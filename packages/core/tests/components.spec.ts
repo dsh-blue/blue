@@ -13,8 +13,13 @@ import {
   wrapTextWithAnsi,
 } from '@earendil-works/pi-tui'
 import { BlueComponentsService } from '../src/components.ts'
-import type { BlueSemanticColors, BlueTheme } from '../src/types.ts'
-import { FakeTerminal } from './fake-terminal.ts'
+import type {
+  BlueAutocompleteItem,
+  BlueAutocompleteProvider,
+  BlueSemanticColors,
+  BlueTheme,
+} from '../src/types.ts'
+import { FakeTerminal, waitForRender } from './fake-terminal.ts'
 
 const ROLES: (keyof BlueSemanticColors)[] = [
   'text',
@@ -137,6 +142,98 @@ describe('createEditor', () => {
     const after = editor.render(40).join('\n')
     expect(after).toContain('[[')
     expect(after).not.toContain('«border:')
+    stop()
+  })
+
+  it('forwards the autocomplete provider to the real Editor with structural parity', async () => {
+    const { tui, stop } = bootTui()
+    const components = createService(tui)
+    const editor = components.createEditor()
+
+    const suggestionCalls: {
+      lines: string[]
+      cursorLine: number
+      cursorCol: number
+      options: { signal: AbortSignal, force?: boolean }
+    }[] = []
+    const completionCalls: {
+      lines: string[]
+      cursorLine: number
+      cursorCol: number
+      item: BlueAutocompleteItem
+      prefix: string
+    }[] = []
+    const fileChecks: { lines: string[], cursorLine: number, cursorCol: number }[] = []
+    const provider: BlueAutocompleteProvider = {
+      triggerCharacters: ['@'],
+      getSuggestions: (lines, cursorLine, cursorCol, options) => {
+        suggestionCalls.push({ lines, cursorLine, cursorCol, options })
+        return Promise.resolve({
+          items: [
+            { value: 'alpha', label: 'Alpha', description: 'first item' },
+            { value: 'beta', label: 'Beta' },
+          ],
+          prefix: '/',
+        })
+      },
+      applyCompletion: (lines, cursorLine, cursorCol, item, prefix) => {
+        completionCalls.push({ lines, cursorLine, cursorCol, item, prefix })
+        const applied = `${prefix}${item.value} `
+        return { lines: [applied], cursorLine: 0, cursorCol: applied.length }
+      },
+      shouldTriggerFileCompletion: (lines, cursorLine, cursorCol) => {
+        fileChecks.push({ lines, cursorLine, cursorCol })
+        return true
+      },
+    }
+    editor.setAutocompleteProvider(provider)
+
+    // Typing '/' at the start of the buffer auto-triggers slash completion.
+    editor.handleInput('/')
+    await waitForRender()
+    expect(suggestionCalls).toHaveLength(1)
+    expect(suggestionCalls[0]?.lines).toEqual(['/'])
+    expect(suggestionCalls[0]?.cursorLine).toBe(0)
+    expect(suggestionCalls[0]?.cursorCol).toBe(1)
+    expect(suggestionCalls[0]?.options.signal).toBeInstanceOf(AbortSignal)
+    expect(suggestionCalls[0]?.options.force).toBe(false)
+
+    // Tab accepts the highlighted completion through the provider.
+    editor.handleInput('\t')
+    expect(completionCalls).toHaveLength(1)
+    expect(completionCalls[0]?.lines).toEqual(['/'])
+    expect(completionCalls[0]?.cursorLine).toBe(0)
+    expect(completionCalls[0]?.cursorCol).toBe(1)
+    expect(completionCalls[0]?.item).toEqual({ value: 'alpha', label: 'Alpha', description: 'first item' })
+    expect(completionCalls[0]?.prefix).toBe('/')
+    expect(editor.getText()).toBe('/alpha ')
+
+    // Tab outside a token routes through shouldTriggerFileCompletion, forcing.
+    editor.setText('open ')
+    editor.handleInput('\t')
+    await waitForRender()
+    expect(fileChecks).toEqual([{ lines: ['open '], cursorLine: 0, cursorCol: 5 }])
+    expect(suggestionCalls).toHaveLength(2)
+    expect(suggestionCalls[1]?.options.force).toBe(true)
+    stop()
+  })
+
+  it('expands paste markers in getExpandedText while getText shows the marker', () => {
+    const { tui, stop } = bootTui()
+    const components = createService(tui)
+    const editor = components.createEditor()
+
+    // A paste over ten lines collapses to a marker in the buffer.
+    const pasted = Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join('\n')
+    editor.handleInput(`\x1b[200~${pasted}\x1b[201~`)
+    expect(editor.getText()).toBe('[paste #1 +12 lines]')
+    expect(editor.getExpandedText()).toBe(pasted)
+
+    // Small pastes stay inline; there is no marker to expand.
+    editor.setText('')
+    editor.handleInput('\x1b[200~short\x1b[201~')
+    expect(editor.getText()).toBe('short')
+    expect(editor.getExpandedText()).toBe('short')
     stop()
   })
 })

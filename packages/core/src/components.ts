@@ -26,6 +26,7 @@ import {
   type TUI,
 } from '@earendil-works/pi-tui'
 import type {
+  BlueAutocompleteProvider,
   BlueColorFn,
   BlueComponents,
   BlueEditor,
@@ -146,6 +147,17 @@ class EditorAdapter implements BlueEditor {
 
   setBorderColor(color: BlueColorFn): void {
     this.editor.borderColor = color
+  }
+
+  setAutocompleteProvider(provider: BlueAutocompleteProvider): void {
+    // BlueAutocompleteProvider is structurally identical to pi-tui's
+    // AutocompleteProvider, so it passes through without wrapping; the pi-tui
+    // type itself never crosses the Blue signature.
+    this.editor.setAutocompleteProvider(provider)
+  }
+
+  getExpandedText(): string {
+    return this.editor.getExpandedText()
   }
 
   render(width: number): string[] {

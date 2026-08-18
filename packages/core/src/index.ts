@@ -29,6 +29,9 @@ export {
 } from './terminal-info.ts'
 export { createTerminalRelease } from './terminal.ts'
 export type {
+  BlueAutocompleteItem,
+  BlueAutocompleteProvider,
+  BlueAutocompleteSuggestions,
   BlueColorFn,
   BlueComponent,
   BlueComponents,

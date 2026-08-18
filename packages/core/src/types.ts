@@ -326,10 +326,78 @@ export interface BlueEditorOptions {
   paddingX?: number
 }
 
+/** One entry of an autocomplete suggestion list. */
+export interface BlueAutocompleteItem {
+  /** The value matched against the prefix and reported to `applyCompletion`. */
+  value: string
+  /** The primary display text. */
+  label: string
+  /** Secondary text shown beside the label. */
+  description?: string
+}
+
+/** The suggestion set returned by {@link BlueAutocompleteProvider.getSuggestions}. */
+export interface BlueAutocompleteSuggestions {
+  /** The completions to display. */
+  items: BlueAutocompleteItem[]
+  /** The token being completed, reused for highlighting and application. */
+  prefix: string
+}
+
 /**
- * A multi-line input editor. Autocomplete wiring is a later increment; the
- * submit/change callbacks and `disableSubmit` are mutable properties, set
- * after creation, matching the underlying component's idiom.
+ * A suggestion source for the editor's autocomplete dropdown. Structurally
+ * identical to the underlying renderer's provider but type-independent; the
+ * L0 adapter passes implementations straight through. All coordinates are
+ * zero-based line/column pairs into `lines`.
+ */
+export interface BlueAutocompleteProvider {
+  /** Characters that trigger this provider at token boundaries. */
+  triggerCharacters?: string[]
+  /**
+   * Compute completions for the token at the cursor.
+   * @param lines - the editor content, one entry per line.
+   * @param cursorLine - the cursor's line index.
+   * @param cursorCol - the cursor's column within that line.
+   * @param options - `signal` aborts a superseded request; `force` marks an
+   *   explicit (e.g. Tab) request.
+   * @returns the suggestions, or `null` for none.
+   */
+  getSuggestions(
+    lines: string[],
+    cursorLine: number,
+    cursorCol: number,
+    options: { signal: AbortSignal, force?: boolean },
+  ): Promise<BlueAutocompleteSuggestions | null>
+  /**
+   * Apply one accepted completion to the editor content.
+   * @param lines - the editor content, one entry per line.
+   * @param cursorLine - the cursor's line index.
+   * @param cursorCol - the cursor's column within that line.
+   * @param item - the accepted suggestion.
+   * @param prefix - the token being replaced.
+   * @returns the new content and cursor position.
+   */
+  applyCompletion(
+    lines: string[],
+    cursorLine: number,
+    cursorCol: number,
+    item: BlueAutocompleteItem,
+    prefix: string,
+  ): { lines: string[], cursorLine: number, cursorCol: number }
+  /**
+   * Gate an explicit file-completion request (Tab outside a token).
+   * @param lines - the editor content, one entry per line.
+   * @param cursorLine - the cursor's line index.
+   * @param cursorCol - the cursor's column within that line.
+   * @returns whether the request should proceed.
+   */
+  shouldTriggerFileCompletion?(lines: string[], cursorLine: number, cursorCol: number): boolean
+}
+
+/**
+ * A multi-line input editor. The submit/change callbacks and `disableSubmit`
+ * are mutable properties, set after creation, matching the underlying
+ * component's idiom.
  */
 export interface BlueEditor extends BlueFocusable {
   /** Called when the user submits; receives the full text. */
@@ -358,6 +426,17 @@ export interface BlueEditor extends BlueFocusable {
    * @param color - the new border color function.
    */
   setBorderColor(color: BlueColorFn): void
+  /**
+   * Attach the autocomplete provider driving the suggestion dropdown.
+   * @param provider - the suggestion source.
+   */
+  setAutocompleteProvider(provider: BlueAutocompleteProvider): void
+  /**
+   * Read the current text with paste markers expanded to their full pasted
+   * content; use this — not {@link BlueEditor.getText} — for submission.
+   * @returns the expanded editor content.
+   */
+  getExpandedText(): string
 }
 
 /** Options for {@link BlueComponents.createMarkdown}. */

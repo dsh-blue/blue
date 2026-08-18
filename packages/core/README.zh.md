@@ -12,7 +12,7 @@ Blue 终端 UI 核心：整棵树中唯一 import `@earendil-works/pi-tui` 的�
 - `ctx.blueTheme`（`BlueTheme`）——语义色表契约。每个值都是 `(text: string) => string` 的 ANSI 包装函数，覆盖 26 token 的 `BlueSemanticColors` 集合（全部 required）。契约留在本包 `src/types.ts`；实现以 `./theme-dark` 子路径插件形式发布（`blue-theme-dark`，内置暗色调色板，plain 基线默认），主题 provider 换装无需消费者改动。
 - `ctx.blueKeymap`（`BlueKeymap`）——键位注册表。`register(actions)` 先整批校验（重复 id、键位已被其它动作占用）再提交，并返回 disposer；`matches(data, action)` 测试输入序列；`getKeys(action)` 解析已绑定键位。
 - `ctx.blueTerminalInfo`（`BlueTerminalInfo`）——只读终端事实：`background`（`'dark' | 'light' | undefined`，来自启动时的 OSC 11 探测）与 `kittyKeyboard`（Kitty 键盘协议是否协商成功）。此后的 DEC 主题上报会发出 `'blue/terminal-theme-changed'` 事件（`'dark' | 'light'`）。
-- `ctx.blueComponents`（`BlueComponents`）——组件工厂。`createEditor` / `createMarkdown` / `createSelectList` / `createSettingsList` 在 pi-tui 无关的接口背后构建 pi-tui 支撑的组件，并把当前 `blueTheme` 色表映射到 pi-tui theme；`visibleWidth` / `wrapText` / `truncateToWidth` 是共享的宽度纯函数。工厂 inject `blueTheme`，provider 换装会经 Cordis reload 语义重建工厂。
+- `ctx.blueComponents`（`BlueComponents`）——组件工厂。`createEditor` / `createMarkdown` / `createSelectList` / `createSettingsList` 在 pi-tui 无关的接口背后构建 pi-tui 支撑的组件，并把当前 `blueTheme` 色表映射到 pi-tui theme；`visibleWidth` / `wrapText` / `truncateToWidth` 是共享的宽度纯函数。`BlueEditor` 契约还暴露 `setAutocompleteProvider(BlueAutocompleteProvider)`——类型独立的 `BlueAutocompleteItem` / `BlueAutocompleteSuggestions` / `BlueAutocompleteProvider` 三件套，由 L0 适配器原样透传给底层渲染器——以及 `getExpandedText()`，提交时用它把粘贴标记展开为完整内容。工厂 inject `blueTheme`，provider 换装会经 Cordis reload 语义重建工厂。
 
 五个契约都以 Cordis `Service` 子类挂载（`blueTheme` 由子路径插件挂载，其余由本插件的 `apply` 挂载）；插件 fiber 卸载时各自自动摘除。组件只消费这些接口，绝不接触 pi-tui 类型。
 
