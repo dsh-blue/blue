@@ -1,0 +1,62 @@
+{
+  "name": "@deepseek-ai/dsh-blue",
+  "description": "The dsh Blue bundle: the interactive terminal UI profile over dsh-base",
+  "version": "0.1.0-rc.7",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./invariant": {
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/invariant.js",
+    "cordis.patch.yml",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-blue-app": "workspace:^",
+    "@deepseek-ai/dsh-blue-core": "workspace:^",
+    "@deepseek-ai/dsh-blue-interaction": "workspace:^",
+    "@deepseek-ai/dsh-blue-transcript": "workspace:^"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.7",
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-invariants": "0.1.0-rc.7",
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/cordis-plugin-include": "1.0.6",
+    "@deepseek-ai/cordis-plugin-loader": "1.0.2",
+    "@deepseek-ai/dsh-agent": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-agent-default-model": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-agent-loop": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-agent-loop-testkit": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-cmdline": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-commands": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-llm": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-user-approval": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-user-questions": "0.1.0-rc.7"
+  }
+}

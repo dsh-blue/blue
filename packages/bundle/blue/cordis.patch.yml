@@ -1,0 +1,45 @@
+# The dsh-blue bundle patch: the Blue interactive terminal UI over dsh-base.
+# It mounts no Host, HTTP server, Web runtime, or browser plugin. An ordinary
+# provider plugin injects `cmdlineArgs`, parses the optional task positional
+# (`dsh --profile blue [task]` and `--resume <id>`) and this app's --help,
+# then the app driver creates or resumes an Agent through the core registry
+# and publishes it through `blueSession` for the transcript and interaction
+# layers.
+
+- id: system-prompt
+  config:
+    persona: >-
+      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+
+# The shared module-reload HMR row stays off; the launcher's watch-only
+# fallback still keeps the user patch layers live until the run exits.
+- id: hmr
+  disabled: true
+
+- insert:
+    # Blue core: the tree's only pi-tui adapter. Starts the terminal and
+    # registers the blueScreen/blueTheme/blueKeymap services.
+    - id: blue-core
+      name: '@deepseek-ai/dsh-blue-core'
+
+    # Transcript: renders session events (streamed Markdown, tool calls) onto
+    # the blue screen.
+    - id: blue-transcript
+      name: '@deepseek-ai/dsh-blue-transcript'
+
+    # Interaction: the input editor, built-in commands (/quit, /resume), the
+    # user-question provider, and the approval answerer.
+    - id: blue-interaction
+      name: '@deepseek-ai/dsh-blue-interaction'
+
+    - id: blue-startup
+      name: '@deepseek-ai/dsh-blue-app/startup'
+
+    # Reads its launch values from the ordinary blueStartup provider; the
+    # plugin's own inject waits for the core Agent services and blueScreen.
+    - id: blue-app
+      name: '@deepseek-ai/dsh-blue-app'
+      inject: [blueStartup]
+      config:
+        task: !!js ctx.blueStartup.task
+        resume: !!js ctx.blueStartup.resume

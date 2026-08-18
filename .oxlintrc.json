@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // Terminal code matches raw ANSI escape sequences on purpose: \x1b and the
+  // escaped brackets in those patterns are the protocol, not accidents.
+  "rules": {
+    "no-control-regex": "off",
+    "no-useless-escape": "off"
+  },
+  "ignorePatterns": [
+    "**/lib/**",
+    "**/node_modules/**"
+  ]
+}
