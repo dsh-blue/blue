@@ -84,8 +84,8 @@ L0  core 内部    终端生命周期 · OSC 11 · alt-screen · 全局键分发
 
 - `./editor-plus`：输入模式状态（`prompt|bash`）——`!` 不进 buffer、prompt 符号与边框色切换、提交后自动退回 prompt；`@` 文件补全 provider（fd 优先、fs 扫描回退，上限防爆）；slash 补全 provider（数据来自 `ctx.commands.list`）。
 - `./global-keys`：注册全局动作——`ctrl+o` 折叠切换（handler 发事件，transcript 消费）、`shift+tab` 模式切换（待上游 ⛔）、`ctrl+s` steer（✅ `agent.steer`）。编辑器语境动作（`ctrl+c` 中断/双击退出、`esc` 级联）留在编辑器组件内经 `matches` 解析，不进全局分发器——避免与 overlay 的 `escape=cancel` 抢键。
-- 审批升级：四选项（allow once / allow session / reject / reject+feedback）、数字键直选、**session 级继承**（Blue 侧队列协调器：同 `toolName` 后续请求自动放行；上游 outcome 无 session 档，照搬 kimi `autoResolveFor` 思路）、弹窗排队互斥协调器、Ctrl-E diff 预览（100% overlay，P2 依赖 diff intent）。
-- 提问 tab 化：多题单弹窗、tab 条状态、Other 自由文本项。
+- 审批升级：四选项（allow once / allow session / reject / reject+feedback）、数字键直选、**session 级继承**（Blue 侧队列协调器：同 `toolName` 后续请求自动放行；上游 outcome 无 session 档，照搬 kimi `autoResolveFor` 思路）、弹窗排队互斥协调器、Ctrl-E diff 预览（100% overlay，P2 依赖 diff intent）。✅ S6 已落地前四项（session 级继承落地为 answerer 侧模块级 `WeakMap<Agent, Set<string>>`；排队为 FIFO 数组 + active 标志）；Ctrl-E diff 预览仍 P2。
+- 提问 tab 化：多题单弹窗、tab 条状态、Other 自由文本项。✅ S6 已落地。
 - 命令扩充：见 §4 对照表。
 
 **纪律**：弹窗只走 `showOverlay`（决策 D19）。全屏对话框 = `width/maxHeight: 100%` 的 overlay；不引入 editor-replacement 范式。
@@ -99,7 +99,7 @@ L0  core 内部    终端生命周期 · OSC 11 · alt-screen · 全局键分发
 **新增**：
 
 - **`ctx.blueStatus` 服务 + footer 壳**（决策 D20）：条目注册表（`{ id, priority, render(width) }`，注册返回 disposer）；footer 两行容器组件负责排序/截断/渲染。**plain 默认条目**（`model · status`）是独立贡献插件 `blue-status-basic`，降级为第一个注册者——现有 `StatusBarComponent` 就此拆分消灭。
-- **pane 插件**（子路径入口）：`./pane-activity`（spinner + 状态提示，消费 `agent/status` ✅）、`./pane-queue`（✅ S0 已核实：`agent.inbox` 公开投影——`nextTurn`/`nextStep`/`hasPending` + `remove(messageId)` 召回 + `agent/inbox/inserted|claimed|discarded` 增量事件，durable 可重放；无需弱版本兜底）、`./pane-todo`（⛔ 无 `sessionProjections` 服务；改为自折叠 `todo/write` 会话事件——整表快照 last-write-wins，`TodoItem = { content, status }`；注意 rc.7 尚无生产者发射该事件，pane 先行兼容）、`./pane-btw`（`/btw` 旁路面板，与 L2 的 `/btw` 命令配对）。pane 不开顺序缝：dock 内位置 = 插件 mount 序 = patch 行序，组合层可控。
+- **pane 插件**（子路径入口）：`./pane-activity`（spinner + 状态提示，消费 `agent/status` ✅）、`./pane-queue`（✅ S0 已核实：`agent.inbox` 公开投影——`nextTurn`/`nextStep`/`hasPending` + `remove(messageId)` 召回 + `agent/inbox/inserted|claimed|discarded` 增量事件，durable 可重放；无需弱版本兜底）、`./pane-todo`（⛔ 无 `sessionProjections` 服务；改为自折叠 `todo/write` 会话事件——整表快照 last-write-wins，`TodoItem = { content, status }`；注意 rc.7 尚无生产者发射该事件，pane 先行兼容）、`./pane-btw`（`/btw` 旁路面板，与 L2 的 `/btw` 命令配对）。✅ S6 已落地（四件全出；偏差：pane-queue 归 interaction 包——召回需编辑器缝；`/btw` 由 pane-btw 自注册而非 L2+L3 配对）。pane 不开顺序缝：dock 钉序靠 inject 解析序（Loader 同组行并发挂载，行序≠挂载序；S6 机制修正，见 §7 S6 行），组合层以行级 inject 钉轮次。
 - **render intent 注册表**（P2）：`blueIntents.register({ intent, create })`；generic 呈现器（现 `ToolCallComponent`）降级为第一个注册者；未知 intent 永远回退 generic——与 fold 的 default 忽略同哲学。
 - **长会话滑动窗口**（P2）：保留最近 N turn（默认 15），旧 turn 组件+条目整体销毁；turn 内旧 step 折叠为摘要行（kimi `StepSummaryComponent` 同款）。
 - `./banner`：welcome/banner 插件。
@@ -108,7 +108,7 @@ L0  core 内部    终端生命周期 · OSC 11 · alt-screen · 全局键分发
 
 **保留**：startup provider（`[task]`、`--resume`）、`blueSession` 契约与 commit-point 语义（D15）、串行 resume 队列。
 
-**新增**：startup flags 按上游核实结果逐个加（`--model` ✅——`cmdlineArgs` 为透传语义，dsh 无内置 app flag 概念，Blue 在自己的 commander program 加 `--model <ref>` 即可，映射到 `agentOptions` + `ModelSelectionRef` 初值；`--yolo/--plan` ⛔ 上游无 presets）；`cordis.patch.yml` 扩展为"基线行 + 增强行"两段注释结构；默认 patch 插入全部自家增强插件——Blue 的产品形态即"缝 + 插件组合"的示范。
+**新增**：startup flags 按上游核实结果逐个加（`--model` ✅——`cmdlineArgs` 为透传语义，dsh 无内置 app flag 概念，Blue 在自己的 commander program 加 `--model <ref>` 即可，映射到 `agentOptions` + `ModelSelectionRef` 初值；`--yolo/--plan` ⛔ 上游无 presets）；`cordis.patch.yml` 扩展为分段注释结构（S6 落地为基线/增强/装配三段，dock 钉序靠 inject 解析序，见 §7）；默认 patch 插入全部自家增强插件——Blue 的产品形态即"缝 + 插件组合"的示范。
 
 ## 3. kimi-code 能力对照：布局与 chrome
 
@@ -166,12 +166,12 @@ L0  core 内部    终端生命周期 · OSC 11 · alt-screen · 全局键分发
 | 命令 | Blue 落点 | 上游 |
 |---|---|---|
 | `/exit`（已有 `/quit`）、`/resume`（已有） | L2 commands-plugin | ✅ |
-| `/new` | L2 命令 → app 层事件（dispose + create，复用启动路径） | ✅ `agents.create` |
-| `/fork` | L2 命令 → app 层 | ✅ `session.fork` |
-| `/sessions`（picker + 分页 + 搜索） | L2 命令 + overlay picker | ✅ `ctx.sessionPersistence.list()`/`listSnapshots()` 返回 `SessionHeader{id,createdAt,cwd,parentSession,...}`；无分页/搜索参数，排序分页客户端自做，内容搜索仅逐会话 `inspect`（贵，首版不做） |
-| `/help`（快捷键+命令速查） | L2 overlay，数据来自 keymap/commands 注册表 | ✅ |
+| `/new` | L2 命令 → app 层事件（dispose + create，复用启动路径） ✅ S6 已落地（`'blue/request-new'`，无载荷） | ✅ `agents.create` |
+| `/fork` | L2 命令 → app 层 ✅ S6 已落地（`'blue/request-fork'`，无载荷；idle 守卫；seed=当前 events 全量 + `meta.{cwd,parentSession,seedLength}`，落地走 `agents.create` 而非 `session.fork`） | ✅ `session.fork` |
+| `/sessions`（picker + 分页 + 搜索） | L2 命令 + overlay picker ✅ S6 已落地（`sessionPersistence.list` 降序 picker，当前会话标注且不可选，选中 emit `'blue/request-resume'`；分页/搜索未做） | ✅ `ctx.sessionPersistence.list()`/`listSnapshots()` 返回 `SessionHeader{id,createdAt,cwd,parentSession,...}`；无分页/搜索参数，排序分页客户端自做，内容搜索仅逐会话 `inspect`（贵，首版不做） |
+| `/help`（快捷键+命令速查） | L2 overlay，数据来自 keymap/commands 注册表 ✅ S6 已落地（`commands.list` + `keymap.list()` 两节 overlay，Esc/Enter/q 关；keymap 为此增 `list()`） | ✅ |
 | `/theme` | L2 命令 → 主题 fiber 换装（§5.2） | 无 |
-| `/btw` | L2 命令 + L3 pane | ✅ fork |
+| `/btw` | L2 命令 + L3 pane ✅ S6 已落地（偏差：命令由 `blue-pane-btw` 插件自注册，非 L2+L3 配对；fork 旁路 agent + followup，面板单槽） | ✅ fork |
 | `/export-md` | L2 命令，fold 结果 → markdown 文件 | ✅ |
 | `/version` `/status` | L2 命令 | ✅（model/provider 读 `session.requestHeader()?.config` 或 `agent.options`；cwd 读 `session.header.cwd`；turn 数 fold `turn/start`；id/创建时间读 `session.header`） |
 | `/usage`（token/上下文用量） | L2 命令 + status 条目 | ✅ fold `assistant/message.usage`（`TokenUsage{inputTokens,outputTokens,cacheReadTokens?,cacheWriteTokens?,reasoningTokens?}`，互斥计数，随 step 落事件）；无聚合 API，transcript 自维护累计器 |
@@ -192,12 +192,12 @@ L0  core 内部    终端生命周期 · OSC 11 · alt-screen · 全局键分发
 
 | 能力 | Blue 落点 | 备注 |
 |---|---|---|
-| 四选项面板 + 数字键 + Esc=reject | L2 approval-plugin 重写 | outcome 词汇不变 |
-| Approve for this session | L2 队列协调器自动继承 | 上游无 session 档，Blue 侧实现（kimi 同款） |
-| reject with feedback | L2 面板内联输入 | ⛔ outcome 闭集 `'allowed-once'|'rejected'|'cancelled'|'unavailable'`，无 feedback 字段（`ApprovalRequest.reason` 是发问方→UI 方向）；按 `ApprovalService.setPolicy` 先例由 Blue 自行 `agent.inject(createUserMessage(...))` 把理由注入会话 |
+| 四选项面板 + 数字键 + Esc=reject | L2 approval-plugin 重写 ✅ S6 已落地（↑↓+Enter+`1`-`4` 直选；Esc 语义由 `'cancelled'` 变更为 `'rejected'`，abort 仍 `'cancelled'`） | outcome 词汇不变 |
+| Approve for this session | L2 队列协调器自动继承 ✅ S6 已落地（answerer 侧模块级 `WeakMap<Agent, Set<string>>`，后续同 agent 同 tool 免弹窗直返 `'allowed-once'`） | 上游无 session 档，Blue 侧实现（kimi 同款） |
+| reject with feedback | L2 面板内联输入 ✅ S6 已落地（内联编辑器输理由 → `'rejected'` + `agent.steer(createUserMessage('User rejected …: …'))`） | ⛔ outcome 闭集 `'allowed-once'|'rejected'|'cancelled'|'unavailable'`，无 feedback 字段（`ApprovalRequest.reason` 是发问方→UI 方向）；按 `ApprovalService.setPolicy` 先例由 Blue 自行 `agent.inject(createUserMessage(...))` 把理由注入会话（S6 落地用 `steer`） |
 | Ctrl-E diff 全屏预览 | L2 100% overlay + L3 diff intent | P2 |
-| 审批/提问弹窗互斥排队 | L2 modal 协调器 | 现状各自独立，需协调器 |
-| 多题 tab 问卷 + Other 项 | L2 questions-plugin 重写 | 现状为逐题串行 |
+| 审批/提问弹窗互斥排队 | L2 modal 协调器 ✅ S6 部分落地（审批侧 FIFO 队列一次一个弹窗，空队同步启动保 waterfall 同步可见性；提问侧一次 overlay 承载整批题） | 现状各自独立，需协调器 |
+| 多题 tab 问卷 + Other 项 | L2 questions-plugin 重写 ✅ S6 已落地（新 `questionnaire.ts`：tab 行 header ?? Q{i+1}、当前 accent、已答 ✓；Tab/Shift-Tab 切题；单选 ↑↓+Enter、multiSelect Space+Enter；固定 Other 伪项进内联编辑器存 custom；无 options 题直接编辑器；全答完自动 resolve；Esc=ASK_DISMISSED/abort=ASK_ABORTED 不变） | 现状为逐题串行 |
 
 ## 5. 主题系统设计（决策 D18 落地）
 
@@ -257,7 +257,7 @@ L0  core 内部    终端生命周期 · OSC 11 · alt-screen · 全局键分发
 
 ## 7. Plain 基线与实施顺序
 
-**Plain 基线 patch**（7 行）：`blue-core`、`blue-theme-dark`、`blue-transcript`、`blue-status-basic`、`blue-interaction`、`blue-startup`、`blue-app`。拔掉一切增强后：主屏 + dark + generic 工具呈现 + 基线 footer 条目（model · status，两行壳）+ 工厂编辑器 + `/quit` `/resume` + 审批/提问 overlay。
+**Plain 基线 patch**（7 行，S6 起分两段排布）：基线段 `blue-core`、`blue-theme-dark`、`blue-transcript`、`blue-status-basic`（4 行）+ 装配段 `blue-interaction`、`blue-startup`、`blue-app`（3 行）；增强段（`blue-editor-plus`、`blue-status-git`、`blue-status-context`、`blue-pane-activity`、`blue-pane-queue`、`blue-pane-todo`、`blue-pane-btw`，7 行）夹在两段之间、可整段拔除。拔掉一切增强后：主屏 + dark + generic 工具呈现 + 基线 footer 条目（model · status，两行壳）+ 工厂编辑器 + `/quit` `/resume` + 审批/提问 overlay。机制修正（S6）：Loader 同组行并发挂载，**行序≠挂载序**；dock 钉序实际靠 inject 解析序——`blue-pane-activity`/`blue-pane-queue` 行级加 `inject: [blueComponents]` 与 transcript 同轮激活，保证 footer→panes→editor 的 bottom 序；行级 inject 不能指 `blueStatus`（`/theme` 换装会连带 dispose 触发命令自己 handler 所在的 fiber）。
 
 | 步 | 内容 | 验收 |
 |---|---|---|
@@ -267,7 +267,7 @@ L0  core 内部    终端生命周期 · OSC 11 · alt-screen · 全局键分发
 | S3 | 全局键分发器 + Ctrl-O/Ctrl-S/Esc 语义链 | ✅ 已完成（2026-08-18，要点：`BlueKeyAction` 增可选 `handler`（带 handler = 焦点无关全局动作），`blueKeymap` 增 `dispatch(data): boolean`（带 handler 动作按注册序触发并回报是否消费）；core apply 内挂全局键分发器（pi-tui `addInputListener`，焦点路由前消费 handler 动作）；transcript inject 加 `blueKeymap` 并注册全局动作 `blue.transcript.toggle-collapse`（ctrl+o）折叠/展开全部工具输出（fold 保留未摘要原文 `fullText`，`ToolCallComponent` 增 `setExpanded`，会话切换重置折叠态）；interaction keys 批次增语境动作 `blue.interaction.interrupt`（ctrl+c）/`blue.interaction.steer`（ctrl+s）；主编辑器语义链：Esc=补全弹层放行→清文本→中断运行中 agent，Ctrl-C=清文本→中断→1s 内双击经 `appExit(0)` 退出（单击 hint 提示），Ctrl-S=非空草稿 steer 注入当前 turn 并清空。决策/偏离记录：编辑器语境键走 `BlueEditor.onKey` 前置钩子（另增 `isShowingAutocomplete()`）而非 §2.3"组件内经 matches 解析"的字面表述——pi-tui Editor 吞掉 Ctrl-C 且自身无兜底出口，onKey 在 Editor 处理前拦截；keymap 服务在 core apply 内直接 `new BlueKeymapService(ctx)` 而非 `ctx.plugin`（Cordis Context 代理对未 inject 服务抛错，自供服务无法 inject 自身）。冲突注入测试落在 keymap.spec（handler 动作抢键抛 `BlueKeymapError` 零提交）与 plugin.spec（分发器接线/卸载）） |
 | S4 | 主题插件族 + `/theme` | ✅ 已完成（2026-08-18，要点：core 新增内部共享模块 `src/theme-palette.ts`（hex→ANSI truecolor 包装、`colorsFromForegrounds` 冻结 26 token 色表、`defineThemeService` Service 子类工厂），theme-dark 改经其构建并导出 `DARK_COLORS`；新增三个子路径主题插件——`./theme-light`（GitHub light 风格 26 token，导出 `LIGHT_COLORS`）、`./theme-auto`（inject `blueTerminalInfo`，按探测背景选 palette，监听 `'blue/terminal-theme-changed'` 并经 promise 链序列化 dispose+重挂 provider 子 fiber）、`./theme-custom`（schemastery 校验 Config `{path, base}`，JSON 文件 token→`#rrggbb`，未知 token/非法 hex 警告后回退 base 条目，文件不可读整体回退 base）；interaction 基线命令插件新增 `/theme`——无参列出已知主题并标出当前、`dark|light|auto` 热切换、`custom <path> [dark|light]` 带配置挂载，切换经 `ctx.registry.delete(当前模块)` + 等待 fiber disposal + `await ctx.plugin(目标)`，挂载失败回退 dark；编辑器草稿经模块级 stash（`src/draft-stash.ts`，onChange 镜像、submit/steer 清空、apply 时 `setText` 恢复）跨 reload 保留；bundle e2e 新增三用例——/theme 换装后色表身份 DARK→LIGHT 且输出含 light ANSI、草稿跨 swap 保留、转录经 D16 快照重折叠以新 palette 重渲染。偏差记录：§5.2 的 zod 校验落地为 schemastery（harness 依赖惯例）；"当前 fiber 句柄模块级持有"落地为模块级当前模块引用 + `ctx.registry.delete`，无需 fiber 句柄） |
 | S5 | blueStatus + footer 壳 + git/context/basic 条目插件 | ✅ 已完成（2026-08-18，要点：transcript 新增 `blueStatus` 服务（`src/status.ts`，`BlueStatusService extends Service` 于 apply 内直接实例化；`register` 查重——重复 id 抛 `BlueStatusError`(DUPLICATE_ENTRY)，返回幂等 disposer；条目按 priority 升序、注册序稳定 tiebreak）与常驻 footer 壳 `FooterShellComponent`（apply 内经 `blueScreen.addBottomChild` 一次性钉底于输入编辑器上方——patch 行序 transcript 先于 interaction 使钉底挂载落在编辑器之上；两行 first-fit、muted ` · ` 连接、两行皆放不下按最低优先级丢弃、空注册表零行；注册/注销 nudge 重渲染）；MVP 的 `StatusBarComponent` 消灭；三条目以子路径插件发布——`./status-basic`（`blue-status-basic`，基线行，优先级 0，muted `{model} · {status}`，model 取 `session.requestHeader()?.config.model ?? agent.options.model ?? agent.options.provider ?? 'no model'`，状态经真实 `'agent/status'` 订阅驱动，`blueSession` 走 `ctx.get` + `'blue/session-changed'` 不 inject）、`./status-git`（`blue-status-git`，增强行，优先级 10，`spawnSync('git', ['branch', '--show-current'], {timeout: 1000})`，cwd 取 session header ?? process.cwd()，模块级 `setGitBranchRunner` 测试注入，非仓库渲染 ''）、`./status-context`（`blue-status-context`，增强行，优先级 20，占用 = 最新 `assistant/message` usage 的 `inputTokens + cacheReadTokens + cacheWriteTokens`，先自扫 `agent.session.events` 快照再订阅 `'session/event'` 增量，格式 `ctx N` / `ctx N.Nk`，无用量渲染 ''）；bundle patch 基线段 7 行（blue-status-basic 随 blue-transcript 之后）、增强段 3 行（blue-status-git/blue-status-context 随 blue-editor-plus 之后），共 10 行；bundle e2e 新增 5 用例——基线 footer 渲染、运行态翻转、下游测试插件注册条目被接受并可见、context 用量（脚本化 usage 流）、git（fake runner），e2e 计 21。偏差记录：① footer 壳经 `addBottomChild` 常驻钉底（原 `StatusBarComponent` 是 `addChild` 滚动区首位）；② context 用量由 status-context 自扫 `session.events` + 订阅增量，未进 `TranscriptFolder`（设计稿 §4 的 "fold assistant/message.usage" 字面表述）） |
-| S6 | pane 插件群 + `/sessions` `/fork` `/new` `/help` `/btw`；审批四选项；提问 tab 化 | 全树 e2e 扩用例 |
+| S6 | pane 插件群 + `/sessions` `/fork` `/new` `/help` `/btw`；审批四选项；提问 tab 化 | ✅ 已完成（2026-08-19，要点：core 的 `BlueKeymap` 契约与 `BlueKeymapService` 增 `list(): readonly BlueKeyAction[]`（注册序快照，条目为拷贝），供 `/help` 枚举；app 新增无载荷事件 `'blue/request-new'`（建新会话切换）与 `'blue/request-fork'`（idle 守卫——无 live session 或非 idle 写 stderr 拒绝；`agents.create` seed=当前 events 全量 + `meta.{cwd,parentSession,seedLength}`），二者与 request-resume 同走 enqueue 串行 + commit-point（dispose 旧 → `current` 赋值 → 广播 `'blue/session-changed'`），失败保留旧会话写 stderr；create 参数抽成模块级 helper `createOptions`，startup/request-new/request-fork 三处共用；transcript 新增三个 pane 子路径插件（四件套齐：src + exports/files + tsdown entry + patch 行）——`./pane-activity`（`blue-pane-activity`，inject blueScreen/blueTheme：spinner 行订 `'agent/status'`，running 显示（100ms 帧推进，模块级 `setActivityTimers` 可注入），idle 零行）、`./pane-todo`（`blue-pane-todo`，+blueKeymap/blueComponents：fold `'todo/write'` 整表 last-write-wins；折叠行 `todos N/M`、展开逐条 ☑/◐/☐；默认规则含 in_progress 展开否则折叠；全局动作 `blue.todo.toggle`（ctrl+t））、`./pane-btw`（`blue-pane-btw`，+commands/agents：自注册 `/btw <question>`——fork 旁路 agent（seed + parentSession/seedLength + agentOptions 继承父 provider/model）+ followup 提问；面板显示 `› question` + 回复（封顶 20 行）；单槽，二次 /btw 替换，无参 /btw = dismiss + dispose）；interaction 新增 `./pane-queue` 子路径插件（`blue-pane-queue`：渲染 agent.inbox 排队消息（nextTurn/nextStep，订 `agent/inbox/*` 事件）；注册无键语境动作 `blue.queue.recall`，input-plugin 的 onKey 链在编辑器为空 + 该动作已注册时拦截 ↑ 召回最近一条（nextStep 末尾优先）进编辑器）与基线命令 `/new`、`/fork`（非 idle 报错）、`/sessions`（`sessionPersistence.list` 降序 picker overlay，当前会话标注且不可选，选中 emit `'blue/request-resume'`；经新增 `SharedEditor.notice` 缝闪提示）、`/help`（`commands.list` + `keymap.list()` 两节 overlay，Esc/Enter/q 关）；审批重写（`approval-plugin.ts`）为四选项面板（1 Allow once / 2 Allow {tool} for this session / 3 Reject / 4 Reject with feedback，↑↓+Enter+数字直选，Esc=`'rejected'`、abort 仍 `'cancelled'`；选项 2 记模块级 `WeakMap<Agent, Set<string>>`，后续同 agent 同 tool 免弹窗直返 `'allowed-once'`；选项 4 内联编辑器输理由 → `'rejected'` + `agent.steer(createUserMessage('User rejected …: …'))`；FIFO 队列一次一个弹窗——显式数组 + active 标志，空队同步启动保 waterfall 同步可见性）；提问重写（`questions-plugin.ts` + 新 `questionnaire.ts`）为一次 showOverlay（80%/60%）承载整批题：tab 行（header ?? Q{i+1}，当前 accent，已答 ✓），Tab/Shift-Tab 切题，单选 ↑↓+Enter、multiSelect Space+Enter，固定 Other 伪项进内联编辑器存 custom，无 options 题直接编辑器，全答完自动 resolve，Esc=ASK_DISMISSED/abort=ASK_ABORTED 不变，intent plan-review 仍不消费；commands-plugin 保持 inject `['commands']` 不加 blueTheme（`/theme` 换装会 dispose 自己 handler 所在 fiber 的雷，蓝服务一律 handler 内 `ctx.get` 惰性解析）；bundle patch 重排三段共 14 行——基线段 4 行（core/theme-dark/transcript/status-basic）→ 增强段 7 行（editor-plus/status-git/status-context/pane-activity/pane-queue/pane-todo/pane-btw）→ 装配段 3 行（interaction/startup/app）；e2e 21→29 例（四个 pane 各一、/help、/sessions+/new+/fork、/btw、审批四选项、提问单 overlay）。偏差记录：① approve-for-session 由 Blue answerer 侧 WeakMap 实现（上游 outcome 无 session 档，§4.4 已预告）；② pane-queue 归 interaction 而非 §2.4 的 L3——召回需编辑器 onKey 缝；③ `/btw` 由 pane-btw 自注册（非 §2.4 的 L2 命令 + L3 pane 配对）；④ patch 三段重排 + 机制修正"行序≠挂载序，dock 钉序靠 inject 解析序"（教训"行级 inject 不能指 blueStatus——/theme 换装连带 dispose"已写进 patch 注释）；⑤ 审批 Esc 语义由 `'cancelled'` 变更为 `'rejected'`；⑥ 召回落地为无键语境动作 + onKey 判存在——up 直注册会撞 `blue.interaction.move-up` 的 KEY_CONFLICT） |
 | S7 | （P2 预览）intent 注册表 + diff/terminal；滑动窗口；图片粘贴 | 长会话性能测量 |
 
 每步门禁：`pnpm run test` / `test:coverage`（逐文件 100%）/ `typecheck` / `lint` 全绿；README 双语同步；MVP 期 README 中将被废止的 Known Limitations 条目（自研编辑器、无主题切换等）随实现清除。

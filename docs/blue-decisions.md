@@ -138,7 +138,7 @@
 
 - **决策**：任何非平凡视觉/交互表面 = 缝 + plain 默认实现；Blue 自家增强（footer 条目、主题、intent、pane）全部经缝注册为插件，与下游同权。基线 patch 拔掉增强行后仍完整可用。
 - **理由**：缝的质量由自家消费验证（dogfooding）；"表面皆插件"从结构口号变为可验收条款。
-- **后果**：包数量不变，增强插件以子路径入口挂在 interaction/transcript 包上（`./pane-activity`、`./status-git`、`./editor-plus` 等）；bundle patch 分基线段与增强段。
+- **后果**：包数量不变，增强插件以子路径入口挂在 interaction/transcript 包上（`./pane-activity`、`./status-git`、`./editor-plus` 等）；bundle patch 分段注释。S6 落地校正（2026-08-19，详见 blue-p1-design §7）：pane-queue 挂 interaction（召回需编辑器 onKey 缝），`/btw` 由 pane-btw 自注册；patch 重排为基线/增强/装配三段 14 行，dock 钉序靠 inject 解析序而非行序。
 
 ## 已知遗留（MVP 有意为之）
 
