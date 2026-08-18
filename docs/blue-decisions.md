@@ -120,6 +120,7 @@
 - **理由**：provider 替换是 Cordis 原生语义，reload 路径免费且与 HMR 同构；transcript reload 走 D16 快照重放，行为正确。
 - **后果**：transcript/interaction 在切换主题时重挂载；编辑器草稿用模块级 stash 补偿。`BlueSemanticColors` 借此次重排一次性全量化（26 token），此后只增不改。OSC 11 探测必须在 raw mode 前，归属 L0（kimi 硬经验）。
 - **S0 验证（2026-08-18，cordis 4.0.1 源码 + 运行时探针双确认）**：dispose provider fiber 时 inject 方自动 `_unload()`（fiber 不销毁、回 PENDING），新 provider fiber 转 ACTIVE 经 `notify` 触发注入方 `_reload()`；`await` 旧 fiber 的 `dispose()` 时注入方已完全卸载，重载异步、`await` 新 fiber 即落地。另注意：cordis 无 optional inject——想软依赖主题的功能插件须走 `ctx.get('blueTheme')` + `'internal/service'` 事件，不能声明非必需 inject。
+- **S4 落地（2026-08-18）**：换装实现为模块级当前模块引用 + `ctx.registry.delete(...)`（dispose 当前 provider 全部 fiber；registry 按回调身份键入，loader 加载的 patch 行与静态 import 共享模块实例）+ `await ctx.plugin(目标)`，挂载失败回退 dark；编辑器草稿经 interaction 的模块级 stash（`onChange` 镜像、submit/steer 清空、apply 时 `setText` 恢复）跨 reload 保留。
 
 ### D19. 弹窗纪律不变：overlay-only
 
