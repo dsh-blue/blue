@@ -100,9 +100,9 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 
 **目标**：工具呈现结构化、长会话性能达标、富媒体进入。状态栏/主题/键位已在 P1 落地，本阶段聚焦"内容呈现"。
 
-- **render intent 注册表**（`ctx.blueIntents`）：`diff` / `terminal` 呈现器落地，generic 呈现降级为第一个注册者
-- **transcript 性能（滑动窗口）**：保留最近 N turn，旧 turn 组件与条目整体销毁；turn 内旧 step 折叠为摘要行；渲染缓存策略固化
-- **图片**：Editor 粘贴图片（L0 `createImage` + 剪贴板工具 + `dsh-attachment` 借力）、`@` 附件
+- **render intent 注册表**（`ctx.blueIntents`）：`diff` / `terminal` 呈现器落地，generic 呈现降级为第一个注册者（✅ S7 已落地）
+- **transcript 性能（滑动窗口）**：保留最近 N turn，旧 turn 组件与条目整体销毁；turn 内旧 step 折叠为摘要行；渲染缓存策略固化（✅ S7 已落地窗口+step 折叠）
+- **图片**：Editor 粘贴图片（L0 `createImage` + 剪贴板工具 + `dsh-attachment` 借力）、`@` 附件（✅ S7 已落地粘贴路径：`blue-attachments` + `blue-paste-image`；`@` 附件待做）
 - **弹窗体系完整化**：model selector、审批 diff 全屏预览（100% overlay）、permission preset 设置面板（待上游 `permissionPresets`）
 - **外部编辑器**（Ctrl-G，需 L0 渲染器暂停配合）
 - **OSC 8 可点链接、OSC 52 复制、鼠标滚轮/文本选择**（alt-screen）
@@ -146,7 +146,7 @@ Blue 不是封闭应用，而是一组可被下游插件定制的 surface。定�
 | P1 | `ctx.blueStatus`（状态栏条目注册表，transcript 提供） | 注册状态栏条目；或整个替换 footer 插件 |
 | P1 | `blueKeymap` 全局动作（`BlueKeyAction.handler`） | 注册焦点无关的全局快捷键 |
 | P1 | `ctx.permissionPresets`（harness，⛔ S0 已核实 rc.7 不存在，待上游做缝） | 注册自定义 preset mode，Blue 模式 UI 自动列出 |
-| P2 | `ctx.blueIntents`（render intent 注册表，transcript 提供） | 为新工具类型提供定制呈现 |
+| P2 | `ctx.blueIntents`（render intent 注册表，transcript 提供；✅ S7 已落地） | 为新工具类型提供定制呈现 |
 | 全程 | `ctx.tools.register` / `tools/pre-execute`（harness 现有） | 定制/包裹 agent-loop 的 tools，Blue 经 render intent 自动呈现 |
 | 全程 | `cordis.patch.yml` 组合层 | 零代码启停/重排任何 Blue 插件 |
 
