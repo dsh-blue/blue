@@ -25,8 +25,14 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
+// The theme modules come from the package subpaths — not relative core
+// source paths — because the /theme swap keys registry runtimes by apply
+// callback identity: only the module instance interaction's theme-switch
+// statically imports (this same lib file) shares a registry record with the
+// baseline provider fiber it replaces.
+import * as themeDarkPlugin from '@deepseek-ai/dsh-blue-core/theme-dark'
+import * as themeLightPlugin from '@deepseek-ai/dsh-blue-core/theme-light'
 import { BlueComponentsService, BlueKeymapService, BlueScreenService, BlueTerminalInfoService } from '../../../core/src/index.ts'
-import * as themeDarkPlugin from '../../../core/src/theme-dark.ts'
 import * as appPlugin from '../../../app/src/index.ts'
 import * as startupPlugin from '../../../app/src/startup.ts'
 import { startBlueTerminal } from '../../../core/src/terminal.ts'
@@ -121,11 +127,14 @@ export const name = 'blue-core'
 export const apply = ctx => globalThis.__blueE2E.coreApply(ctx)
 `)}`,
     // The theme row mirrors cordis.patch.yml: blueTheme now ships from the
-    // theme-dark subpath plugin as its own fiber.
+    // theme-dark subpath plugin as its own fiber. The fixture re-exports the
+    // apply function itself — no wrapper arrow — so the loader-mounted
+    // runtime is keyed by the very callback theme-switch.ts's
+    // registry.delete looks up when /theme swaps the provider.
     '- id: blue-theme-dark',
     `  name: ${fixture('blue-theme-dark.mjs', `
 export const name = 'blue-theme-dark'
-export const apply = ctx => globalThis.__blueE2E.themeDarkApply(ctx)
+export const apply = globalThis.__blueE2E.themeDarkApply
 `)}`,
     '- id: blue-transcript',
     `  name: ${fixture('blue-transcript.mjs', `
@@ -205,6 +214,30 @@ async function currentAgent(tree: BlueTree): Promise<Agent> {
 function typeLine(terminal: FakeTerminal, line: string): void {
   for (const char of line) terminal.sendInput(char)
   terminal.sendInput('\r')
+}
+
+/**
+ * Execute a slash command through the real registry, exactly as the editor's
+ * submit router does. Typing is avoided here so the editor-plus autocomplete
+ * cannot intercept the submission and a typed command cannot clobber a draft
+ * under test.
+ */
+async function executeCommand(tree: BlueTree, agent: Agent, line: string) {
+  const execution = await tree.ctx.commands.execute(agent, line, new AbortController().signal)
+  return execution?.result
+}
+
+/**
+ * Return to the dark baseline after a theme-switch case. theme-switch.ts
+ * holds the live theme key in module state shared across this worker's
+ * cases, while every bootBlue mounts a fresh dark fiber — leaving light
+ * active would strand the next case's `/theme` swap (registry.delete would
+ * find no light fiber and the remount would trip the duplicate-service
+ * guard).
+ */
+async function backToDark(tree: BlueTree, agent: Agent): Promise<void> {
+  await executeCommand(tree, agent, '/theme dark')
+  await vi.waitFor(() => { expect(tree.ctx.get('blueTheme')?.colors).toBe(themeDarkPlugin.DARK_COLORS) })
 }
 
 describe('blue whole-tree e2e', () => {
@@ -381,6 +414,124 @@ describe('blue whole-tree e2e', () => {
     const output = second.terminal.output
     expect(output).toContain('remember this')
     expect(output).toContain('phase one answer')
+  })
+
+  it('switches the live palette through /theme: blueTheme re-provides and the UI re-renders light', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    // ctx.get('blueTheme') returns a fresh proxy per call — the palette is
+    // compared by identity, never the service.
+    expect(tree.ctx.get('blueTheme')?.colors).toBe(themeDarkPlugin.DARK_COLORS)
+    const beforeSwitch = tree.terminal.written.length
+    try {
+      const result = await executeCommand(tree, agent, '/theme light')
+      expect(result).toEqual({ kind: 'success', text: 'switched to theme "light"' })
+      await vi.waitFor(() => {
+        expect(tree.ctx.get('blueTheme')?.colors).toBe(themeLightPlugin.LIGHT_COLORS)
+      })
+      // The swap disposes the dark fiber and Cordis reloads every blueTheme
+      // dependent; the remounted editor re-renders with the light palette
+      // (border #6e7781).
+      await vi.waitFor(() => {
+        expect(tree.terminal.written.slice(beforeSwitch).join('')).toContain('\x1b[38;2;110;119;129m')
+      })
+    } finally {
+      await backToDark(tree, agent)
+    }
+  })
+
+  it('keeps the unsubmitted editor draft across the theme swap', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    for (const char of 'hello') tree.terminal.sendInput(char)
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('hello') })
+    const beforeSwitch = tree.terminal.written.length
+    try {
+      // Programmatic execution: typing the command into the same editor
+      // would replace the draft under test.
+      const result = await executeCommand(tree, agent, '/theme light')
+      expect(result?.kind).toBe('success')
+      // The reload rebuilds the editor from scratch; the draft comes back
+      // from interaction's module-level stash and re-renders.
+      await vi.waitFor(() => {
+        expect(tree.terminal.written.slice(beforeSwitch).join('')).toContain('hello')
+      })
+    } finally {
+      await backToDark(tree, agent)
+    }
+    // The draft was never submitted: the model saw nothing.
+    expect(tree.adapter.requests).toHaveLength(0)
+  })
+
+  it('re-renders the transcript with the new palette after the theme swap', async () => {
+    const tree = await bootBlue(['show', 'palette'], { script: [textResponse('palette reply')] })
+    const agent = await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await agent.whenIdle()
+    await waitForRender()
+    expect(tree.terminal.output).toContain('show palette')
+    expect(tree.terminal.output).toContain('palette reply')
+    const beforeSwitch = tree.terminal.written.length
+    try {
+      const result = await executeCommand(tree, agent, '/theme light')
+      expect(result?.kind).toBe('success')
+      await vi.waitFor(() => {
+        expect(tree.ctx.get('blueTheme')?.colors).toBe(themeLightPlugin.LIGHT_COLORS)
+      })
+      // The transcript reload re-folds the full session snapshot (the D16
+      // path): both rendered items come back, and the re-rendered user row
+      // carries the light accent gutter (#0a7ea4), not dark's #8abeb7.
+      await vi.waitFor(() => {
+        const rendered = tree.terminal.written.slice(beforeSwitch).join('')
+        expect(rendered).toContain('show palette')
+        expect(rendered).toContain('palette reply')
+        expect(rendered).toContain('\x1b[38;2;10;126;164m❯')
+      })
+    } finally {
+      await backToDark(tree, agent)
+    }
+  })
+
+  it('survives a typed /theme light: the swap unloads the input fiber mid-command without crashing', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    expect(tree.ctx.get('blueTheme')?.colors).toBe(themeDarkPlugin.DARK_COLORS)
+    const beforeSwitch = tree.terminal.written.length
+    try {
+      // The real user path that crashed: the command arrives through the
+      // editor, so execute() is still in flight when the swap unloads the
+      // input fiber (blue-input injects blueTheme). Bracketed paste instead
+      // of keystrokes: the pi-tui Editor inserts pasted text atomically
+      // without triggering the editor-plus autocomplete dropdown, which
+      // would race the Enter (an open dropdown turns Enter into completion
+      // acceptance instead of submission).
+      // The draft stash is module state shared across this worker's cases:
+      // the fresh editor may have restored a previous case's unsubmitted
+      // draft, so clear the buffer before typing the command.
+      tree.terminal.sendInput('\x1b')
+      // The real user path that crashed: the command arrives through the
+      // editor, so execute() is still in flight when the swap unloads the
+      // input fiber (blue-input injects blueTheme). Bracketed paste instead
+      // of keystrokes: the pi-tui Editor inserts pasted text atomically
+      // without triggering the editor-plus autocomplete dropdown, which
+      // would race the Enter (an open dropdown turns Enter into completion
+      // acceptance instead of submission).
+      tree.terminal.sendInput('\x1b[200~/theme light\x1b[201~')
+      tree.terminal.sendInput('\r')
+      await vi.waitFor(() => {
+        expect(tree.ctx.get('blueTheme')?.colors).toBe(themeLightPlugin.LIGHT_COLORS)
+      })
+      // Still alive after the swap: no fatal surfaced, no exit requested,
+      // and the remounted editor re-renders with the light palette (border
+      // #6e7781).
+      expect(tree.terminal.output).not.toContain('fatal')
+      expect(tree.exits).toEqual([])
+      await vi.waitFor(() => {
+        expect(tree.terminal.written.slice(beforeSwitch).join('')).toContain('\x1b[38;2;110;119;129m')
+      })
+    } finally {
+      await backToDark(tree, agent)
+    }
   })
 
   it('restores the terminal and removes every registration on dispose', async () => {
