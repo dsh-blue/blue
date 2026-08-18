@@ -4,8 +4,10 @@
  * background (OSC 11, before raw mode), starts the main-screen renderer
  * over `ProcessTerminal`, and registers the `blueScreen`, `blueKeymap`,
  * `blueTerminalInfo`, and `blueComponents` services; `blueTheme` is
- * provided separately by the `blue-theme-dark` subpath plugin. Unloading
- * stops the terminal and restores its state.
+ * provided separately by the `blue-theme-dark` subpath plugin. A global key
+ * dispatcher mounted as a TUI input listener consumes handler-carrying key
+ * actions before focus routing. Unloading stops the terminal and restores
+ * its state.
  *
  * @module @deepseek-ai/dsh-blue-core
  */
@@ -64,9 +66,10 @@ export type {
 export const name = 'blue-core'
 
 /**
- * Probe the terminal, start it, and mount the L1 services. Each service is
- * a class plugin on its own fiber, so unloading this plugin unregisters all
- * of them; the effect stops the terminal last. `blueComponents` mounts as a
+ * Probe the terminal, start it, and mount the L1 services. `blueKeymap`
+ * instantiates directly (see below); the remaining services are class
+ * plugins on their own fibers, so unloading this plugin unregisters all of
+ * them; the effect stops the terminal last. `blueComponents` mounts as a
  * sub-plugin injecting `blueTheme`: while no theme provider is loaded the
  * sub-plugin waits, and a provider swap rebuilds the factory through
  * Cordis reload semantics.
@@ -76,7 +79,17 @@ export async function apply(ctx: Context): Promise<void> {
   const runtime = await startBlueTerminal(undefined, undefined, (scheme) => {
     ctx.emit('blue/terminal-theme-changed', scheme)
   })
-  ctx.plugin(BlueKeymapService)
+  // The keymap instantiates directly instead of as a class plugin so the
+  // dispatcher below can close over the instance: the runtime predates the
+  // service, and the Context proxy rejects service access without an inject
+  // declaration — which a self-provided service cannot carry. Registration
+  // is still effect-bound, so unloading reverts it.
+  const keymap = new BlueKeymapService(ctx)
+  // The global key dispatcher consumes handler-carrying actions before
+  // focus routing; wiring it here because the runtime predates the keymap.
+  ctx.effect(() =>
+    runtime.tui.addInputListener(data => (keymap.dispatch(data) ? { consume: true } : undefined)),
+  )
   ctx.plugin(BlueTerminalInfoService, { background: runtime.background, kittyKeyboard: runtime.kittyKeyboard })
   ctx.plugin(BlueScreenService, runtime)
   ctx.plugin({

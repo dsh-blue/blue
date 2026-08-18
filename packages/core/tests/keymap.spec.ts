@@ -3,7 +3,7 @@
  * matching, and registration-time conflict detection.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { BlueKeymapError, BlueKeymapService } from '../src/keymap.ts'
 
@@ -111,5 +111,67 @@ describe('BlueKeymapService', () => {
     // The freed key can be claimed again.
     keymap.register([{ id: 'blue.app.interrupt', keys: 'ctrl+c' }])
     expect(keymap.matches('\x03', 'blue.app.interrupt')).toBe(true)
+  })
+
+  it('dispatches input to handler-carrying actions only, in registration order', async () => {
+    const ctx = new Context()
+    await ctx.plugin(BlueKeymapService)
+    const keymap = ctx.blueKeymap
+    const calls: string[] = []
+    // A handler-less action never participates in dispatch.
+    keymap.register([{ id: 'blue.input.submit', keys: 'enter' }])
+    keymap.register([
+      { id: 'blue.transcript.toggle', keys: 'ctrl+o', handler: () => calls.push('toggle') },
+      { id: 'blue.app.palette', keys: 'ctrl+p', handler: () => calls.push('palette') },
+    ])
+
+    expect(keymap.dispatch('\r')).toBe(false)
+    expect(keymap.dispatch('\x11')).toBe(false)
+    expect(calls).toEqual([])
+
+    expect(keymap.dispatch('\x0f')).toBe(true)
+    expect(keymap.dispatch('\x10')).toBe(true)
+    expect(calls).toEqual(['toggle', 'palette'])
+  })
+
+  it('stops at the first matching handler action', async () => {
+    const ctx = new Context()
+    await ctx.plugin(BlueKeymapService)
+    const keymap = ctx.blueKeymap
+    const calls: string[] = []
+    // Two handler actions claiming different keys: dispatch of the later
+    // key must not invoke the earlier action.
+    keymap.register([{ id: 'blue.first', keys: 'ctrl+o', handler: () => calls.push('first') }])
+    keymap.register([{ id: 'blue.second', keys: 'ctrl+p', handler: () => calls.push('second') }])
+
+    expect(keymap.dispatch('\x10')).toBe(true)
+    expect(calls).toEqual(['second'])
+  })
+
+  it('rejects a handler action claiming a taken key without committing it', async () => {
+    const ctx = new Context()
+    await ctx.plugin(BlueKeymapService)
+    const keymap = ctx.blueKeymap
+    keymap.register([{ id: 'blue.app.quit', keys: 'ctrl+o' }])
+    const handler = vi.fn()
+
+    expect(() => keymap.register([{ id: 'blue.transcript.toggle', keys: 'ctrl+o', handler }]))
+      .toThrow(BlueKeymapError)
+    // Zero-commit: the rejected handler action never dispatches.
+    expect(keymap.dispatch('\x0f')).toBe(false)
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  it('stops dispatching an action after its disposer unregisters the batch', async () => {
+    const ctx = new Context()
+    await ctx.plugin(BlueKeymapService)
+    const keymap = ctx.blueKeymap
+    const handler = vi.fn()
+    const dispose = keymap.register([{ id: 'blue.transcript.toggle', keys: 'ctrl+o', handler }])
+
+    expect(keymap.dispatch('\x0f')).toBe(true)
+    dispose()
+    expect(keymap.dispatch('\x0f')).toBe(false)
+    expect(handler).toHaveBeenCalledTimes(1)
   })
 })

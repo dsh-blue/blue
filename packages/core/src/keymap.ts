@@ -2,7 +2,9 @@
  * `ctx.blueKeymap` service: the Blue keybinding registry. Key matching
  * delegates to pi-tui's `matchesKey`; conflict detection runs at
  * registration and fails loud, so a key is claimed by at most one
- * registered action at a time.
+ * registered action at a time. `dispatch` runs the global half of the
+ * registry: handler-carrying actions fire in registration order ahead of
+ * focus routing.
  *
  * @module @deepseek-ai/dsh-blue-core/keymap
  */
@@ -36,6 +38,7 @@ export class BlueKeymapError extends Error {
 interface RegisteredAction {
   keys: string[]
   description?: string
+  handler?: () => void
 }
 
 /** Dedupe one action's key list, preserving order. */
@@ -85,7 +88,13 @@ export class BlueKeymapService extends Service implements BlueKeymap {
         }
         batchClaims.set(key, action.id)
       }
-      const entry: RegisteredAction = action.description === undefined ? { keys } : { keys, description: action.description }
+      const entry: RegisteredAction = {
+        keys,
+        // exactOptionalPropertyTypes forbids assigning undefined to the
+        // optional slots, so each is spread in only when present.
+        ...(action.description === undefined ? {} : { description: action.description }),
+        ...(action.handler === undefined ? {} : { handler: action.handler }),
+      }
       batch.set(action.id, entry)
     }
     for (const [id, entry] of batch) {
@@ -116,6 +125,23 @@ export class BlueKeymapService extends Service implements BlueKeymap {
     // KeyId is a compile-time union over key-id strings; L1 accepts plain
     // strings per its own contract and pi-tui matches them at runtime.
     return entry.keys.some(key => matchesKey(data, key as KeyId))
+  }
+
+  /**
+   * Run the global dispatch: walk handler-carrying actions in registration
+   * order (Map insertion order), invoking the first whose key matches.
+   * @param data - the input sequence as read from the terminal.
+   * @returns whether a handler ran for the input.
+   */
+  dispatch(data: string): boolean {
+    for (const entry of this.actions.values()) {
+      if (entry.handler === undefined) continue
+      if (entry.keys.some(key => matchesKey(data, key as KeyId))) {
+        entry.handler()
+        return true
+      }
+    }
+    return false
   }
 
   /**

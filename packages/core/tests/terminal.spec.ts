@@ -216,6 +216,40 @@ describe('overlay focus discipline', () => {
   })
 })
 
+describe('input listeners on the stable reference', () => {
+  it('runs listeners before focus routing and honors consume/dispose', async () => {
+    const terminal = new FakeTerminal()
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    const received: string[] = []
+    const focused: BlueFocusable & { handleInput(data: string): void } = {
+      focused: false,
+      render: () => ['editor'],
+      invalidate: () => {},
+      handleInput: (data) => received.push(data),
+    }
+    runtime.addChild(focused)
+    runtime.setFocus(focused)
+
+    let consume = true
+    const remove = runtime.tui.addInputListener(data => (data === '\x0f' && consume ? { consume: true } : undefined))
+
+    // A consumed sequence never reaches the focused component.
+    terminal.sendInput('\x0f')
+    expect(received).toEqual([])
+
+    // A pass-through result (undefined) delegates to focus routing.
+    terminal.sendInput('a')
+    expect(received).toEqual(['a'])
+
+    // The returned disposer detaches the listener.
+    consume = false
+    remove()
+    terminal.sendInput('\x0f')
+    expect(received).toEqual(['a', '\x0f'])
+    await runtime.stop()
+  })
+})
+
 describe('createTerminalRelease', () => {
   it('is a no-op before any terminal stack is active and after it stops', async () => {
     const release = createTerminalRelease()

@@ -97,6 +97,13 @@ function settingsListTheme(colors: BlueSemanticColors): SettingsListTheme {
 
 /** Delegate exposing a pi-tui `Editor` through the Blue contract. */
 class EditorAdapter implements BlueEditor {
+  /**
+   * Pre-dispatch hook checked by {@link EditorAdapter.handleInput} before
+   * the pi-tui editor sees the input; owned by the adapter because pi-tui's
+   * Editor has no equivalent interception point.
+   */
+  onKey: ((data: string) => boolean) | undefined
+
   constructor(private readonly editor: Editor) {}
 
   get focused(): boolean {
@@ -160,11 +167,17 @@ class EditorAdapter implements BlueEditor {
     return this.editor.getExpandedText()
   }
 
+  isShowingAutocomplete(): boolean {
+    return this.editor.isShowingAutocomplete()
+  }
+
   render(width: number): string[] {
     return this.editor.render(width)
   }
 
   handleInput(data: string): void {
+    // The onKey hook intercepts before delegation; true consumes the input.
+    if (this.onKey?.(data) === true) return
     this.editor.handleInput(data)
   }
 

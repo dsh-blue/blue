@@ -268,6 +268,14 @@ export interface BlueKeyAction {
   keys: string | string[]
   /** Human-readable description for future keybinding UIs. */
   description?: string
+  /**
+   * Optional global handler. An action carrying a handler is a
+   * focus-independent global action: the L0 global dispatcher consumes its
+   * key before focus routing and invokes the handler. An action without a
+   * handler is a contextual action, resolved by components through
+   * {@link BlueKeymap.matches}.
+   */
+  handler?: () => void
 }
 
 /**
@@ -290,6 +298,14 @@ export interface BlueKeymap {
    * @returns whether the input triggers the action.
    */
   matches(data: string, action: string): boolean
+  /**
+   * Run the global dispatch: walk the actions carrying a handler in
+   * registration order, invoke the first whose key matches `data`, and
+   * report whether any handler consumed the input.
+   * @param data - the input sequence as read from the terminal.
+   * @returns whether a handler ran for the input.
+   */
+  dispatch(data: string): boolean
   /**
    * Resolve the key ids currently bound to an action.
    * @param action - the action id.
@@ -404,8 +420,19 @@ export interface BlueEditor extends BlueFocusable {
   onSubmit?: ((text: string) => void) | undefined
   /** Called on every text change. */
   onChange?: ((text: string) => void) | undefined
+  /**
+   * Optional pre-dispatch hook: called with every input sequence before the
+   * underlying editor sees it; return true to consume the sequence without
+   * delegating.
+   */
+  onKey?: ((data: string) => boolean) | undefined
   /** When true, submission keys insert text instead of submitting. */
   disableSubmit: boolean
+  /**
+   * Report whether the autocomplete dropdown is currently visible.
+   * @returns the dropdown visibility.
+   */
+  isShowingAutocomplete(): boolean
   /**
    * Read the current text.
    * @returns the editor content.

@@ -130,6 +130,28 @@ describe('createEditor', () => {
     stop()
   })
 
+  it('intercepts input through onKey before delegating to the real Editor', () => {
+    const { tui, stop } = bootTui()
+    const components = createService(tui)
+    const editor = components.createEditor()
+
+    // A true result consumes the input; the pi-tui Editor never sees it.
+    editor.onKey = () => true
+    editor.handleInput('x')
+    expect(editor.getText()).toBe('')
+
+    // A false result delegates normally.
+    editor.onKey = () => false
+    editor.handleInput('x')
+    expect(editor.getText()).toBe('x')
+
+    // Clearing the hook restores plain delegation.
+    editor.onKey = undefined
+    editor.handleInput('y')
+    expect(editor.getText()).toBe('xy')
+    stop()
+  })
+
   it('renders the palette border and honors setBorderColor', () => {
     const { tui, stop } = bootTui()
     const components = createService(tui)
@@ -188,9 +210,11 @@ describe('createEditor', () => {
     }
     editor.setAutocompleteProvider(provider)
 
+    expect(editor.isShowingAutocomplete()).toBe(false)
     // Typing '/' at the start of the buffer auto-triggers slash completion.
     editor.handleInput('/')
     await waitForRender()
+    expect(editor.isShowingAutocomplete()).toBe(true)
     expect(suggestionCalls).toHaveLength(1)
     expect(suggestionCalls[0]?.lines).toEqual(['/'])
     expect(suggestionCalls[0]?.cursorLine).toBe(0)
@@ -207,6 +231,8 @@ describe('createEditor', () => {
     expect(completionCalls[0]?.item).toEqual({ value: 'alpha', label: 'Alpha', description: 'first item' })
     expect(completionCalls[0]?.prefix).toBe('/')
     expect(editor.getText()).toBe('/alpha ')
+    // Accepting the completion closes the dropdown.
+    expect(editor.isShowingAutocomplete()).toBe(false)
 
     // Tab outside a token routes through shouldTriggerFileCompletion, forcing.
     editor.setText('open ')

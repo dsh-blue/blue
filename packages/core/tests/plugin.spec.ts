@@ -1,9 +1,10 @@
 /**
  * REAL-composition test: boot the blue-core plugin plus the blue-theme-dark
  * entry through the real Loader from a cordis.yml in a temp directory,
- * asserting the terminal starts, all five services register, the
+ * asserting the terminal starts, all five services register, the global key
+ * dispatcher consumes handler actions before focus routing, the
  * terminal-theme-changed broadcast fires, and unloading restores the
- * terminal and removes the services.
+ * terminal and removes the services and the dispatcher listener.
  */
 
 import { mkdtempSync, writeFileSync } from 'node:fs'
@@ -91,6 +92,39 @@ describe('blue-core plugin through the real Loader', () => {
     process.stdin.emit('data', Buffer.from('\x1b[?997;2n', 'utf8'))
     await new Promise<void>(resolve => setTimeout(resolve, 50))
     expect(schemes).toEqual(['light'])
+  })
+
+  it('routes input through the global dispatcher before the focused component', async () => {
+    const { ctx } = await bootBlueCore()
+    const handler = vi.fn()
+    ctx.blueKeymap.register([{ id: 'blue.transcript.toggle', keys: 'ctrl+o', handler }])
+
+    const received: string[] = []
+    const focused = {
+      focused: false,
+      render: () => ['probe'],
+      invalidate: () => {},
+      handleInput: (data: string) => received.push(data),
+    }
+    ctx.blueScreen.addChild(focused)
+    ctx.blueScreen.setFocus(focused)
+
+    // A matching sequence is consumed by the handler before focus routing.
+    process.stdin.emit('data', Buffer.from('\x0f', 'utf8'))
+    await new Promise<void>(resolve => setTimeout(resolve, 50))
+    expect(handler).toHaveBeenCalledTimes(1)
+    expect(received).toEqual([])
+
+    // A non-matching sequence passes through to the focused component.
+    process.stdin.emit('data', Buffer.from('a', 'utf8'))
+    await new Promise<void>(resolve => setTimeout(resolve, 50))
+    expect(received).toEqual(['a'])
+
+    // Unloading removes the dispatcher listener with the fiber.
+    await ctx.fiber.dispose()
+    process.stdin.emit('data', Buffer.from('\x0f', 'utf8'))
+    await new Promise<void>(resolve => setTimeout(resolve, 50))
+    expect(handler).toHaveBeenCalledTimes(1)
   })
 
   it('stops the terminal and removes the services when the tree unloads', async () => {
