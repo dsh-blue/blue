@@ -6,7 +6,11 @@
  * (`./editor-instance.ts`): `inject` cannot order this plugin after
  * `blue-input` (which provides no service), so attach/detach is driven by
  * the `'blue/input-editor-changed'` event, which also re-attaches correctly
- * when a theme reload rebuilds both plugins.
+ * when a theme reload rebuilds both plugins. A bash-mode command can
+ * outlive such a reload — the editor stays usable while the shell runs, so
+ * `/theme` can unload this fiber before the process settles — and the echo
+ * mount therefore gates on the fiber's unload flag before touching the
+ * dead context.
  *
  * @module @deepseek-ai/dsh-blue-interaction/editor-plus
  */
@@ -273,8 +277,15 @@ function capOutput(output: string): { text: string, truncated: boolean } {
   return { text, truncated }
 }
 
-/** Run one bash-mode command and mount its echo into the scroll region. */
-function runShell(ctx: Context, command: string): void {
+/**
+ * Run one bash-mode command and mount its echo into the scroll region.
+ * @param ctx - plugin context carrying the Blue services.
+ * @param command - the shell command line.
+ * @param isUnloaded - reports whether this fiber unloaded while the shell
+ *   was still running (a `/theme` swap); a late echo then drops silently,
+ *   since the dead context can neither style nor mount it.
+ */
+function runShell(ctx: Context, command: string, isUnloaded: () => boolean): void {
   const mount = (output: string, code: number): void => {
     // One trailing newline is transport framing, not content.
     const capped = capOutput(output.replace(/\r?\n$/, ''))
@@ -290,8 +301,12 @@ function runShell(ctx: Context, command: string): void {
     ctx.effect(() => ctx.blueScreen.addChild(echo))
   }
   void shellExecutor(command, process.cwd()).then(
-    result => mount(result.output, result.code),
+    (result) => {
+      if (isUnloaded()) return
+      mount(result.output, result.code)
+    },
     (error: unknown) => {
+      if (isUnloaded()) return
       mount(error instanceof Error ? error.message : String(error), 1)
     },
   )
@@ -302,9 +317,11 @@ function runShell(ctx: Context, command: string): void {
  * preserving the handlers `blue-input` installed.
  * @param ctx - plugin context.
  * @param shared - the shared editor entry.
+ * @param isUnloaded - reports whether this fiber has unloaded; forwarded to
+ *   `runShell` so a shell settling after a theme-swap reload drops its echo.
  * @returns a detacher restoring the previous handlers.
  */
-function attach(ctx: Context, shared: SharedEditor): () => void {
+function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): () => void {
   const { editor } = shared
   const colors = ctx.blueTheme.colors
   let mode: 'prompt' | 'bash' = 'prompt'
@@ -338,7 +355,7 @@ function attach(ctx: Context, shared: SharedEditor): () => void {
     // Prompt and bash share the editor's internal history; the pi-tui
     // Editor exposes no per-mode filtering (known simplification).
     editor.addToHistory(command)
-    runShell(ctx, command)
+    runShell(ctx, command, isUnloaded)
   }
   editor.setAutocompleteProvider(createAutocompleteProvider(ctx))
 
@@ -355,12 +372,21 @@ function attach(ctx: Context, shared: SharedEditor): () => void {
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
+  /**
+   * Set when this fiber unloads: a bash-mode shell can settle after a
+   * theme-swap reload disposed the fiber, and its late echo mount must not
+   * touch services through the dead context.
+   */
+  let unloaded = false
+  ctx.effect(() => () => {
+    unloaded = true
+  })
   let detach: (() => void) | undefined
   const reattach = (): void => {
     detach?.()
     detach = undefined
     const shared = getSharedEditor()
-    if (shared !== undefined) detach = attach(ctx, shared)
+    if (shared !== undefined) detach = attach(ctx, shared, () => unloaded)
   }
   ctx.effect(() => () => {
     detach?.()

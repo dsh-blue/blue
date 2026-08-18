@@ -2,7 +2,8 @@
  * @deepseek-ai/dsh-blue-interaction — Blue terminal UI interaction layer
  * over `dsh-blue-core`: the bottom input editor with slash-command dispatch
  * (`blue-input`, pi-tui Editor behind `ctx.blueComponents`), the built-in
- * `/quit` and `/resume` commands (`blue-commands`), the `ctx.userQuestions`
+ * `/quit`, `/resume`, and `/theme` commands (`blue-commands`), the
+ * `ctx.userQuestions`
  * overlay provider (`blue-questions`), and the interactive
  * `approval/request` answerer (`blue-approval`). The optional bash-mode and
  * autocomplete enhancement layer ships as the `./editor-plus` subpath

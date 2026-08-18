@@ -5,15 +5,22 @@
  * mount/dispose behavior.
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, afterEach } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { BlueComponent } from '@deepseek-ai/dsh-blue-core'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import CommandRuntime from '@deepseek-ai/dsh-commands'
+import CommandRuntime, { type CommandResult } from '@deepseek-ai/dsh-commands'
 import * as inputPlugin from '../src/input-plugin.ts'
 import { getSharedEditor } from '../src/editor-instance.ts'
+import { clearDraft } from '../src/draft-stash.ts'
 import { fakeBlueContext, KEY, type FakeBlueEditor, type FakeScreen } from './fakes.ts'
+
+// The draft stash is module state: a test that leaves unsubmitted text
+// would see it restored into the next test's freshly mounted editor.
+afterEach(() => {
+  clearDraft()
+})
 
 async function mount(options: { withAgent?: boolean, running?: boolean, appExit?: (code: number) => void } = {}): Promise<{
   ctx: Context
@@ -164,6 +171,50 @@ describe('blue-input plugin', () => {
     await vi.waitFor(() => {
       expect(hint.render(80)).toEqual(['~!boom!~'])
     })
+  })
+
+  it('drops the result notice when the fiber unloads before the command settles', async () => {
+    const { ctx, screen, editor, hint, agent, fiber } = await mount()
+    // A handler gate the test settles by hand, so the unload can land while
+    // execute() is still in flight — the /theme crash shape.
+    const gate = Promise.withResolvers<CommandResult>()
+    ctx.commands.register({
+      name: 'slow',
+      description: 'Settle late',
+      handler: () => gate.promise,
+    })
+    type(editor, '/slow')
+    editor.handleInput(KEY.enter)
+    await fiber.dispose()
+    const renderRequests = screen.renderRequests
+    gate.resolve({ kind: 'success', text: 'late' })
+    await vi.waitFor(() => {
+      expect(agent.session.events.some(event => event.type === 'command/done')).toBe(true)
+    })
+    // The continuation saw the unloaded fiber: no notice, no re-render, and
+    // no throw through the dead context.
+    expect(hint.render(80)).toEqual([])
+    expect(screen.renderRequests).toBe(renderRequests)
+  })
+
+  it('drops the error notice when the fiber unloads before the command rejects', async () => {
+    const { ctx, screen, editor, hint, agent, fiber } = await mount()
+    const gate = Promise.withResolvers<CommandResult>()
+    ctx.commands.register({
+      name: 'late-fail',
+      description: 'Reject late',
+      handler: () => gate.promise,
+    })
+    type(editor, '/late-fail')
+    editor.handleInput(KEY.enter)
+    await fiber.dispose()
+    const renderRequests = screen.renderRequests
+    gate.reject(new Error('late boom'))
+    await vi.waitFor(() => {
+      expect(agent.session.events.some(event => event.type === 'command/done')).toBe(true)
+    })
+    expect(hint.render(80)).toEqual([])
+    expect(screen.renderRequests).toBe(renderRequests)
   })
 
   it('shows matching command hints for slash-prefixed input and replaces them on edit', async () => {

@@ -17,6 +17,7 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import * as inputPlugin from '../src/input-plugin.ts'
 import * as editorPlus from '../src/editor-plus.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
+import { clearDraft } from '../src/draft-stash.ts'
 import { fakeBlueContext, FakeBlueEditor, KEY, type FakeScreen } from './fakes.ts'
 
 const signal = (): AbortSignal => new AbortController().signal
@@ -25,6 +26,9 @@ afterEach(() => {
   editorPlus.setShellExecutor(undefined)
   editorPlus.setFdRunner(undefined)
   clearSharedEditor()
+  // The draft stash is module state: don't leak unsubmitted text into the
+  // next test's freshly mounted editor.
+  clearDraft()
   vi.restoreAllMocks()
 })
 
@@ -135,6 +139,36 @@ describe('blue-editor-plus input modes', () => {
     })
     expect(echoes(screen)[0]?.render(80)).toEqual(['*! first*', 'spawn broke', '!exit code 1!'])
     expect(echoes(screen)[1]?.render(80)).toEqual(['*! second*', 'raw failure', '!exit code 1!'])
+  })
+
+  it('drops the echo when the fiber unloads before the shell settles', async () => {
+    const { screen, editor, plusFiber } = await mount()
+    // A shell gate the test settles by hand, so the theme-swap unload can
+    // land while the command is still running.
+    const gate = Promise.withResolvers<editorPlus.ShellExecution>()
+    editorPlus.setShellExecutor(() => gate.promise)
+    type(editor, '!')
+    type(editor, 'slow')
+    editor.handleInput(KEY.enter)
+    await plusFiber.dispose()
+    gate.resolve({ code: 0, output: 'late\n' })
+    await new Promise(resolve => setImmediate(resolve))
+    // The continuation saw the unloaded fiber: no echo, and no throw through
+    // the dead context.
+    expect(echoes(screen)).toHaveLength(0)
+  })
+
+  it('drops the echo when the fiber unloads before the shell fails', async () => {
+    const { screen, editor, plusFiber } = await mount()
+    const gate = Promise.withResolvers<editorPlus.ShellExecution>()
+    editorPlus.setShellExecutor(() => gate.promise)
+    type(editor, '!')
+    type(editor, 'slow')
+    editor.handleInput(KEY.enter)
+    await plusFiber.dispose()
+    gate.reject(new Error('late spawn'))
+    await new Promise(resolve => setImmediate(resolve))
+    expect(echoes(screen)).toHaveLength(0)
   })
 
   it('reverts to prompt mode without executing on a blank bash submission', async () => {

@@ -1,7 +1,8 @@
 /**
  * `blue-commands` plugin: the built-in slash commands. `/quit` requests
  * process exit through the launcher-owned `ctx.appExit`; `/resume <id>`
- * emits `blue/request-resume` for the app layer to perform the resume.
+ * emits `blue/request-resume` for the app layer to perform the resume;
+ * `/theme` swaps the live theme provider (see `./theme-switch.ts`).
  * Registrations are effect-bound, so unloading the fiber removes them.
  *
  * @module @deepseek-ai/dsh-blue-interaction/commands-plugin
@@ -10,6 +11,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 // Empty type import carries the app-owned `'blue/request-resume'` Events merge.
 import type {} from '@deepseek-ai/dsh-blue-app'
+import { registerThemeCommand } from './theme-switch.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-commands'
@@ -50,9 +52,11 @@ export function apply(ctx: Context): void {
         return { kind: 'success' as const, text: `resuming session ${sessionId}` }
       },
     })
+    const theme = registerThemeCommand(ctx)
     return () => {
       quit()
       resume()
+      theme()
     }
   })
 }

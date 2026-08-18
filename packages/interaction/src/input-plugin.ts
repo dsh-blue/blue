@@ -12,7 +12,14 @@
  * pi-tui Editor sees the sequence. The mounted editor and the submit router
  * are published through
  * `./editor-instance.ts` so `blue-editor-plus` can layer input modes and
- * autocomplete over the same component.
+ * autocomplete over the same component. The unsubmitted draft is mirrored
+ * into `./draft-stash.ts`, so a theme-swap reload (the theme provider fiber
+ * disposes, Cordis re-runs this `blueTheme` dependent) restores the text
+ * into the freshly mounted editor. The same reload can land while a slash
+ * command is still in flight — `/theme` disposes the theme provider between
+ * `execute()` and its continuation — so the submit continuation gates on
+ * the fiber's unload flag before touching the hint; a late notice is moot
+ * anyway, since the reloaded fiber repaints.
  *
  * @module @deepseek-ai/dsh-blue-interaction/input-plugin
  */
@@ -22,6 +29,7 @@ import type { BlueComponent } from '@deepseek-ai/dsh-blue-core'
 import { parseCommand } from '@deepseek-ai/dsh-commands'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { clearSharedEditor, setSharedEditor } from './editor-instance.ts'
+import { clearDraft, getStashedDraft, stashDraft } from './draft-stash.ts'
 import { ACTION_CANCEL, ACTION_INTERRUPT, ACTION_STEER } from './keys.ts'
 import { currentBlueAgent } from './session.ts'
 
@@ -85,6 +93,16 @@ export function apply(ctx: Context): void {
   let notice: string | undefined
   /** Current editor text, captured through `onChange` for the slash hint. */
   let currentText = ''
+  /**
+   * Set when this fiber unloads: a submitted command can dispose it while
+   * `execute()` is still in flight (`/theme` swaps the provider, reloading
+   * every `blueTheme` dependent), and the late continuation must not reach
+   * for services through the dead context.
+   */
+  let unloaded = false
+  ctx.effect(() => () => {
+    unloaded = true
+  })
 
   const editor = ctx.blueComponents.createEditor()
   const hintLine = new HintLine(ctx)
@@ -130,6 +148,8 @@ export function apply(ctx: Context): void {
     // Re-sync explicitly: whether setText fires onChange is the component's
     // own behavior, and the hint must never lag the buffer.
     currentText = editor.getText()
+    // The draft was consumed; drop the reload stash with it.
+    clearDraft()
     refreshHint()
     if (line.length === 0) return
     editor.addToHistory(line)
@@ -147,11 +167,15 @@ export function apply(ctx: Context): void {
     }
     void ctx.commands.execute(agent, line, new AbortController().signal).then(
       (execution) => {
+        // The fiber may be gone — `/theme` unloads it mid-execution — and
+        // the reloaded fiber repaints, so a late notice is moot.
+        if (unloaded) return
         if (execution === undefined) setNotice(`unknown command: ${line}`)
         else if (execution.result.kind === 'error') setNotice(colors.error(execution.result.text))
         else if (execution.result.text !== undefined) setNotice(execution.result.text)
       },
       (error: unknown) => {
+        if (unloaded) return
         /* v8 ignore next -- execute() normalizes handler rejections to Error before this rejection handler runs */
         setNotice(colors.error(error instanceof Error ? error.message : String(error)))
       },
@@ -216,6 +240,8 @@ export function apply(ctx: Context): void {
         source: { kind: 'user' },
       }))
       editor.setText('')
+      // Steered text is consumed too: keep no stashed copy for a reload.
+      clearDraft()
       return true
     }
     return false
@@ -223,6 +249,8 @@ export function apply(ctx: Context): void {
 
   editor.onChange = (text) => {
     currentText = text
+    // Mirror every edit so a theme-swap reload loses nothing.
+    stashDraft(text)
     notice = undefined
     refreshHint()
   }
@@ -233,6 +261,17 @@ export function apply(ctx: Context): void {
     submitPrompt(text)
   }
   editor.onKey = handleEditorKey
+
+  // Restore the draft stashed before a reload: plain text only — setText
+  // fires neither a submit nor an input-mode transition. The explicit
+  // re-sync mirrors submitPrompt's caution about component-owned onChange
+  // timing.
+  const stashed = getStashedDraft()
+  if (stashed.length > 0) {
+    editor.setText(stashed)
+    currentText = editor.getText()
+    refreshHint()
+  }
 
   ctx.effect(() => {
     // Pin below the transcript: pi-tui renders root children in mount order,
