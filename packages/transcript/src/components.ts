@@ -145,13 +145,16 @@ export class AssistantMessageComponent implements BlueComponent {
 
 /**
  * Renders one tool call generically: `● name(arguments)` with the arguments
- * ellipsized, and — once paired — an indented `⎿ result summary` line in
- * success or error colors.
+ * ellipsized, and — once paired — an indented `⎿ result` block in success or
+ * error colors. Collapsed (the default) the block shows the one-line summary;
+ * {@link setExpanded} switches it to the unsummarized `fullText` for the
+ * Ctrl-O expansion toggle.
  */
 export class ToolCallComponent implements BlueComponent {
   private readonly item: TranscriptToolItem
   private readonly colors: BlueSemanticColors
   private readonly components: BlueComponents
+  private expanded = false
   private cache: RenderCache | null = null
 
   /**
@@ -172,12 +175,27 @@ export class ToolCallComponent implements BlueComponent {
   }
 
   /**
+   * Switch the result block between the one-line summary and the full tool
+   * output. The expansion flag joins the render cache key, so the next
+   * render rebuilds without an explicit invalidate.
+   * @param expanded - true renders `fullText`, false the summary.
+   */
+  setExpanded(expanded: boolean): void {
+    this.expanded = expanded
+  }
+
+  /**
    * @param width - current viewport width in columns.
    * @returns the rendered rows.
    */
   render(width: number): string[] {
     const { result } = this.item
-    const key = `${width}:${result ? `${result.isError}:${result.text}` : 'pending'}`
+    const body = result === undefined
+      ? ''
+      : this.expanded
+        ? (result.fullText ?? result.text)
+        : result.text
+    const key = `${width}:${this.expanded}:${result ? `${result.isError}:${body}` : 'pending'}`
     if (this.cache?.key === key) return this.cache.lines
 
     const bullet = result === undefined
@@ -195,7 +213,7 @@ export class ToolCallComponent implements BlueComponent {
       const summaryColor = result.isError ? this.colors.error : this.colors.muted
       const prefix = '  ⎿ '
       const contentWidth = Math.max(1, width - this.components.visibleWidth(prefix))
-      for (const line of this.components.wrapText(result.text, contentWidth)) {
+      for (const line of this.components.wrapText(body, contentWidth)) {
         lines.push(`  ${this.colors.border('⎿')} ${summaryColor(line)}`)
       }
     }

@@ -175,6 +175,33 @@ describe('ToolCallComponent', () => {
     component.invalidate()
     expect(component.render(80)).not.toBe(pending)
   })
+
+  it('renders the summary collapsed and the full text expanded', () => {
+    const item = toolItem()
+    item.result = { text: 'line one xxx…', fullText: `line one\n${'x'.repeat(200)}`, isError: false }
+    const component = new ToolCallComponent(item, tagged(), setup())
+    const collapsed = component.render(80)
+    expect(collapsed).toEqual(['', '[S]●[/S] bash[M]({})[/M]', '  [B]⎿[/B] [M]line one xxx…[/M]'])
+
+    component.setExpanded(true)
+    const expanded = component.render(80)
+    expect(expanded).not.toBe(collapsed)
+    expect(expanded[2]).toBe('  [B]⎿[/B] [M]line one[/M]')
+    // The 200-x run hard-breaks across the 76-column content width.
+    expect(expanded.length).toBeGreaterThan(4)
+    expect(expanded.some(line => line.includes('x'.repeat(76)))).toBe(true)
+
+    component.setExpanded(false)
+    expect(component.render(80)).toEqual(collapsed)
+  })
+
+  it('falls back to the summary when an expanded result has no fullText', () => {
+    const item = toolItem()
+    item.result = { text: 'only summary', isError: false }
+    const component = new ToolCallComponent(item, tagged(), setup())
+    component.setExpanded(true)
+    expect(component.render(80)[2]).toBe('  [B]⎿[/B] [M]only summary[/M]')
+  })
 })
 
 describe('StatusBarComponent', () => {

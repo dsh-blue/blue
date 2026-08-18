@@ -39,6 +39,12 @@ export interface TranscriptAssistantItem {
 export interface TranscriptToolResult {
   /** One-line display summary (result text or a string `meta` payload). */
   readonly text: string
+  /**
+   * The unsummarized display text the summary was ellipsized from, kept so
+   * the Ctrl-O expansion toggle can render the full tool output. Absent only
+   * for results constructed outside the fold.
+   */
+  readonly fullText?: string
   /** Whether the tool reported failure. */
   readonly isError: boolean
 }

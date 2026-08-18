@@ -171,6 +171,27 @@ describe('foldSessionEvents', () => {
     expect(text.startsWith('line one ')).toBe(true)
   })
 
+  it('keeps the unsummarized result text as fullText for expansion', () => {
+    const long = `line one\n${'x'.repeat(200)}`
+    const items = foldSessionEvents([
+      toolCallEvent(1, 1, 'c1', 'bash', '{}'),
+      toolResultEvent(1, 1, 'c1', long),
+    ])
+    const result = (items[0] as TranscriptToolItem).result
+    expect(result?.fullText).toBe(long)
+    expect(result?.text).not.toBe(result?.fullText)
+  })
+
+  it('keeps a winning string meta payload as fullText', () => {
+    const items = foldSessionEvents([
+      toolCallEvent(1, 1, 'c1', 'edit', '{}'),
+      toolResultEvent(1, 1, 'c1', 'model-facing text', { meta: '+3 -1 lines\nin src/a.ts' }),
+    ])
+    const result = (items[0] as TranscriptToolItem).result
+    expect(result?.fullText).toBe('+3 -1 lines\nin src/a.ts')
+    expect(result?.text).toBe('+3 -1 lines in src/a.ts')
+  })
+
   it('renders an unpaired tool result as its own item', () => {
     const items = foldSessionEvents([toolResultEvent(1, 1, 'orphan', 'done')])
     expect(items).toHaveLength(1)

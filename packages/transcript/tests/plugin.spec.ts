@@ -16,13 +16,15 @@ import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import type {
   BlueComponent,
+  BlueKeyAction,
+  BlueKeymap,
   BlueOverlayHandle,
   BlueScreen,
 } from '@deepseek-ai/dsh-blue-core'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { BlueSessionRef } from '@deepseek-ai/dsh-blue-app'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import { apply } from '../src/index.ts'
+import { ACTION_TOGGLE_COLLAPSE, apply } from '../src/index.ts'
 import {
   assistantEvent,
   fakeBlueComponents,
@@ -86,6 +88,34 @@ class FakeScreen implements BlueScreen {
   }
 }
 
+/** Records keymap registrations; handlers are invoked manually by specs. */
+class FakeKeymap implements BlueKeymap {
+  readonly actions: BlueKeyAction[] = []
+  readonly unregistered: BlueKeyAction[][] = []
+
+  register(actions: BlueKeyAction[]): () => void {
+    this.actions.push(...actions)
+    let done = false
+    return () => {
+      if (done) return
+      done = true
+      this.unregistered.push(actions)
+    }
+  }
+
+  matches(): boolean {
+    throw new Error('fake matches is out of scope for transcript tests')
+  }
+
+  dispatch(): boolean {
+    throw new Error('fake dispatch is out of scope for transcript tests')
+  }
+
+  getKeys(): string[] {
+    throw new Error('fake getKeys is out of scope for transcript tests')
+  }
+}
+
 /** Structural stand-in for the real `Agent`; cast at the typed emit sites. */
 interface FakeAgent {
   status: 'idle' | 'running'
@@ -110,6 +140,7 @@ function asAgent(fake: FakeAgent): Agent {
 interface Harness {
   ctx: Context
   screen: FakeScreen
+  keymap: FakeKeymap
   blueSession: BlueSessionRef
 }
 
@@ -123,7 +154,7 @@ async function bootTranscript(current: FakeAgent | null = null): Promise<Harness
   const dir = mkdtempSync(join(tmpdir(), 'dsh-blue-transcript-'))
   writeFileSync(join(dir, 'blue-transcript.mjs'), `
 export const name = 'blue-transcript'
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap']
 export const apply = ctx => globalThis.__blueTranscriptApply(ctx)
 `)
   writeFileSync(join(dir, 'cordis.yml'), [
@@ -135,11 +166,13 @@ export const apply = ctx => globalThis.__blueTranscriptApply(ctx)
 
   const ctx = new Context()
   const screen = new FakeScreen()
+  const keymap = new FakeKeymap()
   const blueSession: BlueSessionRef = { current: current === null ? null : asAgent(current) }
   const serviceNames: Record<string, unknown> = {
     blueScreen: screen,
     blueTheme: { colors: COLORS },
     blueComponents: fakeBlueComponents(),
+    blueKeymap: keymap,
     blueSession,
   }
   for (const [serviceName, value] of Object.entries(serviceNames)) {
@@ -151,7 +184,7 @@ export const apply = ctx => globalThis.__blueTranscriptApply(ctx)
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(join(dir, 'cordis.yml')).href } })
   await ctx.loader.await()
   disposers.push(async () => { await ctx.fiber.dispose() })
-  return { ctx, screen, blueSession }
+  return { ctx, screen, keymap, blueSession }
 }
 
 /** The transcript's content components (everything past the status bar). */
@@ -245,5 +278,76 @@ describe('blue-transcript plugin through the real Loader', () => {
     await ctx.fiber.dispose()
     expect(screen.children).toHaveLength(0)
     disposers.length = 0
+  })
+
+  it('registers the ctrl+o toggle action and unregisters it on dispose', async () => {
+    const { ctx, keymap } = await bootTranscript()
+    const action = keymap.actions.find(a => a.id === ACTION_TOGGLE_COLLAPSE)
+    expect(action).toMatchObject({ keys: 'ctrl+o' })
+    expect(typeof action?.handler).toBe('function')
+
+    await ctx.fiber.dispose()
+    disposers.length = 0
+    expect(keymap.unregistered.flat().map(a => a.id)).toContain(ACTION_TOGGLE_COLLAPSE)
+  })
+
+  it('toggles tool output between the summary and the full text', async () => {
+    resetSeq()
+    const { ctx, screen, keymap } = await bootTranscript()
+    const full = `first line\nsecond line\n${'x'.repeat(300)}`
+    const agent = fakeAgent([
+      toolCallEvent(1, 1, 'c1', 'bash', '{"command":"ls"}'),
+      toolResultEvent(1, 1, 'c1', full),
+    ])
+    ctx.emit('blue/session-changed', asAgent(agent))
+
+    // Collapsed by default: the flattened summary carries the ellipsis and
+    // joins the full text's own lines into wrapped rows.
+    const collapsed = contentLines(screen)
+    expect(collapsed.join('\n')).toContain('…')
+    expect(collapsed).toContain('  ⎿ first line second line')
+    expect(collapsed).not.toContain('  ⎿ first line')
+
+    const action = keymap.actions.find(a => a.id === ACTION_TOGGLE_COLLAPSE)
+    const renderBaseline = screen.renderRequests.length
+    action?.handler?.()
+    expect(screen.renderRequests.length).toBe(renderBaseline + 1)
+    expect(screen.renderRequests.at(-1)).toBe(true)
+    const expanded = contentLines(screen)
+    expect(expanded.length).toBeGreaterThan(collapsed.length)
+    expect(expanded).toContain('  ⎿ first line')
+    expect(expanded).toContain('  ⎿ second line')
+    expect(expanded.join('\n')).not.toContain('…')
+
+    action?.handler?.()
+    expect(contentLines(screen).join('\n')).toContain('…')
+    expect(contentLines(screen)).not.toContain('  ⎿ first line')
+  })
+
+  it('resets the toggle to collapsed when the session changes', async () => {
+    resetSeq()
+    const { ctx, screen, keymap } = await bootTranscript()
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([
+      toolCallEvent(1, 1, 'c1', 'bash', '{}'),
+      toolResultEvent(1, 1, 'c1', `alpha\nbeta\n${'x'.repeat(200)}`),
+    ])))
+    const action = keymap.actions.find(a => a.id === ACTION_TOGGLE_COLLAPSE)
+    action?.handler?.()
+    expect(contentLines(screen)).toContain('  ⎿ alpha')
+
+    // The remount clears the collection and the expansion state: the next
+    // session's tool output starts collapsed again.
+    resetSeq()
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([
+      toolCallEvent(1, 1, 'c2', 'bash', '{}'),
+      toolResultEvent(1, 1, 'c2', `gamma\ndelta\n${'y'.repeat(200)}`),
+    ])))
+    expect(contentLines(screen).join('\n')).toContain('…')
+    expect(contentLines(screen)).toContain('  ⎿ gamma delta')
+    expect(contentLines(screen)).not.toContain('  ⎿ gamma')
+
+    // The handler now reaches the new session's components.
+    action?.handler?.()
+    expect(contentLines(screen)).toContain('  ⎿ gamma')
   })
 })

@@ -76,14 +76,21 @@ function reasoningText(content: readonly ContentBlock[]): string {
     .join('\n\n')
 }
 
+/**
+ * Untruncated display text for a `tool/result` payload. A string `meta` is
+ * the tool's own presentation payload and wins over the model-facing result
+ * text; structured meta stays opaque to us.
+ */
+function fullResultText(data: SessionEvent<'tool/result'>['data']): string {
+  if (typeof data.meta === 'string' && data.meta.trim()) {
+    return data.meta
+  }
+  return contentText(data.message.content[0].content)
+}
+
 /** One-line display summary for a `tool/result` payload. */
 function summarizeResult(data: SessionEvent<'tool/result'>['data']): string {
-  // A string `meta` is the tool's own presentation payload and wins over
-  // the model-facing result text; structured meta stays opaque to us.
-  if (typeof data.meta === 'string' && data.meta.trim()) {
-    return ellipsize(data.meta, RESULT_SUMMARY_MAX_CHARS)
-  }
-  return ellipsize(contentText(data.message.content[0].content), RESULT_SUMMARY_MAX_CHARS)
+  return ellipsize(fullResultText(data), RESULT_SUMMARY_MAX_CHARS)
 }
 
 /**
@@ -173,6 +180,7 @@ export class TranscriptFolder {
         const callId = String(block.toolCallId)
         const result = {
           text: summarizeResult(event.data),
+          fullText: fullResultText(event.data),
           isError: block.isError === true || event.data.error !== undefined,
         }
         const paired = this.toolsByCallId.get(callId)
