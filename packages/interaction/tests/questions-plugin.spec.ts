@@ -1,7 +1,7 @@
 /**
  * Tests for the `blue-questions` plugin over the real user-questions
- * service: option overlays, free-text overlays, dismissal, abort, provider
- * uniqueness, and disposal.
+ * service: one tabbed questionnaire overlay per request, dismissal, abort,
+ * provider uniqueness, and disposal.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -66,7 +66,7 @@ describe('blue-questions provider', () => {
     const { ctx, screen } = await mount()
     const pending = ctx.userQuestions.ask({ questions: [{ id: 'q2', question: 'Why?' }] })
     for (const char of 'because') overlay(screen).handleInput(char)
-    // The free-text overlay renders the wrapped editor and invalidates through it.
+    // The questionnaire renders the inline editor and invalidates through it.
     const panel = screen.overlays[0]?.component
     expect(panel?.render(60).at(-1)).toBe('>because')
     panel?.invalidate()
@@ -81,20 +81,36 @@ describe('blue-questions provider', () => {
     await expect(pending).resolves.toEqual({ answers: [{ id: 'q2', selected: [] }] })
   })
 
-  it('asks sequential questions one overlay at a time', async () => {
+  it('carries a multi-question request in a single overlay', async () => {
     const { ctx, screen } = await mount()
     const pending = ctx.userQuestions.ask({
       questions: [choice(), { id: 'q2', question: 'Name?' }],
     })
     expect(screen.overlays).toHaveLength(1)
+    // Tabs move between questions without answering them.
+    overlay(screen).handleInput(KEY.tab)
+    overlay(screen).handleInput(KEY.tab)
     overlay(screen).handleInput(KEY.enter)
-    await vi_wait()
-    expect(screen.overlays).toHaveLength(2)
+    // Still one overlay: answering q1 advanced to q2's editor.
+    expect(screen.overlays).toHaveLength(1)
     for (const char of 'neo') overlay(screen).handleInput(char)
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({
       answers: [{ id: 'q1', selected: ['Alpha'] }, { id: 'q2', selected: [], custom: 'neo' }],
     })
+  })
+
+  it('renders the header as the tab label, plus the question and detail rows', async () => {
+    const { ctx, screen } = await mount()
+    const pending = ctx.userQuestions.ask({
+      questions: [choice({ header: 'Setup', detail: 'extra context' })],
+    })
+    const rendered = screen.overlays[0]?.component.render(60) ?? []
+    expect(rendered[0]).toBe('*Setup*')
+    expect(rendered[1]).toBe('*Pick one*')
+    expect(rendered[2]).toBe('~extra context~')
+    overlay(screen).handleInput(KEY.escape)
+    await pending.catch(() => {})
   })
 
   it('rejects ASK_DISMISSED on Escape and hides the overlay', async () => {
@@ -131,19 +147,6 @@ describe('blue-questions provider', () => {
     expect(screen.overlays).toHaveLength(0)
   })
 
-  it('renders the question, header, and detail in the overlay header', async () => {
-    const { ctx, screen } = await mount()
-    const pending = ctx.userQuestions.ask({
-      questions: [choice({ header: 'Setup', detail: 'extra context' })],
-    })
-    const rendered = screen.overlays[0]?.component.render(60) ?? []
-    expect(rendered[0]).toBe('~Setup~')
-    expect(rendered[1]).toBe('*Pick one*')
-    expect(rendered[2]).toBe('~extra context~')
-    overlay(screen).handleInput(KEY.escape)
-    await pending.catch(() => {})
-  })
-
   it('registers exactly one provider; a second registration fails with DUPLICATE_PROVIDER', async () => {
     const { ctx } = await mount()
     expect(() => ctx.userQuestions.registerProvider({ ask: () => Promise.resolve({ answers: [] }) }))
@@ -160,8 +163,3 @@ describe('blue-questions provider', () => {
     dispose()
   })
 })
-
-/** Flush one macrotask so sequential overlays can mount. */
-function vi_wait(): Promise<void> {
-  return new Promise(resolve => setImmediate(resolve))
-}
