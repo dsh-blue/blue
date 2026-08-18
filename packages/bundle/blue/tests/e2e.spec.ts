@@ -32,6 +32,7 @@ import * as startupPlugin from '../../../app/src/startup.ts'
 import { startBlueTerminal } from '../../../core/src/terminal.ts'
 import { FakeTerminal, waitForRender } from '../../../core/tests/fake-terminal.ts'
 import * as interactionPlugin from '../../../interaction/src/index.ts'
+import * as editorPlusPlugin from '../../../interaction/src/editor-plus.ts'
 import * as transcriptPlugin from '../../../transcript/src/index.ts'
 import { MockAdapter, textResponse } from './mock-adapter.ts'
 
@@ -56,6 +57,7 @@ interface BlueE2EHooks {
   themeDarkApply: typeof themeDarkPlugin.apply
   transcriptApply: typeof transcriptPlugin.apply
   interactionApply: typeof interactionPlugin.apply
+  editorPlusApply: typeof editorPlusPlugin.apply
   startupApply: typeof startupPlugin.apply
   appApply: typeof appPlugin.apply
   appConfig: typeof appPlugin.Config
@@ -96,6 +98,7 @@ async function bootBlue(argv: string[], options: {
     themeDarkApply: themeDarkPlugin.apply,
     transcriptApply: transcriptPlugin.apply,
     interactionApply: interactionPlugin.apply,
+    editorPlusApply: editorPlusPlugin.apply,
     startupApply: startupPlugin.apply,
     appApply: appPlugin.apply,
     appConfig: appPlugin.Config,
@@ -129,6 +132,15 @@ export const apply = ctx => globalThis.__blueE2E.transcriptApply(ctx)
     `  name: ${fixture('blue-interaction.mjs', `
 export const name = 'blue-interaction'
 export const apply = ctx => globalThis.__blueE2E.interactionApply(ctx)
+`)}`,
+    // The enhancement-segment row mirrors cordis.patch.yml: editor-plus
+    // layers bash mode and autocomplete over the shared editor, attaching
+    // through the 'blue/input-editor-changed' event.
+    '- id: blue-editor-plus',
+    `  name: ${fixture('blue-editor-plus.mjs', `
+export const name = 'blue-editor-plus'
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'commands']
+export const apply = ctx => globalThis.__blueE2E.editorPlusApply(ctx)
 `)}`,
     '- id: blue-startup',
     `  name: ${fixture('blue-startup.mjs', `
@@ -220,6 +232,36 @@ describe('blue whole-tree e2e', () => {
     await agent.whenIdle()
     await waitForRender()
     expect(tree.terminal.output).toContain('typed answer')
+  })
+
+  it('decodes Kitty CSI-u input without dropping characters', async () => {
+    const tree = await bootBlue([], { script: [textResponse('kitty reply')] })
+    const agent = await currentAgent(tree)
+    // '\x1b[113u' is the Kitty keyboard protocol encoding of a plain 'q';
+    // the real pi-tui Editor input chain must decode it into the buffer.
+    tree.terminal.sendInput('\x1b[113u')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    expect(JSON.stringify(tree.adapter.requests[0]!.messages)).toContain('q')
+    await agent.whenIdle()
+  })
+
+  it('runs ! shell commands through editor-plus and echoes output into the scroll region', async () => {
+    const tree = await bootBlue([], { script: [] })
+    await currentAgent(tree)
+    // Inject a fake executor (same module instance as the mounted plugin):
+    // no real spawn in the e2e.
+    editorPlusPlugin.setShellExecutor(command => Promise.resolve({ code: 0, output: `ran: ${command}\n` }))
+    try {
+      typeLine(tree.terminal, '!echo hi')
+      await vi.waitFor(() => { expect(tree.terminal.output).toContain('ran: echo hi') })
+      // The ShellEcho header row repeats the command itself.
+      expect(tree.terminal.output).toContain('! echo hi')
+      // Bash mode never reaches the model.
+      expect(tree.adapter.requests).toHaveLength(0)
+    } finally {
+      editorPlusPlugin.setShellExecutor(undefined)
+    }
   })
 
   it('answers the approval waterfall through the overlay for the attached agent', async () => {

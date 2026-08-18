@@ -17,6 +17,10 @@
   disabled: true
 
 - insert:
+    # --- Plain baseline segment -------------------------------------------------
+    # The six rows below are the complete, self-sufficient Blue UI: drop the
+    # enhancement segment and the bundle still boots and works.
+
     # Blue core: the tree's only pi-tui adapter. Starts the terminal and
     # registers the blueScreen/blueKeymap/blueTerminalInfo/blueComponents
     # services.
@@ -49,3 +53,14 @@
       config:
         task: !!js ctx.blueStartup.task
         resume: !!js ctx.blueStartup.resume
+
+    # --- Enhancement segment ----------------------------------------------------
+    # Optional layers over the plain baseline; each row is a self-contained
+    # feature the bundle can drop without breaking the baseline.
+
+    # Editor plus: the '!' bash mode with shell echo, and slash-command /
+    # '@'-file autocomplete, layered over the shared input editor through the
+    # 'blue/input-editor-changed' event (so row order against blue-input does
+    # not matter).
+    - id: blue-editor-plus
+      name: '@deepseek-ai/dsh-blue-interaction/editor-plus'
