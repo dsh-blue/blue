@@ -69,7 +69,7 @@ P1 经一次性破坏性重排（边界与理由见 [blue-p1-design.md](./blue-p
 
 ### L3 — 渲染插件（transcript 包）
 
-统一范式：**`session/event` → 折叠 → 组件子树 → `requestRender()`**，单向数据流，组件不含业务逻辑。纯折叠器 `fold.ts`（`SessionEvent[] → TranscriptItem[]`，无 UI 依赖）；组件层渲染 user/assistant（流式 Markdown）/tool（generic intent）；状态栏 MVP 写死单行。
+统一范式：**`session/event` → 折叠 → 组件子树 → `requestRender()`**，单向数据流，组件不含业务逻辑。纯折叠器 `fold.ts`（`SessionEvent[] → TranscriptItem[]`，无 UI 依赖）；组件层渲染 user/assistant（流式 Markdown）/tool（generic intent）；状态栏为 `blueStatus` 注册表 + transcript 挂载的常驻两行 footer 壳（`addBottomChild` 钉底于编辑器上方，priority 升序 first-fit、溢出丢弃低优先级条目），条目以子路径插件贡献（`status-basic` 基线、`status-git`/`status-context` 增强）。
 
 ### L4 — 组合层（bundle/blue）
 
@@ -114,7 +114,7 @@ P1 经一次性破坏性重排（边界与理由见 [blue-p1-design.md](./blue-p
 Blue 不是封闭应用，是可被下游插件定制的 surface。定制发生在三个级别：
 
 1. **贡献缝**（registry + disposer，多贡献共存）：状态栏条目、主题、slash 命令、render intent 呈现器
-2. **Provider 替换**（单一活跃 provider，热替换自动重载依赖方）：主题 provider、整个状态栏插件、Editor（vim 模式）
+2. **Provider 替换**（单一活跃 provider，热替换自动重载依赖方）：主题 provider、整个 transcript 插件（footer 壳随之替换）、Editor（vim 模式）
 3. **组合层**（profile/bundle patch，零代码）：启停、重排任何 Blue 插件
 
 缝的完整清单——每条缝的契约、归属包、plain 默认实现与开放阶段——见 [blue-p1-design.md](./blue-p1-design.md) §6。P1 起生效 **plain-first 纪律**（ADR D21）：每个非平凡表面 = 缝 + plain 默认实现，Blue 自家增强与下游插件同权经缝注册；基线 patch 拔掉全部增强行后仍完整可用。

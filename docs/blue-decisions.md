@@ -132,6 +132,7 @@
 
 - **决策**：状态栏条目注册表（`ctx.blueStatus`）由 transcript 包提供；两行 footer 壳是其容器组件；`model · status` 基本条目拆为独立贡献插件 `blue-status-basic`，降级为第一个注册者。MVP 的 `StatusBarComponent` 消灭。
 - **理由**：状态栏是 L3 呈现表面，进 L1 违反"核心最小"（D3）；契约归渲染它的包，与 render intent 注册表同处理。
+- **S5 落地（2026-08-18）**：registry 与两行 footer 壳按设计落地——壳经 `blueScreen.addBottomChild` 常驻钉底于输入编辑器上方，注册查重抛 `BlueStatusError`、返回幂等 disposer、priority 升序 + 注册序稳定排序；`StatusBarComponent` 消灭；basic（基线）/git/context（增强）三条目以子路径插件发布，patch 基线 7 行、增强 3 行。
 
 ### D21. plain-first：自家 UI 走自家缝
 
@@ -142,6 +143,4 @@
 ## 已知遗留（MVP 有意为之）
 
 - `/quit` 在 agent attach 前输入会显示 "no active session" 而不退出（input-plugin 在命令分发前检查 current agent）
-- resume 的会话状态行显示 `no model`（恢复时不重解析默认模型，下一轮才需要）
-- Esc 取消 agent、完整 slash autocomplete、多行编辑/kill-ring 属 P1
-- alt-screen、主题切换、自定义键位、blueStatus 缝属 P1/P2
+- alt-screen、自定义键位属 P1/P2
