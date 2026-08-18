@@ -25,7 +25,8 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
-import { BlueKeymapService, BlueScreenService, BlueThemeService } from '../../../core/src/index.ts'
+import { BlueComponentsService, BlueKeymapService, BlueScreenService, BlueTerminalInfoService } from '../../../core/src/index.ts'
+import * as themeDarkPlugin from '../../../core/src/theme-dark.ts'
 import * as appPlugin from '../../../app/src/index.ts'
 import * as startupPlugin from '../../../app/src/startup.ts'
 import { startBlueTerminal } from '../../../core/src/terminal.ts'
@@ -51,7 +52,8 @@ interface BlueTree {
 
 /** Test-scope hooks the Loader fixtures delegate to. */
 interface BlueE2EHooks {
-  coreApply: (ctx: Context) => void
+  coreApply: (ctx: Context) => Promise<void>
+  themeDarkApply: typeof themeDarkPlugin.apply
   transcriptApply: typeof transcriptPlugin.apply
   interactionApply: typeof interactionPlugin.apply
   startupApply: typeof startupPlugin.apply
@@ -73,13 +75,25 @@ async function bootBlue(argv: string[], options: {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-blue-e2e-'))
   const terminal = new FakeTerminal()
   const hooks: BlueE2EHooks = {
-    coreApply: (ctx) => {
-      const runtime = startBlueTerminal(terminal)
+    coreApply: async (ctx) => {
+      // startBlueTerminal went async with the OSC 11 probe; the e2e skips the
+      // probe (FakeTerminal answers no queries) and awaits the runtime. The
+      // service set mirrors core's apply: blueComponents mounts as a
+      // blueTheme-injecting sub-plugin so it waits for the theme-dark row.
+      const runtime = await startBlueTerminal(terminal, () => Promise.resolve(undefined))
       ctx.plugin(BlueKeymapService)
-      ctx.plugin(BlueThemeService)
+      ctx.plugin(BlueTerminalInfoService, { background: runtime.background, kittyKeyboard: runtime.kittyKeyboard })
       ctx.plugin(BlueScreenService, runtime)
+      ctx.plugin({
+        name: 'blue-components',
+        inject: ['blueTheme'],
+        apply(subCtx: Context) {
+          subCtx.plugin(BlueComponentsService, { theme: subCtx.blueTheme, tui: runtime.tui })
+        },
+      })
       ctx.effect(() => () => runtime.stop())
     },
+    themeDarkApply: themeDarkPlugin.apply,
     transcriptApply: transcriptPlugin.apply,
     interactionApply: interactionPlugin.apply,
     startupApply: startupPlugin.apply,
@@ -98,10 +112,17 @@ async function bootBlue(argv: string[], options: {
 export const name = 'blue-core'
 export const apply = ctx => globalThis.__blueE2E.coreApply(ctx)
 `)}`,
+    // The theme row mirrors cordis.patch.yml: blueTheme now ships from the
+    // theme-dark subpath plugin as its own fiber.
+    '- id: blue-theme-dark',
+    `  name: ${fixture('blue-theme-dark.mjs', `
+export const name = 'blue-theme-dark'
+export const apply = ctx => globalThis.__blueE2E.themeDarkApply(ctx)
+`)}`,
     '- id: blue-transcript',
     `  name: ${fixture('blue-transcript.mjs', `
 export const name = 'blue-transcript'
-export const inject = ['blueScreen', 'blueTheme']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents']
 export const apply = ctx => globalThis.__blueE2E.transcriptApply(ctx)
 `)}`,
     '- id: blue-interaction',
@@ -252,6 +273,8 @@ describe('blue whole-tree e2e', () => {
     expect(tree.terminal.drainCount).toBe(1)
     expect(tree.terminal.stopCount).toBe(1)
     expect(tree.ctx.get('blueScreen')).toBeUndefined()
+    // blueTheme now comes from the separate blue-theme-dark plugin row; it
+    // unregisters with the same fiber disposal.
     expect(tree.ctx.get('blueTheme')).toBeUndefined()
     expect(tree.ctx.get('blueKeymap')).toBeUndefined()
     // The user-questions provider went with the fiber: re-registering does

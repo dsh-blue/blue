@@ -18,6 +18,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import * as blueCore from '../../core/src/index.ts'
+import * as themeDark from '../../core/src/theme-dark.ts'
 import { apply } from '../src/index.ts'
 
 const disposers: (() => Promise<void>)[] = []
@@ -38,6 +39,7 @@ async function bootInteraction(): Promise<{ ctx: Context; output: () => string }
   const dir = mkdtempSync(join(tmpdir(), 'dsh-blue-interaction-'))
   ;(globalThis as Record<string, unknown>).__blueInteractionFixtures = {
     coreApply: blueCore.apply,
+    themeDarkApply: themeDark.apply,
     commands: CommandRuntime,
     userQuestions: UserQuestionService,
     interactionApply: apply,
@@ -45,6 +47,10 @@ async function bootInteraction(): Promise<{ ctx: Context; output: () => string }
   writeFileSync(join(dir, 'cordis.yml'), [
     '- id: blue-core',
     `  name: ${pathToFileURL(join(dir, 'core.mjs')).href}`,
+    // blueTheme moved out of blue-core into the theme-dark subpath plugin;
+    // interaction's inject on blueTheme needs this row to activate.
+    '- id: blue-theme-dark',
+    `  name: ${pathToFileURL(join(dir, 'theme-dark.mjs')).href}`,
     '- id: commands',
     `  name: ${pathToFileURL(join(dir, 'commands.mjs')).href}`,
     '- id: user-questions',
@@ -56,6 +62,10 @@ async function bootInteraction(): Promise<{ ctx: Context; output: () => string }
   writeFileSync(join(dir, 'core.mjs'), `
 export const name = 'blue-core'
 export const apply = ctx => globalThis.__blueInteractionFixtures.coreApply(ctx)
+`)
+  writeFileSync(join(dir, 'theme-dark.mjs'), `
+export const name = 'blue-theme-dark'
+export const apply = ctx => globalThis.__blueInteractionFixtures.themeDarkApply(ctx)
 `)
   writeFileSync(join(dir, 'commands.mjs'), `
 export default globalThis.__blueInteractionFixtures.commands

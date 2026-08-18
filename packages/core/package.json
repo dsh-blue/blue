@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-blue-core",
-  "description": "Blue terminal UI core: the tree's only @earendil-works/pi-tui adapter, owning terminal lifecycle and the blueScreen/blueTheme/blueKeymap services",
+  "description": "Blue terminal UI core: the tree's only @earendil-works/pi-tui adapter, owning terminal lifecycle and the blueScreen/blueKeymap/blueTerminalInfo/blueComponents services plus the blue-theme-dark palette entry",
   "version": "0.1.0-rc.7",
   "publishConfig": {
     "access": "public"
@@ -17,12 +17,17 @@
       "types": "./lib/types/invariant.d.ts",
       "default": "./lib/invariant.js"
     },
+    "./theme-dark": {
+      "types": "./lib/types/theme-dark.d.ts",
+      "default": "./lib/theme-dark.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
     "lib/invariant.js",
+    "lib/theme-dark.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",

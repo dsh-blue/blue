@@ -1,22 +1,29 @@
 /**
  * Transcript components: self-contained `BlueComponent` implementations over
- * the pure text helpers (`src/width.ts`, `src/markdown.ts`). None of them
- * imports pi-tui — `render(width)` returns styled ANSI lines within `width`
- * visible columns, and each caches by (source text, width) so the screen's
- * throttled redraws stay cheap while a `TranscriptItem` mutates underneath.
+ * the `blueComponents` factory (`ctx.blueComponents`). None of them imports
+ * pi-tui — `render(width)` returns styled ANSI lines within `width` visible
+ * columns. The assistant body is a held `BlueMarkdown` instance (created
+ * once, streamed via `setText`, rendered straight through); the remaining
+ * components wrap/truncate through the factory's width helpers and cache by
+ * (source text, width) so the screen's throttled redraws stay cheap while a
+ * `TranscriptItem` mutates underneath.
  *
  * @module @deepseek-ai/dsh-blue-transcript/components
  */
 
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { BlueComponent, BlueSemanticColors } from '@deepseek-ai/dsh-blue-core'
-import { renderMarkdown } from './markdown.ts'
+import type {
+  BlueComponent,
+  BlueComponents,
+  BlueMarkdown,
+  BlueSemanticColors,
+} from '@deepseek-ai/dsh-blue-core'
+import { ellipsize } from './fold.ts'
 import type {
   TranscriptAssistantItem,
   TranscriptToolItem,
   TranscriptUserItem,
 } from './types.ts'
-import { ellipsize, truncateToWidth, visibleWidth, wrapStyledText } from './width.ts'
 
 const ITALIC_OPEN = '\x1b[3m'
 const ITALIC_CLOSE = '\x1b[23m'
@@ -37,15 +44,18 @@ interface RenderCache {
 export class UserMessageComponent implements BlueComponent {
   private readonly item: TranscriptUserItem
   private readonly colors: BlueSemanticColors
+  private readonly components: BlueComponents
   private cache: RenderCache | null = null
 
   /**
    * @param item - the folded user item to render.
    * @param colors - the semantic color table.
+   * @param components - the component factory providing the width helpers.
    */
-  constructor(item: TranscriptUserItem, colors: BlueSemanticColors) {
+  constructor(item: TranscriptUserItem, colors: BlueSemanticColors, components: BlueComponents) {
     this.item = item
     this.colors = colors
+    this.components = components
   }
 
   /** Drop the cached lines; the next render rebuilds from the item. */
@@ -61,8 +71,8 @@ export class UserMessageComponent implements BlueComponent {
     const key = `${this.item.seq}:${width}`
     if (this.cache?.key === key) return this.cache.lines
     const gutter = `${this.colors.accent('❯')} `
-    const contentWidth = Math.max(1, width - visibleWidth('❯ '))
-    const wrapped = wrapStyledText(this.item.text, contentWidth)
+    const contentWidth = Math.max(1, width - this.components.visibleWidth('❯ '))
+    const wrapped = this.components.wrapText(this.item.text, contentWidth)
     const lines = ['', ...wrapped.map((line, index) =>
       index === 0 ? gutter + line : '  ' + line)]
     this.cache = { key, lines }
@@ -73,22 +83,28 @@ export class UserMessageComponent implements BlueComponent {
 /**
  * Renders one assistant step: accumulated reasoning (muted italic) above the
  * Markdown body, plus a streaming cursor while chunks are still arriving.
- * The whole Markdown re-renders whenever the underlying item's text changed,
- * so mid-stream unterminated constructs settle as the text completes.
+ * The body is a held `BlueMarkdown` whose own text/width cache replaces the
+ * former hand-rolled Markdown cache; mid-stream unterminated constructs
+ * settle as the text completes.
  */
 export class AssistantMessageComponent implements BlueComponent {
   private readonly item: TranscriptAssistantItem
   private readonly colors: BlueSemanticColors
+  private readonly components: BlueComponents
+  private readonly markdown: BlueMarkdown
   private cache: RenderCache | null = null
 
   /**
    * @param item - the folded assistant item; mutated by the fold as the
    *   step streams and finalizes.
    * @param colors - the semantic color table.
+   * @param components - the component factory; creates the held Markdown.
    */
-  constructor(item: TranscriptAssistantItem, colors: BlueSemanticColors) {
+  constructor(item: TranscriptAssistantItem, colors: BlueSemanticColors, components: BlueComponents) {
     this.item = item
     this.colors = colors
+    this.components = components
+    this.markdown = components.createMarkdown({ text: '' })
   }
 
   /** Drop the cached lines; the next render rebuilds from the item. */
@@ -107,13 +123,14 @@ export class AssistantMessageComponent implements BlueComponent {
 
     const lines: string[] = ['']
     if (reasoning.trim()) {
-      for (const line of wrapStyledText(reasoning, width)) {
+      for (const line of this.components.wrapText(reasoning, width)) {
         lines.push(`${ITALIC_OPEN}${this.colors.muted(line)}${ITALIC_CLOSE}`)
       }
       lines.push('')
     }
     if (text.trim()) {
-      lines.push(...renderMarkdown(text, width, this.colors))
+      this.markdown.setText(text)
+      lines.push(...this.markdown.render(width))
     }
     if (streaming) {
       const cursor = this.colors.accent('▌')
@@ -134,16 +151,19 @@ export class AssistantMessageComponent implements BlueComponent {
 export class ToolCallComponent implements BlueComponent {
   private readonly item: TranscriptToolItem
   private readonly colors: BlueSemanticColors
+  private readonly components: BlueComponents
   private cache: RenderCache | null = null
 
   /**
    * @param item - the folded tool item; `result` appears when the paired
    *   `tool/result` folds in.
    * @param colors - the semantic color table.
+   * @param components - the component factory providing the width helpers.
    */
-  constructor(item: TranscriptToolItem, colors: BlueSemanticColors) {
+  constructor(item: TranscriptToolItem, colors: BlueSemanticColors, components: BlueComponents) {
     this.item = item
     this.colors = colors
+    this.components = components
   }
 
   /** Drop the cached lines; the next render rebuilds from the item. */
@@ -170,12 +190,12 @@ export class ToolCallComponent implements BlueComponent {
       : ''
     const callLine = `${bullet} ${this.item.name}${args}`
 
-    const lines = ['', truncateToWidth(callLine, width)]
+    const lines = ['', this.components.truncateToWidth(callLine, width)]
     if (result !== undefined) {
       const summaryColor = result.isError ? this.colors.error : this.colors.muted
       const prefix = '  ⎿ '
-      const contentWidth = Math.max(1, width - visibleWidth(prefix))
-      for (const line of wrapStyledText(result.text, contentWidth)) {
+      const contentWidth = Math.max(1, width - this.components.visibleWidth(prefix))
+      for (const line of this.components.wrapText(result.text, contentWidth)) {
         lines.push(`  ${this.colors.border('⎿')} ${summaryColor(line)}`)
       }
     }
@@ -191,15 +211,18 @@ export class ToolCallComponent implements BlueComponent {
  */
 export class StatusBarComponent implements BlueComponent {
   private readonly colors: BlueSemanticColors
+  private readonly components: BlueComponents
   private model = ''
   private status: 'idle' | 'running' = 'idle'
   private cache: RenderCache | null = null
 
   /**
    * @param colors - the semantic color table.
+   * @param components - the component factory providing the width helpers.
    */
-  constructor(colors: BlueSemanticColors) {
+  constructor(colors: BlueSemanticColors, components: BlueComponents) {
     this.colors = colors
+    this.components = components
   }
 
   /**
@@ -224,8 +247,8 @@ export class StatusBarComponent implements BlueComponent {
   render(width: number): string[] {
     const key = `${width}:${this.model}:${this.status}`
     if (this.cache?.key === key) return this.cache.lines
-    const text = truncateToWidth(`${this.model} · ${this.status}`, width)
-    const lines = [this.colors.muted(text) + ' '.repeat(Math.max(0, width - visibleWidth(text)))]
+    const text = this.components.truncateToWidth(`${this.model} · ${this.status}`, width)
+    const lines = [this.colors.muted(text) + ' '.repeat(Math.max(0, width - this.components.visibleWidth(text)))]
     this.cache = { key, lines }
     return lines
   }

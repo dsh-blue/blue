@@ -1,9 +1,9 @@
 /**
  * REAL-composition test: boot the blue-transcript plugin through the real
  * Loader from a cordis.yml in a temp directory, over fake `blueScreen` /
- * `blueTheme` / `blueSession` services, then drive it with
- * `'blue/session-changed'` and `'session/event'` exactly as the app package
- * and session service will.
+ * `blueTheme` / `blueComponents` / `blueSession` services, then drive it
+ * with `'blue/session-changed'` and `'session/event'` exactly as the app
+ * package and session service will.
  */
 
 import { mkdtempSync, writeFileSync } from 'node:fs'
@@ -25,6 +25,7 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { apply } from '../src/index.ts'
 import {
   assistantEvent,
+  fakeBlueComponents,
   resetSeq,
   textDelta,
   toolCallEvent,
@@ -41,9 +42,12 @@ afterEach(async () => {
 /** Identity colors so rendered assertions see structure, not escape codes. */
 const id = (text: string): string => text
 const COLORS = {
-  text: id, muted: id, accent: id, border: id, success: id, error: id, warning: id,
-  selectedBg: id, mdHeading: id, mdLink: id, mdLinkUrl: id, mdCode: id, mdCodeBlock: id,
+  text: id, textStrong: id, muted: id, accent: id, border: id, borderFocus: id,
+  success: id, error: id, warning: id, selectedBg: id, roleUser: id, shellMode: id,
+  mdHeading: id, mdLink: id, mdLinkUrl: id, mdCode: id, mdCodeBlock: id,
   mdCodeBlockBorder: id, mdQuote: id, mdQuoteBorder: id, mdHr: id, mdListBullet: id,
+  diffAdded: id, diffRemoved: id, diffAddedStrong: id, diffRemovedStrong: id,
+  diffGutter: id, diffMeta: id,
 }
 // Structurally satisfies BlueSemanticColors; declared where consumed.
 
@@ -119,7 +123,7 @@ async function bootTranscript(current: FakeAgent | null = null): Promise<Harness
   const dir = mkdtempSync(join(tmpdir(), 'dsh-blue-transcript-'))
   writeFileSync(join(dir, 'blue-transcript.mjs'), `
 export const name = 'blue-transcript'
-export const inject = ['blueScreen', 'blueTheme']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents']
 export const apply = ctx => globalThis.__blueTranscriptApply(ctx)
 `)
   writeFileSync(join(dir, 'cordis.yml'), [
@@ -135,6 +139,7 @@ export const apply = ctx => globalThis.__blueTranscriptApply(ctx)
   const serviceNames: Record<string, unknown> = {
     blueScreen: screen,
     blueTheme: { colors: COLORS },
+    blueComponents: fakeBlueComponents(),
     blueSession,
   }
   for (const [serviceName, value] of Object.entries(serviceNames)) {

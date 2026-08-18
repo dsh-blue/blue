@@ -1,14 +1,20 @@
 /**
  * L0 terminal runtime: lifecycle, Blue-typed delegation through the stable
- * reference, overlay focus discipline on a real `TuiMainScreen`, and the
+ * reference, overlay focus discipline on a real `TuiMainScreen`, the OSC 11
+ * probe ordering, terminal color-scheme forwarding, and the
  * `installFailLoud` release factory.
  */
 
 import { describe, expect, it } from 'vitest'
 import type { TUI } from '@earendil-works/pi-tui'
-import type { BlueComponent, BlueFocusable } from '../src/types.ts'
+import type { BlueComponent, BlueFocusable, BlueRgbColor } from '../src/types.ts'
 import { createStableTuiReference, createTerminalRelease, startBlueTerminal } from '../src/terminal.ts'
 import { FakeTerminal, waitForRender } from './fake-terminal.ts'
+
+/** A background probe that never answers, for tests indifferent to it. */
+function noProbe(): Promise<BlueRgbColor | undefined> {
+  return Promise.resolve(undefined)
+}
 
 function textComponent(text: string): BlueComponent {
   return {
@@ -26,17 +32,70 @@ function focusableComponent(text: string): BlueFocusable {
 }
 
 describe('startBlueTerminal', () => {
-  it('starts the renderer on the given terminal immediately', () => {
+  it('starts the renderer on the given terminal', async () => {
     const terminal = new FakeTerminal()
-    const runtime = startBlueTerminal(terminal)
+    const runtime = await startBlueTerminal(terminal, noProbe)
     expect(terminal.startCount).toBe(1)
     expect(runtime.columns).toBe(80)
     return runtime.stop()
   })
 
+  it('runs the probe before the terminal starts and maps the reply', async () => {
+    const terminal = new FakeTerminal()
+    let startCountAtProbe = -1
+    const probe = () => {
+      startCountAtProbe = terminal.startCount
+      return Promise.resolve({ r: 255, g: 255, b: 255 })
+    }
+    const runtime = await startBlueTerminal(terminal, probe)
+    expect(startCountAtProbe).toBe(0)
+    expect(runtime.background).toBe('light')
+    await runtime.stop()
+
+    const dark = await startBlueTerminal(new FakeTerminal(), () => Promise.resolve({ r: 0, g: 0, b: 0 }))
+    expect(dark.background).toBe('dark')
+    await dark.stop()
+
+    const unknown = await startBlueTerminal(new FakeTerminal(), noProbe)
+    expect(unknown.background).toBeUndefined()
+    await unknown.stop()
+  })
+
+  it('exposes the Kitty protocol state and the stable TUI reference', async () => {
+    const terminal = new FakeTerminal()
+    terminal.kittyActive = true
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    expect(runtime.kittyKeyboard).toBe(true)
+    expect(runtime.tui.children).toEqual([])
+    await runtime.stop()
+  })
+
+  it('enables scheme notifications and forwards reports through the callback', async () => {
+    const terminal = new FakeTerminal()
+    const schemes: ('dark' | 'light')[] = []
+    const runtime = await startBlueTerminal(terminal, noProbe, scheme => schemes.push(scheme))
+    // Mode 2031 notifications are requested right after start.
+    expect(terminal.output).toContain('\x1b[?2031h')
+
+    terminal.sendInput('\x1b[?997;2n')
+    terminal.sendInput('\x1b[?997;1n')
+    expect(schemes).toEqual(['light', 'dark'])
+
+    await runtime.stop()
+    // Stopping disables the notification mode again.
+    expect(terminal.output).toContain('\x1b[?2031l')
+  })
+
+  it('tolerates scheme reports without a registered callback', async () => {
+    const terminal = new FakeTerminal()
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    terminal.sendInput('\x1b[?997;2n')
+    await runtime.stop()
+  })
+
   it('renders mounted components to the terminal', async () => {
     const terminal = new FakeTerminal()
-    const runtime = startBlueTerminal(terminal)
+    const runtime = await startBlueTerminal(terminal, noProbe)
     runtime.addChild(textComponent('hello blue'))
     runtime.requestRender()
     await waitForRender()
@@ -50,7 +109,7 @@ describe('startBlueTerminal', () => {
 
   it('renders bottom-pinned components after content mounted later', async () => {
     const terminal = new FakeTerminal()
-    const runtime = startBlueTerminal(terminal)
+    const runtime = await startBlueTerminal(terminal, noProbe)
     // The editor pins first; transcript rows mount afterwards (session start)
     // and must still render above it.
     const editor = textComponent('bottom-editor')
@@ -78,7 +137,7 @@ describe('startBlueTerminal', () => {
 
   it('stops idempotently: drains input once and stops the terminal once', async () => {
     const terminal = new FakeTerminal()
-    const runtime = startBlueTerminal(terminal)
+    const runtime = await startBlueTerminal(terminal, noProbe)
     await runtime.stop()
     await runtime.stop()
     expect(terminal.drainCount).toBe(1)
@@ -86,9 +145,9 @@ describe('startBlueTerminal', () => {
   })
 
   it('keeps only the newest runtime active for the release', async () => {
-    const first = startBlueTerminal(new FakeTerminal())
+    const first = await startBlueTerminal(new FakeTerminal(), noProbe)
     const secondTerminal = new FakeTerminal()
-    startBlueTerminal(secondTerminal)
+    await startBlueTerminal(secondTerminal, noProbe)
     await first.stop()
     await createTerminalRelease()()
     expect(secondTerminal.stopCount).toBe(1)
@@ -98,7 +157,7 @@ describe('startBlueTerminal', () => {
 describe('overlay focus discipline', () => {
   it('focuses a shown overlay and restores the previous focus on hide', async () => {
     const terminal = new FakeTerminal()
-    const runtime = startBlueTerminal(terminal)
+    const runtime = await startBlueTerminal(terminal, noProbe)
     const base = focusableComponent('base')
     runtime.addChild(base)
     runtime.setFocus(base)
@@ -119,7 +178,7 @@ describe('overlay focus discipline', () => {
 
   it('supports temporary hide/show and focus/unfocus through the handle', async () => {
     const terminal = new FakeTerminal()
-    const runtime = startBlueTerminal(terminal)
+    const runtime = await startBlueTerminal(terminal, noProbe)
     const overlay = focusableComponent('modal')
     const handle = runtime.showOverlay(overlay)
 
@@ -143,7 +202,7 @@ describe('overlay focus discipline', () => {
 
   it('does not capture focus for a nonCapturing overlay', async () => {
     const terminal = new FakeTerminal()
-    const runtime = startBlueTerminal(terminal)
+    const runtime = await startBlueTerminal(terminal, noProbe)
     const base = focusableComponent('editor')
     runtime.addChild(base)
     runtime.setFocus(base)
@@ -163,7 +222,7 @@ describe('createTerminalRelease', () => {
     await release()
 
     const terminal = new FakeTerminal()
-    startBlueTerminal(terminal)
+    await startBlueTerminal(terminal, noProbe)
     await release()
     expect(terminal.stopCount).toBe(1)
 

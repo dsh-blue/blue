@@ -8,7 +8,8 @@
  */
 
 import { ProcessTerminal, TuiMainScreen, type Terminal, type TUI } from '@earendil-works/pi-tui'
-import type { BlueComponent, BlueOverlayHandle, BlueOverlayOptions } from './types.ts'
+import { probeTerminalBackground, backgroundFromRgb, type BlueProbeProcess } from './terminal-info.ts'
+import type { BlueComponent, BlueOverlayHandle, BlueOverlayOptions, BlueRgbColor } from './types.ts'
 
 /**
  * The Blue-typed face of the running terminal stack. L1 services consume
@@ -17,6 +18,12 @@ import type { BlueComponent, BlueOverlayHandle, BlueOverlayOptions } from './typ
 export interface BlueTerminalRuntime {
   /** Current terminal width in columns. */
   readonly columns: number
+  /** The probed background luminance class, or `undefined` when the probe failed. */
+  readonly background: 'dark' | 'light' | undefined
+  /** Whether the Kitty keyboard protocol is active on the terminal. */
+  readonly kittyKeyboard: boolean
+  /** The stable TUI reference behind the runtime; core-internal (pi-tui type). */
+  readonly tui: TUI
   /**
    * Mount a root component on the live renderer, above every bottom-pinned
    * component.
@@ -115,18 +122,32 @@ export function createTerminalRelease(): () => Promise<void> {
 
 /**
  * Start the Blue terminal stack: a `TuiMainScreen` renderer over a
- * `ProcessTerminal`, started immediately and registered as the process-active
- * runtime. MVP runs the main-screen renderer only; the returned runtime
+ * `ProcessTerminal`, registered as the process-active runtime. The OSC 11
+ * background probe runs first, before the renderer takes stdin into raw
+ * mode; then the renderer starts and subscribes to terminal color-scheme
+ * (mode 2031) notifications, forwarded through `onSchemeChange`.
+ * MVP runs the main-screen renderer only; the returned runtime
  * delegates through the stable reference so a renderer swap needs no
  * consumer change.
  * @param terminal - the terminal to drive; defaults to a real
  *   `ProcessTerminal` on process stdin/stdout. Tests inject a fake.
+ * @param probe - the background probe; defaults to the OSC 11 query on the
+ *   live process. Tests inject a recording fake.
+ * @param onSchemeChange - called when the terminal reports a dark/light
+ *   color-scheme switch.
  * @returns the running stack's Blue-typed face.
  */
-export function startBlueTerminal(terminal: Terminal = new ProcessTerminal()): BlueTerminalRuntime {
+export async function startBlueTerminal(
+  terminal: Terminal = new ProcessTerminal(),
+  probe: (proc?: BlueProbeProcess) => Promise<BlueRgbColor | undefined> = () => probeTerminalBackground(),
+  onSchemeChange?: (scheme: 'dark' | 'light') => void,
+): Promise<BlueTerminalRuntime> {
   const current: TUI = new TuiMainScreen(terminal)
   const stable = createStableTuiReference(() => current)
+  const background = backgroundFromRgb(await probe())
   current.start()
+  current.setTerminalColorSchemeNotifications(true)
+  if (onSchemeChange !== undefined) current.onTerminalColorSchemeChange(onSchemeChange)
   let stopped = false
   // Bottom-pinned components (the input editor) must render after transcript
   // content no matter when each side mounts: pi-tui renders root children in
@@ -137,6 +158,11 @@ export function startBlueTerminal(terminal: Terminal = new ProcessTerminal()): B
     get columns() {
       return current.terminal.columns
     },
+    background,
+    get kittyKeyboard() {
+      return terminal.kittyProtocolActive
+    },
+    tui: stable,
     addChild(component) {
       if (bottomChildren.size === 0) {
         stable.addChild(component)

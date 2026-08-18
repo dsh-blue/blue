@@ -16,7 +16,7 @@ import type {
   BlueSemanticColors,
   BlueTheme,
 } from '@deepseek-ai/dsh-blue-core'
-import type { BlueScreenService, BlueThemeService, BlueKeymapService } from '@deepseek-ai/dsh-blue-core'
+import type { BlueScreenService, BlueKeymapService } from '@deepseek-ai/dsh-blue-core'
 import {
   ACTION_CANCEL,
   ACTION_CURSOR_LEFT,
@@ -108,13 +108,17 @@ const identity = (text: string): string => text
 function fakeColors(): BlueSemanticColors {
   return {
     text: identity,
+    textStrong: text => `#${text}#`,
     muted: text => `~${text}~`,
     accent: text => `*${text}*`,
     border: identity,
+    borderFocus: text => `%${text}%`,
     success: identity,
     error: text => `!${text}!`,
     warning: text => `?${text}?`,
     selectedBg: identity,
+    roleUser: text => `@${text}@`,
+    shellMode: text => `$${text}$`,
     mdHeading: identity,
     mdLink: identity,
     mdLinkUrl: identity,
@@ -125,6 +129,12 @@ function fakeColors(): BlueSemanticColors {
     mdQuoteBorder: identity,
     mdHr: identity,
     mdListBullet: identity,
+    diffAdded: text => `+${text}+`,
+    diffRemoved: text => `-${text}-`,
+    diffAddedStrong: text => `=${text}=`,
+    diffRemovedStrong: text => `/${text}/`,
+    diffGutter: text => `:${text}:`,
+    diffMeta: text => `;${text};`,
   }
 }
 
@@ -225,7 +235,9 @@ export function fakeBlueContext(): { ctx: Context; screen: FakeScreen; theme: Fa
   const theme = new FakeTheme()
   const keymap = new FakeKeymap()
   ctx.provide('blueScreen', screen as unknown as BlueScreenService)
-  ctx.provide('blueTheme', theme as unknown as BlueThemeService)
+  // The theme fake casts to the BlueTheme contract: the concrete
+  // BlueThemeService class moved to core's theme-dark subpath plugin.
+  ctx.provide('blueTheme', theme as unknown as BlueTheme)
   ctx.provide('blueKeymap', keymap as unknown as BlueKeymapService)
   return { ctx, screen, theme, keymap }
 }

@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Blue terminal UI transcript layer over `dsh-blue-core`: a pure fold from session events to transcript items (user/assistant/tool), the components that render them, and the Cordis plugin mounting them on `blueScreen`. The package imports no pi-tui — every component is a self-contained `BlueComponent` returning styled ANSI lines.
+Blue terminal UI transcript layer over `dsh-blue-core`: a pure fold from session events to transcript items (user/assistant/tool), the components that render them, and the Cordis plugin mounting them on `blueScreen`. The package imports no pi-tui — components either return styled ANSI lines directly or delegate to the `blueComponents` factory.
 
 ## The fold
 
@@ -15,9 +15,9 @@ Blue terminal UI transcript layer over `dsh-blue-core`: a pure fold from session
 
 ## Components and mounting
 
-`src/components.ts` implements `BlueComponent` directly: `UserMessageComponent` (accent `❯` gutter), `AssistantMessageComponent` (minimal Markdown via `src/markdown.ts`, reasoning muted italic, streaming `▌` cursor, cached by text + width), `ToolCallComponent` (`○`/`●` state bullet plus an indented `⎿` summary), and the fixed single-line `StatusBarComponent` (model + agent status). Text measurement and wrapping live in `src/width.ts` (CJK wide cells, style-aware wrapping).
+`src/components.ts` implements `BlueComponent`: `UserMessageComponent` (accent `❯` gutter), `AssistantMessageComponent` (Markdown delegated to `blueComponents.createMarkdown` — pi-tui's Markdown with `setText` caching; reasoning muted italic; streaming `▌` cursor), `ToolCallComponent` (`○`/`●` state bullet plus an indented `⎿` summary), and the fixed single-line `StatusBarComponent` (model + agent status). Text measurement, wrapping, and truncation come from the `blueComponents` pure functions (`visibleWidth` / `wrapText` / `truncateToWidth`); `ellipsize` lives in `src/fold.ts` and is re-exported from the package root.
 
-The plugin (`name: 'blue-transcript'`, `inject: ['blueScreen', 'blueTheme']`) mounts on `'blue/session-changed'` — emitted by `dsh-blue-app` after create/resume — or from `blueSession.current` when an agent already exists. It folds the `agent.session.events` snapshot first (resume seeds never replay `session/event`), then subscribes to the live feed and drops events at or below the snapshot's last seq; every applied event ends in `blueScreen.requestRender()`. Remounting on the next session change, and unloading the plugin, unmounts every component.
+The plugin (`name: 'blue-transcript'`, `inject: ['blueScreen', 'blueTheme', 'blueComponents']`) mounts on `'blue/session-changed'` — emitted by `dsh-blue-app` after create/resume — or from `blueSession.current` when an agent already exists. It folds the `agent.session.events` snapshot first (resume seeds never replay `session/event`), then subscribes to the live feed and drops events at or below the snapshot's last seq; every applied event ends in `blueScreen.requestRender()`. Remounting on the next session change, and unloading the plugin, unmounts every component.
 
 ## Model Experience
 
@@ -29,6 +29,5 @@ None; the package adds nothing to any model request prefix.
 
 ## Known Limitations and Deferred Work
 
-- **Width helpers are a pi-tui stand-in** — `src/width.ts` is exact for ASCII and CJK wide cells but approximate for emoji clusters and combining marks (no RGI/spacing-mark tables); when `dsh-blue-core` grows a component factory, these helpers should be replaced by it.
-- **Markdown subset** — `src/markdown.ts` covers headings, fenced code, lists, quotes, rules, and inline code/bold/links; tables, nested constructs, and streaming-aware transforms are deferred.
+- **Width and Markdown are pi-tui's** — measurement/wrapping go through `blueComponents` and Markdown through its `createMarkdown`; pi-tui's own accuracy limits (e.g. emoji cluster width) apply, and streaming-aware Markdown transforms are deferred.
 - **Status bar has no extension seam** — the single model + status line is fixed; a `blueStatus` service waits for its first real consumer. The status line refreshes on session events rather than `agent/status`, so a status flip displays at the next session event.

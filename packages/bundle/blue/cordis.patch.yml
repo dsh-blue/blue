@@ -18,9 +18,15 @@
 
 - insert:
     # Blue core: the tree's only pi-tui adapter. Starts the terminal and
-    # registers the blueScreen/blueTheme/blueKeymap services.
+    # registers the blueScreen/blueKeymap/blueTerminalInfo/blueComponents
+    # services.
     - id: blue-core
       name: '@deepseek-ai/dsh-blue-core'
+
+    # Blue theme (plain baseline segment): the built-in dark palette,
+    # providing the blueTheme service as its own fiber.
+    - id: blue-theme-dark
+      name: '@deepseek-ai/dsh-blue-core/theme-dark'
 
     # Transcript: renders session events (streamed Markdown, tool calls) onto
     # the blue screen.

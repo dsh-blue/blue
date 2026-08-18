@@ -16,7 +16,6 @@
 
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { ellipsize } from './width.ts'
 import type {
   TranscriptAssistantItem,
   TranscriptItem,
@@ -25,6 +24,17 @@ import type {
 
 /** Maximum length of the one-line tool-result summary. */
 export const RESULT_SUMMARY_MAX_CHARS = 160
+
+/**
+ * Collapse a multi-line string to one ellipsized line.
+ * @param text - the text to flatten.
+ * @param maxChars - the maximum string length (not terminal columns) kept.
+ * @returns whitespace-collapsed text, ellipsized beyond `maxChars`.
+ */
+export function ellipsize(text: string, maxChars: number): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length <= maxChars ? flat : `${flat.slice(0, maxChars - 1)}…`
+}
 
 /**
  * The fold's answer to one event: the item the event created or mutated.

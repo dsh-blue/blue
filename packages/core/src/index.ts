@@ -1,36 +1,59 @@
 /**
  * @deepseek-ai/dsh-blue-core — Blue terminal UI core: the tree's only
- * `@earendil-works/pi-tui` adapter. Loading the plugin starts the terminal
- * (main-screen renderer over `ProcessTerminal`) and registers the
- * `blueScreen`, `blueTheme`, and `blueKeymap` services; unloading stops the
- * terminal and restores its state.
+ * `@earendil-works/pi-tui` adapter. Loading the plugin probes the terminal
+ * background (OSC 11, before raw mode), starts the main-screen renderer
+ * over `ProcessTerminal`, and registers the `blueScreen`, `blueKeymap`,
+ * `blueTerminalInfo`, and `blueComponents` services; `blueTheme` is
+ * provided separately by the `blue-theme-dark` subpath plugin. Unloading
+ * stops the terminal and restores its state.
  *
  * @module @deepseek-ai/dsh-blue-core
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { BlueComponentsService } from './components.ts'
 import { BlueKeymapService } from './keymap.ts'
 import { BlueScreenService } from './screen.ts'
-import { BlueThemeService } from './theme.ts'
+import { BlueTerminalInfoService } from './terminal-info.ts'
 import { startBlueTerminal } from './terminal.ts'
 
+export { BlueComponentsService, type BlueComponentsDeps } from './components.ts'
 export { BlueKeymapError, BlueKeymapService } from './keymap.ts'
 export { BlueScreenService } from './screen.ts'
-export { BlueThemeService } from './theme.ts'
+export {
+  BlueTerminalInfoService,
+  PROBE_TIMEOUT_MS,
+  backgroundFromRgb,
+  probeTerminalBackground,
+  type BlueProbeProcess,
+} from './terminal-info.ts'
 export { createTerminalRelease } from './terminal.ts'
 export type {
   BlueColorFn,
   BlueComponent,
+  BlueComponents,
+  BlueEditor,
+  BlueEditorOptions,
   BlueFocusable,
   BlueKeyAction,
   BlueKeymap,
+  BlueMarkdown,
+  BlueMarkdownOptions,
   BlueOverlayAnchor,
   BlueOverlayHandle,
   BlueOverlayOptions,
   BlueOverlaySize,
   BlueOverlayUnfocusOptions,
+  BlueRgbColor,
   BlueScreen,
+  BlueSelectItem,
+  BlueSelectList,
+  BlueSelectListOptions,
   BlueSemanticColors,
+  BlueSettingItem,
+  BlueSettingsList,
+  BlueSettingsListOptions,
+  BlueTerminalInfo,
   BlueTheme,
 } from './types.ts'
 
@@ -38,15 +61,27 @@ export type {
 export const name = 'blue-core'
 
 /**
- * Start the terminal and mount the three L1 services. Each service is a
- * class plugin on its own fiber, so unloading this plugin unregisters all
- * three; the effect stops the terminal last.
+ * Probe the terminal, start it, and mount the L1 services. Each service is
+ * a class plugin on its own fiber, so unloading this plugin unregisters all
+ * of them; the effect stops the terminal last. `blueComponents` mounts as a
+ * sub-plugin injecting `blueTheme`: while no theme provider is loaded the
+ * sub-plugin waits, and a provider swap rebuilds the factory through
+ * Cordis reload semantics.
  * @param ctx - plugin context.
  */
-export function apply(ctx: Context): void {
-  const runtime = startBlueTerminal()
+export async function apply(ctx: Context): Promise<void> {
+  const runtime = await startBlueTerminal(undefined, undefined, (scheme) => {
+    ctx.emit('blue/terminal-theme-changed', scheme)
+  })
   ctx.plugin(BlueKeymapService)
-  ctx.plugin(BlueThemeService)
+  ctx.plugin(BlueTerminalInfoService, { background: runtime.background, kittyKeyboard: runtime.kittyKeyboard })
   ctx.plugin(BlueScreenService, runtime)
+  ctx.plugin({
+    name: 'blue-components',
+    inject: ['blueTheme'],
+    apply(subCtx: Context) {
+      subCtx.plugin(BlueComponentsService, { theme: subCtx.blueTheme, tui: runtime.tui })
+    },
+  })
   ctx.effect(() => () => runtime.stop())
 }

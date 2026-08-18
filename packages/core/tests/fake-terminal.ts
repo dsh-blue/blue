@@ -15,6 +15,8 @@ export class FakeTerminal implements Terminal {
   private resizeHandler: (() => void) | undefined
   private columnsValue: number
   private rowsValue: number
+  /** Simulated Kitty keyboard protocol state, read by `kittyProtocolActive`. */
+  kittyActive = false
 
   constructor(columns = 80, rows = 24) {
     this.columnsValue = columns
@@ -51,7 +53,7 @@ export class FakeTerminal implements Terminal {
   }
 
   get kittyProtocolActive(): boolean {
-    return false
+    return this.kittyActive
   }
 
   moveBy(): void {}

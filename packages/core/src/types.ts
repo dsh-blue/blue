@@ -6,6 +6,11 @@
  * @module @deepseek-ai/dsh-blue-core/types
  */
 
+// Pulls in Cordis `Context`/`Events` for the declaration merges below; the
+// merges belong to the contract layer because the `blueTheme` provider is
+// replaceable by the theme plugin family outside this package.
+import type {} from '@deepseek-ai/cordis'
+
 /**
  * A renderable Blue component. Structurally compatible with pi-tui's
  * `Component` but type-independent, so pi-tui breaking changes cannot
@@ -180,19 +185,25 @@ export interface BlueScreen {
 export type BlueColorFn = (text: string) => string
 
 /**
- * The semantic color table. Keys name roles, not presentation; values are
- * the built-in dark palette in the MVP. `selectedBg` is a background color;
- * every other entry styles the foreground.
+ * The semantic color table. Keys name roles, not presentation. All 26
+ * tokens are required so a palette is compile-checked for completeness; the
+ * diff group ships unused until P2 but must still carry colors.
+ * `selectedBg` is a background color; every other entry styles the
+ * foreground.
  */
 export interface BlueSemanticColors {
   /** Default foreground. */
   text: BlueColorFn
+  /** Emphasized foreground (bold runs, strong text). */
+  textStrong: BlueColorFn
   /** Secondary, de-emphasized text. */
   muted: BlueColorFn
   /** Primary highlight (selected items, accents). */
   accent: BlueColorFn
   /** Overlay and editor borders. */
   border: BlueColorFn
+  /** Border of the focused overlay or editor. */
+  borderFocus: BlueColorFn
   /** Affirmative status (tool success, confirmations). */
   success: BlueColorFn
   /** Failure status. */
@@ -201,6 +212,10 @@ export interface BlueSemanticColors {
   warning: BlueColorFn
   /** Background of the selected list entry. */
   selectedBg: BlueColorFn
+  /** User-authored transcript messages. */
+  roleUser: BlueColorFn
+  /** Shell-mode indicator in the input editor. */
+  shellMode: BlueColorFn
   /** Markdown heading. */
   mdHeading: BlueColorFn
   /** Markdown link text. */
@@ -221,6 +236,18 @@ export interface BlueSemanticColors {
   mdHr: BlueColorFn
   /** Markdown list bullet. */
   mdListBullet: BlueColorFn
+  /** Added diff line. */
+  diffAdded: BlueColorFn
+  /** Removed diff line. */
+  diffRemoved: BlueColorFn
+  /** Emphasized added diff line (hunk headers, focused hunks). */
+  diffAddedStrong: BlueColorFn
+  /** Emphasized removed diff line (hunk headers, focused hunks). */
+  diffRemovedStrong: BlueColorFn
+  /** Diff line-number gutter. */
+  diffGutter: BlueColorFn
+  /** Diff metadata (file paths, hunk ranges). */
+  diffMeta: BlueColorFn
 }
 
 /** `ctx.blueTheme` — the semantic color provider. */
@@ -269,4 +296,235 @@ export interface BlueKeymap {
    * @returns the bound key ids, empty for unknown actions.
    */
   getKeys(action: string): string[]
+}
+
+/** An RGB color sampled from the terminal (pi-tui's `RgbColor` shape, re-owned). */
+export interface BlueRgbColor {
+  /** Red channel, 0–255. */
+  r: number
+  /** Green channel, 0–255. */
+  g: number
+  /** Blue channel, 0–255. */
+  b: number
+}
+
+/**
+ * `ctx.blueTerminalInfo` — facts about the host terminal, probed once at
+ * startup before raw-mode input begins. `background` is `undefined` when
+ * the terminal did not answer the OSC 11 query in time.
+ */
+export interface BlueTerminalInfo {
+  /** The terminal's default background luminance class, if probed. */
+  readonly background: 'dark' | 'light' | undefined
+  /** Whether the Kitty keyboard protocol is active on the terminal. */
+  readonly kittyKeyboard: boolean
+}
+
+/** Options for {@link BlueComponents.createEditor}. */
+export interface BlueEditorOptions {
+  /** Horizontal padding inside the editor frame, in columns. */
+  paddingX?: number
+}
+
+/**
+ * A multi-line input editor. Autocomplete wiring is a later increment; the
+ * submit/change callbacks and `disableSubmit` are mutable properties, set
+ * after creation, matching the underlying component's idiom.
+ */
+export interface BlueEditor extends BlueFocusable {
+  /** Called when the user submits; receives the full text. */
+  onSubmit?: ((text: string) => void) | undefined
+  /** Called on every text change. */
+  onChange?: ((text: string) => void) | undefined
+  /** When true, submission keys insert text instead of submitting. */
+  disableSubmit: boolean
+  /**
+   * Read the current text.
+   * @returns the editor content.
+   */
+  getText(): string
+  /**
+   * Replace the current text.
+   * @param text - the new content.
+   */
+  setText(text: string): void
+  /**
+   * Add a prompt to the history navigated with up/down arrows.
+   * @param text - the submitted prompt.
+   */
+  addToHistory(text: string): void
+  /**
+   * Restyle the editor frame (e.g. focused vs. unfocused border).
+   * @param color - the new border color function.
+   */
+  setBorderColor(color: BlueColorFn): void
+}
+
+/** Options for {@link BlueComponents.createMarkdown}. */
+export interface BlueMarkdownOptions {
+  /** Initial Markdown source; defaults to empty. */
+  text?: string
+  /** Horizontal padding, in columns; defaults to 0. */
+  paddingX?: number
+  /** Vertical padding, in rows; defaults to 0. */
+  paddingY?: number
+}
+
+/** A streamed-Markdown component with internal render caching. */
+export interface BlueMarkdown extends BlueComponent {
+  /**
+   * Replace the Markdown source; the next render reflects it.
+   * @param text - the new Markdown source (complete or mid-stream).
+   */
+  setText(text: string): void
+}
+
+/** One entry of a {@link BlueSelectList}. */
+export interface BlueSelectItem {
+  /** The value reported to selection callbacks. */
+  value: string
+  /** The primary display text. */
+  label: string
+  /** Secondary text shown beside the label. */
+  description?: string
+}
+
+/** Options for {@link BlueComponents.createSelectList}. */
+export interface BlueSelectListOptions {
+  /** The entries to choose from. */
+  items: BlueSelectItem[]
+  /** Maximum simultaneously visible entries; defaults to 10. */
+  maxVisible?: number
+  /** Called when the user confirms the highlighted entry. */
+  onSelect?(item: BlueSelectItem): void
+  /** Called when the user dismisses the list. */
+  onCancel?(): void
+  /** Called whenever the highlight moves. */
+  onSelectionChange?(item: BlueSelectItem): void
+}
+
+/** A single-selection list. */
+export interface BlueSelectList extends BlueComponent {
+  /**
+   * Read the currently highlighted entry.
+   * @returns the highlighted item, or `null` when the list is empty.
+   */
+  getSelectedItem(): BlueSelectItem | null
+}
+
+/** One entry of a {@link BlueSettingsList}. */
+export interface BlueSettingItem {
+  /** Unique identifier reported to the change callback. */
+  id: string
+  /** Display label (left side). */
+  label: string
+  /** Optional description shown while the entry is highlighted. */
+  description?: string
+  /** Current value displayed on the right side. */
+  currentValue: string
+  /** When provided, confirm keys cycle through these values. */
+  values?: string[]
+  /**
+   * When provided, confirm opens this submenu.
+   * @param currentValue - the value at open time.
+   * @param done - closes the submenu, optionally committing a new value.
+   * @returns the component rendered as the submenu.
+   */
+  submenu?(currentValue: string, done: (selectedValue?: string) => void): BlueComponent
+}
+
+/** Options for {@link BlueComponents.createSettingsList}. */
+export interface BlueSettingsListOptions {
+  /** The settings to display. */
+  items: BlueSettingItem[]
+  /** Maximum simultaneously visible entries; defaults to 10. */
+  maxVisible?: number
+  /** Enable type-to-filter search; defaults to false. */
+  enableSearch?: boolean
+  /** Called after an entry's value changes. */
+  onChange(id: string, newValue: string): void
+  /** Called when the user dismisses the list. */
+  onCancel(): void
+}
+
+/** A key/value settings list. */
+export type BlueSettingsList = BlueComponent
+
+/**
+ * `ctx.blueComponents` — the component factory. Blue-typed options in,
+ * Blue-typed components out; the semantic color table is mapped to the
+ * underlying renderer's themes inside L0, and the width helpers are
+ * re-exported under Blue signatures so no consumer imports pi-tui.
+ */
+export interface BlueComponents {
+  /**
+   * Create a multi-line input editor themed from the active palette.
+   * @param options - editor options.
+   * @returns the editor component.
+   */
+  createEditor(options?: BlueEditorOptions): BlueEditor
+  /**
+   * Create a streamed-Markdown component themed from the active palette.
+   * @param options - markdown options.
+   * @returns the markdown component.
+   */
+  createMarkdown(options?: BlueMarkdownOptions): BlueMarkdown
+  /**
+   * Create a single-selection list themed from the active palette.
+   * @param options - items and selection callbacks.
+   * @returns the list component.
+   */
+  createSelectList(options: BlueSelectListOptions): BlueSelectList
+  /**
+   * Create a settings list themed from the active palette.
+   * @param options - items and change callbacks.
+   * @returns the settings component.
+   */
+  createSettingsList(options: BlueSettingsListOptions): BlueSettingsList
+  /**
+   * Measure the visible width of styled text in terminal columns.
+   * @param text - the text, ANSI styling allowed.
+   * @returns the width in columns.
+   */
+  visibleWidth(text: string): number
+  /**
+   * Word-wrap styled text to a column width, preserving ANSI styling.
+   * @param text - the text, ANSI styling and newlines allowed.
+   * @param width - the maximum visible width per line.
+   * @returns the wrapped lines, not padded.
+   */
+  wrapText(text: string, width: number): string[]
+  /**
+   * Truncate styled text to a maximum visible width, adding an ellipsis
+   * when truncating.
+   * @param text - the text, ANSI styling allowed.
+   * @param width - the maximum visible width.
+   * @param ellipsis - the ellipsis string; defaults to `'...'`.
+   * @returns the truncated text.
+   */
+  truncateToWidth(text: string, width: number, ellipsis?: string): string
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /**
+     * The semantic color provider. Typed as the {@link BlueTheme} contract —
+     * not the built-in implementation — because the theme plugin family
+     * replaces the provider fiber at runtime.
+     */
+    blueTheme: BlueTheme
+  }
+
+  interface Events {
+    /**
+     * The terminal reported a dark/light color-scheme change (mode 2031
+     * notification). Emitted by `blue-core` after startup; consumers treat
+     * it as a hint and re-read {@link BlueTerminalInfo}-style facts from
+     * their providers.
+     * Unfiltered: every terminal-mode switch is broadcast.
+     * @param scheme - the newly active scheme.
+     * @mode emit
+     */
+    'blue/terminal-theme-changed'(scheme: 'dark' | 'light'): void
+  }
 }

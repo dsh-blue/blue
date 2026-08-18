@@ -29,6 +29,7 @@ packages/
 script/install-dev.sh  — one-shot local dev install into a dsh profile
 docs/                  — design docs: blue-architecture.md (blueprint), blue-roadmap.md (phases),
                          blue-mvp-plan.md (MVP plan), blue-decisions.md (ADR log),
+                         blue-p1-design.md (P1 layer design: kimi-code parity map + seam catalog),
                          blue-survey-pi-tui.md / blue-survey-harness.md (research basis)
 ```
 
@@ -36,11 +37,11 @@ Each package has the same shape: `src/` (source), `tests/` (vitest specs), `lib/
 
 ### Package roles and dependencies
 
-- **core** — terminal lifecycle (`src/terminal.ts`) plus three L1 services: `blueScreen` (`src/screen.ts`), `blueTheme` (`src/theme.ts`), `blueKeymap` (`src/keymap.ts`). Only this package may import `@earendil-works/pi-tui`; it exposes pi-tui-independent contracts in `src/types.ts` so pi-tui breaking changes cannot propagate past it.
-- **transcript** — folds session events into transcript items (`src/fold.ts`) and renders them (streamed Markdown via `src/markdown.ts`, tool calls via `src/components.ts`) through `blueScreen`.
+- **core** — terminal lifecycle (`src/terminal.ts`) plus the L1 services: `blueScreen` (`src/screen.ts`), `blueKeymap` (`src/keymap.ts`), `blueTerminalInfo` (`src/terminal-info.ts`, read-only terminal facts from the startup OSC 11 background probe), `blueComponents` (`src/components.ts`, the pi-tui-backed component factory and width pure functions). The `blueTheme` contract lives in `src/types.ts`; its implementation ships as the `./theme-dark` subpath plugin (`src/theme-dark.ts`, `blue-theme-dark`, the built-in 26-token dark palette). Only this package may import `@earendil-works/pi-tui`; it exposes pi-tui-independent contracts in `src/types.ts` so pi-tui breaking changes cannot propagate past it.
+- **transcript** — folds session events into transcript items (`src/fold.ts`, which also owns `ellipsize`) and renders them through `blueScreen`, with Markdown and text measurement delegated to `blueComponents` (`src/components.ts`).
 - **interaction** — bottom input editor (`src/editor.ts`), slash commands `/quit` and `/resume` (`src/commands-plugin.ts`), user-question and approval overlays (`src/questions-plugin.ts`, `src/approval-plugin.ts`). All key handling resolves through `ctx.blueKeymap`.
 - **app** — command-line startup (`src/startup.ts`: `[task]` positional, `--resume <id>`) and the Agent driver (`src/index.ts`) that creates/resumes sessions and publishes them via `blueSession`.
-- **bundle/blue** — the installable unit. Its `cordis.patch.yml` inserts the five Blue plugin rows over `dsh-base`; the bundle module itself mounts nothing. The four library packages are its `workspace:^` dependencies.
+- **bundle/blue** — the installable unit. Its `cordis.patch.yml` inserts the six Blue plugin rows (including `blue-theme-dark` right after `blue-core`, the plain-baseline segment) over `dsh-base`; the bundle module itself mounts nothing. The four library packages are its `workspace:^` dependencies.
 
 Dependency direction: core ← transcript / interaction ← app ← bundle. `@deepseek-ai/cordis` and the `dsh-*` service packages are `peerDependencies` (provided by the host `dsh` installation), mirrored as pinned `devDependencies` for local builds and tests.
 
@@ -109,4 +110,4 @@ Observed conventions:
 
 ## Verification status
 
-As of this writing, `pnpm run test` (206 tests, 25 files), `pnpm run typecheck`, and `pnpm run lint` all pass on Node 22+/pnpm 11.
+As of this writing, `pnpm run test` (203 tests, 26 files), `pnpm run typecheck`, and `pnpm run lint` all pass on Node 22+/pnpm 11.

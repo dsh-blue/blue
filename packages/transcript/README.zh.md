@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-Blue 终端 UI transcript 层，构建于 `dsh-blue-core` 之上：从 session 事件到 transcript 条目（user/assistant/tool）的纯折叠、渲染这些条目的组件，以及把它们挂载到 `blueScreen` 的 Cordis 插件。本包不 import pi-tui——每个组件都是自包含的 `BlueComponent`，返回带样式的 ANSI 行。
+Blue 终端 UI transcript 层，构建于 `dsh-blue-core` 之上：从 session 事件到 transcript 条目（user/assistant/tool）的纯折叠、渲染这些条目的组件，以及把它们挂载到 `blueScreen` 的 Cordis 插件。本包不 import pi-tui——组件要么直接返回带样式的 ANSI 行，要么委托给 `blueComponents` 工厂。
 
 ## 折叠器
 
@@ -15,9 +15,9 @@ Blue 终端 UI transcript 层，构建于 `dsh-blue-core` 之上：从 session �
 
 ## 组件与挂载
 
-`src/components.ts` 直接实现 `BlueComponent`：`UserMessageComponent`（accent `❯` 边栏）、`AssistantMessageComponent`（极简 Markdown，见 `src/markdown.ts`；reasoning 为 muted 斜体；流式 `▌` 光标；按 text + width 缓存）、`ToolCallComponent`（`○`/`●` 状态圆点加缩进的 `⎿` 摘要），以及写死的单行 `StatusBarComponent`（model + agent 状态）。文本测宽与换行在 `src/width.ts`（CJK 宽字符、样式感知的换行）。
+`src/components.ts` 实现 `BlueComponent`：`UserMessageComponent`（accent `❯` 边栏）、`AssistantMessageComponent`（Markdown 委托给 `blueComponents.createMarkdown`——pi-tui 自带、按 `setText` 缓存；reasoning 为 muted 斜体；流式 `▌` 光标）、`ToolCallComponent`（`○`/`●` 状态圆点加缩进的 `⎿` 摘要），以及写死的单行 `StatusBarComponent`（model + agent 状态）。文本测宽、换行与截断来自 `blueComponents` 纯函数（`visibleWidth` / `wrapText` / `truncateToWidth`）；`ellipsize` 收在 `src/fold.ts`，并从包根再导出。
 
-插件（`name: 'blue-transcript'`，`inject: ['blueScreen', 'blueTheme']`）在 `'blue/session-changed'`（由 `dsh-blue-app` 在 create/resume 完成后发出）时挂载；若加载时 agent 已存在，则从 `blueSession.current` 渲染。它先折叠 `agent.session.events` 快照（resume 的 seed 不重播 `session/event`），再订阅增量事件流并丢弃 seq 不超过快照末尾的事件；每个已应用事件的末尾都调用 `blueScreen.requestRender()`。下一次 session 切换会重挂载，插件卸载时摘除全部组件。
+插件（`name: 'blue-transcript'`，`inject: ['blueScreen', 'blueTheme', 'blueComponents']`）在 `'blue/session-changed'`（由 `dsh-blue-app` 在 create/resume 完成后发出）时挂载；若加载时 agent 已存在，则从 `blueSession.current` 渲染。它先折叠 `agent.session.events` 快照（resume 的 seed 不重播 `session/event`），再订阅增量事件流并丢弃 seq 不超过快照末尾的事件；每个已应用事件的末尾都调用 `blueScreen.requestRender()`。下一次 session 切换会重挂载，插件卸载时摘除全部组件。
 
 ## 模型体验
 
@@ -29,6 +29,5 @@ Blue 终端 UI transcript 层，构建于 `dsh-blue-core` 之上：从 session �
 
 ## 已知限制与暂缓事项
 
-- **宽度工具是 pi-tui 的临时替身**——`src/width.ts` 对 ASCII 与 CJK 宽字符是精确的，但对 emoji 簇与组合附加符号是近似的（无 RGI/spacing-mark 表）；当 `dsh-blue-core` 提供组件工厂后，应以工厂实现替换这些辅助函数。
-- **Markdown 子集**——`src/markdown.ts` 覆盖标题、围栏代码块、列表、引用、分隔线以及行内 code/bold/链接；表格、嵌套结构与流式感知的 transform 暂缓。
+- **测宽与 Markdown 归 pi-tui**——测宽/换行经 `blueComponents`，Markdown 经其 `createMarkdown`；pi-tui 自身的精度限制（如 emoji 簇宽度）原样继承，流式感知的 Markdown transform 暂缓。
 - **状态栏无扩展缝**——单行 model + 状态为写死实现；`blueStatus` 服务等待首个真实消费者驱动。状态行在 session 事件时刷新而非订阅 `agent/status`，因此状态翻转最晚在下一个 session 事件时显示。

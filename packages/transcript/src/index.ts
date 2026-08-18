@@ -12,7 +12,12 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { BlueComponent, BlueScreen, BlueSemanticColors } from '@deepseek-ai/dsh-blue-core'
+import type {
+  BlueComponent,
+  BlueComponents,
+  BlueScreen,
+  BlueSemanticColors,
+} from '@deepseek-ai/dsh-blue-core'
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
 import type {} from '@deepseek-ai/dsh-blue-app'
@@ -25,7 +30,7 @@ import {
 import { TranscriptFolder, type FoldUpdate } from './fold.ts'
 
 export type { FoldUpdate } from './fold.ts'
-export { foldSessionEvents, RESULT_SUMMARY_MAX_CHARS, TranscriptFolder } from './fold.ts'
+export { ellipsize, foldSessionEvents, RESULT_SUMMARY_MAX_CHARS, TranscriptFolder } from './fold.ts'
 export {
   AssistantMessageComponent,
   StatusBarComponent,
@@ -33,7 +38,6 @@ export {
   ToolCallComponent,
   UserMessageComponent,
 } from './components.ts'
-export { renderMarkdown } from './markdown.ts'
 export type {
   TranscriptAssistantItem,
   TranscriptItem,
@@ -41,23 +45,26 @@ export type {
   TranscriptToolResult,
   TranscriptUserItem,
 } from './types.ts'
-export { ellipsize, graphemeWidth, truncateToWidth, visibleWidth, wrapStyledText } from './width.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-transcript'
 
 /** Services the plugin requires before it can mount. */
-export const inject = ['blueScreen', 'blueTheme']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents']
 
 /** Create the component rendering one folded item. */
-function createComponent(item: FoldUpdate['item'], colors: BlueSemanticColors): BlueComponent {
+function createComponent(
+  item: FoldUpdate['item'],
+  colors: BlueSemanticColors,
+  components: BlueComponents,
+): BlueComponent {
   switch (item.kind) {
     case 'user':
-      return new UserMessageComponent(item, colors)
+      return new UserMessageComponent(item, colors, components)
     case 'assistant':
-      return new AssistantMessageComponent(item, colors)
+      return new AssistantMessageComponent(item, colors, components)
     case 'tool':
-      return new ToolCallComponent(item, colors)
+      return new ToolCallComponent(item, colors, components)
   }
 }
 
@@ -67,15 +74,16 @@ function createComponent(item: FoldUpdate['item'], colors: BlueSemanticColors): 
  * this session mounted.
  */
 function mountSession(ctx: Context, screen: BlueScreen, colors: BlueSemanticColors, agent: Agent): () => void {
+  const components = ctx.blueComponents
   const disposers: (() => void)[] = []
   const folder = new TranscriptFolder()
 
-  const statusBar = new StatusBarComponent(colors)
+  const statusBar = new StatusBarComponent(colors, components)
   statusBar.update(agent)
   disposers.push(screen.addChild(statusBar))
 
   const present = (update: FoldUpdate | null): void => {
-    if (update?.isNew) disposers.push(screen.addChild(createComponent(update.item, colors)))
+    if (update?.isNew) disposers.push(screen.addChild(createComponent(update.item, colors, components)))
   }
 
   // Snapshot first: resume seeds never replay session/event, so history
