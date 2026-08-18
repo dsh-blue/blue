@@ -8,10 +8,11 @@ import {
   MessageId,
   type AssistantMessage,
   type ContentBlock,
+  type ImageBlock,
   type ToolResultMessage,
   type UserMessage,
 } from '@deepseek-ai/dsh-llm'
-import type { BlueComponents, BlueMarkdown } from '@deepseek-ai/dsh-blue-core'
+import type { BlueComponents, BlueImage, BlueMarkdown } from '@deepseek-ai/dsh-blue-core'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 
 /** Matches every SGR sequence (global, for stripping before measurement). */
@@ -90,6 +91,12 @@ export function fakeBlueComponents(): BlueComponents {
     createEditor(): never {
       throw new Error('fake createEditor is out of scope for transcript tests')
     },
+    createImage(options: { data: Uint8Array }): BlueImage {
+      return {
+        render: () => [`<image ${options.data.length}B>`],
+        invalidate(): void {},
+      }
+    },
     createSelectList(): never {
       throw new Error('fake createSelectList is out of scope for transcript tests')
     },
@@ -148,6 +155,36 @@ function toolResultMessage(callId: string, text: string, isError = false): ToolR
 /** A `user/message` event. */
 export function userEvent(text: string, extra: ContentBlock[] = []): SessionEvent<'user/message'> {
   return event('user/message', userMessage(text, extra))
+}
+
+/** A `turn/start` event. */
+export function turnStart(turn: number): SessionEvent<'turn/start'> {
+  return event('turn/start', { turn })
+}
+
+/** A `step/start` event. */
+export function stepStart(turn: number, step: number): SessionEvent<'step/start'> {
+  return event('step/start', { turn, step })
+}
+
+/** A `step/end` event. */
+export function stepEnd(turn: number, step: number): SessionEvent<'step/end'> {
+  return event('step/end', { turn, step })
+}
+
+/** A `turn/end` event. */
+export function turnEnd(turn: number): SessionEvent<'turn/end'> {
+  return event('turn/end', { turn, reason: { kind: 'completed' } })
+}
+
+/** An image content block over an attachment ref. */
+export function imageBlock(attachment: ImageBlock['attachment']): ContentBlock {
+  return { type: 'image', attachment }
+}
+
+/** A minimal image attachment ref with just the id and media type. */
+export function imageRef(id: string, mediaType = 'image/png'): ImageBlock['attachment'] {
+  return { id, mediaType } as ImageBlock['attachment']
 }
 
 /** An `assistant/chunk` text-delta event. */

@@ -26,15 +26,19 @@ import type {
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { BlueSessionRef } from '@deepseek-ai/dsh-blue-app'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import { ACTION_TOGGLE_COLLAPSE, apply } from '../src/index.ts'
+import { ACTION_TOGGLE_COLLAPSE, apply, setWindowTurns } from '../src/index.ts'
 import * as statusBasic from '../src/status-basic.ts'
+import type { BlueIntentEntry } from '../src/types.ts'
 import {
   assistantEvent,
   fakeBlueComponents,
   resetSeq,
+  stepStart,
   textDelta,
   toolCallEvent,
   toolResultEvent,
+  turnEnd,
+  turnStart,
   userEvent,
 } from './helpers.ts'
 
@@ -182,12 +186,12 @@ function fixtureApply(ctx: Context): void {
  */
 async function bootTranscript(
   current: FakeAgent | null = null,
-  options: { fixture?: boolean } = {},
+  options: { fixture?: boolean, tools?: Record<string, unknown> } = {},
 ): Promise<Harness> {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-blue-transcript-'))
   writeFileSync(join(dir, 'blue-transcript.mjs'), `
 export const name = 'blue-transcript'
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'tools']
 export const apply = ctx => globalThis.__blueTranscriptApply(ctx)
 `)
   writeFileSync(join(dir, 'blue-status-basic.mjs'), `
@@ -232,6 +236,7 @@ export const apply = ctx => globalThis.__blueStatusFixtureApply(ctx)
     blueComponents: fakeBlueComponents(),
     blueKeymap: keymap,
     blueSession,
+    tools: { get: (name: string) => options.tools?.[name] },
   }
   for (const [serviceName, value] of Object.entries(serviceNames)) {
     ctx.reflect.provide(serviceName, value)
@@ -426,5 +431,139 @@ describe('blue-transcript plugin through the real Loader', () => {
     // The handler now reaches the new session's components.
     action?.handler?.()
     expect(contentLines(screen)).toContain('  ⎿ gamma')
+  })
+
+  it('creates tool cards through the blueIntents registry', async () => {
+    resetSeq()
+    const { ctx, screen } = await bootTranscript(null, {
+      tools: { bash: { presentCall: () => ({ card: 'stub-card' }) } },
+    })
+    const seen: { item: { name: string }, expanded: boolean }[] = []
+    const stub: BlueIntentEntry = {
+      intent: 'stub-card',
+      create: (props) => {
+        seen.push({ item: props.item, expanded: props.expanded })
+        return { render: () => ['STUB CARD'] }
+      },
+    }
+    ctx.effect(() => ctx.blueIntents.register(stub))
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([
+      toolCallEvent(1, 1, 'c1', 'bash', '{}'),
+    ])))
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.item.name).toBe('bash')
+    expect(seen[0]?.expanded).toBe(false)
+    expect(contentLines(screen)).toContain('STUB CARD')
+  })
+
+  it('evicts old turns once the window overflows', async () => {
+    resetSeq()
+    setWindowTurns(2)
+    try {
+      const { ctx, screen } = await bootTranscript()
+      const events: SessionEvent[] = []
+      for (let turn = 1; turn <= 4; turn += 1) {
+        events.push(turnStart(turn), userEvent(`t${turn}`), turnEnd(turn))
+      }
+      ctx.emit('blue/session-changed', asAgent(fakeAgent(events)))
+      // Window 2 keeps turns 3 and 4 (2 user components).
+      expect(screen.children).toHaveLength(2)
+      expect(contentLines(screen).join('\n')).toContain('t3')
+      expect(contentLines(screen).join('\n')).not.toContain('t1')
+    } finally {
+      setWindowTurns(undefined)
+    }
+  })
+
+  it('mounts the step summary and disposes the folded tool components', async () => {
+    resetSeq()
+    const { ctx, screen } = await bootTranscript()
+    const events: SessionEvent[] = [
+      turnStart(1),
+      stepStart(1, 1),
+      toolCallEvent(1, 1, 'a1', 'Read', '{}'),
+      toolCallEvent(1, 1, 'a2', 'Read', '{}'),
+      stepStart(1, 2),
+      assistantEvent(1, 2, [{ type: 'text', text: 'done' }]),
+      turnEnd(1),
+    ]
+    ctx.emit('blue/session-changed', asAgent(fakeAgent(events)))
+    const lines = contentLines(screen).join('\n')
+    expect(lines).toContain('… step 1 · Read ×2')
+    expect(lines).not.toContain('○ Read')
+    expect(screen.children).toHaveLength(2)
+  })
+
+  it('toggles intent components that expose setExpanded', async () => {
+    resetSeq()
+    const { ctx, screen, keymap } = await bootTranscript(null, {
+      tools: { bash: { presentCall: () => ({ card: 'flippy' }) } },
+    })
+    const flips: boolean[] = []
+    ctx.effect(() => ctx.blueIntents.register({
+      intent: 'flippy',
+      create: () => ({
+        render: () => ['flip card'],
+        setExpanded: (expanded: boolean) => { flips.push(expanded) },
+      }),
+    }))
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([toolCallEvent(1, 1, 'c1', 'bash', '{}')])))
+    const action = keymap.actions.find(a => a.id === ACTION_TOGGLE_COLLAPSE)
+    action?.handler?.()
+    action?.handler?.()
+    expect(flips).toEqual([true, false])
+    expect(contentLines(screen)).toContain('flip card')
+  })
+
+  it('loads user-message images through the attachments service', async () => {
+    resetSeq()
+    const { ctx, screen } = await bootTranscript()
+    const renderRequests: number[] = []
+    const original = screen.requestRender.bind(screen)
+    screen.requestRender = (force?: boolean) => {
+      renderRequests.push(force ? 1 : 0)
+      original(force)
+    }
+    ctx.reflect.provide('attachments', {
+      readImage: async (_ref: { id: string }) => ({ data: new Uint8Array([1, 2, 3]) }),
+    })
+    const agent = fakeAgent([userEvent('pic', [{ type: 'image', attachment: { id: 'a1', mediaType: 'image/png' } as never }])])
+    ctx.emit('blue/session-changed', asAgent(agent))
+    // First render kicks the load; the settle nudges requestRender and the
+    // loaded image's fake rows replace the placeholder.
+    const before = contentLines(screen)
+    expect(before).toContain('  [image]')
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(renderRequests.length).toBeGreaterThan(0)
+    expect(contentLines(screen)).toContain('<image 3B>')
+    disposers.length = 0
+    await ctx.fiber.dispose()
+  })
+
+  it('keeps the placeholder when readImage rejects', async () => {
+    resetSeq()
+    const { ctx, screen } = await bootTranscript()
+    ctx.reflect.provide('attachments', {
+      readImage: async () => { throw new Error('missing') },
+    })
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([
+      userEvent('pic', [{ type: 'image', attachment: { id: 'a1' } as never }]),
+    ])))
+    contentLines(screen)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    // One placeholder from the message text plus one from the failed load.
+    expect(contentLines(screen)).toEqual(['', '❯ pic', '  [image]', '  [image]'])
+    disposers.length = 0
+    await ctx.fiber.dispose()
+  })
+
+  it('keeps image placeholders when no attachments service exists', async () => {    resetSeq()
+    const { ctx, screen } = await bootTranscript()
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([
+      userEvent('pic', [{ type: 'image', attachment: { id: 'a1' } as never }]),
+    ])))
+    expect(contentLines(screen)).toEqual(['', '❯ pic', '  [image]'])
+    disposers.length = 0
+    await ctx.fiber.dispose()
   })
 })

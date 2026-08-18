@@ -11,15 +11,18 @@
  * @module @deepseek-ai/dsh-blue-transcript/components
  */
 
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {
   BlueComponent,
   BlueComponents,
+  BlueImage,
   BlueMarkdown,
   BlueSemanticColors,
 } from '@deepseek-ai/dsh-blue-core'
 import { ellipsize } from './fold.ts'
 import type {
   TranscriptAssistantItem,
+  TranscriptStepSummaryItem,
   TranscriptToolItem,
   TranscriptUserItem,
 } from './types.ts'
@@ -30,6 +33,23 @@ const ITALIC_CLOSE = '\x1b[23m'
 /** Maximum length of the tool-call arguments shown on the call line. */
 export const TOOL_ARGUMENTS_MAX_CHARS = 60
 
+/** Maximum rendered height of one user-message image, in terminal cells. */
+export const USER_IMAGE_MAX_HEIGHT_CELLS = 12
+
+/**
+ * Loads one image attachment's bytes. Resolves `undefined` when the bytes
+ * are unavailable (missing store, read failure) — the placeholder stays.
+ */
+export type UserImageLoader = (ref: ImageAttachmentRef) => Promise<Uint8Array | undefined>
+
+/** Optional image-rendering wiring for {@link UserMessageComponent}. */
+export interface UserMessageImages {
+  /** The attachment byte loader; absent loaders keep the `[image]` rows. */
+  loadImage?: UserImageLoader
+  /** Nudge called after an image resolves so the screen re-renders. */
+  onReady?(): void
+}
+
 /** Cache keyed on the inputs a component's rendered lines depend on. */
 interface RenderCache {
   key: string
@@ -38,23 +58,41 @@ interface RenderCache {
 
 /**
  * Renders one user prompt: an accent `❯` gutter followed by the wrapped
- * text, with a blank separator line above.
+ * text, with a blank separator line above. When the item carries image
+ * attachments and a loader was provided, loads kick off lazily on the first
+ * render; each image renders its loaded lines below the text (a muted
+ * `[image]` row while loading or after failure), and a resolve bumps the
+ * cache version, invalidates, and nudges `onReady`.
  */
 export class UserMessageComponent implements BlueComponent {
   private readonly item: TranscriptUserItem
   private readonly colors: BlueSemanticColors
   private readonly components: BlueComponents
+  private readonly loadImage: UserImageLoader | undefined
+  private readonly onReady: (() => void) | undefined
+  /** Per-image outcome: the image component, null for a failed load. */
+  private readonly resolved = new Map<number, BlueImage | null>()
+  private imagesRequested = false
+  private imageVersion = 0
   private cache: RenderCache | null = null
 
   /**
    * @param item - the folded user item to render.
    * @param colors - the semantic color table.
    * @param components - the component factory providing the width helpers.
+   * @param images - optional image loader and readiness nudge.
    */
-  constructor(item: TranscriptUserItem, colors: BlueSemanticColors, components: BlueComponents) {
+  constructor(
+    item: TranscriptUserItem,
+    colors: BlueSemanticColors,
+    components: BlueComponents,
+    images: UserMessageImages = {},
+  ) {
     this.item = item
     this.colors = colors
     this.components = components
+    this.loadImage = images.loadImage
+    this.onReady = images.onReady
   }
 
   /** Drop the cached lines; the next render rebuilds from the item. */
@@ -62,18 +100,49 @@ export class UserMessageComponent implements BlueComponent {
     this.cache = null
   }
 
+  /** Kick off all image loads once; each settle stores its outcome. */
+  private requestImages(load: UserImageLoader): void {
+    if (this.imagesRequested) return
+    this.imagesRequested = true
+    this.item.images.forEach((ref, index) => {
+      const settle = (data: Uint8Array | undefined): void => {
+        this.resolved.set(index, data === undefined
+          ? null
+          : this.components.createImage({
+            data,
+            mediaType: ref.mediaType,
+            ...(ref.name === undefined ? {} : { filename: ref.name }),
+            maxHeightCells: USER_IMAGE_MAX_HEIGHT_CELLS,
+          }))
+        this.imageVersion += 1
+        this.invalidate()
+        this.onReady?.()
+      }
+      void load(ref).then(settle, () => settle(undefined))
+    })
+  }
+
   /**
    * @param width - current viewport width in columns.
    * @returns the rendered rows.
    */
   render(width: number): string[] {
-    const key = `${this.item.seq}:${width}`
+    const key = `${this.item.seq}:${width}:${this.imageVersion}`
     if (this.cache?.key === key) return this.cache.lines
     const gutter = `${this.colors.accent('❯')} `
     const contentWidth = Math.max(1, width - this.components.visibleWidth('❯ '))
     const wrapped = this.components.wrapText(this.item.text, contentWidth)
     const lines = ['', ...wrapped.map((line, index) =>
       index === 0 ? gutter + line : '  ' + line)]
+    const load = this.loadImage
+    if (load !== undefined && this.item.images.length > 0) {
+      this.requestImages(load)
+      for (let index = 0; index < this.item.images.length; index += 1) {
+        const image = this.resolved.get(index)
+        if (image) lines.push(...image.render(width))
+        else lines.push(`  ${this.colors.muted('[image]')}`)
+      }
+    }
     this.cache = { key, lines }
     return lines
   }
@@ -225,5 +294,52 @@ export class ToolCallComponent implements BlueComponent {
     }
     this.cache = { key, lines }
     return lines
+  }
+}
+
+/**
+ * Renders one folded-away mid-turn step as a single muted line:
+ * `… step N · Read ×2, Edit ×1` — occurrences counted per tool name in
+ * first-seen order (`toolNames` keeps duplicates; this is the counting
+ * step). The item is immutable, so the cache keys on width alone.
+ */
+export class StepSummaryComponent implements BlueComponent {
+  private readonly item: TranscriptStepSummaryItem
+  private readonly colors: BlueSemanticColors
+  private readonly components: BlueComponents
+  private cache: RenderCache | null = null
+
+  /**
+   * @param item - the folded step-summary item to render.
+   * @param colors - the semantic color table (the line is muted).
+   * @param components - the component factory providing the width helpers.
+   */
+  constructor(item: TranscriptStepSummaryItem, colors: BlueSemanticColors, components: BlueComponents) {
+    this.item = item
+    this.colors = colors
+    this.components = components
+  }
+
+  /** Drop the cached lines; the next render rebuilds from the item. */
+  invalidate(): void {
+    this.cache = null
+  }
+
+  /**
+   * @param width - current viewport width in columns.
+   * @returns the single summary row, truncated to `width`.
+   */
+  render(width: number): string[] {
+    const key = `${width}`
+    if (this.cache?.key === key) return this.cache.lines
+    const counts = new Map<string, number>()
+    for (const name of this.item.toolNames) {
+      counts.set(name, (counts.get(name) ?? 0) + 1)
+    }
+    const tools = [...counts].map(([name, count]) => `${name} ×${count}`).join(', ')
+    const line = this.colors.muted(
+      this.components.truncateToWidth(`… step ${this.item.step} · ${tools}`, width))
+    this.cache = { key, lines: [line] }
+    return this.cache.lines
   }
 }

@@ -8,7 +8,7 @@ Blue 终端 UI transcript 层，构建于 `dsh-blue-core` 之上：从 session �
 
 `src/fold.ts` 是纯函数管线，不依赖 UI。`TranscriptFolder.apply(event)` 折叠一个 `SessionEvent`（来自 `@deepseek-ai/dsh-session`，仅类型导入）并报告新建或变更的 `TranscriptItem`；`foldSessionEvents(events)` 是一次性形式。
 
-- `user/message` → user 条目（text 块拼接，图片显示为 `[image]`）。
+- `user/message` → user 条目（text 块拼接，图片显示为 `[image]`；图片块同时以 `ImageAttachmentRef[]` 保留在条目上，组件经可选的 `attachments` 服务（`ctx.get` 惰性解析，非 inject）加载真实字节并渲染实际图片（上限 12 行），服务缺失或加载失败时保持 `[image]` 占位）。
 - `assistant/chunk` 的 text/reasoning 增量累积进每个 step 的流式 assistant 条目；收尾的 `assistant/message` 用权威组装消息重写该条目。
 - `tool/call` + `tool/result` 按 `callId` 配对为一个 tool 条目：generic 呈现，参数截断、结果摘要为一行（字符串形式的 `meta` 呈现载荷优先于面向模型的结果文本）；fold 同时把未摘要的结果原文保留为 `fullText` 供展开。未配对的结果也会渲染。
 - turn/step 边界、request 记录、log-only 标记以及 merge 扩展的未知类型一概不渲染。
@@ -16,6 +16,16 @@ Blue 终端 UI transcript 层，构建于 `dsh-blue-core` 之上：从 session �
 ## 组件与挂载
 
 `src/components.ts` 实现 `BlueComponent`：`UserMessageComponent`（accent `❯` 边栏）、`AssistantMessageComponent`（Markdown 委托给 `blueComponents.createMarkdown`——pi-tui 自带、按 `setText` 缓存；reasoning 为 muted 斜体；流式 `▌` 光标）、`ToolCallComponent`（`○`/`●` 状态圆点加缩进的 `⎿` 摘要；`setExpanded` 在摘要与未摘要的 `fullText` 之间切换）。文本测宽、换行与截断来自 `blueComponents` 纯函数（`visibleWidth` / `wrapText` / `truncateToWidth`）；`ellipsize` 收在 `src/fold.ts`，并从包根再导出。
+
+## render intent
+
+`ctx.blueIntents`（`src/intents.ts`，`BlueIntentsService`）是 render-intent 注册表：`register({ intent, create(props) })` 返回幂等 disposer（重复 intent 抛 `BlueIntentsError('DUPLICATE_INTENT')`）；`resolve(intent)` 按精确匹配 → `'generic'` 条目 → 首个注册条目的顺序解析，未知 intent 永不抛错（仅空注册表才 `NO_INTENTS`）。挂载器经它解析 tool 条目组件；内置 `'generic'` 呈现器（即上述 `ToolCallComponent`）在 apply 中第一个注册，成为 plain 基线。注册不追溯已挂载条目——组件在挂载时解析，新注册的 intent 只作用于后续条目。插件 inject 宿主 `'tools'` 服务，fold 条目携带 `parsedArguments`、`rawResult`（重建的 `ToolResult`）与 `view`（call 时为 `ToolCallView`，工具的 `presentResult` 返回时替换为 `ToolResultView`），经包内纯解析器（`src/present.ts`）解析——未知工具、缺失 presenter 或抛错的 presenter 一律回退 generic。Ctrl-O 折叠切换泛化为任何暴露 `setExpanded` 的 intent 组件。
+
+两个 intent 呈现器以子路径插件发布：`./intent-diff`（`blue-intent-diff`，inject `['blueIntents', 'blueTheme', 'blueComponents']`）注册 `'diff'` intent——`DiffCardComponent` 经纯 LCS 行 diff（`src/line-diff.ts`）渲染 `FileDiff` 对，用 theme 的 diff token 着色，折叠时每文件 12 行、展开 200 行；`./intent-terminal`（`blue-intent-terminal`）注册 `'terminal'` intent——`TerminalCardComponent`：description/cwd/`$ command` 头，输出行折叠 10、展开 120，exit 徽章经 error/warning 色着色。
+
+## 长会话窗口与 step 折叠
+
+`src/window.ts` 只保持最新已完成 turn 挂载（`DEFAULT_WINDOW_TURNS` = 15；模块级 setter 供测试）。每次折叠事件后——快照重放与增量流同构——挂载器静默逐出更旧 turn 的条目与组件。turn 内：下一个 `step/start` 到达时，上一 step 的工具条目折叠为单个 `step-summary` 条目（`… step N · Tool ×M` 行）；turn 的最后一个 step 保持展开（kimi-parity：每 turn 可见尾部保留工具卡）。step 折叠可经 `setStepFoldingEnabled` 模块级开关。挂载簿记保持 item→component 条目表而非扁平 disposers 数组，折叠与逐出据此精确退役被替换的组件。`tests/perf.spec.ts` 折叠并挂载合成 200-turn 流：窗口保持约 90 个挂载组件（无窗口时 1200），两者均在数十毫秒量级（仅记录，不设时延断言）。
 
 状态行不是写死的组件，而是一条扩展缝。`src/status.ts` 提供 `blueStatus` 服务（`register(entry)`，id 唯一、带 priority；重复 id 抛 `BlueStatusError`，code 为 `DUPLICATE_ENTRY`）与它驱动的 `FooterShellComponent`；插件的 `apply` 经 `blueScreen.addBottomChild` 一次性挂载该壳，底钉在输入编辑器上方（dock 按挂载序渲染 bottom child，bundle patch 经 `blueComponents` 激活轮钉住该顺序——同组 patch 行并发挂载，行序本身不能保证 dock 顺序）。shell 按 priority 升序（同优先级保持注册顺序）把已注册条目排进至多两行，以 muted 的 ` · ` 连接，放不下的溢出到第二行，两行都放不下的按最低优先级丢弃；无注册或无可见条目时渲染零行；注册与注销都会触发重渲染。条目本身以子路径插件发布，供组装 bundle 列为独立 patch 行：`./status-basic`（`blue-status-basic`，优先级 0：`{model} · {agent 状态}`，model 优先取持久化的 request header——`session.requestHeader()?.config.model ?? agent.options.model ?? agent.options.provider ?? 'no model'`——状态由真实的 `'agent/status'` 订阅驱动）、`./status-git`（`blue-status-git`，优先级 10：每次会话挂载时经 `git branch --show-current` 探测当前分支，非 git 仓库不显示）、`./status-context`（`blue-status-context`，优先级 20：最新一步的 context 占用，取最新 `assistant/message` usage 的 `inputTokens + cacheReadTokens + cacheWriteTokens`，格式 `ctx N` / `ctx N.Nk`）。
 

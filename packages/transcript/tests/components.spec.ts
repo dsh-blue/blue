@@ -10,10 +10,16 @@ import { describe, expect, it } from 'vitest'
 import type { BlueComponents, BlueSemanticColors } from '@deepseek-ai/dsh-blue-core'
 import {
   AssistantMessageComponent,
+  StepSummaryComponent,
   ToolCallComponent,
   UserMessageComponent,
 } from '../src/components.ts'
-import type { TranscriptAssistantItem, TranscriptToolItem, TranscriptUserItem } from '../src/types.ts'
+import type {
+  TranscriptAssistantItem,
+  TranscriptStepSummaryItem,
+  TranscriptToolItem,
+  TranscriptUserItem,
+} from '../src/types.ts'
 import { fakeBlueComponents } from './helpers.ts'
 
 /** Identity colors: assertions see structure, not escape codes. */
@@ -59,6 +65,45 @@ function toolItem(partial: Partial<TranscriptToolItem> = {}): TranscriptToolItem
 }
 
 describe('UserMessageComponent', () => {
+  it('loads images on first render and keeps placeholders on failure', async () => {
+    const calls: string[] = []
+    const loaders: ((data?: Uint8Array) => void)[] = []
+    const component = new UserMessageComponent(
+      { kind: 'user', seq: 1, text: 'pics', images: [
+        { id: 'a', mediaType: 'image/png', name: 'shot.png' } as never,
+        { id: 'b', mediaType: 'image/png' } as never,
+      ] },
+      tagged(),
+      setup(),
+      {
+        loadImage: (ref) => new Promise(resolve => {
+          calls.push((ref as { id: string }).id)
+          loaders.push(resolve)
+        }),
+        onReady: () => {},
+      },
+    )
+    // First render kicks both loads; both stay placeholders.
+    let lines = component.render(80)
+    expect(calls).toEqual(['a', 'b'])
+    expect(lines.filter(line => line.includes('[image]'))).toHaveLength(2)
+    // Named and unnamed refs both reach the fake createImage (filename
+    // spread only when the ref names one).
+    loaders[0]?.(new Uint8Array([1]))
+    loaders[1]?.(new Uint8Array([2]))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    lines = component.render(80)
+    expect(lines).toEqual(['', '[A]❯[/A] pics', '<image 1B>', '<image 1B>'])
+    // A rejected load keeps the placeholder.
+    const failing = new UserMessageComponent(
+      { kind: 'user', seq: 2, text: 'x', images: [{ id: 'c' } as never] },
+      tagged(),
+      setup(),
+      { loadImage: () => Promise.reject(new Error('gone')) },
+    )
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(failing.render(80).some(line => line.includes('[image]'))).toBe(true)
+  })
   it('renders an accent gutter, wrapped text, and a leading separator', () => {
     const lines = new UserMessageComponent(userItem('hello world'), tagged(), setup()).render(80)
     expect(lines).toEqual(['', '[A]❯[/A] hello world'])
@@ -209,5 +254,21 @@ describe('ToolCallComponent', () => {
     const component = new ToolCallComponent(item, tagged(), setup())
     component.setExpanded(true)
     expect(component.render(80)[2]).toBe('  [B]⎿[/B] [M]only summary[/M]')
+  })
+})
+
+describe('StepSummaryComponent', () => {
+  const item: TranscriptStepSummaryItem = {
+    kind: 'step-summary', seq: 1, turn: 1, step: 2, toolNames: ['Read', 'Read', 'Edit'],
+  }
+
+  it('renders one muted summary line counting duplicate tools', () => {
+    const component = new StepSummaryComponent(item, tagged(), setup())
+    const lines = component.render(80)
+    expect(lines).toEqual(['[M]… step 2 · Read ×2, Edit ×1[/M]'])
+    // Width-cached; invalidate forces a rebuild.
+    expect(component.render(80)).toBe(lines)
+    component.invalidate()
+    expect(component.render(80)).toEqual(lines)
   })
 })
