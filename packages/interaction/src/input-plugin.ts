@@ -12,7 +12,11 @@
  * pi-tui Editor sees the sequence. The mounted editor and the submit router
  * are published through
  * `./editor-instance.ts` so `blue-editor-plus` can layer input modes and
- * autocomplete over the same component. The unsubmitted draft is mirrored
+ * autocomplete over the same component. When the `blue-pane-queue`
+ * enhancement is loaded, an Up press with an empty buffer recalls the most
+ * recently queued inbox message as the draft (gated on its keyless
+ * `blue.queue.recall` action; the baseline leaves Up to the editor's
+ * history). The unsubmitted draft is mirrored
  * into `./draft-stash.ts`, so a theme-swap reload (the theme provider fiber
  * disposes, Cordis re-runs this `blueTheme` dependent) restores the text
  * into the freshly mounted editor. The same reload can land while a slash
@@ -30,7 +34,8 @@ import { parseCommand } from '@deepseek-ai/dsh-commands'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { clearSharedEditor, setSharedEditor } from './editor-instance.ts'
 import { clearDraft, getStashedDraft, stashDraft } from './draft-stash.ts'
-import { ACTION_CANCEL, ACTION_INTERRUPT, ACTION_STEER } from './keys.ts'
+import { ACTION_CANCEL, ACTION_INTERRUPT, ACTION_MOVE_UP, ACTION_STEER } from './keys.ts'
+import { ACTION_QUEUE_RECALL, queuedMessageText } from './pane-queue.ts'
 import { currentBlueAgent } from './session.ts'
 
 /** Slash-command hint rows shown at once. */
@@ -183,6 +188,34 @@ export function apply(ctx: Context): void {
   }
 
   /**
+   * Recall the most recently queued inbox message into an empty editor:
+   * remove it from the inbox and make its text the draft. Steering
+   * (next-step) is preferred over queued turns as the fresher intent.
+   * @returns whether the recall consumed the key.
+   */
+  function recallQueued(): boolean {
+    // Only with an empty buffer — a drafted line keeps Up on history.
+    if (editor.getText().length > 0) return false
+    const agent = currentBlueAgent(ctx)
+    if (agent === undefined || !agent.inbox.hasPending) return false
+    const latest = agent.inbox.nextStep.at(-1) ?? agent.inbox.nextTurn.at(-1)
+    /* v8 ignore next -- hasPending guarantees one pending list is non-empty */
+    if (latest === undefined) return false
+    const text = queuedMessageText(latest)
+    if (text.length === 0) return false
+    // Lost the race with a claim: leave the editor alone.
+    if (!agent.inbox.remove(latest.id)) return false
+    editor.setText(text)
+    // Re-sync mirrors submitPrompt's caution about component-owned onChange
+    // timing; the recalled text is a draft, so the reload stash keeps it.
+    currentText = editor.getText()
+    stashDraft(currentText)
+    refreshHint()
+    ctx.blueScreen.requestRender()
+    return true
+  }
+
+  /**
    * The editor-context key chain, resolved through the keymap before the
    * pi-tui Editor sees the sequence (it swallows Ctrl-C with no behavior,
    * so interception must happen here). Returns true to consume.
@@ -244,6 +277,14 @@ export function apply(ctx: Context): void {
       clearDraft()
       return true
     }
+    // Up: recall the latest queued message into an empty buffer when the
+    // pane-queue enhancement is loaded — its keyless contextual action is
+    // the enable signal, and the key matches through the existing move-up
+    // binding. The baseline leaves Up to the editor's history navigation.
+    if (keymap.matches(data, ACTION_MOVE_UP)
+      && keymap.list().some(action => action.id === ACTION_QUEUE_RECALL)) {
+      return recallQueued()
+    }
     return false
   }
 
@@ -280,7 +321,7 @@ export function apply(ctx: Context): void {
     const removeEditor = screen.addBottomChild(editor)
     const removeHint = screen.addBottomChild(hintLine)
     screen.setFocus(editor)
-    setSharedEditor({ editor, submitPrompt })
+    setSharedEditor({ editor, submitPrompt, notice: setNotice })
     ctx.emit('blue/input-editor-changed')
     return () => {
       clearSharedEditor()

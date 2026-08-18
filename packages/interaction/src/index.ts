@@ -2,13 +2,15 @@
  * @deepseek-ai/dsh-blue-interaction — Blue terminal UI interaction layer
  * over `dsh-blue-core`: the bottom input editor with slash-command dispatch
  * (`blue-input`, pi-tui Editor behind `ctx.blueComponents`), the built-in
- * `/quit`, `/resume`, and `/theme` commands (`blue-commands`), the
- * `ctx.userQuestions`
- * overlay provider (`blue-questions`), and the interactive
- * `approval/request` answerer (`blue-approval`). The optional bash-mode and
- * autocomplete enhancement layer ships as the `./editor-plus` subpath
- * plugin (`blue-editor-plus`). All registrations are effect-bound, so
- * unloading the fiber reverts every contribution.
+ * `/quit`, `/resume`, `/new`, `/fork`, `/sessions`, `/help`, and `/theme`
+ * commands (`blue-commands`), the `ctx.userQuestions`
+ * overlay provider (`blue-questions`, one tabbed questionnaire overlay per
+ * request), and the interactive four-choice `approval/request` answerer
+ * (`blue-approval`). The optional bash-mode and autocomplete enhancement
+ * layer ships as the `./editor-plus` subpath plugin (`blue-editor-plus`),
+ * and the queued-message pane with the empty-editor Up recall as the
+ * `./pane-queue` subpath plugin (`blue-pane-queue`). All registrations are
+ * effect-bound, so unloading the fiber reverts every contribution.
  *
  * @module @deepseek-ai/dsh-blue-interaction
  */

@@ -11,7 +11,10 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { BlueComponent } from '@deepseek-ai/dsh-blue-core'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime, { type CommandResult } from '@deepseek-ai/dsh-commands'
+import type { UserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import * as inputPlugin from '../src/input-plugin.ts'
+import * as paneQueuePlugin from '../src/pane-queue.ts'
 import { getSharedEditor } from '../src/editor-instance.ts'
 import { clearDraft } from '../src/draft-stash.ts'
 import { fakeBlueContext, KEY, type FakeBlueEditor, type FakeScreen } from './fakes.ts'
@@ -22,7 +25,34 @@ afterEach(() => {
   clearDraft()
 })
 
-async function mount(options: { withAgent?: boolean, running?: boolean, appExit?: (code: number) => void } = {}): Promise<{
+/** In-memory inbox double with a stubbed, recordable removal. */
+function fakeInbox(options: {
+  nextTurn?: UserMessage[]
+  nextStep?: UserMessage[]
+  remove?: (id: string) => boolean
+} = {}) {
+  const nextTurn = options.nextTurn ?? []
+  const nextStep = options.nextStep ?? []
+  return {
+    nextTurn,
+    nextStep,
+    remove: vi.fn(options.remove ?? (() => true)),
+    get hasPending(): boolean {
+      return nextTurn.length > 0 || nextStep.length > 0
+    },
+  }
+}
+
+function queued(text: string): UserMessage {
+  return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
+}
+
+async function mount(options: {
+  withAgent?: boolean
+  running?: boolean
+  appExit?: (code: number) => void
+  inbox?: ReturnType<typeof fakeInbox>
+} = {}): Promise<{
   ctx: Context
   screen: FakeScreen
   editor: FakeBlueEditor
@@ -47,6 +77,7 @@ async function mount(options: { withAgent?: boolean, running?: boolean, appExit?
     followup,
     cancel,
     steer,
+    inbox: options.inbox ?? fakeInbox(),
   } as unknown as Agent
   ctx.provide('blueSession', { current: options.withAgent === false ? null : agent })
   if (options.appExit !== undefined) ctx.provide('appExit', options.appExit)
@@ -420,6 +451,80 @@ describe('blue-input plugin', () => {
       type(editor, 'draft')
       expect(editor.onKey?.(KEY.ctrlS)).toBe(false)
       expect(editor.getText()).toBe('draft')
+    })
+  })
+
+  describe('queued-message recall (pane-queue enhancement)', () => {
+    it('leaves Up to the editor history when pane-queue is not loaded', async () => {
+      const inbox = fakeInbox({ nextTurn: [queued('queued draft')] })
+      const { editor } = await mount({ inbox })
+      expect(editor.onKey?.(KEY.up)).toBe(false)
+      expect(inbox.remove).not.toHaveBeenCalled()
+      expect(editor.getText()).toBe('')
+    })
+
+    it('recalls the latest queued message into an empty buffer on Up', async () => {
+      const first = queued('first')
+      const latest = queued('latest')
+      const inbox = fakeInbox({ nextTurn: [first, latest] })
+      const { ctx, editor } = await mount({ inbox })
+      await ctx.plugin(paneQueuePlugin)
+      expect(editor.onKey?.(KEY.up)).toBe(true)
+      expect(inbox.remove).toHaveBeenCalledWith(latest.id)
+      expect(editor.getText()).toBe('latest')
+    })
+
+    it('prefers pending steering over queued turns as the fresher intent', async () => {
+      const steering = queued('steer me')
+      const inbox = fakeInbox({ nextTurn: [queued('a turn')], nextStep: [steering] })
+      const { ctx, editor } = await mount({ inbox })
+      await ctx.plugin(paneQueuePlugin)
+      expect(editor.onKey?.(KEY.up)).toBe(true)
+      expect(inbox.remove).toHaveBeenCalledWith(steering.id)
+      expect(editor.getText()).toBe('steer me')
+    })
+
+    it('passes Up through when the buffer is not empty', async () => {
+      const inbox = fakeInbox({ nextTurn: [queued('queued')] })
+      const { ctx, editor } = await mount({ inbox })
+      await ctx.plugin(paneQueuePlugin)
+      type(editor, 'draft')
+      expect(editor.onKey?.(KEY.up)).toBe(false)
+      expect(inbox.remove).not.toHaveBeenCalled()
+      expect(editor.getText()).toBe('draft')
+    })
+
+    it('passes Up through when nothing is pending', async () => {
+      const inbox = fakeInbox()
+      const { ctx, editor } = await mount({ inbox })
+      await ctx.plugin(paneQueuePlugin)
+      expect(editor.onKey?.(KEY.up)).toBe(false)
+      expect(inbox.remove).not.toHaveBeenCalled()
+    })
+
+    it('passes Up through without an attached session', async () => {
+      const { ctx, editor } = await mount({ withAgent: false })
+      await ctx.plugin(paneQueuePlugin)
+      expect(editor.onKey?.(KEY.up)).toBe(false)
+    })
+
+    it('leaves the editor alone when the removal loses the race with a claim', async () => {
+      const pending = queued('claimed already')
+      const inbox = fakeInbox({ nextTurn: [pending], remove: () => false })
+      const { ctx, editor } = await mount({ inbox })
+      await ctx.plugin(paneQueuePlugin)
+      expect(editor.onKey?.(KEY.up)).toBe(false)
+      expect(inbox.remove).toHaveBeenCalledWith(pending.id)
+      expect(editor.getText()).toBe('')
+    })
+
+    it('ignores a queued message without visible text', async () => {
+      const empty = { ...queued(''), content: [] } as UserMessage
+      const inbox = fakeInbox({ nextTurn: [empty] })
+      const { ctx, editor } = await mount({ inbox })
+      await ctx.plugin(paneQueuePlugin)
+      expect(editor.onKey?.(KEY.up)).toBe(false)
+      expect(inbox.remove).not.toHaveBeenCalled()
     })
   })
 })

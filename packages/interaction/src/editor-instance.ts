@@ -39,6 +39,13 @@ export interface SharedEditor {
    * @param text - the expanded editor content.
    */
   readonly submitPrompt: (text: string) => void
+  /**
+   * Flash a one-shot notice in the hint line; used by overlay-driven flows
+   * (e.g. the `/sessions` picker) whose outcome settles after the command
+   * handler already returned.
+   * @param text - the notice text; styling is the caller's.
+   */
+  readonly notice?: (text: string) => void
 }
 
 let shared: SharedEditor | undefined

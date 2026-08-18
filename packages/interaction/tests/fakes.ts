@@ -30,35 +30,18 @@ import type {
 } from '@deepseek-ai/dsh-blue-core'
 import type { BlueScreenService, BlueKeymapService, BlueComponentsService } from '@deepseek-ai/dsh-blue-core'
 import {
-  ACTION_CANCEL,
-  ACTION_INTERRUPT,
-  ACTION_MOVE_DOWN,
-  ACTION_MOVE_UP,
-  ACTION_STEER,
-  ACTION_SUBMIT,
-  ACTION_TOGGLE,
+  INTERACTION_KEY_ACTIONS,
 } from '../src/keys.ts'
 
-/** Decoded sequences the fake keymap binds to each interaction action. */
-const FAKE_KEY_SEQUENCES: Record<string, string[]> = {
-  [ACTION_SUBMIT]: ['\r'],
-  [ACTION_CANCEL]: ['\x1b'],
-  [ACTION_MOVE_UP]: ['\x1b[A'],
-  [ACTION_MOVE_DOWN]: ['\x1b[B'],
-  [ACTION_TOGGLE]: [' '],
-  [ACTION_INTERRUPT]: ['\x03'],
-  [ACTION_STEER]: ['\x13'],
-}
-
-/** Key-id labels the fake keymap reports for hint text. */
-const FAKE_KEY_IDS: Record<string, string[]> = {
-  [ACTION_SUBMIT]: ['enter'],
-  [ACTION_CANCEL]: ['escape'],
-  [ACTION_MOVE_UP]: ['up'],
-  [ACTION_MOVE_DOWN]: ['down'],
-  [ACTION_TOGGLE]: ['space'],
-  [ACTION_INTERRUPT]: ['ctrl+c'],
-  [ACTION_STEER]: ['ctrl+s'],
+/** Decoded input sequences matching each key id the interaction batch binds. */
+const SEQUENCE_BY_KEY_ID: Record<string, string> = {
+  enter: '\r',
+  escape: '\x1b',
+  up: '\x1b[A',
+  down: '\x1b[B',
+  space: ' ',
+  'ctrl+c': '\x03',
+  'ctrl+s': '\x13',
 }
 
 /** Convenience aliases for the fake key sequences. */
@@ -67,15 +50,22 @@ export const KEY = {
   escape: '\x1b',
   up: '\x1b[A',
   down: '\x1b[B',
+  tab: '\t',
+  shiftTab: '\x1b[Z',
   space: ' ',
   ctrlC: '\x03',
   ctrlS: '\x13',
 } as const
 
-/** Fake keymap: exact-sequence matching for `matches`, key-id labels for `getKeys`. */
+/**
+ * Fake keymap: registered actions match the decoded sequences their key ids
+ * stand for (`matches`), report key-id labels (`getKeys`), and snapshot
+ * descriptions for keybinding UIs (`list`).
+ */
 export class FakeKeymap implements BlueKeymap {
   private readonly sequences = new Map<string, string[]>()
   private readonly ids = new Map<string, string[]>()
+  private readonly descriptions = new Map<string, string>()
   private readonly handlers = new Map<string, () => void>()
 
   /**
@@ -84,21 +74,27 @@ export class FakeKeymap implements BlueKeymap {
    */
   constructor(withDefaults = true) {
     if (!withDefaults) return
-    for (const [action, keys] of Object.entries(FAKE_KEY_SEQUENCES)) this.sequences.set(action, [...keys])
-    for (const [action, keys] of Object.entries(FAKE_KEY_IDS)) this.ids.set(action, [...keys])
+    for (const action of INTERACTION_KEY_ACTIONS) {
+      const keys = typeof action.keys === 'string' ? [action.keys] : [...action.keys]
+      this.ids.set(action.id, keys)
+      this.sequences.set(action.id, keys.map(key => SEQUENCE_BY_KEY_ID[key] ?? key))
+      if (action.description !== undefined) this.descriptions.set(action.id, action.description)
+    }
   }
 
   register(actions: BlueKeyAction[]): () => void {
     for (const action of actions) {
       const keys = typeof action.keys === 'string' ? [action.keys] : [...action.keys]
       this.ids.set(action.id, keys)
-      this.sequences.set(action.id, keys)
+      this.sequences.set(action.id, keys.map(key => SEQUENCE_BY_KEY_ID[key] ?? key))
+      if (action.description !== undefined) this.descriptions.set(action.id, action.description)
       if (action.handler !== undefined) this.handlers.set(action.id, action.handler)
     }
     return () => {
       for (const action of actions) {
         this.ids.delete(action.id)
         this.sequences.delete(action.id)
+        this.descriptions.delete(action.id)
         this.handlers.delete(action.id)
       }
     }
@@ -121,6 +117,13 @@ export class FakeKeymap implements BlueKeymap {
 
   getKeys(action: string): string[] {
     return [...this.ids.get(action) ?? []]
+  }
+
+  list(): readonly BlueKeyAction[] {
+    return [...this.ids].map(([id, keys]) => {
+      const description = this.descriptions.get(id)
+      return { id, keys: [...keys], ...description === undefined ? {} : { description } }
+    })
   }
 }
 
