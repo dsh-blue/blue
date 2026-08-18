@@ -140,6 +140,13 @@
 - **理由**：缝的质量由自家消费验证（dogfooding）；"表面皆插件"从结构口号变为可验收条款。
 - **后果**：包数量不变，增强插件以子路径入口挂在 interaction/transcript 包上（`./pane-activity`、`./status-git`、`./editor-plus` 等）；bundle patch 分段注释。S6 落地校正（2026-08-19，详见 blue-p1-design §7）：pane-queue 挂 interaction（召回需编辑器 onKey 缝），`/btw` 由 pane-btw 自注册；patch 重排为基线/增强/装配三段 14 行，dock 钉序靠 inject 解析序而非行序。
 
+### D22. welcome banner：静态启动快照 + 基线段行序钉位
+
+- **背景**：banner 是 P1 §2.4 预留的最后一个子路径插件（kimi `tui/banner/` 对照）。要定的三件事：数据从哪来（模型/cwd/版本）、行放哪段、版本字符串怎么取。
+- **决策**：① banner 是**静态启动快照**——模型行 inject `agentDefaultModel` 在 apply 时 `currentSelection()` 快照（`${model} · ${provider}`），cwd 取 `process.cwd()` + 本地 `shortenHome` 缩写；不读 `blueSession`、不订阅会话事件（实时模型由 footer 的 status-basic 呈现），也因此与 transcript 的历史挂载无排序耦合。② patch 行入**基线段且位于 `blue-transcript` 前**：滚动区次序 = `addChild` 挂载次序，二者同 blueComponents 激活轮按行序激活；`/theme` 换装 reload 时 transcript 经 D16 快照重放抢先重挂全部历史，banner 行序在前才能跨换装保持滚动区首子。banner 由此视作 plain 基线产品面（Claude Code 同款定位），行本身仍可单独拔除。③ 版本走 `banner-content.ts` 的 `BLUE_VERSION` 常量 + spec 读 package.json 断言相等的守卫——拒 JSON import（rootDir/emit 布局、无 resolveJsonModule）与 `createRequire(import.meta.url)`（bundler 对 import.meta.url 的改写风险、多余覆盖分支）。
+- **理由**：渲染事实只在启动一刻有意义（Claude Code 语义同款）；行序钉位复用 S6 已验证的"同轮按行序激活"机制，不新开缝；常量 + 守卫是零构建风险的同步手段，漂移在 `pnpm run test` 即失败。
+- **后果**：着色只用现有 26 token（框/城堡 `border`、Welcome `textStrong`、模型行 `accent`、右栏 `muted`/`text`），不扩契约；右栏 Tips/What's new 为占位内容，隔离在 `banner-content.ts`，真实文案落地不动布局（`banner.ts` 的 `composeBannerLines` 纯函数）；像素城堡网格离线生成嵌入 `banner-art.ts`（16 行位图 + 半块打包纯函数），黄金 spec 钉住输出。
+
 ## 已知遗留（MVP 有意为之）
 
 - `/quit` 在 agent attach 前输入会显示 "no active session" 而不退出（input-plugin 在命令分发前检查 current agent）
