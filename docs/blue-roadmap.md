@@ -6,6 +6,7 @@
 > 技术底座：`@earendil-works/pi-tui`（渲染/输入）+ Cordis 插件树（组合/生命周期）
 > 架构分层：L0 pi-tui 适配层 · L1 内核服务 · L2 交互 providers · L3 渲染插件 · L4 组合层
 > 启动形态：`dsh --profile blue`
+> **P1 设计定稿**：[blue-p1-design.md](./blue-p1-design.md)（层职责重排、缝清单、kimi-code 能力对照、S0-S7 实施序）
 
 ## 命名约定
 
@@ -79,37 +80,43 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 
 ## Phase 1 — 交互完整性：达到"日常可用"
 
-**目标**：覆盖交互式 coding agent 的基本操控面；L1 三个服务全部兑现设计能力。
+**目标**：覆盖交互式 coding agent 的基本操控面；以 kimi-code 为参照系（非视觉复刻）落地核心 UX；本阶段是缝的主要开窗期。
+**设计定稿**：[blue-p1-design.md](./blue-p1-design.md)。本节只保留摘要，实施细节、契约草样与逐项对照以该文档为准。
 
-- `ctx.blueTheme` 完整化：JSON 主题文件 + OSC 11 背景探测自动明暗 + 运行时切换（换 provider，组件插件自动重载）
-- `ctx.blueKeymap` 开放：插件经 declaration merging 声明动作 + 启动期冲突检测
-- Esc 取消（`agent.cancel()`）、运行中输入排队 / steer（`agent.steer()`）——`/btw` 命令在此阶段作为示范插件落地
-- `TuiAltScreen` 模式：ScrollView transcript + 底部 dock，main/alt 运行时热切换（兑现 L0 的 Proxy 引用）
-- 会话管理 UI：session selector overlay（fork/resume/list）
-- 工具呈现补齐：`diff` / `terminal` intent 组件
-- 投影组件：todos 面板、会话标题（消费 `ctx.sessionProjections`）
+- **plain-first 纪律**（D21）：每个表面 = 缝 + plain 默认实现；Blue 自家增强经自家缝注册，与下游同权；基线 patch 拔掉增强行后仍完整可用
+- **一次性层职责重排**（D17-D20，边界见 p1-design §1.2）：`blueTheme` 拆为契约 + provider 插件；`ctx.blueComponents` 组件工厂缝落地，MVP 期自研件（`BlueInput`/`markdown.ts`/`width.ts`）退役；`BlueSemanticColors` 全量化为 26 token
+- **主题**：dark/light/auto/custom 插件族 + `/theme` provider 换装；OSC 11 探测归 L0（raw mode 前查询）
+- **键位**：全局动作经 `BlueKeyAction.handler` + L0 全局分发器（Ctrl-O 折叠等）；编辑器语境动作（Esc/Ctrl-C 中断、Ctrl-S steer）经组件内 `matches`
+- **编辑器**：换装 pi-tui Editor（多行/历史/kill-ring/补全/Kitty 解码）；shell 模式（`!`）、`@` 文件补全、slash 补全菜单
+- **状态栏**：`ctx.blueStatus` 注册表 + 两行 footer 壳 + git/context/basic 条目插件
+- **面板与命令**：activity/queue/todo/btw pane 插件；`/sessions` `/fork` `/new` `/help` `/btw`；审批四选项 + session 级继承（Blue 侧协调器）；提问多题 tab 化
+- **alt-screen**：`TuiAltScreen` 与主屏运行时热切换（兑现 L0 的 Proxy 预埋）
 
-**验收**：连续 30 分钟真实 coding 会话无渲染错乱、无焦点丢失；主题/键位/渲染器热切换不重启进程；`/btw` 在 agent 运行中插入旁白且 transcript 正确呈现。
+**验收**：连续 30 分钟真实 coding 会话无渲染错乱、无焦点丢失；主题热切换后 transcript 经快照正确重放且编辑器草稿保留；`/btw` 在 agent 运行中插入旁白且 transcript 正确呈现；plain 基线完整可用；注册冲突在启动期暴露。
 
 ---
 
-## Phase 2 — 表现力：向 Claude Code 的体验密度靠拢
+## Phase 2 — 表现力：呈现密度与性能
 
-- 图片：Editor 粘贴图片（Kitty/iTerm2 `Image` 组件）、`@` 附件
-- 弹窗体系完整化：model selector、permission preset 设置面板（`SettingsList` 子菜单）
-- 状态栏增强：上下文用量、token 统计、git 分支
-- 自定义 slash 命令（md 文件定义，经上游能力缝自动出现在补全里）
-- OSC 8 可点链接、OSC 52 复制、鼠标滚轮/文本选择（alt-screen）
-- transcript 性能：长会话折叠旧消息为静态 `Text`，渲染缓存策略固化
-- 子 agent / Task 工具的树形呈现组件
+**目标**：工具呈现结构化、长会话性能达标、富媒体进入。状态栏/主题/键位已在 P1 落地，本阶段聚焦"内容呈现"。
 
-**验收**：5 万行级 session resume 后滚动流畅；所有 Claude Code 常用交互有对应物。
+- **render intent 注册表**（`ctx.blueIntents`）：`diff` / `terminal` 呈现器落地，generic 呈现降级为第一个注册者
+- **transcript 性能（滑动窗口）**：保留最近 N turn，旧 turn 组件与条目整体销毁；turn 内旧 step 折叠为摘要行；渲染缓存策略固化
+- **图片**：Editor 粘贴图片（L0 `createImage` + 剪贴板工具 + `dsh-attachment` 借力）、`@` 附件
+- **弹窗体系完整化**：model selector、审批 diff 全屏预览（100% overlay）、permission preset 设置面板（待上游 `permissionPresets`）
+- **外部编辑器**（Ctrl-G，需 L0 渲染器暂停配合）
+- **OSC 8 可点链接、OSC 52 复制、鼠标滚轮/文本选择**（alt-screen）
+- **模式命令**（`/yolo` `/plan` `/compact` `/model` 会话中切换）：随上游能力缝落地逐个接入
+- 子 agent / Task 工具的树形呈现组件（经 intent 缝）
+
+**验收**：5 万行级 session resume 后滚动流畅；参照系产品的常用交互有对应物或明确的"不做"结论。
 
 ---
 
 ## Phase 3 — 硬化与生态：从"好用"到"可发布"
 
-- 测试体系：`VirtualTerminal`（@xterm/headless）渲染快照测试 + fake interaction providers 集成测试
+- **缝冻结**：P1/P2 开出的全部缝（`blueScreen`/`blueKeymap`/`blueComponents`/`blueTerminalInfo`/`blueTheme`/`blueStatus`/`blueIntents`/组合层 + 继承的 harness 缝）逐条过守门评审，签名转入稳定承诺
+- 测试体系：`VirtualTerminal`（@xterm/headless）渲染快照测试（届时复审 D13 的 FakeTerminal 决策）+ fake interaction providers 集成测试
 - HMR 开发回路：改组件源码热替换（cordis-plugin-hmr）写入开发文档
 - 焦点/overlay 协调约定文档化（L1 加 focus 进出事件，核心签名仍不动）
 - 文档门禁合规：cordis-surface 生成、doc-sync、子系统文档页
@@ -128,16 +135,20 @@ Blue 不是封闭应用，而是一组可被下游插件定制的 surface。定�
 2. **Provider 替换**（单一活跃 provider，热替换自动重载依赖方）：主题 provider、整个状态栏插件、Editor（vim 模式）
 3. **组合层**（profile/bundle patch，零代码）：启停、重排任何 Blue 插件
 
-各阶段需要刻意开出的缝（缺失即视为该阶段未完成）：
+各阶段需要刻意开出的缝（缺失即视为该阶段未完成）。完整缝清单（契约、归属、plain 默认实现）见 [blue-p1-design.md](./blue-p1-design.md) §6：
 
 | 阶段 | 缝 | 下游能做什么 |
 |---|---|---|
 | P0 | `ctx.commands` / `ctx.userQuestions` / `approval/request`（harness 现有） | 注册命令、接管提问与审批交互 |
-| P1 | `ctx.blueStatus`（状态栏条目注册表）、`blueTheme` 主题注册表 | 自定义状态栏条目、贡献新主题 |
-| P1 | `blueKeymap` declaration merging | 插件声明自己的键位动作 |
-| P1 | `ctx.permissionPresets`（harness 现有） | 注册自定义 preset mode，Blue 设置面板自动列出 |
-| P2 | render intent 组件注册表 | 为新工具类型提供定制呈现 |
+| P0 | `ctx.blueScreen` / `ctx.blueKeymap` / `ctx.blueSession` + 会话事件（Blue 现有） | 挂组件、弹 overlay、注册键位、跟踪/发起会话切换 |
+| P1 | `ctx.blueComponents` / `ctx.blueTerminalInfo` | 造 pi-tui 级组件而不碰 pi-tui；读终端能力事实（背景、协议） |
+| P1 | `blueTheme` provider 替换（主题插件族 + `/theme`） | 提供整套新主题，运行时切换 |
+| P1 | `ctx.blueStatus`（状态栏条目注册表，transcript 提供） | 注册状态栏条目；或整个替换 footer 插件 |
+| P1 | `blueKeymap` 全局动作（`BlueKeyAction.handler`） | 注册焦点无关的全局快捷键 |
+| P1 | `ctx.permissionPresets`（harness，⛔ S0 已核实 rc.7 不存在，待上游做缝） | 注册自定义 preset mode，Blue 模式 UI 自动列出 |
+| P2 | `ctx.blueIntents`（render intent 注册表，transcript 提供） | 为新工具类型提供定制呈现 |
 | 全程 | `ctx.tools.register` / `tools/pre-execute`（harness 现有） | 定制/包裹 agent-loop 的 tools，Blue 经 render intent 自动呈现 |
+| 全程 | `cordis.patch.yml` 组合层 | 零代码启停/重排任何 Blue 插件 |
 
 纪律：凡是"下游可能想换/想加"的表面，一律做成缝，不写死；下游定制路径只依赖文档化 surface，与 Blue 内部实现隔离。
 
@@ -150,7 +161,8 @@ Blue 不是封闭应用，而是一组可被下游插件定制的 surface。定�
   3. 不含具体实现类（`TuiMainScreen`/`TuiAltScreen` 等只允许出现在 L0 内部）
   4. 方法正交：挂组件（screen）、取色（theme）、键位（keymap）互不越界
   5. 未来的缝（blueStatus、render intent 注册表、focus 事件等）一律作为 L3 插件提供的新服务或 L1 的纯增量方法，不允许修改既有签名
-- **缝的清单采用"首个真实消费者驱动"**：表面在 MVP 里可以是写死的内部实现；当第一个具名下游需求出现时才提升为缝（开注册表、默认实现降级为第一个注册者、补文档化签名）。不为假想需求开缝——与 harness "无真实消费者不保留产品表面"的哲学一致。
+- **缝的清单采用"首个真实消费者驱动"**：表面在 MVP 里可以是写死的内部实现；当第一个具名下游需求出现时才提升为缝（开注册表、默认实现降级为第一个注册者、补文档化签名）。不为假想需求开缝——与 harness "无真实消费者不保留产品表面"的哲学一致。P1 的"首个真实消费者"是 Blue 自家增强插件（plain-first 纪律，D21）：自家 UI 增强必须与下游同权经缝注册。
+- **P1 的一次性层职责重排**：blue-p1-design §1.2 行使了一次有边界的破坏性许可（主题拆契约+provider、`blueComponents` 工厂缝落地、token 全量化、MVP 自研件退役；ADR D17-D20）。定稿后 L1 恢复"只增不改"。
 - **P3 是缝的冻结点**：进入硬化阶段前缝可随 pre-release 窗口自由调整；P3 起缝的签名转入稳定承诺。
 
 ## 风险登记
@@ -166,8 +178,8 @@ Blue 不是封闭应用，而是一组可被下游插件定制的 surface。定�
 ## 里程碑速览
 
 ```
-P0 MVP        → 一轮完整对话 + 审批/提问 + resume     （核心定型）
-P1 交互完整性  → 主题/键位/alt-screen/steer//btw       （日常可用）
-P2 表现力      → 图片/弹窗体系/性能/子agent呈现         （体验对齐）
-P3 硬化生态    → 测试/HMR/文档门禁/发布                 （可发布）
+P0 MVP        → 一轮完整对话 + 审批/提问 + resume            （核心定型，已完成）
+P1 交互完整性  → 缝清单落地 + kimi 对照核心 UX（plain-first） （日常可用）
+P2 表现力      → intent 呈现 / 滑动窗口 / 图片 / 全屏 overlay  （体验对齐）
+P3 硬化生态    → 缝冻结 / 测试 / HMR / 文档 / 发布             （可发布）
 ```

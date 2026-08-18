@@ -102,6 +102,42 @@
 - **决策**：transcript 先读 `agent.session.events` 快照渲染历史，记录末尾 seq，再订阅 `session/event` 增量并丢弃 `seq ≤ 快照末尾` 的事件。
 - **理由**：harness 的 seed 机制不重播 `session/event`（"were never published on the firehose"）。
 
+## P1 设计决策（kimi-parity 设计期，2026-08-18）
+
+详见 [blue-p1-design.md](./blue-p1-design.md)。以 kimi-code 为参照系（非视觉复刻目标），行使 roadmap 允许的一次性破坏性层职责重排。
+
+### D17. 组件工厂缝：L0 包装 pi-tui 组件
+
+- **背景**：pi-tui 禁令逼得 transcript 自写 `markdown.ts`/`width.ts`（D14）、interaction 自写单行 `BlueInput`；要复用 pi-tui 的 Editor/Markdown/SelectList 能力又不能放开禁令。kimi 的 `CustomEditor` 直接继承 pi-tui `Editor`，白捡多行/历史/kill-ring/paste-burst/Kitty 解码。
+- **决策**：core 新增 `ctx.blueComponents` 能力缝——Blue 自有类型进、Blue 组件出。`BlueInput`、`markdown.ts`、`width.ts` 随之退役。
+- **理由**：pi-tui 升级影响仍被 L0 吸收（D4 的延续）；同时修掉 `BlueInput.isPrintable` 拒绝 Kitty CSI-u 序列导致 VSCode 终端丢字符的现存缺陷。
+- **后果**：L1 增加一个服务契约；自研组件存活范围收窄到 pi-tui 不提供的少数件（如 `BluePanel` 容器）。
+
+### D18. 主题 = provider 替换，core 只持契约
+
+- **背景**：kimi 用全局单例 `setPalette` + 渲染路径惰性取色实现主题切换。Blue 需要在 Cordis 哲学下选机制。
+- **决策**：`blueTheme` 拆为契约（core）+ 独立 provider 插件（`blue-theme-dark` 为 plain 默认，另有 light/auto/custom）。运行时切换 = dispose 当前主题 fiber + `ctx.plugin(目标)`，inject 方自动 reload。不采用"可变 palette + 事件"方案。
+- **理由**：provider 替换是 Cordis 原生语义，reload 路径免费且与 HMR 同构；transcript reload 走 D16 快照重放，行为正确。
+- **后果**：transcript/interaction 在切换主题时重挂载；编辑器草稿用模块级 stash 补偿。`BlueSemanticColors` 借此次重排一次性全量化（26 token），此后只增不改。OSC 11 探测必须在 raw mode 前，归属 L0（kimi 硬经验）。
+- **S0 验证（2026-08-18，cordis 4.0.1 源码 + 运行时探针双确认）**：dispose provider fiber 时 inject 方自动 `_unload()`（fiber 不销毁、回 PENDING），新 provider fiber 转 ACTIVE 经 `notify` 触发注入方 `_reload()`；`await` 旧 fiber 的 `dispose()` 时注入方已完全卸载，重载异步、`await` 新 fiber 即落地。另注意：cordis 无 optional inject——想软依赖主题的功能插件须走 `ctx.get('blueTheme')` + `'internal/service'` 事件，不能声明非必需 inject。
+
+### D19. 弹窗纪律不变：overlay-only
+
+- **背景**：kimi 的对话框主机制是 editor-replacement（替换输入区容器），另有 screen-takeover 全屏接管。
+- **决策**：Blue 保持"弹窗只走 `showOverlay` 句柄"（架构 §5.2 三条纪律之一）；全屏对话框以 `width/maxHeight: 100%` overlay 近似 screen-takeover。不引入第二种弹窗范式。
+- **理由**：纪律单一比视觉近似重要；overlay 句柄已含焦点恢复语义。
+
+### D20. blueStatus 归属 transcript，不进 L1
+
+- **决策**：状态栏条目注册表（`ctx.blueStatus`）由 transcript 包提供；两行 footer 壳是其容器组件；`model · status` 基本条目拆为独立贡献插件 `blue-status-basic`，降级为第一个注册者。MVP 的 `StatusBarComponent` 消灭。
+- **理由**：状态栏是 L3 呈现表面，进 L1 违反"核心最小"（D3）；契约归渲染它的包，与 render intent 注册表同处理。
+
+### D21. plain-first：自家 UI 走自家缝
+
+- **决策**：任何非平凡视觉/交互表面 = 缝 + plain 默认实现；Blue 自家增强（footer 条目、主题、intent、pane）全部经缝注册为插件，与下游同权。基线 patch 拔掉增强行后仍完整可用。
+- **理由**：缝的质量由自家消费验证（dogfooding）；"表面皆插件"从结构口号变为可验收条款。
+- **后果**：包数量不变，增强插件以子路径入口挂在 interaction/transcript 包上（`./pane-activity`、`./status-git`、`./editor-plus` 等）；bundle patch 分基线段与增强段。
+
 ## 已知遗留（MVP 有意为之）
 
 - `/quit` 在 agent attach 前输入会显示 "no active session" 而不退出（input-plugin 在命令分发前检查 current agent）

@@ -1,5 +1,7 @@
 # Blue MVP（Phase 0）实施计划
 
+> **状态（2026-08-18）**：MVP 已完成验收（219 测试全绿、逐文件 100% 覆盖、typecheck/lint 全过）。本文档保留为实施记录；P1 起的层职责与实施序以 [blue-p1-design.md](./blue-p1-design.md) 为准（ADR D17-D21 记录了一次性层职责重排）。
+
 > **仓库形态（2026-08-18 更新）**：Blue 已落地为独立仓库 `blue/`（本文件同级目录），非 deepseek-harness 仓库内包。依赖经 npm registry 解析（`@deepseek-ai/*@0.1.0-rc.7`，next dist-tag），blue 五包间用 workspace 协议。使用路径为 out-of-tree：`dsh plugin --profile blue add @deepseek-ai/dsh-blue`（不再改 harness 的 PROFILE_TEMPLATES）。本文档的 Step 1/5 中"in-tree profile 注册"相关内容已被该路径取代。
 
 > 前置文档：`blue-roadmap.md`（分层架构、阶段划分、守门清单）

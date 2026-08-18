@@ -1,6 +1,6 @@
 # Blue 架构设计
 
-> 姊妹文档：[blue-roadmap.md](./blue-roadmap.md)（分阶段路线图）、[blue-mvp-plan.md](./blue-mvp-plan.md)（MVP 实施计划）
+> 姊妹文档：[blue-roadmap.md](./blue-roadmap.md)（分阶段路线图）、[blue-mvp-plan.md](./blue-mvp-plan.md)（MVP 实施计划）、[blue-p1-design.md](./blue-p1-design.md)（P1 层职责定稿与缝清单）
 > 本文档是 Blue 的架构蓝图：可行性结论、分层设计、核心契约、稳定性机制。代码现状以仓库 `AGENTS.md` 为准。
 
 ## 1. 背景与可行性结论
@@ -50,11 +50,18 @@ pi 自己的 coding-agent 用 pi-tui 时收成了一个 6.5k 行的 `Interactive
 
 ### L1 — 内核服务（稳定核心）
 
-三个服务，签名在 MVP 定稿：
+MVP 定稿三个服务：
 
 - **`ctx.blueScreen`**：`addChild`（返回 disposer）/ `removeChild` / `setFocus` / `showOverlay`（返回含 focus/unfocus 的 handle）/ `requestRender` / `columns`
 - **`ctx.blueTheme`**：语义色表（accent/border/mdCodeBlock/…），值是 `(text) => string` 函数——pi-tui 的解耦设计，不绑 chalk
 - **`ctx.blueKeymap`**：`register(actions)`（整批校验、冲突即抛、返回 disposer）/ `matches` / `getKeys`
+
+P1 经一次性破坏性重排（边界与理由见 [blue-p1-design.md](./blue-p1-design.md) §1.2、§2.2 与 ADR D17/D18）扩为：
+
+- **`ctx.blueComponents`**（新增）：pi-tui 能力的 Blue 类型化工厂——Editor/Markdown/SelectList 组件与宽度函数，pi-tui 类型不越界
+- **`ctx.blueTerminalInfo`**（新增）：终端事实——OSC 11 探测的背景色、键盘协议能力
+- **`ctx.blueTheme`** 拆为契约（core）+ provider 插件（实现）：dark/light/auto/custom 主题插件经 provider 替换热切换
+- **`ctx.blueKeymap`** 增 `BlueKeyAction.handler` 可选字段：带 handler 的动作成为全局动作，由 L0 分发器在焦点路由前消费
 
 ### L2 — 交互插件（interaction 包）
 
@@ -82,7 +89,7 @@ pi 自己的 coding-agent 用 pi-tui 时收成了一个 6.5k 行的 `Interactive
 
 ### 5.1 L1 签名守门清单（定稿评审标准）
 
-防"改"、允许"加"。L1 签名冻结前逐条过：
+防"改"、允许"加"。L1 签名冻结前逐条过（唯一例外：P1 的一次性层职责重排，见 blue-p1-design §1.2，定稿后恢复只增不改）：
 
 1. 只暴露自有最窄接口（`BlueComponent`），不透传 pi-tui 类型——pi-tui 破坏性变更不得传导出 L0
 2. 不含任何 harness 业务类型（Session/Agent/Tool 出现在 L1 签名即驳回）
@@ -109,6 +116,8 @@ Blue 不是封闭应用，是可被下游插件定制的 surface。定制发生�
 1. **贡献缝**（registry + disposer，多贡献共存）：状态栏条目、主题、slash 命令、render intent 呈现器
 2. **Provider 替换**（单一活跃 provider，热替换自动重载依赖方）：主题 provider、整个状态栏插件、Editor（vim 模式）
 3. **组合层**（profile/bundle patch，零代码）：启停、重排任何 Blue 插件
+
+缝的完整清单——每条缝的契约、归属包、plain 默认实现与开放阶段——见 [blue-p1-design.md](./blue-p1-design.md) §6。P1 起生效 **plain-first 纪律**（ADR D21）：每个非平凡表面 = 缝 + plain 默认实现，Blue 自家增强与下游插件同权经缝注册；基线 patch 拔掉全部增强行后仍完整可用。
 
 两个重要例子甚至不在 Blue 职责内：定制 preset mode 走 harness 的 `ctx.permissionPresets`、定制 agent-loop 的 tools 走 `ctx.tools.register`——Blue 作为消费方自动继承下游的定制。这是"UI 只做呈现、能力在上游"分层的直接收益。
 
