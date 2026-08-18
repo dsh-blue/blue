@@ -27,6 +27,9 @@ packages/
   app/          @deepseek-ai/dsh-blue-app         — CLI startup + Agent driver
   bundle/blue/  @deepseek-ai/dsh-blue             — installable bundle (cordis.patch.yml)
 script/install-dev.sh  — one-shot local dev install into a dsh profile
+docs/                  — design docs: blue-architecture.md (blueprint), blue-roadmap.md (phases),
+                         blue-mvp-plan.md (MVP plan), blue-decisions.md (ADR log),
+                         blue-survey-pi-tui.md / blue-survey-harness.md (research basis)
 ```
 
 Each package has the same shape: `src/` (source), `tests/` (vitest specs), `lib/` (build output, git-ignored here but the runtime entry), its own `tsconfig.json` extending `tsconfig.base.json`, and `README.md` + `README.zh.md` (bilingual docs — keep both in sync when changing documented behavior).
