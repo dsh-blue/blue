@@ -124,6 +124,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: 3.18.1
+        version: 3.18.1
       '@earendil-works/pi-tui':
         specifier: ^0.84.2
         version: 0.84.2

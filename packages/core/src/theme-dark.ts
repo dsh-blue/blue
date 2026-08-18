@@ -4,29 +4,15 @@
  * entry so the composing bundle lists it as its own patch row and other
  * theme plugins (light/auto/custom) can replace it fiber-for-fiber.
  * Palette values follow pi's dark theme so Blue reads consistently next to
- * pi-based tooling.
+ * pi-based tooling. The palette construction lives in `theme-palette.ts`,
+ * shared with the rest of the theme plugin family.
  *
  * @module @deepseek-ai/dsh-blue-core/theme-dark
  */
 
-import { Context, Service } from '@deepseek-ai/cordis'
-import type { BlueColorFn, BlueSemanticColors, BlueTheme } from './types.ts'
-
-/** Wrap text in a truecolor foreground. */
-function foreground(hex: string): BlueColorFn {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  return text => `\x1b[38;2;${r};${g};${b}m${text}\x1b[39m`
-}
-
-/** Wrap text in a truecolor background. */
-function background(hex: string): BlueColorFn {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  return text => `\x1b[48;2;${r};${g};${b}m${text}\x1b[49m`
-}
+import type { Context } from '@deepseek-ai/cordis'
+import { colorsFromForegrounds, defineThemeService } from './theme-palette.ts'
+import type { BlueSemanticColors } from './types.ts'
 
 const DARK_FOREGROUNDS = {
   text: '#d4d4d4',
@@ -60,29 +46,14 @@ const DARK_FOREGROUNDS = {
 
 const DARK_SELECTED_BG = '#3a3a4a'
 
-/** The built-in dark palette as semantic color functions. */
-function buildDarkColors(): BlueSemanticColors {
-  const foregrounds = Object.fromEntries(
-    Object.entries(DARK_FOREGROUNDS).map(([role, hex]) => [role, foreground(hex)]),
-  )
-  return { ...foregrounds, selectedBg: background(DARK_SELECTED_BG) } as BlueSemanticColors
-}
+/** The built-in dark palette as a frozen semantic color table. */
+export const DARK_COLORS: BlueSemanticColors = colorsFromForegrounds(DARK_FOREGROUNDS, DARK_SELECTED_BG)
 
 /**
  * The built-in `blueTheme` provider. Exposes the frozen semantic color
  * table; unregistered automatically when the plugin's fiber unloads.
  */
-export class BlueThemeService extends Service implements BlueTheme {
-  readonly colors: BlueSemanticColors = Object.freeze(buildDarkColors())
-
-  /**
-   * Create and register the service.
-   * @param ctx - the owning Cordis context.
-   */
-  constructor(ctx: Context) {
-    super(ctx, 'blueTheme')
-  }
-}
+export class BlueThemeService extends defineThemeService(DARK_COLORS) {}
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-theme-dark'
