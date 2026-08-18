@@ -1,9 +1,11 @@
 /**
- * REAL-composition test: boot the blue-transcript plugin through the real
- * Loader from a cordis.yml in a temp directory, over fake `blueScreen` /
- * `blueTheme` / `blueComponents` / `blueSession` services, then drive it
- * with `'blue/session-changed'` and `'session/event'` exactly as the app
- * package and session service will.
+ * REAL-composition test: boot the blue-transcript plugin — plus the
+ * `blue-status-basic` subpath plugin and, for the acceptance case, a
+ * downstream fixture plugin registering its own `blueStatus` entry — through
+ * the real Loader from a cordis.yml in a temp directory, over fake
+ * `blueScreen` / `blueTheme` / `blueComponents` / `blueSession` services,
+ * then drive it with `'blue/session-changed'` and `'session/event'` exactly
+ * as the app package and session service will.
  */
 
 import { mkdtempSync, writeFileSync } from 'node:fs'
@@ -25,6 +27,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { BlueSessionRef } from '@deepseek-ai/dsh-blue-app'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { ACTION_TOGGLE_COLLAPSE, apply } from '../src/index.ts'
+import * as statusBasic from '../src/status-basic.ts'
 import {
   assistantEvent,
   fakeBlueComponents,
@@ -56,6 +59,7 @@ const COLORS = {
 /** Records mounts and render requests; renders nothing anywhere real. */
 class FakeScreen implements BlueScreen {
   readonly children: BlueComponent[] = []
+  readonly bottomChildren: BlueComponent[] = []
   readonly renderRequests: (boolean | undefined)[] = []
   readonly columns = 80
 
@@ -66,10 +70,12 @@ class FakeScreen implements BlueScreen {
     }
   }
 
-  // The transcript never bottom-pins; the method exists only to satisfy the
-  // BlueScreen contract.
   addBottomChild(component: BlueComponent): () => void {
-    return this.addChild(component)
+    this.bottomChildren.push(component)
+    return () => {
+      const index = this.bottomChildren.indexOf(component)
+      if (index !== -1) this.bottomChildren.splice(index, 1)
+    }
   }
 
   removeChild(component: BlueComponent): void {
@@ -120,7 +126,11 @@ class FakeKeymap implements BlueKeymap {
 interface FakeAgent {
   status: 'idle' | 'running'
   options: { model?: string }
-  session: { events: SessionEvent[] }
+  session: {
+    events: SessionEvent[]
+    header: { cwd?: string }
+    requestHeader(): { config: { model: string } } | undefined
+  }
 }
 
 /** A fake agent whose session is a plain event-log object. */
@@ -128,7 +138,11 @@ function fakeAgent(events: SessionEvent[], model = 'deepseek-chat'): FakeAgent {
   return {
     status: 'idle',
     options: { model },
-    session: { events },
+    session: {
+      events,
+      header: {},
+      requestHeader: () => undefined,
+    },
   }
 }
 
@@ -144,25 +158,65 @@ interface Harness {
   blueSession: BlueSessionRef
 }
 
+/** The downstream fixture's apply: registers one custom footer entry. */
+function fixtureApply(ctx: Context): void {
+  ctx.effect(() => ctx.blueStatus.register({
+    id: 'blue.status.fixture',
+    priority: 30,
+    render: () => 'fixture-entry',
+  }))
+}
+
 /**
- * Boot a real Loader tree whose single entry delegates to the source-plane
- * plugin already imported by this test (the Loader imports through Node's
- * resolver, which cannot reach tsconfig paths).
+ * Boot a real Loader tree whose entry rows delegate to the source-plane
+ * plugins already imported by this test (the Loader imports through Node's
+ * resolver, which cannot reach tsconfig paths): blue-transcript,
+ * blue-status-basic, and — with `fixture` — a downstream plugin registering
+ * a custom `blueStatus` entry.
  * @param current - agent preloaded onto `blueSession.current`, if any.
+ * @param options.fixture - append the downstream status-entry fixture row.
  */
-async function bootTranscript(current: FakeAgent | null = null): Promise<Harness> {
+async function bootTranscript(
+  current: FakeAgent | null = null,
+  options: { fixture?: boolean } = {},
+): Promise<Harness> {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-blue-transcript-'))
   writeFileSync(join(dir, 'blue-transcript.mjs'), `
 export const name = 'blue-transcript'
 export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap']
 export const apply = ctx => globalThis.__blueTranscriptApply(ctx)
 `)
-  writeFileSync(join(dir, 'cordis.yml'), [
+  writeFileSync(join(dir, 'blue-status-basic.mjs'), `
+export const name = 'blue-status-basic'
+export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const apply = ctx => globalThis.__blueStatusBasicApply(ctx)
+`)
+  writeFileSync(join(dir, 'blue-status-fixture.mjs'), `
+export const name = 'blue-status-fixture'
+export const inject = ['blueStatus']
+export const apply = ctx => globalThis.__blueStatusFixtureApply(ctx)
+`)
+  const rows = [
     '- id: blue-transcript',
     `  name: ${pathToFileURL(join(dir, 'blue-transcript.mjs')).href}`,
-    '',
-  ].join('\n'))
-  ;(globalThis as unknown as { __blueTranscriptApply: typeof apply }).__blueTranscriptApply = apply
+    '- id: blue-status-basic',
+    `  name: ${pathToFileURL(join(dir, 'blue-status-basic.mjs')).href}`,
+  ]
+  if (options.fixture === true) {
+    rows.push(
+      '- id: blue-status-fixture',
+      `  name: ${pathToFileURL(join(dir, 'blue-status-fixture.mjs')).href}`,
+    )
+  }
+  writeFileSync(join(dir, 'cordis.yml'), [...rows, ''].join('\n'))
+  const globals = globalThis as unknown as {
+    __blueTranscriptApply: typeof apply
+    __blueStatusBasicApply: typeof statusBasic.apply
+    __blueStatusFixtureApply: typeof fixtureApply
+  }
+  globals.__blueTranscriptApply = apply
+  globals.__blueStatusBasicApply = statusBasic.apply
+  globals.__blueStatusFixtureApply = fixtureApply
 
   const ctx = new Context()
   const screen = new FakeScreen()
@@ -187,26 +241,33 @@ export const apply = ctx => globalThis.__blueTranscriptApply(ctx)
   return { ctx, screen, keymap, blueSession }
 }
 
-/** The transcript's content components (everything past the status bar). */
+/** The transcript's content components (the footer lives in bottomChildren). */
 function contentLines(screen: FakeScreen): string[] {
-  return screen.children.slice(1).flatMap(component => component.render(80))
+  return screen.children.flatMap(component => component.render(80))
+}
+
+/** The footer shell's rendered rows. */
+function footerLines(screen: FakeScreen): string[] {
+  return screen.bottomChildren.flatMap(component => component.render(80))
 }
 
 describe('blue-transcript plugin through the real Loader', () => {
-  it('mounts nothing before any session exists', async () => {
+  it('mounts only the empty footer before any session exists', async () => {
     const { screen } = await bootTranscript()
     expect(screen.children).toHaveLength(0)
+    expect(screen.bottomChildren).toHaveLength(1)
+    expect(footerLines(screen)).toEqual([])
   })
 
-  it('renders history and the status bar on blue/session-changed', async () => {
+  it('renders history and the footer status on blue/session-changed', async () => {
     resetSeq()
     const { ctx, screen, blueSession } = await bootTranscript()
     // Simulate the app emitting after create: with no listener-visible
     // history the plugin still mounts from the service reference.
     const agent = fakeAgent([userEvent('hi'), assistantEvent(1, 1, [{ type: 'text', text: 'answer' }])])
     ctx.emit('blue/session-changed', asAgent(agent))
-    expect(screen.children).toHaveLength(3)
-    expect(screen.children[0]!.render(80)[0]).toContain('deepseek-chat · idle')
+    expect(screen.children).toHaveLength(2)
+    expect(footerLines(screen)).toEqual([`deepseek-chat · idle${' '.repeat(60)}`])
     expect(contentLines(screen)).toEqual(['', '❯ hi', '', 'answer'])
     expect(screen.renderRequests).toContain(true)
     expect(blueSession.current).toBeNull()
@@ -215,8 +276,19 @@ describe('blue-transcript plugin through the real Loader', () => {
   it('renders a pre-existing current agent without waiting for the event', async () => {
     resetSeq()
     const { screen } = await bootTranscript(fakeAgent([userEvent('remember me')]))
-    expect(screen.children).toHaveLength(2)
+    expect(screen.children).toHaveLength(1)
     expect(contentLines(screen)).toEqual(['', '❯ remember me'])
+    expect(footerLines(screen)[0]).toContain('deepseek-chat · idle')
+  })
+
+  it('lets a downstream plugin register its own footer entry', async () => {
+    resetSeq()
+    const { ctx, screen } = await bootTranscript(null, { fixture: true })
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([])))
+    const footer = footerLines(screen)
+    expect(footer).toHaveLength(1)
+    expect(footer[0]).toContain('deepseek-chat · idle')
+    expect(footer[0]).toContain('fixture-entry')
   })
 
   it('streams chunks, pairs tool calls, and dedupes by snapshot seq', async () => {
@@ -225,37 +297,37 @@ describe('blue-transcript plugin through the real Loader', () => {
     const seeded = [userEvent('work'), toolCallEvent(1, 1, 'c1', 'bash', '{"command":"ls"}')]
     const agent = fakeAgent(seeded)
     ctx.emit('blue/session-changed', asAgent(agent))
-    expect(screen.children).toHaveLength(3)
+    expect(screen.children).toHaveLength(2)
     const renderBaseline = screen.renderRequests.length
 
     // Stale replay at or below the snapshot's last seq is dropped.
     ctx.emit('session/event', agent.session as unknown as Session, { ...textDelta(1, 1, 'stale'), seq: 1 })
     const stale = seeded[seeded.length - 1]!
     ctx.emit('session/event', agent.session as unknown as Session, { ...stale })
-    expect(screen.children).toHaveLength(3)
+    expect(screen.children).toHaveLength(2)
     expect(screen.renderRequests.length).toBe(renderBaseline)
 
     // Events for another session are ignored.
     const other = fakeAgent([])
     ctx.emit('session/event', other.session as unknown as Session, textDelta(9, 9, 'foreign'))
-    expect(screen.children).toHaveLength(3)
+    expect(screen.children).toHaveLength(2)
 
     // Live chunk: mounts a streaming assistant component and re-renders.
     agent.status = 'running'
     ctx.emit('session/event', agent.session as unknown as Session, textDelta(2, 1, 'partial'))
-    expect(screen.children).toHaveLength(4)
-    expect(screen.renderRequests.length).toBe(renderBaseline + 1)
+    expect(screen.children).toHaveLength(3)
+    expect(screen.renderRequests.length).toBe(renderBaseline + 2)
     expect(contentLines(screen)).toContain('partial▌')
-    expect(screen.children[0]!.render(80)[0]).toContain('running')
+    expect(footerLines(screen)[0]).toContain('running')
 
     // Finalization rewrites the streaming item in place.
     ctx.emit('session/event', agent.session as unknown as Session, assistantEvent(2, 1, [{ type: 'text', text: 'final' }]))
-    expect(screen.children).toHaveLength(4)
+    expect(screen.children).toHaveLength(3)
     expect(contentLines(screen)).toContain('final')
 
     // The seeded tool call pairs with its live result.
     ctx.emit('session/event', agent.session as unknown as Session, toolResultEvent(2, 1, 'c1', 'file.txt'))
-    expect(screen.children).toHaveLength(4)
+    expect(screen.children).toHaveLength(3)
     expect(contentLines(screen).join('\n')).toContain('file.txt')
   })
 
@@ -267,16 +339,17 @@ describe('blue-transcript plugin through the real Loader', () => {
 
     resetSeq()
     ctx.emit('blue/session-changed', asAgent(fakeAgent([userEvent('second')])))
-    expect(screen.children).toHaveLength(2)
+    expect(screen.children).toHaveLength(1)
     expect(contentLines(screen)).toEqual(['', '❯ second'])
 
     // The old session's listener went away with its components.
     const staleAgent = fakeAgent([])
     ctx.emit('session/event', staleAgent.session as unknown as Session, textDelta(1, 1, 'x'))
-    expect(screen.children).toHaveLength(2)
+    expect(screen.children).toHaveLength(1)
 
     await ctx.fiber.dispose()
     expect(screen.children).toHaveLength(0)
+    expect(screen.bottomChildren).toHaveLength(0)
     disposers.length = 0
   })
 

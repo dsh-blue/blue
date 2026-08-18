@@ -6,8 +6,13 @@
  * feed, dropping events at or below the snapshot's last seq. Every applied
  * branch ends in `blueScreen.requestRender()`. A global `ctrl+o` keymap
  * action (`blue.transcript.toggle-collapse`) toggles tool-call components
- * between the one-line result summary and the full output. Unloading the
- * plugin unmounts every mounted component and unregisters the action.
+ * between the one-line result summary and the full output. The plugin also
+ * owns the status line's extension seam: it provides the `blueStatus`
+ * registry and mounts the persistent two-row footer shell bottom-pinned
+ * above the input editor; the entries themselves ship as the `status-basic`
+ * / `status-git` / `status-context` subpath plugins so the composing bundle
+ * lists them as its own patch rows. Unloading the plugin unmounts every
+ * mounted component, the footer included, and unregisters the action.
  *
  * @module @deepseek-ai/dsh-blue-transcript
  */
@@ -25,21 +30,22 @@ import type {
 import type {} from '@deepseek-ai/dsh-blue-app'
 import {
   AssistantMessageComponent,
-  StatusBarComponent,
   ToolCallComponent,
   UserMessageComponent,
 } from './components.ts'
 import { TranscriptFolder, type FoldUpdate } from './fold.ts'
+import { BlueStatusService, FooterShellComponent } from './status.ts'
 
 export type { FoldUpdate } from './fold.ts'
 export { ellipsize, foldSessionEvents, RESULT_SUMMARY_MAX_CHARS, TranscriptFolder } from './fold.ts'
 export {
   AssistantMessageComponent,
-  StatusBarComponent,
   TOOL_ARGUMENTS_MAX_CHARS,
   ToolCallComponent,
   UserMessageComponent,
 } from './components.ts'
+export { BlueStatusError, BlueStatusService, FOOTER_MAX_ROWS, FooterShellComponent } from './status.ts'
+export type { BlueStatus, BlueStatusEntry } from './types.ts'
 export type {
   TranscriptAssistantItem,
   TranscriptItem,
@@ -84,11 +90,11 @@ function createComponent(
 }
 
 /**
- * Mount one agent's transcript: status bar, snapshot fold, then the live
- * `session/event` subscription. Tool-call components (snapshot and live
- * alike) join `toggle.components` so the Ctrl-O handler reaches them.
- * Returns the disposer unmounting everything this session mounted and
- * resetting the toggle to its collapsed default.
+ * Mount one agent's transcript: snapshot fold, then the live `session/event`
+ * subscription. Tool-call components (snapshot and live alike) join
+ * `toggle.components` so the Ctrl-O handler reaches them. Returns the
+ * disposer unmounting everything this session mounted and resetting the
+ * toggle to its collapsed default.
  */
 function mountSession(
   ctx: Context,
@@ -100,10 +106,6 @@ function mountSession(
   const components = ctx.blueComponents
   const disposers: (() => void)[] = []
   const folder = new TranscriptFolder()
-
-  const statusBar = new StatusBarComponent(colors, components)
-  statusBar.update(agent)
-  disposers.push(screen.addChild(statusBar))
 
   const present = (update: FoldUpdate | null): void => {
     if (!update?.isNew) return
@@ -129,7 +131,6 @@ function mountSession(
     if (session !== agent.session) return
     if (event.seq <= lastSeq) return
     lastSeq = event.seq
-    statusBar.update(agent)
     present(folder.apply(event))
     screen.requestRender()
   }))
@@ -145,14 +146,23 @@ function mountSession(
 /**
  * Mount the transcript renderer. Renders `blueSession.current` when an agent
  * already exists at load time, then remounts on every
- * `'blue/session-changed'`. Also registers the global Ctrl-O action whose
- * handler flips tool-output expansion for the mounted session's tool calls.
+ * `'blue/session-changed'`. Also provides the `blueStatus` registry and
+ * mounts the footer shell once, bottom-pinned (the transcript patch row
+ * precedes the interaction row, so the footer lands right above the input
+ * editor); entry plugins register into it independently of session mounts.
+ * Finally registers the global Ctrl-O action whose handler flips tool-output
+ * expansion for the mounted session's tool calls.
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
   const screen = ctx.blueScreen
   const colors = ctx.blueTheme.colors
   const toggle: CollapseToggle = { expanded: false, components: new Set() }
+
+  const status = new BlueStatusService(ctx, screen)
+  const footer = new FooterShellComponent(status, colors, ctx.blueComponents)
+  status.attach(footer)
+  ctx.effect(() => screen.addBottomChild(footer))
 
   ctx.effect(() => ctx.blueKeymap.register([{
     id: ACTION_TOGGLE_COLLAPSE,

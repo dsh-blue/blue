@@ -11,7 +11,6 @@
  * @module @deepseek-ai/dsh-blue-transcript/components
  */
 
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {
   BlueComponent,
   BlueComponents,
@@ -135,8 +134,15 @@ export class AssistantMessageComponent implements BlueComponent {
     if (streaming) {
       const cursor = this.colors.accent('▌')
       const last = lines.at(-1)
-      if (last) lines[lines.length - 1] = last + cursor
-      else lines.push(cursor)
+      // The cursor shares the last row: a full-width row must yield one
+      // column, or pi-tui rejects the over-wide line at render time.
+      if (last) {
+        lines[lines.length - 1] = this.components.visibleWidth(last) >= width
+          ? this.components.truncateToWidth(last, width - 1) + cursor
+          : last + cursor
+      } else {
+        lines.push(cursor)
+      }
     }
     this.cache = { key, lines }
     return lines
@@ -217,56 +223,6 @@ export class ToolCallComponent implements BlueComponent {
         lines.push(`  ${this.colors.border('⎿')} ${summaryColor(line)}`)
       }
     }
-    this.cache = { key, lines }
-    return lines
-  }
-}
-
-/**
- * The MVP status bar: one fixed line with the model name and agent status.
- * No extension seam — the first real consumer drives any future `blueStatus`
- * service.
- */
-export class StatusBarComponent implements BlueComponent {
-  private readonly colors: BlueSemanticColors
-  private readonly components: BlueComponents
-  private model = ''
-  private status: 'idle' | 'running' = 'idle'
-  private cache: RenderCache | null = null
-
-  /**
-   * @param colors - the semantic color table.
-   * @param components - the component factory providing the width helpers.
-   */
-  constructor(colors: BlueSemanticColors, components: BlueComponents) {
-    this.colors = colors
-    this.components = components
-  }
-
-  /**
-   * Refresh the displayed facts from the current agent.
-   * @param agent - the agent whose model and status the bar shows.
-   */
-  update(agent: Agent): void {
-    this.model = agent.options.model ?? agent.options.provider ?? 'no model'
-    this.status = agent.status
-    this.cache = null
-  }
-
-  /** Drop the cached line; the next render rebuilds from the last update. */
-  invalidate(): void {
-    this.cache = null
-  }
-
-  /**
-   * @param width - current viewport width in columns.
-   * @returns exactly one row.
-   */
-  render(width: number): string[] {
-    const key = `${width}:${this.model}:${this.status}`
-    if (this.cache?.key === key) return this.cache.lines
-    const text = this.components.truncateToWidth(`${this.model} · ${this.status}`, width)
-    const lines = [this.colors.muted(text) + ' '.repeat(Math.max(0, width - this.components.visibleWidth(text)))]
     this.cache = { key, lines }
     return lines
   }

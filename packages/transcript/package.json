@@ -17,12 +17,27 @@
       "types": "./lib/types/invariant.d.ts",
       "default": "./lib/invariant.js"
     },
+    "./status-basic": {
+      "types": "./lib/types/status-basic.d.ts",
+      "default": "./lib/status-basic.js"
+    },
+    "./status-git": {
+      "types": "./lib/types/status-git.d.ts",
+      "default": "./lib/status-git.js"
+    },
+    "./status-context": {
+      "types": "./lib/types/status-context.d.ts",
+      "default": "./lib/status-context.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
     "lib/invariant.js",
+    "lib/status-basic.js",
+    "lib/status-git.js",
+    "lib/status-context.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",

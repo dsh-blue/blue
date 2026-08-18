@@ -7,11 +7,9 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { BlueComponents, BlueSemanticColors } from '@deepseek-ai/dsh-blue-core'
 import {
   AssistantMessageComponent,
-  StatusBarComponent,
   ToolCallComponent,
   UserMessageComponent,
 } from '../src/components.ts'
@@ -125,6 +123,16 @@ describe('AssistantMessageComponent', () => {
       expect(components.visibleWidth(line)).toBeLessThanOrEqual(12)
     }
   })
+
+  it('yields one column for the streaming cursor on a full-width last line', () => {
+    const components = setup()
+    // The last rendered row is exactly `width` columns; appending the cursor
+    // naively overflowed the viewport and crashed pi-tui's render guard.
+    const item = assistantItem({ text: 'x'.repeat(12), streaming: true })
+    const lines = new AssistantMessageComponent(item, COLORS, components).render(12)
+    for (const line of lines) expect(components.visibleWidth(line)).toBeLessThanOrEqual(12)
+    expect(lines.at(-1)?.endsWith('▌')).toBe(true)
+  })
 })
 
 describe('ToolCallComponent', () => {
@@ -201,53 +209,5 @@ describe('ToolCallComponent', () => {
     const component = new ToolCallComponent(item, tagged(), setup())
     component.setExpanded(true)
     expect(component.render(80)[2]).toBe('  [B]⎿[/B] [M]only summary[/M]')
-  })
-})
-
-describe('StatusBarComponent', () => {
-  const agent = (model: string | undefined, status: 'idle' | 'running') => ({
-    status,
-    options: model === undefined ? {} : { model },
-    session: { events: [] },
-  } as unknown as Agent)
-
-  it('renders model and status on one padded line', () => {
-    const bar = new StatusBarComponent(tagged(), setup())
-    bar.update(agent('deepseek-chat', 'idle'))
-    const lines = bar.render(23)
-    expect(lines).toHaveLength(1)
-    expect(lines[0]).toBe('[M]deepseek-chat · idle[/M]   ')
-  })
-
-  it('pads to the full width', () => {
-    const components = setup()
-    const bar = new StatusBarComponent(COLORS, components)
-    bar.update(agent('deepseek-chat', 'idle'))
-    const line = bar.render(25)[0]!
-    expect(line).toBe('deepseek-chat · idle     ')
-    expect(components.visibleWidth(line)).toBe(25)
-  })
-
-  it('falls back to provider, then to a placeholder', () => {
-    const bar = new StatusBarComponent(COLORS, setup())
-    bar.update({ status: 'running', options: { provider: 'deepseek' }, session: { events: [] } } as unknown as Agent)
-    expect(bar.render(80)[0]).toContain('deepseek · running')
-    bar.update({ status: 'idle', options: {}, session: { events: [] } } as unknown as Agent)
-    expect(bar.render(80)[0]).toContain('no model · idle')
-  })
-
-  it('truncates long model names to the width', () => {
-    const components = setup()
-    const bar = new StatusBarComponent(COLORS, components)
-    bar.update(agent('x'.repeat(50), 'running'))
-    expect(components.visibleWidth(bar.render(10)[0]!)).toBe(10)
-  })
-
-  it('caches and invalidates', () => {
-    const bar = new StatusBarComponent(COLORS, setup())
-    bar.update(agent('m', 'idle'))
-    expect(bar.render(80)).toBe(bar.render(80))
-    bar.invalidate()
-    expect(bar.render(80)).toEqual(bar.render(80))
   })
 })
