@@ -22,6 +22,14 @@ Blue 终端 UI 交互层，构建于 [`dsh-blue-core`](../../blue/core/README.md
 
 **`./pane-queue`** 子路径插件（`blue-pane-queue`，inject `['blueScreen', 'blueTheme', 'blueKeymap']`）是排队消息面板：底钉组件列出当前挂载 agent 的 inbox 排队消息——每条一行 muted 的 `queued ↑ turn:|step:` 前缀行，由过滤到该 agent 的 `agent/inbox/inserted|claimed|discarded` 事件刷新，inbox 为空时渲染零行。它还注册无键语境动作 `blue.queue.recall`，其在 `ctx.blueKeymap.list()` 中的存在即为 `blue-input` 召回功能的启用信号：编辑器 buffer 为空时按 ↑，移除最近一条排队消息（`nextStep` 末尾优先于 `nextTurn`——steer 是更新的意图）并把其文本设为草稿。该动作不绑键，因为 `up` 已被 `blue.interaction.move-up` 占用且 keymap 拒绝重复绑定——召回经既有 move-up 绑定匹配；未加载本插件时，基线把 ↑ 留给编辑器的历史浏览。
 
+**`./attachments`** 子路径插件（`blue-attachments`，inject `['blueComponents']`）提供 harness 的 `attachments` `AttachmentStore`：`FilesystemAttachmentStore` 带魔数嗅探（共享 sniffer 导出）、媒体类型白名单与上限（10MB/图、8 图/消息、30MB/消息、16M 像素），文件存于 `DSH_BLUE_ATTACHMENT_DIR ?? $DSH_HOME/attachments ?? ~/.dsh/attachments` 之下，命名为 `<uuid>.<ext>`；`AttachmentError` code 对齐 dsh-attachment 词表。
+
+**`./paste-image`** 子路径插件（`blue-paste-image`，inject `['attachments', 'blueKeymap']`）注册语境 ctrl+v 动作 `blue.image.paste`，在共享编辑器 `onKey` 链上的 wrapper 中解析。剪贴板经可注入的 reader 读取（默认 wl-paste → xclip 探测，3 秒超时）；图片经 `ctx.attachments` 落盘，并在光标处插入 `[image #N]` 标记（`BlueEditor.insertText`；模块级标记 map 跨主题换装 reload 存活）。下述提交变换器把标记拆成 ImageBlock；失败时闪现 notice，插件卸载后晚到的完成 no-op。
+
+## 提交变换器缝
+
+共享编辑器模块（`src/editor-instance.ts`）暴露 `registerSubmitTransformer(fn): disposer` 与 `applySubmitTransformers(text)`——后者按注册序拼接各贡献，空结果保持历史的单 text block。follow-up 与 steer 两条提交路径都经它构建消息内容——`blue-paste-image` 用它把 `[image #N]` 标记拆成图片块。
+
 ## `blueSession` 契约
 
 当前 agent 通过 `ctx.get('blueSession')` 读取（绝不用 `inject`），因为 app 插件可能晚于本包激活。`BlueSessionRef` 与 `blue/request-resume` 事件由 `@deepseek-ai/dsh-blue-app` 拥有并声明；本包经 type-only import 消费。

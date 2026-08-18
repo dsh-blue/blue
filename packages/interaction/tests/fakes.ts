@@ -29,6 +29,9 @@ import type {
   BlueTheme,
 } from '@deepseek-ai/dsh-blue-core'
 import type { BlueScreenService, BlueKeymapService, BlueComponentsService } from '@deepseek-ai/dsh-blue-core'
+// BlueImage/BlueImageOptions are not root-exported by core yet; source-plane
+// tests import them straight from core's src types.
+import type { BlueImage, BlueImageOptions } from '../../core/src/types.ts'
 import {
   INTERACTION_KEY_ACTIONS,
 } from '../src/keys.ts'
@@ -42,6 +45,7 @@ const SEQUENCE_BY_KEY_ID: Record<string, string> = {
   space: ' ',
   'ctrl+c': '\x03',
   'ctrl+s': '\x13',
+  'ctrl+v': '\x16',
 }
 
 /** Convenience aliases for the fake key sequences. */
@@ -55,6 +59,7 @@ export const KEY = {
   space: ' ',
   ctrlC: '\x03',
   ctrlS: '\x13',
+  ctrlV: '\x16',
 } as const
 
 /**
@@ -202,6 +207,8 @@ export class FakeBlueEditor implements BlueEditor {
   showingAutocomplete = false
   /** Every line recorded through `addToHistory`, in order. */
   readonly history: string[] = []
+  /** Every string recorded through `insertText`, in order. */
+  readonly inserted: string[] = []
   /** The last border color set; identity until restyled. */
   borderColor: BlueColorFn = identity
   /** The last autocomplete provider attached, if any. */
@@ -224,6 +231,13 @@ export class FakeBlueEditor implements BlueEditor {
 
   addToHistory(text: string): void {
     this.history.push(text)
+  }
+
+  /** The fake has no cursor model: insertion appends and fires onChange. */
+  insertText(text: string): void {
+    this.inserted.push(text)
+    this.text += text
+    this.onChange?.(this.text)
   }
 
   setBorderColor(color: BlueColorFn): void {
@@ -356,6 +370,35 @@ export class FakeBlueComponents implements BlueComponents {
 
   createSettingsList(options: BlueSettingsListOptions): BlueSettingsList {
     return fakeSettingsList(options)
+  }
+
+  /** Every image created through this factory, in creation order. */
+  readonly images: BlueImageOptions[] = []
+
+  createImage(options: BlueImageOptions): BlueImage {
+    this.images.push(options)
+    return {
+      render: () => [`[image: ${options.mediaType}]`],
+      invalidate: () => {},
+    }
+  }
+
+  /**
+   * Minimal dimension probe: real parsing for PNG (big-endian at offset 16)
+   * and GIF (little-endian at offset 6), `undefined` otherwise.
+   */
+  imageDimensions(data: Uint8Array): { width: number, height: number } | undefined {
+    if (data.length >= 24 && data[0] === 0x89 && data[1] === 0x50) {
+      const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
+      return { width: view.getUint32(16), height: view.getUint32(20) }
+    }
+    if (data.length >= 10 && data[0] === 0x47 && data[1] === 0x49) {
+      return {
+        width: (data[6] ?? 0) | ((data[7] ?? 0) << 8),
+        height: (data[8] ?? 0) | ((data[9] ?? 0) << 8),
+      }
+    }
+    return undefined
   }
 
   visibleWidth(text: string): number {

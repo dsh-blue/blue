@@ -14,6 +14,7 @@
 import type { BlueEditor } from '@deepseek-ai/dsh-blue-core'
 // Empty type import carries the Cordis `Events` interface this file merges into.
 import type {} from '@deepseek-ai/cordis'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -70,4 +71,47 @@ export function clearSharedEditor(): void {
  */
 export function getSharedEditor(): SharedEditor | undefined {
   return shared
+}
+
+/**
+ * Rewrites one submitted line into content blocks. Enhancement plugins (e.g.
+ * `blue-paste-image`) register one to contribute non-text blocks: the
+ * transformer receives the ORIGINAL submitted text and returns the blocks it
+ * owns, splitting text runs around its markers itself. An empty array means
+ * "nothing to contribute" and the text passes through unchanged.
+ */
+export type SubmitTransformer = (text: string) => ContentBlock[]
+
+/** Registered transformers, in registration order. */
+const submitTransformers: SubmitTransformer[] = []
+
+/**
+ * Register a submit transformer; called by enhancement plugins inside a
+ * `ctx.effect` so unloading reverts the contribution.
+ * @param transformer - the transformer to append.
+ * @returns an idempotent disposer removing exactly this registration.
+ */
+export function registerSubmitTransformer(transformer: SubmitTransformer): () => void {
+  submitTransformers.push(transformer)
+  let disposed = false
+  return () => {
+    if (disposed) return
+    disposed = true
+    submitTransformers.splice(submitTransformers.indexOf(transformer), 1)
+  }
+}
+
+/**
+ * Build the content blocks for one submitted line: the concatenation of
+ * every registered transformer's contribution, in registration order. With
+ * no transformers registered — or when every transformer declines (returns
+ * an empty array) — the result is the historical single text block, so the
+ * baseline behavior is unchanged.
+ * @param text - the submitted line.
+ * @returns the message content blocks.
+ */
+export function applySubmitTransformers(text: string): ContentBlock[] {
+  if (submitTransformers.length === 0) return [{ type: 'text', text }]
+  const blocks = submitTransformers.flatMap(transformer => transformer(text))
+  return blocks.length === 0 ? [{ type: 'text', text }] : blocks
 }

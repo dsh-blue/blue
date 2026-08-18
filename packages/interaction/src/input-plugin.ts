@@ -32,7 +32,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { BlueComponent } from '@deepseek-ai/dsh-blue-core'
 import { parseCommand } from '@deepseek-ai/dsh-commands'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { clearSharedEditor, setSharedEditor } from './editor-instance.ts'
+import { applySubmitTransformers, clearSharedEditor, setSharedEditor } from './editor-instance.ts'
 import { clearDraft, getStashedDraft, stashDraft } from './draft-stash.ts'
 import { ACTION_CANCEL, ACTION_INTERRUPT, ACTION_MOVE_UP, ACTION_STEER } from './keys.ts'
 import { ACTION_QUEUE_RECALL, queuedMessageText } from './pane-queue.ts'
@@ -165,7 +165,7 @@ export function apply(ctx: Context): void {
     }
     if (parseCommand(line) === undefined) {
       agent.followup(createUserMessage({
-        content: [{ type: 'text', text: line }],
+        content: applySubmitTransformers(line),
         source: { kind: 'user' },
       }))
       return
@@ -269,7 +269,7 @@ export function apply(ctx: Context): void {
       const agent = currentBlueAgent(ctx)
       if (text.length === 0 || agent === undefined) return false
       agent.steer(createUserMessage({
-        content: [{ type: 'text', text }],
+        content: applySubmitTransformers(text),
         source: { kind: 'user' },
       }))
       editor.setText('')
