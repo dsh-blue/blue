@@ -312,6 +312,13 @@ export interface BlueKeymap {
    * @returns the bound key ids, empty for unknown actions.
    */
   getKeys(action: string): string[]
+  /**
+   * Snapshot every registered action in registration order, for keybinding
+   * UIs that enumerate the registry (e.g. `/help`).
+   * @returns a fresh array of the current actions; mutating it does not
+   *   touch the registry.
+   */
+  list(): readonly BlueKeyAction[]
 }
 
 /** An RGB color sampled from the terminal (pi-tui's `RgbColor` shape, re-owned). */

@@ -6,6 +6,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { BlueKeymapError, BlueKeymapService } from '../src/keymap.ts'
+import type { BlueKeyAction } from '../src/types.ts'
 
 describe('BlueKeymapService', () => {
   it('registers as ctx.blueKeymap and unregisters when the fiber disposes', async () => {
@@ -173,5 +174,55 @@ describe('BlueKeymapService', () => {
     dispose()
     expect(keymap.dispatch('\x0f')).toBe(false)
     expect(handler).toHaveBeenCalledTimes(1)
+  })
+
+  it('lists every registered action in registration order across batches', async () => {
+    const ctx = new Context()
+    await ctx.plugin(BlueKeymapService)
+    const keymap = ctx.blueKeymap
+    expect(keymap.list()).toEqual([])
+
+    keymap.register([{ id: 'blue.a', keys: 'ctrl+x', description: 'A' }])
+    const handler = () => {}
+    keymap.register([
+      { id: 'blue.b', keys: ['ctrl+o', 'f2'], handler },
+      { id: 'blue.c', keys: 'f3' },
+    ])
+
+    expect(keymap.list()).toEqual([
+      { id: 'blue.a', keys: ['ctrl+x'], description: 'A' },
+      { id: 'blue.b', keys: ['ctrl+o', 'f2'], handler },
+      { id: 'blue.c', keys: ['f3'] },
+    ])
+  })
+
+  it('returns a detached snapshot that cannot reach the registry state', async () => {
+    const ctx = new Context()
+    await ctx.plugin(BlueKeymapService)
+    const keymap = ctx.blueKeymap
+    keymap.register([{ id: 'blue.a', keys: 'ctrl+x' }])
+
+    const snapshot = keymap.list() as BlueKeyAction[]
+    snapshot.length = 0
+    snapshot.push({ id: 'blue.injected', keys: ['f9'] })
+    expect(keymap.list().map(action => action.id)).toEqual(['blue.a'])
+    // Mutating a snapshotted key list does not rebind the action.
+    const entry = keymap.list()[0]!
+    ;(entry.keys as string[]).push('f9')
+    expect(keymap.getKeys('blue.a')).toEqual(['ctrl+x'])
+    expect(keymap.matches('\x1bOP', 'blue.a')).toBe(false)
+  })
+
+  it('drops a batch from the snapshot once its disposer runs', async () => {
+    const ctx = new Context()
+    await ctx.plugin(BlueKeymapService)
+    const keymap = ctx.blueKeymap
+    keymap.register([{ id: 'blue.stay', keys: 'f5' }])
+    const dispose = keymap.register([{ id: 'blue.temp', keys: 'ctrl+t', description: 'Temp' }])
+    keymap.register([{ id: 'blue.tail', keys: 'f6' }])
+
+    expect(keymap.list().map(action => action.id)).toEqual(['blue.stay', 'blue.temp', 'blue.tail'])
+    dispose()
+    expect(keymap.list().map(action => action.id)).toEqual(['blue.stay', 'blue.tail'])
   })
 })

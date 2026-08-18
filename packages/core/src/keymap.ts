@@ -152,4 +152,21 @@ export class BlueKeymapService extends Service implements BlueKeymap {
   getKeys(action: string): string[] {
     return [...(this.actions.get(action)?.keys ?? [])]
   }
+
+  /**
+   * Snapshot every registered action in registration order (Map insertion
+   * order). Each entry is a fresh object with a copied key list, so callers
+   * cannot reach the registry's internal state through the result.
+   * @returns the currently registered actions.
+   */
+  list(): readonly BlueKeyAction[] {
+    return [...this.actions].map(([id, entry]) => ({
+      id,
+      keys: [...entry.keys],
+      // exactOptionalPropertyTypes forbids assigning undefined to the
+      // optional slots, so each is spread in only when present.
+      ...(entry.description === undefined ? {} : { description: entry.description }),
+      ...(entry.handler === undefined ? {} : { handler: entry.handler }),
+    }))
+  }
 }
