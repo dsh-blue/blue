@@ -102,6 +102,8 @@ describe('blue-interaction through the real Loader', () => {
   it('registers the key batch, the built-in commands, and the questions provider', async () => {
     const { ctx } = await bootInteraction()
     expect(ctx.get('blueKeymap')?.getKeys('blue.interaction.submit')).toEqual(['enter'])
+    expect(ctx.get('blueKeymap')?.getKeys('blue.interaction.interrupt')).toEqual(['ctrl+c'])
+    expect(ctx.get('blueKeymap')?.getKeys('blue.interaction.steer')).toEqual(['ctrl+s'])
     expect(ctx.commands.find(lookupAgent(), 'quit')).toBeDefined()
     expect(ctx.commands.find(lookupAgent(), 'resume')).toBeDefined()
     // The provider occupies the single user-questions slot.
@@ -113,6 +115,7 @@ describe('blue-interaction through the real Loader', () => {
     const { ctx, output } = await bootInteraction()
     await ctx.fiber.dispose()
     expect(ctx.get('blueKeymap')?.getKeys('blue.interaction.submit') ?? []).toEqual([])
+    expect(ctx.get('blueKeymap')?.getKeys('blue.interaction.interrupt') ?? []).toEqual([])
     expect(ctx.get('commands')).toBeUndefined()
     expect(ctx.get('userQuestions')).toBeUndefined()
     // ProcessTerminal.stop disables bracketed paste on the real stdout.

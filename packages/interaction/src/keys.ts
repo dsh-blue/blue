@@ -3,8 +3,10 @@
  * `blue-interaction-keys` plugin: the multi-select overlay (`BlueSelect`)
  * resolves its keys through `ctx.blueKeymap` against these action ids, so
  * key claims never conflict and hint text reflects the registered bindings.
- * Text-editing keys are owned by the pi-tui Editor behind
- * `ctx.blueComponents.createEditor` and no longer appear here.
+ * The editor-context actions (interrupt, steer) carry no handler: they are
+ * resolved by the main editor's `onKey` hook in `./input-plugin.ts`, never
+ * by the global dispatcher. Text-editing keys are owned by the pi-tui
+ * Editor behind `ctx.blueComponents.createEditor` and do not appear here.
  *
  * @module @deepseek-ai/dsh-blue-interaction/keys
  */
@@ -22,6 +24,10 @@ export const ACTION_MOVE_UP = 'blue.interaction.move-up'
 export const ACTION_MOVE_DOWN = 'blue.interaction.move-down'
 /** Toggle the focused choice in a multi-select list (Space). */
 export const ACTION_TOGGLE = 'blue.interaction.toggle'
+/** Clear the input, interrupt the agent, or exit on a second press (Ctrl-C); editor-context only. */
+export const ACTION_INTERRUPT = 'blue.interaction.interrupt'
+/** Steer the current turn with the drafted input (Ctrl-S); editor-context only. */
+export const ACTION_STEER = 'blue.interaction.steer'
 
 /** The full interaction key batch, registered as one unit. */
 export const INTERACTION_KEY_ACTIONS: readonly BlueKeyAction[] = [
@@ -30,6 +36,8 @@ export const INTERACTION_KEY_ACTIONS: readonly BlueKeyAction[] = [
   { id: ACTION_MOVE_UP, keys: 'up', description: 'Move the list cursor up' },
   { id: ACTION_MOVE_DOWN, keys: 'down', description: 'Move the list cursor down' },
   { id: ACTION_TOGGLE, keys: 'space', description: 'Toggle the focused choice in a multi-select' },
+  { id: ACTION_INTERRUPT, keys: 'ctrl+c', description: 'Clear input / interrupt the agent / press twice to exit' },
+  { id: ACTION_STEER, keys: 'ctrl+s', description: 'Steer the current turn with the draft' },
 ]
 
 /** Stable Cordis plugin name. */

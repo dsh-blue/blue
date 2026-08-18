@@ -6,7 +6,11 @@
  * otherwise queues the text as a user follow-up message on the current
  * agent (the harness inbox queues it when the agent is running). A muted
  * hint line below the editor shows slash-command discovery and one-shot
- * notices. The mounted editor and the submit router are published through
+ * notices. The editor-context key chain (Escape clear/interrupt, Ctrl-C
+ * clear/interrupt/double-press exit, Ctrl-S steer) resolves through
+ * `ctx.blueKeymap` in the editor's `onKey` hook, which runs before the
+ * pi-tui Editor sees the sequence. The mounted editor and the submit router
+ * are published through
  * `./editor-instance.ts` so `blue-editor-plus` can layer input modes and
  * autocomplete over the same component.
  *
@@ -18,15 +22,20 @@ import type { BlueComponent } from '@deepseek-ai/dsh-blue-core'
 import { parseCommand } from '@deepseek-ai/dsh-commands'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { clearSharedEditor, setSharedEditor } from './editor-instance.ts'
+import { ACTION_CANCEL, ACTION_INTERRUPT, ACTION_STEER } from './keys.ts'
 import { currentBlueAgent } from './session.ts'
 
 /** Slash-command hint rows shown at once. */
 const MAX_HINT_COMMANDS = 3
+/** Window for the double Ctrl-C exit: presses farther apart re-arm the hint. */
+const INTERRUPT_DOUBLE_PRESS_MS = 1000
+/** Timestamp of the last idle Ctrl-C press; 0 means the exit is not armed. */
+let lastInterruptAt = 0
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-input'
 /** Services required before the editor can mount. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'commands']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'commands']
 
 /**
  * The muted single-line hint rendered under the input editor. Empty when no
@@ -149,6 +158,69 @@ export function apply(ctx: Context): void {
     )
   }
 
+  /**
+   * The editor-context key chain, resolved through the keymap before the
+   * pi-tui Editor sees the sequence (it swallows Ctrl-C with no behavior,
+   * so interception must happen here). Returns true to consume.
+   * @param data - the input sequence as read from the terminal.
+   * @returns whether the sequence was consumed.
+   */
+  function handleEditorKey(data: string): boolean {
+    const keymap = ctx.blueKeymap
+    // Escape: an open autocomplete dropdown owns the key (the Editor closes
+    // it); otherwise clear the draft, then interrupt a running agent.
+    if (keymap.matches(data, ACTION_CANCEL)) {
+      if (editor.isShowingAutocomplete()) return false
+      if (editor.getText().length > 0) {
+        editor.setText('')
+        return true
+      }
+      const agent = currentBlueAgent(ctx)
+      if (agent?.status === 'running') {
+        agent.cancel({ kind: 'user' })
+        return true
+      }
+      return false
+    }
+    // Ctrl-C: the same clear/interrupt chain, then the double-press exit —
+    // the first idle press only arms the window and flashes the hint.
+    if (keymap.matches(data, ACTION_INTERRUPT)) {
+      if (editor.getText().length > 0) {
+        editor.setText('')
+        return true
+      }
+      const agent = currentBlueAgent(ctx)
+      if (agent?.status === 'running') {
+        agent.cancel({ kind: 'user' })
+        return true
+      }
+      const now = Date.now()
+      if (now - lastInterruptAt < INTERRUPT_DOUBLE_PRESS_MS) {
+        lastInterruptAt = 0
+        // Same exit path as `/quit`: optional, launcher-provided.
+        ctx.get('appExit')?.(0)
+        return true
+      }
+      lastInterruptAt = now
+      setNotice('press ctrl+c again to exit')
+      return true
+    }
+    // Ctrl-S: steer the current turn with the draft — an idle agent starts
+    // a turn, a running one consumes it at the next step boundary.
+    if (keymap.matches(data, ACTION_STEER)) {
+      const text = editor.getText().trim()
+      const agent = currentBlueAgent(ctx)
+      if (text.length === 0 || agent === undefined) return false
+      agent.steer(createUserMessage({
+        content: [{ type: 'text', text }],
+        source: { kind: 'user' },
+      }))
+      editor.setText('')
+      return true
+    }
+    return false
+  }
+
   editor.onChange = (text) => {
     currentText = text
     notice = undefined
@@ -160,6 +232,7 @@ export function apply(ctx: Context): void {
   editor.onSubmit = (text) => {
     submitPrompt(text)
   }
+  editor.onKey = handleEditorKey
 
   ctx.effect(() => {
     // Pin below the transcript: pi-tui renders root children in mount order,

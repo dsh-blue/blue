@@ -31,8 +31,10 @@ import type {
 import type { BlueScreenService, BlueKeymapService, BlueComponentsService } from '@deepseek-ai/dsh-blue-core'
 import {
   ACTION_CANCEL,
+  ACTION_INTERRUPT,
   ACTION_MOVE_DOWN,
   ACTION_MOVE_UP,
+  ACTION_STEER,
   ACTION_SUBMIT,
   ACTION_TOGGLE,
 } from '../src/keys.ts'
@@ -44,6 +46,8 @@ const FAKE_KEY_SEQUENCES: Record<string, string[]> = {
   [ACTION_MOVE_UP]: ['\x1b[A'],
   [ACTION_MOVE_DOWN]: ['\x1b[B'],
   [ACTION_TOGGLE]: [' '],
+  [ACTION_INTERRUPT]: ['\x03'],
+  [ACTION_STEER]: ['\x13'],
 }
 
 /** Key-id labels the fake keymap reports for hint text. */
@@ -53,6 +57,8 @@ const FAKE_KEY_IDS: Record<string, string[]> = {
   [ACTION_MOVE_UP]: ['up'],
   [ACTION_MOVE_DOWN]: ['down'],
   [ACTION_TOGGLE]: ['space'],
+  [ACTION_INTERRUPT]: ['ctrl+c'],
+  [ACTION_STEER]: ['ctrl+s'],
 }
 
 /** Convenience aliases for the fake key sequences. */
@@ -62,12 +68,15 @@ export const KEY = {
   up: '\x1b[A',
   down: '\x1b[B',
   space: ' ',
+  ctrlC: '\x03',
+  ctrlS: '\x13',
 } as const
 
 /** Fake keymap: exact-sequence matching for `matches`, key-id labels for `getKeys`. */
 export class FakeKeymap implements BlueKeymap {
   private readonly sequences = new Map<string, string[]>()
   private readonly ids = new Map<string, string[]>()
+  private readonly handlers = new Map<string, () => void>()
 
   /**
    * @param withDefaults - preload the interaction action bindings; pass
@@ -84,17 +93,30 @@ export class FakeKeymap implements BlueKeymap {
       const keys = typeof action.keys === 'string' ? [action.keys] : [...action.keys]
       this.ids.set(action.id, keys)
       this.sequences.set(action.id, keys)
+      if (action.handler !== undefined) this.handlers.set(action.id, action.handler)
     }
     return () => {
       for (const action of actions) {
         this.ids.delete(action.id)
         this.sequences.delete(action.id)
+        this.handlers.delete(action.id)
       }
     }
   }
 
   matches(data: string, action: string): boolean {
     return this.sequences.get(action)?.includes(data) ?? false
+  }
+
+  dispatch(data: string): boolean {
+    for (const [id, keys] of this.sequences) {
+      const handler = this.handlers.get(id)
+      if (handler !== undefined && keys.includes(data)) {
+        handler()
+        return true
+      }
+    }
+    return false
   }
 
   getKeys(action: string): string[] {
@@ -162,15 +184,19 @@ function fakeTruncate(text: string, width: number, ellipsis = '...'): string {
 }
 
 /**
- * In-memory BlueEditor: `handleInput` appends any sequence verbatim and
- * submits on `'\r'` (unless `disableSubmit`); `setText` fires `onChange`
+ * In-memory BlueEditor: `handleInput` asks `onKey` first (a true reply
+ * consumes the sequence), then appends any sequence verbatim and submits on
+ * `'\r'` (unless `disableSubmit`); `setText` fires `onChange`
  * synchronously, mirroring the wrapped component's contract.
  */
 export class FakeBlueEditor implements BlueEditor {
   focused = false
   onSubmit: ((text: string) => void) | undefined
   onChange: ((text: string) => void) | undefined
+  onKey: ((data: string) => boolean) | undefined
   disableSubmit = false
+  /** Autocomplete dropdown visibility reported by `isShowingAutocomplete`. */
+  showingAutocomplete = false
   /** Every line recorded through `addToHistory`, in order. */
   readonly history: string[] = []
   /** The last border color set; identity until restyled. */
@@ -205,7 +231,12 @@ export class FakeBlueEditor implements BlueEditor {
     this.autocompleteProvider = provider
   }
 
+  isShowingAutocomplete(): boolean {
+    return this.showingAutocomplete
+  }
+
   handleInput(data: string): void {
+    if (this.onKey?.(data) === true) return
     if (data === KEY.enter) {
       if (!this.disableSubmit) this.onSubmit?.(this.text)
       return
