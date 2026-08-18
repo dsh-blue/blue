@@ -19,7 +19,7 @@
 - insert:
     # --- Baseline segment -----------------------------------------------------
     # The plain baseline is this segment plus the assembly segment at the
-    # bottom — seven rows total — and it is the complete, self-sufficient Blue
+    # bottom — eight rows total — and it is the complete, self-sufficient Blue
     # UI: the whole enhancement segment between them can be dropped and the
     # bundle still boots and works.
 
@@ -33,6 +33,14 @@
     # providing the blueTheme service as its own fiber.
     - id: blue-theme-dark
       name: '@deepseek-ai/dsh-blue-core/theme-dark'
+
+    # Welcome banner: the pixel-castle box rendered once at boot as the first
+    # scroll-area child (model · provider from agentDefaultModel, cwd, tips).
+    # Sits before blue-transcript on purpose: both fibers resolve in the same
+    # blueComponents activation round, so the earlier row keeps the banner
+    # first in the scroll area across initial mounts and /theme reloads.
+    - id: blue-banner
+      name: '@deepseek-ai/dsh-blue-transcript/banner'
 
     # Transcript: renders session events (streamed Markdown, tool calls) onto
     # the blue screen. Also provides the blueStatus registry and mounts the

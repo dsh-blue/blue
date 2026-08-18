@@ -47,6 +47,8 @@ import * as pasteImagePlugin from '../../../interaction/src/paste-image.ts'
 import { setClipboardImageReader } from '../../../interaction/src/paste-image.ts'
 import * as paneQueuePlugin from '../../../interaction/src/pane-queue.ts'
 import * as transcriptPlugin from '../../../transcript/src/index.ts'
+import * as bannerPlugin from '../../../transcript/src/banner.ts'
+import { BLUE_VERSION } from '../../../transcript/src/banner-content.ts'
 import * as intentDiffPlugin from '../../../transcript/src/intent-diff.ts'
 import * as intentTerminalPlugin from '../../../transcript/src/intent-terminal.ts'
 import * as paneActivityPlugin from '../../../transcript/src/pane-activity.ts'
@@ -80,6 +82,7 @@ interface BlueTree {
 interface BlueE2EHooks {
   coreApply: (ctx: Context) => Promise<void>
   themeDarkApply: typeof themeDarkPlugin.apply
+  bannerApply: typeof bannerPlugin.apply
   transcriptApply: typeof transcriptPlugin.apply
   intentDiffApply: typeof intentDiffPlugin.apply
   intentTerminalApply: typeof intentTerminalPlugin.apply
@@ -140,6 +143,7 @@ async function bootBlue(argv: string[], options: {
       ctx.effect(() => () => runtime.stop())
     },
     themeDarkApply: themeDarkPlugin.apply,
+    bannerApply: bannerPlugin.apply,
     transcriptApply: transcriptPlugin.apply,
     intentDiffApply: intentDiffPlugin.apply,
     intentTerminalApply: intentTerminalPlugin.apply,
@@ -179,6 +183,15 @@ export const apply = ctx => globalThis.__blueE2E.coreApply(ctx)
     `  name: ${fixture('blue-theme-dark.mjs', `
 export const name = 'blue-theme-dark'
 export const apply = globalThis.__blueE2E.themeDarkApply
+`)}`,
+    // The banner row mirrors cordis.patch.yml: it sits before the transcript
+    // row in the same blueComponents activation round, so the earlier row
+    // keeps the banner first in the scroll area across mounts and reloads.
+    '- id: blue-banner',
+    `  name: ${fixture('blue-banner.mjs', `
+export const name = 'blue-banner'
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'agentDefaultModel']
+export const apply = ctx => globalThis.__blueE2E.bannerApply(ctx)
 `)}`,
     '- id: blue-transcript',
     `  name: ${fixture('blue-transcript.mjs', `
@@ -424,6 +437,37 @@ describe('blue whole-tree e2e', () => {
     const output = tree.terminal.output
     expect(output).toContain('fix the build')
     expect(output).toContain('Blue online.')
+  })
+
+  it('renders the welcome banner at boot as the first scroll child, compact at eighty columns', async () => {
+    const tree = await bootBlue(['fix', 'the', 'build'], { script: [textResponse('Blue online.')] })
+    const agent = await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await agent.whenIdle()
+    await waitForRender()
+    const output = tree.terminal.output
+    expect(output).toContain('Welcome back!')
+    expect(output).toContain(`blue v${BLUE_VERSION}`)
+    // AgentDefaultModelConfig mounts provider/model 'mock'; the banner
+    // snapshots the selection at mount.
+    expect(output).toContain('mock · mock')
+    // The eighty-column FakeTerminal stays below the right-column threshold.
+    expect(output).not.toContain('Tips for getting started')
+    // The banner renders before any transcript content.
+    expect(output.indexOf('Welcome back!')).toBeLessThan(output.indexOf('Blue online.'))
+  })
+
+  it('joins the tips column on wide terminals with the banner still above the transcript', async () => {
+    const tree = await bootBlue(['fix', 'the', 'build'], { script: [textResponse('Blue online.')] })
+    const agent = await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await agent.whenIdle()
+    await waitForRender()
+    tree.terminal.resize(120, tree.terminal.rows)
+    const frame = await fullFrame(tree.terminal)
+    expect(frame).toContain('Welcome back!')
+    expect(frame).toContain('Tips for getting started')
+    expect(frame).toContain("What's new")
   })
 
   it('routes typed input to the agent and renders the streamed answer', async () => {
@@ -726,8 +770,9 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('mock · idle') })
     // Position discipline: a width change forces a full clear-and-repaint
     // frame, so the last such chunk carries every row in screen order —
-    // transcript reply, then the footer, then the editor's top border (dark
-    // palette `border` #5f87ff).
+    // transcript reply, then the footer, then the editor's top border (the
+    // first border-colored run at or after the footer; the banner above the
+    // transcript also paints with the dark palette `border` #5f87ff).
     tree.terminal.resize(100, 30)
     let frame = ''
     await vi.waitFor(() => {
@@ -737,7 +782,7 @@ describe('blue whole-tree e2e', () => {
     })
     const reply = frame.indexOf('Blue online.')
     const footer = frame.indexOf('mock · idle')
-    const editorBorder = frame.indexOf('\x1b[38;2;95;135;255m')
+    const editorBorder = frame.indexOf('\x1b[38;2;95;135;255m', footer)
     expect(reply).toBeGreaterThanOrEqual(0)
     expect(footer).toBeGreaterThan(reply)
     expect(editorBorder).toBeGreaterThan(footer)
@@ -896,6 +941,34 @@ describe('blue whole-tree e2e', () => {
     }
   })
 
+  it('keeps the banner first after a /theme swap reloads the transcript', async () => {
+    const tree = await bootBlue(['show', 'palette'], { script: [textResponse('palette reply')] })
+    const agent = await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await agent.whenIdle()
+    await waitForRender()
+    const beforeSwitch = tree.terminal.written.length
+    try {
+      const result = await executeCommand(tree, agent, '/theme light')
+      expect(result?.kind).toBe('success')
+      await vi.waitFor(() => {
+        expect(tree.ctx.get('blueTheme')?.colors).toBe(themeLightPlugin.LIGHT_COLORS)
+      })
+      // The swap reloads every blueTheme-dependent fiber — the transcript
+      // re-folds its whole snapshot back into the scroll area. The banner row
+      // sits before the transcript row, so in the shared blueComponents
+      // activation round it re-mounts first and stays the first scroll child.
+      await vi.waitFor(() => {
+        const rendered = tree.terminal.written.slice(beforeSwitch).join('')
+        expect(rendered).toContain('Welcome back!')
+        expect(rendered).toContain('palette reply')
+        expect(rendered.indexOf('Welcome back!')).toBeLessThan(rendered.indexOf('palette reply'))
+      })
+    } finally {
+      await backToDark(tree, agent)
+    }
+  })
+
   it('survives a typed /theme light: the swap unloads the input fiber mid-command without crashing', async () => {
     const tree = await bootBlue([], { script: [] })
     const agent = await currentAgent(tree)
@@ -946,10 +1019,12 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('working…') })
     const running = await fullFrame(tree.terminal)
     expect(running).toContain('working…')
-    // Dock order: the spinner sits between the footer and the editor.
+    // Dock order: the spinner sits between the footer and the editor (the
+    // first border-colored run at or after the spinner — the banner above
+    // also paints with `border`).
     const footerAt = running.indexOf('mock · running')
     const spinnerAt = running.indexOf('working…')
-    const borderAt = running.indexOf('\x1b[38;2;95;135;255m')
+    const borderAt = running.indexOf('\x1b[38;2;95;135;255m', spinnerAt)
     expect(footerAt).toBeGreaterThanOrEqual(0)
     expect(spinnerAt).toBeGreaterThan(footerAt)
     expect(borderAt).toBeGreaterThan(spinnerAt)
@@ -973,11 +1048,12 @@ describe('blue whole-tree e2e', () => {
     // A list with in-progress work starts expanded: one styled row per entry.
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('active-task') })
     // Dock order: the footer (mock · idle), then the todo pane, then the
-    // editor's top border (dark palette `border` #5f87ff).
+    // editor's top border (the first border-colored run at or after the pane
+    // — the banner above also paints with `border`).
     const expanded = await fullFrame(tree.terminal)
     const footer = expanded.indexOf('mock · idle')
     const todo = expanded.indexOf('active-task')
-    const editorBorder = expanded.indexOf('\x1b[38;2;95;135;255m')
+    const editorBorder = expanded.indexOf('\x1b[38;2;95;135;255m', todo)
     expect(footer).toBeGreaterThanOrEqual(0)
     expect(todo).toBeGreaterThan(footer)
     expect(editorBorder).toBeGreaterThan(todo)
@@ -1001,11 +1077,13 @@ describe('blue whole-tree e2e', () => {
       source: { kind: 'user' },
     }))
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('queued ↑ turn: queued-task') })
-    // Dock order: the queue pane sits between the footer and the editor.
+    // Dock order: the queue pane sits between the footer and the editor (the
+    // first border-colored run at or after the pane — the banner above also
+    // paints with `border`).
     const docked = await fullFrame(tree.terminal)
     const footerAt = docked.indexOf('mock · idle')
     const queuedAt = docked.indexOf('queued ↑ turn: queued-task')
-    const borderAt = docked.indexOf('\x1b[38;2;95;135;255m')
+    const borderAt = docked.indexOf('\x1b[38;2;95;135;255m', queuedAt)
     expect(footerAt).toBeGreaterThanOrEqual(0)
     expect(queuedAt).toBeGreaterThan(footerAt)
     expect(borderAt).toBeGreaterThan(queuedAt)

@@ -34,13 +34,17 @@ describe('blue bundle', () => {
   })
 
   it('inserts every Blue row the bundle ships, with the intent and paste rows in the enhancement segment', () => {
-    // The enhancement rows mount order: editor-plus first, the input-side
-    // attachment store + paste layer next, then the footer entries, then the
-    // two intent rows, then the panes, then the assembly segment.
+    // The baseline segment: core, theme, banner (before the transcript so
+    // the same-round activation keeps it the first scroll child), transcript,
+    // and the baseline footer entry. The enhancement rows mount order:
+    // editor-plus first, the input-side attachment store + paste layer next,
+    // then the footer entries, then the two intent rows, then the panes, then
+    // the assembly segment.
     const ids = [...patch.matchAll(/^\s*- id: (blue-[\w-]+)$/gm)].map(match => match[1]!)
     expect(ids).toEqual([
       'blue-core',
       'blue-theme-dark',
+      'blue-banner',
       'blue-transcript',
       'blue-status-basic',
       'blue-editor-plus',
@@ -58,11 +62,12 @@ describe('blue bundle', () => {
       'blue-startup',
       'blue-app',
     ])
-    // The four S7 rows resolve to their package subpath names.
+    // The S7/S8 rows resolve to their package subpath names.
     expect(patch).toContain("name: '@deepseek-ai/dsh-blue-transcript/intent-diff'")
     expect(patch).toContain("name: '@deepseek-ai/dsh-blue-transcript/intent-terminal'")
     expect(patch).toContain("name: '@deepseek-ai/dsh-blue-interaction/attachments'")
     expect(patch).toContain("name: '@deepseek-ai/dsh-blue-interaction/paste-image'")
+    expect(patch).toContain("name: '@deepseek-ai/dsh-blue-transcript/banner'")
   })
 })
 
