@@ -34,7 +34,7 @@ import { FakeTerminal, waitForRender } from '../../../core/tests/fake-terminal.t
 import * as interactionPlugin from '../../../interaction/src/index.ts'
 import * as editorPlusPlugin from '../../../interaction/src/editor-plus.ts'
 import * as transcriptPlugin from '../../../transcript/src/index.ts'
-import { MockAdapter, textResponse } from './mock-adapter.ts'
+import { MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
 
 const disposers: (() => Promise<void>)[] = []
 
@@ -80,10 +80,15 @@ async function bootBlue(argv: string[], options: {
     coreApply: async (ctx) => {
       // startBlueTerminal went async with the OSC 11 probe; the e2e skips the
       // probe (FakeTerminal answers no queries) and awaits the runtime. The
-      // service set mirrors core's apply: blueComponents mounts as a
-      // blueTheme-injecting sub-plugin so it waits for the theme-dark row.
+      // service set mirrors core's apply: the keymap instantiates directly
+      // (not via ctx.plugin) so the global dispatcher listener closes over
+      // the instance, and blueComponents mounts as a blueTheme-injecting
+      // sub-plugin so it waits for the theme-dark row.
       const runtime = await startBlueTerminal(terminal, () => Promise.resolve(undefined))
-      ctx.plugin(BlueKeymapService)
+      const keymap = new BlueKeymapService(ctx)
+      ctx.effect(() =>
+        runtime.tui.addInputListener(data => (keymap.dispatch(data) ? { consume: true } : undefined)),
+      )
       ctx.plugin(BlueTerminalInfoService, { background: runtime.background, kittyKeyboard: runtime.kittyKeyboard })
       ctx.plugin(BlueScreenService, runtime)
       ctx.plugin({
@@ -125,7 +130,7 @@ export const apply = ctx => globalThis.__blueE2E.themeDarkApply(ctx)
     '- id: blue-transcript',
     `  name: ${fixture('blue-transcript.mjs', `
 export const name = 'blue-transcript'
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap']
 export const apply = ctx => globalThis.__blueE2E.transcriptApply(ctx)
 `)}`,
     '- id: blue-interaction',
@@ -275,6 +280,82 @@ describe('blue whole-tree e2e', () => {
     tree.terminal.sendInput('\r')
     await expect(decision).resolves.toBe('allowed-once')
     expect(fallback).not.toHaveBeenCalled()
+  })
+
+  it('Ctrl-C interrupts a running turn: the agent returns to idle and the process stays up', async () => {
+    const tree = await bootBlue([], { script: ['hang'] })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'long work')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await vi.waitFor(() => { expect(agent.status).toBe('running') })
+    tree.terminal.sendInput('\x03')
+    await agent.whenIdle()
+    expect(agent.status).toBe('idle')
+    // The interrupt stays in-session: no exit was requested.
+    expect(tree.exits).toEqual([])
+  })
+
+  it('double Ctrl-C on an idle agent exits with code 0', async () => {
+    const tree = await bootBlue([], { script: [] })
+    await currentAgent(tree)
+    // Two presses inside the 1s double-press window: the first only arms the
+    // exit (hint-line notice), the second takes the same appExit path /quit
+    // uses.
+    tree.terminal.sendInput('\x03')
+    tree.terminal.sendInput('\x03')
+    expect(tree.exits).toEqual([0])
+  })
+
+  it('Esc clears the draft: a later submission carries only the new text', async () => {
+    const tree = await bootBlue([], { script: [textResponse('esc ok')] })
+    const agent = await currentAgent(tree)
+    for (const char of 'draft to discard') tree.terminal.sendInput(char)
+    tree.terminal.sendInput('\x1b')
+    typeLine(tree.terminal, 'kept')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    const messages = JSON.stringify(tree.adapter.requests[0]!.messages)
+    expect(messages).toContain('kept')
+    // Had Esc not cleared the buffer, the submission would have been the
+    // draft plus 'kept'.
+    expect(messages).not.toContain('draft to discard')
+    await agent.whenIdle()
+  })
+
+  it('Ctrl-O toggles a tool result between the one-line summary and the full output', async () => {
+    // Spaced words so the expanded wrap lands TAILMARKER intact on one row;
+    // past the 160-char summary ceiling so the collapsed form ellipsizes it
+    // away.
+    const fullOutput = `${'word '.repeat(80)}TAILMARKER end`
+    const tree = await bootBlue([], {
+      script: [toolCallResponse('call-long', 'long-output', {}), textResponse('tool done')],
+    })
+    const agent = await currentAgent(tree)
+    // A structural ToolDefinition registered without importing dsh-tools:
+    // the bundle package does not depend on it directly, and register() only
+    // validates the output declaration's shape.
+    const tools = (tree.ctx as unknown as { tools: { register(definition: unknown): () => void } }).tools
+    tools.register({
+      name: 'long-output',
+      description: 'test tool emitting a long output',
+      parameters: { type: 'object', properties: {} },
+      output: {
+        schema: { type: 'string' },
+        render: (_args: unknown, value: unknown) => [{ type: 'text', text: String(value) }],
+      },
+      execute: () => Promise.resolve(fullOutput),
+    })
+    typeLine(tree.terminal, 'run the tool')
+    await agent.whenIdle()
+    await waitForRender()
+    // Collapsed (the default): the one-line ellipsized summary renders; the
+    // tail of the full output does not.
+    expect(tree.terminal.output).toContain('long-output')
+    expect(tree.terminal.output).not.toContain('TAILMARKER')
+    const beforeToggle = tree.terminal.written.length
+    tree.terminal.sendInput('\x0f')
+    await waitForRender()
+    const expanded = tree.terminal.written.slice(beforeToggle).join('')
+    expect(expanded).toContain('TAILMARKER')
   })
 
   it('resumes a persisted session: history renders from the snapshot, no replay needed', async () => {
