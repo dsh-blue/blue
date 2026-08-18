@@ -470,6 +470,23 @@ describe('blue whole-tree e2e', () => {
     expect(frame).toContain("What's new")
   })
 
+  it('sinks the footer and editor dock to the last rows at boot with no session content', async () => {
+    const tree = await bootBlue([], { script: [] })
+    await currentAgent(tree)
+    await waitForRender()
+    const frame = await fullFrame(tree.terminal)
+    const rows = frame.split('\r\n')
+    // The boot tree (banner + dock) is shorter than the 24-row viewport; the
+    // renderer pads the gap so the dock spans the terminal's last rows
+    // instead of floating right under the banner.
+    expect(rows).toHaveLength(24)
+    const bannerAt = rows.findIndex(row => row.includes('Welcome back!'))
+    const footerAt = rows.findIndex(row => row.includes('mock · idle'))
+    expect(bannerAt).toBeGreaterThanOrEqual(0)
+    expect(footerAt).toBeGreaterThan(bannerAt)
+    expect(footerAt).toBeGreaterThanOrEqual(rows.length - 8)
+  })
+
   it('routes typed input to the agent and renders the streamed answer', async () => {
     const tree = await bootBlue([], { script: [textResponse('typed answer')] })
     const agent = await currentAgent(tree)
