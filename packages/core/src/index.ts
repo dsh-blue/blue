@@ -40,6 +40,8 @@ export type {
   BlueEditor,
   BlueEditorOptions,
   BlueFocusable,
+  BlueImage,
+  BlueImageOptions,
   BlueKeyAction,
   BlueKeymap,
   BlueMarkdown,

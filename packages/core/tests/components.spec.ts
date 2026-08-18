@@ -21,6 +21,19 @@ import type {
 } from '../src/types.ts'
 import { FakeTerminal, waitForRender } from './fake-terminal.ts'
 
+/** A 1x1 PNG. */
+const PNG_1X1 = new Uint8Array([
+  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6,
+  0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 218, 99, 100, 248, 207, 80, 15,
+  0, 3, 134, 1, 128, 90, 52, 125, 107, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+])
+
+/** A 1x1 GIF. */
+const GIF_1X1 = new Uint8Array([
+  71, 73, 70, 56, 57, 97, 1, 0, 1, 0, 128, 0, 0, 255, 255, 255, 0, 0, 0, 33, 249, 4, 1, 0, 0,
+  0, 0, 44, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 68, 1, 0, 59,
+])
+
 const ROLES: (keyof BlueSemanticColors)[] = [
   'text',
   'textStrong',
@@ -262,6 +275,33 @@ describe('createEditor', () => {
     expect(editor.getExpandedText()).toBe('short')
     stop()
   })
+
+  it('inserts text atomically at the cursor via insertText', () => {
+    const { tui, stop } = bootTui()
+    const components = createService(tui)
+    const editor = components.createEditor()
+
+    // Insertion lands at the cursor, including mid-buffer.
+    editor.setText('ac')
+    editor.handleInput('\x1b[D')
+    editor.insertText('b')
+    expect(editor.getText()).toBe('abc')
+
+    // The cursor advances past the inserted text, so the next insert lands
+    // right after it — still mid-buffer.
+    editor.insertText('z')
+    expect(editor.getText()).toBe('abzc')
+
+    // After setText the cursor sits at the end, so insertion appends.
+    editor.setText('xy')
+    editor.insertText('!')
+    expect(editor.getText()).toBe('xy!')
+
+    // An empty insertion is a no-op.
+    editor.insertText('')
+    expect(editor.getText()).toBe('xy!')
+    stop()
+  })
 })
 
 describe('createMarkdown', () => {
@@ -401,6 +441,50 @@ describe('createSettingsList', () => {
       onCancel: () => {},
     })
     expect(list.render(60).join('\n')).toContain('Mode')
+    stop()
+  })
+})
+
+describe('createImage', () => {
+  it('renders the styled text fallback on a terminal without an image protocol', () => {
+    const { tui, stop } = bootTui()
+    const components = createService(tui)
+    // Under vitest no Kitty/iTerm2 environment is present, so render(width)
+    // returns pi-tui's muted fallback line.
+    const image = components.createImage({
+      data: PNG_1X1,
+      mediaType: 'image/png',
+      filename: 'pic.png',
+      maxWidthCells: 20,
+      maxHeightCells: 5,
+    })
+    const lines = image.render(40)
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toBe('«muted:[Image: pic.png [image/png] 1x1]»')
+
+    // invalidate drops the render cache; the next render rebuilds identically.
+    image.invalidate()
+    expect(image.render(40)).toEqual(lines)
+    stop()
+  })
+
+  it('falls back to the MIME type alone when no filename is given', () => {
+    const { tui, stop } = bootTui()
+    const components = createService(tui)
+    const image = components.createImage({ data: GIF_1X1, mediaType: 'image/gif' })
+    expect(image.render(40)).toEqual(['«muted:[Image: [image/gif] 1x1]»'])
+    image.invalidate()
+    stop()
+  })
+})
+
+describe('imageDimensions', () => {
+  it('decodes PNG and GIF literals and rejects garbage', () => {
+    const { tui, stop } = bootTui()
+    const components = createService(tui)
+    expect(components.imageDimensions(PNG_1X1)).toEqual({ width: 1, height: 1 })
+    expect(components.imageDimensions(GIF_1X1)).toEqual({ width: 1, height: 1 })
+    expect(components.imageDimensions(new Uint8Array([1, 2, 3, 4]))).toBeUndefined()
     stop()
   })
 })

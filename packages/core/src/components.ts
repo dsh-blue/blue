@@ -11,14 +11,18 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import {
   Editor,
+  Image,
   Markdown,
   SelectList,
   SettingsList,
+  getImageDimensions,
   truncateToWidth,
   visibleWidth,
   wrapTextWithAnsi,
   type EditorOptions,
   type EditorTheme,
+  type ImageOptions,
+  type ImageTheme,
   type MarkdownTheme,
   type SelectListTheme,
   type SettingItem,
@@ -31,6 +35,8 @@ import type {
   BlueComponents,
   BlueEditor,
   BlueEditorOptions,
+  BlueImage,
+  BlueImageOptions,
   BlueMarkdown,
   BlueMarkdownOptions,
   BlueSelectItem,
@@ -82,6 +88,11 @@ function markdownTheme(colors: BlueSemanticColors): MarkdownTheme {
     strikethrough: colors.muted,
     underline: colors.text,
   }
+}
+
+/** Map the palette to an image theme: only the text-fallback color is used. */
+function imageTheme(colors: BlueSemanticColors): ImageTheme {
+  return { fallbackColor: colors.muted }
 }
 
 /** Map the palette to a settings-list theme; `cursor` is a plain string. */
@@ -167,6 +178,10 @@ class EditorAdapter implements BlueEditor {
     return this.editor.getExpandedText()
   }
 
+  insertText(text: string): void {
+    this.editor.insertTextAtCursor(text)
+  }
+
   isShowingAutocomplete(): boolean {
     return this.editor.isShowingAutocomplete()
   }
@@ -200,6 +215,19 @@ class MarkdownAdapter implements BlueMarkdown {
 
   invalidate(): void {
     this.markdown.invalidate()
+  }
+}
+
+/** Delegate exposing a pi-tui `Image` through the Blue contract. */
+class ImageAdapter implements BlueImage {
+  constructor(private readonly image: Image) {}
+
+  render(width: number): string[] {
+    return this.image.render(width)
+  }
+
+  invalidate(): void {
+    this.image.invalidate()
   }
 }
 
@@ -290,6 +318,40 @@ export class BlueComponentsService extends Service implements BlueComponents {
     return new MarkdownAdapter(
       new Markdown(options?.text ?? '', options?.paddingX ?? 0, options?.paddingY ?? 0, markdownTheme(this.theme.colors)),
     )
+  }
+
+  /**
+   * Create a palette-themed inline image component. The bytes are base64-encoded
+   * for the renderer; terminals without an image protocol render the styled
+   * text fallback (muted filename, MIME type, and pixel dimensions).
+   * @param options - the image bytes, MIME type, and cell bounds.
+   * @returns the image component.
+   */
+  createImage(options: BlueImageOptions): BlueImage {
+    const imageOptions: ImageOptions = {}
+    if (options.maxWidthCells !== undefined) imageOptions.maxWidthCells = options.maxWidthCells
+    if (options.maxHeightCells !== undefined) imageOptions.maxHeightCells = options.maxHeightCells
+    if (options.filename !== undefined) imageOptions.filename = options.filename
+    return new ImageAdapter(
+      new Image(Buffer.from(options.data).toString('base64'), options.mediaType, imageTheme(this.theme.colors), imageOptions),
+    )
+  }
+
+  /**
+   * Probe the pixel dimensions of encoded image data.
+   * @param data - the encoded image bytes (PNG, JPEG, GIF, or WebP).
+   * @returns the pixel dimensions, or `undefined` for undecodable data.
+   */
+  imageDimensions(data: Uint8Array): { width: number, height: number } | undefined {
+    // The contract takes no MIME type, so each decoder pi-tui supports is
+    // tried in turn; every decoder validates its own magic bytes and returns
+    // null on a mismatch.
+    const base64 = Buffer.from(data).toString('base64')
+    for (const mediaType of ['image/png', 'image/jpeg', 'image/gif', 'image/webp']) {
+      const dimensions = getImageDimensions(base64, mediaType)
+      if (dimensions !== null) return { width: dimensions.widthPx, height: dimensions.heightPx }
+    }
+    return undefined
   }
 
   /**

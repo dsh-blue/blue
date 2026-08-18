@@ -471,6 +471,12 @@ export interface BlueEditor extends BlueFocusable {
    * @returns the expanded editor content.
    */
   getExpandedText(): string
+  /**
+   * Insert text at the cursor as one atomic undo step, without submitting.
+   * Used for programmatic insertion of clipboard image placeholder markers.
+   * @param text - the text to insert.
+   */
+  insertText(text: string): void
 }
 
 /** Options for {@link BlueComponents.createMarkdown}. */
@@ -491,6 +497,27 @@ export interface BlueMarkdown extends BlueComponent {
    */
   setText(text: string): void
 }
+
+/** Options for {@link BlueComponents.createImage}. */
+export interface BlueImageOptions {
+  /** The encoded image bytes (PNG, JPEG, GIF, or WebP). */
+  data: Uint8Array
+  /** The image's MIME type, e.g. `'image/png'`. */
+  mediaType: string
+  /** Optional source path or name shown in the text fallback. */
+  filename?: string
+  /** Maximum rendered width in terminal cells. */
+  maxWidthCells?: number
+  /** Maximum rendered height in terminal cells. */
+  maxHeightCells?: number
+}
+
+/**
+ * An inline image component with internal render caching. Structurally
+ * identical to {@link BlueComponent}; the distinct name keeps image usage
+ * explicit at call sites.
+ */
+export type BlueImage = BlueComponent
 
 /** One entry of a {@link BlueSelectList}. */
 export interface BlueSelectItem {
@@ -582,6 +609,21 @@ export interface BlueComponents {
    * @returns the markdown component.
    */
   createMarkdown(options?: BlueMarkdownOptions): BlueMarkdown
+  /**
+   * Create an inline image component themed from the active palette. Wraps
+   * the underlying renderer's image component; terminals without an image
+   * protocol get its styled text fallback instead of a rendered image.
+   * @param options - the image bytes, MIME type, and cell bounds.
+   * @returns the image component.
+   */
+  createImage(options: BlueImageOptions): BlueImage
+  /**
+   * Probe the pixel dimensions of encoded image data, in the same pure-helper
+   * family as {@link BlueComponents.visibleWidth}.
+   * @param data - the encoded image bytes (PNG, JPEG, GIF, or WebP).
+   * @returns the pixel dimensions, or `undefined` for undecodable data.
+   */
+  imageDimensions(data: Uint8Array): { width: number, height: number } | undefined
   /**
    * Create a single-selection list themed from the active palette.
    * @param options - items and selection callbacks.
