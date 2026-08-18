@@ -2,8 +2,9 @@
  * @deepseek-ai/dsh-blue-app — the Blue terminal UI application driver. The
  * bundle patch rides over dsh-base; the startup provider parses the launch
  * values, and this driver creates or resumes the Agent once the Loader
- * settles, publishes it through `blueSession`, and answers
- * `'blue/request-resume'` switches for the interaction layer's `/resume`.
+ * settles, publishes it through `blueSession`, and answers the
+ * `'blue/request-resume'`/`'blue/request-new'`/`'blue/request-fork'`
+ * switches for the interaction layer's session commands.
  *
  * @module @deepseek-ai/dsh-blue-app
  */
@@ -12,7 +13,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
-import type { AgentHandle, AgentSetup, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
+import type { AgentHandle, AgentSetup, CreateAgentOptions, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import type { AgentDefaultModelConfig } from '@deepseek-ai/dsh-agent-default-model'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -76,6 +77,28 @@ function modelSelectionSetup(defaultModel: AgentDefaultModelConfig): AgentSetup 
 }
 
 /**
+ * Build the Agent-creation options shared by startup creation and the
+ * `'blue/request-new'`/`'blue/request-fork'` switches: a fresh session id,
+ * the current working directory, and the default model's provider/model
+ * with the model-selection setup. Fork callers spread the result and
+ * override `meta`/`seed` with the lineage fields.
+ * @param defaultModel - the default-model service supplying provider/model.
+ * @returns the creation options for a fresh session.
+ */
+function createOptions(defaultModel: AgentDefaultModelConfig): CreateAgentOptions {
+  // This bundle composes no preset roster, so the model-facing rows sit in
+  // the host plane and the agent reads them from the global layer (same
+  // construction as the headless runner).
+  const selection = defaultModel.currentSelection()
+  return {
+    sessionId: SessionId(`session-${randomUUID()}`),
+    meta: { cwd: process.cwd() },
+    agentOptions: { provider: selection.provider, model: selection.model },
+    setup: modelSelectionSetup(defaultModel),
+  }
+}
+
+/**
  * Mount the Blue application driver.
  * @param ctx - plugin context carrying core services and the launcher-provided exit request.
  * @param config - validated launch config.
@@ -119,16 +142,7 @@ export function apply(ctx: Context, config: Config): void {
           setup: modelSelectionSetup(defaultModel),
         })
       } else {
-        // This bundle composes no preset roster, so the model-facing rows sit
-        // in the host plane and the agent reads them from the global layer
-        // (same construction as the headless runner).
-        const selection = defaultModel.currentSelection()
-        handle = await agents.create({
-          sessionId: SessionId(`session-${randomUUID()}`),
-          meta: { cwd: process.cwd() },
-          agentOptions: { provider: selection.provider, model: selection.model },
-          setup: modelSelectionSetup(defaultModel),
-        })
+        handle = await agents.create(createOptions(defaultModel))
       }
     } catch (error) {
       // Startup has no live session to fall back to; fail the launch.
@@ -170,6 +184,68 @@ export function apply(ctx: Context, config: Config): void {
       // one disposed before consumers re-read blueSession.
       session.current = next.agent
       ctx.emit('blue/session-changed', next.agent)
+    })
+  })
+
+  // The shared commit point of the create-based switches (`request-new`,
+  // `request-fork`): same ordering discipline as the resume switch above.
+  const commitSwitch = async (next: AgentHandle): Promise<void> => {
+    const previous = current
+    current = next
+    if (previous !== undefined) await previous.dispose()
+    session.current = next.agent
+    ctx.emit('blue/session-changed', next.agent)
+  }
+
+  ctx.on('blue/request-new', () => {
+    enqueue(async () => {
+      const agents = ctx.get('agents')
+      const defaultModel = ctx.get('agentDefaultModel')
+      if (agents === undefined || defaultModel === undefined) return
+      let next: AgentHandle
+      try {
+        // Create before disposing: a failed switch keeps the live session.
+        next = await agents.create(createOptions(defaultModel))
+      } catch (error) {
+        io.stderr.write(`dsh: could not start a new session: ${describe(error)}\n`)
+        return
+      }
+      await commitSwitch(next)
+    })
+  })
+
+  ctx.on('blue/request-fork', () => {
+    enqueue(async () => {
+      const agents = ctx.get('agents')
+      const defaultModel = ctx.get('agentDefaultModel')
+      if (agents === undefined || defaultModel === undefined) return
+      const active = session.current
+      if (active === null) {
+        io.stderr.write('dsh: no live session to fork\n')
+        return
+      }
+      if (active.status !== 'idle') {
+        io.stderr.write(`dsh: cannot fork session ${String(active.id)} while it is ${active.status}\n`)
+        return
+      }
+      // The fork inherits the parent's full event log as its seed prefix.
+      const seed = active.session.events
+      let next: AgentHandle
+      try {
+        next = await agents.create({
+          ...createOptions(defaultModel),
+          meta: {
+            cwd: active.session.header.cwd ?? process.cwd(),
+            parentSession: active.id,
+            seedLength: seed.length,
+          },
+          seed,
+        })
+      } catch (error) {
+        io.stderr.write(`dsh: could not fork session ${String(active.id)}: ${describe(error)}\n`)
+        return
+      }
+      await commitSwitch(next)
     })
   })
 }

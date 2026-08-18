@@ -1,6 +1,7 @@
 /**
  * The Blue app driver: startup create/resume, blueSession publication, the
- * session-changed broadcast, and `/resume` switching over fake core services.
+ * session-changed broadcast, and `/resume`/`/new`/`/fork` switching over
+ * fake core services.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -43,6 +44,10 @@ function makeHandle(id: string, recorded: Recorded, disposeError?: Error): Agent
   const agent = {
     id,
     status: 'idle',
+    session: {
+      events: [{ type: 'user/message' }, { type: 'assistant/message' }],
+      header: {},
+    },
     followup: (message: unknown) => { recorded.followups.push([id, message]) },
   } as unknown as Agent
   return {
@@ -63,6 +68,8 @@ interface Bench {
   err(): string
   /** Swap the resume behavior mid-test (e.g. to fail a `/resume` switch). */
   setResumeError(error: Error): void
+  /** Swap the create behavior mid-test (e.g. to fail a `/new` or `/fork` switch). */
+  setCreateError(error: unknown): void
 }
 
 /**
@@ -84,10 +91,11 @@ function bench(config: Config, options: {
   ctx.provide('appExit', (code: number) => { exits.push(code) })
   const recorded: Recorded = { created: [], resumed: [], resumeOptions: [], disposed: [], followups: [], setups: 0, listeners: [] }
   let resumeError: Error | undefined
+  let createError = options.createError
   if (options.agents !== false) {
     ctx.provide('agents', {
       create: async (createOptions: CreateAgentOptions) => {
-        if (options.createError !== undefined) throw options.createError
+        if (createError !== undefined) throw createError
         recorded.created.push(createOptions)
         await createOptions.setup?.(recordingAgentCtx(recorded))
         recorded.setups += 1
@@ -117,6 +125,7 @@ function bench(config: Config, options: {
     exits,
     err: () => err,
     setResumeError: (error) => { resumeError = error },
+    setCreateError: (error) => { createError = error },
   }
 }
 
@@ -193,6 +202,8 @@ describe('blue app driver', () => {
     expect(test.ctx.blueSession.current).toBeNull()
     // A late `/resume` against the same service-less tree is a no-op too.
     test.ctx.emit('blue/request-resume', 'abc123')
+    test.ctx.emit('blue/request-new')
+    test.ctx.emit('blue/request-fork')
     await new Promise(resolve => setTimeout(resolve, 10))
     expect(test.exits).toEqual([])
     expect(test.err()).toBe('')
@@ -207,6 +218,8 @@ describe('blue app driver', () => {
     expect(test.err()).toBe('')
     // A `/resume` switch cannot compose model selection either; it is a no-op.
     test.ctx.emit('blue/request-resume', 'abc123')
+    test.ctx.emit('blue/request-new')
+    test.ctx.emit('blue/request-fork')
     await new Promise(resolve => setTimeout(resolve, 10))
     expect(test.recorded.resumed).toEqual([])
     expect(test.exits).toEqual([])
@@ -267,6 +280,128 @@ describe('blue app driver', () => {
     test.ctx.emit('blue/request-resume', 'abc123')
     await vi.waitFor(() => { expect(test.recorded.resumed).toEqual(['xyz789', 'abc123']) })
     await vi.waitFor(() => { expect(test.ctx.blueSession.current?.id).toBe('resumed-abc123') })
+    await test.ctx.fiber.dispose()
+  })
+
+  it('starts a fresh session on blue/request-new: create, dispose, publish', async () => {
+    const test = bench({})
+    await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+    const first = test.ctx.blueSession.current
+    test.ctx.emit('blue/request-new')
+    await vi.waitFor(() => { expect(test.changes).toHaveLength(2) })
+    expect(test.recorded.created).toHaveLength(2)
+    // The `/new` switch creates with the same parameters as startup creation.
+    const created = test.recorded.created[1]!
+    expect(String(created.sessionId)).toMatch(/^session-/)
+    expect(created.meta).toEqual({ cwd: process.cwd() })
+    expect(created.agentOptions).toEqual({ provider: 'test-provider', model: 'test-model' })
+    expect(created.setup).toBeDefined()
+    expect(test.recorded.disposed).toEqual(['agent-1'])
+    const next = test.ctx.blueSession.current
+    expect(next?.id).toBe('agent-2')
+    expect(next).not.toBe(first)
+    expect(test.changes[1]).toBe(next)
+    await test.ctx.fiber.dispose()
+  })
+
+  it('creates without a dispose on blue/request-new when startup never produced an Agent', async () => {
+    const test = bench({}, { createError: new Error('factory exploded') })
+    await vi.waitFor(() => { expect(test.exits).toEqual([1]) })
+    test.setCreateError(undefined)
+    test.ctx.emit('blue/request-new')
+    await vi.waitFor(() => { expect(test.ctx.blueSession.current?.id).toBe('agent-1') })
+    expect(test.recorded.disposed).toEqual([])
+    expect(test.changes).toEqual([test.ctx.blueSession.current])
+    await test.ctx.fiber.dispose()
+  })
+
+  it('keeps the live session when a requested new session fails to create', async () => {
+    const test = bench({})
+    await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+    const first = test.ctx.blueSession.current
+    test.setCreateError(new Error('factory busy'))
+    test.ctx.emit('blue/request-new')
+    await vi.waitFor(() => { expect(test.err()).toContain('could not start a new session: factory busy') })
+    expect(test.ctx.blueSession.current).toBe(first)
+    expect(test.recorded.disposed).toEqual([])
+    expect(test.changes).toHaveLength(1)
+    expect(test.exits).toEqual([])
+    await test.ctx.fiber.dispose()
+  })
+
+  it('forks the live session on blue/request-fork with seed and lineage', async () => {
+    const test = bench({})
+    await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+    const first = test.ctx.blueSession.current!
+    const seed = first.session.events
+    test.ctx.emit('blue/request-fork')
+    await vi.waitFor(() => { expect(test.changes).toHaveLength(2) })
+    expect(test.recorded.created).toHaveLength(2)
+    const forked = test.recorded.created[1]!
+    expect(String(forked.sessionId)).toMatch(/^session-/)
+    // The full parent event prefix is the seed; the header cwd falls back to
+    // the process cwd when the fake session header carries none.
+    expect(forked.seed).toBe(seed)
+    expect(forked.meta).toEqual({
+      cwd: process.cwd(),
+      parentSession: first.id,
+      seedLength: seed.length,
+    })
+    expect(forked.agentOptions).toEqual({ provider: 'test-provider', model: 'test-model' })
+    expect(forked.setup).toBeDefined()
+    expect(test.recorded.disposed).toEqual(['agent-1'])
+    const next = test.ctx.blueSession.current
+    expect(next?.id).toBe('agent-2')
+    expect(test.changes[1]).toBe(next)
+    await test.ctx.fiber.dispose()
+  })
+
+  it('inherits the session header cwd when forking', async () => {
+    const test = bench({})
+    await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+    const first = test.ctx.blueSession.current!
+    ;(first.session.header as { cwd?: string }).cwd = '/tmp/fork-cwd'
+    test.ctx.emit('blue/request-fork')
+    await vi.waitFor(() => { expect(test.changes).toHaveLength(2) })
+    expect(test.recorded.created[1]!.meta).toMatchObject({ cwd: '/tmp/fork-cwd' })
+    await test.ctx.fiber.dispose()
+  })
+
+  it('refuses to fork while the live Agent is running', async () => {
+    const test = bench({})
+    await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+    const first = test.ctx.blueSession.current!
+    ;(first as unknown as { status: string }).status = 'running'
+    test.ctx.emit('blue/request-fork')
+    await vi.waitFor(() => { expect(test.err()).toContain('cannot fork session agent-1 while it is running') })
+    expect(test.recorded.created).toHaveLength(1)
+    expect(test.ctx.blueSession.current).toBe(first)
+    expect(test.recorded.disposed).toEqual([])
+    expect(test.changes).toHaveLength(1)
+    await test.ctx.fiber.dispose()
+  })
+
+  it('refuses to fork when no session is live', async () => {
+    const test = bench({}, { createError: new Error('factory exploded') })
+    await vi.waitFor(() => { expect(test.exits).toEqual([1]) })
+    test.ctx.emit('blue/request-fork')
+    await vi.waitFor(() => { expect(test.err()).toContain('no live session to fork') })
+    expect(test.recorded.created).toEqual([])
+    expect(test.changes).toEqual([])
+    await test.ctx.fiber.dispose()
+  })
+
+  it('keeps the live session when a fork creation fails', async () => {
+    const test = bench({})
+    await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+    const first = test.ctx.blueSession.current
+    test.setCreateError(new Error('factory busy'))
+    test.ctx.emit('blue/request-fork')
+    await vi.waitFor(() => { expect(test.err()).toContain('could not fork session agent-1: factory busy') })
+    expect(test.ctx.blueSession.current).toBe(first)
+    expect(test.recorded.disposed).toEqual([])
+    expect(test.changes).toHaveLength(1)
+    expect(test.exits).toEqual([])
     await test.ctx.fiber.dispose()
   })
 

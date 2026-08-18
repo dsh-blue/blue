@@ -45,5 +45,26 @@ declare module '@deepseek-ai/cordis' {
      * @mode emit
      */
     'blue/request-resume'(sessionId: string): void
+    /**
+     * A UI command asked the app to start a fresh session. The app creates
+     * a new Agent with the same parameters as startup creation, disposes the
+     * previous Agent, and broadcasts `'blue/session-changed'`; a failed
+     * creation keeps the current session and reports to stderr instead.
+     * With no live session the app simply creates one.
+     * Unfiltered: only the app plugin answers this request.
+     * @mode emit
+     */
+    'blue/request-new'(): void
+    /**
+     * A UI command asked the app to fork the current session: create a new
+     * Agent seeded with the full event prefix of the active session, then
+     * dispose the previous Agent and broadcast `'blue/session-changed'`.
+     * The request is refused (stderr, no switch) when no session is live or
+     * the active Agent is not `idle`; a failed creation keeps the current
+     * session and reports to stderr instead.
+     * Unfiltered: only the app plugin answers this request.
+     * @mode emit
+     */
+    'blue/request-fork'(): void
   }
 }
