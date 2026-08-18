@@ -42,20 +42,29 @@ import { FakeTerminal, waitForRender } from '../../../core/tests/fake-terminal.t
 import * as interactionPlugin from '../../../interaction/src/index.ts'
 import { clearDraft } from '../../../interaction/src/draft-stash.ts'
 import * as editorPlusPlugin from '../../../interaction/src/editor-plus.ts'
+import * as attachmentsPlugin from '../../../interaction/src/attachments.ts'
+import * as pasteImagePlugin from '../../../interaction/src/paste-image.ts'
+import { setClipboardImageReader } from '../../../interaction/src/paste-image.ts'
 import * as paneQueuePlugin from '../../../interaction/src/pane-queue.ts'
 import * as transcriptPlugin from '../../../transcript/src/index.ts'
+import * as intentDiffPlugin from '../../../transcript/src/intent-diff.ts'
+import * as intentTerminalPlugin from '../../../transcript/src/intent-terminal.ts'
 import * as paneActivityPlugin from '../../../transcript/src/pane-activity.ts'
 import * as paneBtwPlugin from '../../../transcript/src/pane-btw.ts'
 import * as paneTodoPlugin from '../../../transcript/src/pane-todo.ts'
 import * as statusBasicPlugin from '../../../transcript/src/status-basic.ts'
 import * as statusContextPlugin from '../../../transcript/src/status-context.ts'
 import * as statusGitPlugin from '../../../transcript/src/status-git.ts'
+import { setStepFoldingEnabled } from '../../../transcript/src/window.ts'
 import { MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
 
 const disposers: (() => Promise<void>)[] = []
 
 afterEach(async () => {
   for (const dispose of disposers.splice(0)) await dispose()
+  // In-turn step folding is module-global; restore the default so the next
+  // spec decides its own policy.
+  setStepFoldingEnabled(true)
 })
 
 /** One booted Blue tree plus its observations. */
@@ -72,6 +81,8 @@ interface BlueE2EHooks {
   coreApply: (ctx: Context) => Promise<void>
   themeDarkApply: typeof themeDarkPlugin.apply
   transcriptApply: typeof transcriptPlugin.apply
+  intentDiffApply: typeof intentDiffPlugin.apply
+  intentTerminalApply: typeof intentTerminalPlugin.apply
   statusBasicApply: typeof statusBasicPlugin.apply
   statusGitApply: typeof statusGitPlugin.apply
   statusContextApply: typeof statusContextPlugin.apply
@@ -81,6 +92,8 @@ interface BlueE2EHooks {
   paneBtwApply: typeof paneBtwPlugin.apply
   interactionApply: typeof interactionPlugin.apply
   editorPlusApply: typeof editorPlusPlugin.apply
+  attachmentsApply: typeof attachmentsPlugin.apply
+  pasteImageApply: typeof pasteImagePlugin.apply
   startupApply: typeof startupPlugin.apply
   appApply: typeof appPlugin.apply
   appConfig: typeof appPlugin.Config
@@ -128,6 +141,8 @@ async function bootBlue(argv: string[], options: {
     },
     themeDarkApply: themeDarkPlugin.apply,
     transcriptApply: transcriptPlugin.apply,
+    intentDiffApply: intentDiffPlugin.apply,
+    intentTerminalApply: intentTerminalPlugin.apply,
     statusBasicApply: statusBasicPlugin.apply,
     statusGitApply: statusGitPlugin.apply,
     statusContextApply: statusContextPlugin.apply,
@@ -137,6 +152,8 @@ async function bootBlue(argv: string[], options: {
     paneBtwApply: paneBtwPlugin.apply,
     interactionApply: interactionPlugin.apply,
     editorPlusApply: editorPlusPlugin.apply,
+    attachmentsApply: attachmentsPlugin.apply,
+    pasteImageApply: pasteImagePlugin.apply,
     startupApply: startupPlugin.apply,
     appApply: appPlugin.apply,
     appConfig: appPlugin.Config,
@@ -166,7 +183,7 @@ export const apply = globalThis.__blueE2E.themeDarkApply
     '- id: blue-transcript',
     `  name: ${fixture('blue-transcript.mjs', `
 export const name = 'blue-transcript'
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'tools']
 export const apply = ctx => globalThis.__blueE2E.transcriptApply(ctx)
 `)}`,
     // The baseline-segment status row mirrors cordis.patch.yml: the
@@ -194,6 +211,21 @@ export const name = 'blue-editor-plus'
 export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'commands']
 export const apply = ctx => globalThis.__blueE2E.editorPlusApply(ctx)
 `)}`,
+    // The input-side S7 rows mirror cordis.patch.yml: the attachment store
+    // provides the harness 'attachments' service, and paste-image injects it
+    // (plus blueKeymap) so its fiber activates after the store.
+    '- id: blue-attachments',
+    `  name: ${fixture('blue-attachments.mjs', `
+export const name = 'blue-attachments'
+export const inject = ['blueComponents']
+export const apply = ctx => globalThis.__blueE2E.attachmentsApply(ctx)
+`)}`,
+    '- id: blue-paste-image',
+    `  name: ${fixture('blue-paste-image.mjs', `
+export const name = 'blue-paste-image'
+export const inject = ['attachments', 'blueKeymap']
+export const apply = ctx => globalThis.__blueE2E.pasteImageApply(ctx)
+`)}`,
     // The enhancement-segment status rows mirror cordis.patch.yml: the git
     // branch and context-occupancy footer entries.
     '- id: blue-status-git',
@@ -207,6 +239,20 @@ export const apply = ctx => globalThis.__blueE2E.statusGitApply(ctx)
 export const name = 'blue-status-context'
 export const inject = ['blueStatus', 'blueScreen', 'blueTheme']
 export const apply = ctx => globalThis.__blueE2E.statusContextApply(ctx)
+`)}`,
+    // The S7 intent rows mirror cordis.patch.yml: both inject the
+    // transcript's blueIntents registry and register their render intents.
+    '- id: blue-intent-diff',
+    `  name: ${fixture('blue-intent-diff.mjs', `
+export const name = 'blue-intent-diff'
+export const inject = ['blueIntents', 'blueTheme', 'blueComponents']
+export const apply = ctx => globalThis.__blueE2E.intentDiffApply(ctx)
+`)}`,
+    '- id: blue-intent-terminal',
+    `  name: ${fixture('blue-intent-terminal.mjs', `
+export const name = 'blue-intent-terminal'
+export const inject = ['blueIntents', 'blueTheme', 'blueComponents']
+export const apply = ctx => globalThis.__blueE2E.intentTerminalApply(ctx)
 `)}`,
     // The enhancement-segment pane rows mirror cordis.patch.yml; each fixture
     // re-declares the source module's inject list, and the two lighter panes
@@ -483,6 +529,10 @@ describe('blue whole-tree e2e', () => {
       script: [toolCallResponse('call-long', 'long-output', {}), textResponse('tool done')],
     })
     const agent = await currentAgent(tree)
+    // Step folding collapses an earlier step's tool cards into one summary
+    // line; disabling it keeps this spec's single-step tool card mounted so
+    // the Ctrl-O expansion path stays observable.
+    setStepFoldingEnabled(false)
     // A structural ToolDefinition registered without importing dsh-tools:
     // the bundle package does not depend on it directly, and register() only
     // validates the output declaration's shape.
@@ -509,6 +559,161 @@ describe('blue whole-tree e2e', () => {
     await waitForRender()
     const expanded = tree.terminal.written.slice(beforeToggle).join('')
     expect(expanded).toContain('TAILMARKER')
+  })
+
+  it('renders a diff-intent tool through the DiffCard: title, path count, and +/- rows', async () => {
+    const tree = await bootBlue([], {
+      script: [toolCallResponse('call-diff', 'edit-file', {}), textResponse('edited')],
+    })
+    const agent = await currentAgent(tree)
+    // The presenter hooks are optional fields on the structural definition;
+    // the call view diffs the arguments, the result view the (identical)
+    // payload here, and the output render gives the model a text block.
+    const tools = (tree.ctx as unknown as { tools: { register(definition: unknown): () => void } }).tools
+    tools.register({
+      name: 'edit-file',
+      description: 'edit a file',
+      parameters: { type: 'object', properties: {} },
+      presentCall: () => ({
+        card: 'diff',
+        title: 'Edit a.ts',
+        diffs: [{ path: 'a.ts', oldText: 'one\ntwo\nthree', newText: 'one\nTWO\nthree\nfour' }],
+      }),
+      presentResult: () => ({
+        card: 'diff',
+        title: 'Edited a.ts',
+        diffs: [{ path: 'a.ts', oldText: 'one\ntwo\nthree', newText: 'one\nTWO\nthree\nfour' }],
+      }),
+      output: {
+        schema: { type: 'string' },
+        render: () => [{ type: 'text', text: 'edited a.ts' }],
+      },
+      execute: () => Promise.resolve('ok'),
+    })
+    // Step folding folds earlier steps' tool cards into one summary line;
+    // disabling it keeps the diff card mounted so the rows stay observable.
+    setStepFoldingEnabled(false)
+    typeLine(tree.terminal, 'edit the file')
+    await agent.whenIdle()
+    await waitForRender()
+    // Compare against SGR-stripped output so marker/text adjacency survives
+    // the separate color spans ('-' marker + removed text, '+' + added).
+    const shown = tree.terminal.output.replace(/\x1b\[[0-9;]*m/g, '')
+    expect(shown).toContain('Edited a.ts')
+    expect(shown).toContain('a.ts')
+    expect(shown).toContain('-two')
+    expect(shown).toContain('+TWO')
+    expect(shown).toContain('+four')
+  })
+
+  it('renders a terminal-intent tool through the TerminalCard: cwd, command, output, and the nonzero exit badge', async () => {
+    const tree = await bootBlue([], {
+      script: [
+        toolCallResponse('call-ls', 'bash', { v: 1 }),
+        toolCallResponse('call-fail', 'bash', { v: 2 }),
+        textResponse('ran the shell'),
+      ],
+    })
+    const agent = await currentAgent(tree)
+    const tools = (tree.ctx as unknown as { tools: { register(definition: unknown): () => void } }).tools
+    tools.register({
+      name: 'bash',
+      description: 'run a shell command',
+      parameters: { type: 'object', properties: {} },
+      presentCall: () => ({ card: 'terminal', title: 'ls -la', cwd: '/tmp' }),
+      // The second scripted call carries v:2 — its result card gets the
+      // nonzero exit badge while the first stays at a silent exit 0.
+      presentResult: (args: { v: number }) =>
+        args.v === 2
+          ? { card: 'terminal', title: 'ls -la', cwd: '/tmp', output: 'file-a\nfile-b', exitCode: 2 }
+          : { card: 'terminal', title: 'ls -la', cwd: '/tmp', output: 'file-a\nfile-b', exitCode: 0 },
+      output: {
+        schema: { type: 'string' },
+        render: () => [{ type: 'text', text: 'listed' }],
+      },
+      execute: () => Promise.resolve('ok'),
+    })
+    // Both scripted calls are separate steps; without disabling the fold the
+    // first card collapses to a summary before the exit badge asserts.
+    setStepFoldingEnabled(false)
+    typeLine(tree.terminal, 'list files')
+    await agent.whenIdle()
+    await waitForRender()
+    const shown = tree.terminal.output.replace(/\x1b\[[0-9;]*m/g, '')
+    expect(shown).toContain('$ ls -la')
+    expect(shown).toContain('/tmp')
+    expect(shown).toContain('file-a')
+    expect(shown).toContain('file-b')
+    // The second call completes with a nonzero exit: the badge renders.
+    expect(shown).toContain('exit 2')
+    expect(shown).toContain('ran the shell')
+  })
+
+  it('pastes a clipboard image into the editor and submits it as an image content block', async () => {
+    // The attachment store resolves its root in the constructor, so the env
+    // override must be in place before the boot creates the service.
+    const previousDir = process.env.DSH_BLUE_ATTACHMENT_DIR
+    process.env.DSH_BLUE_ATTACHMENT_DIR = mkdtempSync(join(tmpdir(), 'dsh-blue-e2e-attachments-'))
+    // A 1×1 PNG (the shared literal shape with core's and interaction's
+    // suites).
+    const png = new Uint8Array([
+      137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6,
+      0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 218, 99, 100, 248, 207, 80, 15,
+      0, 3, 134, 1, 128, 90, 52, 125, 107, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+    ])
+    try {
+      setClipboardImageReader(() => Promise.resolve(png))
+      const tree = await bootBlue([], { script: [textResponse('got it')] })
+      const agent = await currentAgent(tree)
+      for (const char of 'look at this ') tree.terminal.sendInput(char)
+      // '\x16' is the raw Ctrl-V byte; the paste trigger resolves it through
+      // the keymap ahead of the pi-tui Editor.
+      tree.terminal.sendInput('\x16')
+      await vi.waitFor(() => { expect(tree.terminal.output).toContain('[image #1]') })
+      tree.terminal.sendInput('\r')
+      await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+      const request = tree.adapter.requests[0]!
+      const serialized = JSON.stringify(request.messages)
+      expect(serialized).toContain('"type":"image"')
+      expect(serialized).toContain('look at this')
+      expect(serialized).not.toContain('[image #1]')
+      await agent.whenIdle()
+    } finally {
+      setClipboardImageReader(undefined)
+      if (previousDir === undefined) delete process.env.DSH_BLUE_ATTACHMENT_DIR
+      else process.env.DSH_BLUE_ATTACHMENT_DIR = previousDir
+    }
+  })
+
+  it('folds earlier in-turn steps into the summary line once the next step starts', async () => {
+    const tree = await bootBlue([], {
+      script: [
+        toolCallResponse('call-s1', 'probe', { v: 1 }),
+        toolCallResponse('call-s2', 'probe', { v: 2 }),
+        textResponse('done'),
+      ],
+    })
+    const agent = await currentAgent(tree)
+    const tools = (tree.ctx as unknown as { tools: { register(definition: unknown): () => void } }).tools
+    tools.register({
+      name: 'probe',
+      description: 'probe tool',
+      parameters: { type: 'object', properties: {} },
+      output: {
+        schema: { type: 'string' },
+        render: () => [{ type: 'text', text: 'probed' }],
+      },
+      execute: () => Promise.resolve('ok'),
+    })
+    typeLine(tree.terminal, 'run the probes')
+    await agent.whenIdle()
+    await waitForRender()
+    // Each scripted response starts a new step, so the first two steps fold
+    // into one summary line each; the final step's card stays mounted.
+    const shown = tree.terminal.output.replace(/\x1b\[[0-9;]*m/g, '')
+    expect(shown).toContain('… step 1 · probe ×1')
+    expect(shown).toContain('… step 2 · probe ×1')
+    expect(shown).toContain('done')
   })
 
   it('renders the baseline footer entry below the transcript and above the editor', async () => {
