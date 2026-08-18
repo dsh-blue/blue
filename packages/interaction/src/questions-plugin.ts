@@ -1,10 +1,10 @@
 /**
  * `blue-questions` plugin: the UI provider for `ctx.userQuestions`. Each
- * question opens a modal overlay — a select list when it carries options
- * (Space toggles in multi-select mode, Enter confirms), a single-line
- * input otherwise. Escape dismisses the question; an aborted request
- * signal closes the overlay and rejects. Registration is effect-bound, so
- * HMR disposal unregisters the provider.
+ * question opens a modal overlay — a single-select list when it carries
+ * options (a multi-select `BlueSelect` when `multiSelect` is set), a
+ * free-text editor otherwise. Escape dismisses the question; an aborted
+ * request signal closes the overlay and rejects. Registration is
+ * effect-bound, so HMR disposal unregisters the provider.
  *
  * @module @deepseek-ai/dsh-blue-interaction/questions-plugin
  */
@@ -17,18 +17,61 @@ import type {
   AskUserQuestionItem,
   AskUserQuestionRequest,
 } from '@deepseek-ai/dsh-user-questions'
-import type { BlueComponent, BlueFocusable } from '@deepseek-ai/dsh-blue-core'
-import { BlueInput } from './editor.ts'
+import type { BlueComponent, BlueKeymap } from '@deepseek-ai/dsh-blue-core'
+import { ACTION_CANCEL } from './keys.ts'
 import { BluePanel, BlueSelect } from './select.ts'
-import { truncate } from './text.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-questions'
 /** Services required before the provider can register. */
-export const inject = ['blueScreen', 'blueTheme', 'blueKeymap', 'userQuestions']
+export const inject = ['blueScreen', 'blueTheme', 'blueKeymap', 'blueComponents', 'userQuestions']
 
 /** Overlay width as a share of the terminal. */
 const OVERLAY_WIDTH = '80%'
+
+/**
+ * Wrap a free-text editor so the cancel key dismisses the overlay; the
+ * editor itself owns every other key.
+ */
+class EscapeDismiss implements BlueComponent {
+  /**
+   * @param keymap - keybinding registry used to resolve the cancel key.
+   * @param child - the wrapped editor.
+   * @param onCancel - called when the cancel key is pressed.
+   */
+  constructor(
+    private readonly keymap: BlueKeymap,
+    private readonly child: BlueComponent,
+    private readonly onCancel: () => void,
+  ) {}
+
+  /**
+   * Render the wrapped editor.
+   * @param width - current viewport width in columns.
+   * @returns one string per rendered row.
+   */
+  render(width: number): string[] {
+    return this.child.render(width)
+  }
+
+  /** Drop the child's cached render state. */
+  invalidate(): void {
+    this.child.invalidate()
+  }
+
+  /**
+   * Dispatch one input sequence: the cancel key dismisses, everything else
+   * goes to the editor.
+   * @param data - the input sequence as read from the terminal.
+   */
+  handleInput(data: string): void {
+    if (this.keymap.matches(data, ACTION_CANCEL)) {
+      this.onCancel()
+      return
+    }
+    this.child.handleInput?.(data)
+  }
+}
 
 /**
  * Register the overlay-backed user-questions provider; the fiber's disposal
@@ -58,6 +101,7 @@ async function askAll(ctx: Context, request: AskUserQuestionRequest): Promise<As
 /** Pre-styled header rows for one question's overlay. */
 function questionHeader(ctx: Context, question: AskUserQuestionItem, width: number): string[] {
   const colors = ctx.blueTheme.colors
+  const truncate = ctx.blueComponents.truncateToWidth
   return [
     ...question.header === undefined ? [] : [colors.muted(truncate(question.header, width))],
     colors.accent(truncate(question.question, width)),
@@ -96,17 +140,19 @@ function askOne(
       })
     }
     const options = question.options ?? []
-    let child: BlueFocusable & BlueComponent
-    if (options.length > 0) {
+    let child: BlueComponent
+    if (options.length > 0 && question.multiSelect === true) {
+      // pi-tui ships no multi-select list, so the package-local BlueSelect
+      // covers this one case.
       child = new BlueSelect({
         keymap: ctx.blueKeymap,
         theme: ctx.blueTheme,
+        components: ctx.blueComponents,
         items: options.map(option => ({
           value: option.label,
           label: option.label,
           ...option.description === undefined ? {} : { description: option.description },
         })),
-        ...question.multiSelect === undefined ? {} : { multiSelect: question.multiSelect },
         onConfirm: (items) => {
           settle(() => {
             resolve({ id: question.id, selected: items.map(item => item.label) })
@@ -114,17 +160,30 @@ function askOne(
         },
         onCancel: dismiss,
       })
-    } else {
-      child = new BlueInput({
-        keymap: ctx.blueKeymap,
-        theme: ctx.blueTheme,
-        onSubmit: (text) => {
+    } else if (options.length > 0) {
+      child = ctx.blueComponents.createSelectList({
+        items: options.map(option => ({
+          value: option.label,
+          label: option.label,
+          ...option.description === undefined ? {} : { description: option.description },
+        })),
+        onSelect: (item) => {
           settle(() => {
-            resolve({ id: question.id, selected: [], ...text.length === 0 ? {} : { custom: text } })
+            resolve({ id: question.id, selected: [item.label] })
           })
         },
         onCancel: dismiss,
       })
+    } else {
+      const editor = ctx.blueComponents.createEditor()
+      // The editor clears its buffer before invoking onSubmit; the callback
+      // argument already carries the paste-expanded, trimmed text.
+      editor.onSubmit = (text) => {
+        settle(() => {
+          resolve({ id: question.id, selected: [], ...text.length === 0 ? {} : { custom: text } })
+        })
+      }
+      child = new EscapeDismiss(ctx.blueKeymap, editor, dismiss)
     }
     const contentWidth = Math.max(1, Math.floor(ctx.blueScreen.columns * 0.8) - 2)
     const panel = new BluePanel(questionHeader(ctx, question, contentWidth), child)

@@ -1,9 +1,10 @@
 /**
  * The shared Blue interaction key actions. One batch registered once by the
- * `blue-interaction-keys` plugin: every interactive component (input editor,
- * question and approval overlays) resolves its keys through
- * `ctx.blueKeymap` against these action ids, so key claims never conflict
- * and hint text reflects the registered bindings.
+ * `blue-interaction-keys` plugin: the multi-select overlay (`BlueSelect`)
+ * resolves its keys through `ctx.blueKeymap` against these action ids, so
+ * key claims never conflict and hint text reflects the registered bindings.
+ * Text-editing keys are owned by the pi-tui Editor behind
+ * `ctx.blueComponents.createEditor` and no longer appear here.
  *
  * @module @deepseek-ai/dsh-blue-interaction/keys
  */
@@ -15,12 +16,6 @@ import type { BlueKeyAction } from '@deepseek-ai/dsh-blue-core'
 export const ACTION_SUBMIT = 'blue.interaction.submit'
 /** Cancel or dismiss the active surface (Escape). */
 export const ACTION_CANCEL = 'blue.interaction.cancel'
-/** Move the text cursor left (Left arrow). */
-export const ACTION_CURSOR_LEFT = 'blue.interaction.cursor-left'
-/** Move the text cursor right (Right arrow). */
-export const ACTION_CURSOR_RIGHT = 'blue.interaction.cursor-right'
-/** Delete the character before the text cursor (Backspace). */
-export const ACTION_DELETE_BACKWARD = 'blue.interaction.delete-backward'
 /** Move the list cursor up (Up arrow). */
 export const ACTION_MOVE_UP = 'blue.interaction.move-up'
 /** Move the list cursor down (Down arrow). */
@@ -32,9 +27,6 @@ export const ACTION_TOGGLE = 'blue.interaction.toggle'
 export const INTERACTION_KEY_ACTIONS: readonly BlueKeyAction[] = [
   { id: ACTION_SUBMIT, keys: 'enter', description: 'Submit input / confirm selection' },
   { id: ACTION_CANCEL, keys: 'escape', description: 'Cancel or dismiss the active surface' },
-  { id: ACTION_CURSOR_LEFT, keys: 'left', description: 'Move the text cursor left' },
-  { id: ACTION_CURSOR_RIGHT, keys: 'right', description: 'Move the text cursor right' },
-  { id: ACTION_DELETE_BACKWARD, keys: 'backspace', description: 'Delete the character before the cursor' },
   { id: ACTION_MOVE_UP, keys: 'up', description: 'Move the list cursor up' },
   { id: ACTION_MOVE_DOWN, keys: 'down', description: 'Move the list cursor down' },
   { id: ACTION_TOGGLE, keys: 'space', description: 'Toggle the focused choice in a multi-select' },

@@ -51,7 +51,7 @@ describe('blue-questions provider', () => {
     const pending = ctx.userQuestions.ask({
       questions: [choice({
         multiSelect: true,
-        options: [{ label: 'A' }, { label: 'B' }, { label: 'C' }],
+        options: [{ label: 'A', description: 'the first' }, { label: 'B' }, { label: 'C' }],
       })],
     })
     overlay(screen).handleInput(KEY.space)
@@ -66,6 +66,10 @@ describe('blue-questions provider', () => {
     const { ctx, screen } = await mount()
     const pending = ctx.userQuestions.ask({ questions: [{ id: 'q2', question: 'Why?' }] })
     for (const char of 'because') overlay(screen).handleInput(char)
+    // The free-text overlay renders the wrapped editor and invalidates through it.
+    const panel = screen.overlays[0]?.component
+    expect(panel?.render(60).at(-1)).toBe('>because')
+    panel?.invalidate()
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({ answers: [{ id: 'q2', selected: [], custom: 'because' }] })
   })
@@ -96,6 +100,14 @@ describe('blue-questions provider', () => {
   it('rejects ASK_DISMISSED on Escape and hides the overlay', async () => {
     const { ctx, screen } = await mount()
     const pending = ctx.userQuestions.ask({ questions: [choice()] })
+    overlay(screen).handleInput(KEY.escape)
+    await expect(pending).rejects.toMatchObject({ code: 'ASK_DISMISSED' })
+    expect(screen.overlays[0]?.hidden).toBe(true)
+  })
+
+  it('rejects ASK_DISMISSED on Escape from a free-text question', async () => {
+    const { ctx, screen } = await mount()
+    const pending = ctx.userQuestions.ask({ questions: [{ id: 'q2', question: 'Why?' }] })
     overlay(screen).handleInput(KEY.escape)
     await expect(pending).rejects.toMatchObject({ code: 'ASK_DISMISSED' })
     expect(screen.overlays[0]?.hidden).toBe(true)

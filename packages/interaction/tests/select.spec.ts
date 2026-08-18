@@ -1,13 +1,13 @@
 /**
- * Unit tests for the `BlueSelect` option list and the `BluePanel` overlay
- * container over the fake keymap and theme.
+ * Unit tests for the multi-select `BlueSelect` option list and the
+ * `BluePanel` overlay container over the fake keymap, theme, and components.
  */
 
 import { describe, expect, it, vi } from 'vitest'
 import type { BlueComponent, BlueFocusable } from '@deepseek-ai/dsh-blue-core'
 import { BluePanel, BlueSelect } from '../src/select.ts'
 import type { BlueSelectItem } from '../src/select.ts'
-import { FakeKeymap, FakeTheme, KEY } from './fakes.ts'
+import { FakeBlueComponents, FakeKeymap, FakeTheme, KEY } from './fakes.ts'
 
 function items(count: number): BlueSelectItem[] {
   return Array.from({ length: count }, (_, index) => ({
@@ -18,7 +18,6 @@ function items(count: number): BlueSelectItem[] {
 
 function mount(options: {
   items?: BlueSelectItem[]
-  multiSelect?: boolean
   onConfirm?: (items: BlueSelectItem[]) => void
   onCancel?: () => void
 } = {}): { select: BlueSelect; onConfirm: ReturnType<typeof vi.fn>; onCancel: ReturnType<typeof vi.fn> } {
@@ -27,8 +26,8 @@ function mount(options: {
   const select = new BlueSelect({
     keymap: new FakeKeymap(),
     theme: new FakeTheme(),
+    components: new FakeBlueComponents(),
     items: options.items ?? items(3),
-    ...options.multiSelect === undefined ? {} : { multiSelect: options.multiSelect },
     onConfirm: options.onConfirm ?? onConfirm,
     onCancel: options.onCancel ?? onCancel,
   })
@@ -51,15 +50,8 @@ describe('BlueSelect navigation', () => {
     expect(onConfirm).toHaveBeenLastCalledWith([expect.objectContaining({ value: 'v0' })])
   })
 
-  it('confirms the focused entry in single-select mode', () => {
+  it('toggles entries and confirms the toggled set', () => {
     const { select, onConfirm } = mount()
-    select.handleInput(KEY.down)
-    select.handleInput(KEY.enter)
-    expect(onConfirm).toHaveBeenCalledWith([expect.objectContaining({ value: 'v1' })])
-  })
-
-  it('toggles entries in multi-select mode and confirms the toggled set', () => {
-    const { select, onConfirm } = mount({ multiSelect: true })
     select.handleInput(KEY.space)
     select.handleInput(KEY.down)
     select.handleInput(KEY.down)
@@ -77,7 +69,7 @@ describe('BlueSelect navigation', () => {
   })
 
   it('confirms the focused entry when nothing was toggled', () => {
-    const { select, onConfirm } = mount({ multiSelect: true })
+    const { select, onConfirm } = mount()
     select.handleInput(KEY.down)
     select.handleInput(KEY.enter)
     expect(onConfirm).toHaveBeenCalledWith([expect.objectContaining({ value: 'v1' })])
@@ -98,7 +90,7 @@ describe('BlueSelect navigation', () => {
   })
 
   it('tolerates an empty item list', () => {
-    const { select, onConfirm } = mount({ items: [], multiSelect: true })
+    const { select, onConfirm } = mount({ items: [] })
     select.handleInput(KEY.space)
     select.handleInput(KEY.up)
     select.handleInput(KEY.enter)
@@ -109,6 +101,7 @@ describe('BlueSelect navigation', () => {
     const select = new BlueSelect({
       keymap: new FakeKeymap(false),
       theme: new FakeTheme(),
+      components: new FakeBlueComponents(),
       items: items(1),
       onConfirm: () => {},
       onCancel: () => {},
@@ -129,25 +122,25 @@ describe('BlueSelect rendering', () => {
       items: [{ value: 'a', label: 'Alpha', description: 'first\nchoice' }, { value: 'b', label: 'Beta' }],
     })
     const lines = select.render(60)
-    expect(lines[0]).toBe('*→ Alpha*~ — first choice~')
-    expect(lines[1]).toBe('  Beta~~')
+    expect(lines[0]).toBe('*→ [ ] Alpha*~ — first choice~')
+    expect(lines[1]).toBe('  [ ] Beta~~')
     expect(lines[2]).toContain('enter confirm')
   })
 
   it('drops the description when the row is too narrow', () => {
     const { select } = mount({ items: [{ value: 'a', label: 'Alpha', description: 'first' }] })
-    const lines = select.render(6)
-    expect(lines[0]).toBe('*→ Alp…*~~')
+    const lines = select.render(10)
+    expect(lines[0]).toBe('*→ [ ] A...*~~')
   })
 
   it('truncates long labels to the row width', () => {
     const { select } = mount({ items: [{ value: 'a', label: 'A very long label indeed' }] })
-    const lines = select.render(10)
-    expect(lines[0]).toBe('*→ A very …*~~')
+    const lines = select.render(14)
+    expect(lines[0]).toBe('*→ [ ] A ver...*~~')
   })
 
-  it('shows scroll info beyond the visible window and a toggle hint in multi-select', () => {
-    const { select } = mount({ items: items(12), multiSelect: true })
+  it('shows scroll info beyond the visible window and a toggle hint in the footer', () => {
+    const { select } = mount({ items: items(12) })
     const lines = select.render(40)
     expect(lines.some(line => line.includes('(1/12)'))).toBe(true)
     expect(lines.at(-1)).toContain('space toggle')
@@ -180,7 +173,7 @@ describe('BluePanel', () => {
     expect(panel.render(40)).toEqual(['*header*', 'child row'])
   })
 
-  it('forwards focus, input, and invalidation to the child', () => {
+  it('forwards focus, input, and invalidation to a focusable child', () => {
     const { inner, handleInput, invalidate } = child()
     const panel = new BluePanel([], inner)
     panel.focused = true
@@ -192,13 +185,14 @@ describe('BluePanel', () => {
     expect(invalidate).toHaveBeenCalled()
   })
 
-  it('tolerates a child without input handling', () => {
-    const bare: BlueFocusable & BlueComponent = {
-      focused: false,
+  it('tolerates a child without focus state or input handling', () => {
+    const bare: BlueComponent = {
       render: () => [],
       invalidate: () => {},
     }
     const panel = new BluePanel([], bare)
+    panel.focused = true
+    expect(panel.focused).toBe(true)
     panel.handleInput('x')
     expect(panel.render(40)).toEqual([])
   })

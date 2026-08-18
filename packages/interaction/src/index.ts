@@ -1,11 +1,12 @@
 /**
  * @deepseek-ai/dsh-blue-interaction — Blue terminal UI interaction layer
  * over `dsh-blue-core`: the bottom input editor with slash-command dispatch
- * (`blue-input`), the built-in `/quit` and `/resume` commands
- * (`blue-commands`), the `ctx.userQuestions` overlay provider
- * (`blue-questions`), and the interactive `approval/request` answerer
- * (`blue-approval`). All key handling resolves through `ctx.blueKeymap`
- * (`blue-interaction-keys`); all registrations are effect-bound, so
+ * (`blue-input`, pi-tui Editor behind `ctx.blueComponents`), the built-in
+ * `/quit` and `/resume` commands (`blue-commands`), the `ctx.userQuestions`
+ * overlay provider (`blue-questions`), and the interactive
+ * `approval/request` answerer (`blue-approval`). The optional bash-mode and
+ * autocomplete enhancement layer ships as the `./editor-plus` subpath
+ * plugin (`blue-editor-plus`). All registrations are effect-bound, so
  * unloading the fiber reverts every contribution.
  *
  * @module @deepseek-ai/dsh-blue-interaction
@@ -18,10 +19,10 @@ import * as inputPlugin from './input-plugin.ts'
 import * as keysPlugin from './keys.ts'
 import * as questionsPlugin from './questions-plugin.ts'
 
-export { BlueInput } from './editor.ts'
-export type { BlueInputOptions } from './editor.ts'
-export { BluePanel, BlueSelect } from './select.ts'
-export type { BlueSelectItem, BlueSelectOptions } from './select.ts'
+// BluePanel is the package's public overlay container; BlueSelect stays
+// package-internal as the multi-select-only list (single-select moved to
+// ctx.blueComponents.createSelectList) and is no longer exported.
+export { BluePanel } from './select.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-interaction'

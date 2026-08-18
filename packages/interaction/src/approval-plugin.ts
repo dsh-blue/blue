@@ -12,14 +12,13 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
-import { BluePanel, BlueSelect } from './select.ts'
+import { BluePanel } from './select.ts'
 import { currentBlueAgent } from './session.ts'
-import { truncate } from './text.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-approval'
 /** Services required before the answerer can listen. */
-export const inject = ['blueScreen', 'blueTheme', 'blueKeymap']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents']
 
 /** Overlay width as a share of the terminal. */
 const OVERLAY_WIDTH = '60%'
@@ -58,21 +57,20 @@ function answer(
       handle.hide()
       resolve(outcome)
     }
-    const select = new BlueSelect({
-      keymap: ctx.blueKeymap,
-      theme: ctx.blueTheme,
+    const select = ctx.blueComponents.createSelectList({
       items: [
         { value: 'allow', label: 'Allow once', description: `run ${req.toolName} this time` },
         { value: 'reject', label: 'Reject', description: `do not run ${req.toolName}` },
       ],
-      onConfirm: (items) => {
-        settle(items[0]?.value === 'allow' ? 'allowed-once' : 'rejected')
+      onSelect: (item) => {
+        settle(item.value === 'allow' ? 'allowed-once' : 'rejected')
       },
       onCancel: () => {
         settle('cancelled')
       },
     })
     const colors = ctx.blueTheme.colors
+    const truncate = ctx.blueComponents.truncateToWidth
     const contentWidth = Math.max(1, Math.floor(ctx.blueScreen.columns * 0.6) - 2)
     const header = [
       colors.warning(truncate(`Approve ${req.toolName}?`, contentWidth)),
