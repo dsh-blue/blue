@@ -135,6 +135,62 @@ describe('startBlueTerminal', () => {
     await runtime.stop()
   })
 
+  it('sinks the bottom dock to the last rows when content is shorter than the viewport', async () => {
+    const terminal = new FakeTerminal()
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    runtime.addBottomChild(textComponent('dock-row'))
+    runtime.addChild(textComponent('content-row'))
+    runtime.requestRender(true)
+    await waitForRender()
+    const frame = terminal.written.at(-1) ?? ''
+    const rows = frame.split('\r\n')
+    // Twenty-four terminal rows: content first, blank filler between, the
+    // dock on the very last row.
+    expect(rows).toHaveLength(24)
+    expect(rows[0]).toContain('content-row')
+    expect(rows.findIndex(row => row.includes('dock-row'))).toBe(23)
+    await runtime.stop()
+  })
+
+  it('leaves a full viewport of content untouched', async () => {
+    const terminal = new FakeTerminal()
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    runtime.addBottomChild(textComponent('dock-row'))
+    runtime.addChild({
+      render: () => Array.from({ length: 30 }, (_, index) => `row-${index}`),
+      invalidate: () => {},
+    })
+    runtime.requestRender(true)
+    await waitForRender()
+    const frame = terminal.written.at(-1) ?? ''
+    const rows = frame.split('\r\n')
+    // Thirty-one rendered lines: no filler, the dock right after the content.
+    expect(rows).toHaveLength(31)
+    expect(rows[30]).toContain('dock-row')
+    await runtime.stop()
+  })
+
+  it('pads nothing while no component is mounted', async () => {
+    const terminal = new FakeTerminal()
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    runtime.requestRender(true)
+    await waitForRender()
+    // An empty tree renders no lines at all — no blank flood at boot.
+    expect(terminal.written.at(-1) ?? '').not.toContain('\r\n')
+    await runtime.stop()
+  })
+
+  it('pads nothing without a bottom-pinned component', async () => {
+    const terminal = new FakeTerminal()
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    runtime.addChild(textComponent('content-row'))
+    runtime.requestRender(true)
+    await waitForRender()
+    const frame = terminal.written.at(-1) ?? ''
+    expect(frame.split('\r\n')).toHaveLength(1)
+    await runtime.stop()
+  })
+
   it('stops idempotently: drains input once and stops the terminal once', async () => {
     const terminal = new FakeTerminal()
     const runtime = await startBlueTerminal(terminal, noProbe)

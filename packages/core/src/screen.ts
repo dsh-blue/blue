@@ -52,7 +52,9 @@ export class BlueScreenService extends Service implements BlueScreen {
   }
 
   /**
-   * Mount a component pinned to the bottom of the tree (the input editor).
+   * Mount a component pinned to the bottom of the tree (the input editor
+   * dock); short content is padded so the pinned block spans the terminal's
+   * last rows.
    * @param component - the component to pin.
    * @returns a disposer that unmounts the component; safe to call twice.
    */

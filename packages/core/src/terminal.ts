@@ -144,16 +144,39 @@ export async function startBlueTerminal(
 ): Promise<BlueTerminalRuntime> {
   const current: TUI = new TuiMainScreen(terminal)
   const stable = createStableTuiReference(() => current)
+  // Bottom-pinned components (the input editor dock) must render after
+  // transcript content no matter when each side mounts: pi-tui renders root
+  // children in array order, and transcript components mount only after the
+  // app's session-changed broadcast, long after the editor.
+  const bottomChildren = new Set<BlueComponent>()
+  // The dock must also sit on the terminal's last rows even when the mounted
+  // content is shorter than the viewport (boot with no session yet, a fresh
+  // /new) — pi-tui stacks root children top-down, so an unpadded tree leaves
+  // the editor floating right under the content. Wrapping the renderer's own
+  // line collection is the one seam where the flat output can be split back
+  // into content and dock: the dock block is measured again (its components
+  // are a few cheap rows) and blank filler is inserted between the blocks
+  // until the frame spans the viewport. Full viewports render untouched, and
+  // an empty or dock-less tree pads nothing (no blank flood at boot).
+  const collectLines = current.render.bind(current)
+  current.render = (width: number): string[] => {
+    const lines = collectLines(width)
+    if (lines.length === 0 || lines.length >= terminal.rows || bottomChildren.size === 0) return lines
+    let dockRows = 0
+    for (const child of bottomChildren) dockRows += child.render(width).length
+    const filler = terminal.rows - lines.length
+    const boundary = lines.length - dockRows
+    return [
+      ...lines.slice(0, boundary),
+      ...Array.from({ length: filler }, () => ''),
+      ...lines.slice(boundary),
+    ]
+  }
   const background = backgroundFromRgb(await probe())
   current.start()
   current.setTerminalColorSchemeNotifications(true)
   if (onSchemeChange !== undefined) current.onTerminalColorSchemeChange(onSchemeChange)
   let stopped = false
-  // Bottom-pinned components (the input editor) must render after transcript
-  // content no matter when each side mounts: pi-tui renders root children in
-  // array order, and transcript components mount only after the app's
-  // session-changed broadcast, long after the editor.
-  const bottomChildren = new Set<BlueComponent>()
   const runtime: BlueTerminalRuntime = {
     get columns() {
       return current.terminal.columns

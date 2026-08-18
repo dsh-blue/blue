@@ -140,6 +140,8 @@ export interface BlueScreen {
    * Mount a component pinned to the bottom of the root tree: it renders
    * after every component mounted with {@link BlueScreen.addChild}, so
    * late-mounted transcript content never lands below the input editor.
+   * When the mounted content is shorter than the viewport, blank filler
+   * keeps the pinned block on the terminal's last rows.
    * @param component - the component to pin.
    * @returns a disposer that unmounts the component; safe to call twice.
    */
