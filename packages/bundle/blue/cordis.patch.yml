@@ -18,7 +18,7 @@
 
 - insert:
     # --- Plain baseline segment -------------------------------------------------
-    # The six rows below are the complete, self-sufficient Blue UI: drop the
+    # The seven rows below are the complete, self-sufficient Blue UI: drop the
     # enhancement segment and the bundle still boots and works.
 
     # Blue core: the tree's only pi-tui adapter. Starts the terminal and
@@ -33,9 +33,15 @@
       name: '@deepseek-ai/dsh-blue-core/theme-dark'
 
     # Transcript: renders session events (streamed Markdown, tool calls) onto
-    # the blue screen.
+    # the blue screen. Also provides the blueStatus registry and mounts the
+    # two-row footer shell bottom-pinned above the input editor.
     - id: blue-transcript
       name: '@deepseek-ai/dsh-blue-transcript'
+
+    # Baseline footer entry: '{model} · {agent status}' at priority 0,
+    # registered into the transcript's blueStatus registry.
+    - id: blue-status-basic
+      name: '@deepseek-ai/dsh-blue-transcript/status-basic'
 
     # Interaction: the input editor, built-in commands (/quit, /resume), the
     # user-question provider, and the approval answerer.
@@ -64,3 +70,13 @@
     # not matter).
     - id: blue-editor-plus
       name: '@deepseek-ai/dsh-blue-interaction/editor-plus'
+
+    # Git footer entry: the current branch (priority 10), probed once per
+    # session attach; renders nothing outside a git repository.
+    - id: blue-status-git
+      name: '@deepseek-ai/dsh-blue-transcript/status-git'
+
+    # Context footer entry: the latest model step's context occupancy
+    # ('ctx N' / 'ctx N.Nk', priority 20) from assistant/message usage.
+    - id: blue-status-context
+      name: '@deepseek-ai/dsh-blue-transcript/status-context'

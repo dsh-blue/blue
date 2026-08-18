@@ -1,5 +1,5 @@
 /**
- * Whole-tree E2E for the Blue bundle: the five Blue plugins boot through the
+ * Whole-tree E2E for the Blue bundle: every Blue plugin row boots through the
  * real Loader from a temp cordis.yml (mirroring cordis.patch.yml's insert
  * rows), the command line arrives through `provideCmdline`, the agent spine
  * is the REAL registry + agent loop driven by a scripted mock LLM adapter
@@ -22,6 +22,7 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
+import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
@@ -40,6 +41,9 @@ import { FakeTerminal, waitForRender } from '../../../core/tests/fake-terminal.t
 import * as interactionPlugin from '../../../interaction/src/index.ts'
 import * as editorPlusPlugin from '../../../interaction/src/editor-plus.ts'
 import * as transcriptPlugin from '../../../transcript/src/index.ts'
+import * as statusBasicPlugin from '../../../transcript/src/status-basic.ts'
+import * as statusContextPlugin from '../../../transcript/src/status-context.ts'
+import * as statusGitPlugin from '../../../transcript/src/status-git.ts'
 import { MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
 
 const disposers: (() => Promise<void>)[] = []
@@ -62,6 +66,9 @@ interface BlueE2EHooks {
   coreApply: (ctx: Context) => Promise<void>
   themeDarkApply: typeof themeDarkPlugin.apply
   transcriptApply: typeof transcriptPlugin.apply
+  statusBasicApply: typeof statusBasicPlugin.apply
+  statusGitApply: typeof statusGitPlugin.apply
+  statusContextApply: typeof statusContextPlugin.apply
   interactionApply: typeof interactionPlugin.apply
   editorPlusApply: typeof editorPlusPlugin.apply
   startupApply: typeof startupPlugin.apply
@@ -74,11 +81,14 @@ interface BlueE2EHooks {
  * (the Loader imports through Node's resolver, which cannot reach tsconfig
  * paths). The core row starts the real renderer over the recording terminal.
  * @param argv - inner command-line arguments (`dsh --profile blue <argv>`).
- * @param options - the mock model script and an optional persistence root.
+ * @param options - the mock model script, an optional persistence root, and
+ *   an optional downstream footer-entry text (adds a fixture row registering
+ *   it through `blueStatus`).
  */
 async function bootBlue(argv: string[], options: {
   script: ConstructorParameters<typeof MockAdapter>[0]
   persistenceRoot?: string
+  footerExtra?: string
 }): Promise<BlueTree> {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-blue-e2e-'))
   const terminal = new FakeTerminal()
@@ -108,6 +118,9 @@ async function bootBlue(argv: string[], options: {
     },
     themeDarkApply: themeDarkPlugin.apply,
     transcriptApply: transcriptPlugin.apply,
+    statusBasicApply: statusBasicPlugin.apply,
+    statusGitApply: statusGitPlugin.apply,
+    statusContextApply: statusContextPlugin.apply,
     interactionApply: interactionPlugin.apply,
     editorPlusApply: editorPlusPlugin.apply,
     startupApply: startupPlugin.apply,
@@ -120,7 +133,7 @@ async function bootBlue(argv: string[], options: {
     writeFileSync(join(dir, file), body)
     return pathToFileURL(join(dir, file)).href
   }
-  writeFileSync(join(dir, 'cordis.yml'), [
+  const rows = [
     '- id: blue-core',
     `  name: ${fixture('blue-core.mjs', `
 export const name = 'blue-core'
@@ -142,6 +155,16 @@ export const name = 'blue-transcript'
 export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap']
 export const apply = ctx => globalThis.__blueE2E.transcriptApply(ctx)
 `)}`,
+    // The baseline-segment status row mirrors cordis.patch.yml: the
+    // '{model} · {status}' footer entry registers into the transcript row's
+    // blueStatus registry. Plain delegation — no registry-identity constraint
+    // like the theme rows.
+    '- id: blue-status-basic',
+    `  name: ${fixture('blue-status-basic.mjs', `
+export const name = 'blue-status-basic'
+export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const apply = ctx => globalThis.__blueE2E.statusBasicApply(ctx)
+`)}`,
     '- id: blue-interaction',
     `  name: ${fixture('blue-interaction.mjs', `
 export const name = 'blue-interaction'
@@ -155,6 +178,20 @@ export const apply = ctx => globalThis.__blueE2E.interactionApply(ctx)
 export const name = 'blue-editor-plus'
 export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'commands']
 export const apply = ctx => globalThis.__blueE2E.editorPlusApply(ctx)
+`)}`,
+    // The enhancement-segment status rows mirror cordis.patch.yml: the git
+    // branch and context-occupancy footer entries.
+    '- id: blue-status-git',
+    `  name: ${fixture('blue-status-git.mjs', `
+export const name = 'blue-status-git'
+export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const apply = ctx => globalThis.__blueE2E.statusGitApply(ctx)
+`)}`,
+    '- id: blue-status-context',
+    `  name: ${fixture('blue-status-context.mjs', `
+export const name = 'blue-status-context'
+export const inject = ['blueStatus', 'blueScreen', 'blueTheme']
+export const apply = ctx => globalThis.__blueE2E.statusContextApply(ctx)
 `)}`,
     '- id: blue-startup',
     `  name: ${fixture('blue-startup.mjs', `
@@ -175,8 +212,23 @@ export const apply = (ctx, config) => globalThis.__blueE2E.appApply(ctx, config)
     '  config:',
     '    task: !!js ctx.blueStartup.task',
     '    resume: !!js ctx.blueStartup.resume',
-    '',
-  ].join('\n'))
+  ]
+  // A stand-in downstream plugin: one fixture row registering a fixed-text
+  // entry through the blueStatus registry, after every bundle row.
+  if (options.footerExtra !== undefined) {
+    const text = JSON.stringify(options.footerExtra)
+    rows.push(
+      '- id: blue-e2e-extra',
+      `  name: ${fixture('blue-e2e-extra.mjs', `
+export const name = 'blue-e2e-extra'
+export const inject = ['blueStatus']
+export const apply = (ctx) => {
+  ctx.effect(() => ctx.blueStatus.register({ id: 'e2e-extra', priority: 30, render: () => ${text} }))
+}
+`)}`,
+    )
+  }
+  writeFileSync(join(dir, 'cordis.yml'), [...rows, ''].join('\n'))
 
   const ctx = new Context()
   await ctx.plugin(Loader)
@@ -389,6 +441,85 @@ describe('blue whole-tree e2e', () => {
     await waitForRender()
     const expanded = tree.terminal.written.slice(beforeToggle).join('')
     expect(expanded).toContain('TAILMARKER')
+  })
+
+  it('renders the baseline footer entry below the transcript and above the editor', async () => {
+    const tree = await bootBlue(['fix', 'the', 'build'], { script: [textResponse('Blue online.')] })
+    const agent = await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await agent.whenIdle()
+    // The model string comes from the scripted flow's durable request header
+    // (the mock default model config is provider/model 'mock').
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('mock · idle') })
+    // Position discipline: a width change forces a full clear-and-repaint
+    // frame, so the last such chunk carries every row in screen order —
+    // transcript reply, then the footer, then the editor's top border (dark
+    // palette `border` #5f87ff).
+    tree.terminal.resize(100, 30)
+    let frame = ''
+    await vi.waitFor(() => {
+      frame = [...tree.terminal.written].reverse()
+        .find(chunk => chunk.includes('\x1b[2J') && chunk.includes('mock · idle')) ?? ''
+      expect(frame).not.toBe('')
+    })
+    const reply = frame.indexOf('Blue online.')
+    const footer = frame.indexOf('mock · idle')
+    const editorBorder = frame.indexOf('\x1b[38;2;95;135;255m')
+    expect(reply).toBeGreaterThanOrEqual(0)
+    expect(footer).toBeGreaterThan(reply)
+    expect(editorBorder).toBeGreaterThan(footer)
+  })
+
+  it('flips the baseline footer entry to running during a turn and back to idle on interrupt', async () => {
+    const tree = await bootBlue([], { script: ['hang'] })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'long work')
+    await vi.waitFor(() => { expect(agent.status).toBe('running') })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('mock · running') })
+    tree.terminal.sendInput('\x03')
+    await agent.whenIdle()
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('mock · idle') })
+  })
+
+  it('renders a footer entry registered by a downstream plugin through blueStatus', async () => {
+    const tree = await bootBlue([], { script: [], footerExtra: 'e2e-extra-entry' })
+    await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('e2e-extra-entry') })
+  })
+
+  it('renders the context footer entry from the assistant/message usage', async () => {
+    // A scripted turn whose usage reports 4242 input-side tokens: the real
+    // agent loop logs it as the assistant/message event's usage, and the
+    // status-context entry formats it as 'ctx 4.2k'.
+    const usageScript: StreamChunk[] = [
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'text-delta', index: 0, text: 'usage reply' },
+      { type: 'block-end', index: 0, block: { type: 'text', text: 'usage reply' } },
+      { type: 'usage', usage: { inputTokens: 4242, outputTokens: 1 } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    const tree = await bootBlue([], { script: [usageScript] })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'spend tokens')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await agent.whenIdle()
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('ctx 4.2k') })
+  })
+
+  it('renders the git footer entry through the injected branch runner', async () => {
+    // The e2e's session cwd is the repo checkout itself (app sets meta.cwd
+    // from process.cwd()), so the real probe would return whatever branch
+    // the checkout happens to be on; inject a fake runner for a
+    // deterministic sentinel instead (same module instance the mounted
+    // plugin delegates to).
+    statusGitPlugin.setGitBranchRunner(() => 'e2e-branch')
+    try {
+      const tree = await bootBlue([], { script: [] })
+      await currentAgent(tree)
+      await vi.waitFor(() => { expect(tree.terminal.output).toContain('e2e-branch') })
+    } finally {
+      statusGitPlugin.setGitBranchRunner(undefined)
+    }
   })
 
   it('resumes a persisted session: history renders from the snapshot, no replay needed', async () => {
