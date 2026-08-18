@@ -15,9 +15,27 @@ afterEach(() => { internals.stderr = originalStderr })
 interface Recorded {
   created: CreateAgentOptions[]
   resumed: string[]
+  resumeOptions: ResumeAgentOptions[]
   disposed: string[]
   followups: [string, unknown][]
   setups: number
+  listeners: string[]
+}
+
+/**
+ * A minimal unpublished-agent scope that records the waterfall listeners a
+ * setup installs — the observable effect of `installModelSelection` on the
+ * agent context.
+ * @param recorded - the capture sink.
+ * @returns the fake agent scope.
+ */
+function recordingAgentCtx(recorded: Recorded): Context {
+  return {
+    on: (event: string) => {
+      recorded.listeners.push(event)
+      return () => {}
+    },
+  } as never
 }
 
 /** Build an owned handle for a fake Agent that records its teardown and prompts. */
@@ -64,21 +82,23 @@ function bench(config: Config, options: {
   internals.stderr = { write: (chunk: string) => { err += chunk; return true } }
   const exits: number[] = []
   ctx.provide('appExit', (code: number) => { exits.push(code) })
-  const recorded: Recorded = { created: [], resumed: [], disposed: [], followups: [], setups: 0 }
+  const recorded: Recorded = { created: [], resumed: [], resumeOptions: [], disposed: [], followups: [], setups: 0, listeners: [] }
   let resumeError: Error | undefined
   if (options.agents !== false) {
     ctx.provide('agents', {
       create: async (createOptions: CreateAgentOptions) => {
         if (options.createError !== undefined) throw options.createError
         recorded.created.push(createOptions)
-        await createOptions.setup?.({ on: () => () => {} } as never)
+        await createOptions.setup?.(recordingAgentCtx(recorded))
         recorded.setups += 1
         return makeHandle(`agent-${recorded.created.length}`, recorded, options.createDisposeError)
       },
-      resume: (resumeOptions: ResumeAgentOptions) => {
-        if (resumeError !== undefined) return Promise.reject(resumeError)
+      resume: async (resumeOptions: ResumeAgentOptions) => {
+        if (resumeError !== undefined) throw resumeError
         recorded.resumed.push(String(resumeOptions.resumeSessionId))
-        return Promise.resolve(makeHandle(`resumed-${String(resumeOptions.resumeSessionId)}`, recorded))
+        recorded.resumeOptions.push(resumeOptions)
+        await resumeOptions.setup?.(recordingAgentCtx(recorded))
+        return makeHandle(`resumed-${String(resumeOptions.resumeSessionId)}`, recorded)
       },
     } as never)
   }
@@ -115,6 +135,7 @@ describe('blue app driver', () => {
     expect(created.meta).toEqual({ cwd: process.cwd() })
     expect(created.agentOptions).toEqual({ provider: 'test-provider', model: 'test-model' })
     expect(test.recorded.setups).toBe(1)
+    expect(test.recorded.listeners).toEqual(['system-prompt/assemble', 'agent/request'])
     const agent = test.ctx.blueSession.current
     expect(agent).not.toBeNull()
     expect(test.changes).toEqual([agent])
@@ -141,6 +162,9 @@ describe('blue app driver', () => {
     await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
     expect(test.recorded.created).toEqual([])
     expect(test.recorded.resumed).toEqual(['abc123'])
+    // Startup resume carries the same model-selection setup as creation.
+    expect(test.recorded.resumeOptions[0]!.setup).toBeDefined()
+    expect(test.recorded.listeners).toEqual(['system-prompt/assemble', 'agent/request'])
     expect(test.changes).toEqual([test.ctx.blueSession.current])
     await test.ctx.fiber.dispose()
   })
@@ -181,6 +205,12 @@ describe('blue app driver', () => {
     expect(test.recorded.created).toEqual([])
     expect(test.exits).toEqual([])
     expect(test.err()).toBe('')
+    // A `/resume` switch cannot compose model selection either; it is a no-op.
+    test.ctx.emit('blue/request-resume', 'abc123')
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(test.recorded.resumed).toEqual([])
+    expect(test.exits).toEqual([])
+    expect(test.err()).toBe('')
     await test.ctx.fiber.dispose()
   })
 
@@ -202,6 +232,12 @@ describe('blue app driver', () => {
     await vi.waitFor(() => { expect(test.recorded.resumed).toEqual(['xyz789']) })
     await vi.waitFor(() => { expect(test.changes).toHaveLength(2) })
     expect(test.recorded.disposed).toEqual(['agent-1'])
+    // The `/resume` switch also wires model selection onto the resumed Agent.
+    expect(test.recorded.resumeOptions[0]!.setup).toBeDefined()
+    expect(test.recorded.listeners).toEqual([
+      'system-prompt/assemble', 'agent/request',
+      'system-prompt/assemble', 'agent/request',
+    ])
     const next = test.ctx.blueSession.current
     expect(next).not.toBe(first)
     expect(test.changes[1]).toBe(next)

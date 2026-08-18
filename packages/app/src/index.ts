@@ -12,8 +12,8 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
-import type { AgentHandle, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-agent-default-model'
+import type { AgentHandle, AgentSetup, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
+import type { AgentDefaultModelConfig } from '@deepseek-ai/dsh-agent-default-model'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 // Empty type imports carry the loader Context merge for the settlement await
@@ -61,6 +61,21 @@ function describe(error: unknown): string {
 }
 
 /**
+ * Build the model-selection setup shared by Agent creation and both resume
+ * paths. The initial selection is the current default; on resume the session
+ * header's model wins once prompt assembly snapshots the selection, as
+ * `installModelSelection` routes requests from the assembled value.
+ * @param defaultModel - the default-model service supplying the initial selection.
+ * @returns an Agent setup installing the mutable selection onto the agent scope.
+ */
+function modelSelectionSetup(defaultModel: AgentDefaultModelConfig): AgentSetup {
+  return (agentCtx) => {
+    const selection: ModelSelectionRef = { current: defaultModel.currentSelection(), assembled: undefined }
+    installModelSelection(agentCtx, selection)
+  }
+}
+
+/**
  * Mount the Blue application driver.
  * @param ctx - plugin context carrying core services and the launcher-provided exit request.
  * @param config - validated launch config.
@@ -99,26 +114,21 @@ export function apply(ctx: Context, config: Config): void {
     let handle: AgentHandle
     try {
       if (config.resume !== undefined) {
-        handle = await agents.resume({ resumeSessionId: SessionId(config.resume) })
+        handle = await agents.resume({
+          resumeSessionId: SessionId(config.resume),
+          setup: modelSelectionSetup(defaultModel),
+        })
       } else {
         // This bundle composes no preset roster, so the model-facing rows sit
         // in the host plane and the agent reads them from the global layer
         // (same construction as the headless runner).
-        /* jscpd:ignore-start */
-        // The create-with-model-selection assembly mirrors the headless runner
-        // by design: both are composition roots over the same documented
-        // construction, not shared logic worth extracting.
         const selection = defaultModel.currentSelection()
         handle = await agents.create({
           sessionId: SessionId(`session-${randomUUID()}`),
           meta: { cwd: process.cwd() },
           agentOptions: { provider: selection.provider, model: selection.model },
-          setup: (agentCtx) => {
-            const selected: ModelSelectionRef = { current: selection, assembled: undefined }
-            installModelSelection(agentCtx, selected)
-          },
+          setup: modelSelectionSetup(defaultModel),
         })
-        /* jscpd:ignore-end */
       }
     } catch (error) {
       // Startup has no live session to fall back to; fail the launch.
@@ -140,11 +150,15 @@ export function apply(ctx: Context, config: Config): void {
   ctx.on('blue/request-resume', (sessionId: string) => {
     enqueue(async () => {
       const agents = ctx.get('agents')
-      if (agents === undefined) return
+      const defaultModel = ctx.get('agentDefaultModel')
+      if (agents === undefined || defaultModel === undefined) return
       let next: AgentHandle
       try {
         // Resume before disposing: a failed switch keeps the live session.
-        next = await agents.resume({ resumeSessionId: SessionId(sessionId) })
+        next = await agents.resume({
+          resumeSessionId: SessionId(sessionId),
+          setup: modelSelectionSetup(defaultModel),
+        })
       } catch (error) {
         io.stderr.write(`dsh: could not resume session ${sessionId}: ${describe(error)}\n`)
         return
