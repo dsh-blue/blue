@@ -17,9 +17,11 @@
   disabled: true
 
 - insert:
-    # --- Plain baseline segment -------------------------------------------------
-    # The seven rows below are the complete, self-sufficient Blue UI: drop the
-    # enhancement segment and the bundle still boots and works.
+    # --- Baseline segment -----------------------------------------------------
+    # The plain baseline is this segment plus the assembly segment at the
+    # bottom — seven rows total — and it is the complete, self-sufficient Blue
+    # UI: the whole enhancement segment between them can be dropped and the
+    # bundle still boots and works.
 
     # Blue core: the tree's only pi-tui adapter. Starts the terminal and
     # registers the blueScreen/blueKeymap/blueTerminalInfo/blueComponents
@@ -43,26 +45,21 @@
     - id: blue-status-basic
       name: '@deepseek-ai/dsh-blue-transcript/status-basic'
 
-    # Interaction: the input editor, built-in commands (/quit, /resume), the
-    # user-question provider, and the approval answerer.
-    - id: blue-interaction
-      name: '@deepseek-ai/dsh-blue-interaction'
-
-    - id: blue-startup
-      name: '@deepseek-ai/dsh-blue-app/startup'
-
-    # Reads its launch values from the ordinary blueStartup provider; the
-    # plugin's own inject waits for the core Agent services and blueScreen.
-    - id: blue-app
-      name: '@deepseek-ai/dsh-blue-app'
-      inject: [blueStartup]
-      config:
-        task: !!js ctx.blueStartup.task
-        resume: !!js ctx.blueStartup.resume
-
-    # --- Enhancement segment ----------------------------------------------------
-    # Optional layers over the plain baseline; each row is a self-contained
-    # feature the bundle can drop without breaking the baseline.
+    # --- Enhancement segment --------------------------------------------------
+    # Optional layers over the plain baseline; the whole segment can be
+    # dropped without breaking it. Bottom panes mount through
+    # blueScreen.addBottomChild, so the dock's render order is the plugin
+    # mount order — and the loader mounts sibling rows CONCURRENTLY, so raw
+    # row order alone does not pin the dock. What orders it is the
+    # blueComponents activation round: the transcript, todo, and btw plugins
+    # inject blueComponents, so their fibers activate when it appears, in row
+    # order; the two lighter panes carry a row-level `inject: [blueComponents]`
+    # pin to join the same round (activity → queue → todo → btw), and the
+    # interaction row's input plugin is created only inside interaction's
+    # apply, subscribing after every row fiber, so the editor mounts last.
+    # (Pinning on blueStatus instead would make the interaction fiber a
+    # transitive blueTheme dependent and /theme would dispose its own
+    # handler's fiber mid-swap.)
 
     # Editor plus: the '!' bash mode with shell echo, and slash-command /
     # '@'-file autocomplete, layered over the shared input editor through the
@@ -80,3 +77,49 @@
     # ('ctx N' / 'ctx N.Nk', priority 20) from assistant/message usage.
     - id: blue-status-context
       name: '@deepseek-ai/dsh-blue-transcript/status-context'
+
+    # Activity pane: a one-row spinner shown while the attached agent runs;
+    # zero rows while idle. The row-level pin joins the blueComponents
+    # activation round so the pane lands between the footer and the editor.
+    - id: blue-pane-activity
+      name: '@deepseek-ai/dsh-blue-transcript/pane-activity'
+      inject: [blueComponents]
+
+    # Queue pane: the attached agent's queued inbox messages, one row each,
+    # plus the keyless action gating the empty-editor Up recall in blue-input.
+    # Same blueComponents dock-order pin as the activity pane.
+    - id: blue-pane-queue
+      name: '@deepseek-ai/dsh-blue-interaction/pane-queue'
+      inject: [blueComponents]
+
+    # Todo pane: the session's todo list (whole-list todo/write snapshots),
+    # with the global Ctrl-T collapse toggle.
+    - id: blue-pane-todo
+      name: '@deepseek-ai/dsh-blue-transcript/pane-todo'
+
+    # Side-question pane and its /btw command: forks the live session into a
+    # throwaway side agent and renders the exchange in the dock.
+    - id: blue-pane-btw
+      name: '@deepseek-ai/dsh-blue-transcript/pane-btw'
+
+    # --- Assembly segment -------------------------------------------------------
+    # The plain baseline's closing rows: the input editor with its built-in
+    # commands and overlays, the startup provider, and the app driver.
+
+    # Interaction: the input editor, built-in commands (/quit, /resume, /new,
+    # /fork, /sessions, /help), the user-question provider, and the approval
+    # answerer.
+    - id: blue-interaction
+      name: '@deepseek-ai/dsh-blue-interaction'
+
+    - id: blue-startup
+      name: '@deepseek-ai/dsh-blue-app/startup'
+
+    # Reads its launch values from the ordinary blueStartup provider; the
+    # plugin's own inject waits for the core Agent services and blueScreen.
+    - id: blue-app
+      name: '@deepseek-ai/dsh-blue-app'
+      inject: [blueStartup]
+      config:
+        task: !!js ctx.blueStartup.task
+        resume: !!js ctx.blueStartup.resume

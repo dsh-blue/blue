@@ -23,6 +23,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
@@ -39,8 +40,13 @@ import * as startupPlugin from '../../../app/src/startup.ts'
 import { startBlueTerminal } from '../../../core/src/terminal.ts'
 import { FakeTerminal, waitForRender } from '../../../core/tests/fake-terminal.ts'
 import * as interactionPlugin from '../../../interaction/src/index.ts'
+import { clearDraft } from '../../../interaction/src/draft-stash.ts'
 import * as editorPlusPlugin from '../../../interaction/src/editor-plus.ts'
+import * as paneQueuePlugin from '../../../interaction/src/pane-queue.ts'
 import * as transcriptPlugin from '../../../transcript/src/index.ts'
+import * as paneActivityPlugin from '../../../transcript/src/pane-activity.ts'
+import * as paneBtwPlugin from '../../../transcript/src/pane-btw.ts'
+import * as paneTodoPlugin from '../../../transcript/src/pane-todo.ts'
 import * as statusBasicPlugin from '../../../transcript/src/status-basic.ts'
 import * as statusContextPlugin from '../../../transcript/src/status-context.ts'
 import * as statusGitPlugin from '../../../transcript/src/status-git.ts'
@@ -69,6 +75,10 @@ interface BlueE2EHooks {
   statusBasicApply: typeof statusBasicPlugin.apply
   statusGitApply: typeof statusGitPlugin.apply
   statusContextApply: typeof statusContextPlugin.apply
+  paneActivityApply: typeof paneActivityPlugin.apply
+  paneQueueApply: typeof paneQueuePlugin.apply
+  paneTodoApply: typeof paneTodoPlugin.apply
+  paneBtwApply: typeof paneBtwPlugin.apply
   interactionApply: typeof interactionPlugin.apply
   editorPlusApply: typeof editorPlusPlugin.apply
   startupApply: typeof startupPlugin.apply
@@ -121,6 +131,10 @@ async function bootBlue(argv: string[], options: {
     statusBasicApply: statusBasicPlugin.apply,
     statusGitApply: statusGitPlugin.apply,
     statusContextApply: statusContextPlugin.apply,
+    paneActivityApply: paneActivityPlugin.apply,
+    paneQueueApply: paneQueuePlugin.apply,
+    paneTodoApply: paneTodoPlugin.apply,
+    paneBtwApply: paneBtwPlugin.apply,
     interactionApply: interactionPlugin.apply,
     editorPlusApply: editorPlusPlugin.apply,
     startupApply: startupPlugin.apply,
@@ -165,14 +179,15 @@ export const name = 'blue-status-basic'
 export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
 export const apply = ctx => globalThis.__blueE2E.statusBasicApply(ctx)
 `)}`,
-    '- id: blue-interaction',
-    `  name: ${fixture('blue-interaction.mjs', `
-export const name = 'blue-interaction'
-export const apply = ctx => globalThis.__blueE2E.interactionApply(ctx)
-`)}`,
-    // The enhancement-segment row mirrors cordis.patch.yml: editor-plus
-    // layers bash mode and autocomplete over the shared editor, attaching
-    // through the 'blue/input-editor-changed' event.
+    // The enhancement segment mirrors cordis.patch.yml's row order: the
+    // editor-plus layer first, then the footer entries, then the four bottom
+    // panes. The loader mounts sibling rows concurrently, so dock order is
+    // set by the blueComponents activation round: transcript, pane-todo, and
+    // pane-btw inject it themselves, the two lighter panes carry the patch's
+    // row-level pin, and the round activates in row order (activity → queue
+    // → todo → btw) — while the interaction row's input plugin subscribes
+    // last (created inside interaction's apply), so the editor mounts below
+    // every pane.
     '- id: blue-editor-plus',
     `  name: ${fixture('blue-editor-plus.mjs', `
 export const name = 'blue-editor-plus'
@@ -192,6 +207,42 @@ export const apply = ctx => globalThis.__blueE2E.statusGitApply(ctx)
 export const name = 'blue-status-context'
 export const inject = ['blueStatus', 'blueScreen', 'blueTheme']
 export const apply = ctx => globalThis.__blueE2E.statusContextApply(ctx)
+`)}`,
+    // The enhancement-segment pane rows mirror cordis.patch.yml; each fixture
+    // re-declares the source module's inject list, and the two lighter panes
+    // carry the patch's row-level blueComponents dock-order pin.
+    '- id: blue-pane-activity',
+    `  name: ${fixture('blue-pane-activity.mjs', `
+export const name = 'blue-pane-activity'
+export const inject = ['blueScreen', 'blueTheme']
+export const apply = ctx => globalThis.__blueE2E.paneActivityApply(ctx)
+`)}`,
+    '  inject: [blueComponents]',
+    '- id: blue-pane-queue',
+    `  name: ${fixture('blue-pane-queue.mjs', `
+export const name = 'blue-pane-queue'
+export const inject = ['blueScreen', 'blueTheme', 'blueKeymap']
+export const apply = ctx => globalThis.__blueE2E.paneQueueApply(ctx)
+`)}`,
+    '  inject: [blueComponents]',
+    '- id: blue-pane-todo',
+    `  name: ${fixture('blue-pane-todo.mjs', `
+export const name = 'blue-pane-todo'
+export const inject = ['blueScreen', 'blueTheme', 'blueKeymap', 'blueComponents']
+export const apply = ctx => globalThis.__blueE2E.paneTodoApply(ctx)
+`)}`,
+    '- id: blue-pane-btw',
+    `  name: ${fixture('blue-pane-btw.mjs', `
+export const name = 'blue-pane-btw'
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'commands', 'agents']
+export const apply = ctx => globalThis.__blueE2E.paneBtwApply(ctx)
+`)}`,
+    // The assembly segment closes the plain baseline: the interaction row
+    // mounts the input editor below every pane row above.
+    '- id: blue-interaction',
+    `  name: ${fixture('blue-interaction.mjs', `
+export const name = 'blue-interaction'
+export const apply = ctx => globalThis.__blueE2E.interactionApply(ctx)
 `)}`,
     '- id: blue-startup',
     `  name: ${fixture('blue-startup.mjs', `
@@ -290,6 +341,23 @@ async function executeCommand(tree: BlueTree, agent: Agent, line: string) {
 async function backToDark(tree: BlueTree, agent: Agent): Promise<void> {
   await executeCommand(tree, agent, '/theme dark')
   await vi.waitFor(() => { expect(tree.ctx.get('blueTheme')?.colors).toBe(themeDarkPlugin.DARK_COLORS) })
+}
+
+/**
+ * Force a full clear-and-repaint frame with a resize and return the first
+ * such chunk WRITTEN AFTER the resize: incremental diffs leave stale text in
+ * `written` and earlier frames also carried '\x1b[2J', so only a fresh full
+ * frame reflects exactly what is on screen right now.
+ */
+async function fullFrame(terminal: FakeTerminal): Promise<string> {
+  const before = terminal.written.length
+  terminal.resize(terminal.columns + 1, terminal.rows)
+  let frame = ''
+  await vi.waitFor(() => {
+    frame = terminal.written.slice(before).find(chunk => chunk.includes('\x1b[2J')) ?? ''
+    expect(frame).not.toBe('')
+  })
+  return frame
 }
 
 describe('blue whole-tree e2e', () => {
@@ -663,6 +731,233 @@ describe('blue whole-tree e2e', () => {
     } finally {
       await backToDark(tree, agent)
     }
+  })
+
+  it('shows the activity spinner while the agent runs and drops it when the turn ends', async () => {
+    const tree = await bootBlue([], { script: ['hang'] })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'long work')
+    await vi.waitFor(() => { expect(agent.status).toBe('running') })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('working…') })
+    const running = await fullFrame(tree.terminal)
+    expect(running).toContain('working…')
+    // Dock order: the spinner sits between the footer and the editor.
+    const footerAt = running.indexOf('mock · running')
+    const spinnerAt = running.indexOf('working…')
+    const borderAt = running.indexOf('\x1b[38;2;95;135;255m')
+    expect(footerAt).toBeGreaterThanOrEqual(0)
+    expect(spinnerAt).toBeGreaterThan(footerAt)
+    expect(borderAt).toBeGreaterThan(spinnerAt)
+    tree.terminal.sendInput('\x03')
+    await agent.whenIdle()
+    expect(await fullFrame(tree.terminal)).not.toContain('working…')
+  })
+
+  it('renders the todo pane between the footer and the editor, and Ctrl-T collapses it', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    // Inject a durable whole-list snapshot straight into the session log; the
+    // pane's live 'session/event' subscription picks it up.
+    agent.session.append('todo/write', {
+      todos: [
+        { content: 'done-task', status: 'completed' },
+        { content: 'active-task', status: 'in_progress' },
+        { content: 'later-task', status: 'pending' },
+      ],
+    })
+    // A list with in-progress work starts expanded: one styled row per entry.
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('active-task') })
+    // Dock order: the footer (mock · idle), then the todo pane, then the
+    // editor's top border (dark palette `border` #5f87ff).
+    const expanded = await fullFrame(tree.terminal)
+    const footer = expanded.indexOf('mock · idle')
+    const todo = expanded.indexOf('active-task')
+    const editorBorder = expanded.indexOf('\x1b[38;2;95;135;255m')
+    expect(footer).toBeGreaterThanOrEqual(0)
+    expect(todo).toBeGreaterThan(footer)
+    expect(editorBorder).toBeGreaterThan(todo)
+    // The global Ctrl-T action collapses the pane to the one-line summary.
+    tree.terminal.sendInput('\x14')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('todos 1/3') })
+    const collapsed = await fullFrame(tree.terminal)
+    expect(collapsed).toContain('todos 1/3')
+    expect(collapsed).not.toContain('active-task')
+  })
+
+  it('renders queued inbox messages and recalls the latest into the empty editor on Up', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    // The draft stash is module state shared across this worker's cases: make
+    // sure the editor starts empty so Up reaches the recall path.
+    tree.terminal.sendInput('\x1b')
+    clearDraft()
+    agent.inbox.append('next-turn', createUserMessage({
+      content: [{ type: 'text', text: 'queued-task' }],
+      source: { kind: 'user' },
+    }))
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('queued ↑ turn: queued-task') })
+    // Dock order: the queue pane sits between the footer and the editor.
+    const docked = await fullFrame(tree.terminal)
+    const footerAt = docked.indexOf('mock · idle')
+    const queuedAt = docked.indexOf('queued ↑ turn: queued-task')
+    const borderAt = docked.indexOf('\x1b[38;2;95;135;255m')
+    expect(footerAt).toBeGreaterThanOrEqual(0)
+    expect(queuedAt).toBeGreaterThan(footerAt)
+    expect(borderAt).toBeGreaterThan(queuedAt)
+    // Empty editor + Up: the pane-queue recall action moves the message out
+    // of the inbox and into the draft.
+    tree.terminal.sendInput('\x1b[A')
+    expect(agent.inbox.hasPending).toBe(false)
+    const frame = await fullFrame(tree.terminal)
+    expect(frame).toContain('queued-task')
+    expect(frame).not.toContain('queued ↑ turn:')
+    // The recall only drafts the text: the model saw nothing.
+    expect(tree.adapter.requests).toHaveLength(0)
+    // Leave no stashed draft for the next case's editor to restore.
+    tree.terminal.sendInput('\x1b')
+    clearDraft()
+  })
+
+  it('lists the registered commands and key bindings in the /help overlay', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    // The full command+key list is taller than the default overlay window;
+    // enlarge the terminal so every row renders.
+    tree.terminal.resize(160, 60)
+    const result = await executeCommand(tree, agent, '/help')
+    expect(result?.kind).toBe('success')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/quit — Exit Blue') })
+    const shown = tree.terminal.output
+    expect(shown).toContain('/new — Start a new session')
+    expect(shown).toContain('/btw — Ask a side question in a forked session')
+    // The Keys section lists the keymap, including the pane-todo global action.
+    expect(shown).toContain('ctrl+c — Clear input / interrupt the agent / press twice to exit')
+    expect(shown).toContain('ctrl+t — Toggle todo panel')
+    // Escape closes the overlay.
+    tree.terminal.sendInput('\x1b')
+    expect(await fullFrame(tree.terminal)).not.toContain('/quit — Exit Blue')
+  })
+
+  it('switches sessions through /new and /fork, and lists them in the /sessions picker', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-blue-e2e-sessions-'))
+    const tree = await bootBlue(['first', 'task'], {
+      script: [textResponse('first answer'), textResponse('second answer')],
+      persistenceRoot: root,
+    })
+    const first = await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await first.whenIdle()
+
+    // /new attaches a fresh session; the session-changed broadcast fires.
+    await expect(executeCommand(tree, first, '/new'))
+      .resolves.toEqual({ kind: 'success', text: 'starting a new session' })
+    await vi.waitFor(() => { expect(tree.sessionChanges).toHaveLength(2) })
+    const second = tree.sessionChanges[1]!
+    expect(second.id).not.toBe(first.id)
+
+    // Give the second session history so the fork's seed prefix is non-empty.
+    typeLine(tree.terminal, 'second task')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(2) })
+    await second.whenIdle()
+
+    // /fork attaches a child carrying the parent's full event log as its seed.
+    await expect(executeCommand(tree, second, '/fork'))
+      .resolves.toEqual({ kind: 'success', text: 'forking the current session' })
+    await vi.waitFor(() => { expect(tree.sessionChanges).toHaveLength(3) })
+    const forked = tree.sessionChanges[2]!
+    expect(String(forked.session.header.parentSession)).toBe(String(second.id))
+    expect(forked.session.header.seedLength).toBeGreaterThan(0)
+
+    // /sessions lists the persisted sessions newest-first in a picker
+    // overlay. Flush the live fork so its header has reached the disk, and
+    // widen the terminal first: the row labels (id · date · cwd) need room.
+    await tree.ctx.sessions.flush(forked.session)
+    tree.terminal.resize(240, 40)
+    await expect(executeCommand(tree, forked, '/sessions')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Resume a session') })
+    const picker = tree.terminal.output
+    expect(picker).toContain(String(first.id))
+    expect(picker).toContain(String(second.id))
+    expect(picker).toContain(String(forked.id))
+    expect(picker).toContain('(current)')
+    // Pick the live session: a notice flashes and no switch happens. Find its
+    // row deterministically by reproducing the picker's newest-first sort
+    // over the same persisted headers.
+    const persistence = tree.ctx.get('sessionPersistence')!
+    const headers = await persistence.list(new AbortController().signal)
+    const sorted = [...headers].sort((a, b) => b.createdAt - a.createdAt)
+    const currentRow = sorted.findIndex(header => String(header.id) === String(forked.id))
+    expect(currentRow).toBeGreaterThanOrEqual(0)
+    for (let row = 0; row < currentRow; row += 1) tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('already the current session') })
+    expect(tree.sessionChanges).toHaveLength(3)
+  })
+
+  it('runs /btw side questions in a forked session and dismisses the pane', async () => {
+    const tree = await bootBlue([], { script: [textResponse('side reply')] })
+    const agent = await currentAgent(tree)
+    await expect(executeCommand(tree, agent, '/btw hello side'))
+      .resolves.toEqual({ kind: 'success', text: 'asked the side question' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('side reply') })
+    expect(tree.terminal.output).toContain('› hello side')
+    // The exchange ran on the side agent: one model request, the main agent
+    // untouched.
+    expect(tree.adapter.requests).toHaveLength(1)
+    await expect(executeCommand(tree, agent, '/btw'))
+      .resolves.toEqual({ kind: 'success', text: 'dismissed the side question' })
+    expect(await fullFrame(tree.terminal)).not.toContain('› hello side')
+  })
+
+  it('remembers a session-scoped approval: the next request for the tool skips the overlay', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    const fallback = vi.fn(() => Promise.resolve<ApprovalOutcome>('unavailable'))
+    const request: ApprovalRequest = { agent, toolName: 'bash' }
+    const first = tree.ctx.waterfall('approval/request', request, fallback)
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Approve bash?') })
+    const menu = tree.terminal.output
+    expect(menu).toContain('Allow once')
+    expect(menu).toContain('Allow bash for this session')
+    expect(menu).toContain('Reject')
+    expect(menu).toContain('Reject with feedback')
+    // Digit 2 direct-selects "Allow bash for this session".
+    tree.terminal.sendInput('2')
+    await expect(first).resolves.toBe('allowed-once')
+    expect(fallback).not.toHaveBeenCalled()
+    // The session allowance short-circuits the prompt: no overlay renders.
+    const before = tree.terminal.written.length
+    const second = tree.ctx.waterfall('approval/request', { agent, toolName: 'bash' }, fallback)
+    await expect(second).resolves.toBe('allowed-once')
+    await waitForRender()
+    expect(tree.terminal.written.slice(before).join('')).not.toContain('Approve bash?')
+  })
+
+  it('answers a two-question user request through one tabbed overlay', async () => {
+    const tree = await bootBlue([], { script: [] })
+    await currentAgent(tree)
+    const answer = tree.ctx.userQuestions.ask({
+      questions: [
+        { id: 'q1', question: 'First question?', header: 'ONE', options: [{ label: 'alpha' }, { label: 'beta' }] },
+        { id: 'q2', question: 'Second question?', header: 'TWO', options: [{ label: 'gamma' }, { label: 'delta' }] },
+      ],
+    })
+    // One overlay carries the whole request: the tab row shows both headers.
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('First question?') })
+    expect(tree.terminal.output).toContain('ONE')
+    expect(tree.terminal.output).toContain('TWO')
+    // Tab switches to the second question; Enter confirms its focused option,
+    // then the overlay returns to the first (still unanswered) question.
+    tree.terminal.sendInput('\t')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Second question?') })
+    tree.terminal.sendInput('\r')
+    tree.terminal.sendInput('\r')
+    await expect(answer).resolves.toEqual({
+      answers: [
+        { id: 'q1', selected: ['alpha'] },
+        { id: 'q2', selected: ['gamma'] },
+      ],
+    })
   })
 
   it('restores the terminal and removes every registration on dispose', async () => {

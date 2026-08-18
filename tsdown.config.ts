@@ -11,7 +11,7 @@ export default defineConfig({
   workspace: {
     include: ['packages/{core,interaction,transcript,app}', 'packages/bundle/blue'],
   },
-  entry: ['lib/types/{index,invariant,startup,theme-dark,theme-light,theme-auto,theme-custom,editor-plus,status-basic,status-git,status-context}.js'],
+  entry: ['lib/types/{index,invariant,startup,theme-dark,theme-light,theme-auto,theme-custom,editor-plus,status-basic,status-git,status-context,pane-activity,pane-todo,pane-btw,pane-queue}.js'],
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',
