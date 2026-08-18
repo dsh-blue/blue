@@ -78,7 +78,7 @@ L0  core 内部    终端生命周期 · OSC 11 · alt-screen · 全局键分发
 **换装**：
 
 - 编辑器实例改用 `blueComponents.createEditor`——一次获得多行、历史、kill-ring、undo、paste-burst、Kitty 解码。`BlueInput` 退役。
-- 选择列表改用 `blueComponents.createSelectList` 后，`BlueSelect` 退役；`BluePanel`（纯 header+child 容器）保留为 L2 内部件。
+- 单选列表改用 `blueComponents.createSelectList`；`BlueSelect` 收窄为包内多选专用（pi-tui 无多选组件），不再从包根导出；`BluePanel`（纯 header+child 容器）保留为唯一的公开组件导出。
 
 **新增**（均为包内子路径插件入口，不增包）：
 
@@ -263,7 +263,7 @@ L0  core 内部    终端生命周期 · OSC 11 · alt-screen · 全局键分发
 |---|---|---|
 | S0 | 验证：pi-tui input listener 语义；`ctx.plugin` 运行时换装 reload 行为；`sessionProjections`/`permissionPresets`/inbox/compaction/usage 上游可用性 | ✅ 已完成（2026-08-18，本文档全部 🔍/📖 项已回写结论；要点：input listener 先于焦点路由且可 consume/改写、`ctx.plugin` 换装自动 reload 注入方、`agent.inbox` 可直接支撑 queue pane；`sessionProjections`/`permissionPresets`/compaction 入口/审批 feedback/undo/title 确认为上游缺口） |
 | S1 | L0/L1：blueComponents 工厂、OSC 11、blueTerminalInfo、token 全量化、blueTheme 迁出 | ✅ 已完成（2026-08-18，要点：`ctx.blueComponents` 工厂（createEditor/createMarkdown/createSelectList/createSettingsList + visibleWidth/wrapText/truncateToWidth，内部映射 blueTheme 到 pi-tui theme）与只读 `ctx.blueTerminalInfo`（OSC 11 自发探测背景 + kittyKeyboard）落地；新事件 `'blue/terminal-theme-changed'` 由 DEC 主题上报驱动；`BlueSemanticColors` 全量化为 26 token 全 required（新增 textStrong/borderFocus/roleUser/shellMode + diff 组 6 个）；blueTheme 实现迁出为 core 子路径插件 `./theme-dark`（`blue-theme-dark`，plain 基线段）；transcript 退役 `markdown.ts`/`width.ts`，Markdown 与宽度改经 blueComponents，ellipsize 收进 `fold.ts` 并仍从包根再导出，inject 扩为 `['blueScreen','blueTheme','blueComponents']`；bundle patch 新增 blue-theme-dark 行） |
-| S2 | L2 编辑器换装 + 补全 + shell 模式（执行通道 Blue 自建 spawn）；补 resume 路径的 `installModelSelection` | Kitty 终端不丢字符；e2e 扩 |
+| S2 | L2 编辑器换装 + 补全 + shell 模式（执行通道 Blue 自建 spawn）；补 resume 路径的 `installModelSelection` | ✅ 已完成（2026-08-18，要点：interaction 主编辑器换装 pi-tui Editor（经 `ctx.blueComponents.createEditor`，多行/历史/kill-ring/undo/粘贴标记内置），`BlueInput`（`src/editor.ts`）与 `text.ts` 退役，hint 行拆为独立 HintLine 组件，宽度函数全走 blueComponents；单选（approval、questions 单选）走 `createSelectList`，`BlueSelect` 收窄为包内多选专用（pi-tui 无多选组件），包导出仅剩 BluePanel；keys.ts 删 cursor-left/right/delete-backward 三 action；新增子路径增强插件 `./editor-plus`（blue-editor-plus）：'!' bash 模式（'!' 不进 buffer、边框切 `colors.shellMode`、提交后自动退回 prompt）+ 自建 child_process 执行（输出 200 行 + 64KB cap）+ ShellEchoComponent 回显进 scroll 区（不进 session transcript）+ 分发式 provider 合并 slash 补全（`ctx.commands.list` 前缀匹配）与 '@' 文件补全（fd 优先、fs 回退、上限 200）；core 的 BlueEditor 契约增 `setAutocompleteProvider(BlueAutocompleteProvider)` 与 `getExpandedText()`，新增 BlueAutocompleteItem/Suggestions/Provider 类型；app 的 create/startup-resume/request-resume 三处统一挂 `modelSelectionSetup`（`installModelSelection`），resume 会话支持运行期模型切换。偏差记录：shell 模式只切边框色（pi-tui Editor 无 prompt 符号载体）；prompt/bash 历史不按模式过滤（pi-tui 内部化）；`onSubmit(text)` 回调参数即粘贴展开后的文本，提交路径无需再调 `getExpandedText()`） |
 | S3 | 全局键分发器 + Ctrl-O/Ctrl-S/Esc 语义链 | 冲突注入测试 |
 | S4 | 主题插件族 + `/theme` | 切换后转录正确重放、草稿保留 |
 | S5 | blueStatus + footer 壳 + git/context/basic 条目插件 | 下游测试插件注册条目成功 |
