@@ -147,6 +147,13 @@
 - **理由**：渲染事实只在启动一刻有意义（Claude Code 语义同款）；行序钉位复用 S6 已验证的"同轮按行序激活"机制，不新开缝；常量 + 守卫是零构建风险的同步手段，漂移在 `pnpm run test` 即失败。
 - **后果**：着色只用现有 26 token（框/城堡 `border`、Welcome `textStrong`、模型行 `accent`、右栏 `muted`/`text`），不扩契约；右栏 Tips/What's new 为占位内容，隔离在 `banner-content.ts`，真实文案落地不动布局（`banner.ts` 的 `composeBannerLines` 纯函数）；像素城堡网格离线生成嵌入 `banner-art.ts`（16 行位图 + 半块打包纯函数），黄金 spec 钉住输出。
 
+### D23. dock 沉底：渲染器 render 包装缝，非组件层 Spacer
+
+- **背景**：S8 banner 落地后暴露——pi-tui 根 children 自顶向下堆叠，`addBottomChild` 只是"排在数组尾部"，内容不足一屏（启动无会话、/new 清空）时 footer/editor 悬在内容正下方，`BlueScreen.addBottomChild` 契约宣称的 "pinned to the bottom" 并未成真。pi-tui 无视口感知的填充组件（`Spacer` 固定行数）。
+- **决策**：在 `startBlueTerminal`（core，唯一 pi-tui 适配点）包一层渲染器实例的 `render`：总行数 < `terminal.rows` 且存在底钉组件时，重测底钉块行数，在滚动内容与底钉块之间插入空行补足整屏。整屏内容、空树（避免启动空白帧灌 24 行空行）、无底钉树原样返回。
+- **理由**：这是 children → 扁平行数组唯一汇合点，能拿到总行数并按"尾部行数 = 底钉块"切分；二次渲染仅限底钉块（footer/editor/hint/panes 几行，纯 render），滚动区（贵）不双渲染。备选均劣：组件层 Spacer 的 `render(width)` 无高度语义无从计算填充量；requestRender 前全树预算 = 每帧双渲染全树。
+- **后果**：底钉语义成真且对所有 bottom child（含下游 pane 插件）生效；overlay 合成发生在包装之后，短内容时居中/贴边 overlay 的定位反而更准（行数组本就覆盖整屏）；每帧行数恒 ≥ max(内容, rows)，与 pi-tui 的 clearOnShrink/差分路径兼容（e2e 全数通过）。
+
 ## 已知遗留（MVP 有意为之）
 
 - `/quit` 在 agent attach 前输入会显示 "no active session" 而不退出（input-plugin 在命令分发前检查 current agent）
