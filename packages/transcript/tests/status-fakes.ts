@@ -13,7 +13,7 @@ import type {
   BlueOverlayHandle,
   BlueScreen,
 } from '@deepseek-ai/dsh-blue-core'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type { BlueStatus, BlueStatusEntry } from '../src/types.ts'
 import { fakeBlueComponents } from './helpers.ts'
 
@@ -80,10 +80,13 @@ export interface FakeSession {
 
 /** Structural stand-in for the real `Agent`; cast at the typed emit sites. */
 export interface FakeAgent {
+  id: SessionId
   status: 'idle' | 'running'
   options: { provider?: string, model?: string }
   session: FakeSession
 }
+
+let agentCounter = 0
 
 /**
  * A fake agent whose session is a plain event-log object.
@@ -95,6 +98,7 @@ export function fakeAgent(
   events: SessionEvent[],
   options: { model?: string, provider?: string, cwd?: string, headerModel?: string } = {},
 ): FakeAgent {
+  agentCounter += 1
   const header: { cwd?: string } = {}
   if (options.cwd !== undefined) header.cwd = options.cwd
   const agentOptions: { provider?: string, model?: string } = {}
@@ -102,6 +106,7 @@ export function fakeAgent(
   if (options.provider !== undefined) agentOptions.provider = options.provider
   const headerModel = options.headerModel
   return {
+    id: SessionId(`fake-agent-${agentCounter}`),
     status: 'idle',
     options: agentOptions,
     session: {

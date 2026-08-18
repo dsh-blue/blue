@@ -120,6 +120,10 @@ class FakeKeymap implements BlueKeymap {
   getKeys(): string[] {
     throw new Error('fake getKeys is out of scope for transcript tests')
   }
+
+  list(): readonly BlueKeyAction[] {
+    throw new Error('fake list is out of scope for transcript tests')
+  }
 }
 
 /** Structural stand-in for the real `Agent`; cast at the typed emit sites. */
