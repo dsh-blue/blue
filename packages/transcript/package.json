@@ -49,6 +49,10 @@
       "types": "./lib/types/intent-terminal.d.ts",
       "default": "./lib/intent-terminal.js"
     },
+    "./banner": {
+      "types": "./lib/types/banner.d.ts",
+      "default": "./lib/banner.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
@@ -63,12 +67,14 @@
     "lib/pane-btw.js",
     "lib/intent-diff.js",
     "lib/intent-terminal.js",
+    "lib/banner.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-agent-default-model": "^0.1.0-rc.7",
     "@deepseek-ai/dsh-attachment": "^0.1.0-rc.7",
     "@deepseek-ai/dsh-blue-app": "workspace:^",
     "@deepseek-ai/dsh-blue-core": "workspace:^",
@@ -83,6 +89,7 @@
     "@deepseek-ai/cordis-plugin-include": "1.0.6",
     "@deepseek-ai/cordis-plugin-loader": "1.0.2",
     "@deepseek-ai/dsh-agent": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-agent-default-model": "0.1.0-rc.7",
     "@deepseek-ai/dsh-attachment": "0.1.0-rc.7",
     "@deepseek-ai/dsh-blue-app": "workspace:^",
     "@deepseek-ai/dsh-blue-core": "workspace:^",
