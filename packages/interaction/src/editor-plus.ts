@@ -39,12 +39,14 @@ import {
   type SharedEditor,
 } from './editor-instance.ts'
 import { getStashedInputMode, stashInputMode } from './draft-stash.ts'
+import { ACTION_BACKSPACE, ACTION_CANCEL } from './keys.ts'
+import { sanitizeShellOutput } from './shell-sanitize.ts'
 import { currentBlueAgent } from './session.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-editor-plus'
 /** Services required before the enhancement layer can attach. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'commands']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'commands']
 
 /** Shell echo output caps: both bounds apply, whichever trips first. */
 const SHELL_MAX_LINES = 200
@@ -56,8 +58,10 @@ const FILE_SUGGESTION_LIMIT = 200
 export interface ShellExecution {
   /** Process exit code; nonzero marks failure. */
   readonly code: number
-  /** Combined stdout/stderr text. */
-  readonly output: string
+  /** Captured stdout text. */
+  readonly stdout: string
+  /** Captured stderr text. */
+  readonly stderr: string
 }
 
 /**
@@ -71,7 +75,7 @@ const defaultShellExecutor: ShellExecutor = (command, cwd) => new Promise((resol
   exec(command, { cwd }, (error, stdout, stderr) => {
     // A signal termination reports no numeric code; normalize it to 1.
     const code = error === null ? 0 : typeof error.code === 'number' ? error.code : 1
-    resolve({ code, output: stdout + stderr })
+    resolve({ code, stdout, stderr })
   })
 })
 
@@ -229,25 +233,31 @@ function createAutocompleteProvider(ctx: Context): BlueAutocompleteProvider {
 }
 
 /**
- * Transcript-style echo of one shell command run from bash mode: an accent
- * `! cmd` header, the capped output body, and an error-colored exit-code
- * row on failure. Mounted into the scroll region; deliberately not part of
- * the session transcript (P2 intent).
+ * Transcript-style echo of one shell command run from bash mode: the `$`
+ * command line with the shell-mode marker (the kimi dim presentation; the
+ * command body itself renders in the default foreground), the sanitized
+ * stdout and stderr below — stderr in `error` when the exit code marks
+ * failure, `textMuted` otherwise — a muted truncation row when the caps cut
+ * either stream, and an error-colored exit-code row on failure. Mounted
+ * into the scroll region; deliberately not part of the session transcript
+ * (P2 intent).
  */
 class ShellEchoComponent implements BlueComponent {
   /**
    * @param colors - the active semantic color table.
    * @param components - the width-truncation helper source.
    * @param command - the executed command line.
-   * @param output - the already-capped combined output.
-   * @param truncated - whether the caps cut the output.
+   * @param stdout - the sanitized, capped stdout.
+   * @param stderr - the sanitized, capped stderr.
+   * @param truncated - whether the caps cut either stream.
    * @param code - the process exit code.
    */
   constructor(
     private readonly colors: BlueSemanticColors,
     private readonly components: BlueComponents,
     private readonly command: string,
-    private readonly output: string,
+    private readonly stdout: string,
+    private readonly stderr: string,
     private readonly truncated: boolean,
     private readonly code: number,
   ) {}
@@ -256,16 +266,31 @@ class ShellEchoComponent implements BlueComponent {
   invalidate(): void {}
 
   /**
-   * Render the header, body, and status rows, each truncated to the width.
+   * Render the command line, the output rows (each truncated to the width),
+   * and the status rows.
    * @param width - current viewport width in columns.
    * @returns one string per rendered row.
    */
   render(width: number): string[] {
-    const lines = [this.colors.accent(this.components.truncateToWidth(`! ${this.command}`, width))]
-    if (this.output.length > 0) {
-      for (const line of this.output.split('\n')) {
-        lines.push(this.components.truncateToWidth(line, width))
+    const lines = [
+      this.components.truncateToWidth(`${this.colors.shellMode('$ ')}${this.command}`, width),
+    ]
+    const body: string[] = []
+    if (this.stdout !== '') {
+      for (const line of this.stdout.split('\n')) {
+        body.push(this.colors.textMuted(this.components.truncateToWidth(line, width)))
       }
+    }
+    const errPaint = this.code === 0 ? this.colors.textMuted : this.colors.error
+    if (this.stderr !== '') {
+      for (const line of this.stderr.split('\n')) {
+        body.push(errPaint(this.components.truncateToWidth(line, width)))
+      }
+    }
+    if (body.length > 0) {
+      lines.push(...body)
+    } else {
+      lines.push(this.colors.textMuted('(no output)'))
     }
     if (this.truncated) lines.push(this.colors.muted('… output truncated'))
     if (this.code !== 0) lines.push(this.colors.error(`exit code ${this.code}`))
@@ -298,16 +323,18 @@ function capOutput(output: string): { text: string, truncated: boolean } {
  *   since the dead context can neither style nor mount it.
  */
 function runShell(ctx: Context, command: string, isUnloaded: () => boolean): void {
-  const mount = (output: string, code: number): void => {
+  const mount = (result: ShellExecution): void => {
     // One trailing newline is transport framing, not content.
-    const capped = capOutput(output.replace(/\r?\n$/, ''))
+    const stdout = capOutput(result.stdout.replace(/\r?\n$/, ''))
+    const stderr = capOutput(result.stderr.replace(/\r?\n$/, ''))
     const echo = new ShellEchoComponent(
       ctx.blueTheme.colors,
       ctx.blueComponents,
       command,
-      capped.text,
-      capped.truncated,
-      code,
+      stdout.text,
+      stderr.text,
+      stdout.truncated || stderr.truncated,
+      result.code,
     )
     // Effect-bound so unloading this fiber also removes its echoes. The
     // mount lands after the input-driven frame — the shell settles
@@ -323,11 +350,20 @@ function runShell(ctx: Context, command: string, isUnloaded: () => boolean): voi
   void shellExecutor(command, process.cwd()).then(
     (result) => {
       if (isUnloaded()) return
-      mount(result.output, result.code)
+      mount({
+        code: result.code,
+        stdout: sanitizeShellOutput(result.stdout),
+        stderr: sanitizeShellOutput(result.stderr),
+      })
     },
     (error: unknown) => {
       if (isUnloaded()) return
-      mount(error instanceof Error ? error.message : String(error), 1)
+      // A rejected executor is a failure: the message becomes red stderr.
+      mount({
+        code: 1,
+        stdout: '',
+        stderr: error instanceof Error ? error.message : String(error),
+      })
     },
   )
 }
@@ -350,6 +386,7 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
   let mode: 'prompt' | 'bash' = getStashedInputMode()
   const previousOnChange = editor.onChange
   const previousOnSubmit = editor.onSubmit
+  const previousOnKey = editor.onKey
 
   /** Apply the bash triple: `!` symbol, border label, and shell hue. */
   const enterBash = (): void => {
@@ -409,12 +446,28 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
     editor.addToHistory(command)
     runShell(ctx, command, isUnloaded)
   }
+  editor.onKey = (data) => {
+    // `blue-input`'s chain runs first: an open side-question pane or a
+    // non-empty draft owns Escape, and the queue recall owns Up.
+    if (previousOnKey?.(data) === true) return true
+    // The kimi bash exit: Backspace or Escape on an empty `!` prompt
+    // returns to prompt mode — the `!` is not in the buffer, so
+    // "deleting" it is a delete on empty bash input.
+    if (mode === 'bash'
+      && editor.getText().length === 0
+      && (ctx.blueKeymap.matches(data, ACTION_CANCEL) || ctx.blueKeymap.matches(data, ACTION_BACKSPACE))) {
+      exitBash()
+      return true
+    }
+    return false
+  }
   editor.setAutocompleteProvider(createAutocompleteProvider(ctx))
 
   return () => {
     unmark()
     editor.onChange = previousOnChange
     editor.onSubmit = previousOnSubmit
+    editor.onKey = previousOnKey
     // Visual restore only — the reload stash keeps the mode the user was
     // in, so a remount (theme swap) rebuilds bash where it left off.
     if (mode === 'bash') applyPromptFrame()

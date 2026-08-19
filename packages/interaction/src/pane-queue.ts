@@ -82,7 +82,16 @@ export function apply(ctx: Context): void {
       ]
       for (const [target, messages] of pending) {
         for (const message of messages) {
-          rows.push(colors.muted(truncate(`queued ↑ ${target}: ${oneLine(queuedMessageText(message))}`, width)))
+          // The `↑` glyph is the activity accent, the row text stays muted:
+          // truncate the plain row first, then split at the glyph — SGR
+          // inserted before char-based truncation would corrupt the width.
+          const plain = truncate(`queued ↑ ${target}: ${oneLine(queuedMessageText(message))}`, width)
+          const at = plain.indexOf('↑')
+          rows.push(
+            at === -1
+              ? colors.muted(plain)
+              : colors.muted(plain.slice(0, at)) + colors.primary('↑') + colors.muted(plain.slice(at + 1)),
+          )
         }
       }
       return rows

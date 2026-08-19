@@ -4,12 +4,14 @@
  * render here as a shell card instead of the generic `● name(args)` row.
  * Rendering scheme: an optional muted description line above the card (the
  * call view alone carries one), then a `diffMeta` cwd line (omitted without a
- * cwd), then the command line — `accent('$')` marker plus the title
+ * cwd), then the command line — `shellMode('$')` marker plus the title
  * (result title ?? call title ?? tool name), with an exit badge appended once
  * completed: `error(\`exit N\`)` for a nonzero exit code, nothing for zero, and
  * `warning(signal)` when a signal killed the run. Captured `output` renders
- * as plain `text` rows below, capped at 10 rows collapsed and 120 expanded
- * (Ctrl-O through `setExpanded`) with a `diffMeta(\`… N more lines\`)` counter.
+ * as `textMuted` rows below (the kimi dim shell card), capped at 10 rows
+ * collapsed and 120 expanded (Ctrl-O through `setExpanded`) with a
+ * `textMuted(\`… N more lines\`)` counter, and a completed run without
+ * output states `(no output)`.
  * The component assumes by construction that its view carries
  * `card: 'terminal'` — the mounter only routes terminal views here — and
  * defensively renders just the title line when the shape does not match. The
@@ -123,9 +125,10 @@ export class TerminalCardComponent implements BlueIntentComponent {
       lines.push(colors.diffMeta(components.truncateToWidth(terminal.cwd, width)))
     }
 
-    // The command line: accent `$` marker, title, and — once completed — the
-    // exit badge (nonzero exit code or a kill signal; a zero exit is silence).
-    let command = `${colors.accent('$')} ${title}`
+    // The command line: shell-mode `$` marker, title, and — once completed —
+    // the exit badge (nonzero exit code or a kill signal; a zero exit is
+    // silence).
+    let command = `${colors.shellMode('$')} ${title}`
     if (terminal !== undefined && this.item.result !== undefined) {
       const badge = terminal.signal !== undefined
         ? colors.warning(terminal.signal)
@@ -140,12 +143,18 @@ export class TerminalCardComponent implements BlueIntentComponent {
       const rows = terminal.output.split('\n')
       const cap = this.expanded ? TERMINAL_EXPANDED_ROWS : TERMINAL_COLLAPSED_ROWS
       const shown = Math.min(rows.length, cap)
+      // The output dims one step below the command (the kimi shell card);
+      // the command body itself renders in the default foreground.
       for (const row of rows.slice(0, shown)) {
-        lines.push(colors.text(components.truncateToWidth(row, width)))
+        lines.push(colors.textMuted(components.truncateToWidth(row, width)))
       }
       if (rows.length > shown) {
         lines.push(colors.textMuted(components.truncateToWidth(`… ${rows.length - shown} more lines`, width)))
       }
+    } else if (this.item.result !== undefined) {
+      // A completed run with no captured output still says so (kimi's
+      // '(no output)'); a pending call renders no output rows.
+      lines.push(colors.textMuted('(no output)'))
     }
 
     this.cache = { key, lines }

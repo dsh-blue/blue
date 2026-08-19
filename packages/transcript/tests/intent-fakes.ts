@@ -33,6 +33,7 @@ export function tagged(): BlueSemanticColors {
     textMuted: tag('TM'),
     primary: tag('P'),
     accent: tag('A'),
+    shellMode: tag('SM'),
     error: tag('E'),
     warning: tag('W'),
     diffMeta: tag('DM'),

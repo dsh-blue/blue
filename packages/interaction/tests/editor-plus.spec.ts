@@ -69,7 +69,7 @@ function type(editor: FakeBlueEditor, text: string): void {
 /** The shell echo components currently mounted in the scroll region. */
 function echoes(screen: FakeScreen): BlueComponent[] {
   return screen.children.filter(child => !(child instanceof FakeBlueEditor))
-    .filter(child => child.render(80)[0]?.startsWith('*! ') === true)
+    .filter(child => child.render(80)[0]?.startsWith('$$ ') === true)
 }
 
 describe('blue-editor-plus input modes', () => {
@@ -98,9 +98,44 @@ describe('blue-editor-plus input modes', () => {
     expect(editor.borderColor('x')).toBe('$x$')
   })
 
+  it('exits bash mode on Escape with an empty buffer', async () => {
+    const { editor } = await mount()
+    type(editor, '!')
+    expect(editor.promptSymbol).toBe('!')
+    // The kimi bash exit: Escape on the empty `!` prompt returns to prompt
+    // mode, consumed by the editor chain.
+    expect(editor.onKey?.(KEY.escape)).toBe(true)
+    expect(editor.promptSymbol).toBe('>')
+    expect(editor.borderLabel).toBeUndefined()
+    expect(editor.borderColor('x')).toBe('x')
+  })
+
+  it('exits bash mode on Backspace with an empty buffer', async () => {
+    const { editor } = await mount()
+    type(editor, '!')
+    expect(editor.onKey?.('\x7f')).toBe(true)
+    expect(editor.promptSymbol).toBe('>')
+    expect(editor.borderLabel).toBeUndefined()
+    expect(editor.borderColor('x')).toBe('x')
+  })
+
+  it('keeps bash mode when Escape clears a non-empty buffer', async () => {
+    const { editor } = await mount()
+    type(editor, '!')
+    type(editor, 'ls')
+    // Escape clears the draft through blue-input's chain; the mode stays.
+    editor.onKey?.(KEY.escape)
+    expect(editor.getText()).toBe('')
+    expect(editor.promptSymbol).toBe('!')
+    expect(editor.borderColor('x')).toBe('$x$')
+    // The next Escape on the now-empty prompt exits.
+    expect(editor.onKey?.(KEY.escape)).toBe(true)
+    expect(editor.promptSymbol).toBe('>')
+  })
+
   it('restores the prompt symbol and drops the label on a bash submission', async () => {
     const { editor } = await mount()
-    editorPlus.setShellExecutor(() => Promise.resolve({ code: 0, output: '' }))
+    editorPlus.setShellExecutor(() => Promise.resolve({ code: 0, stdout: '', stderr: '' }))
     type(editor, '!')
     type(editor, 'true')
     editor.handleInput(KEY.enter)
@@ -119,7 +154,7 @@ describe('blue-editor-plus input modes', () => {
 
   it('executes a bash submission, echoes it, records history, and reverts to prompt mode', async () => {
     const { screen, editor, followup } = await mount()
-    editorPlus.setShellExecutor(() => Promise.resolve({ code: 0, output: 'hi there\n' }))
+    editorPlus.setShellExecutor(() => Promise.resolve({ code: 0, stdout: 'hi there\n', stderr: '' }))
     type(editor, '!')
     type(editor, 'echo hi')
     editor.handleInput(KEY.enter)
@@ -127,7 +162,7 @@ describe('blue-editor-plus input modes', () => {
       expect(echoes(screen)).toHaveLength(1)
     })
     const echo = echoes(screen)[0] as BlueComponent
-    expect(echo.render(80)).toEqual(['*! echo hi*', 'hi there'])
+    expect(echo.render(80)).toEqual(['$$ $echo hi', '_hi there_'])
     echo.invalidate()
     expect(editor.borderColor('x')).toBe('x')
     expect(editor.history).toEqual(['echo hi'])
@@ -150,21 +185,21 @@ describe('blue-editor-plus input modes', () => {
     // Let the input-frame render requests settle before snapshotting.
     await new Promise(resolve => setImmediate(resolve))
     const before = screen.renderRequests
-    gate.resolve({ code: 0, output: 'late output\n' })
+    gate.resolve({ code: 0, stdout: 'late output\n', stderr: '' })
     await vi.waitFor(() => { expect(echoes(screen)).toHaveLength(1) })
     expect(screen.renderRequests).toBeGreaterThan(before)
   })
 
   it('renders a non-zero exit code in the error color and skips an empty body', async () => {
     const { screen, editor } = await mount()
-    editorPlus.setShellExecutor(() => Promise.resolve({ code: 3, output: '' }))
+    editorPlus.setShellExecutor(() => Promise.resolve({ code: 3, stdout: '', stderr: '' }))
     type(editor, '!')
     type(editor, 'boom')
     editor.handleInput(KEY.enter)
     await vi.waitFor(() => {
       expect(echoes(screen)).toHaveLength(1)
     })
-    expect(echoes(screen)[0]?.render(80)).toEqual(['*! boom*', '!exit code 3!'])
+    expect(echoes(screen)[0]?.render(80)).toEqual(['$$ $boom', '_(no output)_', '!exit code 3!'])
   })
 
   it('echoes executor rejections with exit code 1', async () => {
@@ -183,8 +218,8 @@ describe('blue-editor-plus input modes', () => {
     await vi.waitFor(() => {
       expect(echoes(screen)).toHaveLength(2)
     })
-    expect(echoes(screen)[0]?.render(80)).toEqual(['*! first*', 'spawn broke', '!exit code 1!'])
-    expect(echoes(screen)[1]?.render(80)).toEqual(['*! second*', 'raw failure', '!exit code 1!'])
+    expect(echoes(screen)[0]?.render(80)).toEqual(['$$ $first', '!spawn broke!', '!exit code 1!'])
+    expect(echoes(screen)[1]?.render(80)).toEqual(['$$ $second', '!raw failure!', '!exit code 1!'])
   })
 
   it('drops the echo when the fiber unloads before the shell settles', async () => {
@@ -197,7 +232,7 @@ describe('blue-editor-plus input modes', () => {
     type(editor, 'slow')
     editor.handleInput(KEY.enter)
     await plusFiber.dispose()
-    gate.resolve({ code: 0, output: 'late\n' })
+    gate.resolve({ code: 0, stdout: 'late\n', stderr: '' })
     await new Promise(resolve => setImmediate(resolve))
     // The continuation saw the unloaded fiber: no echo, and no throw through
     // the dead context.
@@ -219,7 +254,7 @@ describe('blue-editor-plus input modes', () => {
 
   it('reverts to prompt mode without executing on a blank bash submission', async () => {
     const { editor, followup } = await mount()
-    const executor = vi.fn(() => Promise.resolve({ code: 0, output: '' }))
+    const executor = vi.fn(() => Promise.resolve({ code: 0, stdout: '', stderr: '' }))
     editorPlus.setShellExecutor(executor)
     type(editor, '!')
     type(editor, '   ')
@@ -234,7 +269,7 @@ describe('blue-editor-plus input modes', () => {
   it('caps echo output by line count', async () => {
     const { screen, editor } = await mount()
     const output = Array.from({ length: 250 }, (_, index) => `line ${index}`).join('\n')
-    editorPlus.setShellExecutor(() => Promise.resolve({ code: 0, output }))
+    editorPlus.setShellExecutor(() => Promise.resolve({ code: 0, stdout: output, stderr: '' }))
     type(editor, '!')
     type(editor, 'flood')
     editor.handleInput(KEY.enter)
@@ -244,13 +279,13 @@ describe('blue-editor-plus input modes', () => {
     const rendered = echoes(screen)[0]?.render(80) ?? []
     expect(rendered).toHaveLength(1 + 200 + 1)
     expect(rendered.at(-1)).toBe('~… output truncated~')
-    expect(rendered[1]).toBe('line 0')
-    expect(rendered[200]).toBe('line 199')
+    expect(rendered[1]).toBe('_line 0_')
+    expect(rendered[200]).toBe('_line 199_')
   })
 
   it('caps echo output by byte count', async () => {
     const { screen, editor } = await mount()
-    editorPlus.setShellExecutor(() => Promise.resolve({ code: 0, output: 'x'.repeat(70_000) }))
+    editorPlus.setShellExecutor(() => Promise.resolve({ code: 0, stdout: 'x'.repeat(70_000), stderr: '' }))
     type(editor, '!')
     type(editor, 'big')
     editor.handleInput(KEY.enter)
@@ -258,13 +293,69 @@ describe('blue-editor-plus input modes', () => {
       expect(echoes(screen)).toHaveLength(1)
     })
     const rendered = echoes(screen)[0]?.render(100_000) ?? []
-    expect(rendered[1]).toHaveLength(64 * 1024)
+    expect(rendered[1]).toHaveLength(64 * 1024 + 2)
     expect(rendered.at(-1)).toBe('~… output truncated~')
+  })
+
+  it('dims stderr on success and reddens it on failure', async () => {
+    const { screen, editor } = await mount()
+    editorPlus.setShellExecutor(() => Promise.resolve({ code: 0, stdout: 'out\n', stderr: 'warn\n' }))
+    type(editor, '!')
+    type(editor, 'mixed')
+    editor.handleInput(KEY.enter)
+    await vi.waitFor(() => {
+      expect(echoes(screen)).toHaveLength(1)
+    })
+    expect(echoes(screen)[0]?.render(80)).toEqual(['$$ $mixed', '_out_', '_warn_'])
+    editorPlus.setShellExecutor(() => Promise.resolve({ code: 2, stdout: 'out\n', stderr: 'boom\n' }))
+    type(editor, '!')
+    type(editor, 'bad')
+    editor.handleInput(KEY.enter)
+    await vi.waitFor(() => {
+      expect(echoes(screen)).toHaveLength(2)
+    })
+    expect(echoes(screen)[1]?.render(80)).toEqual(['$$ $bad', '_out_', '!boom!', '!exit code 2!'])
+  })
+
+  it('sanitizes terminal sequences out of captured output', async () => {
+    const { screen, editor } = await mount()
+    editorPlus.setShellExecutor(() => Promise.resolve({
+      code: 0,
+      stdout: '\x1b[31mred\x1b[0m\n\x1b]0;title\x07ok',
+      stderr: '',
+    }))
+    type(editor, '!')
+    type(editor, 'ansi')
+    editor.handleInput(KEY.enter)
+    await vi.waitFor(() => {
+      expect(echoes(screen)).toHaveLength(1)
+    })
+    // The SGR colors and the OSC window-title sequence never reach the TUI.
+    expect(echoes(screen)[0]?.render(80)).toEqual(['$$ $ansi', '_red_', '_ok_'])
+  })
+
+  it('combines per-stream caps into one truncation row', async () => {
+    const { screen, editor } = await mount()
+    const flood = Array.from({ length: 250 }, (_, index) => `s${index}`).join('\n')
+    editorPlus.setShellExecutor(() => Promise.resolve({
+      code: 0,
+      stdout: flood,
+      stderr: 'z'.repeat(70_000),
+    }))
+    type(editor, '!')
+    type(editor, 'flood2')
+    editor.handleInput(KEY.enter)
+    await vi.waitFor(() => {
+      expect(echoes(screen)).toHaveLength(1)
+    })
+    const rendered = echoes(screen)[0]?.render(100_000) ?? []
+    expect(rendered.at(-1)).toBe('~… output truncated~')
+    expect(rendered[1]).toBe('_s0_')
   })
 
   it('truncates echo rows to the render width', async () => {
     const { screen, editor } = await mount()
-    editorPlus.setShellExecutor(() => Promise.resolve({ code: 0, output: 'y'.repeat(100) }))
+    editorPlus.setShellExecutor(() => Promise.resolve({ code: 0, stdout: 'y'.repeat(100), stderr: '' }))
     type(editor, '!')
     type(editor, 'wide')
     editor.handleInput(KEY.enter)
@@ -272,8 +363,8 @@ describe('blue-editor-plus input modes', () => {
       expect(echoes(screen)).toHaveLength(1)
     })
     const rendered = echoes(screen)[0]?.render(20) ?? []
-    expect(rendered[0]).toBe('*! wide*')
-    expect(rendered[1]).toBe(`${'y'.repeat(17)}...`)
+    expect(rendered[0]).toBe('$$ $wide')
+    expect(rendered[1]).toBe(`_${'y'.repeat(17)}..._`)
   })
 
   it('runs the default executor through the real shell', async () => {
@@ -284,7 +375,7 @@ describe('blue-editor-plus input modes', () => {
     await vi.waitFor(() => {
       expect(echoes(screen)).toHaveLength(1)
     })
-    expect(echoes(screen)[0]?.render(80)).toEqual(['*! echo blue-plus-real*', 'blue-plus-real'])
+    expect(echoes(screen)[0]?.render(80)).toEqual(['$$ $echo blue-plus-real', '_blue-plus-real_'])
   })
 
   it('maps signal terminations and numeric exit codes through the default executor', async () => {

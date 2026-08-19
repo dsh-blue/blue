@@ -580,4 +580,124 @@ describe('blue-input plugin', () => {
       expect(inbox.remove).not.toHaveBeenCalled()
     })
   })
+
+  describe('side-question pane routing (S13)', () => {
+    it('mirrors the connected flag onto the editor and splices its corners', async () => {
+      const { ctx, editor } = await mount()
+      ctx.emit('blue/editor-connected-above', true)
+      expect(editor.connectedAbove).toBe(true)
+      ctx.emit('blue/editor-connected-above', false)
+      expect(editor.connectedAbove).toBe(false)
+    })
+
+    it('closes the pane on Escape before clearing the draft', async () => {
+      const { ctx, editor, cancel } = await mount({ running: true })
+      const command = vi.fn()
+      ctx.on('blue/btw-command', command)
+      ctx.emit('blue/editor-connected-above', true)
+      type(editor, 'draft')
+      expect(editor.onKey?.(KEY.escape)).toBe(true)
+      expect(command).toHaveBeenCalledWith('close')
+      // The draft survives the close; the interrupt chain is not reached.
+      expect(editor.getText()).toBe('draft')
+      expect(cancel).not.toHaveBeenCalled()
+    })
+
+    it('lets an open autocomplete dropdown own Escape while the pane is up', async () => {
+      const { ctx, editor } = await mount({ running: true })
+      const command = vi.fn()
+      ctx.on('blue/btw-command', command)
+      ctx.emit('blue/editor-connected-above', true)
+      editor.showingAutocomplete = true
+      expect(editor.onKey?.(KEY.escape)).toBe(false)
+      expect(command).not.toHaveBeenCalled()
+    })
+
+    it('keeps the clear/interrupt chain when no pane is connected', async () => {
+      const { ctx, editor } = await mount({ running: true })
+      const command = vi.fn()
+      ctx.on('blue/btw-command', command)
+      type(editor, 'draft')
+      editor.handleInput(KEY.escape)
+      expect(editor.getText()).toBe('')
+      expect(command).not.toHaveBeenCalled()
+    })
+
+    it('scrolls the pane on Up and Down with an empty buffer', async () => {
+      const { ctx, editor } = await mount()
+      const command = vi.fn()
+      ctx.on('blue/btw-command', command)
+      ctx.emit('blue/editor-connected-above', true)
+      expect(editor.onKey?.(KEY.up)).toBe(true)
+      expect(editor.onKey?.(KEY.down)).toBe(true)
+      expect(command.mock.calls).toEqual([['scroll-up'], ['scroll-down']])
+    })
+
+    it('passes arrows through to the editor when the pane is up but the buffer is not empty', async () => {
+      const { ctx, editor } = await mount()
+      const command = vi.fn()
+      ctx.on('blue/btw-command', command)
+      ctx.emit('blue/editor-connected-above', true)
+      type(editor, 'draft')
+      expect(editor.onKey?.(KEY.up)).toBe(false)
+      expect(command).not.toHaveBeenCalled()
+    })
+
+    it('leaves the queue recall in charge of Up when no pane is connected', async () => {
+      const inbox = fakeInbox({ nextTurn: [queued('queued draft')] })
+      const { ctx, editor } = await mount({ inbox })
+      await ctx.plugin(paneQueuePlugin)
+      const command = vi.fn()
+      ctx.on('blue/btw-command', command)
+      expect(editor.onKey?.(KEY.up)).toBe(true)
+      expect(editor.getText()).toBe('queued draft')
+      expect(command).not.toHaveBeenCalled()
+    })
+
+    it('submits the draft to the side conversation on Enter while connected', async () => {
+      const { ctx, editor, followup } = await mount({ withAgent: true })
+      const command = vi.fn()
+      ctx.on('blue/btw-command', command)
+      ctx.emit('blue/editor-connected-above', true, false)
+      type(editor, 'and then?')
+      editor.handleInput(KEY.enter)
+      expect(command).toHaveBeenCalledWith('submit', 'and then?')
+      // The buffer clears and the main agent never sees the text.
+      expect(editor.getText()).toBe('')
+      expect(followup).not.toHaveBeenCalled()
+    })
+
+    it('refuses the submit and restores the draft while the side agent is busy', async () => {
+      const { ctx, editor } = await mount()
+      const command = vi.fn()
+      ctx.on('blue/btw-command', command)
+      ctx.emit('blue/editor-connected-above', true, true)
+      type(editor, 'wait for me')
+      editor.handleInput(KEY.enter)
+      // The draft survives, the notice flashes, and no command is emitted.
+      expect(editor.getText()).toBe('wait for me')
+      expect(command).not.toHaveBeenCalled()
+    })
+
+    it('clears the buffer without submitting when connected and the draft is blank', async () => {
+      const { ctx, editor } = await mount()
+      const command = vi.fn()
+      ctx.on('blue/btw-command', command)
+      ctx.emit('blue/editor-connected-above', true, false)
+      type(editor, '   ')
+      editor.handleInput(KEY.enter)
+      expect(editor.getText()).toBe('')
+      expect(command).not.toHaveBeenCalled()
+    })
+
+    it('keeps the main-agent submit path when no pane is connected', async () => {
+      const { ctx, editor, followup } = await mount({ withAgent: true })
+      const command = vi.fn()
+      ctx.on('blue/btw-command', command)
+      type(editor, 'plain')
+      editor.handleInput(KEY.enter)
+      expect(followup).toHaveBeenCalledOnce()
+      expect(command).not.toHaveBeenCalled()
+    })
+  })
 })

@@ -50,29 +50,35 @@ describe('TerminalCardComponent', () => {
     const withCwd = toolItem({ view: callView({ cwd: '/repo' }) })
     expect(new TerminalCardComponent(props(withCwd)).render(80)[0]).toBe('[DM]/repo[/DM]')
     const without = toolItem({ view: callView() })
-    expect(new TerminalCardComponent(props(without)).render(80)[0]).toBe('[A]$[/A] ls -la')
+    expect(new TerminalCardComponent(props(without)).render(80)[0]).toBe('[SM]$[/SM] ls -la')
   })
 
   it('renders the command line from the title, preferring result over call over name', () => {
     const pending = toolItem({ view: callView({ title: 'npm test' }) })
-    expect(new TerminalCardComponent(props(pending)).render(80)).toEqual(['[A]$[/A] npm test'])
+    expect(new TerminalCardComponent(props(pending)).render(80)).toEqual(['[SM]$[/SM] npm test'])
 
-    const completed = toolItem({ view: resultView({ title: 'npm test' }) })
+    const completed = toolItem({ view: resultView({ title: 'npm test', output: 'ok' }) })
     completed.result = { text: 'ok', isError: false }
-    expect(new TerminalCardComponent(props(completed)).render(80)).toEqual(['[A]$[/A] npm test'])
+    expect(new TerminalCardComponent(props(completed)).render(80)).toEqual([
+      '[SM]$[/SM] npm test',
+      '[TM]ok[/TM]',
+    ])
 
     const noTitle = toolItem({ view: resultView({}) })
     noTitle.result = { text: 'ok', isError: false }
-    expect(new TerminalCardComponent(props(noTitle)).render(80)).toEqual(['[A]$[/A] bash'])
+    expect(new TerminalCardComponent(props(noTitle)).render(80)).toEqual([
+      '[SM]$[/SM] bash',
+      '[TM](no output)[/TM]',
+    ])
   })
 
-  it('renders completed output as plain text rows, capped when collapsed', () => {
+  it('renders completed output as dimmed rows, capped when collapsed', () => {
     const output = Array.from({ length: 15 }, (_, n) => `out ${n}`).join('\n')
     const item = toolItem({ view: resultView({ title: 'gen', output }) })
     item.result = { text: 'done', isError: false }
     const rendered = new TerminalCardComponent(props(item)).render(80)
     expect(rendered).toHaveLength(1 + TERMINAL_COLLAPSED_ROWS + 1)
-    expect(rendered[1]).toBe('[T]out 0[/T]')
+    expect(rendered[1]).toBe('[TM]out 0[/TM]')
     expect(rendered.at(-1)).toBe(`[TM]… ${15 - TERMINAL_COLLAPSED_ROWS} more lines[/TM]`)
   })
 
@@ -93,36 +99,47 @@ describe('TerminalCardComponent', () => {
 
   it('renders no output rows while pending', () => {
     const item = toolItem({ view: callView() })
-    expect(new TerminalCardComponent(props(item)).render(80)).toEqual(['[A]$[/A] ls -la'])
+    expect(new TerminalCardComponent(props(item)).render(80)).toEqual(['[SM]$[/SM] ls -la'])
   })
 
-  it('omits output rows when the completed view carries none', () => {
+  it('states (no output) when the completed view carries none', () => {
     const item = toolItem({ view: resultView({ title: 'gen' }) })
     item.result = { text: 'done', isError: false }
-    expect(new TerminalCardComponent(props(item)).render(80)).toEqual(['[A]$[/A] gen'])
+    expect(new TerminalCardComponent(props(item)).render(80)).toEqual([
+      '[SM]$[/SM] gen',
+      '[TM](no output)[/TM]',
+    ])
+  })
+
+  it('renders captured output rows while pending and states (no output) once completed', () => {
+    const pending = toolItem({ view: resultView({ title: 'gen', output: 'soon' }) })
+    expect(new TerminalCardComponent(props(pending)).render(80)).toEqual([
+      '[SM]$[/SM] gen',
+      '[TM]soon[/TM]',
+    ])
   })
 
   it('appends an error exit badge for a nonzero exit code', () => {
     const item = toolItem({ view: resultView({ title: 'fail', output: 'boom', exitCode: 2 }) })
     item.result = { text: 'boom', isError: true }
-    expect(new TerminalCardComponent(props(item)).render(80)[0]).toBe('[A]$[/A] fail [E]exit 2[/E]')
+    expect(new TerminalCardComponent(props(item)).render(80)[0]).toBe('[SM]$[/SM] fail [E]exit 2[/E]')
   })
 
   it('appends nothing for a zero exit code', () => {
     const item = toolItem({ view: resultView({ title: 'ok', output: 'fine', exitCode: 0 }) })
     item.result = { text: 'fine', isError: false }
-    expect(new TerminalCardComponent(props(item)).render(80)[0]).toBe('[A]$[/A] ok')
+    expect(new TerminalCardComponent(props(item)).render(80)[0]).toBe('[SM]$[/SM] ok')
   })
 
   it('appends a warning signal badge when a signal killed the run', () => {
     const item = toolItem({ view: resultView({ title: 'kill', output: '', signal: 'SIGTERM' }) })
     item.result = { text: 'killed', isError: true }
-    expect(new TerminalCardComponent(props(item)).render(80)[0]).toBe('[A]$[/A] kill [W]SIGTERM[/W]')
+    expect(new TerminalCardComponent(props(item)).render(80)[0]).toBe('[SM]$[/SM] kill [W]SIGTERM[/W]')
   })
 
   it('skips the badge on a pending call even with exit status present', () => {
     const item = toolItem({ view: resultView({ title: 'x', exitCode: 1 }) })
-    expect(new TerminalCardComponent(props(item)).render(80)).toEqual(['[A]$[/A] x'])
+    expect(new TerminalCardComponent(props(item)).render(80)).toEqual(['[SM]$[/SM] x'])
   })
 
   it('respects the expansion state passed at construction', () => {
@@ -152,11 +169,11 @@ describe('TerminalCardComponent', () => {
 
   it('renders the title only when the view is not a terminal view', () => {
     const item = toolItem({ view: { card: 'generic', title: 'plain' } })
-    expect(new TerminalCardComponent(props(item)).render(80)).toEqual(['[A]$[/A] bash'])
+    expect(new TerminalCardComponent(props(item)).render(80)).toEqual(['[SM]$[/SM] bash'])
   })
 
   it('renders the name only without any view', () => {
-    expect(new TerminalCardComponent(props(toolItem())).render(80)).toEqual(['[A]$[/A] bash'])
+    expect(new TerminalCardComponent(props(toolItem())).render(80)).toEqual(['[SM]$[/SM] bash'])
   })
 })
 

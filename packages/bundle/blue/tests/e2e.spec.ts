@@ -224,7 +224,7 @@ export const apply = ctx => globalThis.__blueE2E.statusBasicApply(ctx)
     '- id: blue-editor-plus',
     `  name: ${fixture('blue-editor-plus.mjs', `
 export const name = 'blue-editor-plus'
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'commands']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'commands']
 export const apply = ctx => globalThis.__blueE2E.editorPlusApply(ctx)
 `)}`,
     // The input-side S7 rows mirror cordis.patch.yml: the attachment store
@@ -571,16 +571,36 @@ describe('blue whole-tree e2e', () => {
   it('runs ! shell commands through editor-plus and echoes output into the scroll region', async () => {
     const tree = await bootBlue([], { script: [] })
     await currentAgent(tree)
+    // The dark theme v2 shell-mode violet.
+    const SHELL_SGR = '\x1b[38;2;189;147;249m'
     // Inject a fake executor (same module instance as the mounted plugin):
     // no real spawn in the e2e.
-    editorPlusPlugin.setShellExecutor(command => Promise.resolve({ code: 0, output: `ran: ${command}\n` }))
+    editorPlusPlugin.setShellExecutor(command => Promise.resolve({ code: 0, stdout: `ran: ${command}\n`, stderr: '' }))
     try {
       typeLine(tree.terminal, '!echo hi')
       await vi.waitFor(() => { expect(tree.terminal.output).toContain('ran: echo hi') })
-      // The ShellEcho header row repeats the command itself.
-      expect(tree.terminal.output).toContain('! echo hi')
+      // The ShellEcho header leads with the shell-mode `$ ` marker, then the
+      // command body in the default foreground (the kimi dim presentation).
+      expect(tree.terminal.output).toContain(`${SHELL_SGR}$ `)
       // Bash mode never reaches the model.
       expect(tree.adapter.requests).toHaveLength(0)
+    } finally {
+      editorPlusPlugin.setShellExecutor(undefined)
+    }
+  })
+
+  it('echoes a failed shell command with red stderr and the exit-code row', async () => {
+    const tree = await bootBlue([], { script: [] })
+    await currentAgent(tree)
+    // The dark theme v2 error red.
+    const ERROR_SGR = '\x1b[38;2;232;84;84m'
+    editorPlusPlugin.setShellExecutor(() => Promise.resolve({ code: 1, stdout: '', stderr: 'boom\n' }))
+    try {
+      typeLine(tree.terminal, '!fail')
+      await vi.waitFor(() => { expect(tree.terminal.output).toContain('boom') })
+      expect(tree.terminal.output).toContain('exit code 1')
+      // The stderr paints error-red (truecolor SGR anchor).
+      expect(tree.terminal.output).toContain(`${ERROR_SGR}boom`)
     } finally {
       editorPlusPlugin.setShellExecutor(undefined)
     }
@@ -921,7 +941,26 @@ describe('blue whole-tree e2e', () => {
     expect(bash).toContain(`${SHELL_SGR}╭`)
     expect(bash).toContain(`${SHELL_SGR}! shell mode`)
     expect(bash).toContain(`${SHELL_SGR}│\x1b[39m ${SHELL_SGR}!`)
-    // Submitting an empty command returns to the neutral prompt frame.
+    // Escape on the empty `!` prompt exits bash mode (the kimi exit): the
+    // shell label leaves and the neutral editor frame returns.
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(() => {
+      const frame = tree.terminal.output
+      const last = frame.lastIndexOf(`${EDITOR_BORDER_SGR}╭`)
+      expect(last).toBeGreaterThan(frame.indexOf('! shell mode'))
+    })
+    // Backspace exits the same way.
+    tree.terminal.sendInput('!')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('! shell mode') })
+    tree.terminal.sendInput('\x7f')
+    await vi.waitFor(() => {
+      const frame = tree.terminal.output
+      const last = frame.lastIndexOf(`${EDITOR_BORDER_SGR}╭`)
+      expect(last).toBeGreaterThan(frame.indexOf('! shell mode'))
+    })
+    // Submitting an empty command returns to the neutral prompt frame too.
+    tree.terminal.sendInput('!')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('! shell mode') })
     tree.terminal.sendInput('\r')
     await vi.waitFor(() => {
       const frame = tree.terminal.output
@@ -1176,7 +1215,7 @@ describe('blue whole-tree e2e', () => {
     expect(await fullFrame(tree.terminal)).not.toContain('working…')
   })
 
-  it('renders the todo pane above the editor with the footer on the last rows, and Ctrl-T collapses it', async () => {
+  it('renders the folded todo pane above the editor and expands it with Ctrl-T', async () => {
     const tree = await bootBlue([], { script: [] })
     const agent = await currentAgent(tree)
     // Inject a durable whole-list snapshot straight into the session log; the
@@ -1185,11 +1224,20 @@ describe('blue whole-tree e2e', () => {
       todos: [
         { content: 'done-task', status: 'completed' },
         { content: 'active-task', status: 'in_progress' },
-        { content: 'later-task', status: 'pending' },
+        { content: 'later-1', status: 'pending' },
+        { content: 'later-2', status: 'pending' },
+        { content: 'later-3', status: 'pending' },
+        { content: 'later-4', status: 'pending' },
       ],
     })
-    // A list with in-progress work starts expanded: one styled row per entry.
+    // The kimi folded default: every in-progress row, the latest completed,
+    // and the earliest pending fit into five rows; the footer counts the one
+    // hidden pending entry. Completed content renders struck through.
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('active-task') })
+    await waitForRender()
+    expect(tree.terminal.output).toContain('\x1b[9mdone-task\x1b[29m')
+    expect(tree.terminal.output).toContain('… +1 more (1 pending) · ctrl+t to expand')
+    expect(tree.terminal.output).not.toContain('later-4')
     // Dock order (S12): the footer pins to the terminal's last rows, then
     // the editor's rounded top border, then the todo pane above it (the
     // first gray `border` frame run at or after the pane — the idle editor
@@ -1201,12 +1249,62 @@ describe('blue whole-tree e2e', () => {
     expect(footer).toBeGreaterThanOrEqual(0)
     expect(editorBorder).toBeGreaterThan(todo)
     expect(footer).toBeGreaterThan(editorBorder)
-    // The global Ctrl-T action collapses the pane to the one-line summary.
+    // The global Ctrl-T action expands the pane to the full list.
     tree.terminal.sendInput('\x14')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('todos 1/3') })
-    const collapsed = await fullFrame(tree.terminal)
-    expect(collapsed).toContain('todos 1/3')
-    expect(collapsed).not.toContain('active-task')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('later-4') })
+    const full = await fullFrame(tree.terminal)
+    expect(full).toContain('all 6 items · ctrl+t to collapse')
+  })
+
+  it('hides todo_write tool calls from the stream while sibling tools render', async () => {
+    const tree = await bootBlue([], {
+      script: [
+        toolCallResponse('call-todo', 'todo_write', { todos: [] }),
+        toolCallResponse('call-probe', 'side-probe', {}),
+        textResponse('plain answer'),
+      ],
+    })
+    const agent = await currentAgent(tree)
+    // Step folding collapses the step's tool cards into one summary line;
+    // disabling it keeps the sibling tool's card mounted so its result row
+    // stays observably present next to the suppressed todo call.
+    setStepFoldingEnabled(false)
+    // Structural ToolDefinitions without importing dsh-tools: register()
+    // only validates the output declaration's shape.
+    const tools = (tree.ctx as unknown as { tools: { register(definition: unknown): () => void } }).tools
+    tools.register({
+      name: 'todo_write',
+      description: 'test stand-in for the harness todo tool',
+      parameters: { type: 'object', properties: {} },
+      output: {
+        schema: { type: 'string' },
+        render: (_args: unknown, value: unknown) => [{ type: 'text', text: String(value) }],
+      },
+      execute: () => Promise.resolve('todos updated'),
+    })
+    tools.register({
+      name: 'side-probe',
+      description: 'test tool emitting a visible output',
+      parameters: { type: 'object', properties: {} },
+      output: {
+        schema: { type: 'string' },
+        render: (_args: unknown, value: unknown) => [{ type: 'text', text: String(value) }],
+      },
+      execute: () => Promise.resolve('probe output'),
+    })
+    typeLine(tree.terminal, 'run both tools')
+    await agent.whenIdle()
+    await waitForRender()
+    // The sibling tool renders its card (across the accumulated frames —
+    // step folding later collapses it into the summary line); the todo call
+    // renders nothing in any frame — the pane owns the list's presentation,
+    // so the stream never echoes it.
+    const shown = tree.terminal.output
+    expect(shown).toContain('side-probe')
+    expect(shown).toContain('probe output')
+    expect(shown).toContain('plain answer')
+    expect(shown).not.toContain('todo_write')
+    expect(shown).not.toContain('todos updated')
   })
 
   it('renders queued inbox messages and recalls the latest into the empty editor on Up', async () => {
@@ -1220,14 +1318,15 @@ describe('blue whole-tree e2e', () => {
       content: [{ type: 'text', text: 'queued-task' }],
       source: { kind: 'user' },
     }))
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('queued ↑ turn: queued-task') })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('queued-task') })
     // Dock order (S12): the footer pins to the terminal's last rows, the
     // editor sits above it, and the queue pane above the editor (the first
     // gray `border` frame run at or after the pane — the idle editor frame
-    // is neutral since S11).
+    // is neutral since S11). The `↑` glyph splits the row with primary SGR
+    // (S13), so the anchor is the message text alone.
     const docked = await fullFrame(tree.terminal)
     const footerAt = docked.indexOf('mock · idle')
-    const queuedAt = docked.indexOf('queued ↑ turn: queued-task')
+    const queuedAt = docked.indexOf('queued-task')
     const borderAt = docked.indexOf(EDITOR_BORDER_SGR, queuedAt)
     expect(footerAt).toBeGreaterThanOrEqual(0)
     expect(borderAt).toBeGreaterThan(queuedAt)
@@ -1264,7 +1363,7 @@ describe('blue whole-tree e2e', () => {
     // once the throttled render settles.
     tree.terminal.sendInput('\x1b[6~')
     tree.terminal.sendInput('\x1b[6~')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Toggle todo panel') })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Toggle todo list expansion') })
     const scrolled = tree.terminal.output
     expect(scrolled).toContain('ctrl+c')
     // Escape closes the overlay.
@@ -1340,12 +1439,37 @@ describe('blue whole-tree e2e', () => {
       .resolves.toEqual({ kind: 'success', text: 'asked the side question' })
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('side reply') })
     expect(tree.terminal.output).toContain('› hello side')
+    // The pane frames itself and splices into the editor: the in-border
+    // title, the close hint, and the editor's top-left corner turn `├` —
+    // the `╭` is replaced by the splice while the pane is connected.
+    expect(tree.terminal.output).toContain(' BTW ')
+    expect(tree.terminal.output).toContain('Esc close')
+    expect(tree.terminal.output).toContain(`${EDITOR_BORDER_SGR}├`)
     // The exchange ran on the side agent: one model request, the main agent
     // untouched.
     expect(tree.adapter.requests).toHaveLength(1)
+
+    // Enter while the pane is up continues the side conversation: the text
+    // reaches the SAME side agent as a second turn, never the main agent.
+    typeLine(tree.terminal, 'follow up?')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('› follow up?') })
+    expect(tree.adapter.requests).toHaveLength(2)
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('side reply') })
+
+    // Escape (routed through the editor chain while the pane is up) closes
+    // it; the editor's rounded corner comes back.
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain(`${EDITOR_BORDER_SGR}╭`) })
+    expect(await fullFrame(tree.terminal)).not.toContain('› hello side')
+    expect(await fullFrame(tree.terminal)).not.toContain(`${EDITOR_BORDER_SGR}├`)
+
+    // The pane reopened via /btw dismisses through the bare command too.
+    await expect(executeCommand(tree, agent, '/btw hello again'))
+      .resolves.toEqual({ kind: 'success', text: 'asked the side question' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain(`${EDITOR_BORDER_SGR}├`) })
     await expect(executeCommand(tree, agent, '/btw'))
       .resolves.toEqual({ kind: 'success', text: 'dismissed the side question' })
-    expect(await fullFrame(tree.terminal)).not.toContain('› hello side')
+    expect(await fullFrame(tree.terminal)).not.toContain('› hello again')
   })
 
   it('remembers a session-scoped approval: the next request for the tool skips the overlay', async () => {

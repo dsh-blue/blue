@@ -16,7 +16,7 @@ Blue 终端 UI 核心：整棵树中唯一 import `@earendil-works/pi-tui` 的�
 
 ## 共享 chrome 辅助层
 
-`./chrome` 子路径（`src/chrome.ts`，S11 开出）导出绘制框架表面的主题无关纯函数：`withSideBorders(lines, paint, {connectedAbove?, label?})` 把 pi-tui 风格的横线行变成 `╭╮`/`╰╯` 圆角框（预着色的横线剥 SGR 重涂为一个跨度、`│` 只叠在字面空格外列上以保护反显光标、标签只嵌入纯 `─` 串），`injectPromptSymbol(line, symbol, paint?)` 在 `paddingX: 4` 的内容行上叠提示符，S12 起另有 `framePanel(body, width, opts)`——把对话框主体框进 kimi 的全宽平 `─` 规则（缩进 2 列的标题（kimi：`  help · Esc …`）+ 可选 muted 标题提示 + 按键行 footer，全部 paint 缺省 identity，ANSI 安全截断）——配套 `hintRow(parts, paint)` 以 ` · ` 拼装按键行。色函数由调用方注入——模块不持有主题也不含 pi-tui 组件机制；其余函数各随首个消费者落地（S13 面板、S14 补全）。
+`./chrome` 子路径（`src/chrome.ts`，S11 开出）导出绘制框架表面的主题无关纯函数：`withSideBorders(lines, paint, {connectedAbove?, label?})` 把 pi-tui 风格的横线行变成 `╭╮`/`╰╯` 圆角框（预着色的横线剥 SGR 重涂为一个跨度、`│` 只叠在字面空格外列上以保护反显光标、标签只嵌入纯 `─` 串），`injectPromptSymbol(line, symbol, paint?)` 在 `paddingX: 4` 的内容行上叠提示符，S12 起另有 `framePanel(body, width, opts)`——把对话框主体框进 kimi 的全宽平 `─` 规则（缩进 2 列的标题（kimi：`  help · Esc …`）+ 可选 muted 标题提示 + 按键行 footer，全部 paint 缺省 identity，ANSI 安全截断）——配套 `hintRow(parts, paint)` 以 ` · ` 拼装按键行。S13 增面板 chrome：`topRule(width, {title, titlePaint, hint, hintPaint, paint})` 渲染 kimi 边框内标题行（`╭ BTW ─ Esc close ────╮`——`─ ` joiner 仅 title+hint 同时在；复合串 ANSI 安全截断，fill 补齐内宽）与 `padColumns(lines, n)`（前缀字面空格 gutter，kimi `GutterContainer` 的纯函数等价；消费显式推迟，待实机测量支撑 1 列重排）。色函数由调用方注入——模块不持有主题也不含 pi-tui 组件机制；其余函数各随首个消费者落地（S14 补全）。
 
 五个契约都以 Cordis `Service` 子类挂载（`blueTheme` 由主题子路径插件挂载，其余由本插件的 `apply` 挂载）；插件 fiber 卸载时各自自动摘除。组件只消费这些接口，绝不接触 pi-tui 类型。
 

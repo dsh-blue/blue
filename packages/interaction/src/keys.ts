@@ -6,7 +6,10 @@
  * The editor-context actions (interrupt, steer) carry no handler: they are
  * resolved by the main editor's `onKey` hook in `./input-plugin.ts`, never
  * by the global dispatcher. Text-editing keys are owned by the pi-tui
- * Editor behind `ctx.blueComponents.createEditor` and do not appear here.
+ * Editor behind `ctx.blueComponents.createEditor` and do not appear here —
+ * the single exception is the contextual `backspace` gate for mode exits
+ * like bash's "Backspace on an empty `!` prompt" (`editor-plus` matches
+ * it in its own `onKey` wrapper; it never dispatches).
  *
  * @module @deepseek-ai/dsh-blue-interaction/keys
  */
@@ -28,6 +31,13 @@ export const ACTION_TOGGLE = 'blue.interaction.toggle'
 export const ACTION_INTERRUPT = 'blue.interaction.interrupt'
 /** Steer the current turn with the drafted input (Ctrl-S); editor-context only. */
 export const ACTION_STEER = 'blue.interaction.steer'
+/**
+ * Delete backward — contextual only: the pi-tui Editor owns actual
+ * deletion, and this action is a gate for mode exits like bash's
+ * "Backspace on an empty `!` prompt" (editor-plus matches it, it never
+ * dispatches).
+ */
+export const ACTION_BACKSPACE = 'blue.interaction.backspace'
 
 /** The full interaction key batch, registered as one unit. */
 export const INTERACTION_KEY_ACTIONS: readonly BlueKeyAction[] = [
@@ -38,6 +48,7 @@ export const INTERACTION_KEY_ACTIONS: readonly BlueKeyAction[] = [
   { id: ACTION_TOGGLE, keys: 'space', description: 'Toggle the focused choice in a multi-select' },
   { id: ACTION_INTERRUPT, keys: 'ctrl+c', description: 'Clear input / interrupt the agent / press twice to exit' },
   { id: ACTION_STEER, keys: 'ctrl+s', description: 'Steer the current turn with the draft' },
+  { id: ACTION_BACKSPACE, keys: 'backspace', description: 'Delete backward / exit bash mode on an empty prompt' },
 ]
 
 /** Stable Cordis plugin name. */

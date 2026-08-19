@@ -21,7 +21,12 @@
  * enhancement is loaded, an Up press with an empty buffer recalls the most
  * recently queued inbox message as the draft (gated on its keyless
  * `blue.queue.recall` action; the baseline leaves Up to the editor's
- * history). The unsubmitted draft is mirrored
+ * history). While the side-question pane is docked above the editor
+ * (`'blue/editor-connected-above'`), Esc closes it — the draft stays intact
+ * — Up/Down with an empty buffer scroll it, and Enter submits the draft to
+ * the side conversation instead of the main agent (refused with a notice
+ * while the side agent is still answering, the draft restored). The
+ * unsubmitted draft is mirrored
  * into `./draft-stash.ts`, so a theme-swap reload (the theme provider fiber
  * disposes, Cordis re-runs this `blueTheme` dependent) restores the text
  * into the freshly mounted editor. The same reload can land while a slash
@@ -51,7 +56,7 @@ import {
 } from './editor-instance.ts'
 import { clearDraft, getStashedDraft, stashDraft } from './draft-stash.ts'
 import { idleHint, runningHint, type HintSources } from './hint-content.ts'
-import { ACTION_CANCEL, ACTION_INTERRUPT, ACTION_MOVE_UP, ACTION_STEER } from './keys.ts'
+import { ACTION_CANCEL, ACTION_INTERRUPT, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_STEER } from './keys.ts'
 import { ACTION_IMAGE_PASTE } from './paste-image.ts'
 import { ACTION_QUEUE_RECALL, queuedMessageText } from './pane-queue.ts'
 import { currentBlueAgent } from './session.ts'
@@ -136,6 +141,19 @@ export function apply(ctx: Context): void {
   /** Current editor text, captured through `onChange` for the slash hint. */
   let currentText = ''
   /**
+   * Whether the side-question pane is docked above the editor (mirrors
+   * `'blue/editor-connected-above'`). While true, Esc closes the pane,
+   * Up/Down scroll it, and Enter submits to it instead of clearing the
+   * draft, recalling the queue, or reaching the main agent.
+   */
+  let connectedAbove = false
+  /**
+   * Whether the side agent is still answering (the pane's busy flag). A
+   * submit while busy is refused: the draft is restored and a notice
+   * flashed, the kimi busy path.
+   */
+  let btwBusy = false
+  /**
    * Set when this fiber unloads: a submitted command can dispose it while
    * `execute()` is still in flight (`/theme` swaps the provider, reloading
    * every `blueTheme` dependent), and the late continuation must not reach
@@ -209,6 +227,27 @@ export function apply(ctx: Context): void {
    */
   function submitPrompt(value: string): void {
     const line = value.trim()
+    // The side-question pane owns Enter while it is docked above the
+    // editor: the input continues the side conversation (kimi's
+    // `sendUserInput`). While the side agent is still answering the submit
+    // is refused — the draft is restored and a notice flashed.
+    if (connectedAbove) {
+      if (btwBusy) {
+        editor.setText(value)
+        currentText = value
+        setNotice('the side question is still answering')
+        return
+      }
+      if (line.length > 0) {
+        ctx.emit('blue/btw-command', 'submit', line)
+      }
+      notice = undefined
+      editor.setText('')
+      currentText = ''
+      clearDraft()
+      refreshHint()
+      return
+    }
     notice = undefined
     editor.setText('')
     // Re-sync explicitly: whether setText fires onChange is the component's
@@ -286,9 +325,16 @@ export function apply(ctx: Context): void {
   function handleEditorKey(data: string): boolean {
     const keymap = ctx.blueKeymap
     // Escape: an open autocomplete dropdown owns the key (the Editor closes
-    // it); otherwise clear the draft, then interrupt a running agent.
+    // it); then an open side-question pane closes before anything else (the
+    // kimi order — the panel is above the editor, so its Esc wins over the
+    // draft clear, which stays intact); otherwise clear the draft, then
+    // interrupt a running agent.
     if (keymap.matches(data, ACTION_CANCEL)) {
       if (editor.isShowingAutocomplete()) return false
+      if (connectedAbove) {
+        ctx.emit('blue/btw-command', 'close')
+        return true
+      }
       if (editor.getText().length > 0) {
         editor.setText('')
         return true
@@ -337,6 +383,17 @@ export function apply(ctx: Context): void {
       // Steered text is consumed too: keep no stashed copy for a reload.
       clearDraft()
       return true
+    }
+    // Up/Down: with the side-question pane docked above and an empty buffer,
+    // the keys scroll the pane (kimi's canUseScrollKeys gate). The pane wins
+    // over the queue recall and the editor's history navigation, and the
+    // sequence is consumed even when the pane has nothing to scroll.
+    if (connectedAbove && editor.getText().length === 0) {
+      const isUp = keymap.matches(data, ACTION_MOVE_UP)
+      if (isUp || keymap.matches(data, ACTION_MOVE_DOWN)) {
+        ctx.emit('blue/btw-command', isUp ? 'scroll-up' : 'scroll-down')
+        return true
+      }
     }
     // Up: recall the latest queued message into an empty buffer when the
     // pane-queue enhancement is loaded — its keyless contextual action is
@@ -388,6 +445,15 @@ export function apply(ctx: Context): void {
   })
   ctx.on('blue/session-changed', () => {
     refreshHint()
+  })
+  // The side-question pane docks above the editor; its flag switches the
+  // editor's top corners to the spliced `├┤` and gates the Esc/arrow/Enter
+  // chain, and its busy flag refuses a submit while the side agent answers.
+  ctx.on('blue/editor-connected-above', (connected, busy) => {
+    connectedAbove = connected
+    btwBusy = busy === true
+    editor.setConnectedAbove(connected)
+    screen.requestRender()
   })
 
   ctx.effect(() => {

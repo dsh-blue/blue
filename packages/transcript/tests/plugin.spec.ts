@@ -67,6 +67,7 @@ class FakeScreen implements BlueScreen {
   readonly bottomChildren: BlueComponent[] = []
   readonly renderRequests: (boolean | undefined)[] = []
   readonly columns = 80
+  readonly rows = 24
 
   addChild(component: BlueComponent): () => void {
     this.children.push(component)

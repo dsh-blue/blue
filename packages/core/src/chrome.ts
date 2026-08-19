@@ -190,3 +190,63 @@ export function framePanel(
   lines.push(rulePaint('─'.repeat(ruleWidth)))
   return lines
 }
+
+/** Options for {@link topRule}. */
+export interface TopRuleOptions {
+  /** Title text rendered after the left corner, typically pre-styled (e.g. bold ` BTW `). */
+  readonly title?: string
+  /** Styling for the title; defaults to unstyled. */
+  readonly titlePaint?: (text: string) => string
+  /** Hint text rendered after the title and a `─ ` joiner, typically pre-styled. */
+  readonly hint?: string
+  /** Styling for the hint; defaults to unstyled. */
+  readonly hintPaint?: (text: string) => string
+  /** Styling for the corners, the joiner, and the dash fill; defaults to unstyled. */
+  readonly paint?: (text: string) => string
+}
+
+/**
+ * Render a panel's top border with an in-border title — the kimi
+ * `╭ BTW ─ Esc close ────╮` row. The joiner `─ ` appears only when both a
+ * title and a hint are present; the composite title+hint is clipped
+ * ANSI-safe (styled text is never cut mid-SGR) with the dash fill taking the
+ * remainder of the inner width. Callers guard `width >= 4` before invoking.
+ * @param width - the full render width of the panel row.
+ * @param options - the title, hint, and their paints.
+ * @returns the single top-border row.
+ */
+export function topRule(width: number, options: TopRuleOptions = {}): string {
+  const paint = options.paint ?? identity
+  const innerWidth = Math.max(1, width - 2)
+  const title = options.title
+  const hint = options.hint
+  const composite =
+    title !== undefined && hint !== undefined
+      ? `${(options.titlePaint ?? identity)(title)}${paint('─ ')}${(options.hintPaint ?? identity)(hint)}`
+      : title !== undefined
+        ? (options.titlePaint ?? identity)(title)
+        : hint !== undefined
+          ? (options.hintPaint ?? identity)(hint)
+          : ''
+  const clipped =
+    composite === ''
+      ? ''
+      : visibleWidth(composite) > innerWidth
+        ? truncateToWidth(composite, innerWidth, '')
+        : composite
+  return paint('╭') + clipped + paint('─'.repeat(Math.max(0, innerWidth - visibleWidth(clipped)))) + paint('╮')
+}
+
+/**
+ * Indent a block of rendered rows by a column gutter: every row gains `n`
+ * literal leading spaces, which the side-border post-processing overlays its
+ * bars onto only at content rows' outermost literal spaces. The pure-function
+ * equivalent of kimi's `GutterContainer(1)` — S13 lands the helper and
+ * measures a real terminal before deciding whether any consumer enables it.
+ * @param lines - the block's rendered rows.
+ * @param n - the gutter width in columns.
+ * @returns the indented rows, styling untouched.
+ */
+export function padColumns(lines: readonly string[], n: number): string[] {
+  return lines.map(line => ' '.repeat(n) + line)
+}
