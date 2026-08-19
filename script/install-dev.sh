@@ -9,6 +9,11 @@
 #   DSH_BIN    dsh executable to use        (default: dsh from PATH)
 #   PROFILE    target profile name          (default: blue)
 #   DSH_HOME   dsh home directory           (default: dsh's own resolution)
+#
+# Worktree effect testing: run this from a feature worktree with
+# PROFILE=blue-<short-branch-tag> to give that checkout its own dogfood
+# profile (packages link from this script's checkout). Remove the profile
+# directory (~/.dsh/profiles/blue-<tag>) when the branch merges.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
