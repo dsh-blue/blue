@@ -492,6 +492,17 @@ export interface BlueEditor extends BlueFocusable {
    */
   setConnectedAbove(connected: boolean): void
   /**
+   * Overlay a dimmed argument-hint ghost after the typed text on the first
+   * content row (the S14 slash-command parameter hint, e.g. `<question>`
+   * after `/btw `). Purely visual: the ghost renders after the cursor and
+   * consumes trailing padding, so the row width is preserved; it declines
+   * while the cursor sits mid-text. The caller owns when the hint applies
+   * (command registered a hint, single-line `/cmd` text, prompt mode).
+   * @param hint - the ghost text with any leading space, or `undefined` to
+   *   remove it.
+   */
+  setGhostHint(hint: string | undefined): void
+  /**
    * Attach the autocomplete provider driving the suggestion dropdown.
    * @param provider - the suggestion source.
    */
@@ -621,6 +632,14 @@ export interface BlueSettingsListOptions {
 /** A key/value settings list. */
 export type BlueSettingsList = BlueComponent
 
+/** The outcome of a fuzzy subsequence probe; lower scores rank better. */
+export interface BlueFuzzyMatch {
+  /** Whether every query character matched, in order. */
+  matches: boolean
+  /** The ranking score; lower is better. */
+  score: number
+}
+
 /**
  * `ctx.blueComponents` — the component factory. Blue-typed options in,
  * Blue-typed components out; the semantic color table is mapped to the
@@ -689,6 +708,25 @@ export interface BlueComponents {
    * @returns the truncated text.
    */
   truncateToWidth(text: string, width: number, ellipsis?: string): string
+  /**
+   * Probe a case-insensitive fuzzy subsequence match (the S14 completion
+   * primitive). Lower scores rank better; boundaries and consecutive runs
+   * are rewarded.
+   * @param query - the query characters, matched in order.
+   * @param text - the candidate text.
+   * @returns whether it matched and at what score.
+   */
+  fuzzyMatch(query: string, text: string): BlueFuzzyMatch
+  /**
+   * Filter and rank items by a fuzzy query: the query splits on whitespace
+   * and slashes into tokens, every token must match `getText(item)`, and
+   * the survivors sort by ascending summed score (stable on ties).
+   * @param items - the candidates.
+   * @param query - the fuzzy query.
+   * @param getText - extracts the match text from an item.
+   * @returns the matching items, best first.
+   */
+  fuzzyFilter<T>(items: readonly T[], query: string, getText: (item: T) => string): T[]
 }
 
 declare module '@deepseek-ai/cordis' {
