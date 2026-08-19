@@ -5,12 +5,13 @@
  * first on every attach, then the live `session/event` feed — filtered by
  * session object, as in the transcript plugin — carries the increments.
  * Collapsed, the pane renders one muted `todos N/M` line (completed over
- * total); expanded, one line per entry: `☑` muted for completed, `◐` accent
- * for in-progress, `☐` plain for pending, with the content truncated to the
- * viewport. Both states sit under a `topRule` frame (the in-border
- * ` todos ─ ctrl+t ` title) with two-column-indented content rows — no side
- * bars or bottom border, so the pane never box-stacks against the editor
- * and the btw panel. The expansion state follows a simple default rule —
+ * total); expanded, one line per entry: `✓` success for completed, `●` bold
+ * primary for in-progress, `○` dim for pending, with the content truncated
+ * to the viewport. Both states sit under the kimi todo frame — a flat
+ * full-width `─` rule, a bold `primary` `  Todo` title, and
+ * two-column-indented content rows — no side bars, rounded corners, or
+ * bottom border (the user's S13 dogfood ruling; the btw panel keeps the
+ * rounded chrome). The expansion state follows a simple default rule —
  * every
  * incoming list containing an in-progress entry starts expanded, any other
  * list starts collapsed — and the global Ctrl-T action
@@ -29,7 +30,6 @@ import type {
   BlueSemanticColors,
 } from '@deepseek-ai/dsh-blue-core'
 import type { TodoItem } from '@deepseek-ai/dsh-session'
-import { topRule } from '@deepseek-ai/dsh-blue-core/chrome'
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
 import type {} from '@deepseek-ai/dsh-blue-app'
@@ -46,7 +46,7 @@ export const ACTION_TOGGLE_TODO = 'blue.todo.toggle'
 /** Below this viewport width the pane renders nothing rather than overflow. */
 const TODO_MIN_WIDTH = 4
 
-/** Bold SGR, wrapped around the in-border title (the ITALIC precedent). */
+/** Bold SGR, wrapped around the title and the in-progress marker (the ITALIC precedent). */
 const BOLD_OPEN = '\x1b[1m'
 const BOLD_CLOSE = '\x1b[22m'
 
@@ -87,36 +87,40 @@ class TodoPaneComponent implements BlueComponent {
 
   /**
    * @param width - current viewport width in columns.
-   * @returns the framed summary or per-entry rows; none when there is no
-   *   list. The frame is a `topRule` row only — no side bars, no bottom
-   *   border — so the pane never box-stacks against the editor and the btw
-   *   panel it may sit beside (kimi's todo panel is frameless too).
+   * @returns the summary or per-entry rows; none when there is no list.
+   *   The frame is the kimi todo panel: a flat full-width `─` rule, a
+   *   `  Todo` title in bold `primary`, and two-column-indented rows —
+   *   no side bars, no bottom border, no rounded corners (the user's S13
+   *   dogfood ruling; the btw panel keeps the rounded chrome).
    */
   render(width: number): string[] {
     const todos = this.state.todos
     if (todos.length === 0) return []
     if (width < TODO_MIN_WIDTH) return []
-    const lines = [topRule(width, {
-      title: this.colors.primary(`${BOLD_OPEN} todos ${BOLD_CLOSE}`),
-      hint: this.colors.textMuted('ctrl+t '),
-      paint: this.colors.border,
-    })]
+    const lines = [
+      this.colors.border('─'.repeat(width)),
+      this.colors.primary(`${BOLD_OPEN}  Todo${BOLD_CLOSE}`),
+    ]
     if (this.state.collapsed) {
       const completed = todos.filter(todo => todo.status === 'completed').length
       lines.push(this.colors.muted(this.components.truncateToWidth(`  todos ${completed}/${todos.length}`, width)))
       return lines
     }
     for (const todo of todos) {
-      const content = this.components.truncateToWidth(todo.content, width - 2)
+      const content = this.components.truncateToWidth(todo.content, width - 4)
       switch (todo.status) {
         case 'completed':
-          lines.push(this.colors.muted(this.components.truncateToWidth(`  ☑ ${content}`, width)))
+          // `✓` success marker, content muted (the kimi done treatment
+          // minus the strikethrough).
+          lines.push(this.components.truncateToWidth(`  ${this.colors.success('✓')} ${this.colors.muted(content)}`, width))
           break
         case 'in_progress':
-          lines.push(this.components.truncateToWidth(`  ${this.colors.accent('◐')} ${content}`, width))
+          // `●` bold primary marker, content plain.
+          lines.push(this.components.truncateToWidth(`  ${this.colors.primary(`${BOLD_OPEN}●${BOLD_CLOSE}`)} ${content}`, width))
           break
         case 'pending':
-          lines.push(this.components.truncateToWidth(`  ☐ ${content}`, width))
+          // `○` dim marker, content plain.
+          lines.push(this.components.truncateToWidth(`  ${this.colors.textMuted('○')} ${content}`, width))
           break
       }
     }
