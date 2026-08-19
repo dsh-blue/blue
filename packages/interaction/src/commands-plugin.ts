@@ -19,7 +19,6 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { BlueComponent } from '@deepseek-ai/dsh-blue-core'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
 // Empty type import carries the app-owned `blueSession` Context merge and
@@ -29,8 +28,9 @@ import type {} from '@deepseek-ai/dsh-blue-app'
 // service itself is optional and resolved lazily.
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { getSharedEditor } from './editor-instance.ts'
-import { ACTION_CANCEL, ACTION_SUBMIT } from './keys.ts'
-import { BluePanel } from './select.ts'
+import type { HelpSection } from './help.ts'
+import { HelpOverlay } from './help.ts'
+import { SessionList } from './select.ts'
 import { registerThemeCommand } from './theme-switch.ts'
 
 /** Stable Cordis plugin name. */
@@ -52,12 +52,12 @@ function formatDate(createdAt: number): string {
 function displayServices(ctx: Context) {
   const screen = ctx.get('blueScreen')
   const components = ctx.get('blueComponents')
-  const colors = ctx.get('blueTheme')?.colors
+  const theme = ctx.get('blueTheme')
   const keymap = ctx.get('blueKeymap')
-  if (screen === undefined || components === undefined || colors === undefined || keymap === undefined) {
+  if (screen === undefined || components === undefined || theme === undefined || keymap === undefined) {
     return undefined
   }
-  return { screen, components, colors, keymap }
+  return { screen, components, theme, colors: theme.colors, keymap }
 }
 
 /**
@@ -102,11 +102,17 @@ export function apply(ctx: Context): void {
     }
     const currentId = ctx.get('blueSession')?.current?.id
     const sorted = [...headers].sort((a, b) => b.createdAt - a.createdAt)
-    const select = display.components.createSelectList({
+    const list = new SessionList({
+      keymap: display.keymap,
+      theme: display.theme,
+      components: display.components,
       items: sorted.map(header => ({
         value: String(header.id),
-        label: `${header.id} · ${formatDate(header.createdAt)} · ${header.cwd ?? ''}${header.id === currentId ? ' (current)' : ''}`,
+        label: `${header.id} · ${formatDate(header.createdAt)} · ${header.cwd ?? ''}`,
+        current: header.id === currentId,
       })),
+      title: 'Sessions',
+      titleHint: 'esc cancel · ↵ resume',
       onSelect: (item) => {
         handle.hide()
         if (item.value === String(currentId)) {
@@ -120,16 +126,14 @@ export function apply(ctx: Context): void {
         handle.hide()
       },
     })
-    const handle = display.screen.showOverlay(
-      new BluePanel([display.colors.accent('Resume a session')], select),
-      { width: '60%', maxHeight: '40%' },
-    )
+    const handle = display.screen.showOverlay(list, { width: '60%', maxHeight: '55%' })
     return { kind: 'success' }
   }
 
   /**
-   * The `/help` handler: an overlay listing the registered commands and key
-   * bindings; Escape, Enter, or `q` closes it.
+   * The `/help` handler: the framed, scrollable overlay listing the
+   * registered commands and key bindings in two aligned columns; Escape,
+   * Enter, or `q` closes it.
    * @param agent - the agent the command was dispatched to.
    * @returns the command outcome.
    */
@@ -138,29 +142,34 @@ export function apply(ctx: Context): void {
     if (display === undefined) {
       return { kind: 'error', text: 'help is unavailable: the Blue screen is not mounted' }
     }
-    const lines: string[] = [display.colors.textStrong('Commands')]
-    for (const command of ctx.commands.list(agent)) {
-      lines.push(`/${command.name} — ${command.description}`)
-    }
-    lines.push('', display.colors.textStrong('Keys'))
-    for (const action of display.keymap.list()) {
-      const keys = [action.keys].flat().join('/')
-      lines.push(`${keys} — ${action.description ?? action.id}`)
-    }
-    const body: BlueComponent = {
-      invalidate(): void {},
-      handleInput(data: string): void {
-        if (display.keymap.matches(data, ACTION_CANCEL)
-          || display.keymap.matches(data, ACTION_SUBMIT)
-          || data === 'q') {
-          handle.hide()
-        }
+    const sections: HelpSection[] = [
+      {
+        heading: 'Commands',
+        labelPaint: display.colors.primary,
+        rows: ctx.commands.list(agent).map(command => ({
+          label: `/${command.name}`,
+          description: command.description,
+        })),
       },
-      render(width: number): string[] {
-        return lines.map(line => display.components.truncateToWidth(line, width))
+      {
+        heading: 'Keys',
+        labelPaint: display.colors.warning,
+        rows: display.keymap.list().map(action => ({
+          label: [action.keys].flat().join('/'),
+          description: action.description ?? action.id,
+        })),
       },
-    }
-    const handle = display.screen.showOverlay(new BluePanel([], body), {
+    ]
+    const overlay = new HelpOverlay({
+      theme: display.theme,
+      components: display.components,
+      keymap: display.keymap,
+      sections,
+      onClose: () => {
+        handle.hide()
+      },
+    })
+    const handle = display.screen.showOverlay(overlay, {
       width: '80%',
       maxHeight: '60%',
     })

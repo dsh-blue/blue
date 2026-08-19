@@ -20,6 +20,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { BlueComponents, BlueEditor, BlueFocusable, BlueScreen, BlueTheme } from '@deepseek-ai/dsh-blue-core'
+import { framePanel } from '@deepseek-ai/dsh-blue-core/chrome'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { currentBlueAgent } from './session.ts'
@@ -31,8 +32,12 @@ export const inject = ['blueScreen', 'blueTheme', 'blueComponents']
 
 /** Overlay width as a share of the terminal. */
 const OVERLAY_WIDTH = '60%'
-/** Overlay height bound as a share of the terminal. */
-const OVERLAY_MAX_HEIGHT = '40%'
+/**
+ * Overlay height bound as a share of the terminal. S12 raises the bound so
+ * the framed dialog (bars, title, reason, four numbered choices, key row)
+ * fits inside its budget — pi-tui slices overlay output past maxHeight.
+ */
+const OVERLAY_MAX_HEIGHT = '55%'
 
 /** Decoded input sequences the prompt handles directly (no keymap actions). */
 const KEY_UP = '\x1b[A'
@@ -187,28 +192,50 @@ class ApprovalPrompt implements BlueFocusable {
   }
 
   /**
-   * Render the header, the optional reason, and the menu or feedback editor.
+   * Render the framed dialog: the amber rules, the `▶`-prefixed title, the
+   * optional reason, and the numbered menu (`N. label`, the selected row
+   * taking a `▶` pointer) or the feedback editor — closed by a key row.
    * @param width - current viewport width in columns.
    * @returns one string per rendered row.
    */
   render(width: number): string[] {
     const { theme, components, toolName, reason } = this.options
     const colors = theme.colors
-    const rows = [colors.warning(components.truncateToWidth(`Approve ${toolName}?`, width))]
-    if (reason !== undefined) rows.push(colors.muted(components.truncateToWidth(reason, width)))
+    const rows: string[] = []
+    if (reason !== undefined) {
+      rows.push(colors.muted(components.truncateToWidth(reason, width)))
+    }
+    rows.push('')
     const editor = this.editor
     if (editor !== undefined) {
       rows.push(colors.muted('reason:'))
       rows.push(...editor.render(width))
-      return rows
+      rows.push('')
+      return framePanel(rows, width, {
+        title: `▶ Approve ${toolName}?`,
+        titlePaint: colors.borderFocus,
+        rulePaint: colors.borderFocus,
+        footer: ['type feedback', '↵ submit', 'esc cancel'],
+        footerPaint: colors.textMuted,
+      })
     }
     const labels = this.labels()
     for (const [at, label] of labels.entries()) {
-      const prefix = at === this.cursor ? '→ ' : '  '
-      const row = components.truncateToWidth(`${prefix}${label}`, width)
-      rows.push(at === this.cursor ? colors.accent(row) : row)
+      const num = `${at + 1}. ${label}`
+      const row = components.truncateToWidth(
+        at === this.cursor ? `▶ ${num}` : `  ${num}`,
+        width,
+      )
+      rows.push(at === this.cursor ? colors.accent(row) : colors.textStrong(row))
     }
-    return rows
+    rows.push('')
+    return framePanel(rows, width, {
+      title: `▶ Approve ${toolName}?`,
+      titlePaint: colors.borderFocus,
+      rulePaint: colors.borderFocus,
+      footer: ['↑/↓ select', '1-4 choose', '↵ confirm'],
+      footerPaint: colors.textMuted,
+    })
   }
 }
 

@@ -2,11 +2,13 @@
  * The chrome helper layer: the `withSideBorders` / `injectPromptSymbol`
  * pure functions over representative row shapes — plain rules, pre-painted
  * rules, scroll indicators, content rows with and without SGR at the
- * outermost columns.
+ * outermost columns — plus the S12 dialog frame (`framePanel` / `hintRow`)
+ * over its branch matrix: titles, hints, footers, and paints.
  */
 
+import { visibleWidth } from '@earendil-works/pi-tui'
 import { describe, expect, it } from 'vitest'
-import { injectPromptSymbol, withSideBorders } from '../src/chrome.ts'
+import { framePanel, hintRow, injectPromptSymbol, withSideBorders } from '../src/chrome.ts'
 
 /** Identity paint keeps assertions readable; the functions never repaint text. */
 const plain = (text: string): string => text
@@ -104,5 +106,77 @@ describe('injectPromptSymbol', () => {
     expect(injectPromptSymbol('   ', '>')).toBeUndefined()
     expect(injectPromptSymbol('  x ', '>')).toBeUndefined()
     expect(injectPromptSymbol('x   ', '>')).toBeUndefined()
+  })
+})
+
+describe('hintRow', () => {
+  it('joins the parts with dot separators and indents the row', () => {
+    expect(hintRow(['↑/↓ select', '1-4 choose', '↵ confirm'], plain))
+      .toBe('  ↑/↓ select · 1-4 choose · ↵ confirm')
+  })
+
+  it('paints the whole row through the injected color function', () => {
+    expect(hintRow(['a', 'b'], text => `[${text}]`)).toBe('[  a · b]')
+  })
+
+  it('renders a single part with no trailing separator', () => {
+    expect(hintRow(['esc cancel'], plain)).toBe('  esc cancel')
+  })
+})
+
+describe('framePanel', () => {
+  it('frames the body with rules spanning the render width', () => {
+    const framed = framePanel(['  body'], 12, { title: 'T' })
+    expect(framed).toEqual(['─'.repeat(12), 'T', '  body', '─'.repeat(12)])
+  })
+
+  it('renders without a title or footer', () => {
+    expect(framePanel(['x'], 4)).toEqual(['────', 'x', '────'])
+  })
+
+  it('appends the title hint on the title line with its own paint', () => {
+    const framed = framePanel([], 20, {
+      title: 'help',
+      titlePaint: text => `<${text}>`,
+      titleHint: '· Esc close',
+      hintPaint: text => `~${text}~`,
+    })
+    expect(framed[1]).toBe('<help> ~· Esc close~')
+  })
+
+  it('renders the footer above the bottom rule through its paint', () => {
+    const framed = framePanel([''], 20, {
+      footer: ['esc cancel', '↵ resume'],
+      footerPaint: text => `_${text}_`,
+    })
+    expect(framed).toEqual(['─'.repeat(20), '', '_  esc cancel · ↵ resume_', '─'.repeat(20)])
+  })
+
+  it('skips the footer when the parts list is empty', () => {
+    expect(framePanel([''], 4, { footer: [] })).toEqual(['────', '', '────'])
+  })
+
+  it('defaults the footer and rule paints to identity', () => {
+    // No paints injected: the footer row and rules render unstyled.
+    expect(framePanel([''], 4, { footer: ['a', 'b'] })).toEqual(['────', '', '  a · b', '────'])
+  })
+
+  it('repaints the rules through the injected paint', () => {
+    const framed = framePanel([], 4, { rulePaint: text => `%${text}%` })
+    expect(framed).toEqual(['%────%', '%────%'])
+  })
+
+  it('truncates an over-long title with styled hint to the width', () => {
+    const framed = framePanel([], 10, {
+      title: 'ab'.repeat(8),
+      titleHint: 'cd'.repeat(8),
+    })
+    // pi-tui truncation keeps SGR resets in the string; the visible width
+    // is what must never exceed the frame.
+    expect(visibleWidth(framed[1] ?? '')).toBe(10)
+  })
+
+  it('keeps a narrow width at least one column', () => {
+    expect(framePanel([], 0)).toEqual(['─', '─'])
   })
 })

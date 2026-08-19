@@ -1245,21 +1245,27 @@ describe('blue whole-tree e2e', () => {
   it('lists the registered commands and key bindings in the /help overlay', async () => {
     const tree = await bootBlue([], { script: [] })
     const agent = await currentAgent(tree)
-    // The full command+key list is taller than the default overlay window;
-    // enlarge the terminal so every row renders.
-    tree.terminal.resize(160, 60)
     const result = await executeCommand(tree, agent, '/help')
     expect(result?.kind).toBe('success')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/quit — Exit Blue') })
+    // The framed HelpPanel: primary rules and the ` help ` title with the
+    // key hint. The two aligned sections start with the sorted commands.
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Commands') })
     const shown = tree.terminal.output
-    expect(shown).toContain('/new — Start a new session')
-    expect(shown).toContain('/btw — Ask a side question in a forked session')
-    // The Keys section lists the keymap, including the pane-todo global action.
-    expect(shown).toContain('ctrl+c — Clear input / interrupt the agent / press twice to exit')
-    expect(shown).toContain('ctrl+t — Toggle todo panel')
+    expect(shown).toContain(' help')
+    expect(shown).toContain('/btw')
+    expect(shown).toContain('Exit Blue')
+    expect(shown).toContain('showing 1-10 of')
+    // PageDown twice scrolls to the tail of the Keys section — including
+    // the pane-todo global action; the accumulated output carries the rows
+    // once the throttled render settles.
+    tree.terminal.sendInput('\x1b[6~')
+    tree.terminal.sendInput('\x1b[6~')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Toggle todo panel') })
+    const scrolled = tree.terminal.output
+    expect(scrolled).toContain('ctrl+c')
     // Escape closes the overlay.
     tree.terminal.sendInput('\x1b')
-    expect(await fullFrame(tree.terminal)).not.toContain('/quit — Exit Blue')
+    expect(await fullFrame(tree.terminal)).not.toContain('Exit Blue')
   })
 
   it('switches sessions through /new and /fork, and lists them in the /sessions picker', async () => {
@@ -1300,12 +1306,15 @@ describe('blue whole-tree e2e', () => {
     await tree.ctx.sessions.flush(forked.session)
     tree.terminal.resize(300, 40)
     await expect(executeCommand(tree, forked, '/sessions')).resolves.toEqual({ kind: 'success' })
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Resume a session') })
+    // The framed picker: the `Sessions` title with the key hint, rows
+    // carrying the `❯ ` pointer and the `← current` badge on the live one.
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Sessions') })
     const picker = tree.terminal.output
+    expect(picker).toContain('esc cancel · ↵ resume')
     expect(picker).toContain(String(first.id))
     expect(picker).toContain(String(second.id))
     expect(picker).toContain(String(forked.id))
-    expect(picker).toContain('(current)')
+    expect(picker).toContain('← current')
     // Pick the live session: a notice flashes and no switch happens. Find its
     // row deterministically by reproducing the picker's newest-first sort
     // over the same persisted headers.

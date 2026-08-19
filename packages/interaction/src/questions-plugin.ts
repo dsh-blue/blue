@@ -22,8 +22,13 @@ export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'userQuestio
 
 /** Overlay width as a share of the terminal. */
 const OVERLAY_WIDTH = '80%'
-/** Overlay height bound as a share of the terminal. */
-const OVERLAY_MAX_HEIGHT = '60%'
+/**
+ * Overlay height bound as a share of the terminal. S12 raises the bound so
+ * the framed dialog (bars, title, tabs, question, six option rows, key
+ * row) fits inside its budget — pi-tui slices overlay output past
+ * maxHeight.
+ */
+const OVERLAY_MAX_HEIGHT = '75%'
 
 /**
  * Register the overlay-backed user-questions provider; the fiber's disposal
