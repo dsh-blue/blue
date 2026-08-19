@@ -16,9 +16,9 @@ import type {
 } from '@deepseek-ai/dsh-blue-core'
 import { describe, expect, it } from 'vitest'
 import {
-  BANNER_MAX_WIDTH,
+  BANNER_LOGO_WIDTH,
   BANNER_MIN_WIDTH,
-  BANNER_RIGHT_WIDTH,
+  BANNER_SECTION_MIN,
   bannerLayout,
   composeBannerLines,
   inject,
@@ -47,7 +47,6 @@ const CONTENT: BannerContent = {
   provider: 'p',
   cwd: '~/dev',
   tips: { heading: 'Tips for getting started', lines: ['tip one', 'tip two'] },
-  whatsNew: { heading: "What's new", lines: ['new one'] },
 }
 
 describe('shortenHome', () => {
@@ -74,28 +73,24 @@ describe('bannerLayout', () => {
     expect(bannerLayout(BANNER_MIN_WIDTH - 1)).toBeNull()
   })
 
-  it('drops the right column below the full threshold', () => {
+  it('spans the full width, the logo cell hugging the castle', () => {
     expect(bannerLayout(BANNER_MIN_WIDTH)).toEqual({
       total: BANNER_MIN_WIDTH,
-      leftWidth: BANNER_MIN_WIDTH - 2,
-      rightWidth: 0,
-      withRight: false,
+      logoWidth: BANNER_LOGO_WIDTH,
+      rightWidth: BANNER_MIN_WIDTH - 3 - BANNER_LOGO_WIDTH,
+      withSections: false,
     })
-    expect(bannerLayout(99)).toEqual({ total: 99, leftWidth: 97, rightWidth: 0, withRight: false })
+    expect(BANNER_LOGO_WIDTH).toBe(16)
   })
 
-  it('joins the fixed right column at the full threshold', () => {
-    expect(bannerLayout(100)).toEqual({
-      total: 100,
-      leftWidth: 100 - 2 - BANNER_RIGHT_WIDTH - 1,
-      rightWidth: BANNER_RIGHT_WIDTH,
-      withRight: true,
-    })
+  it('joins the tips section once the right cell is wide enough', () => {
+    // The right cell is `width − frame(2) − separator(1) − logo(16)`.
+    expect(bannerLayout(BANNER_SECTION_MIN + BANNER_LOGO_WIDTH + 2).withSections).toBe(false)
+    expect(bannerLayout(BANNER_SECTION_MIN + BANNER_LOGO_WIDTH + 3).withSections).toBe(true)
   })
 
-  it('caps the box width on wide terminals', () => {
-    expect(bannerLayout(150)?.total).toBe(BANNER_MAX_WIDTH)
-    expect(bannerLayout(BANNER_MAX_WIDTH).total).toBe(BANNER_MAX_WIDTH)
+  it('never caps: the box fills very wide terminals', () => {
+    expect(bannerLayout(200)?.total).toBe(200)
   })
 })
 
@@ -104,59 +99,64 @@ describe('composeBannerLines', () => {
     expect(composeBannerLines(DEPS, CONTENT, BANNER_MIN_WIDTH - 1)).toEqual([])
   })
 
-  it('composes the golden full box at one hundred columns', () => {
+  it('composes the golden full-width box at one hundred columns', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 100)
-    // 1 top + 14 body (the left column's height) + 1 bottom.
-    expect(lines).toHaveLength(16)
-    expect(lines.map(line => line.length)).toEqual(Array.from({ length: 16 }, () => 100))
+    // 1 top + 8 body (the castle's height; the right column is 7) + 1 bottom.
+    expect(lines).toHaveLength(10)
+    expect(lines.map(line => line.length)).toEqual(Array.from({ length: 10 }, () => 100))
     const title = `blue v${CONTENT.version}`
     expect(lines[0]).toBe(`╭─── ${title} ${'─'.repeat(100 - 7 - title.length)}╮`)
-    expect(lines[1]).toBe(`│${' '.repeat(45)}│${' '.repeat(52)}│`)
-    expect(lines[2]).toBe(`│${' '.repeat(16)}Welcome back!${' '.repeat(16)}│ Tips for getting started${' '.repeat(27)}│`)
-    expect(lines[5]).toContain('        ▄   ▄       ')
-    expect(lines.join('\n')).toContain('  ▄▄▄██▀█████▀██▄▄  ')
-    expect(lines.join('\n')).toContain('m · p')
-    expect(lines.join('\n')).toContain('~/dev')
+    // Body row 0: the castle's blank top row beside the welcome line.
+    expect(lines[1]).toBe(`│${' '.repeat(16)}│ Welcome back!${' '.repeat(67)}│`)
+    expect(lines[2]).toBe(`│      ▄   ▄     │ m · p${' '.repeat(75)}│`)
+    expect(lines[3]).toBe(`│     ▀ ▀▄▀ ▀    │ ~/dev${' '.repeat(75)}│`)
+    expect(lines.join('\n')).toContain('▄▄▄██▀█████▀██▄▄')
     expect(lines.join('\n')).toContain('│ Tips for getting started')
     expect(lines.join('\n')).toContain('│ tip one')
-    expect(lines.join('\n')).toContain(`│ ${'─'.repeat(50)} `)
-    expect(lines.join('\n')).toContain("│ What's new")
-    expect(lines[15]).toBe(`╰${'─'.repeat(98)}╯`)
+    expect(lines.join('\n')).not.toContain("What's new")
+    expect(lines[9]).toBe(`╰${'─'.repeat(98)}╯`)
   })
 
-  it('drops the right column at eighty columns', () => {
+  it('joins the tips at eighty columns too — the right cell is 61 wide', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 80)
-    expect(lines.map(line => line.length)).toEqual(Array.from({ length: lines.length }, () => 80))
-    expect(lines).toHaveLength(16)
+    expect(lines).toHaveLength(10)
+    expect(lines.map(line => line.length)).toEqual(Array.from({ length: 10 }, () => 80))
+    expect(lines.join('\n')).toContain('Welcome back!')
+    expect(lines.join('\n')).toContain('Tips for getting started')
+  })
+
+  it('drops the tips section on narrow terminals', () => {
+    const lines = composeBannerLines(DEPS, CONTENT, 48)
+    expect(lines).toHaveLength(10)
+    expect(lines.map(line => line.length)).toEqual(Array.from({ length: 10 }, () => 48))
+    expect(lines.join('\n')).toContain('Welcome back!')
     expect(lines.join('\n')).not.toContain('Tips for getting started')
-    expect(lines[2]).toBe(`│${' '.repeat(32)}Welcome back!${' '.repeat(33)}│`)
   })
 
-  it('caps the box on very wide terminals', () => {
+  it('fills very wide terminals without a cap', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 200)
-    expect(lines[0]?.length).toBe(BANNER_MAX_WIDTH)
+    expect(lines[0]?.length).toBe(200)
   })
 
-  it('truncates an over-long cwd to the left cell', () => {
+  it('truncates an over-long cwd to the right cell', () => {
     const lines = composeBannerLines(DEPS, { ...CONTENT, cwd: 'd'.repeat(200) }, 100)
-    const joined = lines.join('\n')
-    expect(joined).toContain(`${'d'.repeat(42)}...`)
+    expect(lines.join('\n')).toContain(`│ ${'d'.repeat(77)}...`)
     expect(lines.map(line => line.length)).toEqual(Array.from({ length: lines.length }, () => 100))
   })
 
-  it('truncates an over-long model line to the left cell', () => {
-    const lines = composeBannerLines(DEPS, { ...CONTENT, model: 'm'.repeat(60) }, 100)
-    expect(lines.join('\n')).toContain(`${'m'.repeat(42)}...`)
-    expect(lines.join('\n')).not.toContain('m'.repeat(43))
+  it('truncates an over-long model line to the right cell', () => {
+    const lines = composeBannerLines(DEPS, { ...CONTENT, model: 'm'.repeat(100) }, 100)
+    expect(lines.join('\n')).toContain(`│ ${'m'.repeat(77)}...`)
+    expect(lines.join('\n')).not.toContain('m'.repeat(78))
   })
 
   it('truncates over-long right-column lines to the right cell', () => {
     const lines = composeBannerLines(
       DEPS,
-      { ...CONTENT, tips: { heading: 'Tips for getting started', lines: ['t'.repeat(80)] } },
+      { ...CONTENT, tips: { heading: 'Tips for getting started', lines: ['t'.repeat(90)] } },
       100,
     )
-    expect(lines.join('\n')).toContain(`│ ${'t'.repeat(48)}...`)
+    expect(lines.join('\n')).toContain(`│ ${'t'.repeat(77)}...`)
     expect(lines.map(line => line.length)).toEqual(Array.from({ length: lines.length }, () => 100))
   })
 
@@ -165,16 +165,22 @@ describe('composeBannerLines', () => {
     expect(lines[0]?.length).toBe(40)
   })
 
-  it('pads the left column when the right column is taller', () => {
+  it('centers the castle vertically when the right column is taller', () => {
     const lines = composeBannerLines(
       DEPS,
       { ...CONTENT, tips: { heading: 'Tips for getting started', lines: Array.from({ length: 20 }, (_, i) => `tip ${i}`) } },
       100,
     )
-    // Right column: 1 blank + 1 heading + 20 lines + 1 divider + 1 heading + 1 line.
+    // Right column: 3 info rows + 1 blank + 1 heading + 20 lines.
     expect(lines).toHaveLength(2 + 25)
+    // logoLead = (25 − 8) >> 1 = 8: the castle starts at body row 8, so the
+    // rows above carry a blank logo cell beside the first tips rows.
+    expect(lines[1]).toBe(`│${' '.repeat(16)}│ Welcome back!${' '.repeat(67)}│`)
+    expect(lines[6]).toBe(`│${' '.repeat(16)}│ tip ${0}${' '.repeat(75)}│`)
+    expect(lines[9]).toBe(`│${' '.repeat(16)}│ tip 3${' '.repeat(75)}│`)
+    expect(lines[10]).toContain('▄')
     const lastBody = lines[lines.length - 2] ?? ''
-    expect(lastBody.startsWith(`│${' '.repeat(45)}│ new one`)).toBe(true)
+    expect(lastBody.startsWith(`│${' '.repeat(16)}│ tip 19`)).toBe(true)
     expect(lines.map(line => line.length)).toEqual(Array.from({ length: lines.length }, () => 100))
   })
 })

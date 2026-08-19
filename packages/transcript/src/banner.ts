@@ -1,11 +1,12 @@
 /**
- * `blue-banner` plugin: the Claude Code-style welcome banner, mounted once at
- * boot as the scroll area's first child. The left column centers the pixel
- * castle ({@link packHalfBlockArt} over the frozen grid), a strong
- * "Welcome back!", the default model line (`model · provider`, snapshotted
- * from `agentDefaultModel` at mount), and the home-shortened cwd. The right
- * column — joined once the viewport reaches {@link BANNER_FULL_MIN} columns —
- * carries the tips and what's-new sections from `banner-content.ts`.
+ * `blue-banner` plugin: the welcome banner, mounted once at boot as the
+ * scroll area's first child. The banner fills the full viewport width in two
+ * cells: the left cell hugs the pixel castle's own (trimmed) width, and the
+ * right cell takes everything else — the "Welcome back!" line, the model
+ * line (`model · provider`, snapshotted from `agentDefaultModel` at mount),
+ * the home-shortened cwd, and — once the right cell is wide enough — the
+ * quick-start tips section from `banner-content.ts` (the what's-new
+ * placeholder returns with S16's real right-column content).
  *
  * The banner is a static boot snapshot by design: it never reads
  * `blueSession` (the footer's `blue-status-basic` already tracks the live
@@ -16,11 +17,13 @@
  * across initial mounts and `/theme` reloads.
  *
  * The box adapts to the viewport: below {@link BANNER_MIN_WIDTH} columns it
- * renders nothing, below {@link BANNER_FULL_MIN} it drops the right column,
- * and it caps at {@link BANNER_MAX_WIDTH}. Every over-wide run truncates;
- * nothing ever wraps. Styling uses only frozen theme tokens — frame, castle,
- * and the welcome line share `primary`, the kimi welcome-box treatment, so
- * the banner reads as one blue unit.
+ * renders nothing, otherwise it spans the full width and its height is the
+ * taller of the castle art and the right column (a fixed ten rows at the
+ * default content). Every over-wide run truncates; nothing ever wraps. The
+ * castle centers vertically when the right column is taller. Styling uses
+ * only frozen theme tokens — frame, castle, and the welcome line share
+ * `primary`, the kimi welcome-box treatment, so the banner reads as one
+ * blue unit.
  *
  * @module @deepseek-ai/dsh-blue-transcript/banner
  */
@@ -38,7 +41,6 @@ import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { CASTLE_PIXELS, packHalfBlockArt } from './banner-art.ts'
 import {
   BANNER_TIPS,
-  BANNER_WHATS_NEW,
   BLUE_VERSION,
   type BannerSection,
 } from './banner-content.ts'
@@ -52,14 +54,8 @@ export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'agentDefaul
 /** Below this viewport width the banner renders zero rows rather than overflow. */
 export const BANNER_MIN_WIDTH = 40
 
-/** The viewport width at which the right column joins the box. */
-export const BANNER_FULL_MIN = 100
-
-/** The box width ceiling on terminals wider than the banner needs. */
-export const BANNER_MAX_WIDTH = 120
-
-/** The right column's fixed cell width (left column absorbs the rest). */
-export const BANNER_RIGHT_WIDTH = 52
+/** The right-cell width at which the tips section joins the right column. */
+export const BANNER_SECTION_MIN = 30
 
 /** Columns reserved around the title inside the top rule: `╭─── `, ` `, `╮`. */
 const BANNER_TITLE_RESERVE = 7
@@ -67,33 +63,47 @@ const BANNER_TITLE_RESERVE = 7
 /** The two `│` frame columns every body row spends; also the bottom rule's. */
 const BANNER_FRAME_COLUMNS = 2
 
+/** The one `│` separator column between the logo and right cells. */
+const BANNER_CELL_SEPARATOR = 1
+
+const PACKED_CASTLE = packHalfBlockArt(CASTLE_PIXELS)
+/** First column carrying a lit pixel across the packed rows. */
+const CASTLE_LEAD = Math.min(...PACKED_CASTLE.map(row => row.search(/\S/)).filter(index => index >= 0))
+/** One past the last lit column. */
+const CASTLE_EDGE = Math.max(...PACKED_CASTLE.map(row => row.trimEnd().length))
+/** The trimmed castle art rows; the logo cell hugs these exactly. */
+const CASTLE_ROWS: readonly string[] = PACKED_CASTLE.map(row => row.slice(CASTLE_LEAD, CASTLE_EDGE))
+/** The logo cell's width — the trimmed castle art's own width. */
+export const BANNER_LOGO_WIDTH = CASTLE_EDGE - CASTLE_LEAD
+
 /** One width computation for a banner render. */
 export interface BannerLayout {
-  /** The exact box width; every rendered line is this many columns. */
+  /** The exact box width — the full viewport width; every line is this many columns. */
   readonly total: number
-  /** The left column's cell width. */
-  readonly leftWidth: number
-  /** The right column's cell width; 0 when it is dropped. */
+  /** The logo cell's width; the trimmed castle fills it. */
+  readonly logoWidth: number
+  /** The right cell's width. */
   readonly rightWidth: number
-  /** Whether the right column renders. */
-  readonly withRight: boolean
+  /** Whether the tips section renders. */
+  readonly withSections: boolean
 }
 
 /**
  * The banner's width plan for a viewport: `null` below
- * {@link BANNER_MIN_WIDTH}; otherwise a box of `min(width,
- * BANNER_MAX_WIDTH)` columns whose left column absorbs every column not
- * taken by the frame and the optional right cell.
+ * {@link BANNER_MIN_WIDTH}; otherwise a full-width box whose logo cell hugs
+ * the trimmed castle and whose right cell takes every remaining column.
  * @param width - current viewport width in columns.
  * @returns the layout, or `null` when the banner renders nothing.
  */
 export function bannerLayout(width: number): BannerLayout | null {
   if (width < BANNER_MIN_WIDTH) return null
-  const total = Math.min(width, BANNER_MAX_WIDTH)
-  const withRight = width >= BANNER_FULL_MIN
-  const rightWidth = withRight ? BANNER_RIGHT_WIDTH : 0
-  const leftWidth = total - BANNER_FRAME_COLUMNS - (withRight ? rightWidth + 1 : 0)
-  return { total, leftWidth, rightWidth, withRight }
+  const rightWidth = width - BANNER_FRAME_COLUMNS - BANNER_CELL_SEPARATOR - BANNER_LOGO_WIDTH
+  return {
+    total: width,
+    logoWidth: BANNER_LOGO_WIDTH,
+    rightWidth,
+    withSections: rightWidth >= BANNER_SECTION_MIN,
+  }
 }
 
 /**
@@ -122,8 +132,6 @@ export interface BannerContent {
   readonly cwd: string
   /** The right-column quick-start section. */
   readonly tips: BannerSection
-  /** The right-column what's-new section. */
-  readonly whatsNew: BannerSection
 }
 
 /** The theme tokens the banner paints with, keyed by segment role. */
@@ -148,9 +156,10 @@ export interface BannerDeps {
 /**
  * Compose the banner's lines for one viewport width — the pure layout core
  * the component delegates to. Identity color functions (the spec fakes)
- * yield plain, measurable text. Every body row centers its left cell,
- * pads its right cell, and never wraps: over-wide model, cwd, and section
- * lines truncate first.
+ * yield plain, measurable text. The box spans the full width: the logo cell
+ * hugs the trimmed castle, the right cell pads, and nothing ever wraps —
+ * over-wide model, cwd, and section lines truncate first. The castle
+ * centers vertically when the right column is taller.
  * @param deps - colors plus the truncate/measure primitives.
  * @param content - the snapshotted banner facts.
  * @param width - current viewport width in columns.
@@ -163,7 +172,7 @@ export function composeBannerLines(
 ): string[] {
   const layout = bannerLayout(width)
   if (layout === null) return []
-  const { total, leftWidth, rightWidth, withRight } = layout
+  const { total, logoWidth, rightWidth, withSections } = layout
   const paint: Record<BannerStyle, (text: string) => string> = {
     // kimi parity for the welcome box: the whole frame, the logo, and the
     // welcome line are the brand's interactive blue (`primary`), with only
@@ -181,33 +190,11 @@ export function composeBannerLines(
   const blank = (cellWidth: number, style: BannerStyle): readonly BannerSegment[] =>
     [{ text: ' '.repeat(cellWidth), style }]
 
-  // A left-cell row: truncate to the cell, then center the remainder.
-  const centered = (text: string, style: BannerStyle): readonly BannerSegment[] => {
-    const fit = deps.truncate(text, leftWidth)
-    const pad = leftWidth - deps.visibleWidth(fit)
-    const lead = pad >> 1
-    return [
-      { text: ' '.repeat(lead), style },
-      { text: fit, style },
-      { text: ' '.repeat(pad - lead), style },
-    ]
-  }
-
   const title = deps.truncate(`blue v${content.version}`, total - BANNER_TITLE_RESERVE)
   const top: readonly BannerSegment[] = [
     { text: '╭─── ', style: 'frame' },
     { text: title, style: 'title' },
     { text: ` ${'─'.repeat(total - BANNER_TITLE_RESERVE - deps.visibleWidth(title))}╮`, style: 'frame' },
-  ]
-
-  const leftRows: readonly (readonly BannerSegment[])[] = [
-    blank(leftWidth, 'frame'),
-    centered('Welcome back!', 'strong'),
-    blank(leftWidth, 'frame'),
-    ...packHalfBlockArt(CASTLE_PIXELS).map(art => centered(art, 'logo')),
-    blank(leftWidth, 'frame'),
-    centered(`${content.model} · ${content.provider}`, 'accent'),
-    centered(content.cwd, 'muted'),
   ]
 
   // A right-cell row: one leading space, the truncated text, then padding.
@@ -219,32 +206,35 @@ export function composeBannerLines(
       { text: ' '.repeat(rightWidth - 1 - deps.visibleWidth(fit)), style },
     ]
   }
-  const sectionRows = (section: BannerSection, style: BannerStyle): readonly (readonly BannerSegment[])[] => [
-    rightRow(section.heading, 'text'),
-    ...section.lines.map(entry => rightRow(entry, style)),
+  const rightRows: readonly (readonly BannerSegment[])[] = [
+    rightRow('Welcome back!', 'strong'),
+    rightRow(`${content.model} · ${content.provider}`, 'accent'),
+    rightRow(content.cwd, 'muted'),
+    ...(withSections
+      ? [
+          blank(rightWidth, 'muted'),
+          rightRow(content.tips.heading, 'text'),
+          ...content.tips.lines.map(entry => rightRow(entry, 'muted')),
+        ]
+      : []),
   ]
-  const rightRows: readonly (readonly BannerSegment[])[] = withRight
-    ? [
-        blank(rightWidth, 'muted'),
-        ...sectionRows(content.tips, 'muted'),
-        [
-          { text: ' ', style: 'muted' },
-          { text: '─'.repeat(rightWidth - 2), style: 'muted' },
-          { text: ' ', style: 'muted' },
-        ],
-        ...sectionRows(content.whatsNew, 'muted'),
-      ]
-    : []
 
-  const height = withRight ? Math.max(leftRows.length, rightRows.length) : leftRows.length
+  // The logo cell: the castle rows, vertically centered when the right
+  // column is taller; blank rows pad above and below.
+  const bodyHeight = Math.max(CASTLE_ROWS.length, rightRows.length)
+  const logoLead = (bodyHeight - CASTLE_ROWS.length) >> 1
   const lines = [line(top)]
-  for (let row = 0; row < height; row++) {
+  for (let row = 0; row < bodyHeight; row++) {
+    const art = row >= logoLead && row < logoLead + CASTLE_ROWS.length
+      ? CASTLE_ROWS[row - logoLead]!
+      : undefined
     const segments: BannerSegment[] = [
       { text: '│', style: 'frame' },
-      ...leftRows[row] ?? blank(leftWidth, 'frame'),
+      ...(art !== undefined ? [{ text: art, style: 'logo' } as BannerSegment] : blank(logoWidth, 'logo')),
+      { text: '│', style: 'frame' },
+      ...rightRows[row] ?? blank(rightWidth, 'muted'),
+      { text: '│', style: 'frame' },
     ]
-    if (withRight) segments.push({ text: '│', style: 'frame' }, ...rightRows[row] ?? blank(rightWidth, 'muted'))
-    segments.push({ text: '│', style: 'frame' })
     lines.push(line(segments))
   }
   lines.push(line([{ text: `╰${'─'.repeat(total - BANNER_FRAME_COLUMNS)}╯`, style: 'frame' }]))
@@ -299,7 +289,6 @@ export function apply(ctx: Context): void {
     provider: selection.provider,
     cwd: shortenHome(process.cwd(), homedir()),
     tips: BANNER_TIPS,
-    whatsNew: BANNER_WHATS_NEW,
   })
   // Effect-bound so unloading this fiber unmounts the banner.
   ctx.effect(() => ctx.blueScreen.addChild(banner))

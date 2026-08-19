@@ -439,7 +439,7 @@ describe('blue whole-tree e2e', () => {
     expect(output).toContain('Blue online.')
   })
 
-  it('renders the welcome banner at boot as the first scroll child, compact at eighty columns', async () => {
+  it('renders the welcome banner at boot as the first scroll child, tips included at eighty columns', async () => {
     const tree = await bootBlue(['fix', 'the', 'build'], { script: [textResponse('Blue online.')] })
     const agent = await currentAgent(tree)
     await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
@@ -451,13 +451,14 @@ describe('blue whole-tree e2e', () => {
     // AgentDefaultModelConfig mounts provider/model 'mock'; the banner
     // snapshots the selection at mount.
     expect(output).toContain('mock · mock')
-    // The eighty-column FakeTerminal stays below the right-column threshold.
-    expect(output).not.toContain('Tips for getting started')
+    // The eighty-column right cell (61 wide) is past the section threshold,
+    // so the quick-start tips join even on the default terminal.
+    expect(output).toContain('Tips for getting started')
     // The banner renders before any transcript content.
     expect(output.indexOf('Welcome back!')).toBeLessThan(output.indexOf('Blue online.'))
   })
 
-  it('joins the tips column on wide terminals with the banner still above the transcript', async () => {
+  it('fills the full width on wide terminals with the banner still above the transcript', async () => {
     const tree = await bootBlue(['fix', 'the', 'build'], { script: [textResponse('Blue online.')] })
     const agent = await currentAgent(tree)
     await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
@@ -467,7 +468,18 @@ describe('blue whole-tree e2e', () => {
     const frame = await fullFrame(tree.terminal)
     expect(frame).toContain('Welcome back!')
     expect(frame).toContain('Tips for getting started')
-    expect(frame).toContain("What's new")
+    // The box never caps: every banner row spans the full terminal width.
+    const bannerRow = frame.split('\r\n').find(row => row.includes('Welcome back!')) ?? ''
+    const plain = bannerRow
+      // Strip every escape flavor the renderer emits: SGR runs, CSI
+      // modes (?2031h ...), OSC 8 hyperlink tails, and stray controls.
+      .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
+      .replace(/\x1b\][^\u0007]*\u0007/g, '')
+      .replace(/[\u0000-\u001f]/g, '')
+    // fullFrame bumps the width by one to force the repaint; the box
+    // fills whatever the terminal then reports — no cap.
+    expect(plain.trimEnd().length).toBe(tree.terminal.columns)
+    expect(frame.indexOf('Welcome back!')).toBeLessThan(frame.indexOf('Blue online.'))
   })
 
   it('sinks the footer and editor dock to the last rows at boot with no session content', async () => {
