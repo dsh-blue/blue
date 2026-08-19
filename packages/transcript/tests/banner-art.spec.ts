@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { WHALE_PIXELS, packHalfBlockArt } from '../src/banner-art.ts'
+import { WHALE_ART, WHALE_PIXELS, packHalfBlockArt } from '../src/banner-art.ts'
 
 describe('packHalfBlockArt', () => {
   it('maps the four column combinations of a row pair', () => {
@@ -26,21 +26,29 @@ describe('packHalfBlockArt', () => {
     expect(packHalfBlockArt(['11', ''])).toEqual(['▀▀'])
   })
 
-  it('packs the whale into the seven golden lines', () => {
+  it('packs the whale body into the four golden lines', () => {
     expect(packHalfBlockArt(WHALE_PIXELS)).toEqual([
-      '     ▀  ▀  ▀    ',
-      '       ▄  ▄     ',
       '    ▄▄▄▄▄▄▄▄▄   ',
       '  ▄▄█▀████▀█▄▄  ',
-      '  ███▄████▄███  ',
       '   ██████████   ',
       '   ▀▀▀▀▀▀▀▀▀▀   ',
     ])
   })
 
-  it('keeps every whale line sixteen columns wide', () => {
+  it('keeps every packed body line sixteen columns wide', () => {
     for (const line of packHalfBlockArt(WHALE_PIXELS)) {
       expect(line).toHaveLength(16)
     }
+  })
+
+  it('composes the logo as the text spray above the packed body', () => {
+    expect(WHALE_ART).toEqual([
+      '      ·  .  ·   ',
+      '        .·.     ',
+      '    ▄▄▄▄▄▄▄▄▄   ',
+      '  ▄▄█▀████▀█▄▄  ',
+      '   ██████████   ',
+      '   ▀▀▀▀▀▀▀▀▀▀   ',
+    ])
   })
 })
