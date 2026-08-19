@@ -154,6 +154,24 @@
 - **理由**：这是 children → 扁平行数组唯一汇合点，能拿到总行数并按"尾部行数 = 底钉块"切分；二次渲染仅限底钉块（footer/editor/hint/panes 几行，纯 render），滚动区（贵）不双渲染。备选均劣：组件层 Spacer 的 `render(width)` 无高度语义无从计算填充量；requestRender 前全树预算 = 每帧双渲染全树。
 - **后果**：底钉语义成真且对所有 bottom child（含下游 pane 插件）生效；overlay 合成发生在包装之后，短内容时居中/贴边 overlay 的定位反而更准（行数组本就覆盖整屏）；每帧行数恒 ≥ max(内容, rows)，与 pi-tui 的 clearOnShrink/差分路径兼容（e2e 全数通过）。
 
+## P2 视觉设计决策（kimi-code 观感对齐设计期，2026-08-19）
+
+详见 [blue-p2-visual-design.md](./blue-p2-visual-design.md)。以 kimi-code 为视觉/UX 参照（框架同源 pi-tui，全部效果为应用层实现，逐项可移植），按视觉影响排序分期（S10-S16）。
+
+### D24. 主题契约 v2：+`primary`/`textMuted` 两 token，现有 `muted` 即 kimi 的 textDim 层
+
+- **背景**：Blue 的"朴素感"一半来自色彩层级缺失——`accent` 一个青色既做选中又做强调、单层灰阶、`borderFocus`/`selectedBg` 定义后从未使用；而 kimi 的层级感建立在 primary（交互主色）/accent（次强调）/textDim/textMuted（双层灰）的分离上。
+- **决策**：`BlueSemanticColors` 增 `primary`（dark #5f87ff——现 border 的品牌蓝转任交互主色）与 `textMuted`（dark #666666——最暗层），**不**新增 `textDim`：现有 `muted`（#808080）的用法（描述/引用/暗提示）就是 kimi 的 textDim 层，改名违反"只增不改"且全渲染器两次翻搅。同时重调一批现值（border→#4a5468 退后、warning/borderFocus→共琥珀 #de935f、roleUser→#f0c674、mdHeading→粗体承载层级等，全表见 p2-visual §4.2），启用闲置的 `borderFocus`（S12 审批）与 `selectedBg`（S12 多选）。
+- **理由**：kimi 的四个层级（交互主色/次强调/次级灰/最暗灰）在 26→28 token 内即可完整表达；`theme-palette.ts` 类型自动派生、theme-custom 逐 token `Object.hasOwn` 校验（additive-safe，均已核实），改动面收敛在两 theme 文件 + 映射层。
+- **后果**：全部下游主题插件编译期发现缺口；S10 一并落地消息流/markdown 重映射，后续各期消费。色值以 S10 实机目测微调为准，调值不构成契约变更。
+
+### D25. chrome 辅助层：core 纯模块 + 子路径导出，不经 blueComponents 服务
+
+- **背景**：圆角编辑框（`withSideBorders`）、边框内标题（`topRule`）、对话框框架（`framePanel`）、提示符/幽灵提示注入等全部是纯 `string[]` 绘制，kimi 侧为应用层函数（`custom-editor.ts` 等）；需要宽度函数但不需要 pi-tui 组件机制。
+- **决策**：core 新增 `src/chrome.ts`，子路径导出 `@deepseek-ai/dsh-blue-core/chrome`，接收色函数参数的主题无关纯函数集；`EditorAdapter.render()`（components.ts）做编辑框后处理（kimi `CustomEditor.render` 的镜像位，无需子类化 pi-tui）；`BlueEditor` 契约增 `setPromptSymbol`/`setBorderLabel`/`setConnectedAbove`/`setGhostHint`。
+- **理由**：走 blueComponents 服务会让绘制函数背上服务生命周期；放 interaction/transcript 会重复实现或走私 pi-tui 依赖（违反 D4/L0 唯一适配纪律）；子路径导出与主题插件族先例一致。明确拒绝移植 kimi 的 `GutterContainer`（pi-tui Container 子类，类型越界），以纯 `padColumns` 等价（S13 实测决定启用与否）。
+- **后果**：S11 开出该缝（首个消费者），S12-S14 复用；跨包的面板拼接经新事件 `'blue/editor-connected-above'` 协调（pane-btw 发、input-plugin 听）。
+
 ## 已知遗留（MVP 有意为之）
 
 - `/quit` 在 agent attach 前输入会显示 "no active session" 而不退出（input-plugin 在命令分发前检查 current agent）
