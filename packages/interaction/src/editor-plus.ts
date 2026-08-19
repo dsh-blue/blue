@@ -43,7 +43,7 @@ import {
   markEditorEnhancement,
   type SharedEditor,
 } from './editor-instance.ts'
-import { getStashedInputMode, stashInputMode } from './draft-stash.ts'
+import { getStashedInputMode, stashHistory, stashInputMode } from './draft-stash.ts'
 import { ACTION_BACKSPACE, ACTION_CANCEL } from './keys.ts'
 import { sanitizeShellOutput } from './shell-sanitize.ts'
 import { currentBlueAgent } from './session.ts'
@@ -505,8 +505,11 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
     editor.setText('')
     if (command.length === 0) return
     // Prompt and bash share the editor's internal history; the pi-tui
-    // Editor exposes no per-mode filtering (known simplification).
+    // Editor exposes no per-mode filtering (known simplification). The
+    // stash mirror matches `blue-input`'s, so bash entries survive a
+    // theme-swap rebuild too.
     editor.addToHistory(command)
+    stashHistory(editor.getHistory())
     runShell(ctx, command, isUnloaded)
   }
   editor.onKey = (data) => {

@@ -166,6 +166,11 @@ describe('createEditor', () => {
     editor.setText('')
     editor.handleInput('\x1b[A')
     expect(editor.getText()).toBe('earlier prompt')
+    // The history read-back (the structural cast over pi-tui's private
+    // field, pinned here against 0.84.2) returns the entries oldest first.
+    editor.addToHistory('second prompt')
+    // pi-tui prepends: index 0 is the newest submission.
+    expect(editor.getHistory()).toEqual(['second prompt', 'earlier prompt'])
 
     editor.focused = true
     expect(editor.focused).toBe(true)

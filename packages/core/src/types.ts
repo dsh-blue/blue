@@ -468,6 +468,14 @@ export interface BlueEditor extends BlueFocusable {
    */
   addToHistory(text: string): void
   /**
+   * Read the history entries, newest first (pi-tui stores them that way;
+   * index 0 is the most recent submission). The mirror of
+   * {@link addToHistory} — lets the host preserve history across an editor
+   * rebuild (a theme swap disposes the component with its state).
+   * @returns a copy of the history entries.
+   */
+  getHistory(): readonly string[]
+  /**
    * Restyle the editor frame (e.g. focused vs. unfocused border).
    * @param color - the new border color function.
    */

@@ -214,7 +214,7 @@ export class FakeBlueEditor implements BlueEditor {
   disableSubmit = false
   /** Autocomplete dropdown visibility reported by `isShowingAutocomplete`. */
   showingAutocomplete = false
-  /** Every line recorded through `addToHistory`, in order. */
+  /** History entries, newest first (mirrors pi-tui). */
   readonly history: string[] = []
   /** Every string recorded through `insertText`, in order. */
   readonly inserted: string[] = []
@@ -247,7 +247,13 @@ export class FakeBlueEditor implements BlueEditor {
   }
 
   addToHistory(text: string): void {
-    this.history.push(text)
+    // pi-tui prepends and skips a repeat of the newest entry; the fake
+    // mirrors that contract so order-sensitive consumers behave alike.
+    if (this.history[0] !== text) this.history.unshift(text)
+  }
+
+  getHistory(): readonly string[] {
+    return [...this.history]
   }
 
   /** The fake has no cursor model: insertion appends and fires onChange. */

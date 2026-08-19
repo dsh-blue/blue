@@ -230,6 +230,14 @@ class EditorAdapter implements BlueEditor {
     this.editor.addToHistory(text)
   }
 
+  getHistory(): readonly string[] {
+    // pi-tui types `history` private (0.84.2) though it is a plain instance
+    // field; the single structural cast (via `unknown` — the private field
+    // blocks a direct overlap) is pinned by the components spec.
+    const history = (this.editor as unknown as { history: string[] }).history
+    return [...history]
+  }
+
   setBorderColor(color: BlueColorFn): void {
     this.editor.borderColor = color
   }

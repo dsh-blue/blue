@@ -57,7 +57,7 @@ import {
   setEditorSlotSwap,
   setSharedEditor,
 } from './editor-instance.ts'
-import { clearDraft, getStashedDraft, stashDraft } from './draft-stash.ts'
+import { clearDraft, getStashedDraft, getStashedHistory, stashDraft, stashHistory } from './draft-stash.ts'
 import { ACTION_CANCEL, ACTION_INTERRUPT, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_STEER } from './keys.ts'
 import { ACTION_QUEUE_RECALL, queuedMessageText } from './pane-queue.ts'
 import { currentBlueAgent } from './session.ts'
@@ -236,6 +236,11 @@ export function apply(ctx: Context): void {
     refreshHint()
     if (line.length === 0) return
     editor.addToHistory(line)
+    // The history lives in the component; a `/theme <name>` submission
+    // rebuilds this fiber (and the editor) as its own effect, so the new
+    // entry must reach the reload stash before the swap tears the
+    // component down.
+    stashHistory(editor.getHistory())
     const agent = currentBlueAgent(ctx)
     if (agent === undefined) {
       setNotice('no active session')
@@ -413,6 +418,11 @@ export function apply(ctx: Context): void {
     currentText = editor.getText()
     refreshHint()
   }
+  // Replay the stashed history into the fresh component — the old
+  // editor's Up-recall entries died with it when the reload rebuilt this
+  // fiber. The stash is newest-first and pi-tui prepends, so the replay
+  // walks it reversed to land the same order.
+  for (const entry of [...getStashedHistory()].reverse()) editor.addToHistory(entry)
 
   // Session switches re-derive the slash hint against the new agent (its
   // command list, or the absence of an agent at all); the transient notice

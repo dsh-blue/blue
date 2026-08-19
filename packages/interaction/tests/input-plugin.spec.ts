@@ -16,13 +16,15 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import * as inputPlugin from '../src/input-plugin.ts'
 import * as paneQueuePlugin from '../src/pane-queue.ts'
 import { getSharedEditor, mountEditorReplacement } from '../src/editor-instance.ts'
-import { clearDraft } from '../src/draft-stash.ts'
+import { clearDraft, stashHistory } from '../src/draft-stash.ts'
 import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeBlueEditor, type FakeScreen } from './fakes.ts'
 
 // The draft stash is module state: a test that leaves unsubmitted text
-// would see it restored into the next test's freshly mounted editor.
+// or submitted history would see it restored into the next test's
+// freshly mounted editor.
 afterEach(() => {
   clearDraft()
+  stashHistory([])
 })
 
 /** In-memory inbox double with a stubbed, recordable removal. */
@@ -343,6 +345,21 @@ describe('blue-input plugin', () => {
     expect(screen.children).toHaveLength(0)
     expect(screen.focused).toBeNull()
     expect(getSharedEditor()).toBeUndefined()
+  })
+
+  it('restores the prompt history across the theme-swap reload', async () => {
+    // `/theme <name>` rebuilds this fiber as its own effect: the editor
+    // component (and pi-tui's in-component history) dies with it. The
+    // stash mirrors the history at submit time and the remount replays it.
+    const first = await mount()
+    type(first.editor, 'hello')
+    first.editor.handleInput(KEY.enter)
+    type(first.editor, '/theme dark')
+    first.editor.handleInput(KEY.enter)
+    expect(first.editor.history).toEqual(['/theme dark', 'hello'])
+    await first.fiber.dispose()
+    const second = await mount()
+    expect(second.editor.history).toEqual(['/theme dark', 'hello'])
   })
 
   describe('editor-slot swap (D30 dialog mount)', () => {

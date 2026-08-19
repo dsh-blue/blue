@@ -40,7 +40,7 @@ import * as startupPlugin from '../../../app/src/startup.ts'
 import { startBlueTerminal } from '../../../core/src/terminal.ts'
 import { FakeTerminal, waitForRender } from '../../../core/tests/fake-terminal.ts'
 import * as interactionPlugin from '../../../interaction/src/index.ts'
-import { clearDraft } from '../../../interaction/src/draft-stash.ts'
+import { clearDraft, stashHistory } from '../../../interaction/src/draft-stash.ts'
 import * as editorPlusPlugin from '../../../interaction/src/editor-plus.ts'
 import * as attachmentsPlugin from '../../../interaction/src/attachments.ts'
 import * as pasteImagePlugin from '../../../interaction/src/paste-image.ts'
@@ -107,6 +107,11 @@ afterEach(async () => {
   // In-turn step folding is module-global; restore the default so the next
   // spec decides its own policy.
   setStepFoldingEnabled(true)
+  // The editor stash is module state shared by every booted tree in this
+  // worker: don't leak one case's submitted history into the next case's
+  // fresh editor.
+  clearDraft()
+  stashHistory([])
 })
 
 /** One booted Blue tree plus its observations. */
@@ -1667,7 +1672,8 @@ describe('blue whole-tree e2e', () => {
     // splicing through the zero-width hardware-cursor marker (the S16
     // dogfood garble that ate the recalled text).
     tree.terminal.sendInput('/theme')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/theme') })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('→ /theme') })
+    await waitForRender()
     tree.terminal.sendInput('\r')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('themes:') })
     tree.terminal.sendInput('\x1b[A')
@@ -1676,6 +1682,34 @@ describe('blue whole-tree e2e', () => {
     expect(frame).not.toContain('[dark|light')
     // The recalled text is unsubmitted: clear the module-level draft stash
     // so it cannot leak into the next case's fresh editor.
+    clearDraft()
+  })
+
+  it('recalls a /theme argument submission after the swap rebuilds the editor', async () => {
+    const tree = await bootBlue([], { script: [] })
+    await currentAgent(tree)
+    tree.terminal.sendInput('\x1b')
+    tree.terminal.sendInput('\x1b')
+    clearDraft()
+    // Type the command so the editor's own history records it, then swap:
+    // the swap rebuilds blue-input (a theme dependent) and with it the
+    // editor component — pi-tui keeps the history in the component, so
+    // only the stash replay keeps the entry recallable.
+    tree.terminal.sendInput('/theme')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('→ /theme') })
+    tree.terminal.sendInput(' light')
+    // Let the autocomplete's async round settle on the no-match result
+    // before Enter: pi-tui's confirm applies the stale selection while a
+    // suggestion round is still in flight (typed chars and Enter arrive in
+    // one synchronous burst here, unlike human typing).
+    await waitForRender()
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.ctx.get('blueTheme')?.colors).toBe(themeLightPlugin.LIGHT_COLORS) })
+    tree.terminal.sendInput('\x1b[A')
+    // The recalled line renders with the slash token painted bold-primary,
+    // so the anchor strips SGR before matching.
+    const frame = await fullFrame(tree.terminal)
+    expect(frame.split('\r\n').some(row => stripSgr(row).includes('/theme light'))).toBe(true)
     clearDraft()
   })
 
