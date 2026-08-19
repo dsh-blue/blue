@@ -309,8 +309,16 @@ function runShell(ctx: Context, command: string, isUnloaded: () => boolean): voi
       capped.truncated,
       code,
     )
-    // Effect-bound so unloading this fiber also removes its echoes.
-    ctx.effect(() => ctx.blueScreen.addChild(echo))
+    // Effect-bound so unloading this fiber also removes its echoes. The
+    // mount lands after the input-driven frame — the shell settles
+    // asynchronously and the renderer only paints on request — so the
+    // render must be asked for here or the echo stays invisible until the
+    // next keypress.
+    ctx.effect(() => {
+      const remove = ctx.blueScreen.addChild(echo)
+      ctx.blueScreen.requestRender()
+      return remove
+    })
   }
   void shellExecutor(command, process.cwd()).then(
     (result) => {

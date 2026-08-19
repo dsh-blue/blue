@@ -138,6 +138,23 @@ describe('blue-editor-plus input modes', () => {
     expect(followup).toHaveBeenCalledOnce()
   })
 
+  it('requests a render when the shell echo mounts, not only on the next keypress', async () => {
+    const { screen, editor } = await mount()
+    // A manually-settled executor: the echo mounts strictly after the
+    // input-driven frame, the async window where a paint must be asked for.
+    const gate = Promise.withResolvers<editorPlus.ShellExecution>()
+    editorPlus.setShellExecutor(() => gate.promise)
+    type(editor, '!')
+    type(editor, 'echo late')
+    editor.handleInput(KEY.enter)
+    // Let the input-frame render requests settle before snapshotting.
+    await new Promise(resolve => setImmediate(resolve))
+    const before = screen.renderRequests
+    gate.resolve({ code: 0, output: 'late output\n' })
+    await vi.waitFor(() => { expect(echoes(screen)).toHaveLength(1) })
+    expect(screen.renderRequests).toBeGreaterThan(before)
+  })
+
   it('renders a non-zero exit code in the error color and skips an empty body', async () => {
     const { screen, editor } = await mount()
     editorPlus.setShellExecutor(() => Promise.resolve({ code: 3, output: '' }))
