@@ -76,12 +76,14 @@ function emit2(ctx: Context, agent: FakeAgent, event: Parameters<typeof turnStar
 }
 
 describe('blue-pane-activity', () => {
-  it('mounts one bottom pane that renders zero rows while never active', async () => {
+  it('mounts one bottom pane that renders the kimi placeholder row while idle', async () => {
     const { screen, dispose } = await boot()
     expect(activity.name).toBe('blue-pane-activity')
     expect(activity.inject).toEqual(['blueScreen', 'blueTheme', 'blueComponents'])
     expect(screen.bottomChildren).toHaveLength(1)
-    expect(screen.paneLines()).toEqual([])
+    // kimi's Spacer(1): the placeholder row is always present when the
+    // spinner is not, so the dock never jumps at the activity edges.
+    expect(screen.paneLines()).toEqual([''])
     await dispose()
     expect(screen.bottomChildren).toHaveLength(0)
   })
@@ -107,19 +109,43 @@ describe('blue-pane-activity', () => {
     expect(timers.cleared).toBe(1)
   })
 
-  it('empties while composing and re-enters the moon with a fresh tip', async () => {
+  it('shows the kimi working row with a fresh tip while composing', async () => {
     const agent = runningAgent(fakeAgent([]))
     const { ctx, screen, timers, dispose } = await boot(agent)
     expect(screen.paneLines()).toEqual([`🌑 · Tip: ${FIRST_TIP}`])
-    // Composing clears the pane: the streaming cursor owns the signal (the
-    // S17 dogfood re-ruling dropped the `working…` row).
+    // Composing flips to the braille style at 80 ms; the kind change picks
+    // the next rotation slot and the row is the kimi shape: primary frame,
+    // plain label, riding tip (the user's second dogfood ruling restored
+    // the row — kimi's assistant block has no cursor).
     emit2(ctx, agent, textDelta(1, 1, 'answering'))
-    expect(screen.paneLines()).toEqual([])
-    expect(timers.cleared).toBe(1)
-    // A tool result re-enters the moon kind with the next rotation slot.
+    const composingTip = buildTipRotation(STATUS_TIPS)[1]!.text
+    expect(screen.paneLines()).toEqual([`⠋ working... · Tip: ${composingTip}`])
+    expect(timers.intervals).toEqual([120, 80])
+    // A tick advances the shared frame counter.
+    timers.ticks[1]!()
+    expect(screen.paneLines()).toEqual([`⠙ working... · Tip: ${composingTip}`])
+    // A tool result re-enters the moon kind with the next rotation slot;
+    // the shared frame counter survived the style flip, so the moon picks
+    // up where the cycle left off.
     emit2(ctx, agent, toolResultEvent(1, 1, 'c0', 'done'))
-    expect(screen.paneLines()).toEqual([`🌑 · Tip: ${buildTipRotation(STATUS_TIPS)[1]!.text}`])
-    expect(timers.intervals).toEqual([120, 120])
+    expect(screen.paneLines()).toEqual([`🌒 · Tip: ${buildTipRotation(STATUS_TIPS)[2]!.text}`])
+    await dispose()
+  })
+
+  it('drops the composing tip then the whole row under width pressure', async () => {
+    const agent = runningAgent(fakeAgent([]))
+    const { ctx, screen, dispose } = await boot(agent)
+    emit2(ctx, agent, textDelta(1, 1, 'answering'))
+    const pane = screen.bottomChildren[0]!
+    const tip = buildTipRotation(STATUS_TIPS)[1]!.text
+    const visible = 1 + ' working...'.length + ' · Tip: '.length + tip.length
+    expect(pane.render(visible)).toEqual([`⠋ working... · Tip: ${tip}`])
+    // One column short drops the tip but keeps the base row.
+    expect(pane.render(visible - 1)).toEqual(['⠋ working...'])
+    // Below the eleven-column base there is no row.
+    expect(pane.render(10)).toEqual([])
+    pane.invalidate()
+    expect(pane.render(visible)).toEqual([`⠋ working... · Tip: ${tip}`])
     await dispose()
   })
 
@@ -167,10 +193,11 @@ describe('blue-pane-activity', () => {
     await dispose()
   })
 
-  it('parks the idle placeholder after activity and resets stale idle on wake', async () => {
+  it('parks the idle placeholder and resets stale idle on wake', async () => {
     const agent = fakeAgent([])
     const { ctx, screen, timers, dispose } = await boot(agent)
-    expect(screen.paneLines()).toEqual([])
+    // kimi's Spacer(1): the placeholder shows even before any activity.
+    expect(screen.paneLines()).toEqual([''])
 
     agent.status = 'running'
     ctx.emit('agent/status', { agent: asAgent(agent), status: 'running' })
@@ -195,7 +222,7 @@ describe('blue-pane-activity', () => {
     const { ctx, screen, timers, dispose } = await boot(agent)
     ctx.emit('agent/status', { agent: asAgent(runningAgent(fakeAgent([]))), status: 'running' })
     expect(timers.ticks).toHaveLength(0)
-    expect(screen.paneLines()).toEqual([])
+    expect(screen.paneLines()).toEqual([''])
 
     // A foreign session's events never reach the tracker.
     agent.status = 'running'

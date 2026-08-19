@@ -1494,23 +1494,18 @@ describe('blue whole-tree e2e', () => {
     expect(idle).not.toContain('· Tip: ')
   })
 
-  it('keeps the pane empty while composing — the streaming cursor owns the signal', async () => {
-    // 'hang' streams text then parks: the phase is composing and the
-    // transcript's cursor is the only activity indicator (the S17 dogfood
-    // re-ruling dropped the `working…` row — kimi needs a pane spinner
-    // because its assistant block has no cursor, Blue's does).
+  it('shows the kimi working row while composing — frame, label, and tip', async () => {
+    // 'hang' streams text then parks: the phase is composing and the pane
+    // shows the kimi row — its assistant block has no cursor, so the pane
+    // spinner is the composing signal (full parity restored by the user's
+    // second dogfood ruling).
     const tree = await bootBlue([], { script: ['hang'] })
     const agent = await currentAgent(tree)
     typeLine(tree.terminal, 'stream it')
-    await vi.waitFor(() => { expect(stripSgr(tree.terminal.output)).toContain('partial') })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('working...') })
     const frame = await fullFrame(tree.terminal)
-    const stripped = stripSgr(frame)
-    // The row is padded to full width, so the cursor lands on the next
-    // line's first column; both halves are the composing signal.
-    expect(stripped).toContain('partial')
-    expect(stripped).toContain('▌')
-    expect(frame).not.toContain('working…')
-    expect(frame).not.toContain('· Tip: ')
+    expect(frame).toContain('working...')
+    expect(frame).toContain('· Tip: ')
     expect(frame).not.toContain('🌑')
     tree.terminal.sendInput('\x03')
     await agent.whenIdle()
@@ -1526,7 +1521,7 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('· Tip: ') })
     const waiting = await fullFrame(tree.terminal)
     expect(waiting).toContain('🌑')
-    expect(waiting).not.toContain('working…')
+    expect(waiting).not.toContain('working...')
     tree.terminal.sendInput('\x03')
     await agent.whenIdle()
   })
@@ -1540,7 +1535,7 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('thinking...') })
     const thinking = await fullFrame(tree.terminal)
     expect(thinking).toContain('pondering the question at hand')
-    expect(thinking).not.toContain('working…')
+    expect(thinking).not.toContain('working...')
     expect(thinking).not.toContain('· Tip: ')
     tree.terminal.sendInput('\x03')
     await agent.whenIdle()

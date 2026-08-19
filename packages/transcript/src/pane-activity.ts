@@ -3,17 +3,18 @@
  * machine (the `resolveActivityPaneMode` port, S17). The pane renders one
  * row that says what the attached agent is doing: `waiting` and `tool` show
  * the moon spinner with a rotating teaching tip (the S15 footer pool through
- * the same SWRR expansion, picked fresh on each moon re-entry — the kimi
- * working-tips semantics), `thinking` and `composing` clear the pane
- * entirely — the transcript owns the text-side activity surface: the
- * thinking block's spinner and the streaming cursor. The composing
- * `working…` row the S17 plan carried was dropped by the user's dogfood
- * re-ruling: kimi needs a pane spinner there because its assistant block
- * has no cursor, Blue's does. `idle` keeps a one-row placeholder once
- * anything has run, so the dock does not jump when the spinner disappears.
- * A dialog panel occupying the editor slot (`'blue/editor-slot-swapped'`)
- * hides the pane outright — below an open panel only the footer stays (the
- * S16 dogfood ruling).
+ * the same SWRR expansion, picked fresh when the loading kind changes — the
+ * kimi working-tips semantics), `composing` shows the braille `working...`
+ * row with the frame in `primary`, the plain label, and the tip riding when
+ * the width allows (full kimi parity — the user's second dogfood ruling
+ * restored the row: kimi's assistant block has no cursor, so its pane
+ * spinner is the composing signal; Blue aligns), `thinking` clears the pane
+ * entirely (the spinner belongs to the transcript's thinking block), and
+ * `idle` keeps the one-row placeholder kimi's `Spacer(1)` holds — always,
+ * so the dock never jumps when the spinner disappears. A dialog panel
+ * occupying the editor slot (`'blue/editor-slot-swapped'`) hides the pane
+ * outright — below an open panel only the footer stays (the S16 dogfood
+ * ruling).
  *
  * The phase is the fold's streaming stage: `StreamingPhaseTracker` over the
  * attached session's events (`session/event`, filtered like the transcript
@@ -35,7 +36,12 @@ import type {} from '@dsh-blue/blue-app'
 import { StreamingPhaseTracker } from './phase.ts'
 import { buildTipRotation } from './status-tips.ts'
 import { STATUS_TIPS } from './tips-content.ts'
-import { MOON_SPINNER_FRAMES, MOON_SPINNER_INTERVAL_MS } from './spinners.ts'
+import {
+  BRAILLE_SPINNER_FRAMES,
+  BRAILLE_SPINNER_INTERVAL_MS,
+  MOON_SPINNER_FRAMES,
+  MOON_SPINNER_INTERVAL_MS,
+} from './spinners.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-pane-activity'
@@ -43,8 +49,11 @@ export const name = 'blue-pane-activity'
 /** Services required before the pane can mount. */
 export const inject = ['blueScreen', 'blueTheme', 'blueComponents']
 
-/** The joiner between the moon frame and the teaching tip (kimi format). */
+/** The joiner between the frame and the teaching tip (kimi format). */
 const TIP_LEAD = ' · Tip: '
+
+/** The composing row's base: one frame cell, a space, the kimi label. */
+const WORKING_LABEL = ' working...'
 
 /** The timer primitives behind the spinner animation; replaceable in tests. */
 export interface ActivityTimers {
@@ -73,27 +82,29 @@ export function setActivityTimers(timers: ActivityTimers | undefined): void {
 /** What the pane renders; `hidden` covers the dialog hangup. */
 export type ActivityPaneMode = 'hidden' | 'waiting' | 'thinking' | 'composing' | 'tool' | 'idle'
 
+/** The loading kinds that carry a teaching tip (kimi `loadingTipKind`). */
+type TipKind = 'moon' | 'composing'
+
 /** The pane's render state, reconciled by the `sync` closure in `apply`. */
 interface ActivityState {
   /** The resolved mode the row renders from. */
   mode: ActivityPaneMode
-  /** The current spinner frame counter. */
+  /** The current spinner frame counter (moon and braille share it). */
   frame: number
-  /** The teaching tip riding the moon row; '' outside the moon states. */
+  /** The teaching tip riding the spinner row; '' outside the spinner states. */
   tip: string
-  /** Whether any spinner ever ran — the idle placeholder's ratchet. */
-  everActive: boolean
   /** Whether a dialog panel occupies the editor slot. */
   dialog: boolean
 }
 
 /**
- * The activity pane: one row while a moon state is live, a blank
- * placeholder row once anything has run, and none otherwise.
+ * The activity pane: one row while a spinner state is live, the kimi
+ * `Spacer(1)` blank placeholder row otherwise, and none while a dialog
+ * occupies the editor slot.
  */
 class ActivityPaneComponent implements BlueComponent {
   /**
-   * @param colors - the semantic color table (muted tip).
+   * @param colors - the semantic color table (primary frame, muted tip).
    * @param components - the factory providing the width helpers.
    * @param state - the shared render state.
    */
@@ -113,13 +124,12 @@ class ActivityPaneComponent implements BlueComponent {
         // Below an open dialog panel only the footer stays.
         return []
       case 'thinking':
-      case 'composing':
-        // The transcript owns the text-side activity surface: the thinking
-        // block's spinner and the streaming cursor (the S17 dogfood
-        // re-ruling dropped the composing `working…` row).
+        // The spinner belongs to the transcript's thinking block.
         return []
       case 'idle':
-        return this.state.everActive ? [''] : []
+        // kimi's Spacer(1): the placeholder row is always present when the
+        // spinner is not, so the dock never jumps at the activity edges.
+        return ['']
       case 'waiting':
       case 'tool': {
         const frame = MOON_SPINNER_FRAMES[this.state.frame % MOON_SPINNER_FRAMES.length]!
@@ -129,6 +139,15 @@ class ActivityPaneComponent implements BlueComponent {
         // frame fits renders nothing.
         if (this.components.visibleWidth(row) <= width) return [row]
         return this.components.visibleWidth(frame) <= width ? [frame] : []
+      }
+      case 'composing': {
+        const frame = BRAILLE_SPINNER_FRAMES[this.state.frame % BRAILLE_SPINNER_FRAMES.length]!
+        // kimi parity: the primary frame with the plain label, the tip
+        // riding when it fits.
+        const base = `${this.colors.primary(frame)}${WORKING_LABEL}`
+        const row = base + this.colors.muted(`${TIP_LEAD}${this.state.tip}`)
+        if (this.components.visibleWidth(row) <= width) return [row]
+        return this.components.visibleWidth(base) <= width ? [base] : []
       }
     }
   }
@@ -141,10 +160,11 @@ class ActivityPaneComponent implements BlueComponent {
  * Mount the activity pane. The row reconciles against three facts: the
  * editor-slot occupancy (dialogs hide the pane), the attached agent's
  * status (idle parks the placeholder), and the streaming phase tracker over
- * the attached session's events. The moon timer runs only while a spinner
- * state is live; each tick advances the frame counter and requests a
- * redraw. `sync` requests a redraw only when the mode or the tip actually
- * changed. Unloading the fiber unmounts the pane and stops the timer.
+ * the attached session's events. The frame timer runs only while a spinner
+ * state is live, at the style's interval (moon 120 ms, braille 80 ms); each
+ * tick advances the shared frame counter and requests a redraw. `sync`
+ * requests a redraw only when the mode or the tip actually changed.
+ * Unloading the fiber unmounts the pane and stops the timer.
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
@@ -152,14 +172,15 @@ export function apply(ctx: Context): void {
   const screen = ctx.blueScreen
   const components = ctx.blueComponents
   const state: ActivityState = {
-    mode: 'idle', frame: 0, tip: '', everActive: false, dialog: false,
+    mode: 'idle', frame: 0, tip: '', dialog: false,
   }
   let agent: Agent | undefined
   // Never null: attach re-seeds it per session, and before any attach the
   // agent is undefined so the tracker's phase is unreachable.
   let tracker = new StreamingPhaseTracker()
   let timer: ReturnType<typeof setInterval> | undefined
-  let moonTipActive = false
+  let timerMs = 0
+  let tipKind: TipKind | undefined
   const rotation = buildTipRotation(STATUS_TIPS)
   let tipIndex = 0
 
@@ -167,15 +188,17 @@ export function apply(ctx: Context): void {
     if (timer === undefined) return
     activityTimers.clearInterval(timer)
     timer = undefined
+    timerMs = 0
   }
 
-  /** Start the moon interval; a live timer covers the whole moon stretch. */
-  const startTimer = (): void => {
-    if (timer !== undefined) return
+  const ensureTimer = (ms: number): void => {
+    if (timer !== undefined && timerMs === ms) return
+    stopTimer()
+    timerMs = ms
     timer = activityTimers.setInterval(() => {
       state.frame += 1
       screen.requestRender()
-    }, MOON_SPINNER_INTERVAL_MS)
+    }, ms)
   }
 
   /** Reconcile the row (mode, tip, timer) with the pane's three facts. */
@@ -186,21 +209,25 @@ export function apply(ctx: Context): void {
       : running
         ? tracker.current
         : 'idle'
-    const spinner = mode === 'waiting' || mode === 'tool'
-    // A fresh tip on each moon re-entry, none elsewhere; a continuous
-    // burst of tool calls never flips it (kimi semantics).
-    const tipChanged = spinner !== moonTipActive
-    moonTipActive = spinner
-    if (tipChanged) {
-      if (!spinner || rotation.length === 0) state.tip = ''
-      else {
+    const kind: TipKind | undefined = mode === 'composing'
+      ? 'composing'
+      : mode === 'waiting' || mode === 'tool' ? 'moon' : undefined
+    let tipChanged = false
+    if (kind !== tipKind) {
+      // A fresh tip when the loading kind changes, none when it goes away;
+      // a continuous burst of tool calls never flips it (kimi semantics).
+      tipKind = kind
+      if (kind === undefined || rotation.length === 0) {
+        state.tip = ''
+      } else {
         state.tip = rotation[tipIndex % rotation.length]!.text
         tipIndex += 1
       }
+      tipChanged = true
     }
+    const spinner = kind !== undefined
     if (spinner) {
-      state.everActive = true
-      startTimer()
+      ensureTimer(mode === 'composing' ? BRAILLE_SPINNER_INTERVAL_MS : MOON_SPINNER_INTERVAL_MS)
     } else {
       stopTimer()
     }
