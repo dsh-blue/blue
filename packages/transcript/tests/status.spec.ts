@@ -12,7 +12,7 @@ import type {
   BlueComponent,
   BlueOverlayHandle,
   BlueScreen,
-} from '@deepseek-ai/dsh-blue-core'
+} from '@dsh-blue/blue-core'
 import { BlueStatusError, BlueStatusService, FooterShellComponent } from '../src/status.ts'
 import type { BlueStatusEntry } from '../src/types.ts'
 import { fakeBlueComponents } from './helpers.ts'

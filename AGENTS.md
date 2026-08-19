@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository.
 
 ## Project overview
 
-**Blue** is the interactive terminal UI for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`). It is a renderer over the harness's [Cordis](https://github.com/deepseek-ai/cordis) plugin architecture, built on `@earendil-works/pi-tui`, and shipped as five `@deepseek-ai/dsh-blue-*` packages (all at version `0.1.0-rc.7`). The packages were extracted from the `deepseek-harness` monorepo; this standalone repository builds and tests against the published npm releases of the harness and vendored Cordis. Blue is **not** part of a default `dsh` installation — it is added to a `dsh` profile as an out-of-tree plugin bundle.
+**Blue** is the interactive terminal UI for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`). It is a renderer over the harness's [Cordis](https://github.com/deepseek-ai/cordis) plugin architecture, built on `@earendil-works/pi-tui`, and shipped as five `@dsh-blue/blue-*` packages (all at version `0.1.0-rc.7`). The packages were extracted from the `deepseek-harness` monorepo; this standalone repository builds and tests against the published npm releases of the harness and vendored Cordis. Blue is **not** part of a default `dsh` installation — it is added to a `dsh` profile as an out-of-tree plugin bundle.
 
 - Language: TypeScript (ESM only, `"type": "module"` everywhere).
 - Runtime: Node `^22.19.0 || >=24.0.0`; package manager pnpm 11 (pinned, `pnpm@11.7.0`).
@@ -21,11 +21,11 @@ Consult these while developing instead of guessing API shapes:
 
 ```
 packages/
-  core/         @deepseek-ai/dsh-blue-core        — the tree's ONLY pi-tui adapter
-  transcript/   @deepseek-ai/dsh-blue-transcript  — session events → transcript rendering
-  interaction/  @deepseek-ai/dsh-blue-interaction — input editor, slash commands, overlays
-  app/          @deepseek-ai/dsh-blue-app         — CLI startup + Agent driver
-  bundle/blue/  @deepseek-ai/dsh-blue             — installable bundle (cordis.patch.yml)
+  core/         @dsh-blue/blue-core        — the tree's ONLY pi-tui adapter
+  transcript/   @dsh-blue/blue-transcript  — session events → transcript rendering
+  interaction/  @dsh-blue/blue-interaction — input editor, slash commands, overlays
+  app/          @dsh-blue/blue-app         — CLI startup + Agent driver
+  bundle/blue/  @dsh-blue/blue             — installable bundle (cordis.patch.yml)
 script/install-dev.sh  — one-shot local dev install into a dsh profile
 docs/                  — design docs: blue-architecture.md (blueprint), blue-roadmap.md (phases),
                          blue-mvp-plan.md (MVP plan), blue-decisions.md (ADR log),

@@ -2,7 +2,7 @@
 
 > **状态（2026-08-18）**：MVP 已完成验收（219 测试全绿、逐文件 100% 覆盖、typecheck/lint 全过）。本文档保留为实施记录；P1 起的层职责与实施序以 [blue-p1-design.md](./blue-p1-design.md) 为准（ADR D17-D21 记录了一次性层职责重排）。
 
-> **仓库形态（2026-08-18 更新）**：Blue 已落地为独立仓库 `blue/`（本文件同级目录），非 deepseek-harness 仓库内包。依赖经 npm registry 解析（`@deepseek-ai/*@0.1.0-rc.7`，next dist-tag），blue 五包间用 workspace 协议。使用路径为 out-of-tree：`dsh plugin --profile blue add @deepseek-ai/dsh-blue`（不再改 harness 的 PROFILE_TEMPLATES）。本文档的 Step 1/5 中"in-tree profile 注册"相关内容已被该路径取代。
+> **仓库形态（2026-08-18 更新）**：Blue 已落地为独立仓库 `blue/`（本文件同级目录），非 deepseek-harness 仓库内包。依赖经 npm registry 解析（`@deepseek-ai/*@0.1.0-rc.7`，next dist-tag），blue 五包间用 workspace 协议。使用路径为 out-of-tree：`dsh plugin --profile blue add @dsh-blue/blue`（不再改 harness 的 PROFILE_TEMPLATES）。本文档的 Step 1/5 中"in-tree profile 注册"相关内容已被该路径取代。
 
 > 前置文档：`blue-roadmap.md`（分层架构、阶段划分、守门清单）
 > 目标：`dsh --profile blue` 启动后完成一轮完整对话——流式 Markdown 渲染、工具调用呈现、审批/提问 overlay、`/quit`、`--resume`；终端异常时恢复 raw mode。
@@ -17,7 +17,7 @@
   - `boot(binName, absoluteConfigPath, patches?, prepare?, bareModuleBaseUrl?)` — `packages/boot/app-boot/src/index.ts:757`
   - `installFailLoud(binName, proc?, release?)` — 同文件 :609；`release` 专为 terminal-owning surface 设计，超时 `FAIL_LOUD_RELEASE_TIMEOUT_MS = 2000`
   - `parseCmdline(ctx, program: Command)` — `packages/boot/cmdline/src/index.ts:98`；commander action 里 `ctx.provide(name, value)` 发布 startup 服务
-- **profile 生效**：`PROFILE_TEMPLATES`（`packages/boot/app-boot/src/profile.ts:113-125`）加一行 `blue: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-blue']`（in-tree 路线，对 app-boot 的唯一改动）
+- **profile 生效**：`PROFILE_TEMPLATES`（`packages/boot/app-boot/src/profile.ts:113-125`）加一行 `blue: ['@deepseek-ai/dsh-base', '@dsh-blue/blue']`（in-tree 路线，对 app-boot 的唯一改动）
 - **Agent 驱动**（`packages/core/agent/`）：
   - `agents.create(options): Promise<AgentHandle>`、`agents.resume({ resumeSessionId }): Promise<AgentHandle>`
   - `Agent`：`followup/steer/inject(message)`、`cancel(cause)`、`whenIdle()`、`session`、`status: 'idle' | 'running'`
@@ -44,10 +44,10 @@
 
 ```
 packages/bundle/blue          @deepseek-ai/dsh-bundle-blue   （cordis.patch.yml，骑 dsh-base）
-packages/blue/app             @deepseek-ai/dsh-blue-app      → agents, sessions, cmdline
-packages/blue/interaction     @deepseek-ai/dsh-blue-interaction → core, commands, user-questions, user-approval
-packages/blue/transcript      @deepseek-ai/dsh-blue-transcript  → core, session（类型）
-packages/blue/core            @deepseek-ai/dsh-blue-core     → @earendil-works/pi-tui（全树唯一）
+packages/blue/app             @dsh-blue/blue-app      → agents, sessions, cmdline
+packages/blue/interaction     @dsh-blue/blue-interaction → core, commands, user-questions, user-approval
+packages/blue/transcript      @dsh-blue/blue-transcript  → core, session（类型）
+packages/blue/core            @dsh-blue/blue-core     → @earendil-works/pi-tui（全树唯一）
 ```
 
 依赖严格单向：app → {interaction, transcript} → core。core 不 import 任何 harness 包（只依赖 pi-tui + cordis 类型）——这是守门清单第 2 条的结构性落实。

@@ -1,6 +1,6 @@
 # Blue — deepseek-harness TUI 实现路线图
 
-> **仓库形态（2026-08-18 更新）**：Blue 是独立仓库（`blue/` 目录，产品名 blue），以 npm registry 版本依赖 harness（`@deepseek-ai/*@0.1.0-rc.7` 钉版，跟随其 prerelease 节奏升级），经 `dsh plugin --profile blue add @deepseek-ai/dsh-blue` 挂载为 profile。harness 的 pre-release API 破坏风险由"钉版本 + 升级时适配"承担，与 roadmap 风险登记一致。
+> **仓库形态（2026-08-18 更新）**：Blue 是独立仓库（`blue/` 目录，产品名 blue），以 npm registry 版本依赖 harness（`@deepseek-ai/*@0.1.0-rc.7` 钉版，跟随其 prerelease 节奏升级），经 `dsh plugin --profile blue add @dsh-blue/blue` 挂载为 profile。harness 的 pre-release API 破坏风险由"钉版本 + 升级时适配"承担，与 roadmap 风险登记一致。
 
 > 产品名：**Blue**（deepseek-harness 的官方 TUI surface）
 > 技术底座：`@earendil-works/pi-tui`（渲染/输入）+ Cordis 插件树（组合/生命周期）
@@ -13,10 +13,10 @@
 
 - 产品/Profile/Bundle 名：`blue`
 - 包名（仓库内，遵守 `@deepseek-ai/dsh-*` 命名约定）：
-  - `@deepseek-ai/dsh-blue-core` — L0 + L1（pi-tui 适配 + 三个内核服务）
-  - `@deepseek-ai/dsh-blue-interaction` — L2（输入、命令、审批、提问 providers）
-  - `@deepseek-ai/dsh-blue-transcript` — L3（会话渲染、工具呈现、投影组件、状态栏）
-  - `@deepseek-ai/dsh-blue-app` — L4（startup provider + 主 app 插件）
+  - `@dsh-blue/blue-core` — L0 + L1（pi-tui 适配 + 三个内核服务）
+  - `@dsh-blue/blue-interaction` — L2（输入、命令、审批、提问 providers）
+  - `@dsh-blue/blue-transcript` — L3（会话渲染、工具呈现、投影组件、状态栏）
+  - `@dsh-blue/blue-app` — L4（startup provider + 主 app 插件）
   - `@deepseek-ai/dsh-bundle-blue` — bundle 定义（cordis.patch.yml，骑在 `dsh-base` 上）
 - 目录建议：`packages/blue/{core,interaction,transcript,app}` + `packages/bundle/blue`
 

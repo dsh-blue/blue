@@ -1,4 +1,4 @@
-# `@deepseek-ai/dsh-blue-transcript`
+# `@dsh-blue/blue-transcript`
 
 [English](README.md) | 中文
 

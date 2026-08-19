@@ -22,7 +22,7 @@
  * mount therefore gates on the fiber's unload flag before touching the
  * dead context.
  *
- * @module @deepseek-ai/dsh-blue-interaction/editor-plus
+ * @module @dsh-blue/blue-interaction/editor-plus
  */
 
 import { exec, execFile } from 'node:child_process'
@@ -37,7 +37,7 @@ import type {
   BlueComponent,
   BlueComponents,
   BlueSemanticColors,
-} from '@deepseek-ai/dsh-blue-core'
+} from '@dsh-blue/blue-core'
 import {
   ENHANCEMENT_EDITOR_PLUS,
   getSharedEditor,

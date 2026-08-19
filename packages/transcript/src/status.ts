@@ -8,7 +8,7 @@
  * entries that fit neither row. An empty registry (or a frame where every
  * entry renders '') yields zero rows, so the footer vanishes entirely.
  *
- * @module @deepseek-ai/dsh-blue-transcript/status
+ * @module @dsh-blue/blue-transcript/status
  */
 
 import { Service, type Context } from '@deepseek-ai/cordis'
@@ -17,7 +17,7 @@ import type {
   BlueComponents,
   BlueScreen,
   BlueSemanticColors,
-} from '@deepseek-ai/dsh-blue-core'
+} from '@dsh-blue/blue-core'
 import type { BlueStatus, BlueStatusEntry } from './types.ts'
 
 /** The footer's row budget. */

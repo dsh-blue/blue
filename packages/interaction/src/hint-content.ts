@@ -11,7 +11,7 @@
  * a plugin loading later flips the row without re-wiring. Pure module: the
  * sources are injected, keymap-free, trivially testable.
  *
- * @module @deepseek-ai/dsh-blue-interaction/hint-content
+ * @module @dsh-blue/blue-interaction/hint-content
  */
 
 import { ACTION_CANCEL, ACTION_INTERRUPT, ACTION_STEER } from './keys.ts'

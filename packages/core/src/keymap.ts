@@ -6,7 +6,7 @@
  * registry: handler-carrying actions fire in registration order ahead of
  * focus routing.
  *
- * @module @deepseek-ai/dsh-blue-core/keymap
+ * @module @dsh-blue/blue-core/keymap
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'

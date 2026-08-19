@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import type { BlueKeymap } from '@deepseek-ai/dsh-blue-core'
+import type { BlueKeymap } from '@dsh-blue/blue-core'
 import { HelpOverlay } from '../src/help.ts'
 import type { HelpSection } from '../src/help.ts'
 import { FakeBlueComponents, FakeKeymap, FakeTheme, KEY } from './fakes.ts'

@@ -1,5 +1,5 @@
 /**
- * @deepseek-ai/dsh-blue-interaction — Blue terminal UI interaction layer
+ * @dsh-blue/blue-interaction — Blue terminal UI interaction layer
  * over `dsh-blue-core`: the bottom input editor with slash-command dispatch
  * (`blue-input`, pi-tui Editor behind `ctx.blueComponents`), the built-in
  * `/quit`, `/resume`, `/new`, `/fork`, `/sessions`, `/help`, and `/theme`
@@ -12,7 +12,7 @@
  * `./pane-queue` subpath plugin (`blue-pane-queue`). All registrations are
  * effect-bound, so unloading the fiber reverts every contribution.
  *
- * @module @deepseek-ai/dsh-blue-interaction
+ * @module @dsh-blue/blue-interaction
  */
 
 import type { Context } from '@deepseek-ai/cordis'

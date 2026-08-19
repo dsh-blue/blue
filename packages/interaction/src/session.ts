@@ -2,13 +2,13 @@
  * Read the agent currently attached to the Blue UI through the app-owned
  * `blueSession` service.
  *
- * @module @deepseek-ai/dsh-blue-interaction/session
+ * @module @dsh-blue/blue-interaction/session
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 // Empty type import carries the app-owned `blueSession` Context merge.
-import type {} from '@deepseek-ai/dsh-blue-app'
+import type {} from '@dsh-blue/blue-app'
 
 /**
  * Resolve the UI's current agent. Uses `ctx.get` (never `inject`) because

@@ -3,7 +3,7 @@
  * positional and `--resume <id>`, then publishes {@link BLUE_STARTUP_SERVICE}.
  * The app driver is an ordinary consumer whose lazy config waits for that
  * service, so `--help` and parse errors leave the whole UI pending.
- * @module @deepseek-ai/dsh-blue-app/startup
+ * @module @dsh-blue/blue-app/startup
  */
 
 import { Command } from 'commander'

@@ -13,7 +13,7 @@ import type {
   BlueOverlayHandle,
   BlueScreen,
   BlueSemanticColors,
-} from '@deepseek-ai/dsh-blue-core'
+} from '@dsh-blue/blue-core'
 import { describe, expect, it } from 'vitest'
 import {
   BANNER_LEFT_WIDTH,

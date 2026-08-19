@@ -23,7 +23,7 @@
  * A session without any `todo/write` renders zero rows, so the pane occupies
  * nothing.
  *
- * @module @deepseek-ai/dsh-blue-transcript/pane-todo
+ * @module @dsh-blue/blue-transcript/pane-todo
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -32,11 +32,11 @@ import type {
   BlueComponent,
   BlueComponents,
   BlueSemanticColors,
-} from '@deepseek-ai/dsh-blue-core'
+} from '@dsh-blue/blue-core'
 import type { TodoItem } from '@deepseek-ai/dsh-session'
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
-import type {} from '@deepseek-ai/dsh-blue-app'
+import type {} from '@dsh-blue/blue-app'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-pane-todo'

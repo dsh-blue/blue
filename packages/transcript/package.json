@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-blue-transcript",
+  "name": "@dsh-blue/blue-transcript",
   "description": "Blue terminal UI transcript layer: folds session events into transcript items and renders them through dsh-blue-core",
   "version": "0.1.0-rc.7",
   "publishConfig": {
@@ -76,8 +76,8 @@
     "@deepseek-ai/dsh-agent": "^0.1.0-rc.7",
     "@deepseek-ai/dsh-agent-default-model": "^0.1.0-rc.7",
     "@deepseek-ai/dsh-attachment": "^0.1.0-rc.7",
-    "@deepseek-ai/dsh-blue-app": "workspace:^",
-    "@deepseek-ai/dsh-blue-core": "workspace:^",
+    "@dsh-blue/blue-app": "workspace:^",
+    "@dsh-blue/blue-core": "workspace:^",
     "@deepseek-ai/dsh-commands": "^0.1.0-rc.7",
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.7",
     "@deepseek-ai/dsh-llm": "^0.1.0-rc.7",
@@ -91,8 +91,8 @@
     "@deepseek-ai/dsh-agent": "0.1.0-rc.7",
     "@deepseek-ai/dsh-agent-default-model": "0.1.0-rc.7",
     "@deepseek-ai/dsh-attachment": "0.1.0-rc.7",
-    "@deepseek-ai/dsh-blue-app": "workspace:^",
-    "@deepseek-ai/dsh-blue-core": "workspace:^",
+    "@dsh-blue/blue-app": "workspace:^",
+    "@dsh-blue/blue-core": "workspace:^",
     "@deepseek-ai/dsh-commands": "0.1.0-rc.7",
     "@deepseek-ai/dsh-invariants": "0.1.0-rc.7",
     "@deepseek-ai/dsh-llm": "0.1.0-rc.7",

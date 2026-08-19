@@ -5,7 +5,7 @@
  * which depends on the post-start input chain. The probe's process handle
  * is injectable for tests.
  *
- * @module @deepseek-ai/dsh-blue-core/terminal-info
+ * @module @dsh-blue/blue-core/terminal-info
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'

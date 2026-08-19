@@ -3,7 +3,7 @@
  * package consumes. No pi-tui or harness business type appears here; L0
  * (`src/terminal.ts`) adapts these to pi-tui internally.
  *
- * @module @deepseek-ai/dsh-blue-core/types
+ * @module @dsh-blue/blue-core/types
  */
 
 // Pulls in Cordis `Context`/`Events` for the declaration merges below; the

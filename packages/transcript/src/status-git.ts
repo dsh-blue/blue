@@ -8,14 +8,14 @@
  * renders '' and occupies nothing. The probe runs through a module-level
  * replaceable runner so tests inject a fake (the `editor-plus` precedent).
  *
- * @module @deepseek-ai/dsh-blue-transcript/status-git
+ * @module @dsh-blue/blue-transcript/status-git
  */
 
 import { spawnSync } from 'node:child_process'
 import type { Context } from '@deepseek-ai/cordis'
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
-import type {} from '@deepseek-ai/dsh-blue-app'
+import type {} from '@dsh-blue/blue-app'
 // The named import also carries this package's `blueStatus` Context merge.
 import type { BlueStatusEntry } from './types.ts'
 

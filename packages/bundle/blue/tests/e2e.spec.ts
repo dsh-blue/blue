@@ -32,8 +32,8 @@ import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 // callback identity: only the module instance interaction's theme-switch
 // statically imports (this same lib file) shares a registry record with the
 // baseline provider fiber it replaces.
-import * as themeDarkPlugin from '@deepseek-ai/dsh-blue-core/theme-dark'
-import * as themeLightPlugin from '@deepseek-ai/dsh-blue-core/theme-light'
+import * as themeDarkPlugin from '@dsh-blue/blue-core/theme-dark'
+import * as themeLightPlugin from '@dsh-blue/blue-core/theme-light'
 import { BlueComponentsService, BlueKeymapService, BlueScreenService, BlueTerminalInfoService } from '../../../core/src/index.ts'
 import * as appPlugin from '../../../app/src/index.ts'
 import * as startupPlugin from '../../../app/src/startup.ts'

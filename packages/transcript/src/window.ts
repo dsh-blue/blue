@@ -11,7 +11,7 @@
  * `TranscriptStepSummaryItem` when the NEXT `step/start` of the same turn
  * arrives — so a turn's final step stays expanded and keeps its tool cards.
  *
- * @module @deepseek-ai/dsh-blue-transcript/window
+ * @module @dsh-blue/blue-transcript/window
  */
 
 /** Default count of newest completed turns kept mounted. */

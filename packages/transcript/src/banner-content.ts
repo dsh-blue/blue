@@ -6,7 +6,7 @@
  * `banner.ts`. Every line must fit the right-column budget (51 visible
  * columns) or it renders truncated.
  *
- * @module @deepseek-ai/dsh-blue-transcript/banner-content
+ * @module @dsh-blue/blue-transcript/banner-content
  */
 
 /**

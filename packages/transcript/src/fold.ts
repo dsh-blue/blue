@@ -21,7 +21,7 @@
  * types (request records, log-only markers, and merge-extended unknowns)
  * render nothing.
  *
- * @module @deepseek-ai/dsh-blue-transcript/fold
+ * @module @dsh-blue/blue-transcript/fold
  */
 
 import type { ContentBlock, ImageBlock } from '@deepseek-ai/dsh-llm'

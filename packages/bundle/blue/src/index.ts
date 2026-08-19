@@ -1,11 +1,11 @@
 /**
- * @deepseek-ai/dsh-blue — the Blue terminal UI bundle. `cordis.patch.yml`
+ * @dsh-blue/blue — the Blue terminal UI bundle. `cordis.patch.yml`
  * rides over dsh-base and inserts the Blue rows: core (terminal + L1
  * services), transcript, interaction, the startup command-line provider, and
  * the app driver. The bundle module itself mounts nothing; composition lives
  * entirely in the patch.
  *
- * @module @deepseek-ai/dsh-blue
+ * @module @dsh-blue/blue
  */
 
 import type { Context } from '@deepseek-ai/cordis'

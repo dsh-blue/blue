@@ -9,7 +9,7 @@
  * freshly mounted editor; `blue-editor-plus` mirrors the prompt/bash mode
  * the same way, so a bash draft reloads as bash.
  *
- * @module @deepseek-ai/dsh-blue-interaction/draft-stash
+ * @module @dsh-blue/blue-interaction/draft-stash
  */
 
 /** The stashed draft; the empty string means nothing to restore. */

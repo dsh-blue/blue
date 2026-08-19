@@ -10,15 +10,15 @@
  * `./draft-stash.ts`). A failed mount best-effort restores the built-in
  * dark palette so the UI is never left without a theme.
  *
- * @module @deepseek-ai/dsh-blue-interaction/theme-switch
+ * @module @dsh-blue/blue-interaction/theme-switch
  */
 
 import type { Context, Plugin } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import * as themeAuto from '@deepseek-ai/dsh-blue-core/theme-auto'
-import * as themeCustom from '@deepseek-ai/dsh-blue-core/theme-custom'
-import * as themeDark from '@deepseek-ai/dsh-blue-core/theme-dark'
-import * as themeLight from '@deepseek-ai/dsh-blue-core/theme-light'
+import * as themeAuto from '@dsh-blue/blue-core/theme-auto'
+import * as themeCustom from '@dsh-blue/blue-core/theme-custom'
+import * as themeDark from '@dsh-blue/blue-core/theme-dark'
+import * as themeLight from '@dsh-blue/blue-core/theme-light'
 
 /** Usage text returned for malformed `/theme` invocations. */
 const USAGE = 'usage: /theme [dark|light|auto|custom <path> [dark|light]]'

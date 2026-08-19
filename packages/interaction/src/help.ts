@@ -5,11 +5,11 @@
  * and a scroll window — `showing 1-N of M` — when the content overflows
  * its budget. Escape/Enter/`q` close, arrows and PageUp/PageDown scroll.
  *
- * @module @deepseek-ai/dsh-blue-interaction/help
+ * @module @dsh-blue/blue-interaction/help
  */
 
-import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@deepseek-ai/dsh-blue-core'
-import { framePanel } from '@deepseek-ai/dsh-blue-core/chrome'
+import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
+import { framePanel } from '@dsh-blue/blue-core/chrome'
 import { ACTION_CANCEL, ACTION_SUBMIT } from './keys.ts'
 
 /** Decoded input sequences the overlay handles directly (no keymap actions). */

@@ -31,7 +31,7 @@
  * continuation dispose the fresh handle instead of publishing it, and
  * unloading also disposes the live slot.
  *
- * @module @deepseek-ai/dsh-blue-transcript/pane-btw
+ * @module @dsh-blue/blue-transcript/pane-btw
  */
 
 import { randomUUID } from 'node:crypto'
@@ -42,8 +42,8 @@ import type {
   BlueComponents,
   BlueMarkdown,
   BlueSemanticColors,
-} from '@deepseek-ai/dsh-blue-core'
-import { topRule } from '@deepseek-ai/dsh-blue-core/chrome'
+} from '@dsh-blue/blue-core'
+import { topRule } from '@dsh-blue/blue-core/chrome'
 // The named import also carries the `commands` Context merge.
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -52,7 +52,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 // Empty type import carries the app-owned `blueSession` Context merge this
 // plugin reads through `ctx.get` (never `inject`, as the app plugin may
 // activate after this one).
-import type {} from '@deepseek-ai/dsh-blue-app'
+import type {} from '@dsh-blue/blue-app'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-pane-btw'

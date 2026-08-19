@@ -164,7 +164,7 @@ light 侧对应：`primary #0969da`、`textMuted #8c959f`（均 primer 系，与
 
 ## 5. 共享 chrome 辅助层（决策 D25）
 
-**归属：core 新增纯模块 `src/chrome.ts`，子路径导出 `@deepseek-ai/dsh-blue-core/chrome`**。理由：边框绘制是纯 `string[]` 数学（需要 `visibleWidth` 一类宽度函数，core 已再导出），不需要 pi-tui 组件机制——不走 `blueComponents` 服务（生命周期是死重），不放 interaction/transcript（会重复实现或走私 pi-tui 依赖）。子路径导出与主题插件族先例一致；按 p1-design §6.3 纪律"新缝在首个真实消费者出现时开"，S11 开出。
+**归属：core 新增纯模块 `src/chrome.ts`，子路径导出 `@dsh-blue/blue-core/chrome`**。理由：边框绘制是纯 `string[]` 数学（需要 `visibleWidth` 一类宽度函数，core 已再导出），不需要 pi-tui 组件机制——不走 `blueComponents` 服务（生命周期是死重），不放 interaction/transcript（会重复实现或走私 pi-tui 依赖）。子路径导出与主题插件族先例一致；按 p1-design §6.3 纪律"新缝在首个真实消费者出现时开"，S11 开出。
 
 API（全部接收色函数参数——主题无关、纯函数、trivially testable）：
 

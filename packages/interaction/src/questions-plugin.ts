@@ -7,7 +7,7 @@
  * request signal closes the overlay and rejects. Registration is
  * effect-bound, so HMR disposal unregisters the provider.
  *
- * @module @deepseek-ai/dsh-blue-interaction/questions-plugin
+ * @module @dsh-blue/blue-interaction/questions-plugin
  */
 
 import type { Context } from '@deepseek-ai/cordis'

@@ -10,15 +10,15 @@
  * same discipline as the transcript plugin itself, and `'agent/status'`
  * flips are filtered to the attached agent.
  *
- * @module @deepseek-ai/dsh-blue-transcript/pane-activity
+ * @module @dsh-blue/blue-transcript/pane-activity
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { BlueComponent, BlueSemanticColors } from '@deepseek-ai/dsh-blue-core'
+import type { BlueComponent, BlueSemanticColors } from '@dsh-blue/blue-core'
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
-import type {} from '@deepseek-ai/dsh-blue-app'
+import type {} from '@dsh-blue/blue-app'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-pane-activity'

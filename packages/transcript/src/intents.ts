@@ -8,7 +8,7 @@
  * `'generic'` entry, then the first registered entry — the same
  * default-ignore philosophy as the fold.
  *
- * @module @deepseek-ai/dsh-blue-transcript/intents
+ * @module @dsh-blue/blue-transcript/intents
  */
 
 import { Service, type Context } from '@deepseek-ai/cordis'

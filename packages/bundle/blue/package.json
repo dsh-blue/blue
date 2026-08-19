@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-blue",
+  "name": "@dsh-blue/blue",
   "description": "The dsh Blue bundle: the interactive terminal UI profile over dsh-base",
   "version": "0.1.0-rc.7",
   "publishConfig": {
@@ -34,10 +34,10 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-blue-app": "workspace:^",
-    "@deepseek-ai/dsh-blue-core": "workspace:^",
-    "@deepseek-ai/dsh-blue-interaction": "workspace:^",
-    "@deepseek-ai/dsh-blue-transcript": "workspace:^"
+    "@dsh-blue/blue-app": "workspace:^",
+    "@dsh-blue/blue-core": "workspace:^",
+    "@dsh-blue/blue-interaction": "workspace:^",
+    "@dsh-blue/blue-transcript": "workspace:^"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.7",

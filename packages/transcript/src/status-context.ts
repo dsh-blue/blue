@@ -10,7 +10,7 @@
  * snapshot is scanned first, then the live `session/event` feed carries the
  * increments.
  *
- * @module @deepseek-ai/dsh-blue-transcript/status-context
+ * @module @dsh-blue/blue-transcript/status-context
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -19,7 +19,7 @@ import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
-import type {} from '@deepseek-ai/dsh-blue-app'
+import type {} from '@dsh-blue/blue-app'
 // The named import also carries this package's `blueStatus` Context merge.
 import type { BlueStatusEntry } from './types.ts'
 

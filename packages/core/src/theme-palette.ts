@@ -5,7 +5,7 @@
  * builder, and the `blueTheme` Service subclass factory. Internal module —
  * not a package subpath export; the theme plugins are the public surface.
  *
- * @module @deepseek-ai/dsh-blue-core/theme-palette
+ * @module @dsh-blue/blue-core/theme-palette
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'

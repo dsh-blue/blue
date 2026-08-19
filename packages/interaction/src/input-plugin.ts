@@ -36,7 +36,7 @@
  * the fiber's unload flag before touching the hint; a late notice is moot
  * anyway, since the reloaded fiber repaints.
  *
- * @module @deepseek-ai/dsh-blue-interaction/input-plugin
+ * @module @dsh-blue/blue-interaction/input-plugin
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -45,7 +45,7 @@ import type {
   BlueComponents,
   BlueScreen,
   BlueSemanticColors,
-} from '@deepseek-ai/dsh-blue-core'
+} from '@dsh-blue/blue-core'
 import { parseCommand } from '@deepseek-ai/dsh-commands'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import {

@@ -22,9 +22,9 @@ import type {
   BlueKeymap,
   BlueOverlayHandle,
   BlueScreen,
-} from '@deepseek-ai/dsh-blue-core'
+} from '@dsh-blue/blue-core'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { BlueSessionRef } from '@deepseek-ai/dsh-blue-app'
+import type { BlueSessionRef } from '@dsh-blue/blue-app'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { ACTION_TOGGLE_COLLAPSE, apply, setWindowTurns } from '../src/index.ts'
 import * as statusBasic from '../src/status-basic.ts'

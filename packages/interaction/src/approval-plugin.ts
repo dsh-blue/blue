@@ -14,13 +14,13 @@
  * with `next()`. Returning without `next()` short-circuits the waterfall
  * with the chosen outcome.
  *
- * @module @deepseek-ai/dsh-blue-interaction/approval-plugin
+ * @module @dsh-blue/blue-interaction/approval-plugin
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { BlueComponents, BlueEditor, BlueFocusable, BlueScreen, BlueTheme } from '@deepseek-ai/dsh-blue-core'
-import { framePanel } from '@deepseek-ai/dsh-blue-core/chrome'
+import type { BlueComponents, BlueEditor, BlueFocusable, BlueScreen, BlueTheme } from '@dsh-blue/blue-core'
+import { framePanel } from '@dsh-blue/blue-core/chrome'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { currentBlueAgent } from './session.ts'

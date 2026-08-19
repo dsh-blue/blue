@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import type { BlueComponents, BlueSemanticColors } from '@deepseek-ai/dsh-blue-core'
+import type { BlueComponents, BlueSemanticColors } from '@dsh-blue/blue-core'
 import {
   AssistantMessageComponent,
   StepSummaryComponent,

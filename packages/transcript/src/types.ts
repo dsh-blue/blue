@@ -3,10 +3,10 @@
  * `blueStatus` and `blueIntents` contracts behind the footer shell
  * (`src/status.ts`) and the render-intent registry (`src/intents.ts`). The
  * `blueSession` service and the `'blue/session-changed'` event this package
- * consumes are owned and declared by `@deepseek-ai/dsh-blue-app`; the merge
+ * consumes are owned and declared by `@dsh-blue/blue-app`; the merge
  * arrives through the type import in `src/index.ts`.
  *
- * @module @deepseek-ai/dsh-blue-transcript/types
+ * @module @dsh-blue/blue-transcript/types
  */
 
 // Pulls in Cordis `Context` for the `blueStatus`/`blueIntents` declaration
@@ -19,7 +19,7 @@ import type {
   BlueComponent,
   BlueComponents,
   BlueSemanticColors,
-} from '@deepseek-ai/dsh-blue-core'
+} from '@dsh-blue/blue-core'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ToolCallView, ToolResult, ToolResultView } from '@deepseek-ai/dsh-tools'
 

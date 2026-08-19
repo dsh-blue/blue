@@ -11,11 +11,11 @@
  * the only other way out. All keys are handled as raw sequences in
  * `handleInput`; no keymap actions are registered.
  *
- * @module @deepseek-ai/dsh-blue-interaction/questionnaire
+ * @module @dsh-blue/blue-interaction/questionnaire
  */
 
-import type { BlueComponents, BlueEditor, BlueFocusable, BlueTheme } from '@deepseek-ai/dsh-blue-core'
-import { framePanel } from '@deepseek-ai/dsh-blue-core/chrome'
+import type { BlueComponents, BlueEditor, BlueFocusable, BlueTheme } from '@dsh-blue/blue-core'
+import { framePanel } from '@dsh-blue/blue-core/chrome'
 import type { AskUserQuestionAnswerItem, AskUserQuestionItem, AskUserQuestionOption } from '@deepseek-ai/dsh-user-questions'
 
 /** Decoded input sequences the questionnaire handles (no keymap actions). */

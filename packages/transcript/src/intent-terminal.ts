@@ -17,14 +17,14 @@
  * defensively renders just the title line when the shape does not match. The
  * render cache keys on width, expansion, and view identity.
 
- * @module @deepseek-ai/dsh-blue-transcript/intent-terminal
+ * @module @dsh-blue/blue-transcript/intent-terminal
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   BlueComponents,
   BlueSemanticColors,
-} from '@deepseek-ai/dsh-blue-core'
+} from '@dsh-blue/blue-core'
 import type { BlueIntentComponent, BlueIntentProps, TranscriptToolItem } from './types.ts'
 
 /** Stable Cordis plugin name. */

@@ -4,7 +4,7 @@
  * (start, drain, stop) and the stable TUI reference behind which a future
  * renderer hot-swap can happen without consumers re-resolving.
  *
- * @module @deepseek-ai/dsh-blue-core/terminal
+ * @module @dsh-blue/blue-core/terminal
  */
 
 import { ProcessTerminal, TuiMainScreen, type Terminal, type TUI } from '@earendil-works/pi-tui'

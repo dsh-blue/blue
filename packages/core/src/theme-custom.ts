@@ -7,7 +7,7 @@
  * palette. Ships as a subpath entry so it can replace `blue-theme-dark`
  * fiber-for-fiber in the bundle patch.
  *
- * @module @deepseek-ai/dsh-blue-core/theme-custom
+ * @module @dsh-blue/blue-core/theme-custom
  */
 
 import { readFile } from 'node:fs/promises'

@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-blue-app`.
- * @module @deepseek-ai/dsh-blue-app/invariant
+ * Package-owned invariant companion for `@dsh-blue/blue-app`.
+ * @module @dsh-blue/blue-app/invariant
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 import type {} from './types.ts'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-blue-app'
+const PACKAGE_NAME = '@dsh-blue/blue-app'
 
 /** Cordis companion plugin name. */
 export const name = 'blue-app-invariant'

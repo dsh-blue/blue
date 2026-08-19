@@ -13,7 +13,7 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import * as commandsPlugin from '../src/commands-plugin.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
-import type {} from '@deepseek-ai/dsh-blue-app'
+import type {} from '@dsh-blue/blue-app'
 import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeScreen } from './fakes.ts'
 
 async function mount(options: {

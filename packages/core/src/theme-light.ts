@@ -6,7 +6,7 @@
  * palette. Palette values are tuned for light terminal backgrounds (dark
  * text, muted mid-grays), loosely following GitHub's light primer scale.
  *
- * @module @deepseek-ai/dsh-blue-core/theme-light
+ * @module @dsh-blue/blue-core/theme-light
  */
 
 import type { Context } from '@deepseek-ai/cordis'

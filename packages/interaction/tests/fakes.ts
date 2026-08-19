@@ -29,8 +29,8 @@ import type {
   BlueSettingsList,
   BlueSettingsListOptions,
   BlueTheme,
-} from '@deepseek-ai/dsh-blue-core'
-import type { BlueScreenService, BlueKeymapService, BlueComponentsService } from '@deepseek-ai/dsh-blue-core'
+} from '@dsh-blue/blue-core'
+import type { BlueScreenService, BlueKeymapService, BlueComponentsService } from '@dsh-blue/blue-core'
 // BlueImage/BlueImageOptions are not root-exported by core yet; source-plane
 // tests import them straight from core's src types.
 import type { BlueImage, BlueImageOptions } from '../../core/src/types.ts'

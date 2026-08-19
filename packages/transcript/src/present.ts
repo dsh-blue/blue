@@ -5,7 +5,7 @@
  * an unknown tool, a missing presenter, or a throwing presenter all yield
  * `undefined` and the generic presentation carries on.
  *
- * @module @deepseek-ai/dsh-blue-transcript/present
+ * @module @dsh-blue/blue-transcript/present
  */
 
 import type {

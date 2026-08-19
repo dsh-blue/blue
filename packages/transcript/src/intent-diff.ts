@@ -17,14 +17,14 @@
  * header line when the shape does not match. The item is immutable per view,
  * so the render cache keys on width, expansion, and view identity.
 
- * @module @deepseek-ai/dsh-blue-transcript/intent-diff
+ * @module @dsh-blue/blue-transcript/intent-diff
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   BlueComponents,
   BlueSemanticColors,
-} from '@deepseek-ai/dsh-blue-core'
+} from '@dsh-blue/blue-core'
 import type { FileDiff } from '@deepseek-ai/dsh-tools'
 import { diffLines, summarizeDiffRows, type LineDiffRow } from './line-diff.ts'
 import type { BlueIntentComponent, BlueIntentProps, TranscriptToolItem } from './types.ts'

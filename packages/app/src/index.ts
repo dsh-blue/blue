@@ -1,12 +1,12 @@
 /**
- * @deepseek-ai/dsh-blue-app — the Blue terminal UI application driver. The
+ * @dsh-blue/blue-app — the Blue terminal UI application driver. The
  * bundle patch rides over dsh-base; the startup provider parses the launch
  * values, and this driver creates or resumes the Agent once the Loader
  * settles, publishes it through `blueSession`, and answers the
  * `'blue/request-resume'`/`'blue/request-new'`/`'blue/request-fork'`
  * switches for the interaction layer's session commands.
  *
- * @module @deepseek-ai/dsh-blue-app
+ * @module @dsh-blue/blue-app
  */
 
 import { randomUUID } from 'node:crypto'

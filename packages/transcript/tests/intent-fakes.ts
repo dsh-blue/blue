@@ -6,7 +6,7 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
-import type { BlueSemanticColors } from '@deepseek-ai/dsh-blue-core'
+import type { BlueSemanticColors } from '@dsh-blue/blue-core'
 import type { BlueIntentEntry, BlueIntents } from '../src/types.ts'
 import { fakeBlueComponents } from './helpers.ts'
 

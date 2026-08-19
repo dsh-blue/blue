@@ -19,7 +19,7 @@
  * frozen theme tokens — frame, whale, and the welcome line share `primary`,
  * the kimi welcome-box treatment, so the banner reads as one blue unit.
  *
- * @module @deepseek-ai/dsh-blue-transcript/banner
+ * @module @dsh-blue/blue-transcript/banner
  */
 
 import { homedir } from 'node:os'
@@ -28,7 +28,7 @@ import type {
   BlueComponent,
   BlueComponents,
   BlueSemanticColors,
-} from '@deepseek-ai/dsh-blue-core'
+} from '@dsh-blue/blue-core'
 // Empty type import carries the `agentDefaultModel` Context merge this
 // plugin's inject resolves.
 import type {} from '@deepseek-ai/dsh-agent-default-model'

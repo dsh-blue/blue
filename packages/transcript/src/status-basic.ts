@@ -12,14 +12,14 @@
  * and the footer occupies nothing — matching the pre-footer behavior of
  * showing no status without a session.
  *
- * @module @deepseek-ai/dsh-blue-transcript/status-basic
+ * @module @dsh-blue/blue-transcript/status-basic
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
-import type {} from '@deepseek-ai/dsh-blue-app'
+import type {} from '@dsh-blue/blue-app'
 // The named import also carries this package's `blueStatus` Context merge.
 import type { BlueStatusEntry } from './types.ts'
 

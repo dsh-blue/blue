@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import type { BlueComponent, BlueFocusable } from '@deepseek-ai/dsh-blue-core'
+import type { BlueComponent, BlueFocusable } from '@dsh-blue/blue-core'
 import { BluePanel, BlueSelect, SessionList } from '../src/select.ts'
 import type { BlueSelectItem, SessionListItem } from '../src/select.ts'
 import { FakeBlueComponents, FakeKeymap, FakeTheme, KEY } from './fakes.ts'

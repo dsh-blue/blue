@@ -1,6 +1,6 @@
 /**
- * @deepseek-ai/dsh-blue-transcript — Blue terminal UI transcript layer. On
- * `'blue/session-changed'` (emitted by `@deepseek-ai/dsh-blue-app` after
+ * @dsh-blue/blue-transcript — Blue terminal UI transcript layer. On
+ * `'blue/session-changed'` (emitted by `@dsh-blue/blue-app` after
  * create/resume) the plugin first folds the `agent.session.events` snapshot
  * — resume seeds do not replay `session/event` — then subscribes to the live
  * feed, dropping events at or below the snapshot's last seq. Every applied
@@ -21,7 +21,7 @@
  * lists them as its own patch rows. Unloading the plugin unmounts every
  * mounted component, the footer included, and unregisters the action.
  *
- * @module @deepseek-ai/dsh-blue-transcript
+ * @module @dsh-blue/blue-transcript
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -31,10 +31,10 @@ import type {
   BlueComponents,
   BlueScreen,
   BlueSemanticColors,
-} from '@deepseek-ai/dsh-blue-core'
+} from '@dsh-blue/blue-core'
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
-import type {} from '@deepseek-ai/dsh-blue-app'
+import type {} from '@dsh-blue/blue-app'
 import {
   AssistantMessageComponent,
   StepSummaryComponent,

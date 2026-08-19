@@ -1,4 +1,4 @@
-# `@deepseek-ai/dsh-blue-core`
+# `@dsh-blue/blue-core`
 
 English | [中文](README.zh.md)
 

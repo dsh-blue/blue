@@ -7,7 +7,7 @@
  * pi-based tooling. The palette construction lives in `theme-palette.ts`,
  * shared with the rest of the theme plugin family.
  *
- * @module @deepseek-ai/dsh-blue-core/theme-dark
+ * @module @dsh-blue/blue-core/theme-dark
  */
 
 import type { Context } from '@deepseek-ai/cordis'

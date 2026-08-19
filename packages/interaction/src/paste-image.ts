@@ -15,7 +15,7 @@
  * reloads, which restore the editor text from the draft stash. Ships as a
  * subpath plugin so the baseline bundle keeps the plain text editor.
  *
- * @module @deepseek-ai/dsh-blue-interaction/paste-image
+ * @module @dsh-blue/blue-interaction/paste-image
  */
 
 import { execFile } from 'node:child_process'

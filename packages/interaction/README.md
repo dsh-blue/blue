@@ -1,4 +1,4 @@
-# `@deepseek-ai/dsh-blue-interaction`
+# `@dsh-blue/blue-interaction`
 
 English | [中文](README.zh.md)
 
@@ -32,7 +32,7 @@ The shared-editor module (`src/editor-instance.ts`) exposes `registerSubmitTrans
 
 ## The `blueSession` contract
 
-The current agent is read with `ctx.get('blueSession')` (never `inject`) because the app plugin may activate after this one. `BlueSessionRef` and the `blue/request-resume` event are owned and declared by `@deepseek-ai/dsh-blue-app`; this package consumes them through type-only imports.
+The current agent is read with `ctx.get('blueSession')` (never `inject`) because the app plugin may activate after this one. `BlueSessionRef` and the `blue/request-resume` event are owned and declared by `@dsh-blue/blue-app`; this package consumes them through type-only imports.
 
 ## Model Experience
 

@@ -11,7 +11,7 @@
  * Only `render` is replaced: selection, filtering, and key handling stay in
  * pi-tui.
  *
- * @module @deepseek-ai/dsh-blue-core/wrapping-select-list
+ * @module @dsh-blue/blue-core/wrapping-select-list
  */
 
 import {

@@ -6,7 +6,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { BlueScreen, BlueComponent } from '@deepseek-ai/dsh-blue-core'
+import type { BlueScreen, BlueComponent } from '@dsh-blue/blue-core'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { apply, setWindowTurns } from '../src/index.ts'

@@ -11,16 +11,16 @@
  * binding. Ships as a subpath plugin so the baseline bundle keeps plain
  * pi-tui history navigation on Up.
  *
- * @module @deepseek-ai/dsh-blue-interaction/pane-queue
+ * @module @dsh-blue/blue-interaction/pane-queue
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
-import type { BlueComponent } from '@deepseek-ai/dsh-blue-core'
+import type { BlueComponent } from '@dsh-blue/blue-core'
 // Empty type import carries the app-owned `blueSession` Context merge and
 // the `'blue/session-changed'` Events merge this plugin consumes.
-import type {} from '@deepseek-ai/dsh-blue-app'
+import type {} from '@dsh-blue/blue-app'
 import { currentBlueAgent } from './session.ts'
 
 /** Stable Cordis plugin name. */

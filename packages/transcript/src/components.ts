@@ -8,7 +8,7 @@
  * (source text, width) so the screen's throttled redraws stay cheap while a
  * `TranscriptItem` mutates underneath.
  *
- * @module @deepseek-ai/dsh-blue-transcript/components
+ * @module @dsh-blue/blue-transcript/components
  */
 
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -18,7 +18,7 @@ import type {
   BlueImage,
   BlueMarkdown,
   BlueSemanticColors,
-} from '@deepseek-ai/dsh-blue-core'
+} from '@dsh-blue/blue-core'
 import { ellipsize } from './fold.ts'
 import type {
   TranscriptAssistantItem,

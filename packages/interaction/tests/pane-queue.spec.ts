@@ -13,7 +13,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 // Empty type import carries the app-owned `blueSession` Context merge and
 // the `'blue/session-changed'` Events merge this spec emits.
-import type {} from '@deepseek-ai/dsh-blue-app'
+import type {} from '@dsh-blue/blue-app'
 import * as paneQueuePlugin from '../src/pane-queue.ts'
 import { ACTION_QUEUE_RECALL } from '../src/pane-queue.ts'
 import { fakeBlueContext, type FakeKeymap, type FakeScreen } from './fakes.ts'

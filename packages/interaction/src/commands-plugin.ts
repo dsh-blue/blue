@@ -14,7 +14,7 @@
  * await can still span a tree unload, so its continuation gates on the
  * fiber's unload flag before touching the context again.
  *
- * @module @deepseek-ai/dsh-blue-interaction/commands-plugin
+ * @module @dsh-blue/blue-interaction/commands-plugin
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -23,7 +23,7 @@ import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
 // Empty type import carries the app-owned `blueSession` Context merge and
 // the `'blue/request-*'` Events merges this plugin emits.
-import type {} from '@deepseek-ai/dsh-blue-app'
+import type {} from '@dsh-blue/blue-app'
 // Empty type import carries the `sessionPersistence` Context merge; the
 // service itself is optional and resolved lazily.
 import type {} from '@deepseek-ai/dsh-session-persistence'

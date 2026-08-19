@@ -11,11 +11,11 @@
  * Key resolution goes through `ctx.blueKeymap`, styling through
  * `ctx.blueTheme`, and width math through `ctx.blueComponents`.
  *
- * @module @deepseek-ai/dsh-blue-interaction/select
+ * @module @dsh-blue/blue-interaction/select
  */
 
-import type { BlueComponent, BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@deepseek-ai/dsh-blue-core'
-import { framePanel } from '@deepseek-ai/dsh-blue-core/chrome'
+import type { BlueComponent, BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
+import { framePanel } from '@dsh-blue/blue-core/chrome'
 import {
   ACTION_CANCEL,
   ACTION_MOVE_DOWN,

@@ -7,7 +7,7 @@
  * one is mounted, so `blueTheme` consumers rebuild through Cordis reload
  * semantics. Duplicate reports are ignored without a remount.
  *
- * @module @deepseek-ai/dsh-blue-core/theme-auto
+ * @module @dsh-blue/blue-core/theme-auto
  */
 
 import type { Context, Fiber } from '@deepseek-ai/cordis'

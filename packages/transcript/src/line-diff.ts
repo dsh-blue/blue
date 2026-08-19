@@ -8,7 +8,7 @@
  * output budgets, and the DP keeps the code compact and obviously correct —
  * no Myers heuristic boundary cases to reason about.
 
- * @module @deepseek-ai/dsh-blue-transcript/line-diff
+ * @module @dsh-blue/blue-transcript/line-diff
  */
 
 /** One rendered row of a line diff, unified-diff style. */

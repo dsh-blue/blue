@@ -27,12 +27,12 @@
     # registers the blueScreen/blueKeymap/blueTerminalInfo/blueComponents
     # services.
     - id: blue-core
-      name: '@deepseek-ai/dsh-blue-core'
+      name: '@dsh-blue/blue-core'
 
     # Blue theme (plain baseline segment): the built-in dark palette,
     # providing the blueTheme service as its own fiber.
     - id: blue-theme-dark
-      name: '@deepseek-ai/dsh-blue-core/theme-dark'
+      name: '@dsh-blue/blue-core/theme-dark'
 
     # Welcome banner: the pixel-castle box rendered once at boot as the first
     # scroll-area child (model · provider from agentDefaultModel, cwd, tips).
@@ -40,18 +40,18 @@
     # blueComponents activation round, so the earlier row keeps the banner
     # first in the scroll area across initial mounts and /theme reloads.
     - id: blue-banner
-      name: '@deepseek-ai/dsh-blue-transcript/banner'
+      name: '@dsh-blue/blue-transcript/banner'
 
     # Transcript: renders session events (streamed Markdown, tool calls) onto
     # the blue screen. Also provides the blueStatus registry and mounts the
     # two-row footer shell bottom-pinned above the input editor.
     - id: blue-transcript
-      name: '@deepseek-ai/dsh-blue-transcript'
+      name: '@dsh-blue/blue-transcript'
 
     # Baseline footer entry: '{model} · {agent status}' at priority 0,
     # registered into the transcript's blueStatus registry.
     - id: blue-status-basic
-      name: '@deepseek-ai/dsh-blue-transcript/status-basic'
+      name: '@dsh-blue/blue-transcript/status-basic'
 
     # --- Enhancement segment --------------------------------------------------
     # Optional layers over the plain baseline; the whole segment can be
@@ -74,14 +74,14 @@
     # 'blue/input-editor-changed' event (so row order against blue-input does
     # not matter).
     - id: blue-editor-plus
-      name: '@deepseek-ai/dsh-blue-interaction/editor-plus'
+      name: '@dsh-blue/blue-interaction/editor-plus'
 
     # Attachment store: the harness 'attachments' service (a filesystem
     # image store under $DSH_BLUE_ATTACHMENT_DIR / $DSH_HOME / ~/.dsh).
     # Mounts no screen child; row order is only pinned against paste-image,
     # which injects the service and therefore activates after this row.
     - id: blue-attachments
-      name: '@deepseek-ai/dsh-blue-interaction/attachments'
+      name: '@dsh-blue/blue-interaction/attachments'
 
     # Image paste: the contextual Ctrl-V action that admits a clipboard
     # image through the attachment store, inserts its '[image #N]' marker
@@ -89,17 +89,17 @@
     # blocks on submit. Injects 'attachments' (above), so it always mounts
     # after the store.
     - id: blue-paste-image
-      name: '@deepseek-ai/dsh-blue-interaction/paste-image'
+      name: '@dsh-blue/blue-interaction/paste-image'
 
     # Git footer entry: the current branch (priority 10), probed once per
     # session attach; renders nothing outside a git repository.
     - id: blue-status-git
-      name: '@deepseek-ai/dsh-blue-transcript/status-git'
+      name: '@dsh-blue/blue-transcript/status-git'
 
     # Context footer entry: the latest model step's context occupancy
     # ('ctx N' / 'ctx N.Nk', priority 20) from assistant/message usage.
     - id: blue-status-context
-      name: '@deepseek-ai/dsh-blue-transcript/status-context'
+      name: '@dsh-blue/blue-transcript/status-context'
 
     # Diff render intent: registers the 'diff' entry in the transcript's
     # blueIntents registry, so tool items whose presentCall/presentResult
@@ -107,37 +107,37 @@
     # instead of the generic tool card. Injects blueIntents (provided by
     # blue-transcript), so it always mounts after it; mounts no screen child.
     - id: blue-intent-diff
-      name: '@deepseek-ai/dsh-blue-transcript/intent-diff'
+      name: '@dsh-blue/blue-transcript/intent-diff'
 
     # Terminal render intent: the same registry pattern for card:'terminal'
     # views — a '$ command' shell card with cwd, exit badge, and capped
     # output rows. Same blueIntents activation ordering as the diff row.
     - id: blue-intent-terminal
-      name: '@deepseek-ai/dsh-blue-transcript/intent-terminal'
+      name: '@dsh-blue/blue-transcript/intent-terminal'
 
     # Activity pane: a one-row spinner shown while the attached agent runs;
     # zero rows while idle. The row-level pin joins the blueComponents
     # activation round so the pane lands between the footer and the editor.
     - id: blue-pane-activity
-      name: '@deepseek-ai/dsh-blue-transcript/pane-activity'
+      name: '@dsh-blue/blue-transcript/pane-activity'
       inject: [blueComponents]
 
     # Queue pane: the attached agent's queued inbox messages, one row each,
     # plus the keyless action gating the empty-editor Up recall in blue-input.
     # Same blueComponents dock-order pin as the activity pane.
     - id: blue-pane-queue
-      name: '@deepseek-ai/dsh-blue-interaction/pane-queue'
+      name: '@dsh-blue/blue-interaction/pane-queue'
       inject: [blueComponents]
 
     # Todo pane: the session's todo list (whole-list todo/write snapshots),
     # with the global Ctrl-T collapse toggle.
     - id: blue-pane-todo
-      name: '@deepseek-ai/dsh-blue-transcript/pane-todo'
+      name: '@dsh-blue/blue-transcript/pane-todo'
 
     # Side-question pane and its /btw command: forks the live session into a
     # throwaway side agent and renders the exchange in the dock.
     - id: blue-pane-btw
-      name: '@deepseek-ai/dsh-blue-transcript/pane-btw'
+      name: '@dsh-blue/blue-transcript/pane-btw'
 
     # --- Assembly segment -------------------------------------------------------
     # The plain baseline's closing rows: the input editor with its built-in
@@ -147,15 +147,15 @@
     # /fork, /sessions, /help), the user-question provider, and the approval
     # answerer.
     - id: blue-interaction
-      name: '@deepseek-ai/dsh-blue-interaction'
+      name: '@dsh-blue/blue-interaction'
 
     - id: blue-startup
-      name: '@deepseek-ai/dsh-blue-app/startup'
+      name: '@dsh-blue/blue-app/startup'
 
     # Reads its launch values from the ordinary blueStartup provider; the
     # plugin's own inject waits for the core Agent services and blueScreen.
     - id: blue-app
-      name: '@deepseek-ai/dsh-blue-app'
+      name: '@dsh-blue/blue-app'
       inject: [blueStartup]
       config:
         task: !!js ctx.blueStartup.task

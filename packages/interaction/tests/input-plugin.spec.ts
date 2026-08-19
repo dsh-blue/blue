@@ -8,7 +8,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { BlueComponent } from '@deepseek-ai/dsh-blue-core'
+import type { BlueComponent } from '@dsh-blue/blue-core'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime, { type CommandResult } from '@deepseek-ai/dsh-commands'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'

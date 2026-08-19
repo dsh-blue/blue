@@ -3,13 +3,13 @@
  * turns pi-tui's bare horizontal rules into rounded boxes. Everything here
  * is theme-agnostic math — callers inject the paint function — so the module
  * carries no pi-tui component machinery and no lifecycle; it is re-exported
- * as `@deepseek-ai/dsh-blue-core/chrome` for the interaction/transcript
+ * as `@dsh-blue/blue-core/chrome` for the interaction/transcript
  * packages (S11 opens the seam; each function lands with its first real
  * consumer). The algorithms are kimi-code ports kept ANSI-safe: visible
  * columns are located by stripping SGR runs, and styled cells are never
  * clobbered.
  *
- * @module @deepseek-ai/dsh-blue-core/chrome
+ * @module @dsh-blue/blue-core/chrome
  */
 
 import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui'

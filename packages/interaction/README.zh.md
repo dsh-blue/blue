@@ -1,4 +1,4 @@
-# `@deepseek-ai/dsh-blue-interaction`
+# `@dsh-blue/blue-interaction`
 
 [English](README.md) | 中文
 
@@ -32,7 +32,7 @@ Blue 终端 UI 交互层，构建于 [`dsh-blue-core`](../../blue/core/README.md
 
 ## `blueSession` 契约
 
-当前 agent 通过 `ctx.get('blueSession')` 读取（绝不用 `inject`），因为 app 插件可能晚于本包激活。`BlueSessionRef` 与 `blue/request-resume` 事件由 `@deepseek-ai/dsh-blue-app` 拥有并声明；本包经 type-only import 消费。
+当前 agent 通过 `ctx.get('blueSession')` 读取（绝不用 `inject`），因为 app 插件可能晚于本包激活。`BlueSessionRef` 与 `blue/request-resume` 事件由 `@dsh-blue/blue-app` 拥有并声明；本包经 type-only import 消费。
 
 ## 模型体验
 

@@ -2,7 +2,7 @@
  * `ctx.blueScreen` service: the L1 component-mounting contract, delegating
  * to the L0 terminal runtime.
  *
- * @module @deepseek-ai/dsh-blue-core/screen
+ * @module @dsh-blue/blue-core/screen
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'

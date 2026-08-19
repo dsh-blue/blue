@@ -13,7 +13,7 @@
  * exported for that sibling plugin, which trusts sniffed types over the
  * clipboard tool's assumed PNG.
  *
- * @module @deepseek-ai/dsh-blue-interaction/attachments
+ * @module @dsh-blue/blue-interaction/attachments
  */
 
 import { randomUUID } from 'node:crypto'

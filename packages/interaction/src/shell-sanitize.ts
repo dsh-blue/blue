@@ -9,7 +9,7 @@
  * `\t` (which the renderer understands). This is the Blue port of kimi's
  * `sanitizeShellOutput` (`apps/kimi-code/src/tui/utils/shell-output.ts`).
  *
- * @module @deepseek-ai/dsh-blue-interaction/shell-sanitize
+ * @module @dsh-blue/blue-interaction/shell-sanitize
  */
 
 // ESC [ <params> <intermediates> <final> — colours, cursor moves, clear, and

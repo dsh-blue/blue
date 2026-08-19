@@ -5,7 +5,7 @@
  * pi-tui type crosses the package boundary. Width helpers are re-exported
  * under Blue signatures, passing straight through to pi-tui.
  *
- * @module @deepseek-ai/dsh-blue-core/components
+ * @module @dsh-blue/blue-core/components
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'

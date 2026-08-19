@@ -1,5 +1,5 @@
 /**
- * @deepseek-ai/dsh-blue-core — Blue terminal UI core: the tree's only
+ * @dsh-blue/blue-core — Blue terminal UI core: the tree's only
  * `@earendil-works/pi-tui` adapter. Loading the plugin probes the terminal
  * background (OSC 11, before raw mode), starts the main-screen renderer
  * over `ProcessTerminal`, and registers the `blueScreen`, `blueKeymap`,
@@ -9,7 +9,7 @@
  * actions before focus routing. Unloading stops the terminal and restores
  * its state.
  *
- * @module @deepseek-ai/dsh-blue-core
+ * @module @dsh-blue/blue-core
  */
 
 import type { Context } from '@deepseek-ai/cordis'

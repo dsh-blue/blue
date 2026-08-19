@@ -8,10 +8,10 @@
  * each transition; subscribers re-read the reference on every emission,
  * which also covers theme reloads rebuilding both plugins.
  *
- * @module @deepseek-ai/dsh-blue-interaction/editor-instance
+ * @module @dsh-blue/blue-interaction/editor-instance
  */
 
-import type { BlueEditor } from '@deepseek-ai/dsh-blue-core'
+import type { BlueEditor } from '@dsh-blue/blue-core'
 // Empty type import carries the Cordis `Events` interface this file merges into.
 import type {} from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'

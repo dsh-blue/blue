@@ -12,7 +12,7 @@
  * bulges one pixel left of the back. `'1'` is a lit cell, anything else is
  * dark; the golden spec in `tests/banner-art.spec.ts` pins the packed result.
  *
- * @module @deepseek-ai/dsh-blue-transcript/banner-art
+ * @module @dsh-blue/blue-transcript/banner-art
  */
 
 /** The lit-pixel marker inside {@link WHALE_PIXELS} rows. */

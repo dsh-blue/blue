@@ -12,7 +12,7 @@ import type {
   BlueComponent,
   BlueOverlayHandle,
   BlueScreen,
-} from '@deepseek-ai/dsh-blue-core'
+} from '@dsh-blue/blue-core'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type { BlueStatus, BlueStatusEntry } from '../src/types.ts'
 import { fakeBlueComponents } from './helpers.ts'

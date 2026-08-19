@@ -63,11 +63,11 @@ describe('blue bundle', () => {
       'blue-app',
     ])
     // The S7/S8 rows resolve to their package subpath names.
-    expect(patch).toContain("name: '@deepseek-ai/dsh-blue-transcript/intent-diff'")
-    expect(patch).toContain("name: '@deepseek-ai/dsh-blue-transcript/intent-terminal'")
-    expect(patch).toContain("name: '@deepseek-ai/dsh-blue-interaction/attachments'")
-    expect(patch).toContain("name: '@deepseek-ai/dsh-blue-interaction/paste-image'")
-    expect(patch).toContain("name: '@deepseek-ai/dsh-blue-transcript/banner'")
+    expect(patch).toContain("name: '@dsh-blue/blue-transcript/intent-diff'")
+    expect(patch).toContain("name: '@dsh-blue/blue-transcript/intent-terminal'")
+    expect(patch).toContain("name: '@dsh-blue/blue-interaction/attachments'")
+    expect(patch).toContain("name: '@dsh-blue/blue-interaction/paste-image'")
+    expect(patch).toContain("name: '@dsh-blue/blue-transcript/banner'")
   })
 })
 

@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-blue-root",
+  "name": "@dsh-blue/blue-root",
   "version": "0.1.0-rc.7",
   "license": "MIT",
   "private": true,

@@ -3,7 +3,7 @@
  * layers: the live-session reference service and the session-switch events.
  * Types only — no runtime code.
  *
- * @module @deepseek-ai/dsh-blue-app/types
+ * @module @dsh-blue/blue-app/types
  */
 
 import type { Agent } from '@deepseek-ai/dsh-agent'

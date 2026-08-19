@@ -12,7 +12,7 @@ import {
   type ToolResultMessage,
   type UserMessage,
 } from '@deepseek-ai/dsh-llm'
-import type { BlueComponents, BlueImage, BlueMarkdown } from '@deepseek-ai/dsh-blue-core'
+import type { BlueComponents, BlueImage, BlueMarkdown } from '@dsh-blue/blue-core'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 
 /** Matches every SGR sequence (global, for stripping before measurement). */

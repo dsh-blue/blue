@@ -7,10 +7,10 @@
  * subsequence-match the command name, and survivors rank by summed
  * pi-tui score (lower is better).
  *
- * @module @deepseek-ai/dsh-blue-interaction/slash-filter
+ * @module @dsh-blue/blue-interaction/slash-filter
  */
 
-import type { BlueComponents } from '@deepseek-ai/dsh-blue-core'
+import type { BlueComponents } from '@dsh-blue/blue-core'
 
 /** The command-registry shape the filter reads. */
 export interface SlashCommandText {

@@ -11,11 +11,11 @@
  * like bash's "Backspace on an empty `!` prompt" (`editor-plus` matches
  * it in its own `onKey` wrapper; it never dispatches).
  *
- * @module @deepseek-ai/dsh-blue-interaction/keys
+ * @module @dsh-blue/blue-interaction/keys
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { BlueKeyAction } from '@deepseek-ai/dsh-blue-core'
+import type { BlueKeyAction } from '@dsh-blue/blue-core'
 
 /** Confirm the focused choice or submit the text (Enter). */
 export const ACTION_SUBMIT = 'blue.interaction.submit'

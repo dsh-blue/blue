@@ -12,7 +12,7 @@ import type {
   BlueKeymap,
   BlueOverlayHandle,
   BlueScreen,
-} from '@deepseek-ai/dsh-blue-core'
+} from '@dsh-blue/blue-core'
 import type { CommandDefinition, CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { fakeBlueComponents } from './helpers.ts'
 import { asAgent, COLORS, type FakeAgent } from './status-fakes.ts'
