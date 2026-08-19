@@ -715,23 +715,28 @@ declare module '@deepseek-ai/cordis' {
     /**
      * The side-question pane docked above the input editor (or left) —
      * the editor's top corners switch from `╭╮` to the spliced `├┤` while
-     * connected. Emitted by `blue-pane-btw` on open (true) and on dismiss
-     * or unload (false); `blue-input` listens, mirrors the flag onto the
-     * editor, and gates its Esc/arrow routing on it.
+     * connected. Emitted by `blue-pane-btw` on open (true, with the busy
+     * flag), on dismiss or unload (false), and whenever the side agent's
+     * running state flips; `blue-input` listens, mirrors the flag onto the
+     * editor, and gates its Esc/arrow/Enter routing on it.
      * Unfiltered: the flag is broadcast to every fiber.
      * @param connected - whether the pane is docked above the editor.
+     * @param busy - whether the side agent is still answering; a submit
+     *   while busy is refused by the editor and the draft restored.
      * @mode emit
      */
-    'blue/editor-connected-above'(connected: boolean): void
+    'blue/editor-connected-above'(connected: boolean, busy?: boolean): void
     /**
      * A key command for the open side-question pane, routed through the
      * editor's context key chain (the keymap claims `escape`/`up`/`down`
      * for the list surfaces, so the pane cannot register its own keys).
      * Emitted by `blue-input`; `blue-pane-btw` listens and runs the pane
-     * close/scroll action. No-ops when the pane is closed.
+     * close/scroll/submit action. No-ops when the pane is closed; `submit`
+     * is refused while the side agent is still running.
      * @param command - the pane action to run.
+     * @param text - the submitted follow-up text for `submit`.
      * @mode emit
      */
-    'blue/btw-command'(command: 'close' | 'scroll-up' | 'scroll-down'): void
+    'blue/btw-command'(command: 'close' | 'scroll-up' | 'scroll-down' | 'submit', text?: string): void
   }
 }

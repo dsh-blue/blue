@@ -1371,6 +1371,13 @@ describe('blue whole-tree e2e', () => {
     // untouched.
     expect(tree.adapter.requests).toHaveLength(1)
 
+    // Enter while the pane is up continues the side conversation: the text
+    // reaches the SAME side agent as a second turn, never the main agent.
+    typeLine(tree.terminal, 'follow up?')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('› follow up?') })
+    expect(tree.adapter.requests).toHaveLength(2)
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('side reply') })
+
     // Escape (routed through the editor chain while the pane is up) closes
     // it; the editor's rounded corner comes back.
     tree.terminal.sendInput('\x1b')

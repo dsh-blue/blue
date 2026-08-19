@@ -10,7 +10,6 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { visibleWidth } from '@earendil-works/pi-tui'
 import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
@@ -116,9 +115,19 @@ function run(commands: PaneFakeCommands, rawInput: string): Promise<unknown> {
 }
 
 /**
+ * Fake visible width mirroring the pi-tui convention the real `topRule`
+ * uses: SGR stripped, `↑`/`↓` one column each, everything else one (the
+ * transcript package must not import pi-tui — L0 discipline; pi-tui's
+ * wcwidth treats the arrows as single-width).
+ */
+function visibleWidth(text: string): number {
+  return [...text.replace(/\x1b\[[0-9;]*m/g, '')].length
+}
+
+/**
  * The pane's top border at the default width. The identity colors leave the
  * manual bold SGR of the title; the composite width is computed with the
- * real pi-tui width function, mirroring `topRule` itself.
+ * fake width function, mirroring `topRule` itself.
  */
 function rule(truncated: boolean, width = 80): string {
   const hint = truncated ? 'Esc close · ↑↓ scroll ' : 'Esc close '
@@ -188,7 +197,7 @@ describe('blue-pane-btw', () => {
     ctx.on('blue/editor-connected-above', splice)
 
     expect(await run(commands, 'what is x?')).toEqual({ kind: 'success', text: 'asked the side question' })
-    expect(splice).toHaveBeenLastCalledWith(true)
+    expect(splice).toHaveBeenLastCalledWith(true, true)
     const options = agents.creates[0]!
     expect(String(options.sessionId)).toMatch(/^btw-/)
     expect(options.seed).toBe(current.session.events)
@@ -225,7 +234,9 @@ describe('blue-pane-btw', () => {
     ctx.emit('agent/status', { agent: side.handle.agent, status: 'running' })
     expect(screen.paneLines()).toHaveLength(5)
     ctx.emit('agent/status', { agent: side.handle.agent, status: 'idle' })
-    expect(screen.paneLines()).toEqual(frame(['› what is x?', 'x is the 24th letter']))
+    // The thinking row leaves but the high-water height stays: the third
+    // body row pads blank (the min-height ratchet).
+    expect(screen.paneLines()).toEqual(frame(['› what is x?', 'x is the 24th letter', '']))
 
     // Unloading disposes the live side agent and releases the editor splice.
     await dispose()
@@ -383,6 +394,9 @@ describe('blue-pane-btw', () => {
     const session = side.agent.session as unknown as Session
     const long = Array.from({ length: 25 }, (_, index) => `line${index + 1}`).join('\n')
     ctx.emit('session/event', session, assistantEvent(1, 1, [{ type: 'text', text: long }]))
+    // One render materializes the overflow budget (the fake screen renders
+    // only on request); the scroll commands act on the measured state.
+    expect(screen.paneLines()[1]).toBe(bodyRow('line20'))
 
     // Scrolling past the top clamps to offset 0: the question row shows.
     for (let i = 0; i < 30; i += 1) ctx.emit('blue/btw-command', 'scroll-up')
@@ -402,6 +416,8 @@ describe('blue-pane-btw', () => {
     const session = first.agent.session as unknown as Session
     const long = Array.from({ length: 25 }, (_, index) => `line${index + 1}`).join('\n')
     ctx.emit('session/event', session, assistantEvent(1, 1, [{ type: 'text', text: long }]))
+    // Render once so the overflow budget is measured, then scroll up one.
+    expect(screen.paneLines()[1]).toBe(bodyRow('line20'))
     ctx.emit('blue/btw-command', 'scroll-up')
     expect(screen.paneLines()[1]).toBe(bodyRow('line19'))
 
@@ -420,17 +436,21 @@ describe('blue-pane-btw', () => {
     const side = agents.sides[0]!
     const session = side.agent.session as unknown as Session
     ctx.emit('session/event', session, assistantEvent(1, 1, [{ type: 'text', text: 'l1\nl2\nl3' }]))
-    // Body = question + 3 lines = 4 rows → the panel grows to 4.
-    expect(screen.paneLines()).toHaveLength(1 + 4 + 1)
+    // Body = question + 3 lines + thinking = 5 rows → the panel grows to 5.
+    expect(screen.paneLines()).toHaveLength(1 + 5 + 1)
 
-    // The finalize shrinks the body to question + 1 line = 2 rows, but the
-    // panel stays at its high-water height instead of flickering.
+    // The finalize shrinks the body to question + 1 line, and the idle flip
+    // drops the thinking row — but the panel stays at its high-water height
+    // instead of flickering.
     ctx.emit('session/event', session, assistantEvent(1, 1, [{ type: 'text', text: 'done' }]))
+    ctx.emit('agent/status', { agent: side.handle.agent, status: 'idle' })
     const lines = screen.paneLines()
-    expect(lines).toHaveLength(1 + 4 + 1)
+    expect(lines).toHaveLength(1 + 5 + 1)
     expect(lines[1]).toBe(bodyRow('› q?'))
     expect(lines[2]).toBe(bodyRow('done'))
-    expect(lines[3]).toBe('')
+    // The padding rows render through the border machinery, like the rest.
+    expect(lines[3]).toBe(bodyRow(''))
+    expect(lines[4]).toBe(bodyRow(''))
     await dispose()
   })
 
@@ -453,6 +473,70 @@ describe('blue-pane-btw', () => {
     await dispose()
   })
 
+  it('continues the side conversation on submit while idle', async () => {
+    resetSeq()
+    const agents = new FakeAgents()
+    const { ctx, commands, screen, dispose } = await boot(fakeAgent([]), agents)
+    const splice = vi.fn()
+    ctx.on('blue/editor-connected-above', splice)
+    await run(commands, 'first?')
+    const side = agents.sides[0]!
+    const session = side.agent.session as unknown as Session
+    // The first turn settles; the busy flag flips with it.
+    ctx.emit('agent/status', { agent: side.handle.agent, status: 'idle' })
+    expect(splice).toHaveBeenLastCalledWith(true, false)
+    expect(side.agent.followups).toHaveLength(1)
+
+    // The editor routes the next Enter here: a second turn appends to the
+    // SAME side agent (no second creation), and the busy flag returns.
+    ctx.emit('blue/btw-command', 'submit', 'and then?')
+    expect(agents.creates).toHaveLength(1)
+    expect(splice).toHaveBeenLastCalledWith(true, true)
+    expect(side.agent.followups).toHaveLength(2)
+    expect(side.agent.followups[1]!.content).toEqual([{ type: 'text', text: 'and then?' }])
+    // The first turn settled before the submit, so its thinking row is gone;
+    // the blank separator row sits between the two turns.
+    expect(screen.paneLines()).toEqual(frame(['› first?', '', '› and then?', 'thinking…']))
+
+    ctx.emit('session/event', session, assistantEvent(1, 1, [{ type: 'text', text: 'second reply' }]))
+    ctx.emit('agent/status', { agent: side.handle.agent, status: 'idle' })
+    expect(screen.paneLines()).toEqual(frame(['› first?', '', '› and then?', 'second reply']))
+    await dispose()
+  })
+
+  it('ignores a submit while the side agent is still answering', async () => {
+    resetSeq()
+    const agents = new FakeAgents()
+    const { ctx, commands, screen, dispose } = await boot(fakeAgent([]), agents)
+    await run(commands, 'first?')
+    const side = agents.sides[0]!
+    const baseline = side.agent.followups.length
+    const renderBaseline = screen.renderRequests.length
+
+    ctx.emit('blue/btw-command', 'submit', 'ignored')
+    expect(side.agent.followups).toHaveLength(baseline)
+    expect(screen.renderRequests.length).toBe(renderBaseline)
+    // The pane still shows the first turn only.
+    expect(screen.paneLines()).toEqual(frame(['› first?', 'thinking…']))
+    await dispose()
+  })
+
+  it('ignores submit commands with no text or while closed', async () => {
+    resetSeq()
+    const agents = new FakeAgents()
+    const { ctx, commands, screen, dispose } = await boot(fakeAgent([]), agents)
+    const baseline = screen.renderRequests.length
+    ctx.emit('blue/btw-command', 'submit', '')
+    ctx.emit('blue/btw-command', 'submit')
+    expect(screen.renderRequests.length).toBe(baseline)
+
+    await run(commands, 'q?')
+    const side = agents.sides[0]!
+    ctx.emit('blue/btw-command', 'submit', '   ')
+    expect(side.agent.followups).toHaveLength(1)
+    await dispose()
+  })
+
   it('closes through the close command and hides below the minimum width', async () => {
     resetSeq()
     const agents = new FakeAgents()
@@ -472,7 +556,10 @@ describe('blue-pane-btw', () => {
     await vi.waitFor(() => {
       expect(side.disposed).toBe(1)
     })
-    expect(splice).toHaveBeenLastCalledWith(false)
+    // The splice release lands on the dismiss continuation's microtask.
+    await vi.waitFor(() => {
+      expect(splice).toHaveBeenLastCalledWith(false)
+    })
     expect(screen.paneLines()).toEqual([])
     await dispose()
   })

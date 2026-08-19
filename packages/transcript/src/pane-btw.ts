@@ -70,16 +70,22 @@ const BTW_MIN_WIDTH = 4
 const BOLD_OPEN = '\x1b[1m'
 const BOLD_CLOSE = '\x1b[22m'
 
+/** One question/answer exchange inside the pane. */
+interface BtwTurn {
+  /** The question that started this exchange. */
+  question: string
+  /** The accumulated (then finalized) side reply text. */
+  reply: string
+  /** Whether the side agent has yet to return to idle for this turn. */
+  thinking: boolean
+}
+
 /** The pane's render state, mutated by the command handler and subscriptions. */
 interface BtwState {
   /** Whether an exchange is open; a closed pane renders zero rows. */
   open: boolean
-  /** The question that opened the current exchange. */
-  question: string
-  /** The accumulated (then finalized) side reply text. */
-  reply: string
-  /** Whether the side agent has yet to return to idle. */
-  thinking: boolean
+  /** The exchanges so far; continuation turns append to the same slot. */
+  turns: BtwTurn[]
   /** Height ratchet: the panel never shrinks while open (kimi port). */
   minBodyLines: number
   /** Tail-follow: new content pins the viewport to the bottom until the user scrolls up. */
@@ -182,20 +188,24 @@ class BtwPaneComponent implements BlueComponent {
   }
 
   /**
-   * Render the exchange rows — question, Markdown reply, thinking — at the
-   * content width.
+   * Render the exchange rows — each turn's question and Markdown reply, plus
+   * a thinking row while the current turn is still running — at the content
+   * width.
    * @param width - the content width (viewport minus the border columns).
    * @returns the unfitted body rows.
    */
   private renderBody(width: number): string[] {
-    const lines: string[] = [
-      this.colors.roleUser(this.components.truncateToWidth(`› ${this.state.question}`, width)),
-    ]
-    if (this.state.reply !== '') {
-      this.markdown.setText(this.state.reply)
-      lines.push(...this.markdown.render(width))
+    const lines: string[] = []
+    const turns = this.state.turns
+    for (const [index, turn] of turns.entries()) {
+      if (index > 0) lines.push('')
+      lines.push(this.colors.roleUser(this.components.truncateToWidth(`› ${turn.question}`, width)))
+      if (turn.reply !== '') {
+        this.markdown.setText(turn.reply)
+        lines.push(...this.markdown.render(width))
+      }
+      if (turn.thinking) lines.push(this.colors.muted('thinking…'))
     }
-    if (this.state.thinking) lines.push(this.colors.muted('thinking…'))
     return lines
   }
 
@@ -275,9 +285,7 @@ export function apply(ctx: Context): void {
   const screen = ctx.blueScreen
   const state: BtwState = {
     open: false,
-    question: '',
-    reply: '',
-    thinking: false,
+    turns: [],
     minBodyLines: 0,
     followTail: true,
     scrollTop: 0,
@@ -303,8 +311,7 @@ export function apply(ctx: Context): void {
     // `├┤` corners over a vanished pane.
     ctx.emit('blue/editor-connected-above', false)
     state.open = false
-    state.reply = ''
-    state.thinking = false
+    state.turns = []
     screen.requestRender()
     return { kind: 'success', text: 'dismissed the side question' }
   }
@@ -347,10 +354,12 @@ export function apply(ctx: Context): void {
     }
     const offEvent = ctx.on('session/event', (session, event) => {
       if (session !== handle.agent.session) return
+      const turn = state.turns.at(-1)
+      if (turn === undefined) return
       if (event.type === 'assistant/chunk' && event.data.chunk.type === 'text-delta') {
-        state.reply += event.data.chunk.text
+        turn.reply += event.data.chunk.text
       } else if (event.type === 'assistant/message') {
-        state.reply = messageText(event.data.message)
+        turn.reply = messageText(event.data.message)
       } else {
         return
       }
@@ -359,7 +368,11 @@ export function apply(ctx: Context): void {
     const offStatus = ctx.on('agent/status', (payload) => {
       if (payload.agent !== handle.agent) return
       if (payload.status !== 'idle') return
-      state.thinking = false
+      const turn = state.turns.at(-1)
+      if (turn === undefined) return
+      turn.thinking = false
+      // The busy flag gates the editor's Enter routing; report the flip.
+      ctx.emit('blue/editor-connected-above', true, false)
       screen.requestRender()
     })
     slot = {
@@ -370,16 +383,14 @@ export function apply(ctx: Context): void {
       },
     }
     // A fresh question starts the panel from the top: height ratchet and
-    // scroll state reset, tail-following restored.
+    // scroll state reset, tail-following restored, the slot busy.
     state.open = true
-    state.question = question
-    state.reply = ''
-    state.thinking = true
+    state.turns = [{ question, reply: '', thinking: true }]
     state.minBodyLines = 0
     state.followTail = true
     state.scrollTop = 0
     state.maxScrollTop = 0
-    ctx.emit('blue/editor-connected-above', true)
+    ctx.emit('blue/editor-connected-above', true, true)
     handle.agent.followup(createUserMessage({
       content: [{ type: 'text', text: question }],
       source: { kind: 'user' },
@@ -399,11 +410,33 @@ export function apply(ctx: Context): void {
   const pane = new BtwPaneComponent(colors, components, state, () => screen.rows)
   // Bottom panes render in mount order; a zero-row render occupies nothing.
   ctx.effect(() => screen.addBottomChild(pane))
-  // The editor key chain routes close/scroll here while the pane is open.
-  ctx.on('blue/btw-command', command => {
+  // The editor key chain routes close/scroll/submit here while the pane is
+  // open.
+  ctx.on('blue/btw-command', (command, text) => {
     if (!state.open) return
     if (command === 'close') {
       void dismiss()
+      return
+    }
+    if (command === 'submit') {
+      // The editor already refuses a submit while busy; double-guard so a
+      // stale busy flag cannot drop a question silently. The text trims
+      // like the /btw command (kimi's `submit` normalizes the prompt).
+      const current = slot
+      const question = text?.trim()
+      if (current === undefined || question === undefined || question === '') return
+      const turn = state.turns.at(-1)
+      if (turn?.thinking === true) return
+      state.turns.push({ question, reply: '', thinking: true })
+      state.followTail = true
+      state.scrollTop = 0
+      state.maxScrollTop = 0
+      ctx.emit('blue/editor-connected-above', true, true)
+      current.handle.agent.followup(createUserMessage({
+        content: [{ type: 'text', text: question }],
+        source: { kind: 'user' },
+      }))
+      screen.requestRender()
       return
     }
     if (pane.scroll(command === 'scroll-up' ? 'up' : 'down')) {
