@@ -87,6 +87,31 @@ function createService(tui: TuiMainScreen): BlueComponentsService {
   return new BlueComponentsService(new Context(), { theme: taggedTheme(), tui })
 }
 
+/**
+ * A theme for the chrome specs: the two roles the editor frame consumes emit
+ * real SGR sequences, because the chrome post-processing locates visible
+ * columns by stripping SGR runs (the «role:» tags above are opaque to it).
+ */
+const SGR = { border: '\x1b[38;5;240m', shellMode: '\x1b[38;5;99m' }
+const RESET = '\x1b[0m'
+
+function sgrTheme(): BlueTheme {
+  const identity = (text: string): string => text
+  const colors = Object.fromEntries(
+    ROLES.map(role => [
+      role,
+      role === 'border' || role === 'shellMode'
+        ? (text: string) => SGR[role] + text + RESET
+        : identity,
+    ]),
+  ) as unknown as BlueSemanticColors
+  return { colors }
+}
+
+function createSgrService(tui: TuiMainScreen): BlueComponentsService {
+  return new BlueComponentsService(new Context(), { theme: sgrTheme(), tui })
+}
+
 describe('BlueComponentsService registration', () => {
   it('registers as ctx.blueComponents and unregisters when the fiber disposes', async () => {
     const { tui, stop } = bootTui()
@@ -173,13 +198,80 @@ describe('createEditor', () => {
     const editor = components.createEditor()
     editor.setText('x')
     const before = editor.render(40).join('\n')
-    // The editor is the interactive anchor: its border takes primary.
-    expect(before).toContain('«primary:')
+    // The idle frame is the neutral border; contextual recolors go through
+    // setBorderColor (the S11 rounded-box default, kimi treatment).
+    expect(before).toContain('«border:')
+    expect(before).not.toContain('«primary:')
 
     editor.setBorderColor(text => `[[${text}]]`)
     const after = editor.render(40).join('\n')
     expect(after).toContain('[[')
-    expect(after).not.toContain('«primary:')
+    expect(after).not.toContain('«border:')
+    stop()
+  })
+
+  it('renders a rounded box with side bars over the bare rules', () => {
+    const { tui, stop } = bootTui()
+    const components = createSgrService(tui)
+    const editor = components.createEditor({ paddingX: 4 })
+    editor.setText('hi')
+    const lines = editor.render(20)
+    // The per-dash rule is repainted as one box-drawn span.
+    expect(lines[0]).toBe(`${SGR.border}╭${'─'.repeat(18)}╮${RESET}`)
+    // The content row carries `hi`, the inverse-video cursor right behind
+    // it, and a side bar at each end (the four padding spaces feed them).
+    expect(lines[1]).toBe(`${SGR.border}│${RESET}   hi\x1b[7m \x1b[0m${' '.repeat(12)}${SGR.border}│${RESET}`)
+    expect(lines.at(-1)).toBe(`${SGR.border}╰${'─'.repeat(18)}╯${RESET}`)
+    stop()
+  })
+
+  it('overlays the > prompt symbol unpainted and the ! through the border color', () => {
+    const { tui, stop } = bootTui()
+    const components = createSgrService(tui)
+    const editor = components.createEditor({ paddingX: 4 })
+    editor.setPromptSymbol('>')
+    const plain = editor.render(20)
+    // Column 2 carries the bare `>` (no SGR around it); column 0 is the bar.
+    expect(plain[1]).toBe(`${SGR.border}│${RESET} > \x1b[7m \x1b[0m${' '.repeat(14)}${SGR.border}│${RESET}`)
+
+    editor.setPromptSymbol('!')
+    const bash = editor.render(20)
+    // The bash symbol shares the border hue (kimi rule).
+    expect(bash[1]).toBe(`${SGR.border}│${RESET} ${SGR.border}!${RESET} \x1b[7m \x1b[0m${' '.repeat(14)}${SGR.border}│${RESET}`)
+
+    editor.setPromptSymbol(undefined)
+    const cleared = editor.render(20)
+    expect(cleared[1]).toBe(`${SGR.border}│${RESET}   \x1b[7m \x1b[0m${' '.repeat(14)}${SGR.border}│${RESET}`)
+    stop()
+  })
+
+  it('leaves the prompt off when the first content row lacks the padding', () => {
+    const { tui, stop } = bootTui()
+    const components = createSgrService(tui)
+    // paddingX defaults to 0: content rows start at column 0, so the symbol
+    // has nowhere to land and the row renders unchanged.
+    const editor = components.createEditor()
+    editor.setPromptSymbol('>')
+    const lines = editor.render(20)
+    expect(lines[1]).not.toContain('>')
+    stop()
+  })
+
+  it('lays the border label into the top rule and opens connected corners', () => {
+    const { tui, stop } = bootTui()
+    const components = createSgrService(tui)
+    const editor = components.createEditor({ paddingX: 4 })
+    editor.setBorderLabel(`${SGR.shellMode}! shell mode${RESET}`)
+    const labeled = editor.render(30)
+    // The label's visible width is 12, leaving 28 - 12 dashes of the rule.
+    expect(labeled[0]).toBe(
+      `${SGR.border}╭${RESET}${SGR.shellMode}! shell mode${RESET}${SGR.border}${'─'.repeat(16)}${RESET}${SGR.border}╮${RESET}`,
+    )
+
+    editor.setConnectedAbove(true)
+    const connected = editor.render(30)
+    expect(connected[0]?.startsWith(`${SGR.border}├${RESET}`)).toBe(true)
+    expect(connected.at(-1)).toBe(`${SGR.border}╰${'─'.repeat(28)}╯${RESET}`)
     stop()
   })
 

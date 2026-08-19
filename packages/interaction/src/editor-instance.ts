@@ -52,6 +52,42 @@ export interface SharedEditor {
 let shared: SharedEditor | undefined
 
 /**
+ * The presence id of the `blue-editor-plus` enhancement: bash mode and the
+ * slash/`@` autocomplete live on its optional fiber, and other surfaces
+ * (the persistent hint row) advertise those affordances only while it is
+ * attached.
+ */
+export const ENHANCEMENT_EDITOR_PLUS = 'blue-editor-plus'
+
+/** Currently attached enhancement ids. */
+const enhancements = new Set<string>()
+
+/**
+ * Mark an enhancement as attached to the shared editor; called inside a
+ * `ctx.effect` so unloading reverts the mark.
+ * @param id - the enhancement presence id.
+ * @returns an idempotent disposer removing exactly this mark.
+ */
+export function markEditorEnhancement(id: string): () => void {
+  enhancements.add(id)
+  let disposed = false
+  return () => {
+    if (disposed) return
+    disposed = true
+    enhancements.delete(id)
+  }
+}
+
+/**
+ * Whether an enhancement is currently attached.
+ * @param id - the enhancement presence id.
+ * @returns the attachment state.
+ */
+export function hasEditorEnhancement(id: string): boolean {
+  return enhancements.has(id)
+}
+
+/**
  * Publish the mounted editor; called by `blue-input` on mount.
  * @param value - the editor and its submit router.
  */

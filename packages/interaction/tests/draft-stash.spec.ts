@@ -13,7 +13,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import * as inputPlugin from '../src/input-plugin.ts'
-import { getStashedDraft } from '../src/draft-stash.ts'
+import { getStashedDraft, getStashedInputMode, stashDraft, stashInputMode, clearDraft } from '../src/draft-stash.ts'
 import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeBlueEditor } from './fakes.ts'
 
 function type(editor: FakeBlueEditor, text: string): void {
@@ -70,5 +70,15 @@ describe('editor draft stash', () => {
     await firstFiber.dispose()
     await ctx.plugin(inputPlugin)
     expect(components.editors[1]?.getText()).toBe('')
+  })
+
+  it('stashes the input mode beside the draft and resets both on submit', () => {
+    stashInputMode('bash')
+    expect(getStashedInputMode()).toBe('bash')
+    // Consuming the draft resets the mode with it.
+    stashDraft('ls')
+    clearDraft()
+    expect(getStashedInputMode()).toBe('prompt')
+    expect(getStashedDraft()).toBe('')
   })
 })

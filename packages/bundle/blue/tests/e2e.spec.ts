@@ -62,6 +62,9 @@ import { MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
 
 const disposers: (() => Promise<void>)[] = []
 
+/** The idle editor frame's border SGR: dark palette `border` #5a5a5a (S11). */
+const EDITOR_BORDER_SGR = '\x1b[38;2;90;90;90m'
+
 afterEach(async () => {
   for (const dispose of disposers.splice(0)) await dispose()
   // In-turn step folding is module-global; restore the default so the next
@@ -841,9 +844,9 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('mock · idle') })
     // Position discipline: a width change forces a full clear-and-repaint
     // frame, so the last such chunk carries every row in screen order —
-    // transcript reply, then the footer, then the editor's top border (the
-    // first primary border run at or after the footer; the banner above the
-    // transcript also paints with the dark palette `primary` #4fa8ff).
+    // transcript reply, then the footer, then the editor's rounded top
+    // border (the first gray `border` #5a5a5a run at or after the footer;
+    // the idle frame is neutral since S11, slash/bash contexts recolor it).
     tree.terminal.resize(100, 30)
     let frame = ''
     await vi.waitFor(() => {
@@ -853,10 +856,77 @@ describe('blue whole-tree e2e', () => {
     })
     const reply = frame.indexOf('Blue online.')
     const footer = frame.indexOf('mock · idle')
-    const editorBorder = frame.indexOf('\x1b[38;2;79;168;255m', footer)
+    const editorBorder = frame.indexOf(EDITOR_BORDER_SGR, footer)
     expect(reply).toBeGreaterThanOrEqual(0)
     expect(footer).toBeGreaterThan(reply)
     expect(editorBorder).toBeGreaterThan(footer)
+  })
+
+  it('frames the editor in a rounded box with a prompt symbol and persistent hint row', async () => {
+    const tree = await bootBlue([], { script: [] })
+    await currentAgent(tree)
+    const frame = await fullFrame(tree.terminal)
+    // The idle frame is the neutral gray rounded box: corners on both rules…
+    expect(frame).toContain(`${EDITOR_BORDER_SGR}╭`)
+    expect(frame).toContain(`${EDITOR_BORDER_SGR}╰`)
+    // …a side bar on the content row with the bare `>` prompt in column 2
+    // (no SGR between the bar's reset and the symbol).
+    expect(frame).toContain(`${EDITOR_BORDER_SGR}│\x1b[39m > `)
+    // The persistent hint row carries every loaded affordance — bash and @
+    // (editor-plus) and paste image (its action) — in textMuted #6b6b6b.
+    const hintAt = frame.indexOf('\x1b[38;2;107;107;107m')
+    expect(hintAt).toBeGreaterThanOrEqual(0)
+    expect(frame.slice(hintAt)).toContain('! bash · / commands · @ files · ctrl+s steer · ctrl+v paste image · ctrl+c exit')
+  })
+
+  it('recolors the frame for slash context with the dropdown boxed in the same frame', async () => {
+    const tree = await bootBlue([], { script: [] })
+    await currentAgent(tree)
+    tree.terminal.sendInput('/')
+    // The editor-plus provider resolves the command list asynchronously;
+    // the dropdown rows appear once it settles.
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/help') })
+    const frame = await fullFrame(tree.terminal)
+    // Slash context: the whole frame — corners and the dropdown's side bars
+    // alike — repaints in primary #4fa8ff (the paint routes through the live
+    // borderColor the slash resolution set).
+    const PRIMARY_SGR = '\x1b[38;2;79;168;255m'
+    const topAt = frame.indexOf(`${PRIMARY_SGR}╭`)
+    expect(topAt).toBeGreaterThanOrEqual(0)
+    const bottomAt = frame.indexOf(`${PRIMARY_SGR}╰`, topAt)
+    expect(bottomAt).toBeGreaterThan(topAt)
+    // The dropdown renders below the bottom rule, its rows carrying the
+    // same-color side bars — one frame, no bare rows in between.
+    const dropdownAt = frame.indexOf('/help', bottomAt)
+    expect(dropdownAt).toBeGreaterThan(bottomAt)
+    const dropdownRowStart = frame.lastIndexOf(`${PRIMARY_SGR}│`, dropdownAt)
+    expect(dropdownRowStart).toBeGreaterThan(bottomAt)
+  })
+
+  it('applies the bash triple on ! mode and restores the prompt frame on submit', async () => {
+    const tree = await bootBlue([], { script: [] })
+    await currentAgent(tree)
+    // The draft stash is module state shared across this worker's cases; the
+    // previous case leaves a '/' draft behind, and bash entry needs an empty
+    // buffer (same clear as the queue-recall case).
+    tree.terminal.sendInput('\x1b')
+    clearDraft()
+    tree.terminal.sendInput('!')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('! shell mode') })
+    const bash = await fullFrame(tree.terminal)
+    // The triple: the shellMode #bd93f9 frame, the `! shell mode` label in
+    // the top rule, and the `!` prompt symbol in the frame's hue.
+    const SHELL_SGR = '\x1b[38;2;189;147;249m'
+    expect(bash).toContain(`${SHELL_SGR}╭`)
+    expect(bash).toContain(`${SHELL_SGR}! shell mode`)
+    expect(bash).toContain(`${SHELL_SGR}│\x1b[39m ${SHELL_SGR}!`)
+    // Submitting an empty command returns to the neutral prompt frame.
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => {
+      const frame = tree.terminal.output
+      const last = frame.lastIndexOf(`${EDITOR_BORDER_SGR}╭`)
+      expect(last).toBeGreaterThan(frame.indexOf('! shell mode'))
+    })
   })
 
   it('flips the baseline footer entry to running during a turn and back to idle on interrupt', async () => {
@@ -1091,11 +1161,11 @@ describe('blue whole-tree e2e', () => {
     const running = await fullFrame(tree.terminal)
     expect(running).toContain('working…')
     // Dock order: the spinner sits between the footer and the editor (the
-    // first primary border run at or after the spinner — the banner above
-    // also paints with `primary`).
+    // first gray `border` frame run at or after the spinner — the idle
+    // editor frame is neutral since S11).
     const footerAt = running.indexOf('mock · running')
     const spinnerAt = running.indexOf('working…')
-    const borderAt = running.indexOf('\x1b[38;2;79;168;255m', spinnerAt)
+    const borderAt = running.indexOf(EDITOR_BORDER_SGR, spinnerAt)
     expect(footerAt).toBeGreaterThanOrEqual(0)
     expect(spinnerAt).toBeGreaterThan(footerAt)
     expect(borderAt).toBeGreaterThan(spinnerAt)
@@ -1119,12 +1189,12 @@ describe('blue whole-tree e2e', () => {
     // A list with in-progress work starts expanded: one styled row per entry.
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('active-task') })
     // Dock order: the footer (mock · idle), then the todo pane, then the
-    // editor's top border (the first primary border run at or after the pane
-    // — the banner above also paints with `primary`).
+    // editor's rounded top border (the first gray `border` frame run at or
+    // after the pane — the idle editor frame is neutral since S11).
     const expanded = await fullFrame(tree.terminal)
     const footer = expanded.indexOf('mock · idle')
     const todo = expanded.indexOf('active-task')
-    const editorBorder = expanded.indexOf('\x1b[38;2;79;168;255m', todo)
+    const editorBorder = expanded.indexOf(EDITOR_BORDER_SGR, todo)
     expect(footer).toBeGreaterThanOrEqual(0)
     expect(todo).toBeGreaterThan(footer)
     expect(editorBorder).toBeGreaterThan(todo)
@@ -1149,12 +1219,12 @@ describe('blue whole-tree e2e', () => {
     }))
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('queued ↑ turn: queued-task') })
     // Dock order: the queue pane sits between the footer and the editor (the
-    // first primary border run at or after the pane — the banner above also
-    // paints with `primary`).
+    // first gray `border` frame run at or after the pane — the idle editor
+    // frame is neutral since S11).
     const docked = await fullFrame(tree.terminal)
     const footerAt = docked.indexOf('mock · idle')
     const queuedAt = docked.indexOf('queued ↑ turn: queued-task')
-    const borderAt = docked.indexOf('\x1b[38;2;79;168;255m', queuedAt)
+    const borderAt = docked.indexOf(EDITOR_BORDER_SGR, queuedAt)
     expect(footerAt).toBeGreaterThanOrEqual(0)
     expect(queuedAt).toBeGreaterThan(footerAt)
     expect(borderAt).toBeGreaterThan(queuedAt)
@@ -1224,9 +1294,11 @@ describe('blue whole-tree e2e', () => {
 
     // /sessions lists the persisted sessions newest-first in a picker
     // overlay. Flush the live fork so its header has reached the disk, and
-    // widen the terminal first: the row labels (id · date · cwd) need room.
+    // widen the terminal first: the row labels (id · date · cwd) need room,
+    // and the cwd segment is as long as this checkout's path (a worktree
+    // path runs ~30 columns longer than the main checkout).
     await tree.ctx.sessions.flush(forked.session)
-    tree.terminal.resize(240, 40)
+    tree.terminal.resize(300, 40)
     await expect(executeCommand(tree, forked, '/sessions')).resolves.toEqual({ kind: 'success' })
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Resume a session') })
     const picker = tree.terminal.output

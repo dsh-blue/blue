@@ -467,6 +467,25 @@ export interface BlueEditor extends BlueFocusable {
    */
   setBorderColor(color: BlueColorFn): void
   /**
+   * Overlay a prompt symbol on the editor's first content row. Requires the
+   * editor to be created with `paddingX: 4`; the bash `!` renders in the
+   * current border color, the neutral `>` in the default foreground.
+   * @param symbol - the symbol, or `undefined` to remove it.
+   */
+  setPromptSymbol(symbol: '>' | '!' | undefined): void
+  /**
+   * Lay pre-styled text into the editor's top border (e.g. a mode badge);
+   * scroll-indicator borders are never labeled. Requires `paddingX: 4`.
+   * @param text - the styled label, or `undefined` to remove it.
+   */
+  setBorderLabel(text: string | undefined): void
+  /**
+   * Switch the top corners between `╭╮` and `├┤`, the latter reading as a
+   * frame docked to a panel above (the S13 btw dock).
+   * @param connected - whether a panel is docked above the editor.
+   */
+  setConnectedAbove(connected: boolean): void
+  /**
    * Attach the autocomplete provider driving the suggestion dropdown.
    * @param provider - the suggestion source.
    */
