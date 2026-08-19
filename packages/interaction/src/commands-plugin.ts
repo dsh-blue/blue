@@ -27,7 +27,7 @@ import type {} from '@dsh-blue/blue-app'
 // Empty type import carries the `sessionPersistence` Context merge; the
 // service itself is optional and resolved lazily.
 import type {} from '@deepseek-ai/dsh-session-persistence'
-import { getSharedEditor } from './editor-instance.ts'
+import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
 import type { HelpSection } from './help.ts'
 import { HelpOverlay } from './help.ts'
 import { SessionList } from './select.ts'
@@ -114,7 +114,7 @@ export function apply(ctx: Context): void {
       title: 'Sessions',
       titleHint: '· esc cancel · ↵ resume',
       onSelect: (item) => {
-        handle.hide()
+        restore()
         if (item.value === String(currentId)) {
           getSharedEditor()?.notice?.(display.colors.error('already the current session'))
           return
@@ -123,17 +123,13 @@ export function apply(ctx: Context): void {
         getSharedEditor()?.notice?.(`resuming session ${item.value}`)
       },
       onCancel: () => {
-        handle.hide()
+        restore()
       },
     })
-    // The kimi pull-up panel: full width, anchored to the bottom over the
-    // editor's slot, leaving the two-row footer shell visible below.
-    const handle = display.screen.showOverlay(list, {
-      width: '100%',
-      anchor: 'bottom-center',
-      offsetY: -2,
-      maxHeight: '55%',
-    })
+    // The kimi dialog mount (D30): the panel replaces the editor in its
+    // dock slot, so below it only the footer remains — a floating overlay
+    // would leave the editor's frame peeking around the panel.
+    const restore = mountEditorReplacement(list)
     return { kind: 'success' }
   }
 
@@ -173,17 +169,12 @@ export function apply(ctx: Context): void {
       keymap: display.keymap,
       sections,
       onClose: () => {
-        handle.hide()
+        restore()
       },
     })
-    // The kimi pull-up panel: full width, anchored to the bottom over the
-    // editor's slot, leaving the two-row footer shell visible below.
-    const handle = display.screen.showOverlay(overlay, {
-      width: '100%',
-      anchor: 'bottom-center',
-      offsetY: -2,
-      maxHeight: '85%',
-    })
+    // The kimi dialog mount (D30): the panel replaces the editor in its
+    // dock slot, so below it only the footer remains.
+    const restore = mountEditorReplacement(overlay)
     return { kind: 'success' }
   }
 

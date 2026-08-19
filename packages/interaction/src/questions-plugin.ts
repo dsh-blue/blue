@@ -1,11 +1,12 @@
 /**
  * `blue-questions` plugin: the UI provider for `ctx.userQuestions`. The
  * whole request — however many questions it carries — opens as a single
- * modal overlay hosting the tabbed `Questionnaire` component (see
+ * dialog panel hosting the tabbed `Questionnaire` component (see
  * `./questionnaire.ts`): every question must be answered before the
  * request resolves, Escape dismisses the whole request, and an aborted
- * request signal closes the overlay and rejects. Registration is
- * effect-bound, so HMR disposal unregisters the provider.
+ * request signal closes the panel and rejects. The panel replaces the
+ * editor in its dock slot (D30), so below it only the footer remains.
+ * Registration is effect-bound, so HMR disposal unregisters the provider.
  *
  * @module @dsh-blue/blue-interaction/questions-plugin
  */
@@ -13,29 +14,13 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { UserQuestionError } from '@deepseek-ai/dsh-user-questions'
 import type { AskUserQuestionAnswer, AskUserQuestionRequest } from '@deepseek-ai/dsh-user-questions'
+import { mountEditorReplacement } from './editor-instance.ts'
 import { Questionnaire } from './questionnaire.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-questions'
 /** Services required before the provider can register. */
 export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'userQuestions']
-
-/**
- * The kimi pull-up panel presentation: full width, anchored to the bottom
- * so the dialog rises from the editor's slot, with the two-row footer
- * shell left visible on the terminal's last rows (S12 dock reorder).
- */
-const OVERLAY_WIDTH = '100%'
-const OVERLAY_ANCHOR = 'bottom-center'
-/** Negative offset: the panel's bottom edge ends above the two-row footer. */
-const OVERLAY_FOOTER_CLEARANCE = -2
-/**
- * Overlay height bound as a share of the terminal. S12 raises the bound so
- * the framed dialog (bars, title, tabs, question, six option rows, key
- * row) fits inside its budget — pi-tui slices overlay output past
- * maxHeight.
- */
-const OVERLAY_MAX_HEIGHT = '75%'
 
 /**
  * Register the overlay-backed user-questions provider; the fiber's disposal
@@ -65,7 +50,7 @@ function askAll(ctx: Context, request: AskUserQuestionRequest): Promise<AskUserQ
       if (settled) return
       settled = true
       request.signal?.removeEventListener('abort', onAbort)
-      handle.hide()
+      restore()
       complete()
     }
     const questionnaire = new Questionnaire({
@@ -83,12 +68,9 @@ function askAll(ctx: Context, request: AskUserQuestionRequest): Promise<AskUserQ
         })
       },
     })
-    const handle = ctx.blueScreen.showOverlay(questionnaire, {
-      width: OVERLAY_WIDTH,
-      anchor: OVERLAY_ANCHOR,
-      offsetY: OVERLAY_FOOTER_CLEARANCE,
-      maxHeight: OVERLAY_MAX_HEIGHT,
-    })
+    // The kimi dialog mount (D30): the questionnaire replaces the editor in
+    // its dock slot, so below it only the footer remains.
+    const restore = mountEditorReplacement(questionnaire)
     const onAbort = (): void => {
       settle(() => {
         reject(new UserQuestionError('ask_user_question was aborted before the user answered', 'ASK_ABORTED'))

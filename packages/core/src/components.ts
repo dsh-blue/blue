@@ -250,6 +250,25 @@ class EditorAdapter implements BlueEditor {
     this.ghostHint = hint
   }
 
+  /**
+   * Whether the cursor sits at the end of the input's first line — the only
+   * position the argument-hint ghost belongs (the kimi `computeArgumentHint`
+   * cursor gate). History recall parks the cursor at the recalled text's
+   * start, and a mid-text cursor means the user is editing, not about to
+   * supply arguments; in both the ghost declines.
+   * @returns whether the ghost may render.
+   */
+  private cursorAtInputEnd(): boolean {
+    const { line, col } = this.editor.getCursor()
+    if (line !== 0) return false
+    // The buffer always carries at least one line (pi-tui normalizes even
+    // an empty setText to ['']); the fallback only satisfies the
+    // index-access checker.
+    /* v8 ignore next -- defensive default, unreachable with a real editor */
+    const first = this.editor.getLines()[0] ?? ''
+    return col === first.length
+  }
+
   setAutocompleteProvider(provider: BlueAutocompleteProvider): void {
     // BlueAutocompleteProvider is structurally identical to pi-tui's
     // AutocompleteProvider, so it passes through without wrapping; the pi-tui
@@ -283,7 +302,7 @@ class EditorAdapter implements BlueEditor {
     if (this.promptSymbol !== '!' && this.editor.getText().trimStart().startsWith('/')) {
       row = highlightLeadingSlashToken(row, this.chrome.slashTokenPaint) ?? row
     }
-    if (this.ghostHint !== undefined) {
+    if (this.ghostHint !== undefined && this.cursorAtInputEnd()) {
       row = injectGhostHint(row, this.ghostHint, this.editor.getText().length, width, this.chrome.ghostHintPaint)
     }
     // The bash `!` shares the border hue so the mode reads as one unit; the

@@ -5,13 +5,16 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import type { BlueComponent, BlueFocusable } from '@dsh-blue/blue-core'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import {
   ENHANCEMENT_EDITOR_PLUS,
   applySubmitTransformers,
   hasEditorEnhancement,
   markEditorEnhancement,
+  mountEditorReplacement,
   registerSubmitTransformer,
+  setEditorSlotSwap,
 } from '../src/editor-instance.ts'
 
 describe('submit transformers', () => {
@@ -64,5 +67,53 @@ describe('enhancement presence marks', () => {
     unmark()
     unmark()
     expect(hasEditorEnhancement(ENHANCEMENT_EDITOR_PLUS)).toBe(false)
+  })
+})
+
+describe('editor-slot swap', () => {
+  it('degrades to a no-op mount while no swap is installed', () => {
+    // The module state may hold nothing (blue-input never mounted, or a
+    // fresh module graph between suites): a dialog opening then degrades
+    // instead of crashing, and the returned disposer is inert.
+    setEditorSlotSwap(undefined)
+    const panel: BlueFocusable & BlueComponent = {
+      focused: false,
+      handleInput: () => {},
+      invalidate: () => {},
+      render: () => ['panel'],
+    }
+    const restore = mountEditorReplacement(panel)
+    expect(() => {
+      restore()
+      restore()
+    }).not.toThrow()
+  })
+
+  it('mounts through the installed swap and forwards the disposer', () => {
+    const mounted: string[] = []
+    setEditorSlotSwap({
+      mount: (component) => {
+        mounted.push(component.render(10)[0] ?? '')
+        let restored = false
+        return () => {
+          if (restored) return
+          restored = true
+          mounted.pop()
+        }
+      },
+    })
+    const panel: BlueFocusable & BlueComponent = {
+      focused: false,
+      handleInput: () => {},
+      invalidate: () => {},
+      render: () => ['panel'],
+    }
+    const restore = mountEditorReplacement(panel)
+    expect(mounted).toEqual(['panel'])
+    restore()
+    restore()
+    expect(mounted).toEqual([])
+    // Leave the module state clean for the suites that follow.
+    setEditorSlotSwap(undefined)
   })
 })
