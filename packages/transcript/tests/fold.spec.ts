@@ -217,6 +217,29 @@ describe('foldSessionEvents', () => {
     expect(item.result?.text).toBe('done')
   })
 
+  it('suppresses todo_write calls and their results entirely', () => {
+    // The todo pane owns the list's presentation, so the call and its
+    // paired result render nothing — not even the unpaired fallback.
+    const folder = new TranscriptFolder()
+    expect(folder.apply(toolCallEvent(1, 1, 't1', 'todo_write', '{"todos":[]}'))).toBeNull()
+    expect(folder.apply(toolResultEvent(1, 1, 't1', 'ok'))).toBeNull()
+    // A result whose call id was never seen still renders unpaired; only a
+    // suppressed call id suppresses its result.
+    expect(folder.apply(toolResultEvent(1, 1, 'other', 'late'))?.isNew).toBe(true)
+    expect(folder.items).toHaveLength(1)
+    expect((folder.items[0] as TranscriptToolItem).name).toBe('tool')
+
+    // Other tools pair as before, distinguished by name.
+    const paired = foldSessionEvents([
+      toolCallEvent(1, 1, 'c1', 'bash', '{}'),
+      toolCallEvent(1, 1, 't2', 'todo_write', '{}'),
+      toolResultEvent(1, 1, 't2', 'ok'),
+      toolResultEvent(1, 1, 'c1', 'out'),
+    ])
+    expect(paired).toHaveLength(1)
+    expect((paired[0] as TranscriptToolItem).name).toBe('bash')
+  })
+
   it('runs the result presenter for an unpaired result too', () => {
     const orphanView = { card: 'diff' }
     const folder = new TranscriptFolder({
@@ -469,6 +492,32 @@ describe('in-turn step folding', () => {
     expect(folder.apply(stepStart(1, 2))).toBeNull()
     // The assistant item was not folded away.
     expect(folder.items.filter(item => item.kind === 'assistant')).toHaveLength(1)
+  })
+
+  it('excludes suppressed todo_write calls from the step summary', () => {
+    const folder = new TranscriptFolder()
+    for (const e of [
+      turnStart(1),
+      stepStart(1, 1),
+      toolCallEvent(1, 1, 't1', 'todo_write', '{}'),
+      toolCallEvent(1, 1, 'a1', 'Read', '{}'),
+      toolResultEvent(1, 1, 't1', 'ok'),
+      stepStart(1, 2),
+    ]) folder.apply(e)
+    const summary = folder.items[0] as TranscriptStepSummaryItem
+    expect(summary.kind).toBe('step-summary')
+    expect(summary.toolNames).toEqual(['Read'])
+
+    // A step whose every call was todo_write folds to nothing at all.
+    const todoOnly = new TranscriptFolder()
+    for (const e of [
+      turnStart(1),
+      stepStart(1, 1),
+      toolCallEvent(1, 1, 't2', 'todo_write', '{}'),
+      toolResultEvent(1, 1, 't2', 'ok'),
+      stepStart(1, 2),
+    ]) todoOnly.apply(e)
+    expect(todoOnly.items).toHaveLength(0)
   })
 
   it('never folds at step/end or turn/end — only the next step/start folds', () => {

@@ -1215,7 +1215,7 @@ describe('blue whole-tree e2e', () => {
     expect(await fullFrame(tree.terminal)).not.toContain('working…')
   })
 
-  it('renders the todo pane above the editor with the footer on the last rows, and Ctrl-T collapses it', async () => {
+  it('renders the folded todo pane above the editor and expands it with Ctrl-T', async () => {
     const tree = await bootBlue([], { script: [] })
     const agent = await currentAgent(tree)
     // Inject a durable whole-list snapshot straight into the session log; the
@@ -1224,12 +1224,20 @@ describe('blue whole-tree e2e', () => {
       todos: [
         { content: 'done-task', status: 'completed' },
         { content: 'active-task', status: 'in_progress' },
-        { content: 'later-task', status: 'pending' },
+        { content: 'later-1', status: 'pending' },
+        { content: 'later-2', status: 'pending' },
+        { content: 'later-3', status: 'pending' },
+        { content: 'later-4', status: 'pending' },
       ],
     })
-    // Any list starts expanded (the S13 dogfood ruling): one styled row per
-    // entry.
+    // The kimi folded default: every in-progress row, the latest completed,
+    // and the earliest pending fit into five rows; the footer counts the one
+    // hidden pending entry. Completed content renders struck through.
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('active-task') })
+    await waitForRender()
+    expect(tree.terminal.output).toContain('\x1b[9mdone-task\x1b[29m')
+    expect(tree.terminal.output).toContain('… +1 more (1 pending) · ctrl+t to expand')
+    expect(tree.terminal.output).not.toContain('later-4')
     // Dock order (S12): the footer pins to the terminal's last rows, then
     // the editor's rounded top border, then the todo pane above it (the
     // first gray `border` frame run at or after the pane — the idle editor
@@ -1241,12 +1249,62 @@ describe('blue whole-tree e2e', () => {
     expect(footer).toBeGreaterThanOrEqual(0)
     expect(editorBorder).toBeGreaterThan(todo)
     expect(footer).toBeGreaterThan(editorBorder)
-    // The global Ctrl-T action collapses the pane to the one-line summary.
+    // The global Ctrl-T action expands the pane to the full list.
     tree.terminal.sendInput('\x14')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('todos 1/3') })
-    const collapsed = await fullFrame(tree.terminal)
-    expect(collapsed).toContain('todos 1/3')
-    expect(collapsed).not.toContain('active-task')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('later-4') })
+    const full = await fullFrame(tree.terminal)
+    expect(full).toContain('all 6 items · ctrl+t to collapse')
+  })
+
+  it('hides todo_write tool calls from the stream while sibling tools render', async () => {
+    const tree = await bootBlue([], {
+      script: [
+        toolCallResponse('call-todo', 'todo_write', { todos: [] }),
+        toolCallResponse('call-probe', 'side-probe', {}),
+        textResponse('plain answer'),
+      ],
+    })
+    const agent = await currentAgent(tree)
+    // Step folding collapses the step's tool cards into one summary line;
+    // disabling it keeps the sibling tool's card mounted so its result row
+    // stays observably present next to the suppressed todo call.
+    setStepFoldingEnabled(false)
+    // Structural ToolDefinitions without importing dsh-tools: register()
+    // only validates the output declaration's shape.
+    const tools = (tree.ctx as unknown as { tools: { register(definition: unknown): () => void } }).tools
+    tools.register({
+      name: 'todo_write',
+      description: 'test stand-in for the harness todo tool',
+      parameters: { type: 'object', properties: {} },
+      output: {
+        schema: { type: 'string' },
+        render: (_args: unknown, value: unknown) => [{ type: 'text', text: String(value) }],
+      },
+      execute: () => Promise.resolve('todos updated'),
+    })
+    tools.register({
+      name: 'side-probe',
+      description: 'test tool emitting a visible output',
+      parameters: { type: 'object', properties: {} },
+      output: {
+        schema: { type: 'string' },
+        render: (_args: unknown, value: unknown) => [{ type: 'text', text: String(value) }],
+      },
+      execute: () => Promise.resolve('probe output'),
+    })
+    typeLine(tree.terminal, 'run both tools')
+    await agent.whenIdle()
+    await waitForRender()
+    // The sibling tool renders its card (across the accumulated frames —
+    // step folding later collapses it into the summary line); the todo call
+    // renders nothing in any frame — the pane owns the list's presentation,
+    // so the stream never echoes it.
+    const shown = tree.terminal.output
+    expect(shown).toContain('side-probe')
+    expect(shown).toContain('probe output')
+    expect(shown).toContain('plain answer')
+    expect(shown).not.toContain('todo_write')
+    expect(shown).not.toContain('todos updated')
   })
 
   it('renders queued inbox messages and recalls the latest into the empty editor on Up', async () => {
@@ -1305,7 +1363,7 @@ describe('blue whole-tree e2e', () => {
     // once the throttled render settles.
     tree.terminal.sendInput('\x1b[6~')
     tree.terminal.sendInput('\x1b[6~')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Toggle todo panel') })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Toggle todo list expansion') })
     const scrolled = tree.terminal.output
     expect(scrolled).toContain('ctrl+c')
     // Escape closes the overlay.

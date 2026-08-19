@@ -12,7 +12,9 @@
  * authoritative assembled message; `tool/call` + `tool/result` pair by
  * `callId` into one tool item carrying the parsed arguments, the
  * reconstructed `ToolResult`, and the render intent resolved through the
- * optional `present` hooks. `turn/start`/`step/start`/`turn/end` drive the
+ * optional `present` hooks — except `todo_write`, whose calls and results
+ * render nothing because the todo pane owns that presentation.
+ * `turn/start`/`step/start`/`turn/end` drive the
  * turn/step tagging, the completed-turn list the window policy evicts on,
  * and in-turn step folding: the next `step/start` of a turn folds the
  * previous step's tool items into one `step-summary` item. All other event
@@ -37,6 +39,15 @@ import { isStepFoldingEnabled } from './window.ts'
 
 /** Maximum length of the one-line tool-result summary. */
 export const RESULT_SUMMARY_MAX_CHARS = 160
+
+/**
+ * The harness todo tool's model-facing name (`tool-todo` registers it; the
+ * `todo/write` whole-list snapshots carry the same writes). The todo pane
+ * owns the visible presentation, so the tool call itself renders nothing in
+ * the stream — the user's S13 dogfood ruling (kimi keeps the call headline
+ * and drops only the body; Blue hides both).
+ */
+const TODO_TOOL_NAME = 'todo_write'
 
 /**
  * Collapse a multi-line string to one ellipsized line.
@@ -173,6 +184,8 @@ export class TranscriptFolder {
   private streamingItem: TranscriptAssistantItem | null = null
   private readonly finalizedSteps = new Set<string>()
   private readonly toolsByCallId = new Map<string, TranscriptToolItem>()
+  /** Call ids of suppressed `todo_write` calls, so their results render nothing either. */
+  private readonly suppressedCalls = new Set<string>()
 
   /**
    * @param hooks - optional tool-presentation hooks resolved per call/result.
@@ -278,6 +291,12 @@ export class TranscriptFolder {
       }
 
       case 'tool/call': {
+        // The todo pane renders the list; the call itself would only echo it
+        // into the stream. Track the id so the paired result stays hidden too.
+        if (event.data.name === TODO_TOOL_NAME) {
+          this.suppressedCalls.add(event.data.callId)
+          return null
+        }
         const item: TranscriptToolItem = {
           kind: 'tool',
           seq: event.seq,
@@ -301,6 +320,7 @@ export class TranscriptFolder {
       case 'tool/result': {
         const block = event.data.message.content[0]
         const callId = String(block.toolCallId)
+        if (this.suppressedCalls.has(callId)) return null
         const isError = block.isError === true || event.data.error !== undefined
         const result = {
           text: summarizeResult(event.data),
@@ -354,7 +374,9 @@ export class TranscriptFolder {
    * Internal references to evicted items are pruned, so a late event
    * targeting evicted state (a `tool/result` for an evicted call, chunks for
    * an evicted streaming step) hits the ordinary fallback paths instead of
-   * mutating items nothing renders.
+   * mutating items nothing renders. The suppressed-call id set is kept:
+   * call ids are unique and never re-targeted, and pruning it would let a
+   * late `todo_write` result render unpaired.
    * @param turn - the highest turn number to remove.
    * @returns the evicted items, in session order.
    */
