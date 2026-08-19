@@ -14,7 +14,7 @@ import type {
   TranscriptToolItem,
   TranscriptUserItem,
 } from '../src/types.ts'
-import { setStepFoldingEnabled } from '../src/window.ts'
+import { setRecentStepsRetention, setStepFoldingEnabled } from '../src/window.ts'
 import {
   assistantEvent,
   event,
@@ -35,6 +35,7 @@ import {
 beforeEach(() => {
   resetSeq()
   setStepFoldingEnabled(undefined)
+  setRecentStepsRetention(undefined)
 })
 
 describe('foldSessionEvents', () => {
@@ -459,6 +460,7 @@ describe('user images', () => {
   })
 
   it('prunes only the owning callId entry when folding re-used ids', () => {
+    setRecentStepsRetention(0)
     const folder = new TranscriptFolder()
     for (const e of [
       turnStart(1),
@@ -530,6 +532,13 @@ describe('evictThrough', () => {
 })
 
 describe('in-turn step folding', () => {
+  // Retention 0 reproduces the S7 policy (each step/start folds the previous
+  // step's cards), keeping the per-mechanism assertions sharp; the S20 kimi
+  // retention window gets its own cases below.
+  beforeEach(() => {
+    setRecentStepsRetention(0)
+  })
+
   /** A turn with two tool-using steps and one final assistant-only step. */
   function foldTurn(events?: SessionEvent[]): TranscriptFolder {
     const folder = new TranscriptFolder()
@@ -713,5 +722,37 @@ describe('in-turn step folding', () => {
     const update = folder.apply(toolResultEvent(1, 1, 'a1', 'late'))
     expect(update?.[0]?.isNew).toBe(true)
     expect(folder.items.filter(item => item.kind === 'tool')).toHaveLength(1)
+  })
+
+  it('keeps the most recent steps expanded under the kimi retention', () => {
+    setRecentStepsRetention(2)
+    const folder = new TranscriptFolder()
+    for (const e of [
+      turnStart(1),
+      stepStart(1, 1),
+      toolCallEvent(1, 1, 'a1', 'Read', '{}'),
+      stepStart(1, 2),
+      toolCallEvent(1, 2, 'b1', 'Read', '{}'),
+      stepStart(1, 3),
+      assistantEvent(1, 3, [{ type: 'text', text: 'mid' }]),
+    ]) folder.apply(e)
+    // Steps 1 and 2 are the most recent two: neither folds yet.
+    expect(folder.items.filter(item => item.kind === 'step-summary')).toHaveLength(0)
+    expect(folder.items.filter(item => item.kind === 'tool')).toHaveLength(2)
+
+    // Step 4 slides the window: step 1 leaves it and folds.
+    folder.apply(stepStart(1, 4))
+    expect(folder.items.filter(item => item.kind === 'tool')).toHaveLength(1)
+    const summary = folder.items.find(item => item.kind === 'step-summary') as TranscriptStepSummaryItem
+    expect(summary.step).toBe(1)
+  })
+
+  it('folds nothing within the default 30-step window', () => {
+    // The default retention (30) leaves every card of a normal multi-step
+    // turn expanded — the S20 dogfood alignment (kimi's live behavior).
+    setRecentStepsRetention(undefined)
+    const folder = foldTurn()
+    expect(folder.items.filter(item => item.kind === 'step-summary')).toHaveLength(0)
+    expect(folder.items.filter(item => item.kind === 'tool')).toHaveLength(3)
   })
 })

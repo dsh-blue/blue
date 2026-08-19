@@ -6,14 +6,17 @@
  * feed, dropping events at or below the snapshot's last seq. Every applied
  * branch ends in `blueScreen.requestRender()`. A global `ctrl+o` keymap
  * action (`blue.transcript.toggle-collapse`) toggles tool-card components
- * between the one-line result summary and the full output. Tool cards are
+ * between the collapsed result preview and the full output, scoped to the
+ * most recent {@link EXPAND_TURNS} turns (the S20 kimi range). Tool cards are
  * created through the `blueIntents` render-intent registry: the item's
  * resolved view selects an intent entry, and the entry's factory builds the
  * component (the built-in `'generic'` entry is the `ToolCallComponent`
  * baseline). Long sessions stay bounded: after each applied event the window
  * policy evicts turns older than the newest completed `windowTurns` turns
- * (silent destruction, no replacement UI), and in-turn step folding collapses
- * a completed step's tool cards into one `step-summary` line. The plugin also
+ * (silent destruction, no replacement UI), and in-turn step folding slides a
+ * retention window (the most recent `DEFAULT_RECENT_STEPS_RETENTION` steps
+ * stay expanded, older ones collapse into one `step-summary` line). The
+ * plugin also
  * owns the status line's extension seam: it provides the `blueStatus`
  * registry and mounts the persistent two-row footer shell bottom-pinned
  * above the input editor; the entries themselves ship as the `status-basic`
@@ -81,8 +84,11 @@ export type {
   TranscriptUserItem,
 } from './types.ts'
 export {
+  DEFAULT_RECENT_STEPS_RETENTION,
   DEFAULT_WINDOW_TURNS,
   currentWindowTurns,
+  recentStepsRetention,
+  setRecentStepsRetention,
   setStepFoldingEnabled,
   setWindowTurns,
 } from './window.ts'
@@ -97,15 +103,22 @@ export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap'
 export const ACTION_TOGGLE_COLLAPSE = 'blue.transcript.toggle-collapse'
 
 /**
- * The plugin-wide expansion toggle state plus the live session's tool-card
- * components the toggle re-renders. `expanded` resets to collapsed and the
- * collection empties whenever the mounted session unmounts. Entries without
- * a `setExpanded` (an intent component that never collapses) never join the
- * set, so the toggle skips them.
+ * The Ctrl-O expansion range (kimi `TRANSCRIPT_EXPAND_TURNS`): only cards in
+ * the most recent turns flip; older turns stay collapsed.
+ */
+export const EXPAND_TURNS = 3
+
+/**
+ * The plugin-wide expansion toggle state plus the live session's mounted
+ * entries in mount order — the S20 position-based scope reads turn
+ * boundaries from them. `expanded` resets to collapsed and the entries
+ * reference clears whenever the mounted session unmounts. Entries whose
+ * component lacks a `setExpanded` (an intent component that never
+ * collapses) are skipped by the toggle.
  */
 interface CollapseToggle {
   expanded: boolean
-  components: Set<BlueIntentComponent>
+  entries: readonly MountedEntry[]
 }
 
 /** One mounted component and the bookkeeping to retire it. */
@@ -169,6 +182,7 @@ function mountSession(
 ): () => void {
   const components = ctx.blueComponents
   const entries: MountedEntry[] = []
+  toggle.entries = entries
   const folder = new TranscriptFolder({
     present: {
       call: (name, args) => resolveCallView(ctx.tools, name, args),
@@ -192,12 +206,11 @@ function mountSession(
     onReady: () => screen.requestRender(),
   }
 
-  /** Dispose and drop every entry matching the predicate (toggle included). */
+  /** Dispose and drop every entry matching the predicate. */
   const retire = (matches: (item: TranscriptItem) => boolean): void => {
     for (let index = entries.length - 1; index >= 0; index -= 1) {
       const entry = entries[index]!
       if (!matches(entry.item)) continue
-      toggle.components.delete(entry.component as BlueIntentComponent)
       retireEntry(entry)
       entries.splice(index, 1)
     }
@@ -228,12 +241,11 @@ function mountSession(
     }
     const expandable = component as BlueIntentComponent
     if (item.kind === 'thinking') {
-      // The thinking block joins the Ctrl-O set at the live expansion state
-      // (kimi applies toolOutputExpanded at ThinkingComponent creation too).
+      // The thinking block mounts at the live expansion state (kimi applies
+      // toolOutputExpanded at ThinkingComponent creation too); a freshly
+      // mounted tool card is always in the newest turn, so the creation-time
+      // state below is the same shortcut for it.
       expandable.setExpanded?.(toggle.expanded)
-    }
-    if (typeof expandable.setExpanded === 'function') {
-      toggle.components.add(expandable)
     }
     // The kimi one-column gutter (D29, S21): every transcript entry mounts
     // inset on both sides; the component itself never knows.
@@ -283,7 +295,7 @@ function mountSession(
   return () => {
     offEvent()
     toggle.expanded = false
-    toggle.components.clear()
+    toggle.entries = []
     for (const entry of entries.splice(0)) retireEntry(entry)
   }
 }
@@ -304,7 +316,7 @@ function mountSession(
 export function apply(ctx: Context): void {
   const screen = ctx.blueScreen
   const colors = ctx.blueTheme.colors
-  const toggle: CollapseToggle = { expanded: false, components: new Set() }
+  const toggle: CollapseToggle = { expanded: false, entries: [] }
 
   // Instantiated directly, like BlueStatusService below: a Cordis Context
   // proxy rejects uninjected services and a service cannot inject itself,
@@ -330,7 +342,26 @@ export function apply(ctx: Context): void {
     description: 'Toggle tool output expansion',
     handler: () => {
       toggle.expanded = !toggle.expanded
-      for (const component of toggle.components) component.setExpanded?.(toggle.expanded)
+      // The kimi `toggleToolOutputExpansion` scope (S20): a component is
+      // expandable only when it sits at or after the start of the
+      // (totalTurns - EXPAND_TURNS)-th turn — position-based over the mount
+      // order, so streaming cards without any metadata still resolve. User
+      // items are the turn boundaries; everything before the cutoff turns'
+      // start collapses (never expands), everything at/after it flips.
+      const entries = toggle.entries
+      const boundaries: number[] = []
+      for (let index = 0; index < entries.length; index += 1) {
+        if (entries[index]!.item.kind === 'user') boundaries.push(index)
+      }
+      const cutoff = boundaries.length > EXPAND_TURNS
+        ? boundaries[boundaries.length - EXPAND_TURNS]!
+        : 0
+      for (let index = 0; index < entries.length; index += 1) {
+        const expandable = entries[index]!.component as BlueIntentComponent
+        if (typeof expandable.setExpanded === 'function') {
+          expandable.setExpanded(toggle.expanded && index >= cutoff)
+        }
+      }
       screen.requestRender(true)
     },
   }]))

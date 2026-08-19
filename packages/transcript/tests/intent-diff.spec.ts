@@ -93,7 +93,8 @@ describe('DiffCardComponent', () => {
     const rendered = new DiffCardComponent(props(item)).render(80)
     // Header + path + capped rows + counter.
     expect(rendered).toHaveLength(2 + DIFF_COLLAPSED_ROWS + 1)
-    expect(rendered.at(-1)).toBe(`[TM]… ${20 - DIFF_COLLAPSED_ROWS} more lines[/TM]`)
+    expect(rendered.at(-1)).toBe(
+      `[TM]... (${20 - DIFF_COLLAPSED_ROWS} more lines, 20 total, ctrl+o to expand)[/TM]`)
   })
 
   it('raises the cap when expanded and elides past 200 rows', () => {
@@ -104,7 +105,8 @@ describe('DiffCardComponent', () => {
     component.setExpanded(true)
     const expanded = component.render(80)
     expect(expanded).toHaveLength(2 + DIFF_EXPANDED_ROWS + 1)
-    expect(expanded.at(-1)).toBe(`[TM]… ${230 - DIFF_EXPANDED_ROWS} more lines[/TM]`)
+    expect(expanded.at(-1)).toBe(
+      `[TM]... (${230 - DIFF_EXPANDED_ROWS} more lines, 230 total, ctrl+o to expand)[/TM]`)
     expect(expanded).not.toEqual(collapsed)
     component.setExpanded(false)
     expect(component.render(80)).toEqual(collapsed)

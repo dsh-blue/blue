@@ -112,9 +112,10 @@ describe('transcript perf: 200 turns', () => {
   it('keeps mounted components within the window bound', async () => {
     const bounded = await runPerf(200, undefined)
     console.log(`perf: window=15 mounted=${bounded.screen.mounted} in ${bounded.ms.toFixed(1)}ms`)
-    // Per kept turn: 1 user + 2 folded step summaries + final step's 2 tools
-    // + 1 assistant = 6 mounted components, kept over DEFAULT_WINDOW_TURNS.
-    const bound = 6 * DEFAULT_WINDOW_TURNS + 6
+    // Per kept turn: 1 user + 3 steps × 2 tools (the S20 kimi retention keeps
+    // every card expanded) + 1 assistant = 8 mounted components, kept over
+    // DEFAULT_WINDOW_TURNS.
+    const bound = 8 * DEFAULT_WINDOW_TURNS + 8
     expect(bounded.screen.mounted).toBeLessThanOrEqual(bound)
 
     const unbounded = await runPerf(200, Number.MAX_SAFE_INTEGER)

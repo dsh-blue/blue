@@ -61,7 +61,7 @@ import * as statusGitPlugin from '../../../transcript/src/status-git.ts'
 import * as statusTipsPlugin from '../../../transcript/src/status-tips.ts'
 import { buildTipRotation, tipOffer } from '../../../transcript/src/status-tips.ts'
 import { STATUS_TIPS } from '../../../transcript/src/tips-content.ts'
-import { setStepFoldingEnabled } from '../../../transcript/src/window.ts'
+import { setRecentStepsRetention, setStepFoldingEnabled } from '../../../transcript/src/window.ts'
 import { MockAdapter, reasoningResponse, textResponse, toolCallResponse } from './mock-adapter.ts'
 
 const disposers: (() => Promise<void>)[] = []
@@ -104,9 +104,10 @@ function bootTipText(): string {
 
 afterEach(async () => {
   for (const dispose of disposers.splice(0)) await dispose()
-  // In-turn step folding is module-global; restore the default so the next
+  // In-turn step folding is module-global; restore the defaults so the next
   // spec decides its own policy.
   setStepFoldingEnabled(true)
+  setRecentStepsRetention(undefined)
   // The editor stash is module state shared by every booted tree in this
   // worker: don't leak one case's submitted history into the next case's
   // fresh editor.
@@ -722,7 +723,7 @@ describe('blue whole-tree e2e', () => {
     await agent.whenIdle()
   })
 
-  it('Ctrl-O toggles a tool result between the one-line summary and the full output', async () => {
+  it('Ctrl-O toggles a tool result between the collapsed preview and the full output', async () => {
     // Spaced words so the expanded wrap lands TAILMARKER intact on one row;
     // past the 160-char summary ceiling so the collapsed form ellipsizes it
     // away.
@@ -752,8 +753,13 @@ describe('blue whole-tree e2e', () => {
     typeLine(tree.terminal, 'run the tool')
     await agent.whenIdle()
     await waitForRender()
-    // Collapsed (the default): the one-line ellipsized summary renders; the
+    // Collapsed (the default): the S20 kimi card header (✓ mark, Used verb,
+    // bold name, lines chip), the 3-row preview, and the expand hint; the
     // tail of the full output does not.
+    const shown = tree.terminal.output.replace(/\x1b\[[0-9;]*m/g, '')
+    expect(shown).toContain('✓ Used long-output')
+    expect(shown).toContain(' · 1 line')
+    expect(shown).toContain('more lines, ')
     expect(tree.terminal.output).toContain('long-output')
     expect(tree.terminal.output).not.toContain('TAILMARKER')
     const beforeToggle = tree.terminal.written.length
@@ -888,6 +894,9 @@ describe('blue whole-tree e2e', () => {
   })
 
   it('folds earlier in-turn steps into the summary line once the next step starts', async () => {
+    // Retention 0 pins the folding mechanism itself (each step/start folds
+    // the previous step); the default 30-step window gets its own case below.
+    setRecentStepsRetention(0)
     const tree = await bootBlue([], {
       script: [
         toolCallResponse('call-s1', 'probe', { v: 1 }),
@@ -915,6 +924,37 @@ describe('blue whole-tree e2e', () => {
     const shown = tree.terminal.output.replace(/\x1b\[[0-9;]*m/g, '')
     expect(shown).toContain('… step 1 · call 1 tools')
     expect(shown).toContain('… step 2 · call 1 tools')
+    expect(shown).toContain('done')
+  })
+
+  it('keeps a multi-step turn\'s tool cards expanded under the kimi 30-step retention', async () => {
+    const tree = await bootBlue([], {
+      script: [
+        toolCallResponse('call-s1', 'probe', { v: 1 }),
+        toolCallResponse('call-s2', 'probe', { v: 2 }),
+        textResponse('done'),
+      ],
+    })
+    const agent = await currentAgent(tree)
+    const tools = (tree.ctx as unknown as { tools: { register(definition: unknown): () => void } }).tools
+    tools.register({
+      name: 'probe',
+      description: 'probe tool',
+      parameters: { type: 'object', properties: {} },
+      output: {
+        schema: { type: 'string' },
+        render: () => [{ type: 'text', text: 'probed' }],
+      },
+      execute: () => Promise.resolve('ok'),
+    })
+    typeLine(tree.terminal, 'run the probes')
+    await agent.whenIdle()
+    await waitForRender()
+    // The S20 dogfood alignment: within the default retention window every
+    // step's card stays mounted — two `✓ Used probe` headers, no summary.
+    const shown = tree.terminal.output.replace(/\x1b\[[0-9;]*m/g, '')
+    expect(shown.split('✓ Used probe').length - 1).toBe(2)
+    expect(shown).not.toContain('… step 1')
     expect(shown).toContain('done')
   })
 
