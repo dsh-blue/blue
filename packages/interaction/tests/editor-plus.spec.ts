@@ -80,6 +80,35 @@ describe('blue-editor-plus input modes', () => {
     expect(editor.borderColor('x')).toBe('$x$')
   })
 
+  it('applies the bash triple: ! symbol, border label, and shell hue', async () => {
+    const { editor } = await mount()
+    expect(editor.promptSymbol).toBe('>')
+    type(editor, '!')
+    expect(editor.promptSymbol).toBe('!')
+    expect(editor.borderLabel).toBe(' $! shell mode$ ')
+    expect(editor.borderColor('x')).toBe('$x$')
+  })
+
+  it('keeps the shell hue over the slash-context resolution while bash is active', async () => {
+    const { editor } = await mount()
+    type(editor, '!')
+    // A leading `/` is a path separator in bash mode; blue-input's
+    // primary-highlight must not win over the re-asserted shell hue.
+    type(editor, '/etc/passwd')
+    expect(editor.borderColor('x')).toBe('$x$')
+  })
+
+  it('restores the prompt symbol and drops the label on a bash submission', async () => {
+    const { editor } = await mount()
+    editorPlus.setShellExecutor(() => Promise.resolve({ code: 0, output: '' }))
+    type(editor, '!')
+    type(editor, 'true')
+    editor.handleInput(KEY.enter)
+    expect(editor.promptSymbol).toBe('>')
+    expect(editor.borderLabel).toBeUndefined()
+    expect(editor.borderColor('x')).toBe('x')
+  })
+
   it("keeps a later '!' in the buffer while in bash mode", async () => {
     const { editor } = await mount()
     type(editor, '!')
@@ -107,6 +136,23 @@ describe('blue-editor-plus input modes', () => {
     type(editor, 'back to prompt')
     editor.handleInput(KEY.enter)
     expect(followup).toHaveBeenCalledOnce()
+  })
+
+  it('requests a render when the shell echo mounts, not only on the next keypress', async () => {
+    const { screen, editor } = await mount()
+    // A manually-settled executor: the echo mounts strictly after the
+    // input-driven frame, the async window where a paint must be asked for.
+    const gate = Promise.withResolvers<editorPlus.ShellExecution>()
+    editorPlus.setShellExecutor(() => gate.promise)
+    type(editor, '!')
+    type(editor, 'echo late')
+    editor.handleInput(KEY.enter)
+    // Let the input-frame render requests settle before snapshotting.
+    await new Promise(resolve => setImmediate(resolve))
+    const before = screen.renderRequests
+    gate.resolve({ code: 0, output: 'late output\n' })
+    await vi.waitFor(() => { expect(echoes(screen)).toHaveLength(1) })
+    expect(screen.renderRequests).toBeGreaterThan(before)
   })
 
   it('renders a non-zero exit code in the error color and skips an empty body', async () => {
@@ -272,10 +318,11 @@ describe('blue-editor-plus attach lifecycle', () => {
     const { editor, followup, plusFiber } = await mount()
     await plusFiber.dispose()
     type(editor, '!')
-    // No mode switch anymore: the '!' stays in the buffer, the border keeps
-    // the default color, and the submit routes as a plain follow-up through
-    // the restored blue-input handler.
+    // No mode switch anymore: the '!' stays in the buffer, the frame keeps
+    // the prompt-mode look, and the submit routes as a plain follow-up
+    // through the restored blue-input handler.
     expect(editor.getText()).toBe('!')
+    expect(editor.promptSymbol).toBe('>')
     expect(editor.borderColor('x')).toBe('x')
     editor.handleInput(KEY.enter)
     expect(followup).toHaveBeenCalledOnce()
@@ -286,12 +333,27 @@ describe('blue-editor-plus attach lifecycle', () => {
     type(editor, '!')
     expect(editor.borderColor('x')).toBe('$x$')
     await inputFiber.dispose()
-    // Detach restored the old editor's border color.
+    // Detach restored the old editor's prompt-mode frame.
     expect(editor.borderColor('x')).toBe('x')
+    expect(editor.promptSymbol).toBe('>')
     await ctx.plugin(inputPlugin)
     const remounted = screen.children[0] as FakeBlueEditor
     expect(remounted).not.toBe(editor)
     type(remounted, '!')
+    expect(remounted.borderColor('x')).toBe('$x$')
+  })
+
+  it('rebuilds bash mode on the remounted editor from the reload stash', async () => {
+    const { ctx, screen, editor, inputFiber } = await mount()
+    type(editor, '!')
+    type(editor, 'ls -la')
+    await inputFiber.dispose()
+    await ctx.plugin(inputPlugin)
+    const remounted = screen.children[0] as FakeBlueEditor
+    // The draft text and the bash triple both survive the rebuild.
+    expect(remounted.getText()).toBe('ls -la')
+    expect(remounted.promptSymbol).toBe('!')
+    expect(remounted.borderLabel).toBe(' $! shell mode$ ')
     expect(remounted.borderColor('x')).toBe('$x$')
   })
 
@@ -303,6 +365,10 @@ describe('blue-editor-plus attach lifecycle', () => {
     ctx.emit('blue/input-editor-changed')
     type(bare, '!')
     expect(bare.borderColor('x')).toBe('$x$')
+    // Leave bash mode again, so the re-attach below starts from the
+    // stashed prompt mode rather than restoring the bash frame.
+    bare.handleInput(KEY.enter)
+    expect(bare.promptSymbol).toBe('>')
     // Detach restores the (undefined) handlers without crashing.
     clearSharedEditor()
     ctx.emit('blue/input-editor-changed')

@@ -1,12 +1,17 @@
 /**
  * `blue-input` plugin: the bottom input editor, backed by the pi-tui Editor
  * through `ctx.blueComponents.createEditor` (multi-line, kill-ring, undo,
- * history, and paste markers are the component's own). Submit dispatches a
- * slash command through `ctx.commands` when the line parses as one,
- * otherwise queues the text as a user follow-up message on the current
- * agent (the harness inbox queues it when the agent is running). A muted
- * hint line below the editor shows slash-command discovery and one-shot
- * notices. The editor-context key chain (Escape clear/interrupt, Ctrl-C
+ * history, and paste markers are the component's own). The editor mounts
+ * with `paddingX: 4` and the `>` prompt symbol, feeding the rounded-box
+ * chrome the core adapter overlays; slash-prefixed input highlights the
+ * frame in `primary` and any other text returns the neutral border. Submit
+ * dispatches a slash command through `ctx.commands` when the line parses as
+ * one, otherwise queues the text as a user follow-up message on the current
+ * agent (the harness inbox queues it when the agent is running). A hint
+ * line below the editor carries three tiers — one-shot notices and
+ * slash-command discovery in `muted`, and beneath them the persistent
+ * key-affordance row in `textMuted` (`hint-content.ts`, idle and running
+ * states). The editor-context key chain (Escape clear/interrupt, Ctrl-C
  * clear/interrupt/double-press exit, Ctrl-S steer) resolves through
  * `ctx.blueKeymap` in the editor's `onKey` hook, which runs before the
  * pi-tui Editor sees the sequence. The mounted editor and the submit router
@@ -29,12 +34,25 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { BlueComponent } from '@deepseek-ai/dsh-blue-core'
+import type {
+  BlueComponent,
+  BlueComponents,
+  BlueScreen,
+  BlueSemanticColors,
+} from '@deepseek-ai/dsh-blue-core'
 import { parseCommand } from '@deepseek-ai/dsh-commands'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { applySubmitTransformers, clearSharedEditor, setSharedEditor } from './editor-instance.ts'
+import {
+  ENHANCEMENT_EDITOR_PLUS,
+  hasEditorEnhancement,
+  applySubmitTransformers,
+  clearSharedEditor,
+  setSharedEditor,
+} from './editor-instance.ts'
 import { clearDraft, getStashedDraft, stashDraft } from './draft-stash.ts'
+import { idleHint, runningHint, type HintSources } from './hint-content.ts'
 import { ACTION_CANCEL, ACTION_INTERRUPT, ACTION_MOVE_UP, ACTION_STEER } from './keys.ts'
+import { ACTION_IMAGE_PASTE } from './paste-image.ts'
 import { ACTION_QUEUE_RECALL, queuedMessageText } from './pane-queue.ts'
 import { currentBlueAgent } from './session.ts'
 
@@ -51,38 +69,57 @@ export const name = 'blue-input'
 export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'commands']
 
 /**
- * The muted single-line hint rendered under the input editor. Empty when no
- * hint is set; width truncation goes through `blueComponents`, so notices
- * carrying ANSI styling (error colors) are never cut mid-sequence.
+ * The single-line hint rendered under the input editor. The transient tier
+ * (one-shot notices, slash-command discovery) paints `muted`; when it is
+ * empty the persistent tier takes the row and paints the dimmer
+ * `textMuted`, recomposed at render time so plugin loads and keymap
+ * registrations after mount flip its fragments without re-wiring.
  */
 class HintLine implements BlueComponent {
   private text: string | undefined
 
   /**
-   * @param ctx - plugin context carrying the screen, theme, and components.
+   * @param screen - the screen service, captured at mount (same fiber
+   *   lifetime; property access through a disposed context throws).
+   * @param colors - the active semantic color table.
+   * @param components - the width-truncation helper source.
+   * @param persistent - computes the persistent hint for the current state;
+   *   the row renders nothing when it yields an empty string.
    */
-  constructor(private readonly ctx: Context) {}
+  constructor(
+    private readonly screen: BlueScreen,
+    private readonly colors: BlueSemanticColors,
+    private readonly components: BlueComponents,
+    private readonly persistent: () => string | undefined,
+  ) {}
 
   /**
-   * Replace the hint text and schedule a re-render.
-   * @param text - the new hint, or `undefined` to clear the line.
+   * Replace the transient hint text and schedule a re-render.
+   * @param text - the new hint, or `undefined` to release the row to the
+   *   persistent tier.
    */
   setHint(text: string | undefined): void {
     this.text = text
-    this.ctx.blueScreen.requestRender()
+    this.screen.requestRender()
   }
 
   /** No cached render state. */
   invalidate(): void {}
 
   /**
-   * Render the hint as one muted, width-truncated row, or nothing.
+   * Render the hint as one width-truncated row, or nothing. Truncation goes
+   * through `blueComponents`, so rows carrying ANSI styling (error notices)
+   * are never cut mid-sequence.
    * @param width - current viewport width in columns.
    * @returns one string per rendered row.
    */
   render(width: number): string[] {
-    if (this.text === undefined) return []
-    return [this.ctx.blueTheme.colors.muted(this.ctx.blueComponents.truncateToWidth(this.text, width))]
+    if (this.text !== undefined) {
+      return [this.colors.muted(this.components.truncateToWidth(this.text, width))]
+    }
+    const hint = this.persistent()
+    if (hint === undefined || hint.length === 0) return []
+    return [this.colors.textMuted(this.components.truncateToWidth(hint, width))]
   }
 }
 
@@ -109,8 +146,32 @@ export function apply(ctx: Context): void {
     unloaded = true
   })
 
-  const editor = ctx.blueComponents.createEditor()
-  const hintLine = new HintLine(ctx)
+  const editor = ctx.blueComponents.createEditor({ paddingX: 4 })
+  // The padding reserves columns 0-3 for the side border, its gap, and the
+  // `>` prompt symbol the rounded-box chrome overlays.
+  editor.setPromptSymbol('>')
+  const keymap = ctx.blueKeymap
+
+  /**
+   * The persistent tier's fact sources, read at render time: keymap lookups
+   * plus the enhancement presence gates (`hint-content.ts`).
+   */
+  const hintSources = (): HintSources => ({
+    keys: action => keymap.getKeys(action),
+    editorPlus: hasEditorEnhancement(ENHANCEMENT_EDITOR_PLUS),
+    pasteImage: keymap.list().some(action => action.id === ACTION_IMAGE_PASTE),
+  })
+
+  /**
+   * The persistent hint for the current state: the running fragments while
+   * an agent turn is in flight, the idle affordances otherwise.
+   */
+  const persistentHint = (): string | undefined => {
+    const agent = currentBlueAgent(ctx)
+    return agent?.status === 'running' ? runningHint(hintSources()) : idleHint(hintSources())
+  }
+
+  const hintLine = new HintLine(screen, colors, ctx.blueComponents, persistentHint)
 
   /** Matching-command hint for slash-prefixed input. */
   function slashHint(): string | undefined {
@@ -292,6 +353,10 @@ export function apply(ctx: Context): void {
     currentText = text
     // Mirror every edit so a theme-swap reload loses nothing.
     stashDraft(text)
+    // Slash context highlights the frame in `primary`; any other text
+    // returns the neutral border. `blue-editor-plus` re-asserts its shell
+    // hue on top while bash mode is active.
+    editor.setBorderColor(text.trimStart().startsWith('/') ? colors.primary : colors.border)
     notice = undefined
     refreshHint()
   }
@@ -313,6 +378,17 @@ export function apply(ctx: Context): void {
     currentText = editor.getText()
     refreshHint()
   }
+
+  // Status flips and session switches change the persistent hint's state
+  // (idle vs. running fragments); the row recomposes itself on the next
+  // render, so the subscriptions only need to request one.
+  ctx.on('agent/status', (payload) => {
+    if (payload.agent !== currentBlueAgent(ctx)) return
+    refreshHint()
+  })
+  ctx.on('blue/session-changed', () => {
+    refreshHint()
+  })
 
   ctx.effect(() => {
     // Pin below the transcript: pi-tui renders root children in mount order,

@@ -33,12 +33,17 @@
       "types": "./lib/types/theme-custom.d.ts",
       "default": "./lib/theme-custom.js"
     },
+    "./chrome": {
+      "types": "./lib/types/chrome.d.ts",
+      "default": "./lib/chrome.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
     "lib/invariant.js",
+    "lib/chrome.js",
     "lib/theme-dark.js",
     "lib/theme-light.js",
     "lib/theme-auto.js",

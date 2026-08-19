@@ -1,12 +1,18 @@
 /**
- * Tests for the submit-transformer seam in `../src/editor-instance.ts`:
- * registration order, concatenation semantics, the empty-contribution
- * fallback, and disposer idempotency.
+ * Tests for the submit-transformer seam and the enhancement presence marks
+ * in `../src/editor-instance.ts`: registration order, concatenation
+ * semantics, the empty-contribution fallback, and disposer idempotency.
  */
 
 import { describe, expect, it } from 'vitest'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { applySubmitTransformers, registerSubmitTransformer } from '../src/editor-instance.ts'
+import {
+  ENHANCEMENT_EDITOR_PLUS,
+  applySubmitTransformers,
+  hasEditorEnhancement,
+  markEditorEnhancement,
+  registerSubmitTransformer,
+} from '../src/editor-instance.ts'
 
 describe('submit transformers', () => {
   it('returns the historical single text block with no transformers registered', () => {
@@ -47,5 +53,16 @@ describe('submit transformers', () => {
     dispose()
     dispose()
     expect(applySubmitTransformers('z')).toEqual([{ type: 'text', text: 'z' }])
+  })
+})
+
+describe('enhancement presence marks', () => {
+  it('marks attachment, reports presence, and unmarks exactly once', () => {
+    expect(hasEditorEnhancement(ENHANCEMENT_EDITOR_PLUS)).toBe(false)
+    const unmark = markEditorEnhancement(ENHANCEMENT_EDITOR_PLUS)
+    expect(hasEditorEnhancement(ENHANCEMENT_EDITOR_PLUS)).toBe(true)
+    unmark()
+    unmark()
+    expect(hasEditorEnhancement(ENHANCEMENT_EDITOR_PLUS)).toBe(false)
   })
 })

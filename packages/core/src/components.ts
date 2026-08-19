@@ -30,6 +30,7 @@ import {
   type TUI,
 } from '@earendil-works/pi-tui'
 import { highlightCodeLines } from './highlight.ts'
+import { injectPromptSymbol, withSideBorders } from './chrome.ts'
 import type {
   BlueAutocompleteProvider,
   BlueColorFn,
@@ -56,14 +57,16 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /**
- * Map the palette to an editor theme: the interactive anchor border plus the
- * autocomplete dropdown. The border takes `primary` (S10 interim: with the
- * bare two-line editor the gray default read dead — the editor is the focal
- * interactive surface, so it keeps the brand blue until S11's rounded-box
- * chrome lands the kimi-style contextual border colors).
+ * Map the palette to an editor theme: the frame's neutral border plus the
+ * autocomplete dropdown. The default border is the neutral gray `border`
+ * token — with the S11 rounded-box chrome the contextual cues (slash
+ * context and bash mode recolor the border through `setBorderColor`)
+ * carry the focus, the kimi treatment; the S10 interim that pinned the
+ * idle border to `primary` retired with the bare two-line editor it was
+ * compensating for.
  */
 function editorTheme(colors: BlueSemanticColors): EditorTheme {
-  return { borderColor: colors.primary, selectList: selectListTheme(colors) }
+  return { borderColor: colors.border, selectList: selectListTheme(colors) }
 }
 
 /** Map the palette to a select-list theme. */
@@ -129,6 +132,15 @@ class EditorAdapter implements BlueEditor {
    */
   onKey: ((data: string) => boolean) | undefined
 
+  /** The prompt symbol overlaid on the first content row; none while unset. */
+  private promptSymbol: string | undefined
+
+  /** Pre-styled text laid into the top border; none while unset. */
+  private borderLabel: string | undefined
+
+  /** Whether the top corners open into a panel docked above (S13 btw dock). */
+  private connectedAbove = false
+
   constructor(private readonly editor: Editor) {}
 
   get focused(): boolean {
@@ -181,6 +193,18 @@ class EditorAdapter implements BlueEditor {
     this.editor.borderColor = color
   }
 
+  setPromptSymbol(symbol: '>' | '!' | undefined): void {
+    this.promptSymbol = symbol
+  }
+
+  setBorderLabel(text: string | undefined): void {
+    this.borderLabel = text
+  }
+
+  setConnectedAbove(connected: boolean): void {
+    this.connectedAbove = connected
+  }
+
   setAutocompleteProvider(provider: BlueAutocompleteProvider): void {
     // BlueAutocompleteProvider is structurally identical to pi-tui's
     // AutocompleteProvider, so it passes through without wrapping; the pi-tui
@@ -201,7 +225,29 @@ class EditorAdapter implements BlueEditor {
   }
 
   render(width: number): string[] {
-    return this.editor.render(width)
+    const lines = this.editor.render(width)
+    // The prompt symbol overlays the first content row (row index 1 under
+    // the top border — a scrolled-away top rule keeps that indexing). The
+    // bash `!` shares the border hue so the mode reads as one unit; the
+    // neutral `>` stays in the terminal's default foreground (kimi rule).
+    const symbol = this.promptSymbol
+    if (symbol !== undefined) {
+      /* v8 ignore next -- the real editor always renders at least one content row between the rules, so lines[1] exists */
+      const firstContent = lines[1] ?? ''
+      const painted = injectPromptSymbol(
+        firstContent,
+        symbol,
+        symbol === '!' ? (text: string) => this.editor.borderColor(text) : undefined,
+      )
+      if (painted !== undefined) lines[1] = painted
+    }
+    // Corners and bars route through the live `borderColor` property, so a
+    // host recolor via `setBorderColor` (slash context, bash mode) repaints
+    // the whole frame in sync without re-entering this adapter.
+    return withSideBorders(lines, (text: string) => this.editor.borderColor(text), {
+      connectedAbove: this.connectedAbove,
+      label: this.borderLabel,
+    })
   }
 
   handleInput(data: string): void {

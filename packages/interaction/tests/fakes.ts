@@ -12,6 +12,7 @@ import type {
   BlueComponent,
   BlueComponents,
   BlueEditor,
+  BlueEditorOptions,
   BlueFocusable,
   BlueKeyAction,
   BlueKeymap,
@@ -213,6 +214,12 @@ export class FakeBlueEditor implements BlueEditor {
   readonly inserted: string[] = []
   /** The last border color set; identity until restyled. */
   borderColor: BlueColorFn = identity
+  /** The last prompt symbol set, if any. */
+  promptSymbol: '>' | '!' | undefined
+  /** The last border label set, if any. */
+  borderLabel: string | undefined
+  /** Whether the frame currently opens into a panel above. */
+  connectedAbove = false
   /** The last autocomplete provider attached, if any. */
   autocompleteProvider: BlueAutocompleteProvider | undefined
   private text = ''
@@ -244,6 +251,18 @@ export class FakeBlueEditor implements BlueEditor {
 
   setBorderColor(color: BlueColorFn): void {
     this.borderColor = color
+  }
+
+  setPromptSymbol(symbol: '>' | '!' | undefined): void {
+    this.promptSymbol = symbol
+  }
+
+  setBorderLabel(text: string | undefined): void {
+    this.borderLabel = text
+  }
+
+  setConnectedAbove(connected: boolean): void {
+    this.connectedAbove = connected
   }
 
   setAutocompleteProvider(provider: BlueAutocompleteProvider): void {
@@ -351,10 +370,13 @@ function fakeSettingsList(options: BlueSettingsListOptions): BlueSettingsList {
 export class FakeBlueComponents implements BlueComponents {
   /** Every editor created through this factory, in creation order. */
   readonly editors: FakeBlueEditor[] = []
+  /** The options each editor was created with, in creation order. */
+  readonly editorOptions: Array<BlueEditorOptions | undefined> = []
   /** Every select list created through this factory, in creation order. */
   readonly selectLists: FakeBlueSelectList[] = []
 
-  createEditor(): FakeBlueEditor {
+  createEditor(options?: BlueEditorOptions): FakeBlueEditor {
+    this.editorOptions.push(options)
     const editor = new FakeBlueEditor()
     this.editors.push(editor)
     return editor

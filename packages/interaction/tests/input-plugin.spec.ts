@@ -15,9 +15,10 @@ import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import * as inputPlugin from '../src/input-plugin.ts'
 import * as paneQueuePlugin from '../src/pane-queue.ts'
-import { getSharedEditor } from '../src/editor-instance.ts'
+import { ENHANCEMENT_EDITOR_PLUS, getSharedEditor, markEditorEnhancement } from '../src/editor-instance.ts'
+import { ACTION_IMAGE_PASTE } from '../src/paste-image.ts'
 import { clearDraft } from '../src/draft-stash.ts'
-import { fakeBlueContext, KEY, type FakeBlueEditor, type FakeScreen } from './fakes.ts'
+import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeBlueEditor, type FakeScreen } from './fakes.ts'
 
 // The draft stash is module state: a test that leaves unsubmitted text
 // would see it restored into the next test's freshly mounted editor.
@@ -93,11 +94,16 @@ function type(editor: FakeBlueEditor, text: string): void {
 
 describe('blue-input plugin', () => {
   it('mounts the editor and hint line focused at the bottom of the tree', async () => {
-    const { screen, editor, hint } = await mount()
+    const { ctx, screen, editor, hint } = await mount()
     expect(screen.children).toEqual([editor, hint])
     expect(screen.focused).toBe(editor)
     expect(editor.focused).toBe(true)
-    expect(hint.render(80)).toEqual([])
+    // The editor mounts with the rounded-box chrome's prerequisites — the
+    // prompt symbol and the padding that reserves its columns — and the
+    // idle hint row is the persistent tier.
+    expect(editor.promptSymbol).toBe('>')
+    expect((ctx.blueComponents as FakeBlueComponents).editorOptions[0]).toEqual({ paddingX: 4 })
+    expect(hint.render(80)).toEqual(['_/ commands · ctrl+s steer · ctrl+c exit_'])
     hint.invalidate()
   })
 
@@ -222,9 +228,10 @@ describe('blue-input plugin', () => {
     await vi.waitFor(() => {
       expect(agent.session.events.some(event => event.type === 'command/done')).toBe(true)
     })
-    // The continuation saw the unloaded fiber: no notice, no re-render, and
-    // no throw through the dead context.
-    expect(hint.render(80)).toEqual([])
+    // The continuation saw the unloaded fiber: no notice lands — the row
+    // falls back to the persistent tier — no re-render, and no throw
+    // through the dead context.
+    expect(hint.render(80)).toEqual(['_/ commands · ctrl+s steer · ctrl+c exit_'])
     expect(screen.renderRequests).toBe(renderRequests)
   })
 
@@ -244,7 +251,7 @@ describe('blue-input plugin', () => {
     await vi.waitFor(() => {
       expect(agent.session.events.some(event => event.type === 'command/done')).toBe(true)
     })
-    expect(hint.render(80)).toEqual([])
+    expect(hint.render(80)).toEqual(['_/ commands · ctrl+s steer · ctrl+c exit_'])
     expect(screen.renderRequests).toBe(renderRequests)
   })
 
@@ -273,16 +280,17 @@ describe('blue-input plugin', () => {
     expect(hint.render(80)).toEqual(['~/beta — Second command~'])
   })
 
-  it('shows no hint without an attached session', async () => {
+  it('falls back to the persistent row without an attached session', async () => {
     const { editor, hint } = await mount({ withAgent: false })
     type(editor, '/res')
-    expect(hint.render(80)).toEqual([])
+    // No agent means no slash discovery; the persistent tier takes the row.
+    expect(hint.render(80)).toEqual(['_/ commands · ctrl+s steer · ctrl+c exit_'])
   })
 
-  it('shows no hint when the slash line is not a command', async () => {
+  it('falls back to the persistent row when the slash line is not a command', async () => {
     const { editor, hint } = await mount()
     type(editor, '/1')
-    expect(hint.render(80)).toEqual([])
+    expect(hint.render(80)).toEqual(['_/ commands · ctrl+s steer · ctrl+c exit_'])
   })
 
   it('truncates an over-wide hint to the viewport width', async () => {
@@ -292,7 +300,7 @@ describe('blue-input plugin', () => {
     expect(hint.render(10)).toEqual(['~no acti...~'])
   })
 
-  it('keeps the hint clear when a command succeeds without text', async () => {
+  it('falls back to the persistent row when a command succeeds without text', async () => {
     const { ctx, editor, hint, agent } = await mount()
     ctx.commands.register({
       name: 'quiet',
@@ -304,7 +312,52 @@ describe('blue-input plugin', () => {
     await vi.waitFor(() => {
       expect(agent.session.events.some(event => event.type === 'command/done')).toBe(true)
     })
-    expect(hint.render(80)).toEqual([])
+    expect(hint.render(80)).toEqual(['_/ commands · ctrl+s steer · ctrl+c exit_'])
+  })
+
+  describe('persistent hint tier (S11)', () => {
+    it('switches to the running fragments while an agent turn is in flight', async () => {
+      const { hint } = await mount({ running: true })
+      expect(hint.render(80)).toEqual(['_escape interrupt · ctrl+s steer_'])
+    })
+
+    it('advertises the bash and @ affordances only while editor-plus is attached', async () => {
+      const { hint } = await mount()
+      const unmark = markEditorEnhancement(ENHANCEMENT_EDITOR_PLUS)
+      // Render-time recomposition: no re-mount needed for the flip.
+      expect(hint.render(80)).toEqual(['_! bash · / commands · @ files · ctrl+s steer · ctrl+c exit_'])
+      unmark()
+      expect(hint.render(80)).toEqual(['_/ commands · ctrl+s steer · ctrl+c exit_'])
+    })
+
+    it('adds the paste-image fragment while its keymap action is registered', async () => {
+      const { ctx, hint } = await mount()
+      const unregister = ctx.blueKeymap.register([{ id: ACTION_IMAGE_PASTE, keys: 'ctrl+v' }])
+      expect(hint.render(80)).toEqual(['_/ commands · ctrl+s steer · ctrl+v paste image · ctrl+c exit_'])
+      unregister()
+      expect(hint.render(80)).toEqual(['_/ commands · ctrl+s steer · ctrl+c exit_'])
+    })
+
+    it('renders nothing persistent when no whitelisted action is bound', async () => {
+      const { ctx, hint } = await mount({ running: true })
+      // Re-registering the running state's two actions with no keys drops
+      // their fragments; every running fragment is key-driven, so the row
+      // empties.
+      const restore = ctx.blueKeymap.register([
+        { id: 'blue.interaction.cancel', keys: [] },
+        { id: 'blue.interaction.steer', keys: [] },
+      ])
+      expect(hint.render(80)).toEqual([])
+      restore()
+    })
+
+    it('highlights the frame in primary for slash input and restores the neutral border', async () => {
+      const { editor } = await mount()
+      type(editor, '/th')
+      expect(editor.borderColor('x')).toBe('^x^')
+      editor.setText('plain')
+      expect(editor.borderColor('x')).toBe('x')
+    })
   })
 
   it('unmounts the editor, clears the shared reference, and releases focus on dispose', async () => {

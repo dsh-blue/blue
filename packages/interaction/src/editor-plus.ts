@@ -1,13 +1,19 @@
 /**
  * `blue-editor-plus` plugin: enhancement layer over the shared input editor
  * mounted by `blue-input` — the `prompt | bash` input mode with shell
- * execution and echo, plus the slash-command and `@`-file autocomplete
- * providers. The editor reference comes from the package-local shared ref
- * (`./editor-instance.ts`): `inject` cannot order this plugin after
- * `blue-input` (which provides no service), so attach/detach is driven by
- * the `'blue/input-editor-changed'` event, which also re-attaches correctly
- * when a theme reload rebuilds both plugins. A bash-mode command can
- * outlive such a reload — the editor stays usable while the shell runs, so
+ * execution and echo (bash carries the triple cue: `!` prompt symbol,
+ * ` ! shell mode ` border label, and the shellMode frame hue, re-asserted
+ * over `blue-input`'s slash-context resolution while the mode is active),
+ * plus the slash-command and `@`-file autocomplete providers. The mode is
+ * mirrored into `./draft-stash.ts`, so a theme-swap reload re-applies the
+ * triple on the rebuilt editor. The editor reference comes from the
+ * package-local shared ref (`./editor-instance.ts`): `inject` cannot order
+ * this plugin after `blue-input` (which provides no service), so
+ * attach/detach is driven by the `'blue/input-editor-changed'` event, which
+ * also re-attaches correctly when a theme reload rebuilds both plugins; the
+ * enhancement presence mark registered there gates the `! bash` / `@ files`
+ * fragments of the persistent hint row. A bash-mode command can outlive
+ * such a reload — the editor stays usable while the shell runs, so
  * `/theme` can unload this fiber before the process settles — and the echo
  * mount therefore gates on the fiber's unload flag before touching the
  * dead context.
@@ -26,7 +32,13 @@ import type {
   BlueComponents,
   BlueSemanticColors,
 } from '@deepseek-ai/dsh-blue-core'
-import { getSharedEditor, type SharedEditor } from './editor-instance.ts'
+import {
+  ENHANCEMENT_EDITOR_PLUS,
+  getSharedEditor,
+  markEditorEnhancement,
+  type SharedEditor,
+} from './editor-instance.ts'
+import { getStashedInputMode, stashInputMode } from './draft-stash.ts'
 import { currentBlueAgent } from './session.ts'
 
 /** Stable Cordis plugin name. */
@@ -297,8 +309,16 @@ function runShell(ctx: Context, command: string, isUnloaded: () => boolean): voi
       capped.truncated,
       code,
     )
-    // Effect-bound so unloading this fiber also removes its echoes.
-    ctx.effect(() => ctx.blueScreen.addChild(echo))
+    // Effect-bound so unloading this fiber also removes its echoes. The
+    // mount lands after the input-driven frame — the shell settles
+    // asynchronously and the renderer only paints on request — so the
+    // render must be asked for here or the echo stays invisible until the
+    // next keypress.
+    ctx.effect(() => {
+      const remove = ctx.blueScreen.addChild(echo)
+      ctx.blueScreen.requestRender()
+      return remove
+    })
   }
   void shellExecutor(command, process.cwd()).then(
     (result) => {
@@ -312,6 +332,9 @@ function runShell(ctx: Context, command: string, isUnloaded: () => boolean): voi
   )
 }
 
+/** The bash-mode border label text (styled at attach time). */
+const BASH_LABEL = '! shell mode'
+
 /**
  * Chain the mode routing and autocomplete provider onto the shared editor,
  * preserving the handlers `blue-input` installed.
@@ -324,20 +347,50 @@ function runShell(ctx: Context, command: string, isUnloaded: () => boolean): voi
 function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): () => void {
   const { editor } = shared
   const colors = ctx.blueTheme.colors
-  let mode: 'prompt' | 'bash' = 'prompt'
+  let mode: 'prompt' | 'bash' = getStashedInputMode()
   const previousOnChange = editor.onChange
   const previousOnSubmit = editor.onSubmit
 
+  /** Apply the bash triple: `!` symbol, border label, and shell hue. */
+  const enterBash = (): void => {
+    mode = 'bash'
+    stashInputMode('bash')
+    editor.setPromptSymbol('!')
+    editor.setBorderLabel(` ${colors.shellMode(BASH_LABEL)} `)
+    editor.setBorderColor(colors.shellMode)
+  }
+
+  /** Restore the prompt-mode frame without touching the reload stash. */
+  const applyPromptFrame = (): void => {
+    editor.setPromptSymbol('>')
+    editor.setBorderLabel(undefined)
+    editor.setBorderColor(colors.border)
+  }
+
+  /** Leave bash mode: prompt frame plus the stash update. */
+  const exitBash = (): void => {
+    mode = 'prompt'
+    stashInputMode('prompt')
+    applyPromptFrame()
+  }
+
+  // A theme-swap reload rebuilt the editor while bash mode was stashed:
+  // re-apply the triple so the restored draft still reads as shell input.
+  if (mode === 'bash') enterBash()
+
+  const unmark = markEditorEnhancement(ENHANCEMENT_EDITOR_PLUS)
   editor.onChange = (text) => {
     previousOnChange?.(text)
     // A buffer holding exactly '!' switches to bash mode without polluting
-    // the buffer; the border color is the only mode cue (the pi-tui Editor
-    // has no prompt-symbol carrier).
+    // the buffer; the mode cue is the symbol + label + hue triple.
     if (mode === 'prompt' && text === '!') {
-      mode = 'bash'
+      enterBash()
       editor.setText('')
-      editor.setBorderColor(colors.shellMode)
+      return
     }
+    // While bash is active the shell hue wins over `blue-input`'s
+    // slash-context resolution (a leading `/` is a path separator here).
+    if (mode === 'bash') editor.setBorderColor(colors.shellMode)
   }
   // The editor clears its buffer before invoking onSubmit; the callback
   // argument already carries the paste-expanded, trimmed text.
@@ -347,8 +400,7 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
       return
     }
     // Every bash submission falls back to prompt mode first.
-    mode = 'prompt'
-    editor.setBorderColor(colors.border)
+    exitBash()
     const command = text.trim()
     editor.setText('')
     if (command.length === 0) return
@@ -360,9 +412,13 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
   editor.setAutocompleteProvider(createAutocompleteProvider(ctx))
 
   return () => {
+    unmark()
     editor.onChange = previousOnChange
     editor.onSubmit = previousOnSubmit
-    editor.setBorderColor(colors.border)
+    // Visual restore only — the reload stash keeps the mode the user was
+    // in, so a remount (theme swap) rebuilds bash where it left off.
+    if (mode === 'bash') applyPromptFrame()
+    else editor.setBorderColor(colors.border)
   }
 }
 

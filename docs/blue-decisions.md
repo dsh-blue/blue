@@ -172,6 +172,7 @@
 - **决策**：core 新增 `src/chrome.ts`，子路径导出 `@deepseek-ai/dsh-blue-core/chrome`，接收色函数参数的主题无关纯函数集；`EditorAdapter.render()`（components.ts）做编辑框后处理（kimi `CustomEditor.render` 的镜像位，无需子类化 pi-tui）；`BlueEditor` 契约增 `setPromptSymbol`/`setBorderLabel`/`setConnectedAbove`/`setGhostHint`。
 - **理由**：走 blueComponents 服务会让绘制函数背上服务生命周期；放 interaction/transcript 会重复实现或走私 pi-tui 依赖（违反 D4/L0 唯一适配纪律）；子路径导出与主题插件族先例一致。明确拒绝移植 kimi 的 `GutterContainer`（pi-tui Container 子类，类型越界），以纯 `padColumns` 等价（S13 实测决定启用与否）。
 - **后果**：S11 开出该缝（首个消费者），S12-S14 复用；跨包的面板拼接经新事件 `'blue/editor-connected-above'` 协调（pane-btw 发、input-plugin 听）。
+- **S11 落地（2026-08-19）**：`chrome.ts` 仅随首个消费者落 `withSideBorders`/`injectPromptSymbol`（其余函数各随 S12-S14 消费者落地，含契约里的 `setGhostHint`——S14）；`EditorAdapter.render` 后处理落地，角/条涂色经**活** `borderColor` 引用（宿主 `setBorderColor` 免重入适配器，kimi 同法）。同轮定稿两事：(1) **默认边框色回归中性灰**——S10 第二轮目测的"编辑框 border→primary"是裸双横线时代的过渡补偿，圆角框 + 语境变色（斜杠 primary / bash shellMode）落地后按预告复审退役；(2) **常驻按键提示的存在性门控**（§6）——`! bash`/`@ files` 片段按 editor-plus 在场（editor-instance 模块级标记）而非全量倾倒，`ctrl+v paste image` 按 keymap action 在场，键名一律 `getKeys` 白名单取值；bash 模式经 draft-stash 的 input-mode 暂存活过 `/theme` 换装（detach 只做视觉恢复不写暂存，重载后三件套连同草稿重建）。
 
 ## 已知遗留（MVP 有意为之）
 
