@@ -107,20 +107,19 @@ describe('blue-pane-activity', () => {
     expect(timers.cleared).toBe(1)
   })
 
-  it('switches to composing\'s braille row and back to the moon', async () => {
+  it('empties while composing and re-enters the moon with a fresh tip', async () => {
     const agent = runningAgent(fakeAgent([]))
     const { ctx, screen, timers, dispose } = await boot(agent)
+    expect(screen.paneLines()).toEqual([`🌑 · Tip: ${FIRST_TIP}`])
+    // Composing clears the pane: the streaming cursor owns the signal (the
+    // S17 dogfood re-ruling dropped the `working…` row).
     emit2(ctx, agent, textDelta(1, 1, 'answering'))
-    expect(screen.paneLines()).toEqual(['⠋ working…'])
-    expect(timers.intervals).toEqual([120, 80])
-    // The composing kind picked a fresh tip; returning to the moon kind
-    // picks the rotation's next slot.
-    timers.ticks[1]!()
-    expect(screen.paneLines()).toEqual(['⠙ working…'])
-    emit2(ctx, agent, toolResultEvent(1, 1, "c0", "done"))
-    // The shared frame counter survives the style flip; the third loading
-    // kind change picked the rotation's next slot.
-    expect(screen.paneLines()).toEqual([`🌒 · Tip: ${buildTipRotation(STATUS_TIPS)[2]!.text}`])
+    expect(screen.paneLines()).toEqual([])
+    expect(timers.cleared).toBe(1)
+    // A tool result re-enters the moon kind with the next rotation slot.
+    emit2(ctx, agent, toolResultEvent(1, 1, 'c0', 'done'))
+    expect(screen.paneLines()).toEqual([`🌑 · Tip: ${buildTipRotation(STATUS_TIPS)[1]!.text}`])
+    expect(timers.intervals).toEqual([120, 120])
     await dispose()
   })
 
@@ -233,16 +232,6 @@ describe('blue-pane-activity', () => {
     expect(pane.render(0)).toEqual([])
     pane.invalidate()
     expect(pane.render(visible)).toEqual([full])
-    await dispose()
-  })
-
-  it('renders nothing below the composing row\'s fixed width', async () => {
-    const agent = runningAgent(fakeAgent([]))
-    const { ctx, screen, dispose } = await boot(agent)
-    emit2(ctx, agent, textDelta(1, 1, 'answering'))
-    const pane = screen.bottomChildren[0]!
-    expect(pane.render(10)).toEqual(['⠋ working…'])
-    expect(pane.render(9)).toEqual([])
     await dispose()
   })
 

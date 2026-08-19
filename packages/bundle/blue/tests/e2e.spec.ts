@@ -1469,30 +1469,54 @@ describe('blue whole-tree e2e', () => {
     }
   })
 
-  it('shows the activity spinner while the agent runs and drops it when the turn ends', async () => {
-    const tree = await bootBlue([], { script: ['hang'] })
+  it('shows the moon spinner while the agent runs and drops it when the turn ends', async () => {
+    const tree = await bootBlue([], { script: ['hang-silent'] })
     const agent = await currentAgent(tree)
     typeLine(tree.terminal, 'long work')
     await vi.waitFor(() => { expect(agent.status).toBe('running') })
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('working…') })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('· Tip: ') })
     const running = await fullFrame(tree.terminal)
-    expect(running).toContain('working…')
+    expect(running).toContain('🌑')
     // Dock order (S12): the footer pins to the terminal's last rows, the
     // editor sits above it, and the spinner above the editor (the first
     // gray `border` frame run at or after the spinner — the idle editor
     // frame is neutral since S11).
     const footerAt = running.indexOf(`${FOOTER_TEXT_SGR}mock`)
-    const spinnerAt = running.indexOf('working…')
+    const spinnerAt = running.indexOf('· Tip: ')
     const borderAt = running.indexOf(EDITOR_BORDER_SGR, spinnerAt)
     expect(footerAt).toBeGreaterThanOrEqual(0)
     expect(borderAt).toBeGreaterThan(spinnerAt)
     expect(footerAt).toBeGreaterThan(borderAt)
     tree.terminal.sendInput('\x03')
     await agent.whenIdle()
-    expect(await fullFrame(tree.terminal)).not.toContain('working…')
+    const idle = await fullFrame(tree.terminal)
+    expect(idle).not.toContain('🌑')
+    expect(idle).not.toContain('· Tip: ')
   })
 
-  it('rides the mode machine: moon while waiting, empty pane while thinking, braille while composing', async () => {
+  it('keeps the pane empty while composing — the streaming cursor owns the signal', async () => {
+    // 'hang' streams text then parks: the phase is composing and the
+    // transcript's cursor is the only activity indicator (the S17 dogfood
+    // re-ruling dropped the `working…` row — kimi needs a pane spinner
+    // because its assistant block has no cursor, Blue's does).
+    const tree = await bootBlue([], { script: ['hang'] })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'stream it')
+    await vi.waitFor(() => { expect(stripSgr(tree.terminal.output)).toContain('partial') })
+    const frame = await fullFrame(tree.terminal)
+    const stripped = stripSgr(frame)
+    // The row is padded to full width, so the cursor lands on the next
+    // line's first column; both halves are the composing signal.
+    expect(stripped).toContain('partial')
+    expect(stripped).toContain('▌')
+    expect(frame).not.toContain('working…')
+    expect(frame).not.toContain('· Tip: ')
+    expect(frame).not.toContain('🌑')
+    tree.terminal.sendInput('\x03')
+    await agent.whenIdle()
+  })
+
+  it('rides the mode machine: moon while waiting, empty pane while thinking', async () => {
     // 'hang-silent' parks the stream before any delta: the pane shows the
     // moon spinner with a teaching tip, not the composing row.
     const tree = await bootBlue([], { script: ['hang-silent'] })
