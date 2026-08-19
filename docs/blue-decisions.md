@@ -183,6 +183,13 @@
 - **理由**：上拉框与编辑器的空间关系连续（面板从用户注视的底部升起，操作路径更短），footer 状态保持可见；kimi 参照系同款；居中弹窗在宽终端上显得悬浮、割裂。
 - **后果**：dock 顺序翻转为 kimi 同款（`addBottomChild` 增 `position: 'bottom'`，footer 壳钉在最底行）；五个 overlay 表面全部按上拉面板实现（S12 定妆提交）；后续新对话框表面沿用同一锚定约定，例外需显式说明。
 
+### D27. Footer v2 视觉身份：kimi 三档灰阶 + 两空格 slot，弃 v1 平铺（用户裁决定稿）
+
+- **背景**：S15 v1（分支 `p2/s15-footer-v2` 留档，未合并）结构缝正确（band/cluster、优先级让位），视觉被用户否决：单档 muted 平铺 + ` · ` 分隔符 + agent-status 噪声 + 裸分支名，整条 footer 灰成一片。用户裁决三事：(1) 研究 kimi-code 实现后重设计；(2) agent-status 条目移除，只留 model（运行态归 activity spinner）；(3) 开 worktree 从零重写，v1 只作参照不復用代码。
+- **决策**：footer 视觉身份对齐 kimi——**两空格 slot 连接**（无 ` · ` 字形、无分隔色）；**三档灰阶**（model 与 context 百分比 = `text` #e0e0e0 最亮，cwd 与 git 徽章 = `muted` #888888，tips = `textMuted` #6b6b6b 最暗）；L1 左簇 model+cwd+git、右簇轮换 tips；L2 右簇 context 百分比。git 徽章取全量 `branch [+N -M ↑a↓b]`（diff 计数 + ahead/behind，不取 kimi 的 PR 徽章）；tips 走 nginx SWRR 加权轮换 + ` | ` 两两配对（solo 旗标与重复守卫），10s 显式 ticker 推进（Blue 渲染纯事件驱动，kimi 靠无关重绘刷帧的路径不成立）。
+- **理由**：v1 的失败不是布局而是层级缺失——kimi 的可读性来自亮度差与空格节奏，不来自装饰字形；三档恰好复用 D24 已开的 `textMuted` token，零新色。
+- **后果**：`BlueStatusEntry` 增可选 `row`/`align`（additive，谎言值钳位不崩）；footer 条目插件扩为五个（basic/cwd/git/tips/context，后两个新子路径导出）；git 探测 TTL 缓存（branch 5s / status 15s / numstat 仅脏树，惰性刷新于 render 内）；context 的窗口来源定为 adapter `resolveModel().context.contextWindow` 经 `'request/context'` 事件（v1 调研已证 `agentDefaultModel` 无元数据可取），模型切换撤回窗口即降级 `ctx N`。**Dogfood 追加（2026-08-20）**：S11 的编辑框常驻按键提示行（`! bash · / commands · ...`）随本决策退役——kimi 无此行，affordance 教学统一归 footer 轮换 tips（`hint-content.ts` 删除，HintLine 仅瞬态通知/斜杠发现）。
+
 ## 已知遗留（MVP 有意为之）
 
 - `/quit` 在 agent attach 前输入会显示 "no active session" 而不退出（input-plugin 在命令分发前检查 current agent）

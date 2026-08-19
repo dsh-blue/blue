@@ -120,7 +120,7 @@ dsh --profile blue --resume <id>    # resume a persisted session
 
 Why all five links: the four library packages are the bundle's `workspace:^` dependencies, unresolvable outside this workspace. `dsh plugin` forwards verbatim to pnpm, whose `link:` protocol installs the checkout itself as a symlink; the linked bundle then resolves its siblings through the profile's own `node_modules` links. The four non-bundle links are plain dependencies — expect one `declares no dsh.bundle` warning each; they are libraries, not layers.
 
-If your profile was linked before the package rename (when the packages were named `@deepseek-ai/dsh-blue*`), those links are stale — delete the profile directory (`~/.dsh/profiles/<name>`) or `dsh plugin --profile <name> remove` the old entries, then re-run the script.
+If your profile was linked before the package rename (when the packages were named `@dsh-blue/blue*`), those links are stale — delete the profile directory (`~/.dsh/profiles/<name>`) or `dsh plugin --profile <name> remove` the old entries, then re-run the script.
 
 ### Iteration loop
 

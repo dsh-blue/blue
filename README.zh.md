@@ -120,7 +120,7 @@ dsh --profile blue --resume <id>    # 恢复持久化会话
 
 为什么要链五个包：四个库包是 bundle 的 `workspace:^` 依赖，出了本 workspace 解析不了。`dsh plugin` 原样转发给 profile 目录下的 pnpm，其 `link:` 协议把 checkout 本身装成符号链接；被链的 bundle 再经 profile 自己的 `node_modules` 链接解析兄弟包。四条非 bundle 链接是普通依赖——各有一条 `declares no dsh.bundle` 警告属预期（它们是库，不是层）。
 
-如果你的 profile 是在包改名前（当时包名为 `@deepseek-ai/dsh-blue*`）链的，那些链接已失效——删掉 profile 目录（`~/.dsh/profiles/<name>`）或 `dsh plugin --profile <name> remove` 旧条目，再重跑脚本。
+如果你的 profile 是在包改名前（当时包名为 `@dsh-blue/blue*`）链的，那些链接已失效——删掉 profile 目录（`~/.dsh/profiles/<name>`）或 `dsh plugin --profile <name> remove` 旧条目，再重跑脚本。
 
 ### 迭代环
 

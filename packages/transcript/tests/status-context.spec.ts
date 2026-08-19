@@ -1,8 +1,10 @@
 /**
  * `blue-status-context` plugin: the context-occupancy footer entry. Covers
  * the snapshot-then-subscribe attach, the disjoint input-side token sum, the
- * compact `k` formatting boundaries, live `session/event` increments, and
- * session-change rebinding.
+ * 1024-base `k`/`M` formatting boundaries and the percent math, the
+ * advertised-window percentage and its `ctx N` degradation (snapshot,
+ * `request/context` live updates, model-switch window drops), live
+ * `session/event` increments, session-change rebinding, and the text tier.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -10,7 +12,7 @@ import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import * as context from '../src/status-context.ts'
 import { assistantEvent, reasoningDelta, resetSeq, userEvent } from './helpers.ts'
-import { asAgent, bootStatusPlugin, fakeAgent } from './status-fakes.ts'
+import { asAgent, bootStatusPlugin, COLORS, fakeAgent } from './status-fakes.ts'
 
 /** An `assistant/message` event carrying token accounting. */
 function usageEvent(turn: number, step: number, usage: TokenUsage): SessionEvent<'assistant/message'> {
@@ -18,7 +20,15 @@ function usageEvent(turn: number, step: number, usage: TokenUsage): SessionEvent
   return { ...base, data: { ...base.data, usage } }
 }
 
-describe('contextTokens and formatTokens', () => {
+/** A `request/context` event advertising a context window. */
+function windowEvent(contextWindow?: number): SessionEvent<'request/context'> {
+  return {
+    type: 'request/context',
+    data: { provider: 'deepseek', model: 'deepseek-chat', contextWindow },
+  } as SessionEvent<'request/context'>
+}
+
+describe('contextTokens, formatTokens, contextPercent', () => {
   it('sums the disjoint input-side counts only', () => {
     expect(context.contextTokens({ inputTokens: 100, outputTokens: 50 })).toBe(100)
     expect(context.contextTokens({
@@ -30,11 +40,36 @@ describe('contextTokens and formatTokens', () => {
     })).toBe(1200)
   })
 
-  it('formats plain below 1000 and one-decimal k at or above it', () => {
+  it('formats on the 1024 base: plain, k with one decimal, k rounded at 100k, M', () => {
     expect(context.formatTokens(0)).toBe('0')
-    expect(context.formatTokens(999)).toBe('999')
-    expect(context.formatTokens(1000)).toBe('1.0k')
-    expect(context.formatTokens(12300)).toBe('12.3k')
+    expect(context.formatTokens(1023)).toBe('1023')
+    expect(context.formatTokens(1024)).toBe('1k')
+    expect(context.formatTokens(1536)).toBe('1.5k')
+    expect(context.formatTokens(12288)).toBe('12k')
+    expect(context.formatTokens(12800)).toBe('12.5k')
+    expect(context.formatTokens(1024 * 1024)).toBe('1M')
+    expect(context.formatTokens(262144)).toBe('256k')
+    expect(context.formatTokens(99 * 1024)).toBe('99k')
+    expect(context.formatTokens(100 * 1024)).toBe('100k')
+    expect(context.formatTokens(100.4 * 1024)).toBe('100k')
+    expect(context.formatTokens(100.6 * 1024)).toBe('101k')
+  })
+
+  it('formats degenerate counts as zero', () => {
+    expect(context.formatTokens(Number.NaN)).toBe('0')
+    expect(context.formatTokens(-5)).toBe('0')
+    expect(context.formatTokens(Number.POSITIVE_INFINITY)).toBe('0')
+  })
+
+  it('percentages round up, clamp, and floor at 1% for partial use', () => {
+    expect(context.contextPercent(1, 100)).toBe(1)
+    expect(context.contextPercent(0, 100)).toBe(0)
+    expect(context.contextPercent(50, 100)).toBe(50)
+    expect(context.contextPercent(50.5, 100)).toBe(51)
+    expect(context.contextPercent(200, 100)).toBe(100)
+    expect(context.contextPercent(100, 0)).toBe(0)
+    expect(context.contextPercent(Number.NaN, 100)).toBe(0)
+    expect(context.contextPercent(100, Number.NaN)).toBe(0)
   })
 })
 
@@ -44,6 +79,8 @@ describe('blue-status-context', () => {
     expect(noSession.entry.render(80)).toBe('')
     expect(noSession.entry.id).toBe('blue.status.context')
     expect(noSession.entry.priority).toBe(20)
+    expect(noSession.entry.align).toBe('right')
+    expect(noSession.entry.row).toBe(2)
     await noSession.dispose()
 
     resetSeq()
@@ -61,7 +98,58 @@ describe('blue-status-context', () => {
       reasoningDelta(1, 3, 'thinking'),
     ])
     const harness = await bootStatusPlugin(context, agent)
-    expect(harness.entry.render(80)).toBe('ctx 12.3k')
+    expect(harness.entry.render(80)).toBe('ctx 12k')
+    await harness.dispose()
+  })
+
+  it('renders the occupancy percentage when the snapshot advertises a window', async () => {
+    resetSeq()
+    const agent = fakeAgent(
+      [usageEvent(1, 1, { inputTokens: 4200, outputTokens: 10 })],
+      { contextWindow: 8192 },
+    )
+    const text = (body: string): string => `[T]${body}[/T]`
+    const harness = await bootStatusPlugin(context, agent, { colors: { ...COLORS, text } })
+    // 4200/8192 = 51.3% rounded up; 4200 → 4.1k on the 1024 base.
+    expect(harness.entry.render(80)).toBe('[T]context: 52% (4.1k/8k)[/T]')
+    await harness.dispose()
+  })
+
+  it('picks the window up live from request/context and drops it on a switch', async () => {
+    resetSeq()
+    const agent = fakeAgent([usageEvent(1, 1, { inputTokens: 999, outputTokens: 1 })])
+    const { ctx, screen, entry, dispose } = await bootStatusPlugin(context, agent)
+    expect(entry.render(80)).toBe('ctx 999')
+    const baseline = screen.renderRequests.length
+
+    ctx.emit('session/event', agent.session as unknown as Session, windowEvent(2048))
+    expect(entry.render(80)).toBe('context: 49% (999/2k)')
+    expect(screen.renderRequests.length).toBe(baseline + 1)
+
+    // A restated window requests no redraw.
+    ctx.emit('session/event', agent.session as unknown as Session, windowEvent(2048))
+    expect(screen.renderRequests.length).toBe(baseline + 1)
+
+    // A foreign session's window does not touch the entry.
+    const other = fakeAgent([])
+    ctx.emit('session/event', other.session as unknown as Session, windowEvent(4096))
+    expect(entry.render(80)).toBe('context: 49% (999/2k)')
+
+    // A model switch withdrawing the advertised window degrades the entry.
+    ctx.emit('session/event', agent.session as unknown as Session, windowEvent(undefined))
+    expect(entry.render(80)).toBe('ctx 999')
+    expect(screen.renderRequests.length).toBe(baseline + 2)
+    await dispose()
+  })
+
+  it('ignores a dishonest advertised window and keeps the degraded form', async () => {
+    resetSeq()
+    const agent = fakeAgent(
+      [usageEvent(1, 1, { inputTokens: 500, outputTokens: 1 })],
+      { contextWindow: 0 },
+    )
+    const harness = await bootStatusPlugin(context, agent)
+    expect(harness.entry.render(80)).toBe('ctx 500')
     await harness.dispose()
   })
 
@@ -109,6 +197,22 @@ describe('blue-status-context', () => {
 
     ctx.emit('session/event', second.session as unknown as Session, usageEvent(1, 1, { inputTokens: 42, outputTokens: 1 }))
     expect(entry.render(80)).toBe('ctx 42')
+    await dispose()
+  })
+
+  it('re-reads the window off the new session on blue/session-changed', async () => {
+    resetSeq()
+    const first = fakeAgent([usageEvent(1, 1, { inputTokens: 500, outputTokens: 1 })])
+    const { ctx, entry, dispose } = await bootStatusPlugin(context, first)
+    expect(entry.render(80)).toBe('ctx 500')
+
+    resetSeq()
+    const second = fakeAgent(
+      [usageEvent(1, 1, { inputTokens: 2048, outputTokens: 1 })],
+      { contextWindow: 4096 },
+    )
+    ctx.emit('blue/session-changed', asAgent(second))
+    expect(entry.render(80)).toBe('context: 50% (2k/4k)')
     await dispose()
   })
 

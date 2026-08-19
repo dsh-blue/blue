@@ -1,16 +1,17 @@
 /**
- * `blue-status-basic` plugin: the baseline footer entry — `{model} · {agent
- * status}` in muted colors at priority 0, replacing the retired fixed
- * `StatusBarComponent`. Ships as a subpath entry so the composing bundle
- * lists it as its own patch row and a deployment can swap or drop the
- * baseline independently of the footer shell. The model prefers the durable
- * request header (`session.requestHeader()?.config.model`) over
- * `agent.options`, which can be empty on resume; `blueSession` is read
- * through `ctx.get` plus `'blue/session-changed'` (never `inject`), the same
- * discipline as the transcript plugin itself, because the app plugin may
- * activate after this one. Without an attached agent the entry renders ''
- * and the footer occupies nothing — matching the pre-footer behavior of
- * showing no status without a session.
+ * `blue-status-basic` plugin: the baseline footer entry — the model name in
+ * the full `text` foreground at priority 0, the footer's brightest anchor
+ * (the kimi footer hierarchy: model in text, cwd/git dimmer, tips faintest).
+ * The agent status text retired with S15 v2: a running agent is expressed by
+ * the activity spinner pane, and kimi's footer carries no status text
+ * either. The model prefers the durable request header
+ * (`session.requestHeader()?.config.model`) over `agent.options`, which can
+ * be empty on resume; `blueSession` is read through `ctx.get` plus
+ * `'blue/session-changed'` (never `inject`), the same discipline as the
+ * transcript plugin itself, because the app plugin may activate after this
+ * one. Without an attached agent the entry renders '' and the footer
+ * occupies nothing — matching the pre-footer behavior of showing no status
+ * without a session.
  *
  * @module @dsh-blue/blue-transcript/status-basic
  */
@@ -30,12 +31,11 @@ export const name = 'blue-status-basic'
 export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
 
 /**
- * Register the baseline entry. Re-derives its text on agent status flips
- * (filtered to the current agent), on session switches, and on the current
- * session's events — the first request of a session logs the `request/header`
- * snapshot the model name prefers. Redraws are requested only when the
- * derived text actually changed, so a streamed chunk costs one cheap
- * re-derivation and no render.
+ * Register the baseline entry. Re-derives its text on session switches and on
+ * the current session's events — the first request of a session logs the
+ * `request/header` snapshot the model name prefers. Redraws are requested
+ * only when the derived text actually changed, so a streamed chunk costs one
+ * cheap re-derivation and no render.
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
@@ -50,11 +50,10 @@ export function apply(ctx: Context): void {
       text = ''
       return
     }
-    const model = agent.session.requestHeader()?.config.model
+    text = agent.session.requestHeader()?.config.model
       ?? agent.options.model
       ?? agent.options.provider
       ?? 'no model'
-    text = `${model} · ${agent.status}`
   }
 
   const refresh = (): void => {
@@ -68,10 +67,6 @@ export function apply(ctx: Context): void {
     agent = next
     refresh()
   })
-  ctx.on('agent/status', (payload) => {
-    if (payload.agent !== agent) return
-    refresh()
-  })
   ctx.on('session/event', (session) => {
     if (agent === undefined || session !== agent.session) return
     refresh()
@@ -82,7 +77,7 @@ export function apply(ctx: Context): void {
     priority: 0,
     render(width: number): string {
       if (text === '') return ''
-      return colors.muted(components.truncateToWidth(text, width))
+      return colors.text(components.truncateToWidth(text, width))
     },
   }
   // Effect-bound so unloading this fiber unregisters the entry.

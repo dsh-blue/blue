@@ -53,9 +53,7 @@ let shared: SharedEditor | undefined
 
 /**
  * The presence id of the `blue-editor-plus` enhancement: bash mode and the
- * slash/`@` autocomplete live on its optional fiber, and other surfaces
- * (the persistent hint row) advertise those affordances only while it is
- * attached.
+ * slash/`@` autocomplete live on its optional fiber.
  */
 export const ENHANCEMENT_EDITOR_PLUS = 'blue-editor-plus'
 

@@ -274,7 +274,7 @@ export function apply(ctx: Context): void {
   }))
 
   const status = new BlueStatusService(ctx, screen)
-  const footer = new FooterShellComponent(status, colors, ctx.blueComponents)
+  const footer = new FooterShellComponent(status, ctx.blueComponents)
   status.attach(footer)
   // The footer pins to the dock's lowest slot (S12): the two-row status
   // stays on the terminal's last rows beneath the editor, the kimi layout

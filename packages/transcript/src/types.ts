@@ -143,12 +143,28 @@ export interface BlueStatusEntry {
   /**
    * Layout order: entries fill the footer in ascending priority, and ties
    * keep registration order. The baseline entry (`blue-status-basic`) is 0,
-   * the bundled enhancements 10 and 20, leaving room between and after.
+   * the bundled enhancements 5/10/20/30, leaving room between and after.
    */
   readonly priority: number
   /**
-   * Render the entry within the offered width budget.
-   * @param width - remaining row width in columns.
+   * Which footer band the entry lays out in — 1 (above) or 2 (below). The
+   * default is 1. Values outside the shell's band budget are clamped into
+   * it, never dropped.
+   */
+  readonly row?: 1 | 2
+  /**
+   * The horizontal cluster the entry joins within its band. The default is
+   * `'left'`. A `'right'` entry is right-aligned after a minimum gap and
+   * yields before the left cluster under width pressure; any other value is
+   * treated as `'left'`.
+   */
+  readonly align?: 'left' | 'right'
+  /**
+   * Render the entry within the offered width budget. Called exactly once
+   * per frame the shell lays out: a left-cluster entry's budget is the width
+   * remaining in its band's left cluster, a right-cluster entry's is what
+   * remains after the left cluster and the inter-cluster gap.
+   * @param width - remaining cluster width in columns.
    * @returns one styled line, or '' to hide the entry this frame.
    */
   render(width: number): string

@@ -48,8 +48,9 @@
     - id: blue-transcript
       name: '@dsh-blue/blue-transcript'
 
-    # Baseline footer entry: '{model} · {agent status}' at priority 0,
-    # registered into the transcript's blueStatus registry.
+    # Baseline footer entry: the model name alone at priority 0, in the
+    # full-strength text tier (the S15 kimi identity: the brightest thing in
+    # the footer), registered into the transcript's blueStatus registry.
     - id: blue-status-basic
       name: '@dsh-blue/blue-transcript/status-basic'
 
@@ -91,13 +92,27 @@
     - id: blue-paste-image
       name: '@dsh-blue/blue-interaction/paste-image'
 
-    # Git footer entry: the current branch (priority 10), probed once per
-    # session attach; renders nothing outside a git repository.
+    # Working-directory footer entry: the abbreviated session cwd (priority
+    # 5, muted tier) — '~' under home, else the last three segments.
+    - id: blue-status-cwd
+      name: '@dsh-blue/blue-transcript/status-cwd'
+
+    # Git footer entry: the full badge 'branch [+a -d ↑u↓v]' (priority 10,
+    # muted tier) from a TTL-cached probe (branch 5s, status 15s, diff counts
+    # only while dirty); renders nothing outside a git repository.
     - id: blue-status-git
       name: '@dsh-blue/blue-transcript/status-git'
 
-    # Context footer entry: the latest model step's context occupancy
-    # ('ctx N' / 'ctx N.Nk', priority 20) from assistant/message usage.
+    # Rotating-teaching-tip footer entry: one tip, or two joined ' | ' when
+    # the width allows (priority 30, the faintest textMuted tier,
+    # right-aligned on the footer's first band), advancing every 10s.
+    - id: blue-status-tips
+      name: '@dsh-blue/blue-transcript/status-tips'
+
+    # Context footer entry: the latest model step's context occupancy —
+    # 'context: N% (used/window)' when the adapter advertises a window, else
+    # the bare 'ctx N' (priority 20, text tier, right-aligned on the
+    # footer's second band).
     - id: blue-status-context
       name: '@dsh-blue/blue-transcript/status-context'
 

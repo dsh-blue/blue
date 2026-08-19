@@ -1,8 +1,9 @@
 /**
  * The `blueStatus` registry and footer shell: registration discipline
  * (duplicate ids, disposers, priority ordering with stable ties), the
- * registry→shell nudge, and the two-row first-fit layout with its
- * lowest-priority drop policy. Rendered against identity colors and the fake
+ * registry→shell nudge, and the two-band layout — first-fit left clusters
+ * joined by the two-space slot gap, right clusters right-aligned after a
+ * minimum gap and yielding under width pressure. Rendered against the fake
  * `BlueComponents` factory so assertions see structure, not escape codes.
  */
 
@@ -16,19 +17,6 @@ import type {
 import { BlueStatusError, BlueStatusService, FooterShellComponent } from '../src/status.ts'
 import type { BlueStatusEntry } from '../src/types.ts'
 import { fakeBlueComponents } from './helpers.ts'
-
-/** Identity colors except a tagged muted, so the separator is visible. */
-const id = (text: string): string => text
-const COLORS = {
-  text: id, textStrong: id, muted: (text: string): string => `[M]${text}[/M]`,
-  textMuted: id, accent: id, primary: id, border: id, borderFocus: id, success: id, error: id,
-  warning: id,
-  selectedBg: id, roleUser: id, shellMode: id, mdHeading: id, mdLink: id,
-  mdLinkUrl: id, mdCode: id, mdCodeBlock: id, mdCodeBlockBorder: id, mdQuote: id,
-  mdQuoteBorder: id, mdHr: id, mdListBullet: id, diffAdded: id, diffRemoved: id,
-  diffAddedStrong: id, diffRemovedStrong: id, diffGutter: id, diffMeta: id,
-}
-// Structurally satisfies BlueSemanticColors; declared where consumed.
 
 /** Records render requests; every other screen method is out of scope. */
 class FakeScreen implements BlueScreen {
@@ -67,7 +55,7 @@ interface Harness {
 function setup(): Harness {
   const screen = new FakeScreen()
   const status = new BlueStatusService(new Context(), screen)
-  const footer = new FooterShellComponent(status, COLORS, fakeBlueComponents())
+  const footer = new FooterShellComponent(status, fakeBlueComponents())
   status.attach(footer)
   return { status, footer, screen }
 }
@@ -143,65 +131,100 @@ describe('FooterShellComponent', () => {
     expect(footer.render(80)).toEqual([])
   })
 
-  it('joins entries with a muted separator and pads to the width', () => {
+  it('joins entries with the two-space slot gap and pads to the width', () => {
     const { status, footer } = setup()
     status.register(fixedEntry('a', 0, 'aa'))
     status.register(fixedEntry('b', 10, 'bbb'))
-    const line = footer.render(12)[0]!
-    // Tagged (non-SGR) markers, so exact equality is the width proof here.
-    expect(line).toBe('aa[M] · [/M]bbb    ')
+    expect(footer.render(12)[0]).toBe('aa  bbb     ')
   })
 
-  it('skips hidden entries without leaving separator residue', () => {
+  it('skips hidden entries without leaving gap residue', () => {
     const { status, footer } = setup()
     status.register(fixedEntry('a', 0, 'aa'))
     status.register({ id: 'off', priority: 5, render: () => '' })
     status.register(fixedEntry('b', 10, 'bb'))
-    expect(footer.render(80)[0]).toBe(`aa[M] · [/M]bb${' '.repeat(73)}`)
+    expect(footer.render(80)[0]).toBe(`aa  bb${' '.repeat(74)}`)
   })
 
-  it('wraps overflow onto a second row and drops what fits neither', () => {
+  it('drops overflow within the band instead of spilling into another band', () => {
     const { status, footer } = setup()
-    // Row 0: 'aaaa'(4) + 3 + 'bbbb'(4) + 3 + 'cccc'(4) = 18 of 20 columns;
-    // 'dddd' wraps, then row 1 takes 'eeee' and 'ffffff' (exactly 20);
-    // 'gggg' — the lowest priority — fits neither row and is dropped.
+    // Band 1 left: 'aaaa'(4) + 2 + 'bbbb'(4) + 2 + 'cccc'(4) = 16 of 20
+    // columns; 'dddd' would need 2 more — it and everything after it yield.
     status.register(fixedEntry('a', 0, 'aaaa'))
     status.register(fixedEntry('b', 1, 'bbbb'))
     status.register(fixedEntry('c', 2, 'cccc'))
     status.register(fixedEntry('d', 3, 'dddd'))
     status.register(fixedEntry('e', 4, 'eeee'))
-    status.register(fixedEntry('f', 5, 'ffffff'))
-    status.register(fixedEntry('g', 6, 'gggg'))
-    const lines = footer.render(20)
-    expect(lines).toEqual([
-      'aaaa[M] · [/M]bbbb[M] · [/M]cccc  ',
-      'dddd[M] · [/M]eeee[M] · [/M]ffffff',
-    ])
+    expect(footer.render(20)).toEqual([`aaaa  bbbb  cccc    `])
   })
 
-  it('lets a too-wide-for-row-0 entry claim the second row', () => {
+  it('stops offering renders once the cluster budget is spent', () => {
     const { status, footer } = setup()
-    status.register(fixedEntry('wide', 0, 'w'.repeat(18)))
-    status.register(fixedEntry('narrow', 1, 'nnnnn'))
-    // 'ww…'(18) leaves 2 columns: too few for ' · nnnnn', which wraps whole.
-    const lines = footer.render(20)
-    expect(lines).toEqual([
-      `${'w'.repeat(18)}  `,
-      `nnnnn${' '.repeat(15)}`,
-    ])
+    // 'aaaa' + gap + 'bbbb' consumes the 10 columns exactly; 'cccc' is not
+    // even offered a render — there is nothing left to negotiate with.
+    status.register(fixedEntry('a', 0, 'aaaa'))
+    status.register(fixedEntry('b', 1, 'bbbb'))
+    let offered = false
+    status.register({
+      id: 'c',
+      priority: 2,
+      render: (width) => {
+        offered = true
+        return 'c'.repeat(width)
+      },
+    })
+    expect(footer.render(10)).toEqual(['aaaa  bbbb'])
+    expect(offered).toBe(false)
+  })
+
+  it('lays row-2 entries on their own band below row 1', () => {
+    const { status, footer } = setup()
+    status.register(fixedEntry('a', 0, 'aa'))
+    status.register({ id: 'b', priority: 20, row: 2, render: () => 'bbbb' })
+    expect(footer.render(10)).toEqual(['aa        ', 'bbbb      '])
+  })
+
+  it('right-aligns the right cluster after a minimum gap', () => {
+    const { status, footer } = setup()
+    status.register(fixedEntry('a', 0, 'aa'))
+    status.register({ id: 'tip', priority: 30, align: 'right', render: () => 'tip' })
+    // 'aa'(2) + at least 2 gap columns + 'tip'(3): 13 trailing-pad columns.
+    expect(footer.render(20)[0]).toBe(`aa${' '.repeat(15)}tip`)
+  })
+
+  it('right-aligns a lone right cluster to the width', () => {
+    const { status, footer } = setup()
+    status.register({ id: 'ctx', priority: 20, align: 'right', row: 2, render: () => 'ctx' })
+    expect(footer.render(10)).toEqual([`       ctx`])
+  })
+
+  it('starves the right cluster out of the frame before the left yields', () => {
+    const { status, footer } = setup()
+    status.register(fixedEntry('a', 0, 'a'.repeat(17)))
+    status.register({ id: 'tip', priority: 30, align: 'right', render: () => 'tip' })
+    // 17 used, 3 remaining — below the 2-column gap plus any tip width the
+    // budget is positive but the tip (3) does not fit: dropped for the frame.
+    expect(footer.render(20)[0]).toBe(`${'a'.repeat(17)}   `)
+  })
+
+  it('clamps dishonest row and align values into the budget', () => {
+    const { status, footer } = setup()
+    status.register({ id: 'band9', priority: 0, row: 9 as 2, align: undefined, render: () => 'b9' })
+    status.register({ id: 'weird', priority: 1, align: 'center' as 'left', render: () => 'wd' })
+    // row 9 clamps into band 2; align 'center' is treated as left.
+    expect(footer.render(10)).toEqual(['wd        ', 'b9        '])
   })
 
   it('drops an entry wider than a whole row', () => {
     const { status, footer } = setup()
     status.register(fixedEntry('a', 0, 'aa'))
-    status.register(fixedEntry('huge', 1, 'h'.repeat(30)))
     // A contract-violating entry (returns text wider than the budget it was
     // offered) is measured and skipped just the same.
     status.register({ id: 'dishonest', priority: 2, render: () => 'x'.repeat(25) })
     expect(footer.render(20)).toEqual([`aa${' '.repeat(18)}`])
   })
 
-  it('offers each entry the width remaining on its row', () => {
+  it('offers each entry the width remaining on its cluster', () => {
     const { status, footer } = setup()
     const budgets: number[] = []
     status.register(fixedEntry('a', 0, 'aaaa'))
@@ -214,7 +237,24 @@ describe('FooterShellComponent', () => {
       },
     })
     footer.render(20)
-    expect(budgets).toEqual([13])
+    expect(budgets).toEqual([14])
+  })
+
+  it('offers a right-cluster entry the budget left of the gap', () => {
+    const { status, footer } = setup()
+    const budgets: number[] = []
+    status.register(fixedEntry('a', 0, 'aaaa'))
+    status.register({
+      id: 'r',
+      priority: 1,
+      align: 'right',
+      render: (width) => {
+        budgets.push(width)
+        return 'r'.repeat(Math.min(2, width))
+      },
+    })
+    footer.render(20)
+    expect(budgets).toEqual([14])
   })
 
   it('re-lays-out when an entry changes its text, and invalidate clears the cache', () => {
