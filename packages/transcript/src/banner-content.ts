@@ -1,13 +1,17 @@
 /**
- * The welcome banner's editable copy: the displayed version and the two
- * right-column sections. This module is the placeholder content seam — the
- * S8 banner ships structure with placeholder tips and what's-new lines, and
- * real copy lands here later without touching the layout code in
- * `banner.ts`. Every line must fit the right-column budget (51 visible
- * columns) or it renders truncated.
+ * The welcome banner's editable copy: the displayed version, the derived
+ * tips section, and the what's-new lines. The tips are not hand-written —
+ * they derive from {@link STATUS_TIPS} (the footer rotation's pool, the
+ * single content source) by the rule below, so a feature's tip surviving in
+ * one surface survives in the other. Only the what's-new section is literal
+ * editorial copy, rewritten per release. Every over-wide line renders
+ * truncated (never wrapped) against the live right-column budget —
+ * `width − 47 − 1` columns once the right column joins.
  *
  * @module @dsh-blue/blue-transcript/banner-content
  */
+
+import { STATUS_TIPS, type StatusTip } from './tips-content.ts'
 
 /**
  * The version shown in the banner's title rule. Keep in sync with
@@ -23,22 +27,45 @@ export interface BannerSection {
   readonly lines: readonly string[]
 }
 
-/** Placeholder: quick-start tips for the banner's right column. */
-export const BANNER_TIPS: BannerSection = {
-  heading: 'Tips for getting started',
-  lines: [
-    'Type a task and press Enter to send it',
-    'Press / for commands, ! for shell mode',
-    'Ctrl-O folds tool output, Ctrl-T toggles todos',
-  ],
+/** How many derived tips the section shows. */
+const BANNER_TIP_COUNT = 5
+
+/** One pool tip carrying its pool position for the stable tiebreak. */
+interface RankedTip {
+  readonly tip: StatusTip
+  readonly index: number
+  readonly weight: number
 }
 
-/** Placeholder: what's-new lines for the banner's right column. */
+/**
+ * The quick-start selection: the five highest-weight tips that may share a
+ * row (`solo` tips are long-form, written for the footer's full-width slot —
+ * in a column cell they would render as clipped stubs). Weight descends
+ * with the pool order breaking ties, matching the footer rotation's notion
+ * of importance; five tips plus three what's-new lines exactly fill the
+ * right column's eleven body rows.
+ * @returns the selected tip texts, most important first.
+ */
+function selectBannerTips(): readonly string[] {
+  const ranked: RankedTip[] = STATUS_TIPS
+    .map((tip, index) => ({ tip, index, weight: tip.priority ?? 1 }))
+    .filter(entry => entry.tip.solo !== true)
+  ranked.sort((a, b) => b.weight - a.weight || a.index - b.index)
+  return ranked.slice(0, BANNER_TIP_COUNT).map(entry => entry.tip.text)
+}
+
+/** The banner's quick-start tips, derived from the footer pool. */
+export const BANNER_TIPS: BannerSection = {
+  heading: 'Tips for getting started',
+  lines: selectBannerTips(),
+}
+
+/** This release's what's-new lines — literal editorial copy. */
 export const BANNER_WHATS_NEW: BannerSection = {
   heading: "What's new",
   lines: [
-    'Welcome banner with the pixel castle',
-    'Diff and terminal render intents for tool calls',
-    'Paste images with Ctrl-V into the editor',
+    'Git status, context usage, and tips in the footer',
+    '/btw: side questions while the agent keeps running',
+    'Paste images into the editor with ctrl+v',
   ],
 }

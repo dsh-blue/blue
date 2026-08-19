@@ -23,6 +23,7 @@ import {
   ACTION_SUBMIT,
   ACTION_TOGGLE,
 } from './keys.ts'
+import { CURRENT_MARK, SELECT_POINTER } from './symbols.ts'
 
 /** One selectable entry. */
 export interface BlueSelectItem {
@@ -140,7 +141,7 @@ export class BlueSelect implements BlueFocusable {
       const item = items[index]
       /* v8 ignore next -- start/end are clamped to items.length, so the index is always valid */
       if (item === undefined) continue
-      const prefix = index === this.cursor ? '❯ ' : '  '
+      const prefix = index === this.cursor ? `${SELECT_POINTER} ` : '  '
       const checkbox = this.toggled.has(item.value) ? '[x] ' : '[ ] '
       const label = components.truncateToWidth(`${checkbox}${item.label}`, Math.max(1, width - 2))
       const descriptionWidth = width - 2 - components.visibleWidth(label)
@@ -284,8 +285,8 @@ export class SessionList implements BlueFocusable {
       const item = items[index]
       /* v8 ignore next -- start/end are clamped to items.length, so the index is always valid */
       if (item === undefined) continue
-      const prefix = index === this.cursor ? '❯ ' : '  '
-      const badge = item.current === true ? '  ← current' : ''
+      const prefix = index === this.cursor ? `${SELECT_POINTER} ` : '  '
+      const badge = item.current === true ? `  ${CURRENT_MARK}` : ''
       const row = components.truncateToWidth(`${prefix}${item.label}${badge}`, width)
       lines.push(index === this.cursor ? colors.primary(row) : row)
     }

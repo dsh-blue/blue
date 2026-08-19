@@ -509,9 +509,13 @@ describe('blue whole-tree e2e', () => {
     // AgentDefaultModelConfig mounts provider/model 'mock'; the banner
     // snapshots the selection at mount.
     expect(output).toContain('mock · mock')
-    // The eighty-column right cell (61 wide) is past the section threshold,
-    // so the quick-start tips join even on the default terminal.
+    // The eighty-column right cell is past the section threshold, so the
+    // quick-start tips join even on the default terminal — and they are the
+    // real derived pool texts (S16), not placeholders: '! to run a shell
+    // command' is short enough to survive the 32-column right-cell budget
+    // at eighty columns whole.
     expect(output).toContain('Tips for getting started')
+    expect(output).toContain('! to run a shell command')
     // The banner renders before any transcript content.
     expect(output.indexOf('Welcome back!')).toBeLessThan(output.indexOf('Blue online.'))
   })
