@@ -1,12 +1,12 @@
 # Blue P2 视觉设计：kimi-code 观感对齐、主题契约 v2 与分期实施
 
-> 姊妹文档：[blue-p1-design.md](./blue-p1-design.md)（功能层对照，S0-S9 已完成）、[blue-roadmap.md](./blue-roadmap.md)（阶段路线图）、[blue-decisions.md](./blue-decisions.md)（ADR，本文决策见 D24-D25，后续各期随实施追加）。
+> 姊妹文档：[blue-p1-design.md](./blue-p1-design.md)（功能层对照，S0-S9 已完成）、[blue-roadmap.md](./blue-roadmap.md)（阶段路线图）、[blue-decisions.md](./blue-decisions.md)（ADR，本文决策见 D24-D29）。
 > 本文档回答三个问题：**kimi-code 的"精致感"由哪些具体元素构成**（§2-§3）、**主题与 chrome 基建怎么改**（§4-§6）、**按视觉影响排序的分期怎么走**（§7）。
 > 参照系：kimi-code 本地克隆（`kimi-code/`，MoonshotAI）。与 P1 相同：以源码调研为准，**逐项复刻交互结构，不整体照抄色值**。
 
 ## 1. 目标与范围
 
-**目标**：消除 Blue 与 kimi-code 之间的视觉/UX 层差距——编辑框、面板、对话框、补全下拉、footer 的"chrome"质量，以及无处不在的操作提示。P1 对照表（p1-design §3-§4）覆盖的是功能有无，本文档覆盖的是**呈现质量**；两者维度不同，本文档不是 p1-design 的修订。
+**目标**：消除 Blue 与 kimi-code 之间的视觉/UX 层差距——消息流（transcript 会话流，§2.6）、编辑框、面板、对话框、补全下拉、footer 的呈现质量，以及无处不在的操作提示。P1 对照表（p1-design §3-§4）覆盖的是功能有无，本文档覆盖的是**呈现质量**；两者维度不同，本文档不是 p1-design 的修订。
 
 **范围**：视觉与交互引导层。**不含**：alt-screen 全屏模式（L0 路线图项）、model selector / permission preset 面板（p1-design P2 清单）、Ctrl-E diff 全屏预览（P2）、Ctrl-G 外部编辑器（P2）——这些是功能项，继续留在原路线图。
 
@@ -88,6 +88,22 @@ light 版全部按 WCAG AA 重调（文本 ≥4.5:1，chrome ≥3:1）。**双�
 | 色板 | `theme/colors.ts`；符号 `constant/symbols.ts`；布局常量 `constant/rendering.ts` |
 | 补全 provider | `components/editor/file-mention-provider.ts`、`wrapping-select-list.ts` |
 | 框架侧（vendored pi-tui） | `kimi-code/packages/pi-tui/src/components/{editor,select-list}.ts` |
+| 消息流组件（§2.6 调研对象） | `components/messages/{thinking,user-message,assistant-message,tool-call,step-summary,read-group,shell-execution}.ts`、`components/panes/activity-pane.ts`、`utils/transcript-window.ts` |
+
+### 2.6 消息流呈现调研（messages/*，S17-S21 参照基准，2026-08-20）
+
+调研范围：kimi **会话流**（transcript 消息区）的逐组件解剖。与 §2.1-§2.5 的 chrome 调研互补——S10-S16 覆盖"框"（编辑框/面板/对话框/footer），本节覆盖"框里的内容流"。以源码为准，双侧引用（kimi 侧 `kimi-code/apps/kimi-code/src/tui/` 下、Blue 侧 `packages/transcript/src/` 下）。
+
+| # | 维度 | kimi 实现 | Blue 现状 | 期 |
+|---|---|---|---|---|
+| 1 | **思维链** | 独立 `ThinkingComponent`（`messages/thinking.ts`），`mode: 'live'/'finalized'`：live = 空行 + braille 帧 @80ms + `thinking...`（textDim）+ **尾部 2 行**滚动（`slice(-THINKING_PREVIEW_LINES=2)`）；finalized = 空行 + `● ` textDim + 全文 italic textDim，>2 行折叠为**前 2 行** + dim `... (N more lines, ctrl+o to expand)`；`setExpanded` 共享 ctrl+o；`finalize()` 原地转换不换组件 | reasoning 内联在 `AssistantMessageComponent`（`components.ts` render）muted+italic **永远全量可见**；无折叠、无 spinner、不在 ctrl+o 集合 | S17 |
+| 2 | **活动指示** | `ActivityPaneComponent` 模式机（`panes/activity-pane.ts` + `kimi-tui.ts` `updateActivityPane`/`resolveActivityPaneMode`）：`waiting`/`tool` = **moon spinner** 🌑 @120ms + 轮换 tip + 重试 dim 明细行；`thinking` = **清空 pane**（spinner 归 thinking 块）；`composing`（正文流式）= braille `working...`（primary）；`idle` = 停转但留 Spacer(1) 占位防视口跳；对话框/审批挂起 = `hidden` | `pane-activity.ts` 单态 `⠋ working…`，运行中恒显，与 thinking 双转 | S17 |
+| 3 | **用户回显** | 空行 + `✨ `（`constant/symbols.ts` USER_MESSAGE_BULLET）**boldFg(roleUser)** + **全文 boldFg(roleUser)**；续行以 bullet 可见宽对齐；图片同宽缩进（`messages/user-message.ts`） | 空行 + `❯ ` roleUser gutter + 正文默认前景色；续行 2 空格（`components.ts`） | S18 |
+| 4 | **助手消息 chrome** | 空行 + `● `（text 色）行首 bullet + 正文缩进 `MESSAGE_INDENT = '  '`（`messages/assistant-message.ts`、`constant/rendering.ts`） | 无 bullet，markdown 正文顶格 | S18 |
+| 5 | **注入上下文/系统提示词** | 模型侧合成消息**从不渲染**；回放也只用零行 `ReplayTurnBoundaryComponent` 占位维持 turn 边界（`user-message.ts` 尾部）；请求头 system prompt 无 TUI 呈现面 | harness 以 `user/message` + `source`（agent-instructions/plugin/notice/relay 等 ContextFormed 词汇）注入 AGENTS.md 等；fold **忽略 `source`**（`fold.ts` `case 'user/message'`）→ 整块渲染成 `❯` 用户气泡 | S19（D28） |
+| 6 | **工具卡折叠** | 运行态**实心** `● `（text 色，防空心→实心闪烁）；完成 `✓`/`✗ `；标签 `Using/Used ToolName (key-arg)` bold primary；Bash 纯标签 Running/Ran a command；MCP `· MCP/server` dim；dim chip ` · N lines`；结果预览 **3 行**（`RESULT_PREVIEW_LINES`）、Write/Edit dim 行号预览上限 **10 行**（`COMMAND_PREVIEW_LINES`）；统一展开提示 `... (N more lines, M total, ctrl+o to expand)`；**ctrl+o 只作用最近 3 turn**（`TRANSCRIPT_EXPAND_TURNS` 按位置判定，`kimi-tui.ts` `toggleToolOutputExpansion`）；同 step ≥2 Read → `● Read N files · L lines` + `  ├─/└─` 树（`messages/read-group.ts`）；shell `$ ` shellMode + 命令 textDim + 输出 textMuted（`messages/shell-execution.ts`；以上主体在 `messages/tool-call.ts`） | 运行态空心 `○`→`●`；`● name(args≤60)` 无动词标签；结果 `  ⎿ ` 单行 160 字符摘要（`RESULT_SUMMARY_MAX_CHARS`）；ctrl+o 全量翻转不限 turn（`index.ts`）；无分组/行号预览/chip | S20 |
+| 7 | **会话流边距** | `CHROME_GUTTER = 1`（`constant/rendering.ts`）：transcript/panels/statusline 左右各内收 1 列（`GutterContainer(1,1)` 包全部容器），与编辑框内列对齐；**编辑框贴 0 列**（"边框是视觉锚"） | 组件满宽渲染（`core/src/terminal.ts`）；`padColumns` S13 已落、**消费显式推迟** | S21（D29） |
+| 8 | 次要差异（顺带或明确不做） | step-summary 措辞 `… thinking N times, call M tools, K messages`；窗口 15 turn 带 hysteresis 5；流式 markdown transient 重着色 | `… step N · Read ×2, Edit ×1`；`DEFAULT_WINDOW_TURNS=15` 无 hysteresis；无 transient。**不做**：transcript-mode 历史浮层（L0 否决项维持）、OSC 133 标记（非视觉差异，不引入） | S18 顺带 / 🚫 |
 
 ## 3. 差距表（现状 → 目标，按视觉影响排序）
 
@@ -104,6 +120,11 @@ light 版全部按 WCAG AA 重调（文本 ≥4.5:1，chrome ≥3:1）。**双�
 | 9 | footer | 1-2 行纯 muted 文本 | 两行结构：徽章/条目 + 右对齐轮换 tips；L2 context 百分比 | S15 |
 | 10 | 欢迎页右栏 | 占位文案 | 真实 tips（复用 S15 文案模块）+ v2 token | S16 |
 | 11 | 符号体系 | `●`/`❯`/`⎿` 零散 | `✓/✗/← current`、todo 三态点、展开提示等系统化清扫 | S16 |
+| 12 | 思维链与活动指示 | reasoning 永远全量内联可见；activity pane 单态恒显、与 thinking 双转 | live spinner + 尾部 2 行滚动，完成自动折叠 2 行 + ctrl+o；活动模式机（waiting/tool=moon、thinking 空、composing=braille） | S17 |
+| 13 | 用户回显 / 助手 chrome | `❯` 着色 gutter + 无色正文；助手无 bullet | `✨` + 全文 bold roleUser；助手 `●` bullet + 2 列缩进 | S18 |
+| 14 | 注入上下文 | AGENTS.md 等合成 user 消息整块展开成用户气泡 | 合成来源零呈现（kimi 哲学，D28） | S19 |
+| 15 | 工具卡折叠 | `○`→`●` + `name(args)` + 单行摘要；ctrl+o 全量翻转 | `✓/✗` + Using/Used 动词标签 + 3/10 行预览 + dim chip + 最近 3 turn 范围 + Read 分组树 | S20 |
+| 16 | 会话流边距 | 组件满宽贴边 | chrome 左右各内收 1 列（`padColumns` 消费，D29） | S21 |
 
 ## 4. 主题契约 v2（决策 D24）
 
@@ -203,7 +224,7 @@ kimi 没有编辑框下常驻按键行（其提示分布在对话框 footer 与 
 - **样式**：`textMuted`（新 token）——比今日 `muted` 通知更暗一档，常驻不抢注意力。
 - bash 模式/补全展开态由 editor-plus / pi-tui 持有；补全展开时下拉本身覆盖提示行的信息职能（下拉渲染于编辑框下边框之下，✅ 已核实 0.84.2 editor render 顺序）。
 
-## 7. 分期实施（S10-S16）
+## 7. 分期实施（S10-S21）
 
 排序原则（用户定夺）：**按视觉影响**，不按功能点名顺序。每期 = 一个可交付切片：core 提交 + bundle 提交 + docs 提交（ADR + p1-design step log 行 + roadmap + AGENTS + 双语 README）+ `pnpm run test` / 逐文件 100% 覆盖 / typecheck / lint 全绿。
 
@@ -273,6 +294,50 @@ kimi 没有编辑框下常驻按键行（其提示分布在对话框 footer 与 
 - transcript：banner 右栏换真实 tips（源 = S15 `tips-content.ts`）+ v2 token 复审（banner-art 黄金 spec 只动色不动位图）；spinner 帧可配置（**默认保持 braille**——月亮 emoji 宽度 2 在宽度数学上是风险项，作可选项记录于 §8）；`✓/✗`（工具完成/失败）、`← current`（model/theme 选择器未来用）等符号清扫；工具卡首次折叠时 `ctrl+o to expand` 就地提示。
 - 验收：启动页右栏为真实教学内容；全树符号一致。
 
+**瘦身（2026-08-20，随 S17-S21 会话流立项重划）**：§2.6 调研立项后，本步三个 bullet 迁出——spinner 帧与 working tips 迁 **S17**（braille/moon 帧常量与轮换 tip 随活动模式机落地，§8 月亮判定随此修订）；`✓/✗` 符号清扫与工具卡首折 `ctrl+o to expand` 提示迁 **S20**（工具卡 kimi 折叠一并做，避免同一卡片两期翻搅）。本步保留：banner 右栏真实 tips + v2 token 复审 + `← current` 标注。编号稳定不回收。
+
+### S17 — 思维链组件 + 活动模式机
+
+**为什么在会话流五期中最先**：思维链是会话流中注视面积最大、与 kimi 反差最强的表面；折叠基建（`setExpanded` 集合、finalize 语义）与活动模式机是 S18-S20 组件的挂载底座。
+
+- transcript：新建 `thinking.ts` `ThinkingComponent`（kimi 同构）：`live` = 空行 + braille spinner @80ms（可替换 timers + `requestRender`——pane-activity/tips 先例）+ `thinking...`（muted 层）+ **尾部 2 行**滚动（`THINKING_PREVIEW_LINES = 2`，常量随组件落 transcript，`RESULT_SUMMARY_MAX_CHARS` 先例）；`finalized` = 空行 + `● ` muted + italic muted 正文，>2 行折叠**前 2 行** + textMuted `... (N more lines, ctrl+o to expand)`；`setExpanded`/`finalize`/`dispose`。fold 把 reasoning 从 assistant item 拆出独立挂载，`assistant/message` 终稿时原地 finalize 不换组件；**快照回放一律 finalized**（D16：replay 与 live 收敛结果一致）。
+- transcript：`pane-activity.ts` 改造为模式机 `hidden | waiting | thinking | composing | tool | idle`（kimi `resolveActivityPaneMode` 同构）：waiting/tool = **moon spinner** @120ms + 轮换 tip（复用 S15 `tips-content.ts`，kimi working-tips 语义）+ 重试 dim 明细行（`RETRY_DETAIL_MAX_CHARS = 160` 截断，按 harness 事件面裁剪）；thinking = **清空 pane**（spinner 归 thinking 块）；composing = braille `working...`（primary）；idle = 停转但留 1 行占位防视口跳。braille/moon 帧常量从 pane-activity 内联提取为共享常量（月亮宽度 2 显式计入行宽数学）。状态源 = fold 的 streaming 阶段（唯一事实源，不另立状态）。
+- transcript：ctrl+o 的 `CollapseToggle` 组件集合纳入 thinking 组件（interaction 无键位变化）。
+- bundle e2e：live 尾随 2 行（delta 后断言尾部窗口）、finalize 折叠 + hint、ctrl+o 展开、模式机各态（waiting moon / thinking 空 / composing braille / tool）、resume 回放全 finalized。
+- 风险：现有 reasoning 内联断言全量重写（components.spec + e2e streamed/markdown 用例）；spinner 定时器与 perf.spec 基准交互（perf 用例冻结帧序）；同 step 的 thinking/正文混排呈现顺序（kimi：thinking 块在正文块前）。
+- 验收：一轮真实对话——思考中尾部 2 行滚动 + activity pane 空；正文开始流式时 pane 转 braille `working...`；turn 结束 thinking 折叠 2 行 + hint，ctrl+o 展开。
+
+### S18 — 用户回显 + 助手消息 chrome
+
+- transcript：`UserMessageComponent` —— `✨ `（USER_MESSAGE_BULLET 入符号常量）`boldFg(roleUser)` + **全文 boldFg(roleUser)**；续行以 bullet 可见宽对齐；图片缩进同宽。`AssistantMessageComponent` —— 行首空行 + `● `（`text` 色）bullet + 正文 `MESSAGE_INDENT = '  '`（2 列）缩进。step-summary 措辞顺带对齐 kimi（`… thinking N times, called M tools`，dogfood 定）。
+- bundle e2e：`❯` 锚与 continuation 2 空格锚更新；助手 bullet + 缩进锚。
+- 风险：bold 是 SGR 包裹不改宽度（spec 钉住即可）；`❯` 从用户回显退役不影响 /sessions 指针（不同表面、各自常量）。
+- 验收：输入回显整块琥珀粗体（含换行续行对齐）；助手回复带 `●` 行首 + 2 列缩进。
+
+### S19 — 注入上下文默认隐藏（D28）
+
+- transcript fold：`case 'user/message'` 读 `event.data.source`——有 source（合成：agent-instructions/plugin/notice/relay/recall 等 ContextFormed 词汇）→ **不产出条目**（零呈现、零占位）；`source === undefined` → 人类输入照常。快照回放同规则（D16）。
+- 边界：与 S13 `todo_write` 抑制正交（一边按消息来源、一边按工具名）；step-summary 与窗口计数不感知被隐藏消息（fold 层已消化）；若 dogfood 发现某类合成消息需可见（如文件变更通知），按 `source.form` 单独加 dim 单行，**不改默认隐藏**（D28 预留路径）。
+- bundle e2e：含 AGENTS.md 注入的会话流零呈现；resume 回放一致；人类输入不受影响。
+- 验收：真实 `dsh --profile blue-s19` 在带 AGENTS.md 的仓库发起对话，会话流只见用户输入与助手内容。
+
+### S20 — 工具卡 kimi 折叠
+
+- transcript（`components.ts` + intents）：卡片头三态——运行**实心** `● `（`text` 色，消空心→实心闪烁）、成功 `✓`（success）、失败 `✗ `（error）；标签 `Using/Used ToolName (key-arg)`（动词 + 工具名 bold primary + 首个关键参数作 key-arg，白名单取参：file_path/command/pattern 优先，未命中取首个短参数兜底）；Bash 卡纯标签 `Running a command`/`Ran a command`（参数进正文预览）；MCP 类 `toolName · MCP/server` dim 后缀；` · N lines` dim chip。
+- 预览层级：折叠态结果 **3 行**（`RESULT_PREVIEW_LINES`）+ dim 提示 `... (N more lines, M total, ctrl+o to expand)`；Write/Edit 类新参/旧串预览带 dim 行号（`    N  `）上限 **10 行**（`COMMAND_PREVIEW_LINES`）；intent-diff/intent-terminal 既有上限与之对齐复查；`⎿` 连接符去留随 dogfood（kimi 无此符号，预览行直接缩进）。
+- ctrl+o 范围：由全量翻转改为**最近 3 个 turn**（按挂载位置判定——最近 3 个 turn 边界之后的组件才翻，kimi `toggleToolOutputExpansion` 语义；`CollapseToggle` 会话切换重置语义不变）。
+- Read 分组：同 step ≥2 个 Read 调用折叠为 `● Read N files · L lines` + `  ├─/└─ path · N lines` 树（kimi `read-group` 移植，挂 fold 的 step 聚合处）。体量若超一期，拆两轮 dogfood：前半（卡片头/预览/ctrl+o 范围）+ 后半（Read 分组 + shell 呈现）。
+- shell 呈现：terminal 卡对齐 `shell-execution.ts`——`$ ` shellMode + 命令 textDim + 输出 textMuted（S13 已定妆 `!` echo，本轮统一工具卡侧观感一致）。
+- bundle e2e：三态卡、动词标签、3/10 行预览、hint、ctrl+o 最近 3 turn（第 4 个旧 turn 不展开）、Read 分组树、Bash 纯标签。
+- 验收：一轮多工具对话的工具区与 kimi 并排目测一致；ctrl+o 只影响近 3 turn。
+
+### S21 — 全局 1 列 gutter（定妆 reflow，D29）
+
+- core/transcript：消费 `padColumns`——transcript 条目、panes（btw/todo/activity/queue）、footer 左右各内收 1 列；实现位在**挂载层统一包装**（组件自身无感知，宽度按 `width-2` 下发）；编辑框贴 0 列不动（kimi"边框是视觉锚"）；banner 同步内收。
+- bundle：全量 e2e 布局锚 reflow（列偏移类断言为主——S8/S15 教训：锚内容文本不锚色行）；移除 S13「消费显式推迟」注记（本档 §7 S13 step log 与 D25 S13 落地注）及 AGENTS 对应句。
+- 风险：一次性全树 reflow——放会话流五期最后，避免中途步骤锚点二次改写；editor/overlay 等满宽组件与新列宽的边缘对齐；FakeTerminal 列数断言全面 +1 偏移。
+- 验收：会话流、面板、footer 左缘与编辑框内列对齐成一条竖线；60 列窄终端无折行错位。
+
 ## 8. Adopt / Adapt / Reject
 
 | kimi 元素 | 判定 | 说明 |
@@ -285,9 +350,12 @@ kimi 没有编辑框下常驻按键行（其提示分布在对话框 footer 与 
 | 模糊匹配、描述换行、幽灵提示、斜杠加粗 | **adopt** | S14 |
 | footer 轮换 tips | **adapt** | S15 已落地；SWRR 加权 + `' | '` 配对一次到位，10s ticker 为事件驱动渲染的显式心跳（kimi 靠无关重绘刷帧） |
 | context 百分比 | **adapt** | S15 已落地；max 来自 adapter `resolveModel().context` 经 `'request/context'`（`agentDefaultModel` 路线已证无元数据），撤回即降级 `ctx N` |
-| 月亮 spinner 🌑🌒 | **adapt** | 帧可配置但默认 braille（emoji 宽度风险） |
-| GutterContainer 1 列内收 | **adapt** | 纯 `padColumns`，S13 实测决定启用与否 |
-| working tips（spinner 后附教学） | **adapt** | S16，文案复用 tips 模块 |
+| 月亮 spinner 🌑🌒 | **adapt** | S17 模式机修订：waiting/tool 活动态用 moon（宽度 2 显式计入行宽数学，单行 pane 风险可控），thinking/composing 用 braille；原"默认一律 braille"判定随活动模式机退役 |
+| GutterContainer 1 列内收 | **adapt** | 效果 adopt：纯 `padColumns` 等价，S21 启用（D29）；GutterContainer 组件本体仍拒移植（pi-tui 类型越界，D25） |
+| working tips（spinner 后附教学） | **adapt** | S17，文案复用 tips 模块 |
+| ThinkingComponent 折叠（live 尾随 / 定稿折叠 + ctrl+o） | **adopt** | S17 |
+| 合成消息零呈现（注入上下文隐藏） | **adopt** | S19（D28）——harness 注入面对 kimi"模型侧内容不渲染"哲学的对齐 |
+| 工具卡动词标签 / 预览层级 / Read 分组树 | **adopt** | S20；`⎿` 连接符去留随 dogfood |
 | status_line 自定义命令 | **reject** | kimi 配置体系特定；Blue 用 patch/env |
 | 模式徽章（plan/yolo/swarm/goal） | **reject** | ⛔ 上游无 presets/swarm/goal 概念 |
 | 渐变文字、/dance 彩蛋 | **reject** | 产品个性，非对齐项 |

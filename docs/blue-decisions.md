@@ -156,7 +156,7 @@
 
 ## P2 视觉设计决策（kimi-code 观感对齐设计期，2026-08-19）
 
-详见 [blue-p2-visual-design.md](./blue-p2-visual-design.md)。以 kimi-code 为视觉/UX 参照（框架同源 pi-tui，全部效果为应用层实现，逐项可移植），按视觉影响排序分期（S10-S16）。
+详见 [blue-p2-visual-design.md](./blue-p2-visual-design.md)。以 kimi-code 为视觉/UX 参照（框架同源 pi-tui，全部效果为应用层实现，逐项可移植），按视觉影响排序分期（S10-S21；S17-S21 为 2026-08-20 立项的会话流对齐期，参照基准 p2-visual §2.6）。
 
 ### D24. 主题契约 v2：+`primary`/`textMuted` 两 token，现有 `muted` 即 kimi 的 textDim 层
 
@@ -189,6 +189,20 @@
 - **决策**：footer 视觉身份对齐 kimi——**两空格 slot 连接**（无 ` · ` 字形、无分隔色）；**三档灰阶**（model 与 context 百分比 = `text` #e0e0e0 最亮，cwd 与 git 徽章 = `muted` #888888，tips = `textMuted` #6b6b6b 最暗）；L1 左簇 model+cwd+git、右簇轮换 tips；L2 右簇 context 百分比。git 徽章取全量 `branch [+N -M ↑a↓b]`（diff 计数 + ahead/behind，不取 kimi 的 PR 徽章）；tips 走 nginx SWRR 加权轮换 + ` | ` 两两配对（solo 旗标与重复守卫），10s 显式 ticker 推进（Blue 渲染纯事件驱动，kimi 靠无关重绘刷帧的路径不成立）。
 - **理由**：v1 的失败不是布局而是层级缺失——kimi 的可读性来自亮度差与空格节奏，不来自装饰字形；三档恰好复用 D24 已开的 `textMuted` token，零新色。
 - **后果**：`BlueStatusEntry` 增可选 `row`/`align`（additive，谎言值钳位不崩）；footer 条目插件扩为五个（basic/cwd/git/tips/context，后两个新子路径导出）；git 探测 TTL 缓存（branch 5s / status 15s / numstat 仅脏树，惰性刷新于 render 内）；context 的窗口来源定为 adapter `resolveModel().context.contextWindow` 经 `'request/context'` 事件（v1 调研已证 `agentDefaultModel` 无元数据可取），模型切换撤回窗口即降级 `ctx N`。**Dogfood 追加（2026-08-20）**：S11 的编辑框常驻按键提示行（`! bash · / commands · ...`）随本决策退役——kimi 无此行，affordance 教学统一归 footer 轮换 tips（`hint-content.ts` 删除，HintLine 仅瞬态通知/斜杠发现）。
+
+### D28. 注入上下文默认隐藏：合成来源 user 消息零呈现（用户裁决，S19 落地）
+
+- **背景**：harness 把 AGENTS.md 等工作区指令以 `user/message` 事件注入会话，携带结构化 `source`（`agent-instructions`/`plugin` 及 ContextFormed 词汇——instructions/catalog/snapshot/notice/relay/recall；dsh-llm 的 MessageSourceMap 文档明确"颜色、图标、排序与折叠默认是消费者的事"）。Blue 的 fold 忽略 `source`，每条注入渲染成完整展开的 `❯` 用户气泡——会话流开场即被系统级内容淹没。kimi 对模型侧合成消息从不渲染（回放也只用零行 turn 边界占位）。
+- **决策**（用户裁决 2026-08-20）：fold 层按消息来源分拣——`source === undefined`（人类输入）照常呈现；有 `source`（合成）**零呈现**（不产条目、不留占位行）。快照回放同规则（D16 一致性）。
+- **理由**：对齐 kimi"模型侧内容模型侧消化"的哲学；裁决时明确排除灰色单行占位与"隐藏但可展开"两案（默认态必须干净）；harness 契约把呈现决策完全交给消费者，fold 是唯一正确分拣层。
+- **后果**：S19 落地（p2-visual §7）；step-summary 与窗口计数不感知被隐藏消息（fold 层已消化）；与 S13 `todo_write` 抑制正交（一边按消息来源、一边按工具名）。若日后 dogfood 需要某类合成消息可见（如文件变更通知），按 `source.form` 单独加 dim 单行呈现，不回改默认隐藏。
+
+### D29. 消费 1 列 chrome gutter：S13 推迟项定档 S21（待落地）
+
+- **背景**：kimi 全部 chrome（transcript/panels/statusline）左右各内收 1 列（`CHROME_GUTTER = 1`，`GutterContainer(1,1)` 包全部容器），与编辑框内列对齐，编辑框本身贴 0 列作为视觉锚。S13 落了纯函数等价 `padColumns` 但**消费显式推迟**——"kimi 的 gutter 是全局的，启用牵动 transcript/panes/editor 全部组件"。
+- **决策**：消费该推迟项——transcript 条目、panes、footer 左右各内收 1 列（挂载层统一包装，组件无感知，宽度按 `width-2` 下发），编辑框贴 0 列不动，banner 同步内收；定档 **S21**（会话流组件 S17-S20 定稿后的一次性 reflow，把全量 e2e 锚点改写压缩为一轮）。
+- **理由**：用户将"会话流左右边距"列为对齐缺口（2026-08-20 会话流调研，p2-visual §2.6 #7）；gutter 是 kimi 层级感的结构底座——chrome 与终端边缘脱开、左缘与编辑框内列成一条竖线；"先组件后 reflow"的顺序避免中途步骤锚点二次改写。
+- **后果**：S21 落地时全量 e2e 布局锚 reflow，并移除 S13 推迟注记（p2-visual §7 S13 step log 与 D25 S13 落地注）及 AGENTS 对应句；后续新组件零成本继承 gutter（包装在挂载层，不在组件内）。
 
 ## 已知遗留（MVP 有意为之）
 
