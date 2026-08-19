@@ -571,16 +571,36 @@ describe('blue whole-tree e2e', () => {
   it('runs ! shell commands through editor-plus and echoes output into the scroll region', async () => {
     const tree = await bootBlue([], { script: [] })
     await currentAgent(tree)
+    // The dark theme v2 shell-mode violet.
+    const SHELL_SGR = '\x1b[38;2;189;147;249m'
     // Inject a fake executor (same module instance as the mounted plugin):
     // no real spawn in the e2e.
-    editorPlusPlugin.setShellExecutor(command => Promise.resolve({ code: 0, output: `ran: ${command}\n` }))
+    editorPlusPlugin.setShellExecutor(command => Promise.resolve({ code: 0, stdout: `ran: ${command}\n`, stderr: '' }))
     try {
       typeLine(tree.terminal, '!echo hi')
       await vi.waitFor(() => { expect(tree.terminal.output).toContain('ran: echo hi') })
-      // The ShellEcho header row repeats the command itself.
-      expect(tree.terminal.output).toContain('! echo hi')
+      // The ShellEcho header leads with the shell-mode `$ ` marker, then the
+      // command body in the default foreground (the kimi dim presentation).
+      expect(tree.terminal.output).toContain(`${SHELL_SGR}$ `)
       // Bash mode never reaches the model.
       expect(tree.adapter.requests).toHaveLength(0)
+    } finally {
+      editorPlusPlugin.setShellExecutor(undefined)
+    }
+  })
+
+  it('echoes a failed shell command with red stderr and the exit-code row', async () => {
+    const tree = await bootBlue([], { script: [] })
+    await currentAgent(tree)
+    // The dark theme v2 error red.
+    const ERROR_SGR = '\x1b[38;2;232;84;84m'
+    editorPlusPlugin.setShellExecutor(() => Promise.resolve({ code: 1, stdout: '', stderr: 'boom\n' }))
+    try {
+      typeLine(tree.terminal, '!fail')
+      await vi.waitFor(() => { expect(tree.terminal.output).toContain('boom') })
+      expect(tree.terminal.output).toContain('exit code 1')
+      // The stderr paints error-red (truecolor SGR anchor).
+      expect(tree.terminal.output).toContain(`${ERROR_SGR}boom`)
     } finally {
       editorPlusPlugin.setShellExecutor(undefined)
     }
@@ -1220,14 +1240,15 @@ describe('blue whole-tree e2e', () => {
       content: [{ type: 'text', text: 'queued-task' }],
       source: { kind: 'user' },
     }))
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('queued ↑ turn: queued-task') })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('queued-task') })
     // Dock order (S12): the footer pins to the terminal's last rows, the
     // editor sits above it, and the queue pane above the editor (the first
     // gray `border` frame run at or after the pane — the idle editor frame
-    // is neutral since S11).
+    // is neutral since S11). The `↑` glyph splits the row with primary SGR
+    // (S13), so the anchor is the message text alone.
     const docked = await fullFrame(tree.terminal)
     const footerAt = docked.indexOf('mock · idle')
-    const queuedAt = docked.indexOf('queued ↑ turn: queued-task')
+    const queuedAt = docked.indexOf('queued-task')
     const borderAt = docked.indexOf(EDITOR_BORDER_SGR, queuedAt)
     expect(footerAt).toBeGreaterThanOrEqual(0)
     expect(borderAt).toBeGreaterThan(queuedAt)
@@ -1340,12 +1361,30 @@ describe('blue whole-tree e2e', () => {
       .resolves.toEqual({ kind: 'success', text: 'asked the side question' })
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('side reply') })
     expect(tree.terminal.output).toContain('› hello side')
+    // The pane frames itself and splices into the editor: the in-border
+    // title, the close hint, and the editor's top-left corner turn `├` —
+    // the `╭` is replaced by the splice while the pane is connected.
+    expect(tree.terminal.output).toContain(' BTW ')
+    expect(tree.terminal.output).toContain('Esc close')
+    expect(tree.terminal.output).toContain(`${EDITOR_BORDER_SGR}├`)
     // The exchange ran on the side agent: one model request, the main agent
     // untouched.
     expect(tree.adapter.requests).toHaveLength(1)
+
+    // Escape (routed through the editor chain while the pane is up) closes
+    // it; the editor's rounded corner comes back.
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain(`${EDITOR_BORDER_SGR}╭`) })
+    expect(await fullFrame(tree.terminal)).not.toContain('› hello side')
+    expect(await fullFrame(tree.terminal)).not.toContain(`${EDITOR_BORDER_SGR}├`)
+
+    // The pane reopened via /btw dismisses through the bare command too.
+    await expect(executeCommand(tree, agent, '/btw hello again'))
+      .resolves.toEqual({ kind: 'success', text: 'asked the side question' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain(`${EDITOR_BORDER_SGR}├`) })
     await expect(executeCommand(tree, agent, '/btw'))
       .resolves.toEqual({ kind: 'success', text: 'dismissed the side question' })
-    expect(await fullFrame(tree.terminal)).not.toContain('› hello side')
+    expect(await fullFrame(tree.terminal)).not.toContain('› hello again')
   })
 
   it('remembers a session-scoped approval: the next request for the tool skips the overlay', async () => {
