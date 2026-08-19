@@ -534,7 +534,9 @@ describe('blue whole-tree e2e', () => {
     const frame = await fullFrame(tree.terminal)
     expect(frame).toContain('Welcome back!')
     expect(frame).toContain('Tips for getting started')
-    // The box never caps: every banner row spans the full terminal width.
+    // The kimi gutter insets the banner one column on both sides (D29,
+    // S21): a row spans the leading gutter column plus `columns - 2`
+    // banner columns — no cap, but no full bleed either.
     const bannerRow = frame.split('\r\n').find(row => row.includes('Welcome back!')) ?? ''
     const plain = bannerRow
       // Strip every escape flavor the renderer emits: SGR runs, CSI
@@ -542,9 +544,8 @@ describe('blue whole-tree e2e', () => {
       .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
       .replace(/\x1b\][^\u0007]*\u0007/g, '')
       .replace(/[\u0000-\u001f]/g, '')
-    // fullFrame bumps the width by one to force the repaint; the box
-    // fills whatever the terminal then reports — no cap.
-    expect(plain.trimEnd().length).toBe(tree.terminal.columns)
+    // fullFrame bumps the width by one to force the repaint.
+    expect(plain.trimEnd().length).toBe(tree.terminal.columns - 1)
     expect(frame.indexOf('Welcome back!')).toBeLessThan(frame.indexOf('Blue online.'))
   })
 
@@ -1245,7 +1246,7 @@ describe('blue whole-tree e2e', () => {
       // Slot order and the two-space joins, against the same abbreviation
       // the cwd entry derives from this process's working directory.
       const cwdLabel = statusCwdPlugin.shortenCwd(process.cwd(), homedir())
-      const plain = stripSgr(row!)
+      const plain = stripSgr(row!).trimStart()
       expect(plain.startsWith(`mock  ${cwdLabel}  e2e-branch [+7 -2 ↑2]`)).toBe(true)
       // The tip is the right cluster: whatever the width, it ends the row.
       expect(plain.trimEnd().endsWith(bootTipText())).toBe(true)
@@ -1287,6 +1288,24 @@ describe('blue whole-tree e2e', () => {
     }
   })
 
+  it('renders nothing for injected runtime context — only human input folds (D28)', async () => {
+    const tree = await bootBlue([], { script: [textResponse('plain answer')] })
+    const agent = await currentAgent(tree)
+    // The harness injects context as synthetic user/message events with a
+    // plugin source; the fold hides them outright (zero presentation, zero
+    // placeholder — the S19 rule pulled into the S17 dogfood).
+    agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'RUNTIME-CONTEXT-SECRET' }],
+      source: { kind: 'plugin', plugin: 'agent-context', form: 'snapshot', sections: [] },
+    }), { surfaceOp: 'append' })
+    typeLine(tree.terminal, 'visible prompt')
+    await agent.whenIdle()
+    await waitForRender()
+    expect(tree.terminal.output).toContain('visible prompt')
+    expect(tree.terminal.output).toContain('plain answer')
+    expect(tree.terminal.output).not.toContain('RUNTIME-CONTEXT-SECRET')
+  })
+
   it('resumes a persisted session: history renders from the snapshot, no replay needed', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-blue-e2e-sessions-'))
     // The persisted turn carries visible reasoning: the resumed thinking
@@ -1302,6 +1321,12 @@ describe('blue whole-tree e2e', () => {
     const firstAgent = await currentAgent(first)
     await vi.waitFor(() => { expect(first.adapter.requests).toHaveLength(1) })
     await firstAgent.whenIdle()
+    // A persisted synthetic injection stays hidden on replay too (D16: the
+    // snapshot shares the live fold's rules).
+    firstAgent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'PERSISTED-CONTEXT-SECRET' }],
+      source: { kind: 'plugin', plugin: 'agent-context' },
+    }), { surfaceOp: 'append' })
     const sessionId = String(firstAgent.id)
     await first.ctx.fiber.dispose()
     disposers.length = 0
@@ -1321,6 +1346,8 @@ describe('blue whole-tree e2e', () => {
     expect(stripSgr(output)).toContain('● first we consider the input,')
     expect(output).toContain('more lines, ctrl+o to expand')
     expect(output).not.toContain('thinking...')
+    // The persisted synthetic injection stayed hidden (D16 snapshot rule).
+    expect(output).not.toContain('PERSISTED-CONTEXT-SECRET')
   })
 
   it('switches the live palette through /theme: blueTheme re-provides and the UI re-renders light', async () => {

@@ -242,6 +242,12 @@ export class TranscriptFolder {
       }
 
       case 'user/message': {
+        // D28 (user ruling, landed with the S17 dogfood pull-forward):
+        // synthetic messages — plugin/model/tool sources, the harness's
+        // ContextFormed injections like the runtime-context snapshot —
+        // render nothing, not even a placeholder row. Only `kind: 'user'`
+        // human input folds; the snapshot replay shares the rule (D16).
+        if (event.data.source.kind !== 'user') return null
         const text = contentText(event.data.content)
         if (!text.trim()) return null
         const item: TranscriptUserItem = {

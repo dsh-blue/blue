@@ -47,6 +47,28 @@ describe('foldSessionEvents', () => {
     expect(item.seq).toBe(1)
   })
 
+  it('renders nothing for synthetic messages — only kind:user input folds (D28)', () => {
+    // The harness's ContextFormed injections (runtime-context snapshots,
+    // AGENTS.md instructions, plugin notices) arrive as user/message events
+    // with a non-user source; they are zero-presentation.
+    const folder = new TranscriptFolder()
+    expect(folder.apply(userEvent('runtime context snapshot', [], { kind: 'plugin', plugin: 'agent-context' }))).toBeNull()
+    expect(folder.items).toHaveLength(0)
+    // Human input keeps folding, before and after the injection.
+    const before = folder.apply(userEvent('hello'))
+    expect(before?.[0]?.isNew).toBe(true)
+    expect(folder.apply(userEvent('ignored again', [], { kind: 'model' } as never))).toBeNull()
+    expect(folder.items).toHaveLength(1)
+
+    // Snapshot replay shares the rule (D16): the one-shot fold drops the
+    // synthetic exactly like the live feed.
+    const items = foldSessionEvents([
+      userEvent('hidden', [], { kind: 'plugin', plugin: 'x', form: 'snapshot', sections: [] }),
+      userEvent('shown'),
+    ])
+    expect(items.map(item => (item as TranscriptUserItem).text)).toEqual(['shown'])
+  })
+
   it('folds non-text user content to placeholders and skips empty messages', () => {
     const withImage = userEvent('look', [{ type: 'image', attachment: { id: 'a1' } as never }])
     const imageOnly = userEvent('', [{ type: 'image', attachment: { id: 'a2' } as never }])

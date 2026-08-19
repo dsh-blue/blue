@@ -29,7 +29,12 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { BlueComponent, BlueComponents, BlueSemanticColors } from '@dsh-blue/blue-core'
+import {
+  GutterComponent,
+  type BlueComponent,
+  type BlueComponents,
+  type BlueSemanticColors,
+} from '@dsh-blue/blue-core'
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
 import type {} from '@dsh-blue/blue-app'
@@ -267,7 +272,7 @@ export function apply(ctx: Context): void {
 
   const pane = new ActivityPaneComponent(colors, components, state)
   // Bottom panes render in mount order; a zero-row render occupies nothing.
-  ctx.effect(() => screen.addBottomChild(pane))
+  ctx.effect(() => screen.addBottomChild(new GutterComponent(pane)))
   // Effect-bound so unloading this fiber stops the animation.
   ctx.effect(() => () => stopTimer())
 }

@@ -129,14 +129,14 @@ function visibleWidth(text: string): number {
  * manual bold SGR of the title; the composite width is computed with the
  * fake width function, mirroring `topRule` itself.
  */
-function rule(truncated: boolean, width = 80): string {
+function rule(truncated: boolean, width = 78): string {
   const hint = truncated ? 'Esc close · ↑↓ scroll ' : 'Esc close '
   const composite = `\x1b[1m BTW \x1b[22m─ ${hint}`
   return `╭${composite}${'─'.repeat(Math.max(0, width - 2 - visibleWidth(composite)))}╮`
 }
 
 /** One bordered body row at the default width (plain content). */
-function bodyRow(text: string, width = 80): string {
+function bodyRow(text: string, width = 78): string {
   return `│ ${text}${' '.repeat(Math.max(0, width - 4 - text.length))} │`
 }
 
@@ -591,10 +591,12 @@ describe('blue-pane-btw', () => {
     const side = agents.sides[0]!
 
     const pane = screen.bottomChildren[0]!
-    expect(pane.render(3)).toEqual([])
-    expect(pane.render(8)[0]?.startsWith('╭')).toBe(true)
+    // The mount layer's gutter squeezes the child to `width - 2` and pads
+    // the left column; the pane's own minimum-width guard hides below that.
+    expect(pane.render(5)).toEqual([])
+    expect(pane.render(10)[0]?.slice(1).startsWith('╭')).toBe(true)
     pane.invalidate()
-    expect(pane.render(8)[0]?.startsWith('╭')).toBe(true)
+    expect(pane.render(10)[0]?.slice(1).startsWith('╭')).toBe(true)
 
     ctx.emit('blue/btw-command', 'close')
     await vi.waitFor(() => {

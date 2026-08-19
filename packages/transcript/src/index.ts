@@ -26,11 +26,12 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type {
-  BlueComponent,
-  BlueComponents,
-  BlueScreen,
-  BlueSemanticColors,
+import {
+  GutterComponent,
+  type BlueComponent,
+  type BlueComponents,
+  type BlueScreen,
+  type BlueSemanticColors,
 } from '@dsh-blue/blue-core'
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
@@ -234,7 +235,9 @@ function mountSession(
     if (typeof expandable.setExpanded === 'function') {
       toggle.components.add(expandable)
     }
-    entries.push({ item, component, dispose: screen.addChild(component) })
+    // The kimi one-column gutter (D29, S21): every transcript entry mounts
+    // inset on both sides; the component itself never knows.
+    entries.push({ item, component, dispose: screen.addChild(new GutterComponent(component)) })
   }
 
   const present = (updates: readonly FoldUpdate[] | null): void => {
@@ -248,7 +251,7 @@ function mountSession(
         const folded = new Set<TranscriptItem>(update.replaced)
         retire(item => folded.has(item))
         const summary = createPlainComponent(update.item, colors, components, images, requestRender)
-        entries.push({ item: update.item, component: summary, dispose: screen.addChild(summary) })
+        entries.push({ item: update.item, component: summary, dispose: screen.addChild(new GutterComponent(summary)) })
         continue
       }
       if (update.isNew) mount(update.item)
@@ -319,7 +322,7 @@ export function apply(ctx: Context): void {
   // The footer pins to the dock's lowest slot (S12): the two-row status
   // stays on the terminal's last rows beneath the editor, the kimi layout
   // dialog panels pull up over.
-  ctx.effect(() => screen.addBottomChild(footer, 'bottom'))
+  ctx.effect(() => screen.addBottomChild(new GutterComponent(footer), 'bottom'))
 
   ctx.effect(() => ctx.blueKeymap.register([{
     id: ACTION_TOGGLE_COLLAPSE,

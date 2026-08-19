@@ -40,11 +40,12 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { AgentHandle } from '@deepseek-ai/dsh-agent'
-import type {
-  BlueComponent,
-  BlueComponents,
-  BlueMarkdown,
-  BlueSemanticColors,
+import {
+  GutterComponent,
+  type BlueComponent,
+  type BlueComponents,
+  type BlueMarkdown,
+  type BlueSemanticColors,
 } from '@dsh-blue/blue-core'
 import { topRule } from '@dsh-blue/blue-core/chrome'
 // The named import also carries the `commands` Context merge.
@@ -416,7 +417,7 @@ export function apply(ctx: Context): void {
 
   const pane = new BtwPaneComponent(colors, components, state, () => screen.rows)
   // Bottom panes render in mount order; a zero-row render occupies nothing.
-  ctx.effect(() => screen.addBottomChild(pane))
+  ctx.effect(() => screen.addBottomChild(new GutterComponent(pane)))
   // The editor key chain routes close/scroll/submit here while the pane is
   // open.
   ctx.on('blue/btw-command', (command, text) => {

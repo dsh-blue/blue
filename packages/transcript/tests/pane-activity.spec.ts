@@ -23,6 +23,7 @@ import {
   turnStart,
 } from './helpers.ts'
 import type { Context } from '@deepseek-ai/cordis'
+import type { BlueComponent } from '@dsh-blue/blue-core'
 
 /** Fake timers recording interval creation/clearing; ticks run manually. */
 class FakeTimers implements activity.ActivityTimers {
@@ -73,6 +74,11 @@ const FIRST_TIP = buildTipRotation(STATUS_TIPS)[0]!.text
 /** Emit one session event for the agent's session. */
 function emit2(ctx: Context, agent: FakeAgent, event: Parameters<typeof turnStart>[0]): void {
   ctx.emit('session/event', agent.session, event)
+}
+
+/** Render the mounted (gutter-wrapped) pane as if the child saw `width`. */
+function unwrapped(pane: BlueComponent, width: number): string[] {
+  return pane.render(width + 2).map(line => line === ' ' ? '' : line.slice(1))
 }
 
 describe('blue-pane-activity', () => {
@@ -139,13 +145,13 @@ describe('blue-pane-activity', () => {
     const pane = screen.bottomChildren[0]!
     const tip = buildTipRotation(STATUS_TIPS)[1]!.text
     const visible = 1 + ' working...'.length + ' · Tip: '.length + tip.length
-    expect(pane.render(visible)).toEqual([`⠋ working... · Tip: ${tip}`])
+    expect(unwrapped(pane, visible)).toEqual([`⠋ working... · Tip: ${tip}`])
     // One column short drops the tip but keeps the base row.
-    expect(pane.render(visible - 1)).toEqual(['⠋ working...'])
+    expect(unwrapped(pane, visible - 1)).toEqual(['⠋ working...'])
     // Below the eleven-column base there is no row.
-    expect(pane.render(10)).toEqual([])
+    expect(unwrapped(pane, 10)).toEqual([])
     pane.invalidate()
-    expect(pane.render(visible)).toEqual([`⠋ working... · Tip: ${tip}`])
+    expect(unwrapped(pane, visible)).toEqual([`⠋ working... · Tip: ${tip}`])
     await dispose()
   })
 
@@ -252,13 +258,13 @@ describe('blue-pane-activity', () => {
     // The fake width measure counts codepoints, so the moon is one cell
     // there: the row's visible width is 1 + the lead + the tip.
     const visible = 1 + ' · Tip: '.length + FIRST_TIP.length
-    expect(pane.render(visible)).toEqual([full])
+    expect(unwrapped(pane, visible)).toEqual([full])
     // One column short drops the tip but keeps the moon.
-    expect(pane.render(visible - 1)).toEqual(['🌑'])
+    expect(unwrapped(pane, visible - 1)).toEqual(['🌑'])
     // With no room for the frame itself there is no row.
-    expect(pane.render(0)).toEqual([])
+    expect(unwrapped(pane, 0)).toEqual([])
     pane.invalidate()
-    expect(pane.render(visible)).toEqual([full])
+    expect(unwrapped(pane, visible)).toEqual([full])
     await dispose()
   })
 

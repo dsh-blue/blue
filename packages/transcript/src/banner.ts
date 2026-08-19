@@ -24,10 +24,11 @@
 
 import { homedir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
-import type {
-  BlueComponent,
-  BlueComponents,
-  BlueSemanticColors,
+import {
+  GutterComponent,
+  type BlueComponent,
+  type BlueComponents,
+  type BlueSemanticColors,
 } from '@dsh-blue/blue-core'
 // Empty type import carries the `agentDefaultModel` Context merge this
 // plugin's inject resolves.
@@ -301,7 +302,7 @@ export function apply(ctx: Context): void {
     whatsNew: BANNER_WHATS_NEW,
   })
   // Effect-bound so unloading this fiber unmounts the banner.
-  ctx.effect(() => ctx.blueScreen.addChild(banner))
+  ctx.effect(() => ctx.blueScreen.addChild(new GutterComponent(banner)))
   // addChild schedules no render on its own.
   ctx.blueScreen.requestRender()
 }

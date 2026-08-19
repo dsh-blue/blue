@@ -255,14 +255,23 @@ export const apply = ctx => globalThis.__blueStatusFixtureApply(ctx)
   return { ctx, screen, keymap, blueSession }
 }
 
-/** The transcript's content components (the footer lives in bottomChildren). */
+/**
+ * The transcript's content components (the footer lives in bottomChildren),
+ * with the kimi gutter column the mount layer wraps every surface in
+ * stripped — the gutter itself is asserted by its dedicated case below.
+ */
 function contentLines(screen: FakeScreen): string[] {
-  return screen.children.flatMap(component => component.render(80))
+  return stripGutter(screen.children.flatMap(component => component.render(80)))
 }
 
-/** The footer shell's rendered rows. */
+/** The footer shell's rendered rows, gutter-stripped like {@link contentLines}. */
 function footerLines(screen: FakeScreen): string[] {
-  return screen.bottomChildren.flatMap(component => component.render(80))
+  return stripGutter(screen.bottomChildren.flatMap(component => component.render(80)))
+}
+
+/** Remove the mount layer's one-column kimi gutter from rendered rows. */
+function stripGutter(lines: string[]): string[] {
+  return lines.map(line => line === ' ' ? '' : line.slice(1))
 }
 
 describe('blue-transcript plugin through the real Loader', () => {
@@ -273,6 +282,22 @@ describe('blue-transcript plugin through the real Loader', () => {
     expect(footerLines(screen)).toEqual([])
   })
 
+  it('insets every mounted surface by the kimi one-column gutter (D29)', async () => {
+    resetSeq()
+    const { ctx, screen } = await bootTranscript()
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([
+      userEvent('hi'),
+      assistantEvent(1, 1, [{ type: 'text', text: 'answer' }]),
+    ])))
+    // Every transcript row gains the leading gutter column; the footer
+    // shell's full-width rows do too (the wrapper squeezes the child to
+    // `width - 2`, the squeeze being the right margin).
+    const rawContent = screen.children.flatMap(component => component.render(80))
+    expect(rawContent).toEqual([' ', ' ❯ hi', ' ', ' ● answer'])
+    const rawFooter = screen.bottomChildren.flatMap(component => component.render(80))
+    expect(rawFooter).toEqual([` deepseek-chat${' '.repeat(65)}`])
+  })
+
   it('renders history and the footer status on blue/session-changed', async () => {
     resetSeq()
     const { ctx, screen, blueSession } = await bootTranscript()
@@ -281,7 +306,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     const agent = fakeAgent([userEvent('hi'), assistantEvent(1, 1, [{ type: 'text', text: 'answer' }])])
     ctx.emit('blue/session-changed', asAgent(agent))
     expect(screen.children).toHaveLength(2)
-    expect(footerLines(screen)).toEqual([`deepseek-chat${' '.repeat(67)}`])
+    expect(footerLines(screen)).toEqual([`deepseek-chat${' '.repeat(65)}`])
     expect(contentLines(screen)).toEqual(['', '❯ hi', '', '● answer'])
     expect(screen.renderRequests).toContain(true)
     expect(blueSession.current).toBeNull()
