@@ -28,10 +28,11 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type {
-  BlueComponent,
-  BlueComponents,
-  BlueSemanticColors,
+import {
+  GutterComponent,
+  type BlueComponent,
+  type BlueComponents,
+  type BlueSemanticColors,
 } from '@dsh-blue/blue-core'
 import type { TodoItem } from '@deepseek-ai/dsh-session'
 // Empty type import carries the app-owned `blueSession` Context merge and the
@@ -356,5 +357,5 @@ export function apply(ctx: Context): void {
 
   const pane = new TodoPaneComponent(colors, components, state)
   // Bottom panes render in mount order; a zero-row render occupies nothing.
-  ctx.effect(() => screen.addBottomChild(pane))
+  ctx.effect(() => screen.addBottomChild(new GutterComponent(pane)))
 }

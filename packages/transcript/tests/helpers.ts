@@ -123,12 +123,12 @@ export function event<T extends SessionEvent['type']>(type: T, data: SessionEven
 }
 
 /** A user message with the given content blocks. */
-function userMessage(text: string, extra: ContentBlock[] = []): UserMessage {
+function userMessage(text: string, extra: ContentBlock[] = [], source?: UserMessage['source']): UserMessage {
   return {
     id: MessageId(`m-${seq}`),
     role: 'user',
     content: [{ type: 'text', text }, ...extra],
-    source: { kind: 'user' },
+    source: source ?? { kind: 'user' },
   }
 }
 
@@ -152,9 +152,9 @@ function toolResultMessage(callId: string, text: string, isError = false): ToolR
   }
 }
 
-/** A `user/message` event. */
-export function userEvent(text: string, extra: ContentBlock[] = []): SessionEvent<'user/message'> {
-  return event('user/message', userMessage(text, extra))
+/** A `user/message` event; pass a source to fake a synthetic injection. */
+export function userEvent(text: string, extra: ContentBlock[] = [], source?: UserMessage['source']): SessionEvent<'user/message'> {
+  return event('user/message', userMessage(text, extra, source))
 }
 
 /** A `turn/start` event. */

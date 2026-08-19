@@ -28,10 +28,12 @@ import type { BlueSessionRef } from '@dsh-blue/blue-app'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { ACTION_TOGGLE_COLLAPSE, apply, setWindowTurns } from '../src/index.ts'
 import * as statusBasic from '../src/status-basic.ts'
+import { setThinkingTimers, type ThinkingTimers } from '../src/thinking.ts'
 import type { BlueIntentEntry } from '../src/types.ts'
 import {
   assistantEvent,
   fakeBlueComponents,
+  reasoningDelta,
   resetSeq,
   stepStart,
   textDelta,
@@ -46,6 +48,7 @@ const disposers: (() => Promise<void>)[] = []
 
 afterEach(async () => {
   for (const dispose of disposers.splice(0)) await dispose()
+  setThinkingTimers(undefined)
 })
 
 /** Identity colors so rendered assertions see structure, not escape codes. */
@@ -252,14 +255,23 @@ export const apply = ctx => globalThis.__blueStatusFixtureApply(ctx)
   return { ctx, screen, keymap, blueSession }
 }
 
-/** The transcript's content components (the footer lives in bottomChildren). */
+/**
+ * The transcript's content components (the footer lives in bottomChildren),
+ * with the kimi gutter column the mount layer wraps every surface in
+ * stripped — the gutter itself is asserted by its dedicated case below.
+ */
 function contentLines(screen: FakeScreen): string[] {
-  return screen.children.flatMap(component => component.render(80))
+  return stripGutter(screen.children.flatMap(component => component.render(80)))
 }
 
-/** The footer shell's rendered rows. */
+/** The footer shell's rendered rows, gutter-stripped like {@link contentLines}. */
 function footerLines(screen: FakeScreen): string[] {
-  return screen.bottomChildren.flatMap(component => component.render(80))
+  return stripGutter(screen.bottomChildren.flatMap(component => component.render(80)))
+}
+
+/** Remove the mount layer's one-column kimi gutter from rendered rows. */
+function stripGutter(lines: string[]): string[] {
+  return lines.map(line => line === ' ' ? '' : line.slice(1))
 }
 
 describe('blue-transcript plugin through the real Loader', () => {
@@ -270,6 +282,22 @@ describe('blue-transcript plugin through the real Loader', () => {
     expect(footerLines(screen)).toEqual([])
   })
 
+  it('insets every mounted surface by the kimi one-column gutter (D29)', async () => {
+    resetSeq()
+    const { ctx, screen } = await bootTranscript()
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([
+      userEvent('hi'),
+      assistantEvent(1, 1, [{ type: 'text', text: 'answer' }]),
+    ])))
+    // Every transcript row gains the leading gutter column; the footer
+    // shell's full-width rows do too (the wrapper squeezes the child to
+    // `width - 2`, the squeeze being the right margin).
+    const rawContent = screen.children.flatMap(component => component.render(80))
+    expect(rawContent).toEqual([' ', ' ❯ hi', ' ', ' ● answer'])
+    const rawFooter = screen.bottomChildren.flatMap(component => component.render(80))
+    expect(rawFooter).toEqual([` deepseek-chat${' '.repeat(65)}`])
+  })
+
   it('renders history and the footer status on blue/session-changed', async () => {
     resetSeq()
     const { ctx, screen, blueSession } = await bootTranscript()
@@ -278,8 +306,8 @@ describe('blue-transcript plugin through the real Loader', () => {
     const agent = fakeAgent([userEvent('hi'), assistantEvent(1, 1, [{ type: 'text', text: 'answer' }])])
     ctx.emit('blue/session-changed', asAgent(agent))
     expect(screen.children).toHaveLength(2)
-    expect(footerLines(screen)).toEqual([`deepseek-chat${' '.repeat(67)}`])
-    expect(contentLines(screen)).toEqual(['', '❯ hi', '', 'answer'])
+    expect(footerLines(screen)).toEqual([`deepseek-chat${' '.repeat(65)}`])
+    expect(contentLines(screen)).toEqual(['', '❯ hi', '', '● answer'])
     expect(screen.renderRequests).toContain(true)
     expect(blueSession.current).toBeNull()
   })
@@ -329,18 +357,85 @@ describe('blue-transcript plugin through the real Loader', () => {
     ctx.emit('session/event', agent.session as unknown as Session, textDelta(2, 1, 'partial'))
     expect(screen.children).toHaveLength(3)
     expect(screen.renderRequests.length).toBe(renderBaseline + 1)
-    expect(contentLines(screen)).toContain('partial▌')
+    expect(contentLines(screen)).toContain('● partial')
     expect(footerLines(screen)[0]).toContain('deepseek-chat')
 
     // Finalization rewrites the streaming item in place.
     ctx.emit('session/event', agent.session as unknown as Session, assistantEvent(2, 1, [{ type: 'text', text: 'final' }]))
     expect(screen.children).toHaveLength(3)
-    expect(contentLines(screen)).toContain('final')
+    expect(contentLines(screen)).toContain('● final')
 
     // The seeded tool call pairs with its live result.
     ctx.emit('session/event', agent.session as unknown as Session, toolResultEvent(2, 1, 'c1', 'file.txt'))
     expect(screen.children).toHaveLength(3)
     expect(contentLines(screen).join('\n')).toContain('file.txt')
+  })
+
+  it('mounts live thinking above the answer, finalizes it in place, and joins ctrl+o', async () => {
+    resetSeq()
+    const timers = new (class implements ThinkingTimers {
+      readonly ticks: (() => void)[] = []
+      cleared = 0
+      setInterval(callback: () => void): ReturnType<typeof setInterval> {
+        this.ticks.push(callback)
+        return this.ticks.length as unknown as ReturnType<typeof setInterval>
+      }
+      clearInterval(): void {
+        this.cleared += 1
+      }
+    })()
+    setThinkingTimers(timers)
+    const { ctx, screen, keymap } = await bootTranscript()
+    const agent = fakeAgent([])
+    ctx.emit('blue/session-changed', asAgent(agent))
+
+    // The reasoning stream mounts its own live block: spinner row plus the
+    // tail window, and the spinner timer is running.
+    const SIX_LINES = 'one\ntwo\nthree\nfour\nfive\nsix'
+    ctx.emit('session/event', agent.session as unknown as Session, reasoningDelta(1, 1, SIX_LINES))
+    expect(screen.children).toHaveLength(1)
+    let lines = contentLines(screen)
+    expect(lines[1]).toBe('⠋ thinking...')
+    expect(lines.at(-1)).toBe(`  \x1b[3msix\x1b[23m`)
+    expect(timers.ticks).toHaveLength(1)
+
+    // While still live, a tick advances the frame and requests a redraw
+    // through the mounter's injected nudge.
+    const renderBaseline = screen.renderRequests.length
+    timers.ticks[0]!()
+    expect(contentLines(screen)[1]).toBe('⠙ thinking...')
+    expect(screen.renderRequests.length).toBe(renderBaseline + 1)
+
+    // The answer streams in below the thinking block.
+    ctx.emit('session/event', agent.session as unknown as Session, textDelta(1, 1, 'answer'))
+    expect(screen.children).toHaveLength(2)
+
+    // Finalization settles the thinking block in place — no remount — and
+    // folds the body to the preview plus the expansion hint.
+    ctx.emit('session/event', agent.session as unknown as Session, assistantEvent(1, 1, [
+      { type: 'reasoning', text: SIX_LINES },
+      { type: 'text', text: 'answer' },
+    ]))
+    expect(screen.children).toHaveLength(2)
+    lines = contentLines(screen)
+    expect(lines[1]).toBe('● \x1b[3mone\x1b[23m')
+    expect(lines.join('\n')).toContain('more lines, ctrl+o to expand')
+
+    // The shared Ctrl-O toggle opens the thinking body.
+    const toggle = keymap.actions.find(a => a.id === ACTION_TOGGLE_COLLAPSE)?.handler
+    expect(typeof toggle).toBe('function')
+    toggle!()
+    expect(contentLines(screen).join('\n')).not.toContain('more lines')
+    toggle!()
+    expect(contentLines(screen).join('\n')).toContain('more lines, ctrl+o to expand')
+
+    // A tick on the finalized block stands its spinner down.
+    timers.ticks[0]!()
+    expect(timers.cleared).toBe(1)
+
+    // Unmounting the session retires the component entirely.
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([])))
+    expect(screen.children).toHaveLength(0)
   })
 
   it('remounts on the next blue/session-changed and unmounts everything on dispose', async () => {

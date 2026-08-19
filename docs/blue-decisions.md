@@ -174,7 +174,7 @@
 - **后果**：S11 开出该缝（首个消费者），S12-S14 复用；跨包的面板拼接经新事件 `'blue/editor-connected-above'` 协调（pane-btw 发、input-plugin 听）。
 - **S11 落地（2026-08-19）**：`chrome.ts` 仅随首个消费者落 `withSideBorders`/`injectPromptSymbol`（其余函数各随 S12-S14 消费者落地，含契约里的 `setGhostHint`——S14）；`EditorAdapter.render` 后处理落地，角/条涂色经**活** `borderColor` 引用（宿主 `setBorderColor` 免重入适配器，kimi 同法）。同轮定稿两事：(1) **默认边框色回归中性灰**——S10 第二轮目测的"编辑框 border→primary"是裸双横线时代的过渡补偿，圆角框 + 语境变色（斜杠 primary / bash shellMode）落地后按预告复审退役；(2) **常驻按键提示的存在性门控**（§6）——`! bash`/`@ files` 片段按 editor-plus 在场（editor-instance 模块级标记）而非全量倾倒，`ctrl+v paste image` 按 keymap action 在场，键名一律 `getKeys` 白名单取值；bash 模式经 draft-stash 的 input-mode 暂存活过 `/theme` 换装（detach 只做视觉恢复不写暂存，重载后三件套连同草稿重建）。
 - **S12 落地（2026-08-19）**：`framePanel(body, width, opts)` 与 `hintRow(parts, paint)` 随对话框统一开出（§5 草样签名的两处细化，step log 记录）：规则线宽显式传参（body 可能整体短于视口宽，宽度不能从 body 反推）而非隐含；title/titleHint/footer/footerPaint/rulePaint 均为可选，缺省 identity 保持主题无关。`framePanel` 输出**全宽平 `─` 规则**（圆角框专属于面板/编辑框，对话框是 kimi 的"上下全宽横线 + 左上标题"范式）。五个 overlay 表面统一走 framePanel（审批/问卷//help//sessions/BlueSelect），解剖一致：标题、框、按键行齐备。同轮收口 S10 预告的复审项：`settingsListTheme` 选中行 label/value accent → primary（选中行是交互目标，primary 是它的 token）。
-- **S13 落地（2026-08-19）**：`topRule`/`padColumns` 随面板开出（§5 草样签名的细化：`─ ` joiner 仅 title+hint 同时在；复合串 ANSI-safe 截断——pi-tui 空省略号截断附加 `\x1b[0m` reset 是保护性行为，防开放 SGR 污染 fill）。`'blue/editor-connected-above'` 兑现为 pane-btw emit / input-plugin listen（input-plugin 镜像到 `setConnectedAbove` 并门控编辑器键链）；同批开出 `'blue/btw-command'`（编辑器链 → 面板路由）——**对 §7 规格措辞的裁定**：keymap 按 key 查重使"面板开时注册 Esc 全局动作"不可行（`escape`/`up`/`down` 已属列表表面），改走编辑器链路由（kimi 同构，详见 S13 step log）。`padColumns` 落地但**消费推迟**：kimi 的 1 列 gutter 是全局的，启用牵动 transcript/panes/editor，启用与否由后续实机重审并记录。
+- **S13 落地（2026-08-19）**：`topRule`/`padColumns` 随面板开出（§5 草样签名的细化：`─ ` joiner 仅 title+hint 同时在；复合串 ANSI-safe 截断——pi-tui 空省略号截断附加 `\x1b[0m` reset 是保护性行为，防开放 SGR 污染 fill）。`'blue/editor-connected-above'` 兑现为 pane-btw emit / input-plugin listen（input-plugin 镜像到 `setConnectedAbove` 并门控编辑器键链）；同批开出 `'blue/btw-command'`（编辑器链 → 面板路由）——**对 §7 规格措辞的裁定**：keymap 按 key 查重使"面板开时注册 Esc 全局动作"不可行（`escape`/`up`/`down` 已属列表表面），改走编辑器链路由（kimi 同构，详见 S13 step log）。`padColumns` 落地但**消费推迟**：kimi 的 1 列 gutter 是全局的，启用牵动 transcript/panes/editor，启用与否由后续实机重审并记录——**消费于 S17 dogfood 五轮裁定（2026-08-20）**：见 D29。
 
 ### D26. 对话框一律底部上拉面板，弃用居中弹窗（用户裁决定稿）
 
@@ -197,12 +197,13 @@
 - **理由**：对齐 kimi"模型侧内容模型侧消化"的哲学；裁决时明确排除灰色单行占位与"隐藏但可展开"两案（默认态必须干净）；harness 契约把呈现决策完全交给消费者，fold 是唯一正确分拣层。
 - **后果**：S19 落地（p2-visual §7）；step-summary 与窗口计数不感知被隐藏消息（fold 层已消化）；与 S13 `todo_write` 抑制正交（一边按消息来源、一边按工具名）。若日后 dogfood 需要某类合成消息可见（如文件变更通知），按 `source.form` 单独加 dim 单行呈现，不回改默认隐藏。
 
-### D29. 消费 1 列 chrome gutter：S13 推迟项定档 S21（待落地）
+### D29. 消费 1 列 chrome gutter：S13 推迟项定档 S21（✅ 已随 S17 dogfood 拉前落地）
 
 - **背景**：kimi 全部 chrome（transcript/panels/statusline）左右各内收 1 列（`CHROME_GUTTER = 1`，`GutterContainer(1,1)` 包全部容器），与编辑框内列对齐，编辑框本身贴 0 列作为视觉锚。S13 落了纯函数等价 `padColumns` 但**消费显式推迟**——"kimi 的 gutter 是全局的，启用牵动 transcript/panes/editor 全部组件"。
 - **决策**：消费该推迟项——transcript 条目、panes、footer 左右各内收 1 列（挂载层统一包装，组件无感知，宽度按 `width-2` 下发），编辑框贴 0 列不动，banner 同步内收；定档 **S21**（会话流组件 S17-S20 定稿后的一次性 reflow，把全量 e2e 锚点改写压缩为一轮）。
 - **理由**：用户将"会话流左右边距"列为对齐缺口（2026-08-20 会话流调研，p2-visual §2.6 #7）；gutter 是 kimi 层级感的结构底座——chrome 与终端边缘脱开、左缘与编辑框内列成一条竖线；"先组件后 reflow"的顺序避免中途步骤锚点二次改写。
-- **后果**：S21 落地时全量 e2e 布局锚 reflow，并移除 S13 推迟注记（p2-visual §7 S13 step log 与 D25 S13 落地注）及 AGENTS 对应句；后续新组件零成本继承 gutter（包装在挂载层，不在组件内）。
+- **后果**：全量 e2e 布局锚 reflow，并移除 S13 推迟注记（p2-visual §7 S13 step log 与 D25 S13 落地注）及 AGENTS 对应句；后续新组件零成本继承 gutter（包装在挂载层，不在组件内）。
+- **落地（2026-08-20，S17 dogfood 五轮裁定拉前——用户实机反馈"右侧还是没有边距"）**：core 新增 `GutterComponent`（`src/gutter.ts`，kimi `GutterContainer` 等价：child 按 `width-2n` 渲染 + `padColumns` 左垫 n 列，样式不动、invalidate 透传），挂载层统一包装全部内收面——transcript 条目（含 step-summary）、banner、activity/todo/btw/queue 四 pane、footer；编辑框/对话框/overlay 贴满宽不动。banner 满宽断言改内收锚、footer 行首 gutter 锚，pane 规格经 strip/unwrapped 助手去沟。按原 S21 档的 reflow 预判为一次性完成；S13 推迟注记与本条"待落地"状态随此移除。
 
 ### D30. 对话框挂载改 editor 槽位替换：浮层 overlay 盖不住的编辑器直接退场（用户裁决，S16 dogfood 修订 D26 锚定手法）
 

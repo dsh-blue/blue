@@ -26,11 +26,12 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type {
-  BlueComponent,
-  BlueComponents,
-  BlueScreen,
-  BlueSemanticColors,
+import {
+  GutterComponent,
+  type BlueComponent,
+  type BlueComponents,
+  type BlueScreen,
+  type BlueSemanticColors,
 } from '@dsh-blue/blue-core'
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
@@ -46,6 +47,7 @@ import { TranscriptFolder, type FoldUpdate } from './fold.ts'
 import { BlueIntentsService } from './intents.ts'
 import { resolveCallView, resolveResultView } from './present.ts'
 import { BlueStatusService, FooterShellComponent } from './status.ts'
+import { ThinkingComponent } from './thinking.ts'
 import type { BlueIntentComponent, TranscriptItem } from './types.ts'
 import { currentWindowTurns, windowEvictTurn } from './window.ts'
 
@@ -60,11 +62,20 @@ export {
 } from './components.ts'
 export { BlueIntentsError, BlueIntentsService } from './intents.ts'
 export { BlueStatusError, BlueStatusService, FOOTER_MAX_ROWS, FooterShellComponent } from './status.ts'
+export { StreamingPhaseTracker, type StreamingPhase } from './phase.ts'
+export {
+  BRAILLE_SPINNER_FRAMES,
+  BRAILLE_SPINNER_INTERVAL_MS,
+  MOON_SPINNER_FRAMES,
+  MOON_SPINNER_INTERVAL_MS,
+} from './spinners.ts'
+export { ThinkingComponent, THINKING_PREVIEW_LINES } from './thinking.ts'
 export type { BlueIntentComponent, BlueIntentEntry, BlueIntentProps, BlueIntents, BlueStatus, BlueStatusEntry } from './types.ts'
 export type {
   TranscriptAssistantItem,
   TranscriptItem,
   TranscriptStepSummaryItem,
+  TranscriptThinkingItem,
   TranscriptToolItem,
   TranscriptToolResult,
   TranscriptUserItem,
@@ -108,6 +119,16 @@ interface MountedEntry {
 }
 
 /**
+ * Retire one mounted entry: unmount it from the screen and stand down any
+ * component-owned machinery (the thinking block's spinner timer stops here,
+ * so an evicted or abandoned live block cannot outlive its component).
+ */
+function retireEntry(entry: MountedEntry): void {
+  ;(entry.component as { dispose?: () => void }).dispose?.()
+  entry.dispose()
+}
+
+/**
  * Create the component rendering one folded item (non-tool kinds; tool items
  * resolve through the intent registry instead).
  */
@@ -116,12 +137,15 @@ function createPlainComponent(
   colors: BlueSemanticColors,
   components: BlueComponents,
   images: UserMessageImages,
+  requestRender: () => void,
 ): BlueComponent {
   switch (item.kind) {
     case 'user':
       return new UserMessageComponent(item, colors, components, images)
     case 'assistant':
       return new AssistantMessageComponent(item, colors, components)
+    case 'thinking':
+      return new ThinkingComponent(item, colors, components, requestRender)
     case 'step-summary':
       return new StepSummaryComponent(item, colors, components)
   }
@@ -174,7 +198,7 @@ function mountSession(
       const entry = entries[index]!
       if (!matches(entry.item)) continue
       toggle.components.delete(entry.component as BlueIntentComponent)
-      entry.dispose()
+      retireEntry(entry)
       entries.splice(index, 1)
     }
   }
@@ -187,32 +211,51 @@ function mountSession(
     retire(item => item.turn <= turn)
   }
 
-  const present = (update: FoldUpdate | null): void => {
-    if (update === null) return
-    if ('replaced' in update) {
-      // In-turn step folding: dispose the folded items' components and mount
-      // the summary. screen.addChild appends positionally correctly here
-      // because folding fires at a step boundary, before anything newer than
-      // the folded step has mounted.
-      const folded = new Set<TranscriptItem>(update.replaced)
-      retire(item => folded.has(item))
-      const summary = createPlainComponent(update.item, colors, components, images)
-      entries.push({ item: update.item, component: summary, dispose: screen.addChild(summary) })
-      return
-    }
-    if (!update.isNew) return
-    const { item } = update
+  // One shared redraw nudge: the thinking block's spinner ticks call it,
+  // and every mount site hands the same arrow to its component.
+  const requestRender = (): void => {
+    screen.requestRender()
+  }
+
+  /** Mount one newly created item's component (the fold's mount order). */
+  const mount = (item: TranscriptItem): void => {
     let component: BlueComponent
     if (item.kind === 'tool') {
       const intent = intents.resolve(item.view !== undefined && 'card' in item.view ? item.view.card : 'generic')
       component = intent.create({ item, colors, components, expanded: toggle.expanded })
-      if (typeof (component as BlueIntentComponent).setExpanded === 'function') {
-        toggle.components.add(component as BlueIntentComponent)
-      }
     } else {
-      component = createPlainComponent(item, colors, components, images)
+      component = createPlainComponent(item, colors, components, images, requestRender)
     }
-    entries.push({ item, component, dispose: screen.addChild(component) })
+    const expandable = component as BlueIntentComponent
+    if (item.kind === 'thinking') {
+      // The thinking block joins the Ctrl-O set at the live expansion state
+      // (kimi applies toolOutputExpanded at ThinkingComponent creation too).
+      expandable.setExpanded?.(toggle.expanded)
+    }
+    if (typeof expandable.setExpanded === 'function') {
+      toggle.components.add(expandable)
+    }
+    // The kimi one-column gutter (D29, S21): every transcript entry mounts
+    // inset on both sides; the component itself never knows.
+    entries.push({ item, component, dispose: screen.addChild(new GutterComponent(component)) })
+  }
+
+  const present = (updates: readonly FoldUpdate[] | null): void => {
+    if (updates === null) return
+    for (const update of updates) {
+      if ('replaced' in update) {
+        // In-turn step folding: dispose the folded items' components and mount
+        // the summary. screen.addChild appends positionally correctly here
+        // because folding fires at a step boundary, before anything newer than
+        // the folded step has mounted.
+        const folded = new Set<TranscriptItem>(update.replaced)
+        retire(item => folded.has(item))
+        const summary = createPlainComponent(update.item, colors, components, images, requestRender)
+        entries.push({ item: update.item, component: summary, dispose: screen.addChild(new GutterComponent(summary)) })
+        continue
+      }
+      if (update.isNew) mount(update.item)
+    }
   }
 
   // Snapshot first: resume seeds never replay session/event, so history
@@ -241,7 +284,7 @@ function mountSession(
     offEvent()
     toggle.expanded = false
     toggle.components.clear()
-    for (const entry of entries.splice(0)) entry.dispose()
+    for (const entry of entries.splice(0)) retireEntry(entry)
   }
 }
 
@@ -279,7 +322,7 @@ export function apply(ctx: Context): void {
   // The footer pins to the dock's lowest slot (S12): the two-row status
   // stays on the terminal's last rows beneath the editor, the kimi layout
   // dialog panels pull up over.
-  ctx.effect(() => screen.addBottomChild(footer, 'bottom'))
+  ctx.effect(() => screen.addBottomChild(new GutterComponent(footer), 'bottom'))
 
   ctx.effect(() => ctx.blueKeymap.register([{
     id: ACTION_TOGGLE_COLLAPSE,

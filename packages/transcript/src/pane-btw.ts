@@ -16,9 +16,12 @@
  * A trailing blank row separates the pane from the input editor, whose top
  * corners splice to `├┤` while the pane is open: the pane emits
  * `'blue/editor-connected-above'` (true on open, false on dismiss or
- * unload) and `blue-input` mirrors it onto the editor. The pane is a
- * passive bottom child — it renders zero rows while closed and never
- * consumes keyboard input — so closing and scrolling live in
+ * unload) and `blue-input` mirrors it onto the editor. While a dialog
+ * panel occupies the editor slot the splice claim would point at an
+ * off-tree editor, so the pane drops it for the panel's lifetime and
+ * re-asserts it on `'blue/editor-slot-swapped'` when the editor returns.
+ * The pane is a passive bottom child — it renders zero rows while closed
+ * and never consumes keyboard input — so closing and scrolling live in
  * `blue-input`'s editor key chain, which routes Esc and ↑/↓ through the
  * `'blue/btw-command'` event while the splice is connected (the keymap
  * claims `escape`/`up`/`down` for the list surfaces, so the pane cannot
@@ -37,11 +40,12 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { AgentHandle } from '@deepseek-ai/dsh-agent'
-import type {
-  BlueComponent,
-  BlueComponents,
-  BlueMarkdown,
-  BlueSemanticColors,
+import {
+  GutterComponent,
+  type BlueComponent,
+  type BlueComponents,
+  type BlueMarkdown,
+  type BlueSemanticColors,
 } from '@dsh-blue/blue-core'
 import { topRule } from '@dsh-blue/blue-core/chrome'
 // The named import also carries the `commands` Context merge.
@@ -413,7 +417,7 @@ export function apply(ctx: Context): void {
 
   const pane = new BtwPaneComponent(colors, components, state, () => screen.rows)
   // Bottom panes render in mount order; a zero-row render occupies nothing.
-  ctx.effect(() => screen.addBottomChild(pane))
+  ctx.effect(() => screen.addBottomChild(new GutterComponent(pane)))
   // The editor key chain routes close/scroll/submit here while the pane is
   // open.
   ctx.on('blue/btw-command', (command, text) => {
@@ -446,6 +450,20 @@ export function apply(ctx: Context): void {
     if (pane.scroll(command === 'scroll-up' ? 'up' : 'down')) {
       screen.requestRender()
     }
+  })
+  // While a dialog panel occupies the editor slot the splice flag would
+  // point at an off-tree editor; drop the claim for the panel's lifetime
+  // and re-assert it (still open, busy per the live turn) when the editor
+  // returns (the S16 dogfood known boundary, closed here).
+  ctx.on('blue/editor-slot-swapped', (occupied) => {
+    if (occupied) {
+      // Only an open pane has a claim to drop.
+      if (state.open) ctx.emit('blue/editor-connected-above', false)
+      return
+    }
+    if (!state.open) return
+    const busy = state.turns.at(-1)?.thinking === true
+    ctx.emit('blue/editor-connected-above', true, busy)
   })
   // Disposers may be async and are awaited: unload disposes the side agent,
   // releases the editor splice (idempotent), and arms the guard any

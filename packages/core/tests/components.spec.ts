@@ -600,6 +600,29 @@ describe('createMarkdown', () => {
     expect(markdown.render(40).join('\n')).toContain('first chunk second')
     stop()
   })
+
+  it('re-paints the width-capped horizontal rule to the full render width', () => {
+    const { tui, stop } = bootTui()
+    const components = createService(tui)
+    const markdown = components.createMarkdown({
+      text: `---\n\nplain body\n\n\`\`\`js\n${'─'.repeat(80)}\n\`\`\`\n`,
+    })
+    const output = markdown.render(100).join('\n')
+    // pi-tui caps the rule at 80; the adapter re-paints it to the render
+    // width (the user's S17 dogfood ruling: the rule spans the body text).
+    expect(output).toContain(`«mdHr:${'─'.repeat(100)}»`)
+    // A fenced code line of exactly 80 dashes keeps its own highlight
+    // styling — the exact-match path never touches it.
+    expect(output).not.toContain(`«mdHr:${'─'.repeat(80)}»`)
+    expect(output).toContain('plain body')
+    // Below the 80-column cap the rule passes through unchanged. The
+    // tagged test theme adds visible width, so pi-tui wraps the rule at
+    // the render width here (in production the SGR wrap is zero-width);
+    // the joined lines reassemble the full tag.
+    const narrow = markdown.render(60).join('\n').replaceAll('\n', '')
+    expect(narrow).toContain(`«mdHr:${'─'.repeat(60)}»`)
+    stop()
+  })
 })
 
 describe('createSelectList', () => {

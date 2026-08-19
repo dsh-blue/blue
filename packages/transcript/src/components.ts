@@ -27,11 +27,14 @@ import type {
   TranscriptUserItem,
 } from './types.ts'
 
-const ITALIC_OPEN = '\x1b[3m'
-const ITALIC_CLOSE = '\x1b[23m'
-
 /** Maximum length of the tool-call arguments shown on the call line. */
 export const TOOL_ARGUMENTS_MAX_CHARS = 60
+
+/** The assistant block's first-line marker (kimi `constant/symbols.ts`). */
+const STATUS_BULLET = '● '
+
+/** Continuation indent: the bullet's visible width (kimi `MESSAGE_INDENT`). */
+export const MESSAGE_INDENT = '  '
 
 /** Maximum rendered height of one user-message image, in terminal cells. */
 export const USER_IMAGE_MAX_HEIGHT_CELLS = 12
@@ -149,11 +152,19 @@ export class UserMessageComponent implements BlueComponent {
 }
 
 /**
- * Renders one assistant step: accumulated reasoning (muted italic) above the
- * Markdown body, plus a streaming cursor while chunks are still arriving.
- * The body is a held `BlueMarkdown` whose own text/width cache replaces the
- * former hand-rolled Markdown cache; mid-stream unterminated constructs
- * settle as the text completes.
+ * Renders one assistant step's visible Markdown body behind the kimi
+ * message chrome: a blank separator row, then the `text`-colored `● `
+ * bullet on the first line with every continuation indented by the
+ * bullet's visible width — the S18 assistant half, pulled into the S17
+ * dogfood by the user's margin ruling. The markdown renders at the
+ * content width (viewport minus the bullet), so its horizontal rules span
+ * exactly the body text. The step's reasoning renders in its own sibling
+ * `ThinkingComponent` (`src/thinking.ts`) mounted above this block. There
+ * is no streaming marker: kimi renders growing text bare, and the Blue
+ * `▌` cursor retired with the S17 third dogfood ruling — the activity
+ * pane's composing row is the signal. The body is a held `BlueMarkdown`
+ * whose own text/width cache replaces the former hand-rolled Markdown
+ * cache; mid-stream unterminated constructs settle as the text completes.
  */
 export class AssistantMessageComponent implements BlueComponent {
   private readonly item: TranscriptAssistantItem
@@ -165,7 +176,7 @@ export class AssistantMessageComponent implements BlueComponent {
   /**
    * @param item - the folded assistant item; mutated by the fold as the
    *   step streams and finalizes.
-   * @param colors - the semantic color table.
+   * @param colors - the semantic color table (the bullet carries `text`).
    * @param components - the component factory; creates the held Markdown.
    */
   constructor(item: TranscriptAssistantItem, colors: BlueSemanticColors, components: BlueComponents) {
@@ -185,33 +196,17 @@ export class AssistantMessageComponent implements BlueComponent {
    * @returns the rendered rows.
    */
   render(width: number): string[] {
-    const { text, reasoning, streaming } = this.item
-    const key = `${width}:${streaming}:${reasoning.length}:${text.length}:${text}`
+    const { text } = this.item
+    const key = `${width}:${text}`
     if (this.cache?.key === key) return this.cache.lines
 
     const lines: string[] = ['']
-    if (reasoning.trim()) {
-      for (const line of this.components.wrapText(reasoning, width)) {
-        lines.push(`${ITALIC_OPEN}${this.colors.muted(line)}${ITALIC_CLOSE}`)
-      }
-      lines.push('')
-    }
     if (text.trim()) {
       this.markdown.setText(text)
-      lines.push(...this.markdown.render(width))
-    }
-    if (streaming) {
-      const cursor = this.colors.primary('▌')
-      const last = lines.at(-1)
-      // The cursor shares the last row: a full-width row must yield one
-      // column, or pi-tui rejects the over-wide line at render time.
-      if (last) {
-        lines[lines.length - 1] = this.components.visibleWidth(last) >= width
-          ? this.components.truncateToWidth(last, width - 1) + cursor
-          : last + cursor
-      } else {
-        lines.push(cursor)
-      }
+      const contentWidth = Math.max(1, width - this.components.visibleWidth(STATUS_BULLET))
+      const content = this.markdown.render(contentWidth)
+      lines.push(...content.map((line, index) =>
+        (index === 0 ? this.colors.text(STATUS_BULLET) : MESSAGE_INDENT) + line))
     }
     this.cache = { key, lines }
     return lines

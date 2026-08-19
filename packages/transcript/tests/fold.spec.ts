@@ -10,6 +10,7 @@ import { foldSessionEvents, TranscriptFolder } from '../src/fold.ts'
 import type {
   TranscriptAssistantItem,
   TranscriptStepSummaryItem,
+  TranscriptThinkingItem,
   TranscriptToolItem,
   TranscriptUserItem,
 } from '../src/types.ts'
@@ -46,6 +47,28 @@ describe('foldSessionEvents', () => {
     expect(item.seq).toBe(1)
   })
 
+  it('renders nothing for synthetic messages — only kind:user input folds (D28)', () => {
+    // The harness's ContextFormed injections (runtime-context snapshots,
+    // AGENTS.md instructions, plugin notices) arrive as user/message events
+    // with a non-user source; they are zero-presentation.
+    const folder = new TranscriptFolder()
+    expect(folder.apply(userEvent('runtime context snapshot', [], { kind: 'plugin', plugin: 'agent-context' }))).toBeNull()
+    expect(folder.items).toHaveLength(0)
+    // Human input keeps folding, before and after the injection.
+    const before = folder.apply(userEvent('hello'))
+    expect(before?.[0]?.isNew).toBe(true)
+    expect(folder.apply(userEvent('ignored again', [], { kind: 'model' } as never))).toBeNull()
+    expect(folder.items).toHaveLength(1)
+
+    // Snapshot replay shares the rule (D16): the one-shot fold drops the
+    // synthetic exactly like the live feed.
+    const items = foldSessionEvents([
+      userEvent('hidden', [], { kind: 'plugin', plugin: 'x', form: 'snapshot', sections: [] }),
+      userEvent('shown'),
+    ])
+    expect(items.map(item => (item as TranscriptUserItem).text)).toEqual(['shown'])
+  })
+
   it('folds non-text user content to placeholders and skips empty messages', () => {
     const withImage = userEvent('look', [{ type: 'image', attachment: { id: 'a1' } as never }])
     const imageOnly = userEvent('', [{ type: 'image', attachment: { id: 'a2' } as never }])
@@ -59,12 +82,11 @@ describe('foldSessionEvents', () => {
   it('accumulates streaming chunks into one assistant item per step', () => {
     const folder = new TranscriptFolder()
     const first = folder.apply(textDelta(1, 1, 'Hello'))
-    expect(first?.isNew).toBe(true)
+    expect(first?.[0]?.isNew).toBe(true)
     const second = folder.apply(textDelta(1, 1, ', world'))
-    expect(second?.isNew).toBe(false)
-    const item = second?.item as TranscriptAssistantItem
+    expect(second?.[0]?.isNew).toBe(false)
+    const item = second?.[0]?.item as TranscriptAssistantItem
     expect(item.text).toBe('Hello, world')
-    expect(item.streaming).toBe(true)
     expect(folder.items).toHaveLength(1)
   })
 
@@ -72,19 +94,41 @@ describe('foldSessionEvents', () => {
     const folder = new TranscriptFolder()
     folder.apply(textDelta(1, 1, 'one'))
     const next = folder.apply(textDelta(1, 2, 'two'))
-    expect(next?.isNew).toBe(true)
+    expect(next?.[0]?.isNew).toBe(true)
     expect(folder.items).toHaveLength(2)
     expect((folder.items[0] as TranscriptAssistantItem).text).toBe('one')
     expect((folder.items[1] as TranscriptAssistantItem).text).toBe('two')
   })
 
-  it('accumulates reasoning deltas separately from visible text', () => {
+  it('streams reasoning into its own thinking item above the answer', () => {
     const folder = new TranscriptFolder()
-    folder.apply(reasoningDelta(1, 1, 'thinking'))
-    const update = folder.apply(textDelta(1, 1, 'answer'))
-    const item = update?.item as TranscriptAssistantItem
-    expect(item.reasoning).toBe('thinking')
-    expect(item.text).toBe('answer')
+    const thinking = folder.apply(reasoningDelta(1, 1, 'thinking'))
+    expect(thinking?.[0]?.isNew).toBe(true)
+    expect(folder.items[0]?.kind).toBe('thinking')
+    folder.apply(reasoningDelta(1, 1, ' more'))
+    const answer = folder.apply(textDelta(1, 1, 'answer'))
+    expect(answer?.[0]?.item.kind).toBe('assistant')
+    // The thinking block mounts before the answer, the kimi order.
+    expect(folder.items.map(item => item.kind)).toEqual(['thinking', 'assistant'])
+    const thinkingItem = folder.items[0] as TranscriptThinkingItem
+    expect(thinkingItem.text).toBe('thinking more')
+    expect(thinkingItem.streaming).toBe(true)
+    expect((folder.items[1] as TranscriptAssistantItem).text).toBe('answer')
+  })
+
+  it('mounts no thinking item while the streamed reasoning stays invisible', () => {
+    const folder = new TranscriptFolder()
+    // Encrypted or whitespace-only reasoning: nothing visible yet.
+    expect(folder.apply(reasoningDelta(1, 1, '  '))).toBeNull()
+    expect(folder.items).toHaveLength(0)
+    // The buffered whitespace joins the first visible delta's item.
+    folder.apply(reasoningDelta(1, 1, '  real'))
+    const item = folder.items[0] as TranscriptThinkingItem
+    expect(item.kind).toBe('thinking')
+    expect(item.text).toBe('    real')
+    // Once the item exists, later whitespace deltas append directly.
+    folder.apply(reasoningDelta(1, 1, ' '))
+    expect(item.text).toBe('    real ')
   })
 
   it('ignores non-delta chunk types', () => {
@@ -100,27 +144,63 @@ describe('foldSessionEvents', () => {
 
   it('finalizes a streaming item from the authoritative assistant message', () => {
     const folder = new TranscriptFolder()
-    folder.apply(textDelta(1, 1, 'partial'))
+    // Reasoning streams before the answer (the provider's block order); the
+    // thinking item therefore mounts above the streamed assistant item.
     folder.apply(reasoningDelta(1, 1, 'draft'))
-    const update = folder.apply(assistantEvent(1, 1, [
+    folder.apply(textDelta(1, 1, 'partial'))
+    const updates = folder.apply(assistantEvent(1, 1, [
       { type: 'reasoning', text: 'final thought' },
       { type: 'text', text: 'final text' },
       { type: 'tool-call', id: 'c1' as never, name: 'bash', arguments: '{}' },
     ]))
-    expect(update?.isNew).toBe(false)
-    const item = update?.item as TranscriptAssistantItem
+    // The streamed assistant finalizes in place; the thinking item was
+    // finalized silently ahead of it and stays mounted above.
+    expect(updates).toHaveLength(1)
+    expect(updates?.[0]?.isNew).toBe(false)
+    const item = updates?.[0]?.item as TranscriptAssistantItem
     expect(item.text).toBe('final text')
-    expect(item.reasoning).toBe('final thought')
-    expect(item.streaming).toBe(false)
-    expect(folder.items).toHaveLength(1)
+    expect(folder.items.map(entry => entry.kind)).toEqual(['thinking', 'assistant'])
+    const thinking = folder.items[0] as TranscriptThinkingItem
+    expect(thinking.text).toBe('final thought')
+    expect(thinking.streaming).toBe(false)
+  })
+
+  it('blanks a streamed thinking item whose authoritative reasoning is empty', () => {
+    const folder = new TranscriptFolder()
+    folder.apply(reasoningDelta(1, 1, 'streamed'))
+    folder.apply(assistantEvent(1, 1, [{ type: 'text', text: 'answer only' }]))
+    const thinking = folder.items[0] as TranscriptThinkingItem
+    expect(thinking.text).toBe('')
+    expect(thinking.streaming).toBe(false)
   })
 
   it('creates a finalized assistant item when no chunks were seen', () => {
     const update = new TranscriptFolder().apply(assistantEvent(2, 1, [{ type: 'text', text: 'from history' }]))
-    expect(update?.isNew).toBe(true)
-    const item = update?.item as TranscriptAssistantItem
+    expect(update?.[0]?.isNew).toBe(true)
+    const item = update?.[0]?.item as TranscriptAssistantItem
     expect(item.text).toBe('from history')
-    expect(item.streaming).toBe(false)
+  })
+
+  it('opens the thinking block before the assistant item on replay', () => {
+    // A derived history or snapshot replay carries only assistant/message:
+    // the thinking item is created finalized, ahead of the assistant item,
+    // so replay converges with the live mount order (D16).
+    const updates = new TranscriptFolder().apply(assistantEvent(1, 1, [
+      { type: 'reasoning', text: 'replayed thought' },
+      { type: 'text', text: 'replayed answer' },
+    ]))
+    expect(updates?.map(update => ('isNew' in update ? update.isNew : undefined))).toEqual([true, true])
+    const items = (updates ?? []).map(update => update.item)
+    expect(items[0]?.kind).toBe('thinking')
+    expect(items[1]?.kind).toBe('assistant')
+    expect((items[0] as TranscriptThinkingItem).streaming).toBe(false)
+
+    // Whitespace-only replayed reasoning mounts nothing, live or finalized.
+    const blank = new TranscriptFolder().apply(assistantEvent(1, 1, [
+      { type: 'reasoning', text: '   ' },
+      { type: 'text', text: 'answer' },
+    ]))
+    expect(blank?.map(update => update.item.kind)).toEqual(['assistant'])
   })
 
   it('ignores chunks arriving after the step finalized', () => {
@@ -133,10 +213,10 @@ describe('foldSessionEvents', () => {
   it('pairs tool/call and tool/result by callId', () => {
     const folder = new TranscriptFolder()
     const call = folder.apply(toolCallEvent(1, 1, 'call-1', 'bash', '{"command":"ls"}'))
-    expect(call?.isNew).toBe(true)
+    expect(call?.[0]?.isNew).toBe(true)
     const result = folder.apply(toolResultEvent(1, 1, 'call-1', 'file.txt'))
-    expect(result?.isNew).toBe(false)
-    const item = result?.item as TranscriptToolItem
+    expect(result?.[0]?.isNew).toBe(false)
+    const item = result?.[0]?.item as TranscriptToolItem
     expect(item.name).toBe('bash')
     expect(item.arguments).toBe('{"command":"ls"}')
     expect(item.result?.text).toBe('file.txt')
@@ -225,7 +305,7 @@ describe('foldSessionEvents', () => {
     expect(folder.apply(toolResultEvent(1, 1, 't1', 'ok'))).toBeNull()
     // A result whose call id was never seen still renders unpaired; only a
     // suppressed call id suppresses its result.
-    expect(folder.apply(toolResultEvent(1, 1, 'other', 'late'))?.isNew).toBe(true)
+    expect(folder.apply(toolResultEvent(1, 1, 'other', 'late'))?.[0]?.isNew).toBe(true)
     expect(folder.items).toHaveLength(1)
     expect((folder.items[0] as TranscriptToolItem).name).toBe('tool')
 
@@ -246,7 +326,7 @@ describe('foldSessionEvents', () => {
       present: { result: () => orphanView as never },
     })
     const update = folder.apply(toolResultEvent(1, 1, 'orphan', 'done'))
-    expect(update?.isNew).toBe(true)
+    expect(update?.[0]?.isNew).toBe(true)
     expect((folder.items[0] as TranscriptToolItem).view).toBe(orphanView)
 
     // A declining presenter leaves the unpaired item view-less.
@@ -321,7 +401,7 @@ describe('parsedArguments and view resolution', () => {
       },
     })
     const call = folder.apply(toolCallEvent(1, 1, 'c1', 'bash', '{}'))
-    expect(call && (call.item as TranscriptToolItem).view).toBe(callView)
+    expect(call?.[0] && (call[0]!.item as TranscriptToolItem).view).toBe(callView)
 
     folder.apply(toolResultEvent(1, 1, 'c1', 'boom', { isError: true }))
     expect((folder.items[0] as TranscriptToolItem).view).toBe(resultView)
@@ -415,7 +495,7 @@ describe('evictThrough', () => {
     folder.apply(toolCallEvent(1, 1, 'c1', 'bash', '{}'))
     folder.evictThrough(1)
     const update = folder.apply(toolResultEvent(1, 1, 'c1', 'late result'))
-    expect(update?.isNew).toBe(true)
+    expect(update?.[0]?.isNew).toBe(true)
     const item = folder.items.at(-1) as TranscriptToolItem
     expect(item.name).toBe('tool')
     expect(item.result?.text).toBe('late result')
@@ -429,8 +509,23 @@ describe('evictThrough', () => {
     // The streaming slot is gone, so a later finalize for that step mounts a
     // fresh finalized item instead of mutating the evicted one.
     const update = folder.apply(assistantEvent(1, 1, [{ type: 'text', text: 'final' }]))
-    expect(update?.isNew).toBe(true)
+    expect(update?.[0]?.isNew).toBe(true)
     expect(folder.items).toHaveLength(1)
+  })
+
+  it('prunes a streaming thinking item evicted mid-step', () => {
+    const folder = new TranscriptFolder()
+    folder.apply(turnStart(1))
+    folder.apply(reasoningDelta(1, 1, 'partial thought'))
+    folder.evictThrough(1)
+    // The streaming thinking slot is gone; the finalize creates a fresh
+    // finalized item instead of mutating the evicted one.
+    const updates = folder.apply(assistantEvent(1, 1, [
+      { type: 'reasoning', text: 'final thought' },
+      { type: 'text', text: 'final' },
+    ]))
+    expect(updates?.map(update => ('isNew' in update ? update.isNew : undefined))).toEqual([true, true])
+    expect(folder.items.map(item => item.kind)).toEqual(['thinking', 'assistant'])
   })
 })
 
@@ -566,7 +661,7 @@ describe('in-turn step folding', () => {
       stepStart(1, 2),
     ]) folder.apply(e)
     const update = folder.apply(toolResultEvent(1, 1, 'a1', 'late'))
-    expect(update?.isNew).toBe(true)
+    expect(update?.[0]?.isNew).toBe(true)
     expect(folder.items.filter(item => item.kind === 'tool')).toHaveLength(1)
   })
 })
