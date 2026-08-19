@@ -37,6 +37,9 @@ describe('startBlueTerminal', () => {
     const runtime = await startBlueTerminal(terminal, noProbe)
     expect(terminal.startCount).toBe(1)
     expect(runtime.columns).toBe(80)
+    expect(runtime.rows).toBe(24)
+    terminal.resize(100, 40)
+    expect(runtime.rows).toBe(40)
     return runtime.stop()
   })
 

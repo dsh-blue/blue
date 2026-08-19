@@ -18,6 +18,8 @@ import type { BlueComponent, BlueOverlayHandle, BlueOverlayOptions, BlueRgbColor
 export interface BlueTerminalRuntime {
   /** Current terminal width in columns. */
   readonly columns: number
+  /** Current terminal height in rows. */
+  readonly rows: number
   /** The probed background luminance class, or `undefined` when the probe failed. */
   readonly background: 'dark' | 'light' | undefined
   /** Whether the Kitty keyboard protocol is active on the terminal. */
@@ -196,6 +198,9 @@ export async function startBlueTerminal(
   const runtime: BlueTerminalRuntime = {
     get columns() {
       return current.terminal.columns
+    },
+    get rows() {
+      return terminal.rows
     },
     background,
     get kittyKeyboard() {

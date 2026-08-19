@@ -179,6 +179,8 @@ export interface BlueScreen {
   requestRender(force?: boolean): void
   /** Current terminal width in columns. */
   readonly columns: number
+  /** Current terminal height in rows. */
+  readonly rows: number
 }
 
 /**
@@ -710,5 +712,26 @@ declare module '@deepseek-ai/cordis' {
      * @mode emit
      */
     'blue/terminal-theme-changed'(scheme: 'dark' | 'light'): void
+    /**
+     * The side-question pane docked above the input editor (or left) —
+     * the editor's top corners switch from `╭╮` to the spliced `├┤` while
+     * connected. Emitted by `blue-pane-btw` on open (true) and on dismiss
+     * or unload (false); `blue-input` listens, mirrors the flag onto the
+     * editor, and gates its Esc/arrow routing on it.
+     * Unfiltered: the flag is broadcast to every fiber.
+     * @param connected - whether the pane is docked above the editor.
+     * @mode emit
+     */
+    'blue/editor-connected-above'(connected: boolean): void
+    /**
+     * A key command for the open side-question pane, routed through the
+     * editor's context key chain (the keymap claims `escape`/`up`/`down`
+     * for the list surfaces, so the pane cannot register its own keys).
+     * Emitted by `blue-input`; `blue-pane-btw` listens and runs the pane
+     * close/scroll action. No-ops when the pane is closed.
+     * @param command - the pane action to run.
+     * @mode emit
+     */
+    'blue/btw-command'(command: 'close' | 'scroll-up' | 'scroll-down'): void
   }
 }

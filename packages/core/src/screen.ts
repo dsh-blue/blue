@@ -38,6 +38,11 @@ export class BlueScreenService extends Service implements BlueScreen {
     return this.runtime.columns
   }
 
+  /** Current terminal height in rows. */
+  get rows(): number {
+    return this.runtime.rows
+  }
+
   /**
    * Mount a component at the root of the tree, above every bottom-pinned
    * component regardless of mount order.

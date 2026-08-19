@@ -31,6 +31,7 @@ function recordingRuntime(): BlueTerminalRuntime & Recorded {
   return {
     ...recorded,
     columns: 120,
+    rows: 24,
     addChild(component) {
       recorded.added.push(component)
     },
@@ -76,6 +77,7 @@ describe('BlueScreenService', () => {
     const screen = ctx.blueScreen
 
     expect(screen.columns).toBe(120)
+    expect(screen.rows).toBe(24)
 
     const dispose = screen.addChild(component)
     expect(runtime.added).toEqual([component])
