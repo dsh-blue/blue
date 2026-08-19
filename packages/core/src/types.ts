@@ -143,9 +143,13 @@ export interface BlueScreen {
    * When the mounted content is shorter than the viewport, blank filler
    * keeps the pinned block on the terminal's last rows.
    * @param component - the component to pin.
+   * @param position - `'bottom'` renders the component below the rest of
+   *   the dock (the two-row footer shell mounts there, keeping the status
+   *   on the terminal's last rows beneath the editor and any dialog panel
+   *   that pulls up over it — the kimi layout).
    * @returns a disposer that unmounts the component; safe to call twice.
    */
-  addBottomChild(component: BlueComponent): () => void
+  addBottomChild(component: BlueComponent, position?: 'bottom'): () => void
   /**
    * Unmount a component previously mounted with {@link BlueScreen.addChild}.
    * Unmounting an absent component is a no-op.

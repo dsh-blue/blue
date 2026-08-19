@@ -13,7 +13,7 @@
  * @module @deepseek-ai/dsh-blue-core/chrome
  */
 
-import { visibleWidth } from '@earendil-works/pi-tui'
+import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui'
 
 // oxlint-disable-next-line no-control-regex -- ESC (\x1b) is required to match ANSI SGR escape sequences
 const ANSI_SGR = /\x1b\[[0-9;]*m/g
@@ -113,4 +113,80 @@ export function injectPromptSymbol(
   }
   const rendered = paint === undefined ? symbol : paint(symbol)
   return '  ' + rendered + ' ' + line.slice(4)
+}
+
+/**
+ * Join key-hint parts into one dialog footer row: `↑/↓ select · 1-4 choose ·
+ * ↵ confirm`. Parts are joined with ` · ` (the kimi convention) and the row
+ * is indented two columns so it never sits flush against the surrounding
+ * rule.
+ * @param parts - the key-hint fragments, already styled if they carry color.
+ * @param paint - the color function for the joiners and the indent.
+ * @returns the rendered footer row.
+ */
+export function hintRow(parts: readonly string[], paint: (text: string) => string): string {
+  return paint(`  ${parts.join(' · ')}`)
+}
+
+/** Options for {@link framePanel}. */
+export interface FramePanelOptions {
+  /** Title text rendered on its own line under the top rule, indented two columns. */
+  readonly title?: string
+  /** Styling for the title line; defaults to unstyled. */
+  readonly titlePaint?: (text: string) => string
+  /** Muted hint appended to the title line after a space (lead with `· `). */
+  readonly titleHint?: string
+  /** Styling for the title hint; defaults to unstyled. */
+  readonly hintPaint?: (text: string) => string
+  /** Key-row parts rendered as a footer above the bottom rule. */
+  readonly footer?: readonly string[]
+  /** Styling for the footer row; defaults to unstyled. */
+  readonly footerPaint?: (text: string) => string
+  /** Styling for the top and bottom rules; defaults to unstyled. */
+  readonly rulePaint?: (text: string) => string
+}
+
+const identity = (text: string): string => text
+
+/**
+ * Frame a dialog body in the kimi full-width-rule style: a `─` rule, an
+ * optional title line (with an optional muted hint on the same line), the
+ * body rows, an optional key-row footer, and a closing `─` rule. Dialogs
+ * use flat rules — never the rounded corners of {@link withSideBorders},
+ * which belong to panels and the editor. The rules span the full render
+ * width even when the body truncates shorter; title, hint, and footer are
+ * ANSI-safe truncated so styled text is never cut mid-SGR.
+ * @param body - the dialog's content rows, already rendered at `width`.
+ * @param width - the render width the rules and truncation use.
+ * @param options - title, hint, footer, and their paints.
+ * @returns the framed rows, width preserved.
+ */
+export function framePanel(
+  body: readonly string[],
+  width: number,
+  options: FramePanelOptions = {},
+): string[] {
+  const ruleWidth = Math.max(1, width)
+  const rulePaint = options.rulePaint ?? identity
+  const lines: string[] = [rulePaint('─'.repeat(ruleWidth))]
+  const title = options.title
+  if (title !== undefined) {
+    const titlePaint = options.titlePaint ?? identity
+    const hint = options.titleHint
+    if (hint === undefined) {
+      lines.push(truncateToWidth(titlePaint(`  ${title}`), ruleWidth))
+    } else {
+      const hintPaint = options.hintPaint ?? identity
+      // The kimi title line: `  help · Esc / Enter / q to cancel · ↑↓ scroll`
+      // — callers lead the hint with `· ` so the join is a single space.
+      lines.push(truncateToWidth(`${titlePaint(`  ${title}`)} ${hintPaint(hint)}`, ruleWidth))
+    }
+  }
+  lines.push(...body)
+  const footer = options.footer
+  if (footer !== undefined && footer.length > 0) {
+    lines.push(hintRow(footer, options.footerPaint ?? identity))
+  }
+  lines.push(rulePaint('─'.repeat(ruleWidth)))
+  return lines
 }

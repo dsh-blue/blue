@@ -66,9 +66,10 @@ describe('blue-questions provider', () => {
     const { ctx, screen } = await mount()
     const pending = ctx.userQuestions.ask({ questions: [{ id: 'q2', question: 'Why?' }] })
     for (const char of 'because') overlay(screen).handleInput(char)
-    // The questionnaire renders the inline editor and invalidates through it.
+    // The questionnaire renders the inline editor above the frame's key row
+    // and invalidates through it.
     const panel = screen.overlays[0]?.component
-    expect(panel?.render(60).at(-1)).toBe('>because')
+    expect(panel?.render(60)[5]).toBe('>because')
     panel?.invalidate()
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({ answers: [{ id: 'q2', selected: [], custom: 'because' }] })
@@ -106,9 +107,14 @@ describe('blue-questions provider', () => {
       questions: [choice({ header: 'Setup', detail: 'extra context' })],
     })
     const rendered = screen.overlays[0]?.component.render(60) ?? []
-    expect(rendered[0]).toBe('*Setup*')
-    expect(rendered[1]).toBe('*Pick one*')
-    expect(rendered[2]).toBe('~extra context~')
+    // The framed pull-up panel: primary rules, the indented `question`
+    // title, the header tab, then the question and detail rows.
+    expect(rendered[0]).toBe('^' + '─'.repeat(60) + '^')
+    expect(rendered[1]).toBe('^  question^')
+    expect(rendered[2]).toBe('  ^Setup^')
+    expect(rendered[3]).toBe('')
+    expect(rendered[4]).toBe('^  Pick one^')
+    expect(rendered[5]).toBe('~extra context~')
     overlay(screen).handleInput(KEY.escape)
     await pending.catch(() => {})
   })

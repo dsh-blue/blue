@@ -34,8 +34,12 @@ export interface BlueTerminalRuntime {
    * Mount a root component pinned to the bottom of the live renderer: it
    * renders after every component mounted through `addChild`.
    * @param component - the component to pin.
+   * @param position - `'bottom'` renders the component below the rest of
+   *   the dock (the two-row footer shell mounts there, keeping the status
+   *   on the terminal's last rows beneath the editor and any dialog panel
+   *   that pulls up over it).
    */
-  addBottomChild(component: BlueComponent): void
+  addBottomChild(component: BlueComponent, position?: 'bottom'): void
   /**
    * Unmount a root component from the live renderer.
    * @param component - the component to unmount.
@@ -147,8 +151,13 @@ export async function startBlueTerminal(
   // Bottom-pinned components (the input editor dock) must render after
   // transcript content no matter when each side mounts: pi-tui renders root
   // children in array order, and transcript components mount only after the
-  // app's session-changed broadcast, long after the editor.
+  // app's session-changed broadcast, long after the editor. `bottomPinned`
+  // members render below the rest of the dock — the footer shell mounts
+  // there so the two-row status stays on the terminal's last rows beneath
+  // the editor, the kimi layout (its dialogs pull up from the editor's
+  // slot while the statusline remains visible below).
   const bottomChildren = new Set<BlueComponent>()
+  const bottomPinned = new Set<BlueComponent>()
   // The dock must also sit on the terminal's last rows even when the mounted
   // content is shorter than the viewport (boot with no session yet, a fresh
   // /new) — pi-tui stacks root children top-down, so an unpadded tree leaves
@@ -163,13 +172,20 @@ export async function startBlueTerminal(
     const lines = collectLines(width)
     if (lines.length === 0 || lines.length >= terminal.rows || bottomChildren.size === 0) return lines
     let dockRows = 0
-    for (const child of bottomChildren) dockRows += child.render(width).length
+    for (const child of orderedDock()) dockRows += child.render(width).length
     const filler = terminal.rows - lines.length
     const boundary = lines.length - dockRows
     return [
       ...lines.slice(0, boundary),
       ...Array.from({ length: filler }, () => ''),
       ...lines.slice(boundary),
+    ]
+  }
+  /** Dock children in render order: the regular block, then the pinned tail. */
+  function orderedDock(): BlueComponent[] {
+    return [
+      ...[...bottomChildren].filter(child => !bottomPinned.has(child)),
+      ...bottomPinned,
     ]
   }
   const background = backgroundFromRgb(await probe())
@@ -195,12 +211,28 @@ export async function startBlueTerminal(
       /* v8 ignore next -- pinned components are always mounted on the renderer, so findIndex cannot miss */
       stable.children.splice(index === -1 ? stable.children.length : index, 0, component)
     },
-    addBottomChild(component) {
+    addBottomChild(component, position) {
       bottomChildren.add(component)
-      stable.addChild(component)
+      if (position === 'bottom') {
+        // Pinned members render at the very bottom of the dock: re-append
+        // on the renderer so the array order — and therefore the painted
+        // row order — keeps them after every regular dock child.
+        bottomPinned.add(component)
+        stable.removeChild(component)
+        stable.addChild(component)
+      } else {
+        bottomPinned.delete(component)
+        // Regular dock children insert before the first pinned member (or
+        // append when none is pinned), preserving mount order among
+        // themselves while the pinned tail stays last.
+        const index = stable.children.findIndex(child => bottomPinned.has(child as BlueComponent))
+        /* v8 ignore next -- pinned components are always mounted on the renderer, so findIndex cannot miss */
+        stable.children.splice(index === -1 ? stable.children.length : index, 0, component)
+      }
     },
     removeChild(component) {
       bottomChildren.delete(component)
+      bottomPinned.delete(component)
       stable.removeChild(component)
     },
     setFocus(component) {

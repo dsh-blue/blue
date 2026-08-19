@@ -167,11 +167,14 @@ describe('blue-commands plugin', () => {
     })
     const execution = await ctx.commands.execute(agent, '/sessions', signal())
     expect(execution?.result).toEqual({ kind: 'success' })
+    // The framed picker: rules, title with the key hint, and rows carrying
+    // the `❯ ` pointer plus the `← current` badge on the live session.
     const rows = screen.overlays[0]?.component.render(60) ?? []
-    expect(rows[0]).toBe('*Resume a session*')
-    expect(rows[1]).toContain(`→ ${agent.id} · 1970-01-01 00:00 · /live (current)`)
-    expect(rows[2]).toContain('s-mid · 1970-01-01 00:00 · ')
-    expect(rows[3]).toContain('s-old · 1970-01-01 00:00 · /old')
+    expect(rows[0]).toBe('^' + '─'.repeat(60) + '^')
+    expect(rows[1]).toBe('^  Sessions^ _· esc cancel · ↵ resume_')
+    expect(rows[2]).toContain(`❯ ${agent.id} · 1970-01-01 00:00 · /live  ← current`)
+    expect(rows[3]).toContain('s-mid · 1970-01-01 00:00 · ')
+    expect(rows[4]).toContain('s-old · 1970-01-01 00:00 · /old')
     overlay(screen).handleInput(KEY.escape)
     expect(screen.overlays[0]?.hidden).toBe(true)
   })
@@ -251,13 +254,24 @@ describe('blue-commands plugin', () => {
     const { ctx, screen, agent } = await mount()
     const execution = await ctx.commands.execute(agent, '/help', signal())
     expect(execution?.result).toEqual({ kind: 'success' })
+    // The framed HelpPanel: primary rules, ` help ` title with the key
+    // hint, and the two aligned sections. The sections overflow the ten-row
+    // window, so a `showing` line replaces the tail.
     const rows = screen.overlays[0]?.component.render(80) ?? []
-    expect(rows[0]).toBe('#Commands#')
-    expect(rows).toContain('/quit — Exit Blue')
-    expect(rows).toContain('/new — Start a new session')
-    expect(rows).toContain('#Keys#')
-    expect(rows).toContain('enter — Submit input / confirm selection')
-    expect(rows).toContain('ctrl+c — Clear input / interrupt the agent / press twice to exit')
+    expect(rows[0]).toBe('^' + '─'.repeat(80) + '^')
+    expect(rows[1]).toBe('^  help^ _· Esc / Enter / q to cancel · ↑↓ scroll_')
+    expect(rows[3]).toBe('  #Commands#')
+    // The runtime lists commands alphabetically; labels padEnd inside the
+    // primary span with the description muted behind two spaces.
+    expect(rows[4]).toBe('    ^/fork    ^  ~Fork the current session into a new one~')
+    expect(rows.some(row => row.includes('^/quit    ^  ~Exit Blue~'))).toBe(true)
+    expect(rows.some(row => row.includes('_ showing 1-16 of 18_'))).toBe(true)
+    // Scrolling down reaches the Keys section with the two-column layout.
+    for (let i = 0; i < 9; i += 1) overlay(screen).handleInput(KEY.down)
+    const scrolled = screen.overlays[0]?.component.render(80) ?? []
+    expect(scrolled.some(row => row.includes('  #Keys#'))).toBe(true)
+    expect(scrolled.some(row => row.includes('?enter   ?  ~Submit input / confirm selection~'))).toBe(true)
+    expect(scrolled.some(row => row.includes('_ showing 3-18 of 18_'))).toBe(true)
     screen.overlays[0]?.component.invalidate()
     overlay(screen).handleInput(KEY.escape)
     expect(screen.overlays[0]?.hidden).toBe(true)
@@ -268,8 +282,10 @@ describe('blue-commands plugin', () => {
     const keymap = ctx.get('blueKeymap')
     const unregister = keymap?.register([{ id: 'spec.custom', keys: 'f9' }])
     await ctx.commands.execute(agent, '/help', signal())
+    // The f9 row is the last key binding, beyond the first window.
+    for (let i = 0; i < 9; i += 1) overlay(screen).handleInput(KEY.down)
     const rows = screen.overlays[0]?.component.render(80) ?? []
-    expect(rows).toContain('f9 — spec.custom')
+    expect(rows.some(row => row.includes('f9') && row.includes('~spec.custom~'))).toBe(true)
     unregister?.()
     overlay(screen).handleInput(KEY.escape)
   })
@@ -290,12 +306,15 @@ describe('blue-commands plugin', () => {
   })
 
   it('/help truncates rows to the render width', async () => {
-    const { ctx, screen, agent } = await mount()
+    const { ctx, screen, components, agent } = await mount()
     await ctx.commands.execute(agent, '/help', signal())
     const rows = screen.overlays[0]?.component.render(10) ?? []
-    // The fake theme styles with plain markers and the fake truncation
-    // counts characters, so every rendered row fits the width exactly.
-    expect(rows.every(row => row.length <= 10)).toBe(true)
+    // The overlay's own truncation (headings, two-column rows, and the
+    // showing tail) keeps every content row inside the width; the frame's
+    // title and rules are width-exact by construction. The fake theme's
+    // markers add two columns per styled row, so the invariant allows the
+    // inflation (the real theme's SGR is zero-width).
+    expect(rows.slice(2, -1).every(row => components.visibleWidth(row) <= 12)).toBe(true)
     overlay(screen).handleInput(KEY.escape)
   })
 

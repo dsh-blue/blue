@@ -15,6 +15,7 @@
  */
 
 import type { BlueComponents, BlueEditor, BlueFocusable, BlueTheme } from '@deepseek-ai/dsh-blue-core'
+import { framePanel } from '@deepseek-ai/dsh-blue-core/chrome'
 import type { AskUserQuestionAnswerItem, AskUserQuestionItem, AskUserQuestionOption } from '@deepseek-ai/dsh-user-questions'
 
 /** Decoded input sequences the questionnaire handles (no keymap actions). */
@@ -26,8 +27,11 @@ const KEY_ENTER = '\r'
 const KEY_SPACE = ' '
 const KEY_ESCAPE = '\x1b'
 
-/** Option rows rendered at once; longer lists truncate with an ellipsis row. */
-const MAX_OPTION_ROWS = 8
+/**
+ * Option rows rendered at once; longer lists truncate with an ellipsis row.
+ * S12 sets the kimi value (6) so the framed dialog fits its overlay budget.
+ */
+const MAX_OPTION_ROWS = 6
 
 /** Construction options for {@link Questionnaire}. */
 export interface QuestionnaireOptions {
@@ -273,9 +277,10 @@ export class Questionnaire implements BlueFocusable {
   }
 
   /**
-   * Render the tab row, the active question, and its list or editor. Option
-   * lists longer than {@link MAX_OPTION_ROWS} truncate the tail behind a
-   * muted ellipsis row.
+   * Render the framed dialog: title, the `(○)`/`(✓)` tab row, the active
+   * question, and its list or editor, closed by a key row. Option lists
+   * longer than {@link MAX_OPTION_ROWS} truncate the tail behind a muted
+   * ellipsis row.
    * @param width - current viewport width in columns.
    * @returns one string per rendered row.
    */
@@ -285,12 +290,16 @@ export class Questionnaire implements BlueFocusable {
     const question = this.current()
     const state = this.state()
     const tabs = this.options.questions.map((entry, at) => {
-      const label = `${entry.header ?? `Q${at + 1}`}${this.states[at]?.answer === undefined ? '' : ' ✓'}`
-      return at === this.tab ? colors.accent(label) : label
-    }).join(' · ')
+      const label = entry.header ?? `Q${at + 1}`
+      if (at === this.tab) return colors.primary(label)
+      return this.states[at]?.answer === undefined
+        ? colors.muted(`(○) ${label}`)
+        : colors.success(`(✓) ${label}`)
+    }).join('  ')
     const rows = [
-      components.truncateToWidth(tabs, width),
-      colors.accent(components.truncateToWidth(question.question, width)),
+      components.truncateToWidth(`  ${tabs}`, width),
+      '',
+      colors.primary(components.truncateToWidth(`  ${question.question}`, width)),
     ]
     if (question.detail !== undefined) {
       rows.push(colors.muted(components.truncateToWidth(question.detail, width)))
@@ -298,27 +307,46 @@ export class Questionnaire implements BlueFocusable {
     const editor = this.editor
     if (editor !== undefined) {
       rows.push(...editor.render(width))
-      return rows
+      return framePanel(rows, width, {
+        title: 'question',
+        titlePaint: colors.primary,
+        rulePaint: colors.primary,
+        footer: this.footerParts(),
+        footerPaint: colors.textMuted,
+      })
     }
     const options = state.options
     const multi = question.multiSelect === true
     const entries: string[] = []
     for (const [at, option] of options.entries()) {
-      const prefix = at === state.cursor ? '→ ' : '  '
+      // The kimi dialog body indents every option row two columns.
+      const prefix = at === state.cursor ? '  → ' : '    '
       const checkbox = multi ? (state.toggled.has(option.label) ? '[x] ' : '[ ] ') : ''
       const label = components.truncateToWidth(`${prefix}${checkbox}${option.label}`, width)
       const description = option.description === undefined ? '' : colors.muted(` — ${option.description}`)
-      entries.push(at === state.cursor ? colors.accent(label) + description : label + description)
+      entries.push(at === state.cursor ? colors.primary(label) + description : label + description)
     }
-    const otherPrefix = state.cursor === options.length ? '→ ' : '  '
+    const otherPrefix = state.cursor === options.length ? '  → ' : '    '
     const otherLabel = state.custom === undefined ? 'Other' : `Other: ${state.custom}`
     const other = components.truncateToWidth(`${otherPrefix}${otherLabel}`, width)
-    entries.push(state.cursor === options.length ? colors.accent(other) : other)
+    entries.push(state.cursor === options.length ? colors.primary(other) : other)
     if (entries.length > MAX_OPTION_ROWS) {
       rows.push(...entries.slice(0, MAX_OPTION_ROWS), colors.muted('…'))
     } else {
       rows.push(...entries)
     }
-    return rows
+    rows.push('')
+    return framePanel(rows, width, {
+      title: 'question',
+      titlePaint: colors.primary,
+      rulePaint: colors.primary,
+      footer: this.footerParts(),
+      footerPaint: colors.textMuted,
+    })
+  }
+
+  /** Footer key-row parts for the framed dialog. */
+  private footerParts(): string[] {
+    return ['↑↓ select', 'space toggle', '↵ choose', 'tab switch', 'esc cancel']
   }
 }

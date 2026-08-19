@@ -1,16 +1,21 @@
 /**
- * `BlueSelect`: the multi-select option-list overlay component, and
- * `BluePanel`, the header-plus-child overlay container. Single-select lists
- * moved to `ctx.blueComponents.createSelectList` (the pi-tui SelectList);
- * pi-tui ships no multi-select component, so this one stays as the
- * multi-select-only implementation. Key resolution goes through
- * `ctx.blueKeymap`, styling through `ctx.blueTheme`, and width math through
- * `ctx.blueComponents`.
+ * `BlueSelect`: the multi-select option-list overlay component,
+ * `SessionList`: the single-select session picker list, and `BluePanel`,
+ * the header-plus-child overlay container. Single-select lists moved to
+ * `ctx.blueComponents.createSelectList` (the pi-tui SelectList); pi-tui
+ * ships no multi-select component, so BlueSelect stays as the
+ * multi-select-only implementation, and the session picker renders its own
+ * kimi-style rows (the `← current` badge needs per-row styling the opaque
+ * SelectList cannot carry). Both lists frame themselves with the S12
+ * dialog chrome (`framePanel`): title, full-width rules, and a key row.
+ * Key resolution goes through `ctx.blueKeymap`, styling through
+ * `ctx.blueTheme`, and width math through `ctx.blueComponents`.
  *
  * @module @deepseek-ai/dsh-blue-interaction/select
  */
 
 import type { BlueComponent, BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@deepseek-ai/dsh-blue-core'
+import { framePanel } from '@deepseek-ai/dsh-blue-core/chrome'
 import {
   ACTION_CANCEL,
   ACTION_MOVE_DOWN,
@@ -39,6 +44,8 @@ export interface BlueSelectOptions {
   readonly components: BlueComponents
   /** Entries to choose from; must not be empty. */
   readonly items: readonly BlueSelectItem[]
+  /** Dialog title; defaults to `Select`. */
+  readonly title?: string
   /**
    * Called with the confirmed entries: the toggled ones, or the focused
    * entry when nothing was toggled.
@@ -112,8 +119,11 @@ export class BlueSelect implements BlueFocusable {
   invalidate(): void {}
 
   /**
-   * Render the visible window of items with cursor, toggle marks, and a
-   * footer hint generated from the registered key bindings.
+   * Render the framed dialog: the visible window of items with cursor,
+   * toggle marks, a scroll position, and a footer key row generated from
+   * the registered key bindings. The cursor row carries the full-width
+   * `selectedBg` (the token's first real use) so the background never
+   * breaks mid-line.
    * @param width - current viewport width in columns.
    * @returns one string per rendered row.
    */
@@ -130,23 +140,35 @@ export class BlueSelect implements BlueFocusable {
       const item = items[index]
       /* v8 ignore next -- start/end are clamped to items.length, so the index is always valid */
       if (item === undefined) continue
-      const prefix = index === this.cursor ? '→ ' : '  '
+      const prefix = index === this.cursor ? '❯ ' : '  '
       const checkbox = this.toggled.has(item.value) ? '[x] ' : '[ ] '
       const label = components.truncateToWidth(`${checkbox}${item.label}`, Math.max(1, width - 2))
       const descriptionWidth = width - 2 - components.visibleWidth(label)
       const description = item.description !== undefined && descriptionWidth > 4
         ? components.truncateToWidth(` — ${oneLine(item.description)}`, descriptionWidth)
         : ''
-      const row = index === this.cursor
-        ? colors.accent(`${prefix}${label}`) + colors.muted(description)
-        : `${prefix}${label}${colors.muted(description)}`
-      lines.push(row)
+      const row = `${prefix}${label}${colors.muted(description)}`
+      if (index === this.cursor) {
+        // Pad the row to the full width before wrapping it in the
+        // background so the highlight spans the dialog edge to edge.
+        const truncated = components.truncateToWidth(row, width)
+        const padding = ' '.repeat(Math.max(0, width - components.visibleWidth(truncated)))
+        lines.push(colors.selectedBg(truncated + padding))
+      } else {
+        lines.push(row)
+      }
     }
     if (items.length > MAX_VISIBLE) {
-      lines.push(colors.muted(`  (${this.cursor + 1}/${items.length})`))
+      lines.push(colors.textMuted(`  (${this.cursor + 1}/${items.length})`))
     }
-    lines.push(colors.muted(components.truncateToWidth(this.footer(), width)))
-    return lines
+    lines.push('')
+    return framePanel(lines, width, {
+      title: this.options.title ?? 'Select',
+      titlePaint: colors.primary,
+      rulePaint: colors.primary,
+      footer: this.footerParts(),
+      footerPaint: colors.textMuted,
+    })
   }
 
   /** Entries a confirm would return right now. */
@@ -158,17 +180,127 @@ export class BlueSelect implements BlueFocusable {
     return focused === undefined ? [] : [focused]
   }
 
-  /** Footer hint text from the currently bound keys. */
-  private footer(): string {
+  /** Footer key-row parts from the currently bound keys. */
+  private footerParts(): string[] {
     const { keymap } = this.options
     const key = (action: string): string => keymap.getKeys(action)[0] ?? action
-    const parts = [
+    return [
       `${key(ACTION_MOVE_UP)}/${key(ACTION_MOVE_DOWN)} move`,
       `${key(ACTION_TOGGLE)} toggle`,
       `${key(ACTION_SUBMIT)} confirm`,
       `${key(ACTION_CANCEL)} cancel`,
     ]
-    return `  ${parts.join(' · ')}`
+  }
+}
+
+/** One selectable session row. */
+export interface SessionListItem {
+  /** Stable value returned on confirm. */
+  readonly value: string
+  /** User-facing label. */
+  readonly label: string
+  /** Renders the `← current` badge after the label (kimi CURRENT_MARK). */
+  readonly current?: boolean
+}
+
+/** Construction options for {@link SessionList}. */
+export interface SessionListOptions {
+  /** Keybinding registry used to resolve the list keys. */
+  readonly keymap: BlueKeymap
+  /** Theme supplying the cursor, badge, and rule colors. */
+  readonly theme: BlueTheme
+  /** Component factory supplying the width measurement/truncation helpers. */
+  readonly components: BlueComponents
+  /** Sessions to choose from, newest first. */
+  readonly items: readonly SessionListItem[]
+  /** Dialog title; defaults to `Sessions`. */
+  readonly title?: string
+  /** Muted key row rendered under the title. */
+  readonly titleHint?: string
+  /** Called with the focused entry when the confirm key is pressed. */
+  readonly onSelect: (item: SessionListItem) => void
+  /** Called when the cancel key is pressed. */
+  readonly onCancel: () => void
+}
+
+/**
+ * Single-select session picker: Up/Down wrap the cursor, Enter selects,
+ * Escape cancels. The cursor row takes the `❯ ` pointer in `primary`, and
+ * the current session carries a `← current` badge; the dialog frames
+ * itself with the S12 chrome (title + full-width rules).
+ */
+export class SessionList implements BlueFocusable {
+  /** Whether the list currently holds focus. Managed by the screen. */
+  focused = false
+
+  private cursor = 0
+
+  /**
+   * @param options - see {@link SessionListOptions}.
+   */
+  constructor(private readonly options: SessionListOptions) {}
+
+  /**
+   * Dispatch one input sequence against the list keybindings.
+   * @param data - the input sequence as read from the terminal.
+   */
+  handleInput(data: string): void {
+    const { keymap, items } = this.options
+    if (keymap.matches(data, ACTION_MOVE_UP)) {
+      this.cursor = this.cursor === 0 ? items.length - 1 : this.cursor - 1
+      return
+    }
+    if (keymap.matches(data, ACTION_MOVE_DOWN)) {
+      this.cursor = this.cursor === items.length - 1 ? 0 : this.cursor + 1
+      return
+    }
+    if (keymap.matches(data, ACTION_SUBMIT)) {
+      const item = items[this.cursor]
+      if (item !== undefined) this.options.onSelect(item)
+      return
+    }
+    if (keymap.matches(data, ACTION_CANCEL)) this.options.onCancel()
+  }
+
+  /** No cached render state. */
+  invalidate(): void {}
+
+  /**
+   * Render the framed dialog: the visible window of sessions with the
+   * cursor pointer, the current-session badge, and a scroll position.
+   * @param width - current viewport width in columns.
+   * @returns one string per rendered row.
+   */
+  render(width: number): string[] {
+    const { items, components } = this.options
+    const colors = this.options.theme.colors
+    const start = Math.max(0, Math.min(
+      this.cursor - Math.floor(MAX_VISIBLE / 2),
+      items.length - MAX_VISIBLE,
+    ))
+    const end = Math.min(start + MAX_VISIBLE, items.length)
+    const lines: string[] = []
+    for (let index = start; index < end; index += 1) {
+      const item = items[index]
+      /* v8 ignore next -- start/end are clamped to items.length, so the index is always valid */
+      if (item === undefined) continue
+      const prefix = index === this.cursor ? '❯ ' : '  '
+      const badge = item.current === true ? '  ← current' : ''
+      const row = components.truncateToWidth(`${prefix}${item.label}${badge}`, width)
+      lines.push(index === this.cursor ? colors.primary(row) : row)
+    }
+    if (items.length > MAX_VISIBLE) {
+      lines.push(colors.textMuted(`  (${this.cursor + 1}/${items.length})`))
+    }
+    lines.push('')
+    const titleHint = this.options.titleHint
+    return framePanel(lines, width, {
+      title: this.options.title ?? 'Sessions',
+      titlePaint: colors.primary,
+      ...titleHint === undefined ? {} : { titleHint },
+      hintPaint: colors.textMuted,
+      rulePaint: colors.primary,
+    })
   }
 }
 

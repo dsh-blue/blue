@@ -834,7 +834,7 @@ describe('blue whole-tree e2e', () => {
     expect(shown).toContain('done')
   })
 
-  it('renders the baseline footer entry below the transcript and above the editor', async () => {
+  it('renders the baseline footer entry on the last rows below the editor', async () => {
     const tree = await bootBlue(['fix', 'the', 'build'], { script: [textResponse('Blue online.')] })
     const agent = await currentAgent(tree)
     await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
@@ -844,9 +844,10 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('mock · idle') })
     // Position discipline: a width change forces a full clear-and-repaint
     // frame, so the last such chunk carries every row in screen order —
-    // transcript reply, then the footer, then the editor's rounded top
-    // border (the first gray `border` #5a5a5a run at or after the footer;
-    // the idle frame is neutral since S11, slash/bash contexts recolor it).
+    // transcript reply, then the editor's rounded top border (the first
+    // gray `border` #5a5a5a run; the idle frame is neutral since S11,
+    // slash/bash contexts recolor it), then the footer pinned to the
+    // terminal's last rows (the S12 kimi dock order).
     tree.terminal.resize(100, 30)
     let frame = ''
     await vi.waitFor(() => {
@@ -856,10 +857,10 @@ describe('blue whole-tree e2e', () => {
     })
     const reply = frame.indexOf('Blue online.')
     const footer = frame.indexOf('mock · idle')
-    const editorBorder = frame.indexOf(EDITOR_BORDER_SGR, footer)
+    const editorBorder = frame.indexOf(EDITOR_BORDER_SGR, reply)
     expect(reply).toBeGreaterThanOrEqual(0)
-    expect(footer).toBeGreaterThan(reply)
-    expect(editorBorder).toBeGreaterThan(footer)
+    expect(editorBorder).toBeGreaterThan(reply)
+    expect(footer).toBeGreaterThan(editorBorder)
   })
 
   it('frames the editor in a rounded box with a prompt symbol and persistent hint row', async () => {
@@ -1160,21 +1161,22 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('working…') })
     const running = await fullFrame(tree.terminal)
     expect(running).toContain('working…')
-    // Dock order: the spinner sits between the footer and the editor (the
-    // first gray `border` frame run at or after the spinner — the idle
-    // editor frame is neutral since S11).
+    // Dock order (S12): the footer pins to the terminal's last rows, the
+    // editor sits above it, and the spinner above the editor (the first
+    // gray `border` frame run at or after the spinner — the idle editor
+    // frame is neutral since S11).
     const footerAt = running.indexOf('mock · running')
     const spinnerAt = running.indexOf('working…')
     const borderAt = running.indexOf(EDITOR_BORDER_SGR, spinnerAt)
     expect(footerAt).toBeGreaterThanOrEqual(0)
-    expect(spinnerAt).toBeGreaterThan(footerAt)
     expect(borderAt).toBeGreaterThan(spinnerAt)
+    expect(footerAt).toBeGreaterThan(borderAt)
     tree.terminal.sendInput('\x03')
     await agent.whenIdle()
     expect(await fullFrame(tree.terminal)).not.toContain('working…')
   })
 
-  it('renders the todo pane between the footer and the editor, and Ctrl-T collapses it', async () => {
+  it('renders the todo pane above the editor with the footer on the last rows, and Ctrl-T collapses it', async () => {
     const tree = await bootBlue([], { script: [] })
     const agent = await currentAgent(tree)
     // Inject a durable whole-list snapshot straight into the session log; the
@@ -1188,16 +1190,17 @@ describe('blue whole-tree e2e', () => {
     })
     // A list with in-progress work starts expanded: one styled row per entry.
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('active-task') })
-    // Dock order: the footer (mock · idle), then the todo pane, then the
-    // editor's rounded top border (the first gray `border` frame run at or
-    // after the pane — the idle editor frame is neutral since S11).
+    // Dock order (S12): the footer pins to the terminal's last rows, then
+    // the editor's rounded top border, then the todo pane above it (the
+    // first gray `border` frame run at or after the pane — the idle editor
+    // frame is neutral since S11).
     const expanded = await fullFrame(tree.terminal)
     const footer = expanded.indexOf('mock · idle')
     const todo = expanded.indexOf('active-task')
     const editorBorder = expanded.indexOf(EDITOR_BORDER_SGR, todo)
     expect(footer).toBeGreaterThanOrEqual(0)
-    expect(todo).toBeGreaterThan(footer)
     expect(editorBorder).toBeGreaterThan(todo)
+    expect(footer).toBeGreaterThan(editorBorder)
     // The global Ctrl-T action collapses the pane to the one-line summary.
     tree.terminal.sendInput('\x14')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('todos 1/3') })
@@ -1218,16 +1221,17 @@ describe('blue whole-tree e2e', () => {
       source: { kind: 'user' },
     }))
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('queued ↑ turn: queued-task') })
-    // Dock order: the queue pane sits between the footer and the editor (the
-    // first gray `border` frame run at or after the pane — the idle editor
-    // frame is neutral since S11).
+    // Dock order (S12): the footer pins to the terminal's last rows, the
+    // editor sits above it, and the queue pane above the editor (the first
+    // gray `border` frame run at or after the pane — the idle editor frame
+    // is neutral since S11).
     const docked = await fullFrame(tree.terminal)
     const footerAt = docked.indexOf('mock · idle')
     const queuedAt = docked.indexOf('queued ↑ turn: queued-task')
     const borderAt = docked.indexOf(EDITOR_BORDER_SGR, queuedAt)
     expect(footerAt).toBeGreaterThanOrEqual(0)
-    expect(queuedAt).toBeGreaterThan(footerAt)
     expect(borderAt).toBeGreaterThan(queuedAt)
+    expect(footerAt).toBeGreaterThan(borderAt)
     // Empty editor + Up: the pane-queue recall action moves the message out
     // of the inbox and into the draft.
     tree.terminal.sendInput('\x1b[A')
@@ -1245,21 +1249,27 @@ describe('blue whole-tree e2e', () => {
   it('lists the registered commands and key bindings in the /help overlay', async () => {
     const tree = await bootBlue([], { script: [] })
     const agent = await currentAgent(tree)
-    // The full command+key list is taller than the default overlay window;
-    // enlarge the terminal so every row renders.
-    tree.terminal.resize(160, 60)
     const result = await executeCommand(tree, agent, '/help')
     expect(result?.kind).toBe('success')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/quit — Exit Blue') })
+    // The framed HelpPanel: primary rules and the ` help ` title with the
+    // key hint. The two aligned sections start with the sorted commands.
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Commands') })
     const shown = tree.terminal.output
-    expect(shown).toContain('/new — Start a new session')
-    expect(shown).toContain('/btw — Ask a side question in a forked session')
-    // The Keys section lists the keymap, including the pane-todo global action.
-    expect(shown).toContain('ctrl+c — Clear input / interrupt the agent / press twice to exit')
-    expect(shown).toContain('ctrl+t — Toggle todo panel')
+    expect(shown).toContain(' help')
+    expect(shown).toContain('/btw')
+    expect(shown).toContain('Exit Blue')
+    expect(shown).toContain('showing 1-16 of')
+    // PageDown twice scrolls to the tail of the Keys section — including
+    // the pane-todo global action; the accumulated output carries the rows
+    // once the throttled render settles.
+    tree.terminal.sendInput('\x1b[6~')
+    tree.terminal.sendInput('\x1b[6~')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Toggle todo panel') })
+    const scrolled = tree.terminal.output
+    expect(scrolled).toContain('ctrl+c')
     // Escape closes the overlay.
     tree.terminal.sendInput('\x1b')
-    expect(await fullFrame(tree.terminal)).not.toContain('/quit — Exit Blue')
+    expect(await fullFrame(tree.terminal)).not.toContain('Exit Blue')
   })
 
   it('switches sessions through /new and /fork, and lists them in the /sessions picker', async () => {
@@ -1300,12 +1310,15 @@ describe('blue whole-tree e2e', () => {
     await tree.ctx.sessions.flush(forked.session)
     tree.terminal.resize(300, 40)
     await expect(executeCommand(tree, forked, '/sessions')).resolves.toEqual({ kind: 'success' })
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Resume a session') })
+    // The framed picker: the `Sessions` title with the key hint, rows
+    // carrying the `❯ ` pointer and the `← current` badge on the live one.
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Sessions') })
     const picker = tree.terminal.output
+    expect(picker).toContain('esc cancel · ↵ resume')
     expect(picker).toContain(String(first.id))
     expect(picker).toContain(String(second.id))
     expect(picker).toContain(String(forked.id))
-    expect(picker).toContain('(current)')
+    expect(picker).toContain('← current')
     // Pick the live session: a notice flashes and no switch happens. Find its
     // row deterministically by reproducing the picker's newest-first sort
     // over the same persisted headers.

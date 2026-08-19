@@ -510,10 +510,11 @@ describe('createSettingsList', () => {
     })
 
     const output = list.render(60).join('\n')
-    // The selected row's label and value take accent, the other row text,
-    // the description muted, and the cursor is the primary marker.
-    expect(output).toContain('«accent:Mode»')
-    expect(output).toContain('«accent:a»')
+    // The selected row's label and value take the interaction primary (S12
+    // closes the S10 review item), the other row text, the description
+    // muted, and the cursor is the primary marker.
+    expect(output).toContain('«primary:Mode»')
+    expect(output).toContain('«primary:a»')
     expect(output).toContain('«text:Note»')
     expect(output).toContain('«muted:plain»')
     expect(output).toContain('«muted:  the mode»')

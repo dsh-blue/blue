@@ -27,6 +27,7 @@
 3. 渲染铁律：`session/event` → 组件子树 → `requestRender()`，单向数据流。
 4. 能力铁律：需要 harness 新能力时先在上游做能力缝，Blue 只消费文档化 surface。
 5. 纪律红线：焦点只经 `tuiScreen.setFocus`；键位一律注册进 keymap；弹窗只走 `showOverlay`。
+6. 对话框一律**底部上拉面板**（D26）：全宽 + `bottom-center` 锚定 + 让出 footer 两行，经 `framePanel` 渲染；除非特别说明，不用居中式弹窗。
 
 ---
 
@@ -100,7 +101,7 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 
 ## Phase 2 — 表现力：呈现密度与性能
 
-**目标**：工具呈现结构化、长会话性能达标、富媒体进入。状态栏/主题/键位已在 P1 落地，本阶段聚焦"内容呈现"。**视觉/UX 打磨工作流**（[blue-p2-visual-design.md](./blue-p2-visual-design.md)，S10-S16）在本阶段立项：主题契约 v2（+`primary`/`textMuted`）、共享 chrome 辅助层、对话框/面板/补全/footer 的观感对齐与常驻按键提示，按视觉影响排序推进（✅ S10 已落地：主题契约 v2 28 token + 消息流/markdown 升级；✅ S11 已落地：编辑框圆角框/提示符/语境变色 + 常驻按键提示行，chrome 辅助层缝随期开出）。
+**目标**：工具呈现结构化、长会话性能达标、富媒体进入。状态栏/主题/键位已在 P1 落地，本阶段聚焦"内容呈现"。**视觉/UX 打磨工作流**（[blue-p2-visual-design.md](./blue-p2-visual-design.md)，S10-S16）在本阶段立项：主题契约 v2（+`primary`/`textMuted`）、共享 chrome 辅助层、对话框/面板/补全/footer 的观感对齐与常驻按键提示，按视觉影响排序推进（✅ S10 已落地：主题契约 v2 28 token + 消息流/markdown 升级；✅ S11 已落地：编辑框圆角框/提示符/语境变色 + 常驻按键提示行，chrome 辅助层缝随期开出；✅ S12 已落地：对话框 chrome 统一——审批琥珀框/编号选项、问卷 `(○)/(✓)` tab、/help 双列滚动窗、/sessions 列表框 + `← current`、BlueSelect 选中行 selectedBg，framePanel/hintRow 随期开出）。
 
 - **render intent 注册表**（`ctx.blueIntents`）：`diff` / `terminal` 呈现器落地，generic 呈现降级为第一个注册者（✅ S7 已落地）
 - **transcript 性能（滑动窗口）**：保留最近 N turn，旧 turn 组件与条目整体销毁；turn 内旧 step 折叠为摘要行；渲染缓存策略固化（✅ S7 已落地窗口+step 折叠）
@@ -182,6 +183,6 @@ Blue 不是封闭应用，而是一组可被下游插件定制的 surface。定�
 ```
 P0 MVP        → 一轮完整对话 + 审批/提问 + resume            （核心定型，已完成）
 P1 交互完整性  → 缝清单落地 + kimi 对照核心 UX（plain-first） （日常可用，S0-S9 已完成）
-P2 表现力      → 视觉对齐（S10-S16）/ intent / 滑动窗口 / 图片 （体验对齐，S10/S11 已落地，窗口与图片已随 S7）
+P2 表现力      → 视觉对齐（S10-S16）/ intent / 滑动窗口 / 图片 （体验对齐，S10/S11/S12 已落地，窗口与图片已随 S7）
 P3 硬化生态    → 缝冻结 / 测试 / HMR / 文档 / 发布             （可发布）
 ```

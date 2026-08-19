@@ -112,11 +112,16 @@ function imageTheme(colors: BlueSemanticColors): ImageTheme {
   return { fallbackColor: colors.muted }
 }
 
-/** Map the palette to a settings-list theme; `cursor` is a plain string. */
+/**
+ * Map the palette to a settings-list theme; `cursor` is a plain string.
+ * The selected row's label and value take the interaction primary (S12
+ * closes the S10 review item that left them on accent — the selected row
+ * is an interaction target, `primary` is its token).
+ */
 function settingsListTheme(colors: BlueSemanticColors): SettingsListTheme {
   return {
-    label: (text, selected) => (selected ? colors.accent(text) : colors.text(text)),
-    value: (text, selected) => (selected ? colors.accent(text) : colors.muted(text)),
+    label: (text, selected) => (selected ? colors.primary(text) : colors.text(text)),
+    value: (text, selected) => (selected ? colors.primary(text) : colors.muted(text)),
     description: colors.muted,
     cursor: colors.primary('❯ '),
     hint: colors.muted,
