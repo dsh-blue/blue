@@ -8,11 +8,13 @@
  * dispatches a slash command through `ctx.commands` when the line parses as
  * one, otherwise queues the text as a user follow-up message on the current
  * agent (the harness inbox queues it when the agent is running). A hint
- * line below the editor carries three tiers — one-shot notices and
+ * line below the editor carries the transient tiers — one-shot notices and
  * slash-command discovery in `muted` (S14: fuzzy-matched through the same
- * `./slash-filter.ts` the dropdown uses), and beneath them the persistent
- * key-affordance row in `textMuted` (`hint-content.ts`, idle and running
- * states). The editor-context key chain (Escape clear/interrupt, Ctrl-C
+ * `./slash-filter.ts` the dropdown uses) — and renders zero rows
+ * otherwise (the S15 dogfood verdict retired the persistent
+ * key-affordance row: kimi teaches affordances through the footer's
+ * rotating tips instead, and the tips pool already covers every fragment
+ * the row carried). The editor-context key chain (Escape clear/interrupt, Ctrl-C
  * clear/interrupt/double-press exit, Ctrl-S steer) resolves through
  * `ctx.blueKeymap` in the editor's `onKey` hook, which runs before the
  * pi-tui Editor sees the sequence. The mounted editor and the submit router
@@ -49,16 +51,12 @@ import type {
 import { parseCommand } from '@deepseek-ai/dsh-commands'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import {
-  ENHANCEMENT_EDITOR_PLUS,
-  hasEditorEnhancement,
   applySubmitTransformers,
   clearSharedEditor,
   setSharedEditor,
 } from './editor-instance.ts'
 import { clearDraft, getStashedDraft, stashDraft } from './draft-stash.ts'
-import { idleHint, runningHint, type HintSources } from './hint-content.ts'
 import { ACTION_CANCEL, ACTION_INTERRUPT, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_STEER } from './keys.ts'
-import { ACTION_IMAGE_PASTE } from './paste-image.ts'
 import { ACTION_QUEUE_RECALL, queuedMessageText } from './pane-queue.ts'
 import { currentBlueAgent } from './session.ts'
 import { filterSlashCommands } from './slash-filter.ts'
@@ -76,11 +74,11 @@ export const name = 'blue-input'
 export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'commands']
 
 /**
- * The single-line hint rendered under the input editor. The transient tier
- * (one-shot notices, slash-command discovery) paints `muted`; when it is
- * empty the persistent tier takes the row and paints the dimmer
- * `textMuted`, recomposed at render time so plugin loads and keymap
- * registrations after mount flip its fragments without re-wiring.
+ * The single-line hint rendered under the input editor. Only the transient
+ * tier exists (one-shot notices, slash-command discovery) and paints
+ * `muted`; with nothing transient the row renders zero rows — the
+ * persistent key-affordance tier retired with the S15 dogfood verdict,
+ * its teaching role taken by the footer's rotating tips.
  */
 class HintLine implements BlueComponent {
   private text: string | undefined
@@ -90,20 +88,16 @@ class HintLine implements BlueComponent {
    *   lifetime; property access through a disposed context throws).
    * @param colors - the active semantic color table.
    * @param components - the width-truncation helper source.
-   * @param persistent - computes the persistent hint for the current state;
-   *   the row renders nothing when it yields an empty string.
    */
   constructor(
     private readonly screen: BlueScreen,
     private readonly colors: BlueSemanticColors,
     private readonly components: BlueComponents,
-    private readonly persistent: () => string | undefined,
   ) {}
 
   /**
    * Replace the transient hint text and schedule a re-render.
-   * @param text - the new hint, or `undefined` to release the row to the
-   *   persistent tier.
+   * @param text - the new hint, or `undefined` to release the row.
    */
   setHint(text: string | undefined): void {
     this.text = text
@@ -121,12 +115,8 @@ class HintLine implements BlueComponent {
    * @returns one string per rendered row.
    */
   render(width: number): string[] {
-    if (this.text !== undefined) {
-      return [this.colors.muted(this.components.truncateToWidth(this.text, width))]
-    }
-    const hint = this.persistent()
-    if (hint === undefined || hint.length === 0) return []
-    return [this.colors.textMuted(this.components.truncateToWidth(hint, width))]
+    if (this.text === undefined) return []
+    return [this.colors.muted(this.components.truncateToWidth(this.text, width))]
   }
 }
 
@@ -170,28 +160,8 @@ export function apply(ctx: Context): void {
   // The padding reserves columns 0-3 for the side border, its gap, and the
   // `>` prompt symbol the rounded-box chrome overlays.
   editor.setPromptSymbol('>')
-  const keymap = ctx.blueKeymap
 
-  /**
-   * The persistent tier's fact sources, read at render time: keymap lookups
-   * plus the enhancement presence gates (`hint-content.ts`).
-   */
-  const hintSources = (): HintSources => ({
-    keys: action => keymap.getKeys(action),
-    editorPlus: hasEditorEnhancement(ENHANCEMENT_EDITOR_PLUS),
-    pasteImage: keymap.list().some(action => action.id === ACTION_IMAGE_PASTE),
-  })
-
-  /**
-   * The persistent hint for the current state: the running fragments while
-   * an agent turn is in flight, the idle affordances otherwise.
-   */
-  const persistentHint = (): string | undefined => {
-    const agent = currentBlueAgent(ctx)
-    return agent?.status === 'running' ? runningHint(hintSources()) : idleHint(hintSources())
-  }
-
-  const hintLine = new HintLine(screen, colors, ctx.blueComponents, persistentHint)
+  const hintLine = new HintLine(screen, colors, ctx.blueComponents)
 
   /** Matching-command hint for slash-prefixed input. */
   function slashHint(): string | undefined {
@@ -442,13 +412,9 @@ export function apply(ctx: Context): void {
     refreshHint()
   }
 
-  // Status flips and session switches change the persistent hint's state
-  // (idle vs. running fragments); the row recomposes itself on the next
-  // render, so the subscriptions only need to request one.
-  ctx.on('agent/status', (payload) => {
-    if (payload.agent !== currentBlueAgent(ctx)) return
-    refreshHint()
-  })
+  // Session switches re-derive the slash hint against the new agent (its
+  // command list, or the absence of an agent at all); the transient notice
+  // tier alone owns this row now.
   ctx.on('blue/session-changed', () => {
     refreshHint()
   })

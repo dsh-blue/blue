@@ -14,9 +14,8 @@
  * package-local shared ref (`./editor-instance.ts`): `inject` cannot order
  * this plugin after `blue-input` (which provides no service), so
  * attach/detach is driven by the `'blue/input-editor-changed'` event, which
- * also re-attaches correctly when a theme reload rebuilds both plugins; the
- * enhancement presence mark registered there gates the `! bash` / `@ files`
- * fragments of the persistent hint row. A bash-mode command can outlive
+ * also re-attaches correctly when a theme reload rebuilds both plugins.
+ * A bash-mode command can outlive
  * such a reload — the editor stays usable while the shell runs, so
  * `/theme` can unload this fiber before the process settles — and the echo
  * mount therefore gates on the fiber's unload flag before touching the

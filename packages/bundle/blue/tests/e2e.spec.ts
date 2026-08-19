@@ -940,7 +940,7 @@ describe('blue whole-tree e2e', () => {
     expect(footer).toBeGreaterThan(editorBorder)
   })
 
-  it('frames the editor in a rounded box with a prompt symbol and persistent hint row', async () => {
+  it('frames the editor in a rounded box with a prompt symbol and no persistent hint row', async () => {
     const tree = await bootBlue([], { script: [] })
     await currentAgent(tree)
     const frame = await fullFrame(tree.terminal)
@@ -950,11 +950,12 @@ describe('blue whole-tree e2e', () => {
     // …a side bar on the content row with the bare `>` prompt in column 2
     // (no SGR between the bar's reset and the symbol).
     expect(frame).toContain(`${EDITOR_BORDER_SGR}│\x1b[39m > `)
-    // The persistent hint row carries every loaded affordance — bash and @
-    // (editor-plus) and paste image (its action) — in textMuted #6b6b6b.
-    const hintAt = frame.indexOf('\x1b[38;2;107;107;107m')
-    expect(hintAt).toBeGreaterThanOrEqual(0)
-    expect(frame.slice(hintAt)).toContain('! bash · / commands · @ files · ctrl+s steer · ctrl+v paste image · ctrl+c exit')
+    // The persistent key-affordance row retired with the S15 dogfood
+    // verdict: no fragment of it survives below the box — the footer tips
+    // carry the teaching instead.
+    expect(frame).not.toContain('! bash · / commands')
+    expect(frame).not.toContain('ctrl+c exit')
+    expect(frame).not.toContain('ctrl+s steer')
   })
 
   it('recolors the frame for slash context with the dropdown boxed in the same frame', async () => {
