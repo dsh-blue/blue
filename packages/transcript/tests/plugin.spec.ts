@@ -471,7 +471,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     expect(keymap.unregistered.flat().map(a => a.id)).toContain(ACTION_TOGGLE_COLLAPSE)
   })
 
-  it('toggles tool output between the summary and the full text', async () => {
+  it('toggles tool output between the preview and the full text', async () => {
     resetSeq()
     const { ctx, screen, keymap } = await bootTranscript()
     const full = `first line\nsecond line\n${'x'.repeat(300)}`
@@ -481,12 +481,15 @@ describe('blue-transcript plugin through the real Loader', () => {
     ])
     ctx.emit('blue/session-changed', asAgent(agent))
 
-    // Collapsed by default: the flattened summary carries the ellipsis and
-    // joins the full text's own lines into wrapped rows.
+    // Collapsed by default: the bash pure label, the lines chip, the 3-row
+    // preview, and the kimi hint as the last row.
     const collapsed = contentLines(screen)
-    expect(collapsed.join('\n')).toContain('…')
-    expect(collapsed).toContain('  ⎿ first line second line')
-    expect(collapsed).not.toContain('  ⎿ first line')
+    expect(collapsed[1]).toContain('Ran a command')
+    expect(collapsed[1]).toContain(' · 3 lines')
+    expect(collapsed).toContain('  first line')
+    expect(collapsed).toContain('  second line')
+    expect(collapsed.at(-1)).toContain('more lines, ')
+    expect(collapsed.at(-1)).toContain('total, ctrl+o to expand')
 
     const action = keymap.actions.find(a => a.id === ACTION_TOGGLE_COLLAPSE)
     const renderBaseline = screen.renderRequests.length
@@ -495,13 +498,12 @@ describe('blue-transcript plugin through the real Loader', () => {
     expect(screen.renderRequests.at(-1)).toBe(true)
     const expanded = contentLines(screen)
     expect(expanded.length).toBeGreaterThan(collapsed.length)
-    expect(expanded).toContain('  ⎿ first line')
-    expect(expanded).toContain('  ⎿ second line')
-    expect(expanded.join('\n')).not.toContain('…')
+    expect(expanded.some(line => line.includes('x'.repeat(76)))).toBe(true)
+    expect(expanded.join('\n')).not.toContain('more lines')
 
     action?.handler?.()
-    expect(contentLines(screen).join('\n')).toContain('…')
-    expect(contentLines(screen)).not.toContain('  ⎿ first line')
+    expect(contentLines(screen).join('\n')).toContain('more lines')
+    expect(contentLines(screen).some(line => line.includes('x'.repeat(76)))).toBe(true)
   })
 
   it('resets the toggle to collapsed when the session changes', async () => {
@@ -513,22 +515,54 @@ describe('blue-transcript plugin through the real Loader', () => {
     ])))
     const action = keymap.actions.find(a => a.id === ACTION_TOGGLE_COLLAPSE)
     action?.handler?.()
-    expect(contentLines(screen)).toContain('  ⎿ alpha')
+    expect(contentLines(screen).some(line => line.includes('x'.repeat(76)))).toBe(true)
 
-    // The remount clears the collection and the expansion state: the next
-    // session's tool output starts collapsed again.
+    // The remount clears the entries and the expansion state: the next
+    // session's tool output starts collapsed again (3 preview rows + hint).
     resetSeq()
     ctx.emit('blue/session-changed', asAgent(fakeAgent([
       toolCallEvent(1, 1, 'c2', 'bash', '{}'),
       toolResultEvent(1, 1, 'c2', `gamma\ndelta\n${'y'.repeat(200)}`),
     ])))
-    expect(contentLines(screen).join('\n')).toContain('…')
-    expect(contentLines(screen)).toContain('  ⎿ gamma delta')
-    expect(contentLines(screen)).not.toContain('  ⎿ gamma')
+    const collapsed = contentLines(screen)
+    expect(collapsed.at(-1)).toContain('more lines')
+    expect(collapsed).toHaveLength(1 + 1 + 3 + 1)
+    expect(collapsed).toContain('  gamma')
+    expect(collapsed).toContain('  delta')
 
     // The handler now reaches the new session's components.
     action?.handler?.()
-    expect(contentLines(screen)).toContain('  ⎿ gamma')
+    expect(contentLines(screen).some(line => line.includes('y'.repeat(76)))).toBe(true)
+  })
+
+  it('limits ctrl+o to the most recent three turns (kimi range)', async () => {
+    resetSeq()
+    const { ctx, screen, keymap } = await bootTranscript()
+    const agent = fakeAgent([
+      turnStart(1), userEvent('one'),
+      toolCallEvent(1, 1, 'c1', 'bash', '{}'), toolResultEvent(1, 1, 'c1', 'o'.repeat(500)),
+      turnEnd(1),
+      turnStart(2), userEvent('two'), turnEnd(2),
+      turnStart(3), userEvent('three'), turnEnd(3),
+      turnStart(4), userEvent('four'),
+      toolCallEvent(4, 1, 'c2', 'bash', '{}'), toolResultEvent(4, 1, 'c2', 'n'.repeat(500)),
+      turnEnd(4),
+    ])
+    ctx.emit('blue/session-changed', asAgent(agent))
+    const hints = (): string[] => contentLines(screen).filter(line => line.includes('more lines'))
+    expect(hints()).toHaveLength(2)
+
+    // Expanding flips only the cards at/after the (totalTurns - 3)-th turn
+    // boundary: turn 4's card grows to its full wrapped output, turn 1's
+    // stays at the 3-row preview under its hint.
+    const action = keymap.actions.find(a => a.id === ACTION_TOGGLE_COLLAPSE)
+    action?.handler?.()
+    expect(hints()).toHaveLength(1)
+    expect(contentLines(screen).some(line => line.includes('n'.repeat(76)))).toBe(true)
+    expect(contentLines(screen).filter(line => line.includes('o'.repeat(76)))).toHaveLength(3)
+
+    action?.handler?.()
+    expect(hints()).toHaveLength(2)
   })
 
   it('creates tool cards through the blueIntents registry', async () => {
@@ -588,7 +622,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     ctx.emit('blue/session-changed', asAgent(fakeAgent(events)))
     const lines = contentLines(screen).join('\n')
     expect(lines).toContain('… step 1 · call 2 tools')
-    expect(lines).not.toContain('○ Read')
+    expect(lines).not.toContain('Using Read')
     expect(screen.children).toHaveLength(2)
   })
 

@@ -79,7 +79,8 @@ describe('TerminalCardComponent', () => {
     const rendered = new TerminalCardComponent(props(item)).render(80)
     expect(rendered).toHaveLength(1 + TERMINAL_COLLAPSED_ROWS + 1)
     expect(rendered[1]).toBe('[TM]out 0[/TM]')
-    expect(rendered.at(-1)).toBe(`[TM]… ${15 - TERMINAL_COLLAPSED_ROWS} more lines[/TM]`)
+    expect(rendered.at(-1)).toBe(
+      `[TM]... (${15 - TERMINAL_COLLAPSED_ROWS} more lines, 15 total, ctrl+o to expand)[/TM]`)
   })
 
   it('raises the output cap when expanded and elides past 120 rows', () => {
@@ -91,7 +92,8 @@ describe('TerminalCardComponent', () => {
     component.setExpanded(true)
     const expanded = component.render(80)
     expect(expanded).toHaveLength(1 + TERMINAL_EXPANDED_ROWS + 1)
-    expect(expanded.at(-1)).toBe(`[TM]… ${130 - TERMINAL_EXPANDED_ROWS} more lines[/TM]`)
+    expect(expanded.at(-1)).toBe(
+      `[TM]... (${130 - TERMINAL_EXPANDED_ROWS} more lines, 130 total, ctrl+o to expand)[/TM]`)
     expect(expanded).not.toEqual(collapsed)
     component.setExpanded(false)
     expect(component.render(80)).toEqual(collapsed)

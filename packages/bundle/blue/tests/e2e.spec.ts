@@ -722,7 +722,7 @@ describe('blue whole-tree e2e', () => {
     await agent.whenIdle()
   })
 
-  it('Ctrl-O toggles a tool result between the one-line summary and the full output', async () => {
+  it('Ctrl-O toggles a tool result between the collapsed preview and the full output', async () => {
     // Spaced words so the expanded wrap lands TAILMARKER intact on one row;
     // past the 160-char summary ceiling so the collapsed form ellipsizes it
     // away.
@@ -752,8 +752,13 @@ describe('blue whole-tree e2e', () => {
     typeLine(tree.terminal, 'run the tool')
     await agent.whenIdle()
     await waitForRender()
-    // Collapsed (the default): the one-line ellipsized summary renders; the
+    // Collapsed (the default): the S20 kimi card header (✓ mark, Used verb,
+    // bold name, lines chip), the 3-row preview, and the expand hint; the
     // tail of the full output does not.
+    const shown = tree.terminal.output.replace(/\x1b\[[0-9;]*m/g, '')
+    expect(shown).toContain('✓ Used long-output')
+    expect(shown).toContain(' · 1 line')
+    expect(shown).toContain('more lines, ')
     expect(tree.terminal.output).toContain('long-output')
     expect(tree.terminal.output).not.toContain('TAILMARKER')
     const beforeToggle = tree.terminal.written.length

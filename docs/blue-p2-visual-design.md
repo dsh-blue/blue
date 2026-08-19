@@ -331,7 +331,7 @@ kimi 没有编辑框下常驻按键行（其提示分布在对话框 footer 与 
 - bundle e2e：含 AGENTS.md 注入的会话流零呈现；resume 回放一致；人类输入不受影响。
 - 验收：真实 `dsh --profile blue-s19` 在带 AGENTS.md 的仓库发起对话，会话流只见用户输入与助手内容。
 
-### S20 — 工具卡 kimi 折叠
+### S20 — 工具卡 kimi 折叠（前半 ✅ 已落地（2026-08-20）：卡片头/预览/ctrl+o 范围；剩 Read 分组 + shell 呈现）
 
 **Dogfood 注记（2026-08-20，S17 期间六轮）**：用户实测"缺少写文件的工具展示效果"——一轮三步对话（write → 校验 → 总结）中，write 工具只呈现为 `… step 1 · write ×1` 折叠行。判定：**非 bug，S7 设计使然**——turn 内下一个 `step/start` 把上一 step 的工具卡折叠为 step-summary（kimi 同构，最终 step 恒展开），该轮 write 属中间 step，故折叠；呈现缺口在本步的卡片重设计（展开面）与 S18 的 summary 措辞对齐，两者落地后工具调用在"最终 step 展开面"有完整 kimi 卡片、在"中间 step 折叠面"有对齐措辞——用户预期即由这两处承接。
 
@@ -342,6 +342,8 @@ kimi 没有编辑框下常驻按键行（其提示分布在对话框 footer 与 
 - shell 呈现：terminal 卡对齐 `shell-execution.ts`——`$ ` shellMode + 命令 textDim + 输出 textMuted（S13 已定妆 `!` echo，本轮统一工具卡侧观感一致）。
 - bundle e2e：三态卡、动词标签、3/10 行预览、hint、ctrl+o 最近 3 turn（第 4 个旧 turn 不展开）、Read 分组树、Bash 纯标签。
 - 验收：一轮多工具对话的工具区与 kimi 并排目测一致；ctrl+o 只影响近 3 turn。
+
+**落地注（2026-08-20，前半轮）**：按拆期预案先行前半——卡片头/预览/ctrl+o 范围。**卡片头**：`ToolCallComponent` 三态化——运行**实心 `● `**（`text` 色，消空心→实心闪烁，kimi 裁定采纳）、成功 `✓ `（success）、失败 `✗ `（error）；标签 `Using/Used ToolName (keyArg)`——动词本色、工具名 bold primary（`\x1b[1m` 包裹 S18 先例）、keyArg dim 括号（白名单 `file_path`/`command`/`pattern` 优先、未命中取首个 ≤60 字符的字符串参数兜底、ellipsize 压 60）；`bash` 纯标签 `Running/Ran a command`（命令归正文；Blue 的 shell 工具走 terminal intent，此分支是 presenter 缺失回退）；完成态 dim chip ` · N lines`（非空行计数，失败 error 色，空结果抑制）。**MCP dim 后缀记录不实现**——rc.7 无任何 MCP 表面（dsh-mcp 不存在），缝哲学：不为不存在的消费者开分支。**预览层级**：折叠态 = 全文按内容宽 wrap 后**前 3 个视觉行**（wrap-aware，kimi `TruncatedOutputComponent` 语义）+ dim hint `... (N more lines, M total, ctrl+o to expand)`（N/M 为 wrap 后视觉行数，hint 随宽度截断）；`⎿` 连接符退役、两列缩进直排（kimi 无此符号；去留随 dogfood——本期默认 kimi 形态）；展开态 = 全部 wrap 行。**intent 上限对齐**：diff 折叠 12→10（`COMMAND_PREVIEW_LINES`）、terminal 折叠 10→3（`RESULT_PREVIEW_LINES`，kimi Bash 结果预览同数），两张卡截断行统一换 kimi hint 措辞。**ctrl+o 范围**：`CollapseToggle` 弃组件 Set，改携会话挂载序 `entries`——按用户条目边界定位 `(totalTurns − 3)` 轮起点，起点之后的组件才翻、之前的强制折叠（kimi `toggleToolOutputExpansion` 位置判定）；会话切换重置语义不变，新挂载组件恒在最末轮自然入范围。**view.title 待定项**：rc.7 `GenericCallView.title` 是 harness 设计的卡片头文本，本期按文档 kimi 形态（ToolName 行）实现、未读 title——dogfood 裁定是否让 title 优先。**bundle e2e**：Ctrl-O 用例加新卡锚（`✓ Used long-output`/` · 1 line`/hint）；ctrl+o 3-turn 范围判定由 plugin.spec 四级 turn 用例承载（e2e mock 单请求整脚本，无法脚本化四轮）。876 tests / 61 files，test/coverage（逐文件 100%）/typecheck/lint 全绿。**剩后半轮**：Read 分组树 + shell 呈现（`$ ` shellMode + textDim 命令 + textMuted 输出）。
 
 ### S21 — 全局 1 列 gutter（定妆 reflow，D29）（✅ 已随 S17 dogfood 拉前落地）
 

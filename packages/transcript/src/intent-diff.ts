@@ -9,9 +9,11 @@
  * `diffAdded(text)`, context rows muted (`' ' + text`). Every row is truncated
  * to the viewport through `truncateToWidth`. A null `oldText` (create or
  * overwrite) renders the whole file as added and counts only additions.
- * Height caps keep the transcript bounded: 12 diff rows per file collapsed,
- * 200 expanded (Ctrl-O through `setExpanded`), each capped with a `… N more
- * lines` meta row; all files render in sequence (no per-file toggle). The
+ * Height caps keep the transcript bounded: {@link COMMAND_PREVIEW_LINES} diff
+ * rows per file collapsed (the S20 alignment to kimi's Write/Edit preview),
+ * 200 expanded (Ctrl-O through `setExpanded`), each capped with the kimi
+ * `... (N more lines, M total, ctrl+o to expand)` hint row; all files render
+ * in sequence (no per-file toggle). The
  * component assumes by construction that its view carries `card: 'diff'` —
  * the mounter only routes diff views here — and defensively renders just the
  * header line when the shape does not match. The item is immutable per view,
@@ -26,6 +28,7 @@ import type {
   BlueSemanticColors,
 } from '@dsh-blue/blue-core'
 import type { FileDiff } from '@deepseek-ai/dsh-tools'
+import { COMMAND_PREVIEW_LINES } from './components.ts'
 import { diffLines, summarizeDiffRows, type LineDiffRow } from './line-diff.ts'
 import type { BlueIntentComponent, BlueIntentProps, TranscriptToolItem } from './types.ts'
 
@@ -35,8 +38,8 @@ export const name = 'blue-intent-diff'
 /** Services required before the diff card can register. */
 export const inject = ['blueIntents', 'blueTheme', 'blueComponents']
 
-/** Collapsed cap: diff rows rendered per file. */
-export const DIFF_COLLAPSED_ROWS = 12
+/** Collapsed cap: diff rows rendered per file (kimi's Write/Edit preview). */
+export const DIFF_COLLAPSED_ROWS = COMMAND_PREVIEW_LINES
 
 /** Expanded cap: diff rows rendered per file. */
 export const DIFF_EXPANDED_ROWS = 200
@@ -138,7 +141,8 @@ export class DiffCardComponent implements BlueIntentComponent {
       const shown = Math.min(rows.length, cap)
       for (const row of rows.slice(0, shown)) lines.push(this.renderRow(row, width))
       if (rows.length > shown) {
-        lines.push(colors.textMuted(components.truncateToWidth(`… ${rows.length - shown} more lines`, width)))
+        const hint = `... (${rows.length - shown} more lines, ${rows.length} total, ctrl+o to expand)`
+        lines.push(colors.textMuted(components.truncateToWidth(hint, width)))
       }
     }
 

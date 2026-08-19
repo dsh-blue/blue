@@ -24,11 +24,24 @@ import type {
   TranscriptAssistantItem,
   TranscriptStepSummaryItem,
   TranscriptToolItem,
+  TranscriptToolResult,
   TranscriptUserItem,
 } from './types.ts'
 
 /** Maximum length of the tool-call arguments shown on the call line. */
 export const TOOL_ARGUMENTS_MAX_CHARS = 60
+
+/** Collapsed result preview: visual rows kept (kimi `RESULT_PREVIEW_LINES`). */
+export const RESULT_PREVIEW_LINES = 3
+
+/** Collapsed Write/Edit-style preview: rows kept (kimi `COMMAND_PREVIEW_LINES`). */
+export const COMMAND_PREVIEW_LINES = 10
+
+/** The key-arg whitelist, in priority order (the S20 doc's own list). */
+const KEY_ARG_KEYS = ['file_path', 'command', 'pattern']
+
+/** Indent of the collapsed/expanded result preview rows (kimi's default). */
+const PREVIEW_INDENT = '  '
 
 /** The assistant block's first-line marker (kimi `constant/symbols.ts`). */
 const STATUS_BULLET = '● '
@@ -230,11 +243,26 @@ export class AssistantMessageComponent implements BlueComponent {
 }
 
 /**
- * Renders one tool call generically: `● name(arguments)` with the arguments
- * ellipsized, and — once paired — an indented `⎿ result` block in success or
- * error colors. Collapsed (the default) the block shows the one-line summary;
- * {@link setExpanded} switches it to the unsummarized `fullText` for the
- * Ctrl-O expansion toggle.
+ * Renders one tool call in the kimi tool-card chrome (S20 front half): a
+ * three-state header — the solid `text` `● ` while running (the old hollow
+ * marker flickered on every re-render, kimi's reason for going solid), the
+ * success `✓` / error `✗ ` once finished — behind a `Using/Used ToolName
+ * (keyArg)` label: the verb plain, the tool name bold `primary`, and the
+ * key argument dim in parentheses (whitelist `file_path`/`command`/`pattern`
+ * first, then the first short string argument; values flatten to one line
+ * at {@link TOOL_ARGUMENTS_MAX_CHARS}). `bash` keeps the kimi pure label
+ * `Running a command`/`Ran a command` — the command belongs to the body,
+ * and Blue's shell tool normally renders through the terminal intent, so
+ * this branch is the presenter-less fallback. A finished card carries a dim
+ * ` · N lines` chip counting the result's non-empty lines (error-colored on
+ * failure). The collapsed body is the kimi result preview: the full text
+ * wrapped at the content width, capped at {@link RESULT_PREVIEW_LINES}
+ * visual rows, under a dim `... (N more lines, M total, ctrl+o to expand)`
+ * hint — the two-column kimi indent replaces the retired `⎿` connector
+ * (kimi has no such glyph; the dogfood rules its fate). Expanded (Ctrl-O)
+ * renders every wrapped line. MCP tools need no dim suffix yet: the rc.7
+ * harness has no MCP surface, and Blue does not build for a consumer that
+ * does not exist.
  */
 export class ToolCallComponent implements BlueComponent {
   private readonly item: TranscriptToolItem
@@ -261,13 +289,83 @@ export class ToolCallComponent implements BlueComponent {
   }
 
   /**
-   * Switch the result block between the one-line summary and the full tool
+   * Switch the result block between the collapsed preview and the full tool
    * output. The expansion flag joins the render cache key, so the next
    * render rebuilds without an explicit invalidate.
-   * @param expanded - true renders `fullText`, false the summary.
+   * @param expanded - true renders every wrapped line, false the preview.
    */
   setExpanded(expanded: boolean): void {
     this.expanded = expanded
+  }
+
+  /** The S20 key argument: the whitelist first, then the first short arg. */
+  private keyArgument(): string | undefined {
+    const parsed = this.item.parsedArguments
+    if (parsed === undefined || typeof parsed !== 'object' || parsed === null) return undefined
+    const args = parsed as Record<string, unknown>
+    for (const key of KEY_ARG_KEYS) {
+      const value = args[key]
+      if (typeof value === 'string' && value !== '') {
+        return ellipsize(value, TOOL_ARGUMENTS_MAX_CHARS)
+      }
+    }
+    for (const value of Object.values(args)) {
+      if (typeof value === 'string' && value !== '' && value.length <= TOOL_ARGUMENTS_MAX_CHARS) {
+        return ellipsize(value, TOOL_ARGUMENTS_MAX_CHARS)
+      }
+    }
+    return undefined
+  }
+
+  /** The header row: bullet, verb, bold name, key arg, and the lines chip. */
+  private renderHeader(width: number): string {
+    const { result } = this.item
+    const { colors } = this
+    const bullet = result === undefined
+      ? colors.text(STATUS_BULLET)
+      : result.isError
+        ? colors.error('✗ ')
+        : colors.success('✓ ')
+    let header: string
+    if (this.item.name === 'bash') {
+      const label = result === undefined ? 'Running a command' : 'Ran a command'
+      header = `${bullet}${BOLD_OPEN}${colors.primary(label)}${BOLD_CLOSE}`
+    } else {
+      const verb = result === undefined ? 'Using' : 'Used'
+      const name = `${BOLD_OPEN}${colors.primary(this.item.name)}${BOLD_CLOSE}`
+      const keyArg = this.keyArgument()
+      const argStr = keyArg === undefined ? '' : colors.muted(` (${keyArg})`)
+      header = `${bullet}${verb} ${name}${argStr}`
+    }
+    if (result !== undefined) {
+      const text = result.fullText ?? result.text
+      const count = text.split('\n').filter(line => line.length > 0).length
+      if (count > 0) {
+        const chip = ` · ${count} ${count === 1 ? 'line' : 'lines'}`
+        header += result.isError ? colors.error(chip) : colors.muted(chip)
+      }
+    }
+    return this.components.truncateToWidth(header, width)
+  }
+
+  /** The result rows: the kimi preview collapsed, every line expanded. */
+  private renderBody(width: number, result: TranscriptToolResult): string[] {
+    const { colors, components } = this
+    const text = (result.fullText ?? result.text).replace(/\n+$/, '')
+    if (text === '') return []
+    const contentWidth = Math.max(1, width - components.visibleWidth(PREVIEW_INDENT))
+    const allLines = components.wrapText(text, contentWidth)
+    const paint = (line: string): string =>
+      `${PREVIEW_INDENT}${result.isError ? colors.error(line) : colors.muted(line)}`
+    if (this.expanded) return allLines.map(paint)
+    const shown = allLines.slice(0, RESULT_PREVIEW_LINES)
+    const lines = shown.map(paint)
+    if (allLines.length > shown.length) {
+      const remaining = allLines.length - shown.length
+      const hint = `... (${remaining} more lines, ${allLines.length} total, ctrl+o to expand)`
+      lines.push(colors.textMuted(components.truncateToWidth(hint, width)))
+    }
+    return lines
   }
 
   /**
@@ -276,33 +374,12 @@ export class ToolCallComponent implements BlueComponent {
    */
   render(width: number): string[] {
     const { result } = this.item
-    const body = result === undefined
-      ? ''
-      : this.expanded
-        ? (result.fullText ?? result.text)
-        : result.text
+    const body = result === undefined ? '' : (result.fullText ?? result.text)
     const key = `${width}:${this.expanded}:${result ? `${result.isError}:${body}` : 'pending'}`
     if (this.cache?.key === key) return this.cache.lines
-
-    const bullet = result === undefined
-      ? this.colors.primary('○')
-      : result.isError
-        ? this.colors.error('●')
-        : this.colors.success('●')
-    const args = this.item.arguments
-      ? this.colors.muted(`(${ellipsize(this.item.arguments, TOOL_ARGUMENTS_MAX_CHARS)})`)
-      : ''
-    const callLine = `${bullet} ${this.item.name}${args}`
-
-    const lines = ['', this.components.truncateToWidth(callLine, width)]
-    if (result !== undefined) {
-      const summaryColor = result.isError ? this.colors.error : this.colors.muted
-      const prefix = '  ⎿ '
-      const contentWidth = Math.max(1, width - this.components.visibleWidth(prefix))
-      for (const line of this.components.wrapText(body, contentWidth)) {
-        lines.push(`  ${this.colors.textMuted('⎿')} ${summaryColor(line)}`)
-      }
-    }
+    const lines = result === undefined
+      ? ['', this.renderHeader(width)]
+      : ['', this.renderHeader(width), ...this.renderBody(width, result)]
     this.cache = { key, lines }
     return lines
   }

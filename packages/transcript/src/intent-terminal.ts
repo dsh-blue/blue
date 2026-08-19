@@ -8,10 +8,11 @@
  * (result title ?? call title ?? tool name), with an exit badge appended once
  * completed: `error(\`exit N\`)` for a nonzero exit code, nothing for zero, and
  * `warning(signal)` when a signal killed the run. Captured `output` renders
- * as `textMuted` rows below (the kimi dim shell card), capped at 10 rows
- * collapsed and 120 expanded (Ctrl-O through `setExpanded`) with a
- * `textMuted(\`… N more lines\`)` counter, and a completed run without
- * output states `(no output)`.
+ * as `textMuted` rows below (the kimi dim shell card), capped at
+ * {@link RESULT_PREVIEW_LINES} rows collapsed (the S20 alignment to kimi's
+ * Bash result preview) and 120 expanded (Ctrl-O through `setExpanded`) with
+ * the kimi `... (N more lines, M total, ctrl+o to expand)` hint, and a
+ * completed run without output states `(no output)`.
  * The component assumes by construction that its view carries
  * `card: 'terminal'` — the mounter only routes terminal views here — and
  * defensively renders just the title line when the shape does not match. The
@@ -25,6 +26,7 @@ import type {
   BlueComponents,
   BlueSemanticColors,
 } from '@dsh-blue/blue-core'
+import { RESULT_PREVIEW_LINES } from './components.ts'
 import type { BlueIntentComponent, BlueIntentProps, TranscriptToolItem } from './types.ts'
 
 /** Stable Cordis plugin name. */
@@ -33,8 +35,8 @@ export const name = 'blue-intent-terminal'
 /** Services required before the terminal card can register. */
 export const inject = ['blueIntents', 'blueTheme', 'blueComponents']
 
-/** Collapsed cap: output rows rendered. */
-export const TERMINAL_COLLAPSED_ROWS = 10
+/** Collapsed cap: output rows rendered (kimi's Bash result preview). */
+export const TERMINAL_COLLAPSED_ROWS = RESULT_PREVIEW_LINES
 
 /** Expanded cap: output rows rendered. */
 export const TERMINAL_EXPANDED_ROWS = 120
@@ -149,7 +151,8 @@ export class TerminalCardComponent implements BlueIntentComponent {
         lines.push(colors.textMuted(components.truncateToWidth(row, width)))
       }
       if (rows.length > shown) {
-        lines.push(colors.textMuted(components.truncateToWidth(`… ${rows.length - shown} more lines`, width)))
+        const hint = `... (${rows.length - shown} more lines, ${rows.length} total, ctrl+o to expand)`
+        lines.push(colors.textMuted(components.truncateToWidth(hint, width)))
       }
     } else if (this.item.result !== undefined) {
       // A completed run with no captured output still says so (kimi's

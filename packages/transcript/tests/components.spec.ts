@@ -205,34 +205,74 @@ describe('AssistantMessageComponent', () => {
 })
 
 describe('ToolCallComponent', () => {
-  it('renders a pending call with a muted hollow bullet', () => {
-    const lines = new ToolCallComponent(toolItem(), tagged(), setup()).render(80)
-    expect(lines).toEqual(['', '[P]○[/P] bash[M]({})[/M]'])
+  it('renders a pending call with the solid text bullet and Using verb', () => {
+    const lines = new ToolCallComponent(toolItem({ name: 'probe' }), tagged(), setup()).render(80)
+    expect(lines).toEqual(['', '● Using \x1b[1m[P]probe[/P]\x1b[22m'])
   })
 
-  it('renders a success result with an indented summary', () => {
+  it('gives bash the kimi pure label — the command belongs to the body', () => {
+    const pending = new ToolCallComponent(toolItem(), tagged(), setup()).render(80)
+    expect(pending).toEqual(['', '● \x1b[1m[P]Running a command[/P]\x1b[22m'])
+
     const item = toolItem()
+    item.result = { text: 'ran ok', isError: false }
+    const finished = new ToolCallComponent(item, tagged(), setup()).render(80)
+    expect(finished[1]).toContain('[S]✓ [/S]\x1b[1m[P]Ran a command[/P]\x1b[22m')
+  })
+
+  it('renders a success result with the ✓ mark, lines chip, and preview', () => {
+    const item = toolItem({ name: 'probe' })
     item.result = { text: 'ok done', isError: false }
     const lines = new ToolCallComponent(item, tagged(), setup()).render(80)
-    expect(lines).toEqual(['', '[S]●[/S] bash[M]({})[/M]', '  [T]⎿[/T] [M]ok done[/M]'])
+    expect(lines).toEqual([
+      '',
+      '[S]✓ [/S]Used \x1b[1m[P]probe[/P]\x1b[22m[M] · 1 line[/M]',
+      '  [M]ok done[/M]',
+    ])
   })
 
   it('renders an error result in error colors', () => {
-    const item = toolItem()
+    const item = toolItem({ name: 'probe' })
     item.result = { text: 'nope', isError: true }
     const lines = new ToolCallComponent(item, tagged(), setup()).render(80)
-    expect(lines[1]).toContain('[E]●[/E]')
-    expect(lines[2]).toBe('  [T]⎿[/T] [E]nope[/E]')
+    expect(lines[1]).toContain('[E]✗ [/E]')
+    expect(lines[1]).toContain('[E] · 1 line[/E]')
+    expect(lines[2]).toBe('  [E]nope[/E]')
   })
 
-  it('ellipsizes long arguments and omits empty parentheses', () => {
-    const longArgs = toolItem({ arguments: `{"cmd":"${'x'.repeat(100)}","more":true}` })
-    const lines = new ToolCallComponent(longArgs, COLORS, setup()).render(80)
-    expect(lines[1]!.length).toBeLessThan(80)
-    expect(lines[1]).toContain('…')
+  it('picks the key argument — whitelist first, then the first short arg', () => {
+    const whitelisted = toolItem({
+      name: 'probe',
+      parsedArguments: { verbose: true, file_path: 'src/main.ts' },
+    })
+    const lines = new ToolCallComponent(whitelisted, tagged(), setup()).render(80)
+    expect(lines[1]).toContain('[M] (src/main.ts)[/M]')
 
-    const noArgs = new ToolCallComponent(toolItem({ arguments: '' }), tagged(), setup()).render(80)
-    expect(noArgs[1]).toBe('[P]○[/P] bash')
+    // No whitelist key: the first short string argument steps in; a long
+    // first argument is skipped in favour of a later short one.
+    const fallback = toolItem({
+      name: 'probe',
+      parsedArguments: { blob: 'y'.repeat(100), note: 'short note' },
+    })
+    expect(new ToolCallComponent(fallback, tagged(), setup()).render(80)[1])
+      .toContain('[M] (short note)[/M]')
+
+    // Nothing stringly: no parentheses at all.
+    const none = toolItem({ name: 'probe', parsedArguments: { n: 1, ok: true } })
+    expect(new ToolCallComponent(none, tagged(), setup()).render(80)[1])
+      .toBe('● Using \x1b[1m[P]probe[/P]\x1b[22m')
+  })
+
+  it('ellipsizes a long key argument to one line', () => {
+    const item = toolItem({
+      name: 'probe',
+      parsedArguments: { file_path: `src/${'x'.repeat(100)}.ts` },
+    })
+    const components = setup()
+    const lines = new ToolCallComponent(item, COLORS, components).render(80)
+    // The bold SGR inflates the raw string length; measure the visible width.
+    expect(components.visibleWidth(lines[1]!)).toBeLessThan(80)
+    expect(lines[1]).toContain('…')
   })
 
   it('truncates the call line to the viewport width', () => {
@@ -253,31 +293,53 @@ describe('ToolCallComponent', () => {
     expect(component.render(80)).not.toBe(pending)
   })
 
-  it('renders the summary collapsed and the full text expanded', () => {
-    const item = toolItem()
-    item.result = { text: 'line one xxx…', fullText: `line one\n${'x'.repeat(200)}`, isError: false }
+  it('caps the collapsed preview at three visual rows with the kimi hint', () => {
+    const item = toolItem({ name: 'probe' })
+    item.result = { text: 'line one', fullText: Array.from({ length: 10 }, (_, i) => `line ${i + 1}`).join('\n'), isError: false }
     const component = new ToolCallComponent(item, tagged(), setup())
     const collapsed = component.render(80)
-    expect(collapsed).toEqual(['', '[S]●[/S] bash[M]({})[/M]', '  [T]⎿[/T] [M]line one xxx…[/M]'])
+    expect(collapsed.slice(2)).toEqual([
+      '  [M]line 1[/M]',
+      '  [M]line 2[/M]',
+      '  [M]line 3[/M]',
+      '[T]... (7 more lines, 10 total, ctrl+o to expand)[/T]',
+    ])
 
     component.setExpanded(true)
     const expanded = component.render(80)
-    expect(expanded).not.toBe(collapsed)
-    expect(expanded[2]).toBe('  [T]⎿[/T] [M]line one[/M]')
-    // The 200-x run hard-breaks across the 76-column content width.
-    expect(expanded.length).toBeGreaterThan(4)
-    expect(expanded.some(line => line.includes('x'.repeat(76)))).toBe(true)
+    expect(expanded).not.toEqual(collapsed)
+    expect(expanded).toHaveLength(1 + 1 + 10)
+    expect(expanded[11]).toBe('  [M]line 10[/M]')
 
     component.setExpanded(false)
     expect(component.render(80)).toEqual(collapsed)
   })
 
-  it('falls back to the summary when an expanded result has no fullText', () => {
-    const item = toolItem()
+  it('counts wrapped visual rows for the preview cap and hint', () => {
+    const item = toolItem({ name: 'probe' })
+    item.result = { text: 'word', fullText: 'word '.repeat(30).trim(), isError: false }
+    // At width 20 the single long line wraps past the 3-row cap; the hint
+    // counts the wrapped rows, not the raw line count.
+    const components = setup()
+    const lines = new ToolCallComponent(item, COLORS, components).render(20)
+    // The hint truncates at this narrow width, but its signature survives.
+    expect(lines.at(-1)).toContain('more lines')
+    for (const line of lines) expect(components.visibleWidth(line)).toBeLessThanOrEqual(20)
+  })
+
+  it('falls back to the text when an expanded result has no fullText', () => {
+    const item = toolItem({ name: 'probe' })
     item.result = { text: 'only summary', isError: false }
     const component = new ToolCallComponent(item, tagged(), setup())
     component.setExpanded(true)
-    expect(component.render(80)[2]).toBe('  [T]⎿[/T] [M]only summary[/M]')
+    expect(component.render(80)[2]).toBe('  [M]only summary[/M]')
+  })
+
+  it('suppresses the chip and the body for an empty result', () => {
+    const item = toolItem({ name: 'probe' })
+    item.result = { text: '', isError: false }
+    const lines = new ToolCallComponent(item, tagged(), setup()).render(80)
+    expect(lines).toEqual(['', '[S]✓ [/S]Used \x1b[1m[P]probe[/P]\x1b[22m'])
   })
 })
 
