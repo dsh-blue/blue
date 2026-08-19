@@ -196,7 +196,7 @@ kimi 没有编辑框下常驻按键行（其提示分布在对话框 footer 与 
 
 排序原则（用户定夺）：**按视觉影响**，不按功能点名顺序。每期 = 一个可交付切片：core 提交 + bundle 提交 + docs 提交（ADR + p1-design step log 行 + roadmap + AGENTS + 双语 README）+ `pnpm run test` / 逐文件 100% 覆盖 / typecheck / lint 全绿。
 
-### S10 — 主题契约 v2 + 消息流/markdown 升级
+### S10 — 主题契约 v2 + 消息流/markdown 升级 ✅（2026-08-19 落地）
 
 **为什么第一**：transcript 是用户注视面积最大的表面；且 `primary`/`textMuted` 是 S11-S16 全部的前置。
 
@@ -204,6 +204,8 @@ kimi 没有编辑框下常驻按键行（其提示分布在对话框 footer 与 
 - transcript：组件 token 审计——用户消息槽 `❯` → `roleUser`、流式光标与 spinner 帧 → `primary`、`⎿`/截断行 → `textMuted`、工具 `●` 保留 accent/error 语义但运行态点 → `primary`。
 - 已知限制（文档记录）：0.84.2 markdown 单一 `heading` 函数无法区分 h1/h2，kimi 的 h1 下划线不可表达。
 - 验收：对话含标题/列表/链接/代码块/引用的渲染对比；`/theme light` 全套不刺眼；e2e 色彩断言更新。
+
+**Step log（2026-08-19）**：core 三件（types 26→28、两 theme 表按 §4.2 全表改值、`src/highlight.ts` cli-highlight 包装 + `markdownTheme` 粗体标题/`•` 改写/`highlightCode` 钩子 + select/settings 映射）；transcript 八处 token 审计（components×5、pane-activity、intent-diff、intent-terminal）；bundle e2e 5 处色锚换 v2 值 + 新增 markdown v2 用例（内容级锚：`•`、围栏行、着色行 truecolor SGR 存在性——S8 纪律）。603 tests / 52 files，test/coverage（逐文件 100%）/typecheck/lint 全绿。**范围边界**（按期归位，防 scope creep）：`settingsListTheme` 仅游标换 primary（selected label/value 留 accent，S12 复审）；intent-terminal `$` 前缀与 editor-plus `!` 行的 accent 随 S11；pane-todo `◐` 随 S13；banner token 复审随 S16；interaction 对话框选中 accent（S12）与 status footer muted（S15）不动。色值按 §4.2 落地，`border` #4a5468 实机目测微调随后（调值不构成契约变更）。
 
 ### S11 — 编辑框 chrome + 常驻按键提示
 

@@ -164,6 +164,7 @@
 - **决策**：`BlueSemanticColors` 增 `primary`（dark #5f87ff——现 border 的品牌蓝转任交互主色）与 `textMuted`（dark #666666——最暗层），**不**新增 `textDim`：现有 `muted`（#808080）的用法（描述/引用/暗提示）就是 kimi 的 textDim 层，改名违反"只增不改"且全渲染器两次翻搅。同时重调一批现值（border→#4a5468 退后、warning/borderFocus→共琥珀 #de935f、roleUser→#f0c674、mdHeading→粗体承载层级等，全表见 p2-visual §4.2），启用闲置的 `borderFocus`（S12 审批）与 `selectedBg`（S12 多选）。
 - **理由**：kimi 的四个层级（交互主色/次强调/次级灰/最暗灰）在 26→28 token 内即可完整表达；`theme-palette.ts` 类型自动派生、theme-custom 逐 token `Object.hasOwn` 校验（additive-safe，均已核实），改动面收敛在两 theme 文件 + 映射层。
 - **后果**：全部下游主题插件编译期发现缺口；S10 一并落地消息流/markdown 重映射，后续各期消费。色值以 S10 实机目测微调为准，调值不构成契约变更。
+- **S10 落地（2026-08-19）**：28 token 全量落地（types/theme-dark/theme-light/components 映射 + transcript 审计：`❯`→roleUser、`▌` 与 spinner 帧→primary、`⎿`/截断行/`… N more lines`→textMuted、运行 `○`→primary）。markdown v2：标题经粗体承载层级（0.84.2 单一 `heading` 函数，kimi 的 h1 下划线不可表达——adapt 判定的落地记录）、无序列表符改写为 `•`、代码围栏经 `highlightCode` 钩子接 **cli-highlight@2.1.11**（core 唯一新运行时依赖；`supportsLanguage` 门控 + `ignoreIllegals: true`，theme 把 cli-highlight 的红系 scope（`string`/`regexp`/`deletion`）与 `default` 一并重置到调色板 base（`mdCodeBlock`，随 `/theme` 换装重建），未知语言或 highlighter 异常回退纯文本 split，行数恒等）。`border` #4a5468 按设计稿值落地，实机目测微调随后（调值不构成契约变更）。
 
 ### D25. chrome 辅助层：core 纯模块 + 子路径导出，不经 blueComponents 服务
 
