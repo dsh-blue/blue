@@ -14,6 +14,7 @@ import type {
   BlueEditor,
   BlueEditorOptions,
   BlueFocusable,
+  BlueFuzzyMatch,
   BlueKeyAction,
   BlueKeymap,
   BlueMarkdown,
@@ -224,6 +225,8 @@ export class FakeBlueEditor implements BlueEditor {
   borderLabel: string | undefined
   /** Whether the frame currently opens into a panel above. */
   connectedAbove = false
+  /** The last ghost hint set, if any. */
+  ghostHint: string | undefined
   /** The last autocomplete provider attached, if any. */
   autocompleteProvider: BlueAutocompleteProvider | undefined
   private text = ''
@@ -267,6 +270,10 @@ export class FakeBlueEditor implements BlueEditor {
 
   setConnectedAbove(connected: boolean): void {
     this.connectedAbove = connected
+  }
+
+  setGhostHint(hint: string | undefined): void {
+    this.ghostHint = hint
   }
 
   setAutocompleteProvider(provider: BlueAutocompleteProvider): void {
@@ -439,6 +446,41 @@ export class FakeBlueComponents implements BlueComponents {
 
   truncateToWidth(text: string, width: number, ellipsis?: string): string {
     return ellipsis === undefined ? fakeTruncate(text, width) : fakeTruncate(text, width, ellipsis)
+  }
+
+  /**
+   * Subsequence matcher with pi-tui's shape: `matches` plus a lower-is-better
+   * score that rewards contiguity (`-2` per character found right where the
+   * scan sits, `-1` per gap jump). The real semantics are pinned by the core
+   * spec; this fake only needs to be deterministic for ordering assertions.
+   */
+  fuzzyMatch(query: string, text: string): BlueFuzzyMatch {
+    let at = 0
+    let score = 0
+    for (const char of query) {
+      const found = text.indexOf(char, at)
+      if (found === -1) return { matches: false, score: 0 }
+      score -= found === at ? 2 : 1
+      at = found + 1
+    }
+    return { matches: true, score }
+  }
+
+  fuzzyFilter<T>(items: readonly T[], query: string, getText: (item: T) => string): T[] {
+    const tokens = query.split(/[\s/]+/).filter(token => token.length > 0)
+    return items
+      .map(item => {
+        let total = 0
+        for (const token of tokens) {
+          const match = this.fuzzyMatch(token, getText(item))
+          if (!match.matches) return null
+          total += match.score
+        }
+        return { item, total }
+      })
+      .filter((entry): entry is { item: T, total: number } => entry !== null)
+      .sort((a, b) => a.total - b.total)
+      .map(entry => entry.item)
   }
 }
 

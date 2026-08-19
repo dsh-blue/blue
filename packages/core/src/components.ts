@@ -15,6 +15,8 @@ import {
   Markdown,
   SelectList,
   SettingsList,
+  fuzzyFilter,
+  fuzzyMatch,
   getImageDimensions,
   truncateToWidth,
   visibleWidth,
@@ -30,13 +32,20 @@ import {
   type TUI,
 } from '@earendil-works/pi-tui'
 import { highlightCodeLines } from './highlight.ts'
-import { injectPromptSymbol, withSideBorders } from './chrome.ts'
+import {
+  highlightLeadingSlashToken,
+  injectGhostHint,
+  injectPromptSymbol,
+  withSideBorders,
+} from './chrome.ts'
+import { WrappingSelectList } from './wrapping-select-list.ts'
 import type {
   BlueAutocompleteProvider,
   BlueColorFn,
   BlueComponents,
   BlueEditor,
   BlueEditorOptions,
+  BlueFuzzyMatch,
   BlueImage,
   BlueImageOptions,
   BlueMarkdown,
@@ -128,6 +137,27 @@ function settingsListTheme(colors: BlueSemanticColors): SettingsListTheme {
   }
 }
 
+/**
+ * The autocomplete-list factory pi-tui's `Editor` calls when new suggestions
+ * arrive. pi-tui keeps it private; `createEditor` shadows it with an own
+ * property (the kimi CustomEditor idiom — an own property beats the
+ * prototype method), and the components spec pins the shadow against 0.84.2.
+ */
+interface AutocompleteListFactory {
+  createAutocompleteList: (prefix: string, items: BlueSelectItem[]) => SelectList
+}
+
+/** The slash-menu primary column clamp, mirroring upstream's constant. */
+const SLASH_SELECT_LIST_LAYOUT = { minPrimaryColumnWidth: 12, maxPrimaryColumnWidth: 32 }
+
+/** Theme-derived paints the editor chrome overlays (S14 completion polish). */
+export interface EditorChromePaints {
+  /** Styling for the leading `/command` token (bold + `primary`). */
+  readonly slashTokenPaint: (text: string) => string
+  /** Styling for the argument-hint ghost (`textMuted`). */
+  readonly ghostHintPaint: (text: string) => string
+}
+
 /** Delegate exposing a pi-tui `Editor` through the Blue contract. */
 class EditorAdapter implements BlueEditor {
   /**
@@ -146,7 +176,13 @@ class EditorAdapter implements BlueEditor {
   /** Whether the top corners open into a panel docked above (S13 btw dock). */
   private connectedAbove = false
 
-  constructor(private readonly editor: Editor) {}
+  /** The argument-hint ghost (S14); none while unset. */
+  private ghostHint: string | undefined
+
+  constructor(
+    private readonly editor: Editor,
+    private readonly chrome: EditorChromePaints,
+  ) {}
 
   get focused(): boolean {
     return this.editor.focused
@@ -210,6 +246,10 @@ class EditorAdapter implements BlueEditor {
     this.connectedAbove = connected
   }
 
+  setGhostHint(hint: string | undefined): void {
+    this.ghostHint = hint
+  }
+
   setAutocompleteProvider(provider: BlueAutocompleteProvider): void {
     // BlueAutocompleteProvider is structurally identical to pi-tui's
     // AutocompleteProvider, so it passes through without wrapping; the pi-tui
@@ -231,21 +271,33 @@ class EditorAdapter implements BlueEditor {
 
   render(width: number): string[] {
     const lines = this.editor.render(width)
-    // The prompt symbol overlays the first content row (row index 1 under
-    // the top border — a scrolled-away top rule keeps that indexing). The
-    // bash `!` shares the border hue so the mode reads as one unit; the
+    // The first content row (row index 1 under the top border — a
+    // scrolled-away top rule keeps that indexing) carries the S14
+    // completion polish in the kimi order: the leading `/command` token
+    // paints bold+primary, the argument-hint ghost splices in after the
+    // cursor, and the prompt symbol overlays last. The bash proxy: the `!`
+    // prompt symbol is the bash triple's first leg, so while it is set a
+    // leading `/` is a path separator, not a command, and stays unpainted.
+    /* v8 ignore next -- the real editor always renders at least one content row between the rules, so lines[1] exists */
+    let row = lines[1] ?? ''
+    if (this.promptSymbol !== '!' && this.editor.getText().trimStart().startsWith('/')) {
+      row = highlightLeadingSlashToken(row, this.chrome.slashTokenPaint) ?? row
+    }
+    if (this.ghostHint !== undefined) {
+      row = injectGhostHint(row, this.ghostHint, this.editor.getText().length, width, this.chrome.ghostHintPaint)
+    }
+    // The bash `!` shares the border hue so the mode reads as one unit; the
     // neutral `>` stays in the terminal's default foreground (kimi rule).
     const symbol = this.promptSymbol
     if (symbol !== undefined) {
-      /* v8 ignore next -- the real editor always renders at least one content row between the rules, so lines[1] exists */
-      const firstContent = lines[1] ?? ''
       const painted = injectPromptSymbol(
-        firstContent,
+        row,
         symbol,
         symbol === '!' ? (text: string) => this.editor.borderColor(text) : undefined,
       )
-      if (painted !== undefined) lines[1] = painted
+      if (painted !== undefined) row = painted
     }
+    lines[1] = row
     // Corners and bars route through the live `borderColor` property, so a
     // host recolor via `setBorderColor` (slash context, bash mode) repaints
     // the whole frame in sync without re-entering this adapter.
@@ -364,14 +416,36 @@ export class BlueComponentsService extends Service implements BlueComponents {
   }
 
   /**
-   * Create a palette-themed multi-line input editor.
+   * Create a palette-themed multi-line input editor. The editor's
+   * autocomplete dropdown renders slash-command descriptions wrapped to two
+   * lines (`WrappingSelectList`) while every other completion keeps the
+   * stock single-line list — the S14 kimi treatment.
    * @param options - editor options.
    * @returns the editor component.
    */
   createEditor(options?: BlueEditorOptions): BlueEditor {
     const editorOptions: EditorOptions = {}
     if (options?.paddingX !== undefined) editorOptions.paddingX = options.paddingX
-    return new EditorAdapter(new Editor(this.tui, editorTheme(this.theme.colors), editorOptions))
+    const colors = this.theme.colors
+    const theme = editorTheme(colors)
+    // Explicit annotation: the shadow below references `editor` in its own
+    // initializer, which defeats inference otherwise.
+    const editor: Editor = new Editor(this.tui, theme, editorOptions)
+    // pi-tui's Editor instantiates the dropdown list through its private
+    // createAutocompleteList; the own-property shadow swaps in the wrapping
+    // list for slash menus. The theme rides along so a theme swap rebuilds
+    // the factory with fresh paints (the editor itself is per-theme). The
+    // cast lands on a local — the repo's no-semicolon style cannot start a
+    // statement with `(`.
+    const factory = editor as unknown as AutocompleteListFactory
+    factory.createAutocompleteList = (prefix: string, items: BlueSelectItem[]): SelectList =>
+      prefix.startsWith('/')
+        ? new WrappingSelectList(items, editor.getAutocompleteMaxVisible(), theme.selectList, SLASH_SELECT_LIST_LAYOUT)
+        : new SelectList(items, editor.getAutocompleteMaxVisible(), theme.selectList)
+    return new EditorAdapter(editor, {
+      slashTokenPaint: (text) => `\x1b[1m${colors.primary(text)}\x1b[22m`,
+      ghostHintPaint: colors.textMuted,
+    })
   }
 
   /**
@@ -485,5 +559,27 @@ export class BlueComponentsService extends Service implements BlueComponents {
    */
   truncateToWidth(text: string, width: number, ellipsis?: string): string {
     return truncateToWidth(text, width, ellipsis)
+  }
+
+  /**
+   * Probe a case-insensitive fuzzy subsequence match (the S14 completion
+   * primitive; re-exported from the renderer so no consumer imports pi-tui).
+   * @param query - the query characters, matched in order.
+   * @param text - the candidate text.
+   * @returns whether it matched and at what score.
+   */
+  fuzzyMatch(query: string, text: string): BlueFuzzyMatch {
+    return fuzzyMatch(query, text)
+  }
+
+  /**
+   * Filter and rank items by a fuzzy query (see the contract doc).
+   * @param items - the candidates.
+   * @param query - the fuzzy query.
+   * @param getText - extracts the match text from an item.
+   * @returns the matching items, best first.
+   */
+  fuzzyFilter<T>(items: readonly T[], query: string, getText: (item: T) => string): T[] {
+    return fuzzyFilter([...items], query, getText)
   }
 }

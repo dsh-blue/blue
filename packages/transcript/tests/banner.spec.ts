@@ -259,7 +259,11 @@ describe('blue-banner plugin', () => {
     expect(joined).toContain('Welcome back!')
     expect(joined).toContain(`blue v${BLUE_VERSION}`)
     expect(joined).toContain('m · p')
-    expect(joined).toContain(shortenHome(process.cwd(), homedir()))
+    // The left cell is BANNER_LEFT_WIDTH columns: a cwd that fits renders
+    // whole, while a deeper checkout (this spec also runs from worktree
+    // copies) survives as its clipped prefix before the ellipsis.
+    const cwd = shortenHome(process.cwd(), homedir())
+    expect(joined).toContain(cwd.length <= BANNER_LEFT_WIDTH ? cwd : cwd.slice(0, BANNER_LEFT_WIDTH - 3))
     // The banner is stateless; invalidation is a covered no-op.
     expect(() => screen.children[0]?.invalidate()).not.toThrow()
   })

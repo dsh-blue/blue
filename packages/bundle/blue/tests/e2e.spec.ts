@@ -917,11 +917,102 @@ describe('blue whole-tree e2e', () => {
     const bottomAt = frame.indexOf(`${PRIMARY_SGR}╰`, topAt)
     expect(bottomAt).toBeGreaterThan(topAt)
     // The dropdown renders below the bottom rule, its rows carrying the
-    // same-color side bars — one frame, no bare rows in between.
+    // same-color side bars — one frame, no bare rows in between. S14: the
+    // wrapping list carries the argument hint joined into the description
+    // (/resume sits below the first fold, so /btw is the visible anchor).
     const dropdownAt = frame.indexOf('/help', bottomAt)
     expect(dropdownAt).toBeGreaterThan(bottomAt)
     const dropdownRowStart = frame.lastIndexOf(`${PRIMARY_SGR}│`, dropdownAt)
     expect(dropdownRowStart).toBeGreaterThan(bottomAt)
+    expect(frame).toContain('<question> — Ask a side question in a forked session')
+  })
+
+  it('fuzzy-matches the slash prefix out of order and ranks the contiguous hit first', async () => {
+    const tree = await bootBlue([], { script: [] })
+    await currentAgent(tree)
+    // Shared draft stash hygiene: escape clears the buffer (closing any
+    // dropdown left open), clearDrop drops the reload copy.
+    tree.terminal.sendInput('\x1b')
+    tree.terminal.sendInput('\x1b')
+    clearDraft()
+    tree.terminal.sendInput('/se')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/sessions') })
+    const fuzzy = await fullFrame(tree.terminal)
+    // 'se' subsequence-matches both /sessions and /resume — a prefix filter
+    // would have dropped /resume — and the contiguous /sessions hit ranks
+    // first (real pi-tui scoring, lower is better).
+    expect(fuzzy.indexOf('/sessions')).toBeGreaterThanOrEqual(0)
+    expect(fuzzy.indexOf('/resume')).toBeGreaterThan(fuzzy.indexOf('/sessions'))
+    // An out-of-order subsequence still hits, and the misses are gone.
+    tree.terminal.sendInput('\x1b')
+    tree.terminal.sendInput('\x1b')
+    tree.terminal.sendInput('/ssns')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/sessions') })
+    const subseq = await fullFrame(tree.terminal)
+    expect(subseq).toContain('/sessions')
+    expect(subseq).not.toContain('/resume')
+    expect(subseq).not.toContain('/new')
+  })
+
+  it('ghosts the argument hint after the cursor and bolds the leading slash token', async () => {
+    const tree = await bootBlue([], { script: [] })
+    await currentAgent(tree)
+    tree.terminal.sendInput('\x1b')
+    tree.terminal.sendInput('\x1b')
+    clearDraft()
+    tree.terminal.sendInput('/btw')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Ask a side question') })
+    const frame = await fullFrame(tree.terminal)
+    // The ghost: textMuted (#6b6b6b) with its lead space, starting right at
+    // the end-of-buffer cursor cell (the dropdown's description row carries
+    // no cursor, so the SGR adjacency is unique to the editor row).
+    const GHOST_SGR = '\x1b[38;2;107;107;107m'
+    expect(frame).toContain(`\x1b[7m \x1b[0m${GHOST_SGR} <question>`)
+    // The leading slash token paints bold primary: `\x1b[1m` … `/btw` …
+    // `\x1b[22m` around the primary SGR.
+    const PRIMARY_SGR = '\x1b[38;2;79;168;255m'
+    expect(frame).toContain(`\x1b[1m${PRIMARY_SGR}/btw`)
+  })
+
+  it('Enter on the slash dropdown accepts the fuzzy hit and submits it', async () => {
+    const tree = await bootBlue([], { script: [] })
+    await currentAgent(tree)
+    tree.terminal.sendInput('\x1b')
+    tree.terminal.sendInput('\x1b')
+    clearDraft()
+    tree.terminal.sendInput('/hel')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/help') })
+    // pi-tui's Enter-on-slash semantics: the preselected completion applies
+    // first, then the line submits — the /help overlay is the command's own
+    // observable effect.
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Commands') })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain(' help') })
+  })
+
+  it('wraps long dropdown descriptions onto a second line at narrow widths', async () => {
+    const tree = await bootBlue([], { script: [] })
+    await currentAgent(tree)
+    tree.terminal.sendInput('\x1b')
+    tree.terminal.sendInput('\x1b')
+    clearDraft()
+    // The dropdown renders inside the editor's content width — the frame
+    // bars and the editor's own paddingX are both shaved off it — so a
+    // 56-column terminal leaves the description column (31 wide) narrower
+    // than /sessions' 42-char summary while still past the width-40 gate.
+    tree.terminal.resize(56, 24)
+    tree.terminal.sendInput('/sess')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/sessions') })
+    const frame = await fullFrame(tree.terminal)
+    const rows = frame.split('\r\n')
+    // The dropdown row, not the discovery hint row below the frame, carries
+    // the side-bar-anchored two-line treatment.
+    const at = rows.findIndex(row => row.includes('→ /sessions'))
+    expect(at).toBeGreaterThanOrEqual(0)
+    // The continuation row carries the description tail in the description
+    // column — the command column stays blank, so no slash token repeats.
+    expect(rows[at + 1]).toContain('switch to one')
+    expect(rows[at + 1]).not.toContain('/')
   })
 
   it('applies the bash triple on ! mode and restores the prompt frame on submit', async () => {

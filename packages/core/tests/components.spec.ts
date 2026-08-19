@@ -1,7 +1,11 @@
 /**
  * `ctx.blueComponents` service: delegation of the four factories to the
- * real pi-tui components, the palette → renderer-theme mapping, and the
- * re-exported width helpers' parity with pi-tui.
+ * real pi-tui components, the palette → renderer-theme mapping, the
+ * re-exported width helpers' parity with pi-tui, and the S14 completion
+ * polish on the editor — the wrapping slash dropdown (vs. the stock list on
+ * other prefixes), Enter accepting-and-submitting a slash completion, the
+ * bold leading slash token, the argument-hint ghost, and the fuzzy
+ * re-exports.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -352,6 +356,127 @@ describe('createEditor', () => {
     stop()
   })
 
+  it('accepts and submits a slash completion on a single Enter (0.84.2 semantics)', async () => {
+    const { tui, stop } = bootTui()
+    const components = createService(tui)
+    const editor = components.createEditor()
+    const submits: string[] = []
+    editor.onSubmit = text => submits.push(text)
+    const completions: { item: BlueAutocompleteItem, prefix: string }[] = []
+    const provider: BlueAutocompleteProvider = {
+      triggerCharacters: ['@'],
+      getSuggestions: () =>
+        Promise.resolve({
+          items: [{ value: 'btw', label: '/btw', description: 'ask a side question' }],
+          // The S14 provider contract: the prefix carries its leading slash.
+          prefix: '/btw',
+        }),
+      applyCompletion: (_lines, _line, _col, item, prefix) => {
+        completions.push({ item, prefix })
+        const applied = `${prefix} `
+        return { lines: [applied], cursorLine: 0, cursorCol: applied.length }
+      },
+    }
+    editor.setAutocompleteProvider(provider)
+    editor.handleInput('/')
+    await waitForRender()
+    expect(editor.isShowingAutocomplete()).toBe(true)
+
+    // Enter applies the selected item, closes the dropdown, and falls
+    // through to submit — one keystroke, not two.
+    editor.handleInput('\r')
+    expect(completions).toEqual([
+      { item: { value: 'btw', label: '/btw', description: 'ask a side question' }, prefix: '/btw' },
+    ])
+    // submitValue trims the buffer, so the apply's trailing space drops.
+    expect(submits).toEqual(['/btw'])
+    expect(editor.getText()).toBe('')
+    expect(editor.isShowingAutocomplete()).toBe(false)
+    stop()
+  })
+
+  it('swaps the wrapping dropdown in for slash prefixes and the stock list otherwise', async () => {
+    const { tui, stop } = bootTui()
+    const components = createService(tui)
+    const editor = components.createEditor({ paddingX: 4 })
+    const provider: BlueAutocompleteProvider = {
+      triggerCharacters: ['@'],
+      getSuggestions: lines =>
+        Promise.resolve(lines[0]?.startsWith('@')
+          ? {
+              items: [{ value: 'pkg', label: '@pkg', description: 'aaaa bbbb cccc dddd eeee ffff' }],
+              prefix: '@pkg',
+            }
+          : {
+              items: [{ value: 'btw', label: '/btw', description: 'aaaa bbbb cccc dddd eeee ffff' }],
+              prefix: '/btw',
+            }),
+      applyCompletion: () => ({ lines: [''], cursorLine: 0, cursorCol: 0 }),
+    }
+    editor.setAutocompleteProvider(provider)
+
+    // Slash prefix: the WrappingSelectList carries the description onto a
+    // second indented line, both under the selected paint (content width 42,
+    // description column 26 — the probe numbers of the wrapping spec).
+    editor.handleInput('/')
+    await waitForRender()
+    const slash = editor.render(50)
+    expect(slash).toHaveLength(5)
+    expect(slash.join('\n')).toContain('«primary:→ /btw        aaaa bbbb cccc dddd eeee»')
+    expect(slash.join('\n')).toContain(`«primary:${' '.repeat(14)}ffff»`)
+
+    // Any other prefix keeps pi-tui's stock single-row truncation.
+    editor.setText('')
+    editor.handleInput('@')
+    await waitForRender()
+    const plain = editor.render(50)
+    expect(plain).toHaveLength(4)
+    expect(plain.join('\n')).toContain('@pkg')
+    expect(plain.join('\n')).not.toContain(`«primary:${' '.repeat(14)}ffff»`)
+    stop()
+  })
+
+  it('paints the leading slash token bold-primary outside bash mode', () => {
+    const { tui, stop } = bootTui()
+    const components = createSgrService(tui)
+    const editor = components.createEditor({ paddingX: 4 })
+    editor.setText('/btw')
+    const painted = editor.render(30).join('\n')
+    // The token paints bold; with the SGR theme primary is identity, so the
+    // bold SGR pair is the visible marker.
+    expect(painted).toContain('\x1b[1m/btw\x1b[22m')
+
+    // The bash `!` proxy: while the bash prompt symbol is set, a leading
+    // slash is a path separator and stays unpainted.
+    editor.setPromptSymbol('!')
+    const bash = editor.render(30).join('\n')
+    expect(bash).not.toContain('\x1b[1m/btw\x1b[22m')
+
+    // A buffer whose first row carries no slash (the slash sits on a later
+    // line) leaves the row untouched.
+    editor.setPromptSymbol(undefined)
+    editor.setText('  \n/bt')
+    const declined = editor.render(30).join('\n')
+    expect(declined).not.toContain('\x1b[1m')
+    stop()
+  })
+
+  it('splices the argument-hint ghost after the cursor and clears it', () => {
+    const { tui, stop } = bootTui()
+    const components = createService(tui)
+    const editor = components.createEditor({ paddingX: 4 })
+    // Non-slash text isolates the ghost from the slash-token paint.
+    editor.setText('hello')
+    editor.setGhostHint(' <world>')
+    const ghosted = editor.render(30).join('\n')
+    expect(ghosted).toContain('hello\x1b[7m \x1b[0m«textMuted: <world>»')
+
+    editor.setGhostHint(undefined)
+    const cleared = editor.render(30).join('\n')
+    expect(cleared).not.toContain('<world>')
+    stop()
+  })
+
   it('expands paste markers in getExpandedText while getText shows the marker', () => {
     const { tui, stop } = bootTui()
     const components = createService(tui)
@@ -586,6 +711,35 @@ describe('imageDimensions', () => {
     expect(components.imageDimensions(PNG_1X1)).toEqual({ width: 1, height: 1 })
     expect(components.imageDimensions(GIF_1X1)).toEqual({ width: 1, height: 1 })
     expect(components.imageDimensions(new Uint8Array([1, 2, 3, 4]))).toBeUndefined()
+    stop()
+  })
+})
+
+describe('fuzzy helpers', () => {
+  it('re-export pi-tui fuzzyMatch and fuzzyFilter semantics', () => {
+    const { tui, stop } = bootTui()
+    const components = createService(tui)
+    // Subsequence match with a lower-is-better score; a miss scores 0.
+    const hit = components.fuzzyMatch('bw', '/btw')
+    expect(hit.matches).toBe(true)
+    expect(hit.score).toBeLessThan(0)
+    expect(components.fuzzyMatch('zz', '/btw')).toEqual({ matches: false, score: 0 })
+
+    // All whitespace-separated tokens must match; survivors sort ascending
+    // by score (better first), ties keeping input order.
+    const filtered = components.fuzzyFilter(
+      [{ n: '/theme' }, { n: '/btw' }, { n: '/sessions' }],
+      'th',
+      item => item.n,
+    )
+    expect(filtered.map(item => item.n)).toEqual(['/theme'])
+
+    const ordered = components.fuzzyFilter(
+      [{ n: '/a ab' }, { n: '/ab a' }, { n: '/zz' }],
+      'a ab',
+      item => item.n,
+    )
+    expect(ordered.map(item => item.n)).toEqual(['/ab a', '/a ab'])
     stop()
   })
 })

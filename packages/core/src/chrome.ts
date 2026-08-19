@@ -5,8 +5,7 @@
  * carries no pi-tui component machinery and no lifecycle; it is re-exported
  * as `@deepseek-ai/dsh-blue-core/chrome` for the interaction/transcript
  * packages (S11 opens the seam; each function lands with its first real
- * consumer). The algorithms are the kimi-code ports of
- * `wrapWithSideBorders` / `injectPromptSymbol`, kept ANSI-safe: visible
+ * consumer). The algorithms are kimi-code ports kept ANSI-safe: visible
  * columns are located by stripping SGR runs, and styled cells are never
  * clobbered.
  *
@@ -21,6 +20,138 @@ const ANSI_SGR = /\x1b\[[0-9;]*m/g
 /** Drop every SGR escape sequence, leaving only visible characters. */
 function stripSgr(text: string): string {
   return text.replace(ANSI_SGR, '')
+}
+
+/**
+ * Convert a visible-character index (ANSI-stripped) back into an index into
+ * the raw ANSI-bearing string: a sticky-regex walk that skips SGR runs
+ * without counting them.
+ * @param line - the raw line, SGR escapes allowed.
+ * @param visibleIdx - the index into `stripSgr(line)`.
+ * @returns the corresponding index into `line`.
+ */
+function visibleIndexToRaw(line: string, visibleIdx: number): number {
+  let visibleCount = 0
+  let i = 0
+  const re = new RegExp(ANSI_SGR.source, 'y')
+  while (i < line.length && visibleCount < visibleIdx) {
+    re.lastIndex = i
+    const match = re.exec(line)
+    if (match !== null && match.index === i) {
+      i += match[0].length
+    } else {
+      visibleCount++
+      i++
+    }
+  }
+  return i
+}
+
+/**
+ * Locate the leading `/command` token on a visible (SGR-stripped) line: the
+ * `/` must be the first non-whitespace character (a mid-sentence slash is
+ * prose, not a command) and the token ends at the next whitespace; a token
+ * containing a second `/` is a path, not a command, and declines.
+ * @param visible - the SGR-stripped line.
+ * @returns the token's half-open visible range, or `null` when absent.
+ */
+function leadingSlashTokenRange(visible: string): { start: number, end: number } | null {
+  const slashIdx = visible.indexOf('/')
+  if (slashIdx < 0) return null
+  for (let i = 0; i < slashIdx; i++) {
+    if (visible[i] !== ' ' && visible[i] !== '\t') return null
+  }
+  let endVisible = slashIdx + 1
+  while (endVisible < visible.length) {
+    const ch = visible[endVisible]
+    if (ch === ' ' || ch === '\t') break
+    endVisible++
+  }
+  const visibleToken = visible.slice(slashIdx, endVisible)
+  if (visibleToken.slice(1).includes('/')) return null
+  return { start: slashIdx, end: endVisible }
+}
+
+/**
+ * Paint the leading `/command` token of an editor content row (the kimi
+ * `highlightFirstSlashToken` port). The row may already carry SGR escapes
+ * (the inverse-video cursor), so the token is located through visible-index
+ * math and the paint wraps the raw slice — ANSI pass-through survives.
+ * @param line - the rendered editor content row.
+ * @param paint - the token styling (bold + `primary` at the call site).
+ * @returns the repainted row, or `undefined` when no leading slash token
+ *   exists on the row.
+ */
+export function highlightLeadingSlashToken(
+  line: string,
+  paint: (text: string) => string,
+): string | undefined {
+  const visible = stripSgr(line)
+  const range = leadingSlashTokenRange(visible)
+  if (range === null) return undefined
+  const rawStart = visibleIndexToRaw(line, range.start)
+  const rawEnd = visibleIndexToRaw(line, range.end)
+  return line.slice(0, rawStart) + paint(line.slice(rawStart, rawEnd)) + line.slice(rawEnd)
+}
+
+/** The editor's horizontal padding; the ghost splices into a padded content row. */
+const EDITOR_LEFT_PADDING = 4
+/** pi-tui renders the end-of-input cursor as an inverse-video space. */
+// oxlint-disable-next-line no-control-regex -- the cursor block is a raw SGR sequence
+const CURSOR_BLOCK = '\x1b[7m \x1b[0m'
+
+/**
+ * Clip a ghost hint to `maxLen` visible columns with an ellipsis.
+ * @param hint - the hint text.
+ * @param maxLen - the maximum visible length.
+ * @returns the clipped hint, or `''` when there is no room at all.
+ */
+function truncateHint(hint: string, maxLen: number): string {
+  if (maxLen <= 0) return ''
+  if (hint.length <= maxLen) return hint
+  if (maxLen === 1) return '…'
+  return `${hint.slice(0, maxLen - 1)}…`
+}
+
+/**
+ * Splice a dimmed argument-hint ghost into an editor content row (the kimi
+ * `injectArgumentHint` port). The ghost is purely visual: it lands after the
+ * typed text — after the inverse-video cursor block when one is rendered —
+ * and consumes the trailing padding, so the row width is preserved; a hint
+ * that would overflow the content area is ellipsized instead. When the
+ * cursor block sits before trailing non-padding text (cursor mid-text), the
+ * row is returned unchanged: the ghost belongs at the end of the input.
+ * @param line - the first content row of an editor render (`paddingX: 4`).
+ * @param hint - the ghost text, already lead-spaced by the caller.
+ * @param textLength - the visible length of the real editor text.
+ * @param width - the full render width of the row.
+ * @param paint - the ghost styling (`textMuted` at the call site).
+ * @returns the row with the ghost spliced in, or the row unchanged when
+ *   there is no room or the cursor is mid-text.
+ */
+export function injectGhostHint(
+  line: string,
+  hint: string,
+  textLength: number,
+  width: number,
+  paint: (text: string) => string,
+): string {
+  const cursorIdx = line.indexOf(CURSOR_BLOCK)
+  const cursorPresent = cursorIdx !== -1
+  if (cursorPresent) {
+    // Everything after the cursor block must be padding for the ghost to
+    // belong here; otherwise the cursor is mid-text and the hint declines.
+    if (stripSgr(line.slice(cursorIdx + CURSOR_BLOCK.length)).trim().length > 0) return line
+  }
+  const contentWidth = Math.max(1, width - EDITOR_LEFT_PADDING * 2)
+  const available = contentWidth - textLength - (cursorPresent ? 1 : 0)
+  const trimmed = truncateHint(hint, available)
+  if (trimmed.length === 0) return line
+  const insertAt = cursorPresent
+    ? cursorIdx + CURSOR_BLOCK.length
+    : visibleIndexToRaw(line, EDITOR_LEFT_PADDING + textLength)
+  const trailing = line.length - insertAt
+  return line.slice(0, insertAt) + paint(trimmed) + ' '.repeat(Math.max(0, trailing - trimmed.length))
 }
 
 /** Options for {@link withSideBorders}. */

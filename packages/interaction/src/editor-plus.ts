@@ -4,7 +4,11 @@
  * execution and echo (bash carries the triple cue: `!` prompt symbol,
  * ` ! shell mode ` border label, and the shellMode frame hue, re-asserted
  * over `blue-input`'s slash-context resolution while the mode is active),
- * plus the slash-command and `@`-file autocomplete providers. The mode is
+ * plus the S14 completion polish: slash-command and `@`-file autocomplete
+ * providers with fuzzy matching (`./slash-filter.ts`), slash values that
+ * carry their leading slash so a single Enter accepts the selection and
+ * submits, and the argument-hint ghost driven from each command's
+ * `input.hint`. The mode is
  * mirrored into `./draft-stash.ts`, so a theme-swap reload re-applies the
  * triple on the rebuilt editor. The editor reference comes from the
  * package-local shared ref (`./editor-instance.ts`): `inject` cannot order
@@ -25,7 +29,9 @@ import { exec, execFile } from 'node:child_process'
 import { readdir } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import type { CommandDescriptor } from '@deepseek-ai/dsh-commands'
 import type {
+  BlueAutocompleteItem,
   BlueAutocompleteProvider,
   BlueAutocompleteSuggestions,
   BlueComponent,
@@ -42,6 +48,7 @@ import { getStashedInputMode, stashInputMode } from './draft-stash.ts'
 import { ACTION_BACKSPACE, ACTION_CANCEL } from './keys.ts'
 import { sanitizeShellOutput } from './shell-sanitize.ts'
 import { currentBlueAgent } from './session.ts'
+import { filterSlashCommands } from './slash-filter.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-editor-plus'
@@ -165,19 +172,41 @@ function tokenBeforeCursor(line: string, cursorCol: number): { token: string, st
   return { token: line.slice(start, cursorCol), start }
 }
 
-/** Replace one entry in a lines array. */
+/**
+ * Replace one entry in a lines array.
+ */
 function withLine(lines: string[], index: number, line: string): string[] {
   return lines.map((existing, at) => (at === index ? line : existing))
 }
 
 /**
+ * The dropdown description for one command: the argument hint joins the
+ * summary (`hint — description`); a command without a hint keeps its plain
+ * summary (the kimi `formatSlashCommandDescription` shape — the registry's
+ * non-empty-description and non-empty-hint guarantees keep the empty
+ * corners out).
+ * @param command - the registered command descriptor.
+ * @returns the description text.
+ */
+function slashItemDescription(command: CommandDescriptor): string {
+  const hint = command.input?.hint
+  return hint === undefined ? command.description : `${hint} — ${command.description}`
+}
+
+/**
  * Build the dispatching autocomplete provider for the shared editor: a
- * leading `/` token completes slash commands from `ctx.commands`, an `@`
- * token completes project files.
+ * leading `/` token completes slash commands from `ctx.commands` (S14: fuzzy
+ * over the command names, the prefix carried with its slash so Enter
+ * accepts-and-submits through pi-tui's slash-list semantics, and the
+ * argument hint joined into the description), an `@` token completes project
+ * files (fuzzy over the paths). In bash mode a leading `/` is a path
+ * separator, not a command — the slash branch declines so Enter runs what
+ * was typed instead of applying a command.
  * @param ctx - plugin context carrying the command registry.
+ * @param mode - reports the live input mode.
  * @returns the provider to hand to `BlueEditor.setAutocompleteProvider`.
  */
-function createAutocompleteProvider(ctx: Context): BlueAutocompleteProvider {
+function createAutocompleteProvider(ctx: Context, mode: () => 'prompt' | 'bash'): BlueAutocompleteProvider {
   const cwd = process.cwd()
   return {
     triggerCharacters: ['/', '@'],
@@ -187,21 +216,27 @@ function createAutocompleteProvider(ctx: Context): BlueAutocompleteProvider {
       if (token.startsWith('@')) {
         const prefix = token.slice(1)
         const files = await listProjectFiles(cwd)
-        const items = files
-          .filter(path => path.startsWith(prefix))
+        const items = ctx.blueComponents
+          .fuzzyFilter(files, prefix, path => path)
           .map(path => ({ value: path, label: path }))
         return { items, prefix }
       }
       const slash = /^\/(\S*)$/.exec(line.slice(0, cursorCol))
-      if (slash === null) return null
+      if (slash === null || mode() === 'bash') return null
       const agent = currentBlueAgent(ctx)
       if (agent === undefined) return null
       /* v8 ignore next -- a successful exec always defines the capture group */
-      const prefix = slash[1] ?? ''
-      const items = ctx.commands.list(agent)
-        .filter(command => command.name.startsWith(prefix))
-        .map(command => ({ value: command.name, label: `/${command.name}`, description: command.description }))
-      return { items, prefix }
+      const query = slash[1] ?? ''
+      const items = filterSlashCommands(ctx.commands.list(agent), query, ctx.blueComponents)
+        .map((command): BlueAutocompleteItem => ({
+          value: `/${command.name}`,
+          label: `/${command.name}`,
+          description: slashItemDescription(command),
+        }))
+      // The value carries the slash so pi-tui's best-match preselection
+      // (exact `value === prefix`, then `startsWith`) keys on the same text
+      // the user typed.
+      return { items, prefix: `/${query}` }
     },
     applyCompletion(lines, cursorLine, cursorCol, item, _prefix) {
       const line = lines[cursorLine] ?? ''
@@ -216,7 +251,8 @@ function createAutocompleteProvider(ctx: Context): BlueAutocompleteProvider {
         }
       }
       if (line.startsWith('/')) {
-        const head = `/${item.value} `
+        // The slash item's value already carries its leading slash.
+        const head = `${item.value} `
         return {
           lines: withLine(lines, cursorLine, head + line.slice(cursorCol).trimStart()),
           cursorLine,
@@ -415,6 +451,32 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
   // re-apply the triple so the restored draft still reads as shell input.
   if (mode === 'bash') enterBash()
 
+  /**
+   * The S14 argument-hint ghost for the current buffer: a completed command
+   * token followed by at most one space shows the command's advertised
+   * `input.hint` after the cursor, lead-spaced until the user types the
+   * separator themselves (the kimi `computeArgumentHint` rule). Bash mode
+   * has no slash commands, so its ghost is always clear.
+   * @param text - the current editor buffer.
+   * @returns the ghost text, or `undefined` when none applies.
+   */
+  const ghostHintFor = (text: string): string | undefined => {
+    if (mode === 'bash') return undefined
+    const match = /^\/(\S+)( ?)$/.exec(text)
+    if (match === null) return undefined
+    const agent = currentBlueAgent(ctx)
+    if (agent === undefined) return undefined
+    /* v8 ignore next -- a successful exec always defines the capture group */
+    const hint = ctx.commands.list(agent).find(command => command.name === match[1])?.input?.hint
+    if (hint === undefined || hint.length === 0) return undefined
+    return match[2] === ' ' ? hint : ` ${hint}`
+  }
+
+  /** Re-apply the ghost after every buffer change. */
+  const refreshGhost = (text: string): void => {
+    editor.setGhostHint(ghostHintFor(text))
+  }
+
   const unmark = markEditorEnhancement(ENHANCEMENT_EDITOR_PLUS)
   editor.onChange = (text) => {
     previousOnChange?.(text)
@@ -423,11 +485,13 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
     if (mode === 'prompt' && text === '!') {
       enterBash()
       editor.setText('')
+      editor.setGhostHint(undefined)
       return
     }
     // While bash is active the shell hue wins over `blue-input`'s
     // slash-context resolution (a leading `/` is a path separator here).
     if (mode === 'bash') editor.setBorderColor(colors.shellMode)
+    refreshGhost(text)
   }
   // The editor clears its buffer before invoking onSubmit; the callback
   // argument already carries the paste-expanded, trimmed text.
@@ -461,13 +525,17 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
     }
     return false
   }
-  editor.setAutocompleteProvider(createAutocompleteProvider(ctx))
+  editor.setAutocompleteProvider(createAutocompleteProvider(ctx, () => mode))
+  // A draft restored before this attach (a theme-swap reload) deserves its
+  // ghost without waiting for the next edit.
+  refreshGhost(editor.getText())
 
   return () => {
     unmark()
     editor.onChange = previousOnChange
     editor.onSubmit = previousOnSubmit
     editor.onKey = previousOnKey
+    editor.setGhostHint(undefined)
     // Visual restore only — the reload stash keeps the mode the user was
     // in, so a remount (theme swap) rebuilds bash where it left off.
     if (mode === 'bash') applyPromptFrame()
