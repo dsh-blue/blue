@@ -173,12 +173,13 @@ describe('createEditor', () => {
     const editor = components.createEditor()
     editor.setText('x')
     const before = editor.render(40).join('\n')
-    expect(before).toContain('«border:')
+    // The editor is the interactive anchor: its border takes primary.
+    expect(before).toContain('«primary:')
 
     editor.setBorderColor(text => `[[${text}]]`)
     const after = editor.render(40).join('\n')
     expect(after).toContain('[[')
-    expect(after).not.toContain('«border:')
+    expect(after).not.toContain('«primary:')
     stop()
   })
 

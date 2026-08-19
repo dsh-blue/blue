@@ -55,9 +55,15 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** Map the palette to an editor theme: border plus autocomplete dropdown. */
+/**
+ * Map the palette to an editor theme: the interactive anchor border plus the
+ * autocomplete dropdown. The border takes `primary` (S10 interim: with the
+ * bare two-line editor the gray default read dead — the editor is the focal
+ * interactive surface, so it keeps the brand blue until S11's rounded-box
+ * chrome lands the kimi-style contextual border colors).
+ */
 function editorTheme(colors: BlueSemanticColors): EditorTheme {
-  return { borderColor: colors.border, selectList: selectListTheme(colors) }
+  return { borderColor: colors.primary, selectList: selectListTheme(colors) }
 }
 
 /** Map the palette to a select-list theme. */

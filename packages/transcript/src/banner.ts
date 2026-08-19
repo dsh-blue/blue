@@ -18,8 +18,9 @@
  * The box adapts to the viewport: below {@link BANNER_MIN_WIDTH} columns it
  * renders nothing, below {@link BANNER_FULL_MIN} it drops the right column,
  * and it caps at {@link BANNER_MAX_WIDTH}. Every over-wide run truncates;
- * nothing ever wraps. Styling uses only frozen theme tokens — frame and
- * castle share `border`, so the banner reads as one blue unit.
+ * nothing ever wraps. Styling uses only frozen theme tokens — frame, castle,
+ * and the welcome line share `primary`, the kimi welcome-box treatment, so
+ * the banner reads as one blue unit.
  *
  * @module @deepseek-ai/dsh-blue-transcript/banner
  */
@@ -164,10 +165,13 @@ export function composeBannerLines(
   if (layout === null) return []
   const { total, leftWidth, rightWidth, withRight } = layout
   const paint: Record<BannerStyle, (text: string) => string> = {
-    frame: deps.colors.border,
+    // kimi parity for the welcome box: the whole frame, the logo, and the
+    // welcome line are the brand's interactive blue (`primary`), with only
+    // the info labels staying gray — the boot screen's one big color moment.
+    frame: deps.colors.primary,
     title: deps.colors.muted,
-    strong: deps.colors.textStrong,
-    logo: deps.colors.border,
+    strong: deps.colors.primary,
+    logo: deps.colors.primary,
     accent: deps.colors.accent,
     muted: deps.colors.muted,
     text: deps.colors.text,
