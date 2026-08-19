@@ -294,7 +294,7 @@ export class TranscriptFolder {
         let isNew = false
         if (this.streamingItem === null) {
           this.streamingItem = {
-            kind: 'assistant', seq: event.seq, turn, step, text: '', streaming: true,
+            kind: 'assistant', seq: event.seq, turn, step, text: '',
           }
           this.items.push(this.streamingItem)
           isNew = true
@@ -330,7 +330,6 @@ export class TranscriptFolder {
           // The assembled message is authoritative: replace the accumulated
           // chunk text so replay/assembly differences correct themselves.
           this.streamingItem.text = text
-          this.streamingItem.streaming = false
           this.streamingStep = null
           const item = this.streamingItem
           this.streamingItem = null
@@ -338,7 +337,7 @@ export class TranscriptFolder {
           return updates
         }
         const item: TranscriptAssistantItem = {
-          kind: 'assistant', seq: event.seq, turn, step, text, streaming: false,
+          kind: 'assistant', seq: event.seq, turn, step, text,
         }
         this.items.push(item)
         updates.push({ item, isNew: true })

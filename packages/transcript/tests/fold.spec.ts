@@ -65,7 +65,6 @@ describe('foldSessionEvents', () => {
     expect(second?.[0]?.isNew).toBe(false)
     const item = second?.[0]?.item as TranscriptAssistantItem
     expect(item.text).toBe('Hello, world')
-    expect(item.streaming).toBe(true)
     expect(folder.items).toHaveLength(1)
   })
 
@@ -138,7 +137,6 @@ describe('foldSessionEvents', () => {
     expect(updates?.[0]?.isNew).toBe(false)
     const item = updates?.[0]?.item as TranscriptAssistantItem
     expect(item.text).toBe('final text')
-    expect(item.streaming).toBe(false)
     expect(folder.items.map(entry => entry.kind)).toEqual(['thinking', 'assistant'])
     const thinking = folder.items[0] as TranscriptThinkingItem
     expect(thinking.text).toBe('final thought')
@@ -159,7 +157,6 @@ describe('foldSessionEvents', () => {
     expect(update?.[0]?.isNew).toBe(true)
     const item = update?.[0]?.item as TranscriptAssistantItem
     expect(item.text).toBe('from history')
-    expect(item.streaming).toBe(false)
   })
 
   it('opens the thinking block before the assistant item on replay', () => {

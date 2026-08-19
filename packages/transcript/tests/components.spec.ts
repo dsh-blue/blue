@@ -61,7 +61,7 @@ function userItem(text: string): TranscriptUserItem {
 }
 
 function assistantItem(partial: Partial<TranscriptAssistantItem> = {}): TranscriptAssistantItem {
-  return { kind: 'assistant', seq: 1, text: '', streaming: false, ...partial }
+  return { kind: 'assistant', seq: 1, text: '', ...partial }
 }
 
 function toolItem(partial: Partial<TranscriptToolItem> = {}): TranscriptToolItem {
@@ -143,15 +143,12 @@ describe('AssistantMessageComponent', () => {
     expect(lines).toEqual(['', 'answer'])
   })
 
-  it('shows a streaming cursor that follows the growing text', () => {
-    const item = assistantItem({ streaming: true })
+  it('renders growing text bare — the streaming cursor retired (kimi parity)', () => {
+    const item = assistantItem({ text: 'partial' })
     const component = new AssistantMessageComponent(item, tagged(), setup())
-    expect(component.render(80)).toEqual(['', '[P]▌[/P]'])
-    item.text = 'partial'
-    expect(component.render(80)).toEqual(['', 'partial[P]▌[/P]'])
-    item.text = 'done'
-    item.streaming = false
-    expect(component.render(80)).toEqual(['', 'done'])
+    expect(component.render(80)).toEqual(['', 'partial'])
+    item.text = 'partial, still growing'
+    expect(component.render(80)).toEqual(['', 'partial, still growing'])
   })
 
   it('rebuilds when the item mutates and after invalidate', () => {
@@ -173,14 +170,15 @@ describe('AssistantMessageComponent', () => {
     }
   })
 
-  it('yields one column for the streaming cursor on a full-width last line', () => {
+  it('renders a full-width last row without reserving a cursor column', () => {
     const components = setup()
-    // The last rendered row is exactly `width` columns; appending the cursor
-    // naively overflowed the viewport and crashed pi-tui's render guard.
-    const item = assistantItem({ text: 'x'.repeat(12), streaming: true })
+    // With the cursor retired the last row may fill all `width` columns —
+    // the regression guard for the removed truncation branch: the row must
+    // still satisfy pi-tui's render guard.
+    const item = assistantItem({ text: 'x'.repeat(12) })
     const lines = new AssistantMessageComponent(item, COLORS, components).render(12)
+    expect(lines).toEqual(['', 'x'.repeat(12)])
     for (const line of lines) expect(components.visibleWidth(line)).toBeLessThanOrEqual(12)
-    expect(lines.at(-1)?.endsWith('▌')).toBe(true)
   })
 })
 

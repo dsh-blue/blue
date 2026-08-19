@@ -65,11 +65,14 @@ export interface TranscriptThinkingItem {
 }
 
 /**
- * One assistant step rendered in the transcript. Fields mutate while the
+ * One assistant step rendered in the transcript. The text mutates while the
  * step streams: `assistant/chunk` text deltas append, and the closing
- * `assistant/message` rewrites them from the authoritative assembled message.
+ * `assistant/message` rewrites it from the authoritative assembled message.
  * The step's reasoning streams into a sibling
- * {@link TranscriptThinkingItem} mounted above this block.
+ * {@link TranscriptThinkingItem} mounted above this block. No streaming
+ * marker survives on this item: the retired cursor was its only consumer,
+ * and kimi renders growing text with no cursor at all (the S17 third
+ * dogfood ruling).
  */
 export interface TranscriptAssistantItem {
   readonly kind: 'assistant'
@@ -80,8 +83,6 @@ export interface TranscriptAssistantItem {
   readonly step: number
   /** Accumulated visible Markdown text. */
   text: string
-  /** True until the step's `assistant/message` finalizes the item. */
-  streaming: boolean
 }
 
 /** The folded outcome of one tool invocation. */

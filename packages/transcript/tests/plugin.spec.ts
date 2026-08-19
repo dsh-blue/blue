@@ -332,7 +332,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     ctx.emit('session/event', agent.session as unknown as Session, textDelta(2, 1, 'partial'))
     expect(screen.children).toHaveLength(3)
     expect(screen.renderRequests.length).toBe(renderBaseline + 1)
-    expect(contentLines(screen)).toContain('partial▌')
+    expect(contentLines(screen)).toContain('partial')
     expect(footerLines(screen)[0]).toContain('deepseek-chat')
 
     // Finalization rewrites the streaming item in place.
