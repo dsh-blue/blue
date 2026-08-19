@@ -355,6 +355,9 @@ export function apply(ctx: Context): void {
     const offEvent = ctx.on('session/event', (session, event) => {
       if (session !== handle.agent.session) return
       const turn = state.turns.at(-1)
+      /* v8 ignore next -- the listeners never outlive the turns they feed:
+         dismiss unbinds before clearing, and no await separates registration
+         from the first turn push */
       if (turn === undefined) return
       if (event.type === 'assistant/chunk' && event.data.chunk.type === 'text-delta') {
         turn.reply += event.data.chunk.text
@@ -369,6 +372,7 @@ export function apply(ctx: Context): void {
       if (payload.agent !== handle.agent) return
       if (payload.status !== 'idle') return
       const turn = state.turns.at(-1)
+      /* v8 ignore next -- same invariant as the event listener above */
       if (turn === undefined) return
       turn.thinking = false
       // The busy flag gates the editor's Enter routing; report the flip.

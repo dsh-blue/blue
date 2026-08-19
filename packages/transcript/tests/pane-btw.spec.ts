@@ -407,6 +407,21 @@ describe('blue-pane-btw', () => {
     await dispose()
   })
 
+  it('treats a scroll command as a no-op while the body fits the budget', async () => {
+    resetSeq()
+    const agents = new FakeAgents()
+    const { ctx, commands, screen, dispose } = await boot(fakeAgent([]), agents)
+    await run(commands, 'q?')
+    // Question + thinking = 2 rows against a budget of 7: nothing to scroll.
+    expect(screen.paneLines()).toEqual(frame(['› q?', 'thinking…']))
+    const baseline = screen.renderRequests.length
+    ctx.emit('blue/btw-command', 'scroll-up')
+    ctx.emit('blue/btw-command', 'scroll-down')
+    expect(screen.renderRequests.length).toBe(baseline)
+    expect(screen.paneLines()).toEqual(frame(['› q?', 'thinking…']))
+    await dispose()
+  })
+
   it('resets the scroll state and height ratchet on a fresh question', async () => {
     resetSeq()
     const agents = new FakeAgents()
