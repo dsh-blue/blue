@@ -30,6 +30,12 @@ import type {
 /** Maximum length of the tool-call arguments shown on the call line. */
 export const TOOL_ARGUMENTS_MAX_CHARS = 60
 
+/** The assistant block's first-line marker (kimi `constant/symbols.ts`). */
+const STATUS_BULLET = '● '
+
+/** Continuation indent: the bullet's visible width (kimi `MESSAGE_INDENT`). */
+export const MESSAGE_INDENT = '  '
+
 /** Maximum rendered height of one user-message image, in terminal cells. */
 export const USER_IMAGE_MAX_HEIGHT_CELLS = 12
 
@@ -146,30 +152,37 @@ export class UserMessageComponent implements BlueComponent {
 }
 
 /**
- * Renders one assistant step's visible Markdown body. The step's reasoning
- * renders in its own sibling `ThinkingComponent` (`src/thinking.ts`)
- * mounted above this block. There is no streaming marker: kimi renders
- * growing text bare, and the Blue `▌` cursor retired with the S17 third
- * dogfood ruling — the activity pane's composing row is the signal. The
- * body is a held `BlueMarkdown` whose own text/width cache replaces the
- * former hand-rolled Markdown cache; mid-stream unterminated constructs
- * settle as the text completes.
+ * Renders one assistant step's visible Markdown body behind the kimi
+ * message chrome: a blank separator row, then the `text`-colored `● `
+ * bullet on the first line with every continuation indented by the
+ * bullet's visible width — the S18 assistant half, pulled into the S17
+ * dogfood by the user's margin ruling. The markdown renders at the
+ * content width (viewport minus the bullet), so its horizontal rules span
+ * exactly the body text. The step's reasoning renders in its own sibling
+ * `ThinkingComponent` (`src/thinking.ts`) mounted above this block. There
+ * is no streaming marker: kimi renders growing text bare, and the Blue
+ * `▌` cursor retired with the S17 third dogfood ruling — the activity
+ * pane's composing row is the signal. The body is a held `BlueMarkdown`
+ * whose own text/width cache replaces the former hand-rolled Markdown
+ * cache; mid-stream unterminated constructs settle as the text completes.
  */
 export class AssistantMessageComponent implements BlueComponent {
   private readonly item: TranscriptAssistantItem
+  private readonly colors: BlueSemanticColors
+  private readonly components: BlueComponents
   private readonly markdown: BlueMarkdown
   private cache: RenderCache | null = null
 
   /**
    * @param item - the folded assistant item; mutated by the fold as the
    *   step streams and finalizes.
-   * @param _colors - the semantic color table; unused since the cursor
-   *   retired, kept for the mounter's uniform creation signature (S18's
-   *   bullet chrome takes it back).
+   * @param colors - the semantic color table (the bullet carries `text`).
    * @param components - the component factory; creates the held Markdown.
    */
-  constructor(item: TranscriptAssistantItem, _colors: BlueSemanticColors, components: BlueComponents) {
+  constructor(item: TranscriptAssistantItem, colors: BlueSemanticColors, components: BlueComponents) {
     this.item = item
+    this.colors = colors
+    this.components = components
     this.markdown = components.createMarkdown({ text: '' })
   }
 
@@ -190,7 +203,10 @@ export class AssistantMessageComponent implements BlueComponent {
     const lines: string[] = ['']
     if (text.trim()) {
       this.markdown.setText(text)
-      lines.push(...this.markdown.render(width))
+      const contentWidth = Math.max(1, width - this.components.visibleWidth(STATUS_BULLET))
+      const content = this.markdown.render(contentWidth)
+      lines.push(...content.map((line, index) =>
+        (index === 0 ? this.colors.text(STATUS_BULLET) : MESSAGE_INDENT) + line))
     }
     this.cache = { key, lines }
     return lines

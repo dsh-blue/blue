@@ -347,14 +347,34 @@ class EditorAdapter implements BlueEditor {
 
 /** Delegate exposing a pi-tui `Markdown` through the Blue contract. */
 class MarkdownAdapter implements BlueMarkdown {
-  constructor(private readonly markdown: Markdown) {}
+  /**
+   * @param markdown - the wrapped pi-tui Markdown.
+   * @param hr - the exact horizontal-rule paint the wrapped markdown's
+   *   theme uses (the `markdownTheme` function pins `hr: colors.mdHr`);
+   *   lets the adapter re-paint pi-tui's width-capped rule.
+   */
+  constructor(
+    private readonly markdown: Markdown,
+    private readonly hr: (text: string) => string,
+  ) {}
 
   setText(text: string): void {
     this.markdown.setText(text)
   }
 
   render(width: number): string[] {
-    return this.markdown.render(width)
+    const lines = this.markdown.render(width)
+    // pi-tui caps horizontal rules at 80 columns regardless of the render
+    // width (`'─'.repeat(Math.min(width, 80))` in markdown.js); the user's
+    // S17 dogfood ruling wants the rule as wide as the body text it
+    // separates, so the adapter re-paints the capped rule to the full
+    // render width. Exact string equality against the known theme output —
+    // tolerating pi-tui's row padding — keeps code lines (their own SGRs)
+    // and any custom rule styling out of the path.
+    if (width <= 80) return lines
+    const capped = this.hr('─'.repeat(80))
+    const full = this.hr('─'.repeat(width))
+    return lines.map(line => line.trimEnd() === capped ? full : line)
   }
 
   invalidate(): void {
@@ -483,6 +503,7 @@ export class BlueComponentsService extends Service implements BlueComponents {
   createMarkdown(options?: BlueMarkdownOptions): BlueMarkdown {
     return new MarkdownAdapter(
       new Markdown(options?.text ?? '', options?.paddingX ?? 0, options?.paddingY ?? 0, markdownTheme(this.theme.colors)),
+      this.theme.colors.mdHr,
     )
   }
 

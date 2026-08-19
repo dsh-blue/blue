@@ -282,7 +282,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     ctx.emit('blue/session-changed', asAgent(agent))
     expect(screen.children).toHaveLength(2)
     expect(footerLines(screen)).toEqual([`deepseek-chat${' '.repeat(67)}`])
-    expect(contentLines(screen)).toEqual(['', '❯ hi', '', 'answer'])
+    expect(contentLines(screen)).toEqual(['', '❯ hi', '', '● answer'])
     expect(screen.renderRequests).toContain(true)
     expect(blueSession.current).toBeNull()
   })
@@ -332,13 +332,13 @@ describe('blue-transcript plugin through the real Loader', () => {
     ctx.emit('session/event', agent.session as unknown as Session, textDelta(2, 1, 'partial'))
     expect(screen.children).toHaveLength(3)
     expect(screen.renderRequests.length).toBe(renderBaseline + 1)
-    expect(contentLines(screen)).toContain('partial')
+    expect(contentLines(screen)).toContain('● partial')
     expect(footerLines(screen)[0]).toContain('deepseek-chat')
 
     // Finalization rewrites the streaming item in place.
     ctx.emit('session/event', agent.session as unknown as Session, assistantEvent(2, 1, [{ type: 'text', text: 'final' }]))
     expect(screen.children).toHaveLength(3)
-    expect(contentLines(screen)).toContain('final')
+    expect(contentLines(screen)).toContain('● final')
 
     // The seeded tool call pairs with its live result.
     ctx.emit('session/event', agent.session as unknown as Session, toolResultEvent(2, 1, 'c1', 'file.txt'))

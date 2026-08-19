@@ -129,9 +129,9 @@ describe('UserMessageComponent', () => {
 })
 
 describe('AssistantMessageComponent', () => {
-  it('renders markdown text with a leading separator', () => {
+  it('renders markdown text behind the bullet with a leading separator', () => {
     const lines = new AssistantMessageComponent(assistantItem({ text: '**hi**' }), COLORS, setup()).render(80)
-    expect(lines).toEqual(['', '**hi**'])
+    expect(lines).toEqual(['', '● **hi**'])
   })
 
   it('renders only the body — the step\'s reasoning lives in its own component', () => {
@@ -140,15 +140,22 @@ describe('AssistantMessageComponent', () => {
       tagged(),
       setup(),
     ).render(80)
-    expect(lines).toEqual(['', 'answer'])
+    expect(lines).toEqual(['', '● answer'])
   })
 
   it('renders growing text bare — the streaming cursor retired (kimi parity)', () => {
     const item = assistantItem({ text: 'partial' })
     const component = new AssistantMessageComponent(item, tagged(), setup())
-    expect(component.render(80)).toEqual(['', 'partial'])
+    expect(component.render(80)).toEqual(['', '● partial'])
     item.text = 'partial, still growing'
-    expect(component.render(80)).toEqual(['', 'partial, still growing'])
+    expect(component.render(80)).toEqual(['', '● partial, still growing'])
+  })
+
+  it('indents continuation lines under the bullet (kimi MESSAGE_INDENT)', () => {
+    const components = setup()
+    const lines = new AssistantMessageComponent(assistantItem({ text: 'aaa bbb ccc' }), COLORS, components).render(6)
+    expect(lines).toEqual(['', '● aaa', '  bbb', '  ccc'])
+    for (const line of lines) expect(components.visibleWidth(line)).toBeLessThanOrEqual(6)
   })
 
   it('rebuilds when the item mutates and after invalidate', () => {
@@ -170,14 +177,14 @@ describe('AssistantMessageComponent', () => {
     }
   })
 
-  it('renders a full-width last row without reserving a cursor column', () => {
+  it('renders a full-width content row without reserving a cursor column', () => {
     const components = setup()
-    // With the cursor retired the last row may fill all `width` columns —
-    // the regression guard for the removed truncation branch: the row must
-    // still satisfy pi-tui's render guard.
+    // The markdown renders at the content width (viewport minus the
+    // bullet): the regression guard for the removed truncation branch —
+    // every row must still satisfy pi-tui's render guard.
     const item = assistantItem({ text: 'x'.repeat(12) })
     const lines = new AssistantMessageComponent(item, COLORS, components).render(12)
-    expect(lines).toEqual(['', 'x'.repeat(12)])
+    expect(lines).toEqual(['', '● xxxxxxxxxx', '  xx'])
     for (const line of lines) expect(components.visibleWidth(line)).toBeLessThanOrEqual(12)
   })
 })
