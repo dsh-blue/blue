@@ -112,7 +112,7 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 - **模式命令**（`/yolo` `/plan` `/compact` `/model` 会话中切换）：随上游能力缝落地逐个接入
 - 子 agent / Task 工具的树形呈现组件（经 intent 缝）
 
-**验收**：5 万行级 session resume 后滚动流畅；参照系产品的常用交互有对应物或明确的"不做"结论。
+**验收**：5 万行级 session resume 后滚动流畅；参照系产品的常用交互有对应物或明确的"不做"结论。（2026-08-20 S17 期间 dogfood 实测：主屏模式下输出中移动终端滚动条会导致会话流乱跳——pi-tui 差分渲染的内部视口记账与终端 scrollback 脱节，主屏模式不可修复；"滚动流畅"验收以 **L0 alt-screen 项目**为前提，详见 p2-visual §7 六轮注记。）
 
 ---
 
