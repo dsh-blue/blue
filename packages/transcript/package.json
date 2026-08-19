@@ -21,6 +21,10 @@
       "types": "./lib/types/status-basic.d.ts",
       "default": "./lib/status-basic.js"
     },
+    "./status-cwd": {
+      "types": "./lib/types/status-cwd.d.ts",
+      "default": "./lib/status-cwd.js"
+    },
     "./status-git": {
       "types": "./lib/types/status-git.d.ts",
       "default": "./lib/status-git.js"
@@ -28,6 +32,10 @@
     "./status-context": {
       "types": "./lib/types/status-context.d.ts",
       "default": "./lib/status-context.js"
+    },
+    "./status-tips": {
+      "types": "./lib/types/status-tips.d.ts",
+      "default": "./lib/status-tips.js"
     },
     "./pane-activity": {
       "types": "./lib/types/pane-activity.d.ts",
@@ -60,8 +68,10 @@
     "lib/index.js",
     "lib/invariant.js",
     "lib/status-basic.js",
+    "lib/status-cwd.js",
     "lib/status-git.js",
     "lib/status-context.js",
+    "lib/status-tips.js",
     "lib/pane-activity.js",
     "lib/pane-todo.js",
     "lib/pane-btw.js",

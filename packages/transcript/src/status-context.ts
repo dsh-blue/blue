@@ -1,14 +1,22 @@
 /**
  * `blue-status-context` plugin: enhancement footer entry showing the context
- * occupancy of the latest model step (muted, priority 20). Occupancy is the
- * `assistant/message` usage's disjoint input side — `inputTokens +
+ * occupancy of the latest model step — right-aligned on band 2 in the full
+ * `text` foreground (priority 20), the kimi footer's readout. Occupancy is
+ * the `assistant/message` usage's disjoint input side — `inputTokens +
  * cacheReadTokens + cacheWriteTokens` (output and reasoning tokens are new
- * generation, not occupied context) — rendered as `ctx N` below 1000 tokens
- * and `ctx N.Nk` at or above it (always exactly one decimal, so 1000 →
- * `ctx 1.0k`). A session with no usage data yet renders ''. Attach follows
- * the transcript plugin's own discipline: the durable `agent.session.events`
- * snapshot is scanned first, then the live `session/event` feed carries the
- * increments.
+ * generation, not occupied context). When the session's request context
+ * advertises a context window — `session.requestContext()?.contextWindow`,
+ * the durable `'request/context'` fold fed by the adapter's `resolveModel`
+ * — the entry renders `context: N% (K/M)`: N is the occupancy share rounded
+ * up (a non-zero share always at least 1, clamped to 100), K and M the
+ * 1024-base-abbreviated counts (`x.yk` from 1024, `x.yM` from 1 MiB,
+ * rounded at 100k — context windows are powers of two, so 262144 renders as
+ * `256k`). The share is a lower bound: the window covers request and
+ * response combined while K counts the input side only. Without a window
+ * the entry degrades to `ctx N` (the pre-S15 form); a session with no usage
+ * data yet renders ''. Attach follows the transcript plugin's own
+ * discipline: the durable `agent.session.events` snapshot is scanned first,
+ * then the live `session/event` feed carries the increments.
  *
  * @module @deepseek-ai/dsh-blue-transcript/status-context
  */
@@ -16,7 +24,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { RequestContext, SessionEvent } from '@deepseek-ai/dsh-session'
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
 import type {} from '@deepseek-ai/dsh-blue-app'
@@ -39,13 +47,58 @@ export function contextTokens(usage: TokenUsage): number {
 }
 
 /**
- * Compact token formatting: the plain integer below 1000, one-decimal `k`
- * at or above it.
+ * One decimal, trailing `.0` trimmed: 1 → `1`, 1.5 → `1.5`, 2.04 → `2`.
+ * @param value - the value to format.
+ * @returns the trimmed one-decimal representation.
+ */
+function trimDecimal(value: number): string {
+  return value.toFixed(1).replace(/\.0$/, '')
+}
+
+/**
+ * Compact 1024-base token formatting: the plain integer below 1024, `x.yk`
+ * (rounded at 100k) at or above it, `x.yM` at or above 1 MiB. Context
+ * windows are powers of two, so the binary base keeps the abbreviations
+ * exact — 262144 → `256k`, 1048576 → `1M`. Non-finite or negative input
+ * formats as `0`.
  * @param tokens - the token count.
  * @returns the formatted count.
  */
 export function formatTokens(tokens: number): string {
-  return tokens < 1000 ? String(tokens) : `${(tokens / 1000).toFixed(1)}k`
+  if (!Number.isFinite(tokens) || tokens < 0) return '0'
+  if (tokens >= 1024 * 1024) return `${trimDecimal(tokens / (1024 * 1024))}M`
+  if (tokens >= 1024) {
+    const k = tokens / 1024
+    return `${k >= 100 ? String(Math.round(k)) : trimDecimal(k)}k`
+  }
+  return String(tokens)
+}
+
+/**
+ * The occupancy share of a context window, in whole percents: rounded up so
+ * partial use never reads as empty, clamped to [0, 100], and a non-zero
+ * share always at least 1. A non-finite or non-positive window — or a
+ * non-positive occupancy — yields 0.
+ * @param used - the occupied tokens.
+ * @param max - the context window.
+ * @returns the share in percent.
+ */
+export function contextPercent(used: number, max: number): number {
+  if (!Number.isFinite(used) || !Number.isFinite(max) || used <= 0 || max <= 0) return 0
+  return Math.min(100, Math.max(1, Math.ceil((used / max) * 100)))
+}
+
+/**
+ * Normalize an advertised context window: only a positive finite number is
+ * a window, anything else (undefined included) means "not advertised" and
+ * the entry degrades.
+ * @param contextWindow - the advertised window, if any.
+ * @returns the usable window, or undefined when not advertised.
+ */
+function normalizeWindow(contextWindow: number | undefined): number | undefined {
+  return contextWindow !== undefined && Number.isFinite(contextWindow) && contextWindow > 0
+    ? contextWindow
+    : undefined
 }
 
 /**
@@ -64,16 +117,29 @@ function snapshotTokens(events: readonly SessionEvent[]): number {
 }
 
 /**
+ * The advertised window in a request-context snapshot, if any.
+ * @param context - the session's request context, when it has one.
+ * @returns the usable window, or undefined when not advertised.
+ */
+function snapshotWindow(context: RequestContext | undefined): number | undefined {
+  return normalizeWindow(context?.contextWindow)
+}
+
+/**
  * Register the context entry. Attaches to `blueSession.current` when present
  * and re-attaches on every `'blue/session-changed'`; each attach scans the
- * snapshot and subscribes the live feed. Redraws are requested only when the
- * rendered occupancy changed.
+ * snapshot (usage and request context) and subscribes the live feed —
+ * `assistant/message` usage updates the occupancy, `request/context` updates
+ * the advertised window (a model switch can drop it, degrading the entry
+ * back to `ctx N`). Redraws are requested only when the rendered values
+ * changed.
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
   const colors = ctx.blueTheme.colors
   const screen = ctx.blueScreen
   let tokens = 0
+  let max: number | undefined
   let detach: (() => void) | undefined
 
   const attach = (agent: Agent): void => {
@@ -81,17 +147,26 @@ export function apply(ctx: Context): void {
     // matches the old session, not the new one, so without an explicit
     // detach a stale subscription would keep tracking the detached session.
     detach?.()
-    const before = tokens
+    const beforeTokens = tokens
+    const beforeMax = max
     tokens = snapshotTokens(agent.session.events)
+    max = snapshotWindow(agent.session.requestContext())
     detach = ctx.on('session/event', (session, event) => {
       if (session !== agent.session) return
+      if (event.type === 'request/context') {
+        const next = normalizeWindow(event.data.contextWindow)
+        if (next === max) return
+        max = next
+        screen.requestRender()
+        return
+      }
       if (event.type !== 'assistant/message' || event.data.usage === undefined) return
       const next = contextTokens(event.data.usage)
       if (next === tokens) return
       tokens = next
       screen.requestRender()
     })
-    if (tokens !== before) screen.requestRender()
+    if (tokens !== beforeTokens || max !== beforeMax) screen.requestRender()
   }
 
   const current = ctx.get('blueSession')?.current
@@ -101,12 +176,16 @@ export function apply(ctx: Context): void {
   const entry: BlueStatusEntry = {
     id: 'blue.status.context',
     priority: 20,
+    align: 'right',
+    row: 2,
     render(width: number): string {
       if (tokens <= 0) return ''
+      const text = max === undefined
+        ? `ctx ${formatTokens(tokens)}`
+        : `context: ${String(contextPercent(tokens, max))}% (${formatTokens(tokens)}/${formatTokens(max)})`
       // ASCII-only output, so the string length is the visible width.
-      const text = `ctx ${formatTokens(tokens)}`
       if (text.length > width) return ''
-      return colors.muted(text)
+      return colors.text(text)
     },
   }
   // Effect-bound so unloading this fiber unregisters the entry.

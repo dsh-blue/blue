@@ -3,10 +3,17 @@
  * entries sorted (ascending priority, registration order on ties) and nudges
  * the shell on every change; the shell is mounted once, bottom-pinned above
  * the input editor, by the `blue-transcript` plugin's `apply` and lays the
- * entries out over at most two rows — joining them with a muted ` · `,
- * wrapping overflow onto the second row, and dropping the lowest-priority
- * entries that fit neither row. An empty registry (or a frame where every
- * entry renders '') yields zero rows, so the footer vanishes entirely.
+ * entries out over at most two bands — the kimi footer shape. Each entry
+ * picks its band (`row`, default 1) and its cluster within the band
+ * (`align`, default left); a cluster is filled first-fit in layout order,
+ * joining its entries with a two-space slot gap (no separator glyph and no
+ * separator color — kimi's slot identity), and an entry that does not fit
+ * its cluster's remaining budget — or renders '' — is dropped for the frame
+ * (overflow always sacrifices the lowest priorities; entries never spill
+ * into another band). A band's right cluster lays out after its left cluster
+ * plus a minimum gap and is right-aligned, so a crowded left band yields the
+ * right cluster first. An empty registry (or a frame where every entry
+ * renders '') yields zero rows, so the footer vanishes entirely.
  *
  * @module @deepseek-ai/dsh-blue-transcript/status
  */
@@ -16,12 +23,17 @@ import type {
   BlueComponent,
   BlueComponents,
   BlueScreen,
-  BlueSemanticColors,
 } from '@deepseek-ai/dsh-blue-core'
 import type { BlueStatus, BlueStatusEntry } from './types.ts'
 
-/** The footer's row budget. */
+/** The footer's band budget. */
 export const FOOTER_MAX_ROWS = 2
+
+/** The minimum gap between a band's left and right clusters. */
+export const FOOTER_GAP_COLUMNS = 2
+
+/** The slot gap joining two entries of one cluster (kimi's footer slots). */
+export const FOOTER_SLOT_GAP = '  '
 
 /** Stable error taxonomy for status-registry failures. */
 export class BlueStatusError extends Error {
@@ -49,6 +61,24 @@ interface RegisteredEntry {
 interface Segment {
   text: string
   width: number
+}
+
+/** One band's two clusters, bucketed from the sorted entries. */
+interface Band {
+  left: BlueStatusEntry[]
+  right: BlueStatusEntry[]
+}
+
+/** The visible width of a placed cluster: its segments plus slot gaps. */
+function clusterWidth(segments: readonly Segment[], gapWidth: number): number {
+  if (segments.length === 0) return 0
+  return segments.reduce((total, segment) => total + segment.width, 0)
+    + gapWidth * (segments.length - 1)
+}
+
+/** Join a placed cluster's segments with the slot gap. */
+function joinCluster(segments: readonly Segment[]): string {
+  return segments.map(segment => segment.text).join(FOOTER_SLOT_GAP)
 }
 
 /**
@@ -119,25 +149,26 @@ export class BlueStatusService extends Service implements BlueStatus {
 }
 
 /**
- * The persistent two-row footer. Row fill is first-fit in layout order: each
- * entry sees the width budget remaining on the first row it could join, an
- * entry that fits neither row is dropped (so overflow always sacrifices the
- * lowest priorities), and an entry rendering '' occupies nothing. Every row
- * is padded to the full width so a shrinking footer never leaves stale
- * cells behind. The cache key carries the placed texts, so an entry whose
- * output changed re-lays-out without an explicit invalidate.
+ * The persistent two-band footer. Cluster fill is first-fit in layout order,
+ * an entry that fits its cluster's remaining budget — or renders '' — is
+ * dropped for the frame (so overflow always sacrifices the lowest
+ * priorities), and every entry is rendered exactly once per frame. The right
+ * cluster's budget is what remains after the left cluster and the
+ * inter-cluster gap, so it yields first under width pressure and renders
+ * right-aligned. Every band is padded to the full width so a shrinking
+ * footer never leaves stale cells behind. The cache key carries the placed
+ * texts, so an entry whose output changed re-lays-out without an explicit
+ * invalidate.
  */
 export class FooterShellComponent implements BlueComponent {
   private cache: { key: string, lines: string[] } | null = null
 
   /**
    * @param status - the registry supplying the entries.
-   * @param colors - the semantic color table (the separator is muted).
    * @param components - the component factory providing the width helpers.
    */
   constructor(
     private readonly status: BlueStatusService,
-    private readonly colors: BlueSemanticColors,
     private readonly components: BlueComponents,
   ) {}
 
@@ -148,46 +179,86 @@ export class FooterShellComponent implements BlueComponent {
 
   /**
    * @param width - current viewport width in columns.
-   * @returns up to {@link FOOTER_MAX_ROWS} rows; none when nothing renders.
+   * @returns up to {@link FOOTER_MAX_ROWS} band rows; none when nothing renders.
    */
   render(width: number): string[] {
-    const rows: Segment[][] = [[]]
-    const used: number[] = [0]
-    const separator = this.colors.muted(' · ')
-    const separatorWidth = this.components.visibleWidth(' · ')
+    const gapWidth = this.components.visibleWidth(FOOTER_SLOT_GAP)
+
+    // Bucket the sorted entries into per-band clusters, keeping the global
+    // layout order inside each cluster. Dishonest `row`/`align` values (a
+    // cast `3`, an unknown align) clamp into the budget rather than crash or
+    // drop the entry.
+    const bands: Band[] = Array.from({ length: FOOTER_MAX_ROWS }, () => ({ left: [], right: [] }))
     for (const entry of this.status.sortedEntries) {
-      for (let row = 0; row < FOOTER_MAX_ROWS; row += 1) {
-        const segments = rows[row] ?? []
-        const spent = (used[row] ?? 0) + (segments.length > 0 ? separatorWidth : 0)
-        const remaining = width - spent
-        if (remaining <= 0) continue
-        const text = entry.render(remaining)
-        // '' means "no contribution at this budget": a hidden entry stays
-        // hidden on every row, a too-wide one may still fit the next row.
-        if (text === '') continue
-        const textWidth = this.components.visibleWidth(text)
-        if (textWidth > remaining) continue
-        if (rows[row] === undefined) {
-          rows[row] = []
-          used[row] = 0
-        }
-        rows[row]!.push({ text, width: textWidth })
-        used[row] = spent + textWidth
-        break
-      }
+      const band = Math.min(FOOTER_MAX_ROWS, Math.max(1, entry.row ?? 1)) - 1
+      const cluster = entry.align === 'right' ? bands[band]!.right : bands[band]!.left
+      cluster.push(entry)
     }
 
-    const key = `${width}:${rows.map(segments => segments.map(segment => segment.text).join('\x00')).join('\x01')}`
+    const lines: string[] = []
+    const bandKeys: string[] = []
+    for (const band of bands) {
+      const left = this.layoutCluster(band.left, width, gapWidth)
+      const leftUsed = clusterWidth(left, gapWidth)
+      const rightBudget = left.length === 0 ? width : width - leftUsed - FOOTER_GAP_COLUMNS
+      // A starved right cluster is not even rendered: its entries yield.
+      const right = rightBudget > 0
+        ? this.layoutCluster(band.right, rightBudget, gapWidth)
+        : []
+      if (left.length === 0 && right.length === 0) continue
+
+      const rightUsed = clusterWidth(right, gapWidth)
+      let line: string
+      if (left.length === 0) {
+        line = ' '.repeat(width - rightUsed) + joinCluster(right)
+      } else if (right.length === 0) {
+        line = joinCluster(left) + ' '.repeat(width - leftUsed)
+      } else {
+        // The gap is at least FOOTER_GAP_COLUMNS by the right budget's definition.
+        line = joinCluster(left)
+          + ' '.repeat(width - leftUsed - rightUsed)
+          + joinCluster(right)
+      }
+      lines.push(line)
+      bandKeys.push(
+        `${left.map(segment => segment.text).join('\x00')}\x02${right.map(segment => segment.text).join('\x00')}`,
+      )
+    }
+
+    const key = `${width}:${bandKeys.join('\x01')}`
     if (this.cache?.key === key) return this.cache.lines
-    const lines = rows
-      .filter(segments => segments.length > 0)
-      .map((segments) => {
-        const body = segments.map(segment => segment.text).join(separator)
-        const bodyWidth = segments.reduce((total, segment) => total + segment.width, 0)
-          + separatorWidth * (segments.length - 1)
-        return body + ' '.repeat(Math.max(0, width - bodyWidth))
-      })
     this.cache = { key, lines }
     return lines
+  }
+
+  /**
+   * Fill one cluster first-fit: each entry sees the budget remaining after
+   * the segments already placed, is skipped without a render when nothing
+   * remains, and is dropped when it renders '' or measures over budget.
+   * @param entries - the cluster's entries in layout order.
+   * @param budget - the cluster's total width in columns.
+   * @param gapWidth - the slot gap's visible width.
+   * @returns the placed segments.
+   */
+  private layoutCluster(
+    entries: readonly BlueStatusEntry[],
+    budget: number,
+    gapWidth: number,
+  ): Segment[] {
+    const placed: Segment[] = []
+    let used = 0
+    for (const entry of entries) {
+      const spent = used + (placed.length > 0 ? gapWidth : 0)
+      const remaining = budget - spent
+      if (remaining <= 0) continue
+      const text = entry.render(remaining)
+      // '' means "no contribution at this budget": the entry hides this frame.
+      if (text === '') continue
+      const textWidth = this.components.visibleWidth(text)
+      if (textWidth > remaining) continue
+      placed.push({ text, width: textWidth })
+      used = spent + textWidth
+    }
+    return placed
   }
 }

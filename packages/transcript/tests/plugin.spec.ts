@@ -278,7 +278,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     const agent = fakeAgent([userEvent('hi'), assistantEvent(1, 1, [{ type: 'text', text: 'answer' }])])
     ctx.emit('blue/session-changed', asAgent(agent))
     expect(screen.children).toHaveLength(2)
-    expect(footerLines(screen)).toEqual([`deepseek-chat · idle${' '.repeat(60)}`])
+    expect(footerLines(screen)).toEqual([`deepseek-chat${' '.repeat(67)}`])
     expect(contentLines(screen)).toEqual(['', '❯ hi', '', 'answer'])
     expect(screen.renderRequests).toContain(true)
     expect(blueSession.current).toBeNull()
@@ -289,7 +289,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     const { screen } = await bootTranscript(fakeAgent([userEvent('remember me')]))
     expect(screen.children).toHaveLength(1)
     expect(contentLines(screen)).toEqual(['', '❯ remember me'])
-    expect(footerLines(screen)[0]).toContain('deepseek-chat · idle')
+    expect(footerLines(screen)[0]).toContain('deepseek-chat')
   })
 
   it('lets a downstream plugin register its own footer entry', async () => {
@@ -298,7 +298,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     ctx.emit('blue/session-changed', asAgent(fakeAgent([])))
     const footer = footerLines(screen)
     expect(footer).toHaveLength(1)
-    expect(footer[0]).toContain('deepseek-chat · idle')
+    expect(footer[0]).toContain('deepseek-chat')
     expect(footer[0]).toContain('fixture-entry')
   })
 
@@ -323,13 +323,14 @@ describe('blue-transcript plugin through the real Loader', () => {
     ctx.emit('session/event', other.session as unknown as Session, textDelta(9, 9, 'foreign'))
     expect(screen.children).toHaveLength(2)
 
-    // Live chunk: mounts a streaming assistant component and re-renders.
+    // Live chunk: mounts a streaming assistant component and re-renders. The
+    // footer's model text is untouched — no agent-status noise any more.
     agent.status = 'running'
     ctx.emit('session/event', agent.session as unknown as Session, textDelta(2, 1, 'partial'))
     expect(screen.children).toHaveLength(3)
-    expect(screen.renderRequests.length).toBe(renderBaseline + 2)
+    expect(screen.renderRequests.length).toBe(renderBaseline + 1)
     expect(contentLines(screen)).toContain('partial▌')
-    expect(footerLines(screen)[0]).toContain('running')
+    expect(footerLines(screen)[0]).toContain('deepseek-chat')
 
     // Finalization rewrites the streaming item in place.
     ctx.emit('session/event', agent.session as unknown as Session, assistantEvent(2, 1, [{ type: 'text', text: 'final' }]))

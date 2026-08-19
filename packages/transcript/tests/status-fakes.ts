@@ -78,6 +78,7 @@ export interface FakeSession {
   events: SessionEvent[]
   header: { cwd?: string }
   requestHeader(): { config: { model: string } } | undefined
+  requestContext(): { contextWindow?: number } | undefined
 }
 
 /** Structural stand-in for the real `Agent`; cast at the typed emit sites. */
@@ -98,7 +99,13 @@ let agentCounter = 0
  */
 export function fakeAgent(
   events: SessionEvent[],
-  options: { model?: string, provider?: string, cwd?: string, headerModel?: string } = {},
+  options: {
+    model?: string
+    provider?: string
+    cwd?: string
+    headerModel?: string
+    contextWindow?: number
+  } = {},
 ): FakeAgent {
   agentCounter += 1
   const header: { cwd?: string } = {}
@@ -107,6 +114,9 @@ export function fakeAgent(
   if (options.model !== undefined) agentOptions.model = options.model
   if (options.provider !== undefined) agentOptions.provider = options.provider
   const headerModel = options.headerModel
+  const requestContext = options.contextWindow === undefined
+    ? undefined
+    : (): { contextWindow?: number } => ({ contextWindow: options.contextWindow })
   return {
     id: SessionId(`fake-agent-${agentCounter}`),
     status: 'idle',
@@ -115,6 +125,7 @@ export function fakeAgent(
       events,
       header,
       requestHeader: () => (headerModel === undefined ? undefined : { config: { model: headerModel } }),
+      requestContext: () => requestContext?.(),
     },
   }
 }
@@ -144,10 +155,13 @@ export interface StatusPluginHarness {
  * injects faked.
  * @param plugin - the plugin module under test.
  * @param current - agent preloaded onto `blueSession.current`, if any.
+ * @param options - overrides; a custom color table observes the tier a
+ *   plugin paints its text in.
  */
 export async function bootStatusPlugin(
   plugin: StatusPluginModule,
   current: FakeAgent | null = null,
+  options: { colors?: Record<string, (text: string) => string> } = {},
 ): Promise<StatusPluginHarness> {
   const ctx = new Context()
   const screen = new StatusFakeScreen()
@@ -155,7 +169,7 @@ export async function bootStatusPlugin(
   const serviceNames: Record<string, unknown> = {
     blueStatus: registry,
     blueScreen: screen,
-    blueTheme: { colors: COLORS },
+    blueTheme: { colors: options.colors ?? COLORS },
     blueComponents: fakeBlueComponents(),
     blueSession: { current: current === null ? null : asAgent(current) },
   }
