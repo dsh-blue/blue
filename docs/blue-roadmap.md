@@ -27,6 +27,7 @@
 3. 渲染铁律：`session/event` → 组件子树 → `requestRender()`，单向数据流。
 4. 能力铁律：需要 harness 新能力时先在上游做能力缝，Blue 只消费文档化 surface。
 5. 纪律红线：焦点只经 `tuiScreen.setFocus`；键位一律注册进 keymap；弹窗只走 `showOverlay`。
+6. 对话框一律**底部上拉面板**（D26）：全宽 + `bottom-center` 锚定 + 让出 footer 两行，经 `framePanel` 渲染；除非特别说明，不用居中式弹窗。
 
 ---
 

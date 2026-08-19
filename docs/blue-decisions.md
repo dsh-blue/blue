@@ -175,6 +175,13 @@
 - **S11 落地（2026-08-19）**：`chrome.ts` 仅随首个消费者落 `withSideBorders`/`injectPromptSymbol`（其余函数各随 S12-S14 消费者落地，含契约里的 `setGhostHint`——S14）；`EditorAdapter.render` 后处理落地，角/条涂色经**活** `borderColor` 引用（宿主 `setBorderColor` 免重入适配器，kimi 同法）。同轮定稿两事：(1) **默认边框色回归中性灰**——S10 第二轮目测的"编辑框 border→primary"是裸双横线时代的过渡补偿，圆角框 + 语境变色（斜杠 primary / bash shellMode）落地后按预告复审退役；(2) **常驻按键提示的存在性门控**（§6）——`! bash`/`@ files` 片段按 editor-plus 在场（editor-instance 模块级标记）而非全量倾倒，`ctrl+v paste image` 按 keymap action 在场，键名一律 `getKeys` 白名单取值；bash 模式经 draft-stash 的 input-mode 暂存活过 `/theme` 换装（detach 只做视觉恢复不写暂存，重载后三件套连同草稿重建）。
 - **S12 落地（2026-08-19）**：`framePanel(body, width, opts)` 与 `hintRow(parts, paint)` 随对话框统一开出（§5 草样签名的两处细化，step log 记录）：规则线宽显式传参（body 可能整体短于视口宽，宽度不能从 body 反推）而非隐含；title/titleHint/footer/footerPaint/rulePaint 均为可选，缺省 identity 保持主题无关。`framePanel` 输出**全宽平 `─` 规则**（圆角框专属于面板/编辑框，对话框是 kimi 的"上下全宽横线 + 左上标题"范式）。五个 overlay 表面统一走 framePanel（审批/问卷//help//sessions/BlueSelect），解剖一致：标题、框、按键行齐备。同轮收口 S10 预告的复审项：`settingsListTheme` 选中行 label/value accent → primary（选中行是交互目标，primary 是它的 token）。
 
+### D26. 对话框一律底部上拉面板，弃用居中弹窗（用户裁决定稿）
+
+- **背景**：S12 首版把五个对话框做成居中式模态弹窗（60-80% 宽度、垂直居中）。用户实机对比后否决：「弹窗样式没有上拉框样式效果好」，要求 kimi 式的底部上拉全宽面板（面板从编辑器槽位升起、footer/statusline 保持在最底行可见）。
+- **决策**：Blue 的对话框范式定为**底部上拉面板**——`showOverlay` 以 `width: '100%'` + `anchor: 'bottom-center'` + `offsetY: -2`（让出两行 footer 壳）锚定，面板盖住编辑器槽位；全宽平 `─` 规则 + 缩进标题 + 按键行（framePanel）。**除非后续明确说明，一律不使用居中式弹窗**。
+- **理由**：上拉框与编辑器的空间关系连续（面板从用户注视的底部升起，操作路径更短），footer 状态保持可见；kimi 参照系同款；居中弹窗在宽终端上显得悬浮、割裂。
+- **后果**：dock 顺序翻转为 kimi 同款（`addBottomChild` 增 `position: 'bottom'`，footer 壳钉在最底行）；五个 overlay 表面全部按上拉面板实现（S12 定妆提交）；后续新对话框表面沿用同一锚定约定，例外需显式说明。
+
 ## 已知遗留（MVP 有意为之）
 
 - `/quit` 在 agent attach 前输入会显示 "no active session" 而不退出（input-plugin 在命令分发前检查 current agent）
