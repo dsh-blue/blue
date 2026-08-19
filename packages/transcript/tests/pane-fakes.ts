@@ -22,6 +22,7 @@ export class PaneFakeScreen implements BlueScreen {
   readonly bottomChildren: BlueComponent[] = []
   readonly renderRequests: (boolean | undefined)[] = []
   readonly columns = 80
+  rows = 24
 
   addChild(): () => void {
     throw new Error('fake addChild is out of scope for pane plugin tests')

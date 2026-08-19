@@ -7,7 +7,11 @@
  * Collapsed, the pane renders one muted `todos N/M` line (completed over
  * total); expanded, one line per entry: `☑` muted for completed, `◐` accent
  * for in-progress, `☐` plain for pending, with the content truncated to the
- * viewport. The expansion state follows a simple default rule — every
+ * viewport. Both states sit under a `topRule` frame (the in-border
+ * ` todos ─ ctrl+t ` title) with two-column-indented content rows — no side
+ * bars or bottom border, so the pane never box-stacks against the editor
+ * and the btw panel. The expansion state follows a simple default rule —
+ * every
  * incoming list containing an in-progress entry starts expanded, any other
  * list starts collapsed — and the global Ctrl-T action
  * (`blue.todo.toggle`, handler-carrying like the transcript's Ctrl-O) flips
@@ -25,6 +29,7 @@ import type {
   BlueSemanticColors,
 } from '@deepseek-ai/dsh-blue-core'
 import type { TodoItem } from '@deepseek-ai/dsh-session'
+import { topRule } from '@deepseek-ai/dsh-blue-core/chrome'
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
 import type {} from '@deepseek-ai/dsh-blue-app'
@@ -40,6 +45,10 @@ export const ACTION_TOGGLE_TODO = 'blue.todo.toggle'
 
 /** Below this viewport width the pane renders nothing rather than overflow. */
 const TODO_MIN_WIDTH = 4
+
+/** Bold SGR, wrapped around the in-border title (the ITALIC precedent). */
+const BOLD_OPEN = '\x1b[1m'
+const BOLD_CLOSE = '\x1b[22m'
 
 /** The pane's render state, mutated by the subscriptions in `apply`. */
 interface TodoState {
@@ -78,28 +87,36 @@ class TodoPaneComponent implements BlueComponent {
 
   /**
    * @param width - current viewport width in columns.
-   * @returns the summary or per-entry rows; none when there is no list.
+   * @returns the framed summary or per-entry rows; none when there is no
+   *   list. The frame is a `topRule` row only — no side bars, no bottom
+   *   border — so the pane never box-stacks against the editor and the btw
+   *   panel it may sit beside (kimi's todo panel is frameless too).
    */
   render(width: number): string[] {
     const todos = this.state.todos
     if (todos.length === 0) return []
     if (width < TODO_MIN_WIDTH) return []
+    const lines = [topRule(width, {
+      title: this.colors.primary(`${BOLD_OPEN} todos ${BOLD_CLOSE}`),
+      hint: this.colors.textMuted('ctrl+t '),
+      paint: this.colors.border,
+    })]
     if (this.state.collapsed) {
       const completed = todos.filter(todo => todo.status === 'completed').length
-      return [this.colors.muted(this.components.truncateToWidth(`todos ${completed}/${todos.length}`, width))]
+      lines.push(this.colors.muted(this.components.truncateToWidth(`  todos ${completed}/${todos.length}`, width)))
+      return lines
     }
-    const lines: string[] = []
     for (const todo of todos) {
       const content = this.components.truncateToWidth(todo.content, width - 2)
       switch (todo.status) {
         case 'completed':
-          lines.push(this.colors.muted(`☑ ${content}`))
+          lines.push(this.colors.muted(this.components.truncateToWidth(`  ☑ ${content}`, width)))
           break
         case 'in_progress':
-          lines.push(`${this.colors.accent('◐')} ${content}`)
+          lines.push(this.components.truncateToWidth(`  ${this.colors.accent('◐')} ${content}`, width))
           break
         case 'pending':
-          lines.push(`☐ ${content}`)
+          lines.push(this.components.truncateToWidth(`  ☐ ${content}`, width))
           break
       }
     }

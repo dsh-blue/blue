@@ -34,6 +34,7 @@ const COLORS = {
 class FakeScreen implements BlueScreen {
   readonly renderRequests: (boolean | undefined)[] = []
   readonly columns = 80
+  readonly rows = 24
 
   addChild(): () => void {
     throw new Error('fake addChild is out of scope for status tests')

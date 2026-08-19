@@ -41,6 +41,7 @@ const COLORS = {
 class CountingScreen implements BlueScreen {
   mounted = 0
   readonly columns = 80
+  readonly rows = 24
   readonly children: BlueComponent[] = []
   addChild(component: BlueComponent): () => void {
     this.mounted += 1

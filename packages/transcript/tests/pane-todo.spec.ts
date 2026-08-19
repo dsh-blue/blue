@@ -17,6 +17,15 @@ function todoWrite(todos: TodoItem[]): SessionEvent<'todo/write'> {
   return event('todo/write', { todos })
 }
 
+/**
+ * The framed pane's top rule at the given width. The identity colors leave
+ * only the manual bold SGR of the title; the composite (`todos` + joiner +
+ * hint) is 16 visible columns, so the fill is `width - 18`.
+ */
+function rule(width: number): string {
+  return `╭\x1b[1m todos \x1b[22m─ ctrl+t ${'─'.repeat(width - 18)}╮`
+}
+
 describe('blue-pane-todo', () => {
   it('renders zero rows without a session or without any todo/write', async () => {
     const noSession = await bootPanePlugin(todo)
@@ -43,7 +52,7 @@ describe('blue-pane-todo', () => {
       ]),
     ])
     const { screen, dispose } = await bootPanePlugin(todo, agent)
-    expect(screen.paneLines()).toEqual(['todos 1/2'])
+    expect(screen.paneLines()).toEqual([rule(80), '  todos 1/2'])
     await dispose()
   })
 
@@ -55,7 +64,7 @@ describe('blue-pane-todo', () => {
       { content: 'later', status: 'pending' },
     ])])
     const { screen, dispose } = await bootPanePlugin(todo, agent)
-    expect(screen.paneLines()).toEqual(['☑ done', '◐ doing', '☐ later'])
+    expect(screen.paneLines()).toEqual([rule(80), '  ☑ done', '  ◐ doing', '  ☐ later'])
     await dispose()
   })
 
@@ -63,20 +72,20 @@ describe('blue-pane-todo', () => {
     resetSeq()
     const agent = fakeAgent([todoWrite([{ content: 'a', status: 'pending' }])])
     const { ctx, screen, dispose } = await bootPanePlugin(todo, agent)
-    expect(screen.paneLines()).toEqual(['todos 0/1'])
+    expect(screen.paneLines()).toEqual([rule(80), '  todos 0/1'])
     const baseline = screen.renderRequests.length
 
     // Other sessions and other event types are ignored.
     ctx.emit('session/event', fakeAgent([]).session as unknown as Session, todoWrite([{ content: 'x', status: 'pending' }]))
     ctx.emit('session/event', agent.session as unknown as Session, userEvent('not a todo'))
-    expect(screen.paneLines()).toEqual(['todos 0/1'])
+    expect(screen.paneLines()).toEqual([rule(80), '  todos 0/1'])
     expect(screen.renderRequests.length).toBe(baseline)
 
     ctx.emit('session/event', agent.session as unknown as Session, todoWrite([
       { content: 'a', status: 'completed' },
       { content: 'b', status: 'in_progress' },
     ]))
-    expect(screen.paneLines()).toEqual(['☑ a', '◐ b'])
+    expect(screen.paneLines()).toEqual([rule(80), '  ☑ a', '  ◐ b'])
 
     // An identical rewrite changes no signature and requests no redraw.
     const before = screen.renderRequests.length
@@ -97,21 +106,21 @@ describe('blue-pane-todo', () => {
     const { ctx, screen, keymap, dispose } = await bootPanePlugin(todo, agent)
     expect(keymap.actions.map(action => action.id)).toEqual([todo.ACTION_TOGGLE_TODO])
     expect(keymap.actions[0]!.keys).toBe('ctrl+t')
-    expect(screen.paneLines()).toEqual(['☑ a', '◐ b'])
+    expect(screen.paneLines()).toEqual([rule(80), '  ☑ a', '  ◐ b'])
 
     keymap.handler(todo.ACTION_TOGGLE_TODO)()
     expect(screen.renderRequests.at(-1)).toBe(true)
-    expect(screen.paneLines()).toEqual(['todos 1/2'])
+    expect(screen.paneLines()).toEqual([rule(80), '  todos 1/2'])
 
     keymap.handler(todo.ACTION_TOGGLE_TODO)()
-    expect(screen.paneLines()).toEqual(['☑ a', '◐ b'])
+    expect(screen.paneLines()).toEqual([rule(80), '  ☑ a', '  ◐ b'])
 
     // The next write re-derives the default over the manual choice.
     ctx.emit('session/event', agent.session as unknown as Session, todoWrite([
       { content: 'a', status: 'completed' },
       { content: 'b', status: 'completed' },
     ]))
-    expect(screen.paneLines()).toEqual(['todos 2/2'])
+    expect(screen.paneLines()).toEqual([rule(80), '  todos 2/2'])
 
     await dispose()
     expect(keymap.actions).toHaveLength(0)
@@ -129,7 +138,7 @@ describe('blue-pane-todo', () => {
     resetSeq()
     const first = fakeAgent([todoWrite([{ content: 'first', status: 'pending' }])])
     const { ctx, screen, dispose } = await bootPanePlugin(todo, first)
-    expect(screen.paneLines()).toEqual(['todos 0/1'])
+    expect(screen.paneLines()).toEqual([rule(80), '  todos 0/1'])
 
     resetSeq()
     const second = fakeAgent([userEvent('fresh')])
@@ -143,7 +152,7 @@ describe('blue-pane-todo', () => {
     expect(screen.renderRequests.length).toBe(baseline)
 
     ctx.emit('session/event', second.session as unknown as Session, todoWrite([{ content: 'now', status: 'in_progress' }]))
-    expect(screen.paneLines()).toEqual(['◐ now'])
+    expect(screen.paneLines()).toEqual([rule(80), '  ◐ now'])
     await dispose()
   })
 
@@ -152,10 +161,16 @@ describe('blue-pane-todo', () => {
     const agent = fakeAgent([todoWrite([{ content: 'a very long todo line', status: 'in_progress' }])])
     const { screen, dispose } = await bootPanePlugin(todo, agent)
     const pane = screen.bottomChildren[0]!
-    expect(pane.render(10)).toEqual(['◐ a ver...'])
+    // The framed rows never exceed the viewport (the clipped top rule and
+    // the truncated entry alike), and a too-narrow viewport renders nothing.
+    const narrow = pane.render(10)
+    expect(narrow[0]?.startsWith('╭')).toBe(true)
+    for (const row of narrow) {
+      expect(row.replace(/\x1b\[[0-9;]*m/g, '').length).toBeLessThanOrEqual(10)
+    }
     expect(pane.render(3)).toEqual([])
     pane.invalidate()
-    expect(pane.render(10)).toEqual(['◐ a ver...'])
+    expect(pane.render(10)).toEqual(narrow)
     await dispose()
   })
 
@@ -163,7 +178,7 @@ describe('blue-pane-todo', () => {
     resetSeq()
     const agent = fakeAgent([todoWrite([{ content: 'a', status: 'pending' }])])
     const { screen, dispose } = await bootPanePlugin(todo, agent)
-    expect(screen.bottomChildren[0]!.render(5)).toEqual(['to...'])
+    expect(screen.bottomChildren[0]!.render(20)).toEqual([rule(20), '  todos 0/1'])
     await dispose()
   })
 })
