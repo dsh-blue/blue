@@ -34,6 +34,7 @@ import type { BlueScreenService, BlueKeymapService, BlueComponentsService } from
 // BlueImage/BlueImageOptions are not root-exported by core yet; source-plane
 // tests import them straight from core's src types.
 import type { BlueImage, BlueImageOptions } from '../../core/src/types.ts'
+import { setEditorSlotSwap } from '../src/editor-instance.ts'
 import {
   INTERACTION_KEY_ACTIONS,
 } from '../src/keys.ts'
@@ -213,7 +214,7 @@ export class FakeBlueEditor implements BlueEditor {
   disableSubmit = false
   /** Autocomplete dropdown visibility reported by `isShowingAutocomplete`. */
   showingAutocomplete = false
-  /** Every line recorded through `addToHistory`, in order. */
+  /** History entries, newest first (mirrors pi-tui). */
   readonly history: string[] = []
   /** Every string recorded through `insertText`, in order. */
   readonly inserted: string[] = []
@@ -246,7 +247,13 @@ export class FakeBlueEditor implements BlueEditor {
   }
 
   addToHistory(text: string): void {
-    this.history.push(text)
+    // pi-tui prepends and skips a repeat of the newest entry; the fake
+    // mirrors that contract so order-sensitive consumers behave alike.
+    if (this.history[0] !== text) this.history.unshift(text)
+  }
+
+  getHistory(): readonly string[] {
+    return [...this.history]
   }
 
   /** The fake has no cursor model: insertion appends and fires onChange. */
@@ -488,6 +495,8 @@ export class FakeBlueComponents implements BlueComponents {
 export interface FakeOverlay {
   readonly component: BlueComponent
   readonly options: BlueOverlayOptions | undefined
+  /** The focus holder before this record mounted; restored on dismissal. */
+  readonly previous: BlueComponent | null
   readonly handle: BlueOverlayHandle
   hidden: boolean
 }
@@ -545,10 +554,34 @@ export class FakeScreen implements BlueScreen {
   }
 
   showOverlay(component: BlueComponent, options?: BlueOverlayOptions): BlueOverlayHandle {
+    this.recordDialog(component, options)
+    return this.overlays.at(-1)!.handle
+  }
+
+  /**
+   * Record an editor-slot dialog panel (the D30 mount) through the same
+   * registry as overlays: dialog specs assert one lifecycle — mount,
+   * interact with the component, restore — regardless of the mount
+   * mechanism. Focus mirrors the swap: the panel takes focus on mount and
+   * the disposer restores the previous focus and flags the record hidden.
+   * @param component - the dialog panel.
+   */
+  mountDialogPanel(component: BlueComponent): () => void {
+    this.recordDialog(component, undefined)
+    const overlay = this.overlays.at(-1)!
+    return () => {
+      overlay.hidden = true
+      this.setFocus(overlay.previous)
+    }
+  }
+
+  /** Push one dialog/overlay record with its focus bookkeeping. */
+  private recordDialog(component: BlueComponent, options: BlueOverlayOptions | undefined): void {
     const previous = this.focused
     const overlay: FakeOverlay = {
       component,
       options,
+      previous,
       hidden: false,
       handle: {
         hide: () => {
@@ -570,7 +603,6 @@ export class FakeScreen implements BlueScreen {
     }
     this.overlays.push(overlay)
     this.setFocus(component)
-    return overlay.handle
   }
 
   requestRender(): void {
@@ -601,5 +633,8 @@ export function fakeBlueContext(): {
   ctx.provide('blueTheme', theme as unknown as BlueTheme)
   ctx.provide('blueKeymap', keymap as unknown as BlueKeymapService)
   ctx.provide('blueComponents', components as unknown as BlueComponentsService)
+  // The D30 editor-slot swap stands in for `blue-input`'s real machinery:
+  // dialog specs assert the mounted panel through the overlay registry.
+  setEditorSlotSwap({ mount: component => screen.mountDialogPanel(component) })
   return { ctx, screen, theme, keymap, components }
 }

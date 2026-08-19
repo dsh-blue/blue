@@ -45,6 +45,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {
   BlueComponent,
   BlueComponents,
+  BlueFocusable,
   BlueScreen,
   BlueSemanticColors,
 } from '@dsh-blue/blue-core'
@@ -53,9 +54,10 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import {
   applySubmitTransformers,
   clearSharedEditor,
+  setEditorSlotSwap,
   setSharedEditor,
 } from './editor-instance.ts'
-import { clearDraft, getStashedDraft, stashDraft } from './draft-stash.ts'
+import { clearDraft, getStashedDraft, getStashedHistory, stashDraft, stashHistory } from './draft-stash.ts'
 import { ACTION_CANCEL, ACTION_INTERRUPT, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_STEER } from './keys.ts'
 import { ACTION_QUEUE_RECALL, queuedMessageText } from './pane-queue.ts'
 import { currentBlueAgent } from './session.ts'
@@ -234,6 +236,11 @@ export function apply(ctx: Context): void {
     refreshHint()
     if (line.length === 0) return
     editor.addToHistory(line)
+    // The history lives in the component; a `/theme <name>` submission
+    // rebuilds this fiber (and the editor) as its own effect, so the new
+    // entry must reach the reload stash before the swap tears the
+    // component down.
+    stashHistory(editor.getHistory())
     const agent = currentBlueAgent(ctx)
     if (agent === undefined) {
       setNotice('no active session')
@@ -411,6 +418,11 @@ export function apply(ctx: Context): void {
     currentText = editor.getText()
     refreshHint()
   }
+  // Replay the stashed history into the fresh component — the old
+  // editor's Up-recall entries died with it when the reload rebuilt this
+  // fiber. The stash is newest-first and pi-tui prepends, so the replay
+  // walks it reversed to land the same order.
+  for (const entry of [...getStashedHistory()].reverse()) editor.addToHistory(entry)
 
   // Session switches re-derive the slash hint against the new agent (its
   // command list, or the absence of an agent at all); the transient notice
@@ -432,12 +444,56 @@ export function apply(ctx: Context): void {
     // Pin below the transcript: pi-tui renders root children in mount order,
     // and transcript components only appear once a session exists. The hint
     // line mounts after the editor so it renders beneath it.
-    const removeEditor = screen.addBottomChild(editor)
-    const removeHint = screen.addBottomChild(hintLine)
+    let removeEditor = screen.addBottomChild(editor)
+    let removeHint = screen.addBottomChild(hintLine)
     screen.setFocus(editor)
     setSharedEditor({ editor, submitPrompt, notice: setNotice })
     ctx.emit('blue/input-editor-changed')
+
+    // The editor-slot swap (kimi `mountEditorReplacement`, D30): a dialog
+    // panel takes over the editor's dock slot, so below an open panel only
+    // the footer remains — a floating overlay would leave the editor's
+    // frame peeking around it. A stack keeps nested opens orderly; the top
+    // entry is what renders, and popping back to empty restores the editor
+    // (its buffer and draft survive — the component merely left the tree).
+    const panels: { readonly component: BlueFocusable; readonly remove: () => void }[] = []
+    const hideEditor = (): void => {
+      removeHint()
+      removeEditor()
+    }
+    const showEditor = (): void => {
+      removeEditor = screen.addBottomChild(editor)
+      removeHint = screen.addBottomChild(hintLine)
+      screen.setFocus(editor)
+    }
+    setEditorSlotSwap({
+      mount: (component) => {
+        if (panels.length === 0) hideEditor()
+        const remove = screen.addBottomChild(component)
+        screen.setFocus(component)
+        const entry = { component, remove }
+        panels.push(entry)
+        screen.requestRender()
+        return () => {
+          const index = panels.indexOf(entry)
+          // -1 covers both re-disposal and a panel outliving this fiber:
+          // the teardown below already unmounted it.
+          if (index === -1) return
+          panels.splice(index, 1)
+          remove()
+          const top = panels.at(-1)
+          if (top === undefined) showEditor()
+          else screen.setFocus(top.component)
+          screen.requestRender()
+        }
+      },
+    })
+
     return () => {
+      setEditorSlotSwap(undefined)
+      // Panels still open when this fiber unloads (a /theme swap with a
+      // dialog up) unmount with it; their disposers turn into no-ops.
+      for (const entry of panels.splice(0)) entry.remove()
       clearSharedEditor()
       ctx.emit('blue/input-editor-changed')
       removeHint()

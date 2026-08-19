@@ -27,7 +27,8 @@ import {
   type BannerContent,
   type BannerDeps,
 } from '../src/banner.ts'
-import { BLUE_VERSION } from '../src/banner-content.ts'
+import { BANNER_TIPS, BANNER_WHATS_NEW, BLUE_VERSION } from '../src/banner-content.ts'
+import { STATUS_TIPS } from '../src/tips-content.ts'
 import * as banner from '../src/banner.ts'
 import { fakeBlueComponents } from './helpers.ts'
 import { COLORS } from './status-fakes.ts'
@@ -279,5 +280,38 @@ describe('BLUE_VERSION', () => {
   it('matches the package version', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }
     expect(BLUE_VERSION).toBe(pkg.version)
+  })
+})
+
+describe('banner content', () => {
+  it('derives the tips section from the footer pool: non-solo, weight-first, five lines', () => {
+    // The exact selection, pinned: the two priority-2 sharable tips first,
+    // then the priority-1 tips in pool order.
+    expect(BANNER_TIPS.lines).toEqual([
+      '! to run a shell command',
+      '@: mention files',
+      '/help: show commands',
+      '/sessions to browse and resume earlier sessions',
+      '/fork to branch the conversation and explore safely',
+    ])
+    // The derivation invariants, independent of the pinned copy: every
+    // line is a pool text, none is a solo tip, and higher weight sorts
+    // earlier.
+    const pool = new Map(STATUS_TIPS.map(tip => [tip.text, tip]))
+    for (const line of BANNER_TIPS.lines) expect(pool.get(line)?.solo).not.toBe(true)
+    const weights = BANNER_TIPS.lines.map(line => pool.get(line)?.priority ?? 1)
+    expect([...weights].sort((a, b) => b - a)).toEqual(weights)
+    // Five tips + heading + divider + three what's-new lines exactly fill
+    // the right column's eleven body rows against the left column.
+    expect(BANNER_TIPS.lines).toHaveLength(5)
+    expect(BANNER_WHATS_NEW.lines).toHaveLength(3)
+  })
+
+  it('keeps every right-column line within the hundred-column render budget', () => {
+    // The right cell at one hundred columns budgets fifty-two visible
+    // columns; longer lines would render clipped on the default view.
+    for (const line of [...BANNER_TIPS.lines, ...BANNER_WHATS_NEW.lines]) {
+      expect(line.length).toBeLessThanOrEqual(52)
+    }
   })
 })

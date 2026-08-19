@@ -19,6 +19,7 @@ import * as themeAuto from '@dsh-blue/blue-core/theme-auto'
 import * as themeCustom from '@dsh-blue/blue-core/theme-custom'
 import * as themeDark from '@dsh-blue/blue-core/theme-dark'
 import * as themeLight from '@dsh-blue/blue-core/theme-light'
+import { CURRENT_MARK } from './symbols.ts'
 
 /** Usage text returned for malformed `/theme` invocations. */
 const USAGE = 'usage: /theme [dark|light|auto|custom <path> [dark|light]]'
@@ -52,11 +53,13 @@ const KNOWN_KEYS = ['dark', 'light', 'auto', 'custom'] as const
 let current: ThemeTarget = DARK
 
 /**
- * The `/theme` listing: every known key, the live one marked.
+ * The `/theme` listing: every known key, the live one marked with the
+ * shared `← current` selector mark (the same vocabulary as the session
+ * picker's badge).
  * @returns the listing text.
  */
 function listText(): string {
-  const entries = KNOWN_KEYS.map(key => key === current.key ? `${key} (current)` : key)
+  const entries = KNOWN_KEYS.map(key => key === current.key ? `${key} ${CURRENT_MARK}` : key)
   return `themes: ${entries.join(', ')}`
 }
 

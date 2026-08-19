@@ -8,21 +8,23 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { BlueComponent } from '@dsh-blue/blue-core'
+import type { BlueComponent, BlueFocusable } from '@dsh-blue/blue-core'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime, { type CommandResult } from '@deepseek-ai/dsh-commands'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import * as inputPlugin from '../src/input-plugin.ts'
 import * as paneQueuePlugin from '../src/pane-queue.ts'
-import { getSharedEditor } from '../src/editor-instance.ts'
-import { clearDraft } from '../src/draft-stash.ts'
+import { getSharedEditor, mountEditorReplacement } from '../src/editor-instance.ts'
+import { clearDraft, stashHistory } from '../src/draft-stash.ts'
 import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeBlueEditor, type FakeScreen } from './fakes.ts'
 
 // The draft stash is module state: a test that leaves unsubmitted text
-// would see it restored into the next test's freshly mounted editor.
+// or submitted history would see it restored into the next test's
+// freshly mounted editor.
 afterEach(() => {
   clearDraft()
+  stashHistory([])
 })
 
 /** In-memory inbox double with a stubbed, recordable removal. */
@@ -343,6 +345,98 @@ describe('blue-input plugin', () => {
     expect(screen.children).toHaveLength(0)
     expect(screen.focused).toBeNull()
     expect(getSharedEditor()).toBeUndefined()
+  })
+
+  it('restores the prompt history across the theme-swap reload', async () => {
+    // `/theme <name>` rebuilds this fiber as its own effect: the editor
+    // component (and pi-tui's in-component history) dies with it. The
+    // stash mirrors the history at submit time and the remount replays it.
+    const first = await mount()
+    type(first.editor, 'hello')
+    first.editor.handleInput(KEY.enter)
+    type(first.editor, '/theme dark')
+    first.editor.handleInput(KEY.enter)
+    expect(first.editor.history).toEqual(['/theme dark', 'hello'])
+    await first.fiber.dispose()
+    const second = await mount()
+    expect(second.editor.history).toEqual(['/theme dark', 'hello'])
+  })
+
+  describe('editor-slot swap (D30 dialog mount)', () => {
+    /** A minimal focusable panel for slot tests. */
+    function panel(name: string): BlueFocusable & BlueComponent {
+      return {
+        name,
+        focused: false,
+        handleInput: vi.fn(),
+        invalidate: vi.fn(),
+        render: () => [name],
+      }
+    }
+
+    it('hides the editor for the panel and restores it with focus on dispose', async () => {
+      const { screen, editor, hint } = await mount()
+      const first = panel('first')
+      const restore = mountEditorReplacement(first)
+      // The editor and hint left the dock; the panel took the slot and
+      // the focus.
+      expect(screen.children).toEqual([first])
+      expect(screen.focused).toBe(first)
+      restore()
+      expect(screen.children).toEqual([editor, hint])
+      expect(screen.focused).toBe(editor)
+    })
+
+    it('stacks nested panels: disposing the top refocuses the one beneath', async () => {
+      const { screen, editor } = await mount()
+      const outer = panel('outer')
+      const inner = panel('inner')
+      const restoreOuter = mountEditorReplacement(outer)
+      const restoreInner = mountEditorReplacement(inner)
+      expect(screen.children).toEqual([outer, inner])
+      restoreInner()
+      // The outer panel stays mounted and regains focus.
+      expect(screen.children).toEqual([outer])
+      expect(screen.focused).toBe(outer)
+      restoreOuter()
+      expect(screen.children).toEqual([editor, expect.anything()])
+      expect(screen.focused).toBe(editor)
+    })
+
+    it('keeps the editor hidden when the bottom panel of a stack disposes first', async () => {
+      const { screen, editor } = await mount()
+      const outer = panel('outer')
+      const inner = panel('inner')
+      const restoreOuter = mountEditorReplacement(outer)
+      const restoreInner = mountEditorReplacement(inner)
+      // Out-of-order: the first-mounted panel goes while the top stays.
+      restoreOuter()
+      expect(screen.children).toEqual([inner])
+      expect(screen.focused).toBe(inner)
+      restoreInner()
+      expect(screen.focused).toBe(editor)
+    })
+
+    it('unmounts an open panel with the fiber and turns its disposer into a no-op', async () => {
+      const { screen, fiber } = await mount()
+      const open = panel('open')
+      const restore = mountEditorReplacement(open)
+      await fiber.dispose()
+      // The teardown unmounted the panel; the late disposer must not
+      // resurrect the editor against the disposed fiber's screen handle.
+      expect(screen.children).toEqual([])
+      expect(() => restore()).not.toThrow()
+      expect(screen.children).toEqual([])
+      expect(screen.focused).toBeNull()
+    })
+
+    it('keeps the editor buffer across a swap round-trip', async () => {
+      const { editor } = await mount()
+      type(editor, 'draft survives')
+      const restore = mountEditorReplacement(panel('modal'))
+      restore()
+      expect(editor.getText()).toBe('draft survives')
+    })
   })
 
   describe('editor-context keys', () => {

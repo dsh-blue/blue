@@ -11,7 +11,7 @@
  * @module @dsh-blue/blue-interaction/editor-instance
  */
 
-import type { BlueEditor } from '@dsh-blue/blue-core'
+import type { BlueEditor, BlueFocusable } from '@dsh-blue/blue-core'
 // Empty type import carries the Cordis `Events` interface this file merges into.
 import type {} from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -105,6 +105,45 @@ export function clearSharedEditor(): void {
  */
 export function getSharedEditor(): SharedEditor | undefined {
   return shared
+}
+
+/**
+ * The editor-slot swap `blue-input` installs while mounted (the kimi
+ * `mountEditorReplacement` mechanism): a dialog panel takes over the
+ * editor's dock slot, so the editor disappears for the panel's lifetime
+ * instead of peeking around a floating overlay. The returned disposer
+ * restores whatever was beneath (a prior panel, or the editor itself).
+ */
+export interface EditorSlotSwap {
+  /**
+   * Mount a dialog panel over the editor's dock slot and focus it.
+   * @param component - the panel; a focusable dock child.
+   * @returns an idempotent disposer popping back to the previous occupant.
+   */
+  readonly mount: (component: BlueFocusable) => () => void
+}
+
+/** The installed swap; present exactly while `blue-input` is mounted. */
+let slotSwap: EditorSlotSwap | undefined
+
+/**
+ * Publish the slot-swap machinery; called by `blue-input` on mount.
+ * @param value - the swap implementation.
+ */
+export function setEditorSlotSwap(value: EditorSlotSwap | undefined): void {
+  slotSwap = value
+}
+
+/**
+ * Mount a dialog panel over the editor's dock slot, hiding the editor
+ * (kimi dialog parity: below an open panel only the footer remains). A
+ * no-op while `blue-input` is unmounted, so a dialog opening outside a
+ * mounted input layer degrades instead of crashing.
+ * @param component - the panel; a focusable dock child.
+ * @returns an idempotent disposer restoring the previous occupant.
+ */
+export function mountEditorReplacement(component: BlueFocusable): () => void {
+  return slotSwap?.mount(component) ?? (() => {})
 }
 
 /**

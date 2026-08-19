@@ -204,6 +204,13 @@
 - **理由**：用户将"会话流左右边距"列为对齐缺口（2026-08-20 会话流调研，p2-visual §2.6 #7）；gutter 是 kimi 层级感的结构底座——chrome 与终端边缘脱开、左缘与编辑框内列成一条竖线；"先组件后 reflow"的顺序避免中途步骤锚点二次改写。
 - **后果**：S21 落地时全量 e2e 布局锚 reflow，并移除 S13 推迟注记（p2-visual §7 S13 step log 与 D25 S13 落地注）及 AGENTS 对应句；后续新组件零成本继承 gutter（包装在挂载层，不在组件内）。
 
+### D30. 对话框挂载改 editor 槽位替换：浮层 overlay 盖不住的编辑器直接退场（用户裁决，S16 dogfood 修订 D26 锚定手法）
+
+- **背景**：S12/D26 把对话框定为 `showOverlay` 浮层（`bottom-center` + `offsetY: -2` 让出 footer 两行，面板"盖住"编辑器槽位）。S16 dogfood 实机暴露两层问题：(1) 浮层只让出 footer，编辑器框（尤其顶栏 `╭──╮`）在面板与 footer 之间露出——dump 证实 row 21 面板底边、row 22 编辑器顶框、row 23 footer；(2) 面板较矮时（/sessions 短列表）编辑器整框暴露更多。用户裁决对齐 kimi："应该直接隐藏 Editor，kimi 的效果是看不见 Editor 的，pane 下面只有 footer"。kimi 源码核实：全部对话框（help/session picker/approval/question/trust）统一走 `mountEditorReplacement` —— `editorContainer.clear()` 后把面板 addChild 进编辑器容器，编辑器组件**离树但状态存活**（草稿/历史保留），关闭时 `restoreEditor` 换回并重设焦点。
+- **决策**：对话框挂载从浮层改为**editor 槽位替换**（kimi `mountEditorReplacement` 移植）——`editor-instance` 开 `EditorSlotSwap` 缝（`setEditorSlotSwap` 由 blue-input 挂载期安装、卸载期清除；`mountEditorReplacement(component)` 面板调用并取回恢复 disposer）；blue-input 实现栈式替换（挂面板时摘除 editor+hint 两个 dock 子组件、面板入栈并 `setFocus`；栈弹空恢复 editor 并还焦点；fiber 卸载时未关面板随之下树，其 disposer 变 no-op）。四个调用点（/sessions、/help、approval、questionnaire）全部改走替换，S12 的 `width/anchor/offsetY/maxHeight` 锚定参数随浮层退役。framePanel 全宽上拉的**观感**不变（面板本就自绘框），变化的是挂载机制：面板真实占据 dock 槽位、其下只有 footer。
+- **理由**：盖不住是浮层的结构性缺陷（锚定只认 terminal 底行，不认 dock 高度）；替换让"面板下方只有 footer"成为布局事实而非绘制巧合；kimi 同构；编辑器仅离树不清状态，草稿与历史天然存活；替换还消除了浮层 maxHeight 切片与 dock 增长的相互作用（面板高度自管）。
+- **后果**：D26 的"底部上拉面板观感"裁定维持（全宽、framePanel、底部上拉的视觉范式不变），其 `showOverlay` 锚定手法句由本决策取代——`showOverlay` 仍保留在 L1 契约（未来 alt-screen 搜索/diff 全屏预览等真浮层表面可用），但对话框表面一律走替换。已知边界：btw 面板开着时对话框替换编辑器，btw 面板悬在对话框上方（`├┤` 拼接指向已离树的编辑器）——dogfood 未报困扰，留待 S17 活动模式机的 `hidden` 态一并定夺（kimi 对话框挂起时 activity pane 亦隐藏）；同因，对话框打开时 pane-activity spinner 行仍在面板上方，S17 收口。e2e 锚随之改写：编辑器顶框 SGR（`38;2;90;90;90`）在面板打开时必须从整帧消失。
+
 ## 已知遗留（MVP 有意为之）
 
 - `/quit` 在 agent attach 前输入会显示 "no active session" 而不退出（input-plugin 在命令分发前检查 current agent）

@@ -1,13 +1,17 @@
 /**
  * Module-level stash of the input editor's unsubmitted draft (text and
- * input mode). A theme swap disposes the theme provider fiber and Cordis
- * reloads every `blueTheme` dependent — including `blue-input`, whose
- * editor component is rebuilt from scratch. The module instance survives
- * the reload while the component does not, so the draft lives here:
- * `blue-input` mirrors every edit into the stash through `onChange`, clears
- * it when the text is consumed (submit/steer), and restores it into the
- * freshly mounted editor; `blue-editor-plus` mirrors the prompt/bash mode
- * the same way, so a bash draft reloads as bash.
+ * input mode) and its prompt history. A theme swap disposes the theme
+ * provider fiber and Cordis reloads every `blueTheme` dependent —
+ * including `blue-input`, whose editor component is rebuilt from scratch.
+ * The module instance survives the reload while the component does not,
+ * so the draft lives here: `blue-input` mirrors every edit into the stash
+ * through `onChange`, clears it when the text is consumed (submit/steer),
+ * and restores it into the freshly mounted editor; `blue-editor-plus`
+ * mirrors the prompt/bash mode the same way, so a bash draft reloads as
+ * bash. The history mirrors beside it (after every submission) — pi-tui
+ * keeps the history in the component, so without the stash a `/theme`
+ * argument submission would vanish from Up-recall the moment its own
+ * command rebuilds the editor.
  *
  * @module @dsh-blue/blue-interaction/draft-stash
  */
@@ -23,6 +27,9 @@ let draft = ''
  */
 let inputMode: 'prompt' | 'bash' = 'prompt'
 
+/** The stashed history, newest first (pi-tui's order); survives consumption. */
+let history: readonly string[] = []
+
 /**
  * Mirror the editor's current text into the stash.
  * @param text - the editor content to preserve across reloads.
@@ -31,7 +38,7 @@ export function stashDraft(text: string): void {
   draft = text
 }
 
-/** Clear the stash; called when the draft is consumed (submitted/steered). */
+/** Clear the draft stash; called when the draft is consumed (submitted/steered). */
 export function clearDraft(): void {
   draft = ''
   inputMode = 'prompt'
@@ -59,4 +66,21 @@ export function stashInputMode(mode: 'prompt' | 'bash'): void {
  */
 export function getStashedInputMode(): 'prompt' | 'bash' {
   return inputMode
+}
+
+/**
+ * Mirror the editor's prompt history into the stash.
+ * @param entries - the history entries, newest first.
+ */
+export function stashHistory(entries: readonly string[]): void {
+  history = [...entries]
+}
+
+/**
+ * Read the stashed history.
+ * @returns the preserved entries, newest first; empty when nothing was
+ *   stashed.
+ */
+export function getStashedHistory(): readonly string[] {
+  return history
 }

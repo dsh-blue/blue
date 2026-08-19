@@ -166,6 +166,11 @@ describe('createEditor', () => {
     editor.setText('')
     editor.handleInput('\x1b[A')
     expect(editor.getText()).toBe('earlier prompt')
+    // The history read-back (the structural cast over pi-tui's private
+    // field, pinned here against 0.84.2) returns the entries oldest first.
+    editor.addToHistory('second prompt')
+    // pi-tui prepends: index 0 is the newest submission.
+    expect(editor.getHistory()).toEqual(['second prompt', 'earlier prompt'])
 
     editor.focused = true
     expect(editor.focused).toBe(true)
@@ -474,6 +479,38 @@ describe('createEditor', () => {
     editor.setGhostHint(undefined)
     const cleared = editor.render(30).join('\n')
     expect(cleared).not.toContain('<world>')
+    stop()
+  })
+
+  it('declines the ghost while history recall parks the cursor at the start', () => {
+    const { tui, stop } = bootTui()
+    const components = createService(tui)
+    const editor = components.createEditor({ paddingX: 4 })
+    // Recall the entry through the real history path: Up parks the cursor
+    // on the text's first character (an inverse-video glyph, not the
+    // end-of-input space), and the ghost must decline — the splice math
+    // would otherwise land inside the zero-width hardware-cursor marker
+    // and eat the recalled text (the S16 dogfood garble).
+    editor.addToHistory('/theme')
+    editor.setGhostHint(' [dark|light]')
+    editor.handleInput('\x1b[A')
+    const recalled = editor.render(30).join('\n')
+    expect(recalled).not.toContain('[dark|light]')
+    // The recalled text itself renders whole behind the start cursor.
+    expect(recalled).toContain('theme')
+    stop()
+  })
+
+  it('declines the ghost while the cursor sits on a later line of the input', () => {
+    const { tui, stop } = bootTui()
+    const components = createService(tui)
+    const editor = components.createEditor({ paddingX: 4 })
+    // A multi-line buffer parks the cursor at the end of its LAST line;
+    // the ghost belongs only at the end of the single-line input.
+    editor.setText('hello\nworld')
+    editor.setGhostHint(' <ghost>')
+    const rendered = editor.render(30).join('\n')
+    expect(rendered).not.toContain('<ghost>')
     stop()
   })
 

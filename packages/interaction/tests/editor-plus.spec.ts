@@ -17,7 +17,7 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import * as inputPlugin from '../src/input-plugin.ts'
 import * as editorPlus from '../src/editor-plus.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
-import { clearDraft } from '../src/draft-stash.ts'
+import { clearDraft, stashHistory } from '../src/draft-stash.ts'
 import { fakeBlueContext, FakeBlueEditor, KEY, type FakeScreen } from './fakes.ts'
 
 const signal = (): AbortSignal => new AbortController().signal
@@ -26,9 +26,10 @@ afterEach(() => {
   editorPlus.setShellExecutor(undefined)
   editorPlus.setFdRunner(undefined)
   clearSharedEditor()
-  // The draft stash is module state: don't leak unsubmitted text into the
-  // next test's freshly mounted editor.
+  // The draft stash is module state: don't leak unsubmitted text or
+  // submitted history into the next test's freshly mounted editor.
   clearDraft()
+  stashHistory([])
   vi.restoreAllMocks()
 })
 

@@ -56,7 +56,7 @@ describe('/theme command', () => {
   it('lists the known themes, marking the live one', async () => {
     const { ctx, agent } = await mount()
     const result = await execute(ctx, agent, '/theme')
-    expect(result).toEqual({ kind: 'success', text: 'themes: dark (current), light, auto, custom' })
+    expect(result).toEqual({ kind: 'success', text: 'themes: dark ← current, light, auto, custom' })
   })
 
   it('swaps built-in palettes through the real registry', async () => {
@@ -92,7 +92,7 @@ describe('/theme command', () => {
     expect(colors?.accent('x')).toBe('\x1b[38;2;255;0;0mx\x1b[39m')
     expect(colors?.text).toBe(themeDark.DARK_COLORS.text)
     const list = await execute(ctx, agent, '/theme')
-    expect(list).toEqual({ kind: 'success', text: 'themes: dark, light, auto, custom (current)' })
+    expect(list).toEqual({ kind: 'success', text: 'themes: dark, light, auto, custom ← current' })
   })
 
   it('loads a custom palette over the light base', async () => {
@@ -114,7 +114,7 @@ describe('/theme command', () => {
     expect(await execute(ctx, agent, `/theme custom ${join(dir, 'x.json')} light extra`))
       .toEqual({ kind: 'error', text: USAGE })
     const list = await execute(ctx, agent, '/theme')
-    expect(list).toEqual({ kind: 'success', text: 'themes: dark, light, auto, custom (current)' })
+    expect(list).toEqual({ kind: 'success', text: 'themes: dark, light, auto, custom ← current' })
   })
 
   it('restores the dark palette when the custom mount fails validation', async () => {
@@ -126,7 +126,7 @@ describe('/theme command', () => {
     if (result?.kind === 'error') expect(result.text).toContain('failed to apply theme "custom"')
     expect(ctx.get('blueTheme')?.colors).toBe(themeDark.DARK_COLORS)
     const list = await execute(ctx, agent, '/theme')
-    expect(list).toEqual({ kind: 'success', text: 'themes: dark (current), light, auto, custom' })
+    expect(list).toEqual({ kind: 'success', text: 'themes: dark ← current, light, auto, custom' })
   })
 
   it('unregisters the command when the fiber disposes', async () => {

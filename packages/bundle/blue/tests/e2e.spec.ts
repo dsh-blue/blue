@@ -40,7 +40,7 @@ import * as startupPlugin from '../../../app/src/startup.ts'
 import { startBlueTerminal } from '../../../core/src/terminal.ts'
 import { FakeTerminal, waitForRender } from '../../../core/tests/fake-terminal.ts'
 import * as interactionPlugin from '../../../interaction/src/index.ts'
-import { clearDraft } from '../../../interaction/src/draft-stash.ts'
+import { clearDraft, stashHistory } from '../../../interaction/src/draft-stash.ts'
 import * as editorPlusPlugin from '../../../interaction/src/editor-plus.ts'
 import * as attachmentsPlugin from '../../../interaction/src/attachments.ts'
 import * as pasteImagePlugin from '../../../interaction/src/paste-image.ts'
@@ -107,6 +107,11 @@ afterEach(async () => {
   // In-turn step folding is module-global; restore the default so the next
   // spec decides its own policy.
   setStepFoldingEnabled(true)
+  // The editor stash is module state shared by every booted tree in this
+  // worker: don't leak one case's submitted history into the next case's
+  // fresh editor.
+  clearDraft()
+  stashHistory([])
 })
 
 /** One booted Blue tree plus its observations. */
@@ -509,9 +514,13 @@ describe('blue whole-tree e2e', () => {
     // AgentDefaultModelConfig mounts provider/model 'mock'; the banner
     // snapshots the selection at mount.
     expect(output).toContain('mock · mock')
-    // The eighty-column right cell (61 wide) is past the section threshold,
-    // so the quick-start tips join even on the default terminal.
+    // The eighty-column right cell is past the section threshold, so the
+    // quick-start tips join even on the default terminal — and they are the
+    // real derived pool texts (S16), not placeholders: '! to run a shell
+    // command' is short enough to survive the 32-column right-cell budget
+    // at eighty columns whole.
     expect(output).toContain('Tips for getting started')
+    expect(output).toContain('! to run a shell command')
     // The banner renders before any transcript content.
     expect(output.indexOf('Welcome back!')).toBeLessThan(output.indexOf('Blue online.'))
   })
@@ -994,22 +1003,27 @@ describe('blue whole-tree e2e', () => {
     tree.terminal.sendInput('\x1b')
     clearDraft()
     tree.terminal.sendInput('/se')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/sessions') })
+    // The dropdown's own rows — '/sessions' alone is ambiguous since the
+    // S16 banner's tips column carries a /sessions line. Only the
+    // preselected row carries the `→` pointer; /resume anchors by its
+    // dropdown description.
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('→ /sessions') })
     const fuzzy = await fullFrame(tree.terminal)
     // 'se' subsequence-matches both /sessions and /resume — a prefix filter
     // would have dropped /resume — and the contiguous /sessions hit ranks
     // first (real pi-tui scoring, lower is better).
-    expect(fuzzy.indexOf('/sessions')).toBeGreaterThanOrEqual(0)
-    expect(fuzzy.indexOf('/resume')).toBeGreaterThan(fuzzy.indexOf('/sessions'))
+    const sessionsAt = fuzzy.indexOf('→ /sessions')
+    expect(sessionsAt).toBeGreaterThanOrEqual(0)
+    expect(fuzzy.indexOf('Resume a previous session')).toBeGreaterThan(sessionsAt)
     // An out-of-order subsequence still hits, and the misses are gone.
     tree.terminal.sendInput('\x1b')
     tree.terminal.sendInput('\x1b')
     tree.terminal.sendInput('/ssns')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/sessions') })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('→ /sessions') })
     const subseq = await fullFrame(tree.terminal)
-    expect(subseq).toContain('/sessions')
-    expect(subseq).not.toContain('/resume')
-    expect(subseq).not.toContain('/new')
+    expect(subseq).toContain('→ /sessions')
+    expect(subseq).not.toContain('Resume a previous session')
+    expect(subseq).not.toContain('→ /new')
   })
 
   it('ghosts the argument hint after the cursor and bolds the leading slash token', async () => {
@@ -1039,12 +1053,15 @@ describe('blue whole-tree e2e', () => {
     tree.terminal.sendInput('\x1b')
     clearDraft()
     tree.terminal.sendInput('/hel')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/help') })
+    // The dropdown row's own description — '/help' alone is ambiguous since
+    // the S16 banner's tips column carries `/help: show commands`.
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Show available commands') })
     // pi-tui's Enter-on-slash semantics: the preselected completion applies
     // first, then the line submits — the /help overlay is the command's own
-    // observable effect.
+    // observable effect. The generous timeout: this case sits early in a
+    // long file and the boot-render cycle rides the throttled scheduler.
     tree.terminal.sendInput('\r')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Commands') })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Commands') }, { timeout: 5000 })
     await vi.waitFor(() => { expect(tree.terminal.output).toContain(' help') })
   })
 
@@ -1619,6 +1636,81 @@ describe('blue whole-tree e2e', () => {
     // Escape closes the overlay.
     tree.terminal.sendInput('\x1b')
     expect(await fullFrame(tree.terminal)).not.toContain('Exit Blue')
+  })
+
+  it('hides the editor while the /help panel is open — only the footer below it', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    await executeCommand(tree, agent, '/help')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Commands') })
+    const frame = await fullFrame(tree.terminal)
+    const rows = frame.split('\r\n')
+    // The editor's neutral-gray frame is gone from the screen: the D30
+    // dialog mount replaces the editor in its dock slot, so its rounded
+    // box no longer peeks between the panel and the footer (its top rule
+    // used to render as a lone gray rule under the panel).
+    expect(frame).not.toContain('38;2;90;90;90')
+    // The bottom row is the footer's first band (model · cwd · git); the
+    // editor's frame is nowhere between it and the panel above.
+    expect(rows.at(-1)).toContain(`${FOOTER_TEXT_SGR}mock`)
+    // Escape restores the editor frame.
+    tree.terminal.sendInput('\x1b')
+    const restored = await fullFrame(tree.terminal)
+    expect(restored).toContain('38;2;90;90;90')
+    expect(restored).not.toContain('Exit Blue')
+  })
+
+  it('keeps a recalled slash command intact and ghost-free after Up recall', async () => {
+    const tree = await bootBlue([], { script: [] })
+    await currentAgent(tree)
+    tree.terminal.sendInput('\x1b')
+    tree.terminal.sendInput('\x1b')
+    clearDraft()
+    // Submit /theme by typing so the editor's own history records it, then
+    // recall it with Up: pi-tui parks the cursor on the text's first
+    // character, where the argument-hint ghost must decline instead of
+    // splicing through the zero-width hardware-cursor marker (the S16
+    // dogfood garble that ate the recalled text).
+    tree.terminal.sendInput('/theme')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('→ /theme') })
+    await waitForRender()
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('themes:') })
+    tree.terminal.sendInput('\x1b[A')
+    const frame = await fullFrame(tree.terminal)
+    expect(frame).toContain('theme')
+    expect(frame).not.toContain('[dark|light')
+    // The recalled text is unsubmitted: clear the module-level draft stash
+    // so it cannot leak into the next case's fresh editor.
+    clearDraft()
+  })
+
+  it('recalls a /theme argument submission after the swap rebuilds the editor', async () => {
+    const tree = await bootBlue([], { script: [] })
+    await currentAgent(tree)
+    tree.terminal.sendInput('\x1b')
+    tree.terminal.sendInput('\x1b')
+    clearDraft()
+    // Type the command so the editor's own history records it, then swap:
+    // the swap rebuilds blue-input (a theme dependent) and with it the
+    // editor component — pi-tui keeps the history in the component, so
+    // only the stash replay keeps the entry recallable.
+    tree.terminal.sendInput('/theme')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('→ /theme') })
+    tree.terminal.sendInput(' light')
+    // Let the autocomplete's async round settle on the no-match result
+    // before Enter: pi-tui's confirm applies the stale selection while a
+    // suggestion round is still in flight (typed chars and Enter arrive in
+    // one synchronous burst here, unlike human typing).
+    await waitForRender()
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.ctx.get('blueTheme')?.colors).toBe(themeLightPlugin.LIGHT_COLORS) })
+    tree.terminal.sendInput('\x1b[A')
+    // The recalled line renders with the slash token painted bold-primary,
+    // so the anchor strips SGR before matching.
+    const frame = await fullFrame(tree.terminal)
+    expect(frame.split('\r\n').some(row => stripSgr(row).includes('/theme light'))).toBe(true)
+    clearDraft()
   })
 
   it('switches sessions through /new and /fork, and lists them in the /sessions picker', async () => {

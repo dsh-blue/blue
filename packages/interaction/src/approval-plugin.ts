@@ -1,18 +1,19 @@
 /**
  * `blue-approval` plugin: the interactive answerer on the
  * `approval/request` waterfall. Requests for the agent currently attached
- * to the UI open a modal overlay with four choices — Allow once, Allow the
+ * to the UI open a dialog panel with four choices — Allow once, Allow the
  * tool for this session, Reject, Reject with feedback — navigated with
  * Up/Down and Enter, direct-selected with the `1`–`4` digit keys; Escape
  * rejects, an aborted request signal cancels, and the feedback choice swaps
  * the list for an inline reason editor whose submission steers the agent
- * with the rejection reason. Session-scoped allowances are remembered per
- * agent in a module-level WeakMap and short-circuit later prompts for the
- * same tool. Concurrent requests serialize on a module-level FIFO chain so
- * only one prompt is visible at a time. Requests for any other agent — and
- * requests arriving before a session attaches — delegate down the chain
- * with `next()`. Returning without `next()` short-circuits the waterfall
- * with the chosen outcome.
+ * with the rejection reason. The panel replaces the editor in its dock
+ * slot (D30), so below it only the footer remains. Session-scoped
+ * allowances are remembered per agent in a module-level WeakMap and
+ * short-circuit later prompts for the same tool. Concurrent requests
+ * serialize on a module-level FIFO chain so only one prompt is visible at
+ * a time. Requests for any other agent — and requests arriving before a
+ * session attaches — delegate down the chain with `next()`. Returning
+ * without `next()` short-circuits the waterfall with the chosen outcome.
  *
  * @module @dsh-blue/blue-interaction/approval-plugin
  */
@@ -23,28 +24,13 @@ import type { BlueComponents, BlueEditor, BlueFocusable, BlueScreen, BlueTheme }
 import { framePanel } from '@dsh-blue/blue-core/chrome'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { mountEditorReplacement } from './editor-instance.ts'
 import { currentBlueAgent } from './session.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-approval'
 /** Services required before the answerer can listen. */
 export const inject = ['blueScreen', 'blueTheme', 'blueComponents']
-
-/**
- * The kimi pull-up panel presentation: full width, anchored to the bottom
- * so the dialog rises from the editor's slot, with the two-row footer
- * shell left visible on the terminal's last rows (S12 dock reorder).
- */
-const OVERLAY_WIDTH = '100%'
-const OVERLAY_ANCHOR = 'bottom-center'
-/** Negative offset: the panel's bottom edge ends above the two-row footer. */
-const OVERLAY_FOOTER_CLEARANCE = -2
-/**
- * Overlay height bound as a share of the terminal. S12 raises the bound so
- * the framed dialog (bars, title, reason, four numbered choices, key row)
- * fits inside its budget — pi-tui slices overlay output past maxHeight.
- */
-const OVERLAY_MAX_HEIGHT = '55%'
 
 /** Decoded input sequences the prompt handles directly (no keymap actions). */
 const KEY_UP = '\x1b[A'
@@ -279,7 +265,7 @@ function answer(
 }
 
 /**
- * Queue one modal prompt: show the overlay unless the request signal is
+ * Queue one prompt: mount the panel unless the request signal is
  * already aborted (a queued request can abort while waiting its turn).
  * @param ctx - plugin context carrying the Blue services.
  * @param req - the pending decision.
@@ -293,7 +279,7 @@ function prompt(ctx: Context, req: ApprovalRequest): Promise<ApprovalOutcome> {
       if (settled) return
       settled = true
       req.signal?.removeEventListener('abort', onAbort)
-      handle.hide()
+      restore()
       resolve(outcome)
     }
     const component = new ApprovalPrompt({
@@ -322,12 +308,9 @@ function prompt(ctx: Context, req: ApprovalRequest): Promise<ApprovalOutcome> {
         }))
       },
     })
-    const handle = ctx.blueScreen.showOverlay(component, {
-      width: OVERLAY_WIDTH,
-      anchor: OVERLAY_ANCHOR,
-      offsetY: OVERLAY_FOOTER_CLEARANCE,
-      maxHeight: OVERLAY_MAX_HEIGHT,
-    })
+    // The kimi dialog mount (D30): the prompt replaces the editor in its
+    // dock slot, so below it only the footer remains.
+    const restore = mountEditorReplacement(component)
     const onAbort = (): void => {
       settle('cancelled')
     }
