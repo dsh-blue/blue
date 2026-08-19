@@ -224,7 +224,7 @@ export const apply = ctx => globalThis.__blueE2E.statusBasicApply(ctx)
     '- id: blue-editor-plus',
     `  name: ${fixture('blue-editor-plus.mjs', `
 export const name = 'blue-editor-plus'
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'commands']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'commands']
 export const apply = ctx => globalThis.__blueE2E.editorPlusApply(ctx)
 `)}`,
     // The input-side S7 rows mirror cordis.patch.yml: the attachment store
@@ -941,7 +941,26 @@ describe('blue whole-tree e2e', () => {
     expect(bash).toContain(`${SHELL_SGR}╭`)
     expect(bash).toContain(`${SHELL_SGR}! shell mode`)
     expect(bash).toContain(`${SHELL_SGR}│\x1b[39m ${SHELL_SGR}!`)
-    // Submitting an empty command returns to the neutral prompt frame.
+    // Escape on the empty `!` prompt exits bash mode (the kimi exit): the
+    // shell label leaves and the neutral editor frame returns.
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(() => {
+      const frame = tree.terminal.output
+      const last = frame.lastIndexOf(`${EDITOR_BORDER_SGR}╭`)
+      expect(last).toBeGreaterThan(frame.indexOf('! shell mode'))
+    })
+    // Backspace exits the same way.
+    tree.terminal.sendInput('!')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('! shell mode') })
+    tree.terminal.sendInput('\x7f')
+    await vi.waitFor(() => {
+      const frame = tree.terminal.output
+      const last = frame.lastIndexOf(`${EDITOR_BORDER_SGR}╭`)
+      expect(last).toBeGreaterThan(frame.indexOf('! shell mode'))
+    })
+    // Submitting an empty command returns to the neutral prompt frame too.
+    tree.terminal.sendInput('!')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('! shell mode') })
     tree.terminal.sendInput('\r')
     await vi.waitFor(() => {
       const frame = tree.terminal.output

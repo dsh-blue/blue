@@ -265,13 +265,14 @@ describe('blue-commands plugin', () => {
     // primary span with the description muted behind two spaces.
     expect(rows[4]).toBe('    ^/fork    ^  ~Fork the current session into a new one~')
     expect(rows.some(row => row.includes('^/quit    ^  ~Exit Blue~'))).toBe(true)
-    expect(rows.some(row => row.includes('_ showing 1-16 of 18_'))).toBe(true)
+    expect(rows.some(row => row.includes('_ showing 1-16 of 19_'))).toBe(true)
     // Scrolling down reaches the Keys section with the two-column layout.
     for (let i = 0; i < 9; i += 1) overlay(screen).handleInput(KEY.down)
     const scrolled = screen.overlays[0]?.component.render(80) ?? []
     expect(scrolled.some(row => row.includes('  #Keys#'))).toBe(true)
-    expect(scrolled.some(row => row.includes('?enter   ?  ~Submit input / confirm selection~'))).toBe(true)
-    expect(scrolled.some(row => row.includes('_ showing 3-18 of 18_'))).toBe(true)
+    // Key labels padEnd to the longest label — `backspace` (9) since S13.
+    expect(scrolled.some(row => row.includes('?enter    ?  ~Submit input / confirm selection~'))).toBe(true)
+    expect(scrolled.some(row => row.includes('_ showing 4-19 of 19_'))).toBe(true)
     screen.overlays[0]?.component.invalidate()
     overlay(screen).handleInput(KEY.escape)
     expect(screen.overlays[0]?.hidden).toBe(true)

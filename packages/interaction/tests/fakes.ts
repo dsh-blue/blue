@@ -41,6 +41,7 @@ import {
 const SEQUENCE_BY_KEY_ID: Record<string, string> = {
   enter: '\r',
   escape: '\x1b',
+  backspace: '\x7f',
   up: '\x1b[A',
   down: '\x1b[B',
   space: ' ',

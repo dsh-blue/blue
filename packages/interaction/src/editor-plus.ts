@@ -39,13 +39,14 @@ import {
   type SharedEditor,
 } from './editor-instance.ts'
 import { getStashedInputMode, stashInputMode } from './draft-stash.ts'
+import { ACTION_BACKSPACE, ACTION_CANCEL } from './keys.ts'
 import { sanitizeShellOutput } from './shell-sanitize.ts'
 import { currentBlueAgent } from './session.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-editor-plus'
 /** Services required before the enhancement layer can attach. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'commands']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'commands']
 
 /** Shell echo output caps: both bounds apply, whichever trips first. */
 const SHELL_MAX_LINES = 200
@@ -385,6 +386,7 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
   let mode: 'prompt' | 'bash' = getStashedInputMode()
   const previousOnChange = editor.onChange
   const previousOnSubmit = editor.onSubmit
+  const previousOnKey = editor.onKey
 
   /** Apply the bash triple: `!` symbol, border label, and shell hue. */
   const enterBash = (): void => {
@@ -444,12 +446,28 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
     editor.addToHistory(command)
     runShell(ctx, command, isUnloaded)
   }
+  editor.onKey = (data) => {
+    // `blue-input`'s chain runs first: an open side-question pane or a
+    // non-empty draft owns Escape, and the queue recall owns Up.
+    if (previousOnKey?.(data) === true) return true
+    // The kimi bash exit: Backspace or Escape on an empty `!` prompt
+    // returns to prompt mode — the `!` is not in the buffer, so
+    // "deleting" it is a delete on empty bash input.
+    if (mode === 'bash'
+      && editor.getText().length === 0
+      && (ctx.blueKeymap.matches(data, ACTION_CANCEL) || ctx.blueKeymap.matches(data, ACTION_BACKSPACE))) {
+      exitBash()
+      return true
+    }
+    return false
+  }
   editor.setAutocompleteProvider(createAutocompleteProvider(ctx))
 
   return () => {
     unmark()
     editor.onChange = previousOnChange
     editor.onSubmit = previousOnSubmit
+    editor.onKey = previousOnKey
     // Visual restore only — the reload stash keeps the mode the user was
     // in, so a remount (theme swap) rebuilds bash where it left off.
     if (mode === 'bash') applyPromptFrame()

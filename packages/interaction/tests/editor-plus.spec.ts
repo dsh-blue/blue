@@ -98,6 +98,41 @@ describe('blue-editor-plus input modes', () => {
     expect(editor.borderColor('x')).toBe('$x$')
   })
 
+  it('exits bash mode on Escape with an empty buffer', async () => {
+    const { editor } = await mount()
+    type(editor, '!')
+    expect(editor.promptSymbol).toBe('!')
+    // The kimi bash exit: Escape on the empty `!` prompt returns to prompt
+    // mode, consumed by the editor chain.
+    expect(editor.onKey?.(KEY.escape)).toBe(true)
+    expect(editor.promptSymbol).toBe('>')
+    expect(editor.borderLabel).toBeUndefined()
+    expect(editor.borderColor('x')).toBe('x')
+  })
+
+  it('exits bash mode on Backspace with an empty buffer', async () => {
+    const { editor } = await mount()
+    type(editor, '!')
+    expect(editor.onKey?.('\x7f')).toBe(true)
+    expect(editor.promptSymbol).toBe('>')
+    expect(editor.borderLabel).toBeUndefined()
+    expect(editor.borderColor('x')).toBe('x')
+  })
+
+  it('keeps bash mode when Escape clears a non-empty buffer', async () => {
+    const { editor } = await mount()
+    type(editor, '!')
+    type(editor, 'ls')
+    // Escape clears the draft through blue-input's chain; the mode stays.
+    editor.onKey?.(KEY.escape)
+    expect(editor.getText()).toBe('')
+    expect(editor.promptSymbol).toBe('!')
+    expect(editor.borderColor('x')).toBe('$x$')
+    // The next Escape on the now-empty prompt exits.
+    expect(editor.onKey?.(KEY.escape)).toBe(true)
+    expect(editor.promptSymbol).toBe('>')
+  })
+
   it('restores the prompt symbol and drops the label on a bash submission', async () => {
     const { editor } = await mount()
     editorPlus.setShellExecutor(() => Promise.resolve({ code: 0, stdout: '', stderr: '' }))
