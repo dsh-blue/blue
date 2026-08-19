@@ -1,10 +1,10 @@
 /**
  * Pure half-block packing: the four column combinations, odd trailing rows,
- * empty input, ragged pair widths, and the castle grid's golden output.
+ * empty input, ragged pair widths, and the whale grid's golden output.
  */
 
 import { describe, expect, it } from 'vitest'
-import { CASTLE_PIXELS, packHalfBlockArt } from '../src/banner-art.ts'
+import { WHALE_PIXELS, packHalfBlockArt } from '../src/banner-art.ts'
 
 describe('packHalfBlockArt', () => {
   it('maps the four column combinations of a row pair', () => {
@@ -26,22 +26,21 @@ describe('packHalfBlockArt', () => {
     expect(packHalfBlockArt(['11', ''])).toEqual(['▀▀'])
   })
 
-  it('packs the castle into the eight golden lines', () => {
-    expect(packHalfBlockArt(CASTLE_PIXELS)).toEqual([
-      '                    ',
-      '        ▄   ▄       ',
-      '       ▀ ▀▄▀ ▀      ',
-      '     ▄▄▄▄▄▄▄▄▄▄▄    ',
-      '  ▄▄▄██▀█████▀██▄▄  ',
-      '  █████▄█████▄████  ',
-      '    ████████████    ',
-      '    ▀▀▀▀▀▀▀▀▀▀▀▀    ',
+  it('packs the whale into the seven golden lines', () => {
+    expect(packHalfBlockArt(WHALE_PIXELS)).toEqual([
+      '     ▀  ▀  ▀    ',
+      '       ▄  ▄     ',
+      '    ▄▄▄▄▄▄▄▄▄   ',
+      '  ▄▄█▀████▀█▄▄  ',
+      '  ███▄████▄███  ',
+      '   ██████████   ',
+      '   ▀▀▀▀▀▀▀▀▀▀   ',
     ])
   })
 
-  it('keeps every castle line twenty columns wide', () => {
-    for (const line of packHalfBlockArt(CASTLE_PIXELS)) {
-      expect(line).toHaveLength(20)
+  it('keeps every whale line sixteen columns wide', () => {
+    for (const line of packHalfBlockArt(WHALE_PIXELS)) {
+      expect(line).toHaveLength(16)
     }
   })
 })

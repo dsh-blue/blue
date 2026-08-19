@@ -91,7 +91,7 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 - **编辑器**：换装 pi-tui Editor（多行/历史/kill-ring/补全/Kitty 解码）；shell 模式（`!`）、`@` 文件补全、slash 补全菜单
 - **状态栏**：`ctx.blueStatus` 注册表 + 两行 footer 壳 + git/context/basic 条目插件
 - **面板与命令**：activity/queue/todo/btw pane 插件；`/sessions` `/fork` `/new` `/help` `/btw`；审批四选项 + session 级继承（Blue 侧协调器）；提问多题 tab 化
-- **welcome banner**：启动欢迎横幅（像素城堡 + 模型/cwd + Tips 右栏，自适应宽度；`blue-banner` 基线段行）（✅ S8 已落地）
+- **welcome banner**：启动欢迎横幅（像素鲸鱼 logo + 模型/cwd 信息 + Tips 右栏，铺满全宽；`blue-banner` 基线段行）（✅ S8 已落地，S10 期间重排：全宽三段布局 + 鲸鱼缩小 30%）
 - **alt-screen**：`TuiAltScreen` 与主屏运行时热切换（兑现 L0 的 Proxy 预埋）
 
 **验收**：连续 30 分钟真实 coding 会话无渲染错乱、无焦点丢失；主题热切换后 transcript 经快照正确重放且编辑器草稿保留；`/btw` 在 agent 运行中插入旁白且 transcript 正确呈现；plain 基线完整可用；注册冲突在启动期暴露。
