@@ -131,19 +131,23 @@ export interface TranscriptToolItem {
 }
 
 /**
- * One folded-away mid-turn step: replaces the step's tool items in place when
- * the next `step/start` arrives (in-turn step folding). `toolNames` keeps
- * duplicates in call order; rendering does the ×N counting.
+ * One folded-away mid-turn step: replaces the step's tool and thinking items
+ * in place when the next `step/start` arrives (in-turn step folding).
+ * `toolNames` keeps duplicates in call order; rendering counts them, and
+ * `thinking` carries the step's folded reasoning blocks (0 or 1 — a step
+ * owns at most one thinking item).
  */
 export interface TranscriptStepSummaryItem {
   readonly kind: 'step-summary'
   /** Seq of the first folded tool item. */
   readonly seq: number
-  /** Turn and step the folded tools belonged to. */
+  /** Turn and step the folded items belonged to. */
   readonly turn: number
   readonly step: number
   /** Tool names in call order, duplicates kept. */
   readonly toolNames: string[]
+  /** Number of folded thinking blocks from the step. */
+  readonly thinking: number
 }
 
 /** One rendered row group of the transcript, in session order. */

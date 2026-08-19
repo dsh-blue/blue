@@ -559,10 +559,60 @@ describe('in-turn step folding', () => {
     // remaining tool item and the final assistant item.
     expect(folder.items.indexOf(summary)).toBe(0)
     expect(summary.toolNames).toEqual(['Read', 'Edit'])
+    // Neither step reasoned, so the kimi wording's thinking part stays zero.
+    expect(summary.thinking).toBe(0)
     // Step 2 also folded (step 3 followed it); its tools are gone too.
     expect(folder.items.filter(item => item.kind === 'tool')).toEqual([])
     const summaries = folder.items.filter(item => item.kind === 'step-summary') as TranscriptStepSummaryItem[]
     expect(summaries.map(item => item.step)).toEqual([1, 2])
+  })
+
+  it('folds a finalized thinking block into the summary with its tools', () => {
+    const folder = new TranscriptFolder()
+    for (const e of [
+      turnStart(1),
+      stepStart(1, 1),
+      reasoningDelta(1, 1, 'why this approach'),
+      toolCallEvent(1, 1, 'a1', 'Read', '{}'),
+      assistantEvent(1, 1, [
+        { type: 'reasoning', text: 'why this approach' },
+        { type: 'text', text: 'step one done' },
+      ]),
+      stepStart(1, 2),
+      assistantEvent(1, 2, [{ type: 'text', text: 'final' }]),
+      turnEnd(1),
+    ]) folder.apply(e)
+    const summary = folder.items[0] as TranscriptStepSummaryItem
+    expect(summary.kind).toBe('step-summary')
+    expect(summary.thinking).toBe(1)
+    expect(summary.toolNames).toEqual(['Read'])
+    // The folded step's thinking and tool blocks are gone; its assistant
+    // message and the final step's stay mounted (assistant items never fold).
+    expect(folder.items.map(item => item.kind)).toEqual(['step-summary', 'assistant', 'assistant'])
+  })
+
+  it('prunes a still-streaming thinking item folded mid-step', () => {
+    const folder = new TranscriptFolder()
+    for (const e of [
+      turnStart(1),
+      stepStart(1, 1),
+      reasoningDelta(1, 1, 'partial thought'),
+      toolCallEvent(1, 1, 'a1', 'Read', '{}'),
+      stepStart(1, 2),
+    ]) folder.apply(e)
+    const summary = folder.items[0] as TranscriptStepSummaryItem
+    expect(summary.thinking).toBe(1)
+    // The streaming slot is gone, so a later finalize for the folded step
+    // mounts fresh finalized items instead of mutating the folded ones —
+    // the `evictThrough` symmetry (unreachable in a well-formed live
+    // stream, where the step's assistant/message precedes the next
+    // step/start).
+    const updates = folder.apply(assistantEvent(1, 1, [
+      { type: 'reasoning', text: 'final thought' },
+      { type: 'text', text: 'final' },
+    ]))
+    expect(updates?.map(update => ('isNew' in update ? update.isNew : undefined))).toEqual([true, true])
+    expect(folder.items.map(item => item.kind)).toEqual(['step-summary', 'thinking', 'assistant'])
   })
 
   it('keeps duplicate tool names in call order', () => {
@@ -579,7 +629,7 @@ describe('in-turn step folding', () => {
     expect(summary.toolNames).toEqual(['Read', 'Read', 'Grep'])
   })
 
-  it('returns null for a step with no tool items', () => {
+  it('returns null for a step with no tool or thinking items', () => {
     const folder = new TranscriptFolder()
     folder.apply(turnStart(1))
     folder.apply(stepStart(1, 1))

@@ -97,7 +97,14 @@ describe('UserMessageComponent', () => {
     loaders[1]?.(new Uint8Array([2]))
     await new Promise(resolve => setTimeout(resolve, 0))
     lines = component.render(80)
-    expect(lines).toEqual(['', '[R]❯[/R] pics', '<image 1B>', '<image 1B>'])
+    // The bullet and text carry the bold roleUser wrap; loaded images sit
+    // under the text, indented to the bullet's visible width.
+    expect(lines).toEqual([
+      '',
+      '\x1b[1m[R]✨ [/R]\x1b[22m\x1b[1m[R]pics[/R]\x1b[22m',
+      '  <image 1B>',
+      '  <image 1B>',
+    ])
     // A rejected load keeps the placeholder.
     const failing = new UserMessageComponent(
       { kind: 'user', seq: 2, text: 'x', images: [{ id: 'c' } as never] },
@@ -108,15 +115,23 @@ describe('UserMessageComponent', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(failing.render(80).some(line => line.includes('[image]'))).toBe(true)
   })
-  it('renders a roleUser gutter, wrapped text, and a leading separator', () => {
+  it('renders the kimi user chrome: bold roleUser bullet and full bold text', () => {
     const lines = new UserMessageComponent(userItem('hello world'), tagged(), setup()).render(80)
-    expect(lines).toEqual(['', '[R]❯[/R] hello world'])
+    expect(lines).toEqual([
+      '',
+      '\x1b[1m[R]✨ [/R]\x1b[22m\x1b[1m[R]hello world[/R]\x1b[22m',
+    ])
   })
 
-  it('indents continuation lines under the text', () => {
+  it('aligns continuation lines to the bullet\'s visible width', () => {
     const components = setup()
     const lines = new UserMessageComponent(userItem('aaa bbb ccc'), COLORS, components).render(6)
-    expect(lines).toEqual(['', '❯ aaa', '  bbb', '  ccc'])
+    expect(lines).toEqual([
+      '',
+      '\x1b[1m✨ \x1b[22m\x1b[1maaa\x1b[22m',
+      '  \x1b[1mbbb\x1b[22m',
+      '  \x1b[1mccc\x1b[22m',
+    ])
     for (const line of lines) expect(components.visibleWidth(line)).toBeLessThanOrEqual(6)
   })
 
@@ -268,16 +283,28 @@ describe('ToolCallComponent', () => {
 
 describe('StepSummaryComponent', () => {
   const item: TranscriptStepSummaryItem = {
-    kind: 'step-summary', seq: 1, turn: 1, step: 2, toolNames: ['Read', 'Read', 'Edit'],
+    kind: 'step-summary', seq: 1, turn: 1, step: 2, toolNames: ['Read', 'Read', 'Edit'], thinking: 0,
   }
 
-  it('renders one muted summary line counting duplicate tools', () => {
+  it('renders one muted summary line in the kimi wording — tools only', () => {
     const component = new StepSummaryComponent(item, tagged(), setup())
     const lines = component.render(80)
-    expect(lines).toEqual(['[T]… step 2 · Read ×2, Edit ×1[/T]'])
+    expect(lines).toEqual(['[T]… step 2 · call 3 tools[/T]'])
     // Width-cached; invalidate forces a rebuild.
     expect(component.render(80)).toBe(lines)
     component.invalidate()
     expect(component.render(80)).toEqual(lines)
+  })
+
+  it('counts folded thinking blocks with kimi\'s unconditional pluralization', () => {
+    const withThinking: TranscriptStepSummaryItem = {
+      ...item, toolNames: ['Read'], thinking: 1,
+    }
+    expect(new StepSummaryComponent(withThinking, tagged(), setup()).render(80)).toEqual(
+      ['[T]… step 2 · thinking 1 times, call 1 tools[/T]'])
+
+    const thinkingOnly: TranscriptStepSummaryItem = { ...item, toolNames: [], thinking: 1 }
+    expect(new StepSummaryComponent(thinkingOnly, tagged(), setup()).render(80)).toEqual(
+      ['[T]… step 2 · thinking 1 times[/T]'])
   })
 })

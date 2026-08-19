@@ -33,8 +33,15 @@ export const TOOL_ARGUMENTS_MAX_CHARS = 60
 /** The assistant block's first-line marker (kimi `constant/symbols.ts`). */
 const STATUS_BULLET = '● '
 
+/** The user block's first-line marker (kimi `USER_MESSAGE_BULLET`). */
+export const USER_MESSAGE_BULLET = '✨ '
+
 /** Continuation indent: the bullet's visible width (kimi `MESSAGE_INDENT`). */
 export const MESSAGE_INDENT = '  '
+
+/** Bold SGR pair — S18 wraps the user echo the way kimi's `boldFg` does. */
+const BOLD_OPEN = '\x1b[1m'
+const BOLD_CLOSE = '\x1b[22m'
 
 /** Maximum rendered height of one user-message image, in terminal cells. */
 export const USER_IMAGE_MAX_HEIGHT_CELLS = 12
@@ -60,12 +67,18 @@ interface RenderCache {
 }
 
 /**
- * Renders one user prompt: an accent `❯` gutter followed by the wrapped
- * text, with a blank separator line above. When the item carries image
- * attachments and a loader was provided, loads kick off lazily on the first
- * render; each image renders its loaded lines below the text (a muted
- * `[image]` row while loading or after failure), and a resolve bumps the
- * cache version, invalidates, and nudges `onReady`.
+ * Renders one user prompt behind the kimi user-message chrome (S18): a
+ * blank separator row, then the bold `roleUser` `✨ ` bullet on the first
+ * line with the full text bold `roleUser` — the kimi `boldFg('roleUser', …)`
+ * wrap, composed here as bold SGR around the palette color, so the visible
+ * width never changes. Continuations align under the text with spaces of
+ * the bullet's visible width (kimi re-dyes the text before wrapping; Blue
+ * colors each wrapped line, which re-emits the same per-line spans). When
+ * the item carries image attachments and a loader was provided, loads kick
+ * off lazily on the first render; each image renders its loaded lines
+ * below the text at the content width, indented to the same bullet width
+ * (a muted `[image]` row while loading or after failure), and a resolve
+ * bumps the cache version, invalidates, and nudges `onReady`.
  */
 export class UserMessageComponent implements BlueComponent {
   private readonly item: TranscriptUserItem
@@ -132,18 +145,21 @@ export class UserMessageComponent implements BlueComponent {
   render(width: number): string[] {
     const key = `${this.item.seq}:${width}:${this.imageVersion}`
     if (this.cache?.key === key) return this.cache.lines
-    const gutter = `${this.colors.roleUser('❯')} `
-    const contentWidth = Math.max(1, width - this.components.visibleWidth('❯ '))
+    const bullet = `${BOLD_OPEN}${this.colors.roleUser(USER_MESSAGE_BULLET)}${BOLD_CLOSE}`
+    const bulletWidth = this.components.visibleWidth(USER_MESSAGE_BULLET)
+    const contentWidth = Math.max(1, width - bulletWidth)
     const wrapped = this.components.wrapText(this.item.text, contentWidth)
+    const bold = (text: string): string => `${BOLD_OPEN}${this.colors.roleUser(text)}${BOLD_CLOSE}`
+    const indent = ' '.repeat(bulletWidth)
     const lines = ['', ...wrapped.map((line, index) =>
-      index === 0 ? gutter + line : '  ' + line)]
+      (index === 0 ? bullet : indent) + bold(line))]
     const load = this.loadImage
     if (load !== undefined && this.item.images.length > 0) {
       this.requestImages(load)
       for (let index = 0; index < this.item.images.length; index += 1) {
         const image = this.resolved.get(index)
-        if (image) lines.push(...image.render(width))
-        else lines.push(`  ${this.colors.muted('[image]')}`)
+        if (image) lines.push(...image.render(contentWidth).map(line => indent + line))
+        else lines.push(`${indent}${this.colors.muted('[image]')}`)
       }
     }
     this.cache = { key, lines }
@@ -293,10 +309,13 @@ export class ToolCallComponent implements BlueComponent {
 }
 
 /**
- * Renders one folded-away mid-turn step as a single textMuted line:
- * `… step N · Read ×2, Edit ×1` — occurrences counted per tool name in
- * first-seen order (`toolNames` keeps duplicates; this is the counting
- * step). The item is immutable, so the cache keys on width alone.
+ * Renders one folded-away mid-turn step as a single textMuted line in the
+ * kimi step-summary wording (S18): `… step N · thinking X times, call Y
+ * tools` — the two parts joined by `, `, each omitted at zero, with kimi's
+ * unconditional pluralization (`1 times`, `1 tools`) kept verbatim. The
+ * `step N ·` prefix is Blue's own: folding is per-step, so one turn can
+ * carry several summaries. The item is immutable, so the cache keys on
+ * width alone.
  */
 export class StepSummaryComponent implements BlueComponent {
   private readonly item: TranscriptStepSummaryItem
@@ -327,13 +346,11 @@ export class StepSummaryComponent implements BlueComponent {
   render(width: number): string[] {
     const key = `${width}`
     if (this.cache?.key === key) return this.cache.lines
-    const counts = new Map<string, number>()
-    for (const name of this.item.toolNames) {
-      counts.set(name, (counts.get(name) ?? 0) + 1)
-    }
-    const tools = [...counts].map(([name, count]) => `${name} ×${count}`).join(', ')
+    const parts: string[] = []
+    if (this.item.thinking > 0) parts.push(`thinking ${this.item.thinking} times`)
+    if (this.item.toolNames.length > 0) parts.push(`call ${this.item.toolNames.length} tools`)
     const line = this.colors.textMuted(
-      this.components.truncateToWidth(`… step ${this.item.step} · ${tools}`, width))
+      this.components.truncateToWidth(`… step ${this.item.step} · ${parts.join(', ')}`, width))
     this.cache = { key, lines: [line] }
     return this.cache.lines
   }
