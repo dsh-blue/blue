@@ -70,6 +70,7 @@ export class MockAdapter extends LlmAdapter {
     private script: (StreamChunk[] | ((options: GenerateOptions) => StreamChunk[]) | 'hang' | 'hang-slow')[],
     private readonly reasoning?: LlmModelReasoningInfo,
     private readonly defaultMaxTokens?: number,
+    private readonly defaultContextWindow?: number,
   ) {
     super()
   }
@@ -84,6 +85,7 @@ export class MockAdapter extends LlmAdapter {
       name: model,
       ...this.reasoning === undefined ? {} : { reasoning: this.reasoning },
       ...this.defaultMaxTokens === undefined ? {} : { defaultMaxTokens: this.defaultMaxTokens },
+      ...this.defaultContextWindow === undefined ? {} : { context: { contextWindow: this.defaultContextWindow } },
     })
   }
 

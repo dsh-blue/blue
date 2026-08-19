@@ -9,7 +9,7 @@
  */
 
 import { mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -56,7 +56,11 @@ import * as paneBtwPlugin from '../../../transcript/src/pane-btw.ts'
 import * as paneTodoPlugin from '../../../transcript/src/pane-todo.ts'
 import * as statusBasicPlugin from '../../../transcript/src/status-basic.ts'
 import * as statusContextPlugin from '../../../transcript/src/status-context.ts'
+import * as statusCwdPlugin from '../../../transcript/src/status-cwd.ts'
 import * as statusGitPlugin from '../../../transcript/src/status-git.ts'
+import * as statusTipsPlugin from '../../../transcript/src/status-tips.ts'
+import { buildTipRotation, tipOffer } from '../../../transcript/src/status-tips.ts'
+import { STATUS_TIPS } from '../../../transcript/src/tips-content.ts'
 import { setStepFoldingEnabled } from '../../../transcript/src/window.ts'
 import { MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
 
@@ -64,6 +68,39 @@ const disposers: (() => Promise<void>)[] = []
 
 /** The idle editor frame's border SGR: dark palette `border` #5a5a5a (S11). */
 const EDITOR_BORDER_SGR = '\x1b[38;2;90;90;90m'
+
+/** The footer's inter-slot gap, in columns (the S15 two-space join). */
+const FOOTER_GAP = 2
+
+/**
+ * The S15 footer's three greyscale tiers (dark palette): the model and the
+ * context percentage carry the full `text` #e0e0e0, the cwd and git badge
+ * the `muted` #888888, and the teaching tip the faintest `textMuted`
+ * #6b6b6b — the kimi footer's visual hierarchy.
+ */
+const FOOTER_TEXT_SGR = '\x1b[38;2;224;224;224m'
+const FOOTER_MUTED_SGR = '\x1b[38;2;136;136;136m'
+const FOOTER_TEXTMUTED_SGR = '\x1b[38;2;107;107;107m'
+
+/**
+ * Strip every escape flavor the renderer emits (SGR runs, CSI modes, OSC 8
+ * hyperlinks, stray controls) so footer-row assertions see plain text.
+ */
+function stripSgr(row: string): string {
+  return row
+    .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
+    .replace(/\x1b\][^\u0007]*\u0007/g, '')
+    .replace(/[\u0000-\u001f]/g, '')
+}
+
+/**
+ * The boot tip offer — the first slot of the deterministic SWRR expansion,
+ * exactly what the mounted tips entry renders until its first tick.
+ */
+function bootTipText(): string {
+  const offer = tipOffer(buildTipRotation(STATUS_TIPS), 0)
+  return offer.pair ?? offer.primary
+}
 
 afterEach(async () => {
   for (const dispose of disposers.splice(0)) await dispose()
@@ -90,7 +127,9 @@ interface BlueE2EHooks {
   intentDiffApply: typeof intentDiffPlugin.apply
   intentTerminalApply: typeof intentTerminalPlugin.apply
   statusBasicApply: typeof statusBasicPlugin.apply
+  statusCwdApply: typeof statusCwdPlugin.apply
   statusGitApply: typeof statusGitPlugin.apply
+  statusTipsApply: typeof statusTipsPlugin.apply
   statusContextApply: typeof statusContextPlugin.apply
   paneActivityApply: typeof paneActivityPlugin.apply
   paneQueueApply: typeof paneQueuePlugin.apply
@@ -118,6 +157,7 @@ async function bootBlue(argv: string[], options: {
   script: ConstructorParameters<typeof MockAdapter>[0]
   persistenceRoot?: string
   footerExtra?: string
+  contextWindow?: number
 }): Promise<BlueTree> {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-blue-e2e-'))
   const terminal = new FakeTerminal()
@@ -151,7 +191,9 @@ async function bootBlue(argv: string[], options: {
     intentDiffApply: intentDiffPlugin.apply,
     intentTerminalApply: intentTerminalPlugin.apply,
     statusBasicApply: statusBasicPlugin.apply,
+    statusCwdApply: statusCwdPlugin.apply,
     statusGitApply: statusGitPlugin.apply,
+    statusTipsApply: statusTipsPlugin.apply,
     statusContextApply: statusContextPlugin.apply,
     paneActivityApply: paneActivityPlugin.apply,
     paneQueueApply: paneQueuePlugin.apply,
@@ -242,13 +284,26 @@ export const name = 'blue-paste-image'
 export const inject = ['attachments', 'blueKeymap']
 export const apply = ctx => globalThis.__blueE2E.pasteImageApply(ctx)
 `)}`,
-    // The enhancement-segment status rows mirror cordis.patch.yml: the git
-    // branch and context-occupancy footer entries.
+    // The enhancement-segment status rows mirror cordis.patch.yml's row
+    // order: the cwd abbreviation, the git badge, the rotating tip, and the
+    // context occupancy.
+    '- id: blue-status-cwd',
+    `  name: ${fixture('blue-status-cwd.mjs', `
+export const name = 'blue-status-cwd'
+export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const apply = ctx => globalThis.__blueE2E.statusCwdApply(ctx)
+`)}`,
     '- id: blue-status-git',
     `  name: ${fixture('blue-status-git.mjs', `
 export const name = 'blue-status-git'
 export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
 export const apply = ctx => globalThis.__blueE2E.statusGitApply(ctx)
+`)}`,
+    '- id: blue-status-tips',
+    `  name: ${fixture('blue-status-tips.mjs', `
+export const name = 'blue-status-tips'
+export const inject = ['blueStatus', 'blueScreen', 'blueTheme']
+export const apply = ctx => globalThis.__blueE2E.statusTipsApply(ctx)
 `)}`,
     '- id: blue-status-context',
     `  name: ${fixture('blue-status-context.mjs', `
@@ -357,7 +412,7 @@ export const apply = (ctx) => {
   if (options.persistenceRoot !== undefined) {
     await ctx.plugin(JsonlSessionPersistence, { root: options.persistenceRoot })
   }
-  const adapter = new MockAdapter(options.script)
+  const adapter = new MockAdapter(options.script, undefined, undefined, options.contextWindow)
   ctx.llm.registerAdapter(['mock'], adapter)
 
   const sessionChanges: Agent[] = []
@@ -496,7 +551,7 @@ describe('blue whole-tree e2e', () => {
     // instead of floating right under the banner.
     expect(rows).toHaveLength(24)
     const bannerAt = rows.findIndex(row => row.includes('Welcome back!'))
-    const footerAt = rows.findIndex(row => row.includes('mock · idle'))
+    const footerAt = rows.findIndex(row => row.includes(`${FOOTER_TEXT_SGR}mock`))
     expect(bannerAt).toBeGreaterThanOrEqual(0)
     expect(footerAt).toBeGreaterThan(bannerAt)
     expect(footerAt).toBeGreaterThanOrEqual(rows.length - 8)
@@ -860,23 +915,25 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
     await agent.whenIdle()
     // The model string comes from the scripted flow's durable request header
-    // (the mock default model config is provider/model 'mock').
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('mock · idle') })
+    // (the mock default model config is provider/model 'mock'), painted in
+    // the footer's full text tier — S15's brightest footer color.
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain(`${FOOTER_TEXT_SGR}mock`) })
     // Position discipline: a width change forces a full clear-and-repaint
     // frame, so the last such chunk carries every row in screen order —
     // transcript reply, then the editor's rounded top border (the first
     // gray `border` #5a5a5a run; the idle frame is neutral since S11,
     // slash/bash contexts recolor it), then the footer pinned to the
     // terminal's last rows (the S12 kimi dock order).
+    const footerAnchor = `${FOOTER_TEXT_SGR}mock`
     tree.terminal.resize(100, 30)
     let frame = ''
     await vi.waitFor(() => {
       frame = [...tree.terminal.written].reverse()
-        .find(chunk => chunk.includes('\x1b[2J') && chunk.includes('mock · idle')) ?? ''
+        .find(chunk => chunk.includes('\x1b[2J') && chunk.includes(footerAnchor)) ?? ''
       expect(frame).not.toBe('')
     })
     const reply = frame.indexOf('Blue online.')
-    const footer = frame.indexOf('mock · idle')
+    const footer = frame.indexOf(footerAnchor)
     const editorBorder = frame.indexOf(EDITOR_BORDER_SGR, reply)
     expect(reply).toBeGreaterThanOrEqual(0)
     expect(editorBorder).toBeGreaterThan(reply)
@@ -1060,27 +1117,38 @@ describe('blue whole-tree e2e', () => {
     })
   })
 
-  it('flips the baseline footer entry to running during a turn and back to idle on interrupt', async () => {
+  it('keeps the footer model entry stable across a turn and an interrupt', async () => {
+    // S15: the agent-status half of the old '{model} · {status}' entry is
+    // gone — the running state lives in the activity spinner, and the footer
+    // model text never flickers between turn states.
     const tree = await bootBlue([], { script: ['hang'] })
     const agent = await currentAgent(tree)
     typeLine(tree.terminal, 'long work')
     await vi.waitFor(() => { expect(agent.status).toBe('running') })
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('mock · running') })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain(`${FOOTER_TEXT_SGR}mock`) })
     tree.terminal.sendInput('\x03')
     await agent.whenIdle()
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('mock · idle') })
+    const frame = await fullFrame(tree.terminal)
+    expect(frame).toContain(`${FOOTER_TEXT_SGR}mock`)
   })
 
   it('renders a footer entry registered by a downstream plugin through blueStatus', async () => {
     const tree = await bootBlue([], { script: [], footerExtra: 'e2e-extra-entry' })
     await currentAgent(tree)
+    // Widen first: at the default 80 columns the real checkout's git badge
+    // (a dirty worktree carries large diff counts) can crowd a low-priority
+    // left slot out of the band — the registry contract, not the entry, is
+    // what this case pins.
+    tree.terminal.resize(200, 24)
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('e2e-extra-entry') })
   })
 
   it('renders the context footer entry from the assistant/message usage', async () => {
-    // A scripted turn whose usage reports 4242 input-side tokens: the real
-    // agent loop logs it as the assistant/message event's usage, and the
-    // status-context entry formats it as 'ctx 4.2k'.
+    // A scripted turn whose usage reports 4242 input-side tokens against the
+    // adapter-advertised 8192-token window: the real agent loop logs the
+    // usage as the assistant/message event and the request/context event
+    // carries the window, so the entry formats 'context: 52% (4.1k/8k)' on
+    // the 1024 base — right-aligned on the footer's second band.
     const usageScript: StreamChunk[] = [
       { type: 'block-start', index: 0, blockType: 'text' },
       { type: 'text-delta', index: 0, text: 'usage reply' },
@@ -1088,27 +1156,117 @@ describe('blue whole-tree e2e', () => {
       { type: 'usage', usage: { inputTokens: 4242, outputTokens: 1 } },
       { type: 'finish', reason: { kind: 'stop' } },
     ]
-    const tree = await bootBlue([], { script: [usageScript] })
+    const tree = await bootBlue([], { script: [usageScript], contextWindow: 8192 })
     const agent = await currentAgent(tree)
     typeLine(tree.terminal, 'spend tokens')
     await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
     await agent.whenIdle()
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('ctx 4.2k') })
+    await vi.waitFor(() => {
+      expect(tree.terminal.output).toContain(`${FOOTER_TEXT_SGR}context: 52% (4.1k/8k)`)
+    })
+    // Band discipline: the percentage sits on its own footer row, flush
+    // against the terminal's right edge.
+    const frame = await fullFrame(tree.terminal)
+    const row = frame.split('\r\n').find(line => line.includes('context: 52%'))
+    expect(row).toBeDefined()
+    expect(stripSgr(row!).trimEnd().endsWith('context: 52% (4.1k/8k)')).toBe(true)
   })
 
-  it('renders the git footer entry through the injected branch runner', async () => {
+  it('renders the git footer entry through the injected command runner', async () => {
     // The e2e's session cwd is the repo checkout itself (app sets meta.cwd
     // from process.cwd()), so the real probe would return whatever branch
     // the checkout happens to be on; inject a fake runner for a
     // deterministic sentinel instead (same module instance the mounted
-    // plugin delegates to).
-    statusGitPlugin.setGitBranchRunner(() => 'e2e-branch')
+    // plugin delegates to) — branch ahead 2 with one modified file, so the
+    // full S15 badge composes: diff counts plus the sync markers, in the
+    // muted tier.
+    statusGitPlugin.setGitCommandRunner((args) => {
+      if (args[0] === 'branch') return 'e2e-branch'
+      if (args[0] === 'status') return '## e2e-branch...origin/e2e-branch [ahead 2]\n M wip.ts\n'
+      if (args[0] === 'diff') return '7\t2\tsrc/wip.ts\n'
+      return null
+    })
     try {
       const tree = await bootBlue([], { script: [] })
       await currentAgent(tree)
-      await vi.waitFor(() => { expect(tree.terminal.output).toContain('e2e-branch') })
+      await vi.waitFor(() => {
+        expect(tree.terminal.output).toContain(`${FOOTER_MUTED_SGR}e2e-branch [+7 -2 ↑2]`)
+      })
     } finally {
-      statusGitPlugin.setGitBranchRunner(undefined)
+      statusGitPlugin.setGitCommandRunner(undefined)
+    }
+  })
+
+  it('lays out the footer bands: tiered left slots, the teaching tip flush right', async () => {
+    // The S15 kimi identity end to end: band 1 carries the model in the full
+    // text tier, then the abbreviated cwd and the git badge in muted — each
+    // slot separated by exactly two spaces — with the rotating tip in the
+    // faintest textMuted tier right-aligned against the terminal edge.
+    statusGitPlugin.setGitCommandRunner((args) => {
+      if (args[0] === 'branch') return 'e2e-branch'
+      if (args[0] === 'status') return '## e2e-branch...origin/e2e-branch [ahead 2]\n M wip.ts\n'
+      if (args[0] === 'diff') return '7\t2\tsrc/wip.ts\n'
+      return null
+    })
+    try {
+      const tree = await bootBlue([], { script: [] })
+      await currentAgent(tree)
+      // Wide enough that every slot and the paired tip fit: the layout, not
+      // the yield, is under test here.
+      tree.terminal.resize(200, 24)
+      await vi.waitFor(() => {
+        expect(tree.terminal.output).toContain(`${FOOTER_MUTED_SGR}e2e-branch [+7 -2 ↑2]`)
+      })
+      const frame = await fullFrame(tree.terminal)
+      const row = frame.split('\r\n').find(line => line.includes('e2e-branch'))
+      expect(row).toBeDefined()
+      // Tier anchors: the model leads in text #e0e0e0, the cwd and badge
+      // paint muted #888888, the tip textMuted #6b6b6b.
+      expect(row!).toContain(`${FOOTER_TEXT_SGR}mock`)
+      expect(row!).toContain(`${FOOTER_MUTED_SGR}e2e-branch [+7 -2 ↑2]`)
+      expect(row!).toContain(FOOTER_TEXTMUTED_SGR)
+      // Slot order and the two-space joins, against the same abbreviation
+      // the cwd entry derives from this process's working directory.
+      const cwdLabel = statusCwdPlugin.shortenCwd(process.cwd(), homedir())
+      const plain = stripSgr(row!)
+      expect(plain.startsWith(`mock  ${cwdLabel}  e2e-branch [+7 -2 ↑2]`)).toBe(true)
+      // The tip is the right cluster: whatever the width, it ends the row.
+      expect(plain.trimEnd().endsWith(bootTipText())).toBe(true)
+    } finally {
+      statusGitPlugin.setGitCommandRunner(undefined)
+    }
+  })
+
+  it('yields the footer slots from the right under width pressure', async () => {
+    // Narrow the terminal to exactly one column short of fitting the tip
+    // (computed off the same cwd abbreviation the entry derives, so the
+    // boundary holds in any checkout): the right cluster starves first —
+    // neither the paired tip nor the single one fits — while the left
+    // cluster keeps its full budget, model through git badge.
+    statusGitPlugin.setGitCommandRunner((args) => {
+      if (args[0] === 'branch') return 'e2e-branch'
+      if (args[0] === 'status') return '## e2e-branch\n'
+      return null
+    })
+    try {
+      const tree = await bootBlue([], { script: [] })
+      await currentAgent(tree)
+      const cwdLabel = statusCwdPlugin.shortenCwd(process.cwd(), homedir())
+      const offer = tipOffer(buildTipRotation(STATUS_TIPS), 0)
+      const leftCluster = `mock  ${cwdLabel}  e2e-branch`.length
+      // fullFrame forces its repaint by bumping the width one column, so the
+      // boundary is set two short: even after the bump neither the pair nor
+      // the single tip fits the right cluster's budget.
+      tree.terminal.resize(leftCluster + FOOTER_GAP + offer.primary.length - 2, 24)
+      const frame = await fullFrame(tree.terminal)
+      const row = frame.split('\r\n').find(line => line.includes('e2e-branch'))
+      expect(row).toBeDefined()
+      const plain = stripSgr(row!)
+      expect(plain.trim()).toBe(`mock  ${cwdLabel}  e2e-branch`)
+      expect(plain).not.toContain(offer.primary)
+      expect(plain).not.toContain(' | ')
+    } finally {
+      statusGitPlugin.setGitCommandRunner(undefined)
     }
   })
 
@@ -1295,7 +1453,7 @@ describe('blue whole-tree e2e', () => {
     // editor sits above it, and the spinner above the editor (the first
     // gray `border` frame run at or after the spinner — the idle editor
     // frame is neutral since S11).
-    const footerAt = running.indexOf('mock · running')
+    const footerAt = running.indexOf(`${FOOTER_TEXT_SGR}mock`)
     const spinnerAt = running.indexOf('working…')
     const borderAt = running.indexOf(EDITOR_BORDER_SGR, spinnerAt)
     expect(footerAt).toBeGreaterThanOrEqual(0)
@@ -1334,7 +1492,7 @@ describe('blue whole-tree e2e', () => {
     // first gray `border` frame run at or after the pane — the idle editor
     // frame is neutral since S11).
     const expanded = await fullFrame(tree.terminal)
-    const footer = expanded.indexOf('mock · idle')
+    const footer = expanded.indexOf(`${FOOTER_TEXT_SGR}mock`)
     const todo = expanded.indexOf('active-task')
     const editorBorder = expanded.indexOf(EDITOR_BORDER_SGR, todo)
     expect(footer).toBeGreaterThanOrEqual(0)
@@ -1416,7 +1574,7 @@ describe('blue whole-tree e2e', () => {
     // is neutral since S11). The `↑` glyph splits the row with primary SGR
     // (S13), so the anchor is the message text alone.
     const docked = await fullFrame(tree.terminal)
-    const footerAt = docked.indexOf('mock · idle')
+    const footerAt = docked.indexOf(`${FOOTER_TEXT_SGR}mock`)
     const queuedAt = docked.indexOf('queued-task')
     const borderAt = docked.indexOf(EDITOR_BORDER_SGR, queuedAt)
     expect(footerAt).toBeGreaterThanOrEqual(0)
