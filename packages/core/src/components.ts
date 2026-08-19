@@ -29,6 +29,7 @@ import {
   type SettingsListTheme,
   type TUI,
 } from '@earendil-works/pi-tui'
+import { highlightCodeLines } from './highlight.ts'
 import type {
   BlueAutocompleteProvider,
   BlueColorFn,
@@ -62,18 +63,24 @@ function editorTheme(colors: BlueSemanticColors): EditorTheme {
 /** Map the palette to a select-list theme. */
 function selectListTheme(colors: BlueSemanticColors): SelectListTheme {
   return {
-    selectedPrefix: colors.accent,
-    selectedText: colors.accent,
-    description: colors.muted,
-    scrollInfo: colors.muted,
-    noMatch: colors.warning,
+    selectedPrefix: colors.primary,
+    selectedText: colors.primary,
+    description: colors.textMuted,
+    scrollInfo: colors.textMuted,
+    noMatch: colors.textMuted,
   }
 }
 
-/** Map the palette to a markdown theme: the ten md* tokens plus emphasis. */
+/**
+ * Map the palette to a markdown theme: the ten md* tokens plus emphasis.
+ * Headings carry their level through bold (0.84.2 exposes a single
+ * `heading` fn, so kimi's per-level styling is out of reach), unordered
+ * markers are normalized to `•`, and fenced code goes through cli-highlight
+ * via `highlightCode`, which recolors lines without changing their count.
+ */
 function markdownTheme(colors: BlueSemanticColors): MarkdownTheme {
   return {
-    heading: colors.mdHeading,
+    heading: (text) => `\x1b[1m${colors.mdHeading(text)}\x1b[22m`,
     link: colors.mdLink,
     linkUrl: colors.mdLinkUrl,
     code: colors.mdCode,
@@ -82,11 +89,12 @@ function markdownTheme(colors: BlueSemanticColors): MarkdownTheme {
     quote: colors.mdQuote,
     quoteBorder: colors.mdQuoteBorder,
     hr: colors.mdHr,
-    listBullet: colors.mdListBullet,
+    listBullet: (marker) => colors.mdListBullet(marker.replace(/^[-+*] $/, '• ')),
     bold: colors.textStrong,
     italic: colors.text,
     strikethrough: colors.muted,
     underline: colors.text,
+    highlightCode: (code, lang) => highlightCodeLines(code, lang, colors.mdCodeBlock),
   }
 }
 
@@ -101,7 +109,7 @@ function settingsListTheme(colors: BlueSemanticColors): SettingsListTheme {
     label: (text, selected) => (selected ? colors.accent(text) : colors.text(text)),
     value: (text, selected) => (selected ? colors.accent(text) : colors.muted(text)),
     description: colors.muted,
-    cursor: colors.accent('❯ '),
+    cursor: colors.primary('❯ '),
     hint: colors.muted,
   }
 }

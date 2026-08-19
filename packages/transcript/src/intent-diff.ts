@@ -138,7 +138,7 @@ export class DiffCardComponent implements BlueIntentComponent {
       const shown = Math.min(rows.length, cap)
       for (const row of rows.slice(0, shown)) lines.push(this.renderRow(row, width))
       if (rows.length > shown) {
-        lines.push(colors.diffMeta(components.truncateToWidth(`… ${rows.length - shown} more lines`, width)))
+        lines.push(colors.textMuted(components.truncateToWidth(`… ${rows.length - shown} more lines`, width)))
       }
     }
 

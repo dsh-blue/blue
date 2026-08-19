@@ -36,14 +36,14 @@ export function backgroundColor(hex: string): BlueColorFn {
 }
 
 /**
- * The 25 foreground tokens of a palette as `#rrggbb` hexes. `selectedBg`
+ * The 27 foreground tokens of a palette as `#rrggbb` hexes. `selectedBg`
  * is excluded: it is the palette's only background token and is passed
  * separately to {@link colorsFromForegrounds}.
  */
 export type BlueForegroundHexes = Record<Exclude<keyof BlueSemanticColors, 'selectedBg'>, string>
 
 /**
- * Build the frozen 26-token semantic color table from palette hexes.
+ * Build the frozen 28-token semantic color table from palette hexes.
  * @param foregrounds - one hex per foreground token.
  * @param selectedBg - the hex behind the selected list entry.
  * @returns the frozen semantic color table.

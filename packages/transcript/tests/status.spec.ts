@@ -21,7 +21,8 @@ import { fakeBlueComponents } from './helpers.ts'
 const id = (text: string): string => text
 const COLORS = {
   text: id, textStrong: id, muted: (text: string): string => `[M]${text}[/M]`,
-  accent: id, border: id, borderFocus: id, success: id, error: id, warning: id,
+  textMuted: id, accent: id, primary: id, border: id, borderFocus: id, success: id, error: id,
+  warning: id,
   selectedBg: id, roleUser: id, shellMode: id, mdHeading: id, mdLink: id,
   mdLinkUrl: id, mdCode: id, mdCodeBlock: id, mdCodeBlockBorder: id, mdQuote: id,
   mdQuoteBorder: id, mdHr: id, mdListBullet: id, diffAdded: id, diffRemoved: id,

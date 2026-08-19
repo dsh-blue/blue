@@ -48,7 +48,8 @@
   "license": "MIT",
   "dependencies": {
     "@deepseek-ai/schemastery": "3.18.1",
-    "@earendil-works/pi-tui": "^0.84.2"
+    "@earendil-works/pi-tui": "^0.84.2",
+    "cli-highlight": "^2.1.11"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.7",

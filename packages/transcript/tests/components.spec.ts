@@ -25,7 +25,8 @@ import { fakeBlueComponents } from './helpers.ts'
 /** Identity colors: assertions see structure, not escape codes. */
 const id = (text: string): string => text
 const COLORS = {
-  text: id, textStrong: id, muted: id, accent: id, border: id, borderFocus: id,
+  text: id, textStrong: id, muted: id, textMuted: id, accent: id, primary: id, border: id,
+  borderFocus: id,
   success: id, error: id, warning: id, selectedBg: id, roleUser: id, shellMode: id,
   mdHeading: id, mdLink: id, mdLinkUrl: id, mdCode: id, mdCodeBlock: id,
   mdCodeBlockBorder: id, mdQuote: id, mdQuoteBorder: id, mdHr: id, mdListBullet: id,
@@ -41,6 +42,9 @@ function tagged(): BlueSemanticColors {
     ...COLORS,
     accent: tag('A'),
     muted: tag('M'),
+    textMuted: tag('T'),
+    primary: tag('P'),
+    roleUser: tag('R'),
     border: tag('B'),
     success: tag('S'),
     error: tag('E'),
@@ -93,7 +97,7 @@ describe('UserMessageComponent', () => {
     loaders[1]?.(new Uint8Array([2]))
     await new Promise(resolve => setTimeout(resolve, 0))
     lines = component.render(80)
-    expect(lines).toEqual(['', '[A]❯[/A] pics', '<image 1B>', '<image 1B>'])
+    expect(lines).toEqual(['', '[R]❯[/R] pics', '<image 1B>', '<image 1B>'])
     // A rejected load keeps the placeholder.
     const failing = new UserMessageComponent(
       { kind: 'user', seq: 2, text: 'x', images: [{ id: 'c' } as never] },
@@ -104,9 +108,9 @@ describe('UserMessageComponent', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(failing.render(80).some(line => line.includes('[image]'))).toBe(true)
   })
-  it('renders an accent gutter, wrapped text, and a leading separator', () => {
+  it('renders a roleUser gutter, wrapped text, and a leading separator', () => {
     const lines = new UserMessageComponent(userItem('hello world'), tagged(), setup()).render(80)
-    expect(lines).toEqual(['', '[A]❯[/A] hello world'])
+    expect(lines).toEqual(['', '[R]❯[/R] hello world'])
   })
 
   it('indents continuation lines under the text', () => {
@@ -142,9 +146,9 @@ describe('AssistantMessageComponent', () => {
   it('shows a streaming cursor that follows the growing text', () => {
     const item = assistantItem({ streaming: true })
     const component = new AssistantMessageComponent(item, tagged(), setup())
-    expect(component.render(80)).toEqual(['', '[A]▌[/A]'])
+    expect(component.render(80)).toEqual(['', '[P]▌[/P]'])
     item.text = 'partial'
-    expect(component.render(80)).toEqual(['', 'partial[A]▌[/A]'])
+    expect(component.render(80)).toEqual(['', 'partial[P]▌[/P]'])
     item.text = 'done'
     item.streaming = false
     expect(component.render(80)).toEqual(['', 'done'])
@@ -183,14 +187,14 @@ describe('AssistantMessageComponent', () => {
 describe('ToolCallComponent', () => {
   it('renders a pending call with a muted hollow bullet', () => {
     const lines = new ToolCallComponent(toolItem(), tagged(), setup()).render(80)
-    expect(lines).toEqual(['', '[M]○[/M] bash[M]({})[/M]'])
+    expect(lines).toEqual(['', '[P]○[/P] bash[M]({})[/M]'])
   })
 
   it('renders a success result with an indented summary', () => {
     const item = toolItem()
     item.result = { text: 'ok done', isError: false }
     const lines = new ToolCallComponent(item, tagged(), setup()).render(80)
-    expect(lines).toEqual(['', '[S]●[/S] bash[M]({})[/M]', '  [B]⎿[/B] [M]ok done[/M]'])
+    expect(lines).toEqual(['', '[S]●[/S] bash[M]({})[/M]', '  [T]⎿[/T] [M]ok done[/M]'])
   })
 
   it('renders an error result in error colors', () => {
@@ -198,7 +202,7 @@ describe('ToolCallComponent', () => {
     item.result = { text: 'nope', isError: true }
     const lines = new ToolCallComponent(item, tagged(), setup()).render(80)
     expect(lines[1]).toContain('[E]●[/E]')
-    expect(lines[2]).toBe('  [B]⎿[/B] [E]nope[/E]')
+    expect(lines[2]).toBe('  [T]⎿[/T] [E]nope[/E]')
   })
 
   it('ellipsizes long arguments and omits empty parentheses', () => {
@@ -208,7 +212,7 @@ describe('ToolCallComponent', () => {
     expect(lines[1]).toContain('…')
 
     const noArgs = new ToolCallComponent(toolItem({ arguments: '' }), tagged(), setup()).render(80)
-    expect(noArgs[1]).toBe('[M]○[/M] bash')
+    expect(noArgs[1]).toBe('[P]○[/P] bash')
   })
 
   it('truncates the call line to the viewport width', () => {
@@ -234,12 +238,12 @@ describe('ToolCallComponent', () => {
     item.result = { text: 'line one xxx…', fullText: `line one\n${'x'.repeat(200)}`, isError: false }
     const component = new ToolCallComponent(item, tagged(), setup())
     const collapsed = component.render(80)
-    expect(collapsed).toEqual(['', '[S]●[/S] bash[M]({})[/M]', '  [B]⎿[/B] [M]line one xxx…[/M]'])
+    expect(collapsed).toEqual(['', '[S]●[/S] bash[M]({})[/M]', '  [T]⎿[/T] [M]line one xxx…[/M]'])
 
     component.setExpanded(true)
     const expanded = component.render(80)
     expect(expanded).not.toBe(collapsed)
-    expect(expanded[2]).toBe('  [B]⎿[/B] [M]line one[/M]')
+    expect(expanded[2]).toBe('  [T]⎿[/T] [M]line one[/M]')
     // The 200-x run hard-breaks across the 76-column content width.
     expect(expanded.length).toBeGreaterThan(4)
     expect(expanded.some(line => line.includes('x'.repeat(76)))).toBe(true)
@@ -253,7 +257,7 @@ describe('ToolCallComponent', () => {
     item.result = { text: 'only summary', isError: false }
     const component = new ToolCallComponent(item, tagged(), setup())
     component.setExpanded(true)
-    expect(component.render(80)[2]).toBe('  [B]⎿[/B] [M]only summary[/M]')
+    expect(component.render(80)[2]).toBe('  [T]⎿[/T] [M]only summary[/M]')
   })
 })
 
@@ -265,7 +269,7 @@ describe('StepSummaryComponent', () => {
   it('renders one muted summary line counting duplicate tools', () => {
     const component = new StepSummaryComponent(item, tagged(), setup())
     const lines = component.render(80)
-    expect(lines).toEqual(['[M]… step 2 · Read ×2, Edit ×1[/M]'])
+    expect(lines).toEqual(['[T]… step 2 · Read ×2, Edit ×1[/T]'])
     // Width-cached; invalidate forces a rebuild.
     expect(component.render(80)).toBe(lines)
     component.invalidate()

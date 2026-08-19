@@ -1,6 +1,6 @@
 /**
  * `blue-theme-light` plugin entry: registration and disposal on the fiber,
- * and the built-in light semantic color table (26 tokens).
+ * and the built-in light semantic color table (28 tokens).
  */
 
 import { describe, expect, it } from 'vitest'
@@ -12,7 +12,9 @@ const EXPECTED_ROLES: (keyof BlueSemanticColors)[] = [
   'text',
   'textStrong',
   'muted',
+  'textMuted',
   'accent',
+  'primary',
   'border',
   'borderFocus',
   'success',
@@ -68,9 +70,15 @@ describe('blue-theme-light plugin', () => {
     const { colors } = ctx.blueTheme
     // text #1f2328 → rgb(31, 35, 40)
     expect(colors.text('hi')).toBe('\x1b[38;2;31;35;40mhi\x1b[39m')
+    // primary #0969da → rgb(9, 105, 218)
+    expect(colors.primary('hi')).toBe('\x1b[38;2;9;105;218mhi\x1b[39m')
+    // textMuted #8c959f → rgb(140, 149, 159)
+    expect(colors.textMuted('hi')).toBe('\x1b[38;2;140;149;159mhi\x1b[39m')
+    // roleUser #953800 → rgb(149, 56, 0)
+    expect(colors.roleUser('hi')).toBe('\x1b[38;2;149;56;0mhi\x1b[39m')
+    // mdHeading #1f2328 → rgb(31, 35, 40)
+    expect(colors.mdHeading('hi')).toBe('\x1b[38;2;31;35;40mhi\x1b[39m')
     // selectedBg #d0d7de → rgb(208, 215, 222)
     expect(colors.selectedBg('hi')).toBe('\x1b[48;2;208;215;222mhi\x1b[49m')
-    // mdHeading #953800 → rgb(149, 56, 0)
-    expect(colors.mdHeading('hi')).toBe('\x1b[38;2;149;56;0mhi\x1b[39m')
   })
 })

@@ -89,7 +89,7 @@ class ActivityPaneComponent implements BlueComponent {
     if (!this.state.running) return []
     if (width < SPINNER_LINE_WIDTH) return []
     const frame = SPINNER_FRAMES[this.state.frame % SPINNER_FRAMES.length]!
-    return [`${this.colors.accent(frame)} ${this.colors.muted('working…')}`]
+    return [`${this.colors.primary(frame)} ${this.colors.muted('working…')}`]
   }
 
   /** Stateless render; nothing to drop. */

@@ -144,7 +144,7 @@ export class TerminalCardComponent implements BlueIntentComponent {
         lines.push(colors.text(components.truncateToWidth(row, width)))
       }
       if (rows.length > shown) {
-        lines.push(colors.diffMeta(components.truncateToWidth(`… ${rows.length - shown} more lines`, width)))
+        lines.push(colors.textMuted(components.truncateToWidth(`… ${rows.length - shown} more lines`, width)))
       }
     }
 

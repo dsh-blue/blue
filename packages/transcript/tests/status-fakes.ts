@@ -20,7 +20,8 @@ import { fakeBlueComponents } from './helpers.ts'
 /** Identity colors so rendered assertions see structure, not escape codes. */
 const id = (text: string): string => text
 export const COLORS = {
-  text: id, textStrong: id, muted: id, accent: id, border: id, borderFocus: id,
+  text: id, textStrong: id, muted: id, textMuted: id, accent: id, primary: id, border: id,
+  borderFocus: id,
   success: id, error: id, warning: id, selectedBg: id, roleUser: id, shellMode: id,
   mdHeading: id, mdLink: id, mdLinkUrl: id, mdCode: id, mdCodeBlock: id,
   mdCodeBlockBorder: id, mdQuote: id, mdQuoteBorder: id, mdHr: id, mdListBullet: id,

@@ -187,7 +187,7 @@ export interface BlueScreen {
 export type BlueColorFn = (text: string) => string
 
 /**
- * The semantic color table. Keys name roles, not presentation. All 26
+ * The semantic color table. Keys name roles, not presentation. All 28
  * tokens are required so a palette is compile-checked for completeness; the
  * diff group ships unused until P2 but must still carry colors.
  * `selectedBg` is a background color; every other entry styles the
@@ -200,8 +200,12 @@ export interface BlueSemanticColors {
   textStrong: BlueColorFn
   /** Secondary, de-emphasized text. */
   muted: BlueColorFn
-  /** Primary highlight (selected items, accents). */
+  /** Deepest gray tier (counters, key hints, connectors, truncation rows). */
+  textMuted: BlueColorFn
+  /** Secondary highlight (pointer glyphs, secondary emphasis). */
   accent: BlueColorFn
+  /** Interactive primary (selection, links, spinner, running indicators). */
+  primary: BlueColorFn
   /** Overlay and editor borders. */
   border: BlueColorFn
   /** Border of the focused overlay or editor. */

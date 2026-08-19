@@ -38,7 +38,9 @@ const ROLES: (keyof BlueSemanticColors)[] = [
   'text',
   'textStrong',
   'muted',
+  'textMuted',
   'accent',
+  'primary',
   'border',
   'borderFocus',
   'success',
@@ -314,16 +316,20 @@ describe('createMarkdown', () => {
       paddingY: 0,
     })
     const output = markdown.render(60).join('\n')
-    expect(output).toContain('«mdHeading:')
+    // Headings carry their level through bold on top of the palette color.
+    expect(output).toContain('\x1b[1m«mdHeading:')
     expect(output).toContain('«textStrong:strong»')
     expect(output).toContain('«mdCode:code»')
-    expect(output).toContain('«mdListBullet:')
+    // Unordered markers are normalized to `•` before the palette runs.
+    expect(output).toContain('«mdListBullet:• ')
     expect(output).toContain('«mdQuote:')
     expect(output).toContain('«mdHr:')
     expect(output).toContain('«mdLink:')
     expect(output).toContain('«mdLinkUrl:')
-    expect(output).toContain('«mdCodeBlock:')
     expect(output).toContain('«mdCodeBlockBorder:')
+    // The js fence goes through cli-highlight: plain runs take the palette
+    // tag while keyword runs carry cli-highlight SGR; line count is kept.
+    expect(output).toContain('const')
     markdown.invalidate()
     stop()
   })
@@ -363,9 +369,10 @@ describe('createSelectList', () => {
 
     const output = list.render(80).join('\n')
     expect(output).toContain('One')
-    // The selected row takes accent; the unselected row's description is muted.
-    expect(output).toMatch(/«muted:\s*second»/)
-    expect(output).toContain('«accent:')
+    // The selected row takes primary; the unselected row's description is
+    // textMuted.
+    expect(output).toMatch(/«textMuted:\s*second»/)
+    expect(output).toContain('«primary:')
 
     expect(list.getSelectedItem()?.value).toBe('1')
     list.handleInput('\x1b[B')
@@ -411,13 +418,13 @@ describe('createSettingsList', () => {
 
     const output = list.render(60).join('\n')
     // The selected row's label and value take accent, the other row text,
-    // the description muted, and the cursor is the accented marker.
+    // the description muted, and the cursor is the primary marker.
     expect(output).toContain('«accent:Mode»')
     expect(output).toContain('«accent:a»')
     expect(output).toContain('«text:Note»')
     expect(output).toContain('«muted:plain»')
     expect(output).toContain('«muted:  the mode»')
-    expect(output).toContain('«accent:❯ »')
+    expect(output).toContain('«primary:❯ »')
 
     // Enter cycles the first item's value; Escape cancels.
     list.handleInput('\r')

@@ -129,7 +129,7 @@ export class UserMessageComponent implements BlueComponent {
   render(width: number): string[] {
     const key = `${this.item.seq}:${width}:${this.imageVersion}`
     if (this.cache?.key === key) return this.cache.lines
-    const gutter = `${this.colors.accent('❯')} `
+    const gutter = `${this.colors.roleUser('❯')} `
     const contentWidth = Math.max(1, width - this.components.visibleWidth('❯ '))
     const wrapped = this.components.wrapText(this.item.text, contentWidth)
     const lines = ['', ...wrapped.map((line, index) =>
@@ -201,7 +201,7 @@ export class AssistantMessageComponent implements BlueComponent {
       lines.push(...this.markdown.render(width))
     }
     if (streaming) {
-      const cursor = this.colors.accent('▌')
+      const cursor = this.colors.primary('▌')
       const last = lines.at(-1)
       // The cursor shares the last row: a full-width row must yield one
       // column, or pi-tui rejects the over-wide line at render time.
@@ -274,7 +274,7 @@ export class ToolCallComponent implements BlueComponent {
     if (this.cache?.key === key) return this.cache.lines
 
     const bullet = result === undefined
-      ? this.colors.muted('○')
+      ? this.colors.primary('○')
       : result.isError
         ? this.colors.error('●')
         : this.colors.success('●')
@@ -289,7 +289,7 @@ export class ToolCallComponent implements BlueComponent {
       const prefix = '  ⎿ '
       const contentWidth = Math.max(1, width - this.components.visibleWidth(prefix))
       for (const line of this.components.wrapText(body, contentWidth)) {
-        lines.push(`  ${this.colors.border('⎿')} ${summaryColor(line)}`)
+        lines.push(`  ${this.colors.textMuted('⎿')} ${summaryColor(line)}`)
       }
     }
     this.cache = { key, lines }
@@ -298,7 +298,7 @@ export class ToolCallComponent implements BlueComponent {
 }
 
 /**
- * Renders one folded-away mid-turn step as a single muted line:
+ * Renders one folded-away mid-turn step as a single textMuted line:
  * `… step N · Read ×2, Edit ×1` — occurrences counted per tool name in
  * first-seen order (`toolNames` keeps duplicates; this is the counting
  * step). The item is immutable, so the cache keys on width alone.
@@ -311,7 +311,7 @@ export class StepSummaryComponent implements BlueComponent {
 
   /**
    * @param item - the folded step-summary item to render.
-   * @param colors - the semantic color table (the line is muted).
+   * @param colors - the semantic color table (the line is textMuted).
    * @param components - the component factory providing the width helpers.
    */
   constructor(item: TranscriptStepSummaryItem, colors: BlueSemanticColors, components: BlueComponents) {
@@ -337,7 +337,7 @@ export class StepSummaryComponent implements BlueComponent {
       counts.set(name, (counts.get(name) ?? 0) + 1)
     }
     const tools = [...counts].map(([name, count]) => `${name} ×${count}`).join(', ')
-    const line = this.colors.muted(
+    const line = this.colors.textMuted(
       this.components.truncateToWidth(`… step ${this.item.step} · ${tools}`, width))
     this.cache = { key, lines: [line] }
     return this.cache.lines
