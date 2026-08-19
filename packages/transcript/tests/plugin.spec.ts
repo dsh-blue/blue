@@ -293,7 +293,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     // shell's full-width rows do too (the wrapper squeezes the child to
     // `width - 2`, the squeeze being the right margin).
     const rawContent = screen.children.flatMap(component => component.render(80))
-    expect(rawContent).toEqual([' ', ' ❯ hi', ' ', ' ● answer'])
+    expect(rawContent).toEqual([' ', ' \x1b[1m✨ \x1b[22m\x1b[1mhi\x1b[22m', ' ', ' ● answer'])
     const rawFooter = screen.bottomChildren.flatMap(component => component.render(80))
     expect(rawFooter).toEqual([` deepseek-chat${' '.repeat(65)}`])
   })
@@ -307,7 +307,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     ctx.emit('blue/session-changed', asAgent(agent))
     expect(screen.children).toHaveLength(2)
     expect(footerLines(screen)).toEqual([`deepseek-chat${' '.repeat(65)}`])
-    expect(contentLines(screen)).toEqual(['', '❯ hi', '', '● answer'])
+    expect(contentLines(screen)).toEqual(['', '\x1b[1m✨ \x1b[22m\x1b[1mhi\x1b[22m', '', '● answer'])
     expect(screen.renderRequests).toContain(true)
     expect(blueSession.current).toBeNull()
   })
@@ -316,7 +316,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     resetSeq()
     const { screen } = await bootTranscript(fakeAgent([userEvent('remember me')]))
     expect(screen.children).toHaveLength(1)
-    expect(contentLines(screen)).toEqual(['', '❯ remember me'])
+    expect(contentLines(screen)).toEqual(['', '\x1b[1m✨ \x1b[22m\x1b[1mremember me\x1b[22m'])
     expect(footerLines(screen)[0]).toContain('deepseek-chat')
   })
 
@@ -442,12 +442,12 @@ describe('blue-transcript plugin through the real Loader', () => {
     resetSeq()
     const { ctx, screen } = await bootTranscript()
     ctx.emit('blue/session-changed', asAgent(fakeAgent([userEvent('first')])))
-    expect(contentLines(screen)).toEqual(['', '❯ first'])
+    expect(contentLines(screen)).toEqual(['', '\x1b[1m✨ \x1b[22m\x1b[1mfirst\x1b[22m'])
 
     resetSeq()
     ctx.emit('blue/session-changed', asAgent(fakeAgent([userEvent('second')])))
     expect(screen.children).toHaveLength(1)
-    expect(contentLines(screen)).toEqual(['', '❯ second'])
+    expect(contentLines(screen)).toEqual(['', '\x1b[1m✨ \x1b[22m\x1b[1msecond\x1b[22m'])
 
     // The old session's listener went away with its components.
     const staleAgent = fakeAgent([])
@@ -587,7 +587,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     ]
     ctx.emit('blue/session-changed', asAgent(fakeAgent(events)))
     const lines = contentLines(screen).join('\n')
-    expect(lines).toContain('… step 1 · Read ×2')
+    expect(lines).toContain('… step 1 · call 2 tools')
     expect(lines).not.toContain('○ Read')
     expect(screen.children).toHaveLength(2)
   })
@@ -633,7 +633,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     expect(before).toContain('  [image]')
     await new Promise(resolve => setTimeout(resolve, 10))
     expect(renderRequests.length).toBeGreaterThan(0)
-    expect(contentLines(screen)).toContain('<image 3B>')
+    expect(contentLines(screen)).toContain('  <image 3B>')
     disposers.length = 0
     await ctx.fiber.dispose()
   })
@@ -650,7 +650,12 @@ describe('blue-transcript plugin through the real Loader', () => {
     contentLines(screen)
     await new Promise(resolve => setTimeout(resolve, 10))
     // One placeholder from the message text plus one from the failed load.
-    expect(contentLines(screen)).toEqual(['', '❯ pic', '  [image]', '  [image]'])
+    expect(contentLines(screen)).toEqual([
+      '',
+      '\x1b[1m✨ \x1b[22m\x1b[1mpic\x1b[22m',
+      '  \x1b[1m[image]\x1b[22m',
+      '  [image]',
+    ])
     disposers.length = 0
     await ctx.fiber.dispose()
   })
@@ -660,7 +665,11 @@ describe('blue-transcript plugin through the real Loader', () => {
     ctx.emit('blue/session-changed', asAgent(fakeAgent([
       userEvent('pic', [{ type: 'image', attachment: { id: 'a1' } as never }]),
     ])))
-    expect(contentLines(screen)).toEqual(['', '❯ pic', '  [image]'])
+    expect(contentLines(screen)).toEqual([
+      '',
+      '\x1b[1m✨ \x1b[22m\x1b[1mpic\x1b[22m',
+      '  \x1b[1m[image]\x1b[22m',
+    ])
     disposers.length = 0
     await ctx.fiber.dispose()
   })

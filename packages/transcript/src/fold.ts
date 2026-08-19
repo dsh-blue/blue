@@ -20,7 +20,8 @@
  * `turn/start`/`step/start`/`turn/end` drive the
  * turn/step tagging, the completed-turn list the window policy evicts on,
  * and in-turn step folding: the next `step/start` of a turn folds the
- * previous step's tool items into one `step-summary` item. All other event
+ * previous step's tool and thinking items into one `step-summary` item (the
+ * S18 kimi wording counts both). All other event
  * types (request records, log-only markers, and merge-extended unknowns)
  * render nothing.
  *
@@ -73,8 +74,8 @@ export interface FoldItemUpdate {
 }
 
 /**
- * The fold's answer to in-turn step folding: the step's tool items were
- * replaced in place (at the first folded item's position) by one
+ * The fold's answer to in-turn step folding: the step's tool and thinking
+ * items were replaced in place (at the first folded item's position) by one
  * `step-summary` item. The mounter disposes the replaced items' components
  * and mounts the summary.
  */
@@ -466,36 +467,48 @@ export class TranscriptFolder {
   }
 
   /**
-   * Fold one step's tool items into a single `step-summary` item at the
-   * first folded item's position. The folded items leave `toolsByCallId`, so
-   * a late result renders as an unpaired fallback instead of mutating an
-   * item nothing renders.
+   * Fold one step's tool and thinking items into a single `step-summary`
+   * item at the first folded item's position (the S18 kimi wording counts
+   * both). The folded tools leave `toolsByCallId`, so a late result renders
+   * as an unpaired fallback instead of mutating an item nothing renders; a
+   * folded still-streaming thinking item prunes the streaming slot, so a
+   * late finalize mounts a fresh finalized block (the `evictThrough`
+   * symmetry — unreachable in the live stream, where the step's
+   * `assistant/message` always precedes the next `step/start`).
    * @param turn - the turn owning the step.
-   * @param step - the step whose tool items fold.
+   * @param step - the step whose items fold.
    * @returns the replacement update, or null when the step produced no tool
-   *   items (assistant/user items are never folded).
+   *   or thinking items (assistant/user items are never folded).
    */
   private foldStep(turn: number, step: number): FoldReplacement | null {
     const indices: number[] = []
     for (let index = 0; index < this.items.length; index += 1) {
       const item = this.items[index]!
-      if (item.kind === 'tool' && item.turn === turn && item.step === step) {
+      if ((item.kind === 'tool' || item.kind === 'thinking') && item.turn === turn && item.step === step) {
         indices.push(index)
       }
     }
     const first = indices[0]
     if (first === undefined) return null
-    const folded = indices.map(index => this.items[index] as TranscriptToolItem)
+    const folded = indices.map(index => this.items[index]!)
+    const tools = folded.filter((item): item is TranscriptToolItem => item.kind === 'tool')
     const summary: TranscriptStepSummaryItem = {
       kind: 'step-summary',
       seq: folded[0]!.seq,
       turn,
       step,
-      toolNames: folded.map(item => item.name),
+      toolNames: tools.map(item => item.name),
+      thinking: folded.length - tools.length,
     }
-    for (const item of folded) {
+    for (const item of tools) {
       if (this.toolsByCallId.get(item.callId) === item) {
         this.toolsByCallId.delete(item.callId)
+      }
+    }
+    for (const item of folded) {
+      if (this.streamingThinking === item) {
+        this.streamingThinking = null
+        this.pendingReasoning = ''
       }
     }
     // Descending splices keep the earlier indices valid; the summary takes

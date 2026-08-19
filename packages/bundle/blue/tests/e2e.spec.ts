@@ -913,8 +913,8 @@ describe('blue whole-tree e2e', () => {
     // Each scripted response starts a new step, so the first two steps fold
     // into one summary line each; the final step's card stays mounted.
     const shown = tree.terminal.output.replace(/\x1b\[[0-9;]*m/g, '')
-    expect(shown).toContain('… step 1 · probe ×1')
-    expect(shown).toContain('… step 2 · probe ×1')
+    expect(shown).toContain('… step 1 · call 1 tools')
+    expect(shown).toContain('… step 2 · call 1 tools')
     expect(shown).toContain('done')
   })
 
@@ -1414,12 +1414,13 @@ describe('blue whole-tree e2e', () => {
       })
       // The transcript reload re-folds the full session snapshot (the D16
       // path): both rendered items come back, and the re-rendered user row
-      // carries the light roleUser gutter (#953800), not dark's #f0c674.
+      // carries the light roleUser bullet (#953800), not dark's #f0c674 —
+      // bold-wrapped per the S18 kimi user chrome.
       await vi.waitFor(() => {
         const rendered = tree.terminal.written.slice(beforeSwitch).join('')
         expect(rendered).toContain('show palette')
         expect(rendered).toContain('palette reply')
-        expect(rendered).toContain('\x1b[38;2;149;56;0m❯')
+        expect(rendered).toContain('\x1b[1m\x1b[38;2;149;56;0m✨ ')
       })
     } finally {
       await backToDark(tree, agent)
