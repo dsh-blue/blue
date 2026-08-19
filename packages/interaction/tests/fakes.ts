@@ -452,6 +452,7 @@ export interface FakeOverlay {
 /** Fake screen recording mounts, focus moves, overlays, and render requests. */
 export class FakeScreen implements BlueScreen {
   columns = 80
+  rows = 24
   readonly children: BlueComponent[] = []
   readonly overlays: FakeOverlay[] = []
   focused: BlueComponent | null = null

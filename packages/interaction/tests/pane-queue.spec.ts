@@ -73,20 +73,28 @@ describe('blue-pane-queue plugin', () => {
     expect(screen.children[0]?.render(80)).toEqual([])
   })
 
-  it('renders one muted row per pending message with its target prefix', async () => {
+  it('renders one row per pending message with the activity glyph accented', async () => {
     const { screen } = await mount({
       inbox: fakeInbox([message('first turn'), message('second\nturn')], [message('steer this')]),
     })
+    // The `↑` glyph paints `primary`, the row text stays `muted` around it.
     expect(screen.children[0]?.render(80)).toEqual([
-      '~queued ↑ turn: first turn~',
-      '~queued ↑ turn: second turn~',
-      '~queued ↑ step: steer this~',
+      '~queued ~^↑^~ turn: first turn~',
+      '~queued ~^↑^~ turn: second turn~',
+      '~queued ~^↑^~ step: steer this~',
     ])
   })
 
-  it('truncates rows to the render width', async () => {
+  it('truncates rows to the render width before coloring the glyph', async () => {
     const { screen } = await mount({ inbox: fakeInbox([message('a rather long queued message')]) })
-    expect(screen.children[0]?.render(20)).toEqual(['~queued ↑ turn: a ra…~'])
+    expect(screen.children[0]?.render(20)).toEqual(['~queued ~^↑^~ turn: a ra…~'])
+  })
+
+  it('renders a plain muted row when truncation cuts the glyph', async () => {
+    const { screen } = await mount({ inbox: fakeInbox([message('a rather long queued message')]) })
+    // A 7-column row truncates before the `↑` (column 8): the split is
+    // skipped and the whole row renders muted.
+    expect(screen.children[0]?.render(7)).toEqual(['~queued…~'])
   })
 
   it('renders a blank text portion for messages without text blocks', async () => {
@@ -97,7 +105,7 @@ describe('blue-pane-queue plugin', () => {
       source: { kind: 'user' },
     } as unknown as UserMessage
     const { screen } = await mount({ inbox: fakeInbox([imageOnly]) })
-    expect(screen.children[0]?.render(80)).toEqual(['~queued ↑ turn: ~'])
+    expect(screen.children[0]?.render(80)).toEqual(['~queued ~^↑^~ turn: ~'])
   })
 
   it('re-renders on inbox events of the current agent only', async () => {
@@ -121,7 +129,7 @@ describe('blue-pane-queue plugin', () => {
     const before = screen.renderRequests
     ctx.emit('blue/session-changed', next)
     expect(screen.renderRequests).toBe(before + 1)
-    expect(screen.children[0]?.render(80)).toEqual(['~queued ↑ turn: queued~'])
+    expect(screen.children[0]?.render(80)).toEqual(['~queued ~^↑^~ turn: queued~'])
     // The old agent no longer drives re-renders.
     const stale = { id: 'stale' } as unknown as Agent
     ctx.emit('agent/inbox/inserted', { agent: stale, message: message('x') })
