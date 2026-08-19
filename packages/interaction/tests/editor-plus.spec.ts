@@ -478,26 +478,70 @@ describe('blue-editor-plus slash completion', () => {
   async function providerOf(options: { withAgent?: boolean } = {}): Promise<{
     provider: BlueAutocompleteProvider
     ctx: Context
+    editor: FakeBlueEditor
   }> {
     const mounted = await mount(options)
     const provider = (mounted.editor.autocompleteProvider ?? undefined) as BlueAutocompleteProvider | undefined
     if (provider === undefined) throw new Error('no provider attached')
-    return { provider, ctx: mounted.ctx }
+    return { provider, ctx: mounted.ctx, editor: mounted.editor }
   }
 
-  it('suggests commands matching the slash prefix', async () => {
+  it('suggests commands fuzzy-matching the slash prefix, ties keeping registry order', async () => {
     const { provider, ctx } = await providerOf()
     const agent = ctx.get('blueSession')?.current as Agent
     ctx.commands.register({ name: 'resume', description: 'Resume a previous session', handler: () => ({ kind: 'success' }) })
     ctx.commands.register({ name: 'restart', description: 'Restart everything', handler: () => ({ kind: 'success' }) })
     ctx.commands.register({ name: 'quit', description: 'Exit Blue', handler: () => ({ kind: 'success' }) })
     const suggestions = await provider.getSuggestions(['/re'], 0, 3, { signal: signal() })
-    expect(suggestions?.prefix).toBe('re')
+    // The prefix carries its slash so Enter accepts-and-submits; values do
+    // too so pi-tui's best-match preselection keys on the typed text. The
+    // registry lists name-sorted ('restart' precedes 'resume'), and the
+    // equal scores keep that order.
+    expect(suggestions?.prefix).toBe('/re')
     expect(suggestions?.items).toEqual([
-      { value: 'restart', label: '/restart', description: 'Restart everything' },
-      { value: 'resume', label: '/resume', description: 'Resume a previous session' },
+      { value: '/restart', label: '/restart', description: 'Restart everything' },
+      { value: '/resume', label: '/resume', description: 'Resume a previous session' },
     ])
     expect(agent).toBeDefined()
+  })
+
+  it('drops commands the query cannot subsequence-match', async () => {
+    const { provider, ctx } = await providerOf()
+    ctx.commands.register({ name: 'theme', description: 'Switch the color theme', handler: () => ({ kind: 'success' }) })
+    ctx.commands.register({ name: 'restart', description: 'Restart everything', handler: () => ({ kind: 'success' }) })
+    // 'thm' matches `theme` out of order but finds no `h` after `t` in
+    // `restart`.
+    const suggestions = await provider.getSuggestions(['/thm'], 0, 4, { signal: signal() })
+    expect(suggestions?.items).toEqual([
+      { value: '/theme', label: '/theme', description: 'Switch the color theme' },
+    ])
+  })
+
+  it('joins the argument hint into the dropdown description', async () => {
+    const { provider, ctx } = await providerOf()
+    ctx.commands.register({
+      name: 'resume',
+      description: 'Resume a previous session',
+      input: { hint: '<question>' },
+      handler: () => ({ kind: 'success' }),
+    })
+    ctx.commands.register({
+      name: 'router',
+      description: 'Route the conversation',
+      handler: () => ({ kind: 'success' }),
+    })
+    const suggestions = await provider.getSuggestions(['/r'], 0, 2, { signal: signal() })
+    const byName = new Map(suggestions?.items.map(item => [item.label, item.description]))
+    expect(byName.get('/resume')).toBe('<question> — Resume a previous session')
+    // A command without an argument hint keeps its plain summary.
+    expect(byName.get('/router')).toBe('Route the conversation')
+  })
+
+  it('declines slash suggestions in bash mode so Enter runs the typed path', async () => {
+    const { provider, ctx, editor } = await providerOf()
+    ctx.commands.register({ name: 'resume', description: 'Resume a previous session', handler: () => ({ kind: 'success' }) })
+    type(editor, '!')
+    await expect(provider.getSuggestions(['/tmp'], 0, 4, { signal: signal() })).resolves.toBeNull()
   })
 
   it('applies a slash completion by replacing the command token', async () => {
@@ -506,8 +550,8 @@ describe('blue-editor-plus slash completion', () => {
       ['/res abc', 'second line'],
       0,
       4,
-      { value: 'resume', label: '/resume' },
-      'res',
+      { value: '/resume', label: '/resume' },
+      '/res',
     )
     expect(applied).toEqual({ lines: ['/resume abc', 'second line'], cursorLine: 0, cursorCol: 8 })
   })
@@ -529,6 +573,86 @@ describe('blue-editor-plus slash completion', () => {
     const { provider } = await providerOf()
     expect(provider.applyCompletion([], 0, 0, { value: 'x', label: 'x' }, ''))
       .toEqual({ lines: [], cursorLine: 0, cursorCol: 0 })
+  })
+})
+
+describe('blue-editor-plus argument-hint ghost', () => {
+  it('shows the command input hint after a completed command token', async () => {
+    const { ctx, editor } = await mount()
+    ctx.commands.register({
+      name: 'btw',
+      description: 'Ask a side question',
+      input: { hint: '<question>' },
+      handler: () => ({ kind: 'success' }),
+    })
+    type(editor, '/btw')
+    // No separator typed yet: the ghost lead-spaces itself.
+    expect(editor.ghostHint).toBe(' <question>')
+
+    type(editor, ' ')
+    expect(editor.ghostHint).toBe('<question>')
+
+    // Typing the argument replaces the ghost — the regex only admits a
+    // command token plus at most one space.
+    type(editor, 'w')
+    expect(editor.ghostHint).toBeUndefined()
+  })
+
+  it('clears the ghost for unknown commands and hint-less commands', async () => {
+    const { ctx, editor } = await mount()
+    ctx.commands.register({ name: 'plain', description: 'No input hint', handler: () => ({ kind: 'success' }) })
+    type(editor, '/unknown')
+    expect(editor.ghostHint).toBeUndefined()
+    editor.setText('')
+    type(editor, '/plain')
+    expect(editor.ghostHint).toBeUndefined()
+  })
+
+  it('never shows the ghost without an attached session', async () => {
+    const { editor } = await mount({ withAgent: false })
+    type(editor, '/btw')
+    expect(editor.ghostHint).toBeUndefined()
+  })
+
+  it('never shows the ghost in bash mode and clears it on detach', async () => {
+    const { ctx, editor, plusFiber } = await mount()
+    ctx.commands.register({
+      name: 'btw',
+      description: 'Ask a side question',
+      input: { hint: '<question>' },
+      handler: () => ({ kind: 'success' }),
+    })
+    type(editor, '!')
+    type(editor, '/btw')
+    expect(editor.ghostHint).toBeUndefined()
+
+    // Empty the bash buffer, leave bash, and establish a prompt-mode ghost.
+    editor.setText('')
+    editor.onKey?.(KEY.escape)
+    type(editor, '/btw')
+    expect(editor.ghostHint).toBe(' <question>')
+    await plusFiber.dispose()
+    expect(editor.ghostHint).toBeUndefined()
+  })
+
+  it('ghosts a draft restored before the enhancement attaches', async () => {
+    // A theme-swap reload order: blue-input restores the stashed draft, then
+    // editor-plus attaches over it.
+    const { ctx, editor, plusFiber } = await mount()
+    ctx.commands.register({
+      name: 'btw',
+      description: 'Ask a side question',
+      input: { hint: '<question>' },
+      handler: () => ({ kind: 'success' }),
+    })
+    type(editor, '/btw')
+    expect(editor.ghostHint).toBe(' <question>')
+    await plusFiber.dispose()
+    editor.setText('/btw')
+    expect(editor.ghostHint).toBeUndefined()
+    const reattach = await ctx.plugin(editorPlus)
+    expect(editor.ghostHint).toBe(' <question>')
+    await reattach.dispose()
   })
 })
 

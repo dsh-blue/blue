@@ -9,7 +9,8 @@
  * one, otherwise queues the text as a user follow-up message on the current
  * agent (the harness inbox queues it when the agent is running). A hint
  * line below the editor carries three tiers — one-shot notices and
- * slash-command discovery in `muted`, and beneath them the persistent
+ * slash-command discovery in `muted` (S14: fuzzy-matched through the same
+ * `./slash-filter.ts` the dropdown uses), and beneath them the persistent
  * key-affordance row in `textMuted` (`hint-content.ts`, idle and running
  * states). The editor-context key chain (Escape clear/interrupt, Ctrl-C
  * clear/interrupt/double-press exit, Ctrl-S steer) resolves through
@@ -60,6 +61,7 @@ import { ACTION_CANCEL, ACTION_INTERRUPT, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTI
 import { ACTION_IMAGE_PASTE } from './paste-image.ts'
 import { ACTION_QUEUE_RECALL, queuedMessageText } from './pane-queue.ts'
 import { currentBlueAgent } from './session.ts'
+import { filterSlashCommands } from './slash-filter.ts'
 
 /** Slash-command hint rows shown at once. */
 const MAX_HINT_COMMANDS = 3
@@ -200,10 +202,14 @@ export function apply(ctx: Context): void {
     if (parsed === undefined && currentText !== '/') return undefined
     const agent = currentBlueAgent(ctx)
     if (agent === undefined) return undefined
-    const prefix = parsed?.name ?? ''
-    const matches = ctx.commands.list(agent)
-      .filter(command => command.name.startsWith(prefix))
-    if (matches.length === 0) return `no matching command: /${prefix}`
+    // The S14 fuzzy filter — the same matcher the dropdown uses — keeps the
+    // hint row and the completion list in agreement.
+    const matches = filterSlashCommands(
+      ctx.commands.list(agent),
+      parsed?.name ?? '',
+      ctx.blueComponents,
+    )
+    if (matches.length === 0) return `no matching command: /${parsed?.name ?? ''}`
     return matches.slice(0, MAX_HINT_COMMANDS)
       .map(command => `/${command.name} — ${command.description}`)
       .join('  ')
