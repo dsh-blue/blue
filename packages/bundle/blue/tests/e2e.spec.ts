@@ -1227,7 +1227,8 @@ describe('blue whole-tree e2e', () => {
         { content: 'later-task', status: 'pending' },
       ],
     })
-    // A list with in-progress work starts expanded: one styled row per entry.
+    // Any list starts expanded (the S13 dogfood ruling): one styled row per
+    // entry.
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('active-task') })
     // Dock order (S12): the footer pins to the terminal's last rows, then
     // the editor's rounded top border, then the todo pane above it (the

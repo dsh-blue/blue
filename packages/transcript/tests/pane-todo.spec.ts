@@ -48,7 +48,7 @@ describe('blue-pane-todo', () => {
     await noTodos.dispose()
   })
 
-  it('reads the latest whole-list snapshot and collapses without in-progress work', async () => {
+  it('reads the latest whole-list snapshot and expands by default, in-progress or not', async () => {
     resetSeq()
     const agent = fakeAgent([
       todoWrite([{ content: 'stale', status: 'in_progress' }]),
@@ -59,11 +59,11 @@ describe('blue-pane-todo', () => {
       ]),
     ])
     const { screen, dispose } = await bootPanePlugin(todo, agent)
-    expect(screen.paneLines()).toEqual([rule(80), TITLE, '  todos 1/2'])
+    expect(screen.paneLines()).toEqual([rule(80), TITLE, row('✓', 'done'), row('○', 'later')])
     await dispose()
   })
 
-  it('expands by default when the snapshot has work in progress', async () => {
+  it('renders every status marker on an expanded list', async () => {
     resetSeq()
     const agent = fakeAgent([todoWrite([
       { content: 'done', status: 'completed' },
@@ -79,13 +79,13 @@ describe('blue-pane-todo', () => {
     resetSeq()
     const agent = fakeAgent([todoWrite([{ content: 'a', status: 'pending' }])])
     const { ctx, screen, dispose } = await bootPanePlugin(todo, agent)
-    expect(screen.paneLines()).toEqual([rule(80), TITLE, '  todos 0/1'])
+    expect(screen.paneLines()).toEqual([rule(80), TITLE, row('○', 'a')])
     const baseline = screen.renderRequests.length
 
     // Other sessions and other event types are ignored.
     ctx.emit('session/event', fakeAgent([]).session as unknown as Session, todoWrite([{ content: 'x', status: 'pending' }]))
     ctx.emit('session/event', agent.session as unknown as Session, userEvent('not a todo'))
-    expect(screen.paneLines()).toEqual([rule(80), TITLE, '  todos 0/1'])
+    expect(screen.paneLines()).toEqual([rule(80), TITLE, row('○', 'a')])
     expect(screen.renderRequests.length).toBe(baseline)
 
     ctx.emit('session/event', agent.session as unknown as Session, todoWrite([
@@ -122,12 +122,13 @@ describe('blue-pane-todo', () => {
     keymap.handler(todo.ACTION_TOGGLE_TODO)()
     expect(screen.paneLines()).toEqual([rule(80), TITLE, row('✓', 'a'), row(IN_PROGRESS, 'b')])
 
-    // The next write re-derives the default over the manual choice.
+    // The next write re-derives the default over the manual choice: any
+    // list re-expands.
     ctx.emit('session/event', agent.session as unknown as Session, todoWrite([
       { content: 'a', status: 'completed' },
       { content: 'b', status: 'completed' },
     ]))
-    expect(screen.paneLines()).toEqual([rule(80), TITLE, '  todos 2/2'])
+    expect(screen.paneLines()).toEqual([rule(80), TITLE, row('✓', 'a'), row('✓', 'b')])
 
     await dispose()
     expect(keymap.actions).toHaveLength(0)
@@ -145,7 +146,7 @@ describe('blue-pane-todo', () => {
     resetSeq()
     const first = fakeAgent([todoWrite([{ content: 'first', status: 'pending' }])])
     const { ctx, screen, dispose } = await bootPanePlugin(todo, first)
-    expect(screen.paneLines()).toEqual([rule(80), TITLE, '  todos 0/1'])
+    expect(screen.paneLines()).toEqual([rule(80), TITLE, row('○', 'first')])
 
     resetSeq()
     const second = fakeAgent([userEvent('fresh')])
@@ -184,7 +185,9 @@ describe('blue-pane-todo', () => {
   it('truncates the collapsed summary to the width budget', async () => {
     resetSeq()
     const agent = fakeAgent([todoWrite([{ content: 'a', status: 'pending' }])])
-    const { screen, dispose } = await bootPanePlugin(todo, agent)
+    const { screen, keymap, dispose } = await bootPanePlugin(todo, agent)
+    // The pane opens expanded; the summary appears after a manual collapse.
+    keymap.handler(todo.ACTION_TOGGLE_TODO)()
     expect(screen.bottomChildren[0]!.render(20)).toEqual([rule(20), TITLE, '  todos 0/1'])
     await dispose()
   })

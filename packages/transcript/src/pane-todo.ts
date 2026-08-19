@@ -12,12 +12,10 @@
  * two-column-indented content rows — no side bars, rounded corners, or
  * bottom border (the user's S13 dogfood ruling; the btw panel keeps the
  * rounded chrome). The expansion state follows a simple default rule —
- * every
- * incoming list containing an in-progress entry starts expanded, any other
- * list starts collapsed — and the global Ctrl-T action
- * (`blue.todo.toggle`, handler-carrying like the transcript's Ctrl-O) flips
- * it manually until the next write re-derives it. A session without any
- * `todo/write` renders zero rows, so the pane occupies nothing.
+ * every incoming list opens expanded — and the global Ctrl-T action
+ * (`blue.todo.toggle`, handler-carrying like the transcript's Ctrl-O)
+ * collapses it manually until the next write re-expands. A session without
+ * any `todo/write` renders zero rows, so the pane occupies nothing.
  *
  * @module @deepseek-ai/dsh-blue-transcript/pane-todo
  */
@@ -152,12 +150,14 @@ export function apply(ctx: Context): void {
 
   /**
    * Install a new whole-list snapshot and re-derive the default expansion:
-   * a list with work in progress opens expanded, any other list collapses.
+   * any list opens expanded (the user's S13 dogfood ruling — the list is
+   * the point of the pane; Ctrl-T collapses it manually until the next
+   * write re-expands).
    * @param todos - the incoming list.
    */
   const update = (todos: readonly TodoItem[]): void => {
     state.todos = todos
-    state.collapsed = !todos.some(todo => todo.status === 'in_progress')
+    state.collapsed = false
     const next = signature(state)
     if (next === rendered) return
     rendered = next
