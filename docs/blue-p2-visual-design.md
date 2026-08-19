@@ -117,26 +117,37 @@ light 版全部按 WCAG AA 重调（文本 ≥4.5:1，chrome ≥3:1）。**双�
 
 | 新 token | dark | light | 承接的用法 |
 |---|---|---|---|
-| `primary` | `#5f87ff` | `#0969da` | 补全选中行/指针、编辑框 `/` 语境边框、md 链接与内联代码、spinner 帧、运行 `●`、`→` 游标 |
-| `textMuted` | `#666666` | `#8c959f` | `(n/m)` 滚动行、对话框按键行、`⎿` 连接符、`… output truncated`、footer 分隔、mdLinkUrl、代码围栏 |
+| `primary` | `#4fa8ff` | `#0969da` | 补全选中行/指针、编辑框 `/` 语境边框、md 链接与内联代码、spinner 帧、运行 `●`、`→` 游标 |
+| `textMuted` | `#6b6b6b` | `#8c959f` | `(n/m)` 滚动行、对话框按键行、`⎿` 连接符、`… output truncated`、footer 分隔、mdLinkUrl、代码围栏 |
 
-`#5f87ff` 即现有 `border` 的蓝——**blue 的品牌蓝从"边框"转任"交互主色"**，身份保留、层级对齐 kimi（kimi 的 border 反而是中性灰）。
+`#5f87ff`（现 `border` 的蓝）最初拟转任 `primary`——"品牌蓝从边框转任交互主色"；S10 目测定稿将 primary 校准到 kimi 的天蓝 `#4fa8ff`（暗底更亮），身份仍是"蓝 = 交互色"，层级对齐 kimi（kimi 的 border 反而是中性灰）。
 
 ### 4.2 现有 token 重调（取值变更，不改名不改数）
 
+> **S10 目测定稿（2026-08-19）**：初版按 Tomorrow-Night 系推演，dogfood 反馈整体灰暗无生机。定稿将 dark 全表向 kimi 亮度/饱和度校准（正文 `#e0e0e0`、状态色鲜绿/鲜红、accent/roleUser/shellMode 提饱和、border 取 kimi 中性灰 `#5a5a5a`）；下表"新值"即定稿值。light 侧维持 primer 系不动。调值不构成契约变更（D24）。
+
 | token | dark 现值 → 新值 | 理由 |
 |---|---|---|
-| `border` | `#5f87ff` → `#4a5468` | **本次最需目测调校的一值**。kimi 的层级感一半来自 chrome 退后（#5A5A5A 中性灰）；蓝灰保持 blue 色调但让位于 primary。备选：直接采 kimi 的 #5a5a5a |
-| `borderFocus` | `#8abeb7`（未用）→ `#de935f` | Tomorrow-Night 橙 ≈ kimi 琥珀 #E8A838；S12 审批面板启用 |
-| `warning` | `#ffff00` → `#de935f` | 与 borderFocus 共琥珀（kimi 同值关系）；修正刺眼纯黄 |
-| `roleUser` | `#8abeb7` → `#f0c674` | 用户角色获得独立琥珀（kimi #FFCB6B）；黄从 mdHeading 释放 |
-| `mdHeading` | `#f0c674` → `#d4d4d4` | kimi：标题层级由**粗体**承载而非色相 |
-| `mdLink`、`mdCode` | `#81a2be`/`#8abeb7` → `#5f87ff`（= primary） | kimi 映射 |
-| `mdCodeBlock` | `#b5bd68` → `#d4d4d4` | 代码块正文交给 cli-highlight 着色（§7 S10），底色中性 |
-| `mdCodeBlockBorder` | `#808080` → `#666666`（= textMuted 层） | kimi 映射 |
-| `mdHr` | `#808080` → `#4a5468`（= border） | kimi：hr ≡ border |
-| `mdListBullet` | `#8abeb7` → `#d4d4d4`（= text） | kimi：`•` 用正文色 |
-| 其余（text/textStrong/muted/accent/success/error/shellMode/mdQuote×2/mdLinkUrl/diff×6/selectedBg） | 不变 | muted ≡ textDim、accent 青 ≈ kimi accent 同族，已对位 |
+| `border` | `#5f87ff` → `#5a5a5a` | chrome 退后为中性灰（kimi 同值）；初版蓝灰 #4a5468 目测偏闷 |
+| `borderFocus` | `#8abeb7`（未用）→ `#e8a838` | kimi 焦点琥珀；S12 审批面板启用 |
+| `warning` | `#ffff00` → `#e8a838` | 与 borderFocus 共琥珀（kimi 同值关系）；修正刺眼纯黄 |
+| `roleUser` | `#8abeb7` → `#ffcb6b` | 用户角色获得独立亮琥珀（kimi #FFCB6B）；黄从 mdHeading 释放 |
+| `mdHeading` | `#f0c674` → `#e0e0e0` | kimi：标题层级由**粗体**承载而非色相，色同正文 |
+| `mdLink`、`mdCode` | `#81a2be`/`#8abeb7` → `#4fa8ff`（= primary） | kimi 映射 |
+| `mdCodeBlock` | `#b5bd68` → `#e0e0e0` | 代码块正文交给 cli-highlight 着色（§7 S10），底色中性 |
+| `mdCodeBlockBorder` | `#808080` → `#6b6b6b`（= textMuted 层） | kimi 映射 |
+| `mdHr` | `#808080` → `#5a5a5a`（= border） | kimi：hr ≡ border |
+| `mdListBullet` | `#8abeb7` → `#e0e0e0`（= text） | kimi：`•` 用正文色 |
+| `text` | `#d4d4d4` → `#e0e0e0` | 正文提亮一档（kimi 同值）——目测调校的主轴 |
+| `muted` | `#808080` → `#888888` | 对位 kimi textDim（#888888） |
+| `accent` | `#8abeb7` → `#5bc0be` | 低饱和青提饱和（kimi 同值） |
+| `primary` | `#5f87ff` → `#4fa8ff` | 交互蓝提亮（kimi 同值；§4.1 定稿注） |
+| `success` | `#b5bd68` → `#4ec87e` | 橄榄绿改鲜绿（kimi 同值）：工具圆点/终态观感主因之一 |
+| `error` | `#cc6666` → `#e85454` | 灰红改鲜红（kimi 同值） |
+| `shellMode` | `#b294bb` → `#bd93f9` | 紫提饱和（kimi 同值） |
+| `diff`×6 | → `#4ec87e`/`#e85454`/`#7ad99b`/`#f08585`/`#6b6b6b`/`#888888` | diff 系与状态色共用 kimi 鲜绿/鲜红族，diff 卡不再发闷 |
+| `mdQuote`×2、`mdLinkUrl` | `#808080`×2 → `#888888`；`#666666` → `#6b6b6b` | 跟随所属灰阶层（muted 层 / textMuted 层）联动 |
+| 其余（`textStrong` `#ffffff`、`selectedBg` `#3a3a4a`） | 不变 | textStrong 比 kimi #F5F5F5 略亮，保留 |
 
 light 侧对应：`primary #0969da`、`textMuted #8c959f`（均 primer 系，与现有一致）、`border #6e7781` 不变、`borderFocus`/`warning` → `#9a6700`、`roleUser` → `#953800`、`mdHeading` → `#1f2328`、mdLink/mdCode → primary、mdCodeBlock → `#24292f`、mdCodeBlockBorder/mdLinkUrl → textMuted、mdHr → border、mdListBullet → text。全部维持 ≥4.5:1 文本 / ≥3:1 chrome。
 
@@ -205,7 +216,7 @@ kimi 没有编辑框下常驻按键行（其提示分布在对话框 footer 与 
 - 已知限制（文档记录）：0.84.2 markdown 单一 `heading` 函数无法区分 h1/h2，kimi 的 h1 下划线不可表达。
 - 验收：对话含标题/列表/链接/代码块/引用的渲染对比；`/theme light` 全套不刺眼；e2e 色彩断言更新。
 
-**Step log（2026-08-19）**：core 三件（types 26→28、两 theme 表按 §4.2 全表改值、`src/highlight.ts` cli-highlight 包装 + `markdownTheme` 粗体标题/`•` 改写/`highlightCode` 钩子 + select/settings 映射）；transcript 八处 token 审计（components×5、pane-activity、intent-diff、intent-terminal）；bundle e2e 5 处色锚换 v2 值 + 新增 markdown v2 用例（内容级锚：`•`、围栏行、着色行 truecolor SGR 存在性——S8 纪律）。603 tests / 52 files，test/coverage（逐文件 100%）/typecheck/lint 全绿。**范围边界**（按期归位，防 scope creep）：`settingsListTheme` 仅游标换 primary（selected label/value 留 accent，S12 复审）；intent-terminal `$` 前缀与 editor-plus `!` 行的 accent 随 S11；pane-todo `◐` 随 S13；banner token 复审随 S16；interaction 对话框选中 accent（S12）与 status footer muted（S15）不动。色值按 §4.2 落地，`border` #4a5468 实机目测微调随后（调值不构成契约变更）。
+**Step log（2026-08-19）**：core 三件（types 26→28、两 theme 表按 §4.2 全表改值、`src/highlight.ts` cli-highlight 包装 + `markdownTheme` 粗体标题/`•` 改写/`highlightCode` 钩子 + select/settings 映射）；transcript 八处 token 审计（components×5、pane-activity、intent-diff、intent-terminal）；bundle e2e 5 处色锚换 v2 值 + 新增 markdown v2 用例（内容级锚：`•`、围栏行、着色行 truecolor SGR 存在性——S8 纪律）。603 tests / 52 files，test/coverage（逐文件 100%）/typecheck/lint 全绿。**范围边界**（按期归位，防 scope creep）：`settingsListTheme` 仅游标换 primary（selected label/value 留 accent，S12 复审）；intent-terminal `$` 前缀与 editor-plus `!` 行的 accent 随 S11；pane-todo `◐` 随 S13；banner token 复审随 S16；interaction 对话框选中 accent（S12）与 status footer muted（S15）不动。色值按 §4.2 落地，`border` #4a5468 实机目测微调随后（调值不构成契约变更）。**目测定稿（同日追加提交）**：dogfood 反馈整体灰暗无生机，dark 全表向 kimi 亮度/饱和度校准（正文 `#e0e0e0`、状态色鲜绿/鲜红、accent/roleUser/shellMode 提饱和、primary `#4fa8ff`、border `#5a5a5a`，diff 系同步），light 不动；token 契约与映射零改动，603 tests / coverage / typecheck / lint 复验全绿。
 
 ### S11 — 编辑框 chrome + 常驻按键提示
 

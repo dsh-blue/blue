@@ -831,7 +831,7 @@ describe('blue whole-tree e2e', () => {
     // frame, so the last such chunk carries every row in screen order —
     // transcript reply, then the footer, then the editor's top border (the
     // first border-colored run at or after the footer; the banner above the
-    // transcript also paints with the dark palette `border` #4a5468).
+    // transcript also paints with the dark palette `border` #5a5a5a).
     tree.terminal.resize(100, 30)
     let frame = ''
     await vi.waitFor(() => {
@@ -841,7 +841,7 @@ describe('blue whole-tree e2e', () => {
     })
     const reply = frame.indexOf('Blue online.')
     const footer = frame.indexOf('mock · idle')
-    const editorBorder = frame.indexOf('\x1b[38;2;74;84;104m', footer)
+    const editorBorder = frame.indexOf('\x1b[38;2;90;90;90m', footer)
     expect(reply).toBeGreaterThanOrEqual(0)
     expect(footer).toBeGreaterThan(reply)
     expect(editorBorder).toBeGreaterThan(footer)
@@ -1083,7 +1083,7 @@ describe('blue whole-tree e2e', () => {
     // also paints with `border`).
     const footerAt = running.indexOf('mock · running')
     const spinnerAt = running.indexOf('working…')
-    const borderAt = running.indexOf('\x1b[38;2;74;84;104m', spinnerAt)
+    const borderAt = running.indexOf('\x1b[38;2;90;90;90m', spinnerAt)
     expect(footerAt).toBeGreaterThanOrEqual(0)
     expect(spinnerAt).toBeGreaterThan(footerAt)
     expect(borderAt).toBeGreaterThan(spinnerAt)
@@ -1112,7 +1112,7 @@ describe('blue whole-tree e2e', () => {
     const expanded = await fullFrame(tree.terminal)
     const footer = expanded.indexOf('mock · idle')
     const todo = expanded.indexOf('active-task')
-    const editorBorder = expanded.indexOf('\x1b[38;2;74;84;104m', todo)
+    const editorBorder = expanded.indexOf('\x1b[38;2;90;90;90m', todo)
     expect(footer).toBeGreaterThanOrEqual(0)
     expect(todo).toBeGreaterThan(footer)
     expect(editorBorder).toBeGreaterThan(todo)
@@ -1142,7 +1142,7 @@ describe('blue whole-tree e2e', () => {
     const docked = await fullFrame(tree.terminal)
     const footerAt = docked.indexOf('mock · idle')
     const queuedAt = docked.indexOf('queued ↑ turn: queued-task')
-    const borderAt = docked.indexOf('\x1b[38;2;74;84;104m', queuedAt)
+    const borderAt = docked.indexOf('\x1b[38;2;90;90;90m', queuedAt)
     expect(footerAt).toBeGreaterThanOrEqual(0)
     expect(queuedAt).toBeGreaterThan(footerAt)
     expect(borderAt).toBeGreaterThan(queuedAt)
