@@ -499,6 +499,48 @@ describe('blue whole-tree e2e', () => {
     expect(tree.terminal.output).toContain('typed answer')
   })
 
+  it('renders markdown v2: bold heading, bullet rewrite, fence, and js highlighting', async () => {
+    const reply = [
+      '# Title',
+      '',
+      '- item',
+      '',
+      '[link](https://example.com)',
+      '',
+      '```js',
+      'const x = 1',
+      '```',
+      '',
+    ].join('\n')
+    const tree = await bootBlue([], { script: [textResponse(reply)] })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'show markdown')
+    await agent.whenIdle()
+    await waitForRender()
+    const shown = tree.terminal.output
+    // Content anchors first (the S8 discipline: never anchor shared border
+    // colors): the bullet rewrite and the fence rows are text-level facts,
+    // asserted on the SGR-stripped stream (the bullet and its text sit on
+    // opposite sides of a color reset).
+    const plain = shown.replace(/\x1b\[[0-9;]*m/g, '')
+    expect(plain).toContain('• item')
+    expect(plain).toContain('```js')
+    expect(plain).toContain('example.com')
+    // The heading row carries bold on top of the palette color, and the js
+    // body row carries truecolor SGR from the highlighter (color existence
+    // only — exact hues are pinned by the core unit specs; the row is
+    // located by its SGR-stripped text because highlighting interleaves
+    // SGR runs inside the code).
+    const headingRow = shown.split(/\r?\n/).find(row => row.includes('Title'))
+    expect(headingRow).toMatch(/\x1b\[1m/)
+    const codeRow = shown.split(/\r?\n/).find(row => {
+      // OSC 8 hyperlink tails survive the SGR strip; match on the prefix.
+      const bare = row.replace(/\x1b\[[0-9;]*m/g, '').trim()
+      return bare.startsWith('const x = 1')
+    })
+    expect(codeRow).toMatch(/\x1b\[38;2;/)
+  })
+
   it('decodes Kitty CSI-u input without dropping characters', async () => {
     const tree = await bootBlue([], { script: [textResponse('kitty reply')] })
     const agent = await currentAgent(tree)
@@ -789,7 +831,7 @@ describe('blue whole-tree e2e', () => {
     // frame, so the last such chunk carries every row in screen order —
     // transcript reply, then the footer, then the editor's top border (the
     // first border-colored run at or after the footer; the banner above the
-    // transcript also paints with the dark palette `border` #5f87ff).
+    // transcript also paints with the dark palette `border` #4a5468).
     tree.terminal.resize(100, 30)
     let frame = ''
     await vi.waitFor(() => {
@@ -799,7 +841,7 @@ describe('blue whole-tree e2e', () => {
     })
     const reply = frame.indexOf('Blue online.')
     const footer = frame.indexOf('mock · idle')
-    const editorBorder = frame.indexOf('\x1b[38;2;95;135;255m', footer)
+    const editorBorder = frame.indexOf('\x1b[38;2;74;84;104m', footer)
     expect(reply).toBeGreaterThanOrEqual(0)
     expect(footer).toBeGreaterThan(reply)
     expect(editorBorder).toBeGreaterThan(footer)
@@ -946,12 +988,12 @@ describe('blue whole-tree e2e', () => {
       })
       // The transcript reload re-folds the full session snapshot (the D16
       // path): both rendered items come back, and the re-rendered user row
-      // carries the light accent gutter (#0a7ea4), not dark's #8abeb7.
+      // carries the light roleUser gutter (#953800), not dark's #f0c674.
       await vi.waitFor(() => {
         const rendered = tree.terminal.written.slice(beforeSwitch).join('')
         expect(rendered).toContain('show palette')
         expect(rendered).toContain('palette reply')
-        expect(rendered).toContain('\x1b[38;2;10;126;164m❯')
+        expect(rendered).toContain('\x1b[38;2;149;56;0m❯')
       })
     } finally {
       await backToDark(tree, agent)
@@ -1041,7 +1083,7 @@ describe('blue whole-tree e2e', () => {
     // also paints with `border`).
     const footerAt = running.indexOf('mock · running')
     const spinnerAt = running.indexOf('working…')
-    const borderAt = running.indexOf('\x1b[38;2;95;135;255m', spinnerAt)
+    const borderAt = running.indexOf('\x1b[38;2;74;84;104m', spinnerAt)
     expect(footerAt).toBeGreaterThanOrEqual(0)
     expect(spinnerAt).toBeGreaterThan(footerAt)
     expect(borderAt).toBeGreaterThan(spinnerAt)
@@ -1070,7 +1112,7 @@ describe('blue whole-tree e2e', () => {
     const expanded = await fullFrame(tree.terminal)
     const footer = expanded.indexOf('mock · idle')
     const todo = expanded.indexOf('active-task')
-    const editorBorder = expanded.indexOf('\x1b[38;2;95;135;255m', todo)
+    const editorBorder = expanded.indexOf('\x1b[38;2;74;84;104m', todo)
     expect(footer).toBeGreaterThanOrEqual(0)
     expect(todo).toBeGreaterThan(footer)
     expect(editorBorder).toBeGreaterThan(todo)
@@ -1100,7 +1142,7 @@ describe('blue whole-tree e2e', () => {
     const docked = await fullFrame(tree.terminal)
     const footerAt = docked.indexOf('mock · idle')
     const queuedAt = docked.indexOf('queued ↑ turn: queued-task')
-    const borderAt = docked.indexOf('\x1b[38;2;95;135;255m', queuedAt)
+    const borderAt = docked.indexOf('\x1b[38;2;74;84;104m', queuedAt)
     expect(footerAt).toBeGreaterThanOrEqual(0)
     expect(queuedAt).toBeGreaterThan(footerAt)
     expect(borderAt).toBeGreaterThan(queuedAt)
