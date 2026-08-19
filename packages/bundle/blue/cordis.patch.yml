@@ -60,12 +60,13 @@
     # blueScreen.addBottomChild, so the dock's render order is the plugin
     # mount order — and the loader mounts sibling rows CONCURRENTLY, so raw
     # row order alone does not pin the dock. What orders it is the
-    # blueComponents activation round: the transcript, todo, and btw plugins
-    # inject blueComponents, so their fibers activate when it appears, in row
-    # order; the two lighter panes carry a row-level `inject: [blueComponents]`
-    # pin to join the same round (activity → queue → todo → btw), and the
-    # interaction row's input plugin is created only inside interaction's
-    # apply, subscribing after every row fiber, so the editor mounts last.
+    # blueComponents activation round: the transcript, activity, todo, and
+    # btw plugins inject blueComponents, so their fibers activate when it
+    # appears, in row order; the queue pane carries a row-level
+    # `inject: [blueComponents]` pin to join the same round
+    # (activity → queue → todo → btw), and the interaction row's input
+    # plugin is created only inside interaction's apply, subscribing after
+    # every row fiber, so the editor mounts last.
     # (Pinning on blueStatus instead would make the interaction fiber a
     # transitive blueTheme dependent and /theme would dispose its own
     # handler's fiber mid-swap.)
@@ -130,12 +131,15 @@
     - id: blue-intent-terminal
       name: '@dsh-blue/blue-transcript/intent-terminal'
 
-    # Activity pane: a one-row spinner shown while the attached agent runs;
-    # zero rows while idle. The row-level pin joins the blueComponents
-    # activation round so the pane lands between the footer and the editor.
+    # Activity pane: the kimi mode machine over the attached session's event
+    # stream — moon + teaching tip while waiting or running tools, braille
+    # working… while composing, empty while thinking (the transcript's
+    # thinking block owns the spinner), hidden while a dialog occupies the
+    # editor slot, and a one-row idle placeholder once anything has run. It
+    # injects blueComponents itself, joining the activation round that pins
+    # its dock position.
     - id: blue-pane-activity
       name: '@dsh-blue/blue-transcript/pane-activity'
-      inject: [blueComponents]
 
     # Queue pane: the attached agent's queued inbox messages, one row each,
     # plus the keyless action gating the empty-editor Up recall in blue-input.

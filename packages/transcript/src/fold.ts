@@ -7,8 +7,11 @@
  *
  * Folded: `user/message` → user item (image blocks kept as
  * `ImageAttachmentRef`s alongside the `[image]` text placeholder);
- * `assistant/chunk` text/reasoning deltas accumulate into one streaming
- * assistant item per step; `assistant/message` finalizes it from the
+ * `assistant/chunk` text deltas accumulate into one streaming assistant
+ * item per step while reasoning deltas open a sibling streaming thinking
+ * item (the S17 kimi split — thinking mounts as its own block above the
+ * answer, created only once its accumulated text holds something visible,
+ * the kimi whitespace guard); `assistant/message` finalizes both from the
  * authoritative assembled message; `tool/call` + `tool/result` pair by
  * `callId` into one tool item carrying the parsed arguments, the
  * reconstructed `ToolResult`, and the render intent resolved through the
@@ -32,6 +35,7 @@ import type {
   TranscriptAssistantItem,
   TranscriptItem,
   TranscriptStepSummaryItem,
+  TranscriptThinkingItem,
   TranscriptToolItem,
   TranscriptUserItem,
 } from './types.ts'
@@ -182,6 +186,9 @@ export class TranscriptFolder {
   private readonly completed: number[] = []
   private streamingStep: string | null = null
   private streamingItem: TranscriptAssistantItem | null = null
+  private streamingThinking: TranscriptThinkingItem | null = null
+  /** Reasoning accumulated before the streaming thinking item holds anything visible. */
+  private pendingReasoning = ''
   private readonly finalizedSteps = new Set<string>()
   private readonly toolsByCallId = new Map<string, TranscriptToolItem>()
   /** Call ids of suppressed `todo_write` calls, so their results render nothing either. */
@@ -202,10 +209,10 @@ export class TranscriptFolder {
   /**
    * Fold one event into the transcript.
    * @param event - the next session event, in ascending seq order.
-   * @returns the created/mutated item, a step-summary replacement, or null
-   *   when the event renders nothing (log-only records, unknown types).
+   * @returns the updates the event produced, in mount order, or null when
+   *   the event renders nothing (log-only records, unknown types).
    */
-  apply(event: SessionEvent): FoldUpdate | null {
+  apply(event: SessionEvent): readonly FoldUpdate[] | null {
     switch (event.type) {
       case 'turn/start': {
         this.currentTurn = event.data.turn
@@ -222,7 +229,8 @@ export class TranscriptFolder {
         // one summary line once the next step starts. The turn's final step
         // never folds this way — no later step/start arrives for it.
         if (isStepFoldingEnabled() && previous !== null && previous.turn === turn) {
-          return this.foldStep(turn, previous.step)
+          const replacement = this.foldStep(turn, previous.step)
+          return replacement === null ? null : [replacement]
         }
         return null
       }
@@ -244,7 +252,7 @@ export class TranscriptFolder {
           images: contentImages(event.data.content),
         }
         this.items.push(item)
-        return { item, isNew: true }
+        return [{ item, isNew: true }]
       }
 
       case 'assistant/chunk': {
@@ -252,18 +260,47 @@ export class TranscriptFolder {
         if (chunk.type !== 'text-delta' && chunk.type !== 'reasoning-delta') return null
         const stepKey = `${turn}:${step}`
         if (this.finalizedSteps.has(stepKey)) return null
-        let isNew = false
-        if (this.streamingStep !== stepKey || this.streamingItem === null) {
-          this.streamingItem = {
-            kind: 'assistant', seq: event.seq, turn, step, text: '', reasoning: '', streaming: true,
-          }
+        if (this.streamingStep !== stepKey) {
+          // A new step's first delta opens a fresh streaming window; items
+          // left streaming by a step that never closed stay frozen as-is.
           this.streamingStep = stepKey
+          this.streamingItem = null
+          this.streamingThinking = null
+          this.pendingReasoning = ''
+        }
+        if (chunk.type === 'reasoning-delta') {
+          // The kimi whitespace guard: reasoning that has shown nothing
+          // visible (encrypted or whitespace-only deltas) mounts no block —
+          // an empty thinking component would render a bare spinner row.
+          if (this.streamingThinking === null) {
+            this.pendingReasoning += chunk.text
+            if (this.pendingReasoning.trim() === '') return null
+            const item: TranscriptThinkingItem = {
+              kind: 'thinking',
+              seq: event.seq,
+              turn,
+              step,
+              text: this.pendingReasoning,
+              streaming: true,
+            }
+            this.pendingReasoning = ''
+            this.streamingThinking = item
+            this.items.push(item)
+            return [{ item, isNew: true }]
+          }
+          this.streamingThinking.text += chunk.text
+          return [{ item: this.streamingThinking, isNew: false }]
+        }
+        let isNew = false
+        if (this.streamingItem === null) {
+          this.streamingItem = {
+            kind: 'assistant', seq: event.seq, turn, step, text: '', streaming: true,
+          }
           this.items.push(this.streamingItem)
           isNew = true
         }
-        if (chunk.type === 'text-delta') this.streamingItem.text += chunk.text
-        else this.streamingItem.reasoning += chunk.text
-        return { item: this.streamingItem, isNew }
+        this.streamingItem.text += chunk.text
+        return [{ item: this.streamingItem, isNew }]
       }
 
       case 'assistant/message': {
@@ -272,22 +309,40 @@ export class TranscriptFolder {
         const text = contentText(message.content).trim()
         const reasoning = reasoningText(message.content)
         this.finalizedSteps.add(stepKey)
-        if (this.streamingStep === stepKey && this.streamingItem !== null) {
+        const updates: FoldItemUpdate[] = []
+        // The thinking block finalizes from the authoritative reasoning. A
+        // step that streamed no visible reasoning of its own (a derived
+        // history, a snapshot replay, an encrypted stream) gets its block
+        // created here — finalized, ahead of the assistant item, so replay
+        // converges with the live mount order (D16).
+        if (this.streamingThinking !== null && this.streamingStep === stepKey) {
+          this.streamingThinking.text = reasoning
+          this.streamingThinking.streaming = false
+          this.streamingThinking = null
+        } else if (reasoning.trim() !== '') {
+          const thinking: TranscriptThinkingItem = {
+            kind: 'thinking', seq: event.seq, turn, step, text: reasoning, streaming: false,
+          }
+          this.items.push(thinking)
+          updates.push({ item: thinking, isNew: true })
+        }
+        if (this.streamingItem !== null && this.streamingStep === stepKey) {
           // The assembled message is authoritative: replace the accumulated
           // chunk text so replay/assembly differences correct themselves.
           this.streamingItem.text = text
-          this.streamingItem.reasoning = reasoning
           this.streamingItem.streaming = false
           this.streamingStep = null
           const item = this.streamingItem
           this.streamingItem = null
-          return { item, isNew: false }
+          updates.push({ item, isNew: false })
+          return updates
         }
         const item: TranscriptAssistantItem = {
-          kind: 'assistant', seq: event.seq, turn, step, text, reasoning, streaming: false,
+          kind: 'assistant', seq: event.seq, turn, step, text, streaming: false,
         }
         this.items.push(item)
-        return { item, isNew: true }
+        updates.push({ item, isNew: true })
+        return updates
       }
 
       case 'tool/call': {
@@ -314,7 +369,7 @@ export class TranscriptFolder {
         }
         this.toolsByCallId.set(event.data.callId, item)
         this.items.push(item)
-        return { item, isNew: true }
+        return [{ item, isNew: true }]
       }
 
       case 'tool/result': {
@@ -338,7 +393,7 @@ export class TranscriptFolder {
             // A defined result view replaces the call view; undefined keeps it.
             if (view !== undefined) paired.view = view
           }
-          return { item: paired, isNew: false }
+          return [{ item: paired, isNew: false }]
         }
         // A result without a visible call (e.g. the call predates a folded
         // window) still renders, named by its result alone.
@@ -359,7 +414,7 @@ export class TranscriptFolder {
         }
         this.toolsByCallId.set(callId, item)
         this.items.push(item)
-        return { item, isNew: true }
+        return [{ item, isNew: true }]
       }
 
       default:
@@ -397,6 +452,10 @@ export class TranscriptFolder {
     if (this.streamingItem !== null && dead.has(this.streamingItem)) {
       this.streamingItem = null
       this.streamingStep = null
+    }
+    if (this.streamingThinking !== null && dead.has(this.streamingThinking)) {
+      this.streamingThinking = null
+      this.pendingReasoning = ''
     }
     return evicted
   }

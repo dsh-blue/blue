@@ -473,6 +473,11 @@ export function apply(ctx: Context): void {
         screen.setFocus(component)
         const entry = { component, remove }
         panels.push(entry)
+        if (panels.length === 1) {
+          // The dock slot changed hands: activity panes stand down while a
+          // dialog hangs (below an open panel only the footer stays).
+          ctx.emit('blue/editor-slot-swapped', true)
+        }
         screen.requestRender()
         return () => {
           const index = panels.indexOf(entry)
@@ -482,8 +487,10 @@ export function apply(ctx: Context): void {
           panels.splice(index, 1)
           remove()
           const top = panels.at(-1)
-          if (top === undefined) showEditor()
-          else screen.setFocus(top.component)
+          if (top === undefined) {
+            showEditor()
+            ctx.emit('blue/editor-slot-swapped', false)
+          } else screen.setFocus(top.component)
           screen.requestRender()
         }
       },
@@ -493,7 +500,9 @@ export function apply(ctx: Context): void {
       setEditorSlotSwap(undefined)
       // Panels still open when this fiber unloads (a /theme swap with a
       // dialog up) unmount with it; their disposers turn into no-ops.
+      const wasOccupied = panels.length > 0
       for (const entry of panels.splice(0)) entry.remove()
+      if (wasOccupied) ctx.emit('blue/editor-slot-swapped', false)
       clearSharedEditor()
       ctx.emit('blue/input-editor-changed')
       removeHint()

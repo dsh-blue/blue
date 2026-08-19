@@ -784,5 +784,19 @@ declare module '@deepseek-ai/cordis' {
      * @mode emit
      */
     'blue/btw-command'(command: 'close' | 'scroll-up' | 'scroll-down' | 'submit', text?: string): void
+    /**
+     * A dialog panel took over the input editor's dock slot, or the last
+     * one left and the editor returned (the D30 editor-slot swap).
+     * Emitted by `blue-input` when its replacement-panel stack transitions
+     * between empty and occupied; `blue-pane-activity` hides its row while
+     * any panel is up (below an open panel only the footer stays) and
+     * `blue-pane-btw` re-asserts its editor-splice flag around the
+     * editor's absence.
+     * Unfiltered: the slot is a singleton owned by `blue-input`.
+     * @param occupied - whether a dialog panel currently occupies the
+     *   editor's dock slot.
+     * @mode emit
+     */
+    'blue/editor-slot-swapped'(occupied: boolean): void
   }
 }

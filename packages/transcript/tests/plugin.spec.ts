@@ -28,10 +28,12 @@ import type { BlueSessionRef } from '@dsh-blue/blue-app'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { ACTION_TOGGLE_COLLAPSE, apply, setWindowTurns } from '../src/index.ts'
 import * as statusBasic from '../src/status-basic.ts'
+import { setThinkingTimers, type ThinkingTimers } from '../src/thinking.ts'
 import type { BlueIntentEntry } from '../src/types.ts'
 import {
   assistantEvent,
   fakeBlueComponents,
+  reasoningDelta,
   resetSeq,
   stepStart,
   textDelta,
@@ -46,6 +48,7 @@ const disposers: (() => Promise<void>)[] = []
 
 afterEach(async () => {
   for (const dispose of disposers.splice(0)) await dispose()
+  setThinkingTimers(undefined)
 })
 
 /** Identity colors so rendered assertions see structure, not escape codes. */
@@ -341,6 +344,73 @@ describe('blue-transcript plugin through the real Loader', () => {
     ctx.emit('session/event', agent.session as unknown as Session, toolResultEvent(2, 1, 'c1', 'file.txt'))
     expect(screen.children).toHaveLength(3)
     expect(contentLines(screen).join('\n')).toContain('file.txt')
+  })
+
+  it('mounts live thinking above the answer, finalizes it in place, and joins ctrl+o', async () => {
+    resetSeq()
+    const timers = new (class implements ThinkingTimers {
+      readonly ticks: (() => void)[] = []
+      cleared = 0
+      setInterval(callback: () => void): ReturnType<typeof setInterval> {
+        this.ticks.push(callback)
+        return this.ticks.length as unknown as ReturnType<typeof setInterval>
+      }
+      clearInterval(): void {
+        this.cleared += 1
+      }
+    })()
+    setThinkingTimers(timers)
+    const { ctx, screen, keymap } = await bootTranscript()
+    const agent = fakeAgent([])
+    ctx.emit('blue/session-changed', asAgent(agent))
+
+    // The reasoning stream mounts its own live block: spinner row plus the
+    // tail window, and the spinner timer is running.
+    const SIX_LINES = 'one\ntwo\nthree\nfour\nfive\nsix'
+    ctx.emit('session/event', agent.session as unknown as Session, reasoningDelta(1, 1, SIX_LINES))
+    expect(screen.children).toHaveLength(1)
+    let lines = contentLines(screen)
+    expect(lines[1]).toBe('⠋ thinking...')
+    expect(lines.at(-1)).toBe(`  \x1b[3msix\x1b[23m`)
+    expect(timers.ticks).toHaveLength(1)
+
+    // While still live, a tick advances the frame and requests a redraw
+    // through the mounter's injected nudge.
+    const renderBaseline = screen.renderRequests.length
+    timers.ticks[0]!()
+    expect(contentLines(screen)[1]).toBe('⠙ thinking...')
+    expect(screen.renderRequests.length).toBe(renderBaseline + 1)
+
+    // The answer streams in below the thinking block.
+    ctx.emit('session/event', agent.session as unknown as Session, textDelta(1, 1, 'answer'))
+    expect(screen.children).toHaveLength(2)
+
+    // Finalization settles the thinking block in place — no remount — and
+    // folds the body to the preview plus the expansion hint.
+    ctx.emit('session/event', agent.session as unknown as Session, assistantEvent(1, 1, [
+      { type: 'reasoning', text: SIX_LINES },
+      { type: 'text', text: 'answer' },
+    ]))
+    expect(screen.children).toHaveLength(2)
+    lines = contentLines(screen)
+    expect(lines[1]).toBe('● \x1b[3mone\x1b[23m')
+    expect(lines.join('\n')).toContain('more lines, ctrl+o to expand')
+
+    // The shared Ctrl-O toggle opens the thinking body.
+    const toggle = keymap.actions.find(a => a.id === ACTION_TOGGLE_COLLAPSE)?.handler
+    expect(typeof toggle).toBe('function')
+    toggle!()
+    expect(contentLines(screen).join('\n')).not.toContain('more lines')
+    toggle!()
+    expect(contentLines(screen).join('\n')).toContain('more lines, ctrl+o to expand')
+
+    // A tick on the finalized block stands its spinner down.
+    timers.ticks[0]!()
+    expect(timers.cleared).toBe(1)
+
+    // Unmounting the session retires the component entirely.
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([])))
+    expect(screen.children).toHaveLength(0)
   })
 
   it('remounts on the next blue/session-changed and unmounts everything on dispose', async () => {

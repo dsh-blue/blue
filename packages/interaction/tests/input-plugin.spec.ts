@@ -437,6 +437,26 @@ describe('blue-input plugin', () => {
       restore()
       expect(editor.getText()).toBe('draft survives')
     })
+
+    it('emits blue/editor-slot-swapped on occupancy transitions only', async () => {
+      const { ctx, fiber } = await mount()
+      const swaps: boolean[] = []
+      ctx.on('blue/editor-slot-swapped', occupied => swaps.push(occupied))
+
+      const restoreOuter = mountEditorReplacement(panel('outer'))
+      // A nested panel does not re-emit: the slot stayed occupied.
+      const restoreInner = mountEditorReplacement(panel('inner'))
+      restoreInner()
+      expect(swaps).toEqual([true])
+      restoreOuter()
+      expect(swaps).toEqual([true, false])
+
+      // Unloading with a panel open releases the occupancy too.
+      mountEditorReplacement(panel('gone'))
+      expect(swaps).toEqual([true, false, true])
+      await fiber.dispose()
+      expect(swaps).toEqual([true, false, true, false])
+    })
   })
 
   describe('editor-context keys', () => {

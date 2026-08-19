@@ -27,6 +27,28 @@ export function maxTokensResponse(text: string): StreamChunk[] {
   ]
 }
 
+/**
+ * A reasoning-then-answer stream: the model thinks visibly before it
+ * answers. The reasoning streams as two deltas so the live tail-window
+ * behavior is observable mid-stream.
+ */
+export function reasoningResponse(reasoning: string, text: string): StreamChunk[] {
+  const mid = Math.max(1, Math.floor(reasoning.length / 2))
+  const reasoningDeltas = [reasoning.slice(0, mid), reasoning.slice(mid)]
+    .filter(part => part.length > 0)
+    .map((part): StreamChunk => ({ type: 'reasoning-delta', index: 0, text: part }))
+  return [
+    { type: 'block-start', index: 0, blockType: 'reasoning' },
+    ...reasoningDeltas,
+    { type: 'block-end', index: 0, block: { type: 'reasoning', text: reasoning } },
+    { type: 'block-start', index: 1, blockType: 'text' },
+    ...Array.from(text, (char): StreamChunk => ({ type: 'text-delta', index: 1, text: char })),
+    { type: 'block-end', index: 1, block: { type: 'text', text } },
+    { type: 'usage', usage: { inputTokens: 10, outputTokens: reasoning.length + text.length } },
+    { type: 'finish', reason: { kind: 'stop' } },
+  ]
+}
+
 export function toolCallResponse(rawCallId: string, name: string, args: object, text?: string): StreamChunk[] {
   const callId = CallId(rawCallId)
   const argumentsJson = JSON.stringify(args)
@@ -67,7 +89,7 @@ export class MockAdapter extends LlmAdapter {
   requests: GenerateOptions[] = []
 
   constructor(
-    private script: (StreamChunk[] | ((options: GenerateOptions) => StreamChunk[]) | 'hang' | 'hang-slow')[],
+    private script: (StreamChunk[] | ((options: GenerateOptions) => StreamChunk[]) | 'hang' | 'hang-slow' | 'hang-silent' | 'hang-reasoning')[],
     private readonly reasoning?: LlmModelReasoningInfo,
     private readonly defaultMaxTokens?: number,
     private readonly defaultContextWindow?: number,
@@ -93,9 +115,18 @@ export class MockAdapter extends LlmAdapter {
     this.requests.push(options)
     const entry = this.script.shift()
     if (!entry) throw new Error('MockAdapter: script exhausted')
-    if (entry === 'hang') {
-      yield { type: 'block-start', index: 0, blockType: 'text' }
-      yield { type: 'text-delta', index: 0, text: 'partial' }
+    if (entry === 'hang' || entry === 'hang-silent' || entry === 'hang-reasoning') {
+      // 'hang-silent' parks the stream before any delta (the activity
+      // pane's waiting phase); 'hang-reasoning' streams reasoning then
+      // parks (the thinking phase with a live thinking block).
+      if (entry !== 'hang-silent') {
+        yield { type: 'block-start', index: 0, blockType: entry === 'hang' ? 'text' : 'reasoning' }
+        yield {
+          type: entry === 'hang' ? 'text-delta' : 'reasoning-delta',
+          index: 0,
+          text: entry === 'hang' ? 'partial' : 'pondering the question at hand',
+        }
+      }
       await new Promise<void>((_resolve, reject) => {
         if (options.signal?.aborted) { reject(new Error('aborted')); return }
         options.signal?.addEventListener('abort', () => { reject(new Error('aborted')) }, { once: true })

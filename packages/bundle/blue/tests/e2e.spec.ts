@@ -62,7 +62,7 @@ import * as statusTipsPlugin from '../../../transcript/src/status-tips.ts'
 import { buildTipRotation, tipOffer } from '../../../transcript/src/status-tips.ts'
 import { STATUS_TIPS } from '../../../transcript/src/tips-content.ts'
 import { setStepFoldingEnabled } from '../../../transcript/src/window.ts'
-import { MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
+import { MockAdapter, reasoningResponse, textResponse, toolCallResponse } from './mock-adapter.ts'
 
 const disposers: (() => Promise<void>)[] = []
 
@@ -331,15 +331,14 @@ export const inject = ['blueIntents', 'blueTheme', 'blueComponents']
 export const apply = ctx => globalThis.__blueE2E.intentTerminalApply(ctx)
 `)}`,
     // The enhancement-segment pane rows mirror cordis.patch.yml; each fixture
-    // re-declares the source module's inject list, and the two lighter panes
-    // carry the patch's row-level blueComponents dock-order pin.
+    // re-declares the source module's inject list (the activity pane injects
+    // blueComponents itself, joining the dock-order activation round).
     '- id: blue-pane-activity',
     `  name: ${fixture('blue-pane-activity.mjs', `
 export const name = 'blue-pane-activity'
-export const inject = ['blueScreen', 'blueTheme']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents']
 export const apply = ctx => globalThis.__blueE2E.paneActivityApply(ctx)
 `)}`,
-    '  inject: [blueComponents]',
     '- id: blue-pane-queue',
     `  name: ${fixture('blue-pane-queue.mjs', `
 export const name = 'blue-pane-queue'
@@ -1290,8 +1289,14 @@ describe('blue whole-tree e2e', () => {
 
   it('resumes a persisted session: history renders from the snapshot, no replay needed', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-blue-e2e-sessions-'))
+    // The persisted turn carries visible reasoning: the resumed thinking
+    // block renders finalized (D16 — replay converges with the live fold),
+    // never the live spinner label.
     const first = await bootBlue(['remember this'], {
-      script: [textResponse('phase one answer')],
+      script: [reasoningResponse(
+        ['first we consider the input,', 'then we weigh alternatives,', 'finally we decide.'].join('\n'),
+        'phase one answer',
+      )],
       persistenceRoot: root,
     })
     const firstAgent = await currentAgent(first)
@@ -1311,6 +1316,11 @@ describe('blue whole-tree e2e', () => {
     const output = second.terminal.output
     expect(output).toContain('remember this')
     expect(output).toContain('phase one answer')
+    // Finalized thinking: the bullet above the folded preview and the
+    // expansion hint — and no live `thinking...` row anywhere.
+    expect(stripSgr(output)).toContain('● first we consider the input,')
+    expect(output).toContain('more lines, ctrl+o to expand')
+    expect(output).not.toContain('thinking...')
   })
 
   it('switches the live palette through /theme: blueTheme re-provides and the UI re-renders light', async () => {
@@ -1480,6 +1490,87 @@ describe('blue whole-tree e2e', () => {
     tree.terminal.sendInput('\x03')
     await agent.whenIdle()
     expect(await fullFrame(tree.terminal)).not.toContain('working…')
+  })
+
+  it('rides the mode machine: moon while waiting, empty pane while thinking, braille while composing', async () => {
+    // 'hang-silent' parks the stream before any delta: the pane shows the
+    // moon spinner with a teaching tip, not the composing row.
+    const tree = await bootBlue([], { script: ['hang-silent'] })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'slow work')
+    await vi.waitFor(() => { expect(agent.status).toBe('running') })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('· Tip: ') })
+    const waiting = await fullFrame(tree.terminal)
+    expect(waiting).toContain('🌑')
+    expect(waiting).not.toContain('working…')
+    tree.terminal.sendInput('\x03')
+    await agent.whenIdle()
+  })
+
+  it('streams a live thinking block with the tail window while the activity pane empties', async () => {
+    // 'hang-reasoning' streams reasoning then parks: the thinking block
+    // owns the spinner and the pane stands down.
+    const tree = await bootBlue([], { script: ['hang-reasoning'] })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'ponder')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('thinking...') })
+    const thinking = await fullFrame(tree.terminal)
+    expect(thinking).toContain('pondering the question at hand')
+    expect(thinking).not.toContain('working…')
+    expect(thinking).not.toContain('· Tip: ')
+    tree.terminal.sendInput('\x03')
+    await agent.whenIdle()
+  })
+
+  it('finalizes the thinking block in place with the folded preview, expanded by ctrl+o', async () => {
+    const reasoning = [
+      'the first consideration spans the opening line,',
+      'the second lands on the middle line,',
+      'the third occupies the closing line,',
+      'and a fourth line guarantees the fold.',
+    ].join('\n')
+    const tree = await bootBlue([], { script: [reasoningResponse(reasoning, 'the answer')] })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'think it through')
+    await agent.whenIdle()
+    await waitForRender()
+    // Finalized in place: the bullet over the folded preview plus the hint.
+    expect(stripSgr(tree.terminal.output)).toContain('● the first consideration spans the opening line,')
+    expect(tree.terminal.output).toContain('more lines, ctrl+o to expand')
+    expect(tree.terminal.output).not.toContain('and a fourth line guarantees the fold.')
+    // Ctrl-O opens the full reasoning body across the shared toggle.
+    const beforeToggle = tree.terminal.written.length
+    tree.terminal.sendInput('\x0f')
+    await vi.waitFor(() => {
+      expect(stripSgr(tree.terminal.written.slice(beforeToggle).join(''))).toContain('and a fourth line guarantees the fold.')
+    })
+    // And back: the folded hint returns.
+    const beforeBack = tree.terminal.written.length
+    tree.terminal.sendInput('\x0f')
+    await vi.waitFor(() => {
+      expect(tree.terminal.written.slice(beforeBack).join('')).toContain('more lines, ctrl+o to expand')
+    })
+  })
+
+  it('hides the activity pane while a dialog panel occupies the editor slot', async () => {
+    const tree = await bootBlue([], { script: ['hang-silent'] })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'busy work')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('· Tip: ') })
+
+    // The /help panel takes the editor slot: below it only the footer —
+    // the moon row stands down for the panel's lifetime.
+    typeLine(tree.terminal, '/help')
+    await vi.waitFor(() => { expect(tree.terminal.output.toLowerCase()).toContain('key bindings') })
+    const paneled = await fullFrame(tree.terminal)
+    expect(paneled).not.toContain('🌑')
+    expect(paneled).not.toContain('· Tip: ')
+
+    // Dismiss restores the spinner.
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('🌑') })
+    tree.terminal.sendInput('\x03')
+    await agent.whenIdle()
   })
 
   it('renders the folded todo pane above the editor and expands it with Ctrl-T', async () => {

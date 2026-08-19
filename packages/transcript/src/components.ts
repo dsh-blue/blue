@@ -27,9 +27,6 @@ import type {
   TranscriptUserItem,
 } from './types.ts'
 
-const ITALIC_OPEN = '\x1b[3m'
-const ITALIC_CLOSE = '\x1b[23m'
-
 /** Maximum length of the tool-call arguments shown on the call line. */
 export const TOOL_ARGUMENTS_MAX_CHARS = 60
 
@@ -149,11 +146,12 @@ export class UserMessageComponent implements BlueComponent {
 }
 
 /**
- * Renders one assistant step: accumulated reasoning (muted italic) above the
- * Markdown body, plus a streaming cursor while chunks are still arriving.
- * The body is a held `BlueMarkdown` whose own text/width cache replaces the
- * former hand-rolled Markdown cache; mid-stream unterminated constructs
- * settle as the text completes.
+ * Renders one assistant step's visible Markdown body plus a streaming
+ * cursor while chunks are still arriving. The step's reasoning renders in
+ * its own sibling `ThinkingComponent` (`src/thinking.ts`) mounted above
+ * this block. The body is a held `BlueMarkdown` whose own text/width cache
+ * replaces the former hand-rolled Markdown cache; mid-stream unterminated
+ * constructs settle as the text completes.
  */
 export class AssistantMessageComponent implements BlueComponent {
   private readonly item: TranscriptAssistantItem
@@ -185,17 +183,11 @@ export class AssistantMessageComponent implements BlueComponent {
    * @returns the rendered rows.
    */
   render(width: number): string[] {
-    const { text, reasoning, streaming } = this.item
-    const key = `${width}:${streaming}:${reasoning.length}:${text.length}:${text}`
+    const { text, streaming } = this.item
+    const key = `${width}:${streaming}:${text}`
     if (this.cache?.key === key) return this.cache.lines
 
     const lines: string[] = ['']
-    if (reasoning.trim()) {
-      for (const line of this.components.wrapText(reasoning, width)) {
-        lines.push(`${ITALIC_OPEN}${this.colors.muted(line)}${ITALIC_CLOSE}`)
-      }
-      lines.push('')
-    }
     if (text.trim()) {
       this.markdown.setText(text)
       lines.push(...this.markdown.render(width))

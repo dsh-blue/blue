@@ -244,6 +244,35 @@ describe('blue-pane-btw', () => {
     expect(splice).toHaveBeenLastCalledWith(false)
   })
 
+  it('drops the editor splice while a dialog occupies the slot and re-asserts on return', async () => {
+    resetSeq()
+    const current = fakeAgent([], { cwd: '/repo' })
+    const agents = new FakeAgents()
+    const { ctx, commands, dispose } = await boot(current, agents)
+    const splice = vi.fn()
+    ctx.on('blue/editor-connected-above', splice)
+
+    expect(await run(commands, 'q?')).toEqual({ kind: 'success', text: 'asked the side question' })
+    expect(splice).toHaveBeenLastCalledWith(true, true)
+
+    // A dialog taking the editor slot releases the splice claim: the flag
+    // would otherwise point at an off-tree editor.
+    ctx.emit('blue/editor-slot-swapped', true)
+    expect(splice).toHaveBeenLastCalledWith(false)
+    // The editor returning re-asserts the claim with the live busy flag.
+    ctx.emit('blue/editor-slot-swapped', false)
+    expect(splice).toHaveBeenLastCalledWith(true, true)
+
+    // Once dismissed, a slot round-trip re-asserts nothing.
+    await run(commands, '')
+    const calls = splice.mock.calls.length
+    ctx.emit('blue/editor-slot-swapped', true)
+    ctx.emit('blue/editor-slot-swapped', false)
+    expect(splice.mock.calls.length).toBe(calls)
+    expect(splice).toHaveBeenLastCalledWith(false)
+    await dispose()
+  })
+
   it('hands the side agent the parent route as agentOptions', async () => {
     resetSeq()
     const current = fakeAgent([], { provider: 'mock', model: 'mock-1' })

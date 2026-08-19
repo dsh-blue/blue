@@ -61,7 +61,7 @@ function userItem(text: string): TranscriptUserItem {
 }
 
 function assistantItem(partial: Partial<TranscriptAssistantItem> = {}): TranscriptAssistantItem {
-  return { kind: 'assistant', seq: 1, text: '', reasoning: '', streaming: false, ...partial }
+  return { kind: 'assistant', seq: 1, text: '', streaming: false, ...partial }
 }
 
 function toolItem(partial: Partial<TranscriptToolItem> = {}): TranscriptToolItem {
@@ -134,13 +134,13 @@ describe('AssistantMessageComponent', () => {
     expect(lines).toEqual(['', '**hi**'])
   })
 
-  it('renders reasoning muted and italic above the answer', () => {
+  it('renders only the body — the step\'s reasoning lives in its own component', () => {
     const lines = new AssistantMessageComponent(
-      assistantItem({ text: 'answer', reasoning: 'thought' }),
+      assistantItem({ text: 'answer' }),
       tagged(),
       setup(),
     ).render(80)
-    expect(lines).toEqual(['', '\x1b[3m[M]thought[/M]\x1b[23m', '', 'answer'])
+    expect(lines).toEqual(['', 'answer'])
   })
 
   it('shows a streaming cursor that follows the growing text', () => {

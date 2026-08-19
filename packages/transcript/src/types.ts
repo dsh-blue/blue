@@ -44,9 +44,32 @@ export interface TranscriptUserItem {
 }
 
 /**
+ * One assistant step's reasoning rendered as its own transcript block (the
+ * S17 kimi split: thinking mounts separately from the answer, live with a
+ * spinner and finalized in place). Fields mutate while the step streams:
+ * `assistant/chunk` reasoning deltas append, and the closing
+ * `assistant/message` rewrites the text from the authoritative assembled
+ * message.
+ */
+export interface TranscriptThinkingItem {
+  readonly kind: 'thinking'
+  /** Seq of the first event that opened this item. */
+  readonly seq: number
+  /** Turn and step the reasoning belongs to. */
+  readonly turn: number
+  readonly step: number
+  /** Accumulated reasoning text. */
+  text: string
+  /** True until the step's `assistant/message` finalizes the item. */
+  streaming: boolean
+}
+
+/**
  * One assistant step rendered in the transcript. Fields mutate while the
- * step streams: `assistant/chunk` deltas append, and the closing
+ * step streams: `assistant/chunk` text deltas append, and the closing
  * `assistant/message` rewrites them from the authoritative assembled message.
+ * The step's reasoning streams into a sibling
+ * {@link TranscriptThinkingItem} mounted above this block.
  */
 export interface TranscriptAssistantItem {
   readonly kind: 'assistant'
@@ -57,8 +80,6 @@ export interface TranscriptAssistantItem {
   readonly step: number
   /** Accumulated visible Markdown text. */
   text: string
-  /** Accumulated reasoning text, rendered muted above the answer. */
-  reasoning: string
   /** True until the step's `assistant/message` finalizes the item. */
   streaming: boolean
 }
@@ -128,6 +149,7 @@ export interface TranscriptStepSummaryItem {
 export type TranscriptItem =
   | TranscriptUserItem
   | TranscriptAssistantItem
+  | TranscriptThinkingItem
   | TranscriptToolItem
   | TranscriptStepSummaryItem
 
