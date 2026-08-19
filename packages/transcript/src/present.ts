@@ -14,6 +14,7 @@ import type {
   ToolResultView,
   ToolRuntime,
 } from '@deepseek-ai/dsh-tools'
+import type { TranscriptToolItem } from './types.ts'
 
 /** The slice of the host tool registry the resolvers read. */
 export type ToolPresentationSource = Pick<ToolRuntime, 'get'>
@@ -71,4 +72,22 @@ export function resolveResultView(
   } catch {
     return undefined
   }
+}
+
+/**
+ * Whether one tool item is a file Read (the S20 Read-group signal). The
+ * rc.7 view vocabulary is the name-independent marker: the harness read
+ * tool's pending call presents a generic card tagged `kind: 'read'`, and
+ * its completed state the `card: 'read'` `ReadResultView` — Blue's repo
+ * never sees the harness's concrete tool set, so the documented view
+ * contract is the only stable signal (kimi groups by its own `Read` name).
+ * @param item - the folded tool item to classify.
+ * @returns true when the item's resolved view marks a read.
+ */
+export function isReadItem(item: TranscriptToolItem): boolean {
+  const view = item.view
+  if (view === undefined) return false
+  if (!('card' in view)) return false
+  if (view.card === 'read') return true
+  return view.card === 'generic' && 'kind' in view && view.kind === 'read'
 }

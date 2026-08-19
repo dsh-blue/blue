@@ -11,7 +11,9 @@
  * created through the `blueIntents` render-intent registry: the item's
  * resolved view selects an intent entry, and the entry's factory builds the
  * component (the built-in `'generic'` entry is the `ToolCallComponent`
- * baseline). Long sessions stay bounded: after each applied event the window
+ * baseline). Consecutive same-step Reads group into one
+ * `ReadGroupComponent` at mount time (the S20 kimi contiguity rule). Long
+ * sessions stay bounded: after each applied event the window
  * policy evicts turns older than the newest completed `windowTurns` turns
  * (silent destruction, no replacement UI), and in-turn step folding slides a
  * retention window (the most recent `DEFAULT_RECENT_STEPS_RETENTION` steps
@@ -48,7 +50,8 @@ import {
 } from './components.ts'
 import { TranscriptFolder, type FoldUpdate } from './fold.ts'
 import { BlueIntentsService } from './intents.ts'
-import { resolveCallView, resolveResultView } from './present.ts'
+import { isReadItem, resolveCallView, resolveResultView } from './present.ts'
+import { ReadGroupComponent } from './read-group.ts'
 import { BlueStatusService, FooterShellComponent } from './status.ts'
 import { ThinkingComponent } from './thinking.ts'
 import type { BlueIntentComponent, TranscriptItem } from './types.ts'
@@ -63,6 +66,7 @@ export {
   ToolCallComponent,
   UserMessageComponent,
 } from './components.ts'
+export { ReadGroupComponent } from './read-group.ts'
 export { BlueIntentsError, BlueIntentsService } from './intents.ts'
 export { BlueStatusError, BlueStatusService, FOOTER_MAX_ROWS, FooterShellComponent } from './status.ts'
 export { StreamingPhaseTracker, type StreamingPhase } from './phase.ts'
@@ -232,6 +236,30 @@ function mountSession(
 
   /** Mount one newly created item's component (the fold's mount order). */
   const mount = (item: TranscriptItem): void => {
+    // The S20 back half: consecutive same-step Reads group into one
+    // `ReadGroupComponent` (the kimi contiguity rule — any other tool
+    // between two Reads breaks the chain, which the last-entry check
+    // expresses). The lone first card retires when the second Read mounts;
+    // the group's bookkeeping item is the first member, so step folding and
+    // window eviction retire it exactly when the members' items fold.
+    if (item.kind === 'tool' && isReadItem(item)) {
+      const previous = entries.at(-1)
+      if (previous !== undefined && previous.item.kind === 'tool'
+        && previous.item.turn === item.turn && previous.item.step === item.step
+        && isReadItem(previous.item)) {
+        if (previous.component instanceof ReadGroupComponent) {
+          previous.component.attach(item)
+          return
+        }
+        retireEntry(previous)
+        // `previous` is the last entry by construction, so the pop drops it.
+        entries.pop()
+        const group = new ReadGroupComponent(previous.item, colors, components)
+        group.attach(item)
+        entries.push({ item: previous.item, component: group, dispose: screen.addChild(new GutterComponent(group)) })
+        return
+      }
+    }
     let component: BlueComponent
     if (item.kind === 'tool') {
       const intent = intents.resolve(item.view !== undefined && 'card' in item.view ? item.view.card : 'generic')

@@ -348,18 +348,54 @@ export class ToolCallComponent implements BlueComponent {
     return this.components.truncateToWidth(header, width)
   }
 
-  /** The result rows: the kimi preview collapsed, every line expanded. */
-  private renderBody(width: number, result: TranscriptToolResult): string[] {
+  /** The bash fallback's command lines, or undefined for a non-bash card. */
+  private commandPreview(): string[] | undefined {
+    if (this.item.name !== 'bash') return undefined
+    const parsed = this.item.parsedArguments
+    if (parsed === undefined || typeof parsed !== 'object' || parsed === null) return undefined
+    const command = (parsed as Record<string, unknown>)['command']
+    if (typeof command !== 'string' || command === '') return undefined
+    return command.split('\n')
+  }
+
+  /**
+   * The body rows: the kimi shell chrome for a bash fallback command
+   * (`$ ` shellMode + the command one step dimmer, continuations indented,
+   * the collapsed preview capped at {@link COMMAND_PREVIEW_LINES}), then
+   * the result preview — the kimi wrap-aware 3-row cap with the expand
+   * hint collapsed, every wrapped line expanded.
+   * @param width - current viewport width in columns.
+   * @param result - the paired result, or undefined while pending.
+   * @returns the body rows (possibly empty).
+   */
+  private renderBody(width: number, result: TranscriptToolResult | undefined): string[] {
     const { colors, components } = this
+    const lines: string[] = []
+    const command = this.commandPreview()
+    if (command !== undefined) {
+      const cap = this.expanded
+        ? command.length
+        : Math.min(command.length, COMMAND_PREVIEW_LINES)
+      for (let index = 0; index < cap; index += 1) {
+        const body = colors.muted(command[index]!)
+        lines.push(index === 0
+          ? `${PREVIEW_INDENT}${colors.shellMode('$ ')}${body}`
+          : `${PREVIEW_INDENT}  ${body}`)
+      }
+    }
+    if (result === undefined) return lines
     const text = (result.fullText ?? result.text).replace(/\n+$/, '')
-    if (text === '') return []
+    if (text === '') return lines
     const contentWidth = Math.max(1, width - components.visibleWidth(PREVIEW_INDENT))
     const allLines = components.wrapText(text, contentWidth)
     const paint = (line: string): string =>
       `${PREVIEW_INDENT}${result.isError ? colors.error(line) : colors.muted(line)}`
-    if (this.expanded) return allLines.map(paint)
+    if (this.expanded) {
+      lines.push(...allLines.map(paint))
+      return lines
+    }
     const shown = allLines.slice(0, RESULT_PREVIEW_LINES)
-    const lines = shown.map(paint)
+    lines.push(...shown.map(paint))
     if (allLines.length > shown.length) {
       const remaining = allLines.length - shown.length
       const hint = `... (${remaining} more lines, ${allLines.length} total, ctrl+o to expand)`
@@ -377,9 +413,7 @@ export class ToolCallComponent implements BlueComponent {
     const body = result === undefined ? '' : (result.fullText ?? result.text)
     const key = `${width}:${this.expanded}:${result ? `${result.isError}:${body}` : 'pending'}`
     if (this.cache?.key === key) return this.cache.lines
-    const lines = result === undefined
-      ? ['', this.renderHeader(width)]
-      : ['', this.renderHeader(width), ...this.renderBody(width, result)]
+    const lines = ['', this.renderHeader(width), ...this.renderBody(width, result)]
     this.cache = { key, lines }
     return lines
   }
