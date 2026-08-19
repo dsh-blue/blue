@@ -171,7 +171,7 @@ describe('blue-commands plugin', () => {
     // the `❯ ` pointer plus the `← current` badge on the live session.
     const rows = screen.overlays[0]?.component.render(60) ?? []
     expect(rows[0]).toBe('^' + '─'.repeat(60) + '^')
-    expect(rows[1]).toBe('^Sessions^ _esc cancel · ↵ resume_')
+    expect(rows[1]).toBe('^  Sessions^ _· esc cancel · ↵ resume_')
     expect(rows[2]).toContain(`❯ ${agent.id} · 1970-01-01 00:00 · /live  ← current`)
     expect(rows[3]).toContain('s-mid · 1970-01-01 00:00 · ')
     expect(rows[4]).toContain('s-old · 1970-01-01 00:00 · /old')
@@ -259,19 +259,19 @@ describe('blue-commands plugin', () => {
     // window, so a `showing` line replaces the tail.
     const rows = screen.overlays[0]?.component.render(80) ?? []
     expect(rows[0]).toBe('^' + '─'.repeat(80) + '^')
-    expect(rows[1]).toBe('^ help^ _· Esc / Enter / q to cancel · ↑↓ scroll_')
+    expect(rows[1]).toBe('^  help^ _· Esc / Enter / q to cancel · ↑↓ scroll_')
     expect(rows[3]).toBe('  #Commands#')
     // The runtime lists commands alphabetically; labels padEnd inside the
     // primary span with the description muted behind two spaces.
     expect(rows[4]).toBe('    ^/fork    ^  ~Fork the current session into a new one~')
     expect(rows.some(row => row.includes('^/quit    ^  ~Exit Blue~'))).toBe(true)
-    expect(rows.some(row => row.includes('_ showing 1-10 of 18_'))).toBe(true)
+    expect(rows.some(row => row.includes('_ showing 1-16 of 18_'))).toBe(true)
     // Scrolling down reaches the Keys section with the two-column layout.
     for (let i = 0; i < 9; i += 1) overlay(screen).handleInput(KEY.down)
     const scrolled = screen.overlays[0]?.component.render(80) ?? []
     expect(scrolled.some(row => row.includes('  #Keys#'))).toBe(true)
     expect(scrolled.some(row => row.includes('?enter   ?  ~Submit input / confirm selection~'))).toBe(true)
-    expect(scrolled.some(row => row.includes('_ showing 9-18 of 18_'))).toBe(true)
+    expect(scrolled.some(row => row.includes('_ showing 3-18 of 18_'))).toBe(true)
     screen.overlays[0]?.component.invalidate()
     overlay(screen).handleInput(KEY.escape)
     expect(screen.overlays[0]?.hidden).toBe(true)

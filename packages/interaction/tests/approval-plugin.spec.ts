@@ -58,15 +58,16 @@ describe('blue-approval answerer', () => {
     const pending = decide(ctx, request(agent, { reason: 'writes files' }))
     const rendered = screen.overlays[0]?.component.render(60) ?? []
     const bar = '%' + '─'.repeat(60) + '%'
-    // The S12 dialog frame: amber rules, ▶ title, reason, numbered choices.
+    // The S12 pull-up panel: amber rules, indented ▶ title, reason,
+    // numbered choices indented under the title.
     expect(rendered[0]).toBe(bar)
-    expect(rendered[1]).toBe('%▶ Approve bash?%')
+    expect(rendered[1]).toBe('%  ▶ Approve bash?%')
     expect(rendered[2]).toBe('~writes files~')
     expect(rendered[3]).toBe('')
-    expect(rendered[4]).toBe('*▶ 1. Allow once*')
-    expect(rendered[5]).toBe('#  2. Allow bash for this session#')
-    expect(rendered[6]).toBe('#  3. Reject#')
-    expect(rendered[7]).toBe('#  4. Reject with feedback#')
+    expect(rendered[4]).toBe('*  ▶ 1. Allow once*')
+    expect(rendered[5]).toBe('#    2. Allow bash for this session#')
+    expect(rendered[6]).toBe('#    3. Reject#')
+    expect(rendered[7]).toBe('#    4. Reject with feedback#')
     expect(rendered[8]).toBe('')
     expect(rendered[9]).toBe('_  ↑/↓ select · 1-4 choose · ↵ confirm_')
     expect(rendered[10]).toBe(bar)
@@ -83,7 +84,7 @@ describe('blue-approval answerer', () => {
     const pending = decide(ctx, request(agent))
     const rendered = screen.overlays[0]?.component.render(60) ?? []
     expect(rendered[0]).toBe('%' + '─'.repeat(60) + '%')
-    expect(rendered[1]).toBe('%▶ Approve bash?%')
+    expect(rendered[1]).toBe('%  ▶ Approve bash?%')
     expect(rendered[2]).toBe('')
     expect(rendered[3]).toContain('Allow once')
     overlay(screen).handleInput(KEY.escape)
@@ -95,14 +96,14 @@ describe('blue-approval answerer', () => {
     const pending = decide(ctx, request(agent))
     // No reason row: the four choices are rows 3-6 under the title.
     overlay(screen).handleInput(KEY.up)
-    expect(screen.overlays[0]?.component.render(60)[6]).toBe('*▶ 4. Reject with feedback*')
+    expect(screen.overlays[0]?.component.render(60)[6]).toBe('*  ▶ 4. Reject with feedback*')
     overlay(screen).handleInput(KEY.down)
-    expect(screen.overlays[0]?.component.render(60)[3]).toBe('*▶ 1. Allow once*')
+    expect(screen.overlays[0]?.component.render(60)[3]).toBe('*  ▶ 1. Allow once*')
     overlay(screen).handleInput(KEY.down)
     overlay(screen).handleInput(KEY.down)
-    expect(screen.overlays[0]?.component.render(60)[5]).toBe('*▶ 3. Reject*')
+    expect(screen.overlays[0]?.component.render(60)[5]).toBe('*  ▶ 3. Reject*')
     overlay(screen).handleInput(KEY.up)
-    expect(screen.overlays[0]?.component.render(60)[4]).toBe('*▶ 2. Allow bash for this session*')
+    expect(screen.overlays[0]?.component.render(60)[4]).toBe('*  ▶ 2. Allow bash for this session*')
     overlay(screen).handleInput(KEY.escape)
     await pending
   })
@@ -187,7 +188,7 @@ describe('blue-approval answerer', () => {
     // Feedback mode: the framed dialog keeps the title bar and swaps the
     // menu for the reason label and the inline editor.
     expect(rendered[0]).toBe('%' + '─'.repeat(60) + '%')
-    expect(rendered[1]).toBe('%▶ Approve bash?%')
+    expect(rendered[1]).toBe('%  ▶ Approve bash?%')
     expect(rendered[2]).toBe('')
     expect(rendered[3]).toBe('~reason:~')
     const editor = components.editors.at(-1)

@@ -20,8 +20,15 @@ export const name = 'blue-questions'
 /** Services required before the provider can register. */
 export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'userQuestions']
 
-/** Overlay width as a share of the terminal. */
-const OVERLAY_WIDTH = '80%'
+/**
+ * The kimi pull-up panel presentation: full width, anchored to the bottom
+ * so the dialog rises from the editor's slot, with the two-row footer
+ * shell left visible on the terminal's last rows (S12 dock reorder).
+ */
+const OVERLAY_WIDTH = '100%'
+const OVERLAY_ANCHOR = 'bottom-center'
+/** Negative offset: the panel's bottom edge ends above the two-row footer. */
+const OVERLAY_FOOTER_CLEARANCE = -2
 /**
  * Overlay height bound as a share of the terminal. S12 raises the bound so
  * the framed dialog (bars, title, tabs, question, six option rows, key
@@ -78,6 +85,8 @@ function askAll(ctx: Context, request: AskUserQuestionRequest): Promise<AskUserQ
     })
     const handle = ctx.blueScreen.showOverlay(questionnaire, {
       width: OVERLAY_WIDTH,
+      anchor: OVERLAY_ANCHOR,
+      offsetY: OVERLAY_FOOTER_CLEARANCE,
       maxHeight: OVERLAY_MAX_HEIGHT,
     })
     const onAbort = (): void => {

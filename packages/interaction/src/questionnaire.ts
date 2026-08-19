@@ -297,9 +297,9 @@ export class Questionnaire implements BlueFocusable {
         : colors.success(`(✓) ${label}`)
     }).join('  ')
     const rows = [
-      components.truncateToWidth(tabs, width),
+      components.truncateToWidth(`  ${tabs}`, width),
       '',
-      colors.primary(components.truncateToWidth(question.question, width)),
+      colors.primary(components.truncateToWidth(`  ${question.question}`, width)),
     ]
     if (question.detail !== undefined) {
       rows.push(colors.muted(components.truncateToWidth(question.detail, width)))
@@ -308,7 +308,7 @@ export class Questionnaire implements BlueFocusable {
     if (editor !== undefined) {
       rows.push(...editor.render(width))
       return framePanel(rows, width, {
-        title: ' question ',
+        title: 'question',
         titlePaint: colors.primary,
         rulePaint: colors.primary,
         footer: this.footerParts(),
@@ -319,13 +319,14 @@ export class Questionnaire implements BlueFocusable {
     const multi = question.multiSelect === true
     const entries: string[] = []
     for (const [at, option] of options.entries()) {
-      const prefix = at === state.cursor ? '→ ' : '  '
+      // The kimi dialog body indents every option row two columns.
+      const prefix = at === state.cursor ? '  → ' : '    '
       const checkbox = multi ? (state.toggled.has(option.label) ? '[x] ' : '[ ] ') : ''
       const label = components.truncateToWidth(`${prefix}${checkbox}${option.label}`, width)
       const description = option.description === undefined ? '' : colors.muted(` — ${option.description}`)
       entries.push(at === state.cursor ? colors.primary(label) + description : label + description)
     }
-    const otherPrefix = state.cursor === options.length ? '→ ' : '  '
+    const otherPrefix = state.cursor === options.length ? '  → ' : '    '
     const otherLabel = state.custom === undefined ? 'Other' : `Other: ${state.custom}`
     const other = components.truncateToWidth(`${otherPrefix}${otherLabel}`, width)
     entries.push(state.cursor === options.length ? colors.primary(other) : other)
@@ -336,7 +337,7 @@ export class Questionnaire implements BlueFocusable {
     }
     rows.push('')
     return framePanel(rows, width, {
-      title: ' question ',
+      title: 'question',
       titlePaint: colors.primary,
       rulePaint: colors.primary,
       footer: this.footerParts(),

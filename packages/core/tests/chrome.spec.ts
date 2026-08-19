@@ -127,7 +127,8 @@ describe('hintRow', () => {
 describe('framePanel', () => {
   it('frames the body with rules spanning the render width', () => {
     const framed = framePanel(['  body'], 12, { title: 'T' })
-    expect(framed).toEqual(['─'.repeat(12), 'T', '  body', '─'.repeat(12)])
+    // The title line sits indented two columns (the kimi dialog look).
+    expect(framed).toEqual(['─'.repeat(12), '  T', '  body', '─'.repeat(12)])
   })
 
   it('renders without a title or footer', () => {
@@ -135,13 +136,15 @@ describe('framePanel', () => {
   })
 
   it('appends the title hint on the title line with its own paint', () => {
-    const framed = framePanel([], 20, {
+    const framed = framePanel([], 30, {
       title: 'help',
       titlePaint: text => `<${text}>`,
       titleHint: '· Esc close',
       hintPaint: text => `~${text}~`,
     })
-    expect(framed[1]).toBe('<help> ~· Esc close~')
+    // `  help · Esc close` — the indent sits inside the title paint, the
+    // hint joins after a single space (callers lead it with `· `).
+    expect(framed[1]).toBe('<  help> ~· Esc close~')
   })
 
   it('renders the footer above the bottom rule through its paint', () => {

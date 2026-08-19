@@ -112,7 +112,7 @@ export function apply(ctx: Context): void {
         current: header.id === currentId,
       })),
       title: 'Sessions',
-      titleHint: 'esc cancel · ↵ resume',
+      titleHint: '· esc cancel · ↵ resume',
       onSelect: (item) => {
         handle.hide()
         if (item.value === String(currentId)) {
@@ -126,7 +126,14 @@ export function apply(ctx: Context): void {
         handle.hide()
       },
     })
-    const handle = display.screen.showOverlay(list, { width: '60%', maxHeight: '55%' })
+    // The kimi pull-up panel: full width, anchored to the bottom over the
+    // editor's slot, leaving the two-row footer shell visible below.
+    const handle = display.screen.showOverlay(list, {
+      width: '100%',
+      anchor: 'bottom-center',
+      offsetY: -2,
+      maxHeight: '55%',
+    })
     return { kind: 'success' }
   }
 
@@ -169,9 +176,13 @@ export function apply(ctx: Context): void {
         handle.hide()
       },
     })
+    // The kimi pull-up panel: full width, anchored to the bottom over the
+    // editor's slot, leaving the two-row footer shell visible below.
     const handle = display.screen.showOverlay(overlay, {
-      width: '80%',
-      maxHeight: '60%',
+      width: '100%',
+      anchor: 'bottom-center',
+      offsetY: -2,
+      maxHeight: '85%',
     })
     return { kind: 'success' }
   }

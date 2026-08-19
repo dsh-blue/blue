@@ -130,11 +130,11 @@ export function hintRow(parts: readonly string[], paint: (text: string) => strin
 
 /** Options for {@link framePanel}. */
 export interface FramePanelOptions {
-  /** Title text rendered on its own line under the top rule. */
+  /** Title text rendered on its own line under the top rule, indented two columns. */
   readonly title?: string
   /** Styling for the title line; defaults to unstyled. */
   readonly titlePaint?: (text: string) => string
-  /** Muted hint appended to the title line (e.g. a key summary). */
+  /** Muted hint appended to the title line after a space (lead with `· `). */
   readonly titleHint?: string
   /** Styling for the title hint; defaults to unstyled. */
   readonly hintPaint?: (text: string) => string
@@ -174,10 +174,12 @@ export function framePanel(
     const titlePaint = options.titlePaint ?? identity
     const hint = options.titleHint
     if (hint === undefined) {
-      lines.push(truncateToWidth(titlePaint(title), ruleWidth))
+      lines.push(truncateToWidth(titlePaint(`  ${title}`), ruleWidth))
     } else {
       const hintPaint = options.hintPaint ?? identity
-      lines.push(truncateToWidth(`${titlePaint(title)} ${hintPaint(hint)}`, ruleWidth))
+      // The kimi title line: `  help · Esc / Enter / q to cancel · ↑↓ scroll`
+      // — callers lead the hint with `· ` so the join is a single space.
+      lines.push(truncateToWidth(`${titlePaint(`  ${title}`)} ${hintPaint(hint)}`, ruleWidth))
     }
   }
   lines.push(...body)

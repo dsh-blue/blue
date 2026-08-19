@@ -54,12 +54,16 @@ export class BlueScreenService extends Service implements BlueScreen {
   /**
    * Mount a component pinned to the bottom of the tree (the input editor
    * dock); short content is padded so the pinned block spans the terminal's
-   * last rows.
+   * last rows. `position: 'bottom'` renders the component below the rest of
+   * the dock — the footer shell uses it to stay on the terminal's last rows
+   * beneath the editor (the kimi layout, and what dialog panels pull up
+   * over).
    * @param component - the component to pin.
+   * @param position - `'bottom'` for the dock's lowest slot.
    * @returns a disposer that unmounts the component; safe to call twice.
    */
-  addBottomChild(component: BlueComponent): () => void {
-    this.runtime.addBottomChild(component)
+  addBottomChild(component: BlueComponent, position?: 'bottom'): () => void {
+    this.runtime.addBottomChild(component, position)
     return () => {
       this.runtime.removeChild(component)
     }

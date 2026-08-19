@@ -1,5 +1,5 @@
 /**
- * Unit tests for the `HelpOverlay` dialog: the framed ` help ` title, the
+ * Unit tests for the `HelpOverlay` dialog: the framed `help` title, the
  * two-column sections, the scroll window and its `showing` tail, and the
  * close/scroll key handling (Escape/Enter/`q` close; arrows and PageUp/
  * PageDown scroll).
@@ -47,7 +47,7 @@ describe('HelpOverlay', () => {
     const rows = overlay.render(60)
     const bar = '^' + '─'.repeat(60) + '^'
     expect(rows[0]).toBe(bar)
-    expect(rows[1]).toBe('^ help^ _· Esc / Enter / q to cancel · ↑↓ scroll_')
+    expect(rows[1]).toBe('^  help^ _· Esc / Enter / q to cancel · ↑↓ scroll_')
     expect(rows[3]).toBe('  #Commands#')
     // Labels padEnd to the section's widest label inside the label paint.
     expect(rows[4]).toBe('    ^/cmd-0  ^  ~does thing 0~')

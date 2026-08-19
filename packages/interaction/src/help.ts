@@ -21,8 +21,12 @@ const KEY_PAGE_DOWN = '\x1b[6~'
 /** Rows scrolled at once by PageUp/PageDown (kimi value). */
 const PAGE_SCROLL = 10
 
-/** Content rows visible without scrolling; keeps the frame in its overlay budget. */
-const DEFAULT_MAX_VISIBLE = 10
+/**
+ * Content rows visible without scrolling. The pull-up panel budget (85% of
+ * the viewport minus the two-row footer) fits a sixteen-row window on the
+ * smallest 24-row terminal the suite renders.
+ */
+const DEFAULT_MAX_VISIBLE = 16
 
 /** One aligned row of a section. */
 export interface HelpRow {
@@ -132,7 +136,7 @@ export class HelpOverlay implements BlueFocusable {
       body.push(...content)
     }
     return framePanel(body, width, {
-      title: ' help',
+      title: 'help',
       titlePaint: colors.primary,
       titleHint: '· Esc / Enter / q to cancel · ↑↓ scroll',
       hintPaint: colors.textMuted,

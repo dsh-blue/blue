@@ -125,7 +125,7 @@ describe('BlueSelect rendering', () => {
     const lines = select.render(60)
     const bar = '^' + '─'.repeat(60) + '^'
     expect(lines[0]).toBe(bar)
-    expect(lines[1]).toBe('^Select^')
+    expect(lines[1]).toBe('^  Select^')
     // The selectedBg row pads to the full width so the background never
     // breaks mid-line; the description rides muted inside the row.
     expect(lines[2]).toBe('{' + '❯ [ ] Alpha~ — first choice~'.padEnd(60) + '}')
@@ -190,11 +190,11 @@ describe('SessionList', () => {
   }
 
   it('frames the dialog with the title hint and the current-session badge', () => {
-    const { list } = mountList({ title: 'Sessions', titleHint: 'esc cancel · ↵ resume' })
+    const { list } = mountList({ title: 'Sessions', titleHint: '· esc cancel · ↵ resume' })
     const lines = list.render(60)
     const bar = '^' + '─'.repeat(60) + '^'
     expect(lines[0]).toBe(bar)
-    expect(lines[1]).toBe('^Sessions^ _esc cancel · ↵ resume_')
+    expect(lines[1]).toBe('^  Sessions^ _· esc cancel · ↵ resume_')
     expect(lines[2]).toBe('^❯ s1 · 2026-08-19 09:00 · /work  ← current^')
     expect(lines[3]).toBe('  s2 · 2026-08-18 09:00 · /other')
     expect(lines[4]).toBe('')
@@ -228,7 +228,7 @@ describe('SessionList', () => {
   it('defaults the title and omits the hint row', () => {
     const { list } = mountList()
     const lines = list.render(40)
-    expect(lines[1]).toBe('^Sessions^')
+    expect(lines[1]).toBe('^  Sessions^')
   })
 
   it('shows scroll info beyond the visible window', () => {

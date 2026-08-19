@@ -457,6 +457,8 @@ export class FakeScreen implements BlueScreen {
   focused: BlueComponent | null = null
   renderRequests = 0
   private readonly bottom = new Set<BlueComponent>()
+  /** Dock members pinned to the very bottom slot (the footer shell). */
+  private readonly bottomPinned = new Set<BlueComponent>()
 
   addChild(component: BlueComponent): () => void {
     // Mirror the runtime's ordering contract: plain mounts land above every
@@ -468,9 +470,18 @@ export class FakeScreen implements BlueScreen {
     }
   }
 
-  addBottomChild(component: BlueComponent): () => void {
+  addBottomChild(component: BlueComponent, position?: 'bottom'): () => void {
     this.bottom.add(component)
-    this.children.push(component)
+    // Pinned members render below the rest of the dock, mirroring the
+    // runtime's ordering (the footer shell mounts pinned 'bottom').
+    if (position === 'bottom') {
+      this.bottomPinned.add(component)
+      this.children.push(component)
+    } else {
+      this.bottomPinned.delete(component)
+      const firstPinned = this.children.findIndex(child => this.bottomPinned.has(child))
+      this.children.splice(firstPinned === -1 ? this.children.length : firstPinned, 0, component)
+    }
     return () => {
       this.removeChild(component)
     }
@@ -478,6 +489,7 @@ export class FakeScreen implements BlueScreen {
 
   removeChild(component: BlueComponent): void {
     this.bottom.delete(component)
+    this.bottomPinned.delete(component)
     const index = this.children.indexOf(component)
     if (index >= 0) this.children.splice(index, 1)
   }

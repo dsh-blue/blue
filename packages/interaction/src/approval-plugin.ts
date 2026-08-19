@@ -30,8 +30,15 @@ export const name = 'blue-approval'
 /** Services required before the answerer can listen. */
 export const inject = ['blueScreen', 'blueTheme', 'blueComponents']
 
-/** Overlay width as a share of the terminal. */
-const OVERLAY_WIDTH = '60%'
+/**
+ * The kimi pull-up panel presentation: full width, anchored to the bottom
+ * so the dialog rises from the editor's slot, with the two-row footer
+ * shell left visible on the terminal's last rows (S12 dock reorder).
+ */
+const OVERLAY_WIDTH = '100%'
+const OVERLAY_ANCHOR = 'bottom-center'
+/** Negative offset: the panel's bottom edge ends above the two-row footer. */
+const OVERLAY_FOOTER_CLEARANCE = -2
 /**
  * Overlay height bound as a share of the terminal. S12 raises the bound so
  * the framed dialog (bars, title, reason, four numbered choices, key row)
@@ -222,8 +229,9 @@ class ApprovalPrompt implements BlueFocusable {
     const labels = this.labels()
     for (const [at, label] of labels.entries()) {
       const num = `${at + 1}. ${label}`
+      // The kimi approval rows sit indented two columns under the title.
       const row = components.truncateToWidth(
-        at === this.cursor ? `▶ ${num}` : `  ${num}`,
+        at === this.cursor ? `  ▶ ${num}` : `    ${num}`,
         width,
       )
       rows.push(at === this.cursor ? colors.accent(row) : colors.textStrong(row))
@@ -316,6 +324,8 @@ function prompt(ctx: Context, req: ApprovalRequest): Promise<ApprovalOutcome> {
     })
     const handle = ctx.blueScreen.showOverlay(component, {
       width: OVERLAY_WIDTH,
+      anchor: OVERLAY_ANCHOR,
+      offsetY: OVERLAY_FOOTER_CLEARANCE,
       maxHeight: OVERLAY_MAX_HEIGHT,
     })
     const onAbort = (): void => {
