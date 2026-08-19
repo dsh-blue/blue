@@ -19,9 +19,10 @@
  * render nothing because the todo pane owns that presentation.
  * `turn/start`/`step/start`/`turn/end` drive the
  * turn/step tagging, the completed-turn list the window policy evicts on,
- * and in-turn step folding: the next `step/start` of a turn folds the
- * previous step's tool and thinking items into one `step-summary` item (the
- * S18 kimi wording counts both). All other event
+ * and in-turn step folding with the S20 kimi retention: the most recent
+ * `recentStepsRetention()` steps of a turn keep their cards expanded, and a
+ * new `step/start` folds only the step sliding out of the window into one
+ * `step-summary` item (the S18 kimi wording counts both). All other event
  * types (request records, log-only markers, and merge-extended unknowns)
  * render nothing.
  *
@@ -40,7 +41,7 @@ import type {
   TranscriptToolItem,
   TranscriptUserItem,
 } from './types.ts'
-import { isStepFoldingEnabled } from './window.ts'
+import { isStepFoldingEnabled, recentStepsRetention } from './window.ts'
 
 /** Maximum length of the one-line tool-result summary. */
 export const RESULT_SUMMARY_MAX_CHARS = 160
@@ -226,12 +227,18 @@ export class TranscriptFolder {
         this.currentTurn = turn
         const previous = this.lastStep
         this.lastStep = { turn, step }
-        // In-turn step folding: the previous step's tool cards collapse into
-        // one summary line once the next step starts. The turn's final step
-        // never folds this way — no later step/start arrives for it.
+        // In-turn step folding with the S20 kimi retention: the most recent
+        // `recentStepsRetention()` steps keep their cards expanded, so a new
+        // step/start folds only the step sliding out of the window. The S7
+        // policy folded the previous step outright — the S20 dogfood found
+        // kimi keeps its last 30 steps visible, so Blue aligns. The turn's
+        // last steps never fold — no later step/start arrives for them.
         if (isStepFoldingEnabled() && previous !== null && previous.turn === turn) {
-          const replacement = this.foldStep(turn, previous.step)
-          return replacement === null ? null : [replacement]
+          const outgoing = previous.step - recentStepsRetention()
+          if (outgoing > 0) {
+            const replacement = this.foldStep(turn, outgoing)
+            return replacement === null ? null : [replacement]
+          }
         }
         return null
       }

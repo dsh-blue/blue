@@ -26,7 +26,7 @@ import type {
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { BlueSessionRef } from '@dsh-blue/blue-app'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import { ACTION_TOGGLE_COLLAPSE, apply, setWindowTurns } from '../src/index.ts'
+import { ACTION_TOGGLE_COLLAPSE, apply, setRecentStepsRetention, setWindowTurns } from '../src/index.ts'
 import * as statusBasic from '../src/status-basic.ts'
 import { setThinkingTimers, type ThinkingTimers } from '../src/thinking.ts'
 import type { BlueIntentEntry } from '../src/types.ts'
@@ -609,6 +609,7 @@ describe('blue-transcript plugin through the real Loader', () => {
 
   it('mounts the step summary and disposes the folded tool components', async () => {
     resetSeq()
+    setRecentStepsRetention(0)
     const { ctx, screen } = await bootTranscript()
     const events: SessionEvent[] = [
       turnStart(1),

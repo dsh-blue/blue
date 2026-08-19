@@ -13,8 +13,10 @@
  * component (the built-in `'generic'` entry is the `ToolCallComponent`
  * baseline). Long sessions stay bounded: after each applied event the window
  * policy evicts turns older than the newest completed `windowTurns` turns
- * (silent destruction, no replacement UI), and in-turn step folding collapses
- * a completed step's tool cards into one `step-summary` line. The plugin also
+ * (silent destruction, no replacement UI), and in-turn step folding slides a
+ * retention window (the most recent `DEFAULT_RECENT_STEPS_RETENTION` steps
+ * stay expanded, older ones collapse into one `step-summary` line). The
+ * plugin also
  * owns the status line's extension seam: it provides the `blueStatus`
  * registry and mounts the persistent two-row footer shell bottom-pinned
  * above the input editor; the entries themselves ship as the `status-basic`
@@ -82,8 +84,11 @@ export type {
   TranscriptUserItem,
 } from './types.ts'
 export {
+  DEFAULT_RECENT_STEPS_RETENTION,
   DEFAULT_WINDOW_TURNS,
   currentWindowTurns,
+  recentStepsRetention,
+  setRecentStepsRetention,
   setStepFoldingEnabled,
   setWindowTurns,
 } from './window.ts'
