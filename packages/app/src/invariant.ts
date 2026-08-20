@@ -17,8 +17,9 @@ export const inject = ['invariants']
 /**
  * The session-changed broadcast is the commit point of a create/resume
  * switch: when it fires, the blueSession reference must already point at the
- * broadcast Agent, so a consumer re-reading the reference can never observe
- * the previous (already disposed) one.
+ * broadcast Agent with its model-selection handle published, so a consumer
+ * re-reading the reference can never observe the previous (already disposed)
+ * one or a selection belonging to it.
  */
 const install: InvariantInstaller = (ctx, fail) => {
   ctx.on('blue/session-changed', (agent) => {
@@ -27,6 +28,8 @@ const install: InvariantInstaller = (ctx, fail) => {
       fail('blue/session-changed fired without the blueSession service')
     } else if (session.current !== agent) {
       fail('blue/session-changed fired before blueSession.current pointed at the broadcast Agent')
+    } else if (session.modelRef === undefined) {
+      fail('blue/session-changed fired before blueSession.modelRef was published')
     }
   })
 }
