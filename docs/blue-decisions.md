@@ -212,6 +212,13 @@
 - **理由**：盖不住是浮层的结构性缺陷（锚定只认 terminal 底行，不认 dock 高度）；替换让"面板下方只有 footer"成为布局事实而非绘制巧合；kimi 同构；编辑器仅离树不清状态，草稿与历史天然存活；替换还消除了浮层 maxHeight 切片与 dock 增长的相互作用（面板高度自管）。
 - **后果**：D26 的"底部上拉面板观感"裁定维持（全宽、framePanel、底部上拉的视觉范式不变），其 `showOverlay` 锚定手法句由本决策取代——`showOverlay` 仍保留在 L1 契约（未来 alt-screen 搜索/diff 全屏预览等真浮层表面可用），但对话框表面一律走替换。已知边界：btw 面板开着时对话框替换编辑器，btw 面板悬在对话框上方（`├┤` 拼接指向已离树的编辑器）——dogfood 未报困扰，留待 S17 活动模式机的 `hidden` 态一并定夺（kimi 对话框挂起时 activity pane 亦隐藏）；同因，对话框打开时 pane-activity spinner 行仍在面板上方，S17 收口。e2e 锚随之改写：编辑器顶框 SGR（`38;2;90;90;90`）在面板打开时必须从整帧消失。
 
+### D32. 文档站：VitePress 双语静态站，zh 根路径 + en 子路径，浏览器语言对称分流（用户裁决，2026-08-20）
+
+- **背景**：Blue 缺少面向用户的文档——README 面向开发者，docs/ 是内部中文设计文档（含实施细节与阶段行文），不应整包公开。上游 deepseek-harness 仓库已有 VitePress + GitHub Pages 成熟形态可镜像。
+- **决策**：顶层新增 `website/`（pnpm workspace 成员 `@dsh-blue/website`，VitePress ^1.6.4 + vite ^5.4.14）：**中文挂根路径、英文挂 `/en/`**（中国访问者零 JS 即得中文，与上游同构）；**对称自动分流**——`<head>` 内联脚本按 `localStorage 偏好 > navigator.languages` 在整页加载时做路径映射跳转（英文/其他浏览器落任意中文页跳 `/en/` 等价页；中文浏览器不跳），自动跳转不写偏好；语言切换经 theme 钩子（`router.onBeforeRouteChange`，先剥 `import.meta.env.BASE_URL` 再判 locale）在 SPA 导航时盖章偏好，此后双向粘性。站点显示 `v0.1.0-rc.1 · 预览版`——**自家 rc 线从 rc.1 起计**（版本独立于上游 rc.7/rc.8 线），该版本号即未来五包首次发包的统一版本（发版任务另行执行）。部署 GitHub Pages（project pages 基座 `/blue/`，`DOCS_BASE` 环境变量驱动，sitemap hostname 须含基座且带尾斜杠——sitemap 库按相对解析拼 URL）；CI 三 job（PR 构建检查、push master 构建 + 部署，concurrency 挂 job 级：PR 按 ref 取消、部署串行）。`docs/` 维持仓库内部，不进站点；插件开发指南（seams）留待 API 稳定后二期。
+- **理由**：镜像上游已验证形态（同 CI 动作组合、同 locales/local-search/cleanUrls 模式、vitepress 1.6.4 即当前 latest）成本最低；zh 挂根使"中国优先展示中文"成为结构事实而非脚本行为；"偏好优先、浏览器语言兜底、自动跳转不写偏好"三原则使手动选择粘性成立且首访可探测；docs/ 公开收益低、翻译维护成本高。
+- **后果**：vitepress/vite 进入根 lockfile（esbuild 构建脚本经审查放行，`allowBuilds: esbuild: true`）；仓内包版本（0.1.0-rc.7）与站点版本（v0.1.0-rc.1）暂时并存——前者是未发布的本地状态，发版时五包统一改为 0.1.0-rc.1；网站成为新的双语同步面（zh 顶层为源、en 镜像逐页跟随，en 侧边栏只列已存在页，防死链断构建）；键位/命令/主题 token 三页内容必须从源码提取（`packages/interaction/src/keys.ts`、`packages/interaction/src/commands-plugin.ts`、`packages/core/src/theme-*.ts`），源码变更需同步改页；github.io 在中国大陆可达性不稳，自定义域名为未来缓解项。
+
 ## 已知遗留（MVP 有意为之）
 
 - `/quit` 在 agent attach 前输入会显示 "no active session" 而不退出（input-plugin 在命令分发前检查 current agent）

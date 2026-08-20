@@ -123,6 +123,7 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 - HMR 开发回路：改组件源码热替换（cordis-plugin-hmr）写入开发文档
 - 焦点/overlay 协调约定文档化（L1 加 focus 进出事件，核心签名仍不动）
 - 文档门禁合规：cordis-surface 生成、doc-sync、子系统文档页
+- 文档站：VitePress 双语站点（zh 根路径 / en 子路径，浏览器语言对称分流）发布至 GitHub Pages（`website/`，见 D32）✅（2026-08-20）
 - 发布：`dsh plugin add` 路径验证 + 版本钉住策略（跟随 harness prerelease 节奏）
 - 验收对照删除 TUI 决策笔记的四条重引入条件逐条核验：具名部署（`--profile blue`）、明确包边界、具体交互 provider、组装级生命周期与 transcript 验收
 

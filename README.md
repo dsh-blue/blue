@@ -148,6 +148,8 @@ Tests run from source: specs import the package under test through relative `../
 
 ## Documentation
 
+- **Documentation website**: <https://dsh-blue.github.io/blue/> (中文) · <https://dsh-blue.github.io/blue/en/> (English) — user-facing docs. The design documents below remain repo-internal.
+
 All design documents are in Chinese, under [docs/](docs/):
 
 - [docs/blue-seams.md](docs/blue-seams.md) — the seam catalog: every seam Blue opens (contracts, plain defaults) and which Blue plugin implements each harness-side visual surface.
