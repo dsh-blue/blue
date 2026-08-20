@@ -23,7 +23,7 @@ Consult these while developing instead of guessing API shapes:
 packages/
   core/         @dsh-blue/blue-core        — the tree's ONLY pi-tui adapter
   transcript/   @dsh-blue/blue-transcript  — session events → transcript rendering
-  interaction/  @dsh-blue/blue-interaction — input editor, slash commands, overlays
+  interaction/  @dsh-blue/blue-interaction — input editor, slash commands, overlays, /yolo mode cycle
   app/          @dsh-blue/blue-app         — CLI startup + Agent driver
   bundle/blue/  @dsh-blue/blue             — installable bundle (cordis.patch.yml)
 script/install-dev.sh  — one-shot local dev install into a dsh profile
@@ -118,4 +118,4 @@ Observed conventions:
 
 ## Verification status
 
-As of 2026-08-21, `pnpm run test` (1112 tests, 71 files), `pnpm run test:coverage` (per-file 100%), `pnpm run typecheck`, and `pnpm run lint` all pass on Node 22+/pnpm 11.
+As of 2026-08-21, `pnpm run test` (1184 tests, 74 files), `pnpm run test:coverage` (per-file 100%), `pnpm run typecheck`, and `pnpm run lint` all pass on Node 22+/pnpm 11.

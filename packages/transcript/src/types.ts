@@ -145,6 +145,19 @@ export interface TranscriptErrorItem {
   readonly code?: string
 }
 
+/** A turn whose stream was cut before completing: the `turn/end` `aborted`
+ * reason (an Esc interrupt, a parent or hook cancellation) or the
+ * persistence backend's crash-recovery `interrupted` marker, rendered as
+ * one muted row so the cut is visible instead of the stream just going
+ * quiet (the S24a dogfood ruling). */
+export interface TranscriptInterruptedItem {
+  readonly kind: 'interrupted'
+  /** Seq of the `turn/end` event. */
+  readonly seq: number
+  /** Turn that was cut. */
+  readonly turn: number
+}
+
 /**
  * One folded-away mid-turn step: replaces the step's tool and thinking items
  * in place when the next `step/start` arrives (in-turn step folding).
@@ -173,6 +186,7 @@ export type TranscriptItem =
   | TranscriptToolItem
   | TranscriptStepSummaryItem
   | TranscriptErrorItem
+  | TranscriptInterruptedItem
 
 /**
  * One footer status contribution. `render` returns a single styled line

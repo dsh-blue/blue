@@ -14,6 +14,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import * as approvalPlugin from '../src/approval-plugin.ts'
+import { setYolo } from '../src/mode-state.ts'
 import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeScreen } from './fakes.ts'
 
 async function mount(options: { attach?: boolean } = {}): Promise<{
@@ -271,6 +272,38 @@ describe('blue-approval answerer', () => {
     const { ctx, screen, agent } = await mount({ attach: false })
     const pending = decide(ctx, request(agent))
     await expect(pending).resolves.toBe('unavailable')
+    expect(screen.overlays).toHaveLength(0)
+  })
+
+  it('yolo auto-allows without an overlay for the attached agent', async () => {
+    const { ctx, screen, agent } = await mount()
+    setYolo(agent, true)
+    await expect(decide(ctx, request(agent))).resolves.toBe('allowed-once')
+    expect(screen.overlays).toHaveLength(0)
+    // Turning yolo off restores the interactive prompt.
+    setYolo(agent, false)
+    const pending = decide(ctx, request(agent))
+    expect(screen.overlays).toHaveLength(1)
+    overlay(screen).handleInput(KEY.escape)
+    await expect(pending).resolves.toBe('rejected')
+  })
+
+  it('yolo cancels a pre-aborted request rather than allowing it', async () => {
+    const { ctx, screen, agent } = await mount()
+    setYolo(agent, true)
+    const controller = new AbortController()
+    controller.abort()
+    await expect(decide(ctx, request(agent, { signal: controller.signal }))).resolves.toBe('cancelled')
+    expect(screen.overlays).toHaveLength(0)
+  })
+
+  it('yolo delegates for an agent the UI does not own', async () => {
+    const { ctx, screen, agent } = await mount()
+    setYolo(agent, true)
+    const other = { id: 'other' } as unknown as Agent
+    const pending = decide(ctx, request(other))
+    await expect(pending).resolves.toBe('unavailable')
+    expect(pending.fallback).toHaveBeenCalledOnce()
     expect(screen.overlays).toHaveLength(0)
   })
 })

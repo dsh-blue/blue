@@ -45,6 +45,17 @@ declare module '@deepseek-ai/cordis' {
      */
     'blue/session-changed'(agent: Agent): void
     /**
+     * The live session's model selection changed: the model-family
+     * commands committed a pick into `blueSession.modelRef.current`
+     * (a `/model`/`/effort` switch — picker or argument, persisted or
+     * session-only). Unfiltered: the footer's model entry and the banner's
+     * model line re-derive on it — the pick routes the next request, so
+     * they show it immediately instead of waiting for the next logged
+     * `request/header` (the S24a dogfood ruling).
+     * @mode emit
+     */
+    'blue/model-changed'(): void
+    /**
      * A UI command (the interaction layer's `/resume`) asked the app to
      * switch to a persisted session. The app resumes it, disposes the
      * previous Agent, and broadcasts `'blue/session-changed'`; a failed

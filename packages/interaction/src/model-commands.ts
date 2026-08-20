@@ -127,6 +127,10 @@ async function commitModelSelection(
 ): Promise<string> {
   const previous = modelRef.current
   modelRef.current = next
+  // The pick routes the next request; the footer's model entry and the
+  // banner's model line show it immediately (the S24a dogfood ruling —
+  // they used to wait for the next logged request/header).
+  ctx.emit('blue/model-changed')
   if (!persist) return modelSwitchNotice(previous, next, 'session-only')
   const defaults = ctx.get('agentDefaultModel')
   if (defaults === undefined) return modelSwitchNotice(previous, next, 'unavailable')

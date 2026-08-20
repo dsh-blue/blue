@@ -37,6 +37,7 @@ export const STATUS_TIPS: readonly StatusTip[] = [
   { text: 'ctrl+v to paste an image' },
   { text: 'ctrl+o to hide or reveal tool output' },
   { text: 'ctrl+t to show the todo list' },
+  { text: 'shift+tab to cycle modes: plan, yolo' },
   { text: 'ctrl+s to steer while a turn is running', solo: true, priority: 2 },
   { text: 'esc to interrupt the agent' },
   { text: 'type / to browse commands; matching is fuzzy', solo: true },

@@ -50,7 +50,13 @@ export function apply(ctx: Context): void {
       text = ''
       return
     }
-    text = agent.session.requestHeader()?.config.model
+    // The live selection ref resolves the three tiers itself (in-session
+    // pick → last logged request header → process default), so the footer
+    // shows a `/model` switch immediately; before the app publishes the
+    // ref the tiers fall back to the same sources the ref reads.
+    const selection = ctx.get('blueSession')?.modelRef?.current
+    text = selection?.model
+      ?? agent.session.requestHeader()?.config.model
       ?? agent.options.model
       ?? agent.options.provider
       ?? 'no model'
@@ -65,6 +71,11 @@ export function apply(ctx: Context): void {
   derive()
   ctx.on('blue/session-changed', (next) => {
     agent = next
+    refresh()
+  })
+  // A committed model pick (persisted or session-only) carries no session
+  // event of its own — the commands emit this after writing the ref.
+  ctx.on('blue/model-changed', () => {
     refresh()
   })
   ctx.on('session/event', (session) => {

@@ -55,6 +55,14 @@ export const ACTION_SEGMENT_RIGHT = 'blue.interaction.segment-right'
  * switch that leaves the default-model service untouched.
  */
 export const ACTION_SESSION_ONLY = 'blue.interaction.session-only'
+/**
+ * Cycle the session mode normal → plan → yolo (Shift+Tab) — contextual
+ * only: the main editor's `onKey` chain matches it in
+ * `./input-plugin.ts`; panels and questionnaires keep their own
+ * Shift+Tab tab-navigation because the chain runs solely under editor
+ * focus.
+ */
+export const ACTION_CYCLE_MODE = 'blue.interaction.cycle-mode'
 
 /** The full interaction key batch, registered as one unit. */
 export const INTERACTION_KEY_ACTIONS: readonly BlueKeyAction[] = [
@@ -69,6 +77,7 @@ export const INTERACTION_KEY_ACTIONS: readonly BlueKeyAction[] = [
   { id: ACTION_SEGMENT_LEFT, keys: 'left', description: 'Step the segment control left (contextual)' },
   { id: ACTION_SEGMENT_RIGHT, keys: 'right', description: 'Step the segment control right (contextual)' },
   { id: ACTION_SESSION_ONLY, keys: 'alt+s', description: 'Confirm session-only, no persisted default (contextual)' },
+  { id: ACTION_CYCLE_MODE, keys: 'shift+tab', description: 'Cycle the session mode: normal → plan → yolo' },
 ]
 
 /** Stable Cordis plugin name. */

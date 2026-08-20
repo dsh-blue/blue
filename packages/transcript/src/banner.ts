@@ -7,10 +7,11 @@
  * has room; below that the left column absorbs the width, and below
  * {@link BANNER_MIN_WIDTH} the banner renders nothing.
  *
- * The banner is a static boot snapshot by design: it never reads
- * `blueSession` (the footer's `blue-status-basic` already tracks the live
- * model), which also keeps its mount free of ordering coupling with the
- * transcript's history mounting. In the bundle patch the row sits before
+ * The banner is a boot snapshot except the model line: it reads
+ * `blueSession.modelRef.current` (never `inject` — resolved lazily, so the
+ * mount keeps no ordering coupling with the transcript's history mounting)
+ * and re-derives on `'blue/session-changed'`/`'blue/model-changed'` (the
+ * S24a dogfood ruling). In the bundle patch the row sits before
  * `blue-transcript` so the two fibers resolve in the same `blueComponents`
  * activation round in row order — the banner stays the first scroll child
  * across initial mounts and `/theme` reloads.
@@ -33,6 +34,10 @@ import {
 // Empty type import carries the `agentDefaultModel` Context merge this
 // plugin's inject resolves.
 import type {} from '@deepseek-ai/dsh-agent-default-model'
+// Empty type import carries the app-owned `blueSession` Context merge and
+// the `'blue/session-changed'`/`'blue/model-changed'` Events merges the
+// model-line tracking consumes.
+import type {} from '@dsh-blue/blue-app'
 import { LOGO_ART } from './banner-art.ts'
 import {
   BANNER_TIPS,
@@ -252,21 +257,32 @@ export function composeBannerLines(
 }
 
 /**
- * The welcome banner: a static component whose every render re-composes
- * from the snapshotted content, so it tracks viewport resizes and nothing
- * else.
+ * The welcome banner: every render re-composes from the current content,
+ * so it tracks viewport resizes; the model line tracks the live selection
+ * through {@link BannerComponent.update} (the cwd and the static sections
+ * stay the boot snapshot — the S24a dogfood ruling only pulled the model
+ * line into the live tier).
  */
 class BannerComponent implements BlueComponent {
+  private content: BannerContent
+
   /**
    * @param colors - the semantic color table.
    * @param components - the component factory providing truncation.
-   * @param content - the snapshotted banner facts.
+   * @param content - the boot-time banner facts.
    */
   constructor(
     private readonly colors: BlueSemanticColors,
     private readonly components: BlueComponents,
-    private readonly content: BannerContent,
-  ) {}
+    content: BannerContent,
+  ) {
+    this.content = content
+  }
+
+  /** Swap the banner facts; the next render re-composes. */
+  update(content: BannerContent): void {
+    this.content = content
+  }
 
   /**
    * @param width - current viewport width in columns.
@@ -285,21 +301,43 @@ class BannerComponent implements BlueComponent {
 }
 
 /**
- * Mount the welcome banner as the scroll area's first child. The model
- * line and cwd snapshot here, once; the banner then never re-derives. The
- * mount is effect-bound so unloading this fiber (a `/theme` swap) unmounts
- * and re-mounts it in place.
+ * Mount the welcome banner as the scroll area's first child. The cwd and
+ * the static sections snapshot at boot; the model line re-derives from the
+ * live session's selection ref on session switches and committed model
+ * picks (the S24a dogfood ruling — the banner used to freeze the boot-time
+ * default, surviving `/model` switches and even `/new`), falling back to
+ * the default-model service before the app publishes the ref. The mount is
+ * effect-bound so unloading this fiber (a `/theme` swap) unmounts and
+ * re-mounts it in place.
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
-  const selection = ctx.agentDefaultModel.currentSelection()
+  const boot = ctx.agentDefaultModel.currentSelection()
   const banner = new BannerComponent(ctx.blueTheme.colors, ctx.blueComponents, {
     version: BLUE_VERSION,
-    model: selection.model,
-    provider: selection.provider,
+    model: boot.model,
+    provider: boot.provider,
     cwd: shortenHome(process.cwd(), homedir()),
     tips: BANNER_TIPS,
     whatsNew: BANNER_WHATS_NEW,
+  })
+  const rederive = (): void => {
+    const selection = ctx.get('blueSession')?.modelRef?.current ?? ctx.agentDefaultModel.currentSelection()
+    banner.update({
+      version: BLUE_VERSION,
+      model: selection.model,
+      provider: selection.provider,
+      cwd: shortenHome(process.cwd(), homedir()),
+      tips: BANNER_TIPS,
+      whatsNew: BANNER_WHATS_NEW,
+    })
+    ctx.blueScreen.requestRender()
+  }
+  ctx.on('blue/session-changed', () => {
+    rederive()
+  })
+  ctx.on('blue/model-changed', () => {
+    rederive()
   })
   // Effect-bound so unloading this fiber unmounts the banner.
   ctx.effect(() => ctx.blueScreen.addChild(new GutterComponent(banner)))

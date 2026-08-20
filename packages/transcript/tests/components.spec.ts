@@ -11,6 +11,7 @@ import type { BlueComponents, BlueSemanticColors } from '@dsh-blue/blue-core'
 import {
   AssistantMessageComponent,
   ErrorMessageComponent,
+  InterruptedMarkerComponent,
   StepSummaryComponent,
   ToolCallComponent,
   UserMessageComponent,
@@ -410,6 +411,14 @@ describe('ErrorMessageComponent', () => {
     const rows = new ErrorMessageComponent(item, tagged(), setup()).render(40)
     expect(rows.length).toBeGreaterThan(1)
     expect(rows[0]).toContain('[E]✗ request failed:[/E]')
+  })
+})
+
+describe('InterruptedMarkerComponent', () => {
+  it('renders the single muted tombstone row', () => {
+    const component = new InterruptedMarkerComponent(tagged())
+    expect(component.render(80)).toEqual(['[E]⏹ interrupted[/E]'])
+    component.invalidate()
   })
 })
 
