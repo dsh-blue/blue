@@ -4,13 +4,20 @@
  * settings-then-credentials commit sequence, and every guard.
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { ENDPOINT_PROTOCOLS, ProviderPanel, deriveKeyRef, runProviderAdd, type ProviderRow } from '../src/provider-add.ts'
+import { setModelsDevLoader, type ModelsDevIndex } from '../src/models-dev.ts'
+import { buildIndex } from '../src/models-dev.ts'
+
+/** Tests never touch the network: the offline loader is the default here. */
+const offlineLoader = (): Promise<ModelsDevIndex | undefined> => Promise.resolve(undefined)
+setModelsDevLoader(offlineLoader)
+afterEach(() => { setModelsDevLoader(offlineLoader) })
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
 
 describe('deriveKeyRef', () => {
@@ -606,6 +613,147 @@ describe('runProviderAdd', () => {
     const profile = ((bench.mutations[0] ?? { ops: [] }).ops as { value: Record<string, unknown> }[])[0]!.value
     expect(profile).toEqual({ baseURL: 'https://proxy.example.com', apiKeyEnv: 'ANTHROPIC_API_KEY' })
     expect(bench.credentialSet).toHaveBeenCalledWith(credentialRef('ANTHROPIC_API_KEY'), 'vendor-key')
+  })
+
+  it('adopts models.dev metadata and skips the defaults form when fully matched', async () => {
+    const catalog = {
+      'z-ai': { models: { 'glm-5.3': {
+        limit: { context: 1_048_576, output: 65_536 },
+        reasoning_options: [{ type: 'effort', values: ['none', 'low', 'high'] }],
+      } } },
+    }
+    setModelsDevLoader(() => Promise.resolve(buildIndex(catalog)))
+    const bench = mountWizard({ discovered: [{ id: 'glm-5.3' }] })
+    const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(2) })
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(3) })
+    const form = current(bench.screen)
+    form.handleInput('z-ai-gw')
+    form.handleInput(KEY.enter)
+    form.handleInput('https://z.example.com/v1')
+    form.handleInput(KEY.enter)
+    form.handleInput('k')
+    form.handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(4) })
+    current(bench.screen).handleInput(' ')
+    current(bench.screen).handleInput(KEY.enter)
+    // Fully matched: no defaults form — the add commits directly.
+    await expect(outcome).resolves.toBe('provider "z-ai-gw" added')
+    const profile = ((bench.mutations[0] ?? { ops: [] }).ops as { value: Record<string, unknown> }[])[0]!.value
+    expect(profile.models).toEqual([{
+      id: 'glm-5.3',
+      contextWindow: 1_048_576,
+      maxTokens: 65_536,
+      reasoningEfforts: { low: 'low', high: 'high' },
+    }])
+  })
+
+  it('keeps a listing-reported window over the catalog match', async () => {
+    const catalog = { openai: { models: { 'gpt-x': { limit: { context: 8_000 } } } } }
+    setModelsDevLoader(() => Promise.resolve(buildIndex(catalog)))
+    // The gateway's own listing reported 128k for gpt-x; the catalog's 8k
+    // must not overwrite it.
+    const bench = mountWizard({ discovered: [{ id: 'gpt-x', contextWindow: 128_000 }] })
+    const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(2) })
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(3) })
+    const form = current(bench.screen)
+    form.handleInput('listed-gw')
+    form.handleInput(KEY.enter)
+    form.handleInput('https://l.example.com/v1')
+    form.handleInput(KEY.enter)
+    form.handleInput('k')
+    form.handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(4) })
+    current(bench.screen).handleInput(' ')
+    current(bench.screen).handleInput(KEY.enter)
+    // The listing's window survived; the efforts gap still offers the
+    // (skippable) defaults form.
+    await skipDefaults(bench.screen)
+    await expect(outcome).resolves.toBe('provider "listed-gw" added')
+    const profile = ((bench.mutations[0] ?? { ops: [] }).ops as { value: Record<string, unknown> }[])[0]!.value
+    expect(profile.models).toEqual([{ id: 'gpt-x', contextWindow: 128_000 }])
+  })
+
+  it('marks a catalog non-reasoning model without a defaults stop', async () => {
+    const catalog = {
+      openai: { models: { 'gpt-4o-mini': { limit: { context: 128_000 }, reasoning: false } } },
+    }
+    setModelsDevLoader(() => Promise.resolve(buildIndex(catalog)))
+    const bench = mountWizard({ discovered: [{ id: 'gpt-4o-mini' }] })
+    const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(2) })
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(3) })
+    const form = current(bench.screen)
+    form.handleInput('oai-gw')
+    form.handleInput(KEY.enter)
+    form.handleInput('https://o.example.com/v1')
+    form.handleInput(KEY.enter)
+    form.handleInput('k')
+    form.handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(4) })
+    current(bench.screen).handleInput(' ')
+    current(bench.screen).handleInput(KEY.enter)
+    await expect(outcome).resolves.toBe('provider "oai-gw" added')
+    const profile = ((bench.mutations[0] ?? { ops: [] }).ops as { value: Record<string, unknown> }[])[0]!.value
+    expect(profile.models).toEqual([{ id: 'gpt-4o-mini', contextWindow: 128_000, reasoningEfforts: false }])
+  })
+
+  it('falls to the defaults form with the catalog note when the match is partial', async () => {
+    const catalog = {
+      'z-ai': { models: { 'glm-4.6': { limit: { context: 200_000 } } } },
+    }
+    setModelsDevLoader(() => Promise.resolve(buildIndex(catalog)))
+    const bench = mountWizard({ discovered: [{ id: 'glm-4.6' }, { id: 'custom-model' }] })
+    const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(2) })
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(3) })
+    const form = current(bench.screen)
+    form.handleInput('mixed-gw')
+    form.handleInput(KEY.enter)
+    form.handleInput('https://m.example.com/v1')
+    form.handleInput(KEY.enter)
+    form.handleInput('k')
+    form.handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(4) })
+    // Toggle both rows so both models ride along.
+    current(bench.screen).handleInput(' ')
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(' ')
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => {
+      expect((current(bench.screen).render?.(60) ?? []).join('\n')).toContain('did not describe every model')
+    })
+    // The matched model keeps its catalog window; the form fills the rest.
+    current(bench.screen).handleInput('65536')
+    current(bench.screen).handleInput(KEY.enter)
+    current(bench.screen).handleInput(KEY.enter)
+    await expect(outcome).resolves.toBe('provider "mixed-gw" added')
+    const profile = ((bench.mutations[0] ?? { ops: [] }).ops as { value: Record<string, unknown> }[])[0]!.value
+    expect(profile.models).toEqual([
+      { id: 'glm-4.6', contextWindow: 200_000 },
+      { id: 'custom-model', contextWindow: 65536 },
+    ])
   })
 
   it('answers the guard texts: missing services, empty directory, all-active', async () => {

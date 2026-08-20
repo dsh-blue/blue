@@ -26,6 +26,7 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-credentials'
 import { mountEditorReplacement } from './editor-instance.ts'
+import { loadModelsDevIndex, type ModelsDevMatch } from './models-dev.ts'
 import { FormPanel, type FormField } from './form-panel.ts'
 import { ACTION_CANCEL, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_SUBMIT } from './keys.ts'
 import { BlueSelect, SessionList } from './select.ts'
@@ -204,7 +205,7 @@ interface EndpointDraft {
   protocol: string | undefined
   baseURL: string | undefined
   key: string
-  models: { id: string, contextWindow?: number, maxTokens?: number, reasoningEfforts?: Record<string, string> }[] | undefined
+  models: { id: string, contextWindow?: number, maxTokens?: number, reasoningEfforts?: Record<string, string> | false }[] | undefined
 }
 
 /**
@@ -392,6 +393,86 @@ async function collectModels(
   return manual.ids?.split(',').map(id => ({ id: id.trim() })) ?? []
 }
 
+
+/**
+ * Fold one models.dev match into an adopted model entry: fill the context
+ * window when neither the listing nor a prior pass described it, and set
+ * the effort facts — the pi-ai level→wire map for declared levels, the
+ * explicit `false` for a catalog-marked non-reasoning model.
+ */
+function applyCatalogMatch(
+  model: EndpointDraft['models'] extends (infer M)[] | undefined ? M : never,
+  match: ModelsDevMatch,
+): EndpointDraft['models'] extends (infer M)[] | undefined ? M : never {
+  return {
+    ...model,
+    ...(model.contextWindow === undefined && match.contextWindow !== undefined
+      ? { contextWindow: match.contextWindow }
+      : {}),
+    ...(model.maxTokens === undefined && match.maxTokens !== undefined ? { maxTokens: match.maxTokens } : {}),
+    ...(model.reasoningEfforts === undefined && match.efforts !== undefined
+      ? { reasoningEfforts: Object.fromEntries(match.efforts.map(level => [level, level])) }
+      : {}),
+    ...(model.reasoningEfforts === undefined && match.efforts === undefined && match.nonReasoning === true
+      ? { reasoningEfforts: false }
+      : {}),
+  } as EndpointDraft['models'] extends (infer M)[] | undefined ? M : never
+}
+
+/**
+ * The manual defaults pass for the models the catalog could not describe —
+ * one optional context window (applied to undescribed models only) and one
+ * thinking-effort set, both skippable with two Enters.
+ */
+async function fillModelDefaults(
+  display: ProviderAddDisplay,
+  models: NonNullable<EndpointDraft['models']>,
+  catalogReached: boolean,
+): Promise<NonNullable<EndpointDraft['models']> | undefined> {
+  const defaults = await fillForm(display, {
+    title: 'Model defaults',
+    subtitle: catalogReached
+      ? 'models.dev did not describe every model — fill the gap or press enter to skip'
+      : 'optional — applies to every model this endpoint did not describe',
+    fields: [
+      {
+        id: 'context',
+        label: 'Context window',
+        hint: 'tokens, e.g. 1048576 — empty keeps the 256k default',
+        validate: value => value === '' || /^[0-9]+$/.test(value)
+          ? undefined
+          : 'the context window is a token count (digits only)',
+      },
+      {
+        id: 'efforts',
+        label: 'Thinking efforts',
+        hint: `comma-separated from ${(THINKING_LEVELS as readonly string[]).join(', ')} — empty means none`,
+        validate: value => value === '' || value.split(',').every(level =>
+          THINKING_LEVELS.includes(level.trim() as typeof THINKING_LEVELS[number]))
+          ? undefined
+          : `efforts come from ${(THINKING_LEVELS as readonly string[]).join(', ')}`,
+      },
+    ],
+  })
+  if (defaults === undefined) return undefined
+  const contextWindow = defaults.context === '' ? undefined : Number(defaults.context)
+  // pi-ai's reasoningEfforts is a level→wire map (the level itself is the
+  // wire value on a plain gateway), not a bare list.
+  const effortLevels = defaults.efforts !== undefined && defaults.efforts !== ''
+    ? defaults.efforts.split(',').map(level => level.trim())
+    : undefined
+  const reasoningEfforts = effortLevels === undefined
+    ? undefined
+    : Object.fromEntries(effortLevels.map(level => [level, level]))
+  return models.map(model => ({
+    ...model,
+    ...(model.contextWindow === undefined && contextWindow !== undefined ? { contextWindow } : {}),
+    ...(model.reasoningEfforts === undefined && reasoningEfforts !== undefined
+      ? { reasoningEfforts }
+      : {}),
+  }))
+}
+
 /**
  * Run the Add Provider wizard to completion (or cancellation).
  * @param ctx - plugin context; `llm`, `settings`, and `credentials` are
@@ -488,47 +569,20 @@ export async function runProviderAdd(
        exactOptionalPropertyTypes artifacts */
     const collected = await collectModels(display, llm, ns, protocol, declared.baseURL ?? '', declared.key ?? '')
     if (collected === undefined) return 'add provider cancelled'
-    // Gateway listings rarely carry metadata (new-api answers with bare
-    // ids), so offer one defaults pass: a context window for models that
-    // reported none and a thinking-effort set the endpoint cannot know.
-    const defaults = await fillForm(display, {
-      title: 'Model defaults',
-      subtitle: 'optional — applies to every model this endpoint did not describe',
-      fields: [
-        {
-          id: 'context',
-          label: 'Context window',
-          hint: 'tokens, e.g. 1048576 — empty keeps the 256k default',
-          validate: value => value === '' || /^[0-9]+$/.test(value)
-            ? undefined
-            : 'the context window is a token count (digits only)',
-        },
-        {
-          id: 'efforts',
-          label: 'Thinking efforts',
-          hint: `comma-separated from ${(THINKING_LEVELS as readonly string[]).join(', ')} — empty means none`,
-          validate: value => value === '' || value.split(',').every(level =>
-            THINKING_LEVELS.includes(level.trim() as typeof THINKING_LEVELS[number]))
-            ? undefined
-            : `efforts come from ${(THINKING_LEVELS as readonly string[]).join(', ')}`,
-        },
-      ],
+    // Match the ids against the models.dev catalog first (the kimi flow):
+    // well-known models get their context window and effort set without
+    // asking, and a fully-matched set skips the defaults form entirely.
+    const index = await loadModelsDevIndex()
+    const enriched = collected.map(model => {
+      const match = index?.lookup(model.id)
+      return match === undefined ? model : applyCatalogMatch(model, match)
     })
-    if (defaults === undefined) return 'add provider cancelled'
-    const contextWindow = defaults.context === '' ? undefined : Number(defaults.context)
-    // pi-ai's reasoningEfforts is a level→wire map (the level itself is the
-    // wire value on a plain gateway), not a bare list.
-    const effortLevels = defaults.efforts !== undefined && defaults.efforts !== ''
-      ? defaults.efforts.split(',').map(level => level.trim())
-      : undefined
-    const reasoningEfforts = effortLevels === undefined
-      ? undefined
-      : Object.fromEntries(effortLevels.map(level => [level, level]))
-    const models = collected.map(model => ({
-      ...model,
-      ...(model.contextWindow === undefined && contextWindow !== undefined ? { contextWindow } : {}),
-      ...(reasoningEfforts !== undefined ? { reasoningEfforts } : {}),
-    }))
+    const described = enriched.every(model =>
+      model.contextWindow !== undefined && model.reasoningEfforts !== undefined)
+    const models = described
+      ? enriched
+      : await fillModelDefaults(display, enriched, index !== undefined)
+    if (models === undefined) return 'add provider cancelled'
     /* v8 ignore next -- same required-field artifacts */
     draft = { route: declared.route ?? '', protocol, baseURL: declared.baseURL, key: declared.key ?? '', models }
   }

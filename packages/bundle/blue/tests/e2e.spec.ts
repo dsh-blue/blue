@@ -69,6 +69,9 @@ import { STATUS_TIPS } from '../../../transcript/src/tips-content.ts'
 import { setRecentStepsRetention, setStepFoldingEnabled } from '../../../transcript/src/window.ts'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { MockAdapter, reasoningResponse, textResponse, toolCallResponse } from './mock-adapter.ts'
+// The wizard's models.dev lookup stays offline in the e2e (the fixture
+// gateways carry their own metadata paths).
+import { setModelsDevLoader } from '../../../interaction/src/models-dev.ts'
 import { mkdtempTracked, registerTempDirCleanup } from '../../../core/tests/temp-dir.ts'
 
 
@@ -564,6 +567,8 @@ async function fullFrame(terminal: FakeTerminal): Promise<string> {
   })
   return frame
 }
+
+setModelsDevLoader(() => Promise.resolve(undefined))
 
 describe('blue whole-tree e2e', () => {
   it('boots the tree, publishes blueSession, and broadcasts session-changed', async () => {

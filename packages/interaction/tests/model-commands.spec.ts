@@ -18,6 +18,10 @@ import * as commandsPlugin from '../src/commands-plugin.ts'
 import { canonicalOf } from '../src/command-meta.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
+import { setModelsDevLoader } from '../src/models-dev.ts'
+
+// Tests never touch the network catalog.
+setModelsDevLoader(() => Promise.resolve(undefined))
 
 /** The notices the shared editor received. */
 let notices: string[] = []
