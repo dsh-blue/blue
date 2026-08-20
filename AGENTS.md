@@ -8,7 +8,7 @@ Guidance for AI coding agents working in this repository.
 
 - Language: TypeScript (ESM only, `"type": "module"` everywhere).
 - Runtime: Node `^22.19.0 || >=24.0.0`; package manager pnpm 11 (pinned, `pnpm@11.7.0`).
-- Repository type: pnpm workspace + TypeScript project references; no CI config, no formatter (only oxlint).
+- Repository type: pnpm workspace + TypeScript project references; website CI via GitHub Actions (`.github/workflows/website-pages.yml`), no formatter (only oxlint).
 
 ## External documentation
 
@@ -27,6 +27,9 @@ packages/
   app/          @dsh-blue/blue-app         — CLI startup + Agent driver
   bundle/blue/  @dsh-blue/blue             — installable bundle (cordis.patch.yml)
 script/install-dev.sh  — one-shot local dev install into a dsh profile
+website/               — VitePress documentation site (@dsh-blue/website): zh source at the top
+                         level, en mirror under website/en/; deployed to GitHub Pages (ADR D32)
+.github/workflows/website-pages.yml — website Pages build-check-deploy CI
 docs/                  — design docs: blue-architecture.md (blueprint), blue-roadmap.md (phases),
                          blue-mvp-plan.md (MVP plan), blue-decisions.md (ADR log),
                          blue-p1-design.md (P1 layer design: kimi-code parity map + seam catalog),
@@ -60,6 +63,9 @@ pnpm run test           # vitest run: unit suites + the bundle's whole-tree e2e
 pnpm run test:coverage  # vitest run --coverage — per-file 100% gate on src
 pnpm run typecheck      # tsc -b tsconfig.json (project references)
 pnpm run lint           # oxlint packages
+pnpm run website:dev     # VitePress dev server at 127.0.0.1:5173 (base '/')
+pnpm run website:build   # VitePress build; DOCS_BASE=/blue/ matches the Pages base
+pnpm run website:preview # serves the built site (pass the same DOCS_BASE as the build)
 ```
 
 - Build is two-stage: `tsc -b` owns type emission (`lib/types/*.d.ts` + intermediate JS), `tsdown` owns runtime bundling into the published `lib/` layout (`lib/index.js`, `lib/invariant.js`, `lib/startup.js`). Package deps and peer deps stay external.

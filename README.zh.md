@@ -148,6 +148,8 @@ pnpm run typecheck      # tsc -b
 
 ## 文档
 
+- **文档站**：<https://dsh-blue.dev/>（中文）· <https://dsh-blue.dev/en/>（English）—— 面向用户的文档。下方设计文档仍仅在仓库内。
+
 全部设计文档（中文）在 [docs/](docs/)：
 
 - [docs/blue-seams.md](docs/blue-seams.md) —— 缝清单：Blue 开的每条缝（契约、plain 默认），以及 harness 侧每个视觉表面由哪个 Blue 插件实现。

@@ -1,12 +1,16 @@
 packages:
   - 'packages/*'
   - 'packages/bundle/*'
+  - 'website'
 
 # pnpm 10+ hard-fails installs on unreviewed dependency build scripts
 # (strictDepBuilds). koffi is the Windows-only native boundary used by dsh
 # JSONL persistence (MoveFileExW); its script is unnecessary on Linux/macOS,
-# so it is denied here — install still succeeds.
+# so it is denied here — install still succeeds. esbuild (vite/vitepress's
+# bundler, pulled in by @dsh-blue/website) is allowed after review: its
+# postinstall links the platform binary the website build requires.
 allowBuilds:
+  esbuild: true
   koffi: false
 minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-agent-default-model@0.1.0-rc.7'

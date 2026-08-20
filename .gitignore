@@ -2,3 +2,5 @@ node_modules/
 lib/
 coverage/
 *.tsbuildinfo
+website/.vitepress/dist/
+website/.vitepress/cache/
