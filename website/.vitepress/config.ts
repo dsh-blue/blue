@@ -72,12 +72,12 @@ const sharedTheme = {
 
 // ── 导航：顶栏只保留“文档”与“插件市场”两个入口 ──────────────────────────────
 const navZh = [
-  { text: '文档', link: '/', activeMatch: '^/$|/(guide|features|reference|plugins)' },
+  { text: '文档', link: '/guide/', activeMatch: '/(guide|features|reference|plugins)' },
   { text: '插件市场', link: '/marketplace/', activeMatch: '^/marketplace' },
 ]
 
 const navEn = [
-  { text: 'Docs', link: '/en/', activeMatch: '^/en/$|/en/(guide|features|reference|plugins)' },
+  { text: 'Docs', link: '/en/guide/', activeMatch: '/en/(guide|features|reference|plugins)' },
   { text: 'Plugin marketplace', link: '/en/marketplace/', activeMatch: '^/en/marketplace' },
 ]
 
