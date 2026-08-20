@@ -68,6 +68,26 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/**
+ * Render a failure with its full cause chain — pi-ai's discovery errors say
+ * `could not reach <url>` and park the real reason (DNS, TLS, refused
+ * socket) in `cause`; without the chain the user sees the wrapper but not
+ * the truth.
+ * @param error - the thrown failure.
+ * @returns the message plus every nested cause's message, `: `-joined.
+ */
+function describeDeep(error: unknown): string {
+  const parts: string[] = []
+  let at: unknown = error
+  for (let depth = 0; depth < 5 && at instanceof Error; depth += 1) {
+    parts.push(at.message)
+    at = (at as { cause?: unknown }).cause
+  }
+  /* v8 ignore next -- the catch always hands an Error; the string arm is
+     a non-Error throw that never escapes pi-ai's own catch */
+  return parts.length > 0 ? parts.join(': ') : String(error)
+}
+
 /** One configured provider row of the picker panel. */
 export interface ProviderRow {
   /** The provider route id. */
@@ -335,7 +355,7 @@ async function tryDiscover(
     const code = (error as { code?: unknown }).code
     return {
       failure: {
-        message: describe(error),
+        message: describeDeep(error),
         ...(typeof code === 'string' && code.length > 0 ? { code } : {}),
       },
     }

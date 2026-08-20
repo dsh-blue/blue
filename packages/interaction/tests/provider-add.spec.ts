@@ -877,6 +877,32 @@ describe('runProviderAdd', () => {
     expect(bench.mutations).toEqual([])
   })
 
+  it('surfaces the underlying cause chain behind the discovery wrapper', async () => {
+    // `could not reach <url>` parks the real reason (DNS, TLS, refused
+    // socket) in `cause`; the abort must show it, not just the wrapper.
+    const root = new Error('unable to verify the first certificate')
+    const wrapped = new Error('could not reach https://tls.example.com/v1/models', { cause: new Error('fetch failed', { cause: root }) })
+    const bench = mountWizard({ discoveryError: wrapped })
+    const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(2) })
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(3) })
+    const form = current(bench.screen)
+    form.handleInput('tls-gw')
+    form.handleInput(KEY.enter)
+    form.handleInput('https://tls.example.com')
+    form.handleInput(KEY.enter)
+    form.handleInput('k')
+    form.handleInput(KEY.enter)
+    await expect(outcome).resolves.toBe(
+      'could not list models from the endpoint: could not reach https://tls.example.com/v1/models'
+      + ': fetch failed: unable to verify the first certificate')
+  })
+
   it('aborts with the classified reason when discovery fails', async () => {
     const bench = mountWizard({ discoveryError: new Error('could not reach https://gw3.example.com/models') })
     const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
