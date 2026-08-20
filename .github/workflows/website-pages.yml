@@ -1,0 +1,89 @@
+# Blue documentation website: build-check on PRs, build + deploy to GitHub
+# Pages on master (ADR D32). Chinese serves at the site root, English at /en/.
+# One-time setup: repo Settings → Pages → Build and deployment → Source must
+# be "GitHub Actions" before the first deploy can succeed.
+name: website-pages
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - .github/workflows/website-pages.yml
+      - website/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+  pull_request:
+    paths:
+      - .github/workflows/website-pages.yml
+      - website/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PRIMARY_NODE_VERSION: '24'
+
+jobs:
+  # PR gate: full install + VitePress build. The build fails on dead links by
+  # default (config sets no ignoreDeadLinks), so this catches breakage before
+  # merge. No Pages permissions on PRs.
+  check:
+    name: Build check (PR)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: website-check-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @dsh-blue/website run build
+
+  build:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pages: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/configure-pages@v6
+        id: pages
+      - run: pnpm --filter @dsh-blue/website run build
+        env:
+          DOCS_BASE: ${{ steps.pages.outputs.base_path }}/
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: website/.vitepress/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
