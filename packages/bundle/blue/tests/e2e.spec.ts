@@ -2426,7 +2426,7 @@ describe('blue whole-tree e2e', () => {
     const tree = await bootBlue([], { script: [] })
     const agent = await currentAgent(tree)
     await expect(executeCommand(tree, agent, '/provider add')).resolves.toEqual({
-      kind: 'success',
+      kind: 'error',
       text: 'provider configuration requires the host settings, credentials, and llm services',
     })
   })

@@ -660,6 +660,22 @@ export async function runProviderEdit(ctx: Context, display: ProviderAddDisplay,
 }
 
 /**
+ * Whether a provider-flow outcome line is a failure — the cue its notice
+ * paints error-red instead of plain (the dogfood ruling: a silent grey
+ * error row the user scrolls past is a bug).
+ * @param text - the outcome line the add/edit flow returned.
+ * @returns `true` for guard and failure lines.
+ */
+export function isProviderFlowError(text: string): boolean {
+  return text.startsWith('could not ')
+    || text.startsWith('provider configuration requires')
+    || text.startsWith('no configurable providers')
+    || text.startsWith('the endpoint listed no models')
+    || text.includes('has no stored profile')
+    || text.startsWith('every catalog vendor is already active')
+}
+
+/**
  * Run the Add Provider wizard to completion (or cancellation).
  * @param ctx - plugin context; `llm`, `settings`, and `credentials` are
  * resolved lazily.

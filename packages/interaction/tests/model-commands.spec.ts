@@ -649,8 +649,10 @@ describe('model-family commands', () => {
   it('/provider add answers the host-services guard without settings', async () => {
     const { ctx, agent } = await mount()
     const execution = await ctx.commands.execute(agent, '/provider add', signal())
+    // The guard is a failure — the command result carries kind error so the
+    // input layer flashes it red.
     expect(execution?.result).toEqual({
-      kind: 'success',
+      kind: 'error',
       text: 'provider configuration requires the host settings, credentials, and llm services',
     })
   })
@@ -716,7 +718,9 @@ describe('model-family commands', () => {
     overlay(screen).handleInput(KEY.down)
     overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => { expect(notices).toHaveLength(1) })
-    expect(notices[0]).toContain('provider configuration requires')
+    // Painted error-red (the fake error marker wraps the whole line).
+    expect(notices[0]).toContain('!provider configuration requires')
+    expect(notices[0]).toContain('llm services!')
 
     const noticesBefore = notices.length
     await ctx.commands.execute(agent, '/provider', signal())

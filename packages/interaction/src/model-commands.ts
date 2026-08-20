@@ -25,7 +25,7 @@ import { registerCommandAliases } from './command-meta.ts'
 import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
 import { EffortPanel, ModelPanel, type ModelPanelItem } from './model-panel.ts'
-import { ProviderPanel, runProviderAdd, runProviderEdit, type ProviderRow } from './provider-add.ts'
+import { isProviderFlowError, ProviderPanel, runProviderAdd, runProviderEdit, type ProviderRow } from './provider-add.ts'
 
 /** Render one failure reason for an error result. */
 function describe(error: unknown): string {
@@ -490,6 +490,11 @@ export function registerModelCommands(ctx: Context): () => void {
    * notice channel.
    * @param route - the provider route to scope to.
    */
+  /** Paint a provider-flow outcome: failures flash error-red. */
+  function paintFlowOutcome(display: { colors: { error(text: string): string } }, text: string): string {
+    return isProviderFlowError(text) ? display.colors.error(text) : text
+  }
+
   function pickModels(route: string): void {
     void (async () => {
       await openModelPicker(new AbortController().signal, route)
@@ -516,7 +521,7 @@ export function registerModelCommands(ctx: Context): () => void {
         return { kind: 'error', text: 'provider wizard is unavailable: the Blue screen is not mounted' }
       }
       const text = await runProviderAdd(ctx, display, pickModels)
-      return { kind: 'success', text }
+      return { kind: isProviderFlowError(text) ? 'error' : 'success', text }
     }
     if (argument.split(/\s+/)[0] === 'switch') {
       const name = argument.slice('switch'.length).trim()
@@ -560,7 +565,7 @@ export function registerModelCommands(ctx: Context): () => void {
           const text = await runProviderEdit(ctx, display, row.id)
           /* v8 ignore next -- cordis disposal kills the continuation on a
              dead context before the notice could fire */
-          if (!unloaded) getSharedEditor()?.notice?.(text)
+          if (!unloaded) getSharedEditor()?.notice?.(paintFlowOutcome(display, text))
         })()
       },
       onAdd: () => {
@@ -570,7 +575,7 @@ export function registerModelCommands(ctx: Context): () => void {
           /* v8 ignore next -- the unloaded side only runs when the tree
              tears down mid-wizard; cordis disposal already kills the
              continuation on a dead context before it reaches here */
-          if (!unloaded) getSharedEditor()?.notice?.(text)
+          if (!unloaded) getSharedEditor()?.notice?.(paintFlowOutcome(display, text))
         })()
       },
       onCancel: () => {
