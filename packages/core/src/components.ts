@@ -10,6 +10,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import {
+  CombinedAutocompleteProvider,
   Editor,
   Image,
   Markdown,
@@ -156,6 +157,29 @@ export interface EditorChromePaints {
   readonly slashTokenPaint: (text: string) => string
   /** Styling for the argument-hint ghost (`textMuted`). */
   readonly ghostHintPaint: (text: string) => string
+}
+
+/** Token boundary characters ending a non-mention prefix (the kimi set). */
+const MENTION_DELIMITERS = new Set([' ', '\t', '"', "'", '='])
+
+/**
+ * The token before the cursor when it is an `@` mention — the kimi
+ * `extractAtPrefix` port: scan back to the nearest path delimiter; the
+ * token from there must start with `@`. Quoted mentions degrade after the
+ * first enclosed space, the same corner kimi's app-level extraction has
+ * (the token restarts at the space).
+ * @param text - the text before the cursor on the cursor's line.
+ * @returns the mention token with its `@`, or `null` outside a mention.
+ */
+function mentionTokenBeforeCursor(text: string): string | null {
+  let start = 0
+  for (let i = text.length - 1; i >= 0; i -= 1) {
+    if (MENTION_DELIMITERS.has(text.charAt(i))) {
+      start = i + 1
+      break
+    }
+  }
+  return text.charAt(start) === '@' ? text.slice(start) : null
 }
 
 /** Delegate exposing a pi-tui `Editor` through the Blue contract. */
@@ -338,6 +362,32 @@ class EditorAdapter implements BlueEditor {
     // The onKey hook intercepts before delegation; true consumes the input.
     if (this.onKey?.(data) === true) return
     this.editor.handleInput(data)
+    this.reopenAutocompleteAfterInput()
+  }
+
+  /**
+   * The kimi `reopenAutocompleteAfterInput` port, plus a bare-`@` backstop:
+   * after any input event, re-open the completion dropdown when the mention
+   * token ends in `/` (directory drill-down — accepting a directory or
+   * typing the separator leaves no renderer trigger behind) or when the
+   * token is exactly `@` (a freshly opened mention — the renderer's own
+   * trigger fires inside `insertCharacter`, and this covers any input path
+   * that reaches the buffer without it). `tryTriggerAutocomplete` is
+   * private in 0.84.2; the structural cast (via `unknown`) is pinned by the
+   * components spec, the `getHistory` precedent.
+   */
+  private reopenAutocompleteAfterInput(): void {
+    if (this.editor.isShowingAutocomplete()) return
+    const { line, col } = this.editor.getCursor()
+    /* v8 ignore next -- the real editor always renders the cursor line; the fallback only satisfies the index-access checker */
+    const textBeforeCursor = (this.editor.getLines()[line] ?? '').slice(0, col)
+    const token = mentionTokenBeforeCursor(textBeforeCursor)
+    if (token === null) return
+    if (token !== '@' && !textBeforeCursor.endsWith('/')) return
+    // The cast lands on a local — the repo's no-semicolon style cannot start
+    // a statement with `(`.
+    const trigger = this.editor as unknown as { tryTriggerAutocomplete(): void }
+    trigger.tryTriggerAutocomplete()
   }
 
   invalidate(): void {
@@ -539,6 +589,20 @@ export class BlueComponentsService extends Service implements BlueComponents {
       if (dimensions !== null) return { width: dimensions.widthPx, height: dimensions.heightPx }
     }
     return undefined
+  }
+
+  /**
+   * Create the `@`-mention completion source: the renderer's combined
+   * provider constructed with no commands, so only its `@` branch ever runs.
+   * `BlueAutocompleteProvider` is structurally identical to the renderer's
+   * provider type, so the instance passes through unwrapped — the renderer
+   * type never crosses the Blue signature.
+   * @param basePath - the project root relative paths are reported from.
+   * @param fdPath - the `fd` binary to spawn, or `null` when unavailable.
+   * @returns the mention completion source.
+   */
+  createFileMentionProvider(basePath: string, fdPath: string | null): BlueAutocompleteProvider {
+    return new CombinedAutocompleteProvider([], basePath, fdPath)
   }
 
   /**

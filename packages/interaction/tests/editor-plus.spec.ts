@@ -1,8 +1,9 @@
 /**
  * Tests for the `blue-editor-plus` plugin: prompt/bash mode switching, shell
  * execution and echo (fake and default executors), the dispatching
- * autocomplete provider (slash commands and `@` files, fd and fs-fallback
- * listing), and the shared-reference attach/detach lifecycle.
+ * autocomplete provider (slash commands and `@` mentions — delegation to the
+ * L0 fd pipeline with the fs fallback behind it), and the shared-reference
+ * attach/detach lifecycle.
  */
 
 import { mkdirSync, mkdtempSync, writeFileSync, chmodSync } from 'node:fs'
@@ -16,15 +17,16 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import * as inputPlugin from '../src/input-plugin.ts'
 import * as editorPlus from '../src/editor-plus.ts'
+import * as fileMention from '../src/file-mention.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
 import { clearDraft, stashHistory } from '../src/draft-stash.ts'
-import { fakeBlueContext, FakeBlueEditor, KEY, type FakeScreen } from './fakes.ts'
+import { fakeBlueContext, FakeBlueEditor, KEY, type FakeBlueComponents, type FakeScreen } from './fakes.ts'
 
 const signal = (): AbortSignal => new AbortController().signal
 
 afterEach(() => {
   editorPlus.setShellExecutor(undefined)
-  editorPlus.setFdRunner(undefined)
+  fileMention.setFdProbe(undefined)
   clearSharedEditor()
   // The draft stash is module state: don't leak unsubmitted text or
   // submitted history into the next test's freshly mounted editor.
@@ -36,13 +38,15 @@ afterEach(() => {
 async function mount(options: { withAgent?: boolean, plusFirst?: boolean } = {}): Promise<{
   ctx: Context
   screen: FakeScreen
+  components: FakeBlueComponents
   editor: FakeBlueEditor
+  hint: BlueComponent
   agent: Agent
   followup: ReturnType<typeof vi.fn>
   inputFiber: { dispose(): Promise<void> }
   plusFiber: { dispose(): Promise<void> }
 }> {
-  const { ctx, screen } = fakeBlueContext()
+  const { ctx, screen, components } = fakeBlueContext()
   await ctx.plugin(SessionStore)
   await ctx.plugin(CommandRuntime)
   const session = ctx.sessions.create(SessionId('editor-plus-spec'))
@@ -52,10 +56,14 @@ async function mount(options: { withAgent?: boolean, plusFirst?: boolean } = {})
   const plusFiber = options.plusFirst === true ? await ctx.plugin(editorPlus) : undefined
   const inputFiber = await ctx.plugin(inputPlugin)
   const editor = screen.children[0] as FakeBlueEditor
+  // blue-input mounts the editor first, then the hint line below it.
+  const hint = screen.children[1] as BlueComponent
   return {
     ctx,
     screen,
+    components,
     editor,
+    hint,
     agent,
     followup,
     inputFiber,
@@ -657,7 +665,7 @@ describe('blue-editor-plus argument-hint ghost', () => {
   })
 })
 
-describe('blue-editor-plus file completion', () => {
+describe('blue-editor-plus @ mentions', () => {
   const savedPath = process.env.PATH
   const savedCwd = process.cwd()
 
@@ -671,13 +679,17 @@ describe('blue-editor-plus file completion', () => {
     ctx.emit('blue/input-editor-changed')
   }
 
-  /** A project fixture: regular files, a hidden tree, and node_modules. */
+  /**
+   * A project fixture: a source tree, a hidden tree, a spaced filename, and
+   * node_modules (the one tree the fallback never yields).
+   */
   function fixture(): string {
     const dir = mkdtempSync(join(tmpdir(), 'blue-plus-files-'))
-    mkdirSync(join(dir, 'src'), { recursive: true })
+    mkdirSync(join(dir, 'src'))
     writeFileSync(join(dir, 'src', 'a.ts'), 'a')
     writeFileSync(join(dir, 'src', 'b.ts'), 'b')
     writeFileSync(join(dir, 'top.md'), 'top')
+    writeFileSync(join(dir, 'a b.txt'), 'spaced')
     mkdirSync(join(dir, '.hidden'))
     writeFileSync(join(dir, '.hidden', 'secret.ts'), 'x')
     mkdirSync(join(dir, 'node_modules', 'pkg'), { recursive: true })
@@ -685,99 +697,145 @@ describe('blue-editor-plus file completion', () => {
     return dir
   }
 
-  it('suggests fd-listed files matching the @ prefix', async () => {
-    const { editor } = await mount()
-    editorPlus.setFdRunner(() => Promise.resolve(['src/a.ts', 'src/b.ts', 'top.md']))
+  it('delegates @ suggestions to the L0 mention source while fd is available', async () => {
+    fileMention.setFdProbe(async () => 'fd')
+    const { editor, components } = await mount()
+    await fileMention.detectFdPath()
+    const delegated = vi.fn(async () => ({
+      items: [{ value: '@src/a.ts', label: 'a.ts', description: 'src/a.ts' }],
+      prefix: '@sr',
+    }))
+    components.mentionGetSuggestions = delegated
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
-    const suggestions = await provider.getSuggestions(['@sr'], 0, 3, { signal: signal() })
-    expect(suggestions?.prefix).toBe('sr')
-    expect(suggestions?.items).toEqual([
-      { value: 'src/a.ts', label: 'src/a.ts' },
-      { value: 'src/b.ts', label: 'src/b.ts' },
-    ])
+    const options = { signal: signal() }
+    const suggestions = await provider.getSuggestions(['see @sr'], 0, 7, options)
+    expect(suggestions).toEqual({
+      items: [{ value: '@src/a.ts', label: 'a.ts', description: 'src/a.ts' }],
+      prefix: '@sr',
+    })
+    expect(delegated).toHaveBeenCalledWith(['see @sr'], 0, 7, options)
   })
 
-  it('applies a file completion keeping the @ mention marker', async () => {
-    const { editor } = await mount()
+  it('applies an @ completion through the delegated source', async () => {
+    const { editor, components } = await mount()
+    components.mentionApplyCompletion = (lines, cursorLine, cursorCol) => ({
+      lines: ['applied'],
+      cursorLine,
+      cursorCol,
+    })
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
-    const applied = provider.applyCompletion(['see @sr'], 0, 7, { value: 'src/a.ts', label: 'src/a.ts' }, 'sr')
-    expect(applied).toEqual({ lines: ['see @src/a.ts'], cursorLine: 0, cursorCol: 13 })
+    const applied = provider.applyCompletion(['see @sr'], 0, 7, { value: '@src/a.ts', label: 'a.ts' }, '@sr')
+    expect(applied).toEqual({ lines: ['applied'], cursorLine: 0, cursorCol: 7 })
   })
 
   it('gates explicit file completion on an @ token', async () => {
     const { editor } = await mount()
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
     expect(provider.shouldTriggerFileCompletion?.(['@x'], 0, 2)).toBe(true)
+    expect(provider.shouldTriggerFileCompletion?.(['see @x'], 0, 6)).toBe(true)
     expect(provider.shouldTriggerFileCompletion?.(['hello'], 0, 5)).toBe(false)
     expect(provider.shouldTriggerFileCompletion?.(['/cmd'], 0, 4)).toBe(false)
     expect(provider.shouldTriggerFileCompletion?.([], 0, 0)).toBe(false)
   })
 
-  it('falls back to the fs scanner when fd is unavailable, skipping hidden and node_modules trees', async () => {
+  it('lists one level for a bare @ without consulting fd, and drills on request', async () => {
+    fileMention.setFdProbe(async () => 'fd')
+    const { ctx, editor, components } = await mount()
+    await fileMention.detectFdPath()
+    const delegated = vi.fn(async () => ({ items: [{ value: '@zz.ts', label: 'zz.ts' }], prefix: '@' }))
+    components.mentionGetSuggestions = delegated
+    const root = fixture()
+    process.chdir(root)
+    reattach(ctx)
+    await fileMention.detectFdPath()
+    const provider = editor.autocompleteProvider as BlueAutocompleteProvider
+    // The empty-tail token takes the deterministic one-level listing —
+    // fd is never asked.
+    const bare = await provider.getSuggestions(['@'], 0, 1, { signal: signal() })
+    expect(bare?.items.map(item => item.value)).toEqual(['@.hidden/', '@src/', '@"a b.txt"', '@top.md'])
+    const drill = await provider.getSuggestions(['@src/'], 0, 5, { signal: signal() })
+    expect(drill?.items.map(item => item.value)).toEqual(['@src/a.ts', '@src/b.ts'])
+    expect(delegated).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the fs scanner for fd-less query-bearing tokens', async () => {
+    fileMention.setFdProbe(async () => null)
     const { ctx, editor } = await mount()
     const root = fixture()
     process.chdir(root)
     reattach(ctx)
-    editorPlus.setFdRunner(() => Promise.resolve(null))
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
-    const all = await provider.getSuggestions(['@'], 0, 1, { signal: signal() })
-    expect(all?.items.map(item => item.value).sort()).toEqual(['src/a.ts', 'src/b.ts', 'top.md'])
     const scoped = await provider.getSuggestions(['@src/a'], 0, 6, { signal: signal() })
-    expect(scoped?.items).toEqual([{ value: 'src/a.ts', label: 'src/a.ts' }])
+    expect(scoped?.items).toEqual([{ value: '@src/a.ts', label: 'a.ts', description: 'src/a.ts' }])
   })
 
-  it('yields an empty suggestion set for an unreadable tree', async () => {
+  it('returns null when the fallback finds no match in an unreadable tree', async () => {
+    fileMention.setFdProbe(async () => null)
     const { ctx, editor } = await mount()
     const root = fixture()
     mkdirSync(join(root, 'locked'))
     chmodSync(join(root, 'locked'), 0o000)
     process.chdir(root)
     reattach(ctx)
-    editorPlus.setFdRunner(() => Promise.resolve(null))
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
-    const suggestions = await provider.getSuggestions(['@x'], 0, 2, { signal: signal() })
-    expect(suggestions?.items).toEqual([])
+    const suggestions = await provider.getSuggestions(['@zzz'], 0, 4, { signal: signal() })
+    expect(suggestions).toBeNull()
   })
 
-  it('caps the fs scanner at the suggestion limit', async () => {
+  it('caps the fs fallback at the suggestion limit', async () => {
+    fileMention.setFdProbe(async () => null)
     const { ctx, editor } = await mount()
     const root = mkdtempSync(join(tmpdir(), 'blue-plus-many-'))
     for (let index = 0; index < 205; index += 1) writeFileSync(join(root, `f${String(index).padStart(3, '0')}.txt`), 'x')
     process.chdir(root)
     reattach(ctx)
-    editorPlus.setFdRunner(() => Promise.resolve(null))
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
     const suggestions = await provider.getSuggestions(['@'], 0, 1, { signal: signal() })
-    expect(suggestions?.items).toHaveLength(200)
+    expect(suggestions?.items).toHaveLength(fileMention.MAX_FALLBACK_SUGGESTIONS)
   })
 
-  it('uses the default fd runner when fd is on PATH', async () => {
-    const { ctx, editor } = await mount()
+  it('falls back to the fs scanner when the fd source throws mid-session', async () => {
+    fileMention.setFdProbe(async () => 'fd')
+    const { ctx, editor, components } = await mount()
+    await fileMention.detectFdPath()
+    components.mentionGetSuggestions = async () => {
+      throw new Error('fd spawn failed')
+    }
     const root = fixture()
-    const bin = mkdtempSync(join(tmpdir(), 'blue-plus-bin-'))
-    const fd = join(bin, 'fd')
-    writeFileSync(fd, '#!/bin/sh\nprintf "fd/a.ts\\nfd/b.ts\\n"\n')
-    chmodSync(fd, 0o755)
-    process.env.PATH = `${bin}:${savedPath ?? ''}`
     process.chdir(root)
     reattach(ctx)
-    const provider = editor.autocompleteProvider as BlueAutocompleteProvider
-    const suggestions = await provider.getSuggestions(['@fd'], 0, 3, { signal: signal() })
-    expect(suggestions?.items).toEqual([
-      { value: 'fd/a.ts', label: 'fd/a.ts' },
-      { value: 'fd/b.ts', label: 'fd/b.ts' },
-    ])
-  })
-
-  it('falls back when the default fd runner cannot spawn fd', async () => {
-    const { ctx, editor } = await mount()
-    const root = fixture()
-    const empty = mkdtempSync(join(tmpdir(), 'blue-plus-empty-bin-'))
-    process.env.PATH = empty
-    process.chdir(root)
-    reattach(ctx)
+    await fileMention.detectFdPath()
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
     const suggestions = await provider.getSuggestions(['@top'], 0, 4, { signal: signal() })
-    expect(suggestions?.items).toEqual([{ value: 'top.md', label: 'top.md' }])
+    expect(suggestions?.items).toEqual([{ value: '@top.md', label: 'top.md', description: 'top.md' }])
+  })
+
+  it('notices in the hint line when the mention matches nothing', async () => {
+    fileMention.setFdProbe(async () => null)
+    const { ctx, editor, hint } = await mount()
+    const root = fixture()
+    process.chdir(root)
+    reattach(ctx)
+    const provider = editor.autocompleteProvider as BlueAutocompleteProvider
+    // The empty-session-cwd corner: a directory with nothing to list (and
+    // equally a prefix with no match) closes the dropdown without items —
+    // the hint line carries the feedback instead of silence.
+    const suggestions = await provider.getSuggestions(['@zzz'], 0, 4, { signal: signal() })
+    expect(suggestions).toBeNull()
+    expect(hint.render(80).join('\n')).toContain('no matching files under the session cwd')
+  })
+
+  it('stays quiet when an aborted mention round returns nothing', async () => {
+    fileMention.setFdProbe(async () => null)
+    const { ctx, editor, hint } = await mount()
+    const root = fixture()
+    process.chdir(root)
+    reattach(ctx)
+    const provider = editor.autocompleteProvider as BlueAutocompleteProvider
+    const controller = new AbortController()
+    controller.abort()
+    const suggestions = await provider.getSuggestions(['@zzz'], 0, 4, { signal: controller.signal })
+    expect(suggestions).toBeNull()
+    expect(hint.render(80).join('\n')).not.toContain('no matching files')
   })
 })

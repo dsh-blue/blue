@@ -105,7 +105,7 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 
 - **render intent 注册表**（`ctx.blueIntents`）：`diff` / `terminal` 呈现器落地，generic 呈现降级为第一个注册者（✅ S7 已落地）
 - **transcript 性能（滑动窗口）**：保留最近 N turn，旧 turn 组件与条目整体销毁；turn 内旧 step 折叠为摘要行；渲染缓存策略固化（✅ S7 已落地窗口+step 折叠）
-- **图片**：Editor 粘贴图片（L0 `createImage` + 剪贴板工具 + `dsh-attachment` 借力）、`@` 附件（✅ S7 已落地粘贴路径：`blue-attachments` + `blue-paste-image`；`@` 附件待做）
+- **图片**：Editor 粘贴图片（L0 `createImage` + 剪贴板工具 + `dsh-attachment` 借力）、`@` 附件（✅ S7 已落地粘贴路径：`blue-attachments` + `blue-paste-image`；✅ S22 已落地 `@` 附件——语义层纯文本 mention（D31，kimi 同构：补全插 `@路径` 文本、提交零解析、模型自助 read/read_image，结构化附件经调研否决——harness 无 FileBlock 且 DeepSeek 路由 text-only 会毁 turn），体验层 kimi 全量对齐：core `createFileMentionProvider`（上游 0.84.2 同源 fd 管线：scoped query/子串打分/top-20/引号值/目录下钻 reopen 钩子）+ interaction `file-mention.ts`（fd PATH 探测 + fs fallback 2000/50））
 - **弹窗体系完整化**：model selector、审批 diff 全屏预览（100% overlay）（⏸️ 暂缓 2026-08-20：暂不做，尚未调研清楚——交互形态与参照系对照待调研后再立项）、permission preset 设置面板（待上游 `permissionPresets`）
 - **外部编辑器**（Ctrl-G，需 L0 渲染器暂停配合）
 - **OSC 8 可点链接、OSC 52 复制、鼠标滚轮/文本选择**（alt-screen）
