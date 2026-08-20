@@ -244,8 +244,8 @@ L0  core 内部    终端生命周期 · OSC 11 · alt-screen · 全局键分发
 | `ctx.commands.register` | 注册 slash 命令，自动进入 Blue 的补全菜单 | ✅ |
 | `ctx.userQuestions.registerProvider` | 接管提问交互（Blue 是默认 provider，可被替换） | ✅ |
 | `'approval/request'` waterfall | 接管/包裹审批应答 | ✅ |
-| `ctx.permissionPresets` | 注册权限模式，Blue 模式 UI 自动列出 | ⛔ rc.7 不存在（仅 `approval.setPolicy` 二元 `ask`/`never`）；待上游做缝 |
-| `ctx.sessionProjections` | 提供 todos 等投影，pane-todo 自动呈现 | ⛔ rc.7 不存在；todos 改走 `todo/write` 会话事件自折叠 |
+| `ctx.permissionPresets` | 注册权限模式，Blue 模式 UI 自动列出 | ✅ rc.7+ 已落地（`/permission` 命令 + `permissions` 投影随 base；自定义注册 API 无）。2026-08-21 注：运行时状态以 [blue-seams.md](./blue-seams.md) §3 为准（选择器面板 S24，D33） |
+| `ctx.sessionProjections` | 提供 todos 等投影，pane-todo 自动呈现 | ✅ rc.7+ 已落地（`register/onChanged/checkpoint/restore`）；pane-todo 维持 `todo/write` 事件折叠，改挂为可选。2026-08-21 注：以 [blue-seams.md](./blue-seams.md) §3 为准 |
 | `ctx.tools.register` / `tools/*` | 定制 agent-loop 工具，经 render intent 自动呈现 | ✅（`dsh-tools`：registry + `ctx.tools.execute`/`guard` + `tools/pre-execute` 瀑布） |
 | `ctx.agents` / `ctx.sessions` | 会话与 agent 全量操作 | ✅ |
 

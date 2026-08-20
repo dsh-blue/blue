@@ -228,7 +228,38 @@
 - **后果**：vitepress/vite 进入根 lockfile（esbuild 构建脚本经审查放行，`allowBuilds: esbuild: true`）；仓内包版本（0.1.0-rc.7）与站点版本（v0.1.0-rc.1）暂时并存——前者是未发布的本地状态，发版时五包统一改为 0.1.0-rc.1；网站成为新的双语同步面（zh 顶层为源、en 镜像逐页跟随，en 侧边栏只列已存在页，防死链断构建）；键位/命令/主题 token 三页内容必须从源码提取（`packages/interaction/src/keys.ts`、`packages/interaction/src/commands-plugin.ts`、`packages/core/src/theme-*.ts`），源码变更需同步改页；github.io 在中国大陆可达性不稳，自定义域名为未来缓解项。
 
 
+## P2 命令系列决策（四家命令面实施期，2026-08-21）
+
+### D33. `/permission` 与 `/preset` 分立：dsh 的两个 preset 域各归其位（用户裁决，2026-08-21）
+
+- **背景**：dsh 里 "preset" 一词有两个互不相干的域。**permission preset**（`dsh-permission-presets`，dsh-base 装载）：sandbox 模式 + approval policy 的命名束，`/permission` 命令自带（rc.8 base 扩表为 read-only / workspace-write / danger-full-access，`custom` 为只读派生态），`permissions` 投影 + `permission/preset` 事件 + settings 持久化齐全，会话内随时可切。**agent preset**（`dsh-agent-presets`）：插件组合预设（standard/minimal/code/cordis，一个目录 = 一个 `agent.cordis.yml`），决定工具目录/persona/prompt sections；`ctx.agentPresets.list/mount/recompose` 存在但 **`recompose` 仅对未产出任何内容的空会话合法**（`sessionBlank` 检查在 wire 层 apiproxy 强制，进程内直调时责任在调用方），切换后须 append `agent-preset/selected` 事件保持"模型可见⟺已记录"；无 slash 命令、无 CLI flag，且 **该插件行不在 dsh-base**（仅 web-app bundle 装载）——Blue 骑 dsh-base，默认无 `ctx.agentPresets`。
+- **决策**（用户裁决，A/B 都做）：A 的命令名是 **`/permission`**——不另注册（上游命令本体随 base 到货，`/help` 自动枚举），Blue 只做**选择器面板**：读 `permissions` 投影渲染选项 + 当前值，选中提交 `/permission <name>`（与命令同一条写路径，Web 端同款范式）+ `danger-full-access` 显式风险确认 gate，排 **S24**（自治授权族同期）。B 的命令名是 **`/preset`**——Blue 自注册新命令，排 **S28**：无参列 `ctx.agentPresets.list()`、带参 `recompose`；Blue bundle 的 `cordis.patch.yml` 增 `agent-presets` 行 + bundle 包依赖 `@deepseek-ai/dsh-agent-presets`（`dsh plugin add` 时随装；CLI 启动器 `profile-boot` 检测到该行会自动注入 shipped preset root，四个内置预设即刻可列）。
+- **理由**：命令名一次拆清歧义——用户语义里 "preset" = 换装组合（B），"permission" = 授权束（A）；A 不重复注册是与 `/plan` 同款的"上游自带命令零实现"纪律；B 的组合行由 Blue 自带是因为上游只把它当 web-app 的配置，TUI profile 想要就得自己声明。
+- **后果**：`/preset` 必须**自建 sessionBlank 守卫**（进程内直调没有 wire 层 `agent-preset-locked` 强制；会话开始后切换会毁工具调用重放，产品规则即锁死）+ 切换成功后 append `agent-preset/selected` 事件；预设间能力面差异大（minimal 无 plan mode/compaction）——切换后 Blue 的能力探测一律走投影/键缺失而非硬编码预设差异；自定义 permission preset 的运行时注册 API 上游没有（表由组合 YAML 固定，README 明示），残余缝**不请求**（面板消费现成投影已够）；`permission.defaultPreset` settings 只影响新会话，面板上切换的是会话内即时值。
+
+### D34. `#` 为 skills 提示符：技能不进 slash 命名空间，经上游手势路径消费（用户裁决，2026-08-21）
+
+- **背景**：CC/kimi 把技能做成 slash 命令（`/skill-name`、`/skill:name`）。rc.8 核实：上游的调用机制是**手势路径**——`tool-skill` 的 `agent/pre-step` 监听器扫描本步认领的 user 消息（仅 `source.kind === 'user'`）中的 `/name` token（正则 `/(^|\s)\/([a-z0-9]+(?:-[a-z0-9]+)*)(?=\s|$)/g`，词边界、句中任意位置、去重），命中 user-invocable 技能即把渲染后技能体注入为 instructions 消息；官方契约原话 "every client shares one deterministic path **with no dedicated invocation wire**"。Web 客户端把技能混进 `/` 补全（命令源 order 0、技能源 order 2、同名命令赢、`onPick` 落 `/name ` 字面文本）。Blue 的 `input-plugin.ts:252-274` 对 `parseCommand` 命中但未注册的行拦成 `unknown command`——照抄 web 混排就得改输入层裁决，且 slash 命名空间被动态技能目录污染。
+- **决策**（用户裁决）：**`#` 为 skills 提示符，UI 行为与 `@` 文件补全同构**（D31 形态复用）。`#` 弹补全列 user-invocable 技能（`ctx.skills.list({scope})` + `isUserInvocable` 过滤，`skills/change` 失效重拉目录缓存）；选中插入 `#name` 字面文本；**提交时 SubmitTransformer 把 `#name` token 重写为 `/name`**（仅命中目录的技能名；保证重写后 token 前置空白以对手势正则的 `(^|\s)` 边界），消息照常 `agent.followup`——上游 pre-step 确定性注入，resume/replay 语义完整。slash 命名空间保持封闭（只有注册命令）。`/skills` 列表命令仍做（列 name/description/whenToUse/来源层）。排 **S29**。
+- **理由**：与 D31 `@` mention 同构的投资结构——提示符只是补全体验投资，语义层零自研解析；手势路径是上游唯一调用通路（无 invoke wire 可调），客户端伪造注入会破坏"一条确定性路径"契约与重放安全；`#` 与 `/` 分流使命名空间天然分层（命令 = 封闭注册面，技能 = 开放发现面），并完全绕开输入层命令裁决的拦截问题（`#` 开头的行不经 `parseCommand`，无 admission miss 可言）。
+- **后果**：markdown 标题行是天然误触发面——触发规则须限定 `#` 后紧随非空字符才弹下拉（`# 标题` 的空格形态不触发）🔍 实施期定；未命中技能的 `#tag` 原样保留为普通文本（模型自理）；会话日志记录的是重写后的 `/name` 行，transcript 回显与用户输入差一个前导字符（接受；呈现层映射回来为可选优化 ⚠️）；注入的技能体按 D28（注入上下文默认隐藏）零呈现；**不桥接 `ctx.commands`**——`command/run|done` 是免模型 turn 的本地语义，技能调用必经模型 turn（instructions 注入），桥接是错语义；`ctx.skills`/`skill-filesystem`/`tool-skill` 均在 dsh-base 装载，零上游依赖。
+
+### D35. 用户自建命令 = 技能文件，不做独立 commands-filesystem 机制（用户裁决，2026-08-21）
+
+- **背景**：CC 的 `.claude/commands/*.md` 是用户自建 slash 命令的参照形态。rc.8 核实：上游**无任何**文件系统命令发现机制（`dsh-commands` 仅四源文件，无 fs provider，settings 无命令命名空间）；但 `skill-filesystem` 的六层发现根现成（`.dsh/skills` → `.agents/skills` → `customSkillDirs`（组合配置）→ `~/.dsh/skills` → `~/.agents/skills` → bundled，`SKILL.md` 或平铺 `<name>.md`，frontmatter `name`/`description`/`user-invocable`/`disable-model-invocation`，chokidar watch → `skills/change`）。CC 命令的 prompt 模板语义（`$ARGUMENTS` 展开）与技能 instructions 注入同构；本地 handler 语义（免模型 turn）上游只有 `ctx.commands` 有。
+- **决策**（用户裁决）：**不做**。用户自建命令的唯一形态 = 在发现根写技能文件，经 D34 的 `#` 管线调用；不建 `.dsh/commands/*.md` provider，不提上游缝（原"路线 B"撤销）。
+- **理由**：一条管线一套文档——`#` 补全 + 手势注入 + `/skills` 列表对内置与自建技能一视同仁，用户零新概念；CC 侧 commands 与 skills 本就在合并；维护两套用户可见自定义面成本不值。
+- **后果**：用户文档（website）需给出"自建命令 = 写一个 SKILL.md"的引导页（含 frontmatter 说明与目录表）；`customSkillDirs` 是团队级批量注入面（组合 config，非 settings）；本地脚本命令语义（免模型 turn 的用户命令）不存在，需要时再议。
+
+### D36. `/mcp` 只读列举 + Blue 安装即带 dsh-mcp-client（用户裁决，2026-08-21）
+
+- **背景**：`dsh-mcp-client` 一实例一服务器（stdio / Streamable HTTP），工具自动注册为 `mcp__<server>__<tool>`，指数退避重连 + `tools/list_changed` 重同步；CLI 携带该依赖但**默认组合不启用**（安全姿态：每个服务器命令是沙箱外可信可执行代码）；管理面全缺——不 emit 任何 cordis 事件（状态只写 logger）、无 `listServers`/启停 API（`ConnectionHandle` 模块私有；重连预算耗尽后唯一恢复是 entry 重载或 Host 重启）、无 Resources/Prompts 桥。进程内只读可行：`ctx.loader.entries()` 过滤 `moduleName` 得归一化运行时配置（注意 profile 根 `cordis.yml` 每次启动被重写为空，不可读磁盘那条路）+ `ctx.tools.schemas()` 按 `mcp__` 前缀分组 + `tools/change` 重拉 + fiber phase 近似状态（坑：`failOnStartupError:false` 时 fiber active ≠ 已连接）。
+- **决策**（用户裁决）：**做 `/mcp`**，排 **S28**（与 `/tools` 同能力源 `schemas()`）：服务器列表（serverName/transport/命令或 URL/超时/重连参数）+ 每服务器工具清单 + 近似连接状态 + 会话中 `mcp__` 徽章的说明。Blue bundle 的包依赖以 D33 带 `@deepseek-ai/dsh-agent-presets` 的同款方式**加 `@deepseek-ai/dsh-mcp-client`**（上游默认不装，装 Blue 时装上，钉 rc 版本随仓库节奏）；**服务器声明仍走用户 profile patch 层**（上游原生配置通道，HMR 热生效——改文件即运行时增删服务器），Blue 不在 settings 里造平行配置面。管理面缝维持 §7 #6。
+- **理由**：只读面零上游依赖即刻可做；配置归配置层（cordis patch 是上游唯一声明的配置形态，settings 无 mcp 命名空间，造平行面会双源漂移）；安全姿态继承上游——声明一个服务器 = 显式同意运行一段沙箱外代码，这个同意动作留在配置文件里可审计。
+- **后果**：`/mcp` 面板遇零服务器时引导到 profile patch 文档（而非提供"添加服务器"表单）；重连预算耗尽的服务器只能标注"工具已注销，需重载插件或重启"（无重连 API）；`tools/change` 不在 API gateway 转发白名单（Blue 进程内 `ctx.on` 直接可用，远程形态为架构备忘）；每服务器状态事件与启停 API 维持上游缝请求（§7 #6，P3 nice）。
+
 ## 已知遗留（MVP 有意为之）
+
 
 - `/quit` 在 agent attach 前输入会显示 "no active session" 而不退出（input-plugin 在命令分发前检查 current agent）
 - alt-screen、自定义键位属 P1/P2

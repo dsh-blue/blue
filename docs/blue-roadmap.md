@@ -106,10 +106,10 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 - **render intent 注册表**（`ctx.blueIntents`）：`diff` / `terminal` 呈现器落地，generic 呈现降级为第一个注册者（✅ S7 已落地）
 - **transcript 性能（滑动窗口）**：保留最近 N turn，旧 turn 组件与条目整体销毁；turn 内旧 step 折叠为摘要行；渲染缓存策略固化（✅ S7 已落地窗口+step 折叠）
 - **图片**：Editor 粘贴图片（L0 `createImage` + 剪贴板工具 + `dsh-attachment` 借力）、`@` 附件（✅ S7 已落地粘贴路径：`blue-attachments` + `blue-paste-image`；✅ S22 已落地 `@` 附件——语义层纯文本 mention（D31，kimi 同构：补全插 `@路径` 文本、提交零解析、模型自助 read/read_image，结构化附件经调研否决——harness 无 FileBlock 且 DeepSeek 路由 text-only 会毁 turn），体验层 kimi 全量对齐：core `createFileMentionProvider`（上游 0.84.2 同源 fd 管线：scoped query/子串打分/top-20/引号值/目录下钻 reopen 钩子）+ interaction `file-mention.ts`（fd PATH 探测 + fs fallback 2000/50））
-- **弹窗体系完整化**：model selector、审批 diff 全屏预览（100% overlay）（⏸️ 暂缓 2026-08-20：暂不做，尚未调研清楚——交互形态与参照系对照待调研后再立项）、permission preset 设置面板（待上游 `permissionPresets`）
+- **弹窗体系完整化**：model selector、审批 diff 全屏预览（100% overlay）（⏸️ 暂缓 2026-08-20：暂不做，尚未调研清楚——交互形态与参照系对照待调研后再立项）、permission preset 选择器面板（✅ 上游已解锁——rc.7+ `dsh-permission-presets` 在 base 自带 `/permission` 命令 + `permissions` 投影；Blue 面板 S24 落地，D33）
 - **外部编辑器**（Ctrl-G，需 L0 渲染器暂停配合）
 - **OSC 8 可点链接、OSC 52 复制、鼠标滚轮/文本选择**（alt-screen）
-- **模式命令**（`/yolo` `/plan` `/compact` `/model` 会话中切换）：随上游能力缝落地逐个接入（实施清单已定稿：[blue-commands-plan.md](./blue-commands-plan.md) 2026-08-20——批次 1 纯 Blue 侧零上游依赖可先行，⛔ 项随缝接入）（✅ 2026-08-20 命令别名机制先行落地：`/quit` 别名 `/q` `/exit`，kimi 式执行时解析，机制见 blue-commands-plan §2.12）
+- **模式命令**（`/yolo` `/plan` `/compact` `/model` 会话中切换）：随上游能力缝落地逐个接入（实施清单已定稿：[blue-commands-plan.md](./blue-commands-plan.md) 2026-08-20——批次 1 纯 Blue 侧零上游依赖可先行，⛔ 项随缝接入）（✅ 2026-08-20 命令别名机制先行落地：`/quit` 别名 `/q` `/exit`，kimi 式执行时解析，机制见 blue-commands-plan §2.12；**2026-08-21 四裁决 D33-D36**：`/permission` 选择器面板 S24（上游命令已到货）；`/preset`（agent 组合预设，空会话切换——Blue bundle 加 agent-presets 行）与 `/mcp`（只读列举——bundle 带 dsh-mcp-client 依赖）排 S28；`#` skills 提示符 + `/skills` 列表排 S29（技能不进 slash 命名空间，调用走上游手势路径）；用户自建命令 = 技能文件，不做独立机制）
 - 子 agent / Task 工具的树形呈现组件（经 intent 缝）
 
 **验收**：5 万行级 session resume 后滚动流畅；参照系产品的常用交互有对应物或明确的"不做"结论。（2026-08-20 S17 期间 dogfood 实测：主屏模式下输出中移动终端滚动条会导致会话流乱跳——pi-tui 差分渲染的内部视口记账与终端 scrollback 脱节，主屏模式不可修复；“滚动流畅”验收以 **L0 alt-screen 项目**为前提，详见 p2-visual §7 六轮注记。⏸️ 2026-08-20 裁定暂不考虑实现 TuiAltScreen——该条验收随之挂起，主屏滚动冲突接受为已知边界；OSC 8/52/鼠标等标注 (alt-screen) 的条目维持门控。）
@@ -149,7 +149,7 @@ Blue 不是封闭应用，而是一组可被下游插件定制的 surface。定�
 | P1 | `blueTheme` provider 替换（主题插件族 + `/theme`） | 提供整套新主题，运行时切换 |
 | P1 | `ctx.blueStatus`（状态栏条目注册表，transcript 提供） | 注册状态栏条目；或整个替换 footer 插件 |
 | P1 | `blueKeymap` 全局动作（`BlueKeyAction.handler`） | 注册焦点无关的全局快捷键 |
-| P1 | `ctx.permissionPresets`（harness，⛔ S0 已核实 rc.7 不存在，待上游做缝） | 注册自定义 preset mode，Blue 模式 UI 自动列出 |
+| P1 | `ctx.permissionPresets`（harness，✅ rc.7 已落地——`/permission` 命令 + `permissions` 投影随 base；Blue 选择器面板 S24，D33） | 权限预设切换，Blue 面板自动列出 |
 | P2 | `ctx.blueIntents`（render intent 注册表，transcript 提供；✅ S7 已落地） | 为新工具类型提供定制呈现 |
 | 全程 | `ctx.tools.register` / `tools/pre-execute`（harness 现有） | 定制/包裹 agent-loop 的 tools，Blue 经 render intent 自动呈现 |
 | 全程 | `cordis.patch.yml` 组合层 | 零代码启停/重排任何 Blue 插件 |
@@ -184,6 +184,6 @@ Blue 不是封闭应用，而是一组可被下游插件定制的 surface。定�
 ```
 P0 MVP        → 一轮完整对话 + 审批/提问 + resume            （核心定型，已完成）
 P1 交互完整性  → 缝清单落地 + kimi 对照核心 UX（plain-first） （日常可用，S0-S9 已完成）
-P2 表现力      → 视觉对齐（S10-S21）/ intent / 滑动窗口 / 图片 （体验对齐，S10-S21 会话流对齐五期全部落地——S19/S21 随 S17 dogfood 拉前，S18 用户回显+措辞，S20 工具卡（三态卡片头/动词标签/3 行预览/ctrl+o 3-turn 范围/30-step 折叠保留窗口/Read 分组树/shell 呈现）；窗口与图片已随 S7）
+P2 表现力      → 视觉对齐（S10-S21）/ intent / 滑动窗口 / 图片 （体验对齐，S10-S21 会话流对齐五期全部落地——S19/S21 随 S17 dogfood 拉前，S18 用户回显+措辞，S20 工具卡（三态卡片头/动词标签/3 行预览/ctrl+o 3-turn 范围/30-step 折叠保留窗口/Read 分组树/shell 呈现）；窗口与图片已随 S7；命令系列 S23-S29 定稿（S23-S28 既定 + S29 技能管线，裁决 D33-D36））
 P3 硬化生态    → 缝冻结 / 测试 / HMR / 文档 / 发布             （可发布）
 ```
