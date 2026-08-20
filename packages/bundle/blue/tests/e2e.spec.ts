@@ -1224,12 +1224,12 @@ describe('blue whole-tree e2e', () => {
     // dropdown description.
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('→ /sessions') })
     const fuzzy = await fullFrame(tree.terminal)
-    // 'se' subsequence-matches both /sessions and /resume — a prefix filter
-    // would have dropped /resume — and the contiguous /sessions hit ranks
-    // first (real pi-tui scoring, lower is better).
+    // The contiguous /sessions hit ranks first (real pi-tui scoring, lower
+    // is better) — and since the S24a merge /resume is an alias, so the
+    // dropdown (canonical-only discovery) carries no second 'se' row.
     const sessionsAt = fuzzy.indexOf('→ /sessions')
     expect(sessionsAt).toBeGreaterThanOrEqual(0)
-    expect(fuzzy.indexOf('Resume a previous session')).toBeGreaterThan(sessionsAt)
+    expect(fuzzy).not.toContain('Resume a previous session')
     // An out-of-order subsequence still hits, and the misses are gone.
     tree.terminal.sendInput('\x1b')
     tree.terminal.sendInput('\x1b')

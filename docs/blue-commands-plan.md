@@ -52,7 +52,7 @@ p1-design §4.3 是本文档的前身（MVP 后命令面调研）。本次逐符
 |---|---|---|---|---|---|
 | `/new` (`clear` 别名) | ✅ | ✅ | ✅ | ✅ | ✅ 已发货（commands-plugin.ts，`blue/request-new`） |
 | `/clear` | 别名 | — | 别名 | ✅ | **S27** 别名注册（command-meta 层） |
-| `/resume` | 别名 `/sessions` | ✅ | ✅ | ✅ | ✅ 已发货（commands-plugin.ts，`blue/request-resume`） |
+| `/resume` | 别名 `/sessions` | ✅ | ✅ | ✅ | ✅ 已发货——2026-08-21 S24a dogfood 裁决：/resume 与 /sessions 本是一条命令，注册并入 `/sessions [<id>]`（无参开 picker、带参直发 `blue/request-resume`），/resume 走 command-meta 别名重写 |
 | `/sessions` | ✅ | ✅ | — | — | ✅ 已发货（picker overlay，D30 挂载） |
 | `/fork` | ✅ | ✅ | ✅ | — | ✅ 已发货（idle 守卫，`blue/request-fork`） |
 | `/btw` | ✅ | — | ✅ | — | ✅ 已发货（pane-btw.ts 自注册） |
@@ -158,7 +158,7 @@ p1-design §4.3 是本文档的前身（MVP 后命令面调研）。本次逐符
 | 命令 | 各家同义 | Blue 注册位置 | 落地 |
 |---|---|---|---|
 | `/quit`（别名 `/q` `/exit`） | kimi/pi/CC/Codex `exit`/`quit`/`q` | `packages/interaction/src/commands-plugin.ts` → `ctx.get('appExit')(0)` | ✅ S6（别名 ✅ 2026-08-20，§2.12 首例） |
-| `/resume <id>` | 四家 | `commands-plugin.ts` → `'blue/request-resume'` | ✅ S6 |
+| `/sessions [<id>]`（别名 `/resume`） | 四家 | `commands-plugin.ts`（带参直发 `'blue/request-resume'`，无参走 picker；2026-08-21 并入） | ✅ S6 · S24a |
 | `/new` | kimi `clear`、CC `clear`/`reset` | `commands-plugin.ts` → `'blue/request-new'` | ✅ S6 |
 | `/fork` | kimi/pi/CC | `commands-plugin.ts` → `'blue/request-fork'`（idle 守卫） | ✅ S6 |
 | `/sessions` | kimi `sessions`、pi `resume` | `commands-plugin.ts` → `sessionPersistence.list` picker（D30 editor-slot 替换） | ✅ S6 |
@@ -430,7 +430,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 - 语义是**软引导**：sandbox 模式与 approval policy 独立强制限制、不读写 plan 状态（⚠️ 初版期望"agent 只读、工具走 guard 拒写"，实际不 enforce 只读，靠 section 引导 + sandbox/approval 兜底）
 - ~~包内另随带 session modes TUI 面（default/plan/full Shift+Tab 循环，`SessionModeSpec.plan` 联动 /plan）~~ **2026-08-21 勘误**：该记载有误——`SessionModeSpec` 在 rc.5/rc.6/rc.8 源码与全部 git 历史零命中，不存在通用 session-modes 框架；plan 的既有 UI 面是 React 浏览器包 `dsh-client-ui-plan`（`useProjection('plan')` + composer 座位），不可被 Blue 复用。若 Blue 要 default/plan/full 式三态循环，是纯 Blue 侧 UI 概念（`plan` 投影 + permissions 投影拼装，上游无联动机制）
 
-**Blue 侧残余**：零实现（命令随插件到达，/help 自动枚举）；可选 🔍 项——Blue TUI 对 `plan-review` presentation 的呈现（包内带 fallback i18n，不识别也不阻塞）。
+**Blue 侧残余**：零实现（命令随插件到达，/help 自动枚举）；🔍 **plan-review 呈现——用户裁决顺延（2026-08-21 记录）**：`exit_plan_mode` 的确认提问目前经通用问卷呈现（Approve / Keep planning 两选项，不阻塞、计划体不渲染 Markdown，纯文本 plain 形态）。后续排期做专用呈现：Markdown 渲染的计划面板 + 双选按钮形态（沿 D30 editor-slot 面板先例，读 userQuestions 的 presentation intent `{kind:'plan-review'}` 分流），目标排在 S24b/S25 一轮，届时随 dogfood 定版式。
 
 ### #6 MCP 状态（⚠️ 收窄：客户端现成，管理面仍缺）— 消费：/mcp
 

@@ -1,7 +1,8 @@
 /**
  * Tests for the `blue-commands` plugin over the real command runtime:
- * `/quit` exit requests, `/resume`/`/new`/`/fork` event emission, the
- * `/sessions` picker overlay, the `/help` overlay, and disposal.
+ * `/quit` exit requests, `/sessions <id>` resume emission / `/new`/`/fork`
+ * event emission, the `/sessions` picker overlay, the `/help` overlay, and
+ * disposal.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -86,22 +87,28 @@ describe('blue-commands plugin', () => {
     expect(await ctx.commands.execute(agent, '/q', signal())).toBeUndefined()
   })
 
-  it('/resume emits blue/request-resume with the trimmed session id', async () => {
+  it('/sessions <id> emits blue/request-resume with the trimmed id', async () => {
     const { ctx, agent } = await mount()
     const onResume = vi.fn()
     ctx.on('blue/request-resume', onResume)
-    const execution = await ctx.commands.execute(agent, '/resume  abc-123 ', signal())
+    const execution = await ctx.commands.execute(agent, '/sessions  abc-123 ', signal())
     expect(onResume).toHaveBeenCalledWith('abc-123')
     expect(execution?.result).toEqual({ kind: 'success', text: 'resuming session abc-123' })
   })
 
-  it('/resume without an id returns a usage error', async () => {
-    const { ctx, agent } = await mount()
+  it('/sessions without an id opens the picker, and /resume is its alias', async () => {
+    const { ctx, agent } = await mount({
+      persistence: { list: () => Promise.resolve([{ id: SessionId('s1'), createdAt: 1, cwd: '/tmp' }]) },
+    })
     const onResume = vi.fn()
     ctx.on('blue/request-resume', onResume)
-    const execution = await ctx.commands.execute(agent, '/resume', signal())
+    // Bare /sessions is the picker path — it opens the overlay and never
+    // emits the resume request.
+    const execution = await ctx.commands.execute(agent, '/sessions', signal())
+    expect(execution?.result).toEqual({ kind: 'success' })
     expect(onResume).not.toHaveBeenCalled()
-    expect(execution?.result).toEqual({ kind: 'error', text: 'usage: /resume <session-id>' })
+    // The alias rewrites to /sessions with the id argument intact.
+    expect(canonicalOf('resume')).toBe('sessions')
   })
 
   it('/new emits blue/request-new', async () => {
@@ -281,14 +288,14 @@ describe('blue-commands plugin', () => {
     // the whole column.
     expect(rows[4]).toBe('    ^/effort (/thinking)^  ~Switch the thinking effort of the current model~')
     expect(rows.some(row => row.includes('^/quit (/q, /exit)  ^  ~Exit Blue~'))).toBe(true)
-    expect(rows.some(row => row.includes('_ showing 1-16 of 27_'))).toBe(true)
+    expect(rows.some(row => row.includes('_ showing 1-16 of 26_'))).toBe(true)
     // Scrolling down reaches the Keys section with the two-column layout.
     for (let i = 0; i < 9; i += 1) overlay(screen).handleInput(KEY.down)
     const scrolled = screen.overlays[0]?.component.render(80) ?? []
     expect(scrolled.some(row => row.includes('  #Keys#'))).toBe(true)
     // Key labels padEnd to the longest label — `backspace` (9) since S13.
     expect(scrolled.some(row => row.includes('?enter    ?  ~Submit input / confirm selection~'))).toBe(true)
-    expect(scrolled.some(row => row.includes('_ showing 10-25 of 27_'))).toBe(true)
+    expect(scrolled.some(row => row.includes('_ showing 10-25 of 26_'))).toBe(true)
     screen.overlays[0]?.component.invalidate()
     overlay(screen).handleInput(KEY.escape)
     expect(screen.overlays[0]?.hidden).toBe(true)
@@ -353,11 +360,11 @@ describe('blue-commands plugin', () => {
 
   it('unregisters every command when the fiber disposes', async () => {
     const { ctx, agent, fiber } = await mount({ appExit: () => {} })
-    for (const name of ['quit', 'resume', 'new', 'fork', 'sessions', 'help', 'theme']) {
+    for (const name of ['quit', 'new', 'fork', 'sessions', 'help', 'theme']) {
       expect(ctx.commands.find(agent, name)).toBeDefined()
     }
     await fiber.dispose()
-    for (const name of ['quit', 'resume', 'new', 'fork', 'sessions', 'help', 'theme']) {
+    for (const name of ['quit', 'new', 'fork', 'sessions', 'help', 'theme']) {
       expect(ctx.commands.find(agent, name)).toBeUndefined()
     }
     // The alias metadata follows the fiber: the relation is gone too, so a

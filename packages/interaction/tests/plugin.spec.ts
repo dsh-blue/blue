@@ -108,7 +108,7 @@ describe('blue-interaction through the real Loader', () => {
     expect(ctx.get('blueKeymap')?.getKeys('blue.interaction.interrupt')).toEqual(['ctrl+c'])
     expect(ctx.get('blueKeymap')?.getKeys('blue.interaction.steer')).toEqual(['ctrl+s'])
     expect(ctx.commands.find(lookupAgent(), 'quit')).toBeDefined()
-    expect(ctx.commands.find(lookupAgent(), 'resume')).toBeDefined()
+    expect(ctx.commands.find(lookupAgent(), 'sessions')).toBeDefined()
     // The provider occupies the single user-questions slot.
     expect(() => ctx.userQuestions.registerProvider({ ask: () => Promise.resolve({ answers: [] }) }))
       .toThrow(/already registered/u)
