@@ -70,21 +70,20 @@ const sharedTheme = {
   socialLinks: [{ icon: 'github', link: 'https://github.com/dsh-blue/blue' }],
 }
 
-// ── 中文（根路径）导航与侧边栏 ─────────────────────────────────────────────
+// ── 导航：顶栏只保留“文档”与“插件市场”两个入口 ──────────────────────────────
 const navZh = [
-  { text: '指南', link: '/guide/', activeMatch: '^/$|^/guide/' },
-  { text: '功能', link: '/features/', activeMatch: '^/features/' },
-  {
-    text: '参考',
-    items: [
-      { text: '键位参考', link: '/reference/keys' },
-      { text: '斜杠命令参考', link: '/reference/commands' },
-    ],
-  },
+  { text: '文档', link: '/', activeMatch: '^/$|/(guide|features|reference|plugins)' },
+  { text: '插件市场', link: '/marketplace/', activeMatch: '^/marketplace' },
 ]
 
+const navEn = [
+  { text: 'Docs', link: '/en/', activeMatch: '^/en/$|/en/(guide|features|reference|plugins)' },
+  { text: 'Plugin marketplace', link: '/en/marketplace/', activeMatch: '^/en/marketplace' },
+]
+
+// ── 侧边栏：全站常驻四个分组（非折叠），任何页面可直接跳任一节 ────────────────
 const sidebarZh = {
-  '/guide/': [
+  '/': [
     {
       text: '指南',
       items: [
@@ -93,8 +92,6 @@ const sidebarZh = {
         { text: '常见问题', link: '/guide/faq' },
       ],
     },
-  ],
-  '/features/': [
     {
       text: '功能',
       items: [
@@ -106,8 +103,6 @@ const sidebarZh = {
         { text: '底部面板', link: '/features/panes' },
       ],
     },
-  ],
-  '/reference/': [
     {
       text: '参考',
       items: [
@@ -115,24 +110,17 @@ const sidebarZh = {
         { text: '斜杠命令参考', link: '/reference/commands' },
       ],
     },
+    {
+      text: '插件接入',
+      items: [
+        { text: '编写 Blue 插件', link: '/plugins/' },
+      ],
+    },
   ],
 }
 
-// ── 英文（/en/）导航与侧边栏：只链接已存在的 en 页面 ────────────────────────
-const navEn = [
-  { text: 'Guide', link: '/en/guide/', activeMatch: '^/en/$|^/en/guide/' },
-  { text: 'Features', link: '/en/features/', activeMatch: '^/en/features/' },
-  {
-    text: 'Reference',
-    items: [
-      { text: 'Key bindings', link: '/en/reference/keys' },
-      { text: 'Slash commands', link: '/en/reference/commands' },
-    ],
-  },
-]
-
 const sidebarEn = {
-  '/en/guide/': [
+  '/en/': [
     {
       text: 'Guide',
       items: [
@@ -141,8 +129,6 @@ const sidebarEn = {
         { text: 'FAQ', link: '/en/guide/faq' },
       ],
     },
-  ],
-  '/en/features/': [
     {
       text: 'Features',
       items: [
@@ -154,13 +140,17 @@ const sidebarEn = {
         { text: 'Bottom panes', link: '/en/features/panes' },
       ],
     },
-  ],
-  '/en/reference/': [
     {
       text: 'Reference',
       items: [
         { text: 'Key bindings', link: '/en/reference/keys' },
         { text: 'Slash commands', link: '/en/reference/commands' },
+      ],
+    },
+    {
+      text: 'Plugins',
+      items: [
+        { text: 'Writing a Blue plugin', link: '/en/plugins/' },
       ],
     },
   ],
