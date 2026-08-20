@@ -971,4 +971,25 @@ describe('EditorAdapter mention drill-down reopen', () => {
     expect(getSuggestions).not.toHaveBeenCalled()
     stop()
   })
+
+  it('backstops a bare @ that reached the buffer without the editor trigger', async () => {
+    const { tui, stop } = bootTui()
+    const components = createService(tui)
+    const editor = components.createEditor()
+    const { getSuggestions, provider } = stubProvider(({ item }) => ({
+      lines: [item.value],
+      cursorLine: 0,
+      cursorCol: item.value.length,
+    }))
+    editor.setAutocompleteProvider(provider)
+    // Programmatic insertion bypasses insertCharacter, so the renderer's
+    // own trigger never runs; the next inert input (cursor-right) lets the
+    // adapter hook open the mention dropdown on the bare '@'.
+    editor.setText('@')
+    editor.handleInput('\x1b[C')
+    await vi.waitFor(() => {
+      expect(getSuggestions).toHaveBeenCalledTimes(1)
+    })
+    stop()
+  })
 })

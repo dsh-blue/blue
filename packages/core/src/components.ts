@@ -366,23 +366,24 @@ class EditorAdapter implements BlueEditor {
   }
 
   /**
-   * The kimi `reopenAutocompleteAfterInput` port: after any input event, a
-   * cursor whose text-before ends with `/` inside an `@` mention re-opens
-   * the completion dropdown. The renderer's own triggers fire on `@` itself
-   * and on word characters, so neither accepting a directory completion
-   * (`@src/`, applied after the dropdown was cancelled) nor typing the
-   * separator by hand would list the directory's contents — drill-down
-   * needs this nudge. `tryTriggerAutocomplete` is private in 0.84.2; the
-   * structural cast (via `unknown`) is pinned by the components spec, the
-   * `getHistory` precedent.
+   * The kimi `reopenAutocompleteAfterInput` port, plus a bare-`@` backstop:
+   * after any input event, re-open the completion dropdown when the mention
+   * token ends in `/` (directory drill-down — accepting a directory or
+   * typing the separator leaves no renderer trigger behind) or when the
+   * token is exactly `@` (a freshly opened mention — the renderer's own
+   * trigger fires inside `insertCharacter`, and this covers any input path
+   * that reaches the buffer without it). `tryTriggerAutocomplete` is
+   * private in 0.84.2; the structural cast (via `unknown`) is pinned by the
+   * components spec, the `getHistory` precedent.
    */
   private reopenAutocompleteAfterInput(): void {
     if (this.editor.isShowingAutocomplete()) return
     const { line, col } = this.editor.getCursor()
     /* v8 ignore next -- the real editor always renders the cursor line; the fallback only satisfies the index-access checker */
     const textBeforeCursor = (this.editor.getLines()[line] ?? '').slice(0, col)
-    if (!textBeforeCursor.endsWith('/')) return
-    if (mentionTokenBeforeCursor(textBeforeCursor) === null) return
+    const token = mentionTokenBeforeCursor(textBeforeCursor)
+    if (token === null) return
+    if (token !== '@' && !textBeforeCursor.endsWith('/')) return
     // The cast lands on a local — the repo's no-semicolon style cannot start
     // a statement with `(`.
     const trigger = this.editor as unknown as { tryTriggerAutocomplete(): void }
