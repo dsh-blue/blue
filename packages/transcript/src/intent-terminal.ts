@@ -4,11 +4,15 @@
  * render here as a shell card instead of the generic `● name(args)` row.
  * Rendering scheme: an optional muted description line above the card (the
  * call view alone carries one), then a `diffMeta` cwd line (omitted without a
- * cwd), then the command line — `shellMode('$')` marker plus the title
- * (result title ?? call title ?? tool name), with an exit badge appended once
- * completed: `error(\`exit N\`)` for a nonzero exit code, nothing for zero, and
- * `warning(signal)` when a signal killed the run. Captured `output` renders
- * as `textMuted` rows below (the kimi dim shell card), capped at
+ * cwd), then the command in the kimi shell chrome (S20 back half) —
+ * `shellMode('$')` marker, the command body (result title ?? call title ??
+ * tool name) one step dimmer (`muted`, kimi's `textDim`), continuation lines
+ * indented under the body, the collapsed preview capped at
+ * {@link COMMAND_PREVIEW_LINES} rows (uncapped expanded), with an exit badge
+ * on the first line once completed: `error(\`exit N\`)` for a nonzero exit
+ * code, nothing for zero, and `warning(signal)` when a signal killed the
+ * run. Captured `output` renders as `textMuted` rows below (one step dimmer
+ * still, the kimi shell card's two-tier separation), capped at
  * {@link RESULT_PREVIEW_LINES} rows collapsed (the S20 alignment to kimi's
  * Bash result preview) and 120 expanded (Ctrl-O through `setExpanded`) with
  * the kimi `... (N more lines, M total, ctrl+o to expand)` hint, and a
@@ -26,7 +30,7 @@ import type {
   BlueComponents,
   BlueSemanticColors,
 } from '@dsh-blue/blue-core'
-import { RESULT_PREVIEW_LINES } from './components.ts'
+import { COMMAND_PREVIEW_LINES, RESULT_PREVIEW_LINES } from './components.ts'
 import type { BlueIntentComponent, BlueIntentProps, TranscriptToolItem } from './types.ts'
 
 /** Stable Cordis plugin name. */
@@ -127,26 +131,40 @@ export class TerminalCardComponent implements BlueIntentComponent {
       lines.push(colors.diffMeta(components.truncateToWidth(terminal.cwd, width)))
     }
 
-    // The command line: shell-mode `$` marker, title, and — once completed —
-    // the exit badge (nonzero exit code or a kill signal; a zero exit is
-    // silence).
-    let command = `${colors.shellMode('$')} ${title}`
-    if (terminal !== undefined && this.item.result !== undefined) {
-      const badge = terminal.signal !== undefined
-        ? colors.warning(terminal.signal)
-        : terminal.exitCode !== undefined && terminal.exitCode !== 0
-          ? colors.error(`exit ${terminal.exitCode}`)
-          : ''
-      if (badge !== '') command += ` ${badge}`
+    // The command in the kimi shell chrome (S20 back half): `$ ` in
+    // shellMode, the command body one step dimmer (kimi textDim → muted),
+    // continuation lines indented under the body, and — once completed —
+    // the exit badge on the first line (nonzero exit code or a kill
+    // signal; a zero exit is silence). The collapsed cap keeps long
+    // multi-line commands bounded; the expanded view uncaps.
+    if (title !== '') {
+      let badge = ''
+      if (terminal !== undefined && this.item.result !== undefined) {
+        badge = terminal.signal !== undefined
+          ? colors.warning(terminal.signal)
+          : terminal.exitCode !== undefined && terminal.exitCode !== 0
+            ? colors.error(`exit ${terminal.exitCode}`)
+            : ''
+      }
+      const commandLines = title.split('\n')
+      const cap = this.expanded
+        ? commandLines.length
+        : Math.min(commandLines.length, COMMAND_PREVIEW_LINES)
+      for (let index = 0; index < cap; index += 1) {
+        const body = colors.muted(commandLines[index]!)
+        const row = index === 0
+          ? `${colors.shellMode('$')} ${body}${badge === '' ? '' : ` ${badge}`}`
+          : `  ${body}`
+        lines.push(components.truncateToWidth(row, width))
+      }
     }
-    lines.push(components.truncateToWidth(command, width))
 
     if (terminal?.output !== undefined && terminal.output !== '') {
       const rows = terminal.output.split('\n')
       const cap = this.expanded ? TERMINAL_EXPANDED_ROWS : TERMINAL_COLLAPSED_ROWS
       const shown = Math.min(rows.length, cap)
-      // The output dims one step below the command (the kimi shell card);
-      // the command body itself renders in the default foreground.
+      // The output dims one step below the muted command (the kimi shell
+      // card's two-tier separation).
       for (const row of rows.slice(0, shown)) {
         lines.push(colors.textMuted(components.truncateToWidth(row, width)))
       }

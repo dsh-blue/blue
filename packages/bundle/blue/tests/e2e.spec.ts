@@ -62,7 +62,35 @@ import * as statusTipsPlugin from '../../../transcript/src/status-tips.ts'
 import { buildTipRotation, tipOffer } from '../../../transcript/src/status-tips.ts'
 import { STATUS_TIPS } from '../../../transcript/src/tips-content.ts'
 import { setRecentStepsRetention, setStepFoldingEnabled } from '../../../transcript/src/window.ts'
+import { CallId } from '@deepseek-ai/dsh-llm'
 import { MockAdapter, reasoningResponse, textResponse, toolCallResponse } from './mock-adapter.ts'
+
+/**
+ * Two tool calls in one response — one agent-loop step. The read group
+ * forms per step, so the grouping e2e needs both calls in a single request;
+ * the mock's `toolCallResponse` emits one call per response (and per step).
+ */
+function twoToolCallsResponse(
+  first: { callId: string, name: string, args: object },
+  second: { callId: string, name: string, args: object },
+): StreamChunk[] {
+  const build = (index: number, callId: string, name: string, args: object): StreamChunk[] => {
+    const argumentsJson = JSON.stringify(args)
+    const id = CallId(callId)
+    return [
+      { type: 'block-start', index, blockType: 'tool-call' },
+      { type: 'tool-call-delta', index, id, name, argumentsDelta: argumentsJson.slice(0, 5) },
+      { type: 'tool-call-delta', index, id, argumentsDelta: argumentsJson.slice(5) },
+      { type: 'block-end', index, block: { type: 'tool-call', id, name, arguments: argumentsJson } },
+    ]
+  }
+  return [
+    ...build(0, first.callId, first.name, first.args),
+    ...build(1, second.callId, second.name, second.args),
+    { type: 'usage', usage: { inputTokens: 10, outputTokens: 5 } },
+    { type: 'finish', reason: { kind: 'tool-calls' } },
+  ]
+}
 
 const disposers: (() => Promise<void>)[] = []
 
@@ -769,7 +797,7 @@ describe('blue whole-tree e2e', () => {
     expect(expanded).toContain('TAILMARKER')
   })
 
-  it('renders a diff-intent tool through the DiffCard: title, path count, and +/- rows', async () => {
+  it('renders a diff-intent tool through the DiffCard: kimi header, chip, and +/- rows', async () => {
     const tree = await bootBlue([], {
       script: [toolCallResponse('call-diff', 'edit-file', {}), textResponse('edited')],
     })
@@ -806,9 +834,12 @@ describe('blue whole-tree e2e', () => {
     await waitForRender()
     // Compare against SGR-stripped output so marker/text adjacency survives
     // the separate color spans ('-' marker + removed text, '+' + added).
+    // The S20 kimi header carries the verb, tool name, and the +A -R chip;
+    // the per-file title/path lines are gone (the path belongs to the key
+    // argument, absent here because the scripted call carries no args).
     const shown = tree.terminal.output.replace(/\x1b\[[0-9;]*m/g, '')
-    expect(shown).toContain('Edited a.ts')
-    expect(shown).toContain('a.ts')
+    expect(shown).toContain('✓ Used edit-file')
+    expect(shown).toContain(' · +2 -1')
     expect(shown).toContain('-two')
     expect(shown).toContain('+TWO')
     expect(shown).toContain('+four')
@@ -925,6 +956,44 @@ describe('blue whole-tree e2e', () => {
     expect(shown).toContain('… step 1 · call 1 tools')
     expect(shown).toContain('… step 2 · call 1 tools')
     expect(shown).toContain('done')
+  })
+
+  it('groups two same-step Reads into the kimi tree', async () => {
+    // One request carrying both tool calls keeps them in one agent-loop
+    // step (the grouping unit); the second request's text starts the next
+    // step, which — under the default retention — leaves the group mounted.
+    const tree = await bootBlue([], {
+      script: [
+        twoToolCallsResponse(
+          { callId: 'call-r1', name: 'read', args: { file_path: 'src/a.ts' } },
+          { callId: 'call-r2', name: 'read', args: { file_path: 'src/b.ts' } },
+        ),
+        textResponse('read done'),
+      ],
+    })
+    const agent = await currentAgent(tree)
+    const tools = (tree.ctx as unknown as { tools: { register(definition: unknown): () => void } }).tools
+    tools.register({
+      name: 'read',
+      description: 'read a file',
+      parameters: { type: 'object', properties: {} },
+      presentCall: () => ({ card: 'generic', title: 'Read', kind: 'read' }),
+      output: {
+        schema: { type: 'string' },
+        render: () => [{ type: 'text', text: 'l1\nl2\nl3' }],
+      },
+      execute: () => Promise.resolve('l1\nl2\nl3'),
+    })
+    typeLine(tree.terminal, 'read the files')
+    await agent.whenIdle()
+    await waitForRender()
+    expect(tree.adapter.requests.length).toBe(2)
+    const shown = tree.terminal.output.replace(/\x1b\[[0-9;]*m/g, '')
+    expect(shown).toContain('Read 2 files')
+    expect(shown).toContain('· 6 lines')
+    expect(shown).toContain('├─ src/a.ts')
+    expect(shown).toContain('└─ src/b.ts')
+    expect(shown).toContain('read done')
   })
 
   it('keeps a multi-step turn\'s tool cards expanded under the kimi 30-step retention', async () => {

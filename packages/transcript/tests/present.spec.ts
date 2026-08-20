@@ -4,12 +4,38 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { parseToolArguments, resolveCallView, resolveResultView, type ToolPresentationSource } from '../src/present.ts'
+import { isReadItem, parseToolArguments, resolveCallView, resolveResultView, type ToolPresentationSource } from '../src/present.ts'
+import type { TranscriptToolItem } from '../src/types.ts'
 
 /** A registry stub whose `get` returns the prearranged runtime (or nothing). */
 function tools(get: (name: string) => unknown): ToolPresentationSource {
   return { get } as ToolPresentationSource
 }
+
+describe('isReadItem', () => {
+  function readItem(view: TranscriptToolItem['view']): TranscriptToolItem {
+    return { kind: 'tool', seq: 1, callId: 'c1', name: 'read', arguments: '{}', view }
+  }
+
+  it('marks the pending read call view (generic card, read kind)', () => {
+    expect(isReadItem(readItem({ card: 'generic', title: 'Read x', kind: 'read' }))).toBe(true)
+  })
+
+  it('marks the completed ReadResultView', () => {
+    expect(isReadItem(readItem({
+      card: 'read', path: 'x', offset: 1, lines: [], totalLines: 0,
+    }))).toBe(true)
+  })
+
+  it('rejects other generic kinds and view-less items', () => {
+    expect(isReadItem(readItem({ card: 'generic', title: 'Search', kind: 'search' }))).toBe(false)
+    expect(isReadItem(readItem(undefined))).toBe(false)
+  })
+
+  it('defends against a malformed view missing the card tag', () => {
+    expect(isReadItem(readItem({ title: 'x' } as never))).toBe(false)
+  })
+})
 
 describe('parseToolArguments', () => {
   it('parses valid JSON', () => {

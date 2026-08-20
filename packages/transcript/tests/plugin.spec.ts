@@ -565,6 +565,78 @@ describe('blue-transcript plugin through the real Loader', () => {
     expect(hints()).toHaveLength(2)
   })
 
+  it('groups consecutive same-step Reads into one tree (kimi contiguity)', async () => {
+    resetSeq()
+    const { ctx, screen } = await bootTranscript(null, {
+      tools: {
+        read: { presentCall: () => ({ card: 'generic', title: 'Read', kind: 'read' }) },
+      },
+    })
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([
+      turnStart(1),
+      stepStart(1, 1),
+      toolCallEvent(1, 1, 'r1', 'read', '{"file_path":"a.ts"}'),
+      toolCallEvent(1, 1, 'r2', 'read', '{"file_path":"b.ts"}'),
+      toolCallEvent(1, 1, 'r3', 'read', '{"file_path":"c.ts"}'),
+      toolResultEvent(1, 1, 'r1', 'one'),
+      toolResultEvent(1, 1, 'r2', 'two\nthree'),
+      toolResultEvent(1, 1, 'r3', 'x'),
+      turnEnd(1),
+    ])))
+    // The three reads mount as one group — the lone first card retired.
+    expect(screen.children).toHaveLength(1)
+    const lines = contentLines(screen)
+    expect(lines[1]).toContain('Read 3 files')
+    expect(lines[1]).toContain('· 4 lines')
+    expect(lines[2]).toContain('├─ a.ts')
+    expect(lines[3]).toContain('├─ b.ts')
+    expect(lines[4]).toContain('└─ c.ts')
+  })
+
+  it('breaks the Read chain when another tool mounts between them', async () => {
+    resetSeq()
+    const { ctx, screen } = await bootTranscript(null, {
+      tools: {
+        read: { presentCall: () => ({ card: 'generic', title: 'Read', kind: 'read' }) },
+      },
+    })
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([
+      turnStart(1),
+      stepStart(1, 1),
+      toolCallEvent(1, 1, 'r1', 'read', '{"file_path":"a.ts"}'),
+      toolCallEvent(1, 1, 'b1', 'bash', '{}'),
+      toolCallEvent(1, 1, 'r2', 'read', '{"file_path":"b.ts"}'),
+      turnEnd(1),
+    ])))
+    // The bash card between the reads keeps both lone — kimi's rule.
+    expect(screen.children).toHaveLength(3)
+    expect(contentLines(screen).join('\n')).not.toContain('Read 2 files')
+  })
+
+  it('retires the read group when its step folds into the summary', async () => {
+    resetSeq()
+    setRecentStepsRetention(0)
+    const { ctx, screen } = await bootTranscript(null, {
+      tools: {
+        read: { presentCall: () => ({ card: 'generic', title: 'Read', kind: 'read' }) },
+      },
+    })
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([
+      turnStart(1),
+      stepStart(1, 1),
+      toolCallEvent(1, 1, 'r1', 'read', '{"file_path":"a.ts"}'),
+      toolCallEvent(1, 1, 'r2', 'read', '{"file_path":"b.ts"}'),
+      stepStart(1, 2),
+      assistantEvent(1, 2, [{ type: 'text', text: 'done' }]),
+      turnEnd(1),
+    ])))
+    // The group's bookkeeping item is its first member, so the fold retires
+    // the whole group and mounts the summary.
+    expect(screen.children).toHaveLength(2)
+    expect(contentLines(screen).join('\n')).toContain('… step 1 · call 2 tools')
+    expect(contentLines(screen).join('\n')).not.toContain('Read 2 files')
+  })
+
   it('creates tool cards through the blueIntents registry', async () => {
     resetSeq()
     const { ctx, screen } = await bootTranscript(null, {

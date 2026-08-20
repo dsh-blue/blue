@@ -341,6 +341,57 @@ describe('ToolCallComponent', () => {
     const lines = new ToolCallComponent(item, tagged(), setup()).render(80)
     expect(lines).toEqual(['', '[S]✓ [/S]Used \x1b[1m[P]probe[/P]\x1b[22m'])
   })
+
+  it('collapses a Read card to its header until expanded (kimi)', () => {
+    const item = toolItem({
+      name: 'read',
+      view: { card: 'read', path: 'x', offset: 1, lines: [], totalLines: 0 },
+    })
+    item.result = { text: 'l1', fullText: 'l1\nl2\nl3', isError: false }
+    const component = new ToolCallComponent(item, tagged(), setup())
+    // The kimi Read card: header + lines chip only — the file content
+    // stays hidden behind Ctrl-O.
+    expect(component.render(80)).toEqual([
+      '',
+      '[S]✓ [/S]Used \x1b[1m[P]read[/P]\x1b[22m[M] · 3 lines[/M]',
+    ])
+    component.setExpanded(true)
+    expect(component.render(80)).toHaveLength(1 + 1 + 3)
+  })
+
+  it('surfaces the bash command in the body behind the kimi shell chrome', () => {
+    const item = toolItem({ parsedArguments: { command: 'ls\ncd /tmp' } })
+    const lines = new ToolCallComponent(item, tagged(), setup()).render(80)
+    expect(lines).toEqual([
+      '',
+      '● \x1b[1m[P]Running a command[/P]\x1b[22m',
+      '  $ [M]ls[/M]',
+      '    [M]cd /tmp[/M]',
+    ])
+  })
+
+  it('caps the collapsed bash command preview and uncaps expanded', () => {
+    const item = toolItem({
+      parsedArguments: { command: Array.from({ length: 12 }, (_, n) => `c${n}`).join('\n') },
+    })
+    const component = new ToolCallComponent(item, COLORS, setup())
+    const collapsed = component.render(80)
+    expect(collapsed).toHaveLength(1 + 1 + 10)
+    component.setExpanded(true)
+    expect(component.render(80)).toHaveLength(1 + 1 + 12)
+  })
+
+  it('omits the command preview for non-bash and malformed arguments', () => {
+    // A non-bash card ignores a command argument entirely.
+    const probe = toolItem({ name: 'probe', parsedArguments: { command: 'ls' } })
+    expect(new ToolCallComponent(probe, COLORS, setup()).render(80)).toHaveLength(2)
+
+    // Non-object arguments and an empty command yield no preview rows.
+    const nonObject = toolItem({ parsedArguments: 'not-an-object' })
+    expect(new ToolCallComponent(nonObject, COLORS, setup()).render(80)).toHaveLength(2)
+    const empty = toolItem({ parsedArguments: { command: '' } })
+    expect(new ToolCallComponent(empty, COLORS, setup()).render(80)).toHaveLength(2)
+  })
 })
 
 describe('StepSummaryComponent', () => {

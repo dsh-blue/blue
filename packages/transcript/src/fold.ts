@@ -32,7 +32,8 @@
 import type { ContentBlock, ImageBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ToolCallView, ToolResult, ToolResultView } from '@deepseek-ai/dsh-tools'
-import { parseToolArguments } from './present.ts'
+import { ellipsize, parseToolArguments } from './present.ts'
+export { ellipsize }
 import type {
   TranscriptAssistantItem,
   TranscriptItem,
@@ -54,17 +55,6 @@ export const RESULT_SUMMARY_MAX_CHARS = 160
  * and drops only the body; Blue hides both).
  */
 const TODO_TOOL_NAME = 'todo_write'
-
-/**
- * Collapse a multi-line string to one ellipsized line.
- * @param text - the text to flatten.
- * @param maxChars - the maximum string length (not terminal columns) kept.
- * @returns whitespace-collapsed text, ellipsized beyond `maxChars`.
- */
-export function ellipsize(text: string, maxChars: number): string {
-  const flat = text.replace(/\s+/g, ' ').trim()
-  return flat.length <= maxChars ? flat : `${flat.slice(0, maxChars - 1)}…`
-}
 
 /** The fold's answer to one event: the item the event created or mutated. */
 export interface FoldItemUpdate {
