@@ -72,12 +72,12 @@ const sharedTheme = {
 
 // ── 导航：顶栏只保留“文档”与“插件市场”两个入口 ──────────────────────────────
 const navZh = [
-  { text: '文档', link: '/guide/', activeMatch: '/(guide|features|reference|plugins)' },
+  { text: '文档', link: '/guide/', activeMatch: '/(guide|dsh|features|reference|plugins)' },
   { text: '插件市场', link: '/marketplace/', activeMatch: '^/marketplace' },
 ]
 
 const navEn = [
-  { text: 'Docs', link: '/en/guide/', activeMatch: '/en/(guide|features|reference|plugins)' },
+  { text: 'Docs', link: '/en/guide/', activeMatch: '/en/(guide|dsh|features|reference|plugins)' },
   { text: 'Plugin marketplace', link: '/en/marketplace/', activeMatch: '^/en/marketplace' },
 ]
 
@@ -90,6 +90,16 @@ const sidebarZh = {
         { text: '快速上手', link: '/guide/' },
         { text: '主题', link: '/guide/theme' },
         { text: '常见问题', link: '/guide/faq' },
+      ],
+    },
+    {
+      text: 'dsh 手册',
+      items: [
+        { text: '认识 dsh', link: '/dsh/' },
+        { text: 'Profile 与目录', link: '/dsh/profiles' },
+        { text: '权限与模式', link: '/dsh/modes' },
+        { text: '内置工具', link: '/dsh/tools' },
+        { text: 'Skills', link: '/dsh/skills' },
       ],
     },
     {
@@ -129,6 +139,16 @@ const sidebarEn = {
         { text: 'Quickstart', link: '/en/guide/' },
         { text: 'Theming', link: '/en/guide/theme' },
         { text: 'FAQ', link: '/en/guide/faq' },
+      ],
+    },
+    {
+      text: 'dsh handbook',
+      items: [
+        { text: 'What is dsh', link: '/en/dsh/' },
+        { text: 'Profiles & directories', link: '/en/dsh/profiles' },
+        { text: 'Modes & permissions', link: '/en/dsh/modes' },
+        { text: 'Built-in tools', link: '/en/dsh/tools' },
+        { text: 'Skills', link: '/en/dsh/skills' },
       ],
     },
     {
