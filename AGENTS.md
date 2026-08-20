@@ -118,4 +118,4 @@ Observed conventions:
 
 ## Verification status
 
-As of 2026-08-21, `pnpm run test` (1178 tests, 74 files), `pnpm run test:coverage` (per-file 100%), `pnpm run typecheck`, and `pnpm run lint` all pass on Node 22+/pnpm 11.
+As of 2026-08-21, `pnpm run test` (1182 tests, 74 files), `pnpm run test:coverage` (per-file 100%), `pnpm run typecheck`, and `pnpm run lint` all pass on Node 22+/pnpm 11.

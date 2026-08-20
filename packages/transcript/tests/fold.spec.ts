@@ -392,15 +392,20 @@ describe('closing units settle streaming items', () => {
     folder.apply(reasoningDelta(1, 1, 'pondering'))
     const item = folder.items[0] as TranscriptThinkingItem
     expect(item.streaming).toBe(true)
-    const settled = folder.apply(turnEnd(1, { kind: 'aborted' }))
-    expect(settled).toEqual([{ item, isNew: false }])
+    const settled = folder.apply(turnEnd(1, { kind: 'aborted', reason: { kind: 'user' } }))
+    expect(settled).toEqual([
+      { item, isNew: false },
+      { item: folder.items[1], isNew: true },
+    ])
     expect(item.streaming).toBe(false)
+    // The cut turn leaves its tombstone row after the settled block.
+    expect(folder.items[1]?.kind).toBe('interrupted')
     // The next turn mounts its own live block; the settled one stays down.
     folder.apply(turnStart(2))
     folder.apply(stepStart(2, 1))
     folder.apply(reasoningDelta(2, 1, 'next'))
     expect((folder.items[0] as TranscriptThinkingItem).streaming).toBe(false)
-    expect((folder.items[1] as TranscriptThinkingItem).streaming).toBe(true)
+    expect((folder.items[2] as TranscriptThinkingItem).streaming).toBe(true)
   })
 
   it('a clean turn with nothing streaming settles nothing', () => {
@@ -408,6 +413,38 @@ describe('closing units settle streaming items', () => {
     folder.apply(turnStart(1))
     folder.apply(stepStart(1, 1))
     expect(folder.apply(turnEnd(1))).toBeNull()
+  })
+
+  it('a crash-recovery close also leaves the interrupted tombstone', () => {
+    const folder = new TranscriptFolder()
+    folder.apply(turnStart(1))
+    folder.apply(stepStart(1, 1))
+    const updates = folder.apply(turnEnd(1, { kind: 'interrupted' }))
+    expect(updates).toEqual([{ item: folder.items[0], isNew: true }])
+    expect(folder.items[0]?.kind).toBe('interrupted')
+  })
+
+  it('a non-error close with a streaming item still settles it', () => {
+    // Synthetic but defensive: a turn ending blocked with an unclosed
+    // streaming window settles the item without a tombstone.
+    const folder = new TranscriptFolder()
+    folder.apply(turnStart(1))
+    folder.apply(stepStart(1, 1))
+    folder.apply(reasoningDelta(1, 1, 'dangling'))
+    const item = folder.items[0] as TranscriptThinkingItem
+    expect(folder.apply(turnEnd(1, { kind: 'blocked' }))).toEqual([{ item, isNew: false }])
+    expect(item.streaming).toBe(false)
+    expect(folder.items.some(entry => entry.kind === 'interrupted' || entry.kind === 'error')).toBe(false)
+  })
+
+  it('completed, blocked, and max-tokens turns leave no tombstone', () => {
+    for (const reason of [{ kind: 'completed' }, { kind: 'blocked' }, { kind: 'max-tokens' }] as const) {
+      const folder = new TranscriptFolder()
+      folder.apply(turnStart(1))
+      folder.apply(stepStart(1, 1))
+      expect(folder.apply(turnEnd(1, reason))).toBeNull()
+      expect(folder.items.filter(item => item.kind === 'interrupted')).toEqual([])
+    }
   })
 
   it('a step boundary settles a never-closed step\'s streaming thinking', () => {

@@ -444,6 +444,29 @@ export class ErrorMessageComponent implements BlueComponent {
   }
 }
 
+/**
+ * One cut-turn row: the `⏹` marker and the muted `interrupted` label —
+ * the visible tombstone of an Esc interrupt (or a crash-recovery close),
+ * so the stream going quiet always carries its reason (the S24a dogfood
+ * ruling).
+ */
+export class InterruptedMarkerComponent implements BlueComponent {
+  /** @param colors - the theme's color table. */
+  constructor(private readonly colors: BlueSemanticColors) {}
+
+  /** No cached render state. */
+  invalidate(): void {}
+
+  /**
+   * Render the single muted marker row.
+   * @param width - current render width in columns (the label never wraps).
+   * @returns one string.
+   */
+  render(_width: number): string[] {
+    return [this.colors.textMuted('⏹ interrupted')]
+  }
+}
+
 export class StepSummaryComponent implements BlueComponent {
   private readonly item: TranscriptStepSummaryItem
   private readonly colors: BlueSemanticColors

@@ -811,9 +811,12 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('pondering the question at hand') })
     tree.terminal.sendInput('\x1b')
     await agent.whenIdle()
-    // Interrupted and idle: no live thinking row may remain.
+    // Interrupted and idle: the tombstone row replaces the stream, and no
+    // live thinking row may remain beside it.
     await vi.waitFor(async () => {
-      expect((await fullFrame(tree.terminal)).includes('thinking...')).toBe(false)
+      const frame = await fullFrame(tree.terminal)
+      expect(frame.includes('⏹ interrupted')).toBe(true)
+      expect(frame.includes('thinking...')).toBe(false)
     })
     // The next turn streams its own thinking and completes; still no ghost.
     typeLine(tree.terminal, 'second')

@@ -44,6 +44,7 @@ import type {} from '@dsh-blue/blue-app'
 import {
   AssistantMessageComponent,
   ErrorMessageComponent,
+  InterruptedMarkerComponent,
   StepSummaryComponent,
   ToolCallComponent,
   UserMessageComponent,
@@ -168,6 +169,8 @@ function createPlainComponent(
       return new StepSummaryComponent(item, colors, components)
     case 'error':
       return new ErrorMessageComponent(item, colors, components)
+    case 'interrupted':
+      return new InterruptedMarkerComponent(colors)
   }
 }
 

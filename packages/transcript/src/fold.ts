@@ -37,6 +37,7 @@ export { ellipsize }
 import type {
   TranscriptAssistantItem,
   TranscriptErrorItem,
+  TranscriptInterruptedItem,
   TranscriptItem,
   TranscriptStepSummaryItem,
   TranscriptThinkingItem,
@@ -261,6 +262,18 @@ export class TranscriptFolder {
             turn: this.currentTurn,
             message: failure.message,
             ...(failure.code !== undefined && failure.code.length > 0 ? { code: failure.code } : {}),
+          }
+          this.items.push(item)
+          return [...settled, { item, isNew: true }]
+        }
+        // A cut turn renders its tombstone — an Esc interrupt (or the
+        // persistence backend's crash-recovery close) otherwise reads as
+        // the stream merely going quiet (the S24a dogfood ruling).
+        if (event.data.reason.kind === 'aborted' || event.data.reason.kind === 'interrupted') {
+          const item: TranscriptInterruptedItem = {
+            kind: 'interrupted',
+            seq: event.seq,
+            turn: this.currentTurn,
           }
           this.items.push(item)
           return [...settled, { item, isNew: true }]

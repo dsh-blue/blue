@@ -11,7 +11,7 @@ Blue 终端 UI transcript 层，构建于 `dsh-blue-core` 之上：从 session �
 - `user/message` → user 条目（text 块拼接，图片显示为 `[image]`；图片块同时以 `ImageAttachmentRef[]` 保留在条目上，组件经可选的 `attachments` 服务（`ctx.get` 惰性解析，非 inject）加载真实字节并渲染实际图片（上限 12 行），服务缺失或加载失败时保持 `[image]` 占位）。合成 user 消息——`source.kind !== 'user'`，harness 的 ContextFormed 注入（runtime-context 快照、AGENTS.md 指令、plugin 通知）——一律折叠为无：零呈现、零占位，live 与回放同规则（D28 裁定，S19 随 S17 dogfood 拉前）。
 - `assistant/chunk` 的 text 增量累积进每个 step 的流式 assistant 条目，reasoning 增量则开出同 step 的流式 thinking 条目（S17 kimi 拆分：thinking 作为独立块挂在正文上方，只有当累积文本可见时才创建——加密或纯空白 reasoning 不挂任何块，kimi 守卫）；收尾的 `assistant/message` 以权威组装消息终稿两者，step 未流出任何内容时在此创建终稿对、thinking 居先（回放与 live 挂载顺序收敛，D16）。
 - `tool/call` + `tool/result` 按 `callId` 配对为一个 tool 条目：generic 呈现，参数截断、结果摘要为一行（字符串形式的 `meta` 呈现载荷优先于面向模型的结果文本）；fold 同时把未摘要的结果原文保留为 `fullText` 供展开。未配对的结果也会渲染——`todo_write` 除外：其调用与结果一律折叠为无（todo 面板拥有该呈现，用户 S13 dogfood 裁决；kimi 保留调用标题、只丢弃正文，Blue 两者皆隐）。
-- turn/step 边界、request 记录、log-only 标记以及 merge 扩展的未知类型一概不渲染——S23 唯一的例外：reason 为 `error` 的 `turn/end` 折叠为错误条目，渲染为 error 红的 `✗ request failed (<code>)` 行，端点挂掉或路由错误永不沉默。
+- turn/step 边界、request 记录、log-only 标记以及 merge 扩展的未知类型一概不渲染——两个例外：reason 为 `error` 的 `turn/end` 折叠为错误条目，渲染为 error 红的 `✗ request failed (<code>)` 行，端点挂掉或路由错误永不沉默（S23 裁定）；reason 为 `aborted` 或 `interrupted` 的折叠为中断条目，渲染为单行 textMuted `⏹ interrupted`——Esc 掐断流或崩溃恢复收尾的可见墓碑（S24a dogfood 裁定；闭合单元同时把仍在流式的 thinking 块落定为折叠形态，掐断后不留幽灵 spinner）。
 
 ## 组件与挂载
 
