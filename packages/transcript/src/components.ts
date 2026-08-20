@@ -411,6 +411,39 @@ export class ToolCallComponent implements BlueComponent {
  * carry several summaries. The item is immutable, so the cache keys on
  * width alone.
  */
+/**
+ * One failed-turn row: the `✗` marker in `error` beside the structured
+ * failure's message, wrapped to the content width — the dead-endpoint
+ * answer to the silent transcript (S23 dogfood).
+ */
+export class ErrorMessageComponent implements BlueComponent {
+  /**
+   * @param item - the failed-turn item to render.
+   * @param colors - the theme's color table.
+   * @param components - the component factory (width wrapping).
+   */
+  constructor(
+    private readonly item: import('./types.ts').TranscriptErrorItem,
+    private readonly colors: BlueSemanticColors,
+    private readonly components: BlueComponents,
+  ) {}
+
+  /** No cached render state. */
+  invalidate(): void {}
+
+  /**
+   * Render the marker plus the wrapped message.
+   * @param width - current render width in columns.
+   * @returns one string per rendered row.
+   */
+  render(width: number): string[] {
+    const label = this.item.code !== undefined
+      ? `✗ request failed (${this.item.code}): ${this.item.message}`
+      : `✗ request failed: ${this.item.message}`
+    return this.components.wrapText(label, width).map((line: string) => this.colors.error(line))
+  }
+}
+
 export class StepSummaryComponent implements BlueComponent {
   private readonly item: TranscriptStepSummaryItem
   private readonly colors: BlueSemanticColors

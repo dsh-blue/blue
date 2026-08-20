@@ -37,9 +37,9 @@ p1-design §4.3 是本文档的前身（MVP 后命令面调研）。本次逐符
 
 | 命令 | kimi | pi | CC | Codex | Blue 现状/去向 |
 |---|---|---|---|---|---|
-| `/model` | ✅ | ✅ | ✅ | ✅ | **S23** 待建（新缝 BlueSessionRef.modelRef） |
-| `/effort` (`thinking`) | ✅ | — | ✅ | — | **S23** 待建（LlmModelReasoningInfo.efforts 补全） |
-| `/provider` (`providers`) | ✅ | — | — | — | **S23** 待建（list/switch；add/refresh ⚠️ 顺延） |
+| `/model` | ✅ | ✅ | ✅ | ✅ | ✅ 已发货（S23 落地 2026-08-20：`model-commands.ts` 的 picker + 直切，缝 BlueSessionRef.modelRef） |
+| `/effort` (`thinking`) | ✅ | — | ✅ | — | ✅ 已发货（S23 落地 2026-08-20：水平分段选择器 + 直切，`thinking` 别名） |
+| `/provider` (`providers`) | ✅ | — | — | — | ✅ 已发货（S23 落地 2026-08-20：面板 list/switch + Add Provider 向导——settings.mutate 写 llm-pi-ai profile + credentials.set 存 key，用户裁决将原 ⚠️ 顺延项拉入本期） |
 | `/secondary-model` (`subagent-model`) | ✅ 隐藏 | — | — | — | 🚫 无子 agent 模型概念 |
 | `/scoped-models` | — | ✅ | — | — | 🚫 目录级模型无概念（agent 级 selection 已有） |
 | `/fast` | — | — | — | ✅ | 🚫 无快速模型切换概念 |
@@ -165,6 +165,9 @@ p1-design §4.3 是本文档的前身（MVP 后命令面调研）。本次逐符
 | `/help` | kimi `help`/`h`/`?`、CC/Codex | `commands-plugin.ts` → `HelpOverlay`（commands + keys 双列） | ✅ S6 |
 | `/theme` | kimi/CC | `packages/interaction/src/theme-switch.ts`（provider 换装） | ✅ S4 |
 | `/btw <question>` | kimi/CC | `packages/transcript/src/pane-btw.ts`（fork 旁路 agent） | ✅ S6 |
+| `/model [name]` | 四家 | `packages/interaction/src/model-commands.ts`（picker：`model-panel.ts`，底部 thinking 段控件） | ✅ S23（2026-08-20） |
+| `/effort [level]`（别名 `thinking`） | kimi/CC | `model-commands.ts`（`EffortPanel` 水平分段，`thinking-segments.ts` 共享段 chrome） | ✅ S23（2026-08-20） |
+| `/provider [list\|switch <name>\|add]` | kimi | `model-commands.ts` + `provider-add.ts`（ProviderPanel + 向导；`form-panel.ts` 表单面） | ✅ S23（2026-08-20，含 Add） |
 
 ### 2.10 上游插件自带命令（6 条，随 base 组合自动注册，Blue 零实现）
 
@@ -307,7 +310,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 
 `/model` `/effort` `/status` 的地基。现状：`packages/app/src/index.ts:72-75` `modelSelectionSetup` 把 `installModelSelection(agentCtx, selection)` 挂在三条建会话路径上，`selection: ModelSelectionRef` 闭包在 setup 内，UI 拿不到句柄。
 
-**方案**：`blueSession` 服务（app 层）增 `modelRef: ModelSelectionRef | undefined` 可变引用——`modelSelectionSetup` 创建 selection 时写入 `blueSession.modelRef`，会话切换（`'blue/session-changed'`）时随 current agent 更新。契约沿 `blueSession` 既有形态（服务 + 事件），L1 核心签名不动（"只增不改"）。新命令 handler 经 `ctx.get('blueSession')?.modelRef` 读写 `current`（下一 step 生效，天然无竞态）。
+**方案**：`blueSession` 服务（app 层）增 `modelRef` 可变引用。**✅ 已落地（2026-08-20，S23）**，实施期一项修正：modelRef 不是 §4.2.1 原案的纯可变字段，而是 **getter/setter 三级优先**（会话内 picked → 会话日志最近 request header → 进程默认，harness apiproxy `selectionFor` 同款）——`packages/app/src/model-ref.ts` 的 `createModelSelectionRef`；此举同时修复了 resume 路径的既有缺陷（原接线机械上把 resume 会话切回进程默认模型而非沿用日志 header，app 注释声称 header wins 但不成立），e2e 以 `--resume` 后请求模型断言钉住。三个 commit 点（startup / request-resume / commitSwitch）统一发布 `current` 与 `modelRef`，session-changed 不变式要求 handle 已发布。
 
 #### 4.2.2 S24 语义说明
 
@@ -334,7 +337,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 
 | 步 | 内容 | 能力依赖 | UI 复用 | 验收要点 |
 |---|---|---|---|---|
-| **S23** 模型与强度 | `/model` `/effort` `/provider`(list/switch) | 新缝 BlueSessionRef.modelRef（§4.2.1）；llm.listModels/listProviders + LlmResolvedModelInfo | BlueSelect 面板 + mountEditorReplacement + notice | 面板列模型含 context/reasoning 元数据；切换后下一 step 生效；saveSelection 持久跨进程；switch session 后 selection 跟随新 agent |
+| **S23** 模型与强度 | `/model` `/effort` `/provider`(list/switch/add) | 新缝 BlueSessionRef.modelRef（§4.2.1，getter 三级优先落地）；llm.listModels/listProviders/listConfigurableProviders/discoverModels + settings.mutate + credentials.set | ModelPanel/EffortPanel/ProviderPanel/FormPanel + mountEditorReplacement + notice（e2e 另挂真 dsh-settings-file/dsh-credentials-local/dsh-llm-pi-ai） | ✅ 全部达成（2026-08-20 落地，2026-08-21 合并）：面板行含 `· ctx Nk` 与 thinking 段控件；下一 step 生效（e2e 断言请求模型/effort）；saveSelection 跨进程持久（banner 读回）；/new 后 modelRef 跟随新 agent；Add 落盘 settings.yaml/.credentials.yaml 且路由激活；Alt+S session-only 通道（用户裁决 kimi 全语义）；dogfood 14 轮追加——kimi 版式（tab 搜索/tab 条/圆角表单盒）、provider 编辑/删除流、协议感知 base URL、models.dev 元数据匹配、列举失败回表单重试（分类 cause 链 error 红） |
 | **S24** 自治与授权 | `/yolo` `/auto` + permission preset 选择器面板（D33） | approval answerer 自动模式（§4.2.2 🔍）；'approval/policy' 折叠；questions 自动应答；**permissions 投影**（dsh-permission-presets，base——面板读投影、选中提交 `/permission <name>` 同一写路径） | notice + 新 blueStatus 条目（策略徽章）+ BlueSelect 面板（danger-full-access 行带确认 gate） | 会话内审批免弹窗（answerer 自动放行）；resume 后模式恢复；/auto 下提问自动作答；切会话回默认；面板切换后 `permission/preset` 事件折叠正确、danger 确认必经 |
 | **S25** 会话信息 | `/status` `/usage` `/version` | session.header / requestContext；ctx.tokenMeter.measure + session-stats/session-query 投影（§3.2）；usage.ts 不设累计器（薄封装即可） | HelpOverlay 式两列面板 + notice | 数字与 tokenMeter/session-stats 投影一致；usage 跨 resume 重放正确；/version 与 banner 常量一致 |
 | **S26** 导出与复制 | `/export` `/copy` | persistence.readRaw（supportsRawArtifacts=true）；fold.ts 折叠→Markdown；新模块 interaction/src/clipboard-write.ts（注入式探测） | notice + 路径回显 | 导出文件可独立阅读；复制文本与最近 assistant 消息一致；无剪贴板工具时优雅报错（notice） |
@@ -433,6 +436,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 **2026-08-20 修正**：`dsh-mcp-client`（rc.6）已发布——每插件实例连接**一个**外部服务器（stdio 子进程 / Streamable HTTP），工具自动注册为 `mcp__<serverName>__<rawName>`（冲突加 SHA-256 尾缀）；配置走 cordis.yml（非 settings）；指数退避重连（500ms→30s，10 次上限）。**但无服务器注册表、无 `listServers()`、无启停管理面**；且默认组合不启用——CLI 仅以依赖形式携带供 patch layers，每个服务器命令是沙箱外可信可执行代码（安全姿态，CLI reference README 明示）。
 
 - **缝收窄**：只请求管理面（注册表 + 状态列举 + 启停，P2 降级）；Blue `/mcp` 可先做只读列举（fold 组合配置声明的 mcp-client 实例，⚠️ 可选）。
+  - **S23 注（2026-08-20）**：管理面的 list/switch/add 已由 Blue `/provider` 落地（消费 `listProviders`/`listConfigurableProviders`/`discoverModels` + settings `llm-pi-ai` 命名空间写入，Web Models 页同款跨命名空间 `settings.mutate` 先例）；删除/刷新与 MCP 侧仍缺。
 
 **2026-08-21 注记（D36）**：只读列举已定 S28——数据源为进程内 `ctx.loader.entries()`（moduleName 过滤，读 Schemastery 归一化运行时配置）+ `ctx.tools.schemas()` 按 `mcp__` 前缀分组 + `tools/change` 重拉 + fiber phase 近似状态；Blue bundle 包依赖带 `@deepseek-ai/dsh-mcp-client`（上游默认不装，装 Blue 即装）；服务器声明维持用户 profile patch 层（上游原生通道，HMR 热生效）。缝进一步收窄为**纯管理面**：每服务器状态事件（现只有 logger）+ 启停/重连 API（`ConnectionHandle` 私有；预算耗尽后仅 entry 重载/Host 重启可恢复）+ 服务器注册表服务。
 

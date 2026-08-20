@@ -82,7 +82,7 @@ async function mount(options: {
     steer,
     inbox: options.inbox ?? fakeInbox(),
   } as unknown as Agent
-  ctx.provide('blueSession', { current: options.withAgent === false ? null : agent })
+  ctx.provide('blueSession', { current: options.withAgent === false ? null : agent, modelRef: undefined })
   if (options.appExit !== undefined) ctx.provide('appExit', options.appExit)
   const fiber = await ctx.plugin(inputPlugin)
   const editor = screen.children[0] as FakeBlueEditor

@@ -28,10 +28,12 @@ interface Recorded {
  * setup installs — the observable effect of `installModelSelection` on the
  * agent context.
  * @param recorded - the capture sink.
+ * @param agent - the scoped Agent the setup reads (`ctx.agent`).
  * @returns the fake agent scope.
  */
-function recordingAgentCtx(recorded: Recorded): Context {
+function recordingAgentCtx(recorded: Recorded, agent?: Agent): Context {
   return {
+    agent,
     on: (event: string) => {
       recorded.listeners.push(event)
       return () => {}
@@ -39,14 +41,27 @@ function recordingAgentCtx(recorded: Recorded): Context {
   } as never
 }
 
+/** The request-header config a fake Agent's session reports, if any. */
+interface FakeHeaderConfig {
+  provider: string
+  model: string
+  reasoningEffort?: string
+}
+
 /** Build an owned handle for a fake Agent that records its teardown and prompts. */
-function makeHandle(id: string, recorded: Recorded, disposeError?: Error): AgentHandle {
+function makeHandle(
+  id: string,
+  recorded: Recorded,
+  disposeError?: Error,
+  headerConfig?: FakeHeaderConfig,
+): AgentHandle {
   const agent = {
     id,
     status: 'idle',
     session: {
       events: [{ type: 'user/message' }, { type: 'assistant/message' }],
       header: {},
+      requestHeader: () => (headerConfig === undefined ? undefined : { config: headerConfig }),
     },
     followup: (message: unknown) => { recorded.followups.push([id, message]) },
   } as unknown as Agent
@@ -83,6 +98,10 @@ function bench(config: Config, options: {
   defaultModel?: boolean
   createError?: unknown
   createDisposeError?: Error
+  /** The request header the resumed fake Agent reports (the header tier's input). */
+  resumeHeaderConfig?: FakeHeaderConfig
+  /** The request header the created fake Agent reports (the header tier's input). */
+  createHeaderConfig?: FakeHeaderConfig
 } = {}): Bench {
   const ctx = new Context()
   let err = ''
@@ -97,16 +116,28 @@ function bench(config: Config, options: {
       create: async (createOptions: CreateAgentOptions) => {
         if (createError !== undefined) throw createError
         recorded.created.push(createOptions)
-        await createOptions.setup?.(recordingAgentCtx(recorded))
+        const handle = makeHandle(
+          `agent-${recorded.created.length}`,
+          recorded,
+          options.createDisposeError,
+          options.createHeaderConfig,
+        )
+        await createOptions.setup?.(recordingAgentCtx(recorded, handle.agent))
         recorded.setups += 1
-        return makeHandle(`agent-${recorded.created.length}`, recorded, options.createDisposeError)
+        return handle
       },
       resume: async (resumeOptions: ResumeAgentOptions) => {
         if (resumeError !== undefined) throw resumeError
         recorded.resumed.push(String(resumeOptions.resumeSessionId))
         recorded.resumeOptions.push(resumeOptions)
-        await resumeOptions.setup?.(recordingAgentCtx(recorded))
-        return makeHandle(`resumed-${String(resumeOptions.resumeSessionId)}`, recorded)
+        const handle = makeHandle(
+          `resumed-${String(resumeOptions.resumeSessionId)}`,
+          recorded,
+          undefined,
+          options.resumeHeaderConfig,
+        )
+        await resumeOptions.setup?.(recordingAgentCtx(recorded, handle.agent))
+        return handle
       },
     } as never)
   }
@@ -155,6 +186,76 @@ describe('blue app driver', () => {
       source: { kind: 'user' },
     })
     expect(test.exits).toEqual([])
+    await test.ctx.fiber.dispose()
+  })
+
+  it('publishes the model-selection handle with the Agent, reading the default tier', async () => {
+    const test = bench({})
+    await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+    const modelRef = test.ctx.blueSession.modelRef
+    expect(modelRef).toBeDefined()
+    expect(modelRef!.current).toEqual({ provider: 'test-provider', model: 'test-model' })
+    expect(modelRef!.assembled).toBeUndefined()
+    await test.ctx.fiber.dispose()
+  })
+
+  it('fails the launch when the agent setup runs without a scoped agent', async () => {
+    const ctx = new Context()
+    let err = ''
+    internals.stderr = { write: (chunk: string) => { err += chunk; return true } }
+    const exits: number[] = []
+    ctx.provide('appExit', (code: number) => { exits.push(code) })
+    const recorded: Recorded = { created: [], resumed: [], resumeOptions: [], disposed: [], followups: [], setups: 0, listeners: [] }
+    ctx.provide('agents', {
+      create: async (createOptions: CreateAgentOptions) => {
+        // No scoped agent on the fake context: the setup must fail loud.
+        await createOptions.setup?.(recordingAgentCtx(recorded))
+        throw new Error('unreachable: the setup should have thrown')
+      },
+    } as never)
+    ctx.provide('agentDefaultModel', {
+      currentSelection: () => ({ provider: 'p', model: 'm' }),
+    } as never)
+    apply(ctx, {})
+    await vi.waitFor(() => { expect(exits).toEqual([1]) })
+    expect(err).toContain('blue-app: agent setup ran without a scoped agent')
+    await ctx.fiber.dispose()
+  })
+
+  it('resumes onto the session header\'s model, not the process default', async () => {
+    const test = bench({ resume: 'abc123' }, {
+      resumeHeaderConfig: { provider: 'mock', model: 'mock-pro', reasoningEffort: 'high' },
+    })
+    await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+    // The header tier answers: the resumed session keeps the model it was
+    // already using (the process default is test-provider/test-model).
+    expect(test.ctx.blueSession.modelRef!.current)
+      .toEqual({ provider: 'mock', model: 'mock-pro', reasoningEffort: 'high' })
+    await test.ctx.fiber.dispose()
+  })
+
+  it('moves modelRef to the switched Agent and back to the default tier on /new', async () => {
+    const test = bench({})
+    await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+    const first = test.ctx.blueSession.modelRef!
+    test.ctx.emit('blue/request-new')
+    await vi.waitFor(() => { expect(test.changes).toHaveLength(2) })
+    const second = test.ctx.blueSession.modelRef!
+    expect(second).not.toBe(first)
+    // The fresh Agent has no logged header, so the new reference reads the
+    // default tier.
+    expect(second.current).toEqual({ provider: 'test-provider', model: 'test-model' })
+    await test.ctx.fiber.dispose()
+  })
+
+  it('keeps the live session\'s modelRef when a requested resume fails', async () => {
+    const test = bench({})
+    await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+    const live = test.ctx.blueSession.modelRef
+    test.setResumeError(new Error('no such session'))
+    test.ctx.emit('blue/request-resume', 'gone')
+    await vi.waitFor(() => { expect(test.err()).toContain('could not resume session gone') })
+    expect(test.ctx.blueSession.modelRef).toBe(live)
     await test.ctx.fiber.dispose()
   })
 

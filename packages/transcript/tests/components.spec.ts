@@ -10,12 +10,14 @@ import { describe, expect, it } from 'vitest'
 import type { BlueComponents, BlueSemanticColors } from '@dsh-blue/blue-core'
 import {
   AssistantMessageComponent,
+  ErrorMessageComponent,
   StepSummaryComponent,
   ToolCallComponent,
   UserMessageComponent,
 } from '../src/components.ts'
 import type {
   TranscriptAssistantItem,
+  TranscriptErrorItem,
   TranscriptStepSummaryItem,
   TranscriptToolItem,
   TranscriptUserItem,
@@ -391,6 +393,23 @@ describe('ToolCallComponent', () => {
     expect(new ToolCallComponent(nonObject, COLORS, setup()).render(80)).toHaveLength(2)
     const empty = toolItem({ parsedArguments: { command: '' } })
     expect(new ToolCallComponent(empty, COLORS, setup()).render(80)).toHaveLength(2)
+  })
+})
+
+describe('ErrorMessageComponent', () => {
+  it('renders the marker, code, and message in error color, wrapped', () => {
+    const item: TranscriptErrorItem = { kind: 'error', seq: 9, turn: 3, message: '404: no such route', code: 'PI_AI_ERROR' }
+    const component = new ErrorMessageComponent(item, tagged(), setup())
+    const rows = component.render(80)
+    expect(rows[0]).toBe('[E]✗ request failed (PI_AI_ERROR): 404: no such route[/E]')
+    component.invalidate()
+  })
+
+  it('renders without a code and wraps long messages', () => {
+    const item: TranscriptErrorItem = { kind: 'error', seq: 9, turn: 3, message: 'x'.repeat(120) }
+    const rows = new ErrorMessageComponent(item, tagged(), setup()).render(40)
+    expect(rows.length).toBeGreaterThan(1)
+    expect(rows[0]).toContain('[E]✗ request failed:[/E]')
   })
 })
 

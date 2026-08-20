@@ -316,7 +316,10 @@ export function framePanel(
   lines.push(...body)
   const footer = options.footer
   if (footer !== undefined && footer.length > 0) {
-    lines.push(hintRow(footer, options.footerPaint ?? identity))
+    // Key rows grow with every new panel action; an over-wide footer would
+    // crash the renderer's width invariant, so it clips ANSI-safe like the
+    // title line (the S23 model-family footer is the first to need it).
+    lines.push(truncateToWidth(hintRow(footer, options.footerPaint ?? identity), ruleWidth))
   }
   lines.push(rulePaint('─'.repeat(ruleWidth)))
   return lines

@@ -38,6 +38,23 @@ export const ACTION_STEER = 'blue.interaction.steer'
  * dispatches).
  */
 export const ACTION_BACKSPACE = 'blue.interaction.backspace'
+/**
+ * Step the active segment control left (Left arrow) — contextual only:
+ * the thinking-segment panels (`/model`, `/effort`) match it in their own
+ * `handleInput`; the pi-tui Editor owns cursor-left in text.
+ */
+export const ACTION_SEGMENT_LEFT = 'blue.interaction.segment-left'
+/**
+ * Step the active segment control right (Right arrow) — contextual only,
+ * the mirror of {@link ACTION_SEGMENT_LEFT}.
+ */
+export const ACTION_SEGMENT_RIGHT = 'blue.interaction.segment-right'
+/**
+ * Confirm the active surface session-only — no persisted default
+ * (Alt+S) — contextual only: the model-family panels match it to commit a
+ * switch that leaves the default-model service untouched.
+ */
+export const ACTION_SESSION_ONLY = 'blue.interaction.session-only'
 
 /** The full interaction key batch, registered as one unit. */
 export const INTERACTION_KEY_ACTIONS: readonly BlueKeyAction[] = [
@@ -49,6 +66,9 @@ export const INTERACTION_KEY_ACTIONS: readonly BlueKeyAction[] = [
   { id: ACTION_INTERRUPT, keys: 'ctrl+c', description: 'Clear input / interrupt the agent / press twice to exit' },
   { id: ACTION_STEER, keys: 'ctrl+s', description: 'Steer the current turn with the draft' },
   { id: ACTION_BACKSPACE, keys: 'backspace', description: 'Delete backward / exit bash mode on an empty prompt' },
+  { id: ACTION_SEGMENT_LEFT, keys: 'left', description: 'Step the segment control left (contextual)' },
+  { id: ACTION_SEGMENT_RIGHT, keys: 'right', description: 'Step the segment control right (contextual)' },
+  { id: ACTION_SESSION_ONLY, keys: 'alt+s', description: 'Confirm session-only, no persisted default (contextual)' },
 ]
 
 /** Stable Cordis plugin name. */

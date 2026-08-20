@@ -57,7 +57,7 @@ describe('Questionnaire', () => {
     expect(rows[7]).toBe('    Beta')
     expect(rows[8]).toBe('    Other')
     expect(rows[9]).toBe('')
-    expect(rows[10]).toBe('_  ↑↓ select · space toggle · ↵ choose · tab switch · esc cancel_')
+    expect(rows[10]).toBe('_  ↑↓ select · space toggle · ↵ choose · tab switch · esc\u001b[0m...\u001b[0m')
     expect(rows[11]).toBe(bar)
   })
 
@@ -257,7 +257,7 @@ describe('Questionnaire', () => {
     // ellipsis row + the key row.
     expect(rows).toHaveLength(15)
     expect(rows[11]).toBe('~…~')
-    expect(rows[13]).toBe('_  ↑↓ select · space toggle · ↵ choose · tab switch · esc cancel_')
+    expect(rows[13]).toBe('_  ↑↓ select · space toggle · ↵ choose · tab switch · esc\u001b[0m...\u001b[0m')
     questionnaire.handleInput(KEY.escape)
   })
 

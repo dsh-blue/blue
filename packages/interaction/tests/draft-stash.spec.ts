@@ -31,7 +31,7 @@ async function boot(): Promise<{
   const session = ctx.sessions.create(SessionId('draft-spec'))
   const followup = vi.fn()
   const agent = { id: session.id, session, status: 'idle', followup } as unknown as Agent
-  ctx.provide('blueSession', { current: agent })
+  ctx.provide('blueSession', { current: agent, modelRef: undefined })
   return { ctx, components, followup }
 }
 

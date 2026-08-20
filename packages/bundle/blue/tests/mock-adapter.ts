@@ -1,4 +1,4 @@
-import type { GenerateOptions, LlmModelReasoningInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmModelInfo, LlmModelReasoningInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { CallId, LlmAdapter } from '@deepseek-ai/dsh-llm'
 
 /** Helpers to write scripted responses tersely. */
@@ -93,8 +93,15 @@ export class MockAdapter extends LlmAdapter {
     private readonly reasoning?: LlmModelReasoningInfo,
     private readonly defaultMaxTokens?: number,
     private readonly defaultContextWindow?: number,
+    /** The advertised catalog (the base adapter answers an empty list). */
+    private readonly models?: readonly LlmModelInfo[],
   ) {
     super()
+  }
+
+  /** The advertised catalog; the provider field is normalized per query. */
+  override listModels(provider: string): Promise<readonly LlmModelInfo[]> {
+    return Promise.resolve((this.models ?? []).map(model => ({ ...model, provider })))
   }
 
   override resolveModel(

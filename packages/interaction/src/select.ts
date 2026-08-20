@@ -159,6 +159,8 @@ export class BlueSelect implements BlueFocusable {
         lines.push(row)
       }
     }
+    // Long selections (a discovery adopt list) window instead of spilling
+    // the screen — the S23 dogfood ruling for every list surface.
     if (items.length > MAX_VISIBLE) {
       lines.push(colors.textMuted(`  (${this.cursor + 1}/${items.length})`))
     }

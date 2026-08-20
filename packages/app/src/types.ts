@@ -7,16 +7,25 @@
  */
 
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { BlueModelSelectionRef } from './model-ref.ts'
 
 /**
  * `ctx.blueSession` — the mutable reference to the Agent the Blue UI
  * currently shows. The app plugin owns this object for the process lifetime
- * and mutates `current` in place; consumers re-read it on every
+ * and mutates `current`/`modelRef` in place; consumers re-read them on every
  * `'blue/session-changed'` event instead of caching the Agent.
  */
 export interface BlueSessionRef {
   /** The currently active Agent, or `null` before the first create/resume completes. */
   current: Agent | null
+  /**
+   * The live Agent's model-selection handle, or `undefined` before the first
+   * create/resume completes. Published at the same commit point as `current`
+   * (never mid-switch); reading `modelRef.current` resolves an in-session
+   * pick, then the session log's last request header, then the process
+   * default — see `src/model-ref.ts`.
+   */
+  modelRef: BlueModelSelectionRef | undefined
 }
 
 declare module '@deepseek-ai/cordis' {
