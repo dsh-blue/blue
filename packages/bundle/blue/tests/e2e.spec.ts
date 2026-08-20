@@ -541,7 +541,7 @@ describe('blue whole-tree e2e', () => {
     await agent.whenIdle()
     await waitForRender()
     const output = tree.terminal.output
-    expect(output).toContain('Welcome back!')
+    expect(output).toContain('Welcome to Blue!')
     expect(output).toContain(`blue v${BLUE_VERSION}`)
     // AgentDefaultModelConfig mounts provider/model 'mock'; the banner
     // snapshots the selection at mount.
@@ -554,7 +554,7 @@ describe('blue whole-tree e2e', () => {
     expect(output).toContain('Tips for getting started')
     expect(output).toContain('! to run a shell command')
     // The banner renders before any transcript content.
-    expect(output.indexOf('Welcome back!')).toBeLessThan(output.indexOf('Blue online.'))
+    expect(output.indexOf('Welcome to Blue!')).toBeLessThan(output.indexOf('Blue online.'))
   })
 
   it('fills the full width on wide terminals with the banner still above the transcript', async () => {
@@ -565,12 +565,12 @@ describe('blue whole-tree e2e', () => {
     await waitForRender()
     tree.terminal.resize(120, tree.terminal.rows)
     const frame = await fullFrame(tree.terminal)
-    expect(frame).toContain('Welcome back!')
+    expect(frame).toContain('Welcome to Blue!')
     expect(frame).toContain('Tips for getting started')
     // The kimi gutter insets the banner one column on both sides (D29,
     // S21): a row spans the leading gutter column plus `columns - 2`
     // banner columns — no cap, but no full bleed either.
-    const bannerRow = frame.split('\r\n').find(row => row.includes('Welcome back!')) ?? ''
+    const bannerRow = frame.split('\r\n').find(row => row.includes('Welcome to Blue!')) ?? ''
     const plain = bannerRow
       // Strip every escape flavor the renderer emits: SGR runs, CSI
       // modes (?2031h ...), OSC 8 hyperlink tails, and stray controls.
@@ -579,7 +579,7 @@ describe('blue whole-tree e2e', () => {
       .replace(/[\u0000-\u001f]/g, '')
     // fullFrame bumps the width by one to force the repaint.
     expect(plain.trimEnd().length).toBe(tree.terminal.columns - 1)
-    expect(frame.indexOf('Welcome back!')).toBeLessThan(frame.indexOf('Blue online.'))
+    expect(frame.indexOf('Welcome to Blue!')).toBeLessThan(frame.indexOf('Blue online.'))
   })
 
   it('sinks the footer and editor dock to the last rows at boot with no session content', async () => {
@@ -592,7 +592,7 @@ describe('blue whole-tree e2e', () => {
     // renderer pads the gap so the dock spans the terminal's last rows
     // instead of floating right under the banner.
     expect(rows).toHaveLength(24)
-    const bannerAt = rows.findIndex(row => row.includes('Welcome back!'))
+    const bannerAt = rows.findIndex(row => row.includes('Welcome to Blue!'))
     const footerAt = rows.findIndex(row => row.includes(`${FOOTER_TEXT_SGR}mock`))
     expect(bannerAt).toBeGreaterThanOrEqual(0)
     expect(footerAt).toBeGreaterThan(bannerAt)
@@ -1559,9 +1559,9 @@ describe('blue whole-tree e2e', () => {
       // activation round it re-mounts first and stays the first scroll child.
       await vi.waitFor(() => {
         const rendered = tree.terminal.written.slice(beforeSwitch).join('')
-        expect(rendered).toContain('Welcome back!')
+        expect(rendered).toContain('Welcome to Blue!')
         expect(rendered).toContain('palette reply')
-        expect(rendered.indexOf('Welcome back!')).toBeLessThan(rendered.indexOf('palette reply'))
+        expect(rendered.indexOf('Welcome to Blue!')).toBeLessThan(rendered.indexOf('palette reply'))
       })
     } finally {
       await backToDark(tree, agent)
