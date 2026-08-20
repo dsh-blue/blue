@@ -342,6 +342,23 @@ describe('ToolCallComponent', () => {
     expect(lines).toEqual(['', '[S]✓ [/S]Used \x1b[1m[P]probe[/P]\x1b[22m'])
   })
 
+  it('collapses a Read card to its header until expanded (kimi)', () => {
+    const item = toolItem({
+      name: 'read',
+      view: { card: 'read', path: 'x', offset: 1, lines: [], totalLines: 0 },
+    })
+    item.result = { text: 'l1', fullText: 'l1\nl2\nl3', isError: false }
+    const component = new ToolCallComponent(item, tagged(), setup())
+    // The kimi Read card: header + lines chip only — the file content
+    // stays hidden behind Ctrl-O.
+    expect(component.render(80)).toEqual([
+      '',
+      '[S]✓ [/S]Used \x1b[1m[P]read[/P]\x1b[22m[M] · 3 lines[/M]',
+    ])
+    component.setExpanded(true)
+    expect(component.render(80)).toHaveLength(1 + 1 + 3)
+  })
+
   it('surfaces the bash command in the body behind the kimi shell chrome', () => {
     const item = toolItem({ parsedArguments: { command: 'ls\ncd /tmp' } })
     const lines = new ToolCallComponent(item, tagged(), setup()).render(80)

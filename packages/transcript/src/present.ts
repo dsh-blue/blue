@@ -3,7 +3,10 @@
  * tool registry's `presentCall`/`presentResult` hooks for a render intent.
  * Cordis-free like the fold it serves; every presenter call is contained —
  * an unknown tool, a missing presenter, or a throwing presenter all yield
- * `undefined` and the generic presentation carries on.
+ * `undefined` and the generic presentation carries on. The module also owns
+ * the shared presentation pure helpers: {@link ellipsize} (moved here from
+ * the fold so the key-arg extraction below stays cycle-free) and
+ * {@link extractKeyArgument}.
  *
  * @module @dsh-blue/blue-transcript/present
  */
@@ -18,6 +21,23 @@ import type { TranscriptToolItem } from './types.ts'
 
 /** The slice of the host tool registry the resolvers read. */
 export type ToolPresentationSource = Pick<ToolRuntime, 'get'>
+
+/** Maximum length of the key argument shown on a card header. */
+export const KEY_ARG_MAX_CHARS = 60
+
+/** The key-arg whitelist, in priority order (the S20 doc's own list). */
+const KEY_ARG_KEYS = ['file_path', 'command', 'pattern']
+
+/**
+ * Collapse a multi-line string to one ellipsized line.
+ * @param text - the text to flatten.
+ * @param maxChars - the maximum string length (not terminal columns) kept.
+ * @returns whitespace-collapsed text, ellipsized beyond `maxChars`.
+ */
+export function ellipsize(text: string, maxChars: number): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length <= maxChars ? flat : `${flat.slice(0, maxChars - 1)}…`
+}
 
 /**
  * Parse a tool call's raw arguments JSON.
@@ -90,4 +110,29 @@ export function isReadItem(item: TranscriptToolItem): boolean {
   if (!('card' in view)) return false
   if (view.card === 'read') return true
   return view.card === 'generic' && 'kind' in view && view.kind === 'read'
+}
+
+/**
+ * The S20 key argument for one tool item's header: the whitelist
+ * (`file_path`/`command`/`pattern`) first, then the first short string
+ * argument. Values flatten to one line at {@link KEY_ARG_MAX_CHARS}.
+ * @param item - the folded tool item (reads `parsedArguments`).
+ * @returns the display key argument, or `undefined` when none qualifies.
+ */
+export function extractKeyArgument(item: TranscriptToolItem): string | undefined {
+  const parsed = item.parsedArguments
+  if (parsed === undefined || typeof parsed !== 'object' || parsed === null) return undefined
+  const args = parsed as Record<string, unknown>
+  for (const key of KEY_ARG_KEYS) {
+    const value = args[key]
+    if (typeof value === 'string' && value !== '') {
+      return ellipsize(value, KEY_ARG_MAX_CHARS)
+    }
+  }
+  for (const value of Object.values(args)) {
+    if (typeof value === 'string' && value !== '' && value.length <= KEY_ARG_MAX_CHARS) {
+      return ellipsize(value, KEY_ARG_MAX_CHARS)
+    }
+  }
+  return undefined
 }

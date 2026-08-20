@@ -797,7 +797,7 @@ describe('blue whole-tree e2e', () => {
     expect(expanded).toContain('TAILMARKER')
   })
 
-  it('renders a diff-intent tool through the DiffCard: title, path count, and +/- rows', async () => {
+  it('renders a diff-intent tool through the DiffCard: kimi header, chip, and +/- rows', async () => {
     const tree = await bootBlue([], {
       script: [toolCallResponse('call-diff', 'edit-file', {}), textResponse('edited')],
     })
@@ -834,9 +834,12 @@ describe('blue whole-tree e2e', () => {
     await waitForRender()
     // Compare against SGR-stripped output so marker/text adjacency survives
     // the separate color spans ('-' marker + removed text, '+' + added).
+    // The S20 kimi header carries the verb, tool name, and the +A -R chip;
+    // the per-file title/path lines are gone (the path belongs to the key
+    // argument, absent here because the scripted call carries no args).
     const shown = tree.terminal.output.replace(/\x1b\[[0-9;]*m/g, '')
-    expect(shown).toContain('Edited a.ts')
-    expect(shown).toContain('a.ts')
+    expect(shown).toContain('✓ Used edit-file')
+    expect(shown).toContain(' · +2 -1')
     expect(shown).toContain('-two')
     expect(shown).toContain('+TWO')
     expect(shown).toContain('+four')

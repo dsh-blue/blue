@@ -19,7 +19,7 @@ import type {
   BlueMarkdown,
   BlueSemanticColors,
 } from '@dsh-blue/blue-core'
-import { ellipsize } from './fold.ts'
+import { extractKeyArgument, isReadItem, KEY_ARG_MAX_CHARS } from './present.ts'
 import type {
   TranscriptAssistantItem,
   TranscriptStepSummaryItem,
@@ -29,16 +29,13 @@ import type {
 } from './types.ts'
 
 /** Maximum length of the tool-call arguments shown on the call line. */
-export const TOOL_ARGUMENTS_MAX_CHARS = 60
+export const TOOL_ARGUMENTS_MAX_CHARS = KEY_ARG_MAX_CHARS
 
 /** Collapsed result preview: visual rows kept (kimi `RESULT_PREVIEW_LINES`). */
 export const RESULT_PREVIEW_LINES = 3
 
 /** Collapsed Write/Edit-style preview: rows kept (kimi `COMMAND_PREVIEW_LINES`). */
 export const COMMAND_PREVIEW_LINES = 10
-
-/** The key-arg whitelist, in priority order (the S20 doc's own list). */
-const KEY_ARG_KEYS = ['file_path', 'command', 'pattern']
 
 /** Indent of the collapsed/expanded result preview rows (kimi's default). */
 const PREVIEW_INDENT = '  '
@@ -259,10 +256,12 @@ export class AssistantMessageComponent implements BlueComponent {
  * wrapped at the content width, capped at {@link RESULT_PREVIEW_LINES}
  * visual rows, under a dim `... (N more lines, M total, ctrl+o to expand)`
  * hint — the two-column kimi indent replaces the retired `⎿` connector
- * (kimi has no such glyph; the dogfood rules its fate). Expanded (Ctrl-O)
- * renders every wrapped line. MCP tools need no dim suffix yet: the rc.7
- * harness has no MCP surface, and Blue does not build for a consumer that
- * does not exist.
+ * (kimi has no such glyph; the dogfood rules its fate). A Read item (the
+ * view-contract `isReadItem`) collapses harder — the kimi Read card shows
+ * its header and lines chip only, the file content stays hidden until
+ * Ctrl-O. Expanded (Ctrl-O) renders every wrapped line. MCP tools need no
+ * dim suffix yet: the rc.7 harness has no MCP surface, and Blue does not
+ * build for a consumer that does not exist.
  */
 export class ToolCallComponent implements BlueComponent {
   private readonly item: TranscriptToolItem
@@ -298,25 +297,6 @@ export class ToolCallComponent implements BlueComponent {
     this.expanded = expanded
   }
 
-  /** The S20 key argument: the whitelist first, then the first short arg. */
-  private keyArgument(): string | undefined {
-    const parsed = this.item.parsedArguments
-    if (parsed === undefined || typeof parsed !== 'object' || parsed === null) return undefined
-    const args = parsed as Record<string, unknown>
-    for (const key of KEY_ARG_KEYS) {
-      const value = args[key]
-      if (typeof value === 'string' && value !== '') {
-        return ellipsize(value, TOOL_ARGUMENTS_MAX_CHARS)
-      }
-    }
-    for (const value of Object.values(args)) {
-      if (typeof value === 'string' && value !== '' && value.length <= TOOL_ARGUMENTS_MAX_CHARS) {
-        return ellipsize(value, TOOL_ARGUMENTS_MAX_CHARS)
-      }
-    }
-    return undefined
-  }
-
   /** The header row: bullet, verb, bold name, key arg, and the lines chip. */
   private renderHeader(width: number): string {
     const { result } = this.item
@@ -333,7 +313,7 @@ export class ToolCallComponent implements BlueComponent {
     } else {
       const verb = result === undefined ? 'Using' : 'Used'
       const name = `${BOLD_OPEN}${colors.primary(this.item.name)}${BOLD_CLOSE}`
-      const keyArg = this.keyArgument()
+      const keyArg = extractKeyArgument(this.item)
       const argStr = keyArg === undefined ? '' : colors.muted(` (${keyArg})`)
       header = `${bullet}${verb} ${name}${argStr}`
     }
@@ -394,6 +374,9 @@ export class ToolCallComponent implements BlueComponent {
       lines.push(...allLines.map(paint))
       return lines
     }
+    // The kimi Read collapse (S20 dogfood): a Read card shows its header
+    // and lines chip only — the file content stays hidden until Ctrl-O.
+    if (isReadItem(this.item)) return lines
     const shown = allLines.slice(0, RESULT_PREVIEW_LINES)
     lines.push(...shown.map(paint))
     if (allLines.length > shown.length) {
