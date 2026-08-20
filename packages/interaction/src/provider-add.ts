@@ -267,9 +267,25 @@ interface DiscoveryLlm {
   discoverModels(ns: string, request: { baseURL: string, api: string, apiKey: string }): Promise<readonly LlmDiscoveredModel[]>
 }
 
+/** One classified discovery failure — the message already distinguishes an
+ * unreachable endpoint (`could not reach &lt;url&gt;`), a rejected credential
+ * (`…; check the API key` on 401/403), and an unlistable protocol. */
+interface DiscoveryFailure {
+  readonly message: string
+  readonly code?: string
+}
+
+/** One discovery attempt's outcome: the models it listed, or the
+ * classified failure when it could not (an empty listing is neither). */
+interface DiscoveryResult {
+  readonly models?: readonly LlmDiscoveredModel[]
+  readonly failure?: DiscoveryFailure
+}
+
 /**
- * One discovery attempt: resolve the endpoint's advertised models, or
- * `undefined` when the attempt failed or answered nothing.
+ * Interrogate the endpoint once. The error's classification rides along so
+ * the manual-entry fallback can tell the user whether the gateway is down,
+ * the key was rejected, or the protocol simply has no listing.
  */
 async function tryDiscover(
   llm: DiscoveryLlm,
@@ -277,12 +293,18 @@ async function tryDiscover(
   api: string,
   baseURL: string,
   key: string,
-): Promise<readonly LlmDiscoveredModel[] | undefined> {
+): Promise<DiscoveryResult> {
   try {
     const found = await llm.discoverModels(ns, { baseURL, api, apiKey: key })
-    return found.length > 0 ? found : undefined
-  } catch {
-    return undefined
+    return found.length > 0 ? { models: found } : {}
+  } catch (error) {
+    const code = (error as { code?: unknown }).code
+    return {
+      failure: {
+        message: describe(error),
+        ...(typeof code === 'string' && code.length > 0 ? { code } : {}),
+      },
+    }
   }
 }
 
@@ -305,26 +327,36 @@ async function collectModels(
   baseURL: string,
   key: string,
 ): Promise<EndpointDraft['models'] | undefined> {
-  {
-    let discovered: readonly LlmDiscoveredModel[] | undefined
-    if (LISTABLE_PROTOCOLS.has(protocol)) {
-      discovered = await tryDiscover(llm, ns, protocol, baseURL, key)
-    }
-    discovered ??= await tryDiscover(llm, ns, 'openai-completions', baseURL, key)
-    if (discovered !== undefined) {
-      const catalog = discovered
+  // Declared protocol first (when it has a listing), then the
+  // openai-completions gateway fallback. The fallback keeps whichever
+  // outcome is more informative: models win, a classified failure beats
+  // an empty listing.
+  let outcome: DiscoveryResult = {}
+  if (LISTABLE_PROTOCOLS.has(protocol)) {
+    outcome = await tryDiscover(llm, ns, protocol, baseURL, key)
+  } else {
+    outcome = await tryDiscover(llm, ns, 'openai-completions', baseURL, key)
+  }
+  if (outcome.models === undefined) {
+    const fallback = await tryDiscover(llm, ns, 'openai-completions', baseURL, key)
+    outcome = fallback.models !== undefined || fallback.failure !== undefined ? fallback : outcome
+  }
+  const models = outcome.models
+  if (models !== undefined) {
+    {
+      const catalog = models
       const adopted = await step<string[]>(done => new BlueSelect({
         keymap: display.keymap,
         theme: display.theme,
         components: display.components,
-        items: catalog.map(model => ({ value: model.id, label: model.id })),
+        items: catalog.map((model: LlmDiscoveredModel) => ({ value: model.id, label: model.id })),
         title: 'Advertised models',
         onConfirm: items => done(items.map(item => item.value)),
         onCancel: () => done(undefined),
       }))
       if (adopted === undefined || adopted.length === 0) return undefined
       return adopted.map(id => {
-        const found = catalog.find(model => model.id === id)
+        const found = catalog.find((model: LlmDiscoveredModel) => model.id === id)
         return {
           id,
           ...(found?.contextWindow !== undefined ? { contextWindow: found.contextWindow } : {}),
@@ -335,7 +367,11 @@ async function collectModels(
   }
   const manual = await fillForm(display, {
     title: 'Model ids',
-    subtitle: 'could not list models from the endpoint — enter model ids manually',
+    // The classified reason tells the user whether the gateway is
+    // unreachable, the key was rejected, or nothing was listed.
+    subtitle: outcome.failure !== undefined
+      ? `discovery failed: ${outcome.failure.message} — enter model ids manually`
+      : 'the endpoint listed no models — enter model ids manually',
     fields: [
       {
         id: 'ids',
