@@ -683,6 +683,22 @@ export interface BlueComponents {
    */
   imageDimensions(data: Uint8Array): { width: number, height: number } | undefined
   /**
+   * Create the `@`-mention file completion source over the renderer's
+   * fd-backed pipeline: scoped fuzzy queries (a `/` in the query narrows to
+   * that directory), substring scoring with a directory bonus, a top-20 cut,
+   * quoted values for paths with spaces, and an `applyCompletion` that keeps
+   * directories open for drill-down (no trailing space, cursor inside a
+   * closing quote). `fdPath === null` disables the backend — suggestions
+   * dry to `null` while the pure `applyCompletion` keeps working, so callers
+   * layer their own fallback listing behind it (the kimi `FileMentionProvider`
+   * composition). Slash-command suggestions are the caller's business: the
+   * source is constructed with no commands and only its `@` branch is used.
+   * @param basePath - the project root the relative paths are reported from.
+   * @param fdPath - the `fd` binary to spawn, or `null` when unavailable.
+   * @returns the mention completion source.
+   */
+  createFileMentionProvider(basePath: string, fdPath: string | null): BlueAutocompleteProvider
+  /**
    * Create a single-selection list themed from the active palette.
    * @param options - items and selection callbacks.
    * @returns the list component.

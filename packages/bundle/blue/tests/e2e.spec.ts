@@ -1960,6 +1960,34 @@ describe('blue whole-tree e2e', () => {
     clearDraft()
   })
 
+  it('completes @ mentions with directory drill-down and submits them as plain text', async () => {
+    const tree = await bootBlue([], { script: [textResponse('mentioned')] })
+    const agent = await currentAgent(tree)
+    // The session cwd is the repo checkout: '@docs' ranks the docs
+    // directory, and Enter accepts it without submitting (only slash
+    // completions fall through to submit).
+    tree.terminal.sendInput('@docs')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('docs/') })
+    tree.terminal.sendInput('\r')
+    // The accept leaves '@docs/' before the cursor; the adapter's reopen
+    // hook lists the directory's contents, and the continued typing
+    // preselects the architecture doc by its basename prefix.
+    tree.terminal.sendInput('blue-arch')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('blue-architecture.md') })
+    tree.terminal.sendInput('\r')
+    await waitForRender()
+    // The file accept appends the trailing space — still no submission.
+    expect(tree.adapter.requests).toHaveLength(0)
+    // The third Enter submits: the mention travels as plain text (the kimi
+    // semantics — the model reads the file itself), no attachment blocks.
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    const request = tree.adapter.requests[0]!
+    expect(JSON.stringify(request.messages)).toContain('@docs/blue-architecture.md')
+    await agent.whenIdle()
+    clearDraft()
+  })
+
   it('switches sessions through /new and /fork, and lists them in the /sessions picker', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-blue-e2e-sessions-'))
     const tree = await bootBlue(['first', 'task'], {

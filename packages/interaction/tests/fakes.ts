@@ -7,6 +7,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import type {
+  BlueAutocompleteItem,
   BlueAutocompleteProvider,
   BlueColorFn,
   BlueComponent,
@@ -382,6 +383,52 @@ function fakeSettingsList(options: BlueSettingsListOptions): BlueSettingsList {
 }
 
 /**
+ * Fake `@`-mention completion source: records its construction facts and
+ * reads its behavior through the owning factory instance, so re-programming
+ * `mentionGetSuggestions`/`mentionApplyCompletion` reaches providers created
+ * earlier and later alike (the real source is rebuilt when the fd probe
+ * settles). The real fd pipeline is pinned by the core spec; interaction
+ * tests assert only the composition around it.
+ */
+export class FakeFileMentionProvider implements BlueAutocompleteProvider {
+  triggerCharacters: string[] | undefined
+
+  /**
+   * @param basePath - the project root the factory was called with.
+   * @param fdPath - the fd binary the factory was called with.
+   * @param behavior - the owning factory's programmable behavior fields.
+   */
+  constructor(
+    readonly basePath: string,
+    readonly fdPath: string | null,
+    private readonly behavior: FakeBlueComponents,
+  ) {}
+
+  getSuggestions(
+    lines: string[],
+    cursorLine: number,
+    cursorCol: number,
+    options: { signal: AbortSignal, force?: boolean },
+  ): Promise<ReturnType<BlueAutocompleteProvider['getSuggestions']>> {
+    return this.behavior.mentionGetSuggestions(lines, cursorLine, cursorCol, options)
+  }
+
+  applyCompletion(
+    lines: string[],
+    cursorLine: number,
+    cursorCol: number,
+    item: BlueAutocompleteItem,
+    prefix: string,
+  ): { lines: string[], cursorLine: number, cursorCol: number } {
+    return this.behavior.mentionApplyCompletion(lines, cursorLine, cursorCol, item, prefix)
+  }
+
+  shouldTriggerFileCompletion(): boolean {
+    return true
+  }
+}
+
+/**
  * Fake component factory: deterministic width helpers and recordable
  * editor/select-list creation for test inspection.
  */
@@ -392,6 +439,21 @@ export class FakeBlueComponents implements BlueComponents {
   readonly editorOptions: Array<BlueEditorOptions | undefined> = []
   /** Every select list created through this factory, in creation order. */
   readonly selectLists: FakeBlueSelectList[] = []
+  /**
+   * Programmable mention-source behavior, shared by every provider this
+   * factory creates: suggestions default to none, application to identity.
+   */
+  mentionGetSuggestions: BlueAutocompleteProvider['getSuggestions'] = async () => null
+  mentionApplyCompletion: BlueAutocompleteProvider['applyCompletion'] =
+    (lines, _cursorLine, cursorLine, cursorCol) => ({ lines: [...lines], cursorLine, cursorCol })
+  /** Every mention source created through this factory, in creation order. */
+  readonly mentionProviders: FakeFileMentionProvider[] = []
+
+  createFileMentionProvider(basePath: string, fdPath: string | null): BlueAutocompleteProvider {
+    const provider = new FakeFileMentionProvider(basePath, fdPath, this)
+    this.mentionProviders.push(provider)
+    return provider
+  }
 
   createEditor(options?: BlueEditorOptions): FakeBlueEditor {
     this.editorOptions.push(options)
