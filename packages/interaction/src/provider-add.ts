@@ -279,6 +279,36 @@ interface DiscoveryFailure {
   readonly code?: string
 }
 
+/**
+ * The listing-probe candidates: the entered base first (respect the user),
+ * then the OpenAI `/v1` form, then the bare host — gateways serve the
+ * `GET …/models` listing under different path conventions than their
+ * conversation routes (new-api answers `/v1/models` while the
+ * anthropic-messages transport appends `/v1/messages` to a bare base).
+ * @param baseURL - the user-entered base.
+ * @returns the deduplicated probe candidates, entered first.
+ */
+function discoveryBases(baseURL: string): string[] {
+  const trimmed = baseURL.replace(/\/+$/, '')
+  const withV1 = trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`
+  const stripped = trimmed.replace(/\/v1$/, '')
+  return [...new Set([trimmed, withV1, ...stripped !== trimmed ? [stripped] : []])]
+}
+
+/**
+ * Normalize the base the profile carries, by protocol convention:
+ * anthropic-messages routes append `/v1/messages` themselves so the profile
+ * base never keeps a trailing `/v1` (the dogfood's `POST /v1/v1/messages`);
+ * the OpenAI protocols append `/chat/completions` so a base that only
+ * listed under the `/v1` candidate carries that `/v1` into the profile.
+ */
+function normalizeBaseURL(protocol: string, entered: string, listingBase: string | undefined): string {
+  const trimmed = entered.replace(/\/+$/, '')
+  if (protocol === 'anthropic-messages') return trimmed.replace(/\/v1$/, '')
+  if (listingBase === `${trimmed}/v1`) return listingBase
+  return trimmed
+}
+
 /** One discovery attempt's outcome: the models it listed, or the
  * classified failure when it could not (an empty listing is neither). */
 interface DiscoveryResult {
@@ -323,6 +353,13 @@ async function tryDiscover(
  * a gateway that lists fine). The failure rides the manual form's
  * subtitle.
  */
+/** What the models step produced: the entries plus which base listed them. */
+interface CollectedModels {
+  readonly models: NonNullable<EndpointDraft['models']>
+  /** The probe candidate that answered — `undefined` on the manual path. */
+  readonly listingBase?: string
+}
+
 async function collectModels(
   display: ProviderAddDisplay,
   llm: DiscoveryLlm,
@@ -330,25 +367,30 @@ async function collectModels(
   protocol: string,
   baseURL: string,
   key: string,
-): Promise<EndpointDraft['models'] | undefined> {
+): Promise<CollectedModels | undefined> {
   // Declared protocol first (when it has a listing), then the
-  // openai-completions gateway fallback. The fallback keeps whichever
-  // outcome is more informative: models win, a classified failure beats
-  // an empty listing.
-  let outcome: DiscoveryResult = {}
-  if (LISTABLE_PROTOCOLS.has(protocol)) {
-    outcome = await tryDiscover(llm, ns, protocol, baseURL, key)
-  } else {
-    outcome = await tryDiscover(llm, ns, 'openai-completions', baseURL, key)
+  // openai-completions gateway fallback; each api probes every base
+  // candidate. The first failure (entered base, declared api) is the one
+  // the manual form reports — it describes the URL the user typed.
+  const apis = [...new Set(LISTABLE_PROTOCOLS.has(protocol)
+    ? [protocol, 'openai-completions']
+    : ['openai-completions'])]
+  let found: { models: readonly LlmDiscoveredModel[], listingBase: string } | undefined
+  let failure: DiscoveryFailure | undefined
+  for (const api of apis) {
+    for (const base of discoveryBases(baseURL)) {
+      const outcome = await tryDiscover(llm, ns, api, base, key)
+      if (outcome.models !== undefined) {
+        found = { models: outcome.models, listingBase: base }
+        break
+      }
+      failure ??= outcome.failure
+    }
+    if (found !== undefined) break
   }
-  if (outcome.models === undefined) {
-    const fallback = await tryDiscover(llm, ns, 'openai-completions', baseURL, key)
-    outcome = fallback.models !== undefined || fallback.failure !== undefined ? fallback : outcome
-  }
-  const models = outcome.models
-  if (models !== undefined) {
+  if (found !== undefined) {
     {
-      const catalog = models
+      const catalog = found.models
       const adopted = await step<string[]>(done => new BlueSelect({
         keymap: display.keymap,
         theme: display.theme,
@@ -359,22 +401,25 @@ async function collectModels(
         onCancel: () => done(undefined),
       }))
       if (adopted === undefined || adopted.length === 0) return undefined
-      return adopted.map(id => {
-        const found = catalog.find((model: LlmDiscoveredModel) => model.id === id)
-        return {
-          id,
-          ...(found?.contextWindow !== undefined ? { contextWindow: found.contextWindow } : {}),
-          ...(found?.maxTokens !== undefined ? { maxTokens: found.maxTokens } : {}),
-        }
-      })
+      return {
+        listingBase: found.listingBase,
+        models: adopted.map(id => {
+          const entry = catalog.find((model: LlmDiscoveredModel) => model.id === id)
+          return {
+            id,
+            ...(entry?.contextWindow !== undefined ? { contextWindow: entry.contextWindow } : {}),
+            ...(entry?.maxTokens !== undefined ? { maxTokens: entry.maxTokens } : {}),
+          }
+        }),
+      }
     }
   }
   const manual = await fillForm(display, {
     title: 'Model ids',
     // The classified reason tells the user whether the gateway is
     // unreachable, the key was rejected, or nothing was listed.
-    subtitle: outcome.failure !== undefined
-      ? `discovery failed: ${outcome.failure.message} — enter model ids manually`
+    subtitle: failure !== undefined
+      ? `discovery failed: ${failure.message} — enter model ids manually`
       : 'the endpoint listed no models — enter model ids manually',
     fields: [
       {
@@ -390,7 +435,7 @@ async function collectModels(
   })
   if (manual === undefined) return undefined
   /* v8 ignore next -- the required field guarantees a non-empty id list */
-  return manual.ids?.split(',').map(id => ({ id: id.trim() })) ?? []
+  return { models: manual.ids?.split(',').map(id => ({ id: id.trim() })) ?? [] }
 }
 
 
@@ -560,7 +605,14 @@ export async function runProviderAdd(
             ? (active.has(value) ? `provider name "${value}" already exists` : undefined)
             : 'provider names are lowercase kebab-case (a-z, 0-9, -)',
         },
-        { id: 'baseURL', label: 'Base URL', required: true, hint: 'e.g. https://gateway.example.com/v1' },
+        {
+          id: 'baseURL',
+          label: 'Base URL',
+          required: true,
+          hint: protocol === 'anthropic-messages'
+            ? 'no trailing /v1 — the client appends /v1/messages, e.g. https://gw.example.com'
+            : 'include /v1, e.g. https://gw.example.com/v1',
+        },
         { id: 'key', label: 'API key', mask: true, required: true },
       ],
     })
@@ -569,11 +621,16 @@ export async function runProviderAdd(
        exactOptionalPropertyTypes artifacts */
     const collected = await collectModels(display, llm, ns, protocol, declared.baseURL ?? '', declared.key ?? '')
     if (collected === undefined) return 'add provider cancelled'
+    // The profile base follows the protocol's path convention, not the
+    // user's typing: anthropic transports append /v1 themselves, the
+    // OpenAI family needs it present.
+    /* v8 ignore next -- the required form field guarantees a non-empty base */
+    const baseURL = normalizeBaseURL(protocol, declared.baseURL ?? '', collected.listingBase)
     // Match the ids against the models.dev catalog first (the kimi flow):
     // well-known models get their context window and effort set without
     // asking, and a fully-matched set skips the defaults form entirely.
     const index = await loadModelsDevIndex()
-    const enriched = collected.map(model => {
+    const enriched = collected.models.map(model => {
       const match = index?.lookup(model.id)
       return match === undefined ? model : applyCatalogMatch(model, match)
     })
@@ -584,7 +641,7 @@ export async function runProviderAdd(
       : await fillModelDefaults(display, enriched, index !== undefined)
     if (models === undefined) return 'add provider cancelled'
     /* v8 ignore next -- same required-field artifacts */
-    draft = { route: declared.route ?? '', protocol, baseURL: declared.baseURL, key: declared.key ?? '', models }
+    draft = { route: declared.route ?? '', protocol, baseURL, key: declared.key ?? '', models }
   }
 
   // Step 3: the commit — profile first, key second (the Web Models order:

@@ -143,6 +143,11 @@ function wizardLlm(catalog: {
   discovered?: { id: string, contextWindow?: number }[]
   discoveryError?: Error
   withDeepseekEntry?: boolean
+  /** Only answer the listing when the probed base ends with /v1 (the
+   * new-api convention) — otherwise throw. */
+  listingUnderV1Only?: boolean
+  /** Every probed base rides here for assertions. */
+  probed?: string[]
 } = {}): LlmRuntime {
   // A real host lists the deepseek adapter's own configurable entry ahead
   // of the pi-ai catalog — the wizard must pick the pi-ai namespace.
@@ -165,7 +170,11 @@ function wizardLlm(catalog: {
       settingsPath: ['providers', entry.provider],
       declared: false,
     })),
-    discoverModels: async () => {
+    discoverModels: async (_ns: string, request: { baseURL: string }) => {
+      catalog.probed?.push(request.baseURL)
+      if (catalog.listingUnderV1Only === true && !request.baseURL.endsWith('/v1')) {
+        throw new Error(`could not reach ${request.baseURL}/models`)
+      }
       if (catalog.discoveryError !== undefined) throw catalog.discoveryError
       return [...catalog.discovered ?? []]
     },
@@ -461,6 +470,121 @@ describe('runProviderAdd', () => {
       contextWindow: 1048576,
       reasoningEfforts: { low: 'low', high: 'high' },
     }])
+  })
+
+  it('discovers through the /v1 candidate and keeps the bare base for anthropic', async () => {
+    // The gateway answers the listing only under /v1/models; the entered
+    // base has no /v1 (the anthropic convention) — the probe walks to the
+    // /v1 candidate and the profile keeps the bare base.
+    const probed: string[] = []
+    const bench = mountWizard({ discovered: [{ id: 'glm-5.3' }], listingUnderV1Only: true, probed })
+    const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(2) })
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(3) })
+    const form = current(bench.screen)
+    form.handleInput('bare-gw')
+    form.handleInput(KEY.enter)
+    form.handleInput('https://bare.example.com')
+    form.handleInput(KEY.enter)
+    form.handleInput('k')
+    form.handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(4) })
+    current(bench.screen).handleInput(' ')
+    current(bench.screen).handleInput(KEY.enter)
+    await skipDefaults(bench.screen)
+    await expect(outcome).resolves.toBe('provider "bare-gw" added')
+    expect(probed[0]).toBe('https://bare.example.com')
+    expect(probed).toContain('https://bare.example.com/v1')
+    const profile = ((bench.mutations[0] ?? { ops: [] }).ops as { value: Record<string, unknown> }[])[0]!.value
+    // anthropic-messages: no trailing /v1 — the transport appends it.
+    expect(profile.baseURL).toBe('https://bare.example.com')
+    expect(profile.api).toBe('anthropic-messages')
+  })
+
+  it('carries the /v1 candidate into the profile for openai protocols', async () => {
+    const probed: string[] = []
+    const bench = mountWizard({ discovered: [{ id: 'gpt-x' }], listingUnderV1Only: true, probed })
+    const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(2) })
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(3) })
+    const form = current(bench.screen)
+    form.handleInput('v1-gw')
+    form.handleInput(KEY.enter)
+    form.handleInput('https://v1.example.com')
+    form.handleInput(KEY.enter)
+    form.handleInput('k')
+    form.handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(4) })
+    current(bench.screen).handleInput(' ')
+    current(bench.screen).handleInput(KEY.enter)
+    await skipDefaults(bench.screen)
+    await expect(outcome).resolves.toBe('provider "v1-gw" added')
+    const profile = ((bench.mutations[0] ?? { ops: [] }).ops as { value: Record<string, unknown> }[])[0]!.value
+    // openai-completions appends /chat/completions — the base must carry /v1.
+    expect(profile.baseURL).toBe('https://v1.example.com/v1')
+  })
+
+  it('keeps an entered /v1 base for openai protocols when it lists there', async () => {
+    const bench = mountWizard({ discovered: [{ id: 'gpt-x' }] })
+    const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(2) })
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(3) })
+    const form = current(bench.screen)
+    form.handleInput('kept-gw')
+    form.handleInput(KEY.enter)
+    form.handleInput('https://kept.example.com/v1')
+    form.handleInput(KEY.enter)
+    form.handleInput('k')
+    form.handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(4) })
+    current(bench.screen).handleInput(' ')
+    current(bench.screen).handleInput(KEY.enter)
+    await skipDefaults(bench.screen)
+    await expect(outcome).resolves.toBe('provider "kept-gw" added')
+    const profile = ((bench.mutations[0] ?? { ops: [] }).ops as { value: Record<string, unknown> }[])[0]!.value
+    expect(profile.baseURL).toBe('https://kept.example.com/v1')
+  })
+
+  it('strips a trailing /v1 from anthropic bases even on the manual path', async () => {
+    // Discovery fails everywhere; the manual entry still writes the base
+    // the anthropic transport expects (no /v1 — the dogfood's
+    // POST /v1/v1/messages).
+    const bench = mountWizard({ discovered: [] })
+    const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(2) })
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(3) })
+    const form = current(bench.screen)
+    form.handleInput('strip-gw')
+    form.handleInput(KEY.enter)
+    form.handleInput('https://strip.example.com/v1/')
+    form.handleInput(KEY.enter)
+    form.handleInput('k')
+    form.handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(4) })
+    current(bench.screen).handleInput('strip-chat')
+    current(bench.screen).handleInput(KEY.enter)
+    await skipDefaults(bench.screen)
+    await expect(outcome).resolves.toBe('provider "strip-gw" added')
+    const profile = ((bench.mutations[0] ?? { ops: [] }).ops as { value: Record<string, unknown> }[])[0]!.value
+    expect(profile.baseURL).toBe('https://strip.example.com')
   })
 
   it('writes to llm-pi-ai even when the deepseek entry lists first', async () => {
