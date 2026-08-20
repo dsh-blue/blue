@@ -2,8 +2,8 @@
 layout: home
 
 hero:
-  name: Blue
-  text: Interactive terminal for DeepSeek Harness
+  name: Blue-dsh
+  text: plugin-based TUI
   tagline: v0.1.0-rc.1 · Preview — streaming transcript, tool cards, approval overlays and dock panes, everything a plugin.
   actions:
     - theme: brand

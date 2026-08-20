@@ -100,6 +100,7 @@ const sidebarZh = {
         { text: '权限与模式', link: '/dsh/modes' },
         { text: '内置工具', link: '/dsh/tools' },
         { text: 'Skills', link: '/dsh/skills' },
+        { text: '系统提示词', link: '/dsh/system-prompt' },
       ],
     },
     {
@@ -149,6 +150,7 @@ const sidebarEn = {
         { text: 'Modes & permissions', link: '/en/dsh/modes' },
         { text: 'Built-in tools', link: '/en/dsh/tools' },
         { text: 'Skills', link: '/en/dsh/skills' },
+        { text: 'System prompt', link: '/en/dsh/system-prompt' },
       ],
     },
     {
@@ -192,8 +194,8 @@ export default defineConfig({
     root: {
       label: '简体中文',
       lang: 'zh-CN',
-      title: 'Blue — DeepSeek Harness 交互式终端',
-      description: `DeepSeek Harness (dsh) 的交互式终端界面。预览阶段（v${SITE_VERSION}）。`,
+      title: 'Blue-dsh 插件式 TUI',
+      description: `Blue-dsh：DeepSeek Harness (dsh) 的插件式终端界面。预览阶段（v${SITE_VERSION}）。`,
       themeConfig: {
         nav: navZh,
         sidebar: sidebarZh,
@@ -213,8 +215,8 @@ export default defineConfig({
       label: 'English',
       link: '/en/',
       lang: 'en-US',
-      title: 'Blue — TUI for DeepSeek Harness',
-      description: `Interactive terminal UI for DeepSeek Harness (dsh). Preview (v${SITE_VERSION}).`,
+      title: 'Blue-dsh plugin-based TUI',
+      description: `Blue-dsh: a plugin-based terminal UI for DeepSeek Harness (dsh). Preview (v${SITE_VERSION}).`,
       themeConfig: {
         nav: navEn,
         sidebar: sidebarEn,

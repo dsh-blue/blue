@@ -2,8 +2,8 @@
 layout: home
 
 hero:
-  name: Blue
-  text: DeepSeek Harness 的交互式终端
+  name: Blue-dsh
+  text: 插件式 TUI
   tagline: v0.1.0-rc.1 · 预览版 —— 流式会话、工具卡片、审批浮层与底部面板，一切皆插件。
   actions:
     - theme: brand
