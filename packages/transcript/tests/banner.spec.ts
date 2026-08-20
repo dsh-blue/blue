@@ -51,14 +51,11 @@ const CONTENT: BannerContent = {
   whatsNew: { heading: "What's new", lines: ['new one'] },
 }
 
-/** The whale logo, mirrored from `banner-art.ts`'s golden. */
-const WHALE = [
-  '      ·  .  ·   ',
-  '        .·.     ',
-  '    ▄▄▄▄▄▄▄▄▄   ',
-  '  ▄▄█▀████▀█▄▄  ',
-  '   ██████████   ',
-  '   ▀▀▀▀▀▀▀▀▀▀   ',
+/** The pixel logo, mirrored from `banner-art.ts`'s golden. */
+const LOGO = [
+  '▄▄██▀███▀█▄▄',
+  '████▄███▄███',
+  ' ██████████ ',
 ]
 
 describe('shortenHome', () => {
@@ -113,31 +110,29 @@ describe('composeBannerLines', () => {
 
   it('composes the golden full-width box at one hundred columns', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 100)
-    // 1 top + 11 body (welcome, blank, whale×6, blank, model, cwd) + 1 bottom;
-    // the right column (tips + divider + what's new) is 6 rows.
-    expect(lines).toHaveLength(13)
-    expect(lines.map(line => line.length)).toEqual(Array.from({ length: 13 }, () => 100))
+    // 1 top + 8 body (welcome, blank, logo×3, blank, model, cwd) + 1 bottom;
+    // the right column (tips + divider + what's new) is 6 rows, so the left
+    // column drives the height.
+    expect(lines).toHaveLength(10)
+    expect(lines.map(line => line.length)).toEqual(Array.from({ length: 10 }, () => 100))
     const title = `blue v${CONTENT.version}`
     expect(lines[0]).toBe(`╭─── ${title} ${'─'.repeat(100 - 7 - title.length)}╮`)
-    // The centered left column: welcome, the whale, model, cwd.
+    // The centered left column: welcome, the logo, model, cwd.
     expect(lines[1]).toBe(`│${' '.repeat(15)}Welcome back!${' '.repeat(16)}│ Tips for getting started${' '.repeat(28)}│`)
     expect(lines[2]).toBe(`│${' '.repeat(44)}│ tip one${' '.repeat(45)}│`)
-    expect(lines[3]).toBe(`│${' '.repeat(14)}${WHALE[0]}${' '.repeat(14)}│ tip two${' '.repeat(45)}│`)
-    expect(lines[4]).toBe(`│${' '.repeat(14)}${WHALE[1]}${' '.repeat(14)}│ ${'─'.repeat(51)} │`)
-    expect(lines[5]).toBe(`│${' '.repeat(14)}${WHALE[2]}${' '.repeat(14)}│ What's new${' '.repeat(42)}│`)
-    expect(lines[6]).toBe(`│${' '.repeat(14)}${WHALE[3]}${' '.repeat(14)}│ new one${' '.repeat(45)}│`)
-    expect(lines[7]).toBe(`│${' '.repeat(14)}${WHALE[4]}${' '.repeat(14)}│${' '.repeat(53)}│`)
-    expect(lines[8]).toBe(`│${' '.repeat(14)}${WHALE[5]}${' '.repeat(14)}│${' '.repeat(53)}│`)
-    expect(lines[9]).toBe(`│${' '.repeat(44)}│${' '.repeat(53)}│`)
-    expect(lines[10]).toBe(`│${' '.repeat(19)}m · p${' '.repeat(20)}│${' '.repeat(53)}│`)
-    expect(lines[11]).toBe(`│${' '.repeat(19)}~/dev${' '.repeat(20)}│${' '.repeat(53)}│`)
-    expect(lines[12]).toBe(`╰${'─'.repeat(98)}╯`)
+    expect(lines[3]).toBe(`│${' '.repeat(16)}${LOGO[0]}${' '.repeat(16)}│ tip two${' '.repeat(45)}│`)
+    expect(lines[4]).toBe(`│${' '.repeat(16)}${LOGO[1]}${' '.repeat(16)}│ ${'─'.repeat(51)} │`)
+    expect(lines[5]).toBe(`│${' '.repeat(16)}${LOGO[2]}${' '.repeat(16)}│ What's new${' '.repeat(42)}│`)
+    expect(lines[6]).toBe(`│${' '.repeat(44)}│ new one${' '.repeat(45)}│`)
+    expect(lines[7]).toBe(`│${' '.repeat(19)}m · p${' '.repeat(20)}│${' '.repeat(53)}│`)
+    expect(lines[8]).toBe(`│${' '.repeat(19)}~/dev${' '.repeat(20)}│${' '.repeat(53)}│`)
+    expect(lines[9]).toBe(`╰${'─'.repeat(98)}╯`)
   })
 
   it('joins the right column at eighty columns too — the right cell is 33 wide', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 80)
-    expect(lines).toHaveLength(13)
-    expect(lines.map(line => line.length)).toEqual(Array.from({ length: 13 }, () => 80))
+    expect(lines).toHaveLength(10)
+    expect(lines.map(line => line.length)).toEqual(Array.from({ length: 10 }, () => 80))
     expect(lines.join('\n')).toContain('Welcome back!')
     expect(lines.join('\n')).toContain('Tips for getting started')
     expect(lines.join('\n')).toContain("What's new")
@@ -145,8 +140,8 @@ describe('composeBannerLines', () => {
 
   it('drops the right column on narrow terminals, the left absorbing the width', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 48)
-    expect(lines).toHaveLength(13)
-    expect(lines.map(line => line.length)).toEqual(Array.from({ length: 13 }, () => 48))
+    expect(lines).toHaveLength(10)
+    expect(lines.map(line => line.length)).toEqual(Array.from({ length: 10 }, () => 48))
     expect(lines.join('\n')).toContain('Welcome back!')
     expect(lines[1]).toBe(`│${' '.repeat(16)}Welcome back!${' '.repeat(17)}│`)
     expect(lines.join('\n')).not.toContain('Tips for getting started')

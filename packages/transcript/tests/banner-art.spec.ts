@@ -1,10 +1,10 @@
 /**
  * Pure half-block packing: the four column combinations, odd trailing rows,
- * empty input, ragged pair widths, and the whale grid's golden output.
+ * empty input, ragged pair widths, and the logo grid's golden output.
  */
 
 import { describe, expect, it } from 'vitest'
-import { WHALE_ART, WHALE_PIXELS, packHalfBlockArt } from '../src/banner-art.ts'
+import { LOGO_ART, LOGO_PIXELS, packHalfBlockArt } from '../src/banner-art.ts'
 
 describe('packHalfBlockArt', () => {
   it('maps the four column combinations of a row pair', () => {
@@ -26,29 +26,25 @@ describe('packHalfBlockArt', () => {
     expect(packHalfBlockArt(['11', ''])).toEqual(['▀▀'])
   })
 
-  it('packs the whale body into the four golden lines', () => {
-    expect(packHalfBlockArt(WHALE_PIXELS)).toEqual([
-      '    ▄▄▄▄▄▄▄▄▄   ',
-      '  ▄▄█▀████▀█▄▄  ',
-      '   ██████████   ',
-      '   ▀▀▀▀▀▀▀▀▀▀   ',
+  it('packs the logo body into the three golden lines', () => {
+    expect(packHalfBlockArt(LOGO_PIXELS)).toEqual([
+      '▄▄██▀███▀█▄▄',
+      '████▄███▄███',
+      ' ██████████ ',
     ])
   })
 
-  it('keeps every packed body line sixteen columns wide', () => {
-    for (const line of packHalfBlockArt(WHALE_PIXELS)) {
-      expect(line).toHaveLength(16)
+  it('keeps every packed line twelve columns wide', () => {
+    for (const line of packHalfBlockArt(LOGO_PIXELS)) {
+      expect(line).toHaveLength(12)
     }
   })
 
-  it('composes the logo as the text spray above the packed body', () => {
-    expect(WHALE_ART).toEqual([
-      '      ·  .  ·   ',
-      '        .·.     ',
-      '    ▄▄▄▄▄▄▄▄▄   ',
-      '  ▄▄█▀████▀█▄▄  ',
-      '   ██████████   ',
-      '   ▀▀▀▀▀▀▀▀▀▀   ',
+  it('composes the logo art as exactly the packed body', () => {
+    expect(LOGO_ART).toEqual([
+      '▄▄██▀███▀█▄▄',
+      '████▄███▄███',
+      ' ██████████ ',
     ])
   })
 })

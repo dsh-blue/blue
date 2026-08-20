@@ -1,7 +1,7 @@
 /**
  * `blue-banner` plugin: the welcome banner, mounted once at boot as the
  * scroll area's first child — the Claude-Code-style layout: a centered left
- * column ("Welcome back!", the pixel whale, the model line and cwd) beside a
+ * column ("Welcome back!", the pixel logo, the model line and cwd) beside a
  * right column carrying the tips and what's-new sections separated by a
  * divider rule. The box spans the full viewport width once the right column
  * has room; below that the left column absorbs the width, and below
@@ -16,7 +16,7 @@
  * across initial mounts and `/theme` reloads.
  *
  * Every over-wide run truncates; nothing ever wraps. Styling uses only
- * frozen theme tokens — frame, whale, and the welcome line share `primary`,
+ * frozen theme tokens — frame, logo, and the welcome line share `primary`,
  * the kimi welcome-box treatment, so the banner reads as one blue unit.
  *
  * @module @dsh-blue/blue-transcript/banner
@@ -33,7 +33,7 @@ import {
 // Empty type import carries the `agentDefaultModel` Context merge this
 // plugin's inject resolves.
 import type {} from '@deepseek-ai/dsh-agent-default-model'
-import { WHALE_ART } from './banner-art.ts'
+import { LOGO_ART } from './banner-art.ts'
 import {
   BANNER_TIPS,
   BANNER_WHATS_NEW,
@@ -150,7 +150,7 @@ export interface BannerDeps {
  * Compose the banner's lines for one viewport width — the pure layout core
  * the component delegates to. Identity color functions (the spec fakes)
  * yield plain, measurable text. The left column centers its rows (welcome,
- * whale, model, cwd); the right column pads its rows with a divider rule
+ * logo, model, cwd); the right column pads its rows with a divider rule
  * between the two sections; nothing ever wraps — over-wide model, cwd, and
  * section lines truncate first.
  * @param deps - colors plus the truncate/measure primitives.
@@ -205,7 +205,7 @@ export function composeBannerLines(
   const leftRows: readonly (readonly BannerSegment[])[] = [
     centered('Welcome back!', 'strong'),
     blank(leftWidth, 'frame'),
-    ...WHALE_ART.map(art => centered(art, 'logo')),
+    ...LOGO_ART.map(art => centered(art, 'logo')),
     blank(leftWidth, 'frame'),
     centered(`${content.model} · ${content.provider}`, 'accent'),
     centered(content.cwd, 'muted'),
