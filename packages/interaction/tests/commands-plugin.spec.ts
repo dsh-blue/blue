@@ -12,6 +12,7 @@ import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import * as commandsPlugin from '../src/commands-plugin.ts'
+import { canonicalOf } from '../src/command-meta.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
 import type {} from '@dsh-blue/blue-app'
 import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeScreen } from './fakes.ts'
@@ -70,6 +71,19 @@ describe('blue-commands plugin', () => {
     const result = execution?.result
     expect(result?.kind).toBe('error')
     if (result?.kind === 'error') expect(result.text).toContain('appExit')
+  })
+
+  it('/q and /exit are aliases of /quit, not registered commands (kimi style)', async () => {
+    const { ctx, agent } = await mount({ appExit: () => {} })
+    // The alias relation lives in the Blue-side metadata registry, and only
+    // `/quit` is a real registration: the input layer rewrites an alias line
+    // before dispatch, so the harness registry stays canonical-only.
+    expect(canonicalOf('q')).toBe('quit')
+    expect(canonicalOf('exit')).toBe('quit')
+    expect(canonicalOf('quit')).toBeUndefined()
+    expect(ctx.commands.find(agent, 'q')).toBeUndefined()
+    expect(ctx.commands.find(agent, 'exit')).toBeUndefined()
+    expect(await ctx.commands.execute(agent, '/q', signal())).toBeUndefined()
   })
 
   it('/resume emits blue/request-resume with the trimmed session id', async () => {
@@ -262,9 +276,11 @@ describe('blue-commands plugin', () => {
     expect(rows[1]).toBe('^  help^ _· Esc / Enter / q to cancel · ↑↓ scroll_')
     expect(rows[3]).toBe('  #Commands#')
     // The runtime lists commands alphabetically; labels padEnd inside the
-    // primary span with the description muted behind two spaces.
-    expect(rows[4]).toBe('    ^/fork    ^  ~Fork the current session into a new one~')
-    expect(rows.some(row => row.includes('^/quit    ^  ~Exit Blue~'))).toBe(true)
+    // primary span with the description muted behind two spaces. The longest
+    // label is the aliased `/quit (/q, /exit)` (17 columns), which widens
+    // the whole column.
+    expect(rows[4]).toBe('    ^/fork            ^  ~Fork the current session into a new one~')
+    expect(rows.some(row => row.includes('^/quit (/q, /exit)^  ~Exit Blue~'))).toBe(true)
     expect(rows.some(row => row.includes('_ showing 1-16 of 19_'))).toBe(true)
     // Scrolling down reaches the Keys section with the two-column layout.
     for (let i = 0; i < 9; i += 1) overlay(screen).handleInput(KEY.down)
@@ -343,5 +359,9 @@ describe('blue-commands plugin', () => {
     for (const name of ['quit', 'resume', 'new', 'fork', 'sessions', 'help', 'theme']) {
       expect(ctx.commands.find(agent, name)).toBeUndefined()
     }
+    // The alias metadata follows the fiber: the relation is gone too, so a
+    // later mount can re-register it without tripping the conflict guard.
+    expect(canonicalOf('q')).toBeUndefined()
+    expect(canonicalOf('exit')).toBeUndefined()
   })
 })

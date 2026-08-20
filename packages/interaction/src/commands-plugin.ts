@@ -27,6 +27,7 @@ import type {} from '@dsh-blue/blue-app'
 // Empty type import carries the `sessionPersistence` Context merge; the
 // service itself is optional and resolved lazily.
 import type {} from '@deepseek-ai/dsh-session-persistence'
+import { aliasesOf, registerCommandAliases } from './command-meta.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
 import type { HelpSection } from './help.ts'
 import { HelpOverlay } from './help.ts'
@@ -149,10 +150,19 @@ export function apply(ctx: Context): void {
       {
         heading: 'Commands',
         labelPaint: display.colors.primary,
-        rows: ctx.commands.list(agent).map(command => ({
-          label: `/${command.name}`,
-          description: command.description,
-        })),
+        rows: ctx.commands.list(agent).map(command => {
+          // The kimi help-panel label: aliases join the canonical label in
+          // slashed parentheses (`/quit (/q, /exit)`), visible on every
+          // listing — unlike the dropdown, which shows them only when the
+          // query matched one.
+          const aliases = aliasesOf(command.name)
+          return {
+            label: aliases.length === 0
+              ? `/${command.name}`
+              : `/${command.name} (${aliases.map(alias => `/${alias}`).join(', ')})`,
+            description: command.description,
+          }
+        }),
       },
       {
         heading: 'Keys',
@@ -194,6 +204,11 @@ export function apply(ctx: Context): void {
         return { kind: 'success' as const }
       },
     })
+    // The alias relation lives in the command-meta registry (kimi style):
+    // `/q` and `/exit` are not separate registrations — the input layer
+    // rewrites an alias line to `/quit` before `ctx.commands.execute`, so
+    // the session log records the canonical command.
+    const quitAliases = registerCommandAliases('quit', ['q', 'exit'])
     const resume = ctx.commands.register({
       name: 'resume',
       description: 'Resume a previous session',
@@ -242,6 +257,7 @@ export function apply(ctx: Context): void {
     const theme = registerThemeCommand(ctx)
     return () => {
       quit()
+      quitAliases()
       resume()
       fresh()
       fork()

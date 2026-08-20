@@ -44,12 +44,13 @@ import {
   markEditorEnhancement,
   type SharedEditor,
 } from './editor-instance.ts'
+import { canonicalOf, withCommandAliases } from './command-meta.ts'
 import { detectFdPath, extractAtPrefix, fsMentionSuggestions, listDirectoryMentions } from './file-mention.ts'
 import { getStashedInputMode, stashHistory, stashInputMode } from './draft-stash.ts'
 import { ACTION_BACKSPACE, ACTION_CANCEL } from './keys.ts'
 import { sanitizeShellOutput } from './shell-sanitize.ts'
 import { currentBlueAgent } from './session.ts'
-import { filterSlashCommands } from './slash-filter.ts'
+import { filterSlashCommands, slashCommandLabel } from './slash-filter.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-editor-plus'
@@ -195,12 +196,19 @@ function createAutocompleteProvider(
       if (agent === undefined) return null
       /* v8 ignore next -- a successful exec always defines the capture group */
       const query = slash[1] ?? ''
-      const items = filterSlashCommands(ctx.commands.list(agent), query, ctx.blueComponents)
-        .map((command): BlueAutocompleteItem => ({
-          value: `/${command.name}`,
-          label: `/${command.name}`,
-          description: slashItemDescription(command),
-        }))
+      // The kimi match rule: the canonical name scores first, aliases count
+      // only when it misses, and an alias match labels the canonical command
+      // with its alias list (`/quit (q, exit)`) so the user sees why it
+      // surfaced; the value always completes to the canonical name.
+      const items = filterSlashCommands(
+        withCommandAliases(ctx.commands.list(agent)),
+        query,
+        ctx.blueComponents,
+      ).map((match): BlueAutocompleteItem => ({
+        value: `/${match.command.name}`,
+        label: slashCommandLabel(match),
+        description: slashItemDescription(match.command),
+      }))
       // The value carries the slash so pi-tui's best-match preselection
       // (exact `value === prefix`, then `startsWith`) keys on the same text
       // the user typed.
@@ -431,7 +439,11 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
     const agent = currentBlueAgent(ctx)
     if (agent === undefined) return undefined
     /* v8 ignore next -- a successful exec always defines the capture group */
-    const hint = ctx.commands.list(agent).find(command => command.name === match[1])?.input?.hint
+    const name = match[1] ?? ''
+    // An alias token (`/q `) resolves to its canonical command for the hint,
+    // mirroring the dispatch rewrite — aliases are not registered commands.
+    const canonical = canonicalOf(name) ?? name
+    const hint = ctx.commands.list(agent).find(command => command.name === canonical)?.input?.hint
     if (hint === undefined || hint.length === 0) return undefined
     return match[2] === ' ' ? hint : ` ${hint}`
   }

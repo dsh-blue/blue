@@ -57,11 +57,12 @@ import {
   setEditorSlotSwap,
   setSharedEditor,
 } from './editor-instance.ts'
+import { canonicalOf, withCommandAliases } from './command-meta.ts'
 import { clearDraft, getStashedDraft, getStashedHistory, stashDraft, stashHistory } from './draft-stash.ts'
 import { ACTION_CANCEL, ACTION_INTERRUPT, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_STEER } from './keys.ts'
 import { ACTION_QUEUE_RECALL, queuedMessageText } from './pane-queue.ts'
 import { currentBlueAgent } from './session.ts'
-import { filterSlashCommands } from './slash-filter.ts'
+import { filterSlashCommands, slashCommandLabel } from './slash-filter.ts'
 
 /** Slash-command hint rows shown at once. */
 const MAX_HINT_COMMANDS = 3
@@ -175,15 +176,17 @@ export function apply(ctx: Context): void {
     const agent = currentBlueAgent(ctx)
     if (agent === undefined) return undefined
     // The S14 fuzzy filter — the same matcher the dropdown uses — keeps the
-    // hint row and the completion list in agreement.
+    // hint row and the completion list in agreement. Alias matches surface
+    // the canonical command with the alias list on the label (the kimi
+    // rule), so the hint row explains why `/q` matched `/quit`.
     const matches = filterSlashCommands(
-      ctx.commands.list(agent),
+      withCommandAliases(ctx.commands.list(agent)),
       parsed?.name ?? '',
       ctx.blueComponents,
     )
     if (matches.length === 0) return `no matching command: /${parsed?.name ?? ''}`
     return matches.slice(0, MAX_HINT_COMMANDS)
-      .map(command => `/${command.name} — ${command.description}`)
+      .map(match => `${slashCommandLabel(match)} — ${match.command.description}`)
       .join('  ')
   }
 
@@ -246,14 +249,24 @@ export function apply(ctx: Context): void {
       setNotice('no active session')
       return
     }
-    if (parseCommand(line) === undefined) {
+    const parsed = parseCommand(line)
+    if (parsed === undefined) {
       agent.followup(createUserMessage({
         content: applySubmitTransformers(line),
         source: { kind: 'user' },
       }))
       return
     }
-    void ctx.commands.execute(agent, line, new AbortController().signal).then(
+    // An alias line (`/q`) is rewritten to its canonical command before
+    // dispatch — the kimi resolution: aliases are not registered commands,
+    // the canonical name owns the handler and the session log. The raw
+    // input after the name travels untouched.
+    const canonical = canonicalOf(parsed.name)
+    void ctx.commands.execute(
+      agent,
+      canonical === undefined ? line : `/${canonical}${parsed.rawInput}`,
+      new AbortController().signal,
+    ).then(
       (execution) => {
         // The fiber may be gone — `/theme` unloads it mid-execution — and
         // the reloaded fiber repaints, so a late notice is moot.

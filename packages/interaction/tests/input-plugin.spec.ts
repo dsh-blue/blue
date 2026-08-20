@@ -14,6 +14,7 @@ import CommandRuntime, { type CommandResult } from '@deepseek-ai/dsh-commands'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import * as inputPlugin from '../src/input-plugin.ts'
+import { registerCommandAliases } from '../src/command-meta.ts'
 import * as paneQueuePlugin from '../src/pane-queue.ts'
 import { getSharedEditor, mountEditorReplacement } from '../src/editor-instance.ts'
 import { clearDraft, stashHistory } from '../src/draft-stash.ts'
@@ -176,6 +177,28 @@ describe('blue-input plugin', () => {
     expect(editor.history).toEqual(['/poke now'])
   })
 
+  it('rewrites an alias line to its canonical command before dispatch', async () => {
+    const { ctx, editor, hint } = await mount()
+    ctx.commands.register({
+      name: 'quit',
+      description: 'Exit Blue',
+      handler: (invocation) => ({ kind: 'success', text: `bye${invocation.rawInput}` }),
+    })
+    const clear = registerCommandAliases('quit', ['q', 'exit'])
+    try {
+      // `/q now` reaches the `/quit` handler with its raw input intact — the
+      // kimi resolution: the alias is not a registered command, the rewrite
+      // happens before `ctx.commands.execute`.
+      type(editor, '/q now')
+      editor.handleInput(KEY.enter)
+      await vi.waitFor(() => {
+        expect(hint.render(80)).toEqual(['~bye now~'])
+      })
+    } finally {
+      clear()
+    }
+  })
+
   it('notices unknown commands', async () => {
     const { editor, hint } = await mount()
     type(editor, '/missing')
@@ -279,6 +302,24 @@ describe('blue-input plugin', () => {
     // Typing a letter narrows the discovery list again.
     type(editor, 'b')
     expect(hint.render(80)).toEqual(['~/beta — Second command~'])
+  })
+
+  it('surfaces the canonical command for an alias query in the hint line', async () => {
+    const { ctx, editor, hint } = await mount()
+    ctx.commands.register({ name: 'quit', description: 'Exit Blue', handler: () => ({ kind: 'success' }) })
+    const clear = registerCommandAliases('quit', ['q', 'exit'])
+    try {
+      // A query matching the canonical name (`q` is a subsequence of
+      // `quit`) shows the plain label; one matching only an alias (`exi`
+      // cannot match `quit`) appends the alias list — the kimi rule that
+      // explains why the command surfaced.
+      type(editor, '/q')
+      expect(hint.render(80)).toEqual(['~/quit — Exit Blue~'])
+      editor.setText('/exi')
+      expect(hint.render(80)).toEqual(['~/quit (q, exit) — Exit Blue~'])
+    } finally {
+      clear()
+    }
   })
 
   it('renders no hint row without an attached session', async () => {

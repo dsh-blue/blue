@@ -156,7 +156,7 @@ p1-design §4.3 是本文档的前身（MVP 后命令面调研）。本次逐符
 
 | 命令 | 各家同义 | Blue 注册位置 | 落地 |
 |---|---|---|---|
-| `/quit` | kimi/pi/CC/Codex `exit`/`quit`/`q` | `packages/interaction/src/commands-plugin.ts` → `ctx.get('appExit')(0)` | ✅ S6 |
+| `/quit`（别名 `/q` `/exit`） | kimi/pi/CC/Codex `exit`/`quit`/`q` | `packages/interaction/src/commands-plugin.ts` → `ctx.get('appExit')(0)` | ✅ S6（别名 ✅ 2026-08-20，§2.12 首例） |
 | `/resume <id>` | 四家 | `commands-plugin.ts` → `'blue/request-resume'` | ✅ S6 |
 | `/new` | kimi `clear`、CC `clear`/`reset` | `commands-plugin.ts` → `'blue/request-new'` | ✅ S6 |
 | `/fork` | kimi/pi/CC | `commands-plugin.ts` → `'blue/request-fork'`（idle 守卫） | ✅ S6 |
@@ -178,12 +178,29 @@ p1-design §4.3 是本文档的前身（MVP 后命令面调研）。本次逐符
 
 > 全部为人类命令面（log-only、模型不可见、零 token）；`/help` 自动枚举已覆盖，Blue 无注册成本。§2.9 已发货表只列 Blue 自注册命令，本条与之正交。
 
+### 2.12 命令别名机制（✅ 已落地 2026-08-20，提前于 S23）
+
+**形态**（kimi 同构，见 §2.11 的 `aliases` 差距）：dsh-commands rc.7 的 `CommandDefinition` 无别名元数据，别名关系由 Blue 侧 `interaction/src/command-meta.ts` 注册表持有；**别名不注册为独立命令**——`blue-input` 提交时经 `parseCommand` 解析出名字后查 `canonicalOf`，命中则把行重写为 `/canonical` + 原 rawInput 再走 `ctx.commands.execute`（input-plugin 是唯一执行入口，已核实），因此 `command/run` 生命周期事件恒记 canonical 名，显示面天然只有 canonical 注册（零去重）。
+
+**kimi 对齐逐项**（以 kimi-code `apps/kimi-code/src/tui/commands/` 源码核实）：
+
+| 面 | 行为 |
+|---|---|
+| 执行解析 | `canonicalOf(alias)` → 重写 `/canonical`（kimi `findBuiltInSlashCommand`：name 或 aliases 命中，canonical 名拥有 handler） |
+| 补全/hint 匹配 | canonical 名先 scoreTokens，miss 才逐个试别名取最佳分（slash-filter `matchCommand`）；同分 canonical 命中排在别名命中前（kimi 排序规则） |
+| 下拉/hint label | 仅别名命中时显示 `/${canonical} (alias, alias)`（kimi label 规则，别名不带斜杠）；canonical 命中显示纯名；value 恒补全为 canonical 名 |
+| /help | 恒显示 `/${canonical} (/alias, /alias)`（kimi help-panel 规则，别名带斜杠） |
+| 参数幽灵提示 | `/alias ` 经 `canonicalOf` 解析到 canonical 的 `input.hint`（与执行重写同一解析） |
+| 冲突 | 别名被其它 canonical 占用 → 启动期 fail-loud；alias 等于自身 canonical → 拒绝；同 canonical 重注册 = last-wins 替换（disposer 分代，旧 fiber 的 disposer 不清新注册） |
+
+**首例**：`/quit` 别名 `q`、`exit`（commands-plugin.ts 注册 `registerCommandAliases('quit', ['q', 'exit'])`）。计划内第二消费者：S27 `/clear` = `/new` 别名（§4.2，`registerCommandAliases('new', ['clear'])`，无需真实注册）。上游缝 #9（`CommandDefinition.aliases`）落地后本层可退化为声明式（§4.1 第 4 条修正注记）。
+
 ### 2.11 kimi registry 元数据字段 vs dsh-commands rc.7
 
 kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的元数据：`argumentHint`（补全行内提示）、`completeArgs(prefix)`（参数补全器）、`availability: 'always' | 'idle-only' | fn`（流式期间可用性）、`experimentalFlag`（实验门控隐藏）、`aliases`。dsh-commands rc.7 `CommandDefinition`（`dsh-commands/lib/index.js` `normalizeDefinition`）仅有 `name/description/input?/recordInput?/handler`，**无元数据字段**。差距与 Blue 侧落点：
 
 - `input.hint` 已有（`/resume` 已用）→ 补全行内提示 ✅ 现成
-- `aliases` → Blue 侧 `command-meta.ts` 注册表（S27，§4.1）；同时列上游 nice-to-have 缝（§7 #9）
+- `aliases` → Blue 侧 `command-meta.ts` 注册表（✅ 已落地 2026-08-20，机制与消费见 §2.12；S27 `/clear` 消费）；上游 nice-to-have 缝（§7 #9）维持
 - `availability` → Blue 侧 handler 内 idle 守卫（/fork 先例），不做声明式
 - `argumentHint` 幽灵提示 → S14 已实现 `setGhostHint` + `computeArgumentHint`，新命令参数提示走该链路
 
@@ -252,7 +269,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 1. **effect-bound 注册**：沿用 commands-plugin.ts 现有模式——`ctx.effect(() => { ... register ...; return disposers })`，fiber 卸载即注销。
 2. **display 服务一律 handler 内 `ctx.get` 惰性解析**，不 inject `blueTheme` 等显示服务——`/theme` 换装会 dispose 自己 handler 所在 fiber 的雷（S6 教训）。
 3. **会话切换类命令 idle 守卫**（/fork 先例：`blueSession.current.status !== 'idle'` 报错）；**模型类命令无需守卫**（installModelSelection 下一 step 生效，语义天然安全）。
-4. **新模块 `interaction/src/command-meta.ts`**：Blue 侧命令元数据注册表（别名 → 主命令名、可选 availability 提示），slash 补全与 editor-plus 消费；与 dsh-commands 注册并行（每条别名仍实际注册一条命令，语义一致），上游缝 #9 落地后可退化为声明。
+4. **新模块 `interaction/src/command-meta.ts`**：Blue 侧命令元数据注册表（别名 → 主命令名、可选 availability 提示），slash 补全与 editor-plus 消费。（✅ 已落地 2026-08-20，机制见 §2.12；初版"每条别名仍实际注册一条命令"已修正为 kimi 式执行时解析——别名不注册，`blue-input` 提交时经 `canonicalOf` 重写为 canonical 行再 execute，语义一致且显示面零去重；`/clear` 别名与 `availability` 提示的消费随 S27 落地），上游缝 #9 落地后可退化为声明。
 5. **/help 自动枚举**（`commands.list` + `keymap.list()`），新命令零维护。
 6. **对话框一律 D30 editor-slot 替换挂载**（`mountEditorReplacement`），非浮层；列表类面板复用 `SessionList`/`BlueSelect` + `framePanel`/`topRule` chrome。
 7. **门禁**（每 S 步）：`pnpm run test` / `test:coverage`（逐文件 100%）/ `typecheck` / `lint` 全绿；README 双语同步；bundle e2e 用例随步增加。
@@ -272,7 +289,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 | `/export [path]` | kimi/pi/CC | 默认路径 | fold.ts 折叠 → Markdown 文件写 | notice + 路径回显 | ✅ persistence.readRaw（jsonl 后端 supportsRawArtifacts=true 已核实）+ fs | S26 | kimi /export-md 同款；debug-zip 不做；上游 Web-only ZIP 版（dsh-session-log-export，§2.10）仅供浏览器面，TUI 独立实现 |
 | `/copy` | kimi/CC/Codex | — | 复制最近一条 assistant 消息文本 | notice | ✅ Blue 侧剪贴板写管线（新模块 interaction/src/clipboard-write.ts，注入式探测 wl-copy/xclip/pbcopy/clip.exe，沿 paste-image reader 先例）；OSC 52 主屏不可用（roadmap 挂起项） | S26 | |
 | `/init` | kimi/CC/Codex | — | 罐头提示 followup（分析代码库写 AGENTS.md） | notice | ✅ agent.followup；idle 守卫 | S27 | AGENTS.md 加载面已上游（dsh-agent-instructions，base，§3.2）；/init 仅罐头提示写文件；罐头提示族（/security-review 等）只做这一个，留缝 |
-| `/clear` | kimi(别名)/CC/Codex | — | = /new 语义（kimi 同款；CC"清 transcript 留会话"无原语） | — | ✅ 经 command-meta 别名注册同 handler | S27 | 别名机制落 command-meta |
+| `/clear` | kimi(别名)/CC/Codex | — | = /new 语义（kimi 同款；CC"清 transcript 留会话"无原语） | — | ✅ 经 command-meta 别名（§2.12） | S27 | 别名机制已就绪（§2.12），S27 只需 `registerCommandAliases('new', ['clear'])` |
 | `/context` | CC | — | 切换注入上下文显隐（D28/S19 默认隐藏的反向开关） | notice + 状态栏 | ✅ fold 注入上下文开关（fold.ts，source.kind!=='user' 分拣）+ settings 持久 | S27 | |
 | `/diff` | CC/Codex | — | git status + git diff（未提交变更）面板 | 全宽面板，复用 DiffCardComponent + line-diff.ts | ✅ spawnSync('git')（status-git 先例，TTL 缓存可复用） | S27 | 非 git 仓库报错 |
 | `/hotkeys` | pi | — | 别名 → /help | — | ✅ command-meta | S27 | 低价值可选 |
@@ -309,7 +326,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 
 ## 5. 分期实施（S23-S28）
 
-每步一棵可启动、可验收的插件树（总原则 #1）。依赖链：**S23 的 BlueSessionRef 缝是 S25 /status 读模型的地基，必须第一步开**；S24 无前置；S26 依赖 S25 的 fold/累计器；S27 的 command-meta 是 S28 别名/可用性机制的地基。
+每步一棵可启动、可验收的插件树（总原则 #1）。依赖链：**S23 的 BlueSessionRef 缝是 S25 /status 读模型的地基，必须第一步开**；S24 无前置；S26 依赖 S25 的 fold/累计器；S27 的 command-meta 是 S28 别名/可用性机制的地基（✅ command-meta 已提前落地 2026-08-20，§2.12；S27 只剩消费：`/clear` 别名 + HelpOverlay 分组表头）。
 
 | 步 | 内容 | 能力依赖 | UI 复用 | 验收要点 |
 |---|---|---|---|---|
@@ -480,7 +497,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 
 | 风险 | 对策 |
 |---|---|
-| dsh-commands 无元数据 → 别名靠注册第二条命令 | command-meta 层先行（§4.1），上游缝 #9 落地后退化；不阻塞 |
+| dsh-commands 无元数据 → 别名靠 Blue 侧解析 | command-meta 层先行（✅ 已落地，§2.12：提交时重写 canonical、显示面零去重），上游缝 #9 落地后退化；不阻塞 |
 | 外部剪贴板工具梯度（wl-copy/xclip/pbcopy/clip.exe 缺失） | clipboard-write 注入式探测 + 优雅 notice（沿 paste-image reader 先例） |
 | /import 的格式严格性（SESSION_FORMAT_VERSION=0、ignorable 标记） | 顺延不阻塞主线（§4.2 表 B 末行） |
 | 命令数增长后 /help 双列拥挤 | S27 顺带 HelpOverlay 分组表头（kimi priority 精神） |
