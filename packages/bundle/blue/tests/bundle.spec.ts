@@ -52,6 +52,7 @@ describe('blue bundle', () => {
       'blue-paste-image',
       'blue-status-cwd',
       'blue-status-git',
+      'blue-status-mode',
       'blue-status-tips',
       'blue-status-context',
       'blue-intent-diff',

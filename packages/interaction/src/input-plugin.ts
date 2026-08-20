@@ -59,7 +59,8 @@ import {
 } from './editor-instance.ts'
 import { canonicalOf, withCommandAliases } from './command-meta.ts'
 import { clearDraft, getStashedDraft, getStashedHistory, stashDraft, stashHistory } from './draft-stash.ts'
-import { ACTION_CANCEL, ACTION_INTERRUPT, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_STEER } from './keys.ts'
+import { ACTION_CANCEL, ACTION_CYCLE_MODE, ACTION_INTERRUPT, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_STEER } from './keys.ts'
+import { cycleMode } from './mode-commands.ts'
 import { ACTION_QUEUE_RECALL, queuedMessageText } from './pane-queue.ts'
 import { currentBlueAgent } from './session.ts'
 import { filterSlashCommands, slashCommandLabel } from './slash-filter.ts'
@@ -378,6 +379,14 @@ export function apply(ctx: Context): void {
       editor.setText('')
       // Steered text is consumed too: keep no stashed copy for a reload.
       clearDraft()
+      return true
+    }
+    // Shift+Tab: cycle the session mode (normal → plan → yolo, S24a). The
+    // cycle dispatches one explicit command whose result text is the
+    // feedback, so the press is always consumed. It fires in bash mode too
+    // — the input mode and the session mode are orthogonal axes.
+    if (keymap.matches(data, ACTION_CYCLE_MODE)) {
+      void cycleMode(ctx)
       return true
     }
     // Up/Down: with the side-question pane docked above and an empty buffer,

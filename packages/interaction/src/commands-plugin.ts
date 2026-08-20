@@ -5,7 +5,9 @@
  * emits `blue/request-fork` for the app layer to perform the switch;
  * `/sessions` lists persisted sessions in a picker overlay; `/help` lists
  * the registered commands and key bindings in an overlay; `/theme` swaps
- * the live theme provider (see `./theme-switch.ts`). Registrations are
+ * the live theme provider (see `./theme-switch.ts`); `/yolo` and the
+ * plan/yolo exclusivity wiring live in `./mode-commands.ts`.
+ * Registrations are
  * effect-bound, so unloading the fiber removes them. Only `commands` is
  * injected: the overlay commands read the Blue display services through
  * `ctx.get`, because injecting `blueTheme` would make this fiber a theme
@@ -33,6 +35,7 @@ import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
 import type { HelpSection } from './help.ts'
 import { HelpOverlay } from './help.ts'
 import { registerModelCommands } from './model-commands.ts'
+import { registerModeCommands, setupModeTracking } from './mode-commands.ts'
 import { SessionList } from './select.ts'
 import { registerThemeCommand } from './theme-switch.ts'
 
@@ -248,6 +251,10 @@ export function apply(ctx: Context): void {
     // The model-family commands (`/model`, `/effort`, later `/provider`)
     // live in their own module with the same lazy-service discipline.
     const models = registerModelCommands(ctx)
+    // The mode-family command (`/yolo`) plus the session-switch restore and
+    // the plan/yolo exclusivity watcher.
+    const modes = registerModeCommands(ctx)
+    const modeTracking = setupModeTracking(ctx)
     return () => {
       quit()
       quitAliases()
@@ -258,6 +265,8 @@ export function apply(ctx: Context): void {
       help()
       theme()
       models()
+      modes()
+      modeTracking()
     }
   })
 }

@@ -281,14 +281,14 @@ describe('blue-commands plugin', () => {
     // the whole column.
     expect(rows[4]).toBe('    ^/effort (/thinking)^  ~Switch the thinking effort of the current model~')
     expect(rows.some(row => row.includes('^/quit (/q, /exit)  ^  ~Exit Blue~'))).toBe(true)
-    expect(rows.some(row => row.includes('_ showing 1-16 of 25_'))).toBe(true)
+    expect(rows.some(row => row.includes('_ showing 1-16 of 27_'))).toBe(true)
     // Scrolling down reaches the Keys section with the two-column layout.
     for (let i = 0; i < 9; i += 1) overlay(screen).handleInput(KEY.down)
     const scrolled = screen.overlays[0]?.component.render(80) ?? []
     expect(scrolled.some(row => row.includes('  #Keys#'))).toBe(true)
     // Key labels padEnd to the longest label — `backspace` (9) since S13.
     expect(scrolled.some(row => row.includes('?enter    ?  ~Submit input / confirm selection~'))).toBe(true)
-    expect(scrolled.some(row => row.includes('_ showing 10-25 of 25_'))).toBe(true)
+    expect(scrolled.some(row => row.includes('_ showing 10-25 of 27_'))).toBe(true)
     screen.overlays[0]?.component.invalidate()
     overlay(screen).handleInput(KEY.escape)
     expect(screen.overlays[0]?.hidden).toBe(true)

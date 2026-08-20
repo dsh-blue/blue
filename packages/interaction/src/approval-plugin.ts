@@ -9,7 +9,10 @@
  * with the rejection reason. The panel replaces the editor in its dock
  * slot (D30), so below it only the footer remains. Session-scoped
  * allowances are remembered per agent in a module-level WeakMap and
- * short-circuit later prompts for the same tool. Concurrent requests
+ * short-circuit later prompts for the same tool. Yolo (`/yolo`, S24a)
+ * short-circuits every prompt while on — the policy stays `'ask'`, this
+ * answerer is the auto-approve surface (see `./mode-state.ts`).
+ * Concurrent requests
  * serialize on a module-level FIFO chain so only one prompt is visible at
  * a time. Requests for any other agent — and requests arriving before a
  * session attaches — delegate down the chain with `next()`. Returning
@@ -25,6 +28,7 @@ import { framePanel } from '@dsh-blue/blue-core/chrome'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { mountEditorReplacement } from './editor-instance.ts'
+import { yoloActive } from './mode-state.ts'
 import { currentBlueAgent } from './session.ts'
 
 /** Stable Cordis plugin name. */
@@ -256,11 +260,19 @@ function answer(
   next: () => Promise<ApprovalOutcome>,
 ): Promise<ApprovalOutcome> {
   const agent = currentBlueAgent(ctx)
+  // eslint-disable-next-line no-console
   if (agent === undefined || agent !== req.agent) return next()
   // A session-scoped allowance short-circuits the prompt entirely.
   if (sessionAllowances.get(req.agent)?.has(req.toolName) === true) {
     return Promise.resolve<ApprovalOutcome>('allowed-once')
   }
+  // Yolo (S24a) short-circuits every prompt for the attached agent. The
+  // harness approval policy deliberately stays `'ask'` — `'never'` resolves
+  // asks as rejected BEFORE the waterfall dispatch, so this answerer is the
+  // only auto-approve surface. An already-aborted request cancels rather
+  // than allows, matching the queued-prompt guard below.
+  if (req.signal?.aborted) return Promise.resolve<ApprovalOutcome>('cancelled')
+  if (yoloActive(req.agent)) return Promise.resolve<ApprovalOutcome>('allowed-once')
   return enqueueApproval(() => prompt(ctx, req))
 }
 

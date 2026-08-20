@@ -27,6 +27,7 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
+import PlanModeController from '@deepseek-ai/dsh-plan-mode'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
@@ -50,6 +51,7 @@ import * as editorPlusPlugin from '../../../interaction/src/editor-plus.ts'
 import * as attachmentsPlugin from '../../../interaction/src/attachments.ts'
 import * as pasteImagePlugin from '../../../interaction/src/paste-image.ts'
 import { setClipboardImageReader } from '../../../interaction/src/paste-image.ts'
+import * as modeStatusPlugin from '../../../interaction/src/mode-status.ts'
 import * as paneQueuePlugin from '../../../interaction/src/pane-queue.ts'
 import * as transcriptPlugin from '../../../transcript/src/index.ts'
 import * as bannerPlugin from '../../../transcript/src/banner.ts'
@@ -177,6 +179,7 @@ interface BlueE2EHooks {
   statusGitApply: typeof statusGitPlugin.apply
   statusTipsApply: typeof statusTipsPlugin.apply
   statusContextApply: typeof statusContextPlugin.apply
+  modeStatusApply: typeof modeStatusPlugin.apply
   paneActivityApply: typeof paneActivityPlugin.apply
   paneQueueApply: typeof paneQueuePlugin.apply
   paneTodoApply: typeof paneTodoPlugin.apply
@@ -249,6 +252,7 @@ async function bootBlue(argv: string[], options: {
     statusGitApply: statusGitPlugin.apply,
     statusTipsApply: statusTipsPlugin.apply,
     statusContextApply: statusContextPlugin.apply,
+    modeStatusApply: modeStatusPlugin.apply,
     paneActivityApply: paneActivityPlugin.apply,
     paneQueueApply: paneQueuePlugin.apply,
     paneTodoApply: paneTodoPlugin.apply,
@@ -365,6 +369,14 @@ export const name = 'blue-status-context'
 export const inject = ['blueStatus', 'blueScreen', 'blueTheme']
 export const apply = ctx => globalThis.__blueE2E.statusContextApply(ctx)
 `)}`,
+    // The S24a mode badge row mirrors cordis.patch.yml: display-only fiber
+    // reading the yolo WeakMap and the planMode controller.
+    '- id: blue-status-mode',
+    `  name: ${fixture('blue-status-mode.mjs', `
+export const name = 'blue-status-mode'
+export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const apply = ctx => globalThis.__blueE2E.modeStatusApply(ctx)
+`)}`,
     // The S7 intent rows mirror cordis.patch.yml: both inject the
     // transcript's blueIntents registry and register their render intents.
     '- id: blue-intent-diff',
@@ -460,6 +472,9 @@ export const apply = (ctx) => {
   await mountAgentLoopTestDependencies(ctx)
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(CommandRuntime)
+  // The real plan-mode controller, as dsh-base composes it: /plan arrives
+  // self-registered and plan/mode events hit the log (S24a e2e).
+  await ctx.plugin(PlanModeController, { section: 'Plan mode (e2e): draft only — no mutations.' })
   await ctx.plugin(UserQuestionService)
   // The settings family mounts before the default-model service so the
   // latter's settings-backed default tier resolves through the file.
@@ -2549,6 +2564,185 @@ describe('blue whole-tree e2e', () => {
     await expect(second).resolves.toBe('allowed-once')
     await waitForRender()
     expect(tree.terminal.written.slice(before).join('')).not.toContain('Approve bash?')
+  })
+
+  it('yolo auto-approves without an overlay while questions still pop', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    await expect(executeCommand(tree, agent, '/yolo')).resolves.toMatchObject({ kind: 'success' })
+    const fallback = vi.fn(() => Promise.resolve<ApprovalOutcome>('unavailable'))
+    // No overlay: the waterfall settles allowed-once straight away.
+    const before = tree.terminal.written.length
+    await expect(tree.ctx.waterfall('approval/request', { agent, toolName: 'bash' }, fallback))
+      .resolves.toBe('allowed-once')
+    await waitForRender()
+    expect(tree.terminal.written.slice(before).join('')).not.toContain('Approve bash?')
+    expect(fallback).not.toHaveBeenCalled()
+    // Questions are a separate service: the questionnaire still opens.
+    const answer = tree.ctx.userQuestions.ask({
+      questions: [
+        { id: 'q1', question: 'Still asking?', header: 'ASK', options: [{ label: 'yes' }] },
+      ],
+    })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Still asking?') })
+    tree.terminal.sendInput('\r')
+    await expect(answer).resolves.toEqual({ answers: [{ id: 'q1', selected: ['yes'] }] })
+  })
+
+  it('bare /yolo toggles and the log records the disambiguating follow-up', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    await expect(executeCommand(tree, agent, '/yolo')).resolves.toMatchObject({ kind: 'success' })
+    await expect(executeCommand(tree, agent, '/yolo')).resolves.toMatchObject({ kind: 'success' })
+    const args = agent.session.events
+      .filter((event): event is typeof event & { data: { name: string, args?: string } } =>
+        event.type === 'command/run' && event.data.name === 'yolo')
+      .map(event => event.data.args)
+    expect(args).toEqual(['', '', ' off'])
+    // Off means off: the next approval prompts again.
+    const fallback = vi.fn(() => Promise.resolve<ApprovalOutcome>('unavailable'))
+    const pending = tree.ctx.waterfall('approval/request', { agent, toolName: 'bash' }, fallback)
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Approve bash?') })
+    tree.terminal.sendInput('\r')
+    await expect(pending).resolves.toBe('allowed-once')
+  })
+
+  it('shift+tab cycles normal → plan → yolo → normal with the footer badge', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    const planMode = tree.ctx.get('planMode')!
+    expect(planMode.get(agent).active).toBe(false)
+    // normal → plan
+    tree.terminal.sendInput('\x1b[Z')
+    await vi.waitFor(() => { expect(planMode.get(agent).active).toBe(true) })
+    await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('plan') })
+    // plan → yolo
+    tree.terminal.sendInput('\x1b[Z')
+    await vi.waitFor(() => { expect(planMode.get(agent).active).toBe(false) })
+    await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('yolo') })
+    // yolo auto-allows while the badge shows
+    const fallback = vi.fn(() => Promise.resolve<ApprovalOutcome>('unavailable'))
+    await expect(tree.ctx.waterfall('approval/request', { agent, toolName: 'bash' }, fallback))
+      .resolves.toBe('allowed-once')
+    // yolo → normal: no badge. The cycle dispatch is async, so first wait
+    // for its '/yolo off' notice, then clear it with one edit (the hint
+    // line's one-shot tier) before asserting real frames.
+    tree.terminal.sendInput('\x1b[Z')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('yolo off') })
+    tree.terminal.sendInput('x')
+    await vi.waitFor(async () => {
+      const frame = await fullFrame(tree.terminal)
+      expect(frame).not.toContain('yolo')
+      expect(frame).not.toContain('plan')
+    })
+    expect(planMode.get(agent).active).toBe(false)
+  })
+
+  it('plan and yolo are exclusive whichever way the switch lands', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    const planMode = tree.ctx.get('planMode')!
+    // /plan while yolo is on: the deferred watcher turns yolo off.
+    await expect(executeCommand(tree, agent, '/yolo')).resolves.toMatchObject({ kind: 'success' })
+    await expect(executeCommand(tree, agent, '/plan')).resolves.toMatchObject({ kind: 'success' })
+    await vi.waitFor(() => {
+      const args = agent.session.events
+        .filter((event): event is typeof event & { data: { name: string, args?: string } } =>
+          event.type === 'command/run' && event.data.name === 'yolo')
+        .map(event => event.data.args)
+      expect(args.at(-1)).toBe(' off')
+    })
+    expect(planMode.get(agent).active).toBe(true)
+    // /yolo on while plan is active: plan exits first.
+    await expect(executeCommand(tree, agent, '/yolo on')).resolves.toMatchObject({ kind: 'success' })
+    expect(planMode.get(agent).active).toBe(false)
+  })
+
+  it('keeps yolo across a resume (the command/run fold)', async () => {
+    const root = mkdtempTracked('dsh-blue-e2e-yolo-resume-')
+    const first = await bootBlue(['first'], { script: [textResponse('one')], persistenceRoot: root })
+    const agent = await currentAgent(first)
+    await vi.waitFor(() => { expect(first.adapter.requests).toHaveLength(1) })
+    await agent.whenIdle()
+    await expect(executeCommand(first, agent, '/yolo on')).resolves.toMatchObject({ kind: 'success' })
+    const id = String(agent.session.id)
+    await first.ctx.sessions.flush(agent.session)
+    await first.ctx.fiber.dispose()
+
+    const resumed = await bootBlue(['--resume', id], { script: [], persistenceRoot: root })
+    const next = await currentAgent(resumed)
+    const fallback = vi.fn(() => Promise.resolve<ApprovalOutcome>('unavailable'))
+    await expect(resumed.ctx.waterfall('approval/request', { agent: next, toolName: 'bash' }, fallback))
+      .resolves.toBe('allowed-once')
+    const args = next.session.events
+      .filter((event): event is typeof event & { data: { name: string, args?: string } } =>
+        event.type === 'command/run' && event.data.name === 'yolo')
+      .map(event => event.data.args)
+    expect(args).toEqual([' on'])
+  })
+
+  it('keeps plan across a resume (the plan/mode fold)', async () => {
+    const root = mkdtempTracked('dsh-blue-e2e-plan-resume-')
+    const first = await bootBlue(['first'], { script: [textResponse('one')], persistenceRoot: root })
+    const agent = await currentAgent(first)
+    await vi.waitFor(() => { expect(first.adapter.requests).toHaveLength(1) })
+    await agent.whenIdle()
+    await expect(executeCommand(first, agent, '/plan')).resolves.toMatchObject({ kind: 'success' })
+    const id = String(agent.session.id)
+    await first.ctx.sessions.flush(agent.session)
+    await first.ctx.fiber.dispose()
+
+    const resumed = await bootBlue(['--resume', id], { script: [], persistenceRoot: root })
+    const next = await currentAgent(resumed)
+    const planMode = resumed.ctx.get('planMode')!
+    expect(planMode.get(next).active).toBe(true)
+    // The badge follows the folded state.
+    await vi.waitFor(async () => { expect(await fullFrame(resumed.terminal)).toContain('plan') })
+  })
+
+  it('/new resets the mode to normal', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    await expect(executeCommand(tree, agent, '/yolo')).resolves.toMatchObject({ kind: 'success' })
+    await expect(executeCommand(tree, agent, '/new')).resolves.toMatchObject({ kind: 'success' })
+    await vi.waitFor(() => { expect(tree.ctx.get('blueSession')?.current).not.toBe(agent) })
+    const fresh = tree.ctx.get('blueSession')?.current
+    expect(fresh).toBeDefined()
+    const fallback = vi.fn(() => Promise.resolve<ApprovalOutcome>('unavailable'))
+    const pending = tree.ctx.waterfall('approval/request', { agent: fresh!, toolName: 'bash' }, fallback)
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Approve bash?') })
+    tree.terminal.sendInput('\r')
+    await expect(pending).resolves.toBe('allowed-once')
+    await vi.waitFor(async () => {
+      expect(await fullFrame(tree.terminal)).not.toContain('yolo')
+    })
+  })
+
+  it('/help lists /yolo with its alias and the shift+tab binding', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    await expect(executeCommand(tree, agent, '/help')).resolves.toMatchObject({ kind: 'success' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/yolo (/yes)') })
+    // The Keys section sits below the commands window; scroll to the very
+    // end so the tail rows (shift+tab among them) enter the window.
+    for (let i = 0; i < 24; i += 1) tree.terminal.sendInput('\x1b[B')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('shift+tab') })
+  })
+
+  it('a fork inherits yolo from the forked log', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    await expect(executeCommand(tree, agent, '/yolo')).resolves.toMatchObject({ kind: 'success' })
+    await expect(executeCommand(tree, agent, '/fork')).resolves.toMatchObject({ kind: 'success' })
+    const forked = await vi.waitFor(() => {
+      const next = tree.ctx.get('blueSession')?.current
+      expect(next).toBeDefined()
+      expect(next).not.toBe(agent)
+      return next!
+    })
+    const fallback = vi.fn(() => Promise.resolve<ApprovalOutcome>('unavailable'))
+    await expect(tree.ctx.waterfall('approval/request', { agent: forked, toolName: 'bash' }, fallback))
+      .resolves.toBe('allowed-once')
   })
 
   it('answers a two-question user request through one tabbed overlay', async () => {

@@ -54,6 +54,7 @@ const SEQUENCE_BY_KEY_ID: Record<string, string> = {
   'ctrl+s': '\x13',
   'ctrl+v': '\x16',
   'alt+s': '\x1bs',
+  'shift+tab': '\x1b[Z',
 }
 
 /** Convenience aliases for the fake key sequences. */

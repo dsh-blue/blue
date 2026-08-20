@@ -104,6 +104,14 @@
     - id: blue-status-git
       name: '@dsh-blue/blue-transcript/status-git'
 
+    # Session-mode footer badge (S24a): 'plan' (accent, a queued entry
+    # shows the pending ellipsis) or 'yolo' (warning) while either is in
+    # force; normal renders nothing. Display-only fiber reading the yolo
+    # WeakMap and the planMode controller — no commands, so the /theme
+    # fiber-dispose trap does not apply.
+    - id: blue-status-mode
+      name: '@dsh-blue/blue-interaction/mode-status'
+
     # Rotating-teaching-tip footer entry: one tip, or two joined ' | ' when
     # the width allows (priority 30, the faintest textMuted tier,
     # right-aligned on the footer's first band), advancing every 10s.
