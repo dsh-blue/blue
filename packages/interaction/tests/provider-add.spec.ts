@@ -349,26 +349,6 @@ describe('runProviderAdd', () => {
     await vi.waitFor(() => { expect(atForm.screen.overlays).toHaveLength(3) })
     current(atForm.screen).handleInput(KEY.escape)
     await expect(formRun).resolves.toBe('add provider cancelled')
-
-    // Custom anthropic branch, at the manual model form.
-    const atManual = mountWizard({ discovered: [] })
-    const manualRun = runProviderAdd(atManual.ctx, atManual.display, atManual.picker)
-    await vi.waitFor(() => { expect(atManual.screen.overlays).toHaveLength(1) })
-    current(atManual.screen).handleInput(KEY.down)
-    current(atManual.screen).handleInput(KEY.enter)
-    await vi.waitFor(() => { expect(atManual.screen.overlays).toHaveLength(2) })
-    current(atManual.screen).handleInput(KEY.enter)
-    await vi.waitFor(() => { expect(atManual.screen.overlays).toHaveLength(3) })
-    const form = current(atManual.screen)
-    form.handleInput('gw5')
-    form.handleInput(KEY.enter)
-    form.handleInput('https://gw5.example.com')
-    form.handleInput(KEY.enter)
-    form.handleInput('k')
-    form.handleInput(KEY.enter)
-    await vi.waitFor(() => { expect(atManual.screen.overlays).toHaveLength(4) })
-    current(atManual.screen).handleInput(KEY.escape)
-    await expect(manualRun).resolves.toBe('add provider cancelled')
   })
 
   it('fills the model defaults and rejects invalid entries', async () => {
@@ -561,11 +541,8 @@ describe('runProviderAdd', () => {
     expect(profile.baseURL).toBe('https://kept.example.com/v1')
   })
 
-  it('strips a trailing /v1 from anthropic bases even on the manual path', async () => {
-    // Discovery fails everywhere; the manual entry still writes the base
-    // the anthropic transport expects (no /v1 — the dogfood's
-    // POST /v1/v1/messages).
-    const bench = mountWizard({ discovered: [] })
+  it('strips a trailing /v1 from anthropic bases when the listing answers', async () => {
+    const bench = mountWizard({ discovered: [{ id: 'strip-chat' }] })
     const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
     await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
     current(bench.screen).handleInput(KEY.down)
@@ -581,7 +558,7 @@ describe('runProviderAdd', () => {
     form.handleInput('k')
     form.handleInput(KEY.enter)
     await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(4) })
-    current(bench.screen).handleInput('strip-chat')
+    current(bench.screen).handleInput(' ')
     current(bench.screen).handleInput(KEY.enter)
     await skipDefaults(bench.screen)
     await expect(outcome).resolves.toBe('provider "strip-gw" added')
@@ -624,7 +601,7 @@ describe('runProviderAdd', () => {
       .resolves.toBe('no configurable providers: the host composition carries no llm-pi-ai provider settings surface')
   })
 
-  it('surfaces a credential rejection in the manual form subtitle', async () => {
+  it('aborts with the credential reason when the key is rejected', async () => {
     const bench = mountWizard({
       discoveryError: Object.assign(new Error('401 from /models; check the API key'), { code: 'INVALID_CREDENTIAL_CODE' }),
     })
@@ -643,14 +620,11 @@ describe('runProviderAdd', () => {
     form.handleInput(KEY.enter)
     form.handleInput('k')
     form.handleInput(KEY.enter)
-    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(4) })
-    const manual = current(bench.screen)
-    expect((manual.render?.(120) ?? []).some(row => row.includes('check the API key'))).toBe(true)
-    manual.handleInput(KEY.escape)
-    await expect(outcome).resolves.toBe('add provider cancelled')
+    await expect(outcome).resolves.toContain('check the API key')
+    expect(bench.mutations).toEqual([])
   })
 
-  it('says the endpoint listed nothing when discovery succeeds empty', async () => {
+  it('aborts when the endpoint lists nothing', async () => {
     const bench = mountWizard({ discovered: [] })
     const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
     await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
@@ -667,11 +641,8 @@ describe('runProviderAdd', () => {
     form.handleInput(KEY.enter)
     form.handleInput('k')
     form.handleInput(KEY.enter)
-    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(4) })
-    const manual = current(bench.screen)
-    expect((manual.render?.(120) ?? []).some(row => row.includes('the endpoint listed no models'))).toBe(true)
-    manual.handleInput(KEY.escape)
-    await expect(outcome).resolves.toBe('add provider cancelled')
+    await expect(outcome).resolves.toBe('the endpoint listed no models under https://quiet.example.com')
+    expect(bench.mutations).toEqual([])
   })
 
   it('edits a configured provider and keeps untouched fields', async () => {
@@ -906,8 +877,8 @@ describe('runProviderAdd', () => {
     expect(bench.mutations).toEqual([])
   })
 
-  it('falls back to manual entry when discovery fails', async () => {
-    const bench = mountWizard({ discoveryError: new Error('endpoint unreachable') })
+  it('aborts with the classified reason when discovery fails', async () => {
+    const bench = mountWizard({ discoveryError: new Error('could not reach https://gw3.example.com/models') })
     const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
     await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
     current(bench.screen).handleInput(KEY.down)
@@ -923,12 +894,11 @@ describe('runProviderAdd', () => {
     form.handleInput(KEY.enter)
     form.handleInput('k')
     form.handleInput(KEY.enter)
-    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(4) })
-    expect((current(bench.screen).render?.(60) ?? []).some(row => row.includes('discovery failed: endpoint unreachable'))).toBe(true)
-    current(bench.screen).handleInput('m1')
-    current(bench.screen).handleInput(KEY.enter)
-    await skipDefaults(bench.screen)
-    await expect(outcome).resolves.toBe('provider "gw3" added')
+    // No manual form mounts; the add aborts with the reason.
+    await expect(outcome).resolves.toBe(
+      'could not list models from the endpoint: could not reach https://gw3.example.com/models')
+    expect(bench.screen.overlays).toHaveLength(3)
+    expect(bench.mutations).toEqual([])
   })
 
   it('adopts a known vendor with just the key', async () => {
@@ -1185,31 +1155,6 @@ describe('runProviderAdd', () => {
     await expect(outcome).resolves.toBe('add provider cancelled')
   })
 
-  it('rejects an empty segment in the manual id list', async () => {
-    const bench = mountWizard({ discovered: [] })
-    const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
-    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
-    current(bench.screen).handleInput(KEY.down)
-    current(bench.screen).handleInput(KEY.enter)
-    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(2) })
-    current(bench.screen).handleInput(KEY.enter)
-    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(3) })
-    const form = current(bench.screen)
-    form.handleInput('gw6')
-    form.handleInput(KEY.enter)
-    form.handleInput('https://gw6.example.com')
-    form.handleInput(KEY.enter)
-    form.handleInput('k')
-    form.handleInput(KEY.enter)
-    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(4) })
-    const manual = current(bench.screen)
-    manual.handleInput('a,,b')
-    manual.handleInput(KEY.enter)
-    await new Promise(resolve => setTimeout(resolve, 10))
-    expect(manual.render?.(60).some(row => row.includes('every comma-separated id must be non-empty'))).toBe(true)
-    manual.handleInput(KEY.escape)
-    await expect(outcome).resolves.toBe('add provider cancelled')
-  })
 
   it('surfaces a failed settings write', async () => {
     const bench = mountWizard({}, { settings: { failMutate: new Error('schema rejected') } })

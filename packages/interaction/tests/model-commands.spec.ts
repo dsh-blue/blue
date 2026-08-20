@@ -768,7 +768,7 @@ describe('model-family commands', () => {
     const dynamicLlm = fakeLlm({
       providers: [{ id: 'mock', name: 'Mock' }],
       configurable: [{ provider: 'anthropic', displayName: 'Anthropic' }],
-      discovered: [],
+      discovered: [{ id: 'gw-chat', name: 'GW Chat' }],
       models: { mock: [{ id: 'mock', name: 'Mock' }], gw: [{ id: 'gw-chat', name: 'GW Chat' }] },
     }) as LlmRuntime & { listProviders(): { id: string, name: string }[] }
     dynamicLlm.listProviders = () => registered.map(id => ({ id, name: id }))
@@ -789,7 +789,7 @@ describe('model-family commands', () => {
     form.handleInput('k')
     form.handleInput(KEY.enter)
     await vi.waitFor(() => { expect(screen.overlays).toHaveLength(4) })
-    overlay(screen).handleInput('gw-chat')
+    overlay(screen).handleInput(' ')
     overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => {
       const rows = (overlay(screen).render?.(60) ?? []).join('\n')
@@ -816,7 +816,7 @@ describe('model-family commands', () => {
       describe: () => [{ ns: 'llm-pi-ai', revision: 7 }],
       mutate: async () => {},
     }
-    const never = fakeLlm({ providers: [{ id: 'mock', name: 'Mock' }], discovered: [] })
+    const never = fakeLlm({ providers: [{ id: 'mock', name: 'Mock' }], discovered: [{ id: 'ghost-chat' }] })
     const { ctx, screen, agent, fiber } = await mount({
       llm: never, settings, credentials: { set: async () => {} },
     })
@@ -835,7 +835,7 @@ describe('model-family commands', () => {
     form.handleInput('k')
     form.handleInput(KEY.enter)
     await vi.waitFor(() => { expect(screen.overlays).toHaveLength(4) })
-    overlay(screen).handleInput('ghost-chat')
+    overlay(screen).handleInput(' ')
     overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => {
       const rows = (overlay(screen).render?.(60) ?? []).join('\n')
@@ -874,7 +874,7 @@ describe('model-family commands', () => {
     // settles the wizard on the dead fiber, whose continuation then skips
     // the notice through the unload flag.
     await fiber.dispose()
-    overlay(screen).handleInput('late-chat')
+    overlay(screen).handleInput(' ')
     overlay(screen).handleInput(KEY.enter)
     await new Promise(resolve => setTimeout(resolve, 150))
     expect(notices).toEqual([])

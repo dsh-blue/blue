@@ -353,12 +353,11 @@ async function tryDiscover(
  * a gateway that lists fine). The failure rides the manual form's
  * subtitle.
  */
-/** What the models step produced: the entries plus which base listed them. */
-interface CollectedModels {
-  readonly models: NonNullable<EndpointDraft['models']>
-  /** The probe candidate that answered — `undefined` on the manual path. */
-  readonly listingBase?: string
-}
+/** What the models step produced: the entries plus which base listed them,
+ * or the classified error that aborts the add. */
+type CollectedModels =
+  | { models: NonNullable<EndpointDraft['models']>, listingBase?: string }
+  | { error: string }
 
 async function collectModels(
   display: ProviderAddDisplay,
@@ -414,28 +413,16 @@ async function collectModels(
       }
     }
   }
-  const manual = await fillForm(display, {
-    title: 'Model ids',
-    // The classified reason tells the user whether the gateway is
-    // unreachable, the key was rejected, or nothing was listed.
-    subtitle: failure !== undefined
-      ? `discovery failed: ${failure.message} — enter model ids manually`
-      : 'the endpoint listed no models — enter model ids manually',
-    fields: [
-      {
-        id: 'ids',
-        label: 'Model ids',
-        required: true,
-        hint: 'comma-separated, e.g. claude-sonnet-5, claude-haiku-4-5',
-        validate: value => value.split(',').every(id => id.trim().length > 0)
-          ? undefined
-          : 'every comma-separated id must be non-empty',
-      },
-    ],
-  })
-  if (manual === undefined) return undefined
-  /* v8 ignore next -- the required field guarantees a non-empty id list */
-  return { models: manual.ids?.split(',').map(id => ({ id: id.trim() })) ?? [] }
+  // The manual model-entry stage is disabled (the dogfood ruling): the
+  // endpoint must list its models through discovery or the add aborts with
+  // the classified reason — the reason tells the user whether the gateway
+  // is unreachable, the key was rejected, or nothing was listed. Manual
+  // entry may return behind a flag if a listing-less gateway shows up.
+  return {
+    error: failure !== undefined
+      ? `could not list models from the endpoint: ${failure.message}`
+      : `the endpoint listed no models under ${baseURL}`,
+  }
 }
 
 
@@ -755,6 +742,7 @@ export async function runProviderAdd(
        exactOptionalPropertyTypes artifacts */
     const collected = await collectModels(display, llm, ns, protocol, declared.baseURL ?? '', declared.key ?? '')
     if (collected === undefined) return 'add provider cancelled'
+    if ('error' in collected) return collected.error
     // The profile base follows the protocol's path convention, not the
     // user's typing: anthropic transports append /v1 themselves, the
     // OpenAI family needs it present.
