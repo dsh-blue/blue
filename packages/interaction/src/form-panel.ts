@@ -15,7 +15,7 @@
  */
 
 import type { BlueComponents, BlueEditor, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
-import { framePanel } from '@dsh-blue/blue-core/chrome'
+import { withSideBorders } from '@dsh-blue/blue-core/chrome'
 import {
   ACTION_CANCEL,
   ACTION_MOVE_DOWN,
@@ -164,50 +164,63 @@ export class FormPanel implements BlueFocusable {
   }
 
   /**
-   * Render the framed form: the subtitle-or-error line, then per field a
-   * label (accent bold when active, muted otherwise), its optional hint,
-   * and one derived input row — the text (bullets when masked) with a
-   * trailing cursor block on the active field, muted when inactive.
+   * Render the kimi ApiKeyInput dialog geometry: a rounded box whose first
+   * row is the bold title, then the subtitle-or-error line, then per field
+   * a label and a `> ` input row (bullets when masked, trailing cursor
+   * block on the active field), and the key footer inside the box.
    * @param width - current viewport width in columns.
    * @returns one string per rendered row.
    */
   render(width: number): string[] {
-    const { fields, theme } = this.options
+    const { fields, theme, components } = this.options
     const colors = theme.colors
     const boldOpen = '\x1b[1m'
     const boldClose = '\x1b[22m'
-    const lines: string[] = ['', colors.muted(`  ${this.error ?? this.subtitleOrBlank()}`), '']
+    const inner = Math.max(20, width)
+    const body: string[] = [
+      '',
+      `${boldOpen}${colors.textStrong(`  ${this.options.title}`)}${boldClose}`,
+      '',
+      colors.muted(`  ${this.error ?? this.subtitleOrBlank()}`),
+      '',
+    ]
     fields.forEach((field, index) => {
       const active = index === this.active
       const label = active
         ? `${boldOpen}${colors.accent(`  ${field.label}`)}${boldClose}`
         : colors.muted(`  ${field.label}`)
-      lines.push(label)
-      if (field.hint !== undefined) lines.push(colors.textMuted(`    ${field.hint}`))
+      body.push(label)
+      if (field.hint !== undefined) body.push(colors.textMuted(`    ${field.hint}`))
       /* v8 ignore next -- fields and editors stay index-aligned */
       if (this.editors[index] === undefined) return
       const value = (this.values[field.id] ?? '').replace(/[\r\n]+/g, ' ')
       const shown = field.mask === true ? maskRow(value) : value
       const cursor = active && this.focused ? CURSOR_BLOCK : ''
+      const prefix = active ? colors.primary('> ') : colors.textMuted('> ')
       const painted = active
-        ? `${colors.text(`  ${shown}`)}${cursor}`
-        : colors.muted(`  ${shown}`)
-      lines.push(this.options.components.truncateToWidth(painted, Math.max(width, 1)))
-      lines.push('')
+        ? `${prefix}${colors.text(shown)}${cursor}`
+        : `${prefix}${colors.muted(shown)}`
+      body.push(components.truncateToWidth(painted, inner - 2))
+      body.push('')
     })
-    /* v8 ignore next -- the form keys are always registered */
-    const key = (action: string): string => this.options.keymap.getKeys(action)[0] ?? action
-    return framePanel(lines.slice(0, -1), width, {
-      title: this.options.title,
-      titlePaint: colors.primary,
-      rulePaint: colors.primary,
-      footer: [
-        `tab/↑↓ fields`,
-        this.active === fields.length - 1 ? `${key(ACTION_SUBMIT)} submit` : `${key(ACTION_SUBMIT)} next field`,
-        `${key(ACTION_CANCEL)} cancel`,
-      ],
-      footerPaint: colors.textMuted,
+    const last = fields.length - 1
+    const footer = this.editors.length === 1
+      ? `${colors.textStrong('Enter')} to submit  ·  ${colors.textStrong('Esc')} to cancel`
+      : this.active === last
+        ? `${colors.textStrong('Tab')} / ↑↓ fields  ·  ${colors.textStrong('Enter')} to submit  ·  ${colors.textStrong('Esc')} to cancel`
+        : `${colors.textStrong('Tab')} / ↑↓ fields  ·  ${colors.textStrong('Enter')} for next field  ·  ${colors.textStrong('Esc')} to cancel`
+    body.push(components.truncateToWidth(`  ${footer}`, inner - 2))
+    body.push('')
+    // Pad every row to the inner width, cap with rules, and let
+    // withSideBorders turn the rules into the rounded frame.
+    const padded = body.map(row => {
+      const cut = components.truncateToWidth(row, inner - 2)
+      return cut + ' '.repeat(Math.max(0, inner - 2 - components.visibleWidth(cut)))
     })
+    return withSideBorders(
+      ['─'.repeat(inner), ...padded, '─'.repeat(inner)],
+      colors.border,
+    )
   }
 
   /** The subtitle, or a blank line when the form carries none. */

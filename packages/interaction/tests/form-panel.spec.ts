@@ -118,11 +118,15 @@ describe('FormPanel', () => {
     expect(component.render(60).some(row => row.includes('the original subtitle'))).toBe(true)
   })
 
-  it('ignores focusField for an unknown id and renders an empty mask row', () => {
+  it('ignores focusField for an unknown id and renders an empty input row', () => {
     const { component } = form([{ id: 'key', label: 'Key', mask: true }])
     component.focusField('missing')
-    // The untouched masked field renders the empty bullet row.
-    expect(component.render(60).some(row => row.trim().length === 0)).toBe(true)
+    const rows = component.render(60)
+    // The untouched masked field renders its `>` prompt with no bullets,
+    // inside the rounded box (corner rows present).
+    expect(rows[0]).toContain('╭')
+    expect(rows.at(-1)).toContain('╰')
+    expect(rows.some(row => row.includes('>') && !row.includes('•'))).toBe(true)
   })
 
   it('pre-fills a field from its initial value', () => {

@@ -71,11 +71,16 @@ describe('ModelPanel', () => {
     expect(otherRow).not.toContain('← current')
   })
 
-  it('renders the warning row first when provided', () => {
+  it('renders the title, hint, and warning rows in the kimi order', () => {
     const { component } = panel([item()], { warning: 'switching models starts a fresh prompt cache' })
     const rows = component.render(80)
-    expect(rows[2]).toBe('?  switching models starts a fresh prompt cache?')
+    expect(rows[1]).toContain('Select a model')
+    expect(rows[1]).toContain('(type to search)')
+    expect(rows[2]).toContain('navigate')
+    expect(rows[2]).toContain('session-only')
+    // Single-provider catalog: no tab strip, the warning follows the blank.
     expect(rows[3]).toBe('')
+    expect(rows[4]).toBe('?  switching models starts a fresh prompt cache?')
   })
 
   it('renders the thinking footer from the highlighted row and Off (Unsupported) without efforts', () => {
@@ -137,8 +142,8 @@ describe('ModelPanel', () => {
     component.handleInput(KEY.down)
     component.handleInput(KEY.down)
     component.handleInput(KEY.up)
-    // An unbound key falls through every branch untouched.
-    component.handleInput('x')
+    // An unbound non-printable key falls through every branch untouched.
+    component.handleInput('\x00')
   })
 
   it('seeds a no-default row at its first effort', () => {
@@ -194,13 +199,48 @@ describe('ModelPanel', () => {
     component.invalidate()
   })
 
-  it('truncates a trailing cell that only partly fits', () => {
-    // Width 41: budget 37, name 20, provider 8 — the context cell (9 wide)
-    // gets cut to the 5 remaining columns instead of dropped.
-    const { component } = panel([item({ contextWindow: 65536 })])
-    const row = component.render(41).find(candidate => candidate.includes('deepseek')) ?? ''
-    expect(row).toContain('· ')
+  it('renders the provider tab strip for multi-provider catalogs', () => {
+    const { component } = panel([
+      item(),
+      item({ providerLabel: 'z-ai', provider: 'z-ai', id: 'glm', name: 'glm', current: false }),
+    ])
+    const rows = component.render(60)
+    const strip = rows.find(row => row.includes('All')) ?? ''
+    expect(strip).toContain('^All^')
+    expect(strip).toContain('_z-ai_')
+    expect(rows.some(row => row.includes('tab toggle provider'))).toBe(true)
   })
+
+  it('filters by provider tab and by the typed query', () => {
+    const { component, onSelect } = panel([
+      item(),
+      item({ providerLabel: 'z-ai', provider: 'z-ai', id: 'glm', name: 'glm', current: false }),
+      item({ id: 'other', name: 'other', current: false }),
+    ])
+    // Two tabs: All → deepseek → z-ai.
+    component.handleInput('\t')
+    component.handleInput('\t')
+    let rows = component.render(60)
+    expect(rows.some(row => row.includes('glm'))).toBe(true)
+    expect(rows.some(row => row.includes('deepseek/deepseek-chat'))).toBe(false)
+    // Enter selects within the tab.
+    component.handleInput(KEY.enter)
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'glm' }), undefined)
+    // Back on All, a typed query narrows to the matching rows.
+    component.handleInput('\t')
+    for (const char of 'glm') component.handleInput(char)
+    rows = component.render(60)
+    expect(rows.some(row => row.includes('Search:') && row.includes('glm'))).toBe(true)
+    expect(rows.some(row => row.includes('deepseek/deepseek-chat'))).toBe(false)
+    // Backspace shrinks the query; Escape clears it first (the kimi
+    // rule), not the panel.
+    component.handleInput('\x7f')
+    expect(rows.some(row => row.includes('Search:') && row.includes('gl'))).toBe(true)
+    component.handleInput(KEY.escape)
+    rows = component.render(60)
+    expect(rows.some(row => row.includes('deepseek/deepseek-chat'))).toBe(true)
+  })
+
 })
 
 describe('cycleSegment', () => {

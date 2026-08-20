@@ -110,6 +110,10 @@ export class ModelPanel implements BlueFocusable {
   focused = false
 
   private cursor = 0
+  /** The live fuzzy query (kimi's type-to-search). */
+  private query = ''
+  /** The active provider tab: 0 = All, then the distinct provider labels. */
+  private tab = 0
   /** Per-row effort-draft indexes into each item's `efforts`; rows without efforts stay `-1`. */
   private readonly drafts: number[]
 
@@ -139,79 +143,165 @@ export class ModelPanel implements BlueFocusable {
    * @param data - the input sequence as read from the terminal.
    */
   handleInput(data: string): void {
-    const { keymap, items } = this.options
+    const { keymap } = this.options
+    const view = this.filtered()
     if (keymap.matches(data, ACTION_MOVE_UP)) {
-      this.cursor = this.cursor === 0 ? items.length - 1 : this.cursor - 1
+      this.cursor = this.cursor === 0 ? view.length - 1 : this.cursor - 1
       return
     }
     if (keymap.matches(data, ACTION_MOVE_DOWN)) {
-      this.cursor = this.cursor === items.length - 1 ? 0 : this.cursor + 1
+      this.cursor = this.cursor === view.length - 1 ? 0 : this.cursor + 1
       return
     }
     if (keymap.matches(data, ACTION_SEGMENT_LEFT) || keymap.matches(data, ACTION_SEGMENT_RIGHT)) {
       const direction = keymap.matches(data, ACTION_SEGMENT_LEFT) ? -1 : 1
-      const item = items[this.cursor]
+      /* v8 ignore next -- the cursor always indexes the filtered view */
+      const viewIndex = view[this.cursor] === undefined
+        ? this.cursor
+        : this.options.items.indexOf(view[this.cursor]!)
+      const item = this.options.items[viewIndex]
       /* v8 ignore next -- drafts and items stay index-aligned */
-      const draft = this.drafts[this.cursor] ?? -1
+      const draft = this.drafts[viewIndex] ?? -1
       const efforts = item?.efforts
       if (item !== undefined && efforts !== undefined && efforts.length > 0) {
-        this.drafts[this.cursor] = cycleSegment(draft, efforts.length, direction)
+        this.drafts[viewIndex] = cycleSegment(draft, efforts.length, direction)
       }
       return
     }
     if (keymap.matches(data, ACTION_SUBMIT) || keymap.matches(data, ACTION_SESSION_ONLY)) {
-      const item = items[this.cursor]
+      const item = view[this.cursor]
       if (item === undefined) return
       const effort = this.effortOf(item)
       if (keymap.matches(data, ACTION_SESSION_ONLY)) this.options.onSessionOnlySelect(item, effort)
       else this.options.onSelect(item, effort)
       return
     }
-    if (keymap.matches(data, ACTION_CANCEL)) this.options.onCancel()
+    if (keymap.matches(data, ACTION_CANCEL)) {
+      // The kimi rule: Escape clears a live query before it cancels.
+      if (this.query.length > 0) {
+        this.query = ''
+        this.reseedCursor()
+        return
+      }
+      this.options.onCancel()
+      return
+    }
+    // Tab / Shift-Tab toggle the provider tab (kimi's tabbed selector).
+    if (data === '\t' || data === '\x1b[Z') {
+      this.tab = (this.tab + 1) % this.tabs().length
+      this.reseedCursor()
+      return
+    }
+    // Type-to-search: printable characters grow the query, Backspace
+    // shrinks it.
+    if (data === '\x7f') {
+      this.query = this.query.slice(0, -1)
+      this.reseedCursor()
+      return
+    }
+    if (data.length === 1 && data >= ' ') {
+      this.query += data
+      this.reseedCursor()
+    }
+  }
+
+  /** The distinct provider labels: `['All', …]` in item order — a single
+   * provider catalog keeps the bare `['All']` and renders no strip. */
+  private tabs(): string[] {
+    const labels: string[] = []
+    for (const item of this.options.items) {
+      if (!labels.includes(item.providerLabel)) labels.push(item.providerLabel)
+    }
+    return labels.length > 1 ? ['All', ...labels] : ['All']
+  }
+
+  /** The items under the active tab and the live query. */
+  private filtered(): readonly ModelPanelItem[] {
+    const tabs = this.tabs()
+    const byTab = this.tab === 0
+      ? this.options.items
+      : this.options.items.filter(item => item.providerLabel === tabs[this.tab])
+    if (this.query.length === 0) return byTab
+    return byTab.filter(item =>
+      this.options.components.fuzzyMatch(this.query, `${item.providerLabel}/${item.name}`).matches)
+  }
+
+  /** Re-anchor the cursor after a tab or query change: the current row,
+   * else the head of the filtered view. */
+  private reseedCursor(): void {
+    const view = this.filtered()
+    const current = view.findIndex(item => item.current === true)
+    this.cursor = current >= 0 ? current : 0
   }
 
   /** No cached render state. */
   invalidate(): void {}
 
   /**
-   * Render the framed picker: the optional warning row, the visible window
-   * of model rows (name column at half the width, muted provider and
-   * context metadata, `← current` badge), and the footer thinking-segment
-   * control for the highlighted model.
+   * Render the kimi-model-selector layout: the full-width rules, the
+   * title with its `(type to search)` suffix, the key-hint row under it,
+   * the provider tab strip, the live search row, the visible window of
+   * model rows (`Provider Name/model` labels with metadata and the
+   * current badge), and the thinking-segment footer control.
    * @param width - current viewport width in columns.
    * @returns one string per rendered row.
    */
   render(width: number): string[] {
-    const { items, components, theme } = this.options
+    const { components, theme } = this.options
     const colors = theme.colors
-    const lines: string[] = []
+    const view = this.filtered()
+    const boldOpen = '\x1b[1m'
+    const boldClose = '\x1b[22m'
+    const title = this.options.title ?? 'Select a model'
+    const lines: string[] = [
+      colors.primary('─'.repeat(Math.max(1, width))),
+      components.truncateToWidth(
+        this.query.length === 0
+          ? `${boldOpen}${colors.primary(`  ${title}`)}${boldClose}${colors.textMuted('  (type to search)')}`
+          : `${boldOpen}${colors.primary(`  ${title}`)}${boldClose}`,
+        width,
+      ),
+      components.truncateToWidth(`  ${colors.textMuted(this.hintRow())}`, width),
+      '',
+    ]
     const warning = this.options.warning
     if (warning !== undefined) {
       lines.push(colors.warning(components.truncateToWidth(`  ${warning}`, width)), '')
     }
+    const tabs = this.tabs()
+    if (tabs.length > 1) {
+      const cells = tabs.map((label, index) => index === this.tab
+        ? `${boldOpen}${colors.primary(label)}${boldClose}`
+        : colors.textMuted(label))
+      lines.push(components.truncateToWidth(`  ${cells.join('   ')}`, width), '')
+    }
+    if (this.query.length > 0) {
+      lines.push(`${colors.primary(' Search: ')}${colors.text(this.query)}`, '')
+    }
     const start = Math.max(0, Math.min(
       this.cursor - Math.floor(MAX_VISIBLE / 2),
-      items.length - MAX_VISIBLE,
+      view.length - MAX_VISIBLE,
     ))
-    const end = Math.min(start + MAX_VISIBLE, items.length)
+    const end = Math.min(start + MAX_VISIBLE, view.length)
     const nameCap = Math.max(8, Math.floor(width / 2))
     for (let index = start; index < end; index += 1) {
-      const item = items[index]
-      /* v8 ignore next -- start/end are clamped to items.length, so the index is always valid */
+      const item = view[index]
+      /* v8 ignore next -- start/end are clamped to view.length */
       if (item === undefined) continue
       lines.push(this.renderRow(item, index === this.cursor, nameCap, width))
     }
-    if (items.length > MAX_VISIBLE) {
-      lines.push(colors.textMuted(`  (${this.cursor + 1}/${items.length})`))
+    if (view.length > MAX_VISIBLE) {
+      lines.push(colors.textMuted(`  (${this.cursor + 1}/${view.length})`))
     }
-    const highlighted = items[this.cursor]
+    const highlighted = view[this.cursor]
+    const viewIndex = highlighted === undefined
+      ? this.cursor
+      : this.options.items.indexOf(highlighted)
     const efforts = highlighted?.efforts
-    const draft = this.drafts[this.cursor] ?? -1
+    const draft = this.drafts[viewIndex] ?? -1
     lines.push(
       '',
       colors.textMuted(`  ${SEGMENT_CAPTION}`),
-      // A wide effort list can outrun the row; clip ANSI-safe so the
-      // renderer's width invariant holds at narrow terminals.
       efforts === undefined || efforts.length === 0 || highlighted === undefined
         ? colors.textMuted(`  ${SEGMENT_UNSUPPORTED}`)
         : components.truncateToWidth(`  ${renderSegments(
@@ -219,14 +309,25 @@ export class ModelPanel implements BlueFocusable {
             draft,
             theme,
           )}`, width),
+      colors.primary('─'.repeat(Math.max(1, width))),
     )
-    return framePanel(lines, width, {
-      title: this.options.title ?? 'Select a model',
-      titlePaint: colors.primary,
-      rulePaint: colors.primary,
-      footer: this.footerParts(),
-      footerPaint: colors.textMuted,
-    })
+    return lines
+  }
+
+  /** The key-hint fragments under the title (the kimi hint row). */
+  private hintRow(): string {
+    const { keymap } = this.options
+    /* v8 ignore next -- the panel keys are always registered */
+    const key = (action: string): string => keymap.getKeys(action)[0] ?? action
+    const parts = [
+      ...(this.tabs().length > 1 ? ['tab toggle provider'] : []),
+      `${key(ACTION_MOVE_UP)}/${key(ACTION_MOVE_DOWN)} navigate`,
+      `${key(ACTION_SEGMENT_LEFT)}/${key(ACTION_SEGMENT_RIGHT)} thinking`,
+      `${key(ACTION_SUBMIT)} select`,
+      `${key(ACTION_SESSION_ONLY)} session-only`,
+      `${key(ACTION_CANCEL)} cancel`,
+    ]
+    return parts.join(' · ')
   }
 
   /** The highlighted row's effort draft, or `undefined` when it has no efforts. */
@@ -287,19 +388,7 @@ export class ModelPanel implements BlueFocusable {
     return row
   }
 
-  /** Footer key-row parts from the currently bound keys. */
-  private footerParts(): string[] {
-    const { keymap } = this.options
-    /* v8 ignore next -- the panel keys are always registered */
-    const key = (action: string): string => keymap.getKeys(action)[0] ?? action
-    return [
-      `${key(ACTION_MOVE_UP)}/${key(ACTION_MOVE_DOWN)} move`,
-      `${key(ACTION_SEGMENT_LEFT)}/${key(ACTION_SEGMENT_RIGHT)} thinking`,
-      `${key(ACTION_SUBMIT)} switch`,
-      `${key(ACTION_SESSION_ONLY)} session`,
-      `${key(ACTION_CANCEL)} cancel`,
-    ]
-  }
+
 }
 
 /** Capitalize an effort id for its segment label (`low` → `Low`). */
