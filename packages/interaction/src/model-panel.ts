@@ -55,6 +55,8 @@ export function formatContextWindow(tokens: number): string {
 export interface ModelPanelItem {
   /** The provider route the model belongs to. */
   readonly provider: string
+  /** The provider's display name for the `Provider/model` row label. */
+  readonly providerLabel: string
   /** The provider-owned model id. */
   readonly id: string
   /** The display name (the model's `name`, falling back to its id). */
@@ -238,17 +240,19 @@ export class ModelPanel implements BlueFocusable {
   }
 
   /**
-   * Render one model row: the pointer lead, the padded name column, then
-   * the provider, context metadata, and current badge appended while the
+   * Render one model row: the pointer lead, the `Provider Name/model`
+   * label (the dogfood ruling — `deepseek official/deepseek-v4-flash`),
+   * then the context metadata and current badge appended while the
    * remaining width allows (dropped left-to-right trailing cells first
    * under width pressure).
    */
   private renderRow(item: ModelPanelItem, isCursor: boolean, nameCap: number, width: number): string {
     const { components, theme } = this.options
     const colors = theme.colors
-    const rawName = components.visibleWidth(item.name) > nameCap
-      ? `${components.truncateToWidth(item.name, nameCap - 1)}…`
-      : item.name
+    const label = `${item.providerLabel}/${item.name}`
+    const rawName = components.visibleWidth(label) > nameCap
+      ? `${components.truncateToWidth(label, nameCap - 1)}…`
+      : label
     const nameCell = rawName.padEnd(nameCap, ' ')
     const leadWidth = 4
     let used = components.visibleWidth(nameCell)
@@ -267,7 +271,6 @@ export class ModelPanel implements BlueFocusable {
       }
       return ''
     }
-    const providerCell = append(item.provider)
     const contextCell = item.contextWindow === undefined
       ? ''
       : append(`· ctx ${formatContextWindow(item.contextWindow)}`)
@@ -279,7 +282,6 @@ export class ModelPanel implements BlueFocusable {
       ? `${boldOpen}${colors.primary(nameCell)}${boldClose}`
       : colors.text(nameCell)
     let row = `  ${pointer} ${name}`
-    if (providerCell !== '') row += `  ${colors.textMuted(providerCell)}`
     if (contextCell !== '') row += ` ${colors.textMuted(contextCell)}`
     if (badgeCell !== '') row += `  ${colors.success(badgeCell)}`
     return row

@@ -559,31 +559,39 @@ describe('model-family commands', () => {
     })
   })
 
-  it('/provider opens the panel with active, dormant, and CTA rows', async () => {
+  it('/provider opens the panel over the configured providers', async () => {
     const { ctx, screen, agent } = await mount()
     const execution = await ctx.commands.execute(agent, '/provider', signal())
     expect(execution?.result).toEqual({ kind: 'success' })
     const rows = overlay(screen).render?.(80) ?? []
     const active = rows.find(row => row.includes('Mock')) ?? ''
-    expect(active).toContain('(mock)')
     expect(active).toContain('← current')
-    const dormant = rows.find(row => row.includes('Anthropic')) ?? ''
-    expect(dormant).toContain('_ · not configured_')
+    // Dormant catalog vendors live in the wizard, not the pane.
+    expect(rows.some(row => row.includes('Anthropic'))).toBe(false)
     expect(rows.some(row => row.includes('+ Add provider'))).toBe(true)
   })
 
-  it('/provider panel: dormant Enter flashes the pointer, active Enter opens the scoped picker', async () => {
+  it('/provider panel: Enter on a configured row opens the scoped picker', async () => {
     const { ctx, screen, agent } = await mount()
-    await ctx.commands.execute(agent, '/provider', signal())
-    overlay(screen).handleInput(KEY.down)
-    overlay(screen).handleInput(KEY.enter)
-    await vi.waitFor(() => { expect(notices).toHaveLength(1) })
-    expect(notices[0]).toContain('!provider "anthropic" is not configured — add it with /provider add!')
     await ctx.commands.execute(agent, '/provider', signal())
     overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => {
       const rows = screen.overlays[screen.overlays.length - 1]?.component.render?.(60) ?? []
-      expect(rows.some(row => row.includes('Select a model · mock'))).toBe(true)
+      expect(rows.some(row => row.includes('Select a model · Mock'))).toBe(true)
+    })
+  })
+
+  it('/provider falls back to the id for providers with no display name', async () => {
+    const { ctx, screen, agent } = await mount({
+      catalog: { providers: [{ id: 'x', name: '' }], models: { x: [{ id: 'm', name: 'M' }] } },
+    })
+    await ctx.commands.execute(agent, '/provider', signal())
+    const rows = overlay(screen).render?.(60) ?? []
+    expect(rows.some(row => row.includes('x'))).toBe(true)
+    await ctx.commands.execute(agent, '/provider switch x', signal())
+    await vi.waitFor(() => {
+      const scoped = screen.overlays[screen.overlays.length - 1]?.component.render?.(60) ?? []
+      expect(scoped.some(row => row.includes('Select a model · x'))).toBe(true)
     })
   })
 
@@ -592,7 +600,7 @@ describe('model-family commands', () => {
     const execution = await ctx.commands.execute(agent, '/provider switch mock', signal())
     expect(execution?.result).toEqual({ kind: 'success' })
     const scoped = screen.overlays[0]?.component.render?.(60) ?? []
-    expect(scoped.some(row => row.includes('Select a model · mock'))).toBe(true)
+    expect(scoped.some(row => row.includes('Select a model · Mock'))).toBe(true)
 
     const unknown = await mount()
     expect((await unknown.ctx.commands.execute(unknown.agent, '/provider switch nope', signal()))?.result)
@@ -661,20 +669,10 @@ describe('model-family commands', () => {
     await bare.fiber.dispose()
   })
 
-  it('/provider falls back to the route id for an unnamed provider', async () => {
-    const { ctx, screen, agent } = await mount({
-      catalog: { providers: [{ id: 'x', name: '' }] },
-    })
-    await ctx.commands.execute(agent, '/provider', signal())
-    const rows = overlay(screen).render?.(60) ?? []
-    expect(rows.some(row => row.includes('(x)'))).toBe(true)
-  })
-
   it('/provider CTA runs the wizard; Escape closes the panel quietly', async () => {
     const { ctx, screen, agent } = await mount()
     await ctx.commands.execute(agent, '/provider', signal())
-    // Rows: mock (active), anthropic (dormant), then the CTA.
-    overlay(screen).handleInput(KEY.down)
+    // Rows: mock (configured), then the CTA.
     overlay(screen).handleInput(KEY.down)
     overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => { expect(notices).toHaveLength(1) })
@@ -720,9 +718,10 @@ describe('model-family commands', () => {
     const registered: string[] = ['mock']
     const settings = {
       describe: () => [{ ns: 'llm-pi-ai', revision: 7 }],
+      // The write resolves immediately; the registration lands on a later
+      // tick — after the picker's poll has already started waiting.
       mutate: async () => {
-        await new Promise(resolve => setTimeout(resolve, 120))
-        registered.push('gw')
+        setTimeout(() => { registered.push('gw') }, 120)
       },
     }
     const credentials = { set: async () => {}, unset: async () => {}, resolve: async () => undefined }
@@ -798,6 +797,36 @@ describe('model-family commands', () => {
     expect(screen.overlays[screen.overlays.length - 1]?.hidden).toBe(true)
     expect(notices).toEqual([])
   }, 6000)
+
+  it('/provider CTA suppresses the wizard notice when the tree unloaded first', async () => {
+    const settings = { describe: () => [{ ns: 'llm-pi-ai', revision: 7 }], mutate: async () => {} }
+    const { ctx, screen, agent, fiber } = await mount({
+      settings, credentials: { set: async () => {} },
+    })
+    await ctx.commands.execute(agent, '/provider', signal())
+    overlay(screen).handleInput(KEY.down)
+    overlay(screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(screen.overlays).toHaveLength(2) })
+    overlay(screen).handleInput(KEY.down)
+    overlay(screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(screen.overlays).toHaveLength(3) })
+    const form = overlay(screen)
+    form.handleInput('late')
+    form.handleInput(KEY.enter)
+    form.handleInput('https://late.example.com')
+    form.handleInput(KEY.enter)
+    form.handleInput('k')
+    form.handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(screen.overlays).toHaveLength(4) })
+    // Unload BEFORE the final Enter: the still-mounted (hidden) form
+    // settles the wizard on the dead fiber, whose continuation then skips
+    // the notice through the unload flag.
+    await fiber.dispose()
+    overlay(screen).handleInput('late-chat')
+    overlay(screen).handleInput(KEY.enter)
+    await new Promise(resolve => setTimeout(resolve, 150))
+    expect(notices).toEqual([])
+  })
 
   it('/effort session-only leaves the default untouched', async () => {
     const { ctx, screen, agent, saveSelection } = await mount()

@@ -141,6 +141,22 @@ async function commitModelSelection(
   }
 }
 
+/** The llm surface the display-name helper reads. */
+interface ListingLlm {
+  listProviders(): { id: string, name: string }[]
+}
+
+/**
+ * The provider's display name for row labels, falling back to its id.
+ * @param llm - the llm service.
+ * @param id - the provider route id.
+ * @returns the display name.
+ */
+function providerDisplayName(llm: ListingLlm, id: string): string {
+  const name = llm.listProviders().find(provider => provider.id === id)?.name
+  return name !== undefined && name.length > 0 ? name : id
+}
+
 /** The catalog rows with their resolved metadata, or the guard's error text. */
 type CatalogResult = { items: ModelPanelItem[] } | { error: string }
 
@@ -166,6 +182,9 @@ async function catalogRows(
   if (filterProvider !== undefined && !providers.some(provider => provider.id === filterProvider)) {
     return { error: `provider "${filterProvider}" is not registered` }
   }
+  // The row label renders `Provider Name/model` (the dogfood ruling), so
+  // the display names ride along from the provider listing.
+  const providerLabel = (id: string): string => providerDisplayName(llm, id)
   const rows: { provider: string, id: string, name: string }[] = []
   for (const provider of providers) {
     if (filterProvider !== undefined && provider.id !== filterProvider) continue
@@ -189,6 +208,7 @@ async function catalogRows(
       : undefined
     return {
       ...row,
+      providerLabel: providerLabel(row.provider),
       ...(info?.context?.contextWindow !== undefined
         ? { contextWindow: info.context.contextWindow }
         : {}),
@@ -226,6 +246,7 @@ export function registerModelCommands(ctx: Context): () => void {
    * @returns the command outcome.
    */
   async function openModelPicker(signal: AbortSignal, filterProvider?: string): Promise<CommandResult> {
+    const llm = ctx.get('llm')
     const selection = readSelection(ctx)
     if ('error' in selection) return { kind: 'error', text: selection.error }
     const { agent, modelRef } = selection.read
@@ -234,18 +255,13 @@ export function registerModelCommands(ctx: Context): () => void {
     // can land a beat after the wizard's writes resolve (the first
     // real-terminal dogfood hit exactly this). Poll briefly instead of
     // failing the picker on the gap.
-    if (filterProvider !== undefined) {
-      const llm = ctx.get('llm')
-      /* v8 ignore next -- the calling handler already guarded the llm
-         service; it cannot vanish between the two reads on a live tree */
-      if (llm !== undefined) {
-        const deadline = Date.now() + 2000
-        while (!llm.listProviders().some(provider => provider.id === filterProvider)) {
-          /* v8 ignore next -- the deadline and unload exits both return
-             quietly; the interesting path is the registration landing */
-          if (Date.now() >= deadline || unloaded) return { kind: 'success' }
-          await new Promise(resolve => setTimeout(resolve, 100))
-        }
+    if (filterProvider !== undefined && llm !== undefined) {
+      const deadline = Date.now() + 2000
+      while (!llm.listProviders().some(provider => provider.id === filterProvider)) {
+        /* v8 ignore next -- the deadline and unload exits both return
+           quietly; the interesting path is the registration landing */
+        if (Date.now() >= deadline || unloaded) return { kind: 'success' }
+        await new Promise(resolve => setTimeout(resolve, 100))
       }
     }
     const catalog = await catalogRows(ctx, signal, filterProvider)
@@ -296,7 +312,9 @@ export function registerModelCommands(ctx: Context): () => void {
         ? { warning: 'switching models starts a fresh prompt cache' }
         : {}),
       ...(filterProvider !== undefined
-        ? { title: `Select a model · ${filterProvider}` }
+        /* v8 ignore next -- the poll above already established the llm
+           service for a scoped picker */
+        ? { title: `Select a model · ${providerDisplayName(llm!, filterProvider)}` }
         : {}),
       onSelect: (item, effort) => {
         restore()
@@ -526,17 +544,12 @@ export function registerModelCommands(ctx: Context): () => void {
     if (display === undefined) {
       return { kind: 'error', text: 'provider picker is unavailable: the Blue screen is not mounted' }
     }
-    const activeProviders = llm.listProviders()
-    const activeIds = new Set(activeProviders.map(provider => provider.id))
-    const dormant = llm.listConfigurableProviders().filter(entry => !activeIds.has(entry.provider))
-    const rows: ProviderRow[] = [
-      ...activeProviders.map(provider => ({
-        id: provider.id,
-        name: provider.name.length > 0 ? provider.name : provider.id,
-        active: true,
-      })),
-      ...dormant.map(entry => ({ id: entry.provider, name: entry.displayName, active: false })),
-    ]
+    // The pane lists the configured routes only — dormant catalog vendors
+    // live behind the Add wizard's known-provider branch.
+    const rows: ProviderRow[] = llm.listProviders().map(provider => ({
+      id: provider.id,
+      name: provider.name.length > 0 ? provider.name : provider.id,
+    }))
     const selection = readSelection(ctx)
     const currentProvider = 'error' in selection ? '' : selection.read.modelRef.current.provider
     const panel = new ProviderPanel({
@@ -549,16 +562,13 @@ export function registerModelCommands(ctx: Context): () => void {
         restore()
         pickModels(row.id)
       },
-      onDormant: row => {
-        restore()
-        getSharedEditor()?.notice?.(display.colors.error(
-          `provider "${row.id}" is not configured — add it with /provider add`,
-        ))
-      },
       onAdd: () => {
         restore()
         void (async () => {
           const text = await runProviderAdd(ctx, display, pickModels)
+          /* v8 ignore next -- the unloaded side only runs when the tree
+             tears down mid-wizard; cordis disposal already kills the
+             continuation on a dead context before it reaches here */
           if (!unloaded) getSharedEditor()?.notice?.(text)
         })()
       },

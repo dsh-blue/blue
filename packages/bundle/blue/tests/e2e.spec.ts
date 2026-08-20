@@ -2250,8 +2250,6 @@ describe('blue whole-tree e2e', () => {
     tree.terminal.resize(300, 40)
     await expect(executeCommand(tree, agent, '/provider')).resolves.toEqual({ kind: 'success' })
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Providers') })
-    // registerAdapter carries no display name — the row is `mock (mock)`.
-    expect(tree.terminal.output).toContain('(mock)')
     expect(tree.terminal.output).toContain('← current')
     expect(tree.terminal.output).toContain('+ Add provider')
     tree.terminal.sendInput('\r')

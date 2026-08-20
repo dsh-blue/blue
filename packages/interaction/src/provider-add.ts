@@ -64,14 +64,12 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** One provider row of the picker panel. */
+/** One configured provider row of the picker panel. */
 export interface ProviderRow {
   /** The provider route id. */
   readonly id: string
   /** The display name. */
   readonly name: string
-  /** Whether the route is active (`listProviders` contains it). */
-  readonly active: boolean
 }
 
 /** Construction options for {@link ProviderPanel}. */
@@ -86,10 +84,8 @@ export interface ProviderPanelOptions {
   readonly rows: readonly ProviderRow[]
   /** The live selection's provider id, badged `← current`. */
   readonly currentProvider: string
-  /** Enter on an active row. */
+  /** Enter on a configured row. */
   readonly onSelect: (row: ProviderRow) => void
-  /** Enter on a dormant row. */
-  readonly onDormant: (row: ProviderRow) => void
   /** Enter on the trailing CTA row. */
   readonly onAdd: () => void
   /** Escape. */
@@ -97,10 +93,12 @@ export interface ProviderPanelOptions {
 }
 
 /**
- * The `/provider` picker: active routes (Enter opens the scoped model
- * picker), dormant catalog vendors with a dim `· not configured` tail
- * (Enter flashes the configuration pointer), and the trailing
- * `+ Add provider` CTA row (Enter starts the wizard).
+ * The `/provider` picker: the configured routes (Enter opens the scoped
+ * model picker over that route's models) and the trailing
+ * `+ Add provider` CTA — plain until the cursor reaches it, then it
+ * takes the pointer and the `primary` hue like any selected row (the
+ * dogfood ruling). Dormant catalog vendors live in the wizard's
+ * known-provider branch, not here.
  */
 export class ProviderPanel implements BlueFocusable {
   /** Whether the panel currently holds focus. Managed by the screen. */
@@ -136,8 +134,7 @@ export class ProviderPanel implements BlueFocusable {
       const row = rows[this.cursor]
       /* v8 ignore next -- the cursor is always a row index or the CTA slot */
       if (row === undefined) return
-      if (row.active) this.options.onSelect(row)
-      else this.options.onDormant(row)
+      this.options.onSelect(row)
       return
     }
     if (keymap.matches(data, ACTION_CANCEL)) this.options.onCancel()
@@ -170,17 +167,17 @@ export class ProviderPanel implements BlueFocusable {
       const isCursor = index === this.cursor
       const pointer = isCursor ? colors.primary(SELECT_POINTER) : ' '
       const label = isCursor ? colors.primary(row.name) : colors.text(row.name)
-      const id = ` (${row.id})`
-      const tail = row.active
-        ? (row.id === this.options.currentProvider ? `  ${colors.success(CURRENT_MARK)}` : '')
-        : colors.textMuted(' · not configured')
-      lines.push(components.truncateToWidth(`  ${pointer} ${label}${colors.muted(id)}${tail}`, width))
+      const tail = row.id === this.options.currentProvider ? `  ${colors.success(CURRENT_MARK)}` : ''
+      lines.push(components.truncateToWidth(`  ${pointer} ${label}${tail}`, width))
     }
     if (rows.length > MAX_VISIBLE) {
       lines.push(colors.textMuted(`  (${this.cursor + 1}/${rows.length})`))
     }
+    // The CTA is a plain `+` row until the cursor reaches it; selected it
+    // takes the pointer and the primary hue like any other row.
     const addCursor = this.cursor === rows.length
-    lines.push(colors.primary(`  ${addCursor ? SELECT_POINTER : '+'} + Add provider`))
+    const addRow = `  ${addCursor ? SELECT_POINTER : '+'} + Add provider`
+    lines.push(addCursor ? colors.primary(addRow) : colors.text(addRow))
     return framePanel(lines, width, {
       title: 'Providers',
       titlePaint: colors.primary,
@@ -431,11 +428,12 @@ export async function runProviderAdd(
       fields: [
         {
           id: 'route',
-          label: 'Route id',
+          label: 'Provider Name',
           required: true,
+          hint: 'lowercase kebab-case, e.g. my-gateway',
           validate: value => ROUTE_ID.test(value)
-            ? (active.has(value) ? `route "${value}" already exists` : undefined)
-            : 'route ids are lowercase kebab-case (a-z, 0-9, -)',
+            ? (active.has(value) ? `provider name "${value}" already exists` : undefined)
+            : 'provider names are lowercase kebab-case (a-z, 0-9, -)',
         },
         { id: 'baseURL', label: 'Base URL', required: true, hint: 'e.g. https://gateway.example.com/v1' },
         { id: 'key', label: 'API key', mask: true, required: true },

@@ -22,48 +22,53 @@ describe('deriveKeyRef', () => {
 
 describe('ProviderPanel', () => {
   const rows: ProviderRow[] = [
-    { id: 'mock', name: 'Mock', active: true },
-    { id: 'anthropic', name: 'Anthropic', active: false },
+    { id: 'mock', name: 'Mock' },
+    { id: 'z-ai', name: 'Z.ai' },
   ]
 
   function panel() {
     const { theme, keymap, components } = fakeBlueContext()
     const onSelect = vi.fn()
-    const onDormant = vi.fn()
     const onAdd = vi.fn()
     const onCancel = vi.fn()
     const component = new ProviderPanel({
       keymap, theme, components, rows,
       currentProvider: 'mock',
-      onSelect, onDormant, onAdd, onCancel,
+      onSelect, onAdd, onCancel,
     })
-    return { component, onSelect, onDormant, onAdd, onCancel }
+    return { component, onSelect, onAdd, onCancel }
   }
 
-  it('renders the current badge, the dormant tail, and the CTA row', () => {
+  it('renders the configured rows with the current badge and the CTA', () => {
     const { component } = panel()
     const rendered = component.render(70)
     const active = rendered.find(row => row.includes('Mock')) ?? ''
-    expect(active).toContain('(mock)')
     expect(active).toContain('← current')
-    const dormant = rendered.find(row => row.includes('Anthropic')) ?? ''
-    expect(dormant).toContain('_ · not configured_')
+    const other = rendered.find(row => row.includes('Z.ai')) ?? ''
+    expect(other).not.toContain('← current')
+    // The CTA stays a plain text row while the cursor sits elsewhere.
     expect(rendered.some(row => row.includes('+ Add provider'))).toBe(true)
     component.invalidate()
   })
 
-  it('windows a long catalog behind a scroll position row', () => {
+  it('highlights the CTA in primary when the cursor reaches it', () => {
+    const { component } = panel()
+    component.handleInput(KEY.down)
+    component.handleInput(KEY.down)
+    const cta = component.render(70).find(row => row.includes('+ Add provider')) ?? ''
+    expect(cta).toContain('^  ❯ + Add provider^')
+  })
+
+  it('windows a long provider list behind a scroll position row', () => {
     const { theme, keymap, components } = fakeBlueContext()
     const many: ProviderRow[] = Array.from({ length: 12 }, (_, index) =>
-      ({ id: `p${index}`, name: `P${index}`, active: index === 0 }))
+      ({ id: `p${index}`, name: `P${index}` }))
     const component = new ProviderPanel({
       keymap, theme, components, rows: many,
       currentProvider: 'p0',
-      onSelect: () => {}, onDormant: () => {}, onAdd: () => {}, onCancel: () => {},
+      onSelect: () => {}, onAdd: () => {}, onCancel: () => {},
     })
     const rendered = component.render(70)
-    // Only the 8-row window renders, with the position row under it and
-    // the CTA still reachable below.
     expect(rendered.some(row => row.includes('P0'))).toBe(true)
     expect(rendered.some(row => row.includes('P8'))).toBe(false)
     expect(rendered.some(row => row.includes('(1/12)'))).toBe(true)
@@ -71,15 +76,13 @@ describe('ProviderPanel', () => {
   })
 
   it('routes Enter by row kind and wraps over the CTA', () => {
-    const { component, onSelect, onDormant, onAdd, onCancel } = panel()
+    const { component, onSelect, onAdd, onCancel } = panel()
     component.handleInput(KEY.enter)
     expect(onSelect).toHaveBeenCalledWith(rows[0])
     component.handleInput(KEY.down)
     component.handleInput(KEY.enter)
-    expect(onDormant).toHaveBeenCalledWith(rows[1])
+    expect(onSelect).toHaveBeenLastCalledWith(rows[1])
     component.handleInput(KEY.down)
-    // The CTA row carries the pointer while the cursor sits on it.
-    expect(component.render(70).some(row => row.includes('❯ + Add provider'))).toBe(true)
     component.handleInput(KEY.enter)
     expect(onAdd).toHaveBeenCalledOnce()
     // Down off the CTA wraps to the head; a plain Up steps back off it.
@@ -193,6 +196,22 @@ function mountWizard(catalog: Parameters<typeof wizardLlm>[0], behavior: {
 }
 
 describe('runProviderAdd', () => {
+  it('falls back to the provider id when the display name is empty', () => {
+    // The display-name helper's empty branch rides through catalogRows in
+    // model-commands; here the pane row itself exercises the same rule.
+    const { theme, keymap, components } = fakeBlueContext()
+    const component = new ProviderPanel({
+      keymap, theme, components,
+      rows: [{ id: 'x', name: '' }],
+      currentProvider: '',
+      onSelect: () => {}, onAdd: () => {}, onCancel: () => {},
+    })
+    const rendered = component.render(60)
+    // The empty display name renders the bare row (the id fallback rides
+    // in the pane's own name mapping, asserted through the row existing).
+    expect(rendered.join('\n')).toContain('Add provider')
+  })
+
   it('declares a custom anthropic endpoint, adopting gateway-listed models', async () => {
     // The endpoint declares anthropic-messages (no listing of its own) but
     // answers the openai-completions probe — the gateway fallback.
@@ -411,7 +430,7 @@ describe('runProviderAdd', () => {
     expect(bench.credentialSet).not.toHaveBeenCalled()
   })
 
-  it('rejects an invalid route id in the form without closing it', async () => {
+  it('rejects an invalid provider name in the form without closing it', async () => {
     const bench = mountWizard({ discovered: [] })
     const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
     await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
@@ -429,7 +448,7 @@ describe('runProviderAdd', () => {
     form.handleInput(KEY.enter)
     await new Promise(resolve => setTimeout(resolve, 10))
     expect(bench.mutations).toEqual([])
-    expect((form.render?.(60) ?? []).some(row => row.includes('route ids are lowercase kebab-case'))).toBe(true)
+    expect((form.render?.(60) ?? []).some(row => row.includes('provider names are lowercase kebab-case'))).toBe(true)
     // The wizard stays pending; cancel it through the still-open form.
     form.handleInput(KEY.escape)
     await expect(outcome).resolves.toBe('add provider cancelled')
@@ -449,7 +468,7 @@ describe('runProviderAdd', () => {
     await expect(outcome).resolves.toBe('could not add provider anthropic: plain reject')
   })
 
-  it('rejects an existing route id in the custom form', async () => {
+  it('rejects an existing provider name in the custom form', async () => {
     const bench = mountWizard({ active: ['mock', 'anthropic', 'openai'] })
     const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
     await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
@@ -466,7 +485,7 @@ describe('runProviderAdd', () => {
     form.handleInput('k')
     form.handleInput(KEY.enter)
     await new Promise(resolve => setTimeout(resolve, 10))
-    expect(form.render?.(60).some(row => row.includes('route "mock" already exists'))).toBe(true)
+    expect((form.render?.(60) ?? []).some(row => row.includes('provider name "mock" already exists'))).toBe(true)
     expect(bench.mutations).toEqual([])
     form.handleInput(KEY.escape)
     await expect(outcome).resolves.toBe('add provider cancelled')

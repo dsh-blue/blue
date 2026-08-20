@@ -9,6 +9,7 @@ import { fakeBlueContext, KEY } from './fakes.ts'
 function item(overrides: Partial<ModelPanelItem> = {}): ModelPanelItem {
   return {
     provider: 'deepseek',
+    providerLabel: 'deepseek',
     id: 'deepseek-chat',
     name: 'deepseek-chat',
     current: true,
@@ -60,12 +61,12 @@ describe('ModelPanel', () => {
     // carries the name column, the muted provider and context cells, the
     // success badge; the second row is the plain text variant.
     const currentRow = rows.find(row => row.includes('❯')) ?? ''
-    expect(currentRow).toContain('deepseek-chat')
-    expect(currentRow).toContain('_deepseek_')
+    // The row label is `Provider Name/model` (the dogfood ruling).
+    expect(currentRow).toContain('deepseek/deepseek-chat')
     expect(currentRow).toContain('_· ctx 128k_')
     expect(currentRow).toContain('← current')
     const otherRow = rows.find(row => row.includes('other')) ?? ''
-    expect(otherRow).toContain('other')
+    expect(otherRow).toContain('deepseek/other')
     expect(otherRow).not.toContain('❯')
     expect(otherRow).not.toContain('← current')
   })
@@ -101,15 +102,12 @@ describe('ModelPanel', () => {
     expect(rows.some(row => row.includes('(10/10)'))).toBe(true)
   })
 
-  it('truncates the name column at half the width and drops trailing cells under pressure', () => {
-    const long = 'x'.repeat(60)
-    const { component } = panel([item({ name: long })])
-    const rows = component.render(40)
-    const row = rows.find(candidate => candidate.includes('deepseek')) ?? ''
-    // nameCap = 20 → the name is cut with the ellipsis, and the provider
-    // and badge cells no longer fit the 40-column row.
+  it('truncates a long combined label at half the width', () => {
+    const { component } = panel([item({ name: 'x'.repeat(60) })])
+    const rows = component.render(60)
+    const row = rows.find(candidate => candidate.includes('❯')) ?? ''
+    // nameCap = 30 → the `deepseek/xxx…` label clips with the ellipsis.
     expect(row).toContain('…')
-    expect(row).not.toContain('← current')
   })
 
   it('moves the cursor with wraparound and submits the effort draft', () => {
@@ -151,10 +149,16 @@ describe('ModelPanel', () => {
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'deepseek-chat' }), 'low')
   })
 
-  it('drops the provider cell when the row is too narrow', () => {
-    const { component } = panel([item()])
-    const row = component.render(20).find(candidate => candidate.includes('deepseek-chat')) ?? ''
-    expect(row).not.toContain('_deepseek_')
+  it('partly fits the badge when only a few columns remain', () => {
+    // The long label fills most of the budget: the ctx cell fits whole at
+    // this width and the badge drops; one column wider it cuts partly.
+    const { component } = panel([
+      item({ name: 'x'.repeat(16), contextWindow: 65536 }),
+    ])
+    const tight = component.render(38).find(candidate => candidate.includes('❯')) ?? ''
+    expect(tight).not.toContain('← current')
+    const roomy = component.render(46).find(candidate => candidate.includes('❯')) ?? ''
+    expect(roomy).toContain('← c')
   })
 
   it('keeps ← and → a no-op on a row without efforts', () => {
