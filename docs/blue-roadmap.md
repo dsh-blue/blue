@@ -109,7 +109,7 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 - **弹窗体系完整化**：model selector、审批 diff 全屏预览（100% overlay）（⏸️ 暂缓 2026-08-20：暂不做，尚未调研清楚——交互形态与参照系对照待调研后再立项）、permission preset 设置面板（待上游 `permissionPresets`）
 - **外部编辑器**（Ctrl-G，需 L0 渲染器暂停配合）
 - **OSC 8 可点链接、OSC 52 复制、鼠标滚轮/文本选择**（alt-screen）
-- **模式命令**（`/yolo` `/plan` `/compact` `/model` 会话中切换）：随上游能力缝落地逐个接入
+- **模式命令**（`/yolo` `/plan` `/compact` `/model` 会话中切换）：随上游能力缝落地逐个接入（实施清单已定稿：[blue-commands-plan.md](./blue-commands-plan.md) 2026-08-20——批次 1 纯 Blue 侧零上游依赖可先行，⛔ 项随缝接入）
 - 子 agent / Task 工具的树形呈现组件（经 intent 缝）
 
 **验收**：5 万行级 session resume 后滚动流畅；参照系产品的常用交互有对应物或明确的"不做"结论。（2026-08-20 S17 期间 dogfood 实测：主屏模式下输出中移动终端滚动条会导致会话流乱跳——pi-tui 差分渲染的内部视口记账与终端 scrollback 脱节，主屏模式不可修复；“滚动流畅”验收以 **L0 alt-screen 项目**为前提，详见 p2-visual §7 六轮注记。⏸️ 2026-08-20 裁定暂不考虑实现 TuiAltScreen——该条验收随之挂起，主屏滚动冲突接受为已知边界；OSC 8/52/鼠标等标注 (alt-screen) 的条目维持门控。）

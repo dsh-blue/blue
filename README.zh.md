@@ -153,7 +153,7 @@ pnpm run typecheck      # tsc -b
 - [docs/blue-seams.md](docs/blue-seams.md) —— 缝清单：Blue 开的每条缝（契约、plain 默认），以及 harness 侧每个视觉表面由哪个 Blue 插件实现。
 - [docs/blue-architecture.md](docs/blue-architecture.md) —— 架构：哲学、L0–L4 分层、稳定性规则。
 - [docs/blue-decisions.md](docs/blue-decisions.md) —— 决策记录（ADR）。
-- [docs/blue-roadmap.md](docs/blue-roadmap.md)、[blue-p1-design.md](docs/blue-p1-design.md)、[blue-p2-visual-design.md](docs/blue-p2-visual-design.md)、[blue-mvp-plan.md](docs/blue-mvp-plan.md) —— 各阶段设计与实施记录。
+- [docs/blue-roadmap.md](docs/blue-roadmap.md)、[blue-p1-design.md](docs/blue-p1-design.md)、[blue-p2-visual-design.md](docs/blue-p2-visual-design.md)、[blue-mvp-plan.md](docs/blue-mvp-plan.md)、[blue-commands-plan.md](docs/blue-commands-plan.md) —— 各阶段设计与实施记录（内置命令实施清单：四家参照系合并、harness 能力矩阵、S23–S28 分期、上游缝请求）。
 - [AGENTS.md](AGENTS.md) —— 当前代码的权威逐包描述。
 
 ## 与 deepseek-harness 的关系
