@@ -52,6 +52,24 @@ describe('ProviderPanel', () => {
     component.invalidate()
   })
 
+  it('windows a long catalog behind a scroll position row', () => {
+    const { theme, keymap, components } = fakeBlueContext()
+    const many: ProviderRow[] = Array.from({ length: 12 }, (_, index) =>
+      ({ id: `p${index}`, name: `P${index}`, active: index === 0 }))
+    const component = new ProviderPanel({
+      keymap, theme, components, rows: many,
+      currentProvider: 'p0',
+      onSelect: () => {}, onDormant: () => {}, onAdd: () => {}, onCancel: () => {},
+    })
+    const rendered = component.render(70)
+    // Only the 8-row window renders, with the position row under it and
+    // the CTA still reachable below.
+    expect(rendered.some(row => row.includes('P0'))).toBe(true)
+    expect(rendered.some(row => row.includes('P8'))).toBe(false)
+    expect(rendered.some(row => row.includes('(1/12)'))).toBe(true)
+    expect(rendered.some(row => row.includes('+ Add provider'))).toBe(true)
+  })
+
   it('routes Enter by row kind and wraps over the CTA', () => {
     const { component, onSelect, onDormant, onAdd, onCancel } = panel()
     component.handleInput(KEY.enter)
@@ -175,8 +193,10 @@ function mountWizard(catalog: Parameters<typeof wizardLlm>[0], behavior: {
 }
 
 describe('runProviderAdd', () => {
-  it('declares a custom anthropic endpoint with manual model ids', async () => {
-    const bench = mountWizard({ discovered: [{ id: 'x' }] })
+  it('declares a custom anthropic endpoint, adopting gateway-listed models', async () => {
+    // The endpoint declares anthropic-messages (no listing of its own) but
+    // answers the openai-completions probe — the gateway fallback.
+    const bench = mountWizard({ discovered: [{ id: 'claude-gw-chat' }] })
     const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
     await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
     current(bench.screen).handleInput(KEY.down)
@@ -192,7 +212,8 @@ describe('runProviderAdd', () => {
     form.handleInput('secret')
     form.handleInput(KEY.enter)
     await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(4) })
-    current(bench.screen).handleInput('claude-sonnet-5, claude-haiku-4-5')
+    expect(current(bench.screen).render?.(60).some(row => row.includes('claude-gw-chat'))).toBe(true)
+    current(bench.screen).handleInput(' ')
     current(bench.screen).handleInput(KEY.enter)
     await expect(outcome).resolves.toBe('provider "my-gateway" added')
     expect(bench.mutations).toEqual([{
@@ -200,7 +221,7 @@ describe('runProviderAdd', () => {
       ops: [{ op: 'set', path: ['providers', 'my-gateway'], value: {
         api: 'anthropic-messages',
         baseURL: 'https://gw.example.com',
-        models: [{ id: 'claude-sonnet-5' }, { id: 'claude-haiku-4-5' }],
+        models: [{ id: 'claude-gw-chat' }],
         apiKeyEnv: 'MY_GATEWAY_API_KEY',
       } }],
       expected: 7,
@@ -332,7 +353,7 @@ describe('runProviderAdd', () => {
     form.handleInput('k')
     form.handleInput(KEY.enter)
     await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(4) })
-    expect((current(bench.screen).render?.(60) ?? []).some(row => row.includes('model discovery failed'))).toBe(true)
+    expect((current(bench.screen).render?.(60) ?? []).some(row => row.includes('could not list models from the endpoint'))).toBe(true)
     current(bench.screen).handleInput('m1')
     current(bench.screen).handleInput(KEY.enter)
     await expect(outcome).resolves.toBe('provider "gw3" added')

@@ -229,6 +229,25 @@ export function registerModelCommands(ctx: Context): () => void {
     const selection = readSelection(ctx)
     if ('error' in selection) return { kind: 'error', text: selection.error }
     const { agent, modelRef } = selection.read
+    // A freshly added route registers asynchronously on the real host —
+    // the settings file's watcher fires the update pi-ai reacts to, which
+    // can land a beat after the wizard's writes resolve (the first
+    // real-terminal dogfood hit exactly this). Poll briefly instead of
+    // failing the picker on the gap.
+    if (filterProvider !== undefined) {
+      const llm = ctx.get('llm')
+      /* v8 ignore next -- the calling handler already guarded the llm
+         service; it cannot vanish between the two reads on a live tree */
+      if (llm !== undefined) {
+        const deadline = Date.now() + 2000
+        while (!llm.listProviders().some(provider => provider.id === filterProvider)) {
+          /* v8 ignore next -- the deadline and unload exits both return
+             quietly; the interesting path is the registration landing */
+          if (Date.now() >= deadline || unloaded) return { kind: 'success' }
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+      }
+    }
     const catalog = await catalogRows(ctx, signal, filterProvider)
     /* v8 ignore next -- the llm guard ran in the calling handler; the
        service cannot vanish mid-catalog on a live tree */

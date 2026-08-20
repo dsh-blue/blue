@@ -104,6 +104,8 @@ async function mount(options: {
   headerConfig?: { provider: string, model: string }
   llm?: LlmRuntime
   display?: boolean
+  settings?: object
+  credentials?: object
 } = {}): Promise<{
   ctx: Context
   screen: FakeScreen
@@ -139,6 +141,8 @@ async function mount(options: {
   if (options.attach !== false) {
     ctx.provide('blueSession', { current: agent, modelRef })
   }
+  if (options.settings !== undefined) ctx.provide('settings', options.settings as never)
+  if (options.credentials !== undefined) ctx.provide('credentials', options.credentials as never)
   setSharedEditor({
     editor: { focused: false, render: () => [], invalidate: () => {} } as never,
     submitPrompt: () => {},
@@ -708,6 +712,92 @@ describe('model-family commands', () => {
     await new Promise(resolve => setTimeout(resolve, 10))
     expect(notices).toEqual([])
   })
+
+  it('/provider add waits for the fresh route to register before the picker', async () => {
+    // The real host registers the new route a beat after the wizard's
+    // writes resolve (the settings file's watcher fires the update pi-ai
+    // reacts to); the picker polls through the gap instead of erroring.
+    const registered: string[] = ['mock']
+    const settings = {
+      describe: () => [{ ns: 'llm-pi-ai', revision: 7 }],
+      mutate: async () => {
+        await new Promise(resolve => setTimeout(resolve, 120))
+        registered.push('gw')
+      },
+    }
+    const credentials = { set: async () => {}, unset: async () => {}, resolve: async () => undefined }
+    const dynamicLlm = fakeLlm({
+      providers: [{ id: 'mock', name: 'Mock' }],
+      configurable: [{ provider: 'anthropic', displayName: 'Anthropic' }],
+      discovered: [],
+      models: { mock: [{ id: 'mock', name: 'Mock' }], gw: [{ id: 'gw-chat', name: 'GW Chat' }] },
+    }) as LlmRuntime & { listProviders(): { id: string, name: string }[] }
+    dynamicLlm.listProviders = () => registered.map(id => ({ id, name: id }))
+    const { ctx, screen, agent } = await mount({ llm: dynamicLlm, settings, credentials })
+    // The wizard settles with user input; drive the panels while it pends.
+    void ctx.commands.execute(agent, '/provider add', signal())
+    await vi.waitFor(() => { expect(screen.overlays).toHaveLength(1) })
+    overlay(screen).handleInput(KEY.down)
+    overlay(screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(screen.overlays).toHaveLength(2) })
+    overlay(screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(screen.overlays).toHaveLength(3) })
+    const form = overlay(screen)
+    form.handleInput('gw')
+    form.handleInput(KEY.enter)
+    form.handleInput('https://gw.example.com')
+    form.handleInput(KEY.enter)
+    form.handleInput('k')
+    form.handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(screen.overlays).toHaveLength(4) })
+    overlay(screen).handleInput('gw-chat')
+    overlay(screen).handleInput(KEY.enter)
+    // The route registers ~120ms after the writes; the scoped picker waits
+    // for it and opens over the fresh route.
+    await vi.waitFor(() => {
+      const rows = screen.overlays[screen.overlays.length - 1]?.component.render?.(60) ?? []
+      expect(rows.some(row => row.includes('Select a model · gw'))).toBe(true)
+    }, { timeout: 4000 })
+  })
+
+  it('returns quietly when the fresh route never registers or the tree unloads', async () => {
+    // No llm service at all: the poll skips and the catalog guard answers.
+    const noLlm = await mount({ attach: false })
+    void noLlm.ctx.commands.execute(noLlm.agent, '/provider switch mock', noLlm.fiber ? signal() : signal())
+    await noLlm.fiber.dispose()
+
+    // A route that never appears: the poll exhausts its deadline quietly.
+    const settings = {
+      describe: () => [{ ns: 'llm-pi-ai', revision: 7 }],
+      mutate: async () => {},
+    }
+    const never = fakeLlm({ providers: [{ id: 'mock', name: 'Mock' }], discovered: [] })
+    const { ctx, screen, agent, fiber } = await mount({
+      llm: never, settings, credentials: { set: async () => {} },
+    })
+    void ctx.commands.execute(agent, '/provider add', signal())
+    await vi.waitFor(() => { expect(screen.overlays).toHaveLength(1) })
+    overlay(screen).handleInput(KEY.down)
+    overlay(screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(screen.overlays).toHaveLength(2) })
+    overlay(screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(screen.overlays).toHaveLength(3) })
+    const form = overlay(screen)
+    form.handleInput('ghost')
+    form.handleInput(KEY.enter)
+    form.handleInput('https://ghost.example.com')
+    form.handleInput(KEY.enter)
+    form.handleInput('k')
+    form.handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(screen.overlays).toHaveLength(4) })
+    overlay(screen).handleInput('ghost-chat')
+    overlay(screen).handleInput(KEY.enter)
+    // Unload mid-poll: the wait exits quietly with no picker.
+    await fiber.dispose()
+    await new Promise(resolve => setTimeout(resolve, 150))
+    expect(screen.overlays[screen.overlays.length - 1]?.hidden).toBe(true)
+    expect(notices).toEqual([])
+  }, 6000)
 
   it('/effort session-only leaves the default untouched', async () => {
     const { ctx, screen, agent, saveSelection } = await mount()

@@ -44,6 +44,10 @@ const LISTABLE_PROTOCOLS = new Set<string>(['openai-completions', 'openai-respon
 /** The route-id shape the settings section accepts (the Web Models page's rule). */
 const ROUTE_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
 
+/** Provider rows rendered at once; the real catalog lists ~36 vendors, so
+ * the pane windows like every other list (the @ completion's shape). */
+const MAX_VISIBLE = 8
+
 /**
  * The conventional credential ref for one provider route (the Web Models
  * page's derivation): uppercase, non-alphanumerics folded to `_`, `_API_KEY`
@@ -151,7 +155,18 @@ export class ProviderPanel implements BlueFocusable {
     const { rows, components, theme } = this.options
     const colors = theme.colors
     const lines: string[] = []
-    rows.forEach((row, index) => {
+    // The visible window centers on the cursor like SessionList; the CTA
+    // row rides directly under the window so it stays reachable without
+    // ever letting the catalog spill the whole screen.
+    const start = Math.max(0, Math.min(
+      this.cursor - Math.floor(MAX_VISIBLE / 2),
+      rows.length - MAX_VISIBLE,
+    ))
+    const end = Math.min(start + MAX_VISIBLE, rows.length)
+    for (let index = start; index < end; index += 1) {
+      const row = rows[index]
+      /* v8 ignore next -- start/end are clamped to rows.length */
+      if (row === undefined) continue
       const isCursor = index === this.cursor
       const pointer = isCursor ? colors.primary(SELECT_POINTER) : ' '
       const label = isCursor ? colors.primary(row.name) : colors.text(row.name)
@@ -160,7 +175,10 @@ export class ProviderPanel implements BlueFocusable {
         ? (row.id === this.options.currentProvider ? `  ${colors.success(CURRENT_MARK)}` : '')
         : colors.textMuted(' · not configured')
       lines.push(components.truncateToWidth(`  ${pointer} ${label}${colors.muted(id)}${tail}`, width))
-    })
+    }
+    if (rows.length > MAX_VISIBLE) {
+      lines.push(colors.textMuted(`  (${this.cursor + 1}/${rows.length})`))
+    }
     const addCursor = this.cursor === rows.length
     lines.push(colors.primary(`  ${addCursor ? SELECT_POINTER : '+'} + Add provider`))
     return framePanel(lines, width, {
@@ -253,10 +271,34 @@ interface DiscoveryLlm {
 }
 
 /**
- * Determine the custom endpoint's model set: discovery for listable
- * protocols (the adopt multi-select over the endpoint's answer), manual
- * entry otherwise or when discovery fails — the failure rides the manual
- * form's subtitle.
+ * One discovery attempt: resolve the endpoint's advertised models, or
+ * `undefined` when the attempt failed or answered nothing.
+ */
+async function tryDiscover(
+  llm: DiscoveryLlm,
+  ns: string,
+  api: string,
+  baseURL: string,
+  key: string,
+): Promise<readonly LlmDiscoveredModel[] | undefined> {
+  try {
+    const found = await llm.discoverModels(ns, { baseURL, api, apiKey: key })
+    return found.length > 0 ? found : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Determine the custom endpoint's model set by interrogating the endpoint
+ * (the adopt multi-select over its answer), with manual entry as the
+ * fallback. The declared protocol goes first when it has a listing; every
+ * failed or unlistable attempt then probes the endpoint once as a plain
+ * `openai-completions` surface — OpenAI-compatible gateways commonly serve
+ * the `/models` listing regardless of which wire protocol the caller
+ * picked (the first real-terminal dogfood: an anthropic-declared route on
+ * a gateway that lists fine). The failure rides the manual form's
+ * subtitle.
  */
 async function collectModels(
   display: ProviderAddDisplay,
@@ -266,14 +308,13 @@ async function collectModels(
   baseURL: string,
   key: string,
 ): Promise<EndpointDraft['models'] | undefined> {
-  if (LISTABLE_PROTOCOLS.has(protocol)) {
+  {
     let discovered: readonly LlmDiscoveredModel[] | undefined
-    try {
-      discovered = await llm.discoverModels(ns, { baseURL, api: protocol, apiKey: key })
-    } catch {
-      discovered = undefined
+    if (LISTABLE_PROTOCOLS.has(protocol)) {
+      discovered = await tryDiscover(llm, ns, protocol, baseURL, key)
     }
-    if (discovered !== undefined && discovered.length > 0) {
+    discovered ??= await tryDiscover(llm, ns, 'openai-completions', baseURL, key)
+    if (discovered !== undefined) {
       const catalog = discovered
       const adopted = await step<string[]>(done => new BlueSelect({
         keymap: display.keymap,
@@ -297,9 +338,7 @@ async function collectModels(
   }
   const manual = await fillForm(display, {
     title: 'Model ids',
-    subtitle: protocol === 'anthropic-messages'
-      ? 'this protocol has no model listing — enter model ids manually'
-      : 'model discovery failed — enter model ids manually',
+    subtitle: 'could not list models from the endpoint — enter model ids manually',
     fields: [
       {
         id: 'ids',

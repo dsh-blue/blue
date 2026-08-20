@@ -1,14 +1,15 @@
 /**
  * `FormPanel` — the multi-field dialog form (the kimi
  * `CustomRegistryImportDialogComponent` port over Blue's input primitive):
- * labeled embedded editors, Tab/↑/↓ moving between fields, Enter advancing
- * (submitting from the last field), and an in-panel error line that swaps
- * the subtitle without closing the panel. Masked fields never render the
- * real editor rows — the panel derives a bullet row from the tracked text
- * so a pasted key is never echoed. The panel forwards only text-editing
- * sequences to the focused field's editor; form keys are intercepted ahead
- * of it, so Enter never inserts a newline and arrows never move the caret
- * across lines.
+ * labeled single-line inputs, Tab/↑/↓ moving between fields, Enter
+ * advancing (submitting from the last field), and an in-panel error line
+ * that swaps the subtitle without closing the panel. The embedded editors
+ * own the text but never render — every field draws one derived row (the
+ * S23 dogfood ruling: the masked API-key row's look, minus the masking),
+ * the active one carrying a trailing inverse-video cursor block, so a
+ * pasted key is never echoed raw and no boxed editor stacks inside the
+ * panel. Form keys are intercepted ahead of the editors, so Enter never
+ * inserts a newline and arrows never move the caret across lines.
  *
  * @module @dsh-blue/blue-interaction/form-panel
  */
@@ -66,6 +67,9 @@ export interface FormPanelOptions {
   /** Called when the cancel key is pressed. */
   readonly onCancel: () => void
 }
+
+/** The trailing cursor block on the active field's row. */
+const CURSOR_BLOCK = '\u001b[7m \u001b[0m'
 
 /**
  * Render one input row as bullets, one per character — the masked-field
@@ -162,8 +166,8 @@ export class FormPanel implements BlueFocusable {
   /**
    * Render the framed form: the subtitle-or-error line, then per field a
    * label (accent bold when active, muted otherwise), its optional hint,
-   * and the input — the editor's own rows, or the derived bullet row for
-   * masked fields. The focused editor's `focused` flag tracks the panel's.
+   * and one derived input row — the text (bullets when masked) with a
+   * trailing cursor block on the active field, muted when inactive.
    * @param width - current viewport width in columns.
    * @returns one string per rendered row.
    */
@@ -180,15 +184,15 @@ export class FormPanel implements BlueFocusable {
         : colors.muted(`  ${field.label}`)
       lines.push(label)
       if (field.hint !== undefined) lines.push(colors.textMuted(`    ${field.hint}`))
-      const editor = this.editors[index]
       /* v8 ignore next -- fields and editors stay index-aligned */
-      if (editor === undefined) return
-      editor.focused = this.focused && active
-      if (field.mask === true) {
-        lines.push(colors.text(`  ${maskRow(this.values[field.id] ?? '')}`))
-      } else {
-        lines.push(...editor.render(width))
-      }
+      if (this.editors[index] === undefined) return
+      const value = (this.values[field.id] ?? '').replace(/[\r\n]+/g, ' ')
+      const shown = field.mask === true ? maskRow(value) : value
+      const cursor = active && this.focused ? CURSOR_BLOCK : ''
+      const painted = active
+        ? `${colors.text(`  ${shown}`)}${cursor}`
+        : colors.muted(`  ${shown}`)
+      lines.push(this.options.components.truncateToWidth(painted, Math.max(width, 1)))
       lines.push('')
     })
     /* v8 ignore next -- the form keys are always registered */
