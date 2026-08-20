@@ -132,19 +132,29 @@ function fakeCredentials(behavior: { failSet?: Error } = {}) {
 /** The wizard's llm surface: catalog, configurable directory, discovery. */
 function wizardLlm(catalog: {
   active?: string[]
-  configurable?: { provider: string, displayName: string }[]
+  configurable?: { provider: string, displayName: string, settingsNs?: string }[]
   discovered?: { id: string, contextWindow?: number }[]
   discoveryError?: Error
+  withDeepseekEntry?: boolean
 } = {}): LlmRuntime {
-  return {
-    listProviders: () => (catalog.active ?? ['mock']).map(id => ({ id, name: id })),
-    listConfigurableProviders: () => (catalog.configurable ?? [
+  // A real host lists the deepseek adapter's own configurable entry ahead
+  // of the pi-ai catalog — the wizard must pick the pi-ai namespace.
+  const deepseek = catalog.withDeepseekEntry === false ? [] : [
+    { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek' },
+  ]
+  const entries = [
+    ...deepseek,
+    ...(catalog.configurable ?? [
       { provider: 'anthropic', displayName: 'Anthropic' },
       { provider: 'openai', displayName: 'OpenAI' },
-    ]).map(entry => ({
+    ]),
+  ]
+  return {
+    listProviders: () => (catalog.active ?? ['mock']).map(id => ({ id, name: id })),
+    listConfigurableProviders: () => entries.map(entry => ({
       provider: entry.provider,
       displayName: entry.displayName,
-      settingsNs: 'llm-pi-ai',
+      settingsNs: entry.settingsNs ?? 'llm-pi-ai',
       settingsPath: ['providers', entry.provider],
       declared: false,
     })),
@@ -331,6 +341,40 @@ describe('runProviderAdd', () => {
     await expect(manualRun).resolves.toBe('add provider cancelled')
   })
 
+  it('writes to llm-pi-ai even when the deepseek entry lists first', async () => {
+    // The default wizardLlm fixture already leads with the deepseek
+    // entry; a completed custom flow pins the pi-ai namespace.
+    const bench = mountWizard({ discovered: [{ id: 'gw-chat' }] })
+    const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(2) })
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(3) })
+    const form = current(bench.screen)
+    form.handleInput('ns-check')
+    form.handleInput(KEY.enter)
+    form.handleInput('https://ns.example.com')
+    form.handleInput(KEY.enter)
+    form.handleInput('k')
+    form.handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(4) })
+    current(bench.screen).handleInput(' ')
+    current(bench.screen).handleInput(KEY.enter)
+    await expect(outcome).resolves.toBe('provider "ns-check" added')
+    expect(bench.mutations[0]?.ns).toBe('llm-pi-ai')
+  })
+
+  it('answers the guard when no pi-ai surface exists', async () => {
+    const bench = mountWizard({ withDeepseekEntry: false, configurable: [
+      { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek' },
+    ] })
+    await expect(runProviderAdd(bench.ctx, bench.display, bench.picker))
+      .resolves.toBe('no configurable providers: the host composition carries no llm-pi-ai provider settings surface')
+  })
+
   it('surfaces a credential rejection in the manual form subtitle', async () => {
     const bench = mountWizard({
       discoveryError: Object.assign(new Error('401 from /models; check the API key'), { code: 'INVALID_CREDENTIAL_CODE' }),
@@ -458,7 +502,7 @@ describe('runProviderAdd', () => {
 
     const noConfigurable = await mountWizard({ configurable: [] })
     await expect(runProviderAdd(noConfigurable.ctx, noConfigurable.display, noConfigurable.picker))
-      .resolves.toBe('no configurable providers: the host composition carries no provider settings surface')
+      .resolves.toBe('no configurable providers: the host composition carries no llm-pi-ai provider settings surface')
 
     const allActive = await mountWizard({
       active: ['mock', 'anthropic', 'openai'],
@@ -467,7 +511,7 @@ describe('runProviderAdd', () => {
     const outcome = runProviderAdd(allActive.ctx, allActive.display, allActive.picker)
     await vi.waitFor(() => { expect(allActive.screen.overlays).toHaveLength(1) })
     current(allActive.screen).handleInput(KEY.enter)
-    await expect(outcome).resolves.toBe('every configurable provider is already active — switch with /provider switch')
+    await expect(outcome).resolves.toBe('every catalog vendor is already active — switch with /provider switch')
   })
 
   it('cancels quietly at the source step', async () => {

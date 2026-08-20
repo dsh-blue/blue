@@ -411,12 +411,17 @@ export async function runProviderAdd(
   }
   const configurable = llm.listConfigurableProviders()
   const active = new Set(llm.listProviders().map(provider => provider.id))
-  if (configurable.length === 0) {
-    return 'no configurable providers: the host composition carries no provider settings surface'
+  // Custom endpoints are pi-ai profiles — the wire protocols on offer are
+  // pi-ai's and only pi-ai's schema accepts arbitrary provider routes. The
+  // configurable directory mixes families (a real host lists the deepseek
+  // adapter's own entry first), so select the pi-ai namespace explicitly
+  // instead of trusting the first entry (the second real-terminal dogfood:
+  // discovery answered NO_DISCOVERY for "llm-deepseek").
+  const piAi = configurable.filter(entry => entry.settingsNs === 'llm-pi-ai')
+  if (piAi.length === 0) {
+    return 'no configurable providers: the host composition carries no llm-pi-ai provider settings surface'
   }
-  // Every configurable entry shares the adapter family's namespace; the
-  // first entry's is the write target.
-  const ns = settingsNamespace(configurable[0]!.settingsNs)
+  const ns = settingsNamespace('llm-pi-ai')
 
   // Step 1: the source branch.
   const source = await choose(display, 'Add provider', [
@@ -428,11 +433,11 @@ export async function runProviderAdd(
   // Step 2: the branch-specific declarations.
   let draft: EndpointDraft
   if (source === 'known') {
-    const vendors = configurable
+    const vendors = piAi
       .filter(entry => !active.has(entry.provider))
       .map(entry => ({ value: entry.provider, label: `${entry.displayName} (${entry.provider})` }))
     if (vendors.length === 0) {
-      return 'every configurable provider is already active — switch with /provider switch'
+      return 'every catalog vendor is already active — switch with /provider switch'
     }
     const route = await choose(display, 'Known provider', vendors)
     if (route === undefined) return 'add provider cancelled'
