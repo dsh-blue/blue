@@ -9,10 +9,12 @@ const base = process.env.DOCS_BASE ?? '/'
 const SITE_VERSION = '0.1.0-rc.1'
 
 /**
- * sitemap hostname 必须带尾斜杠（含 base 路径）：sitemap 库把页面 URL
- * 相对解析到 hostname 上，'/blue'（无尾斜杠）会被相对路径替换掉。
+ * 站点正式域名（dsh-blue.dev，经 Cloudflare DNS 指向 GitHub Pages）。
+ * sitemap hostname 必须带尾斜杠：sitemap 库把页面 URL 相对解析到
+ * hostname 上，无尾斜杠的路径会被相对路径替换掉。
  */
-const SITEMAP_HOSTNAME = `https://dsh-blue.github.io${base === '/' ? '' : base.replace(/\/+$/, '')}/`
+const SITE_URL = 'https://dsh-blue.dev'
+const SITEMAP_HOSTNAME = `${SITE_URL}/`
 
 // ── 入口语言路由（烤进 <head> 内联脚本，整页加载执行；SPA 导航不重跑）──────
 // 原则：localStorage 偏好（theme 钩子在 SPA 导航时写入）> navigator.languages。

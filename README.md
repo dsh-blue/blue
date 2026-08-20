@@ -148,7 +148,7 @@ Tests run from source: specs import the package under test through relative `../
 
 ## Documentation
 
-- **Documentation website**: <https://dsh-blue.github.io/blue/> (中文) · <https://dsh-blue.github.io/blue/en/> (English) — user-facing docs. The design documents below remain repo-internal.
+- **Documentation website**: <https://dsh-blue.dev/> (中文) · <https://dsh-blue.dev/en/> (English) — user-facing docs. The design documents below remain repo-internal.
 
 All design documents are in Chinese, under [docs/](docs/):
 

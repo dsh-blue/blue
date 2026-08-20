@@ -148,7 +148,7 @@ pnpm run typecheck      # tsc -b
 
 ## 文档
 
-- **文档站**：<https://dsh-blue.github.io/blue/>（中文）· <https://dsh-blue.github.io/blue/en/>（English）—— 面向用户的文档。下方设计文档仍仅在仓库内。
+- **文档站**：<https://dsh-blue.dev/>（中文）· <https://dsh-blue.dev/en/>（English）—— 面向用户的文档。下方设计文档仍仅在仓库内。
 
 全部设计文档（中文）在 [docs/](docs/)：
 
