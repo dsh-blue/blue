@@ -264,6 +264,32 @@ describe('blue-banner plugin', () => {
     expect(() => screen.children[0]?.invalidate()).not.toThrow()
   })
 
+  it('re-derives the model line on session and model changes', async () => {
+    const ctx = new Context()
+    const screen = new BannerFakeScreen()
+    ctx.reflect.provide('blueScreen', screen)
+    ctx.reflect.provide('blueTheme', { colors: COLORS })
+    ctx.reflect.provide('blueComponents', fakeBlueComponents())
+    ctx.reflect.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'p', model: 'm' }) })
+    let selection: { provider: string, model: string } | undefined
+    ctx.reflect.provide('blueSession', {
+      get current() { return { id: 'a' } },
+      get modelRef() {
+        return selection === undefined ? undefined : { get current() { return selection! } }
+      },
+    })
+    await ctx.plugin(banner)
+    expect(screen.children[0]?.render(100).join('\n')).toContain('m · p')
+    // A committed pick shows through the live ref.
+    selection = { provider: 'mock', model: 'mock-pro' }
+    ctx.emit('blue/model-changed')
+    expect(screen.children[0]?.render(100).join('\n')).toContain('mock-pro · mock')
+    // A session switch without a published ref falls back to the default.
+    selection = undefined
+    ctx.emit('blue/session-changed', { id: 'a' })
+    expect(screen.children[0]?.render(100).join('\n')).toContain('m · p')
+  })
+
   it('unmounts the child when the fiber disposes', async () => {
     const { screen, dispose } = await bootBanner()
     await dispose()

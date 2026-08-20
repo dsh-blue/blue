@@ -2508,6 +2508,37 @@ describe('blue whole-tree e2e', () => {
     expect(resumed.adapter.requests[0]!.model).toBe('mock-pro')
   })
 
+  it('a model switch updates the footer and banner model lines immediately', async () => {
+    // The S24a dogfood round-4 find: the footer read the logged
+    // request/header tier (stale until the next turn) and the banner was a
+    // boot snapshot of the default — both now track the live selection.
+    const tree = await bootBlue([], {
+      script: [],
+      models: [
+        { provider: 'mock', id: 'mock', name: 'Mock' },
+        { provider: 'mock', id: 'mock-pro', name: 'Mock Pro' },
+      ],
+    })
+    const agent = await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain(`${FOOTER_TEXT_SGR}mock`) })
+    await expect(executeCommand(tree, agent, '/model mock-pro'))
+      .resolves.toEqual({ kind: 'success', text: 'Switched to mock-pro (mock)' })
+    // Footer: the pick shows before any new turn logs a header.
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain(`${FOOTER_TEXT_SGR}mock-pro`) })
+    // Banner: the model line re-derives too.
+    await vi.waitFor(async () => {
+      expect(await fullFrame(tree.terminal)).toContain('mock-pro · mock')
+    })
+    // /new re-derives too: the fresh session's ref resolves from the
+    // default service (the e2e boot saves no settings, so back to mock) —
+    // the banner tracks the switch instead of freezing the boot snapshot.
+    await expect(executeCommand(tree, agent, '/new')).resolves.toMatchObject({ kind: 'success' })
+    await currentAgent(tree)
+    await vi.waitFor(async () => {
+      expect(await fullFrame(tree.terminal)).toContain('mock · mock')
+    })
+  })
+
   it('moves modelRef to the fresh session on /new', async () => {
     const tree = await bootBlue([], {
       script: [textResponse('ok')],
