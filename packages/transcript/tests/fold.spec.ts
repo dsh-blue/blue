@@ -381,6 +381,84 @@ describe('foldSessionEvents', () => {
   })
 })
 
+describe('closing units settle streaming items', () => {
+  it('an interrupted turn settles its streaming thinking (no ghost spinner)', () => {
+    // The S24a dogfood find: Esc lands with no authoritative
+    // assistant/message, so the streaming flag never flipped and the
+    // mounted spinner kept animating beside the next turn's block.
+    const folder = new TranscriptFolder()
+    folder.apply(turnStart(1))
+    folder.apply(stepStart(1, 1))
+    folder.apply(reasoningDelta(1, 1, 'pondering'))
+    const item = folder.items[0] as TranscriptThinkingItem
+    expect(item.streaming).toBe(true)
+    const settled = folder.apply(turnEnd(1, { kind: 'aborted' }))
+    expect(settled).toEqual([{ item, isNew: false }])
+    expect(item.streaming).toBe(false)
+    // The next turn mounts its own live block; the settled one stays down.
+    folder.apply(turnStart(2))
+    folder.apply(stepStart(2, 1))
+    folder.apply(reasoningDelta(2, 1, 'next'))
+    expect((folder.items[0] as TranscriptThinkingItem).streaming).toBe(false)
+    expect((folder.items[1] as TranscriptThinkingItem).streaming).toBe(true)
+  })
+
+  it('a clean turn with nothing streaming settles nothing', () => {
+    const folder = new TranscriptFolder()
+    folder.apply(turnStart(1))
+    folder.apply(stepStart(1, 1))
+    expect(folder.apply(turnEnd(1))).toBeNull()
+  })
+
+  it('a step boundary settles a never-closed step\'s streaming thinking', () => {
+    const folder = new TranscriptFolder()
+    folder.apply(turnStart(1))
+    folder.apply(stepStart(1, 1))
+    folder.apply(reasoningDelta(1, 1, 'orphan'))
+    const orphan = folder.items[0] as TranscriptThinkingItem
+    const settled = folder.apply(stepStart(1, 2))
+    expect(settled).toEqual([{ item: orphan, isNew: false }])
+    expect(orphan.streaming).toBe(false)
+    folder.apply(reasoningDelta(1, 2, 'fresh'))
+    expect((folder.items[1] as TranscriptThinkingItem).streaming).toBe(true)
+  })
+
+  it('a failed turn settles its streaming thinking before the error item', () => {
+    const folder = new TranscriptFolder()
+    folder.apply(turnStart(1))
+    folder.apply(stepStart(1, 1))
+    folder.apply(reasoningDelta(1, 1, 'doomed'))
+    const updates = folder.apply(
+      event('turn/end', { turn: 1, reason: { kind: 'error', error: { message: 'boom' } } }) as SessionEvent<'turn/end'>,
+    )
+    const thinking = folder.items[0] as TranscriptThinkingItem
+    expect(updates).toEqual([
+      { item: thinking, isNew: false },
+      { item: folder.items[1], isNew: true },
+    ])
+    expect(thinking.streaming).toBe(false)
+    expect(folder.items[1]?.kind).toBe('error')
+  })
+
+  it('a settle at a step boundary with a foldable-empty outgoing step', () => {
+    setRecentStepsRetention(1)
+    const folder = new TranscriptFolder()
+    folder.apply(turnStart(1))
+    // Step 1 closes finalized with no tool or thinking items: folding it
+    // produces no replacement.
+    folder.apply(stepStart(1, 1))
+    folder.apply(assistantEvent(1, 1, [{ type: 'text', text: 'bare answer' }]))
+    // Step 2 streams thinking and never closes.
+    folder.apply(stepStart(1, 2))
+    folder.apply(reasoningDelta(1, 2, 'orphan'))
+    const orphan = folder.items.find(item => item.kind === 'thinking') as TranscriptThinkingItem
+    // Step 3's boundary: settle the orphan, fold nothing.
+    const updates = folder.apply(stepStart(1, 3))
+    expect(updates).toEqual([{ item: orphan, isNew: false }])
+    expect(orphan.streaming).toBe(false)
+  })
+})
+
 describe('turn and step tagging', () => {
   it('tags items with the current turn and step', () => {
     const items = foldSessionEvents([

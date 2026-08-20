@@ -172,9 +172,17 @@ export function stepEnd(turn: number, step: number): SessionEvent<'step/end'> {
   return event('step/end', { turn, step })
 }
 
-/** A `turn/end` event. */
-export function turnEnd(turn: number): SessionEvent<'turn/end'> {
-  return event('turn/end', { turn, reason: { kind: 'completed' } })
+/**
+ * A `turn/end` event.
+ * @param turn - the turn closing.
+ * @param reason - why it closed; defaults to `completed` (use
+ *   `{ kind: 'aborted' }` for the Esc-interrupt shape).
+ */
+export function turnEnd(
+  turn: number,
+  reason: SessionEvent<'turn/end'>['data']['reason'] = { kind: 'completed' },
+): SessionEvent<'turn/end'> {
+  return event('turn/end', { turn, reason })
 }
 
 /** An image content block over an attachment ref. */

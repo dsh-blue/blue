@@ -218,6 +218,11 @@ export class TranscriptFolder {
         this.currentTurn = turn
         const previous = this.lastStep
         this.lastStep = { turn, step }
+        // A step boundary closes the previous step's streaming window even
+        // when the step itself never closed (an aborted tool call): settle
+        // anything left streaming before the new step's deltas open a
+        // fresh window.
+        const settled = this.settleStreaming()
         // In-turn step folding with the S20 kimi retention: the most recent
         // `recentStepsRetention()` steps keep their cards expanded, so a new
         // step/start folds only the step sliding out of the window. The S7
@@ -228,15 +233,24 @@ export class TranscriptFolder {
           const outgoing = previous.step - recentStepsRetention()
           if (outgoing > 0) {
             const replacement = this.foldStep(turn, outgoing)
-            return replacement === null ? null : [replacement]
+            if (replacement === null) {
+              return settled.length > 0 ? settled : null
+            }
+            return [...settled, replacement]
           }
         }
-        return null
+        return settled.length > 0 ? settled : null
       }
 
       case 'turn/end': {
         this.completed.push(event.data.turn)
         this.lastStep = null
+        // An interrupted turn ends with no authoritative assistant/message,
+        // so the streaming flags never flip and the mounted thinking
+        // spinner keeps animating beside the next turn's (the S24a dogfood
+        // find: two working rows after an Esc). A clean turn already
+        // finalized its items and settles nothing.
+        const settled = this.settleStreaming()
         // A failed turn renders its error — a dead or misrouted endpoint
         // otherwise leaves the transcript silent (S23 dogfood).
         if (event.data.reason.kind === 'error') {
@@ -249,9 +263,9 @@ export class TranscriptFolder {
             ...(failure.code !== undefined && failure.code.length > 0 ? { code: failure.code } : {}),
           }
           this.items.push(item)
-          return [{ item, isNew: true }]
+          return [...settled, { item, isNew: true }]
         }
-        return null
+        return settled.length > 0 ? settled : null
       }
 
       case 'user/message': {
@@ -479,14 +493,34 @@ export class TranscriptFolder {
   }
 
   /**
+   * Settle whatever the closing unit (a step boundary, a turn end) left
+   * streaming. An interrupted turn ends with no authoritative
+   * `assistant/message`, so the streaming flag never flips and the mounted
+   * thinking spinner keeps animating beside the next turn's block (the S24a
+   * dogfood find: two working rows after an Esc); a clean closing already
+   * finalized its items and settles nothing.
+   * @returns the settled items, in mount order (their components re-render
+   *   through the mutation updates and their spinners stand down).
+   */
+  private settleStreaming(): FoldItemUpdate[] {
+    const updates: FoldItemUpdate[] = []
+    if (this.streamingThinking !== null) {
+      this.streamingThinking.streaming = false
+      updates.push({ item: this.streamingThinking, isNew: false })
+      this.streamingThinking = null
+    }
+    this.streamingItem = null
+    return updates
+  }
+
+  /**
    * Fold one step's tool and thinking items into a single `step-summary`
    * item at the first folded item's position (the S18 kimi wording counts
    * both). The folded tools leave `toolsByCallId`, so a late result renders
-   * as an unpaired fallback instead of mutating an item nothing renders; a
-   * folded still-streaming thinking item prunes the streaming slot, so a
-   * late finalize mounts a fresh finalized block (the `evictThrough`
-   * symmetry — unreachable in the live stream, where the step's
-   * `assistant/message` always precedes the next `step/start`).
+   * as an unpaired fallback instead of mutating an item nothing renders.
+   * A still-streaming thinking item can no longer reach here: the
+   * step/start caller settles the streaming window (see
+   * {@link settleStreaming}) before any folding runs.
    * @param turn - the turn owning the step.
    * @param step - the step whose items fold.
    * @returns the replacement update, or null when the step produced no tool
@@ -515,12 +549,6 @@ export class TranscriptFolder {
     for (const item of tools) {
       if (this.toolsByCallId.get(item.callId) === item) {
         this.toolsByCallId.delete(item.callId)
-      }
-    }
-    for (const item of folded) {
-      if (this.streamingThinking === item) {
-        this.streamingThinking = null
-        this.pendingReasoning = ''
       }
     }
     // Descending splices keep the earlier indices valid; the summary takes

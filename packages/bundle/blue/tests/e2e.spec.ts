@@ -800,6 +800,34 @@ describe('blue whole-tree e2e', () => {
     expect(tree.exits).toEqual([])
   })
 
+  it('an Esc-interrupted thinking block settles: no ghost spinner beside the next turn', async () => {
+    // The S24a dogfood find: the interrupted turn ends with no
+    // assistant/message, so the thinking block's streaming flag never
+    // flipped and its spinner kept animating after the next message — two
+    // working rows. The settled block must render its folded form only.
+    const tree = await bootBlue([], { script: ['hang-reasoning', reasoningResponse('second thought', 'done')] })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'first')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('pondering the question at hand') })
+    tree.terminal.sendInput('\x1b')
+    await agent.whenIdle()
+    // Interrupted and idle: no live thinking row may remain.
+    await vi.waitFor(async () => {
+      expect((await fullFrame(tree.terminal)).includes('thinking...')).toBe(false)
+    })
+    // The next turn streams its own thinking and completes; still no ghost.
+    typeLine(tree.terminal, 'second')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(2) })
+    await agent.whenIdle()
+    await vi.waitFor(async () => {
+      expect((await fullFrame(tree.terminal)).includes('thinking...')).toBe(false)
+    })
+    // Both reasonings stay readable in their settled folded form.
+    const frame = await fullFrame(tree.terminal)
+    expect(frame).toContain('pondering the question at hand')
+    expect(frame).toContain('second thought')
+  })
+
   it('double Ctrl-C on an idle agent exits with code 0', async () => {
     const tree = await bootBlue([], { script: [] })
     await currentAgent(tree)
