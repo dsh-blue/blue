@@ -40,6 +40,7 @@ async function mount(options: { withAgent?: boolean, plusFirst?: boolean } = {})
   screen: FakeScreen
   components: FakeBlueComponents
   editor: FakeBlueEditor
+  hint: BlueComponent
   agent: Agent
   followup: ReturnType<typeof vi.fn>
   inputFiber: { dispose(): Promise<void> }
@@ -55,11 +56,14 @@ async function mount(options: { withAgent?: boolean, plusFirst?: boolean } = {})
   const plusFiber = options.plusFirst === true ? await ctx.plugin(editorPlus) : undefined
   const inputFiber = await ctx.plugin(inputPlugin)
   const editor = screen.children[0] as FakeBlueEditor
+  // blue-input mounts the editor first, then the hint line below it.
+  const hint = screen.children[1] as BlueComponent
   return {
     ctx,
     screen,
     components,
     editor,
+    hint,
     agent,
     followup,
     inputFiber,
@@ -798,5 +802,34 @@ describe('blue-editor-plus @ mentions', () => {
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
     const suggestions = await provider.getSuggestions(['@top'], 0, 4, { signal: signal() })
     expect(suggestions?.items).toEqual([{ value: '@top.md', label: 'top.md', description: 'top.md' }])
+  })
+
+  it('notices in the hint line when the mention matches nothing', async () => {
+    fileMention.setFdProbe(async () => null)
+    const { ctx, editor, hint } = await mount()
+    const root = fixture()
+    process.chdir(root)
+    reattach(ctx)
+    const provider = editor.autocompleteProvider as BlueAutocompleteProvider
+    // The empty-session-cwd corner: a directory with nothing to list (and
+    // equally a prefix with no match) closes the dropdown without items —
+    // the hint line carries the feedback instead of silence.
+    const suggestions = await provider.getSuggestions(['@zzz'], 0, 4, { signal: signal() })
+    expect(suggestions).toBeNull()
+    expect(hint.render(80).join('\n')).toContain('no matching files under the session cwd')
+  })
+
+  it('stays quiet when an aborted mention round returns nothing', async () => {
+    fileMention.setFdProbe(async () => null)
+    const { ctx, editor, hint } = await mount()
+    const root = fixture()
+    process.chdir(root)
+    reattach(ctx)
+    const provider = editor.autocompleteProvider as BlueAutocompleteProvider
+    const controller = new AbortController()
+    controller.abort()
+    const suggestions = await provider.getSuggestions(['@zzz'], 0, 4, { signal: controller.signal })
+    expect(suggestions).toBeNull()
+    expect(hint.render(80).join('\n')).not.toContain('no matching files')
   })
 })

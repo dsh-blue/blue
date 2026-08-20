@@ -125,16 +125,23 @@ function slashItemDescription(command: CommandDescriptor): string {
  * project paths as mentions (the S22 kimi composition: the L0 fd pipeline
  * with scoped queries, substring scoring, top-20, and quoted values, the
  * filesystem fallback while fd is unavailable, values carrying their `@`,
- * and `applyCompletion` delegated so directories stay open for drill-down).
+ * and `applyCompletion` delegated so directories stay open for drill-down;
+ * an empty result — the empty-session-cwd corner among them — flashes a
+ * hint-line notice instead of failing silently, the S22 dogfood fix).
  * `@` takes priority over the slash guards so mentions work inside command
  * arguments. In bash mode a leading `/` is a path separator, not a command
  * — the slash branch declines so Enter runs what was typed instead of
  * applying a command.
  * @param ctx - plugin context carrying the command registry.
  * @param mode - reports the live input mode.
+ * @param notice - flashes the empty-result notice into the hint line.
  * @returns the provider to hand to `BlueEditor.setAutocompleteProvider`.
  */
-function createAutocompleteProvider(ctx: Context, mode: () => 'prompt' | 'bash'): BlueAutocompleteProvider {
+function createAutocompleteProvider(
+  ctx: Context,
+  mode: () => 'prompt' | 'bash',
+  notice: (text: string) => void,
+): BlueAutocompleteProvider {
   const cwd = process.cwd()
   // Captured before any unload: the fd probe settles asynchronously and a
   // theme-swap reload may dispose this fiber first — the service object
@@ -155,14 +162,26 @@ function createAutocompleteProvider(ctx: Context, mode: () => 'prompt' | 'bash')
       const line = lines[cursorLine] ?? ''
       const atPrefix = extractAtPrefix(line.slice(0, cursorCol))
       if (atPrefix !== null) {
+        let suggestions: BlueAutocompleteSuggestions | null = null
+        // fd's genuine no-match stays null (kimi: no fallback on it); only
+        // a missing or throwing fd runs the scanner.
+        let fellBack = fdPath === null
         if (fdPath !== null) {
           try {
-            return await inner.getSuggestions(lines, cursorLine, cursorCol, options)
+            suggestions = await inner.getSuggestions(lines, cursorLine, cursorCol, options)
           } catch {
             // fd failing to spawn mid-session falls back to the scanner.
+            fellBack = true
           }
         }
-        return fsMentionSuggestions(cwd, atPrefix, options.signal)
+        if (fellBack) suggestions = await fsMentionSuggestions(cwd, atPrefix, options.signal)
+        // An empty mention result would close the dropdown without a
+        // trace — the empty-session-cwd corner read as "@ is dead". Flash
+        // the hint line instead; a superseded (aborted) round stays quiet.
+        if (suggestions === null && !options.signal.aborted) {
+          notice('no matching files under the session cwd')
+        }
+        return suggestions
       }
       const slash = /^\/(\S*)$/.exec(line.slice(0, cursorCol))
       if (slash === null || mode() === 'bash') return null
@@ -467,7 +486,7 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
     }
     return false
   }
-  editor.setAutocompleteProvider(createAutocompleteProvider(ctx, () => mode))
+  editor.setAutocompleteProvider(createAutocompleteProvider(ctx, () => mode, text => shared.notice?.(text)))
   // A draft restored before this attach (a theme-swap reload) deserves its
   // ghost without waiting for the next edit.
   refreshGhost(editor.getText())
