@@ -28,9 +28,11 @@ import type {} from '@dsh-blue/blue-app'
 // service itself is optional and resolved lazily.
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { aliasesOf, registerCommandAliases } from './command-meta.ts'
+import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
 import type { HelpSection } from './help.ts'
 import { HelpOverlay } from './help.ts'
+import { registerModelCommands } from './model-commands.ts'
 import { SessionList } from './select.ts'
 import { registerThemeCommand } from './theme-switch.ts'
 
@@ -47,18 +49,6 @@ function describe(error: unknown): string {
 /** Format a session creation timestamp as a picker-row date (`YYYY-MM-DD HH:mm`, UTC). */
 function formatDate(createdAt: number): string {
   return new Date(createdAt).toISOString().replace('T', ' ').slice(0, 16)
-}
-
-/** The Blue display services the overlay commands resolve lazily. */
-function displayServices(ctx: Context) {
-  const screen = ctx.get('blueScreen')
-  const components = ctx.get('blueComponents')
-  const theme = ctx.get('blueTheme')
-  const keymap = ctx.get('blueKeymap')
-  if (screen === undefined || components === undefined || theme === undefined || keymap === undefined) {
-    return undefined
-  }
-  return { screen, components, theme, colors: theme.colors, keymap }
 }
 
 /**
@@ -255,6 +245,9 @@ export function apply(ctx: Context): void {
       handler: (invocation) => showHelp(invocation.agent),
     })
     const theme = registerThemeCommand(ctx)
+    // The model-family commands (`/model`, `/effort`, later `/provider`)
+    // live in their own module with the same lazy-service discipline.
+    const models = registerModelCommands(ctx)
     return () => {
       quit()
       quitAliases()
@@ -264,6 +257,7 @@ export function apply(ctx: Context): void {
       sessions()
       help()
       theme()
+      models()
     }
   })
 }

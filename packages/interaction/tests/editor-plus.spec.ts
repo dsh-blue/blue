@@ -56,7 +56,7 @@ async function mount(options: { withAgent?: boolean, plusFirst?: boolean } = {})
   const session = ctx.sessions.create(SessionId('editor-plus-spec'))
   const followup = vi.fn()
   const agent = { id: session.id, session, status: 'idle', followup } as unknown as Agent
-  ctx.provide('blueSession', { current: options.withAgent === false ? null : agent })
+  ctx.provide('blueSession', { current: options.withAgent === false ? null : agent, modelRef: undefined })
   const plusFiber = options.plusFirst === true ? await ctx.plugin(editorPlus) : undefined
   const inputFiber = await ctx.plugin(inputPlugin)
   const editor = screen.children[0] as FakeBlueEditor

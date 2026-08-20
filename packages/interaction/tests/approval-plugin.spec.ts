@@ -28,7 +28,7 @@ async function mount(options: { attach?: boolean } = {}): Promise<{
   const session = ctx.sessions.create(SessionId('approval-spec'))
   const steer = vi.fn()
   const agent = { id: session.id, session, steer } as unknown as Agent
-  ctx.provide('blueSession', { current: options.attach === false ? null : agent })
+  ctx.provide('blueSession', { current: options.attach === false ? null : agent, modelRef: undefined })
   await ctx.plugin(approvalPlugin)
   return { ctx, screen, components, agent, steer }
 }

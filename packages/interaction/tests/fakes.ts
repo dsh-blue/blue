@@ -47,10 +47,13 @@ const SEQUENCE_BY_KEY_ID: Record<string, string> = {
   backspace: '\x7f',
   up: '\x1b[A',
   down: '\x1b[B',
+  left: '\x1b[D',
+  right: '\x1b[C',
   space: ' ',
   'ctrl+c': '\x03',
   'ctrl+s': '\x13',
   'ctrl+v': '\x16',
+  'alt+s': '\x1bs',
 }
 
 /** Convenience aliases for the fake key sequences. */
@@ -59,6 +62,9 @@ export const KEY = {
   escape: '\x1b',
   up: '\x1b[A',
   down: '\x1b[B',
+  left: '\x1b[D',
+  right: '\x1b[C',
+  altS: '\x1bs',
   tab: '\t',
   shiftTab: '\x1b[Z',
   space: ' ',

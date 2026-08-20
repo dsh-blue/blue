@@ -64,7 +64,7 @@ async function mount(options: { attach?: boolean, inbox?: ReturnType<typeof fake
     session,
     inbox: options.inbox ?? fakeInbox(),
   } as unknown as Agent
-  ctx.provide('blueSession', { current: options.attach === false ? null : agent })
+  ctx.provide('blueSession', { current: options.attach === false ? null : agent, modelRef: undefined })
   const fiber = await ctx.plugin(paneQueuePlugin)
   return { ctx, screen, keymap, agent, fiber }
 }
