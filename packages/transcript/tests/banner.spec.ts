@@ -118,7 +118,7 @@ describe('composeBannerLines', () => {
     const title = `blue v${CONTENT.version}`
     expect(lines[0]).toBe(`╭─── ${title} ${'─'.repeat(100 - 7 - title.length)}╮`)
     // The centered left column: welcome, the logo, model, cwd.
-    expect(lines[1]).toBe(`│${' '.repeat(15)}Welcome back!${' '.repeat(16)}│ Tips for getting started${' '.repeat(28)}│`)
+    expect(lines[1]).toBe(`│${' '.repeat(14)}Welcome to Blue!${' '.repeat(14)}│ Tips for getting started${' '.repeat(28)}│`)
     expect(lines[2]).toBe(`│${' '.repeat(44)}│ tip one${' '.repeat(45)}│`)
     expect(lines[3]).toBe(`│${' '.repeat(16)}${LOGO[0]}${' '.repeat(16)}│ tip two${' '.repeat(45)}│`)
     expect(lines[4]).toBe(`│${' '.repeat(16)}${LOGO[1]}${' '.repeat(16)}│ ${'─'.repeat(51)} │`)
@@ -133,7 +133,7 @@ describe('composeBannerLines', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 80)
     expect(lines).toHaveLength(10)
     expect(lines.map(line => line.length)).toEqual(Array.from({ length: 10 }, () => 80))
-    expect(lines.join('\n')).toContain('Welcome back!')
+    expect(lines.join('\n')).toContain('Welcome to Blue!')
     expect(lines.join('\n')).toContain('Tips for getting started')
     expect(lines.join('\n')).toContain("What's new")
   })
@@ -142,8 +142,8 @@ describe('composeBannerLines', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 48)
     expect(lines).toHaveLength(10)
     expect(lines.map(line => line.length)).toEqual(Array.from({ length: 10 }, () => 48))
-    expect(lines.join('\n')).toContain('Welcome back!')
-    expect(lines[1]).toBe(`│${' '.repeat(16)}Welcome back!${' '.repeat(17)}│`)
+    expect(lines.join('\n')).toContain('Welcome to Blue!')
+    expect(lines[1]).toBe(`│${' '.repeat(15)}Welcome to Blue!${' '.repeat(15)}│`)
     expect(lines.join('\n')).not.toContain('Tips for getting started')
   })
 
@@ -252,7 +252,7 @@ describe('blue-banner plugin', () => {
     expect(screen.children).toHaveLength(1)
     expect(screen.renderRequests.length).toBeGreaterThan(0)
     const joined = screen.children[0]?.render(100).join('\n') ?? ''
-    expect(joined).toContain('Welcome back!')
+    expect(joined).toContain('Welcome to Blue!')
     expect(joined).toContain(`blue v${BLUE_VERSION}`)
     expect(joined).toContain('m · p')
     // The left cell is BANNER_LEFT_WIDTH columns: a cwd that fits renders
@@ -279,15 +279,13 @@ describe('BLUE_VERSION', () => {
 })
 
 describe('banner content', () => {
-  it('derives the tips section from the footer pool: non-solo, weight-first, five lines', () => {
+  it('derives the tips section from the footer pool: non-solo, weight-first, three lines', () => {
     // The exact selection, pinned: the two priority-2 sharable tips first,
-    // then the priority-1 tips in pool order.
+    // then the first priority-1 tip in pool order.
     expect(BANNER_TIPS.lines).toEqual([
       '! to run a shell command',
       '@: mention files',
       '/help: show commands',
-      '/sessions to browse and resume earlier sessions',
-      '/fork to branch the conversation and explore safely',
     ])
     // The derivation invariants, independent of the pinned copy: every
     // line is a pool text, none is a solo tip, and higher weight sorts
@@ -296,10 +294,10 @@ describe('banner content', () => {
     for (const line of BANNER_TIPS.lines) expect(pool.get(line)?.solo).not.toBe(true)
     const weights = BANNER_TIPS.lines.map(line => pool.get(line)?.priority ?? 1)
     expect([...weights].sort((a, b) => b - a)).toEqual(weights)
-    // Five tips + heading + divider + three what's-new lines exactly fill
-    // the right column's eleven body rows against the left column.
-    expect(BANNER_TIPS.lines).toHaveLength(5)
-    expect(BANNER_WHATS_NEW.lines).toHaveLength(3)
+    // Three tips + heading + divider + two what's-new lines exactly fill
+    // the right column's eight body rows against the left column.
+    expect(BANNER_TIPS.lines).toHaveLength(3)
+    expect(BANNER_WHATS_NEW.lines).toHaveLength(2)
   })
 
   it('keeps every right-column line within the hundred-column render budget', () => {

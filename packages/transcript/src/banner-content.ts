@@ -28,7 +28,7 @@ export interface BannerSection {
 }
 
 /** How many derived tips the section shows. */
-const BANNER_TIP_COUNT = 5
+const BANNER_TIP_COUNT = 3
 
 /** One pool tip carrying its pool position for the stable tiebreak. */
 interface RankedTip {
@@ -38,12 +38,13 @@ interface RankedTip {
 }
 
 /**
- * The quick-start selection: the five highest-weight tips that may share a
+ * The quick-start selection: the three highest-weight tips that may share a
  * row (`solo` tips are long-form, written for the footer's full-width slot —
  * in a column cell they would render as clipped stubs). Weight descends
  * with the pool order breaking ties, matching the footer rotation's notion
- * of importance; five tips plus three what's-new lines exactly fill the
- * right column's eleven body rows.
+ * of importance; three tips plus two what's-new lines exactly fill the
+ * right column's eight body rows — level with the left column the compact
+ * logo tightened, so the banner carries no filler rows.
  * @returns the selected tip texts, most important first.
  */
 function selectBannerTips(): readonly string[] {
@@ -66,6 +67,5 @@ export const BANNER_WHATS_NEW: BannerSection = {
   lines: [
     'Git status, context usage, and tips in the footer',
     '/btw: side questions while the agent keeps running',
-    'Paste images into the editor with ctrl+v',
   ],
 }

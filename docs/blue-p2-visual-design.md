@@ -299,6 +299,8 @@ kimi 没有编辑框下常驻按键行（其提示分布在对话框 footer 与 
 
 **Step log（2026-08-20，logo 更换）**：用户提供的 truecolor 半块稿（3 行 ×12 列，`#006BFF`，实心格记作 fg+bg 的 `▀`）替换鲸鱼：解码回 12×6 像素网格（圆顶、col 5/9 两个跨行对边界的单格眼缝、收窄底），走既有 `packHalfBlockArt` 重打包逐格与稿一致（fg+bg `▀` ≡ packer `█`），packer 零改动、纯数据替换。**正名**：`WHALE_SPRAY`/`WHALE_PIXELS`/`WHALE_ART` → `LOGO_PIXELS`/`LOGO_ART`（CASTLE→WHALE 先例），水花两行随鲸鱼退役；色不随稿硬编码——维持 token 纪律（框/logo/欢迎行共享 `primary` 随 `/theme` 流动；dark `#4fa8ff` 与稿 `#006BFF` 的观感差接受，不引入第二个蓝）。左栏 11→8 行：默认内容右栏 11 行仍主导、banner 总高 13 行不变；banner.spec 的瘦 CONTENT（右栏 6 行）高度 13→10、黄金行平移（logo 居中 pad 14+14→16+16）。README 双语与 AGENTS.md whale 措辞同步。Dogfood：worktree 独立 profile（`blue-logoswap`）伪 TTY 冒烟，三行 logo 实机渲染、bracketed-paste 开关与退出码断言全过。955 tests / 65 files，test/coverage（逐文件 100%）/typecheck/lint 全绿。
 
+**验收一轮（2026-08-20）**：用户在 `blue-banner-logo` profile 实机验收（上轮 `blue-logoswap` 名不符 worktree 命名规则且流程已按 AGENTS.md 验收门重立，profile 随重立更名）反馈两点——(1) logo 变小后 banner 过高，左栏尾部多出空行填充；(2) `Welcome back!` → `Welcome to Blue!`。修法：**右栏瘦身 11→8 行**（派生 tips 5→3 条——两条 priority-2 可共享条目 + 池序首条 priority-1，e2e 锚 `! to run a shell command` 存活；what's-new 3→2 行，裁掉 paste-images 行），与 8 行左栏恰好齐平，banner 总高 13→10 行、零填充行；欢迎行换文案（用户原话 "WelCome to Blue!"，按常规 casing 归一为 "Welcome to Blue!"，16 字符，100 列黄金 pad 14+14、48 列 15+15）。banner.spec tips 钉扎块与两处黄金、bundle e2e 8 处锚、README 双语、AGENTS.md 措辞同步。955 tests / 65 files，test/coverage（逐文件 100%）/typecheck/lint 全绿。
+
 - transcript：banner 右栏换真实 tips（源 = S15 `tips-content.ts`）+ v2 token 复审（banner-art 黄金 spec 只动色不动位图）；spinner 帧可配置（**默认保持 braille**——月亮 emoji 宽度 2 在宽度数学上是风险项，作可选项记录于 §8）；`✓/✗`（工具完成/失败）、`← current`（model/theme 选择器未来用）等符号清扫；工具卡首次折叠时 `ctrl+o to expand` 就地提示。
 - 验收：启动页右栏为真实教学内容；全树符号一致。
 

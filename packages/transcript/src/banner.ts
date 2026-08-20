@@ -1,7 +1,7 @@
 /**
  * `blue-banner` plugin: the welcome banner, mounted once at boot as the
  * scroll area's first child — the Claude-Code-style layout: a centered left
- * column ("Welcome back!", the pixel logo, the model line and cwd) beside a
+ * column ("Welcome to Blue!", the pixel logo, the model line and cwd) beside a
  * right column carrying the tips and what's-new sections separated by a
  * divider rule. The box spans the full viewport width once the right column
  * has room; below that the left column absorbs the width, and below
@@ -203,7 +203,7 @@ export function composeBannerLines(
   ]
 
   const leftRows: readonly (readonly BannerSegment[])[] = [
-    centered('Welcome back!', 'strong'),
+    centered('Welcome to Blue!', 'strong'),
     blank(leftWidth, 'frame'),
     ...LOGO_ART.map(art => centered(art, 'logo')),
     blank(leftWidth, 'frame'),
