@@ -213,12 +213,12 @@ describe('EffortPanel', () => {
   ]
 
   function effortPanel(activeIndex = 0) {
-    const { theme, keymap } = fakeBlueContext()
+    const { theme, keymap, components } = fakeBlueContext()
     const onSelect = vi.fn()
     const onSessionOnlySelect = vi.fn()
     const onCancel = vi.fn()
     const component = new EffortPanel({
-      keymap, theme, segments, activeIndex, onSelect, onSessionOnlySelect, onCancel,
+      keymap, theme, components, segments, activeIndex, onSelect, onSessionOnlySelect, onCancel,
     })
     return { component, onSelect, onSessionOnlySelect, onCancel }
   }
@@ -257,7 +257,7 @@ describe('EffortPanel', () => {
     const { theme, keymap } = fakeBlueContext()
     const onSelect = vi.fn()
     const component = new EffortPanel({
-      keymap, theme, segments: [], activeIndex: 0, onSelect, onSessionOnlySelect: vi.fn(), onCancel: vi.fn(),
+      keymap, theme, components: fakeBlueContext().components, segments: [], activeIndex: 0, onSelect, onSessionOnlySelect: vi.fn(), onCancel: vi.fn(),
     })
     component.handleInput(KEY.enter)
     component.handleInput('x')

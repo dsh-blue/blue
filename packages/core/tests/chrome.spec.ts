@@ -159,12 +159,22 @@ describe('framePanel', () => {
     expect(framed[1]).toBe('<  help> ~· Esc close~')
   })
 
+  it('clips an over-wide footer row to the panel width', () => {
+    const lines = framePanel(['body'], 12, {
+      footer: ['esc cancel', 'enter resume', 'alt+s session-only'],
+      footerPaint: text => text,
+    })
+    expect(lines[2]).toBe('  esc can\u001b[0m...\u001b[0m')
+    expect(lines).toHaveLength(4)
+  })
+
   it('renders the footer above the bottom rule through its paint', () => {
     const framed = framePanel([''], 20, {
       footer: ['esc cancel', '↵ resume'],
       footerPaint: text => `_${text}_`,
     })
-    expect(framed).toEqual(['─'.repeat(20), '', '_  esc cancel · ↵ resume_', '─'.repeat(20)])
+    // The joined row (22 wide) clips to the 20-column rule, paint and all.
+    expect(framed).toEqual(['─'.repeat(20), '', '_  esc cancel · ↵\u001b[0m...\u001b[0m', '─'.repeat(20)])
   })
 
   it('skips the footer when the parts list is empty', () => {
@@ -173,7 +183,7 @@ describe('framePanel', () => {
 
   it('defaults the footer and rule paints to identity', () => {
     // No paints injected: the footer row and rules render unstyled.
-    expect(framePanel([''], 4, { footer: ['a', 'b'] })).toEqual(['────', '', '  a · b', '────'])
+    expect(framePanel([''], 4, { footer: ['a', 'b'] })).toEqual(['────', '', ' \u001b[0m...\u001b[0m', '────'])
   })
 
   it('repaints the rules through the injected paint', () => {

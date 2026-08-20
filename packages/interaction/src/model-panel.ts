@@ -208,13 +208,15 @@ export class ModelPanel implements BlueFocusable {
     lines.push(
       '',
       colors.textMuted(`  ${SEGMENT_CAPTION}`),
+      // A wide effort list can outrun the row; clip ANSI-safe so the
+      // renderer's width invariant holds at narrow terminals.
       efforts === undefined || efforts.length === 0 || highlighted === undefined
         ? colors.textMuted(`  ${SEGMENT_UNSUPPORTED}`)
-        : `  ${renderSegments(
+        : components.truncateToWidth(`  ${renderSegments(
             efforts.map(id => ({ id, label: effortLabel(id) })),
             draft,
             theme,
-          )}`,
+          )}`, width),
     )
     return framePanel(lines, width, {
       title: this.options.title ?? 'Select a model',
@@ -289,10 +291,10 @@ export class ModelPanel implements BlueFocusable {
     /* v8 ignore next -- the panel keys are always registered */
     const key = (action: string): string => keymap.getKeys(action)[0] ?? action
     return [
-      `${key(ACTION_MOVE_UP)}/${key(ACTION_MOVE_DOWN)} navigate`,
+      `${key(ACTION_MOVE_UP)}/${key(ACTION_MOVE_DOWN)} move`,
       `${key(ACTION_SEGMENT_LEFT)}/${key(ACTION_SEGMENT_RIGHT)} thinking`,
       `${key(ACTION_SUBMIT)} switch`,
-      `${key(ACTION_SESSION_ONLY)} session-only`,
+      `${key(ACTION_SESSION_ONLY)} session`,
       `${key(ACTION_CANCEL)} cancel`,
     ]
   }
@@ -310,6 +312,8 @@ export interface EffortPanelOptions {
   readonly keymap: BlueKeymap
   /** Theme supplying the segment colors. */
   readonly theme: BlueTheme
+  /** Component factory supplying the width truncation helper. */
+  readonly components: BlueComponents
   /** The selectable segments, in order (the `default` segment first). */
   readonly segments: readonly ThinkingSegment[]
   /** The initially active segment's index. */
@@ -376,9 +380,11 @@ export class EffortPanel implements BlueFocusable {
     const { theme, segments } = this.options
     /* v8 ignore next -- the panel keys are always registered */
     const key = (action: string): string => this.options.keymap.getKeys(action)[0] ?? action
+    const { components } = this.options
     return framePanel(
-      ['', `  ${renderSegments(segments, this.cursor, theme)}`],
-      width,
+      // Clip the segment row like the /model footer control does.
+      ['', components.truncateToWidth(`  ${renderSegments(segments, this.cursor, theme)}`, Math.max(width, 1))],
+      Math.max(width, 1),
       {
         title: 'Thinking effort',
         titlePaint: theme.colors.primary,
@@ -386,7 +392,7 @@ export class EffortPanel implements BlueFocusable {
         footer: [
           `${key(ACTION_SEGMENT_LEFT)}/${key(ACTION_SEGMENT_RIGHT)} switch`,
           `${key(ACTION_SUBMIT)} set`,
-          `${key(ACTION_SESSION_ONLY)} session-only`,
+          `${key(ACTION_SESSION_ONLY)} session`,
           `${key(ACTION_CANCEL)} cancel`,
         ],
         footerPaint: theme.colors.textMuted,

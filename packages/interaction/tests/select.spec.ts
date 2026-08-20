@@ -131,7 +131,7 @@ describe('BlueSelect rendering', () => {
     expect(lines[2]).toBe('{' + '❯ [ ] Alpha~ — first choice~'.padEnd(60) + '}')
     expect(lines[3]).toBe('  [ ] Beta~~')
     expect(lines[4]).toBe('')
-    expect(lines[5]).toBe('_  up/down move · space toggle · enter confirm · escape cancel_')
+    expect(lines[5]).toBe('_  up/down move · space toggle · enter confirm · escape c\u001b[0m...\u001b[0m')
     expect(lines[6]).toBe(bar)
   })
 

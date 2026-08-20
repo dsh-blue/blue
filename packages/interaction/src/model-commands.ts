@@ -397,6 +397,7 @@ export function registerModelCommands(ctx: Context): () => void {
       const panel = new EffortPanel({
         keymap: display.keymap,
         theme: display.theme,
+        components: display.components,
         segments,
         activeIndex,
         onSelect: (id) => {
