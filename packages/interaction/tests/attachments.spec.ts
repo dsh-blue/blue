@@ -5,8 +5,7 @@
  * sanitized reads with cancellation, and the batch saveImages contract.
  */
 
-import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
@@ -14,6 +13,10 @@ import { AttachmentError, AttachmentId, type ImageAttachmentLimits, type ImageAt
 import * as attachmentsPlugin from '../src/attachments.ts'
 import { FilesystemAttachmentStore, sniffImageMediaType } from '../src/attachments.ts'
 import { fakeBlueContext } from './fakes.ts'
+import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
+
+
+registerTempDirCleanup()
 
 /** A 1x1 PNG (shared literal shape with core's components suite). */
 const PNG_1X1 = new Uint8Array([
@@ -81,7 +84,7 @@ describe('FilesystemAttachmentStore', () => {
   let fiber: { dispose(): Promise<void> } | undefined
 
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), 'blue-attachments-'))
+    root = mkdtempTracked('blue-attachments-')
     process.env.DSH_BLUE_ATTACHMENT_DIR = root
     const blue = fakeBlueContext()
     ctx = blue.ctx
@@ -109,7 +112,7 @@ describe('FilesystemAttachmentStore', () => {
 
   it('resolves the root from DSH_HOME when the dir override is unset', async () => {
     delete process.env.DSH_BLUE_ATTACHMENT_DIR
-    const home = mkdtempSync(join(tmpdir(), 'blue-attachments-home-'))
+    const home = mkdtempTracked('blue-attachments-home-')
     process.env.DSH_HOME = home
     rmSync(root, { recursive: true, force: true })
     root = home

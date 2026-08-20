@@ -6,8 +6,7 @@
  * unloading the tree removes every contribution.
  */
 
-import { mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -20,6 +19,10 @@ import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import * as blueCore from '../../core/src/index.ts'
 import * as themeDark from '../../core/src/theme-dark.ts'
 import { apply } from '../src/index.ts'
+import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
+
+
+registerTempDirCleanup()
 
 const disposers: (() => Promise<void>)[] = []
 
@@ -36,7 +39,7 @@ afterEach(async () => {
  * @returns the root context and the terminal output observed so far.
  */
 async function bootInteraction(): Promise<{ ctx: Context; output: () => string }> {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-blue-interaction-'))
+  const dir = mkdtempTracked('dsh-blue-interaction-')
   ;(globalThis as Record<string, unknown>).__blueInteractionFixtures = {
     coreApply: blueCore.apply,
     themeDarkApply: themeDark.apply,

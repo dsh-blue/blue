@@ -4,8 +4,7 @@
  * errors leave the consumer pending.
  */
 
-import { mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
@@ -14,6 +13,10 @@ import Include from '@deepseek-ai/cordis-plugin-include'
 import { internals, provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { afterEach, describe, expect, it } from 'vitest'
 import { apply, BLUE_STARTUP_SERVICE, type BlueStartupValues } from '../src/startup.ts'
+import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
+
+
+registerTempDirCleanup()
 
 /** What one boot of the fixture tree observed. */
 interface Observed {
@@ -36,7 +39,7 @@ afterEach(async () => {
  * @returns the resolved service value and observed driver/process effects.
  */
 async function bootStartup(args: string[]): Promise<{ startup: BlueStartupValues | undefined; observed: Observed }> {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-blue-startup-'))
+  const dir = mkdtempTracked('dsh-blue-startup-')
   const observed: Observed = { exits: [], out: '' }
   writeFileSync(join(dir, 'row.mjs'), 'export function apply(_ctx, config) { globalThis.__blueStartupObserved.driverConfig = config }\n')
   // Loader imports through Node's resolver, so this fixture delegates to the

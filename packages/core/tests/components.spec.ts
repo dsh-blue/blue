@@ -10,8 +10,7 @@
  * mention drill-down reopen hook.
  */
 
-import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { chmodSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -29,6 +28,10 @@ import type {
   BlueTheme,
 } from '../src/types.ts'
 import { FakeTerminal, waitForRender } from './fake-terminal.ts'
+import { mkdtempTracked, registerTempDirCleanup } from './temp-dir.ts'
+
+
+registerTempDirCleanup()
 
 /** A 1x1 PNG. */
 const PNG_1X1 = new Uint8Array([
@@ -856,8 +859,8 @@ describe('createFileMentionProvider', () => {
   it('delegates to a spawned fd through the renderer pipeline', async () => {
     const { tui, stop } = bootTui()
     const components = createService(tui)
-    const root = mkdtempSync(join(tmpdir(), 'blue-core-mention-'))
-    const bin = mkdtempSync(join(tmpdir(), 'blue-core-mention-bin-'))
+    const root = mkdtempTracked('blue-core-mention-')
+    const bin = mkdtempTracked('blue-core-mention-bin-')
     const fd = join(bin, 'fd')
     // The fake ignores fd's arguments and prints one directory line; the
     // pipeline's own handling (trailing-slash kind detection, the

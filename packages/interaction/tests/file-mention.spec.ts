@@ -5,8 +5,7 @@
  * semantics (kind detection, skip set, caps, and abort behavior).
  */
 
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, chmodSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, symlinkSync, writeFileSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -17,6 +16,9 @@ import {
   listDirectoryMentions,
   setFdProbe,
 } from '../src/file-mention.ts'
+import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
+
+registerTempDirCleanup()
 
 const signal = (): AbortSignal => new AbortController().signal
 
@@ -32,7 +34,7 @@ afterEach(() => {
 
 /** A fixture root: a source tree, a hidden tree, a spaced name, node_modules. */
 function fixture(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'blue-mention-'))
+  const dir = mkdtempTracked('blue-mention-')
   mkdirSync(join(dir, 'src'))
   writeFileSync(join(dir, 'src', 'a.ts'), 'a')
   writeFileSync(join(dir, 'src', 'b.ts'), 'b')
@@ -47,7 +49,7 @@ function fixture(): string {
 
 /** A fake `fd` binary that prints one fixed line regardless of arguments. */
 function fakeFdBin(line: string): string {
-  const bin = mkdtempSync(join(tmpdir(), 'blue-mention-bin-'))
+  const bin = mkdtempTracked('blue-mention-bin-')
   const fd = join(bin, 'fd')
   writeFileSync(fd, `#!/bin/sh\nprintf '${line}\\n'\n`)
   chmodSync(fd, 0o755)
@@ -107,7 +109,7 @@ describe('detectFdPath', () => {
   })
 
   it('resolves null with no usable binary on the PATH', async () => {
-    process.env.PATH = mkdtempSync(join(tmpdir(), 'blue-mention-empty-'))
+    process.env.PATH = mkdtempTracked('blue-mention-empty-')
     await expect(detectFdPath()).resolves.toBeNull()
   })
 })
@@ -149,7 +151,7 @@ describe('fsMentionSuggestions', () => {
   })
 
   it('stops the scan at the entry cap, leaving deeper trees unlisted', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'blue-mention-deep-'))
+    const root = mkdtempTracked('blue-mention-deep-')
     // a/ holds 1999 files plus subdir b/; with a/ itself that fills the
     // 2000-entry budget exactly, so b/ (holding needle.txt) is never
     // scanned — regardless of the order a/'s entries surface in.
@@ -163,7 +165,7 @@ describe('fsMentionSuggestions', () => {
   })
 
   it('reaches needles below the scan cap through nested directories', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'blue-mention-shallow-'))
+    const root = mkdtempTracked('blue-mention-shallow-')
     mkdirSync(join(root, 'a', 'b'), { recursive: true })
     for (let index = 0; index < 1990; index += 1) {
       writeFileSync(join(root, 'a', `f${String(index).padStart(4, '0')}.txt`), 'x')
@@ -174,7 +176,7 @@ describe('fsMentionSuggestions', () => {
   })
 
   it('caps suggestions at the fallback limit', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'blue-mention-many-'))
+    const root = mkdtempTracked('blue-mention-many-')
     for (let index = 0; index < 205; index += 1) {
       writeFileSync(join(root, `f${String(index).padStart(3, '0')}.txt`), 'x')
     }
@@ -195,7 +197,7 @@ describe('fsMentionSuggestions', () => {
   })
 
   it('breaks score ties between a deep directory and a shallow file directory-first', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'blue-mention-tie-'))
+    const root = mkdtempTracked('blue-mention-tie-')
     // An empty query scores directories 120 minus depth and files 100
     // minus depth: a directory 20 levels down ties a root file at 100,
     // and the tiebreak ranks the directory first. The intermediate
@@ -214,7 +216,7 @@ describe('fsMentionSuggestions', () => {
   })
 
   it('returns null when the root itself cannot be read', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'blue-mention-notdir-'))
+    const root = mkdtempTracked('blue-mention-notdir-')
     writeFileSync(join(root, 'file'), 'x')
     await expect(fsMentionSuggestions(join(root, 'file'), '@x', signal())).resolves.toBeNull()
   })
@@ -247,9 +249,9 @@ describe('fsMentionSuggestions', () => {
     const root = fixture()
     await expect(listDirectoryMentions(root, '@src/a', signal())).resolves.toBeNull()
     await expect(listDirectoryMentions(root, `@${join(root, 'top.md')}/`, signal())).resolves.toBeNull()
-    const empty = mkdtempSync(join(tmpdir(), 'blue-mention-emptydir-'))
+    const empty = mkdtempTracked('blue-mention-emptydir-')
     await expect(listDirectoryMentions(empty, '@', signal())).resolves.toBeNull()
-    const locked = mkdtempSync(join(tmpdir(), 'blue-mention-locked-'))
+    const locked = mkdtempTracked('blue-mention-locked-')
     chmodSync(locked, 0o000)
     await expect(listDirectoryMentions(locked, '@', signal())).resolves.toBeNull()
   })
@@ -276,7 +278,7 @@ describe('fsMentionSuggestions', () => {
   })
 
   it('caps a one-level listing at the entry limit', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'blue-mention-level-'))
+    const root = mkdtempTracked('blue-mention-level-')
     for (let index = 0; index < 55; index += 1) {
       writeFileSync(join(root, `f${String(index).padStart(2, '0')}.txt`), 'x')
     }

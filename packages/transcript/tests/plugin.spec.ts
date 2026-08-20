@@ -8,8 +8,7 @@
  * as the app package and session service will.
  */
 
-import { mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -43,6 +42,9 @@ import {
   turnStart,
   userEvent,
 } from './helpers.ts'
+import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
+
+registerTempDirCleanup()
 
 const disposers: (() => Promise<void>)[] = []
 
@@ -193,7 +195,7 @@ async function bootTranscript(
   current: FakeAgent | null = null,
   options: { fixture?: boolean, tools?: Record<string, unknown> } = {},
 ): Promise<Harness> {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-blue-transcript-'))
+  const dir = mkdtempTracked('dsh-blue-transcript-')
   writeFileSync(join(dir, 'blue-transcript.mjs'), `
 export const name = 'blue-transcript'
 export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'tools']

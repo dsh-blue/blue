@@ -6,8 +6,7 @@
  * the attach/registration lifecycle including mid-flight fiber unloads.
  */
 
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { chmodSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
@@ -17,6 +16,10 @@ import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
 import * as pasteImage from '../src/paste-image.ts'
 import { ACTION_IMAGE_PASTE } from '../src/paste-image.ts'
 import { fakeBlueContext, FakeBlueEditor, KEY, type FakeKeymap } from './fakes.ts'
+import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
+
+
+registerTempDirCleanup()
 
 /** A 1x1 PNG (shared literal shape with core's components suite). */
 const PNG_1X1 = new Uint8Array([
@@ -43,7 +46,7 @@ describe('blue-paste-image plugin', () => {
   let fiber: { dispose(): Promise<void> } | undefined
 
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), 'blue-paste-image-'))
+    root = mkdtempTracked('blue-paste-image-')
     editor = new FakeBlueEditor()
     notices = []
     let saved = 0
@@ -341,7 +344,7 @@ describe('default clipboard image reader', () => {
     fiber = await ctx.plugin(pasteImage)
     // Restoring the default reader makes the paste flow probe the real tools.
     pasteImage.setClipboardImageReader(undefined)
-    const bin = mkdtempSync(join(tmpdir(), 'blue-paste-bin-'))
+    const bin = mkdtempTracked('blue-paste-bin-')
     const wl = join(bin, 'wl-paste')
     writeFileSync(wl, '#!/bin/sh\nexit 1\n')
     chmodSync(wl, 0o755)
@@ -360,7 +363,7 @@ describe('default clipboard image reader', () => {
   it('resolves undefined when both tools fail', async () => {
     fiber = await ctx.plugin(pasteImage)
     pasteImage.setClipboardImageReader(undefined)
-    const bin = mkdtempSync(join(tmpdir(), 'blue-paste-empty-'))
+    const bin = mkdtempTracked('blue-paste-empty-')
     process.env.PATH = bin
     editor.handleInput(KEY.ctrlV)
     await new Promise(resolve => setImmediate(resolve))

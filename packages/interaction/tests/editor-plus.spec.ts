@@ -6,8 +6,7 @@
  * attach/detach lifecycle.
  */
 
-import { mkdirSync, mkdtempSync, writeFileSync, chmodSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, writeFileSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
@@ -21,6 +20,10 @@ import * as fileMention from '../src/file-mention.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
 import { clearDraft, stashHistory } from '../src/draft-stash.ts'
 import { fakeBlueContext, FakeBlueEditor, KEY, type FakeBlueComponents, type FakeScreen } from './fakes.ts'
+import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
+
+
+registerTempDirCleanup()
 
 const signal = (): AbortSignal => new AbortController().signal
 
@@ -684,7 +687,7 @@ describe('blue-editor-plus @ mentions', () => {
    * node_modules (the one tree the fallback never yields).
    */
   function fixture(): string {
-    const dir = mkdtempSync(join(tmpdir(), 'blue-plus-files-'))
+    const dir = mkdtempTracked('blue-plus-files-')
     mkdirSync(join(dir, 'src'))
     writeFileSync(join(dir, 'src', 'a.ts'), 'a')
     writeFileSync(join(dir, 'src', 'b.ts'), 'b')
@@ -785,7 +788,7 @@ describe('blue-editor-plus @ mentions', () => {
   it('caps the fs fallback at the suggestion limit', async () => {
     fileMention.setFdProbe(async () => null)
     const { ctx, editor } = await mount()
-    const root = mkdtempSync(join(tmpdir(), 'blue-plus-many-'))
+    const root = mkdtempTracked('blue-plus-many-')
     for (let index = 0; index < 205; index += 1) writeFileSync(join(root, `f${String(index).padStart(3, '0')}.txt`), 'x')
     process.chdir(root)
     reattach(ctx)

@@ -8,13 +8,16 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as git from '../src/status-git.ts'
 import type { GitBadgeStatus } from '../src/status-git.ts'
 import { asAgent, bootStatusPlugin, fakeAgent } from './status-fakes.ts'
+import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
+
+
+registerTempDirCleanup()
 
 /** The fake epoch every spec starts from — past both TTLs, like Date.now(). */
 const T0 = 100_000
@@ -293,7 +296,7 @@ describe('blue-status-git', () => {
   })
 
   it('default runner reads the branch of a real repository', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'dsh-blue-git-'))
+    const dir = mkdtempTracked('dsh-blue-git-')
     execFileSync('git', ['init', '-b', 'trunk', dir])
     const harness = await bootStatusPlugin(git, fakeAgent([], { cwd: dir }))
     expect(harness.entry.render(80)).toBe('trunk')
@@ -301,7 +304,7 @@ describe('blue-status-git', () => {
   })
 
   it('default runner degrades to empty outside a repository', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'dsh-blue-nogit-'))
+    const dir = mkdtempTracked('dsh-blue-nogit-')
     const harness = await bootStatusPlugin(git, fakeAgent([], { cwd: dir }))
     expect(harness.entry.render(80)).toBe('')
     await harness.dispose()

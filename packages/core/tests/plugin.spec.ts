@@ -7,8 +7,7 @@
  * terminal and removes the services and the dispatcher listener.
  */
 
-import { mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -17,6 +16,10 @@ import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { apply } from '../src/index.ts'
 import { apply as themeDarkApply } from '../src/theme-dark.ts'
+import { mkdtempTracked, registerTempDirCleanup } from './temp-dir.ts'
+
+
+registerTempDirCleanup()
 
 const disposers: (() => Promise<void>)[] = []
 
@@ -32,7 +35,7 @@ afterEach(async () => {
  * @returns the root context and the terminal output observed so far.
  */
 async function bootBlueCore(): Promise<{ ctx: Context; output: () => string }> {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-blue-core-'))
+  const dir = mkdtempTracked('dsh-blue-core-')
   // The fixtures re-export the real plugins' namespace shape (name + apply)
   // so the Loader exercises the same unwrap path as a packaged install.
   writeFileSync(join(dir, 'blue-core.mjs'), `

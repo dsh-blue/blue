@@ -8,8 +8,8 @@
  * process terminal are substituted.
  */
 
-import { mkdtempSync, writeFileSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -64,6 +64,10 @@ import { STATUS_TIPS } from '../../../transcript/src/tips-content.ts'
 import { setRecentStepsRetention, setStepFoldingEnabled } from '../../../transcript/src/window.ts'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { MockAdapter, reasoningResponse, textResponse, toolCallResponse } from './mock-adapter.ts'
+import { mkdtempTracked, registerTempDirCleanup } from '../../../core/tests/temp-dir.ts'
+
+
+registerTempDirCleanup()
 
 /**
  * Two tool calls in one response — one agent-loop step. The read group
@@ -193,7 +197,7 @@ async function bootBlue(argv: string[], options: {
   footerExtra?: string
   contextWindow?: number
 }): Promise<BlueTree> {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-blue-e2e-'))
+  const dir = mkdtempTracked('dsh-blue-e2e-')
   const terminal = new FakeTerminal()
   const hooks: BlueE2EHooks = {
     coreApply: async (ctx) => {
@@ -892,7 +896,7 @@ describe('blue whole-tree e2e', () => {
     // The attachment store resolves its root in the constructor, so the env
     // override must be in place before the boot creates the service.
     const previousDir = process.env.DSH_BLUE_ATTACHMENT_DIR
-    process.env.DSH_BLUE_ATTACHMENT_DIR = mkdtempSync(join(tmpdir(), 'dsh-blue-e2e-attachments-'))
+    process.env.DSH_BLUE_ATTACHMENT_DIR = mkdtempTracked('dsh-blue-e2e-attachments-')
     // A 1×1 PNG (the shared literal shape with core's and interaction's
     // suites).
     const png = new Uint8Array([
@@ -1416,7 +1420,7 @@ describe('blue whole-tree e2e', () => {
   })
 
   it('resumes a persisted session: history renders from the snapshot, no replay needed', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'dsh-blue-e2e-sessions-'))
+    const root = mkdtempTracked('dsh-blue-e2e-sessions-')
     // The persisted turn carries visible reasoning: the resumed thinking
     // block renders finalized (D16 — replay converges with the live fold),
     // never the live spinner label.
@@ -1989,7 +1993,7 @@ describe('blue whole-tree e2e', () => {
   })
 
   it('switches sessions through /new and /fork, and lists them in the /sessions picker', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'dsh-blue-e2e-sessions-'))
+    const root = mkdtempTracked('dsh-blue-e2e-sessions-')
     const tree = await bootBlue(['first', 'task'], {
       script: [textResponse('first answer'), textResponse('second answer')],
       persistenceRoot: root,
