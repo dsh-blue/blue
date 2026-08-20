@@ -48,5 +48,5 @@ Permission presets **bundle the sandbox mode and the approval policy into named 
 | `danger-full-access` | `danger-full-access` | `never` |
 
 ::: tip Relation to Blue
-The permission-presets package ships with rc.6+, but whether your installed version composes it by default is answered by `dsh --profile <name> --dump-config`. Blue currently services the `ask` policy through its approval panel; a preset switcher in Blue's own UI is on the roadmap.
+Permission presets (`dsh-permission-presets`) **are in the default assembly** (one of dsh-base's 78 rows). Blue currently services the `ask` policy through its approval panel; a preset switcher in Blue's own UI is on the roadmap.
 :::

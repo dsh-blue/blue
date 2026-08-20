@@ -68,4 +68,6 @@ dsh 自带的工具目录，按用途分组。哪些工具真正出现在你的�
 
 ::: tip 完整 Schema
 每个工具的参数 Schema 由官方[工具目录](https://deepseek-harness.github.io/deepseek-harness/reference/tool-catalog)生成维护——本页是用途速查，字段细节以那边为准。Blue 会话里工具调用的呈现见[流式会话与工具卡片](/features/streaming)。
+
+**注意**：terminal 与 lsp 两组的工具默认不装配，需要装[官方可选插件](/dsh/plugins)（持久终端、LSP 导航）。
 :::

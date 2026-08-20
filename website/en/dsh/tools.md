@@ -68,4 +68,6 @@ The catalog of dsh's built-in tools, grouped by purpose. Which tools actually ap
 
 ::: tip Full schemas
 Every tool's parameter schema is maintained in the official generated [tool catalog](https://deepseek-harness.github.io/deepseek-harness/reference/tool-catalog) — this page is the purpose cheat sheet; field details live there. How tool calls render in a Blue session is covered in [Streaming transcript & tool cards](/en/features/streaming).
+
+**Note**: the terminal and lsp groups are not assembled by default — install the [official optional plugins](/en/dsh/plugins) (persistent terminal, LSP navigation).
 :::
