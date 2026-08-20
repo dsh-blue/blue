@@ -41,6 +41,9 @@ export const ENDPOINT_PROTOCOLS = [
 /** The protocols whose `/models` listing works — used for discovery. */
 const LISTABLE_PROTOCOLS = new Set<string>(['openai-completions', 'openai-responses'])
 
+/** The thinking levels a pi-ai profile may declare (pi-ai's own gate set). */
+const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+
 /** The route-id shape the settings section accepts (the Web Models page's rule). */
 const ROUTE_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
 
@@ -201,7 +204,7 @@ interface EndpointDraft {
   protocol: string | undefined
   baseURL: string | undefined
   key: string
-  models: { id: string, contextWindow?: number, maxTokens?: number }[] | undefined
+  models: { id: string, contextWindow?: number, maxTokens?: number, reasoningEfforts?: Record<string, string> }[] | undefined
 }
 
 /**
@@ -483,8 +486,49 @@ export async function runProviderAdd(
     if (declared === undefined) return 'add provider cancelled'
     /* v8 ignore next 2 -- both fields are required, the fallbacks are
        exactOptionalPropertyTypes artifacts */
-    const models = await collectModels(display, llm, ns, protocol, declared.baseURL ?? '', declared.key ?? '')
-    if (models === undefined) return 'add provider cancelled'
+    const collected = await collectModels(display, llm, ns, protocol, declared.baseURL ?? '', declared.key ?? '')
+    if (collected === undefined) return 'add provider cancelled'
+    // Gateway listings rarely carry metadata (new-api answers with bare
+    // ids), so offer one defaults pass: a context window for models that
+    // reported none and a thinking-effort set the endpoint cannot know.
+    const defaults = await fillForm(display, {
+      title: 'Model defaults',
+      subtitle: 'optional — applies to every model this endpoint did not describe',
+      fields: [
+        {
+          id: 'context',
+          label: 'Context window',
+          hint: 'tokens, e.g. 1048576 — empty keeps the 256k default',
+          validate: value => value === '' || /^[0-9]+$/.test(value)
+            ? undefined
+            : 'the context window is a token count (digits only)',
+        },
+        {
+          id: 'efforts',
+          label: 'Thinking efforts',
+          hint: `comma-separated from ${(THINKING_LEVELS as readonly string[]).join(', ')} — empty means none`,
+          validate: value => value === '' || value.split(',').every(level =>
+            THINKING_LEVELS.includes(level.trim() as typeof THINKING_LEVELS[number]))
+            ? undefined
+            : `efforts come from ${(THINKING_LEVELS as readonly string[]).join(', ')}`,
+        },
+      ],
+    })
+    if (defaults === undefined) return 'add provider cancelled'
+    const contextWindow = defaults.context === '' ? undefined : Number(defaults.context)
+    // pi-ai's reasoningEfforts is a level→wire map (the level itself is the
+    // wire value on a plain gateway), not a bare list.
+    const effortLevels = defaults.efforts !== undefined && defaults.efforts !== ''
+      ? defaults.efforts.split(',').map(level => level.trim())
+      : undefined
+    const reasoningEfforts = effortLevels === undefined
+      ? undefined
+      : Object.fromEntries(effortLevels.map(level => [level, level]))
+    const models = collected.map(model => ({
+      ...model,
+      ...(model.contextWindow === undefined && contextWindow !== undefined ? { contextWindow } : {}),
+      ...(reasoningEfforts !== undefined ? { reasoningEfforts } : {}),
+    }))
     /* v8 ignore next -- same required-field artifacts */
     draft = { route: declared.route ?? '', protocol, baseURL: declared.baseURL, key: declared.key ?? '', models }
   }

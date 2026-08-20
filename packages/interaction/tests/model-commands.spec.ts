@@ -751,6 +751,12 @@ describe('model-family commands', () => {
     await vi.waitFor(() => { expect(screen.overlays).toHaveLength(4) })
     overlay(screen).handleInput('gw-chat')
     overlay(screen).handleInput(KEY.enter)
+    await vi.waitFor(() => {
+      const rows = (overlay(screen).render?.(60) ?? []).join('\n')
+      expect(rows).toContain('Model defaults')
+    })
+    overlay(screen).handleInput(KEY.enter)
+    overlay(screen).handleInput(KEY.enter)
     // The route registers ~120ms after the writes; the scoped picker waits
     // for it and opens over the fresh route.
     await vi.waitFor(() => {
@@ -790,6 +796,12 @@ describe('model-family commands', () => {
     form.handleInput(KEY.enter)
     await vi.waitFor(() => { expect(screen.overlays).toHaveLength(4) })
     overlay(screen).handleInput('ghost-chat')
+    overlay(screen).handleInput(KEY.enter)
+    await vi.waitFor(() => {
+      const rows = (overlay(screen).render?.(60) ?? []).join('\n')
+      expect(rows).toContain('Model defaults')
+    })
+    overlay(screen).handleInput(KEY.enter)
     overlay(screen).handleInput(KEY.enter)
     // Unload mid-poll: the wait exits quietly with no picker.
     await fiber.dispose()

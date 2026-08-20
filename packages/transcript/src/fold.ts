@@ -36,6 +36,7 @@ import { ellipsize, parseToolArguments } from './present.ts'
 export { ellipsize }
 import type {
   TranscriptAssistantItem,
+  TranscriptErrorItem,
   TranscriptItem,
   TranscriptStepSummaryItem,
   TranscriptThinkingItem,
@@ -236,6 +237,20 @@ export class TranscriptFolder {
       case 'turn/end': {
         this.completed.push(event.data.turn)
         this.lastStep = null
+        // A failed turn renders its error — a dead or misrouted endpoint
+        // otherwise leaves the transcript silent (S23 dogfood).
+        if (event.data.reason.kind === 'error') {
+          const failure = event.data.reason.error
+          const item: TranscriptErrorItem = {
+            kind: 'error',
+            seq: event.seq,
+            turn: this.currentTurn,
+            message: failure.message,
+            ...(failure.code !== undefined && failure.code.length > 0 ? { code: failure.code } : {}),
+          }
+          this.items.push(item)
+          return [{ item, isNew: true }]
+        }
         return null
       }
 

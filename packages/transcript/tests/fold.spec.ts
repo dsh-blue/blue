@@ -338,6 +338,35 @@ describe('foldSessionEvents', () => {
     expect('view' in (declining.items[0] as TranscriptToolItem)).toBe(false)
   })
 
+  it('folds a failed turn into an error item', () => {
+    const folder = new TranscriptFolder()
+    const updates: FoldUpdate[] = []
+    for (const e of [
+      event('turn/start', { turn: 1 }),
+      userEvent('hello'),
+      event('turn/end', { turn: 1, reason: { kind: 'error', error: { message: '404: no such route', code: 'PI_AI_ERROR' } } }),
+    ]) {
+      const update = folder.apply(e as SessionEvent)
+      if (update !== null) updates.push(...update)
+    }
+    const items = folder.items
+    expect(items.some(item => item.kind === 'error')).toBe(true)
+    const error = items.find(item => item.kind === 'error') as { kind: 'error', message: string, code?: string }
+    expect(error.message).toBe('404: no such route')
+    expect(error.code).toBe('PI_AI_ERROR')
+    // A codeless failure and a completed turn: one renders the bare
+    // message, the other nothing extra.
+    const codeless = new TranscriptFolder()
+    codeless.apply(event('turn/start', { turn: 1 }) as SessionEvent)
+    codeless.apply(event('turn/end', { turn: 1, reason: { kind: 'error', error: { message: 'plain boom', code: '' } } }) as SessionEvent)
+    const bare = codeless.items.find(item => item.kind === 'error') as { kind: 'error', code?: string }
+    expect(bare.message).toBe('plain boom')
+    expect('code' in bare).toBe(false)
+    const completed = new TranscriptFolder()
+    completed.apply(event('turn/start', { turn: 1 }) as SessionEvent)
+    expect(completed.apply(event('turn/end', { turn: 1, reason: { kind: 'completed' } }) as SessionEvent)).toBeNull()
+  })
+
   it('ignores boundary, log-only, and unknown event types', () => {
     const events = [
       event('turn/start', { turn: 1 }),

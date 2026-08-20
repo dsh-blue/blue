@@ -43,6 +43,7 @@ import {
 import type {} from '@dsh-blue/blue-app'
 import {
   AssistantMessageComponent,
+  ErrorMessageComponent,
   StepSummaryComponent,
   ToolCallComponent,
   UserMessageComponent,
@@ -165,6 +166,8 @@ function createPlainComponent(
       return new ThinkingComponent(item, colors, components, requestRender)
     case 'step-summary':
       return new StepSummaryComponent(item, colors, components)
+    case 'error':
+      return new ErrorMessageComponent(item, colors, components)
   }
 }
 

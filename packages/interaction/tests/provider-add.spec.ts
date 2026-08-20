@@ -165,6 +165,16 @@ function wizardLlm(catalog: {
   } as unknown as LlmRuntime
 }
 
+/** Advance through the optional Model defaults form with both fields empty. */
+async function skipDefaults(screen: FakeScreen): Promise<void> {
+  await vi.waitFor(() => {
+    const rows = (current(screen).render?.(60) ?? []).join('\n')
+    expect(rows).toContain('Model defaults')
+  })
+  current(screen).handleInput(KEY.enter)
+  current(screen).handleInput(KEY.enter)
+}
+
 /** The panel of the latest unhidden overlay. */
 function current(screen: FakeScreen): { handleInput(data: string): void, render?(width: number): string[] } {
   const entry = screen.overlays[screen.overlays.length - 1]
@@ -244,6 +254,7 @@ describe('runProviderAdd', () => {
     expect(current(bench.screen).render?.(60).some(row => row.includes('claude-gw-chat'))).toBe(true)
     current(bench.screen).handleInput(' ')
     current(bench.screen).handleInput(KEY.enter)
+    await skipDefaults(bench.screen)
     await expect(outcome).resolves.toBe('provider "my-gateway" added')
     expect(bench.mutations).toEqual([{
       ns: 'llm-pi-ai',
@@ -282,6 +293,7 @@ describe('runProviderAdd', () => {
     adopt.handleInput(KEY.down)
     adopt.handleInput(' ') // and gpt-y, which reports no capacities
     adopt.handleInput(KEY.enter)
+    await skipDefaults(bench.screen)
     await expect(outcome).resolves.toBe('provider "gw2" added')
     const profile = ((bench.mutations[0] ?? { ops: [] }).ops as { value: Record<string, unknown> }[])[0]!.value
     expect(profile.api).toBe('openai-completions')
@@ -341,6 +353,109 @@ describe('runProviderAdd', () => {
     await expect(manualRun).resolves.toBe('add provider cancelled')
   })
 
+  it('fills the model defaults and rejects invalid entries', async () => {
+    // Invalid context window: the panel stays open with the reason.
+    const invalid = mountWizard({ discovered: [{ id: 'big-model' }] })
+    const invalidRun = runProviderAdd(invalid.ctx, invalid.display, invalid.picker)
+    await vi.waitFor(() => { expect(invalid.screen.overlays).toHaveLength(1) })
+    current(invalid.screen).handleInput(KEY.down)
+    current(invalid.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(invalid.screen.overlays).toHaveLength(2) })
+    current(invalid.screen).handleInput(KEY.down)
+    current(invalid.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(invalid.screen.overlays).toHaveLength(3) })
+    let form = current(invalid.screen)
+    form.handleInput('defaults-gw')
+    form.handleInput(KEY.enter)
+    form.handleInput('https://defaults.example.com')
+    form.handleInput(KEY.enter)
+    form.handleInput('k')
+    form.handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(invalid.screen.overlays).toHaveLength(4) })
+    current(invalid.screen).handleInput(' ')
+    current(invalid.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => {
+      expect((current(invalid.screen).render?.(60) ?? []).join('\n')).toContain('Model defaults')
+    })
+    form = current(invalid.screen)
+    form.handleInput('big')
+    form.handleInput(KEY.tab)
+    form.handleInput(KEY.enter)
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect((form.render?.(60) ?? []).join('\n'))
+      .toContain('the context window is a token count (digits only)')
+    form.handleInput(KEY.escape)
+    await expect(invalidRun).resolves.toBe('add provider cancelled')
+
+    // Invalid effort level: same treatment.
+    const badEffort = mountWizard({ discovered: [{ id: 'm' }] })
+    const badEffortRun = runProviderAdd(badEffort.ctx, badEffort.display, badEffort.picker)
+    await vi.waitFor(() => { expect(badEffort.screen.overlays).toHaveLength(1) })
+    current(badEffort.screen).handleInput(KEY.down)
+    current(badEffort.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(badEffort.screen.overlays).toHaveLength(2) })
+    current(badEffort.screen).handleInput(KEY.down)
+    current(badEffort.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(badEffort.screen.overlays).toHaveLength(3) })
+    form = current(badEffort.screen)
+    form.handleInput('eff-gw')
+    form.handleInput(KEY.enter)
+    form.handleInput('https://eff.example.com')
+    form.handleInput(KEY.enter)
+    form.handleInput('k')
+    form.handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(badEffort.screen.overlays).toHaveLength(4) })
+    current(badEffort.screen).handleInput(' ')
+    current(badEffort.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => {
+      expect((current(badEffort.screen).render?.(60) ?? []).join('\n')).toContain('Model defaults')
+    })
+    form = current(badEffort.screen)
+    form.handleInput(KEY.tab)
+    form.handleInput('low,ultra')
+    form.handleInput(KEY.enter)
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect((form.render?.(60) ?? []).join('\n')).toContain('efforts come from')
+    form.handleInput(KEY.escape)
+    await expect(badEffortRun).resolves.toBe('add provider cancelled')
+
+    // Valid defaults ride into the profile.
+    const valid = mountWizard({ discovered: [{ id: 'big-model' }] })
+    const validRun = runProviderAdd(valid.ctx, valid.display, valid.picker)
+    await vi.waitFor(() => { expect(valid.screen.overlays).toHaveLength(1) })
+    current(valid.screen).handleInput(KEY.down)
+    current(valid.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(valid.screen.overlays).toHaveLength(2) })
+    current(valid.screen).handleInput(KEY.down)
+    current(valid.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(valid.screen.overlays).toHaveLength(3) })
+    form = current(valid.screen)
+    form.handleInput('defaults-gw')
+    form.handleInput(KEY.enter)
+    form.handleInput('https://defaults.example.com')
+    form.handleInput(KEY.enter)
+    form.handleInput('k')
+    form.handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(valid.screen.overlays).toHaveLength(4) })
+    current(valid.screen).handleInput(' ')
+    current(valid.screen).handleInput(KEY.enter)
+    await vi.waitFor(() => {
+      expect((current(valid.screen).render?.(60) ?? []).join('\n')).toContain('Model defaults')
+    })
+    form = current(valid.screen)
+    form.handleInput('1048576')
+    form.handleInput(KEY.tab)
+    form.handleInput('low,high')
+    form.handleInput(KEY.enter)
+    await expect(validRun).resolves.toBe('provider "defaults-gw" added')
+    const profile = ((valid.mutations[0] ?? { ops: [] }).ops as { value: Record<string, unknown> }[])[0]!.value
+    expect(profile.models).toEqual([{
+      id: 'big-model',
+      contextWindow: 1048576,
+      reasoningEfforts: { low: 'low', high: 'high' },
+    }])
+  })
+
   it('writes to llm-pi-ai even when the deepseek entry lists first', async () => {
     // The default wizardLlm fixture already leads with the deepseek
     // entry; a completed custom flow pins the pi-ai namespace.
@@ -363,6 +478,7 @@ describe('runProviderAdd', () => {
     await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(4) })
     current(bench.screen).handleInput(' ')
     current(bench.screen).handleInput(KEY.enter)
+    await skipDefaults(bench.screen)
     await expect(outcome).resolves.toBe('provider "ns-check" added')
     expect(bench.mutations[0]?.ns).toBe('llm-pi-ai')
   })
@@ -469,6 +585,7 @@ describe('runProviderAdd', () => {
     expect((current(bench.screen).render?.(60) ?? []).some(row => row.includes('discovery failed: endpoint unreachable'))).toBe(true)
     current(bench.screen).handleInput('m1')
     current(bench.screen).handleInput(KEY.enter)
+    await skipDefaults(bench.screen)
     await expect(outcome).resolves.toBe('provider "gw3" added')
   })
 

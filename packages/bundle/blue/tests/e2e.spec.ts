@@ -2298,6 +2298,9 @@ describe('blue whole-tree e2e', () => {
     expect(tree.terminal.output).toContain('gateway-chat')
     tree.terminal.sendInput(' ')
     tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Model defaults') })
+    tree.terminal.sendInput('\r')
+    tree.terminal.sendInput('\r')
     await expect(outcome).resolves.toEqual({ kind: 'success', text: 'provider "blue-e2e-gw" added' })
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Select a model · blue-e2e-gw') })
     // Escape keeps the provider without switching the default.
@@ -2316,6 +2319,66 @@ describe('blue whole-tree e2e', () => {
     expect(models.map(model => model.id)).toEqual(['gateway-chat'])
     await server.close()
   })
+
+  it('surfaces a failing completion endpoint as a transcript error row', async () => {
+    // The listing endpoint answers; every other route 404s — the probe
+    // for the dogfood report of a silent no-output conversation.
+    const server = createServer((request, response) => {
+      if (request.url !== undefined && request.url.endsWith('/models')) {
+        response.setHeader('content-type', 'application/json')
+        response.end(JSON.stringify({ object: 'list', data: [{ id: 'gw-chat', object: 'model' }] }))
+        return
+      }
+      response.statusCode = 404
+      response.end(JSON.stringify({ error: { message: 'no such route' } }))
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    const port = typeof address === 'object' && address !== null ? address.port : 0
+    const dir = mkdtempTracked('dsh-blue-e2e-dead-')
+    const tree = await bootBlue([], {
+      script: [textResponse('unused')],
+      realSettings: { settingsPath: `${dir}/settings.yaml`, credentialsPath: `${dir}/.credentials.yaml` },
+      piAi: true,
+    })
+    const agent = await currentAgent(tree)
+    tree.terminal.resize(300, 40)
+    const outcome = executeCommand(tree, agent, '/provider add')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Add provider') })
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Endpoint protocol') })
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Custom endpoint') })
+    tree.terminal.sendInput('deadgw')
+    tree.terminal.sendInput('\t')
+    tree.terminal.sendInput(`http://127.0.0.1:${port}/v1`)
+    tree.terminal.sendInput('\t')
+    tree.terminal.sendInput('sk-probe')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Advertised models') })
+    tree.terminal.sendInput(' ')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Model defaults') })
+    tree.terminal.sendInput('\r')
+    tree.terminal.sendInput('\r')
+    await expect(outcome).resolves.toEqual({ kind: 'success', text: 'provider "deadgw" added' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Select a model · deadgw') })
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Switched to gw-chat (deadgw)') })
+    // Converse: the completion call 404s. Dump what the UI does.
+    typeLine(tree.terminal, 'hello there')
+    await new Promise(resolve => setTimeout(resolve, 5000))
+    // The failed turn renders its error row — the dead-endpoint answer,
+    // never a silent transcript.
+    await vi.waitFor(() => {
+      expect(tree.terminal.output).toContain('request failed')
+      expect(tree.terminal.output).toContain('no such route')
+    })
+    expect(agent.status).toBe('idle')
+    await server.close()
+  }, 40000)
 
   it('adopts a known catalog vendor through the wizard', async () => {
     const dir = mkdtempTracked('dsh-blue-e2e-vendor-')

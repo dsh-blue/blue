@@ -130,6 +130,21 @@ export interface TranscriptToolItem {
   view?: ToolCallView | ToolResultView
 }
 
+/** A turn that failed: the `turn/end` error reason rendered as a row, so a
+ * dead endpoint is never silent (the S23 dogfood ruling — a 404 completion
+ * route left the transcript blank while the pane spinner idled). */
+export interface TranscriptErrorItem {
+  readonly kind: 'error'
+  /** Seq of the `turn/end` event. */
+  readonly seq: number
+  /** Turn that failed. */
+  readonly turn: number
+  /** The structured failure's message (already human-readable). */
+  readonly message: string
+  /** The structured failure's machine code, when present. */
+  readonly code?: string
+}
+
 /**
  * One folded-away mid-turn step: replaces the step's tool and thinking items
  * in place when the next `step/start` arrives (in-turn step folding).
@@ -157,6 +172,7 @@ export type TranscriptItem =
   | TranscriptThinkingItem
   | TranscriptToolItem
   | TranscriptStepSummaryItem
+  | TranscriptErrorItem
 
 /**
  * One footer status contribution. `render` returns a single styled line
