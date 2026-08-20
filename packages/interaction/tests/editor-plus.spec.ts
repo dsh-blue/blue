@@ -15,6 +15,7 @@ import type { BlueAutocompleteProvider, BlueComponent } from '@dsh-blue/blue-cor
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import * as inputPlugin from '../src/input-plugin.ts'
+import { registerCommandAliases } from '../src/command-meta.ts'
 import * as editorPlus from '../src/editor-plus.ts'
 import * as fileMention from '../src/file-mention.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
@@ -549,6 +550,33 @@ describe('blue-editor-plus slash completion', () => {
     expect(byName.get('/router')).toBe('Route the conversation')
   })
 
+  it('matches aliases behind the canonical name, labeling alias hits with the alias list', async () => {
+    const { provider, ctx } = await providerOf()
+    ctx.commands.register({ name: 'exist', description: 'Exists in the workspace', handler: () => ({ kind: 'success' }) })
+    ctx.commands.register({ name: 'quit', description: 'Exit Blue', handler: () => ({ kind: 'success' }) })
+    const clear = registerCommandAliases('quit', ['q', 'exit'])
+    try {
+      // `exi` misses the canonical names (`exist` matches it fully, `quit`
+      // cannot) but hits `quit`'s alias `exit`: the canonical command
+      // surfaces with the alias list on the label, the value still completes
+      // to `/quit`, and the score tie keeps the canonical-name match ahead
+      // of the alias match (the kimi sort rule).
+      const suggestions = await provider.getSuggestions(['/exi'], 0, 4, { signal: signal() })
+      expect(suggestions?.items).toEqual([
+        { value: '/exist', label: '/exist', description: 'Exists in the workspace' },
+        { value: '/quit', label: '/quit (q, exit)', description: 'Exit Blue' },
+      ])
+      // A query the canonical name itself matches (`q` is a subsequence of
+      // `quit`) keeps the plain label — aliases only count when the name
+      // misses.
+      const plain = await provider.getSuggestions(['/q'], 0, 2, { signal: signal() })
+      expect(plain?.items.some(item => item.label === '/quit (q, exit)')).toBe(false)
+      expect(plain?.items.some(item => item.value === '/quit' && item.description === 'Exit Blue')).toBe(true)
+    } finally {
+      clear()
+    }
+  })
+
   it('declines slash suggestions in bash mode so Enter runs the typed path', async () => {
     const { provider, ctx, editor } = await providerOf()
     ctx.commands.register({ name: 'resume', description: 'Resume a previous session', handler: () => ({ kind: 'success' }) })
@@ -618,6 +646,28 @@ describe('blue-editor-plus argument-hint ghost', () => {
     editor.setText('')
     type(editor, '/plain')
     expect(editor.ghostHint).toBeUndefined()
+  })
+
+  it('resolves the argument hint through an alias token', async () => {
+    const { ctx, editor } = await mount()
+    ctx.commands.register({
+      name: 'resume',
+      description: 'Resume a previous session',
+      input: { hint: '<session-id>' },
+      handler: () => ({ kind: 'success' }),
+    })
+    const clear = registerCommandAliases('resume', ['r'])
+    try {
+      // `/r ` is an alias token: the ghost looks the hint up on the
+      // canonical command, mirroring the dispatch rewrite.
+      type(editor, '/r ')
+      expect(editor.ghostHint).toBe('<session-id>')
+      // Without a registered alias the token stays unknown.
+      editor.setText('/x ')
+      expect(editor.ghostHint).toBeUndefined()
+    } finally {
+      clear()
+    }
   })
 
   it('never shows the ghost without an attached session', async () => {
