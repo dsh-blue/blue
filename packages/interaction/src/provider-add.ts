@@ -749,7 +749,15 @@ export async function runProviderAdd(
     const protocol = await choose(display, 'Endpoint protocol',
       ENDPOINT_PROTOCOLS.map(value => ({ value, label: value })))
     if (protocol === undefined) return 'add provider cancelled'
-    const declared = await fillForm(display, {
+    // The form loops: a failed listing re-opens the same panel with the
+    // classified reason in its error line — fix the URL or key and
+    // resubmit; only Escape leaves (the dogfood ruling: an error must not
+    // kick the user out of the form they are editing).
+    let settle: ((values: Record<string, string> | undefined) => void) | undefined
+    const panel = new FormPanel({
+      keymap: display.keymap,
+      theme: display.theme,
+      components: display.components,
       title: 'Custom endpoint',
       subtitle: 'the profile is written to the llm-pi-ai settings namespace',
       fields: [
@@ -772,13 +780,36 @@ export async function runProviderAdd(
         },
         { id: 'key', label: 'API key', mask: true, required: true },
       ],
+      onSubmit: values => settle?.(values),
+      onCancel: () => settle?.(undefined),
     })
-    if (declared === undefined) return 'add provider cancelled'
-    /* v8 ignore next 2 -- both fields are required, the fallbacks are
-       exactOptionalPropertyTypes artifacts */
-    const collected = await collectModels(display, llm, ns, protocol, declared.baseURL ?? '', declared.key ?? '')
-    if (collected === undefined) return 'add provider cancelled'
-    if ('error' in collected) return collected.error
+    let restore = mountEditorReplacement(panel)
+    let declared: Record<string, string> | undefined
+    let collected: Extract<CollectedModels, { models: unknown }> | undefined
+    for (;;) {
+      const values = await new Promise<Record<string, string> | undefined>(resolve => {
+        settle = resolve
+      })
+      if (values === undefined) {
+        restore()
+        return 'add provider cancelled'
+      }
+      /* v8 ignore next 2 -- both fields are required, the fallbacks are
+         exactOptionalPropertyTypes artifacts */
+      const outcome = await collectModels(display, llm, ns, protocol, values.baseURL ?? '', values.key ?? '')
+      if (outcome === undefined) {
+        restore()
+        return 'add provider cancelled'
+      }
+      if ('error' in outcome) {
+        panel.setError(outcome.error)
+        continue
+      }
+      declared = values
+      collected = outcome
+      restore()
+      break
+    }
     // The profile base follows the protocol's path convention, not the
     // user's typing: anthropic transports append /v1 themselves, the
     // OpenAI family needs it present.

@@ -601,7 +601,7 @@ describe('runProviderAdd', () => {
       .resolves.toBe('no configurable providers: the host composition carries no llm-pi-ai provider settings surface')
   })
 
-  it('aborts with the credential reason when the key is rejected', async () => {
+  it('returns to the form with the credential reason when the key is rejected', async () => {
     const bench = mountWizard({
       discoveryError: Object.assign(new Error('401 from /models; check the API key'), { code: 'INVALID_CREDENTIAL_CODE' }),
     })
@@ -620,11 +620,16 @@ describe('runProviderAdd', () => {
     form.handleInput(KEY.enter)
     form.handleInput('k')
     form.handleInput(KEY.enter)
-    await expect(outcome).resolves.toContain('check the API key')
+    await vi.waitFor(() => {
+      const rows = (current(bench.screen).render?.(120) ?? []).join('\n')
+      expect(rows).toContain('check the API key')
+    })
     expect(bench.mutations).toEqual([])
+    current(bench.screen).handleInput(KEY.escape)
+    await expect(outcome).resolves.toBe('add provider cancelled')
   })
 
-  it('aborts when the endpoint lists nothing', async () => {
+  it('returns to the form when the endpoint lists nothing', async () => {
     const bench = mountWizard({ discovered: [] })
     const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
     await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
@@ -641,8 +646,13 @@ describe('runProviderAdd', () => {
     form.handleInput(KEY.enter)
     form.handleInput('k')
     form.handleInput(KEY.enter)
-    await expect(outcome).resolves.toBe('the endpoint listed no models under https://quiet.example.com')
+    await vi.waitFor(() => {
+      const rows = (current(bench.screen).render?.(120) ?? []).join('\n')
+      expect(rows).toContain('the endpoint listed no models under https://quiet.example.com')
+    })
     expect(bench.mutations).toEqual([])
+    current(bench.screen).handleInput(KEY.escape)
+    await expect(outcome).resolves.toBe('add provider cancelled')
   })
 
   it('edits a configured provider and keeps untouched fields', async () => {
@@ -879,7 +889,8 @@ describe('runProviderAdd', () => {
 
   it('surfaces the underlying cause chain behind the discovery wrapper', async () => {
     // `could not reach <url>` parks the real reason (DNS, TLS, refused
-    // socket) in `cause`; the abort must show it, not just the wrapper.
+    // socket) in `cause`; the form's error line must show it, not just the
+    // wrapper — and stay open for a retry.
     const root = new Error('unable to verify the first certificate')
     const wrapped = new Error('could not reach https://tls.example.com/v1/models', { cause: new Error('fetch failed', { cause: root }) })
     const bench = mountWizard({ discoveryError: wrapped })
@@ -898,12 +909,16 @@ describe('runProviderAdd', () => {
     form.handleInput(KEY.enter)
     form.handleInput('k')
     form.handleInput(KEY.enter)
-    await expect(outcome).resolves.toBe(
-      'could not list models from the endpoint: could not reach https://tls.example.com/v1/models'
-      + ': fetch failed: unable to verify the first certificate')
+    await vi.waitFor(() => {
+      const rows = (current(bench.screen).render?.(200) ?? []).join('\n')
+      expect(rows).toContain('!  could not list models from the endpoint: could not reach')
+      expect(rows).toContain('unable to verify the first certificate')
+    })
+    current(bench.screen).handleInput(KEY.escape)
+    await expect(outcome).resolves.toBe('add provider cancelled')
   })
 
-  it('aborts with the classified reason when discovery fails', async () => {
+  it('returns to the form with the classified reason when discovery fails', async () => {
     const bench = mountWizard({ discoveryError: new Error('could not reach https://gw3.example.com/models') })
     const outcome = runProviderAdd(bench.ctx, bench.display, bench.picker)
     await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
@@ -920,11 +935,17 @@ describe('runProviderAdd', () => {
     form.handleInput(KEY.enter)
     form.handleInput('k')
     form.handleInput(KEY.enter)
-    // No manual form mounts; the add aborts with the reason.
-    await expect(outcome).resolves.toBe(
-      'could not list models from the endpoint: could not reach https://gw3.example.com/models')
-    expect(bench.screen.overlays).toHaveLength(3)
+    // The form stays mounted with the reason in its error line; nothing
+    // was written and no manual stage appears.
+    await vi.waitFor(() => {
+      const rows = (current(bench.screen).render?.(120) ?? []).join('\n')
+      expect(rows).toContain('Custom endpoint')
+      expect(rows).toContain('could not list models from the endpoint: could not reach https://gw3.example.com/models')
+    })
     expect(bench.mutations).toEqual([])
+    // Escape is the only way out.
+    current(bench.screen).handleInput(KEY.escape)
+    await expect(outcome).resolves.toBe('add provider cancelled')
   })
 
   it('adopts a known vendor with just the key', async () => {

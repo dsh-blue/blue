@@ -189,7 +189,9 @@ export class FormPanel implements BlueFocusable {
       '',
       `${boldOpen}${colors.textStrong(`  ${this.options.title}`)}${boldClose}`,
       '',
-      colors.muted(`  ${this.error ?? this.subtitleOrBlank()}`),
+      this.error !== undefined
+        ? colors.error(`  ${this.error}`)
+        : colors.muted(`  ${this.subtitleOrBlank()}`),
       '',
     ]
     fields.forEach((field, index) => {
