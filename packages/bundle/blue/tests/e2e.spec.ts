@@ -8,7 +8,7 @@
  * process terminal are substituted.
  */
 
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -17,6 +17,11 @@ import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { LlmModelInfo, LlmModelReasoningInfo } from '@deepseek-ai/dsh-llm'
+import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
+import LocalCredentialsProvider from '@deepseek-ai/dsh-credentials-local'
+import { apply as piAiApply, inject as piAiInject } from '@deepseek-ai/dsh-llm-pi-ai'
+import { createServer } from 'node:http'
 import AgentDefaultModelConfig from '@deepseek-ai/dsh-agent-default-model'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
@@ -196,6 +201,14 @@ async function bootBlue(argv: string[], options: {
   persistenceRoot?: string
   footerExtra?: string
   contextWindow?: number
+  /** The advertised model catalog for the mock adapter (listModels). */
+  models?: readonly LlmModelInfo[]
+  /** The reasoning metadata resolveModelInfo reports. */
+  reasoning?: LlmModelReasoningInfo
+  /** Mount the real file-backed settings and credentials providers. */
+  realSettings?: { settingsPath: string, credentialsPath: string }
+  /** Mount the real (dormant) llm-pi-ai adapter plugin. */
+  piAi?: boolean
 }): Promise<BlueTree> {
   const dir = mkdtempTracked('dsh-blue-e2e-')
   const terminal = new FakeTerminal()
@@ -445,11 +458,28 @@ export const apply = (ctx) => {
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(CommandRuntime)
   await ctx.plugin(UserQuestionService)
+  // The settings family mounts before the default-model service so the
+  // latter's settings-backed default tier resolves through the file.
+  if (options.realSettings !== undefined) {
+    await ctx.plugin(FileSettingsProvider, { path: options.realSettings.settingsPath, watch: false })
+    await ctx.plugin(LocalCredentialsProvider, { path: options.realSettings.credentialsPath, watch: false })
+  }
   await ctx.plugin(AgentDefaultModelConfig, { provider: 'mock', model: 'mock' })
+  if (options.piAi === true) {
+    // The dormant posture: the installed catalog registers the
+    // configurable-provider directory and the discovery seam, no routes.
+    await ctx.plugin({ name: 'llm-pi-ai', inject: [...piAiInject], apply: piAiApply }, {})
+  }
   if (options.persistenceRoot !== undefined) {
     await ctx.plugin(JsonlSessionPersistence, { root: options.persistenceRoot })
   }
-  const adapter = new MockAdapter(options.script, undefined, undefined, options.contextWindow)
+  const adapter = new MockAdapter(
+    options.script,
+    options.reasoning,
+    undefined,
+    options.contextWindow,
+    options.models,
+  )
   ctx.llm.registerAdapter(['mock'], adapter)
 
   const sessionChanges: Agent[] = []
@@ -471,6 +501,27 @@ async function currentAgent(tree: BlueTree): Promise<Agent> {
 function typeLine(terminal: FakeTerminal, line: string): void {
   for (const char of line) terminal.sendInput(char)
   terminal.sendInput('\r')
+}
+
+/** A local endpoint answering `GET …/models` with the OpenAI list shape. */
+async function startModelServer(models: { id: string }[]): Promise<{ url: string, close(): Promise<void> }> {
+  const server = createServer((request, response) => {
+    if (request.url !== undefined && request.url.endsWith('/models')) {
+      response.setHeader('content-type', 'application/json')
+      response.end(JSON.stringify({ object: 'list', data: models.map(model => ({ id: model.id, object: 'model' })) }))
+      return
+    }
+    response.statusCode = 404
+    response.end('{}')
+  })
+  // Await the binding: reading address() before `listening` yields port 0.
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  const port = typeof address === 'object' && address !== null ? address.port : 0
+  return {
+    url: `http://127.0.0.1:${port}`,
+    close: () => new Promise(resolve => server.close(() => resolve())),
+  }
 }
 
 /**
@@ -2051,6 +2102,319 @@ describe('blue whole-tree e2e', () => {
     tree.terminal.sendInput('\r')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('already the current session') })
     expect(tree.sessionChanges).toHaveLength(3)
+  })
+
+  it('lists the model-family commands in /help', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    await expect(executeCommand(tree, agent, '/help')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/model') })
+    expect(tree.terminal.output).toContain('/effort (/thinking)')
+    expect(tree.terminal.output).toContain('/provider')
+  })
+
+  it('opens the /model picker, commits the draft, and routes the next request', async () => {
+    const tree = await bootBlue([], {
+      script: [textResponse('ok')],
+      contextWindow: 65536,
+      models: [
+        { provider: 'mock', id: 'mock', name: 'Mock' },
+        { provider: 'mock', id: 'mock-pro', name: 'Mock Pro' },
+      ],
+      reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'high' as never },
+    })
+    const agent = await currentAgent(tree)
+    tree.terminal.resize(300, 40)
+    await expect(executeCommand(tree, agent, '/model')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Select a model') })
+    const picker = tree.terminal.output
+    expect(picker).toContain('Mock Pro')
+    expect(picker).toContain('ctx 64k')
+    expect(picker).toContain('← current')
+    expect(picker).toContain('[ High ]')
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Switched to mock-pro (mock) · thinking high') })
+    typeLine(tree.terminal, 'go')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    expect(tree.adapter.requests[0]!.model).toBe('mock-pro')
+    expect(tree.adapter.requests[0]!.reasoningEffort).toBe('high' as never)
+  })
+
+  it('/model answers the unknown-id and empty-catalog guards', async () => {
+    const tree = await bootBlue([], {
+      script: [],
+      models: [{ provider: 'mock', id: 'mock', name: 'Mock' }],
+    })
+    const agent = await currentAgent(tree)
+    await expect(executeCommand(tree, agent, '/model nope'))
+      .resolves.toEqual({ kind: 'error', text: 'unknown model: nope' })
+    const empty = await bootBlue([], { script: [] })
+    const emptyAgent = await currentAgent(empty)
+    await expect(executeCommand(empty, emptyAgent, '/model'))
+      .resolves.toEqual({ kind: 'success', text: 'no models advertised for the configured providers' })
+  })
+
+  it('commits /model session-only with Alt+S and persists the default with Enter', async () => {
+    const dir = mkdtempTracked('dsh-blue-e2e-model-')
+    const settingsPath = `${dir}/settings.yaml`
+    const credentialsPath = `${dir}/.credentials.yaml`
+    const boot = async () => bootBlue([], {
+      script: [],
+      realSettings: { settingsPath, credentialsPath },
+      models: [
+        { provider: 'mock', id: 'mock', name: 'Mock' },
+        { provider: 'mock', id: 'mock-pro', name: 'Mock Pro' },
+      ],
+      reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'high' as never },
+    })
+
+    // Alt+S switches the session but leaves the stored default untouched.
+    const sessionOnly = await boot()
+    const agent = await currentAgent(sessionOnly)
+    sessionOnly.terminal.resize(300, 40)
+    await expect(executeCommand(sessionOnly, agent, '/model')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(() => { expect(sessionOnly.terminal.output).toContain('Select a model') })
+    sessionOnly.terminal.sendInput('\x1b[B')
+    sessionOnly.terminal.sendInput('\x1bs')
+    await vi.waitFor(() => {
+      expect(sessionOnly.terminal.output).toContain('Switched to mock-pro (mock) · thinking high · session only')
+    })
+    await sessionOnly.ctx.fiber.dispose()
+    const afterSessionOnly = await boot()
+    await vi.waitFor(() => { expect(afterSessionOnly.terminal.output).toContain('mock · mock') })
+    expect(afterSessionOnly.terminal.output).not.toContain('mock-pro · mock')
+    await afterSessionOnly.ctx.fiber.dispose()
+
+    // Enter persists the default through the settings file; a fresh boot
+    // (same files) starts on it — the banner snapshot reads it back.
+    const persisting = await boot()
+    const persistAgent = await currentAgent(persisting)
+    await expect(executeCommand(persisting, persistAgent, '/model')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(() => { expect(persisting.terminal.output).toContain('Select a model') })
+    persisting.terminal.sendInput('\x1b[B')
+    persisting.terminal.sendInput('\r')
+    await vi.waitFor(() => {
+      expect(persisting.terminal.output).toContain('Switched to mock-pro (mock) · thinking high')
+    })
+    await persisting.ctx.fiber.dispose()
+    expect(readFileSync(settingsPath, 'utf8')).toContain('mock-pro')
+    const restarted = await boot()
+    await vi.waitFor(() => { expect(restarted.terminal.output).toContain('mock-pro · mock') })
+    await restarted.ctx.fiber.dispose()
+  })
+
+  it('switches the thinking effort through the /effort panel and direct levels', async () => {
+    const tree = await bootBlue([], {
+      script: [textResponse('ok')],
+      reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'high' as never },
+    })
+    const agent = await currentAgent(tree)
+    tree.terminal.resize(300, 40)
+    await expect(executeCommand(tree, agent, '/effort')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Thinking effort') })
+    // No live effort → the Default segment starts active.
+    expect(tree.terminal.output).toContain('[ Default ]')
+    expect(tree.terminal.output).toContain('  High  ')
+    // Right steps to Low; Enter applies it session-wide.
+    tree.terminal.sendInput('\x1b[C')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Thinking set to low') })
+
+    await expect(executeCommand(tree, agent, '/effort high'))
+      .resolves.toEqual({ kind: 'success', text: 'Thinking set to high' })
+    typeLine(tree.terminal, 'go')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    expect(tree.adapter.requests[0]!.reasoningEffort).toBe('high' as never)
+
+    await expect(executeCommand(tree, agent, '/effort default'))
+      .resolves.toEqual({ kind: 'success', text: 'Thinking set to provider default' })
+    await expect(executeCommand(tree, agent, '/effort bogus'))
+      .resolves.toEqual({
+        kind: 'error',
+        text: 'unsupported thinking effort "bogus" for mock: available: default, low, high',
+      })
+
+    const plain = await bootBlue([], { script: [] })
+    const plainAgent = await currentAgent(plain)
+    await expect(executeCommand(plain, plainAgent, '/effort'))
+      .resolves.toEqual({ kind: 'error', text: 'the current model exposes no reasoning efforts' })
+  })
+
+  it('lists providers and opens the scoped picker on switch', async () => {
+    const tree = await bootBlue([], {
+      script: [],
+      models: [{ provider: 'mock', id: 'mock', name: 'Mock' }],
+    })
+    const agent = await currentAgent(tree)
+    tree.terminal.resize(300, 40)
+    await expect(executeCommand(tree, agent, '/provider')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Providers') })
+    // registerAdapter carries no display name — the row is `mock (mock)`.
+    expect(tree.terminal.output).toContain('(mock)')
+    expect(tree.terminal.output).toContain('← current')
+    expect(tree.terminal.output).toContain('+ Add provider')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Select a model · mock') })
+    await expect(executeCommand(tree, agent, '/provider switch nope'))
+      .resolves.toEqual({ kind: 'error', text: 'unknown provider: nope (registered: mock)' })
+    await expect(executeCommand(tree, agent, '/provider bogus'))
+      .resolves.toEqual({ kind: 'error', text: 'usage: /provider [list | switch <name> | add]' })
+  })
+
+  it('adds a custom endpoint through the real settings, credentials, and pi-ai stack', async () => {
+    const server = await startModelServer([{ id: 'gateway-chat' }, { id: 'gateway-lite' }])
+    const dir = mkdtempTracked('dsh-blue-e2e-add-')
+    const settingsPath = `${dir}/settings.yaml`
+    const credentialsPath = `${dir}/.credentials.yaml`
+    const tree = await bootBlue(['start'], {
+      script: [textResponse('booted')],
+      realSettings: { settingsPath, credentialsPath },
+      piAi: true,
+    })
+    const agent = await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await agent.whenIdle()
+    tree.terminal.resize(300, 40)
+    // The wizard's panels settle with user input, so the command promise
+    // stays pending while the test drives them.
+    const outcome = executeCommand(tree, agent, '/provider add')
+    // Source: Custom endpoint.
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Add provider') })
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    // Protocol: openai-completions.
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Endpoint protocol') })
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    // Form: route, baseURL, key.
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Custom endpoint') })
+    tree.terminal.sendInput('blue-e2e-gw')
+    tree.terminal.sendInput('\t')
+    tree.terminal.sendInput(`${server.url}/v1`)
+    tree.terminal.sendInput('\t')
+    tree.terminal.sendInput('sk-test-key')
+    tree.terminal.sendInput('\r')
+    // Discovery feeds the adopt multi-select.
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Advertised models') })
+    expect(tree.terminal.output).toContain('gateway-chat')
+    tree.terminal.sendInput(' ')
+    tree.terminal.sendInput('\r')
+    await expect(outcome).resolves.toEqual({ kind: 'success', text: 'provider "blue-e2e-gw" added' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Select a model · blue-e2e-gw') })
+    // Escape keeps the provider without switching the default.
+    tree.terminal.sendInput('\x1b')
+    // The writes landed on disk and the route is live.
+    const settingsDocument = readFileSync(settingsPath, 'utf8')
+    expect(settingsDocument).toContain('llm-pi-ai')
+    expect(settingsDocument).toContain('blue-e2e-gw')
+    expect(settingsDocument).toContain('openai-completions')
+    expect(settingsDocument).toContain('BLUE_E2E_GW_API_KEY')
+    expect(readFileSync(credentialsPath, 'utf8')).toContain('BLUE_E2E_GW_API_KEY')
+    await vi.waitFor(() => {
+      expect(tree.ctx.llm.listProviders().map(provider => provider.id)).toContain('blue-e2e-gw')
+    })
+    const models = await tree.ctx.llm.listModels('blue-e2e-gw')
+    expect(models.map(model => model.id)).toEqual(['gateway-chat'])
+    await server.close()
+  })
+
+  it('adopts a known catalog vendor through the wizard', async () => {
+    const dir = mkdtempTracked('dsh-blue-e2e-vendor-')
+    const settingsPath = `${dir}/settings.yaml`
+    const credentialsPath = `${dir}/.credentials.yaml`
+    const tree = await bootBlue([], {
+      script: [],
+      realSettings: { settingsPath, credentialsPath },
+      piAi: true,
+    })
+    const agent = await currentAgent(tree)
+    tree.terminal.resize(300, 40)
+    const outcome = executeCommand(tree, agent, '/provider add')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Add provider') })
+    tree.terminal.sendInput('\r')
+    // The source panel's own first row says "Known provider (…)", so wait
+    // for the vendor picker by its first catalog row instead.
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('amazon-bedrock') })
+    const vendor = 'amazon-bedrock'
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('via the credentials service') })
+    // Field 1 is the optional baseURL override — skip it, then the key.
+    tree.terminal.sendInput('\r')
+    tree.terminal.sendInput('vendor-key')
+    tree.terminal.sendInput('\r')
+    await expect(outcome).resolves.toEqual({ kind: 'success', text: `provider "${vendor}" added` })
+    const settingsDocument = readFileSync(settingsPath, 'utf8')
+    expect(settingsDocument).toContain(vendor)
+    expect(settingsDocument).toContain(`${vendor.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`)
+    await vi.waitFor(() => {
+      expect(tree.ctx.llm.listProviders().map(provider => provider.id)).toContain(vendor)
+    })
+  })
+
+  it('answers the /provider add guard without the host settings services', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    await expect(executeCommand(tree, agent, '/provider add')).resolves.toEqual({
+      kind: 'success',
+      text: 'provider configuration requires the host settings, credentials, and llm services',
+    })
+  })
+
+  it('keeps the switched model across a resume (the header tier)', async () => {
+    const root = mkdtempTracked('dsh-blue-e2e-resume-')
+    const first = await bootBlue(['first'], {
+      script: [textResponse('one'), textResponse('two'), textResponse('three')],
+      persistenceRoot: root,
+      models: [
+        { provider: 'mock', id: 'mock', name: 'Mock' },
+        { provider: 'mock', id: 'mock-pro', name: 'Mock Pro' },
+      ],
+    })
+    const agent = await currentAgent(first)
+    await vi.waitFor(() => { expect(first.adapter.requests).toHaveLength(1) })
+    await agent.whenIdle()
+    await expect(executeCommand(first, agent, '/model mock-pro'))
+      .resolves.toEqual({ kind: 'success', text: 'Switched to mock-pro (mock)' })
+    typeLine(first.terminal, 'second')
+    await vi.waitFor(() => { expect(first.adapter.requests).toHaveLength(2) })
+    await agent.whenIdle()
+    const id = String(agent.session.id)
+    await first.ctx.sessions.flush(agent.session)
+    await first.ctx.fiber.dispose()
+
+    const resumed = await bootBlue(['--resume', id], { script: [textResponse('three')], persistenceRoot: root })
+    await currentAgent(resumed)
+    typeLine(resumed.terminal, 'third')
+    await vi.waitFor(() => { expect(resumed.adapter.requests).toHaveLength(1) })
+    // The resumed session keeps mock-pro (the old wiring snapped it back
+    // to the process default `mock`).
+    expect(resumed.adapter.requests[0]!.model).toBe('mock-pro')
+  })
+
+  it('moves modelRef to the fresh session on /new', async () => {
+    const tree = await bootBlue([], {
+      script: [textResponse('ok')],
+      models: [
+        { provider: 'mock', id: 'mock', name: 'Mock' },
+        { provider: 'mock', id: 'mock-pro', name: 'Mock Pro' },
+      ],
+    })
+    const agent = await currentAgent(tree)
+    await expect(executeCommand(tree, agent, '/model mock-pro'))
+      .resolves.toEqual({ kind: 'success', text: 'Switched to mock-pro (mock)' })
+    await expect(executeCommand(tree, agent, '/new'))
+      .resolves.toEqual({ kind: 'success', text: 'starting a new session' })
+    await vi.waitFor(() => { expect(tree.sessionChanges).toHaveLength(2) })
+    const modelRef = tree.ctx.get('blueSession')!.modelRef
+    expect(modelRef).toBeDefined()
+    // The fresh agent reads the default tier: mock.
+    expect(modelRef!.current).toMatchObject({ provider: 'mock', model: 'mock' })
+    const fresh = tree.sessionChanges[1]!
+    typeLine(tree.terminal, 'go')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await fresh.whenIdle()
+    expect(tree.adapter.requests[0]!.model).toBe('mock')
   })
 
   it('runs /btw side questions in a forked session and dismisses the pane', async () => {
