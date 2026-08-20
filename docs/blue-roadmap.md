@@ -93,7 +93,7 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 - **状态栏**：`ctx.blueStatus` 注册表 + 两行 footer 壳 + git/context/basic 条目插件
 - **面板与命令**：activity/queue/todo/btw pane 插件；`/sessions` `/fork` `/new` `/help` `/btw`；审批四选项 + session 级继承（Blue 侧协调器）；提问多题 tab 化
 - **welcome banner**：启动欢迎横幅（像素鲸鱼 logo + 模型/cwd 信息 + Tips 右栏，铺满全宽；`blue-banner` 基线段行）（✅ S8 已落地，S10 期间重排：全宽三段布局 + 鲸鱼缩小 30%）
-- **alt-screen**：`TuiAltScreen` 与主屏运行时热切换（兑现 L0 的 Proxy 预埋）
+- **alt-screen**：`TuiAltScreen` 与主屏运行时热切换（兑现 L0 的 Proxy 预埋）（⏸️ 暂缓 2026-08-20：暂不考虑实现 TuiAltScreen，主屏为当前唯一运行形态；Proxy 预埋保留，主屏滚动冲突按已知边界接受，解除暂缓时按 p2-visual §7 六轮注记重启立项）
 
 **验收**：连续 30 分钟真实 coding 会话无渲染错乱、无焦点丢失；主题热切换后 transcript 经快照正确重放且编辑器草稿保留；`/btw` 在 agent 运行中插入旁白且 transcript 正确呈现；plain 基线完整可用；注册冲突在启动期暴露。
 
@@ -106,13 +106,13 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 - **render intent 注册表**（`ctx.blueIntents`）：`diff` / `terminal` 呈现器落地，generic 呈现降级为第一个注册者（✅ S7 已落地）
 - **transcript 性能（滑动窗口）**：保留最近 N turn，旧 turn 组件与条目整体销毁；turn 内旧 step 折叠为摘要行；渲染缓存策略固化（✅ S7 已落地窗口+step 折叠）
 - **图片**：Editor 粘贴图片（L0 `createImage` + 剪贴板工具 + `dsh-attachment` 借力）、`@` 附件（✅ S7 已落地粘贴路径：`blue-attachments` + `blue-paste-image`；`@` 附件待做）
-- **弹窗体系完整化**：model selector、审批 diff 全屏预览（100% overlay）、permission preset 设置面板（待上游 `permissionPresets`）
+- **弹窗体系完整化**：model selector、审批 diff 全屏预览（100% overlay）（⏸️ 暂缓 2026-08-20：暂不做，尚未调研清楚——交互形态与参照系对照待调研后再立项）、permission preset 设置面板（待上游 `permissionPresets`）
 - **外部编辑器**（Ctrl-G，需 L0 渲染器暂停配合）
 - **OSC 8 可点链接、OSC 52 复制、鼠标滚轮/文本选择**（alt-screen）
 - **模式命令**（`/yolo` `/plan` `/compact` `/model` 会话中切换）：随上游能力缝落地逐个接入
 - 子 agent / Task 工具的树形呈现组件（经 intent 缝）
 
-**验收**：5 万行级 session resume 后滚动流畅；参照系产品的常用交互有对应物或明确的"不做"结论。（2026-08-20 S17 期间 dogfood 实测：主屏模式下输出中移动终端滚动条会导致会话流乱跳——pi-tui 差分渲染的内部视口记账与终端 scrollback 脱节，主屏模式不可修复；"滚动流畅"验收以 **L0 alt-screen 项目**为前提，详见 p2-visual §7 六轮注记。）
+**验收**：5 万行级 session resume 后滚动流畅；参照系产品的常用交互有对应物或明确的"不做"结论。（2026-08-20 S17 期间 dogfood 实测：主屏模式下输出中移动终端滚动条会导致会话流乱跳——pi-tui 差分渲染的内部视口记账与终端 scrollback 脱节，主屏模式不可修复；“滚动流畅”验收以 **L0 alt-screen 项目**为前提，详见 p2-visual §7 六轮注记。⏸️ 2026-08-20 裁定暂不考虑实现 TuiAltScreen——该条验收随之挂起，主屏滚动冲突接受为已知边界；OSC 8/52/鼠标等标注 (alt-screen) 的条目维持门控。）
 
 ---
 
