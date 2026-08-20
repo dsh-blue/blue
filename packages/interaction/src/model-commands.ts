@@ -25,6 +25,7 @@ import { registerCommandAliases } from './command-meta.ts'
 import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
 import { EffortPanel, ModelPanel, type ModelPanelItem } from './model-panel.ts'
+import { ProviderPanel, runProviderAdd, type ProviderRow } from './provider-add.ts'
 
 /** Render one failure reason for an error result. */
 function describe(error: unknown): string {
@@ -152,11 +153,22 @@ type CatalogResult = { items: ModelPanelItem[] } | { error: string }
  * @param signal - the dispatching UI request's cancellation signal.
  * @returns the rows, or the guard's error text.
  */
-async function catalogRows(ctx: Context, signal: AbortSignal): Promise<CatalogResult> {
+async function catalogRows(
+  ctx: Context,
+  signal: AbortSignal,
+  filterProvider?: string,
+): Promise<CatalogResult> {
   const llm = ctx.get('llm')
   if (llm === undefined) return { error: 'the llm service is unavailable' }
+  const providers = llm.listProviders()
+  /* v8 ignore next 3 -- callers pass routes taken from listProviders; the
+     guard only trips when a route vanishes between the listing and here */
+  if (filterProvider !== undefined && !providers.some(provider => provider.id === filterProvider)) {
+    return { error: `provider "${filterProvider}" is not registered` }
+  }
   const rows: { provider: string, id: string, name: string }[] = []
-  for (const provider of llm.listProviders()) {
+  for (const provider of providers) {
+    if (filterProvider !== undefined && provider.id !== filterProvider) continue
     try {
       const models = await llm.listModels(provider.id)
       for (const model of models) {
@@ -207,52 +219,34 @@ export function registerModelCommands(ctx: Context): () => void {
   })
 
   /**
-   * The `/model` handler: no argument opens the picker over the catalog
-   * with each row's context metadata and the footer thinking control; an
-   * argument switches straight to that model id (the live provider's match
-   * wins an ambiguity).
-   * @param rawInput - the command's argument text.
-   * @param signal - the dispatching UI request's cancellation signal.
+   * Open the model picker over the catalog, optionally scoped to one
+   * provider route (`/provider` switch and the post-add step reuse this).
+   * @param signal - a cancellation signal for the catalog awaits.
+   * @param filterProvider - restrict the rows to one provider route.
    * @returns the command outcome.
    */
-  async function switchModel(rawInput: string, signal: AbortSignal): Promise<CommandResult> {
+  async function openModelPicker(signal: AbortSignal, filterProvider?: string): Promise<CommandResult> {
     const selection = readSelection(ctx)
     if ('error' in selection) return { kind: 'error', text: selection.error }
     const { agent, modelRef } = selection.read
-    const catalog = await catalogRows(ctx, signal)
+    const catalog = await catalogRows(ctx, signal, filterProvider)
+    /* v8 ignore next -- the llm guard ran in the calling handler; the
+       service cannot vanish mid-catalog on a live tree */
     if ('error' in catalog) return { kind: 'error', text: catalog.error }
     if (unloaded) return { kind: 'success' }
-    const argument = rawInput.trim()
-    const current = modelRef.current
-    if (argument !== '') {
-      const exact = catalog.items.filter(item => item.id === argument)
-      if (exact.length === 0) {
-        return { kind: 'error', text: `unknown model: ${argument}` }
-      }
-      const chosen = exact.length === 1
-        ? exact[0]
-        : exact.find(item => item.provider === current.provider)
-      if (chosen === undefined) {
-        return {
-          kind: 'error',
-          text: `ambiguous model id: ${argument} (${exact.map(item => `${item.provider}/${item.id}`).join(', ')})`,
-        }
-      }
-      const text = await commitModelSelection(
-        ctx,
-        modelRef,
-        { provider: chosen.provider, model: chosen.id },
-        true,
-      )
-      return { kind: 'success', text }
-    }
     if (catalog.items.length === 0) {
-      return { kind: 'success', text: 'no models advertised for the configured providers' }
+      return {
+        kind: 'success',
+        text: filterProvider === undefined
+          ? 'no models advertised for the configured providers'
+          : `provider "${filterProvider}" advertises no models`,
+      }
     }
     const display = displayServices(ctx)
     if (display === undefined) {
       return { kind: 'error', text: 'model picker is unavailable: the Blue screen is not mounted' }
     }
+    const current = modelRef.current
     const applySwitch = (item: ModelPanelItem, effort: string | undefined, persist: boolean): void => {
       void (async () => {
         const text = await commitModelSelection(
@@ -282,6 +276,9 @@ export function registerModelCommands(ctx: Context): () => void {
       ...(agent.session.requestHeader() !== undefined
         ? { warning: 'switching models starts a fresh prompt cache' }
         : {}),
+      ...(filterProvider !== undefined
+        ? { title: `Select a model · ${filterProvider}` }
+        : {}),
       onSelect: (item, effort) => {
         restore()
         applySwitch(item, effort, true)
@@ -298,6 +295,49 @@ export function registerModelCommands(ctx: Context): () => void {
     // dock slot, so below it only the footer remains.
     const restore = mountEditorReplacement(panel)
     return { kind: 'success' }
+  }
+
+  /**
+   * The `/model` handler: no argument opens the picker over the catalog
+   * with each row's context metadata and the footer thinking control; an
+   * argument switches straight to that model id (the live provider's match
+   * wins an ambiguity).
+   * @param rawInput - the command's argument text.
+   * @param signal - the dispatching UI request's cancellation signal.
+   * @returns the command outcome.
+   */
+  async function switchModel(rawInput: string, signal: AbortSignal): Promise<CommandResult> {
+    const selection = readSelection(ctx)
+    if ('error' in selection) return { kind: 'error', text: selection.error }
+    const { modelRef } = selection.read
+    const catalog = await catalogRows(ctx, signal)
+    if ('error' in catalog) return { kind: 'error', text: catalog.error }
+    if (unloaded) return { kind: 'success' }
+    const argument = rawInput.trim()
+    const current = modelRef.current
+    if (argument !== '') {
+      const exact = catalog.items.filter(item => item.id === argument)
+      if (exact.length === 0) {
+        return { kind: 'error', text: `unknown model: ${argument}` }
+      }
+      const chosen = exact.length === 1
+        ? exact[0]
+        : exact.find(item => item.provider === current.provider)
+      if (chosen === undefined) {
+        return {
+          kind: 'error',
+          text: `ambiguous model id: ${argument} (${exact.map(item => `${item.provider}/${item.id}`).join(', ')})`,
+        }
+      }
+      const text = await commitModelSelection(
+        ctx,
+        modelRef,
+        { provider: chosen.provider, model: chosen.id },
+        true,
+      )
+      return { kind: 'success', text }
+    }
+    return openModelPicker(signal)
   }
 
   /**
@@ -406,6 +446,110 @@ export function registerModelCommands(ctx: Context): () => void {
     return { kind: 'success', text }
   }
 
+  /**
+   * Open the scoped model picker from a fire-and-forget call site (the
+   * provider panel, the post-add step) and flash its outcome through the
+   * notice channel.
+   * @param route - the provider route to scope to.
+   */
+  function pickModels(route: string): void {
+    void (async () => {
+      const result = await openModelPicker(new AbortController().signal, route)
+      if (unloaded || result.kind !== 'error') return
+      const display = displayServices(ctx)
+      /* v8 ignore next -- the display quartet outlives the picker's awaits */
+      getSharedEditor()?.notice?.(display?.colors.error(result.text) ?? result.text)
+    })()
+  }
+
+  /**
+   * The `/provider` handler: no argument opens the provider panel (active
+   * routes with `← current`, dormant catalog vendors with
+   * `· not configured`, and the `+ Add provider` CTA); `switch <name>`
+   * opens the scoped model picker over that route's models (the picked
+   * model commits provider and model together); `add` runs the wizard.
+   * @param rawInput - the command's argument text.
+   * @param signal - the dispatching UI request's cancellation signal.
+   * @returns the command outcome.
+   */
+  async function manageProvider(rawInput: string, signal: AbortSignal): Promise<CommandResult> {
+    const argument = rawInput.trim()
+    const llm = ctx.get('llm')
+    if (llm === undefined) return { kind: 'error', text: 'the llm service is unavailable' }
+    if (argument === 'add') {
+      const display = displayServices(ctx)
+      if (display === undefined) {
+        return { kind: 'error', text: 'provider wizard is unavailable: the Blue screen is not mounted' }
+      }
+      const text = await runProviderAdd(ctx, display, pickModels)
+      return { kind: 'success', text }
+    }
+    if (argument.split(/\s+/)[0] === 'switch') {
+      const name = argument.slice('switch'.length).trim()
+      if (name.length === 0) return { kind: 'error', text: 'usage: /provider switch <name>' }
+      const lowered = name.toLowerCase()
+      const providers = llm.listProviders()
+      const match = providers.find(provider => provider.id.toLowerCase() === lowered)
+        ?? providers.find(provider => provider.name.toLowerCase() === lowered)
+      if (match === undefined) {
+        return {
+          kind: 'error',
+          text: `unknown provider: ${name} (registered: ${providers.map(provider => provider.id).join(', ')})`,
+        }
+      }
+      return openModelPicker(signal, match.id)
+    }
+    if (argument !== '') {
+      return { kind: 'error', text: 'usage: /provider [list | switch <name> | add]' }
+    }
+    const display = displayServices(ctx)
+    if (display === undefined) {
+      return { kind: 'error', text: 'provider picker is unavailable: the Blue screen is not mounted' }
+    }
+    const activeProviders = llm.listProviders()
+    const activeIds = new Set(activeProviders.map(provider => provider.id))
+    const dormant = llm.listConfigurableProviders().filter(entry => !activeIds.has(entry.provider))
+    const rows: ProviderRow[] = [
+      ...activeProviders.map(provider => ({
+        id: provider.id,
+        name: provider.name.length > 0 ? provider.name : provider.id,
+        active: true,
+      })),
+      ...dormant.map(entry => ({ id: entry.provider, name: entry.displayName, active: false })),
+    ]
+    const selection = readSelection(ctx)
+    const currentProvider = 'error' in selection ? '' : selection.read.modelRef.current.provider
+    const panel = new ProviderPanel({
+      keymap: display.keymap,
+      theme: display.theme,
+      components: display.components,
+      rows,
+      currentProvider,
+      onSelect: row => {
+        restore()
+        pickModels(row.id)
+      },
+      onDormant: row => {
+        restore()
+        getSharedEditor()?.notice?.(display.colors.error(
+          `provider "${row.id}" is not configured — add it with /provider add`,
+        ))
+      },
+      onAdd: () => {
+        restore()
+        void (async () => {
+          const text = await runProviderAdd(ctx, display, pickModels)
+          if (!unloaded) getSharedEditor()?.notice?.(text)
+        })()
+      },
+      onCancel: () => {
+        restore()
+      },
+    })
+    const restore = mountEditorReplacement(panel)
+    return { kind: 'success' }
+  }
+
   const model = ctx.commands.register({
     name: 'model',
     description: 'Switch the session model (no argument opens the picker)',
@@ -418,12 +562,19 @@ export function registerModelCommands(ctx: Context): () => void {
     input: { hint: '[level]' },
     handler: invocation => switchEffort(invocation.rawInput, invocation.signal),
   })
+  const provider = ctx.commands.register({
+    name: 'provider',
+    description: 'List providers, switch the route, or add one',
+    input: { hint: '[list | switch <provider> | add]' },
+    handler: invocation => manageProvider(invocation.rawInput, invocation.signal),
+  })
   // The kimi alias: `/thinking` is not a separate registration — the input
   // layer rewrites it to `/effort` before `ctx.commands.execute`.
   const effortAliases = registerCommandAliases('effort', ['thinking'])
   return () => {
     model()
     effort()
+    provider()
     effortAliases()
     stopUnloaded()
   }

@@ -45,6 +45,8 @@ function fakeModelRef(selection: ModelSelection): { ref: BlueModelSelectionRef, 
 /** The fake llm catalog: providers → models, with per-model metadata. */
 interface FakeCatalog {
   providers?: { id: string, name: string }[]
+  configurable?: { provider: string, displayName: string }[]
+  discovered?: { id: string, contextWindow?: number }[]
   models?: Record<string, { id: string, name: string }[]>
   /** Return a rejected metadata promise for these model ids. */
   failInfoFor?: string[]
@@ -62,6 +64,16 @@ function fakeLlm(catalog: FakeCatalog = {}): LlmRuntime {
   }
   return {
     listProviders: () => catalog.providers ?? [{ id: 'mock', name: 'Mock' }],
+    listConfigurableProviders: () => (catalog.configurable ?? [
+      { provider: 'anthropic', displayName: 'Anthropic' },
+    ]).map(entry => ({
+      provider: entry.provider,
+      displayName: entry.displayName,
+      settingsNs: 'llm-pi-ai',
+      settingsPath: ['providers', entry.provider],
+      declared: false,
+    })),
+    discoverModels: async () => [...catalog.discovered ?? []],
     listModels: async (provider: string) => {
       if (catalog.failListFor?.includes(provider)) throw new Error('catalog down')
       return [...models[provider] ?? []]
@@ -151,8 +163,10 @@ describe('model-family commands', () => {
     const names = ctx.commands.list(agent).map(command => command.name)
     expect(names).toContain('model')
     expect(names).toContain('effort')
+    expect(names).toContain('provider')
     expect(canonicalOf('thinking')).toBe('effort')
     expect(ctx.commands.find(agent, 'model')?.input?.hint).toBe('[name]')
+    expect(ctx.commands.find(agent, 'provider')?.input?.hint).toBe('[list | switch <provider> | add]')
   })
 
   it('unregisters both commands and the alias on unload', async () => {
@@ -160,6 +174,7 @@ describe('model-family commands', () => {
     await fiber.dispose()
     expect(ctx.commands.find(agent, 'model')).toBeUndefined()
     expect(ctx.commands.find(agent, 'effort')).toBeUndefined()
+    expect(ctx.commands.find(agent, 'provider')).toBeUndefined()
     expect(canonicalOf('thinking')).toBeUndefined()
   })
 
@@ -538,6 +553,160 @@ describe('model-family commands', () => {
       kind: 'success',
       text: 'Switched to mock-pro (mock) — failed to save default: plain failure',
     })
+  })
+
+  it('/provider opens the panel with active, dormant, and CTA rows', async () => {
+    const { ctx, screen, agent } = await mount()
+    const execution = await ctx.commands.execute(agent, '/provider', signal())
+    expect(execution?.result).toEqual({ kind: 'success' })
+    const rows = overlay(screen).render?.(80) ?? []
+    const active = rows.find(row => row.includes('Mock')) ?? ''
+    expect(active).toContain('(mock)')
+    expect(active).toContain('← current')
+    const dormant = rows.find(row => row.includes('Anthropic')) ?? ''
+    expect(dormant).toContain('_ · not configured_')
+    expect(rows.some(row => row.includes('+ Add provider'))).toBe(true)
+  })
+
+  it('/provider panel: dormant Enter flashes the pointer, active Enter opens the scoped picker', async () => {
+    const { ctx, screen, agent } = await mount()
+    await ctx.commands.execute(agent, '/provider', signal())
+    overlay(screen).handleInput(KEY.down)
+    overlay(screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(notices).toHaveLength(1) })
+    expect(notices[0]).toContain('!provider "anthropic" is not configured — add it with /provider add!')
+    await ctx.commands.execute(agent, '/provider', signal())
+    overlay(screen).handleInput(KEY.enter)
+    await vi.waitFor(() => {
+      const rows = screen.overlays[screen.overlays.length - 1]?.component.render?.(60) ?? []
+      expect(rows.some(row => row.includes('Select a model · mock'))).toBe(true)
+    })
+  })
+
+  it('/provider switch resolves by id or name and opens the scoped picker', async () => {
+    const { ctx, screen, agent } = await mount()
+    const execution = await ctx.commands.execute(agent, '/provider switch mock', signal())
+    expect(execution?.result).toEqual({ kind: 'success' })
+    const scoped = screen.overlays[0]?.component.render?.(60) ?? []
+    expect(scoped.some(row => row.includes('Select a model · mock'))).toBe(true)
+
+    const unknown = await mount()
+    expect((await unknown.ctx.commands.execute(unknown.agent, '/provider switch nope', signal()))?.result)
+      .toEqual({ kind: 'error', text: 'unknown provider: nope (registered: mock)' })
+    const usage = await mount()
+    expect((await usage.ctx.commands.execute(usage.agent, '/provider switch', signal()))?.result)
+      .toEqual({ kind: 'error', text: 'usage: /provider switch <name>' })
+    const bogus = await mount()
+    expect((await bogus.ctx.commands.execute(bogus.agent, '/provider bogus', signal()))?.result)
+      .toEqual({ kind: 'error', text: 'usage: /provider [list | switch <name> | add]' })
+  })
+
+  it('/provider add answers the host-services guard without settings', async () => {
+    const { ctx, agent } = await mount()
+    const execution = await ctx.commands.execute(agent, '/provider add', signal())
+    expect(execution?.result).toEqual({
+      kind: 'success',
+      text: 'provider configuration requires the host settings, credentials, and llm services',
+    })
+  })
+
+  it('/provider switch scopes the catalog and answers the empty case', async () => {
+    const { ctx, agent } = await mount({
+      catalog: {
+        providers: [{ id: 'mock', name: 'Mock' }, { id: 'other', name: 'Other' }],
+        models: { mock: [{ id: 'mock', name: 'Mock' }], other: [] },
+      },
+    })
+    const execution = await ctx.commands.execute(agent, '/provider switch other', signal())
+    expect(execution?.result).toEqual({
+      kind: 'success',
+      text: 'provider "other" advertises no models',
+    })
+  })
+
+  it('/provider panel without a session flashes the picker guard through Enter', async () => {
+    const { ctx, screen, agent } = await mount({ attach: false })
+    await ctx.commands.execute(agent, '/provider', signal())
+    overlay(screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(notices).toHaveLength(1) })
+    expect(notices[0]).toContain('no session is live yet')
+  })
+
+  it('/provider guards the llm and display services', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(CommandRuntime)
+    const session = ctx.sessions.create(SessionId('provider-no-llm'))
+    const agent = { id: session.id, session, status: 'idle' } as unknown as Agent
+    await ctx.plugin(commandsPlugin)
+    expect((await ctx.commands.execute(agent, '/provider', signal()))?.result)
+      .toEqual({ kind: 'error', text: 'the llm service is unavailable' })
+    await ctx.fiber.dispose()
+
+    const bare = new Context()
+    await bare.plugin(SessionStore)
+    await bare.plugin(CommandRuntime)
+    bare.provide('llm', fakeLlm())
+    const bareSession = bare.sessions.create(SessionId('provider-no-display'))
+    const bareAgent = { id: bareSession.id, session: bareSession, status: 'idle' } as unknown as Agent
+    await bare.plugin(commandsPlugin)
+    expect((await bare.commands.execute(bareAgent, '/provider', signal()))?.result)
+      .toEqual({ kind: 'error', text: 'provider picker is unavailable: the Blue screen is not mounted' })
+    expect((await bare.commands.execute(bareAgent, '/provider add', signal()))?.result)
+      .toEqual({ kind: 'error', text: 'provider wizard is unavailable: the Blue screen is not mounted' })
+    await bare.fiber.dispose()
+  })
+
+  it('/provider falls back to the route id for an unnamed provider', async () => {
+    const { ctx, screen, agent } = await mount({
+      catalog: { providers: [{ id: 'x', name: '' }] },
+    })
+    await ctx.commands.execute(agent, '/provider', signal())
+    const rows = overlay(screen).render?.(60) ?? []
+    expect(rows.some(row => row.includes('(x)'))).toBe(true)
+  })
+
+  it('/provider CTA runs the wizard; Escape closes the panel quietly', async () => {
+    const { ctx, screen, agent } = await mount()
+    await ctx.commands.execute(agent, '/provider', signal())
+    // Rows: mock (active), anthropic (dormant), then the CTA.
+    overlay(screen).handleInput(KEY.down)
+    overlay(screen).handleInput(KEY.down)
+    overlay(screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(notices).toHaveLength(1) })
+    expect(notices[0]).toContain('provider configuration requires')
+
+    const noticesBefore = notices.length
+    await ctx.commands.execute(agent, '/provider', signal())
+    overlay(screen).handleInput(KEY.escape)
+    expect(screen.overlays[screen.overlays.length - 1]?.hidden).toBe(true)
+    expect(notices.length).toBe(noticesBefore)
+  })
+
+  it('/provider switch returns quietly when the tree unloads mid-catalog', async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const llm = {
+      listProviders: () => [{ id: 'mock', name: 'Mock' }],
+      listModels: async () => { await gate; return [{ id: 'mock', name: 'Mock' }] },
+      resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model }),
+    } as unknown as LlmRuntime
+    const { ctx, agent, fiber } = await mount({ llm })
+    const pending = ctx.commands.execute(agent, '/provider switch mock', signal())
+    await fiber.dispose()
+    release()
+    expect((await pending)?.result).toEqual({ kind: 'success' })
+  })
+
+  it('/provider CTA suppresses the wizard outcome when the tree unloaded', async () => {
+    const { ctx, screen, agent, fiber } = await mount()
+    await ctx.commands.execute(agent, '/provider', signal())
+    await fiber.dispose()
+    overlay(screen).handleInput(KEY.down)
+    overlay(screen).handleInput(KEY.down)
+    overlay(screen).handleInput(KEY.enter)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(notices).toEqual([])
   })
 
   it('/effort session-only leaves the default untouched', async () => {
