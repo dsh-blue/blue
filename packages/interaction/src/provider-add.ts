@@ -518,6 +518,140 @@ async function fillModelDefaults(
   }))
 }
 
+/** The settings surface the edit flow reads and writes. */
+interface EditSettings {
+  get(ns: object): unknown
+  describe(): { ns: unknown, revision?: number }[]
+  mutate(ns: object, ops: unknown[], expected?: number): Promise<void>
+}
+
+/** The credentials surface the edit flow writes. */
+interface EditCredentials {
+  set(ref: object, value: string): Promise<void>
+  unset(ref: object): Promise<void>
+}
+
+/** One pi-ai provider profile as stored in settings. */
+interface ProviderProfile {
+  displayName?: string
+  api?: string
+  baseURL?: string
+  models?: unknown
+  apiKeyEnv?: string
+}
+
+/**
+ * Read one route's provider profile from the settings section.
+ * @param settings - the settings service.
+ * @param ns - the pi-ai namespace.
+ * @param route - the provider route id.
+ * @returns the stored profile, or undefined when absent.
+ */
+function readProfile(settings: EditSettings, ns: object, route: string): ProviderProfile | undefined {
+  const section = settings.get(ns)
+  if (typeof section !== 'object' || section === null) return undefined
+  const providers = (section as { providers?: Record<string, unknown> }).providers
+  const profile = providers?.[route]
+  return typeof profile === 'object' && profile !== null ? profile as ProviderProfile : undefined
+}
+
+/** The edit form's settlement: saved values, a delete request, or cancel. */
+type EditOutcome = { saved: Record<string, string> } | { delete: true } | { cancelled: true }
+
+/**
+ * Edit one configured provider: its display name, base URL, and API key
+ * (empty keeps the stored one), with Ctrl+D deleting the whole route after
+ * a typed confirmation. Save normalizes the base URL by the profile's
+ * protocol convention and keeps every untouched field (api, models,
+ * apiKeyEnv) exactly as stored.
+ * @param ctx - plugin context; `settings` and `credentials` resolve lazily.
+ * @param display - the resolved display quartet.
+ * @param route - the configured provider route id.
+ * @returns the outcome line for the notice channel.
+ */
+export async function runProviderEdit(ctx: Context, display: ProviderAddDisplay, route: string): Promise<string> {
+  const settings = ctx.get('settings') as EditSettings | undefined
+  const credentials = ctx.get('credentials') as EditCredentials | undefined
+  if (settings === undefined || credentials === undefined) {
+    return 'provider configuration requires the host settings and credentials services'
+  }
+  const ns = settingsNamespace('llm-pi-ai')
+  const profile = readProfile(settings, ns, route)
+  if (profile === undefined) {
+    return `provider "${route}" has no stored profile (catalog vendors carry none) — nothing to edit`
+  }
+  const outcome = await step<EditOutcome>(done => new FormPanel({
+    keymap: display.keymap,
+    theme: display.theme,
+    components: display.components,
+    title: `Configure ${route}`,
+    subtitle: 'empty fields keep their stored values',
+    fields: [
+      { id: 'name', label: 'Provider Name', initial: profile.displayName ?? route },
+      {
+        id: 'baseURL',
+        label: 'Base URL',
+        initial: profile.baseURL ?? '',
+        hint: profile.api === 'anthropic-messages'
+          ? 'no trailing /v1 — the client appends /v1/messages'
+          : 'include /v1',
+      },
+      { id: 'key', label: 'API key', mask: true, hint: 'empty keeps the stored key' },
+    ],
+    onSubmit: values => done({ saved: values }),
+    onCancel: () => done({ cancelled: true }),
+    onDelete: () => done({ delete: true }),
+  }))
+  if (outcome === undefined || 'cancelled' in outcome) return 'provider edit cancelled'
+  if ('delete' in outcome) {
+    const confirm = await fillForm(display, {
+      title: `Delete ${route}`,
+      subtitle: 'type y to remove the provider and its stored key',
+      fields: [
+        {
+          id: 'yes',
+          label: `Delete provider "${route}"?`,
+          required: true,
+          validate: value => value.toLowerCase() === 'y'
+            ? undefined
+            : 'type y to confirm, or Esc to keep the provider',
+        },
+      ],
+    })
+    if (confirm === undefined) return 'delete cancelled'
+    const revision = settings.describe().find(descriptor => String(descriptor.ns) === 'llm-pi-ai')?.revision
+    try {
+      await settings.mutate(ns, [{ op: 'unset', path: ['providers', route] }], revision)
+      await credentials.unset(credentialRef(deriveKeyRef(route)))
+    } catch (error) {
+      return `could not delete provider ${route}: ${describe(error)}`
+    }
+    return `provider "${route}" removed`
+  }
+  const saved = outcome.saved
+  const next: Record<string, unknown> = {
+    ...profile,
+    displayName: saved.name !== undefined && saved.name.trim() !== '' ? saved.name.trim() : route,
+    /* v8 ignore next 2 -- the form always delivers defined strings; the
+       undefined arms are exactOptionalPropertyTypes artifacts */
+    ...(saved.baseURL !== undefined && saved.baseURL !== ''
+      ? { baseURL: normalizeBaseURL(profile.api ?? 'openai-completions', saved.baseURL, undefined) }
+      : {}),
+  }
+  /* v8 ignore next -- same form-delivers-strings artifact */
+  const key = saved.key ?? ''
+  const revision = settings.describe().find(descriptor => String(descriptor.ns) === 'llm-pi-ai')?.revision
+  try {
+    await settings.mutate(ns, [{ op: 'set', path: ['providers', route], value: next }], revision)
+    if (key.trim().length > 0) {
+      await credentials.set(credentialRef(deriveKeyRef(route)), key.trim())
+    }
+  } catch (error) {
+    return `could not update provider ${route}: ${describe(error)}`
+  }
+  return `provider "${route}" updated`
+}
+
 /**
  * Run the Add Provider wizard to completion (or cancellation).
  * @param ctx - plugin context; `llm`, `settings`, and `credentials` are

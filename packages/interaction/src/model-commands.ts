@@ -25,7 +25,7 @@ import { registerCommandAliases } from './command-meta.ts'
 import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
 import { EffortPanel, ModelPanel, type ModelPanelItem } from './model-panel.ts'
-import { ProviderPanel, runProviderAdd, type ProviderRow } from './provider-add.ts'
+import { ProviderPanel, runProviderAdd, runProviderEdit, type ProviderRow } from './provider-add.ts'
 
 /** Render one failure reason for an error result. */
 function describe(error: unknown): string {
@@ -492,11 +492,7 @@ export function registerModelCommands(ctx: Context): () => void {
    */
   function pickModels(route: string): void {
     void (async () => {
-      const result = await openModelPicker(new AbortController().signal, route)
-      if (unloaded || result.kind !== 'error') return
-      const display = displayServices(ctx)
-      /* v8 ignore next -- the display quartet outlives the picker's awaits */
-      getSharedEditor()?.notice?.(display?.colors.error(result.text) ?? result.text)
+      await openModelPicker(new AbortController().signal, route)
     })()
   }
 
@@ -560,7 +556,12 @@ export function registerModelCommands(ctx: Context): () => void {
       currentProvider,
       onSelect: row => {
         restore()
-        pickModels(row.id)
+        void (async () => {
+          const text = await runProviderEdit(ctx, display, row.id)
+          /* v8 ignore next -- cordis disposal kills the continuation on a
+             dead context before the notice could fire */
+          if (!unloaded) getSharedEditor()?.notice?.(text)
+        })()
       },
       onAdd: () => {
         restore()

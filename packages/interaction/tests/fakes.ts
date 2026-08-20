@@ -304,6 +304,12 @@ export class FakeBlueEditor implements BlueEditor {
       if (!this.disableSubmit) this.onSubmit?.(this.text)
       return
     }
+    // Backspace deletes (the pi-tui Editor contract); anything else appends.
+    if (data === '\x7f') {
+      this.text = this.text.slice(0, -1)
+      this.onChange?.(this.text)
+      return
+    }
     this.text += data
     this.onChange?.(this.text)
   }

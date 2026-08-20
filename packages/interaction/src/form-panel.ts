@@ -15,7 +15,6 @@
  */
 
 import type { BlueComponents, BlueEditor, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
-import { withSideBorders } from '@dsh-blue/blue-core/chrome'
 import {
   ACTION_CANCEL,
   ACTION_MOVE_DOWN,
@@ -66,6 +65,11 @@ export interface FormPanelOptions {
   readonly onSubmit: (values: Record<string, string>) => void
   /** Called when the cancel key is pressed. */
   readonly onCancel: () => void
+  /**
+   * Called when Ctrl+D is pressed (the delete affordance — the provider
+   * edit form). Absent fields never see the key.
+   */
+  readonly onDelete?: () => void
 }
 
 /** The trailing cursor block on the active field's row. */
@@ -155,6 +159,10 @@ export class FormPanel implements BlueFocusable {
       this.options.onCancel()
       return
     }
+    if (data === '\x04' && this.options.onDelete !== undefined) {
+      this.options.onDelete()
+      return
+    }
     this.editors[this.active]?.handleInput?.(data)
   }
 
@@ -200,29 +208,37 @@ export class FormPanel implements BlueFocusable {
       const painted = active
         ? `${prefix}${colors.text(shown)}${cursor}`
         : `${prefix}${colors.muted(shown)}`
-      body.push(components.truncateToWidth(painted, inner - 2))
+      body.push(`  ${painted}`)
       body.push('')
     })
     const last = fields.length - 1
+    const deletePart = this.options.onDelete !== undefined
+      ? `  ·  ${colors.textStrong('Ctrl+D')} delete`
+      : ''
     const footer = this.editors.length === 1
-      ? `${colors.textStrong('Enter')} to submit  ·  ${colors.textStrong('Esc')} to cancel`
+      ? `${colors.textStrong('Enter')} to submit  ·  ${colors.textStrong('Esc')} to cancel${deletePart}`
       : this.active === last
-        ? `${colors.textStrong('Tab')} / ↑↓ fields  ·  ${colors.textStrong('Enter')} to submit  ·  ${colors.textStrong('Esc')} to cancel`
-        : `${colors.textStrong('Tab')} / ↑↓ fields  ·  ${colors.textStrong('Enter')} for next field  ·  ${colors.textStrong('Esc')} to cancel`
+        ? `${colors.textStrong('Tab')} / ↑↓ fields  ·  ${colors.textStrong('Enter')} to submit  ·  ${colors.textStrong('Esc')} to cancel${deletePart}`
+        : `${colors.textStrong('Tab')} / ↑↓ fields  ·  ${colors.textStrong('Enter')} for next field  ·  ${colors.textStrong('Esc')} to cancel${deletePart}`
     body.push(components.truncateToWidth(`  ${footer}`, inner - 2))
     body.push('')
-    // Pad every row to the inner width, cap with rules, and let
-    // withSideBorders turn the rules into the rounded frame.
-    const padded = body.map(row => {
-      const cut = components.truncateToWidth(row, inner - 2)
-      return cut + ' '.repeat(Math.max(0, inner - 2 - components.visibleWidth(cut)))
-    })
-    return withSideBorders(
-      ['─'.repeat(inner), ...padded, '─'.repeat(inner)],
-      colors.border,
-    )
+    // Explicit borders: every content row is wrapped in `│  …  │` with the
+    // content clipped to the inner width — SGR-led rows keep their left
+    // border (the space-guessing withSideBorders overlay loses it).
+    // │ + content(rows carry their own 2-space indent) + │ = inner.
+    const contentWidth = inner - 2
+    const bar = colors.border('│')
+    const wrap = (row: string): string => {
+      const cut = components.truncateToWidth(row, contentWidth)
+      const pad = ' '.repeat(Math.max(0, contentWidth - components.visibleWidth(cut)))
+      return `${bar}${cut}${pad}${bar}`
+    }
+    return [
+      colors.border(`╭${'─'.repeat(inner - 2)}╮`),
+      ...body.map(wrap),
+      colors.border(`╰${'─'.repeat(inner - 2)}╯`),
+    ]
   }
-
   /** The subtitle, or a blank line when the form carries none. */
   private subtitleOrBlank(): string {
     return this.options.subtitle ?? ' '

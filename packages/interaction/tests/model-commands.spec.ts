@@ -575,14 +575,43 @@ describe('model-family commands', () => {
     expect(rows.some(row => row.includes('+ Add provider'))).toBe(true)
   })
 
-  it('/provider panel: Enter on a configured row opens the scoped picker', async () => {
-    const { ctx, screen, agent } = await mount()
+  it('/provider panel: Enter on a configured row opens the edit form', async () => {
+    const settings = {
+      get: (ns: object) => String(ns) === 'llm-pi-ai'
+        ? { providers: { mock: { api: 'openai-completions', baseURL: 'https://mock.example.com/v1', apiKeyEnv: 'MOCK_API_KEY' } } }
+        : undefined,
+      describe: () => [{ ns: 'llm-pi-ai', revision: 7 }],
+      mutate: async () => {},
+    }
+    const { ctx, screen, agent } = await mount({ settings, credentials: { set: async () => {}, unset: async () => {} } })
     await ctx.commands.execute(agent, '/provider', signal())
     overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => {
-      const rows = screen.overlays[screen.overlays.length - 1]?.component.render?.(60) ?? []
-      expect(rows.some(row => row.includes('Select a model · Mock'))).toBe(true)
+      const rows = screen.overlays[screen.overlays.length - 1]?.component.render?.(80) ?? []
+      expect(rows.some(row => row.includes('Configure mock'))).toBe(true)
+      expect(rows.some(row => row.includes('Base URL'))).toBe(true)
+      expect(rows.some(row => row.includes('API key'))).toBe(true)
     })
+  })
+
+  it('/provider Enter edit surfaces its outcome through the notice', async () => {
+    const settings = {
+      get: () => ({ providers: { mock: { baseURL: 'https://x', apiKeyEnv: 'MOCK_API_KEY' } } }),
+      describe: () => [{ ns: 'llm-pi-ai', revision: 7 }],
+      mutate: async () => {},
+    }
+    const { ctx, screen, agent } = await mount({ settings, credentials: { set: async () => {}, unset: async () => {} } })
+    await ctx.commands.execute(agent, '/provider', signal())
+    overlay(screen).handleInput(KEY.enter)
+    // The edit form mounts; submit with untouched fields.
+    await vi.waitFor(() => {
+      const rows = screen.overlays[screen.overlays.length - 1]?.component.render?.(80) ?? []
+      expect(rows.some(row => row.includes('Configure mock'))).toBe(true)
+    })
+    overlay(screen).handleInput(KEY.tab)
+    overlay(screen).handleInput(KEY.tab)
+    overlay(screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(notices).toContain('provider "mock" updated') })
   })
 
   it('/provider falls back to the id for providers with no display name', async () => {
@@ -640,12 +669,19 @@ describe('model-family commands', () => {
     })
   })
 
-  it('/provider panel without a session flashes the picker guard through Enter', async () => {
-    const { ctx, screen, agent } = await mount({ attach: false })
+  it('/provider panel Enter edit works without a live session (settings only)', async () => {
+    const settings = {
+      get: () => ({ providers: { mock: { baseURL: 'https://x', apiKeyEnv: 'MOCK_API_KEY' } } }),
+      describe: () => [{ ns: 'llm-pi-ai', revision: 7 }],
+      mutate: async () => {},
+    }
+    const { ctx, screen, agent } = await mount({ attach: false, settings, credentials: { set: async () => {}, unset: async () => {} } })
     await ctx.commands.execute(agent, '/provider', signal())
     overlay(screen).handleInput(KEY.enter)
-    await vi.waitFor(() => { expect(notices).toHaveLength(1) })
-    expect(notices[0]).toContain('no session is live yet')
+    await vi.waitFor(() => {
+      const rows = screen.overlays[screen.overlays.length - 1]?.component.render?.(80) ?? []
+      expect(rows.some(row => row.includes('Configure mock'))).toBe(true)
+    })
   })
 
   it('/provider guards the llm and display services', async () => {

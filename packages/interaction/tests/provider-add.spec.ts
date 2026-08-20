@@ -10,7 +10,7 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
-import { ENDPOINT_PROTOCOLS, ProviderPanel, deriveKeyRef, runProviderAdd, type ProviderRow } from '../src/provider-add.ts'
+import { ENDPOINT_PROTOCOLS, ProviderPanel, deriveKeyRef, runProviderAdd, runProviderEdit, type ProviderRow } from '../src/provider-add.ts'
 import { setModelsDevLoader, type ModelsDevIndex } from '../src/models-dev.ts'
 import { buildIndex } from '../src/models-dev.ts'
 
@@ -105,10 +105,12 @@ describe('ProviderPanel', () => {
 })
 
 /** The fake settings service capturing mutations. */
-function fakeSettings(behavior: { failMutate?: unknown } = {}) {
+function fakeSettings(behavior: { failMutate?: unknown, section?: Record<string, unknown> } = {}) {
   const mutations: { ns: string, ops: unknown[], expected: number | undefined }[] = []
   const revisions = new Map<string, number>([['llm-pi-ai', 7]])
+  const section: Record<string, unknown> = behavior.section ?? {}
   const provider = {
+    get: (ns: object) => (String(ns) === 'llm-pi-ai' ? section : undefined),
     describe: () => [{ ns: 'llm-pi-ai', revision: revisions.get('llm-pi-ai') ?? 0 }],
     mutate: async (ns: object, ops: unknown[], expected?: number) => {
       mutations.push({ ns: String(ns), ops: [...ops], expected })
@@ -119,7 +121,7 @@ function fakeSettings(behavior: { failMutate?: unknown } = {}) {
       revisions.set(String(ns), (revisions.get(String(ns)) ?? 0) + 1)
     },
   }
-  return { provider: provider as unknown as SettingsProvider, mutations }
+  return { provider: provider as unknown as SettingsProvider, mutations, section }
 }
 
 /** The fake credentials service with a set spy. */
@@ -127,13 +129,9 @@ function fakeCredentials(behavior: { failSet?: Error } = {}) {
   const set = vi.fn(async (_ref: object, _value: string) => {
     if (behavior.failSet !== undefined) throw behavior.failSet
   })
-  const provider = {
-    set,
-    unset: async () => {},
-    resolve: async () => undefined,
-    describe: async () => ({ configured: false, writable: true }),
-  }
-  return { provider: provider as unknown as CredentialProvider, set }
+  const unset = vi.fn(async () => {})
+  const provider = { set, unset, resolve: async () => undefined, describe: async () => ({ configured: false, writable: true }) }
+  return { provider: provider as unknown as CredentialProvider, set, unset }
 }
 
 /** The wizard's llm surface: catalog, configurable directory, discovery. */
@@ -203,14 +201,16 @@ interface Bench {
   readonly ctx: Context
   readonly screen: FakeScreen
   readonly mutations: { ns: string, ops: unknown[], expected: number | undefined }[]
+  readonly section: Record<string, unknown>
   readonly credentialSet: ReturnType<typeof vi.fn>
+  readonly credentialUnset: ReturnType<typeof vi.fn>
   readonly picker: ReturnType<typeof vi.fn>
   readonly display: { keymap: never, theme: never, components: never }
 }
 
 /** Mount a context with the wizard's fake services and display quartet. */
 function mountWizard(catalog: Parameters<typeof wizardLlm>[0], behavior: {
-  settings?: { failMutate?: unknown }
+  settings?: { failMutate?: unknown, section?: Record<string, unknown> }
   credentials?: { failSet?: Error }
   withSettings?: boolean
   withCredentials?: boolean
@@ -225,7 +225,9 @@ function mountWizard(catalog: Parameters<typeof wizardLlm>[0], behavior: {
     ctx,
     screen,
     mutations: settings.mutations,
+    section: settings.section,
     credentialSet: credentials.set,
+    credentialUnset: credentials.unset,
     picker: vi.fn(),
     display: { keymap, theme, components } as never,
   }
@@ -670,6 +672,215 @@ describe('runProviderAdd', () => {
     expect((manual.render?.(120) ?? []).some(row => row.includes('the endpoint listed no models'))).toBe(true)
     manual.handleInput(KEY.escape)
     await expect(outcome).resolves.toBe('add provider cancelled')
+  })
+
+  it('edits a configured provider and keeps untouched fields', async () => {
+    const bench = mountWizard({}, {
+      settings: { section: { providers: { 'my-gw': {
+        api: 'anthropic-messages',
+        baseURL: 'https://old.example.com/v1',
+        models: [{ id: 'keep-me' }],
+        apiKeyEnv: 'MY_GW_API_KEY',
+      } } } },
+    })
+    const outcome = runProviderEdit(bench.ctx, bench.display, 'my-gw')
+    await vi.waitFor(() => {
+      const rows = (current(bench.screen).render?.(80) ?? []).join('\n')
+      expect(rows).toContain('Configure my-gw')
+    })
+    const form = current(bench.screen)
+    // Prefilled: name (route fallback), base URL; the key starts empty.
+    // Clear the name field and retype, then walk to the key.
+    form.handleInput('\t')
+    for (let i = 0; i < 40; i += 1) form.handleInput('\x7f')
+    form.handleInput('https://new.example.com')
+    form.handleInput('\t')
+    form.handleInput('fresh-key')
+    form.handleInput(KEY.enter)
+    await expect(outcome).resolves.toBe('provider "my-gw" updated')
+    const op = ((bench.mutations[0] ?? { ops: [] }).ops as { op: string, path: string[], value?: Record<string, unknown> }[])[0]!
+    expect(op.op).toBe('set')
+    expect(op.path).toEqual(['providers', 'my-gw'])
+    // api/models/apiKeyEnv kept; the anthropic base strips its trailing /v1.
+    expect(op.value).toMatchObject({
+      api: 'anthropic-messages',
+      baseURL: 'https://new.example.com',
+      apiKeyEnv: 'MY_GW_API_KEY',
+      models: [{ id: 'keep-me' }],
+    })
+    expect(bench.credentialSet).toHaveBeenCalledWith(credentialRef('MY_GW_API_KEY'), 'fresh-key')
+  })
+
+  it('keeps the stored base URL and key when the edit fields stay empty', async () => {
+    const bench = mountWizard({}, {
+      settings: { section: { providers: { keepall: {
+        api: 'openai-completions',
+        baseURL: 'https://keep.example.com/v1',
+        apiKeyEnv: 'KEEPALL_API_KEY',
+      } } } },
+    })
+    const outcome = runProviderEdit(bench.ctx, bench.display, 'keepall')
+    await vi.waitFor(() => {
+      expect((current(bench.screen).render?.(80) ?? []).join('\n')).toContain('Configure keepall')
+    })
+    // Walk to the last field and submit with everything untouched.
+    current(bench.screen).handleInput(KEY.tab)
+    current(bench.screen).handleInput(KEY.tab)
+    current(bench.screen).handleInput(KEY.enter)
+    await expect(outcome).resolves.toBe('provider "keepall" updated')
+    const op = ((bench.mutations[0] ?? { ops: [] }).ops as { value?: Record<string, unknown> }[])[0]!
+    expect(op.value).toMatchObject({
+      api: 'openai-completions',
+      baseURL: 'https://keep.example.com/v1',
+      displayName: 'keepall',
+    })
+    expect(bench.credentialSet).not.toHaveBeenCalled()
+  })
+
+  it('reports a failed edit write', async () => {
+    const bench = mountWizard({}, {
+      settings: {
+        failMutate: new Error('locked'),
+        section: { providers: { stuck: { baseURL: 'https://x' } } },
+      },
+    })
+    const outcome = runProviderEdit(bench.ctx, bench.display, 'stuck')
+    await vi.waitFor(() => {
+      expect((current(bench.screen).render?.(80) ?? []).join('\n')).toContain('Configure stuck')
+    })
+    current(bench.screen).handleInput(KEY.tab)
+    current(bench.screen).handleInput(KEY.tab)
+    current(bench.screen).handleInput(KEY.enter)
+    await expect(outcome).resolves.toBe('could not update provider stuck: locked')
+  })
+
+  it('deletes a configured provider after the typed confirmation', async () => {
+    const bench = mountWizard({}, {
+      settings: { section: { providers: { gone: { baseURL: 'https://x', apiKeyEnv: 'GONE_API_KEY' } } } },
+    })
+    const outcome = runProviderEdit(bench.ctx, bench.display, 'gone')
+    await vi.waitFor(() => {
+      expect((current(bench.screen).render?.(80) ?? []).join('\n')).toContain('Configure gone')
+    })
+    current(bench.screen).handleInput('\x04')
+    await vi.waitFor(() => {
+      expect((current(bench.screen).render?.(80) ?? []).join('\n')).toContain('Delete gone')
+    })
+    current(bench.screen).handleInput('y')
+    current(bench.screen).handleInput(KEY.enter)
+    await expect(outcome).resolves.toBe('provider "gone" removed')
+    const op = ((bench.mutations[0] ?? { ops: [] }).ops as { op: string, path: string[] }[])[0]!
+    expect(op.op).toBe('unset')
+    expect(op.path).toEqual(['providers', 'gone'])
+    expect(bench.credentialUnset).toHaveBeenCalledWith(credentialRef('GONE_API_KEY'))
+  })
+
+  it('covers the no-base-URL and cleared-name edit corners', async () => {
+    // A profile without baseURL (its initial falls back); the name field
+    // is cleared to empty (the displayName falls back to the route).
+    const bench = mountWizard({}, {
+      settings: { section: { providers: { bare: { apiKeyEnv: 'BARE_API_KEY' } } } },
+    })
+    const outcome = runProviderEdit(bench.ctx, bench.display, 'bare')
+    await vi.waitFor(() => {
+      expect((current(bench.screen).render?.(80) ?? []).join('\n')).toContain('Configure bare')
+    })
+    const form = current(bench.screen)
+    // Clear the name, type a fresh base URL, leave the key empty.
+    for (let i = 0; i < 10; i += 1) form.handleInput('\x7f')
+    form.handleInput(KEY.tab)
+    form.handleInput('https://bare2.example.com/v1')
+    form.handleInput(KEY.tab)
+    form.handleInput(KEY.enter)
+    await expect(outcome).resolves.toBe('provider "bare" updated')
+    const op = ((bench.mutations[0] ?? { ops: [] }).ops as { value?: Record<string, unknown> }[])[0]!
+    expect(op.value).toMatchObject({
+      displayName: 'bare',
+      baseURL: 'https://bare2.example.com/v1',
+    })
+  })
+
+  it('rejects a non-y delete confirmation', async () => {
+    const bench = mountWizard({}, {
+      settings: { section: { providers: { unsure: { baseURL: 'https://x' } } } },
+    })
+    const outcome = runProviderEdit(bench.ctx, bench.display, 'unsure')
+    await vi.waitFor(() => {
+      expect((current(bench.screen).render?.(80) ?? []).join('\n')).toContain('Configure unsure')
+    })
+    current(bench.screen).handleInput('\x04')
+    await vi.waitFor(() => {
+      expect((current(bench.screen).render?.(80) ?? []).join('\n')).toContain('Delete unsure')
+    })
+    current(bench.screen).handleInput('n')
+    current(bench.screen).handleInput(KEY.enter)
+    expect((current(bench.screen).render?.(80) ?? []).join('\n')).toContain('type y to confirm')
+    current(bench.screen).handleInput('\x7f')
+    current(bench.screen).handleInput('y')
+    current(bench.screen).handleInput(KEY.enter)
+    await expect(outcome).resolves.toBe('provider "unsure" removed')
+  })
+
+  it('answers a non-object section and a cancelled delete confirm', async () => {
+    const empty = mountWizard({}, { settings: { section: 'not-an-object' } })
+    await expect(runProviderEdit(empty.ctx, empty.display, 'x'))
+      .resolves.toContain('no stored profile')
+
+    const bench = mountWizard({}, {
+      settings: { section: { providers: { stay: { baseURL: 'https://x' } } } },
+    })
+    const outcome = runProviderEdit(bench.ctx, bench.display, 'stay')
+    await vi.waitFor(() => {
+      expect((current(bench.screen).render?.(80) ?? []).join('\n')).toContain('Configure stay')
+    })
+    current(bench.screen).handleInput('\x04')
+    await vi.waitFor(() => {
+      expect((current(bench.screen).render?.(80) ?? []).join('\n')).toContain('Delete stay')
+    })
+    current(bench.screen).handleInput(KEY.escape)
+    await expect(outcome).resolves.toBe('delete cancelled')
+    expect(bench.mutations).toEqual([])
+  })
+
+  it('reports a failed delete write', async () => {
+    const bench = mountWizard({}, {
+      settings: {
+        failMutate: new Error('read-only'),
+        section: { providers: { locked: { baseURL: 'https://x' } } },
+      },
+    })
+    const outcome = runProviderEdit(bench.ctx, bench.display, 'locked')
+    await vi.waitFor(() => {
+      expect((current(bench.screen).render?.(80) ?? []).join('\n')).toContain('Configure locked')
+    })
+    current(bench.screen).handleInput('\x04')
+    await vi.waitFor(() => {
+      expect((current(bench.screen).render?.(80) ?? []).join('\n')).toContain('Delete locked')
+    })
+    current(bench.screen).handleInput('y')
+    current(bench.screen).handleInput(KEY.enter)
+    await expect(outcome).resolves.toBe('could not delete provider locked: read-only')
+  })
+
+  it('answers the edit guards: missing services, profile-less routes, cancel', async () => {
+    const noServices = mountWizard({}, { withSettings: false })
+    await expect(runProviderEdit(noServices.ctx, noServices.display, 'mock'))
+      .resolves.toBe('provider configuration requires the host settings and credentials services')
+
+    const profileless = mountWizard({})
+    await expect(runProviderEdit(profileless.ctx, profileless.display, 'mock'))
+      .resolves.toContain('no stored profile')
+
+    const bench = mountWizard({}, {
+      settings: { section: { providers: { keep: { baseURL: 'https://x' } } } },
+    })
+    const outcome = runProviderEdit(bench.ctx, bench.display, 'keep')
+    await vi.waitFor(() => {
+      expect((current(bench.screen).render?.(80) ?? []).join('\n')).toContain('Configure keep')
+    })
+    current(bench.screen).handleInput(KEY.escape)
+    await expect(outcome).resolves.toBe('provider edit cancelled')
+    expect(bench.mutations).toEqual([])
   })
 
   it('cancels at the adopt step after a successful discovery', async () => {

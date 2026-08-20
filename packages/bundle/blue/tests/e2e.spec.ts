@@ -2257,8 +2257,12 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Providers') })
     expect(tree.terminal.output).toContain('← current')
     expect(tree.terminal.output).toContain('+ Add provider')
+    // Enter on a configured row routes to the edit flow; without the host
+    // settings services this tree answers their guard notice.
     tree.terminal.sendInput('\r')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Select a model · mock') })
+    await vi.waitFor(() => {
+      expect(tree.terminal.output).toContain('provider configuration requires the host settings and credentials services')
+    })
     await expect(executeCommand(tree, agent, '/provider switch nope'))
       .resolves.toEqual({ kind: 'error', text: 'unknown provider: nope (registered: mock)' })
     await expect(executeCommand(tree, agent, '/provider bogus'))
