@@ -16,8 +16,9 @@
  */
 
 import { execFile } from 'node:child_process'
+import { statSync, type Dirent } from 'node:fs'
 import { readdir, stat } from 'node:fs/promises'
-import type { Dirent } from 'node:fs'
+import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import type { BlueAutocompleteItem, BlueAutocompleteSuggestions } from '@dsh-blue/blue-core'
 
@@ -239,4 +240,89 @@ export async function fsMentionSuggestions(
   const ranked = rankFsMentionCandidates(candidates, query).slice(0, MAX_FALLBACK_SUGGESTIONS)
   if (ranked.length === 0) return null
   return { prefix: atPrefix, items: ranked.map(toMentionItem) }
+}
+
+/**
+ * The effective scoring query of a mention token: the tail after the last
+ * separator, matching the fd pipeline's scoped-query split (`@docs/ma`
+ * scores against `ma` inside `docs/`).
+ * @param atPrefix - the mention token with its `@`.
+ * @returns the tail query (empty for a bare `@` or a directory drill-down).
+ */
+function mentionTailQuery(atPrefix: string): string {
+  const query = atPrefix.slice(1)
+  const slash = query.lastIndexOf('/')
+  return slash === -1 ? query : query.slice(slash + 1)
+}
+
+/** Entry cap on a one-level mention listing (a huge cwd stays bounded). */
+const DIRECTORY_MENTION_LIMIT = 50
+
+/**
+ * The one-level mention listing behind an empty-tail token (the S22
+ * dogfood stable-order ruling): a bare `@` or a directory drill-down
+ * (`@docs/`) lists the resolved directory's own entries — directories
+ * first, then files, `localeCompare` within each — instead of the fd
+ * pipeline's empty-query shape (every entry scored equal, cut to the top
+ * 20 of an arbitrary traversal order, so the shallow entries a bare `@`
+ * should surface may never reach the list). Query-bearing tokens return
+ * `null` here and keep the fd pipeline.
+ * @param cwd - the session root relative bases resolve against.
+ * @param atPrefix - the mention token with its `@` (its typed base —
+ *   relative, `~/`, or absolute — is preserved verbatim in the values).
+ * @param signal - aborts the listing.
+ * @returns the suggestion set, or `null` for a query-bearing token, a
+ *   base that is not a directory, an empty listing, or an aborted call.
+ */
+export async function listDirectoryMentions(
+  cwd: string,
+  atPrefix: string,
+  signal: AbortSignal,
+): Promise<BlueAutocompleteSuggestions | null> {
+  if (mentionTailQuery(atPrefix).length > 0) return null
+  if (signal.aborted) return null
+  const base = atPrefix.slice(1)
+  const resolved = base === ''
+    ? cwd
+    : base.startsWith('/')
+      ? base
+      : base.startsWith('~/')
+        ? join(homedir(), base.slice(2))
+        : join(cwd, base)
+  let directory: Dirent[]
+  try {
+    // readdir itself rejects non-directories (ENOTDIR — including a file
+    // path under a trailing-separator base) and missing paths alike.
+    directory = await readdir(resolved, { withFileTypes: true })
+  } catch {
+    return null
+  }
+  if (signal.aborted) return null
+  const items: BlueAutocompleteItem[] = []
+  for (const entry of directory) {
+    if (entry.name === '.git' || entry.name === 'node_modules') continue
+    const displayPath = `${base}${entry.name}`
+    let isDirectory = entry.isDirectory()
+    if (!isDirectory && entry.isSymbolicLink()) {
+      try {
+        isDirectory = statSync(join(resolved, entry.name)).isDirectory()
+      } catch {
+        // Broken symlink or permission error — stays a file candidate.
+      }
+    }
+    const valuePath = isDirectory ? `${displayPath}/` : displayPath
+    items.push({
+      value: valuePath.includes(' ') ? `@"${valuePath}"` : `@${valuePath}`,
+      label: `${entry.name}${isDirectory ? '/' : ''}`,
+      description: displayPath,
+    })
+  }
+  items.sort((a, b) => {
+    const aDir = a.label.endsWith('/')
+    const bDir = b.label.endsWith('/')
+    if (aDir !== bDir) return aDir ? -1 : 1
+    return a.label.localeCompare(b.label)
+  })
+  const visible = items.slice(0, DIRECTORY_MENTION_LIMIT)
+  return visible.length === 0 ? null : { prefix: atPrefix, items: visible }
 }

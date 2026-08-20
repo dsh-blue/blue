@@ -44,7 +44,7 @@ import {
   markEditorEnhancement,
   type SharedEditor,
 } from './editor-instance.ts'
-import { detectFdPath, extractAtPrefix, fsMentionSuggestions } from './file-mention.ts'
+import { detectFdPath, extractAtPrefix, fsMentionSuggestions, listDirectoryMentions } from './file-mention.ts'
 import { getStashedInputMode, stashHistory, stashInputMode } from './draft-stash.ts'
 import { ACTION_BACKSPACE, ACTION_CANCEL } from './keys.ts'
 import { sanitizeShellOutput } from './shell-sanitize.ts'
@@ -163,10 +163,14 @@ function createAutocompleteProvider(
       const atPrefix = extractAtPrefix(line.slice(0, cursorCol))
       if (atPrefix !== null) {
         let suggestions: BlueAutocompleteSuggestions | null = null
-        // fd's genuine no-match stays null (kimi: no fallback on it); only
-        // a missing or throwing fd runs the scanner.
-        let fellBack = fdPath === null
-        if (fdPath !== null) {
+        // Empty-tail tokens (a bare `@` or a directory drill-down) take the
+        // one-level listing: deterministic, shallow, exactly the entries of
+        // the resolved directory. Everything else — query-bearing tokens —
+        // runs the fd pipeline (fd's genuine no-match stays null, kimi: no
+        // fallback on it); only a missing or throwing fd runs the scanner.
+        suggestions = await listDirectoryMentions(cwd, atPrefix, options.signal)
+        let fellBack = suggestions === null && fdPath === null
+        if (suggestions === null && fdPath !== null) {
           try {
             suggestions = await inner.getSuggestions(lines, cursorLine, cursorCol, options)
           } catch {
@@ -174,7 +178,9 @@ function createAutocompleteProvider(
             fellBack = true
           }
         }
-        if (fellBack) suggestions = await fsMentionSuggestions(cwd, atPrefix, options.signal)
+        if (suggestions === null && fellBack) {
+          suggestions = await fsMentionSuggestions(cwd, atPrefix, options.signal)
+        }
         // An empty mention result would close the dropdown without a
         // trace — the empty-session-cwd corner read as "@ is dead". Flash
         // the hint line instead; a superseded (aborted) round stays quiet.

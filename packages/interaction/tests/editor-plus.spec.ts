@@ -738,27 +738,33 @@ describe('blue-editor-plus @ mentions', () => {
     expect(provider.shouldTriggerFileCompletion?.([], 0, 0)).toBe(false)
   })
 
-  it('falls back to the fs scanner when fd is unavailable', async () => {
+  it('lists one level for a bare @ without consulting fd, and drills on request', async () => {
+    fileMention.setFdProbe(async () => 'fd')
+    const { ctx, editor, components } = await mount()
+    await fileMention.detectFdPath()
+    const delegated = vi.fn(async () => ({ items: [{ value: '@zz.ts', label: 'zz.ts' }], prefix: '@' }))
+    components.mentionGetSuggestions = delegated
+    const root = fixture()
+    process.chdir(root)
+    reattach(ctx)
+    await fileMention.detectFdPath()
+    const provider = editor.autocompleteProvider as BlueAutocompleteProvider
+    // The empty-tail token takes the deterministic one-level listing —
+    // fd is never asked.
+    const bare = await provider.getSuggestions(['@'], 0, 1, { signal: signal() })
+    expect(bare?.items.map(item => item.value)).toEqual(['@.hidden/', '@src/', '@"a b.txt"', '@top.md'])
+    const drill = await provider.getSuggestions(['@src/'], 0, 5, { signal: signal() })
+    expect(drill?.items.map(item => item.value)).toEqual(['@src/a.ts', '@src/b.ts'])
+    expect(delegated).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the fs scanner for fd-less query-bearing tokens', async () => {
     fileMention.setFdProbe(async () => null)
     const { ctx, editor } = await mount()
     const root = fixture()
     process.chdir(root)
     reattach(ctx)
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
-    const all = await provider.getSuggestions(['@'], 0, 1, { signal: signal() })
-    // Empty query, kimi fallback ranking: shallow directories first (`.`
-    // hidden included, `node_modules` excluded; ties break by path order,
-    // so `.hidden/` outranks `src/`), then shallow files (localeCompare on
-    // ties), then depth-1 entries; spaced paths carry quoted values.
-    expect(all?.items).toEqual([
-      { value: '@.hidden/', label: '.hidden/', description: '.hidden' },
-      { value: '@src/', label: 'src/', description: 'src' },
-      { value: '@"a b.txt"', label: 'a b.txt', description: 'a b.txt' },
-      { value: '@top.md', label: 'top.md', description: 'top.md' },
-      { value: '@.hidden/secret.ts', label: 'secret.ts', description: '.hidden/secret.ts' },
-      { value: '@src/a.ts', label: 'a.ts', description: 'src/a.ts' },
-      { value: '@src/b.ts', label: 'b.ts', description: 'src/b.ts' },
-    ])
     const scoped = await provider.getSuggestions(['@src/a'], 0, 6, { signal: signal() })
     expect(scoped?.items).toEqual([{ value: '@src/a.ts', label: 'a.ts', description: 'src/a.ts' }])
   })

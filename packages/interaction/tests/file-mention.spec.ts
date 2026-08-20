@@ -14,6 +14,7 @@ import {
   detectFdPath,
   extractAtPrefix,
   fsMentionSuggestions,
+  listDirectoryMentions,
   setFdProbe,
 } from '../src/file-mention.ts'
 
@@ -29,12 +30,18 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-/** A fixture root with one nested file under `src`. */
+/** A fixture root: a source tree, a hidden tree, a spaced name, node_modules. */
 function fixture(): string {
   const dir = mkdtempSync(join(tmpdir(), 'blue-mention-'))
   mkdirSync(join(dir, 'src'))
   writeFileSync(join(dir, 'src', 'a.ts'), 'a')
+  writeFileSync(join(dir, 'src', 'b.ts'), 'b')
   writeFileSync(join(dir, 'top.md'), 'top')
+  writeFileSync(join(dir, 'a b.txt'), 'spaced')
+  mkdirSync(join(dir, '.hidden'))
+  writeFileSync(join(dir, '.hidden', 'secret.ts'), 'x')
+  mkdirSync(join(dir, 'node_modules', 'pkg'), { recursive: true })
+  writeFileSync(join(dir, 'node_modules', 'pkg', 'i.js'), 'x')
   return dir
 }
 
@@ -210,5 +217,70 @@ describe('fsMentionSuggestions', () => {
     const root = mkdtempSync(join(tmpdir(), 'blue-mention-notdir-'))
     writeFileSync(join(root, 'file'), 'x')
     await expect(fsMentionSuggestions(join(root, 'file'), '@x', signal())).resolves.toBeNull()
+  })
+
+  it('lists one level for a bare @, directories first, node_modules and .git skipped', async () => {
+    const root = fixture()
+    const suggestions = await listDirectoryMentions(root, '@', signal())
+    expect(suggestions).toEqual({
+      prefix: '@',
+      items: [
+        { value: '@.hidden/', label: '.hidden/', description: '.hidden' },
+        { value: '@src/', label: 'src/', description: 'src' },
+        { value: '@"a b.txt"', label: 'a b.txt', description: 'a b.txt' },
+        { value: '@top.md', label: 'top.md', description: 'top.md' },
+      ],
+    })
+  })
+
+  it('drills into a typed base, preserving it verbatim in the values', async () => {
+    const root = fixture()
+    const relative = await listDirectoryMentions(root, '@src/', signal())
+    expect(relative?.items.map(item => item.value)).toEqual(['@src/a.ts', '@src/b.ts'])
+    const absolute = await listDirectoryMentions(root, `@${root}/`, signal())
+    expect(absolute?.items.map(item => item.value)).toContain(`@${root}/src/`)
+    const home = await listDirectoryMentions(root, '@~/', signal())
+    expect(home).not.toBeNull()
+  })
+
+  it('declines query-bearing tokens, non-directory bases, and empty listings', async () => {
+    const root = fixture()
+    await expect(listDirectoryMentions(root, '@src/a', signal())).resolves.toBeNull()
+    await expect(listDirectoryMentions(root, `@${join(root, 'top.md')}/`, signal())).resolves.toBeNull()
+    const empty = mkdtempSync(join(tmpdir(), 'blue-mention-emptydir-'))
+    await expect(listDirectoryMentions(empty, '@', signal())).resolves.toBeNull()
+    const locked = mkdtempSync(join(tmpdir(), 'blue-mention-locked-'))
+    chmodSync(locked, 0o000)
+    await expect(listDirectoryMentions(locked, '@', signal())).resolves.toBeNull()
+  })
+
+  it('aborts a one-level listing', async () => {
+    const root = fixture()
+    const controller = new AbortController()
+    controller.abort()
+    await expect(listDirectoryMentions(root, '@', controller.signal)).resolves.toBeNull()
+    const midWalk = new AbortController()
+    const pending = listDirectoryMentions(root, '@', midWalk.signal)
+    midWalk.abort()
+    await expect(pending).resolves.toBeNull()
+  })
+
+  it('counts symlinked directories as directories and broken symlinks as files', async () => {
+    const root = fixture()
+    symlinkSync(join(root, 'src'), join(root, 'link'))
+    symlinkSync(join(root, 'no-such-target'), join(root, 'broken'))
+    const suggestions = await listDirectoryMentions(root, '@', signal())
+    const values = suggestions?.items.map(item => item.value)
+    expect(values).toContain('@link/')
+    expect(values).toContain('@broken')
+  })
+
+  it('caps a one-level listing at the entry limit', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'blue-mention-level-'))
+    for (let index = 0; index < 55; index += 1) {
+      writeFileSync(join(root, `f${String(index).padStart(2, '0')}.txt`), 'x')
+    }
+    const suggestions = await listDirectoryMentions(root, '@', signal())
+    expect(suggestions?.items).toHaveLength(50)
   })
 })
