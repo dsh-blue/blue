@@ -52,8 +52,9 @@ import {
 } from './components.ts'
 import { TranscriptFolder, type FoldUpdate } from './fold.ts'
 import { BlueIntentsService } from './intents.ts'
-import { isReadItem, resolveCallView, resolveResultView } from './present.ts'
+import { isReadItem, isSubagentTool, resolveCallView, resolveResultView } from './present.ts'
 import { ReadGroupComponent } from './read-group.ts'
+import { AgentGroupComponent } from './agent-group.ts'
 import { BlueStatusService, FooterShellComponent } from './status.ts'
 import { ThinkingComponent } from './thinking.ts'
 import type { BlueIntentComponent, TranscriptItem } from './types.ts'
@@ -69,6 +70,7 @@ export {
   UserMessageComponent,
 } from './components.ts'
 export { ReadGroupComponent } from './read-group.ts'
+export { AgentGroupComponent, setAgentGroupTimers, type AgentGroupTimers } from './agent-group.ts'
 export { BlueIntentsError, BlueIntentsService } from './intents.ts'
 export { BlueStatusError, BlueStatusService, FOOTER_MAX_ROWS, FooterShellComponent } from './status.ts'
 export { StreamingPhaseTracker, type StreamingPhase } from './phase.ts'
@@ -261,6 +263,29 @@ function mountSession(
         // `previous` is the last entry by construction, so the pop drops it.
         entries.pop()
         const group = new ReadGroupComponent(previous.item, colors, components)
+        group.attach(item)
+        entries.push({ item: previous.item, component: group, dispose: screen.addChild(new GutterComponent(group)) })
+        return
+      }
+    }
+    // The S33 twin of the ReadGroup maneuver: consecutive same-step
+    // spawn-class subagent calls (`subagent` / `subagent_fork`) group into
+    // one `AgentGroupComponent`. The name predicates are disjoint from the
+    // Read check, so the two blocks never merge chains; the same
+    // bookkeeping rule holds (the first member's item is the group's item,
+    // so step folding and eviction retire it exactly with its members).
+    if (item.kind === 'tool' && isSubagentTool(item)) {
+      const previous = entries.at(-1)
+      if (previous !== undefined && previous.item.kind === 'tool'
+        && previous.item.turn === item.turn && previous.item.step === item.step
+        && isSubagentTool(previous.item)) {
+        if (previous.component instanceof AgentGroupComponent) {
+          previous.component.attach(item)
+          return
+        }
+        retireEntry(previous)
+        entries.pop()
+        const group = new AgentGroupComponent(previous.item, colors, components, requestRender)
         group.attach(item)
         entries.push({ item: previous.item, component: group, dispose: screen.addChild(new GutterComponent(group)) })
         return

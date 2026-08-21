@@ -26,6 +26,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { BlueSessionRef } from '@dsh-blue/blue-app'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { ACTION_TOGGLE_COLLAPSE, apply, setRecentStepsRetention, setWindowTurns } from '../src/index.ts'
+import { setAgentGroupTimers } from '../src/agent-group.ts'
 import * as statusBasic from '../src/status-basic.ts'
 import { setThinkingTimers, type ThinkingTimers } from '../src/thinking.ts'
 import type { BlueIntentEntry } from '../src/types.ts'
@@ -35,6 +36,7 @@ import {
   reasoningDelta,
   resetSeq,
   stepStart,
+  subagentCallEvent,
   textDelta,
   toolCallEvent,
   toolResultEvent,
@@ -637,6 +639,91 @@ describe('blue-transcript plugin through the real Loader', () => {
     expect(screen.children).toHaveLength(2)
     expect(contentLines(screen).join('\n')).toContain('… step 1 · call 2 tools')
     expect(contentLines(screen).join('\n')).not.toContain('Read 2 files')
+  })
+
+  it('groups consecutive same-step subagent calls into one agent group (S33)', async () => {
+    resetSeq()
+    const { ctx, screen } = await bootTranscript(null, {})
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([
+      turnStart(1),
+      stepStart(1, 1),
+      subagentCallEvent(1, 1, 'a1', 'subagent', 'Survey tests', 'survey'),
+      subagentCallEvent(1, 1, 'a2', 'subagent', 'Map docs', 'map'),
+      subagentCallEvent(1, 1, 'a3', 'subagent_fork', 'Draft README', 'draft'),
+      toolResultEvent(1, 1, 'a1', 'started subagent child-1'),
+      toolResultEvent(1, 1, 'a2', 'started subagent child-2'),
+      toolResultEvent(1, 1, 'a3', 'started background subagent job subagent-1'),
+      turnEnd(1),
+    ])))
+    expect(screen.children).toHaveLength(1)
+    const lines = contentLines(screen)
+    expect(lines[1]).toContain('3 agents finished')
+    expect(lines[2]).toContain('├─ subagent · Survey tests')
+    expect(lines[3]).toContain('├─ subagent · Map docs')
+    expect(lines[4]).toContain('└─ subagent_fork · Draft README')
+  })
+
+  it('breaks the subagent chain when a control tool mounts between them', async () => {
+    resetSeq()
+    const { ctx, screen } = await bootTranscript(null, {})
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([
+      turnStart(1),
+      stepStart(1, 1),
+      subagentCallEvent(1, 1, 'a1', 'subagent', 'Survey', 'survey'),
+      toolCallEvent(1, 1, 's1', 'send_message', '{"message":"hi"}'),
+      subagentCallEvent(1, 1, 'a2', 'subagent', 'Map', 'map'),
+      turnEnd(1),
+    ])))
+    // The send_message control call is not spawn-class: no group forms and
+    // it renders as its own ordinary card.
+    expect(screen.children).toHaveLength(3)
+    expect(contentLines(screen).join('\n')).not.toContain('agents')
+  })
+
+  it('renders the running header for a pending group, tick frozen in tests', async () => {
+    resetSeq()
+    setAgentGroupTimers({
+      setInterval: () => 0 as unknown as ReturnType<typeof setInterval>,
+      clearInterval: () => {},
+      now: () => 1_700_000_000_000,
+    })
+    try {
+      const { ctx, screen } = await bootTranscript(null, {})
+      ctx.emit('blue/session-changed', asAgent(fakeAgent([
+        turnStart(1),
+        stepStart(1, 1),
+        subagentCallEvent(1, 1, 'a1', 'subagent', 'Survey', 'survey'),
+        subagentCallEvent(1, 1, 'a2', 'subagent', 'Map', 'map'),
+        turnEnd(1),
+      ])))
+      expect(screen.children).toHaveLength(1)
+      const lines = contentLines(screen)
+      expect(lines[1]).toContain('Running 2 agents (2 running)')
+      expect(lines[2]).toContain('· Survey ·')
+      expect(lines[2]).toContain('Running')
+    } finally {
+      setAgentGroupTimers(undefined)
+    }
+  })
+
+  it('retires the agent group when its step folds into the summary', async () => {
+    resetSeq()
+    setRecentStepsRetention(0)
+    const { ctx, screen } = await bootTranscript(null, {})
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([
+      turnStart(1),
+      stepStart(1, 1),
+      subagentCallEvent(1, 1, 'a1', 'subagent', 'Survey', 'survey'),
+      subagentCallEvent(1, 1, 'a2', 'subagent', 'Map', 'map'),
+      toolResultEvent(1, 1, 'a1', 'started subagent child-1'),
+      toolResultEvent(1, 1, 'a2', 'started subagent child-2'),
+      stepStart(1, 2),
+      assistantEvent(1, 2, [{ type: 'text', text: 'done' }]),
+      turnEnd(1),
+    ])))
+    expect(screen.children).toHaveLength(2)
+    expect(contentLines(screen).join('\n')).toContain('… step 1 · call 2 tools')
+    expect(contentLines(screen).join('\n')).not.toContain('agents finished')
   })
 
   it('creates tool cards through the blueIntents registry', async () => {

@@ -16,7 +16,11 @@
  * `callId` into one tool item carrying the parsed arguments, the
  * reconstructed `ToolResult`, and the render intent resolved through the
  * optional `present` hooks — except `todo_write`, whose calls and results
- * render nothing because the todo pane owns that presentation.
+ * render nothing because the todo pane owns that presentation. Tool items
+ * also carry the `tool/call`/`tool/result` envelope wall clocks
+ * (`startedAt`/`endedAt`, S33) so the agent group can derive elapsed times;
+ * both come from the persisted envelope, so a replayed snapshot folds to
+ * identical values with no live clock in the fold.
  * `turn/start`/`step/start`/`turn/end` drive the
  * turn/step tagging, the completed-turn list the window policy evicts on,
  * and in-turn step folding with the S20 kimi retention: the most recent
@@ -405,6 +409,7 @@ export class TranscriptFolder {
           callId: event.data.callId,
           name: event.data.name,
           arguments: event.data.arguments,
+          startedAt: event.time,
         }
         const parsed = parseToolArguments(item.arguments)
         if (parsed !== undefined) item.parsedArguments = parsed
@@ -426,6 +431,7 @@ export class TranscriptFolder {
           text: summarizeResult(event.data),
           fullText: fullResultText(event.data),
           isError,
+          endedAt: event.time,
         }
         const rawResult: ToolResult = { content: block.content, isError }
         if (event.data.meta !== undefined) rawResult.meta = event.data.meta
@@ -450,6 +456,7 @@ export class TranscriptFolder {
           callId,
           name: 'tool',
           arguments: '',
+          startedAt: event.time,
           result,
           rawResult,
         }

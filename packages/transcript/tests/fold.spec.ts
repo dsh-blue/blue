@@ -24,6 +24,7 @@ import {
   resetSeq,
   stepEnd,
   stepStart,
+  subagentCallEvent,
   textDelta,
   toolCallEvent,
   toolResultEvent,
@@ -223,6 +224,28 @@ describe('foldSessionEvents', () => {
     expect(item.result?.text).toBe('file.txt')
     expect(item.result?.isError).toBe(false)
     expect(folder.items).toHaveLength(1)
+  })
+
+  it('records the envelope wall clocks for elapsed derivation (S33)', () => {
+    const t0 = 1_700_000_000_000
+    // Explicit times survive the fold verbatim: startedAt from the call
+    // envelope, endedAt from the result envelope — both persisted, so a
+    // replay folds identical values.
+    const timed = foldSessionEvents([
+      subagentCallEvent(1, 1, 'c2', 'subagent', 'd', 'p', { time: t0 }),
+      toolResultEvent(1, 1, 'c2', 'started subagent x', { time: t0 + 45_000 }),
+    ])
+    const sub = timed[0] as TranscriptToolItem
+    expect(sub.startedAt).toBe(t0)
+    expect(sub.result?.endedAt).toBe(t0 + 45_000)
+  })
+
+  it('stamps an unpaired result item with the same instant on both clocks', () => {
+    const t0 = 1_700_000_050_000
+    const items = foldSessionEvents([toolResultEvent(1, 1, 'orphan', 'done', { time: t0 })])
+    const item = items[0] as TranscriptToolItem
+    expect(item.startedAt).toBe(t0)
+    expect(item.result?.endedAt).toBe(t0)
   })
 
   it('marks error results from the block flag or the error identity', () => {
