@@ -177,6 +177,14 @@ export interface BlueScreen {
    * @param force - reset differential render state before drawing.
    */
   requestRender(force?: boolean): void
+  /**
+   * Set the terminal's window/tab title (a sanitized OSC 0 write; inside
+   * tmux, the tmux window name). Paints no cell, so it never disturbs the
+   * renderer's differential state.
+   * @param title - untrusted title text; control characters are stripped
+   *   and the payload capped before the write.
+   */
+  setTitle(title: string): void
   /** Current terminal width in columns. */
   readonly columns: number
   /** Current terminal height in rows. */

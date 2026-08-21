@@ -77,6 +77,7 @@ import * as statusBasicPlugin from '../../../transcript/src/status-basic.ts'
 import * as statusContextPlugin from '../../../transcript/src/status-context.ts'
 import * as statusCwdPlugin from '../../../transcript/src/status-cwd.ts'
 import * as statusGitPlugin from '../../../transcript/src/status-git.ts'
+import * as statusTitlePlugin from '../../../transcript/src/status-title.ts'
 import * as statusTipsPlugin from '../../../transcript/src/status-tips.ts'
 import { buildTipRotation, tipOffer } from '../../../transcript/src/status-tips.ts'
 import { STATUS_TIPS } from '../../../transcript/src/tips-content.ts'
@@ -212,6 +213,7 @@ interface BlueE2EHooks {
   statusBasicApply: typeof statusBasicPlugin.apply
   statusCwdApply: typeof statusCwdPlugin.apply
   statusGitApply: typeof statusGitPlugin.apply
+  statusTitleApply: typeof statusTitlePlugin.apply
   statusTipsApply: typeof statusTipsPlugin.apply
   statusContextApply: typeof statusContextPlugin.apply
   modeStatusApply: typeof modeStatusPlugin.apply
@@ -313,6 +315,7 @@ async function bootBlue(argv: string[], options: {
     statusBasicApply: statusBasicPlugin.apply,
     statusCwdApply: statusCwdPlugin.apply,
     statusGitApply: statusGitPlugin.apply,
+    statusTitleApply: statusTitlePlugin.apply,
     statusTipsApply: statusTipsPlugin.apply,
     statusContextApply: statusContextPlugin.apply,
     modeStatusApply: modeStatusPlugin.apply,
@@ -419,6 +422,12 @@ export const apply = ctx => globalThis.__blueE2E.statusCwdApply(ctx)
 export const name = 'blue-status-git'
 export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
 export const apply = ctx => globalThis.__blueE2E.statusGitApply(ctx)
+`)}`,
+    '- id: blue-status-title',
+    `  name: ${fixture('blue-status-title.mjs', `
+export const name = 'blue-status-title'
+export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const apply = ctx => globalThis.__blueE2E.statusTitleApply(ctx)
 `)}`,
     '- id: blue-status-tips',
     `  name: ${fixture('blue-status-tips.mjs', `

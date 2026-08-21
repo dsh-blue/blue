@@ -8,6 +8,7 @@
  */
 
 import { ProcessTerminal, TuiMainScreen, type Terminal, type TUI } from '@earendil-works/pi-tui'
+import { buildTitleOsc0 } from './terminal-escape.ts'
 import { probeTerminalBackground, backgroundFromRgb, type BlueProbeProcess } from './terminal-info.ts'
 import type { BlueComponent, BlueOverlayHandle, BlueOverlayOptions, BlueRgbColor } from './types.ts'
 
@@ -64,6 +65,15 @@ export interface BlueTerminalRuntime {
    * @param force - reset differential render state before drawing.
    */
   requestRender(force?: boolean): void
+  /**
+   * Set the terminal's window/tab title through a sanitized OSC 0
+   * sequence. The sequence paints no cell, so it never disturbs the
+   * renderer's differential state (the OSC 52 precedent); inside tmux it
+   * becomes the tmux window name.
+   * @param title - untrusted title text; control characters are stripped
+   *   and the payload capped before the write.
+   */
+  setTitle(title: string): void
   /**
    * Restore the terminal: drain pending input, then stop the renderer and
    * the underlying terminal. Idempotent.
@@ -248,6 +258,12 @@ export async function startBlueTerminal(
     },
     requestRender(force) {
       stable.requestRender(force)
+    },
+    setTitle(title) {
+      // Bypass pi-tui's Terminal.setTitle (it writes to process.stdout
+      // directly, with no injection point); the runtime owns the terminal
+      // instance, and the sequence itself is the pure core helper's.
+      terminal.write(buildTitleOsc0(title))
     },
     async stop() {
       if (stopped) return

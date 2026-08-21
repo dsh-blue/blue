@@ -54,6 +54,7 @@ const SEQUENCE_BY_KEY_ID: Record<string, string> = {
   'ctrl+s': '\x13',
   'ctrl+v': '\x16',
   'alt+s': '\x1bs',
+  'alt+m': '\x1bm',
   'shift+tab': '\x1b[Z',
 }
 
@@ -66,6 +67,7 @@ export const KEY = {
   left: '\x1b[D',
   right: '\x1b[C',
   altS: '\x1bs',
+  altM: '\x1bm',
   tab: '\t',
   shiftTab: '\x1b[Z',
   space: ' ',
@@ -584,6 +586,8 @@ export class FakeScreen implements BlueScreen {
   readonly overlays: FakeOverlay[] = []
   focused: BlueComponent | null = null
   renderRequests = 0
+  /** Terminal-title writes, for the OSC-mirror plugin assertions. */
+  readonly titles: string[] = []
   private readonly bottom = new Set<BlueComponent>()
   /** Dock members pinned to the very bottom slot (the footer shell). */
   private readonly bottomPinned = new Set<BlueComponent>()
@@ -682,6 +686,10 @@ export class FakeScreen implements BlueScreen {
 
   requestRender(): void {
     this.renderRequests += 1
+  }
+
+  setTitle(title: string): void {
+    this.titles.push(title)
   }
 }
 

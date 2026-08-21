@@ -106,6 +106,17 @@
 - id: tool-web
   disabled: true
 
+# --- Session-title cadence (S30) ---------------------------------------------
+# The base ships the first-prompt title provider: one auxiliary-model title
+# per session, derived from the opening message, never revised. Blue runs
+# the Claude Code shape instead — the title tracks the conversation, so
+# every human message re-titles and a mis-derived title self-corrects on
+# the next one. The session-title service accepts one provider at most, so
+# the swap is a pair: this disable, plus the all-prompts sibling row below
+# carrying the same policy config as the base row it replaces.
+- id: session-title-llm
+  disabled: true
+
 - insert:
     # The preset roster (S28): the `/preset` command probes `ctx.agentPresets`
     # lazily, so a host composing without this row still boots Blue and gets
@@ -120,6 +131,19 @@
       name: '@deepseek-ai/dsh-agent-presets'
       config:
         default: standard
+
+    # The all-prompts half of the session-title cadence swap above: the
+    # same auxiliary-model title policy as the base's first-prompt row
+    # (words/bytes/token/timeout values copied verbatim), registering the
+    # provider that re-titles on every human message.
+    - id: session-title-all-prompts-llm
+      name: '@deepseek-ai/dsh-session-title-all-prompts-llm'
+      config:
+        targetWords: 5
+        targetCjkCharacters: 10
+        maxInputBytes: 4096
+        maxOutputTokens: 64
+        timeoutMs: 60000
 
     # --- Baseline segment -----------------------------------------------------
     # The plain baseline is this segment plus the assembly segment at the
@@ -208,6 +232,13 @@
     # only while dirty); renders nothing outside a git repository.
     - id: blue-status-git
       name: '@dsh-blue/blue-transcript/status-git'
+
+    # Session-title footer entry: the folded session title (the upstream
+    # session-title service, all-prompts cadence above) on the footer's
+    # second band, left of the context bar (priority 12, muted tier);
+    # renders nothing while the session is untitled.
+    - id: blue-status-title
+      name: '@dsh-blue/blue-transcript/status-title'
 
     # Session-mode footer badge (S24a): 'plan' (accent, a queued entry
     # shows the pending ellipsis) or 'yolo' (warning) while either is in

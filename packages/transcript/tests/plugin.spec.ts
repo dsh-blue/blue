@@ -104,6 +104,8 @@ class FakeScreen implements BlueScreen {
   requestRender(force?: boolean): void {
     this.renderRequests.push(force)
   }
+
+  setTitle(): void {}
 }
 
 /** Records keymap registrations; handlers are invoked manually by specs. */

@@ -227,6 +227,8 @@ class BannerFakeScreen implements BlueScreen {
   requestRender(force?: boolean): void {
     this.renderRequests.push(force)
   }
+
+  setTitle(): void {}
 }
 
 /** Boot the banner plugin on a fresh root context with faked services. */

@@ -61,6 +61,7 @@ class CountingScreen implements BlueScreen {
     throw new Error('out of scope')
   }
   requestRender(): void {}
+  setTitle(): void {}
 }
 
 /** Build `turns` synthetic turns: user, 3 steps × 2 tool calls, assistant. */

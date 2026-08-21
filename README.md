@@ -1,96 +1,39 @@
 # Blue
 
+[![CI](https://github.com/dsh-blue/blue/actions/workflows/ci.yml/badge.svg)](https://github.com/dsh-blue/blue/actions/workflows/ci.yml)
+[![Node](https://img.shields.io/badge/node-%5E22.19%20%7C%7C%20%3E%3D24-339933)](#quick-start)
+[![pnpm](https://img.shields.io/badge/pnpm-11-F69220)](#quick-start)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-dsh--blue.dev-8B5CF6)](https://dsh-blue.dev/en/)
+
 English | [中文](README.zh.md)
 
-Blue is an interactive terminal UI (TUI) plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`): a `pi-tui` renderer mounted as an out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) plugin bundle on top of the `dsh-base` bundle. Nothing is published to npm yet — the project lives in this repository as five workspace packages under the `@dsh-blue` scope, and the only way to run it today is a local development install (see [Installation](#installation-development)).
+Blue is an interactive terminal UI (TUI) plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`): a `pi-tui` renderer mounted as an out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) plugin bundle on top of the `dsh-base` bundle. Its core claim: **a TUI is not a package — it is a Cordis plugin tree.** Every render component, interaction provider, command, and status entry is a separate plugin with its own fiber lifecycle, hot-swappable and omittable.
 
-This repository is the standalone home of those packages. They were extracted from the `deepseek-harness` monorepo (`packages/blue/*` and `packages/bundle/blue`) and now build and test against the published npm releases of the harness (`0.1.1-rc.1` line) and vendored Cordis.
+This repository is the standalone home of Blue's five workspace packages under the `@dsh-blue` scope, extracted from the `deepseek-harness` monorepo (`packages/blue/*` and `packages/bundle/blue`). They build and test against the published npm releases of the harness (`0.1.1-rc.1` line) and vendored Cordis.
 
-## Features
+<!-- TODO: demo capture — record a real session (vhs / asciinema; the script(1)
+     smoke-check under Quick start is the seed), export a GIF into docs/assets/,
+     and embed it here. A TUI repo's README lives or dies on its demo. -->
 
-- **Streaming transcript** — user/assistant messages rendered as Markdown while they stream; tool calls as cards, generic by default with dedicated cards for diffs (`intent-diff`) and terminal output (`intent-terminal`).
-- **Input editor** — rounded-box editor with fuzzy slash-command autocomplete, argument ghost hints, `!` bash mode, `@` file completion, `#` skill completion (a `#name` token anywhere in the line rewrites to the upstream `/name` skill gesture on submit), and Ctrl-V clipboard image paste (`[image #N]` markers split into image blocks on submit).
-- **Overlays** — four-option approval panel (with session-level "always allow" inheritance) and tabbed user-questionnaire overlays.
-- **Two-row status footer** — model name (priority 0), the session-mode badge `plan`/`yolo` (priority 2, hidden in normal mode), git branch (priority 10), context occupancy `ctx N` (priority 20); entries are registry contributions, not hardcoded. Shift+Tab cycles the session mode normal → plan → yolo (`/yolo` auto-approves tool calls, questions still pop).
-- **Bottom dock panes** — activity spinner while the agent runs, queued inbox messages with Up-to-recall, todo list with the Ctrl-T collapse toggle, and a `/btw` side-question pane that forks the live session.
-- **Slash commands** — `/quit` `/new` (`/clear` is its alias) `/fork` `/sessions` (`/resume` is its alias) `/help` `/theme` `/btw` `/model` `/effort` `/provider` `/yolo` `/init` `/status` `/context` `/version` `/export` `/copy` `/tools` `/preset` `/skills`, all auto-listed in the editor's completion menu. `/preset` switches the agent composition (blank sessions only) over the thin-host preset roster; `/tools` lists the session's live tool catalog.
-- **Theming** — `/theme` hot-switching across `dark` / `light` / `auto` (OSC 11 background detection) / `custom` (JSON palette).
+## Contents
 
-## Design philosophy
+- [Quick start](#quick-start)
+- [Features](#features) — [Key bindings](#key-bindings) · [Slash commands](#slash-commands)
+- [Design philosophy](#design-philosophy)
+- [Layered architecture](#layered-architecture)
+- [The Editor seam, in brief](#the-editor-seam-in-brief)
+- [Development](#development)
+- [Documentation](#documentation)
+- [Relationship to deepseek-harness](#relationship-to-deepseek-harness)
+- [License](#license)
 
-**A TUI is not a package; it is a Cordis plugin tree.** pi's own coding agent collapsed its pi-tui UI into a 6.5k-line `InteractiveMode` god class. Blue's core claim is the opposite organization:
+## Quick start
 
-- **Everything is a plugin** — render components, interaction providers, commands, status entries are all separate plugins with their own fiber lifecycles.
-- **Registration is an effect** — component mounts, provider registrations, keybindings bind through `ctx.effect`/`ctx.on`, so plugin unload rolls everything back; HMR and session switching come free.
-- **Seams with three roles** — every capability is split into definition / provider / consumer. Blue consumes the harness's seams (`agents`, `sessions`, `commands`, `userQuestions`, approval) and opens its own seams for downstream plugins ([docs/blue-seams.md](docs/blue-seams.md)).
-- **Dependency-derived loading** — plugins `inject` what they need and wait until the services exist; a provider hot-swap unloads and reloads its dependents automatically.
-- **plain-first** (ADR D21) — every non-trivial surface is a seam plus a plain default implementation. Blue's own enhancements register through the same seams as downstream plugins, and the bundle with every enhancement row removed still boots and works.
-- **One pi-tui import** — only `packages/core` imports `@earendil-works/pi-tui`. Its breaking changes cannot propagate out of L0, and no contract mentions a pi-tui type.
+> [!NOTE]
+> Blue is not published to npm. The only supported install today is a local development install against a checkout of this repository.
 
-The full architecture document is [docs/blue-architecture.md](docs/blue-architecture.md) (Chinese); decisions are recorded in [docs/blue-decisions.md](docs/blue-decisions.md).
-
-## Layered architecture
-
-```
-┌──────────────────────────────────────────────────────┐
-│ L4  composition: bundle/blue — cordis.patch.yml        │  rides on dsh-base
-├──────────────────────────────────────────────────────┤
-│ L3  render plugins: transcript (folds + status bar)    │  hot-swappable, omissible
-├──────────────────────────────────────────────────────┤
-│ L2  interaction plugins: input / commands / approval   │  implements harness seams
-├──────────────────────────────────────────────────────┤
-│ L1  kernel services: blueScreen · blueTheme · …        │  stable core (core package)
-├──────────────────────────────────────────────────────┤
-│ L0  pi-tui adapter: terminal lifecycle ↔ fibers        │  the tree's only pi-tui import
-├──────────────────────────────────────────────────────┤
-│ dsh-base (agents / sessions / commands / …)            │
-└──────────────────────────────────────────────────────┘
-```
-
-Dependencies are strictly one-way: `core ← transcript / interaction ← app ← bundle`.
-
-| Package | Layer | Role |
-| --- | --- | --- |
-| [`@dsh-blue/blue-core`](packages/core) | L0 + L1 | The tree's only `@earendil-works/pi-tui` adapter: terminal lifecycle plus the `blueScreen` / `blueTheme` / `blueKeymap` / `blueComponents` / `blueTerminalInfo` services. |
-| [`@dsh-blue/blue-interaction`](packages/interaction) | L2 | Input editor, slash commands, approval and user-question overlays, plus enhancement subpath plugins (bash mode, image paste, attachments). |
-| [`@dsh-blue/blue-transcript`](packages/transcript) | L3 | Folds session events into transcript items and renders them (streamed Markdown, tool cards), the `blueStatus` registry with its footer shell, and dock panes. |
-| [`@dsh-blue/blue-app`](packages/app) | L4 | Command-line startup (`[task]`, `--resume <id>`) and the Agent driver publishing `blueSession`. |
-| [`@dsh-blue/blue`](packages/bundle/blue) | L4 | The installable bundle: `cordis.patch.yml` inserts the Blue plugin rows over `dsh-base`. |
-
-Each entry point is a Cordis plugin (`export const name`, optional `inject`, `apply(ctx)`); Cordis and the dsh service packages are `peerDependencies` provided by the host `dsh` installation.
-
-## A worked example: the Editor seam
-
-The input editor is the clearest walk through the philosophy. Four roles, four places, no shortcuts between layers:
-
-**1. The contract (L1).** `BlueEditor` is an interface in `packages/core/src/types.ts:437` — it mentions no pi-tui type and no harness type, on purpose:
-
-```ts
-export interface BlueEditor extends BlueFocusable {
-  onSubmit?: ((text: string) => void) | undefined
-  onChange?: ((text: string) => void) | undefined
-  onKey?: ((data: string) => boolean) | undefined   // pre-interception hook
-  getText(): string
-  setBorderColor(color: BlueColorFn): void
-  setGhostHint(hint: string | undefined): void
-  setAutocompleteProvider(provider: BlueAutocompleteProvider): void
-  insertText(text: string): void                    // atomic insert at cursor
-  getExpandedText(): string                         // paste markers expanded, used on submit
-  // …
-}
-```
-
-**2. The implementation (L0).** The only way to obtain one is `ctx.blueComponents.createEditor()` (`packages/core/src/types.ts:655`). Inside core, `EditorAdapter` (`packages/core/src/components.ts:162`) wraps the pi-tui `Editor` and post-processes every render through the chrome helpers to draw the rounded box, prompt symbol, and ghost hint. The adapter is the only code that knows pi-tui is involved; a future vim-mode editor could implement the same interface without any consumer noticing.
-
-**3. The consumer (L2).** The `blue-input` plugin (`packages/interaction/src/input-plugin.ts:169`) creates the editor, mounts it as the screen's bottom child (`input-plugin.ts:469`), and publishes it through the shared-editor seam (`editor-instance.ts`) — submit routing, enhancement markers, and the `blue/input-editor-changed` event that lets later plugins find the editor regardless of row order.
-
-**4. The enhancements (L2 subpath plugins).** `blue-editor-plus` layers the `!` bash mode and slash/`@` autocomplete providers over the shared editor; `blue-paste-image` intercepts Ctrl-V through the `onKey` hook, inserts `[image #N]` markers with `insertText`, and expands them on submit through a submit transformer. Neither touches core — they are rows in `cordis.patch.yml` that can be deleted individually, and the plain editor keeps working.
-
-Contract in L1, implementation locked in L0, enhancement through seams in L2: that is what "every surface is a plugin" means in practice. The complete catalog — every seam Blue opens, its contract location, its plain default, and which plugin implements each visual surface — is in [docs/blue-seams.md](docs/blue-seams.md).
-
-## Installation (development)
-
-The only supported install today is local, against a checkout. Prerequisites: Node `^22.19 || >=24`, pnpm 11, and a `dsh` CLI ≥ `0.1.1-rc.1` (`npm i -g @deepseek-ai/dsh`).
+Prerequisites: Node `^22.19 || >=24`, pnpm 11, and a `dsh` CLI ≥ `0.1.1-rc.1` (`npm i -g @deepseek-ai/dsh`).
 
 ### One-shot
 
@@ -134,6 +77,175 @@ Headless smoke check (pseudo-TTY via `script(1)`):
 # Assert: bracketed-paste on (\x1b[?2004h) at boot, off (\x1b[?2004l) at exit, exit code 0.
 ```
 
+## Features
+
+- **Streaming transcript** — user/assistant messages rendered as Markdown while they stream; tool calls as cards, generic by default with dedicated cards for diffs (`intent-diff`) and terminal output (`intent-terminal`).
+- **Input editor** — rounded-box editor with fuzzy slash-command autocomplete, argument ghost hints, `!` bash mode, `@` file completion, `#` skill completion, and Ctrl-V clipboard image paste.
+- **Overlays** — four-option approval panel (with session-level "always allow" inheritance) and tabbed user-questionnaire overlays.
+- **Two-row status footer** — model name, session-mode badge, git branch, context occupancy `ctx N`; entries are registry contributions, not hardcoded.
+- **Bottom dock panes** — activity spinner while the agent runs, queued inbox messages, todo list, a `/btw` side-question pane that forks the live session, and the subagent-group pane.
+- **Theming** — `/theme` hot-switching across `dark` / `light` / `auto` (OSC 11 background detection) / `custom` (JSON palette).
+- **Extensible by construction** — commands, status entries, and editor enhancements register through the same seams downstream plugins use; the completion menu and `/help` reflect the live registry.
+
+User-facing feature guides live on the documentation website: [dsh-blue.dev/en/features](https://dsh-blue.dev/en/features/) (English) · [dsh-blue.dev/features](https://dsh-blue.dev/features/) (中文).
+
+### Key bindings
+
+The `/help` overlay lists every registered binding live — it is the authoritative source:
+
+| Key | Action |
+| --- | --- |
+| `Shift+Tab` | Cycle session mode: normal → plan → yolo (`/yolo` auto-approves tool calls; questions still pop) |
+| `Ctrl-C` | Clear the draft → interrupt the agent; a second press within 1 s exits |
+| `Ctrl-S` | Steer the running turn with the draft |
+| `Ctrl-V` | Paste a clipboard image as an `[image #N]` marker |
+| `Ctrl-O` | Expand/collapse the last 3 turns of tool output and thinking blocks |
+| `Ctrl-T` | Fold/unfold the todo pane |
+| `↑` (empty editor) | Recall the most recent queued inbox message |
+
+In the editor, the prefixes `/` `!` `@` `#` trigger command, bash, file, and skill completion respectively; a `#name` token anywhere in the line rewrites to the upstream `/name` skill gesture on submit.
+
+### Slash commands
+
+All commands auto-list in the editor's completion menu; `/help` is the live truth:
+
+| Command | Aliases | Description |
+| --- | --- | --- |
+| `/quit` | `/q` `/exit` | Exit Blue |
+| `/new` | `/clear` | Start a new session |
+| `/fork` | — | Fork the current session into a new one |
+| `/sessions` | `/resume` | List persisted sessions and switch; an id resumes directly |
+| `/btw` | — | Side question: fork the live session and ask |
+| `/help` | — | Show available commands and key bindings |
+| `/model` | — | Switch the session model (no argument opens the picker) |
+| `/effort` | `/thinking` | Switch the thinking effort of the current model |
+| `/provider` | — | List providers, switch the route, or add one |
+| `/preset` | — | List agent presets or switch (blank sessions only) |
+| `/yolo` | `/yes` | Toggle auto-approval of tool calls |
+| `/tools` | — | List the tools visible to the current session |
+| `/skills` | — | List available skills (the `#` prompt invokes one) |
+| `/theme` | — | Switch the color theme |
+| `/init` | — | Analyze the codebase and write `AGENTS.md` |
+| `/status` | — | Show the session header, model, and context status |
+| `/context` | — | Show token usage and the context window |
+| `/version` | — | Show the Blue and harness versions and the live model |
+| `/export` | — | Export the current session as a Markdown file |
+| `/copy` | — | Copy the last assistant message to the clipboard |
+
+## Design philosophy
+
+**A TUI is not a package; it is a Cordis plugin tree.** pi's own coding agent collapsed its pi-tui UI into a 6.5k-line `InteractiveMode` god class. Blue's core claim is the opposite organization:
+
+- **Everything is a plugin** — render components, interaction providers, commands, status entries are all separate plugins with their own fiber lifecycles.
+- **Registration is an effect** — component mounts, provider registrations, keybindings bind through `ctx.effect`/`ctx.on`, so plugin unload rolls everything back; HMR and session switching come free.
+- **Seams with three roles** — every capability is split into definition / provider / consumer. Blue consumes the harness's seams (`agents`, `sessions`, `commands`, `userQuestions`, approval) and opens its own seams for downstream plugins ([docs/blue-seams.md](docs/blue-seams.md)).
+- **Dependency-derived loading** — plugins `inject` what they need and wait until the services exist; a provider hot-swap unloads and reloads its dependents automatically.
+- **plain-first** (ADR D21) — every non-trivial surface is a seam plus a plain default implementation. Blue's own enhancements register through the same seams as downstream plugins, and the bundle with every enhancement row removed still boots and works.
+- **One pi-tui import** — only `packages/core` imports `@earendil-works/pi-tui`. Its breaking changes cannot propagate out of L0, and no contract mentions a pi-tui type.
+
+The full architecture document is [docs/blue-architecture.md](docs/blue-architecture.md) (Chinese); decisions are recorded in [docs/blue-decisions.md](docs/blue-decisions.md).
+
+## Layered architecture
+
+<!-- BEGIN diagram:blue-layers -->
+<!-- single source 单一来源: docs/diagrams/blue-layers.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
+```mermaid
+flowchart TB
+    subgraph L4["L4 composition 组合层 — @dsh-blue/blue (bundle)"]
+        patch["cordis.patch.yml — inserts the Blue rows over dsh-base"]
+        app["blue-app · blue-startup — CLI startup + Agent driver"]
+    end
+    subgraph L3["L3 render 渲染插件 — @dsh-blue/blue-transcript · hot-swappable 可热替换、可省略"]
+        fold["event folds → streamed Markdown + tool cards"]
+        status["blueStatus registry + two-row footer shell"]
+        dock["dock panes — activity · todo · btw · subagents"]
+    end
+    subgraph L2["L2 interaction 交互插件 — @dsh-blue/blue-interaction · implements harness seams"]
+        input["blue-input — editor + completion"]
+        cmds["blue-commands — built-in commands"]
+        qa["blue-approval · blue-questions — overlays"]
+        enh2["enhancements — editor-plus · paste-image · attachments · pane-queue · mode-status"]
+    end
+    subgraph L1["L1 kernel services 内核服务 — @dsh-blue/blue-core"]
+        services["blueScreen · blueTheme · blueKeymap · blueComponents · blueTerminalInfo"]
+    end
+    subgraph L0["L0 pi-tui adapter 适配 — @dsh-blue/blue-core"]
+        adapter["terminal lifecycle ↔ fiber binding — the tree's only pi-tui import"]
+    end
+    subgraph BASE["dsh-base host bundle 宿主"]
+        seams["agents · sessions · commands · userQuestions · approval · agentPresets"]
+    end
+    pitui["pi-tui ^0.84.2 (npm)"]
+
+    L4 --> L3
+    L4 --> L2
+    L3 --> L1
+    L2 --> L1
+    L1 --> L0
+    L0 --> pitui
+    L2 -. implements interaction seams 实现交互缝 .-> BASE
+    L4 -. rides on 骑在 dsh-base 上 .-> BASE
+```
+<!-- END diagram:blue-layers -->
+
+Dependencies are strictly one-way: `core ← transcript / interaction ← app ← bundle`.
+
+| Package | Layer | Role |
+| --- | --- | --- |
+| [`@dsh-blue/blue-core`](packages/core) | L0 + L1 | The tree's only `@earendil-works/pi-tui` adapter: terminal lifecycle plus the `blueScreen` / `blueTheme` / `blueKeymap` / `blueComponents` / `blueTerminalInfo` services. |
+| [`@dsh-blue/blue-interaction`](packages/interaction) | L2 | Input editor, slash commands, approval and user-question overlays, the queued-inbox pane, plus enhancement subpath plugins (bash mode, image paste, attachments). |
+| [`@dsh-blue/blue-transcript`](packages/transcript) | L3 | Folds session events into transcript items and renders them (streamed Markdown, tool cards), the `blueStatus` registry with its footer shell, and the dock panes (activity, todo, `/btw`, subagent group). |
+| [`@dsh-blue/blue-app`](packages/app) | L4 | Command-line startup (`[task]`, `--resume <id>`) and the Agent driver publishing `blueSession`. |
+| [`@dsh-blue/blue`](packages/bundle/blue) | L4 | The installable bundle: `cordis.patch.yml` inserts the Blue plugin rows over `dsh-base`. |
+
+Each entry point is a Cordis plugin (`export const name`, optional `inject`, `apply(ctx)`); Cordis and the dsh service packages are `peerDependencies` provided by the host `dsh` installation.
+
+**The same tree, seen from the bundle.** `cordis.patch.yml` inserts 23 Blue rows in three segments. The plain baseline (baseline + assembly, 8 rows) boots and works alone; every enhancement row — the whole dashed segment — is individually deletable, which is plain-first (ADR D21) as a picture:
+
+<!-- BEGIN diagram:blue-composition -->
+<!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
+```mermaid
+flowchart TB
+    subgraph bundle["cordis.patch.yml — the 23 Blue rows · 23 条 Blue 行"]
+        subgraph baseline["plain baseline 基线 — 8 rows, self-sufficient 自足"]
+            core["blue-core"]
+            theme["blue-theme-dark"]
+            banner["blue-banner"]
+            transcript["blue-transcript"]
+            sbasic["blue-status-basic"]
+            interaction["blue-interaction"]
+            startup["blue-startup"]
+            bapp["blue-app"]
+        end
+        subgraph enhancement["enhancement segment 增强段 — every row droppable 每行皆可删"]
+            editorPlus["blue-editor-plus"]
+            att["blue-attachments · blue-paste-image"]
+            statusEnh["blue-status-cwd · -git · -mode · -tips · -context"]
+            intents["blue-intent-diff · -terminal"]
+            panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
+        end
+    end
+    dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]
+    bundle -.-> dshbase
+
+    classDef optional stroke-dasharray: 4 4;
+    class editorPlus,att,statusEnh,intents,panes optional;
+```
+<!-- END diagram:blue-composition -->
+
+Dock order is plugin-row order — activity → queue → todo → btw → subagents, the editor mounting last. The host's agent plane (tools, plan mode, …) is disabled process-wide and re-composed per agent behind presets (ADR D37 thin host); `/preset` switches the composition.
+
+## The Editor seam, in brief
+
+The input editor walks the whole philosophy in four roles, with no shortcuts between layers:
+
+- **Contract (L1)** — `BlueEditor` is an interface in `packages/core/src/types.ts` that mentions no pi-tui type and no harness type, on purpose.
+- **Implementation (L0)** — the only way to obtain one is `ctx.blueComponents.createEditor()`; inside core, an adapter wraps the pi-tui `Editor` and is the only code that knows pi-tui is involved. A future vim-mode editor could implement the same interface without any consumer noticing.
+- **Consumer (L2)** — the `blue-input` plugin creates the editor, mounts it, and publishes it through the shared-editor seam, so later plugins find it regardless of row order.
+- **Enhancements (L2 subpath plugins)** — `blue-editor-plus` (bash mode, autocomplete providers) and `blue-paste-image` (Ctrl-V markers) are rows in `cordis.patch.yml`: delete either and the plain editor keeps working.
+
+Full walkthrough with code: [docs/blue-editor-walkthrough.md](docs/blue-editor-walkthrough.md) (Chinese). The complete seam catalog — every seam Blue opens, its contract, its plain default: [docs/blue-seams.md](docs/blue-seams.md).
+
 ## Development
 
 ```sh
@@ -148,17 +260,24 @@ Tests run from source: specs import the package under test through relative `../
 
 ## Documentation
 
-- **Documentation website**: <https://dsh-blue.dev/> (中文) · <https://dsh-blue.dev/en/> (English) — user-facing docs. The design documents below remain repo-internal.
+**User-facing docs** are on the website: <https://dsh-blue.dev/> (中文) · <https://dsh-blue.dev/en/> (English). The design documents below remain repo-internal.
 
-All design documents are in Chinese, under [docs/](docs/):
+**Design documents** (Chinese) live under [docs/](docs/); the living/archived index is [docs/README.md](docs/README.md):
 
-- [docs/blue-seams.md](docs/blue-seams.md) — the seam catalog: every seam Blue opens (contracts, plain defaults) and which Blue plugin implements each harness-side visual surface.
 - [docs/blue-architecture.md](docs/blue-architecture.md) — architecture: philosophy, L0–L4 layers, stability rules.
+- [docs/blue-seams.md](docs/blue-seams.md) — the seam catalog: every seam Blue opens (contracts, plain defaults) and which Blue plugin implements each harness-side visual surface.
+- [docs/blue-editor-walkthrough.md](docs/blue-editor-walkthrough.md) — the Editor seam worked example: four roles, with code.
 - [docs/blue-decisions.md](docs/blue-decisions.md) — decision records (ADR).
-- [docs/README.md](docs/README.md) — the docs index (living vs archived). Phase designs and implementation logs: [docs/blue-roadmap.md](docs/blue-roadmap.md) and [blue-commands-plan.md](docs/blue-commands-plan.md) — the built-in slash-command checklist: kimi/pi/Claude Code/Codex reference merge, harness capability matrix, S23–S28 phasing, upstream seam requests — plus the archived [blue-p1-design.md](docs/history/blue-p1-design.md), [blue-p2-visual-design.md](docs/history/blue-p2-visual-design.md), [blue-mvp-plan.md](docs/history/blue-mvp-plan.md).
+- [docs/blue-roadmap.md](docs/blue-roadmap.md) and [docs/blue-commands-plan.md](docs/blue-commands-plan.md) — roadmap, and the built-in slash-command implementation checklist (four-harness reference merge, capability matrix, phasing).
 - [AGENTS.md](AGENTS.md) plus each package's own `AGENTS.md` — the authoritative description of the current code (repo-wide conventions at the root; per-package implementation detail in `packages/*/AGENTS.md`).
+
+Archived phase designs and surveys (MVP, P1, P2, pi-tui/harness selection) are under [docs/history/](docs/history/).
 
 ## Relationship to deepseek-harness
 
 - Runtime and test dependencies (`@deepseek-ai/cordis` 4.0.1, `@deepseek-ai/dsh-*` 0.1.1-rc.1, `@earendil-works/pi-tui` ^0.84.2) come from the npm registry; Blue's own five packages are unpublished and stay workspace-linked here.
 - The harness's repository gates (documentation i18n pairing, README gates, snapshot/e2e lanes) do not apply here; this repo keeps the build, the full test suite, and the per-file 100% src coverage gate.
+
+## License
+
+[MIT](LICENSE). Every package under the `@dsh-blue` scope declares `license: MIT`.

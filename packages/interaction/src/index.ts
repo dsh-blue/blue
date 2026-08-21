@@ -9,8 +9,11 @@
  * (`blue-approval`). The optional bash-mode and autocomplete enhancement
  * layer ships as the `./editor-plus` subpath plugin (`blue-editor-plus`),
  * and the queued-message pane with the empty-editor Up recall as the
- * `./pane-queue` subpath plugin (`blue-pane-queue`). All registrations are
- * effect-bound, so unloading the fiber reverts every contribution.
+ * `./pane-queue` subpath plugin (`blue-pane-queue`). The session-title
+ * terminal mirror (`blue-terminal-title`, the OSC 0 window title over the
+ * upstream session-title fold) mounts with the baseline plugins. All
+ * registrations are effect-bound, so unloading the fiber reverts every
+ * contribution.
  *
  * @module @dsh-blue/blue-interaction
  */
@@ -21,6 +24,7 @@ import * as commandsPlugin from './commands-plugin.ts'
 import * as inputPlugin from './input-plugin.ts'
 import * as keysPlugin from './keys.ts'
 import * as questionsPlugin from './questions-plugin.ts'
+import * as terminalTitlePlugin from './terminal-title.ts'
 
 // BluePanel is the package's public overlay container; BlueSelect stays
 // package-internal as the multi-select-only list (single-select moved to
@@ -41,4 +45,5 @@ export function apply(ctx: Context): void {
   ctx.plugin(inputPlugin)
   ctx.plugin(questionsPlugin)
   ctx.plugin(approvalPlugin)
+  ctx.plugin(terminalTitlePlugin)
 }
