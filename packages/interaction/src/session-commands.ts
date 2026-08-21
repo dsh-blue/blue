@@ -66,16 +66,39 @@ export function formatCreated(createdAt: number): string {
 }
 
 /**
- * The `/version` notice: the banner constant, the pinned harness line, and
- * — when a session is live — its current model.
- * @param model - the live model facts, when available.
- * @returns the single-line notice text.
+ * Build the `/version` panel's sections (pure, for the spec): the Blue
+ * release line and the harness line it builds against, plus — when a
+ * session is live — its current model. The Blue number is the first
+ * release the website advertises; the harness line is the independent
+ * dsh pin line (the version spec keeps both in check).
+ * @param model - the live model facts, when a session is live.
+ * @returns the sections in display order.
  */
-export function versionNotice(model?: StatusModelFacts): string {
-  const base = `Blue v${BLUE_VERSION} · dsh ${HARNESS_LINE}`
-  if (model === undefined) return base
-  const effort = model.effort !== undefined ? ` · thinking ${model.effort}` : ''
-  return `${base} · ${model.model} (${model.provider})${effort}`
+export function buildVersionSections(model?: StatusModelFacts): InfoSection[] {
+  const sections: InfoSection[] = [
+    {
+      heading: 'Version',
+      rows: [
+        { label: 'blue', segments: [{ text: `v${BLUE_VERSION}` }] },
+        { label: 'harness', segments: [{ text: HARNESS_LINE }] },
+      ],
+    },
+  ]
+  if (model !== undefined) {
+    sections.push({
+      heading: 'Model',
+      rows: [{
+        label: 'model',
+        segments: [
+          { text: `${model.model} (${model.provider})` },
+          ...(model.effort !== undefined
+            ? [{ text: ` · thinking ${model.effort}`, style: 'muted' as const }]
+            : []),
+        ],
+      }],
+    })
+  }
+  return sections
 }
 
 /** Map a usage severity onto the segment styling the panel paints. */
@@ -442,12 +465,31 @@ export function registerSessionCommands(ctx: Context): () => void {
   }
 
   /**
-   * The `/version` handler: flash the banner constant and the live model.
+   * The `/version` handler: mount the read-only panel over the Blue and
+   * harness release lines, plus the live model when a session is up.
+   * Unlike the status family it needs no live session — the version
+   * answers before one exists — so the panel opens with the version
+   * section alone on an empty slot.
    * @returns the command outcome.
    */
   function showVersion(): CommandResult {
+    const display = displayServices(ctx)
+    if (display === undefined) {
+      return { kind: 'error', text: 'version panel is unavailable: the Blue screen is not mounted' }
+    }
     const agent = ctx.get('blueSession')?.current
-    return { kind: 'success', text: versionNotice(agent !== undefined && agent !== null ? readModelFacts(ctx, agent) : undefined) }
+    const model = agent !== undefined && agent !== null ? readModelFacts(ctx, agent) : undefined
+    const restore = mountEditorReplacement(new InfoPanel({
+      keymap: display.keymap,
+      theme: display.theme,
+      components: display.components,
+      title: 'version',
+      sections: buildVersionSections(model),
+      onClose: () => {
+        restore()
+      },
+    }))
+    return { kind: 'success' }
   }
 
   const status = ctx.commands.register({
