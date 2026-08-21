@@ -214,6 +214,8 @@ interface BlueE2EHooks {
   startupApply: typeof startupPlugin.apply
   appApply: typeof appPlugin.apply
   appConfig: typeof appPlugin.Config
+  /** Session ids the sessionTitle stand-in's refresh recorded (D41 bridge). */
+  sessionTitleRefreshes: string[]
 }
 
 /**
@@ -315,6 +317,7 @@ async function bootBlue(argv: string[], options: {
     startupApply: startupPlugin.apply,
     appApply: appPlugin.apply,
     appConfig: appPlugin.Config,
+    sessionTitleRefreshes: [],
   }
   ;(globalThis as unknown as { __blueE2E: BlueE2EHooks }).__blueE2E = hooks
 
@@ -409,7 +412,8 @@ export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents'
 export const apply = ctx => globalThis.__blueE2E.statusGitApply(ctx)
 `)}`,
     // The harness session-title service stand-in (the thin e2e tree boots no
-    // dsh-base): the structural fold the status-title entry reads.
+    // dsh-base): the structural fold the status-title entry reads, plus the
+    // refresh recorder the D41 cadence bridge drives.
     '- id: e2e-session-title',
     `  name: ${fixture('e2e-session-title.mjs', `
 export const name = 'e2e-session-title'
@@ -420,6 +424,10 @@ export const apply = ctx => ctx.provide('sessionTitle', {
       if (event.type === 'session/title') return { title: event.data.title }
     }
     return undefined
+  },
+  refresh: session => {
+    globalThis.__blueE2E.sessionTitleRefreshes.push(session.id)
+    return Promise.resolve(undefined)
   },
 })
 `)}`,
@@ -1661,6 +1669,29 @@ describe('blue whole-tree e2e', () => {
     } finally {
       statusGitPlugin.setGitCommandRunner(undefined)
     }
+  })
+
+  it('re-derives the title on every human message past the first (D41 bridge)', async () => {
+    // The harness service's all-prompts cadence cannot schedule itself
+    // against this agent-loop event order (step/start precedes the turn's
+    // user/message, so the onMainRequest boundary gate always rejects the
+    // message that opened the turn); the blue-session-title-cadence bridge
+    // drives the public refresh instead. The first message stays with the
+    // service's own header path — no refresh before a request header
+    // exists (a header-less refresh would fail for lack of a route and
+    // supersede that path's pending work).
+    const tree = await bootBlue([], { script: [textResponse('first answer'), textResponse('second answer')] })
+    const agent = await currentAgent(tree)
+    const refreshes = () =>
+      (globalThis as unknown as { __blueE2E: { sessionTitleRefreshes: string[] } }).__blueE2E.sessionTitleRefreshes
+    typeLine(tree.terminal, 'first prompt')
+    await agent.whenIdle()
+    expect(refreshes()).toEqual([])
+    typeLine(tree.terminal, 'second prompt')
+    await agent.whenIdle()
+    await vi.waitFor(() => {
+      expect(refreshes()).toEqual([agent.session.id])
+    })
   })
 
   it('renders nothing for injected runtime context — only human input folds (D28)', async () => {
