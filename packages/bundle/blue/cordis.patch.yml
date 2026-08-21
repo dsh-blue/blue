@@ -48,6 +48,12 @@
     - id: blue-transcript
       name: '@dsh-blue/blue-transcript'
 
+    # S33 dogfood verification — TEMPORARY, REMOVE BEFORE MERGE. Logs the
+    # session/event firehose (with admission keys) and subagent/start|end
+    # probes to /tmp/s33-dogfood.log. No screen child, no services.
+    - id: blue-s33-debug
+      name: '@dsh-blue/blue-transcript/s33-debug'
+
     # Baseline footer entry: the model name alone at priority 0, in the
     # full-strength text tier (the S15 kimi identity: the brightest thing in
     # the footer), registered into the transcript's blueStatus registry.
