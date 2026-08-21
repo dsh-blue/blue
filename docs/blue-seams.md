@@ -1,6 +1,6 @@
 # Blue 缝（seam）清单：契约、默认实现与插件映射
 
-本文描述**当前代码现状**：Blue 目前开了哪些缝、每条缝的契约在哪、plain 默认是什么、以及上游（harness）开的缝的视觉效果由哪些 Blue 插件实现。缝的设计正典见 [blue-p1-design.md](./blue-p1-design.md) §6，架构背景见 [blue-architecture.md](./blue-architecture.md)，相关 ADR 见 [blue-decisions.md](./blue-decisions.md)（D3/D17/D18/D20/D21/D25/D26）。
+本文描述**当前代码现状**：Blue 目前开了哪些缝、每条缝的契约在哪、plain 默认是什么、以及上游（harness）开的缝的视觉效果由哪些 Blue 插件实现。缝的设计正典见 [blue-p1-design.md](./history/blue-p1-design.md) §6，架构背景见 [blue-architecture.md](./blue-architecture.md)，相关 ADR 见 [blue-decisions.md](./blue-decisions.md)（D3/D17/D18/D20/D21/D25/D26）。
 
 ## 1. 什么是缝
 
@@ -98,7 +98,7 @@ patch 在 `dsh-base` 之上插入三段 19 行。**拔掉整个增强段，基�
 
 ## 6. 延伸阅读
 
-- [blue-p1-design.md](./blue-p1-design.md) §6——缝清单正典与设计理由（注意其 §7 的行数描述是 P1 时点，现状以本文 §4 与 patch 文件为准）
+- [blue-p1-design.md](./history/blue-p1-design.md) §6——缝清单正典与设计理由（注意其 §7 的行数描述是 P1 时点，现状以本文 §4 与 patch 文件为准）
 - [blue-architecture.md](./blue-architecture.md) §2/§5.3/§6——设计哲学、缝的设计时机、下游定制三级
 - [blue-decisions.md](./blue-decisions.md)——D3（缝后置）、D17（组件工厂缝）、D18（主题 provider 替换）、D20（blueStatus 归 transcript）、D21（plain-first）、D25（chrome 辅助层）、D26（底部上拉面板）
 - 根 [README](../README.md)——以 Editor 缝为例的设计哲学讲解
