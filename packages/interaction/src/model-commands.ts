@@ -4,9 +4,12 @@
  * (horizontal segment selector or a direct level switch), and the shared
  * commit path they both funnel into — write `blueSession.modelRef.current`
  * (the next step's route) plus, unless session-only, persist the new
- * default through `agentDefaultModel.saveSelection`. The S23 seam supplies
- * the handle; this module never injects a display or harness service, it
- * resolves everything through `ctx.get` (the `/theme` fiber-dispose trap).
+ * default through `agentDefaultModel.saveSelection`. The Alt+M hotkey
+ * cycle (`cycleSessionModel`, matched in the editor key chain) funnels
+ * into the same commit path on the session-only channel. The S23 seam
+ * supplies the handle; this module never injects a display or harness
+ * service, it resolves everything through `ctx.get` (the `/theme`
+ * fiber-dispose trap).
  *
  * @module @dsh-blue/blue-interaction/model-commands
  */
@@ -153,6 +156,103 @@ async function commitModelSelection(
 /** The llm surface the display-name helper reads. */
 interface ListingLlm {
   listProviders(): { id: string, name: string }[]
+}
+
+/** How long a hotkey cycle trusts a cached provider model listing. */
+const MODEL_CACHE_TTL_MS = 60_000
+
+/** The cached provider model listing behind the Alt+M cycle. */
+interface ModelListCache {
+  readonly provider: string
+  readonly ids: string[]
+  readonly fetchedAt: number
+}
+
+let modelListCache: ModelListCache | undefined
+
+/**
+ * Drop the hotkey cycle's provider model cache. Specs call this between
+ * cases; production never needs it (the TTL and the provider key bound the
+ * staleness window).
+ */
+export function resetModelListCache(): void {
+  modelListCache = undefined
+}
+
+/**
+ * The provider's advertised model ids for the hotkey cycle, cached
+ * briefly: `llm.listModels` can be a network round on discovery-based
+ * routes, and a hotkey pressed in rhythm must not re-issue it per press.
+ * A failed listing never poisons the cache — the next press retries.
+ * @param ctx - plugin context (`llm` resolved lazily).
+ * @param provider - the provider route to list.
+ * @returns the advertised model ids, or the guard's error text.
+ */
+async function providerModelIds(
+  ctx: Context,
+  provider: string,
+): Promise<{ ids: string[] } | { error: string }> {
+  const cached = modelListCache
+  if (cached !== undefined && cached.provider === provider
+    && Date.now() - cached.fetchedAt < MODEL_CACHE_TTL_MS) {
+    return { ids: cached.ids }
+  }
+  const llm = ctx.get('llm')
+  if (llm === undefined) return { error: 'the llm service is unavailable' }
+  try {
+    const models = await llm.listModels(provider)
+    const ids = models.map(model => model.id)
+    modelListCache = { provider, ids, fetchedAt: Date.now() }
+    return { ids }
+  } catch (error) {
+    return { error: `could not list the provider's models: ${describe(error)}` }
+  }
+}
+
+/**
+ * Cycle the session model within the current provider — the Alt+M hotkey.
+ * The next advertised model commits through the session-only channel: the
+ * persisted default stays untouched (a deliberate one-press switch must
+ * not rewrite configuration — `/model` is the durable path), and the
+ * reasoning effort is not carried, matching the `/model <id>` direct
+ * switch (the cycled model uses its provider default). The press never
+ * reaches the Editor, so the typed draft is intact by construction.
+ * @param ctx - plugin context.
+ */
+export async function cycleSessionModel(ctx: Context): Promise<void> {
+  const selection = readSelection(ctx)
+  if ('error' in selection) {
+    getSharedEditor()?.notice?.(selection.error)
+    return
+  }
+  const { modelRef } = selection.read
+  const listing = await providerModelIds(ctx, modelRef.current.provider)
+  if ('error' in listing) {
+    const paint = displayServices(ctx)?.colors.error
+    getSharedEditor()?.notice?.(paint === undefined ? listing.error : paint(listing.error))
+    return
+  }
+  if (listing.ids.length === 0) {
+    getSharedEditor()?.notice?.('the current provider advertises no models')
+    return
+  }
+  const current = modelRef.current.model
+  const index = listing.ids.indexOf(current)
+  const next = listing.ids[index === -1 ? 0 : (index + 1) % listing.ids.length]!
+  try {
+    const text = await commitModelSelection(
+      ctx,
+      modelRef,
+      { provider: modelRef.current.provider, model: next },
+      false,
+    )
+    getSharedEditor()?.notice?.(text)
+  } catch (error) {
+    /* v8 ignore next -- the catch guards only the append-failure loud path
+       (the cycleMode discipline); commitModelSelection itself never throws
+       on the session-only channel */
+    ctx.logger.warn(`model cycle commit failed: ${describe(error)}`)
+  }
 }
 
 /**

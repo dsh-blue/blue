@@ -57,7 +57,7 @@ p1-design §4.3 是本文档的前身（MVP 后命令面调研）。本次逐符
 | `/fork` | ✅ | ✅ | ✅ | — | ✅ 已发货（idle 守卫，`blue/request-fork`） |
 | `/btw` | ✅ | — | ✅ | — | ✅ 已发货（pane-btw.ts 自注册） |
 | `/undo` | ✅ | — | `/rewind` | — | ⛔ §7 #2（会话原地撤销；checkpoint-policy 仅崩溃恢复、session-reference 仅跨会话引用，均非撤销） |
-| `/title` (`rename`) | ✅ | `/name` | — | `/rename` | ⚠️ 服务现成（ctx.sessionTitle.rename + `session/title` 事件 + title 投影，§3.2）；命令 Blue 建（**S30 终端小件批**落消费——含 OSC 0/2 终端标题，2026-08-21 排期） |
+| `/title` (`rename`) | ✅ | `/name` | — | `/rename` | 🚫 **命令不做（2026-08-22 用户裁决，S30 拆步①）**：标题全自动——bundle 换 all-prompts 节奏（随会话流更新、歪标题自纠），展示走 OSC 0 终端标题 + footer 条目；无手动改名入口（roadmap「预览版发版冲刺」S30 行） |
 | `/session` | — | ✅ | — | — | 🚫 /status + /sessions 覆盖 |
 | `/tree` | — | ✅ | — | — | 🚫 /sessions + /fork 覆盖（lineage 仅可作 /sessions 可选增强列） |
 | `/branch` | — | — | ✅ | — | 🚫 同上（会话分叉 = fork 新会话） |
@@ -409,12 +409,12 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 - **期望**：`dsh-session`（或 persistence）增会话截断原语：`session.truncate(boundarySeq: number, cause)`——删除 boundary 之后的事件（含 fork/undo 审计事件），或官方承认的 undo 语义（如 kimi 的"撤回最近 prompt"= 删最后 user/assistant 对）。
 - **rc.7 证据**：唯一原语仍是 fork 产新会话（agents.create seed）；dsh-session-checkpoint-policy 仅崩溃恢复（wrap llm/stream + tools/execute 落盘 flush，失败 fail-closed），非撤销语义；dsh-session-reference 仅跨会话引用；persistence 无截断/删除 API。（维持 ⛔）
 
-### #3 会话标题（⚠️ 服务已解决，缝收窄为命令层）— 消费：/title /name
+### #3 会话标题（✅ 已解决：全自动展示，2026-08-22 S30 拆步①）— 消费：OSC 终端标题 + footer 条目
 
 **2026-08-20 修正**：标题能力已随 rc.7 落地（`dsh-session-title`，base），落点在事件面而非 SessionHeader。**缝收窄**：不再请求字段/持久化 API，剩余缺口仅为命令注册。
 
 - **已落地**：`ctx.sessionTitle.get/rename/refresh/register`；`session/title` 事件（log-only；user 源 rename 会 pin 住标题，停自动修订）；title 投影（客户端列表行/`useProjection('title')`）；`session.rename` RPC；first-prompt-llm 自动标题 provider（fork 继承父标题）。
-- **残余**：上游无 `/title` 命令——Blue 经 `ctx.sessionTitle.rename` + 投影读注册（**S30 终端小件批消费**，含 OSC 0/2 终端标题——2026-08-21 排期，roadmap「预览版发版冲刺」）；`SessionHeader.title` 字段与 persistence 修订 API 不再需要。
+- **2026-08-22 终态（S30 拆步①，用户裁决）**：**`/title`/`/name` 命令 🚫 不做**——标题全自动无手动入口；Blue bundle patch 换 **all-prompts** 节奏（disable first-prompt-llm + `dsh-session-title-all-prompts-llm`，CC 式随会话流更新，歪标题下条消息自纠）；展示两路——interaction `terminal-title.ts`（OSC 0 终端标题，fold 驱动，回退 `blue`）+ transcript `status-title.ts`（footer 第 2 行左簇条目）；`SessionHeader.title` 字段与 persistence 修订 API 不再需要。
 
 ### #4 权限预设（✅ 已解决：随 0.1.0-rc.7 发布）— 消费：/permission
 

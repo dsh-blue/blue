@@ -68,7 +68,8 @@ import {
 } from './editor-instance.ts'
 import { canonicalOf, withCommandAliases } from './command-meta.ts'
 import { clearDraft, getStashedDraft, getStashedHistory, stashDraft, stashHistory } from './draft-stash.ts'
-import { ACTION_CANCEL, ACTION_CYCLE_MODE, ACTION_INTERRUPT, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_STEER } from './keys.ts'
+import { ACTION_CANCEL, ACTION_CYCLE_MODE, ACTION_CYCLE_MODEL, ACTION_INTERRUPT, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_STEER } from './keys.ts'
+import { cycleSessionModel } from './model-commands.ts'
 import { cycleMode } from './mode-commands.ts'
 import { openPermissionPanel } from './permission-panel.ts'
 import { ACTION_QUEUE_RECALL, queuedMessageText } from './pane-queue.ts'
@@ -423,6 +424,16 @@ export function apply(ctx: Context): void {
     // — the input mode and the session mode are orthogonal axes.
     if (keymap.matches(data, ACTION_CYCLE_MODE)) {
       void cycleMode(ctx)
+      return true
+    }
+    // Alt+M: cycle the session model within the current provider through
+    // the session-only channel (S30). The switch flashes its notice and
+    // leaves the draft alone — reaching /model would consume the typed
+    // line, which is exactly what the hotkey avoids. Always consumed for
+    // the same reasons as the mode cycle, and it fires in bash mode too
+    // (input mode and model are orthogonal axes).
+    if (keymap.matches(data, ACTION_CYCLE_MODEL)) {
+      void cycleSessionModel(ctx)
       return true
     }
     // Up/Down: with the side-question pane docked above and an empty buffer,

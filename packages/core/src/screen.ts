@@ -107,4 +107,14 @@ export class BlueScreenService extends Service implements BlueScreen {
   requestRender(force?: boolean): void {
     this.runtime.requestRender(force)
   }
+
+  /**
+   * Set the terminal's window/tab title (a sanitized OSC 0 write; inside
+   * tmux, the tmux window name).
+   * @param title - untrusted title text; control characters are stripped
+   *   and the payload capped before the write.
+   */
+  setTitle(title: string): void {
+    this.runtime.setTitle(title)
+  }
 }

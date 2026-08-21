@@ -25,6 +25,10 @@
       "types": "./lib/types/status-cwd.d.ts",
       "default": "./lib/status-cwd.js"
     },
+    "./status-title": {
+      "types": "./lib/types/status-title.d.ts",
+      "default": "./lib/status-title.js"
+    },
     "./status-git": {
       "types": "./lib/types/status-git.d.ts",
       "default": "./lib/status-git.js"

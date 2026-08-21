@@ -69,6 +69,7 @@ async function mount(options: {
   running?: boolean
   appExit?: (code: number) => void
   inbox?: ReturnType<typeof fakeInbox>
+  modelRef?: unknown
 } = {}): Promise<{
   ctx: Context
   screen: FakeScreen
@@ -96,7 +97,7 @@ async function mount(options: {
     steer,
     inbox: options.inbox ?? fakeInbox(),
   } as unknown as Agent
-  ctx.provide('blueSession', { current: options.withAgent === false ? null : agent, modelRef: undefined })
+  ctx.provide('blueSession', { current: options.withAgent === false ? null : agent, modelRef: options.modelRef ?? undefined })
   if (options.appExit !== undefined) ctx.provide('appExit', options.appExit)
   const fiber = await ctx.plugin(inputPlugin)
   const editor = screen.children[0] as FakeBlueEditor
@@ -935,5 +936,47 @@ describe('blue-input plugin', () => {
       expect(followup).toHaveBeenCalledOnce()
       expect(command).not.toHaveBeenCalled()
     })
+  })
+})
+
+describe('the Alt+M model cycle key', () => {
+  /** Capture the shared editor's notice channel for assertions. */
+  function captureNotices(): string[] {
+    const notices: string[] = []
+    const shared = getSharedEditor() as { notice?: (text: string) => void } | undefined
+    expect(shared).toBeDefined()
+    shared!.notice = (text: string) => { notices.push(text) }
+    return notices
+  }
+
+  it('switches the session model without touching the draft', async () => {
+    const writes: unknown[] = []
+    const state = { current: { provider: 'mock', model: 'mock' } }
+    const modelRef = {
+      get current() { return state.current },
+      set current(next: unknown) { state.current = next; writes.push(next) },
+    }
+    const { ctx, editor } = await mount({ modelRef })
+    ctx.provide('llm', {
+      listModels: async () => [{ id: 'mock', name: 'Mock' }, { id: 'mock-pro', name: 'Mock Pro' }],
+    } as never)
+    const notices = captureNotices()
+    type(editor, 'keep this draft')
+    editor.handleInput(KEY.altM)
+    // The press is consumed before the Editor sees it, so the draft
+    // survives byte for byte — the point of the hotkey.
+    expect(editor.getText()).toBe('keep this draft')
+    await vi.waitFor(() => { expect(notices).toHaveLength(1) })
+    expect(notices[0]).toBe('Switched to mock-pro (mock) · session only')
+    expect(writes).toEqual([{ provider: 'mock', model: 'mock-pro' }])
+  })
+
+  it('still consumes the press without a session, flashing the guard notice', async () => {
+    const { editor } = await mount({ withAgent: false })
+    const notices = captureNotices()
+    type(editor, 'draft')
+    editor.handleInput(KEY.altM)
+    expect(editor.getText()).toBe('draft')
+    await vi.waitFor(() => { expect(notices).toEqual(['no session is live yet']) })
   })
 })
