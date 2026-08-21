@@ -11,10 +11,8 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**/*.ts', 'packages/bundle/*/src/**/*.ts'],
-      // Types-only files carry no executable code. The s33-debug row is the
-      // temporary dogfood verification plugin — excluded while it exists and
-      // removed with it before merge (D37).
-      exclude: ['packages/*/src/types.ts', 'packages/bundle/*/src/types.ts', 'packages/transcript/src/s33-debug.ts'],
+      // Types-only files carry no executable code.
+      exclude: ['packages/*/src/types.ts', 'packages/bundle/*/src/types.ts'],
       thresholds: {
         perFile: true,
         statements: 100,

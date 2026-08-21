@@ -46,9 +46,6 @@ describe('blue bundle', () => {
       'blue-theme-dark',
       'blue-banner',
       'blue-transcript',
-      // S33 dogfood verification row — TEMPORARY, removed with the debug
-      // plugin before merge (D37).
-      'blue-s33-debug',
       'blue-status-basic',
       'blue-editor-plus',
       'blue-attachments',
