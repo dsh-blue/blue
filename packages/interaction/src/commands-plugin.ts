@@ -12,7 +12,9 @@
  * plan/yolo exclusivity wiring live in `./mode-commands.ts`; the
  * session-info family (`/status` `/usage` `/version`) lives in
  * `./session-commands.ts`; `/init` (the canned AGENTS.md prompt) lives in
- * `./session-init.ts`.
+ * `./session-init.ts`; the config family (`/tools` over the live tool
+ * catalog, `/preset` over the agent-preset roster) lives in
+ * `./tools-commands.ts` and `./preset-commands.ts`.
  * Registrations are
  * effect-bound, so unloading the fiber removes them. Only `commands` is
  * injected: the overlay commands read the Blue display services through
@@ -42,12 +44,14 @@ import type { HelpSection } from './help.ts'
 import { HelpOverlay } from './help.ts'
 import { registerModelCommands } from './model-commands.ts'
 import { registerModeCommands, setupModeTracking } from './mode-commands.ts'
+import { registerPresetCommands } from './preset-commands.ts'
 import { registerSessionCommands } from './session-commands.ts'
 import { registerExportCommands } from './session-export.ts'
 import { registerInitCommand } from './session-init.ts'
 import { SelectListPanel } from './select-list.ts'
 import { CURRENT_MARK } from './symbols.ts'
 import { registerThemeCommand } from './theme-switch.ts'
+import { registerToolsCommands } from './tools-commands.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-commands'
@@ -276,6 +280,10 @@ export function apply(ctx: Context): void {
     const sessionExport = registerExportCommands(ctx)
     // The canned-prompt command (`/init`).
     const init = registerInitCommand(ctx)
+    // The config-family commands (S28): `/tools` over the live tool
+    // catalog, `/preset` over the agent-preset roster.
+    const toolCatalog = registerToolsCommands(ctx)
+    const agentPresets = registerPresetCommands(ctx)
     return () => {
       quit()
       quitAliases()
@@ -292,6 +300,8 @@ export function apply(ctx: Context): void {
       sessionInfo()
       sessionExport()
       init()
+      toolCatalog()
+      agentPresets()
     }
   })
 }

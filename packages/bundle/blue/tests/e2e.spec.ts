@@ -3247,6 +3247,178 @@ describe('blue whole-tree e2e', () => {
     })
   })
 
+  it('mounts every agent onto the roster default and honors the logged selection across a resume (thin-host)', async () => {
+    const fixtures = [
+      { id: 'alpha', tool: 'e2e_alpha_tool', order: 1 },
+      { id: 'beta', tool: 'e2e_beta_tool', order: 2 },
+    ]
+    // Tree one: the default boot mounts the roster default (alpha), a
+    // switch rebinds to beta, and the selection event lands in the log.
+    const persistenceRoot = mkdtempTracked('dsh-blue-e2e-presets-')
+    const first = await bootBlue([], { script: [], presetFixtures: fixtures, persistenceRoot })
+    const firstAgent = await currentAgent(first)
+    const roster = first.ctx.get('agentPresets')!
+    expect(roster.composedPreset(firstAgent.ctx)).toBe('alpha')
+    await expect(executeCommand(first, firstAgent, '/preset beta')).resolves.toEqual({ kind: 'success', text: 'preset beta' })
+    expect(roster.composedPreset(firstAgent.ctx)).toBe('beta')
+    const sessionId = String(firstAgent.session.id)
+    await first.ctx.fiber.dispose()
+    disposers.length = 0
+    // Tree two: a fresh boot over the same persistence root resumes the
+    // session and rebuilds the composition its log names.
+    const second = await bootBlue(['--resume', sessionId], { script: [], presetFixtures: fixtures, persistenceRoot })
+    const secondAgent = await currentAgent(second)
+    expect(second.ctx.get('agentPresets')!.composedPreset(secondAgent.ctx)).toBe('beta')
+  })
+
+  it('/tools lists the session catalog with MCP grouping and closes on Escape', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    // Two global registrations from the spec side: a plain tool and an
+    // MCP-namespaced one, both in the agent's inherited global layer.
+    const tools = (tree.ctx as unknown as { tools: { register(definition: unknown): () => void } }).tools
+    tools.register({
+      name: 'spec_probe',
+      description: 'the spec-side probe tool',
+      parameters: { type: 'object', properties: {} },
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: '' }] },
+      execute: () => Promise.resolve('ok'),
+    })
+    tools.register({
+      name: 'mcp__demo__list_items',
+      description: 'demo list',
+      parameters: { type: 'object', properties: {} },
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: '' }] },
+      execute: () => Promise.resolve('ok'),
+    })
+    await expect(executeCommand(tree, agent, '/tools')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('spec_probe')
+    })
+    const frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).toContain('the spec-side probe tool')
+    expect(frame).toContain('MCP · demo (1)')
+    expect(frame).toContain('mcp__demo__list_items')
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('spec_probe')
+    })
+  })
+
+  it('/tools shows the preset-bound surface: the default mounts alpha and switching swaps the catalog', async () => {
+    const tree = await bootBlue([], {
+      script: [],
+      presetFixtures: [
+        { id: 'alpha', tool: 'e2e_alpha_tool', order: 1 },
+        { id: 'beta', tool: 'e2e_beta_tool', order: 2 },
+      ],
+    })
+    const agent = await currentAgent(tree)
+    await executeCommand(tree, agent, '/tools')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('e2e_alpha_tool')
+    })
+    let frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).not.toContain('e2e_beta_tool')
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('e2e_alpha_tool')
+    })
+    // The swap: beta's composition replaces alpha's in the agent's view.
+    await expect(executeCommand(tree, agent, '/preset beta')).resolves.toEqual({ kind: 'success', text: 'preset beta' })
+    await executeCommand(tree, agent, '/tools')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('e2e_beta_tool')
+    })
+    frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).not.toContain('e2e_alpha_tool')
+  })
+
+  it('opens the /preset picker on a bare line: broken rows block, cancel switches nothing', async () => {
+    const tree = await bootBlue([], {
+      script: [],
+      presetFixtures: [
+        { id: 'alpha', tool: 'e2e_alpha_tool', order: 1 },
+        { id: 'beta', tool: 'e2e_beta_tool', order: 2 },
+        { id: 'broken', broken: true, order: 3 },
+      ],
+    })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, '/preset')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('alpha')
+      expect(frame).toContain('beta')
+      expect(frame).toContain('broken')
+    })
+    // The default composition (alpha) is the current row.
+    const frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).toContain('← current')
+    // Step to the broken row and press Enter: blocked, no switch, no event.
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => {
+      expect(stripSgr(tree.terminal.output)).toContain('broken')
+    })
+    expect(agent.session.events.filter(event => event.type === 'agent-preset/selected')).toEqual([])
+    expect(tree.ctx.get('agentPresets')!.composedPreset(agent.ctx)).toBe('alpha')
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('Presets')
+    })
+  })
+
+  it('switches through the picker and the log records the same write path as a typed line', async () => {
+    const tree = await bootBlue([], {
+      script: [],
+      presetFixtures: [
+        { id: 'alpha', tool: 'e2e_alpha_tool', order: 1 },
+        { id: 'beta', tool: 'e2e_beta_tool', order: 2 },
+      ],
+    })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, '/preset')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('Presets')
+    })
+    // The cursor seeds on the current row (alpha); step down to beta and Enter.
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => {
+      expect(stripSgr(tree.terminal.output)).toContain('preset beta')
+    })
+    const selected = agent.session.events.filter(event => event.type === 'agent-preset/selected')
+    expect(selected.map(event => (event.data as { agentPreset: string }).agentPreset)).toEqual(['beta'])
+    const runs = agent.session.events.filter(event => event.type === 'command/run')
+    expect(runs.map(event => ({ name: event.data.name, args: event.data.args }))).toEqual([
+      { name: 'preset', args: '' },
+      { name: 'preset', args: ' beta' },
+    ])
+    expect(tree.ctx.get('agentPresets')!.composedPreset(agent.ctx)).toBe('beta')
+  })
+
+  it('/preset answers the unknown-target and blank-session guards', async () => {
+    const tree = await bootBlue([], {
+      script: [textResponse('ok')],
+      presetFixtures: [{ id: 'alpha', tool: 'e2e_alpha_tool', order: 1 }],
+    })
+    const agent = await currentAgent(tree)
+    const unknown = await executeCommand(tree, agent, '/preset nope')
+    expect(unknown?.kind).toBe('error')
+    expect(unknown?.kind === 'error' ? unknown.text : '').toContain('available:')
+    // One real turn opens the session: the blank-only guard refuses after it.
+    typeLine(tree.terminal, 'run')
+    await agent.whenIdle()
+    const locked = await executeCommand(tree, agent, '/preset alpha')
+    expect(locked).toEqual({
+      kind: 'error',
+      text: 'cannot switch presets: this session has already started (blank sessions only)',
+    })
+    expect(agent.session.events.filter(event => event.type === 'agent-preset/selected')).toEqual([])
+  })
+
   it('restores the terminal and removes every registration on dispose', async () => {
     const tree = await bootBlue([], { script: [] })
     const agent = await currentAgent(tree)
