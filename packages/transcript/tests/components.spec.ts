@@ -395,6 +395,20 @@ describe('ToolCallComponent', () => {
     ])
   })
 
+  it('truncates an over-wide bash command row to the viewport — the #15 family', () => {
+    // A real run crashed pi-tui's width guard on an 186-column grep pipeline
+    // (168-column terminal): the composed `$ command` row reached the
+    // renderer untruncated. Both the first row and continuations truncate.
+    const command = Array.from({ length: 24 }, () => 'very-long-segment').join(' && ')
+    const item = toolItem({ parsedArguments: { command: `${command}\n${command}` } })
+    const components = setup()
+    const rendered = new ToolCallComponent(item, COLORS, components).render(60)
+    for (const row of rendered.slice(2)) {
+      expect(components.visibleWidth(row)).toBeLessThanOrEqual(60)
+    }
+    expect(rendered[2]).toContain('...')
+  })
+
   it('caps the collapsed bash command preview and uncaps expanded', () => {
     const item = toolItem({
       parsedArguments: { command: Array.from({ length: 12 }, (_, n) => `c${n}`).join('\n') },

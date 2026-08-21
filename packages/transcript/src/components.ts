@@ -363,9 +363,13 @@ export class ToolCallComponent implements BlueComponent {
         : Math.min(command.length, COMMAND_PREVIEW_LINES)
       for (let index = 0; index < cap; index += 1) {
         const body = colors.muted(command[index]!)
+        // Budgeted like every other composed row (the select-list idiom): a
+        // long one-liner command must truncate to the viewport, not reach
+        // pi-tui's width guard (the #15 family — an 186-column grep
+        // pipeline crashed the real run).
         lines.push(index === 0
-          ? `${PREVIEW_INDENT}${colors.shellMode('$ ')}${body}`
-          : `${PREVIEW_INDENT}  ${body}`)
+          ? components.truncateToWidth(`${PREVIEW_INDENT}${colors.shellMode('$ ')}${body}`, width)
+          : components.truncateToWidth(`${PREVIEW_INDENT}  ${body}`, width))
       }
     }
     if (result === undefined) return lines
