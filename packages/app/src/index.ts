@@ -17,10 +17,14 @@ import type { AgentHandle, AgentSetup, CreateAgentOptions } from '@deepseek-ai/d
 import type { AgentDefaultModelConfig } from '@deepseek-ai/dsh-agent-default-model'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-// Empty type imports carry the loader Context merge for the settlement await
-// and the cmdline Context merge for the appExit host value.
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
+// Empty type imports carry the loader Context merge for the settlement await,
+// the cmdline Context merge for the appExit host value, and the
+// agent-presets merges: the optional `agentPresets` roster service plus the
+// `agent-preset/selected` SessionEventMap member the fold below narrows on.
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-cmdline'
+import type {} from '@deepseek-ai/dsh-agent-presets'
 import { createModelSelectionRef } from './model-ref.ts'
 import type { BlueModelSelectionRef } from './model-ref.ts'
 import type { BlueSessionRef } from './types.ts'
@@ -69,25 +73,61 @@ interface SelectionHolder {
   selection?: BlueModelSelectionRef
 }
 
+/** The session facts the preset fold reads; the Agent's own session satisfies it. */
+interface PresetBearingSession {
+  readonly header: { readonly agentPreset?: string }
+  readonly events: readonly SessionEvent[]
+}
+
 /**
- * Build the model-selection setup shared by Agent creation and both resume
- * paths. The selection reference resolves three tiers on read — an
- * in-session pick, the session log's last request header, then the process
- * default — so a resumed session keeps the model it was already using while
- * a fresh one starts from the default. `installModelSelection` snapshots
- * that merged read when a step enters prompt assembly, so a switch lands on
- * the next request.
+ * The preset a session's own record names: the newest `agent-preset/selected`
+ * event wins over the header's creation-time value (the upstream
+ * `resolveSessionPreset` rule, folded locally so the roster stays an optional
+ * composition — a host without it never loads this package at runtime).
+ * @param session - the session whose log and header name the preset.
+ * @returns the preset id the session runs, or `undefined` for the roster default.
+ */
+function sessionPreset(session: PresetBearingSession): string | undefined {
+  let preset: string | undefined
+  for (const event of session.events) {
+    if (event.type === 'agent-preset/selected') preset = event.data.agentPreset
+  }
+  return preset ?? session.header.agentPreset
+}
+
+/**
+ * The Agent setup every create/resume path shares: the model-selection
+ * install, then the preset mount. The selection reference resolves three
+ * tiers on read — an in-session pick, the session log's last request header,
+ * then the process default — so a resumed session keeps the model it was
+ * already using while a fresh one starts from the default;
+ * `installModelSelection` snapshots that merged read when a step enters
+ * prompt assembly, so a switch lands on the next request.
+ *
+ * The mount is the thin-host half of the S28 migration — the bundle patch
+ * disables the base's global agent-plane rows, so joining an agent to its
+ * preset's standing composition is what gives it a tool surface at all. The
+ * roster is a bundle-level optional: a composition without one (the row
+ * stripped, or Blue mounted into a host that keeps its own agent plane)
+ * skips the mount and the agent reads whatever the global layer offers,
+ * exactly as before the migration. A resumed or forked session re-mounts
+ * the composition its own log names, so a `/preset` switch outlives the
+ * process (the upstream composeAgent precedent).
+ * @param host - the driver's plugin context, where the roster is probed.
  * @param defaultModel - the default-model service supplying the fallback tier.
  * @param holder - receives the created reference for the commit-point publication.
- * @returns an Agent setup installing the mutable selection onto the agent scope.
+ * @returns the Agent setup for every create/resume path.
  */
-function modelSelectionSetup(defaultModel: AgentDefaultModelConfig, holder: SelectionHolder): AgentSetup {
-  return (agentCtx) => {
+function agentSetup(host: Context, defaultModel: AgentDefaultModelConfig, holder: SelectionHolder): AgentSetup {
+  return async (agentCtx) => {
     const agent = agentCtx.agent
     if (agent === undefined) throw new Error('blue-app: agent setup ran without a scoped agent')
     const selection = createModelSelectionRef(agent, defaultModel)
     installModelSelection(agentCtx, selection)
     holder.selection = selection
+    const roster = host.get('agentPresets')
+    if (roster === undefined) return
+    await roster.mount(agentCtx, sessionPreset(agent.session))
   }
 }
 
@@ -95,22 +135,20 @@ function modelSelectionSetup(defaultModel: AgentDefaultModelConfig, holder: Sele
  * Build the Agent-creation options shared by startup creation and the
  * `'blue/request-new'`/`'blue/request-fork'` switches: a fresh session id,
  * the current working directory, and the default model's provider/model
- * with the model-selection setup. Fork callers spread the result and
- * override `meta`/`seed` with the lineage fields.
+ * with the shared agent setup. Fork callers spread the result and override
+ * `meta`/`seed` with the lineage fields.
+ * @param host - the driver's plugin context, carried to the shared setup.
  * @param defaultModel - the default-model service supplying provider/model.
  * @param holder - receives the selection reference the setup creates.
  * @returns the creation options for a fresh session.
  */
-function createOptions(defaultModel: AgentDefaultModelConfig, holder: SelectionHolder): CreateAgentOptions {
-  // This bundle composes no preset roster, so the model-facing rows sit in
-  // the host plane and the agent reads them from the global layer (same
-  // construction as the headless runner).
+function createOptions(host: Context, defaultModel: AgentDefaultModelConfig, holder: SelectionHolder): CreateAgentOptions {
   const selection = defaultModel.currentSelection()
   return {
     sessionId: SessionId(`session-${randomUUID()}`),
     meta: { cwd: process.cwd() },
     agentOptions: { provider: selection.provider, model: selection.model },
-    setup: modelSelectionSetup(defaultModel, holder),
+    setup: agentSetup(host, defaultModel, holder),
   }
 }
 
@@ -169,10 +207,10 @@ export function apply(ctx: Context, config: Config): void {
       if (config.resume !== undefined) {
         handle = await agents.resume({
           resumeSessionId: SessionId(config.resume),
-          setup: modelSelectionSetup(defaultModel, holder),
+          setup: agentSetup(ctx, defaultModel, holder),
         })
       } else {
-        handle = await agents.create(createOptions(defaultModel, holder))
+        handle = await agents.create(createOptions(ctx, defaultModel, holder))
       }
     } catch (error) {
       // Startup has no live session to fall back to; fail the launch.
@@ -200,7 +238,7 @@ export function apply(ctx: Context, config: Config): void {
         // Resume before disposing: a failed switch keeps the live session.
         next = await agents.resume({
           resumeSessionId: SessionId(sessionId),
-          setup: modelSelectionSetup(defaultModel, holder),
+          setup: agentSetup(ctx, defaultModel, holder),
         })
       } catch (error) {
         io.stderr.write(`dsh: could not resume session ${sessionId}: ${describe(error)}\n`)
@@ -219,7 +257,7 @@ export function apply(ctx: Context, config: Config): void {
       let next: AgentHandle
       try {
         // Create before disposing: a failed switch keeps the live session.
-        next = await agents.create(createOptions(defaultModel, holder))
+        next = await agents.create(createOptions(ctx, defaultModel, holder))
       } catch (error) {
         io.stderr.write(`dsh: could not start a new session: ${describe(error)}\n`)
         return
@@ -248,7 +286,7 @@ export function apply(ctx: Context, config: Config): void {
       let next: AgentHandle
       try {
         next = await agents.create({
-          ...createOptions(defaultModel, holder),
+          ...createOptions(ctx, defaultModel, holder),
           meta: {
             cwd: active.session.header.cwd ?? process.cwd(),
             parentSession: active.id,

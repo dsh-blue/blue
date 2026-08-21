@@ -8,7 +8,7 @@
  * process terminal are substituted.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import AgentPresetsService from '@deepseek-ai/dsh-agent-presets'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { LlmModelInfo, LlmModelReasoningInfo } from '@deepseek-ai/dsh-llm'
 import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
@@ -184,6 +185,18 @@ interface BlueTree {
   sessionChanges: Agent[]
 }
 
+/** One fixture preset the e2e roster's temp root ships. */
+interface PresetFixture {
+  /** The preset id (directory name and roster key). */
+  id: string
+  /** A tool the preset's composition registers (`e2e` tool names stay distinct). */
+  tool?: string
+  /** Ship an invalid composition: the roster lists the preset as broken. */
+  broken?: boolean
+  /** The display order (preset.yml metadata). */
+  order?: number
+}
+
 /** Test-scope hooks the Loader fixtures delegate to. */
 interface BlueE2EHooks {
   coreApply: (ctx: Context) => Promise<void>
@@ -247,6 +260,13 @@ async function bootBlue(argv: string[], options: {
    * the production path, the fold without it is the degraded host's.
    */
   sessionProjections?: boolean
+  /**
+   * The fixture presets the roster's temp root ships, replacing the default
+   * single empty composition (which keeps every other case's tool surface
+   * exactly what it registers itself). The first fixture is the roster
+   * default the app driver mounts fresh agents onto.
+   */
+  presetFixtures?: readonly PresetFixture[]
 }): Promise<BlueTree> {
   const dir = mkdtempTracked('dsh-blue-e2e-')
   const terminal = new FakeTerminal()
@@ -531,6 +551,49 @@ export const apply = (ctx) => {
       },
     })
   }
+  // The agent-preset roster, as the bundle patch now composes it (the
+  // thin-host migration): every agent the driver creates joins its preset's
+  // standing composition. The real service over a temp root; the writable
+  // user root stays off so a developer's own presets never leak in. The
+  // default fixture is one EMPTY composition — every plain case's tool
+  // surface stays exactly what it registers itself, unchanged from before
+  // the migration; preset cases pass richer fixtures.
+  const presets = options.presetFixtures ?? [{ id: 'e2e' }]
+  const presetRoot = join(dir, 'agent-presets')
+  for (const preset of presets) {
+    const presetDir = join(presetRoot, preset.id)
+    mkdirSync(presetDir, { recursive: true })
+    if (preset.broken === true) {
+      // Parses, then fails the entry-list audit: the roster lists it broken.
+      writeFileSync(join(presetDir, 'agent.cordis.yml'), 'not-a-list: true\n')
+    } else if (preset.tool !== undefined) {
+      const tool = JSON.stringify(preset.tool)
+      const toolRow = fixture(`${preset.id}-tool.mjs`, `
+export const name = '${preset.id}-tool'
+export const inject = ['tools']
+export const apply = (ctx) => {
+  ctx.effect(() => ctx.tools.register({
+    name: ${tool},
+    description: 'The ${preset.id} preset fixture tool',
+    parameters: { type: 'object', properties: {} },
+    output: { schema: { type: 'object' }, render: () => '' },
+    execute: async () => ({}),
+  }))
+}
+`)
+      writeFileSync(join(presetDir, 'agent.cordis.yml'), `- name: '${toolRow}'\n`)
+    } else {
+      writeFileSync(join(presetDir, 'agent.cordis.yml'), '[]\n')
+    }
+    if (preset.order !== undefined) {
+      writeFileSync(join(presetDir, 'preset.yml'), `order: ${preset.order}\n`)
+    }
+  }
+  await ctx.plugin(AgentPresetsService, {
+    default: presets[0]!.id,
+    roots: [{ path: presetRoot, trust: 'system' }],
+    includeUserRoot: false,
+  })
   // The settings family mounts before the default-model service so the
   // latter's settings-backed default tier resolves through the file.
   if (options.realSettings !== undefined) {
@@ -772,8 +835,13 @@ describe('blue whole-tree e2e', () => {
     const headingRow = shown.split(/\r?\n/).find(row => row.includes('Title'))
     expect(headingRow).toMatch(/\x1b\[1m/)
     const codeRow = shown.split(/\r?\n/).find(row => {
-      // OSC 8 hyperlink tails survive the SGR strip; match on the prefix.
-      const bare = row.replace(/\x1b\[[0-9;]*m/g, '').trim()
+      // The locator strips every ANSI control sequence, not just SGR: OSC 8
+      // hyperlink tails survive an SGR-only strip, and a late dock repaint
+      // (e.g. the git badge resolving on a slow big-diff checkout) re-emits
+      // rows behind an erase-line `\x1b[2K` prefix. The assertion wants the
+      // row's true color, which interleaves INSIDE the code, so only the
+      // transport wrappers may go.
+      const bare = row.replace(/\x1b\[[0-9;]*[a-zA-Z]|\x1b\]8;;\x07/g, '').trim()
       return bare.startsWith('const x = 1')
     })
     expect(codeRow).toMatch(/\x1b\[38;2;/)
