@@ -51,6 +51,7 @@ function tagged(): BlueSemanticColors {
     border: tag('B'),
     success: tag('S'),
     error: tag('E'),
+    warning: tag('W'),
   }
 }
 
@@ -241,6 +242,27 @@ describe('ToolCallComponent', () => {
     expect(lines[1]).toContain('[E]✗ [/E]')
     expect(lines[1]).toContain('[E] · 1 line[/E]')
     expect(lines[2]).toBe('  [E]nope[/E]')
+  })
+
+  it('presents a declined plan review in the warning tone, not the error state', () => {
+    // dsh-plan-mode answers a rejection by failing exit_plan_mode — a
+    // user decision, not a tool failure (the S24b round-3 ruling).
+    const item = toolItem({ name: 'exit_plan_mode' })
+    item.result = { text: 'The user chose to keep planning; their feedback: mojap', isError: true }
+    const lines = new ToolCallComponent(item, tagged(), setup()).render(100)
+    expect(lines[1]).toContain('[W]◐ [/W]Used \x1b[1m[P]exit_plan_mode[/P]\x1b[22m')
+    expect(lines[1]).toContain('[W] · plan declined[/W]')
+    expect(lines[1]).not.toContain('✗')
+    expect(lines[2]).toBe('  [W]The user chose to keep planning; their feedback: mojap[/W]')
+    // The approve path stays the plain success card.
+    const approved = toolItem({ name: 'exit_plan_mode' })
+    approved.result = { text: 'Plan approved — plan mode exited', isError: false }
+    const ok = new ToolCallComponent(approved, tagged(), setup()).render(100)
+    expect(ok[1]).toContain('[S]✓ [/S]')
+    // Other tools failing still render the error state.
+    const other = toolItem({ name: 'probe' })
+    other.result = { text: 'nope', isError: true }
+    expect(new ToolCallComponent(other, tagged(), setup()).render(80)[1]).toContain('[E]✗ [/E]')
   })
 
   it('picks the key argument — whitelist first, then the first short arg', () => {

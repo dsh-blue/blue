@@ -3037,6 +3037,11 @@ describe('blue whole-tree e2e', () => {
     expect(followUp).toContain('The user chose to keep planning')
     await agent.whenIdle()
     expect(planMode.get(agent).active).toBe(true)
+    // The declined review renders as the warning-tone decision record,
+    // not the ✗ error card (the round-3 ruling).
+    const frame = await fullFrame(tree.terminal)
+    expect(frame).toContain('plan declined')
+    expect(frame).not.toContain('✗ Used exit_plan_mode')
   })
 
   it('submits revision feedback from the third row: their feedback reaches the model', async () => {

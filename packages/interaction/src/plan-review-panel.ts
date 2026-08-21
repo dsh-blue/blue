@@ -46,11 +46,17 @@ const KEY_PAGE_DOWN = '\x1b[6~'
 const KEY_ENTER = '\r'
 const KEY_ESCAPE = '\x1b'
 
-/** Plan rows rendered at once; longer plans scroll (the help window's budget). */
-const MAX_PLAN_ROWS = 10
+/**
+ * The panel chrome the plan window yields to: frame title + bottom rule,
+ * the question row, the box's two borders, the blank rule, three list
+ * rows, the revise hint, and the two-row footer shell below the panel.
+ * The window fills the remaining height (the dogfood round-3 ruling: the
+ * plan is the thing to read).
+ */
+const RESERVED_ROWS = 12
 
-/** Rows one page jump moves (the help overlay's page size). */
-const PAGE_SCROLL = 10
+/** The smallest plan window a very short terminal still gets. */
+const MIN_PLAN_ROWS = 6
 
 /** The trailing cursor block on the revision row while it holds focus (FormPanel). */
 const CURSOR_BLOCK = '\u001b[7m \u001b[0m'
@@ -106,6 +112,8 @@ export interface PlanReviewPanelOptions {
   readonly question: AskUserQuestionItem
   /** The decision pair (from {@link planReviewChoices}). */
   readonly choices: PlanReviewChoices
+  /** The plan-review question's live viewport height, in rows. */
+  readonly viewportRows: () => number
   /** Firing Approve or Reject, or submitting the revision input. */
   readonly onComplete: (answer: AskUserQuestionAnswerItem) => void
   /** Escape — dismiss the ask to speak instead. */
@@ -153,6 +161,11 @@ export class PlanReviewPanel implements BlueFocusable {
     }
   }
 
+  /** The plan window's row budget: the viewport minus the panel chrome. */
+  private planWindowRows(): number {
+    return Math.max(MIN_PLAN_ROWS, this.options.viewportRows() - RESERVED_ROWS)
+  }
+
   /**
    * Dispatch one input sequence: ↑/↓ move the cursor, the digits jump
    * (and fire, except 3 which focuses the input), Enter fires the
@@ -187,11 +200,11 @@ export class PlanReviewPanel implements BlueFocusable {
       }
     }
     if (data === KEY_PAGE_UP) {
-      this.scrollTop = Math.max(0, this.scrollTop - PAGE_SCROLL)
+      this.scrollTop = Math.max(0, this.scrollTop - this.planWindowRows())
       return
     }
     if (data === KEY_PAGE_DOWN) {
-      this.scrollTop += PAGE_SCROLL // render clamps
+      this.scrollTop += this.planWindowRows() // render clamps
       return
     }
     if (data === KEY_ESCAPE) {
@@ -266,15 +279,16 @@ export class PlanReviewPanel implements BlueFocusable {
     const boxWidth = Math.max(4, width - 4)
     const contentWidth = boxWidth - 4
     const plan = this.markdown.render(contentWidth)
+    const maxRows = this.planWindowRows()
     const lines: string[] = [topRule(boxWidth, {
       title: colors.primary(' plan '),
-      ...(plan.length > MAX_PLAN_ROWS ? { hint: colors.textMuted('pgup/pgdn scroll') } : {}),
+      ...(plan.length > maxRows ? { hint: colors.textMuted('pgup/pgdn scroll') } : {}),
       paint: colors.border,
     })]
-    const windowed = plan.length > MAX_PLAN_ROWS
-    if (windowed) this.scrollTop = Math.max(0, Math.min(this.scrollTop, plan.length - MAX_PLAN_ROWS))
+    const windowed = plan.length > maxRows
+    if (windowed) this.scrollTop = Math.max(0, Math.min(this.scrollTop, plan.length - maxRows))
     const slice = windowed
-      ? plan.slice(this.scrollTop, this.scrollTop + MAX_PLAN_ROWS)
+      ? plan.slice(this.scrollTop, this.scrollTop + maxRows)
       : plan
     for (const line of slice) {
       const clipped = components.truncateToWidth(line, contentWidth, '…')

@@ -29,7 +29,7 @@ function ask(overrides: Partial<AskUserQuestionItem> = {}): AskUserQuestionItem 
 /** A 15-line plan body, beyond the 10-row window. */
 const LONG_DETAIL = Array.from({ length: 15 }, (_, index) => `line ${index + 1}`).join('\n')
 
-function mount(question: AskUserQuestionItem): {
+function mount(question: AskUserQuestionItem, viewportRows = 24): {
   panel: PlanReviewPanel
   onComplete: ReturnType<typeof vi.fn>
   onCancel: ReturnType<typeof vi.fn>
@@ -43,6 +43,7 @@ function mount(question: AskUserQuestionItem): {
     components: new FakeBlueComponents(),
     question,
     choices,
+    viewportRows: () => viewportRows,
     onComplete,
     onCancel,
   })
@@ -94,21 +95,34 @@ describe('PlanReviewPanel rendering', () => {
   })
 
   it('windows a long plan behind a showing tail inside the box and pages through it', () => {
+    // At 24 viewport rows the window is 12 (the panel chrome reserves 12).
     const { panel } = mount(ask({ detail: LONG_DETAIL }))
     const first = panel.render(60).join('\n')
-    expect(first).toContain('showing 1-10 of 15')
+    expect(first).toContain('showing 1-12 of 15')
     expect(first).toContain('pgup/pgdn scroll')
     expect(first).toContain('line 1')
-    expect(first).not.toContain('line 11')
+    expect(first).not.toContain('line 13')
+    // One page (the window size) clamps to the last full window.
     panel.handleInput('\x1b[6~')
     const paged = panel.render(60).join('\n')
-    // One page (10) from the top clamps to the last full window.
-    expect(paged).toContain('showing 6-15 of 15')
-    expect(paged).not.toContain('line 5')
+    expect(paged).toContain('showing 4-15 of 15')
+    expect(paged).not.toContain('line 3')
     // Page up clamps at the top.
     panel.handleInput('\x1b[5~')
     panel.handleInput('\x1b[5~')
-    expect(panel.render(60).join('\n')).toContain('showing 1-10 of 15')
+    expect(panel.render(60).join('\n')).toContain('showing 1-12 of 15')
+  })
+
+  it('fills the viewport: a tall terminal windows nothing, a tiny one clamps to the minimum', () => {
+    const tall = mount(ask({ detail: LONG_DETAIL }), 40)
+    const frame = tall.panel.render(60).join('\n')
+    expect(frame).not.toContain('showing')
+    expect(frame).not.toContain('pgup/pgdn')
+    expect(frame).toContain('line 15')
+    const tiny = mount(ask({ detail: LONG_DETAIL }), 12)
+    const small = tiny.panel.render(60).join('\n')
+    expect(small).toContain('showing 1-6 of 15')
+    expect(small).not.toContain('line 7')
   })
 
   it('rides the typed revision text inline with the cursor block and hint', () => {

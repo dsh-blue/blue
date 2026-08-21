@@ -84,6 +84,9 @@ function askAll(ctx: Context, request: AskUserQuestionRequest): Promise<AskUserQ
         components: ctx.blueComponents,
         question: single,
         choices,
+        // The plan window fills the viewport (round-3 ruling) — read live
+        // so a resize re-fits the open panel.
+        viewportRows: () => ctx.blueScreen.rows,
         onComplete: (answer) => {
           settle(() => {
             resolve({ answers: [answer] })
