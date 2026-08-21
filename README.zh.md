@@ -83,7 +83,7 @@ Headless 冒烟检查（经 `script(1)` 伪 TTY）：
 - **输入编辑器** —— 圆角框编辑器：slash 命令模糊补全、参数幽灵提示、`!` bash 模式、`@` 文件补全、`#` 技能补全、Ctrl-V 剪贴板贴图。
 - **Overlay** —— 四选项审批面板（session 级"总是允许"继承）与 tab 化用户问卷 overlay。
 - **两行状态栏** —— 模型名、会话模式徽标、git 分支、上下文占用 `ctx N`；条目是注册表贡献，不是写死的。
-- **底部 dock 面板** —— agent 运行中的活动 spinner、排队消息、todo 列表、fork 当前会话的 `/btw` 旁路问答面板。
+- **底部 dock 面板** —— agent 运行中的活动 spinner、排队消息、todo 列表、fork 当前会话的 `/btw` 旁路问答面板、子代理分组面板。
 - **主题** —— `/theme` 热切换：`dark` / `light` / `auto`（OSC 11 背景探测）/ `custom`（JSON 调色板）。
 - **天然可扩展** —— 命令、状态栏条目、编辑器增强都经下游插件同款的缝注册；补全菜单与 `/help` 反映实时注册表。
 
@@ -147,20 +147,42 @@ Headless 冒烟检查（经 `script(1)` 伪 TTY）：
 
 ## 分层架构
 
-```
-┌──────────────────────────────────────────────────────┐
-│ L4  组合层：bundle/blue —— cordis.patch.yml            │  骑在 dsh-base 上
-├──────────────────────────────────────────────────────┤
-│ L3  渲染插件：transcript（折叠器 + 状态栏）            │  可热替换、可省略
-├──────────────────────────────────────────────────────┤
-│ L2  交互插件：input / commands / approval              │  实现 harness 交互缝
-├──────────────────────────────────────────────────────┤
-│ L1  内核服务：blueScreen · blueTheme · …               │  稳定核心（core 包）
-├──────────────────────────────────────────────────────┤
-│ L0  pi-tui 适配：终端生命周期 ↔ fiber 绑定             │  全树唯一 import pi-tui
-├──────────────────────────────────────────────────────┤
-│ dsh-base（agents / sessions / commands / …）           │
-└──────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph L4["L4 组合层 —— @dsh-blue/blue（bundle）"]
+        patch["cordis.patch.yml —— 在 dsh-base 之上插入 Blue 插件行"]
+        app["blue-app · blue-startup —— 命令行启动 + Agent 驱动"]
+    end
+    subgraph L3["L3 渲染插件 —— @dsh-blue/blue-transcript · 可热替换、可省略"]
+        fold["事件折叠 → 流式 Markdown + 工具卡片"]
+        status["blueStatus 注册表 + 两行 footer 壳"]
+        dock["dock 面板 —— activity · todo · btw · 子代理分组"]
+    end
+    subgraph L2["L2 交互插件 —— @dsh-blue/blue-interaction · 实现 harness 交互缝"]
+        input["blue-input —— 编辑器 + 补全"]
+        cmds["blue-commands —— 内置命令"]
+        qa["blue-approval · blue-questions —— 审批/问卷 overlay"]
+        enh2["增强 —— editor-plus · paste-image · attachments · pane-queue · mode-status"]
+    end
+    subgraph L1["L1 内核服务 —— @dsh-blue/blue-core"]
+        services["blueScreen · blueTheme · blueKeymap · blueComponents · blueTerminalInfo"]
+    end
+    subgraph L0["L0 pi-tui 适配 —— @dsh-blue/blue-core"]
+        adapter["终端生命周期 ↔ fiber 绑定"]
+    end
+    subgraph BASE["dsh-base —— 宿主 bundle"]
+        seams["agents · sessions · commands · userQuestions · approval · agentPresets"]
+    end
+    pitui["pi-tui ^0.84.2（npm）"]
+
+    L4 --> L3
+    L4 --> L2
+    L3 --> L1
+    L2 --> L1
+    L1 --> L0
+    L0 --> pitui
+    L2 -. 实现交互缝 .-> BASE
+    L4 -. 骑在 .-> BASE
 ```
 
 依赖严格单向：`core ← transcript / interaction ← app ← bundle`。
@@ -168,12 +190,44 @@ Headless 冒烟检查（经 `script(1)` 伪 TTY）：
 | 包 | 层 | 职责 |
 | --- | --- | --- |
 | [`@dsh-blue/blue-core`](packages/core) | L0 + L1 | 全树唯一 `@earendil-works/pi-tui` 适配器：终端生命周期 + `blueScreen` / `blueTheme` / `blueKeymap` / `blueComponents` / `blueTerminalInfo` 服务。 |
-| [`@dsh-blue/blue-interaction`](packages/interaction) | L2 | 输入编辑器、slash 命令、审批与提问 overlay，以及增强子路径插件（bash 模式、贴图、附件）。 |
-| [`@dsh-blue/blue-transcript`](packages/transcript) | L3 | 会话事件折叠为 transcript 项并渲染（流式 Markdown、工具卡片）、`blueStatus` 注册表与 footer 壳、dock 面板。 |
+| [`@dsh-blue/blue-interaction`](packages/interaction) | L2 | 输入编辑器、slash 命令、审批与提问 overlay、排队消息面板，以及增强子路径插件（bash 模式、贴图、附件）。 |
+| [`@dsh-blue/blue-transcript`](packages/transcript) | L3 | 会话事件折叠为 transcript 项并渲染（流式 Markdown、工具卡片）、`blueStatus` 注册表与 footer 壳、dock 面板（activity / todo / `/btw` / 子代理分组）。 |
 | [`@dsh-blue/blue-app`](packages/app) | L4 | 命令行启动（`[task]`、`--resume <id>`）与发布 `blueSession` 的 Agent 驱动。 |
 | [`@dsh-blue/blue`](packages/bundle/blue) | L4 | 可安装 bundle：`cordis.patch.yml` 在 `dsh-base` 之上插入 Blue 插件行。 |
 
 每个入口都是 Cordis 插件形态（`export const name`、可选 `inject`、`apply(ctx)`）；Cordis 与 dsh 服务包是 `peerDependencies`，由宿主 `dsh` 安装提供。
+
+**同一棵树，换成 bundle 视角。** `cordis.patch.yml` 分三段插入 23 条 Blue 行。plain 基线（基线段 + 组装段，共 8 行）自足可跑；增强段的每一行——整个虚线段——都可单独删掉，这就是 plain-first（ADR D21）的图景：
+
+```mermaid
+flowchart TB
+    subgraph bundle["cordis.patch.yml —— 23 条 Blue 行"]
+        subgraph baseline["plain 基线 —— 8 行，自足"]
+            core["blue-core"]
+            theme["blue-theme-dark"]
+            banner["blue-banner"]
+            transcript["blue-transcript"]
+            sbasic["blue-status-basic"]
+            interaction["blue-interaction"]
+            startup["blue-startup"]
+            bapp["blue-app"]
+        end
+        subgraph enhancement["增强段 —— 每行皆可删"]
+            editorPlus["blue-editor-plus"]
+            att["blue-attachments · blue-paste-image"]
+            statusEnh["blue-status-cwd · -git · -mode · -tips · -context"]
+            intents["blue-intent-diff · -terminal"]
+            panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
+        end
+    end
+    dshbase["dsh-base —— agent 面行禁用，agent 组合收进 agent-presets"]
+    bundle -.-> dshbase
+
+    classDef optional stroke-dasharray: 4 4;
+    class editorPlus,att,statusEnh,intents,panes optional;
+```
+
+Dock 顺序即插件行序——activity → queue → todo → btw → 子代理分组，编辑器最后挂载。宿主的 agent 面（工具、plan 模式……）被进程级禁用、按 agent 在预设后面重新组合（ADR D37 薄宿主）；`/preset` 切换组合。
 
 ## Editor 缝速览
 

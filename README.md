@@ -83,7 +83,7 @@ Headless smoke check (pseudo-TTY via `script(1)`):
 - **Input editor** — rounded-box editor with fuzzy slash-command autocomplete, argument ghost hints, `!` bash mode, `@` file completion, `#` skill completion, and Ctrl-V clipboard image paste.
 - **Overlays** — four-option approval panel (with session-level "always allow" inheritance) and tabbed user-questionnaire overlays.
 - **Two-row status footer** — model name, session-mode badge, git branch, context occupancy `ctx N`; entries are registry contributions, not hardcoded.
-- **Bottom dock panes** — activity spinner while the agent runs, queued inbox messages, todo list, and a `/btw` side-question pane that forks the live session.
+- **Bottom dock panes** — activity spinner while the agent runs, queued inbox messages, todo list, a `/btw` side-question pane that forks the live session, and the subagent-group pane.
 - **Theming** — `/theme` hot-switching across `dark` / `light` / `auto` (OSC 11 background detection) / `custom` (JSON palette).
 - **Extensible by construction** — commands, status entries, and editor enhancements register through the same seams downstream plugins use; the completion menu and `/help` reflect the live registry.
 
@@ -147,20 +147,42 @@ The full architecture document is [docs/blue-architecture.md](docs/blue-architec
 
 ## Layered architecture
 
-```
-┌──────────────────────────────────────────────────────┐
-│ L4  composition: bundle/blue — cordis.patch.yml        │  rides on dsh-base
-├──────────────────────────────────────────────────────┤
-│ L3  render plugins: transcript (folds + status bar)    │  hot-swappable, omissible
-├──────────────────────────────────────────────────────┤
-│ L2  interaction plugins: input / commands / approval   │  implements harness seams
-├──────────────────────────────────────────────────────┤
-│ L1  kernel services: blueScreen · blueTheme · …        │  stable core (core package)
-├──────────────────────────────────────────────────────┤
-│ L0  pi-tui adapter: terminal lifecycle ↔ fibers        │  the tree's only pi-tui import
-├──────────────────────────────────────────────────────┤
-│ dsh-base (agents / sessions / commands / …)            │
-└──────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph L4["L4 composition — @dsh-blue/blue (bundle)"]
+        patch["cordis.patch.yml — inserts the Blue rows over dsh-base"]
+        app["blue-app · blue-startup — CLI startup + Agent driver"]
+    end
+    subgraph L3["L3 render plugins — @dsh-blue/blue-transcript · hot-swappable, omissible"]
+        fold["event folds → streamed Markdown + tool cards"]
+        status["blueStatus registry + two-row footer shell"]
+        dock["dock panes — activity · todo · btw · subagents"]
+    end
+    subgraph L2["L2 interaction plugins — @dsh-blue/blue-interaction · implements the harness seams"]
+        input["blue-input — editor + completion"]
+        cmds["blue-commands — built-in commands"]
+        qa["blue-approval · blue-questions — overlays"]
+        enh2["enhancements — editor-plus · paste-image · attachments · pane-queue · mode-status"]
+    end
+    subgraph L1["L1 kernel services — @dsh-blue/blue-core"]
+        services["blueScreen · blueTheme · blueKeymap · blueComponents · blueTerminalInfo"]
+    end
+    subgraph L0["L0 pi-tui adapter — @dsh-blue/blue-core"]
+        adapter["terminal lifecycle ↔ fiber binding"]
+    end
+    subgraph BASE["dsh-base — host bundle"]
+        seams["agents · sessions · commands · userQuestions · approval · agentPresets"]
+    end
+    pitui["pi-tui ^0.84.2 (npm)"]
+
+    L4 --> L3
+    L4 --> L2
+    L3 --> L1
+    L2 --> L1
+    L1 --> L0
+    L0 --> pitui
+    L2 -. implements interaction seams .-> BASE
+    L4 -. rides on .-> BASE
 ```
 
 Dependencies are strictly one-way: `core ← transcript / interaction ← app ← bundle`.
@@ -168,12 +190,44 @@ Dependencies are strictly one-way: `core ← transcript / interaction ← app �
 | Package | Layer | Role |
 | --- | --- | --- |
 | [`@dsh-blue/blue-core`](packages/core) | L0 + L1 | The tree's only `@earendil-works/pi-tui` adapter: terminal lifecycle plus the `blueScreen` / `blueTheme` / `blueKeymap` / `blueComponents` / `blueTerminalInfo` services. |
-| [`@dsh-blue/blue-interaction`](packages/interaction) | L2 | Input editor, slash commands, approval and user-question overlays, plus enhancement subpath plugins (bash mode, image paste, attachments). |
-| [`@dsh-blue/blue-transcript`](packages/transcript) | L3 | Folds session events into transcript items and renders them (streamed Markdown, tool cards), the `blueStatus` registry with its footer shell, and dock panes. |
+| [`@dsh-blue/blue-interaction`](packages/interaction) | L2 | Input editor, slash commands, approval and user-question overlays, the queued-inbox pane, plus enhancement subpath plugins (bash mode, image paste, attachments). |
+| [`@dsh-blue/blue-transcript`](packages/transcript) | L3 | Folds session events into transcript items and renders them (streamed Markdown, tool cards), the `blueStatus` registry with its footer shell, and the dock panes (activity, todo, `/btw`, subagent group). |
 | [`@dsh-blue/blue-app`](packages/app) | L4 | Command-line startup (`[task]`, `--resume <id>`) and the Agent driver publishing `blueSession`. |
 | [`@dsh-blue/blue`](packages/bundle/blue) | L4 | The installable bundle: `cordis.patch.yml` inserts the Blue plugin rows over `dsh-base`. |
 
 Each entry point is a Cordis plugin (`export const name`, optional `inject`, `apply(ctx)`); Cordis and the dsh service packages are `peerDependencies` provided by the host `dsh` installation.
+
+**The same tree, seen from the bundle.** `cordis.patch.yml` inserts 23 Blue rows in three segments. The plain baseline (baseline + assembly, 8 rows) boots and works alone; every enhancement row — the whole dashed segment — is individually deletable, which is plain-first (ADR D21) as a picture:
+
+```mermaid
+flowchart TB
+    subgraph bundle["cordis.patch.yml — the 23 Blue rows"]
+        subgraph baseline["plain baseline — 8 rows, self-sufficient"]
+            core["blue-core"]
+            theme["blue-theme-dark"]
+            banner["blue-banner"]
+            transcript["blue-transcript"]
+            sbasic["blue-status-basic"]
+            interaction["blue-interaction"]
+            startup["blue-startup"]
+            bapp["blue-app"]
+        end
+        subgraph enhancement["enhancement segment — every row droppable"]
+            editorPlus["blue-editor-plus"]
+            att["blue-attachments · blue-paste-image"]
+            statusEnh["blue-status-cwd · -git · -mode · -tips · -context"]
+            intents["blue-intent-diff · -terminal"]
+            panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
+        end
+    end
+    dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]
+    bundle -.-> dshbase
+
+    classDef optional stroke-dasharray: 4 4;
+    class editorPlus,att,statusEnh,intents,panes optional;
+```
+
+Dock order is plugin-row order — activity → queue → todo → btw → subagents, the editor mounting last. The host's agent plane (tools, plan mode, …) is disabled process-wide and re-composed per agent behind presets (ADR D37 thin host); `/preset` switches the composition.
 
 ## The Editor seam, in brief
 
