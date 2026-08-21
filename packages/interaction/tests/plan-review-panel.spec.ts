@@ -81,36 +81,51 @@ describe('PlanReviewPanel rendering', () => {
     const frame = panel.render(60).join('\n')
     expect(frame).toContain('Plan review')
     expect(frame).toContain('^  Approve this plan and leave plan mode?^')
-    // The plan box: the titled top rule, the markdown body between side
-    // bars, the closing rule (the btw pane's box idiom).
-    expect(frame).toContain('╭^ plan ^')
-    expect(frame).toContain('# Fix the build')
+    // The plan box: a plain top rule (no title — the frame title already
+    // says Plan review), the markdown body at the box's own inset, the
+    // closing rule (the btw pane's box idiom).
+    expect(frame).toContain('│ # Fix the build')
     expect(frame).toContain('╰')
     // The numbered decision list: the approve option's own label, then
     // Blue's Reject and Revise wording; the seeded cursor on Approve.
     expect(frame).toContain('^▶ ^^1. Ship it^')
     expect(frame).toContain('2. Reject')
     expect(frame).toContain('3. Revise')
-    expect(frame).toContain('↑↓ choose · 1-3 select · esc dismiss')
+    expect(frame).toContain('←→/1-3 choose · ↑↓ scroll · esc dismiss')
   })
 
-  it('windows a long plan behind a showing tail inside the box and pages through it', () => {
+  it('windows a long plan behind a showing tail inside the box and scrolls it', () => {
     // At 24 viewport rows the window is 12 (the panel chrome reserves 12).
     const { panel } = mount(ask({ detail: LONG_DETAIL }))
     const first = panel.render(60).join('\n')
     expect(first).toContain('showing 1-12 of 15')
-    expect(first).toContain('pgup/pgdn scroll')
+    expect(first).toContain('↑↓ scroll')
     expect(first).toContain('line 1')
     expect(first).not.toContain('line 13')
-    // One page (the window size) clamps to the last full window.
+    // ↓/↑ step one line — the mouse wheel arrives as those arrows, so the
+    // wheel scrolls the plan (the round-4 ruling).
+    panel.handleInput(KEY.down)
+    expect(panel.render(60).join('\n')).toContain('showing 2-13 of 15')
+    panel.handleInput(KEY.up)
+    expect(panel.render(60).join('\n')).toContain('showing 1-12 of 15')
+    // PageDown/Up jump by the window size; one page clamps to the last
+    // full window.
     panel.handleInput('\x1b[6~')
     const paged = panel.render(60).join('\n')
     expect(paged).toContain('showing 4-15 of 15')
     expect(paged).not.toContain('line 3')
-    // Page up clamps at the top.
     panel.handleInput('\x1b[5~')
     panel.handleInput('\x1b[5~')
     expect(panel.render(60).join('\n')).toContain('showing 1-12 of 15')
+  })
+
+  it('scrolling never moves the choice cursor — the arrows are two axes', () => {
+    const { panel, onComplete } = mount(ask({ detail: LONG_DETAIL }))
+    for (let step = 0; step < 20; step += 1) panel.handleInput(KEY.down)
+    expect(onComplete).not.toHaveBeenCalled()
+    // Still the seeded Approve row: Enter approves, not rejects.
+    panel.handleInput(KEY.enter)
+    expect(onComplete).toHaveBeenCalledWith({ id: 'plan-review', selected: ['Ship it'] })
   })
 
   it('fills the viewport: a tall terminal windows nothing, a tiny one clamps to the minimum', () => {
@@ -127,15 +142,15 @@ describe('PlanReviewPanel rendering', () => {
 
   it('rides the typed revision text inline with the cursor block and hint', () => {
     const { panel } = mount(ask())
-    panel.handleInput(KEY.down)
-    panel.handleInput(KEY.down)
+    panel.handleInput(KEY.right)
+    panel.handleInput(KEY.right)
     for (const char of 'redo') panel.handleInput(char)
     const frame = panel.render(60).join('\n')
     expect(frame).toContain('3. Revise  redo')
     expect(frame).toContain('[7m [0m')
     expect(frame).toContain('~  Type feedback · ↵ submit.~')
     // Leaving the row drops the hint and the block but keeps the text.
-    panel.handleInput(KEY.up)
+    panel.handleInput(KEY.left)
     const moved = panel.render(60).join('\n')
     expect(moved).not.toContain('Type feedback')
     expect(moved).toContain('3. Revise  redo')
@@ -173,7 +188,7 @@ describe('PlanReviewPanel decisions', () => {
 
   it('rejects with the other option label from the second row', () => {
     const { panel, onComplete } = mount(ask())
-    panel.handleInput(KEY.down)
+    panel.handleInput(KEY.right)
     panel.handleInput(KEY.enter)
     expect(onComplete).toHaveBeenCalledWith({ id: 'plan-review', selected: ['Keep planning'] })
   })
@@ -209,21 +224,21 @@ describe('PlanReviewPanel decisions', () => {
     expect(onComplete).not.toHaveBeenCalled()
     expect(onCancel).not.toHaveBeenCalled()
     // The typed text never reached the revision input either.
-    panel.handleInput(KEY.down)
-    panel.handleInput(KEY.down)
+    panel.handleInput(KEY.right)
+    panel.handleInput(KEY.right)
     expect(panel.render(60).join('\n')).not.toContain('3. Revise  redo')
   })
 
-  it('moves with wraparound at both ends', () => {
+  it('moves with ←/→ and wraps at both ends', () => {
     const { panel, onComplete } = mount(ask())
-    // Up off the seeded Approve wraps to Revise; up again lands on Reject.
-    panel.handleInput(KEY.up)
-    panel.handleInput(KEY.up)
+    // Left off the seeded Approve wraps to Revise; left again lands on Reject.
+    panel.handleInput(KEY.left)
+    panel.handleInput(KEY.left)
     panel.handleInput(KEY.enter)
     expect(onComplete).toHaveBeenCalledWith({ id: 'plan-review', selected: ['Keep planning'] })
-    // Down off the tail wraps back to Approve.
-    panel.handleInput(KEY.down)
-    panel.handleInput(KEY.down)
+    // Right off the tail wraps back to Approve.
+    panel.handleInput(KEY.right)
+    panel.handleInput(KEY.right)
     panel.handleInput(KEY.enter)
     expect(onComplete).toHaveBeenLastCalledWith({ id: 'plan-review', selected: ['Ship it'] })
   })

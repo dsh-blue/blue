@@ -3029,8 +3029,8 @@ describe('blue whole-tree e2e', () => {
     const planMode = tree.ctx.get('planMode')!
     await expect(executeCommand(tree, agent, '/plan draft it')).resolves.toMatchObject({ kind: 'success' })
     await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('Plan review') })
-    // Down moves the button focus to Reject.
-    tree.terminal.sendInput('\x1b[B')
+    // Right moves the choice cursor to Reject.
+    tree.terminal.sendInput('\x1b[C')
     tree.terminal.sendInput('\r')
     await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(2) })
     const followUp = JSON.stringify(tree.adapter.requests[1]!.messages)
@@ -3052,10 +3052,10 @@ describe('blue whole-tree e2e', () => {
     const planMode = tree.ctx.get('planMode')!
     await expect(executeCommand(tree, agent, '/plan draft it')).resolves.toMatchObject({ kind: 'success' })
     await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('Plan review') })
-    // Down twice focuses the inline revision input; typed text rides the
+    // Right twice focuses the inline revision input; typed text rides the
     // row (digits included — the input owns the keys while focused).
-    tree.terminal.sendInput('\x1b[B')
-    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\x1b[C')
+    tree.terminal.sendInput('\x1b[C')
     await vi.waitFor(async () => {
       expect(await fullFrame(tree.terminal)).toContain('Type feedback')
     })

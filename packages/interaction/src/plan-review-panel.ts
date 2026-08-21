@@ -41,6 +41,8 @@ import { cycle } from './select-list.ts'
 /** Decoded input sequences the panel handles (no keymap actions). */
 const KEY_UP = '\x1b[A'
 const KEY_DOWN = '\x1b[B'
+const KEY_LEFT = '\x1b[D'
+const KEY_RIGHT = '\x1b[C'
 const KEY_PAGE_UP = '\x1b[5~'
 const KEY_PAGE_DOWN = '\x1b[6~'
 const KEY_ENTER = '\r'
@@ -140,10 +142,9 @@ export class PlanReviewPanel implements BlueFocusable {
    * @param options - see {@link PlanReviewPanelOptions}.
    */
   constructor(private readonly options: PlanReviewPanelOptions) {
-    this.markdown = options.components.createMarkdown({
-      text: options.question.detail ?? '',
-      paddingX: 2,
-    })
+    // No markdown padding: the box's own `│ ` inset is the content gutter
+    // (paddingX here double-indents inside the box).
+    this.markdown = options.components.createMarkdown({ text: options.question.detail ?? '' })
     this.title = options.question.header ?? 'Plan review'
     this.labels = [options.choices.approve.label, REJECT_LABEL, REVISE_LABEL]
     // The revision row's input: a real editor owns the keys, the row
@@ -167,19 +168,29 @@ export class PlanReviewPanel implements BlueFocusable {
   }
 
   /**
-   * Dispatch one input sequence: ↑/↓ move the cursor, the digits jump
-   * (and fire, except 3 which focuses the input), Enter fires the
-   * focused row (on Revise it submits the input), PageUp/PageDown scroll
-   * the plan box, Escape dismisses; anything else feeds the revision
-   * input while it holds focus.
+   * Dispatch one input sequence: ↑/↓ scroll the plan box line-by-line —
+   * the mouse wheel arrives as those arrows while no mouse reporting is
+   * on, so the wheel scrolls the plan (the round-4 ruling) — ←/→ move
+   * the cursor, the digits jump (and fire, except 3 which focuses the
+   * input), Enter fires the focused row (on Revise it submits the
+   * input), PageUp/PageDown page the plan box, Escape dismisses;
+   * anything else feeds the revision input while it holds focus.
    * @param data - the input sequence as read from the terminal.
    */
   handleInput(data: string): void {
     if (data === KEY_UP) {
-      this.cursor = cycle(this.cursor, this.labels.length, -1)
+      this.scrollTop = Math.max(0, this.scrollTop - 1)
       return
     }
     if (data === KEY_DOWN) {
+      this.scrollTop += 1 // render clamps
+      return
+    }
+    if (data === KEY_LEFT) {
+      this.cursor = cycle(this.cursor, this.labels.length, -1)
+      return
+    }
+    if (data === KEY_RIGHT) {
       this.cursor = cycle(this.cursor, this.labels.length, 1)
       return
     }
@@ -266,7 +277,7 @@ export class PlanReviewPanel implements BlueFocusable {
     return framePanel(rows, width, {
       title: this.title,
       titlePaint: colors.primary,
-      titleHint: '· ↑↓ choose · 1-3 select · esc dismiss',
+      titleHint: '· ←→/1-3 choose · ↑↓ scroll · esc dismiss',
       hintPaint: colors.textMuted,
       rulePaint: colors.primary,
     })
@@ -281,8 +292,10 @@ export class PlanReviewPanel implements BlueFocusable {
     const plan = this.markdown.render(contentWidth)
     const maxRows = this.planWindowRows()
     const lines: string[] = [topRule(boxWidth, {
-      title: colors.primary(' plan '),
-      ...(plan.length > maxRows ? { hint: colors.textMuted('pgup/pgdn scroll') } : {}),
+      // No box title: the frame title already says Plan review — a second
+      // `plan` label reads redundant (the round-4 ruling); only the
+      // scroll hint rides the border while the plan overflows.
+      ...(plan.length > maxRows ? { hint: colors.textMuted('↑↓ scroll') } : {}),
       paint: colors.border,
     })]
     const windowed = plan.length > maxRows

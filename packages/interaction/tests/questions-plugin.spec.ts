@@ -204,7 +204,7 @@ describe('blue-questions plan-review intent', () => {
   it('rejects with the other option label from the second button', async () => {
     const { ctx, screen } = await mount()
     const pending = ctx.userQuestions.ask({ questions: [planAsk()] })
-    overlay(screen).handleInput(KEY.down)
+    overlay(screen).handleInput(KEY.right)
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({
       answers: [{ id: 'plan-review', selected: ['Keep planning'] }],
@@ -214,8 +214,8 @@ describe('blue-questions plan-review intent', () => {
   it('submits typed revision feedback from the third row', async () => {
     const { ctx, screen } = await mount()
     const pending = ctx.userQuestions.ask({ questions: [planAsk()] })
-    overlay(screen).handleInput(KEY.down)
-    overlay(screen).handleInput(KEY.down)
+    overlay(screen).handleInput(KEY.right)
+    overlay(screen).handleInput(KEY.right)
     for (const char of 'redo step 2') overlay(screen).handleInput(char)
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({
