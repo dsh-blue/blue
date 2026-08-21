@@ -55,9 +55,10 @@ export interface PresetRow {
 }
 
 /**
- * The roster surface `/preset` consumes — a local shape over the lazily
- * probed service (the permission picker's precedent: never an injected
- * dependency, so a host composing without the roster still boots Blue).
+ * The roster surface `/preset` and `/tools` consume — a local shape over the
+ * lazily probed service (the permission picker's precedent: never an
+ * injected dependency, so a host composing without the roster still boots
+ * Blue).
  */
 export interface AgentPresetsRoster {
   /** Re-read the roots; every visible preset, broken ones included. */
@@ -66,6 +67,8 @@ export interface AgentPresetsRoster {
   recompose(agentCtx: Context, id: string): Promise<{ readonly id: string }>
   /** The preset the agent's scope is parented to, if any. */
   composedPreset(agentCtx: Context): string | undefined
+  /** The standing mount's registry-view scope key ("for a host reader with no agent"). */
+  standingKeyFor(id?: string): Promise<object>
 }
 
 /** Render one failure reason for an error result. */

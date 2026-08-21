@@ -1,14 +1,23 @@
 /**
  * The `/tools` command (S28): a read-only `InfoPanel` over the current
- * session's visible tool catalog, enumerated live from the tool registry —
- * `ctx.tools.schemas(scopeOf(agent.ctx))`, the same per-scope view the wire
- * assembles — never the request header's epoch snapshot (that fold stays
- * the degraded fallback Blue does not carry). MCP tools (`mcp__<server>__*`,
- * the mcp-client's public naming) group under one section per server; the
- * model-facing name stays the row label verbatim because that name is what
- * the model calls. The panel is display-only: managing MCP servers is a
- * profile-patch concern upstream (⛔ commands-plan §7 #6), so every key
- * here closes.
+ * session's visible tool catalog, enumerated live from the tool registry.
+ *
+ * The view scope is the composition the agent runs on: under the thin-host
+ * migration (D37) the agent's tool surface lives in its preset's standing
+ * mount, so the panel enumerates `schemas(roster.standingKeyFor(...))` —
+ * the upstream API built for exactly this "host reader with no agent"
+ * case. `scopeOf(agent.ctx)` is deliberately NOT used: `kScope` is a
+ * module-level Symbol in dsh-scope, and a dev-linked Blue loads its own
+ * dsh-scope instance beside the CLI's — two Symbols, so the CLI-side tag
+ * never reads back (the registry install may dedupe to one instance, but
+ * the panel must work on the dogfood link too). With no roster — or an
+ * agent bound to no preset — the panel falls back to the global view,
+ * which is the honest catalog on hosts that keep their own agent plane.
+ * MCP tools (`mcp__<server>__*`, the mcp-client's public naming) group
+ * under one section per server; the model-facing name stays the row label
+ * verbatim because that name is what the model calls. The panel is
+ * display-only: managing MCP servers is a profile-patch concern upstream
+ * (⛔ commands-plan §7 #6), so every key here closes.
  *
  * @module @dsh-blue/blue-interaction/tools-commands
  */
@@ -16,7 +25,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import type { ToolSchema } from '@deepseek-ai/dsh-llm'
-import { scopeOf } from '@deepseek-ai/dsh-scope'
 // Empty type imports carry the `tools` Context merge (dsh-tools) the probe
 // reads, the `commands` merge the registration uses, and the app-owned
 // `blueSession` merge the handler resolves the agent through.
@@ -26,6 +34,7 @@ import type {} from '@dsh-blue/blue-app'
 import { displayServices } from './display-services.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
 import { InfoPanel, type InfoSection } from './info-panel.ts'
+import type { AgentPresetsRoster } from './preset-commands.ts'
 import { oneLine } from './select-list.ts'
 
 /** The public prefix of MCP-served tool names (`mcp__<server>__<raw>`). */
@@ -87,37 +96,59 @@ export function buildToolsSections(schemas: readonly ToolSchema[]): InfoSection[
   return sections
 }
 
+/** Render one failure reason for an error result. */
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 /**
  * Register the `/tools` command: mount the read-only catalog panel.
  * @param ctx - plugin context (`commands` via the calling plugin).
  * @returns the disposer removing the registration.
  */
 export function registerToolsCommands(ctx: Context): () => void {
+  // The fiber-unload flag: the standing-key await can span a tree unload.
+  let unloaded = false
+  ctx.effect(() => () => {
+    unloaded = true
+  })
+
   /**
-   * The `/tools` handler: guards, enumerate the agent's scoped view, mount.
+   * The `/tools` handler: guards, resolve the view scope, enumerate, mount.
    * @returns the command outcome.
    */
-  function showTools(): CommandResult {
+  async function showTools(): Promise<CommandResult> {
     const agent = ctx.get('blueSession')?.current
     if (agent === undefined || agent === null) {
       return { kind: 'error', text: 'no session is live yet' }
-    }
-    const display = displayServices(ctx)
-    if (display === undefined) {
-      return { kind: 'error', text: 'tools panel is unavailable: the Blue screen is not mounted' }
     }
     const tools = ctx.get('tools')
     if (tools === undefined) {
       return { kind: 'error', text: 'tool registry is unavailable: the host composes no tools service' }
     }
-    // `scopeOf` is `undefined` on an unscoped context — `schemas()` then
-    // answers the global view, which is exactly the honest fallback.
+    // The standing-mount key when the agent runs on a preset's composition;
+    // the global view otherwise. The key's identity is what layers the view.
+    let scope: object | undefined
+    const roster = ctx.get('agentPresets') as AgentPresetsRoster | undefined
+    const current = roster?.composedPreset(agent.ctx)
+    if (roster !== undefined && current !== undefined) {
+      try {
+        scope = await roster.standingKeyFor(current)
+      } catch (error) {
+        return { kind: 'error', text: `could not resolve the preset composition: ${describe(error)}` }
+      }
+      if (unloaded) return { kind: 'success' }
+    }
+    const display = displayServices(ctx)
+    if (display === undefined) {
+      return { kind: 'error', text: 'tools panel is unavailable: the Blue screen is not mounted' }
+    }
     const restore = mountEditorReplacement(new InfoPanel({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,
       title: 'tools',
-      sections: buildToolsSections(tools.schemas(scopeOf(agent.ctx))),
+      sections: buildToolsSections(tools.schemas(scope as never)),
       onClose: () => {
         restore()
       },

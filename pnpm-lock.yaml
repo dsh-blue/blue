@@ -233,9 +233,6 @@ importers:
       '@deepseek-ai/dsh-plan-mode':
         specifier: 0.1.1-rc.1
         version: 0.1.1-rc.1(68378010542805a506e54ae2ca913d47)
-      '@deepseek-ai/dsh-scope':
-        specifier: 0.1.1-rc.1
-        version: 0.1.1-rc.1(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.1(@deepseek-ai/cordis@4.0.1))
       '@deepseek-ai/dsh-session':
         specifier: 0.1.1-rc.1
         version: 0.1.1-rc.1(b5659825c5d2c507be005222aeb74a0f)
