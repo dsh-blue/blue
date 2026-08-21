@@ -250,6 +250,27 @@ describe('blue-input plugin', () => {
     })
   })
 
+  it('yields the hint row while the autocomplete dropdown is up', async () => {
+    const { ctx, editor, hint } = await mount()
+    ctx.commands.register({
+      name: 'poke',
+      description: 'Poke the agent',
+      handler: () => ({ kind: 'success' as const, text: 'poked' }),
+    })
+    // A bare slash lists every command in the discovery tier; with the
+    // dropdown up that same catalog is already on screen one row above, so
+    // the hint row renders nothing until the dropdown closes (S34 dogfood:
+    // the two together double-rendered the command list).
+    type(editor, '/')
+    expect(hint.render(80).some(row => row.includes('/poke'))).toBe(true)
+    editor.showingAutocomplete = true
+    expect(hint.render(80)).toEqual([])
+    // Esc closing the dropdown repaints the frame and the row returns.
+    editor.showingAutocomplete = false
+    expect(hint.render(80).some(row => row.includes('/poke'))).toBe(true)
+    hint.invalidate()
+  })
+
   it('opens the permission picker on a bare /permission instead of dispatching', async () => {
     const { ctx, screen, editor, hint } = await mount()
     const handler = vi.fn(() => ({ kind: 'success' as const, text: 'should not run' }))

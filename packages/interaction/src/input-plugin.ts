@@ -105,7 +105,15 @@ export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap'
  * tier exists (one-shot notices, slash-command discovery) and paints
  * `muted`; with nothing transient the row renders zero rows — the
  * persistent key-affordance tier retired with the S15 dogfood verdict,
- * its teaching role taken by the footer's rotating tips.
+ * its teaching role taken by the footer's rotating tips. While the
+ * editor's autocomplete dropdown is up the row yields entirely (the S34
+ * dogfood verdict: the dropdown lists the same commands and descriptions
+ * the slash-discovery tier would, so the two together double-render the
+ * catalog). The probe runs at render time, not input time, because the
+ * dropdown opens asynchronously (pi-tui resolves the provider on a
+ * promise) — by the frame the hint row paints, the dropdown state is
+ * settled, and an Esc that closes the dropdown repaints this row back
+ * through the same frame.
  */
 class HintLine implements BlueComponent {
   private text: string | undefined
@@ -115,11 +123,16 @@ class HintLine implements BlueComponent {
    *   lifetime; property access through a disposed context throws).
    * @param colors - the active semantic color table.
    * @param components - the width-truncation helper source.
+   * @param yields - probed at render time; a truthy return renders zero
+   *   rows (the dropdown is up). Notices never coexist with an open
+   *   dropdown — every notice fires from a submit or command path, which
+   *   has already cleared the buffer and with it the dropdown.
    */
   constructor(
     private readonly screen: BlueScreen,
     private readonly colors: BlueSemanticColors,
     private readonly components: BlueComponents,
+    private readonly yields?: () => boolean,
   ) {}
 
   /**
@@ -143,6 +156,7 @@ class HintLine implements BlueComponent {
    */
   render(width: number): string[] {
     if (this.text === undefined) return []
+    if (this.yields?.()) return []
     return [this.colors.muted(this.components.truncateToWidth(this.text, width))]
   }
 }
@@ -198,7 +212,9 @@ export function apply(ctx: Context): void {
   // `>` prompt symbol the rounded-box chrome overlays.
   editor.setPromptSymbol('>')
 
-  const hintLine = new HintLine(screen, colors, ctx.blueComponents)
+  // The discovery tier yields while the editor's autocomplete dropdown is
+  // up (see HintLine) — the probe reads the editor's live dropdown state.
+  const hintLine = new HintLine(screen, colors, ctx.blueComponents, () => editor.isShowingAutocomplete())
 
   /** Matching-command hint for slash-prefixed input. */
   function slashHint(): string | undefined {
