@@ -293,6 +293,15 @@
 - **落地（2026-08-21，worktree 待人工验收）**：渲染层成组（`agent-group.ts`，ReadGroup 克隆）+ fold 记录信封 wall clock（`startedAt`/`endedAt`）+ 子会话 tracker（`agent-live.ts`：header 准入、O(1) reducer、两级关联、`firstLiveSeq` 种子）+ 组件第 5 参 live 查询合并（running/waiting 覆盖早熟 ack、kimi stats 行、活动二行、收束 Σ 尾）；1420 tests / coverage 逐文件 100% / typecheck / lint / build 全绿；验收 dogfood 实测 phase 迁移链 `(3 running) → (1 done, 2 running) → … → 3 agents finished · 10 tools · 211k tok · 7s` 与活动行滚动（Thinking…/Using glob/read/bash）。
 - **形态修订（2026-08-21，验收反馈裁决）**：kimi 源码核实其 subagent 呈现有两条路径——普通 `Agent` 工具是流内组卡（本实现首版同构），而 **AgentSwarm 是钉住 pane**（挂 transcript 尾=视觉钉 dock 正上方、子事件全吞、下一 `turn.started` 硬删不进历史、replay 一行摘要）。验收裁决采用 Swarm 语义：**`blue-pane-agents` dock pane**（bundle 行序 activity → queue → todo → btw → **agents** → editor，紧贴编辑框上部）+ **fold 抑制 spawn 类**（todo_write 先例，流与 export 均无 spawn 卡，pane 是唯一呈现面）+ **settled 组保留到下一 turn/start**（live overlay 有 running/waiting 成员则跨 turn 保留——后台 ack 早熟但子会话在跑时不清）+ **resume 快照重建收束卡**（无 live 叠加）。mount 层分组与 mountSession tracker 退役；`AgentGroupComponent`/`agent-live.ts` 原样复用为 pane 内件。随批顺修 queue pane 既有缺陷（字符数截断遇 CJK 漏 2 列触发 pi-tui 宽度守卫崩溃，验收首日实锤）。1427 tests / coverage 逐文件 100% 全指标。
 
+### D40. `/mcp` 提前落地：双口径计数与三层面板（用户四裁决，2026-08-22）
+
+- **背景**：`/mcp` 原排 S28（D36 只读列举），S28 落地时顺延。用户裁决提前到现在做。实施前对最新 harness（0.1.1-rc.2，fetch 核实）重读 mcp-client 全源：rc.1→rc.2 零实质变化、管理面（listServers/启停/状态事件）仍全缺——D36 前提在最新版成立，钉 rc.1 无信息损失。接口面新核实三件事：(1) 枚举字段是 `entry.options.name`（非 D36 写的"moduleName"），归一化配置在 `entry.fiber.config`（Schemastery 校验后、默认值已填），原始兜底 `entry.options.config`；(2) loader 侧还有 `loader/entry-init`/`loader/partial-dispose`/`loader/config-update` 三个公共事件（加 `tools/change`）可作面板 live 刷新信号；(3) `FiberState` 是 const enum——编译产物无运行时对象，跨包引用需本地数字常量对齐 .d.ts 契约。
+- **决策**（用户四裁决）：**Q1 只读维持**（配置归 profile patch 层，不做"添加服务器"表单——D36 理由原样成立：单一配置源、可审计、HMR 热生效）；**Q2 两步式面板**（/tools 同构）；**Q3 计数口径 = 会话可见**（用户："非会话可见的计数展示出来没啥用"）+ **保留一次全局读作健康信号**（我的补充，用户未否决）：fiber ACTIVE 且全局 0 工具才是"无工具"，全局 N + 会话 0 是"被预设限制"——单看会话口径，切 minimal 预设的用户会看到所有服务器"无工具"而误判 MCP 全挂；**Q4 即刻做**（新 S34 步，无硬前置）。
+- **形态**：三层面板走同一次快照——L1 服务器选器（状态注意力序：failed 最前，kimi 同款；尾随诚实注行：无会话/orphan 工具）→ L2 服务器面板（`server config` 伪行 + raw 名工具行 + restricted/blocked 尾行）→ L3 详情（config：状态+双口径计数+恢复提示 / 脱敏连接事实（env/headers 只 key，kimi config-view 纪律）/ 归一化策略；工具 schema：复用 `buildToolDetailSections` 白捡）。空态指路 website dsh/mcp 页。状态推导七态：synced / restricted / no-tools（三义注记：连接中|启动失败被吞|预算耗尽，恢复=重载插件或重启）/ starting / failed / reloading（HMR 换代窗）/ disabled——以全局注册工具存在性为主、fiber phase 为辅（`failOnStartupError:false` 时 active ≠ 已连接）。
+- **落地**：`mcp-servers.ts` 薄读层（纯函数 + 窄结构类型，status 推导/脱敏/双口径全可单测）+ `mcp-commands.ts` + scope 解析抽 `tool-scope.ts` 共享件（/tools 等价重构消费）；bundle dependencies 钉版 `@deepseek-ai/dsh-mcp-client@0.1.1-rc.1`（D33 agent-presets 同款，不加 patch 行——服务器声明留用户层），**runtime dependencies 首入 `version.spec.ts` 门禁**（此前只查 devDeps/peer/excludes）；pnpm-workspace `minimumReleaseAgeExclude` 同步入册。
+- **测试**：单测覆盖状态推导全表/脱敏/双口径/orphan/无会话退化；e2e 手写 stdio fixture server（零依赖 JSON-RPC：initialize 回显 protocolVersion、tools/list 两工具）走真连接路径——loader 拉真 entry、子进程真握手、工具真注册；**FAILED 形态留单测**：`failOnStartupError:true` 的 entry 会让 `loader.await()` 拒绝整树 boot，e2e 树里不可构造。两处 e2e 基建教训：裸包名从 vitest cwd（仓库根）解析失败——bootBlue 的 Loader 设 `baseUrl` 指向 bundle 包目录（生产同构）；node CLI 不接受 `file://` URL 作入口参数——子进程 args 用普通路径（组合行 `name` 仍要 file URL）。
+- **边界与挂起**：快照式面板（SelectListPanel/InfoPanel 构造时定格、无 setRows）——重开面板即新数据；live 原位刷新（四信号订阅 + 面板重建）记挂起，信号清单见上。管理面（每服务器状态事件/启停/重连 API）维持上游缝请求（§7 #6）。重连预算耗尽只能标注"需重载插件或重启"（无重连 API）。`serverName` 可含 `__`（pattern 允许）——分组按 entry 声明名前缀匹配而非 split 解析，入口名的歧义不存在；spec 侧手注册的 `mcp__` 工具（无对应 entry）计 orphan 注行不冒充服务器。
+
 ### D41. all-prompts 标题节奏桥：`sessionTitle.refresh` 公开 API 驱动（2026-08-22；编号避开 s34 分支已占的 D40）
 
 - **背景**：S30① 声明"每条用户消息后辅助小模型重新生成会话标题"，但活体验证（blue-footer-swap profile，4 条消息的真实会话）发现标题冻结在首条消息——会话日志里只有 1 条 `session/title-llm-request`（`messageSeqs [7]`），后续消息零请求。
@@ -311,3 +320,16 @@
 - **理由**：kimi 形态是用户指定的观感基准；单栏把宽度逻辑从双栏规划收缩为 `total`/`innerWidth` 两个字段；占位 logo 避免自设计阻塞本次重构。
 - **后果/边界**：占位是 kimi 产品字符画，Blue 专属标记定稿后于 `banner-art.ts` 一处替换（spec golden 跟随）；头部 `/help` 行自 40 列宽起截断（预算 innerWidth−9），信息行值预算 innerWidth−11；e2e 跨色 run 断言（Version 行 muted 标签 + text 值）改走 `stripSgr`。
 - **落地（2026-08-22，worktree 待人工验收）**：`banner.ts` 单栏重写 + `banner-art.ts` 占位字面量 + `banner-content.ts` 收缩为版本常量模块 + banner/banner-art spec 重写 + e2e 两段 + README 双语/AGENTS/roadmap/seams 同步。
+
+### D43. hint 行 slash-discovery 退役：dropdown 是唯一命令目录（S34 验收裁决，2026-08-22；原编 D42 与 master 已并的 S35 kimi banner 撞号，重编——D37→D39 先例）
+
+- **背景**：裸 `/` 时命令目录双渲染——pi-tui dropdown（S14 completion polish，editor-plus 装载）与 hint 行 slash-discovery tier（S14 同期的前置产物，横排前 3 条）同屏。首轮修复尝试"dropdown 开启时 hint 让位"（render 期探 `isShowingAutocomplete()`，避开异步竞态），但 Esc 关闭 dropdown 后 discovery 行复现——让位治标不治本，验收二轮仍报冗余。
+- **裁决**：彻底退役 discovery tier——dropdown 完全覆盖其功能（同一 `slash-filter.ts` fuzzy filter、可滚动分页、可选中补全），discovery 仅存的出场时机（Esc 后、无 dropdown 的 plain baseline）价值不足。历史注记：S15 已退 persistent key-affordance tier，本条再退 slash-discovery，hint 行只剩 notice 职能。
+- **保留面**：`no matching command: /x` 空结果反馈（dropdown 空匹配自关，notice 是唯一信号）与全部一次性 notice（命令执行结果/错误）。alias 标签语义（`/quit (q, exit)`）由 dropdown 侧测试承接（editor-plus.spec 既有覆盖）。
+- **后果/边界**：plain baseline（drop 掉 enhancement 段、无 dropdown 的组合）失去 slash 目录预览——`/help` 仍在；实际部署 bundle 恒装 editor-plus。`slashCommandLabel` 从 input-plugin 的消费面退役（editor-plus 仍用）。
+
+### D44.（已撤回）进程 stderr 接管（S34 验收三轮尝试，2026-08-22 用户裁决撤回）
+
+- **问题**：boot 期编辑框闪烁 + 一条来不及看的 `Starting default (STDIO) server...`。取证实锤（冒烟 log 原始字节）：裸文本帧后直写——是 **MCP 服务器子进程的 stderr**；dsh-mcp-client 构造 `StdioClientTransport` 不传 `stderr` 选项，SDK 默认 `'inherit'`。影响一切会写 stderr 的 stdio MCP 服务器。
+- **尝试与撤回**：blue-core 曾接管 `process.stderr.write`（行缓冲 → `blue/stderr-line` 事件 → transcript muted 行）。真机冒烟证伪：`'inherit'` 是 **spawn 级 fd 直通**——子进程直接写终端 fd 2，字节不经过父进程 JS 层，`process.stderr.write` 替换拦不到内核级继承。用户裁决撤回（拦不住目标问题）。
+- **正路（上游缝，勿在 Blue 侧重试 JS 层拦截）**：harness `packages/mcp/mcp-client`——`StdioConfig` 加 `stderr: 'inherit' | 'pipe'`（默认 `'pipe'`）、`transport.ts` 透传；pipe 下子进程 stderr 进 SDK PassThrough（`transport.stderr`），mcp-client 消费后以 `console.error` 转发回父进程（in-process 写，届时 Blue 可重评接管形态把行送进 transcript；非 TUI 宿主照常终端可见）。上游落地后 Blue 侧接管才有效。

@@ -86,10 +86,8 @@ import { openPermissionPanel } from './permission-panel.ts'
 import { ACTION_QUEUE_RECALL, queuedMessageText } from './pane-queue.ts'
 import { attachSkillsCatalog, rewriteSkillTokens } from './skills-catalog.ts'
 import { currentBlueAgent } from './session.ts'
-import { filterSlashCommands, slashCommandLabel } from './slash-filter.ts'
+import { filterSlashCommands } from './slash-filter.ts'
 
-/** Slash-command hint rows shown at once. */
-const MAX_HINT_COMMANDS = 3
 /** Window for the double Ctrl-C exit: presses farther apart re-arm the hint. */
 const INTERRUPT_DOUBLE_PRESS_MS = 1000
 /** Timestamp of the last idle Ctrl-C press; 0 means the exit is not armed. */
@@ -102,10 +100,15 @@ export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap'
 
 /**
  * The single-line hint rendered under the input editor. Only the transient
- * tier exists (one-shot notices, slash-command discovery) and paints
- * `muted`; with nothing transient the row renders zero rows — the
- * persistent key-affordance tier retired with the S15 dogfood verdict,
- * its teaching role taken by the footer's rotating tips.
+ * notice tier exists and paints `muted`; with nothing transient the row
+ * renders zero rows — the persistent key-affordance tier retired with the
+ * S15 dogfood verdict, and the slash-discovery tier with the S34 dogfood
+ * verdict (D43): the editor's autocomplete dropdown already lists the same
+ * catalog through the same fuzzy filter, interactively, so the discovery
+ * row only ever surfaced alongside-or-after it as a duplicate. The row
+ * keeps the empty-result feedback (`no matching command: /x` — the
+ * dropdown closes itself on an empty match, so the notice is the only
+ * signal) and every one-shot command notice.
  */
 class HintLine implements BlueComponent {
   private text: string | undefined
@@ -200,31 +203,31 @@ export function apply(ctx: Context): void {
 
   const hintLine = new HintLine(screen, colors, ctx.blueComponents)
 
-  /** Matching-command hint for slash-prefixed input. */
+  /**
+   * Empty-result feedback for slash-prefixed input (D43: the discovery
+   * listing itself retired — the dropdown owns command discovery).
+   * @returns the notice text when the filter matches nothing, else undefined.
+   */
   function slashHint(): string | undefined {
     if (!currentText.startsWith('/')) return undefined
     const parsed = parseCommand(currentText)
-    // A bare slash cannot parse (parseCommand requires a leading letter) but
-    // is exactly the discovery affordance: list every registered command.
+    // A bare slash cannot parse (parseCommand requires a leading letter).
     if (parsed === undefined && currentText !== '/') return undefined
     const agent = currentBlueAgent(ctx)
     if (agent === undefined) return undefined
-    // The S14 fuzzy filter — the same matcher the dropdown uses — keeps the
-    // hint row and the completion list in agreement. Alias matches surface
-    // the canonical command with the alias list on the label (the kimi
-    // rule), so the hint row explains why `/q` matched `/quit`.
+    // The same S14 fuzzy filter the dropdown uses, so the feedback agrees
+    // with what the dropdown just failed to list. The dropdown closes
+    // itself on an empty match, so this notice is the only signal.
     const matches = filterSlashCommands(
       withCommandAliases(ctx.commands.list(agent)),
       parsed?.name ?? '',
       ctx.blueComponents,
     )
     if (matches.length === 0) return `no matching command: /${parsed?.name ?? ''}`
-    return matches.slice(0, MAX_HINT_COMMANDS)
-      .map(match => `${slashCommandLabel(match)} — ${match.command.description}`)
-      .join('  ')
+    return undefined
   }
 
-  /** Recompute the hint line from the notice or the slash discovery list. */
+  /** Recompute the hint line from the notice or the slash feedback. */
   function refreshHint(): void {
     hintLine.setHint(notice ?? slashHint())
   }

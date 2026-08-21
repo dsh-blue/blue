@@ -36,6 +36,7 @@ const HARNESS_LINE = '0.1.1-rc.1'
 interface Manifest {
   readonly name: string
   readonly version: string
+  readonly dependencies?: Readonly<Record<string, string>>
   readonly peerDependencies?: Readonly<Record<string, string>>
   readonly devDependencies?: Readonly<Record<string, string>>
 }
@@ -87,6 +88,22 @@ describe('the Blue release line', () => {
 })
 
 describe('the harness dependency line', () => {
+  it('every dsh runtime dependency is exact-pinned to one line', () => {
+    // The bundle is the only manifest that ships runtime dsh dependencies
+    // (agent-presets from D33, mcp-client from S34): they install with Blue,
+    // so a range or a drifted line would ship a mixed tree.
+    const specs = new Set<string>()
+    for (const rel of MANIFESTS.slice(0, 5)) {
+      const pkg = manifest(rel)
+      for (const [name, spec] of dshEntries(pkg.dependencies)) {
+        expect(spec, `${pkg.name} dependencies ${name}`).toMatch(/^0\.1\.[0-9]+-rc\.[0-9]+$/)
+        specs.add(spec)
+      }
+    }
+    expect(specs.size, 'runtime dsh pins exist').toBeGreaterThan(0)
+    expect([...specs]).toEqual([`${HARNESS_LINE}`])
+  })
+
   it('every dsh dev dependency is exact-pinned to one line', () => {
     const specs = new Set<string>()
     for (const rel of MANIFESTS.slice(0, 5)) {

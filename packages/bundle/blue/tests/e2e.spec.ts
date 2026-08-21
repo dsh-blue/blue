@@ -156,6 +156,49 @@ function stripCwdName(text: string): string {
   return name.length === 0 ? text : text.replaceAll(name, '')
 }
 
+/**
+ * A hand-rolled MCP stdio server for the `/mcp` e2e (S34): newline-delimited
+ * JSON-RPC 2.0 with zero dependencies — `initialize` echoes the client's
+ * protocol version (always acceptable per the MCP negotiation spec),
+ * `tools/list` serves the two fixture tools, `tools/call` answers text, and
+ * notifications (no id) get no response. The dsh-mcp-client row spawns it
+ * with the running interpreter, so the whole bridge path — loader entry,
+ * child process, SDK client, tool registration — runs for real.
+ */
+const MCP_FIXTURE_SERVER = `
+let buffer = ''
+const send = message => process.stdout.write(JSON.stringify(message) + '\\n')
+process.stdin.setEncoding('utf8')
+process.stdin.on('data', chunk => {
+  buffer += chunk
+  let index
+  while ((index = buffer.indexOf('\\n')) >= 0) {
+    const line = buffer.slice(0, index)
+    buffer = buffer.slice(index + 1)
+    if (line.trim() === '') continue
+    const message = JSON.parse(line)
+    if (message.id === undefined) continue
+    if (message.method === 'initialize') {
+      send({ jsonrpc: '2.0', id: message.id, result: {
+        protocolVersion: message.params?.protocolVersion ?? '2025-06-18',
+        capabilities: { tools: {} },
+        serverInfo: { name: 'blue-e2e-fixture', version: '1.0.0' },
+      } })
+    } else if (message.method === 'tools/list') {
+      send({ jsonrpc: '2.0', id: message.id, result: { tools: [
+        { name: 'list_items', description: 'List the fixture items.', inputSchema: { type: 'object', properties: { limit: { type: 'number', description: 'How many items to list.' } }, required: [] } },
+        { name: 'echo_message', description: 'Echo one message back.', inputSchema: { type: 'object', properties: {} } },
+      ] } })
+    } else if (message.method === 'tools/call') {
+      send({ jsonrpc: '2.0', id: message.id, result: { content: [{ type: 'text', text: 'fixture ok' }] } })
+    } else if (message.method === 'ping') {
+      send({ jsonrpc: '2.0', id: message.id, result: {} })
+    }
+  }
+})
+process.stdin.on('end', () => { process.exit(0) })
+`
+
 afterEach(async () => {
   for (const dispose of disposers.splice(0)) await dispose()
   // In-turn step folding is module-global; restore the defaults so the next
@@ -269,6 +312,19 @@ async function bootBlue(argv: string[], options: {
    * skill catalog into every request, which would perturb unrelated cases.
    */
   skills?: { root: string }
+  /**
+   * Real `dsh-mcp-client` entries for the `/mcp` e2e (S34). A live row
+   * spawns the hand-rolled fixture server; a `dead` row names a missing
+   * binary with reconnects off — the contained failure path (fiber active,
+   * no tools). Flag-gated: the entries register real `mcp__` tools, which
+   * would perturb every other case's tool surface.
+   */
+  mcpServers?: readonly {
+    readonly id: string
+    readonly serverName: string
+    readonly dead?: boolean
+    readonly env?: Readonly<Record<string, string>>
+  }[]
 }): Promise<BlueTree> {
   const dir = mkdtempTracked('dsh-blue-e2e-')
   const terminal = new FakeTerminal()
@@ -521,6 +577,45 @@ export const apply = (ctx, config) => globalThis.__blueE2E.appApply(ctx, config)
     '    task: !!js ctx.blueStartup.task',
     '    resume: !!js ctx.blueStartup.resume',
   ]
+  // One real dsh-mcp-client entry per fixture server (S34 /mcp e2e): the
+  // loader boots the entry, the bridge spawns the child and registers its
+  // tools, and /mcp reads the joined truth. The flow-style config is valid
+  // YAML and keeps the row assembly one line per field.
+  if (options.mcpServers !== undefined) {
+    // The child runs by plain path (node's CLI takes no file URL as its
+    // entry argument), written once and shared by every live row.
+    writeFileSync(join(dir, 'mcp-fixture-server.mjs'), MCP_FIXTURE_SERVER)
+    const serverPath = join(dir, 'mcp-fixture-server.mjs')
+    for (const server of options.mcpServers) {
+      const config = server.dead === true
+        ? {
+            transport: 'stdio',
+            serverName: server.serverName,
+            command: 'blue-e2e-missing-binary',
+            args: [] as string[],
+            env: {},
+            cwd: '',
+            failOnStartupError: false,
+            reconnect: { enabled: false, initialDelayMs: 500, maxDelayMs: 30_000, maxAttempts: 10 },
+          }
+        : {
+            transport: 'stdio',
+            serverName: server.serverName,
+            command: process.execPath,
+            args: [serverPath],
+            env: server.env ?? {},
+            cwd: '',
+            toolCallTimeoutMs: 60_000,
+            failOnStartupError: false,
+            reconnect: { enabled: true, initialDelayMs: 500, maxDelayMs: 30_000, maxAttempts: 10 },
+          }
+      rows.push(
+        `- id: ${server.id}`,
+        "  name: '@deepseek-ai/dsh-mcp-client'",
+        `  config: ${JSON.stringify(config)}`,
+      )
+    }
+  }
   // A stand-in downstream plugin: one fixture row registering a fixed-text
   // entry through the blueStatus registry, after every bundle row.
   if (options.footerExtra !== undefined) {
@@ -539,7 +634,11 @@ export const apply = (ctx) => {
   writeFileSync(join(dir, 'cordis.yml'), [...rows, ''].join('\n'))
 
   const ctx = new Context()
-  await ctx.plugin(Loader)
+  // Bare package specifiers (the dsh-mcp-client rows) resolve from the
+  // bundle package's own node_modules, as they would from the CLI's
+  // installation; every fixture row is an absolute file URL and resolves
+  // regardless of the base.
+  await ctx.plugin(Loader, { baseUrl: new URL('..', import.meta.url).href })
   ctx.loader.builtins.include = Include
   const exits: number[] = []
   provideCmdline(ctx, { args: argv, exit: code => void exits.push(code) })
@@ -1455,8 +1554,9 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('/sessions') })
     const frame = await fullFrame(tree.terminal)
     const rows = frame.split('\r\n')
-    // The dropdown row, not the discovery hint row below the frame, carries
-    // the side-bar-anchored two-line treatment.
+    // The dropdown row carries the side-bar-anchored two-line treatment
+    // (the S14 hint-row discovery tier retired with D42 — the dropdown is
+    // the only command catalog).
     const at = rows.findIndex(row => row.includes('→ /sessions'))
     expect(at).toBeGreaterThanOrEqual(0)
     // The continuation row carries the description tail in the description
@@ -2238,19 +2338,26 @@ describe('blue whole-tree e2e', () => {
     const shown = tree.terminal.output
     expect(shown).toContain(' help')
     expect(shown).toContain('/btw')
-    expect(shown).toContain('Exit Blue')
+    expect(shown).toContain('/mcp')
+    // /quit fell past the 16-row window when S34 added /mcp; the scrolled
+    // view still carries the first window's rows in the accumulated output.
     expect(shown).toContain('showing 1-16 of')
-    // PageDown thrice scrolls to the tail of the Keys section — including
-    // the pane-todo global action; the accumulated output carries the rows
-    // once the throttled render settles. (Three presses since S27' added
-    // /init: 38 content rows need the third 10-row step to clamp at the
-    // scroll floor.)
+    // PageDown reaches the tail of the Keys section — including the
+    // pane-todo global action; the accumulated output carries the rows
+    // once the throttled render settles. (The first press is awaited on
+    // its own: /quit slid past the 16-row window when S34 added /mcp, and
+    // back-to-back presses coalesce under the throttle — only awaited
+    // steps are guaranteed a repaint. Two more reach the scroll floor of
+    // the 39-row listing.)
     tree.terminal.sendInput('\x1b[6~')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('showing 11-26') })
+    expect(tree.terminal.output).toContain('Exit Blue')
     tree.terminal.sendInput('\x1b[6~')
     tree.terminal.sendInput('\x1b[6~')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Toggle todo list expansion') })
     const scrolled = tree.terminal.output
     expect(scrolled).toContain('ctrl+c')
+    expect(scrolled).toContain('Exit Blue')
     // Escape closes the overlay.
     tree.terminal.sendInput('\x1b')
     expect(await fullFrame(tree.terminal)).not.toContain('Exit Blue')
@@ -3391,6 +3498,130 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(async () => {
       expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('spec_probe')
     })
+  })
+
+  it('/mcp walks the fixture server stack: picker, config detail, tool schema', async () => {
+    const tree = await bootBlue([], {
+      script: [],
+      mcpServers: [{ id: 'mcp-demo', serverName: 'demo', env: { DEMO_TOKEN: 'fixture-secret' } }],
+    })
+    const agent = await currentAgent(tree)
+    // The entry connected during boot: loader.await covered the initial
+    // sync, so the picker reads the joined truth immediately.
+    await expect(executeCommand(tree, agent, '/mcp')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('demo')
+      expect(frame).toContain('synced')
+      expect(frame).toContain('2 tools')
+    })
+    // Enter opens the per-server panel: the config pseudo-row plus the two
+    // raw-named tools with their first-sentence briefs.
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('server config')
+      expect(frame).toContain('list_items')
+      expect(frame).toContain('List the fixture items.')
+    })
+    // Enter on the head (config) row: the endpoint carries the interpreter
+    // (the panel truncates the long fixture path tail) and the env appears
+    // as its KEY list — the value never renders.
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain(process.execPath)
+      expect(frame).toContain('DEMO_TOKEN')
+      expect(frame).not.toContain('fixture-secret')
+    })
+    // Back out, down to the first tool row, and into the schema detail the
+    // /tools detail view renders (server attribution included).
+    tree.terminal.sendInput('\x1b')
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('mcp__demo__list_items')
+      expect(frame).toContain('Parameters')
+      expect(frame).toContain('limit')
+    })
+    // Escape climbs back one level at a time, each waiting for the level
+    // below to visibly retake the editor slot before the next key arrives.
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('server config')
+      expect(frame).not.toContain('Parameters')
+    })
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).not.toContain('server config')
+      expect(frame).toContain('MCP servers')
+    })
+    // The final Escape can lose a race with the editor-slot settle right
+    // after a restore (the input dispatch lands one tick before the
+    // refocus); the wait re-sends it while the picker is still up, so the
+    // assertion holds on the settled end state either way.
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      if (frame.includes('MCP servers')) tree.terminal.sendInput('\x1b')
+      expect(frame).not.toContain('MCP servers')
+    })
+  })
+
+  it('/mcp sorts the no-tools server ahead and shows its honest note', async () => {
+    const tree = await bootBlue([], {
+      script: [],
+      mcpServers: [
+        { id: 'mcp-demo', serverName: 'demo' },
+        { id: 'mcp-dead', serverName: 'dead', dead: true },
+      ],
+    })
+    const agent = await currentAgent(tree)
+    await executeCommand(tree, agent, '/mcp')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      // Attention-first: the dead row (no tools) heads the list, the live
+      // one follows; both carry their transport and status.
+      expect(frame).toContain('dead')
+      expect(frame).toContain('no tools')
+      expect(frame).toContain('demo')
+      expect(frame).toContain('synced')
+    })
+    // Enter on the head (dead) row: the config pseudo-row and the honest
+    // blocked row — no tools registered, recovery named.
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('server config')
+      expect(frame).toContain('(no tools registered)')
+    })
+    tree.terminal.sendInput('\x1b')
+    tree.terminal.sendInput('\x1b')
+  })
+
+  it('/mcp mounts the guidance panel when no servers are declared', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    // A spec-side mcp__-named registration with no matching entry: the
+    // empty panel notes the orphan instead of hiding it.
+    const tools = (tree.ctx as unknown as { tools: { register(definition: unknown): () => void } }).tools
+    tools.register({
+      name: 'mcp__ghost__haunt',
+      description: 'ghost tool',
+      parameters: { type: 'object', properties: {} },
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: '' }] },
+      execute: () => Promise.resolve('ok'),
+    })
+    await expect(executeCommand(tree, agent, '/mcp')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('no MCP servers are declared')
+      expect(frame).toContain('dsh-blue.dev')
+      expect(frame).toContain('1 mcp__ tool visible but undeclared')
+    })
+    tree.terminal.sendInput('\x1b')
   })
 
   it('/tools shows the preset-bound surface: the default mounts alpha and switching swaps the catalog', async () => {
