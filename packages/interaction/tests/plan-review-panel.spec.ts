@@ -1,7 +1,8 @@
 /**
  * Unit tests for the plan-review decision panel: choice-pair extraction
- * from the intent, the markdown scroll window, the decision rows, the
- * feedback editor path, and dismissal — over the fake theme/components.
+ * from the intent, the markdown scroll window, the three-button decision
+ * row (approve / reject / revise in chat), and dismissal — over the fake
+ * theme/components.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -74,19 +75,25 @@ describe('planReviewChoices', () => {
 })
 
 describe('PlanReviewPanel rendering', () => {
-  it('frames the plan, the window, and the two decision rows', () => {
+  it('frames the plan, the window, the button row, and the focused description', () => {
     const { panel } = mount(ask())
     const lines = panel.render(60)
     const frame = lines.join('\n')
     expect(frame).toContain('Plan review')
     expect(frame).toContain('^  Approve this plan and leave plan mode?^')
-    // The markdown body rides between the question and the rows.
+    // The markdown body rides between the question and the buttons.
     expect(frame).toContain('# Fix the build')
     expect(frame).toContain('1. One')
-    expect(frame).toContain('→ Ship it')
-    expect(frame).toContain('Keep planning')
-    expect(frame).toContain('~ — Leave plan mode; carry out the plan.~')
-    expect(frame).toContain('↑↓ choose · pgup/pgdn scroll')
+    // The three decision buttons: the approve option's own label, then
+    // Blue's Reject and Revise-in-chat wording.
+    expect(frame).toContain('[ Ship it ]')
+    expect(frame).toContain('Reject')
+    expect(frame).toContain('Revise in chat')
+    // The focused button (approve, seeded) paints bold primary; its
+    // description rides muted beneath the row.
+    expect(frame).toContain('\x1b[1m^[ Ship it ]^\x1b[22m')
+    expect(frame).toContain('~  — Leave plan mode; carry out the plan.~')
+    expect(frame).toContain('←→ decide · pgup/pgdn scroll')
   })
 
   it('windows a long plan behind a showing tail and pages through it', () => {
@@ -106,13 +113,14 @@ describe('PlanReviewPanel rendering', () => {
     expect(panel.render(60).join('\n')).toContain('showing 1-10 of 15')
   })
 
-  it('swaps the rows for the feedback editor with its own hint', () => {
+  it('swaps the focused description as the buttons move', () => {
     const { panel } = mount(ask())
-    panel.handleInput(KEY.down)
-    panel.handleInput(KEY.enter)
-    const frame = panel.render(60).join('\n')
-    expect(frame).toContain('↵ send feedback · esc back')
-    expect(frame).not.toContain('→ Ship it')
+    panel.handleInput(KEY.right)
+    let frame = panel.render(60).join('\n')
+    expect(frame).toContain('~  — Stay in plan mode; refine first.~')
+    panel.handleInput(KEY.right)
+    frame = panel.render(60).join('\n')
+    expect(frame).toContain('~  — stay in plan mode and type the changes in chat~')
   })
 
   it('defaults the title when the header is absent', () => {
@@ -133,58 +141,58 @@ describe('PlanReviewPanel rendering', () => {
     } as AskUserQuestionItem)
     const rows = panel.render(60).join('\n')
     expect(rows).toContain('Plan review')
-    expect(rows).toContain('→ Ship it')
-    // The editor frame keeps the default title too.
-    panel.handleInput(KEY.down)
+    expect(rows).toContain('[ Ship it ]')
+    // No focused description row when the approve option carries none.
     panel.handleInput(KEY.enter)
-    expect(panel.render(60).join('\n')).toContain('Plan review')
+    expect(panel.render(60).length).toBeGreaterThan(0)
   })
 })
 
 describe('PlanReviewPanel decisions', () => {
-  it('approves from the seeded cursor without touching the editor', () => {
+  it('approves from the seeded cursor with the intent-named label', () => {
     const { panel, onComplete, onCancel } = mount(ask())
     panel.handleInput(KEY.enter)
     expect(onComplete).toHaveBeenCalledWith({ id: 'plan-review', selected: ['Ship it'] })
     expect(onCancel).not.toHaveBeenCalled()
   })
 
-  it('wraps the cursor between the two rows', () => {
+  it('rejects with the other option label from the second button', () => {
     const { panel, onComplete } = mount(ask())
-    // Up off the approving row wraps to the decline row and back.
-    panel.handleInput(KEY.up)
-    panel.handleInput(KEY.up)
-    panel.handleInput(KEY.enter)
-    expect(onComplete).toHaveBeenCalledWith({ id: 'plan-review', selected: ['Ship it'] })
-  })
-
-  it('declines with feedback text from the inline editor', () => {
-    const { panel, onComplete } = mount(ask())
-    panel.handleInput(KEY.down)
-    panel.handleInput(KEY.enter)
-    for (const char of 'redo step 2') panel.handleInput(char)
-    panel.handleInput(KEY.enter)
-    expect(onComplete).toHaveBeenCalledWith({ id: 'plan-review', selected: [], custom: 'redo step 2' })
-  })
-
-  it('declines without feedback on an empty editor submission', () => {
-    const { panel, onComplete } = mount(ask())
-    panel.handleInput(KEY.down)
-    panel.handleInput(KEY.enter)
+    panel.handleInput(KEY.right)
     panel.handleInput(KEY.enter)
     expect(onComplete).toHaveBeenCalledWith({ id: 'plan-review', selected: ['Keep planning'] })
   })
 
-  it('returns from the editor to the rows on Escape, then dismisses', () => {
+  it('revises in chat from the third button: dismissal, no answer', () => {
     const { panel, onComplete, onCancel } = mount(ask())
-    panel.handleInput(KEY.down)
+    panel.handleInput(KEY.right)
+    panel.handleInput(KEY.right)
     panel.handleInput(KEY.enter)
-    panel.handleInput(KEY.escape)
-    // Back on the rows: Enter approves again (the editor is gone).
+    expect(onComplete).not.toHaveBeenCalled()
+    expect(onCancel).toHaveBeenCalledOnce()
+  })
+
+  it('moves with all four arrows and wraps at both ends', () => {
+    const { panel, onComplete } = mount(ask())
+    // Left off the seeded approve wraps to revise; left again lands on reject.
+    panel.handleInput(KEY.left)
+    panel.handleInput(KEY.left)
+    panel.handleInput(KEY.enter)
+    expect(onComplete).toHaveBeenCalledWith({ id: 'plan-review', selected: ['Keep planning'] })
+    // Right off the reject steps to revise and wraps to approve; down and
+    // up step back and forth from there.
+    panel.handleInput(KEY.right)
+    panel.handleInput(KEY.right)
+    panel.handleInput(KEY.down)
     panel.handleInput(KEY.up)
     panel.handleInput(KEY.enter)
-    expect(onComplete).toHaveBeenCalledWith({ id: 'plan-review', selected: ['Ship it'] })
+    expect(onComplete).toHaveBeenLastCalledWith({ id: 'plan-review', selected: ['Ship it'] })
+  })
+
+  it('dismisses on Escape like the revise button', () => {
+    const { panel, onComplete, onCancel } = mount(ask())
     panel.handleInput(KEY.escape)
+    expect(onComplete).not.toHaveBeenCalled()
     expect(onCancel).toHaveBeenCalledOnce()
   })
 
@@ -193,22 +201,5 @@ describe('PlanReviewPanel decisions', () => {
     panel.handleInput('x')
     panel.invalidate()
     expect(panel.render(60).length).toBeGreaterThan(0)
-  })
-
-  it('creates the feedback editor through the factory without options', () => {
-    const components = new FakeBlueComponents()
-    const choices = planReviewChoices(ask())!
-    const panel = new PlanReviewPanel({
-      theme: new FakeTheme(),
-      components,
-      question: ask(),
-      choices,
-      onComplete: () => {},
-      onCancel: () => {},
-    })
-    panel.handleInput(KEY.down)
-    panel.handleInput(KEY.enter)
-    expect(components.editors[0]).toBeDefined()
-    expect(components.editorOptions[0]).toBeUndefined()
   })
 })

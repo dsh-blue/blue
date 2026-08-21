@@ -2,30 +2,42 @@
  * `PlanReviewPanel`: the dedicated presentation for a `plan-review`
  * user question (S24b) — dsh-plan-mode's `exit_plan_mode` ask. The plan
  * markdown (the question's `detail`) renders through
- * `ctx.blueComponents.createMarkdown` inside a scroll window; below it
- * the two decision rows: the approving option (named by
- * `question.intent.approve` — never a hardcoded label) and the other
- * option. Enter approves from the first row; Enter on the other row
- * swaps the rows for an inline feedback editor (the kimi Revise shape)
- * whose submission declines — empty text as the plain decline, typed
- * text as the decline-with-feedback the harness folds into "their
- * feedback: …". Escape from the editor returns to the rows; Escape
- * from the rows dismisses the ask. Answer encoding is the generic
- * single-select protocol (the intent changes presentation only). All
- * keys are raw sequences, matching the questionnaire and approval
- * panels (blue-questions injects no keymap).
+ * `ctx.blueComponents.createMarkdown` inside a scroll window; below it a
+ * horizontal three-button row (the shared kimi segment chrome from
+ * `thinking-segments.ts`) decides the review:
+ *
+ * - **Approve** — the option named by `question.intent.approve` (never a
+ *   hardcoded label); Enter answers `{selected: [approve]}` and the
+ *   harness exits plan mode.
+ * - **Reject** — answers with the other option's label: the model hears
+ *   "the user chose to keep planning" and reacts in the same turn.
+ * - **Revise in chat** — dismisses the ask (the `ASK_CANCELLED` path):
+ *   the turn stops, plan mode stays, and the model waits for the user's
+ *   next message — the user drives the re-plan by talking (the S24b
+ *   dogfood ruling retired the inline feedback editor: an editor inside
+ *   the pane read poorly, and the dismissal channel already carries the
+ *   semantics). Escape is the same action.
+ *
+ * ←/→/↑/↓ move the button focus, Enter activates, PgUp/PgDn scroll the
+ * plan. Answer encoding stays the generic single-select protocol (the
+ * intent changes presentation only). All keys are raw sequences,
+ * matching the questionnaire and approval panels (blue-questions
+ * injects no keymap).
  *
  * @module @dsh-blue/blue-interaction/plan-review-panel
  */
 
-import type { BlueComponents, BlueEditor, BlueFocusable, BlueMarkdown, BlueTheme } from '@dsh-blue/blue-core'
+import type { BlueComponents, BlueFocusable, BlueMarkdown, BlueTheme } from '@dsh-blue/blue-core'
 import { framePanel } from '@dsh-blue/blue-core/chrome'
 import type { AskUserQuestionAnswerItem, AskUserQuestionItem, AskUserQuestionOption } from '@deepseek-ai/dsh-user-questions'
 import { cycle } from './select-list.ts'
+import { renderSegments } from './thinking-segments.ts'
 
 /** Decoded input sequences the panel handles (no keymap actions). */
 const KEY_UP = '\x1b[A'
 const KEY_DOWN = '\x1b[B'
+const KEY_LEFT = '\x1b[D'
+const KEY_RIGHT = '\x1b[C'
 const KEY_PAGE_UP = '\x1b[5~'
 const KEY_PAGE_DOWN = '\x1b[6~'
 const KEY_ENTER = '\r'
@@ -37,14 +49,18 @@ const MAX_PLAN_ROWS = 10
 /** Rows one page jump moves (the help overlay's page size). */
 const PAGE_SCROLL = 10
 
+/** The third button's fixed copy: the dismissal path in user terms. */
+const REVISE_LABEL = 'Revise in chat'
+const REVISE_DESCRIPTION = 'stay in plan mode and type the changes in chat'
+
 /**
- * The two decision rows of a plan-review question: the approving option
- * first, the declining option second.
+ * The two decision options of a plan-review question: the approving
+ * option first, the declining option second.
  */
 export interface PlanReviewChoices {
   /** The option whose label equals `intent.approve`. */
   readonly approve: AskUserQuestionOption
-  /** The other option (the decline path). */
+  /** The other option (the reject answer's label). */
   readonly decline: AskUserQuestionOption
 }
 
@@ -70,24 +86,30 @@ export function planReviewChoices(question: AskUserQuestionItem): PlanReviewChoi
 
 /** Construction options for {@link PlanReviewPanel}. */
 export interface PlanReviewPanelOptions {
-  /** Theme supplying the plan, choice, and rule colors. */
+  /** Theme supplying the plan, button, and rule colors. */
   readonly theme: BlueTheme
-  /** Component factory supplying the markdown and feedback editor. */
+  /** Component factory supplying the markdown renderer. */
   readonly components: BlueComponents
   /** The plan-review question (its `detail` is the plan markdown). */
   readonly question: AskUserQuestionItem
   /** The decision pair (from {@link planReviewChoices}). */
   readonly choices: PlanReviewChoices
-  /** Enter on the approving row, or a feedback submission. */
+  /** Enter on Approve or Reject. */
   readonly onComplete: (answer: AskUserQuestionAnswerItem) => void
-  /** Escape from the choice rows. */
+  /** Enter on Revise in chat, or Escape. */
   readonly onCancel: () => void
+}
+
+/** One decision button: the segment shape plus the focused-button description. */
+interface DecisionButton {
+  readonly id: 'approve' | 'reject' | 'revise'
+  readonly label: string
+  readonly description: string | undefined
 }
 
 /**
  * The plan-review decision panel: a scrollable markdown plan above the
- * two decision rows, or the feedback editor while the decline row is
- * being answered.
+ * three-button decision row.
  */
 export class PlanReviewPanel implements BlueFocusable {
   /** Whether the panel currently holds focus. Managed by the screen. */
@@ -95,9 +117,9 @@ export class PlanReviewPanel implements BlueFocusable {
 
   private cursor = 0
   private scrollTop = 0
-  private editor: BlueEditor | undefined
   private readonly markdown: BlueMarkdown
   private readonly title: string
+  private readonly buttons: readonly DecisionButton[]
 
   /**
    * @param options - see {@link PlanReviewPanelOptions}.
@@ -108,30 +130,27 @@ export class PlanReviewPanel implements BlueFocusable {
       paddingX: 2,
     })
     this.title = options.question.header ?? 'Plan review'
+    const { approve, decline } = options.choices
+    this.buttons = [
+      { id: 'approve', label: approve.label, description: approve.description },
+      { id: 'reject', label: 'Reject', description: decline.description },
+      { id: 'revise', label: REVISE_LABEL, description: REVISE_DESCRIPTION },
+    ]
   }
 
   /**
-   * Dispatch one input sequence: editing mode forwards to the feedback
-   * editor (Escape returns to the rows); row mode moves the cursor,
-   * scrolls the plan window, decides, or dismisses.
+   * Dispatch one input sequence: the arrows move the button focus,
+   * PageUp/PageDown scroll the plan window, Enter activates the focused
+   * button, Escape revises in chat.
    * @param data - the input sequence as read from the terminal.
    */
   handleInput(data: string): void {
-    const editor = this.editor
-    if (editor !== undefined) {
-      if (data === KEY_ESCAPE) {
-        this.editor = undefined
-        return
-      }
-      editor.handleInput?.(data)
+    if (data === KEY_UP || data === KEY_LEFT) {
+      this.cursor = cycle(this.cursor, this.buttons.length, -1)
       return
     }
-    if (data === KEY_UP) {
-      this.cursor = cycle(this.cursor, 2, -1)
-      return
-    }
-    if (data === KEY_DOWN) {
-      this.cursor = cycle(this.cursor, 2, 1)
+    if (data === KEY_DOWN || data === KEY_RIGHT) {
+      this.cursor = cycle(this.cursor, this.buttons.length, 1)
       return
     }
     if (data === KEY_PAGE_UP) {
@@ -143,31 +162,26 @@ export class PlanReviewPanel implements BlueFocusable {
       return
     }
     if (data === KEY_ENTER) {
-      if (this.cursor === 0) {
-        this.options.onComplete({ id: this.options.question.id, selected: [this.options.choices.approve.label] })
-        return
-      }
-      this.openFeedback()
+      this.activate()
       return
     }
     if (data === KEY_ESCAPE) this.options.onCancel()
   }
 
-  /** Drop the markdown's and editor's cached render state. */
+  /** Drop the markdown's cached render state. */
   invalidate(): void {
     this.markdown.invalidate()
-    this.editor?.invalidate()
   }
 
   /**
    * Render the framed dialog: the question, the scrolled plan window
-   * (a `showing X-Y of Z` tail when it overflows), a blank rule, and
-   * the two decision rows — or the feedback editor while it is open.
+   * (a `showing X-Y of Z` tail when it overflows), a blank rule, the
+   * three-button segment row, and the focused button's description.
    * @param width - current viewport width in columns.
    * @returns one string per rendered row.
    */
   render(width: number): string[] {
-    const { theme, components, question, choices } = this.options
+    const { theme, components, question } = this.options
     const colors = theme.colors
     const rows: string[] = [
       colors.primary(components.truncateToWidth(`  ${question.question}`, width)),
@@ -186,45 +200,37 @@ export class PlanReviewPanel implements BlueFocusable {
       rows.push(...plan)
     }
     rows.push('')
-    const editor = this.editor
-    if (editor !== undefined) {
-      rows.push(...editor.render(width))
-      return framePanel(rows, width, {
-        title: this.title,
-        titlePaint: colors.primary,
-        titleHint: '· ↵ send feedback · esc back',
-        hintPaint: colors.textMuted,
-        rulePaint: colors.primary,
-      })
+    rows.push(components.truncateToWidth(
+      `  ${renderSegments(this.buttons, this.cursor, theme)}`,
+      Math.max(width, 1),
+    ))
+    const focused = this.buttons[this.cursor]
+    if (focused?.description !== undefined) {
+      rows.push(colors.muted(components.truncateToWidth(`  — ${focused.description}`, width)))
     }
-    const entries = [choices.approve, choices.decline].map((option, at) => {
-      const prefix = at === this.cursor ? '  → ' : '    '
-      const label = components.truncateToWidth(`${prefix}${option.label}`, width)
-      const description = option.description === undefined ? '' : colors.muted(` — ${option.description}`)
-      return at === this.cursor ? colors.primary(label) + description : label + description
-    })
-    rows.push(...entries)
     return framePanel(rows, width, {
       title: this.title,
       titlePaint: colors.primary,
-      titleHint: '· ↑↓ choose · pgup/pgdn scroll · ↵ decide · esc dismiss',
+      titleHint: '· ←→ decide · pgup/pgdn scroll · esc revise in chat',
       hintPaint: colors.textMuted,
       rulePaint: colors.primary,
     })
   }
 
-  /** Open the inline feedback editor for the decline row. */
-  private openFeedback(): void {
-    const editor = this.options.components.createEditor()
-    // The editor clears its buffer before invoking onSubmit; the text
-    // arrives trimmed. Empty text declines without feedback.
-    editor.onSubmit = (text) => {
-      if (text.length === 0) {
-        this.options.onComplete({ id: this.options.question.id, selected: [this.options.choices.decline.label] })
-        return
-      }
-      this.options.onComplete({ id: this.options.question.id, selected: [], custom: text })
+  /** Run the focused button: approve and reject answer, revise dismisses. */
+  private activate(): void {
+    const button = this.buttons[this.cursor]
+    /* v8 ignore next -- the cursor is cycle-bounded to the button row */
+    if (button === undefined) return
+    const { question, choices } = this.options
+    if (button.id === 'approve') {
+      this.options.onComplete({ id: question.id, selected: [choices.approve.label] })
+      return
     }
-    this.editor = editor
+    if (button.id === 'reject') {
+      this.options.onComplete({ id: question.id, selected: [choices.decline.label] })
+      return
+    }
+    this.options.onCancel()
   }
 }
