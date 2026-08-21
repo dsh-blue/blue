@@ -65,6 +65,10 @@
       "types": "./lib/types/banner-content.d.ts",
       "default": "./lib/banner-content.js"
     },
+    "./pane-agents": {
+      "types": "./lib/types/pane-agents.d.ts",
+      "default": "./lib/pane-agents.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
@@ -83,6 +87,7 @@
     "lib/intent-terminal.js",
     "lib/banner.js",
     "lib/banner-content.js",
+    "lib/pane-agents.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",

@@ -26,7 +26,7 @@ import { currentBlueAgent } from './session.ts'
 /** Stable Cordis plugin name. */
 export const name = 'blue-pane-queue'
 /** Services required before the pane can mount. */
-export const inject = ['blueScreen', 'blueTheme', 'blueKeymap']
+export const inject = ['blueScreen', 'blueTheme', 'blueKeymap', 'blueComponents']
 
 /**
  * Contextual action gating the empty-editor Up recall in `blue-input`.
@@ -53,12 +53,6 @@ function oneLine(text: string): string {
   return text.replace(/[\r\n]+/g, ' ').trim()
 }
 
-/** Character truncation for the pane's plain (unstyled) rows. */
-function truncate(text: string, width: number): string {
-  if (text.length <= width) return text
-  return `${text.slice(0, Math.max(0, width - 1))}…`
-}
-
 /**
  * Mount the queue pane and the recall-gating key action; both revert when
  * the plugin's fiber unloads.
@@ -67,6 +61,7 @@ function truncate(text: string, width: number): string {
 export function apply(ctx: Context): void {
   const colors = ctx.blueTheme.colors
   const screen = ctx.blueScreen
+  const components = ctx.blueComponents
   // Re-read through blueSession on every switch; the app plugin may
   // activate after this one, so blueSession is never injected.
   let agent = currentBlueAgent(ctx)
@@ -84,8 +79,12 @@ export function apply(ctx: Context): void {
         for (const message of messages) {
           // The `↑` glyph is the activity accent, the row text stays muted:
           // truncate the plain row first, then split at the glyph — SGR
-          // inserted before char-based truncation would corrupt the width.
-          const plain = truncate(`queued ↑ ${target}: ${oneLine(queuedMessageText(message))}`, width)
+          // inserted before truncation would corrupt the width. The
+          // display-width truncation (not char counting) is load-bearing:
+          // queued texts carry CJK, whose cells are two columns wide
+          // (the S33 acceptance crash — a char-counted cut left a row at
+          // width + 2 and pi-tui threw).
+          const plain = components.truncateToWidth(`queued ↑ ${target}: ${oneLine(queuedMessageText(message))}`, width)
           const at = plain.indexOf('↑')
           rows.push(
             at === -1

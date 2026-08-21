@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { isReadItem, parseToolArguments, resolveCallView, resolveResultView, type ToolPresentationSource } from '../src/present.ts'
+import { isReadItem, isSubagentTool, parseToolArguments, resolveCallView, resolveResultView, type ToolPresentationSource } from '../src/present.ts'
 import type { TranscriptToolItem } from '../src/types.ts'
 
 /** A registry stub whose `get` returns the prearranged runtime (or nothing). */
@@ -34,6 +34,23 @@ describe('isReadItem', () => {
 
   it('defends against a malformed view missing the card tag', () => {
     expect(isReadItem(readItem({ title: 'x' } as never))).toBe(false)
+  })
+})
+
+describe('isSubagentTool', () => {
+  function named(name: string): TranscriptToolItem {
+    return { kind: 'tool', seq: 1, turn: 1, step: 1, callId: 'c1', name, arguments: '{}', startedAt: 0 }
+  }
+
+  it('marks the spawn-class tools eligible for the agent group', () => {
+    expect(isSubagentTool(named('subagent'))).toBe(true)
+    expect(isSubagentTool(named('subagent_fork'))).toBe(true)
+  })
+
+  it('rejects the control tools, reads, and ordinary tools', () => {
+    for (const name of ['send_message', 'interrupt_agent', 'list_agents', 'report', 'job_output', 'read', 'bash']) {
+      expect(isSubagentTool(named(name))).toBe(false)
+    }
   })
 })
 

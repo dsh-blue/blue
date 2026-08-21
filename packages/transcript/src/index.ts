@@ -69,6 +69,7 @@ export {
   UserMessageComponent,
 } from './components.ts'
 export { ReadGroupComponent } from './read-group.ts'
+export { AgentGroupComponent, setAgentGroupTimers, type AgentGroupTimers } from './agent-group.ts'
 export { BlueIntentsError, BlueIntentsService } from './intents.ts'
 export { BlueStatusError, BlueStatusService, FOOTER_MAX_ROWS, FooterShellComponent } from './status.ts'
 export { StreamingPhaseTracker, type StreamingPhase } from './phase.ts'

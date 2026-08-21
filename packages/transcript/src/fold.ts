@@ -16,7 +16,11 @@
  * `callId` into one tool item carrying the parsed arguments, the
  * reconstructed `ToolResult`, and the render intent resolved through the
  * optional `present` hooks — except `todo_write`, whose calls and results
- * render nothing because the todo pane owns that presentation.
+ * render nothing because the todo pane owns that presentation. Tool items
+ * also carry the `tool/call`/`tool/result` envelope wall clocks
+ * (`startedAt`/`endedAt`, S33) so the agent group can derive elapsed times;
+ * both come from the persisted envelope, so a replayed snapshot folds to
+ * identical values with no live clock in the fold.
  * `turn/start`/`step/start`/`turn/end` drive the
  * turn/step tagging, the completed-turn list the window policy evicts on,
  * and in-turn step folding with the S20 kimi retention: the most recent
@@ -57,6 +61,14 @@ export const RESULT_SUMMARY_MAX_CHARS = 160
  * and drops only the body; Blue hides both).
  */
 const TODO_TOOL_NAME = 'todo_write'
+
+/**
+ * The spawn-class subagent tool names (the same set `present.ts`
+ * `isSubagentTool` classifies items by): the agents pane owns their
+ * presentation, so their calls and results render nothing in the stream —
+ * the S33 acceptance ruling (kimi AgentSwarm semantics; D39 revision).
+ */
+const SUBAGENT_SPAWN_TOOL_NAMES: ReadonlySet<string> = new Set(['subagent', 'subagent_fork'])
 
 /** The fold's answer to one event: the item the event created or mutated. */
 export interface FoldItemUpdate {
@@ -393,7 +405,11 @@ export class TranscriptFolder {
       case 'tool/call': {
         // The todo pane renders the list; the call itself would only echo it
         // into the stream. Track the id so the paired result stays hidden too.
-        if (event.data.name === TODO_TOOL_NAME) {
+        // The S33 acceptance ruling extends the same suppression to the
+        // spawn-class subagent tools: the agents pane pinned above the editor
+        // owns that presentation, so neither the call nor its ack/result
+        // enters the stream (the kimi AgentSwarm semantics — D39 revision).
+        if (event.data.name === TODO_TOOL_NAME || SUBAGENT_SPAWN_TOOL_NAMES.has(event.data.name)) {
           this.suppressedCalls.add(event.data.callId)
           return null
         }
@@ -405,6 +421,7 @@ export class TranscriptFolder {
           callId: event.data.callId,
           name: event.data.name,
           arguments: event.data.arguments,
+          startedAt: event.time,
         }
         const parsed = parseToolArguments(item.arguments)
         if (parsed !== undefined) item.parsedArguments = parsed
@@ -426,6 +443,7 @@ export class TranscriptFolder {
           text: summarizeResult(event.data),
           fullText: fullResultText(event.data),
           isError,
+          endedAt: event.time,
         }
         const rawResult: ToolResult = { content: block.content, isError }
         if (event.data.meta !== undefined) rawResult.meta = event.data.meta
@@ -450,6 +468,7 @@ export class TranscriptFolder {
           callId,
           name: 'tool',
           arguments: '',
+          startedAt: event.time,
           result,
           rawResult,
         }

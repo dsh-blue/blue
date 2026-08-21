@@ -116,6 +116,29 @@ export function isReadItem(item: TranscriptToolItem): boolean {
 const PLAN_REVIEW_TOOL = 'exit_plan_mode'
 
 /**
+ * The spawn-class subagent tool names — the calls that delegate work to a
+ * child agent session (dsh-subagent registers `subagent` continuable and
+ * `subagent_fork` one-shot over the base composition). The control tools
+ * (`send_message`, `interrupt_agent`, `list_agents`, `report`, `job_output`)
+ * stay normal cards: kimi's group aggregates only its Agent tool, and the
+ * group's semantics are "a run of parallel delegated agents", which a
+ * steering call in a later step is not (the S33 D39 ruling).
+ */
+const SUBAGENT_SPAWN_TOOLS: ReadonlySet<string> = new Set(['subagent', 'subagent_fork'])
+
+/**
+ * Whether a tool item is a spawn-class subagent call eligible for the S33
+ * agent group. Named-tool classification like {@link isPlanDecline}: the
+ * view contract has no agent kind (`ToolCallKind` lists read/edit/…/other),
+ * so the name is the only stable signal.
+ * @param item - the folded tool item to classify.
+ * @returns true when the call's tool name is spawn-class.
+ */
+export function isSubagentTool(item: TranscriptToolItem): boolean {
+  return SUBAGENT_SPAWN_TOOLS.has(item.name)
+}
+
+/**
  * Whether a tool item is a declined plan review: dsh-plan-mode's
  * `exit_plan_mode` answers a rejection (Reject, or Revise with feedback)
  * by failing the call — "The user chose to keep planning…" — a user

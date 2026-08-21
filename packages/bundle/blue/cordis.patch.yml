@@ -152,6 +152,7 @@
     - id: blue-transcript
       name: '@dsh-blue/blue-transcript'
 
+
     # Baseline footer entry: the model name alone at priority 0, in the
     # full-strength text tier (the S15 kimi identity: the brightest thing in
     # the footer), registered into the transcript's blueStatus registry.
@@ -269,6 +270,16 @@
     # throwaway side agent and renders the exchange in the dock.
     - id: blue-pane-btw
       name: '@dsh-blue/blue-transcript/pane-btw'
+
+    # Subagent pane (S33): the running subagent group pinned directly above
+    # the editor (the last dock row before it), rendering the group card
+    # over spawn-class calls the fold suppresses from the stream — the kimi
+    # swarm-pane semantics. Injects blueComponents so its fiber joins the
+    # same activation round as the other panes, keeping the dock order
+    # (activity → queue → todo → btw → agents → editor) in row order.
+    - id: blue-pane-agents
+      name: '@dsh-blue/blue-transcript/pane-agents'
+      inject: [blueComponents]
 
     # --- Assembly segment -------------------------------------------------------
     # The plain baseline's closing rows: the input editor with its built-in

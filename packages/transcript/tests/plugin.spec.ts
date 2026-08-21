@@ -35,6 +35,7 @@ import {
   reasoningDelta,
   resetSeq,
   stepStart,
+  subagentCallEvent,
   textDelta,
   toolCallEvent,
   toolResultEvent,
@@ -142,6 +143,7 @@ interface FakeAgent {
   status: 'idle' | 'running'
   options: { model?: string }
   session: {
+    id: string
     events: SessionEvent[]
     header: { cwd?: string }
     requestHeader(): { config: { model: string } } | undefined
@@ -154,6 +156,7 @@ function fakeAgent(events: SessionEvent[], model = 'deepseek-chat'): FakeAgent {
     status: 'idle',
     options: { model },
     session: {
+      id: 'parent-1',
       events,
       header: {},
       requestHeader: () => undefined,
@@ -637,6 +640,31 @@ describe('blue-transcript plugin through the real Loader', () => {
     expect(screen.children).toHaveLength(2)
     expect(contentLines(screen).join('\n')).toContain('… step 1 · call 2 tools')
     expect(contentLines(screen).join('\n')).not.toContain('Read 2 files')
+  })
+
+  it('suppresses spawn-class subagent calls and results from the stream (S33 pane ruling)', async () => {
+    resetSeq()
+    const { ctx, screen } = await bootTranscript(null, {})
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([
+      turnStart(1),
+      stepStart(1, 1),
+      subagentCallEvent(1, 1, 'a1', 'subagent', 'Survey tests', 'survey'),
+      subagentCallEvent(1, 1, 'a2', 'subagent', 'Map docs', 'map'),
+      subagentCallEvent(1, 1, 'a3', 'subagent_fork', 'Draft README', 'draft'),
+      toolResultEvent(1, 1, 'a1', 'started subagent child-1'),
+      toolResultEvent(1, 1, 'a2', 'started subagent child-2'),
+      toolResultEvent(1, 1, 'a3', 'started background subagent job subagent-1'),
+      stepStart(1, 2),
+      toolCallEvent(1, 2, 's1', 'send_message', '{"message":"hi"}'),
+      toolResultEvent(1, 2, 's1', 'ok'),
+      turnEnd(1),
+    ])))
+    // Only the control card mounts: spawn calls, their acks, and the fork
+    // are pane-owned — the agents pane is their only surface.
+    expect(screen.children).toHaveLength(1)
+    const joined = contentLines(screen).join('\n')
+    expect(joined).toContain('send_message')
+    expect(joined).not.toContain('subagent')
   })
 
   it('creates tool cards through the blueIntents registry', async () => {

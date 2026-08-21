@@ -161,6 +161,34 @@ describe('buildExportMarkdown', () => {
     expect(markdown).toContain('- **Conversation**: 1 turn | 2 tool calls')
   })
 
+  it('exports grouped subagent members as ordinary tool calls (S33: the group is mount-layer only)', () => {
+    const items: TranscriptItem[] = [
+      { kind: 'user', seq: 1, turn: 0, text: 'delegate', images: [] },
+      {
+        kind: 'tool', seq: 2, turn: 0, step: 0, callId: 'a', name: 'subagent',
+        arguments: '{"description":"Survey","prompt":"p"}',
+        parsedArguments: { description: 'Survey', prompt: 'p' },
+        startedAt: 1, result: { text: 'started subagent child-1', isError: false, endedAt: 2 },
+      },
+      {
+        kind: 'tool', seq: 3, turn: 0, step: 0, callId: 'b', name: 'subagent_fork',
+        arguments: '{"description":"Draft","prompt":"q"}',
+        parsedArguments: { description: 'Draft', prompt: 'q' },
+        startedAt: 1, result: { text: 'started background subagent job subagent-1', isError: false, endedAt: 2 },
+      },
+    ]
+    const markdown = buildExportMarkdown({
+      sessionId: 's', workDir: undefined, items, exportedAt: new Date('2026-08-21T00:00:00.000Z'),
+    })
+    // Each member renders its own Tool Call section and both count.
+    expect(markdown).toContain('#### Tool Call: subagent')
+    expect(markdown).toContain('#### Tool Call: subagent_fork')
+    expect(markdown).toContain('- **Conversation**: 1 turn | 2 tool calls')
+    // No group vocabulary leaks into the export.
+    expect(markdown).not.toContain('agents finished')
+    expect(markdown).not.toContain('├─')
+  })
+
   it('keeps the hint from non-whitelist string arguments and absent parse', () => {
     const items: TranscriptItem[] = [
       { kind: 'tool', seq: 1, turn: 0, step: 0, callId: 'a', name: 'read', arguments: '{"path":"/x"}', parsedArguments: { path: '/x' } },

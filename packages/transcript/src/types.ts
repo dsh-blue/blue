@@ -97,6 +97,8 @@ export interface TranscriptToolResult {
   readonly fullText?: string
   /** Whether the tool reported failure. */
   readonly isError: boolean
+  /** Unix epoch ms of the `tool/result` event envelope (S33 elapsed). */
+  readonly endedAt: number
 }
 
 /** A tool call, paired with its result when one has arrived. */
@@ -113,6 +115,8 @@ export interface TranscriptToolItem {
   readonly name: string
   /** Raw JSON arguments string as produced by the model. */
   readonly arguments: string
+  /** Unix epoch ms of the `tool/call` event envelope (S33 elapsed). */
+  readonly startedAt: number
   /** `JSON.parse` of {@link arguments}; absent when the raw string is invalid. */
   parsedArguments?: unknown
   /** Present once the paired `tool/result` event has folded in. */

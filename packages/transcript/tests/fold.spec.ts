@@ -225,6 +225,28 @@ describe('foldSessionEvents', () => {
     expect(folder.items).toHaveLength(1)
   })
 
+  it('records the envelope wall clocks for elapsed derivation (S33)', () => {
+    const t0 = 1_700_000_000_000
+    // Explicit times survive the fold verbatim: startedAt from the call
+    // envelope, endedAt from the result envelope — both persisted, so a
+    // replay folds identical values. (Spawn-class tools use this too but
+    // are suppressed from the stream; the times feed the agents pane.)
+    const timed = foldSessionEvents([
+      toolCallEvent(1, 1, 'c2', 'bash', '{}', ),
+      toolResultEvent(1, 1, 'c2', 'done', { time: t0 + 45_000 }),
+    ] as SessionEvent[])
+    const timedItem = timed[0] as TranscriptToolItem
+    expect(timedItem.result?.endedAt).toBe(t0 + 45_000)
+  })
+
+  it('stamps an unpaired result item with the same instant on both clocks', () => {
+    const t0 = 1_700_000_050_000
+    const items = foldSessionEvents([toolResultEvent(1, 1, 'orphan', 'done', { time: t0 })])
+    const item = items[0] as TranscriptToolItem
+    expect(item.startedAt).toBe(t0)
+    expect(item.result?.endedAt).toBe(t0)
+  })
+
   it('marks error results from the block flag or the error identity', () => {
     const byFlag = foldSessionEvents([
       toolCallEvent(1, 1, 'c1', 'bash', '{}'),

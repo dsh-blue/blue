@@ -117,9 +117,13 @@ export function resetSeq(): void {
 }
 
 /** Build one event envelope with the next synthetic seq. */
-export function event<T extends SessionEvent['type']>(type: T, data: SessionEvent<T>['data']): SessionEvent<T> {
+export function event<T extends SessionEvent['type']>(
+  type: T,
+  data: SessionEvent<T>['data'],
+  time?: number,
+): SessionEvent<T> {
   seq += 1
-  return { type, seq, time: 1_700_000_000_000 + seq, data } as SessionEvent<T>
+  return { type, seq, time: time ?? 1_700_000_000_000 + seq, data } as SessionEvent<T>
 }
 
 /** A user message with the given content blocks. */
@@ -221,7 +225,7 @@ export function toolResultEvent(
   step: number,
   callId: string,
   text: string,
-  options: { isError?: boolean; meta?: SessionEvent<'tool/result'>['data']['meta']; error?: { name: string; code: string } } = {},
+  options: { isError?: boolean; meta?: SessionEvent<'tool/result'>['data']['meta']; error?: { name: string; code: string }; time?: number } = {},
 ): SessionEvent<'tool/result'> {
   return event('tool/result', {
     turn,
@@ -229,5 +233,27 @@ export function toolResultEvent(
     message: toolResultMessage(callId, text, options.isError ?? false),
     ...(options.meta !== undefined ? { meta: options.meta } : {}),
     ...(options.error !== undefined ? { error: options.error } : {}),
-  })
+  }, options.time)
+}
+
+/**
+ * A spawn-class subagent `tool/call` with the harness arg shape (the S33
+ * dogfood-verified `description` + `prompt` pair).
+ */
+export function subagentCallEvent(
+  turn: number,
+  step: number,
+  callId: string,
+  name: 'subagent' | 'subagent_fork',
+  description: string,
+  prompt: string,
+  options: { time?: number } = {},
+): SessionEvent<'tool/call'> {
+  return event('tool/call', {
+    turn,
+    step,
+    callId: CallId(callId),
+    name,
+    arguments: JSON.stringify({ description, prompt }),
+  }, options.time)
 }
