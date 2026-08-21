@@ -73,18 +73,24 @@ const sharedTheme = {
   socialLinks: [{ icon: 'github', link: 'https://github.com/dsh-blue/blue' }],
 }
 
-// ── 导航：顶栏只保留“文档”与“插件市场”两个入口 ──────────────────────────────
+// ── 导航：顶栏三入口——用户手册 / 开发手册 / 插件市场 ────────────────────────
+// 按受众分册（对齐 Claude Code 的使用文档/插件开发文档分家）：用户手册覆盖
+// 使用与定制，开发手册收口 /plugins/ 路径下的插件开发内容，市场独立单页。
 const navZh = [
-  { text: '文档', link: '/guide/', activeMatch: '/(guide|dsh|features|reference|plugins)' },
+  { text: '用户手册', link: '/guide/', activeMatch: '/(guide|dsh|features|reference)' },
+  { text: '开发手册', link: '/plugins/', activeMatch: '^/plugins' },
   { text: '插件市场', link: '/marketplace/', activeMatch: '^/marketplace' },
 ]
 
 const navEn = [
-  { text: 'Docs', link: '/en/guide/', activeMatch: '/en/(guide|dsh|features|reference|plugins)' },
+  { text: 'User manual', link: '/en/guide/', activeMatch: '/en/(guide|dsh|features|reference)' },
+  { text: 'Developer manual', link: '/en/plugins/', activeMatch: '^/en/plugins' },
   { text: 'Plugin marketplace', link: '/en/marketplace/', activeMatch: '^/en/marketplace' },
 ]
 
-// ── 侧边栏：全站常驻四个分组（非折叠），任何页面可直接跳任一节 ────────────────
+// ── 侧边栏：按路径分册 ─────────────────────────────────────────────────────
+// '/' = 用户手册（指南 / dsh 手册 / 功能 / 参考）；'/plugins/' = 开发手册；
+// '/marketplace/' 单页不给侧边栏。文件不动、链接不变，仅导航重组。
 const sidebarZh = {
   '/': [
     {
@@ -127,15 +133,19 @@ const sidebarZh = {
         { text: '斜杠命令参考', link: '/reference/commands' },
       ],
     },
+  ],
+  '/plugins/': [
     {
-      text: '插件',
+      text: '插件开发',
       items: [
         { text: '编写第一个插件', link: '/plugins/' },
         { text: 'Seam 参考', link: '/plugins/seams' },
         { text: '内置插件', link: '/plugins/builtins' },
+        { text: '仓库设计文档（GitHub）', link: 'https://github.com/dsh-blue/blue/blob/master/docs/README.md' },
       ],
     },
   ],
+  '/marketplace/': [],
 }
 
 const sidebarEn = {
@@ -180,15 +190,19 @@ const sidebarEn = {
         { text: 'Slash commands', link: '/en/reference/commands' },
       ],
     },
+  ],
+  '/en/plugins/': [
     {
-      text: 'Plugins',
+      text: 'Plugin development',
       items: [
         { text: 'Writing your first plugin', link: '/en/plugins/' },
         { text: 'Seam reference', link: '/en/plugins/seams' },
         { text: 'Built-in plugins', link: '/en/plugins/builtins' },
+        { text: 'Design docs (GitHub, 中文)', link: 'https://github.com/dsh-blue/blue/blob/master/docs/README.md' },
       ],
     },
   ],
+  '/en/marketplace/': [],
 }
 
 const config = defineConfig({
