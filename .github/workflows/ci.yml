@@ -47,4 +47,8 @@ jobs:
       # package entry points resolve lib/index.js from tsdown, so a fresh
       # checkout needs the bundle build before vitest can run.
       - run: pnpm build
+      # The lib/export integrity gate (the S30 lesson): package.json
+      # exports ↔ built lib/ output ↔ the files tarball whitelist. Runs
+      # before the test minute so the cheap check fails first.
+      - run: pnpm check:lib
       - run: pnpm test:coverage
