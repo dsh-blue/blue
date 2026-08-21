@@ -8,7 +8,9 @@
  * layer to perform the switch; `/help` lists
  * the registered commands and key bindings in an overlay; `/theme` swaps
  * the live theme provider (see `./theme-switch.ts`); `/yolo` and the
- * plan/yolo exclusivity wiring live in `./mode-commands.ts`.
+ * plan/yolo exclusivity wiring live in `./mode-commands.ts`; the
+ * session-info family (`/status` `/usage` `/version`) lives in
+ * `./session-commands.ts`.
  * Registrations are
  * effect-bound, so unloading the fiber removes them. Only `commands` is
  * injected: the overlay commands read the Blue display services through
@@ -38,6 +40,7 @@ import type { HelpSection } from './help.ts'
 import { HelpOverlay } from './help.ts'
 import { registerModelCommands } from './model-commands.ts'
 import { registerModeCommands, setupModeTracking } from './mode-commands.ts'
+import { registerSessionCommands } from './session-commands.ts'
 import { SelectListPanel } from './select-list.ts'
 import { CURRENT_MARK } from './symbols.ts'
 import { registerThemeCommand } from './theme-switch.ts'
@@ -258,6 +261,8 @@ export function apply(ctx: Context): void {
     // the plan/yolo exclusivity watcher.
     const modes = registerModeCommands(ctx)
     const modeTracking = setupModeTracking(ctx)
+    // The session-info family (`/status` `/usage` `/version`).
+    const sessionInfo = registerSessionCommands(ctx)
     return () => {
       quit()
       quitAliases()
@@ -270,6 +275,7 @@ export function apply(ctx: Context): void {
       models()
       modes()
       modeTracking()
+      sessionInfo()
     }
   })
 }

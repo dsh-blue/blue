@@ -61,6 +61,10 @@
       "types": "./lib/types/banner.d.ts",
       "default": "./lib/banner.js"
     },
+    "./banner-content": {
+      "types": "./lib/types/banner-content.d.ts",
+      "default": "./lib/banner-content.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
@@ -78,6 +82,7 @@
     "lib/intent-diff.js",
     "lib/intent-terminal.js",
     "lib/banner.js",
+    "lib/banner-content.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
