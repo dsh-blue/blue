@@ -14,6 +14,7 @@ import * as commandsPlugin from '../src/commands-plugin.ts'
 import type { InfoPanel } from '../src/info-panel.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
 import {
+  buildCompositionSection,
   buildContextSection,
   buildStatusSections,
   buildUsageSections,
@@ -139,6 +140,55 @@ describe('buildUsageSections', () => {
     expect(sections[0]!.rows).toEqual([
       { label: 'tokens', segments: [{ text: 'no provider usage recorded yet', style: 'muted' }] },
     ])
+  })
+})
+
+describe('buildCompositionSection', () => {
+  it('renders the stacked bar, per-component shares, and the free remainder', () => {
+    const section = buildCompositionSection({ system: 2048, tools: 1024, messages: 1024, }, 8192)!
+    expect(section.heading).toBe('Context composition (heuristic)')
+    // 25% █, 12.5% ▓ (quantizes to three columns), 12.5% ▒ (two), 50% ░.
+    expect(section.rows[0]!).toEqual({
+      label: 'window',
+      segments: [{ text: `${'█'.repeat(5)}${'▓'.repeat(3)}${'▒'.repeat(2)}${'░'.repeat(10)}` }],
+    })
+    expect(section.rows[1]!.segments).toEqual([{ text: '2k' }, { text: ' · 25%', style: 'muted' }])
+    expect(section.rows[2]!.segments).toEqual([{ text: '1k' }, { text: ' · 13%', style: 'muted' }])
+    expect(section.rows[3]!.segments).toEqual([{ text: '1k' }, { text: ' · 13%', style: 'muted' }])
+    expect(section.rows[4]!.segments).toEqual([{ text: '4k' }, { text: ' · 50%', style: 'muted' }])
+  })
+
+  it('rounds sub-half-percent shares to an honest 0%', () => {
+    const section = buildCompositionSection({ system: 100, tools: 0, messages: 0 }, 1000000)!
+    expect(section.rows[1]!.segments[1]).toEqual({ text: ' · 0%', style: 'muted' })
+  })
+
+  it('drops the bar, shares, and free row without a window', () => {
+    const section = buildCompositionSection({ system: 100, tools: 200, messages: 300 })!
+    expect(section.rows.map(row => row.label)).toEqual(['system', 'tools', 'messages'])
+    expect(section.rows[0]!.segments).toEqual([{ text: '100' }])
+  })
+
+  it('clamps the free remainder at zero when the heuristic overshoots', () => {
+    const section = buildCompositionSection({ system: 5000, tools: 2000, messages: 2000 }, 8192)!
+    expect(section.rows.at(-1)!.segments).toEqual([{ text: '0' }, { text: ' · 0%', style: 'muted' }])
+  })
+
+  it('omits the section without a breakdown', () => {
+    expect(buildCompositionSection(undefined, 8192)).toBeUndefined()
+  })
+
+  it('joins the /context panel behind the occupancy section', () => {
+    const withBreakdown = buildUsageSections(
+      { buckets: { input: 10, cacheRead: 0, cacheWrite: 0, output: 5 }, context: { used: 10, window: 8192 } },
+      { system: 100, tools: 0, messages: 0 },
+    )
+    expect(withBreakdown.map(section => section.heading))
+      .toEqual(['Session usage', 'Context window', 'Context composition (heuristic)'])
+    const without = buildUsageSections(
+      { buckets: { input: 10, cacheRead: 0, cacheWrite: 0, output: 5 }, context: { used: 10, window: 8192 } },
+    )
+    expect(without.map(section => section.heading)).toEqual(['Session usage', 'Context window'])
   })
 })
 

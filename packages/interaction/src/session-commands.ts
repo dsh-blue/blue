@@ -2,7 +2,8 @@
  * The session-info command family (S25): `/status` — the framed two-column
  * panel over the session header (id, cwd, created, turn/step counts, agent
  * state), the live model selection, and the context occupancy; `/context` —
- * the provider token buckets plus the same context bar, read through the
+ * the provider token buckets, the context bar, and (projection-only) the
+ * CC-style heuristic composition section, read through the
  * session-projection seam (`dsh-token-meter`/`dsh-session-stats` in the
  * base composition) with the local `usage.ts` fold as the degraded host's
  * fallback; and `/version` — the banner constant and the live model as a
@@ -21,18 +22,21 @@ import { BLUE_VERSION } from '@dsh-blue/blue-transcript/banner-content'
 // the app-owned `blueSession` merge every handler reads.
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@dsh-blue/blue-app'
-import type { InfoSection } from './info-panel.ts'
+import type { InfoRow, InfoSection } from './info-panel.ts'
 import { InfoPanel } from './info-panel.ts'
 import { displayServices } from './display-services.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
 import {
   formatTokens,
   ratioSeverity,
+  readCompositionFacts,
   readTurnCounts,
   readUsageFacts,
   renderBar,
+  renderStackedBar,
   usagePercent,
   usageRatio,
+  type CompositionFacts,
   type ContextFacts,
 } from './usage.ts'
 
@@ -111,6 +115,74 @@ export function buildContextSection(context: ContextFacts): InfoSection {
   }
 }
 
+/**
+ * Build the CC-style composition section (the `/context` panel's third
+ * act): a stacked `█▓▒░` bar over the advertised window plus one row per
+ * component — system prompt, tool schemas, conversation surface — and the
+ * free remainder, each with its 1024-base count and whole-percent share.
+ * The figures are the meter's heuristic composition (the upstream unit
+ * prices at a fixed density and underprices CJK/JSON), so the heading
+ * carries the caveat and the anchored occupancy stays in
+ * {@link buildContextSection}. Without a breakdown (no projection seam)
+ * the section is omitted entirely; without a window the rows lose their
+ * shares and the bar.
+ * @param breakdown - the heuristic composition, when the projection answers.
+ * @param window - the advertised context window, when known.
+ * @returns the section, or `undefined` to omit it.
+ */
+export function buildCompositionSection(
+  breakdown: CompositionFacts | undefined,
+  window: number | undefined,
+): InfoSection | undefined {
+  if (breakdown === undefined) return undefined
+  const components: ReadonlyArray<{ label: string, tokens: number }> = [
+    { label: 'system', tokens: breakdown.system },
+    { label: 'tools', tokens: breakdown.tools },
+    { label: 'messages', tokens: breakdown.messages },
+  ]
+  const used = breakdown.system + breakdown.tools + breakdown.messages
+  // Composition shares round to the nearest whole percent — unlike the
+  // occupancy bar's floor-at-1 rule, a 0.3% system prompt reads `0%`, not
+  // an inflated `1%` (the floor exists so partial occupancy never looks
+  // empty; here the bar already shows the parts in proportion).
+  const shareText = (tokens: number, window: number): string =>
+    ` · ${String(Math.min(100, Math.max(0, Math.round((tokens / window) * 100))))}%`
+  const rows: InfoRow[] = []
+  if (window !== undefined) {
+    rows.push({
+      label: 'window',
+      segments: [{ text: renderStackedBar([
+        { ratio: breakdown.system / window, glyph: '█' },
+        { ratio: breakdown.tools / window, glyph: '▓' },
+        { ratio: breakdown.messages / window, glyph: '▒' },
+        { ratio: Math.max(0, window - used) / window, glyph: '░' },
+      ]) }],
+    })
+  }
+  for (const component of components) {
+    rows.push({
+      label: component.label,
+      segments: [
+        { text: formatTokens(component.tokens) },
+        ...(window === undefined
+          ? []
+          : [{ text: shareText(component.tokens, window), style: 'muted' as const }]),
+      ],
+    })
+  }
+  if (window !== undefined) {
+    const free = Math.max(0, window - used)
+    rows.push({
+      label: 'free',
+      segments: [
+        { text: formatTokens(free) },
+        { text: shareText(free, window), style: 'muted' as const },
+      ],
+    })
+  }
+  return { heading: 'Context composition (heuristic)', rows }
+}
+
 /** The header facts the `/status` panel reads. */
 export interface StatusInput {
   /** The session's durable header facts. */
@@ -167,11 +239,16 @@ export function buildStatusSections(input: StatusInput): InfoSection[] {
 
 /**
  * Build the `/context` panel's sections (pure, for the spec): the four
- * disjoint provider buckets plus their total, and the context bar.
+ * disjoint provider buckets plus their total, the context bar, and — when
+ * the breakdown projection answers — the CC-style composition section.
  * @param facts - the usage facts to list.
+ * @param composition - the heuristic composition, when the projection answers.
  * @returns the sections in display order.
  */
-export function buildUsageSections(facts: ReturnType<typeof readUsageFacts>): InfoSection[] {
+export function buildUsageSections(
+  facts: ReturnType<typeof readUsageFacts>,
+  composition?: CompositionFacts,
+): InfoSection[] {
   const { buckets } = facts
   const total = buckets.input + buckets.cacheRead + buckets.cacheWrite + buckets.output
   const usage: InfoSection = total === 0
@@ -189,7 +266,12 @@ export function buildUsageSections(facts: ReturnType<typeof readUsageFacts>): In
           { label: 'total', segments: [{ text: formatTokens(total) }] },
         ],
       }
-  return [usage, buildContextSection(facts.context)]
+  const compositionSection = buildCompositionSection(composition, facts.context.window)
+  return [
+    usage,
+    buildContextSection(facts.context),
+    ...(compositionSection === undefined ? [] : [compositionSection]),
+  ]
 }
 
 /**
@@ -283,7 +365,7 @@ export function registerSessionCommands(ctx: Context): () => void {
       theme: display.theme,
       components: display.components,
       title: 'context',
-      sections: buildUsageSections(facts),
+      sections: buildUsageSections(facts, readCompositionFacts(ctx, agent)),
       onClose: () => {
         restore()
       },

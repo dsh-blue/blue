@@ -67,6 +67,23 @@ interface ContextPressureValue {
   readonly contextWindow?: number
 }
 
+/** Structural shape of the `contextBreakdown` projection value. */
+interface ContextBreakdownValue {
+  readonly systemTokens: number
+  readonly toolsTokens: number
+  readonly messageTokens: number
+}
+
+/** The heuristic composition of the next request (the CC `/context` rows). */
+export interface CompositionFacts {
+  /** Heuristic tokens of the newest request envelope's system prompt. */
+  readonly system: number
+  /** Heuristic tokens of the newest request envelope's tool schemas. */
+  readonly tools: number
+  /** Heuristic tokens of the current model-visible conversation surface. */
+  readonly messages: number
+}
+
 /** Structural shape of the `sessionStats` projection value. */
 export interface SessionStatsValue {
   readonly turns: number
@@ -161,6 +178,41 @@ export const CONTEXT_BAR_WIDTH = 20
 export function renderBar(ratio: number, width: number = CONTEXT_BAR_WIDTH): string {
   const filled = Math.round(usageRatio(ratio, 1) * width)
   return '█'.repeat(filled) + '░'.repeat(Math.max(0, width - filled))
+}
+
+/**
+ * A stacked composition bar: each column takes the glyph of the part whose
+ * cumulative share covers that column's position, so small parts stay
+ * visible in proportion and a zero-total input renders the last part's
+ * glyph across the whole bar. Pure string building; coloring is the
+ * caller's.
+ * @param parts - the composition parts (ratio + glyph), in draw order.
+ * @param width - the bar width in columns.
+ * @returns the bar string.
+ */
+export function renderStackedBar(
+  parts: ReadonlyArray<{ ratio: number, glyph: string }>,
+  width: number = CONTEXT_BAR_WIDTH,
+): string {
+  const total = parts.reduce((sum, part) => sum + Math.max(0, part.ratio), 0)
+  const fallback = parts.at(-1)?.glyph ?? '░'
+  let out = ''
+  for (let column = 0; column < width; column++) {
+    const position = column / width * total
+    let acc = 0
+    let glyph = fallback
+    for (const part of parts) {
+      acc += Math.max(0, part.ratio)
+      // The epsilon keeps float accumulation (0.1 + 0.2) from stealing a
+      // boundary column; real ratio gaps are far above it.
+      if (position < acc - 1e-9) {
+        glyph = part.glyph
+        break
+      }
+    }
+    out += glyph
+  }
+  return out
 }
 
 /** The usage record one `assistant/*` event may carry, if any. */
@@ -296,4 +348,29 @@ export function readTurnCounts(ctx: Context, agent: Agent): { turns: number, ste
     else if (event.type === 'step/end') steps += 1
   }
   return { turns, steps }
+}
+
+/**
+ * Read the heuristic context composition for `/context`'s CC-style rows:
+ * the `contextBreakdown` projection (heuristic system/tools/message
+ * tokens). Projection-only by design — the estimator is the meter's own,
+ * so a host without the seam gets no composition section rather than a
+ * Blue-side re-implementation. The three figures are approximations of
+ * composition, deliberately not a provider-anchored total (the upstream
+ * unit underprices CJK text and JSON schemas; the occupancy bar in
+ * `buildContextSection` carries the anchored number).
+ * @param ctx - plugin context (`sessionProjections` resolved lazily).
+ * @param agent - the agent whose session is read.
+ * @returns the composition, or `undefined` when the projection answers none.
+ */
+export function readCompositionFacts(ctx: Context, agent: Agent): CompositionFacts | undefined {
+  const projections = ctx.get('sessionProjections') as ProjectionsService | undefined
+  if (projections === undefined) return undefined
+  const breakdown = projections.snapshot(agent.session).values.contextBreakdown as ContextBreakdownValue | undefined
+  if (breakdown === undefined) return undefined
+  return {
+    system: breakdown.systemTokens,
+    tools: breakdown.toolsTokens,
+    messages: breakdown.messageTokens,
+  }
 }

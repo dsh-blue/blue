@@ -16,9 +16,11 @@ import {
   foldTokenBuckets,
   formatTokens,
   ratioSeverity,
+  readCompositionFacts,
   readTurnCounts,
   readUsageFacts,
   renderBar,
+  renderStackedBar,
   totalTokens,
   usagePercent,
   usageRatio,
@@ -143,6 +145,41 @@ describe('renderBar / ratioSeverity', () => {
     expect(ratioSeverity(0.5)).toBe('warn')
     expect(ratioSeverity(0.84)).toBe('warn')
     expect(ratioSeverity(0.85)).toBe('danger')
+  })
+})
+
+describe('renderStackedBar', () => {
+  it('draws each part in proportion and keeps small parts visible', () => {
+    // 10/20/20/50 over ten columns: one █, two ▓, two ▒, five ░.
+    const bar = renderStackedBar([
+      { ratio: 0.1, glyph: '█' },
+      { ratio: 0.2, glyph: '▓' },
+      { ratio: 0.2, glyph: '▒' },
+      { ratio: 0.5, glyph: '░' },
+    ], 10)
+    expect(bar).toBe('█▓▓▒▒░░░░░')
+  })
+
+  it('falls to the last glyph on a zero total and tolerates empty parts', () => {
+    expect(renderStackedBar([{ ratio: 0, glyph: '█' }, { ratio: 0, glyph: '░' }], 4)).toBe('░░░░')
+    expect(renderStackedBar([], 3)).toBe('░░░')
+  })
+})
+
+describe('readCompositionFacts', () => {
+  it('reads the contextBreakdown projection when the key answers', async () => {
+    const { ctx, agent } = await sessionOver([])
+    ctx.provide('sessionProjections', {
+      snapshot: () => ({ values: { contextBreakdown: { systemTokens: 10, toolsTokens: 20, messageTokens: 30 } } }),
+    })
+    expect(readCompositionFacts(ctx, agent)).toEqual({ system: 10, tools: 20, messages: 30 })
+  })
+
+  it('answers undefined without the seam or without the key', async () => {
+    const { ctx, agent } = await sessionOver([])
+    expect(readCompositionFacts(ctx, agent)).toBeUndefined()
+    ctx.provide('sessionProjections', { snapshot: () => ({ values: {} }) })
+    expect(readCompositionFacts(ctx, agent)).toBeUndefined()
   })
 })
 

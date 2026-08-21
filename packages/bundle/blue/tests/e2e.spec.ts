@@ -2951,6 +2951,17 @@ describe('blue whole-tree e2e', () => {
     expect(frame).toContain('60k')
     expect(frame).toContain('100')
     expect(frame).toContain('/ 8k')
+    // The CC-style composition section rides on the contextBreakdown
+    // projection: the stacked bar row plus the component rows. The full
+    // panel (17 rows) overflows the sixteen-row window, so the free row
+    // needs one page down.
+    expect(frame).toContain('Context composition (heuristic)')
+    expect(frame).toContain('system')
+    expect(frame).toContain('messages')
+    first.terminal.sendInput('\x1b[6~')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(first.terminal))).toContain('free')
+    })
     const id = String(agent.session.id)
     await first.ctx.sessions.flush(agent.session)
     await first.ctx.fiber.dispose()
