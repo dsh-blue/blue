@@ -12,7 +12,7 @@ The minimal, self-sufficient Blue UI that remains when the whole enhancement seg
 | --- | --- |
 | `blue-core` | the tree's only pi-tui adapter: terminal lifecycle plus the `blueScreen` / `blueKeymap` / `blueTerminalInfo` / `blueComponents` services |
 | `blue-theme-dark` | built-in dark palette, providing `blueTheme` |
-| `blue-banner` | boot welcome banner (model · provider, cwd, tips, what's new) |
+| `blue-banner` | boot welcome banner: the logo-headed welcome/`/help` lines and the Directory/Model/Version rows |
 | `blue-transcript` | session events → transcript rendering; the `blueStatus` registry and two-row footer shell |
 | `blue-status-basic` | baseline footer entry: the model name (priority 0, brightest tier) |
 

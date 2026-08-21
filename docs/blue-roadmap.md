@@ -92,7 +92,7 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 - **编辑器**：换装 pi-tui Editor（多行/历史/kill-ring/补全/Kitty 解码）；shell 模式（`!`）、`@` 文件补全、slash 补全菜单
 - **状态栏**：`ctx.blueStatus` 注册表 + 两行 footer 壳 + git/context/basic 条目插件
 - **面板与命令**：activity/queue/todo/btw pane 插件；`/sessions` `/fork` `/new` `/help` `/btw`；审批四选项 + session 级继承（Blue 侧协调器）；提问多题 tab 化
-- **welcome banner**：启动欢迎横幅（像素鲸鱼 logo + 模型/cwd 信息 + Tips 右栏，铺满全宽；`blue-banner` 基线段行）（✅ S8 已落地，S10 期间重排：全宽三段布局 + 鲸鱼缩小 30%）
+- **welcome banner**：启动欢迎横幅（像素鲸鱼 logo + 模型/cwd 信息 + Tips 右栏，铺满全宽；`blue-banner` 基线段行）（✅ S8 已落地，S10 期间重排：全宽三段布局 + 鲸鱼缩小 30%；S35 改 kimi 式单栏、右栏退役，见 D42）
 - **alt-screen**：`TuiAltScreen` 与主屏运行时热切换（兑现 L0 的 Proxy 预埋）（⏸️ 暂缓 2026-08-20：暂不考虑实现 TuiAltScreen，主屏为当前唯一运行形态；Proxy 预埋保留，主屏滚动冲突按已知边界接受，解除暂缓时按 p2-visual §7 六轮注记重启立项）
 
 **验收**：连续 30 分钟真实 coding 会话无渲染错乱、无焦点丢失；主题热切换后 transcript 经快照正确重放且编辑器草稿保留；`/btw` 在 agent 运行中插入旁白且 transcript 正确呈现；plain 基线完整可用；注册冲突在启动期暴露。
@@ -153,6 +153,7 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 | ✅ S31 | 外部编辑器 Ctrl-G：L0 `blueScreen.suspend(fn)` 缝 + 草稿往返（**播种/回读用 pi-tui `getExpandedText()`**——粘贴标记展开，2026-08-21 核实）+ 异常路径（`:cq` 草稿不丢、无编辑器 notice、挂起期停 ticker、resize 后强制全帧） | 2d | S29——已实现全绿（2026-08-22，coverage 逐文件 100%），**已人工验收（2026-08-22）**；实现要点与两处范围裁定：①「停 ticker」= 渲染 ticker 由 stop() 内部 cancelRenderTimer 真停，应用层计时器空转无害（用户裁决接受+记档）；② `[image #N]` 标记往返**不降级**（paste-image map 模块级、setText 不触及——2026-08-22 实测推翻"降级需 notice"的原判，静默即可）；suspend 状态机（重入拒绝/挂起期 stop 跳 drain）记 core AGENTS.md |
 | S32 | 大粘贴折叠（**2026-08-21 重定范围**：编辑器半**原生已有**，无需移植——pi-tui Editor 内置 >10 行/>1000 字符折叠为 `[paste #N +M lines]` 标记、`pastes` Map 存全文、`submitValue` 提交前自动 `expandPasteMarkers`（模型收全文已核实）、`getExpandedText()` 公开；此前"需移植 kimi paste-burst"判定系按 fork 文件名查证失误）。**剩余 = transcript 侧**：长用户消息折叠呈现（chip + ctrl+o 展开；transcript 无"是粘贴"元数据，按长度启发式 >N 行折，手打长消息同样受益；排 S33 合并后，同包错峰）；已知小疣：历史召回为展开全文（大粘贴 Up 召回整段进编辑器，记边界不修） | 0.5-1d | S33 |
 | ✅ S33 | 子 agent pane（验收反馈定形）：dock pane 钉编辑框上部 + fold 抑制 spawn 类（pane 唯一呈现面）+ 子会话订阅 live 叠加（kimi 级：running/waiting、tokens、toolCount、活动行、model/effort）+ A+ fold 基线（replay 回退）；dogfood 两轮实证（D39，含 descriptor 修正与瞬态事件弃用） | 3.5-4.5d（超原 2-3d 定档，2026-08-21 用户裁决） | 无硬前置（dev‖S31/S32，合并殿后）——已实现全绿（1427 tests / coverage 逐文件 100%），已人工验收（2026-08-21） |
+| S35 | 欢迎横幅改 kimi 式单栏（**D42**，2026-08-22 用户裁决）：logo + Welcome/`/help` 头两行并排 + Directory/Model/Version 对齐标签行；右栏 Tips/What's new 退役（tips 单源归活动面板 spinner 行）；logo 暂用 kimi 占位字符画（`banner-art.ts` 字面量为替换点）；min-40 零行与恒 10 行不变；S24a 活态模型行/patch 行序/`BLUE_VERSION` 守卫链不动 | 0.5d | 无硬前置（banner 三件套独立，worktree `worktree-s35-kimi-banner`） |
 | R1 | 钉版复核：发包时点跟最新 harness rc（现 0.1.1-rc.1）；rc.2+ 小 bump 走全量回归；**不追 minor 之上的跳跃** | 0.5d | G1 |
 | R2 | 快照最小集：@xterm/headless VirtualTerminal，5-8 例核心帧（banner 首帧 / 对话+工具卡 / footer / 面板挂载 D30 形态 / CJK 宽度）；复审 D13 结论记 blue-decisions | 1-1.5d | G1（**S30 后拍**，键位面冻结） |
 | R3 | npm 发包：五包依赖序 core→interaction→transcript→app→bundle；dry-run 核 files/exports 子路径；dist-tag `rc` | 0.5d | G2 |

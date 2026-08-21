@@ -162,8 +162,10 @@
     - id: blue-theme-dark
       name: '@dsh-blue/blue-core/theme-dark'
 
-    # Welcome banner: the pixel-castle box rendered once at boot as the first
-    # scroll-area child (model · provider from agentDefaultModel, cwd, tips).
+    # Welcome banner: the kimi-style single-column box rendered once at boot
+    # as the first scroll-area child (logo-headed welcome lines, then the
+    # Directory/Model/Version rows; model · provider from agentDefaultModel,
+    # cwd).
     # Sits before blue-transcript on purpose: both fibers resolve in the same
     # blueComponents activation round, so the earlier row keeps the banner
     # first in the scroll area across initial mounts and /theme reloads.

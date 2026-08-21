@@ -12,7 +12,7 @@ Blue 不是一个大组件，而是一棵 **Cordis 插件树**：bundle 的 `cor
 | --- | --- |
 | `blue-core` | 全树唯一的 pi-tui 适配器：终端生命周期与 `blueScreen` / `blueKeymap` / `blueTerminalInfo` / `blueComponents` 服务 |
 | `blue-theme-dark` | 内置 dark 调色板，提供 `blueTheme` 服务 |
-| `blue-banner` | 启动欢迎横幅（模型 · provider、cwd、tips、What's new） |
+| `blue-banner` | 启动欢迎横幅：logo + Welcome/`/help` 头两行、Directory/Model/Version 信息行 |
 | `blue-transcript` | 会话事件 → transcript 渲染；`blueStatus` 注册表与两行 footer 壳 |
 | `blue-status-basic` | footer 基线条目：model 名（优先级 0，最亮档） |
 
