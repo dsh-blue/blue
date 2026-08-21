@@ -17,6 +17,7 @@ Entries connect with two-space slots — no separator glyphs; three brightness t
 | Entry | Priority | Position | Content |
 | --- | --- | --- | --- |
 | `blue-status-basic` | 0 | row 1 left | model name (persisted request header, falling back to agent options; `text` tier) |
+| `blue-status-mode` | 2 | row 1 left | session-mode badge: `plan` (accent tier, pending ellipsis while messages are queued) or `yolo` (warning tier); renders nothing in normal (see [Session modes](/en/features/modes)) |
 | `blue-status-cwd` | 5 | row 1 left | session cwd (home shortened to `~`, deep paths to the last three segments; `muted` tier) |
 | `blue-status-git` | 10 | row 1 left | full badge `branch [+a -d ↑e↓f]` (TTL-cached probe: branch 5s / status 15s; hidden outside a git repository) |
 | `blue-status-context` | 20 | row 2 right | latest step's context occupancy: `context: N% (K/M)` with a window, degrading to `ctx N` without (`text` tier) |
@@ -37,7 +38,7 @@ Registering an entry means implementing `BlueStatusEntry`:
 ```ts
 ctx.blueStatus.register({
   id: 'my-plugin.build',        // stable dotted plugin-owned string; duplicates rejected
-  priority: 15,                 // built-ins occupy 0/5/10/20/30 — gaps are yours
+  priority: 15,                 // built-ins occupy 0/2/5/10/20/30 — gaps are yours
   row: 1,                       // band: 1 (default) or 2
   align: 'left',                // side: 'left' (default) or 'right'
   render: (width) => myLine,    // one styled line within budget; '' sits this frame out

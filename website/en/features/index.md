@@ -1,6 +1,6 @@
 # Features overview
 
-Blue is not one big component — it is a **Cordis plugin tree**: the bundle's `cordis.patch.yml` assembles the UI over `dsh-base` with 21 plugin rows. Every visual surface is an individually removable row; that is "everything is a plugin" taken literally.
+Blue is not one big component — it is a **Cordis plugin tree**: the bundle's `cordis.patch.yml` assembles the UI over `dsh-base` with 23 plugin rows. Every visual surface is an individually removable row; that is "everything is a plugin" taken literally.
 
 ## Three-segment assembly
 
@@ -16,7 +16,7 @@ The minimal, self-sufficient Blue UI that remains when the whole enhancement seg
 | `blue-transcript` | session events → transcript rendering; the `blueStatus` registry and two-row footer shell |
 | `blue-status-basic` | baseline footer entry: the model name (priority 0, brightest tier) |
 
-### Enhancement segment (13 rows) — droppable wholesale
+### Enhancement segment (15 rows) — droppable wholesale
 
 Optional layers over the plain baseline; each row deletes individually, the whole segment deletes together:
 
@@ -27,6 +27,7 @@ Optional layers over the plain baseline; each row deletes individually, the whol
 | `blue-paste-image` | Ctrl-V clipboard paste, `[image #N]` markers |
 | `blue-status-cwd` | footer: session working directory (priority 5) |
 | `blue-status-git` | footer: git badge `branch [+a -d ↑u↓v]` (priority 10) |
+| `blue-status-mode` | footer: session-mode badge `plan`/`yolo` (priority 2, hidden in normal) |
 | `blue-status-tips` | footer: rotating tips (priority 30) |
 | `blue-status-context` | footer: context occupancy (priority 20, row 2 right-aligned) |
 | `blue-intent-diff` | dedicated diff tool card |
@@ -35,6 +36,7 @@ Optional layers over the plain baseline; each row deletes individually, the whol
 | `blue-pane-queue` | queued-messages pane + empty-editor Up recall |
 | `blue-pane-todo` | todo pane (Ctrl-T collapse toggle) |
 | `blue-pane-btw` | `/btw` side-question pane |
+| `blue-pane-agents` | subagent-group pane (running subagents' group card, last dock row) |
 
 ### Assembly segment (3 rows) — the closing rows
 
@@ -50,7 +52,7 @@ Baseline + assembly (8 rows total) is the complete, self-sufficient Blue UI. Blu
 
 ## Bottom dock order
 
-Bottom-pinned components (footer, panes, editor) render in mount order. Assembly pins the dock order through the `blueComponents` activation round: **activity → queue → todo → btw, editor last** (the editor always sits directly above the bottom row, panes stacked above it).
+Bottom-pinned components (footer, panes, editor) render in mount order. Assembly pins the dock order through the `blueComponents` activation round: **activity → queue → todo → btw → agents, editor last** (the editor always sits directly above the bottom row, panes stacked above it).
 
 ## Where to read more
 
@@ -58,4 +60,5 @@ Bottom-pinned components (footer, panes, editor) render in mount order. Assembly
 - [Input editor](/en/features/editor)
 - [Approvals & questionnaires](/en/features/approval)
 - [Status bar](/en/features/status-bar)
+- [Session modes](/en/features/modes) — normal / plan / yolo and plan review
 - [Bottom panes](/en/features/panes)

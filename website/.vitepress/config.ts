@@ -112,6 +112,7 @@ const sidebarZh = {
       text: '功能',
       items: [
         { text: '功能总览', link: '/features/' },
+        { text: '会话模式', link: '/features/modes' },
         { text: '流式会话与工具卡片', link: '/features/streaming' },
         { text: '输入编辑器', link: '/features/editor' },
         { text: '审批与问卷浮层', link: '/features/approval' },
@@ -164,6 +165,7 @@ const sidebarEn = {
       text: 'Features',
       items: [
         { text: 'Overview', link: '/en/features/' },
+        { text: 'Session modes', link: '/en/features/modes' },
         { text: 'Streaming transcript & tool cards', link: '/en/features/streaming' },
         { text: 'Input editor', link: '/en/features/editor' },
         { text: 'Approvals & questionnaires', link: '/en/features/approval' },

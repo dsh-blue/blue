@@ -1,6 +1,6 @@
 # Bottom panes
 
-Between the status bar and the input editor sits the **bottom dock**: four passive panes stacked in mount order (activity → queue → todo → btw, editor last). Panes with nothing to say render zero rows — the dock never jumps.
+Between the status bar and the input editor sits the **bottom dock**: five passive panes stacked in mount order (activity → queue → todo → btw → agents, editor last). Panes with nothing to say render zero rows — the dock never jumps.
 
 ## Activity pane
 
@@ -38,3 +38,7 @@ The session's todo list (whole-list snapshots, last-write-wins) renders under a 
 - a `› question` row + streaming Markdown reply + a thinking line; the line budget adapts to terminal height (re-flowing on resize);
 - while open, the editor's top corner joins the pane with `├┤`; **Esc** closes (draft survives), **↑↓** scroll, **Enter** asks a follow-up on the same side agent;
 - one slot at a time: a new `/btw` disposes the previous side agent first; a bare `/btw` closes the pane.
+
+## Subagent-group pane (agents)
+
+While the agent's **subagent group** runs, its group card is pinned directly above the editor — the last dock row (the kimi swarm-pane semantics). Like the todo pane's relationship to `todo_write`: spawn-class tool calls are suppressed from the session stream by the step fold, and this pane is the only surface where running subagents appear — you can see who was spawned and what each is doing without digging through tool cards in the transcript.
