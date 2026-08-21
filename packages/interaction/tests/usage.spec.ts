@@ -20,7 +20,6 @@ import {
   readTurnCounts,
   readUsageFacts,
   renderBar,
-  renderStackedBar,
   totalTokens,
   usagePercent,
   usageRatio,
@@ -145,24 +144,6 @@ describe('renderBar / ratioSeverity', () => {
     expect(ratioSeverity(0.5)).toBe('warn')
     expect(ratioSeverity(0.84)).toBe('warn')
     expect(ratioSeverity(0.85)).toBe('danger')
-  })
-})
-
-describe('renderStackedBar', () => {
-  it('draws each part in proportion and keeps small parts visible', () => {
-    // 10/20/20/50 over ten columns: one █, two ▓, two ▒, five ░.
-    const bar = renderStackedBar([
-      { ratio: 0.1, glyph: '█' },
-      { ratio: 0.2, glyph: '▓' },
-      { ratio: 0.2, glyph: '▒' },
-      { ratio: 0.5, glyph: '░' },
-    ], 10)
-    expect(bar).toBe('█▓▓▒▒░░░░░')
-  })
-
-  it('falls to the last glyph on a zero total and tolerates empty parts', () => {
-    expect(renderStackedBar([{ ratio: 0, glyph: '█' }, { ratio: 0, glyph: '░' }], 4)).toBe('░░░░')
-    expect(renderStackedBar([], 3)).toBe('░░░')
   })
 })
 

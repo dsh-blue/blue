@@ -2950,17 +2950,20 @@ describe('blue whole-tree e2e', () => {
     expect(frame).toContain('4.1k')
     expect(frame).toContain('60k')
     expect(frame).toContain('100')
-    expect(frame).toContain('/ 8k')
+    // With the composition grid present the occupancy bar section is
+    // replaced — the anchored totals ride the grid's headline instead.
+    expect(frame).toContain('/8k tokens (100%)')
     // The CC-style composition section rides on the contextBreakdown
-    // projection: the stacked bar row plus the component rows. The full
-    // panel (17 rows) overflows the sixteen-row window, so the free row
+    // projection: the glyph grid with the legend riding its right edge.
+    // The full panel overflows the sixteen-row window, so the free row
     // needs one page down.
-    expect(frame).toContain('Context composition (heuristic)')
-    expect(frame).toContain('system')
-    expect(frame).toContain('messages')
+    expect(frame).toContain('Context usage (heuristic)')
+    expect(frame).toContain('Estimated usage by category')
+    expect(frame).toContain('System prompt:')
+    expect(frame).toContain('Messages:')
     first.terminal.sendInput('\x1b[6~')
     await vi.waitFor(async () => {
-      expect(stripSgr(await fullFrame(first.terminal))).toContain('free')
+      expect(stripSgr(await fullFrame(first.terminal))).toContain('Free space:')
     })
     const id = String(agent.session.id)
     await first.ctx.sessions.flush(agent.session)

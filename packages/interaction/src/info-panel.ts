@@ -30,7 +30,7 @@ const PAGE_SCROLL = 10
 const DEFAULT_MAX_VISIBLE = 16
 
 /** The value stylings a segment may request (default `text`). */
-export type InfoStyle = 'text' | 'muted' | 'success' | 'warning' | 'error'
+export type InfoStyle = 'text' | 'muted' | 'textMuted' | 'primary' | 'accent' | 'success' | 'warning' | 'error'
 
 /** One styled run of a row's value; consecutive segments join directly. */
 export interface InfoSegment {
@@ -161,6 +161,9 @@ export class InfoPanel implements BlueFocusable {
     const stylePaint = (style: InfoStyle | undefined) => {
       switch (style) {
         case 'muted': return colors.muted
+        case 'textMuted': return colors.textMuted
+        case 'primary': return colors.primary
+        case 'accent': return colors.accent
         case 'success': return colors.success
         case 'warning': return colors.warning
         case 'error': return colors.error

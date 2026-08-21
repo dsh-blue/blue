@@ -180,41 +180,6 @@ export function renderBar(ratio: number, width: number = CONTEXT_BAR_WIDTH): str
   return '█'.repeat(filled) + '░'.repeat(Math.max(0, width - filled))
 }
 
-/**
- * A stacked composition bar: each column takes the glyph of the part whose
- * cumulative share covers that column's position, so small parts stay
- * visible in proportion and a zero-total input renders the last part's
- * glyph across the whole bar. Pure string building; coloring is the
- * caller's.
- * @param parts - the composition parts (ratio + glyph), in draw order.
- * @param width - the bar width in columns.
- * @returns the bar string.
- */
-export function renderStackedBar(
-  parts: ReadonlyArray<{ ratio: number, glyph: string }>,
-  width: number = CONTEXT_BAR_WIDTH,
-): string {
-  const total = parts.reduce((sum, part) => sum + Math.max(0, part.ratio), 0)
-  const fallback = parts.at(-1)?.glyph ?? '░'
-  let out = ''
-  for (let column = 0; column < width; column++) {
-    const position = column / width * total
-    let acc = 0
-    let glyph = fallback
-    for (const part of parts) {
-      acc += Math.max(0, part.ratio)
-      // The epsilon keeps float accumulation (0.1 + 0.2) from stealing a
-      // boundary column; real ratio gaps are far above it.
-      if (position < acc - 1e-9) {
-        glyph = part.glyph
-        break
-      }
-    }
-    out += glyph
-  }
-  return out
-}
-
 /** The usage record one `assistant/*` event may carry, if any. */
 function usageOf(event: SessionEvent):
   | { turn: number, step: number, usage: { inputTokens: number, outputTokens: number, cacheReadTokens?: number, cacheWriteTokens?: number } }

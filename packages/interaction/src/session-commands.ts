@@ -22,7 +22,7 @@ import { BLUE_VERSION } from '@dsh-blue/blue-transcript/banner-content'
 // the app-owned `blueSession` merge every handler reads.
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@dsh-blue/blue-app'
-import type { InfoRow, InfoSection } from './info-panel.ts'
+import type { InfoRow, InfoSection, InfoSegment } from './info-panel.ts'
 import { InfoPanel } from './info-panel.ts'
 import { displayServices } from './display-services.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
@@ -33,7 +33,6 @@ import {
   readTurnCounts,
   readUsageFacts,
   renderBar,
-  renderStackedBar,
   usagePercent,
   usageRatio,
   type CompositionFacts,
@@ -115,72 +114,126 @@ export function buildContextSection(context: ContextFacts): InfoSection {
   }
 }
 
+/** The composition grid's column count (the CC value). */
+const GRID_COLUMNS = 20
+
+/** One composition category: grid glyph + paint, legend label, tokens. */
+interface CompositionPart {
+  readonly glyph: string
+  readonly style: 'muted' | 'primary' | 'accent' | 'textMuted'
+  readonly label: string
+  readonly tokens: number
+}
+
+/** Construction input for {@link buildCompositionSection}. */
+export interface CompositionInput {
+  /** The heuristic composition, when the projection answers. */
+  readonly breakdown?: CompositionFacts
+  /** The advertised context window, when known. */
+  readonly window?: number
+  /** The model annotation beside the grid (`model (provider)`). */
+  readonly model: string
+  /** Provider-anchored occupancy for the headline totals. */
+  readonly occupancy: ContextFacts
+}
+
 /**
- * Build the CC-style composition section (the `/context` panel's third
- * act): a stacked `█▓▒░` bar over the advertised window plus one row per
- * component — system prompt, tool schemas, conversation surface — and the
- * free remainder, each with its 1024-base count and whole-percent share.
- * The figures are the meter's heuristic composition (the upstream unit
- * prices at a fixed density and underprices CJK/JSON), so the heading
- * carries the caveat and the anchored occupancy stays in
- * {@link buildContextSection}. Without a breakdown (no projection seam)
- * the section is omitted entirely; without a window the rows lose their
- * shares and the bar.
- * @param breakdown - the heuristic composition, when the projection answers.
- * @param window - the advertised context window, when known.
+ * Build the CC-style composition section (the `/context` panel's visual):
+ * a glyph grid over the advertised window — `█` system prompt, `▓` tool
+ * schemas, `▒` conversation surface, `░` the free remainder, one cell per
+ * share with every non-zero category guaranteed at least one cell — with
+ * the annotations riding its right edge: the model line, the anchored
+ * `used/window tokens (N%)` headline, the category legend (glyph + label +
+ * one-decimal shares, so a 0.1% system prompt reads `0.1%`, not `0%`), and
+ * the free-space row. The figures are the meter's heuristic composition
+ * (the upstream unit prices at a fixed density and underprices CJK/JSON),
+ * so the heading carries the caveat; without a breakdown (no projection
+ * seam) the section is omitted entirely and the panel falls back to the
+ * occupancy bar; without a window the grid and shares disappear and the
+ * legend keeps its bare counts.
+ * @param input - composition, window, model line, and occupancy.
  * @returns the section, or `undefined` to omit it.
  */
-export function buildCompositionSection(
-  breakdown: CompositionFacts | undefined,
-  window: number | undefined,
-): InfoSection | undefined {
+export function buildCompositionSection(input: CompositionInput): InfoSection | undefined {
+  const { breakdown, window, model, occupancy } = input
   if (breakdown === undefined) return undefined
-  const components: ReadonlyArray<{ label: string, tokens: number }> = [
-    { label: 'system', tokens: breakdown.system },
-    { label: 'tools', tokens: breakdown.tools },
-    { label: 'messages', tokens: breakdown.messages },
+  const parts: ReadonlyArray<CompositionPart> = [
+    { glyph: '█', style: 'muted', label: 'System prompt', tokens: breakdown.system },
+    { glyph: '▓', style: 'primary', label: 'Tools', tokens: breakdown.tools },
+    { glyph: '▒', style: 'accent', label: 'Messages', tokens: breakdown.messages },
   ]
-  const used = breakdown.system + breakdown.tools + breakdown.messages
-  // Composition shares round to the nearest whole percent — unlike the
-  // occupancy bar's floor-at-1 rule, a 0.3% system prompt reads `0%`, not
-  // an inflated `1%` (the floor exists so partial occupancy never looks
-  // empty; here the bar already shows the parts in proportion).
-  const shareText = (tokens: number, window: number): string =>
-    ` · ${String(Math.min(100, Math.max(0, Math.round((tokens / window) * 100))))}%`
-  const rows: InfoRow[] = []
+  const total = parts.reduce((sum, part) => sum + part.tokens, 0)
+  // One-decimal shares (the CC legend): a 0.1% system prompt stays 0.1%.
+  const share = (tokens: number): string | undefined =>
+    window === undefined
+      ? undefined
+      : ` (${Math.max(0, Math.min(100, (tokens / window) * 100)).toFixed(1)}%)`
+  const count = (tokens: number): string =>
+    window === undefined ? formatTokens(tokens) : `${formatTokens(tokens)} tokens`
+  const legendSegments = (part: CompositionPart): readonly InfoSegment[] => [
+    { text: `${part.glyph} `, style: part.style },
+    { text: `${part.label}: ` },
+    { text: count(part.tokens) + (share(part.tokens) ?? ''), style: 'muted' },
+  ]
+  const freeTokens = window === undefined ? 0 : Math.max(0, window - total)
+  // Computed unconditionally so both window states exercise the branch
+  // (the free row itself only mounts with a window).
+  const freeShare = window === undefined ? '' : ` (${Math.max(0, Math.min(100, (freeTokens / window) * 100)).toFixed(1)}%)`
+  const annotations: ReadonlyArray<readonly InfoSegment[]> = [
+    [{ text: model }],
+    occupancy.used !== undefined && window !== undefined
+      ? [
+          { text: `${formatTokens(occupancy.used)}/${formatTokens(window)}` },
+          { text: ` tokens (${String(Math.min(100, Math.max(0, Math.round((occupancy.used / window) * 100))))}%)`, style: 'muted' as const },
+        ]
+      : [{ text: 'no context window advertised', style: 'muted' as const }],
+    [],
+    [{ text: 'Estimated usage by category', style: 'textMuted' as const }],
+    ...parts.map(part => legendSegments(part)),
+    ...(window === undefined ? [] : [[
+      { text: '░ ', style: 'textMuted' as const },
+      { text: 'Free space: ' },
+      { text: `${formatTokens(freeTokens)}${freeShare}`, style: 'muted' as const },
+    ]] satisfies ReadonlyArray<readonly InfoSegment[]>),
+  ]
+  // Cell allocation over the grid: one cell per non-zero category (the CC
+  // guarantee — a 74-token component keeps a visible cell), the rest split
+  // by share, and whatever remains is free space. Without a window there
+  // is no grid at all — the legend carries the section alone.
+  let rows: InfoRow[] = annotations.map(() => ({ label: '', segments: [] as InfoSegment[] }))
   if (window !== undefined) {
-    rows.push({
-      label: 'window',
-      segments: [{ text: renderStackedBar([
-        { ratio: breakdown.system / window, glyph: '█' },
-        { ratio: breakdown.tools / window, glyph: '▓' },
-        { ratio: breakdown.messages / window, glyph: '▒' },
-        { ratio: Math.max(0, window - used) / window, glyph: '░' },
-      ]) }],
+    const cells = annotations.length * GRID_COLUMNS
+    const allocated = parts.map(part => part.tokens > 0
+      ? Math.max(1, Math.round((part.tokens / window) * cells))
+      : 0)
+    const free = Math.max(0, cells - allocated.reduce((sum, value) => sum + value, 0))
+    const styles: ReadonlyArray<CompositionPart['style'] | 'textMuted'> = [
+      ...allocated.flatMap((length, index) =>
+        // allocated is parts.map's array — same length, so the lookup
+        // always lands (the assertion documents the map invariant).
+        Array.from({ length }, () => parts[index]!.style)),
+      ...Array.from({ length: free }, () => 'textMuted' as const),
+    ]
+    rows = annotations.map((_, row) => {
+      const slice = styles.slice(row * GRID_COLUMNS, (row + 1) * GRID_COLUMNS)
+      const grid: InfoSegment[] = []
+      for (let column = 0; column < slice.length; column++) {
+        const style = slice[column]!
+        const glyph = style === 'textMuted' ? '░' : parts.find(part => part.style === style)!.glyph
+        const last = grid.at(-1)
+        if (last !== undefined && last.style === style) {
+          grid[grid.length - 1] = { text: last.text + glyph, style }
+        } else {
+          grid.push({ text: glyph, style })
+        }
+      }
+      return { label: '', segments: [...grid, { text: '  ' }] }
     })
   }
-  for (const component of components) {
-    rows.push({
-      label: component.label,
-      segments: [
-        { text: formatTokens(component.tokens) },
-        ...(window === undefined
-          ? []
-          : [{ text: shareText(component.tokens, window), style: 'muted' as const }]),
-      ],
-    })
+  return {
+    heading: 'Context usage (heuristic)',
+    rows: rows.map((row, index) => ({ label: '', segments: [...row.segments, ...annotations[index]!] })),
   }
-  if (window !== undefined) {
-    const free = Math.max(0, window - used)
-    rows.push({
-      label: 'free',
-      segments: [
-        { text: formatTokens(free) },
-        { text: shareText(free, window), style: 'muted' as const },
-      ],
-    })
-  }
-  return { heading: 'Context composition (heuristic)', rows }
 }
 
 /** The header facts the `/status` panel reads. */
@@ -239,14 +292,17 @@ export function buildStatusSections(input: StatusInput): InfoSection[] {
 
 /**
  * Build the `/context` panel's sections (pure, for the spec): the four
- * disjoint provider buckets plus their total, the context bar, and — when
- * the breakdown projection answers — the CC-style composition section.
+ * disjoint provider buckets plus their total, then the CC-style
+ * composition grid when the breakdown projection answers — otherwise the
+ * occupancy bar section carries the window alone.
  * @param facts - the usage facts to list.
+ * @param model - the model annotation line (`model (provider)`).
  * @param composition - the heuristic composition, when the projection answers.
  * @returns the sections in display order.
  */
 export function buildUsageSections(
   facts: ReturnType<typeof readUsageFacts>,
+  model: string,
   composition?: CompositionFacts,
 ): InfoSection[] {
   const { buckets } = facts
@@ -266,11 +322,17 @@ export function buildUsageSections(
           { label: 'total', segments: [{ text: formatTokens(total) }] },
         ],
       }
-  const compositionSection = buildCompositionSection(composition, facts.context.window)
+  const compositionSection = composition === undefined
+    ? undefined
+    : buildCompositionSection({
+      breakdown: composition,
+      ...(facts.context.window !== undefined ? { window: facts.context.window } : {}),
+      model,
+      occupancy: facts.context,
+    })
   return [
     usage,
-    buildContextSection(facts.context),
-    ...(compositionSection === undefined ? [] : [compositionSection]),
+    compositionSection ?? buildContextSection(facts.context),
   ]
 }
 
@@ -360,12 +422,13 @@ export function registerSessionCommands(ctx: Context): () => void {
       return { kind: 'error', text: 'context panel is unavailable: the Blue screen is not mounted' }
     }
     const facts = readUsageFacts(ctx, agent)
+    const model = readModelFacts(ctx, agent) ?? { provider: 'unknown', model: 'not set' }
     const restore = mountEditorReplacement(new InfoPanel({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,
       title: 'context',
-      sections: buildUsageSections(facts, readCompositionFacts(ctx, agent)),
+      sections: buildUsageSections(facts, `${model.model} (${model.provider})`, readCompositionFacts(ctx, agent)),
       onClose: () => {
         restore()
       },

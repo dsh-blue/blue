@@ -144,49 +144,115 @@ describe('buildUsageSections', () => {
 })
 
 describe('buildCompositionSection', () => {
-  it('renders the stacked bar, per-component shares, and the free remainder', () => {
-    const section = buildCompositionSection({ system: 2048, tools: 1024, messages: 1024, }, 8192)!
-    expect(section.heading).toBe('Context composition (heuristic)')
-    // 25% █, 12.5% ▓ (quantizes to three columns), 12.5% ▒ (two), 50% ░.
-    expect(section.rows[0]!).toEqual({
-      label: 'window',
-      segments: [{ text: `${'█'.repeat(5)}${'▓'.repeat(3)}${'▒'.repeat(2)}${'░'.repeat(10)}` }],
-    })
-    expect(section.rows[1]!.segments).toEqual([{ text: '2k' }, { text: ' · 25%', style: 'muted' }])
-    expect(section.rows[2]!.segments).toEqual([{ text: '1k' }, { text: ' · 13%', style: 'muted' }])
-    expect(section.rows[3]!.segments).toEqual([{ text: '1k' }, { text: ' · 13%', style: 'muted' }])
-    expect(section.rows[4]!.segments).toEqual([{ text: '4k' }, { text: ' · 50%', style: 'muted' }])
+  /** The section over the canonical shares: 25/12.5/12.5/50 of 8192. */
+  function canonical() {
+    return buildCompositionSection({
+      breakdown: { system: 2048, tools: 1024, messages: 1024 },
+      window: 8192,
+      model: 'deepseek-chat (deepseek)',
+      occupancy: { used: 4096, window: 8192 },
+    })!
+  }
+
+  it('renders the CC grid with the annotations riding its right edge', () => {
+    const section = canonical()
+    expect(section.heading).toBe('Context usage (heuristic)')
+    // 160 cells over eight rows: forty █ (two rows), twenty ▓, twenty ▒,
+    // eighty ░ (four rows).
+    expect(section.rows[0]!.segments).toEqual([
+      { text: '█'.repeat(20), style: 'muted' },
+      { text: '  ' },
+      { text: 'deepseek-chat (deepseek)' },
+    ])
+    expect(section.rows[1]!.segments).toEqual([
+      { text: '█'.repeat(20), style: 'muted' },
+      { text: '  ' },
+      { text: '4k/8k' },
+      { text: ' tokens (50%)', style: 'muted' },
+    ])
+    expect(section.rows[2]!.segments).toEqual([
+      { text: '▓'.repeat(20), style: 'primary' },
+      { text: '  ' },
+    ])
+    expect(section.rows[3]!.segments).toEqual([
+      { text: '▒'.repeat(20), style: 'accent' },
+      { text: '  ' },
+      { text: 'Estimated usage by category', style: 'textMuted' },
+    ])
+    expect(section.rows[4]!.segments).toEqual([
+      { text: '░'.repeat(20), style: 'textMuted' },
+      { text: '  ' },
+      { text: '█ ', style: 'muted' },
+      { text: 'System prompt: ' },
+      { text: '2k tokens (25.0%)', style: 'muted' },
+    ])
+    expect(section.rows[5]!.segments.at(-1)).toEqual({ text: '1k tokens (12.5%)', style: 'muted' })
+    expect(section.rows[7]!.segments).toEqual([
+      { text: '░'.repeat(20), style: 'textMuted' },
+      { text: '  ' },
+      { text: '░ ', style: 'textMuted' },
+      { text: 'Free space: ' },
+      { text: '4k (50.0%)', style: 'muted' },
+    ])
   })
 
-  it('rounds sub-half-percent shares to an honest 0%', () => {
-    const section = buildCompositionSection({ system: 100, tools: 0, messages: 0 }, 1000000)!
-    expect(section.rows[1]!.segments[1]).toEqual({ text: ' · 0%', style: 'muted' })
+  it('guarantees a non-zero category one grid cell and one-decimal shares', () => {
+    const section = buildCompositionSection({
+      breakdown: { system: 100, tools: 0, messages: 0 },
+      window: 1000000,
+      model: 'm (p)',
+      occupancy: { used: 100, window: 1000000 },
+    })!
+    // One █ cell opens the grid; the legend reads an honest 0.0%.
+    expect(section.rows[0]!.segments[0]).toEqual({ text: '█', style: 'muted' })
+    expect(section.rows[4]!.segments.at(-1)).toEqual({ text: '100 tokens (0.0%)', style: 'muted' })
   })
 
-  it('drops the bar, shares, and free row without a window', () => {
-    const section = buildCompositionSection({ system: 100, tools: 200, messages: 300 })!
-    expect(section.rows.map(row => row.label)).toEqual(['system', 'tools', 'messages'])
-    expect(section.rows[0]!.segments).toEqual([{ text: '100' }])
+  it('drops the grid, shares, and free row without a window', () => {
+    const section = buildCompositionSection({
+      breakdown: { system: 100, tools: 200, messages: 300 },
+      model: 'm (p)',
+      occupancy: {},
+    })!
+    expect(section.rows).toHaveLength(7)
+    expect(section.rows[0]!.segments).toEqual([{ text: 'm (p)' }])
+    expect(section.rows[1]!.segments).toEqual([{ text: 'no context window advertised', style: 'muted' }])
+    expect(section.rows[4]!.segments).toEqual([
+      { text: '█ ', style: 'muted' },
+      { text: 'System prompt: ' },
+      { text: '100', style: 'muted' },
+    ])
   })
 
   it('clamps the free remainder at zero when the heuristic overshoots', () => {
-    const section = buildCompositionSection({ system: 5000, tools: 2000, messages: 2000 }, 8192)!
-    expect(section.rows.at(-1)!.segments).toEqual([{ text: '0' }, { text: ' · 0%', style: 'muted' }])
+    const section = buildCompositionSection({
+      breakdown: { system: 5000, tools: 2000, messages: 2000 },
+      window: 8192,
+      model: 'm (p)',
+      occupancy: { used: 9000, window: 8192 },
+    })!
+    expect(section.rows.at(-1)!.segments.at(-1)).toEqual({ text: '0 (0.0%)', style: 'muted' })
   })
 
   it('omits the section without a breakdown', () => {
-    expect(buildCompositionSection(undefined, 8192)).toBeUndefined()
+    expect(buildCompositionSection({
+      window: 8192,
+      model: 'm (p)',
+      occupancy: {},
+    })).toBeUndefined()
   })
 
-  it('joins the /context panel behind the occupancy section', () => {
+  it('joins the /context panel, replacing the occupancy bar; the bar answers without it', () => {
     const withBreakdown = buildUsageSections(
       { buckets: { input: 10, cacheRead: 0, cacheWrite: 0, output: 5 }, context: { used: 10, window: 8192 } },
+      'mock (mock)',
       { system: 100, tools: 0, messages: 0 },
     )
     expect(withBreakdown.map(section => section.heading))
-      .toEqual(['Session usage', 'Context window', 'Context composition (heuristic)'])
+      .toEqual(['Session usage', 'Context usage (heuristic)'])
     const without = buildUsageSections(
       { buckets: { input: 10, cacheRead: 0, cacheWrite: 0, output: 5 }, context: { used: 10, window: 8192 } },
+      'mock (mock)',
     )
     expect(without.map(section => section.heading)).toEqual(['Session usage', 'Context window'])
   })
@@ -281,6 +347,25 @@ describe('registerSessionCommands', () => {
     expect(overlay.hidden).toBe(true)
   })
 
+  it('mounts /context over the folded buckets with a window absent', async () => {
+    const { ctx, screen, agent } = await mount({ seed: 'usage' })
+    // A projection host whose pressure lacks a window: the composition
+    // wiring takes the no-window branch (grid and shares dropped).
+    ctx.provide('sessionProjections', {
+      snapshot: () => ({
+        values: {
+          tokenUsage: { uncachedInputTokens: 1536, outputTokens: 9216, cacheReadTokens: 61440, cacheWriteTokens: 7168 },
+          contextBreakdown: { systemTokens: 100, toolsTokens: 0, messageTokens: 0 },
+        },
+      }),
+    })
+    await run(ctx, agent, '/context')
+    const rows = plain((screen.overlays.at(-1)!.component as InfoPanel).render(80))
+    expect(rows.some(row => row.includes('total'))).toBe(true)
+    expect(rows.some(row => row.includes('Estimated usage by category'))).toBe(true)
+    expect(rows.some(row => row.includes('no context window advertised'))).toBe(true)
+  })
+
   it('mounts the /context panel over the folded buckets (no projection seam)', async () => {
     const { ctx, screen, agent } = await mount({ seed: 'usage' })
     const result = await run(ctx, agent, '/context')
@@ -303,10 +388,27 @@ describe('registerSessionCommands', () => {
         values: {
           tokenUsage: { uncachedInputTokens: 30, outputTokens: 7, cacheReadTokens: 100, cacheWriteTokens: 7 },
           contextPressure: { projectedTokens: 4224, contextWindow: 8192 },
+          contextBreakdown: { systemTokens: 100, toolsTokens: 0, messageTokens: 0 },
           sessionStats: { turns: 2, steps: 5, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 },
         },
       }),
     })
+    await run(ctx, agent, '/context')
+    const windowless = plain((screen.overlays.at(-1)!.component as InfoPanel).render(80))
+    // The composition section rides the contextBreakdown projection over
+    // the advertised window: the grid renders and the legend shows shares.
+    // The 17-row panel overflows the sixteen-row window, so the legend
+    // lands after one page down.
+    const panel = screen.overlays.at(-1)!.component as InfoPanel
+    // The headline sits behind the textMuted marker (wrapped in `_`),
+    // which plain() strips — the SGR-only strip keeps it findable.
+    expect(windowless.some(row => row.includes('4.1k'))).toBe(true)
+    panel.handleInput('\x1b[6~')
+    // textMuted wraps its text in `_`, which plain() strips — compare on
+    // the SGR-only-stripped rows so the muted markers survive.
+    const legendRows = panel.render(80).map(row => row.replace(/\x1b\[[0-9;]*m/g, ''))
+    expect(legendRows.some(row => row.includes('Estimated usage by category'))).toBe(true)
+    expect(legendRows.some(row => row.includes('System prompt:'))).toBe(true)
     await run(ctx, agent, '/context')
     const usageRows = plain((screen.overlays.at(-1)!.component as InfoPanel).render(80))
     expect(usageRows.some(row => row.includes('144'))).toBe(true)
