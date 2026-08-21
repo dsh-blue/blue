@@ -2998,15 +2998,24 @@ describe('blue whole-tree e2e', () => {
     expect(frame).toContain('64.1k / 8k')
   })
 
-  it('/version flashes the banner constant and the live model', async () => {
+  it('/version opens the read-only panel over the release lines and the live model', async () => {
     const tree = await bootBlue([], { script: [] })
     const agent = await currentAgent(tree)
-    await expect(executeCommand(tree, agent, '/version'))
-      .resolves.toEqual({ kind: 'success', text: `Blue v${BLUE_VERSION} · dsh rc.7 · mock (mock)` })
-    // The typed line reaches the same notice through the hint line.
-    typeLine(tree.terminal, '/version')
+    await expect(executeCommand(tree, agent, '/version')).resolves.toEqual({ kind: 'success' })
     await vi.waitFor(() => {
-      expect(stripSgr(tree.terminal.output)).toContain(`Blue v${BLUE_VERSION} · dsh rc.7 · mock (mock)`)
+      expect(stripSgr(tree.terminal.output)).toContain(`v${BLUE_VERSION}`)
+    })
+    const frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).toContain(`v${BLUE_VERSION}`)
+    expect(frame).toContain('harness')
+    expect(frame).toContain('rc.7')
+    // The panel is version-only: no model section even with a live session.
+    expect(frame).not.toContain('mock (mock)')
+    // Escape restores the editor: the panel leaves the next full frame
+    // (the version section heading is the panel-only marker).
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('Version')
     })
   })
 

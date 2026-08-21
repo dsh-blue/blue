@@ -12,15 +12,15 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import * as commandsPlugin from '../src/commands-plugin.ts'
 import type { InfoPanel } from '../src/info-panel.ts'
-import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
+import { clearSharedEditor } from '../src/editor-instance.ts'
 import {
   buildCompositionSection,
   buildContextSection,
   buildStatusSections,
   buildUsageSections,
   formatCreated,
+  buildVersionSections,
   registerSessionCommands,
-  versionNotice,
 } from '../src/session-commands.ts'
 import { BLUE_VERSION } from '@dsh-blue/blue-transcript/banner-content'
 import { fakeBlueContext, type FakeScreen } from './fakes.ts'
@@ -29,16 +29,6 @@ afterEach(() => {
   clearSharedEditor()
 })
 
-/** The notices the shared editor received. */
-function sharedEditor(): { notices: string[] } {
-  const notices: string[] = []
-  setSharedEditor({
-    editor: { focused: false, render: () => [], invalidate: () => {} } as never,
-    submitPrompt: () => {},
-    notice: (text: string) => { notices.push(text) },
-  })
-  return { notices }
-}
 
 /** Strip SGR and the fake palette's marker characters so assertions read visible text. */
 function plain(rows: readonly string[]): readonly string[] {
@@ -52,11 +42,14 @@ describe('formatCreated', () => {
   })
 })
 
-describe('versionNotice', () => {
-  it('carries the banner constant, the harness line, and the live model', () => {
-    expect(versionNotice()).toBe(`Blue v${BLUE_VERSION} · dsh rc.7`)
-    expect(versionNotice({ provider: 'deepseek', model: 'deepseek-chat', effort: 'high' }))
-      .toBe(`Blue v${BLUE_VERSION} · dsh rc.7 · deepseek-chat (deepseek) · thinking high`)
+describe('buildVersionSections', () => {
+  it('lists the Blue and harness release lines', () => {
+    const sections = buildVersionSections()
+    expect(sections.map(section => section.heading)).toEqual(['Version'])
+    expect(sections[0]!.rows).toEqual([
+      { label: 'blue', segments: [{ text: `v${BLUE_VERSION}` }] },
+      { label: 'harness', segments: [{ text: 'rc.7' }] },
+    ])
   })
 })
 
@@ -440,20 +433,29 @@ describe('registerSessionCommands', () => {
     expect(rows.some(row => row.includes('not set'))).toBe(true)
   })
 
-  it('flashes the /version notice and works with no session live', async () => {
-    const { notices } = sharedEditor()
-    const { ctx, agent } = await mount({
+  it('opens the /version panel over the release lines and closes on Escape', async () => {
+    const { ctx, screen, agent } = await mount({
       modelRef: { current: { provider: 'deepseek', model: 'deepseek-chat' } },
     })
     const result = await run(ctx, agent, '/version')
-    expect(result).toEqual({
-      kind: 'success',
-      text: `Blue v${BLUE_VERSION} · dsh rc.7 · deepseek-chat (deepseek)`,
-    })
-    expect(notices).toEqual([])
-    const bare = await mount({ attach: false })
-    const noSession = await bare.ctx.commands.execute(bare.agent, '/version', new AbortController().signal)
-    expect(noSession?.result).toEqual({ kind: 'success', text: `Blue v${BLUE_VERSION} · dsh rc.7` })
+    expect(result).toEqual({ kind: 'success' })
+    const overlay = screen.overlays.at(-1)!
+    const rows = plain((overlay.component as InfoPanel).render(80))
+    expect(rows.some(row => row.includes(`v${BLUE_VERSION}`))).toBe(true)
+    expect(rows.some(row => row.includes('harness'))).toBe(true)
+    // The panel is version-only: no model section even with a live session.
+    expect(rows.some(row => row.includes('deepseek-chat'))).toBe(false)
+    overlay.component.handleInput?.('\x1b')
+    expect(overlay.hidden).toBe(true)
+  })
+
+  it('opens the /version panel on an empty slot too', async () => {
+    const { ctx, screen, agent } = await mount({ attach: false })
+    const result = await run(ctx, agent, '/version')
+    expect(result).toEqual({ kind: 'success' })
+    const rows = plain((screen.overlays.at(-1)!.component as InfoPanel).render(80))
+    expect(rows.some(row => row.includes(`v${BLUE_VERSION}`))).toBe(true)
+    expect(rows.some(row => row.includes('harness'))).toBe(true)
   })
 
   it('guards /status and /usage with an error when no session is live', async () => {
@@ -469,16 +471,20 @@ describe('registerSessionCommands', () => {
     expect(empty).toEqual({ kind: 'error', text: 'no session is live yet' })
     const emptyUsage = await run(ctx, agent, '/context')
     expect(emptyUsage).toEqual({ kind: 'error', text: 'no session is live yet' })
+    // /version needs no live session — the panel opens with the version
+    // section alone.
     const emptyVersion = await run(ctx, agent, '/version')
-    expect(emptyVersion).toEqual({ kind: 'success', text: `Blue v${BLUE_VERSION} · dsh rc.7` })
+    expect(emptyVersion).toEqual({ kind: 'success' })
   })
 
-  it('guards /status and /usage with an error when the display services are missing', async () => {
+  it('guards /status, /context, and /version when the display services are missing', async () => {
     const { ctx, agent } = await mount({ display: false })
     const status = await run(ctx, agent, '/status')
     expect(status).toEqual({ kind: 'error', text: 'status panel is unavailable: the Blue screen is not mounted' })
     const usage = await run(ctx, agent, '/context')
     expect(usage).toEqual({ kind: 'error', text: 'context panel is unavailable: the Blue screen is not mounted' })
+    const version = await run(ctx, agent, '/version')
+    expect(version).toEqual({ kind: 'error', text: 'version panel is unavailable: the Blue screen is not mounted' })
   })
 
   it('unregisters with the plugin fiber', async () => {

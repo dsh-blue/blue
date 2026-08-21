@@ -17,7 +17,7 @@ import { STATUS_TIPS, type StatusTip } from './tips-content.ts'
  * The version shown in the banner's title rule. Keep in sync with
  * `package.json` — `tests/banner.spec.ts` fails the suite on drift.
  */
-export const BLUE_VERSION = '0.1.0-rc.7'
+export const BLUE_VERSION = '0.1.0-rc.1'
 
 /** One right-column section: a heading plus indented body lines. */
 export interface BannerSection {
