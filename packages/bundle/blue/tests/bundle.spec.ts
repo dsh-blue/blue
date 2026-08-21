@@ -74,7 +74,6 @@ describe('blue bundle', () => {
       'blue-status-git',
       'blue-status-title',
       'blue-status-mode',
-      'blue-status-tips',
       'blue-status-context',
       'blue-intent-diff',
       'blue-intent-terminal',

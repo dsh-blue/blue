@@ -20,7 +20,7 @@ Blue 自己向下游开的缝。下游插件只允许 import 这些契约与文�
 
 | 缝 | ctx 键 / 机制 | 契约位置（源码） | 实现 | plain 默认 | 下游能做什么 |
 |---|---|---|---|---|---|
-| 屏幕挂载 / overlay / 焦点 | `ctx.blueScreen` | `packages/core/src/types.ts`（`BlueScreen`/`BlueComponent`/`BlueOverlayHandle`） | `core/src/screen.ts`（`BlueScreenService`） | —（核心能力） | 挂组件（`addChild` 返回 disposer）、弹 overlay、`setFocus`、`requestRender` |
+| 屏幕挂载 / overlay / 焦点 | `ctx.blueScreen` | `packages/core/src/types.ts`（`BlueScreen`/`BlueComponent`/`BlueOverlayHandle`） | `core/src/screen.ts`（`BlueScreenService`） | —（核心能力） | 挂组件（`addChild` 返回 disposer）、弹 overlay、`setFocus`、`requestRender`；`suspend(fn)`（S31）——释放终端给子进程（外部编辑器），恢复后重开 2031 通知 + 强制全帧；排他（重入拒绝），挂起期被拆除则跳过重启、fn settlement 原样传播 |
 | 键位注册 | `ctx.blueKeymap` | `core/src/types.ts`（`BlueKeymap`/`BlueKeyAction`） | `core/src/keymap.ts` | — | 注册语境/全局快捷键；冲突在启动期暴露，而非运行时抢键 |
 | 组件工厂 | `ctx.blueComponents` | `core/src/types.ts:649`（`BlueComponents`） | `core/src/components.ts`（`BlueComponentsService`，inject blueTheme，换装自动重建） | — | 造 editor/markdown/select/settings/image 组件 + 宽度/模糊纯函数，全程不碰 pi-tui |
 | 终端事实 | `ctx.blueTerminalInfo` | `core/src/types.ts` | `core/src/terminal-info.ts` | — | 读 OSC 11 探测的背景色与 Kitty 键盘协议能力 |

@@ -28,7 +28,7 @@ Blue 不是一个大组件，而是一棵 **Cordis 插件树**：bundle 的 `cor
 | `blue-status-cwd` | footer：会话工作目录（优先级 5） |
 | `blue-status-git` | footer：git 徽章 `branch [+a -d ↑u↓v]`（优先级 10） |
 | `blue-status-mode` | footer：会话模式徽标 `plan`/`yolo`（优先级 2，normal 隐藏） |
-| `blue-status-tips` | footer：轮换教学提示（优先级 30） |
+| `blue-status-title` | footer：会话标题（优先级 30，行 1 右对齐） |
 | `blue-status-context` | footer：context 占用（优先级 20，第二行右对齐） |
 | `blue-intent-diff` | diff 专属工具卡（统一 diff 着色） |
 | `blue-intent-terminal` | 终端输出专属工具卡（`$ command` + exit 徽章） |

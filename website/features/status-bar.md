@@ -4,13 +4,14 @@
 
 ## 布局与灰阶
 
-两空格 slot 连接、没有分隔符字形；三档灰阶构成层级（对齐 kimi 视觉身份）：
+两空格 slot 连接、没有分隔符字形；灰阶构成层级（对齐 kimi 视觉身份）：
 
 | 档位 | 颜色 | 承载 |
 | --- | --- | --- |
 | 最亮 | `text` | model、context——你每轮都在读的信息 |
-| 中 | `muted` | cwd、git 徽章 |
-| 最暗 | `textMuted` | 轮换 tips |
+| 中 | `muted` | cwd、git 徽章、会话标题 |
+
+（最暗的 `textMuted` tips 档已随 S30 footer 换位退役——教学提示只随 activity 面板的 spinner 行轮换。）
 
 ## 内置条目
 
@@ -21,7 +22,7 @@
 | `blue-status-cwd` | 5 | 行 1 左簇 | 会话工作目录（home 缩写为 `~`，深路径缩到末三段；`muted` 色） |
 | `blue-status-git` | 10 | 行 1 左簇 | 完整徽章 `branch [+a -d ↑e↓f]`（TTL 缓存探测：branch 5s / status 15s；非 git 仓库不显示） |
 | `blue-status-context` | 20 | 行 2 右簇 | 最新一步的 context 占用：有窗口时 `context: N% (K/M)`，无窗口降级 `ctx N`（`text` 色） |
-| `blue-status-tips` | 30 | 行 1 右簇 | 轮换教学提示，10 秒推进，宽度允许时 ` | ` 并列两条（`textMuted` 色，SWRR 加权轮换） |
+| `blue-status-title` | 30 | 行 1 右簇 | 会话标题（折叠自 harness `sessionTitle` 服务，muted 色；S30 换位前是轮换教学提示的槽位；无标题时不占位） |
 
 运行中 agent 的状态**不在** footer——那是 activity 面板的职责（见[底部面板](/features/panes)）。
 

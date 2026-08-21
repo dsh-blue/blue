@@ -17,6 +17,7 @@
 import type { BlueComponents, BlueEditor, BlueFocusable, BlueTheme } from '@dsh-blue/blue-core'
 import { framePanel } from '@dsh-blue/blue-core/chrome'
 import type { AskUserQuestionAnswerItem, AskUserQuestionItem, AskUserQuestionOption } from '@deepseek-ai/dsh-user-questions'
+import { oneLine } from './select-list.ts'
 
 /** Decoded input sequences the questionnaire handles (no keymap actions). */
 const KEY_TAB = '\t'
@@ -280,7 +281,9 @@ export class Questionnaire implements BlueFocusable {
    * Render the framed dialog: title, the `(○)`/`(✓)` tab row, the active
    * question, and its list or editor, closed by a key row. Option lists
    * longer than {@link MAX_OPTION_ROWS} truncate the tail behind a muted
-   * ellipsis row.
+   * ellipsis row, and an option row budgets its description into the width
+   * its label leaves (the select-list discipline, so no row exceeds the
+   * viewport).
    * @param width - current viewport width in columns.
    * @returns one string per rendered row.
    */
@@ -323,7 +326,14 @@ export class Questionnaire implements BlueFocusable {
       const prefix = at === state.cursor ? '  → ' : '    '
       const checkbox = multi ? (state.toggled.has(option.label) ? '[x] ' : '[ ] ') : ''
       const label = components.truncateToWidth(`${prefix}${checkbox}${option.label}`, width)
-      const description = option.description === undefined ? '' : colors.muted(` — ${option.description}`)
+      // The description rides the label's leftover width (the select-list
+      // budget discipline): one-lined, truncated to what remains, hidden
+      // when fewer than five columns survive. Unbudgeted it overflowed
+      // pi-tui's width guard and crashed the process (#14).
+      const descriptionWidth = width - components.visibleWidth(label)
+      const description = option.description !== undefined && descriptionWidth > 4
+        ? colors.muted(components.truncateToWidth(` — ${oneLine(option.description)}`, descriptionWidth))
+        : ''
       entries.push(at === state.cursor ? colors.primary(label) + description : label + description)
     }
     const otherPrefix = state.cursor === options.length ? '  → ' : '    '

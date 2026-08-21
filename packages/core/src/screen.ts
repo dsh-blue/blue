@@ -109,6 +109,17 @@ export class BlueScreenService extends Service implements BlueScreen {
   }
 
   /**
+   * Suspend the renderer and run `fn` with the terminal released for a
+   * child process; resumes with a forced full repaint. See
+   * {@link BlueScreen.suspend} for the exclusivity and teardown semantics.
+   * @param fn - the async body owning the terminal while it is released.
+   * @returns settles with fn's outcome after the renderer resumed.
+   */
+  suspend<T>(fn: () => Promise<T>): Promise<T> {
+    return this.runtime.suspend(fn)
+  }
+
+  /**
    * Set the terminal's window/tab title (a sanitized OSC 0 write; inside
    * tmux, the tmux window name).
    * @param title - untrusted title text; control characters are stripped

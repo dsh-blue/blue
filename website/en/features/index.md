@@ -28,7 +28,7 @@ Optional layers over the plain baseline; each row deletes individually, the whol
 | `blue-status-cwd` | footer: session working directory (priority 5) |
 | `blue-status-git` | footer: git badge `branch [+a -d ↑u↓v]` (priority 10) |
 | `blue-status-mode` | footer: session-mode badge `plan`/`yolo` (priority 2, hidden in normal) |
-| `blue-status-tips` | footer: rotating tips (priority 30) |
+| `blue-status-title` | footer: session title (priority 30, row 1 right-aligned) |
 | `blue-status-context` | footer: context occupancy (priority 20, row 2 right-aligned) |
 | `blue-intent-diff` | dedicated diff tool card |
 | `blue-intent-terminal` | dedicated terminal-output tool card (`$ command` + exit badge) |

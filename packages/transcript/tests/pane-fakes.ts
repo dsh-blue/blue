@@ -51,6 +51,11 @@ export class PaneFakeScreen implements BlueScreen {
     this.renderRequests.push(force)
   }
 
+  /** S31 seam: pass-through; the pane suites never suspend the screen. */
+  suspend<T>(fn: () => Promise<T>): Promise<T> {
+    return fn()
+  }
+
   setTitle(): void {}
 
   /**

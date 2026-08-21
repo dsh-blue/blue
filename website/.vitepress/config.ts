@@ -97,6 +97,7 @@ const sidebarZh = {
       text: '指南',
       items: [
         { text: '快速上手', link: '/guide/' },
+        { text: '配置', link: '/guide/config' },
         { text: '主题', link: '/guide/theme' },
         { text: '常见问题', link: '/guide/faq' },
       ],
@@ -154,6 +155,7 @@ const sidebarEn = {
       text: 'Guide',
       items: [
         { text: 'Quickstart', link: '/en/guide/' },
+        { text: 'Configuration', link: '/en/guide/config' },
         { text: 'Theming', link: '/en/guide/theme' },
         { text: 'FAQ', link: '/en/guide/faq' },
       ],

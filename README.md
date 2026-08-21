@@ -207,7 +207,7 @@ Each entry point is a Cordis plugin (`export const name`, optional `inject`, `ap
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml — the 23 Blue rows · 23 条 Blue 行"]
+    subgraph bundle["cordis.patch.yml — the 22 Blue rows · 22 条 Blue 行"]
         subgraph baseline["plain baseline 基线 — 8 rows, self-sufficient 自足"]
             core["blue-core"]
             theme["blue-theme-dark"]
@@ -221,7 +221,7 @@ flowchart TB
         subgraph enhancement["enhancement segment 增强段 — every row droppable 每行皆可删"]
             editorPlus["blue-editor-plus"]
             att["blue-attachments · blue-paste-image"]
-            statusEnh["blue-status-cwd · -git · -mode · -tips · -context"]
+            statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
             intents["blue-intent-diff · -terminal"]
             panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
         end

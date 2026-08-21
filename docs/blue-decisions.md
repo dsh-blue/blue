@@ -301,3 +301,13 @@
 - **落地**：`mcp-servers.ts` 薄读层（纯函数 + 窄结构类型，status 推导/脱敏/双口径全可单测）+ `mcp-commands.ts` + scope 解析抽 `tool-scope.ts` 共享件（/tools 等价重构消费）；bundle dependencies 钉版 `@deepseek-ai/dsh-mcp-client@0.1.1-rc.1`（D33 agent-presets 同款，不加 patch 行——服务器声明留用户层），**runtime dependencies 首入 `version.spec.ts` 门禁**（此前只查 devDeps/peer/excludes）；pnpm-workspace `minimumReleaseAgeExclude` 同步入册。
 - **测试**：单测覆盖状态推导全表/脱敏/双口径/orphan/无会话退化；e2e 手写 stdio fixture server（零依赖 JSON-RPC：initialize 回显 protocolVersion、tools/list 两工具）走真连接路径——loader 拉真 entry、子进程真握手、工具真注册；**FAILED 形态留单测**：`failOnStartupError:true` 的 entry 会让 `loader.await()` 拒绝整树 boot，e2e 树里不可构造。两处 e2e 基建教训：裸包名从 vitest cwd（仓库根）解析失败——bootBlue 的 Loader 设 `baseUrl` 指向 bundle 包目录（生产同构）；node CLI 不接受 `file://` URL 作入口参数——子进程 args 用普通路径（组合行 `name` 仍要 file URL）。
 - **边界与挂起**：快照式面板（SelectListPanel/InfoPanel 构造时定格、无 setRows）——重开面板即新数据；live 原位刷新（四信号订阅 + 面板重建）记挂起，信号清单见上。管理面（每服务器状态事件/启停/重连 API）维持上游缝请求（§7 #6）。重连预算耗尽只能标注"需重载插件或重启"（无重连 API）。`serverName` 可含 `__`（pattern 允许）——分组按 entry 声明名前缀匹配而非 split 解析，入口名的歧义不存在；spec 侧手注册的 `mcp__` 工具（无对应 entry）计 orphan 注行不冒充服务器。
+
+### D41. all-prompts 标题节奏桥：`sessionTitle.refresh` 公开 API 驱动（2026-08-22；编号避开 s34 分支已占的 D40）
+
+- **背景**：S30① 声明"每条用户消息后辅助小模型重新生成会话标题"，但活体验证（blue-footer-swap profile，4 条消息的真实会话）发现标题冻结在首条消息——会话日志里只有 1 条 `session/title-llm-request`（`messageSeqs [7]`），后续消息零请求。
+- **根因（上游 `dsh-session-title@0.1.1-rc.1`，非 Blue 侧缺陷）**：服务给 all-prompts 档位的两个启动触发都不通——① `request/header` 事件**每会话只落一条**（首个主请求）；② `onMainRequest`（全局 `llm/stream` 瀑布）的边界闸门 `boundary.seq <= pending.throughSeq`——dsh-agent-loop 的事件序是 `step/start` **先于**当轮 `user/message`（实测 seq 6<7、116<117），所以开轮消息本身恒被拒。首条消息能出标题纯靠 ①；第二条起 all-prompts 退化为 first-prompt。
+- **决策**：Blue 侧加桥插件 `blue-session-title-cadence`（interaction，随基线 `blue-interaction` index 挂载，免 patch 行/子路径/tsdown 三处联动）——当前会话的每条人类消息（`user/message` 且 `source.kind === 'user'`）且 `session.requestHeader() !== undefined` 时，`queueMicrotask` 后调 `sessionTitle.refresh(session)`（公开 API：按 provider 选择器全量重派生、supersede 在途生成、连发自动收敛到最后一条）。
+- **纪律**：首条消息必须让位给服务自身的 header 路径——header 未落时 refresh 拿不到路由必失败，且 supersede 会把服务自己的 pending 顶掉（两头皆空）；`session.append` 观察者内不可再派发 append 类调用，必须 microtask 离栈（既有纪律）。
+- **理由**：修复走公开对象 API，零新依赖、不赌组合隔离契约；上游正修（服务侧边界闸门对 agent-loop 事件序的假设）在 harness 仓库另行立项，Blue 桥在其落地后可平滑移除。
+- **后果/边界**：refresh 用**已落 header 的路由**派生（路由不随 alt+m 换档实时更新——与上游行为一致，仅辅助调用身份滞后）；上游修复合入并升 pin 后本桥可退役；e2e 以结构 fake 的 refresh 记录器断言桥行为（真服务不在薄 e2e 树内）。
+- **落地（2026-08-22，随 footer 换位 PR）**：`packages/interaction/src/session-title-cadence.ts` + index 挂载 + 单测 6 例 + e2e 桥断言（首轮 0 次、次轮恰 1 次带会话 id）。

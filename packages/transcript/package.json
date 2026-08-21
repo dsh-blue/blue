@@ -37,10 +37,6 @@
       "types": "./lib/types/status-context.d.ts",
       "default": "./lib/status-context.js"
     },
-    "./status-tips": {
-      "types": "./lib/types/status-tips.d.ts",
-      "default": "./lib/status-tips.js"
-    },
     "./pane-activity": {
       "types": "./lib/types/pane-activity.d.ts",
       "default": "./lib/pane-activity.js"
@@ -83,7 +79,7 @@
     "lib/status-cwd.js",
     "lib/status-git.js",
     "lib/status-context.js",
-    "lib/status-tips.js",
+    "lib/status-title.js",
     "lib/pane-activity.js",
     "lib/pane-todo.js",
     "lib/pane-btw.js",

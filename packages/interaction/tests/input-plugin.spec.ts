@@ -5,7 +5,7 @@
  * mount/dispose behavior.
  */
 
-import { describe, expect, it, vi, afterEach } from 'vitest'
+import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { BlueComponent, BlueFocusable } from '@dsh-blue/blue-core'
@@ -19,7 +19,8 @@ import { registerCommandAliases } from '../src/command-meta.ts'
 import { __setCatalogForTest } from '../src/skills-catalog.ts'
 import * as paneQueuePlugin from '../src/pane-queue.ts'
 import { getSharedEditor, mountEditorReplacement } from '../src/editor-instance.ts'
-import { clearDraft, stashHistory } from '../src/draft-stash.ts'
+import { clearDraft, getStashedDraft, stashHistory } from '../src/draft-stash.ts'
+import { setExternalEditorLauncher } from '../src/external-editor.ts'
 import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeBlueEditor, type FakeScreen } from './fakes.ts'
 
 // The draft stash is module state: a test that leaves unsubmitted text
@@ -741,6 +742,142 @@ describe('blue-input plugin', () => {
       type(editor, 'draft')
       expect(editor.onKey?.(KEY.ctrlS)).toBe(false)
       expect(editor.getText()).toBe('draft')
+    })
+  })
+
+  describe('external editor (Ctrl-G, S31)', () => {
+    const savedVisual = process.env.VISUAL
+    const savedEditor = process.env.EDITOR
+
+    beforeEach(() => {
+      process.env.VISUAL = 'blue-spec-editor'
+    })
+
+    afterEach(() => {
+      process.env.VISUAL = savedVisual
+      process.env.EDITOR = savedEditor
+      setExternalEditorLauncher(undefined)
+    })
+
+    /** Install a recording launcher; `impl` decides each call's outcome. */
+    function fakeLauncher(impl: (seed: string) => Promise<string | undefined>): string[] {
+      const seeds: string[] = []
+      setExternalEditorLauncher((seed, command) => {
+        seeds.push(`${command}: ${seed}`)
+        return impl(seed)
+      })
+      return seeds
+    }
+
+    /** Let the async flow settle past its final await chain. */
+    async function settle(): Promise<void> {
+      await new Promise<void>(resolve => {
+        setImmediate(resolve)
+      })
+    }
+
+    it('hands the draft over, suspends once, and writes the edit back with the mirrors synced', async () => {
+      const { editor, screen } = await mount()
+      const seeds = fakeLauncher(() => Promise.resolve('edited\r\n\r\n'))
+      type(editor, 'draft here')
+      editor.handleInput(KEY.ctrlG)
+      await vi.waitFor(() => {
+        expect(editor.getText()).toBe('edited\n')
+      })
+      // The seed is the expanded draft and the command is the resolved
+      // $VISUAL; the CRLF pair collapses and one trailing newline drops.
+      expect(seeds).toEqual(['blue-spec-editor: draft here'])
+      expect(screen.suspends).toBe(1)
+      expect(getStashedDraft()).toBe('edited\n')
+    })
+
+    it('keeps the draft untouched on a nonzero editor exit (:cq)', async () => {
+      const { editor, screen, hint } = await mount()
+      fakeLauncher(() => Promise.resolve(undefined))
+      type(editor, 'keep me')
+      editor.handleInput(KEY.ctrlG)
+      await vi.waitFor(() => {
+        expect(screen.suspends).toBe(1)
+      })
+      await settle()
+      expect(editor.getText()).toBe('keep me')
+      expect(getStashedDraft()).toBe('keep me')
+      expect(hint.render(80)).toEqual([])
+    })
+
+    it('notices instead of suspending when no editor is configured', async () => {
+      process.env.VISUAL = ''
+      process.env.EDITOR = ''
+      const { editor, screen, hint } = await mount()
+      expect(editor.onKey?.(KEY.ctrlG)).toBe(true)
+      expect(screen.suspends).toBe(0)
+      expect(hint.render(80)).toEqual(['~set $VISUAL or $EDITOR to edit drafts externally~'])
+    })
+
+    it('notices a launcher failure and re-arms for the next press', async () => {
+      const { editor, screen, hint } = await mount()
+      let outcome: Promise<string | undefined> = Promise.reject(new Error('editor gone'))
+      fakeLauncher(() => outcome)
+      editor.handleInput(KEY.ctrlG)
+      await vi.waitFor(() => {
+        expect(hint.render(80)).toEqual(['~!editor gone!~'])
+      })
+      expect(screen.suspends).toBe(1)
+      // A non-Error rejection stringifies into the notice.
+      outcome = Promise.reject('plain failure')
+      editor.handleInput(KEY.ctrlG)
+      await vi.waitFor(() => {
+        expect(hint.render(80)).toEqual(['~!plain failure!~'])
+      })
+      expect(screen.suspends).toBe(2)
+      outcome = Promise.resolve('second try')
+      editor.handleInput(KEY.ctrlG)
+      await vi.waitFor(() => {
+        expect(editor.getText()).toBe('second try')
+      })
+      expect(screen.suspends).toBe(3)
+    })
+
+    it('consumes a second Ctrl-G while a session is in flight and re-arms after', async () => {
+      const { editor, screen } = await mount()
+      const gate = Promise.withResolvers<string | undefined>()
+      fakeLauncher(() => gate.promise)
+      editor.handleInput(KEY.ctrlG)
+      expect(editor.onKey?.(KEY.ctrlG)).toBe(true)
+      expect(screen.suspends).toBe(1)
+      gate.resolve('late edit')
+      await vi.waitFor(() => {
+        expect(editor.getText()).toBe('late edit')
+      })
+      expect(screen.suspends).toBe(1)
+      editor.handleInput(KEY.ctrlG)
+      await vi.waitFor(() => {
+        expect(screen.suspends).toBe(2)
+      })
+    })
+
+    it('leaves the draft alone when the fiber unloads mid-session', async () => {
+      const { editor, screen, fiber } = await mount()
+      const gate = Promise.withResolvers<string | undefined>()
+      fakeLauncher(() => gate.promise)
+      type(editor, 'draft survives')
+      editor.handleInput(KEY.ctrlG)
+      await fiber.dispose()
+      gate.resolve('must not land')
+      await settle()
+      expect(editor.getText()).toBe('draft survives')
+      expect(screen.suspends).toBe(1)
+    })
+
+    it('drops the failure notice when the fiber unloads before the launcher rejects', async () => {
+      const { editor, hint, fiber } = await mount()
+      const gate = Promise.withResolvers<string | undefined>()
+      fakeLauncher(() => gate.promise)
+      editor.handleInput(KEY.ctrlG)
+      await fiber.dispose()
+      gate.reject(new Error('late boom'))
+      await settle()
+      expect(hint.render(80)).toEqual([])
     })
   })
 

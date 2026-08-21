@@ -56,6 +56,11 @@ export class StatusFakeScreen implements BlueScreen {
     this.renderRequests.push(force)
   }
 
+  /** S31 seam: pass-through; the status suites never suspend the screen. */
+  suspend<T>(fn: () => Promise<T>): Promise<T> {
+    return fn()
+  }
+
   /** Title writes recorded for the OSC-mirror assertions, if any. */
   readonly titles: string[] = []
 
