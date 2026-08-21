@@ -193,7 +193,9 @@ describe('blue-questions plan-review intent', () => {
     const frame = screen.overlays[0]?.component.render(60).join('\n') ?? ''
     expect(frame).toContain('Plan review')
     expect(frame).toContain('# Fix the build')
-    expect(frame).toContain('[ Ship it ]')
+    expect(frame).toContain('1. Ship it')
+    expect(frame).toContain('2. Reject')
+    expect(frame).toContain('3. Revise')
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({ answers: [{ id: 'plan-review', selected: ['Ship it'] }] })
     expect(screen.overlays[0]?.hidden).toBe(true)
@@ -209,14 +211,16 @@ describe('blue-questions plan-review intent', () => {
     })
   })
 
-  it('revises in chat from the third button: the dismissal rejection', async () => {
+  it('submits typed revision feedback from the third row', async () => {
     const { ctx, screen } = await mount()
     const pending = ctx.userQuestions.ask({ questions: [planAsk()] })
     overlay(screen).handleInput(KEY.down)
     overlay(screen).handleInput(KEY.down)
+    for (const char of 'redo step 2') overlay(screen).handleInput(char)
     overlay(screen).handleInput(KEY.enter)
-    await expect(pending).rejects.toMatchObject({ code: 'ASK_CANCELLED' })
-    expect(screen.overlays[0]?.hidden).toBe(true)
+    await expect(pending).resolves.toEqual({
+      answers: [{ id: 'plan-review', selected: [], custom: 'redo step 2' }],
+    })
   })
 
   it('rejects with ASK_CANCELLED when the plan review is dismissed', async () => {

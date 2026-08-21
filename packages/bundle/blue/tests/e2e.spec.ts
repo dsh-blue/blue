@@ -3008,9 +3008,9 @@ describe('blue whole-tree e2e', () => {
       expect(frame).toContain('Plan review')
       expect(frame).toContain('Approve this plan and leave plan mode?')
       expect(frame).toContain('Fix the build')
-      expect(frame).toContain('[ Approve ]')
-      expect(frame).toContain('Reject')
-      expect(frame).toContain('Revise in chat')
+      expect(frame).toContain('1. Approve')
+      expect(frame).toContain('2. Reject')
+      expect(frame).toContain('3. Revise')
     })
     // The cursor seeds on the approving row.
     tree.terminal.sendInput('\r')
@@ -3039,7 +3039,7 @@ describe('blue whole-tree e2e', () => {
     expect(planMode.get(agent).active).toBe(true)
   })
 
-  it('revises in chat through the third button: the dismissal message reaches the model', async () => {
+  it('submits revision feedback from the third row: their feedback reaches the model', async () => {
     const tree = await bootBlue([], {
       script: [toolCallResponse('c1', 'exit_plan_mode', { plan: PLAN_MD }), textResponse('ok')],
     })
@@ -3047,12 +3047,33 @@ describe('blue whole-tree e2e', () => {
     const planMode = tree.ctx.get('planMode')!
     await expect(executeCommand(tree, agent, '/plan draft it')).resolves.toMatchObject({ kind: 'success' })
     await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('Plan review') })
-    // Down twice moves the button focus to Revise in chat — the
-    // ASK_CANCELLED dismissal dsh-plan-mode catches to deliver its crafted
-    // message instead of the raw rethrow.
+    // Down twice focuses the inline revision input; typed text rides the
+    // row (digits included — the input owns the keys while focused).
     tree.terminal.sendInput('\x1b[B')
     tree.terminal.sendInput('\x1b[B')
+    await vi.waitFor(async () => {
+      expect(await fullFrame(tree.terminal)).toContain('Type feedback')
+    })
+    for (const char of 'redo step 2') tree.terminal.sendInput(char)
     tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(2) })
+    const followUp = JSON.stringify(tree.adapter.requests[1]!.messages)
+    expect(followUp).toContain('The user chose to keep planning; their feedback: redo step 2')
+    await agent.whenIdle()
+    expect(planMode.get(agent).active).toBe(true)
+  })
+
+  it('dismisses the plan review on Escape and the crafted message reaches the model', async () => {
+    const tree = await bootBlue([], {
+      script: [toolCallResponse('c1', 'exit_plan_mode', { plan: PLAN_MD }), textResponse('ok')],
+    })
+    const agent = await currentAgent(tree)
+    const planMode = tree.ctx.get('planMode')!
+    await expect(executeCommand(tree, agent, '/plan draft it')).resolves.toMatchObject({ kind: 'success' })
+    await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('Plan review') })
+    // Esc rejects with ASK_CANCELLED — the code dsh-plan-mode catches to
+    // deliver its crafted message instead of the raw rethrow.
+    tree.terminal.sendInput('\x1b')
     await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(2) })
     const followUp = JSON.stringify(tree.adapter.requests[1]!.messages)
     expect(followUp).toContain('user dismissed the plan review to speak instead')
