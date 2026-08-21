@@ -43,6 +43,7 @@ import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
 import type { HelpSection } from './help.ts'
 import { HelpOverlay } from './help.ts'
+import { registerMcpCommands } from './mcp-commands.ts'
 import { registerModelCommands } from './model-commands.ts'
 import { registerModeCommands, setupModeTracking } from './mode-commands.ts'
 import { registerPresetCommands } from './preset-commands.ts'
@@ -288,6 +289,8 @@ export function apply(ctx: Context): void {
     const agentPresets = registerPresetCommands(ctx)
     // The skills listing (`/skills`, the `#` pipeline's read side).
     const skillsCommand = registerSkillsCommand(ctx)
+    // The MCP server browser (`/mcp`, S34): read-only over loader entries.
+    const mcpBrowser = registerMcpCommands(ctx)
     return () => {
       quit()
       quitAliases()
@@ -307,6 +310,7 @@ export function apply(ctx: Context): void {
       toolCatalog()
       agentPresets()
       skillsCommand()
+      mcpBrowser()
     }
   })
 }

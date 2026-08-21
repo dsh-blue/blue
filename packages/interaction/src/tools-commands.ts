@@ -36,8 +36,8 @@ import type {} from '@dsh-blue/blue-app'
 import { displayServices } from './display-services.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
 import { InfoPanel, type InfoSection } from './info-panel.ts'
-import type { AgentPresetsRoster } from './preset-commands.ts'
 import { SelectListPanel, type SelectRow } from './select-list.ts'
+import { resolveToolViewScope } from './tool-scope.ts'
 
 /** The public prefix of MCP-served tool names (`mcp__<server>__<raw>`). */
 const MCP_PREFIX = 'mcp__'
@@ -230,16 +230,12 @@ export function registerToolsCommands(ctx: Context): () => void {
     // The standing-mount key when the agent runs on a preset's composition;
     // the global view otherwise. The key's identity is what layers the view.
     let scope: object | undefined
-    const roster = ctx.get('agentPresets') as AgentPresetsRoster | undefined
-    const current = roster?.composedPreset(agent.ctx)
-    if (roster !== undefined && current !== undefined) {
-      try {
-        scope = await roster.standingKeyFor(current)
-      } catch (error) {
-        return { kind: 'error', text: `could not resolve the preset composition: ${describe(error)}` }
-      }
-      if (unloaded) return { kind: 'success' }
+    try {
+      scope = await resolveToolViewScope(ctx, agent.ctx)
+    } catch (error) {
+      return { kind: 'error', text: `could not resolve the preset composition: ${describe(error)}` }
     }
+    if (unloaded) return { kind: 'success' }
     const display = displayServices(ctx)
     if (display === undefined) {
       return { kind: 'error', text: 'tools panel is unavailable: the Blue screen is not mounted' }

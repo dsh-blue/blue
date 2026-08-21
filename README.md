@@ -123,6 +123,7 @@ All commands auto-list in the editor's completion menu; `/help` is the live trut
 | `/preset` | — | List agent presets or switch (blank sessions only) |
 | `/yolo` | `/yes` | Toggle auto-approval of tool calls |
 | `/tools` | — | List the tools visible to the current session |
+| `/mcp` | — | Browse the MCP servers the host connects to (read-only) |
 | `/skills` | — | List available skills (the `#` prompt invokes one) |
 | `/theme` | — | Switch the color theme |
 | `/init` | — | Analyze the codebase and write `AGENTS.md` |
