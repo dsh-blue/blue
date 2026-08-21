@@ -249,6 +249,42 @@ describe('Questionnaire', () => {
     expect(cancelled).toHaveBeenCalledOnce()
   })
 
+  it('budgets the option description into the width the label leaves (#14)', () => {
+    const { questionnaire } = make([choice({
+      options: [{ label: 'Alpha', description: 'x'.repeat(60) }, { label: 'Beta' }],
+    })])
+    const rows = questionnaire.render(60)
+    // The label `  → Alpha` is 9 columns, so the description gets 51:
+    // ` — ` plus 48 columns of text, the fake's `...` ellipsis included —
+    // the whole row stays at 60 instead of overflowing the width guard.
+    expect(rows[5]).toBe(`^  → Alpha^~ — ${'x'.repeat(45)}...~`)
+    questionnaire.handleInput(KEY.escape)
+  })
+
+  it('flattens and truncates a multi-line description to one row', () => {
+    const { questionnaire } = make([choice({
+      options: [{ label: 'Alpha', description: 'line one\nline two' }],
+    })])
+    expect(questionnaire.render(60)[5]).toBe('^  → Alpha^~ — line one line two~')
+    questionnaire.handleInput(KEY.escape)
+  })
+
+  it('hides the description when the label leaves it fewer than five columns', () => {
+    const { questionnaire } = make([choice({
+      options: [
+        // Prefix plus 51 label columns = 55, leaving 5: the last budgeted
+        // description width (the ` — ` separator plus the ellipsis).
+        { label: 'A'.repeat(51), description: 'edge' },
+        // 52 columns leave 4 — under the five-column floor: no description.
+        { label: 'B'.repeat(52), description: 'gone' },
+      ],
+    })])
+    const rows = questionnaire.render(60)
+    expect(rows[5]).toBe(`^  → ${'A'.repeat(51)}^~ —...~`)
+    expect(rows[6]).toBe(`    ${'B'.repeat(52)}`)
+    questionnaire.handleInput(KEY.escape)
+  })
+
   it('truncates long option lists behind a muted ellipsis row', () => {
     const options = Array.from({ length: 10 }, (_, index) => ({ label: `opt-${index}` }))
     const { questionnaire } = make([choice({ options })])
