@@ -38,7 +38,8 @@ import type { HelpSection } from './help.ts'
 import { HelpOverlay } from './help.ts'
 import { registerModelCommands } from './model-commands.ts'
 import { registerModeCommands, setupModeTracking } from './mode-commands.ts'
-import { SessionList } from './select.ts'
+import { SelectListPanel } from './select-list.ts'
+import { CURRENT_MARK } from './symbols.ts'
 import { registerThemeCommand } from './theme-switch.ts'
 
 /** Stable Cordis plugin name. */
@@ -98,25 +99,25 @@ export function apply(ctx: Context): void {
     }
     const currentId = ctx.get('blueSession')?.current?.id
     const sorted = [...headers].sort((a, b) => b.createdAt - a.createdAt)
-    const list = new SessionList({
+    const list = new SelectListPanel({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,
-      items: sorted.map(header => ({
+      rows: sorted.map(header => ({
         value: String(header.id),
         label: `${header.id} · ${formatDate(header.createdAt)} · ${header.cwd ?? ''}`,
-        current: header.id === currentId,
+        ...(header.id === currentId ? { badge: CURRENT_MARK } : {}),
       })),
       title: 'Sessions',
       titleHint: '· esc cancel · ↵ resume',
-      onSelect: (item) => {
+      onSelect: (row) => {
         restore()
-        if (item.value === String(currentId)) {
+        if (row.value === String(currentId)) {
           getSharedEditor()?.notice?.(display.colors.error('already the current session'))
           return
         }
-        ctx.emit('blue/request-resume', item.value)
-        getSharedEditor()?.notice?.(`resuming session ${item.value}`)
+        ctx.emit('blue/request-resume', row.value)
+        getSharedEditor()?.notice?.(`resuming session ${row.value}`)
       },
       onCancel: () => {
         restore()

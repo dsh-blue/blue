@@ -1,13 +1,14 @@
 /**
- * `BlueSelect`: the multi-select option-list overlay component,
- * `SessionList`: the single-select session picker list, and `BluePanel`,
- * the header-plus-child overlay container. Single-select lists moved to
- * `ctx.blueComponents.createSelectList` (the pi-tui SelectList); pi-tui
- * ships no multi-select component, so BlueSelect stays as the
- * multi-select-only implementation, and the session picker renders its own
- * kimi-style rows (the `← current` badge needs per-row styling the opaque
- * SelectList cannot carry). Both lists frame themselves with the S12
- * dialog chrome (`framePanel`): title, full-width rules, and a key row.
+ * `BlueSelect`: the multi-select option-list overlay component, and
+ * `BluePanel`, the header-plus-child overlay container. Single-select
+ * lists moved to `ctx.blueComponents.createSelectList` (the pi-tui
+ * SelectList) until S24b extracted the shared `SelectListPanel`
+ * (`select-list.ts`) — now the home of every single-select pick surface
+ * (/sessions, /provider, /permission) and the list-geometry helpers.
+ * pi-tui ships no multi-select component, so BlueSelect stays as the
+ * multi-select-only implementation (checkbox rows, the `selectedBg`
+ * cursor) and consumes those helpers for its window and wraparound.
+ * Both lists frame themselves with the S12 dialog chrome (`framePanel`).
  * Key resolution goes through `ctx.blueKeymap`, styling through
  * `ctx.blueTheme`, and width math through `ctx.blueComponents`.
  *
@@ -23,7 +24,8 @@ import {
   ACTION_SUBMIT,
   ACTION_TOGGLE,
 } from './keys.ts'
-import { CURRENT_MARK, SELECT_POINTER } from './symbols.ts'
+import { SELECT_POINTER } from './symbols.ts'
+import { MAX_LIST_VISIBLE, counterRow, cycle, oneLine, windowedRange } from './select-list.ts'
 
 /** One selectable entry. */
 export interface BlueSelectItem {
@@ -57,19 +59,6 @@ export interface BlueSelectOptions {
   readonly onCancel: () => void
 }
 
-/** Rows of items rendered at once; longer lists scroll. */
-const MAX_VISIBLE = 8
-
-/**
- * Collapse a multi-line string to one line for list rendering: a pure
- * string transform with no width math, kept local to this module.
- * @param text - the raw text.
- * @returns the text with line breaks replaced by spaces, trimmed.
- */
-function oneLine(text: string): string {
-  return text.replace(/[\r\n]+/g, ' ').trim()
-}
-
 /**
  * Multi-select option-list overlay: Up/Down wrap the cursor, Space toggles,
  * Enter confirms the toggled set (the focused entry when nothing was
@@ -94,11 +83,11 @@ export class BlueSelect implements BlueFocusable {
   handleInput(data: string): void {
     const { keymap, items } = this.options
     if (keymap.matches(data, ACTION_MOVE_UP)) {
-      this.cursor = this.cursor === 0 ? items.length - 1 : this.cursor - 1
+      this.cursor = cycle(this.cursor, items.length, -1)
       return
     }
     if (keymap.matches(data, ACTION_MOVE_DOWN)) {
-      this.cursor = this.cursor === items.length - 1 ? 0 : this.cursor + 1
+      this.cursor = cycle(this.cursor, items.length, 1)
       return
     }
     if (keymap.matches(data, ACTION_TOGGLE)) {
@@ -131,11 +120,7 @@ export class BlueSelect implements BlueFocusable {
   render(width: number): string[] {
     const { items, components } = this.options
     const colors = this.options.theme.colors
-    const start = Math.max(0, Math.min(
-      this.cursor - Math.floor(MAX_VISIBLE / 2),
-      items.length - MAX_VISIBLE,
-    ))
-    const end = Math.min(start + MAX_VISIBLE, items.length)
+    const { start, end } = windowedRange(this.cursor, items.length, MAX_LIST_VISIBLE)
     const lines: string[] = []
     for (let index = start; index < end; index += 1) {
       const item = items[index]
@@ -161,9 +146,8 @@ export class BlueSelect implements BlueFocusable {
     }
     // Long selections (a discovery adopt list) window instead of spilling
     // the screen — the S23 dogfood ruling for every list surface.
-    if (items.length > MAX_VISIBLE) {
-      lines.push(colors.textMuted(`  (${this.cursor + 1}/${items.length})`))
-    }
+    const counter = counterRow(this.cursor, items.length, MAX_LIST_VISIBLE)
+    if (counter !== undefined) lines.push(colors.textMuted(counter))
     lines.push('')
     return framePanel(lines, width, {
       title: this.options.title ?? 'Select',
@@ -193,117 +177,6 @@ export class BlueSelect implements BlueFocusable {
       `${key(ACTION_SUBMIT)} confirm`,
       `${key(ACTION_CANCEL)} cancel`,
     ]
-  }
-}
-
-/** One selectable session row. */
-export interface SessionListItem {
-  /** Stable value returned on confirm. */
-  readonly value: string
-  /** User-facing label. */
-  readonly label: string
-  /** Renders the `← current` badge after the label (kimi CURRENT_MARK). */
-  readonly current?: boolean
-}
-
-/** Construction options for {@link SessionList}. */
-export interface SessionListOptions {
-  /** Keybinding registry used to resolve the list keys. */
-  readonly keymap: BlueKeymap
-  /** Theme supplying the cursor, badge, and rule colors. */
-  readonly theme: BlueTheme
-  /** Component factory supplying the width measurement/truncation helpers. */
-  readonly components: BlueComponents
-  /** Sessions to choose from, newest first. */
-  readonly items: readonly SessionListItem[]
-  /** Dialog title; defaults to `Sessions`. */
-  readonly title?: string
-  /** Muted key row rendered under the title. */
-  readonly titleHint?: string
-  /** Called with the focused entry when the confirm key is pressed. */
-  readonly onSelect: (item: SessionListItem) => void
-  /** Called when the cancel key is pressed. */
-  readonly onCancel: () => void
-}
-
-/**
- * Single-select session picker: Up/Down wrap the cursor, Enter selects,
- * Escape cancels. The cursor row takes the `❯ ` pointer in `primary`, and
- * the current session carries a `← current` badge; the dialog frames
- * itself with the S12 chrome (title + full-width rules).
- */
-export class SessionList implements BlueFocusable {
-  /** Whether the list currently holds focus. Managed by the screen. */
-  focused = false
-
-  private cursor = 0
-
-  /**
-   * @param options - see {@link SessionListOptions}.
-   */
-  constructor(private readonly options: SessionListOptions) {}
-
-  /**
-   * Dispatch one input sequence against the list keybindings.
-   * @param data - the input sequence as read from the terminal.
-   */
-  handleInput(data: string): void {
-    const { keymap, items } = this.options
-    if (keymap.matches(data, ACTION_MOVE_UP)) {
-      this.cursor = this.cursor === 0 ? items.length - 1 : this.cursor - 1
-      return
-    }
-    if (keymap.matches(data, ACTION_MOVE_DOWN)) {
-      this.cursor = this.cursor === items.length - 1 ? 0 : this.cursor + 1
-      return
-    }
-    if (keymap.matches(data, ACTION_SUBMIT)) {
-      const item = items[this.cursor]
-      if (item !== undefined) this.options.onSelect(item)
-      return
-    }
-    if (keymap.matches(data, ACTION_CANCEL)) this.options.onCancel()
-  }
-
-  /** No cached render state. */
-  invalidate(): void {}
-
-  /**
-   * Render the framed dialog: the visible window of sessions with the
-   * cursor pointer, the current-session badge, and a scroll position.
-   * @param width - current viewport width in columns.
-   * @returns one string per rendered row.
-   */
-  render(width: number): string[] {
-    const { items, components } = this.options
-    const colors = this.options.theme.colors
-    const start = Math.max(0, Math.min(
-      this.cursor - Math.floor(MAX_VISIBLE / 2),
-      items.length - MAX_VISIBLE,
-    ))
-    const end = Math.min(start + MAX_VISIBLE, items.length)
-    const lines: string[] = []
-    for (let index = start; index < end; index += 1) {
-      const item = items[index]
-      /* v8 ignore next -- start/end are clamped to items.length, so the index is always valid */
-      if (item === undefined) continue
-      const prefix = index === this.cursor ? `${SELECT_POINTER} ` : '  '
-      const badge = item.current === true ? `  ${CURRENT_MARK}` : ''
-      const row = components.truncateToWidth(`${prefix}${item.label}${badge}`, width)
-      lines.push(index === this.cursor ? colors.primary(row) : row)
-    }
-    if (items.length > MAX_VISIBLE) {
-      lines.push(colors.textMuted(`  (${this.cursor + 1}/${items.length})`))
-    }
-    lines.push('')
-    const titleHint = this.options.titleHint
-    return framePanel(lines, width, {
-      title: this.options.title ?? 'Sessions',
-      titlePaint: colors.primary,
-      ...titleHint === undefined ? {} : { titleHint },
-      hintPaint: colors.textMuted,
-      rulePaint: colors.primary,
-    })
   }
 }
 

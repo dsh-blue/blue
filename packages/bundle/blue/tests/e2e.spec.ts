@@ -10,7 +10,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -133,6 +133,17 @@ function stripSgr(row: string): string {
     .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
     .replace(/\x1b\][^\u0007]*\u0007/g, '')
     .replace(/[\u0000-\u001f]/g, '')
+}
+
+/**
+ * Remove the checkout directory's basename from a frame: the banner and
+ * the status-cwd footer entry paint the session cwd, and a worktree named
+ * after the feature under test can carry the very words an absence
+ * assertion looks for (a `…-plan…` checkout would fake a plan badge).
+ */
+function stripCwdName(text: string): string {
+  const name = basename(process.cwd())
+  return name.length === 0 ? text : text.replaceAll(name, '')
 }
 
 /**
@@ -2693,7 +2704,11 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('yolo off') })
     tree.terminal.sendInput('x')
     await vi.waitFor(async () => {
-      const frame = await fullFrame(tree.terminal)
+      // The frame still paints the session cwd (banner + status-cwd
+      // entry), and this suite runs from checkouts whose directory name
+      // can itself contain the badge words (a `…-plan…` worktree) —
+      // strip the cwd basename so the assertion targets the badge.
+      const frame = stripCwdName(await fullFrame(tree.terminal))
       expect(frame).not.toContain('yolo')
       expect(frame).not.toContain('plan')
     })

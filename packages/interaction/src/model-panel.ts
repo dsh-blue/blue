@@ -7,6 +7,10 @@
  * chrome. Both mount through the D30 editor-slot replacement and resolve
  * their keys through `ctx.blueKeymap`.
  *
+ * ModelPanel keeps its own list geometry: the tab strip and type-to-search
+ * interleave chrome the S24b shared `SelectListPanel` (select-list.ts)
+ * cannot carry. Revisit only if a second tabbed panel appears.
+ *
  * @module @dsh-blue/blue-interaction/model-panel
  */
 
