@@ -39,8 +39,13 @@ import {
   type ContextFacts,
 } from './usage.ts'
 
-/** The harness release line Blue is pinned to (the `rc.N` tail of {@link BLUE_VERSION}). */
-const HARNESS_LINE = BLUE_VERSION.split('-').at(-1)!
+/**
+ * The harness release line Blue builds against — independent of Blue's own
+ * release version: the dsh-* dev pins stay on their own prerelease line
+ * while {@link BLUE_VERSION} is Blue's first-release number. Guarded by
+ * the global version spec against the dsh pins.
+ */
+const HARNESS_LINE = 'rc.7'
 
 /** The model facts the `/status` panel lists. */
 export interface StatusModelFacts {

@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository.
 
 ## Project overview
 
-**Blue** is the interactive terminal UI for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`). It is a renderer over the harness's [Cordis](https://github.com/deepseek-ai/cordis) plugin architecture, built on `@earendil-works/pi-tui`, and shipped as five `@dsh-blue/blue-*` packages (all at version `0.1.0-rc.7`). The packages were extracted from the `deepseek-harness` monorepo; this standalone repository builds and tests against the published npm releases of the harness and vendored Cordis. Blue is **not** part of a default `dsh` installation — it is added to a `dsh` profile as an out-of-tree plugin bundle.
+**Blue** is the interactive terminal UI for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`). It is a renderer over the harness's [Cordis](https://github.com/deepseek-ai/cordis) plugin architecture, built on `@earendil-works/pi-tui`, and shipped as five `@dsh-blue/blue-*` packages (all at version `0.1.0-rc.1` — the first release, the number the website's tagline promises). The packages were extracted from the `deepseek-harness` monorepo; this standalone repository builds and tests against the published npm releases of the harness and vendored Cordis. Blue is **not** part of a default `dsh` installation — it is added to a `dsh` profile as an out-of-tree plugin bundle.
 
 - Language: TypeScript (ESM only, `"type": "module"` everywhere).
 - Runtime: Node `^22.19.0 || >=24.0.0`; package manager pnpm 11 (pinned, `pnpm@11.7.0`).
@@ -106,7 +106,7 @@ Observed conventions:
 ## Dependency and workspace notes
 
 - `pnpm-workspace.yaml` denies the `koffi` build script (`allowBuilds: koffi: false`) — it is a Windows-only native boundary of dsh JSONL persistence and unnecessary on Linux/macOS; install still succeeds. It also pins `minimumReleaseAgeExclude` entries for the `@deepseek-ai/dsh-*@0.1.0-rc.7` line; add new harness deps there in the same format.
-- When bumping the harness release line, update the pinned `devDependencies` in all five packages consistently. The release version is one lockstep line under global control: the five `package.json` versions, `BLUE_VERSION`, every exact-pinned `@deepseek-ai/dsh-*` dev dependency, every `^`-ranged dsh peer, and the `pnpm-workspace.yaml` `minimumReleaseAgeExclude` pins must all agree — `packages/transcript/tests/version.spec.ts` fails on any drift, so a bump edits the same line everywhere at once.
+- There are TWO version lines under global control (`packages/transcript/tests/version.spec.ts` fails on any drift). **Blue's release line**: the six `package.json` versions (five publishable packages + `website/`), `BLUE_VERSION`, and the website's user-facing copy (`index.md` tagline, guide/faq) must all equal `0.1.0-rc.1` — the first release, which the site advertises. **The harness line**: every exact-pinned `@deepseek-ai/dsh-*` dev dependency, every `^`-ranged dsh peer, the `pnpm-workspace.yaml` `minimumReleaseAgeExclude` pins, and the `/version` notice's `HARNESS_LINE` constant (`session-commands.ts`) must all agree with each other — they ride the harness prerelease line and are deliberately NOT tied to Blue's number. Bumping Blue touches the six manifests + `BLUE_VERSION` + the website copy; upgrading the harness line touches the dsh pins + `HARNESS_LINE`.
 - `packages/bundle/blue` depends on the four libraries via `workspace:^`, which is unresolvable outside this workspace — relevant when installing into a `dsh` profile (link all five packages, as `script/install-dev.sh` does).
 
 ## Security considerations
@@ -118,4 +118,4 @@ Observed conventions:
 
 ## Verification status
 
-As of 2026-08-21, `pnpm run test` (1310 tests, 81 files), `pnpm run test:coverage` (per-file 100%), `pnpm run typecheck`, and `pnpm run lint` all pass on Node 22+/pnpm 11.
+As of 2026-08-21, `pnpm run test` (1313 tests, 81 files), `pnpm run test:coverage` (per-file 100%), `pnpm run typecheck`, and `pnpm run lint` all pass on Node 22+/pnpm 11.
