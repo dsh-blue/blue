@@ -36,6 +36,16 @@ echo "==> Link-installing Blue packages into profile '$PROFILE'"
   "link:$REPO_ROOT/packages/transcript" \
   "link:$REPO_ROOT/packages/app"
 
+# Harness packages the bundle patch references as loader entries resolve from
+# the profile root at boot; the global CLI bundles only what dsh-base needs.
+# Without this step a fresh profile boot-crashes on entries outside that
+# closure (first hit: dsh-session-title-all-prompts-llm).
+PROFILE_DIR="${DSH_HOME:-$HOME/.dsh}/profiles/$PROFILE"
+echo "==> Ensuring harness loader entries resolve from profile '$PROFILE'"
+node "$REPO_ROOT/script/ensure-loader-entries.mjs" \
+  "$REPO_ROOT/packages/bundle/blue" "$PROFILE_DIR" "$DSH_BIN"
+pnpm --dir "$PROFILE_DIR" install >/dev/null
+
 cat <<EOF
 
 Done. Blue is linked into profile '$PROFILE'.
