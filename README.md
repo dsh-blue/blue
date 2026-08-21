@@ -155,7 +155,7 @@ All design documents are in Chinese, under [docs/](docs/):
 - [docs/blue-seams.md](docs/blue-seams.md) — the seam catalog: every seam Blue opens (contracts, plain defaults) and which Blue plugin implements each harness-side visual surface.
 - [docs/blue-architecture.md](docs/blue-architecture.md) — architecture: philosophy, L0–L4 layers, stability rules.
 - [docs/blue-decisions.md](docs/blue-decisions.md) — decision records (ADR).
-- [docs/blue-roadmap.md](docs/blue-roadmap.md), [blue-p1-design.md](docs/blue-p1-design.md), [blue-p2-visual-design.md](docs/blue-p2-visual-design.md), [blue-mvp-plan.md](docs/blue-mvp-plan.md), [blue-commands-plan.md](docs/blue-commands-plan.md) — phase designs and implementation logs (the built-in slash-command checklist: kimi/pi/Claude Code/Codex reference merge, harness capability matrix, S23–S28 phasing, upstream seam requests).
+- [docs/blue-roadmap.md](docs/blue-roadmap.md), [blue-p1-design.md](docs/history/blue-p1-design.md), [blue-p2-visual-design.md](docs/history/blue-p2-visual-design.md), [blue-mvp-plan.md](docs/history/blue-mvp-plan.md), [blue-commands-plan.md](docs/blue-commands-plan.md) — phase designs and implementation logs (the built-in slash-command checklist: kimi/pi/Claude Code/Codex reference merge, harness capability matrix, S23–S28 phasing, upstream seam requests).
 - [AGENTS.md](AGENTS.md) — the authoritative per-package description of the current code.
 
 ## Relationship to deepseek-harness

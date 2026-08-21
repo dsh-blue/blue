@@ -1,6 +1,8 @@
 # Blue P1 分层设计：kimi-code 能力对照、层职责定稿与缝清单
 
-> 姊妹文档：[blue-architecture.md](./blue-architecture.md)（架构蓝图）、[blue-roadmap.md](./blue-roadmap.md)（阶段路线图）、[blue-decisions.md](./blue-decisions.md)（ADR，本文决策见 D17-D21）
+> **归档说明（2026-08-21，R6b 文档清账）**：本文档已完成历史使命，移入 docs/history/，正文保持归档时点原貌、不做改写。P1（S0-S9）已全部落地，缝清单正典现为 [blue-seams.md](../blue-seams.md)。更正：§4.3 的 ⛔/🚫 判定（/compact、/title 与 /tasks 前提、/yolo `/plan` `/permission`、/settings /reload、"不做"清单含 /provider /init /mcp* 等）为 P1 时点判定、已系统性偏窄，更正正典见 [blue-commands-plan.md](../blue-commands-plan.md) §1.3，运行时状态以 [blue-seams.md](../blue-seams.md) §3 为准。现状以 [blue-roadmap.md](../blue-roadmap.md)、[blue-decisions.md](../blue-decisions.md) 为准；索引见 [docs/README.md](../README.md)。
+
+> 姊妹文档：[blue-architecture.md](../blue-architecture.md)（架构蓝图）、[blue-roadmap.md](../blue-roadmap.md)（阶段路线图）、[blue-decisions.md](../blue-decisions.md)（ADR，本文决策见 D17-D21）
 > 本文档回答三个问题：**每层放什么**（§2，允许破坏性重排）、**kimi-code 的每项能力落到哪**（§3-§5）、**下游插件能用哪些缝**（§6）。
 > 参照系：kimi-code（MoonshotAI，pi-tui 系 TUI，调研基于其源码，非视觉复刻目标）。
 
@@ -244,8 +246,8 @@ L0  core 内部    终端生命周期 · OSC 11 · alt-screen · 全局键分发
 | `ctx.commands.register` | 注册 slash 命令，自动进入 Blue 的补全菜单 | ✅ |
 | `ctx.userQuestions.registerProvider` | 接管提问交互（Blue 是默认 provider，可被替换） | ✅ |
 | `'approval/request'` waterfall | 接管/包裹审批应答 | ✅ |
-| `ctx.permissionPresets` | 注册权限模式，Blue 模式 UI 自动列出 | ✅ rc.7+ 已落地（`/permission` 命令 + `permissions` 投影随 base；自定义注册 API 无）。2026-08-21 注：运行时状态以 [blue-seams.md](./blue-seams.md) §3 为准（选择器面板 S24，D33） |
-| `ctx.sessionProjections` | 提供 todos 等投影，pane-todo 自动呈现 | ✅ rc.7+ 已落地（`register/onChanged/checkpoint/restore`）；pane-todo 维持 `todo/write` 事件折叠，改挂为可选。2026-08-21 注：以 [blue-seams.md](./blue-seams.md) §3 为准 |
+| `ctx.permissionPresets` | 注册权限模式，Blue 模式 UI 自动列出 | ✅ rc.7+ 已落地（`/permission` 命令 + `permissions` 投影随 base；自定义注册 API 无）。2026-08-21 注：运行时状态以 [blue-seams.md](../blue-seams.md) §3 为准（选择器面板 S24，D33） |
+| `ctx.sessionProjections` | 提供 todos 等投影，pane-todo 自动呈现 | ✅ rc.7+ 已落地（`register/onChanged/checkpoint/restore`）；pane-todo 维持 `todo/write` 事件折叠，改挂为可选。2026-08-21 注：以 [blue-seams.md](../blue-seams.md) §3 为准 |
 | `ctx.tools.register` / `tools/*` | 定制 agent-loop 工具，经 render intent 自动呈现 | ✅（`dsh-tools`：registry + `ctx.tools.execute`/`guard` + `tools/pre-execute` 瀑布） |
 | `ctx.agents` / `ctx.sessions` | 会话与 agent 全量操作 | ✅ |
 

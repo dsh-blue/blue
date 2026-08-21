@@ -1,5 +1,7 @@
 # 调研：pi-tui 能力与限制
 
+> **归档说明（2026-08-21，R6b 文档清账）**：本文档为选型调研存档（pi-tui 0.84.2 时点），移入 docs/history/，正文保持归档时点原貌、不做改写。更正：文中"OSC 52 复制随 TuiAltScreen"的关联已被 S26 解连坐（OSC 52 为纯转义输出，与 scrollback/差分渲染无关，已随 /copy 落地）。现状以 [blue-roadmap.md](../blue-roadmap.md)、[blue-seams.md](../blue-seams.md) 为准；索引见 [docs/README.md](../README.md)。
+
 > 调研对象：`@earendil-works/pi-tui@0.84.2`（pi 单仓 `packages/tui`）。本文是 Blue 选型和 L0/L1 设计的依据存档。
 > 官方文档：<https://pi.dev/docs/latest/tui>
 
