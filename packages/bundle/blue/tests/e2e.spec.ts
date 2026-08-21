@@ -3009,7 +3009,8 @@ describe('blue whole-tree e2e', () => {
     expect(frame).toContain(`v${BLUE_VERSION}`)
     expect(frame).toContain('harness')
     expect(frame).toContain('rc.7')
-    expect(frame).toContain('mock (mock)')
+    // The panel is version-only: no model section even with a live session.
+    expect(frame).not.toContain('mock (mock)')
     // Escape restores the editor: the panel leaves the next full frame
     // (the version section heading is the panel-only marker).
     tree.terminal.sendInput('\x1b')

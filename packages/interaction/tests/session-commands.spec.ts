@@ -43,24 +43,13 @@ describe('formatCreated', () => {
 })
 
 describe('buildVersionSections', () => {
-  it('lists the Blue and harness lines, plus the live model when present', () => {
-    const bare = buildVersionSections()
-    expect(bare.map(section => section.heading)).toEqual(['Version'])
-    expect(bare[0]!.rows).toEqual([
+  it('lists the Blue and harness release lines', () => {
+    const sections = buildVersionSections()
+    expect(sections.map(section => section.heading)).toEqual(['Version'])
+    expect(sections[0]!.rows).toEqual([
       { label: 'blue', segments: [{ text: `v${BLUE_VERSION}` }] },
       { label: 'harness', segments: [{ text: 'rc.7' }] },
     ])
-    const withModel = buildVersionSections({ provider: 'deepseek', model: 'deepseek-chat', effort: 'high' })
-    expect(withModel.map(section => section.heading)).toEqual(['Version', 'Model'])
-    expect(withModel[1]!.rows[0]!.segments).toEqual([
-      { text: 'deepseek-chat (deepseek)' },
-      { text: ' · thinking high', style: 'muted' },
-    ])
-  })
-
-  it('omits the effort tail when the model reports none', () => {
-    const sections = buildVersionSections({ provider: 'p', model: 'm' })
-    expect(sections[1]!.rows[0]!.segments).toEqual([{ text: 'm (p)' }])
   })
 })
 
@@ -444,9 +433,9 @@ describe('registerSessionCommands', () => {
     expect(rows.some(row => row.includes('not set'))).toBe(true)
   })
 
-  it('opens the /version panel over the release lines and the live model', async () => {
+  it('opens the /version panel over the release lines and closes on Escape', async () => {
     const { ctx, screen, agent } = await mount({
-      modelRef: { current: { provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'high' as never } },
+      modelRef: { current: { provider: 'deepseek', model: 'deepseek-chat' } },
     })
     const result = await run(ctx, agent, '/version')
     expect(result).toEqual({ kind: 'success' })
@@ -454,18 +443,19 @@ describe('registerSessionCommands', () => {
     const rows = plain((overlay.component as InfoPanel).render(80))
     expect(rows.some(row => row.includes(`v${BLUE_VERSION}`))).toBe(true)
     expect(rows.some(row => row.includes('harness'))).toBe(true)
-    expect(rows.some(row => row.includes('deepseek-chat (deepseek) · thinking high'))).toBe(true)
+    // The panel is version-only: no model section even with a live session.
+    expect(rows.some(row => row.includes('deepseek-chat'))).toBe(false)
     overlay.component.handleInput?.('\x1b')
     expect(overlay.hidden).toBe(true)
   })
 
-  it('opens the /version panel with the version section alone on an empty slot', async () => {
+  it('opens the /version panel on an empty slot too', async () => {
     const { ctx, screen, agent } = await mount({ attach: false })
     const result = await run(ctx, agent, '/version')
     expect(result).toEqual({ kind: 'success' })
     const rows = plain((screen.overlays.at(-1)!.component as InfoPanel).render(80))
     expect(rows.some(row => row.includes(`v${BLUE_VERSION}`))).toBe(true)
-    expect(rows.some(row => row.includes('Model'))).toBe(false)
+    expect(rows.some(row => row.includes('harness'))).toBe(true)
   })
 
   it('guards /status and /usage with an error when no session is live', async () => {

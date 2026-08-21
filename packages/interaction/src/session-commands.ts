@@ -67,15 +67,13 @@ export function formatCreated(createdAt: number): string {
 
 /**
  * Build the `/version` panel's sections (pure, for the spec): the Blue
- * release line and the harness line it builds against, plus — when a
- * session is live — its current model. The Blue number is the first
- * release the website advertises; the harness line is the independent
- * dsh pin line (the version spec keeps both in check).
- * @param model - the live model facts, when a session is live.
+ * release line and the harness line it builds against. The Blue number
+ * is the first release the website advertises; the harness line is the
+ * independent dsh pin line (the version spec keeps both in check).
  * @returns the sections in display order.
  */
-export function buildVersionSections(model?: StatusModelFacts): InfoSection[] {
-  const sections: InfoSection[] = [
+export function buildVersionSections(): InfoSection[] {
+  return [
     {
       heading: 'Version',
       rows: [
@@ -84,21 +82,6 @@ export function buildVersionSections(model?: StatusModelFacts): InfoSection[] {
       ],
     },
   ]
-  if (model !== undefined) {
-    sections.push({
-      heading: 'Model',
-      rows: [{
-        label: 'model',
-        segments: [
-          { text: `${model.model} (${model.provider})` },
-          ...(model.effort !== undefined
-            ? [{ text: ` · thinking ${model.effort}`, style: 'muted' as const }]
-            : []),
-        ],
-      }],
-    })
-  }
-  return sections
 }
 
 /** Map a usage severity onto the segment styling the panel paints. */
@@ -466,10 +449,8 @@ export function registerSessionCommands(ctx: Context): () => void {
 
   /**
    * The `/version` handler: mount the read-only panel over the Blue and
-   * harness release lines, plus the live model when a session is up.
-   * Unlike the status family it needs no live session — the version
-   * answers before one exists — so the panel opens with the version
-   * section alone on an empty slot.
+   * harness release lines. It needs no live session — the version answers
+   * before one exists — so the panel opens on an empty slot too.
    * @returns the command outcome.
    */
   function showVersion(): CommandResult {
@@ -477,14 +458,12 @@ export function registerSessionCommands(ctx: Context): () => void {
     if (display === undefined) {
       return { kind: 'error', text: 'version panel is unavailable: the Blue screen is not mounted' }
     }
-    const agent = ctx.get('blueSession')?.current
-    const model = agent !== undefined && agent !== null ? readModelFacts(ctx, agent) : undefined
     const restore = mountEditorReplacement(new InfoPanel({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,
       title: 'version',
-      sections: buildVersionSections(model),
+      sections: buildVersionSections(),
       onClose: () => {
         restore()
       },
