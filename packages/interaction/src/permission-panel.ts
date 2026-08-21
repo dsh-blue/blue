@@ -60,11 +60,6 @@ export interface PermissionPresetsService {
   optionOf(name: string): { readonly value: string, readonly name: string, readonly description?: string }
 }
 
-/** Render one failure reason for an error result. */
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
 /** The derived one-line row description: the knob facts a bare table key hides. */
 function presetDescription(spec: PermissionPresetSpec): string {
   return `sandbox ${spec.sandbox} · approval ${spec.approval}`
@@ -109,15 +104,18 @@ export function openPermissionPanel(ctx: Context, agent: Agent): void {
         getSharedEditor()?.notice?.(paint === undefined ? result.text : paint(result.text))
       },
       error => {
-        /* v8 ignore next -- execute() normalizes handler rejections; this
-           arm guards only the append-failure loud path */
-        ctx.logger.warn(`permission dispatch failed: ${describe(error)}`)
+        // execute() rethrows handler failures and append failures alike;
+        // the picker has no panel left to paint them on, so the loud path
+        // is the logger.
+        ctx.logger.warn(`permission dispatch failed: ${error instanceof Error ? error.message : String(error)}`)
       },
     )
   }
 
   // The list stays mounted under the danger gate: cancelling the form
   // pops the stack back onto the picker instead of rebuilding it.
+  /* v8 ignore next -- the placeholder only runs if the panel settles
+     before its mount returns, which the building order forbids */
   let restoreList: () => void = () => {}
   const confirmDanger = (name: string): void => {
     const fields: FormField[] = [{

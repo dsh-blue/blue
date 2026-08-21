@@ -48,6 +48,12 @@ interface MountOptions {
   presets?: PermissionPresetsService
   /** What the spy /permission command returns for every dispatch. */
   outcome?: { kind: 'success', text: string } | { kind: 'error', text: string }
+  /** Register the spy command (default); false leaves /permission absent. */
+  registerCommand?: boolean
+  /** Make the spy succeed with no result text. */
+  textless?: boolean
+  /** Make the spy handler throw (Error or bare string). */
+  reject?: Error | string
 }
 
 async function mount(options: MountOptions = {}): Promise<{
@@ -64,18 +70,22 @@ async function mount(options: MountOptions = {}): Promise<{
   const agent = { id: session.id, session, status: 'idle' } as unknown as Agent
   ctx.provide('permissionPresets', options.presets ?? fakePresets())
   const runs: string[] = []
-  ctx.commands.register({
-    name: 'permission',
-    description: 'spy standing in for the upstream command',
-    input: { hint: '<preset>' },
-    handler: invocation => {
-      runs.push(invocation.rawInput)
-      // Mirror the upstream command: rawInput arrives with the leading
-      // space; the result text names the trimmed preset.
-      const name = invocation.rawInput.trim()
-      return options.outcome ?? { kind: 'success' as const, text: `preset ${name}` }
-    },
-  })
+  if (options.registerCommand !== false) {
+    ctx.commands.register({
+      name: 'permission',
+      description: 'spy standing in for the upstream command',
+      input: { hint: '<preset>' },
+      handler: invocation => {
+        runs.push(invocation.rawInput)
+        // Mirror the upstream command: rawInput arrives with the leading
+        // space; the result text names the trimmed preset.
+        const name = invocation.rawInput.trim()
+        if (options.textless === true) return { kind: 'success' as const }
+        if (options.reject !== undefined) throw options.reject
+        return options.outcome ?? { kind: 'success' as const, text: `preset ${name}` }
+      },
+    })
+  }
   const notices: string[] = []
   setSharedEditor({
     editor: { focused: false, render: () => [], invalidate: () => {} } as never,
@@ -180,6 +190,44 @@ describe('openPermissionPanel', () => {
     expect(top(mounted).hidden).toBe(true)
     expect(mounted.runs).toEqual([])
     expect(mounted.notices).toEqual([])
+  })
+
+  it('swallows a dispatch against an unregistered command', async () => {
+    const mounted = await mount({ registerCommand: false })
+    openPermissionPanel(mounted.ctx, mounted.agent)
+    top(mounted).component.handleInput(KEY.enter)
+    // The panel closed on select; execute() resolved undefined and the
+    // dispatch settled silently — no notice, nothing thrown.
+    await vi.waitFor(() => { expect(top(mounted).hidden).toBe(true) })
+    expect(mounted.notices).toEqual([])
+  })
+
+  it('stays silent for a success result without text', async () => {
+    const mounted = await mount({ textless: true })
+    openPermissionPanel(mounted.ctx, mounted.agent)
+    top(mounted).component.handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(mounted.runs).toEqual([' workspace-write']) })
+    await vi.waitFor(() => { expect(mounted.notices).toEqual([]) })
+  })
+
+  it('warns through the logger for an Error dispatch rejection', async () => {
+    const mounted = await mount({ reject: new Error('route exploded') })
+    const warn = vi.spyOn(mounted.ctx.logger, 'warn')
+    openPermissionPanel(mounted.ctx, mounted.agent)
+    top(mounted).component.handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(warn).toHaveBeenCalledOnce() })
+    expect(String(warn.mock.calls[0]?.[0])).toContain('permission dispatch failed: route exploded')
+    expect(mounted.notices).toEqual([])
+  })
+
+  it('renders a non-Error dispatch rejection through String()', async () => {
+    const mounted = await mount({ reject: 'bare boom' })
+    const warn = vi.spyOn(mounted.ctx.logger, 'warn')
+    openPermissionPanel(mounted.ctx, mounted.agent)
+    top(mounted).component.handleInput(KEY.enter)
+    await vi.waitFor(() => {
+      expect(String(warn.mock.calls[0]?.[0])).toContain('permission dispatch failed: bare boom')
+    })
   })
 
   it('notices and does nothing when the Blue screen is not mounted', async () => {
