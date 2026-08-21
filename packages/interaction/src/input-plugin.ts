@@ -51,6 +51,9 @@ import type {
 } from '@dsh-blue/blue-core'
 import { parseCommand } from '@deepseek-ai/dsh-commands'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+// Empty type import carries the `permissionPresets` Context merge the
+// bare-/permission interception probes (the service rides dsh-base).
+import type {} from '@deepseek-ai/dsh-permission-presets'
 import {
   applySubmitTransformers,
   clearSharedEditor,
@@ -61,6 +64,7 @@ import { canonicalOf, withCommandAliases } from './command-meta.ts'
 import { clearDraft, getStashedDraft, getStashedHistory, stashDraft, stashHistory } from './draft-stash.ts'
 import { ACTION_CANCEL, ACTION_CYCLE_MODE, ACTION_INTERRUPT, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_STEER } from './keys.ts'
 import { cycleMode } from './mode-commands.ts'
+import { openPermissionPanel } from './permission-panel.ts'
 import { ACTION_QUEUE_RECALL, queuedMessageText } from './pane-queue.ts'
 import { currentBlueAgent } from './session.ts'
 import { filterSlashCommands, slashCommandLabel } from './slash-filter.ts'
@@ -256,6 +260,16 @@ export function apply(ctx: Context): void {
         content: applySubmitTransformers(line),
         source: { kind: 'user' },
       }))
+      return
+    }
+    // A bare `/permission` opens the preset picker (S24b, D33) instead of
+    // the upstream command's text listing — only while the preset service
+    // is composed, so a bare line degrades to the command below otherwise.
+    // With an argument the line passes through untouched: `/permission
+    // <name>` stays the upstream write path the picker itself dispatches.
+    if (parsed.name === 'permission' && parsed.rawInput.trim().length === 0
+      && ctx.get('permissionPresets') !== undefined) {
+      openPermissionPanel(ctx, agent)
       return
     }
     // An alias line (`/q`) is rewritten to its canonical command before
