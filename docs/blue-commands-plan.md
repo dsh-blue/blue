@@ -114,7 +114,7 @@ p1-design §4.3 是本文档的前身（MVP 后命令面调研）。本次逐符
 
 | 命令 | kimi | pi | CC | Codex | Blue 现状/去向 |
 |---|---|---|---|---|---|
-| `/preset [name]` | — | — | — | — | **S28** 待建（D33：agent 组合预设切换——`ctx.agentPresets.list/recompose`，空会话限定 + `agent-preset/selected` 事件配对；该插件**不在 dsh-base**（仅 web-app bundle），Blue bundle 加行+带依赖） |
+| `/preset [name]` | — | — | — | — | ✅ **S28 已落地（2026-08-21，D33+D37）**：agent 组合预设切换——`ctx.agentPresets.list/recompose`，自建空会话守卫（`turn/start` 缺席）+ `agent-preset/selected` 事件配对；bundle patch 加 agent-presets 行 + 包依赖，**薄宿主迁移（D37）后为真替换语义**，blue-app 建 agent 挂预设、resume 折事件重建 |
 | `/settings` (`config`) | ✅ | ✅ | `/config` | — | **S28** 待建（Blue 自有命名空间可写，harness 命名空间只读列出，⚠️） |
 | `/theme` | ✅ | — | ✅ | — | ✅ 已发货（theme-switch.ts） |
 | `/editor` | ✅ | — | — | — | 🚫 外部编辑器 Ctrl-G 未实现（roadmap P2 挂起） |
@@ -132,7 +132,7 @@ p1-design §4.3 是本文档的前身（MVP 后命令面调研）。本次逐符
 | `/plugins` | ✅ | — | ✅ | ✅ | 🚫 组合层已承担启停；CLI 另有 `dsh plugin --profile add`（安装外部插件包） |
 | `/apps` | — | — | — | ✅ | 🚫 无 connector 概念 |
 | `/hooks` | — | — | ✅ | ✅ | 🚫 命令不做；上游现成 hooks 兼容桥（dsh-hooks-claude-code / hooks-codex 方言，rc.5 未随 rc.6 发布，§3.2） |
-| `/tools` | ✅ | — | — | — | **S28** 待建（⚠️ interim：fold request/header.tools；真枚举需 §7 #8） |
+| `/tools` | ✅ | — | — | — | ✅ **S28 已落地（2026-08-21）**：`ctx.tools.schemas(scopeOf(agent.ctx))` 真枚举只读 InfoPanel，MCP 工具按 server 分节；fold 兜底路线未采用 |
 | `/tasks` (`task`) | ✅ | — | ✅ | ✅ | **S28** 待建（⚠️ Adapt：todo 面板 + jobs 视图；ctx.jobs + tool-jobs 现成，§3.2） |
 | `/init` | ✅ | — | ✅ | ✅ | ✅ 已发货（S27' 落地 2026-08-21：`interaction/src/session-init.ts` 罐头提示 followup 写 AGENTS.md + idle 守卫拒绝并发） |
 | `/login` / `/logout` | ✅ | ✅ | ✅ | — | 🚫 认证面由 harness settings/凭据承担 |
@@ -303,10 +303,10 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 | `/hotkeys` | pi | — | 别名 → /help | — | ✅ command-meta（机制已就绪） | 🚫 | **2026-08-21 用户裁决不做**（低价值，/help 已覆盖） |
 | `/settings` | kimi(别名 config)/pi/CC | 列表导航 | 编辑 Blue 自有命名空间（theme custom 路径等）；其他命名空间只读列出 | 列表面板 + 内联编辑（questionnaire 模式） | ⚠️ dsh-settings settingsNamespace + register(schemastery) + patch()；仅 Blue 自有命名空间可写 | S28 | harness 命名空间归其 owner 插件 |
 | `/reload` | kimi/pi | — | 重读 Blue settings + 主题重挂 | notice | ⚠️ theme-switch 换装机制已有；kimi 的 config.toml/tui.toml 语义不存在 | S28 | |
-| `/tools` | kimi | — | 列出当前会话工具集 | 面板 | ✅ ctx.tools.schemas(scope)（每可见工具一个深拷贝 schema，§7 #8 已解决）——真枚举 | S28 | §7 #8 缝撤销；fold EpochHeader.tools 仅兜底/对比 |
+| `/tools` | kimi | — | 列出当前会话工具集 | 面板 | ✅ ctx.tools.schemas(scopeOf(agent.ctx))（每可见工具一个深拷贝 schema，§7 #8 已解决）——真枚举 | ✅ S28（2026-08-21，InfoPanel + mcp__ 分节） | §7 #8 缝撤销；fold EpochHeader.tools 仅兜底/对比 |
 | `/tasks` | kimi/CC/Codex | — | 映射为 todo 面板 + jobs 视图 | 面板（pane-todo 复用） | ✅ ctx.jobs（job_output/list/kill，owner 按 SessionId 隔离，§3.2）+ todo/write 折叠 | S28 | Adapt 裁决：/tasks = todo 列表（默认）+ jobs 视图（可选，进程内无持久化） |
 | `/import` | pi/CC/Codex | 文件路径 | 外部 JSONL 解析+校验 → sessionPersistence.prepare + agents.create(seed) | 面板/notice | ⚠️ SESSION_FORMAT_VERSION=0 严格性、ignorable 标记、校验成本高 | 顺延 | 不阻塞主线 |
-| `/preset [name]` | Blue 原创（D33） | 无参=列表；补全=`ctx.agentPresets.list()` | 列出/切换 agent 组合预设（standard/minimal/code/cordis…）；空会话限定 | BlueSelect 面板（mountEditorReplacement，/sessions 模式） | ⚠️ `ctx.agentPresets.list/recompose` **不在 dsh-base**（仅 web-app bundle）——Blue bundle patch 加 `agent-presets` 行 + 包依赖（CLI 启动器见行即自动注入 shipped preset root）；sessionBlank 守卫 + `agent-preset/selected` 事件配对（进程内直调无 wire 层强制） | S28 | UI 能力探测走投影/键缺失（预设间能力面差异大：minimal 无 plan mode/compaction）；自定义 permission preset 注册 API 无（组合 YAML 固定），残余缝不请求 |
+| `/preset [name]` | Blue 原创（D33） | 无参=列表；补全=`ctx.agentPresets.list()` | 列出/切换 agent 组合预设（standard/minimal/code/cordis…）；空会话限定 | BlueSelect 面板（mountEditorReplacement，/sessions 模式） | ⚠️ `ctx.agentPresets.list/recompose` **不在 dsh-base**（仅 web-app bundle）——Blue bundle patch 加 `agent-presets` 行 + 包依赖（CLI 启动器见行即自动注入 shipped preset root）；sessionBlank 守卫 + `agent-preset/selected` 事件配对（进程内直调无 wire 层强制） | ✅ S28（2026-08-21，SelectListPanel + `/preset <id>` 重派发写路径；薄宿主迁移 D37 使替换语义为真） | UI 能力探测走投影/键缺失（预设间能力面差异大：minimal 无 plan mode/compaction）；自定义 permission preset 注册 API 无（组合 YAML 固定），残余缝不请求 |
 | `/mcp` | kimi/CC/Codex | 无参 | 服务器列表（serverName/transport/命令或 URL/超时/重连）+ 每服务器工具清单 + 近似连接状态 | 面板 | ✅ `ctx.loader.entries()` 过滤 `moduleName === '@deepseek-ai/dsh-mcp-client'`（Schemastery 归一化运行时配置；profile 根 `cordis.yml` 每次启动重写为空，不可读磁盘）+ `ctx.tools.schemas()` 按 `mcp__<server>__` 分组 + `tools/change` 重拉；bundle 包依赖带 dsh-mcp-client（D36） | S28 | 状态为近似（`failOnStartupError:false` 时 fiber active ≠ 已连接；重连预算耗尽后工具消失）；启停维持 ⛔ §7 #6，服务器声明走 profile patch（HMR 热生效） |
 | `/skills` | CC/Codex | 无参 | 列出 user-invocable 技能（name/description/whenToUse/来源层） | 面板 | ✅ `ctx.skills.list({scope})` + `isUserInvocable` 过滤 + `skills/change` 失效重拉（目录缓存与 `#` 补全共享，D34） | S29 | 随 `#` 提示符管线同期；`#name` 提交重写 `/name` 走上游手势注入（resume/replay 安全） |
 
@@ -347,7 +347,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 | **S25** 会话信息（✅ 已落地 2026-08-21；`/usage` 落地后经用户裁决更名 `/context`——CC 语义，kimi /usage 同款内容；同批裁决建立全局版本管控 `transcript/tests/version.spec.ts`） | `/status` `/context` `/version` | session.header / requestContext；`sessionProjections.snapshot` 读 tokenUsage/contextPressure/sessionStats 投影（token-meter/session-stats 均在 base）；`usage.ts` 薄读层 + `assistant/*` 纯折回退，不设累计器 | `InfoPanel`（`info-panel.ts`，kimi usage/status 报告形态 × /help 版式：两列 segment 行 + `█░` 严重级占用条 + showing 滚动窗，D30 editor-slot 挂载）+ notice | ✅ 全部达成：数字与投影一致（e2e 断言 64.2k 总数 + 4.1k/60k 分桶）；usage 跨 resume 重放正确（e2e：resume 后同总数）；/version 与 banner 常量一致（同一常量，`./banner-content` 子路径导出）；降级主机回退折 e2e 另证 |
 | **S26** 导出与复制（✅ 已落地 2026-08-21） | `/export` `/copy` | persistence.readRaw（supportsRawArtifacts=true）+ `ctx.sessions.flush` 先冲刷（write-behind coordinator）；fold.ts 折叠→Markdown（`decodeStorageRecord` 展开 chunk 行，新 peer+dev dep dsh-session）；新模块 interaction/src/clipboard-write.ts（注入式探测 wl-copy/xclip/pbcopy/clip.exe） | notice + 路径回显 | ✅ 全部达成：导出文件独立阅读（e2e 断言内容与 turn 结构）；复制文本与最近 assistant 消息一致（e2e 断言 fake writer 收到原文）；无剪贴板工具优雅报错（notice）；readRaw 守卫全分类（无会话/无 persistence/非 raw 后端/无 artifact/空折/坏行/写失败） |
 | **S27'** 轻命令族（✅ 已落地 2026-08-21；范围两度修订——首砍：用户裁决 `/hotkeys` 🚫 不做、`/diff` 移发版后、注入显隐定名 `/injections`；再砍：用户裁决 `/injections` 🚫 不做（维持 D28 默认隐藏），终版 `/init` `/clear` 两条） | `/init` `/clear` | command-meta 别名消费（`registerCommandAliases('new', ['clear'])`）；AGENTS.md 加载面已上游（dsh-agent-instructions，§3.2），/init 仅罐头提示写文件（`session-init.ts`，kimi 文案精神英文正文） | notice | ✅ 全部达成：/clear 别名可补全（下拉 `/new (clear)` 标注）可执行（e2e 断言 sessionChanges 增长同 /new）；/init 注册可见（/help 列出）+ idle 时罐头提示作为请求发出（e2e 断言 adapter.requests 消息含 exploration brief 与 AGENTS.md）+ 运行中拒绝（notice 断言，followup 不发） |
-| **S28** 配置与生态 | `/settings` `/reload` `/tools` `/tasks` + `/preset`（D33）+ `/mcp`（D36） | dsh-settings 注册 'blue' 命名空间；theme-switch 换装复用；ctx.tools.schemas()（§7 #8 已解决）；todo/write 折叠 + ctx.jobs（pane-todo 同源）；**agent-presets 行（bundle patch 新增 + 包依赖）**；**loader.entries + tools.schemas() mcp__ 分组 + bundle 带 dsh-mcp-client 依赖** | 列表+内联编辑面板（questionnaire 模式）/ notice / pane 面板 | 设置持久生效；/reload 只影响 Blue 自有面；/tools 列表与 schemas() 一致；/tasks = todo 折叠 + jobs 视图一致；/preset 空会话切换成功 + 非空会话守卫报错 + `agent-preset/selected` 事件入日志；/mcp 面板与 loader/tools 实况一致；上游自带命令（/compact /plan /goal /permission /feedback，§2.10）随组合可见且 /help 自动枚举 |
+| **S28** 配置与生态（**partial ✅ 2026-08-21**：/tools /preset + 薄宿主迁移 D37 已落地；/settings /reload /tasks /mcp 顺延） | ~~`/settings` `/reload`~~ `/tools` ✅ ~~`/tasks`~~ + `/preset`（D33）✅ + ~~`/mcp`（D36）~~ | dsh-settings 注册 'blue' 命名空间；theme-switch 换装复用；ctx.tools.schemas()（§7 #8 已解决）；todo/write 折叠 + ctx.jobs（pane-todo 同源）；**agent-presets 行（bundle patch 新增 + 包依赖）**；**loader.entries + tools.schemas() mcp__ 分组 + bundle 带 dsh-mcp-client 依赖** | 列表+内联编辑面板（questionnaire 模式）/ notice / pane 面板 | 设置持久生效；/reload 只影响 Blue 自有面；/tools 列表与 schemas() 一致；/tasks = todo 折叠 + jobs 视图一致；/preset 空会话切换成功 + 非空会话守卫报错 + `agent-preset/selected` 事件入日志；/mcp 面板与 loader/tools 实况一致；上游自带命令（/compact /plan /goal /permission /feedback，§2.10）随组合可见且 /help 自动枚举 |
 | **S29** 技能管线 | `#` skills 提示符 + `/skills` 列表命令（D34/D35） | ✅ 上游手势路径（tool-skill pre-step `/name` 注入，base）；ctx.skills.list + isUserInvocable + skills/change；SubmitTransformer `#name`→`/name` 重写（仅命中目录的技能名，保证前置空白） | 补全 UI 复用 `@` 分支形态（S22 file-mention/D31 先例）+ BlueSelect 面板 | `#` 弹补全列 user-invocable 技能、选中插 `#name` 字面文本；提交重写后手势注入生效且 resume 重放正确（注入体按 D28 隐藏）；markdown 标题行（`# ` 空格形态）不误触发；未知 `#tag` 原样保留；/skills 面板与补全目录同源；`skills/change` 后补全刷新 |
 
 每步门禁：`pnpm run test` / `test:coverage`（逐文件 100%）/ `typecheck` / `lint` 全绿；README 双语同步；bundle e2e 用例随步增加（每命令 ≥1 用例：注册可见 + 主路径行为 + 守卫路径）。
@@ -490,7 +490,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 | `/context` | — | — | ✅ | — | **不做**（2026-08-21 用户裁决：注入显隐维持 D28 默认隐藏，定名 /injections 后再砍——挂起区有条目） |
 | `/diff` | — | — | ✅ | ✅ | **Adopt**（发版后，roadmap 挂起区） |
 | `/settings` | ✅ | ✅ | ✅ | — | **Adapt**（S28，仅 Blue 命名空间可写） |
-| `/reload` | ✅ | ✅ | — | — | **Adapt**（S28，仅 Blue 自有 settings） |
+| `/reload` | ✅ | ✅ | — | — | **Adapt**（S28 顺延，仅 Blue 自有 settings） |
 | `/tools` | ✅ | — | — | — | **Adapt**（S28，消费 ctx.tools.schemas() 真枚举） |
 | `/tasks` | ✅ | — | ✅ | ✅ | **Adapt**（S28，todo 面板 + jobs 视图） |
 | `/import` | — | ✅ | ✅ | ✅ | **Adapt**（顺延，JSONL 校验严格） |

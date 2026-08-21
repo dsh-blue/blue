@@ -46,7 +46,7 @@ harness（dsh-base）自己开的缝，Blue 作为下游插件实现——**用�
 | `ctx.permissionPresets` | 权限预设（sandbox 模式 + approval policy 命名束） | ✅ S24b 已落地（2026-08-21，D33）：选择器面板读服务（`current(events)` ≡ 投影 fold——投影键未消费，留给未来消费者）、裸 `/permission` 输入层拦截开面、选中提交 `/permission <name>` 同一写路径、danger typed-y gate；命令本体 dsh-permission-presets 自带、零实现 | ✅ 服务在（rc.7+ base；rc.8 扩表 read-only） |
 | `ctx.planMode` + plan-review 问询 | plan 模式（`/plan` 命令 dsh-plan-mode 自带、`plan/mode` 事件、`plan` 投影、`exit_plan_mode` 工具经 `ctx.userQuestions` 以 `intent.kind === 'plan-review'` 问询） | 命令零实现（随 base 到货）；模式指示器 ✅ S24a（`blue-status-mode` 徽标 + Shift+Tab 三态循环）；plan-review 专用呈现 ✅ S24b（`plan-review-panel.ts`：Markdown 滚动窗 + 双选 + 反馈编辑器；dismissal 码勘误 `ASK_CANCELLED`） | ✅ 服务在（rc.7+ base）；呈现已落地 |
 | `ctx.skills` + 手势路径 | 技能发现/调用（分层注册表 + skill-filesystem 六层根 + `tool-skill` pre-step `/name` 手势注入） | S29 待做（D34：`#` 提示符补全 + 提交重写 `#name`→`/name` 走手势路径 + `/skills` 列表） | ✅ 服务在（rc.7+ base） |
-| `ctx.agentPresets` | agent 组合预设（list/resolve/mount/recompose；`agent-preset/selected` 事件） | S28 待做（D33：`/preset` 命令——空会话 sessionBlank 守卫 + 事件配对）；**插件行不在 dsh-base**（仅 web-app bundle），Blue bundle patch 加行 + 带依赖 | ⚠️ bundle 加行后可用 |
+| `ctx.agentPresets` | agent 组合预设（list/resolve/mount/recompose；`agent-preset/selected` 事件） | ✅ 已消费（2026-08-21，S28+D37）：`/preset` 命令（空会话守卫 + 事件配对）+ blue-app 建 agent 时 mount（resume 折事件重建）；bundle patch 已加行 + 带依赖，薄宿主迁移后为真替换语义 | ✅ |
 | `ctx.sessionProjections` | 会话投影（register/onChanged/checkpoint/restore） | rc.7+ 已在 base（dsh-session-projection）；`pane-todo` 维持 `todo/write` 会话事件折叠，改挂投影为可选项（未裁决） | ✅ 服务在 |
 
 注意分界：`pane-todo` 消费的是**会话事件流**（`todo/write` 整表快照自折叠），不是一条 harness 缝；harness 未来若开出 `sessionProjections`，`pane-todo` 可平滑改挂。

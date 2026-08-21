@@ -13,7 +13,7 @@ This repository is the standalone home of those packages. They were extracted fr
 - **Overlays** — four-option approval panel (with session-level "always allow" inheritance) and tabbed user-questionnaire overlays.
 - **Two-row status footer** — model name (priority 0), the session-mode badge `plan`/`yolo` (priority 2, hidden in normal mode), git branch (priority 10), context occupancy `ctx N` (priority 20); entries are registry contributions, not hardcoded. Shift+Tab cycles the session mode normal → plan → yolo (`/yolo` auto-approves tool calls, questions still pop).
 - **Bottom dock panes** — activity spinner while the agent runs, queued inbox messages with Up-to-recall, todo list with the Ctrl-T collapse toggle, and a `/btw` side-question pane that forks the live session.
-- **Slash commands** — `/quit` `/new` (`/clear` is its alias) `/fork` `/sessions` (`/resume` is its alias) `/help` `/theme` `/btw` `/model` `/effort` `/provider` `/yolo` `/init`, all auto-listed in the editor's completion menu.
+- **Slash commands** — `/quit` `/new` (`/clear` is its alias) `/fork` `/sessions` (`/resume` is its alias) `/help` `/theme` `/btw` `/model` `/effort` `/provider` `/yolo` `/init` `/status` `/context` `/version` `/export` `/copy` `/tools` `/preset`, all auto-listed in the editor's completion menu. `/preset` switches the agent composition (blank sessions only) over the thin-host preset roster; `/tools` lists the session's live tool catalog.
 - **Theming** — `/theme` hot-switching across `dark` / `light` / `auto` (OSC 11 background detection) / `custom` (JSON palette).
 
 ## Design philosophy
