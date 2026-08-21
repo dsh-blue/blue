@@ -268,6 +268,7 @@
 - **理由**：子会话流是唯一不赌组合隔离契约、又能拿到 kimi 级信息的通道（Blue 侧纯工程，零上游依赖、零新包依赖）；pane-btw side-session 订阅为生产先例；A+ 基线保证 replay 诚实降级与无流回退。
 - **后果/边界**：同 prompt 字节级相同的并行成员首见序 tiebreak（最坏两行统计互换）；continuable 唤醒/冷复重开计数为"本 epoch"语义（与 harness epoch 记账一致）；崩溃孤儿 pending 与 ReadGroup 同形既有语义；远程 provider（无本地会话）成员保持 fold-only；`/export` 输出每成员独立 Tool Call 段（分组是挂载层幻象，export 天然降级）。
 - **落地（2026-08-21，worktree 待人工验收）**：渲染层成组（`agent-group.ts`，ReadGroup 克隆）+ fold 记录信封 wall clock（`startedAt`/`endedAt`）+ 子会话 tracker（`agent-live.ts`：header 准入、O(1) reducer、两级关联、`firstLiveSeq` 种子）+ 组件第 5 参 live 查询合并（running/waiting 覆盖早熟 ack、kimi stats 行、活动二行、收束 Σ 尾）；1420 tests / coverage 逐文件 100% / typecheck / lint / build 全绿；验收 dogfood 实测 phase 迁移链 `(3 running) → (1 done, 2 running) → … → 3 agents finished · 10 tools · 211k tok · 7s` 与活动行滚动（Thinking…/Using glob/read/bash）。
+- **形态修订（2026-08-21，验收反馈裁决）**：kimi 源码核实其 subagent 呈现有两条路径——普通 `Agent` 工具是流内组卡（本实现首版同构），而 **AgentSwarm 是钉住 pane**（挂 transcript 尾=视觉钉 dock 正上方、子事件全吞、下一 `turn.started` 硬删不进历史、replay 一行摘要）。验收裁决采用 Swarm 语义：**`blue-pane-agents` dock pane**（bundle 行序 activity → queue → todo → btw → **agents** → editor，紧贴编辑框上部）+ **fold 抑制 spawn 类**（todo_write 先例，流与 export 均无 spawn 卡，pane 是唯一呈现面）+ **settled 组保留到下一 turn/start**（live overlay 有 running/waiting 成员则跨 turn 保留——后台 ack 早熟但子会话在跑时不清）+ **resume 快照重建收束卡**（无 live 叠加）。mount 层分组与 mountSession tracker 退役；`AgentGroupComponent`/`agent-live.ts` 原样复用为 pane 内件。随批顺修 queue pane 既有缺陷（字符数截断遇 CJK 漏 2 列触发 pi-tui 宽度守卫崩溃，验收首日实锤）。1427 tests / coverage 逐文件 100% 全指标。
 
 ## 已知遗留（MVP 有意为之）
 
