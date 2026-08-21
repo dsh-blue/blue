@@ -5,12 +5,14 @@
  * `blue/request-resume` directly (`/resume` is its alias — the S24a
  * dogfood ruling: one command, both surfaces); `/new` emits
  * `blue/request-new`, and `/fork` emits `blue/request-fork` for the app
- * layer to perform the switch; `/help` lists
+ * layer to perform the switch (`/clear` is `/new`'s alias — the kimi
+ * naming, one command wearing both names); `/help` lists
  * the registered commands and key bindings in an overlay; `/theme` swaps
  * the live theme provider (see `./theme-switch.ts`); `/yolo` and the
  * plan/yolo exclusivity wiring live in `./mode-commands.ts`; the
  * session-info family (`/status` `/usage` `/version`) lives in
- * `./session-commands.ts`.
+ * `./session-commands.ts`; `/init` (the canned AGENTS.md prompt) lives in
+ * `./session-init.ts`.
  * Registrations are
  * effect-bound, so unloading the fiber removes them. Only `commands` is
  * injected: the overlay commands read the Blue display services through
@@ -42,6 +44,7 @@ import { registerModelCommands } from './model-commands.ts'
 import { registerModeCommands, setupModeTracking } from './mode-commands.ts'
 import { registerSessionCommands } from './session-commands.ts'
 import { registerExportCommands } from './session-export.ts'
+import { registerInitCommand } from './session-init.ts'
 import { SelectListPanel } from './select-list.ts'
 import { CURRENT_MARK } from './symbols.ts'
 import { registerThemeCommand } from './theme-switch.ts'
@@ -217,6 +220,11 @@ export function apply(ctx: Context): void {
         return { kind: 'success' as const, text: 'starting a new session' }
       },
     })
+    // `/clear` is the new-session command's alias (the S27 kimi naming:
+    // CC/Codex users reach for /clear to wipe the conversation), not a
+    // registration — the input layer rewrites the line to `/new` before
+    // dispatch, exactly like `/q` → `/quit`.
+    const freshAliases = registerCommandAliases('new', ['clear'])
     const fork = ctx.commands.register({
       name: 'fork',
       description: 'Fork the current session into a new one',
@@ -266,10 +274,13 @@ export function apply(ctx: Context): void {
     const sessionInfo = registerSessionCommands(ctx)
     // The session-export family (`/export` `/copy`).
     const sessionExport = registerExportCommands(ctx)
+    // The canned-prompt command (`/init`).
+    const init = registerInitCommand(ctx)
     return () => {
       quit()
       quitAliases()
       fresh()
+      freshAliases()
       fork()
       sessions()
       sessionsAliases()
@@ -280,6 +291,7 @@ export function apply(ctx: Context): void {
       modeTracking()
       sessionInfo()
       sessionExport()
+      init()
     }
   })
 }
