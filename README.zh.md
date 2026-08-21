@@ -147,33 +147,35 @@ Headless 冒烟检查（经 `script(1)` 伪 TTY）：
 
 ## 分层架构
 
+<!-- BEGIN diagram:blue-layers -->
+<!-- single source 单一来源: docs/diagrams/blue-layers.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph L4["L4 组合层 —— @dsh-blue/blue（bundle）"]
-        patch["cordis.patch.yml —— 在 dsh-base 之上插入 Blue 插件行"]
-        app["blue-app · blue-startup —— 命令行启动 + Agent 驱动"]
+    subgraph L4["L4 composition 组合层 — @dsh-blue/blue (bundle)"]
+        patch["cordis.patch.yml — inserts the Blue rows over dsh-base"]
+        app["blue-app · blue-startup — CLI startup + Agent driver"]
     end
-    subgraph L3["L3 渲染插件 —— @dsh-blue/blue-transcript · 可热替换、可省略"]
-        fold["事件折叠 → 流式 Markdown + 工具卡片"]
-        status["blueStatus 注册表 + 两行 footer 壳"]
-        dock["dock 面板 —— activity · todo · btw · 子代理分组"]
+    subgraph L3["L3 render 渲染插件 — @dsh-blue/blue-transcript · hot-swappable 可热替换、可省略"]
+        fold["event folds → streamed Markdown + tool cards"]
+        status["blueStatus registry + two-row footer shell"]
+        dock["dock panes — activity · todo · btw · subagents"]
     end
-    subgraph L2["L2 交互插件 —— @dsh-blue/blue-interaction · 实现 harness 交互缝"]
-        input["blue-input —— 编辑器 + 补全"]
-        cmds["blue-commands —— 内置命令"]
-        qa["blue-approval · blue-questions —— 审批/问卷 overlay"]
-        enh2["增强 —— editor-plus · paste-image · attachments · pane-queue · mode-status"]
+    subgraph L2["L2 interaction 交互插件 — @dsh-blue/blue-interaction · implements harness seams"]
+        input["blue-input — editor + completion"]
+        cmds["blue-commands — built-in commands"]
+        qa["blue-approval · blue-questions — overlays"]
+        enh2["enhancements — editor-plus · paste-image · attachments · pane-queue · mode-status"]
     end
-    subgraph L1["L1 内核服务 —— @dsh-blue/blue-core"]
+    subgraph L1["L1 kernel services 内核服务 — @dsh-blue/blue-core"]
         services["blueScreen · blueTheme · blueKeymap · blueComponents · blueTerminalInfo"]
     end
-    subgraph L0["L0 pi-tui 适配 —— @dsh-blue/blue-core"]
-        adapter["终端生命周期 ↔ fiber 绑定"]
+    subgraph L0["L0 pi-tui adapter 适配 — @dsh-blue/blue-core"]
+        adapter["terminal lifecycle ↔ fiber binding — the tree's only pi-tui import"]
     end
-    subgraph BASE["dsh-base —— 宿主 bundle"]
+    subgraph BASE["dsh-base host bundle 宿主"]
         seams["agents · sessions · commands · userQuestions · approval · agentPresets"]
     end
-    pitui["pi-tui ^0.84.2（npm）"]
+    pitui["pi-tui ^0.84.2 (npm)"]
 
     L4 --> L3
     L4 --> L2
@@ -181,9 +183,10 @@ flowchart TB
     L2 --> L1
     L1 --> L0
     L0 --> pitui
-    L2 -. 实现交互缝 .-> BASE
-    L4 -. 骑在 .-> BASE
+    L2 -. implements interaction seams 实现交互缝 .-> BASE
+    L4 -. rides on 骑在 dsh-base 上 .-> BASE
 ```
+<!-- END diagram:blue-layers -->
 
 依赖严格单向：`core ← transcript / interaction ← app ← bundle`。
 
@@ -199,10 +202,12 @@ flowchart TB
 
 **同一棵树，换成 bundle 视角。** `cordis.patch.yml` 分三段插入 23 条 Blue 行。plain 基线（基线段 + 组装段，共 8 行）自足可跑；增强段的每一行——整个虚线段——都可单独删掉，这就是 plain-first（ADR D21）的图景：
 
+<!-- BEGIN diagram:blue-composition -->
+<!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml —— 23 条 Blue 行"]
-        subgraph baseline["plain 基线 —— 8 行，自足"]
+    subgraph bundle["cordis.patch.yml — the 23 Blue rows · 23 条 Blue 行"]
+        subgraph baseline["plain baseline 基线 — 8 rows, self-sufficient 自足"]
             core["blue-core"]
             theme["blue-theme-dark"]
             banner["blue-banner"]
@@ -212,7 +217,7 @@ flowchart TB
             startup["blue-startup"]
             bapp["blue-app"]
         end
-        subgraph enhancement["增强段 —— 每行皆可删"]
+        subgraph enhancement["enhancement segment 增强段 — every row droppable 每行皆可删"]
             editorPlus["blue-editor-plus"]
             att["blue-attachments · blue-paste-image"]
             statusEnh["blue-status-cwd · -git · -mode · -tips · -context"]
@@ -220,12 +225,13 @@ flowchart TB
             panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
         end
     end
-    dshbase["dsh-base —— agent 面行禁用，agent 组合收进 agent-presets"]
+    dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]
     bundle -.-> dshbase
 
     classDef optional stroke-dasharray: 4 4;
     class editorPlus,att,statusEnh,intents,panes optional;
 ```
+<!-- END diagram:blue-composition -->
 
 Dock 顺序即插件行序——activity → queue → todo → btw → 子代理分组，编辑器最后挂载。宿主的 agent 面（工具、plan 模式……）被进程级禁用、按 agent 在预设后面重新组合（ADR D37 薄宿主）；`/preset` 切换组合。
 

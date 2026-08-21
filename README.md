@@ -147,30 +147,32 @@ The full architecture document is [docs/blue-architecture.md](docs/blue-architec
 
 ## Layered architecture
 
+<!-- BEGIN diagram:blue-layers -->
+<!-- single source 单一来源: docs/diagrams/blue-layers.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph L4["L4 composition — @dsh-blue/blue (bundle)"]
+    subgraph L4["L4 composition 组合层 — @dsh-blue/blue (bundle)"]
         patch["cordis.patch.yml — inserts the Blue rows over dsh-base"]
         app["blue-app · blue-startup — CLI startup + Agent driver"]
     end
-    subgraph L3["L3 render plugins — @dsh-blue/blue-transcript · hot-swappable, omissible"]
+    subgraph L3["L3 render 渲染插件 — @dsh-blue/blue-transcript · hot-swappable 可热替换、可省略"]
         fold["event folds → streamed Markdown + tool cards"]
         status["blueStatus registry + two-row footer shell"]
         dock["dock panes — activity · todo · btw · subagents"]
     end
-    subgraph L2["L2 interaction plugins — @dsh-blue/blue-interaction · implements the harness seams"]
+    subgraph L2["L2 interaction 交互插件 — @dsh-blue/blue-interaction · implements harness seams"]
         input["blue-input — editor + completion"]
         cmds["blue-commands — built-in commands"]
         qa["blue-approval · blue-questions — overlays"]
         enh2["enhancements — editor-plus · paste-image · attachments · pane-queue · mode-status"]
     end
-    subgraph L1["L1 kernel services — @dsh-blue/blue-core"]
+    subgraph L1["L1 kernel services 内核服务 — @dsh-blue/blue-core"]
         services["blueScreen · blueTheme · blueKeymap · blueComponents · blueTerminalInfo"]
     end
-    subgraph L0["L0 pi-tui adapter — @dsh-blue/blue-core"]
-        adapter["terminal lifecycle ↔ fiber binding"]
+    subgraph L0["L0 pi-tui adapter 适配 — @dsh-blue/blue-core"]
+        adapter["terminal lifecycle ↔ fiber binding — the tree's only pi-tui import"]
     end
-    subgraph BASE["dsh-base — host bundle"]
+    subgraph BASE["dsh-base host bundle 宿主"]
         seams["agents · sessions · commands · userQuestions · approval · agentPresets"]
     end
     pitui["pi-tui ^0.84.2 (npm)"]
@@ -181,9 +183,10 @@ flowchart TB
     L2 --> L1
     L1 --> L0
     L0 --> pitui
-    L2 -. implements interaction seams .-> BASE
-    L4 -. rides on .-> BASE
+    L2 -. implements interaction seams 实现交互缝 .-> BASE
+    L4 -. rides on 骑在 dsh-base 上 .-> BASE
 ```
+<!-- END diagram:blue-layers -->
 
 Dependencies are strictly one-way: `core ← transcript / interaction ← app ← bundle`.
 
@@ -199,10 +202,12 @@ Each entry point is a Cordis plugin (`export const name`, optional `inject`, `ap
 
 **The same tree, seen from the bundle.** `cordis.patch.yml` inserts 23 Blue rows in three segments. The plain baseline (baseline + assembly, 8 rows) boots and works alone; every enhancement row — the whole dashed segment — is individually deletable, which is plain-first (ADR D21) as a picture:
 
+<!-- BEGIN diagram:blue-composition -->
+<!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml — the 23 Blue rows"]
-        subgraph baseline["plain baseline — 8 rows, self-sufficient"]
+    subgraph bundle["cordis.patch.yml — the 23 Blue rows · 23 条 Blue 行"]
+        subgraph baseline["plain baseline 基线 — 8 rows, self-sufficient 自足"]
             core["blue-core"]
             theme["blue-theme-dark"]
             banner["blue-banner"]
@@ -212,7 +217,7 @@ flowchart TB
             startup["blue-startup"]
             bapp["blue-app"]
         end
-        subgraph enhancement["enhancement segment — every row droppable"]
+        subgraph enhancement["enhancement segment 增强段 — every row droppable 每行皆可删"]
             editorPlus["blue-editor-plus"]
             att["blue-attachments · blue-paste-image"]
             statusEnh["blue-status-cwd · -git · -mode · -tips · -context"]
@@ -226,6 +231,7 @@ flowchart TB
     classDef optional stroke-dasharray: 4 4;
     class editorPlus,att,statusEnh,intents,panes optional;
 ```
+<!-- END diagram:blue-composition -->
 
 Dock order is plugin-row order — activity → queue → todo → btw → subagents, the editor mounting last. The host's agent plane (tools, plan mode, …) is disabled process-wide and re-composed per agent behind presets (ADR D37 thin host); `/preset` switches the composition.
 

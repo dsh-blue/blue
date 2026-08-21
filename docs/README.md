@@ -13,6 +13,8 @@
 | [blue-decisions.md](./blue-decisions.md) | ADR 决策记录（D1-D38，按主题分组，编号稳定不回收） |
 | [blue-commands-plan.md](./blue-commands-plan.md) | 内置命令实施清单：四家参照系合并、能力支撑矩阵、S23-S29 分期（S29 待实施；§1.3 是 p1-design §4.3 判定的更正正典） |
 
+图源约定：架构分层与 bundle 组合两张 mermaid 图的单一来源在 [diagrams/](./diagrams/)（`.mmd`）；README（中英）与 blue-architecture.md 中的嵌入块由 `pnpm run diagrams:sync` 生成，CI 以 `pnpm run diagrams:check` 把关一致性——改图请改 `.mmd` 源，不要手改嵌入块。
+
 ## 历史存档（history/）
 
 | 文档 | 内容 |

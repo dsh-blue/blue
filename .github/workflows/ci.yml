@@ -40,6 +40,9 @@ jobs:
       # so a type error doesn't burn a full test run.
       - run: pnpm typecheck
       - run: pnpm lint
+      # Docs diagrams: docs/diagrams/*.mmd are the single sources; the
+      # embedded copies in README/README.zh/blue-architecture must match.
+      - run: pnpm diagrams:check
       # tsc -b only emits lib/types declarations; specs that import through
       # package entry points resolve lib/index.js from tsdown, so a fresh
       # checkout needs the bundle build before vitest can run.
