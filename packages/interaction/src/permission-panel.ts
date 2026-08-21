@@ -51,7 +51,7 @@ export interface PermissionPresetSpec {
  */
 export interface PermissionPresetsService {
   /** Switchable preset names in table order; `custom` is never listed. */
-  names(): readonly string[]
+  readonly names: readonly string[]
   /** The preset matching the session's effective knobs, or `custom`. */
   current(events: readonly SessionEvent[]): string
   /** The sandbox + approval bundle of a table preset; throws when unknown. */
@@ -84,7 +84,7 @@ export function openPermissionPanel(ctx: Context, agent: Agent): void {
     return
   }
   const current = presets.current(agent.session.events)
-  const rows: SelectRow[] = presets.names().map(name => ({
+  const rows: SelectRow[] = presets.names.map(name => ({
     value: name,
     label: presets.optionOf(name).name,
     description: presetDescription(presets.resolve(name)),

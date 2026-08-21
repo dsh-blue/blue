@@ -213,7 +213,7 @@ describe('blue-input plugin', () => {
     const handler = vi.fn(() => ({ kind: 'success' as const, text: 'should not run' }))
     ctx.commands.register({ name: 'permission', description: 'spy standing in for the upstream command', handler })
     ctx.provide('permissionPresets', {
-      names: () => ['read-only', 'workspace-write'],
+      names: ['read-only', 'workspace-write'],
       current: () => 'workspace-write',
       resolve: name => ({ sandbox: `${name}-sandbox`, approval: 'ask' }),
       optionOf: name => ({ value: name, name }),
@@ -242,7 +242,7 @@ describe('blue-input plugin', () => {
     const handler = vi.fn(() => ({ kind: 'success' as const, text: 'preset read-only' }))
     ctx.commands.register({ name: 'permission', description: 'spy standing in for the upstream command', handler })
     ctx.provide('permissionPresets', {
-      names: () => ['read-only'],
+      names: ['read-only'],
       current: () => 'read-only',
       resolve: name => ({ sandbox: name, approval: 'ask' }),
       optionOf: name => ({ value: name, name }),

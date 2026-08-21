@@ -31,7 +31,7 @@ const TABLE = [
 function fakePresets(behavior: { current?: string } = {}): PermissionPresetsService {
   const current = behavior.current ?? 'workspace-write'
   return {
-    names: () => TABLE.map(entry => entry.name),
+    names: TABLE.map(entry => entry.name),
     current: () => current,
     resolve: name => {
       const entry = TABLE.find(row => row.name === name)
