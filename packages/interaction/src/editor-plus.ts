@@ -53,7 +53,7 @@ import { canonicalOf, withCommandAliases } from './command-meta.ts'
 import { detectFdPath, extractAtPrefix, fsMentionSuggestions, listDirectoryMentions } from './file-mention.ts'
 import { getStashedInputMode, stashHistory, stashInputMode } from './draft-stash.ts'
 import { ACTION_BACKSPACE, ACTION_CANCEL } from './keys.ts'
-import { extractSkillPrefix, userInvocableSkills } from './skills-catalog.ts'
+import { extractSkillPrefix, refresh, userInvocableSkills } from './skills-catalog.ts'
 import { sanitizeShellOutput } from './shell-sanitize.ts'
 import { currentBlueAgent } from './session.ts'
 import { filterSlashCommands, slashCommandLabel } from './slash-filter.ts'
@@ -210,7 +210,13 @@ function createAutocompleteProvider(
       if (skillQuery !== null) {
         if (mode() === 'bash') return null
         const skills = userInvocableSkills()
-        if (skills.length === 0) return null
+        if (skills.length === 0) {
+          // A fresh session's settle can lag the first keystrokes by one
+          // snapshot; warm the catalog so the next keystroke (pi-tui
+          // re-triggers on every name character) sees the list.
+          void refresh(ctx)
+          return null
+        }
         const items = filterSlashCommands(
           skills.map(skill => ({ name: skill.name, skill })),
           skillQuery,

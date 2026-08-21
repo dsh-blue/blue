@@ -39,6 +39,9 @@ import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-app
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import PermissionPresetsService from '@deepseek-ai/dsh-permission-presets'
 import type { ShellExecutor } from '@deepseek-ai/dsh-shell'
+import SkillRegistry from '@deepseek-ai/dsh-skill'
+import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
+import * as toolSkill from '@deepseek-ai/dsh-tool-skill'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 // The theme modules come from the package subpaths — not relative core
 // source paths — because the /theme swap keys registry runtimes by apply
@@ -54,6 +57,7 @@ import { startBlueTerminal } from '../../../core/src/terminal.ts'
 import { FakeTerminal, waitForRender } from '../../../core/tests/fake-terminal.ts'
 import * as interactionPlugin from '../../../interaction/src/index.ts'
 import { clearDraft, stashHistory } from '../../../interaction/src/draft-stash.ts'
+import { userInvocableSkills } from '../../../interaction/src/skills-catalog.ts'
 import * as editorPlusPlugin from '../../../interaction/src/editor-plus.ts'
 import * as attachmentsPlugin from '../../../interaction/src/attachments.ts'
 import * as pasteImagePlugin from '../../../interaction/src/paste-image.ts'
@@ -267,6 +271,13 @@ async function bootBlue(argv: string[], options: {
    * default the app driver mounts fresh agents onto.
    */
   presetFixtures?: readonly PresetFixture[]
+  /**
+   * Mount the real skill family (registry + filesystem provider scoped to
+   * the given root + tool-skill) so the `#` pipeline runs against the
+   * upstream gesture path end to end. Flag-gated: tool-skill publishes a
+   * skill catalog into every request, which would perturb unrelated cases.
+   */
+  skills?: { root: string }
 }): Promise<BlueTree> {
   const dir = mkdtempTracked('dsh-blue-e2e-')
   const terminal = new FakeTerminal()
@@ -594,6 +605,22 @@ export const apply = (ctx) => {
     roots: [{ path: presetRoot, trust: 'system' }],
     includeUserRoot: false,
   })
+  if (options.skills !== undefined) {
+    // The skill family (S29): the real registry, the filesystem provider
+    // isolated to the fixture root (no default project/user/bundled
+    // roots, so the catalog is exactly the fixture's), and tool-skill —
+    // its `agents`/`tools` dependencies come from the agent-loop
+    // testkit's registry/runtime mounts above. Tool-skill owns the
+    // `/name` gesture pre-step (the injected `<skill_content>` body) and
+    // the model-facing skill catalog.
+    await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SkillFileSystem, {
+      includeDefaultRoots: false,
+      customSkillDirs: [options.skills.root],
+      watch: true,
+    })
+    await ctx.plugin(toolSkill)
+  }
   // The settings family mounts before the default-model service so the
   // latter's settings-backed default tier resolves through the file.
   if (options.realSettings !== undefined) {
@@ -3438,6 +3465,147 @@ describe('blue whole-tree e2e', () => {
       text: 'cannot switch presets: this session has already started (blank sessions only)',
     })
     expect(agent.session.events.filter(event => event.type === 'agent-preset/selected')).toEqual([])
+  })
+
+  /** A skill fixture root carrying one `deploy-check` skill (S29 e2e). */
+  function skillsRootFixture(): string {
+    const root = mkdtempTracked('dsh-blue-e2e-skills-')
+    mkdirSync(join(root, 'deploy-check'), { recursive: true })
+    writeFileSync(join(root, 'deploy-check', 'SKILL.md'), [
+      '---',
+      'name: deploy-check',
+      'description: Checks deployment readiness before shipping',
+      '---',
+      '',
+      'Run the deployment checklist before every release.',
+      '',
+    ].join('\n'))
+    return root
+  }
+
+  it('completes # skills, Enter accepts without submitting, and the rewrite drives the gesture', async () => {
+    const tree = await bootBlue([], {
+      script: [textResponse('skill acknowledged')],
+      skills: { root: skillsRootFixture() },
+    })
+    const agent = await currentAgent(tree)
+    // The catalog settles asynchronously off session-changed; typing into
+    // the editor before the settle would close the dropdown for the whole
+    // token (pi-tui only re-triggers on the next keystroke).
+    await vi.waitFor(() => { expect(userInvocableSkills().length).toBeGreaterThan(0) })
+    for (const char of '#deploy-ch') tree.terminal.sendInput(char)
+    // Incremental-frame discipline (the R0 lesson): assert only frames
+    // written after this mark — the cumulative output could fake-satisfy.
+    const mark = tree.terminal.written.length
+    await vi.waitFor(() => {
+      expect(tree.terminal.written.slice(mark).join('')).toContain('#deploy-check')
+    })
+    // pi-tui's Enter on a non-slash completion accepts without submitting:
+    // the buffer holds the applied token and no request has gone out.
+    tree.terminal.sendInput('\r')
+    await waitForRender()
+    expect(tree.adapter.requests).toHaveLength(0)
+    // The second Enter submits: the line rewrites to the gesture form, the
+    // tool-skill pre-step appends the injected skill body to the request,
+    // and the screen never shows the injection body (D28).
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    const messages = tree.adapter.requests[0]!.messages as unknown as Array<{
+      content: Array<{ type: string, text: string }>
+      source: { kind: string }
+    }>
+    expect(JSON.stringify(messages)).toContain('/deploy-check')
+    const injected = messages.filter(message => message.source.kind === 'skill-invocation')
+    expect(injected).toHaveLength(1)
+    expect(injected[0]!.content[0]!.text).toContain('<skill_content name="deploy-check">')
+    await agent.whenIdle()
+    await waitForRender()
+    expect(stripSgr(tree.terminal.output)).not.toContain('<skill_content')
+    expect(stripSgr(tree.terminal.output)).not.toContain('skill_instructions')
+  })
+
+  it('passes an unknown #tag to the model untouched, with no injection', async () => {
+    const tree = await bootBlue([], {
+      script: [textResponse('plain answer')],
+      skills: { root: skillsRootFixture() },
+    })
+    await currentAgent(tree)
+    typeLine(tree.terminal, '#unknown-tag')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    const messages = tree.adapter.requests[0]!.messages as unknown as Array<{
+      content: Array<{ type: string, text: string }>
+      source: { kind: string }
+    }>
+    // The tag reaches the model verbatim (no rewrite), and no skill body
+    // rode along — only the model-facing catalog may mention skills.
+    expect(JSON.stringify(messages)).toContain('#unknown-tag')
+    expect(JSON.stringify(messages)).not.toContain('/unknown-tag')
+    expect(messages.some(message => message.source.kind === 'skill-invocation')).toBe(false)
+  })
+
+  it('replays the injected skill body across a resume while the screen stays clean', async () => {
+    const persistence = mkdtempTracked('dsh-blue-e2e-skill-resume-')
+    const skills = skillsRootFixture()
+    const first = await bootBlue([], {
+      script: [textResponse('first answer')],
+      persistenceRoot: persistence,
+      skills: { root: skills },
+    })
+    const firstAgent = await currentAgent(first)
+    // The rewrite reads the settled catalog; typing before the settle
+    // would pass the tag through unrewritten (the honest unknown-tag path).
+    await vi.waitFor(() => { expect(userInvocableSkills().length).toBeGreaterThan(0) })
+    typeLine(first.terminal, '#deploy-check')
+    await vi.waitFor(() => { expect(first.adapter.requests).toHaveLength(1) })
+    await firstAgent.whenIdle()
+    await waitForRender()
+    // Live presentation hides the injected body (D28).
+    expect(stripSgr(first.terminal.output)).not.toContain('<skill_content')
+    await first.ctx.sessions.flush(firstAgent.session)
+    const id = String(firstAgent.session.id)
+    await first.ctx.fiber.dispose()
+    disposers.length = 0
+
+    const second = await bootBlue(['--resume', id], {
+      script: [textResponse('second answer')],
+      persistenceRoot: persistence,
+      skills: { root: skills },
+    })
+    const agent = await currentAgent(second)
+    await waitForRender()
+    // Replay converges with the live fold: the skill invocation stays
+    // hidden on screen…
+    expect(stripSgr(second.terminal.output)).not.toContain('<skill_content')
+    // …while the next round's request still carries the earlier injection.
+    typeLine(second.terminal, 'go again')
+    await vi.waitFor(() => { expect(second.adapter.requests).toHaveLength(1) })
+    const replayed = second.adapter.requests[0]!.messages as unknown as Array<{
+      content: Array<{ type: string, text: string }>
+      source: { kind: string }
+    }>
+    const injected = replayed.filter(message => message.source.kind === 'skill-invocation')
+    expect(injected).toHaveLength(1)
+    expect(injected[0]!.content[0]!.text).toContain('<skill_content name="deploy-check">')
+    await agent.whenIdle()
+  })
+
+  it('/skills renders the read-only catalog panel and Esc restores the editor', async () => {
+    const tree = await bootBlue([], { script: [], skills: { root: skillsRootFixture() } })
+    const agent = await currentAgent(tree)
+    await expect(executeCommand(tree, agent, '/skills')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('deploy-check')
+      expect(frame).toContain('Checks deployment readiness before shipping')
+    })
+    // The custom fixture root heads its own section.
+    const frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).toContain('custom')
+    // Escape closes back to the editor.
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('Checks deployment readiness')
+    })
   })
 
   it('restores the terminal and removes every registration on dispose', async () => {
