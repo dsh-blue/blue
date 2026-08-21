@@ -1,5 +1,7 @@
 # 调研：deepseek-harness 架构与 Blue 的挂载点
 
+> **归档说明（2026-08-21，R6b 文档清账）**：本文档为调研存档（deepseek-harness 0.1.0-rc.7 时点；现行版本线 0.1.1-rc.1），移入 docs/history/，正文保持归档时点原貌、不做改写。现状以 [blue-roadmap.md](../blue-roadmap.md)、[blue-seams.md](../blue-seams.md)、[blue-decisions.md](../blue-decisions.md) 为准；索引见 [docs/README.md](../README.md)。
+
 > 调研对象：deepseek-harness 仓库（`0.1.0-rc.7` 开发预览版）。本文是 Blue 分层设计和插件写法的依据存档。
 > 服务与 API 参考：<https://deepseek-harness.github.io/deepseek-harness/reference/>
 

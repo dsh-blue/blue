@@ -104,7 +104,7 @@
 
 ## P1 设计决策（kimi-parity 设计期，2026-08-18）
 
-详见 [blue-p1-design.md](./blue-p1-design.md)。以 kimi-code 为参照系（非视觉复刻目标），行使 roadmap 允许的一次性破坏性层职责重排。
+详见 [blue-p1-design.md](./history/blue-p1-design.md)。以 kimi-code 为参照系（非视觉复刻目标），行使 roadmap 允许的一次性破坏性层职责重排。
 
 ### D17. 组件工厂缝：L0 包装 pi-tui 组件
 
@@ -156,7 +156,7 @@
 
 ## P2 视觉设计决策（kimi-code 观感对齐设计期，2026-08-19）
 
-详见 [blue-p2-visual-design.md](./blue-p2-visual-design.md)。以 kimi-code 为视觉/UX 参照（框架同源 pi-tui，全部效果为应用层实现，逐项可移植），按视觉影响排序分期（S10-S21；S17-S21 为 2026-08-20 立项的会话流对齐期，参照基准 p2-visual §2.6）。
+详见 [blue-p2-visual-design.md](./history/blue-p2-visual-design.md)。以 kimi-code 为视觉/UX 参照（框架同源 pi-tui，全部效果为应用层实现，逐项可移植），按视觉影响排序分期（S10-S21；S17-S21 为 2026-08-20 立项的会话流对齐期，参照基准 p2-visual §2.6）。
 
 ### D24. 主题契约 v2：+`primary`/`textMuted` 两 token，现有 `muted` 即 kimi 的 textDim 层
 
@@ -274,7 +274,7 @@
 - alt-screen、自定义键位属 P1/P2
 
 
-### D33. S23 模型族：modelRef 缝取 getter 三级优先，Alt+S 全语义，Add Provider 走 Web Models 页同款写入序列（用户裁决，2026-08-20）
+### D38. S23 模型族：modelRef 缝取 getter 三级优先，Alt+S 全语义，Add Provider 走 Web Models 页同款写入序列（用户裁决，2026-08-20；原误编号 D33，2026-08-21 勘误重编——本条属 P2 命令系列决策，保留原位）
 
 - **背景**：blue-commands-plan §4.2.1 为 `/model` `/effort` `/provider` 开 `BlueSessionRef.modelRef` 缝。实施前调研发现两件事：(1) 原方案的纯可变字段无法表达 resume 语义——harness apiproxy（Web 面）对同类缝用 **getter/setter 三级优先**（会话内 picked → 会话日志最近 request header → 进程默认），且 Blue 现有接线存在同名缺陷（resume 机械上切回进程默认，app 注释声称 header wins 但不成立）；(2) kimi 的 Alt+S session-only 通道与底部 thinking 段控件是用户明确要的全语义。
 - **决策**（用户四项裁决 + Add Provider 范围扩项）：(1) **modelRef = `createModelSelectionRef` 的 getter 三级优先**（app `src/model-ref.ts`，`current` 恒有值收窄为 `BlueModelSelectionRef`），三个 commit 点与 `current` 一同发布，session-changed 不变式要求 handle 已发布——resume 缺陷随缝修复（e2e `--resume` 后请求模型断言）；(2) **Alt+S session-only 做全语义**（contextual action `blue.interaction.session-only`，三面板提交分支，Enter 持久 / Alt+S 仅会话）；(3) **/model 面板底部带 kimi thinking 段控件**（`thinking-segments.ts` 共享段 chrome，←/→ 调高亮行 effort 草稿，`Off (Unsupported)` 降级）、**/effort 用水平分段**；(4) **/provider v1 即含 Add Provider**（原 ⚠️ 顺延项拉入）：两分支（采纳 pi-ai 目录 vendor / 自定义端点 route+协议+baseURL+掩码 key），openai 协议走 `discoverModels` 端点发现喂多选采纳、其余手填 model id；提交序列 = **`settings.mutate('llm-pi-ai', [set providers.<route>], revision)` 先、`credentials.set(<ROUTE>_API_KEY)` 后**（Web Models 页同序，失败重试只剩一步）；落成后打开限定该路由的模型面板，Esc 保留 provider 不改默认（kimi "provider persists" 同义）。表单面 `form-panel.ts`：kimi 双字段对话框在 Blue editor 上的移植（Tab/↑↓ 字段路由、Enter 前进末字段提交、面板内 error 行不关面板、掩码字段渲染派生 `•` 行永不回显明文）。

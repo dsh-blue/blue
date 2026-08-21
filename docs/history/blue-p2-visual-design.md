@@ -1,6 +1,8 @@
 # Blue P2 视觉设计：kimi-code 观感对齐、主题契约 v2 与分期实施
 
-> 姊妹文档：[blue-p1-design.md](./blue-p1-design.md)（功能层对照，S0-S9 已完成）、[blue-roadmap.md](./blue-roadmap.md)（阶段路线图）、[blue-decisions.md](./blue-decisions.md)（ADR，本文决策见 D24-D29）。
+> **归档说明（2026-08-21，R6b 文档清账）**：本文档已完成历史使命，移入 docs/history/，正文保持归档时点原貌、不做改写。P2 视觉/UX 工作流（S10-S21）已全部落地。更正：§8 adopt/reject 表中"模式徽章（plan/yolo/swarm/goal）"reject 行已被 D33+D37 部分推翻（/permission S24b、/preset S28 落地，/yolo 策略徽章已入 footer）；"editor-replacement 对话框范式"reject 行已被 D30 推翻（现行对话框挂载即 editor 槽位替换）。现状以 [blue-roadmap.md](../blue-roadmap.md)、[blue-seams.md](../blue-seams.md)、[blue-decisions.md](../blue-decisions.md) 为准；索引见 [docs/README.md](../README.md)。
+
+> 姊妹文档：[blue-p1-design.md](./blue-p1-design.md)（功能层对照，S0-S9 已完成）、[blue-roadmap.md](../blue-roadmap.md)（阶段路线图）、[blue-decisions.md](../blue-decisions.md)（ADR，本文决策见 D24-D29）。
 > 本文档回答三个问题：**kimi-code 的"精致感"由哪些具体元素构成**（§2-§3）、**主题与 chrome 基建怎么改**（§4-§6）、**按视觉影响排序的分期怎么走**（§7）。
 > 参照系：kimi-code 本地克隆（`kimi-code/`，MoonshotAI）。与 P1 相同：以源码调研为准，**逐项复刻交互结构，不整体照抄色值**。
 

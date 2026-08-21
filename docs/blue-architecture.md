@@ -1,6 +1,6 @@
 # Blue 架构设计
 
-> 姊妹文档：[blue-roadmap.md](./blue-roadmap.md)（分阶段路线图）、[blue-mvp-plan.md](./blue-mvp-plan.md)（MVP 实施计划）、[blue-p1-design.md](./blue-p1-design.md)（P1 层职责定稿与缝清单）
+> 姊妹文档：[blue-roadmap.md](./blue-roadmap.md)（分阶段路线图）、[blue-mvp-plan.md](./history/blue-mvp-plan.md)（MVP 实施计划）、[blue-p1-design.md](./history/blue-p1-design.md)（P1 层职责定稿与缝清单）
 > 本文档是 Blue 的架构蓝图：可行性结论、分层设计、核心契约、稳定性机制。代码现状以仓库 `AGENTS.md` 为准。
 
 ## 1. 背景与可行性结论
@@ -56,7 +56,7 @@ MVP 定稿三个服务：
 - **`ctx.blueTheme`**：语义色表（accent/border/mdCodeBlock/…），值是 `(text) => string` 函数——pi-tui 的解耦设计，不绑 chalk
 - **`ctx.blueKeymap`**：`register(actions)`（整批校验、冲突即抛、返回 disposer）/ `matches` / `getKeys`
 
-P1 经一次性破坏性重排（边界与理由见 [blue-p1-design.md](./blue-p1-design.md) §1.2、§2.2 与 ADR D17/D18）扩为：
+P1 经一次性破坏性重排（边界与理由见 [blue-p1-design.md](./history/blue-p1-design.md) §1.2、§2.2 与 ADR D17/D18）扩为：
 
 - **`ctx.blueComponents`**（新增）：pi-tui 能力的 Blue 类型化工厂——Editor/Markdown/SelectList 组件与宽度函数，pi-tui 类型不越界
 - **`ctx.blueTerminalInfo`**（新增）：终端事实——OSC 11 探测的背景色、键盘协议能力
@@ -117,7 +117,7 @@ Blue 不是封闭应用，是可被下游插件定制的 surface。定制发生�
 2. **Provider 替换**（单一活跃 provider，热替换自动重载依赖方）：主题 provider、整个 transcript 插件（footer 壳随之替换）、Editor（vim 模式）
 3. **组合层**（profile/bundle patch，零代码）：启停、重排任何 Blue 插件
 
-缝的完整清单——每条缝的契约、归属包、plain 默认实现与开放阶段——见 [blue-p1-design.md](./blue-p1-design.md) §6。P1 起生效 **plain-first 纪律**（ADR D21）：每个非平凡表面 = 缝 + plain 默认实现，Blue 自家增强与下游插件同权经缝注册；基线 patch 拔掉全部增强行后仍完整可用。
+缝的完整清单——每条缝的契约、归属包、plain 默认实现与开放阶段——见 [blue-p1-design.md](./history/blue-p1-design.md) §6。P1 起生效 **plain-first 纪律**（ADR D21）：每个非平凡表面 = 缝 + plain 默认实现，Blue 自家增强与下游插件同权经缝注册；基线 patch 拔掉全部增强行后仍完整可用。
 
 两个重要例子甚至不在 Blue 职责内：定制 preset mode 走 harness 的 `ctx.permissionPresets`、定制 agent-loop 的 tools 走 `ctx.tools.register`——Blue 作为消费方自动继承下游的定制。这是"UI 只做呈现、能力在上游"分层的直接收益。
 
