@@ -312,9 +312,15 @@
 - **后果/边界**：refresh 用**已落 header 的路由**派生（路由不随 alt+m 换档实时更新——与上游行为一致，仅辅助调用身份滞后）；上游修复合入并升 pin 后本桥可退役；e2e 以结构 fake 的 refresh 记录器断言桥行为（真服务不在薄 e2e 树内）。
 - **落地（2026-08-22，随 footer 换位 PR）**：`packages/interaction/src/session-title-cadence.ts` + index 挂载 + 单测 6 例 + e2e 桥断言（首轮 0 次、次轮恰 1 次带会话 id）。
 
-### D42. hint 行 slash-discovery 退役：dropdown 是唯一命令目录（S34 验收裁决，2026-08-22）
+### D43. hint 行 slash-discovery 退役：dropdown 是唯一命令目录（S34 验收裁决，2026-08-22；原编 D42 与 master 已并的 S35 kimi banner 撞号，重编——D37→D39 先例）
 
 - **背景**：裸 `/` 时命令目录双渲染——pi-tui dropdown（S14 completion polish，editor-plus 装载）与 hint 行 slash-discovery tier（S14 同期的前置产物，横排前 3 条）同屏。首轮修复尝试"dropdown 开启时 hint 让位"（render 期探 `isShowingAutocomplete()`，避开异步竞态），但 Esc 关闭 dropdown 后 discovery 行复现——让位治标不治本，验收二轮仍报冗余。
 - **裁决**：彻底退役 discovery tier——dropdown 完全覆盖其功能（同一 `slash-filter.ts` fuzzy filter、可滚动分页、可选中补全），discovery 仅存的出场时机（Esc 后、无 dropdown 的 plain baseline）价值不足。历史注记：S15 已退 persistent key-affordance tier，本条再退 slash-discovery，hint 行只剩 notice 职能。
 - **保留面**：`no matching command: /x` 空结果反馈（dropdown 空匹配自关，notice 是唯一信号）与全部一次性 notice（命令执行结果/错误）。alias 标签语义（`/quit (q, exit)`）由 dropdown 侧测试承接（editor-plus.spec 既有覆盖）。
 - **后果/边界**：plain baseline（drop 掉 enhancement 段、无 dropdown 的组合）失去 slash 目录预览——`/help` 仍在；实际部署 bundle 恒装 editor-plus。`slashCommandLabel` 从 input-plugin 的消费面退役（editor-plus 仍用）。
+
+### D44.（已撤回）进程 stderr 接管（S34 验收三轮尝试，2026-08-22 用户裁决撤回）
+
+- **问题**：boot 期编辑框闪烁 + 一条来不及看的 `Starting default (STDIO) server...`。取证实锤（冒烟 log 原始字节）：裸文本帧后直写——是 **MCP 服务器子进程的 stderr**；dsh-mcp-client 构造 `StdioClientTransport` 不传 `stderr` 选项，SDK 默认 `'inherit'`。影响一切会写 stderr 的 stdio MCP 服务器。
+- **尝试与撤回**：blue-core 曾接管 `process.stderr.write`（行缓冲 → `blue/stderr-line` 事件 → transcript muted 行）。真机冒烟证伪：`'inherit'` 是 **spawn 级 fd 直通**——子进程直接写终端 fd 2，字节不经过父进程 JS 层，`process.stderr.write` 替换拦不到内核级继承。用户裁决撤回（拦不住目标问题）。
+- **正路（上游缝，勿在 Blue 侧重试 JS 层拦截）**：harness `packages/mcp/mcp-client`——`StdioConfig` 加 `stderr: 'inherit' | 'pipe'`（默认 `'pipe'`）、`transport.ts` 透传；pipe 下子进程 stderr 进 SDK PassThrough（`transport.stderr`），mcp-client 消费后以 `console.error` 转发回父进程（in-process 写，届时 Blue 可重评接管形态把行送进 transcript；非 TUI 宿主照常终端可见）。上游落地后 Blue 侧接管才有效。

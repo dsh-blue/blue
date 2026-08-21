@@ -250,7 +250,7 @@ describe('blue-input plugin', () => {
     })
   })
 
-  it('renders no command catalog for slash input — the dropdown owns discovery (D42)', async () => {
+  it('renders no command catalog for slash input — the dropdown owns discovery (D43)', async () => {
     const { ctx, editor, hint } = await mount()
     ctx.commands.register({
       name: 'poke',
@@ -402,7 +402,7 @@ describe('blue-input plugin', () => {
     const { ctx, editor, hint } = await mount()
     ctx.commands.register({ name: 'resume', description: 'Resume a previous session', handler: () => ({ kind: 'success' }) })
     ctx.commands.register({ name: 'restart', description: 'Restart everything', handler: () => ({ kind: 'success' }) })
-    // A match renders nothing (D42: the dropdown owns discovery); the empty
+    // A match renders nothing (D43: the dropdown owns discovery); the empty
     // result keeps its notice — the dropdown closes itself on an empty
     // match, so the notice is the only feedback.
     type(editor, '/res')

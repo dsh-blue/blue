@@ -103,7 +103,7 @@ export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap'
  * notice tier exists and paints `muted`; with nothing transient the row
  * renders zero rows — the persistent key-affordance tier retired with the
  * S15 dogfood verdict, and the slash-discovery tier with the S34 dogfood
- * verdict (D42): the editor's autocomplete dropdown already lists the same
+ * verdict (D43): the editor's autocomplete dropdown already lists the same
  * catalog through the same fuzzy filter, interactively, so the discovery
  * row only ever surfaced alongside-or-after it as a duplicate. The row
  * keeps the empty-result feedback (`no matching command: /x` — the
@@ -204,7 +204,7 @@ export function apply(ctx: Context): void {
   const hintLine = new HintLine(screen, colors, ctx.blueComponents)
 
   /**
-   * Empty-result feedback for slash-prefixed input (D42: the discovery
+   * Empty-result feedback for slash-prefixed input (D43: the discovery
    * listing itself retired — the dropdown owns command discovery).
    * @returns the notice text when the filter matches nothing, else undefined.
    */
