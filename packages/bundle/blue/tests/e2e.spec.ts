@@ -2200,15 +2200,31 @@ describe('blue whole-tree e2e', () => {
     const agent = await currentAgent(tree)
     // The session cwd is the repo checkout: '@docs' ranks the docs
     // directory, and Enter accepts it without submitting (only slash
-    // completions fall through to submit).
+    // completions fall through to submit). Suggestions are async and the
+    // fs fallback (no fd on PATH — the CI runner) resolves far slower than
+    // the fd pipeline, so each Enter waits on frames written *after* the
+    // typing: the accumulated output already holds earlier dropdowns, and
+    // a stale-frame wait would let Enter race the in-flight round and fall
+    // through as a plain submit.
     tree.terminal.sendInput('@docs')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('docs/') })
+    let settled = tree.terminal.written.length
+    await vi.waitFor(() => {
+      expect(tree.terminal.written.slice(settled).join('')).toContain('docs/')
+    })
     tree.terminal.sendInput('\r')
     // The accept leaves '@docs/' before the cursor; the adapter's reopen
     // hook lists the directory's contents, and the continued typing
-    // preselects the architecture doc by its basename prefix.
+    // preselects the architecture doc by its basename prefix. The settled
+    // state is the dropdown's pointer row over the label — the sibling
+    // doc only ever appears in the unfiltered listing, so its absence
+    // rules out a late drill-down frame satisfying the wait.
     tree.terminal.sendInput('blue-arch')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('blue-architecture.md') })
+    settled = tree.terminal.written.length
+    await vi.waitFor(() => {
+      const frames = tree.terminal.written.slice(settled).join('')
+      expect(frames).toContain('→ blue-architecture.md')
+      expect(frames).not.toContain('blue-commands-plan.md')
+    })
     tree.terminal.sendInput('\r')
     await waitForRender()
     // The file accept appends the trailing space — still no submission.
