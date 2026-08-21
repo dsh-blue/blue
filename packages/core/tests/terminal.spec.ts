@@ -73,6 +73,17 @@ describe('startBlueTerminal', () => {
     await runtime.stop()
   })
 
+  it('writes a sanitized OSC 0 title straight through the terminal', async () => {
+    const terminal = new FakeTerminal()
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    runtime.setTitle('fix the login\x1b]0;pwned\x07 bug')
+    // The title write is the terminal's latest: one raw write carries the
+    // whole sequence, its payload sanitized (the injected OSC and BEL
+    // vanish), so the title slot stays the only sequence in it.
+    expect(terminal.written.at(-1)).toBe('\x1b]0;fix the login]0;pwned bug\x07')
+    await runtime.stop()
+  })
+
   it('enables scheme notifications and forwards reports through the callback', async () => {
     const terminal = new FakeTerminal()
     const schemes: ('dark' | 'light')[] = []

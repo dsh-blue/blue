@@ -3,6 +3,17 @@ packages:
   - 'packages/bundle/*'
   - 'website'
 
+# vitepress-plugin-mermaid 把 mermaid 的传递依赖列入 vite optimizeDeps.include，
+# dev 预打包从站点根逐名解析；pnpm 严格布局下这些包不在任何可达顶层（插件
+# README 对 pnpm 的前提是 shamefully-hoist）。这里只定向公开提升这几个包，
+# 不放开整个 hoist。生产构建（rollup 按引用方解析）不受影响，仅 dev 需要。
+publicHoistPattern:
+  - dayjs
+  - debug
+  - cytoscape
+  - cytoscape-cose-bilkent
+  - '@braintree/sanitize-url'
+
 # pnpm 10+ hard-fails installs on unreviewed dependency build scripts
 # (strictDepBuilds). koffi is the Windows-only native boundary used by dsh
 # JSONL persistence (MoveFileExW); its script is unnecessary on Linux/macOS,
@@ -197,3 +208,4 @@ minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-workflow-worker-thread@0.1.1-rc.1'
   - '@deepseek-ai/dsh-workflow@0.1.1-rc.1'
   - '@deepseek-ai/dsh-workspace@0.1.1-rc.1'
+  - '@deepseek-ai/dsh-session-title-all-prompts-llm@0.1.1-rc.1'

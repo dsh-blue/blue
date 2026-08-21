@@ -48,6 +48,8 @@ class FakeScreen implements BlueScreen {
   suspend<T>(fn: () => Promise<T>): Promise<T> {
     return fn()
   }
+
+  setTitle(): void {}
 }
 
 interface Harness {

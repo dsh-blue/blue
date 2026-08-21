@@ -33,6 +33,7 @@
 | `Ctrl-V` | 粘贴图片 | 剪贴板图片入附件库，光标处插入 `[image #N]` 标记 |
 | `Backspace` | 退格 / 退模式 | 空的 `!` bash 提示符上退格即退回 prompt 模式 |
 | `↑`（buffer 为空） | 召回排队消息 | 移除最近一条排队消息入草稿（侧问面板打开时优先滚动面板；无 queue 面板时归历史浏览） |
+| `Shift+Tab` | 循环会话模式 | normal → plan → yolo（见[会话模式](/features/modes)）。仅在编辑器焦点下生效——面板与问卷保留各自的 Tab 导航 |
 
 ## 面板语境
 
@@ -42,6 +43,7 @@
 | `/sessions` 选择器 | ↑↓ 导航，`Enter` 恢复，`Esc` 取消 |
 | 审批面板 | ↑↓ + `Enter`，或数字键 `1`–`4` 直选；`Escape` 拒绝 |
 | 问卷面板 | `Tab` / `Shift-Tab` 切题；单选 ↑↓ + `Enter`；多选 `Space` + `Enter` |
+| `/model` · `/effort` 面板 | `←` `→` 步进 segment 控件；`Enter` 确认并持久化为新默认；`Alt+S` **仅本会话**确认（不写持久默认） |
 | `/btw` 面板 | `Esc` 关闭；`↑` `↓` 滚动；`Enter` 续问 |
 
 ## 自定义键位

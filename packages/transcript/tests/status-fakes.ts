@@ -60,6 +60,13 @@ export class StatusFakeScreen implements BlueScreen {
   suspend<T>(fn: () => Promise<T>): Promise<T> {
     return fn()
   }
+
+  /** Title writes recorded for the OSC-mirror assertions, if any. */
+  readonly titles: string[] = []
+
+  setTitle(title: string): void {
+    this.titles.push(title)
+  }
 }
 
 /** Structural `blueStatus`: remembers entries, honors the disposer contract. */
@@ -161,12 +168,16 @@ export interface StatusPluginHarness {
  * @param plugin - the plugin module under test.
  * @param current - agent preloaded onto `blueSession.current`, if any.
  * @param options - overrides; a custom color table observes the tier a
- *   plugin paints its text in.
+ *   plugin paints its text in, and `services` provides extra structural
+ *   services (e.g. the title fold) beyond the standard set.
  */
 export async function bootStatusPlugin(
   plugin: StatusPluginModule,
   current: FakeAgent | null = null,
-  options: { colors?: Record<string, (text: string) => string> } = {},
+  options: {
+    colors?: Record<string, (text: string) => string>
+    services?: Record<string, unknown>
+  } = {},
 ): Promise<StatusPluginHarness> {
   const ctx = new Context()
   const screen = new StatusFakeScreen()
@@ -177,6 +188,7 @@ export async function bootStatusPlugin(
     blueTheme: { colors: options.colors ?? COLORS },
     blueComponents: fakeBlueComponents(),
     blueSession: { current: current === null ? null : asAgent(current) },
+    ...options.services,
   }
   for (const [serviceName, value] of Object.entries(serviceNames)) {
     ctx.reflect.provide(serviceName, value)

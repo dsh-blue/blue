@@ -31,7 +31,14 @@ export {
   type BlueProbeProcess,
 } from './terminal-info.ts'
 export { createTerminalRelease } from './terminal.ts'
-export { buildClipboardOsc52, emitClipboardOsc52, type BlueEscapeProcess } from './terminal-escape.ts'
+export {
+  TITLE_MAX_CHARS,
+  buildClipboardOsc52,
+  buildTitleOsc0,
+  emitClipboardOsc52,
+  sanitizeTitleText,
+  type BlueEscapeProcess,
+} from './terminal-escape.ts'
 export type {
   BlueAutocompleteItem,
   BlueAutocompleteProvider,

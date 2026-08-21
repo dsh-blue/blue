@@ -26,23 +26,83 @@ pi 自己的 coding-agent 用 pi-tui 时收成了一个 6.5k 行的 `Interactive
 
 ## 3. 分层架构
 
+<!-- BEGIN diagram:blue-layers -->
+<!-- single source 单一来源: docs/diagrams/blue-layers.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
+```mermaid
+flowchart TB
+    subgraph L4["L4 composition 组合层 — @dsh-blue/blue (bundle)"]
+        patch["cordis.patch.yml — inserts the Blue rows over dsh-base"]
+        app["blue-app · blue-startup — CLI startup + Agent driver"]
+    end
+    subgraph L3["L3 render 渲染插件 — @dsh-blue/blue-transcript · hot-swappable 可热替换、可省略"]
+        fold["event folds → streamed Markdown + tool cards"]
+        status["blueStatus registry + two-row footer shell"]
+        dock["dock panes — activity · todo · btw · subagents"]
+    end
+    subgraph L2["L2 interaction 交互插件 — @dsh-blue/blue-interaction · implements harness seams"]
+        input["blue-input — editor + completion"]
+        cmds["blue-commands — built-in commands"]
+        qa["blue-approval · blue-questions — overlays"]
+        enh2["enhancements — editor-plus · paste-image · attachments · pane-queue · mode-status"]
+    end
+    subgraph L1["L1 kernel services 内核服务 — @dsh-blue/blue-core"]
+        services["blueScreen · blueTheme · blueKeymap · blueComponents · blueTerminalInfo"]
+    end
+    subgraph L0["L0 pi-tui adapter 适配 — @dsh-blue/blue-core"]
+        adapter["terminal lifecycle ↔ fiber binding — the tree's only pi-tui import"]
+    end
+    subgraph BASE["dsh-base host bundle 宿主"]
+        seams["agents · sessions · commands · userQuestions · approval · agentPresets"]
+    end
+    pitui["pi-tui ^0.84.2 (npm)"]
+
+    L4 --> L3
+    L4 --> L2
+    L3 --> L1
+    L2 --> L1
+    L1 --> L0
+    L0 --> pitui
+    L2 -. implements interaction seams 实现交互缝 .-> BASE
+    L4 -. rides on 骑在 dsh-base 上 .-> BASE
 ```
-┌─────────────────────────────────────────────────────┐
-│ L4  组合层：packages/bundle/blue（cordis.patch.yml）  │  骑在 dsh-base 上
-├─────────────────────────────────────────────────────┤
-│ L3  渲染插件：transcript（折叠器 + 组件树 + 状态栏）   │  可热替换、可省略
-├─────────────────────────────────────────────────────┤
-│ L2  交互插件：interaction（输入/命令/审批/提问）       │  实现 harness 交互缝
-├─────────────────────────────────────────────────────┤
-│ L1  内核服务：blueScreen · blueTheme · blueKeymap    │  稳定核心（core 包）
-├─────────────────────────────────────────────────────┤
-│ L0  pi-tui 适配：终端生命周期 ↔ fiber 绑定            │  全树唯一 import pi-tui
-├─────────────────────────────────────────────────────┤
-│         dsh-base（agents/sessions/commands/…）        │
-└─────────────────────────────────────────────────────┘
-```
+<!-- END diagram:blue-layers -->
 
 依赖严格单向：`core ← transcript / interaction ← app ← bundle`。
+
+从 bundle 视角看同一棵树：`cordis.patch.yml` 分三段插入 23 条 Blue 行。plain 基线（基线段 + 组装段，共 8 行）自足可跑；增强段的每一行都可单独删掉——plain-first（ADR D21）的图景：
+
+<!-- BEGIN diagram:blue-composition -->
+<!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
+```mermaid
+flowchart TB
+    subgraph bundle["cordis.patch.yml — the 23 Blue rows · 23 条 Blue 行"]
+        subgraph baseline["plain baseline 基线 — 8 rows, self-sufficient 自足"]
+            core["blue-core"]
+            theme["blue-theme-dark"]
+            banner["blue-banner"]
+            transcript["blue-transcript"]
+            sbasic["blue-status-basic"]
+            interaction["blue-interaction"]
+            startup["blue-startup"]
+            bapp["blue-app"]
+        end
+        subgraph enhancement["enhancement segment 增强段 — every row droppable 每行皆可删"]
+            editorPlus["blue-editor-plus"]
+            att["blue-attachments · blue-paste-image"]
+            statusEnh["blue-status-cwd · -git · -mode · -tips · -context"]
+            intents["blue-intent-diff · -terminal"]
+            panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
+        end
+    end
+    dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]
+    bundle -.-> dshbase
+
+    classDef optional stroke-dasharray: 4 4;
+    class editorPlus,att,statusEnh,intents,panes optional;
+```
+<!-- END diagram:blue-composition -->
+
+Dock 顺序即插件行序——activity → queue → todo → btw → 子代理分组，编辑器最后挂载；宿主 agent 面被进程级禁用、组合收进预设（ADR D37 薄宿主，`/preset` 切换）。分段的原注释见 `packages/bundle/blue/cordis.patch.yml`。
 
 ### L0 — pi-tui 适配层（core 包内部）
 

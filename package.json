@@ -14,6 +14,8 @@
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc -b tsconfig.json",
     "lint": "oxlint packages",
+    "diagrams:sync": "node script/sync-diagrams.mjs",
+    "diagrams:check": "node script/sync-diagrams.mjs --check",
     "website:dev": "pnpm --filter @dsh-blue/website run dev",
     "website:build": "pnpm --filter @dsh-blue/website run build",
     "website:preview": "pnpm --filter @dsh-blue/website run preview"

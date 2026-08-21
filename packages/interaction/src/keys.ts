@@ -70,6 +70,14 @@ export const ACTION_CYCLE_MODE = 'blue.interaction.cycle-mode'
  * `./external-editor.ts` (S31).
  */
 export const ACTION_EXTERNAL_EDITOR = 'blue.interaction.external-editor'
+/**
+ * Cycle the session model within the current provider (Alt+M) — contextual
+ * only: the main editor's `onKey` chain matches it in
+ * `./input-plugin.ts` and dispatches the session-only switch from
+ * `./model-commands.ts`. The press is consumed before the Editor sees it,
+ * so the typed draft stays intact — the point of the hotkey.
+ */
+export const ACTION_CYCLE_MODEL = 'blue.interaction.cycle-model'
 
 /** The full interaction key batch, registered as one unit. */
 export const INTERACTION_KEY_ACTIONS: readonly BlueKeyAction[] = [
@@ -86,6 +94,7 @@ export const INTERACTION_KEY_ACTIONS: readonly BlueKeyAction[] = [
   { id: ACTION_SESSION_ONLY, keys: 'alt+s', description: 'Confirm session-only, no persisted default (contextual)' },
   { id: ACTION_CYCLE_MODE, keys: 'shift+tab', description: 'Cycle the session mode: normal → plan → yolo' },
   { id: ACTION_EXTERNAL_EDITOR, keys: 'ctrl+g', description: 'Edit the draft in your external editor ($VISUAL/$EDITOR)' },
+  { id: ACTION_CYCLE_MODEL, keys: 'alt+m', description: 'Cycle the session model within the current provider (contextual)' },
 ]
 
 /** Stable Cordis plugin name. */

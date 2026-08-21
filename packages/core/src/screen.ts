@@ -118,4 +118,14 @@ export class BlueScreenService extends Service implements BlueScreen {
   suspend<T>(fn: () => Promise<T>): Promise<T> {
     return this.runtime.suspend(fn)
   }
+
+  /**
+   * Set the terminal's window/tab title (a sanitized OSC 0 write; inside
+   * tmux, the tmux window name).
+   * @param title - untrusted title text; control characters are stripped
+   *   and the payload capped before the write.
+   */
+  setTitle(title: string): void {
+    this.runtime.setTitle(title)
+  }
 }

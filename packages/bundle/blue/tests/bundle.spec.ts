@@ -72,6 +72,7 @@ describe('blue bundle', () => {
       'blue-paste-image',
       'blue-status-cwd',
       'blue-status-git',
+      'blue-status-title',
       'blue-status-mode',
       'blue-status-tips',
       'blue-status-context',
@@ -108,7 +109,12 @@ describe('blue bundle', () => {
     // rows the web-app bundle disables must equal Blue's, so when the base
     // grows a new agent-plane row and the harness rules on it, this spec goes
     // red until Blue follows. `hmr` rides along (both surfaces keep it off).
-    expect(disabledIds(patch)).toEqual(disabledIds(webAppPatch))
+    // Blue additionally carries non-agent-plane overrides the web-app makes
+    // no ruling on — the session-title cadence swap (S30): the base's
+    // first-prompt provider stands down for the all-prompts sibling row in
+    // the insert, and that is Blue's own call, outside the lockstep list.
+    const blueOnly = new Set(['session-title-llm'])
+    expect(disabledIds(patch).filter(id => !blueOnly.has(id))).toEqual(disabledIds(webAppPatch))
     // A typo'd id would silently disable nothing, leaving the row's tools in
     // the global layer: every disable must address a row the base defines.
     const baseRowIds = new Set([...basePatch.matchAll(/^\s*- id: ([\w-]+)$/gm)].map(match => match[1]!))

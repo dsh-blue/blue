@@ -1,0 +1,35 @@
+flowchart TB
+    subgraph L4["L4 composition 组合层 — @dsh-blue/blue (bundle)"]
+        patch["cordis.patch.yml — inserts the Blue rows over dsh-base"]
+        app["blue-app · blue-startup — CLI startup + Agent driver"]
+    end
+    subgraph L3["L3 render 渲染插件 — @dsh-blue/blue-transcript · hot-swappable 可热替换、可省略"]
+        fold["event folds → streamed Markdown + tool cards"]
+        status["blueStatus registry + two-row footer shell"]
+        dock["dock panes — activity · todo · btw · subagents"]
+    end
+    subgraph L2["L2 interaction 交互插件 — @dsh-blue/blue-interaction · implements harness seams"]
+        input["blue-input — editor + completion"]
+        cmds["blue-commands — built-in commands"]
+        qa["blue-approval · blue-questions — overlays"]
+        enh2["enhancements — editor-plus · paste-image · attachments · pane-queue · mode-status"]
+    end
+    subgraph L1["L1 kernel services 内核服务 — @dsh-blue/blue-core"]
+        services["blueScreen · blueTheme · blueKeymap · blueComponents · blueTerminalInfo"]
+    end
+    subgraph L0["L0 pi-tui adapter 适配 — @dsh-blue/blue-core"]
+        adapter["terminal lifecycle ↔ fiber binding — the tree's only pi-tui import"]
+    end
+    subgraph BASE["dsh-base host bundle 宿主"]
+        seams["agents · sessions · commands · userQuestions · approval · agentPresets"]
+    end
+    pitui["pi-tui ^0.84.2 (npm)"]
+
+    L4 --> L3
+    L4 --> L2
+    L3 --> L1
+    L2 --> L1
+    L1 --> L0
+    L0 --> pitui
+    L2 -. implements interaction seams 实现交互缝 .-> BASE
+    L4 -. rides on 骑在 dsh-base 上 .-> BASE

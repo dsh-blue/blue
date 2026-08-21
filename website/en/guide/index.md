@@ -44,6 +44,16 @@ dsh --profile blue --resume <id>    # resume a persisted session
 If your profile was linked before the package rename (when the packages were named `@dsh-blue/blue*`), those links are stale — delete the profile directory (`~/.dsh/profiles/<name>`) or `dsh plugin --profile <name> remove` the old entries, then re-run the script.
 :::
 
+## One key before you ride
+
+**A single `DEEPSEEK_API_KEY` is all it takes to start using Blue** — the out-of-the-box default talks to the DeepSeek official API (route `deepseek-official`, default model `deepseek-v4-flash`); nothing else to configure:
+
+```sh
+export DEEPSEEK_API_KEY=sk-...        # or store it in ~/.dsh/.credentials.yaml, once and for all
+```
+
+Switching models, wiring custom gateways, theming, and more: [Configuration](/en/guide/config).
+
 ## First run
 
 ```sh

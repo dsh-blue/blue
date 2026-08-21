@@ -16,6 +16,7 @@ import type { AgentDefaultModelConfig } from '@deepseek-ai/dsh-agent-default-mod
 import type { BlueModelSelectionRef } from '@dsh-blue/blue-app'
 import * as commandsPlugin from '../src/commands-plugin.ts'
 import { canonicalOf } from '../src/command-meta.ts'
+import { cycleSessionModel, resetModelListCache } from '../src/model-commands.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
 import { setModelsDevLoader } from '../src/models-dev.ts'
@@ -28,6 +29,7 @@ let notices: string[] = []
 
 afterEach(() => {
   clearSharedEditor()
+  resetModelListCache()
   notices = []
 })
 
@@ -892,5 +894,102 @@ describe('model-family commands', () => {
     await vi.waitFor(() => { expect(notices).toHaveLength(1) })
     expect(saveSelection).not.toHaveBeenCalled()
     expect(notices[0]).toContain('session only')
+  })
+})
+
+describe('cycleSessionModel (the Alt+M hotkey)', () => {
+  it('cycles to the provider\'s next model through the session-only channel', async () => {
+    const { ctx, writes, saveSelection } = await mount()
+    await cycleSessionModel(ctx)
+    expect(writes).toEqual([{ provider: 'mock', model: 'mock-pro' }])
+    // A one-press switch never rewrites the persisted default.
+    expect(saveSelection).not.toHaveBeenCalled()
+    expect(notices).toEqual(['Switched to mock-pro (mock) · session only'])
+  })
+
+  it('drops the reasoning effort, matching the /model <id> direct switch', async () => {
+    const fake = fakeModelRef({ provider: 'mock', model: 'mock', reasoningEffort: 'high' as never })
+    const { ctx } = await mount({ modelRef: fake.ref })
+    await cycleSessionModel(ctx)
+    expect(fake.writes).toEqual([{ provider: 'mock', model: 'mock-pro' }])
+  })
+
+  it('wraps around to the first model and reuses the cached listing', async () => {
+    const llm = fakeLlm()
+    const listModels = vi.fn(llm.listModels)
+    const { ctx } = await mount({ llm: { ...llm, listModels } as unknown as LlmRuntime })
+    await cycleSessionModel(ctx)
+    await cycleSessionModel(ctx)
+    // mock → mock-pro, then the wrap back to mock — one listing for both.
+    expect(listModels).toHaveBeenCalledTimes(1)
+    expect(notices[1]).toBe('Switched to mock (mock) · session only')
+  })
+
+  it('reports already-using on a single-model provider without touching the default', async () => {
+    const { ctx, saveSelection } = await mount({
+      catalog: { models: { mock: [{ id: 'mock', name: 'Mock' }] } },
+    })
+    await cycleSessionModel(ctx)
+    expect(saveSelection).not.toHaveBeenCalled()
+    expect(notices).toEqual(['Already using mock (mock) · session only'])
+  })
+
+  it('declines when the provider advertises no models', async () => {
+    const { ctx } = await mount({ catalog: { models: { mock: [] } } })
+    await cycleSessionModel(ctx)
+    expect(notices).toEqual(['the current provider advertises no models'])
+  })
+
+  it('cycles to the first advertised model when the current one left the list', async () => {
+    const fake = fakeModelRef({ provider: 'mock', model: 'gone' })
+    const { ctx } = await mount({
+      modelRef: fake.ref,
+      catalog: { models: { mock: [{ id: 'other', name: 'Other' }, { id: 'mock-pro', name: 'Mock Pro' }] } },
+    })
+    await cycleSessionModel(ctx)
+    expect(fake.writes).toEqual([{ provider: 'mock', model: 'other' }])
+  })
+
+  /**
+   * A bare context with only `blueSession` (and an optional llm): no
+   * screen/theme/components, so the failure notice travels unpainted.
+   */
+  async function bareContext(llm?: LlmRuntime): Promise<Context> {
+    const ctx = new Context()
+    const agent = { id: 'bare', session: { events: [] }, status: 'idle' } as unknown as Agent
+    ctx.provide('blueSession', { current: agent, modelRef: fakeModelRef({ provider: 'mock', model: 'mock' }).ref })
+    if (llm !== undefined) ctx.provide('llm', llm)
+    setSharedEditor({
+      editor: { focused: false, render: () => [], invalidate: () => {} } as never,
+      submitPrompt: () => {},
+      notice: (text: string) => { notices.push(text) },
+    })
+    return ctx
+  }
+
+  it('declines without the llm service, unpainted', async () => {
+    const ctx = await bareContext()
+    await cycleSessionModel(ctx)
+    expect(notices).toEqual(['the llm service is unavailable'])
+  })
+
+  it('flashes the listing failure unpainted on a display-less host', async () => {
+    const ctx = await bareContext(fakeLlm({ failListFor: ['mock'] }))
+    await cycleSessionModel(ctx)
+    expect(notices).toEqual([`could not list the provider's models: catalog down`])
+  })
+
+  it('flashes the listing failure and retries on the next press', async () => {
+    const llm = fakeLlm({ failListFor: ['mock'] })
+    const { ctx } = await mount({ llm })
+    await cycleSessionModel(ctx)
+    expect(notices[0]).toContain("could not list the provider's models")
+    expect(notices[0]).toContain('catalog down')
+  })
+
+  it('declines without a live session', async () => {
+    const { ctx } = await mount({ attach: false })
+    await cycleSessionModel(ctx)
+    expect(notices).toEqual(['no session is live yet'])
   })
 })

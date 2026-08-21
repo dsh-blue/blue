@@ -1,6 +1,6 @@
 # 功能总览
 
-Blue 不是一个大组件，而是一棵 **Cordis 插件树**：bundle 的 `cordis.patch.yml` 以 21 个插件行把 UI 装配到 `dsh-base` 之上。每个视觉表面都是一个可独立增删的插件行——这正是"一切皆插件"的字面意义。
+Blue 不是一个大组件，而是一棵 **Cordis 插件树**：bundle 的 `cordis.patch.yml` 以 23 个插件行把 UI 装配到 `dsh-base` 之上。每个视觉表面都是一个可独立增删的插件行——这正是"一切皆插件"的字面意义。
 
 ## 三段式装配
 
@@ -16,7 +16,7 @@ Blue 不是一个大组件，而是一棵 **Cordis 插件树**：bundle 的 `cor
 | `blue-transcript` | 会话事件 → transcript 渲染；`blueStatus` 注册表与两行 footer 壳 |
 | `blue-status-basic` | footer 基线条目：model 名（优先级 0，最亮档） |
 
-### 增强段（13 行）—— 可整体摘除
+### 增强段（15 行）—— 可整体摘除
 
 在纯基线之上的可选层，逐行可删，整段可删：
 
@@ -27,6 +27,7 @@ Blue 不是一个大组件，而是一棵 **Cordis 插件树**：bundle 的 `cor
 | `blue-paste-image` | Ctrl-V 剪贴板贴图，`[image #N]` 标记 |
 | `blue-status-cwd` | footer：会话工作目录（优先级 5） |
 | `blue-status-git` | footer：git 徽章 `branch [+a -d ↑u↓v]`（优先级 10） |
+| `blue-status-mode` | footer：会话模式徽标 `plan`/`yolo`（优先级 2，normal 隐藏） |
 | `blue-status-tips` | footer：轮换教学提示（优先级 30） |
 | `blue-status-context` | footer：context 占用（优先级 20，第二行右对齐） |
 | `blue-intent-diff` | diff 专属工具卡（统一 diff 着色） |
@@ -35,6 +36,7 @@ Blue 不是一个大组件，而是一棵 **Cordis 插件树**：bundle 的 `cor
 | `blue-pane-queue` | 排队消息面板 + 空编辑器 Up 召回 |
 | `blue-pane-todo` | todo 面板（Ctrl-T 折叠切换） |
 | `blue-pane-btw` | `/btw` 侧问面板 |
+| `blue-pane-agents` | 子代理分组面板（运行中子代理的组卡片，dock 末行） |
 
 ### 装配段（3 行）—— 收口
 
@@ -50,7 +52,7 @@ Blue 不是一个大组件，而是一棵 **Cordis 插件树**：bundle 的 `cor
 
 ## 底部 dock 顺序
 
-底钉子组件（footer、各面板、编辑器）按挂载顺序渲染。装配上，dock 顺序由 `blueComponents` 激活轮钉住：**activity → queue → todo → btw，编辑器最后**（保证编辑器永远在最底行上方、面板依次叠在其上）。
+底钉子组件（footer、各面板、编辑器）按挂载顺序渲染。装配上，dock 顺序由 `blueComponents` 激活轮钉住：**activity → queue → todo → btw → agents，编辑器最后**（保证编辑器永远在最底行上方、面板依次叠在其上）。
 
 ## 去哪儿看细节
 
@@ -58,4 +60,5 @@ Blue 不是一个大组件，而是一棵 **Cordis 插件树**：bundle 的 `cor
 - [输入编辑器](/features/editor) —— 编辑器与增强
 - [审批与问卷浮层](/features/approval) —— 交互面板
 - [状态栏](/features/status-bar) —— footer 注册表
-- [底部面板](/features/panes) —— 四个 dock pane
+- [会话模式](/features/modes) —— normal / plan / yolo 与计划评审
+- [底部面板](/features/panes) —— 五个 dock pane

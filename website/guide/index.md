@@ -44,6 +44,16 @@ dsh --profile blue --resume <id>    # 恢复一个已持久化的会话
 若你的 profile 在包改名之前链过（当时包名为 `@dsh-blue/blue*`），那些链接已失效——删除 profile 目录（`~/.dsh/profiles/<name>`）或 `dsh plugin --profile <name> remove` 旧条目后重跑脚本。
 :::
 
+## 开跑前配一个 key
+
+**配一个 `DEEPSEEK_API_KEY` 就可以开始使用了**——开箱默认连 DeepSeek 官方 API（`deepseek-official` 路由，默认模型 `deepseek-v4-flash`），除 key 外无需任何配置：
+
+```sh
+export DEEPSEEK_API_KEY=sk-...        # 或写入 ~/.dsh/.credentials.yaml，一劳永逸
+```
+
+换模型、接自建网关、自定义主题等，见[配置：模型、Provider 与主题](/guide/config)。
+
 ## 首次运行
 
 ```sh

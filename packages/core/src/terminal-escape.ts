@@ -1,19 +1,23 @@
 /**
  * Terminal escape emitters that write to the process stdout without
- * rendering anything: the OSC 52 clipboard-copy sequence. The terminal
- * emulator consumes the sequence and puts the payload on the *local*
- * clipboard, so a copy keeps working over SSH or inside a container where
- * no platform clipboard tool exists. Terminals without OSC 52 support
- * (gnome-terminal/VTE, or xterm without `allowWindowOps`) silently ignore
- * it — the write is always safe but its effect is unverifiable from this
- * side, which is why callers report the method as "unverified".
+ * rendering anything: the OSC 52 clipboard-copy sequence and the OSC 0
+ * window-title sequence. The terminal emulator consumes the sequence
+ * itself, so the write keeps working over SSH or inside a container where
+ * no platform tool exists for the job.
  *
- * The sequence produces no visible output — no cursor motion, no cell
- * paint — so unlike the scrollback-touching gestures (mouse wheel, text
- * selection) it does not interact with pi-tui's differential rendering at
- * all; the alt-screen gating the roadmap carried for it was an
- * over-broad association, corrected with S26. The process handle is
- * injectable for tests (the OSC 11 probe's precedent).
+ * The clipboard half: the terminal puts the payload on the *local*
+ * clipboard (terminals without OSC 52 support silently ignore it — the
+ * write is always safe but its effect is unverifiable from this side,
+ * which is why callers report the method as "unverified"). The title half:
+ * the terminal renames its window/tab (inside tmux the sequence becomes
+ * the tmux window name instead — tmux consumes OSC 0 rather than
+ * swallowing it, so unlike OSC 52 no DCS passthrough wrapping is needed).
+ *
+ * Neither sequence produces visible output — no cursor motion, no cell
+ * paint — so neither interacts with pi-tui's differential rendering; the
+ * alt-screen gating the roadmap carried for OSC 52 was an over-broad
+ * association, corrected with S26. The process handle is injectable for
+ * tests (the OSC 11 probe's precedent).
  *
  * @module @dsh-blue/blue-core/terminal-escape
  */
@@ -63,4 +67,39 @@ export function emitClipboardOsc52(text: string, proc: BlueEscapeProcess = proce
   } catch {
     return false
   }
+}
+
+/** Maximum code points a terminal title carries (the kimi cap). */
+export const TITLE_MAX_CHARS = 32
+
+/**
+ * Neutralize title text before it enters an OSC sequence: strip every
+ * C0/C1 control character (an embedded ESC or BEL would corrupt or
+ * terminate the sequence) plus the directional and invisible controls
+ * that can make a displayed title deceptive, collapse whitespace runs,
+ * and trim. The harness title service already normalizes what it logs —
+ * this is the emitter's own defense, so no upstream regression can break
+ * out of the title slot.
+ * @param title - untrusted title text.
+ * @returns the sanitized one-line title, possibly empty.
+ */
+export function sanitizeTitleText(title: string): string {
+  return title
+    .replace(/[\u0000-\u001F\u007F-\u009F]/gu, '')
+    .replace(/[\u200B\u200E\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF]/gu, '')
+    .replace(/\s+/gu, ' ')
+    .trim()
+}
+
+/**
+ * Build an OSC 0 sequence setting the terminal's window (and tab) title:
+ * the sanitized title capped to {@link TITLE_MAX_CHARS} code points. An
+ * empty result sets an empty title — callers substitute their own
+ * fallback text before emitting.
+ * @param title - untrusted title text.
+ * @returns the escape sequence, ready for one terminal write.
+ */
+export function buildTitleOsc0(title: string): string {
+  const capped = [...sanitizeTitleText(title)].slice(0, TITLE_MAX_CHARS).join('')
+  return `${ESC}]0;${capped}${BEL}`
 }

@@ -56,6 +56,8 @@ export class PaneFakeScreen implements BlueScreen {
     return fn()
   }
 
+  setTitle(): void {}
+
   /**
    * Every mounted bottom child's rendered rows, in mount order, with the
    * kimi gutter column the mount layer wraps the panes in stripped — the

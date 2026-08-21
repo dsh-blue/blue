@@ -1,6 +1,39 @@
 # 内置插件
 
-Blue 的一切表面都是插件（patch 行）——本页是 21 个内置插件的目录。它们同时也是"插件能做什么"的活例子：状态栏条目、工具卡片、编辑器增强、完整面板，全部经 [Seam 参考](/plugins/seams)里的缝注册，逐个可拆。
+Blue 的一切表面都是插件（patch 行）——本页是 23 个内置插件的目录。它们同时也是"插件能做什么"的活例子：状态栏条目、工具卡片、编辑器增强、完整面板，全部经 [Seam 参考](/plugins/seams)里的缝注册，逐个可拆。
+
+三段结构一张图（与仓库 README 同源，单一来源 `docs/diagrams/blue-composition.mmd`）：
+
+<!-- BEGIN diagram:blue-composition -->
+<!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
+```mermaid
+flowchart TB
+    subgraph bundle["cordis.patch.yml — the 23 Blue rows · 23 条 Blue 行"]
+        subgraph baseline["plain baseline 基线 — 8 rows, self-sufficient 自足"]
+            core["blue-core"]
+            theme["blue-theme-dark"]
+            banner["blue-banner"]
+            transcript["blue-transcript"]
+            sbasic["blue-status-basic"]
+            interaction["blue-interaction"]
+            startup["blue-startup"]
+            bapp["blue-app"]
+        end
+        subgraph enhancement["enhancement segment 增强段 — every row droppable 每行皆可删"]
+            editorPlus["blue-editor-plus"]
+            att["blue-attachments · blue-paste-image"]
+            statusEnh["blue-status-cwd · -git · -mode · -tips · -context"]
+            intents["blue-intent-diff · -terminal"]
+            panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
+        end
+    end
+    dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]
+    bundle -.-> dshbase
+
+    classDef optional stroke-dasharray: 4 4;
+    class editorPlus,att,statusEnh,intents,panes optional;
+```
+<!-- END diagram:blue-composition -->
 
 ## 基线插件（5 个）
 
@@ -14,7 +47,7 @@ Blue 的一切表面都是插件（patch 行）——本页是 21 个内置插�
 | `blue-transcript` | 会话流主体：事件折叠与渲染、状态栏注册表与两行 footer 壳 |
 | `blue-status-basic` | 状态栏基线条目：model 名（优先级 0） |
 
-## 增强插件（13 个，均可独立启停）
+## 增强插件（15 个，均可独立启停）
 
 在纯基线之上的可选层——每一行都可单独删除而不破坏基线：
 
@@ -25,6 +58,7 @@ Blue 的一切表面都是插件（patch 行）——本页是 21 个内置插�
 | `blue-paste-image` | Ctrl-V 剪贴板贴图，`[image #N]` 标记，提交拆为图片块 |
 | `blue-status-cwd` | 状态栏：会话工作目录（优先级 5，深路径缩写） |
 | `blue-status-git` | 状态栏：git 徽章 `branch [+a -d ↑u↓v]`（优先级 10，TTL 缓存探测） |
+| `blue-status-mode` | 状态栏：会话模式徽标 `plan`/`yolo`（优先级 2，normal 态隐藏） |
 | `blue-status-tips` | 状态栏：轮换教学提示（优先级 30，10 秒推进） |
 | `blue-status-context` | 状态栏：context 占用 `context: N%`（优先级 20，第二行右对齐） |
 | `blue-intent-diff` | diff 专属工具卡（Write/Edit 的统一 diff 着色呈现） |
@@ -33,6 +67,7 @@ Blue 的一切表面都是插件（patch 行）——本页是 21 个内置插�
 | `blue-pane-queue` | 排队消息面板 + 空编辑器 Up 召回 |
 | `blue-pane-todo` | todo 面板（Ctrl-T 折叠切换，全完成自动收起） |
 | `blue-pane-btw` | `/btw` 侧问面板：fork 当前会话问旁路问题 |
+| `blue-pane-agents` | 子代理分组面板：运行中的子代理组卡片（dock 末行，kimi swarm-pane 语义） |
 
 ## 装配插件（3 个）
 

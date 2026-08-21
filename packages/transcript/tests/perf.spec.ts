@@ -65,6 +65,8 @@ class CountingScreen implements BlueScreen {
   suspend<T>(fn: () => Promise<T>): Promise<T> {
     return fn()
   }
+
+  setTitle(): void {}
 }
 
 /** Build `turns` synthetic turns: user, 3 steps × 2 tool calls, assistant. */

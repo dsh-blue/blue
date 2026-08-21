@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitepress'
+import { withMermaid } from 'vitepress-plugin-mermaid'
 
 const base = process.env.DOCS_BASE ?? '/'
 
@@ -72,24 +73,31 @@ const sharedTheme = {
   socialLinks: [{ icon: 'github', link: 'https://github.com/dsh-blue/blue' }],
 }
 
-// ── 导航：顶栏只保留“文档”与“插件市场”两个入口 ──────────────────────────────
+// ── 导航：顶栏三入口——用户手册 / 开发手册 / 插件市场 ────────────────────────
+// 按受众分册（对齐 Claude Code 的使用文档/插件开发文档分家）：用户手册覆盖
+// 使用与定制，开发手册收口 /plugins/ 路径下的插件开发内容，市场独立单页。
 const navZh = [
-  { text: '文档', link: '/guide/', activeMatch: '/(guide|dsh|features|reference|plugins)' },
+  { text: '用户手册', link: '/guide/', activeMatch: '/(guide|dsh|features|reference)' },
+  { text: '开发手册', link: '/plugins/', activeMatch: '^/plugins' },
   { text: '插件市场', link: '/marketplace/', activeMatch: '^/marketplace' },
 ]
 
 const navEn = [
-  { text: 'Docs', link: '/en/guide/', activeMatch: '/en/(guide|dsh|features|reference|plugins)' },
+  { text: 'User manual', link: '/en/guide/', activeMatch: '/en/(guide|dsh|features|reference)' },
+  { text: 'Developer manual', link: '/en/plugins/', activeMatch: '^/en/plugins' },
   { text: 'Plugin marketplace', link: '/en/marketplace/', activeMatch: '^/en/marketplace' },
 ]
 
-// ── 侧边栏：全站常驻四个分组（非折叠），任何页面可直接跳任一节 ────────────────
+// ── 侧边栏：按路径分册 ─────────────────────────────────────────────────────
+// '/' = 用户手册（指南 / dsh 手册 / 功能 / 参考）；'/plugins/' = 开发手册；
+// '/marketplace/' 单页不给侧边栏。文件不动、链接不变，仅导航重组。
 const sidebarZh = {
   '/': [
     {
       text: '指南',
       items: [
         { text: '快速上手', link: '/guide/' },
+        { text: '配置', link: '/guide/config' },
         { text: '主题', link: '/guide/theme' },
         { text: '常见问题', link: '/guide/faq' },
       ],
@@ -111,6 +119,7 @@ const sidebarZh = {
       text: '功能',
       items: [
         { text: '功能总览', link: '/features/' },
+        { text: '会话模式', link: '/features/modes' },
         { text: '流式会话与工具卡片', link: '/features/streaming' },
         { text: '输入编辑器', link: '/features/editor' },
         { text: '审批与问卷浮层', link: '/features/approval' },
@@ -125,15 +134,19 @@ const sidebarZh = {
         { text: '斜杠命令参考', link: '/reference/commands' },
       ],
     },
+  ],
+  '/plugins/': [
     {
-      text: '插件',
+      text: '插件开发',
       items: [
         { text: '编写第一个插件', link: '/plugins/' },
         { text: 'Seam 参考', link: '/plugins/seams' },
         { text: '内置插件', link: '/plugins/builtins' },
+        { text: '仓库设计文档（GitHub）', link: 'https://github.com/dsh-blue/blue/blob/master/docs/README.md' },
       ],
     },
   ],
+  '/marketplace/': [],
 }
 
 const sidebarEn = {
@@ -142,6 +155,7 @@ const sidebarEn = {
       text: 'Guide',
       items: [
         { text: 'Quickstart', link: '/en/guide/' },
+        { text: 'Configuration', link: '/en/guide/config' },
         { text: 'Theming', link: '/en/guide/theme' },
         { text: 'FAQ', link: '/en/guide/faq' },
       ],
@@ -163,6 +177,7 @@ const sidebarEn = {
       text: 'Features',
       items: [
         { text: 'Overview', link: '/en/features/' },
+        { text: 'Session modes', link: '/en/features/modes' },
         { text: 'Streaming transcript & tool cards', link: '/en/features/streaming' },
         { text: 'Input editor', link: '/en/features/editor' },
         { text: 'Approvals & questionnaires', link: '/en/features/approval' },
@@ -177,18 +192,22 @@ const sidebarEn = {
         { text: 'Slash commands', link: '/en/reference/commands' },
       ],
     },
+  ],
+  '/en/plugins/': [
     {
-      text: 'Plugins',
+      text: 'Plugin development',
       items: [
         { text: 'Writing your first plugin', link: '/en/plugins/' },
         { text: 'Seam reference', link: '/en/plugins/seams' },
         { text: 'Built-in plugins', link: '/en/plugins/builtins' },
+        { text: 'Design docs (GitHub, 中文)', link: 'https://github.com/dsh-blue/blue/blob/master/docs/README.md' },
       ],
     },
   ],
+  '/en/marketplace/': [],
 }
 
-export default defineConfig({
+const config = defineConfig({
   base,
   cleanUrls: true,
   sitemap: { hostname: SITEMAP_HOSTNAME },
@@ -234,4 +253,18 @@ export default defineConfig({
     },
   },
   themeConfig: { ...sharedTheme },
+})
+
+// ── Mermaid 图表支持 ────────────────────────────────────────────────────────
+// vitepress-plugin-mermaid v2：`mermaid` 键承载 mermaidConfig，仅在明色主题生效
+// ——插件检测 VitePress 挂在 <body> 上的 dark class，切暗色时自动换主题重渲染。
+// 仓库图源约定：docs/diagrams/*.mmd 是唯一正典，各文档（含本站页面）的嵌入块
+// 由 script/sync-diagrams.mjs 生成，CI 用 pnpm run diagrams:check 把关。
+// optimizeDeps：dev 下 mermaid 的 ESM chunk 引 dayjs 等 CJS 依赖，不预打包会
+// 以 /@fs 原始路径伺服并因缺 default 导出抛 SyntaxError（整页白屏），必须整体
+// 预打包交由 esbuild 做 interop（配合 pnpm-workspace.yaml 的 publicHoistPattern）。
+export default withMermaid({
+  ...config,
+  mermaid: { theme: 'neutral' },
+  vite: { optimizeDeps: { include: ['mermaid'] } },
 })

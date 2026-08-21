@@ -232,6 +232,8 @@ class BannerFakeScreen implements BlueScreen {
   suspend<T>(fn: () => Promise<T>): Promise<T> {
     return fn()
   }
+
+  setTitle(): void {}
 }
 
 /** Boot the banner plugin on a fresh root context with faked services. */
