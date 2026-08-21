@@ -75,6 +75,8 @@ The `blue-editor-plus` `#` completion branch completes the settled skills throug
 
 `/skills` (`src/skills-command.ts`) opens the read-only `InfoPanel` listing the same catalog by folded source layer (project roots under `Project`, user roots under `User`, other sources as delivered) with the name/description/whenToUse rows. The upstream injection arrives as an ordinary `skill-invocation`-sourced session event, which the D28 fold already renders zero rows for — live and replay both. The btw side-question pane's submissions do not run the rewrite (parked).
 
+Acceptance note (2026-08-21): the gesture is invisible on the screen — the echoed user row carries the rewritten `/name` (the typed `#name` survives only in editor history) and the D28 fold renders the skill-invocation injection zero rows, so nothing marks the skill as loaded; the model's answer is the only cue. A visible cue (echoing the typed form, or a one-line dim injection marker as a D28 exception) is parked for post-release — see the roadmap S29 row's 验收注记.
+
 ## Shared selectors and permission (S24b, D33)
 
 The shared single-select `SelectListPanel` (`src/select-list.ts`): the center-on-cursor 8-row window, `❯ ` pointer, `← current` badge, `(n/m)` counter, plus the `cycle`/`windowedRange`/`counterRow`/`oneLine` helpers. `/sessions`, `/provider` (whose CTA became a uniform trailing row), the wizard's choose steps, and the `/permission` picker consume it; `BlueSelect` consumes the helpers; `ModelPanel` keeps its own tabbed geometry.
