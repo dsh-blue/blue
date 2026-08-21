@@ -10,7 +10,9 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
-import { ENDPOINT_PROTOCOLS, ProviderPanel, deriveKeyRef, runProviderAdd, runProviderEdit, type ProviderRow } from '../src/provider-add.ts'
+import { ENDPOINT_PROTOCOLS, deriveKeyRef, runProviderAdd, runProviderEdit } from '../src/provider-add.ts'
+import { SelectListPanel, type SelectRow } from '../src/select-list.ts'
+import { CURRENT_MARK } from '../src/symbols.ts'
 import { setModelsDevLoader, type ModelsDevIndex } from '../src/models-dev.ts'
 import { buildIndex } from '../src/models-dev.ts'
 
@@ -27,23 +29,24 @@ describe('deriveKeyRef', () => {
   })
 })
 
-describe('ProviderPanel', () => {
-  const rows: ProviderRow[] = [
-    { id: 'mock', name: 'Mock' },
-    { id: 'z-ai', name: 'Z.ai' },
+describe('The /provider picker rows (SelectListPanel)', () => {
+  const rows: SelectRow[] = [
+    { value: 'mock', label: 'Mock', badge: CURRENT_MARK },
+    { value: 'z-ai', label: 'Z.ai' },
+    { value: '__add__', label: '+ Add provider' },
   ]
 
   function panel() {
     const { theme, keymap, components } = fakeBlueContext()
     const onSelect = vi.fn()
-    const onAdd = vi.fn()
     const onCancel = vi.fn()
-    const component = new ProviderPanel({
+    const component = new SelectListPanel({
       keymap, theme, components, rows,
-      currentProvider: 'mock',
-      onSelect, onAdd, onCancel,
+      title: 'Providers',
+      titleHint: '· esc cancel · ↵ switch / add',
+      onSelect, onCancel,
     })
-    return { component, onSelect, onAdd, onCancel }
+    return { component, onSelect, onCancel }
   }
 
   it('renders the configured rows with the current badge and the CTA', () => {
@@ -63,35 +66,37 @@ describe('ProviderPanel', () => {
     component.handleInput(KEY.down)
     component.handleInput(KEY.down)
     const cta = component.render(70).find(row => row.includes('+ Add provider')) ?? ''
-    expect(cta).toContain('^  ❯ + Add provider^')
+    expect(cta).toContain('^❯ + Add provider^')
   })
 
   it('windows a long provider list behind a scroll position row', () => {
     const { theme, keymap, components } = fakeBlueContext()
-    const many: ProviderRow[] = Array.from({ length: 12 }, (_, index) =>
-      ({ id: `p${index}`, name: `P${index}` }))
-    const component = new ProviderPanel({
+    const many: SelectRow[] = Array.from({ length: 12 }, (_, index) =>
+      ({ value: `p${index}`, label: `P${index}` }))
+    many.push({ value: '__add__', label: '+ Add provider' })
+    const component = new SelectListPanel({
       keymap, theme, components, rows: many,
-      currentProvider: 'p0',
-      onSelect: () => {}, onAdd: () => {}, onCancel: () => {},
+      onSelect: () => {}, onCancel: () => {},
     })
     const rendered = component.render(70)
     expect(rendered.some(row => row.includes('P0'))).toBe(true)
     expect(rendered.some(row => row.includes('P8'))).toBe(false)
-    expect(rendered.some(row => row.includes('(1/12)'))).toBe(true)
-    expect(rendered.some(row => row.includes('+ Add provider'))).toBe(true)
+    // The CTA windows like any other row now (S24b uniform rows), so a
+    // 13-row list hides it behind the counter.
+    expect(rendered.some(row => row.includes('(1/13)'))).toBe(true)
+    expect(rendered.some(row => row.includes('+ Add provider'))).toBe(false)
   })
 
   it('routes Enter by row kind and wraps over the CTA', () => {
-    const { component, onSelect, onAdd, onCancel } = panel()
+    const { component, onSelect, onCancel } = panel()
     component.handleInput(KEY.enter)
-    expect(onSelect).toHaveBeenCalledWith(rows[0])
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ value: 'mock' }))
     component.handleInput(KEY.down)
     component.handleInput(KEY.enter)
-    expect(onSelect).toHaveBeenLastCalledWith(rows[1])
+    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ value: 'z-ai' }))
     component.handleInput(KEY.down)
     component.handleInput(KEY.enter)
-    expect(onAdd).toHaveBeenCalledOnce()
+    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ value: '__add__' }))
     // Down off the CTA wraps to the head; a plain Up steps back off it.
     component.handleInput(KEY.down)
     component.handleInput(KEY.down)
@@ -238,16 +243,15 @@ describe('runProviderAdd', () => {
     // The display-name helper's empty branch rides through catalogRows in
     // model-commands; here the pane row itself exercises the same rule.
     const { theme, keymap, components } = fakeBlueContext()
-    const component = new ProviderPanel({
+    const component = new SelectListPanel({
       keymap, theme, components,
-      rows: [{ id: 'x', name: '' }],
-      currentProvider: '',
-      onSelect: () => {}, onAdd: () => {}, onCancel: () => {},
+      rows: [{ value: 'x', label: '' }],
+      onSelect: () => {}, onCancel: () => {},
     })
     const rendered = component.render(60)
     // The empty display name renders the bare row (the id fallback rides
-    // in the pane's own name mapping, asserted through the row existing).
-    expect(rendered.join('\n')).toContain('Add provider')
+    // in the pane's own name mapping, asserted through the frame existing).
+    expect(rendered.join('\n')).toContain('Select')
   })
 
   it('declares a custom anthropic endpoint, adopting gateway-listed models', async () => {

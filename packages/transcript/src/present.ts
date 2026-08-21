@@ -112,6 +112,23 @@ export function isReadItem(item: TranscriptToolItem): boolean {
   return view.card === 'generic' && 'kind' in view && view.kind === 'read'
 }
 
+/** dsh-plan-mode's plan-review exit tool — a named-tool presentation exception. */
+const PLAN_REVIEW_TOOL = 'exit_plan_mode'
+
+/**
+ * Whether a tool item is a declined plan review: dsh-plan-mode's
+ * `exit_plan_mode` answers a rejection (Reject, or Revise with feedback)
+ * by failing the call — "The user chose to keep planning…" — a user
+ * decision, not a tool failure, so the card renders the warning tone
+ * instead of the error state (the `todo_write` precedent for a
+ * named-tool presentation exception; no view contract marks it yet).
+ * @param item - the settled tool item.
+ * @returns whether the card should present a declined plan review.
+ */
+export function isPlanDecline(item: TranscriptToolItem): boolean {
+  return item.name === PLAN_REVIEW_TOOL && item.result?.isError === true
+}
+
 /**
  * The S20 key argument for one tool item's header: the whitelist
  * (`file_path`/`command`/`pattern`) first, then the first short string

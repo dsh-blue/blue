@@ -25,12 +25,17 @@ import { registerCommandAliases } from './command-meta.ts'
 import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
 import { EffortPanel, ModelPanel, type ModelPanelItem } from './model-panel.ts'
-import { isProviderFlowError, ProviderPanel, runProviderAdd, runProviderEdit, type ProviderRow } from './provider-add.ts'
+import { isProviderFlowError, runProviderAdd, runProviderEdit } from './provider-add.ts'
+import { SelectListPanel, type SelectRow } from './select-list.ts'
+import { CURRENT_MARK } from './symbols.ts'
 
 /** Render one failure reason for an error result. */
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
+
+/** The `/provider` picker's trailing wizard row — routes Enter to the Add flow. */
+const ADD_PROVIDER = '__add__'
 
 /** The live-session reads every model command starts from. */
 interface SelectionRead {
@@ -550,35 +555,32 @@ export function registerModelCommands(ctx: Context): () => void {
       return { kind: 'error', text: 'provider picker is unavailable: the Blue screen is not mounted' }
     }
     // The pane lists the configured routes only — dormant catalog vendors
-    // live behind the Add wizard's known-provider branch.
-    const rows: ProviderRow[] = llm.listProviders().map(provider => ({
-      id: provider.id,
-      name: provider.name.length > 0 ? provider.name : provider.id,
-    }))
+    // live behind the Add wizard's known-provider branch. The trailing CTA
+    // row routes to the wizard (the shared list panel's uniform row shape,
+    // S24b: the CTA windows and wraps like any other row).
     const selection = readSelection(ctx)
     const currentProvider = 'error' in selection ? '' : selection.read.modelRef.current.provider
-    const panel = new ProviderPanel({
+    const rows: SelectRow[] = llm.listProviders().map(provider => ({
+      value: provider.id,
+      label: provider.name.length > 0 ? provider.name : provider.id,
+      ...(provider.id === currentProvider ? { badge: CURRENT_MARK } : {}),
+    }))
+    rows.push({ value: ADD_PROVIDER, label: '+ Add provider' })
+    const panel = new SelectListPanel({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,
       rows,
-      currentProvider,
+      title: 'Providers',
+      titleHint: '· esc cancel · ↵ switch / add',
       onSelect: row => {
         restore()
         void (async () => {
-          const text = await runProviderEdit(ctx, display, row.id)
+          const text = row.value === ADD_PROVIDER
+            ? await runProviderAdd(ctx, display, pickModels)
+            : await runProviderEdit(ctx, display, row.value)
           /* v8 ignore next -- cordis disposal kills the continuation on a
              dead context before the notice could fire */
-          if (!unloaded) getSharedEditor()?.notice?.(paintFlowOutcome(display, text))
-        })()
-      },
-      onAdd: () => {
-        restore()
-        void (async () => {
-          const text = await runProviderAdd(ctx, display, pickModels)
-          /* v8 ignore next -- the unloaded side only runs when the tree
-             tears down mid-wizard; cordis disposal already kills the
-             continuation on a dead context before it reaches here */
           if (!unloaded) getSharedEditor()?.notice?.(paintFlowOutcome(display, text))
         })()
       },

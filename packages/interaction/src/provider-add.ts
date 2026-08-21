@@ -17,7 +17,6 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
-import { framePanel } from '@dsh-blue/blue-core/chrome'
 import type { LlmDiscoveredModel } from '@deepseek-ai/dsh-llm'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
@@ -28,9 +27,8 @@ import type {} from '@deepseek-ai/dsh-credentials'
 import { mountEditorReplacement } from './editor-instance.ts'
 import { loadModelsDevIndex, type ModelsDevMatch } from './models-dev.ts'
 import { FormPanel, type FormField } from './form-panel.ts'
-import { ACTION_CANCEL, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_SUBMIT } from './keys.ts'
-import { BlueSelect, SessionList } from './select.ts'
-import { CURRENT_MARK, SELECT_POINTER } from './symbols.ts'
+import { BlueSelect } from './select.ts'
+import { SelectListPanel } from './select-list.ts'
 
 /** The wire protocols a custom endpoint may declare — the pi-ai `supportedProtocols` subset with a plain baseURL surface. */
 export const ENDPOINT_PROTOCOLS = [
@@ -47,10 +45,6 @@ const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'ma
 
 /** The route-id shape the settings section accepts (the Web Models page's rule). */
 const ROUTE_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
-
-/** Provider rows rendered at once; the real catalog lists ~36 vendors, so
- * the pane windows like every other list (the @ completion's shape). */
-const MAX_VISIBLE = 8
 
 /**
  * The conventional credential ref for one provider route (the Web Models
@@ -94,122 +88,6 @@ export interface ProviderRow {
   readonly id: string
   /** The display name. */
   readonly name: string
-}
-
-/** Construction options for {@link ProviderPanel}. */
-export interface ProviderPanelOptions {
-  /** Keybinding registry used to resolve the list keys. */
-  readonly keymap: BlueKeymap
-  /** Theme supplying the row, badge, and rule colors. */
-  readonly theme: BlueTheme
-  /** Component factory supplying the width measurement/truncation helpers. */
-  readonly components: BlueComponents
-  /** Rows: active routes and dormant catalog vendors, in catalog order. */
-  readonly rows: readonly ProviderRow[]
-  /** The live selection's provider id, badged `← current`. */
-  readonly currentProvider: string
-  /** Enter on a configured row. */
-  readonly onSelect: (row: ProviderRow) => void
-  /** Enter on the trailing CTA row. */
-  readonly onAdd: () => void
-  /** Escape. */
-  readonly onCancel: () => void
-}
-
-/**
- * The `/provider` picker: the configured routes (Enter opens the scoped
- * model picker over that route's models) and the trailing
- * `+ Add provider` CTA — plain until the cursor reaches it, then it
- * takes the pointer and the `primary` hue like any selected row (the
- * dogfood ruling). Dormant catalog vendors live in the wizard's
- * known-provider branch, not here.
- */
-export class ProviderPanel implements BlueFocusable {
-  /** Whether the panel currently holds focus. Managed by the screen. */
-  focused = false
-
-  private cursor = 0
-
-  /**
-   * @param options - see {@link ProviderPanelOptions}.
-   */
-  constructor(private readonly options: ProviderPanelOptions) {}
-
-  /**
-   * Dispatch one input sequence against the list keybindings.
-   * @param data - the input sequence as read from the terminal.
-   */
-  handleInput(data: string): void {
-    const { keymap, rows } = this.options
-    const count = rows.length + 1
-    if (keymap.matches(data, ACTION_MOVE_UP)) {
-      this.cursor = this.cursor === 0 ? count - 1 : this.cursor - 1
-      return
-    }
-    if (keymap.matches(data, ACTION_MOVE_DOWN)) {
-      this.cursor = this.cursor === count - 1 ? 0 : this.cursor + 1
-      return
-    }
-    if (keymap.matches(data, ACTION_SUBMIT)) {
-      if (this.cursor === rows.length) {
-        this.options.onAdd()
-        return
-      }
-      const row = rows[this.cursor]
-      /* v8 ignore next -- the cursor is always a row index or the CTA slot */
-      if (row === undefined) return
-      this.options.onSelect(row)
-      return
-    }
-    if (keymap.matches(data, ACTION_CANCEL)) this.options.onCancel()
-  }
-
-  /** No cached render state. */
-  invalidate(): void {}
-
-  /**
-   * Render the framed provider list.
-   * @param width - current viewport width in columns.
-   * @returns one string per rendered row.
-   */
-  render(width: number): string[] {
-    const { rows, components, theme } = this.options
-    const colors = theme.colors
-    const lines: string[] = []
-    // The visible window centers on the cursor like SessionList; the CTA
-    // row rides directly under the window so it stays reachable without
-    // ever letting the catalog spill the whole screen.
-    const start = Math.max(0, Math.min(
-      this.cursor - Math.floor(MAX_VISIBLE / 2),
-      rows.length - MAX_VISIBLE,
-    ))
-    const end = Math.min(start + MAX_VISIBLE, rows.length)
-    for (let index = start; index < end; index += 1) {
-      const row = rows[index]
-      /* v8 ignore next -- start/end are clamped to rows.length */
-      if (row === undefined) continue
-      const isCursor = index === this.cursor
-      const pointer = isCursor ? colors.primary(SELECT_POINTER) : ' '
-      const label = isCursor ? colors.primary(row.name) : colors.text(row.name)
-      const tail = row.id === this.options.currentProvider ? `  ${colors.success(CURRENT_MARK)}` : ''
-      lines.push(components.truncateToWidth(`  ${pointer} ${label}${tail}`, width))
-    }
-    if (rows.length > MAX_VISIBLE) {
-      lines.push(colors.textMuted(`  (${this.cursor + 1}/${rows.length})`))
-    }
-    // The CTA is a plain `+` row until the cursor reaches it; selected it
-    // takes the pointer and the primary hue like any other row.
-    const addCursor = this.cursor === rows.length
-    const addRow = `  ${addCursor ? SELECT_POINTER : '+'} + Add provider`
-    lines.push(addCursor ? colors.primary(addRow) : colors.text(addRow))
-    return framePanel(lines, width, {
-      title: 'Providers',
-      titlePaint: colors.primary,
-      titleHint: '· esc cancel · ↵ switch / add',
-      hintPaint: colors.textMuted,
-      rulePaint: colors.primary,
-    })
-  }
 }
 
 /** The display quartet the flow threads through every panel. */
@@ -257,14 +135,14 @@ interface Choice {
 
 /** Mount a single-choice list step and await its value. */
 function choose(display: ProviderAddDisplay, title: string, items: readonly Choice[]): Promise<string | undefined> {
-  return step<string>(done => new SessionList({
+  return step<string>(done => new SelectListPanel({
     keymap: display.keymap,
     theme: display.theme,
     components: display.components,
-    items,
+    rows: items,
     title,
     titleHint: '· esc cancel · ↵ choose',
-    onSelect: item => done(item.value),
+    onSelect: row => done(row.value),
     onCancel: () => done(undefined),
   }))
 }

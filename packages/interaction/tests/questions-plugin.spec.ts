@@ -119,19 +119,19 @@ describe('blue-questions provider', () => {
     await pending.catch(() => {})
   })
 
-  it('rejects ASK_DISMISSED on Escape and hides the overlay', async () => {
+  it('rejects ASK_CANCELLED on Escape and hides the overlay', async () => {
     const { ctx, screen } = await mount()
     const pending = ctx.userQuestions.ask({ questions: [choice()] })
     overlay(screen).handleInput(KEY.escape)
-    await expect(pending).rejects.toMatchObject({ code: 'ASK_DISMISSED' })
+    await expect(pending).rejects.toMatchObject({ code: 'ASK_CANCELLED' })
     expect(screen.overlays[0]?.hidden).toBe(true)
   })
 
-  it('rejects ASK_DISMISSED on Escape from a free-text question', async () => {
+  it('rejects ASK_CANCELLED on Escape from a free-text question', async () => {
     const { ctx, screen } = await mount()
     const pending = ctx.userQuestions.ask({ questions: [{ id: 'q2', question: 'Why?' }] })
     overlay(screen).handleInput(KEY.escape)
-    await expect(pending).rejects.toMatchObject({ code: 'ASK_DISMISSED' })
+    await expect(pending).rejects.toMatchObject({ code: 'ASK_CANCELLED' })
     expect(screen.overlays[0]?.hidden).toBe(true)
   })
 
@@ -167,5 +167,107 @@ describe('blue-questions provider', () => {
     // The slot is free again after disposal.
     const dispose = ctx.userQuestions.registerProvider({ ask: () => Promise.resolve({ answers: [] }) })
     dispose()
+  })
+})
+
+describe('blue-questions plan-review intent', () => {
+  /** The exit_plan_mode ask, with a non-standard approve label. */
+  function planAsk(overrides: Partial<AskUserQuestionItem> = {}): AskUserQuestionItem {
+    return {
+      id: 'plan-review',
+      header: 'Plan review',
+      question: 'Approve this plan and leave plan mode?',
+      detail: '# Fix the build\n\n1. One\n2. Two',
+      options: [
+        { label: 'Ship it', description: 'Leave plan mode.' },
+        { label: 'Keep planning', description: 'Stay and refine.' },
+      ],
+      intent: { kind: 'plan-review', approve: 'Ship it' },
+      ...overrides,
+    }
+  }
+
+  it('mounts the dedicated panel and approves from the seeded cursor', async () => {
+    const { ctx, screen } = await mount()
+    const pending = ctx.userQuestions.ask({ questions: [planAsk()] })
+    const frame = screen.overlays[0]?.component.render(60).join('\n') ?? ''
+    expect(frame).toContain('Plan review')
+    expect(frame).toContain('# Fix the build')
+    expect(frame).toContain('1. Ship it')
+    expect(frame).toContain('2. Reject')
+    expect(frame).toContain('3. Revise')
+    overlay(screen).handleInput(KEY.enter)
+    await expect(pending).resolves.toEqual({ answers: [{ id: 'plan-review', selected: ['Ship it'] }] })
+    expect(screen.overlays[0]?.hidden).toBe(true)
+  })
+
+  it('rejects with the other option label from the second button', async () => {
+    const { ctx, screen } = await mount()
+    const pending = ctx.userQuestions.ask({ questions: [planAsk()] })
+    overlay(screen).handleInput(KEY.right)
+    overlay(screen).handleInput(KEY.enter)
+    await expect(pending).resolves.toEqual({
+      answers: [{ id: 'plan-review', selected: ['Keep planning'] }],
+    })
+  })
+
+  it('submits typed revision feedback from the third row', async () => {
+    const { ctx, screen } = await mount()
+    const pending = ctx.userQuestions.ask({ questions: [planAsk()] })
+    overlay(screen).handleInput(KEY.right)
+    overlay(screen).handleInput(KEY.right)
+    for (const char of 'redo step 2') overlay(screen).handleInput(char)
+    overlay(screen).handleInput(KEY.enter)
+    await expect(pending).resolves.toEqual({
+      answers: [{ id: 'plan-review', selected: [], custom: 'redo step 2' }],
+    })
+  })
+
+  it('rejects with ASK_CANCELLED when the plan review is dismissed', async () => {
+    const { ctx, screen } = await mount()
+    const pending = ctx.userQuestions.ask({ questions: [planAsk()] })
+    overlay(screen).handleInput(KEY.escape)
+    await expect(pending).rejects.toMatchObject({ code: 'ASK_CANCELLED' })
+    expect(screen.overlays[0]?.hidden).toBe(true)
+  })
+
+  it('rejects with ASK_ABORTED when the plan review signal aborts', async () => {
+    const { ctx, screen } = await mount()
+    const controller = new AbortController()
+    const pending = ctx.userQuestions.ask({ questions: [planAsk()], signal: controller.signal })
+    controller.abort()
+    await expect(pending).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    expect(screen.overlays[0]?.hidden).toBe(true)
+  })
+
+  it('falls back to the questionnaire for a three-option intent ask', async () => {
+    const { ctx, screen } = await mount()
+    // A wrong approve label never reaches the provider (the service's
+    // BAD_INTENT gate); the reachable fallback is an intent ask whose
+    // options are not the decision pair — three options here.
+    const pending = ctx.userQuestions.ask({
+      questions: [planAsk({
+        options: [
+          { label: 'Ship it', description: 'Leave plan mode.' },
+          { label: 'Keep planning', description: 'Stay and refine.' },
+          { label: 'Third way' },
+        ],
+      })],
+    })
+    // The generic questionnaire: its title and the fixed Other row.
+    const frame = screen.overlays[0]?.component.render(60).join('\n') ?? ''
+    expect(frame).toContain('question')
+    expect(frame).toContain('Other')
+    overlay(screen).handleInput(KEY.enter)
+    await expect(pending).resolves.toEqual({ answers: [{ id: 'plan-review', selected: ['Ship it'] }] })
+  })
+
+  it('keeps the questionnaire for a multi-question batch carrying the intent', async () => {
+    const { ctx, screen } = await mount()
+    const pending = ctx.userQuestions.ask({ questions: [planAsk(), choice()] })
+    const frame = screen.overlays[0]?.component.render(60).join('\n') ?? ''
+    expect(frame).toContain('Other')
+    overlay(screen).handleInput(KEY.escape)
+    await expect(pending).rejects.toMatchObject({ code: 'ASK_CANCELLED' })
   })
 })

@@ -208,6 +208,62 @@ describe('blue-input plugin', () => {
     })
   })
 
+  it('opens the permission picker on a bare /permission instead of dispatching', async () => {
+    const { ctx, screen, editor, hint } = await mount()
+    const handler = vi.fn(() => ({ kind: 'success' as const, text: 'should not run' }))
+    ctx.commands.register({ name: 'permission', description: 'spy standing in for the upstream command', handler })
+    ctx.provide('permissionPresets', {
+      names: ['read-only', 'workspace-write'],
+      current: () => 'workspace-write',
+      resolve: name => ({ sandbox: `${name}-sandbox`, approval: 'ask' }),
+      optionOf: name => ({ value: name, name }),
+    })
+    type(editor, '/permission')
+    editor.handleInput(KEY.enter)
+    // The picker replaces the editor in its dock slot (the real D30
+    // machinery the plugin installs); the upstream command never runs and
+    // no notice lands (the panel owns the interaction).
+    await vi.waitFor(() => { expect(screen.children).toHaveLength(1) })
+    const panel = screen.children[0] as BlueFocusable
+    const frame = (panel as { render(width: number): string[] }).render(80).join('\n')
+    expect(frame).toContain('Permissions')
+    expect(frame).toContain('← current')
+    expect(handler).not.toHaveBeenCalled()
+    expect(hint.render(80)).toEqual([])
+    // Esc closes back to the editor, still without a dispatch.
+    panel.handleInput(KEY.escape)
+    expect(handler).not.toHaveBeenCalled()
+    expect(screen.children).toEqual([editor, expect.anything()])
+    expect(screen.focused).toBe(editor)
+  })
+
+  it('passes a with-argument /permission line through to the command', async () => {
+    const { ctx, editor, hint, screen } = await mount()
+    const handler = vi.fn(() => ({ kind: 'success' as const, text: 'preset read-only' }))
+    ctx.commands.register({ name: 'permission', description: 'spy standing in for the upstream command', handler })
+    ctx.provide('permissionPresets', {
+      names: ['read-only'],
+      current: () => 'read-only',
+      resolve: name => ({ sandbox: name, approval: 'ask' }),
+      optionOf: name => ({ value: name, name }),
+    })
+    type(editor, '/permission read-only')
+    editor.handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(hint.render(80)).toEqual(['~preset read-only~']) })
+    expect(handler).toHaveBeenCalledOnce()
+    // No panel ever took the editor slot.
+    expect(screen.children).toHaveLength(2)
+  })
+
+  it('falls through a bare /permission to unknown-command without the preset service', async () => {
+    const { editor, hint } = await mount()
+    type(editor, '/permission')
+    editor.handleInput(KEY.enter)
+    await vi.waitFor(() => {
+      expect(hint.render(80)).toEqual(['~unknown command: /permission~'])
+    })
+  })
+
   it('notices command error results and handler rejections', async () => {
     const { ctx, editor, hint } = await mount()
     ctx.commands.register({

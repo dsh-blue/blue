@@ -10,7 +10,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -32,6 +32,9 @@ import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
+import ApprovalService from '@deepseek-ai/dsh-user-approval'
+import PermissionPresetsService from '@deepseek-ai/dsh-permission-presets'
+import type { ShellExecutor } from '@deepseek-ai/dsh-shell'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 // The theme modules come from the package subpaths — not relative core
 // source paths — because the /theme swap keys registry runtimes by apply
@@ -136,6 +139,17 @@ function stripSgr(row: string): string {
 }
 
 /**
+ * Remove the checkout directory's basename from a frame: the banner and
+ * the status-cwd footer entry paint the session cwd, and a worktree named
+ * after the feature under test can carry the very words an absence
+ * assertion looks for (a `…-plan…` checkout would fake a plan badge).
+ */
+function stripCwdName(text: string): string {
+  const name = basename(process.cwd())
+  return name.length === 0 ? text : text.replaceAll(name, '')
+}
+
+/**
  * The boot tip offer — the first slot of the deterministic SWRR expansion,
  * exactly what the mounted tips entry renders until its first tick.
  */
@@ -215,6 +229,13 @@ async function bootBlue(argv: string[], options: {
   realSettings?: { settingsPath: string, credentialsPath: string }
   /** Mount the real (dormant) llm-pi-ai adapter plugin. */
   piAi?: boolean
+  /**
+   * Mount the permission-preset family (stub shell + real approval +
+   * permission services mirroring the dsh-base table). Flag-gated:
+   * pinInitialPermission appends three events to every fresh session,
+   * which would perturb the unrelated cases.
+   */
+  permissionPresets?: boolean
 }): Promise<BlueTree> {
   const dir = mkdtempTracked('dsh-blue-e2e-')
   const terminal = new FakeTerminal()
@@ -476,6 +497,22 @@ export const apply = (ctx) => {
   // self-registered and plan/mode events hit the log (S24a e2e).
   await ctx.plugin(PlanModeController, { section: 'Plan mode (e2e): draft only — no mutations.' })
   await ctx.plugin(UserQuestionService)
+  if (options.permissionPresets === true) {
+    // The permission family as dsh-base composes it: a minimal sandboxed
+    // shell stand-in (the presets service only reads sandboxMode at load),
+    // the real approval service (the /permission command writes its live
+    // policy), and the preset table exactly as the base patch declares it
+    // (bare keys — no names, no descriptions).
+    ctx.provide('shell', { sandboxMode: 'workspace-write' } as unknown as ShellExecutor)
+    await ctx.plugin(ApprovalService, {})
+    await ctx.plugin(PermissionPresetsService, {
+      presets: {
+        'read-only': { sandbox: 'read-only', approval: 'ask' },
+        'workspace-write': { sandbox: 'workspace-write', approval: 'ask' },
+        'danger-full-access': { sandbox: 'danger-full-access', approval: 'never' },
+      },
+    })
+  }
   // The settings family mounts before the default-model service so the
   // latter's settings-backed default tier resolves through the file.
   if (options.realSettings !== undefined) {
@@ -2693,7 +2730,11 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('yolo off') })
     tree.terminal.sendInput('x')
     await vi.waitFor(async () => {
-      const frame = await fullFrame(tree.terminal)
+      // The frame still paints the session cwd (banner + status-cwd
+      // entry), and this suite runs from checkouts whose directory name
+      // can itself contain the badge words (a `…-plan…` worktree) —
+      // strip the cwd basename so the assertion targets the badge.
+      const frame = stripCwdName(await fullFrame(tree.terminal))
       expect(frame).not.toContain('yolo')
       expect(frame).not.toContain('plan')
     })
@@ -2859,5 +2900,188 @@ describe('blue whole-tree e2e', () => {
     unregister()
     // The built-in commands went too.
     expect(commands.list(agent).map(command => command.name)).toEqual([])
+  })
+
+  it('opens the /permission preset picker on a bare line and cancels without dispatching', async () => {
+    const tree = await bootBlue([], { script: [], permissionPresets: true })
+    const agent = await currentAgent(tree)
+    // The interception lives in the editor submit path, so the line must
+    // be typed, not executed through the command runtime.
+    typeLine(tree.terminal, '/permission')
+    await vi.waitFor(async () => {
+      const frame = await fullFrame(tree.terminal)
+      expect(frame).toContain('Permissions')
+      expect(frame).toContain('read-only')
+      expect(frame).toContain('danger-full-access')
+      expect(frame).toContain('sandbox danger-full-access · approval never')
+      expect(frame).toContain('← current')
+    })
+    tree.terminal.sendInput('\x1b')
+    // Esc restores the editor; no command/run was ever recorded (the log
+    // stays honest — only real switches dispatch).
+    await vi.waitFor(async () => {
+      expect(await fullFrame(tree.terminal)).not.toContain('Permissions')
+    })
+    expect(agent.session.events.some(event => event.type === 'command/run' && event.data.name === 'permission'))
+      .toBe(false)
+  })
+
+  it('gates danger-full-access behind the typed-y form and switches presets both ways', async () => {
+    const tree = await bootBlue([], { script: [], permissionPresets: true })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, '/permission')
+    await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('danger-full-access') })
+    // The cursor seeds on the current preset (workspace-write, row 2 of
+    // 3): one Down reaches the danger row.
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('Full access') })
+    // Esc pops the gate back onto the picker.
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('danger-full-access') })
+    // A wrong entry holds the form open with the validation error.
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('Full access') })
+    tree.terminal.sendInput('n')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('type y to confirm') })
+    // The typed y closes both layers and dispatches the real switch.
+    tree.terminal.sendInput('\x7f')
+    tree.terminal.sendInput('y')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('preset danger-full-access') })
+    // The log's first permission/preset is the session-creation pin; the
+    // switch is the last one.
+    const presets = agent.session.events
+      .filter(event => event.type === 'permission/preset')
+      .map(event => event.data.preset)
+    expect(presets.at(-1)).toBe('danger-full-access')
+    const approvalPolicies = agent.session.events
+      .filter(event => event.type === 'approval/policy')
+      .map(event => event.data.policy)
+    expect(approvalPolicies.at(-1)).toBe('never')
+    expect(agent.session.events.some(event => event.type === 'sandbox/mode')).toBe(true)
+    // Switching back through the panel needs no gate. The cursor re-seeds
+    // on the now-current danger row; Down wraps to read-only (row 1 of 3).
+    typeLine(tree.terminal, '/permission')
+    await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('Permissions') })
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('preset read-only') })
+    const policiesAfter = agent.session.events
+      .filter(event => event.type === 'approval/policy')
+      .map(event => event.data.policy)
+    expect(policiesAfter.at(-1)).toBe('ask')
+  })
+
+  it('passes /permission <name> straight through to the upstream command', async () => {
+    const tree = await bootBlue([], { script: [], permissionPresets: true })
+    const agent = await currentAgent(tree)
+    await expect(executeCommand(tree, agent, '/permission nope')).resolves.toMatchObject({
+      kind: 'error',
+      text: expect.stringContaining('unknown preset "nope"') as string,
+    })
+    const before = tree.terminal.written.length
+    typeLine(tree.terminal, '/permission read-only')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('preset read-only') })
+    expect(tree.terminal.written.slice(before).join('')).not.toContain('Permissions')
+    const runs = agent.session.events
+      .filter((event): event is typeof event & { data: { name: string, args?: string } } =>
+        event.type === 'command/run' && event.data.name === 'permission')
+      .map(event => event.data.args)
+    expect(runs).toEqual([' nope', ' read-only'])
+  })
+
+  /** The plan markdown the scripted exit_plan_mode call submits. */
+  const PLAN_MD = '# Fix the build\n\n1. One\n2. Two'
+
+  it('renders the plan review panel and approves through Enter', async () => {
+    const tree = await bootBlue([], {
+      script: [toolCallResponse('c1', 'exit_plan_mode', { plan: PLAN_MD }), textResponse('done')],
+    })
+    const agent = await currentAgent(tree)
+    const planMode = tree.ctx.get('planMode')!
+    // /plan <message> enters plan mode and steers the draft request.
+    await expect(executeCommand(tree, agent, '/plan draft it')).resolves.toMatchObject({ kind: 'success' })
+    await vi.waitFor(async () => {
+      const frame = await fullFrame(tree.terminal)
+      expect(frame).toContain('Plan review')
+      expect(frame).toContain('Fix the build')
+      expect(frame).toContain('1. Approve')
+      expect(frame).toContain('2. Reject')
+      expect(frame).toContain('3. Revise')
+    })
+    // The cursor seeds on the approving row.
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(2) })
+    const followUp = JSON.stringify(tree.adapter.requests[1]!.messages)
+    expect(followUp).toContain('Plan approved')
+    await agent.whenIdle()
+    expect(planMode.get(agent).active).toBe(false)
+  })
+
+  it('rejects the plan through the second button and plan mode survives', async () => {
+    const tree = await bootBlue([], {
+      script: [toolCallResponse('c1', 'exit_plan_mode', { plan: PLAN_MD }), textResponse('ok')],
+    })
+    const agent = await currentAgent(tree)
+    const planMode = tree.ctx.get('planMode')!
+    await expect(executeCommand(tree, agent, '/plan draft it')).resolves.toMatchObject({ kind: 'success' })
+    await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('Plan review') })
+    // Right moves the choice cursor to Reject.
+    tree.terminal.sendInput('\x1b[C')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(2) })
+    const followUp = JSON.stringify(tree.adapter.requests[1]!.messages)
+    expect(followUp).toContain('The user chose to keep planning')
+    await agent.whenIdle()
+    expect(planMode.get(agent).active).toBe(true)
+    // The declined review renders as the warning-tone decision record,
+    // not the ✗ error card (the round-3 ruling).
+    const frame = await fullFrame(tree.terminal)
+    expect(frame).toContain('plan declined')
+    expect(frame).not.toContain('✗ Used exit_plan_mode')
+  })
+
+  it('submits revision feedback from the third row: their feedback reaches the model', async () => {
+    const tree = await bootBlue([], {
+      script: [toolCallResponse('c1', 'exit_plan_mode', { plan: PLAN_MD }), textResponse('ok')],
+    })
+    const agent = await currentAgent(tree)
+    const planMode = tree.ctx.get('planMode')!
+    await expect(executeCommand(tree, agent, '/plan draft it')).resolves.toMatchObject({ kind: 'success' })
+    await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('Plan review') })
+    // Right twice focuses the inline revision input; typed text rides the
+    // row (digits included — the input owns the keys while focused).
+    tree.terminal.sendInput('\x1b[C')
+    tree.terminal.sendInput('\x1b[C')
+    await vi.waitFor(async () => {
+      expect(await fullFrame(tree.terminal)).toContain('Type feedback')
+    })
+    for (const char of 'redo step 2') tree.terminal.sendInput(char)
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(2) })
+    const followUp = JSON.stringify(tree.adapter.requests[1]!.messages)
+    expect(followUp).toContain('The user chose to keep planning; their feedback: redo step 2')
+    await agent.whenIdle()
+    expect(planMode.get(agent).active).toBe(true)
+  })
+
+  it('dismisses the plan review on Escape and the crafted message reaches the model', async () => {
+    const tree = await bootBlue([], {
+      script: [toolCallResponse('c1', 'exit_plan_mode', { plan: PLAN_MD }), textResponse('ok')],
+    })
+    const agent = await currentAgent(tree)
+    const planMode = tree.ctx.get('planMode')!
+    await expect(executeCommand(tree, agent, '/plan draft it')).resolves.toMatchObject({ kind: 'success' })
+    await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('Plan review') })
+    // Esc rejects with ASK_CANCELLED — the code dsh-plan-mode catches to
+    // deliver its crafted message instead of the raw rethrow.
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(2) })
+    const followUp = JSON.stringify(tree.adapter.requests[1]!.messages)
+    expect(followUp).toContain('user dismissed the plan review to speak instead')
+    await agent.whenIdle()
+    expect(planMode.get(agent).active).toBe(true)
   })
 })

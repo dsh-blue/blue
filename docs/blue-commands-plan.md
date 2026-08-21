@@ -101,9 +101,9 @@ p1-design §4.3 是本文档的前身（MVP 后命令面调研）。本次逐符
 | 命令 | kimi | pi | CC | Codex | Blue 现状/去向 |
 |---|---|---|---|---|---|
 | `/yolo` (`yes`) | ✅ | — | — | — | ✅ 已发货（S24a 落地 2026-08-21：answerer 侧自动放行——`approval.setPolicy('never')` 是『不问即拒』且在 waterfall 派发前即拒，故 policy 保持 `'ask'`、`approval-plugin.ts` 的 answerer 即 yolo 面；持久化折 `command/run`（name='yolo'）事件，见 §4.2.2 勘误；Shift+Tab 三态循环 normal→plan→yolo 与 `blue-status-mode` 徽标一并落地） |
-| `/auto` | ✅ | — | — | — | **S24b** 顺延（用户裁决 2026-08-21：/yolo 语义即 dsh 对应面，/auto 与 /permission 面板随 S24b） |
-| `/permission` | ✅ | — | `/permissions` | ✅ | ✅ 命令随上游现成（dsh-permission-presets，§2.10）；Blue 选择器面板 **S24b** 顺延（D33：读 `permissions` 投影 + 提交 `/permission <name>` 同一写路径 + danger 确认 gate） |
-| `/plan` | ✅ | — | ✅ | ✅ | ✅ 随上游现成（dsh-plan-mode 随 rc.7 发布，插件自注册 /plan [msg]+off、exit_plan_mode 工具；Blue 零实现，plan-review 呈现 🔍 见 §7 #5） |
+| `/auto` | ✅ | — | — | — | 🚫 暂不做（用户裁决 2026-08-21：/yolo 语义即 dsh 对应面；questions 自动应答另立项再议——需要时复用 /yolo 开关 + user-questions 自动应答 provider 即可，无上游缝） |
+| `/permission` | ✅ | — | `/permissions` | ✅ | ✅ 已发货（S24b 落地 2026-08-21）：命令随上游现成零实现（dsh-permission-presets，§2.10）；裸 `/permission` 经输入层拦截开选择器面板（读 `ctx.permissionPresets`——服务读 ≡ `permissions` 投影 fold，D33 措辞勘误），选中提交 `/permission <name>` 同一写路径；danger-full-access 必经 typed-y 确认 gate |
+| `/plan` | ✅ | — | ✅ | ✅ | ✅ 随上游现成（dsh-plan-mode 随 rc.7 发布，插件自注册 /plan [msg]+off、exit_plan_mode 工具；Blue 零实现，plan-review 专用呈现 ✅ S24b 落地，见 §7 #5） |
 | `/goal` | ✅ | — | ✅ | — | ✅ 上游现成（ctx.goals + round-driver + /goal 命令 + tool-goal，均在 base，§2.10） |
 | `/swarm` | ✅ | — | — | — | 🚫 编排面现成（workflow 引擎 + tool-workflow 模型工具，门控"仅用户明确要求"，§3.2）但无 swarm 命令形态；Blue 不建 |
 | `/approve` | — | — | — | ✅ | 🚫 审批面板已承担 |
@@ -174,9 +174,9 @@ p1-design §4.3 是本文档的前身（MVP 后命令面调研）。本次逐符
 | 命令 | 注册包 | 参数 | 行为 | Blue 侧 |
 |---|---|---|---|---|
 | `/compact` | dsh-command-compact | 无参（带参报 Usage） | `ctx.compaction.compactNow(agent, signal, commandId)`；回执 shadowed 条数/token 数 | 零实现，/help 自动枚举 |
-| `/plan [message]` / `/plan off` | dsh-plan-mode | 见 §7 #5 | 进入/退出 plan 模式；`<message>` 先进入再 steer | 零实现（plan-review 呈现 🔍） |
+| `/plan [message]` / `/plan off` | dsh-plan-mode | 见 §7 #5 | 进入/退出 plan 模式；`<message>` 先进入再 steer | 零实现（plan-review 专用呈现 ✅ S24b：interaction `plan-review-panel.ts`） |
 | `/goal [obj\|clear\|edit <obj>\|pause\|resume]` | dsh-command-goal | 见左 | 查看/创建/替换持久化同会话目标（GoalRef CAS） | 零实现 |
-| `/permission [preset]` | dsh-permission-presets | read-only / workspace-write / danger-full-access（rc.8 base 组合扩表）+ custom 派生态 | 捆绑 sandbox 模式 + approval policy 预设切换，`permission/preset` 事件 | 零实现；选择器面板 S24（D33） |
+| `/permission [preset]` | dsh-permission-presets | read-only / workspace-write / danger-full-access（rc.8 base 组合扩表）+ custom 派生态 | 捆绑 sandbox 模式 + approval policy 预设切换，`permission/preset` 事件 | 命令零实现；选择器面板 ✅ S24b（D33：裸命令输入层拦截 + typed-y danger gate） |
 | `/feedback <text>` | dsh-command-feedback | 必填 | 追加 `feedback/record` 日志事件（telemetry 共享状态） | 零实现 |
 | `/export` | dsh-session-log-export | 无参 | Web-only：流式 ZIP 会话日志下载（浏览器下载管理器） | Blue TUI 版 S26 独立实现 |
 
@@ -286,7 +286,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 | `/effort [level]` | kimi/CC | 补全=resolveModelInfo().reasoning.efforts | 写 selection.current.reasoningEffort | 列表面板 | ✅ 同 /model；LlmModelReasoningInfo{efforts, defaultEffort} | S23 | 无效 effort 报错（adapter 也拒） |
 | `/provider [list\|switch <name>]` | kimi | 无参=列表 | 列 providers、切换活跃 route（重置 model 为 provider 默认） | 列表面板 | ✅ llm.listProviders + listConfigurableProviders | S23 | add/refresh 需 discoverModels + 凭据输入面 + settings 命名空间 → ⚠️ 顺延 |
 | `/yolo` | kimi/CC | — | 切换自动放行工具审批 | notice + blueStatus 新条目（策略徽章 `blue-status-mode`：plan accent / plan… pending / yolo warning，normal 隐藏） | ✅ answerer 分支（approval-plugin.ts，§4.2.2 勘误：policy 保持 'ask'）；持久化折 `command/run`（name='yolo'）——裸关重派发显式 `/yolo off` 落定折记录；resume/fork 折回、/new 归零 | ✅ S24a（2026-08-21） | 提问仍弹（userQuestions 独立服务）——kimi 语义一致；Shift+Tab 三态循环与互斥见 §4.2.2 |
-| `/auto` | kimi/CC | — | 完全自治 = yolo + questions answerer 自动默认应答 | 同上 | ✅ yolo 开关复用 + user-questions 注册自动应答 provider | S24b | 用户裁决顺延（2026-08-21）；关闭恢复提问 |
+| `/auto` | kimi/CC | — | 完全自治 = yolo + questions answerer 自动默认应答 | 同上 | ✅ yolo 开关复用 + user-questions 注册自动应答 provider | 🚫 暂不做 | 用户裁决（2026-08-21，以后再考虑）；关闭恢复提问 |
 | `/status` | kimi/CC/Codex | — | 会话 id/cwd/创建时间、模型/provider、turn 数、agent 状态、版本 | HelpOverlay 式两列只读面板 | ✅ session.header、requestHeader()?.config、fold turn/start 计数、agent.status | S25 | |
 | `/usage` | kimi/CC | — | 累计 input/output/cacheRead/cacheWrite/reasoning tokens + contextWindow 百分比 | 面板 | ✅ ctx.tokenMeter.measure（重放感知）+ tokenUsage/contextPressure/contextBreakdown 投影（§3.2）；fold assistant/message.usage 兜底 | S25 | tokenMeter 固定启发式 4 字符/token；跨 resume 重放正确；不再自建累计器 |
 | `/version` | kimi | — | BLUE_VERSION + harness rc.7 + 当前模型 | notice | ✅ banner-content.ts 常量（spec 守卫 package.json 先例） | S25 | |
@@ -314,7 +314,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 
 #### 4.2.2 S24 语义说明
 
-`approval.setPolicy('never')` 是“永不询问、一律拒绝”（fail-closed 姿态，dsh-user-approval index.d.ts:77-80），**不是**自动允许。/yolo /auto 的“自动放行”由 Blue 侧实现：**approval answerer 是 Blue 插件**（approval-plugin.ts）。**✅ S24a 实施验证与勘误（2026-08-21）**：🔍 已核实——`'never'` 在 waterfall 派发**之前**就把 ask 定为 `'rejected'`（answerer 根本收不到请求），坐实“实现面在 answerer 而非 policy”：harness policy 保持 `'ask'` 不动，`answer()` 在 sessionAllowances 检查后加 yolo 分支（aborted 先回 `'cancelled'`）。**持久化方案同日勘误**：初版“持久化 'approval/policy' 事件旁挂 Blue 自己的会话事件”两条路都被上游机制否决——(1) Blue 自有会话事件不可行：`KNOWN_SESSION_EVENT_TYPES` 是闭集（generated），持久化读取路径拒读含未知类型的日志，除非事件带 envelope `ignorable: true`，而运行时 `session.append` 无法设置该标记（仅持久化 coordinator 原始路径可设）；(2) `'approval/policy'` 事件不能挪用：permissions 投影折它推导当前 preset，写入会把 preset 污染成 custom。**落地方案：折 `command/run` 事件**（name='yolo'、last-wins、`args.trim()==='off'`→off 否则 on、args 未记录则跳过——上游 plan 投影同款词汇与纪律）；裸 `/yolo` 关闭时 handler 重派发显式 `/yolo off`（`commands.register` 无 commandId 句柄 + dsh-commands invariant 要求 commandId 唯一且 done 配对 run，手工 append 不可行），Shift+Tab 循环每步恰好派发一条显式命令（`/plan` / `/yolo on` / `/yolo off`）。**三态循环（同日用户裁决）**：normal→plan→yolo→normal 互斥（`currentMode` 以 yolo 为先——瞬态重叠时 yolo 是生效面；互斥监视器在 `session/event` 观察到 plan 激活且 yolo 开时经 `queueMicrotask` 派发 `/yolo off`——`session.append` 禁止重入且观察者在 append 内同步运行）；徽标 `blue-status-mode`（interaction 子路径插件，priority 2：plan accent / plan… pending / yolo warning / normal 隐藏）。/auto 顺延 S24b（用户裁决）。
+`approval.setPolicy('never')` 是“永不询问、一律拒绝”（fail-closed 姿态，dsh-user-approval index.d.ts:77-80），**不是**自动允许。/yolo /auto 的“自动放行”由 Blue 侧实现：**approval answerer 是 Blue 插件**（approval-plugin.ts）。**✅ S24a 实施验证与勘误（2026-08-21）**：🔍 已核实——`'never'` 在 waterfall 派发**之前**就把 ask 定为 `'rejected'`（answerer 根本收不到请求），坐实“实现面在 answerer 而非 policy”：harness policy 保持 `'ask'` 不动，`answer()` 在 sessionAllowances 检查后加 yolo 分支（aborted 先回 `'cancelled'`）。**持久化方案同日勘误**：初版“持久化 'approval/policy' 事件旁挂 Blue 自己的会话事件”两条路都被上游机制否决——(1) Blue 自有会话事件不可行：`KNOWN_SESSION_EVENT_TYPES` 是闭集（generated），持久化读取路径拒读含未知类型的日志，除非事件带 envelope `ignorable: true`，而运行时 `session.append` 无法设置该标记（仅持久化 coordinator 原始路径可设）；(2) `'approval/policy'` 事件不能挪用：permissions 投影折它推导当前 preset，写入会把 preset 污染成 custom。**落地方案：折 `command/run` 事件**（name='yolo'、last-wins、`args.trim()==='off'`→off 否则 on、args 未记录则跳过——上游 plan 投影同款词汇与纪律）；裸 `/yolo` 关闭时 handler 重派发显式 `/yolo off`（`commands.register` 无 commandId 句柄 + dsh-commands invariant 要求 commandId 唯一且 done 配对 run，手工 append 不可行），Shift+Tab 循环每步恰好派发一条显式命令（`/plan` / `/yolo on` / `/yolo off`）。**三态循环（同日用户裁决）**：normal→plan→yolo→normal 互斥（`currentMode` 以 yolo 为先——瞬态重叠时 yolo 是生效面；互斥监视器在 `session/event` 观察到 plan 激活且 yolo 开时经 `queueMicrotask` 派发 `/yolo off`——`session.append` 禁止重入且观察者在 append 内同步运行）；徽标 `blue-status-mode`（interaction 子路径插件，priority 2：plan accent / plan… pending / yolo warning / normal 隐藏）。/auto 🚫 暂不做（用户裁决 2026-08-21，以后再考虑）。
 
 ### 4.3 ⛔ 等上游命令（互链 §7）
 
@@ -333,13 +333,13 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 
 ## 5. 分期实施（S23-S29）
 
-每步一棵可启动、可验收的插件树（总原则 #1）。依赖链：**S23 的 BlueSessionRef 缝是 S25 /status 读模型的地基，必须第一步开**；S24a 无前置（✅ 已落地 2026-08-21，S24 拆 a/b：用户裁决 /auto 与 /permission 面板顺延）；S26 依赖 S25 的 fold/累计器；S27 的 command-meta 是 S28 别名/可用性机制的地基（✅ command-meta 已提前落地 2026-08-20，§2.12；S27 只剩消费：`/clear` 别名 + HelpOverlay 分组表头）。S29（`#` 技能管线，D34/D35）无 S 步前置（上游能力全在 base），排在 S28 后收尾命令系列。
+每步一棵可启动、可验收的插件树（总原则 #1）。依赖链：**S23 的 BlueSessionRef 缝是 S25 /status 读模型的地基，必须第一步开**；S24a 无前置（✅ 已落地 2026-08-21，S24 拆 a/b：用户裁决 /auto 与 /permission 面板顺延）；**S24b（✅ 已落地 2026-08-21，范围收窄——用户裁决 /auto 暂不做，改为 plan-review 专用呈现补入本期）**；S26 依赖 S25 的 fold/累计器；S27 的 command-meta 是 S28 别名/可用性机制的地基（✅ command-meta 已提前落地 2026-08-20，§2.12；S27 只剩消费：`/clear` 别名 + HelpOverlay 分组表头）。S29（`#` 技能管线，D34/D35）无 S 步前置（上游能力全在 base），排在 S28 后收尾命令系列。
 
 | 步 | 内容 | 能力依赖 | UI 复用 | 验收要点 |
 |---|---|---|---|---|
 | **S23** 模型与强度 | `/model` `/effort` `/provider`(list/switch/add) | 新缝 BlueSessionRef.modelRef（§4.2.1，getter 三级优先落地）；llm.listModels/listProviders/listConfigurableProviders/discoverModels + settings.mutate + credentials.set | ModelPanel/EffortPanel/ProviderPanel/FormPanel + mountEditorReplacement + notice（e2e 另挂真 dsh-settings-file/dsh-credentials-local/dsh-llm-pi-ai） | ✅ 全部达成（2026-08-20 落地，2026-08-21 合并）：面板行含 `· ctx Nk` 与 thinking 段控件；下一 step 生效（e2e 断言请求模型/effort）；saveSelection 跨进程持久（banner 读回）；/new 后 modelRef 跟随新 agent；Add 落盘 settings.yaml/.credentials.yaml 且路由激活；Alt+S session-only 通道（用户裁决 kimi 全语义）；dogfood 14 轮追加——kimi 版式（tab 搜索/tab 条/圆角表单盒）、provider 编辑/删除流、协议感知 base URL、models.dev 元数据匹配、列举失败回表单重试（分类 cause 链 error 红） |
 | **S24a** 自治开关与三态循环 | `/yolo`（+别名 `yes`）+ Shift+Tab 循环 normal→plan→yolo + `blue-status-mode` 徽标；`/plan` 零实现（上游随 base 组合） | ✅ 全部现成：answerer 分支（§4.2.2 勘误）；`command/run` fold 持久化；`ctx.planMode.get/set`；`shift+tab` 键位（pi-tui 独立 KeyId，无人占用）；e2e 挂真 PlanModeController | notice + blueStatus 徽标条目（plan accent / plan… pending / yolo warning / normal 隐藏） | ✅ 全部达成（2026-08-21）：会话内审批免弹窗（e2e 断言 waterfall 直回 allowed-once 且无 overlay）；提问仍弹；裸切换日志记录 `['', '', ' off']`（重派发落定折）；\x1b[Z 三循环 + 徽标随行；互斥双向（含延迟派发 microtask）；resume 恢复 yolo（command/run fold）与 plan（plan/mode fold）；/new 归零；fork 继承；/help 列出命令与键位 |
-| **S24b** 自治面板族（顺延） | `/auto`（yolo + questions 自动应答）+ permission preset 选择器面板（D33） | questions 自动应答 provider；**permissions 投影**（dsh-permission-presets，base——面板读投影、选中提交 `/permission <name>` 同一写路径） | BlueSelect 面板（danger-full-access 行带确认 gate） | /auto 下提问自动作答；切会话回默认；面板切换后 `permission/preset` 事件折叠正确、danger 确认必经 |
+| **S24b** /permission 面板 + plan-review 呈现 + 通用列表组件（✅ 已落地，范围收窄 2026-08-21） | `/permission` 选择器面板（D33）+ plan-review 专用面板（§7 #5 顺延项提前消费）+ **共享单选列表组件沉淀**（`select-list.ts`：SelectListPanel + cycle/windowedRange/counterRow，回迁 /sessions、/provider、BlueSelect；ModelPanel 保持自有几何）；`/auto` 🚫 暂不做（用户裁决） | `ctx.permissionPresets`（names/current/resolve/optionOf——服务读 ≡ permissions 投影 fold，D33 措辞勘误）；`/permission <name>` 命令写路径（`ctx.commands.execute`，command/run+done 免费入日志）；user-questions `intent {kind:'plan-review'}`（detail=计划 Markdown，答案编码同通用）；type-only 依赖 `@deepseek-ai/dsh-permission-presets`（peer+dev rc.7） | SelectListPanel（D30 挂载）+ FormPanel typed-y danger gate + PlanReviewPanel（kimi approval 形态：plan 边框盒 + 编号列表 Approve/Reject/Revise，Revise 行内联反馈输入） | ✅ 全部达成（2026-08-21）：裸 `/permission` 开面板（e2e：三行 + ← current + knob 派生描述 + Esc 零派发）；danger 必经 typed-y（Esc 回列表、错值留表单）；切换落 `permission/preset`+`sandbox/mode`+`approval/policy` 事件；带参直通命令；plan-review 渲染 Markdown 于 plan 边框盒 + Enter/数字键批准（`plan/mode{active:false}`）/ Reject 本轮拒绝（"chose to keep planning" 入下请求）/ Revise 行内联反馈往返（"their feedback" 入下请求）/ Esc dismissal 走 crafted "speak instead" 消息（ASK_CANCELLED 勘误一并落地） |
 | **S25** 会话信息 | `/status` `/usage` `/version` | session.header / requestContext；ctx.tokenMeter.measure + session-stats/session-query 投影（§3.2）；usage.ts 不设累计器（薄封装即可） | HelpOverlay 式两列面板 + notice | 数字与 tokenMeter/session-stats 投影一致；usage 跨 resume 重放正确；/version 与 banner 常量一致 |
 | **S26** 导出与复制 | `/export` `/copy` | persistence.readRaw（supportsRawArtifacts=true）；fold.ts 折叠→Markdown；新模块 interaction/src/clipboard-write.ts（注入式探测） | notice + 路径回显 | 导出文件可独立阅读；复制文本与最近 assistant 消息一致；无剪贴板工具时优雅报错（notice） |
 | **S27** 轻命令族 | `/init` `/clear` `/context` `/diff`（+可选 `/hotkeys`） | command-meta 别名消费；fold 注入上下文开关；git spawnSync（status-git 先例）；AGENTS.md 加载面已上游（dsh-agent-instructions，§3.2），/init 仅写文件 | notice / DiffCardComponent 全宽面板 / HelpOverlay 分组表头（kimi priority 精神） | 别名可补全可执行（/clear = /new）；/context 开关即时生效且跨会话持久；/diff 面板滚屏正常 |
@@ -430,7 +430,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 - 语义是**软引导**：sandbox 模式与 approval policy 独立强制限制、不读写 plan 状态（⚠️ 初版期望"agent 只读、工具走 guard 拒写"，实际不 enforce 只读，靠 section 引导 + sandbox/approval 兜底）
 - ~~包内另随带 session modes TUI 面（default/plan/full Shift+Tab 循环，`SessionModeSpec.plan` 联动 /plan）~~ **2026-08-21 勘误**：该记载有误——`SessionModeSpec` 在 rc.5/rc.6/rc.8 源码与全部 git 历史零命中，不存在通用 session-modes 框架；plan 的既有 UI 面是 React 浏览器包 `dsh-client-ui-plan`（`useProjection('plan')` + composer 座位），不可被 Blue 复用。若 Blue 要 default/plan/full 式三态循环，是纯 Blue 侧 UI 概念（`plan` 投影 + permissions 投影拼装，上游无联动机制）
 
-**Blue 侧残余**：零实现（命令随插件到达，/help 自动枚举）；🔍 **plan-review 呈现——用户裁决顺延（2026-08-21 记录）**：`exit_plan_mode` 的确认提问目前经通用问卷呈现（Approve / Keep planning 两选项，不阻塞、计划体不渲染 Markdown，纯文本 plain 形态）。后续排期做专用呈现：Markdown 渲染的计划面板 + 双选按钮形态（沿 D30 editor-slot 面板先例，读 userQuestions 的 presentation intent `{kind:'plan-review'}` 分流），目标排在 S24b/S25 一轮，届时随 dogfood 定版式。
+**Blue 侧残余**：命令零实现（随插件到达，/help 自动枚举）；**plan-review 专用呈现 ✅ S24b 落地（2026-08-21）**：`interaction/plan-review-panel.ts`——questions-plugin 对单问 `intent.kind === 'plan-review'` 分流（配对畸形/未来 intent kind/多问题批回退通用问卷），两轮 dogfood 后定 **kimi approval 形态**：计划体（question.detail）经 `createMarkdown` 渲染进带边框 `plan` 盒（btw 面板盒惯用法，窗口按视口占满 + showing 尾行 + pgup/pgdn——轮 3 裁决），其下编号决策列表 `1. Approve`（`intent.approve` 命名，绝不硬编码）/`2. Reject`（另一选项标签作答，模型本轮内收到"chose to keep planning"）/`3. Revise`——该行**内联**反馈输入（kimi `3. Revise  <text>`：真 editor 持键、行显示派生自跟踪文本 + 光标块 + `Type feedback · ↵ submit.` 提示；非空提交 `{selected:[], custom}` 即 keep-planning-with-feedback，空提交纯拒绝）；↑/↓ 环绕、数字键跳选即发（输入聚焦时数字作为文本）、Enter 激活、Esc 走 `ASK_CANCELLED` dismissal（本轮停止、plan 模式保留、模型等用户下一条消息）。**随期勘误**：provider dismissal 码原为 Blue 自造 `ASK_DISMISSED`，而 dsh-plan-mode 只 catch `ASK_CANCELLED`（dsh-host-apiproxy 同码拒 dismissal）——此前 Esc 泄漏原始 rethrow 给模型，全局改 `ASK_CANCELLED` 后模型收到 crafted "user dismissed the plan review to speak instead; stay in plan mode" 消息（e2e 断言下请求消息含该文案）。
 
 ### #6 MCP 状态（⚠️ 收窄：客户端现成，管理面仍缺）— 消费：/mcp
 
@@ -473,7 +473,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 | `/effort` | ✅ | — | ✅ | — | **Adopt**（S23） |
 | `/provider` | ✅ | — | — | — | **Adopt**（S23，list/switch） |
 | `/yolo` | ✅ | — | — | — | **Adopt**（S24） |
-| `/auto` | ✅ | — | — | — | **Adopt**（S24） |
+| `/auto` | ✅ | — | — | — | **不做**（用户裁决 2026-08-21，以后再考虑——/yolo 已覆盖主路径） |
 | `/status` | ✅ | — | ✅ | ✅ | **Adopt**（S25，消费 session-stats/query） |
 | `/usage` | ✅ | — | ✅ | — | **Adopt**（S25，消费 ctx.tokenMeter） |
 | `/version` | ✅ | — | — | — | **Adopt**（S25） |
@@ -495,9 +495,9 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 | `/swarm` | ✅ | — | — | — | **Reject**（workflow 是模型工具非命令，§3.2/§6） |
 | `/undo` | ✅ | — | ✅ | — | **Defer**（⛔ §7 #2） |
 | `/title` | ✅ | ✅ | — | ✅ | **Adapt**（消费 ctx.sessionTitle 注册 /title，S 步顺延） |
-| `/permission` | ✅ | — | ✅ | ✅ | **Adopt**（上游自带 /permission，零实现；选择器面板 S24，D33） |
+| `/permission` | ✅ | — | ✅ | ✅ | **Adopt**（上游自带 /permission，零实现；选择器面板 ✅ S24b，D33） |
 | `/preset` | — | — | — | — | **Adopt**（Blue 原创，S28，D33：agent 组合预设空会话切换） |
-| `/plan` | ✅ | — | ✅ | ✅ | **Adopt**（随上游插件零实现；plan-review 呈现 🔍，§7 #5 已解决） |
+| `/plan` | ✅ | — | ✅ | ✅ | **Adopt**（随上游插件零实现；plan-review 专用呈现 ✅ S24b，§7 #5 已解决） |
 | `/mcp` | ✅ | — | ✅ | ✅ | **Adopt**（S28 只读列举，D36——loader entries + schemas() 分组 + bundle 带包；管理面维持 ⛔ §7 #6） |
 | `/skills` | — | — | ✅ | ✅ | **Adopt**（S29：`#` 提示符管线 + /skills 列表，D34——技能不进 slash 命名空间；§7 #7 缝撤销） |
 | 其余 ~45 | 见 §2/§6 | | | | **Reject**（§6 全表；/subagents 族 ⚠️ 顺延见 §3.2） |

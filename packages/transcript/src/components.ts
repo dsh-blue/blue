@@ -19,7 +19,7 @@ import type {
   BlueMarkdown,
   BlueSemanticColors,
 } from '@dsh-blue/blue-core'
-import { extractKeyArgument, isReadItem, KEY_ARG_MAX_CHARS } from './present.ts'
+import { extractKeyArgument, isPlanDecline, isReadItem, KEY_ARG_MAX_CHARS } from './present.ts'
 import type {
   TranscriptAssistantItem,
   TranscriptStepSummaryItem,
@@ -301,11 +301,14 @@ export class ToolCallComponent implements BlueComponent {
   private renderHeader(width: number): string {
     const { result } = this.item
     const { colors } = this
+    const declined = result !== undefined && isPlanDecline(this.item)
     const bullet = result === undefined
       ? colors.text(STATUS_BULLET)
-      : result.isError
-        ? colors.error('✗ ')
-        : colors.success('✓ ')
+      : declined
+        ? colors.warning('◐ ')
+        : result.isError
+          ? colors.error('✗ ')
+          : colors.success('✓ ')
     let header: string
     if (this.item.name === 'bash') {
       const label = result === undefined ? 'Running a command' : 'Ran a command'
@@ -317,7 +320,9 @@ export class ToolCallComponent implements BlueComponent {
       const argStr = keyArg === undefined ? '' : colors.muted(` (${keyArg})`)
       header = `${bullet}${verb} ${name}${argStr}`
     }
-    if (result !== undefined) {
+    if (declined) {
+      header += colors.warning(' · plan declined')
+    } else if (result !== undefined) {
       const text = result.fullText ?? result.text
       const count = text.split('\n').filter(line => line.length > 0).length
       if (count > 0) {
@@ -368,8 +373,11 @@ export class ToolCallComponent implements BlueComponent {
     if (text === '') return lines
     const contentWidth = Math.max(1, width - components.visibleWidth(PREVIEW_INDENT))
     const allLines = components.wrapText(text, contentWidth)
-    const paint = (line: string): string =>
-      `${PREVIEW_INDENT}${result.isError ? colors.error(line) : colors.muted(line)}`
+    const paint = (line: string): string => `${PREVIEW_INDENT}${
+      isPlanDecline(this.item) ? colors.warning(line)
+        : result.isError ? colors.error(line)
+          : colors.muted(line)
+    }`
     if (this.expanded) {
       lines.push(...allLines.map(paint))
       return lines
