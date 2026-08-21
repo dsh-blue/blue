@@ -280,6 +280,9 @@ export function apply(ctx: Context): void {
     void ctx.commands.execute(
       agent,
       canonical === undefined ? line : `/${canonical}${parsed.rawInput}`,
+      // No image attachments ride a typed slash line (0.1.1's execute
+      // takes the images array ahead of the signal).
+      [],
       new AbortController().signal,
     ).then(
       (execution) => {

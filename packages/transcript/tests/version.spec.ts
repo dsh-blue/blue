@@ -30,7 +30,7 @@ import { BLUE_VERSION } from '../src/banner-content.ts'
 /** The published first-release version (the website's advertised number). */
 const RELEASE_VERSION = '0.1.0-rc.1'
 /** The harness prerelease line the dsh pins ride. */
-const HARNESS_LINE = 'rc.7'
+const HARNESS_LINE = '0.1.1-rc.1'
 
 /** One workspace package manifest. */
 interface Manifest {
@@ -92,18 +92,18 @@ describe('the harness dependency line', () => {
     for (const rel of MANIFESTS.slice(0, 5)) {
       const pkg = manifest(rel)
       for (const [name, spec] of dshEntries(pkg.devDependencies)) {
-        expect(spec, `${pkg.name} devDependencies ${name}`).toMatch(/^0\.1\.0-rc\.[0-9]+$/)
+        expect(spec, `${pkg.name} devDependencies ${name}`).toMatch(/^0\.1\.[0-9]+-rc\.[0-9]+$/)
         specs.add(spec)
       }
     }
-    expect([...specs]).toEqual([`0.1.0-${HARNESS_LINE}`])
+    expect([...specs]).toEqual([`${HARNESS_LINE}`])
   })
 
   it('every dsh peer dependency ranges exactly one line up from the pins', () => {
     for (const rel of MANIFESTS.slice(0, 5)) {
       const pkg = manifest(rel)
       for (const [name, spec] of dshEntries(pkg.peerDependencies)) {
-        expect(spec, `${pkg.name} peerDependencies ${name}`).toBe(`^0.1.0-${HARNESS_LINE}`)
+        expect(spec, `${pkg.name} peerDependencies ${name}`).toBe(`^${HARNESS_LINE}`)
       }
     }
   })
@@ -113,7 +113,7 @@ describe('the harness dependency line', () => {
     const pins = [...workspace.matchAll(/'(@deepseek-ai\/dsh-[a-z-]+)@([^']+)'/g)]
     expect(pins.length).toBeGreaterThan(0)
     for (const [, name, spec] of pins) {
-      expect(spec, `pnpm-workspace exclude ${name}`).toBe(`0.1.0-${HARNESS_LINE}`)
+      expect(spec, `pnpm-workspace exclude ${name}`).toBe(`${HARNESS_LINE}`)
     }
   })
 

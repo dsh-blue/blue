@@ -48,7 +48,7 @@ describe('buildVersionSections', () => {
     expect(sections.map(section => section.heading)).toEqual(['Version'])
     expect(sections[0]!.rows).toEqual([
       { label: 'blue', segments: [{ text: `v${BLUE_VERSION}` }] },
-      { label: 'harness', segments: [{ text: 'rc.7' }] },
+      { label: 'harness', segments: [{ text: '0.1.1-rc.1' }] },
     ])
   })
 })
@@ -98,7 +98,7 @@ describe('buildStatusSections', () => {
     ])
     expect(sections[1]!.rows[1]!.segments).toEqual([
       { text: `Blue v${BLUE_VERSION}` },
-      { text: ' · dsh rc.7', style: 'muted' },
+      { text: ' · dsh 0.1.1-rc.1', style: 'muted' },
     ])
   })
 
@@ -304,7 +304,7 @@ async function mount(options: MountOptions = {}): Promise<{
 }
 
 async function run(ctx: Context, agent: Agent, line: string) {
-  const execution = await ctx.commands.execute(agent, line, new AbortController().signal)
+  const execution = await ctx.commands.execute(agent, line, [], new AbortController().signal)
   return execution?.result
 }
 

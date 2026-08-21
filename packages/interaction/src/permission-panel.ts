@@ -95,7 +95,7 @@ export function openPermissionPanel(ctx: Context, agent: Agent): void {
   }
 
   const dispatch = (name: string): void => {
-    void ctx.commands.execute(agent, `/permission ${name}`, new AbortController().signal).then(
+    void ctx.commands.execute(agent, `/permission ${name}`, [], new AbortController().signal).then(
       execution => {
         if (execution === undefined) return
         const { result } = execution

@@ -61,14 +61,14 @@ describe('blue-commands plugin', () => {
   it('/quit requests exit through the launcher appExit hook', async () => {
     const exit = vi.fn()
     const { ctx, agent } = await mount({ appExit: exit })
-    const execution = await ctx.commands.execute(agent, '/quit', signal())
+    const execution = await ctx.commands.execute(agent, '/quit', [], signal())
     expect(exit).toHaveBeenCalledWith(0)
     expect(execution?.result).toEqual({ kind: 'success' })
   })
 
   it('/quit reports an error when the launcher provided no appExit', async () => {
     const { ctx, agent } = await mount()
-    const execution = await ctx.commands.execute(agent, '/quit', signal())
+    const execution = await ctx.commands.execute(agent, '/quit', [], signal())
     const result = execution?.result
     expect(result?.kind).toBe('error')
     if (result?.kind === 'error') expect(result.text).toContain('appExit')
@@ -84,14 +84,14 @@ describe('blue-commands plugin', () => {
     expect(canonicalOf('quit')).toBeUndefined()
     expect(ctx.commands.find(agent, 'q')).toBeUndefined()
     expect(ctx.commands.find(agent, 'exit')).toBeUndefined()
-    expect(await ctx.commands.execute(agent, '/q', signal())).toBeUndefined()
+    expect(await ctx.commands.execute(agent, '/q', [], signal())).toBeUndefined()
   })
 
   it('/sessions <id> emits blue/request-resume with the trimmed id', async () => {
     const { ctx, agent } = await mount()
     const onResume = vi.fn()
     ctx.on('blue/request-resume', onResume)
-    const execution = await ctx.commands.execute(agent, '/sessions  abc-123 ', signal())
+    const execution = await ctx.commands.execute(agent, '/sessions  abc-123 ', [], signal())
     expect(onResume).toHaveBeenCalledWith('abc-123')
     expect(execution?.result).toEqual({ kind: 'success', text: 'resuming session abc-123' })
   })
@@ -104,7 +104,7 @@ describe('blue-commands plugin', () => {
     ctx.on('blue/request-resume', onResume)
     // Bare /sessions is the picker path — it opens the overlay and never
     // emits the resume request.
-    const execution = await ctx.commands.execute(agent, '/sessions', signal())
+    const execution = await ctx.commands.execute(agent, '/sessions', [], signal())
     expect(execution?.result).toEqual({ kind: 'success' })
     expect(onResume).not.toHaveBeenCalled()
     // The alias rewrites to /sessions with the id argument intact.
@@ -115,7 +115,7 @@ describe('blue-commands plugin', () => {
     const { ctx, agent } = await mount()
     const onNew = vi.fn()
     ctx.on('blue/request-new', onNew)
-    const execution = await ctx.commands.execute(agent, '/new', signal())
+    const execution = await ctx.commands.execute(agent, '/new', [], signal())
     expect(onNew).toHaveBeenCalledOnce()
     expect(execution?.result).toEqual({ kind: 'success', text: 'starting a new session' })
   })
@@ -124,7 +124,7 @@ describe('blue-commands plugin', () => {
     const { ctx, agent } = await mount()
     const onFork = vi.fn()
     ctx.on('blue/request-fork', onFork)
-    const execution = await ctx.commands.execute(agent, '/fork', signal())
+    const execution = await ctx.commands.execute(agent, '/fork', [], signal())
     expect(onFork).toHaveBeenCalledOnce()
     expect(execution?.result).toEqual({ kind: 'success', text: 'forking the current session' })
   })
@@ -133,7 +133,7 @@ describe('blue-commands plugin', () => {
     const { ctx, agent } = await mount({ agentStatus: 'running' })
     const onFork = vi.fn()
     ctx.on('blue/request-fork', onFork)
-    const execution = await ctx.commands.execute(agent, '/fork', signal())
+    const execution = await ctx.commands.execute(agent, '/fork', [], signal())
     expect(onFork).not.toHaveBeenCalled()
     expect(execution?.result).toEqual({ kind: 'error', text: 'cannot fork while the agent is running' })
   })
@@ -142,14 +142,14 @@ describe('blue-commands plugin', () => {
     const { ctx, agent } = await mount({ attach: false })
     const onFork = vi.fn()
     ctx.on('blue/request-fork', onFork)
-    const execution = await ctx.commands.execute(agent, '/fork', signal())
+    const execution = await ctx.commands.execute(agent, '/fork', [], signal())
     expect(onFork).toHaveBeenCalledOnce()
     expect(execution?.result).toEqual({ kind: 'success', text: 'forking the current session' })
   })
 
   it('/sessions errors when session persistence is unavailable', async () => {
     const { ctx, agent } = await mount()
-    const execution = await ctx.commands.execute(agent, '/sessions', signal())
+    const execution = await ctx.commands.execute(agent, '/sessions', [], signal())
     expect(execution?.result).toEqual({ kind: 'error', text: 'session persistence is unavailable' })
   })
 
@@ -157,7 +157,7 @@ describe('blue-commands plugin', () => {
     const { ctx, agent } = await mount({
       persistence: { list: () => Promise.reject(new Error('disk gone')) },
     })
-    const execution = await ctx.commands.execute(agent, '/sessions', signal())
+    const execution = await ctx.commands.execute(agent, '/sessions', [], signal())
     expect(execution?.result).toEqual({ kind: 'error', text: 'could not list sessions: disk gone' })
   })
 
@@ -165,13 +165,13 @@ describe('blue-commands plugin', () => {
     const { ctx, agent } = await mount({
       persistence: { list: () => Promise.reject('plain failure') },
     })
-    const execution = await ctx.commands.execute(agent, '/sessions', signal())
+    const execution = await ctx.commands.execute(agent, '/sessions', [], signal())
     expect(execution?.result).toEqual({ kind: 'error', text: 'could not list sessions: plain failure' })
   })
 
   it('/sessions answers "no sessions" for an empty listing', async () => {
     const { ctx, screen, agent } = await mount({ persistence: { list: () => Promise.resolve([]) } })
-    const execution = await ctx.commands.execute(agent, '/sessions', signal())
+    const execution = await ctx.commands.execute(agent, '/sessions', [], signal())
     expect(execution?.result).toEqual({ kind: 'success', text: 'no sessions' })
     expect(screen.overlays).toHaveLength(0)
   })
@@ -186,7 +186,7 @@ describe('blue-commands plugin', () => {
         ]),
       },
     })
-    const execution = await ctx.commands.execute(agent, '/sessions', signal())
+    const execution = await ctx.commands.execute(agent, '/sessions', [], signal())
     expect(execution?.result).toEqual({ kind: 'success' })
     // The framed picker: rules, title with the key hint, and rows carrying
     // the `❯ ` pointer plus the `← current` badge on the live session.
@@ -209,7 +209,7 @@ describe('blue-commands plugin', () => {
     try {
       const onResume = vi.fn()
       ctx.on('blue/request-resume', onResume)
-      await ctx.commands.execute(agent, '/sessions', signal())
+      await ctx.commands.execute(agent, '/sessions', [], signal())
       overlay(screen).handleInput(KEY.down)
       overlay(screen).handleInput(KEY.enter)
       expect(screen.overlays[0]?.hidden).toBe(true)
@@ -229,7 +229,7 @@ describe('blue-commands plugin', () => {
     try {
       const onResume = vi.fn()
       ctx.on('blue/request-resume', onResume)
-      await ctx.commands.execute(agent, '/sessions', signal())
+      await ctx.commands.execute(agent, '/sessions', [], signal())
       overlay(screen).handleInput(KEY.enter)
       expect(screen.overlays[0]?.hidden).toBe(true)
       expect(onResume).not.toHaveBeenCalled()
@@ -244,7 +244,7 @@ describe('blue-commands plugin', () => {
     const { ctx, screen, agent, fiber } = await mount({
       persistence: { list: () => gate.promise },
     })
-    const pending = ctx.commands.execute(agent, '/sessions', signal())
+    const pending = ctx.commands.execute(agent, '/sessions', [], signal())
     await fiber.dispose()
     gate.resolve([header('s-late', 1_000)])
     const execution = await pending
@@ -263,7 +263,7 @@ describe('blue-commands plugin', () => {
     const session = ctx.sessions.create(SessionId('commands-bare'))
     const agent = { id: session.id, session } as unknown as Agent
     await ctx.plugin(commandsPlugin)
-    const execution = await ctx.commands.execute(agent, '/sessions', signal())
+    const execution = await ctx.commands.execute(agent, '/sessions', [], signal())
     expect(execution?.result).toEqual({
       kind: 'error',
       text: 'session picker is unavailable: the Blue screen is not mounted',
@@ -273,7 +273,7 @@ describe('blue-commands plugin', () => {
 
   it('/help lists the registered commands and key bindings in an overlay', async () => {
     const { ctx, screen, agent } = await mount()
-    const execution = await ctx.commands.execute(agent, '/help', signal())
+    const execution = await ctx.commands.execute(agent, '/help', [], signal())
     expect(execution?.result).toEqual({ kind: 'success' })
     // The framed HelpPanel: primary rules, ` help ` title with the key
     // hint, and the two aligned sections. The sections overflow the ten-row
@@ -308,7 +308,7 @@ describe('blue-commands plugin', () => {
     const { ctx, screen, agent } = await mount()
     const keymap = ctx.get('blueKeymap')
     const unregister = keymap?.register([{ id: 'spec.custom', keys: 'f9' }])
-    await ctx.commands.execute(agent, '/help', signal())
+    await ctx.commands.execute(agent, '/help', [], signal())
     // The f9 row is the last key binding, beyond the first window; extra
     // downs clamp at the scroll floor (17 clears the S26-extended list).
     for (let i = 0; i < 17; i += 1) overlay(screen).handleInput(KEY.down)
@@ -320,14 +320,14 @@ describe('blue-commands plugin', () => {
 
   it('/help closes on Enter and on q as well', async () => {
     const { ctx, screen, agent } = await mount()
-    await ctx.commands.execute(agent, '/help', signal())
+    await ctx.commands.execute(agent, '/help', [], signal())
     overlay(screen).handleInput(KEY.enter)
     expect(screen.overlays[0]?.hidden).toBe(true)
-    await ctx.commands.execute(agent, '/help', signal())
+    await ctx.commands.execute(agent, '/help', [], signal())
     overlay(screen).handleInput('q')
     expect(screen.overlays[1]?.hidden).toBe(true)
     // An unrelated key keeps the overlay open.
-    await ctx.commands.execute(agent, '/help', signal())
+    await ctx.commands.execute(agent, '/help', [], signal())
     overlay(screen).handleInput('x')
     expect(screen.overlays[2]?.hidden).toBe(false)
     overlay(screen).handleInput(KEY.escape)
@@ -335,7 +335,7 @@ describe('blue-commands plugin', () => {
 
   it('/help truncates rows to the render width', async () => {
     const { ctx, screen, components, agent } = await mount()
-    await ctx.commands.execute(agent, '/help', signal())
+    await ctx.commands.execute(agent, '/help', [], signal())
     const rows = screen.overlays[0]?.component.render(10) ?? []
     // The overlay's own truncation (headings, two-column rows, and the
     // showing tail) keeps every content row inside the width; the frame's
@@ -353,7 +353,7 @@ describe('blue-commands plugin', () => {
     const session = ctx.sessions.create(SessionId('commands-bare-help'))
     const agent = { id: session.id, session } as unknown as Agent
     await ctx.plugin(commandsPlugin)
-    const execution = await ctx.commands.execute(agent, '/help', signal())
+    const execution = await ctx.commands.execute(agent, '/help', [], signal())
     expect(execution?.result).toEqual({
       kind: 'error',
       text: 'help is unavailable: the Blue screen is not mounted',

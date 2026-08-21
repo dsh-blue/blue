@@ -48,7 +48,7 @@ async function mount(): Promise<{
 }
 
 async function execute(ctx: Context, agent: Agent, line: string): Promise<CommandResult | undefined> {
-  const execution = await ctx.commands.execute(agent, line, new AbortController().signal)
+  const execution = await ctx.commands.execute(agent, line, [], new AbortController().signal)
   return execution?.result
 }
 

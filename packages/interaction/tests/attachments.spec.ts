@@ -163,6 +163,11 @@ describe('FilesystemAttachmentStore', () => {
     const cappedPixels = new CappedStore(fakeBlueContext().ctx, { maxImagePixels: 0 })
     const tooMany = await cappedPixels.validateImage({ data: GIF_1X1, mediaType: 'image/gif' }).catch(error => error as AttachmentError)
     expect(tooMany.code).toBe('IMAGE_TOO_MANY_PIXELS')
+    // The per-side dimension cap (0.1.1's limits field) trips independently
+    // of the aggregate pixel count.
+    const cappedDimension = new CappedStore(fakeBlueContext().ctx, { maxImageDimension: 0 })
+    const tooWide = await cappedDimension.validateImage({ data: GIF_1X1, mediaType: 'image/gif' }).catch(error => error as AttachmentError)
+    expect(tooWide.code).toBe('IMAGE_TOO_MANY_PIXELS')
   })
 
   it('saveImage persists under the root with decoded metadata and optional name', async () => {

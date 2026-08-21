@@ -4,7 +4,7 @@
 
 Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的一个交互式终端 UI（TUI）插件：以 out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) 插件 bundle 的形式、骑在 `dsh-base` bundle 之上的 `pi-tui` 渲染器。**尚未发布到 npm**——项目以五个 `@dsh-blue` scope 下的 workspace 包形式存在于本仓库，目前唯一的运行方式是本地开发安装（见[安装](#安装开发)）。
 
-本仓库是这五个包的独立 home：它们从 `deepseek-harness` monorepo 抽出（原 `packages/blue/*` 与 `packages/bundle/blue`），现按 npm 上发布的 harness（`0.1.0-rc.7` 线）与 vendored Cordis 构建测试。
+本仓库是这五个包的独立 home：它们从 `deepseek-harness` monorepo 抽出（原 `packages/blue/*` 与 `packages/bundle/blue`），现按 npm 上发布的 harness（`0.1.1-rc.1` 线）与 vendored Cordis 构建测试。
 
 ## 功能
 
@@ -90,7 +90,7 @@ export interface BlueEditor extends BlueFocusable {
 
 ## 安装（开发）
 
-目前唯一受支持的安装方式是针对本地 checkout 的开发安装。前置：Node `^22.19 || >=24`、pnpm 11、`dsh` CLI ≥ `0.1.0-rc.7`（`npm i -g @deepseek-ai/dsh`）。
+目前唯一受支持的安装方式是针对本地 checkout 的开发安装。前置：Node `^22.19 || >=24`、pnpm 11、`dsh` CLI ≥ `0.1.1-rc.1`（`npm i -g @deepseek-ai/dsh`）。
 
 ### 一键
 
@@ -160,5 +160,5 @@ pnpm run typecheck      # tsc -b
 
 ## 与 deepseek-harness 的关系
 
-- 运行时与测试依赖（`@deepseek-ai/cordis` 4.0.1、`@deepseek-ai/dsh-*` 0.1.0-rc.7、`@earendil-works/pi-tui` ^0.84.2）来自 npm registry；Blue 自身五包未发布，在本仓保持 workspace 链接。
+- 运行时与测试依赖（`@deepseek-ai/cordis` 4.0.1、`@deepseek-ai/dsh-*` 0.1.1-rc.1、`@earendil-works/pi-tui` ^0.84.2）来自 npm registry；Blue 自身五包未发布，在本仓保持 workspace 链接。
 - harness 仓库的门禁（文档 i18n 配对、README 门禁、snapshot/e2e 车道）不适用于本仓库；本仓保留构建、全量测试套件与逐文件 100% src 覆盖率门禁。

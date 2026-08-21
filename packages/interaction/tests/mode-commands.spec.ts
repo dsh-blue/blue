@@ -101,7 +101,7 @@ describe('/yolo', () => {
 
   it('bare toggle on: one run record with empty args, state on', async () => {
     const { ctx, agent } = await mount()
-    const execution = await ctx.commands.execute(agent, '/yolo', signal())
+    const execution = await ctx.commands.execute(agent, '/yolo', [], signal())
     expect(execution?.result).toMatchObject({ kind: 'success' })
     expect(execution?.result.kind === 'success' && execution.result.text).toContain('yolo on')
     expect(yoloActive(agent)).toBe(true)
@@ -110,8 +110,8 @@ describe('/yolo', () => {
 
   it('bare toggle off: re-dispatches the explicit form, folding off', async () => {
     const { ctx, agent } = await mount()
-    await ctx.commands.execute(agent, '/yolo', signal())
-    const execution = await ctx.commands.execute(agent, '/yolo', signal())
+    await ctx.commands.execute(agent, '/yolo', [], signal())
+    const execution = await ctx.commands.execute(agent, '/yolo', [], signal())
     expect(execution?.result.kind === 'success' && execution.result.text).toContain('yolo off')
     expect(yoloActive(agent)).toBe(false)
     // The bare record folds on; the explicit follow-up record disambiguates.
@@ -121,14 +121,14 @@ describe('/yolo', () => {
   it('explicit off records the off argument directly', async () => {
     const { ctx, agent } = await mount()
     setYolo(agent, true)
-    await ctx.commands.execute(agent, '/yolo off', signal())
+    await ctx.commands.execute(agent, '/yolo off', [], signal())
     expect(yoloActive(agent)).toBe(false)
     expect(yoloRuns(agent)).toEqual([' off'])
   })
 
   it("any other non-empty argument means on (fold-consistent, no usage error)", async () => {
     const { ctx, agent } = await mount()
-    const execution = await ctx.commands.execute(agent, '/yolo blah', signal())
+    const execution = await ctx.commands.execute(agent, '/yolo blah', [], signal())
     expect(execution?.result).toMatchObject({ kind: 'success' })
     expect(yoloActive(agent)).toBe(true)
     expect(yoloRuns(agent)).toEqual([' blah'])
@@ -137,14 +137,14 @@ describe('/yolo', () => {
   it('turning on leaves plan first through the controller', async () => {
     const planMode = fakePlanMode({ active: true })
     const { ctx, agent } = await mount({ planMode })
-    await ctx.commands.execute(agent, '/yolo on', signal())
+    await ctx.commands.execute(agent, '/yolo on', [], signal())
     expect(yoloActive(agent)).toBe(true)
     expect(planMode.set).toHaveBeenCalledWith(agent, false)
   })
 
   it('turning on succeeds without a composed plan mode', async () => {
     const { ctx, agent } = await mount()
-    await ctx.commands.execute(agent, '/yolo on', signal())
+    await ctx.commands.execute(agent, '/yolo on', [], signal())
     expect(yoloActive(agent)).toBe(true)
   })
 
@@ -153,14 +153,14 @@ describe('/yolo', () => {
     setYolo(agent, true)
     const original = ctx.commands.execute.bind(ctx.commands)
     let calls = 0
-    const spy = vi.spyOn(ctx.commands, 'execute').mockImplementation((dispatchAgent, line, dispatchSignal) => {
+    const spy = vi.spyOn(ctx.commands, 'execute').mockImplementation((dispatchAgent, line, images, dispatchSignal) => {
       calls += 1
       // The second call is the in-handler re-dispatch: report the command
       // gone (the registration vanished mid-toggle).
       if (calls === 2) return Promise.resolve(undefined)
-      return original(dispatchAgent, line, dispatchSignal)
+      return original(dispatchAgent, line, images, dispatchSignal)
     })
-    const execution = await ctx.commands.execute(agent, '/yolo', signal())
+    const execution = await ctx.commands.execute(agent, '/yolo', [], signal())
     spy.mockRestore()
     expect(execution?.result).toEqual({ kind: 'error', text: 'failed to turn yolo off' })
     expect(yoloRuns(agent)).toEqual([''])

@@ -94,7 +94,7 @@ async function toggleYolo(
   if (arg === 'off') return applyYolo(ctx, agent, false)
   if (arg.length > 0) return applyYolo(ctx, agent, true)
   if (!yoloActive(agent)) return applyYolo(ctx, agent, true)
-  const execution = await ctx.commands.execute(agent, '/yolo off', signal)
+  const execution = await ctx.commands.execute(agent, '/yolo off', [], signal)
   return execution?.result ?? { kind: 'error', text: 'failed to turn yolo off' }
 }
 
@@ -115,7 +115,7 @@ export async function cycleMode(ctx: Context): Promise<void> {
   const next = (ctx.get('planMode') === undefined ? CYCLE_WITHOUT_PLAN : CYCLE)[current]
   const line = next === 'plan' ? '/plan' : next === 'yolo' ? '/yolo on' : '/yolo off'
   try {
-    const execution = await ctx.commands.execute(agent, line, new AbortController().signal)
+    const execution = await ctx.commands.execute(agent, line, [], new AbortController().signal)
     if (execution === undefined) return
     const { result } = execution
     if (result.text !== undefined) {
@@ -160,7 +160,7 @@ export function setupModeTracking(ctx: Context): () => void {
          append-to-microtask window; disposal removes the listener, so the
          flag is a belt-and-braces guard for exactly that race */
       if (unloaded) return
-      void ctx.commands.execute(agent, '/yolo off', new AbortController().signal).then(
+      void ctx.commands.execute(agent, '/yolo off', [], new AbortController().signal).then(
         (execution) => {
           const text = execution?.result.text
           if (!unloaded && text !== undefined) getSharedEditor()?.notice?.(text)

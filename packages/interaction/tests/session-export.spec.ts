@@ -434,7 +434,7 @@ describe('registerExportCommands', () => {
   }
 
   async function run(ctx: Context, agent: Agent, line: string) {
-    const execution = await ctx.commands.execute(agent, line, new AbortController().signal)
+    const execution = await ctx.commands.execute(agent, line, [], new AbortController().signal)
     return execution?.result
   }
 

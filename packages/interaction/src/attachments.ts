@@ -40,8 +40,9 @@ const IMAGE_LIMITS: ImageAttachmentLimits = {
   maxImageBytes: 10 * 1024 * 1024,
   maxImagesPerMessage: 8,
   maxMessageImageBytes: 30 * 1024 * 1024,
-  // 4096×4096.
+  // 4096×4096: the pixel cap and the per-side cap agree on a square bound.
   maxImagePixels: 16_777_216,
+  maxImageDimension: 4096,
   mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
 }
 
@@ -136,6 +137,12 @@ export class FilesystemAttachmentStore extends AttachmentStore {
     }
     if (dimensions.width * dimensions.height > this.imageLimits.maxImagePixels) {
       throw new AttachmentError('image exceeds the pixel limit', 'IMAGE_TOO_MANY_PIXELS')
+    }
+    if (
+      dimensions.width > this.imageLimits.maxImageDimension
+      || dimensions.height > this.imageLimits.maxImageDimension
+    ) {
+      throw new AttachmentError('image exceeds the per-side dimension limit', 'IMAGE_TOO_MANY_PIXELS')
     }
     return dimensions
   }

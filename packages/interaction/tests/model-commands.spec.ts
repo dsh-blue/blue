@@ -188,7 +188,7 @@ describe('model-family commands', () => {
 
   it('/model guards: no session and no selection handle', async () => {
     const { ctx, agent } = await mount({ attach: false })
-    expect((await ctx.commands.execute(agent, '/model', signal()))?.result)
+    expect((await ctx.commands.execute(agent, '/model', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'no session is live yet' })
 
     const handleless = fakeBlueContext()
@@ -199,7 +199,7 @@ describe('model-family commands', () => {
     const bareAgent = { id: bareSession.id, session: bareSession, status: 'idle' } as unknown as Agent
     handleless.ctx.provide('blueSession', { current: bareAgent, modelRef: undefined })
     await handleless.ctx.plugin(commandsPlugin)
-    expect((await handleless.ctx.commands.execute(bareAgent, '/model', signal()))?.result)
+    expect((await handleless.ctx.commands.execute(bareAgent, '/model', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'model selection is unavailable for this session' })
   })
 
@@ -218,13 +218,13 @@ describe('model-family commands', () => {
       saveSelection: vi.fn(),
     } as unknown as AgentDefaultModelConfig)
     await bare.ctx.plugin(commandsPlugin)
-    expect((await bare.ctx.commands.execute(bareAgent, '/model', signal()))?.result)
+    expect((await bare.ctx.commands.execute(bareAgent, '/model', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'the llm service is unavailable' })
   })
 
   it('/model opens the picker with metadata, current badge, and segment control', async () => {
     const { ctx, screen, agent } = await mount()
-    const execution = await ctx.commands.execute(agent, '/model', signal())
+    const execution = await ctx.commands.execute(agent, '/model', [], signal())
     expect(execution?.result).toEqual({ kind: 'success' })
     const rows = overlay(screen).render?.(80) ?? []
     const currentRow = rows.find(row => row.includes('← current'))
@@ -240,14 +240,14 @@ describe('model-family commands', () => {
     const { ctx, screen, agent } = await mount({
       headerConfig: { provider: 'mock', model: 'mock' },
     })
-    await ctx.commands.execute(agent, '/model', signal())
+    await ctx.commands.execute(agent, '/model', [], signal())
     const rows = overlay(screen).render?.(80) ?? []
     expect(rows.some(row => row.includes('?  switching models starts a fresh prompt cache?'))).toBe(true)
   })
 
   it('/model degrades rows whose metadata lookup fails', async () => {
     const { ctx, screen, agent } = await mount({ catalog: { failInfoFor: ['mock-pro'] } })
-    await ctx.commands.execute(agent, '/model', signal())
+    await ctx.commands.execute(agent, '/model', [], signal())
     const rows = overlay(screen).render?.(80) ?? []
     const proRow = rows.find(row => row.includes('Mock Pro'))
     expect(proRow).toBeDefined()
@@ -261,7 +261,7 @@ describe('model-family commands', () => {
         failListFor: ['broken'],
       },
     })
-    const execution = await ctx.commands.execute(agent, '/model mock-pro', signal())
+    const execution = await ctx.commands.execute(agent, '/model mock-pro', [], signal())
     expect(execution?.result).toEqual({ kind: 'success', text: 'Switched to mock-pro (mock)' })
   })
 
@@ -269,14 +269,14 @@ describe('model-family commands', () => {
     const empty = await mount({ catalog: { providers: [], models: {} } })
     // Restore one provider for the mount, then exercise the empty catalog
     // through a context whose only provider's listing fails.
-    const execution = await empty.ctx.commands.execute(empty.agent, '/model', signal())
+    const execution = await empty.ctx.commands.execute(empty.agent, '/model', [], signal())
     expect(execution?.result).toEqual({
       kind: 'success',
       text: 'no models advertised for the configured providers',
     })
 
     const unknown = await mount()
-    expect((await unknown.ctx.commands.execute(unknown.agent, '/model nope', signal()))?.result)
+    expect((await unknown.ctx.commands.execute(unknown.agent, '/model nope', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'unknown model: nope' })
   })
 
@@ -290,13 +290,13 @@ describe('model-family commands', () => {
         },
       },
     })
-    const execution = await ambiguous.ctx.commands.execute(ambiguous.agent, '/model shared', signal())
+    const execution = await ambiguous.ctx.commands.execute(ambiguous.agent, '/model shared', [], signal())
     expect(execution?.result).toEqual({ kind: 'success', text: 'Switched to shared (mock)' })
   })
 
   it('/model picker commits on Enter with the segment draft and persists the default', async () => {
     const { ctx, screen, agent, writes, saveSelection } = await mount()
-    await ctx.commands.execute(agent, '/model', signal())
+    await ctx.commands.execute(agent, '/model', [], signal())
     // The current row's draft already sits at the model default (`high`);
     // committing it directly is the kimi untouched-draft behavior.
     overlay(screen).handleInput(KEY.enter)
@@ -308,7 +308,7 @@ describe('model-family commands', () => {
 
   it('/model picker commits session-only with Alt+S and skips the default write', async () => {
     const { ctx, screen, agent, writes, saveSelection } = await mount()
-    await ctx.commands.execute(agent, '/model', signal())
+    await ctx.commands.execute(agent, '/model', [], signal())
     overlay(screen).handleInput(KEY.down)
     overlay(screen).handleInput(KEY.altS)
     await vi.waitFor(() => { expect(notices).toHaveLength(1) })
@@ -321,7 +321,7 @@ describe('model-family commands', () => {
     const { ctx, agent, saveSelection } = await mount({
       defaults: { selection: { provider: 'mock', model: 'mock-pro' } },
     })
-    const execution = await ctx.commands.execute(agent, '/model mock-pro', signal())
+    const execution = await ctx.commands.execute(agent, '/model mock-pro', [], signal())
     expect(execution?.result).toEqual({ kind: 'success', text: 'Switched to mock-pro (mock)' })
     expect(saveSelection).not.toHaveBeenCalled()
   })
@@ -330,7 +330,7 @@ describe('model-family commands', () => {
     const failing = await mount({
       defaults: { selection: { provider: 'mock', model: 'mock' }, saveError: new Error('disk full') },
     })
-    const execution = await failing.ctx.commands.execute(failing.agent, '/model mock-pro', signal())
+    const execution = await failing.ctx.commands.execute(failing.agent, '/model mock-pro', [], signal())
     expect(execution?.result).toEqual({
       kind: 'success',
       text: 'Switched to mock-pro (mock) — failed to save default: disk full',
@@ -339,19 +339,19 @@ describe('model-family commands', () => {
 
   it('/effort guards: no reasoning metadata and resolve failure', async () => {
     const plain = await mount({ catalog: { reasoning: null } })
-    expect((await plain.ctx.commands.execute(plain.agent, '/effort', signal()))?.result)
+    expect((await plain.ctx.commands.execute(plain.agent, '/effort', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'the current model exposes no reasoning efforts' })
-    expect((await plain.ctx.commands.execute(plain.agent, '/effort low', signal()))?.result)
+    expect((await plain.ctx.commands.execute(plain.agent, '/effort low', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'the current model exposes no reasoning efforts' })
 
     const broken = await mount({ catalog: { failInfoFor: ['mock'] } })
-    expect((await broken.ctx.commands.execute(broken.agent, '/effort', signal()))?.result)
+    expect((await broken.ctx.commands.execute(broken.agent, '/effort', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'could not resolve the current model: no metadata' })
   })
 
   it('/effort opens the segment selector seeded at the live effort', async () => {
     const { ctx, screen, agent, writes } = await mount()
-    await ctx.commands.execute(agent, '/effort', signal())
+    await ctx.commands.execute(agent, '/effort', [], signal())
     const rows = overlay(screen).render?.(60) ?? []
     const segmentRow = rows.find(row => row.includes('Default') || row.includes('[ '))
     expect(segmentRow).toBeDefined()
@@ -365,14 +365,14 @@ describe('model-family commands', () => {
 
   it('/effort direct: valid level, default, and the invalid-level listing', async () => {
     const { ctx, agent, writes } = await mount()
-    const execution = await ctx.commands.execute(agent, '/effort low', signal())
+    const execution = await ctx.commands.execute(agent, '/effort low', [], signal())
     expect(execution?.result).toEqual({ kind: 'success', text: 'Thinking set to low' })
     expect(writes[0]).toMatchObject({ reasoningEffort: 'low' as never })
 
-    const back = await ctx.commands.execute(agent, '/effort default', signal())
+    const back = await ctx.commands.execute(agent, '/effort default', [], signal())
     expect(back?.result).toEqual({ kind: 'success', text: 'Thinking set to provider default' })
 
-    const bogus = await ctx.commands.execute(agent, '/effort bogus', signal())
+    const bogus = await ctx.commands.execute(agent, '/effort bogus', [], signal())
     expect(bogus?.result).toEqual({
       kind: 'error',
       text: 'unsupported thinking effort "bogus" for mock: available: default, low, high',
@@ -382,13 +382,13 @@ describe('model-family commands', () => {
   it('/model answers "Already using" when nothing changes', async () => {
     const preset = fakeModelRef({ provider: 'mock', model: 'mock', reasoningEffort: 'high' as never })
     const { ctx, agent } = await mount({ modelRef: preset.ref })
-    const execution = await ctx.commands.execute(agent, '/effort high', signal())
+    const execution = await ctx.commands.execute(agent, '/effort high', [], signal())
     expect(execution?.result).toEqual({ kind: 'success', text: 'Already using mock (mock)' })
   })
 
   it('/model works without the default-model service and says so', async () => {
     const { ctx, agent } = await mount({ defaults: false })
-    const execution = await ctx.commands.execute(agent, '/model mock-pro', signal())
+    const execution = await ctx.commands.execute(agent, '/model mock-pro', [], signal())
     expect(execution?.result).toEqual({
       kind: 'success',
       text: 'Switched to mock-pro (mock) — default not saved: no default-model service',
@@ -405,7 +405,7 @@ describe('model-family commands', () => {
         },
       },
     })
-    const execution = await ctx.commands.execute(agent, '/model shared', signal())
+    const execution = await ctx.commands.execute(agent, '/model shared', [], signal())
     expect(execution?.result).toEqual({
       kind: 'error',
       text: 'ambiguous model id: shared (alpha/shared, beta/shared)',
@@ -426,16 +426,16 @@ describe('model-family commands', () => {
       saveSelection: vi.fn(),
     } as unknown as AgentDefaultModelConfig)
     await ctx.plugin(commandsPlugin)
-    expect((await ctx.commands.execute(agent, '/model', signal()))?.result)
+    expect((await ctx.commands.execute(agent, '/model', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'model picker is unavailable: the Blue screen is not mounted' })
-    expect((await ctx.commands.execute(agent, '/effort', signal()))?.result)
+    expect((await ctx.commands.execute(agent, '/effort', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'effort selector is unavailable: the Blue screen is not mounted' })
     await ctx.fiber.dispose()
   })
 
   it('/effort guards: no session and no llm service', async () => {
     const { ctx, agent } = await mount({ attach: false })
-    expect((await ctx.commands.execute(agent, '/effort', signal()))?.result)
+    expect((await ctx.commands.execute(agent, '/effort', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'no session is live yet' })
     await ctx.fiber.dispose()
 
@@ -450,17 +450,17 @@ describe('model-family commands', () => {
     const fake = fakeModelRef({ provider: 'mock', model: 'mock' })
     ctx.provide('blueSession', { current: agent, modelRef: fake.ref })
     await ctx.plugin(commandsPlugin)
-    expect((await ctx.commands.execute(agent, '/effort', signal()))?.result)
+    expect((await ctx.commands.execute(agent, '/effort', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'the llm service is unavailable' })
     await ctx.fiber.dispose()
   })
 
   it('cancels the pickers with Escape without committing', async () => {
     const { ctx, screen, agent, writes } = await mount()
-    await ctx.commands.execute(agent, '/model', signal())
+    await ctx.commands.execute(agent, '/model', [], signal())
     overlay(screen).handleInput(KEY.escape)
     expect(screen.overlays[screen.overlays.length - 1]?.hidden).toBe(true)
-    await ctx.commands.execute(agent, '/effort', signal())
+    await ctx.commands.execute(agent, '/effort', [], signal())
     overlay(screen).handleInput(KEY.escape)
     expect(screen.overlays[screen.overlays.length - 1]?.hidden).toBe(true)
     expect(writes).toEqual([])
@@ -476,7 +476,7 @@ describe('model-family commands', () => {
       resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model }),
     } as unknown as LlmRuntime
     const { ctx, agent, screen, fiber } = await mount({ llm })
-    const pending = ctx.commands.execute(agent, '/model', signal())
+    const pending = ctx.commands.execute(agent, '/model', [], signal())
     await fiber.dispose()
     release([])
     expect((await pending)?.result).toEqual({ kind: 'success' })
@@ -492,7 +492,7 @@ describe('model-family commands', () => {
       resolveModelInfo: async () => { await gate; return {} },
     } as unknown as LlmRuntime
     const { ctx, agent, screen, fiber } = await mount({ llm })
-    const pending = ctx.commands.execute(agent, '/effort', signal())
+    const pending = ctx.commands.execute(agent, '/effort', [], signal())
     await fiber.dispose()
     release()
     expect((await pending)?.result).toEqual({ kind: 'success' })
@@ -503,14 +503,14 @@ describe('model-family commands', () => {
     const { ctx, screen, agent } = await mount({
       catalog: { models: { mock: [{ id: 'mock', name: '' }] } },
     })
-    await ctx.commands.execute(agent, '/model', signal())
+    await ctx.commands.execute(agent, '/model', [], signal())
     const rows = overlay(screen).render?.(60) ?? []
     expect(rows.some(row => row.includes('mock'))).toBe(true)
   })
 
   it('/model commits an effort-less pick without the effort key', async () => {
     const { ctx, screen, agent, writes } = await mount({ catalog: { reasoning: null } })
-    await ctx.commands.execute(agent, '/model', signal())
+    await ctx.commands.execute(agent, '/model', [], signal())
     overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => { expect(writes).toHaveLength(1) })
     expect('reasoningEffort' in (writes[0] ?? {})).toBe(false)
@@ -518,8 +518,8 @@ describe('model-family commands', () => {
 
   it('/model and /effort suppress the notice when the tree unloaded before the commit', async () => {
     const { ctx, screen, agent, writes, fiber } = await mount()
-    await ctx.commands.execute(agent, '/model', signal())
-    await ctx.commands.execute(agent, '/effort', signal())
+    await ctx.commands.execute(agent, '/model', [], signal())
+    await ctx.commands.execute(agent, '/effort', [], signal())
     await fiber.dispose()
     // The panels stay mounted on the fake screen; their commits still write
     // the selection but no longer reach for the shared editor.
@@ -534,11 +534,11 @@ describe('model-family commands', () => {
   it('pickers seed from a live effort', async () => {
     const preset = fakeModelRef({ provider: 'mock', model: 'mock', reasoningEffort: 'low' as never })
     const { ctx, screen, agent } = await mount({ modelRef: preset.ref })
-    await ctx.commands.execute(agent, '/model', signal())
+    await ctx.commands.execute(agent, '/model', [], signal())
     const rows = overlay(screen).render?.(80) ?? []
     const segmentRow = rows[rows.findIndex(r => r.includes('Thinking  (←→ to switch)')) + 1] ?? ''
     expect(segmentRow).toContain('[ Low ]')
-    await ctx.commands.execute(agent, '/effort', signal())
+    await ctx.commands.execute(agent, '/effort', [], signal())
     const effortRows = overlay(screen).render?.(60) ?? []
     const effortSegments = effortRows.find(r => r.includes('[ Low ]') || r.includes('[ Default ]'))
     expect(effortSegments).toContain('[ Low ]')
@@ -546,7 +546,7 @@ describe('model-family commands', () => {
 
   it('/effort panel commits the default segment directly', async () => {
     const { ctx, screen, agent, writes } = await mount()
-    await ctx.commands.execute(agent, '/effort', signal())
+    await ctx.commands.execute(agent, '/effort', [], signal())
     overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => { expect(writes).toHaveLength(1) })
     expect('reasoningEffort' in (writes[0] ?? {})).toBe(false)
@@ -556,7 +556,7 @@ describe('model-family commands', () => {
     const { ctx, agent } = await mount({
       defaults: { selection: { provider: 'mock', model: 'mock' }, saveError: 'plain failure' as never },
     })
-    const execution = await ctx.commands.execute(agent, '/model mock-pro', signal())
+    const execution = await ctx.commands.execute(agent, '/model mock-pro', [], signal())
     expect(execution?.result).toEqual({
       kind: 'success',
       text: 'Switched to mock-pro (mock) — failed to save default: plain failure',
@@ -565,7 +565,7 @@ describe('model-family commands', () => {
 
   it('/provider opens the panel over the configured providers', async () => {
     const { ctx, screen, agent } = await mount()
-    const execution = await ctx.commands.execute(agent, '/provider', signal())
+    const execution = await ctx.commands.execute(agent, '/provider', [], signal())
     expect(execution?.result).toEqual({ kind: 'success' })
     const rows = overlay(screen).render?.(80) ?? []
     const active = rows.find(row => row.includes('Mock')) ?? ''
@@ -584,7 +584,7 @@ describe('model-family commands', () => {
       mutate: async () => {},
     }
     const { ctx, screen, agent } = await mount({ settings, credentials: { set: async () => {}, unset: async () => {} } })
-    await ctx.commands.execute(agent, '/provider', signal())
+    await ctx.commands.execute(agent, '/provider', [], signal())
     overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => {
       const rows = screen.overlays[screen.overlays.length - 1]?.component.render?.(80) ?? []
@@ -601,7 +601,7 @@ describe('model-family commands', () => {
       mutate: async () => {},
     }
     const { ctx, screen, agent } = await mount({ settings, credentials: { set: async () => {}, unset: async () => {} } })
-    await ctx.commands.execute(agent, '/provider', signal())
+    await ctx.commands.execute(agent, '/provider', [], signal())
     overlay(screen).handleInput(KEY.enter)
     // The edit form mounts; submit with untouched fields.
     await vi.waitFor(() => {
@@ -618,10 +618,10 @@ describe('model-family commands', () => {
     const { ctx, screen, agent } = await mount({
       catalog: { providers: [{ id: 'x', name: '' }], models: { x: [{ id: 'm', name: 'M' }] } },
     })
-    await ctx.commands.execute(agent, '/provider', signal())
+    await ctx.commands.execute(agent, '/provider', [], signal())
     const rows = overlay(screen).render?.(60) ?? []
     expect(rows.some(row => row.includes('x'))).toBe(true)
-    await ctx.commands.execute(agent, '/provider switch x', signal())
+    await ctx.commands.execute(agent, '/provider switch x', [], signal())
     await vi.waitFor(() => {
       const scoped = screen.overlays[screen.overlays.length - 1]?.component.render?.(60) ?? []
       expect(scoped.some(row => row.includes('Select a model · x'))).toBe(true)
@@ -630,25 +630,25 @@ describe('model-family commands', () => {
 
   it('/provider switch resolves by id or name and opens the scoped picker', async () => {
     const { ctx, screen, agent } = await mount()
-    const execution = await ctx.commands.execute(agent, '/provider switch mock', signal())
+    const execution = await ctx.commands.execute(agent, '/provider switch mock', [], signal())
     expect(execution?.result).toEqual({ kind: 'success' })
     const scoped = screen.overlays[0]?.component.render?.(60) ?? []
     expect(scoped.some(row => row.includes('Select a model · Mock'))).toBe(true)
 
     const unknown = await mount()
-    expect((await unknown.ctx.commands.execute(unknown.agent, '/provider switch nope', signal()))?.result)
+    expect((await unknown.ctx.commands.execute(unknown.agent, '/provider switch nope', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'unknown provider: nope (registered: mock)' })
     const usage = await mount()
-    expect((await usage.ctx.commands.execute(usage.agent, '/provider switch', signal()))?.result)
+    expect((await usage.ctx.commands.execute(usage.agent, '/provider switch', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'usage: /provider switch <name>' })
     const bogus = await mount()
-    expect((await bogus.ctx.commands.execute(bogus.agent, '/provider bogus', signal()))?.result)
+    expect((await bogus.ctx.commands.execute(bogus.agent, '/provider bogus', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'usage: /provider [list | switch <name> | add]' })
   })
 
   it('/provider add answers the host-services guard without settings', async () => {
     const { ctx, agent } = await mount()
-    const execution = await ctx.commands.execute(agent, '/provider add', signal())
+    const execution = await ctx.commands.execute(agent, '/provider add', [], signal())
     // The guard is a failure — the command result carries kind error so the
     // input layer flashes it red.
     expect(execution?.result).toEqual({
@@ -664,7 +664,7 @@ describe('model-family commands', () => {
         models: { mock: [{ id: 'mock', name: 'Mock' }], other: [] },
       },
     })
-    const execution = await ctx.commands.execute(agent, '/provider switch other', signal())
+    const execution = await ctx.commands.execute(agent, '/provider switch other', [], signal())
     expect(execution?.result).toEqual({
       kind: 'success',
       text: 'provider "other" advertises no models',
@@ -678,7 +678,7 @@ describe('model-family commands', () => {
       mutate: async () => {},
     }
     const { ctx, screen, agent } = await mount({ attach: false, settings, credentials: { set: async () => {}, unset: async () => {} } })
-    await ctx.commands.execute(agent, '/provider', signal())
+    await ctx.commands.execute(agent, '/provider', [], signal())
     overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => {
       const rows = screen.overlays[screen.overlays.length - 1]?.component.render?.(80) ?? []
@@ -693,7 +693,7 @@ describe('model-family commands', () => {
     const session = ctx.sessions.create(SessionId('provider-no-llm'))
     const agent = { id: session.id, session, status: 'idle' } as unknown as Agent
     await ctx.plugin(commandsPlugin)
-    expect((await ctx.commands.execute(agent, '/provider', signal()))?.result)
+    expect((await ctx.commands.execute(agent, '/provider', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'the llm service is unavailable' })
     await ctx.fiber.dispose()
 
@@ -704,16 +704,16 @@ describe('model-family commands', () => {
     const bareSession = bare.sessions.create(SessionId('provider-no-display'))
     const bareAgent = { id: bareSession.id, session: bareSession, status: 'idle' } as unknown as Agent
     await bare.plugin(commandsPlugin)
-    expect((await bare.commands.execute(bareAgent, '/provider', signal()))?.result)
+    expect((await bare.commands.execute(bareAgent, '/provider', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'provider picker is unavailable: the Blue screen is not mounted' })
-    expect((await bare.commands.execute(bareAgent, '/provider add', signal()))?.result)
+    expect((await bare.commands.execute(bareAgent, '/provider add', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'provider wizard is unavailable: the Blue screen is not mounted' })
     await bare.fiber.dispose()
   })
 
   it('/provider CTA runs the wizard; Escape closes the panel quietly', async () => {
     const { ctx, screen, agent } = await mount()
-    await ctx.commands.execute(agent, '/provider', signal())
+    await ctx.commands.execute(agent, '/provider', [], signal())
     // Rows: mock (configured), then the CTA.
     overlay(screen).handleInput(KEY.down)
     overlay(screen).handleInput(KEY.enter)
@@ -723,7 +723,7 @@ describe('model-family commands', () => {
     expect(notices[0]).toContain('llm services!')
 
     const noticesBefore = notices.length
-    await ctx.commands.execute(agent, '/provider', signal())
+    await ctx.commands.execute(agent, '/provider', [], signal())
     overlay(screen).handleInput(KEY.escape)
     expect(screen.overlays[screen.overlays.length - 1]?.hidden).toBe(true)
     expect(notices.length).toBe(noticesBefore)
@@ -738,7 +738,7 @@ describe('model-family commands', () => {
       resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model }),
     } as unknown as LlmRuntime
     const { ctx, agent, fiber } = await mount({ llm })
-    const pending = ctx.commands.execute(agent, '/provider switch mock', signal())
+    const pending = ctx.commands.execute(agent, '/provider switch mock', [], signal())
     await fiber.dispose()
     release()
     expect((await pending)?.result).toEqual({ kind: 'success' })
@@ -746,7 +746,7 @@ describe('model-family commands', () => {
 
   it('/provider CTA suppresses the wizard outcome when the tree unloaded', async () => {
     const { ctx, screen, agent, fiber } = await mount()
-    await ctx.commands.execute(agent, '/provider', signal())
+    await ctx.commands.execute(agent, '/provider', [], signal())
     await fiber.dispose()
     overlay(screen).handleInput(KEY.down)
     overlay(screen).handleInput(KEY.down)
@@ -778,7 +778,7 @@ describe('model-family commands', () => {
     dynamicLlm.listProviders = () => registered.map(id => ({ id, name: id }))
     const { ctx, screen, agent } = await mount({ llm: dynamicLlm, settings, credentials })
     // The wizard settles with user input; drive the panels while it pends.
-    void ctx.commands.execute(agent, '/provider add', signal())
+    void ctx.commands.execute(agent, '/provider add', [], signal())
     await vi.waitFor(() => { expect(screen.overlays).toHaveLength(1) })
     overlay(screen).handleInput(KEY.down)
     overlay(screen).handleInput(KEY.enter)
@@ -812,7 +812,7 @@ describe('model-family commands', () => {
   it('returns quietly when the fresh route never registers or the tree unloads', async () => {
     // No llm service at all: the poll skips and the catalog guard answers.
     const noLlm = await mount({ attach: false })
-    void noLlm.ctx.commands.execute(noLlm.agent, '/provider switch mock', noLlm.fiber ? signal() : signal())
+    void noLlm.ctx.commands.execute(noLlm.agent, '/provider switch mock', [], signal())
     await noLlm.fiber.dispose()
 
     // A route that never appears: the poll exhausts its deadline quietly.
@@ -824,7 +824,7 @@ describe('model-family commands', () => {
     const { ctx, screen, agent, fiber } = await mount({
       llm: never, settings, credentials: { set: async () => {} },
     })
-    void ctx.commands.execute(agent, '/provider add', signal())
+    void ctx.commands.execute(agent, '/provider add', [], signal())
     await vi.waitFor(() => { expect(screen.overlays).toHaveLength(1) })
     overlay(screen).handleInput(KEY.down)
     overlay(screen).handleInput(KEY.enter)
@@ -859,7 +859,7 @@ describe('model-family commands', () => {
     const { ctx, screen, agent, fiber } = await mount({
       settings, credentials: { set: async () => {} },
     })
-    await ctx.commands.execute(agent, '/provider', signal())
+    await ctx.commands.execute(agent, '/provider', [], signal())
     overlay(screen).handleInput(KEY.down)
     overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => { expect(screen.overlays).toHaveLength(2) })
@@ -886,7 +886,7 @@ describe('model-family commands', () => {
 
   it('/effort session-only leaves the default untouched', async () => {
     const { ctx, screen, agent, saveSelection } = await mount()
-    await ctx.commands.execute(agent, '/effort', signal())
+    await ctx.commands.execute(agent, '/effort', [], signal())
     overlay(screen).handleInput(KEY.right)
     overlay(screen).handleInput(KEY.altS)
     await vi.waitFor(() => { expect(notices).toHaveLength(1) })

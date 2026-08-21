@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 Blue is an interactive terminal UI (TUI) plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`): a `pi-tui` renderer mounted as an out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) plugin bundle on top of the `dsh-base` bundle. Nothing is published to npm yet — the project lives in this repository as five workspace packages under the `@dsh-blue` scope, and the only way to run it today is a local development install (see [Installation](#installation-development)).
 
-This repository is the standalone home of those packages. They were extracted from the `deepseek-harness` monorepo (`packages/blue/*` and `packages/bundle/blue`) and now build and test against the published npm releases of the harness (`0.1.0-rc.7` line) and vendored Cordis.
+This repository is the standalone home of those packages. They were extracted from the `deepseek-harness` monorepo (`packages/blue/*` and `packages/bundle/blue`) and now build and test against the published npm releases of the harness (`0.1.1-rc.1` line) and vendored Cordis.
 
 ## Features
 
@@ -90,7 +90,7 @@ Contract in L1, implementation locked in L0, enhancement through seams in L2: th
 
 ## Installation (development)
 
-The only supported install today is local, against a checkout. Prerequisites: Node `^22.19 || >=24`, pnpm 11, and a `dsh` CLI ≥ `0.1.0-rc.7` (`npm i -g @deepseek-ai/dsh`).
+The only supported install today is local, against a checkout. Prerequisites: Node `^22.19 || >=24`, pnpm 11, and a `dsh` CLI ≥ `0.1.1-rc.1` (`npm i -g @deepseek-ai/dsh`).
 
 ### One-shot
 
@@ -160,5 +160,5 @@ All design documents are in Chinese, under [docs/](docs/):
 
 ## Relationship to deepseek-harness
 
-- Runtime and test dependencies (`@deepseek-ai/cordis` 4.0.1, `@deepseek-ai/dsh-*` 0.1.0-rc.7, `@earendil-works/pi-tui` ^0.84.2) come from the npm registry; Blue's own five packages are unpublished and stay workspace-linked here.
+- Runtime and test dependencies (`@deepseek-ai/cordis` 4.0.1, `@deepseek-ai/dsh-*` 0.1.1-rc.1, `@earendil-works/pi-tui` ^0.84.2) come from the npm registry; Blue's own five packages are unpublished and stay workspace-linked here.
 - The harness's repository gates (documentation i18n pairing, README gates, snapshot/e2e lanes) do not apply here; this repo keeps the build, the full test suite, and the per-file 100% src coverage gate.
