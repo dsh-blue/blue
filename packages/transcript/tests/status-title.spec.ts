@@ -1,10 +1,10 @@
 /**
  * `blue-status-title` plugin: the folded session-title footer entry — the
- * second-band left-cluster placement (priority 12, muted tier), the fold
- * read through the structural title service, the refresh triggers (load,
- * session switches incl. the null broadcast, current-session events), the
- * foreign-session filter, the empty-while-untitled hide, the width
- * truncation, and the fiber unload.
+ * first-band right-cluster placement in the retired tips slot (priority 30,
+ * muted tier), the fold read through the structural title service, the
+ * refresh triggers (load, session switches incl. the null broadcast,
+ * current-session events), the foreign-session filter, the
+ * empty-while-untitled hide, the width truncation, and the fiber unload.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -32,16 +32,16 @@ function titleService() {
 }
 
 describe('blue-status-title', () => {
-  it('renders the folded title at priority 12, band 2, left cluster, muted tier', async () => {
+  it('renders the folded title at priority 30, band 1 right cluster (the retired tips slot), muted tier', async () => {
     const muted = (text: string): string => `[Mu]${text}[/Mu]`
     const harness = await bootStatusPlugin(statusTitle, titledAgent(['fix the login bug']), {
       colors: { ...COLORS, muted },
       services: { sessionTitle: titleService() },
     })
     expect(harness.entry.id).toBe('blue.status.title')
-    expect(harness.entry.priority).toBe(12)
-    expect(harness.entry.row).toBe(2)
-    expect(harness.entry.align).toBe('left')
+    expect(harness.entry.priority).toBe(30)
+    expect(harness.entry.row).toBeUndefined()
+    expect(harness.entry.align).toBe('right')
     expect(harness.entry.render(80)).toBe('[Mu]fix the login bug[/Mu]')
     await harness.dispose()
   })

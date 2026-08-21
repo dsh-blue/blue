@@ -4,13 +4,14 @@ The footer — the terminal's bottom two rows — is a **registry-driven** surfa
 
 ## Layout and gray tiers
 
-Entries connect with two-space slots — no separator glyphs; three brightness tiers build the hierarchy (the kimi visual identity):
+Entries connect with two-space slots — no separator glyphs; brightness tiers build the hierarchy (the kimi visual identity):
 
 | Tier | Color | Carries |
 | --- | --- | --- |
 | Brightest | `text` | model, context — what you read every turn |
-| Middle | `muted` | cwd, git badge |
-| Dimmest | `textMuted` | rotating tips |
+| Middle | `muted` | cwd, git badge, session title |
+
+(The dimmest `textMuted` tips tier retired with the S30 footer swap — teaching tips now ride only the activity pane's spinner rows.)
 
 ## Built-in entries
 
@@ -21,7 +22,7 @@ Entries connect with two-space slots — no separator glyphs; three brightness t
 | `blue-status-cwd` | 5 | row 1 left | session cwd (home shortened to `~`, deep paths to the last three segments; `muted` tier) |
 | `blue-status-git` | 10 | row 1 left | full badge `branch [+a -d ↑e↓f]` (TTL-cached probe: branch 5s / status 15s; hidden outside a git repository) |
 | `blue-status-context` | 20 | row 2 right | latest step's context occupancy: `context: N% (K/M)` with a window, degrading to `ctx N` without (`text` tier) |
-| `blue-status-tips` | 30 | row 1 right | rotating tips, advancing every 10s, two joined ` | ` when width allows (`textMuted` tier, SWRR-weighted rotation) |
+| `blue-status-title` | 30 | row 1 right | the session title folded from the harness `sessionTitle` service (`muted` tier; the slot the rotating tips occupied before the S30 footer swap; hidden while untitled) |
 
 A running agent's status is **not** in the footer — that's the activity pane's job (see [Bottom panes](/en/features/panes)).
 

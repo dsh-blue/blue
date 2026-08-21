@@ -11,7 +11,8 @@
  * and the queued-message pane with the empty-editor Up recall as the
  * `./pane-queue` subpath plugin (`blue-pane-queue`). The session-title
  * terminal mirror (`blue-terminal-title`, the OSC 0 window title over the
- * upstream session-title fold) mounts with the baseline plugins. All
+ * upstream session-title fold) and the all-prompts cadence bridge
+ * (`blue-session-title-cadence`, D41) mount with the baseline plugins. All
  * registrations are effect-bound, so unloading the fiber reverts every
  * contribution.
  *
@@ -24,6 +25,7 @@ import * as commandsPlugin from './commands-plugin.ts'
 import * as inputPlugin from './input-plugin.ts'
 import * as keysPlugin from './keys.ts'
 import * as questionsPlugin from './questions-plugin.ts'
+import * as sessionTitleCadencePlugin from './session-title-cadence.ts'
 import * as terminalTitlePlugin from './terminal-title.ts'
 
 // BluePanel is the package's public overlay container; BlueSelect stays
@@ -46,4 +48,5 @@ export function apply(ctx: Context): void {
   ctx.plugin(questionsPlugin)
   ctx.plugin(approvalPlugin)
   ctx.plugin(terminalTitlePlugin)
+  ctx.plugin(sessionTitleCadencePlugin)
 }
