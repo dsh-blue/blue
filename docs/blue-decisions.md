@@ -311,3 +311,10 @@
 - **理由**：修复走公开对象 API，零新依赖、不赌组合隔离契约；上游正修（服务侧边界闸门对 agent-loop 事件序的假设）在 harness 仓库另行立项，Blue 桥在其落地后可平滑移除。
 - **后果/边界**：refresh 用**已落 header 的路由**派生（路由不随 alt+m 换档实时更新——与上游行为一致，仅辅助调用身份滞后）；上游修复合入并升 pin 后本桥可退役；e2e 以结构 fake 的 refresh 记录器断言桥行为（真服务不在薄 e2e 树内）。
 - **落地（2026-08-22，随 footer 换位 PR）**：`packages/interaction/src/session-title-cadence.ts` + index 挂载 + 单测 6 例 + e2e 桥断言（首轮 0 次、次轮恰 1 次带会话 id）。
+
+### D42. hint 行 slash-discovery 退役：dropdown 是唯一命令目录（S34 验收裁决，2026-08-22）
+
+- **背景**：裸 `/` 时命令目录双渲染——pi-tui dropdown（S14 completion polish，editor-plus 装载）与 hint 行 slash-discovery tier（S14 同期的前置产物，横排前 3 条）同屏。首轮修复尝试"dropdown 开启时 hint 让位"（render 期探 `isShowingAutocomplete()`，避开异步竞态），但 Esc 关闭 dropdown 后 discovery 行复现——让位治标不治本，验收二轮仍报冗余。
+- **裁决**：彻底退役 discovery tier——dropdown 完全覆盖其功能（同一 `slash-filter.ts` fuzzy filter、可滚动分页、可选中补全），discovery 仅存的出场时机（Esc 后、无 dropdown 的 plain baseline）价值不足。历史注记：S15 已退 persistent key-affordance tier，本条再退 slash-discovery，hint 行只剩 notice 职能。
+- **保留面**：`no matching command: /x` 空结果反馈（dropdown 空匹配自关，notice 是唯一信号）与全部一次性 notice（命令执行结果/错误）。alias 标签语义（`/quit (q, exit)`）由 dropdown 侧测试承接（editor-plus.spec 既有覆盖）。
+- **后果/边界**：plain baseline（drop 掉 enhancement 段、无 dropdown 的组合）失去 slash 目录预览——`/help` 仍在；实际部署 bundle 恒装 editor-plus。`slashCommandLabel` 从 input-plugin 的消费面退役（editor-plus 仍用）。

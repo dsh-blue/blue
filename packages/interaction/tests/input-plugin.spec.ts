@@ -250,24 +250,24 @@ describe('blue-input plugin', () => {
     })
   })
 
-  it('yields the hint row while the autocomplete dropdown is up', async () => {
+  it('renders no command catalog for slash input — the dropdown owns discovery (D42)', async () => {
     const { ctx, editor, hint } = await mount()
     ctx.commands.register({
       name: 'poke',
       description: 'Poke the agent',
       handler: () => ({ kind: 'success' as const, text: 'poked' }),
     })
-    // A bare slash lists every command in the discovery tier; with the
-    // dropdown up that same catalog is already on screen one row above, so
-    // the hint row renders nothing until the dropdown closes (S34 dogfood:
-    // the two together double-rendered the command list).
+    // A match (bare slash or a prefix) renders nothing whether the dropdown
+    // is up or closed — the S34 dogfood verdict retired the discovery tier
+    // that double-rendered the catalog next to it; only the empty-result
+    // notice below survives from the S14 tier.
     type(editor, '/')
-    expect(hint.render(80).some(row => row.includes('/poke'))).toBe(true)
+    expect(hint.render(80)).toEqual([])
     editor.showingAutocomplete = true
     expect(hint.render(80)).toEqual([])
-    // Esc closing the dropdown repaints the frame and the row returns.
     editor.showingAutocomplete = false
-    expect(hint.render(80).some(row => row.includes('/poke'))).toBe(true)
+    type(editor, 'po')
+    expect(hint.render(80)).toEqual([])
     hint.invalidate()
   })
 
@@ -398,53 +398,25 @@ describe('blue-input plugin', () => {
     expect(screen.renderRequests).toBe(renderRequests)
   })
 
-  it('shows matching command hints for slash-prefixed input and replaces them on edit', async () => {
+  it('keeps only the empty-result notice for slash-prefixed input', async () => {
     const { ctx, editor, hint } = await mount()
     ctx.commands.register({ name: 'resume', description: 'Resume a previous session', handler: () => ({ kind: 'success' }) })
     ctx.commands.register({ name: 'restart', description: 'Restart everything', handler: () => ({ kind: 'success' }) })
+    // A match renders nothing (D42: the dropdown owns discovery); the empty
+    // result keeps its notice — the dropdown closes itself on an empty
+    // match, so the notice is the only feedback.
     type(editor, '/res')
-    expect(hint.render(80)).toEqual(['~/restart — Restart everything  /resume — Resume a previous session~'])
+    expect(hint.render(80)).toEqual([])
     type(editor, 'x')
     expect(hint.render(80)).toEqual(['~no matching command: /resx~'])
     editor.setText('/res')
-    expect(hint.render(80)[0]).toContain('/resume')
-  })
-
-  it('lists every command on a bare slash prefix', async () => {
-    const { ctx, editor, hint } = await mount()
-    ctx.commands.register({ name: 'alpha', description: 'First command', handler: () => ({ kind: 'success' }) })
-    ctx.commands.register({ name: 'beta', description: 'Second command', handler: () => ({ kind: 'success' }) })
-    type(editor, '/')
-    const rendered = hint.render(80)[0]
-    expect(rendered).toContain('/alpha — First command')
-    expect(rendered).toContain('/beta — Second command')
-    // Typing a letter narrows the discovery list again.
-    type(editor, 'b')
-    expect(hint.render(80)).toEqual(['~/beta — Second command~'])
-  })
-
-  it('surfaces the canonical command for an alias query in the hint line', async () => {
-    const { ctx, editor, hint } = await mount()
-    ctx.commands.register({ name: 'quit', description: 'Exit Blue', handler: () => ({ kind: 'success' }) })
-    const clear = registerCommandAliases('quit', ['q', 'exit'])
-    try {
-      // A query matching the canonical name (`q` is a subsequence of
-      // `quit`) shows the plain label; one matching only an alias (`exi`
-      // cannot match `quit`) appends the alias list — the kimi rule that
-      // explains why the command surfaced.
-      type(editor, '/q')
-      expect(hint.render(80)).toEqual(['~/quit — Exit Blue~'])
-      editor.setText('/exi')
-      expect(hint.render(80)).toEqual(['~/quit (q, exit) — Exit Blue~'])
-    } finally {
-      clear()
-    }
+    expect(hint.render(80)).toEqual([])
   })
 
   it('renders no hint row without an attached session', async () => {
     const { editor, hint } = await mount({ withAgent: false })
     type(editor, '/res')
-    // No agent means no slash discovery, and nothing else owns the row.
+    // No agent means no slash feedback, and nothing else owns the row.
     expect(hint.render(80)).toEqual([])
   })
 
@@ -479,7 +451,7 @@ describe('blue-input plugin', () => {
   it('renders no persistent row in any state — the footer tips teach the affordances', async () => {
     // The S15 dogfood verdict retired the persistent key-affordance tier:
     // idle, running, and with every enhancement attached, the hint row
-    // stays empty unless a notice or slash discovery owns it.
+    // stays empty unless a notice or slash feedback owns it.
     const idle = await mount()
     expect(idle.hint.render(80)).toEqual([])
     await idle.fiber.dispose()

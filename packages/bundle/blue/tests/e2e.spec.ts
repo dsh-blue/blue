@@ -1557,8 +1557,9 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('/sessions') })
     const frame = await fullFrame(tree.terminal)
     const rows = frame.split('\r\n')
-    // The dropdown row, not the discovery hint row below the frame, carries
-    // the side-bar-anchored two-line treatment.
+    // The dropdown row carries the side-bar-anchored two-line treatment
+    // (the S14 hint-row discovery tier retired with D42 — the dropdown is
+    // the only command catalog).
     const at = rows.findIndex(row => row.includes('→ /sessions'))
     expect(at).toBeGreaterThanOrEqual(0)
     // The continuation row carries the description tail in the description

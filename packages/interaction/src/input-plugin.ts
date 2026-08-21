@@ -86,10 +86,8 @@ import { openPermissionPanel } from './permission-panel.ts'
 import { ACTION_QUEUE_RECALL, queuedMessageText } from './pane-queue.ts'
 import { attachSkillsCatalog, rewriteSkillTokens } from './skills-catalog.ts'
 import { currentBlueAgent } from './session.ts'
-import { filterSlashCommands, slashCommandLabel } from './slash-filter.ts'
+import { filterSlashCommands } from './slash-filter.ts'
 
-/** Slash-command hint rows shown at once. */
-const MAX_HINT_COMMANDS = 3
 /** Window for the double Ctrl-C exit: presses farther apart re-arm the hint. */
 const INTERRUPT_DOUBLE_PRESS_MS = 1000
 /** Timestamp of the last idle Ctrl-C press; 0 means the exit is not armed. */
@@ -102,18 +100,15 @@ export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap'
 
 /**
  * The single-line hint rendered under the input editor. Only the transient
- * tier exists (one-shot notices, slash-command discovery) and paints
- * `muted`; with nothing transient the row renders zero rows — the
- * persistent key-affordance tier retired with the S15 dogfood verdict,
- * its teaching role taken by the footer's rotating tips. While the
- * editor's autocomplete dropdown is up the row yields entirely (the S34
- * dogfood verdict: the dropdown lists the same commands and descriptions
- * the slash-discovery tier would, so the two together double-render the
- * catalog). The probe runs at render time, not input time, because the
- * dropdown opens asynchronously (pi-tui resolves the provider on a
- * promise) — by the frame the hint row paints, the dropdown state is
- * settled, and an Esc that closes the dropdown repaints this row back
- * through the same frame.
+ * notice tier exists and paints `muted`; with nothing transient the row
+ * renders zero rows — the persistent key-affordance tier retired with the
+ * S15 dogfood verdict, and the slash-discovery tier with the S34 dogfood
+ * verdict (D42): the editor's autocomplete dropdown already lists the same
+ * catalog through the same fuzzy filter, interactively, so the discovery
+ * row only ever surfaced alongside-or-after it as a duplicate. The row
+ * keeps the empty-result feedback (`no matching command: /x` — the
+ * dropdown closes itself on an empty match, so the notice is the only
+ * signal) and every one-shot command notice.
  */
 class HintLine implements BlueComponent {
   private text: string | undefined
@@ -123,16 +118,11 @@ class HintLine implements BlueComponent {
    *   lifetime; property access through a disposed context throws).
    * @param colors - the active semantic color table.
    * @param components - the width-truncation helper source.
-   * @param yields - probed at render time; a truthy return renders zero
-   *   rows (the dropdown is up). Notices never coexist with an open
-   *   dropdown — every notice fires from a submit or command path, which
-   *   has already cleared the buffer and with it the dropdown.
    */
   constructor(
     private readonly screen: BlueScreen,
     private readonly colors: BlueSemanticColors,
     private readonly components: BlueComponents,
-    private readonly yields?: () => boolean,
   ) {}
 
   /**
@@ -156,7 +146,6 @@ class HintLine implements BlueComponent {
    */
   render(width: number): string[] {
     if (this.text === undefined) return []
-    if (this.yields?.()) return []
     return [this.colors.muted(this.components.truncateToWidth(this.text, width))]
   }
 }
@@ -212,35 +201,33 @@ export function apply(ctx: Context): void {
   // `>` prompt symbol the rounded-box chrome overlays.
   editor.setPromptSymbol('>')
 
-  // The discovery tier yields while the editor's autocomplete dropdown is
-  // up (see HintLine) — the probe reads the editor's live dropdown state.
-  const hintLine = new HintLine(screen, colors, ctx.blueComponents, () => editor.isShowingAutocomplete())
+  const hintLine = new HintLine(screen, colors, ctx.blueComponents)
 
-  /** Matching-command hint for slash-prefixed input. */
+  /**
+   * Empty-result feedback for slash-prefixed input (D42: the discovery
+   * listing itself retired — the dropdown owns command discovery).
+   * @returns the notice text when the filter matches nothing, else undefined.
+   */
   function slashHint(): string | undefined {
     if (!currentText.startsWith('/')) return undefined
     const parsed = parseCommand(currentText)
-    // A bare slash cannot parse (parseCommand requires a leading letter) but
-    // is exactly the discovery affordance: list every registered command.
+    // A bare slash cannot parse (parseCommand requires a leading letter).
     if (parsed === undefined && currentText !== '/') return undefined
     const agent = currentBlueAgent(ctx)
     if (agent === undefined) return undefined
-    // The S14 fuzzy filter — the same matcher the dropdown uses — keeps the
-    // hint row and the completion list in agreement. Alias matches surface
-    // the canonical command with the alias list on the label (the kimi
-    // rule), so the hint row explains why `/q` matched `/quit`.
+    // The same S14 fuzzy filter the dropdown uses, so the feedback agrees
+    // with what the dropdown just failed to list. The dropdown closes
+    // itself on an empty match, so this notice is the only signal.
     const matches = filterSlashCommands(
       withCommandAliases(ctx.commands.list(agent)),
       parsed?.name ?? '',
       ctx.blueComponents,
     )
     if (matches.length === 0) return `no matching command: /${parsed?.name ?? ''}`
-    return matches.slice(0, MAX_HINT_COMMANDS)
-      .map(match => `${slashCommandLabel(match)} — ${match.command.description}`)
-      .join('  ')
+    return undefined
   }
 
-  /** Recompute the hint line from the notice or the slash discovery list. */
+  /** Recompute the hint line from the notice or the slash feedback. */
   function refreshHint(): void {
     hintLine.setHint(notice ?? slashHint())
   }
