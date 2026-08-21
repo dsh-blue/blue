@@ -1,6 +1,6 @@
 # Built-in plugins
 
-Every surface in Blue is a plugin (a patch row) — this page is the directory of the 23 built-ins. They double as living examples of what plugins can do: status entries, tool cards, editor enhancements, whole panes — all registered through the seams in the [Seam reference](/en/plugins/seams), each removable.
+Every surface in Blue is a plugin (a patch row) — this page is the directory of the 22 built-ins. They double as living examples of what plugins can do: status entries, tool cards, editor enhancements, whole panes — all registered through the seams in the [Seam reference](/en/plugins/seams), each removable.
 
 The three-segment structure at a glance (same single source as the repo READMEs, `docs/diagrams/blue-composition.mmd`):
 
@@ -8,7 +8,7 @@ The three-segment structure at a glance (same single source as the repo READMEs,
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml — the 23 Blue rows · 23 条 Blue 行"]
+    subgraph bundle["cordis.patch.yml — the 22 Blue rows · 22 条 Blue 行"]
         subgraph baseline["plain baseline 基线 — 8 rows, self-sufficient 自足"]
             core["blue-core"]
             theme["blue-theme-dark"]
@@ -22,7 +22,7 @@ flowchart TB
         subgraph enhancement["enhancement segment 增强段 — every row droppable 每行皆可删"]
             editorPlus["blue-editor-plus"]
             att["blue-attachments · blue-paste-image"]
-            statusEnh["blue-status-cwd · -git · -mode · -tips · -context"]
+            statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
             intents["blue-intent-diff · -terminal"]
             panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
         end
@@ -47,7 +47,7 @@ The five plugins composing the minimal usable Blue UI — the plain baseline, be
 | `blue-transcript` | the transcript body: event folding and rendering, the status registry and two-row footer shell |
 | `blue-status-basic` | baseline status entry: the model name (priority 0) |
 
-## Enhancement plugins (15, individually toggleable)
+## Enhancement plugins (14, individually toggleable)
 
 Optional layers over the plain baseline — every row deletes on its own without breaking it:
 
@@ -59,7 +59,7 @@ Optional layers over the plain baseline — every row deletes on its own without
 | `blue-status-cwd` | status: session cwd (priority 5, deep-path shortening) |
 | `blue-status-git` | status: git badge `branch [+a -d ↑u↓v]` (priority 10, TTL-cached probe) |
 | `blue-status-mode` | status: session-mode badge `plan`/`yolo` (priority 2, hidden in normal) |
-| `blue-status-tips` | status: rotating teaching tips (priority 30, advancing every 10s) |
+| `blue-status-title` | status: the session title (priority 30, row 1 right-aligned; the slot the rotating tips occupied before the S30 footer swap) |
 | `blue-status-context` | status: context occupancy `context: N%` (priority 20, row 2 right-aligned) |
 | `blue-intent-diff` | dedicated diff tool card (unified-diff coloring for Write/Edit) |
 | `blue-intent-terminal` | dedicated terminal-output tool card (`$ command` + exit badge) |
