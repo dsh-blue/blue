@@ -234,9 +234,10 @@
       name: '@dsh-blue/blue-transcript/status-git'
 
     # Session-title footer entry: the folded session title (the upstream
-    # session-title service, all-prompts cadence above) on the footer's
-    # second band, left of the context bar (priority 12, muted tier);
-    # renders nothing while the session is untitled.
+    # session-title service, all-prompts cadence above) right-aligned on the
+    # footer's first band (priority 30, muted tier — the slot the rotating
+    # tips occupied before retiring to the activity pane); renders nothing
+    # while the session is untitled.
     - id: blue-status-title
       name: '@dsh-blue/blue-transcript/status-title'
 
@@ -247,12 +248,6 @@
     # fiber-dispose trap does not apply.
     - id: blue-status-mode
       name: '@dsh-blue/blue-interaction/mode-status'
-
-    # Rotating-teaching-tip footer entry: one tip, or two joined ' | ' when
-    # the width allows (priority 30, the faintest textMuted tier,
-    # right-aligned on the footer's first band), advancing every 10s.
-    - id: blue-status-tips
-      name: '@dsh-blue/blue-transcript/status-tips'
 
     # Context footer entry: the latest model step's context occupancy —
     # 'context: N% (used/window)' when the adapter advertises a window, else

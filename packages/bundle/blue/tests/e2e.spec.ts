@@ -78,9 +78,6 @@ import * as statusContextPlugin from '../../../transcript/src/status-context.ts'
 import * as statusCwdPlugin from '../../../transcript/src/status-cwd.ts'
 import * as statusGitPlugin from '../../../transcript/src/status-git.ts'
 import * as statusTitlePlugin from '../../../transcript/src/status-title.ts'
-import * as statusTipsPlugin from '../../../transcript/src/status-tips.ts'
-import { buildTipRotation, tipOffer } from '../../../transcript/src/status-tips.ts'
-import { STATUS_TIPS } from '../../../transcript/src/tips-content.ts'
 import { setRecentStepsRetention, setStepFoldingEnabled } from '../../../transcript/src/window.ts'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { MockAdapter, reasoningResponse, textResponse, toolCallResponse } from './mock-adapter.ts'
@@ -128,14 +125,13 @@ const EDITOR_BORDER_SGR = '\x1b[38;2;90;90;90m'
 const FOOTER_GAP = 2
 
 /**
- * The S15 footer's three greyscale tiers (dark palette): the model and the
- * context percentage carry the full `text` #e0e0e0, the cwd and git badge
- * the `muted` #888888, and the teaching tip the faintest `textMuted`
- * #6b6b6b — the kimi footer's visual hierarchy.
+ * The S15 footer's greyscale tiers (dark palette): the model and the
+ * context percentage carry the full `text` #e0e0e0, the cwd, the git badge,
+ * and the session title the `muted` #888888 — the kimi footer's visual
+ * hierarchy (the tips tier retired with the S30 footer swap).
  */
 const FOOTER_TEXT_SGR = '\x1b[38;2;224;224;224m'
 const FOOTER_MUTED_SGR = '\x1b[38;2;136;136;136m'
-const FOOTER_TEXTMUTED_SGR = '\x1b[38;2;107;107;107m'
 
 /**
  * Strip every escape flavor the renderer emits (SGR runs, CSI modes, OSC 8
@@ -157,15 +153,6 @@ function stripSgr(row: string): string {
 function stripCwdName(text: string): string {
   const name = basename(process.cwd())
   return name.length === 0 ? text : text.replaceAll(name, '')
-}
-
-/**
- * The boot tip offer — the first slot of the deterministic SWRR expansion,
- * exactly what the mounted tips entry renders until its first tick.
- */
-function bootTipText(): string {
-  const offer = tipOffer(buildTipRotation(STATUS_TIPS), 0)
-  return offer.pair ?? offer.primary
 }
 
 afterEach(async () => {
@@ -214,7 +201,6 @@ interface BlueE2EHooks {
   statusCwdApply: typeof statusCwdPlugin.apply
   statusGitApply: typeof statusGitPlugin.apply
   statusTitleApply: typeof statusTitlePlugin.apply
-  statusTipsApply: typeof statusTipsPlugin.apply
   statusContextApply: typeof statusContextPlugin.apply
   modeStatusApply: typeof modeStatusPlugin.apply
   paneActivityApply: typeof paneActivityPlugin.apply
@@ -316,7 +302,6 @@ async function bootBlue(argv: string[], options: {
     statusCwdApply: statusCwdPlugin.apply,
     statusGitApply: statusGitPlugin.apply,
     statusTitleApply: statusTitlePlugin.apply,
-    statusTipsApply: statusTipsPlugin.apply,
     statusContextApply: statusContextPlugin.apply,
     modeStatusApply: modeStatusPlugin.apply,
     paneActivityApply: paneActivityPlugin.apply,
@@ -423,17 +408,26 @@ export const name = 'blue-status-git'
 export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
 export const apply = ctx => globalThis.__blueE2E.statusGitApply(ctx)
 `)}`,
+    // The harness session-title service stand-in (the thin e2e tree boots no
+    // dsh-base): the structural fold the status-title entry reads.
+    '- id: e2e-session-title',
+    `  name: ${fixture('e2e-session-title.mjs', `
+export const name = 'e2e-session-title'
+export const apply = ctx => ctx.provide('sessionTitle', {
+  get: session => {
+    for (let i = session.events.length - 1; i >= 0; i--) {
+      const event = session.events[i]
+      if (event.type === 'session/title') return { title: event.data.title }
+    }
+    return undefined
+  },
+})
+`)}`,
     '- id: blue-status-title',
     `  name: ${fixture('blue-status-title.mjs', `
 export const name = 'blue-status-title'
 export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
 export const apply = ctx => globalThis.__blueE2E.statusTitleApply(ctx)
-`)}`,
-    '- id: blue-status-tips',
-    `  name: ${fixture('blue-status-tips.mjs', `
-export const name = 'blue-status-tips'
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme']
-export const apply = ctx => globalThis.__blueE2E.statusTipsApply(ctx)
 `)}`,
     '- id: blue-status-context',
     `  name: ${fixture('blue-status-context.mjs', `
@@ -1590,11 +1584,12 @@ describe('blue whole-tree e2e', () => {
     }
   })
 
-  it('lays out the footer bands: tiered left slots, the teaching tip flush right', async () => {
+  it('lays out the footer bands: tiered left slots, the session title flush right', async () => {
     // The S15 kimi identity end to end: band 1 carries the model in the full
     // text tier, then the abbreviated cwd and the git badge in muted — each
-    // slot separated by exactly two spaces — with the rotating tip in the
-    // faintest textMuted tier right-aligned against the terminal edge.
+    // slot separated by exactly two spaces — with the folded session title
+    // (the retired tips slot) right-aligned in the same muted tier against
+    // the terminal edge.
     statusGitPlugin.setGitCommandRunner((args) => {
       if (args[0] === 'branch') return 'e2e-branch'
       if (args[0] === 'status') return '## e2e-branch...origin/e2e-branch [ahead 2]\n M wip.ts\n'
@@ -1603,9 +1598,10 @@ describe('blue whole-tree e2e', () => {
     })
     try {
       const tree = await bootBlue([], { script: [] })
-      await currentAgent(tree)
-      // Wide enough that every slot and the paired tip fit: the layout, not
-      // the yield, is under test here.
+      const agent = await currentAgent(tree)
+      agent.session.append('session/title', { title: 'fix the login timeout' })
+      // Wide enough that every slot and the title fit: the layout, not the
+      // yield, is under test here.
       tree.terminal.resize(200, 24)
       await vi.waitFor(() => {
         expect(tree.terminal.output).toContain(`${FOOTER_MUTED_SGR}e2e-branch [+7 -2 ↑2]`)
@@ -1613,29 +1609,29 @@ describe('blue whole-tree e2e', () => {
       const frame = await fullFrame(tree.terminal)
       const row = frame.split('\r\n').find(line => line.includes('e2e-branch'))
       expect(row).toBeDefined()
-      // Tier anchors: the model leads in text #e0e0e0, the cwd and badge
-      // paint muted #888888, the tip textMuted #6b6b6b.
+      // Tier anchors: the model leads in text #e0e0e0, the cwd, badge, and
+      // title paint muted #888888.
       expect(row!).toContain(`${FOOTER_TEXT_SGR}mock`)
       expect(row!).toContain(`${FOOTER_MUTED_SGR}e2e-branch [+7 -2 ↑2]`)
-      expect(row!).toContain(FOOTER_TEXTMUTED_SGR)
       // Slot order and the two-space joins, against the same abbreviation
       // the cwd entry derives from this process's working directory.
       const cwdLabel = statusCwdPlugin.shortenCwd(process.cwd(), homedir())
       const plain = stripSgr(row!).trimStart()
       expect(plain.startsWith(`mock  ${cwdLabel}  e2e-branch [+7 -2 ↑2]`)).toBe(true)
-      // The tip is the right cluster: whatever the width, it ends the row.
-      expect(plain.trimEnd().endsWith(bootTipText())).toBe(true)
+      // The title is the right cluster: whatever the width, it ends the row.
+      expect(plain.trimEnd().endsWith('fix the login timeout')).toBe(true)
     } finally {
       statusGitPlugin.setGitCommandRunner(undefined)
     }
   })
 
-  it('yields the footer slots from the right under width pressure', async () => {
-    // Narrow the terminal to exactly one column short of fitting the tip
-    // (computed off the same cwd abbreviation the entry derives, so the
-    // boundary holds in any checkout): the right cluster starves first —
-    // neither the paired tip nor the single one fits — while the left
-    // cluster keeps its full budget, model through git badge.
+  it('truncates the right cluster to its budget before the left cluster yields', async () => {
+    // Narrow the terminal so the right cluster's budget (width − left
+    // cluster − gap) covers only part of the title: the title truncates to
+    // that budget — the entry's own discipline — while the left cluster
+    // keeps its full content, model through git badge. (The tips entry this
+    // case covered before the S30 footer swap hid entirely under pressure;
+    // the title entry truncates instead.)
     statusGitPlugin.setGitCommandRunner((args) => {
       if (args[0] === 'branch') return 'e2e-branch'
       if (args[0] === 'status') return '## e2e-branch\n'
@@ -1643,21 +1639,25 @@ describe('blue whole-tree e2e', () => {
     })
     try {
       const tree = await bootBlue([], { script: [] })
-      await currentAgent(tree)
+      const agent = await currentAgent(tree)
+      agent.session.append('session/title', { title: 'fix the login timeout' })
       const cwdLabel = statusCwdPlugin.shortenCwd(process.cwd(), homedir())
-      const offer = tipOffer(buildTipRotation(STATUS_TIPS), 0)
       const leftCluster = `mock  ${cwdLabel}  e2e-branch`.length
-      // fullFrame forces its repaint by bumping the width one column, so the
-      // boundary is set two short: even after the bump neither the pair nor
-      // the single tip fits the right cluster's budget.
-      tree.terminal.resize(leftCluster + FOOTER_GAP + offer.primary.length - 2, 24)
+      // A right-cluster budget of 8 columns in the frame, computed off the
+      // same cwd abbreviation the entry derives, so the boundary holds in
+      // any checkout. fullFrame forces its repaint by bumping the width one
+      // column, so the resize lands one short of the frame's budget.
+      const budget = 8
+      tree.terminal.resize(leftCluster + FOOTER_GAP + budget - 1, 24)
       const frame = await fullFrame(tree.terminal)
       const row = frame.split('\r\n').find(line => line.includes('e2e-branch'))
       expect(row).toBeDefined()
       const plain = stripSgr(row!)
-      expect(plain.trim()).toBe(`mock  ${cwdLabel}  e2e-branch`)
-      expect(plain).not.toContain(offer.primary)
-      expect(plain).not.toContain(' | ')
+      expect(plain.trim().startsWith(`mock  ${cwdLabel}  e2e-branch`)).toBe(true)
+      // pi-tui's truncateToWidth cuts at word boundaries: an 8-column
+      // budget keeps only 'fix' plus the 3-column ellipsis.
+      expect(plain.trimEnd().endsWith('fix...')).toBe(true)
+      expect(plain).not.toContain('login timeout')
     } finally {
       statusGitPlugin.setGitCommandRunner(undefined)
     }

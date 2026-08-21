@@ -1,17 +1,19 @@
 /**
  * `blue-status-title` plugin: the session-title footer entry — the folded
- * title on the footer's second band, left of the context bar (priority 12,
- * the muted tier: ambient identity, not primary status). The title is
- * generated upstream by the harness session-title service (the Blue bundle
- * runs the all-prompts cadence, so it tracks the conversation's latest
- * task); this entry only re-derives the fold — on load (late activation),
- * on `'blue/session-changed'`, and on the current session's events (the
+ * title right-aligned on the footer's first band (priority 30, the muted
+ * tier: ambient identity, not primary status — the slot the rotating tips
+ * occupied before they retired to the activity pane). The title is generated
+ * upstream by the harness session-title service (the Blue bundle runs the
+ * all-prompts cadence, so it tracks the conversation's latest task); this
+ * entry only re-derives the fold — on load (late activation), on
+ * `'blue/session-changed'`, and on the current session's events (the
  * status-basic discipline: derive cheaply on every event, redraw only on
- * change). An untitled session renders '' and occupies nothing, so a
- * fresh session shows no empty slot; a thin host without the service
- * behaves the same. `blueSession`/`sessionTitle` resolve lazily through
- * `ctx.get`, and the title service is read through a structural interface
- * so this package needs no harness session-title dependency.
+ * change). An untitled session renders '' and occupies nothing, so a fresh
+ * session shows no empty slot and the second band keeps only the context
+ * bar; a thin host without the service behaves the same. `blueSession` and
+ * `sessionTitle` resolve lazily through `ctx.get`, and the title service is
+ * read through a structural interface so this package needs no harness
+ * session-title dependency.
  *
  * @module @dsh-blue/blue-transcript/status-title
  */
@@ -90,9 +92,8 @@ export function apply(ctx: Context): void {
 
   const entry: BlueStatusEntry = {
     id: 'blue.status.title',
-    priority: 12,
-    row: 2,
-    align: 'left',
+    priority: 30,
+    align: 'right',
     render(width: number): string {
       if (text === '') return ''
       return colors.muted(components.truncateToWidth(text, width))

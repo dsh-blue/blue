@@ -1,10 +1,10 @@
 /**
- * The footer's rotating teaching tips — the content module the
- * `blue-status-tips` entry rotates through (and the S16 welcome banner's
- * right column reuses). Every tip is ASCII-only so width math never sees a
- * double-width surprise, describes a feature Blue actually ships, and may
- * carry a `solo` flag (renders alone, never pairs) and a `priority` weight
- * (recurs more often in the rotation).
+ * The teaching tips — the content module the activity pane's spinner rows
+ * rotate through (and the S16 welcome banner's right column reuses; the
+ * footer entry retired with the S30 footer swap). Every tip is ASCII-only
+ * so width math never sees a double-width surprise, describes a feature
+ * Blue actually ships, and may carry a `solo` flag (renders alone, never
+ * pairs) and a `priority` weight (recurs more often in the rotation).
  *
  * @module @dsh-blue/blue-transcript/tips-content
  */
