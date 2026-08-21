@@ -150,8 +150,8 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 | S28 | 配置与生态（**partial ✅ 2026-08-21**：/tools + /preset 已落地，含**薄宿主迁移**——bundle patch 照 web-app 官方清单 disable dsh-base 23 行 agent 面行 + agent-presets 行 + blue-app 建 agent 挂预设（resume 折 `agent-preset/selected` 事件重建组合，详 D37）；/settings /reload /tasks /mcp 顺延） | 3d+ | S27' |
 | S29 | 技能管线：**前置修复**（input-plugin 未注册 `/xxx` miss → 回退 `agent.followup`，独立 e2e 钉住）+ `#` 提示符（复用 @ 分支形态 + `#name→/name` 提交重写）+ /skills | 2d | S27'（dev 可‖S28，合并串行） |
 | S30 | 终端小件批：/title + OSC 0/2（core terminal.ts setTitle helper）、模型热键免清空切换（具体键位步内设计，过 keymap 冲突检测）、/sessions type-to-filter（select-list.ts，跨页搜索仍挂起） | 1.5d | S29 |
-| S31 | 外部编辑器 Ctrl-G：L0 `blueScreen.suspend(fn)` 缝 + 草稿往返 + 异常路径（`:cq` 草稿不丢、无编辑器 notice、挂起期停 ticker、resize 后强制全帧） | 2d | S29 |
-| S32 | 大粘贴折叠：kimi `paste-burst.ts`（61 行）移植 + >800 字符 chip + paste-cache（提交展开全文）；超长粘贴用户回显 chip 化（dogfood 裁决记档） | 2d | S31 |
+| S31 | 外部编辑器 Ctrl-G：L0 `blueScreen.suspend(fn)` 缝 + 草稿往返（**播种/回读用 pi-tui `getExpandedText()`**——粘贴标记展开，2026-08-21 核实）+ 异常路径（`:cq` 草稿不丢、无编辑器 notice、挂起期停 ticker、resize 后强制全帧） | 2d | S29 |
+| S32 | 大粘贴折叠（**2026-08-21 重定范围**：编辑器半**原生已有**，无需移植——pi-tui Editor 内置 >10 行/>1000 字符折叠为 `[paste #N +M lines]` 标记、`pastes` Map 存全文、`submitValue` 提交前自动 `expandPasteMarkers`（模型收全文已核实）、`getExpandedText()` 公开；此前"需移植 kimi paste-burst"判定系按 fork 文件名查证失误）。**剩余 = transcript 侧**：长用户消息折叠呈现（chip + ctrl+o 展开；transcript 无"是粘贴"元数据，按长度启发式 >N 行折，手打长消息同样受益；排 S33 合并后，同包错峰）；已知小疣：历史召回为展开全文（大粘贴 Up 召回整段进编辑器，记边界不修） | 0.5-1d | S33 |
 | S33 | 子 agent 分组卡（**可砍尾**）：同 step ≥2 聚合；步首 🔍 核实 live（ctx 事件）/replay（tool 折+descriptor）两源映射，不足则降级普通工具卡回放记边界 | 2-3d | 无硬前置（dev‖S31/S32，合并殿后） |
 | R1 | 钉版复核：发包时点跟最新 harness rc（现 0.1.1-rc.1）；rc.2+ 小 bump 走全量回归；**不追 minor 之上的跳跃** | 0.5d | G1 |
 | R2 | 快照最小集：@xterm/headless VirtualTerminal，5-8 例核心帧（banner 首帧 / 对话+工具卡 / footer / 面板挂载 D30 形态 / CJK 宽度）；复审 D13 结论记 blue-decisions | 1-1.5d | G1（**S30 后拍**，键位面冻结） |
@@ -182,6 +182,7 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 | Esc-Esc rewind | 会话原地撤销 / checkpoint（CC 双 Esc、kimi undo selector） | ⛔ persistence 无 truncate 原语（commands-plan §7 #2） | 上游落 `session.truncate` 或官方 undo 语义 |
 | Ctrl+B 后台化 | 命令/子 agent 后台 + 任务查看器（kimi+CC 都有） | ⛔ harness 无 background 概念（p1 §4.2） | 上游 subagent 服务出现 background/handle 原语 |
 | /sessions 跨页搜索 | 跨会话内容搜索（kimi 跨页 drain） | S30 只落当前列表过滤；`ctx.sessionQuery`（SQLite FTS5）上游现成 | 正式版排期（纯工作量项） |
+| paste-burst 检测 | 非 bracketed 终端的快速粘贴识别（kimi fork `paste-burst.ts` 61 行） | pi-tui 折叠走 bracketed paste 路径，现代终端普遍支持；纯健壮性边缘项（2026-08-21 裁决砍出 S32） | 无 bracketed paste 环境的实际用户反馈出现 |
 | ADR 拆一决议一文件 | blue-decisions.md 按决议拆单文件 + 索引 | 单文件尚可读，收益在检索与 diff 隔离，非发版阻塞（R6b 评审沉淀） | ADR 数量再增一档或检索痛点出现 |
 
 ### D32 同步偏离记录（2026-08-21）
