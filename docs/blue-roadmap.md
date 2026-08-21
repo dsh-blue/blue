@@ -1,6 +1,6 @@
 # Blue — deepseek-harness TUI 实现路线图
 
-> **仓库形态（2026-08-18 更新）**：Blue 是独立仓库（`blue/` 目录，产品名 blue），以 npm registry 版本依赖 harness（`@deepseek-ai/*@0.1.0-rc.7` 钉版，跟随其 prerelease 节奏升级），经 `dsh plugin --profile blue add @dsh-blue/blue` 挂载为 profile。harness 的 pre-release API 破坏风险由"钉版本 + 升级时适配"承担，与 roadmap 风险登记一致。
+> **仓库形态（2026-08-21 更新）**：Blue 是独立仓库（`blue/` 目录，产品名 blue），以 npm registry 版本依赖 harness（`@deepseek-ai/*@0.1.1-rc.1` 钉版——2026-08-21 随 S26 自 0.1.0-rc.7 迁移，跟随其 prerelease 节奏升级），经 `dsh plugin --profile blue add @dsh-blue/blue` 挂载为 profile。harness 的 pre-release API 破坏风险由"钉版本 + 升级时适配"承担，与 roadmap 风险登记一致。
 
 > 产品名：**Blue**（deepseek-harness 的官方 TUI surface）
 > 技术底座：`@earendil-works/pi-tui`（渲染/输入）+ Cordis 插件树（组合/生命周期）
@@ -107,12 +107,12 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 - **transcript 性能（滑动窗口）**：保留最近 N turn，旧 turn 组件与条目整体销毁；turn 内旧 step 折叠为摘要行；渲染缓存策略固化（✅ S7 已落地窗口+step 折叠）
 - **图片**：Editor 粘贴图片（L0 `createImage` + 剪贴板工具 + `dsh-attachment` 借力）、`@` 附件（✅ S7 已落地粘贴路径：`blue-attachments` + `blue-paste-image`；✅ S22 已落地 `@` 附件——语义层纯文本 mention（D31，kimi 同构：补全插 `@路径` 文本、提交零解析、模型自助 read/read_image，结构化附件经调研否决——harness 无 FileBlock 且 DeepSeek 路由 text-only 会毁 turn），体验层 kimi 全量对齐：core `createFileMentionProvider`（上游 0.84.2 同源 fd 管线：scoped query/子串打分/top-20/引号值/目录下钻 reopen 钩子）+ interaction `file-mention.ts`（fd PATH 探测 + fs fallback 2000/50））
 - **弹窗体系完整化**：model selector、审批 diff 全屏预览（100% overlay）（⏸️ 暂缓 2026-08-20：暂不做，尚未调研清楚——交互形态与参照系对照待调研后再立项）、permission preset 选择器面板（✅ **S24b 已落地 2026-08-21**——上游 `/permission` 命令随 base 零实现，Blue 面板经裸命令输入层拦截开 `SelectListPanel`，服务读 `ctx.permissionPresets`、提交 `/permission <name>` 同一写路径、danger typed-y gate；随期沉淀共享单选列表组件 `select-list.ts` 并回迁 /sessions、/provider、BlueSelect；plan-review 专用呈现（kimi approval 形态：plan 边框盒 + 编号列表 Approve/Reject/Revise，Revise 行内联反馈输入，§7 #5 顺延项）同批落地）
-- **外部编辑器**（Ctrl-G，需 L0 渲染器暂停配合）
+- **外部编辑器**（Ctrl-G）（✅ 排期 **S31**（2026-08-21 裁决做进预览版）：L0 组合既有原语开缝 `blueScreen.suspend(fn)`——pi-tui 0.84.2 已有 `TUI.stop({preserveScreen})/start()/renderNow(force)`（tui.d.ts:140-164），非从零造路径；$VISUAL/$EDITOR 子进程 inherit + 返回全帧重绘，kimi `external-editor.ts` 同构；挂起期停 ticker、resize/信号/`:cq` 异常路径）
 - **OSC 8 可点链接、鼠标滚轮/文本选择**（alt-screen）；OSC 52 复制（✅ **S26 已落地 2026-08-21**——`core/src/terminal-escape.ts` 纯转义写出，`/copy` OSC 52 先行 + 平台工具验证路径，SSH/无工具环境回退 unverified 报告；原 alt-screen 门控系连坐——OSC 52 不渲染任何内容，与 scrollback/差分渲染无关，`tmux` 内经 DCS passthrough 包装）
-- **模式命令**（`/yolo` `/plan` `/compact` `/model` 会话中切换）：随上游能力缝落地逐个接入（实施清单已定稿：[blue-commands-plan.md](./blue-commands-plan.md) 2026-08-20——批次 1 纯 Blue 侧零上游依赖可先行，⛔ 项随缝接入）（✅ 2026-08-20 命令别名机制先行落地：`/quit` 别名 `/q` `/exit`，kimi 式执行时解析，机制见 blue-commands-plan §2.12；✅ 2026-08-20 **S23 模型族落地（2026-08-21 合并 master，含 14 轮 dogfood）**：`blueSession.modelRef` 缝（getter 三级优先——会话内切换 > 日志 header > 进程默认，顺带修复 resume 切回默认模型的缺陷）+ `/model`（kimi tabbed-selector 版式：type-to-search、provider tab 条、ctx 元数据、底部 thinking 段控件）/`/effort`（水平分段，`thinking` 别名）/`/provider`（配置流——Enter 编辑/删除（Ctrl+D y 确认）+ Add Provider 向导：协议感知 base URL、多候选 discovery、models.dev 元数据匹配、defaults 表单、列举失败回表单重试（分类 cause 链 error 红）——settings.mutate 写 llm-pi-ai profile + credentials.set 存 key，用户裁决拉入本期）；Alt+S session-only 通道 kimi 全语义；参数补全 deferred、面板搜索已落；**2026-08-21 四裁决 D33-D36**：`/permission` 选择器面板（✅ S24b 已落地 2026-08-21——裸命令拦截 + danger gate，plan-review 专用呈现同批）；`/preset`（agent 组合预设，空会话切换——Blue bundle 加 agent-presets 行）与 `/mcp`（只读列举——bundle 带 dsh-mcp-client 依赖）排 S28；`#` skills 提示符 + `/skills` 列表排 S29（技能不进 slash 命名空间，调用走上游手势路径）；用户自建命令 = 技能文件，不做独立机制；✅ 2026-08-21 **S25 会话信息落地**：`/status` `/context`（原 `/usage`，用户裁决按 CC 语义更名——注入显隐开关需另取名）/`/version`——`InfoPanel` 两列只读面板（kimi usage/status 报告形态 × /help 版式，`█░` 严重级上下文占用条），数字经 `sessionProjections.snapshot` 读 token-meter/session-stats 投影（跨 resume 重放正确），`usage.ts` 薄读层 + `assistant/*` 纯折回退，Blue 不设累计器；同批建立全局版本管控 `transcript/tests/version.spec.ts`——五包 version + `BLUE_VERSION` + 全部 dsh-* 钉版/peer 区间/workspace excludes 必须 lockstep，漂移即红）
-- 子 agent / Task 工具的树形呈现组件（经 intent 缝）
+- **模式命令**（`/yolo` `/plan` `/compact` `/model` 会话中切换）：随上游能力缝落地逐个接入（实施清单已定稿：[blue-commands-plan.md](./blue-commands-plan.md) 2026-08-20——批次 1 纯 Blue 侧零上游依赖可先行，⛔ 项随缝接入）（✅ 2026-08-20 命令别名机制先行落地：`/quit` 别名 `/q` `/exit`，kimi 式执行时解析，机制见 blue-commands-plan §2.12；✅ 2026-08-20 **S23 模型族落地（2026-08-21 合并 master，含 14 轮 dogfood）**：`blueSession.modelRef` 缝（getter 三级优先——会话内切换 > 日志 header > 进程默认，顺带修复 resume 切回默认模型的缺陷）+ `/model`（kimi tabbed-selector 版式：type-to-search、provider tab 条、ctx 元数据、底部 thinking 段控件）/`/effort`（水平分段，`thinking` 别名）/`/provider`（配置流——Enter 编辑/删除（Ctrl+D y 确认）+ Add Provider 向导：协议感知 base URL、多候选 discovery、models.dev 元数据匹配、defaults 表单、列举失败回表单重试（分类 cause 链 error 红）——settings.mutate 写 llm-pi-ai profile + credentials.set 存 key，用户裁决拉入本期）；Alt+S session-only 通道 kimi 全语义；参数补全 deferred、面板搜索已落；**2026-08-21 四裁决 D33-D36**：`/permission` 选择器面板（✅ S24b 已落地 2026-08-21——裸命令拦截 + danger gate，plan-review 专用呈现同批）；`/preset`（agent 组合预设，空会话切换——Blue bundle 加 agent-presets 行）与 `/mcp`（只读列举——bundle 带 dsh-mcp-client 依赖）排 S28；`#` skills 提示符 + `/skills` 列表排 S29（技能不进 slash 命名空间，调用走上游手势路径）；用户自建命令 = 技能文件，不做独立机制；✅ 2026-08-21 **S25 会话信息落地**：`/status` `/context`（原 `/usage`，用户裁决按 CC 语义更名——注入显隐开关需另取名）/`/version`——`InfoPanel` 两列只读面板（kimi usage/status 报告形态 × /help 版式，`█░` 严重级上下文占用条），数字经 `sessionProjections.snapshot` 读 token-meter/session-stats 投影（跨 resume 重放正确），`usage.ts` 薄读层 + `assistant/*` 纯折回退，Blue 不设累计器；同批建立全局版本管控 `transcript/tests/version.spec.ts`——五包 version + `BLUE_VERSION` + 全部 dsh-* 钉版/peer 区间/workspace excludes 必须 lockstep，漂移即红）。**2026-08-21 发版范围修订（用户裁决）**：S26 `/export` `/copy` 已合并 master（含 harness 线 0.1.0-rc.7→0.1.1-rc.1 迁移 + `commands.execute` images 参数适配）；`/hotkeys` 🚫 不做、`/diff` 发版后；注入显隐开关定名 **`/injections`**（原拟 `/context` 已被 S25 占用面板占用）；S29 前置修复 = input 层未注册 `/xxx` miss 回退 `agent.followup`（`#` 手势路径的卡点在 Blue 输入层非上游）；新增 S30-S33 UX 冲刺步（终端小件批 / 外部编辑器 / 大粘贴折叠 / 子 agent 分组卡），详「预览版发版冲刺」节
+- 子 agent / Task 工具的树形呈现组件（经 intent 缝）（✅ 排期 **S33 最小分组卡**（2026-08-21 裁决）：同 step ≥2 个 subagent 调用聚合，kimi `agent-group.ts` 同构（phase 计数+尾摘要+节流）；上游 `ctx.subagents` + ctx 事件面 rc.7 已就绪——步首 🔍 核实两源映射：live 走 ctx `subagent/start/end` 事件、resume/replay 走 tool 折面 + `subagent/descriptor` 持久事件（词表只有 descriptor），replay 侧信息不足则降级普通工具卡回放并记边界；活动查看器（/subagents 族）维持发版后）
 
-**验收**：5 万行级 session resume 后滚动流畅；参照系产品的常用交互有对应物或明确的"不做"结论。（2026-08-20 S17 期间 dogfood 实测：主屏模式下输出中移动终端滚动条会导致会话流乱跳——pi-tui 差分渲染的内部视口记账与终端 scrollback 脱节，主屏模式不可修复；“滚动流畅”验收以 **L0 alt-screen 项目**为前提，详见 p2-visual §7 六轮注记。⏸️ 2026-08-20 裁定暂不考虑实现 TuiAltScreen——该条验收随之挂起，主屏滚动冲突接受为已知边界；OSC 8/52/鼠标等标注 (alt-screen) 的条目维持门控。）
+**验收**：5 万行级 session resume 后滚动流畅；参照系产品的常用交互有对应物或明确的"不做"结论。（2026-08-20 S17 期间 dogfood 实测：主屏模式下输出中移动终端滚动条会导致会话流乱跳——pi-tui 差分渲染的内部视口记账与终端 scrollback 脱节，主屏模式不可修复；“滚动流畅”验收以 **L0 alt-screen 项目**为前提，详见 p2-visual §7 六轮注记。⏸️ 2026-08-20 裁定暂不考虑实现 TuiAltScreen——该条验收随之挂起，主屏滚动冲突接受为已知边界；OSC 8/鼠标等标注 (alt-screen) 的条目维持门控——OSC 52 已随 S26 解连坐落地（纯转义与 scrollback 无关，见上）。）
 
 ---
 
@@ -127,7 +127,62 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 - 发布：`dsh plugin add` 路径验证 + 版本钉住策略（跟随 harness prerelease 节奏）
 - 验收对照删除 TUI 决策笔记的四条重引入条件逐条核验：具名部署（`--profile blue`）、明确包边界、具体交互 provider、组装级生命周期与 transcript 验收
 
+**预览版执行口径（2026-08-21 裁决，裁剪版）**：0.1.0-rc.1 发版只做——CI 建立（R0）、VirtualTerminal 快照最小集（R2，复审 D13）、npm 发包 + `dsh plugin add` 安装路径验证（R3-R4）、dogfood 记录（R5）、文档站同步（R6）；**缝冻结评审、fake providers 集成测试、HMR 文档、focus/overlay 约定文档四项延至正式版前**（rc 语义下缝允许继续变）。详「预览版发版冲刺」节。
+
 **验收**：CI 全绿 + 文档门禁通过 + 一次完整的 `dsh --profile blue` 真实任务 dogfood 记录。
+
+---
+
+## 预览版发版冲刺（0.1.0-rc.1，2026-08-21 定稿）
+
+> 目标：npm 发包五包 `@dsh-blue/*@0.1.0-rc.1`（**dist-tag 用专用 `rc` 标签，不占 latest**）。范围经 UI/UX 差距三路调研（Blue 代码面盘点 / 仓库文档挂起账本 / kimi·CC·Codex UX 对照）+ 用户两轮裁决定稿。S26 已合并（含 harness 线迁移）；S27'-S29 命令收尾；S30-S33 为裁决新增的 UX 冲刺步；R0-R6 发版段。P3 按上节裁剪版执行。
+>
+> 调研修正记要：Blue 已有 queue pane（↑ 收回+Ctrl+S steer）、Shift+Tab 三态循环、todo pane、图片粘贴+渲染——竞品对照报告中易误判缺失；真实缺口裁决见下表与挂起区。
+
+### 排期（合并天然串行——人工验收是门禁）
+
+| 步 | 范围 | 档 | 前置 |
+|---|---|---|---|
+| ✅ M0 | S26 合并（/export /copy + OSC 52 + harness 线 0.1.1-rc.1 迁移，e1b507d） | — | — |
+| R0 | CI 建立：`ci.yml` test:coverage/typecheck/lint（push+PR、钉 pnpm、frozen-lockfile） | 0.5-1d | M0（dev 可‖S27'） |
+| S27' | 轻命令族：/init（罐头提示写 AGENTS.md + idle 守卫）、/clear（command-meta 一行别名）、**/injections**（注入显隐开关，fold.ts `source.kind` 分拣可开关 + dsh-settings 持久；开关只影响此后事件，历史不回补） | 1d | M0 |
+| S28 | 配置与生态：/settings /reload /tools /tasks /preset /mcp（详 commands-plan §5；/preset 需 bundle patch 加 agent-presets 行，/mcp 需 bundle 带 dsh-mcp-client 依赖） | 3d+ | S27' |
+| S29 | 技能管线：**前置修复**（input-plugin 未注册 `/xxx` miss → 回退 `agent.followup`，独立 e2e 钉住）+ `#` 提示符（复用 @ 分支形态 + `#name→/name` 提交重写）+ /skills | 2d | S27'（dev 可‖S28，合并串行） |
+| S30 | 终端小件批：/title + OSC 0/2（core terminal.ts setTitle helper）、模型热键免清空切换（具体键位步内设计，过 keymap 冲突检测）、/sessions type-to-filter（select-list.ts，跨页搜索仍挂起） | 1.5d | S29 |
+| S31 | 外部编辑器 Ctrl-G：L0 `blueScreen.suspend(fn)` 缝 + 草稿往返 + 异常路径（`:cq` 草稿不丢、无编辑器 notice、挂起期停 ticker、resize 后强制全帧） | 2d | S29 |
+| S32 | 大粘贴折叠：kimi `paste-burst.ts`（61 行）移植 + >800 字符 chip + paste-cache（提交展开全文）；超长粘贴用户回显 chip 化（dogfood 裁决记档） | 2d | S31 |
+| S33 | 子 agent 分组卡（**可砍尾**）：同 step ≥2 聚合；步首 🔍 核实 live（ctx 事件）/replay（tool 折+descriptor）两源映射，不足则降级普通工具卡回放记边界 | 2-3d | 无硬前置（dev‖S31/S32，合并殿后） |
+| R1 | 钉版复核：发包时点跟最新 harness rc（现 0.1.1-rc.1）；rc.2+ 小 bump 走全量回归；**不追 minor 之上的跳跃** | 0.5d | G1 |
+| R2 | 快照最小集：@xterm/headless VirtualTerminal，5-8 例核心帧（banner 首帧 / 对话+工具卡 / footer / 面板挂载 D30 形态 / CJK 宽度）；复审 D13 结论记 blue-decisions | 1-1.5d | G1（**S30 后拍**，键位面冻结） |
+| R3 | npm 发包：五包依赖序 core→interaction→transcript→app→bundle；dry-run 核 files/exports 子路径；dist-tag `rc` | 0.5d | G2 |
+| R4 | 安装路径验证：干净环境（临时 DSH_HOME）`dsh plugin add @dsh-blue/blue` → 启动冒烟；guide 补 registry 安装路径 | 0.5d | G3 |
+| R5 | dogfood 记录：registry 安装（非 dev link）跑一次完整真实任务归档；阻塞项回修重走 R3-R4 | 0.5d | G4 |
+| R6 | 文档站同步+清账：website commands/keys/features/guide 四页集中还清（S23-S30 全量，`/help` + `keymap.list()` 枚举 diff 为源）+ 仓库过期文档清理（p2-visual §8 两条被推翻行、p1-design §4.3 过期 ⛔/🚫 行、blue-decisions D33 编号重复、OSC 52 推翻注）+ 挂起区写入 | 1d | R5 |
+
+**门禁链**：G1 = S 步全合并 + CI 绿 + harness 线最新 → G2 = 快照绿 → G3 = 发包成功 → G4 = 安装可启动 → **发版声明** = R5 归档 + R6 website build 绿。
+
+**并行组合**：R0‖S27'（零交集）；S28‖S29 开发（commands-plugin/session-commands 交叠，S29 合并前 rebase 一次）；S33‖S31/S32（transcript vs interaction 零交集）。
+
+**总量与裁剪线**：串行 17-21d，关键路径 14-16d（利用并行+验收滚动）。时间不够时砍序 **S33 → S32 → S30**（砍序即价值/成本比序）；R 步与 M0/S27'-S29 不可砍。
+
+### 预览版后挂起区（parked after 0.1.0-rc.1）
+
+| 条目 | 范围 | 理由 | 解除条件 |
+|---|---|---|---|
+| 通知体系 | bell / OSC 9 桌面通知 / 失焦门控（OSC 1004 焦点跟踪） | 终端通知能力梯度大（tmux/SSH 行为不一），非核心编码回路（2026-08-21 裁决发版后；kimi `terminal-notification.ts` 同构可照抄） | 正式版 UX 评审，与 alt-screen 门控项一并排期 |
+| 审批 diff 预览 | 面板内嵌 diff / Ctrl+E 全屏（DiffCardComponent 已备，只差接入审批面板） | 交互形态与参照系对照未调研定稿（⏸️ 维持 2026-08-20 裁定，2026-08-21 复核维持） | 专项调研后立项 |
+| live 工具输出流 | 工具执行中流式呈现（尾行跟随+计时；kimi live 运行卡） | ⛔ 上游无工具输出流事件缝（harness 侧可开） | 上游开出 streaming tool output 事件面 |
+| /hotkeys | = /help 别名 | 低价值（2026-08-21 裁决不做） | 键位数再增一档时随命令系列补录 |
+| /diff | 未提交变更面板（DiffCardComponent + line-diff.ts 已备） | 2026-08-21 裁决发版后 | rc.1 dogfood 反馈收集后与审批 diff 预览同评 |
+| alt-screen 及门控项 | TuiAltScreen / OSC 8 可点链接 / 鼠标滚轮与选择 / transcript 全屏搜索 / 主屏滚动冲突 | 维持 2026-08-20 裁定（OSC 52 已解连坐） | 按 p2-visual §7 六轮注记重启立项 |
+| statusline 自定义脚本 | footer 脚本条目（CC statusLine JSON 契约，kimi 已显式镜像） | blueStatus 缝已备，缺脚本宿主与沙箱约定 | 首个真实消费者出现（"首个真实消费者驱动"纪律） |
+| Esc-Esc rewind | 会话原地撤销 / checkpoint（CC 双 Esc、kimi undo selector） | ⛔ persistence 无 truncate 原语（commands-plan §7 #2） | 上游落 `session.truncate` 或官方 undo 语义 |
+| Ctrl+B 后台化 | 命令/子 agent 后台 + 任务查看器（kimi+CC 都有） | ⛔ harness 无 background 概念（p1 §4.2） | 上游 subagent 服务出现 background/handle 原语 |
+| /sessions 跨页搜索 | 跨会话内容搜索（kimi 跨页 drain） | S30 只落当前列表过滤；`ctx.sessionQuery`（SQLite FTS5）上游现成 | 正式版排期（纯工作量项） |
+
+### D32 同步偏离记录（2026-08-21）
+
+website 参考页（commands/keys）自建站起已欠账（停在初版，S23-S25 命令未入）。执行口径调整为：**仓库文档随每步合并跟改**（纪律不变）；**website 页面集中在 R6 一次还清**，以 `/help` 与 `keymap.list()` 枚举 diff 为提取源（仍符合 D32"从源码提取"精神）。R6 之后恢复逐期跟改。
 
 ---
 
@@ -184,6 +239,6 @@ Blue 不是封闭应用，而是一组可被下游插件定制的 surface。定�
 ```
 P0 MVP        → 一轮完整对话 + 审批/提问 + resume            （核心定型，已完成）
 P1 交互完整性  → 缝清单落地 + kimi 对照核心 UX（plain-first） （日常可用，S0-S9 已完成）
-P2 表现力      → 视觉对齐（S10-S21）/ intent / 滑动窗口 / 图片 （体验对齐，S10-S21 会话流对齐五期全部落地——S19/S21 随 S17 dogfood 拉前，S18 用户回显+措辞，S20 工具卡（三态卡片头/动词标签/3 行预览/ctrl+o 3-turn 范围/30-step 折叠保留窗口/Read 分组树/shell 呈现）；窗口与图片已随 S7；命令系列 S23-S29 定稿（S23-S28 既定 + S29 技能管线，裁决 D33-D36））
-P3 硬化生态    → 缝冻结 / 测试 / HMR / 文档 / 发布             （可发布）
+P2 表现力      → 视觉对齐（S10-S21）/ intent / 滑动窗口 / 图片 （体验对齐，S10-S21 会话流对齐五期全部落地——S19/S21 随 S17 dogfood 拉前，S18 用户回显+措辞，S20 工具卡（三态卡片头/动词标签/3 行预览/ctrl+o 3-turn 范围/30-step 折叠保留窗口/Read 分组树/shell 呈现）；窗口与图片已随 S7；命令系列 S23-S29（S23-S26 已并 master 含 harness 线 0.1.1-rc.1 迁移，S27'-S29 冲刺中）+ UX 冲刺 S30-S33（2026-08-21 裁决定稿，详「预览版发版冲刺」节））
+P3 硬化生态    → 缝冻结 / 测试 / HMR / 文档 / 发布             （可发布；0.1.0-rc.1 按裁剪版执行——R0-R6 发版段进预览版，缝冻结/HMR/focus 文档/fake providers 延至正式版前）
 ```

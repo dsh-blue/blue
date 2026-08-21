@@ -57,7 +57,7 @@ p1-design §4.3 是本文档的前身（MVP 后命令面调研）。本次逐符
 | `/fork` | ✅ | ✅ | ✅ | — | ✅ 已发货（idle 守卫，`blue/request-fork`） |
 | `/btw` | ✅ | — | ✅ | — | ✅ 已发货（pane-btw.ts 自注册） |
 | `/undo` | ✅ | — | `/rewind` | — | ⛔ §7 #2（会话原地撤销；checkpoint-policy 仅崩溃恢复、session-reference 仅跨会话引用，均非撤销） |
-| `/title` (`rename`) | ✅ | `/name` | — | `/rename` | ⚠️ 服务现成（ctx.sessionTitle.rename + `session/title` 事件 + title 投影，§3.2）；命令 Blue 建（§7 #3 注记） |
+| `/title` (`rename`) | ✅ | `/name` | — | `/rename` | ⚠️ 服务现成（ctx.sessionTitle.rename + `session/title` 事件 + title 投影，§3.2）；命令 Blue 建（**S30 终端小件批**落消费——含 OSC 0/2 终端标题，2026-08-21 排期） |
 | `/session` | — | ✅ | — | — | 🚫 /status + /sessions 覆盖 |
 | `/tree` | — | ✅ | — | — | 🚫 /sessions + /fork 覆盖（lineage 仅可作 /sessions 可选增强列） |
 | `/branch` | — | — | ✅ | — | 🚫 同上（会话分叉 = fork 新会话） |
@@ -90,7 +90,7 @@ p1-design §4.3 是本文档的前身（MVP 后命令面调研）。本次逐符
 | `/cost` | — | — | ✅ (别名 /usage) | — | 🚫 无 usage/cost 服务，定价表维护不值 |
 | `/version` | ✅ | — | — | — | ✅ 已发货（S25 落地 2026-08-21：notice——`BLUE_VERSION` + harness rc 尾 + 当前模型（无会话时省略）） |
 | `/help` (`h`,`?`) | ✅ | — | ✅ | ✅ | ✅ 已发货（HelpOverlay 双列） |
-| `/hotkeys` | — | ✅ | — | — | **S27** 别名 → /help（低价值可选） |
+| `/hotkeys` | — | ✅ | — | — | 🚫 不做（用户裁决 2026-08-21：低价值，/help 已覆盖键位面） |
 | `/keybindings` / `/keymap` | — | — | ✅ | ✅ | 🚫 /help 已覆盖查看；编辑面不做 |
 | `/changelog` | — | ✅ | — | — | 🚫 banner what's-new 已承担（面板形式 ⚠️ 顺延） |
 | `/whereami` | — | — | ✅ | — | 🚫 = /status 子集 |
@@ -118,7 +118,7 @@ p1-design §4.3 是本文档的前身（MVP 后命令面调研）。本次逐符
 | `/settings` (`config`) | ✅ | ✅ | `/config` | — | **S28** 待建（Blue 自有命名空间可写，harness 命名空间只读列出，⚠️） |
 | `/theme` | ✅ | — | ✅ | — | ✅ 已发货（theme-switch.ts） |
 | `/editor` | ✅ | — | — | — | 🚫 外部编辑器 Ctrl-G 未实现（roadmap P2 挂起） |
-| `/context`（注入显隐） | — | — | ✅ | — | **S27** ⚠️ 待建且**需另取名**（注入上下文显隐开关，D28/S19 语义反向——原拟名 `/context` 已被 S25 的上下文占用面板占用：CC 的 /context 实为占用面板而非显隐开关，2026-08-21 用户裁决按 CC 语义归位；实现时另选名，如 `/injections`） |
+| `/injections`（原拟 `/context`，注入显隐） | — | — | ✅ | — | **S27'** 待建（注入上下文显隐开关，D28/S19 语义反向——原拟名 `/context` 已被 S25 的上下文占用面板占用，**2026-08-21 定名 `/injections`**：fold.ts `source.kind !== 'user'` 分拣改可开关 + dsh-settings 'blue' 命名空间持久；开关只影响此后事件呈现、历史不回补——首个 blue 命名空间 settings 条目，为 S28 /settings 提供消费面） |
 | `/add-dir` | ✅ | — | ✅ | — | 🚫 会话 cwd 无附加目录原语（roadmap 层无 surface） |
 | `/vim` | — | — | ✅ | ✅ | 🚫 需编辑器 provider 实现（P3 缝槽，rc.7 无） |
 | `/color` | — | — | ✅ | — | 🚫 主题契约已覆盖 |
@@ -281,7 +281,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 6. **对话框一律 D30 editor-slot 替换挂载**（`mountEditorReplacement`），非浮层；列表类面板复用 `SessionList`/`BlueSelect` + `framePanel`/`topRule` chrome。
 7. **门禁**（每 S 步）：`pnpm run test` / `test:coverage`（逐文件 100%）/ `typecheck` / `lint` 全绿；README 双语同步；bundle e2e 用例随步增加。
 
-### 4.2 待建命令表（S23-S29，23 条）
+### 4.2 待建命令表（S23-S29，23 条；2026-08-21 修订：/hotkeys 🚫 /diff 发版后移出，/title 随 S30 移入预览版冲刺——发版范围净 22 条）
 
 | 命令 | 来源 | 参数与补全 | 行为 | UI 表面 | 能力依赖 | S 步 | 备注 |
 |---|---|---|---|---|---|---|---|
@@ -297,9 +297,9 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 | `/copy` | kimi/CC/Codex | — | 复制最近一条 assistant 消息文本 | notice（native 计数 / osc52 unverified） | ✅ Blue 侧剪贴板写管线（interaction/src/clipboard-write.ts，注入式探测 wl-copy/xclip/pbcopy/clip.exe，沿 paste-image reader 先例）；OSC 52 ✅ 随批落地（core/terminal-escape.ts 先行发射、工具全败时回退 unverified 报告——原"主屏不可用"经核实系 alt-screen 连坐，纯转义与 scrollback 无关） | S26 | |
 | `/init` | kimi/CC/Codex | — | 罐头提示 followup（分析代码库写 AGENTS.md） | notice | ✅ agent.followup；idle 守卫 | S27 | AGENTS.md 加载面已上游（dsh-agent-instructions，base，§3.2）；/init 仅罐头提示写文件；罐头提示族（/security-review 等）只做这一个，留缝 |
 | `/clear` | kimi(别名)/CC/Codex | — | = /new 语义（kimi 同款；CC"清 transcript 留会话"无原语） | — | ✅ 经 command-meta 别名（§2.12） | S27 | 别名机制已就绪（§2.12），S27 只需 `registerCommandAliases('new', ['clear'])` |
-| `/context`（注入显隐，⚠️ 需另取名——S25 已按 CC 语义把 `/context` 用于上下文占用面板） | CC | — | 切换注入上下文显隐（D28/S19 默认隐藏的反向开关） | notice + 状态栏 | ✅ fold 注入上下文开关（fold.ts，source.kind!=='user' 分拣）+ settings 持久 | S27 | |
-| `/diff` | CC/Codex | — | git status + git diff（未提交变更）面板 | 全宽面板，复用 DiffCardComponent + line-diff.ts | ✅ spawnSync('git')（status-git 先例，TTL 缓存可复用） | S27 | 非 git 仓库报错 |
-| `/hotkeys` | pi | — | 别名 → /help | — | ✅ command-meta | S27 | 低价值可选 |
+| `/injections`（2026-08-21 定名——原拟 `/context` 已被 S25 按 CC 语义用于占用面板） | CC | — | 切换注入上下文显隐（D28/S19 默认隐藏的反向开关） | notice + 状态栏 | ✅ fold 注入上下文开关（fold.ts，source.kind!=='user' 分拣）+ settings 持久 | S27' | 开关只影响此后事件，历史不回补 |
+| `/diff` | CC/Codex | — | git status + git diff（未提交变更）面板 | 全宽面板，复用 DiffCardComponent + line-diff.ts | ✅ spawnSync('git')（status-git 先例，TTL 缓存可复用） | 发版后 | **2026-08-21 用户裁决移出发版范围**（roadmap「预览版后挂起区」有条目）；非 git 仓库报错 |
+| `/hotkeys` | pi | — | 别名 → /help | — | ✅ command-meta（机制已就绪） | 🚫 | **2026-08-21 用户裁决不做**（低价值，/help 已覆盖） |
 | `/settings` | kimi(别名 config)/pi/CC | 列表导航 | 编辑 Blue 自有命名空间（theme custom 路径等）；其他命名空间只读列出 | 列表面板 + 内联编辑（questionnaire 模式） | ⚠️ dsh-settings settingsNamespace + register(schemastery) + patch()；仅 Blue 自有命名空间可写 | S28 | harness 命名空间归其 owner 插件 |
 | `/reload` | kimi/pi | — | 重读 Blue settings + 主题重挂 | notice | ⚠️ theme-switch 换装机制已有；kimi 的 config.toml/tui.toml 语义不存在 | S28 | |
 | `/tools` | kimi | — | 列出当前会话工具集 | 面板 | ✅ ctx.tools.schemas(scope)（每可见工具一个深拷贝 schema，§7 #8 已解决）——真枚举 | S28 | §7 #8 缝撤销；fold EpochHeader.tools 仅兜底/对比 |
@@ -334,7 +334,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 
 见 §6 全表。要点：产品特定（/llama /swarm /web /share /dance /radio /mobile /desktop /powerup /passes /autofix-pr /batch）、无上游能力（/login /logout /goal /cd /vim /memory /trust /scoped-models /tree /branch /clone /session /cost /fast /approve /raw /personality /mute /memories）、既有面覆盖（/plugins /apps /hooks = 组合层；/hotkeys → /help；/changelog → banner；/git → `!` shell；/export-debug-zip → /debug；/keybindings → /help 查看）、评审/诊断族留缝（/security-review /code-review /doctor 仅做 /init 一个罐头提示）。
 
-## 5. 分期实施（S23-S29）
+## 5. 分期实施（S23-S29；S27 于 2026-08-21 砍为 S27'——/hotkeys 🚫、/diff 发版后、注入显隐定名 /injections）
 
 每步一棵可启动、可验收的插件树（总原则 #1）。依赖链：**S23 的 BlueSessionRef 缝是 S25 /status 读模型的地基，必须第一步开**；S24a 无前置（✅ 已落地 2026-08-21，S24 拆 a/b：用户裁决 /auto 与 /permission 面板顺延）；**S24b（✅ 已落地 2026-08-21，范围收窄——用户裁决 /auto 暂不做，改为 plan-review 专用呈现补入本期）**；S26 依赖 S25 的 fold/累计器；S27 的 command-meta 是 S28 别名/可用性机制的地基（✅ command-meta 已提前落地 2026-08-20，§2.12；S27 只剩消费：`/clear` 别名 + HelpOverlay 分组表头）。S29（`#` 技能管线，D34/D35）无 S 步前置（上游能力全在 base），排在 S28 后收尾命令系列。
 
@@ -345,11 +345,13 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 | **S24b** /permission 面板 + plan-review 呈现 + 通用列表组件（✅ 已落地，范围收窄 2026-08-21） | `/permission` 选择器面板（D33）+ plan-review 专用面板（§7 #5 顺延项提前消费）+ **共享单选列表组件沉淀**（`select-list.ts`：SelectListPanel + cycle/windowedRange/counterRow，回迁 /sessions、/provider、BlueSelect；ModelPanel 保持自有几何）；`/auto` 🚫 暂不做（用户裁决） | `ctx.permissionPresets`（names/current/resolve/optionOf——服务读 ≡ permissions 投影 fold，D33 措辞勘误）；`/permission <name>` 命令写路径（`ctx.commands.execute`，command/run+done 免费入日志）；user-questions `intent {kind:'plan-review'}`（detail=计划 Markdown，答案编码同通用）；type-only 依赖 `@deepseek-ai/dsh-permission-presets`（peer+dev rc.7） | SelectListPanel（D30 挂载）+ FormPanel typed-y danger gate + PlanReviewPanel（kimi approval 形态：plan 边框盒 + 编号列表 Approve/Reject/Revise，Revise 行内联反馈输入） | ✅ 全部达成（2026-08-21）：裸 `/permission` 开面板（e2e：三行 + ← current + knob 派生描述 + Esc 零派发）；danger 必经 typed-y（Esc 回列表、错值留表单）；切换落 `permission/preset`+`sandbox/mode`+`approval/policy` 事件；带参直通命令；plan-review 渲染 Markdown 于 plan 边框盒 + Enter/数字键批准（`plan/mode{active:false}`）/ Reject 本轮拒绝（"chose to keep planning" 入下请求）/ Revise 行内联反馈往返（"their feedback" 入下请求）/ Esc dismissal 走 crafted "speak instead" 消息（ASK_CANCELLED 勘误一并落地） |
 | **S25** 会话信息（✅ 已落地 2026-08-21；`/usage` 落地后经用户裁决更名 `/context`——CC 语义，kimi /usage 同款内容；同批裁决建立全局版本管控 `transcript/tests/version.spec.ts`） | `/status` `/context` `/version` | session.header / requestContext；`sessionProjections.snapshot` 读 tokenUsage/contextPressure/sessionStats 投影（token-meter/session-stats 均在 base）；`usage.ts` 薄读层 + `assistant/*` 纯折回退，不设累计器 | `InfoPanel`（`info-panel.ts`，kimi usage/status 报告形态 × /help 版式：两列 segment 行 + `█░` 严重级占用条 + showing 滚动窗，D30 editor-slot 挂载）+ notice | ✅ 全部达成：数字与投影一致（e2e 断言 64.2k 总数 + 4.1k/60k 分桶）；usage 跨 resume 重放正确（e2e：resume 后同总数）；/version 与 banner 常量一致（同一常量，`./banner-content` 子路径导出）；降级主机回退折 e2e 另证 |
 | **S26** 导出与复制（✅ 已落地 2026-08-21） | `/export` `/copy` | persistence.readRaw（supportsRawArtifacts=true）+ `ctx.sessions.flush` 先冲刷（write-behind coordinator）；fold.ts 折叠→Markdown（`decodeStorageRecord` 展开 chunk 行，新 peer+dev dep dsh-session）；新模块 interaction/src/clipboard-write.ts（注入式探测 wl-copy/xclip/pbcopy/clip.exe） | notice + 路径回显 | ✅ 全部达成：导出文件独立阅读（e2e 断言内容与 turn 结构）；复制文本与最近 assistant 消息一致（e2e 断言 fake writer 收到原文）；无剪贴板工具优雅报错（notice）；readRaw 守卫全分类（无会话/无 persistence/非 raw 后端/无 artifact/空折/坏行/写失败） |
-| **S27** 轻命令族 | `/init` `/clear` `/context` `/diff`（+可选 `/hotkeys`） | command-meta 别名消费；fold 注入上下文开关；git spawnSync（status-git 先例）；AGENTS.md 加载面已上游（dsh-agent-instructions，§3.2），/init 仅写文件 | notice / DiffCardComponent 全宽面板 / HelpOverlay 分组表头（kimi priority 精神） | 别名可补全可执行（/clear = /new）；/context 开关即时生效且跨会话持久；/diff 面板滚屏正常 |
+| **S27'** 轻命令族（2026-08-21 范围修订——用户裁决：`/hotkeys` 🚫 不做、`/diff` 移发版后；注入显隐定名 `/injections`） | `/init` `/clear` `/injections` | command-meta 别名消费；fold 注入上下文开关 + dsh-settings 'blue' 命名空间持久（S28 /settings 首个消费面）；AGENTS.md 加载面已上游（dsh-agent-instructions，§3.2），/init 仅写文件 | notice / HelpOverlay 分组表头（kimi priority 精神） | 别名可补全可执行（/clear = /new）；/init 空仓产出 AGENTS.md 且流式期间守卫拒绝；/injections 开关即时生效、跨会话/跨 resume 持久、历史不回补 |
 | **S28** 配置与生态 | `/settings` `/reload` `/tools` `/tasks` + `/preset`（D33）+ `/mcp`（D36） | dsh-settings 注册 'blue' 命名空间；theme-switch 换装复用；ctx.tools.schemas()（§7 #8 已解决）；todo/write 折叠 + ctx.jobs（pane-todo 同源）；**agent-presets 行（bundle patch 新增 + 包依赖）**；**loader.entries + tools.schemas() mcp__ 分组 + bundle 带 dsh-mcp-client 依赖** | 列表+内联编辑面板（questionnaire 模式）/ notice / pane 面板 | 设置持久生效；/reload 只影响 Blue 自有面；/tools 列表与 schemas() 一致；/tasks = todo 折叠 + jobs 视图一致；/preset 空会话切换成功 + 非空会话守卫报错 + `agent-preset/selected` 事件入日志；/mcp 面板与 loader/tools 实况一致；上游自带命令（/compact /plan /goal /permission /feedback，§2.10）随组合可见且 /help 自动枚举 |
 | **S29** 技能管线 | `#` skills 提示符 + `/skills` 列表命令（D34/D35） | ✅ 上游手势路径（tool-skill pre-step `/name` 注入，base）；ctx.skills.list + isUserInvocable + skills/change；SubmitTransformer `#name`→`/name` 重写（仅命中目录的技能名，保证前置空白） | 补全 UI 复用 `@` 分支形态（S22 file-mention/D31 先例）+ BlueSelect 面板 | `#` 弹补全列 user-invocable 技能、选中插 `#name` 字面文本；提交重写后手势注入生效且 resume 重放正确（注入体按 D28 隐藏）；markdown 标题行（`# ` 空格形态）不误触发；未知 `#tag` 原样保留；/skills 面板与补全目录同源；`skills/change` 后补全刷新 |
 
 每步门禁：`pnpm run test` / `test:coverage`（逐文件 100%）/ `typecheck` / `lint` 全绿；README 双语同步；bundle e2e 用例随步增加（每命令 ≥1 用例：注册可见 + 主路径行为 + 守卫路径）。
+
+**S29 之后（2026-08-21 定稿）**：命令系列随 S27'-S29 收尾后，进入 roadmap「预览版发版冲刺」的 UX 步与发版段——**S30** 终端小件批（含命令 `/title`（§7 #3 收窄项落消费）+ 模型热键 + /sessions type-to-filter）、**S31** 外部编辑器 Ctrl-G、**S32** 大粘贴折叠、**S33** 子 agent 分组卡，**R0-R6** 发版段（CI/快照最小集/发包/安装验证/dogfood/文档站清账）。排期、门禁链与裁剪线见 [blue-roadmap.md](./blue-roadmap.md)「预览版发版冲刺」节；发版后挂起项（/hotkeys /diff/通知/审批 diff 预览/live 输出流等）见同文档「预览版后挂起区」。
 
 ## 6. 明确不做（🚫）与理由
 
@@ -411,7 +413,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 **2026-08-20 修正**：标题能力已随 rc.7 落地（`dsh-session-title`，base），落点在事件面而非 SessionHeader。**缝收窄**：不再请求字段/持久化 API，剩余缺口仅为命令注册。
 
 - **已落地**：`ctx.sessionTitle.get/rename/refresh/register`；`session/title` 事件（log-only；user 源 rename 会 pin 住标题，停自动修订）；title 投影（客户端列表行/`useProjection('title')`）；`session.rename` RPC；first-prompt-llm 自动标题 provider（fork 继承父标题）。
-- **残余**：上游无 `/title` 命令——Blue 经 `ctx.sessionTitle.rename` + 投影读注册（⚠️ 可选，S 步顺延）；`SessionHeader.title` 字段与 persistence 修订 API 不再需要。
+- **残余**：上游无 `/title` 命令——Blue 经 `ctx.sessionTitle.rename` + 投影读注册（**S30 终端小件批消费**，含 OSC 0/2 终端标题——2026-08-21 排期，roadmap「预览版发版冲刺」）；`SessionHeader.title` 字段与 persistence 修订 API 不再需要。
 
 ### #4 权限预设（✅ 已解决：随 0.1.0-rc.7 发布）— 消费：/permission
 
