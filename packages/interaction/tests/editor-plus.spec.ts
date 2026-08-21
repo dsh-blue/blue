@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { SkillSummary } from '@deepseek-ai/dsh-skill'
 import type { BlueAutocompleteProvider, BlueComponent } from '@dsh-blue/blue-core'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
@@ -20,6 +21,7 @@ import * as editorPlus from '../src/editor-plus.ts'
 import * as fileMention from '../src/file-mention.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
 import { clearDraft, stashHistory } from '../src/draft-stash.ts'
+import { __setCatalogForTest } from '../src/skills-catalog.ts'
 import { fakeBlueContext, FakeBlueEditor, KEY, type FakeBlueComponents, type FakeScreen } from './fakes.ts'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
 
@@ -36,6 +38,7 @@ afterEach(() => {
   // submitted history into the next test's freshly mounted editor.
   clearDraft()
   stashHistory([])
+  __setCatalogForTest(undefined)
   vi.restoreAllMocks()
 })
 
@@ -613,6 +616,114 @@ describe('blue-editor-plus slash completion', () => {
     const { provider } = await providerOf()
     expect(provider.applyCompletion([], 0, 0, { value: 'x', label: 'x' }, ''))
       .toEqual({ lines: [], cursorLine: 0, cursorCol: 0 })
+  })
+})
+
+describe('blue-editor-plus # skill completion', () => {
+  /** One summary double for the catalog seam. */
+  function skill(name: string, options: { modelInvocable?: boolean } = {}): SkillSummary {
+    return {
+      name,
+      description: `The ${name} skill`,
+      invocation: { modelInvocable: options.modelInvocable ?? true, userInvocable: true },
+      source: 'custom',
+      provider: 'spec',
+    }
+  }
+
+  it('suggests settled skills fuzzy-matching the # prefix, values carrying their #', async () => {
+    const { editor } = await mount()
+    const provider = editor.autocompleteProvider as BlueAutocompleteProvider
+    __setCatalogForTest([skill('deploy-check'), skill('summarize')])
+    const suggestions = await provider.getSuggestions(['#deploy-ch'], 0, 10, { signal: signal() })
+    // The value and the returned prefix carry the `#` so pi-tui's
+    // best-match preselection keys on the typed text — and Enter, seeing a
+    // non-slash prefix, accepts without submitting.
+    expect(suggestions?.prefix).toBe('#deploy-ch')
+    expect(suggestions?.items).toEqual([
+      { value: '#deploy-check', label: '#deploy-check', description: 'The deploy-check skill' },
+    ])
+    expect(provider.triggerCharacters).toEqual(['/', '@', '#'])
+  })
+
+  it('a bare # lists every settled skill', async () => {
+    const { editor } = await mount()
+    const provider = editor.autocompleteProvider as BlueAutocompleteProvider
+    __setCatalogForTest([skill('deploy-check'), skill('summarize')])
+    const suggestions = await provider.getSuggestions(['#'], 0, 1, { signal: signal() })
+    expect(suggestions?.prefix).toBe('#')
+    expect(suggestions?.items.map(item => item.value)).toEqual(['#deploy-check', '#summarize'])
+  })
+
+  it('marks user-only skills in the dropdown description', async () => {
+    const { editor } = await mount()
+    const provider = editor.autocompleteProvider as BlueAutocompleteProvider
+    __setCatalogForTest([skill('deploy-check', { modelInvocable: false })])
+    const suggestions = await provider.getSuggestions(['#de'], 0, 3, { signal: signal() })
+    expect(suggestions?.items).toEqual([
+      { value: '#deploy-check', label: '#deploy-check', description: 'user-only · The deploy-check skill' },
+    ])
+  })
+
+  it('completes a # token mid-line after other words', async () => {
+    const { editor } = await mount()
+    const provider = editor.autocompleteProvider as BlueAutocompleteProvider
+    __setCatalogForTest([skill('deploy-check')])
+    const suggestions = await provider.getSuggestions(['please run #de'], 0, 14, { signal: signal() })
+    expect(suggestions?.prefix).toBe('#de')
+    expect(suggestions?.items[0]?.value).toBe('#deploy-check')
+  })
+
+  it('declines outside a skill token: mid-word #, doubled #, uppercase, closed and empty matches', async () => {
+    const { editor } = await mount()
+    const provider = editor.autocompleteProvider as BlueAutocompleteProvider
+    __setCatalogForTest([skill('deploy-check')])
+    // `C#` (mid-word), `##` (hash before the token), and `#De` (uppercase
+    // sits outside the name grammar) never trigger.
+    await expect(provider.getSuggestions(['C#'], 0, 2, { signal: signal() })).resolves.toBeNull()
+    await expect(provider.getSuggestions(['##'], 0, 2, { signal: signal() })).resolves.toBeNull()
+    await expect(provider.getSuggestions(['#De'], 0, 3, { signal: signal() })).resolves.toBeNull()
+    // A closed token (trailing space) and a query matching nothing close
+    // the dropdown rather than listing.
+    await expect(provider.getSuggestions(['#deploy-check '], 0, 14, { signal: signal() })).resolves.toBeNull()
+    await expect(provider.getSuggestions(['#zzz'], 0, 4, { signal: signal() })).resolves.toBeNull()
+  })
+
+  it('declines with nothing settled', async () => {
+    const { editor } = await mount()
+    const provider = editor.autocompleteProvider as BlueAutocompleteProvider
+    await expect(provider.getSuggestions(['#de'], 0, 3, { signal: signal() })).resolves.toBeNull()
+  })
+
+  it('declines # suggestions in bash mode so Enter keeps the shell line', async () => {
+    const { editor } = await mount()
+    const provider = editor.autocompleteProvider as BlueAutocompleteProvider
+    __setCatalogForTest([skill('deploy-check')])
+    type(editor, '!')
+    await expect(provider.getSuggestions(['#de'], 0, 3, { signal: signal() })).resolves.toBeNull()
+  })
+
+  it('applies a # completion by replacing the token mid-line with a trailing space', async () => {
+    const { editor } = await mount()
+    const provider = editor.autocompleteProvider as BlueAutocompleteProvider
+    // Unlike a slash command the token sits mid-line: the leading words
+    // survive, the applied value takes its trailing space, and the text
+    // after the cursor joins trimmed.
+    const applied = provider.applyCompletion(
+      ['please run #de now', 'second line'],
+      0,
+      14,
+      { value: '#deploy-check', label: '#deploy-check' },
+      '#de',
+    )
+    expect(applied).toEqual({ lines: ['please run #deploy-check now', 'second line'], cursorLine: 0, cursorCol: 25 })
+  })
+
+  it('returns the lines unchanged when applying a # item outside a skill token', async () => {
+    const { editor } = await mount()
+    const provider = editor.autocompleteProvider as BlueAutocompleteProvider
+    expect(provider.applyCompletion(['plain'], 0, 5, { value: '#x', label: '#x' }, '#x'))
+      .toEqual({ lines: ['plain'], cursorLine: 0, cursorCol: 5 })
   })
 })
 

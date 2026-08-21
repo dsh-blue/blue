@@ -9,11 +9,11 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 ## 功能
 
 - **流式会话记录** —— 用户/助手消息边流式边渲染 Markdown；工具调用渲染为卡片，默认 generic 呈现，diff（`intent-diff`）与终端输出（`intent-terminal`）有专属卡片。
-- **输入编辑器** —— 圆角框编辑器：slash 命令模糊补全、参数幽灵提示、`!` bash 模式、`@` 文件补全、Ctrl-V 剪贴板贴图（`[image #N]` 标记在提交时拆为图像块）。
+- **输入编辑器** —— 圆角框编辑器：slash 命令模糊补全、参数幽灵提示、`!` bash 模式、`@` 文件补全、`#` 技能补全（行内任意位置的 `#name` 标记在提交时重写为上游 `/name` 技能手势）、Ctrl-V 剪贴板贴图（`[image #N]` 标记在提交时拆为图像块）。
 - **Overlay** —— 四选项审批面板（session 级"总是允许"继承）与 tab 化用户问卷 overlay。
 - **两行状态栏** —— 模型名（priority 0）、会话模式徽标 `plan`/`yolo`（priority 2，normal 态隐藏）、git 分支（priority 10）、上下文占用 `ctx N`（priority 20）；条目是注册表贡献，不是写死的。Shift+Tab 循环会话模式 normal → plan → yolo（`/yolo` 自动放行工具审批，提问照常弹）。
 - **底部 dock 面板** —— agent 运行中的活动 spinner、排队消息（空编辑器上键召回）、todo 列表（Ctrl-T 折叠开关）、fork 当前会话的 `/btw` 旁路问答面板。
-- **Slash 命令** —— `/quit` `/new`（`/clear` 为其别名）`/fork` `/sessions`（`/resume` 为其别名）`/help` `/theme` `/btw` `/model` `/effort` `/provider` `/yolo` `/init` `/status` `/context` `/version` `/export` `/copy` `/tools` `/preset`，全部自动进入编辑器补全菜单。`/preset` 在薄宿主预设名册上切换 agent 组合（仅空会话）；`/tools` 列出当前会话的实时工具目录。
+- **Slash 命令** —— `/quit` `/new`（`/clear` 为其别名）`/fork` `/sessions`（`/resume` 为其别名）`/help` `/theme` `/btw` `/model` `/effort` `/provider` `/yolo` `/init` `/status` `/context` `/version` `/export` `/copy` `/tools` `/preset` `/skills`，全部自动进入编辑器补全菜单。`/preset` 在薄宿主预设名册上切换 agent 组合（仅空会话）；`/tools` 列出当前会话的实时工具目录。
 - **主题** —— `/theme` 热切换：`dark` / `light` / `auto`（OSC 11 背景探测）/ `custom`（JSON 调色板）。
 
 ## 设计哲学
