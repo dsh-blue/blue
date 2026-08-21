@@ -33,6 +33,7 @@ Text-editing keys (cursor movement, multi-line, undo, kill-ring) belong to the u
 | `Ctrl-V` | Paste image | Store the clipboard image in the attachment library, inserting an `[image #N]` marker at the cursor |
 | `Backspace` | Delete / exit mode | Backspace on an empty `!` bash prompt exits back to prompt mode |
 | `↑` (empty buffer) | Recall queued message | Remove the most recent queued message into the draft (scrolling a side pane takes precedence; without the queue pane, ↑ is history) |
+| `Shift+Tab` | Cycle session mode | normal → plan → yolo (see [Session modes](/en/features/modes)). Effective only under editor focus — panels and questionnaires keep their own Tab navigation |
 
 ## Panel contexts
 
@@ -42,6 +43,7 @@ Text-editing keys (cursor movement, multi-line, undo, kill-ring) belong to the u
 | `/sessions` picker | ↑↓ navigate, `Enter` resume, `Esc` cancel |
 | Approval panel | ↑↓ + `Enter`, or number keys `1`–`4` directly; `Escape` rejects |
 | Questionnaire | `Tab` / `Shift-Tab` between questions; single-choice ↑↓ + `Enter`; multi-choice `Space` + `Enter` |
+| `/model` · `/effort` panels | `←` `→` step the segment control; `Enter` confirms and persists the new default; `Alt+S` confirms **session-only** (the persisted default stays untouched) |
 | `/btw` pane | `Esc` close; `↑` `↓` scroll; `Enter` follow-up |
 
 ## Custom bindings

@@ -17,6 +17,7 @@
 | 条目 | 优先级 | 位置 | 内容 |
 | --- | --- | --- | --- |
 | `blue-status-basic` | 0 | 行 1 左簇 | model 名（取持久化 request 头，回退 agent 选项；`text` 色） |
+| `blue-status-mode` | 2 | 行 1 左簇 | 会话模式徽标：`plan`（accent 色，有排队消息时带省略号）或 `yolo`（warning 色）；normal 态不渲染（见[会话模式](/features/modes)） |
 | `blue-status-cwd` | 5 | 行 1 左簇 | 会话工作目录（home 缩写为 `~`，深路径缩到末三段；`muted` 色） |
 | `blue-status-git` | 10 | 行 1 左簇 | 完整徽章 `branch [+a -d ↑e↓f]`（TTL 缓存探测：branch 5s / status 15s；非 git 仓库不显示） |
 | `blue-status-context` | 20 | 行 2 右簇 | 最新一步的 context 占用：有窗口时 `context: N% (K/M)`，无窗口降级 `ctx N`（`text` 色） |
@@ -37,7 +38,7 @@
 ```ts
 ctx.blueStatus.register({
   id: 'my-plugin.build',        // 稳定的点分插件自有字符串，重复注册会被拒绝
-  priority: 15,                 // 内置条目占 0/5/10/20/30，空档任你使用
+  priority: 15,                 // 内置条目占 0/2/5/10/20/30，空档任你使用
   row: 1,                       // 选带：1（默认）或 2
   align: 'left',                // 选边：'left'（默认）或 'right'
   render: (width) => myLine,    // 一行带样式文本，宽度不超预算；返回 '' 本帧不占位

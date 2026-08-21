@@ -12,13 +12,22 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs'
 
-const TARGETS = ['README.md', 'README.zh.md', 'docs/blue-architecture.md']
-const DIAGRAMS = ['blue-layers', 'blue-composition']
+// 每张图的唯一正典 .mmd 与它嵌入的目标文件（嵌入块一律生成，勿手改）。
+const DIAGRAMS = {
+  'blue-layers': ['README.md', 'README.zh.md', 'docs/blue-architecture.md'],
+  'blue-composition': [
+    'README.md',
+    'README.zh.md',
+    'docs/blue-architecture.md',
+    'website/plugins/builtins.md',
+    'website/en/plugins/builtins.md',
+  ],
+}
 
 const check = process.argv.includes('--check')
 let failures = 0
 
-for (const name of DIAGRAMS) {
+for (const [name, targets] of Object.entries(DIAGRAMS)) {
   const source = `docs/diagrams/${name}.mmd`
   const mermaid = readFileSync(source, 'utf8').replace(/\s+$/, '')
   const fence = '```' + 'mermaid'
@@ -31,7 +40,7 @@ for (const name of DIAGRAMS) {
   const begin = `<!-- BEGIN diagram:${name} -->`
   const end = `<!-- END diagram:${name} -->`
 
-  for (const file of TARGETS) {
+  for (const file of targets) {
     const text = readFileSync(file, 'utf8')
     const i = text.indexOf(begin)
     const j = text.indexOf(end)
