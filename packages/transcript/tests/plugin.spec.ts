@@ -144,6 +144,7 @@ interface FakeAgent {
   status: 'idle' | 'running'
   options: { model?: string }
   session: {
+    id: string
     events: SessionEvent[]
     header: { cwd?: string }
     requestHeader(): { config: { model: string } } | undefined
@@ -156,6 +157,7 @@ function fakeAgent(events: SessionEvent[], model = 'deepseek-chat'): FakeAgent {
     status: 'idle',
     options: { model },
     session: {
+      id: 'parent-1',
       events,
       header: {},
       requestHeader: () => undefined,
@@ -724,6 +726,54 @@ describe('blue-transcript plugin through the real Loader', () => {
     expect(screen.children).toHaveLength(2)
     expect(contentLines(screen).join('\n')).toContain('… step 1 · call 2 tools')
     expect(contentLines(screen).join('\n')).not.toContain('agents finished')
+  })
+
+  it('overlays live child-session stats onto the group (S33 tracker, end-to-end)', async () => {
+    resetSeq()
+    setAgentGroupTimers({
+      setInterval: () => 0 as unknown as ReturnType<typeof setInterval>,
+      clearInterval: () => {},
+      now: () => 1_700_000_000_060_000,
+    })
+    try {
+      const { ctx, screen } = await bootTranscript(null, {})
+      const agent = fakeAgent([
+        turnStart(1),
+        stepStart(1, 1),
+        subagentCallEvent(1, 1, 'a1', 'subagent', 'Survey', 'survey the tests'),
+        subagentCallEvent(1, 1, 'a2', 'subagent', 'Map', 'map the docs'),
+        toolResultEvent(1, 1, 'a1', 'started subagent 9f5c4086a0674b55b621c3eaf8b88c0e'),
+        toolResultEvent(1, 1, 'a2', 'started subagent bd317666afec47f4777c7ca701c1779e'),
+        turnEnd(1),
+      ])
+      ctx.emit('blue/session-changed', asAgent(agent))
+      // The acks alone read as finished (the background-by-default trap).
+      expect(contentLines(screen).join('\n')).toContain('2 agents finished')
+
+      // The first child streams: the exact ack id admits it; the second
+      // child correlates through its delegation prompt (the fork path).
+      const childOne = { id: '9f5c4086a0674b55b621c3eaf8b88c0e', header: { origin: 'subagent', parentSession: 'parent-1' } }
+      const childTwo = { id: 'bd317666afec47f4777c7ca701c1779e', header: { origin: 'subagent', parentSession: 'parent-1' } }
+      ctx.emit('session/event', childOne as unknown as Session, { type: 'turn/start', seq: 1, time: 1, data: { turn: 1 } })
+      ctx.emit('session/event', childOne as unknown as Session, { type: 'tool/call', seq: 2, time: 2, data: { turn: 1, step: 1, callId: 't1', name: 'read', arguments: '{}' } })
+      ctx.emit('session/event', childOne as unknown as Session, { type: 'assistant/message', seq: 3, time: 3, data: { turn: 1, step: 1, message: { role: 'assistant', content: [] }, usage: { inputTokens: 3000, outputTokens: 200 } } })
+      ctx.emit('session/event', childTwo as unknown as Session, { type: 'turn/start', seq: 1, time: 1, data: { turn: 1 } })
+      ctx.emit('session/event', childTwo as unknown as Session, { type: 'user/message', seq: 2, time: 2, data: { id: 'm2', role: 'user', content: [{ type: 'text', text: 'map the docs' }], source: { kind: 'user' } } })
+
+      const joined = contentLines(screen).join('\n')
+      // The premature finish corrected to running; live fields present.
+      expect(joined).toContain('Running 2 agents')
+      expect(joined).toContain('Using read')
+      expect(joined).toContain('3.1k tok')
+
+      // A remount disposes the tracker: later child events change nothing.
+      ctx.emit('blue/session-changed', asAgent(fakeAgent([turnStart(1)])))
+      const after = contentLines(screen).join('\n')
+      ctx.emit('session/event', childOne as unknown as Session, { type: 'tool/call', seq: 9, time: 9, data: { turn: 1, step: 2, callId: 't9', name: 'bash', arguments: '{}' } })
+      expect(contentLines(screen).join('\n')).toBe(after)
+    } finally {
+      setAgentGroupTimers(undefined)
+    }
   })
 
   it('creates tool cards through the blueIntents registry', async () => {

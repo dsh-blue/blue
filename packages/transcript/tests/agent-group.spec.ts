@@ -9,7 +9,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest'
 import type { BlueSemanticColors } from '@dsh-blue/blue-core'
-import { AgentGroupComponent, setAgentGroupTimers } from '../src/agent-group.ts'
+import { AgentGroupComponent, setAgentGroupTimers, type AgentLiveLookup, type AgentMemberLive } from '../src/agent-group.ts'
 import type { TranscriptToolItem } from '../src/types.ts'
 import { fakeBlueComponents } from './helpers.ts'
 
@@ -276,10 +276,14 @@ describe('AgentGroupComponent', () => {
     expect(timers.intervalCount()).toBe(0)
   })
 
-  it('stands the tick down on dispose', () => {
+  it('stands the tick down on dispose, idempotently after self-retire', () => {
     const timers = fakeTimers()
     const group = new AgentGroupComponent(agentMember(), COLORS, fakeBlueComponents())
     group.render(80)
+    group.dispose()
+    expect(timers.clearCount()).toBe(1)
+    // A second dispose (the retire path after the tick already stood down)
+    // is a no-op, not a double clear.
     group.dispose()
     expect(timers.clearCount()).toBe(1)
   })
@@ -301,5 +305,193 @@ describe('AgentGroupComponent', () => {
     fakeTimers()
     const group = new AgentGroupComponent(agentMember(), COLORS, fakeBlueComponents())
     expect((group as unknown as { setExpanded?: unknown }).setExpanded).toBeUndefined()
+  })
+
+  describe('live overlay', () => {
+    /** A live lookup from a table keyed by callId. */
+    function liveTable(table: Record<string, AgentMemberLive | undefined>): AgentLiveLookup {
+      return member => table[member.callId]
+    }
+
+    it('overrides a premature ack with the running state and shows the activity line', () => {
+      const timers = fakeTimers()
+      timers.clock.now = T0 + 20_000
+      // The fold result is the 35ms background ack (already "done"), but the
+      // child is still running — the live overlay corrects the phase.
+      const acked = agentMember()
+      settle(acked, 35)
+      const group = new AgentGroupComponent(
+        acked, tagged(), fakeBlueComponents(), undefined,
+        liveTable({ c1: { phase: 'running', toolCount: 2, activity: 'Using read', model: 'deepseek-v4', effort: 'high' } }),
+      )
+      expect(group.render(140)).toEqual([
+        '',
+        '● \x1b[1m[P]Running 1 agents (1 running)[/P]\x1b[22m[M] · 20s[/M]',
+        `  └─ [P]subagent[/P][M] · Survey tests · deepseek-v4 · high · 2 tools · 20s[/M][P] · Running[/P]`,
+        `  ${'   '}    [M]Using read[/M]`,
+      ])
+    })
+
+    it('formats a non-finite live token count as zero', () => {
+      const timers = fakeTimers()
+      timers.clock.now = T0 + 5_000
+      const group = new AgentGroupComponent(
+        agentMember(), COLORS, fakeBlueComponents(), undefined,
+        liveTable({ c1: { phase: 'completed', endedAt: T0 + 1_000, toolCount: 1, tokens: -1 } }),
+      )
+      expect(group.render(140)[2]).toContain('1 tool · 1s · 0 tok')
+    })
+
+    it('renders the waiting phase for an admitted-but-not-started child', () => {
+      const timers = fakeTimers()
+      timers.clock.now = T0 + 3_000
+      const group = new AgentGroupComponent(
+        agentMember(), tagged(), fakeBlueComponents(), undefined,
+        liveTable({ c1: { phase: 'waiting', toolCount: 0, activity: 'Starting…' } }),
+      )
+      const lines = group.render(80)
+      expect(lines[1]).toContain('Running 1 agents (1 waiting)')
+      expect(lines[2]).toContain('· Waiting')
+      expect(lines[3]).toContain('Starting…')
+      // A second waiting member exercises the counter accumulation.
+      group.attach(agentMember({
+        seq: 2, callId: 'c2',
+        result: { text: 'started background subagent job subagent-4', isError: false, endedAt: T0 + 1 },
+      }))
+      // The second member's ack already folded (done), so it counts done.
+      expect(group.render(80)[1]).toContain('Running 2 agents (1 done, 1 waiting)')
+    })
+
+    it('sums tools and tokens in the settled tail and per-row stats', () => {
+      const first = agentMember()
+      settle(first, 90_000)
+      const second = agentMember({ seq: 2, callId: 'c2', parsedArguments: { description: 'Map docs', prompt: 'p' } })
+      settle(second, 45_000)
+      const group = new AgentGroupComponent(
+        first, tagged(), fakeBlueComponents(), undefined,
+        liveTable({
+          c1: { phase: 'completed', endedAt: T0 + 90_000, toolCount: 5, tokens: 3200, model: 'deepseek-v4' },
+          c2: { phase: 'completed', endedAt: T0 + 45_000, toolCount: 2, tokens: 512 },
+        }),
+      )
+      group.attach(second)
+      expect(group.render(140)).toEqual([
+        '',
+        '[S]✓ [/S]\x1b[1m[P]2 agents finished[/P]\x1b[22m[M] · 7 tools · 3.6k tok · 1m 30s[/M]',
+        `  ├─ [P]subagent[/P][M] · Survey tests · deepseek-v4 · 5 tools · 1m 30s · 3.1k tok[/M][S] · ✓ Completed[/S]`,
+        `  └─ [P]subagent[/P][M] · Map docs · 2 tools · 45s · 512 tok[/M][S] · ✓ Completed[/S]`,
+      ])
+    })
+
+    it('mixes live and fold-only members: the tail sums the live side alone', () => {
+      const timers = fakeTimers()
+      timers.clock.now = T0 + 60_000
+      const live = agentMember()
+      settle(live, 30_000)
+      const foldOnly = agentMember({ seq: 2, callId: 'c2', parsedArguments: { description: 'Map docs', prompt: 'p' } })
+      const group = new AgentGroupComponent(
+        live, COLORS, fakeBlueComponents(), undefined,
+        liveTable({ c1: { phase: 'completed', endedAt: T0 + 30_000, toolCount: 3, tokens: 900 } }),
+      )
+      group.attach(foldOnly)
+      const lines = group.render(80)
+      // The fold-only member stays pending (no live child matched it).
+      expect(lines[1]).toContain('Running 2 agents (1 done, 1 running)')
+      expect(lines[1]).toContain('1m 0s')
+      // While running, the tail carries no tool/token sums (kimi rule).
+      expect(lines[1]).not.toContain('tok')
+      expect(lines[2]).toContain('· 3 tools · 30s · 900 tok · ✓ Completed')
+      expect(lines[3]).toContain('· Map docs · 1m 0s · Running')
+    })
+
+    it('rebuilds when the activity changes without a width change', () => {
+      fakeTimers()
+      const table: Record<string, AgentMemberLive | undefined> = {
+        c1: { phase: 'running', toolCount: 1, activity: 'Thinking…' },
+      }
+      const group = new AgentGroupComponent(
+        agentMember(), COLORS, fakeBlueComponents(), undefined,
+        liveTable(table))
+      const before = group.render(80)
+      expect(group.render(80)).toBe(before)
+      table['c1'] = { phase: 'running', toolCount: 2, activity: 'Using read' }
+      expect(group.render(80)).not.toBe(before)
+    })
+
+    it('marks a live failure even when the fold ack was clean', () => {
+      const acked = agentMember()
+      settle(acked, 35)
+      const group = new AgentGroupComponent(
+        acked, tagged(), fakeBlueComponents(), undefined,
+        liveTable({ c1: { phase: 'failed', endedAt: T0 + 60_000, toolCount: 4 } }),
+      )
+      const lines = group.render(140)
+      expect(lines[1]).toContain('1 agents finished')
+      expect(lines[2]).toContain('4 tools · 1m 0s')
+      expect(lines[2]).toContain('✗ Failed')
+      // No fold error text: the kimi-style second line shows the fallback.
+      expect(lines[3]).toContain('Error: Failed')
+    })
+
+    it('fires the tick over live running members and stands down on their settle', () => {
+      const timers = fakeTimers()
+      const renders: number[] = []
+      const table: Record<string, AgentMemberLive | undefined> = {
+        c1: { phase: 'running', toolCount: 0 },
+      }
+      const acked = agentMember()
+      settle(acked, 35)
+      const group = new AgentGroupComponent(
+        acked, COLORS, fakeBlueComponents(), () => { renders.push(1) }, liveTable(table),
+      )
+      group.render(80)
+      expect(timers.intervalCount()).toBe(1)
+      timers.fire()
+      expect(renders).toHaveLength(1)
+      table['c1'] = { phase: 'completed', endedAt: T0 + 90_000, toolCount: 1, tokens: 512 }
+      timers.fire()
+      expect(timers.clearCount()).toBe(1)
+      // The settled tail with one live member: singular tool and its tokens.
+      expect(group.render(140)[1]).toContain('1 tool · 512 tok')
+    })
+
+    it('renders the settled tail with elapsed only when live members carry no tools', () => {
+      const first = agentMember()
+      settle(first, 30_000)
+      const group = new AgentGroupComponent(
+        first, COLORS, fakeBlueComponents(), undefined,
+        liveTable({ c1: { phase: 'completed', endedAt: T0 + 30_000, toolCount: 0 } }),
+      )
+      expect(group.render(140)[1]).toBe('✓ \x1b[1m1 agents finished\x1b[22m · 30s')
+    })
+
+    it('formats large token counts and settles a terminal live member without an end stamp', () => {
+      const first = agentMember()
+      settle(first, 30_000)
+      const second = agentMember({ seq: 2, callId: 'c2', parsedArguments: { description: 'Map docs', prompt: 'p' } })
+      settle(second, 30_000)
+      const group = new AgentGroupComponent(
+        first, COLORS, fakeBlueComponents(), undefined,
+        liveTable({
+          // 1.5M hits the M arm; 200_704 hits the >=100k rounding arm; the
+          // second member is terminal with no endedAt (elapsed runs against
+          // the injected clock).
+          c1: { phase: 'completed', endedAt: T0 + 30_000, toolCount: 1, tokens: 1_572_864 },
+          c2: { phase: 'completed', toolCount: 1, tokens: 200_704 },
+        }),
+      )
+      group.attach(second)
+      const timers = { now: T0 + 30_000 }
+      setAgentGroupTimers({
+        setInterval: () => 0 as unknown as ReturnType<typeof setInterval>,
+        clearInterval: () => {},
+        now: () => timers.now,
+      })
+      const lines = group.render(140)
+      expect(lines[1]).toContain('1.7M tok')
+      expect(lines[2]).toContain('1.5M tok')
+      expect(lines[3]).toContain('196k tok')
+      expect(lines[3]).toContain('30s')
+    })
   })
 })
