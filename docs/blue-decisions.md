@@ -267,6 +267,7 @@
 - **修正记要**：roadmap L113 "resume/replay 走 tool 折面 + `subagent/descriptor` 持久事件" 的 descriptor 半句有误——descriptor 写在**子会话**日志（"Providers append it turn-enclosed in the child's initial turn"），从不流经父 transcript；replay 是纯 tool 折面。随本条落地一并修 roadmap 措辞。
 - **理由**：子会话流是唯一不赌组合隔离契约、又能拿到 kimi 级信息的通道（Blue 侧纯工程，零上游依赖、零新包依赖）；pane-btw side-session 订阅为生产先例；A+ 基线保证 replay 诚实降级与无流回退。
 - **后果/边界**：同 prompt 字节级相同的并行成员首见序 tiebreak（最坏两行统计互换）；continuable 唤醒/冷复重开计数为"本 epoch"语义（与 harness epoch 记账一致）；崩溃孤儿 pending 与 ReadGroup 同形既有语义；远程 provider（无本地会话）成员保持 fold-only；`/export` 输出每成员独立 Tool Call 段（分组是挂载层幻象，export 天然降级）。
+- **落地（2026-08-21，worktree 待人工验收）**：渲染层成组（`agent-group.ts`，ReadGroup 克隆）+ fold 记录信封 wall clock（`startedAt`/`endedAt`）+ 子会话 tracker（`agent-live.ts`：header 准入、O(1) reducer、两级关联、`firstLiveSeq` 种子）+ 组件第 5 参 live 查询合并（running/waiting 覆盖早熟 ack、kimi stats 行、活动二行、收束 Σ 尾）；1420 tests / coverage 逐文件 100% / typecheck / lint / build 全绿；验收 dogfood 实测 phase 迁移链 `(3 running) → (1 done, 2 running) → … → 3 agents finished · 10 tools · 211k tok · 7s` 与活动行滚动（Thinking…/Using glob/read/bash）。
 
 ## 已知遗留（MVP 有意为之）
 
