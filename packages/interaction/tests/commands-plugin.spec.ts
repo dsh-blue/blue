@@ -282,20 +282,22 @@ describe('blue-commands plugin', () => {
     expect(rows[0]).toBe('^' + '─'.repeat(80) + '^')
     expect(rows[1]).toBe('^  help^ _· Esc / Enter / q to cancel · ↑↓ scroll_')
     expect(rows[3]).toBe('  #Commands#')
-    // The runtime lists commands alphabetically; labels padEnd inside the
-    // primary span with the description muted behind two spaces. The longest
-    // label is the aliased `/effort (/thinking)` (18 columns), which widens
-    // the whole column.
-    expect(rows[4]).toBe('    ^/effort (/thinking)^  ~Switch the thinking effort of the current model~')
+    // The runtime lists commands alphabetically (`/context` leads since
+    // the S25 rename); labels padEnd inside the primary span with the
+    // description muted behind two spaces. The longest label is the
+    // aliased `/effort (/thinking)` (18 columns), which widens the whole
+    // column.
+    expect(rows[4]).toBe('    ^/context           ^  ~Show token usage and the context window~')
+    expect(rows.some(row => row.includes('^/effort (/thinking)^  ~Switch the thinking effort of the current model~'))).toBe(true)
     expect(rows.some(row => row.includes('^/quit (/q, /exit)  ^  ~Exit Blue~'))).toBe(true)
-    expect(rows.some(row => row.includes('_ showing 1-16 of 26_'))).toBe(true)
+    expect(rows.some(row => row.includes('_ showing 1-16 of 29_'))).toBe(true)
     // Scrolling down reaches the Keys section with the two-column layout.
-    for (let i = 0; i < 9; i += 1) overlay(screen).handleInput(KEY.down)
+    for (let i = 0; i < 10; i += 1) overlay(screen).handleInput(KEY.down)
     const scrolled = screen.overlays[0]?.component.render(80) ?? []
     expect(scrolled.some(row => row.includes('  #Keys#'))).toBe(true)
     // Key labels padEnd to the longest label — `backspace` (9) since S13.
     expect(scrolled.some(row => row.includes('?enter    ?  ~Submit input / confirm selection~'))).toBe(true)
-    expect(scrolled.some(row => row.includes('_ showing 10-25 of 26_'))).toBe(true)
+    expect(scrolled.some(row => row.includes('_ showing 11-26 of 29_'))).toBe(true)
     screen.overlays[0]?.component.invalidate()
     overlay(screen).handleInput(KEY.escape)
     expect(screen.overlays[0]?.hidden).toBe(true)
@@ -308,7 +310,7 @@ describe('blue-commands plugin', () => {
     await ctx.commands.execute(agent, '/help', signal())
     // The f9 row is the last key binding, beyond the first window; extra
     // downs clamp at the scroll floor.
-    for (let i = 0; i < 12; i += 1) overlay(screen).handleInput(KEY.down)
+    for (let i = 0; i < 15; i += 1) overlay(screen).handleInput(KEY.down)
     const rows = screen.overlays[0]?.component.render(80) ?? []
     expect(rows.some(row => row.includes('f9') && row.includes('~spec.custom~'))).toBe(true)
     unregister?.()
