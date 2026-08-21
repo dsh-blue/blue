@@ -1,6 +1,6 @@
 # Blue 缝（seam）清单：契约、默认实现与插件映射
 
-本文描述**当前代码现状**：Blue 目前开了哪些缝、每条缝的契约在哪、plain 默认是什么、以及上游（harness）开的缝的视觉效果由哪些 Blue 插件实现。缝的设计正典见 [blue-p1-design.md](./blue-p1-design.md) §6，架构背景见 [blue-architecture.md](./blue-architecture.md)，相关 ADR 见 [blue-decisions.md](./blue-decisions.md)（D3/D17/D18/D20/D21/D25/D26）。
+本文描述**当前代码现状**：Blue 目前开了哪些缝、每条缝的契约在哪、plain 默认是什么、以及上游（harness）开的缝的视觉效果由哪些 Blue 插件实现。缝的设计正典见 [blue-p1-design.md](./history/blue-p1-design.md) §6，架构背景见 [blue-architecture.md](./blue-architecture.md)，相关 ADR 见 [blue-decisions.md](./blue-decisions.md)（D3/D17/D18/D20/D21/D25/D26）。
 
 ## 1. 什么是缝
 
@@ -46,7 +46,7 @@ harness（dsh-base）自己开的缝，Blue 作为下游插件实现——**用�
 | `ctx.permissionPresets` | 权限预设（sandbox 模式 + approval policy 命名束） | ✅ S24b 已落地（2026-08-21，D33）：选择器面板读服务（`current(events)` ≡ 投影 fold——投影键未消费，留给未来消费者）、裸 `/permission` 输入层拦截开面、选中提交 `/permission <name>` 同一写路径、danger typed-y gate；命令本体 dsh-permission-presets 自带、零实现 | ✅ 服务在（rc.7+ base；rc.8 扩表 read-only） |
 | `ctx.planMode` + plan-review 问询 | plan 模式（`/plan` 命令 dsh-plan-mode 自带、`plan/mode` 事件、`plan` 投影、`exit_plan_mode` 工具经 `ctx.userQuestions` 以 `intent.kind === 'plan-review'` 问询） | 命令零实现（随 base 到货）；模式指示器 ✅ S24a（`blue-status-mode` 徽标 + Shift+Tab 三态循环）；plan-review 专用呈现 ✅ S24b（`plan-review-panel.ts`：Markdown 滚动窗 + 双选 + 反馈编辑器；dismissal 码勘误 `ASK_CANCELLED`） | ✅ 服务在（rc.7+ base）；呈现已落地 |
 | `ctx.skills` + 手势路径 | 技能发现/调用（分层注册表 + skill-filesystem 六层根 + `tool-skill` pre-step `/name` 手势注入） | S29 待做（D34：`#` 提示符补全 + 提交重写 `#name`→`/name` 走手势路径 + `/skills` 列表） | ✅ 服务在（rc.7+ base） |
-| `ctx.agentPresets` | agent 组合预设（list/resolve/mount/recompose；`agent-preset/selected` 事件） | S28 待做（D33：`/preset` 命令——空会话 sessionBlank 守卫 + 事件配对）；**插件行不在 dsh-base**（仅 web-app bundle），Blue bundle patch 加行 + 带依赖 | ⚠️ bundle 加行后可用 |
+| `ctx.agentPresets` | agent 组合预设（list/resolve/mount/recompose；`agent-preset/selected` 事件） | ✅ 已消费（2026-08-21，S28+D37）：`/preset` 命令（空会话守卫 + 事件配对）+ blue-app 建 agent 时 mount（resume 折事件重建）；bundle patch 已加行 + 带依赖，薄宿主迁移后为真替换语义 | ✅ |
 | `ctx.sessionProjections` | 会话投影（register/onChanged/checkpoint/restore） | rc.7+ 已在 base（dsh-session-projection）；`pane-todo` 维持 `todo/write` 会话事件折叠，改挂投影为可选项（未裁决） | ✅ 服务在 |
 
 注意分界：`pane-todo` 消费的是**会话事件流**（`todo/write` 整表快照自折叠），不是一条 harness 缝；harness 未来若开出 `sessionProjections`，`pane-todo` 可平滑改挂。
@@ -98,7 +98,7 @@ patch 在 `dsh-base` 之上插入三段 19 行。**拔掉整个增强段，基�
 
 ## 6. 延伸阅读
 
-- [blue-p1-design.md](./blue-p1-design.md) §6——缝清单正典与设计理由（注意其 §7 的行数描述是 P1 时点，现状以本文 §4 与 patch 文件为准）
+- [blue-p1-design.md](./history/blue-p1-design.md) §6——缝清单正典与设计理由（注意其 §7 的行数描述是 P1 时点，现状以本文 §4 与 patch 文件为准）
 - [blue-architecture.md](./blue-architecture.md) §2/§5.3/§6——设计哲学、缝的设计时机、下游定制三级
 - [blue-decisions.md](./blue-decisions.md)——D3（缝后置）、D17（组件工厂缝）、D18（主题 provider 替换）、D20（blueStatus 归 transcript）、D21（plain-first）、D25（chrome 辅助层）、D26（底部上拉面板）
 - 根 [README](../README.md)——以 Editor 缝为例的设计哲学讲解

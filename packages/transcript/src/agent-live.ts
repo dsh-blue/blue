@@ -15,14 +15,14 @@
  * mapping); a continuable child woken by a later `turn/start` flips back to
  * running with per-epoch counters.
  *
- * Member correlation (D37): spawn-class acks carry the child session id
+ * Member correlation (D39): spawn-class acks carry the child session id
  * (`started subagent <id>`), looked up exactly; fork acks carry only a job
  * name, so the delegation prompt is the fallback key — the child's first
  * live `user/message` text equals the parent call's `parsedArguments.prompt`
  * (the driver followups the prompt verbatim; constructor seeds never emit).
  *
  * The ephemeral `subagent/start|end` events are deliberately not subscribed
- * (D37): their carrier is the SubagentsService, whose isolation filter is a
+ * (D39): their carrier is the SubagentsService, whose isolation filter is a
  * composition-dependent contract, and the child stream subsumes them. Replay
  * never constructs this tracker — the live argument is absent on the replay
  * path, so grouped cards degrade to the A+ form structurally. The

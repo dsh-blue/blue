@@ -9,11 +9,11 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 ## 功能
 
 - **流式会话记录** —— 用户/助手消息边流式边渲染 Markdown；工具调用渲染为卡片，默认 generic 呈现，diff（`intent-diff`）与终端输出（`intent-terminal`）有专属卡片。
-- **输入编辑器** —— 圆角框编辑器：slash 命令模糊补全、参数幽灵提示、`!` bash 模式、`@` 文件补全、Ctrl-V 剪贴板贴图（`[image #N]` 标记在提交时拆为图像块）。
+- **输入编辑器** —— 圆角框编辑器：slash 命令模糊补全、参数幽灵提示、`!` bash 模式、`@` 文件补全、`#` 技能补全（行内任意位置的 `#name` 标记在提交时重写为上游 `/name` 技能手势）、Ctrl-V 剪贴板贴图（`[image #N]` 标记在提交时拆为图像块）。
 - **Overlay** —— 四选项审批面板（session 级"总是允许"继承）与 tab 化用户问卷 overlay。
 - **两行状态栏** —— 模型名（priority 0）、会话模式徽标 `plan`/`yolo`（priority 2，normal 态隐藏）、git 分支（priority 10）、上下文占用 `ctx N`（priority 20）；条目是注册表贡献，不是写死的。Shift+Tab 循环会话模式 normal → plan → yolo（`/yolo` 自动放行工具审批，提问照常弹）。
 - **底部 dock 面板** —— agent 运行中的活动 spinner、排队消息（空编辑器上键召回）、todo 列表（Ctrl-T 折叠开关）、fork 当前会话的 `/btw` 旁路问答面板。
-- **Slash 命令** —— `/quit` `/new`（`/clear` 为其别名）`/fork` `/sessions`（`/resume` 为其别名）`/help` `/theme` `/btw` `/model` `/effort` `/provider` `/yolo` `/init`，全部自动进入编辑器补全菜单。
+- **Slash 命令** —— `/quit` `/new`（`/clear` 为其别名）`/fork` `/sessions`（`/resume` 为其别名）`/help` `/theme` `/btw` `/model` `/effort` `/provider` `/yolo` `/init` `/status` `/context` `/version` `/export` `/copy` `/tools` `/preset` `/skills`，全部自动进入编辑器补全菜单。`/preset` 在薄宿主预设名册上切换 agent 组合（仅空会话）；`/tools` 列出当前会话的实时工具目录。
 - **主题** —— `/theme` 热切换：`dark` / `light` / `auto`（OSC 11 背景探测）/ `custom`（JSON 调色板）。
 
 ## 设计哲学
@@ -155,8 +155,8 @@ pnpm run typecheck      # tsc -b
 - [docs/blue-seams.md](docs/blue-seams.md) —— 缝清单：Blue 开的每条缝（契约、plain 默认），以及 harness 侧每个视觉表面由哪个 Blue 插件实现。
 - [docs/blue-architecture.md](docs/blue-architecture.md) —— 架构：哲学、L0–L4 分层、稳定性规则。
 - [docs/blue-decisions.md](docs/blue-decisions.md) —— 决策记录（ADR）。
-- [docs/blue-roadmap.md](docs/blue-roadmap.md)、[blue-p1-design.md](docs/blue-p1-design.md)、[blue-p2-visual-design.md](docs/blue-p2-visual-design.md)、[blue-mvp-plan.md](docs/blue-mvp-plan.md)、[blue-commands-plan.md](docs/blue-commands-plan.md) —— 各阶段设计与实施记录（内置命令实施清单：四家参照系合并、harness 能力矩阵、S23–S28 分期、上游缝请求）。
-- [AGENTS.md](AGENTS.md) —— 当前代码的权威逐包描述。
+- [docs/README.md](docs/README.md) —— 文档索引（在用 / 历史存档）。各阶段设计与实施记录：[docs/blue-roadmap.md](docs/blue-roadmap.md)、[blue-commands-plan.md](docs/blue-commands-plan.md)（现行——内置命令实施清单：四家参照系合并、harness 能力矩阵、S23–S28 分期、上游缝请求），以及已归档的 [blue-p1-design.md](docs/history/blue-p1-design.md)、[blue-p2-visual-design.md](docs/history/blue-p2-visual-design.md)、[blue-mvp-plan.md](docs/history/blue-mvp-plan.md)。
+- [AGENTS.md](AGENTS.md) 与各包自带的 `AGENTS.md` —— 当前代码的权威描述（仓库级约定在根文件；包级实现细节在 `packages/*/AGENTS.md`）。
 
 ## 与 deepseek-harness 的关系
 

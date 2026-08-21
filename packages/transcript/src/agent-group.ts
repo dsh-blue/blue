@@ -17,7 +17,7 @@
  * corrects the background ack's premature "finished"), per-child tool and
  * token counts, the model/effort line, and the running activity second
  * line. Replay never provides the lookup, so it degrades to A+
- * structurally (D37).
+ * structurally (D39).
  *
  * Kimi's 200ms group throttle is not ported: it rate-limits a push model
  * (snapshot listeners rebuilding on every child event). This component pulls
@@ -47,7 +47,7 @@ const DESCRIPTION_MAX_CHARS = 60
 
 /**
  * The live overlay one member renders from — the child-session tracker's
- * snapshot (kimi-level fields the fold has no source for; D37).
+ * snapshot (kimi-level fields the fold has no source for; D39).
  */
 export interface AgentMemberLive {
   /** The refined phase; `running`/`waiting` override a premature ack. */
@@ -157,7 +157,7 @@ function isTerminal(phase: AgentSnapshot['phase']): boolean {
 }
 
 /** The header bucket a phase counts under: fold-only pending members count
- * as running — the baseline cannot split them (D37 divergence). */
+ * as running — the baseline cannot split them (D39 divergence). */
 function headerBucket(phase: AgentSnapshot['phase']): 'done' | 'failed' | 'running' | 'waiting' {
   if (phase === 'done') return 'done'
   if (phase === 'failed') return 'failed'
@@ -346,7 +346,7 @@ export class AgentGroupComponent implements BlueComponent {
   /**
    * The kimi second line: failed members show one error line; live
    * running/waiting members show the activity line. Fold-only pending
-   * members have no source and render nothing (D37 divergence).
+   * members have no source and render nothing (D39 divergence).
    */
   private secondLine(snapshot: AgentSnapshot, isLast: boolean, width: number): string | undefined {
     const prefix = isLast ? '   ' : '│  '

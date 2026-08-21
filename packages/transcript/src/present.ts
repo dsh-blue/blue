@@ -122,7 +122,7 @@ const PLAN_REVIEW_TOOL = 'exit_plan_mode'
  * (`send_message`, `interrupt_agent`, `list_agents`, `report`, `job_output`)
  * stay normal cards: kimi's group aggregates only its Agent tool, and the
  * group's semantics are "a run of parallel delegated agents", which a
- * steering call in a later step is not (the S33 D37 ruling).
+ * steering call in a later step is not (the S33 D39 ruling).
  */
 const SUBAGENT_SPAWN_TOOLS: ReadonlySet<string> = new Set(['subagent', 'subagent_fork'])
 

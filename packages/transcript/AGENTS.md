@@ -1,0 +1,91 @@
+# @dsh-blue/blue-transcript — agent notes
+
+Implementation detail for this package (the user-facing surface is `README.md`/`README.zh.md`). Repo-wide conventions live in the root [AGENTS.md](../../AGENTS.md); decisions cited as Dxx are in [docs/blue-decisions.md](../../docs/blue-decisions.md). Peer+dev deps on the harness line: `@deepseek-ai/dsh-tools`, `@deepseek-ai/dsh-attachment` (plus `@deepseek-ai/dsh-agent-default-model` for the banner).
+
+## Event folding (`src/fold.ts`)
+
+Folds session events into transcript items; `apply` returns the updates one event produced in mount order. The pure helpers (including the re-exported `ellipsize`) live in `src/present.ts` so the key-arg extraction stays cycle-free.
+
+- **Streaming**: `assistant/chunk` text deltas accumulate into one streaming assistant item per step, while reasoning deltas open a sibling streaming `thinking` item created only once its accumulated text is visible (the kimi whitespace guard). The closing `assistant/message` finalizes both from the authoritative message — creating the finalized pair thinking-first when the step streamed nothing, so replay converges with live mount order.
+- **Synthetic injections (D28)**: `user/message` events whose `source.kind !== 'user'` — the harness's ContextFormed injections, runtime-context snapshots, AGENTS.md instructions, plugin notices — produce no items at all: zero presentation, live and replay alike.
+- **Failure twin**: a `turn/end` whose reason is `error` folds into a transcript error item (message plus machine code), rendered as the `✗ request failed` row in error red — a dead or misrouted endpoint is never silent.
+- **Spawn-class suppression + envelope clocks (S33, D39)**: `subagent`/`subagent_fork` calls and results join `todo_write` in the suppressed-from-rendering set — their only surface is the `./pane-agents` dock pane, which reads the fold items; and tool items and results both record `startedAt`/`endedAt` envelope wall clocks, the source of the pane's elapsed rendering.
+
+## Transcript rendering and chrome
+
+Items render through `blueScreen`, and every mounted surface goes through the core `GutterComponent` (the D29 one-column inset); Markdown and text measurement are delegated to `blueComponents`:
+
+- **Assistant body** — the `text` `● ` bullet with two-column `MESSAGE_INDENT` continuations, markdown rendered at the content width.
+- **User echo** — `UserMessageComponent` renders the kimi user chrome: a bold `roleUser` `✨ ` bullet (`USER_MESSAGE_BULLET`) with the whole text bold `roleUser` (kimi's `boldFg` composed as bold SGR around the palette color, each wrapped line colored separately so spans stay per-line), continuations aligned with spaces of the bullet's visible width, and image rows indented the same width at the content width.
+- **Thinking** — `src/thinking.ts` `ThinkingComponent`, the kimi port: live as a blank row + braille spinner @80 ms (`setThinkingTimers` replaceable, a caller-injected redraw nudge) + the wrapped reasoning's rolling two-line tail; finalized in place as the muted `● ` bullet with the folded two-line preview plus the textMuted `... (N more lines, ctrl+o to expand)` hint, expanded by the Ctrl-O toggle and standing its timer down via `dispose` (the mounter's `retireEntry` calls it on every retirement path). A blank finalized reasoning renders zero rows.
+
+## Tool cards
+
+The generic `ToolCallComponent` header is three-state — the solid `text` `● ` while running (kimi's anti-flicker ruling), `✓` success / `✗ ` error finished — behind `Using/Used ToolName (keyArg)`: verb plain, tool name bold `primary`, the key argument dim in parentheses (whitelist `file_path`/`command`/`pattern`, then the first short string argument, flattened to 60 chars), plus a dim ` · N lines` chip (error-colored on failure). `bash` keeps the kimi pure label `Running a command`/`Ran a command`. The collapsed body is the 3-row visual preview (`RESULT_PREVIEW_LINES`, wrap-aware) under the dim `... (N more lines, M total, ctrl+o to expand)` hint; expanded = every wrapped line; the retired `⎿` connector is replaced by the kimi two-column indent. No MCP suffix — the harness line has no MCP surface.
+
+The Ctrl-O toggle uses the kimi position-based scope (the S20 range ruling): `CollapseToggle` carries the session's mounted `entries` and flips only components at/after the (totalTurns - `EXPAND_TURNS` = 3)-th user-item boundary; out-of-range cards collapse.
+
+A Read item collapses to its header + lines chip only (the kimi Read card hides the file content until Ctrl-O); the diff card restyles into the kimi Write/Edit card (see `./intent-diff` below).
+
+## Read grouping and shell chrome
+
+Consecutive same-step Reads group into one `ReadGroupComponent` (`src/read-group.ts`, the kimi `read-group` port — members keep their state on their own fold items, the kimi "state stays in each card" rule). The header runs `● ` text + bold `primary` `Reading N files…` while any member is pending, `✓ ` + `Read N files · L lines` settled (plus an error ` · F failed` tail), `✗ ` + bold error `Read N files · failed` all-failed. The body is the `  ├─/└─ path · N lines` tree with ` · reading…`/` · failed` tails; path-less members are header-only; no `setExpanded` so the toggle skips it. The group's bookkeeping item is its first member, so step folding and window eviction retire it exactly when the members fold.
+
+Read detection is view-contract based, not name-based: `present.ts` `isReadItem` marks the harness read tool's pending generic card tagged `kind: 'read'` and its completed `card: 'read'` `ReadResultView` (Blue's repo never sees the harness's concrete tool set). The mounter's contiguity check expresses kimi's chain rule — any other tool between two Reads keeps both lone.
+
+The shell chrome lands on the terminal card and the bash fallback: the command renders `shellMode('$')` + the command body `muted` (kimi `textDim`) with continuations indented under it; the collapsed command preview is capped at `COMMAND_PREVIEW_LINES` (uncapped expanded, no hint — kimi's own shape); the exit badge rides the first line; the output stays one step dimmer in `textMuted`. The generic `ToolCallComponent`'s bash branch surfaces the command in the body behind the same chrome so presenter-less shells still show what ran.
+
+## Status registry and footer (D27)
+
+The `blueStatus` registry (`BlueStatusService`): duplicate ids throw `BlueStatusError`; entries sort by ascending priority with a registration-order tiebreak. It feeds the persistent two-band footer shell (`src/status.ts`, `FooterShellComponent`, mounted once in `apply` via `blueScreen.addBottomChild(footer, 'bottom')` — the footer sits on the terminal's last rows beneath the editor, so the pull-up dialog panels leave it visible below them).
+
+The v2 footer layout (D27): each entry picks its band (`row: 1 | 2`, default 1) and cluster (`align: 'left' | 'right'`, default left — dishonest values clamp, never crash); a cluster fills first-fit joining entries with the two-space slot gap (`FOOTER_SLOT_GAP`, no `·` glyph and no separator color); an entry that renders `''` or overflows its remaining budget is dropped for the frame; a band's right cluster lays out after the left plus a two-column gap and starves first under width pressure; every band pads to the full width.
+
+## Footer subpath plugins
+
+Five entries wearing the three-tier greyscale identity:
+
+- `./status-basic` (`src/status-basic.ts`, `blue-status-basic`) — baseline patch row: the model name alone at priority 0 in the full `text` tier, read from the durable request header first. The agent-status half of the old `{model} · {status}` is gone — running state belongs to the activity spinner.
+- `./status-cwd` (`blue-status-cwd`) — enhancement row: the abbreviated session cwd `~`/`…/last-3-segments` via the pure `shortenCwd`, priority 5, `muted`.
+- `./status-git` (`blue-status-git`) — enhancement row: the full badge `branch [+N -M ↑a↓b]` from a TTL-cached probe (branch 5 s, `status --porcelain -b` 15 s, `diff --numstat HEAD` only while dirty, `±` fallback), refreshed lazily inside render so any redraw picks up branch changes; the git invocation and clock are module-level replaceable. Priority 10, `muted`.
+- `./status-tips` (`blue-status-tips`) — enhancement row: the rotating teaching tip from `src/tips-content.ts` (13 ASCII tips over real Blue features, `solo`/`priority` fields), spread by nginx-style smooth weighted round-robin, offered as `a | b` when the width allows, advancing on a 10 s ticker behind replaceable timers. Priority 30, `textMuted`, right-aligned band 1.
+- `./status-context` (`blue-status-context`) — enhancement row: the latest step's context occupancy `context: N% (used/window)` in 1024-base formatting when the adapter advertises a window through `'request/context'` (a model switch withdrawing it degrades to `ctx N`). Priority 20, `text`, right-aligned band 2.
+
+## Dock panes
+
+Four pane plugins ship as subpath entries (all mount via `blueScreen.addBottomChild`, zero rows when empty):
+
+- `./pane-activity` (`blue-pane-activity`) — the kimi mode machine over the attached session's event stream: moon spinner + SWRR teaching tip while waiting or running tools; the braille `working...` row (primary frame, plain label, riding tip) while composing (kimi parity: kimi's assistant block has no cursor, so its pane spinner is the composing signal); empty while thinking — the transcript's thinking block owns the spinner; hidden while a dialog occupies the editor slot; and the kimi `Spacer(1)` one-row placeholder always present at idle. The phase comes from the pure `StreamingPhaseTracker` (`src/phase.ts`) seeded from the snapshot on attach; the frame cycles live in `src/spinners.ts` at the braille-80/moon-120 ms intervals.
+- `./pane-todo` (`blue-pane-todo`) — whole-list `todo/write` fold with the global Ctrl-T toggle `blue.todo.toggle`. Renders the kimi flat panel: a full-width flat `─` rule and a bold `primary` `  Todo` title, two-column-indented rows with the three-state markers `✓` success / `●` bold primary / `○` dim, completed content muted with strikethrough. Long lists fold by the kimi selector — at most five rows: every `in_progress` first, then the earliest `pending` with one slot reserved for the latest `completed`, under a `… +N more (counts) · ctrl+t to expand` footer; Ctrl-T expands to `all N items`, the expansion persisting across writes and resetting on a session change or a settled list; auto-closes when every entry completes (the kimi rule). It owns the presentation outright: the fold suppresses `todo_write` calls and results so the pane is the list's only surface.
+- `./pane-btw` (`blue-pane-btw`) — self-registers `/btw <question>`: forks the live session into a throwaway side agent and renders the exchange, single slot. The kimi btw-panel port: a `topRule` border with the in-border ` BTW ` title and the `Esc close` / `Esc close · ↑↓ scroll ` hint (the scroll variant only while the body overflows), the `› question` line in `roleUser`, the reply rendered through `createMarkdown`, and kimi's `fitBodyLines` mechanics — row budget `max(3, floor(rows/3)) - 1` from the live `blueScreen.rows` (a terminal resize re-fits), the min-height ratchet, tail-follow with manual ↑/↓ scrolling and per-question scroll reset — behind a trailing spacer row. The pane emits `'blue/editor-connected-above'` on open/dismiss/unload so the editor's top corners splice to `├┤` while connected, and routes close/scroll from `'blue/btw-command'`.
+- `./pane-agents` (`blue-pane-agents`) — S33 presents spawn-class subagent calls (`subagent`/`subagent_fork`, the fold's suppression set like `todo_write`): the last dock row before the editor, the kimi AgentSwarm semantics from the acceptance ruling — the pane is their only surface (stream and export render nothing for them). The running group renders the shared `AgentGroupComponent` (`src/agent-group.ts`, the kimi agent-group port) over pane-local member items — the fold baseline (A+) derives label/description from `parsedArguments`, the three-state phase from the result, and elapsed from the `startedAt`/`endedAt` envelope wall clocks the fold records (tool items and results both), with a 1 Hz injectable self-retiring tick (`setAgentGroupTimers`) advancing non-terminal elapsed and kimi's 200 ms push-model throttle deliberately not ported (pull-at-render + pi-tui nextTick coalescing, the ReadGroup proof). On the live path the pane-owned tracker in `src/agent-live.ts` overlays kimi-level depth: one global `session/event` listener admits this agent's subagent children by header keys (`origin: 'subagent'` + `parentSession`), an O(1) per-event reducer derives per-step replace-summed tokens (`usageByStep`), the dispatched tool count, activity markers (`Thinking…`/`Writing…`/`Using <tool>`), the `request/header` model/effort, and the child's own `turn/end` phase (continuable `turn/start` re-wakes with fresh epoch counters); members correlate two-level (spawn ack text `started subagent <id>` exact; fork's job-name ack falls back to the delegation prompt = the child's first live `user/message`); a soft `ctx.get('sessions')` seed replays still-live children from `firstLiveSeq` (dropping the fork child's seeded parent-turn prefix); and the ephemeral `subagent/start|end` events are deliberately unsubscribed (isolate-filtered carrier, subsumed — D39). Replay rebuilds the settled card from the snapshot with no overlay; a settled group stays until the next `turn/start` while a live-running one persists across it, and `/export` renders nothing for spawn-class calls (the pane is the only surface).
+
+## Render intents (`ctx.blueIntents`)
+
+The render-intent seam (`src/intents.ts`, `BlueIntentsService`): `register({intent, create})` returns an idempotent disposer and duplicates throw `BlueIntentsError('DUPLICATE_INTENT')`; `resolve(intent)` walks exact → `'generic'` → first registered (`NO_INTENTS` only on an empty registry); the built-in `'generic'` presenter is registered first in `apply`, making the generic baseline the first registrant. The mounter resolves tool-item components through it.
+
+Transcript injects the host `'tools'` service and carries `parsedArguments`/`rawResult`/`view` on fold items (ToolCallView at call, replaced by a ToolResultView when the tool's `presentResult` returns one), resolved via the pure resolvers in `src/present.ts` — unknown tool, missing presenter, or a throwing presenter all degrade to generic.
+
+## Intent subpath plugins
+
+- `./intent-diff` (`blue-intent-diff`) — `DiffCardComponent` over FileDiff pairs via the pure LCS line-diff `src/line-diff.ts`, in the kimi chrome: the shared card header (bullet/verb/bold name/keyArg) with the Write/Edit split chip — creates-only ` · N lines`, any edit hunk ` · +A -R` — and the body split: a null `oldText` renders the kimi numbered file preview (dim `    N  ` numbers, trailing empty row kept, 10 rows collapsed under the expand hint, uncapped expanded), an edit hunk the unified diff rows (10 collapsed / 200 expanded). The old title/path-count lines are gone.
+- `./intent-terminal` (`blue-intent-terminal`) — `TerminalCardComponent` with description/cwd lines, the `$ ` shellMode + muted command chrome with a collapsed 10-row command cap, output 3/120 rows (the `RESULT_PREVIEW_LINES` alignment), exit badges. Its card dims to the kimi shell presentation: `shellMode('$')` marker, `textMuted` output rows, `(no output)` on a completed run with nothing captured.
+
+Both caps end in the kimi `... (N more lines, M total, ctrl+o to expand)` hint and inject `blueIntents`/`blueTheme`/`blueComponents`.
+
+## Session window and step folding
+
+The long-session window (`src/window.ts`): `DEFAULT_WINDOW_TURNS` = 15 newest completed turns stay mounted (module-level setters for tests); the mounter silently evicts older turns' items+components after each folded event.
+
+In-turn step folding follows the S20 kimi retention: the most recent `DEFAULT_RECENT_STEPS_RETENTION` = 30 steps of a turn keep their cards expanded, and a new `step/start` folds only the step sliding out of the window into one `step-summary` item in the kimi wording — `… step N · thinking X times, call Y tools`, parts omitted at zero with kimi's unconditional pluralization, the `step N ·` prefix kept as Blue's per-step disambiguation. Toggleable via `setStepFoldingEnabled`, retention via `setRecentStepsRetention`.
+
+User-message image blocks are kept as `ImageAttachmentRef[]` with bytes lazily loaded through the optional `attachments` service (`ctx.get`, not injected): real images render ≤12 rows, `[image]` placeholders when absent/failed.
+
+## Welcome banner (`./banner`)
+
+The `./banner` subpath plugin (`src/banner.ts`, `blue-banner`) is a baseline patch row sitting before `blue-transcript` — the two fibers activate in the same `blueComponents` round in row order, so the banner stays the scroll area's first child across initial mounts and `/theme` reloads. It injects `agentDefaultModel` and snapshots `model · provider` at apply, home-shortens the cwd via the local `shortenHome`, and never reads `blueSession`.
+
+- The layout core is the pure `composeBannerLines`: the Claude-Code-style adaptive box spanning the full viewport width — zero rows below 40 columns; a centered left column (welcome, logo, model, cwd) fixed at 44 columns once the viewport leaves the right cell 30 or more, which then carries tips + divider + what's-new; height is the taller of the columns (ten rows at the default content, the two columns exactly level); every over-wide run truncates, never wraps.
+- The pixel-logo art lives in `src/banner-art.ts` (a rounded blob with two eye slits — a 12×6 grid folded into three half-block rows, plus the half-block packer `packHalfBlockArt`).
+- The editable copy lives in `src/banner-content.ts`: the `BLUE_VERSION` constant is guarded by a spec against `package.json`; the tips section derives from the footer pool `src/tips-content.ts` (the three highest-weight non-`solo` entries, pinned by a spec); the what's-new section is literal per-release editorial copy.
+- Styling uses only existing tokens: frame, logo, and welcome line `primary` (the kimi blue welcome-box treatment); title/cwd/section bodies `muted`; model line `accent`; section headings `text`.

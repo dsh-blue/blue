@@ -104,7 +104,7 @@
 
 ## P1 设计决策（kimi-parity 设计期，2026-08-18）
 
-详见 [blue-p1-design.md](./blue-p1-design.md)。以 kimi-code 为参照系（非视觉复刻目标），行使 roadmap 允许的一次性破坏性层职责重排。
+详见 [blue-p1-design.md](./history/blue-p1-design.md)。以 kimi-code 为参照系（非视觉复刻目标），行使 roadmap 允许的一次性破坏性层职责重排。
 
 ### D17. 组件工厂缝：L0 包装 pi-tui 组件
 
@@ -156,7 +156,7 @@
 
 ## P2 视觉设计决策（kimi-code 观感对齐设计期，2026-08-19）
 
-详见 [blue-p2-visual-design.md](./blue-p2-visual-design.md)。以 kimi-code 为视觉/UX 参照（框架同源 pi-tui，全部效果为应用层实现，逐项可移植），按视觉影响排序分期（S10-S21；S17-S21 为 2026-08-20 立项的会话流对齐期，参照基准 p2-visual §2.6）。
+详见 [blue-p2-visual-design.md](./history/blue-p2-visual-design.md)。以 kimi-code 为视觉/UX 参照（框架同源 pi-tui，全部效果为应用层实现，逐项可移植），按视觉影响排序分期（S10-S21；S17-S21 为 2026-08-20 立项的会话流对齐期，参照基准 p2-visual §2.6）。
 
 ### D24. 主题契约 v2：+`primary`/`textMuted` 两 token，现有 `muted` 即 kimi 的 textDim 层
 
@@ -259,7 +259,30 @@
 - **理由**：只读面零上游依赖即刻可做；配置归配置层（cordis patch 是上游唯一声明的配置形态，settings 无 mcp 命名空间，造平行面会双源漂移）；安全姿态继承上游——声明一个服务器 = 显式同意运行一段沙箱外代码，这个同意动作留在配置文件里可审计。
 - **后果**：`/mcp` 面板遇零服务器时引导到 profile patch 文档（而非提供"添加服务器"表单）；重连预算耗尽的服务器只能标注"工具已注销，需重载插件或重启"（无重连 API）；`tools/change` 不在 API gateway 转发白名单（Blue 进程内 `ctx.on` 直接可用，远程形态为架构备忘）；每服务器状态事件与启停 API 维持上游缝请求（§7 #6，P3 nice）。
 
-### D37. S33 子 agent 分组卡：渲染层成组 + 子会话订阅 live 叠加，瞬态事件弃用（用户裁决，2026-08-21）
+### D37. 薄宿主迁移：agent 面下放预设层，照 web-app 官方判定（用户裁决，2026-08-21）
+
+- **背景**：dsh-base 把整个 agent 面（tool-bash/fs/jobs/skill/todo/goal/web、plan-mode、compaction 三件套、subagent 全家、workflow、agent-instructions）**全局挂载**；agent preset 组合（standard/code/minimal/cordis）是 harness 为**瘦宿主**设计的（web-app：host 只留注册表/sandbox/approval/持久化/模型路由，工具与 persona 全由预设 standing scope 供给，`recompose` 换父指针即真替换）。Blue 骑 dsh-base，若只加 agent-presets 行，`recompose` 是**叠加**语义——切 minimal 只换 persona 加两工具，~15 个全局工具一个不少，`/preset` 面板会撒谎。官方两哲学在自家 surfaces 互不相撞（CLI 默认 profile 不组预设、web-app 不组 base 工具行）；官方注释明说 TUI（单会话终端）**故意**保留进程级厚基座。D33/commands-plan 写 `/preset` 时引用了 web-app 机制但没意识到基座差异（本期调研发现）。
+- **决策**（用户裁决三选一，取"本期做迁移"）：Blue 照 **web-app bundle 的 host-plane ownership 判定**（`packages/bundle/web-app/cordis.patch.yml:280-419`）做薄宿主：① bundle patch 顶部逐行 disable dsh-base 的 23 个 agent 面行（tool-bash/tool-pwsh/tool-jobs/tool-fs/tool-fs-search/tool-str-replace-editor/skill-filesystem/tool-skill/tool-goal/plan-mode/compaction-basic/command-compact/tool-result-pruner/tool-subagent-control/tool-subagent-list-agents/tool-subagent/tool-subagent-fork/workflow-worker-thread/tool-workflow/tool-ralph/agent-instructions/tool-todo/tool-web；`tool-subagent-report` 与 `system-prompt` 按官方判定**保留**宿主面）+ insert `agent-presets` 行（`default: standard`，CLI 启动器见行自动注入 shipped root）；② `blue-app` 建/resume agent 的 setup 里 `presets.mount(agentCtx, resolved)`（上游 `composeAgent` 先例；resolved = 折会话最后 `agent-preset/selected` 事件 > `SessionHeader.agentPreset` > 默认，折页本地 5 行保持 roster 可选性）。
+- **理由**：disable 清单是官方维护的（"disable 而非删除是故意的：base 是共享的"），Blue 照抄有人同行；standard ≈ base agent 面全集是 harness 自己保证的设计意图，默认挂 standard 行为等价（persona 与 Blue patch 一字不差）；scope 遮蔽/限制机制本就为此设计。方案 2（只加创建时挂预设、不 disable）因 persona 同文本而无副作用、成为"低风险持久叠加"，但 minimal 不极简的缺口仍在——用户裁决一步到位。
+- **后果**：① `/preset` 获得真替换语义（切 minimal 后 `/tools` 面板真实收敛）；② resume/fork 重建组合（日志事件驱动，`/preset` 效果跨重启）；③ **维护税显性化**：bundle.spec 断言 Blue disable 集 ≡ web-app disable 集（漂移守卫：base 新增 agent 面行且官方裁决后，Blue 不跟则红）+ 每个 disable id 必须存在于 base 行集（防拼错静默失效）；依赖 dsh-base/dsh-web-app 两个 patch-file devDep；④ 无 roster 组合（用户删行）= agent 裸建零工具：blue-app 容错跳过 + `/preset` 守卫报错（"薄宿主行被删"是显式误配置）；⑤ minimal 下 pane-todo/plan review 等走优雅退化（能力探测本就走投影/键缺失）；⑥ 挂 standard 后 plan section 文案为预设版（与 base 措辞微差）；⑦ e2e 夹具默认挂真实 roster + 空组合预设（既有用例工具面零变化），/preset 用例换带工具夹具。
+- **实施后记（2026-08-21，随 S28 落地）**：迁移与 /tools /preset 同期落地；e2e 钉住「默认挂 alpha→切 beta→resume 重建 beta」全链。官方姿态差异（TUI 厚基座 vs Blue 先行薄宿主）记入 bundle patch 注释与本文——Blue 是第一个要预设切换的终端面。**Dogfood 第一轮发现（scope 双实例）**：真机 `/tools` 面板全空——`scopeOf(agent.ctx)` 在 dev-link 组合下恒为 `undefined`（`kScope` 是 dsh-scope 的模块级 Symbol，CLI 侧实例给 agent ctx 打的标签，经 worktree 链接加载的 Blue 侧 dsh-scope 副本读不回；e2e 单树单实例所以绿）。修复：`/tools` 改经 roster 公开 API `standingKeyFor(composedPreset(agent.ctx))` 取 standing mount 的视图 key（上游注释原话 "for a host reader with no agent"），无 roster/未绑定时回退全局视图；interaction 移除 dsh-scope 运行时依赖。教训：跨 store 边界（CLI store vs dev-link store）的 Symbol 语义 API 不可依赖，公开对象 API 才是契约。
+
+## 已知遗留（MVP 有意为之）
+
+
+- `/quit` 在 agent attach 前输入会显示 "no active session" 而不退出（input-plugin 在命令分发前检查 current agent）
+- alt-screen、自定义键位属 P1/P2
+
+
+### D38. S23 模型族：modelRef 缝取 getter 三级优先，Alt+S 全语义，Add Provider 走 Web Models 页同款写入序列（用户裁决，2026-08-20；原误编号 D33，2026-08-21 勘误重编——本条属 P2 命令系列决策，保留原位）
+
+- **背景**：blue-commands-plan §4.2.1 为 `/model` `/effort` `/provider` 开 `BlueSessionRef.modelRef` 缝。实施前调研发现两件事：(1) 原方案的纯可变字段无法表达 resume 语义——harness apiproxy（Web 面）对同类缝用 **getter/setter 三级优先**（会话内 picked → 会话日志最近 request header → 进程默认），且 Blue 现有接线存在同名缺陷（resume 机械上切回进程默认，app 注释声称 header wins 但不成立）；(2) kimi 的 Alt+S session-only 通道与底部 thinking 段控件是用户明确要的全语义。
+- **决策**（用户四项裁决 + Add Provider 范围扩项）：(1) **modelRef = `createModelSelectionRef` 的 getter 三级优先**（app `src/model-ref.ts`，`current` 恒有值收窄为 `BlueModelSelectionRef`），三个 commit 点与 `current` 一同发布，session-changed 不变式要求 handle 已发布——resume 缺陷随缝修复（e2e `--resume` 后请求模型断言）；(2) **Alt+S session-only 做全语义**（contextual action `blue.interaction.session-only`，三面板提交分支，Enter 持久 / Alt+S 仅会话）；(3) **/model 面板底部带 kimi thinking 段控件**（`thinking-segments.ts` 共享段 chrome，←/→ 调高亮行 effort 草稿，`Off (Unsupported)` 降级）、**/effort 用水平分段**；(4) **/provider v1 即含 Add Provider**（原 ⚠️ 顺延项拉入）：两分支（采纳 pi-ai 目录 vendor / 自定义端点 route+协议+baseURL+掩码 key），openai 协议走 `discoverModels` 端点发现喂多选采纳、其余手填 model id；提交序列 = **`settings.mutate('llm-pi-ai', [set providers.<route>], revision)` 先、`credentials.set(<ROUTE>_API_KEY)` 后**（Web Models 页同序，失败重试只剩一步）；落成后打开限定该路由的模型面板，Esc 保留 provider 不改默认（kimi "provider persists" 同义）。表单面 `form-panel.ts`：kimi 双字段对话框在 Blue editor 上的移植（Tab/↑↓ 字段路由、Enter 前进末字段提交、面板内 error 行不关面板、掩码字段渲染派生 `•` 行永不回显明文）。
+- **理由**：三级优先是上游 Web 面已验证的语义（零发明），且是唯一同时修 resume 缺陷的形状；Alt+S/段控件是用户裁决的 kimi 全语义对齐；Add 的写入序列照抄 Web Models 页 = 跨命名空间 `settings.mutate` 有官方先例、校验由注册方 schema 在写入点执行、凭据经 `ctx.credentials` 落 `$DSH_HOME/.credentials.yaml`（0600，env 遮蔽时 set 拒绝并转述上游指引）。
+- **后果**：interaction 新增对 `dsh-agent-default-model`/`dsh-settings`/`dsh-credentials` 的 peer 依赖；e2e 另挂真 `dsh-settings-file`/`dsh-credentials-local`/`dsh-llm-pi-ai`（休眠态）+ 本地 fixture HTTP server 承接 discovery（`DUPLICATE_DISCOVERY` 已核实——pi-ai 挂载后不能以假 discovery 覆盖）；生产运行时零新增组合行（宿主 dsh-base 自带三件）。**已知边界**：模型切换若始终未到达一次落盘请求（下一 step 未跑就切会话），picked 随 agent dispose 丢失（dsh 缝只在 `request/header` 落盘时持久化，README 已记）；面板无模糊搜索、命令参数无补全（deferred）；Add 的 revision 冲突 v1 单次尝试。凭据 env 遮蔽行为在 e2e 中真实触发过一次（宿主 shell 恰有同名 `MY_GATEWAY_API_KEY`），守卫文案如实转述。
+- **落地（2026-08-20，S23）**：app 缝 + resume 修复（`model-ref.ts`/三 commit 点/不变式）；interaction `thinking-segments.ts`/`model-panel.ts`/`form-panel.ts`/`provider-add.ts`/`model-commands.ts` + keys 三 contextual action（←/→/alt+s）；e2e 10 用例（含 Add 两分支真件落盘断言、resume 回归、跨进程持久、/new 跟随）。1068 tests / 71 files，test/coverage（逐文件 100%）/typecheck/lint 全绿。
+
+### D39. S33 子 agent 分组卡：渲染层成组 + 子会话订阅 live 叠加，瞬态事件弃用（用户裁决，2026-08-21；原分支编号 D37 与 S28 薄宿主撞号，合并 master 时重编 D39）
 
 - **背景**：S33 要把同 step ≥2 个 spawn 类 subagent 调用从 N 张独立工具卡聚合为一张分组卡（kimi `agent-group.ts` 同构）。三路调研 + 设计核实 + 两轮 dogfood（blue-s33 profile，调试插件落 `/tmp/s33-dogfood.log`，会话 `session-56b4318f`/`session-846a852b`）逐项实证。
 - **dogfood 实证（2026-08-21，0.1.1-rc.1）**：(1) 子会话 `session/event` **无条件到达**未 scoped 插件 ctx（实测 5500+ 条；cordis 对裸 Session 载体不做隔离过滤），准入键 `header.origin === 'subagent' && header.parentSession === <父会话id>` 实测可用；(2) 同 step 并行成组条件实测（turn=1 step=1 内 `subagent`×2 + `subagent_fork`）；(3) **两类 ack 形态分裂**——spawn 类 result 文本 `started subagent <子会话id>`（id 精确关联），**fork 类只有 `started background subagent job subagent-N`（job 名，无会话 id）**——fork 的唯一关联路径是 prompt 键（子会话首条 live `user/message` src=user 文本 === 父 `args.prompt`，实测成立；委派 prompt 先经 `agent/inbox/spliced` 入队、turn 开始才成 user/message）；(4) 三事件均 **35ms 内立即 ack**——包括 fork（0.1.0-rc.5 源码称 fork 前台阻塞，0.1.1-rc.1 实测已 job 化，源漂移活例）——纯 fold 三态对两类工具都会**早熟**显示 finished；(5) 真实结果由模型经 `job_output {job_id, wait:true}` 在后续 step 收割（job_output 非_spawn 名集，天然不进组）；(6) 四个 kimi 字段全有源：tokens ← 子会话 `assistant/message` per-step `usage`（input/output/cacheRead/reasoning，replace-per-step 求和），toolCount ← 子会话 `tool/call` 计数，model/effort ← 子会话 `request/header` config，phase 权威 ← 子会话 `turn/end` reason.kind（实测 `completed`）；(7) `firstLiveSeq` 种子语义证实（fork 子 live 自 seq 2、spawn 子自 seq 4；fork 种子含父 turn 前缀——种子必须 `slice(firstLiveSeq)` 否则父 usage 灌入子 token）；(8) 瞬态 `subagent/start|end` 实测可达（默认组合 isolate 共享），负载 `{runId, provider: spawn|fork, id, local}`（id==子会话 id）、end 带 `stopReason`+`lastAssistantMessage` 全量——但 carrier 是 SubagentsService（Service 隔离过滤，**契约不保证**可达），且信息被子会话流完全覆盖。
@@ -269,18 +292,3 @@
 - **后果/边界**：同 prompt 字节级相同的并行成员首见序 tiebreak（最坏两行统计互换）；continuable 唤醒/冷复重开计数为"本 epoch"语义（与 harness epoch 记账一致）；崩溃孤儿 pending 与 ReadGroup 同形既有语义；远程 provider（无本地会话）成员保持 fold-only；`/export` 输出每成员独立 Tool Call 段（分组是挂载层幻象，export 天然降级）。
 - **落地（2026-08-21，worktree 待人工验收）**：渲染层成组（`agent-group.ts`，ReadGroup 克隆）+ fold 记录信封 wall clock（`startedAt`/`endedAt`）+ 子会话 tracker（`agent-live.ts`：header 准入、O(1) reducer、两级关联、`firstLiveSeq` 种子）+ 组件第 5 参 live 查询合并（running/waiting 覆盖早熟 ack、kimi stats 行、活动二行、收束 Σ 尾）；1420 tests / coverage 逐文件 100% / typecheck / lint / build 全绿；验收 dogfood 实测 phase 迁移链 `(3 running) → (1 done, 2 running) → … → 3 agents finished · 10 tools · 211k tok · 7s` 与活动行滚动（Thinking…/Using glob/read/bash）。
 - **形态修订（2026-08-21，验收反馈裁决）**：kimi 源码核实其 subagent 呈现有两条路径——普通 `Agent` 工具是流内组卡（本实现首版同构），而 **AgentSwarm 是钉住 pane**（挂 transcript 尾=视觉钉 dock 正上方、子事件全吞、下一 `turn.started` 硬删不进历史、replay 一行摘要）。验收裁决采用 Swarm 语义：**`blue-pane-agents` dock pane**（bundle 行序 activity → queue → todo → btw → **agents** → editor，紧贴编辑框上部）+ **fold 抑制 spawn 类**（todo_write 先例，流与 export 均无 spawn 卡，pane 是唯一呈现面）+ **settled 组保留到下一 turn/start**（live overlay 有 running/waiting 成员则跨 turn 保留——后台 ack 早熟但子会话在跑时不清）+ **resume 快照重建收束卡**（无 live 叠加）。mount 层分组与 mountSession tracker 退役；`AgentGroupComponent`/`agent-live.ts` 原样复用为 pane 内件。随批顺修 queue pane 既有缺陷（字符数截断遇 CJK 漏 2 列触发 pi-tui 宽度守卫崩溃，验收首日实锤）。1427 tests / coverage 逐文件 100% 全指标。
-
-## 已知遗留（MVP 有意为之）
-
-
-- `/quit` 在 agent attach 前输入会显示 "no active session" 而不退出（input-plugin 在命令分发前检查 current agent）
-- alt-screen、自定义键位属 P1/P2
-
-
-### D33. S23 模型族：modelRef 缝取 getter 三级优先，Alt+S 全语义，Add Provider 走 Web Models 页同款写入序列（用户裁决，2026-08-20）
-
-- **背景**：blue-commands-plan §4.2.1 为 `/model` `/effort` `/provider` 开 `BlueSessionRef.modelRef` 缝。实施前调研发现两件事：(1) 原方案的纯可变字段无法表达 resume 语义——harness apiproxy（Web 面）对同类缝用 **getter/setter 三级优先**（会话内 picked → 会话日志最近 request header → 进程默认），且 Blue 现有接线存在同名缺陷（resume 机械上切回进程默认，app 注释声称 header wins 但不成立）；(2) kimi 的 Alt+S session-only 通道与底部 thinking 段控件是用户明确要的全语义。
-- **决策**（用户四项裁决 + Add Provider 范围扩项）：(1) **modelRef = `createModelSelectionRef` 的 getter 三级优先**（app `src/model-ref.ts`，`current` 恒有值收窄为 `BlueModelSelectionRef`），三个 commit 点与 `current` 一同发布，session-changed 不变式要求 handle 已发布——resume 缺陷随缝修复（e2e `--resume` 后请求模型断言）；(2) **Alt+S session-only 做全语义**（contextual action `blue.interaction.session-only`，三面板提交分支，Enter 持久 / Alt+S 仅会话）；(3) **/model 面板底部带 kimi thinking 段控件**（`thinking-segments.ts` 共享段 chrome，←/→ 调高亮行 effort 草稿，`Off (Unsupported)` 降级）、**/effort 用水平分段**；(4) **/provider v1 即含 Add Provider**（原 ⚠️ 顺延项拉入）：两分支（采纳 pi-ai 目录 vendor / 自定义端点 route+协议+baseURL+掩码 key），openai 协议走 `discoverModels` 端点发现喂多选采纳、其余手填 model id；提交序列 = **`settings.mutate('llm-pi-ai', [set providers.<route>], revision)` 先、`credentials.set(<ROUTE>_API_KEY)` 后**（Web Models 页同序，失败重试只剩一步）；落成后打开限定该路由的模型面板，Esc 保留 provider 不改默认（kimi "provider persists" 同义）。表单面 `form-panel.ts`：kimi 双字段对话框在 Blue editor 上的移植（Tab/↑↓ 字段路由、Enter 前进末字段提交、面板内 error 行不关面板、掩码字段渲染派生 `•` 行永不回显明文）。
-- **理由**：三级优先是上游 Web 面已验证的语义（零发明），且是唯一同时修 resume 缺陷的形状；Alt+S/段控件是用户裁决的 kimi 全语义对齐；Add 的写入序列照抄 Web Models 页 = 跨命名空间 `settings.mutate` 有官方先例、校验由注册方 schema 在写入点执行、凭据经 `ctx.credentials` 落 `$DSH_HOME/.credentials.yaml`（0600，env 遮蔽时 set 拒绝并转述上游指引）。
-- **后果**：interaction 新增对 `dsh-agent-default-model`/`dsh-settings`/`dsh-credentials` 的 peer 依赖；e2e 另挂真 `dsh-settings-file`/`dsh-credentials-local`/`dsh-llm-pi-ai`（休眠态）+ 本地 fixture HTTP server 承接 discovery（`DUPLICATE_DISCOVERY` 已核实——pi-ai 挂载后不能以假 discovery 覆盖）；生产运行时零新增组合行（宿主 dsh-base 自带三件）。**已知边界**：模型切换若始终未到达一次落盘请求（下一 step 未跑就切会话），picked 随 agent dispose 丢失（dsh 缝只在 `request/header` 落盘时持久化，README 已记）；面板无模糊搜索、命令参数无补全（deferred）；Add 的 revision 冲突 v1 单次尝试。凭据 env 遮蔽行为在 e2e 中真实触发过一次（宿主 shell 恰有同名 `MY_GATEWAY_API_KEY`），守卫文案如实转述。
-- **落地（2026-08-20，S23）**：app 缝 + resume 修复（`model-ref.ts`/三 commit 点/不变式）；interaction `thinking-segments.ts`/`model-panel.ts`/`form-panel.ts`/`provider-add.ts`/`model-commands.ts` + keys 三 contextual action（←/→/alt+s）；e2e 10 用例（含 Add 两分支真件落盘断言、resume 回归、跨进程持久、/new 跟随）。1068 tests / 71 files，test/coverage（逐文件 100%）/typecheck/lint 全绿。

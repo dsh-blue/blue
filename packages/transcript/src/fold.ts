@@ -66,7 +66,7 @@ const TODO_TOOL_NAME = 'todo_write'
  * The spawn-class subagent tool names (the same set `present.ts`
  * `isSubagentTool` classifies items by): the agents pane owns their
  * presentation, so their calls and results render nothing in the stream —
- * the S33 acceptance ruling (kimi AgentSwarm semantics; D37 revision).
+ * the S33 acceptance ruling (kimi AgentSwarm semantics; D39 revision).
  */
 const SUBAGENT_SPAWN_TOOL_NAMES: ReadonlySet<string> = new Set(['subagent', 'subagent_fork'])
 
@@ -408,7 +408,7 @@ export class TranscriptFolder {
         // The S33 acceptance ruling extends the same suppression to the
         // spawn-class subagent tools: the agents pane pinned above the editor
         // owns that presentation, so neither the call nor its ack/result
-        // enters the stream (the kimi AgentSwarm semantics — D37 revision).
+        // enters the stream (the kimi AgentSwarm semantics — D39 revision).
         if (event.data.name === TODO_TOOL_NAME || SUBAGENT_SPAWN_TOOL_NAMES.has(event.data.name)) {
           this.suppressedCalls.add(event.data.callId)
           return null

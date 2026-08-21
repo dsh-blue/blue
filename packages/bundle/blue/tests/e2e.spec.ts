@@ -8,7 +8,7 @@
  * process terminal are substituted.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import AgentPresetsService from '@deepseek-ai/dsh-agent-presets'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { LlmModelInfo, LlmModelReasoningInfo } from '@deepseek-ai/dsh-llm'
 import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
@@ -38,6 +39,9 @@ import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-app
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import PermissionPresetsService from '@deepseek-ai/dsh-permission-presets'
 import type { ShellExecutor } from '@deepseek-ai/dsh-shell'
+import SkillRegistry from '@deepseek-ai/dsh-skill'
+import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
+import * as toolSkill from '@deepseek-ai/dsh-tool-skill'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 // The theme modules come from the package subpaths — not relative core
 // source paths — because the /theme swap keys registry runtimes by apply
@@ -53,6 +57,7 @@ import { startBlueTerminal } from '../../../core/src/terminal.ts'
 import { FakeTerminal, waitForRender } from '../../../core/tests/fake-terminal.ts'
 import * as interactionPlugin from '../../../interaction/src/index.ts'
 import { clearDraft, stashHistory } from '../../../interaction/src/draft-stash.ts'
+import { userInvocableSkills } from '../../../interaction/src/skills-catalog.ts'
 import * as editorPlusPlugin from '../../../interaction/src/editor-plus.ts'
 import * as attachmentsPlugin from '../../../interaction/src/attachments.ts'
 import * as pasteImagePlugin from '../../../interaction/src/paste-image.ts'
@@ -184,6 +189,18 @@ interface BlueTree {
   sessionChanges: Agent[]
 }
 
+/** One fixture preset the e2e roster's temp root ships. */
+interface PresetFixture {
+  /** The preset id (directory name and roster key). */
+  id: string
+  /** A tool the preset's composition registers (`e2e` tool names stay distinct). */
+  tool?: string
+  /** Ship an invalid composition: the roster lists the preset as broken. */
+  broken?: boolean
+  /** The display order (preset.yml metadata). */
+  order?: number
+}
+
 /** Test-scope hooks the Loader fixtures delegate to. */
 interface BlueE2EHooks {
   coreApply: (ctx: Context) => Promise<void>
@@ -247,6 +264,20 @@ async function bootBlue(argv: string[], options: {
    * the production path, the fold without it is the degraded host's.
    */
   sessionProjections?: boolean
+  /**
+   * The fixture presets the roster's temp root ships, replacing the default
+   * single empty composition (which keeps every other case's tool surface
+   * exactly what it registers itself). The first fixture is the roster
+   * default the app driver mounts fresh agents onto.
+   */
+  presetFixtures?: readonly PresetFixture[]
+  /**
+   * Mount the real skill family (registry + filesystem provider scoped to
+   * the given root + tool-skill) so the `#` pipeline runs against the
+   * upstream gesture path end to end. Flag-gated: tool-skill publishes a
+   * skill catalog into every request, which would perturb unrelated cases.
+   */
+  skills?: { root: string }
 }): Promise<BlueTree> {
   const dir = mkdtempTracked('dsh-blue-e2e-')
   const terminal = new FakeTerminal()
@@ -531,6 +562,65 @@ export const apply = (ctx) => {
       },
     })
   }
+  // The agent-preset roster, as the bundle patch now composes it (the
+  // thin-host migration): every agent the driver creates joins its preset's
+  // standing composition. The real service over a temp root; the writable
+  // user root stays off so a developer's own presets never leak in. The
+  // default fixture is one EMPTY composition — every plain case's tool
+  // surface stays exactly what it registers itself, unchanged from before
+  // the migration; preset cases pass richer fixtures.
+  const presets = options.presetFixtures ?? [{ id: 'e2e' }]
+  const presetRoot = join(dir, 'agent-presets')
+  for (const preset of presets) {
+    const presetDir = join(presetRoot, preset.id)
+    mkdirSync(presetDir, { recursive: true })
+    if (preset.broken === true) {
+      // Parses, then fails the entry-list audit: the roster lists it broken.
+      writeFileSync(join(presetDir, 'agent.cordis.yml'), 'not-a-list: true\n')
+    } else if (preset.tool !== undefined) {
+      const tool = JSON.stringify(preset.tool)
+      const toolRow = fixture(`${preset.id}-tool.mjs`, `
+export const name = '${preset.id}-tool'
+export const inject = ['tools']
+export const apply = (ctx) => {
+  ctx.effect(() => ctx.tools.register({
+    name: ${tool},
+    description: 'The ${preset.id} preset fixture tool',
+    parameters: { type: 'object', properties: {} },
+    output: { schema: { type: 'object' }, render: () => '' },
+    execute: async () => ({}),
+  }))
+}
+`)
+      writeFileSync(join(presetDir, 'agent.cordis.yml'), `- name: '${toolRow}'\n`)
+    } else {
+      writeFileSync(join(presetDir, 'agent.cordis.yml'), '[]\n')
+    }
+    if (preset.order !== undefined) {
+      writeFileSync(join(presetDir, 'preset.yml'), `order: ${preset.order}\n`)
+    }
+  }
+  await ctx.plugin(AgentPresetsService, {
+    default: presets[0]!.id,
+    roots: [{ path: presetRoot, trust: 'system' }],
+    includeUserRoot: false,
+  })
+  if (options.skills !== undefined) {
+    // The skill family (S29): the real registry, the filesystem provider
+    // isolated to the fixture root (no default project/user/bundled
+    // roots, so the catalog is exactly the fixture's), and tool-skill —
+    // its `agents`/`tools` dependencies come from the agent-loop
+    // testkit's registry/runtime mounts above. Tool-skill owns the
+    // `/name` gesture pre-step (the injected `<skill_content>` body) and
+    // the model-facing skill catalog.
+    await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SkillFileSystem, {
+      includeDefaultRoots: false,
+      customSkillDirs: [options.skills.root],
+      watch: true,
+    })
+    await ctx.plugin(toolSkill)
+  }
   // The settings family mounts before the default-model service so the
   // latter's settings-backed default tier resolves through the file.
   if (options.realSettings !== undefined) {
@@ -772,8 +862,13 @@ describe('blue whole-tree e2e', () => {
     const headingRow = shown.split(/\r?\n/).find(row => row.includes('Title'))
     expect(headingRow).toMatch(/\x1b\[1m/)
     const codeRow = shown.split(/\r?\n/).find(row => {
-      // OSC 8 hyperlink tails survive the SGR strip; match on the prefix.
-      const bare = row.replace(/\x1b\[[0-9;]*m/g, '').trim()
+      // The locator strips every ANSI control sequence, not just SGR: OSC 8
+      // hyperlink tails survive an SGR-only strip, and a late dock repaint
+      // (e.g. the git badge resolving on a slow big-diff checkout) re-emits
+      // rows behind an erase-line `\x1b[2K` prefix. The assertion wants the
+      // row's true color, which interleaves INSIDE the code, so only the
+      // transport wrappers may go.
+      const bare = row.replace(/\x1b\[[0-9;]*[a-zA-Z]|\x1b\]8;;\x07/g, '').trim()
       return bare.startsWith('const x = 1')
     })
     expect(codeRow).toMatch(/\x1b\[38;2;/)
@@ -3176,6 +3271,340 @@ describe('blue whole-tree e2e', () => {
     tree.terminal.sendInput('\x1b')
     await vi.waitFor(async () => {
       expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('Version')
+    })
+  })
+
+  it('mounts every agent onto the roster default and honors the logged selection across a resume (thin-host)', async () => {
+    const fixtures = [
+      { id: 'alpha', tool: 'e2e_alpha_tool', order: 1 },
+      { id: 'beta', tool: 'e2e_beta_tool', order: 2 },
+    ]
+    // Tree one: the default boot mounts the roster default (alpha), a
+    // switch rebinds to beta, and the selection event lands in the log.
+    const persistenceRoot = mkdtempTracked('dsh-blue-e2e-presets-')
+    const first = await bootBlue([], { script: [], presetFixtures: fixtures, persistenceRoot })
+    const firstAgent = await currentAgent(first)
+    const roster = first.ctx.get('agentPresets')!
+    expect(roster.composedPreset(firstAgent.ctx)).toBe('alpha')
+    await expect(executeCommand(first, firstAgent, '/preset beta')).resolves.toEqual({ kind: 'success', text: 'preset beta' })
+    expect(roster.composedPreset(firstAgent.ctx)).toBe('beta')
+    const sessionId = String(firstAgent.session.id)
+    await first.ctx.fiber.dispose()
+    disposers.length = 0
+    // Tree two: a fresh boot over the same persistence root resumes the
+    // session and rebuilds the composition its log names.
+    const second = await bootBlue(['--resume', sessionId], { script: [], presetFixtures: fixtures, persistenceRoot })
+    const secondAgent = await currentAgent(second)
+    expect(second.ctx.get('agentPresets')!.composedPreset(secondAgent.ctx)).toBe('beta')
+  })
+
+  it('/tools opens the picker, stacks the tool detail on Enter, and Escape walks back', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    // Two global registrations from the spec side: a plain tool and an
+    // MCP-namespaced one, both in the agent's inherited global layer.
+    const tools = (tree.ctx as unknown as { tools: { register(definition: unknown): () => void } }).tools
+    tools.register({
+      name: 'spec_probe',
+      description: 'The spec-side probe tool.\nIt never executes; the panel only reads.',
+      parameters: {
+        type: 'object',
+        properties: { target: { type: 'string', description: 'What to probe' } },
+        required: ['target'],
+      },
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: '' }] },
+      execute: () => Promise.resolve('ok'),
+    })
+    tools.register({
+      name: 'mcp__demo__list_items',
+      description: 'demo list',
+      parameters: { type: 'object', properties: {} },
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: '' }] },
+      execute: () => Promise.resolve('ok'),
+    })
+    await expect(executeCommand(tree, agent, '/tools')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('spec_probe')
+    })
+    // The picker shows the name beside the first-sentence brief.
+    let frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).toContain('The spec-side probe tool.')
+    expect(frame).toContain('mcp__demo__list_items')
+    // Step down to the mcp row (exit_plan_mode sorts first), then Enter
+    // opens the detail panel stacked above the picker.
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('server')
+    })
+    frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).toContain('demo')
+    expect(frame).toContain('demo list')
+    expect(frame).toContain('no parameters')
+    // Escape walks back to the picker, a second one closes it.
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('server')
+    })
+    expect(stripSgr(await fullFrame(tree.terminal))).toContain('spec_probe')
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('spec_probe')
+    })
+  })
+
+  it('/tools shows the preset-bound surface: the default mounts alpha and switching swaps the catalog', async () => {
+    const tree = await bootBlue([], {
+      script: [],
+      presetFixtures: [
+        { id: 'alpha', tool: 'e2e_alpha_tool', order: 1 },
+        { id: 'beta', tool: 'e2e_beta_tool', order: 2 },
+      ],
+    })
+    const agent = await currentAgent(tree)
+    await executeCommand(tree, agent, '/tools')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('e2e_alpha_tool')
+    })
+    let frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).not.toContain('e2e_beta_tool')
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('e2e_alpha_tool')
+    })
+    // The swap: beta's composition replaces alpha's in the agent's view.
+    await expect(executeCommand(tree, agent, '/preset beta')).resolves.toEqual({ kind: 'success', text: 'preset beta' })
+    await executeCommand(tree, agent, '/tools')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('e2e_beta_tool')
+    })
+    frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).not.toContain('e2e_alpha_tool')
+  })
+
+  it('opens the /preset picker on a bare line: broken rows block, cancel switches nothing', async () => {
+    const tree = await bootBlue([], {
+      script: [],
+      presetFixtures: [
+        { id: 'alpha', tool: 'e2e_alpha_tool', order: 1 },
+        { id: 'beta', tool: 'e2e_beta_tool', order: 2 },
+        { id: 'broken', broken: true, order: 3 },
+      ],
+    })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, '/preset')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('alpha')
+      expect(frame).toContain('beta')
+      expect(frame).toContain('broken')
+    })
+    // The default composition (alpha) is the current row.
+    const frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).toContain('← current')
+    // Step to the broken row and press Enter: blocked, no switch, no event.
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => {
+      expect(stripSgr(tree.terminal.output)).toContain('broken')
+    })
+    expect(agent.session.events.filter(event => event.type === 'agent-preset/selected')).toEqual([])
+    expect(tree.ctx.get('agentPresets')!.composedPreset(agent.ctx)).toBe('alpha')
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('Presets')
+    })
+  })
+
+  it('switches through the picker and the log records the same write path as a typed line', async () => {
+    const tree = await bootBlue([], {
+      script: [],
+      presetFixtures: [
+        { id: 'alpha', tool: 'e2e_alpha_tool', order: 1 },
+        { id: 'beta', tool: 'e2e_beta_tool', order: 2 },
+      ],
+    })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, '/preset')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('Presets')
+    })
+    // The cursor seeds on the current row (alpha); step down to beta and Enter.
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => {
+      expect(stripSgr(tree.terminal.output)).toContain('preset beta')
+    })
+    const selected = agent.session.events.filter(event => event.type === 'agent-preset/selected')
+    expect(selected.map(event => (event.data as { agentPreset: string }).agentPreset)).toEqual(['beta'])
+    const runs = agent.session.events.filter(event => event.type === 'command/run')
+    expect(runs.map(event => ({ name: event.data.name, args: event.data.args }))).toEqual([
+      { name: 'preset', args: '' },
+      { name: 'preset', args: ' beta' },
+    ])
+    expect(tree.ctx.get('agentPresets')!.composedPreset(agent.ctx)).toBe('beta')
+  })
+
+  it('/preset answers the unknown-target and blank-session guards', async () => {
+    const tree = await bootBlue([], {
+      script: [textResponse('ok')],
+      presetFixtures: [{ id: 'alpha', tool: 'e2e_alpha_tool', order: 1 }],
+    })
+    const agent = await currentAgent(tree)
+    const unknown = await executeCommand(tree, agent, '/preset nope')
+    expect(unknown?.kind).toBe('error')
+    expect(unknown?.kind === 'error' ? unknown.text : '').toContain('available:')
+    // One real turn opens the session: the blank-only guard refuses after it.
+    typeLine(tree.terminal, 'run')
+    await agent.whenIdle()
+    const locked = await executeCommand(tree, agent, '/preset alpha')
+    expect(locked).toEqual({
+      kind: 'error',
+      text: 'cannot switch presets: this session has already started (blank sessions only)',
+    })
+    expect(agent.session.events.filter(event => event.type === 'agent-preset/selected')).toEqual([])
+  })
+
+  /** A skill fixture root carrying one `deploy-check` skill (S29 e2e). */
+  function skillsRootFixture(): string {
+    const root = mkdtempTracked('dsh-blue-e2e-skills-')
+    mkdirSync(join(root, 'deploy-check'), { recursive: true })
+    writeFileSync(join(root, 'deploy-check', 'SKILL.md'), [
+      '---',
+      'name: deploy-check',
+      'description: Checks deployment readiness before shipping',
+      '---',
+      '',
+      'Run the deployment checklist before every release.',
+      '',
+    ].join('\n'))
+    return root
+  }
+
+  it('completes # skills, Enter accepts without submitting, and the rewrite drives the gesture', async () => {
+    const tree = await bootBlue([], {
+      script: [textResponse('skill acknowledged')],
+      skills: { root: skillsRootFixture() },
+    })
+    const agent = await currentAgent(tree)
+    // The catalog settles asynchronously off session-changed; typing into
+    // the editor before the settle would close the dropdown for the whole
+    // token (pi-tui only re-triggers on the next keystroke).
+    await vi.waitFor(() => { expect(userInvocableSkills().length).toBeGreaterThan(0) })
+    for (const char of '#deploy-ch') tree.terminal.sendInput(char)
+    // Incremental-frame discipline (the R0 lesson): assert only frames
+    // written after this mark — the cumulative output could fake-satisfy.
+    const mark = tree.terminal.written.length
+    await vi.waitFor(() => {
+      expect(tree.terminal.written.slice(mark).join('')).toContain('#deploy-check')
+    })
+    // pi-tui's Enter on a non-slash completion accepts without submitting:
+    // the buffer holds the applied token and no request has gone out.
+    tree.terminal.sendInput('\r')
+    await waitForRender()
+    expect(tree.adapter.requests).toHaveLength(0)
+    // The second Enter submits: the line rewrites to the gesture form, the
+    // tool-skill pre-step appends the injected skill body to the request,
+    // and the screen never shows the injection body (D28).
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    const messages = tree.adapter.requests[0]!.messages as unknown as Array<{
+      content: Array<{ type: string, text: string }>
+      source: { kind: string }
+    }>
+    expect(JSON.stringify(messages)).toContain('/deploy-check')
+    const injected = messages.filter(message => message.source.kind === 'skill-invocation')
+    expect(injected).toHaveLength(1)
+    expect(injected[0]!.content[0]!.text).toContain('<skill_content name="deploy-check">')
+    await agent.whenIdle()
+    await waitForRender()
+    expect(stripSgr(tree.terminal.output)).not.toContain('<skill_content')
+    expect(stripSgr(tree.terminal.output)).not.toContain('skill_instructions')
+  })
+
+  it('passes an unknown #tag to the model untouched, with no injection', async () => {
+    const tree = await bootBlue([], {
+      script: [textResponse('plain answer')],
+      skills: { root: skillsRootFixture() },
+    })
+    await currentAgent(tree)
+    typeLine(tree.terminal, '#unknown-tag')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    const messages = tree.adapter.requests[0]!.messages as unknown as Array<{
+      content: Array<{ type: string, text: string }>
+      source: { kind: string }
+    }>
+    // The tag reaches the model verbatim (no rewrite), and no skill body
+    // rode along — only the model-facing catalog may mention skills.
+    expect(JSON.stringify(messages)).toContain('#unknown-tag')
+    expect(JSON.stringify(messages)).not.toContain('/unknown-tag')
+    expect(messages.some(message => message.source.kind === 'skill-invocation')).toBe(false)
+  })
+
+  it('replays the injected skill body across a resume while the screen stays clean', async () => {
+    const persistence = mkdtempTracked('dsh-blue-e2e-skill-resume-')
+    const skills = skillsRootFixture()
+    const first = await bootBlue([], {
+      script: [textResponse('first answer')],
+      persistenceRoot: persistence,
+      skills: { root: skills },
+    })
+    const firstAgent = await currentAgent(first)
+    // The rewrite reads the settled catalog; typing before the settle
+    // would pass the tag through unrewritten (the honest unknown-tag path).
+    await vi.waitFor(() => { expect(userInvocableSkills().length).toBeGreaterThan(0) })
+    typeLine(first.terminal, '#deploy-check')
+    await vi.waitFor(() => { expect(first.adapter.requests).toHaveLength(1) })
+    await firstAgent.whenIdle()
+    await waitForRender()
+    // Live presentation hides the injected body (D28).
+    expect(stripSgr(first.terminal.output)).not.toContain('<skill_content')
+    await first.ctx.sessions.flush(firstAgent.session)
+    const id = String(firstAgent.session.id)
+    await first.ctx.fiber.dispose()
+    disposers.length = 0
+
+    const second = await bootBlue(['--resume', id], {
+      script: [textResponse('second answer')],
+      persistenceRoot: persistence,
+      skills: { root: skills },
+    })
+    const agent = await currentAgent(second)
+    await waitForRender()
+    // Replay converges with the live fold: the skill invocation stays
+    // hidden on screen…
+    expect(stripSgr(second.terminal.output)).not.toContain('<skill_content')
+    // …while the next round's request still carries the earlier injection.
+    typeLine(second.terminal, 'go again')
+    await vi.waitFor(() => { expect(second.adapter.requests).toHaveLength(1) })
+    const replayed = second.adapter.requests[0]!.messages as unknown as Array<{
+      content: Array<{ type: string, text: string }>
+      source: { kind: string }
+    }>
+    const injected = replayed.filter(message => message.source.kind === 'skill-invocation')
+    expect(injected).toHaveLength(1)
+    expect(injected[0]!.content[0]!.text).toContain('<skill_content name="deploy-check">')
+    await agent.whenIdle()
+  })
+
+  it('/skills renders the read-only catalog panel and Esc restores the editor', async () => {
+    const tree = await bootBlue([], { script: [], skills: { root: skillsRootFixture() } })
+    const agent = await currentAgent(tree)
+    await expect(executeCommand(tree, agent, '/skills')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('deploy-check')
+      expect(frame).toContain('Checks deployment readiness before shipping')
+    })
+    // The custom fixture root heads its own section.
+    const frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).toContain('custom')
+    // Escape closes back to the editor.
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('Checks deployment readiness')
     })
   })
 

@@ -49,6 +49,7 @@
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-agent-default-model": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-agent-presets": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-attachment": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-commands": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-credentials": "^0.1.1-rc.1",
@@ -60,11 +61,18 @@
     "@deepseek-ai/dsh-session-persistence": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-session-projection": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-settings": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-skill": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-user-approval": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-user-questions": "^0.1.1-rc.1",
     "@dsh-blue/blue-app": "workspace:^",
     "@dsh-blue/blue-core": "workspace:^",
     "@dsh-blue/blue-transcript": "workspace:^"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-agent-presets": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.1",
@@ -72,6 +80,7 @@
     "@deepseek-ai/cordis-plugin-loader": "1.0.2",
     "@deepseek-ai/dsh-agent": "0.1.1-rc.1",
     "@deepseek-ai/dsh-agent-default-model": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-agent-presets": "0.1.1-rc.1",
     "@deepseek-ai/dsh-attachment": "0.1.1-rc.1",
     "@deepseek-ai/dsh-commands": "0.1.1-rc.1",
     "@deepseek-ai/dsh-credentials": "0.1.1-rc.1",
@@ -83,6 +92,8 @@
     "@deepseek-ai/dsh-session-persistence": "0.1.1-rc.1",
     "@deepseek-ai/dsh-session-projection": "0.1.1-rc.1",
     "@deepseek-ai/dsh-settings": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-skill": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-tools": "0.1.1-rc.1",
     "@deepseek-ai/dsh-user-approval": "0.1.1-rc.1",
     "@deepseek-ai/dsh-user-questions": "0.1.1-rc.1",
     "@dsh-blue/blue-app": "workspace:^",

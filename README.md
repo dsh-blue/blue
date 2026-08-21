@@ -9,11 +9,11 @@ This repository is the standalone home of those packages. They were extracted fr
 ## Features
 
 - **Streaming transcript** — user/assistant messages rendered as Markdown while they stream; tool calls as cards, generic by default with dedicated cards for diffs (`intent-diff`) and terminal output (`intent-terminal`).
-- **Input editor** — rounded-box editor with fuzzy slash-command autocomplete, argument ghost hints, `!` bash mode, `@` file completion, and Ctrl-V clipboard image paste (`[image #N]` markers split into image blocks on submit).
+- **Input editor** — rounded-box editor with fuzzy slash-command autocomplete, argument ghost hints, `!` bash mode, `@` file completion, `#` skill completion (a `#name` token anywhere in the line rewrites to the upstream `/name` skill gesture on submit), and Ctrl-V clipboard image paste (`[image #N]` markers split into image blocks on submit).
 - **Overlays** — four-option approval panel (with session-level "always allow" inheritance) and tabbed user-questionnaire overlays.
 - **Two-row status footer** — model name (priority 0), the session-mode badge `plan`/`yolo` (priority 2, hidden in normal mode), git branch (priority 10), context occupancy `ctx N` (priority 20); entries are registry contributions, not hardcoded. Shift+Tab cycles the session mode normal → plan → yolo (`/yolo` auto-approves tool calls, questions still pop).
 - **Bottom dock panes** — activity spinner while the agent runs, queued inbox messages with Up-to-recall, todo list with the Ctrl-T collapse toggle, and a `/btw` side-question pane that forks the live session.
-- **Slash commands** — `/quit` `/new` (`/clear` is its alias) `/fork` `/sessions` (`/resume` is its alias) `/help` `/theme` `/btw` `/model` `/effort` `/provider` `/yolo` `/init`, all auto-listed in the editor's completion menu.
+- **Slash commands** — `/quit` `/new` (`/clear` is its alias) `/fork` `/sessions` (`/resume` is its alias) `/help` `/theme` `/btw` `/model` `/effort` `/provider` `/yolo` `/init` `/status` `/context` `/version` `/export` `/copy` `/tools` `/preset` `/skills`, all auto-listed in the editor's completion menu. `/preset` switches the agent composition (blank sessions only) over the thin-host preset roster; `/tools` lists the session's live tool catalog.
 - **Theming** — `/theme` hot-switching across `dark` / `light` / `auto` (OSC 11 background detection) / `custom` (JSON palette).
 
 ## Design philosophy
@@ -155,8 +155,8 @@ All design documents are in Chinese, under [docs/](docs/):
 - [docs/blue-seams.md](docs/blue-seams.md) — the seam catalog: every seam Blue opens (contracts, plain defaults) and which Blue plugin implements each harness-side visual surface.
 - [docs/blue-architecture.md](docs/blue-architecture.md) — architecture: philosophy, L0–L4 layers, stability rules.
 - [docs/blue-decisions.md](docs/blue-decisions.md) — decision records (ADR).
-- [docs/blue-roadmap.md](docs/blue-roadmap.md), [blue-p1-design.md](docs/blue-p1-design.md), [blue-p2-visual-design.md](docs/blue-p2-visual-design.md), [blue-mvp-plan.md](docs/blue-mvp-plan.md), [blue-commands-plan.md](docs/blue-commands-plan.md) — phase designs and implementation logs (the built-in slash-command checklist: kimi/pi/Claude Code/Codex reference merge, harness capability matrix, S23–S28 phasing, upstream seam requests).
-- [AGENTS.md](AGENTS.md) — the authoritative per-package description of the current code.
+- [docs/README.md](docs/README.md) — the docs index (living vs archived). Phase designs and implementation logs: [docs/blue-roadmap.md](docs/blue-roadmap.md) and [blue-commands-plan.md](docs/blue-commands-plan.md) — the built-in slash-command checklist: kimi/pi/Claude Code/Codex reference merge, harness capability matrix, S23–S28 phasing, upstream seam requests — plus the archived [blue-p1-design.md](docs/history/blue-p1-design.md), [blue-p2-visual-design.md](docs/history/blue-p2-visual-design.md), [blue-mvp-plan.md](docs/history/blue-mvp-plan.md).
+- [AGENTS.md](AGENTS.md) plus each package's own `AGENTS.md` — the authoritative description of the current code (repo-wide conventions at the root; per-package implementation detail in `packages/*/AGENTS.md`).
 
 ## Relationship to deepseek-harness
 
