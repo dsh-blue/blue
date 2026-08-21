@@ -158,9 +158,10 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 | R3 | npm 发包：五包依赖序 core→interaction→transcript→app→bundle；dry-run 核 files/exports 子路径；dist-tag `rc` | 0.5d | G2 |
 | R4 | 安装路径验证：干净环境（临时 DSH_HOME）`dsh plugin add @dsh-blue/blue` → 启动冒烟；guide 补 registry 安装路径 | 0.5d | G3 |
 | R5 | dogfood 记录：registry 安装（非 dev link）跑一次完整真实任务归档；阻塞项回修重走 R3-R4 | 0.5d | G4 |
-| R6 | 文档站同步+清账：website commands/keys/features/guide 四页集中还清（S23-S30 全量，`/help` + `keymap.list()` 枚举 diff 为源）+ 仓库过期文档清理（p2-visual §8 两条被推翻行、p1-design §4.3 过期 ⛔/🚫 行、blue-decisions D33 编号重复、OSC 52 推翻注）+ 挂起区写入 | 1d | R5 |
+| R6a | 文档站同步（⏸️ 用户裁决 2026-08-21 暂缓，仓库侧 R6b 先行）：website commands/keys/features/guide 四页集中还清（S23-S30 全量，`/help` + `keymap.list()` 枚举 diff 为源）+ 挂起区写入 | 1d | R5 + 解除暂缓 |
+| R6b | 仓库文档清账+结构重组（✅ 已落地 2026-08-21，本 PR）：五份完成态文档归档 docs/history/（p2-visual §8 两条被推翻行、p1-design §4.3 过期 ⛔/🚫 行随归档 banner 更正）；blue-decisions D33 编号重复勘误重编 D38；OSC 52 推翻注（roadmap 条目拆分 + survey 归档 banner）；AGENTS.md 拆五个包级文件+根瘦身（63.7KB→15.8KB）；docs/README.md 索引 | — | 无（纯仓库侧，不设发版门禁） |
 
-**门禁链**：G1 = S 步全合并 + CI 绿 + harness 线最新 → G2 = 快照绿 → G3 = 发包成功 → G4 = 安装可启动 → **发版声明** = R5 归档 + R6 website build 绿。
+**门禁链**：G1 = S 步全合并 + CI 绿 + harness 线最新 → G2 = 快照绿 → G3 = 发包成功 → G4 = 安装可启动 → **发版声明** = R5 归档 + R6a website build 绿（R6a 暂缓期间发版声明顺延，门禁语义不变）。
 
 **并行组合**：R0‖S27'（零交集）；S28‖S29 开发（commands-plugin/session-commands 交叠，S29 合并前 rebase 一次）；S33‖S31/S32（transcript vs interaction 零交集）。
 
@@ -181,10 +182,11 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 | Esc-Esc rewind | 会话原地撤销 / checkpoint（CC 双 Esc、kimi undo selector） | ⛔ persistence 无 truncate 原语（commands-plan §7 #2） | 上游落 `session.truncate` 或官方 undo 语义 |
 | Ctrl+B 后台化 | 命令/子 agent 后台 + 任务查看器（kimi+CC 都有） | ⛔ harness 无 background 概念（p1 §4.2） | 上游 subagent 服务出现 background/handle 原语 |
 | /sessions 跨页搜索 | 跨会话内容搜索（kimi 跨页 drain） | S30 只落当前列表过滤；`ctx.sessionQuery`（SQLite FTS5）上游现成 | 正式版排期（纯工作量项） |
+| ADR 拆一决议一文件 | blue-decisions.md 按决议拆单文件 + 索引 | 单文件尚可读，收益在检索与 diff 隔离，非发版阻塞（R6b 评审沉淀） | ADR 数量再增一档或检索痛点出现 |
 
 ### D32 同步偏离记录（2026-08-21）
 
-website 参考页（commands/keys）自建站起已欠账（停在初版，S23-S25 命令未入）。执行口径调整为：**仓库文档随每步合并跟改**（纪律不变）；**website 页面集中在 R6 一次还清**，以 `/help` 与 `keymap.list()` 枚举 diff 为提取源（仍符合 D32"从源码提取"精神）。R6 之后恢复逐期跟改。
+website 参考页（commands/keys）自建站起已欠账（停在初版，S23-S25 命令未入）。执行口径调整为：**仓库文档随每步合并跟改**（纪律不变）；**website 页面集中在 R6a 一次还清**，以 `/help` 与 `keymap.list()` 枚举 diff 为提取源（仍符合 D32"从源码提取"精神）。R6a 之后恢复逐期跟改。
 
 ---
 
