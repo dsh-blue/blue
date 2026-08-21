@@ -50,12 +50,12 @@ const KEY_ESCAPE = '\x1b'
 
 /**
  * The panel chrome the plan window yields to: frame title + bottom rule,
- * the question row, the box's two borders, the blank rule, three list
- * rows, the revise hint, and the two-row footer shell below the panel.
- * The window fills the remaining height (the dogfood round-3 ruling: the
- * plan is the thing to read).
+ * the box's two borders, the blank rule, three list rows, the revise
+ * hint, and the two-row footer shell below the panel. The window fills
+ * the remaining height (the dogfood round-3 ruling: the plan is the
+ * thing to read).
  */
-const RESERVED_ROWS = 12
+const RESERVED_ROWS = 11
 
 /** The smallest plan window a very short terminal still gets. */
 const MIN_PLAN_ROWS = 6
@@ -246,11 +246,11 @@ export class PlanReviewPanel implements BlueFocusable {
    * @returns one string per rendered row.
    */
   render(width: number): string[] {
-    const { theme, components, question } = this.options
+    const { theme, components } = this.options
     const colors = theme.colors
-    const rows: string[] = [
-      colors.primary(components.truncateToWidth(`  ${question.question}`, width)),
-    ]
+    // No question row: the frame title names the panel and the plan is
+    // the content — the ask's wording read redundant (round-5 ruling).
+    const rows: string[] = []
     rows.push(...this.renderPlanBox(width))
     rows.push('')
     for (let index = 0; index < this.labels.length; index += 1) {

@@ -29,6 +29,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   GutterComponent,
   type BlueComponent,
@@ -39,6 +40,7 @@ import {
 // `'blue/session-changed'` Events merge this plugin consumes.
 import type {} from '@dsh-blue/blue-app'
 import { StreamingPhaseTracker } from './phase.ts'
+import { contextTokens, formatTokens } from './status-context.ts'
 import { buildTipRotation } from './status-tips.ts'
 import { STATUS_TIPS } from './tips-content.ts'
 import {
@@ -98,8 +100,53 @@ interface ActivityState {
   frame: number
   /** The teaching tip riding the spinner row; '' outside the spinner states. */
   tip: string
+  /** The live turn-flow counter riding the spinner row; '' before any data. */
+  flow: string
   /** Whether a dialog panel occupies the editor slot. */
   dialog: boolean
+}
+
+/**
+ * The per-turn token-flow fold behind the spinner row (the round-5 ruling):
+ * `↑` is the input side of the latest completed response's usage — the
+ * context that went up; `↓` is the streamed text and reasoning this turn,
+ * chars over the harness tokenMeter's fixed 4-chars/token heuristic. A
+ * frozen `↓` while the spinner animates reads as waiting on the wire; a
+ * climbing one reads as streaming.
+ */
+interface TurnFlow {
+  /** Context tokens of the latest `assistant/message` usage this turn. */
+  up: number | undefined
+  /** Streamed text + reasoning characters this turn. */
+  downChars: number
+}
+
+/** Fold one event into the turn flow. */
+function applyFlowEvent(flow: TurnFlow, event: SessionEvent): void {
+  if (event.type === 'turn/start') {
+    flow.up = undefined
+    flow.downChars = 0
+    return
+  }
+  if (event.type === 'assistant/chunk') {
+    const chunk = event.data.chunk
+    if (chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') {
+      flow.downChars += chunk.text.length
+    }
+    return
+  }
+  if (event.type === 'assistant/message' && event.data.usage !== undefined) {
+    flow.up = contextTokens(event.data.usage)
+  }
+}
+
+/** The spinner row's counter text: `↑30.2k ↓4.1k`, parts omitted at zero. */
+function flowCounter(flow: TurnFlow): string {
+  const down = Math.floor(flow.downChars / 4)
+  const parts: string[] = []
+  if (flow.up !== undefined) parts.push(`↑${formatTokens(flow.up)}`)
+  if (down > 0) parts.push(`↓${formatTokens(down)}`)
+  return parts.join(' ')
 }
 
 /**
@@ -138,20 +185,25 @@ class ActivityPaneComponent implements BlueComponent {
       case 'waiting':
       case 'tool': {
         const frame = MOON_SPINNER_FRAMES[this.state.frame % MOON_SPINNER_FRAMES.length]!
-        const row = frame + this.colors.muted(`${TIP_LEAD}${this.state.tip}`)
-        // The tip rides along only while the whole row fits (the moon is
-        // two cells wide — measured, never assumed); a row not even the
-        // frame fits renders nothing.
-        if (this.components.visibleWidth(row) <= width) return [row]
+        // Priority under width pressure: the frame, then the flow counter,
+        // then the tip (the counter is the liveness signal — round 5).
+        const flow = this.state.flow === '' ? '' : this.colors.muted(` ${this.state.flow}`)
+        const full = frame + flow + this.colors.muted(`${TIP_LEAD}${this.state.tip}`)
+        if (this.components.visibleWidth(full) <= width) return [full]
+        const withFlow = frame + flow
+        if (this.components.visibleWidth(withFlow) <= width) return [withFlow]
         return this.components.visibleWidth(frame) <= width ? [frame] : []
       }
       case 'composing': {
         const frame = BRAILLE_SPINNER_FRAMES[this.state.frame % BRAILLE_SPINNER_FRAMES.length]!
-        // kimi parity: the primary frame with the plain label, the tip
-        // riding when it fits.
+        // kimi parity: the primary frame with the plain label; the flow
+        // counter rides inside the base so it survives over the tip.
         const base = `${this.colors.primary(frame)}${WORKING_LABEL}`
-        const row = base + this.colors.muted(`${TIP_LEAD}${this.state.tip}`)
+        const flow = this.state.flow === '' ? '' : this.colors.muted(` ${this.state.flow}`)
+        const withFlow = base + flow
+        const row = withFlow + this.colors.muted(`${TIP_LEAD}${this.state.tip}`)
         if (this.components.visibleWidth(row) <= width) return [row]
+        if (this.components.visibleWidth(withFlow) <= width) return [withFlow]
         return this.components.visibleWidth(base) <= width ? [base] : []
       }
     }
@@ -177,12 +229,13 @@ export function apply(ctx: Context): void {
   const screen = ctx.blueScreen
   const components = ctx.blueComponents
   const state: ActivityState = {
-    mode: 'idle', frame: 0, tip: '', dialog: false,
+    mode: 'idle', frame: 0, tip: '', flow: '', dialog: false,
   }
   let agent: Agent | undefined
   // Never null: attach re-seeds it per session, and before any attach the
   // agent is undefined so the tracker's phase is unreachable.
   let tracker = new StreamingPhaseTracker()
+  const flow: TurnFlow = { up: undefined, downChars: 0 }
   let timer: ReturnType<typeof setInterval> | undefined
   let timerMs = 0
   let tipKind: TipKind | undefined
@@ -236,16 +289,23 @@ export function apply(ctx: Context): void {
     } else {
       stopTimer()
     }
-    const changed = mode !== state.mode || tipChanged
+    const nextFlow = flowCounter(flow)
+    const changed = mode !== state.mode || tipChanged || nextFlow !== state.flow
     state.mode = mode
+    state.flow = nextFlow
     if (changed) screen.requestRender()
   }
 
-  /** Bind to a session's agent: fresh tracker seeded from the snapshot. */
+  /** Bind to a session's agent: fresh tracker and flow seeded from the snapshot. */
   const attach = (next: Agent): void => {
     agent = next
     tracker = new StreamingPhaseTracker()
-    for (const event of next.session.events) tracker.apply(event)
+    flow.up = undefined
+    flow.downChars = 0
+    for (const event of next.session.events) {
+      tracker.apply(event)
+      applyFlowEvent(flow, event)
+    }
     sync()
   }
 
@@ -263,6 +323,7 @@ export function apply(ctx: Context): void {
   ctx.on('session/event', (session, event) => {
     if (agent === undefined || session !== agent.session) return
     tracker.apply(event)
+    applyFlowEvent(flow, event)
     sync()
   })
   ctx.on('blue/editor-slot-swapped', (occupied) => {

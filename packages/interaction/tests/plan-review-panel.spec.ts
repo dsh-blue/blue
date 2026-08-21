@@ -80,7 +80,8 @@ describe('PlanReviewPanel rendering', () => {
     const { panel } = mount(ask())
     const frame = panel.render(60).join('\n')
     expect(frame).toContain('Plan review')
-    expect(frame).toContain('^  Approve this plan and leave plan mode?^')
+    // No question row: the frame title names the panel (round-5 ruling).
+    expect(frame).not.toContain('Approve this plan and leave plan mode?')
     // The plan box: a plain top rule (no title — the frame title already
     // says Plan review), the markdown body at the box's own inset, the
     // closing rule (the btw pane's box idiom).
@@ -95,28 +96,28 @@ describe('PlanReviewPanel rendering', () => {
   })
 
   it('windows a long plan behind a showing tail inside the box and scrolls it', () => {
-    // At 24 viewport rows the window is 12 (the panel chrome reserves 12).
+    // At 24 viewport rows the window is 13 (the panel chrome reserves 11).
     const { panel } = mount(ask({ detail: LONG_DETAIL }))
     const first = panel.render(60).join('\n')
-    expect(first).toContain('showing 1-12 of 15')
+    expect(first).toContain('showing 1-13 of 15')
     expect(first).toContain('↑↓ scroll')
     expect(first).toContain('line 1')
-    expect(first).not.toContain('line 13')
+    expect(first).not.toContain('line 14')
     // ↓/↑ step one line — the mouse wheel arrives as those arrows, so the
     // wheel scrolls the plan (the round-4 ruling).
     panel.handleInput(KEY.down)
-    expect(panel.render(60).join('\n')).toContain('showing 2-13 of 15')
+    expect(panel.render(60).join('\n')).toContain('showing 2-14 of 15')
     panel.handleInput(KEY.up)
-    expect(panel.render(60).join('\n')).toContain('showing 1-12 of 15')
+    expect(panel.render(60).join('\n')).toContain('showing 1-13 of 15')
     // PageDown/Up jump by the window size; one page clamps to the last
     // full window.
     panel.handleInput('\x1b[6~')
     const paged = panel.render(60).join('\n')
-    expect(paged).toContain('showing 4-15 of 15')
-    expect(paged).not.toContain('line 3')
+    expect(paged).toContain('showing 3-15 of 15')
+    expect(paged).not.toContain('line 2')
     panel.handleInput('\x1b[5~')
     panel.handleInput('\x1b[5~')
-    expect(panel.render(60).join('\n')).toContain('showing 1-12 of 15')
+    expect(panel.render(60).join('\n')).toContain('showing 1-13 of 15')
   })
 
   it('scrolling never moves the choice cursor — the arrows are two axes', () => {

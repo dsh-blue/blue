@@ -14,6 +14,8 @@ import { STATUS_TIPS } from '../src/tips-content.ts'
 import { bootPanePlugin, type PanePluginHarness } from './pane-fakes.ts'
 import { asAgent, fakeAgent, type FakeAgent } from './status-fakes.ts'
 import {
+  assistantEvent,
+  event,
   reasoningDelta,
   resetSeq,
   textDelta,
@@ -125,16 +127,17 @@ describe('blue-pane-activity', () => {
     // the row — kimi's assistant block has no cursor).
     emit2(ctx, agent, textDelta(1, 1, 'answering'))
     const composingTip = buildTipRotation(STATUS_TIPS)[1]!.text
-    expect(screen.paneLines()).toEqual([`⠋ working... · Tip: ${composingTip}`])
+    // The streamed chars ride as the live ↓ counter (9 chars → ↓2).
+    expect(screen.paneLines()).toEqual([`⠋ working... ↓2 · Tip: ${composingTip}`])
     expect(timers.intervals).toEqual([120, 80])
     // A tick advances the shared frame counter.
     timers.ticks[1]!()
-    expect(screen.paneLines()).toEqual([`⠙ working... · Tip: ${composingTip}`])
+    expect(screen.paneLines()).toEqual([`⠙ working... ↓2 · Tip: ${composingTip}`])
     // A tool result re-enters the moon kind with the next rotation slot;
     // the shared frame counter survived the style flip, so the moon picks
     // up where the cycle left off.
     emit2(ctx, agent, toolResultEvent(1, 1, 'c0', 'done'))
-    expect(screen.paneLines()).toEqual([`🌒 · Tip: ${buildTipRotation(STATUS_TIPS)[2]!.text}`])
+    expect(screen.paneLines()).toEqual([`🌒 ↓2 · Tip: ${buildTipRotation(STATUS_TIPS)[2]!.text}`])
     await dispose()
   })
 
@@ -144,14 +147,62 @@ describe('blue-pane-activity', () => {
     emit2(ctx, agent, textDelta(1, 1, 'answering'))
     const pane = screen.bottomChildren[0]!
     const tip = buildTipRotation(STATUS_TIPS)[1]!.text
-    const visible = 1 + ' working...'.length + ' · Tip: '.length + tip.length
-    expect(unwrapped(pane, visible)).toEqual([`⠋ working... · Tip: ${tip}`])
-    // One column short drops the tip but keeps the base row.
-    expect(unwrapped(pane, visible - 1)).toEqual(['⠋ working...'])
+    const visible = 1 + ' working...'.length + ' ↓2'.length + ' · Tip: '.length + tip.length
+    expect(unwrapped(pane, visible)).toEqual([`⠋ working... ↓2 · Tip: ${tip}`])
+    // Width pressure drops the tip first — the counter is the liveness
+    // signal, it rides inside the base.
+    expect(unwrapped(pane, visible - 1)).toEqual(['⠋ working... ↓2'])
+    // Then the counter, keeping the plain base row.
+    expect(unwrapped(pane, 12)).toEqual(['⠋ working...'])
     // Below the eleven-column base there is no row.
     expect(unwrapped(pane, 10)).toEqual([])
     pane.invalidate()
-    expect(unwrapped(pane, visible)).toEqual([`⠋ working... · Tip: ${tip}`])
+    expect(unwrapped(pane, visible)).toEqual([`⠋ working... ↓2 · Tip: ${tip}`])
+    // The moon row keeps the frame over the counter under the same
+    // pressure, and renders nothing below the two-cell moon itself.
+    emit2(ctx, agent, toolResultEvent(1, 1, 'c0', 'done'))
+    expect(unwrapped(pane, 2)).toEqual([MOON_SPINNER_FRAMES[0]!])
+    expect(unwrapped(pane, 0)).toEqual([])
+    await dispose()
+  })
+
+  it('rides the turn token flow: ↑ from the latest usage, ↓ from streamed chars, reset per turn', async () => {
+    const agent = runningAgent(fakeAgent([]))
+    const { ctx, screen, dispose } = await boot(agent)
+    // Before any data the moon row carries no counter.
+    expect(screen.paneLines()).toEqual([`🌑 · Tip: ${FIRST_TIP}`])
+    // Chunks that carry no text (block starts, tool-call deltas) count
+    // nothing.
+    emit2(ctx, agent, event('assistant/chunk', {
+      turn: 1, step: 1,
+      chunk: { type: 'block-start', index: 0, blockType: 'text' },
+    }))
+    expect(screen.paneLines()[0]).not.toContain('↓')
+    // A finished response contributes its input side as ↑ (context tokens:
+    // input + cache reads/writes).
+    const finished = assistantEvent(1, 1, [{ type: 'text', text: 'done' }])
+    finished.data.usage = { inputTokens: 2000, outputTokens: 5, cacheReadTokens: 1024 }
+    emit2(ctx, agent, finished)
+    expect(screen.paneLines()).toEqual([`🌑 ↑3k · Tip: ${FIRST_TIP}`])
+    // Streamed text and reasoning accumulate as ↓ (chars over the 4-chars
+    // per-token heuristic); both counters ride together.
+    emit2(ctx, agent, textDelta(1, 2, 'answering'))
+    emit2(ctx, agent, reasoningDelta(1, 2, 'thinking hard'))
+    emit2(ctx, agent, toolResultEvent(1, 2, 'c0', 'done'))
+    expect(screen.paneLines()[0]).toContain('↑3k ↓5')
+    // A new turn resets both (the tip rotation is independent — assert the
+    // counters, not the tip slot).
+    emit2(ctx, agent, turnEnd(1))
+    emit2(ctx, agent, turnStart(2))
+    const resetRow = screen.paneLines()[0] ?? ''
+    expect(resetRow).not.toContain('↑')
+    expect(resetRow).not.toContain('↓')
+    // An empty text delta still flips to composing, but with no counter —
+    // zero streamed chars renders no ↓.
+    emit2(ctx, agent, textDelta(2, 1, ''))
+    const composingRow = screen.paneLines()[0] ?? ''
+    expect(composingRow).toContain('working...')
+    expect(composingRow).not.toContain('↓')
     await dispose()
   })
 

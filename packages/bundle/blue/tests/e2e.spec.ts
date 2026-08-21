@@ -3006,7 +3006,6 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(async () => {
       const frame = await fullFrame(tree.terminal)
       expect(frame).toContain('Plan review')
-      expect(frame).toContain('Approve this plan and leave plan mode?')
       expect(frame).toContain('Fix the build')
       expect(frame).toContain('1. Approve')
       expect(frame).toContain('2. Reject')
