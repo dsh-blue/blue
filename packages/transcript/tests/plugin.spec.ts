@@ -26,7 +26,6 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { BlueSessionRef } from '@dsh-blue/blue-app'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { ACTION_TOGGLE_COLLAPSE, apply, setRecentStepsRetention, setWindowTurns } from '../src/index.ts'
-import { setAgentGroupTimers } from '../src/agent-group.ts'
 import * as statusBasic from '../src/status-basic.ts'
 import { setThinkingTimers, type ThinkingTimers } from '../src/thinking.ts'
 import type { BlueIntentEntry } from '../src/types.ts'
@@ -643,7 +642,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     expect(contentLines(screen).join('\n')).not.toContain('Read 2 files')
   })
 
-  it('groups consecutive same-step subagent calls into one agent group (S33)', async () => {
+  it('suppresses spawn-class subagent calls and results from the stream (S33 pane ruling)', async () => {
     resetSeq()
     const { ctx, screen } = await bootTranscript(null, {})
     ctx.emit('blue/session-changed', asAgent(fakeAgent([
@@ -655,125 +654,17 @@ describe('blue-transcript plugin through the real Loader', () => {
       toolResultEvent(1, 1, 'a1', 'started subagent child-1'),
       toolResultEvent(1, 1, 'a2', 'started subagent child-2'),
       toolResultEvent(1, 1, 'a3', 'started background subagent job subagent-1'),
-      turnEnd(1),
-    ])))
-    expect(screen.children).toHaveLength(1)
-    const lines = contentLines(screen)
-    expect(lines[1]).toContain('3 agents finished')
-    expect(lines[2]).toContain('├─ subagent · Survey tests')
-    expect(lines[3]).toContain('├─ subagent · Map docs')
-    expect(lines[4]).toContain('└─ subagent_fork · Draft README')
-  })
-
-  it('breaks the subagent chain when a control tool mounts between them', async () => {
-    resetSeq()
-    const { ctx, screen } = await bootTranscript(null, {})
-    ctx.emit('blue/session-changed', asAgent(fakeAgent([
-      turnStart(1),
-      stepStart(1, 1),
-      subagentCallEvent(1, 1, 'a1', 'subagent', 'Survey', 'survey'),
-      toolCallEvent(1, 1, 's1', 'send_message', '{"message":"hi"}'),
-      subagentCallEvent(1, 1, 'a2', 'subagent', 'Map', 'map'),
-      turnEnd(1),
-    ])))
-    // The send_message control call is not spawn-class: no group forms and
-    // it renders as its own ordinary card.
-    expect(screen.children).toHaveLength(3)
-    expect(contentLines(screen).join('\n')).not.toContain('agents')
-  })
-
-  it('renders the running header for a pending group, tick frozen in tests', async () => {
-    resetSeq()
-    setAgentGroupTimers({
-      setInterval: () => 0 as unknown as ReturnType<typeof setInterval>,
-      clearInterval: () => {},
-      now: () => 1_700_000_000_000,
-    })
-    try {
-      const { ctx, screen } = await bootTranscript(null, {})
-      ctx.emit('blue/session-changed', asAgent(fakeAgent([
-        turnStart(1),
-        stepStart(1, 1),
-        subagentCallEvent(1, 1, 'a1', 'subagent', 'Survey', 'survey'),
-        subagentCallEvent(1, 1, 'a2', 'subagent', 'Map', 'map'),
-        turnEnd(1),
-      ])))
-      expect(screen.children).toHaveLength(1)
-      const lines = contentLines(screen)
-      expect(lines[1]).toContain('Running 2 agents (2 running)')
-      expect(lines[2]).toContain('· Survey ·')
-      expect(lines[2]).toContain('Running')
-    } finally {
-      setAgentGroupTimers(undefined)
-    }
-  })
-
-  it('retires the agent group when its step folds into the summary', async () => {
-    resetSeq()
-    setRecentStepsRetention(0)
-    const { ctx, screen } = await bootTranscript(null, {})
-    ctx.emit('blue/session-changed', asAgent(fakeAgent([
-      turnStart(1),
-      stepStart(1, 1),
-      subagentCallEvent(1, 1, 'a1', 'subagent', 'Survey', 'survey'),
-      subagentCallEvent(1, 1, 'a2', 'subagent', 'Map', 'map'),
-      toolResultEvent(1, 1, 'a1', 'started subagent child-1'),
-      toolResultEvent(1, 1, 'a2', 'started subagent child-2'),
       stepStart(1, 2),
-      assistantEvent(1, 2, [{ type: 'text', text: 'done' }]),
+      toolCallEvent(1, 2, 's1', 'send_message', '{"message":"hi"}'),
+      toolResultEvent(1, 2, 's1', 'ok'),
       turnEnd(1),
     ])))
-    expect(screen.children).toHaveLength(2)
-    expect(contentLines(screen).join('\n')).toContain('… step 1 · call 2 tools')
-    expect(contentLines(screen).join('\n')).not.toContain('agents finished')
-  })
-
-  it('overlays live child-session stats onto the group (S33 tracker, end-to-end)', async () => {
-    resetSeq()
-    setAgentGroupTimers({
-      setInterval: () => 0 as unknown as ReturnType<typeof setInterval>,
-      clearInterval: () => {},
-      now: () => 1_700_000_000_060_000,
-    })
-    try {
-      const { ctx, screen } = await bootTranscript(null, {})
-      const agent = fakeAgent([
-        turnStart(1),
-        stepStart(1, 1),
-        subagentCallEvent(1, 1, 'a1', 'subagent', 'Survey', 'survey the tests'),
-        subagentCallEvent(1, 1, 'a2', 'subagent', 'Map', 'map the docs'),
-        toolResultEvent(1, 1, 'a1', 'started subagent 9f5c4086a0674b55b621c3eaf8b88c0e'),
-        toolResultEvent(1, 1, 'a2', 'started subagent bd317666afec47f4777c7ca701c1779e'),
-        turnEnd(1),
-      ])
-      ctx.emit('blue/session-changed', asAgent(agent))
-      // The acks alone read as finished (the background-by-default trap).
-      expect(contentLines(screen).join('\n')).toContain('2 agents finished')
-
-      // The first child streams: the exact ack id admits it; the second
-      // child correlates through its delegation prompt (the fork path).
-      const childOne = { id: '9f5c4086a0674b55b621c3eaf8b88c0e', header: { origin: 'subagent', parentSession: 'parent-1' } }
-      const childTwo = { id: 'bd317666afec47f4777c7ca701c1779e', header: { origin: 'subagent', parentSession: 'parent-1' } }
-      ctx.emit('session/event', childOne as unknown as Session, { type: 'turn/start', seq: 1, time: 1, data: { turn: 1 } })
-      ctx.emit('session/event', childOne as unknown as Session, { type: 'tool/call', seq: 2, time: 2, data: { turn: 1, step: 1, callId: 't1', name: 'read', arguments: '{}' } })
-      ctx.emit('session/event', childOne as unknown as Session, { type: 'assistant/message', seq: 3, time: 3, data: { turn: 1, step: 1, message: { role: 'assistant', content: [] }, usage: { inputTokens: 3000, outputTokens: 200 } } })
-      ctx.emit('session/event', childTwo as unknown as Session, { type: 'turn/start', seq: 1, time: 1, data: { turn: 1 } })
-      ctx.emit('session/event', childTwo as unknown as Session, { type: 'user/message', seq: 2, time: 2, data: { id: 'm2', role: 'user', content: [{ type: 'text', text: 'map the docs' }], source: { kind: 'user' } } })
-
-      const joined = contentLines(screen).join('\n')
-      // The premature finish corrected to running; live fields present.
-      expect(joined).toContain('Running 2 agents')
-      expect(joined).toContain('Using read')
-      expect(joined).toContain('3.1k tok')
-
-      // A remount disposes the tracker: later child events change nothing.
-      ctx.emit('blue/session-changed', asAgent(fakeAgent([turnStart(1)])))
-      const after = contentLines(screen).join('\n')
-      ctx.emit('session/event', childOne as unknown as Session, { type: 'tool/call', seq: 9, time: 9, data: { turn: 1, step: 2, callId: 't9', name: 'bash', arguments: '{}' } })
-      expect(contentLines(screen).join('\n')).toBe(after)
-    } finally {
-      setAgentGroupTimers(undefined)
-    }
+    // Only the control card mounts: spawn calls, their acks, and the fork
+    // are pane-owned — the agents pane is their only surface.
+    expect(screen.children).toHaveLength(1)
+    const joined = contentLines(screen).join('\n')
+    expect(joined).toContain('send_message')
+    expect(joined).not.toContain('subagent')
   })
 
   it('creates tool cards through the blueIntents registry', async () => {

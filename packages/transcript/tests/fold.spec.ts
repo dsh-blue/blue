@@ -24,7 +24,6 @@ import {
   resetSeq,
   stepEnd,
   stepStart,
-  subagentCallEvent,
   textDelta,
   toolCallEvent,
   toolResultEvent,
@@ -230,14 +229,14 @@ describe('foldSessionEvents', () => {
     const t0 = 1_700_000_000_000
     // Explicit times survive the fold verbatim: startedAt from the call
     // envelope, endedAt from the result envelope — both persisted, so a
-    // replay folds identical values.
+    // replay folds identical values. (Spawn-class tools use this too but
+    // are suppressed from the stream; the times feed the agents pane.)
     const timed = foldSessionEvents([
-      subagentCallEvent(1, 1, 'c2', 'subagent', 'd', 'p', { time: t0 }),
-      toolResultEvent(1, 1, 'c2', 'started subagent x', { time: t0 + 45_000 }),
-    ])
-    const sub = timed[0] as TranscriptToolItem
-    expect(sub.startedAt).toBe(t0)
-    expect(sub.result?.endedAt).toBe(t0 + 45_000)
+      toolCallEvent(1, 1, 'c2', 'bash', '{}', ),
+      toolResultEvent(1, 1, 'c2', 'done', { time: t0 + 45_000 }),
+    ] as SessionEvent[])
+    const timedItem = timed[0] as TranscriptToolItem
+    expect(timedItem.result?.endedAt).toBe(t0 + 45_000)
   })
 
   it('stamps an unpaired result item with the same instant on both clocks', () => {

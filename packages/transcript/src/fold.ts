@@ -62,6 +62,14 @@ export const RESULT_SUMMARY_MAX_CHARS = 160
  */
 const TODO_TOOL_NAME = 'todo_write'
 
+/**
+ * The spawn-class subagent tool names (the same set `present.ts`
+ * `isSubagentTool` classifies items by): the agents pane owns their
+ * presentation, so their calls and results render nothing in the stream —
+ * the S33 acceptance ruling (kimi AgentSwarm semantics; D37 revision).
+ */
+const SUBAGENT_SPAWN_TOOL_NAMES: ReadonlySet<string> = new Set(['subagent', 'subagent_fork'])
+
 /** The fold's answer to one event: the item the event created or mutated. */
 export interface FoldItemUpdate {
   /** The created or mutated item (object identity is stable per item). */
@@ -397,7 +405,11 @@ export class TranscriptFolder {
       case 'tool/call': {
         // The todo pane renders the list; the call itself would only echo it
         // into the stream. Track the id so the paired result stays hidden too.
-        if (event.data.name === TODO_TOOL_NAME) {
+        // The S33 acceptance ruling extends the same suppression to the
+        // spawn-class subagent tools: the agents pane pinned above the editor
+        // owns that presentation, so neither the call nor its ack/result
+        // enters the stream (the kimi AgentSwarm semantics — D37 revision).
+        if (event.data.name === TODO_TOOL_NAME || SUBAGENT_SPAWN_TOOL_NAMES.has(event.data.name)) {
           this.suppressedCalls.add(event.data.callId)
           return null
         }

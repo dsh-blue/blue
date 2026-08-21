@@ -52,10 +52,8 @@ import {
 } from './components.ts'
 import { TranscriptFolder, type FoldUpdate } from './fold.ts'
 import { BlueIntentsService } from './intents.ts'
-import { isReadItem, isSubagentTool, resolveCallView, resolveResultView } from './present.ts'
+import { isReadItem, resolveCallView, resolveResultView } from './present.ts'
 import { ReadGroupComponent } from './read-group.ts'
-import { AgentGroupComponent } from './agent-group.ts'
-import { trackChildAgents } from './agent-live.ts'
 import { BlueStatusService, FooterShellComponent } from './status.ts'
 import { ThinkingComponent } from './thinking.ts'
 import type { BlueIntentComponent, TranscriptItem } from './types.ts'
@@ -243,12 +241,6 @@ function mountSession(
     screen.requestRender()
   }
 
-  // The S33 child-session tracker: one global listener reducing this
-  // agent's subagent children (the live overlay for agent groups). Session-
-  // scoped — a group folded away while its children still run keeps
-  // accumulating harmlessly; the disposer unsubscribes on remount.
-  const live = trackChildAgents(ctx, agent, requestRender)
-
   /** Mount one newly created item's component (the fold's mount order). */
   const mount = (item: TranscriptItem): void => {
     // The S20 back half: consecutive same-step Reads group into one
@@ -270,29 +262,6 @@ function mountSession(
         // `previous` is the last entry by construction, so the pop drops it.
         entries.pop()
         const group = new ReadGroupComponent(previous.item, colors, components)
-        group.attach(item)
-        entries.push({ item: previous.item, component: group, dispose: screen.addChild(new GutterComponent(group)) })
-        return
-      }
-    }
-    // The S33 twin of the ReadGroup maneuver: consecutive same-step
-    // spawn-class subagent calls (`subagent` / `subagent_fork`) group into
-    // one `AgentGroupComponent`. The name predicates are disjoint from the
-    // Read check, so the two blocks never merge chains; the same
-    // bookkeeping rule holds (the first member's item is the group's item,
-    // so step folding and eviction retire it exactly with its members).
-    if (item.kind === 'tool' && isSubagentTool(item)) {
-      const previous = entries.at(-1)
-      if (previous !== undefined && previous.item.kind === 'tool'
-        && previous.item.turn === item.turn && previous.item.step === item.step
-        && isSubagentTool(previous.item)) {
-        if (previous.component instanceof AgentGroupComponent) {
-          previous.component.attach(item)
-          return
-        }
-        retireEntry(previous)
-        entries.pop()
-        const group = new AgentGroupComponent(previous.item, colors, components, requestRender, live.snapshot)
         group.attach(item)
         entries.push({ item: previous.item, component: group, dispose: screen.addChild(new GutterComponent(group)) })
         return
@@ -360,7 +329,6 @@ function mountSession(
   screen.requestRender(true)
   return () => {
     offEvent()
-    live.dispose()
     toggle.expanded = false
     toggle.entries = []
     for (const entry of entries.splice(0)) retireEntry(entry)

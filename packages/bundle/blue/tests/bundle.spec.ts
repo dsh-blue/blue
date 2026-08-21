@@ -64,6 +64,7 @@ describe('blue bundle', () => {
       'blue-pane-queue',
       'blue-pane-todo',
       'blue-pane-btw',
+      'blue-pane-agents',
       'blue-interaction',
       'blue-startup',
       'blue-app',
