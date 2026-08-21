@@ -79,20 +79,40 @@ function runClipboardTool(command: string, args: string[], text: string): Promis
   })
 }
 
+/**
+ * Classify one tool failure for the aggregate message: a missing binary
+ * (`ENOENT` from spawn) reads as "not installed" instead of the raw spawn
+ * error, every other failure keeps its own message (exit code + stderr).
+ */
+function toolFailure(command: string, error: unknown): string {
+  if (
+    error instanceof Error
+    && 'code' in error
+    && (error as NodeJS.ErrnoException).code === 'ENOENT'
+  ) {
+    return `${command} not installed`
+  }
+  // Every failure this pipeline produces is an Error (spawn errors and the
+  // exit-code classification alike); the String arm only satisfies the
+  // unknown-type contract.
+  /* v8 ignore next -- no non-Error failure can reach this pipeline */
+  return error instanceof Error ? error.message : String(error)
+}
+
 /** The default writer: the first probed tool accepting the text wins. */
 const defaultClipboardTextWriter: ClipboardTextWriter = async (text) => {
-  let lastError: unknown
+  const failures: string[] = []
   for (const [command, args] of CLIPBOARD_TOOLS) {
     try {
       await runClipboardTool(command, args, text)
       return
     } catch (error) {
-      lastError = error
+      failures.push(toolFailure(command, error))
     }
   }
   // Every platform lists at least one tool, so the loop always leaves a
-  // failure behind and this throw always carries it.
-  throw lastError
+  // failure behind and this throw always carries the aggregate.
+  throw new Error(`no clipboard tool is available (${failures.join(', ')})`)
 }
 
 /**

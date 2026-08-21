@@ -20,6 +20,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import { decodeStorageRecord } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { foldSessionEvents } from '@dsh-blue/blue-transcript'
 import type { TranscriptItem, TranscriptToolItem } from '@dsh-blue/blue-transcript'
 // Empty type imports carry the `commands` merge the registration uses, the
@@ -233,19 +234,184 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/** Join the text blocks of content, `\n`-separated (the fold's rule). */
+function contentText(content: readonly ContentBlock[]): string {
+  return content
+    .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
+    .map(block => block.text)
+    .join('\n\n')
+}
+
+/** Join the reasoning blocks of content, or '' when there are none. */
+function reasoningText(content: readonly ContentBlock[]): string {
+  return content
+    .filter((block): block is Extract<ContentBlock, { type: 'reasoning' }> => block.type === 'reasoning')
+    .map(block => block.text)
+    .join('\n\n')
+}
+
+/** Render content blocks for the full export: text verbatim, images as
+ * placeholders, every other block as a bracketed marker. */
+function formatContentBlocksFull(content: readonly ContentBlock[]): string {
+  const parts: string[] = []
+  for (const block of content) {
+    if (block.type === 'text') {
+      if (block.text.trim().length > 0) parts.push(block.text)
+    } else if (block.type === 'image') {
+      parts.push('[image]')
+    } else {
+      parts.push(`[${block.type}]`)
+    }
+  }
+  return parts.join('\n\n')
+}
+
+/** One event's full-export section, in seq order. `assistant/chunk` rows
+ * are the raw material of the assembled message and stay out (the message
+ * carries the whole text). */
+function formatFullEvent(event: SessionEvent): string {
+  const lines: string[] = []
+  switch (event.type) {
+    case 'turn/start':
+      lines.push(`## Turn ${String(event.data.turn)}`, '')
+      break
+    case 'step/start':
+      lines.push(`### Step ${String(event.data.step)}`, '')
+      break
+    case 'user/message': {
+      const source = event.data.source.kind
+      const text = formatContentBlocksFull(event.data.content)
+      lines.push(`#### user (${source})`, '')
+      if (text.trim().length > 0) lines.push(text, '')
+      break
+    }
+    case 'assistant/message': {
+      const reasoning = reasoningText(event.data.message.content)
+      const text = contentText(event.data.message.content)
+      lines.push('#### assistant', '')
+      if (reasoning.trim().length > 0) {
+        lines.push('<details><summary>Thinking</summary>', '', reasoning, '', '</details>', '')
+      }
+      if (text.trim().length > 0) lines.push(text, '')
+      const usage = event.data.usage
+      if (usage !== undefined) {
+        lines.push(`<sub>usage: ${formatUsage(usage)}</sub>`, '')
+      }
+      break
+    }
+    case 'tool/call': {
+      lines.push(`#### tool call: ${event.data.name}`, '', '```json', event.data.arguments, '```', '')
+      break
+    }
+    case 'tool/result': {
+      const block = event.data.message.content[0]
+      const resultText = typeof event.data.meta === 'string' && event.data.meta.trim() !== ''
+        ? event.data.meta
+        : contentText(block.content)
+      const error = event.data.error
+      const errorTail = error === undefined
+        ? ''
+        : ` (error: ${error.code}${error.name === '' ? '' : ` ${error.name}`})`
+      lines.push(`#### tool result${errorTail}`, '')
+      if (resultText.trim().length > 0) lines.push(resultText, '')
+      break
+    }
+    case 'step/end':
+      lines.push('#### step/end', '')
+      break
+    case 'assistant/chunk':
+      // Raw stream material; the assembled assistant/message carries the
+      // whole text, so the chunks add nothing but noise.
+      return ''
+    case 'turn/end': {
+      const reason = event.data.reason
+      const failure = reason.kind === 'error' && reason.error !== undefined
+        ? `: ${reason.error.message}${reason.error.code === undefined ? '' : ` (${reason.error.code})`}`
+        : ''
+      lines.push(`#### turn/end (${reason.kind}${failure})`, '')
+      break
+    }
+    default:
+      // Every other event stays visible as its raw JSON (the "nothing
+      // folded" promise): request/header, request/context, usage rows,
+      // and anything a future harness version adds.
+      lines.push(`#### ${event.type}`, '', '```json', JSON.stringify(event.data, null, 2), '```', '')
+  }
+  return lines.join('\n')
+}
+
+/** `input X, cache-read Y, cache-write Z, output W` — 1024-base, the usage.ts shape. */
+function formatUsage(usage: { inputTokens: number, cacheReadTokens?: number, cacheWriteTokens?: number, outputTokens: number }): string {
+  const parts = [`input ${format1024(usage.inputTokens)}`]
+  if (usage.cacheReadTokens !== undefined) parts.push(`cache-read ${format1024(usage.cacheReadTokens)}`)
+  if (usage.cacheWriteTokens !== undefined) parts.push(`cache-write ${format1024(usage.cacheWriteTokens)}`)
+  parts.push(`output ${format1024(usage.outputTokens)}`)
+  return parts.join(', ')
+}
+
+/** 1024-base token formatting (the status family's `formatTokens` rule). */
+function format1024(count: number): string {
+  if (count >= 1024 * 1024) return `${(count / (1024 * 1024)).toFixed(1)}M`
+  if (count >= 1024) return `${(count / 1024).toFixed(1)}k`
+  return String(count)
+}
+
+/** The facts the full (event-stream) export renders. */
+export interface FullExportInput {
+  /** The persisted session id. */
+  readonly sessionId: string
+  /** The session's durable cwd, when the header recorded one. */
+  readonly workDir: string | undefined
+  /** The decoded event stream, in seq order. */
+  readonly events: readonly SessionEvent[]
+  /** The export timestamp. */
+  readonly exportedAt: Date
+}
+
+/**
+ * Build the full session export Markdown: front-matter, then every event's
+ * section in seq order — nothing folded, nothing filtered (the D28
+ * injection messages appear with their `source.kind` labeled, tool results
+ * carry their full text, boundary events and request rows stay visible).
+ * @param input - the export facts.
+ * @returns the complete Markdown document.
+ */
+export function buildFullExportMarkdown(input: FullExportInput): string {
+  const { sessionId, workDir, events, exportedAt } = input
+  const lines = [
+    '---',
+    `session_id: ${sessionId}`,
+    `exported_at: ${exportedAt.toISOString()}`,
+    `work_dir: ${workDir ?? ''}`,
+    `event_count: ${String(events.length)}`,
+    '---',
+    '',
+    '# Blue Session Export (full)',
+    '',
+  ]
+  for (const event of events) {
+    const section = formatFullEvent(event)
+    if (section.trim().length > 0) lines.push(section, '')
+  }
+  return lines.join('\n')
+}
+
 /**
  * Register the `/export` and `/copy` commands.
  * @param ctx - plugin context.
  * @returns a disposer unregistering both commands.
  */
 export function registerExportCommands(ctx: Context): () => void {
-  /** The shared read path's outcome: the session identity plus its fold. */
+  /** The shared read path's outcome: the session identity, its decoded
+   * event stream, and the fold built from it. */
   interface SessionExportSource {
     /** The persisted session id. */
     readonly id: string
     /** The session's durable cwd, when the header recorded one. */
     readonly cwd: string | undefined
-    /** The folded transcript, in session order. */
+    /** The decoded event stream, in seq order (the full export's view). */
+    readonly events: readonly SessionEvent[]
+    /** The folded transcript, in session order (the readable export's view). */
     readonly items: readonly TranscriptItem[]
   }
 
@@ -281,13 +447,14 @@ export function registerExportCommands(ctx: Context): () => void {
       }
       events.push(...decodeStorageRecord(value))
     }
-    return { id: agent.id, cwd: agent.session.header.cwd, items: foldSessionEvents(events) }
+    return { id: agent.id, cwd: agent.session.header.cwd, events, items: foldSessionEvents(events) }
   }
 
   /**
-   * The `/export` handler: write the folded transcript as Markdown and
-   * flash the path in the hint line.
-   * @param rawInput - the command's raw argument string (`[<path>]`).
+   * The `/export` handler: write the folded transcript (`/export [path]`)
+   * or the full event stream (`/export full [path]`) as Markdown and flash
+   * the path in the hint line.
+   * @param rawInput - the command's raw argument string (`[full] [<path>]`).
    * @param signal - the dispatching UI request's cancellation signal.
    * @returns the command outcome.
    */
@@ -299,24 +466,35 @@ export function registerExportCommands(ctx: Context): () => void {
       return { kind: 'error', text: describe(error) }
     }
     if (source === undefined) return { kind: 'error', text: 'no session is live yet' }
-    if (source.items.length === 0) return { kind: 'error', text: 'nothing to export yet' }
+    // The mode keyword leads the argument; everything after it is the path.
     const trimmed = rawInput.trim()
-    const outputPath = trimmed.length > 0
-      ? resolve(trimmed)
+    const full = trimmed === 'full' || trimmed.startsWith('full ')
+    const pathArg = full ? trimmed.slice(4).trim() : trimmed
+    const count = full ? source.events.length : source.items.length
+    if (count === 0) return { kind: 'error', text: 'nothing to export yet' }
+    const outputPath = pathArg.length > 0
+      ? resolve(pathArg)
       : join(resolve(source.cwd ?? process.cwd()), defaultExportName(source.id, new Date()))
-    const markdown = buildExportMarkdown({
-      sessionId: source.id,
-      workDir: source.cwd,
-      items: source.items,
-      exportedAt: new Date(),
-    })
+    const markdown = full
+      ? buildFullExportMarkdown({
+          sessionId: source.id,
+          workDir: source.cwd,
+          events: source.events,
+          exportedAt: new Date(),
+        })
+      : buildExportMarkdown({
+          sessionId: source.id,
+          workDir: source.cwd,
+          items: source.items,
+          exportedAt: new Date(),
+        })
     try {
       await mkdir(dirname(outputPath), { recursive: true })
       await writeFile(outputPath, markdown, 'utf-8')
     } catch (error) {
       return { kind: 'error', text: `could not write export: ${describe(error)}` }
     }
-    getSharedEditor()?.notice?.(`exported ${String(source.items.length)} items to ${outputPath}`)
+    getSharedEditor()?.notice?.(`exported ${String(count)} ${full ? 'events' : 'items'} to ${outputPath}`)
     return { kind: 'success' }
   }
 
@@ -348,7 +526,7 @@ export function registerExportCommands(ctx: Context): () => void {
   const exportCommand = ctx.commands.register({
     name: 'export',
     description: 'Export the current session as a Markdown file',
-    input: { hint: '[<path>]' },
+    input: { hint: '[full] [<path>]' },
     handler: (invocation) => exportSession(invocation.rawInput, invocation.signal),
   })
   const copyCommand = ctx.commands.register({

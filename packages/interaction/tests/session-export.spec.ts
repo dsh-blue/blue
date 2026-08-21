@@ -12,12 +12,13 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import type { TranscriptItem } from '@dsh-blue/blue-transcript'
 import { setClipboardTextWriter } from '../src/clipboard-write.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
 import * as commandsPlugin from '../src/commands-plugin.ts'
-import { buildExportMarkdown, lastAssistantText } from '../src/session-export.ts'
+import { buildExportMarkdown, buildFullExportMarkdown, lastAssistantText } from '../src/session-export.ts'
 import { fakeBlueContext, FakeBlueEditor } from './fakes.ts'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
 
@@ -172,6 +173,118 @@ describe('buildExportMarkdown', () => {
     // The whitelist scans only the top level: nested file_path does not win
     // over the first short string.
     expect(markdown).toContain('#### Tool Call: read (`/x`)')
+  })
+
+  it('renders the full event-stream view: nothing folded, injections labeled, chunks skipped', () => {
+    const events = [
+      { type: 'turn/start', seq: 1, time: 1, data: { turn: 0 } },
+      { type: 'request/header', seq: 2, time: 2, data: { header: { config: { provider: 'mock', model: 'mock' } }, reason: 'initial' } },
+      { type: 'user/message', seq: 3, time: 3, data: { content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' } } },
+      // A synthetic injection stays visible in the full export, labeled;
+      // its blocks cover the empty-text, image, and unknown-block arms.
+      { type: 'user/message', seq: 4, time: 4, data: { content: [
+        { type: 'text', text: '   ' },
+        { type: 'image', attachment: { attachmentId: 'a1', mediaType: 'image/png', bytes: 4, width: 1, height: 1 } },
+        { type: 'audio', data: 'zzz' },
+        { type: 'text', text: 'CONTEXT-SECRET' },
+      ], source: { kind: 'plugin', plugin: 'agent-context' } } },
+      { type: 'step/start', seq: 5, time: 5, data: { turn: 0, step: 0 } },
+      { type: 'assistant/chunk', seq: 6, time: 6, data: { turn: 0, step: 0, chunk: { index: 0, blockType: 'text', textDelta: 'x' } } },
+      { type: 'assistant/message', seq: 7, time: 7, data: {
+        turn: 0,
+        step: 0,
+        message: {
+          id: 'm1',
+          role: 'assistant',
+          content: [
+            { type: 'reasoning', text: 'reasoning trail' },
+            { type: 'text', text: 'the answer' },
+          ],
+          source: { kind: 'model', provider: 'mock', model: 'mock' },
+        },
+        usage: { inputTokens: 2097152, outputTokens: 9216, cacheReadTokens: 61440, cacheWriteTokens: 4096 },
+      } },
+      { type: 'tool/call', seq: 8, time: 8, data: { turn: 0, step: 0, callId: 'c1', name: 'bash', arguments: '{"command":"ls"}' } },
+      { type: 'tool/result', seq: 9, time: 9, data: { message: { content: [{ toolCallId: 'c1', content: [{ type: 'text', text: 'file1' }] }] } } },
+      { type: 'step/end', seq: 10, time: 10, data: { turn: 0, step: 0 } },
+      { type: 'turn/end', seq: 11, time: 11, data: { turn: 0, reason: { kind: 'completed' } } },
+      { type: 'turn/start', seq: 12, time: 12, data: { turn: 1 } },
+      { type: 'turn/end', seq: 13, time: 13, data: { turn: 1, reason: { kind: 'error', error: { message: 'endpoint 404', code: 'ENDPOINT_404' } } } },
+      // An empty user message renders the header with no body.
+      { type: 'user/message', seq: 14, time: 14, data: { content: [], source: { kind: 'user' } } },
+      // An assistant message without reasoning and with empty text.
+      { type: 'assistant/message', seq: 15, time: 15, data: {
+        turn: 1,
+        step: 0,
+        message: {
+          id: 'm2',
+          role: 'assistant',
+          content: [{ type: 'text', text: '   ' }],
+          source: { kind: 'model', provider: 'mock', model: 'mock' },
+        },
+      } },
+      // A string meta result with empty content, then a structured meta
+      // result that failed, then a fully empty result (header only).
+      { type: 'tool/result', seq: 16, time: 16, data: { message: { content: [{ toolCallId: 'c2', content: [] }] }, meta: 'raw meta' } },
+      { type: 'tool/result', seq: 17, time: 17, data: { message: { content: [{ toolCallId: 'c3', content: [{ type: 'text', text: 'x' }] }] }, meta: { structured: true }, error: { name: 'ToolError', code: 'E_TOOL' } } },
+      { type: 'tool/result', seq: 18, time: 18, data: { message: { content: [{ toolCallId: 'c4', content: [] }] } } },
+      // A failure whose name is empty renders the code alone.
+      { type: 'tool/result', seq: 19, time: 19, data: { message: { content: [{ toolCallId: 'c5', content: [{ type: 'text', text: 'y' }] }] }, error: { name: '', code: 'E_BARE' } } },
+      // A failed turn whose error carries no machine code.
+      { type: 'turn/end', seq: 20, time: 20, data: { turn: 1, reason: { kind: 'error', error: { message: 'no code' } } } },
+    ] as unknown as SessionEvent[]
+    const markdown = buildFullExportMarkdown({
+      sessionId: 'sess-12345678',
+      workDir: '/tmp/spec',
+      events,
+      exportedAt: new Date('2026-08-21T07:15:30.000Z'),
+    })
+    expect(markdown).toContain('# Blue Session Export (full)')
+    expect(markdown).toContain('event_count: 20')
+    expect(markdown).toContain('#### tool result (error: E_BARE)')
+    expect(markdown).toContain('## Turn 0')
+    expect(markdown).toContain('### Step 0')
+    // The injection appears with its source labeled (no D28 filtering);
+    // the empty text block stays out, the image and unknown blocks become
+    // markers.
+    expect(markdown).toContain('#### user (plugin)')
+    expect(markdown).toContain('CONTEXT-SECRET')
+    expect(markdown).toContain('[image]')
+    expect(markdown).toContain('[audio]')
+    expect(markdown).toContain('#### user (user)')
+    // Thinking stays visible; usage rides the message section with the
+    // 1024-base formatting (2M input exercises the M arm).
+    expect(markdown).toContain('<details><summary>Thinking</summary>')
+    expect(markdown).toContain('reasoning trail')
+    expect(markdown).toContain('the answer')
+    expect(markdown).toContain('usage: input 2.0M, cache-read 60.0k, cache-write 4.0k, output 9.0k')
+    // Tool call/result and boundary rows.
+    expect(markdown).toContain('#### tool call: bash')
+    expect(markdown).toContain('{"command":"ls"}')
+    expect(markdown).toContain('#### tool result')
+    expect(markdown).toContain('file1')
+    expect(markdown).toContain('#### step/end')
+    expect(markdown).toContain('#### turn/end (completed)')
+    // The failed turn carries its structured reason with the machine code;
+    // a codeless failure omits the parenthetical.
+    expect(markdown).toContain('#### turn/end (error: endpoint 404 (ENDPOINT_404))')
+    expect(markdown).toContain('#### turn/end (error: no code)')
+    // Chunk rows are the message's raw material and stay out.
+    expect(markdown).not.toContain('#### assistant/chunk')
+    // The empty user message and the reasoning-less assistant message keep
+    // their headers without bodies; the string-meta result and the failed
+    // structured-meta result render their variants.
+    expect(markdown).toContain('#### user (user)\n')
+    expect(markdown).toContain('#### assistant\n')
+    // Exactly one Thinking block — the seq-7 message's reasoning; the
+    // reasoning-less assistant message renders none.
+    expect(markdown.match(/<details><summary>Thinking<\/summary>/g)).toHaveLength(1)
+    expect(markdown).toContain('raw meta')
+    expect(markdown).toContain('#### tool result (error: E_TOOL ToolError)')
+    expect(markdown).toContain('x')
+    // Unknown event types dump their raw JSON.
+    expect(markdown).toContain('#### request/header')
+    expect(markdown).toContain('"reason": "initial"')
   })
 
   it('renders the remaining per-turn variants: second user, empty user text, named images, pluralization arms, codeless errors, over-long hints', () => {
@@ -341,6 +454,34 @@ describe('registerExportCommands', () => {
     expect(readFileSync(target, 'utf8')).toContain('# Blue Session Export')
     expect(readFileSync(target, 'utf8')).toContain('hello')
     expect(notices.join('\n')).toContain(`exported 2 items to ${target}`)
+    await fiber.dispose()
+  })
+
+  it('exports the full event-stream view with the full mode keyword', async () => {
+    const root = mkdtempTracked('blue-export-full-')
+    const target = join(root, 'full.md')
+    const { ctx, agent, fiber } = await mount({ persistence: { content: singleTurnLog('hi', 'hello') } })
+    const result = await run(ctx, agent, `/export full ${target}`)
+    expect(result).toEqual({ kind: 'success' })
+    const markdown = readFileSync(target, 'utf8')
+    expect(markdown).toContain('# Blue Session Export (full)')
+    expect(markdown).toContain('event_count: 6')
+    expect(markdown).toContain('#### user (user)')
+    expect(markdown).not.toContain('# Blue Session Export\n')
+    expect(notices.join('\n')).toContain(`exported 6 events to ${target}`)
+    await fiber.dispose()
+  })
+
+  it('treats a path that merely starts with "full" as a path, not a mode', async () => {
+    const root = mkdtempTracked('blue-export-fullpath-')
+    const target = join(root, 'full.md')
+    const { ctx, agent, fiber } = await mount({ persistence: { content: singleTurnLog('hi', 'hello') } })
+    const result = await run(ctx, agent, `/export ${target}`)
+    expect(result).toEqual({ kind: 'success' })
+    // The readable export — no "(full)" suffix, item-counted.
+    expect(readFileSync(target, 'utf8')).toContain('# Blue Session Export\n')
+    expect(readFileSync(target, 'utf8')).not.toContain('(full)')
+    expect(notices.join('\n')).toContain('exported 2 items to')
     await fiber.dispose()
   })
 

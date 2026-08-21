@@ -94,13 +94,14 @@ describe('default clipboard text writer', () => {
     rmSync(bin, { recursive: true, force: true })
   })
 
-  it('rejects with the last tool failure when both tools fail', async () => {
+  it('rejects with the aggregate failure when both tools fail', async () => {
     const bin = fakeBin({
       wlCopy: '#!/bin/sh\n exit 1\n',
       xclip: '#!/bin/sh\n echo "no display" >&2\n exit 2\n',
     })
     prependBin(bin)
-    await expect(copyTextToClipboard('lost')).rejects.toThrow('xclip exited with code 2: no display')
+    await expect(copyTextToClipboard('lost'))
+      .rejects.toThrow('no clipboard tool is available (wl-copy exited with code 1, xclip exited with code 2: no display)')
     rmSync(bin, { recursive: true, force: true })
   })
 
@@ -110,15 +111,43 @@ describe('default clipboard text writer', () => {
       xclip: '#!/bin/sh\n exit 2\n',
     })
     prependBin(bin)
-    await expect(copyTextToClipboard('lost')).rejects.toThrow('xclip exited with code 2')
+    await expect(copyTextToClipboard('lost'))
+      .rejects.toThrow('no clipboard tool is available (wl-copy exited with code 1, xclip exited with code 2)')
     rmSync(bin, { recursive: true, force: true })
   })
 
-  it('rejects with the spawn error when no tool exists on PATH', async () => {
+  it('rejects with "not installed" when no tool exists on PATH', async () => {
     const empty = mkdtempTracked('blue-clipboard-empty-')
     process.env.PATH = empty
-    await expect(copyTextToClipboard('lost')).rejects.toBeInstanceOf(Error)
+    await expect(copyTextToClipboard('lost'))
+      .rejects.toThrow('no clipboard tool is available (wl-copy not installed, xclip not installed)')
     rmSync(empty, { recursive: true, force: true })
+  })
+
+  it('mixes an installed-but-failing tool with a missing one', async () => {
+    const bin = fakeBin({
+      wlCopy: '#!/bin/sh\n echo "wayland down" >&2\n exit 3\n',
+      // No xclip script: the second probe ENOENTs.
+    })
+    prependBin(bin)
+    await expect(copyTextToClipboard('lost'))
+      .rejects.toThrow('no clipboard tool is available (wl-copy exited with code 3: wayland down, xclip not installed)')
+    rmSync(bin, { recursive: true, force: true })
+  })
+
+  it('classifies a spawn error with a code other than ENOENT as its raw message', async () => {
+    const bin = mkdtempTracked('blue-clipboard-eacces-')
+    // Present but not executable: spawn fails with EACCES, which carries a
+    // `code` that is not ENOENT — the message survives verbatim.
+    writeFileSync(join(bin, 'wl-copy'), '#!/bin/sh\nexit 0\n')
+    chmodSync(join(bin, 'wl-copy'), 0o644)
+    const xclip = join(bin, 'xclip')
+    writeFileSync(xclip, '#!/bin/sh\nexit 0\n')
+    chmodSync(xclip, 0o644)
+    prependBin(bin)
+    await expect(copyTextToClipboard('lost'))
+      .rejects.toThrow(/no clipboard tool is available \(wl-copy spawn EACCES, xclip spawn EACCES\)|wl-copy EACCES/)
+    rmSync(bin, { recursive: true, force: true })
   })
 })
 

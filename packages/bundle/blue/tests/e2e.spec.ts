@@ -1638,6 +1638,15 @@ describe('blue whole-tree e2e', () => {
     expect(markdown).toContain('export me this')
     expect(markdown).toContain('exported answer')
     expect(markdown).toContain(`session_id: ${String(agent.id)}`)
+    // The full mode exports the event-stream view beside it.
+    const fullTarget = join(root, 'session-full.md')
+    const fullResult = await executeCommand(tree, agent, `/export full ${fullTarget}`)
+    expect(fullResult).toEqual({ kind: 'success' })
+    const fullMarkdown = readFileSync(fullTarget, 'utf8')
+    expect(fullMarkdown).toContain('# Blue Session Export (full)')
+    expect(fullMarkdown).toContain('event_count:')
+    expect(fullMarkdown).toContain('#### user (user)')
+    expect(fullMarkdown).toContain('#### assistant')
   })
 
   it('/copy pushes the last assistant message through the clipboard pipeline', async () => {
