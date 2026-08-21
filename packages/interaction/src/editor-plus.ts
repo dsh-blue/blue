@@ -11,7 +11,12 @@
  * command's `input.hint`. `@` mentions run the S22 kimi composition
  * (`./file-mention.ts`): the L0 fd pipeline — scoped queries, substring
  * scoring, top-20, quoted values — with the filesystem fallback while fd
- * is unavailable. The mode is
+ * is unavailable. The S29 `#` branch completes the settled
+ * user-invocable skills (`./skills-catalog.ts`) through the same fuzzy
+ * filter as the slash dropdown — values and prefix carry their `#`, a
+ * `user-only` prefix marks skills the model cannot invoke, Enter accepts
+ * without submitting (pi-tui's non-slash completion semantics), and the
+ * applied token takes a trailing space mid-line. The mode is
  * mirrored into `./draft-stash.ts`, so a theme-swap reload re-applies the
  * triple on the rebuilt editor. The editor reference comes from the
  * package-local shared ref (`./editor-instance.ts`): `inject` cannot order
@@ -48,6 +53,7 @@ import { canonicalOf, withCommandAliases } from './command-meta.ts'
 import { detectFdPath, extractAtPrefix, fsMentionSuggestions, listDirectoryMentions } from './file-mention.ts'
 import { getStashedInputMode, stashHistory, stashInputMode } from './draft-stash.ts'
 import { ACTION_BACKSPACE, ACTION_CANCEL } from './keys.ts'
+import { extractSkillPrefix, userInvocableSkills } from './skills-catalog.ts'
 import { sanitizeShellOutput } from './shell-sanitize.ts'
 import { currentBlueAgent } from './session.ts'
 import { filterSlashCommands, slashCommandLabel } from './slash-filter.ts'
@@ -158,7 +164,7 @@ function createAutocompleteProvider(
     inner = components.createFileMentionProvider(cwd, resolved)
   })
   return {
-    triggerCharacters: ['/', '@'],
+    triggerCharacters: ['/', '@', '#'],
     async getSuggestions(lines, cursorLine, cursorCol, options): Promise<BlueAutocompleteSuggestions | null> {
       const line = lines[cursorLine] ?? ''
       const atPrefix = extractAtPrefix(line.slice(0, cursorCol))
@@ -189,6 +195,37 @@ function createAutocompleteProvider(
           notice('no matching files under the session cwd')
         }
         return suggestions
+      }
+      // The S29 `#` skill branch: a `#`-token in progress at the cursor
+      // completes the settled user-invocable skills (`./skills-catalog.ts`)
+      // through the same fuzzy filter the slash dropdown uses — the kimi
+      // mention idiom with skills in place of files. The values and the
+      // returned prefix carry their `#`, so pi-tui's Enter semantics accept
+      // the item WITHOUT submitting (only a `/` prefix submits on accept —
+      // the user reviews the sentence before the second Enter rewrites and
+      // submits it). Bash mode declines like the slash branch: a `#` there
+      // opens a shell comment, and an accept-without-submit Enter would
+      // hijack the line.
+      const skillQuery = extractSkillPrefix(line.slice(0, cursorCol))
+      if (skillQuery !== null) {
+        if (mode() === 'bash') return null
+        const skills = userInvocableSkills()
+        if (skills.length === 0) return null
+        const items = filterSlashCommands(
+          skills.map(skill => ({ name: skill.name, skill })),
+          skillQuery,
+          ctx.blueComponents,
+        ).map((match): BlueAutocompleteItem => {
+          const skill = match.command.skill
+          return {
+            value: `#${skill.name}`,
+            label: `#${skill.name}`,
+            description: skill.invocation.modelInvocable
+              ? skill.description
+              : `user-only · ${skill.description}`,
+          }
+        })
+        return items.length === 0 ? null : { items, prefix: `#${skillQuery}` }
       }
       const slash = /^\/(\S*)$/.exec(line.slice(0, cursorCol))
       if (slash === null || mode() === 'bash') return null
@@ -221,6 +258,18 @@ function createAutocompleteProvider(
         // appends the trailing space only for files, and parks the cursor
         // inside a closing quote for quoted directories.
         return inner.applyCompletion(lines, cursorLine, cursorCol, item, prefix)
+      }
+      if (prefix.startsWith('#') && extractSkillPrefix(line.slice(0, cursorCol)) !== null) {
+        // The skill item's value carries its '#'. The token — unlike a
+        // slash command — may sit mid-line, so the text before the token
+        // survives; the applied value takes a trailing space so the next
+        // word starts cleanly and the trigger pattern no longer matches.
+        const head = line.slice(0, cursorCol - prefix.length) + item.value + ' '
+        return {
+          lines: withLine(lines, cursorLine, head + line.slice(cursorCol).trimStart()),
+          cursorLine,
+          cursorCol: head.length,
+        }
       }
       if (line.startsWith('/')) {
         // The slash item's value already carries its leading slash.

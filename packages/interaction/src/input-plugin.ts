@@ -7,7 +7,13 @@
  * frame in `primary` and any other text returns the neutral border. Submit
  * dispatches a slash command through `ctx.commands` when the line parses as
  * one, otherwise queues the text as a user follow-up message on the current
- * agent (the harness inbox queues it when the agent is running). A hint
+ * agent (the harness inbox queues it when the agent is running). S29: the
+ * follow-up and Ctrl-S steer paths rewrite `#name` tokens naming settled
+ * user-invocable skills into the `/name` harness gesture form (the
+ * `./skills-catalog.ts` rewrite — line-start slashes stay a strict command
+ * domain; skills reach the model through the follow-up channel, and the
+ * editor history keeps the `#name` the user typed), and the fiber keeps the
+ * skills catalog attached for the `#` completion branch. A hint
  * line below the editor carries the transient tiers — one-shot notices and
  * slash-command discovery in `muted` (S14: fuzzy-matched through the same
  * `./slash-filter.ts` the dropdown uses) — and renders zero rows
@@ -66,6 +72,7 @@ import { ACTION_CANCEL, ACTION_CYCLE_MODE, ACTION_INTERRUPT, ACTION_MOVE_DOWN, A
 import { cycleMode } from './mode-commands.ts'
 import { openPermissionPanel } from './permission-panel.ts'
 import { ACTION_QUEUE_RECALL, queuedMessageText } from './pane-queue.ts'
+import { attachSkillsCatalog, rewriteSkillTokens } from './skills-catalog.ts'
 import { currentBlueAgent } from './session.ts'
 import { filterSlashCommands, slashCommandLabel } from './slash-filter.ts'
 
@@ -163,6 +170,9 @@ export function apply(ctx: Context): void {
   ctx.effect(() => () => {
     unloaded = true
   })
+  // The S29 skills catalog stays warm for the `#` completion branch
+  // (`blue-editor-plus`) and the submit/steer rewrite below.
+  ctx.effect(() => attachSkillsCatalog(ctx))
 
   const editor = ctx.blueComponents.createEditor({ paddingX: 4 })
   // The padding reserves columns 0-3 for the side border, its gap, and the
@@ -257,7 +267,14 @@ export function apply(ctx: Context): void {
     const parsed = parseCommand(line)
     if (parsed === undefined) {
       agent.followup(createUserMessage({
-        content: applySubmitTransformers(line),
+        // The S29 skill pipeline: `#name` tokens naming settled
+        // user-invocable skills rewrite into the `/name` gesture form the
+        // harness tool-skill pre-step scans for (the injection rides the
+        // session log, so replay is safe). The rewrite happens here —
+        // before the submit transformers build the content blocks — and
+        // only on the message text: the history entry above keeps the
+        // `#name` the user typed. Unknown tags pass through untouched.
+        content: applySubmitTransformers(rewriteSkillTokens(line)),
         source: { kind: 'user' },
       }))
       return
@@ -389,8 +406,10 @@ export function apply(ctx: Context): void {
       const text = editor.getText().trim()
       const agent = currentBlueAgent(ctx)
       if (text.length === 0 || agent === undefined) return false
+      // Steered text runs the same `#name` → `/name` skill rewrite as a
+      // submitted follow-up: the gesture reaches the model either way.
       agent.steer(createUserMessage({
-        content: applySubmitTransformers(text),
+        content: applySubmitTransformers(rewriteSkillTokens(text)),
         source: { kind: 'user' },
       }))
       editor.setText('')

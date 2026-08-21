@@ -13,8 +13,10 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime, { type CommandResult } from '@deepseek-ai/dsh-commands'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { SkillSummary } from '@deepseek-ai/dsh-skill'
 import * as inputPlugin from '../src/input-plugin.ts'
 import { registerCommandAliases } from '../src/command-meta.ts'
+import { __setCatalogForTest } from '../src/skills-catalog.ts'
 import * as paneQueuePlugin from '../src/pane-queue.ts'
 import { getSharedEditor, mountEditorReplacement } from '../src/editor-instance.ts'
 import { clearDraft, stashHistory } from '../src/draft-stash.ts'
@@ -26,7 +28,19 @@ import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeBlueEditor, typ
 afterEach(() => {
   clearDraft()
   stashHistory([])
+  __setCatalogForTest(undefined)
 })
+
+/** One settled-skill double for the catalog seam. */
+function skillOf(name: string): SkillSummary {
+  return {
+    name,
+    description: `The ${name} skill`,
+    invocation: { modelInvocable: true, userInvocable: true },
+    source: 'custom',
+    provider: 'spec',
+  }
+}
 
 /** In-memory inbox double with a stubbed, recordable removal. */
 function fakeInbox(options: {
@@ -148,6 +162,32 @@ describe('blue-input plugin', () => {
     editor.handleInput(KEY.enter)
     expect(followup).not.toHaveBeenCalled()
     expect(editor.history).toEqual([])
+  })
+
+  it('rewrites #skill tokens on the follow-up path while history keeps the original', async () => {
+    const { editor, followup } = await mount()
+    __setCatalogForTest([skillOf('deploy-check')])
+    type(editor, 'run #deploy-check now')
+    editor.handleInput(KEY.enter)
+    expect(followup).toHaveBeenCalledOnce()
+    const message = followup.mock.calls[0]?.[0] as {
+      content: Array<{ type: string; text: string }>
+    }
+    // The gesture form reaches the model; the history entry keeps the
+    // `#name` the user typed (Up-recall edits what was typed).
+    expect(message.content).toEqual([{ type: 'text', text: 'run /deploy-check now' }])
+    expect(editor.history).toEqual(['run #deploy-check now'])
+  })
+
+  it('passes unknown #tags through untouched on the follow-up path', async () => {
+    const { editor, followup } = await mount()
+    __setCatalogForTest([skillOf('deploy-check')])
+    // The unknown tag stays; the trailing period breaks the recognized
+    // token's end boundary, so it stays too.
+    type(editor, 'see #unknown-tag and #deploy-check.')
+    editor.handleInput(KEY.enter)
+    const message = followup.mock.calls[0]?.[0] as { content: Array<{ type: string; text: string }> }
+    expect(message.content).toEqual([{ type: 'text', text: 'see #unknown-tag and #deploy-check.' }])
   })
 
   it('notices instead of submitting without an attached session', async () => {
@@ -677,6 +717,16 @@ describe('blue-input plugin', () => {
       expect(message.content).toEqual([{ type: 'text', text: 'steer this' }])
       expect(message.source).toEqual({ kind: 'user' })
       expect(editor.getText()).toBe('')
+    })
+
+    it('rewrites #skill tokens on the Ctrl-S steer path too', async () => {
+      const { editor, steer } = await mount()
+      __setCatalogForTest([skillOf('deploy-check')])
+      type(editor, 'steer #deploy-check')
+      editor.handleInput(KEY.ctrlS)
+      expect(steer).toHaveBeenCalledOnce()
+      const message = steer.mock.calls[0]?.[0] as { content: Array<{ type: string, text: string }> }
+      expect(message.content).toEqual([{ type: 'text', text: 'steer /deploy-check' }])
     })
 
     it('passes Ctrl-S through with an empty buffer', async () => {
