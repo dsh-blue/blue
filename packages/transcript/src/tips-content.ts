@@ -1,7 +1,7 @@
 /**
  * The teaching tips — the content module the activity pane's spinner rows
- * rotate through (and the S16 welcome banner's right column reuses; the
- * footer entry retired with the S30 footer swap). Every tip is ASCII-only
+ * rotate through (the footer entry retired with the S30 footer swap; the
+ * welcome banner's right column with S35). Every tip is ASCII-only
  * so width math never sees a double-width surprise, describes a feature
  * Blue actually ships, and may carry a `solo` flag (renders alone, never
  * pairs) and a `priority` weight (recurs more often in the rotation).

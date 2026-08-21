@@ -861,7 +861,7 @@ describe('blue whole-tree e2e', () => {
     expect(output).toContain('Blue online.')
   })
 
-  it('renders the welcome banner at boot as the first scroll child, tips included at eighty columns', async () => {
+  it('renders the welcome banner at boot as the first scroll child', async () => {
     const tree = await bootBlue(['fix', 'the', 'build'], { script: [textResponse('Blue online.')] })
     const agent = await currentAgent(tree)
     await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
@@ -869,17 +869,14 @@ describe('blue whole-tree e2e', () => {
     await waitForRender()
     const output = tree.terminal.output
     expect(output).toContain('Welcome to Blue!')
-    expect(output).toContain(`blue v${BLUE_VERSION}`)
+    expect(output).toContain('Send /help for help information.')
     // AgentDefaultModelConfig mounts provider/model 'mock'; the banner
     // snapshots the selection at mount.
     expect(output).toContain('mock · mock')
-    // The eighty-column right cell is past the section threshold, so the
-    // quick-start tips join even on the default terminal — and they are the
-    // real derived pool texts (S16), not placeholders: '! to run a shell
-    // command' is short enough to survive the 32-column right-cell budget
-    // at eighty columns whole.
-    expect(output).toContain('Tips for getting started')
-    expect(output).toContain('! to run a shell command')
+    // The info rows paint the muted label and the value as separate SGR
+    // runs, so the joined row is asserted on the stripped frame.
+    expect(stripSgr(output)).toContain('Directory: ')
+    expect(stripSgr(output)).toContain(`Version:   ${BLUE_VERSION}`)
     // The banner renders before any transcript content.
     expect(output.indexOf('Welcome to Blue!')).toBeLessThan(output.indexOf('Blue online.'))
   })
@@ -893,7 +890,7 @@ describe('blue whole-tree e2e', () => {
     tree.terminal.resize(120, tree.terminal.rows)
     const frame = await fullFrame(tree.terminal)
     expect(frame).toContain('Welcome to Blue!')
-    expect(frame).toContain('Tips for getting started')
+    expect(frame).toContain('Send /help for help information.')
     // The kimi gutter insets the banner one column on both sides (D29,
     // S21): a row spans the leading gutter column plus `columns - 2`
     // banner columns — no cap, but no full bleed either.
@@ -3415,10 +3412,11 @@ describe('blue whole-tree e2e', () => {
     // The panel is version-only: no model section even with a live session.
     expect(frame).not.toContain('mock (mock)')
     // Escape restores the editor: the panel leaves the next full frame
-    // (the version section heading is the panel-only marker).
+    // (the `v`-prefixed release line is the panel-only marker — the boot
+    // banner's own Version row carries the bare number).
     tree.terminal.sendInput('\x1b')
     await vi.waitFor(async () => {
-      expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('Version')
+      expect(stripSgr(await fullFrame(tree.terminal))).not.toContain(`v${BLUE_VERSION}`)
     })
   })
 

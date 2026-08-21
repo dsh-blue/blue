@@ -61,7 +61,7 @@ patch 在 `dsh-base` 之上插入三段 19 行。**拔掉整个增强段，基�
 |---|---|---|---|
 | `blue-core` | `@dsh-blue/blue-core` | 提供 L0 适配 + L1 服务（blueScreen/blueKeymap/blueTerminalInfo/blueComponents） | 终端本身；一切组件的地基 |
 | `blue-theme-dark` | `@dsh-blue/blue-core/theme-dark` | `blueTheme` provider（plain 默认） | 全部颜色的内置暗色调色板 |
-| `blue-banner` | `@dsh-blue/blue-transcript/banner` | 消费 blueScreen（首个滚动区子组件） | 欢迎横幅：像素城堡、model · provider、cwd、tips |
+| `blue-banner` | `@dsh-blue/blue-transcript/banner` | 消费 blueScreen（首个滚动区子组件） | 欢迎横幅：kimi 式单栏（logo + Welcome//help 头两行、Directory/Model/Version 标签行） |
 | `blue-transcript` | `@dsh-blue/blue-transcript` | 提供 `blueStatus`/`blueIntents`；消费 `blueSession` 与 session 事件 | 会话记录主体（流式 Markdown + generic 工具卡）+ 两行 footer 壳 |
 | `blue-status-basic` | `@dsh-blue/blue-transcript/status-basic` | 向 `blueStatus` 贡献（priority 0） | footer 第一条目 `{model} · {status}` |
 

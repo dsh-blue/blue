@@ -1,8 +1,8 @@
 /**
- * The banner's pure core — home shortening, adaptive layout boundaries,
- * composition goldens at full/compact/hidden widths, truncation and
- * column-balance edges — plus the component delegation and the plugin's
- * mount lifecycle, and the version-constant guard against `package.json`.
+ * The banner's pure core — home shortening, layout boundaries, composition
+ * goldens at full/compact/hidden widths, truncation edges — plus the
+ * component delegation and the plugin's mount lifecycle, and the
+ * version-constant guard against `package.json`.
  */
 
 import { readFileSync } from 'node:fs'
@@ -16,9 +16,7 @@ import type {
 } from '@dsh-blue/blue-core'
 import { describe, expect, it } from 'vitest'
 import {
-  BANNER_LEFT_WIDTH,
   BANNER_MIN_WIDTH,
-  BANNER_RIGHT_MIN,
   bannerLayout,
   composeBannerLines,
   inject,
@@ -27,8 +25,7 @@ import {
   type BannerContent,
   type BannerDeps,
 } from '../src/banner.ts'
-import { BANNER_TIPS, BANNER_WHATS_NEW, BLUE_VERSION } from '../src/banner-content.ts'
-import { STATUS_TIPS } from '../src/tips-content.ts'
+import { BLUE_VERSION } from '../src/banner-content.ts'
 import * as banner from '../src/banner.ts'
 import { fakeBlueComponents } from './helpers.ts'
 import { COLORS } from './status-fakes.ts'
@@ -41,22 +38,16 @@ const DEPS: BannerDeps = {
   visibleWidth: text => components.visibleWidth(text),
 }
 
-/** Deterministic facts; cwd and sections drive the width edges below. */
+/** Deterministic facts; cwd and version drive the width edges below. */
 const CONTENT: BannerContent = {
   version: '9.9.9-test',
   model: 'm',
   provider: 'p',
   cwd: '~/dev',
-  tips: { heading: 'Tips for getting started', lines: ['tip one', 'tip two'] },
-  whatsNew: { heading: "What's new", lines: ['new one'] },
 }
 
-/** The pixel logo, mirrored from `banner-art.ts`'s golden. */
-const LOGO = [
-  '▄▄██▀███▀█▄▄',
-  '████▄███▄███',
-  ' ██████████ ',
-]
+/** The placeholder logo, mirrored from `banner-art.ts`'s literal. */
+const LOGO = ['▐█▛█▛█▌', '▐█████▌']
 
 describe('shortenHome', () => {
   it('collapses the exact home to ~', () => {
@@ -82,24 +73,15 @@ describe('bannerLayout', () => {
     expect(bannerLayout(BANNER_MIN_WIDTH - 1)).toBeNull()
   })
 
-  it('spans the full width, the left column absorbing it alone at the minimum', () => {
+  it('spans the full width with the inset content cell at the minimum', () => {
     expect(bannerLayout(BANNER_MIN_WIDTH)).toEqual({
       total: BANNER_MIN_WIDTH,
-      leftWidth: BANNER_MIN_WIDTH - 2,
-      rightWidth: 0,
-      withRight: false,
+      innerWidth: BANNER_MIN_WIDTH - 4,
     })
   })
 
-  it('joins the right column once the viewport leaves it enough room', () => {
-    // The right cell is `width − frame(2) − separator(1) − LEFT(44)`.
-    expect(bannerLayout(BANNER_LEFT_WIDTH + BANNER_RIGHT_MIN + 2).withRight).toBe(false)
-    expect(bannerLayout(BANNER_LEFT_WIDTH + BANNER_RIGHT_MIN + 3).withRight).toBe(true)
-    expect(bannerLayout(BANNER_LEFT_WIDTH + BANNER_RIGHT_MIN + 3).rightWidth).toBe(BANNER_RIGHT_MIN)
-  })
-
   it('never caps: the box fills very wide terminals', () => {
-    expect(bannerLayout(200)?.total).toBe(200)
+    expect(bannerLayout(200)).toEqual({ total: 200, innerWidth: 196 })
   })
 })
 
@@ -110,41 +92,37 @@ describe('composeBannerLines', () => {
 
   it('composes the golden full-width box at one hundred columns', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 100)
-    // 1 top + 8 body (welcome, blank, logo×3, blank, model, cwd) + 1 bottom;
-    // the right column (tips + divider + what's new) is 6 rows, so the left
-    // column drives the height.
+    // 1 top + 8 body (blank, the two logo-headed lines, blank, the three
+    // label rows, blank) + 1 bottom.
     expect(lines).toHaveLength(10)
     expect(lines.map(line => line.length)).toEqual(Array.from({ length: 10 }, () => 100))
-    const title = `blue v${CONTENT.version}`
-    expect(lines[0]).toBe(`╭─── ${title} ${'─'.repeat(100 - 7 - title.length)}╮`)
-    // The centered left column: welcome, the logo, model, cwd.
-    expect(lines[1]).toBe(`│${' '.repeat(14)}Welcome to Blue!${' '.repeat(14)}│ Tips for getting started${' '.repeat(28)}│`)
-    expect(lines[2]).toBe(`│${' '.repeat(44)}│ tip one${' '.repeat(45)}│`)
-    expect(lines[3]).toBe(`│${' '.repeat(16)}${LOGO[0]}${' '.repeat(16)}│ tip two${' '.repeat(45)}│`)
-    expect(lines[4]).toBe(`│${' '.repeat(16)}${LOGO[1]}${' '.repeat(16)}│ ${'─'.repeat(51)} │`)
-    expect(lines[5]).toBe(`│${' '.repeat(16)}${LOGO[2]}${' '.repeat(16)}│ What's new${' '.repeat(42)}│`)
-    expect(lines[6]).toBe(`│${' '.repeat(44)}│ new one${' '.repeat(45)}│`)
-    expect(lines[7]).toBe(`│${' '.repeat(19)}m · p${' '.repeat(20)}│${' '.repeat(53)}│`)
-    expect(lines[8]).toBe(`│${' '.repeat(19)}~/dev${' '.repeat(20)}│${' '.repeat(53)}│`)
+    expect(lines[0]).toBe(`╭${'─'.repeat(98)}╮`)
+    expect(lines[1]).toBe(`│${' '.repeat(98)}│`)
+    expect(lines[2]).toBe(`│  ${LOGO[0]}  Welcome to Blue!${' '.repeat(71)}│`)
+    expect(lines[3]).toBe(`│  ${LOGO[1]}  Send /help for help information.${' '.repeat(55)}│`)
+    expect(lines[4]).toBe(`│${' '.repeat(98)}│`)
+    expect(lines[5]).toBe(`│  Directory: ~/dev${' '.repeat(80)}│`)
+    expect(lines[6]).toBe(`│  Model:     m · p${' '.repeat(80)}│`)
+    expect(lines[7]).toBe(`│  Version:   9.9.9-test${' '.repeat(75)}│`)
+    expect(lines[8]).toBe(`│${' '.repeat(98)}│`)
     expect(lines[9]).toBe(`╰${'─'.repeat(98)}╯`)
   })
 
-  it('joins the right column at eighty columns too — the right cell is 33 wide', () => {
+  it('composes the same single column at eighty columns', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 80)
     expect(lines).toHaveLength(10)
     expect(lines.map(line => line.length)).toEqual(Array.from({ length: 10 }, () => 80))
     expect(lines.join('\n')).toContain('Welcome to Blue!')
-    expect(lines.join('\n')).toContain('Tips for getting started')
-    expect(lines.join('\n')).toContain("What's new")
+    expect(lines.join('\n')).toContain('Send /help for help information.')
+    expect(lines.join('\n')).toContain('Directory: ~/dev')
   })
 
-  it('drops the right column on narrow terminals, the left absorbing the width', () => {
+  it('composes the same single column on narrow terminals', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 48)
     expect(lines).toHaveLength(10)
     expect(lines.map(line => line.length)).toEqual(Array.from({ length: 10 }, () => 48))
     expect(lines.join('\n')).toContain('Welcome to Blue!')
-    expect(lines[1]).toBe(`│${' '.repeat(15)}Welcome to Blue!${' '.repeat(15)}│`)
-    expect(lines.join('\n')).not.toContain('Tips for getting started')
+    expect(lines.join('\n')).toContain('Model:     m · p')
   })
 
   it('fills very wide terminals without a cap', () => {
@@ -152,44 +130,32 @@ describe('composeBannerLines', () => {
     expect(lines[0]?.length).toBe(200)
   })
 
-  it('truncates an over-long cwd to the left column', () => {
+  it('truncates the /help line once the header budget runs out', () => {
+    const lines = composeBannerLines(DEPS, CONTENT, 40)
+    // innerWidth 36 − logo 7 − gap 2 = 27 columns for the header text.
+    expect(lines.join('\n')).toContain('Send /help for help info...')
+    expect(lines.join('\n')).not.toContain('information.')
+    expect(lines.map(line => line.length)).toEqual(Array.from({ length: lines.length }, () => 40))
+  })
+
+  it('truncates an over-long cwd to the value budget', () => {
     const lines = composeBannerLines(DEPS, { ...CONTENT, cwd: 'd'.repeat(200) }, 100)
-    expect(lines.join('\n')).toContain(`${'d'.repeat(41)}...`)
-    expect(lines.join('\n')).not.toContain('d'.repeat(42))
+    // innerWidth 96 − label 11 = 85 columns for every info value.
+    expect(lines.join('\n')).toContain(`${'d'.repeat(82)}...`)
+    expect(lines.join('\n')).not.toContain('d'.repeat(83))
     expect(lines.map(line => line.length)).toEqual(Array.from({ length: lines.length }, () => 100))
   })
 
-  it('truncates an over-long model line to the left column', () => {
+  it('truncates an over-long model line to the value budget', () => {
     const lines = composeBannerLines(DEPS, { ...CONTENT, model: 'm'.repeat(100) }, 100)
-    expect(lines.join('\n')).toContain(`${'m'.repeat(41)}...`)
-    expect(lines.join('\n')).not.toContain('m'.repeat(42))
+    expect(lines.join('\n')).toContain(`${'m'.repeat(82)}...`)
+    expect(lines.join('\n')).not.toContain('m'.repeat(83))
   })
 
-  it('truncates over-long right-column lines to the right cell', () => {
-    const lines = composeBannerLines(
-      DEPS,
-      { ...CONTENT, tips: { heading: 'Tips for getting started', lines: ['t'.repeat(90)] } },
-      100,
-    )
-    expect(lines.join('\n')).toContain(`│ ${'t'.repeat(49)}...`)
-    expect(lines.map(line => line.length)).toEqual(Array.from({ length: lines.length }, () => 100))
-  })
-
-  it('truncates an over-long title inside the top rule', () => {
-    const lines = composeBannerLines(DEPS, { ...CONTENT, version: 'v'.repeat(100) }, 40)
-    expect(lines[0]?.length).toBe(40)
-  })
-
-  it('pads the left column when the right column is taller', () => {
-    const lines = composeBannerLines(
-      DEPS,
-      { ...CONTENT, whatsNew: { heading: "What's new", lines: Array.from({ length: 20 }, (_, i) => `new ${i}`) } },
-      100,
-    )
-    // Right column: tips heading + 2 lines + divider + what's-new heading + 20 lines.
-    expect(lines).toHaveLength(2 + 25)
-    const lastBody = lines[lines.length - 2] ?? ''
-    expect(lastBody.startsWith(`│${' '.repeat(44)}│ new 19`)).toBe(true)
+  it('truncates an over-long version value to the value budget', () => {
+    const lines = composeBannerLines(DEPS, { ...CONTENT, version: 'v'.repeat(100) }, 100)
+    expect(lines.join('\n')).toContain(`Version:   ${'v'.repeat(82)}...`)
+    expect(lines.join('\n')).not.toContain('v'.repeat(83))
     expect(lines.map(line => line.length)).toEqual(Array.from({ length: lines.length }, () => 100))
   })
 })
@@ -260,13 +226,13 @@ describe('blue-banner plugin', () => {
     expect(screen.renderRequests.length).toBeGreaterThan(0)
     const joined = screen.children[0]?.render(100).join('\n') ?? ''
     expect(joined).toContain('Welcome to Blue!')
-    expect(joined).toContain(`blue v${BLUE_VERSION}`)
+    expect(joined).toContain(`Version:   ${BLUE_VERSION}`)
     expect(joined).toContain('m · p')
-    // The left cell is BANNER_LEFT_WIDTH columns: a cwd that fits renders
-    // whole, while a deeper checkout (this spec also runs from worktree
-    // copies) survives as its clipped prefix before the ellipsis.
+    // The value cell budgets ninety-six minus the eleven-column label: a
+    // cwd that fits renders whole, while a deeper checkout (this spec also
+    // runs from worktree copies) survives as its clipped prefix.
     const cwd = shortenHome(process.cwd(), homedir())
-    expect(joined).toContain(cwd.length <= BANNER_LEFT_WIDTH ? cwd : cwd.slice(0, BANNER_LEFT_WIDTH - 3))
+    expect(joined).toContain(cwd.length <= 85 ? cwd : cwd.slice(0, 82))
     // The banner is stateless; invalidation is a covered no-op.
     expect(() => screen.children[0]?.invalidate()).not.toThrow()
   })
@@ -308,36 +274,5 @@ describe('BLUE_VERSION', () => {
   it('matches the package version', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }
     expect(BLUE_VERSION).toBe(pkg.version)
-  })
-})
-
-describe('banner content', () => {
-  it('derives the tips section from the footer pool: non-solo, weight-first, three lines', () => {
-    // The exact selection, pinned: the two priority-2 sharable tips first,
-    // then the first priority-1 tip in pool order.
-    expect(BANNER_TIPS.lines).toEqual([
-      '! to run a shell command',
-      '@: mention files',
-      '/help: show commands',
-    ])
-    // The derivation invariants, independent of the pinned copy: every
-    // line is a pool text, none is a solo tip, and higher weight sorts
-    // earlier.
-    const pool = new Map(STATUS_TIPS.map(tip => [tip.text, tip]))
-    for (const line of BANNER_TIPS.lines) expect(pool.get(line)?.solo).not.toBe(true)
-    const weights = BANNER_TIPS.lines.map(line => pool.get(line)?.priority ?? 1)
-    expect([...weights].sort((a, b) => b - a)).toEqual(weights)
-    // Three tips + heading + divider + two what's-new lines exactly fill
-    // the right column's eight body rows against the left column.
-    expect(BANNER_TIPS.lines).toHaveLength(3)
-    expect(BANNER_WHATS_NEW.lines).toHaveLength(2)
-  })
-
-  it('keeps every right-column line within the hundred-column render budget', () => {
-    // The right cell at one hundred columns budgets fifty-two visible
-    // columns; longer lines would render clipped on the default view.
-    for (const line of [...BANNER_TIPS.lines, ...BANNER_WHATS_NEW.lines]) {
-      expect(line.length).toBeLessThanOrEqual(52)
-    }
   })
 })

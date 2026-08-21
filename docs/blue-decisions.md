@@ -312,6 +312,15 @@
 - **后果/边界**：refresh 用**已落 header 的路由**派生（路由不随 alt+m 换档实时更新——与上游行为一致，仅辅助调用身份滞后）；上游修复合入并升 pin 后本桥可退役；e2e 以结构 fake 的 refresh 记录器断言桥行为（真服务不在薄 e2e 树内）。
 - **落地（2026-08-22，随 footer 换位 PR）**：`packages/interaction/src/session-title-cadence.ts` + index 挂载 + 单测 6 例 + e2e 桥断言（首轮 0 次、次轮恰 1 次带会话 id）。
 
+### D42. S35 欢迎横幅改 kimi 式单栏：右栏整体退役，logo 暂用 kimi 占位（用户裁决，2026-08-22）
+
+- **背景**：S8/S16 定稿的双栏 banner（左栏 44 列居中欢迎 + 像素 logo + `model · provider` + cwd，右栏 Tips + What's new，标题嵌顶边框）信息密度高但视觉偏重；用户要求改成 kimi-code `welcome.ts` 那种简洁单栏形态。
+- **决策**（用户三项裁决）：(1) **单栏形态**——logo 与 "Welcome to Blue!" / "Send /help for help information." 两行并排，其下 Directory/Model/Version 手工对齐标签行（各 11 可见列），不加 Session 行；(2) **右栏整体退役**——tips 唯一内容源归活动面板 spinner 行（`tips-content.ts` 池不动），What's new 文案删除；(3) **logo 暂用 kimi 原版字符画占位**（`▐█▛█▛█▌`/`▐█████▌`，7 列 2 行；两个自设计候选均被否）——`banner-art.ts` 的字面量即未来替换点，`packHalfBlockArt` 折叠器随 12×6 网格一并退役（grep 证实无外部消费者）。
+- **不变式**：min-40 渲染零行维持（不移植 kimi 的 <24 纯文本降级——Blue 自 D22 起"宁可不渲染"路线）；Model 行保 `model · provider`（`ModelSelection` 无 displayName，且 `/model`/`/status` 与 e2e 既有断言零冲突）；S24a 模型行活态刷新、patch 行序钉位（banner 先于 `blue-transcript`）、`BLUE_VERSION` 守卫链（`./banner-content` 公共子路径，`/version` 读它）全部不动；版本号从标题行移入 Version 行；高度恒 10 行（与旧版相同，footer 沉底 e2e 数学不变）。
+- **理由**：kimi 形态是用户指定的观感基准；单栏把宽度逻辑从双栏规划收缩为 `total`/`innerWidth` 两个字段；占位 logo 避免自设计阻塞本次重构。
+- **后果/边界**：占位是 kimi 产品字符画，Blue 专属标记定稿后于 `banner-art.ts` 一处替换（spec golden 跟随）；头部 `/help` 行自 40 列宽起截断（预算 innerWidth−9），信息行值预算 innerWidth−11；e2e 跨色 run 断言（Version 行 muted 标签 + text 值）改走 `stripSgr`。
+- **落地（2026-08-22，worktree 待人工验收）**：`banner.ts` 单栏重写 + `banner-art.ts` 占位字面量 + `banner-content.ts` 收缩为版本常量模块 + banner/banner-art spec 重写 + e2e 两段 + README 双语/AGENTS/roadmap/seams 同步。
+
 ### D43. hint 行 slash-discovery 退役：dropdown 是唯一命令目录（S34 验收裁决，2026-08-22；原编 D42 与 master 已并的 S35 kimi banner 撞号，重编——D37→D39 先例）
 
 - **背景**：裸 `/` 时命令目录双渲染——pi-tui dropdown（S14 completion polish，editor-plus 装载）与 hint 行 slash-discovery tier（S14 同期的前置产物，横排前 3 条）同屏。首轮修复尝试"dropdown 开启时 hint 让位"（render 期探 `isShowingAutocomplete()`，避开异步竞态），但 Esc 关闭 dropdown 后 discovery 行复现——让位治标不治本，验收二轮仍报冗余。

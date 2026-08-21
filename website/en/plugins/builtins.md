@@ -43,7 +43,7 @@ The five plugins composing the minimal usable Blue UI — the plain baseline, be
 | --- | --- |
 | `blue-core` | terminal core: the tree's only pi-tui adapter, providing the screen/keymap/component-factory/terminal-facts services |
 | `blue-theme-dark` | built-in dark palette (the plain default provider of `blueTheme`) |
-| `blue-banner` | boot welcome banner: model · provider, cwd, tips, what's new |
+| `blue-banner` | boot welcome banner: the logo-headed welcome/`/help` lines and the Directory/Model/Version rows |
 | `blue-transcript` | the transcript body: event folding and rendering, the status registry and two-row footer shell |
 | `blue-status-basic` | baseline status entry: the model name (priority 0) |
 
