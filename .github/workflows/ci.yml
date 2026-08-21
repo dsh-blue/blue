@@ -1,0 +1,43 @@
+# R0 (release roadmap): test/typecheck/lint gate for the five packages.
+# Runs on every master push and PR (except website-only PRs — those are
+# covered by website-pages.yml's build check). Install is pinned by the
+# root packageManager field (pnpm/action-setup reads it) with a frozen
+# lockfile; node mirrors the website workflow's PRIMARY_NODE_VERSION.
+# Coverage enforces per-file 100% via vitest.config.ts thresholds, so
+# `test:coverage` failing = discipline breach, not just a broken test.
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    paths-ignore:
+      - website/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PRIMARY_NODE_VERSION: '24'
+
+jobs:
+  check:
+    name: typecheck / lint / test (coverage)
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ci-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Fast gates first: tsc -b fails in seconds, oxlint in under a second,
+      # so a type error doesn't burn a full test run.
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test:coverage
