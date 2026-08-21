@@ -43,7 +43,7 @@ flowchart TB
 | --- | --- |
 | `blue-core` | 终端核心：全树唯一的 pi-tui 适配器，提供屏幕/键位/组件工厂/终端事实四项服务 |
 | `blue-theme-dark` | 内置 dark 调色板（`blueTheme` 服务的 plain 默认提供方） |
-| `blue-banner` | 启动欢迎横幅：模型 · provider、cwd、tips、What's new |
+| `blue-banner` | 启动欢迎横幅：logo + Welcome/`/help` 头两行、Directory/Model/Version 信息行 |
 | `blue-transcript` | 会话流主体：事件折叠与渲染、状态栏注册表与两行 footer 壳 |
 | `blue-status-basic` | 状态栏基线条目：model 名（优先级 0） |
 
