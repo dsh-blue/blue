@@ -3271,7 +3271,7 @@ describe('blue whole-tree e2e', () => {
     expect(second.ctx.get('agentPresets')!.composedPreset(secondAgent.ctx)).toBe('beta')
   })
 
-  it('/tools lists the session catalog with MCP grouping and closes on Escape', async () => {
+  it('/tools opens the picker, stacks the tool detail on Enter, and Escape walks back', async () => {
     const tree = await bootBlue([], { script: [] })
     const agent = await currentAgent(tree)
     // Two global registrations from the spec side: a plain tool and an
@@ -3279,8 +3279,12 @@ describe('blue whole-tree e2e', () => {
     const tools = (tree.ctx as unknown as { tools: { register(definition: unknown): () => void } }).tools
     tools.register({
       name: 'spec_probe',
-      description: 'the spec-side probe tool',
-      parameters: { type: 'object', properties: {} },
+      description: 'The spec-side probe tool.\nIt never executes; the panel only reads.',
+      parameters: {
+        type: 'object',
+        properties: { target: { type: 'string', description: 'What to probe' } },
+        required: ['target'],
+      },
       output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: '' }] },
       execute: () => Promise.resolve('ok'),
     })
@@ -3296,10 +3300,27 @@ describe('blue whole-tree e2e', () => {
       const frame = stripSgr(await fullFrame(tree.terminal))
       expect(frame).toContain('spec_probe')
     })
-    const frame = stripSgr(await fullFrame(tree.terminal))
-    expect(frame).toContain('the spec-side probe tool')
-    expect(frame).toContain('MCP · demo (1)')
+    // The picker shows the name beside the first-sentence brief.
+    let frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).toContain('The spec-side probe tool.')
     expect(frame).toContain('mcp__demo__list_items')
+    // Step down to the mcp row (exit_plan_mode sorts first), then Enter
+    // opens the detail panel stacked above the picker.
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('server')
+    })
+    frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).toContain('demo')
+    expect(frame).toContain('demo list')
+    expect(frame).toContain('no parameters')
+    // Escape walks back to the picker, a second one closes it.
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('server')
+    })
+    expect(stripSgr(await fullFrame(tree.terminal))).toContain('spec_probe')
     tree.terminal.sendInput('\x1b')
     await vi.waitFor(async () => {
       expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('spec_probe')

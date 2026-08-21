@@ -132,7 +132,7 @@ p1-design §4.3 是本文档的前身（MVP 后命令面调研）。本次逐符
 | `/plugins` | ✅ | — | ✅ | ✅ | 🚫 组合层已承担启停；CLI 另有 `dsh plugin --profile add`（安装外部插件包） |
 | `/apps` | — | — | — | ✅ | 🚫 无 connector 概念 |
 | `/hooks` | — | — | ✅ | ✅ | 🚫 命令不做；上游现成 hooks 兼容桥（dsh-hooks-claude-code / hooks-codex 方言，rc.5 未随 rc.6 发布，§3.2） |
-| `/tools` | ✅ | — | — | — | ✅ **S28 已落地（2026-08-21）**：`ctx.tools.schemas(scopeOf(agent.ctx))` 真枚举只读 InfoPanel，MCP 工具按 server 分节；fold 兜底路线未采用 |
+| `/tools` | ✅ | — | — | — | ✅ **S28 已落地（2026-08-21，dogfood 二轮改为两段式）**：选择器面板（工具名 + 首句简介）→ Enter 叠详情 InfoPanel（name/server、描述折行、参数逐行 + required 标注，Esc 逐层退回）；枚举经 `schemas(roster.standingKeyFor(...))`（跨 store 安全，D37 后记）；fold 兜底路线未采用 |
 | `/tasks` (`task`) | ✅ | — | ✅ | ✅ | **S28** 待建（⚠️ Adapt：todo 面板 + jobs 视图；ctx.jobs + tool-jobs 现成，§3.2） |
 | `/init` | ✅ | — | ✅ | ✅ | ✅ 已发货（S27' 落地 2026-08-21：`interaction/src/session-init.ts` 罐头提示 followup 写 AGENTS.md + idle 守卫拒绝并发） |
 | `/login` / `/logout` | ✅ | ✅ | ✅ | — | 🚫 认证面由 harness settings/凭据承担 |

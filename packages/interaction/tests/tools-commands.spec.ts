@@ -1,8 +1,9 @@
 /**
- * Unit tests for the `/tools` command family: the pure section builder
- * (built-in bucket, MCP grouping, ordering, description collapsing), and
- * the command over the real command runtime — panel mount, close, and the
- * no-session / no-display / no-service guards.
+ * Unit tests for the `/tools` command family: the pure builders (the
+ * first-sentence brief, the display-line wrapping, the picker rows, the
+ * defensive parameter extraction, the detail sections), and the command
+ * over the real command runtime — picker mount, the stacked detail panel
+ * with Escape walking back, the empty catalog, and the guard chain.
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -12,10 +13,16 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import * as commandsPlugin from '../src/commands-plugin.ts'
 import type { InfoPanel } from '../src/info-panel.ts'
 import { clearSharedEditor } from '../src/editor-instance.ts'
-import { buildToolsSections } from '../src/tools-commands.ts'
+import {
+  buildToolDetailSections,
+  buildToolPickerRows,
+  firstSentence,
+  readParameters,
+  wrapLines,
+} from '../src/tools-commands.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Context } from '@deepseek-ai/cordis'
-import { fakeBlueContext, type FakeScreen } from './fakes.ts'
+import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
 
 afterEach(() => {
   clearSharedEditor()
@@ -23,64 +30,133 @@ afterEach(() => {
 
 /** Strip SGR and the fake palette's marker characters so assertions read visible text. */
 function plain(rows: readonly string[]): readonly string[] {
-  return rows.map(row => row.replace(/\x1b\[[0-9;]*m/g, '').replace(/[~^#]/g, ''))
+  return rows.map(row => row.replace(/\x1b\[[0-9;]*m/g, '').replace(/[~^#!?]/g, ''))
 }
 
-/** One schema fixture, description optional. */
-function tool(name: string, description = ''): ToolSchema {
-  return { name, description, parameters: { type: 'object' } }
+/** One schema fixture; `parameters` defaults to an empty object schema. */
+function tool(name: string, description = '', parameters?: Record<string, unknown>): ToolSchema {
+  return { name, description, parameters: parameters ?? { type: 'object', properties: {} } }
 }
 
-describe('buildToolsSections', () => {
-  it('buckets built-in tools into one name-sorted section with counts', () => {
-    const sections = buildToolsSections([tool('bash', 'Run a command'), tool('edit', 'Edit a file')])
-    expect(sections).toHaveLength(1)
-    expect(sections[0]!.heading).toBe('Tools (2)')
+describe('firstSentence', () => {
+  it('takes the first non-empty line, cut after its first sentence end', () => {
+    expect(firstSentence('Run a command. Use it for everything else.\nSecond line.'))
+      .toBe('Run a command.')
+    expect(firstSentence('\n\n  Run a command  \n* bullet body')).toBe('Run a command')
+    // CJK sentence ends cut too.
+    expect(firstSentence('运行命令。更多说明。')).toBe('运行命令。')
+  })
+
+  it('answers an empty string for a textless description', () => {
+    expect(firstSentence('')).toBe('')
+    expect(firstSentence('\n \n')).toBe('')
+  })
+})
+
+describe('wrapLines', () => {
+  it('keeps short lines verbatim and drops empty ones', () => {
+    expect(wrapLines('one\ntwo\n\n  \nthree')).toEqual(['one', 'two', 'three'])
+  })
+
+  it('word-wraps a line past the budget on space boundaries', () => {
+    const wrapped = wrapLines(`${'word '.repeat(20)}end`)
+    expect(wrapped.length).toBeGreaterThan(1)
+    for (const line of wrapped) expect(line.length).toBeLessThanOrEqual(64)
+    expect(wrapped.at(-1)!.endsWith('end')).toBe(true)
+    // A single word longer than the budget stays one line (the panel's
+    // width truncation is the backstop, never a mid-word cut here).
+    expect(wrapLines('x'.repeat(100))).toEqual(['x'.repeat(100)])
+  })
+})
+
+describe('buildToolPickerRows', () => {
+  it('lists name-sorted rows with the first sentence, omitting empty briefs', () => {
+    const rows = buildToolPickerRows([
+      tool('bash', 'Run a command.\nLong body follows.'),
+      tool('edit'),
+      tool('mcp__demo__get', 'Fetch one item from demo.\nRate limited.'),
+    ])
+    expect(rows.map(row => row.value)).toEqual(['bash', 'edit', 'mcp__demo__get'])
+    expect(rows[0]).toEqual({ value: 'bash', label: 'bash', description: 'Run a command.' })
+    expect(rows[1]).toEqual({ value: 'edit', label: 'edit' })
+    expect(rows[2]!.description).toBe('Fetch one item from demo.')
+  })
+})
+
+describe('readParameters', () => {
+  it('extracts type, description, and the required marking in property order', () => {
+    const facts = readParameters({
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'The file path.\nMore.' },
+        force: { type: 'boolean' },
+        legacy: {},
+      },
+      required: ['path', 'legacy'],
+    })
+    expect(facts).toEqual([
+      { name: 'path', type: 'string', description: 'The file path.', required: true },
+      { name: 'force', type: 'boolean', description: '', required: false },
+      { name: 'legacy', type: 'any', description: '', required: true },
+    ])
+  })
+
+  it('answers undefined for absent, non-object, or empty shapes', () => {
+    expect(readParameters(undefined)).toBeUndefined()
+    expect(readParameters({ type: 'object' })).toBeUndefined()
+    expect(readParameters({ properties: 'nope' as unknown as Record<string, unknown> })).toBeUndefined()
+    expect(readParameters({ properties: {} })).toBeUndefined()
+    expect(readParameters({ properties: { broken: 'scalar' as unknown as object } })).toBeUndefined()
+    expect(readParameters({ required: 'path', properties: { path: { type: 'string' } } } as unknown as Record<string, unknown>))
+      .toEqual([{ name: 'path', type: 'string', description: '', required: false }])
+  })
+})
+
+describe('buildToolDetailSections', () => {
+  it('shows the identity rows with the MCP server, wrapped description, and parameters', () => {
+    const sections = buildToolDetailSections(tool(
+      'mcp__demo__get',
+      'Fetch one item from the demo server.\nArguments:\n* id — the item id',
+      {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'The item id' },
+          verbose: { type: 'boolean' },
+        },
+        required: ['id'],
+      },
+    ))
+    expect(sections.map(section => section.heading)).toEqual(['Tool', 'Description', 'Parameters (2)'])
     expect(sections[0]!.rows).toEqual([
-      { label: 'bash', segments: [{ text: 'Run a command' }] },
-      { label: 'edit', segments: [{ text: 'Edit a file' }] },
+      { label: 'name', segments: [{ text: 'mcp__demo__get' }] },
+      { label: 'server', segments: [{ text: 'demo' }] },
+    ])
+    expect(sections[1]!.rows.map(row => row.segments[0]!.text))
+      .toEqual(['Fetch one item from the demo server.', 'Arguments:', '* id — the item id'])
+    expect(sections[2]!.rows).toEqual([
+      {
+        label: 'id',
+        segments: [
+          { text: 'string', style: 'muted' },
+          { text: ' — The item id' },
+          { text: ' · required', style: 'warning' },
+        ],
+      },
+      {
+        label: 'verbose',
+        segments: [{ text: 'boolean', style: 'muted' }],
+      },
     ])
   })
 
-  it('answers a single muted section for an empty catalog', () => {
-    const sections = buildToolsSections([])
-    expect(sections).toEqual([{
-      heading: 'tools',
-      rows: [{ label: 'none', segments: [{ text: 'no tools visible to this session', style: 'muted' }] }],
-    }])
-  })
-
-  it('groups mcp__ tools per server after the built-in section, servers sorted', () => {
-    const sections = buildToolsSections([
-      tool('bash', 'Run a command'),
-      tool('mcp__zeta__get', 'zeta get'),
-      tool('mcp__demo__list_items', 'demo list'),
-      tool('mcp__demo__get', 'demo get'),
-    ])
-    expect(sections.map(section => section.heading)).toEqual(['Tools (1)', 'MCP · demo (2)', 'MCP · zeta (1)'])
-    expect(sections[1]!.rows.map(row => row.label)).toEqual(['mcp__demo__get', 'mcp__demo__list_items'])
-    expect(sections[2]!.rows.map(row => row.label)).toEqual(['mcp__zeta__get'])
-  })
-
-  it('answers MCP-only catalogs and a bare mcp__ name with no raw segment', () => {
-    // No built-in tools: no Tools section, only the server sections.
-    const only = buildToolsSections([tool('mcp__demo__get', 'demo get')])
-    expect(only.map(section => section.heading)).toEqual(['MCP · demo (1)'])
-    // `mcp__lonely` has no second `__`: the whole tail is the server name.
-    const bare = buildToolsSections([tool('mcp__lonely', 'tailless')])
-    expect(bare.map(section => section.heading)).toEqual(['MCP · lonely (1)'])
-    expect(bare[0]!.rows[0]!.label).toBe('mcp__lonely')
-  })
-
-  it('collapses multiline descriptions and marks empty ones muted', () => {
-    const sections = buildToolsSections([
-      tool('multi', 'line one\nline two\nline three'),
-      tool('silent'),
-    ])
-    expect(sections[0]!.rows).toEqual([
-      { label: 'multi', segments: [{ text: 'line one line two line three' }] },
-      { label: 'silent', segments: [{ text: '(no description)', style: 'muted' }] },
-    ])
+  it('omits the server row for builtin tools and marks absent text and parameters muted', () => {
+    const sections = buildToolDetailSections(tool('edit'))
+    expect(sections[0]!.rows).toEqual([{ label: 'name', segments: [{ text: 'edit' }] }])
+    expect(sections[1]!.rows).toEqual([{ label: '', segments: [{ text: '(no description)', style: 'muted' }] }])
+    expect(sections[2]).toEqual({
+      heading: 'Parameters',
+      rows: [{ label: '', segments: [{ text: '(no parameters)', style: 'muted' }] }],
+    })
   })
 })
 
@@ -133,9 +209,55 @@ describe('registerToolsCommands', () => {
     await run(ctx, agent, '/tools')
   })
 
+  it('opens the picker, stacks the detail on Enter, and Escape walks back twice', async () => {
+    const { ctx, screen, agent } = await mount({
+      schemas: () => [
+        tool('spec_probe', 'Probe the catalog.', 'arguments follow', {
+          type: 'object',
+          properties: { target: { type: 'string', description: 'What to probe' } },
+          required: ['target'],
+        }),
+        tool('mcp__demo__get', 'Fetch one item.'),
+      ],
+    })
+    expect(await run(ctx, agent, '/tools')).toEqual({ kind: 'success' })
+    // The picker: name-sorted rows with their briefs (mcp sorts first).
+    const picker = screen.overlays.at(-1)!
+    expect(picker.hidden).toBe(false)
+    let rows = plain(picker.component.render(100))
+    expect(rows.some(row => row.includes('mcp__demo__get') && row.includes('Fetch one item.'))).toBe(true)
+    expect(rows.some(row => row.includes('spec_probe') && row.includes('Probe the catalog.'))).toBe(true)
+    // Enter on the head row opens the detail panel stacked above the picker.
+    picker.component.handleInput(KEY.enter)
+    const detail = screen.overlays.at(-1)!
+    expect(detail).not.toBe(picker)
+    rows = plain((detail.component as InfoPanel).render(100))
+    expect(rows.some(row => row.includes('name'))).toBe(true)
+    expect(rows.some(row => row.includes('mcp__demo__get'))).toBe(true)
+    expect(rows.some(row => row.includes('server'))).toBe(true)
+    expect(rows.some(row => row.includes('Fetch one item.'))).toBe(true)
+    // Escape pops the detail back onto the picker (the hidden detail
+    // record stays in the array — the visible top is the picker), a
+    // second Escape closes it.
+    detail.component.handleInput(KEY.escape)
+    expect(screen.overlays.filter(entry => !entry.hidden).at(-1)).toBe(picker)
+    picker.component.handleInput(KEY.escape)
+    expect(picker.hidden).toBe(true)
+  })
+
+  it('shows the read-only empty panel for an empty catalog, closing on Escape', async () => {
+    const { ctx, screen, agent } = await mount({ schemas: () => [] })
+    expect(await run(ctx, agent, '/tools')).toEqual({ kind: 'success' })
+    const overlay = screen.overlays.at(-1)!
+    const rows = plain((overlay.component as InfoPanel).render(80))
+    expect(rows.some(row => row.includes('no tools visible to this session'))).toBe(true)
+    overlay.component.handleInput(KEY.escape)
+    expect(overlay.hidden).toBe(true)
+  })
+
   it('enumerates through the preset standing key when the agent runs on a roster composition', async () => {
     const scopes: unknown[] = []
-    const { ctx, screen, agent } = await mount({
+    const { ctx, agent } = await mount({
       schemas: scope => {
         scopes.push(scope)
         return [tool('bash', 'Run a command')]
@@ -144,8 +266,6 @@ describe('registerToolsCommands', () => {
     })
     expect(await run(ctx, agent, '/tools')).toEqual({ kind: 'success' })
     expect(scopes).toEqual([STANDING_KEY])
-    const rows = plain((screen.overlays.at(-1)!.component as InfoPanel).render(80))
-    expect(rows.some(row => row.includes('Tools (1)'))).toBe(true)
   })
 
   it('falls back to the global view when the roster is absent or binds nothing', async () => {
@@ -186,24 +306,6 @@ describe('registerToolsCommands', () => {
     gate.resolve(STANDING_KEY)
     expect(await pending).toEqual({ kind: 'success' })
     expect(screen.overlays).toHaveLength(0)
-  })
-
-  it('mounts the panel over the scoped catalog and closes on Escape', async () => {
-    const { ctx, screen, agent } = await mount({
-      schemas: () => [tool('bash', 'Run a command'), tool('mcp__demo__get', 'demo get')],
-    })
-    const result = await run(ctx, agent, '/tools')
-    expect(result).toEqual({ kind: 'success' })
-    const overlay = screen.overlays.at(-1)!
-    expect(overlay.hidden).toBe(false)
-    const rows = plain((overlay.component as InfoPanel).render(80))
-    expect(rows.some(row => row.includes('Tools (1)'))).toBe(true)
-    expect(rows.some(row => row.includes('bash'))).toBe(true)
-    expect(rows.some(row => row.includes('Run a command'))).toBe(true)
-    expect(rows.some(row => row.includes('MCP · demo (1)'))).toBe(true)
-    expect(rows.some(row => row.includes('mcp__demo__get'))).toBe(true)
-    overlay.component.handleInput?.('\x1b')
-    expect(overlay.hidden).toBe(true)
   })
 
   it('refuses without a live session', async () => {
