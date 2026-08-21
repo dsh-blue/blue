@@ -683,6 +683,14 @@ export class FakeScreen implements BlueScreen {
   requestRender(): void {
     this.renderRequests += 1
   }
+
+  /** S31 seam: counts suspends; the body runs unreleased (no renderer here). */
+  suspends = 0
+
+  suspend<T>(fn: () => Promise<T>): Promise<T> {
+    this.suspends += 1
+    return fn()
+  }
 }
 
 function isFocusable(component: BlueComponent | null): component is BlueFocusable {

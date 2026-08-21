@@ -51,6 +51,11 @@ export class PaneFakeScreen implements BlueScreen {
     this.renderRequests.push(force)
   }
 
+  /** S31 seam: pass-through; the pane suites never suspend the screen. */
+  suspend<T>(fn: () => Promise<T>): Promise<T> {
+    return fn()
+  }
+
   /**
    * Every mounted bottom child's rendered rows, in mount order, with the
    * kimi gutter column the mount layer wraps the panes in stripped — the

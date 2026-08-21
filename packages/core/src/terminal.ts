@@ -65,6 +65,19 @@ export interface BlueTerminalRuntime {
    */
   requestRender(force?: boolean): void
   /**
+   * Suspend the renderer, run `fn` with the terminal released (raw mode off,
+   * pi-tui detached, the tty free for a child process with inherited stdio),
+   * then resume: restart the renderer, re-arm OSC 2031 notifications, and
+   * force a full repaint. The suspend is exclusive — a second call while one
+   * is in flight rejects — and refuses on a stopped runtime. If the runtime
+   * is torn down while suspended, the resume side skips the restart and the
+   * fn's settlement (value or error) propagates unchanged.
+   * @param fn - the async body owning the terminal while it is released.
+   * @returns settles with fn's outcome after the renderer resumed (or was
+   *   torn down mid-suspend).
+   */
+  suspend<T>(fn: () => Promise<T>): Promise<T>
+  /**
    * Restore the terminal: drain pending input, then stop the renderer and
    * the underlying terminal. Idempotent.
    * @returns settles when the terminal state is restored.
@@ -195,6 +208,7 @@ export async function startBlueTerminal(
   current.setTerminalColorSchemeNotifications(true)
   if (onSchemeChange !== undefined) current.onTerminalColorSchemeChange(onSchemeChange)
   let stopped = false
+  let suspended = false
   const runtime: BlueTerminalRuntime = {
     get columns() {
       return current.terminal.columns
@@ -249,9 +263,47 @@ export async function startBlueTerminal(
     requestRender(force) {
       stable.requestRender(force)
     },
+    async suspend<T>(fn: () => Promise<T>): Promise<T> {
+      if (suspended) throw new Error('blue terminal suspend is already in flight')
+      if (stopped) throw new Error('blue terminal is stopped; suspend refused')
+      suspended = true
+      // Main-screen mode: the child appends below the content in the
+      // scrollback tail, so stop() takes no preserveScreen option — the
+      // cursor drops below the rendered content and the external editor
+      // opens in place (kimi's main-screen ordering).
+      current.stop()
+      // One setImmediate beat lets the stop escape sequences flush before
+      // the child takes over the tty.
+      await new Promise<void>(resolve => setImmediate(resolve))
+      try {
+        return await fn()
+      } finally {
+        suspended = false
+        // Pause before start(): bytes buffered while suspended must not
+        // surface as application input once raw mode re-arms.
+        process.stdin.pause()
+        // Torn down mid-suspend (fiber unload / fail-loud release): the
+        // renderer must not restart; the settlement propagates as-is.
+        if (!stopped && activeRuntime === runtime) {
+          current.start()
+          // stop() disabled OSC 2031 notifications; re-arm them, then force
+          // a full repaint — start()'s self-SIGWINCH (Unix) has already
+          // refreshed dimensions stale from any resize while suspended.
+          current.setTerminalColorSchemeNotifications(true)
+          current.requestRender(true)
+        }
+      }
+    },
     async stop() {
       if (stopped) return
       stopped = true
+      if (suspended) {
+        // The renderer is already stopped and a child owns the tty: draining
+        // here would steal the child's input, and a second tui stop would
+        // replay the teardown sequences. Just unregister.
+        if (activeRuntime === runtime) activeRuntime = undefined
+        return
+      }
       // Drain before stopping so in-flight Kitty key releases cannot leak
       // into the parent shell as literal escape sequences.
       await terminal.drainInput()

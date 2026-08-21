@@ -55,6 +55,11 @@ export class StatusFakeScreen implements BlueScreen {
   requestRender(force?: boolean): void {
     this.renderRequests.push(force)
   }
+
+  /** S31 seam: pass-through; the status suites never suspend the screen. */
+  suspend<T>(fn: () => Promise<T>): Promise<T> {
+    return fn()
+  }
 }
 
 /** Structural `blueStatus`: remembers entries, honors the disposer contract. */

@@ -177,6 +177,21 @@ export interface BlueScreen {
    * @param force - reset differential render state before drawing.
    */
   requestRender(force?: boolean): void
+  /**
+   * Suspend the renderer and run `fn` with the terminal released — raw mode
+   * off, the tty free for a child process with inherited stdio (an external
+   * `$VISUAL`/`$EDITOR` session). On fn's settlement the runtime resumes:
+   * the renderer restarts, OSC 2031 notifications re-arm, and a full repaint
+   * is forced (covering any resize that happened while suspended). The
+   * suspend is exclusive — a second call while one is in flight rejects —
+   * and refuses on a stopped screen. If the screen is torn down while
+   * suspended, the restart is skipped and fn's settlement propagates
+   * unchanged.
+   * @param fn - the async body owning the terminal while it is released.
+   * @returns settles with fn's outcome after the renderer resumed (or was
+   *   torn down mid-suspend).
+   */
+  suspend<T>(fn: () => Promise<T>): Promise<T>
   /** Current terminal width in columns. */
   readonly columns: number
   /** Current terminal height in rows. */

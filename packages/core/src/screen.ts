@@ -107,4 +107,15 @@ export class BlueScreenService extends Service implements BlueScreen {
   requestRender(force?: boolean): void {
     this.runtime.requestRender(force)
   }
+
+  /**
+   * Suspend the renderer and run `fn` with the terminal released for a
+   * child process; resumes with a forced full repaint. See
+   * {@link BlueScreen.suspend} for the exclusivity and teardown semantics.
+   * @param fn - the async body owning the terminal while it is released.
+   * @returns settles with fn's outcome after the renderer resumed.
+   */
+  suspend<T>(fn: () => Promise<T>): Promise<T> {
+    return this.runtime.suspend(fn)
+  }
 }

@@ -16,6 +16,7 @@ interface Recorded {
   focused: (BlueComponent | null)[]
   overlays: { component: BlueComponent; options?: unknown }[]
   renders: (boolean | undefined)[]
+  suspends: unknown[]
 }
 
 function recordingRuntime(): BlueTerminalRuntime & Recorded {
@@ -27,7 +28,7 @@ function recordingRuntime(): BlueTerminalRuntime & Recorded {
     unfocus: () => {},
     isFocused: () => true,
   }
-  const recorded: Recorded = { added: [], bottomAdded: [], removed: [], focused: [], overlays: [], renders: [] }
+  const recorded: Recorded = { added: [], bottomAdded: [], removed: [], focused: [], overlays: [], renders: [], suspends: [] }
   return {
     ...recorded,
     columns: 120,
@@ -50,6 +51,11 @@ function recordingRuntime(): BlueTerminalRuntime & Recorded {
     },
     requestRender(force) {
       recorded.renders.push(force)
+    },
+    async suspend<T>(fn: () => Promise<T>): Promise<T> {
+      const value = await fn()
+      recorded.suspends.push(value)
+      return value
     },
     stop: () => Promise.resolve(),
   }
@@ -102,5 +108,8 @@ describe('BlueScreenService', () => {
     screen.requestRender()
     screen.requestRender(true)
     expect(runtime.renders).toEqual([undefined, true])
+
+    await expect(screen.suspend(async () => 'ok')).resolves.toBe('ok')
+    expect(runtime.suspends).toEqual(['ok'])
   })
 })

@@ -61,6 +61,10 @@ class CountingScreen implements BlueScreen {
     throw new Error('out of scope')
   }
   requestRender(): void {}
+  /** S31 seam: pass-through. */
+  suspend<T>(fn: () => Promise<T>): Promise<T> {
+    return fn()
+  }
 }
 
 /** Build `turns` synthetic turns: user, 3 steps × 2 tool calls, assistant. */

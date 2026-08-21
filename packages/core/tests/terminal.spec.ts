@@ -1,8 +1,8 @@
 /**
  * L0 terminal runtime: lifecycle, Blue-typed delegation through the stable
  * reference, overlay focus discipline on a real `TuiMainScreen`, the OSC 11
- * probe ordering, terminal color-scheme forwarding, and the
- * `installFailLoud` release factory.
+ * probe ordering, terminal color-scheme forwarding, the suspend/resume seam
+ * (S31), and the `installFailLoud` release factory.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -210,6 +210,113 @@ describe('startBlueTerminal', () => {
     await first.stop()
     await createTerminalRelease()()
     expect(secondTerminal.stopCount).toBe(1)
+  })
+})
+
+describe('suspend', () => {
+  it('releases the renderer around fn and resumes with a full repaint', async () => {
+    const terminal = new FakeTerminal()
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    runtime.addChild(textComponent('suspend-frame'))
+    runtime.requestRender()
+    await waitForRender()
+    const startCountBefore = terminal.startCount
+    const stopCountBefore = terminal.stopCount
+
+    await expect(runtime.suspend(async () => 42)).resolves.toBe(42)
+    expect(terminal.stopCount).toBe(stopCountBefore + 1)
+    expect(terminal.startCount).toBe(startCountBefore + 1)
+    // Mode 2031 notifications: disabled by the suspend stop, re-armed by the
+    // resume — the re-arm must come after the disable.
+    const output = terminal.output
+    expect(output.lastIndexOf('\x1b[?2031h')).toBeGreaterThan(output.lastIndexOf('\x1b[?2031l'))
+    // The forced repaint lands with the mounted content visible again.
+    await waitForRender()
+    expect(terminal.written.at(-1) ?? '').toContain('suspend-frame')
+    await runtime.stop()
+  })
+
+  it('runs fn with the renderer already stopped', async () => {
+    const terminal = new FakeTerminal()
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    let stopCountInside = -1
+    await runtime.suspend(async () => {
+      stopCountInside = terminal.stopCount
+      // No input handler is attached while suspended; simulated input is a
+      // silent no-op, not an error.
+      terminal.sendInput('x')
+    })
+    expect(stopCountInside).toBe(1)
+    await runtime.stop()
+  })
+
+  it('propagates fn failures after resuming the renderer', async () => {
+    const terminal = new FakeTerminal()
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    const startCountBefore = terminal.startCount
+    await expect(runtime.suspend(async () => {
+      throw new Error('boom')
+    })).rejects.toThrow('boom')
+    expect(terminal.startCount).toBe(startCountBefore + 1)
+    await runtime.stop()
+  })
+
+  it('rejects a second suspend while one is in flight', async () => {
+    const terminal = new FakeTerminal()
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    await runtime.suspend(async () => {
+      await expect(runtime.suspend(async () => 1)).rejects.toThrow('already in flight')
+    })
+    await runtime.stop()
+  })
+
+  it('a stop during suspend tears down without draining or re-stopping the renderer', async () => {
+    const terminal = new FakeTerminal()
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    const value = await runtime.suspend(async () => {
+      await runtime.stop()
+      // A child owns the tty: no drain, and the renderer's own suspend stop
+      // is the only stop — no teardown-sequence replay.
+      expect(terminal.drainCount).toBe(0)
+      expect(terminal.stopCount).toBe(1)
+      return 'settled'
+    })
+    // The settlement propagates unchanged and the resume skipped restart.
+    expect(value).toBe('settled')
+    expect(terminal.startCount).toBe(1)
+    // A later stop stays idempotent.
+    await runtime.stop()
+    expect(terminal.drainCount).toBe(0)
+    expect(terminal.stopCount).toBe(1)
+  })
+
+  it('a superseded runtime stopping mid-suspend leaves the successor alone', async () => {
+    const first = await startBlueTerminal(new FakeTerminal(), noProbe)
+    const secondTerminal = new FakeTerminal()
+    await first.suspend(async () => {
+      // A newer stack registers while the first is suspended (the mirror of
+      // "keeps only the newest runtime active", raced against a suspend).
+      await startBlueTerminal(secondTerminal, noProbe)
+      await first.stop()
+      // The stop unregisters the superseded runtime only.
+      expect(secondTerminal.stopCount).toBe(0)
+    })
+  })
+
+  it('refuses to suspend a stopped runtime', async () => {
+    const terminal = new FakeTerminal()
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    await runtime.stop()
+    await expect(runtime.suspend(async () => 1)).rejects.toThrow('stopped; suspend refused')
+  })
+
+  it('drains and stops normally after a resumed suspend', async () => {
+    const terminal = new FakeTerminal()
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    await runtime.suspend(async () => undefined)
+    await runtime.stop()
+    expect(terminal.drainCount).toBe(1)
+    expect(terminal.stopCount).toBe(2)
   })
 })
 

@@ -8,12 +8,21 @@ Core is the tree's ONLY package allowed to import `@earendil-works/pi-tui` (plus
 
 ## L1 services and the global key dispatcher
 
-- **`blueScreen`** (`src/screen.ts`) — the screen contract carries `readonly rows` (the btw panel's height budget reads it live) and `addBottomChild(component, position?)`: the optional `'bottom'` position renders the component below the rest of the dock. The footer shell mounts pinned there, putting the two-row status on the terminal's last rows beneath the editor — the kimi dock layout the pull-up dialog panels leave visible.
+- **`blueScreen`** (`src/screen.ts`) — the screen contract carries `readonly rows` (the btw panel's height budget reads it live) and `addBottomChild(component, position?)`: the optional `'bottom'` position renders the component below the rest of the dock. The footer shell mounts pinned there, putting the two-row status on the terminal's last rows beneath the editor — the kimi dock layout the pull-up dialog panels leave visible. Since S31 it also carries `suspend(fn)` (see below).
 - **`blueKeymap`** (`src/keymap.ts`) — `list()` gives a registration-order snapshot for `/help`-style enumeration; registration runs key-level conflict detection.
 - **`blueTerminalInfo`** (`src/terminal-info.ts`) — read-only terminal facts from the startup OSC 11 background probe.
 - **Global key dispatcher** — core's `apply` mounts a pi-tui input listener ahead of focus routing that consumes keymap actions carrying a `handler`. The service is instantiated directly in `apply`, not via `ctx.plugin`: the Cordis Context proxy rejects uninjected services, and a service cannot inject itself.
 
 Dock sinking lives in `startBlueTerminal`: the renderer instance's `render` is wrapped so that when the mounted tree is shorter than the viewport, blank filler is inserted between the scroll content and the bottom-pinned block, keeping the footer/editor dock on the terminal's last rows. Full viewports, empty trees, and dock-less trees render untouched.
+
+## Suspend/resume seam (S31, `runtime.suspend` → `blueScreen.suspend`)
+
+The recoverable suspend composes pi-tui 0.84.2's own lifecycle primitives — `TUI.stop()` / `TUI.start()` / `requestRender(true)` — and is deliberately NOT the teardown `runtime.stop()`. State machine (closure flags `stopped`/`suspended` inside `startBlueTerminal`):
+
+- **suspend(fn)**: exclusive (a second in-flight call rejects) and refused once stopped. `current.stop()` with NO `preserveScreen` — Blue is always `TuiMainScreen`, so the child appends below the content in the scrollback tail (kimi's main-screen ordering; `preserveScreen` is only meaningful for an alt-screen takeover). One `setImmediate` beat flushes the stop escapes before the child takes the tty, then `fn` runs with the terminal released (raw mode off, pi-tui detached).
+- **resume** (fn settlement, in a `finally`): `process.stdin.pause()` BEFORE `start()` — bytes buffered while suspended must not surface as application input once raw mode re-arms — then, unless the runtime was torn down mid-suspend (`stopped || activeRuntime !== runtime`), `current.start()` (its self-SIGWINCH on Unix refreshes dimensions stale from a resize while suspended) → `setTerminalColorSchemeNotifications(true)` (the stop wrote `\x1b[?2031l`; the registered `onTerminalColorSchemeChange` callback itself survives stop/start) → `requestRender(true)` (forced full repaint). fn's rejection propagates unchanged — resume never swallows.
+- **stop() during suspend** (fiber unload / fail-loud release while a child owns the tty): `stopped = true` but NO `terminal.drainInput()` (the parent drain would steal the child's input) and NO second `current.stop()` (the renderer is already stopped; a replay of teardown sequences would corrupt the child's screen). It only unregisters `activeRuntime`; the later resume detects the teardown and skips the restart.
+- Render ticker: pi-tui has no standing render loop — `stop()` cancels the 16ms throttle timer for free. Application-level timers (footer tips, spinners) keep firing into `requestRender` and no-op inside the stopped renderer's early exit; accepted as harmless spinning (kimi does the same), not gated.
 
 ## Component factory (`blueComponents`, `src/components.ts`)
 
