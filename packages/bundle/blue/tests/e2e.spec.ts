@@ -2925,7 +2925,7 @@ describe('blue whole-tree e2e', () => {
     })
   })
 
-  it('/usage reads the token-meter projections and survives a resume through the durable fold', async () => {
+  it('/context reads the token-meter projections and survives a resume through the durable fold', async () => {
     const usageScript: StreamChunk[] = [
       { type: 'block-start', index: 0, blockType: 'text' },
       { type: 'text-delta', index: 0, text: 'usage reply' },
@@ -2944,7 +2944,7 @@ describe('blue whole-tree e2e', () => {
     typeLine(first.terminal, 'spend tokens')
     await vi.waitFor(() => { expect(first.adapter.requests).toHaveLength(1) })
     await agent.whenIdle()
-    await expect(executeCommand(first, agent, '/usage')).resolves.toEqual({ kind: 'success' })
+    await expect(executeCommand(first, agent, '/context')).resolves.toEqual({ kind: 'success' })
     await vi.waitFor(() => { expect(stripSgr(first.terminal.output)).toContain('64.2k') })
     const frame = stripSgr(await fullFrame(first.terminal))
     expect(frame).toContain('4.1k')
@@ -2959,11 +2959,11 @@ describe('blue whole-tree e2e', () => {
     // the whole durable log, replay included.
     const resumed = await bootBlue(['--resume', id], { script: [], persistenceRoot: root, sessionProjections: true })
     const resumedAgent = await currentAgent(resumed)
-    await expect(executeCommand(resumed, resumedAgent, '/usage')).resolves.toEqual({ kind: 'success' })
+    await expect(executeCommand(resumed, resumedAgent, '/context')).resolves.toEqual({ kind: 'success' })
     await vi.waitFor(() => { expect(stripSgr(resumed.terminal.output)).toContain('64.2k') })
   })
 
-  it('/usage falls back to the assistant fold without the projection family', async () => {
+  it('/context falls back to the assistant fold without the projection family', async () => {
     const usageScript: StreamChunk[] = [
       { type: 'block-start', index: 0, blockType: 'text' },
       { type: 'text-delta', index: 0, text: 'usage reply' },
@@ -2976,7 +2976,7 @@ describe('blue whole-tree e2e', () => {
     typeLine(tree.terminal, 'spend tokens')
     await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
     await agent.whenIdle()
-    await expect(executeCommand(tree, agent, '/usage')).resolves.toEqual({ kind: 'success' })
+    await expect(executeCommand(tree, agent, '/context')).resolves.toEqual({ kind: 'success' })
     await vi.waitFor(() => { expect(stripSgr(tree.terminal.output)).toContain('64.2k') })
     const frame = stripSgr(await fullFrame(tree.terminal))
     // The fallback context pair: last request's input side over the

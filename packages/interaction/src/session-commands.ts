@@ -1,7 +1,7 @@
 /**
  * The session-info command family (S25): `/status` — the framed two-column
  * panel over the session header (id, cwd, created, turn/step counts, agent
- * state), the live model selection, and the context occupancy; `/usage` —
+ * state), the live model selection, and the context occupancy; `/context` —
  * the provider token buckets plus the same context bar, read through the
  * session-projection seam (`dsh-token-meter`/`dsh-session-stats` in the
  * base composition) with the local `usage.ts` fold as the degraded host's
@@ -166,7 +166,7 @@ export function buildStatusSections(input: StatusInput): InfoSection[] {
 }
 
 /**
- * Build the `/usage` panel's sections (pure, for the spec): the four
+ * Build the `/context` panel's sections (pure, for the spec): the four
  * disjoint provider buckets plus their total, and the context bar.
  * @param facts - the usage facts to list.
  * @returns the sections in display order.
@@ -219,7 +219,7 @@ function readModelFacts(ctx: Context, agent: { session: { requestHeader(): { con
 }
 
 /**
- * Register the session-info commands (`/status`, `/usage`, `/version`) on
+ * Register the session-info commands (`/status`, `/context`, `/version`) on
  * `ctx.commands`.
  * @param ctx - plugin context.
  * @returns the disposer removing all three registrations.
@@ -263,11 +263,11 @@ export function registerSessionCommands(ctx: Context): () => void {
   }
 
   /**
-   * The `/usage` handler: mount the read-only panel over the provider
+   * The `/context` handler: mount the read-only panel over the provider
    * token buckets and the context occupancy.
    * @returns the command outcome.
    */
-  function showUsage(): CommandResult {
+  function showContext(): CommandResult {
     const session = ctx.get('blueSession')
     const agent = session?.current
     if (session === undefined || agent === undefined || agent === null) {
@@ -275,14 +275,14 @@ export function registerSessionCommands(ctx: Context): () => void {
     }
     const display = displayServices(ctx)
     if (display === undefined) {
-      return { kind: 'error', text: 'usage panel is unavailable: the Blue screen is not mounted' }
+      return { kind: 'error', text: 'context panel is unavailable: the Blue screen is not mounted' }
     }
     const facts = readUsageFacts(ctx, agent)
     const restore = mountEditorReplacement(new InfoPanel({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,
-      title: 'usage',
+      title: 'context',
       sections: buildUsageSections(facts),
       onClose: () => {
         restore()
@@ -305,10 +305,10 @@ export function registerSessionCommands(ctx: Context): () => void {
     description: 'Show the session header, model, and context status',
     handler: () => showStatus(),
   })
-  const usage = ctx.commands.register({
-    name: 'usage',
-    description: 'Show session token usage and the context window',
-    handler: () => showUsage(),
+  const context = ctx.commands.register({
+    name: 'context',
+    description: 'Show token usage and the context window',
+    handler: () => showContext(),
   })
   const version = ctx.commands.register({
     name: 'version',
@@ -317,7 +317,7 @@ export function registerSessionCommands(ctx: Context): () => void {
   })
   return () => {
     status()
-    usage()
+    context()
     version()
   }
 }

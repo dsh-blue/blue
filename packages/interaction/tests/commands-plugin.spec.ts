@@ -282,11 +282,13 @@ describe('blue-commands plugin', () => {
     expect(rows[0]).toBe('^' + '─'.repeat(80) + '^')
     expect(rows[1]).toBe('^  help^ _· Esc / Enter / q to cancel · ↑↓ scroll_')
     expect(rows[3]).toBe('  #Commands#')
-    // The runtime lists commands alphabetically; labels padEnd inside the
-    // primary span with the description muted behind two spaces. The longest
-    // label is the aliased `/effort (/thinking)` (18 columns), which widens
-    // the whole column.
-    expect(rows[4]).toBe('    ^/effort (/thinking)^  ~Switch the thinking effort of the current model~')
+    // The runtime lists commands alphabetically (`/context` leads since
+    // the S25 rename); labels padEnd inside the primary span with the
+    // description muted behind two spaces. The longest label is the
+    // aliased `/effort (/thinking)` (18 columns), which widens the whole
+    // column.
+    expect(rows[4]).toBe('    ^/context           ^  ~Show token usage and the context window~')
+    expect(rows.some(row => row.includes('^/effort (/thinking)^  ~Switch the thinking effort of the current model~'))).toBe(true)
     expect(rows.some(row => row.includes('^/quit (/q, /exit)  ^  ~Exit Blue~'))).toBe(true)
     expect(rows.some(row => row.includes('_ showing 1-16 of 29_'))).toBe(true)
     // Scrolling down reaches the Keys section with the two-column layout.

@@ -1,6 +1,6 @@
 /**
  * Unit tests for the session-info family: the pure section builders
- * (`/status`, `/usage`, the shared context section, `/version`'s notice),
+ * (`/status`, `/context`, the shared context section, `/version`'s notice),
  * and the three commands over the real command runtime — panel mount,
  * close, and the no-session / no-display guards.
  */
@@ -204,7 +204,7 @@ describe('registerSessionCommands', () => {
     const { ctx, agent } = await mount()
     const names = ctx.commands.list().map(command => command.name)
     expect(names).toContain('status')
-    expect(names).toContain('usage')
+    expect(names).toContain('context')
     expect(names).toContain('version')
     await run(ctx, agent, '/version')
   })
@@ -231,9 +231,9 @@ describe('registerSessionCommands', () => {
     expect(overlay.hidden).toBe(true)
   })
 
-  it('mounts the /usage panel over the folded buckets (no projection seam)', async () => {
+  it('mounts the /context panel over the folded buckets (no projection seam)', async () => {
     const { ctx, screen, agent } = await mount({ seed: 'usage' })
-    const result = await run(ctx, agent, '/usage')
+    const result = await run(ctx, agent, '/context')
     expect(result).toEqual({ kind: 'success' })
     const overlay = screen.overlays.at(-1)!
     const rows = plain((overlay.component as InfoPanel).render(80))
@@ -257,7 +257,7 @@ describe('registerSessionCommands', () => {
         },
       }),
     })
-    await run(ctx, agent, '/usage')
+    await run(ctx, agent, '/context')
     const usageRows = plain((screen.overlays.at(-1)!.component as InfoPanel).render(80))
     expect(usageRows.some(row => row.includes('144'))).toBe(true)
     await run(ctx, agent, '/status')
@@ -308,14 +308,14 @@ describe('registerSessionCommands', () => {
     const { ctx, agent } = await mount({ attach: false })
     const status = await run(ctx, agent, '/status')
     expect(status).toEqual({ kind: 'error', text: 'no session is live yet' })
-    const usage = await run(ctx, agent, '/usage')
+    const usage = await run(ctx, agent, '/context')
     expect(usage).toEqual({ kind: 'error', text: 'no session is live yet' })
     // A published-but-empty slot (the app driver before its first agent)
     // answers the same guard.
     ctx.provide('blueSession', { current: null })
     const empty = await run(ctx, agent, '/status')
     expect(empty).toEqual({ kind: 'error', text: 'no session is live yet' })
-    const emptyUsage = await run(ctx, agent, '/usage')
+    const emptyUsage = await run(ctx, agent, '/context')
     expect(emptyUsage).toEqual({ kind: 'error', text: 'no session is live yet' })
     const emptyVersion = await run(ctx, agent, '/version')
     expect(emptyVersion).toEqual({ kind: 'success', text: `Blue v${BLUE_VERSION} · dsh rc.7` })
@@ -325,8 +325,8 @@ describe('registerSessionCommands', () => {
     const { ctx, agent } = await mount({ display: false })
     const status = await run(ctx, agent, '/status')
     expect(status).toEqual({ kind: 'error', text: 'status panel is unavailable: the Blue screen is not mounted' })
-    const usage = await run(ctx, agent, '/usage')
-    expect(usage).toEqual({ kind: 'error', text: 'usage panel is unavailable: the Blue screen is not mounted' })
+    const usage = await run(ctx, agent, '/context')
+    expect(usage).toEqual({ kind: 'error', text: 'context panel is unavailable: the Blue screen is not mounted' })
   })
 
   it('unregisters with the plugin fiber', async () => {
