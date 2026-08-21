@@ -1,20 +1,136 @@
 # Blue
 
+[![CI](https://github.com/dsh-blue/blue/actions/workflows/ci.yml/badge.svg)](https://github.com/dsh-blue/blue/actions/workflows/ci.yml)
+[![Node](https://img.shields.io/badge/node-%5E22.19%20%7C%7C%20%3E%3D24-339933)](#快速开始)
+[![pnpm](https://img.shields.io/badge/pnpm-11-F69220)](#快速开始)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-dsh--blue.dev-8B5CF6)](https://dsh-blue.dev/)
+
 [English](README.md) | 中文
 
-Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的一个交互式终端 UI（TUI）插件：以 out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) 插件 bundle 的形式、骑在 `dsh-base` bundle 之上的 `pi-tui` 渲染器。**尚未发布到 npm**——项目以五个 `@dsh-blue` scope 下的 workspace 包形式存在于本仓库，目前唯一的运行方式是本地开发安装（见[安装](#安装开发)）。
+Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的一个交互式终端 UI（TUI）插件：以 out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) 插件 bundle 的形式、骑在 `dsh-base` bundle 之上的 `pi-tui` 渲染器。它的核心主张：**TUI 不是一个包——而是一棵 Cordis 插件树。** 每个渲染组件、交互 provider、命令、状态栏条目都是独立插件，各有自己的 fiber 生命周期，可热替换、可省略。
 
-本仓库是这五个包的独立 home：它们从 `deepseek-harness` monorepo 抽出（原 `packages/blue/*` 与 `packages/bundle/blue`），现按 npm 上发布的 harness（`0.1.1-rc.1` 线）与 vendored Cordis 构建测试。
+本仓库是 `@dsh-blue` scope 下五个 workspace 包的独立 home，它们从 `deepseek-harness` monorepo 抽出（原 `packages/blue/*` 与 `packages/bundle/blue`），现按 npm 上发布的 harness（`0.1.1-rc.1` 线）与 vendored Cordis 构建测试。
+
+<!-- TODO: 演示动图——录一段真实会话（vhs / asciinema；快速开始里的 script(1)
+     冒烟检查是种子），导出 GIF 到 docs/assets/ 后嵌到这里。
+     TUI 仓库的 README 成败系于演示。 -->
+
+## 目录
+
+- [快速开始](#快速开始)
+- [功能](#功能) — [键位](#键位) · [Slash 命令](#slash-命令)
+- [设计哲学](#设计哲学)
+- [分层架构](#分层架构)
+- [Editor 缝速览](#editor-缝速览)
+- [开发](#开发)
+- [文档](#文档)
+- [与 deepseek-harness 的关系](#与-deepseek-harness-的关系)
+- [许可证](#许可证)
+
+## 快速开始
+
+> [!NOTE]
+> Blue 尚未发布到 npm。目前唯一受支持的安装方式是针对本仓库 checkout 的本地开发安装。
+
+前置：Node `^22.19 || >=24`、pnpm 11、`dsh` CLI ≥ `0.1.1-rc.1`（`npm i -g @deepseek-ai/dsh`）。
+
+### 一键
+
+```sh
+script/install-dev.sh
+# 覆盖: DSH_BIN=/path/to/dsh PROFILE=my-profile DSH_HOME=/custom/home script/install-dev.sh
+```
+
+脚本构建 workspace 并把五个包全部 link 安装进 profile。
+
+### 手动等价流程
+
+```sh
+pnpm install && pnpm run build   # lib/ 是每个包的运行时入口
+
+# 一次性 profile 设置：
+dsh plugin --profile blue add \
+  link:/path/to/blue/packages/bundle/blue \
+  link:/path/to/blue/packages/core \
+  link:/path/to/blue/packages/interaction \
+  link:/path/to/blue/packages/transcript \
+  link:/path/to/blue/packages/app
+
+dsh --profile blue [task]           # 跑一个任务，或进入交互
+dsh --profile blue --resume <id>    # 恢复持久化会话
+```
+
+为什么要链五个包：四个库包是 bundle 的 `workspace:^` 依赖，出了本 workspace 解析不了。`dsh plugin` 原样转发给 profile 目录下的 pnpm，其 `link:` 协议把 checkout 本身装成符号链接；被链的 bundle 再经 profile 自己的 `node_modules` 链接解析兄弟包。四条非 bundle 链接是普通依赖——各有一条 `declares no dsh.bundle` 警告属预期（它们是库，不是层）。
+
+如果你的 profile 是在包改名前（当时包名为 `@dsh-blue/blue*`）链的，那些链接已失效——删掉 profile 目录（`~/.dsh/profiles/<name>`）或 `dsh plugin --profile <name> remove` 旧条目，再重跑脚本。
+
+### 迭代环
+
+**edit src → `pnpm run build` → 重跑 `dsh --profile blue`**。链接指向包目录，重建的 `lib/` 无需重装即生效；只有依赖图变化（新增包或改 `dependencies`）才需要再跑 `dsh plugin --profile blue add`/`install`。
+
+Headless 冒烟检查（经 `script(1)` 伪 TTY）：
+
+```sh
+(sleep 10; printf '/quit\r'; sleep 3) \
+  | timeout 90 script -qec "dsh --profile blue" /tmp/blue-smoke.typescript
+# 断言：启动时 bracketed-paste 开（\x1b[?2004h）、退出时关（\x1b[?2004l）、退出码 0。
+```
 
 ## 功能
 
 - **流式会话记录** —— 用户/助手消息边流式边渲染 Markdown；工具调用渲染为卡片，默认 generic 呈现，diff（`intent-diff`）与终端输出（`intent-terminal`）有专属卡片。
-- **输入编辑器** —— 圆角框编辑器：slash 命令模糊补全、参数幽灵提示、`!` bash 模式、`@` 文件补全、`#` 技能补全（行内任意位置的 `#name` 标记在提交时重写为上游 `/name` 技能手势）、Ctrl-V 剪贴板贴图（`[image #N]` 标记在提交时拆为图像块）。
+- **输入编辑器** —— 圆角框编辑器：slash 命令模糊补全、参数幽灵提示、`!` bash 模式、`@` 文件补全、`#` 技能补全、Ctrl-V 剪贴板贴图。
 - **Overlay** —— 四选项审批面板（session 级"总是允许"继承）与 tab 化用户问卷 overlay。
-- **两行状态栏** —— 模型名（priority 0）、会话模式徽标 `plan`/`yolo`（priority 2，normal 态隐藏）、git 分支（priority 10）、上下文占用 `ctx N`（priority 20）；条目是注册表贡献，不是写死的。Shift+Tab 循环会话模式 normal → plan → yolo（`/yolo` 自动放行工具审批，提问照常弹）。
-- **底部 dock 面板** —— agent 运行中的活动 spinner、排队消息（空编辑器上键召回）、todo 列表（Ctrl-T 折叠开关）、fork 当前会话的 `/btw` 旁路问答面板。
-- **Slash 命令** —— `/quit` `/new`（`/clear` 为其别名）`/fork` `/sessions`（`/resume` 为其别名）`/help` `/theme` `/btw` `/model` `/effort` `/provider` `/yolo` `/init` `/status` `/context` `/version` `/export` `/copy` `/tools` `/preset` `/skills`，全部自动进入编辑器补全菜单。`/preset` 在薄宿主预设名册上切换 agent 组合（仅空会话）；`/tools` 列出当前会话的实时工具目录。
+- **两行状态栏** —— 模型名、会话模式徽标、git 分支、上下文占用 `ctx N`；条目是注册表贡献，不是写死的。
+- **底部 dock 面板** —— agent 运行中的活动 spinner、排队消息、todo 列表、fork 当前会话的 `/btw` 旁路问答面板。
 - **主题** —— `/theme` 热切换：`dark` / `light` / `auto`（OSC 11 背景探测）/ `custom`（JSON 调色板）。
+- **天然可扩展** —— 命令、状态栏条目、编辑器增强都经下游插件同款的缝注册；补全菜单与 `/help` 反映实时注册表。
+
+面向用户的功能指南在文档站：[dsh-blue.dev/features](https://dsh-blue.dev/features/)（中文）· [dsh-blue.dev/en/features](https://dsh-blue.dev/en/features/)（English）。
+
+### 键位
+
+`/help` overlay 实时列出所有已注册键位——它才是权威来源：
+
+| 键 | 作用 |
+| --- | --- |
+| `Shift+Tab` | 循环会话模式：normal → plan → yolo（`/yolo` 自动放行工具审批，提问照常弹） |
+| `Ctrl-C` | 清空草稿 → 打断 agent；1 秒内再按一次退出 |
+| `Ctrl-S` | 用草稿内容 steer 当前运行中的回合 |
+| `Ctrl-V` | 粘贴剪贴板图片为 `[image #N]` 标记 |
+| `Ctrl-O` | 展开/折叠最近 3 回合的工具输出与思考块 |
+| `Ctrl-T` | 折叠/展开 todo 面板 |
+| `↑`（空编辑器） | 召回最近一条排队消息 |
+
+编辑器内，前缀 `/` `!` `@` `#` 分别触发命令、bash、文件、技能补全；行内任意位置的 `#name` 标记在提交时重写为上游 `/name` 技能手势。
+
+### Slash 命令
+
+全部命令自动进入编辑器补全菜单；`/help` 是实时真相：
+
+| 命令 | 别名 | 说明 |
+| --- | --- | --- |
+| `/quit` | `/q` `/exit` | 退出 Blue |
+| `/new` | `/clear` | 开始新会话 |
+| `/fork` | — | 把当前会话 fork 成新会话 |
+| `/sessions` | `/resume` | 列出持久化会话并切换；带 id 直接恢复 |
+| `/btw` | — | 旁路提问：fork 当前会话发问 |
+| `/help` | — | 显示可用命令与键位 |
+| `/model` | — | 切换会话模型（无参数打开选择器） |
+| `/effort` | `/thinking` | 切换当前模型的思考力度 |
+| `/provider` | — | 列出 provider、切换路由或新增 |
+| `/preset` | — | 列出 agent 预设或切换（仅空会话） |
+| `/yolo` | `/yes` | 开关工具调用自动放行 |
+| `/tools` | — | 列出当前会话可见的工具 |
+| `/skills` | — | 列出可用技能（`#` 前缀调用） |
+| `/theme` | — | 切换配色主题 |
+| `/init` | — | 分析代码库并写 `AGENTS.md` |
+| `/status` | — | 显示会话头、模型与上下文状态 |
+| `/context` | — | 显示 token 用量与上下文窗口 |
+| `/version` | — | 显示 Blue 与 harness 版本及实时模型 |
+| `/export` | — | 把当前会话导出为 Markdown 文件 |
+| `/copy` | — | 复制最近一条助手消息到剪贴板 |
 
 ## 设计哲学
 
@@ -59,80 +175,16 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 
 每个入口都是 Cordis 插件形态（`export const name`、可选 `inject`、`apply(ctx)`）；Cordis 与 dsh 服务包是 `peerDependencies`，由宿主 `dsh` 安装提供。
 
-## 实例：Editor 缝
+## Editor 缝速览
 
-输入编辑器是走通这套哲学最清晰的一条路径。四个角色、四个位置，层间没有捷径：
+输入编辑器用四个角色走通整套哲学，层间没有捷径：
 
-**1. 契约（L1）。** `BlueEditor` 是 `packages/core/src/types.ts:437` 里的接口——刻意不含任何 pi-tui 类型、任何 harness 类型：
+- **契约（L1）**——`BlueEditor` 是 `packages/core/src/types.ts` 里的接口，刻意不含任何 pi-tui 类型、任何 harness 类型。
+- **实现（L0）**——获得编辑器的唯一入口是 `ctx.blueComponents.createEditor()`；core 内部的适配器包装 pi-tui `Editor`，是唯一知道背后是 pi-tui 的代码。未来的 vim 模式编辑器可以实现同一接口，消费者毫无感知。
+- **消费（L2）**——`blue-input` 插件创建并挂载编辑器，经共享编辑器缝发布，后挂插件无论行序如何都能找到它。
+- **增强（L2 子路径插件）**——`blue-editor-plus`（bash 模式、补全 provider）与 `blue-paste-image`（Ctrl-V 贴图标记）是 `cordis.patch.yml` 里的行：单独删掉任一行，plain 编辑器照常工作。
 
-```ts
-export interface BlueEditor extends BlueFocusable {
-  onSubmit?: ((text: string) => void) | undefined
-  onChange?: ((text: string) => void) | undefined
-  onKey?: ((data: string) => boolean) | undefined   // 前置拦截钩子
-  getText(): string
-  setBorderColor(color: BlueColorFn): void
-  setGhostHint(hint: string | undefined): void
-  setAutocompleteProvider(provider: BlueAutocompleteProvider): void
-  insertText(text: string): void                    // 光标处原子插入
-  getExpandedText(): string                         // 粘贴标记展开，提交时使用
-  // …
-}
-```
-
-**2. 实现（L0）。** 获得编辑器的唯一入口是 `ctx.blueComponents.createEditor()`（`packages/core/src/types.ts:655`）。core 内部，`EditorAdapter`（`packages/core/src/components.ts:162`）包装 pi-tui `Editor`，每次 render 后经 chrome 辅助层后处理，画出圆角框、提示符与幽灵提示。适配器是唯一知道背后是 pi-tui 的代码；未来的 vim 模式编辑器可以实现同一接口，消费者毫无感知。
-
-**3. 消费（L2）。** `blue-input` 插件（`packages/interaction/src/input-plugin.ts:169`）创建编辑器、把它挂为屏幕底部子组件（`input-plugin.ts:469`），并经共享编辑器缝（`editor-instance.ts`）发布——提交路由、增强在场标记，以及让后挂插件无论行序如何都能找到编辑器的 `blue/input-editor-changed` 事件。
-
-**4. 增强（L2 子路径插件）。** `blue-editor-plus` 在共享编辑器上叠 `!` bash 模式与 slash/`@` 补全 provider；`blue-paste-image` 经 `onKey` 钩子拦截 Ctrl-V、用 `insertText` 插入 `[image #N]` 标记、提交时经提交变换器展开。两者都不碰 core——它们是 `cordis.patch.yml` 里的行，可以单独删掉，plain 编辑器照常工作。
-
-契约在 L1、实现锁在 L0、增强经缝在 L2——这就是"凡表面皆插件"在实践中的含义。完整清单——Blue 开的每条缝、契约位置、plain 默认、每个视觉表面由哪个插件实现——见 [docs/blue-seams.md](docs/blue-seams.md)。
-
-## 安装（开发）
-
-目前唯一受支持的安装方式是针对本地 checkout 的开发安装。前置：Node `^22.19 || >=24`、pnpm 11、`dsh` CLI ≥ `0.1.1-rc.1`（`npm i -g @deepseek-ai/dsh`）。
-
-### 一键
-
-```sh
-script/install-dev.sh
-# 覆盖: DSH_BIN=/path/to/dsh PROFILE=my-profile DSH_HOME=/custom/home script/install-dev.sh
-```
-
-脚本构建 workspace 并把五个包全部 link 安装进 profile。
-
-### 手动等价流程
-
-```sh
-pnpm install && pnpm run build   # lib/ 是每个包的运行时入口
-
-# 一次性 profile 设置：
-dsh plugin --profile blue add \
-  link:/path/to/blue/packages/bundle/blue \
-  link:/path/to/blue/packages/core \
-  link:/path/to/blue/packages/interaction \
-  link:/path/to/blue/packages/transcript \
-  link:/path/to/blue/packages/app
-
-dsh --profile blue [task]           # 跑一个任务，或进入交互
-dsh --profile blue --resume <id>    # 恢复持久化会话
-```
-
-为什么要链五个包：四个库包是 bundle 的 `workspace:^` 依赖，出了本 workspace 解析不了。`dsh plugin` 原样转发给 profile 目录下的 pnpm，其 `link:` 协议把 checkout 本身装成符号链接；被链的 bundle 再经 profile 自己的 `node_modules` 链接解析兄弟包。四条非 bundle 链接是普通依赖——各有一条 `declares no dsh.bundle` 警告属预期（它们是库，不是层）。
-
-如果你的 profile 是在包改名前（当时包名为 `@dsh-blue/blue*`）链的，那些链接已失效——删掉 profile 目录（`~/.dsh/profiles/<name>`）或 `dsh plugin --profile <name> remove` 旧条目，再重跑脚本。
-
-### 迭代环
-
-**edit src → `pnpm run build` → 重跑 `dsh --profile blue`**。链接指向包目录，重建的 `lib/` 无需重装即生效；只有依赖图变化（新增包或改 `dependencies`）才需要再跑 `dsh plugin --profile blue add`/`install`。
-
-Headless 冒烟检查（经 `script(1)` 伪 TTY）：
-
-```sh
-(sleep 10; printf '/quit\r'; sleep 3) \
-  | timeout 90 script -qec "dsh --profile blue" /tmp/blue-smoke.typescript
-# 断言：启动时 bracketed-paste 开（\x1b[?2004h）、退出时关（\x1b[?2004l）、退出码 0。
-```
+带代码的完整走查见 [docs/blue-editor-walkthrough.md](docs/blue-editor-walkthrough.md)；Blue 开的每条缝、契约与 plain 默认的完整清单见 [docs/blue-seams.md](docs/blue-seams.md)。
 
 ## 开发
 
@@ -148,17 +200,24 @@ pnpm run typecheck      # tsc -b
 
 ## 文档
 
-- **文档站**：<https://dsh-blue.dev/>（中文）· <https://dsh-blue.dev/en/>（English）—— 面向用户的文档。下方设计文档仍仅在仓库内。
+**面向用户的文档**在文档站：<https://dsh-blue.dev/>（中文）· <https://dsh-blue.dev/en/>（English）。下方设计文档仍仅在仓库内。
 
-全部设计文档（中文）在 [docs/](docs/)：
+**设计文档**（中文）在 [docs/](docs/)；在用/存档索引见 [docs/README.md](docs/README.md)：
 
-- [docs/blue-seams.md](docs/blue-seams.md) —— 缝清单：Blue 开的每条缝（契约、plain 默认），以及 harness 侧每个视觉表面由哪个 Blue 插件实现。
 - [docs/blue-architecture.md](docs/blue-architecture.md) —— 架构：哲学、L0–L4 分层、稳定性规则。
+- [docs/blue-seams.md](docs/blue-seams.md) —— 缝清单：Blue 开的每条缝（契约、plain 默认），以及 harness 侧每个视觉表面由哪个 Blue 插件实现。
+- [docs/blue-editor-walkthrough.md](docs/blue-editor-walkthrough.md) —— Editor 缝实例走查：四角色，含代码。
 - [docs/blue-decisions.md](docs/blue-decisions.md) —— 决策记录（ADR）。
-- [docs/README.md](docs/README.md) —— 文档索引（在用 / 历史存档）。各阶段设计与实施记录：[docs/blue-roadmap.md](docs/blue-roadmap.md)、[blue-commands-plan.md](docs/blue-commands-plan.md)（现行——内置命令实施清单：四家参照系合并、harness 能力矩阵、S23–S28 分期、上游缝请求），以及已归档的 [blue-p1-design.md](docs/history/blue-p1-design.md)、[blue-p2-visual-design.md](docs/history/blue-p2-visual-design.md)、[blue-mvp-plan.md](docs/history/blue-mvp-plan.md)。
+- [docs/blue-roadmap.md](docs/blue-roadmap.md) 与 [blue-commands-plan.md](docs/blue-commands-plan.md) —— 路线图，以及内置命令实施清单（四家参照系合并、能力矩阵、分期）。
 - [AGENTS.md](AGENTS.md) 与各包自带的 `AGENTS.md` —— 当前代码的权威描述（仓库级约定在根文件；包级实现细节在 `packages/*/AGENTS.md`）。
+
+已归档的各阶段设计与调研（MVP、P1、P2、pi-tui/harness 选型）在 [docs/history/](docs/history/)。
 
 ## 与 deepseek-harness 的关系
 
 - 运行时与测试依赖（`@deepseek-ai/cordis` 4.0.1、`@deepseek-ai/dsh-*` 0.1.1-rc.1、`@earendil-works/pi-tui` ^0.84.2）来自 npm registry；Blue 自身五包未发布，在本仓保持 workspace 链接。
 - harness 仓库的门禁（文档 i18n 配对、README 门禁、snapshot/e2e 车道）不适用于本仓库；本仓保留构建、全量测试套件与逐文件 100% src 覆盖率门禁。
+
+## 许可证
+
+[MIT](LICENSE)。`@dsh-blue` scope 下每个包的 `license` 字段均为 MIT。
