@@ -242,4 +242,11 @@ const config = defineConfig({
 // ——插件检测 VitePress 挂在 <body> 上的 dark class，切暗色时自动换主题重渲染。
 // 仓库图源约定：docs/diagrams/*.mmd 是唯一正典，各文档（含本站页面）的嵌入块
 // 由 script/sync-diagrams.mjs 生成，CI 用 pnpm run diagrams:check 把关。
-export default withMermaid({ ...config, mermaid: { theme: 'neutral' } })
+// optimizeDeps：dev 下 mermaid 的 ESM chunk 引 dayjs 等 CJS 依赖，不预打包会
+// 以 /@fs 原始路径伺服并因缺 default 导出抛 SyntaxError（整页白屏），必须整体
+// 预打包交由 esbuild 做 interop（配合 pnpm-workspace.yaml 的 publicHoistPattern）。
+export default withMermaid({
+  ...config,
+  mermaid: { theme: 'neutral' },
+  vite: { optimizeDeps: { include: ['mermaid'] } },
+})
