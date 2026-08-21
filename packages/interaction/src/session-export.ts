@@ -31,7 +31,6 @@ import type {} from '@dsh-blue/blue-app'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { copyTextToClipboard } from './clipboard-write.ts'
 import { getSharedEditor } from './editor-instance.ts'
-
 /** The key-arg whitelist for the tool-call hint, in priority order (the
  * present.ts list — the export keeps the same hint the card shows). */
 const KEY_ARG_KEYS = ['file_path', 'command', 'pattern'] as const
@@ -514,12 +513,18 @@ export function registerExportCommands(ctx: Context): () => void {
     if (source === undefined) return { kind: 'error', text: 'no session is live yet' }
     const text = lastAssistantText(source.items)
     if (text.length === 0) return { kind: 'error', text: 'no assistant message to copy' }
+    let method
     try {
-      await copyTextToClipboard(text)
+      method = await copyTextToClipboard(text)
     } catch (error) {
       return { kind: 'error', text: `could not copy to clipboard: ${describe(error)}` }
     }
-    getSharedEditor()?.notice?.(`copied the last assistant message (${String(text.length)} characters)`)
+    // The OSC 52 leg cannot be confirmed from this side — the terminal
+    // honors it silently or ignores it silently — so it reports as
+    // unverified (the kimi wording).
+    getSharedEditor()?.notice?.(method === 'native'
+      ? `copied the last assistant message (${String(text.length)} characters)`
+      : `copied via terminal escape sequence (unverified, ${String(text.length)} characters)`)
     return { kind: 'success' }
   }
 

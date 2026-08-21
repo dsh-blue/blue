@@ -76,7 +76,7 @@ p1-design §4.3 是本文档的前身（MVP 后命令面调研）。本次逐符
 | `/export` (`export-md`) | ✅ | ✅ | ✅ | — | ✅ **S26 已落地（2026-08-21）**：fold.ts 折叠 → Markdown（readRaw + session flush 先行）；上游另有 Web-only ZIP 版 dsh-session-log-export，TUI 独立实现，§3.2 |
 | `/export-debug-zip` | ✅ | — | — | — | 🚫 /debug 覆盖诊断导出 |
 | `/import` | — | ✅ | ✅ | ✅ | ⚠️ 顺延（SESSION_FORMAT_VERSION=0 格式严格性） |
-| `/copy` | ✅ | ✅ | ✅ | ✅ | ✅ **S26 已落地（2026-08-21）**：剪贴板写管线（clipboard-write.ts） |
+| `/copy` | ✅ | ✅ | ✅ | ✅ | ✅ **S26 已落地（2026-08-21）**：剪贴板写管线（clipboard-write.ts，OSC 52 先行 + wl-copy/xclip/pbcopy/clip.exe 验证路径，SSH 回退 unverified 报告） |
 | `/share` | — | ✅ | — | — | 🚫 gist 分享无上游 |
 | `/web` | ✅ | — | — | — | 🚫 web 服务非 Blue 职责 |
 | `/zip-archive` | — | — | ✅ | — | 🚫 文件工具，`!` shell 覆盖 |
@@ -294,7 +294,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 | `/context`（原 `/usage`，2026-08-21 用户裁决更名——CC 语义） | kimi(/usage)/CC(/context) | — | 累计 input/output/cacheRead/cacheWrite/reasoning tokens + contextWindow 百分比 + **CC 式构成分解**（验收轮裁决：system/tools/messages/free，`contextBreakdown` 投影） | 面板（`InfoPanel`） | ✅ sessionProjections.snapshot 读 tokenUsage/contextPressure/contextBreakdown 投影（§3.2）；`usage.ts` 纯折 assistant/* usage 兜底（replace-per-step 语义），构成节无投影即省略（估算器归上游，Blue 不复刻） | ✅ S25（2026-08-21） | 投影折整条持久日志，跨 resume 重放正确；Blue 不设累计器；构成节标题标 heuristic |
 | `/version` | kimi | — | BLUE_VERSION + harness rc.7 + 当前模型 | notice | ✅ banner-content.ts 常量（spec 守卫 package.json 先例；经新增 `./banner-content` 子路径导出跨包读取）；**版本管控**（2026-08-21 用户裁决）：`packages/transcript/tests/version.spec.ts` 守卫五包 version + BLUE_VERSION + 全部 dsh-* dev 钉版/peer 区间/workspace excludes 同一 lockstep 线 | ✅ S25（2026-08-21） | |
 | `/export [full] [path]` | kimi/pi/CC | 默认路径 | fold.ts 折叠 → Markdown 文件写；`full` 关键字 = 事件流直出完整版（不折叠不过滤，注入带 source 标注） | notice + 路径回显 | ✅ persistence.readRaw（jsonl 后端 supportsRawArtifacts=true 已核实）+ `ctx.sessions.flush` 先冲刷 + fs | S26 | kimi /export-md 同款；debug-zip 不做；上游 Web-only ZIP 版（dsh-session-log-export，§2.10）仅供浏览器面，TUI 独立实现 |
-| `/copy` | kimi/CC/Codex | — | 复制最近一条 assistant 消息文本 | notice | ✅ Blue 侧剪贴板写管线（新模块 interaction/src/clipboard-write.ts，注入式探测 wl-copy/xclip/pbcopy/clip.exe，沿 paste-image reader 先例）；OSC 52 主屏不可用（roadmap 挂起项） | S26 | |
+| `/copy` | kimi/CC/Codex | — | 复制最近一条 assistant 消息文本 | notice（native 计数 / osc52 unverified） | ✅ Blue 侧剪贴板写管线（interaction/src/clipboard-write.ts，注入式探测 wl-copy/xclip/pbcopy/clip.exe，沿 paste-image reader 先例）；OSC 52 ✅ 随批落地（core/terminal-escape.ts 先行发射、工具全败时回退 unverified 报告——原"主屏不可用"经核实系 alt-screen 连坐，纯转义与 scrollback 无关） | S26 | |
 | `/init` | kimi/CC/Codex | — | 罐头提示 followup（分析代码库写 AGENTS.md） | notice | ✅ agent.followup；idle 守卫 | S27 | AGENTS.md 加载面已上游（dsh-agent-instructions，base，§3.2）；/init 仅罐头提示写文件；罐头提示族（/security-review 等）只做这一个，留缝 |
 | `/clear` | kimi(别名)/CC/Codex | — | = /new 语义（kimi 同款；CC"清 transcript 留会话"无原语） | — | ✅ 经 command-meta 别名（§2.12） | S27 | 别名机制已就绪（§2.12），S27 只需 `registerCommandAliases('new', ['clear'])` |
 | `/context`（注入显隐，⚠️ 需另取名——S25 已按 CC 语义把 `/context` 用于上下文占用面板） | CC | — | 切换注入上下文显隐（D28/S19 默认隐藏的反向开关） | notice + 状态栏 | ✅ fold 注入上下文开关（fold.ts，source.kind!=='user' 分拣）+ settings 持久 | S27 | |

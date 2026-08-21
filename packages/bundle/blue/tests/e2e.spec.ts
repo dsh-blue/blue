@@ -57,7 +57,7 @@ import * as editorPlusPlugin from '../../../interaction/src/editor-plus.ts'
 import * as attachmentsPlugin from '../../../interaction/src/attachments.ts'
 import * as pasteImagePlugin from '../../../interaction/src/paste-image.ts'
 import { setClipboardImageReader } from '../../../interaction/src/paste-image.ts'
-import { setClipboardTextWriter } from '../../../interaction/src/clipboard-write.ts'
+import { setClipboardOsc52Emitter, setClipboardTextWriter } from '../../../interaction/src/clipboard-write.ts'
 import * as modeStatusPlugin from '../../../interaction/src/mode-status.ts'
 import * as paneQueuePlugin from '../../../interaction/src/pane-queue.ts'
 import * as transcriptPlugin from '../../../transcript/src/index.ts'
@@ -1655,6 +1655,9 @@ describe('blue whole-tree e2e', () => {
     setClipboardTextWriter(async text => {
       captured.push(text)
     })
+    // Keep the osc52 leg injected-false for the native pass: the default
+    // would write the escape to the test runner's stdout.
+    setClipboardOsc52Emitter(() => false)
     try {
       const tree = await bootBlue(['copy this'], {
         script: [textResponse('the answer to copy')],
@@ -1669,8 +1672,25 @@ describe('blue whole-tree e2e', () => {
       await vi.waitFor(() => {
         expect(tree.terminal.output).toContain('copied the last assistant message')
       })
+      // The SSH fallback: every platform tool fails, the OSC 52 escape went
+      // out — the copy still succeeds with the unverified report.
+      const osc52: string[] = []
+      setClipboardTextWriter(async () => {
+        throw new Error('no clipboard tool is available (wl-copy not installed, xclip not installed)')
+      })
+      setClipboardOsc52Emitter(text => {
+        osc52.push(text)
+        return true
+      })
+      const fallback = await executeCommand(tree, agent, '/copy')
+      expect(fallback).toEqual({ kind: 'success' })
+      expect(osc52).toEqual(['the answer to copy'])
+      await vi.waitFor(() => {
+        expect(tree.terminal.output).toContain('copied via terminal escape sequence (unverified')
+      })
     } finally {
       setClipboardTextWriter(undefined)
+      setClipboardOsc52Emitter(undefined)
     }
   })
 

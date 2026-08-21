@@ -7,8 +7,8 @@
 
 import { chmodSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
-import { clipboardToolsFor, copyTextToClipboard, setClipboardTextWriter } from '../src/clipboard-write.ts'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { clipboardToolsFor, copyTextToClipboard, setClipboardOsc52Emitter, setClipboardTextWriter } from '../src/clipboard-write.ts'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
 
 registerTempDirCleanup()
@@ -32,9 +32,22 @@ describe('clipboardToolsFor', () => {
 describe('default clipboard text writer', () => {
   const savedPath = process.env.PATH
 
+  let osc52Emitted: string[]
+
+  beforeEach(() => {
+    osc52Emitted = []
+    // Records the call but declines, so the rejection tests below see the
+    // plain tool failures; the osc52-fallback tests override with `true`.
+    setClipboardOsc52Emitter(text => {
+      osc52Emitted.push(text)
+      return false
+    })
+  })
+
   afterEach(() => {
     process.env.PATH = savedPath
     setClipboardTextWriter(undefined)
+    setClipboardOsc52Emitter(undefined)
   })
 
   /**
@@ -77,8 +90,10 @@ describe('default clipboard text writer', () => {
       xclip: captureScript(join(mkdtempTracked('blue-clipboard-xc-'), 'copied.txt')),
     })
     prependBin(bin)
-    await copyTextToClipboard('hello clipboard')
+    await expect(copyTextToClipboard('hello clipboard')).resolves.toBe('native')
     expect(readFileSync(join(wlCapture, 'copied.txt'), 'utf8')).toBe('hello clipboard')
+    // The OSC 52 leg went out first (belt and suspenders, kimi's order).
+    expect(osc52Emitted).toEqual(['hello clipboard'])
     rmSync(bin, { recursive: true, force: true })
   })
 
@@ -124,12 +139,41 @@ describe('default clipboard text writer', () => {
     rmSync(empty, { recursive: true, force: true })
   })
 
+  it('resolves the unverified osc52 method when every tool fails but the escape was emitted', async () => {
+    setClipboardOsc52Emitter(text => {
+      osc52Emitted.push(text)
+      return true
+    })
+    const bin = fakeBin({
+      wlCopy: '#!/bin/sh\n exit 1\n',
+      xclip: '#!/bin/sh\n exit 2\n',
+    })
+    prependBin(bin)
+    await expect(copyTextToClipboard('over ssh')).resolves.toBe('osc52')
+    expect(osc52Emitted).toEqual(['over ssh'])
+    rmSync(bin, { recursive: true, force: true })
+  })
+
+  it('rejects when the emitter declined (no TTY) and the tools failed', async () => {
+    setClipboardOsc52Emitter(() => false)
+    const bin = fakeBin({
+      wlCopy: '#!/bin/sh\n exit 1\n',
+      xclip: '#!/bin/sh\n exit 2\n',
+    })
+    prependBin(bin)
+    await expect(copyTextToClipboard('lost'))
+      .rejects.toThrow('no clipboard tool is available (wl-copy exited with code 1, xclip exited with code 2)')
+    rmSync(bin, { recursive: true, force: true })
+  })
+
   it('mixes an installed-but-failing tool with a missing one', async () => {
     const bin = fakeBin({
       wlCopy: '#!/bin/sh\n echo "wayland down" >&2\n exit 3\n',
-      // No xclip script: the second probe ENOENTs.
+      // No xclip script: replacing PATH outright (the scripts exec no
+      // external commands) makes the second probe a true ENOENT — a
+      // prepended bin would fall through to any real xclip on the host.
     })
-    prependBin(bin)
+    process.env.PATH = bin
     await expect(copyTextToClipboard('lost'))
       .rejects.toThrow('no clipboard tool is available (wl-copy exited with code 3: wayland down, xclip not installed)')
     rmSync(bin, { recursive: true, force: true })
@@ -154,6 +198,7 @@ describe('default clipboard text writer', () => {
 describe('copyTextToClipboard with an injected writer', () => {
   afterEach(() => {
     setClipboardTextWriter(undefined)
+    setClipboardOsc52Emitter(undefined)
   })
 
   it('routes through the injected writer and restores the default', async () => {
@@ -161,7 +206,10 @@ describe('copyTextToClipboard with an injected writer', () => {
     setClipboardTextWriter(async text => {
       received.push(text)
     })
-    await copyTextToClipboard('injected')
+    // Keep the default writer's osc52 leg quiet for this suite's asserts;
+    // the emit-first ordering is covered in the default-writer suite.
+    setClipboardOsc52Emitter(() => false)
+    await expect(copyTextToClipboard('injected')).resolves.toBe('native')
     expect(received).toEqual(['injected'])
     // Restoring the default makes the next call probe the real tools again;
     // with an empty PATH that now fails loud instead of reaching the fake.
@@ -173,9 +221,18 @@ describe('copyTextToClipboard with an injected writer', () => {
   })
 
   it('propagates the injected writer failure', async () => {
+    setClipboardOsc52Emitter(() => false)
     setClipboardTextWriter(async () => {
       throw new Error('clipboard daemon down')
     })
     await expect(copyTextToClipboard('x')).rejects.toThrow('clipboard daemon down')
+  })
+
+  it('returns osc52 when the injected writer fails and the emitter answered', async () => {
+    setClipboardOsc52Emitter(() => true)
+    setClipboardTextWriter(async () => {
+      throw new Error('clipboard daemon down')
+    })
+    await expect(copyTextToClipboard('x')).resolves.toBe('osc52')
   })
 })

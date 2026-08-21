@@ -15,7 +15,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import type { TranscriptItem } from '@dsh-blue/blue-transcript'
-import { setClipboardTextWriter } from '../src/clipboard-write.ts'
+import { setClipboardOsc52Emitter, setClipboardTextWriter } from '../src/clipboard-write.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
 import * as commandsPlugin from '../src/commands-plugin.ts'
 import { buildExportMarkdown, buildFullExportMarkdown, lastAssistantText } from '../src/session-export.ts'
@@ -355,10 +355,12 @@ describe('lastAssistantText', () => {
 describe('registerExportCommands', () => {
   let notices: string[]
   let copied: string[]
+  let osc52Emitted: string[]
 
   beforeEach(() => {
     notices = []
     copied = []
+    osc52Emitted = []
     setSharedEditor({
       editor: new FakeBlueEditor(),
       submitPrompt: () => {},
@@ -367,10 +369,12 @@ describe('registerExportCommands', () => {
     setClipboardTextWriter(async text => {
       copied.push(text)
     })
+    setClipboardOsc52Emitter(() => false)
   })
 
   afterEach(() => {
     setClipboardTextWriter(undefined)
+    setClipboardOsc52Emitter(undefined)
     clearSharedEditor()
   })
 
@@ -627,6 +631,23 @@ describe('registerExportCommands', () => {
     expect(await run(failing.ctx, failing.agent, '/copy'))
       .toEqual({ kind: 'error', text: 'could not copy to clipboard: wl-copy missing' })
     await failing.fiber.dispose()
+    setClipboardTextWriter(undefined)
+  })
+
+  it('reports the unverified escape when the tools fail but OSC 52 went out', async () => {
+    setClipboardTextWriter(async () => {
+      throw new Error('no clipboard tool is available (wl-copy not installed, xclip not installed)')
+    })
+    setClipboardOsc52Emitter(text => {
+      osc52Emitted.push(text)
+      return true
+    })
+    const { ctx, agent, fiber } = await mount({ persistence: { content: singleTurnLog('hi', 'hello') } })
+    const result = await run(ctx, agent, '/copy')
+    expect(result).toEqual({ kind: 'success' })
+    expect(osc52Emitted).toEqual(['hello'])
+    expect(notices.join('\n')).toContain('copied via terminal escape sequence (unverified, 5 characters)')
+    await fiber.dispose()
     setClipboardTextWriter(undefined)
   })
 })

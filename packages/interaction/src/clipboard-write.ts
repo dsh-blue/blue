@@ -1,20 +1,27 @@
 /**
- * Blue clipboard write pipeline for the `/copy` command: platform clipboard
- * tools fed the text over stdin — `wl-copy` then `xclip` on Linux,
- * `pbcopy` on macOS, `clip.exe` on Windows — probed in order with the
- * paste-image timeout discipline, so a hung helper never wedges the
- * command. OSC 52 is deliberately not emitted (the roadmap hangs it on the
- * unavailable main-screen escape). A module-level writer hook lets tests
- * substitute a fake (the `setClipboardImageReader` precedent in
- * `./paste-image.ts`).
+ * Blue clipboard write pipeline for the `/copy` command. The kimi order:
+ * OSC 52 first — the escape sequence travels over stdout to the local
+ * terminal emulator, so the copy reaches the local clipboard over SSH or
+ * inside containers where no platform tool exists (unverifiable from this
+ * side, hence "unverified" reporting) — then the platform clipboard tools
+ * fed the text over stdin as the verified path (`wl-copy` then `xclip` on
+ * Linux, `pbcopy` on macOS, `clip.exe` on Windows), probed with the
+ * paste-image timeout discipline so a hung helper never wedges the
+ * command. Module-level hooks let tests substitute fakes for both legs
+ * (the `setClipboardImageReader` precedent in `./paste-image.ts`).
  *
  * @module @dsh-blue/blue-interaction/clipboard-write
  */
 
 import { spawn } from 'node:child_process'
+import { emitClipboardOsc52 } from '@dsh-blue/blue-core'
 
 /** Per-tool timeout; a hung clipboard helper must not wedge the command. */
 const CLIPBOARD_TOOL_TIMEOUT_MS = 3000
+
+/** How the text was delivered: a verified local clipboard tool, or an
+ *  unverified OSC 52 escape the terminal may have honored. */
+export type ClipboardCopyMethod = 'native' | 'osc52'
 
 /**
  * Clipboard text tools probed in order, per platform (kimi's list).
@@ -133,10 +140,45 @@ export function setClipboardTextWriter(writer: ClipboardTextWriter | undefined):
 }
 
 /**
- * Copy text to the system clipboard through the current writer.
- * @param text - the text to copy.
- * @throws when no clipboard tool accepted the text.
+ * Emit the OSC 52 escape leg; returns whether the sequence was written.
  */
-export async function copyTextToClipboard(text: string): Promise<void> {
-  await clipboardTextWriter(text)
+export type ClipboardOsc52Emitter = (text: string) => boolean
+
+let clipboardOsc52Emitter: ClipboardOsc52Emitter = emitClipboardOsc52
+
+/**
+ * Replace the OSC 52 emitter (tests inject a fake here).
+ * @param emitter - the replacement, or `undefined` to restore the default
+ * (core's stdout write).
+ */
+export function setClipboardOsc52Emitter(emitter: ClipboardOsc52Emitter | undefined): void {
+  clipboardOsc52Emitter = emitter ?? emitClipboardOsc52
+}
+
+/**
+ * Copy text to the system clipboard: the OSC 52 escape goes out first
+ * (every failure path below can still have delivered it), then the
+ * verified platform tools run. A successful tool wins as `'native'`; when
+ * every tool fails but the escape was emitted, the copy resolves as the
+ * unverified `'osc52'`; nothing delivered rejects with the aggregate tool
+ * failure.
+ * @param text - the text to copy.
+ * @returns how the text was delivered.
+ * @throws the aggregate platform-tool failure when neither leg could run.
+ */
+export async function copyTextToClipboard(text: string): Promise<ClipboardCopyMethod> {
+  // OSC 52 travels over stdout to the local terminal emulator, so it
+  // reaches the clipboard even where no tool exists; emitting up front
+  // lets every failure path below fall back on it.
+  const osc52Emitted = clipboardOsc52Emitter(text)
+  try {
+    await clipboardTextWriter(text)
+    return 'native'
+  } catch (error) {
+    // The native clipboard is unreachable (headless server, SSH session,
+    // missing wl-copy/xclip …) but the terminal may still have delivered
+    // the text via the escape; without a terminal there is nothing left.
+    if (osc52Emitted) return 'osc52'
+    throw error
+  }
 }
