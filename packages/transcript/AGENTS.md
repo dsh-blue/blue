@@ -90,3 +90,7 @@ The `./banner` subpath plugin (`src/banner.ts`, `blue-banner`) is a baseline pat
 - The pixel-logo art lives in `src/banner-art.ts` (a rounded blob with two eye slits — a 12×6 grid folded into three half-block rows, plus the half-block packer `packHalfBlockArt`).
 - The editable copy lives in `src/banner-content.ts`: the `BLUE_VERSION` constant is guarded by a spec against `package.json`; the tips section derives from the footer pool `src/tips-content.ts` (the three highest-weight non-`solo` entries, pinned by a spec); the what's-new section is literal per-release editorial copy.
 - Styling uses only existing tokens: frame, logo, and welcome line `primary` (the kimi blue welcome-box treatment); title/cwd/section bodies `muted`; model line `accent`; section headings `text`.
+
+## Test fakes
+
+The suites' `BlueScreen` implementations (pane-fakes / status-fakes / status / plugin / perf / banner specs) each carry a `suspend(fn)` pass-through stub since S31 — the seam is core-owned and no transcript suite suspends the screen; the stub exists only to satisfy the widened `BlueScreen` contract.

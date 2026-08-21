@@ -228,6 +228,11 @@ class BannerFakeScreen implements BlueScreen {
     this.renderRequests.push(force)
   }
 
+  /** S31 seam: pass-through; the banner suite never suspends the screen. */
+  suspend<T>(fn: () => Promise<T>): Promise<T> {
+    return fn()
+  }
+
   setTitle(): void {}
 }
 

@@ -105,6 +105,11 @@ class FakeScreen implements BlueScreen {
     this.renderRequests.push(force)
   }
 
+  /** S31 seam: pass-through; the transcript suite never suspends the screen. */
+  suspend<T>(fn: () => Promise<T>): Promise<T> {
+    return fn()
+  }
+
   setTitle(): void {}
 }
 

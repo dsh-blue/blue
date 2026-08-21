@@ -21,7 +21,8 @@
  * key-affordance row: kimi teaches affordances through the footer's
  * rotating tips instead, and the tips pool already covers every fragment
  * the row carried). The editor-context key chain (Escape clear/interrupt, Ctrl-C
- * clear/interrupt/double-press exit, Ctrl-S steer) resolves through
+ * clear/interrupt/double-press exit, Ctrl-S steer, Ctrl-G external
+ * editor) resolves through
  * `ctx.blueKeymap` in the editor's `onKey` hook, which runs before the
  * pi-tui Editor sees the sequence. The mounted editor and the submit router
  * are published through
@@ -68,7 +69,17 @@ import {
 } from './editor-instance.ts'
 import { canonicalOf, withCommandAliases } from './command-meta.ts'
 import { clearDraft, getStashedDraft, getStashedHistory, stashDraft, stashHistory } from './draft-stash.ts'
-import { ACTION_CANCEL, ACTION_CYCLE_MODE, ACTION_CYCLE_MODEL, ACTION_INTERRUPT, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_STEER } from './keys.ts'
+import { resolveExternalEditorCommand, runExternalEditor } from './external-editor.ts'
+import {
+  ACTION_CANCEL,
+  ACTION_CYCLE_MODE,
+  ACTION_CYCLE_MODEL,
+  ACTION_EXTERNAL_EDITOR,
+  ACTION_INTERRUPT,
+  ACTION_MOVE_DOWN,
+  ACTION_MOVE_UP,
+  ACTION_STEER,
+} from './keys.ts'
 import { cycleSessionModel } from './model-commands.ts'
 import { cycleMode } from './mode-commands.ts'
 import { openPermissionPanel } from './permission-panel.ts'
@@ -161,6 +172,13 @@ export function apply(ctx: Context): void {
    * flashed, the kimi busy path.
    */
   let btwBusy = false
+  /**
+   * Whether an external-editor session (Ctrl-G, S31) currently owns the
+   * terminal through `blueScreen.suspend`. The flag refuses a second
+   * Ctrl-G while one is in flight; it is fiber-scoped so a reload starts
+   * fresh.
+   */
+  let externalEditorRunning = false
   /**
    * Set when this fiber unloads: a submitted command can dispose it while
    * `execute()` is still in flight (`/theme` swaps the provider, reloading
@@ -320,6 +338,46 @@ export function apply(ctx: Context): void {
   }
 
   /**
+   * Hand the draft to the external editor ($VISUAL/$EDITOR, Ctrl-G, S31).
+   * The screen suspends while the child owns the tty; the edited text is
+   * written back inside the suspend window so the resumed full frame
+   * already shows it. A nonzero exit (`:cq`) resolves `undefined` and the
+   * draft stays untouched; a missing editor only flashes a notice. The
+   * mirrors re-sync explicitly (setText fires no onChange — the
+   * recallQueued precedent) so a theme-swap reload keeps the edited draft.
+   */
+  async function runExternalEditorFlow(): Promise<void> {
+    const command = resolveExternalEditorCommand()
+    if (command === undefined) {
+      setNotice('set $VISUAL or $EDITOR to edit drafts externally')
+      return
+    }
+    externalEditorRunning = true
+    try {
+      // Seed through getExpandedText(): large pastes materialize as their
+      // full text (the upstream-sanctioned external-editor form). Image
+      // markers ride as literal text and keep resolving at submit — the
+      // paste-image map is module-level and unaffected by setText.
+      const seed = editor.getExpandedText()
+      await screen.suspend(async () => {
+        const edited = await runExternalEditor(seed, command)
+        // :cq / a mid-suspend fiber unload: the draft stays untouched.
+        if (edited === undefined || unloaded) return
+        editor.setText(edited.replaceAll('\r\n', '\n').replace(/\n$/, ''))
+        currentText = editor.getText()
+        stashDraft(currentText)
+        refreshHint()
+      })
+    } catch (error) {
+      // The launcher rejected (spawn failure); resume already ran, so the
+      // notice paints on the live screen — unless the fiber went with it.
+      if (!unloaded) setNotice(colors.error(error instanceof Error ? error.message : String(error)))
+    } finally {
+      externalEditorRunning = false
+    }
+  }
+
+  /**
    * Recall the most recently queued inbox message into an empty editor:
    * remove it from the inbox and make its text the draft. Steering
    * (next-step) is preferred over queued turns as the fresher intent.
@@ -424,6 +482,14 @@ export function apply(ctx: Context): void {
     // — the input mode and the session mode are orthogonal axes.
     if (keymap.matches(data, ACTION_CYCLE_MODE)) {
       void cycleMode(ctx)
+      return true
+    }
+    // Ctrl-G: hand the draft to $VISUAL/$EDITOR (S31). The terminal
+    // suspends while the child owns the tty; the edited text is written
+    // back inside the suspend window. A second press while an editor
+    // session runs is consumed silently.
+    if (keymap.matches(data, ACTION_EXTERNAL_EDITOR)) {
+      if (!externalEditorRunning) void runExternalEditorFlow()
       return true
     }
     // Alt+M: cycle the session model within the current provider through

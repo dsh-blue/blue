@@ -52,6 +52,7 @@ const SEQUENCE_BY_KEY_ID: Record<string, string> = {
   space: ' ',
   'ctrl+c': '\x03',
   'ctrl+s': '\x13',
+  'ctrl+g': '\x07',
   'ctrl+v': '\x16',
   'alt+s': '\x1bs',
   'alt+m': '\x1bm',
@@ -73,6 +74,7 @@ export const KEY = {
   space: ' ',
   ctrlC: '\x03',
   ctrlS: '\x13',
+  ctrlG: '\x07',
   ctrlV: '\x16',
 } as const
 
@@ -686,6 +688,14 @@ export class FakeScreen implements BlueScreen {
 
   requestRender(): void {
     this.renderRequests += 1
+  }
+
+  /** S31 seam: counts suspends; the body runs unreleased (no renderer here). */
+  suspends = 0
+
+  suspend<T>(fn: () => Promise<T>): Promise<T> {
+    this.suspends += 1
+    return fn()
   }
 
   setTitle(title: string): void {
