@@ -63,6 +63,7 @@ import * as attachmentsPlugin from '../../../interaction/src/attachments.ts'
 import * as pasteImagePlugin from '../../../interaction/src/paste-image.ts'
 import { setClipboardImageReader } from '../../../interaction/src/paste-image.ts'
 import { setClipboardOsc52Emitter, setClipboardTextWriter } from '../../../interaction/src/clipboard-write.ts'
+import { setExternalEditorLauncher } from '../../../interaction/src/external-editor.ts'
 import * as modeStatusPlugin from '../../../interaction/src/mode-status.ts'
 import * as paneQueuePlugin from '../../../interaction/src/pane-queue.ts'
 import * as transcriptPlugin from '../../../transcript/src/index.ts'
@@ -3541,6 +3542,43 @@ describe('blue whole-tree e2e', () => {
     expect(JSON.stringify(messages)).toContain('#unknown-tag')
     expect(JSON.stringify(messages)).not.toContain('/unknown-tag')
     expect(messages.some(message => message.source.kind === 'skill-invocation')).toBe(false)
+  })
+
+  it('suspends the renderer around Ctrl-G and repaints fully with the edited draft', async () => {
+    // S31 end to end: the Ctrl-G branch resolves the injected launcher (no
+    // real child in the e2e), the runtime suspends the renderer for the
+    // child's duration, and the resume's forced repaint already carries the
+    // edited draft — banner included, i.e. a full frame, not an incremental
+    // editor-only update.
+    const savedVisual = process.env.VISUAL
+    process.env.VISUAL = 'blue-e2e-editor'
+    setExternalEditorLauncher((seed, command) => {
+      expect(seed).toBe('e2e draft')
+      expect(command).toBe('blue-e2e-editor')
+      return Promise.resolve('e2e edited\n')
+    })
+    try {
+      const tree = await bootBlue([], { script: [textResponse('ok')] })
+      await currentAgent(tree)
+      for (const char of 'e2e draft') tree.terminal.sendInput(char)
+      await waitForRender()
+      const stopCountBefore = tree.terminal.stopCount
+      const startCountBefore = tree.terminal.startCount
+      // Incremental-frame discipline: assert only frames written after the
+      // suspend mark.
+      const mark = tree.terminal.written.length
+      tree.terminal.sendInput('\x07')
+      await vi.waitFor(() => {
+        const resumed = tree.terminal.written.slice(mark).join('')
+        expect(resumed).toContain('e2e edited')
+        expect(resumed).toContain('Welcome to Blue!')
+      })
+      expect(tree.terminal.stopCount).toBe(stopCountBefore + 1)
+      expect(tree.terminal.startCount).toBe(startCountBefore + 1)
+    } finally {
+      process.env.VISUAL = savedVisual
+      setExternalEditorLauncher(undefined)
+    }
   })
 
   it('replays the injected skill body across a resume while the screen stays clean', async () => {

@@ -63,6 +63,13 @@ export const ACTION_SESSION_ONLY = 'blue.interaction.session-only'
  * focus.
  */
 export const ACTION_CYCLE_MODE = 'blue.interaction.cycle-mode'
+/**
+ * Hand the draft to the external editor $VISUAL/$EDITOR (Ctrl-G) —
+ * contextual only: the main editor's `onKey` chain matches it in
+ * `./input-plugin.ts` and runs the `blueScreen.suspend` flow from
+ * `./external-editor.ts` (S31).
+ */
+export const ACTION_EXTERNAL_EDITOR = 'blue.interaction.external-editor'
 
 /** The full interaction key batch, registered as one unit. */
 export const INTERACTION_KEY_ACTIONS: readonly BlueKeyAction[] = [
@@ -78,6 +85,7 @@ export const INTERACTION_KEY_ACTIONS: readonly BlueKeyAction[] = [
   { id: ACTION_SEGMENT_RIGHT, keys: 'right', description: 'Step the segment control right (contextual)' },
   { id: ACTION_SESSION_ONLY, keys: 'alt+s', description: 'Confirm session-only, no persisted default (contextual)' },
   { id: ACTION_CYCLE_MODE, keys: 'shift+tab', description: 'Cycle the session mode: normal → plan → yolo' },
+  { id: ACTION_EXTERNAL_EDITOR, keys: 'ctrl+g', description: 'Edit the draft in your external editor ($VISUAL/$EDITOR)' },
 ]
 
 /** Stable Cordis plugin name. */
