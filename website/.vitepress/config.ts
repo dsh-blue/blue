@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitepress'
+import { withMermaid } from 'vitepress-plugin-mermaid'
 
 const base = process.env.DOCS_BASE ?? '/'
 
@@ -188,7 +189,7 @@ const sidebarEn = {
   ],
 }
 
-export default defineConfig({
+const config = defineConfig({
   base,
   cleanUrls: true,
   sitemap: { hostname: SITEMAP_HOSTNAME },
@@ -235,3 +236,10 @@ export default defineConfig({
   },
   themeConfig: { ...sharedTheme },
 })
+
+// ── Mermaid 图表支持 ────────────────────────────────────────────────────────
+// vitepress-plugin-mermaid v2：`mermaid` 键承载 mermaidConfig，仅在明色主题生效
+// ——插件检测 VitePress 挂在 <body> 上的 dark class，切暗色时自动换主题重渲染。
+// 仓库图源约定：docs/diagrams/*.mmd 是唯一正典，各文档（含本站页面）的嵌入块
+// 由 script/sync-diagrams.mjs 生成，CI 用 pnpm run diagrams:check 把关。
+export default withMermaid({ ...config, mermaid: { theme: 'neutral' } })
