@@ -145,7 +145,7 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 |---|---|---|---|
 | ✅ M0 | S26 合并（/export /copy + OSC 52 + harness 线 0.1.1-rc.1 迁移，e1b507d） | — | — |
 | ✅ R0 | CI 建立（2026-08-21 落地全绿 run 32477151535）：`ci.yml` typecheck→lint→build→test:coverage（push+PR、钉 pnpm、frozen-lockfile；website-only PR 跳过；runner 无 fd 属有意——唯一覆盖 @ 补全 fs fallback 路径的环境。随批三修：interaction tsconfig 补 transcript 项目引用——本地 typecheck 此前靠 lib/ 历史产物假绿；CI 加 pnpm build——spec 经包名入口需 lib/*.js；@ 下钻 e2e 增量帧断言去竞态） | — | — |
-| S27' | 轻命令族：/init（罐头提示写 AGENTS.md + idle 守卫）、/clear（command-meta 一行别名）、**/injections**（注入显隐开关，fold.ts `source.kind` 分拣可开关 + dsh-settings 持久；开关只影响此后事件，历史不回补） | 1d | M0 |
+| S27' | 轻命令族（✅ 已落地 2026-08-21）：/init（罐头提示写 AGENTS.md + idle 守卫，`session-init.ts`）、/clear（command-meta 一行别名 = /new）；**/injections 🚫 用户裁决不做**（2026-08-21：注入上下文维持 D28 默认隐藏，不开开关——挂起区有条目） | 1d | M0 |
 | S28 | 配置与生态：/settings /reload /tools /tasks /preset /mcp（详 commands-plan §5；/preset 需 bundle patch 加 agent-presets 行，/mcp 需 bundle 带 dsh-mcp-client 依赖） | 3d+ | S27' |
 | S29 | 技能管线：**前置修复**（input-plugin 未注册 `/xxx` miss → 回退 `agent.followup`，独立 e2e 钉住）+ `#` 提示符（复用 @ 分支形态 + `#name→/name` 提交重写）+ /skills | 2d | S27'（dev 可‖S28，合并串行） |
 | S30 | 终端小件批：/title + OSC 0/2（core terminal.ts setTitle helper）、模型热键免清空切换（具体键位步内设计，过 keymap 冲突检测）、/sessions type-to-filter（select-list.ts，跨页搜索仍挂起） | 1.5d | S29 |
@@ -173,6 +173,7 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 | 审批 diff 预览 | 面板内嵌 diff / Ctrl+E 全屏（DiffCardComponent 已备，只差接入审批面板） | 交互形态与参照系对照未调研定稿（⏸️ 维持 2026-08-20 裁定，2026-08-21 复核维持） | 专项调研后立项 |
 | live 工具输出流 | 工具执行中流式呈现（尾行跟随+计时；kimi live 运行卡） | ⛔ 上游无工具输出流事件缝（harness 侧可开） | 上游开出 streaming tool output 事件面 |
 | /hotkeys | = /help 别名 | 低价值（2026-08-21 裁决不做） | 键位数再增一档时随命令系列补录 |
+| /injections | 注入上下文显隐开关（原 S27' 范围项：fold.ts `source.kind` 分拣可开关 + dsh-settings 'blue' 命名空间持久） | 2026-08-21 用户裁决：注入上下文维持 D28/S19 默认隐藏，不开开关 | 真实需求出现再议（届时为 S28 /settings 的首个 'blue' 命名空间消费面） |
 | /diff | 未提交变更面板（DiffCardComponent + line-diff.ts 已备） | 2026-08-21 裁决发版后 | rc.1 dogfood 反馈收集后与审批 diff 预览同评 |
 | alt-screen 及门控项 | TuiAltScreen / OSC 8 可点链接 / 鼠标滚轮与选择 / transcript 全屏搜索 / 主屏滚动冲突 | 维持 2026-08-20 裁定（OSC 52 已解连坐） | 按 p2-visual §7 六轮注记重启立项 |
 | statusline 自定义脚本 | footer 脚本条目（CC statusLine JSON 契约，kimi 已显式镜像） | blueStatus 缝已备，缺脚本宿主与沙箱约定 | 首个真实消费者出现（"首个真实消费者驱动"纪律） |

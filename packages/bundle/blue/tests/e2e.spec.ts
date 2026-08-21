@@ -2107,9 +2107,12 @@ describe('blue whole-tree e2e', () => {
     expect(shown).toContain('/btw')
     expect(shown).toContain('Exit Blue')
     expect(shown).toContain('showing 1-16 of')
-    // PageDown twice scrolls to the tail of the Keys section — including
+    // PageDown thrice scrolls to the tail of the Keys section — including
     // the pane-todo global action; the accumulated output carries the rows
-    // once the throttled render settles.
+    // once the throttled render settles. (Three presses since S27' added
+    // /init: 38 content rows need the third 10-row step to clamp at the
+    // scroll floor.)
+    tree.terminal.sendInput('\x1b[6~')
     tree.terminal.sendInput('\x1b[6~')
     tree.terminal.sendInput('\x1b[6~')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Toggle todo list expansion') })
@@ -2298,6 +2301,72 @@ describe('blue whole-tree e2e', () => {
     tree.terminal.sendInput('\r')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('already the current session') })
     expect(tree.sessionChanges).toHaveLength(3)
+  })
+
+  it('/clear completes as an annotated alias of /new and runs its semantics', async () => {
+    const tree = await bootBlue(['first', 'task'], {
+      script: [textResponse('first answer')],
+      persistenceRoot: mkdtempTracked('dsh-blue-e2e-clear-'),
+    })
+    const first = await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await first.whenIdle()
+
+    // The alias surfaces the canonical command, the label carrying the
+    // alias annotation (`/new (clear)` — the query matched the alias, not
+    // the name). Assert the increment after the keystrokes only: the
+    // accumulated output holds older frames that would false-satisfy.
+    const mark = tree.terminal.written.length
+    tree.terminal.sendInput('/clear')
+    await vi.waitFor(() => {
+      expect(tree.terminal.written.slice(mark).join('')).toContain('/new (clear)')
+    })
+    // Enter runs the alias line's semantics: a fresh session attaches and
+    // the session-changed broadcast fires (the preselected completion and
+    // the raw line both resolve to /new — the value completes to the
+    // canonical name, the input layer rewrites the alias).
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.sessionChanges).toHaveLength(2) })
+    const second = tree.sessionChanges[1]!
+    expect(second.id).not.toBe(first.id)
+  })
+
+  it('/init lists in /help, sends its canned prompt to an idle agent, and refuses while running', async () => {
+    // The listing surface: /help enumerates the command with its summary.
+    const listing = await bootBlue([], { script: [] })
+    const helper = await currentAgent(listing)
+    await expect(executeCommand(listing, helper, '/help')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(() => {
+      expect(listing.terminal.output).toContain('Analyze the codebase and write AGENTS.md')
+    })
+
+    // The idle path: the canned prompt rides the next request as a user
+    // message — the exploration brief and the AGENTS.md target are both
+    // model-visible.
+    const tree = await bootBlue([], { script: [textResponse('AGENTS.md written')] })
+    const agent = await currentAgent(tree)
+    await expect(executeCommand(tree, agent, '/init'))
+      .resolves.toEqual({ kind: 'success', text: 'analyzing the codebase to write AGENTS.md' })
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    const messages = JSON.stringify(tree.adapter.requests[0]!.messages)
+    expect(messages).toContain('explore the current project directory')
+    expect(messages).toContain('AGENTS.md')
+    await agent.whenIdle()
+
+    // The busy path: a typed /init while the agent runs is refused with a
+    // notice and no second request.
+    const busy = await bootBlue([], { script: ['hang'] })
+    const busyAgent = await currentAgent(busy)
+    typeLine(busy.terminal, 'long work')
+    await vi.waitFor(() => { expect(busy.adapter.requests).toHaveLength(1) })
+    await vi.waitFor(() => { expect(busyAgent.status).toBe('running') })
+    const mark = busy.terminal.written.length
+    typeLine(busy.terminal, '/init')
+    await vi.waitFor(() => {
+      expect(busy.terminal.written.slice(mark).join(''))
+        .toContain('cannot run /init while the agent is running')
+    })
+    expect(busy.adapter.requests).toHaveLength(1)
   })
 
   it('lists the model-family commands in /help', async () => {

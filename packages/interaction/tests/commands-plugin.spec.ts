@@ -120,6 +120,21 @@ describe('blue-commands plugin', () => {
     expect(execution?.result).toEqual({ kind: 'success', text: 'starting a new session' })
   })
 
+  it('/clear is the /new alias, not a registration', async () => {
+    const { ctx, agent } = await mount()
+    // The S27 alias relation: the input layer rewrites `/clear` to `/new`
+    // before dispatch (kimi's one-command-two-names rule), so the harness
+    // registry stays canonical-only and the session log records /new.
+    expect(canonicalOf('clear')).toBe('new')
+    expect(ctx.commands.find(agent, 'clear')).toBeUndefined()
+    expect(await ctx.commands.execute(agent, '/clear', [], signal())).toBeUndefined()
+    const onNew = vi.fn()
+    ctx.on('blue/request-new', onNew)
+    const rewritten = await ctx.commands.execute(agent, '/new', [], signal())
+    expect(onNew).toHaveBeenCalledOnce()
+    expect(rewritten?.result).toEqual({ kind: 'success', text: 'starting a new session' })
+  })
+
   it('/fork emits blue/request-fork while the current session is idle', async () => {
     const { ctx, agent } = await mount()
     const onFork = vi.fn()
@@ -290,15 +305,15 @@ describe('blue-commands plugin', () => {
     expect(rows[4]).toBe('    ^/context           ^  ~Show token usage and the context window~')
     expect(rows.some(row => row.includes('^/effort (/thinking)^  ~Switch the thinking effort of the current model~'))).toBe(true)
     expect(rows.some(row => row.includes('^/quit (/q, /exit)  ^  ~Exit Blue~'))).toBe(true)
-    // 31 rows since the S26 export family joined the command list.
-    expect(rows.some(row => row.includes('_ showing 1-16 of 31_'))).toBe(true)
+    // 32 rows since S27' added /init to the command list (31 at S26).
+    expect(rows.some(row => row.includes('_ showing 1-16 of 32_'))).toBe(true)
     // Scrolling down reaches the Keys section with the two-column layout.
     for (let i = 0; i < 10; i += 1) overlay(screen).handleInput(KEY.down)
     const scrolled = screen.overlays[0]?.component.render(80) ?? []
     expect(scrolled.some(row => row.includes('  #Keys#'))).toBe(true)
     // Key labels padEnd to the longest label — `backspace` (9) since S13.
     expect(scrolled.some(row => row.includes('?enter    ?  ~Submit input / confirm selection~'))).toBe(true)
-    expect(scrolled.some(row => row.includes('_ showing 11-26 of 31_'))).toBe(true)
+    expect(scrolled.some(row => row.includes('_ showing 11-26 of 32_'))).toBe(true)
     screen.overlays[0]?.component.invalidate()
     overlay(screen).handleInput(KEY.escape)
     expect(screen.overlays[0]?.hidden).toBe(true)
