@@ -54,13 +54,14 @@ function makeHandle(
   recorded: Recorded,
   disposeError?: Error,
   headerConfig?: FakeHeaderConfig,
+  presetSeed?: { events?: unknown[]; header?: string },
 ): AgentHandle {
   const agent = {
     id,
     status: 'idle',
     session: {
-      events: [{ type: 'user/message' }, { type: 'assistant/message' }],
-      header: {},
+      events: presetSeed?.events ?? [{ type: 'user/message' }, { type: 'assistant/message' }],
+      header: presetSeed?.header === undefined ? {} : { agentPreset: presetSeed.header },
       requestHeader: () => (headerConfig === undefined ? undefined : { config: headerConfig }),
     },
     followup: (message: unknown) => { recorded.followups.push([id, message]) },
@@ -102,6 +103,12 @@ function bench(config: Config, options: {
   resumeHeaderConfig?: FakeHeaderConfig
   /** The request header the created fake Agent reports (the header tier's input). */
   createHeaderConfig?: FakeHeaderConfig
+  /** The preset roster the driver probes; absent means no roster composed. */
+  roster?: { mount: ReturnType<typeof vi.fn> }
+  /** The fake Agents' session events, seeding the preset fold (create and resume). */
+  sessionEvents?: unknown[]
+  /** The fake Agents' creation-header preset, seeding the preset fold. */
+  headerAgentPreset?: string
 } = {}): Bench {
   const ctx = new Context()
   let err = ''
@@ -109,6 +116,7 @@ function bench(config: Config, options: {
   const exits: number[] = []
   ctx.provide('appExit', (code: number) => { exits.push(code) })
   const recorded: Recorded = { created: [], resumed: [], resumeOptions: [], disposed: [], followups: [], setups: 0, listeners: [] }
+  const presetSeed = { events: options.sessionEvents, header: options.headerAgentPreset }
   let resumeError: Error | undefined
   let createError = options.createError
   if (options.agents !== false) {
@@ -121,6 +129,7 @@ function bench(config: Config, options: {
           recorded,
           options.createDisposeError,
           options.createHeaderConfig,
+          presetSeed,
         )
         await createOptions.setup?.(recordingAgentCtx(recorded, handle.agent))
         recorded.setups += 1
@@ -135,6 +144,7 @@ function bench(config: Config, options: {
           recorded,
           undefined,
           options.resumeHeaderConfig,
+          presetSeed,
         )
         await resumeOptions.setup?.(recordingAgentCtx(recorded, handle.agent))
         return handle
@@ -145,6 +155,9 @@ function bench(config: Config, options: {
     ctx.provide('agentDefaultModel', {
       currentSelection: () => ({ provider: 'test-provider', model: 'test-model' }),
     } as never)
+  }
+  if (options.roster !== undefined) {
+    ctx.provide('agentPresets', options.roster as never)
   }
   const changes: Agent[] = []
   ctx.on('blue/session-changed', (agent) => { changes.push(agent) })
@@ -510,5 +523,76 @@ describe('blue app driver', () => {
     expect(new Config({})).toEqual({})
     expect(new Config({ task: 'x', resume: 'y' })).toEqual({ task: 'x', resume: 'y' })
     expect(() => new Config({ task: 1 } as never)).toThrow()
+  })
+
+  describe('preset mount (thin-host migration)', () => {
+    it('creates without mounting when no roster is composed', async () => {
+      // The default bench provisions no roster: every other test in this file
+      // exercises this path, asserted here explicitly for the migration.
+      const test = bench({})
+      await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+      expect(test.exits).toEqual([])
+      expect(test.err()).toBe('')
+      await test.ctx.fiber.dispose()
+    })
+
+    it('mounts the roster default when the fresh session names no preset', async () => {
+      const mount = vi.fn(async () => 'standard')
+      const test = bench({}, { roster: { mount } })
+      await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+      expect(mount).toHaveBeenCalledTimes(1)
+      // The setup's own agent context is the mount target; the fresh session's
+      // log and header name nothing, so the roster default resolves (undefined id).
+      expect(mount.mock.calls[0]![1]).toBeUndefined()
+      await test.ctx.fiber.dispose()
+    })
+
+    it('re-mounts the preset the session log names, the header losing', async () => {
+      const mount = vi.fn(async () => 'minimal')
+      const test = bench({ resume: 'abc123' }, {
+        roster: { mount },
+        headerAgentPreset: 'standard',
+        sessionEvents: [
+          { type: 'user/message' },
+          { type: 'agent-preset/selected', data: { agentPreset: 'standard' } },
+          { type: 'agent-preset/selected', data: { agentPreset: 'minimal' } },
+        ],
+      })
+      await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+      // The newest selection wins over the creation header.
+      expect(mount).toHaveBeenCalledTimes(1)
+      expect(mount.mock.calls[0]![1]).toBe('minimal')
+      await test.ctx.fiber.dispose()
+    })
+
+    it('falls back to the creation header when the log has no selection', async () => {
+      const mount = vi.fn(async () => 'code')
+      const test = bench({ resume: 'abc123' }, {
+        roster: { mount },
+        headerAgentPreset: 'code',
+        sessionEvents: [{ type: 'user/message' }],
+      })
+      await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+      expect(mount.mock.calls[0]![1]).toBe('code')
+      await test.ctx.fiber.dispose()
+    })
+
+    it('mounts through the /new switch with the same setup', async () => {
+      const mount = vi.fn(async () => 'standard')
+      const test = bench({}, { roster: { mount } })
+      await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+      test.ctx.emit('blue/request-new')
+      await vi.waitFor(() => { expect(mount).toHaveBeenCalledTimes(2) })
+      await test.ctx.fiber.dispose()
+    })
+
+    it('fails the launch when the mount rejects', async () => {
+      const mount = vi.fn(async () => { throw new Error('preset root unreadable') })
+      const test = bench({}, { roster: { mount } })
+      await vi.waitFor(() => { expect(test.exits).toEqual([1]) })
+      expect(test.err()).toContain('preset root unreadable')
+      expect(test.ctx.blueSession.current).toBeNull()
+      await test.ctx.fiber.dispose()
+    })
   })
 })

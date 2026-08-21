@@ -146,7 +146,7 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 | ✅ M0 | S26 合并（/export /copy + OSC 52 + harness 线 0.1.1-rc.1 迁移，e1b507d） | — | — |
 | ✅ R0 | CI 建立（2026-08-21 落地全绿 run 32477151535）：`ci.yml` typecheck→lint→build→test:coverage（push+PR、钉 pnpm、frozen-lockfile；website-only PR 跳过；runner 无 fd 属有意——唯一覆盖 @ 补全 fs fallback 路径的环境。随批三修：interaction tsconfig 补 transcript 项目引用——本地 typecheck 此前靠 lib/ 历史产物假绿；CI 加 pnpm build——spec 经包名入口需 lib/*.js；@ 下钻 e2e 增量帧断言去竞态） | — | — |
 | S27' | 轻命令族（✅ 已落地 2026-08-21）：/init（罐头提示写 AGENTS.md + idle 守卫，`session-init.ts`）、/clear（command-meta 一行别名 = /new）；**/injections 🚫 用户裁决不做**（2026-08-21：注入上下文维持 D28 默认隐藏，不开开关——挂起区有条目） | 1d | M0 |
-| S28 | 配置与生态：/settings /reload /tools /tasks /preset /mcp（详 commands-plan §5；/preset 需 bundle patch 加 agent-presets 行，/mcp 需 bundle 带 dsh-mcp-client 依赖） | 3d+ | S27' |
+| S28 | 配置与生态（**partial ✅ 2026-08-21**：/tools + /preset 已落地，含**薄宿主迁移**——bundle patch 照 web-app 官方清单 disable dsh-base 23 行 agent 面行 + agent-presets 行 + blue-app 建 agent 挂预设（resume 折 `agent-preset/selected` 事件重建组合，详 D37）；/settings /reload /tasks /mcp 顺延） | 3d+ | S27' |
 | S29 | 技能管线：**前置修复**（input-plugin 未注册 `/xxx` miss → 回退 `agent.followup`，独立 e2e 钉住）+ `#` 提示符（复用 @ 分支形态 + `#name→/name` 提交重写）+ /skills | 2d | S27'（dev 可‖S28，合并串行） |
 | S30 | 终端小件批：/title + OSC 0/2（core terminal.ts setTitle helper）、模型热键免清空切换（具体键位步内设计，过 keymap 冲突检测）、/sessions type-to-filter（select-list.ts，跨页搜索仍挂起） | 1.5d | S29 |
 | S31 | 外部编辑器 Ctrl-G：L0 `blueScreen.suspend(fn)` 缝 + 草稿往返 + 异常路径（`:cq` 草稿不丢、无编辑器 notice、挂起期停 ticker、resize 后强制全帧） | 2d | S29 |

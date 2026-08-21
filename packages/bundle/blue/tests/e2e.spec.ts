@@ -8,7 +8,7 @@
  * process terminal are substituted.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import AgentPresetsService from '@deepseek-ai/dsh-agent-presets'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { LlmModelInfo, LlmModelReasoningInfo } from '@deepseek-ai/dsh-llm'
 import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
@@ -184,6 +185,18 @@ interface BlueTree {
   sessionChanges: Agent[]
 }
 
+/** One fixture preset the e2e roster's temp root ships. */
+interface PresetFixture {
+  /** The preset id (directory name and roster key). */
+  id: string
+  /** A tool the preset's composition registers (`e2e` tool names stay distinct). */
+  tool?: string
+  /** Ship an invalid composition: the roster lists the preset as broken. */
+  broken?: boolean
+  /** The display order (preset.yml metadata). */
+  order?: number
+}
+
 /** Test-scope hooks the Loader fixtures delegate to. */
 interface BlueE2EHooks {
   coreApply: (ctx: Context) => Promise<void>
@@ -247,6 +260,13 @@ async function bootBlue(argv: string[], options: {
    * the production path, the fold without it is the degraded host's.
    */
   sessionProjections?: boolean
+  /**
+   * The fixture presets the roster's temp root ships, replacing the default
+   * single empty composition (which keeps every other case's tool surface
+   * exactly what it registers itself). The first fixture is the roster
+   * default the app driver mounts fresh agents onto.
+   */
+  presetFixtures?: readonly PresetFixture[]
 }): Promise<BlueTree> {
   const dir = mkdtempTracked('dsh-blue-e2e-')
   const terminal = new FakeTerminal()
@@ -531,6 +551,49 @@ export const apply = (ctx) => {
       },
     })
   }
+  // The agent-preset roster, as the bundle patch now composes it (the
+  // thin-host migration): every agent the driver creates joins its preset's
+  // standing composition. The real service over a temp root; the writable
+  // user root stays off so a developer's own presets never leak in. The
+  // default fixture is one EMPTY composition — every plain case's tool
+  // surface stays exactly what it registers itself, unchanged from before
+  // the migration; preset cases pass richer fixtures.
+  const presets = options.presetFixtures ?? [{ id: 'e2e' }]
+  const presetRoot = join(dir, 'agent-presets')
+  for (const preset of presets) {
+    const presetDir = join(presetRoot, preset.id)
+    mkdirSync(presetDir, { recursive: true })
+    if (preset.broken === true) {
+      // Parses, then fails the entry-list audit: the roster lists it broken.
+      writeFileSync(join(presetDir, 'agent.cordis.yml'), 'not-a-list: true\n')
+    } else if (preset.tool !== undefined) {
+      const tool = JSON.stringify(preset.tool)
+      const toolRow = fixture(`${preset.id}-tool.mjs`, `
+export const name = '${preset.id}-tool'
+export const inject = ['tools']
+export const apply = (ctx) => {
+  ctx.effect(() => ctx.tools.register({
+    name: ${tool},
+    description: 'The ${preset.id} preset fixture tool',
+    parameters: { type: 'object', properties: {} },
+    output: { schema: { type: 'object' }, render: () => '' },
+    execute: async () => ({}),
+  }))
+}
+`)
+      writeFileSync(join(presetDir, 'agent.cordis.yml'), `- name: '${toolRow}'\n`)
+    } else {
+      writeFileSync(join(presetDir, 'agent.cordis.yml'), '[]\n')
+    }
+    if (preset.order !== undefined) {
+      writeFileSync(join(presetDir, 'preset.yml'), `order: ${preset.order}\n`)
+    }
+  }
+  await ctx.plugin(AgentPresetsService, {
+    default: presets[0]!.id,
+    roots: [{ path: presetRoot, trust: 'system' }],
+    includeUserRoot: false,
+  })
   // The settings family mounts before the default-model service so the
   // latter's settings-backed default tier resolves through the file.
   if (options.realSettings !== undefined) {
@@ -772,8 +835,13 @@ describe('blue whole-tree e2e', () => {
     const headingRow = shown.split(/\r?\n/).find(row => row.includes('Title'))
     expect(headingRow).toMatch(/\x1b\[1m/)
     const codeRow = shown.split(/\r?\n/).find(row => {
-      // OSC 8 hyperlink tails survive the SGR strip; match on the prefix.
-      const bare = row.replace(/\x1b\[[0-9;]*m/g, '').trim()
+      // The locator strips every ANSI control sequence, not just SGR: OSC 8
+      // hyperlink tails survive an SGR-only strip, and a late dock repaint
+      // (e.g. the git badge resolving on a slow big-diff checkout) re-emits
+      // rows behind an erase-line `\x1b[2K` prefix. The assertion wants the
+      // row's true color, which interleaves INSIDE the code, so only the
+      // transport wrappers may go.
+      const bare = row.replace(/\x1b\[[0-9;]*[a-zA-Z]|\x1b\]8;;\x07/g, '').trim()
       return bare.startsWith('const x = 1')
     })
     expect(codeRow).toMatch(/\x1b\[38;2;/)
@@ -3177,6 +3245,199 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(async () => {
       expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('Version')
     })
+  })
+
+  it('mounts every agent onto the roster default and honors the logged selection across a resume (thin-host)', async () => {
+    const fixtures = [
+      { id: 'alpha', tool: 'e2e_alpha_tool', order: 1 },
+      { id: 'beta', tool: 'e2e_beta_tool', order: 2 },
+    ]
+    // Tree one: the default boot mounts the roster default (alpha), a
+    // switch rebinds to beta, and the selection event lands in the log.
+    const persistenceRoot = mkdtempTracked('dsh-blue-e2e-presets-')
+    const first = await bootBlue([], { script: [], presetFixtures: fixtures, persistenceRoot })
+    const firstAgent = await currentAgent(first)
+    const roster = first.ctx.get('agentPresets')!
+    expect(roster.composedPreset(firstAgent.ctx)).toBe('alpha')
+    await expect(executeCommand(first, firstAgent, '/preset beta')).resolves.toEqual({ kind: 'success', text: 'preset beta' })
+    expect(roster.composedPreset(firstAgent.ctx)).toBe('beta')
+    const sessionId = String(firstAgent.session.id)
+    await first.ctx.fiber.dispose()
+    disposers.length = 0
+    // Tree two: a fresh boot over the same persistence root resumes the
+    // session and rebuilds the composition its log names.
+    const second = await bootBlue(['--resume', sessionId], { script: [], presetFixtures: fixtures, persistenceRoot })
+    const secondAgent = await currentAgent(second)
+    expect(second.ctx.get('agentPresets')!.composedPreset(secondAgent.ctx)).toBe('beta')
+  })
+
+  it('/tools opens the picker, stacks the tool detail on Enter, and Escape walks back', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    // Two global registrations from the spec side: a plain tool and an
+    // MCP-namespaced one, both in the agent's inherited global layer.
+    const tools = (tree.ctx as unknown as { tools: { register(definition: unknown): () => void } }).tools
+    tools.register({
+      name: 'spec_probe',
+      description: 'The spec-side probe tool.\nIt never executes; the panel only reads.',
+      parameters: {
+        type: 'object',
+        properties: { target: { type: 'string', description: 'What to probe' } },
+        required: ['target'],
+      },
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: '' }] },
+      execute: () => Promise.resolve('ok'),
+    })
+    tools.register({
+      name: 'mcp__demo__list_items',
+      description: 'demo list',
+      parameters: { type: 'object', properties: {} },
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: '' }] },
+      execute: () => Promise.resolve('ok'),
+    })
+    await expect(executeCommand(tree, agent, '/tools')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('spec_probe')
+    })
+    // The picker shows the name beside the first-sentence brief.
+    let frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).toContain('The spec-side probe tool.')
+    expect(frame).toContain('mcp__demo__list_items')
+    // Step down to the mcp row (exit_plan_mode sorts first), then Enter
+    // opens the detail panel stacked above the picker.
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('server')
+    })
+    frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).toContain('demo')
+    expect(frame).toContain('demo list')
+    expect(frame).toContain('no parameters')
+    // Escape walks back to the picker, a second one closes it.
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('server')
+    })
+    expect(stripSgr(await fullFrame(tree.terminal))).toContain('spec_probe')
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('spec_probe')
+    })
+  })
+
+  it('/tools shows the preset-bound surface: the default mounts alpha and switching swaps the catalog', async () => {
+    const tree = await bootBlue([], {
+      script: [],
+      presetFixtures: [
+        { id: 'alpha', tool: 'e2e_alpha_tool', order: 1 },
+        { id: 'beta', tool: 'e2e_beta_tool', order: 2 },
+      ],
+    })
+    const agent = await currentAgent(tree)
+    await executeCommand(tree, agent, '/tools')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('e2e_alpha_tool')
+    })
+    let frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).not.toContain('e2e_beta_tool')
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('e2e_alpha_tool')
+    })
+    // The swap: beta's composition replaces alpha's in the agent's view.
+    await expect(executeCommand(tree, agent, '/preset beta')).resolves.toEqual({ kind: 'success', text: 'preset beta' })
+    await executeCommand(tree, agent, '/tools')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('e2e_beta_tool')
+    })
+    frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).not.toContain('e2e_alpha_tool')
+  })
+
+  it('opens the /preset picker on a bare line: broken rows block, cancel switches nothing', async () => {
+    const tree = await bootBlue([], {
+      script: [],
+      presetFixtures: [
+        { id: 'alpha', tool: 'e2e_alpha_tool', order: 1 },
+        { id: 'beta', tool: 'e2e_beta_tool', order: 2 },
+        { id: 'broken', broken: true, order: 3 },
+      ],
+    })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, '/preset')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('alpha')
+      expect(frame).toContain('beta')
+      expect(frame).toContain('broken')
+    })
+    // The default composition (alpha) is the current row.
+    const frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).toContain('← current')
+    // Step to the broken row and press Enter: blocked, no switch, no event.
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => {
+      expect(stripSgr(tree.terminal.output)).toContain('broken')
+    })
+    expect(agent.session.events.filter(event => event.type === 'agent-preset/selected')).toEqual([])
+    expect(tree.ctx.get('agentPresets')!.composedPreset(agent.ctx)).toBe('alpha')
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('Presets')
+    })
+  })
+
+  it('switches through the picker and the log records the same write path as a typed line', async () => {
+    const tree = await bootBlue([], {
+      script: [],
+      presetFixtures: [
+        { id: 'alpha', tool: 'e2e_alpha_tool', order: 1 },
+        { id: 'beta', tool: 'e2e_beta_tool', order: 2 },
+      ],
+    })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, '/preset')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('Presets')
+    })
+    // The cursor seeds on the current row (alpha); step down to beta and Enter.
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => {
+      expect(stripSgr(tree.terminal.output)).toContain('preset beta')
+    })
+    const selected = agent.session.events.filter(event => event.type === 'agent-preset/selected')
+    expect(selected.map(event => (event.data as { agentPreset: string }).agentPreset)).toEqual(['beta'])
+    const runs = agent.session.events.filter(event => event.type === 'command/run')
+    expect(runs.map(event => ({ name: event.data.name, args: event.data.args }))).toEqual([
+      { name: 'preset', args: '' },
+      { name: 'preset', args: ' beta' },
+    ])
+    expect(tree.ctx.get('agentPresets')!.composedPreset(agent.ctx)).toBe('beta')
+  })
+
+  it('/preset answers the unknown-target and blank-session guards', async () => {
+    const tree = await bootBlue([], {
+      script: [textResponse('ok')],
+      presetFixtures: [{ id: 'alpha', tool: 'e2e_alpha_tool', order: 1 }],
+    })
+    const agent = await currentAgent(tree)
+    const unknown = await executeCommand(tree, agent, '/preset nope')
+    expect(unknown?.kind).toBe('error')
+    expect(unknown?.kind === 'error' ? unknown.text : '').toContain('available:')
+    // One real turn opens the session: the blank-only guard refuses after it.
+    typeLine(tree.terminal, 'run')
+    await agent.whenIdle()
+    const locked = await executeCommand(tree, agent, '/preset alpha')
+    expect(locked).toEqual({
+      kind: 'error',
+      text: 'cannot switch presets: this session has already started (blank sessions only)',
+    })
+    expect(agent.session.events.filter(event => event.type === 'agent-preset/selected')).toEqual([])
   })
 
   it('restores the terminal and removes every registration on dispose', async () => {

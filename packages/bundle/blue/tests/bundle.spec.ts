@@ -17,6 +17,26 @@ import * as BundleInvariant from '../src/invariant.ts'
 /** The patch file's own directory (fixtures and structure live next to src). */
 const patchDir = dirname(fileURLToPath(import.meta.url))
 const patch = readFileSync(join(patchDir, '..', 'cordis.patch.yml'), 'utf8')
+/** The composed base patch: the rows Blue's disables address by id. */
+const basePatch = readFileSync(join(patchDir, '..', 'node_modules', '@deepseek-ai', 'dsh-base', 'cordis.patch.yml'), 'utf8')
+/** The web-app bundle patch: the harness's own thin-host ruling Blue mirrors. */
+const webAppPatch = readFileSync(join(patchDir, '..', 'node_modules', '@deepseek-ai', 'dsh-web-app', 'cordis.patch.yml'), 'utf8')
+
+/**
+ * The top-level rows a patch disables: row ids addressed at column 0 whose
+ * own block carries `disabled: true`. Nested rows (an insert's entries) sit
+ * past the `- ` boundary and never match.
+ * @param text - a bundle patch file.
+ * @returns the disabled row ids, in file order.
+ */
+function disabledIds(text: string): string[] {
+  const ids: string[] = []
+  for (const row of text.split(/(?=^- )/m)) {
+    const id = /^- id: ([\w-]+)$/m.exec(row)?.[1]
+    if (id !== undefined && /^ {2}disabled: true$/m.test(row)) ids.push(id)
+  }
+  return ids
+}
 
 describe('blue bundle', () => {
 
@@ -71,6 +91,30 @@ describe('blue bundle', () => {
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/attachments'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/paste-image'")
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/banner'")
+  })
+
+  it('inserts the upstream agent-presets roster row ahead of the Blue rows', () => {
+    expect(patch).toContain('- id: agent-presets')
+    expect(patch).toContain("name: '@deepseek-ai/dsh-agent-presets'")
+    expect(patch).toContain('default: standard')
+    // The roster row precedes the first Blue row: it is a host-plane row the
+    // launcher keys on, not part of the UI stack.
+    expect(patch.indexOf('- id: agent-presets')).toBeLessThan(patch.indexOf('- id: blue-core'))
+  })
+
+  it('disables exactly the web-app bundle\'s thin-host agent-plane list, every id addressing a real base row', () => {
+    // The thin-host migration mirrors the harness's own ruling: the set of
+    // rows the web-app bundle disables must equal Blue's, so when the base
+    // grows a new agent-plane row and the harness rules on it, this spec goes
+    // red until Blue follows. `hmr` rides along (both surfaces keep it off).
+    expect(disabledIds(patch)).toEqual(disabledIds(webAppPatch))
+    // A typo'd id would silently disable nothing, leaving the row's tools in
+    // the global layer: every disable must address a row the base defines.
+    const baseRowIds = new Set([...basePatch.matchAll(/^\s*- id: ([\w-]+)$/gm)].map(match => match[1]!))
+    for (const id of disabledIds(patch)) {
+      if (id === 'hmr') continue
+      expect(baseRowIds, `Blue disables '${id}', which the base patch does not define`).toContain(id)
+    }
   })
 })
 
