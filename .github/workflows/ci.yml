@@ -40,4 +40,8 @@ jobs:
       # so a type error doesn't burn a full test run.
       - run: pnpm typecheck
       - run: pnpm lint
+      # tsc -b only emits lib/types declarations; specs that import through
+      # package entry points resolve lib/index.js from tsdown, so a fresh
+      # checkout needs the bundle build before vitest can run.
+      - run: pnpm build
       - run: pnpm test:coverage
