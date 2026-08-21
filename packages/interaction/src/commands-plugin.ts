@@ -41,6 +41,7 @@ import { HelpOverlay } from './help.ts'
 import { registerModelCommands } from './model-commands.ts'
 import { registerModeCommands, setupModeTracking } from './mode-commands.ts'
 import { registerSessionCommands } from './session-commands.ts'
+import { registerExportCommands } from './session-export.ts'
 import { SelectListPanel } from './select-list.ts'
 import { CURRENT_MARK } from './symbols.ts'
 import { registerThemeCommand } from './theme-switch.ts'
@@ -263,6 +264,8 @@ export function apply(ctx: Context): void {
     const modeTracking = setupModeTracking(ctx)
     // The session-info family (`/status` `/usage` `/version`).
     const sessionInfo = registerSessionCommands(ctx)
+    // The session-export family (`/export` `/copy`).
+    const sessionExport = registerExportCommands(ctx)
     return () => {
       quit()
       quitAliases()
@@ -276,6 +279,7 @@ export function apply(ctx: Context): void {
       modes()
       modeTracking()
       sessionInfo()
+      sessionExport()
     }
   })
 }

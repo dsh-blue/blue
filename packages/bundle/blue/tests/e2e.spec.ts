@@ -57,6 +57,7 @@ import * as editorPlusPlugin from '../../../interaction/src/editor-plus.ts'
 import * as attachmentsPlugin from '../../../interaction/src/attachments.ts'
 import * as pasteImagePlugin from '../../../interaction/src/paste-image.ts'
 import { setClipboardImageReader } from '../../../interaction/src/paste-image.ts'
+import { setClipboardTextWriter } from '../../../interaction/src/clipboard-write.ts'
 import * as modeStatusPlugin from '../../../interaction/src/mode-status.ts'
 import * as paneQueuePlugin from '../../../interaction/src/pane-queue.ts'
 import * as transcriptPlugin from '../../../transcript/src/index.ts'
@@ -1242,7 +1243,7 @@ describe('blue whole-tree e2e', () => {
     tree.terminal.sendInput('/')
     // The editor-plus provider resolves the command list asynchronously;
     // the dropdown rows appear once it settles.
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/help') })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/copy') })
     const frame = await fullFrame(tree.terminal)
     // Slash context: the whole frame — corners and the dropdown's side bars
     // alike — repaints in primary #4fa8ff (the paint routes through the live
@@ -1255,8 +1256,9 @@ describe('blue whole-tree e2e', () => {
     // The dropdown renders below the bottom rule, its rows carrying the
     // same-color side bars — one frame, no bare rows in between. S14: the
     // wrapping list carries the argument hint joined into the description
-    // (/resume sits below the first fold, so /btw is the visible anchor).
-    const dropdownAt = frame.indexOf('/help', bottomAt)
+    // (/copy anchors the S26-extended list inside the eight-row window;
+    // /help now sits beyond the fold).
+    const dropdownAt = frame.indexOf('/copy', bottomAt)
     expect(dropdownAt).toBeGreaterThan(bottomAt)
     const dropdownRowStart = frame.lastIndexOf(`${PRIMARY_SGR}│`, dropdownAt)
     expect(dropdownRowStart).toBeGreaterThan(bottomAt)
@@ -1617,6 +1619,50 @@ describe('blue whole-tree e2e', () => {
     expect(output).not.toContain('thinking...')
     // The persisted synthetic injection stayed hidden (D16 snapshot rule).
     expect(output).not.toContain('PERSISTED-CONTEXT-SECRET')
+  })
+
+  it('/export writes the folded session to a Markdown file through the raw artifact', async () => {
+    const root = mkdtempTracked('dsh-blue-e2e-export-')
+    const tree = await bootBlue(['export me this'], {
+      script: [textResponse('exported answer')],
+      persistenceRoot: root,
+    })
+    const agent = await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await agent.whenIdle()
+    const target = join(root, 'session.md')
+    const result = await executeCommand(tree, agent, `/export ${target}`)
+    expect(result).toEqual({ kind: 'success' })
+    const markdown = readFileSync(target, 'utf8')
+    expect(markdown).toContain('# Blue Session Export')
+    expect(markdown).toContain('export me this')
+    expect(markdown).toContain('exported answer')
+    expect(markdown).toContain(`session_id: ${String(agent.id)}`)
+  })
+
+  it('/copy pushes the last assistant message through the clipboard pipeline', async () => {
+    const root = mkdtempTracked('dsh-blue-e2e-copy-')
+    const captured: string[] = []
+    setClipboardTextWriter(async text => {
+      captured.push(text)
+    })
+    try {
+      const tree = await bootBlue(['copy this'], {
+        script: [textResponse('the answer to copy')],
+        persistenceRoot: root,
+      })
+      const agent = await currentAgent(tree)
+      await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+      await agent.whenIdle()
+      const result = await executeCommand(tree, agent, '/copy')
+      expect(result).toEqual({ kind: 'success' })
+      expect(captured).toEqual(['the answer to copy'])
+      await vi.waitFor(() => {
+        expect(tree.terminal.output).toContain('copied the last assistant message')
+      })
+    } finally {
+      setClipboardTextWriter(undefined)
+    }
   })
 
   it('switches the live palette through /theme: blueTheme re-provides and the UI re-renders light', async () => {

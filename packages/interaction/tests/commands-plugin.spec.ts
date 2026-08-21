@@ -290,14 +290,15 @@ describe('blue-commands plugin', () => {
     expect(rows[4]).toBe('    ^/context           ^  ~Show token usage and the context window~')
     expect(rows.some(row => row.includes('^/effort (/thinking)^  ~Switch the thinking effort of the current model~'))).toBe(true)
     expect(rows.some(row => row.includes('^/quit (/q, /exit)  ^  ~Exit Blue~'))).toBe(true)
-    expect(rows.some(row => row.includes('_ showing 1-16 of 29_'))).toBe(true)
+    // 31 rows since the S26 export family joined the command list.
+    expect(rows.some(row => row.includes('_ showing 1-16 of 31_'))).toBe(true)
     // Scrolling down reaches the Keys section with the two-column layout.
     for (let i = 0; i < 10; i += 1) overlay(screen).handleInput(KEY.down)
     const scrolled = screen.overlays[0]?.component.render(80) ?? []
     expect(scrolled.some(row => row.includes('  #Keys#'))).toBe(true)
     // Key labels padEnd to the longest label — `backspace` (9) since S13.
     expect(scrolled.some(row => row.includes('?enter    ?  ~Submit input / confirm selection~'))).toBe(true)
-    expect(scrolled.some(row => row.includes('_ showing 11-26 of 29_'))).toBe(true)
+    expect(scrolled.some(row => row.includes('_ showing 11-26 of 31_'))).toBe(true)
     screen.overlays[0]?.component.invalidate()
     overlay(screen).handleInput(KEY.escape)
     expect(screen.overlays[0]?.hidden).toBe(true)
@@ -309,8 +310,8 @@ describe('blue-commands plugin', () => {
     const unregister = keymap?.register([{ id: 'spec.custom', keys: 'f9' }])
     await ctx.commands.execute(agent, '/help', signal())
     // The f9 row is the last key binding, beyond the first window; extra
-    // downs clamp at the scroll floor.
-    for (let i = 0; i < 15; i += 1) overlay(screen).handleInput(KEY.down)
+    // downs clamp at the scroll floor (17 clears the S26-extended list).
+    for (let i = 0; i < 17; i += 1) overlay(screen).handleInput(KEY.down)
     const rows = screen.overlays[0]?.component.render(80) ?? []
     expect(rows.some(row => row.includes('f9') && row.includes('~spec.custom~'))).toBe(true)
     unregister?.()
