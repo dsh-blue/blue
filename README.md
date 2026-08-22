@@ -13,7 +13,7 @@ Blue is an interactive terminal UI (TUI) plugin for [DeepSeek Harness](https://g
 This repository is the standalone home of Blue's five workspace packages under the `@dsh-blue` scope, extracted from the `deepseek-harness` monorepo (`packages/blue/*` and `packages/bundle/blue`). They build and test against the published npm releases of the harness (`0.1.1-rc.2` line) and vendored Cordis.
 
 <!-- TODO: demo capture — record a real session (vhs / asciinema; the script(1)
-     smoke-check under Quick start is the seed), export a GIF into docs/assets/,
+     smoke-check in the contributor guide is the seed), export a GIF into docs/assets/,
      and embed it here. A TUI repo's README lives or dies on its demo. -->
 
 ## Contents
@@ -31,51 +31,19 @@ This repository is the standalone home of Blue's five workspace packages under t
 ## Quick start
 
 > [!NOTE]
-> Blue is not published to npm. The only supported install today is a local development install against a checkout of this repository.
+> `0.1.0-rc.1` is the preview release, published under the **`rc` dist-tag** — `latest` stays reserved for the stable line, so install specs carry the `@rc` suffix.
 
 Prerequisites: Node `^22.19 || >=24`, pnpm 11, and a `dsh` CLI ≥ `0.1.1-rc.2` (`npm i -g @deepseek-ai/dsh`).
 
-### One-shot
+### Install from npm
 
 ```sh
-script/install-dev.sh
-# overrides: DSH_BIN=/path/to/dsh PROFILE=my-profile DSH_HOME=/custom/home script/install-dev.sh
+dsh --profile blue plugin add @dsh-blue/blue@rc
 ```
 
-The script builds the workspace and link-installs all five packages into the profile.
+After installing, see the [quickstart](https://dsh-blue.dev/en/guide/) for launching and a first run; models, providers, themes, and API keys are covered in the [configuration guide](https://dsh-blue.dev/en/guide/config/).
 
-### Manual, equivalent
-
-```sh
-pnpm install && pnpm run build   # lib/ is the runtime entry of every package
-
-# One-time profile setup:
-dsh plugin --profile blue add \
-  link:/path/to/blue/packages/bundle/blue \
-  link:/path/to/blue/packages/core \
-  link:/path/to/blue/packages/interaction \
-  link:/path/to/blue/packages/transcript \
-  link:/path/to/blue/packages/app
-
-dsh --profile blue [task]           # run a task, or start interactive
-dsh --profile blue --resume <id>    # resume a persisted session
-```
-
-Why all five links: the four library packages are the bundle's `workspace:^` dependencies, unresolvable outside this workspace. `dsh plugin` forwards verbatim to pnpm, whose `link:` protocol installs the checkout itself as a symlink; the linked bundle then resolves its siblings through the profile's own `node_modules` links. The four non-bundle links are plain dependencies — expect one `declares no dsh.bundle` warning each; they are libraries, not layers.
-
-If your profile was linked before the package rename (when the packages were named `@dsh-blue/blue*`), those links are stale — delete the profile directory (`~/.dsh/profiles/<name>`) or `dsh plugin --profile <name> remove` the old entries, then re-run the script.
-
-### Iteration loop
-
-**edit src → `pnpm run build` → re-run `dsh --profile blue`**. The links point at the package directories, so rebuilt `lib/` takes effect with no reinstall; only a dependency-graph change (adding a package or changing `dependencies`) needs another `dsh plugin --profile blue add`/`install`.
-
-Headless smoke check (pseudo-TTY via `script(1)`):
-
-```sh
-(sleep 10; printf '/quit\r'; sleep 3) \
-  | timeout 90 script -qec "dsh --profile blue" /tmp/blue-smoke.typescript
-# Assert: bracketed-paste on (\x1b[?2004h) at boot, off (\x1b[?2004l) at exit, exit code 0.
-```
+The `@rc` suffix is required: preview releases only carry the `rc` dist-tag, so a bare spec — which resolves `latest` — finds nothing. Upgrading to a newer preview is the same `plugin add` again; the spec re-resolves.
 
 ## Features
 
@@ -258,6 +226,8 @@ pnpm run typecheck      # tsc -b
 ```
 
 Tests run from source: specs import the package under test through relative `../src/*.ts` paths, and every `@deepseek-ai/*` dependency resolves from `node_modules`.
+
+Development install (from a checkout, link-based) and the edit → build → re-run loop live in the contributor guide on the docs site: [dsh-blue.dev/en/plugins/contributing](https://dsh-blue.dev/en/plugins/contributing/) (中文: [dsh-blue.dev/plugins/contributing](https://dsh-blue.dev/plugins/contributing/)).
 
 ## Documentation
 

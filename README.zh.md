@@ -12,8 +12,8 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 
 本仓库是 `@dsh-blue` scope 下五个 workspace 包的独立 home，它们从 `deepseek-harness` monorepo 抽出（原 `packages/blue/*` 与 `packages/bundle/blue`），现按 npm 上发布的 harness（`0.1.1-rc.2` 线）与 vendored Cordis 构建测试。
 
-<!-- TODO: 演示动图——录一段真实会话（vhs / asciinema；快速开始里的 script(1)
-     冒烟检查是种子），导出 GIF 到 docs/assets/ 后嵌到这里。
+<!-- TODO: 演示动图——录一段真实会话（vhs / asciinema；贡献者指南（开发手册）里的
+     script(1) 冒烟检查是种子），导出 GIF 到 docs/assets/ 后嵌到这里。
      TUI 仓库的 README 成败系于演示。 -->
 
 ## 目录
@@ -31,51 +31,19 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 ## 快速开始
 
 > [!NOTE]
-> Blue 尚未发布到 npm。目前唯一受支持的安装方式是针对本仓库 checkout 的本地开发安装。
+> `0.1.0-rc.1` 为预览版，发布在 **`rc` dist-tag** 下——`latest` 留给稳定线，安装 spec 需带 `@rc` 后缀。
 
 前置：Node `^22.19 || >=24`、pnpm 11、`dsh` CLI ≥ `0.1.1-rc.2`（`npm i -g @deepseek-ai/dsh`）。
 
-### 一键
+### npm 安装
 
 ```sh
-script/install-dev.sh
-# 覆盖: DSH_BIN=/path/to/dsh PROFILE=my-profile DSH_HOME=/custom/home script/install-dev.sh
+dsh --profile blue plugin add @dsh-blue/blue@rc
 ```
 
-脚本构建 workspace 并把五个包全部 link 安装进 profile。
+安装完成后，启动与首次运行见[快速上手](https://dsh-blue.dev/guide/)；模型、Provider、主题与 API 密钥的配置见[配置教程](https://dsh-blue.dev/guide/config/)。
 
-### 手动等价流程
-
-```sh
-pnpm install && pnpm run build   # lib/ 是每个包的运行时入口
-
-# 一次性 profile 设置：
-dsh plugin --profile blue add \
-  link:/path/to/blue/packages/bundle/blue \
-  link:/path/to/blue/packages/core \
-  link:/path/to/blue/packages/interaction \
-  link:/path/to/blue/packages/transcript \
-  link:/path/to/blue/packages/app
-
-dsh --profile blue [task]           # 跑一个任务，或进入交互
-dsh --profile blue --resume <id>    # 恢复持久化会话
-```
-
-为什么要链五个包：四个库包是 bundle 的 `workspace:^` 依赖，出了本 workspace 解析不了。`dsh plugin` 原样转发给 profile 目录下的 pnpm，其 `link:` 协议把 checkout 本身装成符号链接；被链的 bundle 再经 profile 自己的 `node_modules` 链接解析兄弟包。四条非 bundle 链接是普通依赖——各有一条 `declares no dsh.bundle` 警告属预期（它们是库，不是层）。
-
-如果你的 profile 是在包改名前（当时包名为 `@dsh-blue/blue*`）链的，那些链接已失效——删掉 profile 目录（`~/.dsh/profiles/<name>`）或 `dsh plugin --profile <name> remove` 旧条目，再重跑脚本。
-
-### 迭代环
-
-**edit src → `pnpm run build` → 重跑 `dsh --profile blue`**。链接指向包目录，重建的 `lib/` 无需重装即生效；只有依赖图变化（新增包或改 `dependencies`）才需要再跑 `dsh plugin --profile blue add`/`install`。
-
-Headless 冒烟检查（经 `script(1)` 伪 TTY）：
-
-```sh
-(sleep 10; printf '/quit\r'; sleep 3) \
-  | timeout 90 script -qec "dsh --profile blue" /tmp/blue-smoke.typescript
-# 断言：启动时 bracketed-paste 开（\x1b[?2004h）、退出时关（\x1b[?2004l）、退出码 0。
-```
+`@rc` 后缀是必须的：预览版只打 `rc` dist-tag，裸 spec 解析 `latest`、什么都找不到。升级到更新的预览版 = 重跑同一条 `plugin add`（spec 会重新解析）。
 
 ## 功能
 
@@ -258,6 +226,8 @@ pnpm run typecheck      # tsc -b
 ```
 
 测试从源码跑：spec 经相对 `../src/*.ts` 路径 import 被测包，所有 `@deepseek-ai/*` 依赖从 `node_modules` 解析。
+
+本地开发安装（从源码检出、link 安装）与迭代环在文档站的贡献者指南：[dsh-blue.dev/plugins/contributing](https://dsh-blue.dev/plugins/contributing/)（English: [dsh-blue.dev/en/plugins/contributing](https://dsh-blue.dev/en/plugins/contributing/)）。
 
 ## 文档
 

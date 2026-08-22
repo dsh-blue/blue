@@ -1,8 +1,8 @@
 # FAQ
 
-## Why can't I `npm install @dsh-blue/blue`?
+## Why does a bare `npm install @dsh-blue/blue` find nothing?
 
-Blue is in preview and not published to npm. The only supported install today is a local development install against a checkout — see [Quickstart](/en/guide/). `v0.1.0-rc.1` will be the first released version; this site's install docs will be updated when it ships.
+Preview releases are published only under the **`rc` dist-tag** (`latest` stays reserved for the stable line), and a bare install resolves `latest` — use `dsh --profile blue plugin add @dsh-blue/blue@rc` instead, see [Quickstart](/en/guide/). `v0.1.0-rc.1` is the first released version; the contributor development install lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
 
 ## Pasting an image does nothing?
 

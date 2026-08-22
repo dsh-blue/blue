@@ -2,8 +2,8 @@
 layout: home
 
 hero:
-  name: Blue-dsh
-  text: plugin-based TUI
+  name: Blue
+  text: A plugin-powered terminal UI for dsh
   tagline: v0.1.0-rc.1 · Preview — streaming transcript, tool cards, approval overlays and dock panes, everything a plugin.
   actions:
     - theme: brand
@@ -14,28 +14,16 @@ hero:
       link: https://github.com/dsh-blue/blue
 
 features:
-  - title: Streaming transcript
-    details: User and assistant messages render as Markdown while they stream; tool calls appear as cards, with dedicated cards for diffs and terminal output, and reasoning as its own block.
+  - title: Stay in the conversation
+    details: Streaming Markdown, reasoning, and tool calls unfold naturally in one transcript. Commands, file completion, and image paste all happen from the editor.
     link: /en/features/streaming
     linkText: Learn more →
-  - title: Input editor
-    details: Rounded-box editor with fuzzy slash-command autocomplete, argument ghost hints, ! bash mode, @ file completion, and Ctrl-V clipboard image paste.
-    link: /en/features/editor
-    linkText: Learn more →
-  - title: Approvals & questionnaires
-    details: A four-choice approval panel (numbered selection, session-level always-allow, reject with feedback) and tabbed questionnaire overlays.
+  - title: See each step clearly
+    details: Tool cards, approval overlays, activity indicators, todos, and context usage keep the agent's progress and your decisions in view.
     link: /en/features/approval
     linkText: Learn more →
-  - title: Two-row status bar
-    details: model · cwd · git badge · context occupancy · rotating tips — every entry is a registry contribution, none hardcoded.
-    link: /en/features/status-bar
-    linkText: Learn more →
-  - title: Bottom panes
-    details: Activity indicator while the agent runs, a queued-inbox pane with Up-to-recall, a todo pane with the Ctrl-T toggle, and the /btw side-question pane.
-    link: /en/features/panes
-    linkText: Learn more →
-  - title: Hot-switchable theming
-    details: /theme swaps live between dark / light / auto (OSC 11 background detection) / custom (JSON palette); your input draft survives.
-    link: /en/guide/theme
+  - title: Extend it your way
+    details: Themes, status entries, tool presentation, and interactions all come from plugins. Keep what you need and add capabilities that fit your workflow.
+    link: /en/plugins/
     linkText: Learn more →
 ---
