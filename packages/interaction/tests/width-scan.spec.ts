@@ -17,6 +17,7 @@ import { HelpOverlay, type HelpSection } from '../src/help.ts'
 import { InfoPanel, type InfoSection } from '../src/info-panel.ts'
 import { PlanReviewPanel, planReviewChoices } from '../src/plan-review-panel.ts'
 import { Questionnaire } from '../src/questionnaire.ts'
+import { UpdateNoticeComponent } from '../src/update-notice.ts'
 import { fakeBlueContext, FakeBlueComponents, FakeKeymap } from './fakes.ts'
 import { ADVERSARIAL, SCAN_WIDTHS, expectLinesFit } from '../../core/tests/width-scan.ts'
 
@@ -65,6 +66,21 @@ function planAsk(text: string) {
 
 describe('interaction width-scan', () => {
   for (const { name, text } of ADVERSARIAL) {
+    it(`UpdateNoticeComponent survives ${name}`, () => {
+      const { components } = fakeBlueContext()
+      const notice = new UpdateNoticeComponent(
+        (line, width) => components.truncateToWidth(line, width),
+        {
+          current: '0.1.0-rc.2',
+          target: `${text.slice(0, 20)}`,
+          command: `dsh plugin --profile blue add @dsh-blue/blue@${text.slice(0, 12)}`,
+        },
+      )
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`UpdateNotice/${name}`, notice.render(width), width)
+      }
+    })
+
     it(`FormPanel survives ${name}`, () => {
       const { keymap, components } = fakeBlueContext()
       const fields: FormField[] = [

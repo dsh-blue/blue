@@ -11,6 +11,22 @@ pnpm 11 enables a `minimumReleaseAge` cooldown by default: dist-tag resolution s
 - install the exact version right away — `dsh plugin --profile blue add @dsh-blue/blue@0.1.0-rc.2` (match the repository's newest tag);
 - or re-run the same `@rc` command once the cooldown window has passed (upgrading = re-running the same `plugin add`).
 
+Upgrading through `/update` avoids the trap entirely: it resolves the target from registry metadata, always pins the exact version, and inside the cooldown window it answers with the retry time (an ETA) instead of installing a stale build.
+
+## How do I upgrade Blue?
+
+Two paths:
+
+- **In-app (recommended)**: type `/update` in the session — it runs the safety pre-flight first (profile health, whether the global dsh CLI meets the target release's harness line, the cooldown window), then after a typed `y` confirmation it snapshots the current install, installs the exact version in one transaction, verifies the six-package set, and boot-smokes the result (a module import sweep plus a real boot); any failure **rolls back automatically** to the previous version, with a progress panel and a log path throughout. `/update <version>` pins an explicit target; a bare `/update` doubles as a read-only check. After a successful update the current session keeps running the old version — restart dsh to apply.
+- **Manually**: re-run the same `dsh plugin --profile blue add @dsh-blue/blue@rc` (or the exact-version form in the previous question).
+
+Blue also checks for a newer release in the background at startup (at most once per 24h, silent on failure, reads registry metadata only, sends nothing); when one exists it posts a two-line notice at the top of the scroll area. To turn the startup check off, write this into `~/.dsh/settings.yaml`:
+
+```yaml
+blue:
+  updateCheck: false
+```
+
 ## Pasting an image does nothing?
 
 Ctrl-V paste depends on two things:

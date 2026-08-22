@@ -44,7 +44,7 @@ dsh plugin --profile blue add @dsh-blue/blue@rc
 
 安装完成后，启动与首次运行见[快速上手](https://dsh-blue.dev/guide/)；模型、Provider、主题与 API 密钥的配置见[配置教程](https://dsh-blue.dev/guide/config/)。
 
-`@rc` 后缀是必须的：预览版只打 `rc` dist-tag，裸 spec 解析 `latest`、什么都找不到。升级到更新的预览版 = 重跑同一条 `plugin add`（spec 会重新解析）。
+`@rc` 后缀是必须的：预览版只打 `rc` dist-tag，裸 spec 解析 `latest`、什么都找不到。升级到更新的预览版：在 Blue 中输入 `/update`（应用内安全升级，详见[FAQ](https://dsh-blue.dev/guide/faq/)），或重跑同一条 `plugin add`（spec 会重新解析）。
 
 ## 功能
 

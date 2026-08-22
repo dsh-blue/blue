@@ -175,6 +175,7 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 | 步 | 范围 | 档 | 前置 |
 |---|---|---|---|
 | S37 | `blue` 壳包 `@dsh-blue/blue-cli`（**D50④**）：bin 名 `blue`、嵌套钉版 `@deepseek-ai/dsh` 作运行时宿主（A 方案——用户全局有无 dsh 皆可，版本恒与测试线一致）、托管校准（启动读 profile 清单，bundle 版本不一致才 `plugin add`，一致零开销；升级 = 重装壳一条命令，**无 `blue upgrade`**）、`-V` 一行三段自答（壳/Blue/harness 线）、`--patch`/`--dump-config`/`plugin` 子命令翻译透传、startup.ts `program.name` 文案改 `blue`、version.spec 扩第七份 manifest、website quickstart 双写（`blue` 为主、dsh 命令并列）；bootstrap 失败一行报错指路手动命令；发版走 release.yml 同管道 | 0.5-1d | R3 发包（rc.1 五包须已存在） |
+| S38 | 用户侧安全更新（**D52**）：`blue-update-check` 启动检查（loader settle 后一次 `npm view`/registry 元数据、24h 缓存、静默失败、settings `blue` 命名空间 `updateCheck`/`updateChannel` 可关）+ `/update` 命令（六道预检：link 污染/组一致性/目标存在/D51 下限/宿主线/冷却期 ETA → 打字确认 → 快照 → 单事务精确版本安装 → 装后组校验 → 冒烟 A 导入扫描 + 冒烟 B pipe-stdio boot → 失败自动回滚全组重装；`/update <version>` 钉目标、bare 即只读检查）；滚动区两行通知组件 + 编辑器 hint（banner 不动）；`updater/` 全收 `blue-interaction`、S37 落地后壳复用核心 | 1.5-2d | R3/R4（包已在 npm） |
 
 ### 预览版后挂起区（parked after 0.1.0-rc.1）
 

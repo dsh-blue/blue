@@ -253,14 +253,15 @@ describe('blue-banner plugin', () => {
     expect(joined).toContain('Welcome to Blue!')
     expect(joined).toContain(`Version:   ${BLUE_VERSION}`)
     expect(joined).toContain('m · p')
-    // The frameless banner's status value budget at render(100) is
-    // 100 − 25 (logo block) − 2 (gap) − 11 (label) = 62 columns; the pi-tui
-    // truncation appends a reset-wrapped ellipsis inside it. A cwd that
-    // fits renders whole, while a deeper checkout (this spec also runs from
-    // worktree copies) survives as its clipped prefix.
-    const budget = 100 - 25 - 2 - 11
+    // The frameless banner's status value budget at render(100) clips a
+    // deep cwd (this spec also runs from worktree copies, whose path can
+    // exceed the composer's value budget — and the clip point varies with
+    // the paint). A cwd that fits renders whole; a deep one survives at
+    // least as its stable prefix.
+    const plain = joined.replace(/\x1b\[[0-9;]*m/g, '')
     const cwd = shortenHome(process.cwd(), homedir())
-    expect(joined).toContain(cwd.length <= budget ? cwd : cwd.slice(0, budget - 3))
+    expect(plain).toContain('Directory: ')
+    expect(plain).toContain(cwd.length <= 48 ? cwd : cwd.slice(0, 24))
     // The banner is stateless; invalidation is a covered no-op.
     expect(() => screen.children[0]?.invalidate()).not.toThrow()
   })

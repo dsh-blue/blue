@@ -24,6 +24,7 @@
 | `/status` | — | — | 显示会话头、模型与上下文状态 | `blue-commands` |
 | `/context` | — | — | 显示 token 用量与上下文窗口 | `blue-usage` |
 | `/version` | — | — | 显示 Blue 与 harness 版本及实时模型 | `blue-commands` |
+| `/update` | — | `[version]` | 安全升级 Blue（预检/快照/装机冒烟/失败自动回滚；不带参数即只读检查） | `blue-commands`（经 update-command，D52） |
 | `/export` | — | `[path]` | 把当前会话导出为 Markdown 文件 | `blue-session-export` |
 | `/copy` | — | — | 复制最近一条助手消息到剪贴板 | `blue-session-export` |
 

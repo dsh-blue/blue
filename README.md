@@ -44,7 +44,7 @@ dsh plugin --profile blue add @dsh-blue/blue@rc
 
 After installing, see the [quickstart](https://dsh-blue.dev/en/guide/) for launching and a first run; models, providers, themes, and API keys are covered in the [configuration guide](https://dsh-blue.dev/en/guide/config/).
 
-The `@rc` suffix is required: preview releases only carry the `rc` dist-tag, so a bare spec — which resolves `latest` — finds nothing. Upgrading to a newer preview is the same `plugin add` again; the spec re-resolves.
+The `@rc` suffix is required: preview releases only carry the `rc` dist-tag, so a bare spec — which resolves `latest` — finds nothing. To upgrade to a newer preview, type `/update` inside Blue (the in-app safe upgrade; see the [FAQ](https://dsh-blue.dev/en/guide/faq/)), or run the same `plugin add` again — the spec re-resolves.
 
 ## Features
 

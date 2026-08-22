@@ -12,7 +12,9 @@
  * `./pane-queue` subpath plugin (`blue-pane-queue`). The session-title
  * terminal mirror (`blue-terminal-title`, the OSC 0 window title over the
  * upstream session-title fold) and the all-prompts cadence bridge
- * (`blue-session-title-cadence`, D41) mount with the baseline plugins. All
+ * (`blue-session-title-cadence`, D41) mount with the baseline plugins, as
+ * does the boot-time update check (`blue-update-check`, D52: one registry
+ * metadata read after the tree settles, silent-fail, 24h cache). All
  * registrations are effect-bound, so unloading the fiber reverts every
  * contribution.
  *
@@ -27,6 +29,7 @@ import * as keysPlugin from './keys.ts'
 import * as questionsPlugin from './questions-plugin.ts'
 import * as sessionTitleCadencePlugin from './session-title-cadence.ts'
 import * as terminalTitlePlugin from './terminal-title.ts'
+import * as updateCheckPlugin from './updater/check.ts'
 
 // BluePanel is the package's public overlay container; BlueSelect stays
 // package-internal as the multi-select-only list (single-select moved to
@@ -49,4 +52,5 @@ export function apply(ctx: Context): void {
   ctx.plugin(approvalPlugin)
   ctx.plugin(terminalTitlePlugin)
   ctx.plugin(sessionTitleCadencePlugin)
+  ctx.plugin(updateCheckPlugin)
 }
