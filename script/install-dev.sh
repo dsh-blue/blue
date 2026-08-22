@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # install-dev.sh — one-shot local development install of Blue into a dsh profile.
 #
-# Builds the Blue workspace and link-installs all five packages into the blue
+# Builds the Blue workspace and link-installs all Blue packages into the blue
 # profile (no npm publish). Code changes take effect after `pnpm run build`;
 # re-run this script only when the dependency graph changes.
 #
@@ -36,6 +36,7 @@ pnpm --dir "$REPO_ROOT" run build
 echo "==> Link-installing Blue packages into profile '$PROFILE'"
 "$DSH_BIN" plugin --profile "$PROFILE" add \
   "link:$REPO_ROOT/packages/bundle/blue" \
+  "link:$REPO_ROOT/packages/api" \
   "link:$REPO_ROOT/packages/core" \
   "link:$REPO_ROOT/packages/interaction" \
   "link:$REPO_ROOT/packages/transcript" \
