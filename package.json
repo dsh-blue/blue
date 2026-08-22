@@ -18,6 +18,7 @@
     "diagrams:check": "node script/sync-diagrams.mjs --check",
     "check:lib": "node script/check-lib-exports.mjs",
     "smoke:happy": "node script/smoke-happy.mjs",
+    "smoke:pty": "node script/smoke-pty.mjs",
     "website:dev": "pnpm --filter @dsh-blue/website run dev",
     "website:build": "pnpm --filter @dsh-blue/website run build",
     "website:preview": "pnpm --filter @dsh-blue/website run preview"

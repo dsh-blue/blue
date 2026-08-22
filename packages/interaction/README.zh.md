@@ -26,7 +26,7 @@ Blue 终端 UI 交互层，构建于 [`dsh-blue-core`](../core/README.md) 之上
 
 **`./attachments`** 子路径插件（`blue-attachments`，inject `['blueComponents']`）提供 harness 的 `attachments` `AttachmentStore`：`FilesystemAttachmentStore` 带魔数嗅探（共享 sniffer 导出）、媒体类型白名单与上限（10MB/图、8 图/消息、30MB/消息、16M 像素），文件存于 `DSH_BLUE_ATTACHMENT_DIR ?? $DSH_HOME/attachments ?? ~/.dsh/attachments` 之下，命名为 `<uuid>.<ext>`；`AttachmentError` code 对齐 dsh-attachment 词表。
 
-**`./paste-image`** 子路径插件（`blue-paste-image`，inject `['attachments', 'blueKeymap']`）注册语境 ctrl+v 动作 `blue.image.paste`，在共享编辑器 `onKey` 链上的 wrapper 中解析。剪贴板经可注入的 reader 读取（默认 wl-paste → xclip 探测，3 秒超时）；图片经 `ctx.attachments` 落盘，并在光标处插入 `[image #N]` 标记（`BlueEditor.insertText`；模块级标记 map 跨主题换装 reload 存活）。下述提交变换器把标记拆成 ImageBlock；失败时闪现 notice，插件卸载后晚到的完成 no-op。
+**`./paste-image`** 子路径插件（`blue-paste-image`，inject `['attachments', 'blueKeymap']`）注册语境 ctrl+v 动作 `blue.image.paste`，在共享编辑器 `onKey` 链上的 wrapper 中解析。其 `backend` 配置可取 `auto`（默认）、`wayland` 或 `x11`：自动模式先探测当前显示会话的原生后端，再按需跨协议回退；严格模式不跨协议。每个后端先列类型，再读取首个有效的 PNG/JPEG/WebP/GIF representation；空字节、无效字节或 MIME 不匹配会继续下一类型。文件管理器只提供 `text/uri-list`（或 GNOME copied-files）时，本地普通图片文件按原顺序整批有界读取，服从附件数量/字节上限，并以魔数字节而非扩展名识别格式；远程 URI、目录、末级符号链接和特殊文件均拒绝。工具 3 秒超时后以 SIGKILL 结束，并在同一显示环境下冷却 60 秒。自动跨后端成功会提示实际 fallback，因为损坏的 Wayland/X11 桥可能暴露旧剪贴板。准入图片经 `ctx.attachments` 落盘、插入 `[image #N]` 标记并在提交时拆成 ImageBlock；失败显示分级 notice，插件卸载后晚到的完成 no-op。
 
 ## 共享面板
 

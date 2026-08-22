@@ -8,7 +8,7 @@
  * process terminal are substituted.
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -255,6 +255,7 @@ interface BlueE2EHooks {
   editorPlusApply: typeof editorPlusPlugin.apply
   attachmentsApply: typeof attachmentsPlugin.apply
   pasteImageApply: typeof pasteImagePlugin.apply
+  pasteImageConfig: typeof pasteImagePlugin.Config
   startupApply: typeof startupPlugin.apply
   appApply: typeof appPlugin.apply
   appConfig: typeof appPlugin.Config
@@ -371,6 +372,7 @@ async function bootBlue(argv: string[], options: {
     editorPlusApply: editorPlusPlugin.apply,
     attachmentsApply: attachmentsPlugin.apply,
     pasteImageApply: pasteImagePlugin.apply,
+    pasteImageConfig: pasteImagePlugin.Config,
     startupApply: startupPlugin.apply,
     appApply: appPlugin.apply,
     appConfig: appPlugin.Config,
@@ -451,7 +453,8 @@ export const apply = ctx => globalThis.__blueE2E.attachmentsApply(ctx)
     `  name: ${fixture('blue-paste-image.mjs', `
 export const name = 'blue-paste-image'
 export const inject = ['attachments', 'blueKeymap']
-export const apply = ctx => globalThis.__blueE2E.pasteImageApply(ctx)
+export const Config = globalThis.__blueE2E.pasteImageConfig
+export const apply = (ctx, config) => globalThis.__blueE2E.pasteImageApply(ctx, config)
 `)}`,
     // The enhancement-segment status rows mirror cordis.patch.yml's row
     // order: the cwd abbreviation, the git badge, the rotating tip, and the
@@ -1256,7 +1259,8 @@ describe('blue whole-tree e2e', () => {
     // The attachment store resolves its root in the constructor, so the env
     // override must be in place before the boot creates the service.
     const previousDir = process.env.DSH_BLUE_ATTACHMENT_DIR
-    process.env.DSH_BLUE_ATTACHMENT_DIR = mkdtempTracked('dsh-blue-e2e-attachments-')
+    const attachmentRoot = mkdtempTracked('dsh-blue-e2e-attachments-')
+    process.env.DSH_BLUE_ATTACHMENT_DIR = attachmentRoot
     // A 1×1 PNG (the shared literal shape with core's and interaction's
     // suites).
     const png = new Uint8Array([
@@ -1265,7 +1269,7 @@ describe('blue whole-tree e2e', () => {
       0, 3, 134, 1, 128, 90, 52, 125, 107, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
     ])
     try {
-      setClipboardImageReader(() => Promise.resolve(png))
+      setClipboardImageReader(() => Promise.resolve({ kind: 'image', data: png, mediaType: 'image/png' }))
       const tree = await bootBlue([], { script: [textResponse('got it')] })
       const agent = await currentAgent(tree)
       for (const char of 'look at this ') tree.terminal.sendInput(char)
@@ -1281,6 +1285,15 @@ describe('blue whole-tree e2e', () => {
       expect(serialized).toContain('look at this')
       expect(serialized).not.toContain('[image #1]')
       await agent.whenIdle()
+      setClipboardImageReader(() => Promise.resolve({ kind: 'image', data: png, mediaType: 'image/jpeg' }))
+      tree.terminal.sendInput('\x16')
+      await vi.waitFor(() => {
+        expect(tree.terminal.output).toContain('image rejected: declared image/jpeg but the bytes sniff as image/png')
+      })
+      const files = readdirSync(attachmentRoot)
+      expect(files).toHaveLength(1)
+      expect(files[0]).toMatch(/\.png$/)
+      expect(new Uint8Array(readFileSync(join(attachmentRoot, files[0]!)))).toEqual(png)
     } finally {
       setClipboardImageReader(undefined)
       if (previousDir === undefined) delete process.env.DSH_BLUE_ATTACHMENT_DIR

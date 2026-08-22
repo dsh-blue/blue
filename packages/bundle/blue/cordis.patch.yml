@@ -220,9 +220,12 @@
     # image through the attachment store, inserts its '[image #N]' marker
     # into the shared editor, and splits the markers into image content
     # blocks on submit. Injects 'attachments' (above), so it always mounts
-    # after the store.
+    # after the store. Auto selects the session-native backend first; profile
+    # overlays may set wayland/x11 to forbid cross-protocol fallback.
     - id: blue-paste-image
       name: '@dsh-blue/blue-interaction/paste-image'
+      config:
+        backend: auto
 
     # Working-directory footer entry: the abbreviated session cwd (priority
     # 5, muted tier) — '~' under home, else the last three segments.

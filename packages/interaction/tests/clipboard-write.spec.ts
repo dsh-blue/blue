@@ -182,7 +182,11 @@ describe('default clipboard text writer', () => {
   it('classifies a spawn error with a code other than ENOENT as its raw message', async () => {
     const bin = mkdtempTracked('blue-clipboard-eacces-')
     // Present but not executable: spawn fails with EACCES, which carries a
-    // `code` that is not ENOENT — the message survives verbatim.
+    // `code` that is not ENOENT — the message survives verbatim. The PATH is
+    // replaced outright (not prepended): libuv's PATH search skips entries
+    // that fail with EACCES and keeps searching, so a prepended fake would
+    // leak through to the machine's real wl-copy/xclip whenever they are
+    // installed (observed 2026-08-22 after installing wl-clipboard).
     writeFileSync(join(bin, 'wl-copy'), '#!/bin/sh\nexit 0\n')
     chmodSync(join(bin, 'wl-copy'), 0o644)
     const xclip = join(bin, 'xclip')

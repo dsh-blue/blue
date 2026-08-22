@@ -1,20 +1,29 @@
 /**
  * Tests for the `blue-paste-image` plugin: the Ctrl-V key wrapper over the
- * shared editor's onKey chain, the paste flow (clipboard reader, sniffed
- * media type, admission through `ctx.attachments`, marker insertion, notice
- * degradation), the submit transformer splitting `[image #N]` markers, and
- * the attach/registration lifecycle including mid-flight fiber unloads.
+ * shared editor's onKey chain, the paste flow (clipboard reader, declared
+ * media type, admission through `ctx.attachments`, marker insertion, the
+ * per-failure-kind notices), the submit transformer splitting `[image #N]`
+ * markers, the default reader's two-step type negotiation through fake
+ * clipboard tools, copied local-file URI batches and their refusal bounds,
+ * and the attach/registration lifecycle including mid-flight fiber unloads.
  */
 
-import { chmodSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import { AttachmentError, AttachmentId, type ImageAttachmentRef, type SaveImageAttachment } from '@deepseek-ai/dsh-attachment'
+import {
+  AttachmentError,
+  AttachmentId,
+  type ImageAttachmentLimits,
+  type ImageAttachmentRef,
+  type SaveImageAttachment,
+} from '@deepseek-ai/dsh-attachment'
 import { applySubmitTransformers } from '../src/editor-instance.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
 import * as pasteImage from '../src/paste-image.ts'
-import { ACTION_IMAGE_PASTE } from '../src/paste-image.ts'
+import { ACTION_IMAGE_PASTE, type ClipboardImageResult } from '../src/paste-image.ts'
 import { fakeBlueContext, FakeBlueEditor, KEY, type FakeKeymap } from './fakes.ts'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
 
@@ -34,6 +43,20 @@ const GIF_1X1 = new Uint8Array([
   0, 0, 44, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 68, 1, 0, 59,
 ])
 
+/** A JPEG magic prefix; the mocked store in this suite does not sniff. */
+const JPEG_PREFIX = new Uint8Array([
+  0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01,
+])
+
+const IMAGE_LIMITS: ImageAttachmentLimits = {
+  maxImageBytes: 10 * 1024 * 1024,
+  maxImagesPerMessage: 8,
+  maxMessageImageBytes: 30 * 1024 * 1024,
+  maxImagePixels: 16_777_216,
+  maxImageDimension: 4096,
+  mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
+}
+
 const tick = (): Promise<void> => new Promise(resolve => setImmediate(resolve))
 
 describe('blue-paste-image plugin', () => {
@@ -41,6 +64,8 @@ describe('blue-paste-image plugin', () => {
   let editor: FakeBlueEditor
   let notices: string[]
   let saveImage: ReturnType<typeof vi.fn>
+  let saveImages: ReturnType<typeof vi.fn>
+  let imageLimits: ImageAttachmentLimits
   let ctx: Context
   let keymap: FakeKeymap
   let fiber: { dispose(): Promise<void> } | undefined
@@ -49,6 +74,7 @@ describe('blue-paste-image plugin', () => {
     root = mkdtempTracked('blue-paste-image-')
     editor = new FakeBlueEditor()
     notices = []
+    imageLimits = { ...IMAGE_LIMITS }
     let saved = 0
     saveImage = vi.fn(async (input: SaveImageAttachment): Promise<ImageAttachmentRef> => {
       saved += 1
@@ -61,15 +87,18 @@ describe('blue-paste-image plugin', () => {
         ...(input.name === undefined ? {} : { name: input.name }),
       }
     })
+    saveImages = vi.fn(async (inputs: readonly SaveImageAttachment[]) => Promise.all(inputs.map(input => saveImage(input))))
     const blue = fakeBlueContext()
     ctx = blue.ctx
     keymap = blue.keymap
-    ctx.provide('attachments', { saveImage })
+    ctx.provide('attachments', { imageLimits, saveImage, saveImages })
     setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
   })
 
   afterEach(async () => {
     pasteImage.setClipboardImageReader(undefined)
+    pasteImage.setClipboardClock(undefined)
+    pasteImage.resetClipboardBackendCooldowns()
     clearSharedEditor()
     await fiber?.dispose()
     fiber = undefined
@@ -153,9 +182,9 @@ describe('blue-paste-image plugin', () => {
     setSharedEditor({ editor: third, submitPrompt: () => {} })
   })
 
-  it('pastes a sniffed image as an incrementing marker and splits it on submit', async () => {
+  it('pastes a declared image as an incrementing marker and splits it on submit', async () => {
     await mount()
-    pasteImage.setClipboardImageReader(() => Promise.resolve(PNG_1X1))
+    pasteImage.setClipboardImageReader(() => Promise.resolve({ kind: 'image', data: PNG_1X1, mediaType: 'image/png' }))
     pressPaste()
     await vi.waitFor(() => {
       expect(editor.inserted).toHaveLength(1)
@@ -167,7 +196,7 @@ describe('blue-paste-image plugin', () => {
     expect(firstRef.name).toBe('pasted-image.png')
     expect(firstRef.data).toBe(PNG_1X1)
 
-    pasteImage.setClipboardImageReader(() => Promise.resolve(GIF_1X1))
+    pasteImage.setClipboardImageReader(() => Promise.resolve({ kind: 'image', data: GIF_1X1, mediaType: 'image/gif' }))
     pressPaste()
     await vi.waitFor(() => {
       expect(editor.inserted).toHaveLength(2)
@@ -176,13 +205,16 @@ describe('blue-paste-image plugin', () => {
     expect(Number(/#(\d+)/.exec(secondMarker)![1])).toBe(Number(/#(\d+)/.exec(firstMarker)![1]) + 1)
     expect((saveImage.mock.calls[1]![0] as SaveImageAttachment).mediaType).toBe('image/gif')
 
-    // Sniffing miss falls back to the PNG label the tools promise.
-    pasteImage.setClipboardImageReader(() => Promise.resolve(new Uint8Array([1, 2, 3])))
+    // The declared type passes through untouched: the name derives from it
+    // and the store's admission (mocked here) owns the byte cross-check.
+    pasteImage.setClipboardImageReader(() => Promise.resolve({ kind: 'image', data: JPEG_PREFIX, mediaType: 'image/jpeg' }))
     pressPaste()
     await vi.waitFor(() => {
       expect(editor.inserted).toHaveLength(3)
     })
-    expect((saveImage.mock.calls[2]![0] as SaveImageAttachment).mediaType).toBe('image/png')
+    const thirdRef = saveImage.mock.calls[2]![0] as SaveImageAttachment
+    expect(thirdRef.mediaType).toBe('image/jpeg')
+    expect(thirdRef.name).toBe('pasted-image.jpg')
 
     // Submit splitting: known markers become image blocks with text runs.
     const blocks = applySubmitTransformers(`before ${firstMarker} mid ${secondMarker} after`)
@@ -201,45 +233,129 @@ describe('blue-paste-image plugin', () => {
     // paste).
     const thirdMarker = editor.inserted[2]!
     expect(applySubmitTransformers(thirdMarker)).toEqual([
-      { type: 'image', attachment: expect.objectContaining({ mediaType: 'image/png' }) },
+      { type: 'image', attachment: expect.objectContaining({ mediaType: 'image/jpeg' }) },
     ])
     // No known markers at all: the fallback single text block.
     expect(applySubmitTransformers('plain line')).toEqual([{ type: 'text', text: 'plain line' }])
   })
 
-  it('notices when the clipboard has no image or the reader fails', async () => {
+  it('reports a successful automatic backend fallback after inserting its marker', async () => {
     await mount()
-    pasteImage.setClipboardImageReader(() => Promise.resolve(undefined))
+    pasteImage.setClipboardImageReader(() => Promise.resolve({
+      kind: 'image',
+      data: PNG_1X1,
+      mediaType: 'image/png',
+      backend: 'x11',
+      fallback: true,
+    }))
     pressPaste()
     await vi.waitFor(() => {
-      expect(notices).toEqual(['no image available from the clipboard'])
+      expect(editor.inserted).toHaveLength(1)
     })
+    expect(notices).toEqual(['pasting image...', 'pasted image via X11 fallback; verify it is current'])
+
+    pasteImage.setClipboardImageReader(() => Promise.resolve({
+      kind: 'image',
+      data: GIF_1X1,
+      mediaType: 'image/gif',
+      backend: 'wayland',
+      fallback: true,
+    }))
+    pressPaste()
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(2)
+    })
+    expect(notices.at(-1)).toBe('pasted image via Wayland fallback; verify it is current')
+  })
+
+  it('admits a copied-file batch and inserts its ordered markers together', async () => {
+    await mount()
+    pasteImage.setClipboardImageReader(() => Promise.resolve({
+      kind: 'images',
+      images: [
+        { data: PNG_1X1, mediaType: 'image/png', name: 'first.png' },
+        { data: GIF_1X1, mediaType: 'image/gif', name: 'second.gif' },
+      ],
+    }))
+    pressPaste()
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImages).toHaveBeenCalledWith([
+      expect.objectContaining({ mediaType: 'image/png', name: 'first.png' }),
+      expect.objectContaining({ mediaType: 'image/gif', name: 'second.gif' }),
+    ])
+    expect(editor.inserted[0]!.match(/\[image #\d+\]/g)).toHaveLength(2)
+    expect(applySubmitTransformers(editor.inserted[0]!)).toEqual([
+      { type: 'image', attachment: expect.objectContaining({ mediaType: 'image/png' }) },
+      { type: 'text', text: ' ' },
+      { type: 'image', attachment: expect.objectContaining({ mediaType: 'image/gif' }) },
+    ])
+  })
+
+  it('notices each clipboard failure kind with what is missing', async () => {
+    await mount()
+    const cases: ReadonlyArray<readonly [ClipboardImageResult, string]> = [
+      [{ kind: 'missing-tool' }, 'clipboard image tool missing: install wl-clipboard (wl-paste) or xclip'],
+      [{ kind: 'unreachable' }, 'clipboard unreachable: DISPLAY/WAYLAND_DISPLAY is not set in this session'],
+      [{ kind: 'no-image' }, 'no image available from the clipboard'],
+      [{ kind: 'unsupported', mediaType: 'image/bmp' }, 'clipboard image type image/bmp is not supported'],
+      [{ kind: 'file-failed', detail: 'notes.txt is not an image' }, 'clipboard image file failed: notes.txt is not an image'],
+      [{ kind: 'timeout' }, 'clipboard read timed out'],
+      [{ kind: 'failed', detail: 'wl-paste exited with code 1: nope' }, 'clipboard read failed: wl-paste exited with code 1: nope'],
+    ]
+    let seen = 0
+    for (const [result, expected] of cases) {
+      pasteImage.setClipboardImageReader(() => Promise.resolve(result))
+      pressPaste()
+      seen += 1
+      await vi.waitFor(() => {
+        expect(notices).toHaveLength(seen * 2)
+      })
+      // Each press flashes the in-progress notice first; the failure notice
+      // overwrites its slot in the sequence.
+      expect(notices[(seen - 1) * 2]).toBe('pasting image...')
+      expect(notices[seen * 2 - 1]).toBe(expected)
+    }
+    expect(editor.inserted).toHaveLength(0)
+  })
+
+  it('notices when the reader rejects, with or without an Error', async () => {
+    await mount()
     pasteImage.setClipboardImageReader(() => Promise.reject(new Error('tool broke')))
     pressPaste()
     await vi.waitFor(() => {
-      expect(notices).toHaveLength(2)
+      expect(notices).toEqual(['pasting image...', 'clipboard read failed: tool broke'])
     })
-    expect(notices[1]).toBe('no image available from the clipboard')
+    pasteImage.setClipboardImageReader(() => Promise.reject('raw failure'))
+    pressPaste()
+    await vi.waitFor(() => {
+      expect(notices).toHaveLength(4)
+    })
+    expect(notices[3]).toBe('clipboard read failed: raw failure')
     expect(editor.inserted).toHaveLength(0)
   })
 
   it('notices and keeps the buffer when admission rejects the image', async () => {
     await mount()
+    const image = { kind: 'image', data: PNG_1X1, mediaType: 'image/png' } as const
     saveImage.mockRejectedValue(new AttachmentError('image exceeds the per-image byte limit', 'IMAGE_TOO_LARGE'))
-    pasteImage.setClipboardImageReader(() => Promise.resolve(PNG_1X1))
+    pasteImage.setClipboardImageReader(() => Promise.resolve(image))
     pressPaste()
     await vi.waitFor(() => {
-      expect(notices).toEqual(['image rejected: image exceeds the per-image byte limit'])
+      expect(notices).toEqual(['pasting image...', 'image rejected: image exceeds the per-image byte limit'])
     })
     expect(editor.inserted).toHaveLength(0)
 
     // A non-Error rejection still degrades to a readable notice.
     saveImage.mockRejectedValue('raw failure')
-    pasteImage.setClipboardImageReader(() => Promise.resolve(PNG_1X1))
+    pasteImage.setClipboardImageReader(() => Promise.resolve(image))
     pressPaste()
     await vi.waitFor(() => {
       expect(notices).toEqual([
+        'pasting image...',
         'image rejected: image exceeds the per-image byte limit',
+        'pasting image...',
         'image rejected: raw failure',
       ])
     })
@@ -251,7 +367,7 @@ describe('blue-paste-image plugin', () => {
     const plain = new FakeBlueEditor()
     setSharedEditor({ editor: plain, submitPrompt: () => {} })
     ctx.emit('blue/input-editor-changed')
-    pasteImage.setClipboardImageReader(() => Promise.resolve(undefined))
+    pasteImage.setClipboardImageReader(() => Promise.resolve({ kind: 'no-image' }))
     plain.handleInput(KEY.ctrlV)
     await tick()
     expect(plain.inserted).toHaveLength(0)
@@ -260,23 +376,36 @@ describe('blue-paste-image plugin', () => {
 
   it('no-ops when the fiber unloads before the clipboard settles', async () => {
     await mount()
-    const gate = Promise.withResolvers<Uint8Array | undefined>()
+    const gate = Promise.withResolvers<ClipboardImageResult>()
     pasteImage.setClipboardImageReader(() => gate.promise)
     pressPaste()
     await fiber!.dispose()
     fiber = undefined
-    gate.resolve(PNG_1X1)
+    gate.resolve({ kind: 'image', data: PNG_1X1, mediaType: 'image/png' })
     await tick()
     expect(editor.inserted).toHaveLength(0)
-    expect(notices).toHaveLength(0)
+    // Only the in-progress flash landed before the unload; nothing follows.
+    expect(notices).toEqual(['pasting image...'])
     expect(saveImage).not.toHaveBeenCalled()
+
+    // The same unload gate covers a rejecting reader: no notice flashes
+    // through the dead fiber.
+    await mount()
+    const rejection = Promise.withResolvers<ClipboardImageResult>()
+    pasteImage.setClipboardImageReader(() => rejection.promise)
+    pressPaste()
+    await fiber!.dispose()
+    fiber = undefined
+    rejection.reject(new Error('too late'))
+    await tick()
+    expect(notices).toEqual(['pasting image...', 'pasting image...'])
   })
 
   it('no-ops when the fiber unloads before the save settles or the rejection lands', async () => {
     await mount()
     const gate = Promise.withResolvers<ImageAttachmentRef>()
     saveImage.mockReturnValue(gate.promise)
-    pasteImage.setClipboardImageReader(() => Promise.resolve(PNG_1X1))
+    pasteImage.setClipboardImageReader(() => Promise.resolve({ kind: 'image', data: PNG_1X1, mediaType: 'image/png' }))
     pressPaste()
     await fiber!.dispose()
     fiber = undefined
@@ -294,25 +423,36 @@ describe('blue-paste-image plugin', () => {
     await mount()
     const failure = Promise.withResolvers<ImageAttachmentRef>()
     saveImage.mockReturnValue(failure.promise)
-    pasteImage.setClipboardImageReader(() => Promise.resolve(PNG_1X1))
+    pasteImage.setClipboardImageReader(() => Promise.resolve({ kind: 'image', data: PNG_1X1, mediaType: 'image/png' }))
     pressPaste()
     await fiber!.dispose()
     fiber = undefined
     failure.reject(new AttachmentError('late', 'IMAGE_TOO_LARGE'))
     await tick()
-    expect(notices).toHaveLength(0)
+    expect(notices).toEqual(['pasting image...', 'pasting image...'])
   })
 })
 
 describe('default clipboard image reader', () => {
   const savedPath = process.env.PATH
+  const savedDisplay = process.env.DISPLAY
+  const savedWayland = process.env.WAYLAND_DISPLAY
+  const savedRuntimeDir = process.env.XDG_RUNTIME_DIR
   let editor: FakeBlueEditor
+  let notices: string[]
   let saveImage: ReturnType<typeof vi.fn>
+  let saveImages: ReturnType<typeof vi.fn>
+  let imageLimits: ImageAttachmentLimits
   let ctx: Context
   let fiber: { dispose(): Promise<void> } | undefined
 
   beforeEach(() => {
+    delete process.env.DISPLAY
+    delete process.env.WAYLAND_DISPLAY
+    delete process.env.XDG_RUNTIME_DIR
     editor = new FakeBlueEditor()
+    notices = []
+    imageLimits = { ...IMAGE_LIMITS }
     saveImage = vi.fn(async (input: SaveImageAttachment): Promise<ImageAttachmentRef> => ({
       attachmentId: AttachmentId('spec-default'),
       mediaType: input.mediaType,
@@ -320,55 +460,594 @@ describe('default clipboard image reader', () => {
       width: 1,
       height: 1,
     }))
+    saveImages = vi.fn(async (inputs: readonly SaveImageAttachment[]) => Promise.all(inputs.map(input => saveImage(input))))
     const blue = fakeBlueContext()
     ctx = blue.ctx
-    ctx.provide('attachments', { saveImage })
-    setSharedEditor({ editor, submitPrompt: () => {}, notice: () => {} })
+    ctx.provide('attachments', { imageLimits, saveImage, saveImages })
+    setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
   })
 
   afterEach(async () => {
     process.env.PATH = savedPath
+    if (savedDisplay === undefined) delete process.env.DISPLAY
+    else process.env.DISPLAY = savedDisplay
+    if (savedWayland === undefined) delete process.env.WAYLAND_DISPLAY
+    else process.env.WAYLAND_DISPLAY = savedWayland
+    if (savedRuntimeDir === undefined) delete process.env.XDG_RUNTIME_DIR
+    else process.env.XDG_RUNTIME_DIR = savedRuntimeDir
     pasteImage.setClipboardImageReader(undefined)
+    pasteImage.setClipboardClock(undefined)
+    pasteImage.resetClipboardBackendCooldowns()
     clearSharedEditor()
     await fiber?.dispose()
     fiber = undefined
   })
 
-  /** Octal-escape script body printing the PNG bytes on stdout. */
-  function pngPrinter(): string {
-    const escaped = Array.from(PNG_1X1, byte => `\\${byte.toString(8).padStart(3, '0')}`).join('')
-    return `#!/bin/sh\nprintf '${escaped}'\n`
+  /** Octal-escape a byte array for a printf literal. */
+  function shBytes(bytes: Uint8Array): string {
+    return Array.from(bytes, byte => `\\${byte.toString(8).padStart(3, '0')}`).join('')
   }
 
-  it('probes wl-paste then xclip through the real tools', async () => {
-    fiber = await ctx.plugin(pasteImage)
-    // Restoring the default reader makes the paste flow probe the real tools.
+  /** Write one executable fake tool into the bin directory. */
+  function tool(bin: string, name: string, body: string): string {
+    const path = join(bin, name)
+    writeFileSync(path, body)
+    chmodSync(path, 0o755)
+    return path
+  }
+
+  /** Pin the session env to "no display" for the env-gated aggregation. */
+  function unsetDisplaySession(): void {
+    delete process.env.DISPLAY
+    delete process.env.WAYLAND_DISPLAY
+  }
+
+  /** Mount the plugin with the default reader probing the fake bin. */
+  async function mountDefault(backend?: pasteImage.ClipboardBackendPolicy): Promise<void> {
+    fiber = await (backend === undefined ? ctx.plugin(pasteImage) : ctx.plugin(pasteImage, { backend }))
     pasteImage.setClipboardImageReader(undefined)
-    const bin = mkdtempTracked('blue-paste-bin-')
-    const wl = join(bin, 'wl-paste')
-    writeFileSync(wl, '#!/bin/sh\nexit 1\n')
-    chmodSync(wl, 0o755)
-    const xc = join(bin, 'xclip')
-    writeFileSync(xc, pngPrinter())
-    chmodSync(xc, 0o755)
-    process.env.PATH = bin
     editor.handleInput(KEY.ctrlV)
+  }
+
+  /** A wl-paste fake: `-l` lists types, `-t <type>` prints mapped bytes. */
+  function wlPasteFake(listing: string, reads: Record<string, string>): string {
+    const cases = Object.entries(reads)
+      .map(([type, bytes]) => `  ${type}) printf '%b' '${bytes}'; exit 0 ;;`)
+      .join('\n')
+    return `#!/bin/sh
+if [ "$1" = '-l' ]; then printf '${listing}'; exit 0; fi
+case "$2" in
+${cases}
+esac
+exit 1
+`
+  }
+
+  /** An xclip fake: TARGETS lists types, `-t <type> -o` prints mapped bytes. */
+  function xclipFake(listing: string, reads: Record<string, string>): string {
+    const cases = Object.entries(reads)
+      .map(([type, bytes]) => `  ${type}) printf '%b' '${bytes}'; exit 0 ;;`)
+      .join('\n')
+    return `#!/bin/sh
+if [ "$4" = 'TARGETS' ]; then printf '${listing}'; exit 0; fi
+case "$4" in
+${cases}
+esac
+exit 1
+`
+  }
+
+  it('reads the first admitted type the listing offers, in admitted order', async () => {
+    // The listing offers JPEG first, but png leads the admitted order and
+    // both reads succeed: png wins.
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', wlPasteFake('image/jpeg\nimage/png\n', {
+      'image/jpeg': shBytes(JPEG_PREFIX),
+      'image/png': shBytes(PNG_1X1),
+    }))
+    process.env.PATH = bin
+    await mountDefault()
     await vi.waitFor(() => {
       expect(editor.inserted).toHaveLength(1)
     })
     expect(saveImage.mock.calls[0]![0]).toMatchObject({ mediaType: 'image/png', name: 'pasted-image.png' })
-    rmSync(bin, { recursive: true, force: true })
   })
 
-  it('resolves undefined when both tools fail', async () => {
-    fiber = await ctx.plugin(pasteImage)
-    pasteImage.setClipboardImageReader(undefined)
+  it('falls to the next admitted type when the first read comes back empty', async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', wlPasteFake('image/png\nimage/jpeg\n', {
+      'image/png': '',
+      'image/jpeg': shBytes(JPEG_PREFIX),
+    }))
+    process.env.PATH = bin
+    await mountDefault()
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImage.mock.calls[0]![0]).toMatchObject({ mediaType: 'image/jpeg', name: 'pasted-image.jpg' })
+  })
+
+  it('falls to the next admitted type when the first returns invalid or mismatched bytes', async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', wlPasteFake('image/png\nimage/jpeg\n', {
+      'image/png': shBytes(new Uint8Array([1, 2, 3])),
+      'image/jpeg': shBytes(JPEG_PREFIX),
+    }))
+    process.env.PATH = bin
+    await mountDefault()
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImage.mock.calls[0]![0]).toMatchObject({ mediaType: 'image/jpeg', name: 'pasted-image.jpg' })
+
+    await fiber!.dispose()
+    fiber = undefined
+    editor = new FakeBlueEditor()
+    notices = []
+    setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+    tool(bin, 'wl-paste', wlPasteFake('image/png\nimage/jpeg\n', {
+      'image/png': shBytes(GIF_1X1),
+      'image/jpeg': shBytes(JPEG_PREFIX),
+    }))
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImage.mock.calls[1]![0]).toMatchObject({ mediaType: 'image/jpeg' })
+  })
+
+  it('pastes an ordered, deduplicated URI-list batch with encoded file names', async () => {
+    const files = mkdtempTracked('blue-paste-files-')
+    const png = join(files, 'castle image.png')
+    const gif = join(files, 'second.gif')
+    writeFileSync(png, PNG_1X1)
+    writeFileSync(gif, GIF_1X1)
+    const pngUri = pathToFileURL(png).href
+    const gifUri = pathToFileURL(gif).href
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', wlPasteFake('text/uri-list\n', {
+      'text/uri-list': `# copied by files\\r\\n${pngUri}\\r\\n${pngUri}\\r\\n${gifUri}\\r\\n`,
+    }))
+    process.env.PATH = bin
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(notices).toEqual(['pasting image...'])
+    expect(editor.inserted).toHaveLength(1)
+    expect(saveImages).toHaveBeenCalledWith([
+      expect.objectContaining({ data: expect.any(Uint8Array), mediaType: 'image/png', name: 'castle image.png' }),
+      expect.objectContaining({ data: expect.any(Uint8Array), mediaType: 'image/gif', name: 'second.gif' }),
+    ])
+    expect(Array.from(saveImages.mock.calls[0]![0][0]!.data)).toEqual(Array.from(PNG_1X1))
+    expect(Array.from(saveImages.mock.calls[0]![0][1]!.data)).toEqual(Array.from(GIF_1X1))
+    expect(editor.inserted[0]!.match(/\[image #\d+\]/g)).toHaveLength(2)
+  })
+
+  it('supports GNOME copied-files and treats cut as a read-only paste', async () => {
+    const file = join(mkdtempTracked('blue-paste-files-'), 'castle.png')
+    writeFileSync(file, PNG_1X1)
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'xclip', xclipFake('TARGETS\nx-special/gnome-copied-files\n', {
+      'x-special/gnome-copied-files': `cut\\n${pathToFileURL(file).href}`,
+    }))
+    process.env.PATH = bin
+    await mountDefault('x11')
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImages.mock.calls[0]![0][0]).toMatchObject({ mediaType: 'image/png', name: 'castle.png' })
+  })
+
+  it('prefers direct image bytes over a copied-file representation', async () => {
+    const file = join(mkdtempTracked('blue-paste-files-'), 'other.gif')
+    writeFileSync(file, GIF_1X1)
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', wlPasteFake('text/uri-list\nimage/png\n', {
+      'image/png': shBytes(PNG_1X1),
+      'text/uri-list': `${pathToFileURL(file).href}\\n`,
+    }))
+    process.env.PATH = bin
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImage.mock.calls[0]![0]).toMatchObject({ mediaType: 'image/png', name: 'pasted-image.png' })
+    expect(saveImages).not.toHaveBeenCalled()
+  })
+
+  it('falls back from invalid direct bytes to a valid copied image file', async () => {
+    const file = join(mkdtempTracked('blue-paste-files-'), 'fallback.gif')
+    writeFileSync(file, GIF_1X1)
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', wlPasteFake('image/png\ntext/uri-list\n', {
+      'image/png': shBytes(new Uint8Array([1, 2, 3])),
+      'text/uri-list': `${pathToFileURL(file).href}\\n`,
+    }))
+    process.env.PATH = bin
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImages.mock.calls[0]![0][0]).toMatchObject({ mediaType: 'image/gif', name: 'fallback.gif' })
+  })
+
+  it('rejects malformed, remote, and non-local-host file URIs', async () => {
+    const cases = [
+      ['not a uri', 'clipboard file list contains an invalid URI'],
+      ['https://example.test/image.png', 'clipboard URI scheme https is not local'],
+      ['file://remote-host/tmp/image.png', 'clipboard file URI does not name a local path'],
+    ] as const
+    for (const [uri, detail] of cases) {
+      const bin = mkdtempTracked('blue-paste-bin-')
+      tool(bin, 'wl-paste', wlPasteFake('text/uri-list\n', { 'text/uri-list': `${uri}\\n` }))
+      process.env.PATH = bin
+      await mountDefault('wayland')
+      await vi.waitFor(() => {
+        expect(notices.at(-1)).toBe(`clipboard image file failed: ${detail}`)
+      })
+      await fiber!.dispose()
+      fiber = undefined
+      editor = new FakeBlueEditor()
+      notices = []
+      setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+    }
+  })
+
+  it('rejects missing files, directories, symlinks, and unreadable regular files', async () => {
+    const files = mkdtempTracked('blue-paste-files-')
+    const missing = join(files, 'missing.png')
+    const directory = join(files, 'directory.png')
+    const target = join(files, 'target.png')
+    const link = join(files, 'link.png')
+    mkdirSync(directory)
+    writeFileSync(target, PNG_1X1)
+    symlinkSync(target, link)
+    const cases = [
+      [missing, 'missing.png could not be opened (ENOENT)'],
+      [directory, 'directory.png is not a regular file'],
+      ['/', 'copied file is not a regular file'],
+      [link, 'link.png symbolic links are not accepted'],
+      ['/proc/self/mem', 'mem could not be read (EIO)'],
+    ] as const
+    for (const [path, detail] of cases) {
+      const bin = mkdtempTracked('blue-paste-bin-')
+      tool(bin, 'wl-paste', wlPasteFake('text/uri-list\n', { 'text/uri-list': `${pathToFileURL(path).href}\\n` }))
+      process.env.PATH = bin
+      await mountDefault('wayland')
+      await vi.waitFor(() => {
+        expect(notices.at(-1)).toBe(`clipboard image file failed: ${detail}`)
+      })
+      await fiber!.dispose()
+      fiber = undefined
+      editor = new FakeBlueEditor()
+      notices = []
+      setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+    }
+  })
+
+  it('rejects non-images and enforces file count and byte limits before saving', async () => {
+    const files = mkdtempTracked('blue-paste-files-')
+    const textFile = join(files, 'notes.txt')
+    const png = join(files, 'one.png')
+    const gif = join(files, 'two.gif')
+    writeFileSync(textFile, 'not an image')
+    writeFileSync(png, PNG_1X1)
+    writeFileSync(gif, GIF_1X1)
+
+    const cases: Array<{ paths: string[]; limits: Partial<ImageAttachmentLimits>; detail: string }> = [
+      { paths: [textFile], limits: {}, detail: 'notes.txt is not a supported PNG, JPEG, WebP, or GIF image' },
+      { paths: [png], limits: { maxImageBytes: PNG_1X1.byteLength - 1 }, detail: 'one.png exceeds the per-image byte limit' },
+      { paths: ['/proc/version'], limits: { maxImageBytes: 1 }, detail: 'version exceeds the per-image byte limit' },
+      { paths: [png, gif], limits: { maxImagesPerMessage: 1 }, detail: 'copied file selection exceeds the 1-image limit' },
+      { paths: [png, gif], limits: { maxMessageImageBytes: PNG_1X1.byteLength + GIF_1X1.byteLength - 1 }, detail: 'copied file selection exceeds the aggregate image-byte limit' },
+    ]
+    for (const item of cases) {
+      Object.assign(imageLimits, IMAGE_LIMITS, item.limits)
+      const uris = item.paths.map(path => pathToFileURL(path).href).join('\\n')
+      const bin = mkdtempTracked('blue-paste-bin-')
+      tool(bin, 'wl-paste', wlPasteFake('text/uri-list\n', { 'text/uri-list': `${uris}\\n` }))
+      process.env.PATH = bin
+      await mountDefault('wayland')
+      await vi.waitFor(() => {
+        expect(notices.at(-1)).toBe(`clipboard image file failed: ${item.detail}`)
+      })
+      await fiber!.dispose()
+      fiber = undefined
+      editor = new FakeBlueEditor()
+      notices = []
+      setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+    }
+    expect(saveImages).not.toHaveBeenCalled()
+  })
+
+  it('handles empty and malformed GNOME file selections', async () => {
+    const cases = [
+      ['text/uri-list', '# no files\\r\\n', 'no image available from the clipboard'],
+      ['x-special/gnome-copied-files', 'move\\nfile:///tmp/image.png', 'clipboard image file failed: GNOME copied-files data has no copy/cut operation'],
+    ] as const
+    for (const [type, data, expected] of cases) {
+      const bin = mkdtempTracked('blue-paste-bin-')
+      tool(bin, 'wl-paste', wlPasteFake(`${type}\n`, { [type]: data }))
+      process.env.PATH = bin
+      await mountDefault('wayland')
+      await vi.waitFor(() => {
+        expect(notices.at(-1)).toBe(expected)
+      })
+      await fiber!.dispose()
+      fiber = undefined
+      editor = new FakeBlueEditor()
+      notices = []
+      setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+    }
+  })
+
+  it('classifies a clipboard-tool failure while reading a promised file list', async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', wlPasteFake('text/uri-list\n', {}))
+    process.env.PATH = bin
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'clipboard read failed: wl-paste exited with code 1'])
+    })
+  })
+
+  it('uses the session-aware automatic order and honors strict backend policies', async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', wlPasteFake('image/gif\n', { 'image/gif': shBytes(GIF_1X1) }))
+    tool(bin, 'xclip', xclipFake('TARGETS\nimage/png\n', { 'image/png': shBytes(PNG_1X1) }))
+    process.env.PATH = bin
+    process.env.DISPLAY = ':1'
+    await mountDefault()
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImage.mock.calls[0]![0]).toMatchObject({ mediaType: 'image/png' })
+
+    await fiber!.dispose()
+    fiber = undefined
+    editor = new FakeBlueEditor()
+    setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImage.mock.calls[1]![0]).toMatchObject({ mediaType: 'image/gif' })
+
+    await fiber!.dispose()
+    fiber = undefined
+    editor = new FakeBlueEditor()
+    setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+    process.env.WAYLAND_DISPLAY = 'wayland-1'
+    process.env.XDG_RUNTIME_DIR = '/tmp/blue-runtime'
+    await mountDefault()
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImage.mock.calls[2]![0]).toMatchObject({ mediaType: 'image/gif' })
+  })
+
+  it('probes xclip after a silently failing wl-paste listing', async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', '#!/bin/sh\nexit 1\n')
+    tool(bin, 'xclip', xclipFake('TARGETS\nimage/png\n', { 'image/png': shBytes(PNG_1X1) }))
+    process.env.PATH = bin
+    await mountDefault()
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImage.mock.calls[0]![0]).toMatchObject({ mediaType: 'image/png', name: 'pasted-image.png' })
+    expect(notices.at(-1)).toBe('pasted image via X11 fallback; verify it is current')
+  })
+
+  it('notices the unsupported kind when only non-admitted image types are offered', async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', wlPasteFake('image/bmp\n', {}))
+    process.env.PATH = bin
+    await mountDefault()
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'clipboard image type image/bmp is not supported'])
+    })
+    expect(editor.inserted).toHaveLength(0)
+  })
+
+  it('notices the missing tools when neither is on PATH', async () => {
     const bin = mkdtempTracked('blue-paste-empty-')
     process.env.PATH = bin
-    editor.handleInput(KEY.ctrlV)
-    await new Promise(resolve => setImmediate(resolve))
-    expect(editor.inserted).toHaveLength(0)
+    await mountDefault()
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'clipboard image tool missing: install wl-clipboard (wl-paste) or xclip'])
+    })
     expect(saveImage).not.toHaveBeenCalled()
-    rmSync(bin, { recursive: true, force: true })
+  })
+
+  it('notices the unreachable session when both tools cannot reach a display', async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', '#!/bin/sh\necho \'Failed to connect to a Wayland server\' >&2\nexit 1\n')
+    tool(bin, 'xclip', '#!/bin/sh\necho "Error: Can\'t open display: (null)" >&2\nexit 1\n')
+    unsetDisplaySession()
+    process.env.PATH = bin
+    await mountDefault()
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'clipboard unreachable: DISPLAY/WAYLAND_DISPLAY is not set in this session'])
+    })
+  })
+
+  it('gates the unreachable/missing mix on the session env: display set', async () => {
+    // wl-paste exists but cannot connect; xclip is absent. A display
+    // session exists, so the absent tool is what is missing.
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', '#!/bin/sh\necho \'Failed to connect to a Wayland server\' >&2\nexit 1\n')
+    process.env.DISPLAY = ':0'
+    delete process.env.WAYLAND_DISPLAY
+    process.env.PATH = bin
+    await mountDefault()
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'clipboard image tool missing: install wl-clipboard (wl-paste) or xclip'])
+    })
+  })
+
+  it('gates the unreachable/missing mix on the session env: no display', async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', '#!/bin/sh\necho \'Failed to connect to a Wayland server\' >&2\nexit 1\n')
+    unsetDisplaySession()
+    process.env.PATH = bin
+    await mountDefault()
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'clipboard unreachable: DISPLAY/WAYLAND_DISPLAY is not set in this session'])
+    })
+  })
+
+  it('notices the timeout when a clipboard tool hangs', async () => {
+    // /bin/sleep by absolute path: the replaced PATH cannot resolve a bare
+    // `sleep`, which would exit 127 and never exercise the kill. The TERM
+    // trap pins the kill signal: wl-clipboard traps TERM while wedged, so a
+    // regressed SIGTERM timeout would leave the fake alive and hang this
+    // test instead of resolving the timeout notice.
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', '#!/bin/sh\ntrap \'\' TERM\nexec /bin/sleep 10\n')
+    process.env.PATH = bin
+    await mountDefault()
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'clipboard read timed out'])
+    }, { timeout: 8000 })
+    expect(saveImage).not.toHaveBeenCalled()
+  })
+
+  it('skips a timed-out backend during cooldown and retries it after expiry', async () => {
+    let now = 1_000
+    pasteImage.setClipboardClock(() => now)
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', '#!/bin/sh\ntrap \'\' TERM\nexec /bin/sleep 10\n')
+    process.env.PATH = bin
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'clipboard read timed out'])
+    }, { timeout: 8000 })
+
+    tool(bin, 'wl-paste', wlPasteFake('image/png\n', { 'image/png': shBytes(PNG_1X1) }))
+    process.env.WAYLAND_DISPLAY = 'wayland-new'
+    process.env.XDG_RUNTIME_DIR = '/tmp/blue-runtime-new'
+    editor.handleInput(KEY.ctrlV)
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+
+    delete process.env.WAYLAND_DISPLAY
+    delete process.env.XDG_RUNTIME_DIR
+    editor.handleInput(KEY.ctrlV)
+    await vi.waitFor(() => {
+      expect(notices).toHaveLength(5)
+    })
+    expect(notices.at(-1)).toBe('clipboard read timed out')
+    expect(editor.inserted).toHaveLength(1)
+
+    now += 60_000
+    editor.handleInput(KEY.ctrlV)
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(2)
+    })
+  })
+
+  it('notices the raw failure detail when a read exits nonzero with stderr', async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', `#!/bin/sh
+if [ "$1" = '-l' ]; then printf 'image/png\n'; exit 0; fi
+echo 'boom' >&2
+exit 2
+`)
+    process.env.PATH = bin
+    await mountDefault()
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'clipboard read failed: wl-paste exited with code 2: boom'])
+    })
+  })
+
+  it('keeps the first soft failure when every promised read fails softly', async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', `#!/bin/sh
+if [ "$1" = '-l' ]; then printf 'image/png\nimage/jpeg\n'; exit 0; fi
+echo 'first boom' >&2
+exit 3
+`)
+    process.env.PATH = bin
+    await mountDefault()
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'clipboard read failed: wl-paste exited with code 3: first boom'])
+    })
+  })
+
+  it('keeps the first invalid-byte diagnosis when every representation is invalid', async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', wlPasteFake('image/png\nimage/jpeg\n', {
+      'image/png': shBytes(new Uint8Array([1, 2, 3])),
+      'image/jpeg': shBytes(GIF_1X1),
+    }))
+    process.env.PATH = bin
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'clipboard read failed: wl-paste returned invalid bytes for image/png'])
+    })
+  })
+
+  it('notices no image when the clipboard holds only text', async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', wlPasteFake('text/plain;charset=utf-8\nUTF8_STRING\n', {}))
+    process.env.PATH = bin
+    await mountDefault()
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'no image available from the clipboard'])
+    })
+  })
+
+  it('treats a silent failed xclip listing as no image', async () => {
+    // xclip's empty-clipboard quirk: nonzero listing exit, no stderr.
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'xclip', '#!/bin/sh\nexit 1\n')
+    process.env.PATH = bin
+    await mountDefault('x11')
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'no image available from the clipboard'])
+    })
+  })
+
+  it('keeps a silent failed wl-paste listing as a tool failure', async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', '#!/bin/sh\nexit 1\n')
+    process.env.PATH = bin
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'clipboard read failed: wl-paste exited with code 1'])
+    })
+  })
+
+  it('stops the read loop when a read step loses the display session', async () => {
+    // The listing succeeds, the typed read hits the unreachable signature:
+    // a hard failure must surface instead of retrying the remaining types.
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', `#!/bin/sh
+if [ "$1" = '-l' ]; then printf 'image/png\nimage/jpeg\n'; exit 0; fi
+echo 'Failed to connect to a Wayland server' >&2
+exit 1
+`)
+    unsetDisplaySession()
+    process.env.PATH = bin
+    await mountDefault()
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'clipboard unreachable: DISPLAY/WAYLAND_DISPLAY is not set in this session'])
+    })
+  })
+
+  it('notices no image when every promised type reads back empty', async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', wlPasteFake('image/png\nimage/jpeg\n', {
+      'image/png': '',
+      'image/jpeg': '',
+    }))
+    process.env.PATH = bin
+    await mountDefault()
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'no image available from the clipboard'])
+    })
   })
 })

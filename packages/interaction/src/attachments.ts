@@ -9,9 +9,10 @@
  * `~/.dsh/attachments`. Attachment ids are random UUIDs, so reads sanitize
  * the id against path traversal before touching the filesystem. Ships as a
  * subpath plugin so the baseline bundle keeps the abstract seam unprovided;
- * `blue-paste-image` is the in-tree consumer. The magic-byte sniffer is
- * exported for that sibling plugin, which trusts sniffed types over the
- * clipboard tool's assumed PNG.
+ * `blue-paste-image` is the in-tree consumer. The admitted-type order and
+ * the extension map are shared with that sibling plugin, which negotiates
+ * clipboard types against the order and derives attachment names from the
+ * map; the magic-byte sniffer is the store's own admission cross-check.
  *
  * @module @dsh-blue/blue-interaction/attachments
  */
@@ -35,6 +36,18 @@ export const name = 'blue-attachments'
 /** Services required before the store can decode image dimensions. */
 export const inject = ['blueComponents']
 
+/**
+ * Admitted image media types in probe-preference order. Single source for
+ * the store whitelist and for `blue-paste-image`, which negotiates
+ * clipboard types against this order (first readable type wins).
+ */
+export const ADMITTED_IMAGE_TYPES: readonly ImageMediaType[] = [
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+]
+
 /** The deployment image policy this store admits against. */
 const IMAGE_LIMITS: ImageAttachmentLimits = {
   maxImageBytes: 10 * 1024 * 1024,
@@ -43,11 +56,14 @@ const IMAGE_LIMITS: ImageAttachmentLimits = {
   // 4096×4096: the pixel cap and the per-side cap agree on a square bound.
   maxImagePixels: 16_777_216,
   maxImageDimension: 4096,
-  mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
+  mediaTypes: [...ADMITTED_IMAGE_TYPES],
 }
 
-/** File extension per admitted media type. */
-const EXT_BY_MEDIA_TYPE: Record<ImageMediaType, string> = {
+/**
+ * File extension per admitted media type, shared with `blue-paste-image`
+ * for attachment name derivation.
+ */
+export const EXT_BY_MEDIA_TYPE: Readonly<Record<ImageMediaType, string>> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
   'image/webp': 'webp',
@@ -72,9 +88,9 @@ function startsWith(data: Uint8Array, magic: readonly number[]): boolean {
 }
 
 /**
- * Sniff the image media type from encoded magic bytes. Shared with
- * `blue-paste-image`, which trusts this over the clipboard tool's assumed
- * PNG.
+ * Sniff the image media type from encoded magic bytes. The store's
+ * admission cross-check: a declared type that disagrees with the bytes is
+ * rejected (`IMAGE_TYPE_MISMATCH`).
  * @param data - the encoded image bytes.
  * @returns the detected type, or `undefined` when no signature matches.
  */
