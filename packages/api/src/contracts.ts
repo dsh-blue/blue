@@ -5,6 +5,8 @@
  * @module @dsh-blue/blue-api/contracts
  */
 
+import type { BluePluginManifest } from './manifest.ts'
+
 /** Stable error taxonomy returned by Blue actions. */
 export type BlueErrorCode =
   | 'BLUE_API_INCOMPATIBLE'
@@ -31,6 +33,57 @@ export interface BlueRegistration {
 export interface BlueContributionMeta {
   readonly id: string
   readonly priority?: number
+}
+
+/** A stable command contribution exposed to plugins. */
+export interface BlueCommandContribution extends BlueContributionMeta {
+  readonly label: string
+  readonly execute: (args: readonly string[], options?: { readonly signal?: AbortSignal }) => Promise<BlueResult>
+}
+
+/** A renderer-neutral status contribution. */
+export interface BlueStatusContribution extends BlueContributionMeta {
+  readonly render: () => BlueView | null
+}
+
+/** A renderer-neutral dock contribution. */
+export interface BlueDockContribution extends BlueContributionMeta {
+  readonly view: BlueView | (() => BlueView | null)
+  readonly priority?: number
+  readonly preferredRows?: number
+  readonly minRows?: number
+  readonly collapsible?: boolean
+}
+
+/** A notification emitted by a plugin. */
+export interface BlueNotification {
+  readonly id: string
+  readonly view: BlueView
+  readonly tone?: BlueTone
+}
+
+/** Registration handle owned by a consumer Fiber. */
+export interface BlueRegistry<T> {
+  register(contribution: T): BlueResult<BlueRegistration>
+  list(): readonly T[]
+}
+
+/** Public, capability-scoped façade opened for one Cordis consumer. */
+export interface BluePluginApi {
+  readonly manifest: BluePluginManifest
+  readonly commands?: BlueRegistry<BlueCommandContribution>
+  readonly status?: BlueRegistry<BlueStatusContribution>
+  readonly dock?: BlueRegistry<BlueDockContribution>
+  readonly notifications?: {
+    publish(notification: BlueNotification): BlueResult
+    subscribe(listener: (notification: BlueNotification) => void): BlueRegistration
+  }
+}
+
+/** Host service that validates manifests and scopes all registrations. */
+export interface BluePluginHost {
+  readonly version: string
+  open(consumer: { effect(callback: () => void | (() => void)): unknown }, manifest: BluePluginManifest): BlueResult<BluePluginApi>
 }
 
 /** Semantic text tone; ANSI and theme functions stay inside core. */

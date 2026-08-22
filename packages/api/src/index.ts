@@ -12,11 +12,18 @@ export {
   type BluePluginDefinition,
   type BluePluginManifest,
 } from './manifest.ts'
+export { BluePluginHostService, apply as applyHost, name as hostName } from './host.ts'
+export type { BluePluginHost } from './contracts.ts'
 export type {
+  BlueCommandContribution,
   BlueContributionMeta,
+  BlueDockContribution,
   BlueErrorCode,
   BlueField,
   BlueInlineSpan,
+  BlueNotification,
+  BluePluginApi,
+  BlueRegistry,
   BlueJson,
   BlueRegistration,
   BlueRequestLifecycle,
