@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue",
   "description": "The dsh Blue bundle: the interactive terminal UI profile over dsh-base",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0-rc.2",
   "publishConfig": {
     "access": "public"
   },
@@ -21,10 +21,8 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
-    "lib/invariant.js",
-    "cordis.patch.yml",
-    "lib/types/**/*.d.ts"
+    "lib/**/*",
+    "cordis.patch.yml"
   ],
   "license": "MIT",
   "repository": {
@@ -40,6 +38,7 @@
   "dependencies": {
     "@deepseek-ai/dsh-agent-presets": "0.1.1-rc.2",
     "@deepseek-ai/dsh-mcp-client": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-session-title-all-prompts-llm": "0.1.1-rc.2",
     "@dsh-blue/blue-app": "workspace:^",
     "@dsh-blue/blue-core": "workspace:^",
     "@dsh-blue/blue-interaction": "workspace:^",
@@ -71,7 +70,6 @@
     "@deepseek-ai/dsh-session-persistence-jsonl": "0.1.1-rc.2",
     "@deepseek-ai/dsh-session-projection": "0.1.1-rc.2",
     "@deepseek-ai/dsh-session-stats": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-session-title-all-prompts-llm": "0.1.1-rc.2",
     "@deepseek-ai/dsh-settings": "0.1.1-rc.2",
     "@deepseek-ai/dsh-settings-file": "0.1.1-rc.2",
     "@deepseek-ai/dsh-shell": "0.1.1-rc.2",

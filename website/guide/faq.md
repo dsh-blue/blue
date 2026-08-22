@@ -2,7 +2,7 @@
 
 ## 为什么裸 `npm install @dsh-blue/blue` 装不到？
 
-预览版只发布在 **`rc` dist-tag** 下（`latest` 留给稳定线），而裸安装解析 `latest`、什么都找不到——请用 `dsh plugin --profile blue add @dsh-blue/blue@rc`，见[快速上手](/guide/)。`v0.1.0-rc.1` 是首个发布版本；贡献者的本地开发安装见开发手册的[贡献本仓库](/plugins/contributing)页。
+预览版只发布在 **`rc` dist-tag** 下（`latest` 留给稳定线），而裸安装解析 `latest`、拿到的版本不受控——请用 `dsh plugin --profile blue add @dsh-blue/blue@rc`，见[快速上手](/guide/)。当前预览版为 `v0.1.0-rc.2`；`0.1.0-rc.1` 因打包缺失文件不可用，装到请升级。贡献者的本地开发安装见开发手册的[贡献本仓库](/plugins/contributing)页。
 
 ## 粘贴图片没有反应？
 

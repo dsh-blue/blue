@@ -119,6 +119,26 @@ for (const pkg of packagesWithExports()) {
       problems.push(`${pkg.name}: files lists ${rel} — no such build output`)
     }
   }
+
+  // Reverse direction (the rc.1 lesson): tsdown emits hashed chunks that no
+  // exports entry names, so the walk above cannot see them. A files list
+  // narrower than the built lib/ ships entry points whose first import is a
+  // chunk the tarball never carried, and every real install boot-crashes —
+  // a dev-profile link never notices. Every built file must be claimed.
+  const walkLib = (dir, prefix) => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry)
+      const rel = prefix === '' ? entry : `${prefix}/${entry}`
+      if (statSync(full).isDirectory()) {
+        walkLib(full, rel)
+        continue
+      }
+      if (!files.some(f => filesEntryMatches(f, `lib/${rel}`))) {
+        problems.push(`${pkg.name}: built lib/${rel} is not in the files list — the npm tarball would omit it`)
+      }
+    }
+  }
+  walkLib(join(pkg.dir, 'lib'), '')
 }
 
 if (problems.length > 0) {

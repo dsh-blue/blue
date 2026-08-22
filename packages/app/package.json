@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-app",
   "description": "Blue terminal UI application: command-line startup and the Agent driver that wires sessions to the Blue transcript and interaction layers",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0-rc.2",
   "publishConfig": {
     "access": "public"
   },
@@ -24,10 +24,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
-    "lib/invariant.js",
-    "lib/startup.js",
-    "lib/types/**/*.d.ts"
+    "lib/**/*"
   ],
   "license": "MIT",
   "repository": {

@@ -1,6 +1,6 @@
 /**
  * The global version-control guard: Blue has ONE release version (the
- * first release, `0.1.0-rc.1` — the number the website's tagline and
+ * first release line, `0.1.0-rc.2` — the number the website's tagline and
  * quickstart promise) and ONE harness dependency line (the `dsh-*` pins,
  * which stay on their own prerelease line while Blue's number moves).
  *
@@ -28,7 +28,7 @@ import { describe, expect, it } from 'vitest'
 import { BLUE_VERSION } from '../src/banner-content.ts'
 
 /** The published first-release version (the website's advertised number). */
-const RELEASE_VERSION = '0.1.0-rc.1'
+const RELEASE_VERSION = '0.1.0-rc.2'
 /** The harness prerelease line the dsh pins ride. */
 const HARNESS_LINE = '0.1.1-rc.2'
 

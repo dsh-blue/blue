@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-core",
   "description": "Blue terminal UI core: the tree's only @earendil-works/pi-tui adapter, owning terminal lifecycle and the blueScreen/blueKeymap/blueTerminalInfo/blueComponents services plus the blue-theme-dark/light/auto/custom palette entries",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0-rc.2",
   "publishConfig": {
     "access": "public"
   },
@@ -40,14 +40,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
-    "lib/invariant.js",
-    "lib/chrome.js",
-    "lib/theme-dark.js",
-    "lib/theme-light.js",
-    "lib/theme-auto.js",
-    "lib/theme-custom.js",
-    "lib/types/**/*.d.ts"
+    "lib/**/*"
   ],
   "license": "MIT",
   "repository": {

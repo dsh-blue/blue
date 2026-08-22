@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-transcript",
   "description": "Blue terminal UI transcript layer: folds session events into transcript items and renders them through dsh-blue-core",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0-rc.2",
   "publishConfig": {
     "access": "public"
   },
@@ -72,22 +72,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
-    "lib/invariant.js",
-    "lib/status-basic.js",
-    "lib/status-cwd.js",
-    "lib/status-git.js",
-    "lib/status-context.js",
-    "lib/status-title.js",
-    "lib/pane-activity.js",
-    "lib/pane-todo.js",
-    "lib/pane-btw.js",
-    "lib/intent-diff.js",
-    "lib/intent-terminal.js",
-    "lib/banner.js",
-    "lib/banner-content.js",
-    "lib/pane-agents.js",
-    "lib/types/**/*.d.ts"
+    "lib/**/*"
   ],
   "license": "MIT",
   "repository": {

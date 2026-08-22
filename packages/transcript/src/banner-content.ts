@@ -12,4 +12,4 @@
  * The displayed Blue version; `tests/banner.spec.ts` fails the suite on
  * drift from `package.json`.
  */
-export const BLUE_VERSION = '0.1.0-rc.1'
+export const BLUE_VERSION = '0.1.0-rc.2'
