@@ -1,0 +1,46 @@
+# Canary publish (D50 B-test): proves the npm org exists, the NPM_TOKEN
+# granular secret authenticates, and the registry accepts a publish — from
+# the same runner environment release.yml will publish from. Dispatch-only,
+# never automatic, no checkout (the package is generated inline).
+#
+# @dsh-blue/smoke is a canary: safe to ignore or delete. Each run publishes
+# a fresh 0.0.<run_number> under the `canary` dist-tag, so reruns never
+# collide and nothing ever needs the 72h unpublish dance.
+name: npm-smoke
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: publish @dsh-blue/smoke canary
+    runs-on: ubuntu-latest
+    steps:
+      - name: pack canary
+        run: |
+          mkdir smoke
+          printf '{
+            "name": "@dsh-blue/smoke",
+            "version": "0.0.%s",
+            "description": "release pipeline canary - safe to ignore or delete",
+            "publishConfig": { "access": "public" },
+            "license": "MIT"
+          }\n' "$RUN_NUMBER" > smoke/package.json
+          cat smoke/package.json
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+      # Same auth shape as release.yml (D50): explicit .npmrc line, granular
+      # token — the smoke result transfers to the release path 1:1.
+      - name: npm auth (NPM_TOKEN granular)
+        run: printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" >> ~/.npmrc
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - run: npm publish --tag canary
+        working-directory: smoke
+      - name: verify (npm view)
+        run: npm view "@dsh-blue/smoke@0.0.$RUN_NUMBER" version
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
