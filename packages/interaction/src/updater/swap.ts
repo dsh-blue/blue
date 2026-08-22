@@ -35,12 +35,29 @@ const BOOT_ALIVE_DEGRADED_MS = 15_000
 /** The poll cadence for marker watching and deadline loops. */
 const POLL_MS = 250
 
-/** The runtime dsh dependencies the bundle pins exactly. */
-const RUNTIME_DEPS = [
-  '@deepseek-ai/dsh-agent-presets',
-  '@deepseek-ai/dsh-mcp-client',
-  '@deepseek-ai/dsh-session-title-all-prompts-llm',
-] as const
+/**
+ * The @dsh-blue package entries the profile's bundle patch names — every
+ * `name:` row of the installed `cordis.patch.yml` that points at a Blue
+ * package. This is the set whose missing files the D51 gate must catch.
+ * The runtime dsh rows stay out: their peer dependencies come from the
+ * HOST at boot, so a bare import would misjudge — the boot smoke owns
+ * that plane.
+ * @param root - the profile workspace root.
+ * @returns the package specs to import, deduplicated.
+ */
+export function patchEntrySpecs(root: string): string[] {
+  const patchText = updaterInternals.readTextFile(join(root, 'node_modules', '@dsh-blue', 'blue', 'cordis.patch.yml'))
+  const specs: string[] = []
+  if (patchText !== undefined) {
+    for (const match of patchText.matchAll(/name:\s*'([^']+)'/g)) {
+      // The regex guarantees the group, so the non-null assertion is safe.
+      const spec = match[1]!
+      if (!spec.startsWith('@dsh-blue/') || specs.includes(spec)) continue
+      specs.push(spec)
+    }
+  }
+  return specs
+}
 
 /** The steps the progress panel renders, in execution order. */
 export type SwapStep = 'snapshot' | 'install' | 'verify' | 'smoke-imports' | 'smoke-boot' | 'rollback' | 'done'
@@ -126,39 +143,32 @@ export function classifyInstallFailure(logTail: string): string {
   return `the install failed${lastLine === undefined || lastLine === '' ? '' : `: ${lastLine}`}`
 }
 
-/**
- * The package entries the profile's bundle patch names — every `name:`
- * row of the installed `cordis.patch.yml` plus the pinned runtime dsh
- * dependencies. This is exactly the set the cordis loader imports at
- * boot, so importing them all is the D51 gate in miniature.
- * @param root - the profile workspace root.
- * @returns the package specs to import, deduplicated.
- */
-export function patchEntrySpecs(root: string): string[] {
-  const patchText = updaterInternals.readTextFile(join(root, 'node_modules', '@dsh-blue', 'blue', 'cordis.patch.yml'))
-  const specs: string[] = []
-  if (patchText !== undefined) {
-    for (const match of patchText.matchAll(/name:\s*'([^']+)'/g)) {
-      // The regex guarantees the group, so the non-null assertion is safe.
-      const spec = match[1]!
-      if (!specs.includes(spec)) specs.push(spec)
-    }
-  }
-  for (const dep of RUNTIME_DEPS) {
-    if (!specs.includes(dep)) specs.push(dep)
-  }
-  return specs
-}
-
 /** The import-sweep child script: resolve and import every spec. */
 function importSweepScript(specs: readonly string[]): string {
   return [
     "const { createRequire } = await import('node:module');",
-    "const req = createRequire(process.cwd() + '/package.json');",
+    "const { realpathSync } = await import('node:fs');",
+    "const { join } = await import('node:path');",
+    // Resolution anchors on the BUNDLE's manifest, realpathed: pnpm's
+    // isolated linker puts the sibling libraries beside the bundle in the
+    // virtual store (invisible from the profile root), and createRequire
+    // does not follow the top-level symlink on its own.
+    "const manifest = realpathSync(join(process.cwd(), 'node_modules', '@dsh-blue', 'blue', 'package.json'));",
+    'const req = createRequire(manifest);',
     `const specs = ${JSON.stringify(specs)};`,
     'for (const spec of specs) {',
-    '  const resolved = req.resolve(spec);',
-    '  await import(resolved);',
+    '  await import(req.resolve(spec)).catch(error => {',
+    // The host plane (@deepseek-ai peers like cordis) is provided by the
+    // running dsh at boot, not by the profile — a bare import misses it in
+    // hoisted layouts and that is not a packaging defect. Everything else
+    // — a @dsh-blue package, a hashed chunk file — is exactly the D51
+    // class this sweep exists to catch, and stays fatal.
+    "    const message = String(error?.message ?? '');",
+    "    const missing = error?.code === 'ERR_MODULE_NOT_FOUND' || message.includes('Cannot find');",
+    "    const target = /'([^']+)'/.exec(message)?.[1] ?? '';",
+    "    if (missing && target.startsWith('@deepseek-ai/')) return;",
+    '    throw error;',
+    '  });',
     '}',
     '',
   ].join('\n')

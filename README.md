@@ -31,7 +31,7 @@ This repository is the standalone home of Blue's five workspace packages under t
 ## Quick start
 
 > [!NOTE]
-> `0.1.0-rc.2` is the preview release, published under the **`rc` dist-tag** — `latest` stays reserved for the stable line, so install specs carry the `@rc` suffix.
+> `0.1.0-rc.3` is the preview release, published under the **`rc` dist-tag** — `latest` stays reserved for the stable line, so install specs carry the `@rc` suffix.
 
 Prerequisites: Node `^22.19 || >=24`, pnpm 11, and a `dsh` CLI ≥ `0.1.1-rc.2` (`npm i -g @deepseek-ai/dsh`).
 

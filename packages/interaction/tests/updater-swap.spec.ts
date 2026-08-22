@@ -212,35 +212,25 @@ describe('updater/swap classifyInstallFailure', () => {
 })
 
 describe('updater/swap patchEntrySpecs', () => {
-  it('extracts quoted name rows with dedupe and appends the runtime deps', () => {
+  it('extracts the @dsh-blue name rows with dedupe, skipping host rows', () => {
     const world = makeWorld()
-    // A repeated row proves the dedupe; the extraction must drop it.
+    // A repeated Blue row proves the dedupe; the runtime dsh row (its
+    // peers come from the host at boot) stays out of the sweep.
     const patch = join(world.root, 'node_modules', '@dsh-blue', 'blue', 'cordis.patch.yml')
     writeFileSync(patch, `${readFileSync(patch, 'utf8')}- id: blue-core-again\n  name: '@dsh-blue/blue-core'\n`)
     expect(patchEntrySpecs(world.root)).toEqual([
       '@dsh-blue/blue-api',
       '@dsh-blue/blue-core',
       '@dsh-blue/blue-core/theme-dark',
-      '@deepseek-ai/dsh-agent-presets',
-      '@deepseek-ai/dsh-mcp-client',
-      '@deepseek-ai/dsh-session-title-all-prompts-llm',
     ])
   })
 
-  it('falls back to the runtime deps when the patch file is missing', () => {
+  it('falls back to an empty list when the patch file is missing', () => {
     const world = makeWorld()
     writeFileSync(join(world.root, 'node_modules', '@dsh-blue', 'blue', 'cordis.patch.yml'), 'no entries here\n')
-    expect(patchEntrySpecs(world.root)).toEqual([
-      '@deepseek-ai/dsh-agent-presets',
-      '@deepseek-ai/dsh-mcp-client',
-      '@deepseek-ai/dsh-session-title-all-prompts-llm',
-    ])
+    expect(patchEntrySpecs(world.root)).toEqual([])
     rmSync(join(world.root, 'node_modules', '@dsh-blue', 'blue', 'cordis.patch.yml'))
-    expect(patchEntrySpecs(world.root)).toEqual([
-      '@deepseek-ai/dsh-agent-presets',
-      '@deepseek-ai/dsh-mcp-client',
-      '@deepseek-ai/dsh-session-title-all-prompts-llm',
-    ])
+    expect(patchEntrySpecs(world.root)).toEqual([])
   })
 })
 
