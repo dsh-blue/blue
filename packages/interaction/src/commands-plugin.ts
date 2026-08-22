@@ -146,13 +146,14 @@ export function apply(ctx: Context): void {
       .filter(header => header.cwd !== undefined && resolve(header.cwd) === here)
       .sort((a, b) => b.createdAt - a.createdAt)
     if (sorted.length === 0) return { kind: 'success', text: 'no sessions in this directory' }
-    if (unloaded) return { kind: 'success' }
     const display = displayServices(ctx)
     if (display === undefined) {
       return { kind: 'error', text: 'session picker is unavailable: the Blue screen is not mounted' }
     }
     const currentId = ctx.get('blueSession')?.current?.id
     const titles = await resolveTitles(sorted, signal)
+    // The title await can span a tree unload exactly like the listing
+    // above; the continuation must not mount a panel on the dead tree.
     if (unloaded) return { kind: 'success' }
     const list = new SelectListPanel({
       keymap: display.keymap,
@@ -215,7 +216,9 @@ export function apply(ctx: Context): void {
   ): Promise<Map<string, string>> {
     const titles = new Map<string, string>()
     const query = ctx.get('sessionQuery')
-    if (query === undefined || sorted.length === 0) return titles
+    // The caller returns before the empty listing reaches here, so an
+    // absent query service is the only early exit.
+    if (query === undefined) return titles
     const ids: SessionId[] = sorted.slice(0, sessionTitleLimit).map(header => header.id)
     let results
     try {

@@ -325,6 +325,7 @@ describe('blue-commands plugin', () => {
     })
     commandsPlugin.setSessionTitleLimit(1)
     try {
+      expect(commandsPlugin.currentSessionTitleLimit()).toBe(1)
       await ctx.commands.execute(agent, '/sessions', [], signal())
       // Newest-first: only the newest id is worth a full-log parse when
       // the cap is 1; the older row keeps the id form.
@@ -332,6 +333,25 @@ describe('blue-commands plugin', () => {
     } finally {
       commandsPlugin.setSessionTitleLimit(undefined)
     }
+    expect(commandsPlugin.currentSessionTitleLimit()).toBe(commandsPlugin.DEFAULT_SESSION_TITLE_LIMIT)
+  })
+
+  it('/sessions degrades to the id form when the whole title batch fails', async () => {
+    const { ctx, screen, agent } = await mount({
+      persistence: {
+        list: () => Promise.resolve([header('s-one', 1_000, HERE), header('s-two', 2_000, HERE)]),
+      },
+      sessionQuery: {
+        readTitleSnapshots: async () => {
+          throw new Error('persistence backend gone')
+        },
+      },
+    })
+    const execution = await ctx.commands.execute(agent, '/sessions', [], signal())
+    expect(execution?.result).toEqual({ kind: 'success' })
+    const rows = screen.overlays[0]?.component.render(60) ?? []
+    expect(rows[2]).toContain('s-two · 1970-01-01 00:00')
+    expect(rows[3]).toContain('s-one · 1970-01-01 00:00')
   })
 
   it('/sessions filters rows by the typed query and clears it before cancelling', async () => {
@@ -403,6 +423,20 @@ describe('blue-commands plugin', () => {
     const pending = ctx.commands.execute(agent, '/sessions', [], signal())
     await fiber.dispose()
     gate.resolve([header('s-late', 1_000, HERE)])
+    const execution = await pending
+    expect(execution?.result).toEqual({ kind: 'success' })
+    expect(screen.overlays).toHaveLength(0)
+  })
+
+  it('/sessions shows no overlay when the fiber unloads while titles resolve', async () => {
+    const gate = Promise.withResolvers<ReadonlyArray<{ sessionId: { toString(): string }, status: 'fulfilled', value: { title?: { title: string } } }>>()
+    const { ctx, screen, agent, fiber } = await mount({
+      persistence: { list: () => Promise.resolve([header('s-late', 1_000, HERE)]) },
+      sessionQuery: { readTitleSnapshots: () => gate.promise },
+    })
+    const pending = ctx.commands.execute(agent, '/sessions', [], signal())
+    await fiber.dispose()
+    gate.resolve([])
     const execution = await pending
     expect(execution?.result).toEqual({ kind: 'success' })
     expect(screen.overlays).toHaveLength(0)

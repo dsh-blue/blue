@@ -23,10 +23,13 @@
 /** The default profile the resume command names when the launcher flags do not. */
 const DEFAULT_PROFILE = 'blue'
 
-/** The writer the epitaph flushes through; tests substitute a capture. */
-let writer: (text: string) => void = (text): void => {
+/** The default writer: plain synchronous stdout. */
+const defaultWriter = (text: string): void => {
   process.stdout.write(text)
 }
+
+/** The writer the epitaph flushes through; tests substitute a capture. */
+let writer: (text: string) => void = defaultWriter
 
 /** The single armed epitaph; the latest arm wins (HMR remounts re-arm). */
 let armed: string | undefined
@@ -39,9 +42,7 @@ let hooked = false
  * @param next - the replacement, or `undefined` to restore the default.
  */
 export function setExitEpitaphWriter(next: ((text: string) => void) | undefined): void {
-  writer = next ?? ((text): void => {
-    process.stdout.write(text)
-  })
+  writer = next ?? defaultWriter
 }
 
 /**

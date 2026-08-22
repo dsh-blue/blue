@@ -261,9 +261,11 @@ describe('SelectListPanel type-to-filter (S30②)', () => {
     panel.handleInput('\x7f')
     // 'It' still matches only the Item rows.
     expect(panel.render(40).some(line => line.includes('Xylophone'))).toBe(false)
+    // The raw bytes match singles only: a multi-char escape sequence (no
+    // keymap action claims it) falls through untouched.
+    panel.handleInput('\x1b[Z')
     panel.handleInput('\x7f')
     panel.handleInput('\x7f')
-    // The empty query restores the full list.
     expect(panel.render(40).some(line => line.includes('Xylophone'))).toBe(true)
     panel.handleInput('\x7f')
     expect(panel.render(40)[1]).toContain('type to search')

@@ -647,6 +647,18 @@ describe('exit epitaph (D47)', () => {
     }
   })
 
+  it('restores the plain synchronous stdout writer on an undefined seam', () => {
+    setExitEpitaphWriter(undefined)
+    const write = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
+    try {
+      armExitEpitaph('to stdout')
+      writeArmedEpitaph()
+      expect(write).toHaveBeenCalledWith('to stdout')
+    } finally {
+      write.mockRestore()
+    }
+  })
+
   it('keeps a single slot: the latest arm wins (HMR remounts)', () => {
     armExitEpitaph('first')
     armExitEpitaph('second')
