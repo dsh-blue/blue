@@ -30,6 +30,11 @@
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dsh-blue/blue.git",
+    "directory": "packages/app"
+  },
   "dependencies": {
     "@deepseek-ai/dsh-cmdline": "0.1.1-rc.2",
     "@deepseek-ai/schemastery": "3.18.1",

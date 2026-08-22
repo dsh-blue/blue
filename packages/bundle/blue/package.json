@@ -27,6 +27,11 @@
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dsh-blue/blue.git",
+    "directory": "packages/bundle/blue"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

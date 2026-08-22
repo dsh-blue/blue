@@ -50,6 +50,11 @@
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dsh-blue/blue.git",
+    "directory": "packages/core"
+  },
   "dependencies": {
     "@deepseek-ai/schemastery": "3.18.1",
     "@earendil-works/pi-tui": "^0.84.2",
