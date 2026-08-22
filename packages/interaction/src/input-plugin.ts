@@ -288,6 +288,7 @@ export function apply(ctx: Context): void {
     }
     const parsed = parseCommand(line)
     if (parsed === undefined) {
+      ctx.get('blueRequests')?.begin('main')
       agent.followup(createUserMessage({
         // The S29 skill pipeline: `#name` tokens naming settled
         // user-invocable skills rewrite into the `/name` gesture form the
@@ -434,6 +435,7 @@ export function apply(ctx: Context): void {
       }
       const agent = currentBlueAgent(ctx)
       if (agent?.status === 'running') {
+        ctx.get('blueRequests')?.interrupt()
         agent.cancel({ kind: 'user' })
         return true
       }
@@ -448,6 +450,7 @@ export function apply(ctx: Context): void {
       }
       const agent = currentBlueAgent(ctx)
       if (agent?.status === 'running') {
+        ctx.get('blueRequests')?.interrupt()
         agent.cancel({ kind: 'user' })
         return true
       }
@@ -470,6 +473,7 @@ export function apply(ctx: Context): void {
       if (text.length === 0 || agent === undefined) return false
       // Steered text runs the same `#name` → `/name` skill rewrite as a
       // submitted follow-up: the gesture reaches the model either way.
+      ctx.get('blueRequests')?.begin('main')
       agent.steer(createUserMessage({
         content: applySubmitTransformers(rewriteSkillTokens(text)),
         source: { kind: 'user' },

@@ -41,6 +41,7 @@ Each package has the same shape: `src/` (source), `tests/` (vitest specs), `lib/
 
 | Package | Import name | Role | Owns (key surfaces) | Detail |
 |---|---|---|---|---|
+| api | `@dsh-blue/blue-api` | stable renderer-independent public contracts and manifest validation | `BlueView` · readonly session/request lifecycle · `BlueResult` · capabilities | [AGENTS.md](packages/api/AGENTS.md) |
 | core | `@dsh-blue/blue-core` | the tree's ONLY pi-tui adapter; terminal lifecycle, L1 services, component factory, themes, shared chrome | `blueScreen` · `blueKeymap` · `blueTerminalInfo` · `blueComponents` · 4 theme subpath plugins · `./chrome` | [AGENTS.md](packages/core/AGENTS.md) |
 | transcript | `@dsh-blue/blue-transcript` | session events → transcript items and rendering | fold · tool cards/read groups · `blueStatus` + footer shell + 5 status plugins · dock panes (activity/todo/btw/agents) · `blueIntents` + `./intent-diff`/`./intent-terminal` · window/step folding · `./banner` | [AGENTS.md](packages/transcript/AGENTS.md) |
 | interaction | `@dsh-blue/blue-interaction` | input editor, slash commands, dialogs | commands + alias registry · dialog panels (D30 editor-slot replacement) · completions (slash/`@`/`#`) · skills pipeline (`#` mark → `/name` gesture + `/skills` panel, S29) · model/session-info/export/tools/preset/permission/plan-review families · shared editor seams · `./attachments`/`./paste-image`/`./pane-queue`/`./editor-plus` | [AGENTS.md](packages/interaction/AGENTS.md) |

@@ -7,6 +7,7 @@
  */
 
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { BlueRequestLifecycle } from '@dsh-blue/blue-api'
 import type { BlueModelSelectionRef } from './model-ref.ts'
 
 /**
@@ -35,6 +36,10 @@ declare module '@deepseek-ai/cordis' {
   }
 
   interface Events {
+    /** A request lifecycle transition shared by transcript and activity projections. */
+    'blue/request-state-changed'(lifecycle: BlueRequestLifecycle): void
+    /** A frame/session operation was committed and stale event guards may advance. */
+    'blue/session-epoch-changed'(sessionEpoch: number): void
     /**
      * The Blue app's active Agent changed: the initial create/resume
      * completed, or a `'blue/request-resume'` switch committed. Fired only

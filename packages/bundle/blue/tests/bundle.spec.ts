@@ -62,6 +62,7 @@ describe('blue bundle', () => {
     // the assembly segment.
     const ids = [...patch.matchAll(/^\s*- id: (blue-[\w-]+)$/gm)].map(match => match[1]!)
     expect(ids).toEqual([
+      'blue-api-host',
       'blue-core',
       'blue-theme-dark',
       'blue-banner',
@@ -123,4 +124,3 @@ describe('blue bundle', () => {
     }
   })
 })
-

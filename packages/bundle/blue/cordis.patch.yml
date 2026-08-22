@@ -154,6 +154,11 @@
     # Blue core: the tree's only pi-tui adapter. Starts the terminal and
     # registers the blueScreen/blueKeymap/blueTerminalInfo/blueComponents
     # services.
+    # Stable API host: validates and scopes third-party contributions before
+    # any renderer-facing Blue package is activated.
+    - id: blue-api-host
+      name: '@dsh-blue/blue-api'
+
     - id: blue-core
       name: '@dsh-blue/blue-core'
 
