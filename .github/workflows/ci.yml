@@ -59,5 +59,12 @@ jobs:
       # purpose: its subtree reshapes hoisting and breaks the S34 /mcp e2e's
       # bare-specifier resolution, so CI installs it globally instead and
       # the smoke pins its version against HARNESS_LINE.
-      - run: pnpm add -g @deepseek-ai/dsh@0.1.1-rc.1
+      #
+      # npm, not `pnpm add -g`: action-setup installs pnpm itself under
+      # /home/runner/setup-pnpm, and with no PNPM_HOME set `pnpm add -g`
+      # resolves the global bin dir next to the pnpm binary and refuses
+      # ("configured global bin directory ... is not in PATH" — the red
+      # run 32548149673). npm's global bin is setup-node's prefix, already
+      # on PATH for this step and for smoke:happy's `command -v dsh`.
+      - run: npm install -g @deepseek-ai/dsh@0.1.1-rc.1
       - run: pnpm smoke:happy

@@ -188,7 +188,13 @@ describe('default clipboard text writer', () => {
     const xclip = join(bin, 'xclip')
     writeFileSync(xclip, '#!/bin/sh\nexit 0\n')
     chmodSync(xclip, 0o644)
-    prependBin(bin)
+    // Replace PATH outright, not prepend: libuv's PATH scan skips the 644
+    // (non-executable) candidates and falls through to any real wl-copy/
+    // xclip further down PATH — a desktop host has both, so a prepended
+    // bin turns the probe into the real tools (the "mixes" case below
+    // documents the same trap). Neither script execs an external command,
+    // so no PATH tail is needed.
+    process.env.PATH = bin
     await expect(copyTextToClipboard('lost'))
       .rejects.toThrow(/no clipboard tool is available \(wl-copy spawn EACCES, xclip spawn EACCES\)|wl-copy EACCES/)
     rmSync(bin, { recursive: true, force: true })
