@@ -351,3 +351,11 @@
 - **度量与重折**：判定用**原始文本**行数/字符数（与视口宽无关）→ resize 改变换行数但**永不重折**已展开的消息（expanded 标志门控折叠分支）；阈值常量模块级 + `setUserFoldThresholds` 测试 setter（window.ts 模式）。提示行只在 `wrapped.length > USER_PREVIEW_LINES` 时出现（≤3 换行行 = 无内容被藏，不空喊）。
 - **ctrl+o 集成**：`setExpanded` 挂上即自动并入全局翻面（handler 扫所有挂载 entries 的 `setExpanded`，不限于工具卡）；user item 本就是 3-turn 边界标记，边界语义零改动；挂载期一行与 thinking 同权接 `toggle.expanded`（toggle 开时新消息不落折叠态）；会话切换重置走既有 disposer。cache key 追加 `expanded`（ToolCall 先例——标志即 key，无需显式 invalidate）。
 - **边界**：图片附件不受折叠影响（照常渲染在文本下方）；Up 历史召回仍把全文放进编辑器（roadmap 既记边界，不修）；快捷键零新增（ctrl+o 既有全局动作，R2 冻结无涉）。
+
+### D47. 退出遗言：app 驱动层 dispose arm + `process 'exit'` flush（用户裁决，2026-08-22）
+
+- **背景**：用户裁决——退出时打印当前会话 id 及恢复命令，便于下次恢复。此前 /quit/双击 Ctrl-C 退出后终端干干净净，会话 id 无处可寻。
+- **挂点选型**：blue-app 驱动层 `ctx.effect` dispose effect **arm** + `process 'exit'` 事件 **flush**。理由：(1) Cordis LIFO 卸载序 = blue-app 先卸（跨 fiber 再取不到 `blueSession`）→ 闭包捕获会话对象在 dispose 时读；(2) `'exit'` 是唯一严格后于屏幕恢复（blue-core 的 stop effect 在后）与持久化 flush（dsh-base 行最后卸）的全路径汇合点——`/quit`、双击 Ctrl-C、启动失败 `io.exit(1)`、fail-loud release 全走 launcher 的 dispose-then-exit；(3) `--help`/参数错误路径根本不挂载 blue-app，天然零输出。
+- **形态**：两行——`blue · session saved · resume with:` + 裸命令 `dsh --profile <name> --resume <session-<uuid>>` 独立成行（三击选中即复制）；id 全量；profile 从 `process.argv` 扫 `--profile <n>`/`--profile=<n>`（无 DSH_PROFILE 环境变量），fallback `blue`（dev 安装默认）。
+- **守卫与语义**：零事件会话不 arm（无恢复价值）；模块级单槽 latest-arm-wins（HMR recompose 重建树不双打，间隔窗口内的陈旧行内容相同、可接受）；`'exit'` 只许同步写（TTY stdout 实际同步）。持久化时序由架构保证（coordinator 的 dispose effect 在 'exit' 前 flush 完毕），不额外显式 flush。
+- **边界**：`kill -9`/裸 SIGTERM/SIGINT 无遗言（无 handler 可挂，best-effort 记档）；测试缝 = `setExitEpitaphWriter` + `armExitEpitaph(undefined)` 清理（vitest 进程自身的 exit 不打印残留）。
