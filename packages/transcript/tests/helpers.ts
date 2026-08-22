@@ -15,64 +15,18 @@ import {
 import type { BlueComponents, BlueImage, BlueMarkdown } from '@dsh-blue/blue-core'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 
-/** Matches every SGR sequence (global, for stripping before measurement). */
-const SGR_GLOBAL = /\x1b\[[0-9;]*m/g
-
-/**
- * Fake `visibleWidth`: codepoint count with SGR sequences stripped. Exact
- * for the ASCII-only test fixtures; assertions must agree with this, not
- * with pi-tui's terminal-cell semantics.
- */
-function fakeVisibleWidth(text: string): number {
-  return [...text.replace(SGR_GLOBAL, '')].length
-}
-
-/**
- * Fake `wrapText`: greedy word wrap on spaces, hard-breaking over-wide words
- * codepoint by codepoint. Deterministic; lines never exceed `width` fake
- * columns. Empty input yields one empty line.
- */
-function fakeWrapText(text: string, width: number): string[] {
-  const limit = Math.max(1, width)
-  const lines: string[] = []
-  for (const inputLine of text.split('\n')) {
-    let current = ''
-    for (const word of inputLine.split(' ')) {
-      let rest = word
-      if (current && fakeVisibleWidth(current) + 1 + fakeVisibleWidth(rest) <= limit) {
-        current += ` ${rest}`
-        continue
-      }
-      if (current) {
-        lines.push(current)
-        current = ''
-      }
-      while (fakeVisibleWidth(rest) > limit) {
-        lines.push([...rest].slice(0, limit).join(''))
-        rest = [...rest].slice(limit).join('')
-      }
-      current = rest
-    }
-    if (current || lines.length === 0 || inputLine === '') lines.push(current)
-  }
-  return lines.length > 0 ? lines : ['']
-}
-
-/**
- * Fake `truncateToWidth`: keeps the first `width - ellipsis.length` fake
- * columns and appends the ellipsis when truncating.
- */
-function fakeTruncateToWidth(text: string, width: number, ellipsis = '...'): string {
-  if (fakeVisibleWidth(text) <= width) return text
-  const keep = Math.max(0, width - fakeVisibleWidth(ellipsis))
-  return [...text].slice(0, keep).join('') + ellipsis
-}
+// Width truth is pi-tui itself (D45): the fake codepoint counters that used
+// to live here were exact only for ASCII fixtures, so a CJK mis-budget that
+// would trip the real width guard stayed green in tests (the D39 lesson).
+// Tests now measure and truncate through the same implementations the
+// renderer runs.
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '../../core/src/width.ts'
 
 /**
  * Build a fake `BlueComponents` for transcript tests. `createMarkdown`
  * returns a minimal `BlueMarkdown`: `setText` stores the source, `render`
- * wraps it with the fake `wrapText` (no Markdown transform). The editor and
- * list factories are out of scope for the transcript and throw.
+ * wraps it with the real `wrapTextWithAnsi` (no Markdown transform). The
+ * editor and list factories are out of scope for the transcript and throw.
  */
 export function fakeBlueComponents(): BlueComponents {
   return {
@@ -83,7 +37,7 @@ export function fakeBlueComponents(): BlueComponents {
           text = next
         },
         render(width: number): string[] {
-          return fakeWrapText(text, width)
+          return wrapTextWithAnsi(text, width)
         },
         invalidate(): void {},
       }
@@ -103,9 +57,9 @@ export function fakeBlueComponents(): BlueComponents {
     createSettingsList(): never {
       throw new Error('fake createSettingsList is out of scope for transcript tests')
     },
-    visibleWidth: fakeVisibleWidth,
-    wrapText: fakeWrapText,
-    truncateToWidth: fakeTruncateToWidth,
+    visibleWidth,
+    wrapText: wrapTextWithAnsi,
+    truncateToWidth,
   }
 }
 

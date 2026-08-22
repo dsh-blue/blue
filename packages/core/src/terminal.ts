@@ -8,6 +8,7 @@
  */
 
 import { ProcessTerminal, TuiMainScreen, type Terminal, type TUI } from '@earendil-works/pi-tui'
+import { clampFrame, createFileOverflowSink, defaultOverflowDirectory, type OverflowSink } from './frame-clamp.ts'
 import { buildTitleOsc0 } from './terminal-escape.ts'
 import { probeTerminalBackground, backgroundFromRgb, type BlueProbeProcess } from './terminal-info.ts'
 import type { BlueComponent, BlueOverlayHandle, BlueOverlayOptions, BlueRgbColor } from './types.ts'
@@ -164,12 +165,16 @@ export function createTerminalRelease(): () => Promise<void> {
  *   live process. Tests inject a recording fake.
  * @param onSchemeChange - called when the terminal reports a dark/light
  *   color-scheme switch.
+ * @param overflow - where the exit backstop records clamped lines; defaults
+ *   to the deduplicating file sink under pi-tui's log directory. Tests
+ *   inject a recorder.
  * @returns the running stack's Blue-typed face.
  */
 export async function startBlueTerminal(
   terminal: Terminal = new ProcessTerminal(),
   probe: (proc?: BlueProbeProcess) => Promise<BlueRgbColor | undefined> = () => probeTerminalBackground(),
   onSchemeChange?: (scheme: 'dark' | 'light') => void,
+  overflow: OverflowSink = createFileOverflowSink({ directory: defaultOverflowDirectory() }),
 ): Promise<BlueTerminalRuntime> {
   const current: TUI = new TuiMainScreen(terminal)
   const stable = createStableTuiReference(() => current)
@@ -192,19 +197,27 @@ export async function startBlueTerminal(
   // are a few cheap rows) and blank filler is inserted between the blocks
   // until the frame spans the viewport. Full viewports render untouched, and
   // an empty or dock-less tree pads nothing (no blank flood at boot).
+  //
+  // The same wrapper is the exit backstop (D45): every frame line, on both
+  // return paths, is clamped to `width` before pi-tui's differential writer
+  // can crash on it — an over-wide component row degrades to a truncated
+  // row plus one deduplicated blue-overflow.log entry instead of a dead
+  // session. `width` is the very value pi-tui's guard compares against.
   const collectLines = current.render.bind(current)
   current.render = (width: number): string[] => {
     const lines = collectLines(width)
-    if (lines.length === 0 || lines.length >= terminal.rows || bottomChildren.size === 0) return lines
+    if (lines.length === 0 || lines.length >= terminal.rows || bottomChildren.size === 0) {
+      return clampFrame(lines, width, overflow)
+    }
     let dockRows = 0
     for (const child of orderedDock()) dockRows += child.render(width).length
     const filler = terminal.rows - lines.length
     const boundary = lines.length - dockRows
-    return [
+    return clampFrame([
       ...lines.slice(0, boundary),
       ...Array.from({ length: filler }, () => ''),
       ...lines.slice(boundary),
-    ]
+    ], width, overflow)
   }
   /** Dock children in render order: the regular block, then the pinned tail. */
   function orderedDock(): BlueComponent[] {

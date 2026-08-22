@@ -380,7 +380,7 @@ describe('blue-editor-plus input modes', () => {
     })
     const rendered = echoes(screen)[0]?.render(20) ?? []
     expect(rendered[0]).toBe('$$ $wide')
-    expect(rendered[1]).toBe(`_${'y'.repeat(17)}..._`)
+    expect(rendered[1]).toBe(`_${'y'.repeat(17)}\x1b[0m...\x1b[0m_`)
   })
 
   it('runs the default executor through the real shell', async () => {

@@ -94,3 +94,7 @@ The `./banner` subpath plugin (`src/banner.ts`, `blue-banner`) is a baseline pat
 ## Test fakes
 
 The suites' `BlueScreen` implementations (pane-fakes / status-fakes / status / plugin / perf / banner specs) each carry a `suspend(fn)` pass-through stub since S31 — the seam is core-owned and no transcript suite suspends the screen; the stub exists only to satisfy the widened `BlueScreen` contract.
+
+## Width discipline (D45)
+
+`tests/helpers.ts`'s `fakeBlueComponents` delegates `visibleWidth`/`wrapText`/`truncateToWidth` to pi-tui through `../../core/src/width.ts` — width assertions measure with the renderer's own semantics (pi-tui's truncation wraps its ellipsis in `\x1b[0m` resets; emoji bullets like `✨` span two cells, so continuation indents measure three). `tests/width-scan.spec.ts` holds the width contract: every content-rendering component (message bodies, tool cards including the generic bash fallback — the #18 seat, thinking, groups, intents, banner, footer shell) renders each `ADVERSARIAL` fixture at each `SCAN_WIDTHS` and every row must fit; new content components join it. The bullet/indent components clamp their assembled rows through `clampRowsToWidth` (bullet furniture can out-wide a degenerate resize-drag viewport).

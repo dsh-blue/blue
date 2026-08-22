@@ -6,6 +6,11 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
+// Width truth is pi-tui itself (D45): the fake SGR-stripped counters that
+// used to live here were exact only for ASCII, so CJK mis-budgets stayed
+// green in tests while tripping the real width guard. Fakes now delegate to
+// the same implementations the renderer runs.
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '../../core/src/width.ts'
 import type {
   BlueAutocompleteItem,
   BlueAutocompleteProvider,
@@ -194,24 +199,6 @@ export class FakeTheme implements BlueTheme {
   readonly colors = fakeColors()
 }
 
-/** Strip ANSI SGR sequences for the fake width math. */
-function stripAnsi(text: string): string {
-  return text.replace(/\x1b\[[0-9;]*m/g, '')
-}
-
-/** Deterministic visible width: the SGR-stripped character count. */
-function fakeVisibleWidth(text: string): number {
-  return stripAnsi(text).length
-}
-
-/** Deterministic truncation: SGR-stripped character cut plus the ellipsis. */
-function fakeTruncate(text: string, width: number, ellipsis = '...'): string {
-  const plain = stripAnsi(text)
-  if (plain.length <= width) return text
-  if (width <= 0) return ''
-  return plain.slice(0, Math.max(0, width - ellipsis.length)) + ellipsis
-}
-
 /**
  * In-memory BlueEditor: `handleInput` asks `onKey` first (a true reply
  * consumes the sequence), then appends any sequence verbatim and submits on
@@ -320,7 +307,7 @@ export class FakeBlueEditor implements BlueEditor {
   }
 
   render(width: number): string[] {
-    return [fakeTruncate(`>${this.text}`, Math.max(0, width))]
+    return [truncateToWidth(`>${this.text}`, Math.max(0, width))]
   }
 
   invalidate(): void {}
@@ -363,7 +350,7 @@ export class FakeBlueSelectList implements BlueSelectList {
   }
 
   render(width: number): string[] {
-    return this.options.items.map((item, at) => fakeTruncate(
+    return this.options.items.map((item, at) => truncateToWidth(
       `${at === this.index ? '→ ' : '  '}${item.label}`,
       Math.max(0, width),
     ))
@@ -523,15 +510,15 @@ export class FakeBlueComponents implements BlueComponents {
   }
 
   visibleWidth(text: string): number {
-    return fakeVisibleWidth(text)
+    return visibleWidth(text)
   }
 
   wrapText(text: string, width: number): string[] {
-    return text.split('\n').map(line => fakeTruncate(line, width, ''))
+    return wrapTextWithAnsi(text, width)
   }
 
   truncateToWidth(text: string, width: number, ellipsis?: string): string {
-    return ellipsis === undefined ? fakeTruncate(text, width) : fakeTruncate(text, width, ellipsis)
+    return truncateToWidth(text, width, ellipsis)
   }
 
   /**

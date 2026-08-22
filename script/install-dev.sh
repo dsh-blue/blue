@@ -9,6 +9,11 @@
 #   DSH_BIN    dsh executable to use        (default: dsh from PATH)
 #   PROFILE    target profile name          (default: blue)
 #   DSH_HOME   dsh home directory           (default: dsh's own resolution)
+#   PROFILE_INSTALL_FLAGS
+#              extra flags for the profile's `pnpm install` (default: none).
+#              CI consumers pass --no-frozen-lockfile: CI=true flips pnpm's
+#              frozen-lockfile default on, and ensure-loader-entries' package
+#              additions then read as lockfile violations.
 #
 # Worktree effect testing: run this from a feature worktree with
 # PROFILE=blue-<short-branch-tag> to give that checkout its own dogfood
@@ -44,7 +49,8 @@ PROFILE_DIR="${DSH_HOME:-$HOME/.dsh}/profiles/$PROFILE"
 echo "==> Ensuring harness loader entries resolve from profile '$PROFILE'"
 node "$REPO_ROOT/script/ensure-loader-entries.mjs" \
   "$REPO_ROOT/packages/bundle/blue" "$PROFILE_DIR" "$DSH_BIN"
-pnpm --dir "$PROFILE_DIR" install >/dev/null
+# shellcheck disable=SC2086 — PROFILE_INSTALL_FLAGS is a word-split flag list
+pnpm --dir "$PROFILE_DIR" install ${PROFILE_INSTALL_FLAGS:-} >/dev/null
 
 cat <<EOF
 

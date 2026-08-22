@@ -19,6 +19,7 @@ import type {
   BlueMarkdown,
   BlueSemanticColors,
 } from '@dsh-blue/blue-core'
+import { clampRowsToWidth } from '@dsh-blue/blue-core/chrome'
 import { extractKeyArgument, isPlanDecline, isReadItem, KEY_ARG_MAX_CHARS } from './present.ts'
 import type {
   TranscriptAssistantItem,
@@ -161,7 +162,7 @@ export class UserMessageComponent implements BlueComponent {
     const wrapped = this.components.wrapText(this.item.text, contentWidth)
     const bold = (text: string): string => `${BOLD_OPEN}${this.colors.roleUser(text)}${BOLD_CLOSE}`
     const indent = ' '.repeat(bulletWidth)
-    const lines = ['', ...wrapped.map((line, index) =>
+    let lines = ['', ...wrapped.map((line, index) =>
       (index === 0 ? bullet : indent) + bold(line))]
     const load = this.loadImage
     if (load !== undefined && this.item.images.length > 0) {
@@ -172,6 +173,9 @@ export class UserMessageComponent implements BlueComponent {
         else lines.push(`${indent}${this.colors.muted('[image]')}`)
       }
     }
+    // The bullet can out wide a degenerate viewport (a resize drag crossing
+    // three columns); every assembled row passes the width backstop.
+    lines = clampRowsToWidth(lines, width, text => this.components.truncateToWidth(text, width))
     this.cache = { key, lines }
     return lines
   }
@@ -234,8 +238,9 @@ export class AssistantMessageComponent implements BlueComponent {
       lines.push(...content.map((line, index) =>
         (index === 0 ? this.colors.text(STATUS_BULLET) : MESSAGE_INDENT) + line))
     }
-    this.cache = { key, lines }
-    return lines
+    const clamped = clampRowsToWidth(lines, width, text => this.components.truncateToWidth(text, width))
+    this.cache = { key, lines: clamped }
+    return clamped
   }
 }
 
@@ -464,19 +469,26 @@ export class ErrorMessageComponent implements BlueComponent {
  * prominence).
  */
 export class InterruptedMarkerComponent implements BlueComponent {
-  /** @param colors - the theme's color table. */
-  constructor(private readonly colors: BlueSemanticColors) {}
+  /**
+   * @param colors - the theme's color table.
+   * @param components - the component factory providing `truncateToWidth`
+   *   (the fixed label still has to honor degenerate widths).
+   */
+  constructor(
+    private readonly colors: BlueSemanticColors,
+    private readonly components: BlueComponents,
+  ) {}
 
   /** No cached render state. */
   invalidate(): void {}
 
   /**
-   * Render the single error-red marker row.
+   * Render the single error-red marker row, truncated to the width.
    * @param width - current render width in columns (the label never wraps).
    * @returns one string.
    */
-  render(_width: number): string[] {
-    return [this.colors.error('⏹ interrupted')]
+  render(width: number): string[] {
+    return [this.components.truncateToWidth(this.colors.error('⏹ interrupted'), width)]
   }
 }
 

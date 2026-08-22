@@ -9,11 +9,23 @@ import { describe, expect, it } from 'vitest'
 import type { TUI } from '@earendil-works/pi-tui'
 import type { BlueComponent, BlueFocusable, BlueRgbColor } from '../src/types.ts'
 import { createStableTuiReference, createTerminalRelease, startBlueTerminal } from '../src/terminal.ts'
+import type { FrameOverflowEntry } from '../src/frame-clamp.ts'
+import { visibleWidth } from '../src/width.ts'
 import { FakeTerminal, waitForRender } from './fake-terminal.ts'
 
 /** A background probe that never answers, for tests indifferent to it. */
 function noProbe(): Promise<BlueRgbColor | undefined> {
   return Promise.resolve(undefined)
+}
+
+/**
+ * Drop the writer-level control wrappers pi-tui adds around raw writes but
+ * never includes in the frame lines its width guard checks: the
+ * synchronized-output mode (CSI ? 2026 h/l) — whose `?` private parameter
+ * `visibleWidth` does not strip — and the OSC 8 hyperlink close.
+ */
+function stripWriterWrappers(row: string): string {
+  return row.replace(/\x1b\[\?2026[hl]/g, '').replace(/\x1b\]8;;\x07/g, '')
 }
 
 function textComponent(text: string): BlueComponent {
@@ -202,6 +214,55 @@ describe('startBlueTerminal', () => {
     await waitForRender()
     const frame = terminal.written.at(-1) ?? ''
     expect(frame.split('\r\n')).toHaveLength(1)
+    await runtime.stop()
+  })
+
+  it('clamps over-wide component lines instead of crashing the guard', async () => {
+    // Pre-D45 this render died in pi-tui's differential writer: the frame
+    // line exceeds the 40-column viewport and the width guard throws out of
+    // the render timer. The exit backstop hard-slices it instead.
+    const terminal = new FakeTerminal(40)
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    runtime.addChild({
+      render: () => ['x'.repeat(60), '中文'.repeat(30), 'fits'],
+      invalidate: () => {},
+    })
+    runtime.requestRender(true)
+    await waitForRender()
+    const frame = terminal.written.at(-1) ?? ''
+    for (const row of frame.split('\r\n')) {
+      expect(visibleWidth(stripWriterWrappers(row))).toBeLessThanOrEqual(40)
+    }
+    expect(frame).toContain('fits')
+    await runtime.stop()
+  })
+
+  it('records clamped lines through the injected overflow sink', async () => {
+    const terminal = new FakeTerminal(40)
+    const entries: FrameOverflowEntry[] = []
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, {
+      record: entry => entries.push(entry),
+    })
+    runtime.addChild(textComponent('y'.repeat(55)))
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(entries).toEqual([{ index: 0, columns: 40, width: 55, line: 'y'.repeat(55) }])
+    await runtime.stop()
+  })
+
+  it('clamps the dock-filler frame path as well', async () => {
+    const terminal = new FakeTerminal(40)
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    runtime.addBottomChild(textComponent('z'.repeat(52)))
+    runtime.addChild(textComponent('content'))
+    runtime.requestRender(true)
+    await waitForRender()
+    const frame = terminal.written.at(-1) ?? ''
+    const rows = frame.split('\r\n')
+    expect(rows).toHaveLength(24)
+    for (const row of rows) {
+      expect(visibleWidth(stripWriterWrappers(row))).toBeLessThanOrEqual(40)
+    }
     await runtime.stop()
   })
 

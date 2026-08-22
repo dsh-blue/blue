@@ -195,7 +195,7 @@ describe('SelectListPanel rendering', () => {
 
   it('truncates long labels to the row width', () => {
     const { panel } = mount({ rows: [{ value: 'a', label: 'A very long label indeed' }] })
-    expect(panel.render(14)[2]).toBe('^❯ A very ...^~~')
+    expect(panel.render(14)[2]).toBe('^❯ A very \x1b[0m...\x1b[0m^~~')
   })
 
   it('windows a long list behind a scroll position row', () => {

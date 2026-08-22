@@ -280,7 +280,10 @@ export class ModelPanel implements BlueFocusable {
       lines.push(components.truncateToWidth(`  ${cells.join('   ')}`, width), '')
     }
     if (this.query.length > 0) {
-      lines.push(`${colors.primary(' Search: ')}${colors.text(this.query)}`, '')
+      lines.push(components.truncateToWidth(
+        `${colors.primary(' Search: ')}${colors.text(this.query)}`,
+        Math.max(1, width),
+      ), '')
     }
     const start = Math.max(0, Math.min(
       this.cursor - Math.floor(MAX_VISIBLE / 2),
@@ -305,9 +308,9 @@ export class ModelPanel implements BlueFocusable {
     const draft = this.drafts[viewIndex] ?? -1
     lines.push(
       '',
-      colors.textMuted(`  ${SEGMENT_CAPTION}`),
+      colors.textMuted(components.truncateToWidth(`  ${SEGMENT_CAPTION}`, Math.max(1, width))),
       efforts === undefined || efforts.length === 0 || highlighted === undefined
-        ? colors.textMuted(`  ${SEGMENT_UNSUPPORTED}`)
+        ? colors.textMuted(components.truncateToWidth(`  ${SEGMENT_UNSUPPORTED}`, Math.max(1, width)))
         : components.truncateToWidth(`  ${renderSegments(
             efforts.map(id => ({ id, label: effortLabel(id) })),
             draft,
@@ -389,7 +392,11 @@ export class ModelPanel implements BlueFocusable {
     let row = `  ${pointer} ${name}`
     if (contextCell !== '') row += ` ${colors.textMuted(contextCell)}`
     if (badgeCell !== '') row += `  ${colors.success(badgeCell)}`
-    return row
+    // The name cap floors at eight columns and the lead adds four; only a
+    // degenerate viewport under that floor sees the row cut (D45) — wider
+    // viewports emit the budgeted row untouched.
+    if (width >= leadWidth + 8) return row
+    return components.truncateToWidth(row, Math.max(1, width))
   }
 
 

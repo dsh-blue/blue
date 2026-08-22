@@ -1,9 +1,9 @@
 /**
- * The transcript components: rendering against identity colors and the fake
- * `BlueComponents` factory, width discipline, caching/invalidation, and
- * mutable streaming state. Width guards measure with the fake's
- * `visibleWidth` (codepoint count, SGR-stripped) so assertions match the
- * deterministic fake wrap/truncate behavior, not pi-tui's.
+ * The transcript components: rendering against identity colors and the
+ * factory-backed `BlueComponents`, width discipline, caching/invalidation,
+ * and mutable streaming state. Width guards measure with pi-tui's own
+ * `visibleWidth` (the D45 real-semantics swap), so assertions match the
+ * renderer's terminal-cell truth.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -102,12 +102,13 @@ describe('UserMessageComponent', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
     lines = component.render(80)
     // The bullet and text carry the bold roleUser wrap; loaded images sit
-    // under the text, indented to the bullet's visible width.
+    // under the text, indented to the bullet's visible width (the emoji
+    // bullet spans two cells, so three columns).
     expect(lines).toEqual([
       '',
       '\x1b[1m[R]✨ [/R]\x1b[22m\x1b[1m[R]pics[/R]\x1b[22m',
-      '  <image 1B>',
-      '  <image 1B>',
+      '   <image 1B>',
+      '   <image 1B>',
     ])
     // A rejected load keeps the placeholder.
     const failing = new UserMessageComponent(
@@ -133,8 +134,8 @@ describe('UserMessageComponent', () => {
     expect(lines).toEqual([
       '',
       '\x1b[1m✨ \x1b[22m\x1b[1maaa\x1b[22m',
-      '  \x1b[1mbbb\x1b[22m',
-      '  \x1b[1mccc\x1b[22m',
+      '   \x1b[1mbbb\x1b[22m',
+      '   \x1b[1mccc\x1b[22m',
     ])
     for (const line of lines) expect(components.visibleWidth(line)).toBeLessThanOrEqual(6)
   })
@@ -452,7 +453,7 @@ describe('ErrorMessageComponent', () => {
 
 describe('InterruptedMarkerComponent', () => {
   it('renders the single muted tombstone row', () => {
-    const component = new InterruptedMarkerComponent(tagged())
+    const component = new InterruptedMarkerComponent(tagged(), setup())
     expect(component.render(80)).toEqual(['[E]⏹ interrupted[/E]'])
     component.invalidate()
   })

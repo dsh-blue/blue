@@ -322,8 +322,20 @@ export function framePanel(
     lines.push(truncateToWidth(hintRow(footer, options.footerPaint ?? identity), ruleWidth))
   }
   lines.push(rulePaint('─'.repeat(ruleWidth)))
-  return lines
+  // Body rows arrive pre-budgeted by their callers; only a degenerate
+  // viewport — narrow enough that the rows' fixed furniture (their
+  // two-space indents) already exceeds the frame — can leave them
+  // over-wide, and only then does the framer cut (D45). Wider frames
+  // emit the body untouched.
+  if (width >= FRAME_DEGENERATE_WIDTH) return lines
+  return lines.map(line => truncateToWidth(line, Math.max(1, width)))
 }
+
+/**
+ * Below this width a frame's fixed row furniture (indents, ellipses) no
+ * longer fits; the D45 backstop engages.
+ */
+const FRAME_DEGENERATE_WIDTH = 8
 
 /** Options for {@link topRule}. */
 export interface TopRuleOptions {
@@ -383,4 +395,26 @@ export function topRule(width: number, options: TopRuleOptions = {}): string {
  */
 export function padColumns(lines: readonly string[], n: number): string[] {
   return lines.map(line => ' '.repeat(n) + line)
+}
+
+/**
+ * The component-level width backstop (D45): every hand-assembled row —
+ * bullet plus wrapped text, indent plus content — passes through the
+ * display-width-aware truncate before it leaves `render`. Rows that already
+ * fit come back untouched (the truncate fast path), so the cost on healthy
+ * widths is one width measurement per row; at degenerate widths (a resize
+ * drag crossing two or three columns) the row is cut instead of tripping
+ * pi-tui's width guard. The render-exit clamp in terminal.ts is the frame
+ * backstop behind this one; a clamped row is still a component bug.
+ * @param rows - the assembled rows.
+ * @param width - the viewport width the rows were rendered for.
+ * @param truncate - the components service's `truncateToWidth`.
+ * @returns rows whose visible width never exceeds `width`.
+ */
+export function clampRowsToWidth(
+  rows: readonly string[],
+  width: number,
+  truncate: (text: string, width: number) => string,
+): string[] {
+  return rows.map(row => truncate(row, width))
 }
