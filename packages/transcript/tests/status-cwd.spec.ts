@@ -6,6 +6,7 @@
  * fiber unload.
  */
 
+import { homedir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import * as cwd from '../src/status-cwd.ts'
 import { asAgent, bootStatusPlugin, COLORS, fakeAgent } from './status-fakes.ts'
@@ -50,11 +51,7 @@ describe('blue-status-cwd', () => {
 
   it('falls back to the process cwd without a session', async () => {
     const harness = await bootStatusPlugin(cwd)
-    const segments = process.cwd().split('/').filter(segment => segment.length > 0)
-    const expected = segments.length <= 3
-      ? process.cwd()
-      : `…/${segments.slice(-3).join('/')}`
-    expect(harness.entry.render(80)).toBe(expected)
+    expect(harness.entry.render(80)).toBe(cwd.shortenCwd(process.cwd(), homedir()))
     await harness.dispose()
   })
 

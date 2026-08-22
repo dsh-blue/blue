@@ -57,7 +57,12 @@ class BlueRegistrationImpl implements BlueRegistration {
 
 class ScopedNotifications {
   private readonly listeners = new Set<(notification: BlueNotification) => void>()
-  constructor(private readonly allowed: readonly string[], private readonly publishGlobal: (n: BlueNotification) => void) {}
+  private readonly handles = new Set<BlueRegistrationImpl>()
+  constructor(
+    private readonly allowed: readonly string[],
+    private readonly publishGlobal: (n: BlueNotification) => void,
+    private readonly effect: (callback: () => void | (() => void)) => unknown,
+  ) {}
   publish(notification: BlueNotification): BlueResult {
     if (!this.allowed.includes('notifications')) return failure('BLUE_CAPABILITY_DENIED', 'capability "notifications" was not declared')
     if (!notification || typeof notification.id !== 'string' || notification.id.length === 0) return failure('BLUE_INVALID_CONTRIBUTION', 'notification id must be a non-empty string')
@@ -67,10 +72,16 @@ class ScopedNotifications {
   }
   subscribe(listener: (notification: BlueNotification) => void): BlueRegistration {
     this.listeners.add(listener)
-    return new BlueRegistrationImpl(() => this.listeners.delete(listener))
+    const handle = new BlueRegistrationImpl(() => {
+      this.listeners.delete(listener)
+      this.handles.delete(handle)
+    })
+    this.handles.add(handle)
+    this.effect(() => () => handle.dispose())
+    return handle
   }
   emit(notification: BlueNotification): void { for (const listener of this.listeners) listener(notification) }
-  dispose(): void { this.listeners.clear() }
+  dispose(): void { for (const handle of this.handles) handle.dispose(); this.listeners.clear() }
 }
 
 /** Cordis service implementing the stable Blue plugin host. */
@@ -91,7 +102,7 @@ export class BluePluginHostService extends Service implements BluePluginHost {
     const dock = new ScopedRegistry<BlueDockContribution>('dock', capabilities)
     const notifications = new ScopedNotifications(capabilities, notification => {
       for (const target of this.notifications) target.emit(notification)
-    })
+    }, callback => consumer.effect(callback))
     this.registries.add(commands); this.registries.add(status); this.registries.add(dock); this.notifications.add(notifications)
     const api: BluePluginApi = {
       manifest: Object.freeze({ ...manifest, capabilities: Object.freeze([...capabilities]) }),
