@@ -30,7 +30,7 @@ import { BLUE_VERSION } from '../src/banner-content.ts'
 /** The published first-release version (the website's advertised number). */
 const RELEASE_VERSION = '0.1.0-rc.1'
 /** The harness prerelease line the dsh pins ride. */
-const HARNESS_LINE = '0.1.1-rc.1'
+const HARNESS_LINE = '0.1.1-rc.2'
 
 /** One workspace package manifest. */
 interface Manifest {
@@ -138,5 +138,14 @@ describe('the harness dependency line', () => {
     const source = readFileSync(new URL('../../interaction/src/session-commands.ts', import.meta.url), 'utf8')
     expect(source).toContain(`const HARNESS_LINE = '${HARNESS_LINE}'`)
     expect(source).not.toContain("BLUE_VERSION.split('-')")
+  })
+
+  it('ci.yml derives the CLI pin from HARNESS_LINE, not a literal', () => {
+    // Single-sourcing (R1): a literal version here would drift off this
+    // gate, and an automation push touching a workflow file is rejected
+    // by GitHub outright (GITHUB_TOKEN cannot update workflows).
+    const ci = readFileSync(new URL('../../../.github/workflows/ci.yml', import.meta.url), 'utf8')
+    expect(ci).toContain('$(node script/harness-line.mjs)')
+    expect(ci).not.toContain(`@deepseek-ai/dsh@${HARNESS_LINE}`)
   })
 })

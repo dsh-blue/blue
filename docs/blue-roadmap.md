@@ -1,6 +1,6 @@
 # Blue — deepseek-harness TUI 实现路线图
 
-> **仓库形态（2026-08-21 更新）**：Blue 是独立仓库（`blue/` 目录，产品名 blue），以 npm registry 版本依赖 harness（`@deepseek-ai/*@0.1.1-rc.1` 钉版——2026-08-21 随 S26 自 0.1.0-rc.7 迁移，跟随其 prerelease 节奏升级），经 `dsh plugin --profile blue add @dsh-blue/blue` 挂载为 profile。harness 的 pre-release API 破坏风险由"钉版本 + 升级时适配"承担，与 roadmap 风险登记一致。
+> **仓库形态（2026-08-21 更新）**：Blue 是独立仓库（`blue/` 目录，产品名 blue），以 npm registry 版本依赖 harness（`@deepseek-ai/*@0.1.1-rc.2` 钉版——2026-08-21 随 S26 自 0.1.0-rc.7 迁移、2026-08-22 R1 升至 rc.2，跟随其 prerelease 节奏升级），经 `dsh plugin --profile blue add @dsh-blue/blue` 挂载为 profile。harness 的 pre-release API 破坏风险由"钉版本 + 升级时适配"承担，与 roadmap 风险登记一致。
 
 > 产品名：**Blue**（deepseek-harness 的官方 TUI surface）
 > 技术底座：`@earendil-works/pi-tui`（渲染/输入）+ Cordis 插件树（组合/生命周期）
@@ -155,7 +155,7 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 | ✅ S33 | 子 agent pane（验收反馈定形）：dock pane 钉编辑框上部 + fold 抑制 spawn 类（pane 唯一呈现面）+ 子会话订阅 live 叠加（kimi 级：running/waiting、tokens、toolCount、活动行、model/effort）+ A+ fold 基线（replay 回退）；dogfood 两轮实证（D39，含 descriptor 修正与瞬态事件弃用） | 3.5-4.5d（超原 2-3d 定档，2026-08-21 用户裁决） | 无硬前置（dev‖S31/S32，合并殿后）——已实现全绿（1427 tests / coverage 逐文件 100%），已人工验收（2026-08-21） |
 | ✅ S34 | `/mcp` 只读面板（**S28 顺延项提前，2026-08-22 用户裁决"现在做"，详 D40**）：三层面板（服务器选器 → 服务器面板（config 伪行 + raw 名工具行）→ 详情（config 状态/脱敏连接/策略 | 工具 schema 复用 buildToolDetailSections））+ `mcp-servers.ts` 薄读层（loader entries × `fiber.config` 归一化 + 双口径计数——**展示用会话可见、健康信号用全局注册**（用户裁决 + 补充：restricted ≠ dead 必须可区分）+ 状态推导七态 + env/headers 只显 key 脱敏）+ bundle 带钉版 dsh-mcp-client（dependencies 首入 version.spec 门禁）+ 空态指路 website dsh/mcp 页；快照式（组件构造定格，live 四信号刷新记 D40 挂起）；e2e 手写 stdio fixture server 走真连接路径（含 dead/空态两态；FAILED 形态留单测——loader.await 会拒整树 boot）——**已人工验收（2026-08-22）**，验收附修 D43（hint 行 discovery 退役）+ D44 撤回记档（MCP 子进程 stderr 闪烁=上游缝） | 1.5d | 无硬前置（interaction 独立面）——coverage 逐文件 100% 全绿 |
 | S35 | 欢迎横幅改 kimi 式单栏（**D42**，2026-08-22 用户裁决）：logo + Welcome/`/help` 头两行并排 + Directory/Model/Version 对齐标签行；右栏 Tips/What's new 退役（tips 单源归活动面板 spinner 行）；logo 暂用 kimi 占位字符画（`banner-art.ts` 字面量为替换点）；min-40 零行与恒 10 行不变；S24a 活态模型行/patch 行序/`BLUE_VERSION` 守卫链不动 | 0.5d | 无硬前置（banner 三件套独立，worktree `worktree-s35-kimi-banner`） |
-| R1 | 钉版复核：发包时点跟最新 harness rc（现 0.1.1-rc.1）；rc.2+ 小 bump 走全量回归；**不追 minor 之上的跳跃** | 0.5d | G1 |
+| ✅ R1 | 钉版复核（✅ 2026-08-22 全量对齐 0.1.1-rc.2）：上游 rc.1→rc.2 对 Blue 消费面**零 API 变化**（9 包纯版本行、mcp-client 仅自家测试风格，实质变更在 image/attachment 管线内部与 deepseek llm 修复）；66 精确钉 + 35 caret peer + 181 excludes（pnpm 自动补录 4 条新包）+ HARNESS_LINE 同步，lockfile 最小演进（transitive 12 包经临时 overrides 升齐防双实例；jose 压回 6.2.9 避 minimumReleaseAge 24h 拒装——pnpm 11 默认供应链策略与 rc 线的交互记入 AGENTS）；**ci.yml 钉版单源化**至 `script/harness-line.mjs`（version.spec 增轻断言防字面量回潮）；session-title 上游 bug rc.2 仍未修、refresh 桥保留（两处 AGENTS 叙述更新）；全量回归 1844/1844 + smoke:happy 真机（rc.2 probe）全绿；验收项：真 API dogfood 双消息标题自纠（桥活体证据）随 PR 人工验收 | 0.5d | G1 |
 | R2 | 快照最小集：@xterm/headless VirtualTerminal，5-8 例核心帧（banner 首帧 / 对话+工具卡 / footer / 面板挂载 D30 形态 / CJK 宽度）；复审 D13 结论记 blue-decisions | 1-1.5d | G1（**S30 后拍**，键位面冻结） |
 | R3 | npm 发包：五包依赖序 core→interaction→transcript→app→bundle；dry-run 核 files/exports 子路径；dist-tag `rc` | 0.5d | G2 |
 | R4 | 安装路径验证：干净环境（临时 DSH_HOME）`dsh plugin add @dsh-blue/blue` → 启动冒烟；guide 补 registry 安装路径 | 0.5d | G3 |

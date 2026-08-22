@@ -66,5 +66,9 @@ jobs:
       # ("configured global bin directory ... is not in PATH" — the red
       # run 32548149673). npm's global bin is setup-node's prefix, already
       # on PATH for this step and for smoke:happy's `command -v dsh`.
-      - run: npm install -g @deepseek-ai/dsh@0.1.1-rc.1
+      # The version is derived from HARNESS_LINE via script/harness-line.mjs
+      # (single-sourced) — keep it that way: a literal here would drift off
+      # the version.spec gate AND an automation push touching a workflow
+      # file is rejected by GitHub (GITHUB_TOKEN cannot update workflows).
+      - run: npm install -g "@deepseek-ai/dsh@$(node script/harness-line.mjs)"
       - run: pnpm smoke:happy

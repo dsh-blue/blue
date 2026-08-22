@@ -48,7 +48,7 @@ describe('buildVersionSections', () => {
     expect(sections.map(section => section.heading)).toEqual(['Version'])
     expect(sections[0]!.rows).toEqual([
       { label: 'blue', segments: [{ text: `v${BLUE_VERSION}` }] },
-      { label: 'harness', segments: [{ text: '0.1.1-rc.1' }] },
+      { label: 'harness', segments: [{ text: '0.1.1-rc.2' }] },
     ])
   })
 })
@@ -98,7 +98,7 @@ describe('buildStatusSections', () => {
     ])
     expect(sections[1]!.rows[1]!.segments).toEqual([
       { text: `Blue v${BLUE_VERSION}` },
-      { text: ' · dsh 0.1.1-rc.1', style: 'muted' },
+      { text: ' · dsh 0.1.1-rc.2', style: 'muted' },
     ])
   })
 
