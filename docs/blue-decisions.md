@@ -333,3 +333,13 @@
 - **问题**：boot 期编辑框闪烁 + 一条来不及看的 `Starting default (STDIO) server...`。取证实锤（冒烟 log 原始字节）：裸文本帧后直写——是 **MCP 服务器子进程的 stderr**；dsh-mcp-client 构造 `StdioClientTransport` 不传 `stderr` 选项，SDK 默认 `'inherit'`。影响一切会写 stderr 的 stdio MCP 服务器。
 - **尝试与撤回**：blue-core 曾接管 `process.stderr.write`（行缓冲 → `blue/stderr-line` 事件 → transcript muted 行）。真机冒烟证伪：`'inherit'` 是 **spawn 级 fd 直通**——子进程直接写终端 fd 2，字节不经过父进程 JS 层，`process.stderr.write` 替换拦不到内核级继承。用户裁决撤回（拦不住目标问题）。
 - **正路（上游缝，勿在 Blue 侧重试 JS 层拦截）**：harness `packages/mcp/mcp-client`——`StdioConfig` 加 `stderr: 'inherit' | 'pipe'`（默认 `'pipe'`）、`transport.ts` 透传；pipe 下子进程 stderr 进 SDK PassThrough（`transport.stderr`），mcp-client 消费后以 `console.error` 转发回父进程（in-process 写，届时 Blue 可重评接管形态把行送进 transcript；非 TUI 宿主照常终端可见）。上游落地后 Blue 侧接管才有效。
+
+### D45. `/sessions` 三合一：cwd 圈定 + 标题命名 + type-to-filter（用户三项裁决，2026-08-22）
+
+- **背景**：S30 拆步②（type-to-filter）排期内，用户追加两项裁决——面板须带会话标题（S30① all-prompts 自动命名的数据已在日志里，"便于用户恢复 session"），且列表按当前 cwd 圈定（全局混杂太乱）。
+- **cwd 圈定**：`persistence.list()` 后滤 `resolve(header.cwd) === resolve(process.cwd())`——归一化后**精确相等，不做子树/祖先扩散**（子目录开的会话在父目录不可见）；无 cwd 的老会话不可见；无"看全部目录"开关（未要求，首个真实消费者出现再议）。
+- **标题数据路径**（三选一，选 a）：(a) `ctx.sessionQuery.readTitleSnapshots(ids, signal)` 批量读——dsh-base `session-query-sqlite` 行以 `openAt: never` 常挂（配置注释明说 exact reads/titles 可用），零新 runtime 依赖、结构化 `ctx.get` 同 persistence 纪律、allSettled 逐会话隔离 + 4 并发内建；(b) 逐会话 `persistence.inspect` + 自折 title 事件——同 I/O 成本更多代码；(c) `sessionProjectionCache`——组合里未挂载，需加行加依赖。**缺席降级**：sessionQuery 不在树或整批失败 → 全部行回退 id 形态，面板照开。
+- **成本护栏**：每个非活跃会话的标题 = 一次**全量 JSONL 事件日志解析**（`readFrom` 在 JSONL 后端同样顺序全解析；SQLite 寻址优化不适用）。cwd 圈定先大幅缩面，其上再设 **newest-K 上限**（`DEFAULT_SESSION_TITLE_LIMIT = 100`，测试 setter）——更老的行直接 id 形态不请求。
+- **行形态**：有标题 → `label = 标题`（服务端已归一化 ≤80 字节）+ `description = id · MM-DD HH:mm`；无标题/被拒 → `id · 日期` 单行。**cwd 从行与过滤文本中整体退役**（一个面板一个目录，无区分度，宽度让给标题）。
+- **type-to-filter 缝**：`SelectListPanel` 加 opt-in `filter?: boolean`（其余 6 消费面零变化）+ `SelectRow.filterText?` 可选匹配文本覆写（首个消费者即本面板——标题做 label、id/日期做 description 时匹配面仍要覆盖后者）。交互逐字照 `ModelPanel`：raw `\x7f`/可打印字节（不新增 keymap 动作，R2 冻结前最后一键已用）、fuzzyMatch 只匹配不重排、Esc 先清 query 再取消（kimi 规则）、`Search:` 行 + `no matches` 空态、`(type to search)` 提示走 titleHint 通道（framePanel title 单色限制，textMuted 视觉等价）。Search 行自截断（`truncateToWidth`）——对 ModelPanel 的一处有意分叉（那边未截是 #15 家族潜伏超宽坑）。
+- **边界**：跨页/跨会话内容搜索维持挂起（`ctx.sessionQuery.searchSessions` FTS5 上游现成，正式版排期）；`filterText` 覆写是**替换**而非叠加 label（语义单一）。
