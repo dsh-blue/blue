@@ -89,9 +89,24 @@ jobs:
       - name: verify (npm view, five packages)
         run: |
           V="${GITHUB_REF_NAME#v}"
+          # A version can 404 on `npm view` for a few seconds after its
+          # publish lands (registry read lag measured on the rc.2 run:
+          # core verified instantly, interaction 404'd 2s after publish,
+          # and all five were visible a minute later). Retry before
+          # declaring the release broken.
           for p in blue-core blue-interaction blue-transcript blue-app blue; do
-            echo -n "@dsh-blue/$p@$V → "
-            npm view "@dsh-blue/$p@$V" version
+            ok=""
+            for attempt in 1 2 3 4 5; do
+              GOT=$(npm view "@dsh-blue/$p@$V" version 2>/dev/null || true)
+              if [ "$GOT" = "$V" ]; then ok=1; break; fi
+              echo "($p: not visible yet, attempt $attempt — retrying in 15s)"
+              sleep 15
+            done
+            if [ -z "$ok" ]; then
+              echo "::error::@dsh-blue/$p@$V not visible on npm after 5 attempts"
+              exit 1
+            fi
+            echo "@dsh-blue/$p@$V → $GOT"
           done
       # Dist-tag hygiene (D50): npm ALWAYS writes `latest` on a package's
       # first publish, even with an explicit --tag — measured live on the
