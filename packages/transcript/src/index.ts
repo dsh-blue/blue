@@ -33,6 +33,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import {
   GutterComponent,
+  mountDockChild,
   type BlueComponent,
   type BlueComponents,
   type BlueScreen,
@@ -374,7 +375,7 @@ export function apply(ctx: Context): void {
   // The footer pins to the dock's lowest slot (S12): the two-row status
   // stays on the terminal's last rows beneath the editor, the kimi layout
   // dialog panels pull up over.
-  ctx.effect(() => screen.addBottomChild(new GutterComponent(footer), 'bottom'))
+  ctx.effect(() => mountDockChild(screen, new GutterComponent(footer), { fixed: true, priority: 2000 }))
 
   ctx.effect(() => ctx.blueKeymap.register([{
     id: ACTION_TOGGLE_COLLAPSE,

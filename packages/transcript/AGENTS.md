@@ -103,4 +103,8 @@ The suites' `BlueScreen` implementations (pane-fakes / status-fakes / status / p
 
 ## Width discipline (D48)
 
+Dock panes use the core `mountDockChild` seam with explicit priorities and
+preferred row budgets, preventing concurrent panes from pushing the editor
+or footer outside the viewport.
+
 `tests/helpers.ts`'s `fakeBlueComponents` delegates `visibleWidth`/`wrapText`/`truncateToWidth` to pi-tui through `../../core/src/width.ts` — width assertions measure with the renderer's own semantics (pi-tui's truncation wraps its ellipsis in `\x1b[0m` resets; emoji bullets like `✨` span two cells, so continuation indents measure three). `tests/width-scan.spec.ts` holds the width contract: every content-rendering component (message bodies, tool cards including the generic bash fallback — the #18 seat, thinking, groups, intents, banner, footer shell) renders each `ADVERSARIAL` fixture at each `SCAN_WIDTHS` and every row must fit; new content components join it. The bullet/indent components clamp their assembled rows through `clampRowsToWidth` (bullet furniture can out-wide a degenerate resize-drag viewport).

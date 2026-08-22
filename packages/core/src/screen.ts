@@ -7,7 +7,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { BlueTerminalRuntime } from './terminal.ts'
-import type { BlueComponent, BlueOverlayHandle, BlueOverlayOptions, BlueScreen } from './types.ts'
+import type { BlueComponent, BlueDockOptions, BlueOverlayHandle, BlueOverlayOptions, BlueScreen } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -69,6 +69,15 @@ export class BlueScreenService extends Service implements BlueScreen {
    */
   addBottomChild(component: BlueComponent, position?: 'bottom'): () => void {
     this.runtime.addBottomChild(component, position)
+    return () => {
+      this.runtime.removeChild(component)
+    }
+  }
+
+  /** Register a dock child with an explicit shared row budget. */
+  addDockChild(component: BlueComponent, options?: BlueDockOptions): () => void {
+    if (this.runtime.addDockChild === undefined) return this.addBottomChild(component)
+    this.runtime.addDockChild(component, options)
     return () => {
       this.runtime.removeChild(component)
     }

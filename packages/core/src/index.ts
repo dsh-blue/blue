@@ -21,6 +21,7 @@ import { startBlueTerminal } from './terminal.ts'
 
 export { BlueComponentsService, type BlueComponentsDeps } from './components.ts'
 export { GutterComponent } from './gutter.ts'
+export { mountDockChild } from './dock.ts'
 export { BlueKeymapError, BlueKeymapService } from './keymap.ts'
 export { BlueScreenService } from './screen.ts'
 export {
@@ -45,6 +46,7 @@ export type {
   BlueAutocompleteSuggestions,
   BlueColorFn,
   BlueComponent,
+  BlueDockOptions,
   BlueComponents,
   BlueEditor,
   BlueEditorOptions,

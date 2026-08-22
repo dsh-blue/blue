@@ -62,6 +62,10 @@ The pure `src/chrome.ts` — re-exported as the `./chrome` subpath, theme-agnost
 
 ## Gutter and dock mechanics (D29)
 
+`BlueScreen.addDockChild` and `mountDockChild` provide shared row-budget
+metadata for dock surfaces. The runtime renders each dock child once per frame
+and reserves fixed editor/footer slots before allocating flexible panes.
+
 `GutterComponent` (`src/gutter.ts`, exported from the package root — the kimi `GutterContainer` equivalent): the child renders at `max(1, width - 2n)` (the floor keeps degenerate resize-drag viewports from handing children zero or negative widths, D48) and every row gains `n` leading columns through `padColumns`, styling untouched, `invalidate` forwarded; below `2n + 2` columns the padded rows are also cut to the width (the gutter furniture itself no longer fits). It wraps every inset surface at the mount layer — transcript entries, the banner, the four dock panes, and the footer — while the editor, dialogs, and overlays stay full-width.
 
 ## WrappingSelectList

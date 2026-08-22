@@ -30,6 +30,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import {
   GutterComponent,
+  mountDockChild,
   type BlueComponent,
   type BlueComponents,
   type BlueSemanticColors,
@@ -357,5 +358,9 @@ export function apply(ctx: Context): void {
 
   const pane = new TodoPaneComponent(colors, components, state)
   // Bottom panes render in mount order; a zero-row render occupies nothing.
-  ctx.effect(() => screen.addBottomChild(new GutterComponent(pane)))
+  ctx.effect(() => mountDockChild(screen, new GutterComponent(pane), {
+    priority: 60,
+    minRows: 0,
+    preferredRows: MAX_VISIBLE + 3,
+  }))
 }
