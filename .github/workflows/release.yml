@@ -93,3 +93,20 @@ jobs:
             echo -n "@dsh-blue/$p@$V → "
             npm view "@dsh-blue/$p@$V" version
           done
+      # Dist-tag hygiene (D50): npm ALWAYS writes `latest` on a package's
+      # first publish, even with an explicit --tag — measured live on the
+      # @dsh-blue/smoke canary (published --tag canary, latest still set).
+      # Unedited, the first rc publish would squat latest=rc against the
+      # "latest is the stable line" ruling. Remove latest whenever it points
+      # at the just-published prerelease; a deliberate future stable publish
+      # (--tag latest) never matches this condition and stays untouched.
+      - name: dist-tag hygiene (latest must not point at the rc line)
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          for p in blue-core blue-interaction blue-transcript blue-app blue; do
+            LATEST=$(npm view "@dsh-blue/$p" dist-tags.latest 2>/dev/null || true)
+            if [ "$LATEST" = "$V" ]; then
+              npm dist-tag rm "@dsh-blue/$p" latest
+              echo "removed latest (= $V) from @dsh-blue/$p"
+            fi
+          done
