@@ -95,7 +95,11 @@ export function checkSetConsistency(facts: ProfileFacts, currentVersion: string,
 
 /** Gate 3 — the target must exist as a published version. */
 export function checkTargetExists(packument: Packument, target: string): Verdict {
-  if (packument.versions[target] !== undefined) return { code: 'target-exists', blocking: false }
+  // Key presence, not truthiness: the npm-view packument shape lists
+  // versions as bare keys (values undefined until the targeted deps
+  // query), and a value check would declare every one of them
+  // unpublished (caught live on the rc.3 real-machine run).
+  if (Object.hasOwn(packument.versions, target)) return { code: 'target-exists', blocking: false }
   return {
     code: 'target-exists',
     blocking: true,
