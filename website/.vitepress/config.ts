@@ -221,7 +221,7 @@ const config = defineConfig({
     root: {
       label: '简体中文',
       lang: 'zh-CN',
-      title: 'Blue-dsh 插件式 TUI',
+      title: 'Blue',
       description: `Blue-dsh：DeepSeek Harness (dsh) 的插件式终端界面。预览阶段（v${SITE_VERSION}）。`,
       themeConfig: {
         nav: navZh,
@@ -242,7 +242,7 @@ const config = defineConfig({
       label: 'English',
       link: '/en/',
       lang: 'en-US',
-      title: 'Blue-dsh plugin-based TUI',
+      title: 'Blue',
       description: `Blue-dsh: a plugin-based terminal UI for DeepSeek Harness (dsh). Preview (v${SITE_VERSION}).`,
       themeConfig: {
         nav: navEn,
