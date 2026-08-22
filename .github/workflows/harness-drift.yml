@@ -163,6 +163,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
+      # No checkout in this job: every gh call carries the repo explicitly
+      # (without a git context gh fails with "not a git repository").
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Upsert the drift tracking issue
         run: |
