@@ -39,9 +39,9 @@ Prerequisites: Node `^22.19 || >=24`, pnpm 11, and a `dsh` CLI ≥ `0.1.1-rc.2` 
 
 ```sh
 dsh --profile blue plugin add @dsh-blue/blue@rc
-dsh --profile blue [task]           # run a task, or start interactive
-dsh --profile blue --resume <id>    # resume a persisted session
 ```
+
+After installing, see the [quickstart](https://dsh-blue.dev/en/guide/) for launching and a first run; models, providers, themes, and API keys are covered in the [configuration guide](https://dsh-blue.dev/en/guide/config/).
 
 The `@rc` suffix is required: preview releases only carry the `rc` dist-tag, so a bare spec — which resolves `latest` — finds nothing. Upgrading to a newer preview is the same `plugin add` again; the spec re-resolves.
 

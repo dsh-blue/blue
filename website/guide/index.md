@@ -16,9 +16,9 @@
 
 ```sh
 dsh --profile blue plugin add @dsh-blue/blue@rc
-dsh --profile blue            # 交互模式
-dsh --profile blue [task]     # 直接执行任务
 ```
+
+安装完成后，按下方「开跑前配一个 key」与「首次运行」两节启动；模型、Provider、主题与密钥的详细配置见[配置：模型、Provider 与主题](/guide/config)。
 
 - `@rc` 后缀是必须的：预览版只打 `rc` dist-tag，裸 spec 解析 `latest`、什么都找不到。
 - 升级到更新的预览版：重跑同一条 `plugin add`——`@rc` spec 会重新解析到最新版。

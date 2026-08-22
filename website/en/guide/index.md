@@ -16,9 +16,9 @@
 
 ```sh
 dsh --profile blue plugin add @dsh-blue/blue@rc
-dsh --profile blue            # interactive mode
-dsh --profile blue [task]     # run a task directly
 ```
+
+After installing, follow the two sections below — one key, then a first run; models, providers, themes, and API keys are covered in detail in [Configuration](/en/guide/config).
 
 - The `@rc` suffix is required: preview releases only carry the `rc` dist-tag, so a bare spec — which resolves `latest` — finds nothing.
 - Upgrading to a newer preview: re-run the same `plugin add` — the `@rc` spec re-resolves to the newest version.
