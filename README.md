@@ -39,7 +39,7 @@ Prerequisites: Node `^22.19 || >=24`, pnpm 11, and a `dsh` CLI ≥ `0.1.1-rc.2` 
 
 ```sh
 npm i -g @deepseek-ai/dsh
-dsh --profile blue plugin add @dsh-blue/blue@rc
+dsh plugin --profile blue add @dsh-blue/blue@rc
 ```
 
 After installing, see the [quickstart](https://dsh-blue.dev/en/guide/) for launching and a first run; models, providers, themes, and API keys are covered in the [configuration guide](https://dsh-blue.dev/en/guide/config/).

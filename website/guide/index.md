@@ -16,7 +16,7 @@
 
 ```sh
 npm i -g @deepseek-ai/dsh
-dsh --profile blue plugin add @dsh-blue/blue@rc
+dsh plugin --profile blue add @dsh-blue/blue@rc
 ```
 
 安装完成后，按下方「开跑前配一个 key」与「首次运行」两节启动；模型、Provider、主题与密钥的详细配置见[配置：模型、Provider 与主题](/guide/config)。

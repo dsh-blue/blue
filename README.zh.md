@@ -39,7 +39,7 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 
 ```sh
 npm i -g @deepseek-ai/dsh
-dsh --profile blue plugin add @dsh-blue/blue@rc
+dsh plugin --profile blue add @dsh-blue/blue@rc
 ```
 
 安装完成后，启动与首次运行见[快速上手](https://dsh-blue.dev/guide/)；模型、Provider、主题与 API 密钥的配置见[配置教程](https://dsh-blue.dev/guide/config/)。

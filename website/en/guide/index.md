@@ -16,7 +16,7 @@
 
 ```sh
 npm i -g @deepseek-ai/dsh
-dsh --profile blue plugin add @dsh-blue/blue@rc
+dsh plugin --profile blue add @dsh-blue/blue@rc
 ```
 
 After installing, follow the two sections below — one key, then a first run; models, providers, themes, and API keys are covered in detail in [Configuration](/en/guide/config).
