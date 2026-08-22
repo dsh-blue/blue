@@ -17,16 +17,6 @@
 import { join } from 'node:path'
 import { updaterInternals } from './io.ts'
 
-/** The six @dsh-blue packages a healthy profile installs at one version. */
-export const BLUE_PACKAGE_NAMES = [
-  '@dsh-blue/blue',
-  '@dsh-blue/blue-api',
-  '@dsh-blue/blue-core',
-  '@dsh-blue/blue-interaction',
-  '@dsh-blue/blue-transcript',
-  '@dsh-blue/blue-app',
-] as const
-
 /** The profile manifest files a snapshot preserves. */
 const SNAPSHOT_FILES = ['package.json', 'pnpm-lock.yaml', 'cordis.patch.yml'] as const
 
@@ -123,9 +113,13 @@ export function readProfileFacts(root: string): ProfileFacts {
       manifest = undefined
     }
   }
+  // The installed set is discovered, not hardcoded: releases grow the
+  // set (rc.2 shipped five packages, blue-api joins later), and the
+  // consistency gates judge against the target release's own set.
   const installed: Record<string, string | undefined> = {}
-  for (const name of BLUE_PACKAGE_NAMES) {
-    installed[name] = readInstalledVersion(join(root, 'node_modules', name, 'package.json'))
+  const scope = join(root, 'node_modules', '@dsh-blue')
+  for (const entry of updaterInternals.listDir(scope) ?? []) {
+    installed[`@dsh-blue/${entry}`] = readInstalledVersion(join(scope, entry, 'package.json'))
   }
   return { manifest, specs, installed, linked }
 }

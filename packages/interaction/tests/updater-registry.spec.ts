@@ -9,9 +9,9 @@ import type { SpawnOutcome } from '../src/updater/io.ts'
 import { updaterInternals } from '../src/updater/io.ts'
 import {
   fetchPackument,
-  harnessLineOf,
   normalizePackument,
   publishedAt,
+  releaseFacts,
   type Packument,
 } from '../src/updater/registry.ts'
 
@@ -29,6 +29,7 @@ const RAW_DOCUMENT = {
     },
     '0.2.0': 'not-a-manifest',
     '0.3.0': { dependencies: 'not-an-object' },
+    '0.4.0': { dependencies: { '@deepseek-ai/dsh-agent-presets': '^0.1.1-rc.2' } },
   },
   time: {
     created: '2026-08-20T00:00:00.000Z',
@@ -90,6 +91,32 @@ describe('updater/registry normalizePackument', () => {
       time: {},
     })
     expect(packument?.versions['1.0.0']).toEqual({ good: '1.2.3' })
+  })
+
+  it('folds the npm-view shapes into the version-keyed map', () => {
+    // The real `npm view <pkg> --json` emits versions as an ARRAY of
+    // version strings (manifest fields ride only on the top level) — the
+    // rehearsal caught the parser assuming the registry API's map of
+    // manifests; a full-manifest array folds the same way.
+    const stringList = normalizePackument({
+      'dist-tags': { rc: '0.1.0-rc.2' },
+      versions: ['0.1.0-rc.1', '0.1.0-rc.2'],
+      time: { '0.1.0-rc.2': '2026-08-20T00:00:00.000Z' },
+    })
+    expect(Object.keys(stringList?.versions ?? {})).toEqual(['0.1.0-rc.1', '0.1.0-rc.2'])
+    expect(stringList?.versions['0.1.0-rc.2']).toBeUndefined()
+    const manifestList = normalizePackument({
+      'dist-tags': { rc: '0.1.0-rc.2' },
+      versions: [
+        { version: '0.1.0-rc.2', dependencies: { '@dsh-blue/blue-core': '^0.1.0-rc.2' } },
+        '0.1.0-rc.3',
+        { name: 'broken' },
+        42,
+      ],
+      time: {},
+    })
+    expect(manifestList?.versions['0.1.0-rc.2']).toEqual({ '@dsh-blue/blue-core': '^0.1.0-rc.2' })
+    expect(Object.keys(manifestList?.versions ?? {})).toEqual(['0.1.0-rc.2', '0.1.0-rc.3'])
   })
 })
 
@@ -211,13 +238,70 @@ describe('updater/registry fetchPackument', () => {
   })
 })
 
-describe('updater/registry selectors', () => {
+describe('updater/registry releaseFacts', () => {
   const packument: Packument = normalizePackument(RAW_DOCUMENT)!
 
-  it('harnessLineOf reads the exact pin and rejects ranges', () => {
-    expect(harnessLineOf(packument, '0.1.0-rc.2')).toBe('0.1.1-rc.2')
-    expect(harnessLineOf(packument, '0.3.0')).toBeUndefined()
-    expect(harnessLineOf(packument, '9.9.9')).toBeUndefined()
+  it('reads the set and harness pin from the packument without a query', async () => {
+    const release = await releaseFacts(packument, '0.1.0-rc.2')
+    expect(release.names).toEqual([
+      '@dsh-blue/blue',
+      '@dsh-blue/blue-core',
+    ])
+    expect(release.harnessLine).toBe('0.1.1-rc.2')
+    expect((await releaseFacts(packument, '0.1.0-rc.1')).harnessLine).toBe('0.1.1-rc.1')
+    // A range spec carries no pin.
+    expect((await releaseFacts(packument, '0.4.0')).harnessLine).toBeUndefined()
+  })
+
+  it('falls back to the targeted dependencies query for version-list packuments', async () => {
+    const queries: string[][] = []
+    updaterInternals.spawnOnce = (cmd, args) => {
+      queries.push([...args])
+      return Promise.resolve({
+        code: 0,
+        signal: null,
+        stdout: JSON.stringify({
+          '@dsh-blue/blue-api': '^0.1.0-rc.3',
+          '@dsh-blue/blue-core': '^0.1.0-rc.3',
+          '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.3',
+        }),
+        stderr: '',
+        timedOut: false,
+      })
+    }
+    const listed = normalizePackument({
+      'dist-tags': { rc: '0.1.0-rc.3' },
+      versions: ['0.1.0-rc.2', '0.1.0-rc.3'],
+      time: {},
+    })!
+    const release = await releaseFacts(listed, '0.1.0-rc.3')
+    expect(queries).toEqual([['view', '@dsh-blue/blue@0.1.0-rc.3', 'dependencies', '--json']])
+    expect(release.names).toEqual(['@dsh-blue/blue', '@dsh-blue/blue-api', '@dsh-blue/blue-core'])
+    expect(release.harnessLine).toBe('0.1.1-rc.3')
+  })
+
+  it('survives a failed targeted query with an empty set', async () => {
+    updaterInternals.spawnOnce = () =>
+      Promise.resolve({ code: 1, signal: null, stdout: '', stderr: 'ETIMEDOUT', timedOut: false })
+    const listed = normalizePackument({ 'dist-tags': {}, versions: ['0.1.0-rc.3'], time: {} })!
+    const release = await releaseFacts(listed, '0.1.0-rc.3')
+    expect(release.names).toEqual(['@dsh-blue/blue'])
+    expect(release.harnessLine).toBeUndefined()
+  })
+
+  it('survives unparseable targeted-query output with an empty set', async () => {
+    updaterInternals.spawnOnce = () =>
+      Promise.resolve({ code: 0, signal: null, stdout: '<html>maintenance</html>', stderr: '', timedOut: false })
+    const listed = normalizePackument({ 'dist-tags': {}, versions: ['0.1.0-rc.3'], time: {} })!
+    const release = await releaseFacts(listed, '0.1.0-rc.3')
+    expect(release.names).toEqual(['@dsh-blue/blue'])
+  })
+
+  it('survives a non-object targeted-query answer with an empty set', async () => {
+    updaterInternals.spawnOnce = () =>
+      Promise.resolve({ code: 0, signal: null, stdout: 'null', stderr: '', timedOut: false })
+    const listed = normalizePackument({ 'dist-tags': {}, versions: ['0.1.0-rc.3'], time: {} })!
+    expect((await releaseFacts(listed, '0.1.0-rc.3')).names).toEqual(['@dsh-blue/blue'])
   })
 
   it('publishedAt parses timestamps and reports unknowns', () => {

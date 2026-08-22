@@ -49,7 +49,13 @@ export type RegistryResult = { ok: true; packument: Packument } | { ok: false; r
 
 /**
  * Normalize a raw npm-view or registry-API document into a
- * {@link Packument}; `undefined` when the shape is foreign.
+ * {@link Packument}; `undefined` when the shape is foreign. The two
+ * sources differ in `versions`: the registry API keys full manifests by
+ * version string; `npm view --json` emits an ARRAY of version STRINGS
+ * (the manifest fields ride only on the top level, for the newest
+ * release) — both fold into the version-keyed map, and the npm-view
+ * shape leaves per-version dependencies to
+ * {@link releaseFacts}'s targeted query.
  * @param raw - the parsed JSON document.
  * @returns the packument, or `undefined` when required fields are absent.
  */
@@ -63,18 +69,31 @@ export function normalizePackument(raw: unknown): Packument | undefined {
   if (typeof versions !== 'object' || versions === null) return undefined
   if (typeof time !== 'object' || time === null) return undefined
   const normalizedVersions: Record<string, Record<string, string> | undefined> = {}
-  for (const [version, manifest] of Object.entries(versions as Record<string, unknown>)) {
-    if (typeof manifest !== 'object' || manifest === null) continue
-    const dependencies = (manifest as Record<string, unknown>).dependencies
+  const claim = (version: unknown, manifest: unknown): void => {
+    if (typeof version !== 'string') return
+    const dependencies = typeof manifest === 'object' && manifest !== null
+      ? (manifest as Record<string, unknown>).dependencies
+      : undefined
     if (typeof dependencies !== 'object' || dependencies === null) {
       normalizedVersions[version] = undefined
-      continue
+      return
     }
     const deps: Record<string, string> = {}
     for (const [name, spec] of Object.entries(dependencies as Record<string, unknown>)) {
       if (typeof spec === 'string') deps[name] = spec
     }
     normalizedVersions[version] = deps
+  }
+  if (Array.isArray(versions)) {
+    // npm view: version strings, or (defensively) full manifests.
+    for (const entry of versions) {
+      if (typeof entry === 'string') claim(entry, undefined)
+      else if (typeof entry === 'object' && entry !== null) claim((entry as Record<string, unknown>).version, entry)
+    }
+  } else {
+    for (const [version, manifest] of Object.entries(versions as Record<string, unknown>)) {
+      claim(version, manifest)
+    }
   }
   const normalizedTime: Record<string, string> = {}
   for (const [key, value] of Object.entries(time as Record<string, unknown>)) {
@@ -145,20 +164,61 @@ export async function fetchPackument(): Promise<RegistryResult> {
   return last
 }
 
+/** What a release's own manifest says about its set and harness pin. */
+export interface ReleaseFacts {
+  /** The release's lockstep set: the bundle plus its `@dsh-blue/*` deps. */
+  readonly names: readonly string[]
+  /**
+   * The exact pinned harness line (`@deepseek-ai/dsh-agent-presets`); a
+   * range spec carries no pin and reads as absent.
+   */
+  readonly harnessLine: string | undefined
+}
+
 /**
- * The exact pinned harness line a bundle version rides, read from its
- * published manifest: the `@deepseek-ai/dsh-agent-presets` dependency
- * every Blue release pins exactly (lockstep, the version.spec model).
- * A range spec (`^…`) carries no pin and reads as absent — the host
- * gate then warns instead of comparing against a guess.
+ * Read one release's facts. The per-version dependency block comes from
+ * the packument when the source carries it (the registry API shape) and
+ * otherwise from one targeted `npm view <pkg>@<version> dependencies`
+ * query (the npm-view shape lists versions without their manifests).
+ * The set is derived per release because it GROWS — rc.2 shipped five
+ * packages, blue-api joins later — and a hardcoded list would misjudge
+ * every install that predates the newest member (the rehearsal
+ * finding: the verify step flagged a healthy rc.2 tree and the rollback
+ * asked the registry for a package it never served).
  * @param packument - the normalized packument.
- * @param version - the bundle version to inspect.
- * @returns the pinned harness line, or `undefined` when unknown.
+ * @param version - the bundle version.
+ * @returns the release's set names and harness pin.
  */
-export function harnessLineOf(packument: Packument, version: string): string | undefined {
-  const spec = packument.versions[version]?.['@deepseek-ai/dsh-agent-presets']
-  if (spec === undefined) return undefined
-  return /^(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(spec)?.[1]
+export async function releaseFacts(packument: Packument, version: string): Promise<ReleaseFacts> {
+  let deps = packument.versions[version]
+  if (deps === undefined) {
+    deps = await viewDependencies(version)
+  }
+  const names = [BUNDLE_PACKAGE, ...deps === undefined ? [] : Object.keys(deps).filter(name => name.startsWith('@dsh-blue/'))]
+  const spec = deps?.['@deepseek-ai/dsh-agent-presets']
+  return {
+    names,
+    harnessLine: spec === undefined ? undefined : /^(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(spec)?.[1],
+  }
+}
+
+/** One targeted manifest query: `npm view <pkg>@<version> dependencies`. */
+async function viewDependencies(version: string): Promise<Record<string, string> | undefined> {
+  const outcome = await updaterInternals.spawnOnce('npm', ['view', `${BUNDLE_PACKAGE}@${version}`, 'dependencies', '--json'], {
+    timeoutMs: VIEW_TIMEOUT_MS,
+  })
+  if (outcome.spawnError !== undefined || outcome.code !== 0) return undefined
+  try {
+    const parsed: unknown = JSON.parse(outcome.stdout)
+    if (typeof parsed !== 'object' || parsed === null) return undefined
+    const deps: Record<string, string> = {}
+    for (const [name, spec] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof spec === 'string') deps[name] = spec
+    }
+    return deps
+  } catch {
+    return undefined
+  }
 }
 
 /**

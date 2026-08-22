@@ -8,7 +8,6 @@ import { describe, expect, it } from 'vitest'
 import type { Packument } from '../src/updater/registry.ts'
 import { normalizePackument } from '../src/updater/registry.ts'
 import type { ProfileFacts } from '../src/updater/profile.ts'
-import { BLUE_PACKAGE_NAMES } from '../src/updater/profile.ts'
 import {
   checkCooldown,
   checkHostLine,
@@ -36,11 +35,20 @@ const PACKUMENT: Packument = normalizePackument({
   },
 })!
 
+/** The rc.2 release set (five packages — blue-api joins with rc.3). */
+const RC2_NAMES = [
+  '@dsh-blue/blue',
+  '@dsh-blue/blue-core',
+  '@dsh-blue/blue-interaction',
+  '@dsh-blue/blue-transcript',
+  '@dsh-blue/blue-app',
+]
+
 /** A clean npm-only profile running rc.2. */
 function healthyFacts(version = '0.1.0-rc.2'): ProfileFacts {
   const specs: Record<string, string> = {}
   const installed: Record<string, string> = {}
-  for (const name of BLUE_PACKAGE_NAMES) {
+  for (const name of RC2_NAMES) {
     specs[name] = version
     installed[name] = version
   }
@@ -57,13 +65,13 @@ describe('updater/preflight checkLinkPollution', () => {
     const verdict = checkLinkPollution(facts)
     expect(verdict.blocking).toBe(true)
     expect(verdict.message).toContain('@dsh-blue/blue')
-    expect(verdict.message).toContain(repairRecipe('<version>'))
+    expect(verdict.message).toContain(repairRecipe(['<the names above>'], '<version>'))
   })
 })
 
 describe('updater/preflight checkSetConsistency', () => {
   it('passes when all six packages sit at one version', () => {
-    expect(checkSetConsistency(healthyFacts(), '0.1.0-rc.2').blocking).toBe(false)
+    expect(checkSetConsistency(healthyFacts(), '0.1.0-rc.2', RC2_NAMES).blocking).toBe(false)
   })
 
   it('blocks a mixed set', () => {
@@ -71,18 +79,24 @@ describe('updater/preflight checkSetConsistency', () => {
       ...healthyFacts(),
       installed: { ...healthyFacts().installed, '@dsh-blue/blue-core': '0.1.0-rc.1' },
     }
-    const verdict = checkSetConsistency(facts, '0.1.0-rc.2')
+    const verdict = checkSetConsistency(facts, '0.1.0-rc.2', RC2_NAMES)
     expect(verdict.blocking).toBe(true)
     expect(verdict.message).toContain('0.1.0-rc.2')
     expect(verdict.message).toContain('0.1.0-rc.1')
     expect(verdict.message).toContain('running 0.1.0-rc.2')
   })
 
-  it('blocks a set with missing packages', () => {
+  it('passes a set with a merely missing member (the install restores it)', () => {
     const facts: ProfileFacts = { ...healthyFacts(), installed: { ...healthyFacts().installed, '@dsh-blue/blue-app': undefined } }
-    const verdict = checkSetConsistency(facts, '0.1.0-rc.2')
+    expect(checkSetConsistency(facts, '0.1.0-rc.2', RC2_NAMES).blocking).toBe(false)
+  })
+
+  it('blocks when nothing @dsh-blue is installed, with the target-set recipe', () => {
+    const facts: ProfileFacts = { ...healthyFacts(), installed: {} }
+    const verdict = checkSetConsistency(facts, '0.1.0-rc.2', RC2_NAMES)
     expect(verdict.blocking).toBe(true)
-    expect(verdict.message).toContain('1 package(s) missing')
+    expect(verdict.message).toContain('no @dsh-blue packages are installed')
+    expect(verdict.message).toContain(`@dsh-blue/blue-app@<version>`)
   })
 })
 
@@ -181,6 +195,7 @@ describe('updater/preflight runPreflight', () => {
   it('runs all gates in order', () => {
     const verdicts = runPreflight({
       facts: healthyFacts(),
+      packageNames: RC2_NAMES,
       currentVersion: '0.1.0-rc.2',
       target: '0.1.0-rc.3',
       packument: PACKUMENT,
@@ -201,6 +216,7 @@ describe('updater/preflight runPreflight', () => {
   it('carries the first blocking verdict for the caller', () => {
     const verdicts = runPreflight({
       facts: { ...healthyFacts(), linked: ['@dsh-blue/blue'] },
+      packageNames: RC2_NAMES,
       currentVersion: '0.1.0-rc.2',
       target: '0.1.0-rc.3',
       packument: PACKUMENT,

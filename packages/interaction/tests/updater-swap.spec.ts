@@ -13,7 +13,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempTracked } from '../../core/tests/temp-dir.ts'
 import type { InteractiveChild, SpawnOutcome } from '../src/updater/io.ts'
 import { updaterInternals } from '../src/updater/io.ts'
-import { BLUE_PACKAGE_NAMES } from '../src/updater/profile.ts'
 import {
   bootSmoke,
   classifyInstallFailure,
@@ -118,7 +117,7 @@ function makeWorld(fromVersion = '0.1.0-rc.2') {
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'profile', dependencies: { '@dsh-blue/blue': fromVersion } }))
   writeFileSync(join(root, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
   const installAt = (version: string): void => {
-    for (const name of BLUE_PACKAGE_NAMES) {
+    for (const name of version.endsWith('rc.3') ? RC3_NAMES : RC2_NAMES) {
       const dir = join(root, 'node_modules', name)
       mkdirSync(dir, { recursive: true })
       writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, version }))
@@ -175,6 +174,18 @@ function makeWorld(fromVersion = '0.1.0-rc.2') {
   }
 }
 
+/** The rc.2 release set (five packages — blue-api joins with rc.3). */
+const RC2_NAMES = [
+  '@dsh-blue/blue',
+  '@dsh-blue/blue-core',
+  '@dsh-blue/blue-interaction',
+  '@dsh-blue/blue-transcript',
+  '@dsh-blue/blue-app',
+]
+
+/** The rc.3 release set (six packages — blue-api joins). */
+const RC3_NAMES = ['@dsh-blue/blue-api', ...RC2_NAMES]
+
 /** The standard swap input against a world. */
 function swapInput(world: ReturnType<typeof makeWorld>, overrides: Partial<Parameters<typeof performSwap>[0]> = {}) {
   return {
@@ -183,6 +194,7 @@ function swapInput(world: ReturnType<typeof makeWorld>, overrides: Partial<Param
     dshBin: '/usr/bin/dsh',
     fromVersion: '0.1.0-rc.2',
     toVersion: '0.1.0-rc.3',
+    packageNames: RC3_NAMES,
     bootMarker: 'deepseek-chat marker',
     ...overrides,
   }
@@ -386,7 +398,7 @@ describe('updater/swap performSwap', () => {
     expectRollback(outcome, 'cooldown window')
     const rollback = world.spawns.filter(call => call.args[0] === 'plugin').pop()
     expect(rollback?.args.slice(0, 4)).toEqual(['plugin', '--profile', 'blue', 'add'])
-    for (const name of BLUE_PACKAGE_NAMES) {
+    for (const name of RC3_NAMES) {
       expect(rollback?.args).toContain(`${name}@0.1.0-rc.2`)
     }
     // The snapshot's package.json was restored before the reinstall.

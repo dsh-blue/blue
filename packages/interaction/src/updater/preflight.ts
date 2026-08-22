@@ -3,7 +3,7 @@
  * the caller gathered through the io seam, so every lane rule and
  * release lesson has one testable home. The gates encode, in order:
  * the lane rule (`link:` pollution refuses — the Frankenstein boot),
- * set consistency (six packages, one version), target existence, the
+ * set consistency (the release's set, one version), target existence, the
  * D51 version floor (never rc.1), the host harness line (the global dsh
  * CLI must meet the bundle's pin), and the pnpm cooldown forecast (a
  * fresh release is hard-refused by `minimumReleaseAge`; the user gets
@@ -14,7 +14,6 @@
 
 import type { Packument } from './registry.ts'
 import type { ProfileFacts } from './profile.ts'
-import { BLUE_PACKAGE_NAMES } from './profile.ts'
 import { compareVersions, isVersion, VERSION_FLOOR } from './version.ts'
 
 /** pnpm 11's default cooldown window, in minutes (the R4 measurement). */
@@ -42,8 +41,8 @@ export interface PassingVerdict {
 export type Verdict = BlockingVerdict | PassingVerdict
 
 /** The repair recipe every blocking lane/set verdict offers. */
-export function repairRecipe(version: string): string {
-  const specs = BLUE_PACKAGE_NAMES.map(name => `${name}@${version}`).join(' ')
+export function repairRecipe(names: readonly string[], version: string): string {
+  const specs = names.map(name => `${name}@${version}`).join(' ')
   return `repair: dsh plugin --profile <name> add ${specs} (reinstall the full set by exact version) or delete the profile directory and re-add`
 }
 
@@ -58,31 +57,39 @@ export function checkLinkPollution(facts: ProfileFacts): Verdict {
   return {
     code: 'link-pollution',
     blocking: true,
-    message: `the profile mixes link/file specs (${facts.linked.join(', ')}) — npm upgrades half-overwrite them and boot a broken tree; refuse to update\n${repairRecipe('<version>')}`,
+    message: `the profile mixes link/file specs (${facts.linked.join(', ')}) — npm upgrades half-overwrite them and boot a broken tree; refuse to update\n${repairRecipe(['<the names above>'], '<version>')}`,
   }
 }
 
 /**
- * Gate 2 — set consistency: all six @dsh-blue packages installed at one
- * version. A mixed set is the Frankenstein tree (or a half-finished
- * previous update); the fix is the full-set reinstall, not an increment.
+ * Gate 2 — set consistency: the DISCOVERED install must be one coherent
+ * version. Mixed versions are the Frankenstein tree (a half-overwritten
+ * previous update); a bundle that is not installed at all leaves nothing
+ * to update from. A merely missing member is benign — the next install
+ * pulls the target release's full dependency set — so the gate judges
+ * coherence, not membership (the post-install verify owns membership,
+ * against the target release's set).
+ * @param facts - the profile facts.
+ * @param currentVersion - the running version, for the message.
+ * @param names - the target release's set, the repair recipe's fallback
+ * when nothing is installed to enumerate.
  */
-export function checkSetConsistency(facts: ProfileFacts, currentVersion: string): Verdict {
-  const versions = new Set<string>()
-  let missing = 0
-  for (const name of BLUE_PACKAGE_NAMES) {
-    const version = facts.installed[name]
-    if (version === undefined) {
-      missing += 1
-      continue
-    }
-    versions.add(version)
+export function checkSetConsistency(facts: ProfileFacts, currentVersion: string, names: readonly string[]): Verdict {
+  const discovered = Object.entries(facts.installed).filter(([, version]) => version !== undefined)
+  const versions = new Set(discovered.map(([, version]) => version))
+  if (facts.installed['@dsh-blue/blue'] !== undefined && versions.size === 1) {
+    return { code: 'set-consistency', blocking: false }
   }
-  if (missing === 0 && versions.size === 1) return { code: 'set-consistency', blocking: false }
+  const recipeNames = discovered.length > 0 ? discovered.map(([name]) => name) : names
+  const detail = discovered.length === 0
+    ? 'no @dsh-blue packages are installed'
+    : facts.installed['@dsh-blue/blue'] === undefined
+      ? 'the @dsh-blue/blue bundle itself is not installed'
+      : `the installed @dsh-blue set mixes versions (${[...versions].join(' + ')}; running ${currentVersion})`
   return {
     code: 'set-consistency',
     blocking: true,
-    message: `the installed @dsh-blue set is not one version (${missing > 0 ? `${missing} package(s) missing` : [...versions].join(' + ')}; running ${currentVersion})\n${repairRecipe('<version>')}`,
+    message: `${detail}\n${repairRecipe(recipeNames, '<version>')}`,
   }
 }
 
@@ -190,6 +197,8 @@ export function checkCooldown(target: string, input: CooldownInput): Verdict {
 /** Everything the composed pre-flight needs. */
 export interface PreflightInput {
   readonly facts: ProfileFacts
+  /** The target release's lockstep set (see `bundleSetNames`). */
+  readonly packageNames: readonly string[]
   /** The running version (`BLUE_VERSION`). */
   readonly currentVersion: string
   /** The candidate target version. */
@@ -208,7 +217,7 @@ export interface PreflightInput {
 export function runPreflight(input: PreflightInput): Verdict[] {
   return [
     checkLinkPollution(input.facts),
-    checkSetConsistency(input.facts, input.currentVersion),
+    checkSetConsistency(input.facts, input.currentVersion, input.packageNames),
     checkTargetExists(input.packument, input.target),
     checkVersionFloor(input.target),
     checkHostLine(input.host),

@@ -12,7 +12,6 @@ import { updaterInternals } from '../src/updater/io.ts'
 import {
   appendUpdateLog,
   backupDir,
-  BLUE_PACKAGE_NAMES,
   dshHome,
   findDshBin,
   profileNameFromArgv,
@@ -49,9 +48,18 @@ function installedJson(version: string): string {
   return JSON.stringify({ name: 'pkg', version })
 }
 
-/** Install all six packages at one version inside a fixture root. */
+/** The rc.2 release set (five packages — blue-api joins with rc.3). */
+const RC2_NAMES = [
+  '@dsh-blue/blue',
+  '@dsh-blue/blue-core',
+  '@dsh-blue/blue-interaction',
+  '@dsh-blue/blue-transcript',
+  '@dsh-blue/blue-app',
+]
+
+/** Install the release set at one version inside a fixture root. */
 function installSet(root: string, version: string): void {
-  for (const name of BLUE_PACKAGE_NAMES) {
+  for (const name of RC2_NAMES) {
     const dir = join(root, 'node_modules', name)
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'package.json'), installedJson(version))

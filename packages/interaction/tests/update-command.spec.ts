@@ -18,7 +18,6 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { mkdtempTracked } from '../../core/tests/temp-dir.ts'
 import * as updateCheck from '../src/updater/check.ts'
 import { updaterInternals, type InteractiveChild, type SpawnOutcome } from '../src/updater/io.ts'
-import { BLUE_PACKAGE_NAMES } from '../src/updater/profile.ts'
 import { registerUpdateCommand, UpdatePanel } from '../src/update-command.ts'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
 import type { BlueTheme, BlueComponents, BlueKeymap } from '@dsh-blue/blue-core'
@@ -29,6 +28,18 @@ const REAL = { ...updaterInternals }
 afterEach(() => {
   Object.assign(updaterInternals, REAL)
 })
+
+/** The rc.2 release set (five packages — blue-api joins with rc.3). */
+const RC2_NAMES = [
+  '@dsh-blue/blue',
+  '@dsh-blue/blue-core',
+  '@dsh-blue/blue-interaction',
+  '@dsh-blue/blue-transcript',
+  '@dsh-blue/blue-app',
+]
+
+/** The rc.3 release set (six packages — blue-api joins). */
+const RC3_NAMES = ['@dsh-blue/blue-api', ...RC2_NAMES]
 
 /** A spawn success. */
 function ok(): SpawnOutcome {
@@ -66,12 +77,23 @@ class FakeChild implements InteractiveChild {
 
 /** The registry document variants the tests switch between. */
 function packumentJson(options: { rcTag?: string; time?: Record<string, string> } = {}): string {
+  // The dependency blocks mirror the real registry: rc.2 shipped the
+  // four-package set, rc.3 adds blue-api (bundleSetNames derives from
+  // these).
+  const dshDeps = { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.2' }
+  const rc2Deps = {
+    ...dshDeps,
+    '@dsh-blue/blue-core': '^0.1.0-rc.2',
+    '@dsh-blue/blue-interaction': '^0.1.0-rc.2',
+    '@dsh-blue/blue-transcript': '^0.1.0-rc.2',
+    '@dsh-blue/blue-app': '^0.1.0-rc.2',
+  }
   return JSON.stringify({
     'dist-tags': { ...(options.rcTag === undefined ? {} : { rc: options.rcTag }), latest: '0.1.0-rc.2' },
     versions: {
       '0.1.0-rc.1': { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.1' } },
-      '0.1.0-rc.2': { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.2' } },
-      '0.1.0-rc.3': { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.2' } },
+      '0.1.0-rc.2': { dependencies: rc2Deps },
+      '0.1.0-rc.3': { dependencies: { ...rc2Deps, '@dsh-blue/blue-api': '^0.1.0-rc.3' } },
     },
     time: {
       '0.1.0-rc.2': '2026-08-20T00:00:00.000Z',
@@ -95,16 +117,14 @@ async function mountWorld(options: {
   mkdirSync(join(root, 'node_modules', '@dsh-blue', 'blue'), { recursive: true })
   writeFileSync(join(root, 'node_modules', '@dsh-blue', 'blue', 'cordis.patch.yml'), "rows:\n")
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'profile', dependencies: { '@dsh-blue/blue': '0.1.0-rc.2' } }))
-  for (const name of BLUE_PACKAGE_NAMES) {
-    const dir = join(root, 'node_modules', name)
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, version: '0.1.0-rc.2' }))
-  }
   const installAt = (version: string): void => {
-    for (const name of BLUE_PACKAGE_NAMES) {
-      writeFileSync(join(root, 'node_modules', name, 'package.json'), JSON.stringify({ name, version }))
+    for (const name of version.endsWith('rc.3') ? RC3_NAMES : RC2_NAMES) {
+      const dir = join(root, 'node_modules', name)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, version }))
     }
   }
+  installAt('0.1.0-rc.2')
 
   const now = Date.parse('2026-08-25T00:00:00.000Z')
   let clock = now
@@ -258,16 +278,16 @@ describe('/update early verdicts', () => {
   it('rejects a missing channel tag', async () => {
     const world = await mountWorld({ packument: packumentJson({ rcTag: '0.1.0-rc.2' }) })
     const result = await world.run('/update 0.9.9')
-    if (result?.kind === 'error') expect(result.text).toContain('is not published')
-    else throw new Error('expected error')
+    expect(result).toEqual({ kind: 'success' })
+    expect(overlayRows(world.screen)).toContain('is not published')
     world.dispose()
   })
 
   it('refuses a target below the D51 floor', async () => {
     const world = await mountWorld()
     const result = await world.run('/update 0.1.0-rc.1')
-    if (result?.kind === 'error') expect(result.text).toContain('D51')
-    else throw new Error('expected error')
+    expect(result).toEqual({ kind: 'success' })
+    expect(overlayRows(world.screen)).toContain('D51')
     world.dispose()
   })
 
@@ -283,6 +303,23 @@ describe('/update early verdicts', () => {
     world.dispose()
   })
 
+  it('blocks on a missing-package profile with the repair recipe', async () => {
+    // A half-missing tree: the set-consistency gate blocks, and with the
+    // bundle install itself gone the panel header falls back to the
+    // running version for its from→to row.
+    const world = await mountWorld()
+    const { rmSync } = await import('node:fs')
+    rmSync(join(world.root, 'node_modules', '@dsh-blue', 'blue', 'package.json'))
+    rmSync(join(world.root, 'node_modules', '@dsh-blue', 'blue-app', 'package.json'))
+    const result = await world.run('/update 0.1.0-rc.3')
+    expect(result).toEqual({ kind: 'success' })
+    const rows = overlayRows(world.screen)
+    expect(rows).toContain('the @dsh-blue/blue bundle itself is not installed')
+    expect(rows).toContain('repair: dsh plugin')
+    expect(rows).toContain('v0.1.0-rc.2 → v0.1.0-rc.3')
+    world.dispose()
+  })
+
   it('answers up to date when the channel tag points below the running version', async () => {
     // The tag-below-floor shape only bites once the floor rises above the
     // running version; for a current tree it reads as plain up-to-date.
@@ -292,36 +329,42 @@ describe('/update early verdicts', () => {
     world.dispose()
   })
 
-  it('refuses a link-polluted profile with the repair recipe', async () => {
+  it('blocks a link-polluted profile on the panel with the repair recipe', async () => {
     const world = await mountWorld()
     const manifest = JSON.parse(String(updaterInternals.readTextFile(join(world.root, 'package.json')))) as Record<string, unknown>
     manifest.dependencies = { '@dsh-blue/blue': 'link:../../blue/packages/bundle/blue' }
     updaterInternals.writeTextFile(join(world.root, 'package.json'), JSON.stringify(manifest))
     const result = await world.run()
-    if (result?.kind === 'error') {
-      expect(result.text).toContain('link/file specs')
-      expect(result.text).toContain('repair:')
-    } else throw new Error('expected error')
+    // The verdict speaks through the panel (a result line would truncate
+    // the recipe); the command itself resolves success-no-text.
+    expect(result).toEqual({ kind: 'success' })
+    const rows = overlayRows(world.screen)
+    expect(rows).toContain('the profile mixes link/file specs (@dsh-blue/blue)')
+    expect(rows).toContain('repair: dsh plugin')
+    expect(rows).toContain('nothing was changed')
+    // Esc closes the blocked panel through the bound restore path.
+    const component = world.screen.overlays.at(-1)?.component as { handleInput(data: string): void } | undefined
+    expect(() => component?.handleInput(KEY.escape)).not.toThrow()
     world.dispose()
   })
 
-  it('blocks on a stale host with the exact upgrade command', async () => {
+  it('blocks on a stale host with the exact upgrade command on the panel', async () => {
     const world = await mountWorld({ hostVersion: 'dsh 0.1.1-rc.1' })
     const result = await world.run()
-    if (result?.kind === 'error') expect(result.text).toContain('npm i -g @deepseek-ai/dsh@0.1.1-rc.2')
-    else throw new Error('expected error')
+    expect(result).toEqual({ kind: 'success' })
+    expect(overlayRows(world.screen)).toContain('npm i -g @deepseek-ai/dsh@0.1.1-rc.2')
     world.dispose()
   })
 
-  it('blocks inside the cooldown window with the ETA', async () => {
+  it('blocks inside the cooldown window with the ETA on the panel', async () => {
     const world = await mountWorld({
       packument: packumentJson({ rcTag: '0.1.0-rc.3', time: { '0.1.0-rc.3': '2026-08-24T23:00:00.000Z' } }),
     })
     const result = await world.run()
-    if (result?.kind === 'error') {
-      expect(result.text).toContain('minimumReleaseAge')
-      expect(result.text).toContain('2026-08-25 23:00')
-    } else throw new Error('expected error')
+    expect(result).toEqual({ kind: 'success' })
+    const rows = overlayRows(world.screen)
+    expect(rows).toContain('minimumReleaseAge')
+    expect(rows).toContain('2026-08-25 23:00')
     world.dispose()
   })
 
@@ -419,10 +462,26 @@ describe('/update confirm and swap', () => {
     form.handleInput('y')
     form.handleInput(KEY.enter)
     const execution = await pending
-    if (execution?.result?.kind === 'error') {
-      expect(execution.result.text).toContain('cooldown window')
-      expect(execution.result.text).toContain('rolled back to 0.1.0-rc.2')
-    } else throw new Error('expected error')
+    // The result line stays a short summary; the panel carries the recipe.
+    expect(execution?.result).toEqual({ kind: 'error', text: 'update failed — rolled back to v0.1.0-rc.2' })
+    const rows = overlayRows(world.screen)
+    expect(rows).toContain('cooldown window')
+    expect(rows).toContain('rolled back to 0.1.0-rc.2')
+    world.dispose()
+  })
+
+  it('reports the recipe-in-panel summary when the rollback itself fails', async () => {
+    const world = await mountWorld({
+      installBehavior: () => ({ code: 1, signal: null, stdout: '', stderr: 'ERR_PNPM broken', timedOut: false }),
+    })
+    const pending = world.ctx.commands.execute(world.agent, '/update', [], new AbortController().signal)
+    const overlay = await world.waitOverlay()
+    const form = overlay as { handleInput(data: string): void }
+    form.handleInput('y')
+    form.handleInput(KEY.enter)
+    const execution = await pending
+    expect(execution?.result).toEqual({ kind: 'error', text: 'update failed — the repair recipe is in the update panel' })
+    expect(overlayRows(world.screen)).toContain('manual repair')
     world.dispose()
   })
 
@@ -497,8 +556,8 @@ describe('/update confirm and swap', () => {
       packument: packumentJson({ rcTag: '0.1.0-rc.3', time: { '0.1.0-rc.3': '2026-08-24T23:00:00.000Z' } }),
     })
     const result = await world.run()
-    expect(result?.kind).toBe('error')
-    if (result?.kind === 'error') expect(result.text).toContain('minimumReleaseAge')
+    expect(result).toEqual({ kind: 'success' })
+    expect(overlayRows(world.screen)).toContain('minimumReleaseAge')
     world.dispose()
   })
 
@@ -509,17 +568,24 @@ describe('/update confirm and swap', () => {
         packument: packumentJson({ rcTag: '0.1.0-rc.3', time: { '0.1.0-rc.3': '2026-08-24T23:00:00.000Z' } }),
       })
       const result = await world.run()
-      expect(result?.kind, probe).toBe('error')
-      if (result?.kind === 'error') expect(result.text, probe).toContain('minimumReleaseAge')
+      expect(result, probe).toEqual({ kind: 'success' })
+      expect(overlayRows(world.screen), probe).toContain('minimumReleaseAge')
       world.dispose()
     }
   })
 })
 
+/** Strip the fake theme's paint markers and any ANSI for row asserts. */
+const plain = (rows: readonly string[]): string =>
+  rows.join('\n').replace(/[\^_!]/g, '').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
+
+/** The last overlay's rendered rows, cleaned, if one is mounted. */
+function overlayRows(screen: FakeScreen): string {
+  const component = screen.overlays.at(-1)?.component as { render(width: number): string[] } | undefined
+  return plain(component?.render(120) ?? [])
+}
+
 describe('UpdatePanel', () => {
-  /** Strip the fake theme's `^`/`_`/`!` paint markers and any ANSI for row asserts. */
-  const plain = (rows: readonly string[]): string =>
-    rows.join('\n').replace(/[\^_!]/g, '').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
 
   /** Panel fakes from the shared context. */
   function panelFakes() {
@@ -565,6 +631,23 @@ describe('UpdatePanel', () => {
     panel.handleInput('\r')
     expect(closed).toHaveBeenCalledOnce()
     expect(panel.settledSummary()).toContain('restart dsh to apply')
+  })
+
+  it('renders a blocked verdict with close keys and a neutral summary', () => {
+    const fakes = panelFakes()
+    const panel = new UpdatePanel({ ...fakes, fromVersion: '0.1.0-rc.2', toVersion: '0.1.0-rc.3' })
+    panel.showBlocking('the profile mixes link/file specs (@dsh-blue/blue)\nrepair: dsh plugin --profile <name> add …')
+    const rows = plain(panel.render(100))
+    expect(rows).toContain('the profile mixes link/file specs (@dsh-blue/blue)')
+    expect(rows).toContain('repair: dsh plugin --profile <name> add …')
+    expect(rows).toContain('nothing was changed')
+    expect(rows).toContain('Esc to close')
+    expect(panel.settledSummary()).toContain('update blocked')
+    const closed = vi.fn()
+    panel.bindClose(closed)
+    panel.handleInput(KEY.escape)
+    expect(closed).toHaveBeenCalledOnce()
+    panel.invalidate()
   })
 
   it('renders the rollback row and its fail mark, and summarizes failures', () => {

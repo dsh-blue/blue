@@ -17,7 +17,7 @@
 
 import { join } from 'node:path'
 import { cleanOutput, updaterInternals, type InteractiveChild, type SpawnOutcome } from './io.ts'
-import { appendUpdateLog, backupDir, BLUE_PACKAGE_NAMES, readProfileFacts, restoreSnapshot, snapshotProfile } from './profile.ts'
+import { appendUpdateLog, backupDir, readProfileFacts, restoreSnapshot, snapshotProfile } from './profile.ts'
 import { repairRecipe } from './preflight.ts'
 import { compareVersions, VERSION_FLOOR } from './version.ts'
 
@@ -75,6 +75,8 @@ export interface SwapInput {
   readonly fromVersion: string
   /** The version to install. */
   readonly toVersion: string
+  /** The target release's lockstep set (see `bundleSetNames`). */
+  readonly packageNames: readonly string[]
   /**
    * The boot marker (the live default model string); absent degrades
    * the boot smoke to an alive-without-crash judgment.
@@ -296,7 +298,7 @@ export async function performSwap(input: SwapInput): Promise<SwapOutcome> {
 
   progress(input, 'verify', 'start')
   const facts = readProfileFacts(input.root)
-  const versions = new Set(BLUE_PACKAGE_NAMES.map(name => facts.installed[name]))
+  const versions = new Set(input.packageNames.map(name => facts.installed[name]))
   if (versions.size !== 1 || !versions.has(input.toVersion)) {
     progress(input, 'verify', 'fail')
     logLine(input.root, `post-install set check failed: ${JSON.stringify(facts.installed)}`)
@@ -337,14 +339,14 @@ async function rollback(input: SwapInput, reason: string, logPath: string): Prom
       kind: 'failed-no-rollback',
       fromVersion: input.fromVersion,
       toVersion: input.toVersion,
-      message: `${reason}; rollback refused (${input.fromVersion} predates ${VERSION_FLOOR}) — ${repairRecipe(VERSION_FLOOR)}`,
+      message: `${reason}; rollback refused (${input.fromVersion} predates ${VERSION_FLOOR}) — ${repairRecipe(input.packageNames, VERSION_FLOOR)}`,
       logPath,
     }
   }
   progress(input, 'rollback', 'start')
   logLine(input.root, `rolling back to ${input.fromVersion}: ${reason}`)
   restoreSnapshot(input.root)
-  const specs = BLUE_PACKAGE_NAMES.map(name => `${name}@${input.fromVersion}`)
+  const specs = input.packageNames.map(name => `${name}@${input.fromVersion}`)
   const reinstall = await updaterInternals.spawnOnce(
     input.dshBin,
     ['plugin', '--profile', input.profile, 'add', ...specs],
@@ -357,7 +359,7 @@ async function rollback(input: SwapInput, reason: string, logPath: string): Prom
       kind: 'rollback-incomplete',
       fromVersion: input.fromVersion,
       toVersion: input.toVersion,
-      message: `${reason}; rollback reinstall failed — ${classifyInstallFailure(tail(`${reinstall.stdout}${reinstall.stderr}`))}; manual repair:\n${repairRecipe(input.fromVersion)}`,
+      message: `${reason}; rollback reinstall failed — ${classifyInstallFailure(tail(`${reinstall.stdout}${reinstall.stderr}`))}; manual repair:\n${repairRecipe(input.packageNames, input.fromVersion)}`,
       logPath,
     }
   }
@@ -367,7 +369,7 @@ async function rollback(input: SwapInput, reason: string, logPath: string): Prom
       kind: 'rollback-incomplete',
       fromVersion: input.fromVersion,
       toVersion: input.toVersion,
-      message: `${reason}; rolled back but the import smoke still fails — manual repair:\n${repairRecipe(input.fromVersion)}`,
+      message: `${reason}; rolled back but the import smoke still fails — manual repair:\n${repairRecipe(input.packageNames, input.fromVersion)}`,
       logPath,
     }
   }

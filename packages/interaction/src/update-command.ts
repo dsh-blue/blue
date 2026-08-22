@@ -28,9 +28,9 @@ import { writeUpdateCheckState } from './updater/check.ts'
 import { updaterInternals } from './updater/io.ts'
 import { findDshBin, profileNameFromArgv, profileRoot, readProfileFacts } from './updater/profile.ts'
 import {
-  harnessLineOf,
   fetchPackument,
   publishedAt,
+  releaseFacts,
 } from './updater/registry.ts'
 import { resolveOffer, runPreflight } from './updater/preflight.ts'
 import { performSwap, type SwapOutcome, type SwapProgress, type SwapStep } from './updater/swap.ts'
@@ -58,6 +58,7 @@ export class UpdatePanel implements BlueFocusable {
 
   private readonly states = new Map<SwapStep, 'start' | 'ok' | 'fail'>()
   private outcome: SwapOutcome | undefined
+  private blockedMessage: string | undefined
   private onClose: (() => void) | undefined
 
   /**
@@ -82,21 +83,34 @@ export class UpdatePanel implements BlueFocusable {
     this.options.requestRender()
   }
 
+  /**
+   * Show a pre-flight blocking verdict instead of running anything. The
+   * verdicts carry multi-line repair recipes that a one-line command
+   * result would truncate away (the dogfood finding), so the panel —
+   * which renders every row — is the verdict's surface.
+   * @param message - the blocking verdict's full message.
+   */
+  showBlocking(message: string): void {
+    this.blockedMessage = message
+    this.options.requestRender()
+  }
+
   /** The one-line summary for the editor notice when the panel closes. */
   settledSummary(): string {
     const outcome = this.outcome
-    if (outcome === undefined) return 'update panel closed'
+    if (outcome === undefined) return this.blockedMessage === undefined ? 'update panel closed' : 'update blocked — nothing was changed'
     return outcome.kind === 'success'
       ? `updated to v${outcome.toVersion} — restart dsh to apply`
       : `update did not complete (${outcome.kind}) — log: ${outcome.logPath}`
   }
 
   /**
-   * Dispatch one input sequence: close keys work only once settled.
+   * Dispatch one input sequence: close keys work once the panel settled
+   * or was blocked from the start; mid-swap they must not fire.
    * @param data - the input sequence as read from the terminal.
    */
   handleInput(data: string): void {
-    if (this.outcome === undefined) return
+    if (this.outcome === undefined && this.blockedMessage === undefined) return
     if (this.options.keymap.matches(data, ACTION_CANCEL) || data === '\r' || data === 'q' || data === 'Q') {
       this.onClose?.()
     }
@@ -107,7 +121,7 @@ export class UpdatePanel implements BlueFocusable {
 
   /**
    * Render the framed panel: the from→to line, the step ladder, and —
-   * once settled — the outcome message rows and log path.
+   * once settled or blocked — the message rows and log path.
    * @param width - current viewport width in columns.
    * @returns one string per rendered row.
    */
@@ -116,6 +130,9 @@ export class UpdatePanel implements BlueFocusable {
     const colors = theme.colors
     const budget = Math.max(1, width - 4)
     const line = (text: string): string => `  ${components.truncateToWidth(text, budget)}`
+    // Message rows wrap instead of truncate: the repair recipes are the
+    // payload, and a clipped recipe is the dogfood finding (D52).
+    const wrapLine = (styled: string): string[] => components.wrapText(styled, budget).map(row => `  ${row}`)
     const body: string[] = [line(`v${fromVersion} → v${toVersion}`), '']
     for (const row of STEP_ROWS) {
       const state = this.states.get(row.step)
@@ -130,14 +147,23 @@ export class UpdatePanel implements BlueFocusable {
     if (outcome !== undefined) {
       body.push('')
       for (const text of outcome.message.split('\n')) {
-        body.push(line(colors.textStrong(text)))
+        body.push(...wrapLine(colors.textStrong(text)))
       }
       body.push(line(colors.textMuted(`log: ${outcome.logPath}`)))
     }
+    const blocked = this.blockedMessage
+    if (blocked !== undefined) {
+      body.push('')
+      for (const text of blocked.split('\n')) {
+        body.push(...wrapLine(colors.error(text)))
+      }
+      body.push(line(colors.textMuted('nothing was changed')))
+    }
+    const settled = outcome !== undefined || blocked !== undefined
     return framePanel(body, width, {
       title: 'Update Blue',
       titlePaint: colors.primary,
-      titleHint: outcome === undefined ? '· updating — do not close' : '· Esc to close',
+      titleHint: settled ? '· Esc to close' : '· updating — do not close',
       hintPaint: colors.textMuted,
       rulePaint: colors.primary,
     })
@@ -223,6 +249,7 @@ async function runSwapPanel(
     readonly dshBin: string
     readonly fromVersion: string
     readonly toVersion: string
+    readonly packageNames: readonly string[]
   },
 ): Promise<SwapOutcome> {
   const bootMarker = ctx.get('agentDefaultModel')?.currentSelection().model
@@ -354,23 +381,33 @@ async function runUpdateCommand(ctx: Context, requested: string): Promise<Comman
   if (dshBin === undefined) {
     return { kind: 'error', text: 'cannot find the dsh CLI — set DSH_BIN or put dsh on PATH' }
   }
-  const [hostOutput, cooldownMinutes] = await Promise.all([probeHostVersion(dshBin), probeCooldownMinutes(root)])
+  const [hostOutput, cooldownMinutes, release] = await Promise.all([
+    probeHostVersion(dshBin),
+    probeCooldownMinutes(root),
+    releaseFacts(packument, target),
+  ])
+  const packageNames = release.names
   const verdicts = runPreflight({
     facts,
     currentVersion: BLUE_VERSION,
     target,
     packument,
-    host: { hostVersion: hostOutput, requiredLine: harnessLineOf(packument, target) },
+    packageNames,
+    host: { hostVersion: hostOutput, requiredLine: release.harnessLine },
     cooldown: { publishedAt: publishedAt(packument, target), cooldownMinutes, now: updaterInternals.now() },
   })
+  const installedVersion = facts.installed['@dsh-blue/blue']
   const blocking = verdicts.find(verdict => verdict.blocking)
   if (blocking !== undefined) {
-    return { kind: 'error', text: blocking.message }
+    // The verdict's multi-line repair recipe is the payload; a one-line
+    // command result would truncate it away, so the panel carries it.
+    mountBlockedPanel(display, installedVersion ?? BLUE_VERSION, target, blocking.message)
+    return { kind: 'success' }
   }
   const warnings = verdicts.filter(verdict => !verdict.blocking && verdict.message !== undefined)
   // The set-consistency gate has already refused a profile whose bundle
   // install is missing, so the lookup cannot miss here.
-  const fromVersion = facts.installed['@dsh-blue/blue']!
+  const fromVersion = installedVersion!
 
   const hostLine = hostOutput?.trim()
   const detailParts = [
@@ -383,11 +420,48 @@ async function runUpdateCommand(ctx: Context, requested: string): Promise<Comman
     return { kind: 'success', text: 'update cancelled' }
   }
 
-  const outcome = await runSwapPanel(ctx, display, { root, profile, dshBin, fromVersion, toVersion: target })
+  const outcome = await runSwapPanel(ctx, display, { root, profile, dshBin, fromVersion, toVersion: target, packageNames })
   if (outcome.kind === 'success') {
     // The boot check stops offering what this session just installed.
     writeUpdateCheckState({ lastCheckAt: updaterInternals.now(), lastNotifiedVersion: target })
     return { kind: 'success', text: outcome.message }
   }
-  return { kind: 'error', text: outcome.message }
+  // The panel already shows the full multi-line outcome; the result line
+  // stays a short summary so the transcript never truncates mid-recipe.
+  return {
+    kind: 'error',
+    text: outcome.kind === 'rolled-back'
+      ? `update failed — rolled back to v${outcome.fromVersion}`
+      : 'update failed — the repair recipe is in the update panel',
+  }
+}
+
+/**
+ * Mount the panel in blocked mode for a pre-flight verdict: nothing ran,
+ * nothing changed, the recipe is readable.
+ * @param display - the display services.
+ * @param fromVersion - the installed version (for the from→to row).
+ * @param target - the refused target.
+ * @param message - the verdict's full multi-line message.
+ */
+function mountBlockedPanel(
+  display: NonNullable<ReturnType<typeof displayServices>>,
+  fromVersion: string,
+  target: string,
+  message: string,
+): void {
+  const panel = new UpdatePanel({
+    theme: display.theme,
+    components: display.components,
+    keymap: display.keymap,
+    requestRender: () => display.screen.requestRender(),
+    fromVersion,
+    toVersion: target,
+  })
+  const restore = mountEditorReplacement(panel)
+  panel.bindClose(() => {
+    restore()
+    getSharedEditor()?.notice?.(panel.settledSummary())
+  })
+  panel.showBlocking(message)
 }
