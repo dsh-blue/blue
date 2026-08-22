@@ -8,6 +8,7 @@
 |---|---|
 | [blue-architecture.md](./blue-architecture.md) | 架构蓝图：分层、包职责与依赖方向 |
 | [blue-architecture-audit.md](./blue-architecture-audit.md) | Harness/Cordis 与 Blue 架构审计：现状评价、维护风险及长期稳定的公共插件 API 方案 |
+| [blue-api-design.md](./blue-api-design.md) | 公共 API 与可替换 UI 改进设计：目标契约、官方 UI 重构、复用治理和分阶段迁移 |
 | [blue-roadmap.md](./blue-roadmap.md) | 路线图与「预览版发版冲刺」排期、挂起区 |
 | [blue-seams.md](./blue-seams.md) | 缝目录：当前代码开了哪些缝、契约与 plain 默认（现状正典） |
 | [blue-editor-walkthrough.md](./blue-editor-walkthrough.md) | Editor 缝实例走查：契约/实现/消费/增强四角色逐层走查（自 README 抽出全文） |

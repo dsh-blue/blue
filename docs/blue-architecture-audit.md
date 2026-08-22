@@ -3,6 +3,8 @@
 > 审计基线：Blue `master` at `5db6b6b`，2026-08-22。本文评估当前代码，而不是历史设计稿中的目标状态。
 >
 > 结论先行：Blue 不需要推倒重来。它的宏观方向正确，L0/L1 边界尤其扎实；当前迭代已经沉淀了 width/chrome、selector/panel、fold 和 registry 等高价值复用，机械重复约 0.96%，但 session observation、panel orchestration 和 stateful renderer shell 仍在重复。将 Blue API 设计为 Cordis seam 是正确方向，不过当前只有 theme/status/intent/pane 达到部分可替换粒度，`blue-interaction` 和 transcript-owned registries 仍阻碍“卸载官方效果、挂载自定义效果”。下一阶段应治理**公共契约所有权、组合粒度、模块级状态生命周期、流程复用和第三方渲染隔离**。
+>
+> 目标契约、官方 UI 重构和首阶段实施详设见 [Blue 公共 API 与可替换 UI 改进设计](./blue-api-design.md)。
 
 ## 1. 审计范围与依据
 
