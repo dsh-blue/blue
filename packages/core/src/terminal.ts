@@ -13,6 +13,33 @@ import { buildTitleOsc0 } from './terminal-escape.ts'
 import { probeTerminalBackground, backgroundFromRgb, type BlueProbeProcess } from './terminal-info.ts'
 import type { BlueComponent, BlueOverlayHandle, BlueOverlayOptions, BlueRgbColor } from './types.ts'
 
+const KEY_UP = '\x1b[A'
+const KEY_DOWN = '\x1b[B'
+
+/**
+ * Normalize terminal wheel reports to the direction-key sequences consumed by
+ * Blue's focused components. Main-screen mode deliberately leaves mouse
+ * reporting disabled, but multiplexers and inherited terminal modes can still
+ * deliver SGR/X10 wheel reports; keeping this seam in core prevents each panel
+ * from implementing a competing parser.
+ * @param data - one decoded terminal input sequence.
+ * @returns an up/down key sequence for wheel input, or `undefined` when the
+ *   input is not a supported wheel report.
+ */
+export function normalizeWheelInput(data: string): string | undefined {
+  let button: number
+  if (data.length === 6 && data.startsWith('\x1b[M')) {
+    button = data.charCodeAt(3) - 32
+  } else {
+    const match = /^\x1b\[<(\d+);\d+;\d+[Mm]$/.exec(data)
+    if (match === null) return undefined
+    button = Number.parseInt(match[1]!, 10)
+  }
+  if ((button & 64) === 0) return undefined
+  const direction = button & 3
+  return direction === 0 ? KEY_UP : direction === 1 ? KEY_DOWN : undefined
+}
+
 /**
  * The Blue-typed face of the running terminal stack. L1 services consume
  * this; pi-tui types stay inside this module.
@@ -178,6 +205,12 @@ export async function startBlueTerminal(
 ): Promise<BlueTerminalRuntime> {
   const current: TUI = new TuiMainScreen(terminal)
   const stable = createStableTuiReference(() => current)
+  // Main-screen TUI has no alt-screen wheel router. Normalize reports before
+  // pi-tui's focus dispatch so panels share one wheel contract.
+  const removeWheelNormalizer = current.addInputListener(data => {
+    const normalized = normalizeWheelInput(data)
+    return normalized === undefined ? undefined : { data: normalized }
+  })
   // Bottom-pinned components (the input editor dock) must render after
   // transcript content no matter when each side mounts: pi-tui renders root
   // children in array order, and transcript components mount only after the
@@ -330,6 +363,7 @@ export async function startBlueTerminal(
         // The renderer is already stopped and a child owns the tty: draining
         // here would steal the child's input, and a second tui stop would
         // replay the teardown sequences. Just unregister.
+        removeWheelNormalizer()
         if (activeRuntime === runtime) activeRuntime = undefined
         return
       }
@@ -337,6 +371,7 @@ export async function startBlueTerminal(
       // into the parent shell as literal escape sequences.
       await terminal.drainInput()
       current.stop()
+      removeWheelNormalizer()
       if (activeRuntime === runtime) activeRuntime = undefined
     },
   }
