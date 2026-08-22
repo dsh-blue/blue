@@ -76,16 +76,22 @@ async function stableFrame(vt: VtTerminal): Promise<string> {
 }
 
 /**
- * The golden capture: quiesce, then dump the VT buffer as-is. No forced
- * full repaint — the incremental diff stream leaves the VT holding exactly
- * what a real terminal would show, and a forced repaint turned out to be a
- * bug amplifier: the whole-tree 40-column frame (and one 80-column image
- * case) carries an over-wide row that trips pi-tui's width guard MID-write
- * (the 2J clear lands, the content does not) — a real D48-family residue
- * the component-level width scans never see, recorded for its own fix.
+ * The golden capture: quiesce, force one same-size full clear-and-repaint
+ * (the strongest rendering path — every golden frame is the result of a
+ * deliberate full repaint, not an incidental incremental diff), wait for
+ * the throttled pipeline, and compare the normalized grid against
+ * `tests/golden/<name>.txt`.
+ *
+ * A forced repaint was briefly SUSPECTED of crashing mid-write at 40
+ * columns (empty frames during development); a dedicated reproduction
+ * matrix disproved it — the empties came from this spec's own premature
+ * quiesce, and the forced-repaint path has never thrown. The suspicion is
+ * retracted here so nobody chases it again.
  */
 async function captureGolden(tree: BlueTree, vt: VtTerminal, name: string): Promise<string> {
   await stableFrame(vt)
+  tree.ctx.get('blueScreen')!.requestRender(true)
+  await waitForRender()
   const frame = await vt.frame(cwdNormalizer())
   await expect(frame).toMatchFileSnapshot(new URL(`./golden/${name}.txt`, import.meta.url).pathname)
   return frame
