@@ -2457,11 +2457,13 @@ describe('blue whole-tree e2e', () => {
     tree.terminal.sendInput('\r')
     // The accept leaves '@docs/' before the cursor; the adapter's reopen
     // hook lists the directory's contents, and the continued typing
-    // preselects the architecture doc by its basename prefix. The settled
-    // state is the dropdown's pointer row over the label — the sibling
+    // preselects the architecture doc by its basename prefix. Keep the
+    // prefix specific enough that adding sibling architecture documents
+    // does not turn this file-acceptance test into a ranking assertion.
+    // The settled state is the dropdown's pointer row over the label — the sibling
     // doc only ever appears in the unfiltered listing, so its absence
     // rules out a late drill-down frame satisfying the wait.
-    tree.terminal.sendInput('blue-arch')
+    tree.terminal.sendInput('blue-architecture.m')
     settled = tree.terminal.written.length
     await vi.waitFor(() => {
       const frames = tree.terminal.written.slice(settled).join('')
