@@ -210,7 +210,10 @@ function screenSvg(lines) {
     const closeText = () => {
       if (text === null) return
       const baseline = (top + LINE_H * BASELINE_F).toFixed(2)
-      parts.push(`<text x="${(PAD + text.x * CELL_W).toFixed(2)}" y="${baseline}" font-family="JetBrains Mono" font-size="${FONT_SIZE}"${text.weight}>${text.tspans}</text>`)
+      // fill must be explicit: SVG's default fill is black, and one missing
+      // attribute painted the whole transcript black-on-navy (only the
+      // braille circles, which carry their own fill, survived visible).
+      parts.push(`<text x="${(PAD + text.x * CELL_W).toFixed(2)}" y="${baseline}" font-family="JetBrains Mono" font-size="${FONT_SIZE}"${text.weight} fill="${text.fill}">${text.tspans}</text>`)
       text = null
     }
     for (let x = 0; x < cells.length; x += 1) {
@@ -283,18 +286,40 @@ for (const sample of samples) {
   groups.push(sample)
 }
 
-// Global palette from a spread of groups.
-const sampleStride = Math.max(1, Math.floor(groups.length / 12))
-const sampleScreens = groups.filter((_, index) => index % sampleStride === 0).slice(0, 8)
+// Global palette: deterministic anchors first (the page background sits at
+// slot 0 = the inter-frame transparency slot, and the text/border/accent
+// colors must never be quantized away), then a quantized spread across the
+// WHOLE timeline. The first pass sampled only the earliest groups — the
+// streaming-reply frames never made the sample, every light text color was
+// crushed into dark/blue entries, and the GIF rendered black-on-black.
+const PALETTE_ANCHORS = [
+  PAGE_BG_RGB,
+  [0xff, 0xff, 0xff], // banner heading white
+  [0xe0, 0xe0, 0xe0], // default text
+  [0x88, 0x88, 0x88], // muted text
+  [0x6b, 0x6b, 0x6b], // deep-muted text / code-block border
+  [0x5a, 0x5a, 0x5a], // box borders
+  [0x4f, 0xa8, 0xff], // brand blue / inline code
+  [0x2b, 0xc8, 0xe8], // accent
+]
+const spread = []
+const spreadCount = Math.min(12, groups.length)
+for (let k = 0; k < spreadCount; k += 1) {
+  const index = spreadCount === 1 ? 0 : Math.round((k * (groups.length - 1)) / (spreadCount - 1))
+  spread.push(groups[index])
+}
 let sampleRgba = new Uint8Array(0)
-for (const { screen } of sampleScreens) {
+for (const { screen } of spread) {
   const { pixels } = rasterize(screenSvg(screen))
   const merged = new Uint8Array(sampleRgba.length + pixels.length)
   merged.set(sampleRgba)
   merged.set(pixels, sampleRgba.length)
   sampleRgba = merged
 }
-const palette = [PAGE_BG_RGB, ...quantize(sampleRgba, 255, { format: 'rgb565' })].slice(0, 256)
+const palette = [
+  ...PALETTE_ANCHORS,
+  ...quantize(sampleRgba, 256 - PALETTE_ANCHORS.length, { format: 'rgb565' }),
+].slice(0, 256)
 
 const gif = GIFEncoder()
 let previousPixels = null
@@ -315,6 +340,11 @@ for (let index = 0; index < groups.length; index += 1) {
   gif.writeFrame(indexed, width, height, {
     palette: index === 0 ? palette : undefined,
     delay,
+    // Unchanged pixels are marked with the transparent slot and must show
+    // the PREVIOUS frame — disposal 1 ("do not dispose"). gifenc's implicit
+    // default when `transparent` is on is disposal 2 (restore to
+    // background), which blanks every static region between frames.
+    dispose: 1,
     transparent: true,
     transparentIndex: 0,
     repeat: 0,
