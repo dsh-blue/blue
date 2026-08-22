@@ -31,6 +31,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { BlueRequestLifecycle } from '@dsh-blue/blue-api'
 import {
   GutterComponent,
   type BlueComponent,
@@ -331,9 +332,24 @@ function mountSession(
     screen.requestRender()
   })
 
+  // Request lifecycle is the authoritative cancellation projection.  An
+  // interrupt can reach the UI before persistence emits `turn/end`; create
+  // the tombstone immediately and let TranscriptFolder merge the later host
+  // close idempotently.  The controller has already rejected stale session
+  // and request epochs, so this listener only needs to scope to main turns.
+  const offLifecycle = ctx.on('blue/request-state-changed', (lifecycle: BlueRequestLifecycle) => {
+    if (lifecycle.state !== 'interrupted' || lifecycle.ref.scope !== 'main') return
+    const requests = ctx.get('blueRequests') as { readonly sessionEpoch: number } | undefined
+    if (requests !== undefined && lifecycle.ref.sessionEpoch !== requests.sessionEpoch) return
+    present(folder.interrupt())
+    evict()
+    screen.requestRender()
+  })
+
   screen.requestRender(true)
   return () => {
     offEvent()
+    offLifecycle()
     toggle.expanded = false
     toggle.entries = []
     for (const entry of entries.splice(0)) retireEntry(entry)

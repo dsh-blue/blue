@@ -39,6 +39,19 @@ beforeEach(() => {
 })
 
 describe('foldSessionEvents', () => {
+  it('creates one interruption tombstone before and at the host turn close', () => {
+    const folder = new TranscriptFolder()
+    folder.apply(turnStart(1))
+    folder.apply(stepStart(1, 1))
+    folder.apply(reasoningDelta(1, 1, 'thinking'))
+    const synthetic = folder.interrupt(99)
+    expect(synthetic?.some(update => 'item' in update && update.item.kind === 'interrupted')).toBe(true)
+    expect(folder.items.filter(item => item.kind === 'interrupted')).toHaveLength(1)
+    const host = folder.apply(turnEnd(1, { kind: 'aborted' }))
+    expect(host?.some(update => 'item' in update && update.item.kind === 'interrupted') ?? false).toBe(false)
+    expect(folder.items.filter(item => item.kind === 'interrupted')).toHaveLength(1)
+  })
+
   it('folds a user message into a user item', () => {
     const items = foldSessionEvents([userEvent('hello world')])
     expect(items).toHaveLength(1)
