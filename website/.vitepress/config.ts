@@ -17,6 +17,40 @@ const SITE_VERSION = '0.1.0-rc.2'
 const SITE_URL = 'https://dsh-blue.dev'
 const SITEMAP_HOSTNAME = `${SITE_URL}/`
 
+// ── 社交分享与 SEO 元数据 ───────────────────────────────────────────────────
+// og:image 固定指向正式域的绝对 URL（抓取器要求；Pages 预览基座 DOCS_BASE
+// 下也指向正式域——抓取器只该看正式域）。图由 script/export-logo.mjs
+// 生成（暂定 logo：蓝色终端图标，dsh-blue.dev/public/og.png）。
+const OG_IMAGE = `${SITE_URL}/og.png`
+const META_ZH = {
+  title: 'Blue',
+  description: `Blue-dsh：DeepSeek Harness (dsh) 的插件式终端界面。预览阶段（v${SITE_VERSION}）。`,
+}
+const META_EN = {
+  title: 'Blue',
+  description: `Blue-dsh: a plugin-based terminal UI for DeepSeek Harness (dsh). Preview (v${SITE_VERSION}).`,
+}
+const canonicalUrl = (relativePath: string): string => {
+  const clean = relativePath.replace(/\.md$/, '')
+  if (clean === 'index') return `${SITE_URL}/`
+  if (clean.endsWith('/index')) return `${SITE_URL}/${clean.slice(0, -'/index'.length)}/`
+  return `${SITE_URL}/${clean}`
+}
+// 逐页 canonical / og:url / og:locale 与逐语言 og:title/og:description——
+// 全局 head 做不到逐页，transformHead 在构建期每页调用一次。
+const transformHead = ({ pageData }: { pageData: { relativePath: string } }) => {
+  const isEn = pageData.relativePath === 'en/index.md' || pageData.relativePath.startsWith('en/')
+  const meta = isEn ? META_EN : META_ZH
+  const url = canonicalUrl(pageData.relativePath)
+  return [
+    ['link', { rel: 'canonical', href: url }],
+    ['meta', { property: 'og:url', content: url }],
+    ['meta', { property: 'og:locale', content: isEn ? 'en_US' : 'zh_CN' }],
+    ['meta', { property: 'og:title', content: meta.title }],
+    ['meta', { property: 'og:description', content: meta.description }],
+  ]
+}
+
 // ── 入口语言路由（烤进 <head> 内联脚本，整页加载执行；SPA 导航不重跑）──────
 // 原则：localStorage 偏好（theme 钩子在 SPA 导航时写入）> navigator.languages。
 // 中文挂根路径：中文浏览器不跳；英文/其他浏览器落任意中文页（含深链）跳 /en/
@@ -76,16 +110,18 @@ const sharedTheme = {
 // ── 导航：顶栏三入口——用户手册 / 开发手册 / 插件市场 ────────────────────────
 // 按受众分册（对齐 Claude Code 的使用文档/插件开发文档分家）：用户手册覆盖
 // 使用与定制，开发手册收口 /plugins/ 路径下的插件开发内容，市场独立单页。
+// 「插件市场」暂从导航隐去（2026-08 宣传期决策）：页面仍是占位（建设中），
+// 宣传流量落到"建设中"页是减分项；市场开张时恢复这两行即可。
 const navZh = [
   { text: '用户手册', link: '/guide/', activeMatch: '/(guide|dsh|features|reference)' },
   { text: '开发手册', link: '/plugins/', activeMatch: '^/plugins' },
-  { text: '插件市场', link: '/marketplace/', activeMatch: '^/marketplace' },
+  // { text: '插件市场', link: '/marketplace/', activeMatch: '^/marketplace' },
 ]
 
 const navEn = [
   { text: 'User manual', link: '/en/guide/', activeMatch: '/en/(guide|dsh|features|reference)' },
   { text: 'Developer manual', link: '/en/plugins/', activeMatch: '^/en/plugins' },
-  { text: 'Plugin marketplace', link: '/en/marketplace/', activeMatch: '^/en/marketplace' },
+  // { text: 'Plugin marketplace', link: '/en/marketplace/', activeMatch: '^/en/marketplace' },
 ]
 
 // ── 侧边栏：按路径分册 ─────────────────────────────────────────────────────
@@ -216,6 +252,22 @@ const config = defineConfig({
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: `${base}favicon.svg` }],
     ['script', {}, `(${langRedirect.toString()})(${JSON.stringify(base)})`],
+    // 社交卡片（og 全套 + twitter large card）与 SEO 基础；逐页的
+    // canonical/og:url/og:locale/og:title 见下方 transformHead。
+    ['meta', { property: 'og:type', content: 'website' }],
+    ['meta', { property: 'og:site_name', content: 'Blue' }],
+    ['meta', { property: 'og:image', content: OG_IMAGE }],
+    ['meta', { property: 'og:image:width', content: '1200' }],
+    ['meta', { property: 'og:image:height', content: '630' }],
+    ['meta', { property: 'og:image:alt', content: 'Blue — a plugin-based terminal UI for DeepSeek Harness (dsh)' }],
+    ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+    ['meta', { name: 'twitter:title', content: 'Blue' }],
+    ['meta', { name: 'twitter:description', content: META_EN.description }],
+    ['meta', { name: 'twitter:image', content: OG_IMAGE }],
+    ['meta', { name: 'theme-color', content: '#0b0e1a' }],
+    ['link', { rel: 'alternate', hreflang: 'zh', href: `${SITE_URL}/` }],
+    ['link', { rel: 'alternate', hreflang: 'en', href: `${SITE_URL}/en/` }],
+    ['link', { rel: 'alternate', hreflang: 'x-default', href: `${SITE_URL}/en/` }],
   ],
   locales: {
     root: {
@@ -255,6 +307,7 @@ const config = defineConfig({
     },
   },
   themeConfig: { ...sharedTheme },
+  transformHead,
 })
 
 // ── Mermaid 图表支持 ────────────────────────────────────────────────────────

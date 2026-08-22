@@ -1,0 +1,48 @@
+# Promo asset regeneration (A/B lines): re-records the scripted demo cast
+# and re-renders the GIF/stills/logo cards on demand, uploading everything
+# as an artifact for human review — recording carries wall-clock timing, so
+# it is NOT byte-deterministic and never auto-commits; a reviewed artifact
+# is committed by hand (the docs/assets files in-tree are the source of
+# truth for README/website).
+# Manual trigger: workflow → Assets → Run workflow.
+name: assets
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PRIMARY_NODE_VERSION: '24'
+
+jobs:
+  regenerate:
+    name: demo-record + demo-render + export-logo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # The recording boots the real dsh CLI (the demo's install/version
+      # assertions pin it); installed globally for the same hoisting
+      # reasons as ci.yml's smoke step.
+      - run: npm install -g "@deepseek-ai/dsh@$(node script/harness-line.mjs)"
+      - run: pnpm demo:record
+      - run: pnpm demo:render
+      - run: pnpm logo:export
+      - uses: actions/upload-artifact@v4
+        with:
+          name: promo-assets
+          path: |
+            docs/assets/demo.cast
+            docs/assets/demo.gif
+            docs/assets/shot-*.png
+            docs/assets/social-preview.png
+            website/public/og.png
+          retention-days: 14

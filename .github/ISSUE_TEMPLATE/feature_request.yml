@@ -1,0 +1,45 @@
+name: Feature request
+description: Propose a capability or an improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The situation the current Blue falls short in.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: What should it do instead?
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Is this built-in behaviour or a downstream plugin?
+      description: |
+        Blue's architecture makes most capabilities plugins — commands, status
+        entries, and editor enhancements all register through the same seams a
+        downstream plugin would use. If your idea fits that shape, a plugin
+        may be the right home and this request becomes an API/seam issue
+        rather than a core change.
+      options:
+        - Built-in (belongs in the Blue bundles)
+        - A downstream plugin (needs the seam to support it)
+        - Not sure — help me sort it out
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you have considered
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Would you like to implement it?
+      options:
+        - "Yes"
+        - "Yes, with guidance"
+        - "No"

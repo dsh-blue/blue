@@ -12,19 +12,20 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 
 本仓库是 `@dsh-blue` scope 下五个 workspace 包的独立 home，它们从 `deepseek-harness` monorepo 抽出（原 `packages/blue/*` 与 `packages/bundle/blue`），现按 npm 上发布的 harness（`0.1.1-rc.2` 线）与 vendored Cordis 构建测试。
 
-<!-- TODO: 演示动图——录一段真实会话（vhs / asciinema；贡献者指南（开发手册）里的
-     script(1) 冒烟检查是种子），导出 GIF 到 docs/assets/ 后嵌到这里。
-     TUI 仓库的 README 成败系于演示。 -->
+<p align="center"><img src="docs/assets/demo.gif" width="840" alt="Blue 演示：键入任务、read 工具卡、流式 markdown 回复与斜杠命令菜单"></p>
 
 ## 目录
 
 - [快速开始](#快速开始)
 - [功能](#功能) — [键位](#键位) · [Slash 命令](#slash-命令)
+- [截图](#截图)
+- [定位](#定位)
 - [设计哲学](#设计哲学)
 - [分层架构](#分层架构)
 - [Editor 缝速览](#editor-缝速览)
 - [开发](#开发)
 - [文档](#文档)
+- [已知限制](#已知限制)
 - [与 deepseek-harness 的关系](#与-deepseek-harness-的关系)
 - [许可证](#许可证)
 
@@ -101,6 +102,24 @@ dsh plugin --profile blue add @dsh-blue/blue@rc
 | `/version` | — | 显示 Blue 与 harness 版本及实时模型 |
 | `/export` | — | 把当前会话导出为 Markdown 文件 |
 | `/copy` | — | 复制最近一条助手消息到剪贴板 |
+
+## 截图
+
+截取自一段可完全复现的脚本化录制（`pnpm demo:record && pnpm demo:render`——与冒烟测试同一套 mock-LLM 驱动）：
+
+| 启动与横幅 | 一个回合：工具卡 + 流式回复 | 命令菜单 |
+| --- | --- | --- |
+| <img src="docs/assets/shot-banner.png" width="360" alt="启动画面：盲文点阵横幅、元信息块、空的圆角输入框与两行状态栏"> | <img src="docs/assets/shot-conversation.png" width="360" alt="会话画面：用户任务、带预览的 read 工具卡与流式 markdown 回复"> | <img src="docs/assets/shot-panels.png" width="360" alt="输入框上方的斜杠命令下拉：fuzzy 匹配与参数提示"> |
+
+这些界面在真实使用中的完整走查见功能文档：[dsh-blue.dev/features](https://dsh-blue.dev/features/)（English: [dsh-blue.dev/en/features](https://dsh-blue.dev/en/features/)）。
+
+## 定位
+
+**对独立 TUI agent 产品**（Claude Code 一类）：Blue 不是 agent 产品——它是一个 agent 的交互界面。它自己不跑模型回路，只渲染并驱动 DeepSeek Harness 会话。它主张的是组织方式——**TUI 不是一个包，而是一棵插件树**——所以上文每一项能力都是一行可以删掉、热替换、或用你自己的插件顶替的插件行。
+
+**对 dsh 自带的交互模式**：Blue 是 out-of-tree 的 profile 插件。它实现 harness 的交互缝（审批、用户问卷、命令），并向下游开放自己的缝——第三方命令、状态栏条目、编辑器增强，通过的就是 Blue 自身增强所用的同一批注册面。
+
+**适合谁**：想要一个精致、键盘优先、可换主题的终端前端的 dsh 用户——以及想让 TUI 每个表面都可扩展的插件作者。
 
 ## 设计哲学
 
@@ -245,9 +264,20 @@ pnpm run typecheck      # tsc -b
 
 已归档的各阶段设计与调研（MVP、P1、P2、pi-tui/harness 选型）在 [docs/history/](docs/history/)。
 
+## 已知限制
+
+预览版的诚实清单——完整挂起账本见 [docs/blue-roadmap.md](docs/blue-roadmap.md)：
+
+- **主屏滚动**：输出流式进行时，拖动终端自身的回滚区可能与正在更新的会话流相互干扰（Blue 按设计渲染在主屏；alt-screen 门控在挂起区）。
+- **暂无桌面通知**——bell / OSC 9 / 失焦门控均在挂起区。
+- **审批面板暂无内嵌 diff 预览**——diff 卡组件已备，接线未做。
+- **工具输出非流式**：工具执行完毕才渲染卡片（上游暂无流式工具输出缝）。
+- **无会话原地回退（Esc-Esc）与任务后台化（Ctrl+B）**——均依赖上游原语。
+- **预览版语义**：包走 `rc` dist-tag 并钉 harness 线，预览版之间可能出现破坏性变更；pnpm 11 的 `minimumReleaseAge` 可能在新版本发布后 24 小时内把 `@rc` 静默解析到上一版（见 [FAQ](https://dsh-blue.dev/guide/faq/)）。
+
 ## 与 deepseek-harness 的关系
 
-- 运行时与测试依赖（`@deepseek-ai/cordis` 4.0.1、`@deepseek-ai/dsh-*` 0.1.1-rc.2、`@earendil-works/pi-tui` ^0.84.2）来自 npm registry；Blue 自身五包未发布，在本仓保持 workspace 链接。
+- 运行时与测试依赖（`@deepseek-ai/cordis` 4.0.1、`@deepseek-ai/dsh-*` 0.1.1-rc.2、`@earendil-works/pi-tui` ^0.84.2）来自 npm registry。Blue 自身的包以 lockstep 节奏发布到 npm 的 `rc` dist-tag 下（`latest` 留给稳定线）：[`@dsh-blue/blue`](https://www.npmjs.com/package/@dsh-blue/blue) 及其库包当前为 0.1.0-rc.2；公共契约包 `@dsh-blue/blue-api` 随下一次发版加入。
 - harness 仓库的门禁（文档 i18n 配对、README 门禁、snapshot/e2e 车道）不适用于本仓库；本仓保留构建、全量测试套件与逐文件 100% src 覆盖率门禁。
 
 ## 许可证

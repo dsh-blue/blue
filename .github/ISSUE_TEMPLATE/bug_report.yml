@@ -1,0 +1,89 @@
+name: Bug report
+description: Something looks or behaves wrong in the Blue TUI
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report. Blue is a terminal UI, so the
+        terminal itself is half the story: width, font, and multiplexer
+        details below decide whether a layout bug reproduces for anyone else.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A short description, and what you expected instead.
+    validations:
+      required: true
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal emulator and version
+      placeholder: e.g. iTerm2 3.5, WezTerm 20240203, Windows Terminal 1.19, kitty 0.35
+    validations:
+      required: true
+  - type: input
+    id: multiplexer
+    attributes:
+      label: Multiplexer (tmux / screen / none) and version
+      placeholder: e.g. tmux 3.4, none
+  - type: input
+    id: columns
+    attributes:
+      label: Window width at the time (columns)
+      description: Run `tput cols` in the same window if you can. Width is
+        where most rendering bugs live.
+      placeholder: e.g. 120
+  - type: input
+    id: font
+    attributes:
+      label: Terminal font
+      placeholder: e.g. JetBrains Mono 14pt
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows (native terminal)
+        - Windows (WSL)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: dsh-version
+    attributes:
+      label: dsh version (`dsh --version`)
+    validations:
+      required: true
+  - type: input
+    id: blue-version
+    attributes:
+      label: Blue version (the `/version` panel inside Blue)
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence that shows the problem.
+    validations:
+      required: true
+  - type: checkboxes
+    id: logs
+    attributes:
+      label: Crash logs present?
+      description: |
+        Check any that exist and attach them below. Paths:
+        `~/.pi-agent/pi-crash.log` (renderer crash log) and
+        `~/.pi-agent/blue-overflow.log` (width-overflow log).
+      options:
+        - label: "`pi-crash.log` exists — attached below"
+        - label: "`blue-overflow.log` exists — attached below"
+  - type: textarea
+    id: logs-attach
+    attributes:
+      label: Log attachments
+      description: Paste or drag the checked files here. Screenshots or an
+        asciinema recording of the misbehaviour help a lot.

@@ -134,3 +134,28 @@ jobs:
               fi
             fi
           done
+
+  # The GitHub Release page (promo: tag ↔ Release is 1:1 — no CHANGELOG.md
+  # to keep in sync). Notes come from docs/release-notes/v<version>.md when
+  # it ships with the tag (Highlights / Fixes / Known issues), falling back
+  # to generated commit notes. Runs after publish so the page never
+  # advertises a version that failed to land.
+  release:
+    name: GitHub release page
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: gh release create
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          NOTES="docs/release-notes/v${V}.md"
+          if [ -f "$NOTES" ]; then
+            gh release create "$GITHUB_REF_NAME" --title "Blue $V" --notes-file "$NOTES"
+          else
+            gh release create "$GITHUB_REF_NAME" --title "Blue $V" --generate-notes
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
