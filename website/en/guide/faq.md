@@ -4,6 +4,13 @@
 
 Preview releases are published only under the **`rc` dist-tag** (`latest` stays reserved for the stable line), and a bare install resolves `latest` — an uncontrolled version — use `dsh plugin --profile blue add @dsh-blue/blue@rc` instead, see [Quickstart](/en/guide/). The current preview is `v0.1.0-rc.2`; `0.1.0-rc.1` shipped broken tarballs (missing files) — if it is installed, upgrade. The contributor development install lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
 
+## `@rc` does not resolve the newest preview?
+
+pnpm 11 enables a `minimumReleaseAge` cooldown by default: dist-tag resolution silently skips versions published inside the window and falls back to an older one. If `dsh plugin --profile blue add @dsh-blue/blue@rc` installs a stale version, either:
+
+- install the exact version right away — `dsh plugin --profile blue add @dsh-blue/blue@0.1.0-rc.2` (match the repository's newest tag);
+- or re-run the same `@rc` command once the cooldown window has passed (upgrading = re-running the same `plugin add`).
+
 ## Pasting an image does nothing?
 
 Ctrl-V paste depends on two things:
