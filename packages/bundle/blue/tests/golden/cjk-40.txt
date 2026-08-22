@@ -1,0 +1,24 @@
+ 
+ ✨ 宽度
+ 
+ ● 你好，世界。宽度守卫崩溃族修复：中文
+   长句不会被截断工具正确处理时的形状。
+   你好，世界。宽度守卫崩溃族修复：中文
+   长句不会被截断工具正确处理时的形状。
+   xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   xxxxxxxxxxxxxxxxxxxx                
+   👨‍👩‍👧‍👦✌🏽🇨🇳 ✨👍 family flags tone spark 
+
+
+
+
+ 
+╭──────────────────────────────────────╮
+│ >                                    │
+╰──────────────────────────────────────╯
+ mock  «cwd»       
+                                 ctx 10

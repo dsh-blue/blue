@@ -84,6 +84,7 @@
 - **背景**：pi-tui npm dist 不导出 VirtualTerminal（只存在于 pi 源码 test/）。
 - **决策**：core 测试用手写录制型 FakeTerminal；不引入 @xterm/headless。
 - **理由**：core 测的是委托/生命周期/焦点语义，FakeTerminal 充分；视口快照测试是 transcript 的需求，届时再评估。
+- **R2 复审（2026-08-22，R2 落地）**：前半维持——core 单元测试继续用 FakeTerminal 测委托/生命周期/焦点语义（语义断言不需要网格模拟）；后半"不引入 @xterm/headless"**就快照用途推翻**：整树版式回归锁（R2）需要真实终端字节流 → 网格 → 黄金帧，手写网格模拟等于重造终端解析器。`@xterm/headless@6.0.0` 以 root devDep 进入（test-only，与 vitest 同位；不进任何发布包依赖面——快照只在测试里消费 L0 出口的字节，pi-tui 禁令与 L0 唯一适配不受影响）。与 D48 width-scan 的分工：width-scan 钉**组件级** `render(width)` 宽度契约（逐宽度扫描、病态语料、不依赖终端语义）；VT 快照钉**整树帧级**版式（真差分写屏链 + D23 dock 填充 + D48 clamp 兜底 + 跨组件拼装 + 终端侧宽度裁决），互补不互替。已知语义边界：帧内动态面（spinner、git 真 probe、cwd 长度决定的截断/padding）以 quiescence + 测试缝（setGitCommandRunner / cwdNormalizer / spec 顶层 chdir 到恒定长度临时目录）固定，运行中帧不在最小集；强制全清重绘（requestRender(true)）在整树 40 列帧上会触发 pi-tui 宽度守卫**中途打断写入**（2J 已发、内容未写）——一个 D48 家族的真实残余（组件级扫描看不到的组合面），记此待专项修复，快照采用缓冲直读（增量写入的累积 = 真实终端所见）规避。
 
 ### D14. transcript 自实现宽度/Markdown 工具（临时）
 
