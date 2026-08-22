@@ -68,6 +68,7 @@ function mount(options: {
   title?: string
   titleHint?: string
   initialValue?: string
+  filter?: boolean
   onSelect?: (row: SelectRow) => void
   onBlockedSelect?: (row: SelectRow) => void
   onCancel?: () => void
@@ -88,6 +89,7 @@ function mount(options: {
     title: options.title,
     titleHint: options.titleHint,
     initialValue: options.initialValue,
+    filter: options.filter === true ? true : undefined,
     onSelect: options.onSelect ?? onSelect,
     onBlockedSelect: options.onBlockedSelect ?? onBlockedSelect,
     onCancel: options.onCancel ?? onCancel,
@@ -211,5 +213,150 @@ describe('SelectListPanel rendering', () => {
 
   it('renders the visible window size the migration preserved', () => {
     expect(MAX_LIST_VISIBLE).toBe(8)
+  })
+})
+
+describe('SelectListPanel type-to-filter (S30②)', () => {
+  it('swallows printable bytes when the filter is off (the other consumers)', () => {
+    const { panel, onSelect, onCancel } = mount()
+    panel.handleInput('x')
+    panel.handleInput('\x7f')
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(onCancel).not.toHaveBeenCalled()
+    // The render is unchanged: no Search row, no hint change.
+    expect(panel.render(40)[1]).toBe('^  Select^')
+  })
+
+  it('grows the query on printables, narrows the rows, and paints the Search row', () => {
+    const { panel } = mount({
+      filter: true,
+      rows: [...rows(2), { value: 'xy', label: 'Xylophone' }],
+      titleHint: '· esc cancel',
+    })
+    // The fake matcher is a case-sensitive subsequence (the real one folds
+    // case; ordering semantics are pinned by the core spec) — so the
+    // queries here use the labels' own casing.
+    for (const char of 'Item') panel.handleInput(char)
+    const lines = panel.render(40)
+    // The hint drops the type-to-search fragment while a query is live.
+    expect(lines[1]).toBe('^  Select^ _· esc cancel_')
+    expect(lines[2]).toBe('  ^Search: ^Item')
+    expect(lines[3]).toBe('')
+    expect(lines.some(line => line.includes('Item 0'))).toBe(true)
+    expect(lines.some(line => line.includes('Xylophone'))).toBe(false)
+  })
+
+  it('carries the type-to-search hint fragment only while the query is empty', () => {
+    const withHint = mount({ filter: true, titleHint: '· esc cancel' })
+    expect(withHint.panel.render(60)[1]).toBe('^  Select^ _· type to search · esc cancel_')
+    // The fragment stands alone when the caller has no hint of its own.
+    const bare = mount({ filter: true })
+    expect(bare.panel.render(60)[1]).toBe('^  Select^ _· type to search_')
+  })
+
+  it('shrinks the query on Backspace and clamps at empty', () => {
+    const { panel } = mount({ filter: true, rows: [...rows(2), { value: 'xy', label: 'Xylophone' }] })
+    for (const char of 'Ite') panel.handleInput(char)
+    expect(panel.render(40).some(line => line.includes('Xylophone'))).toBe(false)
+    panel.handleInput('\x7f')
+    // 'It' still matches only the Item rows.
+    expect(panel.render(40).some(line => line.includes('Xylophone'))).toBe(false)
+    // The raw bytes match singles only: a multi-char escape sequence (no
+    // keymap action claims it) falls through untouched.
+    panel.handleInput('\x1b[Z')
+    panel.handleInput('\x7f')
+    panel.handleInput('\x7f')
+    expect(panel.render(40).some(line => line.includes('Xylophone'))).toBe(true)
+    panel.handleInput('\x7f')
+    expect(panel.render(40)[1]).toContain('type to search')
+  })
+
+  it('clears the query on Escape before cancelling (the kimi rule)', () => {
+    const { panel, onCancel } = mount({ filter: true })
+    panel.handleInput('i')
+    panel.handleInput(KEY.escape)
+    expect(onCancel).not.toHaveBeenCalled()
+    // The query is gone: the full list renders with the empty-query hint.
+    expect(panel.render(40)[1]).toContain('type to search')
+    panel.handleInput(KEY.escape)
+    expect(onCancel).toHaveBeenCalledOnce()
+  })
+
+  it('renders a muted no-matches row and swallows Enter on the empty view', () => {
+    const { panel, onSelect } = mount({ filter: true })
+    for (const char of 'zzz') panel.handleInput(char)
+    expect(panel.render(40).some(line => line === '_  no matches_')).toBe(true)
+    panel.handleInput(KEY.enter)
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('counts and windows the filtered view, not the full list', () => {
+    const { panel } = mount({ filter: true, rows: rows(12) })
+    // 'Item 1' subsequence-matches Item 1, Item 10, and Item 11 — below
+    // the window, so no counter; clearing the query shows the full (1/12).
+    for (const char of 'Item 1') panel.handleInput(char)
+    const narrowed = panel.render(40)
+    expect(narrowed.some(line => line.includes('/12)'))).toBe(false)
+    expect(narrowed.some(line => line.includes('Item 1'))).toBe(true)
+    expect(narrowed.some(line => line.includes('Item 2 '))).toBe(false)
+    for (let i = 0; i < 6; i += 1) panel.handleInput('\x7f')
+    expect(panel.render(40).some(line => line.includes('(1/12)'))).toBe(true)
+  })
+
+  it('reseeds the cursor on the initial value, else the head of the view', () => {
+    const { panel, onSelect } = mount({ filter: true, rows: rows(3), initialValue: 'v2' })
+    // 'Item 2' keeps v2 in the view: Enter picks it straight away.
+    for (const char of 'Item 2') panel.handleInput(char)
+    panel.handleInput(KEY.enter)
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ value: 'v2' }))
+    // 'Item 0' filters v2 out: the cursor falls to the head.
+    for (let i = 0; i < 6; i += 1) panel.handleInput('\x7f')
+    for (const char of 'Item 0') panel.handleInput(char)
+    panel.handleInput(KEY.enter)
+    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ value: 'v0' }))
+  })
+
+  it('walks Up/Down over the filtered view only', () => {
+    const { panel, onSelect } = mount({
+      filter: true,
+      rows: [{ value: 'a', label: 'Alpha' }, { value: 'b', label: 'Beta' }, { value: 'xy', label: 'Xylophone' }],
+    })
+    panel.handleInput('a')
+    // Two matches: Up from the head wraps to the second, never the hidden row.
+    panel.handleInput(KEY.up)
+    panel.handleInput(KEY.enter)
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ value: 'b' }))
+  })
+
+  it('keeps blocked-select semantics on a disabled row under the filter', () => {
+    const { panel, onSelect, onBlockedSelect } = mount({
+      filter: true,
+      rows: [
+        { value: 'ok', label: 'Alpha ok' },
+        { value: 'no', label: 'Alpha custom', disabled: true },
+      ],
+    })
+    panel.handleInput('a')
+    panel.handleInput(KEY.down)
+    panel.handleInput(KEY.enter)
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(onBlockedSelect).toHaveBeenCalledWith(expect.objectContaining({ value: 'no' }))
+  })
+
+  it('matches filterText in place of the label when provided', () => {
+    const { panel } = mount({
+      filter: true,
+      rows: [{ value: 'a', label: 'Alpha', filterText: 'hidden gem' }],
+    })
+    // A query hitting only the filterText keeps the row.
+    for (const char of 'gem') panel.handleInput(char)
+    expect(panel.render(40).some(line => line.includes('Alpha'))).toBe(true)
+    // A query hitting only the label drops it: the override replaces, not
+    // extends, the match text.
+    panel.handleInput('\x7f')
+    panel.handleInput('\x7f')
+    panel.handleInput('\x7f')
+    for (const char of 'alpha') panel.handleInput(char)
+    expect(panel.render(40).some(line => line.includes('_  no matches_'))).toBe(true)
   })
 })

@@ -6,7 +6,7 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
-// Width truth is pi-tui itself (D45): the fake SGR-stripped counters that
+// Width truth is pi-tui itself (D48): the fake SGR-stripped counters that
 // used to live here were exact only for ASCII, so CJK mis-budgets stayed
 // green in tests while tripping the real width guard. Fakes now delegate to
 // the same implementations the renderer runs.

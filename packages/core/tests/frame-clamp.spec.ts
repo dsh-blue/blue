@@ -1,5 +1,5 @@
 /**
- * The render-exit width backstop (D45): `clampFrame` line surgery, the
+ * The render-exit width backstop (D48): `clampFrame` line surgery, the
  * file sink's dedupe/cap/error posture, and the log-directory chain.
  */
 

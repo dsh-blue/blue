@@ -198,7 +198,7 @@ export async function startBlueTerminal(
   // until the frame spans the viewport. Full viewports render untouched, and
   // an empty or dock-less tree pads nothing (no blank flood at boot).
   //
-  // The same wrapper is the exit backstop (D45): every frame line, on both
+  // The same wrapper is the exit backstop (D48): every frame line, on both
   // return paths, is clamped to `width` before pi-tui's differential writer
   // can crash on it — an over-wide component row degrades to a truncated
   // row plus one deduplicated blue-overflow.log entry instead of a dead

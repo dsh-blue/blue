@@ -15,7 +15,7 @@ import {
 import type { BlueComponents, BlueImage, BlueMarkdown } from '@dsh-blue/blue-core'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 
-// Width truth is pi-tui itself (D45): the fake codepoint counters that used
+// Width truth is pi-tui itself (D48): the fake codepoint counters that used
 // to live here were exact only for ASCII fixtures, so a CJK mis-budget that
 // would trip the real width guard stayed green in tests (the D39 lesson).
 // Tests now measure and truncate through the same implementations the

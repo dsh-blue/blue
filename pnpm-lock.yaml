@@ -214,6 +214,10 @@ importers:
         version: 0.1.1-rc.1(@deepseek-ai/cordis@4.0.1)
 
   packages/interaction:
+    dependencies:
+      '@deepseek-ai/dsh-session-query':
+        specifier: ^0.1.1-rc.1
+        version: 0.1.1-rc.1(d8add798cd90fc5b0a3a8f65054f2f8b)
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.1

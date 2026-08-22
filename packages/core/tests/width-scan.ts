@@ -1,5 +1,5 @@
 /**
- * The width-scan contract harness (D45): renders a component at a sweep of
+ * The width-scan contract harness (D48): renders a component at a sweep of
  * viewport widths against adversarial content and asserts the
  * `BlueComponent` contract — every output line's VISIBLE width stays within
  * the width it was given (core/src/types.ts states it; the render-exit

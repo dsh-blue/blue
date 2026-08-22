@@ -1,11 +1,11 @@
-// Real-process smoke (D45, in CI): boots the shipped Blue plugin tree
+// Real-process smoke (D48, in CI): boots the shipped Blue plugin tree
 // through the real dsh CLI in a throwaway profile, drives one turn against
 // a local mock LLM whose reply is deliberately width-hostile (an unbroken
 // 160-column token, CJK, emoji, a deep path), and renders the whole session
 // at COLUMNS=40 — narrow enough that any untruncated row trips pi-tui's
 // width guard and kills the process. Green means: exit 0, the statusline
 // and the pathological reply both rendered, no width-guard crash, and the
-// D45 exit clamp's blue-overflow.log stays empty (a clamped row is still a
+// D48 exit clamp's blue-overflow.log stays empty (a clamped row is still a
 // component bug). Run: pnpm smoke:happy
 
 import { spawn } from 'node:child_process'

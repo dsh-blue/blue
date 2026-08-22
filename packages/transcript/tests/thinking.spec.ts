@@ -2,7 +2,7 @@
  * The thinking block: live tail-window rendering with the spinner timer,
  * in-place finalization with the folded preview and expansion hint, the
  * blank-reasoning zero-row settle, and dispose discipline. Width behavior
- * asserts against pi-tui's own width helpers (the D45 real-semantics swap).
+ * asserts against pi-tui's own width helpers (the D48 real-semantics swap).
  */
 
 import { afterEach, describe, expect, it } from 'vitest'

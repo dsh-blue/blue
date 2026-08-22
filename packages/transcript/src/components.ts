@@ -38,6 +38,38 @@ export const RESULT_PREVIEW_LINES = 3
 /** Collapsed Write/Edit-style preview: rows kept (kimi `COMMAND_PREVIEW_LINES`). */
 export const COMMAND_PREVIEW_LINES = 10
 
+/** Collapsed long user-message preview: visual rows kept (the S20 idiom, D46). */
+export const USER_PREVIEW_LINES = 3
+
+/**
+ * Default raw-line count above which a user message folds. Mirrors the
+ * pi-tui editor's paste-fold line ("> 10 lines") so what folds in the
+ * editor folds in the transcript echo too (D46).
+ */
+export const DEFAULT_USER_FOLD_LINES = 10
+
+/**
+ * Default raw character count above which a user message folds — the
+ * pi-tui editor's second paste-fold criterion ("> 1000 characters"), so a
+ * single long line (a big one-line JSON, say) folds as well.
+ */
+export const DEFAULT_USER_FOLD_CHARS = 1000
+
+let userFoldLines = DEFAULT_USER_FOLD_LINES
+let userFoldChars = DEFAULT_USER_FOLD_CHARS
+
+/**
+ * Replace the user-message fold thresholds (tests inject small bounds
+ * here; the values are read at render time, so set them before the first
+ * render or invalidate).
+ * @param lines - the raw-line replacement, or `undefined` to restore the default.
+ * @param chars - the raw-character replacement, or `undefined` to restore the default.
+ */
+export function setUserFoldThresholds(lines: number | undefined, chars: number | undefined): void {
+  userFoldLines = lines ?? DEFAULT_USER_FOLD_LINES
+  userFoldChars = chars ?? DEFAULT_USER_FOLD_CHARS
+}
+
 /** Indent of the collapsed/expanded result preview rows (kimi's default). */
 const PREVIEW_INDENT = '  '
 
@@ -90,6 +122,15 @@ interface RenderCache {
  * below the text at the content width, indented to the same bullet width
  * (a muted `[image]` row while loading or after failure), and a resolve
  * bumps the cache version, invalidates, and nudges `onReady`.
+ *
+ * A long message (raw metrics over the original text — the pi-tui editor
+ * paste-fold thresholds, >10 lines or >1000 characters — never wrap
+ * width) renders collapsed (D46): the first {@link USER_PREVIEW_LINES}
+ * wrapped lines plus the dim `ctrl+o` hint row, the S20 tool-card idiom.
+ * The fold stays component-local so the fold layer stays pure/width-free
+ * and replay converges for free (D16); `setExpanded` joins the global
+ * Ctrl-O toggle, and raw metrics mean a resize never refolds an expanded
+ * message.
  */
 export class UserMessageComponent implements BlueComponent {
   private readonly item: TranscriptUserItem
@@ -101,6 +142,7 @@ export class UserMessageComponent implements BlueComponent {
   private readonly resolved = new Map<number, BlueImage | null>()
   private imagesRequested = false
   private imageVersion = 0
+  private expanded = false
   private cache: RenderCache | null = null
 
   /**
@@ -125,6 +167,22 @@ export class UserMessageComponent implements BlueComponent {
   /** Drop the cached lines; the next render rebuilds from the item. */
   invalidate(): void {
     this.cache = null
+  }
+
+  /**
+   * Switch a foldable message between the collapsed preview and the full
+   * text. The expansion flag joins the render cache key, so the next
+   * render rebuilds without an explicit invalidate (the ToolCall
+   * precedent); short messages ignore the flag — nothing is hidden.
+   * @param expanded - true renders every wrapped line, false the preview.
+   */
+  setExpanded(expanded: boolean): void {
+    this.expanded = expanded
+  }
+
+  /** Whether the raw-text metrics put this message over a fold threshold. */
+  private isFoldable(): boolean {
+    return this.item.text.split('\n').length > userFoldLines || this.item.text.length > userFoldChars
   }
 
   /** Kick off all image loads once; each settle stores its outcome. */
@@ -154,7 +212,7 @@ export class UserMessageComponent implements BlueComponent {
    * @returns the rendered rows.
    */
   render(width: number): string[] {
-    const key = `${this.item.seq}:${width}:${this.imageVersion}`
+    const key = `${this.item.seq}:${width}:${this.imageVersion}:${this.expanded}`
     if (this.cache?.key === key) return this.cache.lines
     const bullet = `${BOLD_OPEN}${this.colors.roleUser(USER_MESSAGE_BULLET)}${BOLD_CLOSE}`
     const bulletWidth = this.components.visibleWidth(USER_MESSAGE_BULLET)
@@ -162,8 +220,18 @@ export class UserMessageComponent implements BlueComponent {
     const wrapped = this.components.wrapText(this.item.text, contentWidth)
     const bold = (text: string): string => `${BOLD_OPEN}${this.colors.roleUser(text)}${BOLD_CLOSE}`
     const indent = ' '.repeat(bulletWidth)
-    let lines = ['', ...wrapped.map((line, index) =>
+    // The fold gates on `expanded`, never on the wrapped count: a resize
+    // changes wrapping but never refolds an expanded message back.
+    const folded = !this.expanded && this.isFoldable()
+    const shown = folded ? wrapped.slice(0, USER_PREVIEW_LINES) : wrapped
+    let lines = ['', ...shown.map((line, index) =>
       (index === 0 ? bullet : indent) + bold(line))]
+    if (folded && wrapped.length > shown.length) {
+      // The S20 expand hint, width-disciplined to the content indent.
+      const remaining = wrapped.length - shown.length
+      const hint = `... (${remaining} more lines, ${wrapped.length} total, ctrl+o to expand)`
+      lines.push(indent + this.colors.textMuted(this.components.truncateToWidth(hint, contentWidth)))
+    }
     const load = this.loadImage
     if (load !== undefined && this.item.images.length > 0) {
       this.requestImages(load)

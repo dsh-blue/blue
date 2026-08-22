@@ -1,10 +1,10 @@
 /**
- * The width-scan contract for the transcript components (D45): the crash
+ * The width-scan contract for the transcript components (D48): the crash
  * family (#14/#15/#18) all lived here, so every content-rendering component
  * renders each adversarial fixture at each scan width and must honor the
  * `BlueComponent` contract — every output line's visible width within the
  * width it was given. A red row here is a latent pi-tui width-guard crash
- * (before the D45 exit clamp) or a blue-overflow.log entry (after it);
+ * (before the D48 exit clamp) or a blue-overflow.log entry (after it);
  * either way the component gets fixed, not the harness.
  */
 

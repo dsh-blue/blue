@@ -2,7 +2,7 @@
  * The transcript components: rendering against identity colors and the
  * factory-backed `BlueComponents`, width discipline, caching/invalidation,
  * and mutable streaming state. Width guards measure with pi-tui's own
- * `visibleWidth` (the D45 real-semantics swap), so assertions match the
+ * `visibleWidth` (the D48 real-semantics swap), so assertions match the
  * renderer's terminal-cell truth.
  */
 
@@ -12,9 +12,11 @@ import {
   AssistantMessageComponent,
   ErrorMessageComponent,
   InterruptedMarkerComponent,
+  setUserFoldThresholds,
   StepSummaryComponent,
   ToolCallComponent,
   UserMessageComponent,
+  USER_PREVIEW_LINES,
 } from '../src/components.ts'
 import type {
   TranscriptAssistantItem,
@@ -145,6 +147,104 @@ describe('UserMessageComponent', () => {
     expect(component.render(80)).toBe(component.render(80))
     component.invalidate()
     expect(component.render(80)).not.toBe(component.render(40))
+  })
+
+  it('folds a long message to the preview plus the ctrl+o hint (D46)', () => {
+    const components = setup()
+    // Eleven short raw lines: over the >10 default, each wrapping to one
+    // row at this width, so the folded count is exact. Identity colors
+    // leave the S18 bold wrap visible.
+    const text = Array.from({ length: 11 }, (_, index) => `line ${index}`).join('\n')
+    const lines = new UserMessageComponent(userItem(text), COLORS, components).render(80)
+    expect(lines).toEqual([
+      '',
+      '\x1b[1m✨ \x1b[22m\x1b[1mline 0\x1b[22m',
+      '   \x1b[1mline 1\x1b[22m',
+      '   \x1b[1mline 2\x1b[22m',
+      '   ... (8 more lines, 11 total, ctrl+o to expand)',
+    ])
+    expect(USER_PREVIEW_LINES).toBe(3)
+    for (const line of lines) expect(components.visibleWidth(line)).toBeLessThanOrEqual(80)
+  })
+
+  it('expands on setExpanded without an invalidate and folds back', () => {
+    const text = Array.from({ length: 11 }, (_, index) => `line ${index}`).join('\n')
+    const component = new UserMessageComponent(userItem(text), COLORS, setup())
+    component.setExpanded(true)
+    const lines = component.render(80)
+    expect(lines).toHaveLength(1 + 11)
+    expect(lines.some(line => line.includes('ctrl+o'))).toBe(false)
+    // Same inputs, same cached object; the flag itself joins the key.
+    expect(component.render(80)).toBe(lines)
+    component.setExpanded(false)
+    const folded = component.render(80)
+    expect(folded.some(line => line.includes('8 more lines'))).toBe(true)
+    expect(folded).not.toBe(lines)
+  })
+
+  it('folds a single line over the character threshold', () => {
+    // The chars criterion catches what the line count cannot: one long
+    // line (a big one-line JSON, say). Four wrapped rows at this width,
+    // so the preview genuinely hides content and the hint row appears.
+    setUserFoldThresholds(10, 300)
+    try {
+      const lines = new UserMessageComponent(userItem('x'.repeat(400)), COLORS, setup()).render(80)
+      expect(lines).toHaveLength(1 + USER_PREVIEW_LINES + 1)
+      expect(lines.at(-1)).toContain('more lines, 6 total, ctrl+o to expand')
+    } finally {
+      setUserFoldThresholds(undefined, undefined)
+    }
+  })
+
+  it('never refolds an expanded message on resize', () => {
+    const text = Array.from({ length: 11 }, (_, index) => `line ${index} ${'x'.repeat(70)}`).join('\n')
+    const component = new UserMessageComponent(userItem(text), COLORS, setup())
+    component.setExpanded(true)
+    // Width 82: the three-column emoji bullet leaves 79, and the longest
+    // raw line (78 columns) keeps to one row — eleven rows plus the blank.
+    const wide = component.render(82)
+    expect(wide).toHaveLength(1 + 11)
+    // Narrowing re-wraps (each raw line hard-breaks into many rows) but
+    // the expanded gate holds: no hint row, nothing hidden.
+    const narrow = component.render(10)
+    expect(narrow.some(line => line.includes('ctrl+o'))).toBe(false)
+    expect(narrow.length).toBeGreaterThan(wide.length)
+  })
+
+  it('ignores the expansion flag for short messages', () => {
+    const component = new UserMessageComponent(userItem('hello'), COLORS, setup())
+    const before = component.render(80)
+    component.setExpanded(true)
+    expect(component.render(80)).toEqual(before)
+    component.setExpanded(false)
+    expect(component.render(80)).toEqual(before)
+  })
+
+  it('honors setUserFoldThresholds and restores the defaults', () => {
+    setUserFoldThresholds(3, 1000)
+    try {
+      const four = new UserMessageComponent(userItem('a\nb\nc\nd'), COLORS, setup()).render(80)
+      expect(four.some(line => line.includes('1 more lines, 4 total'))).toBe(true)
+    } finally {
+      setUserFoldThresholds(undefined, undefined)
+    }
+    const fourAgain = new UserMessageComponent(userItem('a\nb\nc\nd'), COLORS, setup()).render(80)
+    expect(fourAgain.some(line => line.includes('more lines'))).toBe(false)
+  })
+
+  it('keeps image placeholders below a folded message', async () => {
+    const text = Array.from({ length: 11 }, (_, index) => `line ${index}`).join('\n')
+    const component = new UserMessageComponent(
+      { kind: 'user', seq: 1, text, images: [{ id: 'a', mediaType: 'image/png' } as never] },
+      tagged(),
+      setup(),
+      // A never-settling load keeps the placeholder row up.
+      { loadImage: () => new Promise(() => {}) },
+    )
+    const lines = component.render(80)
+    expect(lines.some(line => line.includes('ctrl+o to expand'))).toBe(true)
+    expect(lines.at(-1)).toBe('   [M][image][/M]')
+    await new Promise(resolve => setTimeout(resolve, 0))
   })
 })
 

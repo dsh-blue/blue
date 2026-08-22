@@ -34,7 +34,7 @@ export class GutterComponent implements BlueComponent {
    * resize drag must not hand children a zero or negative width, and a
    * wide character cannot fit below two). Rows are cut only in that
    * degenerate regime — a viewport too narrow for the gutter furniture
-   * itself; wider viewports emit the child's rows untouched (D45).
+   * itself; wider viewports emit the child's rows untouched (D48).
    * @param width - current viewport width in columns.
    * @returns the child's rows, squeezed, gutter-padded, width-bounded.
    */

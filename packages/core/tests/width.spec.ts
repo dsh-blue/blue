@@ -1,5 +1,5 @@
 /**
- * The width-truth property gate (D45): every invariant the `BlueComponent`
+ * The width-truth property gate (D48): every invariant the `BlueComponent`
  * contract ("visible width must not exceed `width`") and the render-exit
  * clamp depend on holds only because pi-tui's `visibleWidth` and
  * `truncateToWidth` agree with each other on every input shape — ASCII,

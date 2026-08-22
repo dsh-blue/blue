@@ -1,4 +1,4 @@
-// Interactive PTY smoke (D45, manual — not in CI): boots the real dsh CLI
+// Interactive PTY smoke (D48, manual — not in CI): boots the real dsh CLI
 // with the Blue plugin under a real pseudo-terminal at a deliberately
 // narrow 40 columns and drives it through the raw-mode key path — a turn
 // against a local mock LLM, the slash-command dropdown (a WrappingSelectList

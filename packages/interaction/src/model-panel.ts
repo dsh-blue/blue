@@ -393,7 +393,7 @@ export class ModelPanel implements BlueFocusable {
     if (contextCell !== '') row += ` ${colors.textMuted(contextCell)}`
     if (badgeCell !== '') row += `  ${colors.success(badgeCell)}`
     // The name cap floors at eight columns and the lead adds four; only a
-    // degenerate viewport under that floor sees the row cut (D45) — wider
+    // degenerate viewport under that floor sees the row cut (D48) — wider
     // viewports emit the budgeted row untouched.
     if (width >= leadWidth + 8) return row
     return components.truncateToWidth(row, Math.max(1, width))

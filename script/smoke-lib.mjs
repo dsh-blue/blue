@@ -1,4 +1,4 @@
-// Shared bootstrap for the smoke scripts (D45): dsh discovery and version
+// Shared bootstrap for the smoke scripts (D48): dsh discovery and version
 // alignment, the throwaway-profile install chain, and output cleaning.
 // Both smoke-happy.mjs (CI, pipe stdio) and smoke-pty.mjs (manual, real
 // pseudo-terminal) boot the same real process through these helpers.

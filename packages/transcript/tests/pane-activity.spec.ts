@@ -307,7 +307,7 @@ describe('blue-pane-activity', () => {
     const { screen, dispose } = await boot(agent)
     const pane = screen.bottomChildren[0]!
     const full = `🌑 · Tip: ${FIRST_TIP}`
-    // The width measure is pi-tui's (D45): the moon glyph spans two cells,
+    // The width measure is pi-tui's (D48): the moon glyph spans two cells,
     // so the row's visible width is the moon + the lead + the tip.
     const visible = visibleWidth('🌑') + ' · Tip: '.length + FIRST_TIP.length
     expect(unwrapped(pane, visible)).toEqual([full])

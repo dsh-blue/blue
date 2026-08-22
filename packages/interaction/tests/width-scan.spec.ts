@@ -1,9 +1,9 @@
 /**
- * The width-scan contract for the interaction panels (D45): every
+ * The width-scan contract for the interaction panels (D48): every
  * content-rendering panel renders each adversarial fixture at each scan
  * width and must honor the `BlueComponent` contract — every output line's
  * visible width within the width it was given. A red row here is a latent
- * pi-tui width-guard crash (before the D45 exit clamp) or a
+ * pi-tui width-guard crash (before the D48 exit clamp) or a
  * blue-overflow.log entry (after it). The plugin-boot components (mode
  * status, pane queue, approval, editor-plus echo) render through these
  * same panel primitives and carry their own real-semantics width

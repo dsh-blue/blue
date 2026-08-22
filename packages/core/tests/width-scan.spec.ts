@@ -1,5 +1,5 @@
 /**
- * The width-scan contract for core's own rendering surfaces (D45): the
+ * The width-scan contract for core's own rendering surfaces (D48): the
  * gutter wrapper, the shared `framePanel` framer, `WrappingSelectList`
  * (the slash-command dropdown), and the `clampRowsToWidth` backstop
  * itself — each must honor the `BlueComponent` contract at every scan

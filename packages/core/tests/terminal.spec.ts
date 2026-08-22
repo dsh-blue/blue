@@ -218,7 +218,7 @@ describe('startBlueTerminal', () => {
   })
 
   it('clamps over-wide component lines instead of crashing the guard', async () => {
-    // Pre-D45 this render died in pi-tui's differential writer: the frame
+    // Pre-D48 this render died in pi-tui's differential writer: the frame
     // line exceeds the 40-column viewport and the width guard throws out of
     // the render timer. The exit backstop hard-slices it instead.
     const terminal = new FakeTerminal(40)

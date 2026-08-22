@@ -1,5 +1,5 @@
 /**
- * The render-exit width backstop (D45). pi-tui's main-screen guard crashes
+ * The render-exit width backstop (D48). pi-tui's main-screen guard crashes
  * the process when any rendered line exceeds the terminal width — the right
  * fail-loud behavior for dogfooding, but a user session dies with it. This
  * module clamps every frame line at the one seam that sees the complete

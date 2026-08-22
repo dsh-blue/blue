@@ -325,7 +325,7 @@ export function framePanel(
   // Body rows arrive pre-budgeted by their callers; only a degenerate
   // viewport — narrow enough that the rows' fixed furniture (their
   // two-space indents) already exceeds the frame — can leave them
-  // over-wide, and only then does the framer cut (D45). Wider frames
+  // over-wide, and only then does the framer cut (D48). Wider frames
   // emit the body untouched.
   if (width >= FRAME_DEGENERATE_WIDTH) return lines
   return lines.map(line => truncateToWidth(line, Math.max(1, width)))
@@ -333,7 +333,7 @@ export function framePanel(
 
 /**
  * Below this width a frame's fixed row furniture (indents, ellipses) no
- * longer fits; the D45 backstop engages.
+ * longer fits; the D48 backstop engages.
  */
 const FRAME_DEGENERATE_WIDTH = 8
 
@@ -398,7 +398,7 @@ export function padColumns(lines: readonly string[], n: number): string[] {
 }
 
 /**
- * The component-level width backstop (D45): every hand-assembled row —
+ * The component-level width backstop (D48): every hand-assembled row —
  * bullet plus wrapped text, indent plus content — passes through the
  * display-width-aware truncate before it leaves `render`. Rows that already
  * fit come back untouched (the truncate fast path), so the cost on healthy

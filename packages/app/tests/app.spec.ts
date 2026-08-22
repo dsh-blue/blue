@@ -1,16 +1,29 @@
 /**
  * The Blue app driver: startup create/resume, blueSession publication, the
- * session-changed broadcast, and `/resume`/`/new`/`/fork` switching over
- * fake core services.
+ * session-changed broadcast, `/resume`/`/new`/`/fork` switching, and the
+ * exit epitaph (D47) over fake core services.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentHandle, CreateAgentOptions, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
 import { apply, Config, internals } from '../src/index.ts'
+import {
+  armExitEpitaph,
+  armedEpitaph,
+  epitaphFor,
+  profileFromArgv,
+  setExitEpitaphWriter,
+  writeArmedEpitaph,
+} from '../src/exit-epitaph.ts'
 
 const originalStderr = internals.stderr
-afterEach(() => { internals.stderr = originalStderr })
+afterEach(() => {
+  internals.stderr = originalStderr
+  // The epitaph slot is process-global; an armed leftover would print at
+  // the vitest process's own exit.
+  armExitEpitaph(undefined)
+})
 
 /** What the fake core services recorded. */
 interface Recorded {
@@ -594,5 +607,76 @@ describe('blue app driver', () => {
       expect(test.ctx.blueSession.current).toBeNull()
       await test.ctx.fiber.dispose()
     })
+  })
+})
+
+describe('exit epitaph (D47)', () => {
+  it('arms on tree dispose with the live session id and the default profile', async () => {
+    const test = bench({})
+    await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+    expect(armedEpitaph()).toBeUndefined()
+    await test.ctx.fiber.dispose()
+    // The fake handle's id and the test argv (no --profile) name the line.
+    expect(armedEpitaph()).toBe(epitaphFor('agent-1', 'blue'))
+  })
+
+  it('arms nothing for a session without events and for no session at all', async () => {
+    const eventless = bench({}, { sessionEvents: [] })
+    await vi.waitFor(() => { expect(eventless.ctx.blueSession.current).not.toBeNull() })
+    await eventless.ctx.fiber.dispose()
+    expect(armedEpitaph()).toBeUndefined()
+    // No agents service mounted: the startup chain returns early and the
+    // session reference stays null through dispose.
+    const bare = bench({}, { agents: false })
+    await bare.ctx.fiber.dispose()
+    expect(armedEpitaph()).toBeUndefined()
+  })
+
+  it('flushes the armed text through the writer and skips when unarmed', () => {
+    const written: string[] = []
+    setExitEpitaphWriter(text => { written.push(text) })
+    try {
+      armExitEpitaph('farewell')
+      writeArmedEpitaph()
+      expect(written).toEqual(['farewell'])
+      armExitEpitaph(undefined)
+      writeArmedEpitaph()
+      expect(written).toEqual(['farewell'])
+    } finally {
+      setExitEpitaphWriter(undefined)
+    }
+  })
+
+  it('restores the plain synchronous stdout writer on an undefined seam', () => {
+    setExitEpitaphWriter(undefined)
+    const write = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
+    try {
+      armExitEpitaph('to stdout')
+      writeArmedEpitaph()
+      expect(write).toHaveBeenCalledWith('to stdout')
+    } finally {
+      write.mockRestore()
+    }
+  })
+
+  it('keeps a single slot: the latest arm wins (HMR remounts)', () => {
+    armExitEpitaph('first')
+    armExitEpitaph('second')
+    expect(armedEpitaph()).toBe('second')
+  })
+
+  it('reads the profile from both launcher flag forms, defaulting to blue', () => {
+    expect(profileFromArgv(['dsh'])).toBe('blue')
+    expect(profileFromArgv(['dsh', '--profile', 'tui', '--resume', 'x'])).toBe('tui')
+    expect(profileFromArgv(['dsh', '--profile=cc-tui'])).toBe('cc-tui')
+    // A flag-shaped follower is not a profile name.
+    expect(profileFromArgv(['dsh', '--profile', '--resume', 'x'])).toBe('blue')
+    expect(profileFromArgv(['dsh', '--profile'])).toBe('blue')
+  })
+
+  it('puts the resume command on its own line for a triple-click copy', () => {
+    expect(epitaphFor('session-abc', 'blue')).toBe(
+      'blue · session saved · resume with:\ndsh --profile blue --resume session-abc\n',
+    )
   })
 })
