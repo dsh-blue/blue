@@ -140,4 +140,7 @@ The orchestration lives in `blue-input` (`runExternalEditorFlow`, resolved from 
 
 ## Width discipline (D48)
 
+The input editor, hint line, and replacement dialogs register as fixed dock
+slots through `mountDockChild`; passive panes cannot consume their rows.
+
 `tests/fakes.ts`'s width helpers delegate to pi-tui through `../../core/src/width.ts` — no codepoint counters (they let CJK mis-budgets stay green while tripping the real width guard). `tests/width-scan.spec.ts` holds the width contract for the directly constructible panels (FormPanel, ModelPanel, HelpOverlay, InfoPanel, PlanReviewPanel, Questionnaire): each renders every `ADVERSARIAL` fixture at every `SCAN_WIDTHS` with an identity theme (marker paints read as false over-widths) and every row must fit. Fixed furniture that can out-wide a degenerate viewport cuts conditionally: FormPanel below its 20-column floor, ModelPanel's rows below lead+name-cap, framePanel below `FRAME_DEGENERATE_WIDTH` (core chrome) — normal widths emit untouched.

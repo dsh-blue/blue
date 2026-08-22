@@ -42,6 +42,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { AgentHandle } from '@deepseek-ai/dsh-agent'
 import {
   GutterComponent,
+  mountDockChild,
   type BlueComponent,
   type BlueComponents,
   type BlueMarkdown,
@@ -417,7 +418,12 @@ export function apply(ctx: Context): void {
 
   const pane = new BtwPaneComponent(colors, components, state, () => screen.rows)
   // Bottom panes render in mount order; a zero-row render occupies nothing.
-  ctx.effect(() => screen.addBottomChild(new GutterComponent(pane)))
+  ctx.effect(() => mountDockChild(screen, new GutterComponent(pane), {
+    priority: 100,
+    minRows: 3,
+    preferredRows: Math.max(3, Math.floor(screen.rows / 3)),
+    collapsible: false,
+  }))
   // The editor key chain routes close/scroll/submit here while the pane is
   // open.
   ctx.on('blue/btw-command', (command, text) => {

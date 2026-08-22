@@ -161,6 +161,34 @@ describe('startBlueTerminal', () => {
     await runtime.stop()
   })
 
+  it('shares a short dock viewport by priority and renders each child once', async () => {
+    const terminal = new FakeTerminal(80, 10)
+    const counts = new Map<string, number>()
+    const counted = (label: string, rows: number): BlueComponent => ({
+      render: () => {
+        counts.set(label, (counts.get(label) ?? 0) + 1)
+        return Array.from({ length: rows }, () => label)
+      },
+      invalidate: () => {},
+    })
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    runtime.addDockChild?.(counted('editor', 2), { fixed: true, priority: 1000 })
+    runtime.addDockChild?.(counted('footer', 1), { fixed: true, priority: 2000 })
+    runtime.addDockChild?.(counted('btw', 6), { priority: 100, preferredRows: 6, minRows: 3, collapsible: false })
+    runtime.addDockChild?.(counted('todo', 6), { priority: 60, preferredRows: 6 })
+    runtime.requestRender(true)
+    await waitForRender()
+    const rows = (terminal.written.at(-1) ?? '').split('\r\n')
+    expect(rows).toHaveLength(10)
+    expect(rows.filter(row => row.includes('btw')).length).toBe(6)
+    expect(rows.filter(row => row.includes('todo')).length).toBe(1)
+    expect(counts.get('btw')).toBe(1)
+    expect(counts.get('todo')).toBe(1)
+    expect(counts.get('editor')).toBe(1)
+    expect(counts.get('footer')).toBe(1)
+    await runtime.stop()
+  })
+
   it('sinks the bottom dock to the last rows when content is shorter than the viewport', async () => {
     const terminal = new FakeTerminal()
     const runtime = await startBlueTerminal(terminal, noProbe)
@@ -190,9 +218,9 @@ describe('startBlueTerminal', () => {
     await waitForRender()
     const frame = terminal.written.at(-1) ?? ''
     const rows = frame.split('\r\n')
-    // Thirty-one rendered lines: no filler, the dock right after the content.
-    expect(rows).toHaveLength(31)
-    expect(rows[30]).toContain('dock-row')
+    // The dock is height-bounded even when content exceeds the viewport.
+    expect(rows).toHaveLength(24)
+    expect(rows.at(-1)).toContain('dock-row')
     await runtime.stop()
   })
 

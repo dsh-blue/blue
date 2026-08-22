@@ -17,7 +17,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
-import { GutterComponent, type BlueComponent } from '@dsh-blue/blue-core'
+import { GutterComponent, mountDockChild, type BlueComponent } from '@dsh-blue/blue-core'
 // Empty type import carries the app-owned `blueSession` Context merge and
 // the `'blue/session-changed'` Events merge this plugin consumes.
 import type {} from '@dsh-blue/blue-app'
@@ -115,5 +115,9 @@ export function apply(ctx: Context): void {
   }]))
   // Bottom-pinned like the input editor; the pane's ordering against it is
   // the composing bundle patch's concern.
-  ctx.effect(() => screen.addBottomChild(new GutterComponent(pane)))
+  ctx.effect(() => mountDockChild(screen, new GutterComponent(pane), {
+    priority: 40,
+    minRows: 0,
+    preferredRows: 3,
+  }))
 }

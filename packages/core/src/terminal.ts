@@ -11,7 +11,7 @@ import { ProcessTerminal, TuiMainScreen, type Terminal, type TUI } from '@earend
 import { clampFrame, createFileOverflowSink, defaultOverflowDirectory, type OverflowSink } from './frame-clamp.ts'
 import { buildTitleOsc0 } from './terminal-escape.ts'
 import { probeTerminalBackground, backgroundFromRgb, type BlueProbeProcess } from './terminal-info.ts'
-import type { BlueComponent, BlueOverlayHandle, BlueOverlayOptions, BlueRgbColor } from './types.ts'
+import type { BlueComponent, BlueDockOptions, BlueOverlayHandle, BlueOverlayOptions, BlueRgbColor } from './types.ts'
 
 /**
  * The Blue-typed face of the running terminal stack. L1 services consume
@@ -44,6 +44,8 @@ export interface BlueTerminalRuntime {
    *   that pulls up over it).
    */
   addBottomChild(component: BlueComponent, position?: 'bottom'): void
+  /** Register a bottom child with explicit row-budget metadata. */
+  addDockChild?(component: BlueComponent, options?: BlueDockOptions): void
   /**
    * Unmount a root component from the live renderer.
    * @param component - the component to unmount.
@@ -188,6 +190,8 @@ export async function startBlueTerminal(
   // slot while the statusline remains visible below).
   const bottomChildren = new Set<BlueComponent>()
   const bottomPinned = new Set<BlueComponent>()
+  const dockOptions = new Map<BlueComponent, Required<BlueDockOptions>>()
+  const defaults = (): Required<BlueDockOptions> => ({ priority: 50, minRows: 0, preferredRows: Number.POSITIVE_INFINITY, collapsible: true, fixed: false })
   // The dock must also sit on the terminal's last rows even when the mounted
   // content is shorter than the viewport (boot with no session yet, a fresh
   // /new) — pi-tui stacks root children top-down, so an unpadded tree leaves
@@ -205,19 +209,35 @@ export async function startBlueTerminal(
   // session. `width` is the very value pi-tui's guard compares against.
   const collectLines = current.render.bind(current)
   current.render = (width: number): string[] => {
-    const lines = collectLines(width)
-    if (lines.length === 0 || lines.length >= terminal.rows || bottomChildren.size === 0) {
-      return clampFrame(lines, width, overflow)
+    if (bottomChildren.size === 0) return clampFrame(collectLines(width), width, overflow)
+    const dockSet = new Set(bottomChildren)
+    const content: string[] = []
+    for (const child of stable.children) {
+      if (!dockSet.has(child as BlueComponent)) content.push(...child.render(width))
     }
-    let dockRows = 0
-    for (const child of orderedDock()) dockRows += child.render(width).length
-    const filler = terminal.rows - lines.length
-    const boundary = lines.length - dockRows
-    return clampFrame([
-      ...lines.slice(0, boundary),
-      ...Array.from({ length: filler }, () => ''),
-      ...lines.slice(boundary),
-    ], width, overflow)
+    const entries = orderedDock().map(component => ({ component, lines: component.render(width), options: dockOptions.get(component) ?? defaults() }))
+    const fixedRows = entries.filter(entry => entry.options.fixed || bottomPinned.has(entry.component)).reduce((sum, entry) => sum + entry.lines.length, 0)
+    const available = Math.max(0, terminal.rows - fixedRows)
+    const flexible = entries.filter(entry => !entry.options.fixed && !bottomPinned.has(entry.component))
+    let remaining = Math.max(0, available)
+    const allocations = new Map<BlueComponent, number>()
+    for (const entry of [...flexible].sort((a, b) => b.options.priority - a.options.priority)) {
+      const cap = Math.min(entry.lines.length, entry.options.preferredRows)
+      const rows = Math.min(remaining, cap)
+      remaining -= rows
+      allocations.set(entry.component, rows)
+    }
+    const dock: string[] = []
+    for (const entry of [...flexible].sort((a, b) => a.options.priority - b.options.priority)) {
+      const rows = allocations.get(entry.component) ?? 0
+      if (rows > 0) dock.push(...entry.lines.slice(-rows))
+    }
+    for (const entry of entries
+      .filter(entry => entry.options.fixed || bottomPinned.has(entry.component))
+      .sort((a, b) => a.options.priority - b.options.priority)) dock.push(...entry.lines)
+    const filler = Math.max(0, terminal.rows - content.length - dock.length)
+    const frame = [...content, ...Array.from({ length: filler }, () => ''), ...dock]
+    return clampFrame(frame.length > terminal.rows ? frame.slice(-terminal.rows) : frame, width, overflow)
   }
   /** Dock children in render order: the regular block, then the pinned tail. */
   function orderedDock(): BlueComponent[] {
@@ -255,6 +275,7 @@ export async function startBlueTerminal(
     },
     addBottomChild(component, position) {
       bottomChildren.add(component)
+      dockOptions.set(component, { ...defaults(), fixed: position === 'bottom' })
       if (position === 'bottom') {
         // Pinned members render at the very bottom of the dock: re-append
         // on the renderer so the array order — and therefore the painted
@@ -272,9 +293,17 @@ export async function startBlueTerminal(
         stable.children.splice(index === -1 ? stable.children.length : index, 0, component)
       }
     },
+    addDockChild(component, options) {
+      bottomChildren.add(component)
+      dockOptions.set(component, { ...defaults(), ...options })
+      bottomPinned.delete(component)
+      const index = stable.children.findIndex(child => bottomPinned.has(child as BlueComponent))
+      stable.children.splice(index === -1 ? stable.children.length : index, 0, component)
+    },
     removeChild(component) {
       bottomChildren.delete(component)
       bottomPinned.delete(component)
+      dockOptions.delete(component)
       stable.removeChild(component)
     },
     setFocus(component) {

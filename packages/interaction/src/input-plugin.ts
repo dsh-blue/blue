@@ -56,6 +56,7 @@ import type {
   BlueScreen,
   BlueSemanticColors,
 } from '@dsh-blue/blue-core'
+import { mountDockChild } from '@dsh-blue/blue-core'
 import { parseCommand } from '@deepseek-ai/dsh-commands'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 // Empty type import carries the `permissionPresets` Context merge the
@@ -582,8 +583,9 @@ export function apply(ctx: Context): void {
     // Pin below the transcript: pi-tui renders root children in mount order,
     // and transcript components only appear once a session exists. The hint
     // line mounts after the editor so it renders beneath it.
-    let removeEditor = screen.addBottomChild(editor)
-    let removeHint = screen.addBottomChild(hintLine)
+    const editorDock = { fixed: true, priority: 1000 }
+    let removeEditor = mountDockChild(screen, editor, editorDock)
+    let removeHint = mountDockChild(screen, hintLine, { fixed: true, priority: 1000 })
     screen.setFocus(editor)
     setSharedEditor({ editor, submitPrompt, notice: setNotice })
     ctx.emit('blue/input-editor-changed')
@@ -600,14 +602,14 @@ export function apply(ctx: Context): void {
       removeEditor()
     }
     const showEditor = (): void => {
-      removeEditor = screen.addBottomChild(editor)
-      removeHint = screen.addBottomChild(hintLine)
+      removeEditor = mountDockChild(screen, editor, editorDock)
+      removeHint = mountDockChild(screen, hintLine, { fixed: true, priority: 1000 })
       screen.setFocus(editor)
     }
     setEditorSlotSwap({
       mount: (component) => {
         if (panels.length === 0) hideEditor()
-        const remove = screen.addBottomChild(component)
+        const remove = mountDockChild(screen, component, { fixed: true, priority: 1000 })
         screen.setFocus(component)
         const entry = { component, remove }
         panels.push(entry)

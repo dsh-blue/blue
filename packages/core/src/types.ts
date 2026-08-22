@@ -34,6 +34,20 @@ export interface BlueComponent {
   invalidate(): void
 }
 
+/** Layout metadata for a component occupying the bottom dock. */
+export interface BlueDockOptions {
+  /** Stable ordering priority; larger values are closer to the editor. */
+  readonly priority?: number
+  /** Minimum rows retained while the component is visible. */
+  readonly minRows?: number
+  /** Preferred row allocation before the dock is compressed. */
+  readonly preferredRows?: number
+  /** Whether the component may be removed when the dock is short. */
+  readonly collapsible?: boolean
+  /** Whether the component is an uncompressed fixed slot. */
+  readonly fixed?: boolean
+}
+
 /**
  * A {@link BlueComponent} that can hold keyboard focus and display the
  * hardware cursor. The screen sets `focused` on focus changes; focused
@@ -129,6 +143,8 @@ export interface BlueOverlayHandle {
  * or keybinding responsibility.
  */
 export interface BlueScreen {
+  /** Register a dock child with explicit row-budget metadata. */
+  addDockChild?(component: BlueComponent, options?: BlueDockOptions): () => void
   /**
    * Mount a component at the root of the tree, above every bottom-pinned
    * component regardless of mount order.

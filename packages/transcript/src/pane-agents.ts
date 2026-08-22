@@ -26,7 +26,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { GutterComponent, type BlueComponent } from '@dsh-blue/blue-core'
+import { GutterComponent, mountDockChild, type BlueComponent } from '@dsh-blue/blue-core'
 // Empty type import carries the app-owned `blueSession` Context merge and
 // the `'blue/session-changed'` Events merge this plugin consumes.
 import type {} from '@dsh-blue/blue-app'
@@ -198,7 +198,11 @@ export function apply(ctx: Context): void {
   if (current) attach(current)
   ctx.on('blue/session-changed', attach)
   ctx.effect(() => {
-    const dispose = screen.addBottomChild(new GutterComponent(pane))
+    const dispose = mountDockChild(screen, new GutterComponent(pane), {
+      priority: 80,
+      minRows: 0,
+      preferredRows: 8,
+    })
     return () => {
       detach?.()
       tracker?.dispose()
