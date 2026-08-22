@@ -5,8 +5,8 @@
  * wrapper chained onto the shared editor's `onKey` hook — ahead of the
  * pi-tui Editor, which has no clipboard-image handling of its own. The paste
  * flow is fire-and-forget: an injectable reader (the default negotiates with
- * the stdout-form tools `wl-paste` then `xclip` — macOS's `pngpaste` writes
- * only to files, so it is deliberately not probed) resolves to either image
+ * the Linux stdout-form tools `wl-paste` and `xclip` in session-aware order)
+ * resolves to either image
  * bytes tagged with the clipboard's own declared type or a failure kind
  * naming what is missing: the tool absent, the display session unreachable,
  * no image, an unsupported image type, a timeout, or a raw tool failure.
@@ -26,15 +26,33 @@
 
 import { execFile } from 'node:child_process'
 import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { getSharedEditor, registerSubmitTransformer, type SharedEditor } from './editor-instance.ts'
-import { ADMITTED_IMAGE_TYPES, EXT_BY_MEDIA_TYPE } from './attachments.ts'
+import { ADMITTED_IMAGE_TYPES, EXT_BY_MEDIA_TYPE, sniffImageMediaType } from './attachments.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-paste-image'
 /** Services required before the paste flow can run. */
 export const inject = ['attachments', 'blueKeymap']
+
+/** Clipboard backend policy: automatic session order, or one strict backend. */
+export type ClipboardBackendPolicy = 'auto' | 'wayland' | 'x11'
+
+/** Concrete clipboard backend that produced an image. */
+export type ClipboardBackend = Exclude<ClipboardBackendPolicy, 'auto'>
+
+/** Plugin configuration for clipboard backend selection. */
+export interface Config {
+  /** Backend policy; strict modes never cross the Wayland/X11 boundary. */
+  backend: ClipboardBackendPolicy
+}
+
+/** Validated plugin configuration; automatic session-aware probing is the default. */
+export const Config: z<Config> = z.object({
+  backend: z.union([z.const('auto'), z.const('wayland'), z.const('x11')]).default('auto'),
+})
 
 /**
  * Contextual action triggering the clipboard-image paste. Bound to Ctrl-V;
@@ -48,7 +66,7 @@ export const ACTION_IMAGE_PASTE = 'blue.image.paste'
  * clipboard itself declared, or a failure kind naming what is missing.
  */
 export type ClipboardImageResult =
-  | { kind: 'image'; data: Uint8Array; mediaType: ImageMediaType }
+  | { kind: 'image'; data: Uint8Array; mediaType: ImageMediaType; backend?: ClipboardBackend; fallback?: boolean }
   | { kind: 'no-image' }
   | { kind: 'unsupported'; mediaType: string }
   | { kind: 'unreachable' }
@@ -64,6 +82,8 @@ export type ClipboardImageReader = () => Promise<ClipboardImageResult>
 
 /** How one clipboard tool lists the offered types and reads one back. */
 type ClipboardTool = {
+  /** Stable backend identity used by policy selection and cooldowns. */
+  backend: ClipboardBackend
   /** The probe command. */
   command: string
   /** stderr signature meaning "no display session is reachable". */
@@ -74,24 +94,62 @@ type ClipboardTool = {
   readArgs: (mediaType: string) => string[]
 }
 
-/** Clipboard image tools probed in order: Wayland first, then X11. */
-const CLIPBOARD_TOOLS: readonly ClipboardTool[] = [
-  {
+/** Clipboard image tools keyed by their display protocol. */
+const CLIPBOARD_TOOLS: Readonly<Record<ClipboardBackend, ClipboardTool>> = {
+  wayland: {
+    backend: 'wayland',
     command: 'wl-paste',
     unreachable: /failed to connect to a wayland server/i,
     listArgs: ['-l'],
     readArgs: mediaType => ['-t', mediaType],
   },
-  {
+  x11: {
+    backend: 'x11',
     command: 'xclip',
     unreachable: /can(?:not|'t) open display/i,
     listArgs: ['-selection', 'clipboard', '-t', 'TARGETS', '-o'],
     readArgs: mediaType => ['-selection', 'clipboard', '-t', mediaType, '-o'],
   },
-]
+}
 
 /** Per-tool timeout; a hung clipboard helper must not wedge the editor. */
 const CLIPBOARD_TOOL_TIMEOUT_MS = 3000
+
+/** A timed-out backend stays skipped briefly, then is retried automatically. */
+const BACKEND_COOLDOWN_MS = 60_000
+
+/** Wall clock seam for deterministic cooldown specs. */
+export type ClipboardClock = () => number
+
+const defaultClipboardClock: ClipboardClock = () => Date.now()
+let clipboardClock: ClipboardClock = defaultClipboardClock
+
+/** Retry deadline per backend and display-environment identity. */
+const backendCooldowns = new Map<string, number>()
+
+/** Replace the cooldown clock in tests. */
+export function setClipboardClock(clock: ClipboardClock | undefined): void {
+  clipboardClock = clock ?? defaultClipboardClock
+}
+
+/** Clear every remembered backend timeout. */
+export function resetClipboardBackendCooldowns(): void {
+  backendCooldowns.clear()
+}
+
+/** The display identity whose failures may be reused safely. */
+function cooldownKey(backend: ClipboardBackend): string {
+  return [backend, process.env.DISPLAY ?? '', process.env.WAYLAND_DISPLAY ?? '', process.env.XDG_RUNTIME_DIR ?? ''].join('\0')
+}
+
+/** Resolve the configured backend order against the current display session. */
+function clipboardToolsFor(policy: ClipboardBackendPolicy): readonly ClipboardTool[] {
+  if (policy === 'wayland') return [CLIPBOARD_TOOLS.wayland]
+  if (policy === 'x11') return [CLIPBOARD_TOOLS.x11]
+  if ((process.env.WAYLAND_DISPLAY ?? '') !== '') return [CLIPBOARD_TOOLS.wayland, CLIPBOARD_TOOLS.x11]
+  if ((process.env.DISPLAY ?? '') !== '') return [CLIPBOARD_TOOLS.x11, CLIPBOARD_TOOLS.wayland]
+  return [CLIPBOARD_TOOLS.wayland, CLIPBOARD_TOOLS.x11]
+}
 
 /** Outcome of one clipboard tool invocation. */
 type ToolRun =
@@ -197,9 +255,10 @@ async function probeTool(tool: ClipboardTool): Promise<ClipboardImageResult> {
   const listing = await runTool(tool.command, tool.listArgs)
   if (!listing.ok) {
     const failure = classifyFailure(tool, listing)
-    // A terse nonzero listing exit (xclip's empty-clipboard quirk fails
-    // with no stderr) still queried the clipboard: treat it as no image.
-    if (failure.kind === 'failed' && listing.stderr.trim() === '') return { kind: 'no-image' }
+    // xclip's empty-clipboard TARGETS query exits nonzero without stderr.
+    // Keep this quirk backend-specific: a silent wl-paste failure is not
+    // evidence that the clipboard was queried successfully.
+    if (tool.backend === 'x11' && failure.kind === 'failed' && listing.stderr.trim() === '') return { kind: 'no-image' }
     return failure
   }
   const offered = listing.stdout.toString('utf8')
@@ -215,7 +274,18 @@ async function probeTool(tool: ClipboardTool): Promise<ClipboardImageResult> {
   for (const mediaType of admitted) {
     const read = await runTool(tool.command, tool.readArgs(mediaType))
     if (read.ok) {
-      if (read.stdout.length > 0) return { kind: 'image', data: read.stdout, mediaType }
+      if (read.stdout.length > 0) {
+        const sniffed = sniffImageMediaType(read.stdout)
+        if (sniffed === mediaType) {
+          return { kind: 'image', data: read.stdout, mediaType, backend: tool.backend }
+        }
+        if (softFailure === undefined) {
+          softFailure = sniffed === undefined
+            ? { kind: 'failed', detail: `${tool.command} returned invalid bytes for ${mediaType}` }
+            : { kind: 'failed', detail: `${tool.command} returned ${sniffed} bytes for ${mediaType}` }
+        }
+        continue
+      }
       // The listing promised the type but the read came back empty (the
       // clipboard can change mid-probe): fall through to the next type.
       continue
@@ -247,26 +317,40 @@ function aggregateOutcomes(outcomes: FailureResult[]): ClipboardImageResult {
   return hasDisplaySession ? { kind: 'missing-tool' } : { kind: 'unreachable' }
 }
 
-/** The default reader: probe each tool in order; the first image wins,
- * otherwise the failures aggregate into one verdict. */
-const defaultClipboardImageReader: ClipboardImageReader = async () => {
+/** The default reader: probe each policy-selected tool in order; the first
+ * valid image wins, otherwise the failures aggregate into one verdict. */
+async function defaultClipboardImageReader(config: Config): Promise<ClipboardImageResult> {
   const outcomes: FailureResult[] = []
-  for (const tool of CLIPBOARD_TOOLS) {
+  const tools = clipboardToolsFor(config.backend)
+  for (const [index, tool] of tools.entries()) {
+    const key = cooldownKey(tool.backend)
+    const retryAt = backendCooldowns.get(key)
+    if (retryAt !== undefined && clipboardClock() < retryAt) {
+      outcomes.push({ kind: 'timeout' })
+      continue
+    }
+    backendCooldowns.delete(key)
     const outcome = await probeTool(tool)
-    if (outcome.kind === 'image') return outcome
+    if (outcome.kind === 'timeout') backendCooldowns.set(key, clipboardClock() + BACKEND_COOLDOWN_MS)
+    if (outcome.kind === 'image') {
+      return {
+        ...outcome,
+        fallback: config.backend === 'auto' && index > 0,
+      }
+    }
     outcomes.push(outcome)
   }
   return aggregateOutcomes(outcomes)
 }
 
-let clipboardImageReader: ClipboardImageReader = defaultClipboardImageReader
+let clipboardImageReader: ClipboardImageReader | undefined
 
 /**
  * Replace the clipboard image reader (tests inject a fake here).
  * @param reader - the replacement, or `undefined` to restore the default.
  */
 export function setClipboardImageReader(reader: ClipboardImageReader | undefined): void {
-  clipboardImageReader = reader ?? defaultClipboardImageReader
+  clipboardImageReader = reader
 }
 
 /**
@@ -331,7 +415,7 @@ function transformImageMarkers(text: string): ContentBlock[] {
  * @param shared - the shared editor entry.
  * @param isUnloaded - reports whether this fiber unloaded mid-flight.
  */
-async function pasteFlow(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): Promise<void> {
+async function pasteFlow(ctx: Context, config: Config, shared: SharedEditor, isUnloaded: () => boolean): Promise<void> {
   // A missing notice callback degrades to silence rather than a throw.
   const notice = shared.notice ?? (() => {})
   // The probe can take seconds (a wedged wl-paste costs its whole timeout);
@@ -341,7 +425,7 @@ async function pasteFlow(ctx: Context, shared: SharedEditor, isUnloaded: () => b
   notice('pasting image...')
   let result: ClipboardImageResult
   try {
-    result = await clipboardImageReader()
+    result = await (clipboardImageReader?.() ?? defaultClipboardImageReader(config))
   } catch (error) {
     // An injected reader rejecting degrades to the same notice family.
     if (isUnloaded()) return
@@ -367,6 +451,10 @@ async function pasteFlow(ctx: Context, shared: SharedEditor, isUnloaded: () => b
     const marker = `[image #${pasteCount}]`
     pastedImages.set(marker, ref)
     shared.editor.insertText(marker)
+    if (result.fallback === true && result.backend !== undefined) {
+      const label = result.backend === 'x11' ? 'X11' : 'Wayland'
+      notice(`pasted image via ${label} fallback; verify it is current`)
+    }
   } catch (error) {
     if (isUnloaded()) return
     const message = error instanceof Error ? error.message : String(error)
@@ -383,12 +471,12 @@ async function pasteFlow(ctx: Context, shared: SharedEditor, isUnloaded: () => b
  *   the paste flow so a paste settling after a theme-swap reload no-ops.
  * @returns a detacher restoring the previous handler.
  */
-function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): () => void {
+function attach(ctx: Context, config: Config, shared: SharedEditor, isUnloaded: () => boolean): () => void {
   const { editor } = shared
   const previousOnKey = editor.onKey
   editor.onKey = (data) => {
     if (ctx.blueKeymap.matches(data, ACTION_IMAGE_PASTE)) {
-      void pasteFlow(ctx, shared, isUnloaded)
+      void pasteFlow(ctx, config, shared, isUnloaded)
       return true
     }
     return previousOnKey?.(data) ?? false
@@ -404,7 +492,7 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
  * unmounts or this fiber disposes.
  * @param ctx - plugin context.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: Config): void {
   /**
    * Set when this fiber unloads: a paste can settle after a theme-swap
    * reload disposed the fiber, and the late completion must not touch the
@@ -425,7 +513,7 @@ export function apply(ctx: Context): void {
     detach?.()
     detach = undefined
     const shared = getSharedEditor()
-    if (shared !== undefined) detach = attach(ctx, shared, () => unloaded)
+    if (shared !== undefined) detach = attach(ctx, config, shared, () => unloaded)
   }
   ctx.effect(() => () => {
     detach?.()

@@ -77,6 +77,8 @@ describe('blue-paste-image plugin', () => {
 
   afterEach(async () => {
     pasteImage.setClipboardImageReader(undefined)
+    pasteImage.setClipboardClock(undefined)
+    pasteImage.resetClipboardBackendCooldowns()
     clearSharedEditor()
     await fiber?.dispose()
     fiber = undefined
@@ -215,6 +217,35 @@ describe('blue-paste-image plugin', () => {
     ])
     // No known markers at all: the fallback single text block.
     expect(applySubmitTransformers('plain line')).toEqual([{ type: 'text', text: 'plain line' }])
+  })
+
+  it('reports a successful automatic backend fallback after inserting its marker', async () => {
+    await mount()
+    pasteImage.setClipboardImageReader(() => Promise.resolve({
+      kind: 'image',
+      data: PNG_1X1,
+      mediaType: 'image/png',
+      backend: 'x11',
+      fallback: true,
+    }))
+    pressPaste()
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(notices).toEqual(['pasting image...', 'pasted image via X11 fallback; verify it is current'])
+
+    pasteImage.setClipboardImageReader(() => Promise.resolve({
+      kind: 'image',
+      data: GIF_1X1,
+      mediaType: 'image/gif',
+      backend: 'wayland',
+      fallback: true,
+    }))
+    pressPaste()
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(2)
+    })
+    expect(notices.at(-1)).toBe('pasted image via Wayland fallback; verify it is current')
   })
 
   it('notices each clipboard failure kind with what is missing', async () => {
@@ -360,6 +391,7 @@ describe('default clipboard image reader', () => {
   const savedPath = process.env.PATH
   const savedDisplay = process.env.DISPLAY
   const savedWayland = process.env.WAYLAND_DISPLAY
+  const savedRuntimeDir = process.env.XDG_RUNTIME_DIR
   let editor: FakeBlueEditor
   let notices: string[]
   let saveImage: ReturnType<typeof vi.fn>
@@ -367,6 +399,9 @@ describe('default clipboard image reader', () => {
   let fiber: { dispose(): Promise<void> } | undefined
 
   beforeEach(() => {
+    delete process.env.DISPLAY
+    delete process.env.WAYLAND_DISPLAY
+    delete process.env.XDG_RUNTIME_DIR
     editor = new FakeBlueEditor()
     notices = []
     saveImage = vi.fn(async (input: SaveImageAttachment): Promise<ImageAttachmentRef> => ({
@@ -388,7 +423,11 @@ describe('default clipboard image reader', () => {
     else process.env.DISPLAY = savedDisplay
     if (savedWayland === undefined) delete process.env.WAYLAND_DISPLAY
     else process.env.WAYLAND_DISPLAY = savedWayland
+    if (savedRuntimeDir === undefined) delete process.env.XDG_RUNTIME_DIR
+    else process.env.XDG_RUNTIME_DIR = savedRuntimeDir
     pasteImage.setClipboardImageReader(undefined)
+    pasteImage.setClipboardClock(undefined)
+    pasteImage.resetClipboardBackendCooldowns()
     clearSharedEditor()
     await fiber?.dispose()
     fiber = undefined
@@ -414,8 +453,8 @@ describe('default clipboard image reader', () => {
   }
 
   /** Mount the plugin with the default reader probing the fake bin. */
-  async function mountDefault(): Promise<void> {
-    fiber = await ctx.plugin(pasteImage)
+  async function mountDefault(backend?: pasteImage.ClipboardBackendPolicy): Promise<void> {
+    fiber = await (backend === undefined ? ctx.plugin(pasteImage) : ctx.plugin(pasteImage, { backend }))
     pasteImage.setClipboardImageReader(undefined)
     editor.handleInput(KEY.ctrlV)
   }
@@ -478,6 +517,70 @@ exit 1
     expect(saveImage.mock.calls[0]![0]).toMatchObject({ mediaType: 'image/jpeg', name: 'pasted-image.jpg' })
   })
 
+  it('falls to the next admitted type when the first returns invalid or mismatched bytes', async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', wlPasteFake('image/png\nimage/jpeg\n', {
+      'image/png': shBytes(new Uint8Array([1, 2, 3])),
+      'image/jpeg': shBytes(JPEG_PREFIX),
+    }))
+    process.env.PATH = bin
+    await mountDefault()
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImage.mock.calls[0]![0]).toMatchObject({ mediaType: 'image/jpeg', name: 'pasted-image.jpg' })
+
+    await fiber!.dispose()
+    fiber = undefined
+    editor = new FakeBlueEditor()
+    notices = []
+    setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+    tool(bin, 'wl-paste', wlPasteFake('image/png\nimage/jpeg\n', {
+      'image/png': shBytes(GIF_1X1),
+      'image/jpeg': shBytes(JPEG_PREFIX),
+    }))
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImage.mock.calls[1]![0]).toMatchObject({ mediaType: 'image/jpeg' })
+  })
+
+  it('uses the session-aware automatic order and honors strict backend policies', async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', wlPasteFake('image/gif\n', { 'image/gif': shBytes(GIF_1X1) }))
+    tool(bin, 'xclip', xclipFake('TARGETS\nimage/png\n', { 'image/png': shBytes(PNG_1X1) }))
+    process.env.PATH = bin
+    process.env.DISPLAY = ':1'
+    await mountDefault()
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImage.mock.calls[0]![0]).toMatchObject({ mediaType: 'image/png' })
+
+    await fiber!.dispose()
+    fiber = undefined
+    editor = new FakeBlueEditor()
+    setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImage.mock.calls[1]![0]).toMatchObject({ mediaType: 'image/gif' })
+
+    await fiber!.dispose()
+    fiber = undefined
+    editor = new FakeBlueEditor()
+    setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+    process.env.WAYLAND_DISPLAY = 'wayland-1'
+    process.env.XDG_RUNTIME_DIR = '/tmp/blue-runtime'
+    await mountDefault()
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImage.mock.calls[2]![0]).toMatchObject({ mediaType: 'image/gif' })
+  })
+
   it('probes xclip after a silently failing wl-paste listing', async () => {
     const bin = mkdtempTracked('blue-paste-bin-')
     tool(bin, 'wl-paste', '#!/bin/sh\nexit 1\n')
@@ -488,6 +591,7 @@ exit 1
       expect(editor.inserted).toHaveLength(1)
     })
     expect(saveImage.mock.calls[0]![0]).toMatchObject({ mediaType: 'image/png', name: 'pasted-image.png' })
+    expect(notices.at(-1)).toBe('pasted image via X11 fallback; verify it is current')
   })
 
   it('notices the unsupported kind when only non-admitted image types are offered', async () => {
@@ -564,6 +668,41 @@ exit 1
     expect(saveImage).not.toHaveBeenCalled()
   })
 
+  it('skips a timed-out backend during cooldown and retries it after expiry', async () => {
+    let now = 1_000
+    pasteImage.setClipboardClock(() => now)
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', '#!/bin/sh\ntrap \'\' TERM\nexec /bin/sleep 10\n')
+    process.env.PATH = bin
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'clipboard read timed out'])
+    }, { timeout: 8000 })
+
+    tool(bin, 'wl-paste', wlPasteFake('image/png\n', { 'image/png': shBytes(PNG_1X1) }))
+    process.env.WAYLAND_DISPLAY = 'wayland-new'
+    process.env.XDG_RUNTIME_DIR = '/tmp/blue-runtime-new'
+    editor.handleInput(KEY.ctrlV)
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+
+    delete process.env.WAYLAND_DISPLAY
+    delete process.env.XDG_RUNTIME_DIR
+    editor.handleInput(KEY.ctrlV)
+    await vi.waitFor(() => {
+      expect(notices).toHaveLength(5)
+    })
+    expect(notices.at(-1)).toBe('clipboard read timed out')
+    expect(editor.inserted).toHaveLength(1)
+
+    now += 60_000
+    editor.handleInput(KEY.ctrlV)
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(2)
+    })
+  })
+
   it('notices the raw failure detail when a read exits nonzero with stderr', async () => {
     const bin = mkdtempTracked('blue-paste-bin-')
     tool(bin, 'wl-paste', `#!/bin/sh
@@ -592,6 +731,19 @@ exit 3
     })
   })
 
+  it('keeps the first invalid-byte diagnosis when every representation is invalid', async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', wlPasteFake('image/png\nimage/jpeg\n', {
+      'image/png': shBytes(new Uint8Array([1, 2, 3])),
+      'image/jpeg': shBytes(GIF_1X1),
+    }))
+    process.env.PATH = bin
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'clipboard read failed: wl-paste returned invalid bytes for image/png'])
+    })
+  })
+
   it('notices no image when the clipboard holds only text', async () => {
     const bin = mkdtempTracked('blue-paste-bin-')
     tool(bin, 'wl-paste', wlPasteFake('text/plain;charset=utf-8\nUTF8_STRING\n', {}))
@@ -607,9 +759,19 @@ exit 3
     const bin = mkdtempTracked('blue-paste-bin-')
     tool(bin, 'xclip', '#!/bin/sh\nexit 1\n')
     process.env.PATH = bin
-    await mountDefault()
+    await mountDefault('x11')
     await vi.waitFor(() => {
       expect(notices).toEqual(['pasting image...', 'no image available from the clipboard'])
+    })
+  })
+
+  it('keeps a silent failed wl-paste listing as a tool failure', async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', '#!/bin/sh\nexit 1\n')
+    process.env.PATH = bin
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'clipboard read failed: wl-paste exited with code 1'])
     })
   })
 
