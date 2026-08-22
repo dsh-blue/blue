@@ -233,9 +233,12 @@ describe('blue-paste-image plugin', () => {
       pressPaste()
       seen += 1
       await vi.waitFor(() => {
-        expect(notices).toHaveLength(seen)
+        expect(notices).toHaveLength(seen * 2)
       })
-      expect(notices[seen - 1]).toBe(expected)
+      // Each press flashes the in-progress notice first; the failure notice
+      // overwrites its slot in the sequence.
+      expect(notices[(seen - 1) * 2]).toBe('pasting image...')
+      expect(notices[seen * 2 - 1]).toBe(expected)
     }
     expect(editor.inserted).toHaveLength(0)
   })
@@ -245,14 +248,14 @@ describe('blue-paste-image plugin', () => {
     pasteImage.setClipboardImageReader(() => Promise.reject(new Error('tool broke')))
     pressPaste()
     await vi.waitFor(() => {
-      expect(notices).toEqual(['clipboard read failed: tool broke'])
+      expect(notices).toEqual(['pasting image...', 'clipboard read failed: tool broke'])
     })
     pasteImage.setClipboardImageReader(() => Promise.reject('raw failure'))
     pressPaste()
     await vi.waitFor(() => {
-      expect(notices).toHaveLength(2)
+      expect(notices).toHaveLength(4)
     })
-    expect(notices[1]).toBe('clipboard read failed: raw failure')
+    expect(notices[3]).toBe('clipboard read failed: raw failure')
     expect(editor.inserted).toHaveLength(0)
   })
 
@@ -263,7 +266,7 @@ describe('blue-paste-image plugin', () => {
     pasteImage.setClipboardImageReader(() => Promise.resolve(image))
     pressPaste()
     await vi.waitFor(() => {
-      expect(notices).toEqual(['image rejected: image exceeds the per-image byte limit'])
+      expect(notices).toEqual(['pasting image...', 'image rejected: image exceeds the per-image byte limit'])
     })
     expect(editor.inserted).toHaveLength(0)
 
@@ -273,7 +276,9 @@ describe('blue-paste-image plugin', () => {
     pressPaste()
     await vi.waitFor(() => {
       expect(notices).toEqual([
+        'pasting image...',
         'image rejected: image exceeds the per-image byte limit',
+        'pasting image...',
         'image rejected: raw failure',
       ])
     })
@@ -302,7 +307,8 @@ describe('blue-paste-image plugin', () => {
     gate.resolve({ kind: 'image', data: PNG_1X1, mediaType: 'image/png' })
     await tick()
     expect(editor.inserted).toHaveLength(0)
-    expect(notices).toHaveLength(0)
+    // Only the in-progress flash landed before the unload; nothing follows.
+    expect(notices).toEqual(['pasting image...'])
     expect(saveImage).not.toHaveBeenCalled()
 
     // The same unload gate covers a rejecting reader: no notice flashes
@@ -315,7 +321,7 @@ describe('blue-paste-image plugin', () => {
     fiber = undefined
     rejection.reject(new Error('too late'))
     await tick()
-    expect(notices).toHaveLength(0)
+    expect(notices).toEqual(['pasting image...', 'pasting image...'])
   })
 
   it('no-ops when the fiber unloads before the save settles or the rejection lands', async () => {
@@ -346,7 +352,7 @@ describe('blue-paste-image plugin', () => {
     fiber = undefined
     failure.reject(new AttachmentError('late', 'IMAGE_TOO_LARGE'))
     await tick()
-    expect(notices).toHaveLength(0)
+    expect(notices).toEqual(['pasting image...', 'pasting image...'])
   })
 })
 
@@ -490,7 +496,7 @@ exit 1
     process.env.PATH = bin
     await mountDefault()
     await vi.waitFor(() => {
-      expect(notices).toEqual(['clipboard image type image/bmp is not supported'])
+      expect(notices).toEqual(['pasting image...', 'clipboard image type image/bmp is not supported'])
     })
     expect(editor.inserted).toHaveLength(0)
   })
@@ -500,7 +506,7 @@ exit 1
     process.env.PATH = bin
     await mountDefault()
     await vi.waitFor(() => {
-      expect(notices).toEqual(['clipboard image tool missing: install wl-clipboard (wl-paste) or xclip'])
+      expect(notices).toEqual(['pasting image...', 'clipboard image tool missing: install wl-clipboard (wl-paste) or xclip'])
     })
     expect(saveImage).not.toHaveBeenCalled()
   })
@@ -513,7 +519,7 @@ exit 1
     process.env.PATH = bin
     await mountDefault()
     await vi.waitFor(() => {
-      expect(notices).toEqual(['clipboard unreachable: DISPLAY/WAYLAND_DISPLAY is not set in this session'])
+      expect(notices).toEqual(['pasting image...', 'clipboard unreachable: DISPLAY/WAYLAND_DISPLAY is not set in this session'])
     })
   })
 
@@ -527,7 +533,7 @@ exit 1
     process.env.PATH = bin
     await mountDefault()
     await vi.waitFor(() => {
-      expect(notices).toEqual(['clipboard image tool missing: install wl-clipboard (wl-paste) or xclip'])
+      expect(notices).toEqual(['pasting image...', 'clipboard image tool missing: install wl-clipboard (wl-paste) or xclip'])
     })
   })
 
@@ -538,7 +544,7 @@ exit 1
     process.env.PATH = bin
     await mountDefault()
     await vi.waitFor(() => {
-      expect(notices).toEqual(['clipboard unreachable: DISPLAY/WAYLAND_DISPLAY is not set in this session'])
+      expect(notices).toEqual(['pasting image...', 'clipboard unreachable: DISPLAY/WAYLAND_DISPLAY is not set in this session'])
     })
   })
 
@@ -553,7 +559,7 @@ exit 1
     process.env.PATH = bin
     await mountDefault()
     await vi.waitFor(() => {
-      expect(notices).toEqual(['clipboard read timed out'])
+      expect(notices).toEqual(['pasting image...', 'clipboard read timed out'])
     }, { timeout: 8000 })
     expect(saveImage).not.toHaveBeenCalled()
   })
@@ -568,7 +574,7 @@ exit 2
     process.env.PATH = bin
     await mountDefault()
     await vi.waitFor(() => {
-      expect(notices).toEqual(['clipboard read failed: wl-paste exited with code 2: boom'])
+      expect(notices).toEqual(['pasting image...', 'clipboard read failed: wl-paste exited with code 2: boom'])
     })
   })
 
@@ -582,7 +588,7 @@ exit 3
     process.env.PATH = bin
     await mountDefault()
     await vi.waitFor(() => {
-      expect(notices).toEqual(['clipboard read failed: wl-paste exited with code 3: first boom'])
+      expect(notices).toEqual(['pasting image...', 'clipboard read failed: wl-paste exited with code 3: first boom'])
     })
   })
 
@@ -592,7 +598,7 @@ exit 3
     process.env.PATH = bin
     await mountDefault()
     await vi.waitFor(() => {
-      expect(notices).toEqual(['no image available from the clipboard'])
+      expect(notices).toEqual(['pasting image...', 'no image available from the clipboard'])
     })
   })
 
@@ -603,7 +609,7 @@ exit 3
     process.env.PATH = bin
     await mountDefault()
     await vi.waitFor(() => {
-      expect(notices).toEqual(['no image available from the clipboard'])
+      expect(notices).toEqual(['pasting image...', 'no image available from the clipboard'])
     })
   })
 
@@ -620,7 +626,7 @@ exit 1
     process.env.PATH = bin
     await mountDefault()
     await vi.waitFor(() => {
-      expect(notices).toEqual(['clipboard unreachable: DISPLAY/WAYLAND_DISPLAY is not set in this session'])
+      expect(notices).toEqual(['pasting image...', 'clipboard unreachable: DISPLAY/WAYLAND_DISPLAY is not set in this session'])
     })
   })
 
@@ -633,7 +639,7 @@ exit 1
     process.env.PATH = bin
     await mountDefault()
     await vi.waitFor(() => {
-      expect(notices).toEqual(['no image available from the clipboard'])
+      expect(notices).toEqual(['pasting image...', 'no image available from the clipboard'])
     })
   })
 })

@@ -334,6 +334,11 @@ function transformImageMarkers(text: string): ContentBlock[] {
 async function pasteFlow(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): Promise<void> {
   // A missing notice callback degrades to silence rather than a throw.
   const notice = shared.notice ?? (() => {})
+  // The probe can take seconds (a wedged wl-paste costs its whole timeout);
+  // flash an in-progress notice so the wait reads as work, not a dead key.
+  // The marker insertion's own change event clears it on success; a failure
+  // notice overwrites it in place.
+  notice('pasting image...')
   let result: ClipboardImageResult
   try {
     result = await clipboardImageReader()
