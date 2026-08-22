@@ -63,9 +63,13 @@ export type { FoldUpdate } from './fold.ts'
 export { ellipsize, foldSessionEvents, RESULT_SUMMARY_MAX_CHARS, TranscriptFolder } from './fold.ts'
 export {
   AssistantMessageComponent,
+  DEFAULT_USER_FOLD_CHARS,
+  DEFAULT_USER_FOLD_LINES,
+  setUserFoldThresholds,
   StepSummaryComponent,
   TOOL_ARGUMENTS_MAX_CHARS,
   ToolCallComponent,
+  USER_PREVIEW_LINES,
   UserMessageComponent,
 } from './components.ts'
 export { ReadGroupComponent } from './read-group.ts'
@@ -171,7 +175,7 @@ function createPlainComponent(
     case 'error':
       return new ErrorMessageComponent(item, colors, components)
     case 'interrupted':
-      return new InterruptedMarkerComponent(colors)
+      return new InterruptedMarkerComponent(colors, components)
   }
 }
 
@@ -275,11 +279,12 @@ function mountSession(
       component = createPlainComponent(item, colors, components, images, requestRender)
     }
     const expandable = component as BlueIntentComponent
-    if (item.kind === 'thinking') {
-      // The thinking block mounts at the live expansion state (kimi applies
-      // toolOutputExpanded at ThinkingComponent creation too); a freshly
-      // mounted tool card is always in the newest turn, so the creation-time
-      // state below is the same shortcut for it.
+    if (item.kind === 'thinking' || item.kind === 'user') {
+      // The thinking block and a foldable long user message mount at the
+      // live expansion state (kimi applies toolOutputExpanded at
+      // ThinkingComponent creation too); a freshly mounted entry is always
+      // in the newest turn, so the creation-time state below is the same
+      // shortcut for it.
       expandable.setExpanded?.(toggle.expanded)
     }
     // The kimi one-column gutter (D29, S21): every transcript entry mounts
@@ -344,8 +349,8 @@ function mountSession(
  * (the transcript patch row precedes the interaction row, so the footer lands
  * right above the input editor); entry plugins register into the registries
  * independently of session mounts. Finally registers the global Ctrl-O
- * action whose handler flips tool-output expansion for the mounted session's
- * tool cards.
+ * action whose handler flips detail expansion for the mounted session's
+ * tool cards, thinking blocks, and foldable long user messages.
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
@@ -374,7 +379,7 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.blueKeymap.register([{
     id: ACTION_TOGGLE_COLLAPSE,
     keys: 'ctrl+o',
-    description: 'Toggle tool output expansion',
+    description: 'Toggle detail expansion (tool output, long messages)',
     handler: () => {
       toggle.expanded = !toggle.expanded
       // The kimi `toggleToolOutputExpansion` scope (S20): a component is

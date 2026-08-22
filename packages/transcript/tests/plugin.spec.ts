@@ -577,6 +577,82 @@ describe('blue-transcript plugin through the real Loader', () => {
     expect(hints()).toHaveLength(2)
   })
 
+  it('folds a long user message into the ctrl+o family (D46)', async () => {
+    resetSeq()
+    const { ctx, screen, keymap } = await bootTranscript()
+    const long = Array.from({ length: 11 }, (_, index) => `row ${index}`).join('\n')
+    const agent = fakeAgent([turnStart(1), userEvent(long), turnEnd(1)])
+    ctx.emit('blue/session-changed', asAgent(agent))
+    // Collapsed: blank + 3 preview rows + the S20-style hint.
+    const collapsed = contentLines(screen)
+    expect(collapsed).toHaveLength(1 + 3 + 1)
+    expect(collapsed.at(-1)).toContain('(8 more lines, 11 total, ctrl+o to expand)')
+    // The shared toggle expands the whole message and folds it back.
+    const action = keymap.actions.find(a => a.id === ACTION_TOGGLE_COLLAPSE)?.handler
+    action!()
+    expect(contentLines(screen)).toHaveLength(1 + 11)
+    action!()
+    expect(contentLines(screen).at(-1)).toContain('8 more lines')
+  })
+
+  it('gives long user messages the same three-turn range as tool cards', async () => {
+    resetSeq()
+    const { ctx, screen, keymap } = await bootTranscript()
+    const long = (mark: string): string =>
+      Array.from({ length: 11 }, (_, index) => `${mark}-${index}`).join('\n')
+    const agent = fakeAgent([
+      turnStart(1), userEvent(long('one')), turnEnd(1),
+      turnStart(2), userEvent(long('two')), turnEnd(2),
+      turnStart(3), userEvent(long('three')), turnEnd(3),
+      turnStart(4), userEvent(long('four')), turnEnd(4),
+    ])
+    ctx.emit('blue/session-changed', asAgent(agent))
+    const hints = (): string[] => contentLines(screen).filter(line => line.includes('more lines'))
+    expect(hints()).toHaveLength(4)
+    // Expanding flips the boundary messages of turns 2-4; turn 1's stays
+    // folded exactly like its tool-card peers.
+    const action = keymap.actions.find(a => a.id === ACTION_TOGGLE_COLLAPSE)?.handler
+    action!()
+    expect(hints()).toHaveLength(1)
+    expect(contentLines(screen).some(line => line.includes('four-10'))).toBe(true)
+    expect(contentLines(screen).some(line => line.includes('one-10'))).toBe(false)
+    action!()
+    expect(hints()).toHaveLength(4)
+  })
+
+  it('mounts a live long user message at the live expansion state', async () => {
+    resetSeq()
+    const { ctx, screen, keymap } = await bootTranscript()
+    const agent = fakeAgent([turnStart(1)])
+    ctx.emit('blue/session-changed', asAgent(agent))
+    const action = keymap.actions.find(a => a.id === ACTION_TOGGLE_COLLAPSE)?.handler
+    action!()
+    const long = Array.from({ length: 11 }, (_, index) => `live ${index}`).join('\n')
+    ctx.emit('session/event', agent.session as unknown as Session, userEvent(long))
+    // The message mounts while the toggle is on: already expanded, no hint.
+    const lines = contentLines(screen)
+    expect(lines.some(line => line.includes('more lines'))).toBe(false)
+    expect(lines).toHaveLength(1 + 11)
+  })
+
+  it('resets long-message expansion when the session changes', async () => {
+    resetSeq()
+    const { ctx, screen, keymap } = await bootTranscript()
+    const long = (mark: string): string =>
+      Array.from({ length: 11 }, (_, index) => `${mark}-${index}`).join('\n')
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([turnStart(1), userEvent(long('first')), turnEnd(1)])))
+    const action = keymap.actions.find(a => a.id === ACTION_TOGGLE_COLLAPSE)?.handler
+    action!()
+    expect(contentLines(screen).some(line => line.includes('first-10'))).toBe(true)
+    // The remount resets the toggle: the next session's long message starts
+    // folded regardless of the previous session's state.
+    resetSeq()
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([turnStart(1), userEvent(long('next')), turnEnd(1)])))
+    const collapsed = contentLines(screen)
+    expect(collapsed.at(-1)).toContain('8 more lines, 11 total')
+    expect(collapsed.some(line => line.includes('next-10'))).toBe(false)
+  })
+
   it('groups consecutive same-step Reads into one tree (kimi contiguity)', async () => {
     resetSeq()
     const { ctx, screen } = await bootTranscript(null, {
@@ -774,10 +850,10 @@ describe('blue-transcript plugin through the real Loader', () => {
     // First render kicks the load; the settle nudges requestRender and the
     // loaded image's fake rows replace the placeholder.
     const before = contentLines(screen)
-    expect(before).toContain('  [image]')
+    expect(before).toContain('   [image]')
     await new Promise(resolve => setTimeout(resolve, 10))
     expect(renderRequests.length).toBeGreaterThan(0)
-    expect(contentLines(screen)).toContain('  <image 3B>')
+    expect(contentLines(screen)).toContain('   <image 3B>')
     disposers.length = 0
     await ctx.fiber.dispose()
   })
@@ -797,8 +873,8 @@ describe('blue-transcript plugin through the real Loader', () => {
     expect(contentLines(screen)).toEqual([
       '',
       '\x1b[1m✨ \x1b[22m\x1b[1mpic\x1b[22m',
-      '  \x1b[1m[image]\x1b[22m',
-      '  [image]',
+      '   \x1b[1m[image]\x1b[22m',
+      '   [image]',
     ])
     disposers.length = 0
     await ctx.fiber.dispose()
@@ -812,7 +888,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     expect(contentLines(screen)).toEqual([
       '',
       '\x1b[1m✨ \x1b[22m\x1b[1mpic\x1b[22m',
-      '  \x1b[1m[image]\x1b[22m',
+      '   \x1b[1m[image]\x1b[22m',
     ])
     disposers.length = 0
     await ctx.fiber.dispose()

@@ -160,7 +160,8 @@ describe('blue-status-mode', () => {
 
   it('truncates the badge text to the given width', async () => {
     const { entries } = await mount({ plan: { active: true } })
-    expect(badge(entries).render(2)).toBe('*...*')
+    // At two columns pi-tui's ellipsis itself is cut to fit: two dots.
+    expect(badge(entries).render(2)).toBe('*\x1b[0m..\x1b[0m*')
   })
 
   it('renders nothing while no session is attached', async () => {

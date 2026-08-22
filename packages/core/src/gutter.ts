@@ -12,7 +12,8 @@
  */
 
 import type { BlueComponent } from './types.ts'
-import { padColumns } from './chrome.ts'
+import { clampRowsToWidth, padColumns } from './chrome.ts'
+import { truncateToWidth } from './width.ts'
 
 /**
  * Renders one wrapped child inside the kimi one-column gutter.
@@ -28,11 +29,20 @@ export class GutterComponent implements BlueComponent {
   ) {}
 
   /**
+   * Render the child squeezed by both gutters and inset by the left one.
+   * The child width floors at one column (a degenerate viewport during a
+   * resize drag must not hand children a zero or negative width, and a
+   * wide character cannot fit below two). Rows are cut only in that
+   * degenerate regime — a viewport too narrow for the gutter furniture
+   * itself; wider viewports emit the child's rows untouched (D48).
    * @param width - current viewport width in columns.
-   * @returns the child's rows, squeezed and gutter-padded.
+   * @returns the child's rows, squeezed, gutter-padded, width-bounded.
    */
   render(width: number): string[] {
-    return padColumns(this.child.render(width - 2 * this.n), this.n)
+    const inner = Math.max(1, width - 2 * this.n)
+    const rows = padColumns(this.child.render(inner), this.n)
+    if (width >= 2 * this.n + 2) return rows
+    return clampRowsToWidth(rows, Math.max(1, width), (text, target) => truncateToWidth(text, target))
   }
 
   /** Forward the cache drop to the wrapped child. */

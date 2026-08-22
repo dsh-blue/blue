@@ -27,6 +27,7 @@ import {
 } from '../src/banner.ts'
 import { BLUE_VERSION } from '../src/banner-content.ts'
 import * as banner from '../src/banner.ts'
+import { visibleWidth } from '../../core/src/width.ts'
 import { fakeBlueComponents } from './helpers.ts'
 import { COLORS } from './status-fakes.ts'
 
@@ -95,7 +96,7 @@ describe('composeBannerLines', () => {
     // 1 top + 8 body (blank, the two logo-headed lines, blank, the three
     // label rows, blank) + 1 bottom.
     expect(lines).toHaveLength(10)
-    expect(lines.map(line => line.length)).toEqual(Array.from({ length: 10 }, () => 100))
+    expect(lines.map(line => visibleWidth(line))).toEqual(Array.from({ length: 10 }, () => 100))
     expect(lines[0]).toBe(`╭${'─'.repeat(98)}╮`)
     expect(lines[1]).toBe(`│${' '.repeat(98)}│`)
     expect(lines[2]).toBe(`│  ${LOGO[0]}  Welcome to Blue!${' '.repeat(71)}│`)
@@ -111,7 +112,7 @@ describe('composeBannerLines', () => {
   it('composes the same single column at eighty columns', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 80)
     expect(lines).toHaveLength(10)
-    expect(lines.map(line => line.length)).toEqual(Array.from({ length: 10 }, () => 80))
+    expect(lines.map(line => visibleWidth(line))).toEqual(Array.from({ length: 10 }, () => 80))
     expect(lines.join('\n')).toContain('Welcome to Blue!')
     expect(lines.join('\n')).toContain('Send /help for help information.')
     expect(lines.join('\n')).toContain('Directory: ~/dev')
@@ -120,7 +121,7 @@ describe('composeBannerLines', () => {
   it('composes the same single column on narrow terminals', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 48)
     expect(lines).toHaveLength(10)
-    expect(lines.map(line => line.length)).toEqual(Array.from({ length: 10 }, () => 48))
+    expect(lines.map(line => visibleWidth(line))).toEqual(Array.from({ length: 10 }, () => 48))
     expect(lines.join('\n')).toContain('Welcome to Blue!')
     expect(lines.join('\n')).toContain('Model:     m · p')
   })
@@ -133,30 +134,30 @@ describe('composeBannerLines', () => {
   it('truncates the /help line once the header budget runs out', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 40)
     // innerWidth 36 − logo 7 − gap 2 = 27 columns for the header text.
-    expect(lines.join('\n')).toContain('Send /help for help info...')
+    expect(lines.join('\n')).toContain('Send /help for help info\x1b[0m...\x1b[0m')
     expect(lines.join('\n')).not.toContain('information.')
-    expect(lines.map(line => line.length)).toEqual(Array.from({ length: lines.length }, () => 40))
+    expect(lines.map(line => visibleWidth(line))).toEqual(Array.from({ length: lines.length }, () => 40))
   })
 
   it('truncates an over-long cwd to the value budget', () => {
     const lines = composeBannerLines(DEPS, { ...CONTENT, cwd: 'd'.repeat(200) }, 100)
     // innerWidth 96 − label 11 = 85 columns for every info value.
-    expect(lines.join('\n')).toContain(`${'d'.repeat(82)}...`)
+    expect(lines.join('\n')).toContain(`${'d'.repeat(82)}\x1b[0m...\x1b[0m`)
     expect(lines.join('\n')).not.toContain('d'.repeat(83))
-    expect(lines.map(line => line.length)).toEqual(Array.from({ length: lines.length }, () => 100))
+    expect(lines.map(line => visibleWidth(line))).toEqual(Array.from({ length: lines.length }, () => 100))
   })
 
   it('truncates an over-long model line to the value budget', () => {
     const lines = composeBannerLines(DEPS, { ...CONTENT, model: 'm'.repeat(100) }, 100)
-    expect(lines.join('\n')).toContain(`${'m'.repeat(82)}...`)
+    expect(lines.join('\n')).toContain(`${'m'.repeat(82)}\x1b[0m...\x1b[0m`)
     expect(lines.join('\n')).not.toContain('m'.repeat(83))
   })
 
   it('truncates an over-long version value to the value budget', () => {
     const lines = composeBannerLines(DEPS, { ...CONTENT, version: 'v'.repeat(100) }, 100)
-    expect(lines.join('\n')).toContain(`Version:   ${'v'.repeat(82)}...`)
+    expect(lines.join('\n')).toContain(`Version:   ${'v'.repeat(82)}\x1b[0m...\x1b[0m`)
     expect(lines.join('\n')).not.toContain('v'.repeat(83))
-    expect(lines.map(line => line.length)).toEqual(Array.from({ length: lines.length }, () => 100))
+    expect(lines.map(line => visibleWidth(line))).toEqual(Array.from({ length: lines.length }, () => 100))
   })
 })
 
@@ -228,11 +229,15 @@ describe('blue-banner plugin', () => {
     expect(joined).toContain('Welcome to Blue!')
     expect(joined).toContain(`Version:   ${BLUE_VERSION}`)
     expect(joined).toContain('m · p')
-    // The value cell budgets ninety-six minus the eleven-column label: a
-    // cwd that fits renders whole, while a deeper checkout (this spec also
-    // runs from worktree copies) survives as its clipped prefix.
+    // The plugin mounts the banner through the scroll wrapper, which
+    // renders the box two columns narrower than its own width, so at
+    // render(100) the value cell budgets 100 − 2 (scroll) − 15 (frame,
+    // inset, label) = 83 columns: a cwd that fits renders whole, while a
+    // deeper checkout (this spec also runs from worktree copies) survives
+    // as its clipped prefix.
+    const budget = 100 - 2 - 15
     const cwd = shortenHome(process.cwd(), homedir())
-    expect(joined).toContain(cwd.length <= 85 ? cwd : cwd.slice(0, 82))
+    expect(joined).toContain(cwd.length <= budget ? cwd : cwd.slice(0, budget - 3))
     // The banner is stateless; invalidation is a covered no-op.
     expect(() => screen.children[0]?.invalidate()).not.toThrow()
   })

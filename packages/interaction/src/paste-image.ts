@@ -11,7 +11,7 @@
  * naming what is missing: the tool absent, the display session unreachable,
  * no image, an unsupported image type, a timeout, or a raw tool failure.
  * Every kind flashes a one-shot notice; nothing is installed or worked
- * around on the user's behalf (D48). Images are admitted through
+ * around on the user's behalf (D49). Images are admitted through
  * `ctx.attachments.saveImage` — the store cross-checks the declared type
  * against the sniffed bytes — and land in the editor as an `[image #N]`
  * marker recorded in a module-level marker→ref map. A submit transformer
@@ -271,7 +271,7 @@ export function setClipboardImageReader(reader: ClipboardImageReader | undefined
 
 /**
  * Notice text per failure kind: each names what is missing so the user can
- * fix it (D48: diagnose, never work around).
+ * fix it (D49: diagnose, never work around).
  * @param result - the non-image reader outcome.
  * @returns the notice text.
  */

@@ -1,7 +1,10 @@
 /**
  * `blue-commands` plugin: the built-in slash commands. `/quit` requests
- * process exit through the launcher-owned `ctx.appExit`; `/sessions` lists
- * persisted sessions in a picker overlay, or with an id argument emits
+ * process exit through the launcher-owned `ctx.appExit`; `/sessions`
+ * lists this directory's persisted sessions in a type-to-filter picker
+ * — rows carry the session title (the S30① all-prompts naming, resolved
+ * through the optional `sessionQuery` batch title read) with the
+ * `← current` badge on the live one, and an id argument emits
  * `blue/request-resume` directly (`/resume` is its alias — the S24a
  * dogfood ruling: one command, both surfaces); `/new` emits
  * `blue/request-new`, and `/fork` emits `blue/request-fork` for the app
@@ -28,16 +31,21 @@
  * @module @dsh-blue/blue-interaction/commands-plugin
  */
 
+import { resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import type { SessionHeader } from '@deepseek-ai/dsh-session'
+import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 // Empty type import carries the app-owned `blueSession` Context merge and
 // the `'blue/request-*'` Events merges this plugin emits.
 import type {} from '@dsh-blue/blue-app'
 // Empty type import carries the `sessionPersistence` Context merge; the
 // service itself is optional and resolved lazily.
 import type {} from '@deepseek-ai/dsh-session-persistence'
+// Empty type import carries the `sessionQuery` Context merge (the dsh-base
+// `session-query-sqlite` row with `openAt: never` keeps batch title reads
+// available); optional and resolved lazily like persistence.
+import type {} from '@deepseek-ai/dsh-session-query'
 import { aliasesOf, registerCommandAliases } from './command-meta.ts'
 import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
@@ -72,6 +80,29 @@ function formatDate(createdAt: number): string {
 }
 
 /**
+ * Default count of newest sessions whose titles resolve when the picker
+ * opens. Each persisted title is one full event-log parse behind the
+ * batch read (4-way concurrent), so the cap bounds the open cost for a
+ * directory with a long session history; older rows keep the id form.
+ */
+export const DEFAULT_SESSION_TITLE_LIMIT = 100
+
+let sessionTitleLimit = DEFAULT_SESSION_TITLE_LIMIT
+
+/**
+ * Replace the title-resolution cap (tests inject small bounds here).
+ * @param n - the replacement, or `undefined` to restore the default.
+ */
+export function setSessionTitleLimit(n: number | undefined): void {
+  sessionTitleLimit = n ?? DEFAULT_SESSION_TITLE_LIMIT
+}
+
+/** The active title-resolution cap. */
+export function currentSessionTitleLimit(): number {
+  return sessionTitleLimit
+}
+
+/**
  * Register the built-in commands on `ctx.commands`.
  * @param ctx - plugin context.
  */
@@ -88,8 +119,9 @@ export function apply(ctx: Context): void {
   })
 
   /**
-   * The `/sessions` handler: list persisted sessions newest-first and offer
-   * them in a picker overlay; picking another session emits
+   * The `/sessions` handler: list this directory's persisted sessions
+   * newest-first with their titles (the optional batch title read) and
+   * offer them in a type-to-filter picker; picking another session emits
    * `blue/request-resume`, picking the live one only flashes a notice.
    * @param signal - the dispatching UI request's cancellation signal.
    * @returns the command outcome.
@@ -106,24 +138,48 @@ export function apply(ctx: Context): void {
       return { kind: 'error', text: `could not list sessions: ${describe(error)}` }
     }
     if (unloaded) return { kind: 'success' }
-    if (headers.length === 0) return { kind: 'success', text: 'no sessions' }
+    // The cwd scope (D46): only this directory's sessions — a global list
+    // mixes every project the harness ever ran in. Exact match after
+    // normalization, no subtree spread; headerless-cwd rows stay hidden.
+    const here = resolve(process.cwd())
+    const sorted = headers
+      .filter(header => header.cwd !== undefined && resolve(header.cwd) === here)
+      .sort((a, b) => b.createdAt - a.createdAt)
+    if (sorted.length === 0) return { kind: 'success', text: 'no sessions in this directory' }
     const display = displayServices(ctx)
     if (display === undefined) {
       return { kind: 'error', text: 'session picker is unavailable: the Blue screen is not mounted' }
     }
     const currentId = ctx.get('blueSession')?.current?.id
-    const sorted = [...headers].sort((a, b) => b.createdAt - a.createdAt)
+    const titles = await resolveTitles(sorted, signal)
+    // The title await can span a tree unload exactly like the listing
+    // above; the continuation must not mount a panel on the dead tree.
+    if (unloaded) return { kind: 'success' }
     const list = new SelectListPanel({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,
-      rows: sorted.map(header => ({
-        value: String(header.id),
-        label: `${header.id} · ${formatDate(header.createdAt)} · ${header.cwd ?? ''}`,
-        ...(header.id === currentId ? { badge: CURRENT_MARK } : {}),
-      })),
+      rows: sorted.map(header => {
+        const id = String(header.id)
+        const date = formatDate(header.createdAt)
+        const title = titles.get(id)
+        // A titled row leads with the title (the reason the picker is
+        // scannable); the id and date ride the description. Untitled rows
+        // (pre-title-era or zero-message sessions) keep the id-first form.
+        // The constant cwd is dropped from every form — one picker, one
+        // directory (D46).
+        const label = title ?? `${id} · ${date}`
+        return {
+          value: id,
+          label,
+          ...(title === undefined ? {} : { description: `${id} · ${date}` }),
+          filterText: `${label} ${date}`,
+          ...(header.id === currentId ? { badge: CURRENT_MARK } : {}),
+        }
+      }),
       title: 'Sessions',
       titleHint: '· esc cancel · ↵ resume',
+      filter: true,
       onSelect: (row) => {
         restore()
         if (row.value === String(currentId)) {
@@ -142,6 +198,41 @@ export function apply(ctx: Context): void {
     // would leave the editor's frame peeking around the panel.
     const restore = mountEditorReplacement(list)
     return { kind: 'success' }
+  }
+
+  /**
+   * Resolve titles for the newest sessions through the optional
+   * `sessionQuery` batch read (D46): each persisted title is one full
+   * event-log parse, so only the first {@link sessionTitleLimit} ids are
+   * requested. An absent service, a failed batch, and per-session
+   * rejections all degrade those rows to the id form — never the panel.
+   * @param sorted - the cwd-scoped sessions, newest-first.
+   * @param signal - the dispatching UI request's cancellation signal.
+   * @returns session id to title for every resolved snapshot.
+   */
+  async function resolveTitles(
+    sorted: readonly SessionHeader[],
+    signal: AbortSignal,
+  ): Promise<Map<string, string>> {
+    const titles = new Map<string, string>()
+    const query = ctx.get('sessionQuery')
+    // The caller returns before the empty listing reaches here, so an
+    // absent query service is the only early exit.
+    if (query === undefined) return titles
+    const ids: SessionId[] = sorted.slice(0, sessionTitleLimit).map(header => header.id)
+    let results
+    try {
+      results = await query.readTitleSnapshots(ids, signal)
+    } catch {
+      // A whole-batch failure leaves every row untitled; per-session
+      // failures are isolated below by the allSettled result shape.
+      return titles
+    }
+    for (const result of results) {
+      const title = result.status === 'fulfilled' ? result.value.title : undefined
+      if (title !== undefined) titles.set(String(result.sessionId), title.title)
+    }
+    return titles
   }
 
   /**

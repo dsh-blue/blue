@@ -52,3 +52,12 @@ jobs:
       # before the test minute so the cheap check fails first.
       - run: pnpm check:lib
       - run: pnpm test:coverage
+      # The real-process width smoke (D45): boots the built plugin tree
+      # through the real dsh CLI at COLUMNS=40 against a mock LLM streaming
+      # width-hostile content — any untruncated row must fail the run, not
+      # crash a user session. The CLI is NOT a workspace devDependency on
+      # purpose: its subtree reshapes hoisting and breaks the S34 /mcp e2e's
+      # bare-specifier resolution, so CI installs it globally instead and
+      # the smoke pins its version against HARNESS_LINE.
+      - run: pnpm add -g @deepseek-ai/dsh@0.1.1-rc.1
+      - run: pnpm smoke:happy

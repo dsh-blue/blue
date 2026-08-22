@@ -93,7 +93,7 @@ describe('blue-status-basic', () => {
   it('truncates to the offered width budget', async () => {
     const agent = fakeAgent([], { model: 'a-very-long-model-name' })
     const harness = await bootStatusPlugin(basic, agent)
-    expect(harness.entry.render(10)).toBe('a-very-...')
+    expect(harness.entry.render(10)).toBe('a-very-\x1b[0m...\x1b[0m')
     await harness.dispose()
   })
 

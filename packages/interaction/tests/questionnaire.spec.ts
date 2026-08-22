@@ -255,9 +255,10 @@ describe('Questionnaire', () => {
     })])
     const rows = questionnaire.render(60)
     // The label `  → Alpha` is 9 columns, so the description gets 51:
-    // ` — ` plus 48 columns of text, the fake's `...` ellipsis included —
-    // the whole row stays at 60 instead of overflowing the width guard.
-    expect(rows[5]).toBe(`^  → Alpha^~ — ${'x'.repeat(45)}...~`)
+    // ` — ` plus 48 columns of text, pi-tui's reset-wrapped `...` ellipsis
+    // included — the whole row stays at 60 instead of overflowing the width
+    // guard.
+    expect(rows[5]).toBe(`^  → Alpha^~ — ${'x'.repeat(45)}\x1b[0m...\x1b[0m~`)
     questionnaire.handleInput(KEY.escape)
   })
 
@@ -280,7 +281,7 @@ describe('Questionnaire', () => {
       ],
     })])
     const rows = questionnaire.render(60)
-    expect(rows[5]).toBe(`^  → ${'A'.repeat(51)}^~ —...~`)
+    expect(rows[5]).toBe(`^  → ${'A'.repeat(51)}^~ —\x1b[0m...\x1b[0m~`)
     expect(rows[6]).toBe(`    ${'B'.repeat(52)}`)
     questionnaire.handleInput(KEY.escape)
   })

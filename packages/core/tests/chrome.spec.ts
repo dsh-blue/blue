@@ -186,9 +186,12 @@ describe('framePanel', () => {
     expect(framePanel([''], 4, { footer: ['a', 'b'] })).toEqual(['────', '', ' \u001b[0m...\u001b[0m', '────'])
   })
 
-  it('repaints the rules through the injected paint', () => {
-    const framed = framePanel([], 4, { rulePaint: text => `%${text}%` })
-    expect(framed).toEqual(['%────%', '%────%'])
+  it('repaints the rules through the injected paint, clamped to the width', () => {
+    // The rule repeats the width first and paints after, so a paint whose
+    // literals add columns reads past the frame — the D48 backstop cuts it
+    // (the paint still lands: the marker survives the cut).
+    const framed = framePanel([], 6, { rulePaint: text => `%${text}%` })
+    expect(framed).toEqual(['%──\x1b[0m...\x1b[0m', '%──\x1b[0m...\x1b[0m'])
   })
 
   it('truncates an over-long title with styled hint to the width', () => {
