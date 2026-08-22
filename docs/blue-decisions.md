@@ -343,3 +343,11 @@
 - **行形态**：有标题 → `label = 标题`（服务端已归一化 ≤80 字节）+ `description = id · MM-DD HH:mm`；无标题/被拒 → `id · 日期` 单行。**cwd 从行与过滤文本中整体退役**（一个面板一个目录，无区分度，宽度让给标题）。
 - **type-to-filter 缝**：`SelectListPanel` 加 opt-in `filter?: boolean`（其余 6 消费面零变化）+ `SelectRow.filterText?` 可选匹配文本覆写（首个消费者即本面板——标题做 label、id/日期做 description 时匹配面仍要覆盖后者）。交互逐字照 `ModelPanel`：raw `\x7f`/可打印字节（不新增 keymap 动作，R2 冻结前最后一键已用）、fuzzyMatch 只匹配不重排、Esc 先清 query 再取消（kimi 规则）、`Search:` 行 + `no matches` 空态、`(type to search)` 提示走 titleHint 通道（framePanel title 单色限制，textMuted 视觉等价）。Search 行自截断（`truncateToWidth`）——对 ModelPanel 的一处有意分叉（那边未截是 #15 家族潜伏超宽坑）。
 - **边界**：跨页/跨会话内容搜索维持挂起（`ctx.sessionQuery.searchSessions` FTS5 上游现成，正式版排期）；`filterText` 覆写是**替换**而非叠加 label（语义单一）。
+
+### D46. transcript 长用户消息折叠：组件局部启发式 + ctrl+o 同权（S32 收口，2026-08-22 两项用户裁决）
+
+- **背景**：S32 编辑器半原生已有（pi-tui `>10 行/>1000 字符`粘贴折叠、`getExpandedText()` 公开），剩余 = transcript 侧长用户消息折叠。两项裁决：折叠形态 = **3 行预览 + dim 提示行**（工具卡同款 idiom，非单行 chip——保留上下文，日志类粘贴前几行就是定位信息）；阈值 = **>10 行 或 >1000 字符**（与编辑器判据逐字一致——"编辑器里折的 transcript 里也折"，单行大 JSON 也能折，手打长文同样受益）。
+- **启发式位置**：**组件局部**（`UserMessageComponent` render 期读 `item.text` 原始度量），不动 `fold.ts`——fold 层保持纯/无宽度（house 纪律），live 与 replay 走同一条 `TranscriptFolder.apply → mount → 组件` 路径，D16 replay 一致性白送；无"是粘贴"元数据可用（事件面只有 text），纯长度启发式。
+- **度量与重折**：判定用**原始文本**行数/字符数（与视口宽无关）→ resize 改变换行数但**永不重折**已展开的消息（expanded 标志门控折叠分支）；阈值常量模块级 + `setUserFoldThresholds` 测试 setter（window.ts 模式）。提示行只在 `wrapped.length > USER_PREVIEW_LINES` 时出现（≤3 换行行 = 无内容被藏，不空喊）。
+- **ctrl+o 集成**：`setExpanded` 挂上即自动并入全局翻面（handler 扫所有挂载 entries 的 `setExpanded`，不限于工具卡）；user item 本就是 3-turn 边界标记，边界语义零改动；挂载期一行与 thinking 同权接 `toggle.expanded`（toggle 开时新消息不落折叠态）；会话切换重置走既有 disposer。cache key 追加 `expanded`（ToolCall 先例——标志即 key，无需显式 invalidate）。
+- **边界**：图片附件不受折叠影响（照常渲染在文本下方）；Up 历史召回仍把全文放进编辑器（roadmap 既记边界，不修）；快捷键零新增（ctrl+o 既有全局动作，R2 冻结无涉）。
