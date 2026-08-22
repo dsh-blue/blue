@@ -2,7 +2,7 @@
 
 > 审计基线：Blue `master` at `5db6b6b`，2026-08-22。本文评估当前代码，而不是历史设计稿中的目标状态。
 >
-> 结论先行：Blue 不需要推倒重来。它的宏观方向正确，L0/L1 边界尤其扎实；下一阶段真正需要治理的是**公共契约所有权、模块级状态生命周期、软依赖类型和第三方渲染隔离**。当前内部 seam 适合 Blue 自己快速演进，但还不适合作为长期稳定的第三方 API 直接发布。
+> 结论先行：Blue 不需要推倒重来。它的宏观方向正确，L0/L1 边界尤其扎实；当前迭代已经沉淀了 width/chrome、selector/panel、fold 和 registry 等高价值复用，机械重复约 0.96%，但 session observation、panel orchestration 和 stateful renderer shell 仍在重复。将 Blue API 设计为 Cordis seam 是正确方向，不过当前只有 theme/status/intent/pane 达到部分可替换粒度，`blue-interaction` 和 transcript-owned registries 仍阻碍“卸载官方效果、挂载自定义效果”。下一阶段应治理**公共契约所有权、组合粒度、模块级状态生命周期、流程复用和第三方渲染隔离**。
 
 ## 1. 审计范围与依据
 
@@ -277,6 +277,110 @@ Blue 自己的增强功能与潜在下游插件走相同 registry，baseline 不
 
 这些是规模增长后的治理问题，不是架构根基失败。正确策略是收紧公共边界，而不是把插件树重写成单体。
 
+### 5.4 当前代码复用的实证审计
+
+“有很多小文件”不能证明复用，“重复率低”也不能单独证明抽象合理。本节同时检查机械重复、共享基础设施和跨功能的流程重复。
+
+#### 机械重复率低，但不是零
+
+用 jscpd 5.0.16 对 core/transcript/interaction/app 的实现文件扫描，排除纯类型和 invariant 文件，阈值设为连续 8 行、60 token。该结果用于发现审计线索，不作为 CI gate；复现命令为：
+
+```sh
+pnpm dlx jscpd@5.0.16 --min-lines 8 --min-tokens 60 \
+  --reporters console --format typescript \
+  --ignore '**/types.ts' --ignore '**/invariant.ts' \
+  packages/core/src packages/transcript/src packages/interaction/src packages/app/src
+```
+
+| 指标 | 结果 |
+|---|---:|
+| 扫描文件 | 98 |
+| 实现行数 | 21,959 |
+| clone groups | 10 |
+| 重复行 | 210（0.96%） |
+| 重复 token | 1,080（1.15%） |
+
+这说明项目没有明显依赖复制粘贴推进功能。发现的重复主要集中在：
+
+- `HelpOverlay` 与 `InfoPanel` 的滚动、分页、关闭键和 frame 逻辑，连续约 64 行同构；
+- `DiffCardComponent` 与 `TerminalCardComponent` 的 props、expanded、cache、invalidate 骨架；
+- `status-basic` 与 `mode-status` 的 session attach 初始化；
+- permission/preset 面板的选择结果通知；
+- usage/status-context 的 token/context 格式化；
+- editor-plus/paste-image 对 shared editor enhancement 的 attach/dispose 骨架。
+
+扫描只能发现字面近似，无法发现“每个模块用不同代码重复同一生命周期”的概念重复。因此 0.96% 应解释为**局部实现复用较好**，不能解释为**架构流程已经充分收敛**。
+
+#### 已经形成、且在持续迭代中被真实复用的抽象
+
+| 复用层 | 当前抽象 | 实际消费者/证据 | 评价 |
+|---|---|---|---|
+| renderer adapter | `BlueComponent`、`BlueComponents` | transcript、interaction 的全部组件 | 边界稳定，隔离 pi-tui，复用价值最高 |
+| 终端宽度 | `visibleWidth`、`wrapText`、`truncateToWidth`、`clampRowsToWidth` | 所有内容组件和测试 fake | 已形成唯一 truth seam，D48 后质量高 |
+| chrome | `framePanel`、`topRule`、`GutterComponent` | 8 个 framed module、7 个 dock module | 避免每个功能重写 ANSI/边框/宽度预算 |
+| 单选面板 | `SelectListPanel` + `cycle/windowedRange/counterRow/oneLine` | sessions、permission、preset、tools、MCP、provider wizard 等 | 真实复用，新增 picker 不再手写 cursor/window |
+| 信息面板 | `InfoPanel` | status/context、tools、MCP、skills | 结构化 section/row 已成为读取型 surface 的共同语言 |
+| 表单 | `FormPanel` | provider 配置、危险权限确认等 | 字段路由、mask、error row 得到复用 |
+| panel 挂载 | `mountEditorReplacement` | 12 个 interaction module | 统一 editor-slot、focus 恢复和栈式返回 |
+| display capability | `displayServices` | 10 个 interaction module | 消除了 screen/components/theme/keymap 的重复软读取 |
+| 命令元数据 | `command-meta` | alias rewrite、help、completion | 保持 canonical command 单一来源 |
+| transcript data | `TranscriptFolder`/`foldSessionEvents` | live transcript、resume、session export | 业务投影复用成立，导出不会另写一套事件解释 |
+| 扩展注册表 | `blueStatus`、`blueIntents`、`blueKeymap` | 状态、tool cards、全局动作 | duplicate 检查、排序和 disposer 语义统一 |
+| editor 增强 | shared editor、submit transformer、enhancement mark | editor-plus、paste-image、多种 command panel | 解决跨 Fiber 协作，但 module singleton 使生命周期质量弱于 service seam |
+
+这些抽象不是为了消除两三行重复而建立；它们把容易出错的规则集中起来。最典型的是 `SelectListPanel`：sessions 的 type-to-filter、permission 的危险确认前置选择、provider wizard 的多步选择都共享 cursor/window/frame，却保留各自的数据加载和提交语义。它符合“复用机制、不复用业务流程”的原则。
+
+#### 目前仍重复的不是控件，而是 feature orchestration
+
+当前功能迭代的主要重复落在四条流程：
+
+1. **Active session binding**：至少 18 个 interaction/transcript module 监听 `'blue/session-changed'`。todo、agents、status-context 等分别实现“读取当前 Agent → fold snapshot → 退订旧 session → 订阅新 session → 丢弃非当前 session event → requestRender”。各模块的 fold 业务不同，但 attach/detach/filter/cleanup 机械部分相同。
+2. **Panel command flow**：命令 handler 反复执行 `displayServices(ctx)`、构造 panel、`mountEditorReplacement()`、在 onClose/onSelect 中恢复前一层、再通过 shared editor notice 报告结果。panel 已复用，打开 panel 的控制器仍分散。
+3. **Stateful renderer shell**：diff/terminal/thinking/agent group 等组件重复 expanded flag、cache key、invalidate、row cap 和 “N more lines” 逻辑。这里的根因不是少一个基类，而是 view data 与 component lifecycle 仍绑定。
+4. **Command family ownership**：`commands-plugin.ts` 统一挂了 20 个 command registration，但各 family 自己返回组合 disposer、自己维护 unloaded flag、自己解析 display unavailable。注册纪律存在，缺少标准 command scope/controller。
+
+建议增加三个内部复用层，随后由公共 API 复用同一实现：
+
+```ts
+observeActiveSession(ctx, {
+  seed(agent),
+  event(agent, event),
+  status?(agent, status),
+  clear(),
+})
+
+openEditorPanel(ctx, model, {
+  signal,
+  parent?,
+}): BluePanelHandle
+
+compileBlueView(view, renderContext): BlueComponent
+```
+
+`observeActiveSession` 只收敛 session identity、snapshot-before-live、退订和 disposal，不抽象各功能的 fold；`openEditorPanel` 统一 mount/focus/notification/abort，不决定业务页面；`compileBlueView` 统一 cache/expand/width/chrome，不要求所有 renderer 继承一个有状态基类。
+
+#### 不应为了复用而合并的代码
+
+以下相似保持分开是合理的：
+
+- `ModelPanel` 与普通 `SelectListPanel`：前者有 provider tabs、live query、effort draft 和 session/default 双提交，几何和状态机实质不同；
+- questionnaire、approval、plan review：都能“选项交互”，但回答协议、队列、反馈和取消语义不同；
+- activity/todo/agents pane 的 fold：共同的是 session binding，不是事件解释；
+- banner 与 footer：都画文本，但生命周期、布局预算和退化条件不同；
+- app session switch 与 UI session observation：前者拥有 AgentHandle 和事务 commit，后者必须只读。
+
+强行把它们放进通用 `BasePanel`/`BasePane`/`BaseCommand` 会把差异变成布尔配置和 callback 矩阵，维护性反而下降。建议优先抽纯函数、controller 和数据协议，少用继承层级。
+
+### 5.5 复用成熟度结论
+
+当前复用可以分为三档：
+
+- **成熟**：width/chrome、component factory、select/info/form primitives、fold、registry/disposer；
+- **有效但需要换所有权**：shared editor、session reference、status/intents，它们已经解决复用问题，但 contract 或 state 仍属于实现包/module；
+- **尚未收敛**：session observation、panel orchestration、stateful renderer shell、官方 effect 的替换协议。
+
+因此，持续功能迭代并没有造成大面积复制粘贴，代码质量总体仍高；但下一轮抽象重点不应继续增加视觉 helper，而应把跨功能的生命周期和 view compilation 提升为稳定平台能力。公共 Blue API 正好可以成为这次收敛的载体，但前提是先让现有官方 UI 使用它验证抽象，而不是仅为第三方另造一套旁路。
+
 ## 6. 公共插件 API 的目标设计
 
 ### 6.1 核心原则
@@ -327,6 +431,7 @@ interface BluePluginApi {
   readonly commands: BlueCommandRegistry
   readonly status: BlueStatusRegistry
   readonly tools: BlueToolViewRegistry
+  readonly dock: BlueDockRegistry
   readonly editor: BlueEditorExtensionRegistry
   readonly panels: BluePanelService
   readonly notifications: BlueNotificationService
@@ -566,6 +671,185 @@ interface BlueSessionReader {
 
 不开放 session event log、Agent、AgentHandle、modelRef mutable setter。需要读事件的导出/分析插件应走后续专门的 paged read API，并设置内容和权限边界。
 
+### 6.12 将 Blue API 设计为 Cordis seam 是否合理
+
+结论是：**合理，而且比自建插件管理器更符合 Blue 的根架构；但不能把所有定制都压成同一种 `register()`。** Cordis 中有三种不同的替换关系，Blue API 应明确选择：
+
+| 需求 | Cordis/Blue 模式 | 例子 | 替换语义 |
+|---|---|---|---|
+| 多个效果并存 | contribution registry | status entry、command、completion、tool view | 官方项与第三方项可同时注册；同 id 冲突 |
+| 一个实现替换另一个 | service provider | theme、transcript renderer、editor provider | 卸载旧 provider，依赖方回 `PENDING`；新 provider 激活后 reload |
+| 一整块功能启停/重排 | bundle composition | banner、activity/todo pane、approval answerer | disable 官方 row，insert 第三方 Cordis plugin |
+
+如果把 theme 也做成多贡献 registry，就会出现“哪一个主题生效”的额外仲裁；如果把每个 status item 做成独占 service，又会为小贡献制造大量 service name。选择 seam 类型必须由 cardinality 和所有权决定。
+
+当前代码距离这一目标的差异如下：
+
+| Surface | 当前能否按官方组合替换 | 当前限制 |
+|---|---|---|
+| theme | 是 | 最成熟的 provider seam；调用 `/theme` 仍依赖内部 registry identity 技巧 |
+| status entry | 是 | 每项独立 row，但公共 entry 可返回任意 ANSI string |
+| diff/terminal intent | 是 | 每项独立 row，但返回任意 `BlueComponent`，无第三方渲染隔离 |
+| banner | 是 | 独立 row；自定义实现只能使用内部 screen/component API |
+| activity/queue/todo/btw/agents | 是 | 独立 row 并可重排；尚无安全 dock API，第三方需直接挂 screen |
+| transcript renderer | 部分 | 可卸载，但会连 `blueStatus`/`blueIntents` seam host 一起卸载 |
+| editor/input | 否 | 包在 `blue-interaction` 父 row 中，无稳定独占 provider contract |
+| questions/approval | 否 | 自身是 Cordis/Harness provider，但官方实现与 editor/commands 共用父 row |
+| command family | 否 | registry 可贡献新命令；官方命令集中挂在 composite row，不能按 family 禁用 |
+| terminal title/cadence | 否 | 是独立子 Fiber，却没有独立 bundle row/export contract |
+
+因此，Blue 当前已经证明 Cordis seam 模型可行，但只完成了 theme/status/intent/pane 这一半。下一步的重点不是再证明 Cordis 能否替换，而是把 seam host、默认效果和 bundle 地址拆到正确粒度。
+
+#### “卸载官方效果，挂上自定义效果”的标准路径
+
+对一个可替换 surface，正确结构是：
+
+```text
+stable seam host
+  - 拥有 contract、registry/state 和生命周期 guard
+  - 不拥有官方视觉效果
+
+official effect plugin
+  - inject stable seam
+  - 注册默认 contribution 或提供默认 provider
+
+custom effect plugin
+  - inject 同一 stable seam
+  - 注册 contribution，或提供同一 provider contract
+
+bundle/profile
+  - 保留两者（多贡献），或 disable official + mount custom（独占 provider）
+```
+
+以主题为例，当前实现已基本符合：`blueTheme` 是 contract，`theme-dark` 是默认 provider；禁用 dark row、挂自定义 provider，消费者按 Cordis inject 关系重载。
+
+以 status 为例，官方 row 和第三方 row 可以并存；若第三方要替换 `blue-status-git`，必须先禁用官方 row，再注册自己的 id/位置。这里需要把官方 patch row id 和 contribution id 明确列入 composition compatibility contract，否则用户无法稳定表达“卸载谁”。
+
+#### Seam host 必须独立于官方效果
+
+当前 `blueStatus` 和 `blueIntents` 由 `blue-transcript` 创建。如果用户想卸载官方 transcript renderer 并装自己的 renderer，status/intents service 也会一起消失，相关贡献插件全部回到 `PENDING`。这在 Cordis 上是正确卸载，却不是理想的公共替换粒度。
+
+公共化后应改为：
+
+```text
+blue-api-runtime / bluePlugins        owns registries and guards
+blue-transcript-model                 owns SessionEvent -> readonly projection
+blue-transcript-default-renderer      consumes projection + registries
+custom-transcript-renderer            consumes the same contracts
+```
+
+这样卸载 default renderer 不会销毁数据面和贡献注册表。第三方 renderer 可以继续呈现官方/其他插件贡献的 status/tool views；也可以完整替换 renderer provider，而不接触 Agent 和 mutable transcript item。
+
+#### Provider replacement 需要满足六个条件
+
+1. contract 由稳定 API 包拥有，而不是由默认 provider 包拥有；
+2. provider 只提供一个窄 surface，不顺带拥有无关服务；
+3. 所有必须跟随 provider 重建的消费者用 `inject`，不能只用一次性 `ctx.get()`；
+4. 不应随 provider 重建的 command/data controller 依赖稳定 host，不依赖具体 provider；
+5. provider 切换期间 UI 有明确空态或保留上一帧，不能让 terminal lifecycle 一起卸载；
+6. 用户可以通过稳定 row id 禁用默认 provider，且 duplicate provider 在启动期 fail loud。
+
+第 3、4 点尤其重要。当前 `displayServices()` 软读取 theme/screen 是为了避免 `/theme` 命令在执行中卸载自己的 Fiber，这个判断正确；未来应让命令依赖稳定 `BluePluginApi`，而实际 panel renderer/provider 在内部响应 theme replacement。这样不用在“正确 reload”和“命令不能自杀”之间二选一。
+
+#### 哪些东西不应支持替换
+
+- raw terminal ownership：同一进程只能有一个 owner；只能整体替换 core runtime，不能让多个插件竞争 raw mode/stdout；
+- frame exit clamp 和 width measurement：它们是安全不变量，不是视觉效果；
+- session switch commit：app 对 AgentHandle 的事务所有权不能由 UI renderer 覆盖；
+- error/lifecycle guard：第三方 provider 不能关闭；
+- Harness 的权威 command/tool/session registry：Blue 只提供 adapter，不创建平行真相。
+
+因此 seam 的开放边界不是“所有官方实现都能被随意替换”，而是“所有用户可感知的**呈现策略**和**可组合贡献**都能替换；终端、事务和安全不变量保持内核所有”。
+
+### 6.13 当前官方 UI 基于 Blue API 的重构方案
+
+公共 API 是否合理，最可靠的验证是让官方效果成为第一批消费者。目标不是把 core/app 也伪装成第三方插件，而是让所有承诺可扩展的 surface 走同一 seam。
+
+#### 目标结构
+
+```text
+L0 terminal kernel
+  -> L1 safe screen/view compiler
+     -> blue-api-runtime (registries, scoped API, guards)
+        -> session/transcript readonly projections
+           -> official effect plugins
+           -> third-party effect plugins
+
+official bundle = kernel + API runtime + official effects
+custom bundle   = kernel + API runtime + selected official/custom effects
+```
+
+官方效果不再拥有 seam；它们只注册默认实现。这样“默认体验完整”和“任意效果可替换”不冲突。
+
+#### 现有 surface 的迁移映射
+
+| 当前实现 | 目标 seam | 官方默认插件 | 用户替换方式 |
+|---|---|---|---|
+| `theme-dark/light/auto/custom` | 独占 `BlueThemeProvider` | 保留当前四个 provider | disable 当前 theme row，mount 自定义 provider |
+| `status-*` | `api.status` 结构化 contribution | 每个 status 仍是独立 row | 删除一个 row 或追加新 entry |
+| `intent-diff/terminal` | `api.tools` 的 `BlueView` provider | 官方 diff/terminal view plugin | disable 对应 intent row，注册同 card 的 provider |
+| banner | startup region contribution | `blue-banner-default` | disable row，注册 startup region view |
+| activity/queue/todo/btw/agents | `api.dock` contribution + readonly projections | 五个独立 pane plugin | 按 row 启停/重排，或替换同 slot/id |
+| transcript main renderer | `BlueTranscriptRenderer` provider | `blue-transcript-default` | 保留 projection host，替换 renderer provider |
+| slash commands | Harness commands adapter | 按 command family 拆官方 plugin | 禁用 family row，挂自定义 command plugin |
+| select/info/form surfaces | `api.panels` model | 官方 command 只创建 model | Blue 统一编译/挂载/focus |
+| editor-plus/paste-image | `api.editor` completion/action/submit hook | 两个官方 extension plugin | 独立卸载或叠加 extension |
+| input editor | Experimental editor provider | `blue-editor-default` | v1 不承诺；成熟后替换 provider |
+| questions/approval | Harness provider seam + Blue panel model | 独立 `blue-questions-default`/`blue-approval-default` | disable 官方 provider row，挂自定义 provider |
+| terminal title/cadence | 独立 behavior plugin | 两个独立 row | 分别启停，不随 input/commands 捆绑 |
+
+这里新增 `api.dock`，其稳定输入不是 `BlueComponent`，而是：
+
+```ts
+interface BlueDockContribution extends BlueContributionMeta {
+  readonly placement: 'before-editor' | 'before-footer'
+  readonly order?: number
+  render(context: BlueDockContext): BlueView | null
+}
+```
+
+`BlueDockContext` 只含 viewport、readonly session/projection snapshot 和 schedule handle。Blue 负责 Gutter、width、render cache 和 request coalescing。需要异步/事件状态的官方 pane 使用 tree-scoped controller 更新 projection，render 仍是纯 `snapshot -> BlueView`。
+
+#### 必须拆开 `blue-interaction` 的组合粒度
+
+当前 `blue-interaction.apply()` 在一个 patch row 内挂载 keys、commands、input、questions、approval、terminal-title、session-title-cadence 七个子插件。它们虽然各有 Fiber，但 bundle 用户只能看到父 row：卸载 input 会连 commands 和 approval 一起卸载，无法实现“保留官方命令，只换 editor”或“保留 editor，只换 approval UI”。
+
+重构后 bundle 至少显式列出：
+
+```text
+blue-interaction-keys
+blue-commands-default
+blue-editor-default
+blue-questions-default
+blue-approval-default
+blue-terminal-title
+blue-session-title-cadence
+```
+
+不要求为 20 个 command 各发一个 npm subpath。可以按稳定功能族拆 row，例如 session/model/export/tools/preset；真正需要单命令替换时，Harness command registry 的 duplicate/disable 规则处理。目标是用户可感知 surface 的替换粒度，不是把每个函数都包装成插件。
+
+#### 内置实现 dogfood 公共 API 的边界
+
+应遵守：
+
+- status、tool view、dock、commands、panels、editor extension 使用与第三方相同的 stable API；
+- core terminal、view compiler、API guard、session projection adapter 使用 internal API；
+- 官方功能需要额外 Harness 能力时，可以在自己的 Cordis plugin 中 inject Harness service，但交给 renderer 的仍是公共 snapshot/view；
+- 不为迁移官方复杂功能而扩大公共 API。若 BTW pane 需要创建 side Agent，它可在 controller 内使用 `agents`，但 dock renderer 不能因此获得 AgentHandle。
+
+这避免两种极端：一是官方继续走私有捷径，公共 API 永远缺乏真实验证；二是为了让所有官方代码“看起来平等”，把危险内核能力全部公开。
+
+#### 对代码复用的直接收益
+
+迁移不是单纯增加 adapter 层，它应消除前述四类流程重复：
+
+- session projection host 统一 snapshot/live/session switch，pane/status 不再各写 attach/detach；
+- panel service 统一 display resolution、editor slot、focus、stack、notice 和 abort；
+- `BlueView` compiler 统一 expanded/cache/cap/chrome/width；
+- consumer-scoped API 统一 command/contribution disposer、unloaded guard 和错误诊断。
+
+若迁移完成后官方实现仍大量直接调用 `blueScreen`、`mountEditorReplacement`、`getSharedEditor` 或自行监听 `'blue/session-changed'`，说明 API 只是第三方 façade，没有真正成为 Blue 的架构 seam，应视为验收失败。
+
 ## 7. 插件不能破坏 Blue 的防线
 
 ### 7.1 同进程插件的隔离上限
@@ -663,34 +947,48 @@ API 不允许 contribution 返回自定义 disposer 来替 Blue 管理内部资�
 ### Phase A：先界定公共面
 
 - 创建 `@dsh-blue/blue-api`，只放类型、版本检查和 view schema；
-- 把 `blueSession`、status/intent 公共投影和共享版本常量迁入 API 包；
+- 把 `blueSession` 的只读投影、status/intent 公共类型和共享版本常量迁入 API 包；
 - 在文档中把现有 subpath 分为 stable/experimental/internal；
 - 移除发布包的 `./src/*` exports；
 - 增加 API extractor/类型快照或等价的 public surface diff gate。
 
 验收：实现包之间不再为了 declaration merge 反向依赖 app；第三方示例插件只依赖 blue-api 和 Cordis。
 
-### Phase B：安全 façade 与低风险接缝
+### Phase B：先修正所有权和组合粒度，不改变 UI
+
+- 将 status/tool-view registry 和 session projection host 从默认 transcript renderer 中移出；
+- 将 `blue-interaction` 的 input、commands、questions、approval、title/cadence 拆成可独立寻址的 exports 和 patch rows；
+- 保持官方 bundle 的默认 row 集合、挂载顺序和最终 UI 与迁移前一致；
+- 把官方 row id、provider slot 和 contribution id 的稳定性规则写入 composition contract；
+- 为每个可替换 surface 加“disable official → mount reference replacement”的 bundle fixture。
+
+验收：默认 profile 的录屏/width/e2e golden 不变；卸载 transcript default renderer 后 API host、session projection 和第三方 contribution 仍然存活。
+
+### Phase C：安全 façade 与低风险接缝
 
 - 实现 `bluePlugins` host service、`defineBluePlugin()` 和 consumer-scoped API；
-- 先开放 commands、notifications、readonly session、结构化 status；
+- 先开放 commands、notifications、readonly session 和结构化 status；
 - adapter 内桥接 Harness commands 和当前 Blue status；
 - 加入 id namespace、版本检查、callback guard、abort 和诊断；
+- 将官方 status 和至少一个 command family 迁到同一 stable API；
 - 提供一个官方 example plugin 作为兼容 fixture。
 
-验收：卸载 example plugin 后无 command/status/panel/subscription 残留；异常和超宽文本不影响主 UI。
+验收：卸载 example plugin 后无 command/status/panel/subscription 残留；异常和超宽文本不影响主 UI；官方和第三方 entry 经过同一 guard。
 
-### Phase C：声明式工具视图和 panel
+### Phase D：声明式 view、panel 和 dock
 
 - 定稿最小 `BlueView` union；
 - 将内置 generic/diff/terminal renderer 先改为消费同一 DSL，证明 plain-first；
 - 开放 tool view provider；
 - 开放 select/form/info panel model；
+- 实现 `api.dock` 和 session projection observer；
+- 依次迁移 queue、todo、activity、agents；BTW 的 side-Agent controller 保留 internal，只迁移其 view；
+- 用 panel service 替换官方 command 中的 `displayServices + mountEditorReplacement + getSharedEditor` 流程；
 - 保留旧 `blueIntents` 为内部 adapter，不直接向第三方导出。
 
-验收：内置与第三方 view 经过同一个 width-scan 和错误隔离管线。
+验收：内置与第三方 view 经过同一个 width-scan 和错误隔离管线；官方 pane 不再自行实现 session attach/detach；官方 command 不再直接挂 panel component。
 
-### Phase D：Editor 扩展与状态收敛
+### Phase E：Editor 扩展与状态收敛
 
 - 开放 completion/submit/action 三类受限扩展；
 - 将 shared editor、draft/history 和 extension registry 移入 tree-scoped service；
@@ -699,13 +997,15 @@ API 不允许 contribution 返回自定义 disposer 来替 Blue 管理内部资�
 
 验收：同进程两棵测试 Blue tree 的 draft、completion、allowance 和 panel 状态互不串联。
 
-### Phase E：组合升级保障
+### Phase F：Provider replacement 与组合升级保障
 
+- 在保持 terminal kernel 的前提下验证 theme、transcript renderer、editor experimental provider 的运行期替换；
+- 验证 provider 卸载时消费者进入 `PENDING`、新 provider 激活后 reload，且在途 command/controller 不被误卸载；
 - 自动比较 Blue thin-host roster 与上游 base/web-app 的 agent-plane row；
 - 对每个 preset 启动真实 Agent scope 并断言最终工具/plan/persona surface；
 - 将检查加入 harness line 升级门禁。
 
-验收：上游新增 agent-plane row 时 CI 必须要求 Blue 明确裁决，而不是静默继承。
+验收：每个独占 provider 都能通过“官方卸载、自定义挂载、官方恢复”三段测试；上游新增 agent-plane row 时 CI 必须要求 Blue 明确裁决，而不是静默继承。
 
 ## 10. 测试与发布门禁
 
@@ -718,6 +1018,9 @@ API 不允许 contribution 返回自定义 disposer 来替 Blue 管理内部资�
 - duplicate id、非法 namespace、API range 不兼容测试；
 - callback throw/reject、反复失败后停用测试；
 - unload/session switch/theme reload 的资源清理测试；
+- 逐个禁用官方 status/tool-view/pane/command-family/provider row，再挂 reference replacement 的组合测试；
+- 替换 transcript renderer 时 registry、projection、已注册 contribution 不消失；
+- provider swap 的 `PENDING → ACTIVE`、controller 存活和焦点恢复时序测试；
 - CJK、ANSI、超长单词、零宽字符和窄终端的第三方 view width-scan；
 - panel focus/Escape/stack 恢复测试；
 - async completion/command 的 abort 与 late result 丢弃测试；
@@ -736,10 +1039,12 @@ Blue 当前设计的价值已经被大量功能验证：插件树、service seam
 
 1. 先建立 `blue-api` 并修正契约所有权；
 2. 关闭 `./src/*` 公共逃生口；
-3. 以 `bluePlugins` façade 开放 command/status/notification/session；
-4. 用声明式 `BlueView` 开放工具卡片和 panel；
-5. 最后才开放 editor，并且只开放数据增强；
-6. 同步把产品级模块状态迁到 tree-scoped service；
-7. 用真实 composition 测试守住 thin-host。
+3. 把 seam host 从官方 renderer 中移出，并拆开 `blue-interaction` 的 bundle 粒度；
+4. 以 `bluePlugins` façade 开放 command/status/notification/session/dock；
+5. 用声明式 `BlueView` 重构官方状态、工具卡片、pane 和 panel，再向第三方开放；
+6. 收敛 session observation、panel orchestration 和 renderer shell 三类流程复用；
+7. 最后才开放 editor，并且只开放数据增强；
+8. 同步把产品级模块状态迁到 tree-scoped service；
+9. 用真实 composition 测试守住 thin-host 和官方效果替换能力。
 
 这样既保留 Cordis 带来的组合能力，也让 Blue 对第三方插件拥有最终渲染权和生命周期控制权。长期稳定的关键不是冻结更多内部类型，而是冻结一层更小、更声明式、更难误用的协议。
