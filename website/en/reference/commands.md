@@ -24,6 +24,7 @@ Typing `/` triggers fuzzy autocomplete and discovery hints (see [Input editor](/
 | `/status` | — | — | Show the session header, model, and context status | `blue-commands` |
 | `/context` | — | — | Show token usage and the context window | `blue-usage` |
 | `/version` | — | — | Show the Blue and harness versions and the live model | `blue-commands` |
+| `/update` | — | `[version]` | Safely update Blue (pre-flight, snapshot, boot smoke, automatic rollback; a bare call is a read-only check) | `blue-commands` (via update-command, D52) |
 | `/export` | — | `[path]` | Export the current session as a Markdown file | `blue-session-export` |
 | `/copy` | — | — | Copy the last assistant message to the clipboard | `blue-session-export` |
 

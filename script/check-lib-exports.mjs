@@ -73,7 +73,11 @@ let checked = 0
  * npm files-list matching: a literal entry compares directly, a `**`
  * segment spans directories, and a lone `*` stays within one path segment
  * (the packages mix styles — literal lists, `lib` + `*.js`, and nested
- * `lib` + `types` + `*.d.ts` wildcard shapes).
+ * `lib` + `types` + `*.d.ts` wildcard shapes). The `**` expansions are
+ * staged through placeholder tokens first: the inserted regexes carry
+ * their own `*` repeaters, and a later lone-`*` pass over the raw string
+ * would rewrite them (the nested-types bug — a `lib` + `**` + `*` files
+ * entry silently matched only one directory level).
  * @param entry - one files-list string.
  * @param rel - the lib-relative path to test.
  * @returns whether the entry claims the path.
@@ -82,9 +86,11 @@ function filesEntryMatches(entry, rel) {
   if (!entry.includes('*')) return entry === rel
   const pattern = entry
     .replace(/[.+^${}()|[\]\\]/g, String.raw`\$&`)
-    .replace(/\*\*\//g, '(?:.*/)?')
-    .replace(/\*\*/g, '.*')
+    .replace(/\*\*\//g, '__DIR__')
+    .replace(/\*\*/g, '__ANY__')
     .replace(/\*/g, '[^/]*')
+    .replace(/__DIR__/g, '(?:.*/)?')
+    .replace(/__ANY__/g, '.*')
   return new RegExp(`^${pattern}$`).test(rel)
 }
 
