@@ -1265,7 +1265,7 @@ describe('blue whole-tree e2e', () => {
       0, 3, 134, 1, 128, 90, 52, 125, 107, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
     ])
     try {
-      setClipboardImageReader(() => Promise.resolve(png))
+      setClipboardImageReader(() => Promise.resolve({ kind: 'image', data: png, mediaType: 'image/png' }))
       const tree = await bootBlue([], { script: [textResponse('got it')] })
       const agent = await currentAgent(tree)
       for (const char of 'look at this ') tree.terminal.sendInput(char)
