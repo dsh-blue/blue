@@ -34,6 +34,7 @@ export type BlueManifestErrorCode =
   | 'BLUE_INVALID_MANIFEST'
   | 'BLUE_INVALID_PLUGIN_ID'
   | 'BLUE_INVALID_API_RANGE'
+  | 'BLUE_INVALID_CAPABILITY'
   | 'BLUE_DUPLICATE_CAPABILITY'
 
 /** Structured validation result. */
@@ -43,6 +44,10 @@ export type BlueManifestResult =
 
 const ID_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/
 const RANGE_PATTERN = /^[~^=<>*0-9xX|.\-+\s]+$/
+const CAPABILITIES = new Set<BlueCapability>([
+  'commands', 'status', 'tools', 'dock', 'editor', 'panels',
+  'notifications', 'session.read', 'session.act',
+])
 
 /** Validate a manifest without executing plugin code. */
 export function validateBlueManifest(manifest: BluePluginManifest): BlueManifestResult {
@@ -60,6 +65,9 @@ export function validateBlueManifest(manifest: BluePluginManifest): BlueManifest
   }
   const capabilities = new Set<string>()
   for (const capability of manifest.capabilities) {
+    if (typeof capability !== 'string' || !CAPABILITIES.has(capability as BlueCapability)) {
+      return { ok: false, code: 'BLUE_INVALID_CAPABILITY', message: `unknown capability "${String(capability)}"` }
+    }
     if (capabilities.has(capability)) {
       return { ok: false, code: 'BLUE_DUPLICATE_CAPABILITY', message: `capability "${capability}" is repeated` }
     }
