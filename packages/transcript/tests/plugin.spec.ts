@@ -850,10 +850,10 @@ describe('blue-transcript plugin through the real Loader', () => {
     // First render kicks the load; the settle nudges requestRender and the
     // loaded image's fake rows replace the placeholder.
     const before = contentLines(screen)
-    expect(before).toContain('  [image]')
+    expect(before).toContain('   [image]')
     await new Promise(resolve => setTimeout(resolve, 10))
     expect(renderRequests.length).toBeGreaterThan(0)
-    expect(contentLines(screen)).toContain('  <image 3B>')
+    expect(contentLines(screen)).toContain('   <image 3B>')
     disposers.length = 0
     await ctx.fiber.dispose()
   })
@@ -873,8 +873,8 @@ describe('blue-transcript plugin through the real Loader', () => {
     expect(contentLines(screen)).toEqual([
       '',
       '\x1b[1m✨ \x1b[22m\x1b[1mpic\x1b[22m',
-      '  \x1b[1m[image]\x1b[22m',
-      '  [image]',
+      '   \x1b[1m[image]\x1b[22m',
+      '   [image]',
     ])
     disposers.length = 0
     await ctx.fiber.dispose()
@@ -888,7 +888,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     expect(contentLines(screen)).toEqual([
       '',
       '\x1b[1m✨ \x1b[22m\x1b[1mpic\x1b[22m',
-      '  \x1b[1m[image]\x1b[22m',
+      '   \x1b[1m[image]\x1b[22m',
     ])
     disposers.length = 0
     await ctx.fiber.dispose()

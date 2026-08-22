@@ -15,6 +15,7 @@
  */
 
 import type { BlueComponents, BlueEditor, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
+import { clampRowsToWidth } from '@dsh-blue/blue-core/chrome'
 import {
   ACTION_CANCEL,
   ACTION_MOVE_DOWN,
@@ -235,11 +236,16 @@ export class FormPanel implements BlueFocusable {
       const pad = ' '.repeat(Math.max(0, contentWidth - components.visibleWidth(cut)))
       return `${bar}${cut}${pad}${bar}`
     }
-    return [
+    // `inner` floors at the form's 20-column minimum; only a degenerate
+    // viewport under that floor (a resize drag crossing it) gets its rows
+    // cut to the offered width — wider viewports emit the frame untouched.
+    const frame = [
       colors.border(`╭${'─'.repeat(inner - 2)}╮`),
       ...body.map(wrap),
       colors.border(`╰${'─'.repeat(inner - 2)}╯`),
     ]
+    if (width >= 20) return frame
+    return clampRowsToWidth(frame, width, (t, target) => components.truncateToWidth(t, target))
   }
   /** The subtitle, or a blank line when the form carries none. */
   private subtitleOrBlank(): string {

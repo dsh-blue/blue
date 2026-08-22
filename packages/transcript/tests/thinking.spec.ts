@@ -2,8 +2,7 @@
  * The thinking block: live tail-window rendering with the spinner timer,
  * in-place finalization with the folded preview and expansion hint, the
  * blank-reasoning zero-row settle, and dispose discipline. Width behavior
- * asserts against the fake factory's codepoint `visibleWidth` (the
- * components.spec convention).
+ * asserts against pi-tui's own width helpers (the D48 real-semantics swap).
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -77,14 +76,23 @@ describe('ThinkingComponent', () => {
       fakeBlueComponents(),
     )
     expect(timers.ticks).toHaveLength(1)
-    const lines = component.render(6)
-    // Blank separator, the muted spinner with its label, then the wrapped
-    // text's last two lines only, italic-indent styled.
-    expect(lines).toEqual([
+    // The tagged rows measure past twenty columns, so the spinner row's
+    // structure asserts at a width it fits.
+    const wide = component.render(40)
+    expect(wide[0]).toBe('')
+    expect(wide[1]).toBe('[M]⠋[/M] [M]thinking...[/M]')
+    // The tail window folds at a narrow width: identity colors, the last
+    // two wrapped words only, italic-indent styled and width-safe.
+    const narrow = new ThinkingComponent(
+      thinkingItem({ text: SIX_WORDS, streaming: true }),
+      COLORS,
+      fakeBlueComponents(),
+    ).render(5)
+    expect(narrow).toEqual([
       '',
-      '[M]⠋[/M] [M]thinking...[/M]',
-      '  \x1b[3m[M]l4[/M]\x1b[23m',
-      '  \x1b[3m[M]l5[/M]\x1b[23m',
+      '⠋ \x1b[0m...\x1b[0m',
+      '  \x1b[3ml4\x1b[23m',
+      '  \x1b[3ml5\x1b[23m',
     ])
     // A tick advances the frame and nudges a redraw.
     const renders: number[] = []
@@ -94,8 +102,8 @@ describe('ThinkingComponent', () => {
       fakeBlueComponents(),
       () => { renders.push(1) },
     )
-    timers.ticks[1]!()
-    expect(animating.render(6)[1]).toBe('⠙ thinking...')
+    timers.ticks[2]!()
+    expect(animating.render(30)[1]).toBe('⠙ thinking...')
     expect(renders).toHaveLength(1)
   })
 
@@ -105,22 +113,27 @@ describe('ThinkingComponent', () => {
       tagged(),
       fakeBlueComponents(),
     )
-    expect(component.render(6)).toEqual([
+    const wide = component.render(40)
+    expect(wide[0]).toBe('')
+    expect(wide[1]).toBe('[M]● [/M]\x1b[3m[M]l0 l1 l2 l3 l4 l5[/M]\x1b[23m')
+    // Folding asserts at a narrow width with identity colors: two preview
+    // rows then the expansion hint, every row within the given width.
+    const narrow = new ThinkingComponent(
+      thinkingItem({ text: SIX_WORDS }),
+      COLORS,
+      fakeBlueComponents(),
+    ).render(5)
+    expect(narrow).toEqual([
       '',
-      '[M]● [/M]\x1b[3m[M]l0[/M]\x1b[23m',
-      '  \x1b[3m[M]l1[/M]\x1b[23m',
-      '  [T]...…[/T]',
+      '● \x1b[3ml0\x1b[23m',
+      '  \x1b[3ml1\x1b[23m',
+      '  ..\x1b[0m…\x1b[0m',
     ])
     // Expansion opens the full body; short bodies never fold.
     component.setExpanded(true)
-    expect(component.render(6)).toEqual([
+    expect(component.render(40)).toEqual([
       '',
-      '[M]● [/M]\x1b[3m[M]l0[/M]\x1b[23m',
-      '  \x1b[3m[M]l1[/M]\x1b[23m',
-      '  \x1b[3m[M]l2[/M]\x1b[23m',
-      '  \x1b[3m[M]l3[/M]\x1b[23m',
-      '  \x1b[3m[M]l4[/M]\x1b[23m',
-      '  \x1b[3m[M]l5[/M]\x1b[23m',
+      '[M]● [/M]\x1b[3m[M]l0 l1 l2 l3 l4 l5[/M]\x1b[23m',
     ])
     const short = new ThinkingComponent(
       thinkingItem({ text: 'one line only' }),
@@ -149,10 +162,11 @@ describe('ThinkingComponent', () => {
       COLORS,
       fakeBlueComponents(),
     )
-    // Width 6 leaves 4 for the hint: three kept characters plus the ellipsis.
-    expect(component.render(6).at(-1)).toBe('  ...…')
+    // Width 6 leaves 4 for the hint: three kept characters plus the
+    // ellipsis (reset-wrapped by pi-tui even inside the tag markers).
+    expect(component.render(6).at(-1)).toBe('  ...\x1b[0m…\x1b[0m')
     // Width 3 leaves a single column: the bare ellipsis.
-    expect(component.render(3).at(-1)).toBe('  …')
+    expect(component.render(3).at(-1)).toBe('  \x1b[0m…\x1b[0m')
   })
 
   it('stands the spinner down once the item finalizes, and on dispose', () => {

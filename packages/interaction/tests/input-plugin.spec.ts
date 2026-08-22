@@ -430,7 +430,7 @@ describe('blue-input plugin', () => {
     const { editor, hint } = await mount({ withAgent: false })
     type(editor, 'hello')
     editor.handleInput(KEY.enter)
-    expect(hint.render(10)).toEqual(['~no acti...~'])
+    expect(hint.render(10)).toEqual(['~no acti\x1b[0m...\x1b[0m~'])
   })
 
   it('renders no hint row when a command succeeds without text', async () => {

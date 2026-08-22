@@ -175,7 +175,7 @@ function createPlainComponent(
     case 'error':
       return new ErrorMessageComponent(item, colors, components)
     case 'interrupted':
-      return new InterruptedMarkerComponent(colors)
+      return new InterruptedMarkerComponent(colors, components)
   }
 }
 

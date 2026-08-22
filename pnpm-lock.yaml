@@ -8,12 +8,18 @@ importers:
 
   .:
     devDependencies:
+      '@deepseek-ai/dsh-llm-mock-server':
+        specifier: 0.1.1-rc.1
+        version: 0.1.1-rc.1(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.1(@deepseek-ai/cordis@4.0.1))
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.1
       '@vitest/coverage-v8':
         specifier: ^4.1.8
         version: 4.1.10(vitest@4.1.10)
+      node-pty:
+        specifier: 1.2.0-beta.15
+        version: 1.2.0-beta.15
       oxlint:
         specifier: 1.76.0
         version: 1.76.0
@@ -1565,6 +1571,12 @@ packages:
       '@deepseek-ai/dsh-llm': ^0.1.1-rc.1
       '@deepseek-ai/dsh-settings': ^0.1.1-rc.1
       '@deepseek-ai/dsh-timeout': ^0.1.1-rc.1
+
+  '@deepseek-ai/dsh-llm-mock-server@0.1.1-rc.1':
+    resolution: {integrity: sha512-w5JyA8Emnvj5cG1o8Z6DZniDPGxVty7RA1sYwwcb0l10E309tpUr6TcM7ersaqL5Jz/Afvfoz+EvClMNmMB1Xg==}
+    peerDependencies:
+      '@deepseek-ai/cordis': ^4.0.1
+      '@deepseek-ai/dsh-invariants': ^0.1.1-rc.1
 
   '@deepseek-ai/dsh-llm-pi-ai@0.1.1-rc.1':
     resolution: {integrity: sha512-lExsZIY7PeL7yEwgglTGLb1Tbg4soANFpuePOONIrn1ZP51DwENw1SrU/0RK9ps9ksMHyl9J1ie5FIYS/YCY0w==}
@@ -7130,6 +7142,11 @@ snapshots:
       '@deepseek-ai/dsh-timeout': 0.1.0-rc.7(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.1(@deepseek-ai/cordis@4.0.1))
       '@deepseek-ai/schemastery': 3.18.1
       eventsource-parser: 3.1.1
+
+  '@deepseek-ai/dsh-llm-mock-server@0.1.1-rc.1(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.1(@deepseek-ai/cordis@4.0.1))':
+    dependencies:
+      '@deepseek-ai/cordis': 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@deepseek-ai/dsh-invariants': 0.1.1-rc.1(@deepseek-ai/cordis@4.0.1)
 
   '@deepseek-ai/dsh-llm-pi-ai@0.1.1-rc.1(7031edf298d4b319cfbbabbab1eb97ab)':
     dependencies:

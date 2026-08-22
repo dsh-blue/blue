@@ -24,6 +24,7 @@ import {
   turnEnd,
   turnStart,
 } from './helpers.ts'
+import { visibleWidth } from '../../core/src/width.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { BlueComponent } from '@dsh-blue/blue-core'
 
@@ -306,9 +307,9 @@ describe('blue-pane-activity', () => {
     const { screen, dispose } = await boot(agent)
     const pane = screen.bottomChildren[0]!
     const full = `🌑 · Tip: ${FIRST_TIP}`
-    // The fake width measure counts codepoints, so the moon is one cell
-    // there: the row's visible width is 1 + the lead + the tip.
-    const visible = 1 + ' · Tip: '.length + FIRST_TIP.length
+    // The width measure is pi-tui's (D48): the moon glyph spans two cells,
+    // so the row's visible width is the moon + the lead + the tip.
+    const visible = visibleWidth('🌑') + ' · Tip: '.length + FIRST_TIP.length
     expect(unwrapped(pane, visible)).toEqual([full])
     // One column short drops the tip but keeps the moon.
     expect(unwrapped(pane, visible - 1)).toEqual(['🌑'])

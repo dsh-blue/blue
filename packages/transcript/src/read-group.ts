@@ -24,6 +24,7 @@
  */
 
 import type { BlueComponent, BlueComponents, BlueSemanticColors } from '@dsh-blue/blue-core'
+import { clampRowsToWidth } from '@dsh-blue/blue-core/chrome'
 import type { TranscriptToolItem } from './types.ts'
 
 /** Bold SGR pair (the S18 local-constant precedent). */
@@ -160,7 +161,8 @@ export class ReadGroupComponent implements BlueComponent {
     visible.forEach((snapshot, index) => {
       lines.push(this.bodyRow(snapshot, index === visible.length - 1, width))
     })
-    this.cache = { key, lines }
-    return lines
+    const clamped = clampRowsToWidth(lines, width, text => this.components.truncateToWidth(text, width))
+    this.cache = { key, lines: clamped }
+    return clamped
   }
 }

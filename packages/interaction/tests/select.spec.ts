@@ -140,13 +140,13 @@ describe('BlueSelect rendering', () => {
   it('drops the description when the row is too narrow', () => {
     const { select } = mount({ items: [{ value: 'a', label: 'Alpha', description: 'first' }] })
     const lines = select.render(10)
-    expect(lines[2]).toBe('{❯ [ ] A...}')
+    expect(lines[2]).toBe('{❯ [ ] A\x1b[0m...\x1b[0m}')
   })
 
   it('truncates long labels to the row width', () => {
     const { select } = mount({ items: [{ value: 'a', label: 'A very long label indeed' }] })
     const lines = select.render(14)
-    expect(lines[2]).toBe('{❯ [ ] A ver...}')
+    expect(lines[2]).toBe('{❯ [ ] A ver\x1b[0m...\x1b[0m}')
   })
 
   it('shows scroll info beyond the visible window and a toggle hint in the footer', () => {
