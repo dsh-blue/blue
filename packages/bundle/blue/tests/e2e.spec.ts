@@ -201,7 +201,7 @@ describe('blue whole-tree e2e', () => {
     const frame = await fullFrame(tree.terminal)
     expect(frame).toContain('Welcome to Blue!')
     expect(frame).toContain('Send /help for help information.')
-    // The banner is frameless: the whale logo block sits left and the
+    // The banner is frameless: the terminal-window logo block sits left and the
     // status column beside it, so the welcome row is content-width — it
     // never bleeds to the full viewport (no box frame, no cap).
     const bannerRow = frame.split('\r\n').find(row => row.includes('Welcome to Blue!')) ?? ''

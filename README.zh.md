@@ -12,7 +12,7 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 
 本仓库是 `@dsh-blue` scope 下五个 workspace 包的独立 home，它们从 `deepseek-harness` monorepo 抽出（原 `packages/blue/*` 与 `packages/bundle/blue`），现按 npm 上发布的 harness（`0.1.1-rc.2` 线）与 vendored Cordis 构建测试。
 
-<p align="center"><img src="docs/assets/demo.gif" width="840" alt="Blue 演示：键入任务、read 工具卡、流式 markdown 回复与斜杠命令菜单"></p>
+<p align="center"><img src="docs/assets/demo.gif" width="840" alt="Blue 演示：键入任务、命令卡、流式 markdown 回复、模式切换、todo 面板与命令菜单"></p>
 
 ## 目录
 
@@ -109,7 +109,7 @@ dsh plugin --profile blue add @dsh-blue/blue@rc
 
 | 启动与横幅 | 一个回合：工具卡 + 流式回复 | 命令菜单 |
 | --- | --- | --- |
-| <img src="docs/assets/shot-banner.png" width="360" alt="启动画面：盲文点阵横幅、元信息块、空的圆角输入框与两行状态栏"> | <img src="docs/assets/shot-conversation.png" width="360" alt="会话画面：用户任务、带预览的 read 工具卡与流式 markdown 回复"> | <img src="docs/assets/shot-panels.png" width="360" alt="输入框上方的斜杠命令下拉：fuzzy 匹配与参数提示"> |
+| <img src="docs/assets/shot-banner.png" width="360" alt="启动画面：盲文点阵横幅、元信息块、空的圆角输入框与两行状态栏"> | <img src="docs/assets/shot-conversation.png" width="360" alt="会话画面：用户任务、带输出的命令卡与流式 markdown 回复"> | <img src="docs/assets/shot-panels.png" width="360" alt="输入框上方的斜杠命令下拉：fuzzy 匹配与参数提示"> |
 
 这些界面在真实使用中的完整走查见功能文档：[dsh-blue.dev/features](https://dsh-blue.dev/features/)（English: [dsh-blue.dev/en/features](https://dsh-blue.dev/en/features/)）。
 

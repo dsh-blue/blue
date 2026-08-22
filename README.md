@@ -12,7 +12,7 @@ Blue is an interactive terminal UI (TUI) plugin for [DeepSeek Harness](https://g
 
 This repository is the standalone home of Blue's five workspace packages under the `@dsh-blue` scope, extracted from the `deepseek-harness` monorepo (`packages/blue/*` and `packages/bundle/blue`). They build and test against the published npm releases of the harness (`0.1.1-rc.2` line) and vendored Cordis.
 
-<p align="center"><img src="docs/assets/demo.gif" width="840" alt="Blue demo: typing a task, the read tool card, a streaming markdown reply, and the slash-command menu"></p>
+<p align="center"><img src="docs/assets/demo.gif" width="840" alt="Blue demo: typing a task, a command card, a streaming markdown reply, mode switching, the todo pane, and the command menu"></p>
 
 ## Contents
 
@@ -109,7 +109,7 @@ From a scripted, fully reproducible recording (`pnpm demo:record && pnpm demo:re
 
 | Boot with the banner | A turn: tool card + streaming reply | The command menu |
 | --- | --- | --- |
-| <img src="docs/assets/shot-banner.png" width="360" alt="Boot screen: braille-art banner, metadata block, empty rounded editor, two-row status footer"> | <img src="docs/assets/shot-conversation.png" width="360" alt="Conversation: the user task, a read tool card with preview, and a streaming markdown answer"> | <img src="docs/assets/shot-panels.png" width="360" alt="The slash-command dropdown with fuzzy matches and argument hints over the editor"> |
+| <img src="docs/assets/shot-banner.png" width="360" alt="Boot screen: braille-art banner, metadata block, empty rounded editor, two-row status footer"> | <img src="docs/assets/shot-conversation.png" width="360" alt="Conversation: the user task, a command card with its output, and a streaming markdown answer"> | <img src="docs/assets/shot-panels.png" width="360" alt="The slash-command dropdown with fuzzy matches and argument hints over the editor"> |
 
 Feature walkthroughs with these surfaces in motion: [dsh-blue.dev/en/features](https://dsh-blue.dev/en/features/) (中文: [dsh-blue.dev/features](https://dsh-blue.dev/features/)).
 

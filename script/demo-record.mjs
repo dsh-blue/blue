@@ -50,12 +50,13 @@ const OUT = process.env.DEMO_OUT ?? join(root, 'docs/assets/demo.cast')
 // The scripted conversation. The task is TYPED (not passed on the CLI): a
 // fresh boot shows no banner — it mounts on the first session attach — so
 // typing the prompt shows the editor, then reveals the banner as the session
-// starts. The first mock reply is a `read` tool call (dedicated read card,
-// and the approval panel when the profile asks), the post-tool reply streams
-// slowly (chunkDelayMs only paces `slow_success` — a plain `success` blasts
-// the whole text in one burst, which reads terribly in a GIF). Content stays
-// English-only: the vendored JetBrains Mono carries no CJK glyphs.
-const TASK = 'Read README.md and give me the 30-second tour.'
+// starts. The first mock reply is a `bash` tool call (the four-option
+// approval panel when the profile asks, then the terminal-output card with
+// the real command output), the post-tool reply streams slowly (chunkDelayMs
+// only paces `slow_success` — a plain `success` blasts the whole text in one
+// burst, which reads terribly in a GIF). Content stays English-only: the
+// vendored JetBrains Mono carries no CJK glyphs.
+const TASK = 'Look at README.md and give me the 30-second tour.'
 // The reply's first line doubles as the session title (the harness's title
 // generator sees the mock's repeat-last reply) — keep it a clean short line.
 const REPLY = [
@@ -150,8 +151,8 @@ const server = await startMockLlmServer({
   // (the session-title provider); repeat-last keeps them from exhausting the
   // script (the smoke scripts ride the same posture).
   repeatLast: true,
-  toolName: 'read',
-  toolArguments: JSON.stringify({ file_path: 'README.md' }),
+  toolName: 'bash',
+  toolArguments: JSON.stringify({ command: 'cat README.md', description: 'Read the project README' }),
   successText: REPLY,
   chunkSize: 16,
   chunkDelayMs: 90,
@@ -235,29 +236,49 @@ try {
   if (!(await waitFor(() => clean().includes('Welcome to Blue'), 'the banner'))) throw new Error('banner')
   await sleep(800)
 
-  // 3. The `read` tool: an approval panel when the profile asks (answer with
-  //    the default), then the dedicated read card.
+  // 3. The `bash` tool: the terminal-output card titled with the command and
+  //    carrying its real output. The demo profile auto-allows bash (no
+  //    approval panel in this posture); should that change, accept the
+  //    default after a readable hold.
+  const approvalDue = Date.now() + 8000
+  while (Date.now() < approvalDue && !clean().includes('Allow once')) await sleep(200)
   if (clean().includes('Allow once')) {
-    await sleep(1200)
+    await sleep(1700)
     term.write('\r')
     note('i', '\r')
   }
-  if (!(await waitFor(() => clean().includes('Read README.md'), 'the read tool card'))) throw new Error('read-card')
+  if (!(await waitFor(() => clean().includes('cat README.md'), 'the bash tool card'))) throw new Error('bash-card')
 
   // 4. The streaming markdown answer.
   if (!(await waitFor(() => clean().includes(REPLY_END), 'the streamed markdown reply'))) throw new Error('reply')
-  await sleep(1800)
+  await sleep(2200)
 
-  // 5. The slash dropdown — the live command registry with fuzzy filter and
+  // 5. Session-mode toggle (Shift+Tab cycles normal ↔ yolo in this build):
+  //    two presses land back on normal, both banner messages on record.
+  for (let cycle = 0; cycle < 2; cycle += 1) {
+    term.write('\x1b[Z')
+    note('i', '\x1b[Z')
+    await sleep(1800)
+  }
+
+  // 7. The todo pane (Ctrl-T): the dock pane toggles over the editor.
+  term.write('\x14')
+  note('i', '\x14')
+  await sleep(2300)
+  term.write('\x14')
+  note('i', '\x14')
+  await sleep(700)
+
+  // 8. The slash dropdown — the live command registry with fuzzy filter and
   //    argument hints; shown, never submitted (the list's active item is a
   //    /resume session suggestion, and Enter there would send a message).
   await type('/')
-  await sleep(1800)
+  await sleep(2000)
   term.write('\x1b')
   note('i', '\x1b')
   await sleep(350)
 
-  // 6. The double-Ctrl-C exit path (a Ctrl-C that dismisses an overlay does
+  // 9. The double-Ctrl-C exit path (a Ctrl-C that dismisses an overlay does
   //    not arm the exit — send up to three, one beat apart).
   for (let attempt = 0; attempt < 3 && exitCode === null; attempt += 1) {
     term.write('\x03')
