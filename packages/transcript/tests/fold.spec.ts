@@ -52,6 +52,27 @@ describe('foldSessionEvents', () => {
     expect(folder.items.filter(item => item.kind === 'interrupted')).toHaveLength(1)
   })
 
+  it('does not reopen an interrupted turn from late assistant events', () => {
+    const folder = new TranscriptFolder()
+    folder.apply(turnStart(1))
+    folder.apply(stepStart(1, 1))
+    folder.apply(event('assistant/chunk', {
+      turn: 1,
+      step: 1,
+      chunk: { type: 'text-delta', text: 'partial answer' },
+    }))
+    folder.interrupt(99)
+
+    expect(folder.apply(event('assistant/chunk', {
+      turn: 1,
+      step: 1,
+      chunk: { type: 'text-delta', text: ' buffered tail' },
+    }))).toBeNull()
+    expect(folder.apply(assistantEvent(1, 1, [{ type: 'text', text: 'partial answer buffered tail' }]))).toBeNull()
+    expect(folder.items.map(item => item.kind)).toEqual(['assistant', 'interrupted'])
+    expect((folder.items[0] as TranscriptAssistantItem).text).toBe('partial answer')
+  })
+
   it('folds a user message into a user item', () => {
     const items = foldSessionEvents([userEvent('hello world')])
     expect(items).toHaveLength(1)

@@ -319,6 +319,10 @@ export class TranscriptFolder {
 
       case 'assistant/chunk': {
         const { turn, step, chunk } = event.data
+        // The request lifecycle can mark a turn interrupted before the host
+        // drains its buffered assistant events. Keep the partial item that
+        // was already visible, but never reopen the turn after its tombstone.
+        if (this.interruptedTurns.has(turn)) return null
         if (chunk.type !== 'text-delta' && chunk.type !== 'reasoning-delta') return null
         const stepKey = `${turn}:${step}`
         if (this.finalizedSteps.has(stepKey)) return null
@@ -367,6 +371,7 @@ export class TranscriptFolder {
 
       case 'assistant/message': {
         const { turn, step, message } = event.data
+        if (this.interruptedTurns.has(turn)) return null
         const stepKey = `${turn}:${step}`
         const text = contentText(message.content).trim()
         const reasoning = reasoningText(message.content)
