@@ -157,10 +157,9 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 | S35 | 欢迎横幅改 kimi 式单栏（**D42**，2026-08-22 用户裁决）：logo + Welcome/`/help` 头两行并排 + Directory/Model/Version 对齐标签行；右栏 Tips/What's new 退役（tips 单源归活动面板 spinner 行）；logo 暂用 kimi 占位字符画（`banner-art.ts` 字面量为替换点）；min-40 零行与恒 10 行不变；S24a 活态模型行/patch 行序/`BLUE_VERSION` 守卫链不动 | 0.5d | 无硬前置（banner 三件套独立，worktree `worktree-s35-kimi-banner`） |
 | ✅ S36 | paste-image 失败分级提示 + 多类型可靠探测（**D49**）：六级失败分类 + `pasting image...`；列 MIME 后按 png>jpeg>webp>gif 读，空/坏/错 MIME representation 继续下一类型，store 最终交叉校验；`backend=auto|wayland|x11`（auto 原生优先、strict 禁跨协议）+ auto fallback 来源警示；3s SIGKILL timeout 按显示环境冷却 60s；Ubuntu Files 的 `text/uri-list`/GNOME copied-files 本地图片批次安全读取；真实 store e2e 逐字节回读（✅ 2026-08-22 真机验收通过——logout 复验后桌面复制路径确认，PR #21） | 0.5d | 无硬前置（interaction 独立面，worktree `worktree-s36-paste`） |
 | ✅ R1 | 钉版复核（✅ 2026-08-22 全量对齐 0.1.1-rc.2）：上游 rc.1→rc.2 对 Blue 消费面**零 API 变化**（9 包纯版本行、mcp-client 仅自家测试风格，实质变更在 image/attachment 管线内部与 deepseek llm 修复）；66 精确钉 + 35 caret peer + 181 excludes（pnpm 自动补录 4 条新包）+ HARNESS_LINE 同步，lockfile 最小演进（transitive 12 包经临时 overrides 升齐防双实例；jose 压回 6.2.9 避 minimumReleaseAge 24h 拒装——pnpm 11 默认供应链策略与 rc 线的交互记入 AGENTS）；**ci.yml 钉版单源化**至 `script/harness-line.mjs`（version.spec 增轻断言防字面量回潮）；session-title 上游 bug rc.2 仍未修、refresh 桥保留（两处 AGENTS 叙述更新）；全量回归 1844/1844 + smoke:happy 真机（rc.2 probe）全绿；验收项：真 API dogfood 双消息标题自纠（桥活体证据）随 PR 人工验收（已过，28e34a4）；**后续：harness-drift 每日监控落地**（同日 PR #25）：detect 脚本盯全系 next tag（等齐约束/跨 minor 只报不动）、BUMP_READY 由 dsh 无头 agent 改文件（version.spec 为完备证明）、workflow 确定性全套门禁绿才 push+PR upsert——R1 口径机械化，机制详根 AGENTS.md「Harness drift monitoring」 | 0.5d | G1 |
->>>>>>> origin/master
 | ✅ R2 | 快照最小集（✅ 2026-08-22）：`vt-snapshot.spec.ts` 八例十二帧（banner 80/40/160 三宽含 D42 零行形态 / markdown 一轮 / 工具卡折叠+失败同帧+ctrl+o 展开 / footer 全负载双宽含 S15 让宽形态 / ModelPanel D30 槽位替换 / CJK 40 列 D48 语料+逐 cell 宽度断言 / S32 大粘贴折叠 / 图片消息）；VtTerminal（FakeTerminal 子类双喂 @xterm/headless，bootBlue 增 terminal 注入缝并抽出 e2e-boot.ts——114 e2e 用例零语义变化）；黄金帧 `tests/golden/*.txt` 明文入库（toMatchFileSnapshot，`-u` 重生成，PR diff 即版式评审）；确定性三件套（quiescence 两段等待 / setGitCommandRunner 缝 / spec 顶层 chdir 恒定长度目录+cwd 逐段前缀 token——换目录自证过）；@xterm/headless 6.0.0 root devDep；开发期曾疑 force 重绘守卫断写，**专项复现证伪（误诊撤回，详 D13 复审段）**，黄金帧统一经手 force 全清重绘路径；D13 复审记 blue-decisions | 1-1.5d | G1 |
-| R3 | npm 发包：五包依赖序 core→interaction→transcript→app→bundle；dry-run 核 files/exports 子路径；dist-tag `rc` | 0.5d | G2 |
-| R4 | 安装路径验证：干净环境（临时 DSH_HOME）`dsh plugin add @dsh-blue/blue` → 启动冒烟；guide 补 registry 安装路径 | 0.5d | G3 |
+| R3 | npm 发包（**管道 ✅ 2026-08-22 D50**，发车只待 npm org/token）：CI-only——release.yml tag 驱动（`v*` == 六 manifest 版本守卫 + tag 须在 master 上 + 全量 gate 复跑 + `pnpm -r publish --tag rc --no-git-checks --provenance` 拓扑序发包 + `npm view` 五包验证）；凭证 = org 级 granular `NPM_TOKEN` secret（Trusted Publishers 鸡生蛋暂不用——npm/cli#8544 配置入口要求包已存在；rc.1 存在后可迁）；五包 `./src/*` 死出口发前清（随管道 PR）；发版动作收敛为 master 上打 tag | 0.5d | G2 |
+| R4 | 安装路径验证：干净环境（临时 DSH_HOME）`dsh --profile blue plugin add @dsh-blue/blue@rc`（**一律 @rc 后缀，D50**：五包只打 rc 不占 latest，pnpm 默认解析 latest、无后缀即 404）→ 启动冒烟；guide 补 registry 安装路径；遇"装不上"先查 pnpm 11 minimumReleaseAge 冷却期（R1 同源坑） | 0.5d | G3 |
 | R5 | dogfood 记录：registry 安装（非 dev link）跑一次完整真实任务归档；阻塞项回修重走 R3-R4 | 0.5d | G4 |
 | R6a | 文档站同步（⏸️ 用户裁决 2026-08-21 暂缓，仓库侧 R6b 先行）：website commands/keys/features/guide 四页集中还清（S23-S30 全量，`/help` + `keymap.list()` 枚举 diff 为源）+ 挂起区写入 | 1d | R5 + 解除暂缓 |
 | R6b | 仓库文档清账+结构重组（✅ 已落地 2026-08-21，本 PR）：五份完成态文档归档 docs/history/（p2-visual §8 两条被推翻行、p1-design §4.3 过期 ⛔/🚫 行随归档 banner 更正）；blue-decisions D33 编号重复勘误重编 D38；OSC 52 推翻注（roadmap 条目拆分 + survey 归档 banner）；AGENTS.md 拆五个包级文件+根瘦身（63.7KB→15.8KB）；docs/README.md 索引 | — | 无（纯仓库侧，不设发版门禁） |
@@ -170,6 +169,12 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 **并行组合**：R0‖S27'（零交集）；S28‖S29 开发（commands-plugin/session-commands 交叠，S29 合并前 rebase 一次）；S33‖S31/S32（transcript vs interaction 零交集）。
 
 **总量与裁剪线**：串行 17-21d，关键路径 14-16d（利用并行+验收滚动）。时间不够时砍序 **S33 → S32 → S30**（砍序即价值/成本比序）；R 步与 M0/S27'-S29 不可砍。
+
+### rc.2 起步项（0.1.0-rc.1 发出后）
+
+| 步 | 范围 | 档 | 前置 |
+|---|---|---|---|
+| S37 | `blue` 壳包 `@dsh-blue/blue-cli`（**D50④**）：bin 名 `blue`、嵌套钉版 `@deepseek-ai/dsh` 作运行时宿主（A 方案——用户全局有无 dsh 皆可，版本恒与测试线一致）、托管校准（启动读 profile 清单，bundle 版本不一致才 `plugin add`，一致零开销；升级 = 重装壳一条命令，**无 `blue upgrade`**）、`-V` 一行三段自答（壳/Blue/harness 线）、`--patch`/`--dump-config`/`plugin` 子命令翻译透传、startup.ts `program.name` 文案改 `blue`、version.spec 扩第七份 manifest、website quickstart 双写（`blue` 为主、dsh 命令并列）；bootstrap 失败一行报错指路手动命令；发版走 release.yml 同管道 | 0.5-1d | R3 发包（rc.1 五包须已存在） |
 
 ### 预览版后挂起区（parked after 0.1.0-rc.1）
 
