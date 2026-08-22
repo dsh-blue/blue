@@ -108,6 +108,19 @@ describe('updater/preflight checkTargetExists', () => {
     expect(verdict.message).toContain('9.9.9')
     expect(verdict.message).toContain('0.1.0-rc.2')
   })
+
+  it('passes targets that exist as bare keys (the npm-view shape)', () => {
+    // npm view lists versions as strings — the normalized map carries
+    // the key with an undefined value, and a truthiness check would
+    // block every real target (the rc.3 live finding).
+    const listed = normalizePackument({
+      'dist-tags': { rc: '0.1.0-rc.3' },
+      versions: ['0.1.0-rc.2', '0.1.0-rc.3'],
+      time: {},
+    })!
+    expect(checkTargetExists(listed, '0.1.0-rc.2').blocking).toBe(false)
+    expect(checkTargetExists(listed, '9.9.9').blocking).toBe(true)
+  })
 })
 
 describe('updater/preflight checkVersionFloor', () => {

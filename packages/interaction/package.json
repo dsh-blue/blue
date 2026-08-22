@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-interaction",
   "description": "Blue terminal UI interaction layer: input editor, slash commands, approval and user-question overlays over dsh-blue-core",
-  "version": "0.1.0-rc.3",
+  "version": "0.1.0-rc.4",
   "publishConfig": {
     "access": "public"
   },
