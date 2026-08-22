@@ -12,17 +12,30 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
+import type SessionQueryEngine from '@deepseek-ai/dsh-session-query'
 import * as commandsPlugin from '../src/commands-plugin.ts'
 import { canonicalOf } from '../src/command-meta.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
 import type {} from '@dsh-blue/blue-app'
 import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeScreen } from './fakes.ts'
 
+/** The structural slice of `sessionQuery` the `/sessions` titles read. */
+interface TitleQueryFake {
+  readTitleSnapshots(
+    sessionIds: readonly { toString(): string }[],
+    signal?: AbortSignal,
+  ): Promise<ReadonlyArray<
+    | { sessionId: { toString(): string }, status: 'fulfilled', value: { title?: { title: string } } }
+    | { sessionId: { toString(): string }, status: 'rejected', reason: unknown }
+  >>
+}
+
 async function mount(options: {
   appExit?: (code: number) => void
   agentStatus?: 'idle' | 'running'
   attach?: boolean
   persistence?: { list(signal?: AbortSignal): Promise<SessionHeader[]> }
+  sessionQuery?: TitleQueryFake
 } = {}): Promise<{
   ctx: Context
   screen: FakeScreen
@@ -40,14 +53,42 @@ async function mount(options: {
   if (options.persistence !== undefined) {
     ctx.provide('sessionPersistence', options.persistence as unknown as SessionPersistence)
   }
+  if (options.sessionQuery !== undefined) {
+    ctx.provide('sessionQuery', options.sessionQuery as unknown as SessionQueryEngine)
+  }
   const fiber = await ctx.plugin(commandsPlugin)
   return { ctx, screen, components, agent, fiber }
 }
 
 const signal = (): AbortSignal => new AbortController().signal
 
+/** The cwd the picker scopes to: the test runner's own directory. */
+const HERE = process.cwd()
+
 function header(id: string, createdAt: number, cwd?: string): SessionHeader {
   return { version: 1, id: SessionId(id), createdAt, ...cwd === undefined ? {} : { cwd } }
+}
+
+/** A fulfilled batch-title result for `readTitleSnapshots` fakes. */
+function titled(id: string, title?: string): {
+  sessionId: { toString(): string }
+  status: 'fulfilled'
+  value: { title?: { title: string } }
+} {
+  return {
+    sessionId: SessionId(id),
+    status: 'fulfilled',
+    ...title === undefined ? {} : { value: { title: { title } } },
+  }
+}
+
+/** A rejected batch-title result for `readTitleSnapshots` fakes. */
+function rejected(id: string): {
+  sessionId: { toString(): string }
+  status: 'rejected'
+  reason: string
+} {
+  return { sessionId: SessionId(id), status: 'rejected', reason: 'log unreadable' }
 }
 
 /** The overlay component of the last shown overlay. */
@@ -98,7 +139,7 @@ describe('blue-commands plugin', () => {
 
   it('/sessions without an id opens the picker, and /resume is its alias', async () => {
     const { ctx, agent } = await mount({
-      persistence: { list: () => Promise.resolve([{ id: SessionId('s1'), createdAt: 1, cwd: '/tmp' }]) },
+      persistence: { list: () => Promise.resolve([header('s1', 1, HERE)]) },
     })
     const onResume = vi.fn()
     ctx.on('blue/request-resume', onResume)
@@ -184,41 +225,161 @@ describe('blue-commands plugin', () => {
     expect(execution?.result).toEqual({ kind: 'error', text: 'could not list sessions: plain failure' })
   })
 
-  it('/sessions answers "no sessions" for an empty listing', async () => {
-    const { ctx, screen, agent } = await mount({ persistence: { list: () => Promise.resolve([]) } })
+  it('/sessions answers "no sessions in this directory" for an empty or all-foreign listing', async () => {
+    const { ctx, screen, agent } = await mount({
+      persistence: { list: () => Promise.resolve([header('s-away', 1_000, '/elsewhere'), header('s-bare', 2_000)]) },
+    })
     const execution = await ctx.commands.execute(agent, '/sessions', [], signal())
-    expect(execution?.result).toEqual({ kind: 'success', text: 'no sessions' })
+    expect(execution?.result).toEqual({ kind: 'success', text: 'no sessions in this directory' })
     expect(screen.overlays).toHaveLength(0)
+    const empty = await mount({ persistence: { list: () => Promise.resolve([]) } })
+    const bare = await empty.ctx.commands.execute(empty.agent, '/sessions', [], signal())
+    expect(bare?.result).toEqual({ kind: 'success', text: 'no sessions in this directory' })
   })
 
-  it('/sessions lists sessions newest-first, marking the live one', async () => {
+  it('/sessions scopes to this cwd, lists newest-first, and marks the live one', async () => {
     const { ctx, screen, agent } = await mount({
       persistence: {
         list: () => Promise.resolve([
-          header('s-old', 1_000, '/old'),
-          header(String(agent.id), 3_000, '/live'),
-          header('s-mid', 2_000),
+          header('s-old', 1_000, HERE),
+          header(String(agent.id), 3_000, HERE),
+          header('s-mid', 2_000, HERE),
+          header('s-away', 9_000, '/elsewhere'),
+          header('s-bare', 8_000),
         ]),
       },
     })
     const execution = await ctx.commands.execute(agent, '/sessions', [], signal())
     expect(execution?.result).toEqual({ kind: 'success' })
-    // The framed picker: rules, title with the key hint, and rows carrying
-    // the `❯ ` pointer plus the `← current` badge on the live session.
-    const rows = screen.overlays[0]?.component.render(60) ?? []
-    expect(rows[0]).toBe('^' + '─'.repeat(60) + '^')
-    expect(rows[1]).toBe('^  Sessions^ _· esc cancel · ↵ resume_')
-    expect(rows[2]).toContain(`❯ ${agent.id} · 1970-01-01 00:00 · /live  ← current`)
-    expect(rows[3]).toContain('s-mid · 1970-01-01 00:00 · ')
-    expect(rows[4]).toContain('s-old · 1970-01-01 00:00 · /old')
+    // The framed picker: rules, the filtered title hint, and the untitled
+    // rows (`id · date`, the constant cwd dropped — D46) with the `❯ `
+    // pointer plus the `← current` badge on the live session. The foreign
+    // and cwd-less rows never render.
+    const rows = screen.overlays[0]?.component.render(72) ?? []
+    expect(rows[0]).toBe('^' + '─'.repeat(72) + '^')
+    expect(rows[1]).toBe('^  Sessions^ _· type to search · esc cancel · ↵ resume_')
+    expect(rows[2]).toContain(`❯ ${agent.id} · 1970-01-01 00:00  ← current`)
+    expect(rows[3]).toContain('s-mid · 1970-01-01 00:00')
+    expect(rows[4]).toContain('s-old · 1970-01-01 00:00')
+    expect(rows.some(row => row.includes('s-away'))).toBe(false)
+    expect(rows.some(row => row.includes('s-bare'))).toBe(false)
     overlay(screen).handleInput(KEY.escape)
+    expect(screen.overlays[0]?.hidden).toBe(true)
+  })
+
+  it('/sessions leads titled rows with the title and demotes the id to the description', async () => {
+    const { ctx, screen, agent } = await mount({
+      persistence: {
+        list: () => Promise.resolve([
+          header('s-fix', 3_000, HERE),
+          header(String(agent.id), 2_000, HERE),
+          header('s-plain', 1_000, HERE),
+        ]),
+      },
+      sessionQuery: {
+        readTitleSnapshots: async () => [
+          titled('s-fix', 'Fix the questionnaire width crash'),
+          titled(String(agent.id), 'Kimi-style welcome banner'),
+          rejected('s-plain'),
+        ],
+      },
+    })
+    await ctx.commands.execute(agent, '/sessions', [], signal())
+    const rows = screen.overlays[0]?.component.render(88) ?? []
+    expect(rows[2]).toContain('❯ Fix the questionnaire width crash')
+    expect(rows[2]).toContain('— s-fix · 1970-01-01 00:00')
+    // The live session (older than s-fix) is second, led by its title with
+    // the current badge; a rejected observation degrades to the id form.
+    expect(rows[3]).toContain('Kimi-style welcome banner')
+    expect(rows[3]).toContain(`— ${agent.id} · 1970-01-01 00:00`)
+    expect(rows[3]).toContain('← current')
+    expect(rows[4]).toContain('s-plain · 1970-01-01 00:00')
+    expect(rows[4]).not.toContain('—')
+  })
+
+  it('/sessions opens with the id form when no sessionQuery is mounted', async () => {
+    const { ctx, screen, agent } = await mount({
+      persistence: { list: () => Promise.resolve([header('s-one', 1_000, HERE)]) },
+    })
+    const execution = await ctx.commands.execute(agent, '/sessions', [], signal())
+    expect(execution?.result).toEqual({ kind: 'success' })
+    const rows = screen.overlays[0]?.component.render(60) ?? []
+    expect(rows[2]).toContain('s-one · 1970-01-01 00:00')
+  })
+
+  it('/sessions resolves titles only for the newest sessions under the limit', async () => {
+    const requested: string[] = []
+    const { ctx, agent } = await mount({
+      persistence: {
+        list: () => Promise.resolve([
+          header('s-new', 3_000, HERE),
+          header('s-old', 1_000, HERE),
+        ]),
+      },
+      sessionQuery: {
+        readTitleSnapshots: async ids => {
+          requested.push(...ids.map(String))
+          return []
+        },
+      },
+    })
+    commandsPlugin.setSessionTitleLimit(1)
+    try {
+      expect(commandsPlugin.currentSessionTitleLimit()).toBe(1)
+      await ctx.commands.execute(agent, '/sessions', [], signal())
+      // Newest-first: only the newest id is worth a full-log parse when
+      // the cap is 1; the older row keeps the id form.
+      expect(requested).toEqual(['s-new'])
+    } finally {
+      commandsPlugin.setSessionTitleLimit(undefined)
+    }
+    expect(commandsPlugin.currentSessionTitleLimit()).toBe(commandsPlugin.DEFAULT_SESSION_TITLE_LIMIT)
+  })
+
+  it('/sessions degrades to the id form when the whole title batch fails', async () => {
+    const { ctx, screen, agent } = await mount({
+      persistence: {
+        list: () => Promise.resolve([header('s-one', 1_000, HERE), header('s-two', 2_000, HERE)]),
+      },
+      sessionQuery: {
+        readTitleSnapshots: async () => {
+          throw new Error('persistence backend gone')
+        },
+      },
+    })
+    const execution = await ctx.commands.execute(agent, '/sessions', [], signal())
+    expect(execution?.result).toEqual({ kind: 'success' })
+    const rows = screen.overlays[0]?.component.render(60) ?? []
+    expect(rows[2]).toContain('s-two · 1970-01-01 00:00')
+    expect(rows[3]).toContain('s-one · 1970-01-01 00:00')
+  })
+
+  it('/sessions filters rows by the typed query and clears it before cancelling', async () => {
+    const { ctx, screen, agent } = await mount({
+      persistence: {
+        list: () => Promise.resolve([header('s-fix', 2_000, HERE), header('s-banner', 1_000, HERE)]),
+      },
+      sessionQuery: {
+        readTitleSnapshots: async () => [titled('s-fix', 'Fix width crash'), titled('s-banner', 'Banner rework')],
+      },
+    })
+    await ctx.commands.execute(agent, '/sessions', [], signal())
+    const panel = overlay(screen)
+    for (const char of 'Banner') panel.handleInput(char)
+    const rows = screen.overlays[0]?.component.render(60) ?? []
+    expect(rows.some(row => row.includes('Banner rework'))).toBe(true)
+    expect(rows.some(row => row.includes('Fix width crash'))).toBe(false)
+    // Escape clears the query first; only the second press cancels.
+    panel.handleInput(KEY.escape)
+    expect(screen.overlays[0]?.hidden).not.toBe(true)
+    panel.handleInput(KEY.escape)
     expect(screen.overlays[0]?.hidden).toBe(true)
   })
 
   it('/sessions emits blue/request-resume when another session is picked', async () => {
     const notice = vi.fn()
     const { ctx, screen, components, agent } = await mount({
-      persistence: { list: () => Promise.resolve([header('s-other', 2_000, '/other'), header(String(agent.id), 3_000, '/live')]) },
+      persistence: { list: () => Promise.resolve([header('s-other', 2_000, HERE), header(String(agent.id), 3_000, HERE)]) },
     })
     setSharedEditor({ editor: components.createEditor(), submitPrompt: () => {}, notice })
     try {
@@ -238,7 +399,7 @@ describe('blue-commands plugin', () => {
   it('/sessions flashes an error notice when the live session is picked', async () => {
     const notice = vi.fn()
     const { ctx, screen, components, agent } = await mount({
-      persistence: { list: () => Promise.resolve([header(String(agent.id), 3_000, '/live')]) },
+      persistence: { list: () => Promise.resolve([header(String(agent.id), 3_000, HERE)]) },
     })
     setSharedEditor({ editor: components.createEditor(), submitPrompt: () => {}, notice })
     try {
@@ -261,7 +422,21 @@ describe('blue-commands plugin', () => {
     })
     const pending = ctx.commands.execute(agent, '/sessions', [], signal())
     await fiber.dispose()
-    gate.resolve([header('s-late', 1_000)])
+    gate.resolve([header('s-late', 1_000, HERE)])
+    const execution = await pending
+    expect(execution?.result).toEqual({ kind: 'success' })
+    expect(screen.overlays).toHaveLength(0)
+  })
+
+  it('/sessions shows no overlay when the fiber unloads while titles resolve', async () => {
+    const gate = Promise.withResolvers<ReadonlyArray<{ sessionId: { toString(): string }, status: 'fulfilled', value: { title?: { title: string } } }>>()
+    const { ctx, screen, agent, fiber } = await mount({
+      persistence: { list: () => Promise.resolve([header('s-late', 1_000, HERE)]) },
+      sessionQuery: { readTitleSnapshots: () => gate.promise },
+    })
+    const pending = ctx.commands.execute(agent, '/sessions', [], signal())
+    await fiber.dispose()
+    gate.resolve([])
     const execution = await pending
     expect(execution?.result).toEqual({ kind: 'success' })
     expect(screen.overlays).toHaveLength(0)
@@ -273,7 +448,7 @@ describe('blue-commands plugin', () => {
     await ctx.plugin(SessionStore)
     await ctx.plugin(CommandRuntime)
     ctx.provide('sessionPersistence', {
-      list: () => Promise.resolve([header('s-one', 1_000)]),
+      list: () => Promise.resolve([header('s-one', 1_000, process.cwd())]),
     } as unknown as SessionPersistence)
     const session = ctx.sessions.create(SessionId('commands-bare'))
     const agent = { id: session.id, session } as unknown as Agent

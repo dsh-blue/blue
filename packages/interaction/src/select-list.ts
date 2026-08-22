@@ -10,6 +10,12 @@
  * math through `ctx.blueComponents` — the display quartet callers
  * resolve lazily via `displayServices`.
  *
+ * `filter: true` opts a panel into type-to-filter (S30②, `/sessions`
+ * being the first consumer): printable characters grow a query, the
+ * rows narrow through `fuzzyMatch` over `filterText ?? label`, and
+ * Escape clears the query before it cancels (the kimi rule, as in
+ * `ModelPanel`). Opt-in keeps the other six consumers byte-identical.
+ *
  * `BlueSelect` (the multi-select checkbox list) and `ModelPanel` (the
  * tabbed, type-to-search model picker) keep their own geometry: the
  * former toggles rather than selects, the latter interleaves tab and
@@ -30,6 +36,12 @@ export interface SelectRow {
   readonly value: string
   /** User-facing label. */
   readonly label: string
+  /**
+   * Match text for type-to-filter; defaults to the label. The first
+   * consumer is `/sessions`, whose visible label is the session title
+   * while the id and date ride in the description.
+   */
+  readonly filterText?: string
   /** Muted one-line tail rendered after the label (` — ` joined). */
   readonly description?: string
   /** Trailing mark on the row (the `← current` badge, kimi CURRENT_MARK). */
@@ -54,6 +66,12 @@ export interface SelectListPanelOptions {
   readonly titleHint?: string
   /** Seeds the cursor on this row's value (the current entry); head otherwise. */
   readonly initialValue?: string
+  /**
+   * Opt the panel into type-to-filter (S30②): printable characters grow
+   * a query, Backspace shrinks it, and Escape clears it before
+   * cancelling. Off by default — the shared consumers are unchanged.
+   */
+  readonly filter?: boolean
   /** Enter on an enabled row. */
   readonly onSelect: (row: SelectRow) => void
   /** Enter on a `disabled` row; absent handlers ignore the press. */
@@ -114,16 +132,24 @@ export function oneLine(text: string): string {
 
 /**
  * Single-select list panel: Up/Down wrap the cursor, Enter selects (a
- * `disabled` row blocks the press), Escape cancels. The cursor row
- * takes the `❯ ` pointer and the `primary` hue on the label, badges
- * render in `success`, descriptions ride muted inside the row, and the
- * dialog frames itself with the S12 chrome (title + full-width rules).
+ * `disabled` row blocks the press), Escape cancels. With `filter: true`
+ * the panel also narrows to the typed query (fuzzy over
+ * `filterText ?? label`; Escape clears the query before cancelling —
+ * the kimi rule). The cursor row takes the `❯ ` pointer and the
+ * `primary` hue on the label, badges render in `success`, descriptions
+ * ride muted inside the row, and the dialog frames itself with the S12
+ * chrome (title + full-width rules).
  */
 export class SelectListPanel implements BlueFocusable {
   /** Whether the list currently holds focus. Managed by the screen. */
   focused = false
 
   private cursor: number
+
+  /** The live type-to-filter query (empty while unused). */
+  private query = ''
+
+  private readonly filter: boolean
 
   /**
    * @param options - see {@link SelectListPanelOptions}.
@@ -133,30 +159,75 @@ export class SelectListPanel implements BlueFocusable {
       ? -1
       : options.rows.findIndex(row => row.value === options.initialValue)
     this.cursor = seeded >= 0 ? seeded : 0
+    this.filter = options.filter === true
+  }
+
+  /** The rows under the live query: identity while the filter is off or
+   * the query empty, else the fuzzy matches in list order (no re-rank —
+   * the ModelPanel precedent). */
+  private filtered(): readonly SelectRow[] {
+    const { rows, components } = this.options
+    if (!this.filter || this.query.length === 0) return rows
+    return rows.filter(row => components.fuzzyMatch(this.query, row.filterText ?? row.label).matches)
+  }
+
+  /** Re-anchor the cursor after a query change: the `initialValue` row
+   * if it survived the filter, else the head of the filtered view. */
+  private reseedCursor(): void {
+    const { initialValue } = this.options
+    const view = this.filtered()
+    const seeded = initialValue === undefined
+      ? -1
+      : view.findIndex(row => row.value === initialValue)
+    this.cursor = seeded >= 0 ? seeded : 0
   }
 
   /**
-   * Dispatch one input sequence against the list keybindings.
+   * Dispatch one input sequence against the list keybindings, then the
+   * type-to-filter bytes when the panel opted in.
    * @param data - the input sequence as read from the terminal.
    */
   handleInput(data: string): void {
-    const { keymap, rows } = this.options
+    const { keymap } = this.options
+    const view = this.filtered()
     if (keymap.matches(data, ACTION_MOVE_UP)) {
-      this.cursor = cycle(this.cursor, rows.length, -1)
+      this.cursor = cycle(this.cursor, view.length, -1)
       return
     }
     if (keymap.matches(data, ACTION_MOVE_DOWN)) {
-      this.cursor = cycle(this.cursor, rows.length, 1)
+      this.cursor = cycle(this.cursor, view.length, 1)
       return
     }
     if (keymap.matches(data, ACTION_SUBMIT)) {
-      const row = rows[this.cursor]
+      const row = view[this.cursor]
       if (row === undefined) return
       if (row.disabled === true) this.options.onBlockedSelect?.(row)
       else this.options.onSelect(row)
       return
     }
-    if (keymap.matches(data, ACTION_CANCEL)) this.options.onCancel()
+    if (keymap.matches(data, ACTION_CANCEL)) {
+      // The kimi rule: Escape clears a live query before it cancels.
+      if (this.filter && this.query.length > 0) {
+        this.query = ''
+        this.reseedCursor()
+        return
+      }
+      this.options.onCancel()
+      return
+    }
+    // Type-to-filter bytes (only when opted in; other consumers keep
+    // swallowing printables). ModelPanel matches the same raw bytes —
+    // no keymap action exists for these and the freeze holds.
+    if (!this.filter) return
+    if (data === '\x7f') {
+      this.query = this.query.slice(0, -1)
+      this.reseedCursor()
+      return
+    }
+    if (data.length === 1 && data >= ' ') {
+      this.query += data
+      this.reseedCursor()
+    }
   }
 
   /** No cached render state. */
@@ -165,17 +236,31 @@ export class SelectListPanel implements BlueFocusable {
   /**
    * Render the framed dialog: the visible window of rows with the
    * cursor pointer, badges, muted descriptions, and a scroll position.
+   * A live query paints a `Search:` row above the window and the empty
+   * result paints a muted `no matches` row.
    * @param width - current viewport width in columns.
    * @returns one string per rendered row.
    */
   render(width: number): string[] {
-    const { rows, components } = this.options
+    const { components } = this.options
     const colors = this.options.theme.colors
-    const { start, end } = windowedRange(this.cursor, rows.length, MAX_LIST_VISIBLE)
+    const view = this.filtered()
     const lines: string[] = []
+    if (this.filter && this.query.length > 0) {
+      // Self-truncated: framePanel does not clip body rows (the #15
+      // width-discipline lesson), so the composed row must fit itself.
+      lines.push(
+        components.truncateToWidth(
+          `  ${colors.primary('Search: ')}${colors.text(this.query)}`,
+          width,
+        ),
+        '',
+      )
+    }
+    const { start, end } = windowedRange(this.cursor, view.length, MAX_LIST_VISIBLE)
     for (let index = start; index < end; index += 1) {
-      const row = rows[index]
-      /* v8 ignore next -- start/end are clamped to rows.length, so the index is always valid */
+      const row = view[index]
+      /* v8 ignore next -- start/end are clamped to view.length, so the index is always valid */
       if (row === undefined) continue
       const isCursor = index === this.cursor
       const prefix = isCursor ? `${SELECT_POINTER} ` : '  '
@@ -190,14 +275,24 @@ export class SelectListPanel implements BlueFocusable {
       // description(the remaining budget), so no post-paint truncation.
       lines.push(`${head}${colors.muted(description)}`)
     }
-    const counter = counterRow(this.cursor, rows.length, MAX_LIST_VISIBLE)
+    if (view.length === 0 && this.filter && this.query.length > 0) {
+      lines.push(colors.textMuted('  no matches'))
+    }
+    const counter = counterRow(this.cursor, view.length, MAX_LIST_VISIBLE)
     if (counter !== undefined) lines.push(colors.textMuted(counter))
     lines.push('')
-    const titleHint = this.options.titleHint
+    // The affordance hint rides the title-hint channel (the frame paints
+    // it muted): while no query is live, every filtered panel advertises
+    // type-to-search, with the caller's own hint fragments behind it.
+    const hint = this.filter && this.query.length === 0
+      ? this.options.titleHint === undefined
+        ? '· type to search'
+        : `· type to search ${this.options.titleHint}`
+      : this.options.titleHint
     return framePanel(lines, width, {
       title: this.options.title ?? 'Select',
       titlePaint: colors.primary,
-      ...titleHint === undefined ? {} : { titleHint },
+      ...hint === undefined ? {} : { titleHint: hint },
       hintPaint: colors.textMuted,
       rulePaint: colors.primary,
     })

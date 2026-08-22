@@ -2,9 +2,11 @@
  * @dsh-blue/blue-app — the Blue terminal UI application driver. The
  * bundle patch rides over dsh-base; the startup provider parses the launch
  * values, and this driver creates or resumes the Agent once the Loader
- * settles, publishes it through `blueSession`, and answers the
+ * settles, publishes it through `blueSession`, answers the
  * `'blue/request-resume'`/`'blue/request-new'`/`'blue/request-fork'`
- * switches for the interaction layer's session commands.
+ * switches for the interaction layer's session commands, and arms the
+ * exit epitaph (D47) that the process 'exit' hook flushes after the
+ * teardown — the saved session id and its resume command.
  *
  * @module @dsh-blue/blue-app
  */
@@ -25,6 +27,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import type {} from '@deepseek-ai/dsh-agent-presets'
+import { armExitEpitaph, epitaphFor, profileFromArgv } from './exit-epitaph.ts'
 import { createModelSelectionRef } from './model-ref.ts'
 import type { BlueModelSelectionRef } from './model-ref.ts'
 import type { BlueSessionRef } from './types.ts'
@@ -167,6 +170,19 @@ export function apply(ctx: Context, config: Config): void {
   const io: BlueIo = { stderr: internals.stderr, exit }
   const session: BlueSessionRef = { current: null, modelRef: undefined }
   ctx.provide('blueSession', session)
+  // The exit epitaph (D47): arm on tree dispose — every deliberate exit
+  // path funnels through the launcher's dispose-then-exit, and the
+  // process 'exit' hook flushes strictly after the screen restore and the
+  // persistence flush (the base rows unload after this fiber). The
+  // session object survives the fiber unload, so the closure read stays
+  // valid; a session with no events has nothing to resume and arms
+  // nothing.
+  ctx.effect(() => () => {
+    const active = session.current
+    armExitEpitaph(active !== null && active.session.events.length > 0
+      ? epitaphFor(String(active.id), profileFromArgv(process.argv))
+      : undefined)
+  })
   let current: AgentHandle | undefined
   // Session operations serialize on this chain so a `/resume` issued while
   // startup (or another switch) is in flight cannot interleave two resumes.
