@@ -59,7 +59,7 @@ export function createBlueRequestController(ctx: Context): BlueRequestController
     },
     transition(ref, nextState, reason) {
       if (ref.sessionEpoch !== sessionEpoch || active?.requestEpoch !== ref.requestEpoch || state === undefined) return
-      if (!allowed.get(state)?.has(nextState)) return
+      if (!allowed.get(state)!.has(nextState)) return
       state = nextState
       emit({ ref, state: nextState, ...(reason === undefined ? {} : { reason }) })
       if (terminal.has(nextState)) active = undefined

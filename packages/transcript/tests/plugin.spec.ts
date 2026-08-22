@@ -203,7 +203,7 @@ function fixtureApply(ctx: Context): void {
  */
 async function bootTranscript(
   current: FakeAgent | null = null,
-  options: { fixture?: boolean, tools?: Record<string, unknown> } = {},
+  options: { fixture?: boolean, tools?: Record<string, unknown>, sessionEpoch?: number } = {},
 ): Promise<Harness> {
   const dir = mkdtempTracked('dsh-blue-transcript-')
   writeFileSync(join(dir, 'blue-transcript.mjs'), `
@@ -254,6 +254,7 @@ export const apply = ctx => globalThis.__blueStatusFixtureApply(ctx)
     blueKeymap: keymap,
     blueSession,
     tools: { get: (name: string) => options.tools?.[name] },
+    ...(options.sessionEpoch === undefined ? {} : { blueRequests: { sessionEpoch: options.sessionEpoch } }),
   }
   for (const [serviceName, value] of Object.entries(serviceNames)) {
     ctx.reflect.provide(serviceName, value)
@@ -381,6 +382,33 @@ describe('blue-transcript plugin through the real Loader', () => {
     ctx.emit('session/event', agent.session as unknown as Session, toolResultEvent(2, 1, 'c1', 'file.txt'))
     expect(screen.children).toHaveLength(3)
     expect(contentLines(screen).join('\n')).toContain('file.txt')
+  })
+
+  it('rejects an interrupted lifecycle event from a stale session epoch', async () => {
+    resetSeq()
+    const { ctx, screen } = await bootTranscript(null, { sessionEpoch: 2 })
+    const agent = fakeAgent([])
+    ctx.emit('blue/session-changed', asAgent(agent))
+    const baseline = screen.renderRequests.length
+    ctx.emit('blue/request-state-changed', {
+      ref: { sessionEpoch: 1, requestEpoch: 1, scope: 'main' },
+      state: 'interrupted',
+    })
+    expect(screen.children).toHaveLength(0)
+    expect(screen.renderRequests).toHaveLength(baseline)
+  })
+
+  it('projects an interrupted lifecycle event from the current session epoch', async () => {
+    resetSeq()
+    const { ctx, screen } = await bootTranscript(null, { sessionEpoch: 2 })
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([])))
+    const baseline = screen.renderRequests.length
+    ctx.emit('blue/request-state-changed', {
+      ref: { sessionEpoch: 2, requestEpoch: 1, scope: 'main' },
+      state: 'interrupted',
+    })
+    expect(contentLines(screen)).toContain('⏹ interrupted')
+    expect(screen.renderRequests).toHaveLength(baseline + 1)
   })
 
   it('mounts live thinking above the answer, finalizes it in place, and joins ctrl+o', async () => {

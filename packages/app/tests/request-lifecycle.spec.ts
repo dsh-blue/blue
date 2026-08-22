@@ -15,6 +15,7 @@ describe('Blue request lifecycle', () => {
     const events: unknown[] = []
     ctx.on('blue/request-state-changed', event => { events.push(event) })
     const requests = createBlueRequestController(ctx)
+    expect(requests.sessionEpoch).toBe(0)
     const ref = requests.begin()
     requests.interrupt(ref)
     requests.transition(ref, 'completed')
@@ -61,6 +62,20 @@ describe('Blue request lifecycle', () => {
     expect(requests.active()).toBeUndefined()
   })
 
+  it('ignores a superseded request, a duplicate start, and an idle interrupt', () => {
+    const ctx = new Context()
+    const events: unknown[] = []
+    ctx.on('blue/request-state-changed', event => { events.push(event) })
+    const requests = createBlueRequestController(ctx)
+    requests.interrupt()
+    const first = requests.begin()
+    const second = requests.begin()
+    requests.transition(first, 'streaming')
+    requests.transition(second, 'started')
+    expect(requests.active()).toBe(second)
+    expect(events).toHaveLength(2)
+  })
+
   it('cleans up emissions when its Cordis fiber is disposed', async () => {
     const ctx = new Context()
     const events: unknown[] = []
@@ -69,7 +84,8 @@ describe('Blue request lifecycle', () => {
     const ref = requests.begin()
     await ctx.fiber.dispose()
     requests.transition(ref, 'completed')
+    requests.begin()
     expect(events).toHaveLength(1)
-    expect(requests.active()).toBeUndefined()
+    expect(requests.active()).toBeDefined()
   })
 })
