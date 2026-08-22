@@ -32,7 +32,7 @@ import { visibleWidth } from '../../core/src/width.ts'
 import { fakeBlueComponents } from './helpers.ts'
 import { COLORS } from './status-fakes.ts'
 
-/** Wrap a logo row in its brand-blue gradient ANSI, as the banner paints it. */
+/** Wrap a whale row in its brand-blue gradient ANSI, as the banner paints it. */
 function wrapLogo(row: string, index: number): string {
   const hex = LOGO_GRADIENT[index]!
   const r = parseInt(hex.slice(1, 3), 16)
@@ -41,7 +41,7 @@ function wrapLogo(row: string, index: number): string {
   return `\x1b[38;2;${r};${g};${b}m${row}\x1b[39m`
 }
 
-/** The logo's uniform column width from banner-art. */
+/** The whale logo's uniform column width from banner-art. */
 const LOGO_WIDTH_COLS = LOGO_COLS
 
 
@@ -61,17 +61,17 @@ const CONTENT: BannerContent = {
   cwd: '~/dev',
 }
 
-/** The terminal-window logo, mirrored from `banner-art.ts` literal. */
+/** The whale logo, mirrored from `banner-art.ts`'s literal. */
 const LOGO = [
-  '⡔⠉⠩⠍⠩⠍⠩⠍⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⢢',
-  '⡇⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⢸',
-  '⡇                       ⢸',
-  '⡇       ⠘⠶⣤⣀            ⢸',
-  '⡇          ⠉⠛⠶⣤⡀        ⢸',
-  '⡇          ⣀⣤⠶⠛⠁        ⢸',
-  '⡇       ⢠⠶⠛⠉     ⣤⣤⣤⣤⣤⡄ ⢸',
-  '⡇                       ⢸',
-  '⠣⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⠜',
+  '   ⢀⣀⣰⣰⣰⣰⣰⣼⣼⠜   ⣺⣵⡀    ⢀⡀',
+  ' ⢀⣸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣵⣐  ⢯⣿⣿⣵⣸⣼⣼⣿⠕',
+  '⢨⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣽⣐⠂⠯⣿⣿⣿⣿⠿⠇',
+  '⣿⡟⠃⠃⠋⠏⠿⣿⣿⣿⣿⣿⣿⠯⢿⣿⣽⣴⣿⣿⡕',
+  '⣿⣿      ⠋⢿⣿⣿⣿⣿ ⠋⣿⣿⣿⣿⠁',
+  '⢯⣿⣵       ⠫⣿⣿⣿⣽⣼⣿⣿⣿⠗',
+  '⠂⢯⣿⣵⡀   ⣰⣀ ⠊⢿⣿⣿⣿⣿⡿⠇',
+  '  ⠋⣿⣿⣼⣰⣰⣻⣿⣽⣰⣀⠋⢿⣿⣿⣼⣰⡀',
+  '    ⠃⠏⠿⣿⣿⣿⣿⣿⠿⠟⠇⠂⠃⠃⠃',
 ]
 
 describe('shortenHome', () => {
@@ -118,12 +118,12 @@ describe('composeBannerLines', () => {
     expect(composeBannerLines(DEPS, CONTENT, BANNER_MIN_WIDTH - 1)).toEqual([])
   })
 
-  it('composes the frameless terminal-logo banner at one hundred columns', () => {
+  it('composes the frameless whale banner at one hundred columns', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 100)
-    // Nine logo rows; the status column leads with the welcome/help lines
+    // Nine whale rows; the status column leads with the welcome/help lines
     // then the three labels, vertically centered.
     expect(lines).toHaveLength(9)
-    // The frameless block stacks the logo rows; the status column leads
+    // The frameless block stacks the whale rows; the status column leads
     // with the welcome/help lines and the three labels, vertically centered.
     expect(lines[0]).toBe(`${wrapLogo(LOGO[0]!.padEnd(LOGO_COLS), 0)}  `)
     expect(lines[1]).toContain('Welcome to Blue!')
@@ -150,7 +150,7 @@ describe('composeBannerLines', () => {
     expect(lines.join('\n')).toContain('Model')
   })
 
-  it('leaves the logo rows at their natural width on wide terminals', () => {
+  it('leaves the whale rows at their natural width on wide terminals', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 200)
     // The logo rows are frameless: they never stretch to the viewport width.
     expect(visibleWidth(lines[0]!)).toBe(LOGO_WIDTH_COLS + 2)

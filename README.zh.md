@@ -109,7 +109,7 @@ dsh plugin --profile blue add @dsh-blue/blue@rc
 
 | 启动与横幅 | 一个回合：工具卡 + 流式回复 | 命令菜单 |
 | --- | --- | --- |
-| <img src="docs/assets/shot-banner.png" width="360" alt="启动画面：盲文终端窗横幅、元信息块、输入框中打了一半的任务与两行状态栏"> | <img src="docs/assets/shot-conversation.png" width="360" alt="会话画面：用户任务、带输出的命令卡与流式 markdown 回复"> | <img src="docs/assets/shot-panels.png" width="360" alt="输入框上方的斜杠命令下拉：fuzzy 匹配与参数提示"> |
+| <img src="docs/assets/shot-banner.png" width="360" alt="启动画面：盲文鲸鱼横幅、元信息块、输入框中打了一半的任务与两行状态栏"> | <img src="docs/assets/shot-conversation.png" width="360" alt="会话画面：用户任务、带输出的命令卡与流式 markdown 回复"> | <img src="docs/assets/shot-panels.png" width="360" alt="输入框上方的斜杠命令下拉：fuzzy 匹配与参数提示"> |
 
 这些界面在真实使用中的完整走查见功能文档：[dsh-blue.dev/features](https://dsh-blue.dev/features/)（English: [dsh-blue.dev/en/features](https://dsh-blue.dev/en/features/)）。
 

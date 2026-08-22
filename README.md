@@ -109,7 +109,7 @@ From a scripted, fully reproducible recording (`pnpm demo:record && pnpm demo:re
 
 | Boot with the banner | A turn: tool card + streaming reply | The command menu |
 | --- | --- | --- |
-| <img src="docs/assets/shot-banner.png" width="360" alt="Boot screen: braille terminal-window banner, metadata block, the typed task in the editor, two-row status footer"> | <img src="docs/assets/shot-conversation.png" width="360" alt="Conversation: the user task, a command card with its output, and a streaming markdown answer"> | <img src="docs/assets/shot-panels.png" width="360" alt="The slash-command dropdown with fuzzy matches and argument hints over the editor"> |
+| <img src="docs/assets/shot-banner.png" width="360" alt="Boot screen: the braille whale banner, metadata block, the typed task in the editor, two-row status footer"> | <img src="docs/assets/shot-conversation.png" width="360" alt="Conversation: the user task, a command card with its output, and a streaming markdown answer"> | <img src="docs/assets/shot-panels.png" width="360" alt="The slash-command dropdown with fuzzy matches and argument hints over the editor"> |
 
 Feature walkthroughs with these surfaces in motion: [dsh-blue.dev/en/features](https://dsh-blue.dev/en/features/) (中文: [dsh-blue.dev/features](https://dsh-blue.dev/features/)).
 

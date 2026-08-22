@@ -1,12 +1,12 @@
- ⡔⠉⠩⠍⠩⠍⠩⠍⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⢢  
- ⡇⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⢸  Welcome to Blue!                        
- ⡇                       ⢸  Send /help for help information.        
- ⡇       ⠘⠶⣤⣀            ⢸                                          
- ⡇          ⠉⠛⠶⣤⡀        ⢸  Directory: «cwd»    
- ⡇          ⣀⣤⠶⠛⠁        ⢸  Model:     mock · mock                  
- ⡇       ⢠⠶⠛⠉     ⣤⣤⣤⣤⣤⡄ ⢸  Version:   0.1.0-rc.2                   
- ⡇                       ⢸  
- ⠣⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⠜  
+    ⢀⣀⣰⣰⣰⣰⣰⣼⣼⠜   ⣺⣵⡀    ⢀⡀  
+  ⢀⣸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣵⣐  ⢯⣿⣿⣵⣸⣼⣼⣿⠕  Welcome to Blue!                        
+ ⢨⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣽⣐⠂⠯⣿⣿⣿⣿⠿⠇   Send /help for help information.        
+ ⣿⡟⠃⠃⠋⠏⠿⣿⣿⣿⣿⣿⣿⠯⢿⣿⣽⣴⣿⣿⡕                                              
+ ⣿⣿      ⠋⢿⣿⣿⣿⣿ ⠋⣿⣿⣿⣿⠁      Directory: «cwd»    
+ ⢯⣿⣵       ⠫⣿⣿⣿⣽⣼⣿⣿⣿⠗       Model:     mock · mock                  
+ ⠂⢯⣿⣵⡀   ⣰⣀ ⠊⢿⣿⣿⣿⣿⡿⠇        Version:   0.1.0-rc.2                   
+   ⠋⣿⣿⣼⣰⣰⣻⣿⣽⣰⣀⠋⢿⣿⣿⣼⣰⡀       
+     ⠃⠏⠿⣿⣿⣿⣿⣿⠿⠟⠇⠂⠃⠃⠃        
  
  » run both
  

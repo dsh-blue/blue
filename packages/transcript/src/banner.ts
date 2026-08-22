@@ -1,9 +1,8 @@
 /**
  * `blue-banner` plugin: the welcome banner, mounted once at boot as the
- * scroll area's first child — a frameless horizontal block: the
- * terminal-window `>_` logo on the left, the welcome/help/status lines on
- * the right, no box frame. Below {@link BANNER_MIN_WIDTH} the banner
- * renders nothing.
+ * scroll area's first child — a frameless horizontal block: the DeepSeek
+ * whale logo on the left, the welcome/help/status lines on the right, no
+ * box frame. Below {@link BANNER_MIN_WIDTH} the banner renders nothing.
  *
  * The banner is a boot snapshot except the model line: it reads
  * `blueSession.modelRef.current` (never `inject` — resolved lazily, so the
@@ -140,7 +139,7 @@ interface StatusLine {
  * Compose the banner's lines for one viewport width — the pure layout core
  * the component delegates to. Identity color functions (the spec fakes)
  * yield plain, measurable text. The frameless horizontal block stacks the
- * terminal-window logo rows down the left and centers the status column beside them;
+ * whale logo rows down the left and centers the status column beside them;
  * nothing ever wraps — an over-wide status value or welcome line truncates
  * first.
  * @param deps - colors plus the truncate/measure primitives.
@@ -169,7 +168,7 @@ export function composeBannerLines(
 
   // The logo's brand-blue gradient, one hex per row, applied directly (the
   // mark is brand identity — the same sweep in every theme). The gap after
-  // the window frame stays the frame's neutral tint.
+  // the whale stays the frame's neutral tint.
   const gradientWrap = (hex: string, text: string): string => {
     const r = parseInt(hex.slice(1, 3), 16)
     const g = parseInt(hex.slice(3, 5), 16)
