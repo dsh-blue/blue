@@ -4,15 +4,22 @@
  * media type, admission through `ctx.attachments`, marker insertion, the
  * per-failure-kind notices), the submit transformer splitting `[image #N]`
  * markers, the default reader's two-step type negotiation through fake
- * clipboard tools, and the attach/registration lifecycle including
- * mid-flight fiber unloads.
+ * clipboard tools, copied local-file URI batches and their refusal bounds,
+ * and the attach/registration lifecycle including mid-flight fiber unloads.
  */
 
-import { chmodSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import { AttachmentError, AttachmentId, type ImageAttachmentRef, type SaveImageAttachment } from '@deepseek-ai/dsh-attachment'
+import {
+  AttachmentError,
+  AttachmentId,
+  type ImageAttachmentLimits,
+  type ImageAttachmentRef,
+  type SaveImageAttachment,
+} from '@deepseek-ai/dsh-attachment'
 import { applySubmitTransformers } from '../src/editor-instance.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
 import * as pasteImage from '../src/paste-image.ts'
@@ -41,6 +48,15 @@ const JPEG_PREFIX = new Uint8Array([
   0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01,
 ])
 
+const IMAGE_LIMITS: ImageAttachmentLimits = {
+  maxImageBytes: 10 * 1024 * 1024,
+  maxImagesPerMessage: 8,
+  maxMessageImageBytes: 30 * 1024 * 1024,
+  maxImagePixels: 16_777_216,
+  maxImageDimension: 4096,
+  mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
+}
+
 const tick = (): Promise<void> => new Promise(resolve => setImmediate(resolve))
 
 describe('blue-paste-image plugin', () => {
@@ -48,6 +64,8 @@ describe('blue-paste-image plugin', () => {
   let editor: FakeBlueEditor
   let notices: string[]
   let saveImage: ReturnType<typeof vi.fn>
+  let saveImages: ReturnType<typeof vi.fn>
+  let imageLimits: ImageAttachmentLimits
   let ctx: Context
   let keymap: FakeKeymap
   let fiber: { dispose(): Promise<void> } | undefined
@@ -56,6 +74,7 @@ describe('blue-paste-image plugin', () => {
     root = mkdtempTracked('blue-paste-image-')
     editor = new FakeBlueEditor()
     notices = []
+    imageLimits = { ...IMAGE_LIMITS }
     let saved = 0
     saveImage = vi.fn(async (input: SaveImageAttachment): Promise<ImageAttachmentRef> => {
       saved += 1
@@ -68,10 +87,11 @@ describe('blue-paste-image plugin', () => {
         ...(input.name === undefined ? {} : { name: input.name }),
       }
     })
+    saveImages = vi.fn(async (inputs: readonly SaveImageAttachment[]) => Promise.all(inputs.map(input => saveImage(input))))
     const blue = fakeBlueContext()
     ctx = blue.ctx
     keymap = blue.keymap
-    ctx.provide('attachments', { saveImage })
+    ctx.provide('attachments', { imageLimits, saveImage, saveImages })
     setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
   })
 
@@ -248,6 +268,31 @@ describe('blue-paste-image plugin', () => {
     expect(notices.at(-1)).toBe('pasted image via Wayland fallback; verify it is current')
   })
 
+  it('admits a copied-file batch and inserts its ordered markers together', async () => {
+    await mount()
+    pasteImage.setClipboardImageReader(() => Promise.resolve({
+      kind: 'images',
+      images: [
+        { data: PNG_1X1, mediaType: 'image/png', name: 'first.png' },
+        { data: GIF_1X1, mediaType: 'image/gif', name: 'second.gif' },
+      ],
+    }))
+    pressPaste()
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImages).toHaveBeenCalledWith([
+      expect.objectContaining({ mediaType: 'image/png', name: 'first.png' }),
+      expect.objectContaining({ mediaType: 'image/gif', name: 'second.gif' }),
+    ])
+    expect(editor.inserted[0]!.match(/\[image #\d+\]/g)).toHaveLength(2)
+    expect(applySubmitTransformers(editor.inserted[0]!)).toEqual([
+      { type: 'image', attachment: expect.objectContaining({ mediaType: 'image/png' }) },
+      { type: 'text', text: ' ' },
+      { type: 'image', attachment: expect.objectContaining({ mediaType: 'image/gif' }) },
+    ])
+  })
+
   it('notices each clipboard failure kind with what is missing', async () => {
     await mount()
     const cases: ReadonlyArray<readonly [ClipboardImageResult, string]> = [
@@ -255,6 +300,7 @@ describe('blue-paste-image plugin', () => {
       [{ kind: 'unreachable' }, 'clipboard unreachable: DISPLAY/WAYLAND_DISPLAY is not set in this session'],
       [{ kind: 'no-image' }, 'no image available from the clipboard'],
       [{ kind: 'unsupported', mediaType: 'image/bmp' }, 'clipboard image type image/bmp is not supported'],
+      [{ kind: 'file-failed', detail: 'notes.txt is not an image' }, 'clipboard image file failed: notes.txt is not an image'],
       [{ kind: 'timeout' }, 'clipboard read timed out'],
       [{ kind: 'failed', detail: 'wl-paste exited with code 1: nope' }, 'clipboard read failed: wl-paste exited with code 1: nope'],
     ]
@@ -395,6 +441,8 @@ describe('default clipboard image reader', () => {
   let editor: FakeBlueEditor
   let notices: string[]
   let saveImage: ReturnType<typeof vi.fn>
+  let saveImages: ReturnType<typeof vi.fn>
+  let imageLimits: ImageAttachmentLimits
   let ctx: Context
   let fiber: { dispose(): Promise<void> } | undefined
 
@@ -404,6 +452,7 @@ describe('default clipboard image reader', () => {
     delete process.env.XDG_RUNTIME_DIR
     editor = new FakeBlueEditor()
     notices = []
+    imageLimits = { ...IMAGE_LIMITS }
     saveImage = vi.fn(async (input: SaveImageAttachment): Promise<ImageAttachmentRef> => ({
       attachmentId: AttachmentId('spec-default'),
       mediaType: input.mediaType,
@@ -411,9 +460,10 @@ describe('default clipboard image reader', () => {
       width: 1,
       height: 1,
     }))
+    saveImages = vi.fn(async (inputs: readonly SaveImageAttachment[]) => Promise.all(inputs.map(input => saveImage(input))))
     const blue = fakeBlueContext()
     ctx = blue.ctx
-    ctx.provide('attachments', { saveImage })
+    ctx.provide('attachments', { imageLimits, saveImage, saveImages })
     setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
   })
 
@@ -462,7 +512,7 @@ describe('default clipboard image reader', () => {
   /** A wl-paste fake: `-l` lists types, `-t <type>` prints mapped bytes. */
   function wlPasteFake(listing: string, reads: Record<string, string>): string {
     const cases = Object.entries(reads)
-      .map(([type, bytes]) => `  ${type}) printf '${bytes}'; exit 0 ;;`)
+      .map(([type, bytes]) => `  ${type}) printf '%b' '${bytes}'; exit 0 ;;`)
       .join('\n')
     return `#!/bin/sh
 if [ "$1" = '-l' ]; then printf '${listing}'; exit 0; fi
@@ -476,7 +526,7 @@ exit 1
   /** An xclip fake: TARGETS lists types, `-t <type> -o` prints mapped bytes. */
   function xclipFake(listing: string, reads: Record<string, string>): string {
     const cases = Object.entries(reads)
-      .map(([type, bytes]) => `  ${type}) printf '${bytes}'; exit 0 ;;`)
+      .map(([type, bytes]) => `  ${type}) printf '%b' '${bytes}'; exit 0 ;;`)
       .join('\n')
     return `#!/bin/sh
 if [ "$4" = 'TARGETS' ]; then printf '${listing}'; exit 0; fi
@@ -544,6 +594,202 @@ exit 1
       expect(editor.inserted).toHaveLength(1)
     })
     expect(saveImage.mock.calls[1]![0]).toMatchObject({ mediaType: 'image/jpeg' })
+  })
+
+  it('pastes an ordered, deduplicated URI-list batch with encoded file names', async () => {
+    const files = mkdtempTracked('blue-paste-files-')
+    const png = join(files, 'castle image.png')
+    const gif = join(files, 'second.gif')
+    writeFileSync(png, PNG_1X1)
+    writeFileSync(gif, GIF_1X1)
+    const pngUri = pathToFileURL(png).href
+    const gifUri = pathToFileURL(gif).href
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', wlPasteFake('text/uri-list\n', {
+      'text/uri-list': `# copied by files\\r\\n${pngUri}\\r\\n${pngUri}\\r\\n${gifUri}\\r\\n`,
+    }))
+    process.env.PATH = bin
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(notices).toEqual(['pasting image...'])
+    expect(editor.inserted).toHaveLength(1)
+    expect(saveImages).toHaveBeenCalledWith([
+      expect.objectContaining({ data: expect.any(Uint8Array), mediaType: 'image/png', name: 'castle image.png' }),
+      expect.objectContaining({ data: expect.any(Uint8Array), mediaType: 'image/gif', name: 'second.gif' }),
+    ])
+    expect(Array.from(saveImages.mock.calls[0]![0][0]!.data)).toEqual(Array.from(PNG_1X1))
+    expect(Array.from(saveImages.mock.calls[0]![0][1]!.data)).toEqual(Array.from(GIF_1X1))
+    expect(editor.inserted[0]!.match(/\[image #\d+\]/g)).toHaveLength(2)
+  })
+
+  it('supports GNOME copied-files and treats cut as a read-only paste', async () => {
+    const file = join(mkdtempTracked('blue-paste-files-'), 'castle.png')
+    writeFileSync(file, PNG_1X1)
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'xclip', xclipFake('TARGETS\nx-special/gnome-copied-files\n', {
+      'x-special/gnome-copied-files': `cut\\n${pathToFileURL(file).href}`,
+    }))
+    process.env.PATH = bin
+    await mountDefault('x11')
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImages.mock.calls[0]![0][0]).toMatchObject({ mediaType: 'image/png', name: 'castle.png' })
+  })
+
+  it('prefers direct image bytes over a copied-file representation', async () => {
+    const file = join(mkdtempTracked('blue-paste-files-'), 'other.gif')
+    writeFileSync(file, GIF_1X1)
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', wlPasteFake('text/uri-list\nimage/png\n', {
+      'image/png': shBytes(PNG_1X1),
+      'text/uri-list': `${pathToFileURL(file).href}\\n`,
+    }))
+    process.env.PATH = bin
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImage.mock.calls[0]![0]).toMatchObject({ mediaType: 'image/png', name: 'pasted-image.png' })
+    expect(saveImages).not.toHaveBeenCalled()
+  })
+
+  it('falls back from invalid direct bytes to a valid copied image file', async () => {
+    const file = join(mkdtempTracked('blue-paste-files-'), 'fallback.gif')
+    writeFileSync(file, GIF_1X1)
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', wlPasteFake('image/png\ntext/uri-list\n', {
+      'image/png': shBytes(new Uint8Array([1, 2, 3])),
+      'text/uri-list': `${pathToFileURL(file).href}\\n`,
+    }))
+    process.env.PATH = bin
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    })
+    expect(saveImages.mock.calls[0]![0][0]).toMatchObject({ mediaType: 'image/gif', name: 'fallback.gif' })
+  })
+
+  it('rejects malformed, remote, and non-local-host file URIs', async () => {
+    const cases = [
+      ['not a uri', 'clipboard file list contains an invalid URI'],
+      ['https://example.test/image.png', 'clipboard URI scheme https is not local'],
+      ['file://remote-host/tmp/image.png', 'clipboard file URI does not name a local path'],
+    ] as const
+    for (const [uri, detail] of cases) {
+      const bin = mkdtempTracked('blue-paste-bin-')
+      tool(bin, 'wl-paste', wlPasteFake('text/uri-list\n', { 'text/uri-list': `${uri}\\n` }))
+      process.env.PATH = bin
+      await mountDefault('wayland')
+      await vi.waitFor(() => {
+        expect(notices.at(-1)).toBe(`clipboard image file failed: ${detail}`)
+      })
+      await fiber!.dispose()
+      fiber = undefined
+      editor = new FakeBlueEditor()
+      notices = []
+      setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+    }
+  })
+
+  it('rejects missing files, directories, symlinks, and unreadable regular files', async () => {
+    const files = mkdtempTracked('blue-paste-files-')
+    const missing = join(files, 'missing.png')
+    const directory = join(files, 'directory.png')
+    const target = join(files, 'target.png')
+    const link = join(files, 'link.png')
+    mkdirSync(directory)
+    writeFileSync(target, PNG_1X1)
+    symlinkSync(target, link)
+    const cases = [
+      [missing, 'missing.png could not be opened (ENOENT)'],
+      [directory, 'directory.png is not a regular file'],
+      ['/', 'copied file is not a regular file'],
+      [link, 'link.png symbolic links are not accepted'],
+      ['/proc/self/mem', 'mem could not be read (EIO)'],
+    ] as const
+    for (const [path, detail] of cases) {
+      const bin = mkdtempTracked('blue-paste-bin-')
+      tool(bin, 'wl-paste', wlPasteFake('text/uri-list\n', { 'text/uri-list': `${pathToFileURL(path).href}\\n` }))
+      process.env.PATH = bin
+      await mountDefault('wayland')
+      await vi.waitFor(() => {
+        expect(notices.at(-1)).toBe(`clipboard image file failed: ${detail}`)
+      })
+      await fiber!.dispose()
+      fiber = undefined
+      editor = new FakeBlueEditor()
+      notices = []
+      setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+    }
+  })
+
+  it('rejects non-images and enforces file count and byte limits before saving', async () => {
+    const files = mkdtempTracked('blue-paste-files-')
+    const textFile = join(files, 'notes.txt')
+    const png = join(files, 'one.png')
+    const gif = join(files, 'two.gif')
+    writeFileSync(textFile, 'not an image')
+    writeFileSync(png, PNG_1X1)
+    writeFileSync(gif, GIF_1X1)
+
+    const cases: Array<{ paths: string[]; limits: Partial<ImageAttachmentLimits>; detail: string }> = [
+      { paths: [textFile], limits: {}, detail: 'notes.txt is not a supported PNG, JPEG, WebP, or GIF image' },
+      { paths: [png], limits: { maxImageBytes: PNG_1X1.byteLength - 1 }, detail: 'one.png exceeds the per-image byte limit' },
+      { paths: ['/proc/version'], limits: { maxImageBytes: 1 }, detail: 'version exceeds the per-image byte limit' },
+      { paths: [png, gif], limits: { maxImagesPerMessage: 1 }, detail: 'copied file selection exceeds the 1-image limit' },
+      { paths: [png, gif], limits: { maxMessageImageBytes: PNG_1X1.byteLength + GIF_1X1.byteLength - 1 }, detail: 'copied file selection exceeds the aggregate image-byte limit' },
+    ]
+    for (const item of cases) {
+      Object.assign(imageLimits, IMAGE_LIMITS, item.limits)
+      const uris = item.paths.map(path => pathToFileURL(path).href).join('\\n')
+      const bin = mkdtempTracked('blue-paste-bin-')
+      tool(bin, 'wl-paste', wlPasteFake('text/uri-list\n', { 'text/uri-list': `${uris}\\n` }))
+      process.env.PATH = bin
+      await mountDefault('wayland')
+      await vi.waitFor(() => {
+        expect(notices.at(-1)).toBe(`clipboard image file failed: ${item.detail}`)
+      })
+      await fiber!.dispose()
+      fiber = undefined
+      editor = new FakeBlueEditor()
+      notices = []
+      setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+    }
+    expect(saveImages).not.toHaveBeenCalled()
+  })
+
+  it('handles empty and malformed GNOME file selections', async () => {
+    const cases = [
+      ['text/uri-list', '# no files\\r\\n', 'no image available from the clipboard'],
+      ['x-special/gnome-copied-files', 'move\\nfile:///tmp/image.png', 'clipboard image file failed: GNOME copied-files data has no copy/cut operation'],
+    ] as const
+    for (const [type, data, expected] of cases) {
+      const bin = mkdtempTracked('blue-paste-bin-')
+      tool(bin, 'wl-paste', wlPasteFake(`${type}\n`, { [type]: data }))
+      process.env.PATH = bin
+      await mountDefault('wayland')
+      await vi.waitFor(() => {
+        expect(notices.at(-1)).toBe(expected)
+      })
+      await fiber!.dispose()
+      fiber = undefined
+      editor = new FakeBlueEditor()
+      notices = []
+      setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+    }
+  })
+
+  it('classifies a clipboard-tool failure while reading a promised file list', async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    tool(bin, 'wl-paste', wlPasteFake('text/uri-list\n', {}))
+    process.env.PATH = bin
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(notices).toEqual(['pasting image...', 'clipboard read failed: wl-paste exited with code 1'])
+    })
   })
 
   it('uses the session-aware automatic order and honors strict backend policies', async () => {

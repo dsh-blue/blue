@@ -6,8 +6,12 @@
  * pi-tui Editor, which has no clipboard-image handling of its own. The paste
  * flow is fire-and-forget: an injectable reader (the default negotiates with
  * the Linux stdout-form tools `wl-paste` and `xclip` in session-aware order)
- * resolves to either image
- * bytes tagged with the clipboard's own declared type or a failure kind
+ * resolves to direct image bytes tagged with the clipboard's declared type,
+ * or to local image files copied through `text/uri-list` / GNOME's copied-
+ * files representation. Copied files are opened without following a final
+ * symlink, bounded by the attachment deployment limits, magic-byte sniffed,
+ * and admitted as one ordered batch. Otherwise the reader returns a failure
+ * kind
  * naming what is missing: the tool absent, the display session unreachable,
  * no image, an unsupported image type, a timeout, or a raw tool failure.
  * Every kind flashes a one-shot notice; nothing is installed or worked
@@ -25,9 +29,18 @@
  */
 
 import { execFile } from 'node:child_process'
+import { constants as fsConstants } from 'node:fs'
+import { open } from 'node:fs/promises'
+import { basename } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
+import type {
+  ImageAttachmentLimits,
+  ImageAttachmentRef,
+  ImageMediaType,
+  SaveImageAttachment,
+} from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { getSharedEditor, registerSubmitTransformer, type SharedEditor } from './editor-instance.ts'
 import { ADMITTED_IMAGE_TYPES, EXT_BY_MEDIA_TYPE, sniffImageMediaType } from './attachments.ts'
@@ -62,13 +75,15 @@ export const Config: z<Config> = z.object({
 export const ACTION_IMAGE_PASTE = 'blue.image.paste'
 
 /**
- * One clipboard read: the image bytes tagged with the media type the
- * clipboard itself declared, or a failure kind naming what is missing.
+ * One clipboard read: direct image bytes, an ordered copied-file image
+ * batch, or a failure kind naming what is missing.
  */
 export type ClipboardImageResult =
   | { kind: 'image'; data: Uint8Array; mediaType: ImageMediaType; backend?: ClipboardBackend; fallback?: boolean }
+  | { kind: 'images'; images: readonly SaveImageAttachment[]; backend?: ClipboardBackend; fallback?: boolean }
   | { kind: 'no-image' }
   | { kind: 'unsupported'; mediaType: string }
+  | { kind: 'file-failed'; detail: string }
   | { kind: 'unreachable' }
   | { kind: 'missing-tool' }
   | { kind: 'timeout' }
@@ -93,6 +108,9 @@ type ClipboardTool = {
   /** Args reading back one offered media type. */
   readArgs: (mediaType: string) => string[]
 }
+
+/** Standard and desktop-specific clipboard representations for copied files. */
+const FILE_URI_TYPES = ['text/uri-list', 'x-special/gnome-copied-files'] as const
 
 /** Clipboard image tools keyed by their display protocol. */
 const CLIPBOARD_TOOLS: Readonly<Record<ClipboardBackend, ClipboardTool>> = {
@@ -159,8 +177,8 @@ type ToolRun =
 /** The failed half of {@link ToolRun}. */
 type FailedRun = Extract<ToolRun, { ok: false }>
 
-/** Every non-image result kind. */
-type FailureResult = Exclude<ClipboardImageResult, { kind: 'image' }>
+/** Every unsuccessful clipboard result. */
+type FailureResult = Exclude<ClipboardImageResult, { kind: 'image' | 'images' }>
 
 /** The non-image result kinds. */
 type FailureKind = FailureResult['kind']
@@ -173,11 +191,12 @@ type FailureKind = FailureResult['kind']
  */
 const OUTCOME_RANK: Readonly<Record<FailureKind, number>> = {
   unsupported: 0,
-  'no-image': 1,
-  unreachable: 2,
-  failed: 3,
-  timeout: 4,
-  'missing-tool': 5,
+  'file-failed': 1,
+  'no-image': 2,
+  unreachable: 3,
+  failed: 4,
+  timeout: 5,
+  'missing-tool': 6,
 }
 
 /**
@@ -242,16 +261,109 @@ function classifyFailure(tool: ClipboardTool, run: FailedRun): ClipboardImageRes
   return { kind: 'failed', detail: failureDetail(tool.command, run) }
 }
 
+/** A parsed local file selection, or a user-facing refusal detail. */
+type ParsedFileUris =
+  | { ok: true; paths: readonly string[] }
+  | { ok: false; detail: string }
+
+/** Parse standard URI-list or GNOME copied-files bytes into unique local paths. */
+function parseFileUris(data: Buffer, mediaType: typeof FILE_URI_TYPES[number]): ParsedFileUris {
+  const lines = data.toString('utf8').split(/\r?\n/).map(line => line.trim())
+  if (mediaType === 'x-special/gnome-copied-files') {
+    const operation = lines.shift()
+    if (operation !== 'copy' && operation !== 'cut') {
+      return { ok: false, detail: 'GNOME copied-files data has no copy/cut operation' }
+    }
+  }
+  const paths: string[] = []
+  const seen = new Set<string>()
+  for (const line of lines) {
+    if (line === '' || line.startsWith('#')) continue
+    let url: URL
+    try {
+      url = new URL(line)
+    } catch {
+      return { ok: false, detail: 'clipboard file list contains an invalid URI' }
+    }
+    if (url.protocol !== 'file:') {
+      return { ok: false, detail: `clipboard URI scheme ${url.protocol.slice(0, -1)} is not local` }
+    }
+    let path: string
+    try {
+      path = fileURLToPath(url)
+    } catch {
+      return { ok: false, detail: 'clipboard file URI does not name a local path' }
+    }
+    if (!seen.has(path)) {
+      seen.add(path)
+      paths.push(path)
+    }
+  }
+  return { ok: true, paths }
+}
+
+/** Read one copied local file without following a final symlink. */
+async function readCopiedImage(path: string, maxBytes: number): Promise<SaveImageAttachment | FailureResult> {
+  const displayName = basename(path) || 'copied file'
+  let handle
+  try {
+    handle = await open(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    const reason = code === 'ELOOP' ? 'symbolic links are not accepted' : `could not be opened (${String(code)})`
+    return { kind: 'file-failed', detail: `${displayName} ${reason}` }
+  }
+  try {
+    const stat = await handle.stat()
+    if (!stat.isFile()) return { kind: 'file-failed', detail: `${displayName} is not a regular file` }
+    if (stat.size > maxBytes) return { kind: 'file-failed', detail: `${displayName} exceeds the per-image byte limit` }
+    const data = await handle.readFile()
+    if (data.byteLength > maxBytes) return { kind: 'file-failed', detail: `${displayName} exceeds the per-image byte limit` }
+    const mediaType = sniffImageMediaType(data)
+    if (mediaType === undefined) {
+      return { kind: 'file-failed', detail: `${displayName} is not a supported PNG, JPEG, WebP, or GIF image` }
+    }
+    return { data, mediaType, name: displayName }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    return { kind: 'file-failed', detail: `${displayName} could not be read (${String(code)})` }
+  } finally {
+    await handle.close()
+  }
+}
+
+/** Read and preflight one copied-file representation as an ordered batch. */
+async function readCopiedImages(data: Buffer, mediaType: typeof FILE_URI_TYPES[number], limits: ImageAttachmentLimits): Promise<ClipboardImageResult> {
+  const parsed = parseFileUris(data, mediaType)
+  if (!parsed.ok) return { kind: 'file-failed', detail: parsed.detail }
+  if (parsed.paths.length === 0) return { kind: 'no-image' }
+  if (parsed.paths.length > limits.maxImagesPerMessage) {
+    return { kind: 'file-failed', detail: `copied file selection exceeds the ${limits.maxImagesPerMessage}-image limit` }
+  }
+  const images: SaveImageAttachment[] = []
+  let totalBytes = 0
+  for (const path of parsed.paths) {
+    const image = await readCopiedImage(path, limits.maxImageBytes)
+    if ('kind' in image) return image
+    totalBytes += image.data.byteLength
+    if (totalBytes > limits.maxMessageImageBytes) {
+      return { kind: 'file-failed', detail: 'copied file selection exceeds the aggregate image-byte limit' }
+    }
+    images.push(image)
+  }
+  return { kind: 'images', images }
+}
+
 /**
- * Probe one tool: list the clipboard's offered types, intersect with the
- * store's admitted types (`ADMITTED_IMAGE_TYPES` order — first readable
- * type wins), and read the bytes. A listing that only offers non-admitted
- * `image/*` types reports the unsupported type; hard read failures stop the
- * loop (they repeat for every remaining type).
+ * Probe one tool: list the clipboard's offered types, try direct admitted
+ * images in `ADMITTED_IMAGE_TYPES` order, then try a copied local-file
+ * representation. A listing that only offers non-admitted `image/*` types
+ * reports the unsupported type; hard read failures stop the loop.
  * @param tool - the tool to probe.
+ * @param limits - deployment image limits used for bounded local-file reads.
  * @returns the probe outcome.
  */
-async function probeTool(tool: ClipboardTool): Promise<ClipboardImageResult> {
+async function probeTool(tool: ClipboardTool, limits: ImageAttachmentLimits): Promise<ClipboardImageResult> {
   const listing = await runTool(tool.command, tool.listArgs)
   if (!listing.ok) {
     const failure = classifyFailure(tool, listing)
@@ -266,10 +378,6 @@ async function probeTool(tool: ClipboardTool): Promise<ClipboardImageResult> {
     .map(line => line.trim())
     .filter(line => line.length > 0)
   const admitted = ADMITTED_IMAGE_TYPES.filter(mediaType => offered.includes(mediaType))
-  if (admitted.length === 0) {
-    const imageType = offered.find(type => type.startsWith('image/'))
-    return imageType === undefined ? { kind: 'no-image' } : { kind: 'unsupported', mediaType: imageType }
-  }
   let softFailure: ClipboardImageResult | undefined
   for (const mediaType of admitted) {
     const read = await runTool(tool.command, tool.readArgs(mediaType))
@@ -293,6 +401,18 @@ async function probeTool(tool: ClipboardTool): Promise<ClipboardImageResult> {
     const failure = classifyFailure(tool, read)
     if (failure.kind !== 'failed') return failure
     if (softFailure === undefined) softFailure = failure
+  }
+  for (const fileType of FILE_URI_TYPES) {
+    if (!offered.includes(fileType)) continue
+    const read = await runTool(tool.command, tool.readArgs(fileType))
+    if (!read.ok) return classifyFailure(tool, read)
+    const files = await readCopiedImages(read.stdout, fileType, limits)
+    if (files.kind === 'images') return { ...files, backend: tool.backend }
+    if (files.kind !== 'no-image') return files
+  }
+  if (admitted.length === 0) {
+    const imageType = offered.find(type => type.startsWith('image/'))
+    return imageType === undefined ? { kind: 'no-image' } : { kind: 'unsupported', mediaType: imageType }
   }
   return softFailure ?? { kind: 'no-image' }
 }
@@ -319,7 +439,7 @@ function aggregateOutcomes(outcomes: FailureResult[]): ClipboardImageResult {
 
 /** The default reader: probe each policy-selected tool in order; the first
  * valid image wins, otherwise the failures aggregate into one verdict. */
-async function defaultClipboardImageReader(config: Config): Promise<ClipboardImageResult> {
+async function defaultClipboardImageReader(config: Config, limits: ImageAttachmentLimits): Promise<ClipboardImageResult> {
   const outcomes: FailureResult[] = []
   const tools = clipboardToolsFor(config.backend)
   for (const [index, tool] of tools.entries()) {
@@ -330,9 +450,9 @@ async function defaultClipboardImageReader(config: Config): Promise<ClipboardIma
       continue
     }
     backendCooldowns.delete(key)
-    const outcome = await probeTool(tool)
+    const outcome = await probeTool(tool, limits)
     if (outcome.kind === 'timeout') backendCooldowns.set(key, clipboardClock() + BACKEND_COOLDOWN_MS)
-    if (outcome.kind === 'image') {
+    if (outcome.kind === 'image' || outcome.kind === 'images') {
       return {
         ...outcome,
         fallback: config.backend === 'auto' && index > 0,
@@ -365,6 +485,7 @@ function failureNotice(result: FailureResult): string {
     case 'unreachable': return 'clipboard unreachable: DISPLAY/WAYLAND_DISPLAY is not set in this session'
     case 'no-image': return 'no image available from the clipboard'
     case 'unsupported': return `clipboard image type ${result.mediaType} is not supported`
+    case 'file-failed': return `clipboard image file failed: ${result.detail}`
     case 'timeout': return 'clipboard read timed out'
     case 'failed': return `clipboard read failed: ${result.detail}`
   }
@@ -425,7 +546,7 @@ async function pasteFlow(ctx: Context, config: Config, shared: SharedEditor, isU
   notice('pasting image...')
   let result: ClipboardImageResult
   try {
-    result = await (clipboardImageReader?.() ?? defaultClipboardImageReader(config))
+    result = await (clipboardImageReader?.() ?? defaultClipboardImageReader(config, ctx.attachments.imageLimits))
   } catch (error) {
     // An injected reader rejecting degrades to the same notice family.
     if (isUnloaded()) return
@@ -434,23 +555,29 @@ async function pasteFlow(ctx: Context, config: Config, shared: SharedEditor, isU
     return
   }
   if (isUnloaded()) return
-  if (result.kind !== 'image') {
+  if (result.kind !== 'image' && result.kind !== 'images') {
     notice(failureNotice(result))
     return
   }
-  // The declared type comes from the clipboard's own type listing; the
-  // store's admission sniffer cross-checks it against the bytes.
   try {
-    const ref = await ctx.attachments.saveImage({
-      data: result.data,
-      mediaType: result.mediaType,
-      name: `pasted-image.${EXT_BY_MEDIA_TYPE[result.mediaType]}`,
-    })
+    // Direct representations retain their declared type for the store's
+    // cross-check; copied files carry a type sniffed from their bytes and
+    // use the batch path for count and aggregate-byte admission.
+    const refs = result.kind === 'image'
+      ? [await ctx.attachments.saveImage({
+          data: result.data,
+          mediaType: result.mediaType,
+          name: `pasted-image.${EXT_BY_MEDIA_TYPE[result.mediaType]}`,
+        })]
+      : await ctx.attachments.saveImages(result.images)
     if (isUnloaded()) return
-    pasteCount += 1
-    const marker = `[image #${pasteCount}]`
-    pastedImages.set(marker, ref)
-    shared.editor.insertText(marker)
+    const markers = refs.map(ref => {
+      pasteCount += 1
+      const marker = `[image #${pasteCount}]`
+      pastedImages.set(marker, ref)
+      return marker
+    })
+    shared.editor.insertText(markers.join(' '))
     if (result.fallback === true && result.backend !== undefined) {
       const label = result.backend === 'x11' ? 'X11' : 'Wayland'
       notice(`pasted image via ${label} fallback; verify it is current`)

@@ -13,6 +13,8 @@ Ctrl-V paste depends on two things:
 
 Images land in the attachment store (default `~/.dsh/attachments`; relocate via `DSH_BLUE_ATTACHMENT_DIR` or `DSH_HOME`), capped at 10MB per image, 8 images / 30MB / 16M pixels per message.
 
+You can copy image content from an application or copy one or more local PNG/JPEG/WebP/GIF files in Ubuntu Files. The file-manager path only accepts local regular files; remote URIs, directories, symlinks, and special files are refused with a reason.
+
 ## Why doesn't the injected AGENTS.md context show up in the transcript?
 
 The harness injects workspace instructions (AGENTS.md and friends) and runtime-context snapshots into the session as synthetic user messages. Blue sorts by message source: human input renders as usual (`❯` bubbles); **synthetic messages render as nothing** — no item, no placeholder — keeping the transcript clean. The content is still sent to the model in full; it is just not rendered.
