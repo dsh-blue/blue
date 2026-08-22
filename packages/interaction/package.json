@@ -37,7 +37,6 @@
       "types": "./lib/types/paste-image.d.ts",
       "default": "./lib/paste-image.js"
     },
-    "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [

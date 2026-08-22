@@ -37,7 +37,6 @@
       "types": "./lib/types/chrome.d.ts",
       "default": "./lib/chrome.js"
     },
-    "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [

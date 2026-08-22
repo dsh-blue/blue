@@ -69,7 +69,6 @@
       "types": "./lib/types/pane-agents.d.ts",
       "default": "./lib/pane-agents.js"
     },
-    "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [

@@ -18,7 +18,6 @@
       "default": "./lib/invariant.js"
     },
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
