@@ -7,6 +7,9 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import type { AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions'
+import type { BlueComponent } from '../../core/src/types.ts'
+import { startBlueTerminal } from '../../core/src/terminal.ts'
+import { FakeTerminal, waitForRender } from '../../core/tests/fake-terminal.ts'
 import { PlanReviewPanel, planReviewChoices } from '../src/plan-review-panel.ts'
 import { FakeBlueComponents, FakeTheme, KEY } from './fakes.ts'
 
@@ -96,28 +99,67 @@ describe('PlanReviewPanel rendering', () => {
   })
 
   it('windows a long plan behind a showing tail inside the box and scrolls it', () => {
-    // At 24 viewport rows the window is 13 (the panel chrome reserves 11).
+    // At 24 viewport rows the window is 10 (worst-case chrome with the revise
+    // hint, footer, and one visible upstream row reserve the other 14).
     const { panel } = mount(ask({ detail: LONG_DETAIL }))
     const first = panel.render(60).join('\n')
-    expect(first).toContain('showing 1-13 of 15')
+    expect(first).toContain('showing 1-10 of 15')
     expect(first).toContain('↑↓ scroll')
     expect(first).toContain('line 1')
     expect(first).not.toContain('line 14')
     // ↓/↑ step one line — the mouse wheel arrives as those arrows, so the
     // wheel scrolls the plan (the round-4 ruling).
     panel.handleInput(KEY.down)
-    expect(panel.render(60).join('\n')).toContain('showing 2-14 of 15')
+    expect(panel.render(60).join('\n')).toContain('showing 2-11 of 15')
     panel.handleInput(KEY.up)
-    expect(panel.render(60).join('\n')).toContain('showing 1-13 of 15')
+    expect(panel.render(60).join('\n')).toContain('showing 1-10 of 15')
     // PageDown/Up jump by the window size; one page clamps to the last
     // full window.
     panel.handleInput('\x1b[6~')
     const paged = panel.render(60).join('\n')
-    expect(paged).toContain('showing 3-15 of 15')
-    expect(paged).not.toContain('line 2')
+    expect(paged).toContain('showing 6-15 of 15')
+    expect(paged).not.toContain('line 5')
     panel.handleInput('\x1b[5~')
     panel.handleInput('\x1b[5~')
-    expect(panel.render(60).join('\n')).toContain('showing 1-13 of 15')
+    expect(panel.render(60).join('\n')).toContain('showing 1-10 of 15')
+  })
+
+  it('keeps streaming transcript growth inside the main-screen differential viewport', async () => {
+    const terminal = new FakeTerminal(60, 24)
+    const runtime = await startBlueTerminal(terminal, () => Promise.resolve(undefined))
+    const lines = ['stream 1']
+    const transcript: BlueComponent = {
+      render: () => [...lines],
+      invalidate: () => {},
+    }
+    const footer: BlueComponent = {
+      render: () => ['footer 1', 'footer 2'],
+      invalidate: () => {},
+    }
+    const { panel } = mount(ask({ detail: LONG_DETAIL }))
+    panel.handleInput(KEY.right)
+    panel.handleInput(KEY.right)
+    runtime.addChild(transcript)
+    runtime.addBottomChild(panel)
+    runtime.addBottomChild(footer, 'bottom')
+    runtime.requestRender(true)
+    await waitForRender()
+    const initialFullRedraws = runtime.tui.fullRedraws
+
+    // exit_plan_mode can keep rewriting the active transcript tail while its
+    // question is already open. This exact same-line token stream sat one row
+    // above the viewport before the reserve and forced a full redraw per token.
+    for (let index = 2; index <= 4; index += 1) {
+      lines[0] = `stream token ${String(index)}`
+      runtime.requestRender()
+      await waitForRender()
+    }
+    // A newline then grows the transcript and moves the panel as well.
+    lines.push('stream next line')
+    runtime.requestRender()
+    await waitForRender()
+    expect(runtime.tui.fullRedraws).toBe(initialFullRedraws)
+    await runtime.stop()
   })
 
   it('scrolling never moves the choice cursor — the arrows are two axes', () => {
