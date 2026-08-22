@@ -133,7 +133,7 @@ P1 经一次性破坏性重排（边界与理由见 [blue-p1-design.md](./histor
 
 ### L4 — 组合层（bundle/blue）
 
-照 harness `bundle/headless` 模板：startup provider（inject `cmdlineArgs`，commander 解析 `[task]` 和 `--resume`）→ `ctx.provide('blueStartup', …)`；`cordis.patch.yml` 骑 `dsh-base`，用 `!!js ctx.blueStartup.*` 惰性插值注入配置。安装路径为 out-of-tree：`dsh plugin --profile blue add`（见 README 的本地开发安装节）。
+照 harness `bundle/headless` 模板：startup provider（inject `cmdlineArgs`，commander 解析 `[task]` 和 `--resume`）→ `ctx.provide('blueStartup', …)`；`cordis.patch.yml` 骑 `dsh-base`，用 `!!js ctx.blueStartup.*` 惰性插值注入配置。安装路径为 out-of-tree：`dsh plugin --profile blue-dev add`（见贡献者文档的本地开发安装节）。
 
 ## 4. 插件间契约
 

@@ -1,19 +1,24 @@
 #!/usr/bin/env bash
 # install-dev.sh — one-shot local development install of Blue into a dsh profile.
 #
-# Builds the Blue workspace and link-installs all five packages into the blue
+# Builds the Blue workspace and link-installs all five packages into a dev
 # profile (no npm publish). Code changes take effect after `pnpm run build`;
 # re-run this script only when the dependency graph changes.
 #
 # Environment overrides:
 #   DSH_BIN    dsh executable to use        (default: dsh from PATH)
-#   PROFILE    target profile name          (default: blue)
+#   PROFILE    target profile name          (default: blue-dev)
 #   DSH_HOME   dsh home directory           (default: dsh's own resolution)
 #   PROFILE_INSTALL_FLAGS
 #              extra flags for the profile's `pnpm install` (default: none).
 #              CI consumers pass --no-frozen-lockfile: CI=true flips pnpm's
 #              frozen-lockfile default on, and ensure-loader-entries' package
 #              additions then read as lockfile violations.
+#
+# Lane rule (D51 aftermath): `blue` is the production profile — npm
+# installs only, never link:; `blue-dev` links this checkout; a worktree
+# gets its own `blue-<tag>`. Never link into `blue`: a later npm upgrade
+# half-overwrites the links and boots a Frankenstein tree.
 #
 # Worktree effect testing: run this from a feature worktree with
 # PROFILE=blue-<short-branch-tag> to give that checkout its own dogfood
@@ -23,7 +28,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DSH_BIN="${DSH_BIN:-dsh}"
-PROFILE="${PROFILE:-blue}"
+PROFILE="${PROFILE:-blue-dev}"
 
 if ! command -v "$DSH_BIN" >/dev/null 2>&1; then
   echo "error: '$DSH_BIN' not found on PATH. Install dsh or set DSH_BIN=/path/to/dsh" >&2

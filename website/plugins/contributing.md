@@ -29,32 +29,36 @@ script/install-dev.sh
 pnpm install && pnpm run build   # lib/ 是每个包的运行时入口
 
 # 一次性 profile 设置：
-dsh plugin --profile blue add \
+dsh plugin --profile blue-dev add \
   link:/path/to/blue/packages/bundle/blue \
   link:/path/to/blue/packages/core \
   link:/path/to/blue/packages/interaction \
   link:/path/to/blue/packages/transcript \
   link:/path/to/blue/packages/app
 
-dsh --profile blue [task]           # 执行任务，或进入交互模式
-dsh --profile blue --resume <id>    # 恢复一个已持久化的会话
+dsh --profile blue-dev [task]           # 执行任务，或进入交互模式
+dsh --profile blue-dev --resume <id>    # 恢复一个已持久化的会话
 ```
 
 **为什么要 link 五个包**：四个库包是 bundle 的 `workspace:^` 依赖，在 workspace 之外无法解析。`dsh plugin` 原样转发给 pnpm，`link:` 协议把检出本身安装为符号链接；链入的 bundle 再经 profile 自己的 `node_modules` 链接解析它的兄弟包。四个非 bundle 链接是普通依赖——各会有一条 `declares no dsh.bundle` 警告，属预期行为（它们是库，不是装配层）。
 
-::: tip 旧 profile 清理
-若你的 profile 在包改名之前链过（当时包名为 `@dsh-blue/blue*`），那些链接已失效——删除 profile 目录（`~/.dsh/profiles/<name>`）或 `dsh plugin --profile <name> remove` 旧条目后重跑脚本。
+::: tip 三条泳道，别混
+- **`blue`** = 生产 profile,**只走 npm 安装**（`@dsh-blue/blue@rc` / 精确版本号）。永远不要往里 `link:`——后续 npm 升级只会覆盖点名的包，残留的链接悬空后启动即 `ERR_MODULE_NOT_FOUND`（且 `pnpm add` 对混装零告警）。
+- **`blue-dev`** = 本检出（主仓 master）的 link 开发 profile，`script/install-dev.sh` 的默认目标。
+- **`blue-<tag>`** = worktree 验收 profile（`PROFILE=blue-<tag> script/install-dev.sh` 从 worktree 内跑）；分支合并后连同 profile 目录一起删。
+
+若你的 profile 在包改名之前链过（当时包名为 `@dsh-blue/blue*`），或混装过 link 与 npm 包：最省事的修复是把六项一起精确版本重装——`dsh plugin --profile <name> add @dsh-blue/blue@<v> @dsh-blue/blue-core@<v> … @deepseek-ai/dsh-session-title-all-prompts-llm@0.1.1-rc.2`（或干脆删除 profile 目录重来）。
 :::
 
 ## 迭代开发
 
-**改 src → `pnpm run build` → 重跑 `dsh --profile blue`**。链接指向包目录，重建后的 `lib/` 直接生效，无需重装；只有依赖图变化（新增包或改 `dependencies`）才需要再次 `dsh plugin --profile blue add`/`install`。
+**改 src → `pnpm run build` → 重跑 `dsh --profile blue-dev`**。链接指向包目录，重建后的 `lib/` 直接生效，无需重装；只有依赖图变化（新增包或改 `dependencies`）才需要再次 `dsh plugin --profile blue-dev add`/`install`。
 
 无头冒烟检查（经 `script(1)` 伪 TTY）：
 
 ```sh
 (sleep 10; printf '/quit\r'; sleep 3) \
-  | timeout 90 script -qec "dsh --profile blue" /tmp/blue-smoke.typescript
+  | timeout 90 script -qec "dsh --profile blue-dev" /tmp/blue-smoke.typescript
 # 断言：启动时 bracketed-paste 开（\x1b[?2004h）、退出时关（\x1b[?2004l）、退出码 0。
 ```
 

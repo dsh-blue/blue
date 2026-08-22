@@ -29,32 +29,36 @@ The script builds the workspace and link-installs all five packages into the pro
 pnpm install && pnpm run build   # lib/ is the runtime entry of every package
 
 # One-time profile setup:
-dsh plugin --profile blue add \
+dsh plugin --profile blue-dev add \
   link:/path/to/blue/packages/bundle/blue \
   link:/path/to/blue/packages/core \
   link:/path/to/blue/packages/interaction \
   link:/path/to/blue/packages/transcript \
   link:/path/to/blue/packages/app
 
-dsh --profile blue [task]           # run a task, or start interactive
-dsh --profile blue --resume <id>    # resume a persisted session
+dsh --profile blue-dev [task]           # run a task, or start interactive
+dsh --profile blue-dev --resume <id>    # resume a persisted session
 ```
 
 **Why all five links**: the four library packages are the bundle's `workspace:^` dependencies, unresolvable outside this workspace. `dsh plugin` forwards verbatim to pnpm, whose `link:` protocol installs the checkout itself as a symlink; the linked bundle then resolves its siblings through the profile's own `node_modules` links. The four non-bundle links are plain dependencies — expect one `declares no dsh.bundle` warning each; they are libraries, not layers.
 
-::: tip Stale profile cleanup
-If your profile was linked before the package rename (when the packages were named `@dsh-blue/blue*`), those links are stale — delete the profile directory (`~/.dsh/profiles/<name>`) or `dsh plugin --profile <name> remove` the old entries, then re-run the script.
+::: tip Three lanes — never mix them
+- **`blue`** = the production profile, **npm installs only** (`@dsh-blue/blue@rc` / an exact version). Never `link:` into it — a later npm upgrade overwrites only the named packages, the leftover links dangle, and boot dies with `ERR_MODULE_NOT_FOUND` (`pnpm add` does not warn about the mix).
+- **`blue-dev`** = the link-dev profile of this checkout (the script's default target).
+- **`blue-<tag>`** = a worktree acceptance profile (`PROFILE=blue-<tag> script/install-dev.sh` from inside the worktree); delete the profile directory together with the branch when it merges.
+
+If your profile carries links from before the package rename, or ever mixed link and npm packages: the cheapest repair is reinstalling all six by exact version — `dsh plugin --profile <name> add @dsh-blue/blue@<v> @dsh-blue/blue-core@<v> … @deepseek-ai/dsh-session-title-all-prompts-llm@0.1.1-rc.2` (or just delete the profile directory and start over).
 :::
 
 ## Iteration loop
 
-**edit src → `pnpm run build` → re-run `dsh --profile blue`**. The links point at the package directories, so rebuilt `lib/` takes effect with no reinstall; only a dependency-graph change (adding a package or changing `dependencies`) needs another `dsh plugin --profile blue add`/`install`.
+**edit src → `pnpm run build` → re-run `dsh --profile blue-dev`**. The links point at the package directories, so rebuilt `lib/` takes effect with no reinstall; only a dependency-graph change (adding a package or changing `dependencies`) needs another `dsh plugin --profile blue-dev add`/`install`.
 
 Headless smoke check (pseudo-TTY via `script(1)`):
 
 ```sh
 (sleep 10; printf '/quit\r'; sleep 3) \
-  | timeout 90 script -qec "dsh --profile blue" /tmp/blue-smoke.typescript
+  | timeout 90 script -qec "dsh --profile blue-dev" /tmp/blue-smoke.typescript
 # Assert: bracketed-paste on (\x1b[?2004h) at boot, off (\x1b[?2004l) at exit, exit code 0.
 ```
 
