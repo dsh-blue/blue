@@ -72,8 +72,13 @@ jobs:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
       - id: classify
         run: |
+          # Capture the exit code WITHOUT a pipeline: the default shell has
+          # no pipefail, so `node | tee || code=$?` reads tee's 0 and turns
+          # a BUMP_READY (10) into a bogus sync (caught in the first
+          # apply rehearsal — run 32561189281).
           code=0
-          node script/harness-drift.mjs | tee drift-report.txt || code=$?
+          node script/harness-drift.mjs > drift-report.txt || code=$?
+          cat drift-report.txt
           case "$code" in
             0) state=sync ;;
             10) state=bump-ready ;;
