@@ -86,7 +86,7 @@ jobs:
       # checkout is a detached HEAD (pnpm would otherwise refuse); website
       # is private:true and skipped naturally.
       - run: pnpm -r publish --tag rc --no-git-checks --provenance
-      - name: verify (npm view, five packages)
+      - name: verify (npm view, six packages)
         run: |
           V="${GITHUB_REF_NAME#v}"
           # A version can 404 on `npm view` for a few seconds after its
@@ -94,7 +94,7 @@ jobs:
           # core verified instantly, interaction 404'd 2s after publish,
           # and all five were visible a minute later). Retry before
           # declaring the release broken.
-          for p in blue-core blue-interaction blue-transcript blue-app blue; do
+          for p in blue-api blue-core blue-interaction blue-transcript blue-app blue; do
             ok=""
             for attempt in 1 2 3 4 5; do
               GOT=$(npm view "@dsh-blue/$p@$V" version 2>/dev/null || true)
@@ -122,7 +122,7 @@ jobs:
       - name: dist-tag hygiene (latest must not point at the rc line)
         run: |
           V="${GITHUB_REF_NAME#v}"
-          for p in blue-core blue-interaction blue-transcript blue-app blue; do
+          for p in blue-api blue-core blue-interaction blue-transcript blue-app blue; do
             LATEST=$(npm view "@dsh-blue/$p" dist-tags.latest 2>/dev/null || true)
             if [ "$LATEST" = "$V" ]; then
               STABLE=$(npm view "@dsh-blue/$p" versions --json | jq -r '.[]?' | grep -v -- '-' | sort -V | tail -n 1)
