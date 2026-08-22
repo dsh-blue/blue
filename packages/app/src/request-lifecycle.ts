@@ -30,6 +30,16 @@ export function createBlueRequestController(ctx: Context): BlueRequestController
   let requestEpoch = 0
   let active: BlueRequestRef | undefined
   let disposed = false
+  const terminal = new Set<BlueRequestState>(['completed', 'failed', 'aborted', 'interrupted'])
+  const allowed = new Map<BlueRequestState, ReadonlySet<BlueRequestState>>([
+    ['started', new Set(['streaming', 'completed', 'failed', 'aborted', 'interrupted'])],
+    ['streaming', new Set(['completed', 'failed', 'aborted', 'interrupted'])],
+    ['completed', new Set()],
+    ['failed', new Set()],
+    ['aborted', new Set()],
+    ['interrupted', new Set()],
+  ])
+  let state: BlueRequestState | undefined
   const emit = (lifecycle: BlueRequestLifecycle): void => {
     if (!disposed) ctx.emit('blue/request-state-changed', lifecycle)
   }
@@ -43,13 +53,16 @@ export function createBlueRequestController(ctx: Context): BlueRequestController
     begin(scope = 'main') {
       const ref: BlueRequestRef = { sessionEpoch, requestEpoch: ++requestEpoch, scope }
       active = ref
+      state = 'started'
       emit({ ref, state: 'started' })
       return ref
     },
-    transition(ref, state, reason) {
-      if (ref.sessionEpoch !== sessionEpoch || active?.requestEpoch !== ref.requestEpoch) return
-      emit({ ref, state, ...(reason === undefined ? {} : { reason }) })
-      if (state === 'completed' || state === 'failed' || state === 'aborted' || state === 'interrupted') active = undefined
+    transition(ref, nextState, reason) {
+      if (ref.sessionEpoch !== sessionEpoch || active?.requestEpoch !== ref.requestEpoch || state === undefined) return
+      if (!allowed.get(state)?.has(nextState)) return
+      state = nextState
+      emit({ ref, state: nextState, ...(reason === undefined ? {} : { reason }) })
+      if (terminal.has(nextState)) active = undefined
     },
     interrupt(ref = active) {
       if (ref !== undefined) controller.transition(ref, 'interrupted', 'user')
@@ -57,6 +70,7 @@ export function createBlueRequestController(ctx: Context): BlueRequestController
     commitSession() {
       sessionEpoch += 1
       active = undefined
+      state = undefined
       ctx.emit('blue/session-epoch-changed', sessionEpoch)
       return sessionEpoch
     },

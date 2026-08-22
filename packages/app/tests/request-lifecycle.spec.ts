@@ -49,6 +49,18 @@ describe('Blue request lifecycle', () => {
     expect(events.at(-1)).toMatchObject({ state: 'completed', reason: 'done' })
   })
 
+  it('rejects transitions that skip backwards or leave a terminal state', () => {
+    const ctx = new Context()
+    const events: unknown[] = []
+    ctx.on('blue/request-state-changed', event => { events.push(event) })
+    const requests = createBlueRequestController(ctx)
+    const ref = requests.begin()
+    requests.transition(ref, 'completed')
+    requests.transition(ref, 'streaming')
+    expect(events).toHaveLength(2)
+    expect(requests.active()).toBeUndefined()
+  })
+
   it('cleans up emissions when its Cordis fiber is disposed', async () => {
     const ctx = new Context()
     const events: unknown[] = []

@@ -12,7 +12,7 @@ export {
   type BluePluginDefinition,
   type BluePluginManifest,
 } from './manifest.ts'
-export { BluePluginHostService, apply as applyHost, name as hostName } from './host.ts'
+export { BluePluginHostService, apply, apply as applyHost, name, name as hostName } from './host.ts'
 export type { BluePluginHost } from './contracts.ts'
 export type {
   BlueCommandContribution,

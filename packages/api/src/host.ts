@@ -46,7 +46,7 @@ class ScopedRegistry<T extends { readonly id: string }> implements BlueRegistry<
   }
 
   list(): readonly T[] { return Object.freeze([...this.entries.values()]) }
-  dispose(): void { for (const handle of [...this.handles]) handle.dispose() }
+  dispose(): void { for (const handle of this.handles) handle.dispose() }
 }
 
 class BlueRegistrationImpl implements BlueRegistration {
@@ -69,7 +69,7 @@ class ScopedNotifications {
     this.listeners.add(listener)
     return new BlueRegistrationImpl(() => this.listeners.delete(listener))
   }
-  emit(notification: BlueNotification): void { for (const listener of [...this.listeners]) listener(notification) }
+  emit(notification: BlueNotification): void { for (const listener of this.listeners) listener(notification) }
   dispose(): void { this.listeners.clear() }
 }
 
@@ -104,7 +104,7 @@ export class BluePluginHostService extends Service implements BluePluginHost {
     return success(Object.freeze(api))
   }
 
-  dispose(): void { for (const registry of [...this.registries]) registry.dispose(); for (const notifications of this.notifications) notifications.dispose() }
+  dispose(): void { for (const registry of this.registries) registry.dispose(); for (const notifications of this.notifications) notifications.dispose() }
 }
 
 /** Cordis plugin entry for the host service. */
