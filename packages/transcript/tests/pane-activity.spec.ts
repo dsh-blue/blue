@@ -100,18 +100,18 @@ describe('blue-pane-activity', () => {
   it('shows the moon row with a teaching tip for a running agent (waiting)', async () => {
     const agent = runningAgent(fakeAgent([]))
     const { screen, timers, dispose } = await boot(agent)
-    expect(screen.paneLines()).toEqual([`🌑 · Tip: ${FIRST_TIP}`])
+    expect(screen.paneLines()).toEqual([`${MOON_SPINNER_FRAMES[0]!} · Tip: ${FIRST_TIP}`])
     expect(timers.intervals).toEqual([120])
 
     // Each tick advances the frame and requests a redraw.
     const baseline = screen.renderRequests.length
     timers.ticks[0]!()
-    expect(screen.paneLines()).toEqual([`🌒 · Tip: ${FIRST_TIP}`])
+    expect(screen.paneLines()).toEqual([`${MOON_SPINNER_FRAMES[1]!} · Tip: ${FIRST_TIP}`])
     expect(screen.renderRequests.length).toBe(baseline + 1)
 
     // The frame wraps around the moon cycle.
     for (let index = 0; index < MOON_SPINNER_FRAMES.length - 1; index += 1) timers.ticks[0]!()
-    expect(screen.paneLines()).toEqual([`🌑 · Tip: ${FIRST_TIP}`])
+    expect(screen.paneLines()).toEqual([`${MOON_SPINNER_FRAMES[0]!} · Tip: ${FIRST_TIP}`])
 
     // Unloading stops the animation.
     await dispose()
@@ -121,7 +121,7 @@ describe('blue-pane-activity', () => {
   it('shows the kimi working row with a fresh tip while composing', async () => {
     const agent = runningAgent(fakeAgent([]))
     const { ctx, screen, timers, dispose } = await boot(agent)
-    expect(screen.paneLines()).toEqual([`🌑 · Tip: ${FIRST_TIP}`])
+    expect(screen.paneLines()).toEqual([`${MOON_SPINNER_FRAMES[0]!} · Tip: ${FIRST_TIP}`])
     // Composing flips to the braille style at 80 ms; the kind change picks
     // the next rotation slot and the row is the kimi shape: primary frame,
     // plain label, riding tip (the user's second dogfood ruling restored
@@ -138,7 +138,7 @@ describe('blue-pane-activity', () => {
     // the shared frame counter survived the style flip, so the moon picks
     // up where the cycle left off.
     emit2(ctx, agent, toolResultEvent(1, 1, 'c0', 'done'))
-    expect(screen.paneLines()).toEqual([`🌒 ↓2 · Tip: ${buildTipRotation(STATUS_TIPS)[2]!.text}`])
+    expect(screen.paneLines()).toEqual([`${MOON_SPINNER_FRAMES[1]!} ↓2 · Tip: ${buildTipRotation(STATUS_TIPS)[2]!.text}`])
     await dispose()
   })
 
@@ -171,7 +171,7 @@ describe('blue-pane-activity', () => {
     const agent = runningAgent(fakeAgent([]))
     const { ctx, screen, dispose } = await boot(agent)
     // Before any data the moon row carries no counter.
-    expect(screen.paneLines()).toEqual([`🌑 · Tip: ${FIRST_TIP}`])
+    expect(screen.paneLines()).toEqual([`${MOON_SPINNER_FRAMES[0]!} · Tip: ${FIRST_TIP}`])
     // Chunks that carry no text (block starts, tool-call deltas) count
     // nothing.
     emit2(ctx, agent, event('assistant/chunk', {
@@ -184,7 +184,7 @@ describe('blue-pane-activity', () => {
     const finished = assistantEvent(1, 1, [{ type: 'text', text: 'done' }])
     finished.data.usage = { inputTokens: 2000, outputTokens: 5, cacheReadTokens: 1024 }
     emit2(ctx, agent, finished)
-    expect(screen.paneLines()).toEqual([`🌑 ↑3k · Tip: ${FIRST_TIP}`])
+    expect(screen.paneLines()).toEqual([`${MOON_SPINNER_FRAMES[0]!} ↑3k · Tip: ${FIRST_TIP}`])
     // Streamed text and reasoning accumulate as ↓ (chars over the 4-chars
     // per-token heuristic); both counters ride together.
     emit2(ctx, agent, textDelta(1, 2, 'answering'))
@@ -224,7 +224,7 @@ describe('blue-pane-activity', () => {
     const { ctx, screen, dispose } = await boot(agent)
     emit2(ctx, agent, toolCallEvent(1, 1, 'c1', 'bash', '{}'))
     // waiting → tool keeps the moon loading kind, so the tip survives.
-    expect(screen.paneLines()).toEqual([`🌑 · Tip: ${FIRST_TIP}`])
+    expect(screen.paneLines()).toEqual([`${MOON_SPINNER_FRAMES[0]!} · Tip: ${FIRST_TIP}`])
     await dispose()
   })
 
@@ -232,21 +232,21 @@ describe('blue-pane-activity', () => {
     const agent = runningAgent(fakeAgent([]))
     const { ctx, screen, dispose } = await boot(agent)
     emit2(ctx, agent, reasoningDelta(1, 1, ' '))
-    expect(screen.paneLines()).toEqual([`🌑 · Tip: ${FIRST_TIP}`])
+    expect(screen.paneLines()).toEqual([`${MOON_SPINNER_FRAMES[0]!} · Tip: ${FIRST_TIP}`])
     await dispose()
   })
 
   it('hides while a dialog panel occupies the editor slot', async () => {
     const agent = runningAgent(fakeAgent([]))
     const { ctx, screen, timers, dispose } = await boot(agent)
-    expect(screen.paneLines()).toEqual([`🌑 · Tip: ${FIRST_TIP}`])
+    expect(screen.paneLines()).toEqual([`${MOON_SPINNER_FRAMES[0]!} · Tip: ${FIRST_TIP}`])
     ctx.emit('blue/editor-slot-swapped', true)
     expect(screen.paneLines()).toEqual([])
     expect(timers.cleared).toBe(1)
     // Returning re-enters the moon loading kind: a fresh tip from the next
     // rotation slot.
     ctx.emit('blue/editor-slot-swapped', false)
-    expect(screen.paneLines()).toEqual([`🌑 · Tip: ${buildTipRotation(STATUS_TIPS)[1]!.text}`])
+    expect(screen.paneLines()).toEqual([`${MOON_SPINNER_FRAMES[0]!} · Tip: ${buildTipRotation(STATUS_TIPS)[1]!.text}`])
     expect(timers.intervals).toEqual([120, 120])
     await dispose()
   })
@@ -259,7 +259,7 @@ describe('blue-pane-activity', () => {
 
     agent.status = 'running'
     ctx.emit('agent/status', { agent: asAgent(agent), status: 'running' })
-    expect(screen.paneLines()).toEqual([`🌑 · Tip: ${FIRST_TIP}`])
+    expect(screen.paneLines()).toEqual([`${MOON_SPINNER_FRAMES[0]!} · Tip: ${FIRST_TIP}`])
     emit2(ctx, agent, turnEnd(1))
     expect(screen.paneLines()).toEqual([''])
 
@@ -270,7 +270,7 @@ describe('blue-pane-activity', () => {
     expect(screen.paneLines()).toEqual([''])
     agent.status = 'running'
     ctx.emit('agent/status', { agent: asAgent(agent), status: 'running' })
-    expect(screen.paneLines()).toEqual([`🌑 · Tip: ${buildTipRotation(STATUS_TIPS)[1]!.text}`])
+    expect(screen.paneLines()).toEqual([`${MOON_SPINNER_FRAMES[0]!} · Tip: ${buildTipRotation(STATUS_TIPS)[1]!.text}`])
     await dispose()
     expect(timers.cleared).toBe(2)
   })
@@ -287,7 +287,7 @@ describe('blue-pane-activity', () => {
     ctx.emit('agent/status', { agent: asAgent(agent), status: 'running' })
     const foreign = fakeAgent([])
     ctx.emit('session/event', foreign.session, textDelta(1, 1, 'x'))
-    expect(screen.paneLines()).toEqual([`🌑 · Tip: ${FIRST_TIP}`])
+    expect(screen.paneLines()).toEqual([`${MOON_SPINNER_FRAMES[0]!} · Tip: ${FIRST_TIP}`])
     await dispose()
   })
 
@@ -306,13 +306,13 @@ describe('blue-pane-activity', () => {
     const agent = runningAgent(fakeAgent([]))
     const { screen, dispose } = await boot(agent)
     const pane = screen.bottomChildren[0]!
-    const full = `🌑 · Tip: ${FIRST_TIP}`
+    const full = `${MOON_SPINNER_FRAMES[0]!} · Tip: ${FIRST_TIP}`
     // The width measure is pi-tui's (D48): the moon glyph spans two cells,
     // so the row's visible width is the moon + the lead + the tip.
-    const visible = visibleWidth('🌑') + ' · Tip: '.length + FIRST_TIP.length
+    const visible = visibleWidth(MOON_SPINNER_FRAMES[0]!) + ' · Tip: '.length + FIRST_TIP.length
     expect(unwrapped(pane, visible)).toEqual([full])
     // One column short drops the tip but keeps the moon.
-    expect(unwrapped(pane, visible - 1)).toEqual(['🌑'])
+    expect(unwrapped(pane, visible - 1)).toEqual([MOON_SPINNER_FRAMES[0]!])
     // With no room for the frame itself there is no row.
     expect(unwrapped(pane, 0)).toEqual([])
     pane.invalidate()

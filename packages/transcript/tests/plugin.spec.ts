@@ -305,7 +305,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     // shell's full-width rows do too (the wrapper squeezes the child to
     // `width - 2`, the squeeze being the right margin).
     const rawContent = screen.children.flatMap(component => component.render(80))
-    expect(rawContent).toEqual([' ', ' \x1b[1m✨ \x1b[22m\x1b[1mhi\x1b[22m', ' ', ' ● answer'])
+    expect(rawContent).toEqual([' ', ' \x1b[1m» \x1b[22m\x1b[1mhi\x1b[22m', ' ', ' ● answer'])
     const rawFooter = screen.bottomChildren.flatMap(component => component.render(80))
     expect(rawFooter).toEqual([` deepseek-chat${' '.repeat(65)}`])
   })
@@ -319,7 +319,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     ctx.emit('blue/session-changed', asAgent(agent))
     expect(screen.children).toHaveLength(2)
     expect(footerLines(screen)).toEqual([`deepseek-chat${' '.repeat(65)}`])
-    expect(contentLines(screen)).toEqual(['', '\x1b[1m✨ \x1b[22m\x1b[1mhi\x1b[22m', '', '● answer'])
+    expect(contentLines(screen)).toEqual(['', '\x1b[1m» \x1b[22m\x1b[1mhi\x1b[22m', '', '● answer'])
     expect(screen.renderRequests).toContain(true)
     expect(blueSession.current).toBeNull()
   })
@@ -328,7 +328,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     resetSeq()
     const { screen } = await bootTranscript(fakeAgent([userEvent('remember me')]))
     expect(screen.children).toHaveLength(1)
-    expect(contentLines(screen)).toEqual(['', '\x1b[1m✨ \x1b[22m\x1b[1mremember me\x1b[22m'])
+    expect(contentLines(screen)).toEqual(['', '\x1b[1m» \x1b[22m\x1b[1mremember me\x1b[22m'])
     expect(footerLines(screen)[0]).toContain('deepseek-chat')
   })
 
@@ -454,12 +454,12 @@ describe('blue-transcript plugin through the real Loader', () => {
     resetSeq()
     const { ctx, screen } = await bootTranscript()
     ctx.emit('blue/session-changed', asAgent(fakeAgent([userEvent('first')])))
-    expect(contentLines(screen)).toEqual(['', '\x1b[1m✨ \x1b[22m\x1b[1mfirst\x1b[22m'])
+    expect(contentLines(screen)).toEqual(['', '\x1b[1m» \x1b[22m\x1b[1mfirst\x1b[22m'])
 
     resetSeq()
     ctx.emit('blue/session-changed', asAgent(fakeAgent([userEvent('second')])))
     expect(screen.children).toHaveLength(1)
-    expect(contentLines(screen)).toEqual(['', '\x1b[1m✨ \x1b[22m\x1b[1msecond\x1b[22m'])
+    expect(contentLines(screen)).toEqual(['', '\x1b[1m» \x1b[22m\x1b[1msecond\x1b[22m'])
 
     // The old session's listener went away with its components.
     const staleAgent = fakeAgent([])
@@ -850,10 +850,10 @@ describe('blue-transcript plugin through the real Loader', () => {
     // First render kicks the load; the settle nudges requestRender and the
     // loaded image's fake rows replace the placeholder.
     const before = contentLines(screen)
-    expect(before).toContain('   [image]')
+    expect(before).toContain('  [image]')
     await new Promise(resolve => setTimeout(resolve, 10))
     expect(renderRequests.length).toBeGreaterThan(0)
-    expect(contentLines(screen)).toContain('   <image 3B>')
+    expect(contentLines(screen)).toContain('  <image 3B>')
     disposers.length = 0
     await ctx.fiber.dispose()
   })
@@ -872,9 +872,9 @@ describe('blue-transcript plugin through the real Loader', () => {
     // One placeholder from the message text plus one from the failed load.
     expect(contentLines(screen)).toEqual([
       '',
-      '\x1b[1m✨ \x1b[22m\x1b[1mpic\x1b[22m',
-      '   \x1b[1m[image]\x1b[22m',
-      '   [image]',
+      '\x1b[1m» \x1b[22m\x1b[1mpic\x1b[22m',
+      '  \x1b[1m[image]\x1b[22m',
+      '  [image]',
     ])
     disposers.length = 0
     await ctx.fiber.dispose()
@@ -887,8 +887,8 @@ describe('blue-transcript plugin through the real Loader', () => {
     ])))
     expect(contentLines(screen)).toEqual([
       '',
-      '\x1b[1m✨ \x1b[22m\x1b[1mpic\x1b[22m',
-      '   \x1b[1m[image]\x1b[22m',
+      '\x1b[1m» \x1b[22m\x1b[1mpic\x1b[22m',
+      '  \x1b[1m[image]\x1b[22m',
     ])
     disposers.length = 0
     await ctx.fiber.dispose()

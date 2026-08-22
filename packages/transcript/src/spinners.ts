@@ -16,8 +16,13 @@ export const BRAILLE_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴',
 /** Braille frame advance interval in milliseconds. */
 export const BRAILLE_SPINNER_INTERVAL_MS = 80
 
-/** The moon frame cycle; every glyph is two terminal cells wide. */
-export const MOON_SPINNER_FRAMES = ['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘'] as const
+/**
+ * The moon-pane frame cycle — the DeepSeek deep-sea ripple: a wave that
+ * slides left-to-right across the two-cell slot. Every frame spans two
+ * terminal cells (the row layout's width budget for the spinner), so each
+ * entry carries a trailing space where its glyph is a single cell.
+ */
+export const MOON_SPINNER_FRAMES = ['··', '·≈', '≈≈', '≈·', '··', '·≈', '≈≈', '≈·'] as const
 
 /** Moon frame advance interval in milliseconds. */
 export const MOON_SPINNER_INTERVAL_MS = 120
