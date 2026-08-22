@@ -3,6 +3,8 @@
 > 姊妹文档：[blue-roadmap.md](./blue-roadmap.md)（分阶段路线图）、[blue-mvp-plan.md](./history/blue-mvp-plan.md)（MVP 实施计划）、[blue-p1-design.md](./history/blue-p1-design.md)（P1 层职责定稿与缝清单）
 > 本文档是 Blue 的架构蓝图：可行性结论、分层设计、核心契约、稳定性机制。代码现状以仓库 `AGENTS.md` 为准。
 
+> **目标架构说明（2026-08）**：跨 renderer 的新目标架构、Domain/Interaction/Renderer/Composition 分层、session runtime 和 provider 热插拔以 [blue-frontend-architecture.md](./blue-frontend-architecture.md) 及其姊妹文档为准。本文保留已落地 Blue TUI 的历史分层和当前实现参考，不代表重构后的最终包边界。
+
 ## 1. 背景与可行性结论
 
 Blue 是 deepseek-harness（`dsh`）的交互式终端 UI，基于 `@earendil-works/pi-tui` 渲染，按 harness 的 Cordis 插件哲学组织。可行性的三条事实依据：
