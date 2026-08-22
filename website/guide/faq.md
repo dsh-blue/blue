@@ -1,8 +1,8 @@
 # 常见问题
 
-## 为什么不能 `npm install @dsh-blue/blue`？
+## 为什么裸 `npm install @dsh-blue/blue` 装不到？
 
-Blue 处于预览阶段，尚未发布到 npm。当前唯一支持的安装方式是从源码检出进行本地开发安装，见[快速上手](/guide/)。`v0.1.0-rc.1` 将是首个发布版本，发布后本站会更新安装说明。
+预览版只发布在 **`rc` dist-tag** 下（`latest` 留给稳定线），而裸安装解析 `latest`、什么都找不到——请用 `dsh --profile blue plugin add @dsh-blue/blue@rc`，见[快速上手](/guide/)。`v0.1.0-rc.1` 是首个发布版本；从源码检出的本地开发安装（贡献者路径）在快速上手同一页。
 
 ## 粘贴图片没有反应？
 

@@ -1,7 +1,7 @@
 # 快速上手
 
 ::: info 预览阶段说明
-Blue 尚未发布到 npm（`v0.1.0-rc.1` 将是首个发布版本）。当前唯一支持的安装方式是**从源码检出进行本地开发安装**——本页描述的即是这条路径。npm 安装段落将在预览版发布后补充于此。
+`v0.1.0-rc.1` 已发布在 npm 的 **`rc` dist-tag** 下（`latest` 留给稳定线，安装 spec 需带 `@rc` 后缀）。npm 安装是首选路径，见下一节；从源码检出的本地开发安装面向贡献者，在本页后半。
 :::
 
 ## 前置条件
@@ -10,9 +10,20 @@ Blue 尚未发布到 npm（`v0.1.0-rc.1` 将是首个发布版本）。当前唯
 | --- | --- |
 | Node | `^22.19.0 \|\| >=24.0.0` |
 | pnpm | 11 |
-| dsh CLI | `>=0.1.0-rc.7`（`npm i -g @deepseek-ai/dsh`） |
+| dsh CLI | `>=0.1.1-rc.2`（`npm i -g @deepseek-ai/dsh`） |
 
-## 一键安装
+## npm 安装（预览版）
+
+```sh
+dsh --profile blue plugin add @dsh-blue/blue@rc
+dsh --profile blue            # 交互模式
+dsh --profile blue [task]     # 直接执行任务
+```
+
+- `@rc` 后缀是必须的：预览版只打 `rc` dist-tag，裸 spec 解析 `latest`、什么都找不到。
+- 升级到更新的预览版：重跑同一条 `plugin add`——`@rc` spec 会重新解析到最新版。
+
+## 本地开发安装——一键
 
 ```sh
 script/install-dev.sh

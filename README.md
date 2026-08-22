@@ -31,11 +31,21 @@ This repository is the standalone home of Blue's five workspace packages under t
 ## Quick start
 
 > [!NOTE]
-> Blue is not published to npm. The only supported install today is a local development install against a checkout of this repository.
+> `0.1.0-rc.1` is the preview release, published under the **`rc` dist-tag** — `latest` stays reserved for the stable line, so install specs carry the `@rc` suffix.
 
 Prerequisites: Node `^22.19 || >=24`, pnpm 11, and a `dsh` CLI ≥ `0.1.1-rc.2` (`npm i -g @deepseek-ai/dsh`).
 
-### One-shot
+### Install from npm
+
+```sh
+dsh --profile blue plugin add @dsh-blue/blue@rc
+dsh --profile blue [task]           # run a task, or start interactive
+dsh --profile blue --resume <id>    # resume a persisted session
+```
+
+The `@rc` suffix is required: preview releases only carry the `rc` dist-tag, so a bare spec — which resolves `latest` — finds nothing. Upgrading to a newer preview is the same `plugin add` again; the spec re-resolves.
+
+### Local development install — one-shot
 
 ```sh
 script/install-dev.sh
