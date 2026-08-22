@@ -20,6 +20,7 @@
 | [blue-compatibility-and-rollout.md](./blue-compatibility-and-rollout.md) | 主分支演进、Harness 兼容窗口、新旧实现共存与迁移门禁 |
 | [blue-fixture-audit.md](./blue-fixture-audit.md) | dsh-remote、dsh-context、dsh-openpencil、dsh-lark 的迁移审计与验证计划 |
 | [blue-skills-plan.md](./blue-skills-plan.md) | 插件开发与迁移 skills 的输入、诊断输出和实施顺序 |
+| [blue-implementation-plan.md](./blue-implementation-plan.md) | p2/frontend-runtime 的阶段实施、迁移顺序、主线同步与合并门禁 |
 
 图源约定：架构分层与 bundle 组合两张 mermaid 图的单一来源在 [diagrams/](./diagrams/)（`.mmd`）；README（中英）与 blue-architecture.md 中的嵌入块由 `pnpm run diagrams:sync` 生成，CI 以 `pnpm run diagrams:check` 把关一致性——改图请改 `.mmd` 源，不要手改嵌入块。
 
