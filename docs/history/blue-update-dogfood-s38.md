@@ -25,3 +25,17 @@
 - 冒烟 B 的 marker 在真实 dsh 默认模型串下工作（blue-s38 TUI 内验证过 statusline 形态）；无 marker 的降级路径经演练 A 验证。
 - pnpm 非 TTY 子进程 purge 提示：演练 A/B 的 `dsh plugin add` 子进程在 pipe 下正常完成，未见提示问题。
 - PTY 驱动注意项：输入须分段发送（整块写入疑似撞上输入层的 paste-burst 处理）；`| tail` 会吞流式输出。
+
+
+## 发版后真机矩阵（rc.3/rc.4，2026-08-23 续）
+
+| 场景 | 结果 |
+|---|---|
+| rc.3 会话启动检查 | ✅ 真通知 "Blue v0.1.0-rc.4 is available"（真 registry、真 24h 缓存） |
+| bare `/update`（rc.3/rc.4 会话） | ✅ up-to-date 只读回答，未触 profile |
+| `/update 0.1.0-rc.3`（38min 新鲜） | ✅ 冷却期门拦截：面板 ETA `until 2026-08-23 21:59 UTC`，nothing was changed |
+| `/update 0.1.0-rc.2`（410min） | ✅ 同上（窗内拒动）；profile 级 `minimumReleaseAge: 0` 关窗后放行 |
+| 降级 rc.4→rc.2（关窗） | ✅ 安全链：单事务后兄弟滞留 rc.4 → 装后校验抓混树 → 自动整组回滚 rc.4 → 复冒烟 ✓ |
+| 成功路径 `/update 0.1.0-rc.4`（关窗 no-op） | ✅ 12s 全程：confirm y → 装幂等 → 真冒烟 → "restart dsh to apply" |
+
+另：rc.3 的 target-exists 误判（npm-view 裸键）即由本矩阵第 2 轮真机抓出 → rc.4 修复（`Object.hasOwn`）+ 回归 fixture。
