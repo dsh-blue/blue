@@ -10,6 +10,12 @@ name: npm-smoke
 
 on:
   workflow_dispatch: {}
+  # Self-bootstrap: a dispatch-only workflow isn't dispatchable until it has
+  # run once, and it can't run until registered. This branch-scoped push
+  # trigger makes the very push of this file the first run; afterwards
+  # workflow_dispatch works for reruns.
+  push:
+    branches: [test/npm-smoke]
 
 permissions:
   contents: read
