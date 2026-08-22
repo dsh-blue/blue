@@ -15,6 +15,7 @@
 ## npm 安装（预览版）
 
 ```sh
+npm i -g @deepseek-ai/dsh
 dsh --profile blue plugin add @dsh-blue/blue@rc
 ```
 

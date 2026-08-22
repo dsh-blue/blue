@@ -38,6 +38,7 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 ### npm 安装
 
 ```sh
+npm i -g @deepseek-ai/dsh
 dsh --profile blue plugin add @dsh-blue/blue@rc
 ```
 

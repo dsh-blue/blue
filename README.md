@@ -38,6 +38,7 @@ Prerequisites: Node `^22.19 || >=24`, pnpm 11, and a `dsh` CLI ≥ `0.1.1-rc.2` 
 ### Install from npm
 
 ```sh
+npm i -g @deepseek-ai/dsh
 dsh --profile blue plugin add @dsh-blue/blue@rc
 ```
 

@@ -15,6 +15,7 @@
 ## Install from npm (preview)
 
 ```sh
+npm i -g @deepseek-ai/dsh
 dsh --profile blue plugin add @dsh-blue/blue@rc
 ```
 
