@@ -1,7 +1,7 @@
 # 快速上手
 
 ::: info 预览阶段说明
-`v0.1.0-rc.1` 已发布在 npm 的 **`rc` dist-tag** 下（`latest` 留给稳定线，安装 spec 需带 `@rc` 后缀）。npm 安装是首选路径，见下一节；从源码检出的本地开发安装面向贡献者，在本页后半。
+`v0.1.0-rc.1` 已发布在 npm 的 **`rc` dist-tag** 下（`latest` 留给稳定线，安装 spec 需带 `@rc` 后缀）。本页是用户安装路径；贡献者的本地开发安装（源码检出、link 安装、迭代环）在开发手册的[贡献本仓库](/plugins/contributing)页。
 :::
 
 ## 前置条件
@@ -22,38 +22,6 @@ dsh --profile blue [task]     # 直接执行任务
 
 - `@rc` 后缀是必须的：预览版只打 `rc` dist-tag，裸 spec 解析 `latest`、什么都找不到。
 - 升级到更新的预览版：重跑同一条 `plugin add`——`@rc` spec 会重新解析到最新版。
-
-## 本地开发安装——一键
-
-```sh
-script/install-dev.sh
-# 覆盖项：DSH_BIN=/path/to/dsh PROFILE=my-profile DSH_HOME=/custom/home script/install-dev.sh
-```
-
-脚本会构建整个 workspace，并把五个包 link 安装进 dsh profile。
-
-## 手动安装（等价步骤）
-
-```sh
-pnpm install && pnpm run build   # lib/ 是每个包的运行时入口
-
-# 一次性 profile 设置：
-dsh plugin --profile blue add \
-  link:/path/to/blue/packages/bundle/blue \
-  link:/path/to/blue/packages/core \
-  link:/path/to/blue/packages/interaction \
-  link:/path/to/blue/packages/transcript \
-  link:/path/to/blue/packages/app
-
-dsh --profile blue [task]           # 执行任务，或进入交互模式
-dsh --profile blue --resume <id>    # 恢复一个已持久化的会话
-```
-
-**为什么要 link 五个包**：四个库包是 bundle 的 `workspace:^` 依赖，在 workspace 之外无法解析。`dsh plugin` 原样转发给 pnpm，`link:` 协议把检出本身安装为符号链接；链入的 bundle 再经 profile 自己的 `node_modules` 链接解析它的兄弟包。四个非 bundle 链接是普通依赖——各会有一条 `declares no dsh.bundle` 警告，属预期行为（它们是库，不是装配层）。
-
-::: tip 旧 profile 清理
-若你的 profile 在包改名之前链过（当时包名为 `@dsh-blue/blue*`），那些链接已失效——删除 profile 目录（`~/.dsh/profiles/<name>`）或 `dsh plugin --profile <name> remove` 旧条目后重跑脚本。
-:::
 
 ## 开跑前配一个 key
 
@@ -77,15 +45,3 @@ dsh --profile blue 修复登录页的空指针    # 直接执行任务
 - 输入 `/` 查看斜杠命令补全，`/help` 打开命令与键位总览；
 - 随手问点什么，观察流式回复与工具卡片；
 - `/theme light` 感受主题热切换（输入草稿不会丢）。
-
-## 迭代开发
-
-**改 src → `pnpm run build` → 重跑 `dsh --profile blue`**。链接指向包目录，重建后的 `lib/` 直接生效，无需重装；只有依赖图变化（新增包或改 `dependencies`）才需要再次 `dsh plugin --profile blue add`/`install`。
-
-无头冒烟检查（经 `script(1)` 伪 TTY）：
-
-```sh
-(sleep 10; printf '/quit\r'; sleep 3) \
-  | timeout 90 script -qec "dsh --profile blue" /tmp/blue-smoke.typescript
-# 断言：启动时 bracketed-paste 开（\x1b[?2004h）、退出时关（\x1b[?2004l）、退出码 0。
-```
