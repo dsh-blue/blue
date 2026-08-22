@@ -1,0 +1,89 @@
+# R3 (release roadmap): tag-driven npm publish. CI-only publishing (D50):
+# no release ever happens from a laptop — a vX.Y.Z-* tag on a master commit
+# is the release authority, and the granular NPM_TOKEN is the only credential
+# involved. The guard refuses tags that disagree with the manifest set (the
+# same number version.spec lockstep-checks across the six manifests, read
+# here without vitest so a mistyped tag dies in one second, not after the
+# gates), and the full gate re-runs before publish so a tag can never ship
+# what ci.yml wouldn't pass on the commit itself.
+#
+# Dist-tag is `rc` (D50): latest stays reserved for the stable line, so the
+# documented install spec must carry the tag suffix (@dsh-blue/blue@rc).
+# --provenance links each tarball to this build (public repo, pnpm ≥8.4);
+# it needs the id-token permission below.
+#
+# Partial-failure note: pnpm -r publish walks topologically
+# (core→interaction→transcript→app→bundle) and does NOT skip versions that
+# already exist — if a run dies mid-sequence, the verify step shows what
+# landed; rerun publishes only the missing tail by hand-editing this note's
+# recovery: re-run with `pnpm --filter <missing-pkg> publish ...` semantics
+# in a dispatch job, never by republishing the whole set.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write # npm provenance attestation
+
+env:
+  PRIMARY_NODE_VERSION: '24'
+
+jobs:
+  publish:
+    name: gate + publish (dist-tag rc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+      # Tag ↔ manifest guard, before any install: the tag IS the release
+      # version. version.spec holds the six-manifest lockstep; this reads
+      # the number it guards (core's manifest) without dependencies, and
+      # test:coverage below fails the run if the other five disagree.
+      - name: guard (tag == manifest version, tag on master)
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          MANIFEST=$(node -p "require('./packages/core/package.json').version")
+          if [ "$TAG" != "$MANIFEST" ]; then
+            echo "release: tag v$TAG != manifest $MANIFEST — bump the six manifests + BLUE_VERSION, or fix the tag" >&2
+            exit 1
+          fi
+          git fetch origin master
+          if ! git merge-base --is-ancestor HEAD origin/master; then
+            echo "release: tag commit is not on master — releases cut from master only" >&2
+            exit 1
+          fi
+      - run: pnpm install --frozen-lockfile
+      # The gate mirrors ci.yml exactly (fast checks first, lib/export
+      # integrity before the test minute). The real-process smoke stays in
+      # ci.yml: the tagged commit is a master commit that already passed it.
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm diagrams:check
+      - run: pnpm build
+      - run: pnpm check:lib
+      - run: pnpm test:coverage
+      # Explicit .npmrc rather than NODE_AUTH_TOKEN: pnpm publish reads
+      # npmrc config, and the written line is deterministic across pnpm
+      # versions. The token is org-scoped granular (D50), never a classic.
+      - name: npm auth (NPM_TOKEN granular)
+        run: printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" >> ~/.npmrc
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Topological order is pnpm's default; --no-git-checks because a tag
+      # checkout is a detached HEAD (pnpm would otherwise refuse); website
+      # is private:true and skipped naturally.
+      - run: pnpm -r publish --tag rc --no-git-checks --provenance
+      - name: verify (npm view, five packages)
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          for p in blue-core blue-interaction blue-transcript blue-app blue; do
+            echo -n "@dsh-blue/$p@$V → "
+            npm view "@dsh-blue/$p@$V" version
+          done
