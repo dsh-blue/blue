@@ -36,7 +36,13 @@ jobs:
     name: gate + publish (dist-tag rc)
     runs-on: ubuntu-latest
     steps:
+      # Full history: the master-ancestor guard below runs merge-base over
+      # the fetched refs, and a depth-1 checkout carries neither remote
+      # tracking refs nor the parent chain — the guard would false-fail
+      # (or resolve wrongly) on the one commit it must never misjudge.
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
