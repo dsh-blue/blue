@@ -1,9 +1,8 @@
 /**
  * `blue-banner` plugin: the welcome banner, mounted once at boot as the
- * scroll area's first child — the kimi-code-style single column: the logo
- * beside the welcome and `/help` lines, then the Directory/Model/Version
- * label rows, all inside one full-viewport box. Below
- * {@link BANNER_MIN_WIDTH} the banner renders nothing.
+ * scroll area's first child — a frameless horizontal block: the DeepSeek
+ * whale logo on the left, the welcome/help/status lines on the right, no
+ * box frame. Below {@link BANNER_MIN_WIDTH} the banner renders nothing.
  *
  * The banner is a boot snapshot except the model line: it reads
  * `blueSession.modelRef.current` (never `inject` — resolved lazily, so the
@@ -15,9 +14,9 @@
  * across initial mounts and `/theme` reloads.
  *
  * Every over-wide run truncates; nothing ever wraps. Styling uses only
- * frozen theme tokens — the frame, the logo, and the welcome line share
- * `primary`, the kimi welcome-box treatment, so the banner reads as one
- * blue unit.
+ * frozen theme tokens — the logo and the welcome line share `primary`, the
+ * labels stay muted and the model value accent, so the banner reads as one
+ * brand-blue unit.
  *
  * @module @dsh-blue/blue-transcript/banner
  */
@@ -37,7 +36,7 @@ import type {} from '@deepseek-ai/dsh-agent-default-model'
 // the `'blue/session-changed'`/`'blue/model-changed'` Events merges the
 // model-line tracking consumes.
 import type {} from '@dsh-blue/blue-app'
-import { LOGO_ART } from './banner-art.ts'
+import { LOGO_ART, LOGO_GRADIENT, LOGO_ROWS } from './banner-art.ts'
 import { BLUE_VERSION } from './banner-content.ts'
 
 /** Stable Cordis plugin name. */
@@ -49,13 +48,7 @@ export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'agentDefaul
 /** Below this viewport width the banner renders zero rows rather than overflow. */
 export const BANNER_MIN_WIDTH = 40
 
-/** The two `│` frame columns every row spends; also the rules'. */
-const BANNER_FRAME_COLUMNS = 2
-
-/** Blank columns between each `│` and the content — the box's inner inset. */
-const BANNER_INNER_PAD = 2
-
-/** Columns between the logo and the header text beside it. */
+/** Blank columns between the logo block and the right-hand status column. */
 const LOGO_TEXT_GAP = 2
 
 /** The info rows' labels, hand-aligned to {@link LABEL_WIDTH} columns. */
@@ -68,25 +61,24 @@ const LABEL_WIDTH = 11
 
 /** One width computation for a banner render. */
 export interface BannerLayout {
-  /** The exact box width — the full viewport width; every line is this many columns. */
+  /** The viewport width budget; every line stays within this many columns. */
   readonly total: number
-  /** The content cell's width: what the frame columns and the inner inset leave. */
-  readonly innerWidth: number
+  /** The width each status value may use, after the logo and its labels. */
+  readonly valueWidth: number
 }
 
 /**
  * The banner's width plan for a viewport: `null` below
- * {@link BANNER_MIN_WIDTH}; otherwise a full-width box with one content
- * cell.
+ * {@link BANNER_MIN_WIDTH}; otherwise the frameless horizontal budget. The
+ * logo block and its gap are fixed furniture; the value column gets the rest.
  * @param width - current viewport width in columns.
  * @returns the layout, or `null` when the banner renders nothing.
  */
 export function bannerLayout(width: number): BannerLayout | null {
   if (width < BANNER_MIN_WIDTH) return null
-  return {
-    total: width,
-    innerWidth: width - BANNER_FRAME_COLUMNS - BANNER_INNER_PAD,
-  }
+  const logoWidth = Math.max(...LOGO_ART.map(art => art.length))
+  const valueWidth = Math.max(0, width - logoWidth - LOGO_TEXT_GAP - LABEL_WIDTH)
+  return { total: width, valueWidth }
 }
 
 /**
@@ -116,7 +108,10 @@ export interface BannerContent {
 }
 
 /** The theme tokens the banner paints with, keyed by segment role. */
-type BannerStyle = 'frame' | 'strong' | 'logo' | 'accent' | 'muted' | 'text'
+type BannerStyle = 'logo' | 'strong' | 'accent' | 'muted' | 'text' | 'highlight'
+
+/** The model row's brand-light-blue highlight (theme-independent, like the logo). */
+const MODEL_HIGHLIGHT = '#8ca8ff'
 
 /** One styled run of a rendered banner line. */
 interface BannerSegment {
@@ -134,12 +129,19 @@ export interface BannerDeps {
   readonly visibleWidth: (text: string) => number
 }
 
+/** The right-hand status lines, one per banner row. */
+interface StatusLine {
+  readonly text: string
+  readonly style: BannerStyle
+}
+
 /**
  * Compose the banner's lines for one viewport width — the pure layout core
  * the component delegates to. Identity color functions (the spec fakes)
- * yield plain, measurable text. The single column stacks the logo-headed
- * welcome lines above the three label rows; nothing ever wraps — over-wide
- * header and value runs truncate first.
+ * yield plain, measurable text. The frameless horizontal block stacks the
+ * whale logo rows down the left and centers the status column beside them;
+ * nothing ever wraps — an over-wide status value or welcome line truncates
+ * first.
  * @param deps - colors plus the truncate/measure primitives.
  * @param content - the snapshotted banner facts.
  * @param width - current viewport width in columns.
@@ -152,68 +154,65 @@ export function composeBannerLines(
 ): string[] {
   const layout = bannerLayout(width)
   if (layout === null) return []
-  const { total, innerWidth } = layout
+  const { valueWidth } = layout
   const paint: Record<BannerStyle, (text: string) => string> = {
-    // kimi parity for the welcome box: the whole frame, the logo, and the
-    // welcome line are the brand's interactive blue (`primary`), with only
-    // the labels staying gray — the boot screen's one big color moment.
-    frame: deps.colors.primary,
-    strong: deps.colors.primary,
     logo: deps.colors.primary,
+    strong: deps.colors.primary,
     accent: deps.colors.accent,
     muted: deps.colors.muted,
     text: deps.colors.text,
+    highlight: text => gradientWrap(MODEL_HIGHLIGHT, text),
   }
   const line = (segments: readonly BannerSegment[]): string =>
     segments.map(segment => paint[segment.style](segment.text)).join('')
-  const logoWidth = Math.max(...LOGO_ART.map(art => deps.visibleWidth(art)))
 
-  const rule = (left: string, right: string): string =>
-    line([{ text: `${left}${'─'.repeat(total - BANNER_FRAME_COLUMNS)}${right}`, style: 'frame' }])
-  const blankRow = (): string =>
-    line([{ text: `│${' '.repeat(total - BANNER_FRAME_COLUMNS)}│`, style: 'frame' }])
-
-  // A header row: the logo padded level with its widest row, the gap, then
-  // the text truncated to the remaining budget.
-  const headerRow = (logo: string, text: string, style: BannerStyle): string => {
-    const budget = innerWidth - logoWidth - LOGO_TEXT_GAP
-    const fit = deps.truncate(text, budget)
-    const pad = budget - deps.visibleWidth(fit)
-    return line([
-      { text: '│', style: 'frame' },
-      { text: ' '.repeat(BANNER_INNER_PAD), style: 'frame' },
-      { text: logo + ' '.repeat(logoWidth - deps.visibleWidth(logo)), style: 'logo' },
-      { text: `${' '.repeat(LOGO_TEXT_GAP)}${fit}${' '.repeat(pad)}`, style },
-      { text: '│', style: 'frame' },
-    ])
+  // The logo's brand-blue gradient, one hex per row, applied directly (the
+  // mark is brand identity — the same sweep in every theme). The gap after
+  // the whale stays the frame's neutral tint.
+  const gradientWrap = (hex: string, text: string): string => {
+    const r = parseInt(hex.slice(1, 3), 16)
+    const g = parseInt(hex.slice(3, 5), 16)
+    const b = parseInt(hex.slice(5, 7), 16)
+    return `\x1b[38;2;${r};${g};${b}m${text}\x1b[39m`
   }
 
-  // An info row: the aligned label, then the value truncated to the rest.
-  const infoRow = (label: string, value: string, style: BannerStyle): string => {
-    const budget = innerWidth - LABEL_WIDTH
-    const fit = deps.truncate(value, budget)
-    const pad = budget - deps.visibleWidth(fit)
-    return line([
-      { text: '│', style: 'frame' },
-      { text: ' '.repeat(BANNER_INNER_PAD), style: 'frame' },
-      { text: label, style: 'muted' },
-      { text: `${fit}${' '.repeat(pad)}`, style },
-      { text: '│', style: 'frame' },
-    ])
-  }
-
-  return [
-    rule('╭', '╮'),
-    blankRow(),
-    headerRow(LOGO_ART[0], 'Welcome to Blue!', 'strong'),
-    headerRow(LOGO_ART[1], 'Send /help for help information.', 'muted'),
-    blankRow(),
-    infoRow(DIRECTORY_LABEL, content.cwd, 'text'),
-    infoRow(MODEL_LABEL, `${content.model} · ${content.provider}`, 'accent'),
-    infoRow(VERSION_LABEL, content.version, 'text'),
-    blankRow(),
-    rule('╰', '╯'),
+  // The right-hand status column; the welcome and help lines lead, then the
+  // three info rows. A blank spacer row separates the two groups.
+  const status: StatusLine[] = [
+    { text: 'Welcome to Blue!', style: 'strong' },
+    { text: 'Send /help for help information.', style: 'muted' },
+    { text: '', style: 'text' },
+    { text: `${DIRECTORY_LABEL}${content.cwd}`, style: 'text' },
+    { text: `${MODEL_LABEL}${content.model} · ${content.provider}`, style: 'highlight' },
+    { text: `${VERSION_LABEL}${content.version}`, style: 'text' },
   ]
+
+  // Center the status column against the logo's rows; a negative offset
+  // (status taller than the logo) would clip, so clamp to the leading row.
+  const statusTopPad = Math.max(0, Math.floor((LOGO_ROWS - status.length) / 2))
+
+  const fit = (text: string, style: BannerStyle, max: number): BannerSegment => {
+    const truncated = deps.truncate(text, max)
+    const widthOfFit = deps.visibleWidth(truncated)
+    const pad = Math.max(0, max - widthOfFit)
+    return { text: `${truncated}${' '.repeat(pad)}`, style }
+  }
+
+  const rows: string[] = []
+  for (let i = 0; i < LOGO_ROWS; i += 1) {
+    const logo = LOGO_ART[i]!
+    const statusIndex = i - statusTopPad
+    const statusLine = status[statusIndex]
+    const segments: BannerSegment[] = [
+      { text: gradientWrap(LOGO_GRADIENT[i]!, logo), style: 'logo' },
+      { text: ' '.repeat(LOGO_TEXT_GAP), style: 'logo' },
+    ]
+    if (statusLine !== undefined) {
+      segments.push(fit(statusLine.text, statusLine.style, valueWidth))
+    }
+    rows.push(line(segments))
+  }
+  return rows
 }
 
 /**

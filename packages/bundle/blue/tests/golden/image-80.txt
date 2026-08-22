@@ -1,21 +1,21 @@
- ╭────────────────────────────────────────────────────────────────────────────╮
- │                                                                            │
- │  ▐█▛█▛█▌  Welcome to Blue!                                                 │
- │  ▐█████▌  Send /help for help information.                                 │
- │                                                                            │
- │  Directory: «cwd»                                      │
- │  Model:     mock · mock                                                    │
- │  Version:   0.1.0-rc.1                                                     │
- │                                                                            │
- ╰────────────────────────────────────────────────────────────────────────────╯
+    ⢀⣀⣰⣰⣰⣰⣰⣼⣼⠜   ⣺⣵⡀    ⢀⡀  
+  ⢀⣸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣵⣐  ⢯⣿⣿⣵⣸⣼⣼⣿⠕  Welcome to Blue!                        
+ ⢨⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣽⣐⠂⠯⣿⣿⣿⣿⠿⠇   Send /help for help information.        
+ ⣿⡟⠃⠃⠋⠏⠿⣿⣿⣿⣿⣿⣿⠯⢿⣿⣽⣴⣿⣿⡕                                              
+ ⣿⣿      ⠋⢿⣿⣿⣿⣿ ⠋⣿⣿⣿⣿⠁      Directory: «cwd»    
+ ⢯⣿⣵       ⠫⣿⣿⣿⣽⣼⣿⣿⣿⠗       Model:     mock · mock                  
+ ⠂⢯⣿⣵⡀   ⣰⣀ ⠊⢿⣿⣿⣿⣿⡿⠇        Version:   0.1.0-rc.1                   
+   ⠋⣿⣿⣼⣰⣰⣻⣿⣽⣰⣀⠋⢿⣿⣿⣼⣰⡀       
+     ⠃⠏⠿⣿⣿⣿⣿⣿⠿⠟⠇⠂⠃⠃⠃        
  
- ✨ look at this
+ » look at this
  
  ● seen                                                                        
  
- ✨ [image]
-    [Image: pasted-image.png [image/png] 1x1]
+ » [image]
+   [Image: pasted-image.png [image/png] 1x1]
  ✗ request failed (UNKNOWN): MockAdapter: script exhausted
+
  
 ╭──────────────────────────────────────────────────────────────────────────────╮
 │ >                                                                            │

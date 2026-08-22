@@ -104,13 +104,13 @@ describe('UserMessageComponent', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
     lines = component.render(80)
     // The bullet and text carry the bold roleUser wrap; loaded images sit
-    // under the text, indented to the bullet's visible width (the emoji
-    // bullet spans two cells, so three columns).
+    // under the text, indented to the bullet's visible width (the guide
+    // arrow bullet spans two columns).
     expect(lines).toEqual([
       '',
-      '\x1b[1m[R]✨ [/R]\x1b[22m\x1b[1m[R]pics[/R]\x1b[22m',
-      '   <image 1B>',
-      '   <image 1B>',
+      '\x1b[1m[R]» [/R]\x1b[22m\x1b[1m[R]pics[/R]\x1b[22m',
+      '  <image 1B>',
+      '  <image 1B>',
     ])
     // A rejected load keeps the placeholder.
     const failing = new UserMessageComponent(
@@ -126,7 +126,7 @@ describe('UserMessageComponent', () => {
     const lines = new UserMessageComponent(userItem('hello world'), tagged(), setup()).render(80)
     expect(lines).toEqual([
       '',
-      '\x1b[1m[R]✨ [/R]\x1b[22m\x1b[1m[R]hello world[/R]\x1b[22m',
+      '\x1b[1m[R]» [/R]\x1b[22m\x1b[1m[R]hello world[/R]\x1b[22m',
     ])
   })
 
@@ -135,9 +135,9 @@ describe('UserMessageComponent', () => {
     const lines = new UserMessageComponent(userItem('aaa bbb ccc'), COLORS, components).render(6)
     expect(lines).toEqual([
       '',
-      '\x1b[1m✨ \x1b[22m\x1b[1maaa\x1b[22m',
-      '   \x1b[1mbbb\x1b[22m',
-      '   \x1b[1mccc\x1b[22m',
+      '\x1b[1m» \x1b[22m\x1b[1maaa\x1b[22m',
+      '  \x1b[1mbbb\x1b[22m',
+      '  \x1b[1mccc\x1b[22m',
     ])
     for (const line of lines) expect(components.visibleWidth(line)).toBeLessThanOrEqual(6)
   })
@@ -158,10 +158,10 @@ describe('UserMessageComponent', () => {
     const lines = new UserMessageComponent(userItem(text), COLORS, components).render(80)
     expect(lines).toEqual([
       '',
-      '\x1b[1m✨ \x1b[22m\x1b[1mline 0\x1b[22m',
-      '   \x1b[1mline 1\x1b[22m',
-      '   \x1b[1mline 2\x1b[22m',
-      '   ... (8 more lines, 11 total, ctrl+o to expand)',
+      '\x1b[1m» \x1b[22m\x1b[1mline 0\x1b[22m',
+      '  \x1b[1mline 1\x1b[22m',
+      '  \x1b[1mline 2\x1b[22m',
+      '  ... (8 more lines, 11 total, ctrl+o to expand)',
     ])
     expect(USER_PREVIEW_LINES).toBe(3)
     for (const line of lines) expect(components.visibleWidth(line)).toBeLessThanOrEqual(80)
@@ -243,7 +243,7 @@ describe('UserMessageComponent', () => {
     )
     const lines = component.render(80)
     expect(lines.some(line => line.includes('ctrl+o to expand'))).toBe(true)
-    expect(lines.at(-1)).toBe('   [M][image][/M]')
+    expect(lines.at(-1)).toBe('  [M][image][/M]')
     await new Promise(resolve => setTimeout(resolve, 0))
   })
 })

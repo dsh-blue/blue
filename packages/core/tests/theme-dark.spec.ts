@@ -67,8 +67,8 @@ describe('blue-theme-dark plugin', () => {
     const ctx = new Context()
     await ctx.plugin({ name, apply })
     const { colors } = ctx.blueTheme
-    // accent #5bc0be → rgb(91, 192, 190)
-    expect(colors.accent('hi')).toBe('\x1b[38;2;91;192;190mhi\x1b[39m')
+    // accent #2bc8e8 → rgb(43, 200, 232)
+    expect(colors.accent('hi')).toBe('\x1b[38;2;43;200;232mhi\x1b[39m')
     // primary #4fa8ff → rgb(79, 168, 255)
     expect(colors.primary('hi')).toBe('\x1b[38;2;79;168;255mhi\x1b[39m')
     // textMuted #6b6b6b → rgb(107, 107, 107)

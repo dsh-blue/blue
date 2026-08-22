@@ -32,6 +32,7 @@ import { setClipboardImageReader} from '../../../interaction/src/paste-image.ts'
 import { setClipboardOsc52Emitter, setClipboardTextWriter} from '../../../interaction/src/clipboard-write.ts'
 import { setExternalEditorLauncher} from '../../../interaction/src/external-editor.ts'
 import { BLUE_VERSION} from '../../../transcript/src/banner-content.ts'
+import { MOON_SPINNER_FRAMES} from '../../../transcript/src/spinners.ts'
 import * as statusCwdPlugin from '../../../transcript/src/status-cwd.ts'
 import * as statusGitPlugin from '../../../transcript/src/status-git.ts'
 import { setRecentStepsRetention, setStepFoldingEnabled} from '../../../transcript/src/window.ts'
@@ -60,6 +61,15 @@ const FOOTER_GAP = 2
  */
 const FOOTER_TEXT_SGR = '\x1b[38;2;224;224;224m'
 const FOOTER_MUTED_SGR = '\x1b[38;2;136;136;136m'
+
+/**
+ * Whether a frame of the activity-pane spinner shows in `text`. Frames are
+ * two columns wide and cycle, so a snapshot may catch any of them; the
+ * ripple is only present while the spinner is live.
+ */
+function hasSpinnerFrame(text: string): boolean {
+  return MOON_SPINNER_FRAMES.some(frame => text.includes(frame))
+}
 
 /**
  * Strip every escape flavor the renderer emits (SGR runs, CSI modes, OSC 8
@@ -191,9 +201,9 @@ describe('blue whole-tree e2e', () => {
     const frame = await fullFrame(tree.terminal)
     expect(frame).toContain('Welcome to Blue!')
     expect(frame).toContain('Send /help for help information.')
-    // The kimi gutter insets the banner one column on both sides (D29,
-    // S21): a row spans the leading gutter column plus `columns - 2`
-    // banner columns — no cap, but no full bleed either.
+    // The banner is frameless: the whale logo block sits left and the
+    // status column beside it, so the welcome row is content-width — it
+    // never bleeds to the full viewport (no box frame, no cap).
     const bannerRow = frame.split('\r\n').find(row => row.includes('Welcome to Blue!')) ?? ''
     const plain = bannerRow
       // Strip every escape flavor the renderer emits: SGR runs, CSI
@@ -201,8 +211,10 @@ describe('blue whole-tree e2e', () => {
       .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
       .replace(/\x1b\][^\u0007]*\u0007/g, '')
       .replace(/[\u0000-\u001f]/g, '')
-    // fullFrame bumps the width by one to force the repaint.
-    expect(plain.trimEnd().length).toBe(tree.terminal.columns - 1)
+    // fullFrame bumps the width by one to force the repaint; the welcome
+    // row now stays within it rather than spanning it.
+    expect(plain.trimEnd().length).toBeLessThanOrEqual(tree.terminal.columns)
+    expect(plain.trimEnd().length).toBeGreaterThan(0)
     expect(frame.indexOf('Welcome to Blue!')).toBeLessThan(frame.indexOf('Blue online.'))
   })
 
@@ -1252,7 +1264,7 @@ describe('blue whole-tree e2e', () => {
       })
       // The swap disposes the dark fiber and Cordis reloads every blueTheme
       // dependent; the remounted editor re-renders with the light palette
-      // (border #0969da, the primary anchor).
+      // (light #0969da, the primary anchor).
       await vi.waitFor(() => {
         expect(tree.terminal.written.slice(beforeSwitch).join('')).toContain('\x1b[38;2;9;105;218m')
       })
@@ -1301,13 +1313,13 @@ describe('blue whole-tree e2e', () => {
       })
       // The transcript reload re-folds the full session snapshot (the D16
       // path): both rendered items come back, and the re-rendered user row
-      // carries the light roleUser bullet (#953800), not dark's #f0c674 —
+      // carries the light roleUser bullet (#2e3fb8), not dark's #f0c674 —
       // bold-wrapped per the S18 kimi user chrome.
       await vi.waitFor(() => {
         const rendered = tree.terminal.written.slice(beforeSwitch).join('')
         expect(rendered).toContain('show palette')
         expect(rendered).toContain('palette reply')
-        expect(rendered).toContain('\x1b[1m\x1b[38;2;149;56;0m✨ ')
+        expect(rendered).toContain('\x1b[1m\x1b[38;2;46;63;184m» ')
       })
     } finally {
       await backToDark(tree, agent)
@@ -1391,7 +1403,7 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(agent.status).toBe('running') })
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('· Tip: ') })
     const running = await fullFrame(tree.terminal)
-    expect(running).toContain('🌑')
+    expect(hasSpinnerFrame(running)).toBe(true)
     // Dock order (S12): the footer pins to the terminal's last rows, the
     // editor sits above it, and the spinner above the editor (the first
     // gray `border` frame run at or after the spinner — the idle editor
@@ -1405,7 +1417,7 @@ describe('blue whole-tree e2e', () => {
     tree.terminal.sendInput('\x03')
     await agent.whenIdle()
     const idle = await fullFrame(tree.terminal)
-    expect(idle).not.toContain('🌑')
+    expect(hasSpinnerFrame(idle)).toBe(false)
     expect(idle).not.toContain('· Tip: ')
   })
 
@@ -1421,7 +1433,7 @@ describe('blue whole-tree e2e', () => {
     const frame = await fullFrame(tree.terminal)
     expect(frame).toContain('working...')
     expect(frame).toContain('· Tip: ')
-    expect(frame).not.toContain('🌑')
+    expect(hasSpinnerFrame(frame)).toBe(false)
     tree.terminal.sendInput('\x03')
     await agent.whenIdle()
   })
@@ -1435,7 +1447,7 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(agent.status).toBe('running') })
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('· Tip: ') })
     const waiting = await fullFrame(tree.terminal)
-    expect(waiting).toContain('🌑')
+    expect(hasSpinnerFrame(waiting)).toBe(true)
     expect(waiting).not.toContain('working...')
     tree.terminal.sendInput('\x03')
     await agent.whenIdle()
@@ -1497,12 +1509,12 @@ describe('blue whole-tree e2e', () => {
     typeLine(tree.terminal, '/help')
     await vi.waitFor(() => { expect(tree.terminal.output.toLowerCase()).toContain('key bindings') })
     const paneled = await fullFrame(tree.terminal)
-    expect(paneled).not.toContain('🌑')
+    expect(hasSpinnerFrame(paneled)).toBe(false)
     expect(paneled).not.toContain('· Tip: ')
 
     // Dismiss restores the spinner.
     tree.terminal.sendInput('\x1b')
-    await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('🌑') })
+    await vi.waitFor(async () => { expect(hasSpinnerFrame(await fullFrame(tree.terminal))).toBe(true) })
     tree.terminal.sendInput('\x03')
     await agent.whenIdle()
   })

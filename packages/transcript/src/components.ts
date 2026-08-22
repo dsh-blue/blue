@@ -76,8 +76,8 @@ const PREVIEW_INDENT = '  '
 /** The assistant block's first-line marker (kimi `constant/symbols.ts`). */
 const STATUS_BULLET = '● '
 
-/** The user block's first-line marker (kimi `USER_MESSAGE_BULLET`). */
-export const USER_MESSAGE_BULLET = '✨ '
+/** The user block's first-line marker (the DeepSeek guide arrow). */
+export const USER_MESSAGE_BULLET = '» '
 
 /** Continuation indent: the bullet's visible width (kimi `MESSAGE_INDENT`). */
 export const MESSAGE_INDENT = '  '
@@ -110,8 +110,8 @@ interface RenderCache {
 }
 
 /**
- * Renders one user prompt behind the kimi user-message chrome (S18): a
- * blank separator row, then the bold `roleUser` `✨ ` bullet on the first
+ * Renders one user prompt behind the DeepSeek user-message chrome (S18): a
+ * blank separator row, then the bold `roleUser` `» ` bullet on the first
  * line with the full text bold `roleUser` — the kimi `boldFg('roleUser', …)`
  * wrap, composed here as bold SGR around the palette color, so the visible
  * width never changes. Continuations align under the text with spaces of
