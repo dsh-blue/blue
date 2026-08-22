@@ -26,6 +26,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { BLUE_VERSION } from '../src/banner-content.ts'
+import { BLUE_VERSION as API_BLUE_VERSION } from '@dsh-blue/blue-api'
 
 /** The published first-release version (the website's advertised number). */
 const RELEASE_VERSION = '0.1.0-rc.2'
@@ -41,8 +42,9 @@ interface Manifest {
   readonly devDependencies?: Readonly<Record<string, string>>
 }
 
-/** The six manifests whose version must equal {@link RELEASE_VERSION}. */
+/** The seven manifests whose version must equal {@link RELEASE_VERSION}. */
 const MANIFESTS: readonly string[] = [
+  '../../api/package.json',
   '../../core/package.json',
   '../package.json',
   '../../interaction/package.json',
@@ -50,6 +52,8 @@ const MANIFESTS: readonly string[] = [
   '../../bundle/blue/package.json',
   '../../../website/package.json',
 ]
+/** Publishable manifests that carry harness dependencies. */
+const HARNESS_MANIFESTS = MANIFESTS.filter(rel => !rel.endsWith('/api/package.json') && !rel.endsWith('/website/package.json'))
 
 /** Read one manifest relative to this spec. */
 function manifest(rel: string): Manifest {
@@ -62,8 +66,8 @@ function dshEntries(table: Readonly<Record<string, string>> | undefined): Readon
 }
 
 describe('the Blue release line', () => {
-  it('BLUE_VERSION is the version of all six manifests', () => {
-    expect(MANIFESTS).toHaveLength(6)
+  it('BLUE_VERSION is the version of all seven manifests', () => {
+    expect(MANIFESTS).toHaveLength(7)
     for (const rel of MANIFESTS) {
       const pkg = manifest(rel)
       expect(pkg.version, `${pkg.name} version`).toBe(RELEASE_VERSION)
@@ -72,6 +76,7 @@ describe('the Blue release line', () => {
 
   it('BLUE_VERSION is the constant', () => {
     expect(BLUE_VERSION).toBe(RELEASE_VERSION)
+    expect(API_BLUE_VERSION).toBe(RELEASE_VERSION)
   })
 
   it('the website never advertises a different number than the code ships', () => {
@@ -93,7 +98,7 @@ describe('the harness dependency line', () => {
     // (agent-presets from D33, mcp-client from S34): they install with Blue,
     // so a range or a drifted line would ship a mixed tree.
     const specs = new Set<string>()
-    for (const rel of MANIFESTS.slice(0, 5)) {
+    for (const rel of HARNESS_MANIFESTS) {
       const pkg = manifest(rel)
       for (const [name, spec] of dshEntries(pkg.dependencies)) {
         expect(spec, `${pkg.name} dependencies ${name}`).toMatch(/^0\.1\.[0-9]+-rc\.[0-9]+$/)
@@ -106,7 +111,7 @@ describe('the harness dependency line', () => {
 
   it('every dsh dev dependency is exact-pinned to one line', () => {
     const specs = new Set<string>()
-    for (const rel of MANIFESTS.slice(0, 5)) {
+    for (const rel of HARNESS_MANIFESTS) {
       const pkg = manifest(rel)
       for (const [name, spec] of dshEntries(pkg.devDependencies)) {
         expect(spec, `${pkg.name} devDependencies ${name}`).toMatch(/^0\.1\.[0-9]+-rc\.[0-9]+$/)
@@ -117,7 +122,7 @@ describe('the harness dependency line', () => {
   })
 
   it('every dsh peer dependency ranges exactly one line up from the pins', () => {
-    for (const rel of MANIFESTS.slice(0, 5)) {
+    for (const rel of HARNESS_MANIFESTS) {
       const pkg = manifest(rel)
       for (const [name, spec] of dshEntries(pkg.peerDependencies)) {
         expect(spec, `${pkg.name} peerDependencies ${name}`).toBe(`^${HARNESS_LINE}`)

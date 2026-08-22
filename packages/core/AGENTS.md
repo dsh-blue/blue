@@ -13,6 +13,13 @@ Core is the tree's ONLY package allowed to import `@earendil-works/pi-tui` (plus
 - **`blueTerminalInfo`** (`src/terminal-info.ts`) — read-only terminal facts from the startup OSC 11 background probe.
 - **Global key dispatcher** — core's `apply` mounts a pi-tui input listener ahead of focus routing that consumes keymap actions carrying a `handler`. The service is instantiated directly in `apply`, not via `ctx.plugin`: the Cordis Context proxy rejects uninjected services, and a service cannot inject itself.
 
+  The terminal runtime also installs one input-boundary normalizer for SGR and
+  legacy X10 wheel reports. Main-screen mode does not enable mouse reporting,
+  but a multiplexer or inherited terminal mode can still send these sequences;
+  they are converted to pi-tui's standard up/down key sequences before focus
+  routing, so panels share one scroll seam. The listener is removed with the
+  runtime stop lifecycle.
+
 Dock sinking lives in `startBlueTerminal`: the renderer instance's `render` is wrapped so that when the mounted tree is shorter than the viewport, blank filler is inserted between the scroll content and the bottom-pinned block, keeping the footer/editor dock on the terminal's last rows. Full viewports, empty trees, and dock-less trees render untouched.
 
 ## Suspend/resume seam (S31, `runtime.suspend` → `blueScreen.suspend`)

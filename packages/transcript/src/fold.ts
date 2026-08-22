@@ -196,6 +196,8 @@ export class TranscriptFolder {
   /** Reasoning accumulated before the streaming thinking item holds anything visible. */
   private pendingReasoning = ''
   private readonly finalizedSteps = new Set<string>()
+  /** Turns that already have an interruption tombstone (synthetic or host). */
+  private readonly interruptedTurns = new Set<number>()
   private readonly toolsByCallId = new Map<string, TranscriptToolItem>()
   /** Call ids of suppressed `todo_write` calls, so their results render nothing either. */
   private readonly suppressedCalls = new Set<string>()
@@ -282,6 +284,8 @@ export class TranscriptFolder {
         // persistence backend's crash-recovery close) otherwise reads as
         // the stream merely going quiet (the S24a dogfood ruling).
         if (event.data.reason.kind === 'aborted' || event.data.reason.kind === 'interrupted') {
+          if (this.interruptedTurns.has(event.data.turn)) return settled.length > 0 ? settled : null
+          this.interruptedTurns.add(event.data.turn)
           const item: TranscriptInterruptedItem = {
             kind: 'interrupted',
             seq: event.seq,
@@ -315,6 +319,10 @@ export class TranscriptFolder {
 
       case 'assistant/chunk': {
         const { turn, step, chunk } = event.data
+        // The request lifecycle can mark a turn interrupted before the host
+        // drains its buffered assistant events. Keep the partial item that
+        // was already visible, but never reopen the turn after its tombstone.
+        if (this.interruptedTurns.has(turn)) return null
         if (chunk.type !== 'text-delta' && chunk.type !== 'reasoning-delta') return null
         const stepKey = `${turn}:${step}`
         if (this.finalizedSteps.has(stepKey)) return null
@@ -363,6 +371,7 @@ export class TranscriptFolder {
 
       case 'assistant/message': {
         const { turn, step, message } = event.data
+        if (this.interruptedTurns.has(turn)) return null
         const stepKey = `${turn}:${step}`
         const text = contentText(message.content).trim()
         const reasoning = reasoningText(message.content)
@@ -486,6 +495,23 @@ export class TranscriptFolder {
         // types unknown to this build render nothing.
         return null
     }
+  }
+
+  /**
+   * Record an interruption before the host's `turn/end` arrives.  The marker
+   * is idempotent by turn, allowing the authoritative host close to merge
+   * without producing a duplicate row.
+   * @param seq - synthetic sequence used for the marker (not fed to seq dedupe).
+   * @returns fold updates for the newly settled stream, or `null` when already marked.
+   */
+  interrupt(seq = -1): readonly FoldUpdate[] | null {
+    const turn = this.streamingThinking?.turn ?? this.streamingItem?.turn ?? this.currentTurn
+    if (this.interruptedTurns.has(turn)) return null
+    const settled = this.settleStreaming()
+    this.interruptedTurns.add(turn)
+    const item: TranscriptInterruptedItem = { kind: 'interrupted', seq, turn }
+    this.items.push(item)
+    return [...settled, { item, isNew: true }]
   }
 
   /**

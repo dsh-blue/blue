@@ -51,11 +51,13 @@ const KEY_ESCAPE = '\x1b'
 /**
  * The panel chrome the plan window yields to: frame title + bottom rule,
  * the box's two borders, the blank rule, three list rows, the revise
- * hint, and the two-row footer shell below the panel. The window fills
- * the remaining height (the dogfood round-3 ruling: the plan is the
- * thing to read).
+ * hint, the two-row footer shell below the panel, and one visible upstream
+ * transcript row. Keeping that last row in the main-screen viewport lets a
+ * streaming tool result update differentially; consuming the whole viewport
+ * puts every upstream change above pi-tui's working area and forces a clear +
+ * full redraw on every token.
  */
-const RESERVED_ROWS = 11
+const RESERVED_ROWS = 14
 
 /** The smallest plan window a very short terminal still gets. */
 const MIN_PLAN_ROWS = 6

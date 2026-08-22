@@ -293,6 +293,36 @@ describe('blue app driver', () => {
     await test.ctx.fiber.dispose()
   })
 
+  it('maps every host turn close reason onto the request lifecycle', async () => {
+    const test = bench({})
+    await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+    const session = test.ctx.blueSession.current!.session
+    const states: string[] = []
+    test.ctx.on('blue/request-state-changed', lifecycle => { states.push(lifecycle.state) })
+    const reasons = [
+      { kind: 'aborted' },
+      { kind: 'interrupted' },
+      { kind: 'error', error: { message: 'boom' } },
+      { kind: 'completed' },
+    ] as const
+    for (const reason of reasons) {
+      test.ctx.blueRequests.begin()
+      test.ctx.emit('session/event', session, {
+        type: 'turn/end',
+        seq: states.length + 1,
+        time: 0,
+        data: { turn: states.length + 1, reason },
+      } as never)
+    }
+    expect(states.filter(state => state !== 'started')).toEqual([
+      'interrupted',
+      'interrupted',
+      'failed',
+      'completed',
+    ])
+    await test.ctx.fiber.dispose()
+  })
+
   it('resumes the requested session instead of creating one', async () => {
     const test = bench({ resume: 'abc123' })
     await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })

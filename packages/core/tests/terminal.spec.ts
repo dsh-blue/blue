@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest'
 import type { TUI } from '@earendil-works/pi-tui'
 import type { BlueComponent, BlueFocusable, BlueRgbColor } from '../src/types.ts'
-import { createStableTuiReference, createTerminalRelease, startBlueTerminal } from '../src/terminal.ts'
+import { createStableTuiReference, createTerminalRelease, normalizeWheelInput, startBlueTerminal } from '../src/terminal.ts'
 import type { FrameOverflowEntry } from '../src/frame-clamp.ts'
 import { visibleWidth } from '../src/width.ts'
 import { FakeTerminal, waitForRender } from './fake-terminal.ts'
@@ -455,6 +455,32 @@ describe('overlay focus discipline', () => {
 })
 
 describe('input listeners on the stable reference', () => {
+  it('normalizes SGR and legacy wheel reports at the core input boundary', () => {
+    expect(normalizeWheelInput('\x1b[<64;10;4M')).toBe('\x1b[A')
+    expect(normalizeWheelInput('\x1b[<65;10;4M')).toBe('\x1b[B')
+    expect(normalizeWheelInput(`\x1b[M${String.fromCharCode(96)}${String.fromCharCode(33)}${String.fromCharCode(33)}`)).toBe('\x1b[A')
+    expect(normalizeWheelInput('\x1b[<0;10;4M')).toBeUndefined()
+    expect(normalizeWheelInput('\x1b[<66;10;4M')).toBeUndefined()
+  })
+
+  it('routes normalized wheel input to the focused component', async () => {
+    const terminal = new FakeTerminal()
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    const received: string[] = []
+    const focused: BlueFocusable & { handleInput(data: string): void } = {
+      focused: false,
+      render: () => ['editor'],
+      invalidate: () => {},
+      handleInput: data => received.push(data),
+    }
+    runtime.addChild(focused)
+    runtime.setFocus(focused)
+
+    terminal.sendInput('\x1b[<65;1;1M')
+    expect(received).toEqual(['\x1b[B'])
+    await runtime.stop()
+  })
+
   it('runs listeners before focus routing and honors consume/dispose', async () => {
     const terminal = new FakeTerminal()
     const runtime = await startBlueTerminal(terminal, noProbe)
