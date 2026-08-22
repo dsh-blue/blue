@@ -544,9 +544,12 @@ exit 1
 
   it('notices the timeout when a clipboard tool hangs', async () => {
     // /bin/sleep by absolute path: the replaced PATH cannot resolve a bare
-    // `sleep`, which would exit 127 and never exercise the kill.
+    // `sleep`, which would exit 127 and never exercise the kill. The TERM
+    // trap pins the kill signal: wl-clipboard traps TERM while wedged, so a
+    // regressed SIGTERM timeout would leave the fake alive and hang this
+    // test instead of resolving the timeout notice.
     const bin = mkdtempTracked('blue-paste-bin-')
-    tool(bin, 'wl-paste', '#!/bin/sh\nexec /bin/sleep 10\n')
+    tool(bin, 'wl-paste', '#!/bin/sh\ntrap \'\' TERM\nexec /bin/sleep 10\n')
     process.env.PATH = bin
     await mountDefault()
     await vi.waitFor(() => {

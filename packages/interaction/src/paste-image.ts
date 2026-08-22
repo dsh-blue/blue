@@ -132,7 +132,12 @@ const OUTCOME_RANK: Readonly<Record<FailureKind, number>> = {
  */
 function runTool(command: string, args: readonly string[]): Promise<ToolRun> {
   return new Promise(resolve => {
-    execFile(command, args, { encoding: 'buffer', timeout: CLIPBOARD_TOOL_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => {
+    // SIGKILL, not the default SIGTERM: wl-clipboard traps TERM for its own
+    // cleanup and, wedged on an unresponsive compositor (GNOME's core-
+    // protocol fallback never gains focus from a background process), never
+    // returns from the handler — a TERM'd tool survives as a zombie and the
+    // exit event never settles this promise.
+    execFile(command, args, { encoding: 'buffer', timeout: CLIPBOARD_TOOL_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error === null) {
         resolve({ ok: true, stdout })
         return
