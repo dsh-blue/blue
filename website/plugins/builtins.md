@@ -55,7 +55,7 @@ flowchart TB
 | --- | --- |
 | `blue-editor-plus` | 输入编辑器增强：`!` bash 模式 + 斜杠/`@` 补全 + 参数幽灵提示 |
 | `blue-attachments` | 附件存储：文件系统图片库（魔数嗅探、容量上限） |
-| `blue-paste-image` | Ctrl-V 剪贴板贴图，`[image #N]` 标记，提交拆为图片块 |
+| `blue-paste-image` | Ctrl-V 剪贴板贴图（Windows 另绑 `Alt-V`），`[image #N]` 标记，提交拆为图片块 |
 | `blue-status-cwd` | 状态栏：会话工作目录（优先级 5，深路径缩写） |
 | `blue-status-git` | 状态栏：git 徽章 `branch [+a -d ↑u↓v]`（优先级 10，TTL 缓存探测） |
 | `blue-status-mode` | 状态栏：会话模式徽标 `plan`/`yolo`（优先级 2，normal 态隐藏） |

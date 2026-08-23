@@ -71,7 +71,7 @@ patch 在 `dsh-base` 之上插入三段 19 行。**拔掉整个增强段，基�
 |---|---|---|---|
 | `blue-editor-plus` | `@dsh-blue/blue-interaction/editor-plus` | 消费共享编辑器缝（`blue/input-editor-changed` 事件重挂） | `!` bash 模式（提示符与边框变色）+ slash/`@` 补全 |
 | `blue-attachments` | `@dsh-blue/blue-interaction/attachments` | 提供 harness `attachments` 纯缝的实现 | 无屏幕子组件（纯数据面） |
-| `blue-paste-image` | `@dsh-blue/blue-interaction/paste-image` | 消费共享编辑器缝（onKey + insertText + 提交变换）与 `attachments` | Ctrl-V 贴图：`[image #N]` 标记，提交拆为图像块 |
+| `blue-paste-image` | `@dsh-blue/blue-interaction/paste-image` | 消费共享编辑器缝（onKey + insertText + 提交变换）与 `attachments` | Ctrl-V 贴图（Windows 另绑 Alt-V，D55）：`[image #N]` 标记，提交拆为图像块 |
 | `blue-status-git` | `@dsh-blue/blue-transcript/status-git` | 向 `blueStatus` 贡献（priority 10） | git 分支条目（仓库外不渲染） |
 | `blue-status-context` | `@dsh-blue/blue-transcript/status-context` | 向 `blueStatus` 贡献（priority 20） | 上下文占用条目 `ctx N` / `ctx N.Nk` |
 | `blue-intent-diff` | `@dsh-blue/blue-transcript/intent-diff` | 向 `blueIntents` 贡献 `card:'diff'` | 带标题的 per-file 统一 diff 卡片 |

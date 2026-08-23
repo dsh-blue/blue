@@ -30,7 +30,7 @@
 | --- | --- | --- |
 | `Ctrl-C` | 清空 → 中断 → 退出 | 先清草稿，再中断运行中的 agent；**1 秒内第二次按下**退出 Blue |
 | `Ctrl-S` | steer 注入 | 把非空草稿作为转向指令注入当前 turn，并清空 buffer |
-| `Ctrl-V` | 粘贴图片 | 剪贴板图片入附件库，光标处插入 `[image #N]` 标记 |
+| `Ctrl-V`（Windows 另有 `Alt-V`） | 粘贴图片 | 剪贴板图片入附件库，光标处插入 `[image #N]` 标记；Windows Terminal/conhost 会截留 `Ctrl-V` 做自己的文本粘贴，故 Windows 上并行绑定 `Alt-V` |
 | `Ctrl-G` | 外部编辑器 | 草稿交给 `$VISUAL`/`$EDITOR` 全屏编辑（Blue 挂起让出终端）；以 `:cq` 退出则草稿原样保留 |
 | `Alt+M` | 循环会话模型 | 当前 provider 的模型列表里逐个切换（**仅本会话**、不写默认；按键被消费，草稿不动） |
 | `Backspace` | 退格 / 退模式 | 空的 `!` bash 提示符上退格即退回 prompt 模式 |

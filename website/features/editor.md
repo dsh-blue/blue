@@ -36,9 +36,11 @@ buffer 恰为 `!` 时切入 bash 模式（`!` 不进 buffer），三重提示齐
 
 ## Ctrl-V 粘贴图片
 
-Ctrl-V 把剪贴板图片存入附件库，并在光标处插入 `[image #N]` 标记；提交时标记拆分为图片内容块进入消息。标记跨主题热切换存活。
+Ctrl-V 把剪贴板图片存入附件库，并在光标处插入 `[image #N]` 标记；提交时标记拆分为图片内容块进入消息。标记跨主题热切换存活。Windows 上 `Alt-V` 同样可用——Windows Terminal/conhost 会截留 `Ctrl-V` 做自己的文本粘贴，因此 Blue 双绑两个键。
 
-依赖与限制：Linux 依次探测 `wl-paste`、`xclip`；单图 10MB、每条消息 8 张 / 30MB / 16M 像素；模型需具备图片输入能力（详见 [FAQ](/guide/faq)）。
+依赖与限制：Linux 依次探测 `wl-paste`、`xclip`（3 秒超时）；Windows 上单次 PowerShell 调用读取剪贴板图片或复制的文件（10 秒预算）；macOS 上 osascript 读取剪贴板类目并把 TIFF-only 的复制经 sips 转换（5 秒预算）。单图 10MB、每条消息 8 张 / 30MB / 16M 像素；模型需具备图片输入能力（详见 [FAQ](/guide/faq)）。
+
+复制的文件在三平台都按原顺序整批粘贴：Ubuntu 文件管理器的 `text/uri-list`、Windows 资源管理器的 FileDropList、macOS 的 Finder 复制。只接受本地普通 PNG/JPEG/WebP/GIF 文件；远程 URI、目录和符号链接会显示拒绝原因。
 
 ## 编辑器语境键位
 

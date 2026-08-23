@@ -33,12 +33,12 @@ blue:
 
 Ctrl-V paste depends on two things:
 
-1. **Terminal environment**: a clipboard tool is probed — `wl-paste` then `xclip` on Linux (3s timeout);
+1. **Terminal environment**: the platform's own clipboard path is probed — `wl-paste` then `xclip` on Linux (3s timeout), one PowerShell call on Windows (10s), osascript on macOS (5s). On Windows, press `Alt-V` — Windows Terminal and conhost intercept `Ctrl-V` for their own text paste, so Blue binds both keys;
 2. **Model capability**: pasted images enter the message as image content blocks. If the current model route has no image input, messages containing image blocks are rejected — that is the upstream harness capability negotiation; switch to a vision-capable model.
 
 Images land in the attachment store (default `~/.dsh/attachments`; relocate via `DSH_BLUE_ATTACHMENT_DIR` or `DSH_HOME`), capped at 10MB per image, 8 images / 30MB / 16M pixels per message.
 
-You can copy image content from an application or copy one or more local PNG/JPEG/WebP/GIF files in Ubuntu Files. The file-manager path only accepts local regular files; remote URIs, directories, symlinks, and special files are refused with a reason.
+You can copy image content from an application or copy one or more local PNG/JPEG/WebP/GIF files in your file manager (Ubuntu Files, Windows Explorer, macOS Finder — all paste as one ordered batch). The file-manager path only accepts local regular files; remote URIs, directories, symlinks, and special files are refused with a reason. Known limitation: inside WSL the Linux toolchain reads the WSL session's own clipboard, not the Windows clipboard.
 
 ## Why doesn't the injected AGENTS.md context show up in the transcript?
 

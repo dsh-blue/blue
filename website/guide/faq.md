@@ -33,12 +33,12 @@ blue:
 
 Ctrl-V 粘贴依赖两个条件：
 
-1. **终端环境**：需要剪贴板工具——Linux 上依次探测 `wl-paste`、`xclip`（3 秒超时）；
+1. **终端环境**：按平台探测各自的剪贴板通道——Linux 依次探测 `wl-paste`、`xclip`（3 秒超时），Windows 单次 PowerShell 调用（10 秒），macOS 走 osascript（5 秒）。Windows 上请按 `Alt-V`——Windows Terminal/conhost 会截留 `Ctrl-V` 做自己的文本粘贴，因此 Blue 双绑两个键；
 2. **模型能力**：粘贴的图片以图片内容块进入消息。如果当前模型路由不支持图片输入，包含图片块的消息会被拒绝——这是上游 harness 的能力协商行为，换用具备视觉输入的模型即可。
 
 图片落入附件存储（默认 `~/.dsh/attachments`，可用 `DSH_BLUE_ATTACHMENT_DIR` 或 `DSH_HOME` 改址），单图上限 10MB、每条消息至多 8 张 / 30MB / 16M 像素。
 
-既可以复制应用中的图片内容，也可以在 Ubuntu 文件管理器中复制一个或多个本地 PNG/JPEG/WebP/GIF 文件。文件管理器路径只接受本地普通文件；远程 URI、目录、符号链接和特殊文件会显示拒绝原因。
+既可以复制应用中的图片内容，也可以在文件管理器（Ubuntu 文件、Windows 资源管理器、macOS Finder）中复制一个或多个本地 PNG/JPEG/WebP/GIF 文件——三平台都按原顺序整批粘贴。文件管理器路径只接受本地普通文件；远程 URI、目录、符号链接和特殊文件会显示拒绝原因。已知限制：WSL 内的 Linux 工具链读取的是 WSL 会话自己的剪贴板，而非 Windows 剪贴板。
 
 ## 为什么 AGENTS.md 等注入的上下文不显示在会话流里？
 

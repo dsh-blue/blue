@@ -36,9 +36,11 @@ Pasting more than 10 lines or 1000 characters folds into a `[paste #N +M lines]`
 
 ## Ctrl-V image paste
 
-Ctrl-V stores the clipboard image in the attachment library and inserts an `[image #N]` marker at the cursor; on submit the markers split into image content blocks. Markers survive theme switches.
+Ctrl-V stores the clipboard image in the attachment library and inserts an `[image #N]` marker at the cursor; on submit the markers split into image content blocks. Markers survive theme switches. On Windows, `Alt-V` works too — Windows Terminal and conhost intercept `Ctrl-V` for their own text paste, so Blue binds both.
 
-Dependencies and limits: probes `wl-paste` then `xclip` on Linux; 10MB per image, 8 images / 30MB / 16M pixels per message; the model must accept image input (see the [FAQ](/en/guide/faq)).
+Dependencies and limits: probes `wl-paste` then `xclip` on Linux (3s timeout); on Windows one PowerShell call saves the clipboard image or the copied files (10s budget); on macOS osascript reads the clipboard classes and converts TIFF-only copies through sips (5s budget). 10MB per image, 8 images / 30MB / 16M pixels per message; the model must accept image input (see the [FAQ](/en/guide/faq)).
+
+Copied files paste as one ordered batch on every platform: `text/uri-list` in Ubuntu Files, a FileDropList in Windows Explorer, a Finder copy on macOS. Only local regular PNG/JPEG/WebP/GIF files are accepted; remote URIs, directories, and symlinks are refused with a reason.
 
 ## Editor-context keys
 
