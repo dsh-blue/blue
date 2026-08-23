@@ -33,3 +33,22 @@ agent 需要用户裁决时，Blue 以全宽上拉面板应答。面板采用 **
 - 全部答完自动提交；Escape 拒绝整个请求，请求中止时同样关闭并拒绝。
 
 问卷答案作为用户可见内容进入会话，模型可见。
+
+## plan 评审面板
+
+plan 模式下 agent 调 `exit_plan_mode` 收尾时，评审请求以专用问询形态打开（经 `ctx.userQuestions` 的 `plan-review` intent）：**边框盒里的 plan 全文滚动窗**（Markdown 渲染）+ 编号三选：
+
+```
+1. Approve
+2. Reject
+3. Revise（行内联反馈编辑器）
+```
+
+- **Revise** 打开内联反馈编辑器，提交后作为用户反馈 steer 给 agent——agent 拿到修改意见继续迭代 plan；
+- Approve/Reject 直接定案；请求中止时面板随取消码关闭（`ASK_CANCELLED`）。
+
+plan 模式的进入/退出走 `Shift+Tab` 三态循环（见[会话模式](/features/modes)），footer 的模式徽标实时反映。
+
+## 权限预设切换面板
+
+`/permission` 打开权限预设选择器（与 `/sessions` `/preset` 同款单选列表面板）：每行一个预设名（sandbox 模式 + 审批策略的命名束），当前预设打勾；Enter 切换走宿主同一写路径，**danger 级预设需打字 `y` 确认**（防误触）。命令经输入层拦截开面，不在 `/help` 注册表。
