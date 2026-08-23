@@ -45,4 +45,5 @@ A few things to try first:
 
 - type `/` to see slash-command autocomplete, `/help` for the command and key overview;
 - ask something and watch the streaming reply and tool cards;
-- `/theme light` to feel a hot theme switch (your draft survives).
+- `/theme light` to feel a hot theme switch (your draft survives);
+- on exit, the last line is the **session epitaph**: the session id and a one-line resume command (a triple-click selects exactly it) — pick the conversation right back up next time.

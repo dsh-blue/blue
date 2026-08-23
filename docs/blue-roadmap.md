@@ -161,10 +161,10 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 | ✅ R3 | npm 发包（**✅ 2026-08-22 发车完成，两轮**：rc.1 首发 E422——五包 manifests 全缺 `repository`，provenance 校验拒收（b6f4f6c 补）；rc.1 tarball 自毁见 D51/R4 → rc.2 修复后全绿五包上 npm。verify 步 404 = registry 读延迟误报（已加 5×15s 退避重试，93040a3）；provenance 被 pnpm OIDC token-exchange 404 **静默跳过**（`attestations: null`），待查 pnpm 交换端点或弃 `--provenance`；npm dist-tag 侧：`rm latest` 一律 403（registry 禁删），冷却期外 latest 暂锁 rc 线）。管道本体：CI-only——release.yml tag 驱动（`v*` == 六 manifest 版本守卫 + tag 须在 master 上 + 全量 gate 复跑 + `pnpm -r publish --tag rc --no-git-checks --provenance` 拓扑序发包 + `npm view` 五包验证）；凭证 = org 级 granular `NPM_TOKEN` secret | 0.5d | G2 |
 | ✅ R4 | 安装路径验证（**✅ 2026-08-22 执行完成**）：① 装机语法 bug——`--profile` 是 `plugin` 子命令必选项，`dsh --profile blue plugin add …` 必报 required option，正确形式 `dsh plugin --profile blue add <spec>`（d7704e6 十处文档同步）；② rc.1 tarball 自毁——tsdown 哈希 chunk 不占 exports、files 逐文件枚举漏装 + session-title 桥包无人携带，**D51** 定案：五包 `files=["lib/**/*"]`、check:lib 反向遍历、tsbuildinfo 出 lib、all-prompts-llm 升 bundle dependencies、发版前本地 pack 装机预检；③ rc.2 真·验证：scratch DSH_HOME npm 装机（精确版本 spec）+ PTY boot 冒烟零 ERR、banner 四行、TUI 存活；④ `@rc` 冷却期实测定性：pnpm 11 默认 `minimumReleaseAge` 24h，dist-tag 解析对窗口内新版本**静默回退旧版**（非拒装——比拒装危险，rc.1 时代即装到坏包）；FAQ 双语已写精确版本号 workaround，guide 安装路径已随 PR #31 + 本轮入档 | 0.5d | G3 |
 | ✅ R5 | dogfood 记录（**✅ 2026-08-22 执行完成，零阻塞项**）：纯 npm 安装（`blue` profile @0.1.0-rc.2 精确版本，D51 修复后）跑两轮真实任务——`urlcheck.sh` + README + `--json` 模式，2 turns / 16 tool calls / 46 messages；模型自发 bash -n + 三条实测（example.com 200 ok:true 987ms、404、badhost 降级 null）；`/export` 39KB 入档 [history/blue-dogfood-r5-session.md](./history/blue-dogfood-r5-session.md)、录屏 977KB 全扫零 ERR/零 WARN、`/quit` exit 0；**无需回修 R3-R4，G4 达成**；记录 [history/blue-dogfood-r5.md](./history/blue-dogfood-r5.md) | 0.5d | G4 |
-| R6a | 文档站同步（⏸️ 用户裁决 2026-08-21 暂缓，仓库侧 R6b 先行）：website commands/keys/features/guide 四页集中还清（S23-S30 全量，`/help` + `keymap.list()` 枚举 diff 为源）+ 挂起区写入 | 1d | R5 + 解除暂缓 |
+| ✅ R6a | 文档站同步（⏸️ 用户裁决 2026-08-21 暂缓，**2026-08-23 解除并落地**）：website commands/keys/features/guide 四页集中还清（S23-S30 全量，`/help` + `keymap.list()` 枚举 diff 为源）+ 挂起区写入。**✅ 已落地 2026-08-23**：commands 双语——`/mcp`（S34）与 `/permission`（S24b，输入层拦截非注册表的口径入档）两行 + `/sessions` 过滤/标题行 + `Alt+M` 快路 + **「暂缓的命令」一节**（/settings /reload /tasks /archive /delete /import /diff /debug 挂起口径公开）；keys 双语——`Ctrl-G` 外部编辑器（S31）与 `Alt+M` 模型循环（S30①）两行；features/editor 双语——`#` 技能手势（S29，含回显重写与零行注入口径）、大粘贴折叠（S32）、Ctrl-G 三节；features/approval 双语——plan 评审面板（S24b 三选+Revise）与 `/permission` 面板两节；guide 双语——退出遗言一条（D47）。panes/streaming/features 索引经核对已新（R6b/S33/S38 随批维护的意外收益） | 1d | R5 + 解除暂缓 |
 | R6b | 仓库文档清账+结构重组（✅ 已落地 2026-08-21，本 PR）：五份完成态文档归档 docs/history/（p2-visual §8 两条被推翻行、p1-design §4.3 过期 ⛔/🚫 行随归档 banner 更正）；blue-decisions D33 编号重复勘误重编 D38；OSC 52 推翻注（roadmap 条目拆分 + survey 归档 banner）；AGENTS.md 拆五个包级文件+根瘦身（63.7KB→15.8KB）；docs/README.md 索引 | — | 无（纯仓库侧，不设发版门禁） |
 
-**门禁链**：G1 = S 步全合并 + CI 绿 + harness 线最新（harness-drift workflow 每日盯 next tag，线移动即自动 bump+门禁+PR） → G2 = 快照绿 → G3 = 发包成功 → G4 = 安装可启动 → **发版声明** = R5 归档 + R6a website build 绿（R6a 暂缓期间发版声明顺延，门禁语义不变）。
+**门禁链**：G1 = S 步全合并 + CI 绿 + harness 线最新（harness-drift workflow 每日盯 next tag，线移动即自动 bump+门禁+PR） → G2 = 快照绿 → G3 = 发包成功 → G4 = 安装可启动 → **发版声明** = R5 归档 + R6a website build 绿（R6a 已落地，本腿随下一版 build 绿即满足）。
 
 **并行组合**：R0‖S27'（零交集）；S28‖S29 开发（commands-plugin/session-commands 交叠，S29 合并前 rebase 一次）；S33‖S31/S32（transcript vs interaction 零交集）。
 
@@ -195,9 +195,11 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 | paste-burst 检测 | 非 bracketed 终端的快速粘贴识别（kimi fork `paste-burst.ts` 61 行） | pi-tui 折叠走 bracketed paste 路径，现代终端普遍支持；纯健壮性边缘项（2026-08-21 裁决砍出 S32） | 无 bracketed paste 环境的实际用户反馈出现 |
 | ADR 拆一决议一文件 | blue-decisions.md 按决议拆单文件 + 索引 | 单文件尚可读，收益在检索与 diff 隔离，非发版阻塞（R6b 评审沉淀） | ADR 数量再增一档或检索痛点出现 |
 
-### D32 同步偏离记录（2026-08-21）
+### D32 同步偏离记录（2026-08-21；R6a 已还清，2026-08-23）
 
 website 参考页（commands/keys）自建站起已欠账（停在初版，S23-S25 命令未入）。执行口径调整为：**仓库文档随每步合并跟改**（纪律不变）；**website 页面集中在 R6a 一次还清**，以 `/help` 与 `keymap.list()` 枚举 diff 为提取源（仍符合 D32"从源码提取"精神）。R6a 之后恢复逐期跟改。
+
+> **R6a 结账（2026-08-23）**：四页还清入档（commands/keys/features/editor/features/approval/guide 双语 + 暂缓命令一节公开挂起口径）；panes/streaming/features 索引经核对无需返工（R6b/S33/S38 随批维护的意外收益）。自本次合并起**恢复逐期跟改**——每步 PR 的 docs 清单重新纳入 website 页（对应 D32 原纪律）。
 
 ---
 
