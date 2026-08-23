@@ -2,7 +2,7 @@
 
 ## Why does a bare `npm install @dsh-blue/blue` find nothing?
 
-Preview releases are published only under the **`rc` dist-tag** (`latest` stays reserved for the stable line), and a bare install resolves `latest` — an uncontrolled version — use `dsh plugin --profile blue add @dsh-blue/blue@rc` instead, see [Quickstart](/en/guide/). The current preview is `v0.1.0-rc.4`; `0.1.0-rc.1` shipped broken tarballs (missing files) — if it is installed, upgrade. The contributor development install lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
+Preview releases are published only under the **`rc` dist-tag** (`latest` stays reserved for the stable line), and a bare install resolves `latest` — an uncontrolled version — install the `blue` shell with `npm i -g @dsh-blue/blue-cli@rc`, or use `dsh plugin --profile blue add @dsh-blue/blue@rc`, see [Quickstart](/en/guide/). The current preview is `v0.1.0-rc.4`; `0.1.0-rc.1` shipped broken tarballs (missing files) — if it is installed, upgrade. The contributor development install lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
 
 ## `@rc` does not resolve the newest preview?
 
@@ -17,8 +17,10 @@ Upgrading through `/update` avoids the trap entirely: it resolves the target fro
 
 Two paths:
 
-- **In-app (recommended)**: type `/update` in the session — it runs the safety pre-flight first (profile health, whether the global dsh CLI meets the target release's harness line, the cooldown window), then after a typed `y` confirmation it snapshots the current install, installs the exact version in one transaction, verifies the six-package set, and boot-smokes the result (a module import sweep plus a real boot); any failure **rolls back automatically** to the previous version, with a progress panel and a log path throughout. `/update <version>` pins an explicit target; a bare `/update` doubles as a read-only check. After a successful update the current session keeps running the old version — restart dsh to apply.
-- **Manually**: re-run the same `dsh plugin --profile blue add @dsh-blue/blue@rc` (or the exact-version form in the previous question).
+- **Shell users**: re-run `npm i -g @dsh-blue/blue-cli@rc` — reinstalling is the upgrade (the shell calibrates the profile's Blue to its own version and pins the host line with it); start with `blue` as usual afterwards.
+- **Direct-dsh users**:
+  - **In-app (recommended)**: type `/update` in the session — it runs the safety pre-flight first (profile health, whether the global dsh CLI meets the target release's harness line, the cooldown window), then after a typed `y` confirmation it snapshots the current install, installs the exact version in one transaction, verifies the six-package set, and boot-smokes the result (a module import sweep plus a real boot); any failure **rolls back automatically** to the previous version, with a progress panel and a log path throughout. `/update <version>` pins an explicit target; a bare `/update` doubles as a read-only check. After a successful update the current session keeps running the old version — restart dsh to apply.
+  - **Manually**: re-run the same `dsh plugin --profile blue add @dsh-blue/blue@rc` (or the exact-version form in the previous question).
 
 Blue also checks for a newer release in the background at startup (at most once per 24h, silent on failure, reads registry metadata only, sends nothing); when one exists it posts a two-line notice at the top of the scroll area. To turn the startup check off, write this into `~/.dsh/settings.yaml`:
 

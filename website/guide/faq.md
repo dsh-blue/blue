@@ -2,7 +2,7 @@
 
 ## 为什么裸 `npm install @dsh-blue/blue` 装不到？
 
-预览版只发布在 **`rc` dist-tag** 下（`latest` 留给稳定线），而裸安装解析 `latest`、拿到的版本不受控——请用 `dsh plugin --profile blue add @dsh-blue/blue@rc`，见[快速上手](/guide/)。当前预览版为 `v0.1.0-rc.4`；`0.1.0-rc.1` 因打包缺失文件不可用，装到请升级。贡献者的本地开发安装见开发手册的[贡献本仓库](/plugins/contributing)页。
+预览版只发布在 **`rc` dist-tag** 下（`latest` 留给稳定线），而裸安装解析 `latest`、拿到的版本不受控——请装 `blue` 壳包 `npm i -g @dsh-blue/blue-cli@rc`，或用 `dsh plugin --profile blue add @dsh-blue/blue@rc`，见[快速上手](/guide/)。当前预览版为 `v0.1.0-rc.4`；`0.1.0-rc.1` 因打包缺失文件不可用，装到请升级。贡献者的本地开发安装见开发手册的[贡献本仓库](/plugins/contributing)页。
 
 ## `@rc` 装到的不是最新预览版？
 
@@ -17,8 +17,10 @@ pnpm 11 默认开启 `minimumReleaseAge` 冷却期：dist-tag 解析会静默跳
 
 两条路：
 
-- **应用内（推荐）**：会话里输入 `/update`——先做安全预检（profile 健康度、全局 dsh 版本是否满足目标版本的 harness 线、冷却期窗口），打字 `y` 确认后自动执行：快照当前安装 → 精确版本单事务安装 → 装后六包版本校验 → 装机冒烟（模块导入扫描 + 真实启动）→ 任一失败**自动回滚**到原版本，全程有进度面板与日志路径。`/update <版本号>` 可显式指定目标版本；不带参数的 `/update` 兼作只读检查。升级完成后当前会话继续运行旧版，重启 dsh 生效。
-- **手工**：重跑同一条 `dsh plugin --profile blue add @dsh-blue/blue@rc`（或上一条 FAQ 的精确版本号形式）。
+- **壳包用户**：重跑 `npm i -g @dsh-blue/blue-cli@rc`——重装即升级（壳按自身版本把 profile 里的 Blue 校准到同一版，宿主线随之固定），之后照常 `blue` 启动。
+- **dsh 直装用户**：
+  - **应用内（推荐）**：会话里输入 `/update`——先做安全预检（profile 健康度、全局 dsh 版本是否满足目标版本的 harness 线、冷却期窗口），打字 `y` 确认后自动执行：快照当前安装 → 精确版本单事务安装 → 装后六包版本校验 → 装机冒烟（模块导入扫描 + 真实启动）→ 任一失败**自动回滚**到原版本，全程有进度面板与日志路径。`/update <版本号>` 可显式指定目标版本；不带参数的 `/update` 兼作只读检查。升级完成后当前会话继续运行旧版，重启 dsh 生效。
+  - **手工**：重跑同一条 `dsh plugin --profile blue add @dsh-blue/blue@rc`（或上一条 FAQ 的精确版本号形式）。
 
 此外 Blue 启动后会后台检查一次新版（每 24h 至多一次、失败静默、只读 registry 元数据、不做任何上报），有新版时在会话流顶部给出两行提示。不想要启动检查，在 `~/.dsh/settings.yaml` 写入：
 

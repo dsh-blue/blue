@@ -7,8 +7,9 @@
  * re-register every e2e case in this fork).
  */
 
-import { mkdirSync, writeFileSync} from 'node:fs'
-import { join} from 'node:path'
+import { mkdirSync, symlinkSync, writeFileSync} from 'node:fs'
+import { createRequire} from 'node:module'
+import { dirname, join} from 'node:path'
 import { pathToFileURL} from 'node:url'
 import { expect, vi} from 'vitest'
 import { Context} from '@deepseek-ai/cordis'
@@ -286,6 +287,16 @@ export async function bootBlue(argv: string[], options: {
   terminal?: FakeTerminal
 }): Promise<BlueTree> {
   const dir = mkdtempTracked('dsh-blue-e2e-')
+  // S37 puts the dsh host in the workspace (blue-cli's pinned dependency),
+  // and the host carries node-addon-require-builtin within the loader's
+  // resolution — the loader's internal importer activates on Node 24, and
+  // bare rows (the /mcp e2e's dsh-mcp-client) then resolve from this
+  // profile's baseUrl, not from the importing module's own tree. A real
+  // profile has node_modules beside its cordis.yml; link the one
+  // bare-name package in so the temp profile resolves it the same way.
+  const mcpClientRoot = dirname(createRequire(import.meta.url).resolve('@deepseek-ai/dsh-mcp-client/package.json'))
+  mkdirSync(join(dir, 'node_modules', '@deepseek-ai'), { recursive: true })
+  symlinkSync(mcpClientRoot, join(dir, 'node_modules', '@deepseek-ai', 'dsh-mcp-client'))
   const terminal = options.terminal ?? new FakeTerminal()
   const hooks: BlueE2EHooks = {
     coreApply: async (ctx) => {

@@ -95,5 +95,10 @@ export function profileFromArgv(argv: readonly string[]): string {
  * @returns the two-line farewell with its trailing newline.
  */
 export function epitaphFor(sessionId: string, profile: string): string {
-  return `blue · session saved · resume with:\ndsh --profile ${profile} --resume ${sessionId}\n`
+  // Under the @dsh-blue/blue-cli launcher (S37) the resume command is the
+  // shell's own bin — the profile is `blue` by construction there.
+  const resume = process.env.BLUE_LAUNCHER === 'blue'
+    ? `blue --resume ${sessionId}`
+    : `dsh --profile ${profile} --resume ${sessionId}`
+  return `blue · session saved · resume with:\n${resume}\n`
 }
