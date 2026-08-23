@@ -23,6 +23,7 @@
     "blue:plugin-validate": "node script/blue-plugin-validate.mjs",
     "blue:plugin-fixture": "node script/blue-plugin-fixture.mjs",
     "fixture:context-upstream": "node script/context-upstream-fixture.mjs",
+    "fixture:remote-upstream": "node script/remote-upstream-fixture.mjs",
     "website:dev": "pnpm --filter @dsh-blue/website run dev",
     "website:build": "pnpm --filter @dsh-blue/website run build",
     "website:preview": "pnpm --filter @dsh-blue/website run preview"

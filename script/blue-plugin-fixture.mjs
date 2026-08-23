@@ -81,6 +81,7 @@ const frontend = await load('@dsh-blue/blue-frontend')
 const adapter = await load('@dsh-blue/blue-harness-adapter')
 const core = await load('@dsh-blue/blue-core')
 const context = await load('@dsh-blue/blue-context')
+const remote = await load('@dsh-blue/blue-remote')
 
 const host = new frontend.FrontendHost()
 let latePublish
@@ -151,6 +152,44 @@ if (officialFeature.snapshot?.facts.timeline !== undefined) throw new Error('off
 officialFeature.dispose()
 executed.push('official session-projection baseline/push/unload')
 
+let remoteListener
+let remoteDetached = false
+let remoteDisposed = false
+let remoteLeaseReleased = false
+const remoteActions = []
+const remoteTransport = {
+  negotiate: async () => ({ protocol: 'fixture-v2', capabilities: ['session', 'action', 'projection', 'question', 'approval', 'writeLease'] }),
+  snapshot: async sessionId => ({ watermark: 4, value: { id: sessionId, cwd: '/remote', status: 'idle', mode: 'normal' } }),
+  subscribe: (_sessionId, _watermark, listener) => { remoteListener = listener; return () => { remoteListener = undefined } },
+  request: async (_sessionId, action) => { remoteActions.push(action.kind) },
+  acquireWriteLease: async sessionId => ({ token: `fixture:${sessionId}`, expiresAt: 100 }),
+  releaseWriteLease: async () => { remoteLeaseReleased = true },
+  ask: async (_sessionId, question) => question.answer,
+  approve: async (_sessionId, question) => question.outcome,
+  detach: () => { remoteDetached = true },
+  dispose: () => { remoteDisposed = true },
+}
+const remoteAdapter = new remote.RemoteSessionAdapter(remoteTransport)
+const remoteConnected = await remoteAdapter.connect('remote-one')
+if (!remoteConnected.ok || remoteAdapter.protocol !== 'fixture-v2') throw new Error('independent remote connect failed')
+const remoteSeen = []
+remoteAdapter.subscribe(4, event => remoteSeen.push(event.seq))
+remoteListener?.({ sessionId: 'remote-one', seq: 5, event: { id: 'remote-one', cwd: '/remote/live', status: 'running', mode: 'normal' } })
+await remoteAdapter.request({ kind: 'followup', text: 'hello' }, new AbortController().signal)
+const remoteLease = await remoteAdapter.acquireWriteLease()
+if (!remoteLease.ok) throw new Error('independent remote lease failed')
+await remoteAdapter.releaseWriteLease()
+const remoteQuestions = remoteAdapter.questionSource()
+if (await remoteQuestions?.ask({ answer: 'answered' }, new AbortController().signal) !== 'answered') throw new Error('independent remote question failed')
+if (await remoteQuestions?.approve({ outcome: 'allowed-once' }, new AbortController().signal) !== 'allowed-once') throw new Error('independent remote approval failed')
+const lateRemote = remoteListener
+remoteAdapter.disconnect()
+lateRemote?.({ sessionId: 'remote-one', seq: 6, event: { id: 'remote-one', cwd: '/late', status: 'idle', mode: 'normal' } })
+remoteAdapter.dispose()
+await new Promise(resolve => setImmediate(resolve))
+if (remoteSeen.join() !== '5' || remoteActions.join() !== 'followup' || !remoteLeaseReleased || !remoteDetached || !remoteDisposed) throw new Error('independent remote unload contract drifted')
+executed.push('remote resume/action/lease/question/unload')
+
 const model = context.buildContextModel({ sessionId: 's1', watermark: 3, facts: { input: 123456, output: 7890, cacheRead: 42, cacheWrite: 8, used: 120, window: 1000, breakdown: { system: 1, tools: 2, messages: 3 } } })
 const views = [...model.panel.view ? [model.panel.view] : [], ...model.status.views]
 for (const width of [20, 40, 80, 120]) {
@@ -161,4 +200,4 @@ for (const width of [20, 40, 80, 120]) {
 }
 executed.push('width scan 20/40/80/120')
 observations.push(`installed ${packages.size} local tarballs`, 'provider/action/projection/renderer contracts executed')
-console.log(JSON.stringify({ package: manifest.name, fixtureRoot, installed: install, independentInstall: existsSync(join(fixtureRoot, 'node_modules')), scenarios: ['headless projection replay/resume', 'official session-projection baseline/push/unload', 'action abort and stale-result rejection', 'provider swap and plain fallback', 'width scan 20/40/80/120', 'unload followed by late event'], executed, observations }, null, 2))
+console.log(JSON.stringify({ package: manifest.name, fixtureRoot, installed: install, independentInstall: existsSync(join(fixtureRoot, 'node_modules')), scenarios: ['headless projection replay/resume', 'official session-projection baseline/push/unload', 'remote resume/action/lease/question/unload', 'action abort and stale-result rejection', 'provider swap and plain fallback', 'width scan 20/40/80/120', 'unload followed by late event'], executed, observations }, null, 2))

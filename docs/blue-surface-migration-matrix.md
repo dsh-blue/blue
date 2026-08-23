@@ -23,8 +23,10 @@ vertical slice now consumes the official four-key projection cut and has an
 independent tarball fixture, a real dsh-context 0.25.3 host fixture, a TUI
 panel consumer, width scan, and bundle e2e. Its bundle row stays disabled and
 it has not replaced `blue-status-context` pending live profile acceptance.
-Remote v2 negotiation and lease transport remain adapter contracts; they are
-not evidence of a real SSH profile acceptance.
+Remote v2 negotiation and lease transport now have a real authenticated
+Unix-socket daemon fixture, including two sessions, authorization, response
+carriers, contention, release, and late-event cleanup. This is deliberately
+not recorded as SSH bootstrap or live-profile acceptance.
 
 The remaining rows intentionally stay on the legacy baseline until their
 official consumers and live acceptance are available. This prevents duplicate

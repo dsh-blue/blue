@@ -51,7 +51,7 @@
 
 实现 projection registry、action coordinator、current-session binding、dsh-remote session/proxy adapter，验证 attach/detach、seq resume、write lease、approval/question bridge。
 
-当前实现位于 [`packages/remote`](../packages/remote)：除 generic fixture 外，`DshRemoteTransport` 已接入官方 dsh-remote v1 wire-client 形状（health、session.list、session.prompt、mux events、question/approval response）；session interrupt/write-lease 在 v1 明确报告 capability absent/unsupported。真实 SSH bootstrap daemon 仍由外部 remote registry 负责，需独立 profile 配置后人工 dogfood。
+当前实现位于 [`packages/remote`](../packages/remote)：`DshRemoteTransport` 已接入官方 `DshRemoteConnection` structural surface，以显式 authorization 调用 `session.list/history/prompt/cancel`，在 baseline 前开启 mux 并缓存 snapshot/subscribe 缝隙，detach 时释放 read/write attachment 和 event stream；question/approval 使用 `/api/respond` client-response carrier。`pnpm fixture:remote-upstream -- --upstream <checkout>` 已通过真实 Unix socket 验证 pairing/authentication/negotiate、双 session、write-lease 竞争/释放和 late-event cleanup。该 fixture 对应外部 rc.6 ABI，不代表 SSH bootstrap 或当前 Blue Harness line 已人工验收；SSH 仍由外部 registry/profile 负责。
 
 验收：runtime 不限于单 session；switch 先 abort 再清理订阅/cache；remote late event 不回挂旧 UI；domain bundle 不依赖 TUI。
 

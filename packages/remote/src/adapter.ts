@@ -77,10 +77,11 @@ export class RemoteSessionAdapter implements HarnessSessionSource {
     const sessionId = this.currentSession
     this.lease = undefined
     if (lease !== undefined && sessionId !== undefined && this.transport.releaseWriteLease !== undefined) void this.transport.releaseWriteLease(sessionId, lease).catch(() => undefined)
+    if (sessionId !== undefined) this.transport.detach?.(sessionId)
     this.controller = new AbortController()
     this.currentSession = undefined
     this.remoteCapabilities = undefined
     this.generation++
   }
-  dispose(): void { this.disconnect() }
+  dispose(): void { this.disconnect(); this.transport.dispose?.() }
 }
