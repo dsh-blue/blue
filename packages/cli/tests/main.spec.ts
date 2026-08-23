@@ -1,9 +1,10 @@
 /**
- * Tests for the launcher's main flow (S37): the `-V` three-segment
- * self-answer, the missing-host bootstrap line, the boot surface's
- * calibration (current / installed / dev lane / failed) ahead of the
- * inherited exec, the plugin surface's calibration skip, and the exit
- * code propagation.
+ * Tests for the launcher's main flow (S37, failure form extended by D56):
+ * the `-V` three-segment self-answer, the missing-host bootstrap line, the
+ * boot surface's calibration (current / installed / dev lane / failed with
+ * its classified manual pointer and output tail) ahead of the inherited
+ * exec, the plugin surface's calibration skip, and the exit code
+ * propagation.
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -155,7 +156,7 @@ describe('main', () => {
     expect(captures.err).toEqual([`blue: installed @dsh-blue/blue@${PIN} into profile 'blue'\n`])
   })
 
-  it('fails bootstrap with the manual pointer and exits non-zero, never execing', async () => {
+  it('fails bootstrap with the classified manual pointer and output tail, never execing', async () => {
     fixtureLauncher()
     cliInternals.spawnOnce = async () => ({ code: 1, signal: null, stdout: '', stderr: 'pnpm: ETARGET\n', timedOut: false })
     let inherited = false
@@ -165,10 +166,51 @@ describe('main', () => {
     }
     await main(['task'])
     expect(captures.err).toEqual([
-      `blue: bootstrap failed — pnpm: ETARGET\n  manual: dsh plugin --profile blue add @dsh-blue/blue@${PIN}\n`,
+      `blue: bootstrap failed — pnpm: ETARGET\n  manual: fix the cause and re-run blue (with a global dsh: dsh plugin --profile blue add @dsh-blue/blue@${PIN})\n`,
     ])
     expect(captures.exits).toEqual([1])
     expect(inherited).toBe(false)
+  })
+
+  it('routes a pnpm-missing bootstrap to the pnpm manual line', async () => {
+    fixtureLauncher()
+    cliInternals.spawnOnce = async (cmd, args) => args[args.length - 1] === '--version'
+      ? { code: null, signal: null, stdout: '', stderr: '', timedOut: false, spawnError: 'Error: spawn pnpm ENOENT' }
+      : OK
+    let inherited = false
+    cliInternals.spawnInherit = async () => {
+      inherited = true
+      return OK
+    }
+    await main(['task'])
+    expect(captures.err).toEqual([
+      'blue: bootstrap failed — pnpm is missing on PATH — npm i -g pnpm (or: corepack enable pnpm)\n  manual: npm i -g pnpm (or: corepack enable pnpm), then re-run blue\n',
+    ])
+    expect(captures.exits).toEqual([1])
+    expect(inherited).toBe(false)
+  })
+
+  it('routes a timed-out bootstrap to the resume manual line', async () => {
+    fixtureLauncher()
+    cliInternals.spawnOnce = async () => ({ code: null, signal: null, stdout: '', stderr: 'blue: install timed out', timedOut: true })
+    await main(['task'])
+    expect(captures.err).toEqual([
+      'blue: bootstrap failed — install timed out after 20 minutes\n  blue: install timed out\n  manual: re-run blue — downloaded packages are cached and the install resumes\n',
+    ])
+    expect(captures.exits).toEqual([1])
+  })
+
+  it('prints the failure tail as indented lines between verdict and manual', async () => {
+    fixtureLauncher()
+    cliInternals.spawnOnce = async (cmd, args) => args[args.length - 1] === '--version'
+      ? OK
+      : { code: 1, signal: null, stdout: '', stderr: 'first line\nsecond line\nETARGET no match\n', timedOut: false }
+    await main(['task'])
+    expect(captures.err).toEqual([
+      'blue: bootstrap failed — ETARGET no match\n  first line\n  second line\n  manual: fix the cause and re-run blue (with a global dsh: dsh plugin --profile blue add @dsh-blue/blue@'
+      + `${PIN})\n`,
+    ])
+    expect(captures.exits).toEqual([1])
   })
 
   it('forwards the plugin surface without calibrating', async () => {

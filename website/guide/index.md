@@ -1,7 +1,7 @@
 # 快速上手
 
 ::: info 预览阶段说明
-`v0.1.0-rc.4` 已发布在 npm 的 **`rc` dist-tag** 下（`latest` 留给稳定线，安装 spec 需带 `@rc` 后缀）。本页是用户安装路径；贡献者的本地开发安装（源码检出、link 安装、迭代环）在开发手册的[贡献本仓库](/plugins/contributing)页。
+`v0.1.0-rc.5` 已发布在 npm 的 **`rc` dist-tag** 下（`latest` 留给稳定线，安装 spec 需带 `@rc` 后缀）。本页是用户安装路径；贡献者的本地开发安装（源码检出、link 安装、迭代环）在开发手册的[贡献本仓库](/plugins/contributing)页。
 :::
 
 ## 前置条件
@@ -9,16 +9,22 @@
 | 依赖 | 版本 |
 | --- | --- |
 | Node | `^22.19.0 \|\| >=24.0.0` |
-| pnpm | 11（两条路径都需要：宿主的 `plugin` 命令是 profile 工作区内 pnpm 的薄转发，首跑装配走它） |
+| pnpm | 11（两条路径都需要：宿主的 `plugin` 命令是 profile 工作区内 pnpm 的薄转发，首跑装配走它；若缺失，首次运行 `blue` 会以一行报错指明装法：`npm i -g pnpm` 或 `corepack enable pnpm`） |
 | dsh CLI | 仅「dsh 直装」路径需要：`>=0.1.1-rc.2`（`npm i -g @deepseek-ai/dsh`；壳包路径宿主已随包自带） |
 
 ## 安装（预览版）
 
-**推荐：`blue` 壳包**（一条命令，自带与测试线一致的 dsh 宿主；首次运行自动把 Blue 装进 `blue` profile——装配经 pnpm 在 profile 内完成，缺 pnpm 时会以一行报错指路）：
+**推荐：`blue` 壳包**（一条命令，自带与测试线一致的 dsh 宿主；首次运行自动把 Blue 装进 `blue` profile——装配经 pnpm 在 profile 内完成，缺 pnpm 时会以一行报错指路）。请用 npm 安装壳包，不要用 pnpm——pnpm 的严格全局布局不会链接嵌套宿主的依赖，启动时以 `ERR_MODULE_NOT_FOUND` 失败：
 
 ```sh
 npm i -g @dsh-blue/blue-cli@rc
 blue
+```
+
+首次运行 `blue` 会在 profile 内下载完整依赖树——数百个包，慢速网络下需要数分钟（预算约 20 分钟，中途超时重跑 `blue` 即从缓存续传）；npm 自身在解析依赖树的大部分时间里没有输出，这种安静是正常现象，不是卡死。国内网络建议配置镜像加速（profile 内装配与 `/update` 走同一份 registry 配置）：
+
+```sh
+pnpm config set registry https://registry.npmmirror.com
 ```
 
 **或 dsh 直装**（宿主自理，适合已有 dsh 的用户）：

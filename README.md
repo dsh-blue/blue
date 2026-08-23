@@ -33,7 +33,7 @@ This repository is the standalone home of Blue's five workspace packages under t
 > [!NOTE]
 > `0.1.0-rc.5` is the preview release, published under the **`rc` dist-tag** — `latest` stays reserved for the stable line, so install specs carry the `@rc` suffix.
 
-Prerequisites: Node `^22.19 || >=24` and pnpm 11 (both install paths; the host's `plugin` command forwards to pnpm). A global `dsh` CLI is only needed on the direct-dsh path — the shell ships its own pinned host.
+Prerequisites: Node `^22.19 || >=24` and pnpm 11 (both install paths; the host's `plugin` command forwards to pnpm — if it is missing, the first `blue` run says exactly how to install it: `npm i -g pnpm` or `corepack enable pnpm`). Install the shell with **npm, not pnpm** — pnpm's strict global layout does not link the nested dsh host's dependencies, and boot fails with `ERR_MODULE_NOT_FOUND`. A global `dsh` CLI is only needed on the direct-dsh path — the shell ships its own pinned host.
 
 ### Install from npm
 
@@ -43,6 +43,8 @@ Prerequisites: Node `^22.19 || >=24` and pnpm 11 (both install paths; the host's
 npm i -g @dsh-blue/blue-cli@rc
 blue
 ```
+
+The first `blue` run downloads the full dependency tree into the profile — hundreds of packages; expect minutes on slow links (the budget is ~20 minutes, and re-running `blue` resumes from the cache). npm itself is silent for most of its own install while resolving the tree — that stillness is normal, not a hang.
 
 **Or install over your own dsh** (bring your own host — for existing dsh users):
 

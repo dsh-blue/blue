@@ -21,8 +21,8 @@ import { appendUpdateLog, backupDir, readProfileFacts, restoreSnapshot, snapshot
 import { repairRecipe } from './preflight.ts'
 import { compareVersions, VERSION_FLOOR } from './version.ts'
 
-/** The install budget — install-dev.sh uses the same 300s bound. */
-const INSTALL_TIMEOUT_MS = 300_000
+/** The install budget — 20 min; the calibration install's parity (D55), slow networks measured at 18 min for 455 packages. */
+const INSTALL_TIMEOUT_MS = 1_200_000
 
 /** The import sweep's budget (module loading only). */
 const IMPORT_SMOKE_TIMEOUT_MS = 30_000

@@ -9,17 +9,19 @@
 | Dependency | Version |
 | --- | --- |
 | Node | `^22.19.0 \|\| >=24.0.0` |
-| pnpm | 11 (both paths need it: the host's `plugin` command is a thin pnpm forwarder inside the profile, and the first-run assembly goes through it) |
+| pnpm | 11 (both paths need it: the host's `plugin` command is a thin pnpm forwarder inside the profile, and the first-run assembly goes through it — if it is missing, the first `blue` run says exactly how to install it: `npm i -g pnpm` or `corepack enable pnpm`) |
 | dsh CLI | only for the direct-dsh path: `>=0.1.1-rc.2` (`npm i -g @deepseek-ai/dsh`; on the shell path the host ships with the package) |
 
 ## Install (preview)
 
-**Recommended: the `blue` shell** (one command; ships the dsh host pinned to the tested line and installs Blue into its `blue` profile on first run — the assembly runs pnpm inside the profile, and a missing pnpm fails with a one-line pointer):
+**Recommended: the `blue` shell** (one command; ships the dsh host pinned to the tested line and installs Blue into its `blue` profile on first run — the assembly runs pnpm inside the profile, and a missing pnpm fails with a one-line pointer). Install the shell with npm, not pnpm — pnpm's strict global layout does not link the nested host's dependencies, and boot fails with `ERR_MODULE_NOT_FOUND`:
 
 ```sh
 npm i -g @dsh-blue/blue-cli@rc
 blue
 ```
+
+The first `blue` run downloads the full dependency tree into the profile — hundreds of packages; expect minutes on slow links (the budget is ~20 minutes, and re-running `blue` resumes from the cache). npm itself is silent for most of its own install while resolving the tree — that stillness is normal, not a hang.
 
 **Or install over your own dsh** (bring your own host — for existing dsh users):
 

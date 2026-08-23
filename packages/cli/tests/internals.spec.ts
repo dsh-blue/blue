@@ -99,4 +99,8 @@ describe('cli/internals fs and resolution defaults', () => {
     expect(resolvePackageManifest('@dsh-blue/definitely-not-a-package-x/package.json')).toBeUndefined()
     expect(cliInternals.homedir()).toContain('/')
   })
+
+  it('mirrors the process platform (the win32-branch seam, D56)', () => {
+    expect(cliInternals.platform).toBe(process.platform)
+  })
 })

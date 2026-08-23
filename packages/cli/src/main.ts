@@ -3,14 +3,16 @@
  * shell's own manifests (shell · Blue pin · harness line, one line),
  * resolve the nested host, calibrate the `blue` profile on the boot
  * surface, then exec the host with inherited stdio and propagate the
- * child's exit code. Every failure is one line plus a pointer — the
- * bootstrap contract — and a non-zero exit.
+ * child's exit code. Every failure is one verdict line, an optional
+ * bounded output tail, and a manual pointer — the bootstrap contract's
+ * failure form (D56 extends D50④) — and a non-zero exit.
  *
  * @module @dsh-blue/blue-cli/main
  */
 
 import { fileURLToPath } from 'node:url'
 import { calibrate } from './calibrate.ts'
+import type { CalibrationOutcome } from './calibrate.ts'
 import { cliInternals } from './internals.ts'
 import { nestedDsh } from './nested.ts'
 import { translateArgv } from './translate.ts'
@@ -21,6 +23,24 @@ import { translateArgv } from './translate.ts'
  * (the S37 seam in blue-app).
  */
 const LAUNCHER_ENV: Record<string, string> = { BLUE_LAUNCHER: 'blue' }
+
+/** The failed half of `CalibrationOutcome` — the `manualLine` input shape. */
+type FailedOutcome = Extract<CalibrationOutcome, { action: 'failed' }>
+
+/**
+ * The manual pointer per failure class (D56): every line must be runnable by
+ * the failing audience — a fresh npm-shell user has no global `dsh` on PATH,
+ * so the bare plugin command retired from the failure output; the global-dsh
+ * form stays as the parenthesized escape hatch on the generic classes.
+ * @param outcome - the failed calibration.
+ * @param version - the shell's own version (the Blue pin).
+ * @returns the one manual line.
+ */
+function manualLine(outcome: FailedOutcome, version: string): string {
+  if (outcome.kind === 'pnpm-missing') return 'npm i -g pnpm (or: corepack enable pnpm), then re-run blue'
+  if (outcome.kind === 'timeout') return 're-run blue — downloaded packages are cached and the install resumes'
+  return `fix the cause and re-run blue (with a global dsh: dsh plugin --profile blue add @dsh-blue/blue@${version})`
+}
 
 /**
  * Run one invocation to process exit.
@@ -43,7 +63,11 @@ export async function main(argv: readonly string[]): Promise<void> {
     const version = shellVersion()
     const outcome = await calibrate({ version, dshBinJs: host.binJs })
     if (outcome.action === 'failed') {
-      cliInternals.stderr(`blue: bootstrap failed — ${outcome.reason}\n  manual: dsh plugin --profile blue add @dsh-blue/blue@${version}\n`)
+      cliInternals.stderr([
+        `blue: bootstrap failed — ${outcome.reason}`,
+        ...(outcome.detail ?? []).map(line => `  ${line}`),
+        `  manual: ${manualLine(outcome, version)}`,
+      ].join('\n') + '\n')
       cliInternals.exit(1)
       return
     }

@@ -1,14 +1,16 @@
 /**
- * Tests for managed calibration (D50 decision 4): the matching-version
- * passthrough, the dev-lane skip, the single-transaction install with
- * its post-verify, and the one-line failure shapes.
+ * Tests for managed calibration (D50 decision 4, failure form extended by
+ * D56): the matching-version passthrough, the dev-lane skip, the pnpm
+ * pre-flight (posix ENOENT / win32 ComSpec 9009), the single-transaction
+ * install with its post-verify, and the classified failure shapes with
+ * their bounded detail tails.
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
-import { calibrate, compareVersions, dshHome } from '../src/calibrate.ts'
+import { calibrate, compareVersions, dshHome, isPnpmMissing, pnpmProbeCommand } from '../src/calibrate.ts'
 import { cliInternals, type SpawnOutcome } from '../src/internals.ts'
 
 registerTempDirCleanup()
@@ -55,6 +57,21 @@ function installedManifest(version: string): string {
 /** A successful spawn outcome. */
 const OK: SpawnOutcome = { code: 0, signal: null, stdout: '', stderr: '', timedOut: false }
 
+/** A probe outcome reporting a true posix ENOENT (pnpm unresolvable). */
+const PROBE_ENOENT: SpawnOutcome = { code: null, signal: null, stdout: '', stderr: '', timedOut: false, spawnError: 'Error: spawn pnpm ENOENT' }
+
+/**
+ * Wrap an install stub with the pnpm pre-flight dispatch: the probe is the
+ * call whose last argument is `--version` (both platforms), the install
+ * calls end in the bundle spec.
+ */
+function withProbe(
+  install: (cmd: string, args: readonly string[], opts: { timeoutMs?: number } | undefined) => Promise<SpawnOutcome>,
+  probe: SpawnOutcome = OK,
+): typeof cliInternals.spawnOnce {
+  return (cmd, args, opts) => args[args.length - 1] === '--version' ? Promise.resolve(probe) : install(cmd, args, opts)
+}
+
 describe('calibrate', () => {
   it('passes through with zero spawns when the installed bundle matches the pin', async () => {
     const calls: Call[] = []
@@ -87,18 +104,33 @@ describe('calibrate', () => {
   it('installs the pin through the nested host and verifies the result', async () => {
     const { root } = fixtureHome({})
     const calls: Call[] = []
+    cliInternals.spawnOnce = withProbe(async (cmd, args, opts) => {
+      calls.push({ cmd, args, opts })
+      mkdirSync(join(root, 'node_modules', '@dsh-blue', 'blue'), { recursive: true })
+      writeFileSync(join(root, 'node_modules', '@dsh-blue', 'blue', 'package.json'), installedManifest(PIN))
+      return OK
+    })
+    await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({ action: 'installed' })
+    expect(calls).toEqual([{
+      cmd: cliInternals.execPath,
+      args: ['/nested/dsh/lib/bin.js', 'plugin', '--profile', 'blue', 'add', `@dsh-blue/blue@${PIN}`],
+      opts: { timeoutMs: 1_200_000 },
+    }])
+  })
+
+  it('probes pnpm once before the install with the 30s probe budget', async () => {
+    const { root } = fixtureHome({})
+    const calls: Call[] = []
     cliInternals.spawnOnce = async (cmd, args, opts) => {
       calls.push({ cmd, args, opts })
+      if (args[args.length - 1] === '--version') return OK
       mkdirSync(join(root, 'node_modules', '@dsh-blue', 'blue'), { recursive: true })
       writeFileSync(join(root, 'node_modules', '@dsh-blue', 'blue', 'package.json'), installedManifest(PIN))
       return OK
     }
     await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({ action: 'installed' })
-    expect(calls).toEqual([{
-      cmd: cliInternals.execPath,
-      args: ['/nested/dsh/lib/bin.js', 'plugin', '--profile', 'blue', 'add', `@dsh-blue/blue@${PIN}`],
-      opts: { timeoutMs: 300_000 },
-    }])
+    expect(calls[0]).toEqual({ cmd: 'pnpm', args: ['--version'], opts: { timeoutMs: 30_000 } })
+    expect(calls).toHaveLength(2)
   })
 
   it('never downgrades a profile that /update advanced past the shell', async () => {
@@ -119,7 +151,7 @@ describe('calibrate', () => {
     const { root } = fixtureHome({})
     const calls: Call[] = []
     let attempt = 0
-    cliInternals.spawnOnce = async (cmd, args, opts) => {
+    cliInternals.spawnOnce = withProbe(async (cmd, args, opts) => {
       attempt += 1
       calls.push({ cmd, args, opts })
       if (attempt === 1) {
@@ -128,7 +160,7 @@ describe('calibrate', () => {
       mkdirSync(join(root, 'node_modules', '@dsh-blue', 'blue'), { recursive: true })
       writeFileSync(join(root, 'node_modules', '@dsh-blue', 'blue', 'package.json'), installedManifest(PIN))
       return OK
-    }
+    })
     await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({ action: 'installed' })
     expect(calls.map(call => call.args.join(' '))).toEqual([
       `/nested/dsh/lib/bin.js plugin --profile blue add @dsh-blue/blue@${PIN}`,
@@ -136,76 +168,221 @@ describe('calibrate', () => {
     ])
   })
 
-  it('translates a missing pnpm into the install suggestion', async () => {
+  it('translates a missing pnpm into the install suggestion, keeping the dsh line as detail', async () => {
     fixtureHome({})
-    cliInternals.spawnOnce = async () => ({
+    cliInternals.spawnOnce = withProbe(async () => ({
       code: 1, signal: null, stdout: '',
       stderr: 'dsh: pnpm not found on PATH — install pnpm to manage profile plugins\n',
       timedOut: false,
-    })
+    }))
     await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'pnpm is missing on PATH — npm i -g pnpm (or: corepack enable pnpm)',
+      kind: 'pnpm-missing',
+      detail: ['dsh: pnpm not found on PATH — install pnpm to manage profile plugins'],
+    })
+  })
+
+  it('blocks fast with the pnpm suggestion when the posix probe ENOENTs, never spawning dsh', async () => {
+    fixtureHome({})
+    let installSpawned = false
+    cliInternals.spawnOnce = withProbe(async () => {
+      installSpawned = true
+      return OK
+    }, PROBE_ENOENT)
+    await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
+      action: 'failed',
+      reason: 'pnpm is missing on PATH — npm i -g pnpm (or: corepack enable pnpm)',
+      kind: 'pnpm-missing',
+    })
+    expect(installSpawned).toBe(false)
+  })
+
+  it('probes through ComSpec on win32 and blocks on the cmd 9009 verdict', async () => {
+    fixtureHome({})
+    const { env } = cliInternals
+    cliInternals.env = { ...env, ComSpec: 'C:\\Windows\\system32\\cmd.exe' }
+    cliInternals.platform = 'win32'
+    const probes: Call[] = []
+    cliInternals.spawnOnce = async (cmd, args, opts) => {
+      probes.push({ cmd, args, opts })
+      return { code: 9009, signal: null, stdout: '', stderr: "'pnpm' is not recognized as an internal or external command\r\n", timedOut: false }
+    }
+    await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
+      action: 'failed',
+      reason: 'pnpm is missing on PATH — npm i -g pnpm (or: corepack enable pnpm)',
+      kind: 'pnpm-missing',
+    })
+    expect(probes).toEqual([{ cmd: 'C:\\Windows\\system32\\cmd.exe', args: ['/d', '/c', 'pnpm', '--version'], opts: { timeoutMs: 30_000 } }])
+  })
+
+  it('treats 127 from a win32 shell as missing too', async () => {
+    fixtureHome({})
+    cliInternals.platform = 'win32'
+    cliInternals.spawnOnce = async () => ({ code: 127, signal: null, stdout: '', stderr: 'pnpm: not found\n', timedOut: false })
+    await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
+      action: 'failed',
+      reason: 'pnpm is missing on PATH — npm i -g pnpm (or: corepack enable pnpm)',
+      kind: 'pnpm-missing',
+    })
+  })
+
+  it('proceeds when the win32 probe is inconclusive (spawn error, odd exit, timeout)', async () => {
+    const inconclusive: SpawnOutcome[] = [
+      { code: null, signal: null, stdout: '', stderr: '', timedOut: false, spawnError: 'Error: spawn cmd.exe ENOENT' },
+      { code: 1, signal: null, stdout: '', stderr: '', timedOut: false },
+      { code: null, signal: null, stdout: '', stderr: '', timedOut: true },
+    ]
+    for (const probe of inconclusive) {
+      const { root } = fixtureHome({})
+      const install = async (): Promise<SpawnOutcome> => {
+        mkdirSync(join(root, 'node_modules', '@dsh-blue', 'blue'), { recursive: true })
+        writeFileSync(join(root, 'node_modules', '@dsh-blue', 'blue', 'package.json'), installedManifest(PIN))
+        return OK
+      }
+      cliInternals.platform = 'win32'
+      cliInternals.spawnOnce = withProbe(install, probe)
+      await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({ action: 'installed' })
+    }
+  })
+
+  it('classifies the win32 shell-not-found exit 9009 after a failed install as pnpm-missing, keeping the dsh line as detail', async () => {
+    fixtureHome({})
+    cliInternals.platform = 'win32'
+    cliInternals.spawnOnce = withProbe(async () => ({
+      code: 9009, signal: null, stdout: '',
+      stderr: 'dsh: pnpm failed in profile directory C:\\Users\\x\\.dsh\\profiles\\blue\n',
+      timedOut: false,
+    }))
+    await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
+      action: 'failed',
+      reason: 'pnpm is missing on PATH — npm i -g pnpm (or: corepack enable pnpm)',
+      kind: 'pnpm-missing',
+      detail: ['dsh: pnpm failed in profile directory C:\\Users\\x\\.dsh\\profiles\\blue'],
+    })
+  })
+
+  it('reports a timed-out install with the timeout class and the marker tail', async () => {
+    fixtureHome({})
+    cliInternals.spawnOnce = withProbe(async () => ({
+      code: null, signal: null, stdout: '',
+      stderr: 'pnpm: downloading…\nblue: install timed out',
+      timedOut: true,
+    }))
+    await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
+      action: 'failed',
+      reason: 'install timed out after 20 minutes',
+      kind: 'timeout',
+      detail: ['pnpm: downloading…', 'blue: install timed out'],
     })
   })
 
   it('fails one-line on a rejected install, quoting the output tail', async () => {
     fixtureHome({})
-    cliInternals.spawnOnce = async () => ({ code: 1, signal: null, stdout: '', stderr: 'pnpm: install\nETARGET no match\n', timedOut: false })
+    cliInternals.spawnOnce = withProbe(async () => ({ code: 1, signal: null, stdout: '', stderr: 'pnpm: install\nETARGET no match\n', timedOut: false }))
     await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'ETARGET no match',
+      kind: 'install',
+      detail: ['pnpm: install'],
     })
   })
 
   it('fails on a spawn error and on a post-install mismatch', async () => {
     fixtureHome({})
-    cliInternals.spawnOnce = async () => ({ code: 0, signal: null, stdout: '', stderr: '', timedOut: false, spawnError: 'ENOENT' })
+    cliInternals.spawnOnce = withProbe(async () => ({ code: 0, signal: null, stdout: '', stderr: '', timedOut: false, spawnError: 'ENOENT' }))
     await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'ENOENT',
+      kind: 'install',
     })
     fixtureHome({})
-    cliInternals.spawnOnce = async () => OK
+    cliInternals.spawnOnce = withProbe(async () => OK)
     await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'profile reports @dsh-blue/blue@uninstalled after install',
+      kind: 'verify',
     })
   })
 
   it('reads broken manifests as absent and installs through them', async () => {
     fixtureHome({ 'package.json': '{ broken', 'node_modules/@dsh-blue/blue/package.json': '{ also broken' })
-    cliInternals.spawnOnce = async () => OK
+    cliInternals.spawnOnce = withProbe(async () => OK)
     await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'profile reports @dsh-blue/blue@uninstalled after install',
+      kind: 'verify',
     })
   })
 
   it('reads a non-string installed version as absent', async () => {
     fixtureHome({ 'package.json': JSON.stringify({ dependencies: {} }), 'node_modules/@dsh-blue/blue/package.json': JSON.stringify({ version: 3 }) })
-    cliInternals.spawnOnce = async () => OK
+    cliInternals.spawnOnce = withProbe(async () => OK)
     await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'profile reports @dsh-blue/blue@uninstalled after install',
+      kind: 'verify',
+    })
+  })
+
+  it('bounds each detail line and drops the verdict duplicate', async () => {
+    fixtureHome({})
+    const long = `y`.repeat(400)
+    cliInternals.spawnOnce = withProbe(async () => ({ code: 1, signal: null, stdout: '', stderr: `${long}\nETARGET no match\n`, timedOut: false }))
+    await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
+      action: 'failed',
+      reason: 'ETARGET no match',
+      kind: 'install',
+      detail: [`${'y'.repeat(197)}...`],
     })
   })
 
   it('truncates a long output tail to one bounded line', async () => {
     fixtureHome({})
     const long = `x`.repeat(400)
-    cliInternals.spawnOnce = async () => ({ code: 1, signal: null, stdout: '', stderr: `${long}\n`, timedOut: false })
+    cliInternals.spawnOnce = withProbe(async () => ({ code: 1, signal: null, stdout: '', stderr: `${long}\n`, timedOut: false }))
     const outcome = await calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })
-    expect(outcome).toEqual({ action: 'failed', reason: `${'x'.repeat(197)}...` })
+    expect(outcome).toEqual({ action: 'failed', reason: `${'x'.repeat(197)}...`, kind: 'install' })
   })
 
   it('falls back to a generic reason when the install died wordlessly', async () => {
     fixtureHome({})
-    cliInternals.spawnOnce = async () => ({ code: 1, signal: null, stdout: '', stderr: '', timedOut: false })
+    cliInternals.spawnOnce = withProbe(async () => ({ code: 1, signal: null, stdout: '', stderr: '', timedOut: false }))
     await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'install failed',
+      kind: 'install',
     })
+  })
+})
+
+describe('pnpmProbeCommand', () => {
+  it('spawns pnpm directly on posix and through ComSpec on win32', () => {
+    expect(pnpmProbeCommand('linux', undefined)).toEqual({ cmd: 'pnpm', args: ['--version'] })
+    expect(pnpmProbeCommand('darwin', '/bin/zsh')).toEqual({ cmd: 'pnpm', args: ['--version'] })
+    expect(pnpmProbeCommand('win32', 'C:\\Windows\\system32\\cmd.exe')).toEqual({
+      cmd: 'C:\\Windows\\system32\\cmd.exe',
+      args: ['/d', '/c', 'pnpm', '--version'],
+    })
+    expect(pnpmProbeCommand('win32', undefined)).toEqual({ cmd: 'cmd.exe', args: ['/d', '/c', 'pnpm', '--version'] })
+  })
+})
+
+describe('isPnpmMissing', () => {
+  it('takes only cmd not-found exits as missing on win32', () => {
+    expect(isPnpmMissing({ ...OK, code: 9009 }, 'win32')).toBe(true)
+    expect(isPnpmMissing({ ...OK, code: 127 }, 'win32')).toBe(true)
+    expect(isPnpmMissing(OK, 'win32')).toBe(false)
+    expect(isPnpmMissing({ ...OK, code: 1 }, 'win32')).toBe(false)
+    expect(isPnpmMissing({ ...OK, code: null, spawnError: 'Error: spawn cmd.exe ENOENT' }, 'win32')).toBe(false)
+    expect(isPnpmMissing({ ...OK, code: null, timedOut: true }, 'win32')).toBe(false)
+  })
+
+  it('takes only a true ENOENT as missing on posix', () => {
+    expect(isPnpmMissing({ ...OK, code: null, spawnError: 'Error: spawn pnpm ENOENT' }, 'linux')).toBe(true)
+    expect(isPnpmMissing({ ...OK, code: null, spawnError: 'Error: spawn pnpm EACCES' }, 'linux')).toBe(false)
+    expect(isPnpmMissing(OK, 'linux')).toBe(false)
+    expect(isPnpmMissing({ ...OK, code: 1 }, 'linux')).toBe(false)
   })
 })
 
