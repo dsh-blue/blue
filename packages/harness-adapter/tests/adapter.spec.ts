@@ -7,6 +7,7 @@ import { QuestionBridge } from '../src/question.ts'
 import { SessionBridge } from '../src/session.ts'
 import { apply as invariantApply, name as invariantName } from '../src/invariant.ts'
 import { actionPlugin, apply as rootApply, modelPlugin, projectionPlugin, questionPlugin, sessionPlugin } from '../src/plugins.ts'
+import { AdapterCapabilityAbsentError } from '../src/types.ts'
 
 const snapshot = (id = 's1') => ({ id, cwd: '/tmp', status: 'idle' as const, mode: 'normal' as const })
 
@@ -31,6 +32,23 @@ describe('SessionBridge', () => {
   })
   it('maps an aborted request and cleans registrations on dispose', async () => {
     const source = { snapshot: async () => ({ watermark: 0, value: snapshot() }), subscribe: () => () => undefined, request: vi.fn((_action: unknown, signal: AbortSignal) => new Promise<void>((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }))) }; const bridge = new SessionBridge({ source }); await bridge.attach(); const controller = new AbortController(); const pending = bridge.request({ kind: 'interrupt' }, { signal: controller.signal }); controller.abort(); await expect(pending).resolves.toMatchObject({ code: 'BLUE_ABORTED' }); bridge.dispose(); expect(bridge.attached).toBe(false)
+  })
+  it('preserves structured capability absence across the async request boundary', async () => {
+    const source = {
+      snapshot: async () => ({ watermark: 0, value: snapshot() }),
+      subscribe: () => () => undefined,
+      request: async () => { throw new AdapterCapabilityAbsentError('action') },
+    }
+    const bridge = new SessionBridge({ source })
+    await bridge.attach()
+    await expect(bridge.request({ kind: 'interrupt' })).resolves.toEqual({
+      ok: false,
+      code: 'BLUE_CAPABILITY_ABSENT',
+      message: 'Harness capability "action" is unavailable',
+    })
+    const custom = new AdapterCapabilityAbsentError('action', 'session interrupt is unavailable')
+    expect(custom).toMatchObject({ name: 'AdapterCapabilityAbsentError', code: 'BLUE_CAPABILITY_ABSENT', capability: 'action', message: 'session interrupt is unavailable' })
+    bridge.dispose()
   })
   it('rejects an attach whose snapshot is aborted', async () => { let bridge!: SessionBridge; const source = { snapshot: async (signal: AbortSignal) => { queueMicrotask(() => bridge.detach()); await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true })); return { watermark: 0, value: snapshot() } }, subscribe: () => () => undefined, request: async () => undefined }; bridge = new SessionBridge({ source }); await expect(bridge.attach()).resolves.toMatchObject({ code: 'BLUE_ABORTED' }) })
 })

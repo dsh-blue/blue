@@ -4,3 +4,4 @@ F2 compatibility layer. It depends only on documented, narrow source interfaces 
 
 Removal conditions are recorded per adapter in its source module: delete the bridge when the corresponding Harness capability exposes the same snapshot/watermark and structured action contract.
 `ProjectionBridge.attach` treats snapshot loader failures as structured `BLUE_ACTION_REJECTED` results and always aborts/disposes the subscription before replacing a session. This is the adapter boundary used by context and remote fixtures.
+`AdapterCapabilityAbsentError` carries action-level absence through async source methods; `SessionBridge.request` maps it to `BLUE_CAPABILITY_ABSENT` while retaining ordinary handler failures as `BLUE_ACTION_REJECTED`.

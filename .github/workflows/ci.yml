@@ -1,4 +1,4 @@
-# R0 (release roadmap): test/typecheck/lint gate for the five packages.
+# R0 (release roadmap): test/typecheck/lint gate for the workspace packages.
 # Runs on every master push and PR (except website-only PRs — those are
 # covered by website-pages.yml's build check). Install is pinned by the
 # root packageManager field (pnpm/action-setup reads it) with a frozen

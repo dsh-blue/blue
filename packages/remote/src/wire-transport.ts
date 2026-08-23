@@ -6,6 +6,7 @@
  * @module @dsh-blue/blue-remote/wire-transport
  */
 import type { BlueSessionAction, BlueSessionSnapshot } from '@dsh-blue/blue-api'
+import { AdapterCapabilityAbsentError } from '@dsh-blue/blue-harness-adapter'
 import type { EventEnvelope, SnapshotEnvelope } from '@dsh-blue/blue-harness-adapter'
 import type {
   DshRemoteConnectionClient,
@@ -183,7 +184,7 @@ export class DshRemoteTransport implements RemoteTransport {
   async request(sessionId: string, action: BlueSessionAction, signal: AbortSignal): Promise<void> {
     if (this.client.agents !== undefined) await this.ensureWriteAttachment(sessionId, signal)
     if (action.kind === 'interrupt') {
-      if (this.negotiatedProtocol !== '2') throw new Error('remote action unavailable: session interrupt is not in protocol v1')
+      if (this.negotiatedProtocol !== '2') throw new AdapterCapabilityAbsentError('action', 'remote session interrupt is unavailable in protocol v1')
       if (this.client.agents !== undefined) await this.client.agents.invoke('session.cancel', { sessionId }, { authorization: { kind: 'session-write', sessionId }, signal })
       else await this.client.call('session.cancel', { sessionId }, signal)
       return

@@ -171,6 +171,62 @@ describe('blue whole-tree e2e', () => {
     expect(output).toContain('Blue online.')
   })
 
+  it('replays and drives the official conversation model without duplicating the legacy transcript', async () => {
+    const root = mkdtempTracked('dsh-blue-e2e-official-transcript-')
+    const first = await bootBlue(['official replay question'], {
+      script: [textResponse('official replay answer')],
+      persistenceRoot: root,
+      officialTranscript: true,
+    })
+    const firstAgent = await currentAgent(first)
+    await vi.waitFor(() => { expect(first.adapter.requests).toHaveLength(1) })
+    await firstAgent.whenIdle()
+    const id = String(firstAgent.session.id)
+    await first.ctx.sessions.flush(firstAgent.session)
+    await first.ctx.fiber.dispose()
+
+    const resumed = await bootBlue(['--resume', id], {
+      script: [textResponse('official live answer')],
+      persistenceRoot: root,
+      officialTranscript: true,
+    })
+    const resumedAgent = await currentAgent(resumed)
+    await vi.waitFor(async () => {
+      const plain = stripSgr(await fullFrame(resumed.terminal))
+      expect(plain.split('official replay question')).toHaveLength(2)
+      expect(plain.split('official replay answer')).toHaveLength(2)
+    })
+
+    typeLine(resumed.terminal, 'official live question')
+    await vi.waitFor(() => { expect(resumed.adapter.requests).toHaveLength(1) })
+    await resumedAgent.whenIdle()
+    await vi.waitFor(async () => {
+      const plain = stripSgr(await fullFrame(resumed.terminal))
+      expect(plain.split('official replay answer')).toHaveLength(2)
+      expect(plain.split('official live answer')).toHaveLength(2)
+    })
+
+    const officialEntry = [...resumed.ctx.loader.entries()]
+      .find(entry => entry.options.id === 'blue-transcript-official')
+    expect(officialEntry).toBeDefined()
+    await resumed.ctx.loader.update(officialEntry!.id, { disabled: true })
+    await resumed.ctx.loader.await()
+    await vi.waitFor(async () => {
+      const plain = stripSgr(await fullFrame(resumed.terminal))
+      expect(plain.split('official replay answer')).toHaveLength(2)
+      expect(plain.split('official live answer')).toHaveLength(2)
+    })
+    const conversationEntry = [...resumed.ctx.loader.entries()]
+      .find(entry => entry.options.id === 'blue-conversation')
+    expect(conversationEntry).toBeDefined()
+    await resumed.ctx.loader.update(conversationEntry!.id, { disabled: true })
+    await resumed.ctx.loader.await()
+    await vi.waitFor(() => {
+      expect(resumed.ctx.get('blueConversationProjection')).toBeUndefined()
+      expect(resumed.ctx.sessionProjections.snapshot(resumedAgent.session).values.blueConversation).toBeUndefined()
+    })
+  })
+
   it('renders the welcome banner at boot as the first scroll child', async () => {
     const tree = await bootBlue(['fix', 'the', 'build'], { script: [textResponse('Blue online.')] })
     const agent = await currentAgent(tree)

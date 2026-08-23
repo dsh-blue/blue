@@ -70,9 +70,47 @@ Harness peer in the temporary install to that exact line, and again executed
 9/9 scenarios with no skips or failures. The override never edits repository
 manifests or `pnpm-lock.yaml`.
 
-The final automated gate passed with 2,080 tests in 133 files and per-file
-100% coverage (9,301 statements, 5,819 branches, 1,885 functions, 7,661
-lines). Typecheck/build, lint, 62 lib/export claims, diagram synchronization,
+The final automated gate passed with 2,109 tests in 136 files and per-file
+100% coverage (9,634 statements, 6,055 branches, 1,956 functions, 7,958
+lines). Typecheck/build, lint, 66 lib/export claims, diagram synchronization,
 the VitePress production build, `smoke:happy`, `smoke:pty`, and
 `smoke:pty:mouse` also passed; all three smoke processes exited 0. Dedicated
 `blue-frontend-runtime` profile dogfood and human acceptance remain separate.
+
+## F5 conversation packed fixture evidence (2026-08-24)
+
+`@dsh-blue/blue-conversation` and `@dsh-blue/blue-transcript` were each packed
+with the recursive local closure, installed into a throwaway npm project, and
+loaded only through installed public exports. Each target declared and executed
+11/11 scenarios with no skip or failure, and each fixture root was removed.
+
+The four added scenarios use the real Harness `SessionProjectionRegistry` for
+replay, live drive, checkpoint, restore, readiness capability, and Fiber
+unload; reject duplicate/stale sequences and wrong-session changes; reject a
+late callback after provider disposal; and scan semantic plus plain transcript
+rows at 20/40/80/120 columns using installed core width truth.
+
+Current runs resolved the observed Harness packages to `0.1.1-rc.2`.
+Compatibility runs recursively walked public Harness peer metadata because
+`--legacy-peer-deps` suppresses peer installation, pinned the resulting
+21-package closure to exactly `0.1.1-rc.1`, and again passed 11/11 for both
+targets. This compatibility override exists only in each temporary fixture;
+repository manifests and the lockfile remain on rc.2.
+
+## Dedicated frontend-runtime profile dogfood (2026-08-24)
+
+`PROFILE=blue-frontend-runtime script/install-dev.sh` linked all thirteen
+publishable packages into the dedicated profile. Its profile-local patch
+enabled `blue-context`, `blue-conversation`, `blue-transcript-official`,
+`blue-openpencil`, and `blue-lark`; the same five rows remain disabled in the
+production bundle.
+
+The initial pseudo-TTY boot entered and restored alternate-screen,
+bracketed-paste, and mouse-reporting modes, then exited 0 without an overflow
+record or uncaught error. A 40-column local-mock run exercised two live turns
+through the official conversation projection and semantic transcript consumer,
+mouse-wheel manual scroll, the new-message notice, End-follow, resize to 52x28,
+the official `/context` panel, OSC 52 drag-copy, and clean exit. Four mock LLM
+requests completed. Resuming the saved session rendered the persisted
+`official-tail-line-59` history through the same official path and again exited
+0 with terminal modes restored. Human live acceptance remains pending.

@@ -134,6 +134,32 @@ describe('blue-input plugin', () => {
     expect(screen.children).toEqual([transcriptRow, editor, hint])
   })
 
+  it('pauses tail-follow, advertises new messages, and resumes on End', async () => {
+    const { ctx, screen, editor, hint, fiber } = await mount()
+    screen.contentScrollResult = true
+    screen.contentPaused = true
+    ctx.emit('blue/transcript-content-changed', screen.contentChanged())
+    expect(hint.render(80)).toEqual(['~new messages available · press End to follow~'])
+
+    expect(screen.sendContentInput('\x1b[5~')).toBe(true)
+    expect(screen.sendContentInput('\x1b[6~')).toBe(true)
+    expect(screen.contentScrolls).toEqual([
+      { direction: 'up', amount: 20 },
+      { direction: 'down', amount: 20 },
+    ])
+
+    type(editor, 'draft')
+    expect(screen.sendContentInput('\x1b[F')).toBe(false)
+    editor.setText('')
+    expect(screen.sendContentInput('\x1b[F')).toBe(true)
+    expect(screen.followCount).toBe(1)
+    expect(screen.contentPaused).toBe(false)
+    expect(hint.render(80)).toEqual([])
+
+    await fiber.dispose()
+    expect(screen.sendContentInput('\x1b[F')).toBe(false)
+  })
+
   it('publishes the editor and submit router through the shared reference', async () => {
     const { editor } = await mount()
     const shared = getSharedEditor()

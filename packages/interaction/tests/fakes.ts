@@ -575,6 +575,10 @@ export class FakeScreen implements BlueScreen {
   readonly overlays: FakeOverlay[] = []
   focused: BlueComponent | null = null
   renderRequests = 0
+  readonly contentScrolls: Array<{ readonly direction: 'up' | 'down'; readonly amount: number | undefined }> = []
+  contentScrollResult = false
+  contentPaused = false
+  followCount = 0
   /** Terminal-title writes, for the OSC-mirror plugin assertions. */
   readonly titles: string[] = []
   private readonly bottom = new Set<BlueComponent>()
@@ -619,6 +623,34 @@ export class FakeScreen implements BlueScreen {
     if (isFocusable(this.focused)) this.focused.focused = false
     this.focused = component
     if (isFocusable(component)) component.focused = true
+  }
+
+  scrollContent = (direction: 'up' | 'down', amount?: number): boolean => {
+    this.contentScrolls.push({ direction, amount })
+    return this.contentScrollResult
+  }
+
+  contentChanged(): boolean {
+    return this.contentPaused
+  }
+
+  followContent(): void {
+    this.contentPaused = false
+    this.followCount += 1
+  }
+
+  private contentScrollHandler: ((data: string) => boolean) | undefined
+
+  setContentScrollHandler(handler: ((data: string) => boolean) | undefined): () => void {
+    this.contentScrollHandler = handler
+    return () => {
+      if (this.contentScrollHandler === handler) this.contentScrollHandler = undefined
+    }
+  }
+
+  /** Drive the focused-editor transcript navigation seam. */
+  sendContentInput(data: string): boolean {
+    return this.contentScrollHandler?.(data) ?? false
   }
 
   showOverlay(component: BlueComponent, options?: BlueOverlayOptions): BlueOverlayHandle {

@@ -10,6 +10,15 @@ export type Unsubscribe = () => void
 export type AbortOptions = { readonly signal?: AbortSignal }
 export type ActionRef = BlueRequestRef
 
+/** Error carrier for a capability missing below an async adapter boundary. */
+export class AdapterCapabilityAbsentError extends Error {
+  readonly code = 'BLUE_CAPABILITY_ABSENT'
+  constructor(readonly capability: AdapterCapability, message = `Harness capability "${capability}" is unavailable`) {
+    super(message)
+    this.name = 'AdapterCapabilityAbsentError'
+  }
+}
+
 export function absent<T>(capability: AdapterCapability, reason = `Harness capability "${capability}" is unavailable`): AdapterResult<T> {
   return { ok: false, code: 'BLUE_CAPABILITY_ABSENT', absent: { kind: 'absent', capability, reason } }
 }

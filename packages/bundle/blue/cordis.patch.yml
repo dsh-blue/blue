@@ -277,6 +277,22 @@
       name: '@dsh-blue/blue-context'
       disabled: true
 
+    # Frontend-runtime transcript producer (F5): projects append-origin
+    # Harness conversation facts through the official session-projection
+    # registry. The effect-scoped readiness capability orders its consumer
+    # even though sibling loader rows activate concurrently.
+    - id: blue-conversation
+      name: '@dsh-blue/blue-conversation'
+      disabled: true
+
+    # Frontend-runtime transcript consumer (F5): replaces the legacy
+    # event-folded transcript model while blueConversation is present and
+    # restores that fallback on unload. It depends on the producer readiness
+    # capability, so resumed history is available in its first snapshot.
+    - id: blue-transcript-official
+      name: '@dsh-blue/blue-transcript/official-model'
+      disabled: true
+
     # OpenPencil compatibility adapter (F6): observes only official
     # dsh-tools results, converts public presentation metadata to bounded Blue
     # tool models, and drops signed editor capability metadata. Disabled until

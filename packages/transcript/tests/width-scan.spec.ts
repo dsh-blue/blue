@@ -23,6 +23,7 @@ import {
 import { AgentGroupComponent } from '../src/agent-group.ts'
 import { ReadGroupComponent } from '../src/read-group.ts'
 import { ThinkingComponent } from '../src/thinking.ts'
+import { createTranscriptModel, TranscriptModelComponent } from '../src/transcript-model.ts'
 import { BlueStatusService, FooterShellComponent } from '../src/status.ts'
 import { TerminalCardComponent } from '../src/intent-terminal.ts'
 import { DiffCardComponent } from '../src/intent-diff.ts'
@@ -114,6 +115,36 @@ describe('transcript width-scan', () => {
       for (const width of SCAN_WIDTHS) {
         expectLinesFit(`Thinking/${name}`, new ThinkingComponent(item, colors, components).render(width), width)
       }
+    })
+
+    it(`TranscriptModelComponent semantic bridge survives ${name}`, () => {
+      const components = fakeBlueComponents()
+      const model = createTranscriptModel('width-scan', [
+        { kind: 'transcript-user', id: 'user', seq: 1, turn: 1, text, images: [] },
+        { kind: 'transcript-assistant', id: 'assistant', seq: 2, turn: 1, step: 0, text, streaming: false },
+        { kind: 'transcript-thinking', id: 'thinking', seq: 3, turn: 1, step: 0, text, streaming: false },
+        {
+          kind: 'transcript-tool', id: 'tool', seq: 4, turn: 1, step: 0, callId: 'call', name: 'custom',
+          arguments: '{}', startedAt: 1, result: { text, fullText: text, isError: false, endedAt: 2 },
+        },
+        {
+          kind: 'transcript-tool', id: 'presented', seq: 5, turn: 1, step: 0, callId: 'presented', name: 'custom',
+          arguments: '{}', startedAt: 1, presentation: { kind: 'tool', id: 'presented', name: 'custom', result: { kind: 'text', text } },
+        },
+        { kind: 'transcript-error', id: 'error', seq: 6, turn: 1, message: text },
+        { kind: 'transcript-interrupted', id: 'interrupted', seq: 7, turn: 1 },
+      ])
+      const component = new TranscriptModelComponent(() => model, {
+        colors,
+        components,
+        images: () => ({}),
+        intents: {} as never,
+        requestRender: () => undefined,
+      })
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`TranscriptModel/${name}`, component.render(width), width)
+      }
+      component.dispose()
     })
 
     it(`ReadGroupComponent survives ${name}`, () => {

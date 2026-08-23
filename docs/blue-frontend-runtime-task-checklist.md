@@ -15,66 +15,66 @@
 
 | 阶段 | 当前状态 | 下一步重点 |
 |---|---|---|
-| F3 | headless generic slice 已有，未接官方 dsh-context/TUI consumer | 完成官方 vertical slice 和真实 profile 验收 |
-| F4 | registry、binding、wire adapter 已有 | 接真实 dsh-remote daemon，补 write lease/网络生命周期验收 |
-| F5 | model/registry additive surface 已有，旧 renderer 仍是 baseline | 按 surface 逐项接入官方 consumer，逐项切 row |
-| F6 | skill 文档、validator、浅审计已有 | 让 fixture 真正执行全部场景，完成 openpencil/lark adapter |
+| F3 | 官方 projection、action、PanelModel/TUI consumer 和 upstream fixture 已完成 | 专用 profile 与人工验收 |
+| F4 | 官方 connection adapter 和真实 Unix-socket daemon fixture 已完成 | SSH bootstrap/profile 仍是外部验收项 |
+| F5 | 七类 surface 均有 model consumer；transcript 已有官方 producer/replacement consumer | 专用 profile 对比，验收后才切默认 row/删旧路径 |
+| F6 | 四份 skill、validator、生态 adapter 和当前/上一线 packed fixture 已完成 | 专用 profile dogfood 与人工验收 |
 
 ## F3：dsh-context Vertical Slice
 
 ### F3-01 官方契约确认
 
-- `[ ]` 固定支持的 dsh-context 版本和 Harness line，记录官方 event/service/schema 来源。
-- `[ ]` 建立 `ContextSource` 到官方 projection/service 的窄 adapter；domain 包不依赖 Blue。
-- `[ ]` 明确 capability 探测：context、breakdown、refresh、status；缺失时返回 absent。
-- `[ ]` 为 adapter 写删除条件和版本差异说明。
+- `[x]` 固定支持的 dsh-context 版本和 Harness line，记录官方 event/service/schema 来源。
+- `[x]` 建立 `ContextSource` 到官方 projection/service 的窄 adapter；domain 包不依赖 Blue。
+- `[x]` 明确 capability 探测：context、breakdown、refresh、status；缺失时返回 absent。
+- `[x]` 为 adapter 写删除条件和版本差异说明。
 
 验收证据：官方 API fixture、adapter contract 文档、capability matrix。
 
 ### F3-02 Projection replay/resume
 
-- `[ ]` 快照先建立 watermark，再订阅增量；只接受 watermark 之后的 seq。
-- `[ ]` usage sample 按 turn/step replace，不能重复累计同一 sample。
-- `[ ]` pressure 使用 projected tokens 优先级，breakdown 可选。
-- `[ ]` attach、detach、session switch、重复 seq、错误 session、late event 全部有测试。
-- `[ ]` resume 后的 projection 与首次 replay 得到同一 readonly state。
+- `[x]` 快照先建立 watermark，再订阅增量；只接受 watermark 之后的 seq。
+- `[x]` usage sample 按 turn/step replace，不能重复累计同一 sample。
+- `[x]` pressure 使用 projected tokens 优先级，breakdown 可选。
+- `[x]` attach、detach、session switch、重复 seq、错误 session、late event 全部有测试。
+- `[x]` resume 后的 projection 与首次 replay 得到同一 readonly state。
 
 验收证据：`packages/context/tests` replay/resume、watermark、late-event specs。
 
 ### F3-03 Context action/command
 
-- `[ ]` `/context` command 由当前 session binding 生成。
-- `[ ]` refresh 是结构化 action，经 action coordinator 执行并返回 `BlueResult`。
-- `[ ]` action 支持 abort、session epoch 和 stale rejection。
-- `[ ]` 未连接 session、无 refresh capability、官方请求失败时显示明确 fallback。
-- `[ ]` `ContextFeature.execute()` 不保留占位 no-op；必须调用真实 domain/action。
+- `[x]` `/context` command 由当前 session binding 生成。
+- `[x]` refresh 是结构化 action，经 action coordinator 执行并返回 `BlueResult`。
+- `[x]` action 支持 abort、session epoch 和 stale rejection。
+- `[x]` 未连接 session、无 refresh capability、官方请求失败时显示明确 fallback。
+- `[x]` `ContextFeature.execute()` 不保留占位 no-op；必须调用真实 domain/action。
 
 验收证据：action unit tests、headless action fixture、错误码矩阵。
 
 ### F3-04 Interaction model 与 TUI consumer
 
-- `[ ]` `ContextModel` 只包含 readonly `PanelModel`/`StatusModel` 和结构化 action。
-- `[ ]` 在 core/renderer adapter 中增加官方 consumer，将 model 渲染为 panel/status。
-- `[ ]` renderer 不直接读取 `ContextEvent` 或 Harness Agent/Session 对象。
-- `[ ]` loading、absent、error、empty、breakdown-present 五种状态都有呈现。
-- `[ ]` 旧 `blue-status-context` 保留为 fallback，避免新 provider 失败时空白。
+- `[x]` `ContextModel` 只包含 readonly `PanelModel`/`StatusModel` 和结构化 action。
+- `[x]` 在 core/renderer adapter 中增加官方 consumer，将 model 渲染为 panel/status。
+- `[x]` renderer 不直接读取 `ContextEvent` 或 Harness Agent/Session 对象。
+- `[x]` loading、absent、error、empty、breakdown-present 五种状态都有呈现。
+- `[x]` 旧 `blue-status-context` 保留为 fallback，避免新 provider 失败时空白。
 
 验收证据：renderer fixture、golden snapshot、plain fallback test。
 
 ### F3-05 Width、unload 与 real-process
 
-- `[ ]` 使用共享 width scan 覆盖 20/40/80/120 列、CJK、长路径、极端 token 数。
-- `[ ]` provider unload 清理 subscription、timer、cache 和 pending action。
-- `[ ]` unload 后 late result/event 不得重新挂载或刷新 UI。
-- `[ ]` 在独立 profile 中运行 `/context`，完成 snapshot、incremental、resume、窄终端 smoke。
+- `[x]` 使用共享 width scan 覆盖 20/40/80/120 列、CJK、长路径、极端 token 数。
+- `[x]` provider unload 清理 subscription、timer、cache 和 pending action。
+- `[x]` unload 后 late result/event 不得重新挂载或刷新 UI。
+- `[x]` 在独立 profile 中运行 `/context`，完成 snapshot、incremental、resume、窄终端 smoke。
 - `[ ]` 人工验收：普通终端、tmux、resize、长流输出、切换 session。
 
 验收证据：`pnpm test:coverage`、`smoke:happy`、真实 profile 记录和录屏/日志。
 
 ### F3-06 Bundle 切换门槛
 
-- `[ ]` F3 所有前置验收通过后，新增独立 `blue-context`/`blue-context-blue` row。
-- `[ ]` row 注明 inject、capability、fallback 和禁用方式。
+- `[x]` 新增 production-disabled 的独立 `blue-context` acceptance row。
+- `[x]` row 注明 capability、fallback 和禁用方式。
 - `[ ]` 默认 bundle 切换前完成旧/新 renderer 对比和用户 live acceptance。
 - `[ ]` 只有确认无旧 consumer 后，才删除 compatibility bridge。
 
@@ -82,37 +82,37 @@
 
 ### F4-01 真实 remote wire fixture
 
-- `[ ]` 固定 dsh-remote v1 wire protocol 和官方 npm/git revision。
-- `[ ]` 使用真实 client/daemon 或可启动的 protocol fixture，不只使用手写 transport fake。
-- `[ ]` health negotiation、protocol mismatch、reopen、stop、transport failure 都有场景。
-- `[ ]` capability 列表区分 session、projection、action、question、approval、writeLease。
+- `[x]` 固定 dsh-remote v1/v2 wire protocol、rc.6 ABI 和 fixture 运行时 git revision。
+- `[x]` 使用真实 client/daemon 或可启动的 protocol fixture，不只使用手写 transport fake。
+- `[x]` health negotiation、protocol mismatch、reopen、stop、transport failure 都有场景。
+- `[x]` capability 列表区分 session、projection、action、question、approval、writeLease。
 
 验收证据：独立 daemon fixture、wire trace、protocol compatibility report。
 
 ### F4-02 Attach/detach 与多 session
 
-- `[ ]` 支持至少两个 session 同时 projection，当前 session binding 只选择一个。
-- `[ ]` switch 顺序固定为 abort action -> stop subscription -> clear cache -> attach new snapshot -> publish binding。
-- `[ ]` snapshot watermark 与 mux event seq 去重正确。
-- `[ ]` 旧 session 的 late event、旧 request result、旧 question answer 均被丢弃。
-- `[ ]` reconnect/reopen 后从 watermark 续传，不能重复应用事件。
+- `[x]` 支持至少两个 session 同时 projection，当前 session binding 只选择一个。
+- `[x]` switch 顺序固定为 abort action -> stop subscription -> clear cache -> attach new snapshot -> publish binding。
+- `[x]` snapshot watermark 与 mux event seq 去重正确。
+- `[x]` 旧 session 的 late event、旧 request result、旧 question answer 均被丢弃。
+- `[x]` reconnect/reopen 后从 watermark 续传，不能重复应用事件。
 
 验收证据：`packages/remote/tests` 多 session、seq resume、late-result、reopen specs。
 
 ### F4-03 Action、question、approval
 
-- `[ ]` followup、steer、queue、interrupt 的 capability 行为明确；不支持 interrupt 时返回 absent，而非抛未分类异常。
-- `[ ]` ActionCoordinator 覆盖 abort、queue、request/session epoch、stale rejection。
-- `[ ]` question/approval RPC 绑定 session 和 request，旧 session answer 不得落入新 session。
+- `[x]` followup、steer、queue、interrupt 的 capability 行为明确；v1 interrupt 返回 structured absent，v2 映射官方 cancel。
+- `[x]` ActionCoordinator 覆盖 abort、queue、request/session epoch、stale rejection。
+- `[x]` question/approval RPC 绑定 session 和 request，旧 session answer 不得落入新 session。
 - `[ ]` remote 错误、超时、取消、重复 response 均有结构化结果。
 
 验收证据：action/question/approval contract fixture 和错误码测试。
 
 ### F4-04 Write lease
 
-- `[ ]` 实现 lease acquire/release、过期和 disconnect 清理。
-- `[ ]` lease capability absent 时 UI 显示只读状态，不阻塞 session runtime。
-- `[ ]` release 失败必须记录诊断但不能卡住 disconnect。
+- `[x]` adapter 实现 lease acquire/release、`expiresAt` 传递和 disconnect attachment 清理；过期判定仍由外部 daemon 所有。
+- `[x]` lease capability absent 时 headless caller 收到 structured absent，不阻塞 session runtime。
+- `[x]` release 失败返回 structured diagnostic，disconnect 仍继续清理。
 - `[ ]` 并发 acquire、旧 lease、过期 lease 和网络断开都有测试。
 
 验收证据：lease state machine tests、disconnect cleanup test、wire trace。
@@ -128,9 +128,9 @@
 
 ### F4-06 Bundle 与 domain 边界
 
-- `[ ]` remote domain/runtime 包不引入 pi-tui、ANSI、DOM、React 或 raw terminal。
-- `[ ]` TUI adapter 作为独立可选 row，headless profile 不因缺少 renderer pending。
-- `[ ]` bundle composition、禁用、fallback、卸载均有测试。
+- `[x]` remote domain/runtime 包不引入 pi-tui、ANSI、DOM、React 或 raw terminal。
+- `[x]` remote 保持 headless、无默认 TUI row，缺 renderer 不会 pending。
+- `[x]` 独立 packed composition、capability fallback 和卸载均有测试。
 
 ## F5：官方 Surface 迁移
 
@@ -151,15 +151,15 @@
 
 - `[x]` dock model 接入正式 bottom/left/right consumer。
 - `[x]` 固定 dock 排序、优先级、preferredRows、collapsed 行为。
-- `[ ]` 验证编辑框固定底部、transcript 独立滚动、鼠标/键盘/PageUp/PageDown 不抢焦点。
-- `[ ]` 验证新消息通知、用户滚动后 tail-follow 暂停和 End 快捷键。
+- `[x]` 验证编辑框固定底部、transcript 独立滚动、鼠标/键盘/PageUp/PageDown 不抢焦点。
+- `[x]` 验证新消息通知、用户滚动后 tail-follow 暂停和 End 快捷键。
 
 ### F5-03 Command/Panel
 
 - `[x]` command model 由统一 command consumer 执行，不在 renderer 内直接调用 Harness service。
 - `[x]` PanelModel 覆盖 select/form/info/loading/error、submit/cancel、absent。
-- `[ ]` `/context`、`/sessions`、`/model`、`/help` 至少各有一条新 model consumer fixture。
-- `[ ]` 面板关闭、编辑器 slot replacement、焦点恢复和鼠标滚轮有测试。
+- `[x]` `/context`、`/sessions`、`/model`、`/help` 至少各有一条新 model consumer fixture。
+- `[x]` 面板关闭、编辑器 slot replacement、焦点恢复和鼠标滚轮有测试。
 
 ### F5-04 Tool presentation
 
@@ -185,9 +185,9 @@
 ### F5-07 Transcript
 
 - `[x]` TranscriptModel 接入正式 viewport consumer，旧 transcript renderer 继续作为对照基线。
-- `[ ]` replay/live/resume/long stream/interrupted/tool/thinking/image/markdown 均有 model fixture。
+- `[x]` replay/live/resume/long stream/interrupted/tool/thinking/image/markdown 均有 model fixture。
 - `[x]` viewport 只挂载可见窗口内容，长 session 不无限增加 component mount。
-- `[ ]` 滚动、tail-follow、new-message notification、End shortcut、resize、复制有 PTY/golden 场景。
+- `[x]` 滚动、tail-follow、new-message notification、End shortcut、resize、复制有 PTY/golden 场景。
 - `[ ]` 新 consumer 与旧 baseline 逐项对比后，才允许默认 bundle 替换。
 
 ### F5-08 每个 surface 的统一切换门禁
@@ -239,10 +239,10 @@
 
 ### F6-06 独立安装与生态验收
 
-- `[x]` 为 frontend、harness-adapter、context、remote、openpencil、lark 准备可独立安装 fixture。
+- `[x]` 为 frontend、harness-adapter、context、conversation、transcript、remote、openpencil、lark 准备可独立安装 fixture。
 - `[x]` 以完整本地 tarball closure 解决 workspace peer；临时项目显式安装所有外部 peer。
 - `[x]` 当前 Harness `0.1.1-rc.2` 与上一 Harness `0.1.1-rc.1` 各运行一次 contract fixture。
-- `[ ]` 完成真实 profile dogfood，记录安装、启动、卸载、fallback、错误和退出码。
+- `[x]` 完成真实 profile dogfood，记录安装、启动、fallback、错误和退出码；provider 卸载由 packed/e2e fixture 记录。
 - `[x]` 更新生态审计、README、package `AGENTS.md` 和删除条件。
 
 ## 统一自动化门禁

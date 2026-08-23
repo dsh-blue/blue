@@ -252,7 +252,7 @@ export function apply(ctx: Context): void {
 
   /** Flash a notice in the hint line. */
   function setNotice(text: string): void {
-    notice = text
+    notice = text === '' ? undefined : text
     refreshHint()
   }
 

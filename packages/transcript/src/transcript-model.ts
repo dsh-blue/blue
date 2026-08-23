@@ -1,64 +1,334 @@
 /**
- * Renderer-neutral transcript projection registry. It accepts readonly view
- * entries and provides an additive screen consumer; folding and session
- * ownership remain in the existing transcript domain adapter.
+ * Renderer-neutral transcript model registry and the semantic TUI consumer.
+ * Producers supply projected entries; this module owns only component
+ * reconciliation, bounded mounting, width-safe rendering, and screen change
+ * notification.
  *
  * @module @dsh-blue/blue-transcript/transcript-model
  */
+
 import { Service, type Context } from '@deepseek-ai/cordis'
-import { renderFrontendView, type BlueComponent, type BlueScreen } from '@dsh-blue/blue-core'
-import { freezeModel, type TranscriptModel, type View } from '@dsh-blue/blue-frontend'
+import { AttachmentId, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import {
+  GutterComponent,
+  renderFrontendView,
+  type BlueComponent,
+  type BlueComponents,
+  type BlueScreen,
+  type BlueSemanticColors,
+} from '@dsh-blue/blue-core'
+import {
+  freezeModel,
+  type TranscriptEntryModel,
+  type TranscriptImageModel,
+  type TranscriptModel,
+  type TranscriptToolModel,
+  type View,
+} from '@dsh-blue/blue-frontend'
+import {
+  AssistantMessageComponent,
+  ErrorMessageComponent,
+  InterruptedMarkerComponent,
+  ToolCallComponent,
+  UserMessageComponent,
+  type UserMessageImages,
+} from './components.ts'
+import type { BlueIntentsService } from './intents.ts'
+import { ThinkingComponent } from './thinking.ts'
+import { ToolModelComponent } from './tool-model.ts'
+import type { BlueIntentComponent, TranscriptToolItem } from './types.ts'
 
 declare module '@deepseek-ai/cordis' { interface Context { blueTranscriptModels: TranscriptModelService } }
 type Source = TranscriptModel | (() => TranscriptModel | null)
 
-/** Maximum model entries one component renders in a frame. */
+/** Maximum semantic entries mounted by one transcript model component. */
 export const TRANSCRIPT_MODEL_WINDOW = 200
 
-/** Build an immutable transcript model from already-projected frontend views. */
-export function createTranscriptModel(id: string, entries: readonly View[], streaming?: boolean): TranscriptModel {
+/** Renderer-only dependencies for semantic transcript entries. */
+export interface TranscriptModelRenderer {
+  readonly colors: BlueSemanticColors
+  readonly components: BlueComponents
+  readonly images: () => UserMessageImages
+  readonly intents: BlueIntentsService
+  readonly requestRender: () => void
+}
+
+/** Optional service hooks used by the legacy/plain fallback owner. */
+export interface TranscriptModelServiceHooks {
+  readonly renderer?: TranscriptModelRenderer
+  readonly onPresenceChanged?: (present: boolean) => void
+}
+
+/** Build an immutable transcript model from already-projected entries. */
+export function createTranscriptModel(
+  id: string,
+  entries: readonly (View | TranscriptEntryModel)[],
+  streaming?: boolean,
+): TranscriptModel {
   return freezeModel({ kind: 'transcript', id, entries: [...entries], ...(streaming === undefined ? {} : { streaming }) })
 }
 
-/** Append one projected view without reading or folding Harness events. */
-export function appendTranscriptView(model: TranscriptModel, entry: View, streaming = model.streaming): TranscriptModel {
+/** Append one projected entry without reading or folding Harness events. */
+export function appendTranscriptView(
+  model: TranscriptModel,
+  entry: View | TranscriptEntryModel,
+  streaming = model.streaming,
+): TranscriptModel {
   return createTranscriptModel(model.id, [...model.entries, entry], streaming)
 }
 
-class TranscriptModelComponent implements BlueComponent {
-  constructor(private readonly source: () => TranscriptModel | null) {}
-  render(width: number): string[] {
-    const model = this.source()
-    if (model === null) return []
-    return model.entries.slice(-TRANSCRIPT_MODEL_WINDOW).flatMap(view => renderFrontendView(view, width))
-  }
-  invalidate(): void {}
+function isSemantic(entry: View | TranscriptEntryModel): entry is TranscriptEntryModel {
+  return entry.kind.startsWith('transcript-')
 }
 
+function asToolItem(entry: TranscriptToolModel): TranscriptToolItem {
+  return {
+    kind: 'tool',
+    seq: entry.seq,
+    turn: entry.turn,
+    step: entry.step,
+    callId: entry.callId,
+    name: entry.name,
+    arguments: entry.arguments,
+    startedAt: entry.startedAt,
+    ...(entry.result === undefined ? {} : { result: entry.result }),
+  }
+}
+
+function asImageRef(image: TranscriptImageModel): ImageAttachmentRef {
+  return {
+    attachmentId: AttachmentId(image.attachmentId),
+    mediaType: image.mediaType,
+    bytes: image.bytes,
+    width: image.width,
+    height: image.height,
+    ...(image.name === undefined ? {} : { name: image.name }),
+    ...(image.originalDimensions === undefined ? {} : {
+      originalDimensions: { ...image.originalDimensions },
+    }),
+  }
+}
+
+function signature(entry: TranscriptEntryModel): string {
+  return JSON.stringify(entry)
+}
+
+interface CachedComponent {
+  readonly signature: string
+  readonly component: BlueComponent
+  readonly target: BlueComponent
+}
+
+/** Bounded semantic transcript component with id-based reconciliation. */
+export class TranscriptModelComponent implements BlueComponent {
+  private readonly cached = new Map<string, CachedComponent>()
+  private expanded = false
+
+  constructor(
+    private readonly source: () => TranscriptModel | null,
+    private readonly renderer?: TranscriptModelRenderer,
+  ) {}
+
+  render(width: number): string[] {
+    const model = this.source()
+    if (model === null) {
+      this.prune(new Set())
+      return []
+    }
+    const entries = model.entries.slice(-TRANSCRIPT_MODEL_WINDOW)
+    const live = new Set(entries.filter(isSemantic).map(entry => entry.id))
+    this.prune(live)
+    return entries.flatMap(entry => isSemantic(entry) ? this.renderSemantic(entry, width) : renderFrontendView(entry, width))
+  }
+
+  /** Apply the global recent-detail expansion state to mounted entries. */
+  setExpanded(expanded: boolean): void {
+    this.expanded = expanded
+    for (const { target } of this.cached.values()) {
+      ;(target as BlueIntentComponent).setExpanded?.(expanded)
+      target.invalidate()
+    }
+  }
+
+  invalidate(): void {
+    for (const { component } of this.cached.values()) component.invalidate()
+  }
+
+  /** Dispose timers and async renderer resources held by cached components. */
+  dispose(): void {
+    this.prune(new Set())
+  }
+
+  private renderSemantic(entry: TranscriptEntryModel, width: number): string[] {
+    if (this.renderer === undefined) return [...renderFrontendView({ kind: 'text', text: this.plainText(entry) }, width)]
+    const currentSignature = signature(entry)
+    let cached = this.cached.get(entry.id)
+    if (cached?.signature !== currentSignature) {
+      if (cached !== undefined) this.disposeComponent(cached.target)
+      const target = this.createComponent(entry)
+      cached = { signature: currentSignature, target, component: new GutterComponent(target) }
+      this.cached.set(entry.id, cached)
+    }
+    return cached.component.render(width)
+  }
+
+  private createComponent(entry: TranscriptEntryModel): BlueComponent {
+    const renderer = this.renderer!
+    switch (entry.kind) {
+      case 'transcript-user': {
+        const component = new UserMessageComponent({
+          kind: 'user', seq: entry.seq, turn: entry.turn, text: entry.text, images: entry.images.map(asImageRef),
+        }, renderer.colors, renderer.components, renderer.images())
+        component.setExpanded(this.expanded)
+        return component
+      }
+      case 'transcript-assistant':
+        return new AssistantMessageComponent({
+          kind: 'assistant', seq: entry.seq, turn: entry.turn, step: entry.step, text: entry.text,
+        }, renderer.colors, renderer.components)
+      case 'transcript-thinking': {
+        const component = new ThinkingComponent({
+          kind: 'thinking', seq: entry.seq, turn: entry.turn, step: entry.step, text: entry.text, streaming: entry.streaming,
+        }, renderer.colors, renderer.components, renderer.requestRender)
+        component.setExpanded(this.expanded)
+        return component
+      }
+      case 'transcript-tool': {
+        const presentation = entry.presentation
+        if (presentation !== undefined) return new ToolModelComponent(() => presentation)
+        return new ToolCallComponent(asToolItem(entry), renderer.colors, renderer.components)
+      }
+      case 'transcript-error':
+        return new ErrorMessageComponent({
+          kind: 'error', seq: entry.seq, turn: entry.turn, message: entry.message,
+          ...(entry.code === undefined ? {} : { code: entry.code }),
+        }, renderer.colors, renderer.components)
+      case 'transcript-interrupted':
+        return new InterruptedMarkerComponent(renderer.colors, renderer.components)
+    }
+  }
+
+  private plainText(entry: TranscriptEntryModel): string {
+    switch (entry.kind) {
+      case 'transcript-user': return entry.text
+      case 'transcript-assistant': return entry.text
+      case 'transcript-thinking': return entry.text
+      case 'transcript-tool': return entry.result?.fullText ?? entry.result?.text ?? `${entry.name} ${entry.arguments}`
+      case 'transcript-error': return entry.code === undefined ? entry.message : `${entry.message} (${entry.code})`
+      case 'transcript-interrupted': return 'Interrupted'
+    }
+  }
+
+  private prune(live: ReadonlySet<string>): void {
+    for (const [id, cached] of this.cached) {
+      if (live.has(id)) continue
+      this.disposeComponent(cached.target)
+      this.cached.delete(id)
+    }
+  }
+
+  private disposeComponent(component: BlueComponent): void {
+    ;(component as BlueComponent & { dispose?: () => void }).dispose?.()
+  }
+}
+
+interface MountedModel {
+  readonly component: TranscriptModelComponent
+  readonly unmount: () => void
+}
+
+/** Renderer-neutral transcript registry with an additive/replacement TUI bridge. */
 export class TranscriptModelService extends Service {
   private readonly models = new Map<string, Source>()
-  private readonly mounted = new Map<string, () => void>()
+  private readonly mounted = new Map<string, MountedModel>()
   private screen: BlueScreen | undefined
-  constructor(ctx: Context, screen?: BlueScreen) { super(ctx, 'blueTranscriptModels'); this.screen = screen }
-  attach(screen: BlueScreen): void { for (const dispose of this.mounted.values()) dispose(); this.mounted.clear(); this.screen = screen; for (const id of this.models.keys()) this.mount(id) }
+  private expanded = false
+
+  constructor(
+    private readonly owner: Context,
+    screen?: BlueScreen,
+    private readonly hooks: TranscriptModelServiceHooks = {},
+  ) {
+    super(owner, 'blueTranscriptModels')
+    this.screen = screen
+  }
+
+  attach(screen: BlueScreen): void {
+    for (const id of this.mounted.keys()) this.unmount(id)
+    this.screen = screen
+    for (const id of this.models.keys()) this.mount(id)
+  }
+
   register(source: Source): () => void {
     const initial = typeof source === 'function' ? source() : source
     if (initial === null) return () => undefined
     if (this.models.has(initial.id)) throw new Error(`transcript model "${initial.id}" is already registered`)
-    this.models.set(initial.id, source); this.mount(initial.id)
+    const wasEmpty = this.models.size === 0
+    this.models.set(initial.id, source)
+    this.mount(initial.id)
+    if (wasEmpty) this.hooks.onPresenceChanged?.(true)
     let disposed = false
-    return () => { if (disposed) return; disposed = true; this.models.delete(initial.id); this.mounted.get(initial.id)?.(); this.mounted.delete(initial.id); this.screen?.requestRender() }
+    return () => {
+      if (disposed) return
+      disposed = true
+      this.models.delete(initial.id)
+      this.unmount(initial.id)
+      this.screen?.requestRender()
+      if (this.models.size === 0) this.hooks.onPresenceChanged?.(false)
+    }
   }
-  refresh(id: string): void { if (this.models.has(id)) this.screen?.requestRender() }
-  list(): readonly TranscriptModel[] { return [...this.models.values()].map(source => typeof source === 'function' ? source() : source).filter((model): model is TranscriptModel => model !== null) }
-  dispose(): void { for (const dispose of this.mounted.values()) dispose(); this.mounted.clear(); this.models.clear(); this.screen = undefined }
+
+  refresh(id: string): void {
+    if (!this.models.has(id)) return
+    const screen = this.screen
+    if (screen === undefined) return
+    const paused = screen.contentChanged()
+    this.owner.emit('blue/transcript-content-changed', paused)
+    screen.requestRender()
+  }
+
+  setExpanded(expanded: boolean): void {
+    this.expanded = expanded
+    for (const { component } of this.mounted.values()) component.setExpanded(expanded)
+  }
+
+  hasModels(): boolean {
+    return this.models.size > 0
+  }
+
+  list(): readonly TranscriptModel[] {
+    return [...this.models.values()]
+      .map(source => typeof source === 'function' ? source() : source)
+      .filter((model): model is TranscriptModel => model !== null)
+  }
+
+  dispose(): void {
+    const hadModels = this.models.size > 0
+    for (const id of this.mounted.keys()) this.unmount(id)
+    this.models.clear()
+    this.screen = undefined
+    if (hadModels) this.hooks.onPresenceChanged?.(false)
+  }
+
   private mount(id: string): void {
-    const screen = this.screen; const source = this.models.get(id)
+    const screen = this.screen
+    const source = this.models.get(id)
     if (screen === undefined || source === undefined) return
-    this.mounted.get(id)?.(); this.mounted.delete(id)
-    const component = new TranscriptModelComponent(() => { const current = this.models.get(id); return current === undefined ? null : typeof current === 'function' ? current() : current })
-    this.mounted.set(id, screen.addChild(component)); screen.requestRender()
+    this.unmount(id)
+    const component = new TranscriptModelComponent(() => {
+      const current = this.models.get(id)
+      return current === undefined ? null : typeof current === 'function' ? current() : current
+    }, this.hooks.renderer)
+    component.setExpanded(this.expanded)
+    this.mounted.set(id, { component, unmount: screen.addChild(component) })
+    screen.requestRender()
+  }
+
+  private unmount(id: string): void {
+    const mounted = this.mounted.get(id)
+    if (mounted === undefined) return
+    mounted.component.dispose()
+    mounted.unmount()
+    this.mounted.delete(id)
   }
 }
-
-export { TranscriptModelComponent }

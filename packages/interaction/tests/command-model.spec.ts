@@ -9,6 +9,23 @@ describe('CommandModelService', () => {
     const ctx = new Context(); const commands = { list: () => [{ name: 'status', description: 'Show status', input: { hint: 'filter' } }, { name: 'version', description: 'Version' }] }; ctx.reflect.provide('commands', commands); const service = new CommandModelService(ctx); expect(service.list()).toEqual([]); const models = service.list(agent); expect(models).toHaveLength(2); expect(models[0]).toMatchObject({ id: 'command.status', label: '/status', enabled: true, action: { kind: 'command.execute', name: 'status' } }); expect(Object.isFrozen(models[0])).toBe(true); let updates = 0; const off = service.subscribe(() => { updates += 1 }); ctx.emit('commands/change'); expect(updates).toBe(1); off(); off(); service.dispose()
   })
 
+  it('projects the acceptance command family as structured actions', async () => {
+    const names = ['context', 'sessions', 'model', 'help'] as const
+    const execute = vi.fn(async () => ({ commandId: 'acceptance', result: { kind: 'success' as const } }))
+    const ctx = new Context()
+    ctx.reflect.provide('commands', {
+      list: () => names.map(name => ({ name, description: `Show ${name}` })),
+      execute,
+    })
+    const service = new CommandModelService(ctx)
+    const models = service.list(agent)
+    expect(models.map(model => model.label)).toEqual(['/context', '/sessions', '/model', '/help'])
+    expect(models.map(model => model.action)).toEqual(names.map(name => ({ kind: 'command.execute', name })))
+    for (const model of models) await service.execute(agent, model.action)
+    expect(execute.mock.calls.map(call => call[1])).toEqual(['/context', '/sessions', '/model', '/help'])
+    service.dispose()
+  })
+
   it('handles a missing command service without pending the tree', () => {
     const service = new CommandModelService(new Context()); expect(service.list(agent)).toEqual([]); service.dispose()
   })

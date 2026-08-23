@@ -1,5 +1,5 @@
 import type { BlueSessionAction, BlueSessionSnapshot, BlueSessionReader, BlueRegistration, BlueResult } from '@dsh-blue/blue-api'
-import { absent, abortResult, failure, staleResult, success, type AdapterResult, type EventEnvelope, type SnapshotEnvelope, type AbortOptions, type Unsubscribe } from './types.ts'
+import { absent, abortResult, AdapterCapabilityAbsentError, failure, staleResult, success, type AdapterResult, type EventEnvelope, type SnapshotEnvelope, type AbortOptions, type Unsubscribe } from './types.ts'
 
 export interface HarnessSessionSource { snapshot(signal: AbortSignal): Promise<SnapshotEnvelope<BlueSessionSnapshot>>; subscribe(afterWatermark: number, listener: (event: EventEnvelope<BlueSessionSnapshot>) => void): Unsubscribe; request(action: BlueSessionAction, signal: AbortSignal): Promise<void> }
 export interface SessionBridgeOptions { readonly source?: HarnessSessionSource }
@@ -37,7 +37,11 @@ export class SessionBridge implements BlueSessionReader {
       if (controller.signal.aborted) return abortResult()
       await source.request(action, controller.signal)
       return epoch === this.epoch ? success(undefined) : staleResult()
-    } catch (error) { return controller.signal.aborted ? abortResult() : failure('BLUE_ACTION_REJECTED', error instanceof Error ? error.message : String(error)) } finally { options.signal?.removeEventListener('abort', forward) }
+    } catch (error) {
+      if (controller.signal.aborted) return abortResult()
+      if (error instanceof AdapterCapabilityAbsentError) return failure(error.code, error.message)
+      return failure('BLUE_ACTION_REJECTED', error instanceof Error ? error.message : String(error))
+    } finally { options.signal?.removeEventListener('abort', forward) }
   }
   detach(emit = true): void { this.controller.abort(); this.unsubscribe?.(); this.unsubscribe = undefined; this.controller = new AbortController(); this.epoch++; this.currentSnapshot = null; this.watermark = -1; if (emit) this.emit() }
   dispose(): void { this.detach(); this.listeners.clear(); this.source = undefined }

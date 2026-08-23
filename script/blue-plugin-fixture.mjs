@@ -129,8 +129,18 @@ try {
 
   /** Resolve the complete local package closure without querying the registry. */
   function localClosure() {
-    const names = new Set([manifest.name])
-    const queue = [manifest.name]
+    const forced = [
+      '@dsh-blue/blue-api',
+      '@dsh-blue/blue-frontend',
+      '@dsh-blue/blue-harness-adapter',
+      '@dsh-blue/blue-context',
+      '@dsh-blue/blue-conversation',
+      '@dsh-blue/blue-remote',
+      '@dsh-blue/blue-core',
+      '@dsh-blue/blue-transcript',
+    ].filter(name => workspacePackages.has(name))
+    const names = new Set([manifest.name, ...forced])
+    const queue = [...names]
     while (queue.length > 0) {
       const name = queue.shift()
       const directory = workspacePackages.get(name)
@@ -141,9 +151,6 @@ try {
         names.add(dependencyName)
         queue.push(dependencyName)
       }
-    }
-    for (const name of ['@dsh-blue/blue-api', '@dsh-blue/blue-frontend', '@dsh-blue/blue-harness-adapter', '@dsh-blue/blue-context', '@dsh-blue/blue-remote', '@dsh-blue/blue-core']) {
-      if (workspacePackages.has(name)) names.add(name)
     }
     return [...names]
   }
@@ -176,6 +183,21 @@ try {
     }
   }
   if (harnessLine !== undefined) {
+    // The exact-line lane uses npm's legacy peer resolver so Blue's current
+    // peer ranges do not override the requested older line. Walk the public
+    // Harness peer metadata so every runtime peer omitted by legacy
+    // resolution is still installed at that exact line.
+    const peerQueue = [...harnessPackageNames]
+    while (peerQueue.length > 0) {
+      const name = peerQueue.shift()
+      const output = execFileSync('npm', ['view', `${name}@${harnessLine}`, 'peerDependencies', '--json'], { encoding: 'utf8' }).trim()
+      const peers = output === '' ? {} : JSON.parse(output)
+      for (const peerName of Object.keys(peers)) {
+        if (!peerName.startsWith('@deepseek-ai/dsh-') || harnessPackageNames.has(peerName)) continue
+        harnessPackageNames.add(peerName)
+        peerQueue.push(peerName)
+      }
+    }
     for (const name of harnessPackageNames) dependencies[name] = harnessLine
   }
   writeFileSync(join(fixtureRoot, 'package.json'), JSON.stringify({ private: true, type: 'module', dependencies }, null, 2))
@@ -212,7 +234,10 @@ try {
   const adapter = await load('@dsh-blue/blue-harness-adapter')
   const core = await load('@dsh-blue/blue-core')
   const context = await load('@dsh-blue/blue-context')
+  const conversation = await load('@dsh-blue/blue-conversation')
   const remote = await load('@dsh-blue/blue-remote')
+  const officialTranscript = await load('@dsh-blue/blue-transcript/official-model')
+  const transcriptModel = await load('@dsh-blue/blue-transcript/transcript-model')
 
   await scenario('provider.swap-and-plain-fallback', async () => {
     const host = new frontend.FrontendHost()
@@ -338,6 +363,96 @@ try {
       }
     }
   })
+
+  if (manifest.name === '@dsh-blue/blue-conversation' || manifest.name === '@dsh-blue/blue-transcript') {
+    await scenario('conversation.registry-replay-live-checkpoint-restore-unload', async () => {
+      const cordis = await load('@deepseek-ai/cordis')
+      const llm = await load('@deepseek-ai/dsh-llm')
+      const sessionRuntime = await load('@deepseek-ai/dsh-session')
+      const projectionRuntime = await load('@deepseek-ai/dsh-session-projection')
+      const ctx = new cordis.Context()
+      await ctx.plugin(sessionRuntime.SessionStore)
+      await ctx.plugin(projectionRuntime.SessionProjectionRegistry)
+      const session = ctx.sessions.create(sessionRuntime.SessionId('packed-conversation'))
+      session.append('turn/start', { turn: 0 })
+      session.append('user/message', llm.createUserMessage({
+        content: [{ type: 'text', text: 'packed replay' }],
+        source: { kind: 'user' },
+      }), { surfaceOp: 'append' })
+      const fiber = await ctx.plugin(conversation)
+      ensure(ctx.blueConversationProjection?.key === 'blueConversation', 'FIXTURE_CONVERSATION_CAPABILITY', 'conversation readiness capability was absent')
+      ensure(ctx.sessionProjections.snapshot(session).values.blueConversation?.entries[0]?.text === 'packed replay', 'FIXTURE_CONVERSATION_REPLAY', 'conversation replay did not restore history')
+      const changes = []
+      const off = ctx.sessionProjections.onChanged((changedSession, key, _value, sequence) => {
+        if (changedSession === session && key === 'blueConversation') changes.push(sequence)
+      })
+      session.append('assistant/chunk', { turn: 0, step: 0, chunk: { type: 'text-delta', index: 0, text: 'packed live' } })
+      ensure(changes.join() === '2', 'FIXTURE_CONVERSATION_LIVE', 'conversation live drive did not publish the next sequence')
+      const checkpoint = ctx.sessionProjections.checkpoint(session)
+      const floor = ctx.sessionProjections.restoreFloor(checkpoint)
+      ensure(floor === 2, 'FIXTURE_CONVERSATION_CHECKPOINT', 'conversation checkpoint floor drifted')
+      const restored = ctx.sessionProjections.restore(checkpoint, session.events.filter(row => row.seq >= floor), floor)
+      ensure(JSON.stringify(restored.snapshot) === JSON.stringify(ctx.sessionProjections.snapshot(session)), 'FIXTURE_CONVERSATION_RESTORE', 'conversation checkpoint restore diverged')
+      off()
+      await fiber.dispose()
+      ensure(ctx.get('blueConversationProjection') === undefined && ctx.sessionProjections.snapshot(session).values.blueConversation === undefined, 'FIXTURE_CONVERSATION_UNLOAD', 'conversation projection survived Fiber unload')
+      await ctx.fiber.dispose()
+    })
+
+    await scenario('conversation.source-stale-duplicate-and-wrong-session', async () => {
+      const session = {}
+      const other = {}
+      let changed
+      const baseline = { entries: [{ kind: 'assistant', id: 'assistant-1', seq: 1, turn: 0, step: 0, text: 'baseline', streaming: false }], streaming: false }
+      const source = new officialTranscript.OfficialConversationModelSource({
+        snapshot: () => ({ asOfSeq: 4, values: { blueConversation: baseline } }),
+        onChanged: listener => { changed = listener; return () => { changed = undefined } },
+      }, { get: () => undefined }, () => undefined)
+      source.attach({ id: 'packed', session })
+      const live = { entries: [{ kind: 'assistant', id: 'assistant-2', seq: 5, turn: 0, step: 0, text: 'live', streaming: true }], streaming: true }
+      changed?.(other, 'blueConversation', live, 5)
+      changed?.(session, 'blueConversation', live, 4)
+      ensure(source.snapshot().entries[0]?.text === 'baseline', 'FIXTURE_CONVERSATION_STALE', 'foreign or duplicate sequence replaced the baseline')
+      changed?.(session, 'blueConversation', live, 5)
+      ensure(source.snapshot().entries[0]?.text === 'live' && source.snapshot().streaming === true, 'FIXTURE_CONVERSATION_SEQUENCE', 'fresh conversation sequence was rejected')
+      source.dispose()
+    })
+
+    await scenario('conversation.provider-unload-and-late-callback', async () => {
+      const session = {}
+      let changed
+      let unsubscribed = false
+      const published = []
+      const source = new officialTranscript.OfficialConversationModelSource({
+        snapshot: () => ({ asOfSeq: 0, values: { blueConversation: { entries: [], streaming: false } } }),
+        onChanged: listener => { changed = listener; return () => { unsubscribed = true } },
+      }, { get: () => undefined }, model => published.push(model.entries.length))
+      source.attach({ id: 'packed', session })
+      const late = changed
+      source.dispose()
+      late?.(session, 'blueConversation', {
+        entries: [{ kind: 'assistant', id: 'late', seq: 1, turn: 0, step: 0, text: 'late', streaming: false }],
+        streaming: false,
+      }, 1)
+      ensure(unsubscribed && published.join() === '0' && source.snapshot().entries.length === 0, 'FIXTURE_CONVERSATION_LATE_CALLBACK', 'late projection callback survived provider unload')
+    })
+
+    await scenario('conversation.semantic-plain-width-20-40-80-120', async () => {
+      const adversarial = '路径/非常长的目录/🙂🙂🙂/unbroken-supercalifragilisticexpialidocious\nsecond line'
+      const semantic = transcriptModel.createTranscriptModel('packed-semantic', [
+        { kind: 'transcript-user', id: 'user-1', seq: 1, turn: 0, text: adversarial, images: [] },
+        { kind: 'transcript-assistant', id: 'assistant-1', seq: 2, turn: 0, step: 0, text: adversarial, streaming: false },
+        { kind: 'transcript-error', id: 'error-1', seq: 3, turn: 0, message: adversarial },
+      ], false)
+      const component = new transcriptModel.TranscriptModelComponent(() => semantic)
+      for (const width of [20, 40, 80, 120]) {
+        const semanticRows = component.render(width)
+        const plainRows = core.renderFrontendView({ kind: 'text', text: adversarial }, width)
+        ensure(![...semanticRows, ...plainRows].some(row => core.visibleWidth(row) > width), 'FIXTURE_CONVERSATION_WIDTH', `conversation renderer exceeded width ${width}`)
+      }
+      component.dispose()
+    })
+  }
 
   if (manifest.name === '@dsh-blue/blue-openpencil') {
     const openpencil = await load('@dsh-blue/blue-openpencil')

@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/api" },
     { "path": "packages/frontend" },
+    { "path": "packages/conversation" },
     { "path": "packages/harness-adapter" },
     { "path": "packages/context" },
     { "path": "packages/remote" },

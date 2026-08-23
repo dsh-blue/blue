@@ -77,6 +77,8 @@ describe('blue bundle', () => {
       'blue-status-mode',
       'blue-status-context',
       'blue-context',
+      'blue-conversation',
+      'blue-transcript-official',
       'blue-openpencil',
       'blue-lark',
       'blue-intent-diff',
@@ -98,7 +100,9 @@ describe('blue bundle', () => {
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/banner'")
     expect(patch).toContain("name: '@dsh-blue/blue-openpencil'")
     expect(patch).toContain("name: '@dsh-blue/blue-lark'")
-    expect(patch.match(/- id: blue-(?:openpencil|lark)\n\s+name:[^\n]+\n\s+disabled: true/gu)).toHaveLength(2)
+    expect(patch).toContain("name: '@dsh-blue/blue-conversation'")
+    expect(patch).toContain("name: '@dsh-blue/blue-transcript/official-model'")
+    expect(patch.match(/- id: blue-(?:context|conversation|transcript-official|openpencil|lark)\n\s+name:[^\n]+\n\s+disabled: true/gu)).toHaveLength(5)
   })
 
   it('inserts the upstream agent-presets roster row ahead of the Blue rows', () => {

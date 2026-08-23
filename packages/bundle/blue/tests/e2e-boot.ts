@@ -51,6 +51,7 @@ import { startBlueTerminal} from '../../../core/src/terminal.ts'
 import { FakeTerminal} from '../../../core/tests/fake-terminal.ts'
 import * as interactionPlugin from '../../../interaction/src/index.ts'
 import * as contextPlugin from '../../../context/src/index.ts'
+import * as conversationPlugin from '../../../conversation/src/index.ts'
 import { clearDraft, stashHistory} from '../../../interaction/src/draft-stash.ts'
 import * as editorPlusPlugin from '../../../interaction/src/editor-plus.ts'
 import * as attachmentsPlugin from '../../../interaction/src/attachments.ts'
@@ -58,6 +59,7 @@ import * as pasteImagePlugin from '../../../interaction/src/paste-image.ts'
 import * as modeStatusPlugin from '../../../interaction/src/mode-status.ts'
 import * as paneQueuePlugin from '../../../interaction/src/pane-queue.ts'
 import * as transcriptPlugin from '../../../transcript/src/index.ts'
+import * as officialTranscriptPlugin from '../../../transcript/src/official-model.ts'
 import * as bannerPlugin from '../../../transcript/src/banner.ts'
 import * as intentDiffPlugin from '../../../transcript/src/intent-diff.ts'
 import * as intentTerminalPlugin from '../../../transcript/src/intent-terminal.ts'
@@ -200,6 +202,8 @@ interface BlueE2EHooks {
   statusTitleApply: typeof statusTitlePlugin.apply
   statusContextApply: typeof statusContextPlugin.apply
   contextApply: typeof contextPlugin.apply
+  conversationApply: typeof conversationPlugin.apply
+  officialTranscriptApply: typeof officialTranscriptPlugin.apply
   modeStatusApply: typeof modeStatusPlugin.apply
   paneActivityApply: typeof paneActivityPlugin.apply
   paneQueueApply: typeof paneQueuePlugin.apply
@@ -255,6 +259,8 @@ export async function bootBlue(argv: string[], options: {
   sessionProjections?: boolean
   /** Explicitly enable the production-disabled F3 Blue context row. */
   frontendContext?: boolean
+  /** Explicitly enable the production-disabled F5 conversation rows. */
+  officialTranscript?: boolean
   /**
    * The fixture presets the roster's temp root ships, replacing the default
    * single empty composition (which keeps every other case's tool surface
@@ -326,6 +332,8 @@ export async function bootBlue(argv: string[], options: {
     statusTitleApply: statusTitlePlugin.apply,
     statusContextApply: statusContextPlugin.apply,
     contextApply: contextPlugin.apply,
+    conversationApply: conversationPlugin.apply,
+    officialTranscriptApply: officialTranscriptPlugin.apply,
     modeStatusApply: modeStatusPlugin.apply,
     paneActivityApply: paneActivityPlugin.apply,
     paneQueueApply: paneQueuePlugin.apply,
@@ -471,6 +479,20 @@ export const apply = ctx => globalThis.__blueE2E.statusContextApply(ctx)
       `  name: ${fixture('blue-context.mjs', `
 export const name = 'blue-context'
 export const apply = ctx => globalThis.__blueE2E.contextApply(ctx)
+`)}`,
+    ] : []),
+    ...(options.officialTranscript === true ? [
+      '- id: blue-conversation',
+      `  name: ${fixture('blue-conversation.mjs', `
+export const name = 'blue-conversation'
+export const inject = ['sessionProjections']
+export const apply = ctx => globalThis.__blueE2E.conversationApply(ctx)
+`)}`,
+      '- id: blue-transcript-official',
+      `  name: ${fixture('blue-transcript-official.mjs', `
+export const name = 'blue-transcript-official'
+export const inject = ['blueConversationProjection', 'sessionProjections', 'blueTranscriptModels', 'blueSession', 'tools']
+export const apply = ctx => globalThis.__blueE2E.officialTranscriptApply(ctx)
 `)}`,
     ] : []),
     // The S24a mode badge row mirrors cordis.patch.yml: display-only fiber
@@ -623,7 +645,7 @@ export const apply = (ctx) => {
   // self-registered and plan/mode events hit the log (S24a e2e).
   await ctx.plugin(PlanModeController, { section: 'Plan mode (e2e): draft only — no mutations.' })
   await ctx.plugin(UserQuestionService)
-  if (options.sessionProjections === true) {
+  if (options.sessionProjections === true || options.officialTranscript === true) {
     // The projection family as dsh-base composes it: the registry drives
     // the token-meter and session-stats units over every committed event.
     await ctx.plugin(SessionProjectionRegistry)

@@ -14,7 +14,7 @@ does not satisfy the row.
 | tool presentation / transcript | official `dsh-tools` `ToolCallView`, `ToolResultView`, and canonical `ToolResult` | `createToolPresentationModel` -> `BlueModelToolService` -> `renderFrontendView`; generic/terminal/diff/search/read/web converters | absent presentation uses canonical raw result; errors use danger text; unknown calls use tool name | service in `blue-transcript`; legacy `blue-intent-diff/terminal` rows remain | canonical converter and lifecycle specs; transcript shared width scan; bundle VT/e2e legacy comparison | remove fold-owned card presenters only after an official projection publishes every live/replay tool model and Ctrl-O/long-output golden + PTY acceptance pass |
 | theme / frontend + core | Blue semantic token configuration; no Harness session input | `ThemeModelService`; core compiles semantic colors into terminal paint functions | activation failure/absent provider selects built-in dark/plain model; legacy aliases stay | theme rows `blue-theme-dark/light/auto/custom` | frontend theme lifecycle/duplicate/unload tests; core dark/light/custom and width suites | remove compatibility aliases only after all model consumers use semantic tokens and dark/light/auto/custom live acceptance passes |
 | editor / interaction | input owner's shared set/submit/clear-or-interrupt actions | `EditorModelService` publishes `set`/`submit`/`abort`; existing pi-tui editor remains the TUI consumer | absent editor returns no model/false action; existing plain editor is fallback | service in `blue-interaction`; `blue-editor-plus` stays optional | editor model + real input owner specs; paste/history/completion/slot suites; interaction width scan | remove shared-editor compatibility only after a replacement consumer passes paste/history/completion/resize/mouse/selection/scroll and PTY acceptance |
-| transcript / transcript | already-projected readonly `View[]`; explicitly no Harness event input | immutable `createTranscriptModel`/append -> `TranscriptModelService`; newest 200 model entries rendered | null/absent source mounts nothing; old event fold + transcript renderer remains baseline and export fallback | service in `blue-transcript`; no duplicate model producer in default bundle | replay/live/immutability/window/unload/reattach specs; transcript width scan; bundle legacy e2e/VT golden | replace old fold consumer only after official projection covers replay/live/resume/thinking/image/markdown/tool/interruption and PTY tail-follow/notification/End/resize/copy parity |
+| transcript / conversation + transcript | official `SessionProjectionRegistry` -> append-origin `blueConversation`; no Harness event input reaches the consumer | `@dsh-blue/blue-conversation` -> `./official-model` -> semantic `TranscriptModelService`; user/assistant/thinking/tool/error/interruption components; newest 200 entries rendered | `blueConversationProjection` readiness orders resumed replay; official model replaces rather than duplicates the legacy fold; consumer/provider unload restores legacy fallback and rejects late values | disabled `blue-conversation` + `blue-transcript-official`; service/fallback in `blue-transcript` | projection replay/live/checkpoint/restore/unload specs; source stale/wrong-session/late-result specs; semantic width scan; whole-tree resume/live/no-duplicate/fallback e2e; installed tarball fixtures 11/11 on rc.2 and rc.1 | enable only after dedicated-profile PTY tail-follow/new-message notice/End/resize/copy parity and user acceptance; then retire the legacy fold only after export and every tool/pane consumer no longer needs its items |
 
 ## Current Evidence
 
@@ -31,24 +31,32 @@ not recorded as SSH bootstrap or live-profile acceptance.
 Status providers have crossed the model boundary and retain footer golden
 parity. Command execution, generic panels, canonical tool conversion, editor
 actions, dock ordering, and the bounded transcript viewport have official
-consumers and lifecycle fixtures. The dock/tool/transcript/editor product
-paths intentionally remain additive: no default bundle producer duplicates
-the legacy pane, tool card, transcript, or editor content.
+consumers and lifecycle fixtures. Transcript now has a real official producer
+and replacement consumer: append-origin Harness events fold in the domain-only
+`blueConversation` projection, and the semantic TUI model replaces the legacy
+fold while present. Both rows remain production-disabled. Dock/tool/editor
+paths remain additive, and no default bundle producer duplicates legacy
+content.
 
 The acceptance profile for every row is `blue-frontend-runtime`. Automated
 evidence does not mark the human column complete; that happens only after the
 user runs `dsh --profile blue-frontend-runtime` and responds `验收通过`.
+The profile-local acceptance rows have passed install, live official streaming,
+resume, `/context`, manual-scroll/new-message/End, resize, OSC 52 copy, and
+clean-exit dogfood; production rows remain disabled while human acceptance is
+pending.
 
 ## Required Record Per Row
 
 Focused F5 evidence is reproducible with:
 
 ```sh
-pnpm exec vitest run packages/transcript/tests/status-model.spec.ts packages/transcript/tests/dock-model.spec.ts packages/transcript/tests/tool-model.spec.ts packages/transcript/tests/transcript-model.spec.ts packages/interaction/tests/command-model.spec.ts packages/interaction/tests/editor-model.spec.ts packages/interaction/tests/frontend-panel.spec.ts packages/transcript/tests/width-scan.spec.ts packages/interaction/tests/width-scan.spec.ts packages/bundle/blue/tests/e2e.spec.ts packages/bundle/blue/tests/vt-snapshot.spec.ts
+pnpm exec vitest run packages/conversation/tests packages/transcript/tests/status-model.spec.ts packages/transcript/tests/dock-model.spec.ts packages/transcript/tests/tool-model.spec.ts packages/transcript/tests/transcript-model.spec.ts packages/transcript/tests/official-model.spec.ts packages/interaction/tests/command-model.spec.ts packages/interaction/tests/editor-model.spec.ts packages/interaction/tests/frontend-panel.spec.ts packages/transcript/tests/width-scan.spec.ts packages/interaction/tests/width-scan.spec.ts packages/bundle/blue/tests/e2e.spec.ts packages/bundle/blue/tests/vt-snapshot.spec.ts
 pnpm run test:coverage
+node script/blue-plugin-fixture.mjs packages/conversation --install
+node script/blue-plugin-fixture.mjs packages/transcript --install --harness-line 0.1.1-rc.1
 ```
 
-The independent packed fixture command is `node script/blue-plugin-fixture.mjs
-packages/frontend --install`; F6 owns its multi-package closure and external
-adapter expansion. Live acceptance, and therefore every legacy deletion, is
-still pending.
+The packed fixture runner owns the multi-package closure and installed-export
+checks for frontend, conversation, transcript, and external adapters. Live
+acceptance, and therefore every legacy deletion, is still pending.

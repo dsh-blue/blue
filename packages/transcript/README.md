@@ -2,7 +2,13 @@
 
 English | [中文](README.zh.md)
 
-Blue terminal UI transcript layer over `dsh-blue-core`: a pure fold from session events to transcript items (user/assistant/tool), the components that render them, and the Cordis plugin mounting them on `blueScreen`. The package imports no pi-tui — components either return styled ANSI lines directly or delegate to the `blueComponents` factory.
+Blue terminal UI transcript layer over `dsh-blue-core`: semantic transcript models, the components that render them, an official `blueConversation` projection adapter, and the legacy session-event fold retained as the production fallback. The package imports no pi-tui — components either return styled ANSI lines directly or delegate to the `blueComponents` factory.
+
+## Official conversation model
+
+The `./official-model` Cordis plugin consumes whole `blueConversation` values from the official Harness session-projection registry. It maps user, assistant, thinking, tool, error, interruption, and durable image-reference facts into renderer-neutral semantic entries; tool presenters are resolved outside the projection through the official `dsh-tools` service. The consumer never folds Harness events and rejects stale, malformed, foreign-session, and late values.
+
+`TranscriptModelService` reconciles semantic components by stable id, keeps the newest 200 entries, forwards Ctrl-O expansion, disposes retired component timers, and reports tail-follow changes through the screen. While an official model is registered, the baseline plugin unmounts the legacy transcript rather than rendering both; removing the model restores the legacy fold. The `blue-conversation` and `blue-transcript-official` bundle rows are disabled in production pending dedicated-profile acceptance.
 
 ## The fold
 

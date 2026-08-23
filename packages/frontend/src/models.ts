@@ -18,7 +18,16 @@ export interface ProviderModel { readonly providerId: string; readonly capabilit
 export interface ToolPresentationModel { readonly kind: 'tool'; readonly id: string; readonly name: string; readonly call?: View; readonly result?: View; readonly expanded?: boolean; readonly action?: Action }
 export interface ThemeModel { readonly kind: 'theme'; readonly id: string; readonly name: string; readonly colors: Readonly<Record<string, string>>; readonly dark: boolean }
 export interface EditorModel { readonly kind: 'editor'; readonly id: string; readonly value: string; readonly placeholder?: string; readonly enabled: boolean; readonly set?: Action; readonly submit?: Action; readonly abort?: Action }
-export interface TranscriptModel { readonly kind: 'transcript'; readonly id: string; readonly entries: readonly View[]; readonly streaming?: boolean }
+export interface TranscriptImageModel { readonly attachmentId: string; readonly mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'; readonly bytes: number; readonly width: number; readonly height: number; readonly name?: string | undefined; readonly originalDimensions?: Readonly<{ readonly width: number; readonly height: number }> | undefined }
+export interface TranscriptUserModel { readonly kind: 'transcript-user'; readonly id: string; readonly seq: number; readonly turn: number; readonly text: string; readonly images: readonly TranscriptImageModel[] }
+export interface TranscriptAssistantModel { readonly kind: 'transcript-assistant'; readonly id: string; readonly seq: number; readonly turn: number; readonly step: number; readonly text: string; readonly streaming: boolean }
+export interface TranscriptThinkingModel { readonly kind: 'transcript-thinking'; readonly id: string; readonly seq: number; readonly turn: number; readonly step: number; readonly text: string; readonly streaming: boolean }
+export interface TranscriptToolResultModel { readonly text: string; readonly fullText?: string; readonly isError: boolean; readonly endedAt: number }
+export interface TranscriptToolModel { readonly kind: 'transcript-tool'; readonly id: string; readonly seq: number; readonly turn: number; readonly step: number; readonly callId: string; readonly name: string; readonly arguments: string; readonly startedAt: number; readonly result?: TranscriptToolResultModel; readonly presentation?: ToolPresentationModel }
+export interface TranscriptErrorModel { readonly kind: 'transcript-error'; readonly id: string; readonly seq: number; readonly turn: number; readonly message: string; readonly code?: string }
+export interface TranscriptInterruptedModel { readonly kind: 'transcript-interrupted'; readonly id: string; readonly seq: number; readonly turn: number }
+export type TranscriptEntryModel = TranscriptUserModel | TranscriptAssistantModel | TranscriptThinkingModel | TranscriptToolModel | TranscriptErrorModel | TranscriptInterruptedModel
+export interface TranscriptModel { readonly kind: 'transcript'; readonly id: string; readonly entries: readonly (View | TranscriptEntryModel)[]; readonly streaming?: boolean }
 
 export function freezeModel<T>(value: T): Readonly<T> {
   if (value && typeof value === 'object') {

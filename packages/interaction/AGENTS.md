@@ -4,7 +4,7 @@ Implementation detail for this package (the user-facing surface is `README.md`/`
 
 ## Editor and hint line
 
-The bottom input editor (`src/input-plugin.ts`) is the pi-tui Editor behind `ctx.blueComponents.createEditor` plus a separate hint-line component. The editor mounts with `paddingX: 4` and the `>` prompt symbol (feeding the core rounded-box chrome); slash-prefixed input recolors the frame `primary` and anything else restores the neutral border (onChange chain). The hint line carries only its transient tiers — one-shot notices and slash discovery in `muted`. (A persistent key-affordance row was retired by the S15 dogfood verdict: kimi teaches affordances through the footer's rotating tips, which already cover every fragment the row carried.)
+The bottom input editor (`src/input-plugin.ts`) is the pi-tui Editor behind `ctx.blueComponents.createEditor` plus a separate hint-line component. The editor mounts with `paddingX: 4` and the `>` prompt symbol (feeding the core rounded-box chrome); slash-prefixed input recolors the frame `primary` and anything else restores the neutral border (onChange chain). The hint line carries only its transient tiers — one-shot notices and slash discovery in `muted`; an empty notice clears the row instead of retaining an empty styled component. (A persistent key-affordance row was retired by the S15 dogfood verdict: kimi teaches affordances through the footer's rotating tips, which already cover every fragment the row carried.)
 
 ## Commands and aliases
 
