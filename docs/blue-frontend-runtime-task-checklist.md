@@ -292,4 +292,4 @@ node script/blue-plugin-fixture.mjs <package> --install --harness-line 0.1.1-rc.
 - `[x]` F5 每个官方 surface 都有 consumer、fixture、fallback、bundle row 和删除清单，旧实现无未登记 consumer。
 - `[x]` F6 skills 能生成/诊断真实插件，fixture runner 实际执行全部场景，openpencil/lark adapter 和独立安装通过。
 - `[x]` 当前/上一 Harness line、全量门禁、真实 profile 和用户 live acceptance 全部有记录。
-- `[ ]` 合并后在主 checkout 重新 `pnpm run build`，并保留 dogfood log。
+- `[x]` 合并后在主 checkout 重新 `pnpm run build`，并保留 dogfood log。
