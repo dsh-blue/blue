@@ -55,7 +55,7 @@ Optional layers over the plain baseline — every row deletes on its own without
 | --- | --- |
 | `blue-editor-plus` | editor enhancements: `!` bash mode + slash/`@` autocomplete + argument ghost hints |
 | `blue-attachments` | attachment store: filesystem image library (magic-byte sniffing, size caps) |
-| `blue-paste-image` | Ctrl-V clipboard paste with `[image #N]` markers, split into image blocks on submit |
+| `blue-paste-image` | Ctrl-V clipboard paste (`Alt-V` too on Windows) with `[image #N]` markers, split into image blocks on submit |
 | `blue-status-cwd` | status: session cwd (priority 5, deep-path shortening) |
 | `blue-status-git` | status: git badge `branch [+a -d ↑u↓v]` (priority 10, TTL-cached probe) |
 | `blue-status-mode` | status: session-mode badge `plan`/`yolo` (priority 2, hidden in normal) |

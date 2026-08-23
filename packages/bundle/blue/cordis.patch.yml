@@ -221,12 +221,15 @@
     - id: blue-attachments
       name: '@dsh-blue/blue-interaction/attachments'
 
-    # Image paste: the contextual Ctrl-V action that admits a clipboard
-    # image through the attachment store, inserts its '[image #N]' marker
-    # into the shared editor, and splits the markers into image content
-    # blocks on submit. Injects 'attachments' (above), so it always mounts
-    # after the store. Auto selects the session-native backend first; profile
-    # overlays may set wayland/x11 to forbid cross-protocol fallback.
+    # Image paste: the contextual Ctrl-V action (Alt-V bound alongside on
+    # Windows, whose terminals intercept Ctrl-V for their own text paste)
+    # that admits a clipboard image through the attachment store, inserts
+    # its '[image #N]' marker into the shared editor, and splits the
+    # markers into image content blocks on submit. Injects 'attachments'
+    # (above), so it always mounts after the store. Auto selects the
+    # session-native backend first; profile overlays may set wayland/x11
+    # to forbid cross-protocol fallback. The backend knob is Linux-only —
+    # win32/darwin select their native PowerShell/osascript probe (D55).
     - id: blue-paste-image
       name: '@dsh-blue/blue-interaction/paste-image'
       config:

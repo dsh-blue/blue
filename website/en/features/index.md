@@ -24,7 +24,7 @@ Optional layers over the plain baseline; each row deletes individually, the whol
 | --- | --- |
 | `blue-editor-plus` | `!` bash mode + slash/`@` autocomplete |
 | `blue-attachments` | attachment store (filesystem image library) |
-| `blue-paste-image` | Ctrl-V clipboard paste, `[image #N]` markers |
+| `blue-paste-image` | Ctrl-V clipboard paste (`Alt-V` too on Windows), `[image #N]` markers |
 | `blue-status-cwd` | footer: session working directory (priority 5) |
 | `blue-status-git` | footer: git badge `branch [+a -d ↑u↓v]` (priority 10) |
 | `blue-status-mode` | footer: session-mode badge `plan`/`yolo` (priority 2, hidden in normal) |

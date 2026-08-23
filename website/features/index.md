@@ -24,7 +24,7 @@ Blue 不是一个大组件，而是一棵 **Cordis 插件树**：bundle 的 `cor
 | --- | --- |
 | `blue-editor-plus` | `!` bash 模式 + 斜杠/`@` 补全 |
 | `blue-attachments` | 附件存储（文件系统图片库） |
-| `blue-paste-image` | Ctrl-V 剪贴板贴图，`[image #N]` 标记 |
+| `blue-paste-image` | Ctrl-V 剪贴板贴图（Windows 另绑 `Alt-V`），`[image #N]` 标记 |
 | `blue-status-cwd` | footer：会话工作目录（优先级 5） |
 | `blue-status-git` | footer：git 徽章 `branch [+a -d ↑u↓v]`（优先级 10） |
 | `blue-status-mode` | footer：会话模式徽标 `plan`/`yolo`（优先级 2，normal 隐藏） |
