@@ -10,7 +10,7 @@ English | [中文](README.zh.md)
 
 Blue is an interactive terminal UI (TUI) plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`): a `pi-tui` renderer mounted as an out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) plugin bundle on top of the `dsh-base` bundle. Its core claim: **a TUI is not a package — it is a Cordis plugin tree.** Every render component, interaction provider, command, and status entry is a separate plugin with its own fiber lifecycle, hot-swappable and omittable.
 
-This repository is the standalone home of Blue's twelve workspace packages under the `@dsh-blue` scope, extracted from the `deepseek-harness` monorepo and extended with the renderer-neutral frontend runtime. They build and test against the published npm releases of the harness (`0.1.1-rc.2` line) and vendored Cordis.
+This repository is the standalone home of Blue's thirteen workspace packages under the `@dsh-blue` scope, extracted from the `deepseek-harness` monorepo and extended with the renderer-neutral frontend runtime. They build and test against the published npm releases of the harness (`0.1.1-rc.2` line) and vendored Cordis.
 
 <!-- TODO: demo capture — record a real session (vhs / asciinema; the script(1)
      smoke-check in the contributor guide is the seed), export a GIF into docs/assets/,
@@ -166,6 +166,7 @@ The legacy renderer remains one-way: `core ← transcript / interaction ← app 
 | [`@dsh-blue/blue-frontend`](packages/frontend) | Runtime | Renderer-neutral models, notifications/themes, and the hot-swappable provider host. |
 | [`@dsh-blue/blue-harness-adapter`](packages/harness-adapter) | Adapter | Narrow capability-scoped bridges over official Harness services. |
 | [`@dsh-blue/blue-context`](packages/context) | Feature | Official context projection and structured action consumer; disabled by default pending acceptance. |
+| [`@dsh-blue/blue-conversation`](packages/conversation) | Domain | Official append-origin conversation projection for replay/live renderer consumers; disabled by default pending acceptance. |
 | [`@dsh-blue/blue-remote`](packages/remote) | Adapter | Renderer-neutral remote session, action, lease, and question/approval transport. |
 | [`@dsh-blue/blue-core`](packages/core) | L0 + L1 | The tree's only `@earendil-works/pi-tui` adapter: terminal lifecycle plus the `blueScreen` / `blueTheme` / `blueKeymap` / `blueComponents` / `blueTerminalInfo` services. |
 | [`@dsh-blue/blue-interaction`](packages/interaction) | L2 | Input editor, slash commands, approval and user-question overlays, the queued-inbox pane, plus enhancement subpath plugins (bash mode, image paste, attachments). |
@@ -177,14 +178,15 @@ The legacy renderer remains one-way: `core ← transcript / interaction ← app 
 
 Each entry point is a Cordis plugin (`export const name`, optional `inject`, `apply(ctx)`); Cordis and the dsh service packages are `peerDependencies` provided by the host `dsh` installation.
 
-**The same tree, seen from the bundle.** `cordis.patch.yml` inserts 27 Blue rows in three segments. The plain baseline (baseline + assembly, 8 rows) boots and works alone; optional frontend-runtime/ecosystem rows remain disabled until dedicated profile acceptance, and every enhancement row is individually deletable.
+**The same tree, seen from the bundle.** `cordis.patch.yml` inserts 29 Blue rows in three segments. The plain baseline (baseline + assembly, 9 rows) boots and works alone; optional frontend-runtime/ecosystem rows remain disabled until dedicated profile acceptance, and every enhancement row is individually deletable.
 
 <!-- BEGIN diagram:blue-composition -->
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml — the 27 Blue rows · 27 条 Blue 行"]
-        subgraph baseline["plain baseline 基线 — 8 rows, self-sufficient 自足"]
+    subgraph bundle["cordis.patch.yml — the 29 Blue rows · 29 条 Blue 行"]
+        subgraph baseline["plain baseline 基线 — 9 rows, self-sufficient 自足"]
+            api["blue-api-host"]
             core["blue-core"]
             theme["blue-theme-dark"]
             banner["blue-banner"]
@@ -200,14 +202,15 @@ flowchart TB
             statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
             intents["blue-intent-diff · -terminal"]
             panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
-            adapters["blue-context · blue-openpencil · blue-lark · disabled by default"]
+            runtime["blue-context · blue-conversation · blue-transcript-official · disabled by default"]
+            adapters["blue-openpencil · blue-lark · disabled by default"]
         end
     end
     dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]
     bundle -.-> dshbase
 
     classDef optional stroke-dasharray: 4 4;
-    class editorPlus,att,statusEnh,intents,panes,adapters optional;
+    class editorPlus,att,statusEnh,intents,panes,runtime,adapters optional;
 ```
 <!-- END diagram:blue-composition -->
 
@@ -255,7 +258,7 @@ Archived phase designs and surveys (MVP, P1, P2, pi-tui/harness selection) are u
 
 ## Relationship to deepseek-harness
 
-- Runtime and test dependencies (`@deepseek-ai/cordis` 4.0.1, `@deepseek-ai/dsh-*` 0.1.1-rc.2, `@earendil-works/pi-tui` ^0.84.2) come from the npm registry; Blue's twelve packages stay workspace-linked during local development.
+- Runtime and test dependencies (`@deepseek-ai/cordis` 4.0.1, `@deepseek-ai/dsh-*` 0.1.1-rc.2, `@earendil-works/pi-tui` ^0.84.2) come from the npm registry; Blue's thirteen packages stay workspace-linked during local development.
 - The harness's repository gates (documentation i18n pairing, README gates, snapshot/e2e lanes) do not apply here; this repo keeps the build, the full test suite, and the per-file 100% src coverage gate.
 
 ## License

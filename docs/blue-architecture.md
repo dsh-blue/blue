@@ -71,14 +71,15 @@ flowchart TB
 
 依赖严格单向：`core ← transcript / interaction ← app ← bundle`。
 
-从 bundle 视角看同一棵树：`cordis.patch.yml` 分三段插入 23 条 Blue 行。plain 基线（基线段 + 组装段，共 8 行）自足可跑；增强段的每一行都可单独删掉——plain-first（ADR D21）的图景：
+从 bundle 视角看同一棵树：`cordis.patch.yml` 分三段插入 29 条 Blue 行。plain 基线（基线段 + 组装段，共 9 行）自足可跑；增强段的每一行都可单独删掉——plain-first（ADR D21）的图景：
 
 <!-- BEGIN diagram:blue-composition -->
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml — the 27 Blue rows · 27 条 Blue 行"]
-        subgraph baseline["plain baseline 基线 — 8 rows, self-sufficient 自足"]
+    subgraph bundle["cordis.patch.yml — the 29 Blue rows · 29 条 Blue 行"]
+        subgraph baseline["plain baseline 基线 — 9 rows, self-sufficient 自足"]
+            api["blue-api-host"]
             core["blue-core"]
             theme["blue-theme-dark"]
             banner["blue-banner"]
@@ -94,14 +95,15 @@ flowchart TB
             statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
             intents["blue-intent-diff · -terminal"]
             panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
-            adapters["blue-context · blue-openpencil · blue-lark · disabled by default"]
+            runtime["blue-context · blue-conversation · blue-transcript-official · disabled by default"]
+            adapters["blue-openpencil · blue-lark · disabled by default"]
         end
     end
     dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]
     bundle -.-> dshbase
 
     classDef optional stroke-dasharray: 4 4;
-    class editorPlus,att,statusEnh,intents,panes,adapters optional;
+    class editorPlus,att,statusEnh,intents,panes,runtime,adapters optional;
 ```
 <!-- END diagram:blue-composition -->
 

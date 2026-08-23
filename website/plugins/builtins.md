@@ -1,6 +1,6 @@
 # 内置插件
 
-Blue 的一切表面都是插件（patch 行）——本页是 22 个内置插件的目录。它们同时也是"插件能做什么"的活例子：状态栏条目、工具卡片、编辑器增强、完整面板，全部经 [Seam 参考](/plugins/seams)里的缝注册，逐个可拆。
+Blue 的一切表面都是插件（patch 行）——本页是 29 个内置插件的目录，其中 5 个 frontend-runtime/生态验收行默认禁用。它们同时也是"插件能做什么"的活例子：状态栏条目、工具卡片、编辑器增强、完整面板，全部经 [Seam 参考](/plugins/seams)里的缝注册，逐个可拆。
 
 三段结构一张图（与仓库 README 同源，单一来源 `docs/diagrams/blue-composition.mmd`）：
 
@@ -8,8 +8,9 @@ Blue 的一切表面都是插件（patch 行）——本页是 22 个内置插�
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml — the 27 Blue rows · 27 条 Blue 行"]
-        subgraph baseline["plain baseline 基线 — 8 rows, self-sufficient 自足"]
+    subgraph bundle["cordis.patch.yml — the 29 Blue rows · 29 条 Blue 行"]
+        subgraph baseline["plain baseline 基线 — 9 rows, self-sufficient 自足"]
+            api["blue-api-host"]
             core["blue-core"]
             theme["blue-theme-dark"]
             banner["blue-banner"]
@@ -25,30 +26,32 @@ flowchart TB
             statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
             intents["blue-intent-diff · -terminal"]
             panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
-            adapters["blue-context · blue-openpencil · blue-lark · disabled by default"]
+            runtime["blue-context · blue-conversation · blue-transcript-official · disabled by default"]
+            adapters["blue-openpencil · blue-lark · disabled by default"]
         end
     end
     dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]
     bundle -.-> dshbase
 
     classDef optional stroke-dasharray: 4 4;
-    class editorPlus,att,statusEnh,intents,panes,adapters optional;
+    class editorPlus,att,statusEnh,intents,panes,runtime,adapters optional;
 ```
 <!-- END diagram:blue-composition -->
 
-## 基线插件（5 个）
+## 基线插件（6 个）
 
-组成最小可用 Blue UI 的五个插件——纯基线，建议整组保留：
+组成最小可用 Blue UI 的六个插件——纯基线，建议整组保留：
 
 | 插件 | 说明 |
 | --- | --- |
+| `blue-api-host` | 稳定 renderer-independent contract 与 capability 注册宿主 |
 | `blue-core` | 终端核心：全树唯一的 pi-tui 适配器，提供屏幕/键位/组件工厂/终端事实四项服务 |
 | `blue-theme-dark` | 内置 dark 调色板（`blueTheme` 服务的 plain 默认提供方） |
 | `blue-banner` | 启动欢迎横幅：logo + Welcome/`/help` 头两行、Directory/Model/Version 信息行 |
 | `blue-transcript` | 会话流主体：事件折叠与渲染、状态栏注册表与两行 footer 壳 |
 | `blue-status-basic` | 状态栏基线条目：model 名（优先级 0） |
 
-## 增强插件（14 个，均可独立启停）
+## 增强插件（20 个，其中 5 个默认禁用）
 
 在纯基线之上的可选层——每一行都可单独删除而不破坏基线：
 
@@ -69,6 +72,11 @@ flowchart TB
 | `blue-pane-todo` | todo 面板（Ctrl-T 折叠切换，全完成自动收起） |
 | `blue-pane-btw` | `/btw` 侧问面板：fork 当前会话问旁路问题 |
 | `blue-pane-agents` | 子代理分组面板：运行中的子代理组卡片（dock 末行，kimi swarm-pane 语义） |
+| `blue-context` | 官方 context projection 与结构化 action 的 frontend-runtime vertical slice；验收前禁用 |
+| `blue-conversation` | 官方 append-origin conversation projection producer；与 official transcript consumer 配对验收 |
+| `blue-transcript-official` | 只消费 whole projection snapshot/change feed 的 semantic transcript consumer；验收前禁用 |
+| `blue-openpencil` | 官方 tool-result presentation 与 plain fallback adapter；验收前禁用 |
+| `blue-lark` | 官方 command 与 loopback settings notification adapter；验收前禁用 |
 
 ## 装配插件（3 个）
 

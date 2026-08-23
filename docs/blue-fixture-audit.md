@@ -70,8 +70,8 @@ Harness peer in the temporary install to that exact line, and again executed
 9/9 scenarios with no skips or failures. The override never edits repository
 manifests or `pnpm-lock.yaml`.
 
-The final automated gate passed with 2,109 tests in 136 files and per-file
-100% coverage (9,634 statements, 6,055 branches, 1,956 functions, 7,958
+The final automated gate passed with 2,115 tests in 136 files and per-file
+100% coverage (9,762 statements, 6,124 branches, 1,976 functions, 8,086
 lines). Typecheck/build, lint, 66 lib/export claims, diagram synchronization,
 the VitePress production build, `smoke:happy`, `smoke:pty`, and
 `smoke:pty:mouse` also passed; all three smoke processes exited 0. Dedicated

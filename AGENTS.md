@@ -180,4 +180,4 @@ The `harness-drift` workflow (`.github/workflows/harness-drift.yml`) watches the
 
 ## Verification status
 
-As of 2026-08-22, `pnpm run test` (1844 tests, 103 files), `pnpm run test:coverage` (per-file 100%), `pnpm run typecheck`, `pnpm run lint`, and `pnpm run smoke:happy` (real-process width smoke) all pass on Node 22+/pnpm 11 against the 0.1.1-rc.2 harness line.
+As of 2026-08-24, `pnpm run test` (2115 tests, 136 files), `pnpm run test:coverage` (per-file 100%), `pnpm run typecheck`, `pnpm run lint`, `pnpm run build`, `pnpm run check:lib`, `pnpm run diagrams:check`, `pnpm run website:build`, `pnpm run smoke:happy`, `pnpm run smoke:pty`, and `pnpm run smoke:pty:mouse` all pass on Node 22+/pnpm 11 against the 0.1.1-rc.2 harness line.

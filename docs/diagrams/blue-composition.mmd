@@ -1,6 +1,7 @@
 flowchart TB
-    subgraph bundle["cordis.patch.yml — the 27 Blue rows · 27 条 Blue 行"]
-        subgraph baseline["plain baseline 基线 — 8 rows, self-sufficient 自足"]
+    subgraph bundle["cordis.patch.yml — the 29 Blue rows · 29 条 Blue 行"]
+        subgraph baseline["plain baseline 基线 — 9 rows, self-sufficient 自足"]
+            api["blue-api-host"]
             core["blue-core"]
             theme["blue-theme-dark"]
             banner["blue-banner"]
@@ -16,11 +17,12 @@ flowchart TB
             statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
             intents["blue-intent-diff · -terminal"]
             panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
-            adapters["blue-context · blue-openpencil · blue-lark · disabled by default"]
+            runtime["blue-context · blue-conversation · blue-transcript-official · disabled by default"]
+            adapters["blue-openpencil · blue-lark · disabled by default"]
         end
     end
     dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]
     bundle -.-> dshbase
 
     classDef optional stroke-dasharray: 4 4;
-    class editorPlus,att,statusEnh,intents,panes,adapters optional;
+    class editorPlus,att,statusEnh,intents,panes,runtime,adapters optional;

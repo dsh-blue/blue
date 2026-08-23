@@ -1,6 +1,6 @@
 # Built-in plugins
 
-Every surface in Blue is a plugin (a patch row) — this page is the directory of the 22 built-ins. They double as living examples of what plugins can do: status entries, tool cards, editor enhancements, whole panes — all registered through the seams in the [Seam reference](/en/plugins/seams), each removable.
+Every surface in Blue is a plugin (a patch row) — this page is the directory of the 29 built-ins, including five frontend-runtime/ecosystem acceptance rows that are disabled by default. They double as living examples of what plugins can do: status entries, tool cards, editor enhancements, whole panes — all registered through the seams in the [Seam reference](/en/plugins/seams), each removable.
 
 The three-segment structure at a glance (same single source as the repo READMEs, `docs/diagrams/blue-composition.mmd`):
 
@@ -8,8 +8,9 @@ The three-segment structure at a glance (same single source as the repo READMEs,
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml — the 27 Blue rows · 27 条 Blue 行"]
-        subgraph baseline["plain baseline 基线 — 8 rows, self-sufficient 自足"]
+    subgraph bundle["cordis.patch.yml — the 29 Blue rows · 29 条 Blue 行"]
+        subgraph baseline["plain baseline 基线 — 9 rows, self-sufficient 自足"]
+            api["blue-api-host"]
             core["blue-core"]
             theme["blue-theme-dark"]
             banner["blue-banner"]
@@ -25,30 +26,32 @@ flowchart TB
             statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
             intents["blue-intent-diff · -terminal"]
             panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
-            adapters["blue-context · blue-openpencil · blue-lark · disabled by default"]
+            runtime["blue-context · blue-conversation · blue-transcript-official · disabled by default"]
+            adapters["blue-openpencil · blue-lark · disabled by default"]
         end
     end
     dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]
     bundle -.-> dshbase
 
     classDef optional stroke-dasharray: 4 4;
-    class editorPlus,att,statusEnh,intents,panes,adapters optional;
+    class editorPlus,att,statusEnh,intents,panes,runtime,adapters optional;
 ```
 <!-- END diagram:blue-composition -->
 
-## Baseline plugins (5)
+## Baseline plugins (6)
 
-The five plugins composing the minimal usable Blue UI — the plain baseline, best kept as a group:
+The six plugins composing the minimal usable Blue UI — the plain baseline, best kept as a group:
 
 | Plugin | Description |
 | --- | --- |
+| `blue-api-host` | stable renderer-independent contract and capability registration host |
 | `blue-core` | terminal core: the tree's only pi-tui adapter, providing the screen/keymap/component-factory/terminal-facts services |
 | `blue-theme-dark` | built-in dark palette (the plain default provider of `blueTheme`) |
 | `blue-banner` | boot welcome banner: the logo-headed welcome/`/help` lines and the Directory/Model/Version rows |
 | `blue-transcript` | the transcript body: event folding and rendering, the status registry and two-row footer shell |
 | `blue-status-basic` | baseline status entry: the model name (priority 0) |
 
-## Enhancement plugins (14, individually toggleable)
+## Enhancement plugins (20, including 5 disabled by default)
 
 Optional layers over the plain baseline — every row deletes on its own without breaking it:
 
@@ -69,6 +72,11 @@ Optional layers over the plain baseline — every row deletes on its own without
 | `blue-pane-todo` | todo pane (Ctrl-T collapse toggle, auto-close when all done) |
 | `blue-pane-btw` | `/btw` side-question pane: fork the live session for a by-the-way question |
 | `blue-pane-agents` | subagent-group pane: running subagent group card (last dock row, the kimi swarm-pane semantics) |
+| `blue-context` | official context projection and structured-action frontend-runtime vertical slice; disabled pending acceptance |
+| `blue-conversation` | official append-origin conversation projection producer; accepted together with the official transcript consumer |
+| `blue-transcript-official` | semantic transcript consumer of whole projection snapshots/change feeds only; disabled pending acceptance |
+| `blue-openpencil` | official tool-result presentation and plain-fallback adapter; disabled pending acceptance |
+| `blue-lark` | official command and loopback-settings notification adapter; disabled pending acceptance |
 
 ## Assembly plugins (3)
 

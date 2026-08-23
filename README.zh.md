@@ -10,7 +10,7 @@
 
 Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的一个交互式终端 UI（TUI）插件：以 out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) 插件 bundle 的形式、骑在 `dsh-base` bundle 之上的 `pi-tui` 渲染器。它的核心主张：**TUI 不是一个包——而是一棵 Cordis 插件树。** 每个渲染组件、交互 provider、命令、状态栏条目都是独立插件，各有自己的 fiber 生命周期，可热替换、可省略。
 
-本仓库是 `@dsh-blue` scope 下十二个 workspace 包的独立 home：主体从 `deepseek-harness` monorepo 抽出，并扩展了 renderer-neutral frontend runtime。它们按 npm 上发布的 harness（`0.1.1-rc.2` 线）与 vendored Cordis 构建测试。
+本仓库是 `@dsh-blue` scope 下十三个 workspace 包的独立 home：主体从 `deepseek-harness` monorepo 抽出，并扩展了 renderer-neutral frontend runtime。它们按 npm 上发布的 harness（`0.1.1-rc.2` 线）与 vendored Cordis 构建测试。
 
 <!-- TODO: 演示动图——录一段真实会话（vhs / asciinema；贡献者指南（开发手册）里的
      script(1) 冒烟检查是种子），导出 GIF 到 docs/assets/ 后嵌到这里。
@@ -166,6 +166,7 @@ flowchart TB
 | [`@dsh-blue/blue-frontend`](packages/frontend) | Runtime | Renderer-neutral model、notification/theme 与可热替换 provider host。 |
 | [`@dsh-blue/blue-harness-adapter`](packages/harness-adapter) | Adapter | 基于 Harness 官方 service、按 capability 收窄的 bridge。 |
 | [`@dsh-blue/blue-context`](packages/context) | Feature | 官方 context projection 与结构化 action consumer；人工验收前默认禁用。 |
+| [`@dsh-blue/blue-conversation`](packages/conversation) | Domain | 面向 replay/live renderer consumer 的官方 append-origin conversation projection；人工验收前默认禁用。 |
 | [`@dsh-blue/blue-remote`](packages/remote) | Adapter | Renderer-neutral remote session、action、lease 与 question/approval transport。 |
 | [`@dsh-blue/blue-core`](packages/core) | L0 + L1 | 全树唯一 `@earendil-works/pi-tui` 适配器：终端生命周期 + `blueScreen` / `blueTheme` / `blueKeymap` / `blueComponents` / `blueTerminalInfo` 服务。 |
 | [`@dsh-blue/blue-interaction`](packages/interaction) | L2 | 输入编辑器、slash 命令、审批与提问 overlay、排队消息面板，以及增强子路径插件（bash 模式、贴图、附件）。 |
@@ -177,14 +178,15 @@ flowchart TB
 
 每个入口都是 Cordis 插件形态（`export const name`、可选 `inject`、`apply(ctx)`）；Cordis 与 dsh 服务包是 `peerDependencies`，由宿主 `dsh` 安装提供。
 
-**同一棵树，换成 bundle 视角。** `cordis.patch.yml` 分三段插入 27 条 Blue 行。plain 基线（基线段 + 组装段，共 8 行）自足可跑；frontend-runtime/生态可选行在专用 profile 人工验收前保持禁用，增强段每一行均可单独删除。
+**同一棵树，换成 bundle 视角。** `cordis.patch.yml` 分三段插入 29 条 Blue 行。plain 基线（基线段 + 组装段，共 9 行）自足可跑；frontend-runtime/生态可选行在专用 profile 人工验收前保持禁用，增强段每一行均可单独删除。
 
 <!-- BEGIN diagram:blue-composition -->
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml — the 27 Blue rows · 27 条 Blue 行"]
-        subgraph baseline["plain baseline 基线 — 8 rows, self-sufficient 自足"]
+    subgraph bundle["cordis.patch.yml — the 29 Blue rows · 29 条 Blue 行"]
+        subgraph baseline["plain baseline 基线 — 9 rows, self-sufficient 自足"]
+            api["blue-api-host"]
             core["blue-core"]
             theme["blue-theme-dark"]
             banner["blue-banner"]
@@ -200,14 +202,15 @@ flowchart TB
             statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
             intents["blue-intent-diff · -terminal"]
             panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
-            adapters["blue-context · blue-openpencil · blue-lark · disabled by default"]
+            runtime["blue-context · blue-conversation · blue-transcript-official · disabled by default"]
+            adapters["blue-openpencil · blue-lark · disabled by default"]
         end
     end
     dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]
     bundle -.-> dshbase
 
     classDef optional stroke-dasharray: 4 4;
-    class editorPlus,att,statusEnh,intents,panes,adapters optional;
+    class editorPlus,att,statusEnh,intents,panes,runtime,adapters optional;
 ```
 <!-- END diagram:blue-composition -->
 
@@ -255,7 +258,7 @@ pnpm run typecheck      # tsc -b
 
 ## 与 deepseek-harness 的关系
 
-- 运行时与测试依赖（`@deepseek-ai/cordis` 4.0.1、`@deepseek-ai/dsh-*` 0.1.1-rc.2、`@earendil-works/pi-tui` ^0.84.2）来自 npm registry；Blue 的十二个包在本地开发时保持 workspace 链接。
+- 运行时与测试依赖（`@deepseek-ai/cordis` 4.0.1、`@deepseek-ai/dsh-*` 0.1.1-rc.2、`@earendil-works/pi-tui` ^0.84.2）来自 npm registry；Blue 的十三个包在本地开发时保持 workspace 链接。
 - harness 仓库的门禁（文档 i18n 配对、README 门禁、snapshot/e2e 车道）不适用于本仓库；本仓保留构建、全量测试套件与逐文件 100% src 覆盖率门禁。
 
 ## 许可证

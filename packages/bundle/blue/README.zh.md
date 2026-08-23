@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-dsh Blue 组合包：交互式终端 UI profile。[`cordis.patch.yml`](cordis.patch.yml) 直接叠加在 [`dsh-base`](https://github.com/deepseek-ai/deepseek-harness) 之上，分三段插入 27 条 Blue 行。plain 基线保持自足，增强行可逐项移除。frontend-runtime 的 `blue-context` 以及生态 adapter `blue-openpencil`/`blue-lark` 在专用 profile 人工验收前默认禁用。OpenPencil 只投影官方 tool result 且丢弃签名 editor metadata；Lark 通过官方 command 注册 status/retry，不保存 credentials。
+dsh Blue 组合包：交互式终端 UI profile。[`cordis.patch.yml`](cordis.patch.yml) 直接叠加在 [`dsh-base`](https://github.com/deepseek-ai/deepseek-harness) 之上，分三段插入 29 条 Blue 行。plain 基线保持自足，增强行可逐项移除。frontend-runtime 的 `blue-context`、`blue-conversation`、`blue-transcript-official` 以及生态 adapter `blue-openpencil`/`blue-lark` 在专用 profile 人工验收前默认禁用。OpenPencil 只投影官方 tool result 且丢弃签名 editor metadata；Lark 通过官方 command 注册 status/retry，不保存 credentials。
 
 ## 模型体验
 
