@@ -9,12 +9,12 @@
 | Dependency | Version |
 | --- | --- |
 | Node | `^22.19.0 \|\| >=24.0.0` |
-| pnpm | 11 (not needed on the `blue` shell path) |
-| dsh CLI | only for the direct-dsh path: `>=0.1.1-rc.2` (`npm i -g @deepseek-ai/dsh`) |
+| pnpm | 11 (both paths need it: the host's `plugin` command is a thin pnpm forwarder inside the profile, and the first-run assembly goes through it) |
+| dsh CLI | only for the direct-dsh path: `>=0.1.1-rc.2` (`npm i -g @deepseek-ai/dsh`; on the shell path the host ships with the package) |
 
 ## Install (preview)
 
-**Recommended: the `blue` shell** (one command; ships the dsh host pinned to the tested line and installs Blue into its `blue` profile on first run):
+**Recommended: the `blue` shell** (one command; ships the dsh host pinned to the tested line and installs Blue into its `blue` profile on first run — the assembly runs pnpm inside the profile, and a missing pnpm fails with a one-line pointer):
 
 ```sh
 npm i -g @dsh-blue/blue-cli@rc

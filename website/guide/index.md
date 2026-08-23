@@ -9,12 +9,12 @@
 | 依赖 | 版本 |
 | --- | --- |
 | Node | `^22.19.0 \|\| >=24.0.0` |
-| pnpm | 11（`blue` 壳包路径不需要） |
-| dsh CLI | 仅「dsh 直装」路径需要：`>=0.1.1-rc.2`（`npm i -g @deepseek-ai/dsh`） |
+| pnpm | 11（两条路径都需要：宿主的 `plugin` 命令是 profile 工作区内 pnpm 的薄转发，首跑装配走它） |
+| dsh CLI | 仅「dsh 直装」路径需要：`>=0.1.1-rc.2`（`npm i -g @deepseek-ai/dsh`；壳包路径宿主已随包自带） |
 
 ## 安装（预览版）
 
-**推荐：`blue` 壳包**（一条命令，自带与测试线一致的 dsh 宿主；首次运行自动把 Blue 装进 `blue` profile）：
+**推荐：`blue` 壳包**（一条命令，自带与测试线一致的 dsh 宿主；首次运行自动把 Blue 装进 `blue` profile——装配经 pnpm 在 profile 内完成，缺 pnpm 时会以一行报错指路）：
 
 ```sh
 npm i -g @dsh-blue/blue-cli@rc
