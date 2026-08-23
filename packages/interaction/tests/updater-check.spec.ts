@@ -32,22 +32,22 @@ afterEach(() => {
 
 /** A packument whose `rc` tag offers rc.3 over the running rc.2. */
 const OFFER_JSON = JSON.stringify({
-  'dist-tags': { rc: '0.1.0-rc.6', latest: '0.1.0-rc.5' },
+  'dist-tags': { rc: '0.1.0-rc.7', latest: '0.1.0-rc.6' },
   versions: {
-    '0.1.0-rc.5': { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.2' } },
     '0.1.0-rc.6': { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.2' } },
+    '0.1.0-rc.7': { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.2' } },
   },
   time: {
-    '0.1.0-rc.5': '2026-08-20T00:00:00.000Z',
-    '0.1.0-rc.6': '2026-08-22T00:00:00.000Z',
+    '0.1.0-rc.6': '2026-08-20T00:00:00.000Z',
+    '0.1.0-rc.7': '2026-08-22T00:00:00.000Z',
   },
 })
 
 /** A packument already at the running version. */
 const CURRENT_JSON = JSON.stringify({
-  'dist-tags': { rc: '0.1.0-rc.5' },
-  versions: { '0.1.0-rc.5': {} },
-  time: { '0.1.0-rc.5': '2026-08-20T00:00:00.000Z' },
+  'dist-tags': { rc: '0.1.0-rc.6' },
+  versions: { '0.1.0-rc.6': {} },
+  time: { '0.1.0-rc.6': '2026-08-20T00:00:00.000Z' },
 })
 
 /** One check world: temp DSH_HOME, fixed clock, scripted npm view. */
@@ -77,15 +77,15 @@ describe('updater/check runUpdateCheck', () => {
     expect(world.screen.children).toHaveLength(1)
     const rows = world.screen.children[0]!.render(80)
     expect(rows).toHaveLength(2)
+    expect(rows[0]).toContain('v0.1.0-rc.7')
     expect(rows[0]).toContain('v0.1.0-rc.6')
-    expect(rows[0]).toContain('v0.1.0-rc.5')
     expect(rows[1]).toContain('run /update')
-    expect(rows[1]).toContain('dsh plugin --profile blue add @dsh-blue/blue@0.1.0-rc.6')
+    expect(rows[1]).toContain('dsh plugin --profile blue add @dsh-blue/blue@0.1.0-rc.7')
     expect(world.screen.renderRequests).toBeGreaterThan(0)
     // Stateless render; invalidate is a harmless no-op.
     expect(() => world.screen.children[0]!.invalidate()).not.toThrow()
     const state = readUpdateCheckState()
-    expect(state).toEqual({ lastCheckAt: world.now, lastNotifiedVersion: '0.1.0-rc.6' })
+    expect(state).toEqual({ lastCheckAt: world.now, lastNotifiedVersion: '0.1.0-rc.7' })
   })
 
   it('skips the registry entirely inside the 24h cache window', async () => {
@@ -98,7 +98,7 @@ describe('updater/check runUpdateCheck', () => {
 
   it('re-checks and re-notifies once the cache window has passed', async () => {
     const world = makeCheck()
-    writeUpdateCheckState({ lastCheckAt: world.now - 25 * 60 * 60 * 1_000, lastNotifiedVersion: '0.1.0-rc.6' })
+    writeUpdateCheckState({ lastCheckAt: world.now - 25 * 60 * 60 * 1_000, lastNotifiedVersion: '0.1.0-rc.7' })
     await runUpdateCheck(world.ctx, () => DEFAULT_SETTINGS, () => false)
     expect(world.spawns()).toBe(1)
     expect(world.screen.children).toHaveLength(1)
@@ -121,11 +121,11 @@ describe('updater/check runUpdateCheck', () => {
 
   it('keeps the previous notified marker through a failed re-check', async () => {
     const world = makeCheck({ fail: true })
-    writeUpdateCheckState({ lastCheckAt: world.now - 25 * 60 * 60 * 1_000, lastNotifiedVersion: '0.1.0-rc.6' })
+    writeUpdateCheckState({ lastCheckAt: world.now - 25 * 60 * 60 * 1_000, lastNotifiedVersion: '0.1.0-rc.7' })
     await runUpdateCheck(world.ctx, () => DEFAULT_SETTINGS, () => false)
     expect(readUpdateCheckState()).toEqual({
       lastCheckAt: world.now,
-      lastNotifiedVersion: '0.1.0-rc.6',
+      lastNotifiedVersion: '0.1.0-rc.7',
       lastError: 'network',
     })
   })
@@ -173,14 +173,14 @@ describe('updater/check runUpdateCheck', () => {
     })
     expect(world.spawns()).toBe(1)
     expect(world.screen.children).toHaveLength(0)
-    expect(readUpdateCheckState()?.lastNotifiedVersion).toBe('0.1.0-rc.6')
+    expect(readUpdateCheckState()?.lastNotifiedVersion).toBe('0.1.0-rc.7')
   })
 
   it('skips the mount without throwing when no screen is mounted', async () => {
     makeCheck()
     const bare = new Context()
     await expect(runUpdateCheck(bare, () => DEFAULT_SETTINGS, () => false)).resolves.toBeUndefined()
-    expect(readUpdateCheckState()?.lastNotifiedVersion).toBe('0.1.0-rc.6')
+    expect(readUpdateCheckState()?.lastNotifiedVersion).toBe('0.1.0-rc.7')
   })
 })
 
@@ -193,7 +193,7 @@ describe('updater/check state reader', () => {
       updaterInternals.writeTextFile(world.statePath, text)
       expect(readUpdateCheckState(), text).toBeUndefined()
     }
-    const full: UpdateCheckState = { lastCheckAt: 5, lastNotifiedVersion: '0.1.0-rc.6', lastError: 'network' }
+    const full: UpdateCheckState = { lastCheckAt: 5, lastNotifiedVersion: '0.1.0-rc.7', lastError: 'network' }
     writeUpdateCheckState(full)
     expect(readUpdateCheckState()).toEqual(full)
     // Non-string optional fields are dropped, not carried.
@@ -220,7 +220,7 @@ describe('updater/check apply', () => {
     apply(world.ctx)
     await new Promise(resolve => setTimeout(resolve, 20))
     expect(world.screen.children).toHaveLength(1)
-    expect(readUpdateCheckState()?.lastNotifiedVersion).toBe('0.1.0-rc.6')
+    expect(readUpdateCheckState()?.lastNotifiedVersion).toBe('0.1.0-rc.7')
     expect(name).toBe('blue-update-check')
   })
 
