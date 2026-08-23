@@ -77,7 +77,7 @@ flowchart TB
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml — the 22 Blue rows · 22 条 Blue 行"]
+    subgraph bundle["cordis.patch.yml — the 27 Blue rows · 27 条 Blue 行"]
         subgraph baseline["plain baseline 基线 — 8 rows, self-sufficient 自足"]
             core["blue-core"]
             theme["blue-theme-dark"]
@@ -94,13 +94,14 @@ flowchart TB
             statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
             intents["blue-intent-diff · -terminal"]
             panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
+            adapters["blue-context · blue-openpencil · blue-lark · disabled by default"]
         end
     end
     dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]
     bundle -.-> dshbase
 
     classDef optional stroke-dasharray: 4 4;
-    class editorPlus,att,statusEnh,intents,panes optional;
+    class editorPlus,att,statusEnh,intents,panes,adapters optional;
 ```
 <!-- END diagram:blue-composition -->
 

@@ -10,6 +10,8 @@
     { "path": "packages/app" },
     { "path": "packages/interaction" },
     { "path": "packages/transcript" },
+    { "path": "packages/openpencil" },
+    { "path": "packages/lark" },
     { "path": "packages/bundle/blue" }
   ]
 }

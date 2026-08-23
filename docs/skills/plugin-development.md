@@ -1,5 +1,9 @@
 # Plugin Development Skill
 
+The loadable repository skill is
+`.agents/skills/plugin-development/SKILL.md`. This page is its human-facing
+summary.
+
 Use this checklist when adding an external Blue plugin.
 
 1. Classify the contribution as Domain, Interaction, Renderer, or Composition.

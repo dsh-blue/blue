@@ -77,6 +77,8 @@ describe('blue bundle', () => {
       'blue-status-mode',
       'blue-status-context',
       'blue-context',
+      'blue-openpencil',
+      'blue-lark',
       'blue-intent-diff',
       'blue-intent-terminal',
       'blue-pane-activity',
@@ -94,6 +96,9 @@ describe('blue bundle', () => {
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/attachments'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/paste-image'")
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/banner'")
+    expect(patch).toContain("name: '@dsh-blue/blue-openpencil'")
+    expect(patch).toContain("name: '@dsh-blue/blue-lark'")
+    expect(patch.match(/- id: blue-(?:openpencil|lark)\n\s+name:[^\n]+\n\s+disabled: true/gu)).toHaveLength(2)
   })
 
   it('inserts the upstream agent-presets roster row ahead of the Blue rows', () => {

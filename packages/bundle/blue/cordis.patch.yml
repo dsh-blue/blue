@@ -277,6 +277,21 @@
       name: '@dsh-blue/blue-context'
       disabled: true
 
+    # OpenPencil compatibility adapter (F6): observes only official
+    # dsh-tools results, converts public presentation metadata to bounded Blue
+    # tool models, and drops signed editor capability metadata. Disabled until
+    # the dedicated frontend-runtime profile receives live acceptance.
+    - id: blue-openpencil
+      name: '@dsh-blue/blue-openpencil'
+      disabled: true
+
+    # Lark compatibility adapter (F6): registers /lark through official
+    # commands and calls the public loopback settings route for status/retry.
+    # The route remains optional and the adapter stores no credentials.
+    - id: blue-lark
+      name: '@dsh-blue/blue-lark'
+      disabled: true
+
     # Diff render intent: registers the 'diff' entry in the transcript's
     # blueIntents registry, so tool items whose presentCall/presentResult
     # views carry card:'diff' render as titled per-file unified diffs

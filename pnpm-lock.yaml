@@ -126,6 +126,12 @@ importers:
       '@dsh-blue/blue-interaction':
         specifier: workspace:^
         version: link:../../interaction
+      '@dsh-blue/blue-lark':
+        specifier: workspace:^
+        version: link:../../lark
+      '@dsh-blue/blue-openpencil':
+        specifier: workspace:^
+        version: link:../../openpencil
       '@dsh-blue/blue-transcript':
         specifier: workspace:^
         version: link:../../transcript
@@ -371,6 +377,36 @@ importers:
         version: link:../core
       '@dsh-blue/blue-transcript':
         specifier: workspace:^
+        version: link:../transcript
+
+  packages/lark:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@deepseek-ai/dsh-commands':
+        specifier: 0.1.1-rc.2
+        version: 0.1.1-rc.2(d1399cb81885d3e5537c8ff734d29d59)
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: 0.1.1-rc.2
+        version: 0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1))
+      '@dsh-blue/blue-frontend':
+        specifier: workspace:*
+        version: link:../frontend
+
+  packages/openpencil:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@deepseek-ai/dsh-tools':
+        specifier: 0.1.1-rc.2
+        version: 0.1.1-rc.2(2b28dc2a7b5da557183b24e20374217f)
+      '@dsh-blue/blue-frontend':
+        specifier: workspace:*
+        version: link:../frontend
+      '@dsh-blue/blue-transcript':
+        specifier: workspace:*
         version: link:../transcript
 
   packages/remote:

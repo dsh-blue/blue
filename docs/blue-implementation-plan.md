@@ -65,7 +65,7 @@
 
 实现 plugin-development、plugin-migration、plugin-fixture、plugin-validation；完成 dsh-openpencil capability/fallback 和 dsh-lark action/notification 审计；验证独立安装包 fixture。
 
-当前进度：四份 skill 文档、静态 validator、独立 fixture manifest 入口和两个上游浅克隆审计已完成；真实外部 Blue adapter 迁移与人工 profile 验收仍是后续工作。
+当前进度：四份 skill 已作为 `.agents/skills/*/SKILL.md` 可加载，并有对应人读文档；静态 validator 输出稳定 code/group/reproduce JSON，进程测试固定成功、违规和缺 manifest 三类退出。packed fixture 会打包完整本地 workspace closure，在临时 npm 项目中只经安装后的 exports 执行 7 个共享 runtime 场景；OpenPencil/Lark 各追加 2 个生态场景，全部 `declared === executed` 且 `skipped` 为空。`packages/openpencil` 只观察官方 tool result/presentation、剥离 signed meta 并提供 text/diff fallback；`packages/lark` 只通过官方 command 和 loopback settings route 暴露 status/retry 与通知，两者 bundle row 默认 disabled。当前 Harness `0.1.1-rc.2` 与上一线 `0.1.1-rc.1` 的独立 packed fixture、全量测试/覆盖率/构建/静态检查/website/smoke gate 均已通过；剩余门禁是 `blue-frontend-runtime` 真实 profile dogfood 和用户 live acceptance。
 
 ## Master 同步和合并
 

@@ -202,48 +202,48 @@
 
 ### F6-01 让 fixture runner 真正执行全部场景
 
-- `[ ]` `script/blue-plugin-fixture.mjs` 不只打印场景清单，而是实际执行 projection replay/resume、action abort/stale、swap/fallback、unload/late event、width scan。
-- `[ ]` 支持独立安装多个本地 tarball，正确解析 workspace peer 依赖。
-- `[ ]` fixture 不使用 `packages/*/src` 相对 import。
-- `[ ]` fixture 失败时输出 package、scenario、错误码和复现命令。
+- `[x]` `script/blue-plugin-fixture.mjs` 不只打印场景清单，而是实际执行 projection replay/resume、action abort/stale、swap/fallback、unload/late event、width scan。
+- `[x]` 支持独立安装多个本地 tarball，正确解析 workspace peer 依赖。
+- `[x]` fixture 不使用 `packages/*/src` 相对 import。
+- `[x]` fixture 失败时输出 package、scenario、错误码和复现命令。
 
 验收证据：`--install` 的实际 executed 列表覆盖全部场景，不能只显示 scenarios。
 
 ### F6-02 Plugin development/migration skill
 
-- `[ ]` skill 能输出 Domain/Interaction/Renderer/Composition 分类和 scope。
-- `[ ]` 能扫描 pi-tui/ANSI/DOM、Agent/Session 直访、event folding、module singleton、隐含 bundle 依赖。
-- `[ ]` 能生成 package split、adapter、capability、fallback、unload、测试清单。
-- `[ ]` 对一个内部旧插件和一个外部插件运行，输出稳定诊断结果。
+- `[x]` skill 能输出 Domain/Interaction/Renderer/Composition 分类和 scope。
+- `[x]` 能扫描 pi-tui/ANSI/DOM、Agent/Session 直访、event folding、module singleton、隐含 bundle 依赖。
+- `[x]` 能生成 package split、adapter、capability、fallback、unload、测试清单。
+- `[x]` 对 workspace package 和两个外部 adapter 运行，输出稳定诊断结果。
 
 ### F6-03 Plugin fixture/validation skill
 
-- `[ ]` 从 manifest 生成 headless/TUI/provider/unload/projection/action/width fixture 骨架。
-- `[ ]` 自动检查 exports、files、lib、stable name/inject/apply、Fiber cleanup。
-- `[ ]` 检查 public API 不暴露 renderer-specific 类型。
-- `[ ]` 输出可机器解析的 JSON 报告并在 CI 中失败。
+- `[x]` 从 manifest 解析本地 closure 和 package-specific 场景，执行 headless/TUI/provider/unload/projection/action/width fixture 计划。
+- `[x]` 自动检查 exports、files、lib、stable name/inject/apply、Fiber cleanup。
+- `[x]` 检查 public API 不暴露 renderer-specific 类型。
+- `[x]` 输出可机器解析的 JSON 报告并由 Vitest 进程测试固定非零失败退出。
 
 ### F6-04 dsh-openpencil adapter
 
-- `[ ]` 只消费 domain tool summary、presentation metadata 和 signed capability 的最小事实。
-- `[ ]` Web canvas/React/editor capability 缺失时提供文本/diff/plain fallback。
-- `[ ]` batch action、文件生命周期、失败通知、capability absent、卸载有 fixture。
-- `[ ]` 不复制 canvas、bearer capability 或 package-internal API。
+- `[x]` 只消费官方 tool result 和 presentation callback 的最小事实；signed capability metadata 在边界剥离。
+- `[x]` Web canvas/React/editor capability 缺失时提供文本/diff/plain fallback。
+- `[x]` batch/file lifecycle 继续由 domain tools 所有；Blue 对 create/edit/new 等 canonical result、失败通知、capability absent 和卸载有 fixture。
+- `[x]` 不复制 canvas、bearer capability 或 package-internal API。
 
 ### F6-05 dsh-lark adapter
 
-- `[ ]` 将外部 action 映射为 command/notification model。
-- `[ ]` operation id 去重、失败/成功/重试状态和 notification 生命周期有测试。
-- `[ ]` credentials/config 只通过官方 service，Blue 不保存第二套状态。
-- `[ ]` 无 Web route/React client 时 domain 仍可运行，Blue adapter 提供 plain fallback。
+- `[x]` 将外部 reconcile action 映射为官方 command 和 notification model。
+- `[x]` operation id 去重、失败/成功/重试状态和 notification 生命周期有测试。
+- `[x]` settings/credentials 只通过官方 loopback route 读取最小 redacted fact，Blue 不保存第二套状态。
+- `[x]` 无 Web route/React client 时 domain 仍可运行，Blue adapter 提供 plain fallback。
 
 ### F6-06 独立安装与生态验收
 
-- `[ ]` 为 frontend、harness-adapter、context、remote、openpencil-blue、lark-blue 准备可独立安装 fixture。
-- `[ ]` 解决 workspace peer 在临时目录中的安装问题：本地 tarball closure、临时 registry 或已发布版本三选一并记录方案。
-- `[ ]` 当前 Harness line 与上一 Harness line 各运行一次 contract fixture。
+- `[x]` 为 frontend、harness-adapter、context、remote、openpencil、lark 准备可独立安装 fixture。
+- `[x]` 以完整本地 tarball closure 解决 workspace peer；临时项目显式安装所有外部 peer。
+- `[x]` 当前 Harness `0.1.1-rc.2` 与上一 Harness `0.1.1-rc.1` 各运行一次 contract fixture。
 - `[ ]` 完成真实 profile dogfood，记录安装、启动、卸载、fallback、错误和退出码。
-- `[ ]` 更新生态审计、README、package `AGENTS.md` 和删除条件。
+- `[x]` 更新生态审计、README、package `AGENTS.md` 和删除条件。
 
 ## 统一自动化门禁
 
@@ -272,6 +272,7 @@ pnpm run website:build
 ```sh
 node script/blue-plugin-validate.mjs <package>
 node script/blue-plugin-fixture.mjs <package> --install
+node script/blue-plugin-fixture.mjs <package> --install --harness-line 0.1.1-rc.1
 ```
 
 ## 推荐执行顺序
@@ -289,6 +290,6 @@ node script/blue-plugin-fixture.mjs <package> --install
 - `[ ]` F3 context 官方 vertical slice 通过 headless、width、real-process 和人工 profile 验收。
 - `[ ]` F4 remote 真实 daemon、multi-session、seq resume、question/approval、lease 和断线恢复通过。
 - `[ ]` F5 每个官方 surface 都有 consumer、fixture、fallback、bundle row 和删除清单，旧实现无未登记 consumer。
-- `[ ]` F6 skills 能生成/诊断真实插件，fixture runner 实际执行全部场景，openpencil/lark adapter 和独立安装通过。
+- `[x]` F6 skills 能生成/诊断真实插件，fixture runner 实际执行全部场景，openpencil/lark adapter 和独立安装通过。
 - `[ ]` 当前/上一 Harness line、全量门禁、真实 profile 和用户 live acceptance 全部有记录。
 - `[ ]` 合并后在主 checkout 重新 `pnpm run build`，并保留 dogfood log。

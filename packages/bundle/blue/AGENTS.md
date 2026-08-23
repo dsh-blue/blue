@@ -8,6 +8,8 @@ The installable unit. Its `cordis.patch.yml` inserts the Blue plugin rows over `
 
 The F3 `blue-context` row is present but `disabled: true`. It supplies the official session-projection-to-frontend adapter when explicitly enabled in the `blue-frontend-runtime` acceptance profile. Production composition continues to use the legacy `/context` and `blue-status-context` consumers until live acceptance; enabling the row does not disable those fallbacks, and the interaction command selects the renderer-neutral model only while the service is live.
 
+F6 adds disabled `blue-openpencil` and `blue-lark` rows. OpenPencil observes only official dsh-tools results, drops signed result metadata, and publishes bounded tool/notification models. Lark registers an official command and uses the optional public loopback settings route without retaining credentials. Both packages ship in the bundle dependency closure but remain product-inert until explicitly enabled; their package `AGENTS.md` files record the compatibility seams and deletion conditions.
+
 F5 adds no parallel composition rows for registries: `blue-transcript` owns `blueStatusModels`, `blueDockModels`, `blueToolModels`, and `blueTranscriptModels`; `blue-interaction` owns `blueCommandModels` and `blueEditorModels`. The basic/cwd/git/title/context/mode status rows inject `blueStatusModels`, so the model service is their activation boundary. Bundle e2e fixture wrappers must mirror those source inject lists exactly. Legacy panes, tool intents, editor, and transcript remain mounted once as the golden/plain fallback; additive models must not duplicate their content in the default composition.
 
 ## Session-title cadence swap (S30) + bridge (D41)

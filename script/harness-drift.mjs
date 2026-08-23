@@ -26,27 +26,35 @@
 // here — rewriting is the agent's job)
 
 import { execFile } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { harnessLine } from './smoke-lib.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
-/** The manifests whose dsh dependency names join the watched set. */
-const MANIFESTS = [
-  'package.json',
-  'packages/core/package.json',
-  'packages/interaction/package.json',
-  'packages/transcript/package.json',
-  'packages/app/package.json',
-  'packages/bundle/blue/package.json',
-]
+/** Every workspace manifest whose dsh dependency names join the watched set. */
+function manifests() {
+  const found = ['package.json']
+  const visit = (directory, prefix, depth) => {
+    if (depth > 2) return
+    const packageFile = join(directory, 'package.json')
+    if (existsSync(packageFile)) {
+      found.push(join(prefix, 'package.json'))
+      return
+    }
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory() && entry.name !== 'node_modules') visit(join(directory, entry.name), join(prefix, entry.name), depth + 1)
+    }
+  }
+  visit(join(root, 'packages'), 'packages', 0)
+  return found
+}
 
 /** Every @deepseek-ai/dsh-* package name the tree references anywhere. */
 export function watchedPackages() {
   const names = new Set()
-  for (const rel of MANIFESTS) {
+  for (const rel of manifests()) {
     const pkg = JSON.parse(readFileSync(join(root, rel), 'utf8'))
     for (const table of [pkg.dependencies, pkg.peerDependencies, pkg.devDependencies]) {
       for (const name of Object.keys(table ?? {})) {

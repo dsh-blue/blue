@@ -1,5 +1,9 @@
 # Plugin Migration Skill
 
+The loadable repository skill is
+`.agents/skills/plugin-migration/SKILL.md`. This page is its human-facing
+summary.
+
 Run `node script/blue-plugin-validate.mjs <package>` before migration. Record
 each finding under Domain, Projection, Action, Interaction model, Renderer UI,
 Bundle rows, scope, and deletion condition.

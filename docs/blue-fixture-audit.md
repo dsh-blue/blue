@@ -44,7 +44,35 @@ throwaway `/tmp/blue-ecosystem-audit.*` directory:
   external actions as notification/command models, dedupe by operation id, and
   remain usable without the web route or client bundle.
 
-The audit is evidence for the migration boundary, not a claim that either
-external project has been rewritten. `script/blue-plugin-validate.mjs` and
-`script/blue-plugin-fixture.mjs` are the repeatable local gates for the next
-adapter implementation.
+The audit established the migration boundary; neither external domain project
+was rewritten. Blue now implements that boundary in
+`@dsh-blue/blue-openpencil` and `@dsh-blue/blue-lark`, with both composition
+rows disabled by default until profile acceptance.
+
+## F6 packed fixture evidence (2026-08-23)
+
+The runner packed the complete local workspace closure, installed it in an
+independent temporary npm project, and resolved imports only through installed
+package exports. Frontend, harness-adapter, context, and remote each executed
+all seven shared scenarios with zero skipped scenarios. OpenPencil and Lark
+each executed those seven plus two package-specific scenarios (9/9):
+
+- OpenPencil verified official presentation fallback, signed-meta elision,
+  call-id dedupe, bounded retention, failure notification cleanup, unload, and
+  rejection of late tool results.
+- Lark verified status/retry notification states, operation-id dedupe,
+  route-absent fallback, abort, bounded retention, unload, and late-result
+  rejection.
+
+Current-line runs resolved the observed Harness peers to `0.1.1-rc.2`.
+Compatibility runs used `--harness-line 0.1.1-rc.1`, resolved every observed
+Harness peer in the temporary install to that exact line, and again executed
+9/9 scenarios with no skips or failures. The override never edits repository
+manifests or `pnpm-lock.yaml`.
+
+The final automated gate passed with 2,080 tests in 133 files and per-file
+100% coverage (9,301 statements, 5,819 branches, 1,885 functions, 7,661
+lines). Typecheck/build, lint, 62 lib/export claims, diagram synchronization,
+the VitePress production build, `smoke:happy`, `smoke:pty`, and
+`smoke:pty:mouse` also passed; all three smoke processes exited 0. Dedicated
+`blue-frontend-runtime` profile dogfood and human acceptance remain separate.
