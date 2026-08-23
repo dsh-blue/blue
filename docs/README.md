@@ -22,6 +22,7 @@
 | [blue-skills-plan.md](./blue-skills-plan.md) | 插件开发与迁移 skills 的输入、诊断输出和实施顺序 |
 | [blue-implementation-plan.md](./blue-implementation-plan.md) | p2/frontend-runtime 的阶段实施、迁移顺序、主线同步与合并门禁 |
 | [blue-plugin-validation.md](./blue-plugin-validation.md) | F6 外部插件验证、独立 fixture 与生态审计门禁 |
+| [blue-surface-migration-matrix.md](./blue-surface-migration-matrix.md) | F5 status、dock、command、tool、theme、editor、transcript 迁移矩阵与删除条件 |
 | [blue-frontend-runtime-task-checklist.md](./blue-frontend-runtime-task-checklist.md) | F3/F4/F5/F6 可执行开发任务、验收门禁与完成定义 |
 
 F2 兼容适配层的实现位于 [`packages/harness-adapter`](../packages/harness-adapter)，按 session、projection、action、model 和 question/approval 能力拆分。

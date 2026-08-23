@@ -89,3 +89,4 @@ Three events live on the core Events merge:
 Theme providers also publish a semantic companion through the optional `blueThemeModels` frontend registry. ANSI color functions remain core-only; the companion contains the source palette hexes and is removed with the theme provider Fiber.
 
 `blueNotifications` is the frontend runtime's immutable notification registry; core only hosts its lifecycle, while feature adapters push structured messages and consume snapshots.
+`frontend-renderer.ts` is the narrow TUI consumer for `@dsh-blue/blue-frontend` readonly views. `renderFrontendView`/`renderFrontendModel` and `FrontendModelComponent` are the only renderer-facing bridge for the new frontend model; width clamping delegates to pi-tui through `width.ts`. It does not read Harness events or session objects.

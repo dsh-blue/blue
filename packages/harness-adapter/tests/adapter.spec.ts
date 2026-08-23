@@ -41,6 +41,15 @@ describe('ProjectionBridge', () => {
   })
   it('returns absent without a source', async () => { const bridge = new ProjectionBridge({ init: () => 0, apply: (state: number, event: number) => state + event }); await expect(bridge.attach('s1')).resolves.toMatchObject({ code: 'BLUE_CAPABILITY_ABSENT' }); bridge.dispose() })
   it('drops an attach aborted during baseline loading', async () => { let bridge!: ProjectionBridge<number, number>; const source = { snapshot: async (id: string, signal: AbortSignal) => { queueMicrotask(() => bridge.detach()); await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true })); return { watermark: 0, value: [] } }, subscribe: () => () => undefined }; bridge = new ProjectionBridge({ init: () => 0, apply: (state, event) => state + event }, source); await expect(bridge.attach('s1')).resolves.toMatchObject({ code: 'BLUE_ABORTED' }) })
+  it('maps baseline loader errors to structured failures', async () => {
+    const error = new ProjectionBridge({ init: () => 0, apply: (state: number, event: number) => state + event }, { snapshot: async () => { throw new Error('projection down') }, subscribe: () => () => undefined })
+    await expect(error.attach('s1')).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'projection down' })
+    const stringError = new ProjectionBridge({ init: () => 0, apply: (state: number, event: number) => state + event }, { snapshot: async () => { throw 'projection down' }, subscribe: () => () => undefined })
+    await expect(stringError.attach('s1')).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'projection down' })
+    let aborted!: ProjectionBridge<number, number>
+    aborted = new ProjectionBridge({ init: () => 0, apply: (state: number, event: number) => state + event }, { snapshot: async (_id, signal) => new Promise((_resolve, reject) => { queueMicrotask(() => aborted.detach()); signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }) }), subscribe: () => () => undefined })
+    await expect(aborted.attach('s1')).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
+  })
 })
 
 describe('ActionCoordinator', () => {

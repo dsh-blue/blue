@@ -1,4 +1,4 @@
-import { ProjectionBridge, type AdapterResult } from '@dsh-blue/blue-harness-adapter'
+import { absent, failure, ProjectionBridge, type AdapterResult } from '@dsh-blue/blue-harness-adapter'
 import { freezeModel } from '@dsh-blue/blue-frontend'
 import type { ContextEvent, ContextFacts, ContextSnapshot, ContextSource, ContextState, UsageSample } from './types.ts'
 
@@ -18,14 +18,26 @@ export function applyContextEvent(state: ContextState, event: ContextEvent): Con
 }
 export class ContextProjection {
   private readonly bridge: ProjectionBridge<ContextState, ContextEvent>
+  private readonly source: ContextSource | undefined
   private sessionId: string | undefined
   private watermark = -1
   private state: ContextState | undefined
   private readonly listeners = new Set<(snapshot: ContextSnapshot) => void>()
-  constructor(source?: ContextSource) { this.bridge = new ProjectionBridge({ init: initialContextState, apply: applyContextEvent }, source === undefined ? undefined : { snapshot: async (id, signal) => { const result = await source.snapshot(id, signal); return { watermark: result.watermark, value: result.events } }, subscribe: (id, seq, listener) => source.subscribe(id, seq, listener) }); this.bridge.subscribe((state, watermark) => { this.state = state; this.watermark = watermark; if (this.sessionId !== undefined) this.emit() }) }
+  constructor(source?: ContextSource) { this.source = source; this.bridge = new ProjectionBridge({ init: initialContextState, apply: applyContextEvent }, source === undefined ? undefined : { snapshot: async (id, signal) => { const result = await source.snapshot(id, signal); return { watermark: result.watermark, value: result.events } }, subscribe: (id, seq, listener) => source.subscribe(id, seq, listener) }); this.bridge.subscribe((state, watermark) => { this.state = state; this.watermark = watermark; if (this.sessionId !== undefined) this.emit() }) }
   get snapshot(): ContextSnapshot | undefined { return this.sessionId === undefined || this.state === undefined ? undefined : freezeModel({ sessionId: this.sessionId, watermark: this.watermark, facts: this.state.usage }) }
   subscribe(listener: (snapshot: ContextSnapshot) => void): () => void { this.listeners.add(listener); const current = this.snapshot; if (current !== undefined) listener(current); return () => this.listeners.delete(listener) }
   async attach(sessionId: string): Promise<AdapterResult<ContextState>> { this.sessionId = undefined; const result = await this.bridge.attach(sessionId); if (result.ok) { this.sessionId = sessionId; this.watermark = this.bridge.snapshot.watermark; this.state = result.value; this.emit() } return result }
+  async refresh(signal: AbortSignal): Promise<AdapterResult<ContextState>> {
+    const sessionId = this.sessionId
+    if (sessionId === undefined) return failure<ContextState>('BLUE_SESSION_UNAVAILABLE', 'Context session is not attached')
+    if (this.source === undefined || this.source.refresh === undefined || (this.source.capabilities !== undefined && !this.source.capabilities.includes('refresh'))) return absent('refresh')
+    try {
+      await this.source.refresh(sessionId, signal)
+      return this.attach(sessionId)
+    } catch (error) {
+      return failure<ContextState>('BLUE_ACTION_REJECTED', error instanceof Error ? error.message : String(error))
+    }
+  }
   detach(): void { this.bridge.detach(); this.sessionId = undefined; this.state = undefined; this.watermark = -1 }
   dispose(): void { this.bridge.dispose(); this.listeners.clear(); this.sessionId = undefined; this.state = undefined }
   private emit(): void { const snapshot = this.snapshot; if (snapshot !== undefined) for (const listener of this.listeners) listener(snapshot) }

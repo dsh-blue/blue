@@ -32,6 +32,8 @@ export {
   type BlueProbeProcess,
 } from './terminal-info.ts'
 export { createTerminalRelease } from './terminal.ts'
+export { FrontendModelComponent, renderFrontendModel, renderFrontendView } from './frontend-renderer.ts'
+export { visibleWidth } from './width.ts'
 export {
   TITLE_MAX_CHARS,
   buildClipboardOsc52,

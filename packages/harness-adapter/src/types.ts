@@ -1,6 +1,6 @@
 import type { BlueErrorCode, BlueResult, BlueRequestRef } from '@dsh-blue/blue-api'
 
-export type AdapterCapability = 'session' | 'projection' | 'action' | 'model' | 'question' | 'approval'
+export type AdapterCapability = 'session' | 'projection' | 'action' | 'model' | 'question' | 'approval' | 'refresh'
 export type AdapterAbsent = { readonly kind: 'absent'; readonly capability: AdapterCapability; readonly reason: string }
 export type AdapterResult<T> = BlueResult<T> | { readonly ok: false; readonly code: 'BLUE_CAPABILITY_ABSENT'; readonly absent: AdapterAbsent }
 export type EventEnvelope<E> = { readonly seq: number; readonly sessionId: string; readonly event: E }

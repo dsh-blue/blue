@@ -17,7 +17,11 @@ export class RemoteSessionAdapter implements HarnessSessionSource {
   get sessionId(): string | undefined { return this.currentSession }
   get protocol(): string | undefined { return this.remoteCapabilities?.protocol }
   async connect(sessionId: string, signal: AbortSignal = new AbortController().signal): Promise<RemoteResult<BlueSessionSnapshot>> {
-    this.disconnect(); const generation = ++this.generation; const controller = this.controller
+    this.disconnect()
+    const generation = ++this.generation
+    const controller = this.controller
+    const forward = (): void => controller.abort()
+    signal.addEventListener('abort', forward, { once: true })
     try {
       if (signal.aborted) return abortResult()
       const capabilities = await this.transport.negotiate(controller.signal)
@@ -28,6 +32,7 @@ export class RemoteSessionAdapter implements HarnessSessionSource {
       const snapshot = await this.snapshot(controller.signal)
       return success(snapshot.value)
     } catch (error) { return controller.signal.aborted ? abortResult() : failure('BLUE_API_INCOMPATIBLE', error instanceof Error ? error.message : String(error)) }
+    finally { signal.removeEventListener('abort', forward) }
   }
   snapshot(signal: AbortSignal): Promise<Readonly<{ watermark: number; value: BlueSessionSnapshot }>> {
     if (this.currentSession === undefined || !this.capabilities.includes('session')) return Promise.reject(new Error('remote session unavailable'))
@@ -64,6 +69,18 @@ export class RemoteSessionAdapter implements HarnessSessionSource {
       approve: async (question, signal) => { if (!this.capabilities.includes('approval') || this.transport.approve === undefined) throw new Error('remote approval unavailable'); return this.transport.approve(sessionId, question, signal) },
     }
   }
-  disconnect(): void { this.controller.abort(); this.unsubscribe?.(); this.unsubscribe = undefined; void this.releaseWriteLease(); this.controller = new AbortController(); this.currentSession = undefined; this.remoteCapabilities = undefined; this.generation++ }
+  disconnect(): void {
+    this.controller.abort()
+    this.unsubscribe?.()
+    this.unsubscribe = undefined
+    const lease = this.lease
+    const sessionId = this.currentSession
+    this.lease = undefined
+    if (lease !== undefined && sessionId !== undefined && this.transport.releaseWriteLease !== undefined) void this.transport.releaseWriteLease(sessionId, lease).catch(() => undefined)
+    this.controller = new AbortController()
+    this.currentSession = undefined
+    this.remoteCapabilities = undefined
+    this.generation++
+  }
   dispose(): void { this.disconnect() }
 }
