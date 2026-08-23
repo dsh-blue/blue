@@ -9,20 +9,30 @@
 | Dependency | Version |
 | --- | --- |
 | Node | `^22.19.0 \|\| >=24.0.0` |
-| pnpm | 11 |
-| dsh CLI | `>=0.1.1-rc.2` (`npm i -g @deepseek-ai/dsh`) |
+| pnpm | 11 (both paths need it: the host's `plugin` command is a thin pnpm forwarder inside the profile, and the first-run assembly goes through it) |
+| dsh CLI | only for the direct-dsh path: `>=0.1.1-rc.2` (`npm i -g @deepseek-ai/dsh`; on the shell path the host ships with the package) |
 
-## Install from npm (preview)
+## Install (preview)
+
+**Recommended: the `blue` shell** (one command; ships the dsh host pinned to the tested line and installs Blue into its `blue` profile on first run — the assembly runs pnpm inside the profile, and a missing pnpm fails with a one-line pointer):
+
+```sh
+npm i -g @dsh-blue/blue-cli@rc
+blue
+```
+
+**Or install over your own dsh** (bring your own host — for existing dsh users):
 
 ```sh
 npm i -g @deepseek-ai/dsh
 dsh plugin --profile blue add @dsh-blue/blue@rc
+dsh --profile blue
 ```
 
 After installing, follow the two sections below — one key, then a first run; models, providers, themes, and API keys are covered in detail in [Configuration](/en/guide/config).
 
 - The `@rc` suffix is required: preview releases only carry the `rc` dist-tag, so a bare spec — which resolves `latest` — finds nothing.
-- Upgrading to a newer preview: type `/update` inside Blue (the in-app safe upgrade: pre-flight, snapshot, boot smoke, automatic rollback), or re-run the same `plugin add` — the `@rc` spec re-resolves to the newest version.
+- Upgrading to a newer preview: shell users re-run `npm i -g @dsh-blue/blue-cli@rc` (reinstalling is the upgrade — the shell calibrates the profile's Blue to its own version and pins the host line with it); direct-dsh users type `/update` inside Blue (the in-app safe upgrade: pre-flight, snapshot, boot smoke, automatic rollback), or re-run the same `plugin add`.
 
 ## One key before you ride
 
@@ -37,8 +47,10 @@ Switching models, wiring custom gateways, theming, and more: [Configuration](/en
 ## First run
 
 ```sh
-dsh --profile blue            # interactive: welcome banner + input editor
-dsh --profile blue fix the null deref on the login page    # run a task directly
+blue                        # interactive: welcome banner + input editor
+blue fix the null deref on the login page    # run a task directly
+# direct-dsh users: dsh --profile blue (the two are equivalent — the shell
+# just manages the host and the profile for you)
 ```
 
 A few things to try first:

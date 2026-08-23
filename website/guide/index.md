@@ -9,20 +9,30 @@
 | 依赖 | 版本 |
 | --- | --- |
 | Node | `^22.19.0 \|\| >=24.0.0` |
-| pnpm | 11 |
-| dsh CLI | `>=0.1.1-rc.2`（`npm i -g @deepseek-ai/dsh`） |
+| pnpm | 11（两条路径都需要：宿主的 `plugin` 命令是 profile 工作区内 pnpm 的薄转发，首跑装配走它） |
+| dsh CLI | 仅「dsh 直装」路径需要：`>=0.1.1-rc.2`（`npm i -g @deepseek-ai/dsh`；壳包路径宿主已随包自带） |
 
-## npm 安装（预览版）
+## 安装（预览版）
+
+**推荐：`blue` 壳包**（一条命令，自带与测试线一致的 dsh 宿主；首次运行自动把 Blue 装进 `blue` profile——装配经 pnpm 在 profile 内完成，缺 pnpm 时会以一行报错指路）：
+
+```sh
+npm i -g @dsh-blue/blue-cli@rc
+blue
+```
+
+**或 dsh 直装**（宿主自理，适合已有 dsh 的用户）：
 
 ```sh
 npm i -g @deepseek-ai/dsh
 dsh plugin --profile blue add @dsh-blue/blue@rc
+dsh --profile blue
 ```
 
 安装完成后，按下方「开跑前配一个 key」与「首次运行」两节启动；模型、Provider、主题与密钥的详细配置见[配置：模型、Provider 与主题](/guide/config)。
 
 - `@rc` 后缀是必须的：预览版只打 `rc` dist-tag，裸 spec 解析 `latest`、什么都找不到。
-- 升级到更新的预览版：在 Blue 中输入 `/update`（应用内安全升级：预检、快照、装机冒烟、失败自动回滚），或重跑同一条 `plugin add`——`@rc` spec 会重新解析到最新版。
+- 升级到更新的预览版：壳包用户重跑 `npm i -g @dsh-blue/blue-cli@rc`（重装即升级——壳按自身版本校准 profile 里的 Blue，宿主线随之固定）；dsh 直装用户在 Blue 中输入 `/update`（应用内安全升级：预检、快照、装机冒烟、失败自动回滚），或重跑同一条 `plugin add`。
 
 ## 开跑前配一个 key
 
@@ -37,8 +47,9 @@ export DEEPSEEK_API_KEY=sk-...        # 或写入 ~/.dsh/.credentials.yaml，一
 ## 首次运行
 
 ```sh
-dsh --profile blue            # 交互模式：欢迎横幅 + 输入编辑器
-dsh --profile blue 修复登录页的空指针    # 直接执行任务
+blue                        # 交互模式：欢迎横幅 + 输入编辑器
+blue 修复登录页的空指针       # 直接执行任务
+# dsh 直装用户：dsh --profile blue（两条等价，壳包只是把宿主与 profile 管了起来）
 ```
 
 启动后可以先试这几件事：
