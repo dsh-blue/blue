@@ -55,6 +55,8 @@ export interface CliInternals {
   env: Record<string, string | undefined>
   /** The running Node binary (children run `node <entry>`). */
   execPath: string
+  /** The process platform — the win32 branches are seam-tested (CI runs ubuntu only). */
+  platform: string
   /** The user's home directory. */
   homedir(): string
   /** Read a UTF-8 file, `undefined` when missing or unreadable. */
@@ -104,6 +106,7 @@ export function resolvePackageManifest(specifier: string): string | undefined {
 export const cliInternals: CliInternals = {
   env: process.env,
   execPath: process.execPath,
+  platform: process.platform,
   homedir: osHomedir,
   readTextFile(path: string): string | undefined {
     try {

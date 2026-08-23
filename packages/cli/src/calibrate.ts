@@ -14,10 +14,23 @@
 
 import { join } from 'node:path'
 import { cliInternals } from './internals.ts'
+import type { SpawnOutcome } from './internals.ts'
 import { PROFILE } from './translate.ts'
 
-/** The calibration install's deadline (the updater swap's parity). */
-const INSTALL_TIMEOUT_MS = 300_000
+/** The calibration install's deadline (the updater swap's parity) — 20 min; slow networks measured at 18 min for 455 packages. */
+const INSTALL_TIMEOUT_MS = 1_200_000
+
+/** The pnpm pre-flight's deadline — inconclusive probes never block, they defer to the install's own classification. */
+const PNPM_PROBE_TIMEOUT_MS = 30_000
+
+/** The output-tail line budget for failed installs (D56: the failure-form extension). */
+const DETAIL_LINES = 6
+
+/** The pnpm-missing verdict — D50④'s suggestion, hoisted for the pre-flight and the install classification to share. */
+const PNPM_MISSING_REASON = 'pnpm is missing on PATH — npm i -g pnpm (or: corepack enable pnpm)'
+
+/** How a failed calibration classifies — `main`'s manual-pointer key (D56). */
+export type CalibrationFailureKind = 'pnpm-missing' | 'timeout' | 'install' | 'verify'
 
 /** What calibration decided. */
 export type CalibrationOutcome =
@@ -25,7 +38,15 @@ export type CalibrationOutcome =
   | { readonly action: 'ahead', readonly installed: string }
   | { readonly action: 'link-lane', readonly spec: string }
   | { readonly action: 'installed' }
-  | { readonly action: 'failed', readonly reason: string }
+  | {
+      readonly action: 'failed'
+      /** One-line verdict, bounded to 200 characters (the D50④ contract's line). */
+      readonly reason: string
+      /** The failure class — `main` routes the manual pointer on it. */
+      readonly kind: CalibrationFailureKind
+      /** The last few output lines as context, each bounded, the verdict line excluded; absent when nothing survived. */
+      readonly detail?: readonly string[] | undefined
+    }
 
 /** What calibration needs: the pin and the nested host entry. */
 export interface CalibrateOptions {
@@ -33,6 +54,38 @@ export interface CalibrateOptions {
   readonly version: string
   /** The nested dsh CLI entry (see `nestedDsh()`). */
   readonly dshBinJs: string
+}
+
+/**
+ * The pnpm pre-flight's argv per platform (D56): posix spawns `pnpm` directly —
+ * dsh's own no-shell semantics there make ENOENT decisive; win32 goes through
+ * ComSpec because dsh's `shell: true` resolves through cmd.exe + PATHEXT, and
+ * only the same resolution judges corepack shims and standalone installs
+ * fairly. The probe proves unreachability, never reachability: whatever it
+ * cannot establish defers to the install's own classification.
+ * @param platform - the process platform (the `cliInternals` seam).
+ * @param comspec - `ComSpec` from the environment, `undefined` when absent.
+ * @returns the command to probe `pnpm --version` with.
+ */
+export function pnpmProbeCommand(platform: string, comspec: string | undefined): { cmd: string, args: readonly string[] } {
+  return platform === 'win32'
+    ? { cmd: comspec ?? 'cmd.exe', args: ['/d', '/c', 'pnpm', '--version'] }
+    : { cmd: 'pnpm', args: ['--version'] }
+}
+
+/**
+ * Whether a probe outcome *establishes* pnpm unresolvable: on posix only a
+ * true ENOENT (an EACCES means present-but-broken — the install reports it
+ * better); on win32 only cmd's not-found exit codes (9009 from cmd.exe, 127
+ * defensively) with no spawn error — everything inconclusive (probe spawn
+ * error, odd exits, timeouts) proceeds and lets the install classify.
+ * @param probe - the probe's spawn outcome.
+ * @param platform - the process platform (the `cliInternals` seam).
+ * @returns whether pnpm is established missing.
+ */
+export function isPnpmMissing(probe: SpawnOutcome, platform: string): boolean {
+  if (platform === 'win32') return probe.spawnError === undefined && (probe.code === 9009 || probe.code === 127)
+  return probe.spawnError !== undefined && probe.spawnError.includes('ENOENT')
 }
 
 /** `$DSH_HOME` (default `~/.dsh`) — the updater family's resolution. */
@@ -47,10 +100,12 @@ export function blueProfileRoot(): string {
 }
 
 /**
- * Calibrate the `blue` profile to the pin. Every failure shape returns
- * `{ action: 'failed' }` with a one-line reason — `main` prints it with
- * the manual-install pointer and exits non-zero (D50 decision 4's
- * bootstrap contract).
+ * Calibrate the `blue` profile to the pin. Installs run behind a pnpm
+ * pre-flight (D56). Every failure shape returns `{ action: 'failed' }` with
+ * a one-line reason, a failure class, and an optional bounded output tail —
+ * `main` prints the verdict, the tail, and the class's manual pointer, then
+ * exits non-zero (D50 decision 4's bootstrap contract, failure form extended
+ * by D56).
  * @param options - the pin and the nested host entry.
  * @returns what calibration did.
  */
@@ -66,6 +121,15 @@ export async function calibrate(options: CalibrateOptions): Promise<CalibrationO
   if (installed !== undefined && compareVersions(installed, options.version) > 0) {
     return { action: 'ahead', installed }
   }
+  // The pnpm pre-flight (D56): dsh's win32 `shell: true` spawn turns a
+  // missing pnpm into exit 9009, so its "not found" branch — and the
+  // translation below — never fires there. Probing with dsh's own resolution
+  // semantics first blocks fast, with zero profile side effects.
+  const probeCommand = pnpmProbeCommand(cliInternals.platform, cliInternals.env.ComSpec)
+  const probe = await cliInternals.spawnOnce(probeCommand.cmd, probeCommand.args, { timeoutMs: PNPM_PROBE_TIMEOUT_MS })
+  if (isPnpmMissing(probe, cliInternals.platform)) {
+    return { action: 'failed', reason: PNPM_MISSING_REASON, kind: 'pnpm-missing' }
+  }
   const runInstall = (extra: readonly string[]) => cliInternals.spawnOnce(cliInternals.execPath, [
     options.dshBinJs, 'plugin', '--profile', PROFILE, 'add', ...extra, `@dsh-blue/blue@${options.version}`,
   ], { timeoutMs: INSTALL_TIMEOUT_MS })
@@ -76,16 +140,21 @@ export async function calibrate(options: CalibrateOptions): Promise<CalibrationO
     // with the flag before declaring bootstrap failed.
     if (`${install.stderr}\n${install.stdout}`.includes('ERR_PNPM_ADDING_TO_ROOT')) install = await runInstall(['-w'])
   }
-  if (install.spawnError !== undefined) return { action: 'failed', reason: install.spawnError }
+  if (install.spawnError !== undefined) return { action: 'failed', reason: install.spawnError, kind: 'install' }
   if (install.code !== 0) {
     const output = `${install.stderr}\n${install.stdout}`
-    if (/pnpm not found/i.test(output)) {
-      return { action: 'failed', reason: 'pnpm is missing on PATH — npm i -g pnpm (or: corepack enable pnpm)' }
+    if (/pnpm not found/i.test(output) || (cliInternals.platform === 'win32' && install.code === 9009)) {
+      return { action: 'failed', reason: PNPM_MISSING_REASON, kind: 'pnpm-missing', detail: tailLines(output, PNPM_MISSING_REASON) }
     }
-    return { action: 'failed', reason: lastLine(install.stderr, install.stdout) }
+    if (install.timedOut) {
+      const reason = `install timed out after ${INSTALL_TIMEOUT_MS / 60_000} minutes`
+      return { action: 'failed', reason, kind: 'timeout', detail: tailLines(output, reason) }
+    }
+    const reason = lastLine(install.stderr, install.stdout)
+    return { action: 'failed', reason, kind: 'install', detail: tailLines(output, reason) }
   }
   if (installedBundleVersion(root) !== options.version) {
-    return { action: 'failed', reason: `profile reports @dsh-blue/blue@${installedBundleVersion(root) ?? 'uninstalled'} after install` }
+    return { action: 'failed', kind: 'verify', reason: `profile reports @dsh-blue/blue@${installedBundleVersion(root) ?? 'uninstalled'} after install` }
   }
   return { action: 'installed' }
 }
@@ -170,6 +239,27 @@ function installedBundleVersion(root: string): string | undefined {
 /** The last non-empty output line, kept to one line for the one-line contract. */
 function lastLine(stderr: string, stdout: string): string {
   const lines = `${stderr}\n${stdout}`.split('\n').map(line => line.trim()).filter(line => line !== '')
-  const line = lines[lines.length - 1] ?? 'install failed'
+  return boundLine(lines[lines.length - 1] ?? 'install failed')
+}
+
+/** One output line capped at 200 characters for the failure form's budget. */
+function boundLine(line: string): string {
   return line.length > 200 ? `${line.slice(0, 197)}...` : line
+}
+
+/**
+ * The last few non-empty output lines as failure context — each bounded, the
+ * verdict line excluded (it already leads the block), `undefined` when
+ * nothing survived (the `detail` key stays absent). D56's failure-form
+ * extension of the D50④ one-line contract.
+ */
+function tailLines(output: string, verdict: string): readonly string[] | undefined {
+  const lines = output
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line !== '')
+    .slice(-DETAIL_LINES)
+    .map(boundLine)
+    .filter(line => line !== verdict)
+  return lines.length > 0 ? lines : undefined
 }

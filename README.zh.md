@@ -33,7 +33,7 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 > [!NOTE]
 > `0.1.0-rc.5` 为预览版，发布在 **`rc` dist-tag** 下——`latest` 留给稳定线，安装 spec 需带 `@rc` 后缀。
 
-前置：Node `^22.19 || >=24` 与 pnpm 11（两条安装路径都需要：宿主的 `plugin` 命令把安装转发给 pnpm）。全局 `dsh` CLI 仅「dsh 直装」路径需要——壳包自带钉版宿主。
+前置：Node `^22.19 || >=24` 与 pnpm 11（两条安装路径都需要：宿主的 `plugin` 命令把安装转发给 pnpm——若缺失，首次运行 `blue` 会以一行报错指明装法：`npm i -g pnpm` 或 `corepack enable pnpm`）。壳包请用 **npm 安装，不要用 pnpm**——pnpm 的严格全局布局不会链接嵌套宿主的依赖，启动时以 `ERR_MODULE_NOT_FOUND` 失败。全局 `dsh` CLI 仅「dsh 直装」路径需要——壳包自带钉版宿主。
 
 ### npm 安装
 
@@ -42,6 +42,14 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 ```sh
 npm i -g @dsh-blue/blue-cli@rc
 blue
+```
+
+首次运行 `blue` 会在 profile 内下载完整依赖树——数百个包，慢速网络下需要数分钟（预算约 20 分钟，中途超时重跑 `blue` 即从缓存续传）。npm 自身的安装在解析依赖树的大部分时间里没有输出——这种安静是正常现象，不是卡死。
+
+国内网络建议配置镜像加速（profile 内装配与 `/update` 走同一份 registry 配置）：
+
+```sh
+pnpm config set registry https://registry.npmmirror.com
 ```
 
 **或 dsh 直装**（宿主自理，适合已有 dsh 的用户）：
