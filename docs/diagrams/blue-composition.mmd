@@ -17,8 +17,8 @@ flowchart TB
             statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
             intents["blue-intent-diff · -terminal"]
             panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
-            runtime["blue-context · blue-conversation · blue-transcript-official · disabled by default"]
-            adapters["blue-openpencil · blue-lark · disabled by default"]
+            runtime["blue-context · blue-conversation · blue-transcript-official · default-enabled"]
+            adapters["blue-openpencil · blue-lark · capability-gated"]
         end
     end
     dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]

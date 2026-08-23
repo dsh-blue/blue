@@ -165,20 +165,20 @@ The legacy renderer remains one-way: `core ← transcript / interaction ← app 
 | [`@dsh-blue/blue-api`](packages/api) | Contract | Stable renderer-independent lifecycle, result, capability, and contribution contracts. |
 | [`@dsh-blue/blue-frontend`](packages/frontend) | Runtime | Renderer-neutral models, notifications/themes, and the hot-swappable provider host. |
 | [`@dsh-blue/blue-harness-adapter`](packages/harness-adapter) | Adapter | Narrow capability-scoped bridges over official Harness services. |
-| [`@dsh-blue/blue-context`](packages/context) | Feature | Official context projection and structured action consumer; disabled by default pending acceptance. |
-| [`@dsh-blue/blue-conversation`](packages/conversation) | Domain | Official append-origin conversation projection for replay/live renderer consumers; disabled by default pending acceptance. |
+| [`@dsh-blue/blue-context`](packages/context) | Feature | Default official context projection and structured action consumer, with the legacy facts reader as fallback. |
+| [`@dsh-blue/blue-conversation`](packages/conversation) | Domain | Default append-origin conversation projection for replay/live renderer consumers. |
 | [`@dsh-blue/blue-remote`](packages/remote) | Adapter | Renderer-neutral remote session, action, lease, and question/approval transport. |
 | [`@dsh-blue/blue-core`](packages/core) | L0 + L1 | The tree's only `@earendil-works/pi-tui` adapter: terminal lifecycle plus the `blueScreen` / `blueTheme` / `blueKeymap` / `blueComponents` / `blueTerminalInfo` services. |
 | [`@dsh-blue/blue-interaction`](packages/interaction) | L2 | Input editor, slash commands, approval and user-question overlays, the queued-inbox pane, plus enhancement subpath plugins (bash mode, image paste, attachments). |
 | [`@dsh-blue/blue-transcript`](packages/transcript) | L3 | Folds session events into transcript items and renders them (streamed Markdown, tool cards), the `blueStatus` registry with its footer shell, and the dock panes (activity, todo, `/btw`, subagent group). |
-| [`@dsh-blue/blue-openpencil`](packages/openpencil) | Adapter | Optional official tool-result presentation and error-notification adapter; disabled by default. |
-| [`@dsh-blue/blue-lark`](packages/lark) | Adapter | Optional official command and loopback settings notification adapter; disabled by default. |
+| [`@dsh-blue/blue-openpencil`](packages/openpencil) | Adapter | Capability-gated official tool-result presentation and error-notification adapter. |
+| [`@dsh-blue/blue-lark`](packages/lark) | Adapter | Capability-gated official command and loopback settings notification adapter. |
 | [`@dsh-blue/blue-app`](packages/app) | L4 | Command-line startup (`[task]`, `--resume <id>`) and the Agent driver publishing `blueSession`. |
 | [`@dsh-blue/blue`](packages/bundle/blue) | L4 | The installable bundle: `cordis.patch.yml` inserts the Blue plugin rows over `dsh-base`. |
 
 Each entry point is a Cordis plugin (`export const name`, optional `inject`, `apply(ctx)`); Cordis and the dsh service packages are `peerDependencies` provided by the host `dsh` installation.
 
-**The same tree, seen from the bundle.** `cordis.patch.yml` inserts 29 Blue rows in three segments. The plain baseline (baseline + assembly, 9 rows) boots and works alone; optional frontend-runtime/ecosystem rows remain disabled until dedicated profile acceptance, and every enhancement row is individually deletable.
+**The same tree, seen from the bundle.** `cordis.patch.yml` inserts 29 Blue rows in three segments. The plain baseline (baseline + assembly, 9 rows) boots and works alone; accepted frontend-runtime/ecosystem rows are default-enabled with capability-absent fallbacks, and every enhancement row is individually deletable.
 
 <!-- BEGIN diagram:blue-composition -->
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
@@ -202,8 +202,8 @@ flowchart TB
             statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
             intents["blue-intent-diff · -terminal"]
             panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
-            runtime["blue-context · blue-conversation · blue-transcript-official · disabled by default"]
-            adapters["blue-openpencil · blue-lark · disabled by default"]
+            runtime["blue-context · blue-conversation · blue-transcript-official · default-enabled"]
+            adapters["blue-openpencil · blue-lark · capability-gated"]
         end
     end
     dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]

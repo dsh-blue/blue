@@ -1,6 +1,6 @@
 # Built-in plugins
 
-Every surface in Blue is a plugin (a patch row) — this page is the directory of the 29 built-ins, including five frontend-runtime/ecosystem acceptance rows that are disabled by default. They double as living examples of what plugins can do: status entries, tool cards, editor enhancements, whole panes — all registered through the seams in the [Seam reference](/en/plugins/seams), each removable.
+Every surface in Blue is a plugin (a patch row) — this page is the directory of the 29 built-ins, including five accepted frontend-runtime/ecosystem rows that are default-enabled and capability-gated. They double as living examples of what plugins can do: status entries, tool cards, editor enhancements, whole panes — all registered through the seams in the [Seam reference](/en/plugins/seams), each removable.
 
 The three-segment structure at a glance (same single source as the repo READMEs, `docs/diagrams/blue-composition.mmd`):
 
@@ -26,8 +26,8 @@ flowchart TB
             statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
             intents["blue-intent-diff · -terminal"]
             panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
-            runtime["blue-context · blue-conversation · blue-transcript-official · disabled by default"]
-            adapters["blue-openpencil · blue-lark · disabled by default"]
+            runtime["blue-context · blue-conversation · blue-transcript-official · default-enabled"]
+            adapters["blue-openpencil · blue-lark · capability-gated"]
         end
     end
     dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]
@@ -51,7 +51,7 @@ The six plugins composing the minimal usable Blue UI — the plain baseline, bes
 | `blue-transcript` | the transcript body: event folding and rendering, the status registry and two-row footer shell |
 | `blue-status-basic` | baseline status entry: the model name (priority 0) |
 
-## Enhancement plugins (20, including 5 disabled by default)
+## Enhancement plugins (20)
 
 Optional layers over the plain baseline — every row deletes on its own without breaking it:
 
@@ -72,11 +72,11 @@ Optional layers over the plain baseline — every row deletes on its own without
 | `blue-pane-todo` | todo pane (Ctrl-T collapse toggle, auto-close when all done) |
 | `blue-pane-btw` | `/btw` side-question pane: fork the live session for a by-the-way question |
 | `blue-pane-agents` | subagent-group pane: running subagent group card (last dock row, the kimi swarm-pane semantics) |
-| `blue-context` | official context projection and structured-action frontend-runtime vertical slice; disabled pending acceptance |
+| `blue-context` | default official context projection and structured-action frontend-runtime vertical slice; legacy reader fallback retained |
 | `blue-conversation` | official append-origin conversation projection producer; accepted together with the official transcript consumer |
-| `blue-transcript-official` | semantic transcript consumer of whole projection snapshots/change feeds only; disabled pending acceptance |
-| `blue-openpencil` | official tool-result presentation and plain-fallback adapter; disabled pending acceptance |
-| `blue-lark` | official command and loopback-settings notification adapter; disabled pending acceptance |
+| `blue-transcript-official` | default semantic transcript consumer of whole projection snapshots/change feeds only |
+| `blue-openpencil` | capability-gated official tool-result presentation and plain-fallback adapter |
+| `blue-lark` | capability-gated official command and loopback-settings notification adapter |
 
 ## Assembly plugins (3)
 

@@ -1,7 +1,7 @@
 # F3/F4/F5/F6 开发任务清单
 
 > 用途：按 `docs/blue-implementation-plan.md` 推进 frontend-runtime 后续开发。
-> 规则：每个任务先完成自动化测试，再进行真实 profile/终端人工验收；人工验收通过前，不切换默认 bundle row，也不删除旧实现。
+> 规则：每个任务先完成自动化测试，再进行真实 profile/终端人工验收；2026-08-24 人工验收已通过并切换默认 bundle row，旧实现仍按逐 surface 删除条件保留。
 
 ## 使用规则
 
@@ -15,10 +15,10 @@
 
 | 阶段 | 当前状态 | 下一步重点 |
 |---|---|---|
-| F3 | 官方 projection、action、PanelModel/TUI consumer 和 upstream fixture 已完成 | 专用 profile 与人工验收 |
-| F4 | 官方 connection adapter、真实 Unix/SSH daemon fixture 和专用 profile 自动化已完成 | 用户 live acceptance |
-| F5 | 七类 surface 均有 model consumer；transcript 已有官方 producer/replacement consumer | 专用 profile 对比，验收后才切默认 row/删旧路径 |
-| F6 | 四份 skill、validator、生态 adapter 和当前/上一线 packed fixture 已完成 | 专用 profile dogfood 与人工验收 |
+| F3 | 官方 projection、action、PanelModel/TUI consumer、fixture 和人工验收已完成 | 保留 capability-absent/unload fallback |
+| F4 | 官方 connection adapter、真实 Unix/SSH daemon fixture 和专用 profile 验收已完成 | 继续跟踪上游 ABI |
+| F5 | 七类 surface 均有 model consumer；transcript 官方 producer/replacement consumer 已默认启用 | 按删除条件逐项退役旧路径 |
+| F6 | 四份 skill、validator、生态 adapter、双线 fixture 和人工验收已完成 | 维持生态兼容性 fixture |
 
 ## F3：dsh-context Vertical Slice
 
@@ -67,15 +67,15 @@
 - `[x]` provider unload 清理 subscription、timer、cache 和 pending action。
 - `[x]` unload 后 late result/event 不得重新挂载或刷新 UI。
 - `[x]` 在独立 profile 中运行 `/context`，完成 snapshot、incremental、resume、窄终端 smoke。
-- `[ ]` 人工验收：普通终端、tmux、resize、长流输出、切换 session。
+- `[x]` 人工验收：普通终端、tmux、resize、长流输出、切换 session。
 
 验收证据：`pnpm test:coverage`、`smoke:happy`、真实 profile 记录和录屏/日志。
 
 ### F3-06 Bundle 切换门槛
 
-- `[x]` 新增 production-disabled 的独立 `blue-context` acceptance row。
+- `[x]` 新增独立 `blue-context` acceptance row，验收后切为默认启用。
 - `[x]` row 注明 capability、fallback 和禁用方式。
-- `[ ]` 默认 bundle 切换前完成旧/新 renderer 对比和用户 live acceptance。
+- `[x]` 默认 bundle 切换前完成旧/新 renderer 对比和用户 live acceptance。
 - `[ ]` 只有确认无旧 consumer 后，才删除 compatibility bridge。
 
 ## F4：Session Runtime 与 dsh-remote
@@ -188,14 +188,14 @@
 - `[x]` replay/live/resume/long stream/interrupted/tool/thinking/image/markdown 均有 model fixture。
 - `[x]` viewport 只挂载可见窗口内容，长 session 不无限增加 component mount。
 - `[x]` 滚动、tail-follow、new-message notification、End shortcut、resize、复制有 PTY/golden 场景。
-- `[ ]` 新 consumer 与旧 baseline 逐项对比后，才允许默认 bundle 替换。
+- `[x]` 新 consumer 与旧 baseline 逐项对比后，允许默认 bundle 替换。
 
 ### F5-08 每个 surface 的统一切换门禁
 
 - `[x]` official consumer 已存在。
 - `[x]` headless fixture、unload/reload、late-result、width scan、golden/e2e 全通过。
 - `[x]` plain fallback 和 capability absent 已验证。
-- `[ ]` 独立 profile 人工验收通过。
+- `[x]` 独立 profile 人工验收通过。
 - `[x]` 更新对应 package `AGENTS.md`、bundle row 和删除清单。
 
 ## F6：Skills 与生态验证
@@ -287,9 +287,9 @@ node script/blue-plugin-fixture.mjs <package> --install --harness-line 0.1.1-rc.
 
 ## 最终完成定义
 
-- `[ ]` F3 context 官方 vertical slice 通过 headless、width、real-process 和人工 profile 验收。
+- `[x]` F3 context 官方 vertical slice 通过 headless、width、real-process 和人工 profile 验收。
 - `[x]` F4 remote 真实 daemon、multi-session、seq resume、question/approval、lease 和断线恢复通过。
-- `[ ]` F5 每个官方 surface 都有 consumer、fixture、fallback、bundle row 和删除清单，旧实现无未登记 consumer。
+- `[x]` F5 每个官方 surface 都有 consumer、fixture、fallback、bundle row 和删除清单，旧实现无未登记 consumer。
 - `[x]` F6 skills 能生成/诊断真实插件，fixture runner 实际执行全部场景，openpencil/lark adapter 和独立安装通过。
-- `[ ]` 当前/上一 Harness line、全量门禁、真实 profile 和用户 live acceptance 全部有记录。
+- `[x]` 当前/上一 Harness line、全量门禁、真实 profile 和用户 live acceptance 全部有记录。
 - `[ ]` 合并后在主 checkout 重新 `pnpm run build`，并保留 dogfood log。

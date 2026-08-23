@@ -1,6 +1,6 @@
 # 内置插件
 
-Blue 的一切表面都是插件（patch 行）——本页是 29 个内置插件的目录，其中 5 个 frontend-runtime/生态验收行默认禁用。它们同时也是"插件能做什么"的活例子：状态栏条目、工具卡片、编辑器增强、完整面板，全部经 [Seam 参考](/plugins/seams)里的缝注册，逐个可拆。
+Blue 的一切表面都是插件（patch 行）——本页是 29 个内置插件的目录，其中 5 个已验收的 frontend-runtime/生态行默认启用并按 capability 降级。它们同时也是"插件能做什么"的活例子：状态栏条目、工具卡片、编辑器增强、完整面板，全部经 [Seam 参考](/plugins/seams)里的缝注册，逐个可拆。
 
 三段结构一张图（与仓库 README 同源，单一来源 `docs/diagrams/blue-composition.mmd`）：
 
@@ -26,8 +26,8 @@ flowchart TB
             statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
             intents["blue-intent-diff · -terminal"]
             panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
-            runtime["blue-context · blue-conversation · blue-transcript-official · disabled by default"]
-            adapters["blue-openpencil · blue-lark · disabled by default"]
+            runtime["blue-context · blue-conversation · blue-transcript-official · default-enabled"]
+            adapters["blue-openpencil · blue-lark · capability-gated"]
         end
     end
     dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]
@@ -51,7 +51,7 @@ flowchart TB
 | `blue-transcript` | 会话流主体：事件折叠与渲染、状态栏注册表与两行 footer 壳 |
 | `blue-status-basic` | 状态栏基线条目：model 名（优先级 0） |
 
-## 增强插件（20 个，其中 5 个默认禁用）
+## 增强插件（20 个）
 
 在纯基线之上的可选层——每一行都可单独删除而不破坏基线：
 
@@ -72,11 +72,11 @@ flowchart TB
 | `blue-pane-todo` | todo 面板（Ctrl-T 折叠切换，全完成自动收起） |
 | `blue-pane-btw` | `/btw` 侧问面板：fork 当前会话问旁路问题 |
 | `blue-pane-agents` | 子代理分组面板：运行中的子代理组卡片（dock 末行，kimi swarm-pane 语义） |
-| `blue-context` | 官方 context projection 与结构化 action 的 frontend-runtime vertical slice；验收前禁用 |
+| `blue-context` | 默认的官方 context projection 与结构化 action frontend-runtime vertical slice；旧 reader fallback 保留 |
 | `blue-conversation` | 官方 append-origin conversation projection producer；与 official transcript consumer 配对验收 |
-| `blue-transcript-official` | 只消费 whole projection snapshot/change feed 的 semantic transcript consumer；验收前禁用 |
-| `blue-openpencil` | 官方 tool-result presentation 与 plain fallback adapter；验收前禁用 |
-| `blue-lark` | 官方 command 与 loopback settings notification adapter；验收前禁用 |
+| `blue-transcript-official` | 默认的 whole projection snapshot/change feed semantic transcript consumer |
+| `blue-openpencil` | 按 capability 激活的官方 tool-result presentation 与 plain fallback adapter |
+| `blue-lark` | 按 capability 激活的官方 command 与 loopback settings notification adapter |
 
 ## 装配插件（3 个）
 

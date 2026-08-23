@@ -102,7 +102,7 @@ describe('blue bundle', () => {
     expect(patch).toContain("name: '@dsh-blue/blue-lark'")
     expect(patch).toContain("name: '@dsh-blue/blue-conversation'")
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/official-model'")
-    expect(patch.match(/- id: blue-(?:context|conversation|transcript-official|openpencil|lark)\n\s+name:[^\n]+\n\s+disabled: true/gu)).toHaveLength(5)
+    expect(patch).not.toMatch(/- id: blue-(?:context|conversation|transcript-official|openpencil|lark)\n\s+name:[^\n]+\n\s+disabled: true/gu)
   })
 
   it('inserts the upstream agent-presets roster row ahead of the Blue rows', () => {

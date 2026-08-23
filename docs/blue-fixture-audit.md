@@ -46,8 +46,9 @@ throwaway `/tmp/blue-ecosystem-audit.*` directory:
 
 The audit established the migration boundary; neither external domain project
 was rewritten. Blue now implements that boundary in
-`@dsh-blue/blue-openpencil` and `@dsh-blue/blue-lark`, with both composition
-rows disabled by default until profile acceptance.
+`@dsh-blue/blue-openpencil` and `@dsh-blue/blue-lark`. Both composition rows
+are default-enabled after profile acceptance; capability absence contributes
+nothing and does not block the tree.
 
 ## F6 packed fixture evidence (2026-08-23)
 
@@ -70,12 +71,13 @@ Harness peer in the temporary install to that exact line, and again executed
 9/9 scenarios with no skips or failures. The override never edits repository
 manifests or `pnpm-lock.yaml`.
 
-The final automated gate passed with 2,115 tests in 136 files and per-file
-100% coverage (9,762 statements, 6,124 branches, 1,976 functions, 8,086
-lines). Typecheck/build, lint, 66 lib/export claims, diagram synchronization,
-the VitePress production build, `smoke:happy`, `smoke:pty`, and
-`smoke:pty:mouse` also passed; all three smoke processes exited 0. Dedicated
-`blue-frontend-runtime` profile dogfood and human acceptance remain separate.
+The pre-acceptance automated gate passed with 2,115 tests in 136 files and
+per-file 100% coverage (9,762 statements, 6,124 branches, 1,976 functions,
+8,086 lines). Typecheck/build, lint, 66 lib/export claims, diagram
+synchronization, the VitePress production build, `smoke:happy`, `smoke:pty`,
+and `smoke:pty:mouse` also passed; all three smoke processes exited 0. The
+merge gate reruns this evidence after the accepted production-row switch; its
+final counts are recorded in the acceptance archive.
 
 ## F5 conversation packed fixture evidence (2026-08-24)
 
@@ -102,8 +104,9 @@ repository manifests and the lockfile remain on rc.2.
 `PROFILE=blue-frontend-runtime script/install-dev.sh` linked all thirteen
 publishable packages into the dedicated profile. Its profile-local patch
 enabled `blue-context`, `blue-conversation`, `blue-transcript-official`,
-`blue-openpencil`, and `blue-lark`; the same five rows remain disabled in the
-production bundle.
+`blue-openpencil`, and `blue-lark`. After human acceptance the same five rows
+became default-enabled in the production bundle, with their capability-absent
+and unload fallbacks retained.
 
 The initial pseudo-TTY boot entered and restored alternate-screen,
 bracketed-paste, and mouse-reporting modes, then exited 0 without an overflow
@@ -113,7 +116,9 @@ mouse-wheel manual scroll, the new-message notice, End-follow, resize to 52x28,
 the official `/context` panel, OSC 52 drag-copy, and clean exit. Four mock LLM
 requests completed. Resuming the saved session rendered the persisted
 `official-tail-line-59` history through the same official path and again exited
-0 with terminal modes restored. Human live acceptance remains pending.
+0 with terminal modes restored. The user then confirmed the specialized
+version, subagent and tmux-copy fixes, reported no further issues, and
+explicitly accepted the profile on 2026-08-24.
 
 ## F4 SSH and remote profile evidence (2026-08-24)
 

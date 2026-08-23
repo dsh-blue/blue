@@ -1,6 +1,6 @@
 # Features overview
 
-Blue is not one big component — it is a **Cordis plugin tree**: the bundle's `cordis.patch.yml` assembles the UI over `dsh-base` with 29 Blue plugin rows, including five frontend-runtime/ecosystem acceptance rows that are disabled by default. Every visual surface is an individually removable row; that is "everything is a plugin" taken literally.
+Blue is not one big component — it is a **Cordis plugin tree**: the bundle's `cordis.patch.yml` assembles the UI over `dsh-base` with 29 Blue plugin rows. Five accepted frontend-runtime/ecosystem rows are default-enabled with capability-absent fallbacks. Every visual surface is an individually removable row; that is "everything is a plugin" taken literally.
 
 ## Three-segment assembly
 
@@ -38,11 +38,11 @@ Optional layers over the plain baseline; each row deletes individually, the whol
 | `blue-pane-todo` | todo pane (Ctrl-T collapse toggle) |
 | `blue-pane-btw` | `/btw` side-question pane |
 | `blue-pane-agents` | subagent-group pane (running subagents' group card, last dock row) |
-| `blue-context` | official context projection and structured-action vertical slice; disabled pending acceptance |
-| `blue-conversation` | official append-origin conversation projection producer; disabled pending acceptance |
-| `blue-transcript-official` | semantic transcript consumer of whole projection snapshots/change feeds; disabled pending acceptance |
-| `blue-openpencil` | official tool-result presentation and plain-fallback adapter; disabled pending acceptance |
-| `blue-lark` | official command and loopback-settings notification adapter; disabled pending acceptance |
+| `blue-context` | default official context projection and structured-action vertical slice; legacy reader fallback retained |
+| `blue-conversation` | default official append-origin conversation projection producer |
+| `blue-transcript-official` | default semantic transcript consumer of whole projection snapshots/change feeds |
+| `blue-openpencil` | capability-gated official tool-result presentation and plain-fallback adapter |
+| `blue-lark` | capability-gated official command and loopback-settings notification adapter |
 
 ### Assembly segment (3 rows) — the closing rows
 

@@ -8,7 +8,7 @@ Blue 终端 UI transcript 层，构建于 `dsh-blue-core` 之上：提供语义�
 
 `./official-model` Cordis 插件只从 Harness 官方 session-projection registry 消费完整的 `blueConversation` 值。它把 user、assistant、thinking、tool、error、interruption 和持久图片引用事实映射成 renderer-neutral 语义条目；tool presenter 在投影外经官方 `dsh-tools` 服务解析。consumer 从不折叠 Harness event，并拒绝过期、畸形、其他 session 和卸载后晚到的值。
 
-`TranscriptModelService` 按稳定 id 协调语义组件，只保留最新 200 项，转发 Ctrl-O 展开状态，清理退役组件的 timer，并经 screen 报告 tail-follow 变化。官方 model 注册期间，baseline 插件会卸载旧 transcript，而不是把两套内容重复渲染；model 移除后恢复旧 fold。bundle 中 `blue-conversation` 与 `blue-transcript-official` 行在专用 profile 验收前保持生产禁用。
+`TranscriptModelService` 按稳定 id 协调语义组件，只保留最新 200 项，转发 Ctrl-O 展开状态，清理退役组件的 timer，并经 screen 报告 tail-follow 变化。官方 model 注册期间，baseline 插件会卸载旧 transcript，而不是把两套内容重复渲染；model 移除后恢复旧 fold。专用 profile 验收通过后，bundle 中 `blue-conversation` 与 `blue-transcript-official` 行已默认启用，旧 fold 继续作为 capability-absent/unload fallback。
 
 ## 折叠器
 

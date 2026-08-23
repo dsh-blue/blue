@@ -6,4 +6,4 @@ The projection registry emits once per changed key while driving a committed eve
 
 The model includes usage, pressure, composition, current-surface categories, request/event summaries, and a status provider. Official projections are push-driven and expose no refresh action; compatibility `ContextSource` implementations may still advertise `refresh`, in which case the panel publishes the structured `context.refresh` action. Remove that bridge once every supported host has the official projection path.
 
-The legacy `blue-status-context` and old `/context` facts reader remain fallbacks until live TUI acceptance. The optional `blue-context` bundle row supplies the official feature; it does not own or duplicate the dsh-context domain fold.
+The legacy `blue-status-context` and old `/context` facts reader remain capability-absent/unload fallbacks after live TUI acceptance. The default-enabled `blue-context` bundle row supplies the official feature; it does not own or duplicate the dsh-context domain fold.

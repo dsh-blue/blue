@@ -257,9 +257,9 @@ export async function bootBlue(argv: string[], options: {
    * the production path, the fold without it is the degraded host's.
    */
   sessionProjections?: boolean
-  /** Explicitly enable the production-disabled F3 Blue context row. */
+  /** Mount the default F3 context row in focused source-plane cases. */
   frontendContext?: boolean
-  /** Explicitly enable the production-disabled F5 conversation rows. */
+  /** Mount the default F5 conversation rows in focused source-plane cases. */
   officialTranscript?: boolean
   /**
    * The fixture presets the roster's temp root ships, replacing the default

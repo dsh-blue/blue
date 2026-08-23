@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-The dsh Blue bundle: the interactive terminal UI profile. [`cordis.patch.yml`](cordis.patch.yml) rides directly over [`dsh-base`](https://github.com/deepseek-ai/deepseek-harness) and inserts 29 Blue rows in three segments. The plain baseline remains self-contained; enhancements are individually removable. The frontend-runtime `blue-context`, `blue-conversation`, and `blue-transcript-official` rows and the ecosystem `blue-openpencil`/`blue-lark` adapters ship disabled until their dedicated profile receives live acceptance. OpenPencil projects official tool results without signed editor metadata; Lark registers status/retry through official commands and stores no credentials.
+The dsh Blue bundle: the interactive terminal UI profile. [`cordis.patch.yml`](cordis.patch.yml) rides directly over [`dsh-base`](https://github.com/deepseek-ai/deepseek-harness) and inserts 29 Blue rows in three segments. The plain baseline remains self-contained; enhancements are individually removable. Following dedicated-profile acceptance, the frontend-runtime `blue-context`, `blue-conversation`, and `blue-transcript-official` rows and the ecosystem `blue-openpencil`/`blue-lark` adapters are default-enabled with capability-absent and unload fallbacks. OpenPencil projects official tool results without signed editor metadata; Lark registers status/retry through official commands and stores no credentials.
 
 ## Model Experience
 

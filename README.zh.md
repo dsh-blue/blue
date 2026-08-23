@@ -165,20 +165,20 @@ flowchart TB
 | [`@dsh-blue/blue-api`](packages/api) | Contract | 稳定、renderer-independent 的生命周期、结果、capability 与 contribution contract。 |
 | [`@dsh-blue/blue-frontend`](packages/frontend) | Runtime | Renderer-neutral model、notification/theme 与可热替换 provider host。 |
 | [`@dsh-blue/blue-harness-adapter`](packages/harness-adapter) | Adapter | 基于 Harness 官方 service、按 capability 收窄的 bridge。 |
-| [`@dsh-blue/blue-context`](packages/context) | Feature | 官方 context projection 与结构化 action consumer；人工验收前默认禁用。 |
-| [`@dsh-blue/blue-conversation`](packages/conversation) | Domain | 面向 replay/live renderer consumer 的官方 append-origin conversation projection；人工验收前默认禁用。 |
+| [`@dsh-blue/blue-context`](packages/context) | Feature | 默认的官方 context projection 与结构化 action consumer，旧 facts reader 保留为 fallback。 |
+| [`@dsh-blue/blue-conversation`](packages/conversation) | Domain | 面向 replay/live renderer consumer 的默认 append-origin conversation projection。 |
 | [`@dsh-blue/blue-remote`](packages/remote) | Adapter | Renderer-neutral remote session、action、lease 与 question/approval transport。 |
 | [`@dsh-blue/blue-core`](packages/core) | L0 + L1 | 全树唯一 `@earendil-works/pi-tui` 适配器：终端生命周期 + `blueScreen` / `blueTheme` / `blueKeymap` / `blueComponents` / `blueTerminalInfo` 服务。 |
 | [`@dsh-blue/blue-interaction`](packages/interaction) | L2 | 输入编辑器、slash 命令、审批与提问 overlay、排队消息面板，以及增强子路径插件（bash 模式、贴图、附件）。 |
 | [`@dsh-blue/blue-transcript`](packages/transcript) | L3 | 会话事件折叠为 transcript 项并渲染（流式 Markdown、工具卡片）、`blueStatus` 注册表与 footer 壳、dock 面板（activity / todo / `/btw` / 子代理分组）。 |
-| [`@dsh-blue/blue-openpencil`](packages/openpencil) | Adapter | 可选的官方 tool-result presentation 与错误 notification adapter；默认禁用。 |
-| [`@dsh-blue/blue-lark`](packages/lark) | Adapter | 可选的官方 command 与 loopback settings notification adapter；默认禁用。 |
+| [`@dsh-blue/blue-openpencil`](packages/openpencil) | Adapter | 按 capability 激活的官方 tool-result presentation 与错误 notification adapter。 |
+| [`@dsh-blue/blue-lark`](packages/lark) | Adapter | 按 capability 激活的官方 command 与 loopback settings notification adapter。 |
 | [`@dsh-blue/blue-app`](packages/app) | L4 | 命令行启动（`[task]`、`--resume <id>`）与发布 `blueSession` 的 Agent 驱动。 |
 | [`@dsh-blue/blue`](packages/bundle/blue) | L4 | 可安装 bundle：`cordis.patch.yml` 在 `dsh-base` 之上插入 Blue 插件行。 |
 
 每个入口都是 Cordis 插件形态（`export const name`、可选 `inject`、`apply(ctx)`）；Cordis 与 dsh 服务包是 `peerDependencies`，由宿主 `dsh` 安装提供。
 
-**同一棵树，换成 bundle 视角。** `cordis.patch.yml` 分三段插入 29 条 Blue 行。plain 基线（基线段 + 组装段，共 9 行）自足可跑；frontend-runtime/生态可选行在专用 profile 人工验收前保持禁用，增强段每一行均可单独删除。
+**同一棵树，换成 bundle 视角。** `cordis.patch.yml` 分三段插入 29 条 Blue 行。plain 基线（基线段 + 组装段，共 9 行）自足可跑；已验收的 frontend-runtime/生态行默认启用并保留 capability-absent fallback，增强段每一行均可单独删除。
 
 <!-- BEGIN diagram:blue-composition -->
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
@@ -202,8 +202,8 @@ flowchart TB
             statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
             intents["blue-intent-diff · -terminal"]
             panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
-            runtime["blue-context · blue-conversation · blue-transcript-official · disabled by default"]
-            adapters["blue-openpencil · blue-lark · disabled by default"]
+            runtime["blue-context · blue-conversation · blue-transcript-official · default-enabled"]
+            adapters["blue-openpencil · blue-lark · capability-gated"]
         end
     end
     dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]

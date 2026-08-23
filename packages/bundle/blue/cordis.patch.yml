@@ -271,12 +271,11 @@
 
     # Frontend-runtime context slice (F3): consumes the official
     # session-projection read face and publishes a renderer-neutral panel.
-    # It stays disabled on the production bundle until the dedicated
-    # blue-frontend-runtime profile receives live acceptance; `/context`
-    # continues through the legacy facts reader while disabled.
+    # Enabled after the blue-frontend-runtime live acceptance on 2026-08-24;
+    # `/context` still falls back to the legacy facts reader when the official
+    # projection capability is absent or this provider unloads.
     - id: blue-context
       name: '@dsh-blue/blue-context'
-      disabled: true
 
     # Frontend-runtime transcript producer (F5): projects append-origin
     # Harness conversation facts through the official session-projection
@@ -284,7 +283,6 @@
     # even though sibling loader rows activate concurrently.
     - id: blue-conversation
       name: '@dsh-blue/blue-conversation'
-      disabled: true
 
     # Frontend-runtime transcript consumer (F5): replaces the legacy
     # event-folded transcript model while blueConversation is present and
@@ -292,22 +290,21 @@
     # capability, so resumed history is available in its first snapshot.
     - id: blue-transcript-official
       name: '@dsh-blue/blue-transcript/official-model'
-      disabled: true
 
     # OpenPencil compatibility adapter (F6): observes only official
     # dsh-tools results, converts public presentation metadata to bounded Blue
-    # tool models, and drops signed editor capability metadata. Disabled until
-    # the dedicated frontend-runtime profile receives live acceptance.
+    # tool models, and drops signed editor capability metadata. Capability
+    # absence is a zero-contribution path, so the domain stays usable without
+    # OpenPencil or its browser renderer.
     - id: blue-openpencil
       name: '@dsh-blue/blue-openpencil'
-      disabled: true
 
     # Lark compatibility adapter (F6): registers /lark through official
     # commands and calls the public loopback settings route for status/retry.
-    # The route remains optional and the adapter stores no credentials.
+    # The route remains optional, absence contributes nothing, and the adapter
+    # stores no credentials.
     - id: blue-lark
       name: '@dsh-blue/blue-lark'
-      disabled: true
 
     # Diff render intent: registers the 'diff' entry in the transcript's
     # blueIntents registry, so tool items whose presentCall/presentResult

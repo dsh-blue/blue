@@ -8,7 +8,7 @@ Blue terminal UI transcript layer over `dsh-blue-core`: semantic transcript mode
 
 The `./official-model` Cordis plugin consumes whole `blueConversation` values from the official Harness session-projection registry. It maps user, assistant, thinking, tool, error, interruption, and durable image-reference facts into renderer-neutral semantic entries; tool presenters are resolved outside the projection through the official `dsh-tools` service. The consumer never folds Harness events and rejects stale, malformed, foreign-session, and late values.
 
-`TranscriptModelService` reconciles semantic components by stable id, keeps the newest 200 entries, forwards Ctrl-O expansion, disposes retired component timers, and reports tail-follow changes through the screen. While an official model is registered, the baseline plugin unmounts the legacy transcript rather than rendering both; removing the model restores the legacy fold. The `blue-conversation` and `blue-transcript-official` bundle rows are disabled in production pending dedicated-profile acceptance.
+`TranscriptModelService` reconciles semantic components by stable id, keeps the newest 200 entries, forwards Ctrl-O expansion, disposes retired component timers, and reports tail-follow changes through the screen. While an official model is registered, the baseline plugin unmounts the legacy transcript rather than rendering both; removing the model restores the legacy fold. The `blue-conversation` and `blue-transcript-official` bundle rows are default-enabled after dedicated-profile acceptance; the fold remains the capability-absent/unload fallback.
 
 ## The fold
 

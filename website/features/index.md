@@ -1,6 +1,6 @@
 # 功能总览
 
-Blue 不是一个大组件，而是一棵 **Cordis 插件树**：bundle 的 `cordis.patch.yml` 以 29 个 Blue 插件行把 UI 装配到 `dsh-base` 之上，其中 5 个 frontend-runtime/生态验收行默认禁用。每个视觉表面都是一个可独立增删的插件行——这正是"一切皆插件"的字面意义。
+Blue 不是一个大组件，而是一棵 **Cordis 插件树**：bundle 的 `cordis.patch.yml` 以 29 个 Blue 插件行把 UI 装配到 `dsh-base` 之上；5 个已验收的 frontend-runtime/生态行默认启用，并保留 capability-absent fallback。每个视觉表面都是一个可独立增删的插件行——这正是"一切皆插件"的字面意义。
 
 ## 三段式装配
 
@@ -38,11 +38,11 @@ Blue 不是一个大组件，而是一棵 **Cordis 插件树**：bundle 的 `cor
 | `blue-pane-todo` | todo 面板（Ctrl-T 折叠切换） |
 | `blue-pane-btw` | `/btw` 侧问面板 |
 | `blue-pane-agents` | 子代理分组面板（运行中子代理的组卡片，dock 末行） |
-| `blue-context` | 官方 context projection 与结构化 action vertical slice；验收前禁用 |
-| `blue-conversation` | 官方 append-origin conversation projection producer；验收前禁用 |
-| `blue-transcript-official` | whole projection snapshot/change feed 的 semantic transcript consumer；验收前禁用 |
-| `blue-openpencil` | 官方 tool-result presentation 与 plain fallback adapter；验收前禁用 |
-| `blue-lark` | 官方 command 与 loopback settings notification adapter；验收前禁用 |
+| `blue-context` | 默认的官方 context projection 与结构化 action vertical slice；旧 reader fallback 保留 |
+| `blue-conversation` | 默认的官方 append-origin conversation projection producer |
+| `blue-transcript-official` | 默认的 whole projection snapshot/change feed semantic transcript consumer |
+| `blue-openpencil` | 按 capability 激活的官方 tool-result presentation 与 plain fallback adapter |
+| `blue-lark` | 按 capability 激活的官方 command 与 loopback settings notification adapter |
 
 ### 装配段（3 行）—— 收口
 
