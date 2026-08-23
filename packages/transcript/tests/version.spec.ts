@@ -30,7 +30,7 @@ import { BLUE_VERSION } from '../src/banner-content.ts'
 import { BLUE_VERSION as API_BLUE_VERSION } from '@dsh-blue/blue-api'
 
 /** The published first-release version (the website's advertised number). */
-const RELEASE_VERSION = '0.1.0-rc.5'
+const RELEASE_VERSION = '0.1.0-rc.6'
 /** The harness prerelease line the dsh pins ride. */
 const HARNESS_LINE = '0.1.1-rc.2'
 

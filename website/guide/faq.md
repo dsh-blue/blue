@@ -2,13 +2,13 @@
 
 ## 为什么裸 `npm install @dsh-blue/blue` 装不到？
 
-预览版只发布在 **`rc` dist-tag** 下（`latest` 留给稳定线），而裸安装解析 `latest`、拿到的版本不受控——请装 `blue` 壳包 `npm i -g @dsh-blue/blue-cli@rc`，或用 `dsh plugin --profile blue add @dsh-blue/blue@rc`，见[快速上手](/guide/)。当前预览版为 `v0.1.0-rc.5`；`0.1.0-rc.1` 因打包缺失文件不可用，装到请升级。贡献者的本地开发安装见开发手册的[贡献本仓库](/plugins/contributing)页。
+预览版只发布在 **`rc` dist-tag** 下（`latest` 留给稳定线），而裸安装解析 `latest`、拿到的版本不受控——请装 `blue` 壳包 `npm i -g @dsh-blue/blue-cli@rc`，或用 `dsh plugin --profile blue add @dsh-blue/blue@rc`，见[快速上手](/guide/)。当前预览版为 `v0.1.0-rc.6`；`0.1.0-rc.1` 因打包缺失文件不可用，装到请升级。贡献者的本地开发安装见开发手册的[贡献本仓库](/plugins/contributing)页。
 
 ## `@rc` 装到的不是最新预览版？
 
 pnpm 11 默认开启 `minimumReleaseAge` 冷却期：dist-tag 解析会静默跳过冷却窗口内刚发布的版本、回退到旧版。若 `dsh plugin --profile blue add @dsh-blue/blue@rc` 装到的版本偏旧，两个办法：
 
-- 立即装到新版：改用精确版本号——`dsh plugin --profile blue add @dsh-blue/blue@0.1.0-rc.5`（版本号以仓库最新 tag 为准）；
+- 立即装到新版：改用精确版本号——`dsh plugin --profile blue add @dsh-blue/blue@0.1.0-rc.6`（版本号以仓库最新 tag 为准）；
 - 或等冷却窗口过去后重跑同一条 `@rc` 命令（升级 = 重跑同一条 `plugin add`）。
 
 用 `/update` 升级的用户不受此坑影响：它按 registry 元数据解析目标、始终精确钉版，冷却窗口内会直接给出可重试的时间（ETA）而不是装到旧版。

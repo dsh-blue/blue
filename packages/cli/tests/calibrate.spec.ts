@@ -135,14 +135,14 @@ describe('calibrate', () => {
 
   it('never downgrades a profile that /update advanced past the shell', async () => {
     let spawned = false
-    fixtureHome({ 'node_modules/@dsh-blue/blue/package.json': installedManifest('0.1.0-rc.5') })
+    fixtureHome({ 'node_modules/@dsh-blue/blue/package.json': installedManifest('0.1.0-rc.6') })
     cliInternals.spawnOnce = async () => {
       spawned = true
       return OK
     }
     await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
       action: 'ahead',
-      installed: '0.1.0-rc.5',
+      installed: '0.1.0-rc.6',
     })
     expect(spawned).toBe(false)
   })
@@ -400,7 +400,7 @@ describe('dshHome', () => {
 
 describe('compareVersions', () => {
   it('orders prerelease numerics, numeric boundaries, and releases', () => {
-    expect(compareVersions('0.1.0-rc.4', '0.1.0-rc.5')).toBeLessThan(0)
+    expect(compareVersions('0.1.0-rc.4', '0.1.0-rc.6')).toBeLessThan(0)
     expect(compareVersions('0.1.0-rc.9', '0.1.0-rc.10')).toBeLessThan(0)
     expect(compareVersions('0.1.0-rc.10', '0.1.0-rc.9')).toBeGreaterThan(0)
     expect(compareVersions('0.1.9', '0.2.0')).toBeLessThan(0)
