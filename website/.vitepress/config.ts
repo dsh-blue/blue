@@ -7,7 +7,7 @@ const base = process.env.DOCS_BASE ?? '/'
  * 站点版本（ADR D32）：当前预览线。未来五包首次发包时统一使用该版本号，
  * 升级时只改这一处（首页 hero 文案与 footer 同步引用语义，见各 index.md）。
  */
-const SITE_VERSION = '0.1.0-rc.2'
+const SITE_VERSION = '0.1.0-rc.4'
 
 /**
  * 站点正式域名（dsh-blue.dev，经 Cloudflare DNS 指向 GitHub Pages）。

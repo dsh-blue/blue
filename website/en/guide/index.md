@@ -1,7 +1,7 @@
 # Quickstart
 
 ::: info Preview stage
-`v0.1.0-rc.2` is published on npm under the **`rc` dist-tag** (`latest` stays reserved for the stable line, so install specs carry the `@rc` suffix). This page is the user install path; the contributor development install (checkout, link install, iteration loop) lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
+`v0.1.0-rc.4` is published on npm under the **`rc` dist-tag** (`latest` stays reserved for the stable line, so install specs carry the `@rc` suffix). This page is the user install path; the contributor development install (checkout, link install, iteration loop) lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
 :::
 
 ## Prerequisites
@@ -22,7 +22,7 @@ dsh plugin --profile blue add @dsh-blue/blue@rc
 After installing, follow the two sections below — one key, then a first run; models, providers, themes, and API keys are covered in detail in [Configuration](/en/guide/config).
 
 - The `@rc` suffix is required: preview releases only carry the `rc` dist-tag, so a bare spec — which resolves `latest` — finds nothing.
-- Upgrading to a newer preview: re-run the same `plugin add` — the `@rc` spec re-resolves to the newest version.
+- Upgrading to a newer preview: type `/update` inside Blue (the in-app safe upgrade: pre-flight, snapshot, boot smoke, automatic rollback), or re-run the same `plugin add` — the `@rc` spec re-resolves to the newest version.
 
 ## One key before you ride
 
