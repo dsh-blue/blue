@@ -16,7 +16,7 @@
 | 阶段 | 当前状态 | 下一步重点 |
 |---|---|---|
 | F3 | 官方 projection、action、PanelModel/TUI consumer 和 upstream fixture 已完成 | 专用 profile 与人工验收 |
-| F4 | 官方 connection adapter 和真实 Unix-socket daemon fixture 已完成 | SSH bootstrap/profile 仍是外部验收项 |
+| F4 | 官方 connection adapter、真实 Unix/SSH daemon fixture 和专用 profile 自动化已完成 | 用户 live acceptance |
 | F5 | 七类 surface 均有 model consumer；transcript 已有官方 producer/replacement consumer | 专用 profile 对比，验收后才切默认 row/删旧路径 |
 | F6 | 四份 skill、validator、生态 adapter 和当前/上一线 packed fixture 已完成 | 专用 profile dogfood 与人工验收 |
 
@@ -104,27 +104,27 @@
 - `[x]` followup、steer、queue、interrupt 的 capability 行为明确；v1 interrupt 返回 structured absent，v2 映射官方 cancel。
 - `[x]` ActionCoordinator 覆盖 abort、queue、request/session epoch、stale rejection。
 - `[x]` question/approval RPC 绑定 session 和 request，旧 session answer 不得落入新 session。
-- `[ ]` remote 错误、超时、取消、重复 response 均有结构化结果。
+- `[x]` remote 错误、超时、取消、重复 response 均有结构化结果。
 
 验收证据：action/question/approval contract fixture 和错误码测试。
 
 ### F4-04 Write lease
 
-- `[x]` adapter 实现 lease acquire/release、`expiresAt` 传递和 disconnect attachment 清理；过期判定仍由外部 daemon 所有。
+- `[x]` adapter 实现 lease acquire/release、`expiresAt` 校验和 disconnect attachment 清理；daemon 仍是 lease grant/fencing 真相源。
 - `[x]` lease capability absent 时 headless caller 收到 structured absent，不阻塞 session runtime。
 - `[x]` release 失败返回 structured diagnostic，disconnect 仍继续清理。
-- `[ ]` 并发 acquire、旧 lease、过期 lease 和网络断开都有测试。
+- `[x]` 并发 acquire、旧 lease、过期 lease 和网络断开都有测试。
 
 验收证据：lease state machine tests、disconnect cleanup test、wire trace。
 
 ### F4-05 真实 SSH/profile dogfood
 
-- `[ ]` 准备独立 `blue-remote-<tag>` profile，生产 `blue` profile 不参与测试。
-- `[ ]` 真实启动 remote daemon，完成 attach、切换、prompt、question/approval、断线重连。
-- `[ ]` 检查 daemon 退出、CLI 退出、终端 resize、tmux/SSH 复制行为。
-- `[ ]` 记录运行时延迟、错误、seq、lease 和退出码。
+- `[x]` 准备独立 `blue-remote-<tag>` profile，生产 `blue` profile 不参与测试。
+- `[x]` 真实启动 remote daemon，完成 attach、切换、prompt、question/approval、断线重连。
+- `[x]` 检查 daemon 退出、CLI 退出、终端 resize、tmux/SSH forwarding 与 copy mode 行为。
+- `[x]` 记录运行时延迟、错误、seq、lease 和退出码。
 
-验收证据：dogfood log、PTY transcript、profile 配置、人工验收结论。
+验收证据：`docs/history/blue-remote-ssh-dogfood-2026-08-24.md`、PTY transcript、profile 配置；用户 live acceptance 仍由统一人工门禁单独记录。
 
 ### F4-06 Bundle 与 domain 边界
 
@@ -288,7 +288,7 @@ node script/blue-plugin-fixture.mjs <package> --install --harness-line 0.1.1-rc.
 ## 最终完成定义
 
 - `[ ]` F3 context 官方 vertical slice 通过 headless、width、real-process 和人工 profile 验收。
-- `[ ]` F4 remote 真实 daemon、multi-session、seq resume、question/approval、lease 和断线恢复通过。
+- `[x]` F4 remote 真实 daemon、multi-session、seq resume、question/approval、lease 和断线恢复通过。
 - `[ ]` F5 每个官方 surface 都有 consumer、fixture、fallback、bundle row 和删除清单，旧实现无未登记 consumer。
 - `[x]` F6 skills 能生成/诊断真实插件，fixture runner 实际执行全部场景，openpencil/lark adapter 和独立安装通过。
 - `[ ]` 当前/上一 Harness line、全量门禁、真实 profile 和用户 live acceptance 全部有记录。

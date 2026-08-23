@@ -114,3 +114,30 @@ the official `/context` panel, OSC 52 drag-copy, and clean exit. Four mock LLM
 requests completed. Resuming the saved session rendered the persisted
 `official-tail-line-59` history through the same official path and again exited
 0 with terminal modes restored. Human live acceptance remains pending.
+
+## F4 SSH and remote profile evidence (2026-08-24)
+
+The upstream fixture at commit `423c736869aad20304f470580165bc6dd82d2fbf`
+ran the rc.6 ABI first over its real Unix socket and then through upstream
+`connectSsh()` to that socket. The SSH lane used an explicitly supplied ED25519
+host fingerprint; the fixture has no scan-or-trust fallback. Both lanes exited
+0 after pairing/authentication/negotiation, two-session baseline/live routing,
+prompt/cancel, structured remote failure, timeout and caller cancellation,
+question/approval plus duplicate-response rejection, lease contention and
+one-second expiry, transport loss, same-identity reconnect, sequence resume,
+and late-event fencing.
+
+The SSH run observed initial seq `4`/`6`, resumed seq `8`, lease fencing token
+`1 -> 2`, and successful disconnect lease cleanup. First connect took 258 ms,
+the intentional timeout settled in 41 ms, reconnect took 253 ms, and the whole
+fixture took 3459 ms. Timeout and cancellation correctly surfaced as
+`OUTCOME_UNKNOWN`; stale release surfaced as `LEASE_LOST`.
+
+`blue-remote-frontend-runtime` is a separate linked profile whose local patch
+inserts only `blue-remote-runtime`; production `blue` was not used. A standalone
+PTY and a tmux lane (`80x24 -> 42x18 -> 96x32`) exited 0 with alternate screen,
+bracketed paste, and mouse modes restored, no width overflow, and no uncaught
+error. Tmux copy mode returned the selected `Welcome to Blue!` row. The full
+command/output record is archived in
+`history/blue-remote-ssh-dogfood-2026-08-24.md`. Human live acceptance remains
+pending.

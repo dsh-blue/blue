@@ -325,7 +325,7 @@ try {
       snapshot: async sessionId => ({ watermark: 4, value: { id: sessionId, cwd: '/remote', status: 'idle', mode: 'normal' } }),
       subscribe: (_sessionId, _watermark, next) => { listener = next; return () => { listener = undefined } },
       request: async (_sessionId, action) => { actions.push(action.kind) },
-      acquireWriteLease: async sessionId => ({ token: `fixture:${sessionId}`, expiresAt: 100 }),
+      acquireWriteLease: async sessionId => ({ token: `fixture:${sessionId}`, expiresAt: Date.now() + 60_000 }),
       releaseWriteLease: async () => { leaseReleased = true },
       ask: async (_sessionId, question) => question.answer,
       approve: async (_sessionId, question) => question.outcome,

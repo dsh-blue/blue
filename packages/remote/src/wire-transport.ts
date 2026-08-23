@@ -23,6 +23,7 @@ import type {
 import type { RemoteCapabilities, RemoteTransport, WriteLease } from './types.ts'
 
 type Attachment = { readonly release: () => Promise<void> }
+type PendingAttachment = { readonly epoch: number; waiters: number; promise: Promise<void> }
 
 /** Protocol client shape implemented by legacy wire clients and the official connection facade. */
 export interface DshRemoteWireClient extends RemoteWireClient {
@@ -37,6 +38,8 @@ export interface DshRemoteTransportOptions {
   readonly acceptedAbis?: readonly Record<string, string>[]
   readonly requiredCapabilities?: readonly string[]
   readonly bridge?: { readonly major: number; readonly minMinor: number; readonly maxMinor: number }
+  /** Bound official agent actions; mutation timeouts surface as outcome-unknown failures. */
+  readonly requestTimeoutMs?: number
 }
 
 function sessionIdFrom(payload: unknown): string {
@@ -73,7 +76,13 @@ export function createDshRemoteWireClient(connection: DshRemoteConnectionClient)
         headers: [['content-type', 'application/json']],
         body: Buffer.from(JSON.stringify({ type: 'client-response', rpcId, result: { ok: true, value } })),
       }, { authorization: { kind: 'host-write' }, ...(signal === undefined ? {} : { signal }) })
-      return response.status >= 200 && response.status < 300
+      if (response.status < 200 || response.status >= 300) return false
+      if (response.body.byteLength === 0) return true
+      try {
+        return (JSON.parse(Buffer.from(response.body).toString('utf8')) as { accepted?: unknown }).accepted === true
+      } catch {
+        return false
+      }
     },
     start: () => undefined,
     stop: () => undefined,
@@ -110,8 +119,12 @@ export class DshRemoteTransport implements RemoteTransport {
   private readonly detachedSessions = new Set<string>()
   private readonly readAttachments = new Map<string, Attachment>()
   private readonly writeAttachments = new Map<string, Attachment>()
+  private readonly pendingReadAttachments = new Map<string, PendingAttachment>()
+  private readonly pendingWriteAttachments = new Map<string, PendingAttachment>()
+  private readonly attachmentEpochs = new Map<string, number>()
   private streamController: AbortController | undefined
   private started = false
+  private disposed = false
   private negotiatedProtocol: string | undefined
   private readonly options: DshRemoteTransportOptions
 
@@ -150,11 +163,17 @@ export class DshRemoteTransport implements RemoteTransport {
     await this.ensureEventStream(signal)
     const value = this.client.agents === undefined
       ? await this.client.call<RemoteSessionList>('session.list', {}, signal)
-      : await this.client.agents.invoke<RemoteSessionList>('session.list', {}, { authorization: { kind: 'read' }, signal })
+      : await this.client.agents.invoke<RemoteSessionList>('session.list', {}, {
+          authorization: { kind: 'read' }, signal,
+          ...(this.options.requestTimeoutMs === undefined ? {} : { timeoutMs: this.options.requestTimeoutMs }),
+        })
     const row = value.items.find(item => item.sessionId === sessionId)
     let watermark = row?.projections?.asOfSeq ?? -1
     if (this.client.agents !== undefined) {
-      const history = await this.client.agents.invoke<RemoteSessionHistory>('session.history', { sessionId, maxMessages: 1 }, { authorization: { kind: 'read' }, signal })
+      const history = await this.client.agents.invoke<RemoteSessionHistory>('session.history', { sessionId, maxMessages: 1 }, {
+        authorization: { kind: 'read' }, signal,
+        ...(this.options.requestTimeoutMs === undefined ? {} : { timeoutMs: this.options.requestTimeoutMs }),
+      })
       watermark = Math.max(watermark, historyWatermark(history))
     }
     let snapshot = snapshotFromRow(sessionId, row)
@@ -185,12 +204,18 @@ export class DshRemoteTransport implements RemoteTransport {
     if (this.client.agents !== undefined) await this.ensureWriteAttachment(sessionId, signal)
     if (action.kind === 'interrupt') {
       if (this.negotiatedProtocol !== '2') throw new AdapterCapabilityAbsentError('action', 'remote session interrupt is unavailable in protocol v1')
-      if (this.client.agents !== undefined) await this.client.agents.invoke('session.cancel', { sessionId }, { authorization: { kind: 'session-write', sessionId }, signal })
+      if (this.client.agents !== undefined) await this.client.agents.invoke('session.cancel', { sessionId }, {
+        authorization: { kind: 'session-write', sessionId }, signal,
+        ...(this.options.requestTimeoutMs === undefined ? {} : { timeoutMs: this.options.requestTimeoutMs }),
+      })
       else await this.client.call('session.cancel', { sessionId }, signal)
       return
     }
     const payload = { sessionId, mode: action.kind === 'steer' ? 'steer' : 'queue', content: [{ type: 'text', text: action.text }] }
-    if (this.client.agents !== undefined) await this.client.agents.invoke('session.prompt', payload, { authorization: { kind: 'session-write', sessionId }, signal })
+    if (this.client.agents !== undefined) await this.client.agents.invoke('session.prompt', payload, {
+      authorization: { kind: 'session-write', sessionId }, signal,
+      ...(this.options.requestTimeoutMs === undefined ? {} : { timeoutMs: this.options.requestTimeoutMs }),
+    })
     else await this.client.call('session.prompt', payload, signal)
   }
 
@@ -237,44 +262,88 @@ export class DshRemoteTransport implements RemoteTransport {
 
   detach(sessionId: string): void {
     this.detachedSessions.add(sessionId)
+    this.attachmentEpochs.set(sessionId, (this.attachmentEpochs.get(sessionId) ?? 0) + 1)
     const read = this.readAttachments.get(sessionId)
     const write = this.writeAttachments.get(sessionId)
     this.readAttachments.delete(sessionId)
     this.writeAttachments.delete(sessionId)
-    if (read !== undefined) void read.release()
-    if (write !== undefined) void write.release()
+    if (read !== undefined) void read.release().catch(() => undefined)
+    if (write !== undefined) void write.release().catch(() => undefined)
     this.snapshots.delete(sessionId)
     this.recent.delete(sessionId)
     if (this.readAttachments.size === 0 && this.writeAttachments.size === 0 && this.listeners.size === 0) this.stopStream()
   }
 
   dispose(): void {
+    this.disposed = true
     this.listeners.clear()
     this.stopStream()
     this.negotiatedProtocol = undefined
     this.snapshots.clear()
     this.recent.clear()
     this.detachedSessions.clear()
-    for (const attachment of this.readAttachments.values()) void attachment.release()
-    for (const attachment of this.writeAttachments.values()) void attachment.release()
+    for (const attachment of this.readAttachments.values()) void attachment.release().catch(() => undefined)
+    for (const attachment of this.writeAttachments.values()) void attachment.release().catch(() => undefined)
     this.readAttachments.clear()
     this.writeAttachments.clear()
+    this.pendingReadAttachments.clear()
+    this.pendingWriteAttachments.clear()
+    this.attachmentEpochs.clear()
   }
 
   private async ensureReadAttachment(sessionId: string, signal: AbortSignal): Promise<void> {
-    if (this.client.attach === undefined || this.readAttachments.has(sessionId)) return
-    if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-    const attachment = await this.client.attach(sessionId, 'read')
-    if (signal.aborted) { await attachment.release(); throw new DOMException('Aborted', 'AbortError') }
-    this.readAttachments.set(sessionId, attachment)
+    await this.ensureAttachment(sessionId, 'read', signal)
   }
 
   private async ensureWriteAttachment(sessionId: string, signal: AbortSignal): Promise<void> {
-    if (this.client.attach === undefined || this.writeAttachments.has(sessionId)) return
+    await this.ensureAttachment(sessionId, 'write', signal)
+  }
+
+  private async ensureAttachment(sessionId: string, access: 'read' | 'write', signal: AbortSignal): Promise<void> {
+    const attach = this.client.attach
+    if (attach === undefined) return
+    const attached = access === 'read' ? this.readAttachments : this.writeAttachments
+    if (attached.has(sessionId)) return
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-    const attachment = await this.client.attach(sessionId, 'write')
-    if (signal.aborted) { await attachment.release(); throw new DOMException('Aborted', 'AbortError') }
-    this.writeAttachments.set(sessionId, attachment)
+    const pending = access === 'read' ? this.pendingReadAttachments : this.pendingWriteAttachments
+    const epoch = this.attachmentEpochs.get(sessionId) ?? 0
+    let record = pending.get(sessionId)
+    if (record === undefined || record.epoch !== epoch) {
+      record = { epoch, waiters: 0, promise: Promise.resolve() }
+      const current = record
+      pending.set(sessionId, current)
+      current.promise = Promise.resolve().then(async (): Promise<void> => {
+        const attachment = await attach.call(this.client, sessionId, access)
+        if (current.waiters === 0 || this.disposed || (this.attachmentEpochs.get(sessionId) ?? 0) !== epoch) {
+          await attachment.release()
+          throw new DOMException('Aborted', 'AbortError')
+        }
+        attached.set(sessionId, attachment)
+      })
+      const cleanup = (): void => { if (pending.get(sessionId) === current) pending.delete(sessionId) }
+      void current.promise.then(cleanup, cleanup)
+    }
+    record.waiters += 1
+    let waiting = true
+    const finishWaiting = (): void => {
+      if (!waiting) return
+      waiting = false
+      record.waiters -= 1
+    }
+    let abort!: () => void
+    const callerAbort = new Promise<never>((_resolve, reject) => {
+      abort = () => {
+        finishWaiting()
+        reject(new DOMException('Aborted', 'AbortError'))
+      }
+      signal.addEventListener('abort', abort, { once: true })
+    })
+    try {
+      await Promise.race([record.promise, callerAbort])
+    } finally {
+      signal.removeEventListener('abort', abort)
+      finishWaiting()
+    }
   }
 
   private async ensureEventStream(signal: AbortSignal): Promise<void> {

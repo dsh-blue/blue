@@ -43,3 +43,4 @@ F4 session runtime 与 `dsh-remote` proxy adapter 位于 [`packages/remote`](../
 | [history/blue-survey-pi-tui.md](./history/blue-survey-pi-tui.md) | pi-tui 0.84.2 选型调研存档 |
 | [history/blue-survey-harness.md](./history/blue-survey-harness.md) | deepseek-harness 0.1.0-rc.7 调研存档 |
 | [history/blue-codex-acceptance-2026-08-23.md](./history/blue-codex-acceptance-2026-08-23.md) | Codex 验收机器门禁、证据边界与暂缓项归档 |
+| [history/blue-remote-ssh-dogfood-2026-08-24.md](./history/blue-remote-ssh-dogfood-2026-08-24.md) | F4 真实 Unix/SSH daemon、lease/reconnect 与专用 profile 自动化证据 |

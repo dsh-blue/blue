@@ -23,10 +23,14 @@ vertical slice now consumes the official four-key projection cut and has an
 independent tarball fixture, a real dsh-context 0.25.3 host fixture, a TUI
 panel consumer, width scan, and bundle e2e. Its bundle row stays disabled and
 it has not replaced `blue-status-context` pending live profile acceptance.
-Remote v2 negotiation and lease transport now have a real authenticated
-Unix-socket daemon fixture, including two sessions, authorization, response
-carriers, contention, release, and late-event cleanup. This is deliberately
-not recorded as SSH bootstrap or live-profile acceptance.
+Remote v2 negotiation and lease transport now have real authenticated Unix and
+fingerprint-pinned SSH daemon fixtures. They cover two sessions, authorization,
+structured action failures, timeout/cancel outcome-unknown results, duplicate
+response rejection, lease contention/expiry/disconnect cleanup, transport
+loss, same-identity reconnect, sequence resume, and late-event cleanup. The
+separate `blue-remote-frontend-runtime` profile mounts the headless runtime and
+passes PTY/tmux resize, copy-mode, and clean-exit smoke. These automated results
+do not replace the shared user live-acceptance gate.
 
 Status providers have crossed the model boundary and retain footer golden
 parity. Command execution, generic panels, canonical tool conversion, editor

@@ -168,7 +168,7 @@ describe('DshRemoteTransport', () => {
       start: vi.fn(),
       stop: vi.fn(),
     }
-    const transport = new DshRemoteTransport(client)
+    const transport = new DshRemoteTransport(client, { requestTimeoutMs: 321 })
     await expect(transport.negotiate(new AbortController().signal)).resolves.toMatchObject({ protocol: '2', capabilities: ['session', 'projection', 'action', 'writeLease'] })
     await expect(transport.snapshot('s1', new AbortController().signal)).resolves.toMatchObject({ watermark: 10, value: { cwd: '/official', status: 'idle' } })
     const seen: number[] = []
@@ -178,13 +178,15 @@ describe('DshRemoteTransport', () => {
     await vi.waitFor(() => expect(seen).toEqual([11]))
     await expect(transport.request('s1', { kind: 'followup', text: 'hello' }, new AbortController().signal)).resolves.toBeUndefined()
     await expect(transport.request('s1', { kind: 'interrupt' }, new AbortController().signal)).resolves.toBeUndefined()
-    expect(client.agents.invoke).toHaveBeenCalledWith('session.cancel', { sessionId: 's1' }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(client.agents.invoke).toHaveBeenCalledWith('session.cancel', { sessionId: 's1' }, expect.objectContaining({ signal: expect.any(AbortSignal), timeoutMs: 321 }))
     await expect(transport.acquireWriteLease('s1', new AbortController().signal)).resolves.toMatchObject({ token: 'attachment:s1', sessionId: 's1' })
     await expect(transport.releaseWriteLease('s1', { token: 'attachment:s1', expiresAt: Number.POSITIVE_INFINITY, sessionId: 's1' })).resolves.toBeUndefined()
     expect(released).toContain('write')
     transport.dispose()
     const minimal = new DshRemoteTransport({ ...client, contract: {} })
     await expect(minimal.negotiate(new AbortController().signal)).resolves.toEqual({ protocol: '2', capabilities: ['writeLease'] })
+    await minimal.request('s1', { kind: 'followup', text: 'without timeout' }, new AbortController().signal)
+    await minimal.request('s1', { kind: 'interrupt' }, new AbortController().signal)
     await minimal.acquireWriteLease('s1', new AbortController().signal)
     minimal.dispose()
   })
@@ -250,6 +252,84 @@ describe('DshRemoteTransport', () => {
     expect(released).toEqual(expect.arrayContaining(['during-read:read', 'during-write:write', 's1:read', 's1:write', 's2:read']))
     transport.dispose()
   })
+  it('deduplicates concurrent attachments and fences detach/dispose generations', async () => {
+    const firstWrite = Promise.withResolvers<{ release(): Promise<void> }>()
+    const oldWrite = Promise.withResolvers<{ release(): Promise<void> }>()
+    const freshWrite = Promise.withResolvers<{ release(): Promise<void> }>()
+    const pendingRead = Promise.withResolvers<{ release(): Promise<void> }>()
+    const released: string[] = []
+    const attach = vi.fn()
+      .mockImplementationOnce(async () => firstWrite.promise)
+      .mockImplementationOnce(async () => oldWrite.promise)
+      .mockImplementationOnce(async () => freshWrite.promise)
+      .mockImplementationOnce(async () => pendingRead.promise)
+    const client: DshRemoteWireClient = {
+      contract: { bridge: { major: 2, minor: 0 }, capabilities: ['writer-lease', 'tui-read-projection'] },
+      call: vi.fn(async () => undefined),
+      agents: { invoke: vi.fn(async (action: string) => action === 'session.list' ? { items: [] } : { events: [] }) },
+      host: { subscribe: vi.fn(async () => ({ async *[Symbol.asyncIterator](): AsyncGenerator<Uint8Array> {} })) },
+      attach,
+      respond: vi.fn(async () => true),
+      start: vi.fn(),
+      stop: vi.fn(),
+    }
+    const transport = new DshRemoteTransport(client)
+    await transport.negotiate(new AbortController().signal)
+    const abortedController = new AbortController()
+    const abortedWaiter = transport.acquireWriteLease('shared', abortedController.signal)
+    const sharedOne = transport.acquireWriteLease('shared', new AbortController().signal)
+    const sharedTwo = transport.acquireWriteLease('shared', new AbortController().signal)
+    abortedController.abort()
+    await expect(abortedWaiter).rejects.toThrow('Aborted')
+    await vi.waitFor(() => expect(attach).toHaveBeenCalledTimes(1))
+    firstWrite.resolve({ release: async () => { released.push('shared') } })
+    await expect(sharedOne).resolves.toMatchObject({ token: 'attachment:shared' })
+    await expect(sharedTwo).resolves.toMatchObject({ token: 'attachment:shared' })
+    transport.detach('shared')
+    await vi.waitFor(() => expect(released).toContain('shared'))
+
+    const stale = transport.acquireWriteLease('epoch', new AbortController().signal)
+    await Promise.resolve()
+    transport.detach('epoch')
+    const fresh = transport.acquireWriteLease('epoch', new AbortController().signal)
+    freshWrite.resolve({ release: async () => { released.push('fresh') } })
+    await expect(fresh).resolves.toMatchObject({ token: 'attachment:epoch' })
+    oldWrite.resolve({ release: async () => { released.push('stale') } })
+    await expect(stale).rejects.toThrow('Aborted')
+    await vi.waitFor(() => expect(released).toContain('stale'))
+
+    const read = transport.snapshot('pending-read', new AbortController().signal)
+    await Promise.resolve()
+    transport.dispose()
+    pendingRead.resolve({ release: async () => { released.push('disposed-read') } })
+    await expect(read).rejects.toThrow('Aborted')
+    expect(released).toContain('disposed-read')
+  })
+  it('contains attachment cleanup failures during detach and dispose', async () => {
+    const releases = vi.fn(async () => { throw new Error('cleanup failed') })
+    const client: DshRemoteWireClient = {
+      contract: { bridge: { major: 2, minor: 0 }, capabilities: ['writer-lease', 'tui-read-projection'] },
+      call: vi.fn(async () => undefined),
+      agents: { invoke: vi.fn(async (action: string) => action === 'session.list' ? { items: [] } : { events: [] }) },
+      host: { subscribe: vi.fn(async () => ({ async *[Symbol.asyncIterator](): AsyncGenerator<Uint8Array> {} })) },
+      attach: vi.fn(async () => ({ release: releases })),
+      respond: vi.fn(async () => true),
+      start: vi.fn(),
+      stop: vi.fn(),
+    }
+    const detached = new DshRemoteTransport(client)
+    await detached.snapshot('detach-fail', new AbortController().signal)
+    await detached.acquireWriteLease('detach-fail', new AbortController().signal)
+    detached.detach('detach-fail')
+    await vi.waitFor(() => expect(releases).toHaveBeenCalledTimes(2))
+
+    const disposed = new DshRemoteTransport(client)
+    await disposed.snapshot('dispose-fail', new AbortController().signal)
+    await disposed.acquireWriteLease('dispose-fail', new AbortController().signal)
+    disposed.dispose()
+    await vi.waitFor(() => expect(releases).toHaveBeenCalledTimes(4))
+    detached.dispose()
+  })
   it('aborts failed stream opens and restarts after split or failed SSE generations', async () => {
     const preStream = new AbortController(); preStream.abort()
     await expect(new DshRemoteTransport(fixture().client).snapshot('s1', preStream.signal)).rejects.toThrow('Aborted')
@@ -273,7 +353,7 @@ describe('DshRemoteTransport', () => {
     const aborting = new DshRemoteTransport(abortingClient)
     const controller = new AbortController()
     const pending = aborting.snapshot('s1', controller.signal)
-    await Promise.resolve()
+    await vi.waitFor(() => expect(abortingClient.host?.subscribe).toHaveBeenCalledOnce())
     controller.abort()
     await expect(pending).rejects.toThrow('open aborted')
     aborting.dispose()
@@ -285,7 +365,7 @@ describe('DshRemoteTransport', () => {
     }
     const superseded = new DshRemoteTransport(supersededClient)
     const supersededOpen = superseded.snapshot('s1', new AbortController().signal)
-    await Promise.resolve()
+    await vi.waitFor(() => expect(supersededClient.host?.subscribe).toHaveBeenCalledOnce())
     superseded.dispose()
     await expect(supersededOpen).rejects.toThrow('open stopped')
 
@@ -348,6 +428,12 @@ describe('DshRemoteTransport', () => {
     await expect(client.call('session.prompt', { sessionId: 's1' }, new AbortController().signal)).resolves.toBeUndefined()
     await expect(client.call('session.cancel', { sessionId: 's1' })).resolves.toBeUndefined()
     await expect(client.respond('rpc-2', 'no', new AbortController().signal)).resolves.toBe(true)
+    fetch.mockResolvedValueOnce({ status: 200, headers: [], body: Buffer.from('{"accepted":false,"reason":"duplicate"}') })
+    await expect(client.respond('rpc-duplicate', 'no')).resolves.toBe(false)
+    fetch.mockResolvedValueOnce({ status: 200, headers: [], body: Buffer.from('{"accepted":true}') })
+    await expect(client.respond('rpc-accepted', 'yes')).resolves.toBe(true)
+    fetch.mockResolvedValueOnce({ status: 200, headers: [], body: Buffer.from('not-json') })
+    await expect(client.respond('rpc-malformed', null)).resolves.toBe(false)
     expect(invoke).toHaveBeenCalledWith('session.list', {}, { authorization: { kind: 'read' } })
     expect(fetch).toHaveBeenCalledWith(expect.objectContaining({ path: '/api/respond', body: expect.any(Uint8Array) }), { authorization: { kind: 'host-write' } })
     expect(JSON.parse(Buffer.from(fetch.mock.calls[0]![0].body!).toString('utf8'))).toEqual({ type: 'client-response', rpcId: 'rpc-1', result: { ok: true, value: 'yes' } })
