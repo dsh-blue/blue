@@ -28,22 +28,29 @@
  * @module @dsh-blue/blue-interaction/paste-image
  */
 
-import { execFile } from 'node:child_process'
-import { constants as fsConstants } from 'node:fs'
-import { open } from 'node:fs/promises'
-import { basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
-  ImageMediaType,
   SaveImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { getSharedEditor, registerSubmitTransformer, type SharedEditor } from './editor-instance.ts'
 import { ADMITTED_IMAGE_TYPES, EXT_BY_MEDIA_TYPE, sniffImageMediaType } from './attachments.ts'
+import {
+  type ClipboardBackend,
+  type ClipboardImageResult,
+  type FailedRun,
+  type FailureKind,
+  type FailureResult,
+  failureDetail,
+  readCopiedImage,
+  runTool,
+} from './clipboard-probe.ts'
+
+export type { ClipboardBackend, ClipboardImageResult } from './clipboard-probe.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-paste-image'
@@ -52,9 +59,6 @@ export const inject = ['attachments', 'blueKeymap']
 
 /** Clipboard backend policy: automatic session order, or one strict backend. */
 export type ClipboardBackendPolicy = 'auto' | 'wayland' | 'x11'
-
-/** Concrete clipboard backend that produced an image. */
-export type ClipboardBackend = Exclude<ClipboardBackendPolicy, 'auto'>
 
 /** Plugin configuration for clipboard backend selection. */
 export interface Config {
@@ -73,21 +77,6 @@ export const Config: z<Config> = z.object({
  * `blueKeymap.matches`.
  */
 export const ACTION_IMAGE_PASTE = 'blue.image.paste'
-
-/**
- * One clipboard read: direct image bytes, an ordered copied-file image
- * batch, or a failure kind naming what is missing.
- */
-export type ClipboardImageResult =
-  | { kind: 'image'; data: Uint8Array; mediaType: ImageMediaType; backend?: ClipboardBackend; fallback?: boolean }
-  | { kind: 'images'; images: readonly SaveImageAttachment[]; backend?: ClipboardBackend; fallback?: boolean }
-  | { kind: 'no-image' }
-  | { kind: 'unsupported'; mediaType: string }
-  | { kind: 'file-failed'; detail: string }
-  | { kind: 'unreachable' }
-  | { kind: 'missing-tool' }
-  | { kind: 'timeout' }
-  | { kind: 'failed'; detail: string }
 
 /**
  * Reads the clipboard's current image, or resolves the failure kind. Never
@@ -130,9 +119,6 @@ const CLIPBOARD_TOOLS: Readonly<Record<ClipboardBackend, ClipboardTool>> = {
   },
 }
 
-/** Per-tool timeout; a hung clipboard helper must not wedge the editor. */
-const CLIPBOARD_TOOL_TIMEOUT_MS = 3000
-
 /** A timed-out backend stays skipped briefly, then is retried automatically. */
 const BACKEND_COOLDOWN_MS = 60_000
 
@@ -169,20 +155,6 @@ function clipboardToolsFor(policy: ClipboardBackendPolicy): readonly ClipboardTo
   return [CLIPBOARD_TOOLS.wayland, CLIPBOARD_TOOLS.x11]
 }
 
-/** Outcome of one clipboard tool invocation. */
-type ToolRun =
-  | { ok: true; stdout: Buffer }
-  | { ok: false; code: string | number | undefined; killed: boolean; stderr: string }
-
-/** The failed half of {@link ToolRun}. */
-type FailedRun = Extract<ToolRun, { ok: false }>
-
-/** Every unsuccessful clipboard result. */
-type FailureResult = Exclude<ClipboardImageResult, { kind: 'image' | 'images' }>
-
-/** The non-image result kinds. */
-type FailureKind = FailureResult['kind']
-
 /**
  * Failure kinds in cross-tool aggregation order: a completed clipboard query
  * (including "holds an unsupported image type") outranks environment
@@ -197,53 +169,6 @@ const OUTCOME_RANK: Readonly<Record<FailureKind, number>> = {
   failed: 4,
   timeout: 5,
   'missing-tool': 6,
-}
-
-/**
- * Run one clipboard tool to completion. Never rejects; a nonzero exit or a
- * spawn failure resolves as a failed run carrying the exit code, kill flag,
- * and stderr text for classification.
- * @param command - the tool to run.
- * @param args - its arguments.
- * @returns the stdout bytes, or the failure details.
- */
-function runTool(command: string, args: readonly string[]): Promise<ToolRun> {
-  return new Promise(resolve => {
-    // SIGKILL, not the default SIGTERM: wl-clipboard traps TERM for its own
-    // cleanup and, wedged on an unresponsive compositor (GNOME's core-
-    // protocol fallback never gains focus from a background process), never
-    // returns from the handler — a TERM'd tool survives as a zombie and the
-    // exit event never settles this promise.
-    execFile(command, args, { encoding: 'buffer', timeout: CLIPBOARD_TOOL_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => {
-      if (error === null) {
-        resolve({ ok: true, stdout })
-        return
-      }
-      resolve({
-        ok: false,
-        // `null` arrives only from a killed run without an exit code; the
-        // detail formatter prints it like any other code.
-        code: error.code ?? undefined,
-        killed: error.killed ?? false,
-        stderr: stderr.toString(),
-      })
-    })
-  })
-}
-
-/**
- * Build the raw-failure detail in the `clipboard-write` idiom: the command,
- * its exit code, and the first non-empty stderr line.
- * @param command - the tool that failed.
- * @param run - its failed run.
- * @returns the one-line detail.
- */
-function failureDetail(command: string, run: FailedRun): string {
-  const code = String(run.code)
-  const firstLine = run.stderr.split('\n').map(line => line.trim()).find(line => line.length > 0)
-  return firstLine === undefined
-    ? `${command} exited with code ${code}`
-    : `${command} exited with code ${code}: ${firstLine}`
 }
 
 /**
@@ -300,36 +225,6 @@ function parseFileUris(data: Buffer, mediaType: typeof FILE_URI_TYPES[number]): 
     }
   }
   return { ok: true, paths }
-}
-
-/** Read one copied local file without following a final symlink. */
-async function readCopiedImage(path: string, maxBytes: number): Promise<SaveImageAttachment | FailureResult> {
-  const displayName = basename(path) || 'copied file'
-  let handle
-  try {
-    handle = await open(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW)
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code
-    const reason = code === 'ELOOP' ? 'symbolic links are not accepted' : `could not be opened (${String(code)})`
-    return { kind: 'file-failed', detail: `${displayName} ${reason}` }
-  }
-  try {
-    const stat = await handle.stat()
-    if (!stat.isFile()) return { kind: 'file-failed', detail: `${displayName} is not a regular file` }
-    if (stat.size > maxBytes) return { kind: 'file-failed', detail: `${displayName} exceeds the per-image byte limit` }
-    const data = await handle.readFile()
-    if (data.byteLength > maxBytes) return { kind: 'file-failed', detail: `${displayName} exceeds the per-image byte limit` }
-    const mediaType = sniffImageMediaType(data)
-    if (mediaType === undefined) {
-      return { kind: 'file-failed', detail: `${displayName} is not a supported PNG, JPEG, WebP, or GIF image` }
-    }
-    return { data, mediaType, name: displayName }
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code
-    return { kind: 'file-failed', detail: `${displayName} could not be read (${String(code)})` }
-  } finally {
-    await handle.close()
-  }
 }
 
 /** Read and preflight one copied-file representation as an ordered batch. */
