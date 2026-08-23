@@ -277,7 +277,7 @@ pnpm run typecheck      # tsc -b
 
 ## 与 deepseek-harness 的关系
 
-- 运行时与测试依赖（`@deepseek-ai/cordis` 4.0.1、`@deepseek-ai/dsh-*` 0.1.1-rc.2、`@earendil-works/pi-tui` ^0.84.2）来自 npm registry。Blue 自身的包以 lockstep 节奏发布到 npm 的 `rc` dist-tag 下（`latest` 留给稳定线）：[`@dsh-blue/blue`](https://www.npmjs.com/package/@dsh-blue/blue) 及其库包当前为 0.1.0-rc.2；公共契约包 `@dsh-blue/blue-api` 随下一次发版加入。
+- 运行时与测试依赖（`@deepseek-ai/cordis` 4.0.1、`@deepseek-ai/dsh-*` 0.1.1-rc.2、`@earendil-works/pi-tui` ^0.84.2）来自 npm registry。Blue 自身的包以 lockstep 节奏发布到 npm 的 `rc` dist-tag 下（`latest` 留给稳定线）：六包集合（[`@dsh-blue/blue`](https://www.npmjs.com/package/@dsh-blue/blue) 与 core/interaction/transcript/app 及公共契约包 `blue-api`）当前为 0.1.0-rc.4。
 - harness 仓库的门禁（文档 i18n 配对、README 门禁、snapshot/e2e 车道）不适用于本仓库；本仓保留构建、全量测试套件与逐文件 100% src 覆盖率门禁。
 
 ## 许可证

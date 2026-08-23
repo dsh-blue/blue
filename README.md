@@ -277,7 +277,7 @@ Preview-honest list — the full parked log lives in [docs/blue-roadmap.md](docs
 
 ## Relationship to deepseek-harness
 
-- Runtime and test dependencies (`@deepseek-ai/cordis` 4.0.1, `@deepseek-ai/dsh-*` 0.1.1-rc.2, `@earendil-works/pi-tui` ^0.84.2) come from the npm registry. Blue's own packages publish to npm in lockstep under the `rc` dist-tag — `latest` stays reserved for the stable line: [`@dsh-blue/blue`](https://www.npmjs.com/package/@dsh-blue/blue) plus its library packages at 0.1.0-rc.2; the public-contract package `@dsh-blue/blue-api` joins the set at the next release.
+- Runtime and test dependencies (`@deepseek-ai/cordis` 4.0.1, `@deepseek-ai/dsh-*` 0.1.1-rc.2, `@earendil-works/pi-tui` ^0.84.2) come from the npm registry. Blue's own packages publish to npm in lockstep under the `rc` dist-tag — `latest` stays reserved for the stable line: the six-package set ([`@dsh-blue/blue`](https://www.npmjs.com/package/@dsh-blue/blue) plus core/interaction/transcript/app and the public-contract package `blue-api`) at 0.1.0-rc.4.
 - The harness's repository gates (documentation i18n pairing, README gates, snapshot/e2e lanes) do not apply here; this repo keeps the build, the full test suite, and the per-file 100% src coverage gate.
 
 ## License
