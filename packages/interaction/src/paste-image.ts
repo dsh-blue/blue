@@ -34,7 +34,6 @@ import z from '@deepseek-ai/schemastery'
 import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
-  SaveImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { getSharedEditor, registerSubmitTransformer, type SharedEditor } from './editor-instance.ts'
@@ -46,7 +45,7 @@ import {
   type FailureKind,
   type FailureResult,
   failureDetail,
-  readCopiedImage,
+  readCopiedPaths,
   runTool,
 } from './clipboard-probe.ts'
 
@@ -84,10 +83,13 @@ export const ACTION_IMAGE_PASTE = 'blue.image.paste'
  */
 export type ClipboardImageReader = () => Promise<ClipboardImageResult>
 
+/** The Linux display-protocol backends the `backend` config can select. */
+type LinuxBackend = Exclude<ClipboardBackend, 'win32' | 'darwin'>
+
 /** How one clipboard tool lists the offered types and reads one back. */
 type ClipboardTool = {
   /** Stable backend identity used by policy selection and cooldowns. */
-  backend: ClipboardBackend
+  backend: LinuxBackend
   /** The probe command. */
   command: string
   /** stderr signature meaning "no display session is reachable". */
@@ -102,7 +104,7 @@ type ClipboardTool = {
 const FILE_URI_TYPES = ['text/uri-list', 'x-special/gnome-copied-files'] as const
 
 /** Clipboard image tools keyed by their display protocol. */
-const CLIPBOARD_TOOLS: Readonly<Record<ClipboardBackend, ClipboardTool>> = {
+const CLIPBOARD_TOOLS: Readonly<Record<LinuxBackend, ClipboardTool>> = {
   wayland: {
     backend: 'wayland',
     command: 'wl-paste',
@@ -191,7 +193,7 @@ type ParsedFileUris =
   | { ok: true; paths: readonly string[] }
   | { ok: false; detail: string }
 
-/** Parse standard URI-list or GNOME copied-files bytes into unique local paths. */
+/** Parse standard URI-list or GNOME copied-files bytes into local paths. */
 function parseFileUris(data: Buffer, mediaType: typeof FILE_URI_TYPES[number]): ParsedFileUris {
   const lines = data.toString('utf8').split(/\r?\n/).map(line => line.trim())
   if (mediaType === 'x-special/gnome-copied-files') {
@@ -201,7 +203,6 @@ function parseFileUris(data: Buffer, mediaType: typeof FILE_URI_TYPES[number]): 
     }
   }
   const paths: string[] = []
-  const seen = new Set<string>()
   for (const line of lines) {
     if (line === '' || line.startsWith('#')) continue
     let url: URL
@@ -219,34 +220,16 @@ function parseFileUris(data: Buffer, mediaType: typeof FILE_URI_TYPES[number]): 
     } catch {
       return { ok: false, detail: 'clipboard file URI does not name a local path' }
     }
-    if (!seen.has(path)) {
-      seen.add(path)
-      paths.push(path)
-    }
+    paths.push(path)
   }
   return { ok: true, paths }
 }
 
-/** Read and preflight one copied-file representation as an ordered batch. */
+/** Read one copied-file representation as an ordered batch through the shared path preflight. */
 async function readCopiedImages(data: Buffer, mediaType: typeof FILE_URI_TYPES[number], limits: ImageAttachmentLimits): Promise<ClipboardImageResult> {
   const parsed = parseFileUris(data, mediaType)
   if (!parsed.ok) return { kind: 'file-failed', detail: parsed.detail }
-  if (parsed.paths.length === 0) return { kind: 'no-image' }
-  if (parsed.paths.length > limits.maxImagesPerMessage) {
-    return { kind: 'file-failed', detail: `copied file selection exceeds the ${limits.maxImagesPerMessage}-image limit` }
-  }
-  const images: SaveImageAttachment[] = []
-  let totalBytes = 0
-  for (const path of parsed.paths) {
-    const image = await readCopiedImage(path, limits.maxImageBytes)
-    if ('kind' in image) return image
-    totalBytes += image.data.byteLength
-    if (totalBytes > limits.maxMessageImageBytes) {
-      return { kind: 'file-failed', detail: 'copied file selection exceeds the aggregate image-byte limit' }
-    }
-    images.push(image)
-  }
-  return { kind: 'images', images }
+  return readCopiedPaths(parsed.paths, limits)
 }
 
 /**

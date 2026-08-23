@@ -13,13 +13,16 @@
 
 import { execFile } from 'node:child_process'
 import { constants as fsConstants } from 'node:fs'
-import { open } from 'node:fs/promises'
-import { basename } from 'node:path'
-import type { ImageMediaType, SaveImageAttachment } from '@deepseek-ai/dsh-attachment'
+import { mkdtemp, open, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
+import type { ImageAttachmentLimits, ImageMediaType, SaveImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { sniffImageMediaType } from './attachments.ts'
 
-/** Concrete clipboard backend that produced an image. */
-export type ClipboardBackend = 'wayland' | 'x11'
+/** Concrete clipboard backend that produced an image: the two Linux
+ * display protocols (config-selectable through `blue-paste-image`) plus the
+ * win32/darwin native probes (platform-selected). */
+export type ClipboardBackend = 'wayland' | 'x11' | 'win32' | 'darwin'
 
 /**
  * One clipboard read: direct image bytes, an ordered copied-file image
@@ -53,22 +56,38 @@ export type ToolRun =
 /** The failed half of {@link ToolRun}. */
 export type FailedRun = Extract<ToolRun, { ok: false }>
 
+/** Options for one tool run: per-backend spawn timeout and environment. */
+export interface ToolRunOptions {
+  /** Spawn timeout in milliseconds; defaults to {@link CLIPBOARD_TOOL_TIMEOUT_MS}. */
+  timeoutMs?: number | undefined
+  /** Full child environment (the staging-dir handoff); set means no inheritance. */
+  env?: NodeJS.ProcessEnv | undefined
+}
+
 /**
  * Run one clipboard tool to completion. Never rejects; a nonzero exit or a
  * spawn failure resolves as a failed run carrying the exit code, kill flag,
  * and stderr text for classification.
  * @param command - the tool to run.
  * @param args - its arguments.
+ * @param options - per-run timeout and environment overrides.
  * @returns the stdout bytes, or the failure details.
  */
-export function runTool(command: string, args: readonly string[]): Promise<ToolRun> {
+export function runTool(command: string, args: readonly string[], options?: ToolRunOptions): Promise<ToolRun> {
   return new Promise(resolve => {
     // SIGKILL, not the default SIGTERM: wl-clipboard traps TERM for its own
     // cleanup and, wedged on an unresponsive compositor (GNOME's core-
     // protocol fallback never gains focus from a background process), never
     // returns from the handler — a TERM'd tool survives as a zombie and the
-    // exit event never settles this promise.
-    execFile(command, args, { encoding: 'buffer', timeout: CLIPBOARD_TOOL_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => {
+    // exit event never settles this promise. Native helpers have no TERM
+    // traps; the kill is a plain TerminateProcess on win32.
+    execFile(command, args, {
+      encoding: 'buffer',
+      timeout: options?.timeoutMs ?? CLIPBOARD_TOOL_TIMEOUT_MS,
+      killSignal: 'SIGKILL',
+      maxBuffer: 32 * 1024 * 1024,
+      ...(options?.env === undefined ? {} : { env: options.env }),
+    }, (error, stdout, stderr) => {
       if (error === null) {
         resolve({ ok: true, stdout })
         return
@@ -100,6 +119,21 @@ export function failureDetail(command: string, run: FailedRun): string {
     : `${command} exited with code ${code}: ${firstLine}`
 }
 
+/**
+ * Classify a native-helper failure (powershell.exe, osascript, sips):
+ * ENOENT is the missing binary, `killed` is the timeout, and everything
+ * else keeps its raw detail. No unreachable arm — native helpers have no
+ * display-session stderr signature to match.
+ * @param command - the native helper that failed.
+ * @param run - its failed run.
+ * @returns the classified failure.
+ */
+export function classifyNativeFailure(command: string, run: FailedRun): FailureResult {
+  if (run.code === 'ENOENT') return { kind: 'missing-tool' }
+  if (run.killed) return { kind: 'timeout' }
+  return { kind: 'failed', detail: failureDetail(command, run) }
+}
+
 /** Read one copied local file without following a final symlink. */
 export async function readCopiedImage(path: string, maxBytes: number): Promise<SaveImageAttachment | FailureResult> {
   const displayName = basename(path) || 'copied file'
@@ -127,5 +161,60 @@ export async function readCopiedImage(path: string, maxBytes: number): Promise<S
     return { kind: 'file-failed', detail: `${displayName} could not be read (${String(code)})` }
   } finally {
     await handle.close()
+  }
+}
+
+/**
+ * Read and preflight an ordered local-path batch as one admitted image
+ * batch: Linux URI lists, the Windows FileDropList staging, Finder furl
+ * listings. Duplicates collapse, the count and aggregate-byte limits bound
+ * the batch, each file is read without following a final symlink and typed
+ * by its magic bytes alone, and the original order survives.
+ * @param paths - the copied local paths in copy order.
+ * @param limits - deployment image limits bounding the batch.
+ * @returns the ordered batch, or the first refusal.
+ */
+export async function readCopiedPaths(paths: readonly string[], limits: ImageAttachmentLimits): Promise<ClipboardImageResult> {
+  const unique: string[] = []
+  const seen = new Set<string>()
+  for (const path of paths) {
+    if (!seen.has(path)) {
+      seen.add(path)
+      unique.push(path)
+    }
+  }
+  if (unique.length === 0) return { kind: 'no-image' }
+  if (unique.length > limits.maxImagesPerMessage) {
+    return { kind: 'file-failed', detail: `copied file selection exceeds the ${limits.maxImagesPerMessage}-image limit` }
+  }
+  const images: SaveImageAttachment[] = []
+  let totalBytes = 0
+  for (const path of unique) {
+    const image = await readCopiedImage(path, limits.maxImageBytes)
+    if ('kind' in image) return image
+    totalBytes += image.data.byteLength
+    if (totalBytes > limits.maxMessageImageBytes) {
+      return { kind: 'file-failed', detail: 'copied file selection exceeds the aggregate image-byte limit' }
+    }
+    images.push(image)
+  }
+  return { kind: 'images', images }
+}
+
+/**
+ * Run fn with a private staging directory under the OS temp dir, removed
+ * best-effort afterwards. The native probes hand clipboard bytes through
+ * this directory — PowerShell saves into it, AppleScript writes into it —
+ * so binary data never crosses a tool's stdout (D55).
+ * @param fn - the probe body receiving the staging directory path.
+ * @returns whatever fn resolves to.
+ */
+export async function withStagingDir<T>(fn: (stage: string) => Promise<T>): Promise<T> {
+  const stage = await mkdtemp(join(tmpdir(), 'blue-paste-'))
+  try {
+    return await fn(stage)
+  } finally {
+    /* v8 ignore next -- best-effort cleanup; losing the race leaves one bounded blue-paste-* dir (D55) */
+    await rm(stage, { recursive: true, force: true }).catch(() => {})
   }
 }
