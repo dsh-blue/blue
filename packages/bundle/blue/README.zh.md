@@ -6,11 +6,11 @@ dsh Blue 组合包：交互式终端 UI profile。[`cordis.patch.yml`](cordis.pa
 
 ## 模型体验
 
-间接影响，通过被插入的行：本组合包只是 patch 列表的载体，除 patch 中引用的 persona 覆盖外，自身不贡献任何模型可见文本。
+间接影响，通过被插入的行：本组合包只是 patch 列表的载体，除 patch 中引用的 host fallback persona 外，自身不贡献任何模型可见文本。该 fallback 只使用所有 agent 都具备的工作目录变量；模型相关表述留给 preset persona，因此无 preset 的 subagent 也能安全组装 prompt。
 
 #### KV Cache 影响
 
-persona 覆盖是静态前缀；各插入行的前缀影响由所属包各自承担。
+fallback persona 是静态前缀；各插入行的前缀影响由所属包各自承担。
 
 ## 已知限制与暂缓事项
 

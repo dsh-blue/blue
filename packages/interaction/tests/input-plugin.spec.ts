@@ -382,6 +382,24 @@ describe('blue-input plugin', () => {
     })
   })
 
+  it('flattens a multi-line command result into one terminal row', async () => {
+    const { ctx, editor, hint } = await mount()
+    ctx.commands.register({
+      name: 'multiline',
+      description: 'Return a structured status notice',
+      handler: () => ({
+        kind: 'success',
+        text: 'Goal created\r\nStatus: active\n\n  Activation: armed',
+      }),
+    })
+    type(editor, '/multiline')
+    editor.handleInput(KEY.enter)
+    await vi.waitFor(() => {
+      expect(hint.render(120)).toEqual(['~Goal created · Status: active · Activation: armed~'])
+    })
+    expect(hint.render(120)[0]).not.toMatch(/[\r\n]/u)
+  })
+
   it('drops the result notice when the fiber unloads before the command settles', async () => {
     const { ctx, screen, editor, hint, agent, fiber } = await mount()
     // A handler gate the test settles by hand, so the unload can land while

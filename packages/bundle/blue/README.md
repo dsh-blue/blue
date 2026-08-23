@@ -6,11 +6,11 @@ The dsh Blue bundle: the interactive terminal UI profile. [`cordis.patch.yml`](c
 
 ## Model Experience
 
-Indirectly, through the inserted rows: this bundle is a patch-list carrier and contributes no model-visible text of its own beyond the persona override quoted in the patch.
+Indirectly, through the inserted rows: this bundle is a patch-list carrier and contributes no model-visible text of its own beyond the host fallback persona quoted in the patch. That fallback uses the universally available working-directory variable and leaves model-specific wording to preset personas, so preset-less subagents can assemble it safely.
 
 #### KV Cache effect
 
-The persona override is a static prefix; each inserted row's package owns its own prefix effect.
+The fallback persona is a static prefix; each inserted row's package owns its own prefix effect.
 
 ## Known Limitations and Deferred Work
 

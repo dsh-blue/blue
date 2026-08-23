@@ -43,7 +43,10 @@
  * command is still in flight — `/theme` disposes the theme provider between
  * `execute()` and its continuation — so the submit continuation gates on
  * the fiber's unload flag before touching the hint; a late notice is moot
- * anyway, since the reloaded fiber repaints.
+ * anyway, since the reloaded fiber repaints. Command result notices are
+ * flattened to one display row before truncation: an upstream command can
+ * return multi-line status text, but embedded line breaks must never escape
+ * the screen's one-string-per-terminal-row contract.
  *
  * @module @dsh-blue/blue-interaction/input-plugin
  */
@@ -164,7 +167,12 @@ class HintLine implements BlueComponent {
    */
   render(width: number): string[] {
     if (this.text === undefined) return []
-    return [this.colors.muted(this.components.truncateToWidth(this.text, width))]
+    const singleLine = this.text
+      .split(/\r\n?|\n/u)
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .join(' · ')
+    return [this.colors.muted(this.components.truncateToWidth(singleLine, width))]
   }
 }
 

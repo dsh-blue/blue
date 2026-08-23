@@ -4,7 +4,7 @@ Implementation detail for this package (the user-facing surface is `README.md`/`
 
 ## Editor and hint line
 
-The bottom input editor (`src/input-plugin.ts`) is the pi-tui Editor behind `ctx.blueComponents.createEditor` plus a separate hint-line component. The editor mounts with `paddingX: 4` and the `>` prompt symbol (feeding the core rounded-box chrome); slash-prefixed input recolors the frame `primary` and anything else restores the neutral border (onChange chain). The hint line carries only its transient tiers — one-shot notices and slash discovery in `muted`; an empty notice clears the row instead of retaining an empty styled component. (A persistent key-affordance row was retired by the S15 dogfood verdict: kimi teaches affordances through the footer's rotating tips, which already cover every fragment the row carried.)
+The bottom input editor (`src/input-plugin.ts`) is the pi-tui Editor behind `ctx.blueComponents.createEditor` plus a separate hint-line component. The editor mounts with `paddingX: 4` and the `>` prompt symbol (feeding the core rounded-box chrome); slash-prefixed input recolors the frame `primary` and anything else restores the neutral border (onChange chain). The hint line carries only its transient tiers — one-shot notices and slash discovery in `muted`; an empty notice clears the row instead of retaining an empty styled component. Command result text is flattened across CR/LF boundaries with ` · ` before width truncation: one component row may never contain embedded physical terminal lines (the `/goal` duplicate editor/footer regression). (A persistent key-affordance row was retired by the S15 dogfood verdict: kimi teaches affordances through the footer's rotating tips, which already cover every fragment the row carried.)
 
 ## Commands and aliases
 
@@ -59,7 +59,7 @@ When the optional `blueContextFeature` service is present, `/context` consumes i
 
 `src/session-export.ts` registers `/export [full] [path]` (writes the current session as Markdown) and `/copy` (pushes the last assistant message's text through `src/clipboard-write.ts`). `/copy` follows the kimi order:
 
-1. **OSC 52 first** — core's `terminal-escape.ts` emitter (`buildClipboardOsc52` + `emitClipboardOsc52`, both legs injectable). The escape is pure stdout output the terminal consumes without rendering, so it neither touches scrollback nor pi-tui's differential frames; tmux runs wrap in the DCS passthrough with doubled ESC.
+1. **OSC 52 first** — core's `terminal-escape.ts` emitter (`buildClipboardOsc52` + `emitClipboardOsc52`, both legs injectable). The escape is pure stdout output the terminal consumes without rendering, so it neither touches scrollback nor pi-tui's differential frames. It stays bare inside tmux so `set-clipboard on|external` can consume and forward it; DCS passthrough is not used because its separate `allow-passthrough` option is off by default.
 2. **Then the platform tools over stdin** (wl-copy → xclip, pbcopy, clip.exe) as the verified path with the paste-image timeout.
 
 A tool win reports `native`; an all-tools-fail with the escape out reports the unverified `copied via terminal escape sequence` notice; both legs dead throws the aggregate `no clipboard tool is available (…)` failure with ENOENT classified as "not installed".

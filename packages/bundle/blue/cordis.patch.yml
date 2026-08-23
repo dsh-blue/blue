@@ -9,7 +9,7 @@
 - id: system-prompt
   config:
     persona: >-
-      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+      You are a coding agent. Your working directory is {{cwd}}.
 
 # The shared module-reload HMR row stays off; the launcher's watch-only
 # fallback still keeps the user patch layers live until the run exits.
@@ -32,8 +32,9 @@
 # subagents), the sandbox and approval stack, persistence, the model route,
 # the token meter, shell-env, `tool-subagent-report` (registers a continuable
 # setup on the subagent singleton, which is not scope-aware), and the
-# `system-prompt` persona row (the fallback for agents bound to no preset —
-# its text matches the `standard` preset's persona verbatim).
+# `system-prompt` persona row (the fallback for agents bound to no preset).
+# The fallback uses only `cwd`: spawned children can reach this row without
+# inheriting the preset's `model` prompt variable.
 #
 # Keep this list in lockstep with the web-app bundle's disable list: when the
 # base grows a new agent-plane row, both surfaces must rule on it.

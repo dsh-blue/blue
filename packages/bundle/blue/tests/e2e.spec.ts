@@ -3445,6 +3445,13 @@ describe('blue whole-tree e2e', () => {
     })
     const agent = await currentAgent(tree)
     const planMode = tree.ctx.get('planMode')!
+    agent.session.append('todo/write', {
+      todos: Array.from({ length: 6 }, (_, index) => ({
+        content: `plan-task-${index}`,
+        status: index === 0 ? 'in_progress' as const : 'pending' as const,
+      })),
+    })
+    await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('plan-task-0') })
     // /plan <message> enters plan mode and steers the draft request.
     await expect(executeCommand(tree, agent, '/plan draft it')).resolves.toMatchObject({ kind: 'success' })
     await vi.waitFor(async () => {
@@ -3454,6 +3461,7 @@ describe('blue whole-tree e2e', () => {
       expect(frame).toContain('1. Approve')
       expect(frame).toContain('2. Reject')
       expect(frame).toContain('3. Revise')
+      expect(frame).not.toContain('plan-task-0')
     })
     // The cursor seeds on the approving row.
     tree.terminal.sendInput('\r')
@@ -3462,6 +3470,7 @@ describe('blue whole-tree e2e', () => {
     expect(followUp).toContain('Plan approved')
     await agent.whenIdle()
     expect(planMode.get(agent).active).toBe(false)
+    await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('plan-task-0') })
   })
 
   it('rejects the plan through the second button and plan mode survives', async () => {

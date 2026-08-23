@@ -114,6 +114,12 @@ describe('blue bundle', () => {
     expect(patch.indexOf('- id: agent-presets')).toBeLessThan(patch.indexOf('- id: blue-core'))
   })
 
+  it('keeps the host fallback persona valid for agents without preset model variables', () => {
+    const persona = /^- id: system-prompt\n {2}config:\n {4}persona: >-\n {6}([^\n]+)$/m.exec(patch)?.[1]
+    expect(persona).toBe('You are a coding agent. Your working directory is {{cwd}}.')
+    expect(persona).not.toContain('{{model}}')
+  })
+
   it('disables exactly the web-app bundle\'s thin-host agent-plane list, every id addressing a real base row', () => {
     // The thin-host migration mirrors the harness's own ruling: the set of
     // rows the web-app bundle disables must equal Blue's, so when the base

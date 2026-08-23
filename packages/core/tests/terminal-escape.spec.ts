@@ -1,7 +1,7 @@
 /**
  * Tests for the terminal escape emitters: the OSC 52 clipboard-copy
- * sequence (pure builder with plain and tmux-wrapped arms, the tmux
- * detection default, and the injectable-process write path with its TTY
+ * sequence (pure builder with plain and bare-tmux arms, the tmux detection
+ * default, and the injectable-process write path with its TTY
  * gate and write-failure containment) and the OSC 0 window-title sequence
  * (sanitization, the code-point cap, and the sequence shape).
  */
@@ -37,13 +37,10 @@ describe('buildClipboardOsc52', () => {
     expect(sequence).toBe(`\x1b]52;c;${Buffer.from('hi', 'utf8').toString('base64')}\x07`)
   })
 
-  it('wraps the sequence in the tmux DCS passthrough with doubled ESC bytes', () => {
+  it('keeps the sequence bare inside tmux so set-clipboard can consume it', () => {
     const sequence = buildClipboardOsc52('hi', true)
-    const inner = `\x1b]52;c;${Buffer.from('hi', 'utf8').toString('base64')}\x07`
-    expect(sequence).toBe(`\x1bPtmux;${inner.replaceAll('\x1b', '\x1b\x1b')}\x1b\\`)
-    // The wrapper opens with a single DCS start and closes with ST.
-    expect(sequence.startsWith('\x1bPtmux;')).toBe(true)
-    expect(sequence.endsWith('\x1b\\')).toBe(true)
+    expect(sequence).toBe(`\x1b]52;c;${Buffer.from('hi', 'utf8').toString('base64')}\x07`)
+    expect(sequence).not.toContain('\x1bPtmux;')
   })
 
   it('encodes multi-byte text as UTF-8 before base64', () => {
@@ -51,13 +48,14 @@ describe('buildClipboardOsc52', () => {
     expect(sequence).toBe(`\x1b]52;c;${Buffer.from('你好', 'utf8').toString('base64')}\x07`)
   })
 
-  it('defaults the tmux arm from $TMUX', () => {
+  it('keeps the default output bare when $TMUX is set', () => {
     const saved = process.env.TMUX
     try {
       delete process.env.TMUX
-      expect(buildClipboardOsc52('x')).not.toContain('Ptmux;')
+      const expected = `\x1b]52;c;${Buffer.from('x', 'utf8').toString('base64')}\x07`
+      expect(buildClipboardOsc52('x')).toBe(expected)
       process.env.TMUX = '/tmp/tmux-1000/default,123,0'
-      expect(buildClipboardOsc52('x')).toContain('Ptmux;')
+      expect(buildClipboardOsc52('x')).toBe(expected)
     } finally {
       if (saved === undefined) {
         delete process.env.TMUX

@@ -21,7 +21,8 @@
  * a session change or a settled list. A list whose every entry is completed
  * closes the pane automatically (the kimi session-event-handler rule).
  * A session without any `todo/write` renders zero rows, so the pane occupies
- * nothing.
+ * nothing. A dialog taking the editor slot also hides the pane temporarily,
+ * preserving its todo snapshot and expansion choice until the editor returns.
  *
  * @module @dsh-blue/blue-transcript/pane-todo
  */
@@ -210,6 +211,8 @@ interface TodoState {
   todos: readonly TodoItem[]
   /** Whether the pane renders the full list instead of the folded selection. */
   expanded: boolean
+  /** Whether a dialog temporarily occupies the editor slot. */
+  dialog: boolean
 }
 
 /**
@@ -220,7 +223,7 @@ interface TodoState {
  */
 function signature(state: TodoState): string {
   const list = state.todos.map(todo => `${todo.status}:${todo.content}`).join('\n')
-  return `${state.expanded ? 'expanded' : 'folded'}\n${list}`
+  return `${state.dialog ? 'dialog' : 'visible'}\n${state.expanded ? 'expanded' : 'folded'}\n${list}`
 }
 
 /**
@@ -245,6 +248,7 @@ class TodoPaneComponent implements BlueComponent {
    *   to the viewport; none when there is no list.
    */
   render(width: number): string[] {
+    if (this.state.dialog) return []
     const todos = this.state.todos
     if (todos.length === 0) return []
     if (width < TODO_MIN_WIDTH) return []
@@ -285,14 +289,15 @@ class TodoPaneComponent implements BlueComponent {
  * `setTodos` semantics). Redraws are requested only when the render
  * signature changed. Also registers the global Ctrl-T action whose handler
  * flips the expansion and forces a redraw. Unloading the fiber unmounts the
- * pane and unregisters the action.
+ * pane and unregisters the action. An editor-slot dialog suppresses rendering
+ * without detaching the session feed or resetting expansion.
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
   const colors = ctx.blueTheme.colors
   const components = ctx.blueComponents
   const screen = ctx.blueScreen
-  const state: TodoState = { todos: [], expanded: false }
+  const state: TodoState = { todos: [], expanded: false, dialog: false }
   let rendered = signature(state)
   let detach: (() => void) | undefined
 
@@ -342,6 +347,12 @@ export function apply(ctx: Context): void {
   const current = ctx.get('blueSession')?.current
   if (current) attach(current)
   ctx.on('blue/session-changed', attach)
+  ctx.on('blue/editor-slot-swapped', (occupied) => {
+    if (state.dialog === occupied) return
+    state.dialog = occupied
+    rendered = signature(state)
+    screen.requestRender()
+  })
 
   // Effect-bound so unloading this fiber unregisters the action.
   ctx.effect(() => ctx.blueKeymap.register([{

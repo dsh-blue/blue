@@ -8,10 +8,13 @@
  * The clipboard half: the terminal puts the payload on the *local*
  * clipboard (terminals without OSC 52 support silently ignore it — the
  * write is always safe but its effect is unverifiable from this side,
- * which is why callers report the method as "unverified"). The title half:
- * the terminal renames its window/tab (inside tmux the sequence becomes
- * the tmux window name instead — tmux consumes OSC 0 rather than
- * swallowing it, so unlike OSC 52 no DCS passthrough wrapping is needed).
+ * which is why callers report the method as "unverified"). Modern tmux
+ * consumes the bare OSC 52 form through `set-clipboard on|external` and
+ * forwards it with the outer terminal's clipboard capability. A tmux DCS
+ * passthrough wrapper is deliberately not used: it is governed by the
+ * separate `allow-passthrough` option, which is off by default. The title
+ * half renames the terminal window/tab (inside tmux it becomes the tmux
+ * window name).
  *
  * Neither sequence produces visible output — no cursor motion, no cell
  * paint — so neither interacts with pi-tui's differential rendering; the
@@ -40,16 +43,14 @@ export interface BlueEscapeProcess {
  * clipboard.
  * @param text - the text to copy.
  * @param insideTmux - whether the process runs inside tmux (detected from
- * `$TMUX` by default): tmux swallows bare OSC sequences, so inside tmux
- * the sequence is wrapped in a DCS passthrough with doubled ESC bytes.
+ * `$TMUX` by default). Retained for call-site compatibility; both paths use
+ * the bare sequence because tmux handles OSC 52 without DCS passthrough.
  * @returns the escape sequence, ready for a single stdout write.
  */
 export function buildClipboardOsc52(text: string, insideTmux: boolean = (process.env.TMUX ?? '').length > 0): string {
+  void insideTmux
   const payload = Buffer.from(text, 'utf8').toString('base64')
-  const sequence = `${ESC}]52;c;${payload}${BEL}`
-  if (!insideTmux) return sequence
-  const escaped = sequence.replaceAll(ESC, `${ESC}${ESC}`)
-  return `${ESC}Ptmux;${escaped}${ESC}\\`
+  return `${ESC}]52;c;${payload}${BEL}`
 }
 
 /**
