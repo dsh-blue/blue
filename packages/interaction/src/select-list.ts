@@ -76,6 +76,12 @@ export interface SelectListPanelOptions {
   readonly onSelect: (row: SelectRow) => void
   /** Enter on a `disabled` row; absent handlers ignore the press. */
   readonly onBlockedSelect?: (row: SelectRow) => void
+  /**
+   * The cursor moved onto a new row (Up/Down). Absent by default — the
+   * first consumer is the `/theme` picker, whose live preview applies the
+   * highlighted palette.
+   */
+  readonly onHighlight?: (row: SelectRow) => void
   /** Escape. */
   readonly onCancel: () => void
 }
@@ -192,10 +198,12 @@ export class SelectListPanel implements BlueFocusable {
     const view = this.filtered()
     if (keymap.matches(data, ACTION_MOVE_UP)) {
       this.cursor = cycle(this.cursor, view.length, -1)
+      this.notifyHighlight()
       return
     }
     if (keymap.matches(data, ACTION_MOVE_DOWN)) {
       this.cursor = cycle(this.cursor, view.length, 1)
+      this.notifyHighlight()
       return
     }
     if (keymap.matches(data, ACTION_SUBMIT)) {
@@ -232,6 +240,12 @@ export class SelectListPanel implements BlueFocusable {
 
   /** No cached render state. */
   invalidate(): void {}
+
+  /** Announce the row under the cursor to the `onHighlight` subscriber. */
+  private notifyHighlight(): void {
+    const row = this.filtered()[this.cursor]
+    if (row !== undefined) this.options.onHighlight?.(row)
+  }
 
   /**
    * Render the framed dialog: the visible window of rows with the

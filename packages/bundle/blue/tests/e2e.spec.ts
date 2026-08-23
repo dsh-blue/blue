@@ -1319,7 +1319,7 @@ describe('blue whole-tree e2e', () => {
         const rendered = tree.terminal.written.slice(beforeSwitch).join('')
         expect(rendered).toContain('show palette')
         expect(rendered).toContain('palette reply')
-        expect(rendered).toContain('\x1b[1m\x1b[38;2;46;63;184m» ')
+        expect(rendered).toContain('\x1b[1m\x1b[38;2;31;62;194m» ')
       })
     } finally {
       await backToDark(tree, agent)
@@ -1722,7 +1722,11 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('→ /theme') })
     await waitForRender()
     tree.terminal.sendInput('\r')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('themes:') })
+    // A bare /theme opens the theme picker: wait for the panel frame,
+    // then Escape back to the editor before recalling.
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('esc revert') })
+    tree.terminal.sendInput('\x1b')
+    await waitForRender()
     tree.terminal.sendInput('\x1b[A')
     const frame = await fullFrame(tree.terminal)
     expect(frame).toContain('theme')

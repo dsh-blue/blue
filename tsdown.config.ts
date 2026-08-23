@@ -13,7 +13,7 @@ export default defineConfig({
   },
   // `bin` is the cli package's launcher entry (S37): the only name in this
   // list its workspace owns, so the shared brace form keeps working.
-  entry: ['lib/types/{index,invariant,chrome,startup,theme-dark,theme-light,theme-auto,theme-custom,editor-plus,status-basic,status-cwd,status-git,status-context,status-title,pane-activity,pane-todo,pane-btw,pane-queue,attachments,paste-image,intent-diff,intent-terminal,banner,banner-content,pane-agents,mode-status,bin}.js'],
+  entry: ['lib/types/{index,invariant,chrome,startup,theme-dark,theme-light,theme-ocean,theme-paper,theme-auto,theme-custom,editor-plus,status-basic,status-cwd,status-git,status-context,status-title,pane-activity,pane-todo,pane-btw,pane-queue,attachments,paste-image,intent-diff,intent-terminal,banner,banner-content,pane-agents,mode-status,bin}.js'],
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',

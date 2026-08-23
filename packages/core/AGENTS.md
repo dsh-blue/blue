@@ -43,14 +43,16 @@ The pi-tui-backed component factory and width pure functions:
 
 ## Themes and markdown rendering
 
-The v2 28-token palette maps onto the component themes: selection/cursor rows take `primary`, hints take `textMuted`, markdown headings carry their level through bold, unordered markers normalize to `•`, and fenced code goes through cli-highlight behind the markdown `highlightCode` hook. The internal `src/highlight.ts` wrapper gates on `supportsLanguage`, resets cli-highlight's red scopes to the palette base, and falls back to the raw split so line count never changes.
+The 32-key palette maps onto the component themes: selection/cursor rows take `primary`, hints take `textMuted`, markdown headings carry their level through bold, unordered markers normalize to `•`, and fenced code goes through cli-highlight behind the markdown `highlightCode` hook. The internal `src/highlight.ts` wrapper gates on `supportsLanguage`, resets cli-highlight's red scopes to the palette base, and falls back to the raw split so line count never changes.
 
 The markdown adapter carries a horizontal-rule post-process: pi-tui caps rules at 80 columns regardless of the render width, so the adapter re-paints the capped rule to the full render width (exact string match on the theme's known output, tolerating row padding — fenced code lines keep their own styling).
 
-The `blueTheme` contract lives in `src/types.ts`; implementations ship as four subpath plugins, all built on the internal `src/theme-palette.ts` palette helpers:
+The `blueTheme` contract lives in `src/types.ts`; implementations ship as six subpath plugins, all built on the internal `src/theme-palette.ts` palette helpers:
 
-- `./theme-dark` (`src/theme-dark.ts`, `blue-theme-dark`) — the built-in 28-token dark palette, the plain-baseline default.
+- `./theme-dark` (`src/theme-dark.ts`, `blue-theme-dark`) — the built-in dark palette, the plain-baseline default.
 - `./theme-light` (`src/theme-light.ts`, `blue-theme-light`).
+- `./theme-ocean` (`src/theme-ocean.ts`, `blue-theme-ocean`) — the blue-tinted dark palette.
+- `./theme-paper` (`src/theme-paper.ts`, `blue-theme-paper`) — the warm light palette.
 - `./theme-auto` (`src/theme-auto.ts`, `blue-theme-auto`) — picks dark/light from `blueTerminalInfo` and re-provides on `'blue/terminal-theme-changed'`.
 - `./theme-custom` (`src/theme-custom.ts`, `blue-theme-custom`) — a schemastery-validated JSON file palette over a built-in base.
 

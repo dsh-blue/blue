@@ -1,6 +1,6 @@
 {
   "name": "@dsh-blue/blue-core",
-  "description": "Blue terminal UI core: the tree's only @earendil-works/pi-tui adapter, owning terminal lifecycle and the blueScreen/blueKeymap/blueTerminalInfo/blueComponents services plus the blue-theme-dark/light/auto/custom palette entries",
+  "description": "Blue terminal UI core: the tree's only @earendil-works/pi-tui adapter, owning terminal lifecycle and the blueScreen/blueKeymap/blueTerminalInfo/blueComponents services plus the blue-theme-dark/light/ocean/paper/auto/custom palette entries",
   "version": "0.1.0-rc.5",
   "publishConfig": {
     "access": "public"
@@ -24,6 +24,14 @@
     "./theme-light": {
       "types": "./lib/types/theme-light.d.ts",
       "default": "./lib/theme-light.js"
+    },
+    "./theme-ocean": {
+      "types": "./lib/types/theme-ocean.d.ts",
+      "default": "./lib/theme-ocean.js"
+    },
+    "./theme-paper": {
+      "types": "./lib/types/theme-paper.d.ts",
+      "default": "./lib/theme-paper.js"
     },
     "./theme-auto": {
       "types": "./lib/types/theme-auto.d.ts",

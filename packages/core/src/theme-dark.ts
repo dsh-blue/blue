@@ -44,12 +44,19 @@ const DARK_FOREGROUNDS = {
   diffRemovedStrong: '#f08585',
   diffGutter: '#6b6b6b',
   diffMeta: '#888888',
+  modelHighlight: '#8ca8ff',
 } as const
+
+/** The dark banner logo sweep: deep navy up top to sky at the tail. */
+const DARK_LOGO_GRADIENT = [
+  '#2a3bd0', '#3247db', '#3b53e7', '#445ff2', '#4d6bfe',
+  '#617cfe', '#758efe', '#899ffe', '#9db1ff',
+] as const
 
 const DARK_SELECTED_BG = '#3a3a4a'
 
 /** The built-in dark palette as a frozen semantic color table. */
-export const DARK_COLORS: BlueSemanticColors = colorsFromForegrounds(DARK_FOREGROUNDS, DARK_SELECTED_BG)
+export const DARK_COLORS: BlueSemanticColors = colorsFromForegrounds(DARK_FOREGROUNDS, DARK_SELECTED_BG, DARK_LOGO_GRADIENT)
 
 /**
  * The built-in `blueTheme` provider. Exposes the frozen semantic color
