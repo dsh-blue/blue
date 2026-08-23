@@ -111,9 +111,18 @@ importers:
       '@dsh-blue/blue-app':
         specifier: workspace:^
         version: link:../../app
+      '@dsh-blue/blue-context':
+        specifier: workspace:^
+        version: link:../../context
       '@dsh-blue/blue-core':
         specifier: workspace:^
         version: link:../../core
+      '@dsh-blue/blue-frontend':
+        specifier: workspace:^
+        version: link:../../frontend
+      '@dsh-blue/blue-harness-adapter':
+        specifier: workspace:^
+        version: link:../../harness-adapter
       '@dsh-blue/blue-interaction':
         specifier: workspace:^
         version: link:../../interaction

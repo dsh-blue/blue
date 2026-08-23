@@ -76,6 +76,7 @@ describe('blue bundle', () => {
       'blue-status-title',
       'blue-status-mode',
       'blue-status-context',
+      'blue-context',
       'blue-intent-diff',
       'blue-intent-terminal',
       'blue-pane-activity',

@@ -14,6 +14,36 @@ export function applyContextEvent(state: ContextState, event: ContextEvent): Con
   if (event.type === 'usage' && event.usage !== undefined) { const samples = { ...state.samples, [sampleKey(event.usage)]: event.usage }; return { usage: { ...state.usage, ...sumSamples(samples) }, samples } }
   if (event.type === 'pressure') return { ...state, usage: { ...state.usage, ...(event.projectedTokens ?? event.pressureTokens) === undefined ? {} : { used: event.projectedTokens ?? event.pressureTokens }, ...(event.contextWindow === undefined ? {} : { window: event.contextWindow }) } }
   if (event.type === 'breakdown' && event.systemTokens !== undefined && event.toolsTokens !== undefined && event.messageTokens !== undefined) return { ...state, usage: { ...state.usage, breakdown: { system: event.systemTokens, tools: event.toolsTokens, messages: event.messageTokens } } }
+  if (event.type === 'official' && event.official !== undefined) {
+    const official = event.official
+    const used = official.pressure?.projectedTokens ?? official.pressure?.pressureTokens
+    if (official.complete === true) {
+      return {
+        ...state,
+        usage: {
+          input: official.usage?.input ?? 0,
+          output: official.usage?.output ?? 0,
+          cacheRead: official.usage?.cacheRead ?? 0,
+          cacheWrite: official.usage?.cacheWrite ?? 0,
+          ...(used === undefined ? {} : { used }),
+          ...(official.pressure?.contextWindow === undefined ? {} : { window: official.pressure.contextWindow }),
+          ...(official.breakdown === undefined ? {} : { breakdown: official.breakdown }),
+          ...(official.timeline === undefined ? {} : { timeline: official.timeline }),
+        },
+      }
+    }
+    return {
+      ...state,
+      usage: {
+        ...state.usage,
+        ...(official.usage === undefined ? {} : official.usage),
+        ...(used === undefined ? {} : { used }),
+        ...(official.pressure?.contextWindow === undefined ? {} : { window: official.pressure.contextWindow }),
+        ...(official.breakdown === undefined ? {} : { breakdown: official.breakdown }),
+        ...(official.timeline === undefined ? {} : { timeline: official.timeline }),
+      },
+    }
+  }
   return state
 }
 export class ContextProjection {
@@ -39,6 +69,6 @@ export class ContextProjection {
     }
   }
   detach(): void { this.bridge.detach(); this.sessionId = undefined; this.state = undefined; this.watermark = -1 }
-  dispose(): void { this.bridge.dispose(); this.listeners.clear(); this.sessionId = undefined; this.state = undefined }
+  dispose(): void { this.bridge.dispose(); this.source?.dispose?.(); this.listeners.clear(); this.sessionId = undefined; this.state = undefined }
   private emit(): void { const snapshot = this.snapshot; if (snapshot !== undefined) for (const listener of this.listeners) listener(snapshot) }
 }

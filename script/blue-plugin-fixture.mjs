@@ -126,6 +126,31 @@ contextListener?.({ sessionId: 's1', seq: 4, event: { type: 'pressure', projecte
 feature.dispose()
 executed.push('headless projection replay/resume')
 
+let officialChanged
+let officialSeq = 7
+let officialValues = {
+  tokenUsage: { uncachedInputTokens: 32, outputTokens: 4, cacheReadTokens: 8, cacheWriteTokens: 1 },
+  contextPressure: { projectedTokens: 48, contextWindow: 1024 },
+  contextBreakdown: { systemTokens: 2, toolsTokens: 3, messageTokens: 40 },
+  contextTimeline: { current: { system: 2, tools: 3, user: 10, inject: 0, assistant: 20, tool: 5, total: 40 }, requests: [{ turn: 1, step: 1, time: 1, seq: 6, total: 40 }], events: [], droppedNodes: 0, images: 0 },
+}
+const sessionHandle = {}
+const officialSource = new context.OfficialContextSource({
+  snapshot: () => ({ asOfSeq: officialSeq, values: officialValues }),
+  onChanged: listener => { officialChanged = listener; return () => { officialChanged = undefined } },
+}, sessionId => sessionId === 'official' ? sessionHandle : undefined)
+const officialFeature = new context.ContextFeature(officialSource)
+await officialFeature.attach('official')
+if (officialFeature.snapshot?.facts.timeline?.requests.length !== 1 || officialFeature.snapshot.facts.input !== 32) throw new Error('official context projection baseline drifted')
+officialSeq = 8
+officialValues = { ...officialValues }
+delete officialValues.contextTimeline
+officialChanged?.(sessionHandle, 'tokenUsage', officialValues.tokenUsage, officialSeq)
+await new Promise(resolve => setImmediate(resolve))
+if (officialFeature.snapshot?.facts.timeline !== undefined) throw new Error('official context projection unload stayed stale')
+officialFeature.dispose()
+executed.push('official session-projection baseline/push/unload')
+
 const model = context.buildContextModel({ sessionId: 's1', watermark: 3, facts: { input: 123456, output: 7890, cacheRead: 42, cacheWrite: 8, used: 120, window: 1000, breakdown: { system: 1, tools: 2, messages: 3 } } })
 const views = [...model.panel.view ? [model.panel.view] : [], ...model.status.views]
 for (const width of [20, 40, 80, 120]) {
@@ -136,4 +161,4 @@ for (const width of [20, 40, 80, 120]) {
 }
 executed.push('width scan 20/40/80/120')
 observations.push(`installed ${packages.size} local tarballs`, 'provider/action/projection/renderer contracts executed')
-console.log(JSON.stringify({ package: manifest.name, fixtureRoot, installed: install, independentInstall: existsSync(join(fixtureRoot, 'node_modules')), scenarios: ['headless projection replay/resume', 'action abort and stale-result rejection', 'provider swap and plain fallback', 'width scan 20/40/80/120', 'unload followed by late event'], executed, observations }, null, 2))
+console.log(JSON.stringify({ package: manifest.name, fixtureRoot, installed: install, independentInstall: existsSync(join(fixtureRoot, 'node_modules')), scenarios: ['headless projection replay/resume', 'official session-projection baseline/push/unload', 'action abort and stale-result rejection', 'provider swap and plain fallback', 'width scan 20/40/80/120', 'unload followed by late event'], executed, observations }, null, 2))

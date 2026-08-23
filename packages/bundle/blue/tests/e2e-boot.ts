@@ -50,6 +50,7 @@ import * as startupPlugin from '../../../app/src/startup.ts'
 import { startBlueTerminal} from '../../../core/src/terminal.ts'
 import { FakeTerminal} from '../../../core/tests/fake-terminal.ts'
 import * as interactionPlugin from '../../../interaction/src/index.ts'
+import * as contextPlugin from '../../../context/src/index.ts'
 import { clearDraft, stashHistory} from '../../../interaction/src/draft-stash.ts'
 import * as editorPlusPlugin from '../../../interaction/src/editor-plus.ts'
 import * as attachmentsPlugin from '../../../interaction/src/attachments.ts'
@@ -198,6 +199,7 @@ interface BlueE2EHooks {
   statusGitApply: typeof statusGitPlugin.apply
   statusTitleApply: typeof statusTitlePlugin.apply
   statusContextApply: typeof statusContextPlugin.apply
+  contextApply: typeof contextPlugin.apply
   modeStatusApply: typeof modeStatusPlugin.apply
   paneActivityApply: typeof paneActivityPlugin.apply
   paneQueueApply: typeof paneQueuePlugin.apply
@@ -251,6 +253,8 @@ export async function bootBlue(argv: string[], options: {
    * the production path, the fold without it is the degraded host's.
    */
   sessionProjections?: boolean
+  /** Explicitly enable the production-disabled F3 Blue context row. */
+  frontendContext?: boolean
   /**
    * The fixture presets the roster's temp root ships, replacing the default
    * single empty composition (which keeps every other case's tool surface
@@ -321,6 +325,7 @@ export async function bootBlue(argv: string[], options: {
     statusGitApply: statusGitPlugin.apply,
     statusTitleApply: statusTitlePlugin.apply,
     statusContextApply: statusContextPlugin.apply,
+    contextApply: contextPlugin.apply,
     modeStatusApply: modeStatusPlugin.apply,
     paneActivityApply: paneActivityPlugin.apply,
     paneQueueApply: paneQueuePlugin.apply,
@@ -461,6 +466,13 @@ export const name = 'blue-status-context'
 export const inject = ['blueStatus', 'blueScreen', 'blueTheme']
 export const apply = ctx => globalThis.__blueE2E.statusContextApply(ctx)
 `)}`,
+    ...(options.frontendContext === true ? [
+      '- id: blue-context',
+      `  name: ${fixture('blue-context.mjs', `
+export const name = 'blue-context'
+export const apply = ctx => globalThis.__blueE2E.contextApply(ctx)
+`)}`,
+    ] : []),
     // The S24a mode badge row mirrors cordis.patch.yml: display-only fiber
     // reading the yolo WeakMap and the planMode controller.
     '- id: blue-status-mode',

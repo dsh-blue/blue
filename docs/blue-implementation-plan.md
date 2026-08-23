@@ -45,6 +45,8 @@
 
 验收：数据和 watermark 与 Harness/Web 语义一致；CJK/窄终端通过 width contract；真实 Blue profile 完成 smoke 和用户 dogfood。
 
+当前实现：`packages/context` 已通过窄 structural adapter 直读官方 `sessionProjections.snapshot/onChanged`，消费 dsh-context 的 `contextTimeline` 及 token-meter 的三个 projection key；同 seq 多 key 经 microtask 合并后读取一致 snapshot，baseline/subscription 缝隙有 buffer，domain/Fiber unload 会清除旧 timeline。`FrontendPanel` 是 `/context` 的 TUI consumer，旧 `InfoPanel` 保持 fallback。真实 upstream fixture `pnpm fixture:context-upstream -- --upstream <checkout>` 已对 `dsh-context@0.25.3` 验证四 key baseline、push、domain unload 和 Blue unload。bundle 中 `blue-context` 行仍 disabled，等待专用 profile 的用户 live acceptance。
+
 ### F4：session runtime 和 dsh-remote
 
 实现 projection registry、action coordinator、current-session binding、dsh-remote session/proxy adapter，验证 attach/detach、seq resume、write lease、approval/question bridge。

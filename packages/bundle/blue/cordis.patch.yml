@@ -268,6 +268,15 @@
     - id: blue-status-context
       name: '@dsh-blue/blue-transcript/status-context'
 
+    # Frontend-runtime context slice (F3): consumes the official
+    # session-projection read face and publishes a renderer-neutral panel.
+    # It stays disabled on the production bundle until the dedicated
+    # blue-frontend-runtime profile receives live acceptance; `/context`
+    # continues through the legacy facts reader while disabled.
+    - id: blue-context
+      name: '@dsh-blue/blue-context'
+      disabled: true
+
     # Diff render intent: registers the 'diff' entry in the transcript's
     # blueIntents registry, so tool items whose presentCall/presentResult
     # views carry card:'diff' render as titled per-file unified diffs

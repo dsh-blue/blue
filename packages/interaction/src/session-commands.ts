@@ -17,6 +17,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
+import type { Action, PanelModel } from '@dsh-blue/blue-frontend'
 import { BLUE_VERSION } from '@dsh-blue/blue-transcript/banner-content'
 // Empty type imports carry the `commands` merge the registration uses and
 // the app-owned `blueSession` merge every handler reads.
@@ -24,6 +25,7 @@ import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@dsh-blue/blue-app'
 import type { InfoRow, InfoSection, InfoSegment } from './info-panel.ts'
 import { InfoPanel } from './info-panel.ts'
+import { FrontendPanel } from './frontend-panel.ts'
 import { displayServices } from './display-services.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
 import {
@@ -52,6 +54,16 @@ export interface StatusModelFacts {
   readonly provider: string
   readonly model: string
   readonly effort?: string
+}
+
+interface ContextFeatureFace {
+  readonly model: { readonly panel: PanelModel } | undefined
+  subscribe(listener: () => void): () => void
+  execute(action: Action): Promise<unknown>
+}
+
+function contextFeature(ctx: Context): ContextFeatureFace | undefined {
+  return (ctx as unknown as { get(name: string): unknown }).get('blueContextFeature') as ContextFeatureFace | undefined
 }
 
 /**
@@ -431,6 +443,24 @@ export function registerSessionCommands(ctx: Context): () => void {
     const display = displayServices(ctx)
     if (display === undefined) {
       return { kind: 'error', text: 'context panel is unavailable: the Blue screen is not mounted' }
+    }
+    const projected = contextFeature(ctx)
+    if (projected?.model !== undefined) {
+      const cleanups: Array<() => void> = []
+      const close = (): void => {
+        for (const cleanup of cleanups.splice(0)) cleanup()
+      }
+      const panel = new FrontendPanel({
+        keymap: display.keymap,
+        theme: display.theme,
+        components: display.components,
+        model: () => projected.model?.panel ?? { kind: 'panel', mode: 'error', title: 'Context', view: { kind: 'text', text: 'context unavailable' } },
+        onAction: async action => { await projected.execute(action) },
+        onClose: close,
+      })
+      cleanups.push(mountEditorReplacement(panel))
+      cleanups.push(projected.subscribe(() => panel.invalidate()))
+      return { kind: 'success' }
     }
     const facts = readUsageFacts(ctx, agent)
     const model = readModelFacts(ctx, agent) ?? { provider: 'unknown', model: 'not set' }

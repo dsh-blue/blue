@@ -35,6 +35,7 @@ import { EditorModelService } from './editor-model.ts'
 // ctx.blueComponents.createSelectList) and is no longer exported.
 export { BluePanel } from './select.ts'
 export { CommandModelService } from './command-model.ts'
+export { FrontendPanel } from './frontend-panel.ts'
 export { EditorModelService } from './editor-model.ts'
 
 /** Stable Cordis plugin name. */

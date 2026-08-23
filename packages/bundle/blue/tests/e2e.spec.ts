@@ -2699,6 +2699,32 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(stripSgr(resumed.terminal.output)).toContain('64.2k') })
   })
 
+  it('/context consumes the optional frontend-runtime model over the official projection service', async () => {
+    const usageScript: StreamChunk[] = [
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'text-delta', index: 0, text: 'frontend context reply' },
+      { type: 'block-end', index: 0, block: { type: 'text', text: 'frontend context reply' } },
+      { type: 'usage', usage: { inputTokens: 2048, outputTokens: 32, cacheReadTokens: 1024 } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    const tree = await bootBlue([], { script: [usageScript], contextWindow: 8192, sessionProjections: true, frontendContext: true })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'render official context')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await agent.whenIdle()
+    const feature = (tree.ctx as unknown as { get(name: string): { model?: unknown } | undefined }).get('blueContextFeature')
+    await vi.waitFor(() => { expect(feature?.model).toBeDefined() })
+    await expect(executeCommand(tree, agent, '/context')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('usage')
+      expect(frame).toContain('input: 2k')
+      expect(frame).toContain('context pressure')
+      expect(frame).toContain('composition')
+    })
+    tree.terminal.sendInput('\x1b')
+  })
+
   it('/context falls back to the assistant fold without the projection family', async () => {
     const usageScript: StreamChunk[] = [
       { type: 'block-start', index: 0, blockType: 'text' },

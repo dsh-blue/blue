@@ -41,7 +41,10 @@
     "@deepseek-ai/dsh-mcp-client": "0.1.1-rc.2",
     "@deepseek-ai/dsh-session-title-all-prompts-llm": "0.1.1-rc.2",
     "@dsh-blue/blue-app": "workspace:^",
+    "@dsh-blue/blue-context": "workspace:^",
     "@dsh-blue/blue-core": "workspace:^",
+    "@dsh-blue/blue-frontend": "workspace:^",
+    "@dsh-blue/blue-harness-adapter": "workspace:^",
     "@dsh-blue/blue-interaction": "workspace:^",
     "@dsh-blue/blue-transcript": "workspace:^"
   },
