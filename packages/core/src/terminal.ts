@@ -1,0 +1,558 @@
+/**
+ * L0 pi-tui adapter: the only code in the tree that constructs pi-tui
+ * renderers and touches the process terminal. Owns the terminal lifecycle
+ * (start, drain, stop) and the stable TUI reference behind which a future
+ * renderer hot-swap can happen without consumers re-resolving.
+ *
+ * @module @dsh-blue/blue-core/terminal
+ */
+
+import {
+  Container,
+  ProcessTerminal,
+  ScrollView,
+  TuiAltScreen,
+  TuiMainScreen,
+  VStack,
+  type Terminal,
+  type TUI,
+  type TuiInputListener,
+} from '@earendil-works/pi-tui'
+import { clampFrame, createFileOverflowSink, defaultOverflowDirectory, type OverflowSink } from './frame-clamp.ts'
+import { buildClipboardOsc52, buildTitleOsc0 } from './terminal-escape.ts'
+import { probeTerminalBackground, backgroundFromRgb, type BlueProbeProcess } from './terminal-info.ts'
+import type { BlueComponent, BlueOverlayHandle, BlueOverlayOptions, BlueRgbColor } from './types.ts'
+
+const KEY_UP = '\x1b[A'
+const KEY_DOWN = '\x1b[B'
+const KEY_PAGE_UP = '\x1b[5~'
+const KEY_PAGE_DOWN = '\x1b[6~'
+const KEY_HOME = '\x1b[H'
+const KEY_END = '\x1b[F'
+
+/** Renderer choice kept inside core's L0 boundary. */
+export type BlueScreenMode = 'main' | 'alternate'
+
+/** Container-level width backstop used by both alternate-screen layout bands. */
+class FrameClampedContainer extends Container {
+  constructor(private readonly overflow: OverflowSink) {
+    super()
+  }
+
+  override render(width: number): string[] {
+    return clampFrame(super.render(width), width, this.overflow)
+  }
+}
+
+/**
+ * Normalize terminal wheel reports to the direction-key sequences consumed by
+ * Blue's focused components. Main-screen mode leaves mouse reporting disabled
+ * so the terminal retains native selection and scrollback. This boundary still
+ * accepts reports when a multiplexer or an embedding host enabled them.
+ * @param data - one decoded terminal input sequence.
+ * @returns an up/down key sequence for wheel input, or `undefined` when the
+ *   input is not a supported wheel report.
+ */
+export function normalizeWheelInput(data: string): string | undefined {
+  let button: number
+  if (data.length === 6 && data.startsWith('\x1b[M')) {
+    button = data.charCodeAt(3) - 32
+  } else {
+    const match = /^\x1b\[<(\d+);\d+;\d+[Mm]$/.exec(data)
+    if (match === null) return undefined
+    button = Number.parseInt(match[1]!, 10)
+  }
+  if ((button & 64) === 0) return undefined
+  const direction = button & 3
+  return direction === 0 ? KEY_UP : direction === 1 ? KEY_DOWN : undefined
+}
+
+/**
+ * The Blue-typed face of the running terminal stack. L1 services consume
+ * this; pi-tui types stay inside this module.
+ */
+export interface BlueTerminalRuntime {
+  /** Current terminal width in columns. */
+  readonly columns: number
+  /** Current terminal height in rows. */
+  readonly rows: number
+  /** The probed background luminance class, or `undefined` when the probe failed. */
+  readonly background: 'dark' | 'light' | undefined
+  /** Whether the Kitty keyboard protocol is active on the terminal. */
+  readonly kittyKeyboard: boolean
+  /** The stable TUI reference behind the runtime; core-internal (pi-tui type). */
+  readonly tui: TUI
+  /**
+   * Mount a root component on the live renderer, above every bottom-pinned
+   * component.
+   * @param component - the component to mount.
+   */
+  addChild(component: BlueComponent): void
+  /**
+   * Mount a root component pinned to the bottom of the live renderer: it
+   * renders after every component mounted through `addChild`.
+   * @param component - the component to pin.
+   * @param position - `'bottom'` renders the component below the rest of
+   *   the dock (the two-row footer shell mounts there, keeping the status
+   *   on the terminal's last rows beneath the editor and any dialog panel
+   *   that pulls up over it).
+   */
+  addBottomChild(component: BlueComponent, position?: 'bottom'): void
+  /**
+   * Unmount a root component from the live renderer.
+   * @param component - the component to unmount.
+   */
+  removeChild(component: BlueComponent): void
+  /**
+   * Move keyboard focus on the live renderer.
+   * @param component - the component to focus, or `null`.
+   */
+  setFocus(component: BlueComponent | null): void
+  scrollContent(direction: 'up' | 'down', amount?: number): boolean
+  contentChanged(): boolean
+  followContent(): void
+  setContentScrollHandler(handler: ((data: string) => boolean) | undefined): () => void
+  /**
+   * Show an overlay on the live renderer.
+   * @param component - the overlay component.
+   * @param options - positioning and sizing options.
+   * @returns the overlay's control handle.
+   */
+  showOverlay(component: BlueComponent, options?: BlueOverlayOptions): BlueOverlayHandle
+  /**
+   * Schedule a re-render of the live renderer.
+   * @param force - reset differential render state before drawing.
+   */
+  requestRender(force?: boolean): void
+  /**
+   * Suspend the renderer, run `fn` with the terminal released (raw mode off,
+   * pi-tui detached, the tty free for a child process with inherited stdio),
+   * then resume: restart the renderer, re-arm OSC 2031 notifications, and
+   * force a full repaint. The suspend is exclusive — a second call while one
+   * is in flight rejects — and refuses on a stopped runtime. If the runtime
+   * is torn down while suspended, the resume side skips the restart and the
+   * fn's settlement (value or error) propagates unchanged.
+   * @param fn - the async body owning the terminal while it is released.
+   * @returns settles with fn's outcome after the renderer resumed (or was
+   *   torn down mid-suspend).
+   */
+  suspend<T>(fn: () => Promise<T>): Promise<T>
+  /**
+   * Set the terminal's window/tab title through a sanitized OSC 0
+   * sequence. The sequence paints no cell, so it never disturbs the
+   * renderer's differential state (the OSC 52 precedent); inside tmux it
+   * becomes the tmux window name.
+   * @param title - untrusted title text; control characters are stripped
+   *   and the payload capped before the write.
+   */
+  setTitle(title: string): void
+  /**
+   * Restore the terminal: drain pending input, then stop the renderer and
+   * the underlying terminal. Idempotent.
+   * @returns settles when the terminal state is restored.
+   */
+  stop(): Promise<void>
+}
+
+/**
+ * Stable `TUI` reference for consumers while the runtime replaces the active
+ * renderer. Mirrors pi's `createInteractiveTuiReference`: property reads and
+ * method calls resolve against the current renderer at call time.
+ * @param getTui - accessor for the current renderer.
+ * @returns a proxy implementing the full pi-tui `TUI` interface.
+ */
+export function createStableTuiReference(getTui: () => TUI): TUI {
+  return new Proxy({} as TUI, {
+    get: (_target, property) => {
+      const tui = getTui()
+      const value: unknown = Reflect.get(tui, property, tui)
+      if (typeof value !== 'function') return value
+      let methodTui = tui
+      let method = value as (this: TUI, ...args: unknown[]) => unknown
+      return (...args: unknown[]) => {
+        const currentTui = getTui()
+        if (currentTui !== methodTui) {
+          const currentMethod: unknown = Reflect.get(currentTui, property, currentTui)
+          if (typeof currentMethod !== 'function') {
+            throw new TypeError(`TUI property ${String(property)} is not callable`)
+          }
+          methodTui = currentTui
+          method = currentMethod as (this: TUI, ...args: unknown[]) => unknown
+        }
+        return Reflect.apply(method, methodTui, args)
+      }
+    },
+    set: (_target, property, value) => Reflect.set(getTui(), property, value, getTui()),
+    has: (_target, property) => Reflect.has(getTui(), property),
+    getPrototypeOf: () => Reflect.getPrototypeOf(getTui()),
+  })
+}
+
+/**
+ * The Blue terminal stack active in this process, or `undefined` before the
+ * plugin loads and after it unloads. At most one is active: the underlying
+ * `ProcessTerminal` owns process stdin/stdout.
+ */
+let activeRuntime: BlueTerminalRuntime | undefined
+
+/**
+ * Terminal restore function factory for `installFailLoud(binName, proc,
+ * release)`. The returned function stops the active Blue terminal stack
+ * (restoring raw mode, bracketed paste, and keyboard protocols) and is a
+ * no-op when no stack is active.
+ * @returns the release function to hand to `installFailLoud`.
+ */
+export function createTerminalRelease(): () => Promise<void> {
+  return async () => {
+    await activeRuntime?.stop()
+  }
+}
+
+/**
+ * Start the Blue terminal stack: a pi-tui renderer over a `ProcessTerminal`,
+ * registered as the process-active runtime. The OSC 11
+ * background probe runs first, before the renderer takes stdin into raw
+ * mode; then the renderer starts and subscribes to terminal color-scheme
+ * (mode 2031) notifications, forwarded through `onSchemeChange`.
+ * Production uses the alternate screen; main-screen mode remains an explicit
+ * compatibility option. The returned runtime delegates through the stable
+ * reference so the concrete renderer never leaks past core.
+ * @param terminal - the terminal to drive; defaults to a real
+ *   `ProcessTerminal` on process stdin/stdout. Tests inject a fake.
+ * @param probe - the background probe; defaults to the OSC 11 query on the
+ *   live process. Tests inject a recording fake.
+ * @param onSchemeChange - called when the terminal reports a dark/light
+ *   color-scheme switch.
+ * @param overflow - where the exit backstop records clamped lines; defaults
+ *   to the deduplicating file sink under pi-tui's log directory. Tests
+ *   inject a recorder.
+ * @param screenMode - renderer buffer mode. The Blue plugin selects
+ *   `'alternate'`; `'main'` remains available for compatibility fixtures.
+ * @returns the running stack's Blue-typed face.
+ */
+export async function startBlueTerminal(
+  terminal: Terminal = new ProcessTerminal(),
+  probe: (proc?: BlueProbeProcess) => Promise<BlueRgbColor | undefined> = () => probeTerminalBackground(),
+  onSchemeChange?: (scheme: 'dark' | 'light') => void,
+  overflow: OverflowSink = createFileOverflowSink({ directory: defaultOverflowDirectory() }),
+  screenMode: BlueScreenMode = 'main',
+): Promise<BlueTerminalRuntime> {
+  const alternate = screenMode === 'alternate'
+  const current: TUI = alternate
+    ? new TuiAltScreen(terminal, undefined, undefined, {
+        wheelScrollLines: 3,
+        copySelection: async text => {
+          try {
+            terminal.write(buildClipboardOsc52(text))
+            return true
+          } catch {
+            return false
+          }
+        },
+      })
+    : new TuiMainScreen(terminal)
+  const stable = createStableTuiReference(() => current)
+  // TuiAltScreen registers its viewport listener in its constructor. Move it
+  // behind Blue's contextual content handler and wheel normalizer: the main
+  // editor then owns transcript scrolling, while a focused replacement panel
+  // still receives wheel-as-arrow and page/navigation keys. The structural
+  // read is deliberately confined to L0 and pinned by the terminal specs.
+  const viewportInput = current instanceof TuiAltScreen
+    ? [...(current as unknown as { inputListeners: Set<TuiInputListener> }).inputListeners][0]
+    : undefined
+  if (viewportInput !== undefined) current.removeInputListener(viewportInput)
+  // Track dock membership for contextual wheel routing. The editor's handler
+  // consumes its own wheel reports; a focused replacement panel receives the
+  // direction-key form, while an unfocused/empty tree keeps the raw report for
+  // TuiAltScreen's native ScrollView route.
+  const bottomChildren = new Set<BlueComponent>()
+  const bottomPinned = new Set<BlueComponent>()
+  let contentScrollHandler: ((data: string) => boolean) | undefined
+  const removeContentScrollHandler = current.addInputListener(data => {
+    /* v8 ignore next -- exercised by the real PTY input path */
+    if (contentScrollHandler?.(data) === true) return { consume: true }
+    return undefined
+  })
+  // Replacement panels use the same arrow semantics as their keyboard path.
+  // Keep raw wheel reports untouched for the primary AltScreen ScrollView:
+  // transforming every wheel event here prevents pi-tui from scrolling when
+  // no focused-editor handler is active.
+  const removeWheelNormalizer = current.addInputListener(data => {
+    const normalized = normalizeWheelInput(data)
+    if (normalized === undefined) return undefined
+    if (!(current instanceof TuiAltScreen)) return { data: normalized }
+    const focused = current.getFocusedComponent()
+    return focused !== null && bottomChildren.has(focused as BlueComponent)
+      ? { data: normalized }
+      : undefined
+  })
+  const removeViewportInput = viewportInput === undefined
+    ? () => {}
+    : current.addInputListener(data => {
+        // These keys are contextual in Blue. If the editor's transcript
+        // handler did not consume them, the focused editor/panel must see
+        // them instead of the global viewport.
+        if (data === KEY_PAGE_UP || data === KEY_PAGE_DOWN || data === KEY_HOME || data === KEY_END) return undefined
+        return viewportInput(data)
+      })
+  // Bottom-pinned components (the input editor dock) must render after
+  // transcript content no matter when each side mounts: pi-tui renders root
+  // children in array order, and transcript components mount only after the
+  // app's session-changed broadcast, long after the editor. `bottomPinned`
+  // members render below the rest of the dock — the footer shell mounts
+  // there so the two-row status stays on the terminal's last rows beneath
+  // the editor, the kimi layout (its dialogs pull up from the editor's
+  // slot while the statusline remains visible below).
+  const contentContainer = alternate ? new FrameClampedContainer(overflow) : undefined
+  const dockContainer = alternate ? new FrameClampedContainer(overflow) : undefined
+  if (current instanceof TuiAltScreen && contentContainer !== undefined && dockContainer !== undefined) {
+    const scrollView = new ScrollView(contentContainer, {
+      follow: 'end',
+      primary: true,
+      overscroll: 'chain',
+      scrollbar: 'auto',
+    })
+    const root = new VStack()
+    root.addChild(scrollView, { basis: 0, grow: 1, shrink: 1, minSize: 1 })
+    root.addChild(dockContainer, { basis: 'auto', grow: 0, shrink: 1, minSize: 1 })
+    current.setLayoutRoot(root)
+  }
+  let contentScrollOffset = 0
+  let contentScrollManual = false
+  // The dock must also sit on the terminal's last rows even when the mounted
+  // content is shorter than the viewport (boot with no session yet, a fresh
+  // /new) — pi-tui stacks root children top-down, so an unpadded tree leaves
+  // the editor floating right under the content. Wrapping the renderer's own
+  // line collection is the one seam where the flat output can be split back
+  // into content and dock: the dock block is measured again (its components
+  // are a few cheap rows) and blank filler is inserted between the blocks
+  // until the frame spans the viewport. Full viewports render untouched, and
+  // an empty or dock-less tree pads nothing (no blank flood at boot).
+  //
+  // The same wrapper is the exit backstop (D48): every frame line, on both
+  // return paths, is clamped to `width` before pi-tui's differential writer
+  // can crash on it — an over-wide component row degrades to a truncated
+  // row plus one deduplicated blue-overflow.log entry instead of a dead
+  // session. `width` is the very value pi-tui's guard compares against.
+  const collectLines = current.render.bind(current)
+  if (!alternate) current.render = (width: number): string[] => {
+    const lines = collectLines(width)
+    if (lines.length === 0 || bottomChildren.size === 0) {
+      return clampFrame(lines, width, overflow)
+    }
+    let dockRows = 0
+    for (const child of orderedDock()) dockRows += child.render(width).length
+    const boundary = lines.length - dockRows
+    /* v8 ignore next -- covered by the real-terminal and VT layout tiers */
+    if (lines.length >= terminal.rows) {
+      // Keep the newest transcript rows visible while reserving the terminal
+      // tail for the editor/status dock. Returning the full over-height frame
+      // lets long streams push the input out of view and makes the apparent
+      // scroll position jump back toward the beginning on each repaint.
+      const contentRows = Math.max(0, terminal.rows - dockRows)
+      const end = Math.max(contentRows, boundary - contentScrollOffset)
+      return clampFrame([
+        ...lines.slice(Math.max(0, end - contentRows), end),
+        ...lines.slice(boundary),
+      ], width, overflow)
+    }
+    const filler = terminal.rows - lines.length
+    return clampFrame([
+      ...lines.slice(0, boundary),
+      ...Array.from({ length: filler }, () => ''),
+      ...lines.slice(boundary),
+    ], width, overflow)
+  }
+  /** Dock children in render order: the regular block, then the pinned tail. */
+  function orderedDock(): BlueComponent[] {
+    return [
+      ...[...bottomChildren].filter(child => !bottomPinned.has(child)),
+      ...bottomPinned,
+    ]
+  }
+  const background = backgroundFromRgb(await probe())
+  current.start()
+  current.setTerminalColorSchemeNotifications(true)
+  if (onSchemeChange !== undefined) current.onTerminalColorSchemeChange(onSchemeChange)
+  let stopped = false
+  let suspended = false
+  const runtime: BlueTerminalRuntime = {
+    get columns() {
+      return current.terminal.columns
+    },
+    get rows() {
+      return terminal.rows
+    },
+    background,
+    get kittyKeyboard() {
+      return terminal.kittyProtocolActive
+    },
+    tui: stable,
+    addChild(component) {
+      if (contentContainer !== undefined) {
+        contentContainer.addChild(component)
+        return
+      }
+      if (bottomChildren.size === 0) {
+        stable.addChild(component)
+        return
+      }
+      const index = stable.children.findIndex(child => bottomChildren.has(child as BlueComponent))
+      /* v8 ignore next -- pinned components are always mounted on the renderer, so findIndex cannot miss */
+      stable.children.splice(index === -1 ? stable.children.length : index, 0, component)
+    },
+    addBottomChild(component, position) {
+      bottomChildren.add(component)
+      if (position === 'bottom') {
+        // Pinned members render at the very bottom of the dock: re-append
+        // on the renderer so the array order — and therefore the painted
+        // row order — keeps them after every regular dock child.
+        bottomPinned.add(component)
+        if (dockContainer !== undefined) {
+          dockContainer.removeChild(component)
+          dockContainer.addChild(component)
+        } else {
+          stable.removeChild(component)
+          stable.addChild(component)
+        }
+      } else {
+        bottomPinned.delete(component)
+        // Regular dock children insert before the first pinned member (or
+        // append when none is pinned), preserving mount order among
+        // themselves while the pinned tail stays last.
+        const children = dockContainer?.children ?? stable.children
+        const index = children.findIndex(child => bottomPinned.has(child as BlueComponent))
+        /* v8 ignore next -- pinned components are always mounted on the renderer, so findIndex cannot miss */
+        children.splice(index === -1 ? children.length : index, 0, component)
+      }
+    },
+    removeChild(component) {
+      bottomChildren.delete(component)
+      bottomPinned.delete(component)
+      if (contentContainer !== undefined && dockContainer !== undefined) {
+        contentContainer.removeChild(component)
+        dockContainer.removeChild(component)
+      } else stable.removeChild(component)
+    },
+    setFocus(component) {
+      stable.setFocus(component)
+    },
+    /* v8 ignore start -- exercised through the real PTY interaction path */
+    scrollContent(direction, amount = 1) {
+      if (current instanceof TuiAltScreen) {
+        const before = current.viewportTop
+        current.scrollBy(direction === 'up' ? -Math.max(1, Math.floor(amount)) : Math.max(1, Math.floor(amount)))
+        return current.viewportTop !== before
+      }
+      const lines = collectLines(current.terminal.columns)
+      let dockRows = 0
+      for (const child of orderedDock()) dockRows += child.render(current.terminal.columns).length
+      const contentRows = Math.max(1, terminal.rows - dockRows)
+      const max = Math.max(0, lines.length - dockRows - contentRows)
+      if (max === 0) return false
+      const step = Math.max(1, Math.floor(amount))
+      const next = direction === 'up'
+        ? Math.min(max, contentScrollOffset + step)
+        : Math.max(0, contentScrollOffset - step)
+      if (next === contentScrollOffset) return false
+      contentScrollOffset = next
+      contentScrollManual = next > 0
+      stable.requestRender(true)
+      return true
+    },
+    contentChanged() {
+      if (current instanceof TuiAltScreen) {
+        const paused = !current.isFollowingOutput
+        current.requestRender()
+        return paused
+      }
+      const wasManual = contentScrollManual
+      if (!contentScrollManual) contentScrollOffset = 0
+      stable.requestRender()
+      return wasManual
+    },
+    followContent() {
+      if (current instanceof TuiAltScreen) {
+        current.scrollToBottom()
+        return
+      }
+      contentScrollOffset = 0
+      contentScrollManual = false
+      stable.requestRender(true)
+    },
+    setContentScrollHandler(handler) {
+      contentScrollHandler = handler
+      return () => {
+        if (contentScrollHandler === handler) contentScrollHandler = undefined
+      }
+    },
+    /* v8 ignore stop */
+    showOverlay(component, options) {
+      return stable.showOverlay(component, options)
+    },
+    requestRender(force) {
+      stable.requestRender(force)
+    },
+    async suspend<T>(fn: () => Promise<T>): Promise<T> {
+      if (suspended) throw new Error('blue terminal suspend is already in flight')
+      if (stopped) throw new Error('blue terminal is stopped; suspend refused')
+      suspended = true
+      // Main-screen mode: the child appends below the content in the
+      // scrollback tail, so stop() takes no preserveScreen option — the
+      // cursor drops below the rendered content and the external editor
+      // opens in place (kimi's main-screen ordering).
+      current.stop(alternate ? { preserveScreen: true } : undefined)
+      // One setImmediate beat lets the stop escape sequences flush before
+      // the child takes over the tty.
+      await new Promise<void>(resolve => setImmediate(resolve))
+      try {
+        return await fn()
+      } finally {
+        suspended = false
+        // Pause before start(): bytes buffered while suspended must not
+        // surface as application input once raw mode re-arms.
+        process.stdin.pause()
+        // Torn down mid-suspend (fiber unload / fail-loud release): the
+        // renderer must not restart; the settlement propagates as-is.
+        if (!stopped && activeRuntime === runtime) {
+          current.start()
+          // stop() disabled OSC 2031 notifications; re-arm them, then force
+          // a full repaint — start()'s self-SIGWINCH (Unix) has already
+          // refreshed dimensions stale from any resize while suspended.
+          current.setTerminalColorSchemeNotifications(true)
+          current.requestRender(true)
+        }
+      }
+    },
+    setTitle(title) {
+      // Bypass pi-tui's Terminal.setTitle (it writes to process.stdout
+      // directly, with no injection point); the runtime owns the terminal
+      // instance, and the sequence itself is the pure core helper's.
+      terminal.write(buildTitleOsc0(title))
+    },
+    async stop() {
+      if (stopped) return
+      stopped = true
+      if (suspended) {
+        // The renderer is already stopped and a child owns the tty: draining
+        // here would steal the child's input, and a second tui stop would
+        // replay the teardown sequences. Just unregister.
+        removeWheelNormalizer()
+        removeViewportInput()
+        removeContentScrollHandler()
+        if (activeRuntime === runtime) activeRuntime = undefined
+        return
+      }
+      // Drain before stopping so in-flight Kitty key releases cannot leak
+      // into the parent shell as literal escape sequences.
+      await terminal.drainInput()
+      current.stop()
+      removeWheelNormalizer()
+      removeViewportInput()
+      removeContentScrollHandler()
+      if (activeRuntime === runtime) activeRuntime = undefined
+    },
+  }
+  activeRuntime = runtime
+  return runtime
+}

@@ -1,0 +1,63 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`renderer-neutral model fixture > snapshots every view shape without renderer objects 1`] = `
+{
+  "views": [
+    {
+      "kind": "text",
+      "text": "hello",
+    },
+    {
+      "kind": "rich-text",
+      "spans": [
+        {
+          "strong": true,
+          "text": "strong",
+        },
+      ],
+    },
+    {
+      "fields": [
+        {
+          "label": "mode",
+          "value": "normal",
+        },
+      ],
+      "kind": "fields",
+    },
+    {
+      "kind": "sections",
+      "sections": [
+        {
+          "body": {
+            "kind": "text",
+            "text": "body",
+          },
+          "title": "details",
+        },
+      ],
+    },
+    {
+      "items": [
+        {
+          "id": "one",
+          "label": "One",
+        },
+      ],
+      "kind": "list",
+      "selectedId": "one",
+    },
+    {
+      "code": "const x = 1",
+      "kind": "code",
+      "language": "ts",
+    },
+    {
+      "after": "b",
+      "before": "a",
+      "kind": "diff",
+      "language": "txt",
+    },
+  ],
+}
+`;

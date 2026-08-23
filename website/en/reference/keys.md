@@ -1,0 +1,51 @@
+# Key bindings
+
+Keys register through the `blueKeymap` service; duplicate bindings are rejected. The `/help` overlay lists every registered binding live — it is the authoritative source for this table (if anything differs, trust `/help`).
+
+## Global actions
+
+In effect regardless of focus:
+
+| Key | Action | Description |
+| --- | --- | --- |
+| `Ctrl-O` | Toggle tool output expansion | Switch the most recent **3 turns** of tool cards and thinking blocks between one-line summary and full output; resets on session change |
+| `Ctrl-T` | Toggle todo pane folding | Five-row folded view ↔ full list |
+
+## Shared interaction keys
+
+One batch shared by overlays (lists, menus) and the editor:
+
+| Key | Action | Description |
+| --- | --- | --- |
+| `Enter` | Submit / confirm | Submit input or confirm the focused choice |
+| `Escape` | Cancel / dismiss | Close the active surface (completion popup → side pane → clear draft → interrupt the agent, yielding step by step) |
+| `↑` / `↓` | Move list cursor | Overlay list navigation (wraps) |
+| `Space` | Toggle selection | Toggle the focused entry in a multi-select |
+
+## Editor context
+
+Text-editing keys (cursor movement, multi-line, undo, kill-ring) belong to the underlying editor; in addition:
+
+| Key | Action | Description |
+| --- | --- | --- |
+| `Ctrl-C` | Clear → interrupt → exit | Clears the draft, then interrupts a running agent; a **second press within 1 second** exits Blue |
+| `Ctrl-S` | Steer | Inject the non-empty draft as a steering instruction into the current turn, clearing the buffer |
+| `Ctrl-V` | Paste image | Store the clipboard image in the attachment library, inserting an `[image #N]` marker at the cursor |
+| `Backspace` | Delete / exit mode | Backspace on an empty `!` bash prompt exits back to prompt mode |
+| `↑` (empty buffer) | Recall queued message | Remove the most recent queued message into the draft (scrolling a side pane takes precedence; without the queue pane, ↑ is history) |
+| `Shift+Tab` | Cycle session mode | normal → plan → yolo (see [Session modes](/en/features/modes)). Effective only under editor focus — panels and questionnaires keep their own Tab navigation |
+
+## Panel contexts
+
+| Surface | Keys |
+| --- | --- |
+| `/help` overlay | ↑↓ / PageUp / PageDown scroll; `Escape` / `Enter` / `q` close |
+| `/sessions` picker | ↑↓ navigate, `Enter` resume, `Esc` cancel |
+| Approval panel | ↑↓ + `Enter`, or number keys `1`–`4` directly; `Escape` rejects |
+| Questionnaire | `Tab` / `Shift-Tab` between questions; single-choice ↑↓ + `Enter`; multi-choice `Space` + `Enter` |
+| `/model` · `/effort` panels | `←` `→` step the segment control; `Enter` confirms and persists the new default; `Alt+S` confirms **session-only** (the persisted default stays untouched) |
+| `/btw` pane | `Esc` close; `↑` `↓` scroll; `Enter` follow-up |
+
+## Custom bindings
+
+Deferred to a later phase. There is no user-facing key configuration today; conflicts are prevented by rejecting duplicate registrations at keymap registration time.

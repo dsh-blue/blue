@@ -1,0 +1,74 @@
+# R0 (release roadmap): test/typecheck/lint gate for the five packages.
+# Runs on every master push and PR (except website-only PRs — those are
+# covered by website-pages.yml's build check). Install is pinned by the
+# root packageManager field (pnpm/action-setup reads it) with a frozen
+# lockfile; node mirrors the website workflow's PRIMARY_NODE_VERSION.
+# Coverage enforces per-file 100% via vitest.config.ts thresholds, so
+# `test:coverage` failing = discipline breach, not just a broken test.
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    paths-ignore:
+      - website/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PRIMARY_NODE_VERSION: '24'
+
+jobs:
+  check:
+    name: typecheck / lint / test (coverage)
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ci-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Fast gates first: tsc -b fails in seconds, oxlint in under a second,
+      # so a type error doesn't burn a full test run.
+      - run: pnpm typecheck
+      - run: pnpm lint
+      # Docs diagrams: docs/diagrams/*.mmd are the single sources; the
+      # embedded copies in README/README.zh/blue-architecture must match.
+      - run: pnpm diagrams:check
+      # tsc -b only emits lib/types declarations; specs that import through
+      # package entry points resolve lib/index.js from tsdown, so a fresh
+      # checkout needs the bundle build before vitest can run.
+      - run: pnpm build
+      # The lib/export integrity gate (the S30 lesson): package.json
+      # exports ↔ built lib/ output ↔ the files tarball whitelist. Runs
+      # before the test minute so the cheap check fails first.
+      - run: pnpm check:lib
+      - run: pnpm test:coverage
+      # The real-process width smoke (D45): boots the built plugin tree
+      # through the real dsh CLI at COLUMNS=40 against a mock LLM streaming
+      # width-hostile content — any untruncated row must fail the run, not
+      # crash a user session. The CLI is NOT a workspace devDependency on
+      # purpose: its subtree reshapes hoisting and breaks the S34 /mcp e2e's
+      # bare-specifier resolution, so CI installs it globally instead and
+      # the smoke pins its version against HARNESS_LINE.
+      #
+      # npm, not `pnpm add -g`: action-setup installs pnpm itself under
+      # /home/runner/setup-pnpm, and with no PNPM_HOME set `pnpm add -g`
+      # resolves the global bin dir next to the pnpm binary and refuses
+      # ("configured global bin directory ... is not in PATH" — the red
+      # run 32548149673). npm's global bin is setup-node's prefix, already
+      # on PATH for this step and for smoke:happy's `command -v dsh`.
+      # The version is derived from HARNESS_LINE via script/harness-line.mjs
+      # (single-sourced) — keep it that way: a literal here would drift off
+      # the version.spec gate AND an automation push touching a workflow
+      # file is rejected by GitHub (GITHUB_TOKEN cannot update workflows).
+      - run: npm install -g "@deepseek-ai/dsh@$(node script/harness-line.mjs)"
+      - run: pnpm smoke:happy

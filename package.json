@@ -1,0 +1,40 @@
+{
+  "name": "@dsh-blue/blue-root",
+  "version": "0.1.0-rc.7",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json && tsdown",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc -b tsconfig.json",
+    "lint": "oxlint packages",
+    "diagrams:sync": "node script/sync-diagrams.mjs",
+    "diagrams:check": "node script/sync-diagrams.mjs --check",
+    "check:lib": "node script/check-lib-exports.mjs",
+    "smoke:happy": "node script/smoke-happy.mjs",
+    "smoke:pty": "node script/smoke-pty.mjs",
+    "smoke:pty:mouse": "node script/smoke-pty-mouse.mjs",
+    "blue:plugin-validate": "node script/blue-plugin-validate.mjs",
+    "blue:plugin-fixture": "node script/blue-plugin-fixture.mjs",
+    "website:dev": "pnpm --filter @dsh-blue/website run dev",
+    "website:build": "pnpm --filter @dsh-blue/website run build",
+    "website:preview": "pnpm --filter @dsh-blue/website run preview"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-llm-mock-server": "0.1.1-rc.2",
+    "@types/node": "^22.20.0",
+    "@vitest/coverage-v8": "^4.1.8",
+    "@xterm/headless": "6.0.0",
+    "node-pty": "1.2.0-beta.15",
+    "oxlint": "1.76.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}

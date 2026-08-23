@@ -1,0 +1,15 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/api" },
+    { "path": "packages/frontend" },
+    { "path": "packages/harness-adapter" },
+    { "path": "packages/context" },
+    { "path": "packages/remote" },
+    { "path": "packages/core" },
+    { "path": "packages/app" },
+    { "path": "packages/interaction" },
+    { "path": "packages/transcript" },
+    { "path": "packages/bundle/blue" }
+  ]
+}

@@ -1,0 +1,30 @@
+    ⢀⣀⣰⣰⣰⣰⣰⣼⣼⠜   ⣺⣵⡀    ⢀⡀  
+  ⢀⣸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣵⣐  ⢯⣿⣿⣵⣸⣼⣼⣿⠕  Welcome to Blue!                        
+ ⢨⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣽⣐⠂⠯⣿⣿⣿⣿⠿⠇   Send /help for help information.        
+ ⣿⡟⠃⠃⠋⠏⠿⣿⣿⣿⣿⣿⣿⠯⢿⣿⣽⣴⣿⣿⡕                                              
+ ⣿⣿      ⠋⢿⣿⣿⣿⣿ ⠋⣿⣿⣿⣿⠁      Directory: «cwd»    
+ ⢯⣿⣵       ⠫⣿⣿⣿⣽⣼⣿⣿⣿⠗       Model:     mock · mock                  
+ ⠂⢯⣿⣵⡀   ⣰⣀ ⠊⢿⣿⣿⣿⣿⡿⠇        Version:   0.1.0-rc.2                   
+   ⠋⣿⣿⣼⣰⣰⣻⣿⣽⣰⣀⠋⢿⣿⣿⣼⣰⡀       
+     ⠃⠏⠿⣿⣿⣿⣿⣿⠿⠟⠇⠂⠃⠃⠃        
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+  Select a model  (type to search)
+  up/down navigate · left/right thinking · enter select · alt+s session-only ...
+
+  ❯ mock/Mock                                 ← current
+    mock/Mock Pro                           
+
+  Thinking  (←→ to switch)
+    Low   [ High ]
+────────────────────────────────────────────────────────────────────────────────
+ mock  «cwd»                                               
