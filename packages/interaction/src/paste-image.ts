@@ -1,16 +1,21 @@
 /**
  * `blue-paste-image` plugin: Ctrl-V pastes a clipboard image into the input
  * editor as an attachment. The contextual `blue.image.paste` key action is
- * registered keyless-style (bound to ctrl+v, no handler) and resolved in a
- * wrapper chained onto the shared editor's `onKey` hook — ahead of the
- * pi-tui Editor, which has no clipboard-image handling of its own. The paste
- * flow is fire-and-forget: an injectable reader (the default negotiates with
- * the Linux stdout-form tools `wl-paste` and `xclip` in session-aware order)
- * resolves to direct image bytes tagged with the clipboard's declared type,
- * or to local image files copied through `text/uri-list` / GNOME's copied-
- * files representation. Copied files are opened without following a final
- * symlink, bounded by the attachment deployment limits, magic-byte sniffed,
- * and admitted as one ordered batch. Otherwise the reader returns a failure
+ * registered keyless-style (bound to ctrl+v — plus alt+v on Windows, where
+ * Windows Terminal and conhost intercept ctrl+v for their own text paste —
+ * no handler) and resolved in a wrapper chained onto the shared editor's
+ * `onKey` hook — ahead of the pi-tui Editor, which has no clipboard-image
+ * handling of its own. The paste flow is fire-and-forget: an injectable
+ * reader probes the platform's native backend — the Linux stdout-form
+ * tools `wl-paste` and `xclip` in session-aware order, one PowerShell
+ * staging spawn on Windows, osascript's list-then-read negotiation on
+ * macOS (`./paste-image-native.ts`) — resolving to direct image bytes
+ * tagged with the clipboard's declared type, or to local image files
+ * copied through `text/uri-list` / GNOME's copied-files representation on
+ * Linux, a FileDropList staging on Windows, or a Finder furl listing on
+ * macOS. Copied files are opened without following a final symlink,
+ * bounded by the attachment deployment limits, magic-byte sniffed, and
+ * admitted as one ordered batch. Otherwise the reader returns a failure
  * kind
  * naming what is missing: the tool absent, the display session unreachable,
  * no image, an unsupported image type, a timeout, or a raw tool failure.
@@ -48,6 +53,7 @@ import {
   readCopiedPaths,
   runTool,
 } from './clipboard-probe.ts'
+import { probeDarwin, probeWindows } from './paste-image-native.ts'
 
 export type { ClipboardBackend, ClipboardImageResult } from './clipboard-probe.ts'
 
@@ -61,7 +67,9 @@ export type ClipboardBackendPolicy = 'auto' | 'wayland' | 'x11'
 
 /** Plugin configuration for clipboard backend selection. */
 export interface Config {
-  /** Backend policy; strict modes never cross the Wayland/X11 boundary. */
+  /** Linux display-protocol policy; ignored on win32/darwin, where the
+   * platform selects the native probe. Strict modes never cross the
+   * Wayland/X11 boundary. */
   backend: ClipboardBackendPolicy
 }
 
@@ -148,13 +156,71 @@ function cooldownKey(backend: ClipboardBackend): string {
   return [backend, process.env.DISPLAY ?? '', process.env.WAYLAND_DISPLAY ?? '', process.env.XDG_RUNTIME_DIR ?? ''].join('\0')
 }
 
-/** Resolve the configured backend order against the current display session. */
-function clipboardToolsFor(policy: ClipboardBackendPolicy): readonly ClipboardTool[] {
+/** Resolve the Linux backend order against the current display session. */
+function linuxClipboardTools(policy: ClipboardBackendPolicy): readonly ClipboardTool[] {
   if (policy === 'wayland') return [CLIPBOARD_TOOLS.wayland]
   if (policy === 'x11') return [CLIPBOARD_TOOLS.x11]
   if ((process.env.WAYLAND_DISPLAY ?? '') !== '') return [CLIPBOARD_TOOLS.wayland, CLIPBOARD_TOOLS.x11]
   if ((process.env.DISPLAY ?? '') !== '') return [CLIPBOARD_TOOLS.x11, CLIPBOARD_TOOLS.wayland]
   return [CLIPBOARD_TOOLS.wayland, CLIPBOARD_TOOLS.x11]
+}
+
+let clipboardPlatformOverride: NodeJS.Platform | undefined
+
+/**
+ * Replace the platform used for backend, notice, and key selection (tests
+ * inject a platform here).
+ * @param platform - the replacement, or `undefined` to restore the host.
+ */
+export function setClipboardPlatform(platform: NodeJS.Platform | undefined): void {
+  clipboardPlatformOverride = platform
+}
+
+/** The platform clipboard decisions run against: the test seam, else the host. */
+function clipboardPlatform(): NodeJS.Platform {
+  return clipboardPlatformOverride ?? process.platform
+}
+
+/** One resolved clipboard backend: its stable identity and its read. */
+interface BackendProbe {
+  /** Stable backend identity used by cooldowns and fallback notices. */
+  readonly backend: ClipboardBackend
+  /** One clipboard read attempt, bounded by the deployment limits. */
+  readonly read: (limits: ImageAttachmentLimits) => Promise<ClipboardImageResult>
+}
+
+/** Wrap the Linux tool order as probes. */
+function linuxProbes(policy: ClipboardBackendPolicy): readonly BackendProbe[] {
+  return linuxClipboardTools(policy).map(tool => ({
+    backend: tool.backend,
+    read: (limits: ImageAttachmentLimits) => probeTool(tool, limits),
+  }))
+}
+
+/**
+ * Resolve the probe list for a policy on a platform: win32/darwin select
+ * their single native probe regardless of the Linux-only `backend` knob;
+ * everything else resolves the Linux display-protocol order.
+ * @param policy - the configured Linux backend policy.
+ * @param platform - the host platform (tested directly for all three).
+ * @returns the probes to try, in order.
+ */
+function backendsFor(policy: ClipboardBackendPolicy, platform: NodeJS.Platform): readonly BackendProbe[] {
+  if (platform === 'win32') return [{ backend: 'win32', read: probeWindows }]
+  if (platform === 'darwin') return [{ backend: 'darwin', read: probeDarwin }]
+  return linuxProbes(policy)
+}
+
+/**
+ * The keys bound to the paste action on a platform: Windows Terminal and
+ * conhost intercept ctrl+v for their own text paste, so win32 binds alt+v
+ * alongside it (the Gemini CLI convention) while passthrough terminals
+ * keep the ctrl+v muscle memory (D55).
+ * @param platform - the host platform (tested directly for all three).
+ * @returns the key ids to register.
+ */
+export function pasteKeysForPlatform(platform: NodeJS.Platform): readonly string[] {
+  return platform === 'win32' ? ['ctrl+v', 'alt+v'] : ['ctrl+v']
 }
 
 /**
@@ -315,20 +381,20 @@ function aggregateOutcomes(outcomes: FailureResult[]): ClipboardImageResult {
   return hasDisplaySession ? { kind: 'missing-tool' } : { kind: 'unreachable' }
 }
 
-/** The default reader: probe each policy-selected tool in order; the first
- * valid image wins, otherwise the failures aggregate into one verdict. */
+/** The default reader: probe each platform-resolved backend in order; the
+ * first valid image wins, otherwise the failures aggregate into one verdict. */
 async function defaultClipboardImageReader(config: Config, limits: ImageAttachmentLimits): Promise<ClipboardImageResult> {
   const outcomes: FailureResult[] = []
-  const tools = clipboardToolsFor(config.backend)
-  for (const [index, tool] of tools.entries()) {
-    const key = cooldownKey(tool.backend)
+  const probes = backendsFor(config.backend, clipboardPlatform())
+  for (const [index, probe] of probes.entries()) {
+    const key = cooldownKey(probe.backend)
     const retryAt = backendCooldowns.get(key)
     if (retryAt !== undefined && clipboardClock() < retryAt) {
       outcomes.push({ kind: 'timeout' })
       continue
     }
     backendCooldowns.delete(key)
-    const outcome = await probeTool(tool, limits)
+    const outcome = await probe.read(limits)
     if (outcome.kind === 'timeout') backendCooldowns.set(key, clipboardClock() + BACKEND_COOLDOWN_MS)
     if (outcome.kind === 'image' || outcome.kind === 'images') {
       return {
@@ -351,15 +417,25 @@ export function setClipboardImageReader(reader: ClipboardImageReader | undefined
   clipboardImageReader = reader
 }
 
+/** The missing-tool notice names the platform's own clipboard tool. */
+function missingToolNotice(): string {
+  const platform = clipboardPlatform()
+  if (platform === 'win32') return 'clipboard image tool missing: powershell.exe is not on PATH'
+  if (platform === 'darwin') return 'clipboard image tool missing: osascript is not on PATH'
+  return 'clipboard image tool missing: install wl-clipboard (wl-paste) or xclip'
+}
+
 /**
  * Notice text per failure kind: each names what is missing so the user can
- * fix it (D49: diagnose, never work around).
+ * fix it (D49: diagnose, never work around). The missing-tool text is
+ * platform-aware; unreachable can only arise from the Linux tools, whose
+ * env-var names it cites.
  * @param result - the non-image reader outcome.
  * @returns the notice text.
  */
 function failureNotice(result: FailureResult): string {
   switch (result.kind) {
-    case 'missing-tool': return 'clipboard image tool missing: install wl-clipboard (wl-paste) or xclip'
+    case 'missing-tool': return missingToolNotice()
     case 'unreachable': return 'clipboard unreachable: DISPLAY/WAYLAND_DISPLAY is not set in this session'
     case 'no-image': return 'no image available from the clipboard'
     case 'unsupported': return `clipboard image type ${result.mediaType} is not supported`
@@ -457,8 +533,10 @@ async function pasteFlow(ctx: Context, config: Config, shared: SharedEditor, isU
     })
     shared.editor.insertText(markers.join(' '))
     if (result.fallback === true && result.backend !== undefined) {
-      const label = result.backend === 'x11' ? 'X11' : 'Wayland'
-      notice(`pasted image via ${label} fallback; verify it is current`)
+      // Only the Linux auto policy ever sets fallback (win32/darwin are
+      // single-backend), so the label stays exhaustive over its producers.
+      const label = result.backend === 'x11' ? 'X11' : result.backend === 'wayland' ? 'Wayland' : undefined
+      if (label !== undefined) notice(`pasted image via ${label} fallback; verify it is current`)
     }
   } catch (error) {
     if (isUnloaded()) return
@@ -509,7 +587,7 @@ export function apply(ctx: Context, config: Config): void {
   })
   ctx.effect(() => ctx.blueKeymap.register([{
     id: ACTION_IMAGE_PASTE,
-    keys: ['ctrl+v'],
+    keys: [...pasteKeysForPlatform(clipboardPlatform())],
     description: 'Paste a clipboard image into the prompt',
   }]))
   ctx.effect(() => registerSubmitTransformer(transformImageMarkers))
