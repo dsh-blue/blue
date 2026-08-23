@@ -69,6 +69,12 @@ export const name = 'blue-commands'
 /** Services required before the commands can register. */
 export const inject = ['commands']
 
+/** Built-in command configuration forwarded by the interaction root. */
+export interface Config {
+  /** Optional profile-local identity shown by `/status` and `/version`. */
+  readonly displayVersion?: string
+}
+
 /** Render one failure reason for an error result. */
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -105,8 +111,9 @@ export function currentSessionTitleLimit(): number {
 /**
  * Register the built-in commands on `ctx.commands`.
  * @param ctx - plugin context.
+ * @param config - command presentation configuration.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: Config = {}): void {
   /**
    * Set when this fiber unloads: the `/sessions` listing can still be in
    * flight (a tree unload lands between `list()` and the overlay mount),
@@ -386,7 +393,7 @@ export function apply(ctx: Context): void {
     const modes = registerModeCommands(ctx)
     const modeTracking = setupModeTracking(ctx)
     // The session-info family (`/status` `/usage` `/version`).
-    const sessionInfo = registerSessionCommands(ctx)
+    const sessionInfo = registerSessionCommands(ctx, config.displayVersion)
     // The session-export family (`/export` `/copy`).
     const sessionExport = registerExportCommands(ctx)
     // The canned-prompt command (`/init`).

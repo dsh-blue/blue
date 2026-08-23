@@ -52,6 +52,15 @@ describe('buildVersionSections', () => {
       { label: 'harness', segments: [{ text: '0.1.1-rc.2' }] },
     ])
   })
+
+  it('uses a profile-local display identity without changing the release constant', () => {
+    const displayVersion = `${BLUE_VERSION}+frontend-runtime.test`
+    expect(buildVersionSections(displayVersion)[0]!.rows[0]).toEqual({
+      label: 'blue',
+      segments: [{ text: `v${displayVersion}` }],
+    })
+    expect(BLUE_VERSION).toBe('0.1.0-rc.2')
+  })
 })
 
 describe('buildContextSection', () => {
@@ -258,6 +267,7 @@ interface MountOptions {
   display?: boolean
   modelRef?: { current: { provider: string, model: string, reasoningEffort?: string } }
   seed?: 'usage' | 'header'
+  displayVersion?: string
 }
 
 async function mount(options: MountOptions = {}): Promise<{
@@ -300,7 +310,7 @@ async function mount(options: MountOptions = {}): Promise<{
   if (options.attach !== false) {
     ctx.provide('blueSession', { current: agent, modelRef: options.modelRef })
   }
-  const fiber = await ctx.plugin(commandsPlugin)
+  const fiber = await ctx.plugin(commandsPlugin, { displayVersion: options.displayVersion })
   return { ctx, screen: screen as FakeScreen, agent, fiber }
 }
 
@@ -473,6 +483,17 @@ describe('registerSessionCommands', () => {
     expect(rows.some(row => row.includes('deepseek-chat'))).toBe(false)
     overlay.component.handleInput?.('\x1b')
     expect(overlay.hidden).toBe(true)
+  })
+
+  it('shows the same profile-local identity in /status and /version', async () => {
+    const displayVersion = `${BLUE_VERSION}+frontend-runtime.test`
+    const { ctx, screen, agent } = await mount({ displayVersion })
+    await run(ctx, agent, '/status')
+    const statusRows = plain((screen.overlays.at(-1)!.component as InfoPanel).render(100))
+    expect(statusRows.some(row => row.includes(`Blue v${displayVersion}`))).toBe(true)
+    await run(ctx, agent, '/version')
+    const versionRows = plain((screen.overlays.at(-1)!.component as InfoPanel).render(100))
+    expect(versionRows.some(row => row.includes(`v${displayVersion}`))).toBe(true)
   })
 
   it('opens the /version panel on an empty slot too', async () => {

@@ -82,14 +82,15 @@ export function formatCreated(createdAt: number): string {
  * release line and the harness line it builds against. The Blue number
  * is the first release the website advertises; the harness line is the
  * independent dsh pin line (the version spec keeps both in check).
+ * @param displayVersion - profile-local display identity, defaulting to the release version.
  * @returns the sections in display order.
  */
-export function buildVersionSections(): InfoSection[] {
+export function buildVersionSections(displayVersion = BLUE_VERSION): InfoSection[] {
   return [
     {
       heading: 'Version',
       rows: [
-        { label: 'blue', segments: [{ text: `v${BLUE_VERSION}` }] },
+        { label: 'blue', segments: [{ text: `v${displayVersion}` }] },
         { label: 'harness', segments: [{ text: HARNESS_LINE }] },
       ],
     },
@@ -277,9 +278,10 @@ export interface StatusInput {
 /**
  * Build the `/status` panel's sections (pure, for the spec).
  * @param input - the session facts to list.
+ * @param displayVersion - profile-local display identity, defaulting to the release version.
  * @returns the sections in display order.
  */
-export function buildStatusSections(input: StatusInput): InfoSection[] {
+export function buildStatusSections(input: StatusInput, displayVersion = BLUE_VERSION): InfoSection[] {
   return [
     {
       heading: 'Session',
@@ -304,7 +306,7 @@ export function buildStatusSections(input: StatusInput): InfoSection[] {
             : []),
         ] },
         { label: 'version', segments: [
-          { text: `Blue v${BLUE_VERSION}` },
+          { text: `Blue v${displayVersion}` },
           { text: ` · dsh ${HARNESS_LINE}`, style: 'muted' },
         ] },
       ],
@@ -389,9 +391,10 @@ function readModelFacts(ctx: Context, agent: { session: { requestHeader(): { con
  * Register the session-info commands (`/status`, `/context`, `/version`) on
  * `ctx.commands`.
  * @param ctx - plugin context.
+ * @param displayVersion - profile-local display identity, defaulting to the release version.
  * @returns the disposer removing all three registrations.
  */
-export function registerSessionCommands(ctx: Context): () => void {
+export function registerSessionCommands(ctx: Context, displayVersion = BLUE_VERSION): () => void {
   /**
    * The `/status` handler: mount the read-only panel over the session
    * header, counts, model, and context occupancy.
@@ -421,7 +424,7 @@ export function registerSessionCommands(ctx: Context): () => void {
         agentStatus: agent.status,
         model,
         context: readUsageFacts(ctx, agent).context,
-      }),
+      }, displayVersion),
       onClose: () => {
         restore()
       },
@@ -493,7 +496,7 @@ export function registerSessionCommands(ctx: Context): () => void {
       theme: display.theme,
       components: display.components,
       title: 'version',
-      sections: buildVersionSections(),
+      sections: buildVersionSections(displayVersion),
       onClose: () => {
         restore()
       },
