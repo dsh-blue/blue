@@ -50,6 +50,8 @@ import * as startupPlugin from '../../../app/src/startup.ts'
 import { startBlueTerminal} from '../../../core/src/terminal.ts'
 import { FakeTerminal} from '../../../core/tests/fake-terminal.ts'
 import * as interactionPlugin from '../../../interaction/src/index.ts'
+import * as contextPlugin from '../../../context/src/index.ts'
+import * as conversationPlugin from '../../../conversation/src/index.ts'
 import { clearDraft, stashHistory} from '../../../interaction/src/draft-stash.ts'
 import * as editorPlusPlugin from '../../../interaction/src/editor-plus.ts'
 import * as attachmentsPlugin from '../../../interaction/src/attachments.ts'
@@ -57,6 +59,7 @@ import * as pasteImagePlugin from '../../../interaction/src/paste-image.ts'
 import * as modeStatusPlugin from '../../../interaction/src/mode-status.ts'
 import * as paneQueuePlugin from '../../../interaction/src/pane-queue.ts'
 import * as transcriptPlugin from '../../../transcript/src/index.ts'
+import * as officialTranscriptPlugin from '../../../transcript/src/official-model.ts'
 import * as bannerPlugin from '../../../transcript/src/banner.ts'
 import * as intentDiffPlugin from '../../../transcript/src/intent-diff.ts'
 import * as intentTerminalPlugin from '../../../transcript/src/intent-terminal.ts'
@@ -198,6 +201,9 @@ interface BlueE2EHooks {
   statusGitApply: typeof statusGitPlugin.apply
   statusTitleApply: typeof statusTitlePlugin.apply
   statusContextApply: typeof statusContextPlugin.apply
+  contextApply: typeof contextPlugin.apply
+  conversationApply: typeof conversationPlugin.apply
+  officialTranscriptApply: typeof officialTranscriptPlugin.apply
   modeStatusApply: typeof modeStatusPlugin.apply
   paneActivityApply: typeof paneActivityPlugin.apply
   paneQueueApply: typeof paneQueuePlugin.apply
@@ -251,6 +257,10 @@ export async function bootBlue(argv: string[], options: {
    * the production path, the fold without it is the degraded host's.
    */
   sessionProjections?: boolean
+  /** Mount the default F3 context row in focused source-plane cases. */
+  frontendContext?: boolean
+  /** Mount the default F5 conversation rows in focused source-plane cases. */
+  officialTranscript?: boolean
   /**
    * The fixture presets the roster's temp root ships, replacing the default
    * single empty composition (which keeps every other case's tool surface
@@ -321,6 +331,9 @@ export async function bootBlue(argv: string[], options: {
     statusGitApply: statusGitPlugin.apply,
     statusTitleApply: statusTitlePlugin.apply,
     statusContextApply: statusContextPlugin.apply,
+    contextApply: contextPlugin.apply,
+    conversationApply: conversationPlugin.apply,
+    officialTranscriptApply: officialTranscriptPlugin.apply,
     modeStatusApply: modeStatusPlugin.apply,
     paneActivityApply: paneActivityPlugin.apply,
     paneQueueApply: paneQueuePlugin.apply,
@@ -420,13 +433,13 @@ export const apply = (ctx, config) => globalThis.__blueE2E.pasteImageApply(ctx, 
     '- id: blue-status-cwd',
     `  name: ${fixture('blue-status-cwd.mjs', `
 export const name = 'blue-status-cwd'
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueStatusModels']
 export const apply = ctx => globalThis.__blueE2E.statusCwdApply(ctx)
 `)}`,
     '- id: blue-status-git',
     `  name: ${fixture('blue-status-git.mjs', `
 export const name = 'blue-status-git'
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueStatusModels']
 export const apply = ctx => globalThis.__blueE2E.statusGitApply(ctx)
 `)}`,
     // The harness session-title service stand-in (the thin e2e tree boots no
@@ -452,21 +465,42 @@ export const apply = ctx => ctx.provide('sessionTitle', {
     '- id: blue-status-title',
     `  name: ${fixture('blue-status-title.mjs', `
 export const name = 'blue-status-title'
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueStatusModels']
 export const apply = ctx => globalThis.__blueE2E.statusTitleApply(ctx)
 `)}`,
     '- id: blue-status-context',
     `  name: ${fixture('blue-status-context.mjs', `
 export const name = 'blue-status-context'
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme']
+export const inject = ['blueStatusModels']
 export const apply = ctx => globalThis.__blueE2E.statusContextApply(ctx)
 `)}`,
+    ...(options.frontendContext === true ? [
+      '- id: blue-context',
+      `  name: ${fixture('blue-context.mjs', `
+export const name = 'blue-context'
+export const apply = ctx => globalThis.__blueE2E.contextApply(ctx)
+`)}`,
+    ] : []),
+    ...(options.officialTranscript === true ? [
+      '- id: blue-conversation',
+      `  name: ${fixture('blue-conversation.mjs', `
+export const name = 'blue-conversation'
+export const inject = ['sessionProjections']
+export const apply = ctx => globalThis.__blueE2E.conversationApply(ctx)
+`)}`,
+      '- id: blue-transcript-official',
+      `  name: ${fixture('blue-transcript-official.mjs', `
+export const name = 'blue-transcript-official'
+export const inject = ['blueConversationProjection', 'sessionProjections', 'blueTranscriptModels', 'blueSession', 'tools']
+export const apply = ctx => globalThis.__blueE2E.officialTranscriptApply(ctx)
+`)}`,
+    ] : []),
     // The S24a mode badge row mirrors cordis.patch.yml: display-only fiber
     // reading the yolo WeakMap and the planMode controller.
     '- id: blue-status-mode',
     `  name: ${fixture('blue-status-mode.mjs', `
 export const name = 'blue-status-mode'
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueStatusModels']
 export const apply = ctx => globalThis.__blueE2E.modeStatusApply(ctx)
 `)}`,
     // The S7 intent rows mirror cordis.patch.yml: both inject the
@@ -611,7 +645,7 @@ export const apply = (ctx) => {
   // self-registered and plan/mode events hit the log (S24a e2e).
   await ctx.plugin(PlanModeController, { section: 'Plan mode (e2e): draft only — no mutations.' })
   await ctx.plugin(UserQuestionService)
-  if (options.sessionProjections === true) {
+  if (options.sessionProjections === true || options.officialTranscript === true) {
     // The projection family as dsh-base composes it: the registry drives
     // the token-meter and session-stats units over every committed event.
     await ctx.plugin(SessionProjectionRegistry)

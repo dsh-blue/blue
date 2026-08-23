@@ -44,7 +44,105 @@ throwaway `/tmp/blue-ecosystem-audit.*` directory:
   external actions as notification/command models, dedupe by operation id, and
   remain usable without the web route or client bundle.
 
-The audit is evidence for the migration boundary, not a claim that either
-external project has been rewritten. `script/blue-plugin-validate.mjs` and
-`script/blue-plugin-fixture.mjs` are the repeatable local gates for the next
-adapter implementation.
+The audit established the migration boundary; neither external domain project
+was rewritten. Blue now implements that boundary in
+`@dsh-blue/blue-openpencil` and `@dsh-blue/blue-lark`. Both composition rows
+are default-enabled after profile acceptance; capability absence contributes
+nothing and does not block the tree.
+
+## F6 packed fixture evidence (2026-08-23)
+
+The runner packed the complete local workspace closure, installed it in an
+independent temporary npm project, and resolved imports only through installed
+package exports. Frontend, harness-adapter, context, and remote each executed
+all seven shared scenarios with zero skipped scenarios. OpenPencil and Lark
+each executed those seven plus two package-specific scenarios (9/9):
+
+- OpenPencil verified official presentation fallback, signed-meta elision,
+  call-id dedupe, bounded retention, failure notification cleanup, unload, and
+  rejection of late tool results.
+- Lark verified status/retry notification states, operation-id dedupe,
+  route-absent fallback, abort, bounded retention, unload, and late-result
+  rejection.
+
+Current-line runs resolved the observed Harness peers to `0.1.1-rc.2`.
+Compatibility runs used `--harness-line 0.1.1-rc.1`, resolved every observed
+Harness peer in the temporary install to that exact line, and again executed
+9/9 scenarios with no skips or failures. The override never edits repository
+manifests or `pnpm-lock.yaml`.
+
+The pre-acceptance automated gate passed with 2,115 tests in 136 files and
+per-file 100% coverage (9,762 statements, 6,124 branches, 1,976 functions,
+8,086 lines). Typecheck/build, lint, 66 lib/export claims, diagram
+synchronization, the VitePress production build, `smoke:happy`, `smoke:pty`,
+and `smoke:pty:mouse` also passed; all three smoke processes exited 0. The
+merge gate reruns this evidence after the accepted production-row switch; its
+final counts are recorded in the acceptance archive.
+
+## F5 conversation packed fixture evidence (2026-08-24)
+
+`@dsh-blue/blue-conversation` and `@dsh-blue/blue-transcript` were each packed
+with the recursive local closure, installed into a throwaway npm project, and
+loaded only through installed public exports. Each target declared and executed
+11/11 scenarios with no skip or failure, and each fixture root was removed.
+
+The four added scenarios use the real Harness `SessionProjectionRegistry` for
+replay, live drive, checkpoint, restore, readiness capability, and Fiber
+unload; reject duplicate/stale sequences and wrong-session changes; reject a
+late callback after provider disposal; and scan semantic plus plain transcript
+rows at 20/40/80/120 columns using installed core width truth.
+
+Current runs resolved the observed Harness packages to `0.1.1-rc.2`.
+Compatibility runs recursively walked public Harness peer metadata because
+`--legacy-peer-deps` suppresses peer installation, pinned the resulting
+21-package closure to exactly `0.1.1-rc.1`, and again passed 11/11 for both
+targets. This compatibility override exists only in each temporary fixture;
+repository manifests and the lockfile remain on rc.2.
+
+## Dedicated frontend-runtime profile dogfood (2026-08-24)
+
+`PROFILE=blue-frontend-runtime script/install-dev.sh` linked all thirteen
+publishable packages into the dedicated profile. Its profile-local patch
+enabled `blue-context`, `blue-conversation`, `blue-transcript-official`,
+`blue-openpencil`, and `blue-lark`. After human acceptance the same five rows
+became default-enabled in the production bundle, with their capability-absent
+and unload fallbacks retained.
+
+The initial pseudo-TTY boot entered and restored alternate-screen,
+bracketed-paste, and mouse-reporting modes, then exited 0 without an overflow
+record or uncaught error. A 40-column local-mock run exercised two live turns
+through the official conversation projection and semantic transcript consumer,
+mouse-wheel manual scroll, the new-message notice, End-follow, resize to 52x28,
+the official `/context` panel, OSC 52 drag-copy, and clean exit. Four mock LLM
+requests completed. Resuming the saved session rendered the persisted
+`official-tail-line-59` history through the same official path and again exited
+0 with terminal modes restored. The user then confirmed the specialized
+version, subagent and tmux-copy fixes, reported no further issues, and
+explicitly accepted the profile on 2026-08-24.
+
+## F4 SSH and remote profile evidence (2026-08-24)
+
+The upstream fixture at commit `423c736869aad20304f470580165bc6dd82d2fbf`
+ran the rc.6 ABI first over its real Unix socket and then through upstream
+`connectSsh()` to that socket. The SSH lane used an explicitly supplied ED25519
+host fingerprint; the fixture has no scan-or-trust fallback. Both lanes exited
+0 after pairing/authentication/negotiation, two-session baseline/live routing,
+prompt/cancel, structured remote failure, timeout and caller cancellation,
+question/approval plus duplicate-response rejection, lease contention and
+one-second expiry, transport loss, same-identity reconnect, sequence resume,
+and late-event fencing.
+
+The SSH run observed initial seq `4`/`6`, resumed seq `8`, lease fencing token
+`1 -> 2`, and successful disconnect lease cleanup. First connect took 258 ms,
+the intentional timeout settled in 41 ms, reconnect took 253 ms, and the whole
+fixture took 3459 ms. Timeout and cancellation correctly surfaced as
+`OUTCOME_UNKNOWN`; stale release surfaced as `LEASE_LOST`.
+
+`blue-remote-frontend-runtime` is a separate linked profile whose local patch
+inserts only `blue-remote-runtime`; production `blue` was not used. A standalone
+PTY and a tmux lane (`80x24 -> 42x18 -> 96x32`) exited 0 with alternate screen,
+bracketed paste, and mouse modes restored, no width overflow, and no uncaught
+error. Tmux copy mode returned the selected `Welcome to Blue!` row. The full
+command/output record is archived in
+`history/blue-remote-ssh-dogfood-2026-08-24.md`. Human live acceptance remains
+pending.

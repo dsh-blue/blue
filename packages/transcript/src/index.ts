@@ -90,8 +90,9 @@ export { BlueIntentsError, BlueIntentsService } from './intents.ts'
 export { BlueStatusError, BlueStatusService, FOOTER_MAX_ROWS, FooterShellComponent } from './status.ts'
 export { BlueStatusModelService, plainView } from './status-model.ts'
 export { BlueDockModelService, ModelDockComponent } from './dock-model.ts'
-export { BlueModelToolService, ToolModelComponent, ToolModelService } from './tool-model.ts'
-export { TranscriptModelService, TranscriptModelComponent } from './transcript-model.ts'
+export { createToolPresentationModel, toolCallView, toolResultView, BlueModelToolService, ToolModelComponent, ToolModelService } from './tool-model.ts'
+export type { ToolPresentationFacts } from './tool-model.ts'
+export { appendTranscriptView, createTranscriptModel, TRANSCRIPT_MODEL_WINDOW, TranscriptModelService, TranscriptModelComponent } from './transcript-model.ts'
 export { StreamingPhaseTracker, type StreamingPhase } from './phase.ts'
 export {
   BRAILLE_SPINNER_FRAMES,
@@ -210,6 +211,7 @@ function mountSession(
   intents: BlueIntentsService,
   agent: Agent,
   toggle: CollapseToggle,
+  images: UserMessageImages,
 ): () => void {
   const components = ctx.blueComponents
   const entries: MountedEntry[] = []
@@ -220,22 +222,6 @@ function mountSession(
       result: (name, args, result) => resolveResultView(ctx.tools, name, args, result),
     },
   })
-
-  // Optional image wiring: the attachments service is looked up softly so a
-  // host without it keeps the `[image]` placeholders.
-  const attachments = ctx.get('attachments') as
-    | { readImage(ref: unknown): Promise<{ data: Uint8Array }> }
-    | undefined
-  const images: UserMessageImages = attachments === undefined ? {} : {
-    loadImage: async (ref: unknown) => {
-      try {
-        return (await attachments.readImage(ref)).data
-      } catch {
-        return undefined
-      }
-    },
-    onReady: () => screen.requestRender(),
-  }
 
   /** Dispose and drop every entry matching the predicate. */
   const retire = (matches: (item: TranscriptItem) => boolean): void => {
@@ -393,6 +379,25 @@ export function apply(ctx: Context): void {
   const colors = ctx.blueTheme.colors
   const toggle: CollapseToggle = { expanded: false, entries: [] }
 
+  // Optional image wiring is renderer-owned. Both the legacy baseline and the
+  // official model consumer receive the same byte loader; the projected model
+  // itself carries only durable references.
+  const imageDependencies = (): UserMessageImages => {
+    const attachments = ctx.get('attachments') as
+      | { readImage(ref: unknown): Promise<{ data: Uint8Array }> }
+      | undefined
+    return attachments === undefined ? {} : {
+      loadImage: async (ref: unknown) => {
+        try {
+          return (await attachments.readImage(ref)).data
+        } catch {
+          return undefined
+        }
+      },
+      onReady: () => screen.requestRender(),
+    }
+  }
+
   // Instantiated directly, like BlueStatusService below: a Cordis Context
   // proxy rejects uninjected services and a service cannot inject itself,
   // yet the built-in generic entry must register before any downstream
@@ -407,10 +412,35 @@ export function apply(ctx: Context): void {
   const statusModels = new BlueStatusModelService(ctx)
   const dockModels = new BlueDockModelService(ctx)
   const toolModels = new BlueModelToolService(ctx)
-  const transcriptModels = new TranscriptModelService(ctx)
+  let activeAgent = ctx.get('blueSession')?.current ?? undefined
+  let unmount: (() => void) | null = null
+  let closing = false
+  const mountLegacy = (): void => {
+    if (closing || activeAgent === undefined) return
+    unmount = mountSession(ctx, screen, colors, intents, activeAgent, toggle, imageDependencies())
+  }
+  const transcriptModels = new TranscriptModelService(ctx, undefined, {
+    renderer: {
+      colors,
+      components: ctx.blueComponents,
+      images: imageDependencies,
+      intents,
+      requestRender: () => screen.requestRender(),
+    },
+    onPresenceChanged: (present) => {
+      if (closing) return
+      if (present) {
+        unmount?.()
+        unmount = null
+      } else {
+        mountLegacy()
+      }
+    },
+  })
+  ctx.effect(() => () => transcriptModels.dispose())
   const footer = new FooterShellComponent(status, ctx.blueComponents)
   status.attach(footer)
-  statusModels.attach(status, screen, colors)
+  statusModels.attach(status, screen, colors, ctx.blueComponents)
   dockModels.attach(screen)
   toolModels.attach(screen)
   transcriptModels.attach(screen)
@@ -445,19 +475,22 @@ export function apply(ctx: Context): void {
           expandable.setExpanded(toggle.expanded && index >= cutoff)
         }
       }
+      transcriptModels.setExpanded(toggle.expanded)
       screen.requestRender(true)
     },
   }]))
 
-  let unmount: (() => void) | null = null
   ctx.on('blue/session-changed', (agent) => {
+    activeAgent = agent
     unmount?.()
-    unmount = mountSession(ctx, screen, colors, intents, agent, toggle)
+    unmount = null
+    if (!transcriptModels.hasModels()) mountLegacy()
   })
-  ctx.effect(() => () => unmount?.())
+  ctx.effect(() => () => {
+    closing = true
+    unmount?.()
+    unmount = null
+  })
 
-  const current = ctx.get('blueSession')?.current
-  if (current) {
-    unmount = mountSession(ctx, screen, colors, intents, current, toggle)
-  }
+  if (activeAgent !== undefined) mountLegacy()
 }

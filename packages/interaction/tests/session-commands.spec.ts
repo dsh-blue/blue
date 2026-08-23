@@ -5,13 +5,14 @@
  * close, and the no-session / no-display guards.
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import * as commandsPlugin from '../src/commands-plugin.ts'
 import type { InfoPanel } from '../src/info-panel.ts'
+import type { FrontendPanel } from '../src/frontend-panel.ts'
 import { clearSharedEditor } from '../src/editor-instance.ts'
 import {
   buildCompositionSection,
@@ -50,6 +51,15 @@ describe('buildVersionSections', () => {
       { label: 'blue', segments: [{ text: `v${BLUE_VERSION}` }] },
       { label: 'harness', segments: [{ text: '0.1.1-rc.2' }] },
     ])
+  })
+
+  it('uses a profile-local display identity without changing the release constant', () => {
+    const displayVersion = `${BLUE_VERSION}+frontend-runtime.test`
+    expect(buildVersionSections(displayVersion)[0]!.rows[0]).toEqual({
+      label: 'blue',
+      segments: [{ text: `v${displayVersion}` }],
+    })
+    expect(BLUE_VERSION).toBe('0.1.0-rc.2')
   })
 })
 
@@ -257,6 +267,7 @@ interface MountOptions {
   display?: boolean
   modelRef?: { current: { provider: string, model: string, reasoningEffort?: string } }
   seed?: 'usage' | 'header'
+  displayVersion?: string
 }
 
 async function mount(options: MountOptions = {}): Promise<{
@@ -299,7 +310,7 @@ async function mount(options: MountOptions = {}): Promise<{
   if (options.attach !== false) {
     ctx.provide('blueSession', { current: agent, modelRef: options.modelRef })
   }
-  const fiber = await ctx.plugin(commandsPlugin)
+  const fiber = await ctx.plugin(commandsPlugin, { displayVersion: options.displayVersion })
   return { ctx, screen: screen as FakeScreen, agent, fiber }
 }
 
@@ -372,6 +383,31 @@ describe('registerSessionCommands', () => {
     expect(rows.some(row => row.includes('61.5k / 8k'))).toBe(true)
     overlay.component.handleInput?.('q')
     expect(overlay.hidden).toBe(true)
+  })
+
+  it('prefers the renderer-neutral context model and falls back when it unloads', async () => {
+    const { ctx, screen, agent } = await mount({ seed: 'usage' })
+    const execute = vi.fn(async () => ({ ok: true }))
+    const unsubscribe = vi.fn()
+    const feature = {
+      model: { panel: { kind: 'panel', mode: 'info', title: 'Context', view: { kind: 'text', text: 'official context projection' }, submit: { kind: 'context.refresh', sessionId: 'status-spec' } } },
+      subscribe: (listener: () => void) => { listener(); return unsubscribe },
+      execute,
+    }
+    ;(ctx as unknown as { provide(name: string, value: unknown): void }).provide('blueContextFeature', feature)
+    expect(await run(ctx, agent, '/context')).toEqual({ kind: 'success' })
+    const projected = screen.overlays.at(-1)!.component as FrontendPanel
+    expect(plain(projected.render(80)).some(row => row.includes('official context projection'))).toBe(true)
+    projected.handleInput('\r')
+    await Promise.resolve()
+    expect(execute).toHaveBeenCalledWith({ kind: 'context.refresh', sessionId: 'status-spec' })
+    feature.model = undefined as never
+    expect(plain(projected.render(80)).some(row => row.includes('context unavailable'))).toBe(true)
+    projected.handleInput('\x1b')
+    expect(unsubscribe).toHaveBeenCalledOnce()
+    expect(await run(ctx, agent, '/context')).toEqual({ kind: 'success' })
+    expect(screen.overlays.at(-1)!.component).toBeInstanceOf(Object)
+    expect(screen.overlays.at(-1)!.component.constructor.name).toBe('InfoPanel')
   })
 
   it('reads the projection snapshot when the seam is composed', async () => {
@@ -447,6 +483,17 @@ describe('registerSessionCommands', () => {
     expect(rows.some(row => row.includes('deepseek-chat'))).toBe(false)
     overlay.component.handleInput?.('\x1b')
     expect(overlay.hidden).toBe(true)
+  })
+
+  it('shows the same profile-local identity in /status and /version', async () => {
+    const displayVersion = `${BLUE_VERSION}+frontend-runtime.test`
+    const { ctx, screen, agent } = await mount({ displayVersion })
+    await run(ctx, agent, '/status')
+    const statusRows = plain((screen.overlays.at(-1)!.component as InfoPanel).render(100))
+    expect(statusRows.some(row => row.includes(`Blue v${displayVersion}`))).toBe(true)
+    await run(ctx, agent, '/version')
+    const versionRows = plain((screen.overlays.at(-1)!.component as InfoPanel).render(100))
+    expect(versionRows.some(row => row.includes(`v${displayVersion}`))).toBe(true)
   })
 
   it('opens the /version panel on an empty slot too', async () => {

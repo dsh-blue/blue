@@ -15,6 +15,7 @@ import { FormPanel, type FormField } from '../src/form-panel.ts'
 import { ModelPanel, type ModelPanelItem } from '../src/model-panel.ts'
 import { HelpOverlay, type HelpSection } from '../src/help.ts'
 import { InfoPanel, type InfoSection } from '../src/info-panel.ts'
+import { FrontendPanel } from '../src/frontend-panel.ts'
 import { PlanReviewPanel, planReviewChoices } from '../src/plan-review-panel.ts'
 import { Questionnaire } from '../src/questionnaire.ts'
 import { fakeBlueContext, FakeBlueComponents, FakeKeymap } from './fakes.ts'
@@ -145,6 +146,20 @@ describe('interaction width-scan', () => {
       })
       for (const width of SCAN_WIDTHS) {
         expectLinesFit(`InfoPanel/${name}`, panel.render(width), width)
+      }
+    })
+
+    it(`FrontendPanel survives ${name}`, () => {
+      const panel = new FrontendPanel({
+        theme: IDENTITY_THEME as never,
+        components: new FakeBlueComponents(),
+        keymap: new FakeKeymap(),
+        model: () => ({ kind: 'panel', mode: 'info', title: text, view: { kind: 'sections', sections: [{ title: text, body: { kind: 'fields', fields: [{ label: text, value: text }] } }] } }),
+        onAction: vi.fn(),
+        onClose: vi.fn(),
+      })
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`FrontendPanel/${name}`, panel.render(width), width)
       }
     })
 

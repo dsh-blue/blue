@@ -19,7 +19,7 @@ import {
   type TuiInputListener,
 } from '@earendil-works/pi-tui'
 import { clampFrame, createFileOverflowSink, defaultOverflowDirectory, type OverflowSink } from './frame-clamp.ts'
-import { buildClipboardOsc52, buildTitleOsc0 } from './terminal-escape.ts'
+import { buildTitleOsc0, copySelectionText } from './terminal-escape.ts'
 import { probeTerminalBackground, backgroundFromRgb, type BlueProbeProcess } from './terminal-info.ts'
 import type { BlueComponent, BlueOverlayHandle, BlueOverlayOptions, BlueRgbColor } from './types.ts'
 
@@ -241,14 +241,7 @@ export async function startBlueTerminal(
   const current: TUI = alternate
     ? new TuiAltScreen(terminal, undefined, undefined, {
         wheelScrollLines: 3,
-        copySelection: async text => {
-          try {
-            terminal.write(buildClipboardOsc52(text))
-            return true
-          } catch {
-            return false
-          }
-        },
+        copySelection: text => copySelectionText(text, terminal),
       })
     : new TuiMainScreen(terminal)
   const stable = createStableTuiReference(() => current)

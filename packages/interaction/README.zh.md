@@ -6,7 +6,11 @@ Blue 终端 UI 交互层，构建于 [`dsh-blue-core`](../core/README.md) 之上
 
 ## 插件
 
-单一入口插件 `blue-interaction` 挂载五个子插件；所有注册均经 effect 绑定，因此卸载 fiber 会摘除全部贡献（HMR 安全：provider/命令/键位注册随 fiber 消失）。
+单一入口插件 `blue-interaction` 挂载五个子插件；所有注册均经 effect 绑定，因此卸载 fiber 会摘除全部贡献（HMR 安全：provider/命令/键位注册随 fiber 消失）。它的可选 `displayVersion` 配置用于在 `/status` 与 `/version` 中标识隔离验收 profile；未配置时仍取 `BLUE_VERSION`，package manifest 与发布常量均不变。
+
+`/copy` 会先发送原生 OSC 52 序列；在 tmux 内同样保持原生形式，由 `set-clipboard on|external` 转发，无需 DCS passthrough。随后它会尝试平台剪贴板工具作为可验证路径。由于终端协议没有回执，仅靠 OSC 成功时仍会明确标为“未验证”。
+
+input hint 始终只占一个终端物理行。`/goal` 状态输出这类多行命令结果会先用 ` · ` 压平再按宽度截断，内嵌 CR/LF 不会再扰乱 editor/footer 帧。
 
 - **`blue-interaction-keys`** —— 在 `ctx.blueKeymap` 上作为一个校验单元注册共享键位批次（`blue.interaction.submit/cancel/move-up/move-down/toggle`），另加两个编辑器语境动作 `blue.interaction.interrupt`（Ctrl-C）与 `blue.interaction.steer`（Ctrl-S）。后两者不带 handler——保持语境属性，由主编辑器的 `onKey` 钩子解析，绝不进全局分发器，因此不会与 overlay 的 `escape=cancel` 抢键。多选列表 `BlueSelect` 针对这些 action 解析键位并用 `getKeys` 生成底部提示；文本编辑键位归 pi-tui Editor 自身所有。
 - **`blue-input`** —— 挂载聚焦的底部编辑器：来自 `ctx.blueComponents.createEditor({ paddingX: 4 })` 的 pi-tui Editor，挂载即设 `>` 提示符（padding 与符号供给 core 适配器的圆角框 chrome），hint 行拆为独立的 `HintLine` 组件钉在其下方。hint 行只承载瞬态层：一次性通知与斜杠命令发现用 `muted`，其余时刻渲染零行（S15 dogfood 裁决退役了常驻按键提示行——kimi 经 footer 轮换 tips 教学 affordance，tips 池已覆盖该行全部片段）。以 `/` 开头的输入经 `setBorderColor` 把编辑框变 `primary`，其余文本恢复中性边框。提交时用 `parseCommand` 解析该行：裸 `/permission` 行——仅在权限预设服务已组合时——改开预设选择器而非分发（见[共享面板](#共享面板)）；其余斜杠命令经 `ctx.commands.execute` 分发（不进入模型轮；成功/错误文本在 hint 行闪现），其余内容作为 `createUserMessage({ source: { kind: 'user' } })` follow-up 提交给当前 agent——agent 运行中时由 harness inbox 排队。`onSubmit` 回调参数携带的已是粘贴展开、trim 后的文本。以 `/` 开头的输入会从 `ctx.commands.list` 显示最多三条模糊匹配命令作为发现提示（与下拉共用同一 `slash-filter` helper）。挂载的编辑器与其提交路由经包内共享 ref 发布，供 `blue-editor-plus` 在同一组件上叠加输入模式与补全。编辑器的 `onKey` 前置拦截钩子解析编辑器语境键链：Escape 先放行正在显示的补全弹层，其次在旁路问题面板挂在编辑框上方时关闭面板（草稿存活），再清空草稿，最后中断运行中的 agent；Ctrl-C 先清草稿，再中断运行中的 agent，1 秒内第二次按下经启动器持有的 `appExit(0)` 退出（单击时在 hint 行闪现双击提示）；Ctrl-S 把非空草稿 steer 注入当前 turn 并清空 buffer；Shift-Tab 循环会话模式（normal → plan → yolo，每步恰好派发一条显式命令，bash 模式下同样生效——输入模式与会话模式是正交两轴）；空 buffer 的 ↑/↓ 在面板挂载时优先滚动面板（先于队列 recall）。未提交的草稿、输入模式与提示历史镜像到模块级 stash（`src/draft-stash.ts`），主题切换重建本 fiber 时一并恢复到新编辑器（文本经 `setText`、历史按序重放 `addToHistory`——否则 `/theme <name>` 这类提交会在自己触发的编辑器重建中从 Up 召回里消失）；提交与 steer 清空草稿，历史留存。

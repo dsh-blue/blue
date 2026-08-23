@@ -111,12 +111,30 @@ importers:
       '@dsh-blue/blue-app':
         specifier: workspace:^
         version: link:../../app
+      '@dsh-blue/blue-context':
+        specifier: workspace:^
+        version: link:../../context
+      '@dsh-blue/blue-conversation':
+        specifier: workspace:^
+        version: link:../../conversation
       '@dsh-blue/blue-core':
         specifier: workspace:^
         version: link:../../core
+      '@dsh-blue/blue-frontend':
+        specifier: workspace:^
+        version: link:../../frontend
+      '@dsh-blue/blue-harness-adapter':
+        specifier: workspace:^
+        version: link:../../harness-adapter
       '@dsh-blue/blue-interaction':
         specifier: workspace:^
         version: link:../../interaction
+      '@dsh-blue/blue-lark':
+        specifier: workspace:^
+        version: link:../../lark
+      '@dsh-blue/blue-openpencil':
+        specifier: workspace:^
+        version: link:../../openpencil
       '@dsh-blue/blue-transcript':
         specifier: workspace:^
         version: link:../../transcript
@@ -226,6 +244,25 @@ importers:
       '@dsh-blue/blue-harness-adapter':
         specifier: workspace:*
         version: link:../harness-adapter
+
+  packages/conversation:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@deepseek-ai/dsh-llm':
+        specifier: 0.1.1-rc.2
+        version: 0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-attachment@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-brand@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-brand@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-timeout@0.1.0-rc.7(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)))
+      '@deepseek-ai/dsh-session':
+        specifier: 0.1.1-rc.2
+        version: 0.1.1-rc.2(da10d73275c6b969dc5c0d73e993fef4)
+      '@deepseek-ai/dsh-session-projection':
+        specifier: 0.1.1-rc.2
+        version: 0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-session@0.1.1-rc.2(da10d73275c6b969dc5c0d73e993fef4))
 
   packages/core:
     dependencies:
@@ -364,6 +401,36 @@ importers:
         specifier: workspace:^
         version: link:../transcript
 
+  packages/lark:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@deepseek-ai/dsh-commands':
+        specifier: 0.1.1-rc.2
+        version: 0.1.1-rc.2(d1399cb81885d3e5537c8ff734d29d59)
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: 0.1.1-rc.2
+        version: 0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1))
+      '@dsh-blue/blue-frontend':
+        specifier: workspace:*
+        version: link:../frontend
+
+  packages/openpencil:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@deepseek-ai/dsh-tools':
+        specifier: 0.1.1-rc.2
+        version: 0.1.1-rc.2(2b28dc2a7b5da557183b24e20374217f)
+      '@dsh-blue/blue-frontend':
+        specifier: workspace:*
+        version: link:../frontend
+      '@dsh-blue/blue-transcript':
+        specifier: workspace:*
+        version: link:../transcript
+
   packages/remote:
     devDependencies:
       '@deepseek-ai/cordis':
@@ -412,6 +479,9 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: 0.1.1-rc.2
         version: 0.1.1-rc.2(da10d73275c6b969dc5c0d73e993fef4)
+      '@deepseek-ai/dsh-session-projection':
+        specifier: 0.1.1-rc.2
+        version: 0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-session@0.1.1-rc.2(da10d73275c6b969dc5c0d73e993fef4))
       '@deepseek-ai/dsh-tools':
         specifier: 0.1.1-rc.2
         version: 0.1.1-rc.2(2b28dc2a7b5da557183b24e20374217f)
@@ -421,6 +491,9 @@ importers:
       '@dsh-blue/blue-app':
         specifier: workspace:^
         version: link:../app
+      '@dsh-blue/blue-conversation':
+        specifier: workspace:^
+        version: link:../conversation
       '@dsh-blue/blue-core':
         specifier: workspace:^
         version: link:../core

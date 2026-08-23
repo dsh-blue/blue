@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ActionCoordinator, SessionBridge } from '@dsh-blue/blue-harness-adapter'
+import { ActionCoordinator, QuestionBridge, SessionBridge } from '@dsh-blue/blue-harness-adapter'
 import { CurrentSessionBinding } from '../src/binding.ts'
 import { RemoteSessionAdapter } from '../src/adapter.ts'
 import { ProjectionRegistry } from '../src/registry.ts'
@@ -16,7 +16,7 @@ function transportFixture() {
     snapshot: vi.fn(async () => ({ watermark: 4, value: snap() })),
     subscribe: vi.fn((id, _after, listener) => { eventListeners.set(id, listener); return () => { if (eventListeners.get(id) === listener) eventListeners.delete(id) } }),
     request: vi.fn(async () => undefined),
-    acquireWriteLease: vi.fn(async () => ({ token: 'lease', expiresAt: 10 })),
+    acquireWriteLease: vi.fn(async () => ({ token: 'lease', expiresAt: Date.now() + 60_000 })),
     releaseWriteLease: vi.fn(async () => undefined),
     ask: vi.fn(async (_id, question) => `answer:${String(question)}`),
     approve: vi.fn(async () => 'yes'),
@@ -36,12 +36,173 @@ describe('RemoteSessionAdapter', () => {
     const controller = new AbortController(); controller.abort(); const aborted = new RemoteSessionAdapter(transportFixture().transport); await expect(aborted.connect('s1', controller.signal)).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
     const bad: RemoteTransport = { ...absentTransport, negotiate: async () => { throw new Error('network') } }; await expect(new RemoteSessionAdapter(bad).connect('s1')).resolves.toMatchObject({ code: 'BLUE_API_INCOMPATIBLE', message: 'network' }); const stringBad: RemoteTransport = { ...absentTransport, negotiate: async () => { throw 'network' } }; await expect(new RemoteSessionAdapter(stringBad).connect('s1')).resolves.toMatchObject({ code: 'BLUE_API_INCOMPATIBLE', message: 'network' }); let rejectOnAbort!: (error: unknown) => void; const abortBad: RemoteTransport = { ...absentTransport, negotiate: async signal => new Promise((_resolve, reject) => { rejectOnAbort = reject; signal.addEventListener('abort', () => rejectOnAbort(new Error('aborted')), { once: true }) }) }; const abortBadAdapter = new RemoteSessionAdapter(abortBad); const abortBadPending = abortBadAdapter.connect('s1'); abortBadAdapter.disconnect(); await expect(abortBadPending).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
     const fixture = transportFixture(); const adapter = new RemoteSessionAdapter(fixture.transport); await adapter.connect('s1'); await expect(adapter.request({ kind: 'interrupt' }, new AbortController().signal)).resolves.toBeUndefined(); await expect(adapter.acquireWriteLease()).resolves.toMatchObject({ ok: true, value: { token: 'lease' } }); await expect(adapter.releaseWriteLease()).resolves.toMatchObject({ ok: true }); expect(adapter.questionSource()).toBeDefined(); await expect(adapter.questionSource()!.ask('q', new AbortController().signal)).resolves.toBe('answer:q'); await expect(adapter.questionSource()!.approve('q', new AbortController().signal)).resolves.toBe('yes'); adapter.dispose()
+    const externallyAborted = new AbortController(); let rejectExternal!: (error: unknown) => void; const pendingTransport: RemoteTransport = { ...fixture.transport, negotiate: async signal => new Promise((_resolve, reject) => { rejectExternal = reject; signal.addEventListener('abort', () => rejectExternal(new Error('aborted')), { once: true }) }) }; const pendingAdapter = new RemoteSessionAdapter(pendingTransport); const pendingConnect = pendingAdapter.connect('s1', externallyAborted.signal); externallyAborted.abort(); await expect(pendingConnect).resolves.toMatchObject({ code: 'BLUE_ABORTED' }); pendingAdapter.dispose()
     const snapshotBad = { ...absentTransport, negotiate: async () => ({ protocol: '1', capabilities: ['session'] as const }), snapshot: async () => { throw new Error('snapshot down') } }; await expect(new RemoteSessionAdapter(snapshotBad).connect('s1')).resolves.toMatchObject({ code: 'BLUE_API_INCOMPATIBLE', message: 'snapshot down' }); let resolveNegotiation!: (value: { protocol: string; capabilities: readonly ['session'] }) => void; const slow: RemoteTransport = { ...absentTransport, negotiate: async () => new Promise(resolve => { resolveNegotiation = resolve }) }; const slowAdapter = new RemoteSessionAdapter(slow); const connecting = slowAdapter.connect('s1'); slowAdapter.disconnect(); resolveNegotiation({ protocol: '1', capabilities: ['session'] }); await expect(connecting).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
   })
   it('handles optional lease/question capability and abort/error paths', async () => {
     const fixture = transportFixture(); const transport = { ...fixture.transport, negotiate: async () => ({ protocol: '1', capabilities: ['session', 'action', 'writeLease'] as const }), acquireWriteLease: async (_id: string, signal: AbortSignal) => { if (signal.aborted) throw new Error('aborted'); throw new Error('lease down') }, releaseWriteLease: async () => { throw new Error('release down') } }; const adapter = new RemoteSessionAdapter(transport); await adapter.connect('s1'); await expect(adapter.acquireWriteLease()).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED' }); expect(adapter.questionSource()).toBeDefined(); await expect(adapter.questionSource()!.ask('q', new AbortController().signal)).rejects.toThrow('remote question unavailable'); await expect(adapter.request({ kind: 'interrupt' }, new AbortController().signal)).resolves.toBeUndefined(); adapter.disconnect()
     const noLease = new RemoteSessionAdapter({ ...fixture.transport, negotiate: async () => ({ protocol: '1', capabilities: ['session'] as const }) }); await noLease.connect('s1'); await expect(noLease.acquireWriteLease()).resolves.toMatchObject({ code: 'BLUE_CAPABILITY_ABSENT' }); await expect(noLease.releaseWriteLease()).resolves.toMatchObject({ ok: true }); await expect(noLease.questionSource()!.approve('q', new AbortController().signal)).rejects.toThrow('remote approval unavailable'); noLease.dispose(); expect(noLease.questionSource()).toBeUndefined(); await expect(noLease.request({ kind: 'interrupt' }, new AbortController().signal)).rejects.toThrow('remote action unavailable'); await expect(noLease.snapshot(new AbortController().signal)).rejects.toThrow('remote session unavailable')
     const leased = transportFixture(); const releaseError = { ...leased.transport, releaseWriteLease: async () => { throw 'release down' } }; const leasedAdapter = new RemoteSessionAdapter(releaseError); await leasedAdapter.connect('s1'); await expect(leasedAdapter.acquireWriteLease()).resolves.toMatchObject({ ok: true }); await expect(leasedAdapter.releaseWriteLease()).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'release down' }); const releaseErrorObject = transportFixture(); const releaseErrorAdapter = new RemoteSessionAdapter({ ...releaseErrorObject.transport, releaseWriteLease: async () => { throw new Error('release down') } }); await releaseErrorAdapter.connect('s1'); await releaseErrorAdapter.acquireWriteLease(); await expect(releaseErrorAdapter.releaseWriteLease()).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED' }); const abortLease = new AbortController(); const abortTransport = { ...leased.transport, acquireWriteLease: async (_id: string, signal: AbortSignal) => new Promise<never>((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })) }; const abortAdapter = new RemoteSessionAdapter(abortTransport); await abortAdapter.connect('s1'); const aborting = abortAdapter.acquireWriteLease(abortLease.signal); abortLease.abort(); await expect(aborting).resolves.toMatchObject({ code: 'BLUE_ABORTED' }); const preAborted = new AbortController(); preAborted.abort(); await expect(abortAdapter.acquireWriteLease(preAborted.signal)).resolves.toMatchObject({ code: 'BLUE_ABORTED' }); const stringLease = new RemoteSessionAdapter({ ...leased.transport, acquireWriteLease: async () => { throw 'lease down' } }); await stringLease.connect('s1'); await expect(stringLease.acquireWriteLease()).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'lease down' }); abortAdapter.dispose(); leasedAdapter.dispose(); releaseErrorAdapter.dispose(); stringLease.dispose()
+  })
+
+  it('deduplicates concurrent leases, fences expiry, and releases late grants', async () => {
+    const fixture = transportFixture()
+    let now = 100
+    const acquireGate = Promise.withResolvers<{ token: string; expiresAt: number }>()
+    vi.mocked(fixture.transport.acquireWriteLease!).mockImplementationOnce(async () => acquireGate.promise)
+    const releaseGate = Promise.withResolvers<void>()
+    vi.mocked(fixture.transport.releaseWriteLease!).mockImplementationOnce(async () => releaseGate.promise)
+    const adapter = new RemoteSessionAdapter(fixture.transport, { now: () => now })
+    await adapter.connect('s1')
+
+    const firstController = new AbortController()
+    const first = adapter.acquireWriteLease(firstController.signal)
+    const second = adapter.acquireWriteLease()
+    expect(fixture.transport.acquireWriteLease).toHaveBeenCalledTimes(1)
+    firstController.abort()
+    await expect(first).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
+    acquireGate.resolve({ token: 'shared', expiresAt: 110 })
+    await expect(second).resolves.toMatchObject({ ok: true, value: { token: 'shared' } })
+    await expect(adapter.acquireWriteLease()).resolves.toMatchObject({ ok: true, value: { token: 'shared' } })
+    expect(fixture.transport.acquireWriteLease).toHaveBeenCalledTimes(1)
+
+    const releaseOne = adapter.releaseWriteLease()
+    const releaseTwo = adapter.releaseWriteLease()
+    expect(fixture.transport.releaseWriteLease).toHaveBeenCalledTimes(1)
+    releaseGate.resolve()
+    await expect(releaseOne).resolves.toMatchObject({ ok: true })
+    await expect(releaseTwo).resolves.toMatchObject({ ok: true })
+
+    vi.mocked(fixture.transport.acquireWriteLease!).mockResolvedValueOnce({ token: 'expiring', expiresAt: 105 })
+    await expect(adapter.acquireWriteLease()).resolves.toMatchObject({ ok: true, value: { token: 'expiring' } })
+    now = 120
+    vi.mocked(fixture.transport.acquireWriteLease!).mockResolvedValueOnce({ token: 'fresh', expiresAt: 200 })
+    await expect(adapter.acquireWriteLease()).resolves.toMatchObject({ ok: true, value: { token: 'fresh' } })
+    expect(fixture.transport.releaseWriteLease).toHaveBeenCalledWith('s1', expect.objectContaining({ token: 'expiring' }))
+    await adapter.releaseWriteLease()
+
+    vi.mocked(fixture.transport.acquireWriteLease!).mockResolvedValueOnce({ token: 'already-expired', expiresAt: Number.NaN })
+    await expect(adapter.acquireWriteLease()).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'remote writer lease was already expired' })
+    expect(fixture.transport.releaseWriteLease).toHaveBeenCalledWith('s1', expect.objectContaining({ token: 'already-expired' }))
+    adapter.dispose()
+
+    const noReleaseFixture = transportFixture()
+    noReleaseFixture.transport.releaseWriteLease = undefined
+    const noRelease = new RemoteSessionAdapter(noReleaseFixture.transport)
+    await noRelease.connect('s1')
+    await noRelease.acquireWriteLease()
+    await expect(noRelease.releaseWriteLease()).resolves.toMatchObject({ ok: true })
+    await noRelease.acquireWriteLease()
+    noRelease.disconnect()
+    await expect(noRelease.releaseWriteLease()).resolves.toMatchObject({ ok: true })
+    noRelease.dispose()
+  })
+
+  it('aborts a pending acquire before release and isolates release generations', async () => {
+    const pendingFixture = transportFixture()
+    const acquireStarted = Promise.withResolvers<void>()
+    vi.mocked(pendingFixture.transport.acquireWriteLease!).mockImplementationOnce(async (_sessionId, signal) => new Promise((_resolve, reject) => {
+      acquireStarted.resolve()
+      signal.addEventListener('abort', () => reject(new Error('acquire aborted')), { once: true })
+    }))
+    const pendingAdapter = new RemoteSessionAdapter(pendingFixture.transport)
+    await pendingAdapter.connect('s1')
+    const pendingAcquire = pendingAdapter.acquireWriteLease()
+    await acquireStarted.promise
+    const releaseDuringAcquire = pendingAdapter.releaseWriteLease()
+    await expect(pendingAcquire).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
+    await expect(releaseDuringAcquire).resolves.toMatchObject({ ok: true })
+    pendingAdapter.dispose()
+
+    const reconnectFixture = transportFixture()
+    const staleGrant = Promise.withResolvers<{ token: string; expiresAt: number }>()
+    vi.mocked(reconnectFixture.transport.acquireWriteLease!)
+      .mockImplementationOnce(async () => staleGrant.promise)
+      .mockResolvedValueOnce({ token: 'fresh', expiresAt: Date.now() + 60_000 })
+    const reconnecting = new RemoteSessionAdapter(reconnectFixture.transport)
+    await reconnecting.connect('s1')
+    const staleAcquire = reconnecting.acquireWriteLease()
+    reconnecting.disconnect()
+    await reconnecting.connect('s2')
+    await expect(reconnecting.releaseWriteLease()).resolves.toMatchObject({ ok: true })
+    const freshAcquire = reconnecting.acquireWriteLease()
+    staleGrant.resolve({ token: 'stale', expiresAt: Date.now() + 60_000 })
+    await expect(staleAcquire).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
+    await expect(freshAcquire).resolves.toMatchObject({ ok: true, value: { token: 'fresh' } })
+    reconnecting.dispose()
+
+    const releaseFixture = transportFixture()
+    const oldRelease = Promise.withResolvers<void>()
+    const newRelease = Promise.withResolvers<void>()
+    vi.mocked(releaseFixture.transport.releaseWriteLease!)
+      .mockImplementationOnce(async () => oldRelease.promise)
+      .mockImplementationOnce(async () => newRelease.promise)
+    const releases = new RemoteSessionAdapter(releaseFixture.transport)
+    await releases.connect('s1')
+    await releases.acquireWriteLease()
+    const releasingOldGeneration = releases.releaseWriteLease()
+    releases.disconnect()
+    await releases.connect('s1')
+    await releases.acquireWriteLease()
+    const releasingNewGeneration = releases.releaseWriteLease()
+    oldRelease.reject(new Error('old connection lost'))
+    await expect(releasingOldGeneration).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'old connection lost' })
+    newRelease.resolve()
+    await expect(releasingNewGeneration).resolves.toMatchObject({ ok: true })
+    releases.dispose()
+  })
+
+  it('reports network cleanup failures and rejects a lease completed after disconnect', async () => {
+    const fixture = transportFixture()
+    const diagnostics: unknown[] = []
+    const late = Promise.withResolvers<{ token: string; expiresAt: number }>()
+    vi.mocked(fixture.transport.acquireWriteLease!).mockImplementationOnce(async () => late.promise)
+    vi.mocked(fixture.transport.releaseWriteLease!).mockRejectedValue(new Error('network disconnected'))
+    const adapter = new RemoteSessionAdapter(fixture.transport, { onDiagnostic: diagnostic => diagnostics.push(diagnostic) })
+    await adapter.connect('s1')
+    const acquiring = adapter.acquireWriteLease()
+    adapter.disconnect()
+    late.resolve({ token: 'late', expiresAt: Date.now() + 60_000 })
+    await expect(acquiring).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
+    await vi.waitFor(() => expect(diagnostics).toEqual([
+      { operation: 'lease.release', sessionId: 's1', code: 'BLUE_ACTION_REJECTED', message: 'network disconnected' },
+    ]))
+    adapter.dispose()
+
+    const callbackFailure = transportFixture()
+    vi.mocked(callbackFailure.transport.releaseWriteLease!).mockRejectedValue('release failed')
+    const throwingDiagnostic = new RemoteSessionAdapter(callbackFailure.transport, { onDiagnostic: () => { throw new Error('diagnostic sink failed') } })
+    await throwingDiagnostic.connect('s1')
+    await throwingDiagnostic.acquireWriteLease()
+    throwingDiagnostic.disconnect()
+    await vi.waitFor(() => expect(callbackFailure.transport.releaseWriteLease).toHaveBeenCalled())
+    throwingDiagnostic.dispose()
+  })
+
+  it('returns remote failure, timeout, cancellation, and duplicate response as structured bridge results', async () => {
+    const fixture = transportFixture()
+    const adapter = new RemoteSessionAdapter(fixture.transport)
+    await adapter.connect('s1')
+    const session = new SessionBridge({ source: adapter })
+    await session.attach(adapter)
+
+    vi.mocked(fixture.transport.request).mockRejectedValueOnce(new Error('remote failed'))
+    await expect(session.request({ kind: 'followup', text: 'failure' })).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'remote failed' })
+    vi.mocked(fixture.transport.request).mockRejectedValueOnce(Object.assign(new Error('remote request timed out'), { code: 'REQUEST_TIMEOUT' }))
+    await expect(session.request({ kind: 'followup', text: 'timeout' })).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'remote request timed out' })
+    vi.mocked(fixture.transport.request).mockImplementationOnce(async (_sessionId, _action, signal) => new Promise<void>((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new Error('remote request was cancelled')), { once: true })
+    }))
+    const controller = new AbortController()
+    const cancelling = session.request({ kind: 'followup', text: 'cancel' }, { signal: controller.signal })
+    controller.abort()
+    await expect(cancelling).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
+
+    vi.mocked(fixture.transport.ask!).mockRejectedValueOnce(new Error('duplicate remote response'))
+    const questions = new QuestionBridge(adapter.questionSource())
+    await expect(questions.ask({ rpcId: 'duplicate' })).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'duplicate remote response' })
+    session.dispose()
+    adapter.dispose()
   })
 })
 

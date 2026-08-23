@@ -22,11 +22,12 @@
 | [blue-skills-plan.md](./blue-skills-plan.md) | 插件开发与迁移 skills 的输入、诊断输出和实施顺序 |
 | [blue-implementation-plan.md](./blue-implementation-plan.md) | p2/frontend-runtime 的阶段实施、迁移顺序、主线同步与合并门禁 |
 | [blue-plugin-validation.md](./blue-plugin-validation.md) | F6 外部插件验证、独立 fixture 与生态审计门禁 |
+| [blue-surface-migration-matrix.md](./blue-surface-migration-matrix.md) | F5 status、dock、command、tool、theme、editor、transcript 迁移矩阵与删除条件 |
 | [blue-frontend-runtime-task-checklist.md](./blue-frontend-runtime-task-checklist.md) | F3/F4/F5/F6 可执行开发任务、验收门禁与完成定义 |
 
 F2 兼容适配层的实现位于 [`packages/harness-adapter`](../packages/harness-adapter)，按 session、projection、action、model 和 question/approval 能力拆分。
 
-F3 `dsh-context` vertical slice 的 headless 实现位于 [`packages/context`](../packages/context)；旧 `blue-status-context` 在人工 TUI 验收前继续作为 renderer baseline。
+F3 `dsh-context` vertical slice 的 headless 实现位于 [`packages/context`](../packages/context)；人工 TUI 验收通过后官方 row 已默认启用，旧 `blue-status-context` 继续作为 capability-absent/unload renderer fallback。
 
 F4 session runtime 与 `dsh-remote` proxy adapter 位于 [`packages/remote`](../packages/remote)；它提供多 session projection registry、current-session binding、seq resume、write lease 和 question/approval 转发，仍不接触 TUI。
 
@@ -42,3 +43,5 @@ F4 session runtime 与 `dsh-remote` proxy adapter 位于 [`packages/remote`](../
 | [history/blue-survey-pi-tui.md](./history/blue-survey-pi-tui.md) | pi-tui 0.84.2 选型调研存档 |
 | [history/blue-survey-harness.md](./history/blue-survey-harness.md) | deepseek-harness 0.1.0-rc.7 调研存档 |
 | [history/blue-codex-acceptance-2026-08-23.md](./history/blue-codex-acceptance-2026-08-23.md) | Codex 验收机器门禁、证据边界与暂缓项归档 |
+| [history/blue-remote-ssh-dogfood-2026-08-24.md](./history/blue-remote-ssh-dogfood-2026-08-24.md) | F4 真实 Unix/SSH daemon、lease/reconnect 与专用 profile 自动化证据 |
+| [history/blue-frontend-runtime-acceptance-2026-08-24.md](./history/blue-frontend-runtime-acceptance-2026-08-24.md) | frontend-runtime 专用 profile 人工验收、自动门禁、默认 row 切换与已知后续项 |

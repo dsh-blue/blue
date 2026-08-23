@@ -4,7 +4,8 @@
  * the kimi row selection (`selectVisibleTodos`) and its footer distribution,
  * live `session/event` increments filtered by session, the Ctrl-T
  * expand/collapse toggle with the expansion persisting across writes, the
- * settled-list auto-close, session-change rebinding, and the width rules.
+ * dialog-slot hide/restore behavior, settled-list auto-close,
+ * session-change rebinding, and the width rules.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -283,6 +284,39 @@ describe('blue-pane-todo', () => {
     ])
     await dispose()
     expect(keymap.actions).toHaveLength(0)
+  })
+
+  it('hides for an editor-slot dialog and restores the current expanded list', async () => {
+    resetSeq()
+    const initial = Array.from({ length: 6 }, (_, index): TodoItem => ({
+      content: `task-${index}`,
+      status: index === 0 ? 'in_progress' : 'pending',
+    }))
+    const agent = fakeAgent([todoWrite(initial)])
+    const { ctx, screen, keymap, dispose } = await bootPanePlugin(todo, agent)
+    keymap.handler(todo.ACTION_TOGGLE_TODO)()
+    expect(screen.paneLines()).toContain(row(IN_PROGRESS, 'task-0'))
+    expect(screen.paneLines()).toContain(allFooter(6))
+
+    const beforeHide = screen.renderRequests.length
+    ctx.emit('blue/editor-slot-swapped', true)
+    expect(screen.paneLines()).toEqual([])
+    expect(screen.renderRequests.length).toBe(beforeHide + 1)
+    // Repeating the same slot state is inert.
+    ctx.emit('blue/editor-slot-swapped', true)
+    expect(screen.renderRequests.length).toBe(beforeHide + 1)
+
+    // Writes continue updating the hidden model; neither the contents nor the
+    // user's expanded choice are discarded while the dialog owns the slot.
+    ctx.emit('session/event', agent.session as unknown as Session, todoWrite([
+      { content: 'task-0 done', status: 'completed' },
+      ...initial.slice(1),
+    ]))
+    expect(screen.paneLines()).toEqual([])
+    ctx.emit('blue/editor-slot-swapped', false)
+    expect(screen.paneLines()).toContain(row('✓', strike('task-0 done')))
+    expect(screen.paneLines()).toContain(allFooter(6))
+    await dispose()
   })
 
   it('closes the pane when the list settles and reopens folded on the next write', async () => {

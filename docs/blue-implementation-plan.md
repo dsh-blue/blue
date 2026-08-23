@@ -45,11 +45,13 @@
 
 验收：数据和 watermark 与 Harness/Web 语义一致；CJK/窄终端通过 width contract；真实 Blue profile 完成 smoke 和用户 dogfood。
 
+当前实现：`packages/context` 已通过窄 structural adapter 直读官方 `sessionProjections.snapshot/onChanged`，消费 dsh-context 的 `contextTimeline` 及 token-meter 的三个 projection key；同 seq 多 key 经 microtask 合并后读取一致 snapshot，baseline/subscription 缝隙有 buffer，domain/Fiber unload 会清除旧 timeline。`FrontendPanel` 是 `/context` 的 TUI consumer，旧 `InfoPanel` 保持 fallback。真实 upstream fixture `pnpm fixture:context-upstream -- --upstream <checkout>` 已对 `dsh-context@0.25.3` 验证四 key baseline、push、domain unload 和 Blue unload。`blue-frontend-runtime` 专用 profile 已通过 `/context`、窄终端、resize 和用户 live acceptance；bundle 中 `blue-context` 已默认启用，能力缺失或 provider unload 时仍回退到旧 facts reader。
+
 ### F4：session runtime 和 dsh-remote
 
 实现 projection registry、action coordinator、current-session binding、dsh-remote session/proxy adapter，验证 attach/detach、seq resume、write lease、approval/question bridge。
 
-当前实现位于 [`packages/remote`](../packages/remote)：除 generic fixture 外，`DshRemoteTransport` 已接入官方 dsh-remote v1 wire-client 形状（health、session.list、session.prompt、mux events、question/approval response）；session interrupt/write-lease 在 v1 明确报告 capability absent/unsupported。真实 SSH bootstrap daemon 仍由外部 remote registry 负责，需独立 profile 配置后人工 dogfood。
+当前实现位于 [`packages/remote`](../packages/remote)：`DshRemoteTransport` 已接入官方 `DshRemoteConnection` structural surface，以显式 authorization 调用 `session.list/history/prompt/cancel`，在 baseline 前开启 mux 并缓存 snapshot/subscribe 缝隙，detach 时释放 read/write attachment 和 event stream；question/approval 使用 `/api/respond` client-response carrier。`pnpm fixture:remote-upstream -- --upstream <checkout>` 已通过真实 Unix socket 与 fingerprint-pinned SSH 验证 pairing/authentication/negotiate、双 session、结构化 failure/timeout/cancel、question/approval、write-lease 竞争/过期/释放、断线重连和 late-event cleanup；独立 `blue-remote-frontend-runtime` profile 也通过 PTY/tmux resize、copy mode 和 clean-exit 自动化。该 fixture 对应外部 rc.6 ABI；当前/上一 Blue Harness line 由 packed fixture 独立覆盖，用户 live acceptance 仍是合并门禁。
 
 验收：runtime 不限于单 session；switch 先 abort 再清理订阅/cache；remote late event 不回挂旧 UI；domain bundle 不依赖 TUI。
 
@@ -57,13 +59,13 @@
 
 按 status、dock、command、tool presentation、theme、editor、transcript 顺序迁移。每项必须有新 provider/registry、官方 consumer、replacement fixture、unload/reload、width-scan、golden/e2e、bundle row 和 plain fallback。旧实现只在对应验收后删除。
 
-当前进度：status、dock、command、tool presentation、theme semantic model、editor model 和 transcript registry 均已 additive 接入；旧 transcript/editor renderer 仍保留为 golden baseline，transcript model 默认不重复挂载旧行。
+当前进度：status 的 basic/cwd/git/title/context/mode provider 已全部切到 `StatusModel` 和正式 footer bridge；dock 固定 placement/priority/id 顺序并支持 `preferredRows`/collapsed；command action 只经官方 `commands.execute` 且 unload abort/丢弃 late result；`FrontendPanel` 覆盖 select/form/info/loading/error 和 submit/cancel；tool presentation 只转换官方 dsh-tools canonical view/result；editor 暴露 set/submit/abort 结构化 action。Transcript 已补齐真正的官方 producer/consumer：domain-only `packages/conversation` 经官方 `SessionProjectionRegistry` 把 append-origin 事件投影为 `blueConversation`，`@dsh-blue/blue-transcript/official-model` 只消费 whole snapshot/change feed 并生成 user/assistant/thinking/tool/error/interruption 语义条目；`TranscriptModelService` 复用现有组件、限制最新 200 项、清理 timer、转发 Ctrl-O，并把 contentChanged 连接到 tail-follow 通知。官方 model 存在时旧 event fold 会卸载，provider/consumer 卸载后恢复 fallback。`blue-frontend-runtime` 已通过 official live/resume、scroll/End/new-message、resize/copy 的 PTY dogfood 和用户 live acceptance；bundle 的 `blue-conversation`/`blue-transcript-official` 已默认启用。旧 editor、pane renderer 和 event fold 仍是 capability-absent/unload 回退与 golden/plain baseline；删除条件见 surface migration matrix。
 
 ### F6：skills 和生态验证
 
 实现 plugin-development、plugin-migration、plugin-fixture、plugin-validation；完成 dsh-openpencil capability/fallback 和 dsh-lark action/notification 审计；验证独立安装包 fixture。
 
-当前进度：四份 skill 文档、静态 validator、独立 fixture manifest 入口和两个上游浅克隆审计已完成；真实外部 Blue adapter 迁移与人工 profile 验收仍是后续工作。
+当前进度：四份 skill 已作为 `.agents/skills/*/SKILL.md` 可加载，并有对应人读文档；静态 validator 输出稳定 code/group/reproduce JSON，进程测试固定成功、违规和缺 manifest 三类退出。packed fixture 会打包递归完整的本地 workspace closure，在临时 npm 项目中只经安装后的 exports 执行 7 个共享 runtime 场景；OpenPencil/Lark 各追加 2 个生态场景。Conversation/transcript 各执行 11 个场景，新增真实 `SessionProjectionRegistry` replay/live/checkpoint/restore/unload、stale/wrong-session/late rejection 和 20/40/80/120 语义/plain width scan；当前 Harness `0.1.1-rc.2` 与上一线 `0.1.1-rc.1` 都是 `declared === executed`、`skipped` 为空，rc.1 lane 递归解析并精确 pin 官方 Harness peer closure。`packages/openpencil` 只观察官方 tool result/presentation、剥离 signed meta 并提供 text/diff fallback；`packages/lark` 只通过官方 command 和 loopback settings route 暴露 status/retry 与通知，两个生态 row 都以 capability-gated 方式默认启用。人工验收已于 2026-08-24 通过：版本标识正确，subagent 和 tmux 复制修复已确认，未发现更多问题。自动门禁以本次合并前最终运行结果为准；验收记录见 `docs/history/blue-frontend-runtime-acceptance-2026-08-24.md`。
 
 ## Master 同步和合并
 

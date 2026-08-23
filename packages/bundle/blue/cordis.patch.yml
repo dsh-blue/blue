@@ -9,7 +9,7 @@
 - id: system-prompt
   config:
     persona: >-
-      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+      You are a coding agent. Your working directory is {{cwd}}.
 
 # The shared module-reload HMR row stays off; the launcher's watch-only
 # fallback still keeps the user patch layers live until the run exits.
@@ -32,8 +32,9 @@
 # subagents), the sandbox and approval stack, persistence, the model route,
 # the token meter, shell-env, `tool-subagent-report` (registers a continuable
 # setup on the subagent singleton, which is not scope-aware), and the
-# `system-prompt` persona row (the fallback for agents bound to no preset —
-# its text matches the `standard` preset's persona verbatim).
+# `system-prompt` persona row (the fallback for agents bound to no preset).
+# The fallback uses only `cwd`: spawned children can reach this row without
+# inheriting the preset's `model` prompt variable.
 #
 # Keep this list in lockstep with the web-app bundle's disable list: when the
 # base grows a new agent-plane row, both surfaces must rule on it.
@@ -267,6 +268,43 @@
     # footer's second band).
     - id: blue-status-context
       name: '@dsh-blue/blue-transcript/status-context'
+
+    # Frontend-runtime context slice (F3): consumes the official
+    # session-projection read face and publishes a renderer-neutral panel.
+    # Enabled after the blue-frontend-runtime live acceptance on 2026-08-24;
+    # `/context` still falls back to the legacy facts reader when the official
+    # projection capability is absent or this provider unloads.
+    - id: blue-context
+      name: '@dsh-blue/blue-context'
+
+    # Frontend-runtime transcript producer (F5): projects append-origin
+    # Harness conversation facts through the official session-projection
+    # registry. The effect-scoped readiness capability orders its consumer
+    # even though sibling loader rows activate concurrently.
+    - id: blue-conversation
+      name: '@dsh-blue/blue-conversation'
+
+    # Frontend-runtime transcript consumer (F5): replaces the legacy
+    # event-folded transcript model while blueConversation is present and
+    # restores that fallback on unload. It depends on the producer readiness
+    # capability, so resumed history is available in its first snapshot.
+    - id: blue-transcript-official
+      name: '@dsh-blue/blue-transcript/official-model'
+
+    # OpenPencil compatibility adapter (F6): observes only official
+    # dsh-tools results, converts public presentation metadata to bounded Blue
+    # tool models, and drops signed editor capability metadata. Capability
+    # absence is a zero-contribution path, so the domain stays usable without
+    # OpenPencil or its browser renderer.
+    - id: blue-openpencil
+      name: '@dsh-blue/blue-openpencil'
+
+    # Lark compatibility adapter (F6): registers /lark through official
+    # commands and calls the public loopback settings route for status/retry.
+    # The route remains optional, absence contributes nothing, and the adapter
+    # stores no credentials.
+    - id: blue-lark
+      name: '@dsh-blue/blue-lark'
 
     # Diff render intent: registers the 'diff' entry in the transcript's
     # blueIntents registry, so tool items whose presentCall/presentResult

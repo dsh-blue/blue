@@ -25,17 +25,16 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { RequestContext, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { StatusModel } from '@dsh-blue/blue-frontend'
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
 import type {} from '@dsh-blue/blue-app'
-// The named import also carries this package's `blueStatus` Context merge.
-import type { BlueStatusEntry } from './types.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-status-context'
 
 /** Services required before the context entry can register. */
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme']
+export const inject = ['blueStatusModels']
 
 /**
  * The context occupancy of one step: the disjoint input-side token counts.
@@ -136,8 +135,6 @@ function snapshotWindow(context: RequestContext | undefined): number | undefined
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
-  const colors = ctx.blueTheme.colors
-  const screen = ctx.blueScreen
   let tokens = 0
   let max: number | undefined
   let detach: (() => void) | undefined
@@ -157,37 +154,29 @@ export function apply(ctx: Context): void {
         const next = normalizeWindow(event.data.contextWindow)
         if (next === max) return
         max = next
-        screen.requestRender()
+        ctx.blueStatusModels.refresh('blue.status.context')
         return
       }
       if (event.type !== 'assistant/message' || event.data.usage === undefined) return
       const next = contextTokens(event.data.usage)
       if (next === tokens) return
       tokens = next
-      screen.requestRender()
+      ctx.blueStatusModels.refresh('blue.status.context')
     })
-    if (tokens !== beforeTokens || max !== beforeMax) screen.requestRender()
+    if (tokens !== beforeTokens || max !== beforeMax) ctx.blueStatusModels.refresh('blue.status.context')
   }
 
   const current = ctx.get('blueSession')?.current
   if (current) attach(current)
   ctx.on('blue/session-changed', attach)
 
-  const entry: BlueStatusEntry = {
-    id: 'blue.status.context',
-    priority: 20,
-    align: 'right',
-    row: 2,
-    render(width: number): string {
-      if (tokens <= 0) return ''
-      const text = max === undefined
+  const model = (): StatusModel => {
+    const text = tokens <= 0
+      ? ''
+      : max === undefined
         ? `ctx ${formatTokens(tokens)}`
         : `context: ${String(contextPercent(tokens, max))}% (${formatTokens(tokens)}/${formatTokens(max)})`
-      // ASCII-only output, so the string length is the visible width.
-      if (text.length > width) return ''
-      return colors.text(text)
-    },
+    return { kind: 'status', id: 'blue.status.context', priority: 20, band: 'right', row: 2, overflow: 'hide', view: { kind: 'text', text }, visible: text !== '' }
   }
-  // Effect-bound so unloading this fiber unregisters the entry.
-  ctx.effect(() => ctx.blueStatus.register(entry))
+  ctx.effect(() => ctx.blueStatusModels.register(model))
 }

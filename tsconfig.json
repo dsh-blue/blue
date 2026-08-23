@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/api" },
     { "path": "packages/frontend" },
+    { "path": "packages/conversation" },
     { "path": "packages/harness-adapter" },
     { "path": "packages/context" },
     { "path": "packages/remote" },
@@ -10,6 +11,8 @@
     { "path": "packages/app" },
     { "path": "packages/interaction" },
     { "path": "packages/transcript" },
+    { "path": "packages/openpencil" },
+    { "path": "packages/lark" },
     { "path": "packages/bundle/blue" }
   ]
 }

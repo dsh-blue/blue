@@ -24,6 +24,8 @@ Blue 终端 UI 核心：整棵树中唯一 import `@earendil-works/pi-tui` 的�
 
 `createTerminalRelease()` 返回供 `@deepseek-ai/dsh-app-boot` 的 `installFailLoud(binName, proc, release)` 使用的 `release` 函数：发生致命加载失败时，它停止当前活跃的终端栈（先 drain 未决输入），使进程退出前恢复 raw mode 与 bracketed paste。没有活跃 Blue 终端时它是 no-op。各服务经由稳定的代理引用委托，未来切换渲染器（主屏/alt-screen）无需消费者改动。
 
+应用内拖选在直连终端中通过原生 OSC 52 复制；在 tmux 内则执行 `tmux load-buffer -w -`，同时更新 tmux paste buffer，并由 tmux 向外层剪贴板转发。该路径兼容 `set-clipboard external`（它会明确忽略应用发出的 OSC 52），也不依赖默认关闭的 DCS `allow-passthrough`。出现 `Copied!` 表示 tmux 命令已成功退出；外层终端仍须通过 tmux 的 `Ms` 能力声明剪贴板支持。
+
 ## 模型体验
 
 无影响，因为终端 UI 核心面向用户渲染，不注册任何模型可见的内容。

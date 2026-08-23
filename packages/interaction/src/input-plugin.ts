@@ -43,7 +43,10 @@
  * command is still in flight — `/theme` disposes the theme provider between
  * `execute()` and its continuation — so the submit continuation gates on
  * the fiber's unload flag before touching the hint; a late notice is moot
- * anyway, since the reloaded fiber repaints.
+ * anyway, since the reloaded fiber repaints. Command result notices are
+ * flattened to one display row before truncation: an upstream command can
+ * return multi-line status text, but embedded line breaks must never escape
+ * the screen's one-string-per-terminal-row contract.
  *
  * @module @dsh-blue/blue-interaction/input-plugin
  */
@@ -164,7 +167,12 @@ class HintLine implements BlueComponent {
    */
   render(width: number): string[] {
     if (this.text === undefined) return []
-    return [this.colors.muted(this.components.truncateToWidth(this.text, width))]
+    const singleLine = this.text
+      .split(/\r\n?|\n/u)
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .join(' · ')
+    return [this.colors.muted(this.components.truncateToWidth(singleLine, width))]
   }
 }
 
@@ -252,7 +260,7 @@ export function apply(ctx: Context): void {
 
   /** Flash a notice in the hint line. */
   function setNotice(text: string): void {
-    notice = text
+    notice = text === '' ? undefined : text
     refreshHint()
   }
 
@@ -427,6 +435,24 @@ export function apply(ctx: Context): void {
     return true
   }
 
+  /** Clear the current draft, or interrupt the active main request. */
+  function clearOrInterrupt(): boolean {
+    if (editor.getText().length > 0) {
+      editor.setText('')
+      currentText = ''
+      clearDraft()
+      refreshHint()
+      ctx.emit('blue/editor-model-changed')
+      screen.requestRender()
+      return true
+    }
+    const agent = currentBlueAgent(ctx)
+    if (agent?.status !== 'running') return false
+    ctx.get('blueRequests')?.interrupt()
+    agent.cancel({ kind: 'user' })
+    return true
+  }
+
   /**
    * The editor-context key chain, resolved through the keymap before the
    * pi-tui Editor sees the sequence (it swallows Ctrl-C with no behavior,
@@ -447,31 +473,12 @@ export function apply(ctx: Context): void {
         ctx.emit('blue/btw-command', 'close')
         return true
       }
-      if (editor.getText().length > 0) {
-        editor.setText('')
-        return true
-      }
-      const agent = currentBlueAgent(ctx)
-      if (agent?.status === 'running') {
-        ctx.get('blueRequests')?.interrupt()
-        agent.cancel({ kind: 'user' })
-        return true
-      }
-      return false
+      return clearOrInterrupt()
     }
     // Ctrl-C: the same clear/interrupt chain, then the double-press exit —
     // the first idle press only arms the window and flashes the hint.
     if (keymap.matches(data, ACTION_INTERRUPT)) {
-      if (editor.getText().length > 0) {
-        editor.setText('')
-        return true
-      }
-      const agent = currentBlueAgent(ctx)
-      if (agent?.status === 'running') {
-        ctx.get('blueRequests')?.interrupt()
-        agent.cancel({ kind: 'user' })
-        return true
-      }
+      if (clearOrInterrupt()) return true
       const now = Date.now()
       if (now - lastInterruptAt < INTERRUPT_DOUBLE_PRESS_MS) {
         lastInterruptAt = 0
@@ -616,7 +623,7 @@ export function apply(ctx: Context): void {
     let removeEditor = screen.addBottomChild(editor)
     let removeHint = screen.addBottomChild(hintLine)
     screen.setFocus(editor)
-    setSharedEditor({ editor, submitPrompt, notice: setNotice })
+    setSharedEditor({ editor, submitPrompt, abortPrompt: () => { clearOrInterrupt() }, notice: setNotice })
     ctx.emit('blue/input-editor-changed')
 
     // The editor-slot swap (kimi `mountEditorReplacement`, D30): a dialog
