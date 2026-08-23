@@ -465,9 +465,9 @@ describe('alternate-screen runtime', () => {
     await runtime.stop()
   })
 
-  it('copies a mouse drag selection through bare OSC 52 inside tmux', async () => {
+  it('copies a mouse drag selection through OSC 52 outside tmux', async () => {
     const savedTmux = process.env.TMUX
-    process.env.TMUX = '/tmp/tmux-1000/default,123,0'
+    delete process.env.TMUX
     const terminal = new AltScreenTerminal(40, 8)
     const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
     try {
@@ -493,6 +493,8 @@ describe('alternate-screen runtime', () => {
   })
 
   it('reports a failed application-owned clipboard write without breaking selection', async () => {
+    const savedTmux = process.env.TMUX
+    delete process.env.TMUX
     class FailingClipboardTerminal extends AltScreenTerminal {
       override write(data: string): void {
         if (data.includes('\x1b]52;c;')) throw new Error('clipboard unavailable')
@@ -501,18 +503,23 @@ describe('alternate-screen runtime', () => {
     }
     const terminal = new FailingClipboardTerminal(40, 8)
     const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
-    runtime.addChild(textComponent('select this text'))
-    runtime.requestRender(true)
-    await waitForRender()
+    try {
+      runtime.addChild(textComponent('select this text'))
+      runtime.requestRender(true)
+      await waitForRender()
 
-    terminal.sendInput('\x1b[<0;1;1M')
-    terminal.sendInput('\x1b[<32;7;1M')
-    terminal.sendInput('\x1b[<0;7;1m')
-    await waitForRender()
+      terminal.sendInput('\x1b[<0;1;1M')
+      terminal.sendInput('\x1b[<32;7;1M')
+      terminal.sendInput('\x1b[<0;7;1m')
+      await waitForRender()
 
-    expect(terminal.output).toContain('Copy failed')
-    await runtime.stop()
-    terminal.dispose()
+      expect(terminal.output).toContain('Copy failed')
+    } finally {
+      if (savedTmux === undefined) delete process.env.TMUX
+      else process.env.TMUX = savedTmux
+      await runtime.stop()
+      terminal.dispose()
+    }
   })
 
   it('preserves the main screen during suspend and re-enters fullscreen afterwards', async () => {

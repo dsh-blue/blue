@@ -1,20 +1,42 @@
 /**
- * Tests for the terminal escape emitters: the OSC 52 clipboard-copy
- * sequence (pure builder with plain and bare-tmux arms, the tmux detection
- * default, and the injectable-process write path with its TTY
- * gate and write-failure containment) and the OSC 0 window-title sequence
- * (sanitization, the code-point cap, and the sequence shape).
+ * Tests for the terminal escape emitters and selection clipboard routing:
+ * direct OSC 52 outside tmux, tmux-native `load-buffer -w -` with truthful
+ * child-process outcomes, and the OSC 0 window-title sequence (sanitization,
+ * the code-point cap, and the sequence shape).
  */
 
-import { describe, expect, it } from 'vitest'
+import { EventEmitter } from 'node:events'
+import { spawn } from 'node:child_process'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildClipboardOsc52,
   buildTitleOsc0,
+  copySelectionText,
   emitClipboardOsc52,
+  loadTmuxClipboard,
   sanitizeTitleText,
   TITLE_MAX_CHARS,
   type BlueEscapeProcess,
 } from '../src/terminal-escape.ts'
+
+vi.mock('node:child_process', () => ({ spawn: vi.fn() }))
+
+interface FakeChild extends EventEmitter {
+  readonly stdin: EventEmitter & { end: ReturnType<typeof vi.fn> }
+}
+
+/** Child-process fake exposing the three events the tmux writer owns. */
+function fakeChild(end: (text: string) => void = () => {}): FakeChild {
+  const child = new EventEmitter() as FakeChild
+  const stdin = new EventEmitter() as FakeChild['stdin']
+  stdin.end = vi.fn(end)
+  Object.defineProperty(child, 'stdin', { value: stdin })
+  return child
+}
+
+afterEach(() => {
+  vi.mocked(spawn).mockReset()
+})
 
 /** A process fake recording stdout writes; can be non-TTY or throwing. */
 function fakeProc(opts: { tty?: boolean, throwOnWrite?: boolean } = {}): BlueEscapeProcess & { written: string[] } {
@@ -37,7 +59,7 @@ describe('buildClipboardOsc52', () => {
     expect(sequence).toBe(`\x1b]52;c;${Buffer.from('hi', 'utf8').toString('base64')}\x07`)
   })
 
-  it('keeps the sequence bare inside tmux so set-clipboard can consume it', () => {
+  it('keeps the pure sequence bare when a compatibility caller passes tmux', () => {
     const sequence = buildClipboardOsc52('hi', true)
     expect(sequence).toBe(`\x1b]52;c;${Buffer.from('hi', 'utf8').toString('base64')}\x07`)
     expect(sequence).not.toContain('\x1bPtmux;')
@@ -62,6 +84,90 @@ describe('buildClipboardOsc52', () => {
       } else {
         process.env.TMUX = saved
       }
+    }
+  })
+})
+
+describe('loadTmuxClipboard', () => {
+  it('writes the text to tmux stdin and resolves on a zero exit', async () => {
+    const child = fakeChild()
+    vi.mocked(spawn).mockReturnValue(child as never)
+
+    const result = loadTmuxClipboard('hello tmux')
+    expect(spawn).toHaveBeenCalledWith('tmux', ['load-buffer', '-w', '-'], {
+      stdio: ['pipe', 'ignore', 'ignore'],
+      timeout: 3000,
+    })
+    expect(child.stdin.end).toHaveBeenCalledWith('hello tmux')
+    child.emit('close', 0)
+
+    await expect(result).resolves.toBe(true)
+  })
+
+  it('reports nonzero, process, stdin, and synchronous failures', async () => {
+    const nonzero = fakeChild()
+    vi.mocked(spawn).mockReturnValueOnce(nonzero as never)
+    const nonzeroResult = loadTmuxClipboard('x')
+    nonzero.emit('close', 1)
+    await expect(nonzeroResult).resolves.toBe(false)
+
+    const processError = fakeChild()
+    vi.mocked(spawn).mockReturnValueOnce(processError as never)
+    const processResult = loadTmuxClipboard('x')
+    processError.emit('error', new Error('tmux missing'))
+    processError.emit('close', null)
+    await expect(processResult).resolves.toBe(false)
+
+    const stdinError = fakeChild()
+    vi.mocked(spawn).mockReturnValueOnce(stdinError as never)
+    const stdinResult = loadTmuxClipboard('x')
+    stdinError.stdin.emit('error', new Error('pipe closed'))
+    await expect(stdinResult).resolves.toBe(false)
+
+    vi.mocked(spawn).mockImplementationOnce(() => { throw new Error('spawn failed') })
+    await expect(loadTmuxClipboard('x')).resolves.toBe(false)
+
+    const writeError = fakeChild(() => { throw new Error('write failed') })
+    vi.mocked(spawn).mockReturnValueOnce(writeError as never)
+    await expect(loadTmuxClipboard('x')).resolves.toBe(false)
+  })
+})
+
+describe('copySelectionText', () => {
+  it('uses direct OSC 52 outside tmux', async () => {
+    const written: string[] = []
+    await expect(copySelectionText('hi', { write: chunk => written.push(chunk) }, false)).resolves.toBe(true)
+    expect(written).toEqual([buildClipboardOsc52('hi', false)])
+  })
+
+  it('reports a direct terminal write failure', async () => {
+    await expect(copySelectionText('hi', { write: () => { throw new Error('closed') } }, false)).resolves.toBe(false)
+  })
+
+  it('uses tmux load-buffer instead of writing OSC 52 inside tmux', async () => {
+    const child = fakeChild()
+    vi.mocked(spawn).mockReturnValue(child as never)
+    const terminal = { write: vi.fn() }
+
+    const result = copySelectionText('hi', terminal, true)
+    child.emit('close', 0)
+
+    await expect(result).resolves.toBe(true)
+    expect(terminal.write).not.toHaveBeenCalled()
+  })
+
+  it('detects tmux from the environment by default', async () => {
+    const savedTmux = process.env.TMUX
+    const child = fakeChild()
+    vi.mocked(spawn).mockReturnValue(child as never)
+    try {
+      process.env.TMUX = '/tmp/tmux-1000/default,123,0'
+      const result = copySelectionText('hi', { write: vi.fn() })
+      child.emit('close', 0)
+      await expect(result).resolves.toBe(true)
+    } finally {
+      if (savedTmux === undefined) delete process.env.TMUX
+      else process.env.TMUX = savedTmux
     }
   })
 })

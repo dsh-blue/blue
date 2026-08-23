@@ -24,7 +24,7 @@ All five contracts are mounted as Cordis `Service` subclasses (`blueTheme` by a 
 
 `createTerminalRelease()` returns the `release` function for `installFailLoud(binName, proc, release)` from `@deepseek-ai/dsh-app-boot`: on a fatal load failure it stops the active terminal stack (draining pending input first) so raw mode and bracketed paste are restored before the process exits. It is a no-op when no Blue terminal is active. Services delegate through a stable proxy reference so a future renderer swap (main/alt screen) needs no consumer change.
 
-Application-owned drag selections copy with a bare OSC 52 sequence. Inside tmux this intentionally uses tmux's `set-clipboard on|external` path; it does not use DCS passthrough, whose separate `allow-passthrough` option is off by default. The outer terminal must still advertise clipboard support to tmux. The renderer's copy notice confirms that it handed off the sequence, not that the outer clipboard acknowledged it.
+Application-owned drag selections use bare OSC 52 on a direct terminal. Inside tmux they run `tmux load-buffer -w -`, which updates tmux's paste buffer and asks tmux to forward it to the outer clipboard. This works with `set-clipboard external` (which explicitly ignores application OSC 52) and does not require DCS passthrough's default-off `allow-passthrough`. `Copied!` means the tmux command exited successfully; the outer terminal must still advertise clipboard support through tmux's `Ms` capability.
 
 ## Model Experience
 
