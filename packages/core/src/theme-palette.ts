@@ -36,23 +36,32 @@ export function backgroundColor(hex: string): BlueColorFn {
 }
 
 /**
- * The 27 foreground tokens of a palette as `#rrggbb` hexes. `selectedBg`
- * is excluded: it is the palette's only background token and is passed
- * separately to {@link colorsFromForegrounds}.
+ * The 30 single-hex foreground tokens of a palette as `#rrggbb` hexes.
+ * `selectedBg` (the only background token) and `logoGradient` (the only
+ * array token) are passed separately to {@link colorsFromForegrounds}.
  */
-export type BlueForegroundHexes = Record<Exclude<keyof BlueSemanticColors, 'selectedBg'>, string>
+export type BlueForegroundHexes = Record<Exclude<keyof BlueSemanticColors, 'selectedBg' | 'logoGradient'>, string>
 
 /**
- * Build the frozen 28-token semantic color table from palette hexes.
- * @param foregrounds - one hex per foreground token.
+ * Build the frozen 32-token semantic color table from palette hexes.
+ * @param foregrounds - one hex per single-hex foreground token.
  * @param selectedBg - the hex behind the selected list entry.
- * @returns the frozen semantic color table.
+ * @param logoGradient - one hex per banner logo row, top to bottom.
+ * @returns the frozen semantic color table (the gradient array frozen too).
  */
-export function colorsFromForegrounds(foregrounds: BlueForegroundHexes, selectedBg: string): BlueSemanticColors {
+export function colorsFromForegrounds(
+  foregrounds: BlueForegroundHexes,
+  selectedBg: string,
+  logoGradient: readonly string[],
+): BlueSemanticColors {
   const colors = Object.fromEntries(
     Object.entries(foregrounds).map(([role, hex]) => [role, foregroundColor(hex)]),
   )
-  return Object.freeze({ ...colors, selectedBg: backgroundColor(selectedBg) }) as BlueSemanticColors
+  return Object.freeze({
+    ...colors,
+    selectedBg: backgroundColor(selectedBg),
+    logoGradient: Object.freeze(logoGradient.map(hex => foregroundColor(hex))),
+  }) as BlueSemanticColors
 }
 
 /** Constructor shape of the `blueTheme` providers built by {@link defineThemeService}. */

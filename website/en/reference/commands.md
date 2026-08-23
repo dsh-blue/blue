@@ -49,7 +49,7 @@ Typing `/` triggers fuzzy autocomplete and discovery hints (see [Input editor](/
 
 - **`/export [path]`** — exports the current session as Markdown; without a path it writes the default filename `blue-export-{id8}-{YYYYMMDD-HHMMSS}.md`.
 - **`/copy`** — the last assistant message's text goes to the clipboard: OSC 52 first (the escape sequence travels over stdout to the local terminal emulator, so **SSH sessions still reach the local clipboard**), with a fallback pipeline behind it.
-- **`/theme`** — full usage `usage: /theme [dark|light|auto|custom <path> [dark|light]]`, see [Theming](/en/guide/theme).
+- **`/theme`** — full usage `usage: /theme [dark|light|ocean|paper|auto|custom <path> [dark|light|ocean|paper]]`, see [Theming](/en/guide/theme).
 - **`/quit`** — before the agent attaches it shows `no active session` (see the [FAQ](/en/guide/faq)).
 
 Commands never enter a model turn — success/error text flashes on the editor hint line. Commands registered by downstream plugins through `ctx.commands` appear automatically in the completion menu and `/help`; aliases are not registered as commands — the input layer rewrites them to the canonical name before dispatch (the kimi `aliases` port); **input-layer intercepted commands** like `/permission` are likewise outside the registry — present in the completion menu, absent from `/help`.

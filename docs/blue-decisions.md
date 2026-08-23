@@ -408,6 +408,7 @@
 - **后果**：rc.1 作废（tarball 不可变，不追 unpublish；FAQ 双语已改口"rc.1 因打包缺文件不可用，装到请升级"）；`version.spec` 锁步 bumped 至 `0.1.0-rc.2`（六 manifest + `BLUE_VERSION` + 网站四处文案 + 9 个 VT golden 随版重锁）；发版预检流程固化（决策③）；安装文档命令全量改 `dsh plugin --profile blue add @dsh-blue/blue@rc` 形式（README×2/guide×2/faq×2/contributing×2 + D50②/R4 行已同步）。
 - **落地（2026-08-22）**：本地 pack 装机模拟已绿（chunk 落位、all-prompts-llm 入 profile、PTY boot 零 ERR + banner 四行、TUI 活到超时被杀即冒烟通过）；rc.2 tag 随后打。
 
+
 ### D52. 用户侧安全更新：启动期 registry 元数据检查 + `/update` 预检/快照/冒烟/自动回滚（用户裁决，2026-08-23）
 
 - **背景**：rc.2 已在 npm，但用户侧零更新机制——升级 = 手工重跑 `dsh plugin --profile blue add @dsh-blue/blue@rc`，且每个已知坑都砸在用户手里：pnpm 11 `minimumReleaseAge` 对 dist-tag 解析**静默回退旧版**（R4 实测，rc.1 时代即装到坏包；精确版本装新包则硬拒）；link/npm 混装半覆盖后启动 `ERR_MODULE_NOT_FOUND`（fe8512c 三泳道规则的存在理由）；rc.1 tarball 地雷永不可回退（D51）；全局 dsh 宿主必须 ≥ bundle 钉的 harness 线；CI 绿 ≠ 装机能跑（D51 全部教训）。用户裁决（2026-08-23）：载体 = 应用内命令；触发 = 启动检查 + 通知；交付 = 设计 + 完整实现。
@@ -430,3 +431,11 @@
 - **决策②（退役条件，锁步的彼岸）**：harness 进入 stable（1.x、semver 破坏性变更契约成立）后——peers 从精确线放宽为 `^1` caret；壳的宿主钉版同步放宽；漂移守卫从门禁降为提示；`/update` 预检⑤的宿主线阻塞自然松化。version.spec 两条线刻意分离（Blue 号与 harness 号互不绑架）即为此预埋。
 - **决策③（对照记档）**：上游装载契约确认（2026-08-23 源码核实）——`resolveBundleDir` 的 installation-first 顺序是官方契约（"in-box bundle always comes from the same installation as the running dsh, never from a profile-local copy"），内置 `PROFILE_TEMPLATES` 仅 web/headless 两键且锁在 CLI 代码内：**树外薄宿主在官方架构里没有一等答案**，Blue 的壳是官方"树内一致性"的树外重建（嵌套钉宿主 + 锁步）。真正的"官方同款"终局只有被收编 in-box 一途，属上游产品决策，不作依赖。
 - **后果**：D50/D52 的"仍开放"措辞以本条为准关闭；`/update` × 壳的接缝语义随 S37 随批三补丁定形（校准方向守卫：profile 领先壳时不降级、提示重装壳前进——`/update` 服务侧路径不变，壳用户的正路升级入口是重装壳）；官宣物料口径（"升级 = `npm i -g @dsh-blue/blue-cli@rc`"）与此一致。
+### D54. 主题 token 扩容与四套内置配色：logo 渐变入表 + light 重做 + ocean/paper + `/theme` 实时预览面板（用户裁决，2026-08-24）
+
+- **背景**：用户实测 light 主题观感"太淡"（GitHub primer 二三级灰在真终端上偏浅），且横幅鲸鱼渐变（`banner-art.ts` 的 `LOGO_GRADIENT`）与 Model 行高亮 `#8ca8ff` 是硬编码的主题无关品牌色——浅色底上发虚，全仓唯一硬编码色点。用户裁决：四套阵容（dark 保留 / light 重做 / 新增 ocean 蓝灰暗色 / 新增 paper 暖纸浅色）；logo 渐变跟随主题色系；`/theme` 无参数改为可上下切换、实时展示视觉差异的选择面板。
+- **决策①（token 契约 v3，32 键）**：`BlueSemanticColors` 增 `modelHighlight`（单 hex，走既有 per-token 通道）与 `logoGradient`（唯一数组值 token：每行一 `BlueColorFn`，短数组**钳制到末项**——custom 主题友好）。`BlueForegroundHexes` 排除键扩为 `Exclude<…, 'selectedBg' | 'logoGradient'>`，`colorsFromForegrounds` 增第三位渐变参数；数组本身 `Object.freeze`（frozen 不变量延到成员）。加 token 在所有 palette 上强制编译检查的既有性质保持。
+- **决策②（四套色值的对比度纪律）**：dark 零视觉变化（渐变原值入表）；light 重做 = 二三级灰压深一档（gray-700/600 取代 600/500）、accent #0b7285、roleUser #1f3ec2、selectedBg 蓝调 #cfe0ff、渐变改深海军蓝起点；ocean/paper 各配同色系九步渐变与 modelHighlight。custom JSON 增 `logoGradient` 数组键：逐项 HEX 校验、整组失败整组回退（ramp 不做逐项 salvage）。
+- **决策③（`/theme` 选择面板，实时预览）**：裸 `/theme` 在 display 四件套在场时开 `SelectListPanel`（`SelectRow` 增 `onHighlight` 回调——首个消费者即本面板）：**每次高亮移动即时换装 provider**，整套 UI 含鲸鱼渐变原地预览；`↵` 保留、`esc` 还原打开时主题（打开时为 custom 则预览即所留）。无 display 服务的环境回退文本列表（headless 测试与降级路径同一条）。关键工程点：每次预览切换重建 input fiber，其 teardown 会卸掉 editor 槽位面板——面板在每次换装 settle 后**重挂落座**，并订阅 `'blue/input-editor-changed'`（该事件发射于 input mount 早于槽位机装配，故延迟一个微task 再重挂）；换装经 promise 链序列化防快速连按交错。
+- **后果**：theme-switch 的 USAGE/`input.hint` 与网站 commands 页/主题页五处键列表需同步；e2e 直发 `/theme`+Enter 的召回用例改等面板帧再 Esc；bundle patch 仍只有 `blue-theme-dark` 一行（ocean/paper 走运行时挂载，bundle.spec 行断言不动）；`check:lib`/tsdown 入口清单随新 subpath 扩（S30 三方对齐纪律）。
+- **落地（2026-08-24，worktree 待人工验收）**：`theme-ocean.ts`/`theme-paper.ts` + 六 subpath + token 扩容 + banner 改造（删本地 `gradientWrap`/`MODEL_HIGHLIGHT`，双重包裹随之消除）+ 选择面板 + specs（ocean/paper 新建、custom 数组矩阵、picker 六用例）+ 网站双语主题页/命令页与 core README/AGENTS 同步（本 PR）。

@@ -63,7 +63,7 @@ dsh --profile blue
 - **Overlay** —— 四选项审批面板（session 级"总是允许"继承）与 tab 化用户问卷 overlay。
 - **两行状态栏** —— 模型名、会话模式徽标、git 分支、上下文占用 `ctx N`；条目是注册表贡献，不是写死的。
 - **底部 dock 面板** —— agent 运行中的活动 spinner、排队消息、todo 列表、fork 当前会话的 `/btw` 旁路问答面板、子代理分组面板。
-- **主题** —— `/theme` 热切换：`dark` / `light` / `auto`（OSC 11 背景探测）/ `custom`（JSON 调色板）。
+- **主题** —— `/theme` 实时预览选择面板与热切换：`dark` / `light` / `ocean` / `paper` / `auto`（OSC 11 背景探测）/ `custom`（JSON 调色板）。
 - **天然可扩展** —— 命令、状态栏条目、编辑器增强都经下游插件同款的缝注册；补全菜单与 `/help` 反映实时注册表。
 
 面向用户的功能指南在文档站：[dsh-blue.dev/features](https://dsh-blue.dev/features/)（中文）· [dsh-blue.dev/en/features](https://dsh-blue.dev/en/features/)（English）。

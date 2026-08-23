@@ -1,11 +1,12 @@
 /**
- * `blue-theme-dark` plugin entry: registration and disposal on the fiber,
- * and the built-in dark semantic color table (32 tokens).
+ * `blue-theme-paper` plugin entry: registration and disposal on the fiber,
+ * and the paper semantic color table (32 tokens) — the warm light palette
+ * with its amber logo sweep.
  */
 
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { apply, BlueThemeService, name } from '../src/theme-dark.ts'
+import { apply, BlueThemeService, name, PAPER_COLORS } from '../src/theme-paper.ts'
 import type { BlueSemanticColors } from '../src/types.ts'
 
 const EXPECTED_ROLES: (keyof BlueSemanticColors)[] = [
@@ -43,13 +44,14 @@ const EXPECTED_ROLES: (keyof BlueSemanticColors)[] = [
   'logoGradient',
 ]
 
-describe('blue-theme-dark plugin', () => {
+describe('blue-theme-paper plugin', () => {
   it('registers as ctx.blueTheme and unregisters when the fiber disposes', async () => {
-    expect(name).toBe('blue-theme-dark')
+    expect(name).toBe('blue-theme-paper')
     const ctx = new Context()
     const fiber = ctx.plugin({ name, apply })
     await fiber
     expect(ctx.get('blueTheme')).toBeInstanceOf(BlueThemeService)
+    expect(ctx.blueTheme.colors).toBe(PAPER_COLORS)
     await fiber.dispose()
     expect(ctx.get('blueTheme')).toBeUndefined()
   })
@@ -73,31 +75,29 @@ describe('blue-theme-dark plugin', () => {
     const ctx = new Context()
     await ctx.plugin({ name, apply })
     const { colors } = ctx.blueTheme
-    // accent #2bc8e8 → rgb(43, 200, 232)
-    expect(colors.accent('hi')).toBe('\x1b[38;2;43;200;232mhi\x1b[39m')
-    // primary #4fa8ff → rgb(79, 168, 255)
-    expect(colors.primary('hi')).toBe('\x1b[38;2;79;168;255mhi\x1b[39m')
-    // textMuted #6b6b6b → rgb(107, 107, 107)
-    expect(colors.textMuted('hi')).toBe('\x1b[38;2;107;107;107mhi\x1b[39m')
-    // selectedBg #3a3a4a → rgb(58, 58, 74)
-    expect(colors.selectedBg('hi')).toBe('\x1b[48;2;58;58;74mhi\x1b[49m')
-    // shellMode #bd93f9 → rgb(189, 147, 249)
-    expect(colors.shellMode('hi')).toBe('\x1b[38;2;189;147;249mhi\x1b[39m')
-    // modelHighlight #8ca8ff → rgb(140, 168, 255)
-    expect(colors.modelHighlight('hi')).toBe('\x1b[38;2;140;168;255mhi\x1b[39m')
+    // text #3b322a → rgb(59, 50, 42)
+    expect(colors.text('hi')).toBe('\x1b[38;2;59;50;42mhi\x1b[39m')
+    // primary #b4541e → rgb(180, 84, 30)
+    expect(colors.primary('hi')).toBe('\x1b[38;2;180;84;30mhi\x1b[39m')
+    // accent #0e7a70 → rgb(14, 122, 112)
+    expect(colors.accent('hi')).toBe('\x1b[38;2;14;122;112mhi\x1b[39m')
+    // roleUser #35509e → rgb(53, 80, 158)
+    expect(colors.roleUser('hi')).toBe('\x1b[38;2;53;80;158mhi\x1b[39m')
+    // selectedBg #efe6d3 → rgb(239, 230, 211)
+    expect(colors.selectedBg('hi')).toBe('\x1b[48;2;239;230;211mhi\x1b[49m')
+    // modelHighlight #a04e1a → rgb(160, 78, 26)
+    expect(colors.modelHighlight('hi')).toBe('\x1b[38;2;160;78;26mhi\x1b[39m')
   })
 
-  it('carries one truecolor sweep entry per logo row, frozen', async () => {
+  it('carries the amber logo sweep, frozen', async () => {
     const ctx = new Context()
     await ctx.plugin({ name, apply })
     const { logoGradient } = ctx.blueTheme.colors
     expect(logoGradient).toHaveLength(9)
     expect(Object.isFrozen(logoGradient)).toBe(true)
-    // The sweep: #2a3bd0 → rgb(42, 59, 208) at the top …
-    expect(logoGradient[0]!('hi')).toBe('\x1b[38;2;42;59;208mhi\x1b[39m')
-    // … through the brand blue #4d6bfe → rgb(77, 107, 254) at the waist …
-    expect(logoGradient[4]!('hi')).toBe('\x1b[38;2;77;107;254mhi\x1b[39m')
-    // … to #9db1ff → rgb(157, 177, 255) at the tail.
-    expect(logoGradient[8]!('hi')).toBe('\x1b[38;2;157;177;255mhi\x1b[39m')
+    // #7c3f0e → rgb(124, 63, 14) at the top …
+    expect(logoGradient[0]!('hi')).toBe('\x1b[38;2;124;63;14mhi\x1b[39m')
+    // … to #f0d0ab → rgb(240, 208, 171) at the tail.
+    expect(logoGradient[8]!('hi')).toBe('\x1b[38;2;240;208;171mhi\x1b[39m')
   })
 })

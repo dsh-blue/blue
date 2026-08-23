@@ -14,9 +14,9 @@
  * across initial mounts and `/theme` reloads.
  *
  * Every over-wide run truncates; nothing ever wraps. Styling uses only
- * frozen theme tokens — the logo and the welcome line share `primary`, the
- * labels stay muted and the model value accent, so the banner reads as one
- * brand-blue unit.
+ * frozen theme tokens — the logo carries the palette's `logoGradient` sweep,
+ * the welcome line shares `primary`, the labels stay muted, and the model
+ * row paints `modelHighlight`, so the whole banner follows the live theme.
  *
  * @module @dsh-blue/blue-transcript/banner
  */
@@ -36,7 +36,7 @@ import type {} from '@deepseek-ai/dsh-agent-default-model'
 // the `'blue/session-changed'`/`'blue/model-changed'` Events merges the
 // model-line tracking consumes.
 import type {} from '@dsh-blue/blue-app'
-import { LOGO_ART, LOGO_GRADIENT, LOGO_ROWS } from './banner-art.ts'
+import { LOGO_ART, LOGO_ROWS } from './banner-art.ts'
 import { BLUE_VERSION } from './banner-content.ts'
 
 /** Stable Cordis plugin name. */
@@ -48,8 +48,14 @@ export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'agentDefaul
 /** Below this viewport width the banner renders zero rows rather than overflow. */
 export const BANNER_MIN_WIDTH = 40
 
+/** Blank rows above the logo block — the banner's top margin. */
+const BANNER_TOP_PAD = 1
+
+/** Blank rows below the logo block — the banner's bottom margin. */
+const BANNER_BOTTOM_PAD = 1
+
 /** Blank columns between the logo block and the right-hand status column. */
-const LOGO_TEXT_GAP = 2
+const LOGO_TEXT_GAP = 4
 
 /** The info rows' labels, hand-aligned to {@link LABEL_WIDTH} columns. */
 const DIRECTORY_LABEL = 'Directory: '
@@ -108,10 +114,7 @@ export interface BannerContent {
 }
 
 /** The theme tokens the banner paints with, keyed by segment role. */
-type BannerStyle = 'logo' | 'strong' | 'accent' | 'muted' | 'text' | 'highlight'
-
-/** The model row's brand-light-blue highlight (theme-independent, like the logo). */
-const MODEL_HIGHLIGHT = '#8ca8ff'
+type BannerStyle = 'strong' | 'accent' | 'muted' | 'text' | 'highlight'
 
 /** One styled run of a rendered banner line. */
 interface BannerSegment {
@@ -139,9 +142,10 @@ interface StatusLine {
  * Compose the banner's lines for one viewport width — the pure layout core
  * the component delegates to. Identity color functions (the spec fakes)
  * yield plain, measurable text. The frameless horizontal block stacks the
- * whale logo rows down the left and centers the status column beside them;
- * nothing ever wraps — an over-wide status value or welcome line truncates
- * first.
+ * whale logo rows down the left and centers the status column beside them,
+ * between {@link BANNER_TOP_PAD} blank rows above and
+ * {@link BANNER_BOTTOM_PAD} below; nothing ever wraps — an over-wide status
+ * value or welcome line truncates first.
  * @param deps - colors plus the truncate/measure primitives.
  * @param content - the snapshotted banner facts.
  * @param width - current viewport width in columns.
@@ -156,25 +160,14 @@ export function composeBannerLines(
   if (layout === null) return []
   const { valueWidth } = layout
   const paint: Record<BannerStyle, (text: string) => string> = {
-    logo: deps.colors.primary,
     strong: deps.colors.primary,
     accent: deps.colors.accent,
     muted: deps.colors.muted,
     text: deps.colors.text,
-    highlight: text => gradientWrap(MODEL_HIGHLIGHT, text),
+    highlight: deps.colors.modelHighlight,
   }
   const line = (segments: readonly BannerSegment[]): string =>
     segments.map(segment => paint[segment.style](segment.text)).join('')
-
-  // The logo's brand-blue gradient, one hex per row, applied directly (the
-  // mark is brand identity — the same sweep in every theme). The gap after
-  // the whale stays the frame's neutral tint.
-  const gradientWrap = (hex: string, text: string): string => {
-    const r = parseInt(hex.slice(1, 3), 16)
-    const g = parseInt(hex.slice(3, 5), 16)
-    const b = parseInt(hex.slice(5, 7), 16)
-    return `\x1b[38;2;${r};${g};${b}m${text}\x1b[39m`
-  }
 
   // The right-hand status column; the welcome and help lines lead, then the
   // three info rows. A blank spacer row separates the two groups.
@@ -199,19 +192,22 @@ export function composeBannerLines(
   }
 
   const rows: string[] = []
+  for (let i = 0; i < BANNER_TOP_PAD; i += 1) rows.push('')
+  // The logo's per-row sweep comes from the palette; a short gradient (a
+  // custom theme) clamps to its last entry for the remaining rows. The gap
+  // after the whale stays unpainted spaces — a foreground color on
+  // whitespace shows nothing.
+  const gradient = deps.colors.logoGradient
   for (let i = 0; i < LOGO_ROWS; i += 1) {
-    const logo = LOGO_ART[i]!
+    const rowPaint = gradient[i] ?? gradient[gradient.length - 1]!
     const statusIndex = i - statusTopPad
     const statusLine = status[statusIndex]
-    const segments: BannerSegment[] = [
-      { text: gradientWrap(LOGO_GRADIENT[i]!, logo), style: 'logo' },
-      { text: ' '.repeat(LOGO_TEXT_GAP), style: 'logo' },
-    ]
-    if (statusLine !== undefined) {
-      segments.push(fit(statusLine.text, statusLine.style, valueWidth))
-    }
-    rows.push(line(segments))
+    const statusPart = statusLine === undefined
+      ? ''
+      : line([fit(statusLine.text, statusLine.style, valueWidth)])
+    rows.push(`${rowPaint(LOGO_ART[i]!)}${' '.repeat(LOGO_TEXT_GAP)}${statusPart}`)
   }
+  for (let i = 0; i < BANNER_BOTTOM_PAD; i += 1) rows.push('')
   return rows
 }
 
