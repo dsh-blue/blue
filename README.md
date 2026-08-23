@@ -8,23 +8,23 @@
 
 English | [中文](README.zh.md)
 
+<p align="center"><a href="https://dsh-blue.dev/en/"><img src="docs/assets/social-preview.png" width="800" alt="Blue — a plugin-based terminal UI for DeepSeek Harness (dsh)"></a></p>
+
 Blue is an interactive terminal UI (TUI) plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`): a `pi-tui` renderer mounted as an out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) plugin bundle on top of the `dsh-base` bundle. Its core claim: **a TUI is not a package — it is a Cordis plugin tree.** Every render component, interaction provider, command, and status entry is a separate plugin with its own fiber lifecycle, hot-swappable and omittable.
 
 This repository is the standalone home of Blue's five workspace packages under the `@dsh-blue` scope, extracted from the `deepseek-harness` monorepo (`packages/blue/*` and `packages/bundle/blue`). They build and test against the published npm releases of the harness (`0.1.1-rc.2` line) and vendored Cordis.
-
-<!-- TODO: demo capture — record a real session (vhs / asciinema; the script(1)
-     smoke-check in the contributor guide is the seed), export a GIF into docs/assets/,
-     and embed it here. A TUI repo's README lives or dies on its demo. -->
 
 ## Contents
 
 - [Quick start](#quick-start)
 - [Features](#features) — [Key bindings](#key-bindings) · [Slash commands](#slash-commands)
+- [Positioning](#positioning)
 - [Design philosophy](#design-philosophy)
 - [Layered architecture](#layered-architecture)
 - [The Editor seam, in brief](#the-editor-seam-in-brief)
 - [Development](#development)
 - [Documentation](#documentation)
+- [Known limitations](#known-limitations)
 - [Relationship to deepseek-harness](#relationship-to-deepseek-harness)
 - [License](#license)
 
@@ -101,6 +101,14 @@ All commands auto-list in the editor's completion menu; `/help` is the live trut
 | `/version` | — | Show the Blue and harness versions and the live model |
 | `/export` | — | Export the current session as a Markdown file |
 | `/copy` | — | Copy the last assistant message to the clipboard |
+
+## Positioning
+
+**Versus standalone TUI agents** (Claude Code and friends): Blue is not an agent product — it is the interactive face of one. It runs no model loop of its own; it renders and drives DeepSeek Harness sessions. The claim it stakes is organizational — *a TUI is not a package, it is a plugin tree* — so every capability above is a row you can drop, hot-swap, or replace with your own plugin.
+
+**Versus dsh's stock interaction**: Blue is an out-of-tree profile plugin. It implements the harness's interaction seams (approval, user questions, commands) and opens its own seams downstream — a third-party command, status entry, or editor enhancement registers through exactly the surfaces Blue's own enhancements use.
+
+**For whom**: dsh users who want a polished, keyboard-first, themeable terminal front-end today — and plugin authors who want a TUI whose every surface is an extension point.
 
 ## Design philosophy
 
@@ -245,9 +253,20 @@ Development install (from a checkout, link-based) and the edit → build → re-
 
 Archived phase designs and surveys (MVP, P1, P2, pi-tui/harness selection) are under [docs/history/](docs/history/).
 
+## Known limitations
+
+Preview-honest list — the full parked log lives in [docs/blue-roadmap.md](docs/blue-roadmap.md):
+
+- **Main-screen scrolling**: while output streams, dragging the terminal's own scrollback can fight the live conversation (Blue renders on the main screen by design; alt-screen gating is parked).
+- **No desktop notifications** yet — bell / OSC 9 / focus tracking are parked.
+- **No inline diff preview in the approval panel** yet — the diff card component exists, the wiring does not.
+- **Tool output is not streamed**: cards render when the tool completes (the harness has no streaming tool-output seam yet).
+- **No in-place rewind (Esc-Esc) or task backgrounding (Ctrl+B)** — both wait on harness primitives.
+- **Preview semantics**: packages carry the `rc` dist-tag and pin the harness line, so breaking changes between previews are possible; pnpm 11's `minimumReleaseAge` can resolve `@rc` to the previous version during the first day after a publish (see the [FAQ](https://dsh-blue.dev/en/guide/faq/)).
+
 ## Relationship to deepseek-harness
 
-- Runtime and test dependencies (`@deepseek-ai/cordis` 4.0.1, `@deepseek-ai/dsh-*` 0.1.1-rc.2, `@earendil-works/pi-tui` ^0.84.2) come from the npm registry; Blue's own five packages are unpublished and stay workspace-linked here.
+- Runtime and test dependencies (`@deepseek-ai/cordis` 4.0.1, `@deepseek-ai/dsh-*` 0.1.1-rc.2, `@earendil-works/pi-tui` ^0.84.2) come from the npm registry. Blue's own packages publish to npm in lockstep under the `rc` dist-tag — `latest` stays reserved for the stable line: the six-package set ([`@dsh-blue/blue`](https://www.npmjs.com/package/@dsh-blue/blue) plus core/interaction/transcript/app and the public-contract package `blue-api`) at 0.1.0-rc.4.
 - The harness's repository gates (documentation i18n pairing, README gates, snapshot/e2e lanes) do not apply here; this repo keeps the build, the full test suite, and the per-file 100% src coverage gate.
 
 ## License

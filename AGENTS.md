@@ -138,6 +138,17 @@ The `harness-drift` workflow (`.github/workflows/harness-drift.yml`) watches the
 - Rehearsal path: on any branch, pin the tree back to an old line, `workflow_dispatch` with `apply: true` — the input is an explicit human intent and may run off-master; the schedule never can.
 - If branch-protection required checks ever appear, switch the push to a PAT secret so the PR gains native runs; until then the built-in gates are the check.
 
+## Promo assets
+
+The og/social cards and the README entry banners are generated, never hand-drawn; the demo GIF/stills from the same pipeline are post/social assets (the README banner and a hand-recorded demo video replaced them there):
+
+- **`pnpm demo:record`** (`script/demo-record.mjs`) — boots the real dsh CLI at 120×30 in a scratch git repo under the throwaway profile, drives a scripted conversation against the mock LLM (typed task → `read` tool card → slow-streamed markdown reply → slash dropdown), and writes `docs/assets/demo.cast` (asciinema v2). The reply's first line doubles as the session title — the harness title generator sees the mock's repeat-last reply, so keep it a clean short line. `slow_success` is required for the reply: plain `success` ignores `chunkDelayMs` and blasts the text in one burst.
+- **`pnpm demo:render`** (`script/demo-render.mjs`) — replays the cast through `@xterm/headless`, reads every cell with its truecolor attributes, paints SVG (braille cells as vector dot grids — font-independent), rasterizes via resvg-js against the vendored JetBrains Mono, and encodes the GIF with gifenc (global palette, inter-frame transparency). `--png <path> --at <sec>` emits a still; the trailing "press ctrl+c again" exit hint is auto-trimmed. Idle gaps clamp at 1.5 s.
+- **`pnpm logo:export`** (`script/export-logo.mjs`) — derives `website/public/og.png` (1200×630), `docs/assets/social-preview.png` (EN banner, README.md top) and `docs/assets/social-preview-zh.png` (中文 banner, README.zh.md top — body lines need CJK: renders with the system Noto Sans CJK collection) from the interim logo: the blue terminal favicon. The whale banner is product UI only — promo visuals never use it (DeepSeek mascot association, 2026-08 ruling).
+- **`.github/workflows/assets.yml`** regenerates all three on demand and uploads an artifact for review; recording carries wall-clock timing (not byte-deterministic), so artifacts are committed by hand after review.
+- The banner in the frames carries the package version — **re-record after every release** (the version line is expected to move; the cast content otherwise stays stable). Fonts are vendored under `docs/assets/fonts/` with their OFL license — keep the license file beside them.
+- Post copy (announcement drafts) lives in `promo/` at the repo root, **git-ignored and never committed** — public channels get the polished prose, the repo gets none of the drafts.
+
 ## Security considerations
 
 - Never commit secrets; nothing in this repo should require credentials at rest (all deps resolve from the public npm registry).

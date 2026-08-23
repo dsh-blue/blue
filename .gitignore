@@ -5,3 +5,6 @@ coverage/
 website/.vitepress/dist/
 website/.vitepress/cache/
 .claude/tmp/
+
+# promo post drafts — local only, never committed (see promo/README.md)
+promo/

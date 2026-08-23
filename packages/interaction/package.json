@@ -108,5 +108,14 @@
     "@dsh-blue/blue-app": "workspace:^",
     "@dsh-blue/blue-core": "workspace:^",
     "@dsh-blue/blue-transcript": "workspace:^"
-  }
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "tui",
+    "cli",
+    "plugin",
+    "cordis"
+  ]
 }

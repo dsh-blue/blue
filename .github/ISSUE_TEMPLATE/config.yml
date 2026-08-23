@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and discussions
+    url: https://github.com/dsh-blue/blue/discussions
+    about: Usage questions and ideas that are not bugs or concrete proposals.
+  - name: Documentation
+    url: https://dsh-blue.dev/
+    about: Guides, feature pages, and the command/key reference.
+  - name: Roadmap and known limitations
+    url: https://github.com/dsh-blue/blue/blob/master/docs/blue-roadmap.md
+    about: What is parked, blocked upstream, or planned.
