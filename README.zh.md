@@ -8,17 +8,17 @@
 
 [English](README.md) | 中文
 
+<p align="center"><a href="https://dsh-blue.dev/"><img src="docs/assets/social-preview-zh.png" width="800" alt="Blue —— DeepSeek Harness（dsh）的插件式终端界面"></a></p>
+
 Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的一个交互式终端 UI（TUI）插件：以 out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) 插件 bundle 的形式、骑在 `dsh-base` bundle 之上的 `pi-tui` 渲染器。它的核心主张：**TUI 不是一个包——而是一棵 Cordis 插件树。** 每个渲染组件、交互 provider、命令、状态栏条目都是独立插件，各有自己的 fiber 生命周期，可热替换、可省略。
 
 本仓库是 `@dsh-blue` scope 下五个 workspace 包的独立 home，它们从 `deepseek-harness` monorepo 抽出（原 `packages/blue/*` 与 `packages/bundle/blue`），现按 npm 上发布的 harness（`0.1.1-rc.2` 线）与 vendored Cordis 构建测试。
 
-<p align="center"><img src="docs/assets/demo.gif" width="840" alt="Blue 演示：键入任务、命令卡、流式 markdown 回复、模式切换、todo 面板与命令菜单"></p>
 
 ## 目录
 
 - [快速开始](#快速开始)
 - [功能](#功能) — [键位](#键位) · [Slash 命令](#slash-命令)
-- [截图](#截图)
 - [定位](#定位)
 - [设计哲学](#设计哲学)
 - [分层架构](#分层架构)
@@ -102,16 +102,6 @@ dsh plugin --profile blue add @dsh-blue/blue@rc
 | `/version` | — | 显示 Blue 与 harness 版本及实时模型 |
 | `/export` | — | 把当前会话导出为 Markdown 文件 |
 | `/copy` | — | 复制最近一条助手消息到剪贴板 |
-
-## 截图
-
-截取自一段可完全复现的脚本化录制（`pnpm demo:record && pnpm demo:render`——与冒烟测试同一套 mock-LLM 驱动）：
-
-| 启动与横幅 | 一个回合：工具卡 + 流式回复 | 命令菜单 |
-| --- | --- | --- |
-| <img src="docs/assets/shot-banner.png" width="360" alt="启动画面：盲文鲸鱼横幅、元信息块、输入框中打了一半的任务与两行状态栏"> | <img src="docs/assets/shot-conversation.png" width="360" alt="会话画面：用户任务、带输出的命令卡与流式 markdown 回复"> | <img src="docs/assets/shot-panels.png" width="360" alt="输入框上方的斜杠命令下拉：fuzzy 匹配与参数提示"> |
-
-这些界面在真实使用中的完整走查见功能文档：[dsh-blue.dev/features](https://dsh-blue.dev/features/)（English: [dsh-blue.dev/en/features](https://dsh-blue.dev/en/features/)）。
 
 ## 定位
 

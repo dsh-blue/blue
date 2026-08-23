@@ -8,17 +8,16 @@
 
 English | [中文](README.zh.md)
 
+<p align="center"><a href="https://dsh-blue.dev/en/"><img src="docs/assets/social-preview.png" width="800" alt="Blue — a plugin-based terminal UI for DeepSeek Harness (dsh)"></a></p>
+
 Blue is an interactive terminal UI (TUI) plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`): a `pi-tui` renderer mounted as an out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) plugin bundle on top of the `dsh-base` bundle. Its core claim: **a TUI is not a package — it is a Cordis plugin tree.** Every render component, interaction provider, command, and status entry is a separate plugin with its own fiber lifecycle, hot-swappable and omittable.
 
 This repository is the standalone home of Blue's five workspace packages under the `@dsh-blue` scope, extracted from the `deepseek-harness` monorepo (`packages/blue/*` and `packages/bundle/blue`). They build and test against the published npm releases of the harness (`0.1.1-rc.2` line) and vendored Cordis.
-
-<p align="center"><img src="docs/assets/demo.gif" width="840" alt="Blue demo: typing a task, a command card, a streaming markdown reply, mode switching, the todo pane, and the command menu"></p>
 
 ## Contents
 
 - [Quick start](#quick-start)
 - [Features](#features) — [Key bindings](#key-bindings) · [Slash commands](#slash-commands)
-- [Screenshots](#screenshots)
 - [Positioning](#positioning)
 - [Design philosophy](#design-philosophy)
 - [Layered architecture](#layered-architecture)
@@ -102,16 +101,6 @@ All commands auto-list in the editor's completion menu; `/help` is the live trut
 | `/version` | — | Show the Blue and harness versions and the live model |
 | `/export` | — | Export the current session as a Markdown file |
 | `/copy` | — | Copy the last assistant message to the clipboard |
-
-## Screenshots
-
-From a scripted, fully reproducible recording (`pnpm demo:record && pnpm demo:render` — the same mock-LLM harness the smoke tests use):
-
-| Boot with the banner | A turn: tool card + streaming reply | The command menu |
-| --- | --- | --- |
-| <img src="docs/assets/shot-banner.png" width="360" alt="Boot screen: the braille whale banner, metadata block, the typed task in the editor, two-row status footer"> | <img src="docs/assets/shot-conversation.png" width="360" alt="Conversation: the user task, a command card with its output, and a streaming markdown answer"> | <img src="docs/assets/shot-panels.png" width="360" alt="The slash-command dropdown with fuzzy matches and argument hints over the editor"> |
-
-Feature walkthroughs with these surfaces in motion: [dsh-blue.dev/en/features](https://dsh-blue.dev/en/features/) (中文: [dsh-blue.dev/features](https://dsh-blue.dev/features/)).
 
 ## Positioning
 
