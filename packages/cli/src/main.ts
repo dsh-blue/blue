@@ -49,6 +49,10 @@ export async function main(argv: readonly string[]): Promise<void> {
     }
     if (outcome.action === 'installed') {
       cliInternals.stderr(`blue: installed @dsh-blue/blue@${version} into profile 'blue'\n`)
+    } else if (outcome.action === 'ahead') {
+      // /update (or a manual add) advanced the profile past this shell —
+      // boot it as-is; reinstalling the shell is how the pair advances.
+      cliInternals.stderr(`blue: profile 'blue' is at @dsh-blue/blue@${outcome.installed}, ahead of this shell (${version}) — reinstall to advance: npm i -g @dsh-blue/blue-cli@rc\n`)
     } else if (outcome.action === 'link-lane') {
       cliInternals.stderr(`blue: profile 'blue' is a dev ${outcome.spec.split(':', 1)[0]} lane — calibration skipped\n`)
     }

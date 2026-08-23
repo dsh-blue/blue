@@ -22,6 +22,7 @@ const INSTALL_TIMEOUT_MS = 300_000
 /** What calibration decided. */
 export type CalibrationOutcome =
   | { readonly action: 'current' }
+  | { readonly action: 'ahead', readonly installed: string }
   | { readonly action: 'link-lane', readonly spec: string }
   | { readonly action: 'installed' }
   | { readonly action: 'failed', readonly reason: string }
@@ -57,16 +58,84 @@ export async function calibrate(options: CalibrateOptions): Promise<CalibrationO
   const root = blueProfileRoot()
   const spec = bundleSpec(root)
   if (spec !== undefined && /^(link|file):/.test(spec)) return { action: 'link-lane', spec }
-  if (installedBundleVersion(root) === options.version) return { action: 'current' }
-  const install = await cliInternals.spawnOnce(cliInternals.execPath, [
-    options.dshBinJs, 'plugin', '--profile', PROFILE, 'add', `@dsh-blue/blue@${options.version}`,
+  const installed = installedBundleVersion(root)
+  if (installed === options.version) return { action: 'current' }
+  // Direction guard: the profile may have advanced via /update — the shell
+  // never downgrades what it does not own the latest word on (reinstalling
+  // the shell is the advancing move, D50④).
+  if (installed !== undefined && compareVersions(installed, options.version) > 0) {
+    return { action: 'ahead', installed }
+  }
+  const runInstall = (extra: readonly string[]) => cliInternals.spawnOnce(cliInternals.execPath, [
+    options.dshBinJs, 'plugin', '--profile', PROFILE, 'add', ...extra, `@dsh-blue/blue@${options.version}`,
   ], { timeoutMs: INSTALL_TIMEOUT_MS })
+  let install = await runInstall([])
+  if (install.spawnError === undefined && install.code !== 0) {
+    // pnpm refuses writes into a workspace root without -w (dsh-TUI's
+    // issue #239 class) — the profile IS a workspace root, so retry once
+    // with the flag before declaring bootstrap failed.
+    if (`${install.stderr}\n${install.stdout}`.includes('ERR_PNPM_ADDING_TO_ROOT')) install = await runInstall(['-w'])
+  }
   if (install.spawnError !== undefined) return { action: 'failed', reason: install.spawnError }
-  if (install.code !== 0) return { action: 'failed', reason: lastLine(install.stderr, install.stdout) }
+  if (install.code !== 0) {
+    const output = `${install.stderr}\n${install.stdout}`
+    if (/pnpm not found/i.test(output)) {
+      return { action: 'failed', reason: 'pnpm is missing on PATH — npm i -g pnpm (or: corepack enable pnpm)' }
+    }
+    return { action: 'failed', reason: lastLine(install.stderr, install.stdout) }
+  }
   if (installedBundleVersion(root) !== options.version) {
     return { action: 'failed', reason: `profile reports @dsh-blue/blue@${installedBundleVersion(root) ?? 'uninstalled'} after install` }
   }
   return { action: 'installed' }
+}
+
+/**
+ * Compare two semver versions, prereleases included: negative when `a` is
+ * older, `0` when equal (or unparseable — "cannot order" reads as "do not
+ * touch" to the direction guard), positive when newer. The standard
+ * prerelease rules: numeric identifiers compare numerically and rank below
+ * alphanumeric; a prerelease ranks below its release.
+ * @param a - one version string.
+ * @param b - the other version string.
+ * @returns the ordering of `a` relative to `b`.
+ */
+export function compareVersions(a: string, b: string): number {
+  const pa = parseVersion(a)
+  const pb = parseVersion(b)
+  if (pa === undefined || pb === undefined) return 0
+  if (pa.major !== pb.major) return pa.major - pb.major
+  if (pa.minor !== pb.minor) return pa.minor - pb.minor
+  if (pa.patch !== pb.patch) return pa.patch - pb.patch
+  if (pa.pre === null && pb.pre === null) return 0
+  if (pa.pre === null) return 1
+  if (pb.pre === null) return -1
+  const n = Math.max(pa.pre.length, pb.pre.length)
+  for (let index = 0; index < n; index += 1) {
+    const x = pa.pre[index]
+    const y = pb.pre[index]
+    if (x === undefined) return -1
+    if (y === undefined) return 1
+    const xn = /^\d+$/.test(x)
+    const yn = /^\d+$/.test(y)
+    if (xn && yn) {
+      const delta = Number(x) - Number(y)
+      if (delta !== 0) return delta
+    } else if (xn !== yn) return xn ? -1 : 1
+    else if (x !== y) return x < y ? -1 : 1
+  }
+  return 0
+}
+
+/** Parse `x.y.z[-pre]`; `undefined` when the shape is not semver. */
+function parseVersion(version: string): { major: number, minor: number, patch: number, pre: readonly string[] | null } | undefined {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(version.trim())
+  return match === null ? undefined : {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    pre: match[4] === undefined ? null : match[4].split('.'),
+  }
 }
 
 /** The profile's `@dsh-blue/blue` dependency spec, when its manifest names one. */

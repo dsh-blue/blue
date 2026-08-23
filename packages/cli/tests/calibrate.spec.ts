@@ -8,7 +8,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
-import { calibrate, dshHome } from '../src/calibrate.ts'
+import { calibrate, compareVersions, dshHome } from '../src/calibrate.ts'
 import { cliInternals, type SpawnOutcome } from '../src/internals.ts'
 
 registerTempDirCleanup()
@@ -101,6 +101,54 @@ describe('calibrate', () => {
     }])
   })
 
+  it('never downgrades a profile that /update advanced past the shell', async () => {
+    let spawned = false
+    fixtureHome({ 'node_modules/@dsh-blue/blue/package.json': installedManifest('0.1.0-rc.5') })
+    cliInternals.spawnOnce = async () => {
+      spawned = true
+      return OK
+    }
+    await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
+      action: 'ahead',
+      installed: '0.1.0-rc.5',
+    })
+    expect(spawned).toBe(false)
+  })
+
+  it('retries once with -w when pnpm refuses a workspace-root write', async () => {
+    const { root } = fixtureHome({})
+    const calls: Call[] = []
+    let attempt = 0
+    cliInternals.spawnOnce = async (cmd, args, opts) => {
+      attempt += 1
+      calls.push({ cmd, args, opts })
+      if (attempt === 1) {
+        return { code: 1, signal: null, stdout: '', stderr: 'ERR_PNPM_ADDING_TO_ROOT', timedOut: false }
+      }
+      mkdirSync(join(root, 'node_modules', '@dsh-blue', 'blue'), { recursive: true })
+      writeFileSync(join(root, 'node_modules', '@dsh-blue', 'blue', 'package.json'), installedManifest(PIN))
+      return OK
+    }
+    await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({ action: 'installed' })
+    expect(calls.map(call => call.args.join(' '))).toEqual([
+      `/nested/dsh/lib/bin.js plugin --profile blue add @dsh-blue/blue@${PIN}`,
+      `/nested/dsh/lib/bin.js plugin --profile blue add -w @dsh-blue/blue@${PIN}`,
+    ])
+  })
+
+  it('translates a missing pnpm into the install suggestion', async () => {
+    fixtureHome({})
+    cliInternals.spawnOnce = async () => ({
+      code: 1, signal: null, stdout: '',
+      stderr: 'dsh: pnpm not found on PATH — install pnpm to manage profile plugins\n',
+      timedOut: false,
+    })
+    await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
+      action: 'failed',
+      reason: 'pnpm is missing on PATH — npm i -g pnpm (or: corepack enable pnpm)',
+    })
+  })
+
   it('fails one-line on a rejected install, quoting the output tail', async () => {
     fixtureHome({})
     cliInternals.spawnOnce = async () => ({ code: 1, signal: null, stdout: '', stderr: 'pnpm: install\nETARGET no match\n', timedOut: false })
@@ -170,5 +218,36 @@ describe('dshHome', () => {
     expect(dshHome()).toBe(join('/u', '.dsh'))
     cliInternals.env = { DSH_HOME: '' }
     expect(dshHome()).toBe(join('/u', '.dsh'))
+  })
+})
+
+describe('compareVersions', () => {
+  it('orders prerelease numerics, numeric boundaries, and releases', () => {
+    expect(compareVersions('0.1.0-rc.4', '0.1.0-rc.5')).toBeLessThan(0)
+    expect(compareVersions('0.1.0-rc.9', '0.1.0-rc.10')).toBeLessThan(0)
+    expect(compareVersions('0.1.0-rc.10', '0.1.0-rc.9')).toBeGreaterThan(0)
+    expect(compareVersions('0.1.9', '0.2.0')).toBeLessThan(0)
+    expect(compareVersions('0.1.0-rc.4', '0.1.1-rc.1')).toBeLessThan(0)
+    expect(compareVersions('0.1.0-rc.4.1', '0.1.0-rc.4.2')).toBeLessThan(0)
+    expect(compareVersions('1.0.0', '0.9.9')).toBeGreaterThan(0)
+    expect(compareVersions('0.1.0-rc.4', '0.1.0-rc.4')).toBe(0)
+    expect(compareVersions('0.1.0', '0.1.0')).toBe(0)
+    expect(compareVersions('0.1.0-rc.1', '0.1.0')).toBeLessThan(0)
+    expect(compareVersions('0.1.0', '0.1.0-rc.1')).toBeGreaterThan(0)
+  })
+
+  it('ranks numeric prerelease identifiers below alphanumeric ones', () => {
+    expect(compareVersions('0.1.0-1', '0.1.0-alpha')).toBeLessThan(0)
+    expect(compareVersions('0.1.0-alpha', '0.1.0-1')).toBeGreaterThan(0)
+    expect(compareVersions('0.1.0-alpha', '0.1.0-beta')).toBeLessThan(0)
+    expect(compareVersions('0.1.0-beta', '0.1.0-alpha')).toBeGreaterThan(0)
+    expect(compareVersions('0.1.0-rc.2', '0.1.0-rc.2.1')).toBeLessThan(0)
+    expect(compareVersions('0.1.0-rc.2.1', '0.1.0-rc.2')).toBeGreaterThan(0)
+  })
+
+  it('treats unparseable and mismatched shapes as unordered (0)', () => {
+    expect(compareVersions('not-a-version', '0.1.0-rc.4')).toBe(0)
+    expect(compareVersions('0.1.0-rc.4', 'latest')).toBe(0)
+    expect(compareVersions('v0.1.0', '0.1.0')).toBe(0)
   })
 })

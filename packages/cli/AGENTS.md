@@ -16,7 +16,12 @@ Scope boundaries:
   never parses Blue arguments (startup.ts owns that).
 - Calibration skips `link:`/`file:` lanes (the three-lane rule: `blue` is
   npm-only; `blue-dev`/`blue-<tag>` are link lanes and must never be
-  clobbered). No `blue upgrade` exists by ruling — reinstalling the shell
+  clobbered), and never downgrades a profile that `/update` advanced past
+  the shell (`compareVersions` guard → 'ahead' notice; reinstalling the
+  shell is the advancing move). Install retries once with `-w` when pnpm
+  refuses a workspace-root write (ERR_PNPM_ADDING_TO_ROOT), and a missing
+  pnpm fails with the install suggestion (npm i -g pnpm, or corepack).
+  No `blue upgrade` exists by ruling — reinstalling the shell
   is the upgrade.
 - The `BLUE_LAUNCHER=blue` child env rebrands the app's help and exit
   epitaph; nothing else in the app tree reads it.

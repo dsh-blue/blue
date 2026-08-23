@@ -114,6 +114,27 @@ describe('main', () => {
     expect(captures.exits).toEqual([1])
   })
 
+  it('boots an ahead profile as-is with the reinstall pointer, never downgrading', async () => {
+    const { calls, root } = fixtureLauncher()
+    installBundle(root, '0.1.0-rc.5')
+    let once = false
+    cliInternals.spawnOnce = async () => {
+      once = true
+      return OK
+    }
+    cliInternals.spawnInherit = async (cmd, args, opts) => {
+      calls.inherit.push({ cmd, args, env: opts?.env })
+      return OK
+    }
+    await main(['task'])
+    expect(once).toBe(false)
+    expect(captures.err).toEqual([
+      `blue: profile 'blue' is at @dsh-blue/blue@0.1.0-rc.5, ahead of this shell (${PIN}) — reinstall to advance: npm i -g @dsh-blue/blue-cli@rc\n`,
+    ])
+    expect(calls.inherit).toHaveLength(1)
+    expect(captures.exits).toEqual([0])
+  })
+
   it('announces a first install, then execs; and skips a dev link lane with a notice', async () => {
     const { calls, root } = fixtureLauncher()
     writeFileSync(join(root, 'package.json'), JSON.stringify({ dependencies: { '@dsh-blue/blue': 'link:/checkout' } }))
