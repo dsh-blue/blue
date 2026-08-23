@@ -59,7 +59,7 @@
 
 按 status、dock、command、tool presentation、theme、editor、transcript 顺序迁移。每项必须有新 provider/registry、官方 consumer、replacement fixture、unload/reload、width-scan、golden/e2e、bundle row 和 plain fallback。旧实现只在对应验收后删除。
 
-当前进度：status、dock、command、tool presentation、theme semantic model、editor model 和 transcript registry 均已 additive 接入；旧 transcript/editor renderer 仍保留为 golden baseline，transcript model 默认不重复挂载旧行。
+当前进度：status 的 basic/cwd/git/title/context/mode provider 已全部切到 `StatusModel` 和正式 footer bridge；dock 固定 placement/priority/id 顺序并支持 `preferredRows`/collapsed；command action 只经官方 `commands.execute` 且 unload abort/丢弃 late result；`FrontendPanel` 覆盖 select/form/info/loading/error 和 submit/cancel；tool presentation 只转换官方 dsh-tools canonical view/result；editor 暴露 set/submit/abort 结构化 action；transcript registry 只接收已投影 view，并把单帧窗口限制为最新 200 项。旧 transcript/editor 和 pane renderer 仍是 golden/plain baseline，默认 bundle 不重复挂载对应 model 内容；删除条件和 `blue-frontend-runtime` 人工验收门禁见 surface migration matrix。
 
 ### F6：skills 和生态验证
 

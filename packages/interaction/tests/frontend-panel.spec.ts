@@ -41,7 +41,8 @@ describe('FrontendPanel', () => {
     fixture.panel.handleInput('q')
     fixture.panel.handleInput('Q')
     fixture.panel.handleInput('x')
-    expect(fixture.onClose).toHaveBeenCalledTimes(4)
+    expect(fixture.onClose).toHaveBeenCalledTimes(3)
+    expect(fixture.panel.render(30).some(row => row.includes('loading...'))).toBe(true)
   })
 
   it('uses the error frame and resets scrolling for a short replacement model', () => {
@@ -52,5 +53,47 @@ describe('FrontendPanel', () => {
     const rows = fixture.panel.render(30.8)
     expect(rows.some(row => row.includes('failure'))).toBe(true)
     expect(rows.some(row => row.includes('down'))).toBe(true)
+  })
+
+  it('selects enabled list actions and dispatches cancel', () => {
+    const fixture = panelFixture({
+      kind: 'panel', mode: 'select', title: 'Choose', cancel: { kind: 'fixture.cancel' },
+      view: { kind: 'list', selectedId: 'a', items: [
+        { id: 'a', label: 'A', action: { kind: 'fixture.a' } },
+        { id: 'b', label: 'B', disabled: true, action: { kind: 'fixture.b' } },
+        { id: 'c', label: 'C', action: { kind: 'fixture.c' } },
+      ] },
+    })
+    expect(fixture.panel.render(40).some(row => row.includes('> A'))).toBe(true)
+    fixture.panel.handleInput('\x1b[B'); expect(fixture.panel.render(40).some(row => row.includes('> C'))).toBe(true); fixture.panel.handleInput('\r')
+    fixture.panel.handleInput('\x1b[A'); fixture.panel.handleInput('\r'); fixture.panel.handleInput('\x1b')
+    expect(fixture.onAction.mock.calls.map(call => call[0])).toEqual([{ kind: 'fixture.c' }, { kind: 'fixture.a' }, { kind: 'fixture.cancel' }])
+    expect(fixture.onClose).toHaveBeenCalledOnce()
+  })
+
+  it('renders form and empty error modes with submit behavior', () => {
+    const form = panelFixture({ kind: 'panel', mode: 'form', title: 'Form', view: { kind: 'fields', fields: [{ label: 'name', value: 'blue' }] }, submit: { kind: 'fixture.save' } })
+    expect(form.panel.render(30).some(row => row.includes('name: blue'))).toBe(true); form.panel.handleInput('\r'); expect(form.onAction).toHaveBeenCalledWith({ kind: 'fixture.save' })
+    const error = panelFixture({ kind: 'panel', mode: 'error', title: 'Failure' }); expect(error.panel.render(30).some(row => row.includes('unavailable'))).toBe(true)
+  })
+
+  it('closes an actionless info panel and renders an empty body', () => {
+    const fixture = panelFixture({ kind: 'panel', mode: 'info', title: 'Empty' })
+    expect(fixture.panel.render(30).some(row => row.includes('unavailable'))).toBe(false)
+    fixture.panel.handleInput('\r')
+    expect(fixture.onClose).toHaveBeenCalledOnce()
+  })
+
+  it('selects the first enabled item when no valid preference exists', () => {
+    const fixture = panelFixture({
+      kind: 'panel', mode: 'select', title: 'Choose',
+      view: { kind: 'list', selectedId: 'missing', items: [
+        { id: 'disabled', label: 'Disabled', disabled: true },
+        { id: 'first', label: 'First', action: { kind: 'fixture.first' } },
+      ] },
+    })
+    expect(fixture.panel.render(40).some(row => row.includes('> First'))).toBe(true)
+    fixture.panel.handleInput('\r')
+    expect(fixture.onAction).toHaveBeenCalledWith({ kind: 'fixture.first' })
   })
 })

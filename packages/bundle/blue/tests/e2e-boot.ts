@@ -425,13 +425,13 @@ export const apply = (ctx, config) => globalThis.__blueE2E.pasteImageApply(ctx, 
     '- id: blue-status-cwd',
     `  name: ${fixture('blue-status-cwd.mjs', `
 export const name = 'blue-status-cwd'
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueStatusModels']
 export const apply = ctx => globalThis.__blueE2E.statusCwdApply(ctx)
 `)}`,
     '- id: blue-status-git',
     `  name: ${fixture('blue-status-git.mjs', `
 export const name = 'blue-status-git'
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueStatusModels']
 export const apply = ctx => globalThis.__blueE2E.statusGitApply(ctx)
 `)}`,
     // The harness session-title service stand-in (the thin e2e tree boots no
@@ -457,13 +457,13 @@ export const apply = ctx => ctx.provide('sessionTitle', {
     '- id: blue-status-title',
     `  name: ${fixture('blue-status-title.mjs', `
 export const name = 'blue-status-title'
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueStatusModels']
 export const apply = ctx => globalThis.__blueE2E.statusTitleApply(ctx)
 `)}`,
     '- id: blue-status-context',
     `  name: ${fixture('blue-status-context.mjs', `
 export const name = 'blue-status-context'
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme']
+export const inject = ['blueStatusModels']
 export const apply = ctx => globalThis.__blueE2E.statusContextApply(ctx)
 `)}`,
     ...(options.frontendContext === true ? [
@@ -478,7 +478,7 @@ export const apply = ctx => globalThis.__blueE2E.contextApply(ctx)
     '- id: blue-status-mode',
     `  name: ${fixture('blue-status-mode.mjs', `
 export const name = 'blue-status-mode'
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueStatusModels']
 export const apply = ctx => globalThis.__blueE2E.modeStatusApply(ctx)
 `)}`,
     // The S7 intent rows mirror cordis.patch.yml: both inject the

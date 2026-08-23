@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { BlueComponent, BlueScreen } from '@dsh-blue/blue-core'
 import type { ToolPresentationModel } from '@dsh-blue/blue-frontend'
-import { BlueModelToolService, ToolModelComponent } from '../src/tool-model.ts'
+import { createToolPresentationModel, toolCallView, toolResultView, BlueModelToolService, ToolModelComponent } from '../src/tool-model.ts'
 
 function screenFixture() {
   const children: BlueComponent[] = []; const renders: number[] = []
@@ -20,4 +20,50 @@ describe('BlueModelToolService', () => {
   })
   it('renders missing views and invalidates safely', () => { const empty = new ToolModelComponent(() => ({ kind: 'tool', id: 'empty', name: 'empty' })); expect(empty.render(10)).toEqual([]); empty.invalidate(); const none = new ToolModelComponent(() => null); expect(none.render(10)).toEqual([]); none.invalidate() })
   it('renders a statically registered model through the mounted closure', () => { const ctx = new Context(); const fixture = screenFixture(); const service = new BlueModelToolService(ctx, fixture.screen); service.register(tool('static')); expect((fixture.children[0] as ToolModelComponent).render(10)).toEqual(['result']); service.dispose() })
+  it('cleans the previous screen when reattached', () => { const first = screenFixture(); const second = screenFixture(); const service = new BlueModelToolService(new Context(), first.screen); service.register(tool('reattach')); service.attach(second.screen); expect(first.children).toHaveLength(0); expect(second.children).toHaveLength(1); service.dispose() })
+})
+
+describe('canonical tool presentation builder', () => {
+  it('maps generic, terminal, and diff call metadata', () => {
+    const generic = toolCallView({ card: 'generic', title: 'Read', rawInput: { path: 'a.ts' }, content: [{ type: 'text', text: 'body' }] })
+    expect(generic).toMatchObject({ kind: 'sections', sections: [{ title: 'Read', body: { text: 'body' } }] })
+    expect(toolCallView({ card: 'generic', title: 'Raw', rawInput: { path: 'a.ts' } })).toMatchObject({ sections: [{ body: { text: expect.stringContaining('a.ts') } }] })
+    const cyclic: { self?: unknown } = {}; cyclic.self = cyclic
+    expect(toolCallView({ card: 'generic', title: 'Cycle', rawInput: cyclic })).toMatchObject({ sections: [{ body: { text: '[object Object]' } }] })
+    expect(toolCallView({ card: 'generic', title: 'Symbol', rawInput: Symbol('x') })).toMatchObject({ sections: [{ body: { text: 'Symbol(x)' } }] })
+    expect(toolCallView({ card: 'generic', title: 'String', rawInput: 'literal' })).toMatchObject({ sections: [{ body: { text: 'literal' } }] })
+    expect(toolCallView({ card: 'terminal', title: 'pnpm test', description: 'Tests', cwd: '/repo' })).toMatchObject({ kind: 'sections', sections: [{ title: 'Tests' }, { title: 'Command', body: { kind: 'code' } }] })
+    expect((toolCallView({ card: 'terminal', title: 'pnpm test', description: 'Tests' }) as { sections: readonly unknown[] }).sections[0]).toMatchObject({ title: 'Tests', body: { text: '' } })
+    expect(toolCallView({ card: 'terminal', title: 'pwd' })).toMatchObject({ sections: [{ title: 'Command' }] })
+    expect(toolCallView({ card: 'diff', title: 'Write', diffs: [{ path: 'a.ts', oldText: 'old', newText: 'new' }] })).toMatchObject({ sections: [{ title: 'a.ts', body: { kind: 'diff', before: 'old', after: 'new' } }] })
+    expect(toolCallView({ card: 'diff', title: 'Write', diffs: [] })).toMatchObject({ sections: [{ title: 'Write', body: { text: '(no changes)' } }] })
+  })
+
+  it('maps every official result view and generic fallback', () => {
+    const content = [{ type: 'text' as const, text: 'text' }, { type: 'reasoning' as const, text: 'reason' }, { type: 'image' as const, attachment: {} as never }, { type: 'tool-call' as const, id: 'c' as never, name: 'read', arguments: '{}' }, { type: 'tool-result' as const, toolCallId: 'c' as never, content: [], isError: false }, { type: 'future' }] as never
+    expect(toolResultView({ card: 'generic', title: 'Done', content }, undefined, 'tool')).toMatchObject({ sections: [{ title: 'Done', body: { text: expect.stringContaining('[future]') } }] })
+    expect(toolResultView({ card: 'generic' }, { content: [{ type: 'text', text: 'raw' }], isError: false }, 'tool')).toMatchObject({ sections: [{ title: 'tool', body: { text: 'raw' } }] })
+    expect(toolResultView({ card: 'terminal', title: 'Shell', output: 'ok', exitCode: 0 }, undefined, 'tool')).toMatchObject({ sections: [{ body: { code: 'ok' } }, { body: { text: 'exit 0' } }] })
+    expect(toolResultView({ card: 'terminal', signal: 'SIGTERM' }, undefined, 'tool')).toMatchObject({ sections: [{ body: { code: '(no output)' } }, { body: { text: 'signal SIGTERM' } }] })
+    expect(toolResultView({ card: 'terminal' }, undefined, 'tool')).toMatchObject({ sections: [{}, { body: { text: 'complete' } }] })
+    expect(toolResultView({ card: 'diff', diffs: [{ path: 'new.ts', oldText: null, newText: 'new' }] }, undefined, 'tool')).toMatchObject({ sections: [{ body: { before: '', after: 'new' } }] })
+    expect(toolResultView({ card: 'search', shape: 'paths', paths: ['a.ts'], truncated: false, total: 1 }, undefined, 'tool')).toMatchObject({ kind: 'list', selectedId: 'path-0' })
+    expect(toolResultView({ card: 'search', shape: 'paths', paths: [], truncated: false, total: 0 }, undefined, 'tool')).toMatchObject({ kind: 'list', items: [] })
+    expect(toolResultView({ card: 'search', shape: 'matches', files: [{ path: 'a.ts', matches: [{ lineNumber: 2, line: 'hit' }] }], truncated: false, total: 1 }, undefined, 'tool')).toMatchObject({ sections: [{ title: 'a.ts', body: { code: '2: hit' } }] })
+    expect(toolResultView({ card: 'search', shape: 'matches', title: 'Search', files: [], truncated: false, total: 0 }, undefined, 'tool')).toMatchObject({ sections: [{ title: 'Search', body: { text: '(no matches)' } }] })
+    expect(toolResultView({ card: 'search', shape: 'matches', files: [], truncated: false, total: 0 }, undefined, 'tool')).toMatchObject({ sections: [{ title: 'tool', body: { text: '(no matches)' } }] })
+    expect(toolResultView({ card: 'read', path: 'a.ts', offset: 1, lines: [{ number: 1, text: 'const x = 1' }], totalLines: 1, lang: 'ts' }, undefined, 'tool')).toMatchObject({ sections: [{ title: 'a.ts', body: { language: 'ts' } }] })
+    expect(toolResultView({ card: 'read', title: 'Read', path: 'a', offset: 1, lines: [], totalLines: 0 }, undefined, 'tool')).toMatchObject({ sections: [{ title: 'Read', body: { code: '' } }] })
+    expect(toolResultView({ card: 'web', kind: 'fetch', url: 'https://example.com', statusCode: 200, truncated: true }, undefined, 'tool')).toMatchObject({ fields: [{ value: 'https://example.com' }, { value: '200' }, { value: 'yes' }] })
+    expect(toolResultView({ card: 'web', kind: 'fetch', url: 'x', statusCode: 204, truncated: false }, undefined, 'tool')).toMatchObject({ fields: [{}, {}, { value: 'no' }] })
+    expect(toolResultView({ card: 'web', kind: 'search', sources: [{ url: 'u', title: 'Title', snippet: 'Snippet' }, { url: 'v' }], truncated: false }, undefined, 'tool')).toMatchObject({ items: [{ label: 'Title', detail: 'Snippet' }, { label: 'v', detail: 'v' }] })
+    expect(toolResultView(undefined, { content: [], isError: false }, 'tool')).toEqual({ kind: 'text', text: '(no output)' })
+    expect(toolResultView(undefined, { content: [{ type: 'text', text: 'failed' }], isError: true }, 'tool')).toEqual({ kind: 'text', text: 'failed', tone: 'danger' })
+  })
+
+  it('creates a deeply frozen model with structured toggle action', () => {
+    const model = createToolPresentationModel({ id: 'c1', name: 'read', call: { card: 'generic', title: 'Read' }, result: { card: 'read', path: 'a', offset: 1, lines: [], totalLines: 0 }, outcome: { content: [], isError: false }, expanded: false })
+    expect(model).toMatchObject({ id: 'c1', expanded: false, action: { kind: 'tool.toggle', id: 'c1' } }); expect(Object.isFrozen(model)).toBe(true); expect(Object.isFrozen(model.call)).toBe(true)
+    const plain = createToolPresentationModel({ id: 'c2', name: 'unknown' }); expect(plain.call).toEqual({ kind: 'text', text: 'unknown' }); expect(plain.result).toBeUndefined()
+  })
 })

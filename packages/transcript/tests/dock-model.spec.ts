@@ -22,6 +22,33 @@ describe('BlueDockModelService', () => {
   })
 
   it('renders hidden models as no rows and invalidates without state', () => {
-    const component = new ModelDockComponent(() => null); expect(component.render(10)).toEqual([]); component.invalidate(); const hidden = new ModelDockComponent(() => dock('hidden', 'bottom', { kind: 'code', code: 'x' }, true)); expect(hidden.render(10)).toEqual([]); const wide = new ModelDockComponent(() => dock('wide', 'bottom', { kind: 'diff', before: 'a', after: 'abcdef' })); expect(wide.render(3)).toEqual(['abc']); hidden.invalidate(); wide.invalidate()
+    const component = new ModelDockComponent(() => null); expect(component.render(10)).toEqual([]); component.invalidate(); const hidden = new ModelDockComponent(() => dock('hidden', 'bottom', { kind: 'code', code: 'x' }, true)); expect(hidden.render(10)).toEqual([]); const wide = new ModelDockComponent(() => dock('wide', 'bottom', { kind: 'diff', before: 'a', after: 'abcdef' })); expect(wide.render(3)).toEqual(['- a', '+', 'abc', 'def']); hidden.invalidate(); wide.invalidate()
+  })
+
+  it('orders placements and priorities, caps rows, and cleans up on reattach', () => {
+    const first = screenFixture(); const second = screenFixture(); const service = new BlueDockModelService(new Context(), first.screen)
+    service.register({ ...dock('z-bottom'), priority: 9 }); service.register({ ...dock('a-bottom'), priority: 1 }); service.register({ ...dock('right', 'right'), priority: 2 }); service.register({ ...dock('left', 'left'), priority: 3 }); service.register({ ...dock('tie-z', 'bottom', { kind: 'text', text: 'tie-z' }), priority: 5 }); service.register({ ...dock('tie-a', 'bottom', { kind: 'text', text: 'tie-a' }), priority: 5 })
+    expect(first.children.map(component => (component as ModelDockComponent).render(20)[0])).toEqual(['dock', 'dock'])
+    expect(first.bottom.map(component => (component as ModelDockComponent).render(20)[0])).toEqual(['dock', 'tie-a', 'tie-z', 'dock'])
+    const capped = new ModelDockComponent(() => ({ ...dock('capped', 'bottom', { kind: 'code', code: 'one\ntwo\nthree' }), preferredRows: 2 }))
+    expect(capped.render(20)).toEqual(['one', 'two'])
+    service.attach(second.screen); expect(first.children).toHaveLength(0); expect(first.bottom).toHaveLength(0); expect(second.children).toHaveLength(2); expect(second.bottom).toHaveLength(4)
+    service.dispose()
+  })
+
+  it('defensively skips missing and newly collapsed mount sources', () => {
+    const service = new BlueDockModelService(new Context())
+    const mount = (service as unknown as { mount(id: string): void }).mount.bind(service)
+    mount('missing-screen')
+    const fixture = screenFixture()
+    service.attach(fixture.screen)
+    mount('missing-source')
+    let reads = 0
+    service.register(() => {
+      reads += 1
+      return reads <= 2 ? dock('changing') : dock('changing', 'bottom', { kind: 'text', text: 'hidden' }, true)
+    })
+    expect(fixture.bottom).toHaveLength(0)
+    service.dispose()
   })
 })

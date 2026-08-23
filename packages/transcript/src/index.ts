@@ -90,8 +90,9 @@ export { BlueIntentsError, BlueIntentsService } from './intents.ts'
 export { BlueStatusError, BlueStatusService, FOOTER_MAX_ROWS, FooterShellComponent } from './status.ts'
 export { BlueStatusModelService, plainView } from './status-model.ts'
 export { BlueDockModelService, ModelDockComponent } from './dock-model.ts'
-export { BlueModelToolService, ToolModelComponent, ToolModelService } from './tool-model.ts'
-export { TranscriptModelService, TranscriptModelComponent } from './transcript-model.ts'
+export { createToolPresentationModel, toolCallView, toolResultView, BlueModelToolService, ToolModelComponent, ToolModelService } from './tool-model.ts'
+export type { ToolPresentationFacts } from './tool-model.ts'
+export { appendTranscriptView, createTranscriptModel, TRANSCRIPT_MODEL_WINDOW, TranscriptModelService, TranscriptModelComponent } from './transcript-model.ts'
 export { StreamingPhaseTracker, type StreamingPhase } from './phase.ts'
 export {
   BRAILLE_SPINNER_FRAMES,
@@ -410,7 +411,7 @@ export function apply(ctx: Context): void {
   const transcriptModels = new TranscriptModelService(ctx)
   const footer = new FooterShellComponent(status, ctx.blueComponents)
   status.attach(footer)
-  statusModels.attach(status, screen, colors)
+  statusModels.attach(status, screen, colors, ctx.blueComponents)
   dockModels.attach(screen)
   toolModels.attach(screen)
   transcriptModels.attach(screen)

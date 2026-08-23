@@ -427,6 +427,24 @@ export function apply(ctx: Context): void {
     return true
   }
 
+  /** Clear the current draft, or interrupt the active main request. */
+  function clearOrInterrupt(): boolean {
+    if (editor.getText().length > 0) {
+      editor.setText('')
+      currentText = ''
+      clearDraft()
+      refreshHint()
+      ctx.emit('blue/editor-model-changed')
+      screen.requestRender()
+      return true
+    }
+    const agent = currentBlueAgent(ctx)
+    if (agent?.status !== 'running') return false
+    ctx.get('blueRequests')?.interrupt()
+    agent.cancel({ kind: 'user' })
+    return true
+  }
+
   /**
    * The editor-context key chain, resolved through the keymap before the
    * pi-tui Editor sees the sequence (it swallows Ctrl-C with no behavior,
@@ -447,31 +465,12 @@ export function apply(ctx: Context): void {
         ctx.emit('blue/btw-command', 'close')
         return true
       }
-      if (editor.getText().length > 0) {
-        editor.setText('')
-        return true
-      }
-      const agent = currentBlueAgent(ctx)
-      if (agent?.status === 'running') {
-        ctx.get('blueRequests')?.interrupt()
-        agent.cancel({ kind: 'user' })
-        return true
-      }
-      return false
+      return clearOrInterrupt()
     }
     // Ctrl-C: the same clear/interrupt chain, then the double-press exit —
     // the first idle press only arms the window and flashes the hint.
     if (keymap.matches(data, ACTION_INTERRUPT)) {
-      if (editor.getText().length > 0) {
-        editor.setText('')
-        return true
-      }
-      const agent = currentBlueAgent(ctx)
-      if (agent?.status === 'running') {
-        ctx.get('blueRequests')?.interrupt()
-        agent.cancel({ kind: 'user' })
-        return true
-      }
+      if (clearOrInterrupt()) return true
       const now = Date.now()
       if (now - lastInterruptAt < INTERRUPT_DOUBLE_PRESS_MS) {
         lastInterruptAt = 0
@@ -616,7 +615,7 @@ export function apply(ctx: Context): void {
     let removeEditor = screen.addBottomChild(editor)
     let removeHint = screen.addBottomChild(hintLine)
     screen.setFocus(editor)
-    setSharedEditor({ editor, submitPrompt, notice: setNotice })
+    setSharedEditor({ editor, submitPrompt, abortPrompt: () => { clearOrInterrupt() }, notice: setNotice })
     ctx.emit('blue/input-editor-changed')
 
     // The editor-slot swap (kimi `mountEditorReplacement`, D30): a dialog

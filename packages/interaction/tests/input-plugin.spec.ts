@@ -139,6 +139,9 @@ describe('blue-input plugin', () => {
     const shared = getSharedEditor()
     expect(shared?.editor).toBe(editor)
     expect(shared?.submitPrompt).toBeTypeOf('function')
+    type(editor, 'clear me')
+    shared?.abortPrompt?.()
+    expect(editor.getText()).toBe('')
   })
 
   it('submits plain text as a user follow-up message, records history, and clears the buffer', async () => {

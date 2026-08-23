@@ -136,67 +136,67 @@
 
 ### F5-00 迁移矩阵与删除清单
 
-- `[ ]` 为 status、dock、command、tool、theme、editor、transcript 各建立迁移表。
-- `[ ]` 每项记录旧 consumer、新 provider/model、官方 API、fallback、bundle row、删除条件和 owner。
-- `[ ]` 明确“旧 renderer 仍是 baseline”的范围，禁止重复挂载同一 surface。
+- `[x]` 为 status、dock、command、tool、theme、editor、transcript 各建立迁移表。
+- `[x]` 每项记录旧 consumer、新 provider/model、官方 API、fallback、bundle row、删除条件和 owner。
+- `[x]` 明确“旧 renderer 仍是 baseline”的范围，禁止重复挂载同一 surface。
 
 ### F5-01 Status
 
-- `[ ]` status model 接入正式 footer consumer。
-- `[ ]` 覆盖 model/cwd/git/title/context/mode 等现有 status 条目。
-- `[ ]` 缺 capability、空值、窄终端和主题切换有 fallback/golden。
-- `[ ]` 完成 unload/reload、优先级、band 和重复注册测试。
+- `[x]` status model 接入正式 footer consumer。
+- `[x]` 覆盖 model/cwd/git/title/context/mode 等现有 status 条目。
+- `[x]` 缺 capability、空值、窄终端和主题切换有 fallback/golden。
+- `[x]` 完成 unload/reload、优先级、band 和重复注册测试。
 
 ### F5-02 Dock
 
-- `[ ]` dock model 接入正式 bottom/left/right consumer。
-- `[ ]` 固定 dock 排序、优先级、preferredRows、collapsed 行为。
+- `[x]` dock model 接入正式 bottom/left/right consumer。
+- `[x]` 固定 dock 排序、优先级、preferredRows、collapsed 行为。
 - `[ ]` 验证编辑框固定底部、transcript 独立滚动、鼠标/键盘/PageUp/PageDown 不抢焦点。
 - `[ ]` 验证新消息通知、用户滚动后 tail-follow 暂停和 End 快捷键。
 
 ### F5-03 Command/Panel
 
-- `[ ]` command model 由统一 command consumer 执行，不在 renderer 内直接调用 Harness service。
-- `[ ]` PanelModel 覆盖 select/form/info/loading/error、submit/cancel、absent。
+- `[x]` command model 由统一 command consumer 执行，不在 renderer 内直接调用 Harness service。
+- `[x]` PanelModel 覆盖 select/form/info/loading/error、submit/cancel、absent。
 - `[ ]` `/context`、`/sessions`、`/model`、`/help` 至少各有一条新 model consumer fixture。
 - `[ ]` 面板关闭、编辑器 slot replacement、焦点恢复和鼠标滚轮有测试。
 
 ### F5-04 Tool presentation
 
-- `[ ]` tool model 与 canonical tool call/result 分离，renderer 不自行折叠 session events。
-- `[ ]` Read/Write/Shell/失败/长输出/折叠/展开均有 structured presentation。
-- `[ ]` intent registry、plain fallback、Ctrl-O、width scan、golden/e2e 完成。
-- `[ ]` 未识别 tool intent 仍可显示通用文本结果。
+- `[x]` tool model 与 canonical tool call/result 分离，renderer 不自行折叠 session events。
+- `[x]` Read/Write/Shell/失败/长输出/折叠/展开均有 structured presentation。
+- `[x]` intent registry、plain fallback、Ctrl-O、width scan、golden/e2e 完成。
+- `[x]` 未识别 tool intent 仍可显示通用文本结果。
 
 ### F5-05 Theme semantic model
 
-- `[ ]` 主题只注册 semantic tokens，renderer 负责编译为 terminal theme。
-- `[ ]` theme activation、重复注册、Fiber unload、失败回退有测试。
-- `[ ]` 新 model consumer 不暴露 ANSI 或 pi-tui 类型。
-- `[ ]` dark/light/auto/custom、CJK 和窄终端 golden 全部通过。
+- `[x]` 主题只注册 semantic tokens，renderer 负责编译为 terminal theme。
+- `[x]` theme activation、重复注册、Fiber unload、失败回退有测试。
+- `[x]` 新 model consumer 不暴露 ANSI 或 pi-tui 类型。
+- `[x]` dark/light/auto/custom、CJK 和窄终端 golden 全部通过。
 
 ### F5-06 Editor
 
-- `[ ]` EditorModel 与 input action 接入正式 editor consumer。
-- `[ ]` editor slot replacement、焦点恢复、paste、history、completion、submit/abort 有测试。
-- `[ ]` AltScreen 下鼠标滚轮、拖选复制、键盘滚动和 PageUp/PageDown 不回归。
-- `[ ]` 编辑框始终底部，transcript viewport 独立滚动，用户滚动后不被新消息抢回。
+- `[x]` EditorModel 与 input action 接入正式 editor consumer。
+- `[x]` editor slot replacement、焦点恢复、paste、history、completion、submit/abort 有测试。
+- `[x]` AltScreen 下鼠标滚轮、拖选复制、键盘滚动和 PageUp/PageDown 不回归。
+- `[x]` 编辑框始终底部，transcript viewport 独立滚动，用户滚动后不被新消息抢回。
 
 ### F5-07 Transcript
 
-- `[ ]` TranscriptModel 接入正式 viewport consumer，旧 transcript renderer 继续作为对照基线。
+- `[x]` TranscriptModel 接入正式 viewport consumer，旧 transcript renderer 继续作为对照基线。
 - `[ ]` replay/live/resume/long stream/interrupted/tool/thinking/image/markdown 均有 model fixture。
-- `[ ]` viewport 只挂载可见窗口内容，长 session 不无限增加 component mount。
+- `[x]` viewport 只挂载可见窗口内容，长 session 不无限增加 component mount。
 - `[ ]` 滚动、tail-follow、new-message notification、End shortcut、resize、复制有 PTY/golden 场景。
 - `[ ]` 新 consumer 与旧 baseline 逐项对比后，才允许默认 bundle 替换。
 
 ### F5-08 每个 surface 的统一切换门禁
 
-- `[ ]` official consumer 已存在。
-- `[ ]` headless fixture、unload/reload、late-result、width scan、golden/e2e 全通过。
-- `[ ]` plain fallback 和 capability absent 已验证。
+- `[x]` official consumer 已存在。
+- `[x]` headless fixture、unload/reload、late-result、width scan、golden/e2e 全通过。
+- `[x]` plain fallback 和 capability absent 已验证。
 - `[ ]` 独立 profile 人工验收通过。
-- `[ ]` 更新对应 package `AGENTS.md`、bundle row 和删除清单。
+- `[x]` 更新对应 package `AGENTS.md`、bundle row 和删除清单。
 
 ## F6：Skills 与生态验证
 

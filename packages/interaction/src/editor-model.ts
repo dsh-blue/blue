@@ -6,7 +6,7 @@
  * @module @dsh-blue/blue-interaction/editor-model
  */
 import { Service, type Context } from '@deepseek-ai/cordis'
-import type { EditorModel } from '@dsh-blue/blue-frontend'
+import type { Action, EditorModel } from '@dsh-blue/blue-frontend'
 import { getSharedEditor } from './editor-instance.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -24,9 +24,27 @@ export class EditorModelService extends Service {
   get current(): EditorModel | undefined {
     const shared = getSharedEditor()
     if (shared === undefined) return undefined
-    return Object.freeze({ kind: 'editor', id: 'prompt', value: shared.editor.getText(), placeholder: 'Message', enabled: !shared.editor.disableSubmit, submit: { kind: 'editor.submit' } })
+    return Object.freeze({ kind: 'editor', id: 'prompt', value: shared.editor.getText(), placeholder: 'Message', enabled: !shared.editor.disableSubmit, set: { kind: 'editor.set' }, submit: { kind: 'editor.submit' }, abort: { kind: 'editor.abort' } })
   }
   update(value: string): boolean { const shared = getSharedEditor(); if (shared === undefined) return false; shared.editor.setText(value); this.emit(); return true }
+  execute(action: Action): boolean {
+    const shared = getSharedEditor()
+    if (shared === undefined) return false
+    if (action.kind === 'editor.set') return typeof action.value === 'string' && this.update(action.value)
+    if (action.kind === 'editor.submit') {
+      if (shared.editor.disableSubmit) return false
+      const value = action.value
+      if (value !== undefined && typeof value !== 'string') return false
+      shared.submitPrompt(value ?? shared.editor.getExpandedText())
+      this.emit()
+      return true
+    }
+    if (action.kind !== 'editor.abort') return false
+    if (shared.abortPrompt === undefined) shared.editor.setText('')
+    else shared.abortPrompt()
+    this.emit()
+    return true
+  }
   subscribe(listener: (model: EditorModel | undefined) => void): () => void { this.listeners.add(listener); listener(this.current); return () => this.listeners.delete(listener) }
   dispose(): void { this.listeners.clear() }
   private emit(): void { const model = this.current; for (const listener of this.listeners) listener(model) }
