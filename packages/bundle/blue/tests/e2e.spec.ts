@@ -1941,7 +1941,9 @@ describe('blue whole-tree e2e', () => {
     await expect(executeCommand(tree, agent, '/help')).resolves.toEqual({ kind: 'success' })
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('/model') })
     expect(tree.terminal.output).toContain('/effort (/thinking)')
-    expect(tree.terminal.output).toContain('/provider')
+    // /changelog pushed /provider past the first window; page the panel down.
+    tree.terminal.sendInput('\x1b[6~')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/provider') })
   })
 
   it('opens the /model picker, commits the draft, and routes the next request', async () => {
