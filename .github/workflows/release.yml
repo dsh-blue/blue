@@ -5,6 +5,12 @@ name: release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Exact Blue version to release (for example 0.1.0-rc.7)'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -16,6 +22,7 @@ concurrency:
 
 env:
   PRIMARY_NODE_VERSION: '24'
+  RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
 
 jobs:
   candidate:
@@ -34,7 +41,7 @@ jobs:
           registry-url: https://registry.npmjs.org
       - name: guard tag, version, and master ancestry
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${RELEASE_VERSION#v}"
           MANIFEST=$(node -p "require('./packages/core/package.json').version")
           test "$VERSION" = "$MANIFEST" || { echo "tag $VERSION != manifest $MANIFEST" >&2; exit 1; }
           git fetch origin master
@@ -85,13 +92,13 @@ jobs:
           registry-url: https://registry.npmjs.org
       - name: install exact candidate CLI
         shell: bash
-        run: npm install -g "@dsh-blue/blue-cli@${GITHUB_REF_NAME#v}"
+        run: npm install -g "@dsh-blue/blue-cli@${RELEASE_VERSION#v}"
       - run: blue -V
       - name: calibrate exact bundle and compose profile
         run: blue --dump-config
       - name: verify installed Blue set
         shell: bash
-        run: node script/verify-installed-blue.mjs "${GITHUB_REF_NAME#v}"
+        run: node script/verify-installed-blue.mjs "${RELEASE_VERSION#v}"
       - name: real PTY boot and clean exit
         if: runner.os == 'Linux' && matrix.node == '24'
         shell: bash
