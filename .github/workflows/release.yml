@@ -66,6 +66,8 @@ jobs:
         run: printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" >> ~/.npmrc
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: verify npm publisher identity
+        run: npm whoami --registry=https://registry.npmjs.org
       - run: node script/release-packages.mjs publish
 
   registry-install:
