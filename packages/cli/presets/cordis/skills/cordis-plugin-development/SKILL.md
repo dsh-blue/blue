@@ -1,6 +1,6 @@
 ---
 name: cordis-plugin-development
-description: Create, modify, debug, or roll back dynamic Cordis Plugins in this Blue session — HOST HALF ONLY. Covers the inspect → define → run → approve → diagnose lifecycle, runtime diagnostics, dynamic model Tools, approval failures, and version management. Blue is a terminal UI: a `code.client` half targets the browser slot system and has no surface here, so never write one; UI changes belong in Blue source (blue-plugin-development skill).
+description: Create, modify, debug, or roll back dynamic Cordis Plugins in this Blue session — HOST HALF ONLY. Covers the inspect → define → run → approve → diagnose lifecycle, runtime diagnostics, dynamic model Tools, approval failures, and version management. Blue is a terminal UI: a `code.client` half targets the browser slot system and has no surface here, and the vm sandbox cannot keep Blue's row-width contract — so dynamic packages never ship UI; UI ships as a distributable plugin package (blue-plugin-development skill).
 ---
 
 # Develop Dynamic Cordis Plugins (host half)
