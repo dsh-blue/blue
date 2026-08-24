@@ -1,6 +1,6 @@
 ---
 name: blue-plugin-development
-description: Use when creating, changing, or debugging a Blue feature — the terminal UI on the DeepSeek Harness. A real Blue feature is a distributable plugin package (an npm package of Cordis plugins plus a cordis.patch.yml, installed with `dsh plugin --profile blue add`), NOT an edit to Blue's own source tree. Covers the package shape, the L1 service surface, the row-width and effect-bound contracts, and the install-restart iteration loop. Not for editing compositions — use editing-cordis-compositions for those.
+description: Use when packaging an accepted Blue feature as a distributable plugin package — the terminal UI on the DeepSeek Harness. A real Blue feature is a distributable plugin package (an npm package of Cordis plugins plus a cordis.patch.yml, installed with `dsh plugin --profile blue add`), NOT an edit to Blue's own source tree. Covers the package shape, the L1 service surface, the row-width and effect-bound contracts, and the install-restart iteration loop. For fast in-session prototyping before packaging, use the cordis-plugin-development skill (dynamic plugins hot-mount without a restart); come here once the user accepts the prototype. Not for editing compositions — use editing-cordis-compositions for those.
 ---
 
 # Develop Blue plugins
@@ -83,10 +83,11 @@ Fixed furniture (bullets, indents) plus wrapped text must be measured assembled.
 
 ## The iteration loop
 
+0. **Fastest iteration is upstream of the package**: while the feature's shape is still moving, prototype it as a dynamic plugin hot-mounted in the session (cordis-plugin-development skill) — the user sees every change immediately, with no reinstall and no restart. Reach for the package form when the user has accepted the prototype.
 1. Develop against a **scratch profile**, never the production `blue` one: `dsh plugin --profile blue-dev add /path/to/my-blue-feature` records a `link:` spec, so edits to your package are live on the next restart — no reinstall needed while the dependency graph is unchanged.
 2. Restart `dsh --profile blue-dev` and look at the result. Repeat.
 3. For a release check, `npm pack` and install the tarball into a throwaway profile (or a throwaway `DSH_HOME`) — that exercises the exact artifact users will get.
-4. Ship: publish to npm; users install with `dsh plugin --profile blue add my-blue-feature`. Remove with `dsh plugin --profile blue remove my-blue-feature`.
+4. **Ask the user how far to ship**: install into the local profile only (`dsh plugin --profile blue add`), or distribute — publish to npm so any user can `dsh plugin --profile blue add my-blue-feature`. Remove with `dsh plugin --profile blue remove my-blue-feature`.
 
 The `blue` launcher calibrates only the `@dsh-blue/blue` bundle version and leaves additional bundles alone; a plain `blue` boot does not disturb an installed third-party feature.
 
@@ -94,7 +95,7 @@ The `blue` launcher calibrates only the `@dsh-blue/blue` bundle version and leav
 
 - **Changing Blue's own packages** (api/core/transcript/interaction/app/bundle) — that is dsh-blue repository work with its own gates (per-file full coverage, the subpath export triangle, the worktree + dogfood flow). Clone the repo and follow its AGENTS.md; this skill's loop does not apply.
 - **Session capabilities** (a tool, a prompt section) — that is an agent preset; see the editing-cordis-compositions skill.
-- **Quick behavior experiments** — a host-half-only dynamic plugin via the cordis_* tools; see the cordis-plugin-development skill. Dynamic packages cannot keep the width contract (no pi-tui in the vm sandbox), so they never ship UI.
+- **Quick behavior experiments and in-session UI prototypes** — a dynamic plugin via the cordis_* tools (cordis-plugin-development skill) hot-mounts without a restart, and its host half CAN render Blue UI through the L1 services. Prototype there; package here once the user accepts.
 
 ## Style
 

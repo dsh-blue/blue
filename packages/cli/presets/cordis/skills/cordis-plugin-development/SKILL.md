@@ -1,6 +1,6 @@
 ---
 name: cordis-plugin-development
-description: Create, modify, debug, or roll back dynamic Cordis Plugins in this Blue session — HOST HALF ONLY. Covers the inspect → define → run → approve → diagnose lifecycle, runtime diagnostics, dynamic model Tools, approval failures, and version management. Blue is a terminal UI: a `code.client` half targets the browser slot system and has no surface here, and the vm sandbox cannot keep Blue's row-width contract — so dynamic packages never ship UI; UI ships as a distributable plugin package (blue-plugin-development skill).
+description: Create, modify, debug, or roll back dynamic Cordis Plugins in this Blue session — including hot-mounting Blue UI prototypes the user sees immediately, with no reinstall or restart. Covers the discuss → inspect → define → run → iterate lifecycle, Blue's L1 services from the package façade, runtime diagnostics, dynamic model Tools, approval failures, and version management. A `code.client` half targets the browser slot system and has no surface in Blue. Dynamic packages vanish on restart: when the user accepts a prototype, package it as a distributable plugin package (blue-plugin-development skill).
 ---
 
 # Develop Dynamic Cordis Plugins (host half)
@@ -11,6 +11,7 @@ The vm sandbox isolates globals but is not a security boundary: host-realm helpe
 
 ## Standard workflow
 
+0. **Discuss the requirement with the user first.** Do not define a package on a vague request — pin down what the user wants to see, then prototype.
 1. Call `cordis_inspect_list` to obtain the Providers, methods, and schemas currently registered.
 2. Select the smallest set of `cordis_inspect_query` calls needed to read the exact Services, Events, Builtins, or Tools that the implementation will use.
 3. For a new Plugin, design its first Package. To modify an existing Plugin, first use `cordis_inspect_self(pluginId, packageId)` to read the base source and diagnostics.
@@ -18,6 +19,7 @@ The vm sandbox isolates globals but is not a security boundary: host-realm helpe
 5. Call `cordis_run` with the final `pluginId` and `packageId` returned by define.
 6. Handle approval, waiting, and failures from the Run card, steering messages, or `cordis_inspect_self`.
 7. Use `cordis_stop` to disable the Plugin temporarily. Use `cordis_undefine` only when it is no longer needed.
+8. **When the user accepts the prototype, package it.** A dynamic package vanishes on restart, so an accepted feature must not stay dynamic: load the blue-plugin-development skill, build the distributable plugin package, and ask the user whether to distribute it (npm) or install it into the local profile only.
 
 Do not wait in the same turn for user approval or asynchronous results. After `cordis_run` returns `awaiting-approval` or `starting`, end the current Tool flow and wait for the system to report the final outcome through state updates and steering.
 
@@ -44,7 +46,37 @@ Select methods from the actual `cordis_inspect_list` result. Common initial meth
 
 Provider names, methods, and inputs must come from the current list result. The Service/Event Catalog describes which interfaces this version permits; it does not guarantee that a Service is currently mounted. At runtime, use real Services and Events rather than caching or displaying Catalog query results.
 
-In a Blue session the host service store also carries Blue's own L1 services (`blueScreen`, `blueKeymap`, `blueTerminalInfo`, `blueComponents`, and the transcript/interaction registries) — inspect them the same way before consuming one.
+In a Blue session the host service store also carries Blue's own L1 services (`blueScreen`, `blueKeymap`, `blueTerminalInfo`, `blueComponents`, and the transcript/interaction registries) — inspect them the same way before consuming one. The inspect catalog is an incomplete, compile-time view: a service missing from the catalog can still be live and reachable. Runtime `ctx.get(name)` is the truth — probe with it before concluding a capability does not exist.
+
+## Mount Blue UI from the host half
+
+The host half CAN mount Blue UI — this is the fast iteration path, because the user watches the feature appear in the running session with no reinstall and no restart. A UI component is a plain object with `render(width)` returning one string per row (visible width must not exceed `width`) plus an `invalidate()` that drops cached rows:
+
+```js
+return {
+  name: 'my-probe',
+  apply(ctx) {
+    const screen = ctx.get('blueScreen')
+    const components = ctx.get('blueComponents')
+    const theme = ctx.get('blueTheme')
+    if (screen === undefined || components === undefined || theme === undefined) return
+    const pane = {
+      render(width) {
+        const row = theme.colors.muted(components.truncateToWidth('my probe pane', width))
+        return [row]
+      },
+      invalidate() {},
+    }
+    const unmount = screen.addBottomChild(pane)
+    ctx.on('dispose', unmount)
+  },
+}
+```
+
+- `blueScreen.addBottomChild(component)` docks a pane above the editor and returns the unmount disposer — retain it. `blueStatus.register({ id, priority, render(width) })` adds a footer entry and likewise returns a disposer.
+- The row-width contract applies inside the sandbox: measure every row with `blueComponents.truncateToWidth` / `visibleWidth`. Hand-rolled character counts mis-budget CJK and emoji and trip the render-exit clamp — a clamped row lands in `blue-overflow.log` and is a bug.
+- Render through `blueTheme.colors`, never color literals — themes are plugins and swap at runtime.
+- The package façade has no `ctx.effect()`: cleanup is the disposers the registration APIs return. Retain every disposer so stop/update leaves nothing mounted.
 
 ## Execution environment
 
@@ -172,6 +204,7 @@ If the reference is unavailable, explain that the Plugin was removed, belongs to
 | Failure | Check first |
 | --- | --- |
 | `service "x" is not declared` | Whether code uses `ctx.x` without declaring `inject: ['x']` on the Plugin object; switch to `ctx.get('x')` with an absence check or declare a true hard dependency |
+| `dynamic tool registration must use a tool returned by harness.defineTool(...)` | The Tool object was hand-assembled; build it with the `harness` Builtin's `defineTool` (query its exact signature with `Builtin.listBuiltins` first) and register that return value |
 | `cannot get property "timer" without inject` | Query the timer Service and declare `inject: ['timer']` |
 | Parse failure | Whether the code uses TypeScript, `import`/`require`, or an unavailable global |
 | Update failure | Preserve current/next semantics; repair next and update, or run current to roll back |
