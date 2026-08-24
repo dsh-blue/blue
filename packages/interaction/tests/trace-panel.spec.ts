@@ -58,6 +58,8 @@ describe('TracePanel', () => {
     empty.handleInput('c')
     const mounted = mount()
     expect(mounted.panel.render(70).join('\n')).toContain('summary 0')
+    const multiline = new TracePanel(options({ items: [{ ...items[0]!, summary: 'first\nsecond' }] }))
+    expect(multiline.render(70).every(row => !row.includes('\n'))).toBe(true)
     mounted.panel.handleInput(KEY.down)
     mounted.panel.handleInput(KEY.enter)
     mounted.panel.handleInput('x')

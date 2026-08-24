@@ -96,7 +96,13 @@ export class TracePanel implements BlueFocusable {
       const absolute = this.scrollTop + index
       const pointer = absolute === this.cursor ? colors.primary('❯ ') : '  '
       const surface = item.surface === 'current' ? colors.text('●') : colors.textMuted('·')
-      const summary = item.summary.length > 0 ? `  ${item.summary}` : ''
+      // A streamed delta may contain newlines. Keep each timeline entry one
+      // physical terminal row: pi-tui's differential renderer counts array
+      // rows, so embedded newlines would desynchronise its row map and leave
+      // stale/duplicated frames behind. Clipboard formatting still uses the
+      // unmodified TraceItem summary.
+      const preview = item.summary.replaceAll(/\s+/g, ' ').trim()
+      const summary = preview.length > 0 ? `  ${preview}` : ''
       const sequence = item.lastSeq === item.seq ? `#${String(item.seq)}` : `#${String(item.seq)}-${String(item.lastSeq)}`
       body.push(`${pointer}${colors.textMuted(traceTime(item.time))} ${surface} ${colors.textStrong(`${sequence} ${item.title}`)}${components.truncateToWidth(summary, Math.max(1, width - 30))}`)
       if (this.expanded.has(item.seq)) {
