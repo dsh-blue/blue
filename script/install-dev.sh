@@ -35,6 +35,17 @@ if ! command -v "$DSH_BIN" >/dev/null 2>&1; then
   exit 1
 fi
 
+# WSL commonly inherits the Windows npm bin directory. Its dsh shim runs
+# Windows Node, which cannot resolve the Linux symlinks this script installs
+# under $HOME/.dsh and fails later with a misleading package-not-found storm.
+DSH_RESOLVED="$(command -v "$DSH_BIN")"
+if [ "$(uname -s)" = Linux ] && [[ "$DSH_RESOLVED" == /mnt/*/npm/dsh || "$DSH_RESOLVED" == /mnt/*/npm/dsh.exe || "$DSH_RESOLVED" == /mnt/*/npm/dsh.cmd ]]; then
+  echo "error: '$DSH_RESOLVED' is a Windows dsh shim; WSL profiles need a Linux dsh executable" >&2
+  echo "       set DSH_BIN to a Linux install, for example:" >&2
+  echo "       DSH_BIN=packages/cli/node_modules/.bin/dsh PROFILE=blue-dev script/install-dev.sh" >&2
+  exit 1
+fi
+
 echo "==> Building Blue workspace"
 pnpm --dir "$REPO_ROOT" run build
 

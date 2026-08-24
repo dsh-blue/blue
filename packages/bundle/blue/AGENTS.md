@@ -16,14 +16,20 @@ The all-prompts row alone is inert from a session's second message on (D41): `ds
 
 Sibling rows mount concurrently, so the dock order is pinned by the `blueComponents` activation round: `blue-pane-activity`/`blue-pane-queue` carry a row-level `inject: [blueComponents]` (never `blueStatus` — `/theme` would dispose the handler's own fiber mid-swap).
 
+The whole-tree e2e keeps BTW's side stream asynchronous and asserts its first
+reply arrives while the parent Agent is still `running`. This is the
+concurrency contract for `/btw`; a test that only uses an immediately
+completed mock response would miss the production network timing.
+
 ## Thin-host migration (S28, D37)
 
 Two parts:
 
 1. The upstream `agent-presets` roster row sits at the head of the insert block — the dsh CLI launcher keys on the row id to inject the shipped preset root; Blue never resolves preset paths.
 2. Ahead of the insert, the web-app bundle's own ruling is ported row-for-row: twenty-three dsh-base agent-plane rows disabled (`tool-*`, plan-mode, the compaction trio, the delegation four, the workflow trio, `agent-instructions`; `tool-subagent-report` and `system-prompt` stay host-plane), which moves the agent plane behind the presets and gives `/preset` true replacement semantics.
+3. The host-plane `cordis-host-runner` row (also the web-app's own ruling — dsh-base mounts no provider) supplies `dynamicCordisRunner` + `cordisInspect`, the inject of the shipped `cordis` preset's `tool-cordis` row; without it that preset's standing mount fails the roster's activation audit. The web client's half (`cordis-client-runner`) is deliberately not ported.
 
-`bundle.spec.ts` pins the disable list to the web-app's (drift guard) and asserts every id addresses a real base row. The runtime dependency `@deepseek-ai/dsh-agent-presets` rides the bundle's `dependencies` so `dsh plugin add` installs it.
+`bundle.spec.ts` pins the disable list to the web-app's (drift guard) and asserts every id addresses a real base row. The runtime dependencies `@deepseek-ai/dsh-agent-presets` and `@deepseek-ai/dsh-cordis-host-runner` ride the bundle's `dependencies` so `dsh plugin add` installs them.
 
 ## Distribution contract
 

@@ -132,6 +132,18 @@
       config:
         default: standard
 
+    # The dynamic-cordis host runner, host plane, mirroring the web-app
+    # bundle's own `cordis-host-runner` row: one plugin providing both
+    # `dynamicCordisRunner` and `cordisInspect` — the services the shipped
+    # `cordis` preset's `tool-cordis` row declares in its inject. dsh-base
+    # never mounts a provider for them, so without this row that preset's
+    # standing mount parks `tool-cordis` waiting forever and the roster's
+    # activation audit fails the `/preset cordis` switch ("1 row(s) did not
+    # activate"). A terminal host needs only this half; the web-app's
+    # `cordis-client-runner` row is the browser client's half.
+    - id: cordis-host-runner
+      name: '@deepseek-ai/dsh-cordis-host-runner'
+
     # The all-prompts half of the session-title cadence swap above: the
     # same auxiliary-model title policy as the base's first-prompt row
     # (words/bytes/token/timeout values copied verbatim), registering the

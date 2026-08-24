@@ -6,8 +6,11 @@
  * CC-style heuristic composition section, read through the
  * session-projection seam (`dsh-token-meter`/`dsh-session-stats` in the
  * base composition) with the local `usage.ts` fold as the degraded host's
- * fallback; and `/version` — the banner constant and the live model as a
- * notice (the kimi shape). The panels are read-only `InfoPanel`s mounted
+ * fallback; `/version` — the banner constant and the live model as a
+ * notice (the kimi shape); and `/changelog` — the release-notes panel over
+ * the embedded `changelog-content.ts` entries (the markdown lives at the
+ * repository root and never ships in the tarballs). The panels are
+ * read-only `InfoPanel`s mounted
  * through the D30 editor-slot swap; this module injects nothing and
  * resolves every service through `ctx.get` (the `/theme` fiber-dispose
  * trap).
@@ -22,10 +25,12 @@ import { BLUE_VERSION } from '@dsh-blue/blue-transcript/banner-content'
 // the app-owned `blueSession` merge every handler reads.
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@dsh-blue/blue-app'
-import type { InfoRow, InfoSection, InfoSegment } from './info-panel.ts'
+import type { InfoRow, InfoSection, InfoSegment, InfoStyle } from './info-panel.ts'
 import { InfoPanel } from './info-panel.ts'
+import { CHANGELOG_ENTRIES, type ChangelogEntry } from './changelog-content.ts'
 import { displayServices } from './display-services.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
+import { wrapLines } from './tools-commands.ts'
 import {
   formatTokens,
   ratioSeverity,
@@ -82,6 +87,53 @@ export function buildVersionSections(): InfoSection[] {
       ],
     },
   ]
+}
+
+/**
+ * One release-note bullet as panel rows: word-wrapped through the tools
+ * detail panel's `wrapLines` budget, the first line carrying the bullet
+ * marker and the continuation lines aligning under it.
+ * @param text - the bullet's plain text.
+ * @param style - the segment styling for every wrapped line.
+ * @returns the rows.
+ */
+function changelogBulletRows(text: string, style: InfoStyle): InfoRow[] {
+  return wrapLines(text).map((line, index) => ({
+    label: '',
+    segments: [{ text: `${index === 0 ? '• ' : '  '}${line}`, style }],
+  }))
+}
+
+/**
+ * Build the `/changelog` panel's sections (pure, for the spec): one section
+ * per release in the entries' (newest-first) order — the heading carries
+ * the version with a `· current` badge on the running release, the rows
+ * list the wrapped summary, then the Highlights and (when the release has
+ * any) Known issues bullets under their muted sub-labels.
+ * @param entries - the changelog entries to render.
+ * @returns the sections in display order.
+ */
+export function buildChangelogSections(entries: readonly ChangelogEntry[]): InfoSection[] {
+  return entries.map(entry => {
+    const rows: InfoRow[] = wrapLines(entry.summary).map(line => ({
+      label: '',
+      segments: [{ text: line, style: 'muted' as const }],
+    }))
+    rows.push({ label: 'Highlights', segments: [] })
+    for (const highlight of entry.highlights) {
+      rows.push(...changelogBulletRows(highlight, 'textMuted'))
+    }
+    if (entry.knownIssues.length > 0) {
+      rows.push({ label: 'Known issues', segments: [] })
+      for (const issue of entry.knownIssues) {
+        rows.push(...changelogBulletRows(issue, 'warning'))
+      }
+    }
+    return {
+      heading: `v${entry.version}${entry.version === BLUE_VERSION ? ' · current' : ''}`,
+      rows,
+    }
+  })
 }
 
 /** Map a usage severity onto the segment styling the panel paints. */
@@ -471,6 +523,29 @@ export function registerSessionCommands(ctx: Context): () => void {
     return { kind: 'success' }
   }
 
+  /**
+   * The `/changelog` handler: mount the read-only panel over the embedded
+   * release notes. Like `/version` it needs no live session.
+   * @returns the command outcome.
+   */
+  function showChangelog(): CommandResult {
+    const display = displayServices(ctx)
+    if (display === undefined) {
+      return { kind: 'error', text: 'changelog panel is unavailable: the Blue screen is not mounted' }
+    }
+    const restore = mountEditorReplacement(new InfoPanel({
+      keymap: display.keymap,
+      theme: display.theme,
+      components: display.components,
+      title: 'changelog',
+      sections: buildChangelogSections(CHANGELOG_ENTRIES),
+      onClose: () => {
+        restore()
+      },
+    }))
+    return { kind: 'success' }
+  }
+
   const status = ctx.commands.register({
     name: 'status',
     description: 'Show the session header, model, and context status',
@@ -486,9 +561,15 @@ export function registerSessionCommands(ctx: Context): () => void {
     description: 'Show the Blue and harness versions and the live model',
     handler: () => showVersion(),
   })
+  const changelog = ctx.commands.register({
+    name: 'changelog',
+    description: "Show the release changelog (what's new)",
+    handler: () => showChangelog(),
+  })
   return () => {
     status()
     context()
     version()
+    changelog()
   }
 }
