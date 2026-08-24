@@ -62,13 +62,13 @@ jobs:
           if-no-files-found: error
       # OIDC migration replaces this isolated auth step only. Candidate and
       # promotion behavior deliberately know nothing about credential source.
-      - name: npm auth (granular token)
-        run: printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" >> "${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: verify npm publisher identity
         run: npm whoami --registry=https://registry.npmjs.org
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - run: node script/release-packages.mjs publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   registry-install:
     name: registry install (${{ matrix.os }}, node ${{ matrix.node }})
@@ -122,8 +122,6 @@ jobs:
         with:
           name: npm-tarballs
           path: .artifacts/pack
-      - name: npm auth (granular token)
-        run: printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" >> "${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       - run: node script/release-packages.mjs promote
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
