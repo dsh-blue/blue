@@ -10,15 +10,21 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import * as btw from '../src/pane-btw.ts'
 import {
   assistantEvent,
+  event,
   reasoningDelta,
   resetSeq,
+  stepEnd,
+  stepStart,
   textDelta,
+  turnEnd,
+  turnStart,
   userEvent,
 } from './helpers.ts'
 import { bootPanePlugin, type PaneFakeCommands, type PanePluginHarness } from './pane-fakes.ts'
@@ -42,7 +48,7 @@ interface FakeSide {
 }
 
 /** Build one fake side agent/handle pair for a creation request. */
-function makeSide(options: CreateAgentOptions): FakeSide {
+function makeSide(options: CreateAgentOptions, followupFailure?: unknown): FakeSide {
   const agent: FakeSideAgent = {
     id: options.sessionId,
     status: 'running',
@@ -50,6 +56,7 @@ function makeSide(options: CreateAgentOptions): FakeSide {
     session: { events: [], header: {} },
     followups: [],
     followup(message) {
+      if (followupFailure !== undefined) throw followupFailure
       this.followups.push(message)
     },
   }
@@ -73,6 +80,7 @@ class FakeAgents {
   readonly sides: FakeSide[] = []
   failure: unknown
   hold = false
+  followupFailure: unknown
   private pendingResolve: (() => void) | undefined
 
   get pending(): boolean {
@@ -82,7 +90,7 @@ class FakeAgents {
   create(options: CreateAgentOptions): Promise<AgentHandle> {
     this.creates.push(options)
     if (this.failure !== undefined) return Promise.reject(this.failure)
-    const side = makeSide(options)
+    const side = makeSide(options, this.followupFailure)
     this.sides.push(side)
     if (this.hold) {
       return new Promise((resolve) => {
@@ -105,8 +113,12 @@ class FakeAgents {
  * @param current - agent preloaded onto `blueSession.current`, if any.
  * @param agents - the fake registry.
  */
-async function boot(current: FakeAgent | null, agents: FakeAgents): Promise<PanePluginHarness> {
-  return bootPanePlugin(btw, current, { agents })
+async function boot(
+  current: FakeAgent | null,
+  agents: FakeAgents,
+  extras: Record<string, unknown> = {},
+): Promise<PanePluginHarness> {
+  return bootPanePlugin(btw, current, { agents, ...extras })
 }
 
 /** Invoke `/btw` with the given raw input. */
@@ -125,7 +137,7 @@ function visibleWidth(text: string): number {
 }
 
 /**
- * The pane's top border at the default width. The identity colors leave the
+ * The pane's top border at the default full-screen width. The identity colors leave the
  * manual bold SGR of the title; the composite width is computed with the
  * fake width function, mirroring `topRule` itself.
  */
@@ -135,14 +147,14 @@ function rule(truncated: boolean, width = 78): string {
   return `╭${composite}${'─'.repeat(Math.max(0, width - 2 - visibleWidth(composite)))}╮`
 }
 
-/** One bordered body row at the default width (plain content). */
+/** One bordered body row at the default full-screen width (plain content). */
 function bodyRow(text: string, width = 78): string {
   return `│ ${text}${' '.repeat(Math.max(0, width - 4 - text.length))} │`
 }
 
-/** The default frame: rule + fitted body rows + the trailing spacer. */
+/** The default frame: rule followed directly by the fitted body rows. */
 function frame(rows: readonly string[], truncated = false): string[] {
-  return [rule(truncated), ...rows.map(text => bodyRow(text)), '']
+  return [rule(truncated), ...rows.map(text => bodyRow(text))]
 }
 
 describe('blue-pane-btw', () => {
@@ -208,6 +220,10 @@ describe('blue-pane-btw', () => {
     expect(side.agent.followups[0]!.content).toEqual([{ type: 'text', text: 'what is x?' }])
     expect(side.agent.followups[0]!.source).toEqual({ kind: 'user' })
     expect(screen.paneLines()).toEqual(frame(['› what is x?', 'thinking…']))
+    const rawFrame = screen.bottomChildren[0]!.render(80)
+    expect(visibleWidth(rawFrame[0]!)).toBe(79)
+    expect(rawFrame[0]!.startsWith(' ╭')).toBe(true)
+    expect(rawFrame[1]!.startsWith(' │')).toBe(true)
 
     // Text deltas accumulate; other sessions, reasoning deltas, and
     // non-assistant events are ignored.
@@ -232,7 +248,7 @@ describe('blue-pane-btw', () => {
     // Only the side agent's own idle flip settles the thinking row.
     ctx.emit('agent/status', { agent: asAgent(fakeAgent([])), status: 'idle' })
     ctx.emit('agent/status', { agent: side.handle.agent, status: 'running' })
-    expect(screen.paneLines()).toHaveLength(5)
+    expect(screen.paneLines()).toHaveLength(4)
     ctx.emit('agent/status', { agent: side.handle.agent, status: 'idle' })
     // The thinking row leaves but the high-water height stays: the third
     // body row pads blank (the min-height ratchet).
@@ -283,6 +299,155 @@ describe('blue-pane-btw', () => {
     await dispose()
   })
 
+  it('seeds only the completed prefix while the parent turn is running', async () => {
+    resetSeq()
+    const completed = [turnStart(1), stepStart(1, 1), userEvent('done'), stepEnd(1, 1), turnEnd(1)]
+    const active = [...completed, turnStart(2), stepStart(2, 1), userEvent('still running')]
+    const current = fakeAgent(active)
+    current.status = 'running'
+    const agents = new FakeAgents()
+    const { commands, dispose } = await boot(current, agents)
+
+    await run(commands, 'side while busy')
+    expect(agents.creates[0]!.seed).toEqual(completed)
+    expect(agents.creates[0]!.seed).not.toContain(active.at(-1))
+    await dispose()
+  })
+
+  it('keeps a completed prefix and strips a dangling command on a fresh session', async () => {
+    resetSeq()
+    const completed = [turnStart(1), stepStart(1, 1), userEvent('done'), stepEnd(1, 1), turnEnd(1)]
+    const agents = new FakeAgents()
+    const { commands, dispose } = await boot(fakeAgent(completed), agents)
+    await run(commands, 'closed')
+    expect(agents.creates[0]!.seed).toEqual(completed)
+    await dispose()
+
+    resetSeq()
+    const dangling = event('command/run', {
+      commandId: 'cmd-btw' as never,
+      name: 'btw',
+      source: { kind: 'user' },
+    } as never)
+    const freshAgents = new FakeAgents()
+    const fresh = fakeAgent([userEvent('context'), dangling])
+    const harness = await boot(fresh, freshAgents)
+    await run(harness.commands, 'fresh')
+    expect(freshAgents.creates[0]!.seed).toEqual([fresh.session.events[0]])
+    await harness.dispose()
+  })
+
+  it('mounts the parent preset on the side agent', async () => {
+    resetSeq()
+    const parent = fakeAgent([])
+    ;(parent.session.header as { agentPreset?: string }).agentPreset = 'standard'
+    parent.session.events.push(event('agent-preset/selected', { agentPreset: 'minimal' } as never))
+    const mount = vi.fn()
+    const agents = new FakeAgents()
+    const harness = await boot(parent, agents, { agentPresets: { mount } })
+    await run(harness.commands, 'preset?')
+    expect(agents.creates[0]!.meta).toMatchObject({ agentPreset: 'minimal' })
+    await agents.creates[0]!.setup?.(new Context())
+    expect(mount).toHaveBeenCalledWith(expect.any(Context), 'minimal')
+    await harness.dispose()
+  })
+
+  it('disposes a create that becomes stale after a session switch', async () => {
+    resetSeq()
+    const agents = new FakeAgents()
+    agents.hold = true
+    const harness = await boot(fakeAgent([]), agents)
+    const pending = run(harness.commands, 'stale')
+    await vi.waitFor(() => { expect(agents.pending).toBe(true) })
+    harness.ctx.emit('blue/session-changed', asAgent(fakeAgent([])))
+    agents.resolvePending()
+    await expect(pending).resolves.toEqual({ kind: 'error', text: 'the side question was superseded' })
+    expect(agents.sides[0]!.disposed).toBe(1)
+    await harness.dispose()
+  })
+
+  it('keeps the current pane usable when replacement creation fails', async () => {
+    resetSeq()
+    const agents = new FakeAgents()
+    const { commands, screen, dispose } = await boot(fakeAgent([]), agents)
+    await run(commands, 'first')
+    const first = agents.sides[0]!
+    agents.failure = new Error('replacement unavailable')
+
+    await expect(run(commands, 'second')).resolves.toEqual({
+      kind: 'error',
+      text: 'could not start the side session: replacement unavailable',
+    })
+    expect(first.disposed).toBe(0)
+    expect(screen.paneLines()).toEqual(frame(['› first', 'thinking…']))
+    await dispose()
+  })
+
+  it('shows a side-agent turn failure in the pane', async () => {
+    resetSeq()
+    const agents = new FakeAgents()
+    const { ctx, commands, screen, dispose } = await boot(fakeAgent([]), agents)
+    await run(commands, 'fail?')
+    const side = agents.sides[0]!
+    ctx.emit('session/event', side.agent.session as unknown as Session, turnEnd(1, {
+      kind: 'error',
+      error: { message: 'provider failed', code: 'MOCK_FAILURE' },
+    }))
+    expect(screen.paneLines().join('\n')).toContain('error: provider failed')
+    ctx.emit('session/event', side.agent.session as unknown as Session, turnEnd(1, {
+      kind: 'error',
+      error: { code: 'MOCK_CODE' } as never,
+    }))
+    expect(screen.paneLines().join('\n')).toContain('error: MOCK_CODE')
+    ctx.emit('session/event', side.agent.session as unknown as Session, turnEnd(1, {
+      kind: 'error',
+      error: {} as never,
+    }))
+    expect(screen.paneLines().join('\n')).toContain('error: the side session ended with an error')
+    ctx.emit('session/event', side.agent.session as unknown as Session, turnEnd(1, {
+      kind: 'error',
+      error: undefined as never,
+    }))
+    expect(screen.paneLines().join('\n')).toContain('error: the side session ended with an error')
+    await dispose()
+  })
+
+  it('reports an initial follow-up failure and closes the pane', async () => {
+    resetSeq()
+    const agents = new FakeAgents()
+    agents.followupFailure = new Error('initial follow-up failed')
+    const { commands, screen, dispose } = await boot(fakeAgent([]), agents)
+    await expect(run(commands, 'fail immediately')).resolves.toEqual({
+      kind: 'error',
+      text: 'could not ask the side question: initial follow-up failed',
+    })
+    expect(screen.paneLines()).toEqual([])
+    await dispose()
+
+    const stringFailure = new FakeAgents()
+    stringFailure.followupFailure = 'plain initial failure'
+    const second = await boot(fakeAgent([]), stringFailure)
+    await expect(run(second.commands, 'fail plainly')).resolves.toEqual({
+      kind: 'error',
+      text: 'could not ask the side question: plain initial failure',
+    })
+    await second.dispose()
+  })
+
+  it('closes the side pane when the active parent session changes', async () => {
+    resetSeq()
+    const agents = new FakeAgents()
+    const { ctx, commands, screen, dispose } = await boot(fakeAgent([]), agents)
+    await run(commands, 'old session')
+    const side = agents.sides[0]!
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([])))
+    await vi.waitFor(() => {
+      expect(side.disposed).toBe(1)
+      expect(screen.paneLines()).toEqual([])
+    })
+    await dispose()
+  })
+
   it('dismisses with bare /btw and refuses a second dismiss', async () => {
     resetSeq()
     const agents = new FakeAgents()
@@ -329,6 +494,48 @@ describe('blue-pane-btw', () => {
     await dispose()
   })
 
+  it('does not let an older replacement win after an async dispose race', async () => {
+    resetSeq()
+    const agents = new FakeAgents()
+    const { commands, screen, dispose } = await boot(fakeAgent([]), agents)
+    await run(commands, 'first')
+    const first = agents.sides[0]!
+    let releaseDispose!: () => void
+    first.handle.dispose = () => new Promise<void>(resolve => { releaseDispose = resolve })
+
+    const second = run(commands, 'second')
+    await vi.waitFor(() => { expect(agents.sides).toHaveLength(2) })
+    const third = run(commands, 'third')
+    await vi.waitFor(() => { expect(agents.sides).toHaveLength(3) })
+    releaseDispose()
+
+    await expect(second).resolves.toEqual({ kind: 'error', text: 'the side question was superseded' })
+    await expect(third).resolves.toEqual({ kind: 'success', text: 'asked the side question' })
+    expect(agents.sides[1]!.disposed).toBe(1)
+    expect(screen.paneLines()).toEqual(frame(['› third', 'thinking…']))
+    await dispose()
+  })
+
+  it('disposes a replacement that settles while the pane unloads', async () => {
+    resetSeq()
+    const agents = new FakeAgents()
+    const harness = await boot(fakeAgent([]), agents)
+    await run(harness.commands, 'first')
+    const first = agents.sides[0]!
+    let releaseDispose!: () => void
+    first.handle.dispose = () => new Promise<void>(resolve => { releaseDispose = resolve })
+    const pending = run(harness.commands, 'second')
+    await vi.waitFor(() => { expect(agents.sides).toHaveLength(2) })
+    const unloading = harness.dispose()
+    releaseDispose()
+    await unloading
+    await expect(pending).resolves.toEqual({
+      kind: 'error',
+      text: 'the side-question plugin was unloaded',
+    })
+    expect(agents.sides[1]!.disposed).toBe(1)
+  })
+
   it('disposes the fresh handle when the fiber unloaded mid-creation', async () => {
     resetSeq()
     const agents = new FakeAgents()
@@ -344,7 +551,7 @@ describe('blue-pane-btw', () => {
     expect(agents.sides[0]!.disposed).toBe(1)
   })
 
-  it('fits the body to the terminal-height budget with a trailing spacer', async () => {
+  it('fits the body to the terminal-height budget without a separator gap', async () => {
     resetSeq()
     const agents = new FakeAgents()
     const { ctx, commands, screen, dispose } = await boot(fakeAgent([]), agents)
@@ -355,18 +562,18 @@ describe('blue-pane-btw', () => {
     const ten = Array.from({ length: 10 }, (_, index) => `line${index + 1}`).join('\n')
     ctx.emit('session/event', session, assistantEvent(1, 1, [{ type: 'text', text: ten }]))
     // Body = question + 10 lines + thinking = 12 rows. rows = 24 → budget
-    // = max(3, 8) - 1 = 7: rule + 7 body rows + spacer, tail-followed.
-    expect(screen.paneLines()).toHaveLength(1 + 7 + 1)
+    // = max(3, 8) - 1 = 7: rule + 7 body rows, tail-followed.
+    expect(screen.paneLines()).toHaveLength(1 + 7)
     expect(screen.paneLines()[1]).toBe(bodyRow('line5'))
 
     // A resize re-fits live: rows = 15 → budget = max(3, 5) - 1 = 4.
     screen.rows = 15
-    expect(screen.paneLines()).toHaveLength(1 + 4 + 1)
+    expect(screen.paneLines()).toHaveLength(1 + 4)
     expect(screen.paneLines()[1]).toBe(bodyRow('line8'))
 
     // rows = 4 → budget = max(3, 1) - 1 = 2, never below the panel minimum.
     screen.rows = 4
-    expect(screen.paneLines()).toHaveLength(1 + 2 + 1)
+    expect(screen.paneLines()).toHaveLength(1 + 2)
     expect(screen.paneLines()[1]).toBe(bodyRow('line10'))
     await dispose()
   })
@@ -384,11 +591,10 @@ describe('blue-pane-btw', () => {
     // Question + 25 reply rows + thinking = 27 rows; the last 7 show
     // (tail-follow), and the hint advertises the scroll keys.
     const lines = screen.paneLines()
-    expect(lines).toHaveLength(1 + 7 + 1)
+    expect(lines).toHaveLength(1 + 7)
     expect(lines[0]).toBe(rule(true))
     expect(lines[1]).toBe(bodyRow('line20'))
-    expect(lines.at(-2)).toBe(bodyRow('thinking…'))
-    expect(lines.at(-1)).toBe('')
+    expect(lines.at(-1)).toBe(bodyRow('thinking…'))
 
     // Scroll up one row: the viewport steps back and stops following.
     ctx.emit('blue/btw-command', 'scroll-up')
@@ -404,7 +610,7 @@ describe('blue-pane-btw', () => {
     // New content while tail-following pins to the new bottom.
     ctx.emit('session/event', session, textDelta(1, 1, 'tail'))
     expect(screen.paneLines()[1]).toBe(bodyRow('line20'))
-    expect(screen.paneLines().at(-2)).toBe(bodyRow('thinking…'))
+    expect(screen.paneLines().at(-1)).toBe(bodyRow('thinking…'))
     await dispose()
   })
 
@@ -481,7 +687,7 @@ describe('blue-pane-btw', () => {
     const session = side.agent.session as unknown as Session
     ctx.emit('session/event', session, assistantEvent(1, 1, [{ type: 'text', text: 'l1\nl2\nl3' }]))
     // Body = question + 3 lines + thinking = 5 rows → the panel grows to 5.
-    expect(screen.paneLines()).toHaveLength(1 + 5 + 1)
+    expect(screen.paneLines()).toHaveLength(1 + 5)
 
     // The finalize shrinks the body to question + 1 line, and the idle flip
     // drops the thinking row — but the panel stays at its high-water height
@@ -489,7 +695,7 @@ describe('blue-pane-btw', () => {
     ctx.emit('session/event', session, assistantEvent(1, 1, [{ type: 'text', text: 'done' }]))
     ctx.emit('agent/status', { agent: side.handle.agent, status: 'idle' })
     const lines = screen.paneLines()
-    expect(lines).toHaveLength(1 + 5 + 1)
+    expect(lines).toHaveLength(1 + 5)
     expect(lines[1]).toBe(bodyRow('› q?'))
     expect(lines[2]).toBe(bodyRow('done'))
     // The padding rows render through the border machinery, like the rest.
@@ -509,11 +715,11 @@ describe('blue-pane-btw', () => {
     const long = Array.from({ length: 25 }, (_, index) => `line${index + 1}`).join('\n')
     ctx.emit('session/event', session, assistantEvent(1, 1, [{ type: 'text', text: long }]))
     const lines = screen.paneLines()
-    // 1 + 27 + 1: every body row renders, untruncated.
-    expect(lines).toHaveLength(1 + 27 + 1)
+    // 1 + 27: every body row renders, untruncated.
+    expect(lines).toHaveLength(1 + 27)
     expect(lines[0]).toBe(rule(false))
     expect(lines[1]).toBe(bodyRow('› q?'))
-    expect(lines.at(-2)).toBe(bodyRow('thinking…'))
+    expect(lines.at(-1)).toBe(bodyRow('thinking…'))
     await dispose()
   })
 
@@ -545,6 +751,22 @@ describe('blue-pane-btw', () => {
     ctx.emit('session/event', session, assistantEvent(1, 1, [{ type: 'text', text: 'second reply' }]))
     ctx.emit('agent/status', { agent: side.handle.agent, status: 'idle' })
     expect(screen.paneLines()).toEqual(frame(['› first?', '', '› and then?', 'second reply']))
+    await dispose()
+  })
+
+  it('renders synchronous follow-up failures instead of leaving a busy turn', async () => {
+    resetSeq()
+    const agents = new FakeAgents()
+    const { ctx, commands, screen, dispose } = await boot(fakeAgent([]), agents)
+    await run(commands, 'first?')
+    const side = agents.sides[0]!
+    ctx.emit('agent/status', { agent: side.handle.agent, status: 'idle' })
+    side.agent.followup = () => { throw new Error('follow-up failed') }
+    ctx.emit('blue/btw-command', 'submit', 'second?')
+    expect(screen.paneLines().join('\n')).toContain('error: follow-up failed')
+    side.agent.followup = () => { throw 'plain follow-up failure' }
+    ctx.emit('blue/btw-command', 'submit', 'third?')
+    expect(screen.paneLines().join('\n')).toContain('error: plain follow-up failure')
     await dispose()
   })
 
@@ -591,12 +813,13 @@ describe('blue-pane-btw', () => {
     const side = agents.sides[0]!
 
     const pane = screen.bottomChildren[0]!
-    // The mount layer's gutter squeezes the child to `width - 2` and pads
-    // the left column; the pane's own minimum-width guard hides below that.
-    expect(pane.render(5)).toEqual([])
-    expect(pane.render(10)[0]?.slice(1).startsWith('╭')).toBe(true)
+    // The connected pane keeps the leading editor slot; its own minimum-width
+    // guard hides it only when the available inner width falls below four.
+    expect(pane.render(1)).toEqual([])
+    expect(pane.render(3)).toEqual([])
+    expect(pane.render(10)[0]?.startsWith(' ╭')).toBe(true)
     pane.invalidate()
-    expect(pane.render(10)[0]?.slice(1).startsWith('╭')).toBe(true)
+    expect(pane.render(10)[0]?.startsWith(' ╭')).toBe(true)
 
     ctx.emit('blue/btw-command', 'close')
     await vi.waitFor(() => {

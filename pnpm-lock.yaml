@@ -108,6 +108,9 @@ importers:
       '@deepseek-ai/dsh-agent-presets':
         specifier: 0.1.1-rc.2
         version: 0.1.1-rc.2(458d8f960a6e445302dd5b0902b079dd)
+      '@deepseek-ai/dsh-cordis-host-runner':
+        specifier: 0.1.1-rc.2
+        version: 0.1.1-rc.2(d57c446fab7b15594d84254941d4f4c8)
       '@deepseek-ai/dsh-mcp-client':
         specifier: 0.1.1-rc.2
         version: 0.1.1-rc.2(8c2a11b378cd5cf327104574f6e069b2)

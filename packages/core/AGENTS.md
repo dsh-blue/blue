@@ -69,6 +69,11 @@ The pure `src/chrome.ts` — re-exported as the `./chrome` subpath, theme-agnost
 - `injectGhostHint` splices the dimmed hint after the inverse-video cursor, consuming trailing padding so the row width holds, ellipsizing on overflow, and leaving mid-text cursors untouched (`setGhostHint`'s first consumer).
 - `highlightLeadingSlashToken` re-paints the leading `/command` token through visible-index math so ANSI pass-through survives (bold `primary` at the call site).
 
+When `BlueEditor.setConnectedAbove(true)` is active, `EditorAdapter.render` uses
+the same `width - 2` inner budget as `GutterComponent` and restores the left
+gutter after painting `├┤` chrome. This keeps the editor splice aligned with
+inset dock panes such as `/btw`; the editor remains full-width when disconnected.
+
 ## Gutter and dock mechanics (D29)
 
 `GutterComponent` (`src/gutter.ts`, exported from the package root — the kimi `GutterContainer` equivalent): the child renders at `max(1, width - 2n)` (the floor keeps degenerate resize-drag viewports from handing children zero or negative widths, D48) and every row gains `n` leading columns through `padColumns`, styling untouched, `invalidate` forwarded; below `2n + 2` columns the padded rows are also cut to the width (the gutter furniture itself no longer fits). It wraps every inset surface at the mount layer — transcript entries, the banner, the four dock panes, and the footer — while the editor, dialogs, and overlays stay full-width.
