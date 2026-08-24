@@ -7,6 +7,8 @@ import { FakeBlueComponents, FakeKeymap, FakeTheme, KEY } from './fakes.ts'
 
 const items: TraceItem[] = Array.from({ length: 3 }, (_, seq) => ({
   seq,
+  lastSeq: seq,
+  eventSeqs: [seq],
   time: seq === 2 ? Number.NaN : seq * 1000,
   type: 'user/message',
   surface: seq === 2 ? 'shadowed' : 'current',

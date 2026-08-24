@@ -97,7 +97,8 @@ export class TracePanel implements BlueFocusable {
       const pointer = absolute === this.cursor ? colors.primary('❯ ') : '  '
       const surface = item.surface === 'current' ? colors.text('●') : colors.textMuted('·')
       const summary = item.summary.length > 0 ? `  ${item.summary}` : ''
-      body.push(`${pointer}${colors.textMuted(traceTime(item.time))} ${surface} ${colors.textStrong(`#${String(item.seq)} ${item.title}`)}${components.truncateToWidth(summary, Math.max(1, width - 28))}`)
+      const sequence = item.lastSeq === item.seq ? `#${String(item.seq)}` : `#${String(item.seq)}-${String(item.lastSeq)}`
+      body.push(`${pointer}${colors.textMuted(traceTime(item.time))} ${surface} ${colors.textStrong(`${sequence} ${item.title}`)}${components.truncateToWidth(summary, Math.max(1, width - 30))}`)
       if (this.expanded.has(item.seq)) {
         const detail = this.detail.get(item.seq) ?? '  loading details…'
         for (const line of detail.split('\n').slice(0, 6)) body.push(colors.textMuted(`      ${components.truncateToWidth(line, Math.max(1, width - 8))}`))

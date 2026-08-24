@@ -30,6 +30,7 @@ describe('trace-format', () => {
     const cyclic: Record<string, unknown> = {}
     cyclic.self = cyclic
     expect(traceSummary(event('custom/event', cyclic))).toBe('[unserializable event payload]')
+    expect(traceSummary(event('assistant/chunk', { turn: 1, step: 1, chunk: { type: 'block-start', index: 0, blockType: 'text' } }))).toContain('block-start')
   })
 
   it('builds items and serializes relations and raw payload', () => {
@@ -55,6 +56,9 @@ describe('trace-format', () => {
     expect(formatTraceAll([item], 'session')).toContain('# Trace\n\nSession: session')
     expect(formatTraceItem({ ...item, summary: '' }, undefined, undefined)).not.toContain('raw event:')
     expect(formatTraceAll([{ ...item, summary: '' }], 'session')).not.toContain('\n\nhello')
+    const merged = { ...item, lastSeq: 5, eventSeqs: [3, 4, 5] }
+    expect(formatTraceItem(merged, undefined, undefined, [event('user/message', {})])).toContain('#3-5')
+    expect(formatTraceAll([merged], 'session')).toContain('#3-5')
   })
 
   it('supports an item without an event payload', () => {

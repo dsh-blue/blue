@@ -8,11 +8,13 @@
 
 import { extractSessionEventText } from '@deepseek-ai/dsh-session-query'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import type { SessionEventRecord, SessionEventTraceObservation, SessionEventWindow } from '@deepseek-ai/dsh-session-query'
+import type { SessionEventRecord, SessionEventTrace, SessionEventWindow } from '@deepseek-ai/dsh-session-query'
 
 /** One display-ready event in the trace timeline. */
 export interface TraceItem {
   readonly seq: number
+  readonly lastSeq: number
+  readonly eventSeqs: readonly number[]
   readonly time: number
   readonly type: string
   readonly surface: SessionEventRecord['surface']
@@ -38,6 +40,10 @@ export function traceTitle(type: string): string {
 
 /** Build a one-line summary from the official semantic text extractor. */
 export function traceSummary(event: SessionEvent): string {
+  if (event.type === 'assistant/chunk') {
+    const chunk = event.data.chunk
+    if (chunk.type === 'reasoning-delta' || chunk.type === 'text-delta') return chunk.text
+  }
   const text = extractSessionEventText(event).replaceAll(/\s+/g, ' ').trim()
   if (text.length > 0) return text
   const data = event.data
@@ -54,6 +60,8 @@ export function traceSummary(event: SessionEvent): string {
 export function toTraceItem(record: SessionEventRecord, event?: SessionEvent): TraceItem {
   return {
     seq: record.seq,
+    lastSeq: record.seq,
+    eventSeqs: [record.seq],
     time: record.time,
     type: record.type,
     surface: record.surface,
@@ -69,8 +77,9 @@ export function traceTime(time: number): string {
 }
 
 /** Serialize one event and its official relationship trace for clipboard use. */
-export function formatTraceItem(item: TraceItem, window: SessionEventWindow | undefined, relation: SessionEventTraceObservation | undefined): string {
-  const lines = [`[${traceTime(item.time)}] #${String(item.seq)} ${item.title} (${item.type})`, `surface: ${item.surface}`]
+export function formatTraceItem(item: TraceItem, window: SessionEventWindow | undefined, relation: SessionEventTrace | undefined, rawEvents: readonly SessionEvent[] = []): string {
+  const sequence = item.lastSeq === item.seq ? `#${String(item.seq)}` : `#${String(item.seq)}-${String(item.lastSeq)}`
+  const lines = [`[${traceTime(item.time)}] ${sequence} ${item.title} (${item.type})`, `surface: ${item.surface}`]
   if (item.summary.length > 0) lines.push('', item.summary)
   if (relation !== undefined) {
     if (relation.replacedBy !== undefined) lines.push('', `replaced by: #${String(relation.replacedBy)}`)
@@ -81,6 +90,8 @@ export function formatTraceItem(item: TraceItem, window: SessionEventWindow | un
   }
   if (window !== undefined) {
     lines.push('', 'raw event:', JSON.stringify(window.target, null, 2))
+  } else if (rawEvents.length > 0) {
+    lines.push('', 'raw events:', JSON.stringify(rawEvents, null, 2))
   }
   return lines.join('\n')
 }
@@ -89,7 +100,8 @@ export function formatTraceItem(item: TraceItem, window: SessionEventWindow | un
 export function formatTraceAll(items: readonly TraceItem[], sessionId: string): string {
   const lines = [`# Trace`, '', `Session: ${sessionId}`, '']
   for (const item of items) {
-    lines.push(`## [${traceTime(item.time)}] #${String(item.seq)} ${item.title}`, '', `Type: ${item.type}`, `Surface: ${item.surface}`)
+    const sequence = item.lastSeq === item.seq ? `#${String(item.seq)}` : `#${String(item.seq)}-${String(item.lastSeq)}`
+    lines.push(`## [${traceTime(item.time)}] ${sequence} ${item.title}`, '', `Type: ${item.type}`, `Surface: ${item.surface}`)
     if (item.summary.length > 0) lines.push('', item.summary)
     lines.push('')
   }

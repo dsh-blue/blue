@@ -32,9 +32,9 @@ Blue 终端 UI 交互层，构建于 [`dsh-blue-core`](../core/README.md) 之上
 
 - **`/trace`（`src/trace-command.ts`、`src/trace-panel.ts`）** —— 基于官方
   `ctx.sessionQuery` 的只读执行轨迹面板。首次使用 `readSession()` 和上游
-  事件记录投影构建时间线，选中条目后按需读取原始详情；按 `c` 复制当前条目，
-  按 `a` 复制完整轨迹。`/trace copy <seq>` 与 `/trace copy all` 复用现有
-  OSC52/原生剪贴板管线。
+  事件记录投影构建时间线，并按 transcript 规则把连续的 assistant reasoning/text delta 合并成一个条目；
+  选中条目的原始详情直接从快照内存加载。按 `c`（或 `/trace copy <seq>`）复制单条时追加官方关系数据，
+  按 `a` 或 `/trace copy all` 复制完整轨迹，都复用现有 OSC52/原生剪贴板管线。
 
 - **`SelectListPanel`（`src/select-list.ts`，S24b）** —— 所有单选拾取面共享的列表面板：`framePanel` 带框 + 标题提示，↑↓ 环绕于居中 8 行窗口（`windowedRange`/`counterRow`/`cycle`/`oneLine` 为共享小件，`BlueSelect` 与 plan-review 面板同消费），光标行 `❯ ` 指针 + primary 标签，success 徽章，行预算内 muted 描述，`(n/m)` 滚动计数。行即 `SelectRow {value, label, description?, badge?, disabled?}`，`initialValue` 播种光标；`disabled` 行把 Enter 挡进 `onBlockedSelect`。/sessions、/provider 选择器、向导 choose 步与 /permission 选择器均是其消费者；`ModelPanel` 保持自有几何（tab 条 + 实时搜索的交织 chrome 非纯列表所能承载）。
 - **`InfoPanel`（`src/info-panel.ts`，S25）** —— `/status` 与 `/context` 挂载的只读双列信息面板（kimi usage/status 报告形态、Blue `/help` 版式）：分节的标签/值行——标签 muted padEnd 对齐，值由带样式的 segment 拼接（`InfoSegment {text, style?}` 直接相连，上下文条因此能在纯文本计数旁携带严重级颜色）——外层 `framePanel` chrome，`showing 1-N of M` 滚动窗与 Escape/Enter/`q` 关闭键。`src/session-commands.ts` 中的分节构造器是对读取事实的纯函数，共享的上下文窗分节渲染 `█░` 条（20 列）——kimi 阈值分色（50% 起 warn、85% 起 danger）——旁随向上取整的百分比与 1024 基的 `used / window` 计数。

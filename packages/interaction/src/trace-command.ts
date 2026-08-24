@@ -8,13 +8,15 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { buildSessionEventRecords } from '@deepseek-ai/dsh-session-query'
 import type { SessionEventRecord } from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-session-query'
 import { copyTextToClipboard } from './clipboard-write.ts'
 import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
-import { formatTraceAll, formatTraceItem, toTraceItem, type TraceItem } from './trace-format.ts'
+import { formatTraceAll, formatTraceItem, type TraceItem } from './trace-format.ts'
+import { aggregateTraceItems } from './trace-aggregate.ts'
 import { TracePanel } from './trace-panel.ts'
 
 function describe(error: unknown): string {
@@ -23,17 +25,17 @@ function describe(error: unknown): string {
 
 /** Register `/trace` and its copy subcommands. */
 export function registerTraceCommand(ctx: Context): () => void {
-  async function loadItems(): Promise<{ sessionId: SessionId, records: SessionEventRecord[], items: TraceItem[] } | undefined> {
+  async function loadItems(): Promise<{ sessionId: SessionId, records: SessionEventRecord[], events: SessionEvent[], items: TraceItem[] } | undefined> {
     const current = ctx.get('blueSession')?.current
     const query = ctx.get('sessionQuery')
     if (current === undefined || current === null) return undefined
     if (query === undefined) throw new Error('session query is unavailable')
     const snapshot = await query.readSession(current.id)
     const records = buildSessionEventRecords(current.id, snapshot.events)
-    return { sessionId: current.id, records, items: records.map((record, index) => toTraceItem(record, snapshot.events[index])) }
+    return { sessionId: current.id, records, events: snapshot.events, items: aggregateTraceItems(records, snapshot.events) }
   }
 
-  async function copyItem(sessionId: SessionId, item: TraceItem): Promise<CommandResult> {
+  async function copyItem(sessionId: SessionId, item: TraceItem, events: readonly SessionEvent[]): Promise<CommandResult> {
     const query = ctx.get('sessionQuery')
     /* v8 ignore next -- the command's load path guards the same missing
      * service before a copy handler can be reached. */
@@ -41,11 +43,13 @@ export function registerTraceCommand(ctx: Context): () => void {
     /* v8 ignore start -- clipboard/process failures and the native notice are
      * exercised by the shared clipboard integration suite and real terminal. */
     try {
-      const [window, relation] = await Promise.all([
-        query.readEvent({ sessionId, seq: item.seq }),
-        query.traceEvent({ sessionId, seq: item.seq }),
-      ])
-      const method = await copyTextToClipboard(formatTraceItem(item, window, relation))
+      const relation = await query.traceEvent({ sessionId, seq: item.seq })
+      const eventBySeq = new Map(events.map(event => [event.seq, event]))
+      const rawEvents = item.eventSeqs.flatMap(seq => {
+        const event = eventBySeq.get(seq)
+        return event === undefined ? [] : [event]
+      })
+      const method = await copyTextToClipboard(formatTraceItem(item, undefined, relation, rawEvents))
       getSharedEditor()?.notice?.(`copied trace item #${String(item.seq)}${method === 'osc52' ? ' via terminal escape sequence (unverified)' : ''}`)
       return { kind: 'success' }
     } catch (error) {
@@ -73,7 +77,7 @@ export function registerTraceCommand(ctx: Context): () => void {
     if (match !== null) {
       const item = loaded.items.find(entry => entry.seq === Number(match[1]))
       if (item === undefined) return { kind: 'error', text: `trace event #${match[1]} was not found` }
-      return copyItem(loaded.sessionId, item)
+      return copyItem(loaded.sessionId, item, loaded.events)
     }
     /* v8 ignore start -- editor-slot callbacks require the live Blue input
      * plugin; TracePanel itself has source-plane coverage. */
@@ -85,16 +89,15 @@ export function registerTraceCommand(ctx: Context): () => void {
       sessionId: String(loaded.sessionId),
       items: loaded.items,
       onClose: () => restore(),
-      onCopyItem: (item) => { void copyItem(loaded.sessionId, item) },
+      onCopyItem: (item) => { void copyItem(loaded.sessionId, item, loaded.events) },
       onCopyAll: () => {
         void copyTextToClipboard(formatTraceAll(loaded.items, String(loaded.sessionId))).then(method => {
           getSharedEditor()?.notice?.(`copied ${String(loaded.items.length)} trace events${method === 'osc52' ? ' via terminal escape sequence (unverified)' : ''}`)
         }).catch(error => getSharedEditor()?.notice?.(`could not copy trace: ${describe(error)}`))
       },
       onLoadDetail: (item) => {
-        const query = ctx.get('sessionQuery')
-        if (query === undefined) return
-        void query.readEvent({ sessionId: loaded.sessionId, seq: item.seq }).then(window => panel.setDetail(item.seq, JSON.stringify(window.target, null, 2))).catch(error => panel.setDetail(item.seq, `detail unavailable: ${describe(error)}`))
+        const rawEvents = item.eventSeqs.flatMap(seq => loaded.events.filter(event => event.seq === seq))
+        panel.setDetail(item.seq, JSON.stringify(rawEvents, null, 2))
       },
     })
     restore = mountEditorReplacement(panel)
