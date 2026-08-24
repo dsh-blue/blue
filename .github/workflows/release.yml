@@ -134,6 +134,8 @@ jobs:
         with:
           name: npm-tarballs
           path: .artifacts/pack
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
           run-id: ${{ inputs.source_run_id || github.run_id }}
       - run: node script/release-packages.mjs promote
         env:
