@@ -20,7 +20,7 @@ import {
   type ImageAttachmentRef,
   type SaveImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import { applySubmitTransformers } from '../src/editor-instance.ts'
+import { applyReversibleSubmitTransformers, applySubmitTransformers } from '../src/editor-instance.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
 import * as pasteImage from '../src/paste-image.ts'
 import { ACTION_IMAGE_PASTE, type ClipboardImageResult } from '../src/paste-image.ts'
@@ -231,13 +231,18 @@ describe('blue-paste-image plugin', () => {
     expect(thirdRef.name).toBe('pasted-image.jpg')
 
     // Submit splitting: known markers become image blocks with text runs.
-    const blocks = applySubmitTransformers(`before ${firstMarker} mid ${secondMarker} after`)
-    expect(blocks).toEqual([
+    const transformed = applyReversibleSubmitTransformers(`before ${firstMarker} mid ${secondMarker} after`)
+    expect(transformed.blocks).toEqual([
       { type: 'text', text: 'before ' },
       { type: 'image', attachment: expect.objectContaining({ mediaType: 'image/png' }) },
       { type: 'text', text: ' mid ' },
       { type: 'image', attachment: expect.objectContaining({ mediaType: 'image/gif' }) },
       { type: 'text', text: ' after' },
+    ])
+    transformed.rollback?.()
+    transformed.rollback?.()
+    expect(applySubmitTransformers(firstMarker)).toEqual([
+      { type: 'image', attachment: expect.objectContaining({ mediaType: 'image/png' }) },
     ])
     // Consumed markers leave the map: a resubmit keeps them literal.
     expect(applySubmitTransformers(`again ${firstMarker}`)).toEqual([

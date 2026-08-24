@@ -21,6 +21,7 @@ import {
   imageBlock,
   imageRef,
   reasoningDelta,
+  retractionEvent,
   resetSeq,
   stepEnd,
   stepStart,
@@ -39,6 +40,73 @@ beforeEach(() => {
 })
 
 describe('foldSessionEvents', () => {
+  it('removes a live retracted turn and rejects every late close event', () => {
+    const folder = new TranscriptFolder()
+    folder.apply(turnStart(1))
+    folder.apply(userEvent('revise this'))
+    folder.apply(stepStart(1, 1))
+    folder.apply(reasoningDelta(1, 1, 'private thought'))
+    folder.apply(textDelta(1, 1, 'partial answer'))
+    expect(folder.items).toHaveLength(3)
+
+    const updates = folder.retract(1)
+    expect(updates?.[0]).toMatchObject({ removed: expect.any(Array) })
+    expect('removed' in updates![0]! && updates![0].removed).toHaveLength(3)
+    expect(folder.items).toEqual([])
+    expect(folder.apply(reasoningDelta(1, 1, 'late'))).toBeNull()
+    expect(folder.apply(assistantEvent(1, 1, [{ type: 'text', text: 'late final' }]))).toBeNull()
+    expect(folder.apply(turnEnd(1, { kind: 'aborted' }))).toBeNull()
+    expect(folder.items).toEqual([])
+    expect(folder.completedTurns).toEqual([])
+  })
+
+  it('pre-scans durable retractions so replay never exposes the withdrawn turn', () => {
+    const priorStart = turnStart(1)
+    const priorUser = userEvent('keep me')
+    const priorEnd = turnEnd(1)
+    const goneStart = turnStart(2)
+    const goneUser = userEvent('withdraw me')
+    const goneStep = stepStart(2, 1)
+    const goneThinking = reasoningDelta(2, 1, 'discarded')
+    const goneEnd = turnEnd(2, { kind: 'aborted' })
+    const marker = retractionEvent(2, 1, goneUser.seq, goneUser.seq)
+    const items = foldSessionEvents([
+      priorStart, priorUser, priorEnd,
+      goneStart, goneUser, goneStep, goneThinking, goneEnd, marker,
+    ])
+    expect(items.map(item => item.kind === 'user' ? item.text : item.kind)).toEqual(['keep me'])
+  })
+
+  it('retracts a completed tool-bearing fold without disturbing another turn', () => {
+    const folder = new TranscriptFolder()
+    folder.apply(turnStart(1))
+    folder.apply(userEvent('old turn'))
+    folder.apply(stepStart(1, 1))
+    folder.apply(toolCallEvent(1, 1, 'old-call', 'read', '{}'))
+    folder.apply(assistantEvent(1, 1, [{ type: 'text', text: 'old answer' }]))
+    folder.apply(turnEnd(1))
+    folder.apply(turnStart(2))
+    folder.apply(userEvent('keep turn'))
+    folder.apply(stepStart(2, 1))
+    folder.apply(toolCallEvent(2, 1, 'keep-call', 'read', '{}'))
+    folder.apply(assistantEvent(2, 1, [{ type: 'text', text: 'keep answer' }]))
+    folder.apply(turnEnd(2))
+
+    const updates = folder.retract(1)
+    expect(updates?.[0]).toMatchObject({ removed: expect.any(Array) })
+    expect(folder.items.every(item => item.turn === 2)).toBe(true)
+    expect(folder.completedTurns).toEqual([2])
+    expect(folder.retract(1)).toBeNull()
+    expect(new TranscriptFolder().retract(9)).toBeNull()
+  })
+
+  it('suppresses late tool calls and results for a pre-marked retracted turn', () => {
+    const folder = new TranscriptFolder({ retractedTurns: new Set([1]) })
+    folder.apply(turnStart(1))
+    expect(folder.apply(toolCallEvent(1, 1, 'late-call', 'bash', '{}'))).toBeNull()
+    expect(folder.apply(toolResultEvent(1, 1, 'late-call', 'late result'))).toBeNull()
+  })
+
   it('creates one interruption tombstone before and at the host turn close', () => {
     const folder = new TranscriptFolder()
     folder.apply(turnStart(1))

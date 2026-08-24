@@ -71,6 +71,7 @@ async function mount(options: {
   appExit?: (code: number) => void
   inbox?: ReturnType<typeof fakeInbox>
   modelRef?: unknown
+  retract?: (messageId: string) => boolean
 } = {}): Promise<{
   ctx: Context
   screen: FakeScreen
@@ -99,6 +100,7 @@ async function mount(options: {
     inbox: options.inbox ?? fakeInbox(),
   } as unknown as Agent
   ctx.provide('blueSession', { current: options.withAgent === false ? null : agent, modelRef: options.modelRef ?? undefined })
+  if (options.retract !== undefined) ctx.provide('blueRetractions', { tryRetract: options.retract })
   if (options.appExit !== undefined) ctx.provide('appExit', options.appExit)
   const fiber = await ctx.plugin(inputPlugin)
   const editor = screen.children[0] as FakeBlueEditor
@@ -604,6 +606,22 @@ describe('blue-input plugin', () => {
       const { editor, cancel } = await mount({ running: true })
       expect(editor.onKey?.(KEY.escape)).toBe(true)
       expect(cancel).toHaveBeenCalledWith({ kind: 'user' })
+    })
+
+    it('restores the submitted message and removes its history entry after a safe Escape retraction', async () => {
+      const retract = vi.fn(() => true)
+      const { editor, followup, cancel } = await mount({ running: true, retract })
+      type(editor, 'revise this prompt')
+      editor.handleInput(KEY.enter)
+      const message = followup.mock.calls[0]?.[0] as { id: string }
+      expect(editor.getText()).toBe('')
+      expect(editor.history).toEqual(['revise this prompt'])
+
+      expect(editor.onKey?.(KEY.escape)).toBe(true)
+      expect(retract).toHaveBeenCalledWith(String(message.id))
+      expect(editor.getText()).toBe('revise this prompt')
+      expect(editor.history).toEqual([])
+      expect(cancel).not.toHaveBeenCalled()
     })
 
     it('passes Escape through with an empty buffer and an idle agent', async () => {

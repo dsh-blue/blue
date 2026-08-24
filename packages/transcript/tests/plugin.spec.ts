@@ -33,6 +33,7 @@ import {
   assistantEvent,
   fakeBlueComponents,
   reasoningDelta,
+  retractionEvent,
   resetSeq,
   stepStart,
   subagentCallEvent,
@@ -409,6 +410,45 @@ describe('blue-transcript plugin through the real Loader', () => {
     })
     expect(contentLines(screen)).toContain('⏹ interrupted')
     expect(screen.renderRequests).toHaveLength(baseline + 1)
+  })
+
+  it('removes a safely retracted live turn without an Interrupted tombstone', async () => {
+    resetSeq()
+    const { ctx, screen } = await bootTranscript(null, { sessionEpoch: 2 })
+    const agent = fakeAgent([])
+    ctx.emit('blue/session-changed', asAgent(agent))
+    ctx.emit('session/event', agent.session as unknown as Session, turnStart(4))
+    ctx.emit('session/event', agent.session as unknown as Session, userEvent('bring this back'))
+    ctx.emit('session/event', agent.session as unknown as Session, stepStart(4, 1))
+    ctx.emit('session/event', agent.session as unknown as Session, reasoningDelta(4, 1, 'discard me'))
+    expect(contentLines(screen).join('\n')).toContain('bring this back')
+
+    ctx.emit('blue/turn-retracted', { sessionEpoch: 2, requestEpoch: 1, turn: 4 })
+    expect(contentLines(screen).join('\n')).not.toContain('bring this back')
+    expect(contentLines(screen).join('\n')).not.toContain('discard me')
+    ctx.emit('session/event', agent.session as unknown as Session, turnEnd(4, { kind: 'aborted' }))
+    expect(contentLines(screen)).not.toContain('⏹ interrupted')
+  })
+
+  it('rejects a retraction signal from a stale session epoch', async () => {
+    resetSeq()
+    const { ctx, screen } = await bootTranscript(null, { sessionEpoch: 3 })
+    const agent = fakeAgent([turnStart(1), userEvent('still visible')])
+    ctx.emit('blue/session-changed', asAgent(agent))
+    ctx.emit('blue/turn-retracted', { sessionEpoch: 2, requestEpoch: 1, turn: 1 })
+    expect(contentLines(screen).join('\n')).toContain('still visible')
+  })
+
+  it('hides a durably retracted turn on the initial session snapshot', async () => {
+    resetSeq()
+    const start = turnStart(1)
+    const user = userEvent('withdrawn snapshot')
+    const end = turnEnd(1, { kind: 'aborted' })
+    const marker = retractionEvent(1, 0, user.seq, user.seq)
+    const { ctx, screen } = await bootTranscript(null)
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([start, user, end, marker])))
+    expect(contentLines(screen).join('\n')).not.toContain('withdrawn snapshot')
+    expect(contentLines(screen)).not.toContain('⏹ interrupted')
   })
 
   it('mounts live thinking above the answer, finalizes it in place, and joins ctrl+o', async () => {

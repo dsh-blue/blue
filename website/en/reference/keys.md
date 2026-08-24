@@ -18,7 +18,7 @@ One batch shared by overlays (lists, menus) and the editor:
 | Key | Action | Description |
 | --- | --- | --- |
 | `Enter` | Submit / confirm | Submit input or confirm the focused choice |
-| `Escape` | Cancel / dismiss | Close the active surface (completion popup → side pane → clear draft → interrupt the agent, yielding step by step) |
+| `Escape` | Cancel / retract / dismiss | Close the active surface (completion popup → side pane → clear draft, yielding step by step); while the agent runs, retract a tool-free current message back into the editor, otherwise interrupt normally |
 | `↑` / `↓` | Move list cursor | Overlay list navigation (wraps) |
 | `Space` | Toggle selection | Toggle the focused entry in a multi-select |
 

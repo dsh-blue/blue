@@ -179,6 +179,9 @@ describe('createEditor', () => {
     editor.addToHistory('second prompt')
     // pi-tui prepends: index 0 is the newest submission.
     expect(editor.getHistory()).toEqual(['second prompt', 'earlier prompt'])
+    expect(editor.removeLatestHistory?.('not newest')).toBe(false)
+    expect(editor.removeLatestHistory?.('second prompt')).toBe(true)
+    expect(editor.getHistory()).toEqual(['earlier prompt'])
 
     editor.focused = true
     expect(editor.focused).toBe(true)
