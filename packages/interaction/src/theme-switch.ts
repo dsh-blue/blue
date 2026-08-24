@@ -1,6 +1,6 @@
 /**
  * The `/theme` command and the provider swap behind it. The command knows
- * the four core theme subpath plugins (dark/light/auto/custom) and switches
+ * the six core theme subpath plugins (dark/light/ocean/paper/auto/custom) and switches
  * by disposing the live provider's fibers — `ctx.registry.delete` keys
  * runtimes by plugin callback identity, and the loader-loaded baseline
  * `blue-theme-dark` row resolves to the same module this file statically
@@ -19,10 +19,12 @@ import * as themeAuto from '@dsh-blue/blue-core/theme-auto'
 import * as themeCustom from '@dsh-blue/blue-core/theme-custom'
 import * as themeDark from '@dsh-blue/blue-core/theme-dark'
 import * as themeLight from '@dsh-blue/blue-core/theme-light'
+import * as themeOcean from '@dsh-blue/blue-core/theme-ocean'
+import * as themePaper from '@dsh-blue/blue-core/theme-paper'
 import { CURRENT_MARK } from './symbols.ts'
 
 /** Usage text returned for malformed `/theme` invocations. */
-const USAGE = 'usage: /theme [dark|light|auto|custom <path> [dark|light]]'
+const USAGE = 'usage: /theme [dark|light|ocean|paper|auto|custom <path> [dark|light|ocean|paper]]'
 
 /** One switchable theme provider: the command-facing key and the plugin module. */
 interface ThemeTarget {
@@ -37,6 +39,8 @@ const DARK: ThemeTarget = { key: 'dark', module: themeDark }
 const BUILTIN: ReadonlyMap<string, ThemeTarget> = new Map([
   ['dark', DARK],
   ['light', { key: 'light', module: themeLight }],
+  ['ocean', { key: 'ocean', module: themeOcean }],
+  ['paper', { key: 'paper', module: themePaper }],
   ['auto', { key: 'auto', module: themeAuto }],
 ])
 
@@ -44,7 +48,7 @@ const BUILTIN: ReadonlyMap<string, ThemeTarget> = new Map([
 const CUSTOM: ThemeTarget = { key: 'custom', module: themeCustom }
 
 /** Theme keys in listing order. */
-const KNOWN_KEYS = ['dark', 'light', 'auto', 'custom'] as const
+const KNOWN_KEYS = ['dark', 'light', 'ocean', 'paper', 'auto', 'custom'] as const
 
 /**
  * The live provider. Initialized to dark: the baseline bundle patch loads
@@ -96,6 +100,15 @@ async function switchTheme(ctx: Context, next: ThemeTarget, config?: themeCustom
   return { kind: 'success', text: `switched to theme "${next.key}"` }
 }
 
+/** Apply a built-in theme by key for the persisted settings default. */
+export async function applyTheme(ctx: Context, key: string): Promise<CommandResult> {
+  const target = BUILTIN.get(key)
+  if (target === undefined) {
+    return { kind: 'error', text: `unknown theme "${key}" (known: ${[...BUILTIN.keys()].join(', ')})` }
+  }
+  return switchTheme(ctx, target)
+}
+
 /**
  * Register the `/theme` command on `ctx.commands`.
  * @param ctx - plugin context carrying the command registry.
@@ -105,7 +118,7 @@ export function registerThemeCommand(ctx: Context): () => void {
   return ctx.commands.register({
     name: 'theme',
     description: 'Switch the color theme',
-    input: { hint: '[dark|light|auto|custom <path> [dark|light]]' },
+    input: { hint: '[dark|light|ocean|paper|auto|custom <path> [dark|light|ocean|paper]]' },
     handler: async (invocation): Promise<CommandResult> => {
       const trimmed = invocation.rawInput.trim()
       const args = trimmed.length === 0 ? [] : trimmed.split(/\s+/)

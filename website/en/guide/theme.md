@@ -15,6 +15,17 @@ usage: /theme [dark|light|auto|custom <path> [dark|light]]
 
 A switch replaces the provider's fiber wholesale; theme-dependent plugins (transcript, input) reload with it. A failed mount falls back to the built-in dark palette — the UI is never left without a theme.
 
+## The persisted default theme
+
+`/theme` switches the theme **for the session**; the persisted default lives in the `blue:` section of settings.yaml (or the `/settings` panel's Theme row — it cycles the value, applies live, and writes through):
+
+```yaml
+blue:
+  theme: ocean   # dark | light | ocean | paper | auto
+```
+
+The default applies at startup; an in-session `/theme` pick overrides it, and unrelated settings writes never stomp that pick. Custom palettes (`/theme custom <path>`) stay session-only — they never persist.
+
 ## custom: JSON palettes
 
 The custom theme reads a JSON file mapping tokens to `#rrggbb` hexes, layered over a `base` (dark or light):

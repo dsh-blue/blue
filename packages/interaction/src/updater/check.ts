@@ -28,11 +28,10 @@ import type { Context } from '@deepseek-ai/cordis'
 // Empty type import carries the loader Context merge for the settlement
 // await (the app driver's own discipline).
 import type {} from '@deepseek-ai/cordis-plugin-loader'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
-import z from '@deepseek-ai/schemastery'
 import { BLUE_VERSION } from '@dsh-blue/blue-api'
 import { join } from 'node:path'
 import { getSharedEditor } from '../editor-instance.ts'
+import { currentBlueSettings, type BlueSettings } from '../settings.ts'
 import type { InterruptedNoticeContent } from '../update-notice.ts'
 import { interruptedNoticeRows, UpdateNoticeComponent, updateNoticeRows } from '../update-notice.ts'
 import { updaterInternals } from './io.ts'
@@ -56,23 +55,8 @@ export interface UpdateCheckState {
   readonly lastError?: string
 }
 
-/** The user-tunable update settings (the `blue` settings namespace). */
-export interface UpdateSettings {
-  /** Whether the boot check runs at all; `false` is the offline switch. */
-  readonly updateCheck: boolean
-  /** The dist-tag the check follows (`rc` today; `latest` once a stable
-   * line exists). */
-  readonly updateChannel: string
-}
-
-/** The settings schema; defaults double as the composition base. */
-export const Config: z<UpdateSettings> = z.object({
-  updateCheck: z.boolean().default(true),
-  updateChannel: z.string().default('rc'),
-})
-
-/** The resolved defaults, used until a settings service layers overrides. */
-export const DEFAULT_SETTINGS: UpdateSettings = { updateCheck: true, updateChannel: 'rc' }
+/** The update-specific view of the shared Blue settings namespace. */
+export type UpdateSettings = Pick<BlueSettings, 'updateCheck' | 'updateChannel'>
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-update-check'
@@ -262,8 +246,7 @@ function mountInterruptedNotice(ctx: Context, content: InterruptedNoticeContent)
 }
 
 /**
- * Mount the boot check: wire the `blue` settings section (defaults until
- * a settings service layers user overrides) and fire the check body.
+ * Mount the boot check; `blue-settings` owns the single settings section.
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
@@ -271,14 +254,6 @@ export function apply(ctx: Context): void {
   ctx.effect(() => () => {
     unloaded = true
   })
-  let source: () => UpdateSettings = () => DEFAULT_SETTINGS
-  installSettingsSection(ctx, settingsNamespace('blue'), Config, DEFAULT_SETTINGS, {
-    setSource: next => {
-      source = next
-    },
-    onChange: () => {},
-  })
   /* v8 ignore next 1 -- the defensive catch; runUpdateCheck never rejects */
-  void runUpdateCheck(ctx, source, () => unloaded).catch(() => {})
+  void runUpdateCheck(ctx, () => currentBlueSettings(), () => unloaded).catch(() => {})
 }
-

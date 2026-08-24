@@ -20,6 +20,8 @@ Typing `/` triggers fuzzy autocomplete and discovery hints (see [Input editor](/
 | `/tools` | — | — | List the tools visible to the current session | `blue-tools-commands` |
 | `/skills` | — | — | List available skills (the `#` prompt invokes one) | `blue-skills-command` |
 | `/theme` | see [Theming](/en/guide/theme) | | List or switch themes | `blue-commands` (via theme-switch) |
+| `/update` | — | `[version]` | Safely upgrade Blue with preflight, smoke checks, and rollback | `blue-commands` (via update-command, D52) |
+| `/settings` | — | — | Open the settings panel and edit settings.yaml | `blue-commands` (via settings-command) |
 | `/init` | — | — | Analyze the codebase and write `AGENTS.md` | `blue-session-init` |
 | `/status` | — | — | Show the session header, model, and context status | `blue-commands` |
 | `/context` | — | — | Show token usage and the context window | `blue-usage` |
@@ -44,7 +46,8 @@ Typing `/` triggers fuzzy autocomplete and discovery hints (see [Input editor](/
 
 - **`/export [path]`** — exports the current session as Markdown; without a path it writes the default filename `blue-export-{id8}-{YYYYMMDD-HHMMSS}.md`.
 - **`/copy`** — the last assistant message's text goes to the clipboard: OSC 52 first (the escape sequence travels over stdout to the local terminal emulator, so **SSH sessions still reach the local clipboard**), with a fallback pipeline behind it.
-- **`/theme`** — full usage `usage: /theme [dark|light|auto|custom <path> [dark|light]]`, see [Theming](/en/guide/theme).
+- **`/theme`** — full usage `usage: /theme [dark|light|ocean|paper|auto|custom <path> [dark|light|ocean|paper]]`, see [Theming](/en/guide/theme).
+- **`/settings`** — opens the settings panel: use Up/Down to select and Enter/Space to cycle presets; the default theme applies live and persists as the startup default, while unregistered host namespaces are hidden.
 - **`/quit`** — before the agent attaches it shows `no active session` (see the [FAQ](/en/guide/faq)).
 
 Commands never enter a model turn — success/error text flashes on the editor hint line. Commands registered by downstream plugins through `ctx.commands` appear automatically in the completion menu and `/help`; aliases are not registered as commands — the input layer rewrites them to the canonical name before dispatch (the kimi `aliases` port).

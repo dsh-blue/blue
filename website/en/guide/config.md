@@ -8,7 +8,8 @@ Blue's configuration lives on two layers: **in-app slash commands** (the everyda
 | Default model / thinking effort | `/model`, `/effort`, `Alt+M` | the `agent-default-model:` section of `settings.yaml` |
 | New provider / custom gateway | `/provider add` | the `llm-pi-ai:` section of `settings.yaml` + the credentials file |
 | DeepSeek official endpoint tuning | — (files only) | the `llm-deepseek:` section of `settings.yaml` |
-| Theme | `/theme` | session-only, no file ([Theming](/en/guide/theme)) |
+| Theme | `/theme` (session-level); `/settings` or the file for the persisted default | the `blue:` section of `settings.yaml` ([Theming](/en/guide/theme)) |
+| Blue preferences (update check, fold defaults, …) | `/settings` | the `blue:` section of `settings.yaml` |
 | Plugin rows / composition | — | the profile's `cordis.patch.yml` ([Profiles & directories](/en/dsh/profiles)) |
 
 ## Minimal setup: one DEEPSEEK_API_KEY
@@ -134,6 +135,21 @@ Notes:
 - pi-ai routes take further fields: `modelOverrides:` (reshape one catalog model without replacing the list), `compat:` (reasoning-parameter format switches), `defaultContextWindow:` / `defaultMaxTokens:` (route-wide fallbacks), and more — the complete list lives in the [upstream config catalog](https://deepseek-harness.github.io/deepseek-harness/reference/).
 - List fields (like `models:`) **replace wholesale**, they never merge entry by entry.
 
+### blue: Blue's own settings section
+
+The `/settings` panel writes here (every key optional; defaults shown):
+
+```yaml
+blue:
+  updateCheck: true        # the boot update check (false is the offline switch)
+  updateChannel: rc        # the dist-tag the update check follows
+  theme: dark              # persisted default theme: dark | light | ocean | paper | auto (applied at startup)
+  collapseThinking: true   # thinking blocks start collapsed
+  collapseToolCalls: true  # tool output starts collapsed (ctrl+o toggles in the session)
+```
+
+In the panel `Enter`/`Space` steps a row's preset value and every change lands on disk; `blue.theme` applies live and becomes the startup default (`/theme` stays the session-level switch — see [Theming](/en/guide/theme)). The panel also lists common keys of host sections like `shell:`, `agent-loop:`, and `web-search-deepseek:`, and its last row opens the whole settings.yaml in `$EDITOR`.
+
 ### Verifying your edits
 
 ```sh
@@ -144,7 +160,7 @@ settings.yaml effects show up right in the UI: the `/model` panel lists each rou
 
 ## Themes
 
-`/theme dark|light|auto` switches instantly; `/theme custom <path>` mounts a custom JSON palette — hot switches never lose your draft. The full semantic token table and the custom file format are in [Theming](/en/guide/theme).
+`/theme dark|light|auto` switches instantly; `/theme custom <path>` mounts a custom JSON palette — hot switches never lose your draft. `/theme` is the session-level switch; the persisted default theme is set through the `/settings` panel or `blue.theme` in settings.yaml (applied at startup). The full semantic token table and the custom file format are in [Theming](/en/guide/theme).
 
 ## Other configuration surfaces
 

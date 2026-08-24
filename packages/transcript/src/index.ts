@@ -42,6 +42,8 @@ import {
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
 import type { BlueTurnRetraction } from '@dsh-blue/blue-app'
+// Carries the optional host `settings` service Context merge.
+import type {} from '@deepseek-ai/dsh-settings'
 import {
   AssistantMessageComponent,
   ErrorMessageComponent,
@@ -61,6 +63,7 @@ import { BlueDockModelService } from './dock-model.ts'
 import { BlueModelToolService } from './tool-model.ts'
 import { TranscriptModelService } from './transcript-model.ts'
 import { ThinkingComponent } from './thinking.ts'
+import { defaultExpansion, setDefaultExpansion } from './fold-defaults.ts'
 import type { BlueIntentComponent, TranscriptItem } from './types.ts'
 import { currentWindowTurns, windowEvictTurn } from './window.ts'
 
@@ -85,6 +88,7 @@ export {
   UserMessageComponent,
 } from './components.ts'
 export { ReadGroupComponent } from './read-group.ts'
+export { defaultExpansion, setDefaultExpansion } from './fold-defaults.ts'
 export { AgentGroupComponent, setAgentGroupTimers, type AgentGroupTimers } from './agent-group.ts'
 export { BlueIntentsError, BlueIntentsService } from './intents.ts'
 export { BlueStatusError, BlueStatusService, FOOTER_MAX_ROWS, FooterShellComponent } from './status.ts'
@@ -277,7 +281,7 @@ function mountSession(
     let component: BlueComponent
     if (item.kind === 'tool') {
       const intent = intents.resolve(item.view !== undefined && 'card' in item.view ? item.view.card : 'generic')
-      component = intent.create({ item, colors, components, expanded: toggle.expanded })
+      component = intent.create({ item, colors, components, expanded: toggle.expanded || defaultExpansion('tools') })
     } else {
       component = createPlainComponent(item, colors, components, images, requestRender)
     }
@@ -288,7 +292,7 @@ function mountSession(
       // ThinkingComponent creation too); a freshly mounted entry is always
       // in the newest turn, so the creation-time state below is the same
       // shortcut for it.
-      expandable.setExpanded?.(toggle.expanded)
+      expandable.setExpanded?.(toggle.expanded || (item.kind === 'thinking' && defaultExpansion('thinking')))
     }
     // The kimi one-column gutter (D29, S21): every transcript entry mounts
     // inset on both sides; the component itself never knows.
@@ -394,6 +398,22 @@ export function apply(ctx: Context): void {
   const colors = ctx.blueTheme.colors
   const toggle: CollapseToggle = { expanded: false, entries: [] }
 
+  const syncExpansionDefaults = (): void => {
+    const settings = ctx.get('settings')
+    if (settings === undefined) return
+    const descriptor = settings.describe().find(entry => String(entry.ns) === 'blue')
+    if (descriptor === undefined) return
+    const value = descriptor.value as Record<string, unknown>
+    setDefaultExpansion({
+      thinking: value.collapseThinking === false,
+      tools: value.collapseToolCalls === false,
+    })
+  }
+  syncExpansionDefaults()
+  ctx.on('settings/updated', ns => {
+    if (String(ns) === 'blue') syncExpansionDefaults()
+  })
+
   // Optional image wiring is renderer-owned. Both the legacy baseline and the
   // official model consumer receive the same byte loader; the projected model
   // itself carries only durable references.
@@ -487,7 +507,13 @@ export function apply(ctx: Context): void {
       for (let index = 0; index < entries.length; index += 1) {
         const expandable = entries[index]!.component as BlueIntentComponent
         if (typeof expandable.setExpanded === 'function') {
-          expandable.setExpanded(toggle.expanded && index >= cutoff)
+          const item = entries[index]!.item
+          const fallback = item.kind === 'thinking'
+            ? defaultExpansion('thinking')
+            : item.kind === 'tool'
+              ? defaultExpansion('tools')
+              : false
+          expandable.setExpanded((toggle.expanded || fallback) && index >= cutoff)
         }
       }
       transcriptModels.setExpanded(toggle.expanded)

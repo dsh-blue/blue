@@ -18,7 +18,8 @@
  * `./session-init.ts`; the config family (`/tools` over the live tool
  * catalog, `/preset` over the agent-preset roster) lives in
  * `./tools-commands.ts` and `./preset-commands.ts`; and `/skills` (the
- * `#` pipeline's read-only listing) lives in `./skills-command.ts`.
+ * `#` pipeline's read-only listing) lives in `./skills-command.ts`; the
+ * settings panel (`/settings`) lives in `./settings-command.ts`.
  * Registrations are
  * effect-bound, so unloading the fiber removes them. Only `commands` is
  * injected: the overlay commands read the Blue display services through
@@ -58,6 +59,7 @@ import { registerPresetCommands } from './preset-commands.ts'
 import { registerSessionCommands } from './session-commands.ts'
 import { registerExportCommands } from './session-export.ts'
 import { registerInitCommand } from './session-init.ts'
+import { registerSettingsCommand } from './settings-command.ts'
 import { registerSkillsCommand } from './skills-command.ts'
 import { MAX_LIST_VISIBLE, SelectListPanel, type SelectRow } from './select-list.ts'
 import { CURRENT_MARK } from './symbols.ts'
@@ -412,6 +414,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     const trace = registerTraceCommand(ctx)
     // `/update` is the crash-safe, preflighted profile swap.
     const update = registerUpdateCommand(ctx)
+    const settings = registerSettingsCommand(ctx)
     return () => {
       quit()
       quitAliases()
@@ -434,6 +437,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       mcpBrowser()
       trace()
       update()
+      settings()
     }
   })
 }

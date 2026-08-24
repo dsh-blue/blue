@@ -20,6 +20,8 @@
 | `/tools` | — | — | 列出当前会话可见的工具 | `blue-tools-commands` |
 | `/skills` | — | — | 列出可用技能（`#` 前缀调用） | `blue-skills-command` |
 | `/theme` | — | 见[主题](/guide/theme) | 列出或切换主题 | `blue-commands`（经 theme-switch） |
+| `/update` | — | `[version]` | 安全升级 Blue（预检/快照/装机冒烟/失败自动回滚） | `blue-commands`（经 update-command，D52） |
+| `/settings` | — | — | 打开设置面板并编辑 settings.yaml | `blue-commands`（经 settings-command） |
 | `/init` | — | — | 分析代码库并在项目根写 `AGENTS.md` | `blue-session-init` |
 | `/status` | — | — | 显示会话头、模型与上下文状态 | `blue-commands` |
 | `/context` | — | — | 显示 token 用量与上下文窗口 | `blue-usage` |
@@ -44,7 +46,8 @@
 
 - **`/export [path]`** —— 当前会话导出为 Markdown；不带路径时写入默认文件名 `blue-export-{id8}-{YYYYMMDD-HHMMSS}.md`。
 - **`/copy`** —— 最近一条助手消息的文本进剪贴板：优先 OSC 52 转义序列（经 stdout 到达本地终端模拟器，**SSH 远程会话也能复制到本地剪贴板**），失败再走回退管线。
-- **`/theme`** —— 完整用法 `usage: /theme [dark|light|auto|custom <path> [dark|light]]`，详见[主题](/guide/theme)。
+- **`/theme`** —— 完整用法 `usage: /theme [dark|light|ocean|paper|auto|custom <path> [dark|light|ocean|paper]]`，详见[主题](/guide/theme)。
+- **`/settings`** —— 打开设置面板：`↑↓` 选择、`Enter`/`Space` 步进预设值；默认主题实时生效并作为启动默认持久化，宿主未注册的命名空间会隐藏。
 - **`/quit`** —— agent attach 前输入显示 `no active session`（见 [FAQ](/guide/faq)）。
 
 命令不进入模型轮——成功/错误文本在编辑器 hint 行闪现。下游插件经 `ctx.commands` 注册的命令会自动出现在补全菜单与 `/help` 里；别名不在 `ctx.commands` 注册，由输入层在分发前重写为规范名（kimi `aliases` 移植）。
