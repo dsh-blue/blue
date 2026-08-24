@@ -62,7 +62,7 @@ dsh --profile blue
 
 安装完成后，启动与首次运行见[快速上手](https://dsh-blue.dev/guide/)；模型、Provider、主题与 API 密钥的配置见[配置教程](https://dsh-blue.dev/guide/config/)。
 
-`@rc` 后缀是必须的：预览版只打 `rc` dist-tag，裸 spec 解析 `latest`、什么都找不到。升级到更新的预览版：壳包用户重跑 `npm i -g @dsh-blue/blue-cli@rc`（重装即升级——壳按自身版本校准 profile）；dsh 直装用户在 Blue 中输入 `/update`（应用内安全升级，详见[FAQ](https://dsh-blue.dev/guide/faq/)）或重跑同一条 `plugin add`。
+预览期裸 spec 与 `@rc` 都解析到同一个已通过真实安装验证的版本；需要明确预览通道时可写 `@rc`。首个 stable 发布后，`latest` 才恢复指向稳定线。升级到更新的预览版：壳包用户重跑 `npm i -g @dsh-blue/blue-cli@rc`（重装即升级——壳按自身版本校准 profile）；dsh 直装用户在 Blue 中输入 `/update`（应用内安全升级，详见[FAQ](https://dsh-blue.dev/guide/faq/)）或重跑同一条 `plugin add`。
 
 ## 功能
 

@@ -6,11 +6,16 @@
     "access": "public"
   },
   "type": "module",
+  "exports": {
+    "./package.json": "./package.json"
+  },
   "bin": {
     "blue": "lib/bin.js"
   },
   "files": [
-    "lib/**/*"
+    "lib/bin.js",
+    "npm-shrinkwrap.json",
+    "README.zh.md"
   ],
   "license": "MIT",
   "repository": {

@@ -24,3 +24,7 @@ Two parts:
 2. Ahead of the insert, the web-app bundle's own ruling is ported row-for-row: twenty-three dsh-base agent-plane rows disabled (`tool-*`, plan-mode, the compaction trio, the delegation four, the workflow trio, `agent-instructions`; `tool-subagent-report` and `system-prompt` stay host-plane), which moves the agent plane behind the presets and gives `/preset` true replacement semantics.
 
 `bundle.spec.ts` pins the disable list to the web-app's (drift guard) and asserts every id addresses a real base row. The runtime dependency `@deepseek-ai/dsh-agent-presets` rides the bundle's `dependencies` so `dsh plugin add` installs it.
+
+## Distribution contract
+
+The bundle tarball contains runtime JS, declarations, and `cordis.patch.yml`. Its five Blue dependencies are `workspace:*` in the repository and exact versions after packing. The candidate release workflow installs this tarball in a scratch dsh profile before promoting any tag.

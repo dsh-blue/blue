@@ -84,3 +84,7 @@ Three events live on the core Events merge:
 - `'blue/editor-connected-above'` — the D25-pre-approved splice flag: pane-btw emits, blue-input mirrors it onto the editor.
 - `'blue/btw-command'` — editor key chain → pane close/scroll routing.
 - `'blue/editor-slot-swapped'` — blue-input emits on its replacement-panel stack's empty↔occupied transitions (nested panels re-emit nothing; unloading with one open releases the occupancy). pane-activity hides while occupied and pane-btw re-asserts its splice on return.
+
+## Distribution contract
+
+Published output contains runtime JS and declarations only; hashed chunks are allowed under `lib/` and are covered by the directory files rule and `pnpm check:pack`. Internal Blue dependencies use `workspace:*` so packed manifests resolve to the exact lockstep release.

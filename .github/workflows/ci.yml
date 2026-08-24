@@ -51,6 +51,7 @@ jobs:
       # exports ↔ built lib/ output ↔ the files tarball whitelist. Runs
       # before the test minute so the cheap check fails first.
       - run: pnpm check:lib
+      - run: pnpm check:pack
       - run: pnpm test:coverage
       # The real-process width smoke (D45): boots the built plugin tree
       # through the real dsh CLI at COLUMNS=40 against a mock LLM streaming

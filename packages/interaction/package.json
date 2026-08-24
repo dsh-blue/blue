@@ -40,7 +40,8 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/**/*"
+    "lib/*.js",
+    "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
   "repository": {
@@ -52,7 +53,7 @@
     "@deepseek-ai/schemastery": "3.18.1"
   },
   "peerDependencies": {
-    "@dsh-blue/blue-api": "workspace:^",
+    "@dsh-blue/blue-api": "workspace:*",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-agent-default-model": "^0.1.1-rc.2",
@@ -73,9 +74,9 @@
     "@deepseek-ai/dsh-tools": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-user-approval": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-user-questions": "^0.1.1-rc.2",
-    "@dsh-blue/blue-app": "workspace:^",
-    "@dsh-blue/blue-core": "workspace:^",
-    "@dsh-blue/blue-transcript": "workspace:^"
+    "@dsh-blue/blue-app": "workspace:*",
+    "@dsh-blue/blue-core": "workspace:*",
+    "@dsh-blue/blue-transcript": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-agent-presets": {
@@ -83,7 +84,7 @@
     }
   },
   "devDependencies": {
-    "@dsh-blue/blue-api": "workspace:^",
+    "@dsh-blue/blue-api": "workspace:*",
     "@deepseek-ai/cordis": "4.0.1",
     "@deepseek-ai/cordis-plugin-include": "1.0.6",
     "@deepseek-ai/cordis-plugin-loader": "1.0.2",
@@ -105,8 +106,8 @@
     "@deepseek-ai/dsh-tools": "0.1.1-rc.2",
     "@deepseek-ai/dsh-user-approval": "0.1.1-rc.2",
     "@deepseek-ai/dsh-user-questions": "0.1.1-rc.2",
-    "@dsh-blue/blue-app": "workspace:^",
-    "@dsh-blue/blue-core": "workspace:^",
-    "@dsh-blue/blue-transcript": "workspace:^"
+    "@dsh-blue/blue-app": "workspace:*",
+    "@dsh-blue/blue-core": "workspace:*",
+    "@dsh-blue/blue-transcript": "workspace:*"
   }
 }

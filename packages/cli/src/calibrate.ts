@@ -27,10 +27,11 @@ const PNPM_PROBE_TIMEOUT_MS = 30_000
 const DETAIL_LINES = 6
 
 /** The pnpm-missing verdict — D50④'s suggestion, hoisted for the pre-flight and the install classification to share. */
-const PNPM_MISSING_REASON = 'pnpm is missing on PATH — npm i -g pnpm (or: corepack enable pnpm)'
+const PNPM_MISSING_REASON = 'pnpm is missing on PATH — npm i -g pnpm@11 (or: corepack enable pnpm@11)'
+const PNPM_VERSION_REASON = 'pnpm 11 is required — npm i -g pnpm@11 (or: corepack enable pnpm@11)'
 
 /** How a failed calibration classifies — `main`'s manual-pointer key (D56). */
-export type CalibrationFailureKind = 'pnpm-missing' | 'timeout' | 'install' | 'verify'
+export type CalibrationFailureKind = 'pnpm-missing' | 'pnpm-version' | 'timeout' | 'install' | 'verify'
 
 /** What calibration decided. */
 export type CalibrationOutcome =
@@ -88,6 +89,13 @@ export function isPnpmMissing(probe: SpawnOutcome, platform: string): boolean {
   return probe.spawnError !== undefined && probe.spawnError.includes('ENOENT')
 }
 
+/** Return pnpm's major when its version output is parseable. */
+export function pnpmMajor(probe: SpawnOutcome): number | undefined {
+  const text = `${probe.stdout}\n${probe.stderr}`.trim()
+  const match = /(?:^|\n)\s*(\d+)\./.exec(text)
+  return match === null ? undefined : Number(match[1])
+}
+
 /** `$DSH_HOME` (default `~/.dsh`) — the updater family's resolution. */
 export function dshHome(): string {
   const home = cliInternals.env.DSH_HOME
@@ -130,6 +138,8 @@ export async function calibrate(options: CalibrateOptions): Promise<CalibrationO
   if (isPnpmMissing(probe, cliInternals.platform)) {
     return { action: 'failed', reason: PNPM_MISSING_REASON, kind: 'pnpm-missing' }
   }
+  const major = pnpmMajor(probe)
+  if (major !== undefined && major !== 11) return { action: 'failed', reason: PNPM_VERSION_REASON, kind: 'pnpm-version' }
   const runInstall = (extra: readonly string[]) => cliInternals.spawnOnce(cliInternals.execPath, [
     options.dshBinJs, 'plugin', '--profile', PROFILE, 'add', ...extra, `@dsh-blue/blue@${options.version}`,
   ], { timeoutMs: INSTALL_TIMEOUT_MS })

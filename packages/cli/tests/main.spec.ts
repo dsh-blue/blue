@@ -184,10 +184,22 @@ describe('main', () => {
     }
     await main(['task'])
     expect(captures.err).toEqual([
-      'blue: bootstrap failed — pnpm is missing on PATH — npm i -g pnpm (or: corepack enable pnpm)\n  manual: npm i -g pnpm (or: corepack enable pnpm), then re-run blue\n',
+      'blue: bootstrap failed — pnpm is missing on PATH — npm i -g pnpm@11 (or: corepack enable pnpm@11)\n  manual: npm i -g pnpm@11 (or: corepack enable pnpm@11), then re-run blue\n',
     ])
     expect(captures.exits).toEqual([1])
     expect(inherited).toBe(false)
+  })
+
+  it('routes an unsupported pnpm major to the pnpm 11 manual line', async () => {
+    fixtureLauncher()
+    cliInternals.spawnOnce = async (cmd, args) => args[args.length - 1] === '--version'
+      ? { code: 0, signal: null, stdout: '10.4.1\n', stderr: '', timedOut: false }
+      : OK
+    await main(['task'])
+    expect(captures.err).toEqual([
+      'blue: bootstrap failed — pnpm 11 is required — npm i -g pnpm@11 (or: corepack enable pnpm@11)\n  manual: npm i -g pnpm@11 (or: corepack enable pnpm@11), then re-run blue\n',
+    ])
+    expect(captures.exits).toEqual([1])
   })
 
   it('routes a timed-out bootstrap to the resume manual line', async () => {

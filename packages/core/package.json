@@ -48,7 +48,8 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/**/*"
+    "lib/*.js",
+    "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
   "repository": {
@@ -57,7 +58,7 @@
     "directory": "packages/core"
   },
   "dependencies": {
-    "@dsh-blue/blue-api": "workspace:^",
+    "@dsh-blue/blue-api": "workspace:*",
     "@deepseek-ai/schemastery": "3.18.1",
     "@earendil-works/pi-tui": "^0.84.2",
     "cli-highlight": "^2.1.11"

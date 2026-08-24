@@ -2,7 +2,7 @@
 
 ## 为什么裸 `npm install @dsh-blue/blue` 装不到？
 
-预览版只发布在 **`rc` dist-tag** 下（`latest` 留给稳定线），而裸安装解析 `latest`、拿到的版本不受控——请装 `blue` 壳包 `npm i -g @dsh-blue/blue-cli@rc`，或用 `dsh plugin --profile blue add @dsh-blue/blue@rc`，见[快速上手](/guide/)。当前预览版为 `v0.1.0-rc.6`；`0.1.0-rc.1` 因打包缺失文件不可用，装到请升级。贡献者的本地开发安装见开发手册的[贡献本仓库](/plugins/contributing)页。
+预览期每个通过真实 registry 安装验证的版本会同时推进 **`rc` 和 `latest`**，所以裸安装会落到同一个已验证版本；需要明确预览通道时可写 `@rc`。首个 stable 发布后，`latest` 才只指向稳定线。请装 `blue` 壳包 `npm i -g @dsh-blue/blue-cli@rc`，或用 `dsh plugin --profile blue add @dsh-blue/blue@rc`，见[快速上手](/guide/)。当前预览版为 `v0.1.0-rc.6`；`0.1.0-rc.1` 因打包缺失文件不可用，装到请升级。贡献者的本地开发安装见开发手册的[贡献本仓库](/plugins/contributing)页。
 
 ## `@rc` 装到的不是最新预览版？
 

@@ -10,7 +10,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
-import { calibrate, compareVersions, dshHome, isPnpmMissing, pnpmProbeCommand } from '../src/calibrate.ts'
+import { calibrate, compareVersions, dshHome, isPnpmMissing, pnpmMajor, pnpmProbeCommand } from '../src/calibrate.ts'
 import { cliInternals, type SpawnOutcome } from '../src/internals.ts'
 
 registerTempDirCleanup()
@@ -177,10 +177,25 @@ describe('calibrate', () => {
     }))
     await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
       action: 'failed',
-      reason: 'pnpm is missing on PATH — npm i -g pnpm (or: corepack enable pnpm)',
+      reason: 'pnpm is missing on PATH — npm i -g pnpm@11 (or: corepack enable pnpm@11)',
       kind: 'pnpm-missing',
       detail: ['dsh: pnpm not found on PATH — install pnpm to manage profile plugins'],
     })
+  })
+
+  it('rejects an installed pnpm major other than 11 before touching the profile', async () => {
+    fixtureHome({})
+    let installSpawned = false
+    cliInternals.spawnOnce = withProbe(async () => {
+      installSpawned = true
+      return OK
+    }, { ...OK, stdout: '10.4.1\n' })
+    await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
+      action: 'failed',
+      reason: 'pnpm 11 is required — npm i -g pnpm@11 (or: corepack enable pnpm@11)',
+      kind: 'pnpm-version',
+    })
+    expect(installSpawned).toBe(false)
   })
 
   it('blocks fast with the pnpm suggestion when the posix probe ENOENTs, never spawning dsh', async () => {
@@ -192,7 +207,7 @@ describe('calibrate', () => {
     }, PROBE_ENOENT)
     await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
       action: 'failed',
-      reason: 'pnpm is missing on PATH — npm i -g pnpm (or: corepack enable pnpm)',
+      reason: 'pnpm is missing on PATH — npm i -g pnpm@11 (or: corepack enable pnpm@11)',
       kind: 'pnpm-missing',
     })
     expect(installSpawned).toBe(false)
@@ -210,7 +225,7 @@ describe('calibrate', () => {
     }
     await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
       action: 'failed',
-      reason: 'pnpm is missing on PATH — npm i -g pnpm (or: corepack enable pnpm)',
+      reason: 'pnpm is missing on PATH — npm i -g pnpm@11 (or: corepack enable pnpm@11)',
       kind: 'pnpm-missing',
     })
     expect(probes).toEqual([{ cmd: 'C:\\Windows\\system32\\cmd.exe', args: ['/d', '/c', 'pnpm', '--version'], opts: { timeoutMs: 30_000 } }])
@@ -222,7 +237,7 @@ describe('calibrate', () => {
     cliInternals.spawnOnce = async () => ({ code: 127, signal: null, stdout: '', stderr: 'pnpm: not found\n', timedOut: false })
     await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
       action: 'failed',
-      reason: 'pnpm is missing on PATH — npm i -g pnpm (or: corepack enable pnpm)',
+      reason: 'pnpm is missing on PATH — npm i -g pnpm@11 (or: corepack enable pnpm@11)',
       kind: 'pnpm-missing',
     })
   })
@@ -256,7 +271,7 @@ describe('calibrate', () => {
     }))
     await expect(calibrate({ version: PIN, dshBinJs: '/nested/dsh/lib/bin.js' })).resolves.toEqual({
       action: 'failed',
-      reason: 'pnpm is missing on PATH — npm i -g pnpm (or: corepack enable pnpm)',
+      reason: 'pnpm is missing on PATH — npm i -g pnpm@11 (or: corepack enable pnpm@11)',
       kind: 'pnpm-missing',
       detail: ['dsh: pnpm failed in profile directory C:\\Users\\x\\.dsh\\profiles\\blue'],
     })
@@ -383,6 +398,14 @@ describe('isPnpmMissing', () => {
     expect(isPnpmMissing({ ...OK, code: null, spawnError: 'Error: spawn pnpm EACCES' }, 'linux')).toBe(false)
     expect(isPnpmMissing(OK, 'linux')).toBe(false)
     expect(isPnpmMissing({ ...OK, code: 1 }, 'linux')).toBe(false)
+  })
+})
+
+describe('pnpmMajor', () => {
+  it('reads a version from stdout and ignores unparseable output', () => {
+    expect(pnpmMajor({ ...OK, stdout: '11.7.0\n' })).toBe(11)
+    expect(pnpmMajor({ ...OK, stderr: '10.4.1\n' })).toBe(10)
+    expect(pnpmMajor(OK)).toBeUndefined()
   })
 })
 

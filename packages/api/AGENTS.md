@@ -13,3 +13,7 @@ session references remain implementation or experimental surfaces.
 scoped API. Registries and notification subscriptions are bound to the
 consumer's Cordis effect: consumer unload disposes every returned registration,
 while service unload also clears all remaining host-owned state.
+
+## Distribution contract
+
+The package publishes only `lib/*.js` and `lib/types/**/*.d.ts`. Runtime entries are derived from `exports` by `script/package-contract.mjs`; add a public entry by adding its manifest export and matching `src/<entry>.ts`, then run `pnpm check:pack`.

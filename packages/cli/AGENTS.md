@@ -49,3 +49,7 @@ the win32 branches are seam-tested, never machine-tested); the bin entry
 the run-as-binary line; per-file 100% coverage includes the default spawn
 shapes, which the io spec drives with real `node -e` children (the
 SIGTERM→SIGKILL ladder included).
+
+## Distribution contract
+
+The CLI publishes `lib/bin.js`, bilingual README files, and `npm-shrinkwrap.json`. The shrinkwrap is regenerated only by `pnpm release:lock-cli` in an isolated npm project and must contain registry records, never pnpm `link:` entries. `pnpm check:pack` verifies the executable mode, shebang, single runtime file, shrinkwrap root pin, and 30 KB launcher budget.

@@ -156,3 +156,7 @@ The user-side safe-update machinery lives entirely in this package — `src/upda
 - `update-notice.ts` — the two-row scroll-area notice (plain styling, no theme dependency — it survives `/theme` swaps without being a theme dependent; the banner is off-limits per S35).
 
 Lane rule applies to the updater itself: on a `link:`-installed profile (`blue-dev`, `blue-<tag>`), `/update` refuses by design — the link-pollution gate is itself a dogfood path. Real swaps are exercised against a scratch `DSH_HOME` npm profile (the D51 pack-verification apparatus).
+
+## Distribution contract
+
+Interaction's runtime entries and hashed chunks are packed from `lib/`; declarations live under `lib/types/`. Blue workspace dependencies use `workspace:*` and must become exact release versions in a packed manifest.

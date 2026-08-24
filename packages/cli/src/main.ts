@@ -37,7 +37,7 @@ type FailedOutcome = Extract<CalibrationOutcome, { action: 'failed' }>
  * @returns the one manual line.
  */
 function manualLine(outcome: FailedOutcome, version: string): string {
-  if (outcome.kind === 'pnpm-missing') return 'npm i -g pnpm (or: corepack enable pnpm), then re-run blue'
+  if (outcome.kind === 'pnpm-missing' || outcome.kind === 'pnpm-version') return 'npm i -g pnpm@11 (or: corepack enable pnpm@11), then re-run blue'
   if (outcome.kind === 'timeout') return 're-run blue — downloaded packages are cached and the install resumes'
   return `fix the cause and re-run blue (with a global dsh: dsh plugin --profile blue add @dsh-blue/blue@${version})`
 }

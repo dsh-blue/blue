@@ -73,8 +73,10 @@ pnpm run typecheck      # tsc -b tsconfig.json (project references)
 pnpm run lint           # oxlint packages
 pnpm run website:dev     # VitePress dev server at 127.0.0.1:5173 (base '/')
 pnpm run website:build   # VitePress build; DOCS_BASE=/blue/ matches the Pages base
-pnpm run website:preview # serves the built site (pass the same DOCS_BASE as the build)
+  pnpm run website:preview # serves the built site (pass the same DOCS_BASE as the build)
 ```
+
+Packaging gates: `pnpm check:lib` validates built exports, while `pnpm check:pack` creates and validates the exact seven publish tarballs (publint, ATTW, manifest/bin checks, protocol leakage, shrinkwrap, and size budgets). The release workflow publishes those tarballs to a candidate tag, runs registry install smoke across Linux/macOS/Windows, then promotes `rc` and `latest`; it never rebuilds a second artifact. `pnpm release:lock-cli` is the only supported way to refresh `packages/cli/npm-shrinkwrap.json`, and it resolves in an isolated npm project so pnpm workspace links cannot enter the published lock.
 
 - Build is two-stage: `tsc -b` owns type emission (`lib/types/*.d.ts` + intermediate JS), `tsdown` owns runtime bundling into the published `lib/` layout (`lib/index.js`, `lib/invariant.js`, `lib/startup.js`). Package deps and peer deps stay external.
 - **Subpath exports travel in threes.** Adding, renaming, or removing a package subpath moves three independent manifests together: the package's `package.json` `exports`, its `files` tarball whitelist, and the root `tsdown.config.ts` entry enumeration. Nothing ties them together — tsc emits types for subpaths tsdown never bundles, the specs run source-plane (`../src/*.ts` relative imports) so no test walks `lib/`, and a dev profile links the source checkout so the `files` list stays invisible until the first publish. `pnpm check:lib` (a CI gate right after `pnpm build`) verifies the triangle mechanically; each arm shipped once as the S30 incident (`./status-title` missing from the tsdown list boot-crashed every real install, and missing from `files` would have shipped a tarball without it). A plugin mounted through the package index (no subpath of its own) needs none of the three.

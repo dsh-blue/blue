@@ -31,7 +31,7 @@ This repository is the standalone home of Blue's five workspace packages under t
 ## Quick start
 
 > [!NOTE]
-> `0.1.0-rc.6` is the preview release, published under the **`rc` dist-tag** — `latest` stays reserved for the stable line, so install specs carry the `@rc` suffix.
+> `0.1.0-rc.6` is the preview release. Each verified preview advances both the **`rc`** and **`latest`** tags; use `@rc` when you want to state the preview channel explicitly. After the first stable release, `latest` returns to the stable line.
 
 Prerequisites: Node `^22.19 || >=24` and pnpm 11 (both install paths; the host's `plugin` command forwards to pnpm — if it is missing, the first `blue` run says exactly how to install it: `npm i -g pnpm` or `corepack enable pnpm`). Install the shell with **npm, not pnpm** — pnpm's strict global layout does not link the nested dsh host's dependencies, and boot fails with `ERR_MODULE_NOT_FOUND`. A global `dsh` CLI is only needed on the direct-dsh path — the shell ships its own pinned host.
 
@@ -56,7 +56,7 @@ dsh --profile blue
 
 After installing, see the [quickstart](https://dsh-blue.dev/en/guide/) for launching and a first run; models, providers, themes, and API keys are covered in the [configuration guide](https://dsh-blue.dev/en/guide/config/).
 
-The `@rc` suffix is required: preview releases only carry the `rc` dist-tag, so a bare spec — which resolves `latest` — finds nothing. To upgrade to a newer preview, shell users re-run `npm i -g @dsh-blue/blue-cli@rc` (reinstalling is the upgrade — the shell calibrates the profile to its own version); direct-dsh users type `/update` inside Blue (the in-app safe upgrade; see the [FAQ](https://dsh-blue.dev/en/guide/faq/)) or run the same `plugin add` again.
+During preview, a bare spec and `@rc` resolve to the same verified version. To upgrade to a newer preview, shell users re-run `npm i -g @dsh-blue/blue-cli@rc` (reinstalling is the upgrade — the shell calibrates the profile to its own version); direct-dsh users type `/update` inside Blue (the in-app safe upgrade; see the [FAQ](https://dsh-blue.dev/en/guide/faq/)) or run the same `plugin add` again.
 
 ## Features
 

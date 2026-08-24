@@ -21,3 +21,7 @@ The shared setup carries the preset mount: when `ctx.agentPresets` is composed (
 ## Exit epitaph (D47)
 
 `src/exit-epitaph.ts` prints the farewell after teardown — `blue · session saved · resume with:` plus the bare `dsh --profile <name> --resume <id>` command on its own line. The driver's dispose effect arms it (`blue · session saved` only when the live session has events; the session object survives the fiber unload), and the `process 'exit'` hook flushes — the one point strictly after the screen restore and the persistence flush on every deliberate exit path (`/quit`, double Ctrl-C, startup failures, fail-loud), because the Cordis LIFO dispose order unloads blue-app before blue-core's stop effect and the base persistence rows after both. The armed line is a module-level single slot (latest arm wins, HMR-safe); the profile comes from a `process.argv` `--profile` scan defaulting to `blue`; `kill -9`/bare signals never fire it.
+
+## Distribution contract
+
+The `.`/`./startup`/`./invariant` entries are built directly from their source files and published with their declaration counterparts. Keep the manifest exports and source entry names aligned; `pnpm check:pack` is the release gate.

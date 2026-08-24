@@ -16,11 +16,9 @@
 // Run after `pnpm build` (CI does, right between build and the test run;
 // locally a missing lib/ is an error, never a silent pass). Exits 1 with
 // one line per violation.
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+import { existsSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+import { PACKAGE_DIRS, ROOT as root, readManifest } from './package-contract.mjs'
 
 /**
  * Every workspace package under packages/ carrying an exports map — the
@@ -28,21 +26,11 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
  * naturally, and future packages join the check without an edit here).
  * @returns the package directory, manifest name, and parsed manifest.
  */
-function packagesWithExports() {
-  const found = []
-  const visit = dir => {
-    for (const entry of readdirSync(dir)) {
-      if (entry === 'node_modules') continue
-      const full = join(dir, entry)
-      if (!statSync(full).isDirectory()) continue
-      const manifestPath = join(full, 'package.json')
-      if (!existsSync(manifestPath)) continue
-      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-      if (manifest.exports !== undefined) found.push({ dir: full, name: manifest.name, manifest })
-    }
-  }
-  visit(join(root, 'packages'))
-  return found
+function publishablePackages() {
+  return PACKAGE_DIRS.map(relativeDir => {
+    const manifest = readManifest(relativeDir)
+    return { dir: join(root, relativeDir), name: manifest.name, manifest }
+  })
 }
 
 /**
@@ -94,7 +82,7 @@ function filesEntryMatches(entry, rel) {
   return new RegExp(`^${pattern}$`).test(rel)
 }
 
-for (const pkg of packagesWithExports()) {
+for (const pkg of publishablePackages()) {
   if (!existsSync(join(pkg.dir, 'lib'))) {
     problems.push(`${pkg.name}: no lib/ — run pnpm build before this check`)
     continue
@@ -104,6 +92,9 @@ for (const pkg of packagesWithExports()) {
   // The entry point behind "main" is a lib claim like any export.
   const claims = [...exportTargets(pkg.manifest.exports)]
   if (typeof pkg.manifest.main === 'string') claims.push(['(main)', pkg.manifest.main])
+  if (typeof pkg.manifest.types === 'string') claims.push(['(types)', pkg.manifest.types])
+  const bins = typeof pkg.manifest.bin === 'string' ? { [pkg.name]: pkg.manifest.bin } : pkg.manifest.bin ?? {}
+  for (const [name, target] of Object.entries(bins)) claims.push([`(bin:${name})`, target])
 
   for (const [subpath, target] of claims) {
     const rel = target.replace(/^\.\//, '')

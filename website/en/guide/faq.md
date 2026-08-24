@@ -2,7 +2,7 @@
 
 ## Why does a bare `npm install @dsh-blue/blue` find nothing?
 
-Preview releases are published only under the **`rc` dist-tag** (`latest` stays reserved for the stable line), and a bare install resolves `latest` — an uncontrolled version — install the `blue` shell with `npm i -g @dsh-blue/blue-cli@rc`, or use `dsh plugin --profile blue add @dsh-blue/blue@rc`, see [Quickstart](/en/guide/). The current preview is `v0.1.0-rc.6`; `0.1.0-rc.1` shipped broken tarballs (missing files) — if it is installed, upgrade. The contributor development install lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
+During preview, every release that passes a real registry-install check advances both **`rc` and `latest`**, so a bare install resolves to the same verified version. Use `@rc` to state the preview channel explicitly; after the first stable release, `latest` points only to stable. Install the `blue` shell with `npm i -g @dsh-blue/blue-cli@rc`, or use `dsh plugin --profile blue add @dsh-blue/blue@rc`, see [Quickstart](/en/guide/). The current preview is `v0.1.0-rc.6`; `0.1.0-rc.1` shipped broken tarballs (missing files) — if it is installed, upgrade. The contributor development install lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
 
 ## `@rc` does not resolve the newest preview?
 
