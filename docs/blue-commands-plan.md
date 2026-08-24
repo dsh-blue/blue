@@ -92,7 +92,7 @@ p1-design §4.3 是本文档的前身（MVP 后命令面调研）。本次逐符
 | `/help` (`h`,`?`) | ✅ | — | ✅ | ✅ | ✅ 已发货（HelpOverlay 双列） |
 | `/hotkeys` | — | ✅ | — | — | 🚫 不做（用户裁决 2026-08-21：低价值，/help 已覆盖键位面） |
 | `/keybindings` / `/keymap` | — | — | ✅ | ✅ | 🚫 /help 已覆盖查看；编辑面不做 |
-| `/changelog` | — | ✅ | — | — | 🚫 banner what's-new 已承担（面板形式 ⚠️ 顺延） |
+| `/changelog` | — | ✅ | — | — | ✅ 已发货（面板形式：`InfoPanel` 逐版本分节 + `· current` 徽章；内容内嵌 `changelog-content.ts`，drift spec 对齐 docs/release-notes；banner what's-new 已随 S35 退役） |
 | `/whereami` | — | — | ✅ | — | 🚫 = /status 子集 |
 | `/recap` | — | — | ✅ | — | 🚫 会话摘要无上游 |
 
@@ -333,7 +333,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 
 ### 4.4 🚫 明确不做命令（互链 §6）
 
-见 §6 全表。要点：产品特定（/llama /swarm /web /share /dance /radio /mobile /desktop /powerup /passes /autofix-pr /batch）、无上游能力（/login /logout /goal /cd /vim /memory /trust /scoped-models /tree /branch /clone /session /cost /fast /approve /raw /personality /mute /memories）、既有面覆盖（/plugins /apps /hooks = 组合层；/hotkeys → /help；/changelog → banner；/git → `!` shell；/export-debug-zip → /debug；/keybindings → /help 查看）、评审/诊断族留缝（/security-review /code-review /doctor 仅做 /init 一个罐头提示）。
+见 §6 全表。要点：产品特定（/llama /swarm /web /share /dance /radio /mobile /desktop /powerup /passes /autofix-pr /batch）、无上游能力（/login /logout /goal /cd /vim /memory /trust /scoped-models /tree /branch /clone /session /cost /fast /approve /raw /personality /mute /memories）、既有面覆盖（/plugins /apps /hooks = 组合层；/hotkeys → /help；/git → `!` shell；/export-debug-zip → /debug；/keybindings → /help 查看）、评审/诊断族留缝（/security-review /code-review /doctor 仅做 /init 一个罐头提示）。
 
 ## 5. 分期实施（S23-S29；S27 于 2026-08-21 两度砍剩——首砍 S27'：/hotkeys 🚫、/diff 发版后、注入显隐定名 /injections；再砍 /injections 🚫（用户裁决维持 D28 默认隐藏），S27' 终版仅 /init /clear，✅ 已落地 2026-08-21）
 
@@ -378,7 +378,6 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 | `/session` | pi | /status + /sessions 覆盖 |
 | `/scoped-models` | pi | 目录级模型无概念（agent 级 selection 已有，不做目录维度） |
 | `/trust` | pi | 信任文件夹无 harness 概念 |
-| `/changelog` | pi | banner-content 的 what's-new 已承担；面板形式可选（⚠️ 顺延） |
 | `/cd` | CC | 会话 cwd 创建时钉死，无切换原语 |
 | `/cost` | CC | 无 usage/cost 服务；定价表 Blue 侧维护不值 |
 | `/vim` `/keymap` `/keybindings` | CC/Codex | vim 需编辑器 provider 实现（P3 缝槽，rc.7 无）；keymap 编辑面不做（/help 已覆盖查看） |

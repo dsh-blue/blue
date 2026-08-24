@@ -1,8 +1,9 @@
 /**
  * Unit tests for the session-info family: the pure section builders
- * (`/status`, `/context`, the shared context section, `/version`'s notice),
- * and the three commands over the real command runtime — panel mount,
- * close, and the no-session / no-display guards.
+ * (`/status`, `/context`, the shared context section, `/version`'s notice,
+ * `/changelog`'s release-notes sections), and the commands over the real
+ * command runtime — panel mount, close, and the no-session / no-display
+ * guards.
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -13,7 +14,9 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import * as commandsPlugin from '../src/commands-plugin.ts'
 import type { InfoPanel } from '../src/info-panel.ts'
 import { clearSharedEditor } from '../src/editor-instance.ts'
+import { CHANGELOG_ENTRIES } from '../src/changelog-content.ts'
 import {
+  buildChangelogSections,
   buildCompositionSection,
   buildContextSection,
   buildStatusSections,
@@ -50,6 +53,37 @@ describe('buildVersionSections', () => {
       { label: 'blue', segments: [{ text: `v${BLUE_VERSION}` }] },
       { label: 'harness', segments: [{ text: '0.1.1-rc.2' }] },
     ])
+  })
+})
+
+describe('buildChangelogSections', () => {
+  it('badges the running release and wraps the bullets', () => {
+    const long = 'word '.repeat(30).trim()
+    const sections = buildChangelogSections([
+      { version: BLUE_VERSION, summary: 'current summary', highlights: [long], knownIssues: ['one issue'] },
+      { version: '0.0.1', summary: 'old summary', highlights: ['old highlight'], knownIssues: [] },
+    ])
+    expect(sections.map(section => section.heading)).toEqual([`v${BLUE_VERSION} · current`, 'v0.0.1'])
+    const current = sections[0]!.rows
+    expect(current[0]).toEqual({ label: '', segments: [{ text: 'current summary', style: 'muted' }] })
+    expect(current.some(row => row.label === 'Highlights')).toBe(true)
+    expect(current.some(row => row.label === 'Known issues')).toBe(true)
+    const bullets = current.filter(row => row.label === '' && row.segments[0]?.style === 'textMuted')
+    expect(bullets.length).toBeGreaterThan(1)
+    expect(bullets[0]!.segments[0]!.text.startsWith('• ')).toBe(true)
+    expect(bullets[1]!.segments[0]!.text.startsWith('  ')).toBe(true)
+    const issues = current.filter(row => row.segments[0]?.style === 'warning')
+    expect(issues[0]!.segments[0]!.text).toBe('• one issue')
+    // A release without known issues omits the sub-label entirely.
+    const old = sections[1]!.rows
+    expect(old.some(row => row.label === 'Known issues')).toBe(false)
+  })
+
+  it('carries the shipped entries', () => {
+    const sections = buildChangelogSections(CHANGELOG_ENTRIES)
+    expect(sections.map(section => section.heading)).toEqual(
+      CHANGELOG_ENTRIES.map(entry => `v${entry.version}${entry.version === BLUE_VERSION ? ' · current' : ''}`),
+    )
   })
 })
 
@@ -309,12 +343,13 @@ async function run(ctx: Context, agent: Agent, line: string) {
 }
 
 describe('registerSessionCommands', () => {
-  it('registers the three commands on the runtime', async () => {
+  it('registers the four commands on the runtime', async () => {
     const { ctx, agent } = await mount()
     const names = ctx.commands.list().map(command => command.name)
     expect(names).toContain('status')
     expect(names).toContain('context')
     expect(names).toContain('version')
+    expect(names).toContain('changelog')
     await run(ctx, agent, '/version')
   })
 
@@ -458,6 +493,25 @@ describe('registerSessionCommands', () => {
     expect(rows.some(row => row.includes('harness'))).toBe(true)
   })
 
+  it('opens the /changelog panel over the release notes and closes on q', async () => {
+    const { ctx, screen, agent } = await mount({ attach: false })
+    const result = await run(ctx, agent, '/changelog')
+    expect(result).toEqual({ kind: 'success' })
+    const overlay = screen.overlays.at(-1)!
+    const panel = overlay.component as InfoPanel
+    const rows = plain(panel.render(120))
+    expect(rows.some(row => row.includes('changelog'))).toBe(true)
+    expect(rows.some(row => row.includes(`v${CHANGELOG_ENTRIES[0]!.version}`))).toBe(true)
+    expect(rows.some(row => row.includes(CHANGELOG_ENTRIES[0]!.summary.slice(0, 30)))).toBe(true)
+    // The bullet rows wrap long lines; the first note's highlights overflow
+    // the window, so page down to reach the known-issues styling.
+    panel.handleInput('\x1b[6~')
+    const paged = panel.render(120).map(row => row.replace(/\x1b\[[0-9;]*m/g, ''))
+    expect(paged.some(row => row.includes('Known issues'))).toBe(true)
+    overlay.component.handleInput?.('q')
+    expect(overlay.hidden).toBe(true)
+  })
+
   it('guards /status and /usage with an error when no session is live', async () => {
     const { ctx, agent } = await mount({ attach: false })
     const status = await run(ctx, agent, '/status')
@@ -477,7 +531,7 @@ describe('registerSessionCommands', () => {
     expect(emptyVersion).toEqual({ kind: 'success' })
   })
 
-  it('guards /status, /context, and /version when the display services are missing', async () => {
+  it('guards /status, /context, /version, and /changelog when the display services are missing', async () => {
     const { ctx, agent } = await mount({ display: false })
     const status = await run(ctx, agent, '/status')
     expect(status).toEqual({ kind: 'error', text: 'status panel is unavailable: the Blue screen is not mounted' })
@@ -485,6 +539,8 @@ describe('registerSessionCommands', () => {
     expect(usage).toEqual({ kind: 'error', text: 'context panel is unavailable: the Blue screen is not mounted' })
     const version = await run(ctx, agent, '/version')
     expect(version).toEqual({ kind: 'error', text: 'version panel is unavailable: the Blue screen is not mounted' })
+    const changelog = await run(ctx, agent, '/changelog')
+    expect(changelog).toEqual({ kind: 'error', text: 'changelog panel is unavailable: the Blue screen is not mounted' })
   })
 
   it('unregisters with the plugin fiber', async () => {

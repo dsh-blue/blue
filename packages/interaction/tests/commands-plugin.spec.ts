@@ -472,24 +472,25 @@ describe('blue-commands plugin', () => {
     expect(rows[0]).toBe('^' + '─'.repeat(80) + '^')
     expect(rows[1]).toBe('^  help^ _· Esc / Enter / q to cancel · ↑↓ scroll_')
     expect(rows[3]).toBe('  #Commands#')
-    // The runtime lists commands alphabetically (`/context` leads since
-    // the S25 rename); labels padEnd inside the primary span with the
+    // The runtime lists commands alphabetically (`/changelog` leads);
+    // labels padEnd inside the primary span with the
     // description muted behind two spaces. The longest label is the
-    // aliased `/effort (/thinking)` (18 columns), which widens the whole
+    // aliased `/effort (/thinking)` (19 columns), which widens the whole
     // column.
-    expect(rows[4]).toBe('    ^/context           ^  ~Show token usage and the context window~')
+    expect(rows[4]).toBe('    ^/changelog         ^  ~Show the release changelog (what\'s new)~')
+    expect(rows.some(row => row.includes('^/context           ^  ~Show token usage and the context window~'))).toBe(true)
     expect(rows.some(row => row.includes('^/effort (/thinking)^  ~Switch the thinking effort of the current model~'))).toBe(true)
     expect(rows.some(row => row.includes('^/quit (/q, /exit)  ^  ~Exit Blue~'))).toBe(true)
-    // 39 rows since D52 added /update to the command list (38 at S34,
-    // 37 at S31, 36 at S30, 34 at S28).
-    expect(rows.some(row => row.includes('_ showing 1-16 of 39_'))).toBe(true)
+    // 40 rows since /changelog joined the command list (39 at D52, 38 at
+    // S34, 37 at S31, 36 at S30, 34 at S28).
+    expect(rows.some(row => row.includes('_ showing 1-16 of 40_'))).toBe(true)
     // Scrolling down reaches the Keys section with the two-column layout.
-    for (let i = 0; i < 10; i += 1) overlay(screen).handleInput(KEY.down)
+    for (let i = 0; i < 11; i += 1) overlay(screen).handleInput(KEY.down)
     const scrolled = screen.overlays[0]?.component.render(80) ?? []
     expect(scrolled.some(row => row.includes('  #Keys#'))).toBe(true)
     // Key labels padEnd to the longest label — `backspace` (9) since S13.
     expect(scrolled.some(row => row.includes('?enter    ?  ~Submit input / confirm selection~'))).toBe(true)
-    expect(scrolled.some(row => row.includes('_ showing 11-26 of 39_'))).toBe(true)
+    expect(scrolled.some(row => row.includes('_ showing 12-27 of 40_'))).toBe(true)
     screen.overlays[0]?.component.invalidate()
     overlay(screen).handleInput(KEY.escape)
     expect(screen.overlays[0]?.hidden).toBe(true)
@@ -501,9 +502,9 @@ describe('blue-commands plugin', () => {
     const unregister = keymap?.register([{ id: 'spec.custom', keys: 'f9' }])
     await ctx.commands.execute(agent, '/help', [], signal())
     // The f9 row is the last key binding, beyond the first window; extra
-    // downs clamp at the scroll floor (24 clears the D52-extended list:
-    // 39 rows minus the 16-row window plus one).
-    for (let i = 0; i < 24; i += 1) overlay(screen).handleInput(KEY.down)
+    // downs clamp at the scroll floor (25 clears the list: 41 rows with the
+    // extra f9 binding minus the 16-row window).
+    for (let i = 0; i < 25; i += 1) overlay(screen).handleInput(KEY.down)
     const rows = screen.overlays[0]?.component.render(80) ?? []
     expect(rows.some(row => row.includes('f9') && row.includes('~spec.custom~'))).toBe(true)
     unregister?.()
