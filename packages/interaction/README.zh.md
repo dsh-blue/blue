@@ -30,6 +30,12 @@ Blue 终端 UI 交互层，构建于 [`dsh-blue-core`](../core/README.md) 之上
 
 ## 共享面板
 
+- **`/trace`（`src/trace-command.ts`、`src/trace-panel.ts`）** —— 基于官方
+  `ctx.sessionQuery` 的只读执行轨迹面板。首次使用 `readSession()` 和上游
+  事件记录投影构建时间线，选中条目后按需读取原始详情；按 `c` 复制当前条目，
+  按 `a` 复制完整轨迹。`/trace copy <seq>` 与 `/trace copy all` 复用现有
+  OSC52/原生剪贴板管线。
+
 - **`SelectListPanel`（`src/select-list.ts`，S24b）** —— 所有单选拾取面共享的列表面板：`framePanel` 带框 + 标题提示，↑↓ 环绕于居中 8 行窗口（`windowedRange`/`counterRow`/`cycle`/`oneLine` 为共享小件，`BlueSelect` 与 plan-review 面板同消费），光标行 `❯ ` 指针 + primary 标签，success 徽章，行预算内 muted 描述，`(n/m)` 滚动计数。行即 `SelectRow {value, label, description?, badge?, disabled?}`，`initialValue` 播种光标；`disabled` 行把 Enter 挡进 `onBlockedSelect`。/sessions、/provider 选择器、向导 choose 步与 /permission 选择器均是其消费者；`ModelPanel` 保持自有几何（tab 条 + 实时搜索的交织 chrome 非纯列表所能承载）。
 - **`InfoPanel`（`src/info-panel.ts`，S25）** —— `/status` 与 `/context` 挂载的只读双列信息面板（kimi usage/status 报告形态、Blue `/help` 版式）：分节的标签/值行——标签 muted padEnd 对齐，值由带样式的 segment 拼接（`InfoSegment {text, style?}` 直接相连，上下文条因此能在纯文本计数旁携带严重级颜色）——外层 `framePanel` chrome，`showing 1-N of M` 滚动窗与 Escape/Enter/`q` 关闭键。`src/session-commands.ts` 中的分节构造器是对读取事实的纯函数，共享的上下文窗分节渲染 `█░` 条（20 列）——kimi 阈值分色（50% 起 warn、85% 起 danger）——旁随向上取整的百分比与 1024 基的 `used / window` 计数。
 - **`/permission` 预设选择器（`src/permission-panel.ts`，S24b，D33）** —— 由 input 层裸 `/permission` 拦截打开；带参 `/permission <name>` 行原样走上游命令，选择器自身的提交也派发同一条写路径（`ctx.commands.execute`），因此每次真实切换都落 `command/run|done` 加 `permission/preset`/`sandbox/mode`/`approval/policy` knob 事件。面板经 `ctx.permissionPresets` 的结构接口探测读预设表（type-only 依赖；服务读按构造即 `permissions` 投影的 `currentValue`）——行带裸 base 表所缺的 knob 事实（`resolve()` 派生 `sandbox <mode> · approval <policy>`），当前预设带徽章并播种光标，派生态 `custom` 作为 display-only 行挡 Enter 并说明。`danger-full-access` 行必经 typed-`y` `FormPanel` 确认——栈式挂载于列表之上，Esc 回列表、错值留表单、`y` 关闭两层并派发。
