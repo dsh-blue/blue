@@ -94,6 +94,13 @@ if (mode === 'promote') {
   }
   for (const pkg of packages) {
     const candidate = npmView(pkg.name, 'dist-tags.candidate')
-    if (candidate === version) execFileSync('npm', ['dist-tag', 'rm', pkg.name, 'candidate'], { cwd: ROOT, stdio: 'inherit' })
+    if (candidate === version) {
+      try {
+        execFileSync('npm', ['dist-tag', 'rm', pkg.name, 'candidate'], { cwd: ROOT, stdio: 'inherit' })
+      } catch {
+        // npm may forbid deleting dist-tags; candidate is harmless after rc/latest converge.
+        console.warn(`${pkg.name}: candidate cleanup was refused; leaving it at ${version}`)
+      }
+    }
   }
 }
