@@ -1,7 +1,9 @@
 /**
  * `/update` (D52): the in-app safe upgrade. The flow is the ADR's whole
- * spine — busy guard, registry read (metadata, never dist-tag
- * resolution), the six pre-flight gates, a typed `y` confirm, then the
+ * spine — busy guard (plus a module-level in-flight guard against a
+ * second concurrent run), registry read (metadata, never dist-tag
+ * resolution) with progress notices in the editor hint line, the
+ * pre-flight gates, a typed `y` confirm, then the
  * swap executor behind a step panel (`check ✓ / snapshot ✓ / installing…
  * / verify ✓ / smoke: imports ✓ / smoke: boot…`) where Escape is ignored
  * while the install or smoke is in flight (closing mid-swap is the one
@@ -19,6 +21,7 @@ import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { BLUE_VERSION } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
 import { framePanel } from '@dsh-blue/blue-core/chrome'
+import { join } from 'node:path'
 import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
 import { FormPanel } from './form-panel.ts'
@@ -26,8 +29,9 @@ import { ACTION_CANCEL } from './keys.ts'
 import type { UpdateSettings } from './updater/check.ts'
 import { writeUpdateCheckState } from './updater/check.ts'
 import { updaterInternals } from './updater/io.ts'
-import { findDshBin, profileNameFromArgv, profileRoot, readProfileFacts } from './updater/profile.ts'
+import { backupDir, findDshBin, profileNameFromArgv, profileRoot, readProfileFacts } from './updater/profile.ts'
 import {
+  BUNDLE_PACKAGE,
   fetchPackument,
   publishedAt,
   releaseFacts,
@@ -250,6 +254,7 @@ async function runSwapPanel(
     readonly fromVersion: string
     readonly toVersion: string
     readonly packageNames: readonly string[]
+    readonly rollbackNames: readonly string[]
   },
 ): Promise<SwapOutcome> {
   const bootMarker = ctx.get('agentDefaultModel')?.currentSelection().model
@@ -266,11 +271,25 @@ async function runSwapPanel(
     restore()
     getSharedEditor()?.notice?.(panel.settledSummary())
   })
-  const outcome = await performSwap({
-    ...input,
-    ...(bootMarker !== undefined ? { bootMarker } : {}),
-    onProgress: progress => panel.applyProgress(progress),
-  })
+  // A throw out of the executor (ENOSPC mid-rename, a crashed spawn
+  // wrapper) must still settle the panel — an unsettled panel refuses to
+  // close and would strand the editor replacement forever.
+  let outcome: SwapOutcome
+  try {
+    outcome = await performSwap({
+      ...input,
+      ...(bootMarker !== undefined ? { bootMarker } : {}),
+      onProgress: progress => panel.applyProgress(progress),
+    })
+  } catch (error) {
+    outcome = {
+      kind: 'failed-no-rollback',
+      fromVersion: input.fromVersion,
+      toVersion: input.toVersion,
+      message: `the swap crashed: ${error instanceof Error ? error.message : String(error)}\nthe profile may be in a mixed state — the snapshot is at ${backupDir(input.root)}`,
+      logPath: join(backupDir(input.root), 'update.log'),
+    }
+  }
   panel.settle(outcome)
   return outcome
 }
@@ -327,6 +346,30 @@ export function registerUpdateCommand(ctx: Context): () => void {
   return dispose
 }
 
+/** Serializes concurrent `/update` runs — two swaps at once corrupt the profile. */
+let updateInFlight = false
+
+/**
+ * The `/update` handler entry: refuses a second concurrent run, then
+ * delegates to {@link runUpdateFlow}. The flag releases in a `finally`
+ * so a crashed swap cannot wedge the command for the session.
+ * @param ctx - plugin context.
+ * @param requested - the raw argument: empty (follow the channel) or an
+ * exact version.
+ * @returns the command outcome.
+ */
+async function runUpdateCommand(ctx: Context, requested: string): Promise<CommandResult> {
+  if (updateInFlight) {
+    return { kind: 'error', text: 'an update is already in progress' }
+  }
+  updateInFlight = true
+  try {
+    return await runUpdateFlow(ctx, requested)
+  } finally {
+    updateInFlight = false
+  }
+}
+
 /**
  * The `/update` handler body: guards, registry read, pre-flight, confirm,
  * swap. Every blocking verdict returns as an error result with its exact
@@ -336,7 +379,7 @@ export function registerUpdateCommand(ctx: Context): () => void {
  * exact version.
  * @returns the command outcome.
  */
-async function runUpdateCommand(ctx: Context, requested: string): Promise<CommandResult> {
+async function runUpdateFlow(ctx: Context, requested: string): Promise<CommandResult> {
   const current = ctx.get('blueSession')?.current
   if (current !== undefined && current !== null && current.status !== 'idle') {
     return { kind: 'error', text: 'the agent is running — wait for the current turn to finish before updating' }
@@ -345,9 +388,18 @@ async function runUpdateCommand(ctx: Context, requested: string): Promise<Comman
   if (display === undefined) {
     return { kind: 'error', text: 'update is unavailable: the Blue screen is not mounted' }
   }
-  const registry = await fetchPackument()
+  getSharedEditor()?.notice?.(`checking the registry for ${BUNDLE_PACKAGE} updates…`)
+  const registry = await fetchPackument({
+    onRetry: (attempt, total) =>
+      getSharedEditor()?.notice?.(`registry unreachable, retrying (${attempt}/${total})…`),
+  })
   if (!registry.ok) {
-    return { kind: 'error', text: `could not read the registry (${registry.reason === 'network' ? 'unreachable' : 'unparseable answer'}) — check the network or the npmrc mirror and retry` }
+    const detail = registry.reason === 'network'
+      ? 'unreachable — check the network or the npmrc mirror and retry'
+      : registry.reason === 'not-found'
+        ? 'the registry answers E404 for @dsh-blue/blue — check the npmrc registry/mirror configuration'
+        : 'unparseable answer — check the npmrc mirror and retry'
+    return { kind: 'error', text: `could not read the registry (${detail})` }
   }
   const packument = registry.packument
 
@@ -408,6 +460,16 @@ async function runUpdateCommand(ctx: Context, requested: string): Promise<Comman
   // The set-consistency gate has already refused a profile whose bundle
   // install is missing, so the lookup cannot miss here.
   const fromVersion = installedVersion!
+  // The rollback set is the from-release's own membership: the set GROWS
+  // across releases (blue-api joined at rc.3), so rolling an old profile
+  // back with the target set would request packages that never existed →
+  // ETARGET. When the old release's registry answer carries just the
+  // bundle itself, fall back to the installed set this profile actually
+  // carries.
+  const fromRelease = await releaseFacts(packument, fromVersion)
+  const rollbackNames = fromRelease.names.length > 1
+    ? fromRelease.names
+    : Object.keys(facts.installed).filter(name => facts.installed[name] !== undefined)
 
   const hostLine = hostOutput?.trim()
   const detailParts = [
@@ -420,7 +482,7 @@ async function runUpdateCommand(ctx: Context, requested: string): Promise<Comman
     return { kind: 'success', text: 'update cancelled' }
   }
 
-  const outcome = await runSwapPanel(ctx, display, { root, profile, dshBin, fromVersion, toVersion: target, packageNames })
+  const outcome = await runSwapPanel(ctx, display, { root, profile, dshBin, fromVersion, toVersion: target, packageNames, rollbackNames })
   if (outcome.kind === 'success') {
     // The boot check stops offering what this session just installed.
     writeUpdateCheckState({ lastCheckAt: updaterInternals.now(), lastNotifiedVersion: target })

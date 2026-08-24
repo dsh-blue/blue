@@ -7,8 +7,9 @@
  * half-updated tree is the Frankenstein state, and the two-layer smoke
  * exists because D51 proved a green pipeline can still ship a boot
  * crash: layer A imports every patch entry the profile's bundle names
- * (exactly the D51 failure class — missing hash-chunks, an absent
- * bridge dep), layer B boots the real CLI over pipes (the
+ * plus its declared dsh runtime dependencies (exactly the D51 failure
+ * class — missing hash-chunks, an absent bridge dep), layer B boots the
+ * real CLI over pipes (the
  * `smoke-happy.mjs` shape — marker, `/quit`, exit 0) with no pty, no
  * credentials, no model call.
  *
@@ -22,7 +23,7 @@ import { repairRecipe } from './preflight.ts'
 import { compareVersions, VERSION_FLOOR } from './version.ts'
 
 /** The install budget — 20 min; the calibration install's parity (D55), slow networks measured at 18 min for 455 packages. */
-const INSTALL_TIMEOUT_MS = 1_200_000
+export const INSTALL_TIMEOUT_MS = 1_200_000
 
 /** The import sweep's budget (module loading only). */
 const IMPORT_SMOKE_TIMEOUT_MS = 30_000
@@ -36,12 +37,12 @@ const BOOT_ALIVE_DEGRADED_MS = 15_000
 const POLL_MS = 250
 
 /**
- * The @dsh-blue package entries the profile's bundle patch names — every
- * `name:` row of the installed `cordis.patch.yml` that points at a Blue
- * package. This is the set whose missing files the D51 gate must catch.
- * The runtime dsh rows stay out: their peer dependencies come from the
- * HOST at boot, so a bare import would misjudge — the boot smoke owns
- * that plane.
+ * The package entries the import sweep covers (D52④): every `name:` row
+ * of the installed bundle's `cordis.patch.yml` — Blue packages and the
+ * inserted dsh runtime rows alike — PLUS the bundle manifest's declared
+ * `@deepseek-ai/*` runtime dependencies (they are real installed deps of
+ * the profile). This is the set whose missing files the D51 gate must
+ * catch.
  * @param root - the profile workspace root.
  * @returns the package specs to import, deduplicated.
  */
@@ -52,11 +53,36 @@ export function patchEntrySpecs(root: string): string[] {
     for (const match of patchText.matchAll(/name:\s*'([^']+)'/g)) {
       // The regex guarantees the group, so the non-null assertion is safe.
       const spec = match[1]!
-      if (!spec.startsWith('@dsh-blue/') || specs.includes(spec)) continue
+      if (specs.includes(spec)) continue
       specs.push(spec)
     }
   }
+  for (const dep of declaredRuntimeDeps(root)) {
+    if (!specs.includes(dep)) specs.push(dep)
+  }
   return specs
+}
+
+/**
+ * The bundle manifest's declared `@deepseek-ai/*` runtime dependencies —
+ * the pinned dsh packages the profile genuinely installs, so the sweep
+ * treats their absence as a real failure (undeclared `@deepseek-ai/`
+ * targets, provided by the host at boot, stay exempt).
+ * @param root - the profile workspace root.
+ * @returns the declared dependency names.
+ */
+export function declaredRuntimeDeps(root: string): string[] {
+  const text = updaterInternals.readTextFile(join(root, 'node_modules', '@dsh-blue', 'blue', 'package.json'))
+  if (text === undefined) return []
+  try {
+    const parsed: unknown = JSON.parse(text)
+    if (typeof parsed !== 'object' || parsed === null) return []
+    const deps = (parsed as Record<string, unknown>).dependencies
+    if (typeof deps !== 'object' || deps === null) return []
+    return Object.keys(deps as Record<string, unknown>).filter(name => name.startsWith('@deepseek-ai/'))
+  } catch {
+    return []
+  }
 }
 
 /** The steps the progress panel renders, in execution order. */
@@ -94,6 +120,15 @@ export interface SwapInput {
   readonly toVersion: string
   /** The target release's lockstep set (see `bundleSetNames`). */
   readonly packageNames: readonly string[]
+  /**
+   * The FROM release's lockstep set — the rollback reinstall must ask the
+   * registry for the old version's own members (the set GROWS across
+   * releases: blue-api joined at rc.3, so the target set at the
+   * from-version would request packages that never existed → ETARGET).
+   * Derived by the caller from `releaseFacts(packument, fromVersion)`;
+   * absent falls back to `packageNames` (the pre-hardening behavior).
+   */
+  readonly rollbackNames?: readonly string[]
   /**
    * The boot marker (the live default model string); absent degrades
    * the boot smoke to an alive-without-crash judgment.
@@ -144,11 +179,13 @@ export function classifyInstallFailure(logTail: string): string {
 }
 
 /** The import-sweep child script: resolve and import every spec. */
-function importSweepScript(specs: readonly string[]): string {
+export function importSweepScript(specs: readonly string[], declared: readonly string[]): string {
   return [
     "const { createRequire } = await import('node:module');",
     "const { realpathSync } = await import('node:fs');",
     "const { join } = await import('node:path');",
+    // Windows-safe: the ESM loader rejects a bare `C:\...` specifier.
+    "const { pathToFileURL } = await import('node:url');",
     // Resolution anchors on the BUNDLE's manifest, realpathed: pnpm's
     // isolated linker puts the sibling libraries beside the bundle in the
     // virtual store (invisible from the profile root), and createRequire
@@ -156,17 +193,20 @@ function importSweepScript(specs: readonly string[]): string {
     "const manifest = realpathSync(join(process.cwd(), 'node_modules', '@dsh-blue', 'blue', 'package.json'));",
     'const req = createRequire(manifest);',
     `const specs = ${JSON.stringify(specs)};`,
+    `const declared = ${JSON.stringify(declared)};`,
     'for (const spec of specs) {',
-    '  await import(req.resolve(spec)).catch(error => {',
-    // The host plane (@deepseek-ai peers like cordis) is provided by the
-    // running dsh at boot, not by the profile — a bare import misses it in
-    // hoisted layouts and that is not a packaging defect. Everything else
-    // — a @dsh-blue package, a hashed chunk file — is exactly the D51
-    // class this sweep exists to catch, and stays fatal.
+    '  await import(pathToFileURL(req.resolve(spec)).href).catch(error => {',
+    // A DECLARED dsh runtime dep is installed by the profile — its absence
+    // is a packaging defect and stays fatal. Only an UNDECLARED
+    // @deepseek-ai/ target (a peer the running dsh host provides at boot,
+    // like cordis) is exempt: a bare import misses those in hoisted
+    // layouts and that is not a packaging defect. Everything else — a
+    // @dsh-blue package, a hashed chunk file — is exactly the D51 class
+    // this sweep exists to catch, and stays fatal.
     "    const message = String(error?.message ?? '');",
     "    const missing = error?.code === 'ERR_MODULE_NOT_FOUND' || message.includes('Cannot find');",
     "    const target = /'([^']+)'/.exec(message)?.[1] ?? '';",
-    "    if (missing && target.startsWith('@deepseek-ai/')) return;",
+    "    if (missing && target.startsWith('@deepseek-ai/') && !declared.some(dep => target === dep || target.startsWith(dep + '/'))) return;",
     '    throw error;',
     '  });',
     '}',
@@ -185,7 +225,7 @@ function importSweepScript(specs: readonly string[]): string {
 export async function importSweepSmoke(root: string): Promise<boolean> {
   const outcome = await updaterInternals.spawnOnce(
     process.execPath,
-    ['--input-type=module', '-e', importSweepScript(patchEntrySpecs(root))],
+    ['--input-type=module', '-e', importSweepScript(patchEntrySpecs(root), declaredRuntimeDeps(root))],
     { cwd: root, timeoutMs: IMPORT_SMOKE_TIMEOUT_MS },
   )
   if (outcome.code === 0) return true
@@ -271,15 +311,21 @@ export async function bootSmoke(input: SwapInput): Promise<boolean> {
 
 /**
  * Perform the swap: snapshot, install the target as one exact-version
- * transaction, verify the set, run both smoke layers, and on any failure
- * restore the snapshot and reinstall the old full set by exact version
- * (never below the D51 floor — a user on rc.1 gets the manual repair
- * recipe instead of a rollback onto broken tarballs).
+ * transaction (a DOWNGRADE installs the target release's full set — a
+ * bundle-only spec would leave newer siblings behind, the D52 follow-up),
+ * verify the set, run both smoke layers, and on any failure restore the
+ * snapshot and reinstall the old full set by exact version (never below
+ * the D51 floor — a user on rc.1 gets the manual repair recipe instead of
+ * a rollback onto broken tarballs). A `pending.json` marker in the backup
+ * dir brackets the swap: written after the snapshot, removed when the
+ * swap settles (success or completed rollback); a process kill leaves it
+ * for the boot check's interrupted-update warning.
  * @param input - the swap parameters.
  * @returns the outcome for the panel and notices.
  */
 export async function performSwap(input: SwapInput): Promise<SwapOutcome> {
   const logPath = join(backupDir(input.root), 'update.log')
+  const pendingPath = join(backupDir(input.root), 'pending.json')
   logLine(input.root, `=== update ${input.fromVersion} -> ${input.toVersion} (${new Date(updaterInternals.now()).toISOString()}) ===`)
 
   progress(input, 'snapshot', 'start')
@@ -290,47 +336,56 @@ export async function performSwap(input: SwapInput): Promise<SwapOutcome> {
     files: [],
   })
   progress(input, 'snapshot', 'ok')
+  updaterInternals.writeTextFile(pendingPath, `${JSON.stringify({
+    from: input.fromVersion,
+    to: input.toVersion,
+    startedAt: updaterInternals.now(),
+  }, null, 2)}\n`)
 
   progress(input, 'install', 'start')
+  // A downgrade must pin every member of the target set: the bundle spec
+  // alone never pulls the newer siblings back down.
+  const installSpecs = compareVersions(input.toVersion, input.fromVersion) < 0
+    ? input.packageNames.map(name => `${name}@${input.toVersion}`)
+    : [`@dsh-blue/blue@${input.toVersion}`]
   const install = await updaterInternals.spawnOnce(
     input.dshBin,
-    ['plugin', '--profile', input.profile, 'add', `@dsh-blue/blue@${input.toVersion}`],
+    ['plugin', '--profile', input.profile, 'add', ...installSpecs],
     { cwd: input.root, timeoutMs: INSTALL_TIMEOUT_MS },
   )
-  logLine(input.root, `$ dsh plugin --profile ${input.profile} add @dsh-blue/blue@${input.toVersion}\n${install.stdout}${install.stderr}`)
+  logLine(input.root, `$ dsh plugin --profile ${input.profile} add ${installSpecs.join(' ')}\n${install.stdout}${install.stderr}`)
   if (install.code !== 0) {
     progress(input, 'install', 'fail')
     const reason = classifyInstallFailure(tail(`${install.stdout}${install.stderr}`))
     logLine(input.root, `install failed: ${reason}`)
-    return rollback(input, `install failed — ${reason}`, logPath)
+    return rollback(input, `install failed — ${reason}`, logPath, pendingPath)
   }
   progress(input, 'install', 'ok')
 
   progress(input, 'verify', 'start')
-  const facts = readProfileFacts(input.root)
-  const versions = new Set(input.packageNames.map(name => facts.installed[name]))
-  if (versions.size !== 1 || !versions.has(input.toVersion)) {
+  if (!setIsOneVersion(input.root, input.packageNames, input.toVersion)) {
     progress(input, 'verify', 'fail')
-    logLine(input.root, `post-install set check failed: ${JSON.stringify(facts.installed)}`)
-    return rollback(input, 'post-install set check failed — the tree is not one version', logPath)
+    logLine(input.root, `post-install set check failed: ${JSON.stringify(readProfileFacts(input.root).installed)}`)
+    return rollback(input, 'post-install set check failed — the tree is not one version', logPath, pendingPath)
   }
   progress(input, 'verify', 'ok')
 
   progress(input, 'smoke-imports', 'start')
   if (!await importSweepSmoke(input.root)) {
     progress(input, 'smoke-imports', 'fail')
-    return rollback(input, 'import smoke failed — a patch entry does not load (the D51 class)', logPath)
+    return rollback(input, 'import smoke failed — a patch entry does not load (the D51 class)', logPath, pendingPath)
   }
   progress(input, 'smoke-imports', 'ok')
 
   progress(input, 'smoke-boot', 'start')
   if (!await bootSmoke(input)) {
     progress(input, 'smoke-boot', 'fail')
-    return rollback(input, 'boot smoke failed — the updated tree does not boot cleanly', logPath)
+    return rollback(input, 'boot smoke failed — the updated tree does not boot cleanly', logPath, pendingPath)
   }
   progress(input, 'smoke-boot', 'ok')
 
   progress(input, 'done', 'ok')
+  updaterInternals.removeFile(pendingPath)
   logLine(input.root, `=== success: now at ${input.toVersion} (restart to apply) ===`)
   return {
     kind: 'success',
@@ -341,22 +396,30 @@ export async function performSwap(input: SwapInput): Promise<SwapOutcome> {
   }
 }
 
-/** The failure path: restore, reinstall the old set, re-smoke, report. */
-async function rollback(input: SwapInput, reason: string, logPath: string): Promise<SwapOutcome> {
+/** Whether the discovered install of `names` is exactly one version. */
+function setIsOneVersion(root: string, names: readonly string[], version: string): boolean {
+  const facts = readProfileFacts(root)
+  const versions = new Set(names.map(name => facts.installed[name]))
+  return versions.size === 1 && versions.has(version)
+}
+
+/** The failure path: restore, reinstall the old set, re-verify, re-smoke, report. */
+async function rollback(input: SwapInput, reason: string, logPath: string, pendingPath: string): Promise<SwapOutcome> {
+  const names = input.rollbackNames ?? input.packageNames
   if (compareVersions(input.fromVersion, VERSION_FLOOR) < 0) {
     logLine(input.root, `rollback refused: ${input.fromVersion} predates the D51 floor ${VERSION_FLOOR}`)
     return {
       kind: 'failed-no-rollback',
       fromVersion: input.fromVersion,
       toVersion: input.toVersion,
-      message: `${reason}; rollback refused (${input.fromVersion} predates ${VERSION_FLOOR}) — ${repairRecipe(input.packageNames, VERSION_FLOOR)}`,
+      message: `${reason}; rollback refused (${input.fromVersion} predates ${VERSION_FLOOR}) — ${repairRecipe(names, VERSION_FLOOR)}`,
       logPath,
     }
   }
   progress(input, 'rollback', 'start')
   logLine(input.root, `rolling back to ${input.fromVersion}: ${reason}`)
   restoreSnapshot(input.root)
-  const specs = input.packageNames.map(name => `${name}@${input.fromVersion}`)
+  const specs = names.map(name => `${name}@${input.fromVersion}`)
   const reinstall = await updaterInternals.spawnOnce(
     input.dshBin,
     ['plugin', '--profile', input.profile, 'add', ...specs],
@@ -369,7 +432,20 @@ async function rollback(input: SwapInput, reason: string, logPath: string): Prom
       kind: 'rollback-incomplete',
       fromVersion: input.fromVersion,
       toVersion: input.toVersion,
-      message: `${reason}; rollback reinstall failed — ${classifyInstallFailure(tail(`${reinstall.stdout}${reinstall.stderr}`))}; manual repair:\n${repairRecipe(input.packageNames, input.fromVersion)}`,
+      message: `${reason}; rollback reinstall failed — ${classifyInstallFailure(tail(`${reinstall.stdout}${reinstall.stderr}`))}; manual repair:\n${repairRecipe(names, input.fromVersion)}`,
+      logPath,
+    }
+  }
+  // The reinstall can land a mixed tree exactly like the forward install
+  // (the D52 follow-up class) — re-run the set check before the sweep.
+  if (!setIsOneVersion(input.root, names, input.fromVersion)) {
+    progress(input, 'rollback', 'fail')
+    logLine(input.root, `post-rollback set check failed: ${JSON.stringify(readProfileFacts(input.root).installed)}`)
+    return {
+      kind: 'rollback-incomplete',
+      fromVersion: input.fromVersion,
+      toVersion: input.toVersion,
+      message: `${reason}; rolled back but the tree is not one version — manual repair:\n${repairRecipe(names, input.fromVersion)}`,
       logPath,
     }
   }
@@ -379,11 +455,12 @@ async function rollback(input: SwapInput, reason: string, logPath: string): Prom
       kind: 'rollback-incomplete',
       fromVersion: input.fromVersion,
       toVersion: input.toVersion,
-      message: `${reason}; rolled back but the import smoke still fails — manual repair:\n${repairRecipe(input.packageNames, input.fromVersion)}`,
+      message: `${reason}; rolled back but the import smoke still fails — manual repair:\n${repairRecipe(names, input.fromVersion)}`,
       logPath,
     }
   }
   progress(input, 'rollback', 'ok')
+  updaterInternals.removeFile(pendingPath)
   logLine(input.root, `=== rolled back to ${input.fromVersion} ===`)
   return {
     kind: 'rolled-back',

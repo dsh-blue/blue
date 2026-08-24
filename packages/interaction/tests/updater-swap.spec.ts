@@ -7,7 +7,7 @@
  * under the default fs seams.
  */
 
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempTracked } from '../../core/tests/temp-dir.ts'
@@ -16,7 +16,10 @@ import { updaterInternals } from '../src/updater/io.ts'
 import {
   bootSmoke,
   classifyInstallFailure,
+  declaredRuntimeDeps,
+  importSweepScript,
   importSweepSmoke,
+  INSTALL_TIMEOUT_MS,
   patchEntrySpecs,
   performSwap,
   type SwapOutcome,
@@ -109,7 +112,8 @@ function makeWorld(fromVersion = '0.1.0-rc.2') {
     "  name: '@dsh-blue/blue-core'",
     "- id: blue-theme-dark",
     "  name: '@dsh-blue/blue-core/theme-dark'",
-    // The real bundle's inserted row — overlaps RUNTIME_DEPS on purpose.
+    // The real bundle's inserted dsh row — overlaps the declared runtime
+    // deps on purpose (the sweep dedupes the two sources).
     "- id: agent-presets",
     "  name: '@deepseek-ai/dsh-agent-presets'",
     '',
@@ -120,7 +124,13 @@ function makeWorld(fromVersion = '0.1.0-rc.2') {
     for (const name of version.endsWith('rc.3') ? RC3_NAMES : RC2_NAMES) {
       const dir = join(root, 'node_modules', name)
       mkdirSync(dir, { recursive: true })
-      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, version }))
+      // The bundle manifest carries the declared dsh runtime deps the
+      // sweep reads; sibling manifests are bare.
+      writeFileSync(join(dir, 'package.json'), JSON.stringify(
+        name === '@dsh-blue/blue'
+          ? { name, version, dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.2' } }
+          : { name, version },
+      ))
     }
   }
   installAt(fromVersion)
@@ -195,6 +205,9 @@ function swapInput(world: ReturnType<typeof makeWorld>, overrides: Partial<Param
     fromVersion: '0.1.0-rc.2',
     toVersion: '0.1.0-rc.3',
     packageNames: RC3_NAMES,
+    // The from-release's own set (rc.2 shipped five packages) — the
+    // rollback installs exactly these at the from-version.
+    rollbackNames: RC2_NAMES,
     bootMarker: 'deepseek-chat marker',
     ...overrides,
   }
@@ -212,25 +225,42 @@ describe('updater/swap classifyInstallFailure', () => {
 })
 
 describe('updater/swap patchEntrySpecs', () => {
-  it('extracts the @dsh-blue name rows with dedupe, skipping host rows', () => {
+  it('extracts every patch name row plus the declared dsh deps, deduplicated', () => {
     const world = makeWorld()
-    // A repeated Blue row proves the dedupe; the runtime dsh row (its
-    // peers come from the host at boot) stays out of the sweep.
+    // A repeated Blue row proves the dedupe; the runtime dsh row and the
+    // bundle manifest's declared deps join the sweep (D52④).
     const patch = join(world.root, 'node_modules', '@dsh-blue', 'blue', 'cordis.patch.yml')
     writeFileSync(patch, `${readFileSync(patch, 'utf8')}- id: blue-core-again\n  name: '@dsh-blue/blue-core'\n`)
     expect(patchEntrySpecs(world.root)).toEqual([
       '@dsh-blue/blue-api',
       '@dsh-blue/blue-core',
       '@dsh-blue/blue-core/theme-dark',
+      '@deepseek-ai/dsh-agent-presets',
     ])
   })
 
-  it('falls back to an empty list when the patch file is missing', () => {
+  it('falls back to the declared deps alone when the patch file is missing', () => {
     const world = makeWorld()
     writeFileSync(join(world.root, 'node_modules', '@dsh-blue', 'blue', 'cordis.patch.yml'), 'no entries here\n')
-    expect(patchEntrySpecs(world.root)).toEqual([])
+    expect(patchEntrySpecs(world.root)).toEqual(['@deepseek-ai/dsh-agent-presets'])
     rmSync(join(world.root, 'node_modules', '@dsh-blue', 'blue', 'cordis.patch.yml'))
+    expect(patchEntrySpecs(world.root)).toEqual(['@deepseek-ai/dsh-agent-presets'])
+    rmSync(join(world.root, 'node_modules', '@dsh-blue', 'blue', 'package.json'))
     expect(patchEntrySpecs(world.root)).toEqual([])
+  })
+})
+
+describe('updater/swap declaredRuntimeDeps', () => {
+  it('reads the declared dsh deps and tolerates foreign manifests', () => {
+    const world = makeWorld()
+    expect(declaredRuntimeDeps(world.root)).toEqual(['@deepseek-ai/dsh-agent-presets'])
+    const manifest = join(world.root, 'node_modules', '@dsh-blue', 'blue', 'package.json')
+    writeFileSync(manifest, '{nope')
+    expect(declaredRuntimeDeps(world.root)).toEqual([])
+    writeFileSync(manifest, '7')
+    expect(declaredRuntimeDeps(world.root)).toEqual([])
+    writeFileSync(manifest, JSON.stringify({ dependencies: 'nope' }))
+    expect(declaredRuntimeDeps(world.root)).toEqual([])
   })
 })
 
@@ -344,6 +374,10 @@ describe('updater/swap bootSmoke', () => {
 })
 
 describe('updater/swap performSwap', () => {
+  it('pins the install budget at the D56 calibration (20 min)', () => {
+    expect(INSTALL_TIMEOUT_MS).toBe(1_200_000)
+  })
+
   it('succeeds end to end: snapshot, install, verify, both smokes', async () => {
     const world = makeWorld()
     world.onInstall(() => {
@@ -361,6 +395,8 @@ describe('updater/swap performSwap', () => {
     const snapshot = readFileSync(join(world.root, '.blue-update-backup', 'manifest.json'), 'utf8')
     expect(snapshot).toContain('"fromVersion": "0.1.0-rc.2"')
     expect(snapshot).toContain('"pnpm-lock.yaml"')
+    // The pending marker bracketed the swap and settled with it.
+    expect(existsSync(join(world.root, '.blue-update-backup', 'pending.json'))).toBe(false)
     // The step ladder ran in order.
     expect(events.map(event => event.step)).toEqual([
       'snapshot', 'snapshot',
@@ -375,7 +411,7 @@ describe('updater/swap performSwap', () => {
     expect(log).toContain('=== success')
   })
 
-  it('classifies a cooldown install failure and rolls the full set back', async () => {
+  it('classifies a cooldown install failure and rolls the from-set back', async () => {
     const world = makeWorld()
     world.onInstall(specs => {
       if (specs.some(spec => spec.includes('@0.1.0-rc.3'))) {
@@ -388,12 +424,64 @@ describe('updater/swap performSwap', () => {
     expectRollback(outcome, 'cooldown window')
     const rollback = world.spawns.filter(call => call.args[0] === 'plugin').pop()
     expect(rollback?.args.slice(0, 4)).toEqual(['plugin', '--profile', 'blue', 'add'])
-    for (const name of RC3_NAMES) {
+    // The rollback set is the FROM release's own members (rc.2 shipped
+    // five): asking for rc.3's blue-api at rc.2 would be an ETARGET.
+    for (const name of RC2_NAMES) {
       expect(rollback?.args).toContain(`${name}@0.1.0-rc.2`)
     }
+    expect(rollback?.args).not.toContain('@dsh-blue/blue-api@0.1.0-rc.2')
     // The snapshot's package.json was restored before the reinstall.
     const manifest = readFileSync(join(world.root, 'package.json'), 'utf8')
     expect(manifest).toContain('0.1.0-rc.2')
+    // A completed rollback retires the interrupted-update marker.
+    expect(existsSync(join(world.root, '.blue-update-backup', 'pending.json'))).toBe(false)
+  })
+
+  it('falls back to the target set when no from-set was derived', async () => {
+    const world = makeWorld()
+    world.onInstall(specs => {
+      if (specs.some(spec => spec.includes('@0.1.0-rc.3'))) return fail('ERR_PNPM nope')
+      world.installAt('0.1.0-rc.2')
+      // The fallback set names rc.3's blue-api; the reinstall serves it.
+      const dir = join(world.root, 'node_modules', '@dsh-blue', 'blue-api')
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '@dsh-blue/blue-api', version: '0.1.0-rc.2' }))
+      return ok()
+    })
+    const outcome = await performSwap({
+      root: world.root,
+      profile: 'blue',
+      dshBin: '/usr/bin/dsh',
+      fromVersion: '0.1.0-rc.2',
+      toVersion: '0.1.0-rc.3',
+      packageNames: RC3_NAMES,
+      bootMarker: 'deepseek-chat marker',
+    })
+    expectRollback(outcome, 'install failed')
+    const rollback = world.spawns.filter(call => call.args[0] === 'plugin').pop()
+    for (const name of RC3_NAMES) {
+      expect(rollback?.args).toContain(`${name}@0.1.0-rc.2`)
+    }
+  })
+
+  it('installs the full target set in one transaction on a downgrade', async () => {
+    const world = makeWorld('0.1.0-rc.3')
+    world.onInstall(specs => {
+      world.installAt(specs[0]?.endsWith('@0.1.0-rc.2') === true ? '0.1.0-rc.2' : '0.1.0-rc.3')
+      return ok()
+    })
+    const outcome = await performSwap(swapInput(world, {
+      fromVersion: '0.1.0-rc.3',
+      toVersion: '0.1.0-rc.2',
+      packageNames: RC2_NAMES,
+      rollbackNames: RC3_NAMES,
+    }))
+    expect(outcome.kind).toBe('success')
+    const install = world.spawns.find(call => call.args[0] === 'plugin')
+    expect(install?.args.slice(0, 4)).toEqual(['plugin', '--profile', 'blue', 'add'])
+    for (const name of RC2_NAMES) {
+      expect(install?.args).toContain(`${name}@0.1.0-rc.2`)
+    }
   })
 
   it('rolls back when the post-install set is not one version', async () => {
@@ -423,8 +511,9 @@ describe('updater/swap performSwap', () => {
 
   it('rolls back when the boot smoke fails', async () => {
     const world = makeWorld()
-    world.onInstall(() => {
-      world.installAt('0.1.0-rc.3')
+    world.onInstall(specs => {
+      // The forward install lands rc.3; the rollback reinstall lands rc.2.
+      world.installAt(specs[0]?.endsWith('@0.1.0-rc.3') === true ? '0.1.0-rc.3' : '0.1.0-rc.2')
       return ok()
     })
     world.onBoot(() => new FakeChild({ preExit: fail('boot crash') }))
@@ -449,6 +538,28 @@ describe('updater/swap performSwap', () => {
     const outcome = await performSwap(swapInput(world))
     expect(outcome.kind).toBe('rollback-incomplete')
     expect(outcome.message).toContain('manual repair')
+    // The swap never settled: the interrupted-update marker survives.
+    const pending = JSON.parse(readFileSync(join(world.root, '.blue-update-backup', 'pending.json'), 'utf8')) as Record<string, unknown>
+    expect(pending.to).toBe('0.1.0-rc.3')
+    expect(pending.from).toBe('0.1.0-rc.2')
+  })
+
+  it('reports an incomplete rollback when the rolled-back tree is not one version', async () => {
+    const world = makeWorld()
+    world.onInstall(specs => {
+      if (specs[0]?.endsWith('@0.1.0-rc.3') === true) return fail('ERR_PNPM nope')
+      // The rollback reinstall lands a mixed tree (a sibling stayed newer).
+      writeFileSync(
+        join(world.root, 'node_modules', '@dsh-blue', 'blue-core', 'package.json'),
+        JSON.stringify({ name: '@dsh-blue/blue-core', version: '0.1.0-rc.3' }),
+      )
+      return ok()
+    })
+    const outcome = await performSwap(swapInput(world))
+    expect(outcome.kind).toBe('rollback-incomplete')
+    expect(outcome.message).toContain('rolled back but the tree is not one version')
+    const log = readFileSync(join(world.root, '.blue-update-backup', 'update.log'), 'utf8')
+    expect(log).toContain('post-rollback set check failed')
   })
 
   it('reports an incomplete rollback when the post-rollback smoke fails', async () => {
@@ -472,3 +583,81 @@ function expectRollback(outcome: SwapOutcome, messagePart: string): void {
   expect(outcome.message).toContain(messagePart)
   expect(outcome.message).toContain('rolled back to 0.1.0-rc.2')
 }
+
+describe('updater/swap import sweep real execution', () => {
+  /**
+   * Build a fixture profile with real resolvable dummy packages on disk;
+   * the sweep then runs the built script through a real Node child.
+   */
+  function fixture(setup: {
+    /** The bundle manifest's `dependencies` block. */
+    declared?: Record<string, string>
+    /** The cordis.patch.yml `name:` rows. */
+    rows?: string[]
+    /** Package name → index.js body; absent names are never installed. */
+    packages?: Record<string, string>
+  }): string {
+    const root = mkdtempTracked('blue-updater-sweep-')
+    const bundleDir = join(root, 'node_modules', '@dsh-blue', 'blue')
+    mkdirSync(bundleDir, { recursive: true })
+    writeFileSync(join(bundleDir, 'package.json'), JSON.stringify({
+      name: '@dsh-blue/blue',
+      version: '0.1.0-rc.6',
+      ...(setup.declared === undefined ? {} : { dependencies: setup.declared }),
+    }))
+    writeFileSync(
+      join(bundleDir, 'cordis.patch.yml'),
+      (setup.rows ?? []).map(row => `- id: row\n  name: '${row}'\n`).join(''),
+    )
+    for (const [pkg, body] of Object.entries(setup.packages ?? {})) {
+      const dir = join(root, 'node_modules', pkg)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: pkg, version: '1.0.0', type: 'module', exports: './index.js' }))
+      writeFileSync(join(dir, 'index.js'), body)
+    }
+    return root
+  }
+
+  /** Run the real sweep script against the fixture through the real spawn. */
+  async function sweep(root: string): Promise<SpawnOutcome> {
+    return updaterInternals.spawnOnce(
+      process.execPath,
+      ['--input-type=module', '-e', importSweepScript(patchEntrySpecs(root), declaredRuntimeDeps(root))],
+      { cwd: root, timeoutMs: 10_000 },
+    )
+  }
+
+  it('passes over resolvable Blue packages and declared dsh deps', async () => {
+    const root = fixture({
+      declared: { '@deepseek-ai/dsh-fixture': '1.0.0' },
+      rows: ['@dsh-blue/blue-dummy', '@deepseek-ai/dsh-fixture'],
+      packages: {
+        '@dsh-blue/blue-dummy': 'export const ok = 1\n',
+        '@deepseek-ai/dsh-fixture': 'export const ok = 1\n',
+      },
+    })
+    const outcome = await sweep(root)
+    expect(outcome.stderr).toBe('')
+    expect(outcome.code).toBe(0)
+  })
+
+  it('fails on a missing DECLARED dsh dep — the exemption is narrowed', async () => {
+    const root = fixture({
+      declared: { '@deepseek-ai/dsh-missing': '1.0.0' },
+      rows: ['@dsh-blue/blue-dummy', '@deepseek-ai/dsh-missing'],
+      packages: { '@dsh-blue/blue-dummy': 'export const ok = 1\n' },
+    })
+    const outcome = await sweep(root)
+    expect(outcome.code).not.toBe(0)
+    expect(outcome.stderr).toContain('@deepseek-ai/dsh-missing')
+  })
+
+  it('still exempts a missing UNDECLARED @deepseek-ai target (the host plane)', async () => {
+    const root = fixture({
+      rows: ['@dsh-blue/blue-dummy'],
+      packages: { '@dsh-blue/blue-dummy': "import '@deepseek-ai/dsh-undeclared'\n" },
+    })
+    const outcome = await sweep(root)
+    expect(outcome.code).toBe(0)
+  })
+})

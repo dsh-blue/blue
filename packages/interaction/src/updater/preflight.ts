@@ -5,9 +5,10 @@
  * the lane rule (`link:` pollution refuses — the Frankenstein boot),
  * set consistency (the release's set, one version), target existence, the
  * D51 version floor (never rc.1), the host harness line (the global dsh
- * CLI must meet the bundle's pin), and the pnpm cooldown forecast (a
+ * CLI must meet the bundle's pin), the pnpm cooldown forecast (a
  * fresh release is hard-refused by `minimumReleaseAge`; the user gets
- * an ETA, never a silent bypass).
+ * an ETA, never a silent bypass), and the downgrade notice (an older
+ * target warns that the full set is reinstalled).
  *
  * @module @dsh-blue/blue-interaction/updater/preflight
  */
@@ -198,6 +199,28 @@ export function checkCooldown(target: string, input: CooldownInput): Verdict {
   }
 }
 
+/**
+ * Gate 7 — the downgrade notice: an older target reinstalls the FULL set
+ * in one transaction (the D52 follow-up: a bundle-only spec leaves newer
+ * siblings behind and the post-install check rolls the attempt back), so
+ * the user hears it before confirming. Never blocking — the swap handles
+ * the mechanics.
+ * @param facts - the profile facts (the installed bundle version is the
+ * comparison base; absent installs say nothing).
+ * @param target - the candidate target version.
+ */
+export function checkDowngrade(facts: ProfileFacts, target: string): Verdict {
+  const installed = facts.installed['@dsh-blue/blue']
+  if (installed === undefined || compareVersions(target, installed) >= 0) {
+    return { code: 'downgrade', blocking: false }
+  }
+  return {
+    code: 'downgrade',
+    blocking: false,
+    message: `warning: v${target} is older than the installed v${installed} — a downgrade reinstalls the full @dsh-blue set at the older version`,
+  }
+}
+
 /** Everything the composed pre-flight needs. */
 export interface PreflightInput {
   readonly facts: ProfileFacts
@@ -226,6 +249,7 @@ export function runPreflight(input: PreflightInput): Verdict[] {
     checkVersionFloor(input.target),
     checkHostLine(input.host),
     checkCooldown(input.target, input.cooldown),
+    checkDowngrade(input.facts, input.target),
   ]
 }
 

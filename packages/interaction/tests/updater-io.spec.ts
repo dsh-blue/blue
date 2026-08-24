@@ -181,6 +181,26 @@ describe('updater/io fs defaults', () => {
     expect(updaterInternals.listDir(join(dir, 'nope'))).toBeUndefined()
   })
 
+  it('removes files and directory trees, absent targets being no-ops', () => {
+    const file = join(dir, 'gone', 'marker.txt')
+    updaterInternals.writeTextFile(file, 'x')
+    updaterInternals.removeFile(file)
+    expect(existsSync(file)).toBe(false)
+    expect(() => updaterInternals.removeFile(file)).not.toThrow()
+    updaterInternals.removeDir(join(dir, 'gone'))
+    expect(existsSync(join(dir, 'gone'))).toBe(false)
+    expect(() => updaterInternals.removeDir(join(dir, 'gone'))).not.toThrow()
+  })
+
+  it('renames a directory into place', () => {
+    const staging = join(dir, 'staging')
+    updaterInternals.ensureDir(staging)
+    updaterInternals.writeTextFile(join(staging, 'manifest.json'), '{}')
+    updaterInternals.rename(staging, join(dir, 'backup'))
+    expect(existsSync(staging)).toBe(false)
+    expect(updaterInternals.readTextFile(join(dir, 'backup', 'manifest.json'))).toBe('{}')
+  })
+
   it('reads text written straight to disk', () => {
     const file = join(dir, 'plain.txt')
     writeFileSync(file, 'plain')

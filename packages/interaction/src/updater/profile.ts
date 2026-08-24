@@ -158,22 +158,29 @@ export function backupDir(root: string): string {
 /**
  * Snapshot the profile's manifest files into `.blue-update-backup/`
  * (overwriting any previous snapshot — one slot, the newest), recording
- * the swap intent beside them.
+ * the swap intent beside them. The write is atomic by construction: the
+ * snapshot assembles in a `<backup>.tmp` staging sibling and renames into
+ * place, so a kill mid-snapshot leaves either the old intact backup or a
+ * recognizable staging dir (cleaned at the next snapshot's start).
  * @param root - the profile workspace root.
  * @param manifest - the swap bookkeeping to persist; the `files` list is
  * rewritten with what this snapshot actually preserved.
  */
 export function snapshotProfile(root: string, manifest: SnapshotManifest): void {
   const backup = backupDir(root)
-  updaterInternals.ensureDir(backup)
+  const staging = `${backup}.tmp`
+  updaterInternals.removeDir(staging)
+  updaterInternals.ensureDir(staging)
   const preserved: string[] = []
   for (const file of SNAPSHOT_FILES) {
     const source = join(root, file)
     if (updaterInternals.readTextFile(source) === undefined) continue
-    updaterInternals.copyFile(source, join(backup, file))
+    updaterInternals.copyFile(source, join(staging, file))
     preserved.push(file)
   }
-  updaterInternals.writeTextFile(join(backup, 'manifest.json'), `${JSON.stringify({ ...manifest, files: preserved }, null, 2)}\n`)
+  updaterInternals.writeTextFile(join(staging, 'manifest.json'), `${JSON.stringify({ ...manifest, files: preserved }, null, 2)}\n`)
+  updaterInternals.removeDir(backup)
+  updaterInternals.rename(staging, backup)
 }
 
 /**
@@ -203,11 +210,23 @@ export function restoreSnapshot(root: string): boolean {
   return true
 }
 
+/** The update log's soft cap, and the tail kept when the cap trips. */
+const LOG_CAP_BYTES = 256 * 1024
+const LOG_KEEP_BYTES = 64 * 1024
+
 /**
- * Append a line to the profile's update log (created on first write).
+ * Append a line to the profile's update log (created on first write). The
+ * log is bounded: past 256 KB the existing content is cut to its last
+ * ~64 KB under a one-line truncation marker before the append.
  * @param root - the profile workspace root.
  * @param line - the text to append (newline added).
  */
 export function appendUpdateLog(root: string, line: string): void {
-  updaterInternals.appendTextFile(join(backupDir(root), 'update.log'), `${line}\n`)
+  const path = join(backupDir(root), 'update.log')
+  const existing = updaterInternals.readTextFile(path)
+  if (existing !== undefined && existing.length > LOG_CAP_BYTES) {
+    const tail = existing.slice(existing.length - LOG_KEEP_BYTES)
+    updaterInternals.writeTextFile(path, `… log truncated …\n${tail}`)
+  }
+  updaterInternals.appendTextFile(path, `${line}\n`)
 }

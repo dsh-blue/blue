@@ -231,4 +231,33 @@ describe('updater/profile snapshot and restore', () => {
     appendUpdateLog(root, 'second')
     expect(readFileSync(join(backupDir(root), 'update.log'), 'utf8')).toBe('first\nsecond\n')
   })
+
+  it('appendUpdateLog truncates an over-cap log to its tail under a marker', () => {
+    const root = fixtureProfile({})
+    const logPath = join(backupDir(root), 'update.log')
+    updaterInternals.ensureDir(backupDir(root))
+    const head = 'old line\n'
+    const tail = 'recent line\n'
+    writeFileSync(logPath, `${head.repeat(30_000)}${tail.repeat(6_000)}`)
+    appendUpdateLog(root, 'next')
+    const result = readFileSync(logPath, 'utf8')
+    expect(result).toContain('… log truncated …')
+    expect(result.endsWith(`${tail}next\n`)).toBe(true)
+    expect(result.length).toBeLessThan(100 * 1024)
+  })
+
+  it('snapshot replaces the slot atomically and cleans a stale staging dir', () => {
+    const root = fixtureProfile({ 'package.json': manifestJson({ '@dsh-blue/blue': '0.1.0-rc.2' }) })
+    snapshotProfile(root, { fromVersion: '0.1.0-rc.2', toVersion: '0.1.0-rc.3', createdAt: 1, files: [] })
+    expect(readFileSync(join(backupDir(root), 'package.json'), 'utf8')).toContain('0.1.0-rc.2')
+    // Debris of a killed snapshot run: cleaned at the next snapshot start.
+    mkdirSync(`${backupDir(root)}.tmp`, { recursive: true })
+    writeFileSync(join(`${backupDir(root)}.tmp`, 'stale.txt'), 'stale')
+    writeFileSync(join(root, 'package.json'), manifestJson({ '@dsh-blue/blue': '0.1.0-rc.3' }))
+    snapshotProfile(root, { fromVersion: '0.1.0-rc.3', toVersion: '0.1.0-rc.4', createdAt: 2, files: [] })
+    expect(readFileSync(join(backupDir(root), 'package.json'), 'utf8')).toContain('0.1.0-rc.3')
+    const manifest = JSON.parse(readFileSync(join(backupDir(root), 'manifest.json'), 'utf8')) as { toVersion: string }
+    expect(manifest.toVersion).toBe('0.1.0-rc.4')
+    expect(() => readFileSync(join(`${backupDir(root)}.tmp`, 'stale.txt'), 'utf8')).toThrow()
+  })
 })
