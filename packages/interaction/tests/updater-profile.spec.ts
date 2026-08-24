@@ -1,7 +1,8 @@
 /**
  * Tests for the updater's profile module (D52): the argv profile scan,
- * home/root resolution, dsh discovery, profile facts (specs, installed
- * versions, lane violations), and the snapshot/restore round trip.
+ * home/root resolution, dsh and pnpm-policy discovery, profile facts
+ * (specs, installed versions, lane violations), and the snapshot/restore
+ * round trip.
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -14,6 +15,7 @@ import {
   backupDir,
   dshHome,
   findDshBin,
+  probeCooldownMinutes,
   profileNameFromArgv,
   profileRoot,
   readProfileFacts,
@@ -112,6 +114,28 @@ describe('updater/profile findDshBin', () => {
     updaterInternals.spawnOnce = () =>
       Promise.resolve({ code: null, signal: null, stdout: '', stderr: '', timedOut: false, spawnError: 'ENOENT' })
     await expect(findDshBin()).resolves.toBeUndefined()
+  })
+})
+
+describe('updater/profile probeCooldownMinutes', () => {
+  it('reads the profile policy and tolerates failed or foreign answers', async () => {
+    let seenRoot: string | undefined
+    updaterInternals.spawnOnce = (_cmd, _args, options) => {
+      seenRoot = options?.cwd
+      return Promise.resolve({ code: 0, signal: null, stdout: '30\n', stderr: '', timedOut: false })
+    }
+    await expect(probeCooldownMinutes('/profile/blue')).resolves.toBe(30)
+    expect(seenRoot).toBe('/profile/blue')
+
+    updaterInternals.spawnOnce = () =>
+      Promise.resolve({ code: 1, signal: null, stdout: '', stderr: 'failed', timedOut: false })
+    await expect(probeCooldownMinutes('/profile/blue')).resolves.toBeUndefined()
+    updaterInternals.spawnOnce = () =>
+      Promise.resolve({ code: null, signal: null, stdout: '', stderr: '', timedOut: false, spawnError: 'ENOENT' })
+    await expect(probeCooldownMinutes('/profile/blue')).resolves.toBeUndefined()
+    updaterInternals.spawnOnce = () =>
+      Promise.resolve({ code: 0, signal: null, stdout: 'undefined\n', stderr: '', timedOut: false })
+    await expect(probeCooldownMinutes('/profile/blue')).resolves.toBeUndefined()
   })
 })
 

@@ -1,9 +1,10 @@
 /**
  * Tests for the boot-check plugin (D52): the offer path (notice rows,
- * state write), the 24h cache gate and re-notify after it, the settings
- * off switch, registry failure recording, the up-to-date and no-tag
- * channels, the unload guards, the state file's tolerant reader, and
- * the apply wiring with a live settings service.
+ * state write), cooldown-delayed notification, the 24h cache gate and
+ * re-notify after it, the settings off switch, registry failure
+ * recording, the up-to-date and no-tag channels, the unload guards, the
+ * state file's tolerant reader, and the apply wiring with a live
+ * settings service.
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -58,17 +59,34 @@ const CURRENT_JSON = JSON.stringify({
   time: { [BLUE_VERSION]: '2026-08-22T00:00:00.000Z' },
 })
 
+/** Build the offer packument with a test-relative publish stamp. */
+function offerJsonAt(publishedAt: number | undefined): string {
+  return JSON.stringify({
+    'dist-tags': { rc: OFFER_VERSION, latest: BLUE_VERSION },
+    versions: { [BLUE_VERSION]: {}, [OFFER_VERSION]: {} },
+    time: publishedAt === undefined ? {} : { [OFFER_VERSION]: new Date(publishedAt).toISOString() },
+  })
+}
+
 /** One check world: temp DSH_HOME, fixed clock, scripted npm view. */
-function makeCheck(options: { json?: string; fail?: boolean } = {}) {
+function makeCheck(options: { json?: string; fail?: boolean; cooldown?: string; cooldownFail?: boolean } = {}) {
   const home = mkdtempTracked('blue-updater-check-')
   const now = 1_800_000_000_000
-  let spawns = 0
+  let registrySpawns = 0
+  let cooldownSpawns = 0
   updaterInternals.env = { DSH_HOME: home }
   updaterInternals.homedir = () => home
   updaterInternals.now = () => now
   updaterInternals.sleep = () => Promise.resolve()
-  updaterInternals.spawnOnce = () => {
-    spawns += 1
+  updaterInternals.spawnOnce = cmd => {
+    if (cmd === 'pnpm') {
+      cooldownSpawns += 1
+      if (options.cooldownFail === true) {
+        return Promise.resolve({ code: 1, signal: null, stdout: '', stderr: 'config failed', timedOut: false })
+      }
+      return Promise.resolve({ code: 0, signal: null, stdout: options.cooldown ?? '1440\n', stderr: '', timedOut: false })
+    }
+    registrySpawns += 1
     if (options.fail === true) {
       return Promise.resolve({ code: 1, signal: null, stdout: '', stderr: 'ETIMEDOUT', timedOut: false })
     }
@@ -82,7 +100,17 @@ function makeCheck(options: { json?: string; fail?: boolean } = {}) {
     mkdirSync(profileRootDir, { recursive: true })
     writeFileSync(join(profileRootDir, 'package.json'), JSON.stringify({ name: 'profile', dependencies }))
   }
-  return { home, now, spawns: () => spawns, ctx, screen, statePath: updateCheckStatePath(), profileRootDir, writeProfile }
+  return {
+    home,
+    now,
+    spawns: () => registrySpawns,
+    cooldownSpawns: () => cooldownSpawns,
+    ctx,
+    screen,
+    statePath: updateCheckStatePath(),
+    profileRootDir,
+    writeProfile,
+  }
 }
 
 describe('updater/check runUpdateCheck', () => {
@@ -103,8 +131,78 @@ describe('updater/check runUpdateCheck', () => {
     expect(state).toEqual({
       lastCheckAt: world.now,
       lastNotifiedVersion: OFFER_VERSION,
-      lastOffer: { version: OFFER_VERSION, publishedAt: Date.parse('2026-08-23T00:00:00.000Z') },
+      lastOffer: {
+        version: OFFER_VERSION,
+        publishedAt: Date.parse('2026-08-23T00:00:00.000Z'),
+        eligibleAt: Date.parse('2026-08-24T00:00:00.000Z'),
+      },
     })
+    expect(world.cooldownSpawns()).toBe(1)
+  })
+
+  it('records a fresh offer but stays quiet until the profile cooldown passes', async () => {
+    const publishedAt = 1_800_000_000_000 - 30 * 60_000
+    const world = makeCheck({ json: offerJsonAt(publishedAt) })
+    await runUpdateCheck(world.ctx, () => DEFAULT_SETTINGS, () => false)
+    expect(world.screen.children).toHaveLength(0)
+    expect(world.cooldownSpawns()).toBe(1)
+    expect(readUpdateCheckState()).toEqual({
+      lastCheckAt: world.now,
+      lastOffer: {
+        version: OFFER_VERSION,
+        publishedAt,
+        eligibleAt: publishedAt + 1440 * 60_000,
+      },
+    })
+  })
+
+  it('keeps a cached offer quiet before eligibility without re-reading the registry', async () => {
+    const world = makeCheck()
+    writeUpdateCheckState({
+      lastCheckAt: world.now - 1_000,
+      lastOffer: { version: OFFER_VERSION, publishedAt: world.now - 1_000, eligibleAt: world.now + 1_000 },
+    })
+    await runUpdateCheck(world.ctx, () => DEFAULT_SETTINGS, () => false)
+    expect(world.spawns()).toBe(0)
+    expect(world.cooldownSpawns()).toBe(0)
+    expect(world.screen.children).toHaveLength(0)
+  })
+
+  it('mounts a cached offer after eligibility without waiting for the registry cache', async () => {
+    const world = makeCheck()
+    writeUpdateCheckState({
+      lastCheckAt: world.now - 1_000,
+      lastOffer: { version: OFFER_VERSION, publishedAt: world.now - 86_401_000, eligibleAt: world.now - 1_000 },
+    })
+    await runUpdateCheck(world.ctx, () => DEFAULT_SETTINGS, () => false)
+    expect(world.spawns()).toBe(0)
+    expect(world.cooldownSpawns()).toBe(0)
+    expect(world.screen.children).toHaveLength(1)
+    expect(readUpdateCheckState()?.lastNotifiedVersion).toBe(OFFER_VERSION)
+  })
+
+  it('notifies immediately when the profile disables the cooldown', async () => {
+    const publishedAt = 1_800_000_000_000 - 1_000
+    const world = makeCheck({ json: offerJsonAt(publishedAt), cooldown: '0' })
+    await runUpdateCheck(world.ctx, () => DEFAULT_SETTINGS, () => false)
+    expect(world.screen.children).toHaveLength(1)
+    expect(readUpdateCheckState()?.lastOffer?.eligibleAt).toBe(publishedAt)
+  })
+
+  it('honors a custom profile cooldown', async () => {
+    const publishedAt = 1_800_000_000_000 - 31 * 60_000
+    const world = makeCheck({ json: offerJsonAt(publishedAt), cooldown: '30' })
+    await runUpdateCheck(world.ctx, () => DEFAULT_SETTINGS, () => false)
+    expect(world.screen.children).toHaveLength(1)
+    expect(readUpdateCheckState()?.lastOffer?.eligibleAt).toBe(publishedAt + 30 * 60_000)
+  })
+
+  it('uses pnpm 11 default cooldown when the profile policy cannot be read', async () => {
+    const publishedAt = 1_800_000_000_000 - 30 * 60_000
+    const world = makeCheck({ json: offerJsonAt(publishedAt), cooldownFail: true })
+    await runUpdateCheck(world.ctx, () => DEFAULT_SETTINGS, () => false)
+    expect(world.screen.children).toHaveLength(0)
+    expect(readUpdateCheckState()?.lastOffer?.eligibleAt).toBe(publishedAt + 1440 * 60_000)
   })
 
   it('re-mounts the notice from the cached offer inside the 24h window', async () => {
@@ -218,11 +316,23 @@ describe('updater/check runUpdateCheck', () => {
     let calls = 0
     await runUpdateCheck(world.ctx, () => DEFAULT_SETTINGS, () => {
       calls += 1
-      return calls >= 3
+      return calls >= 4
     })
     expect(world.spawns()).toBe(1)
     expect(world.screen.children).toHaveLength(0)
     expect(readUpdateCheckState()?.lastNotifiedVersion).toBe(OFFER_VERSION)
+  })
+
+  it('writes nothing when unload wins during the cooldown probe', async () => {
+    const world = makeCheck()
+    let calls = 0
+    await runUpdateCheck(world.ctx, () => DEFAULT_SETTINGS, () => {
+      calls += 1
+      return calls >= 3
+    })
+    expect(world.spawns()).toBe(1)
+    expect(world.cooldownSpawns()).toBe(1)
+    expect(readUpdateCheckState()).toBeUndefined()
   })
 
   it('skips the mount without throwing when no screen is mounted', async () => {
@@ -303,6 +413,7 @@ describe('updater/check runUpdateCheck', () => {
       lastNotifiedVersion: OFFER_VERSION,
       lastOffer: { version: OFFER_VERSION },
     })
+    expect(world.cooldownSpawns()).toBe(0)
   })
 })
 
@@ -319,7 +430,7 @@ describe('updater/check state reader', () => {
       lastCheckAt: 5,
       lastNotifiedVersion: '0.1.0-rc.8',
       lastError: 'network',
-      lastOffer: { version: '0.1.0-rc.8', publishedAt: 42 },
+      lastOffer: { version: '0.1.0-rc.8', publishedAt: 42, eligibleAt: 86_400_042 },
     }
     writeUpdateCheckState(full)
     expect(readUpdateCheckState()).toEqual(full)
@@ -327,7 +438,12 @@ describe('updater/check state reader', () => {
     updaterInternals.writeTextFile(world.statePath, JSON.stringify({ lastCheckAt: 5, lastNotifiedVersion: 9, lastError: [] }))
     expect(readUpdateCheckState()).toEqual({ lastCheckAt: 5 })
     // Foreign offer shapes are dropped the same way.
-    for (const lastOffer of ['rc.8', { version: 9 }, { version: '0.1.0-rc.8', publishedAt: 'soon' }]) {
+    for (const lastOffer of [
+      'rc.8',
+      { version: 9 },
+      { version: '0.1.0-rc.8', publishedAt: 'soon' },
+      { version: '0.1.0-rc.8', eligibleAt: 'later' },
+    ]) {
       updaterInternals.writeTextFile(world.statePath, JSON.stringify({ lastCheckAt: 5, lastOffer }))
       expect(readUpdateCheckState(), JSON.stringify(lastOffer)).toEqual({ lastCheckAt: 5 })
     }

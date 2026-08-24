@@ -16,6 +16,7 @@ import {
   checkSetConsistency,
   checkTargetExists,
   checkVersionFloor,
+  cooldownReadyAt,
   DEFAULT_COOLDOWN_MINUTES,
   repairRecipe,
   resolveOffer,
@@ -202,6 +203,7 @@ describe('updater/preflight checkCooldown', () => {
     const verdict = checkCooldown('0.1.0-rc.3', { publishedAt: undefined, cooldownMinutes: 30, now: 0 })
     expect(verdict.blocking).toBe(false)
     expect(verdict.message).toContain('publish time unknown')
+    expect(cooldownReadyAt({ publishedAt: undefined, cooldownMinutes: 30 })).toBeUndefined()
   })
 })
 

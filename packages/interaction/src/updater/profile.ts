@@ -83,6 +83,23 @@ export async function findDshBin(): Promise<string | undefined> {
 }
 
 /**
+ * Probe pnpm's `minimumReleaseAge` in minutes inside a profile. An unset,
+ * failed, or unparsable value returns `undefined`, leaving callers to use
+ * pnpm 11's default policy.
+ * @param root - the profile workspace root.
+ * @returns the configured cooldown in minutes, when readable.
+ */
+export async function probeCooldownMinutes(root: string): Promise<number | undefined> {
+  const outcome = await updaterInternals.spawnOnce('pnpm', ['config', 'get', 'minimumReleaseAge'], {
+    cwd: root,
+    timeoutMs: 10_000,
+  })
+  if (outcome.spawnError !== undefined || outcome.code !== 0) return undefined
+  const parsed = Number.parseInt(outcome.stdout.trim(), 10)
+  return Number.isNaN(parsed) ? undefined : parsed
+}
+
+/**
  * Read a profile's facts: manifest, specs, installed versions, and the
  * lane violations. Missing files read as absent — pre-flight turns each
  * shape into a verdict.

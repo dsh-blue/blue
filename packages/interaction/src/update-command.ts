@@ -29,7 +29,7 @@ import { ACTION_CANCEL } from './keys.ts'
 import type { UpdateSettings } from './updater/check.ts'
 import { writeUpdateCheckState } from './updater/check.ts'
 import { updaterInternals } from './updater/io.ts'
-import { backupDir, findDshBin, profileNameFromArgv, profileRoot, readProfileFacts } from './updater/profile.ts'
+import { backupDir, findDshBin, probeCooldownMinutes, profileNameFromArgv, profileRoot, readProfileFacts } from './updater/profile.ts'
 import {
   BUNDLE_PACKAGE,
   fetchPackument,
@@ -307,21 +307,6 @@ async function probeHostVersion(dshBin: string): Promise<string | undefined> {
   const outcome = await updaterInternals.spawnOnce(dshBin, ['--version'], { timeoutMs: 10_000 })
   if (outcome.spawnError !== undefined || outcome.code !== 0) return undefined
   return outcome.stdout
-}
-
-/**
- * Probe pnpm's `minimumReleaseAge` in minutes inside the profile; an
- * unset or unparsable value reads as `undefined` (the pnpm 11 default
- * applies downstream).
- */
-async function probeCooldownMinutes(root: string): Promise<number | undefined> {
-  const outcome = await updaterInternals.spawnOnce('pnpm', ['config', 'get', 'minimumReleaseAge'], {
-    cwd: root,
-    timeoutMs: 10_000,
-  })
-  if (outcome.spawnError !== undefined || outcome.code !== 0) return undefined
-  const parsed = Number.parseInt(outcome.stdout.trim(), 10)
-  return Number.isNaN(parsed) ? undefined : parsed
 }
 
 /** Format the publish age for the confirm subtitle. */

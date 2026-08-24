@@ -178,20 +178,34 @@ export interface CooldownInput {
 }
 
 /**
+ * Resolve when a published release leaves the configured pnpm cooldown.
+ * An unknown publish time has no forecast and returns `undefined`.
+ * @param input - publish stamp and profile cooldown policy.
+ * @returns the install eligibility timestamp, epoch ms, when known.
+ */
+export function cooldownReadyAt(
+  input: Pick<CooldownInput, 'publishedAt' | 'cooldownMinutes'>,
+): number | undefined {
+  if (input.publishedAt === undefined) return undefined
+  const minutes = input.cooldownMinutes ?? DEFAULT_COOLDOWN_MINUTES
+  return input.publishedAt + minutes * 60_000
+}
+
+/**
  * Gate 6 — the cooldown forecast: inside pnpm's `minimumReleaseAge`
  * window an exact-version install is hard-refused (the R1 finding), so
  * the gate converts that future pnpm error into an ETA now. Never a
  * bypass: the supply-chain guard is the user's policy.
  */
 export function checkCooldown(target: string, input: CooldownInput): Verdict {
-  const minutes = input.cooldownMinutes ?? DEFAULT_COOLDOWN_MINUTES
   if (input.publishedAt === undefined) {
     return { code: 'cooldown', blocking: false, message: 'warning: publish time unknown — cooldown cannot be forecast' }
   }
-  const windowMs = minutes * 60_000
+  const minutes = input.cooldownMinutes ?? DEFAULT_COOLDOWN_MINUTES
+  const readyAtMs = cooldownReadyAt(input)!
   const ageMs = input.now - input.publishedAt
-  if (ageMs >= windowMs) return { code: 'cooldown', blocking: false }
-  const readyAt = new Date(input.publishedAt + windowMs)
+  if (input.now >= readyAtMs) return { code: 'cooldown', blocking: false }
+  const readyAt = new Date(readyAtMs)
   return {
     code: 'cooldown',
     blocking: true,

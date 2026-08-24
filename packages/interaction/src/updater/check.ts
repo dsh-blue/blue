@@ -4,9 +4,11 @@
  * with boot), it reads one packument — npm view first for the user's
  * npmrc mirrors, the registry API as fallback — at most once per 24h,
  * silently, and when the channel tag outranks the running version it
- * appends the two-row update notice to the scroll area and flashes the
- * editor hint line. A recorded offer (`lastOffer` in the state) re-mounts
- * the notice on every cache-window boot without a network read, and a
+ * waits until the profile's pnpm `minimumReleaseAge` policy permits the
+ * exact install, then appends the two-row update notice to the scroll
+ * area and flashes the editor hint line. A recorded offer (`lastOffer`
+ * in the state) carries that eligibility time and re-mounts the notice
+ * on a later cache-window boot without a network read, and a
  * FAILED read never stamps the cache window, so the next boot retries. A
  * `link:`/`file:`-installed dev profile never sees the offer notice (it
  * would invite the `dsh plugin add` that half-overwrites the links), and
@@ -36,8 +38,8 @@ import { getSharedEditor } from '../editor-instance.ts'
 import type { InterruptedNoticeContent } from '../update-notice.ts'
 import { interruptedNoticeRows, UpdateNoticeComponent, updateNoticeRows } from '../update-notice.ts'
 import { updaterInternals } from './io.ts'
-import { backupDir, dshHome, profileNameFromArgv, profileRoot, readProfileFacts } from './profile.ts'
-import { resolveOffer } from './preflight.ts'
+import { backupDir, dshHome, probeCooldownMinutes, profileNameFromArgv, profileRoot, readProfileFacts } from './profile.ts'
+import { cooldownReadyAt, resolveOffer } from './preflight.ts'
 import { fetchPackument, publishedAt } from './registry.ts'
 import { compareVersions } from './version.ts'
 
@@ -51,7 +53,12 @@ export interface UpdateCheckState {
   /** The newest version the check last notified about, when it did. */
   readonly lastNotifiedVersion?: string
   /** The last offer seen, so a cache-window boot can re-mount the notice without a network read. */
-  readonly lastOffer?: { readonly version: string, readonly publishedAt?: number }
+  readonly lastOffer?: {
+    readonly version: string
+    readonly publishedAt?: number
+    /** When this exact release leaves the profile's pnpm cooldown. */
+    readonly eligibleAt?: number
+  }
   /** The last failure class, for offline diagnosis. */
   readonly lastError?: string
 }
@@ -111,11 +118,17 @@ export function readUpdateCheckState(): UpdateCheckState | undefined {
 }
 
 /** Tolerant read of the persisted offer shape. */
-function isOfferShape(value: unknown): value is { version: string, publishedAt?: number } {
+function isOfferShape(value: unknown): value is { version: string, publishedAt?: number, eligibleAt?: number } {
   if (typeof value !== 'object' || value === null) return false
   const record = value as Record<string, unknown>
   if (typeof record.version !== 'string') return false
-  return record.publishedAt === undefined || typeof record.publishedAt === 'number'
+  if (record.publishedAt !== undefined && typeof record.publishedAt !== 'number') return false
+  return record.eligibleAt === undefined || typeof record.eligibleAt === 'number'
+}
+
+/** A legacy offer without a forecast stays immediately visible. */
+function offerIsEligible(offer: NonNullable<UpdateCheckState['lastOffer']>, now: number): boolean {
+  return offer.eligibleAt === undefined || now >= offer.eligibleAt
 }
 
 /**
@@ -157,7 +170,14 @@ export async function runUpdateCheck(
     // offer that still outranks the running version re-mounts its notice
     // from the cache — otherwise only the first boot of 24h ever showed it.
     const offer = previous.lastOffer
-    if (offer !== undefined && compareVersions(offer.version, BLUE_VERSION) > 0) {
+    if (
+      offer !== undefined
+      && compareVersions(offer.version, BLUE_VERSION) > 0
+      && offerIsEligible(offer, now)
+    ) {
+      if (previous.lastNotifiedVersion !== offer.version) {
+        writeUpdateCheckState({ ...previous, lastNotifiedVersion: offer.version })
+      }
       mountNotice(ctx, offer.version)
     }
     return
@@ -183,11 +203,23 @@ export async function runUpdateCheck(
     return
   }
   const published = publishedAt(result.packument, offer.target)
+  const cooldownMinutes = published === undefined
+    ? undefined
+    : await probeCooldownMinutes(profileRoot(profileNameFromArgv(process.argv)))
+  if (isUnloaded()) return
+  const eligibleAt = cooldownReadyAt({ publishedAt: published, cooldownMinutes })
+  const eligible = eligibleAt === undefined || now >= eligibleAt
+  const lastOffer = {
+    version: offer.target,
+    ...(published === undefined ? {} : { publishedAt: published }),
+    ...(eligibleAt === undefined ? {} : { eligibleAt }),
+  }
   writeUpdateCheckState({
     lastCheckAt: now,
-    lastNotifiedVersion: offer.target,
-    lastOffer: { version: offer.target, ...(published === undefined ? {} : { publishedAt: published }) },
+    ...(eligible ? { lastNotifiedVersion: offer.target } : {}),
+    lastOffer,
   })
+  if (!eligible) return
   if (isUnloaded()) return
   mountNotice(ctx, offer.target)
 }
