@@ -13,7 +13,6 @@ const KEY_UP = '\x1b[A'
 const KEY_DOWN = '\x1b[B'
 const KEY_PAGE_UP = '\x1b[5~'
 const KEY_PAGE_DOWN = '\x1b[6~'
-const DETAIL_VISIBLE_LINES = 6
 
 /** Dependencies and callbacks required by {@link TracePanel}. */
 export interface TracePanelOptions {
@@ -33,9 +32,6 @@ export class TracePanel implements BlueFocusable {
   focused = false
   private cursor = 0
   private scrollTop = 0
-  private expanded = new Set<number>()
-  private detail = new Map<number, string>()
-  private detailScroll = new Map<number, number>()
 
   constructor(private readonly options: TracePanelOptions) {}
 
@@ -46,41 +42,18 @@ export class TracePanel implements BlueFocusable {
     }
     if (data === KEY_UP) this.cursor = Math.max(0, this.cursor - 1)
     else if (data === KEY_DOWN) this.cursor = Math.min(this.options.items.length - 1, this.cursor + 1)
-    else if (data === KEY_PAGE_UP || data === KEY_PAGE_DOWN) {
-      const item = this.options.items[this.cursor]
-      if (item !== undefined && this.expanded.has(item.seq) && this.detail.has(item.seq)) {
-        const lineCount = this.detailLines(item).length
-        const maxScroll = Math.max(0, lineCount - DETAIL_VISIBLE_LINES)
-        /* v8 ignore next -- setDetail initializes the scroll entry atomically
-         * with the detail text before this branch can handle page input. */
-        const current = this.detailScroll.get(item.seq) ?? 0
-        const next = data === KEY_PAGE_UP
-          ? Math.max(0, current - DETAIL_VISIBLE_LINES)
-          : Math.min(maxScroll, current + DETAIL_VISIBLE_LINES)
-        this.detailScroll.set(item.seq, next)
-      } else if (data === KEY_PAGE_UP) this.cursor = Math.max(0, this.cursor - 8)
-      else this.cursor = Math.min(this.options.items.length - 1, this.cursor + 8)
-    }
+    else if (data === KEY_PAGE_UP) this.cursor = Math.max(0, this.cursor - 8)
+    else if (data === KEY_PAGE_DOWN) this.cursor = Math.min(this.options.items.length - 1, this.cursor + 8)
     else if (data === '\r') {
       const item = this.options.items[this.cursor]
       if (item === undefined) return
-      if (this.expanded.has(item.seq)) this.expanded.delete(item.seq)
-      else {
-        this.expanded.add(item.seq)
-        this.options.onLoadDetail(item)
-      }
+      this.options.onLoadDetail(item)
     } else if (data === 'c' || data === 'C') {
       const item = this.options.items[this.cursor]
       if (item !== undefined) this.options.onCopyItem(item)
     } else if (data === 'a' || data === 'A') {
       this.options.onCopyAll()
     }
-    this.invalidate()
-  }
-
-  setDetail(seq: number, text: string): void {
-    this.detail.set(seq, text)
-    this.detailScroll.set(seq, 0)
     this.invalidate()
   }
 
@@ -121,20 +94,8 @@ export class TracePanel implements BlueFocusable {
       const summary = preview.length > 0 ? `  ${preview}` : ''
       const sequence = item.lastSeq === item.seq ? `#${String(item.seq)}` : `#${String(item.seq)}-${String(item.lastSeq)}`
       body.push(`${pointer}${colors.textMuted(traceTime(item.time))} ${surface} ${colors.textStrong(`${sequence} ${item.title}`)}${components.truncateToWidth(summary, Math.max(1, width - 30))}`)
-      if (this.expanded.has(item.seq)) {
-        const detailLines = this.detailLines(item)
-        const maxScroll = Math.max(0, detailLines.length - DETAIL_VISIBLE_LINES)
-        const scroll = Math.min(this.detailScroll.get(item.seq) ?? 0, maxScroll)
-        const visible = detailLines.slice(scroll, scroll + DETAIL_VISIBLE_LINES)
-        for (const line of visible) body.push(colors.textMuted(`      ${components.truncateToWidth(line, Math.max(1, width - 8))}`))
-        for (let detailIndex = visible.length; detailIndex < DETAIL_VISIBLE_LINES; detailIndex += 1) body.push('')
-        const end = Math.min(detailLines.length, scroll + DETAIL_VISIBLE_LINES)
-        body.push(colors.textMuted(components.truncateToWidth(`      detail lines ${String(scroll + 1)}-${String(end)} of ${String(detailLines.length)} · PgUp/PgDn`, Math.max(1, width))))
-      }
     }
-    const current = items[this.cursor]
-    const detailHint = current !== undefined && this.expanded.has(current.seq) ? '  [PgUp/PgDn] detail scroll' : ''
-    body.push(colors.textMuted(components.truncateToWidth(`  [c] copy item  [a] copy all  [Enter] details  [↑↓] select${detailHint}`, Math.max(1, width))))
+    body.push(colors.textMuted(components.truncateToWidth('  [c] copy item  [a] copy all  [Enter] open details  [↑↓] select', Math.max(1, width))))
     return framePanel(body, width, {
       title: 'Trace',
       titleHint: '· Esc / q to close',
@@ -144,9 +105,6 @@ export class TracePanel implements BlueFocusable {
     })
   }
 
-  private detailLines(item: TraceItem): string[] {
-    return (this.detail.get(item.seq) ?? '  loading details…').split('\n')
-  }
 }
 
 function traceTime(time: number): string {

@@ -18,6 +18,7 @@ import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
 import { formatTraceAll, formatTraceItem, type TraceItem } from './trace-format.ts'
 import { aggregateTraceItems } from './trace-aggregate.ts'
 import { TracePanel } from './trace-panel.ts'
+import { TraceDetailPanel } from './trace-detail-panel.ts'
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -96,8 +97,19 @@ export function registerTraceCommand(ctx: Context): () => void {
         }).catch(error => getSharedEditor()?.notice?.(`could not copy trace: ${describe(error)}`))
       },
       onLoadDetail: (item) => {
-        const rawEvents = item.eventSeqs.flatMap(seq => loaded.events.filter(event => event.seq === seq))
-        panel.setDetail(item.seq, JSON.stringify(rawEvents, null, 2))
+        const eventBySeq = new Map(loaded.events.map(event => [event.seq, event]))
+        const rawEvents = item.eventSeqs.flatMap(seq => {
+          const event = eventBySeq.get(seq)
+          return event === undefined ? [] : [event]
+        })
+        let restoreDetail = () => {}
+        const detail = new TraceDetailPanel({
+          ...display,
+          item,
+          text: JSON.stringify(rawEvents, null, 2),
+          onClose: () => restoreDetail(),
+        })
+        restoreDetail = mountEditorReplacement(detail)
       },
     })
     restore = mountEditorReplacement(panel)
