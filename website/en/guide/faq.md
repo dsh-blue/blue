@@ -2,13 +2,13 @@
 
 ## Why does a bare `npm install @dsh-blue/blue` find nothing?
 
-During preview, every release that passes a real registry-install check advances both **`rc` and `latest`**, so a bare install resolves to the same verified version. Use `@rc` to state the preview channel explicitly; after the first stable release, `latest` points only to stable. Install the `blue` shell with `npm i -g @dsh-blue/blue-cli@rc`, or use `dsh plugin --profile blue add @dsh-blue/blue@rc`, see [Quickstart](/en/guide/). The current preview is `v0.1.0-rc.6`; `0.1.0-rc.1` shipped broken tarballs (missing files) — if it is installed, upgrade. The contributor development install lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
+During preview, every release that passes a real registry-install check advances both **`rc` and `latest`**, so a bare install resolves to the same verified version. Use `@rc` to state the preview channel explicitly; after the first stable release, `latest` points only to stable. Install the `blue` shell with `npm i -g @dsh-blue/blue-cli@rc`, or use `dsh plugin --profile blue add @dsh-blue/blue@rc`, see [Quickstart](/en/guide/). The current preview is `v0.1.0-rc.7`; `0.1.0-rc.1` shipped broken tarballs (missing files) — if it is installed, upgrade. The contributor development install lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
 
 ## `@rc` does not resolve the newest preview?
 
 pnpm 11 enables a `minimumReleaseAge` cooldown by default: dist-tag resolution silently skips versions published inside the window and falls back to an older one. If `dsh plugin --profile blue add @dsh-blue/blue@rc` installs a stale version, either:
 
-- install the exact version right away — `dsh plugin --profile blue add @dsh-blue/blue@0.1.0-rc.6` (match the repository's newest tag);
+- install the exact version right away — `dsh plugin --profile blue add @dsh-blue/blue@0.1.0-rc.7` (match the repository's newest tag);
 - or re-run the same `@rc` command once the cooldown window has passed (upgrading = re-running the same `plugin add`).
 
 Upgrading through `/update` avoids the trap entirely: it resolves the target from registry metadata, always pins the exact version, and inside the cooldown window it answers with the retry time (an ETA) instead of installing a stale build.

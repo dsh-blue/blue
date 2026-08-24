@@ -94,10 +94,12 @@ function packumentJson(options: { rcTag?: string; time?: Record<string, string> 
       '0.1.0-rc.1': { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.1' } },
       '0.1.0-rc.6': { dependencies: rc2Deps },
       '0.1.0-rc.7': { dependencies: { ...rc2Deps, '@dsh-blue/blue-api': '^0.1.0-rc.7' } },
+      '0.1.0-rc.8': { dependencies: { ...rc2Deps, '@dsh-blue/blue-api': '^0.1.0-rc.8' } },
     },
     time: {
       '0.1.0-rc.6': '2026-08-20T00:00:00.000Z',
       '0.1.0-rc.7': '2026-08-22T00:00:00.000Z',
+      '0.1.0-rc.8': '2026-08-23T00:00:00.000Z',
       ...options.time,
     },
   })
@@ -142,7 +144,7 @@ async function mountWorld(options: {
   updaterInternals.spawnOnce = ((cmd: string, args: readonly string[], opts?: { cwd?: string; timeoutMs?: number }) => {
     spawns.push({ cmd, args: [...args] })
     void opts
-    if (cmd === 'npm') return Promise.resolve({ ...ok(), stdout: options.packument ?? packumentJson({ rcTag: '0.1.0-rc.7' }) })
+    if (cmd === 'npm') return Promise.resolve({ ...ok(), stdout: options.packument ?? packumentJson({ rcTag: '0.1.0-rc.8' }) })
     if (args[0] === '--version') {
       return Promise.resolve({ ...ok(), stdout: `${options.hostVersion ?? 'dsh 0.1.1-rc.2 (node v24)'}\n` })
     }
@@ -161,7 +163,7 @@ async function mountWorld(options: {
     if (args[0] === 'plugin') {
       const specs = args.filter(arg => arg.startsWith('@dsh-blue/'))
       const behavior = options.installBehavior ?? (targetSpecs => {
-        installAt(targetSpecs[0]?.endsWith('@0.1.0-rc.7') === true ? '0.1.0-rc.7' : '0.1.0-rc.6')
+        installAt(targetSpecs[0]?.endsWith('@0.1.0-rc.8') === true ? '0.1.0-rc.8' : '0.1.0-rc.6')
         return ok()
       })
       return Promise.resolve(behavior(specs))
@@ -229,7 +231,7 @@ describe('/update guards', () => {
       if (cmd === 'sh') {
         return Promise.resolve({ code: 1, signal: null, stdout: '', stderr: 'not found', timedOut: false })
       }
-      if (cmd === 'npm') return Promise.resolve({ ...ok(), stdout: packumentJson({ rcTag: '0.1.0-rc.7' }) })
+      if (cmd === 'npm') return Promise.resolve({ ...ok(), stdout: packumentJson({ rcTag: '0.1.0-rc.8' }) })
       return Promise.resolve(ok())
     }) as typeof updaterInternals.spawnOnce
     const result = await world.run()
@@ -271,7 +273,7 @@ describe('/update early verdicts', () => {
   it('answers up to date without touching the profile', async () => {
     const world = await mountWorld({ packument: packumentJson({ rcTag: '0.1.0-rc.6' }) })
     const result = await world.run()
-    expect(result).toEqual({ kind: 'success', text: 'up to date (v0.1.0-rc.6; rc tag: 0.1.0-rc.6)' })
+    expect(result).toEqual({ kind: 'success', text: 'up to date (v0.1.0-rc.7; rc tag: 0.1.0-rc.6)' })
     expect(world.spawns.some(call => call.args[0] === 'plugin')).toBe(false)
     world.dispose()
   })
@@ -317,7 +319,7 @@ describe('/update early verdicts', () => {
     const rows = overlayRows(world.screen)
     expect(rows).toContain('the @dsh-blue/blue bundle itself is not installed')
     expect(rows).toContain('repair: dsh plugin')
-    expect(rows).toContain('v0.1.0-rc.6 → v0.1.0-rc.7')
+    expect(rows).toContain('v0.1.0-rc.7 → v0.1.0-rc.7')
     world.dispose()
   })
 
@@ -326,7 +328,7 @@ describe('/update early verdicts', () => {
     // running version; for a current tree it reads as plain up-to-date.
     const world = await mountWorld({ packument: packumentJson({ rcTag: '0.1.0-rc.3' }) })
     const result = await world.run()
-    expect(result).toEqual({ kind: 'success', text: 'up to date (v0.1.0-rc.6; rc tag: 0.1.0-rc.3)' })
+    expect(result).toEqual({ kind: 'success', text: 'up to date (v0.1.0-rc.7; rc tag: 0.1.0-rc.3)' })
     world.dispose()
   })
 
@@ -359,7 +361,7 @@ describe('/update early verdicts', () => {
 
   it('blocks inside the cooldown window with the ETA on the panel', async () => {
     const world = await mountWorld({
-      packument: packumentJson({ rcTag: '0.1.0-rc.7', time: { '0.1.0-rc.7': '2026-08-24T23:00:00.000Z' } }),
+      packument: packumentJson({ rcTag: '0.1.0-rc.8', time: { '0.1.0-rc.8': '2026-08-24T23:00:00.000Z' } }),
     })
     const result = await world.run()
     expect(result).toEqual({ kind: 'success' })
@@ -411,10 +413,10 @@ describe('/update confirm and swap', () => {
     if (execution?.result?.kind === 'success') expect(execution.result.text).toContain('restart dsh to apply')
     // The install was one exact-version transaction.
     const install = world.spawns.find(call => call.args[0] === 'plugin')
-    expect(install?.args).toEqual(['plugin', '--profile', 'blue', 'add', '@dsh-blue/blue@0.1.0-rc.7'])
+    expect(install?.args).toEqual(['plugin', '--profile', 'blue', 'add', '@dsh-blue/blue@0.1.0-rc.8'])
     // The boot check stops offering what this session installed.
     const state = updaterInternals.readTextFile(join(world.home, '.dsh', 'storages', 'blue-update', 'state.json'))
-    expect(state).toContain('"lastNotifiedVersion": "0.1.0-rc.7"')
+    expect(state).toContain('"lastNotifiedVersion": "0.1.0-rc.8"')
     // The progress panel stays readable; Esc closes it through the bound
     // restore path.
     const panelOverlay = world.screen.overlays.at(-1)?.component as { handleInput(data: string): void } | undefined
@@ -450,7 +452,7 @@ describe('/update confirm and swap', () => {
   it('returns the rollback outcome when the install fails', async () => {
     const world = await mountWorld({
       installBehavior: specs => {
-        if (specs[0]?.endsWith('@0.1.0-rc.7') === true) {
+        if (specs[0]?.endsWith('@0.1.0-rc.8') === true) {
           return { code: 1, signal: null, stdout: '', stderr: 'ERR_PNPM minimumReleaseAge refused', timedOut: false }
         }
         world.installAt('0.1.0-rc.6')
@@ -488,7 +490,7 @@ describe('/update confirm and swap', () => {
 
   it('shows the hours form of the publish age outside the window', async () => {
     const world = await mountWorld({
-      packument: packumentJson({ rcTag: '0.1.0-rc.7', time: { '0.1.0-rc.7': '2026-08-24T19:00:00.000Z' } }),
+      packument: packumentJson({ rcTag: '0.1.0-rc.8', time: { '0.1.0-rc.8': '2026-08-24T19:00:00.000Z' } }),
       cooldownProbe: '60',
     })
     const pending = world.ctx.commands.execute(world.agent, '/update', [], new AbortController().signal)
@@ -520,10 +522,11 @@ describe('/update confirm and swap', () => {
     // No publish time for the target, an unreadable host probe, and no
     // other warnings: the subtitle carries just the versions.
     const noTimePackument = JSON.stringify({
-      'dist-tags': { rc: '0.1.0-rc.7' },
+      'dist-tags': { rc: '0.1.0-rc.8' },
       versions: {
         '0.1.0-rc.6': { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.2' } },
         '0.1.0-rc.7': { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.2' } },
+        '0.1.0-rc.8': { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.2' } },
       },
       time: { '0.1.0-rc.6': '2026-08-20T00:00:00.000Z' },
     })
@@ -544,7 +547,7 @@ describe('/update confirm and swap', () => {
     const overlay = await world.waitOverlay()
     const form = overlay as { handleInput(data: string): void, render(width: number): string[] }
     const subtitle = form.render(120).join('\n')
-    expect(subtitle).toContain('v0.1.0-rc.6 → v0.1.0-rc.7')
+    expect(subtitle).toContain('v0.1.0-rc.6 → v0.1.0-rc.8')
     expect(subtitle).not.toContain('published')
     form.handleInput(KEY.escape)
     await pending
@@ -554,7 +557,7 @@ describe('/update confirm and swap', () => {
   it('treats a missing pnpm probe as the default window', async () => {
     const world = await mountWorld({
       cooldownProbe: 'missing',
-      packument: packumentJson({ rcTag: '0.1.0-rc.7', time: { '0.1.0-rc.7': '2026-08-24T23:00:00.000Z' } }),
+      packument: packumentJson({ rcTag: '0.1.0-rc.8', time: { '0.1.0-rc.8': '2026-08-24T23:00:00.000Z' } }),
     })
     const result = await world.run()
     expect(result).toEqual({ kind: 'success' })
@@ -566,7 +569,7 @@ describe('/update confirm and swap', () => {
     for (const probe of ['fail', 'blank'] as const) {
       const world = await mountWorld({
         cooldownProbe: probe,
-        packument: packumentJson({ rcTag: '0.1.0-rc.7', time: { '0.1.0-rc.7': '2026-08-24T23:00:00.000Z' } }),
+      packument: packumentJson({ rcTag: '0.1.0-rc.8', time: { '0.1.0-rc.8': '2026-08-24T23:00:00.000Z' } }),
       })
       const result = await world.run()
       expect(result, probe).toEqual({ kind: 'success' })

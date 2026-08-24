@@ -31,7 +31,7 @@ This repository is the standalone home of Blue's five workspace packages under t
 ## Quick start
 
 > [!NOTE]
-> `0.1.0-rc.6` is the preview release. Each verified preview advances both the **`rc`** and **`latest`** tags; use `@rc` when you want to state the preview channel explicitly. After the first stable release, `latest` returns to the stable line.
+> `0.1.0-rc.7` is the preview release. Each verified preview advances both the **`rc`** and **`latest`** tags; use `@rc` when you want to state the preview channel explicitly. After the first stable release, `latest` returns to the stable line.
 
 Prerequisites: Node `^22.19 || >=24` and pnpm 11 (both install paths; the host's `plugin` command forwards to pnpm — if it is missing, the first `blue` run says exactly how to install it: `npm i -g pnpm` or `corepack enable pnpm`). Install the shell with **npm, not pnpm** — pnpm's strict global layout does not link the nested dsh host's dependencies, and boot fails with `ERR_MODULE_NOT_FOUND`. A global `dsh` CLI is only needed on the direct-dsh path — the shell ships its own pinned host.
 
