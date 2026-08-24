@@ -36,9 +36,9 @@ The **`./paste-image`** subpath plugin (`blue-paste-image`, inject `['attachment
   initial timeline, folds consecutive assistant reasoning/text deltas into
   transcript-style items, and loads selected raw details from memory. Copying
   one item with `c` (or `/trace copy <seq>`) adds official relationship data;
-  Enter opens a fixed-height detail viewport and PageUp/PageDown scroll its
-  complete JSON; `a` and `/trace copy all` copy the full timeline through the
-  existing OSC52/native clipboard pipeline.
+  Enter opens a separate fixed-height detail window and PageUp/PageDown scroll
+  its complete JSON; `a` and `/trace copy all` copy the full timeline through
+  the existing OSC52/native clipboard pipeline.
 
 - **`SelectListPanel` (`src/select-list.ts`, S24b)** — the single-select list panel every pick surface shares: framed by `framePanel` with a title hint, Up/Down wraparound over a center-on-cursor 8-row window (`windowedRange`/`counterRow`/`cycle`/`oneLine` are the shared helpers `BlueSelect` and the plan-review panel consume too), the `❯ ` pointer and `primary` label on the cursor row, `success` badges, muted descriptions inside the row budget, and an `(n/m)` scroll counter. Rows are `SelectRow {value, label, description?, badge?, disabled?}` with `initialValue` cursor seeding; a `disabled` row blocks Enter into `onBlockedSelect`. `/sessions`, the provider picker, the wizard's choose steps, and the `/permission` picker are its consumers; `ModelPanel` keeps its own geometry (tab strip + type-to-search interleave chrome the plain list cannot carry).
 - **`InfoPanel` (`src/info-panel.ts`, S25)** — the read-only two-column info panel `/status` and `/context` mount (the kimi usage/status report shape in Blue's `/help` idiom): headed sections of label/value rows — labels muted and padEnd-aligned, values composed of styled segments (`InfoSegment {text, style?}` joins directly, so a context bar carries its severity color beside plain counts) — over the `framePanel` chrome with the `showing 1-N of M` scroll window and the Escape/Enter/`q` close keys. The section builders in `src/session-commands.ts` are pure functions over the read facts, and the shared context-window section renders the `█░` bar (20 columns) severity-colored at the kimi thresholds (warn from 50%, danger from 85%) with the ceiling percent and `used / window` counts in the 1024 base.

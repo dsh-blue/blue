@@ -63,7 +63,7 @@ describe('registerTraceCommand', () => {
     await Promise.resolve()
     const detail = screen.overlays[1]?.component
     expect(detail).toBeDefined()
-    expect(detail?.render(80).join('\n')).toContain('"type": "user/message"')
+    expect(detail?.render(80).join('\n')).toContain('user/message')
     detail?.handleInput('\x1b[6~')
     detail?.handleInput('\x1b')
     panel?.handleInput('a')

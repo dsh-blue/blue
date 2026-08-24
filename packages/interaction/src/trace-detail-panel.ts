@@ -53,9 +53,12 @@ export class TraceDetailPanel implements BlueFocusable {
     const maxScroll = Math.max(0, lines.length - DETAIL_VISIBLE_LINES)
     this.scrollTop = Math.min(this.scrollTop, maxScroll)
     const visible = lines.slice(this.scrollTop, this.scrollTop + DETAIL_VISIBLE_LINES)
-    const body: string[] = ['']
-    for (const line of visible) body.push(colors.textMuted(`  ${components.truncateToWidth(line, Math.max(1, width - 2))}`))
-    for (let index = visible.length; index < DETAIL_VISIBLE_LINES; index += 1) body.push('')
+    const body: string[] = [
+      '',
+      colors.textMuted(`  ${item.type} · ${item.surface} · source #${String(item.seq)}`),
+    ]
+    for (const line of visible) body.push(this.paintJsonLine(line, width))
+    for (let index = visible.length; index < DETAIL_VISIBLE_LINES - 1; index += 1) body.push('')
     const end = Math.min(lines.length, this.scrollTop + DETAIL_VISIBLE_LINES)
     body.push(colors.textMuted(components.truncateToWidth(
       `  lines ${String(this.scrollTop + 1)}-${String(end)} of ${String(lines.length)} · ↑↓ line · PgUp/PgDn page · g/G top/end`,
@@ -73,4 +76,19 @@ export class TraceDetailPanel implements BlueFocusable {
   private lines(): string[] {
     return this.options.text.split('\n')
   }
+
+  private paintJsonLine(line: string, width: number): string {
+    const { colors } = this.options.theme
+    const trimmed = line.trimStart()
+    const indent = line.slice(0, line.length - trimmed.length)
+    const key = /^("[^"\n]+":)(.*)$/.exec(trimmed)
+    if (key === null) return colors.textMuted(componentsTruncate(this.options.components, `  ${line}`, width))
+    const prefixWidth = 2 + this.options.components.visibleWidth(indent) + key[1]!.length
+    const value = componentsTruncate(this.options.components, key[2]!, Math.max(1, width - prefixWidth))
+    return colors.textMuted(`  ${indent}`) + colors.accent(key[1]!) + colors.text(value)
+  }
+}
+
+function componentsTruncate(components: BlueComponents, text: string, width: number): string {
+  return components.truncateToWidth(text, Math.max(1, width))
 }

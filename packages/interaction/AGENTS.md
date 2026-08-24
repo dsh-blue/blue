@@ -16,10 +16,12 @@ replacement/source relationships; Blue does not persist or redefine session
 events. Consecutive `assistant/chunk` reasoning/text deltas fold into one item
 per `turn:step:chunk.type`, matching transcript streaming slots, and retain
 their source sequence range. `TracePanel` is mounted through the D30
-editor-slot replacement and supports Up/Down item navigation, Enter detail
-loading, PageUp/PageDown scrolling inside the selected item's fixed-height
-detail viewport, `c` selected-item copy, `a` full-timeline copy, plus
-`/trace copy <seq>` and `/trace copy all`.
+editor-slot replacement and supports Up/Down item navigation, Enter opening a
+stacked full-detail window, PageUp/PageDown scrolling inside that fixed-height
+JSON viewport, `c` selected-item copy, `a` full-timeline copy, plus
+`/trace copy <seq>` and `/trace copy all`. The selected list row uses the
+theme's full-width `selectedBg`; current-surface dots and stream titles use
+semantic status colors, while detail JSON keys use the theme accent.
 Clipboard output uses the shared OSC52/native `copyTextToClipboard` pipeline.
 
 `src/commands-plugin.ts` registers `/quit` `/resume` `/new` `/fork` `/sessions` `/help` `/init` (`/new`/`/fork` emit the app layer's `blue/request-new`/`blue/request-fork`; `/sessions` is a persistence-list picker panel; `/help` enumerates `commands.list` + `keymap.list()`). `/theme` (`src/theme-switch.ts`) hot-swaps the `blueTheme` provider via `ctx.registry.delete` + `ctx.plugin`, restoring dark on mount failure. A bare invocation opens the theme picker (D54): every cursor move live-applies the highlighted palette through the shared `SelectListPanel` `onHighlight` callback, Enter keeps it, Escape reverts to the opening theme; without the display quartet the bare command falls back to the `← current` text listing (the selected settings-list row styles in `primary`, not `accent`). Each live swap rebuilds `blue-input`, so the picker re-homes its editor dock slot after every swap and on a deferred `blue/input-editor-changed` emission.

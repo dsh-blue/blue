@@ -75,13 +75,14 @@ describe('TracePanel', () => {
   })
 
   it('covers page navigation and long windows', () => {
-    const many = Array.from({ length: 15 }, (_, seq) => ({ ...items[0]!, seq }))
+    const many = [...Array.from({ length: 15 }, (_, seq) => ({ ...items[0]!, seq })), { ...items[0]!, seq: 15, title: 'Custom event' }]
     const mounted = new TracePanel(options({ items: many }))
     mounted.handleInput(KEY.up)
     mounted.handleInput('\x1b[6~')
     mounted.handleInput('\x1b[5~')
-    for (let index = 0; index < 12; index += 1) mounted.handleInput(KEY.down)
-    for (let index = 0; index < 12; index += 1) mounted.handleInput(KEY.up)
+    for (let index = 0; index < 16; index += 1) mounted.handleInput(KEY.down)
+    expect(mounted.render(30).length).toBeGreaterThan(0)
+    for (let index = 0; index < 16; index += 1) mounted.handleInput(KEY.up)
     expect(mounted.render(30).length).toBeGreaterThan(0)
   })
 

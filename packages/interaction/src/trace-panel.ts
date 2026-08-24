@@ -14,6 +14,13 @@ const KEY_DOWN = '\x1b[B'
 const KEY_PAGE_UP = '\x1b[5~'
 const KEY_PAGE_DOWN = '\x1b[6~'
 
+const TRACE_TITLE_COLORS = new Map<string, keyof Pick<BlueTheme['colors'], 'roleUser' | 'accent' | 'success' | 'textStrong'>>([
+  ['User request', 'roleUser'],
+  ['Thinking', 'accent'],
+  ['Assistant draft', 'success'],
+  ['Assistant answer', 'success'],
+])
+
 /** Dependencies and callbacks required by {@link TracePanel}. */
 export interface TracePanelOptions {
   readonly theme: BlueTheme
@@ -80,11 +87,12 @@ export class TracePanel implements BlueFocusable {
     if (this.cursor < this.scrollTop) this.scrollTop = this.cursor
     /* v8 ignore next -- see the cursor re-anchoring note above. */
     if (this.cursor >= this.scrollTop + maxVisible) this.scrollTop = this.cursor - maxVisible + 1
-    const body: string[] = ['', colors.textMuted(`  session ${this.options.sessionId} · ${String(items.length)} events`)]
+    const body: string[] = ['', `${colors.textMuted('  session ')}${colors.text(this.options.sessionId)}${colors.textMuted(` · ${String(items.length)} events`)}`]
     for (const [index, item] of items.slice(this.scrollTop, this.scrollTop + maxVisible).entries()) {
       const absolute = this.scrollTop + index
-      const pointer = absolute === this.cursor ? colors.primary('❯ ') : '  '
-      const surface = item.surface === 'current' ? colors.text('●') : colors.textMuted('·')
+      const selected = absolute === this.cursor
+      const pointer = selected ? colors.primary('❯ ') : '  '
+      const surface = item.surface === 'current' ? colors.success('●') : colors.textMuted('·')
       // A streamed delta may contain newlines. Keep each timeline entry one
       // physical terminal row: pi-tui's differential renderer counts array
       // rows, so embedded newlines would desynchronise its row map and leave
@@ -93,9 +101,15 @@ export class TracePanel implements BlueFocusable {
       const preview = item.summary.replaceAll(/\s+/g, ' ').trim()
       const summary = preview.length > 0 ? `  ${preview}` : ''
       const sequence = item.lastSeq === item.seq ? `#${String(item.seq)}` : `#${String(item.seq)}-${String(item.lastSeq)}`
-      body.push(`${pointer}${colors.textMuted(traceTime(item.time))} ${surface} ${colors.textStrong(`${sequence} ${item.title}`)}${components.truncateToWidth(summary, Math.max(1, width - 30))}`)
+      const titleColor = colors[TRACE_TITLE_COLORS.get(item.title) ?? 'textStrong']
+      const row = `${pointer}${colors.textMuted(traceTime(item.time))} ${surface} ${titleColor(`${sequence} ${item.title}`)}${colors.text(summary)}`
+      const truncated = components.truncateToWidth(row, Math.max(1, width))
+      body.push(selected
+        ? colors.selectedBg(truncated + ' '.repeat(Math.max(0, width - components.visibleWidth(truncated))))
+        : truncated)
     }
-    body.push(colors.textMuted(components.truncateToWidth('  [c] copy item  [a] copy all  [Enter] open details  [↑↓] select', Math.max(1, width))))
+    const hint = `${colors.textMuted('  ')}${colors.accent('[c]')}${colors.textMuted(' copy  ')}${colors.accent('[a]')}${colors.textMuted(' all  ')}${colors.accent('[Enter]')}${colors.textMuted(' details  ')}${colors.accent('[↑↓]')}${colors.textMuted(' select')}`
+    body.push(components.truncateToWidth(hint, Math.max(1, width)))
     return framePanel(body, width, {
       title: 'Trace',
       titleHint: '· Esc / q to close',
