@@ -63,7 +63,7 @@ jobs:
       # OIDC migration replaces this isolated auth step only. Candidate and
       # promotion behavior deliberately know nothing about credential source.
       - name: npm auth (granular token)
-        run: printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" >> ~/.npmrc
+        run: printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" >> "${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: verify npm publisher identity
@@ -123,7 +123,7 @@ jobs:
           name: npm-tarballs
           path: .artifacts/pack
       - name: npm auth (granular token)
-        run: printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" >> ~/.npmrc
+        run: printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" >> "${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       - run: node script/release-packages.mjs promote
