@@ -51,11 +51,15 @@ Scope boundaries:
   `version`/`plugin` surfaces never sync. The payload itself is the
   shipped `cordis` composition with the persona retargeted at Blue's three
   planes (distributable Blue plugin package via `dsh plugin add` /
-  composition rows / host-half-only dynamic plugins — a real Blue feature
-  never requires the dsh-blue source tree; verified by the S39 spike: a
-  plain ESM package layered after Blue's bundle mounts and renders) and
-  three skills: `blue-plugin-development` (the plugin-package path), `editing-cordis-compositions`
-  (adapted), `cordis-plugin-development` (trimmed to the host half).
+  composition rows / dynamic plugins — a real Blue feature never requires
+  the dsh-blue source tree; verified by the S39 spike: a plain ESM package
+  layered after Blue's bundle mounts and renders, and a live-session probe
+  confirmed the dynamic host half reaches all seven Blue L1 services and
+  hot-mounts UI). The persona's workflow is prototype-in-session (dynamic
+  hot-mount, user sees it immediately) then package-and-ask-distribute.
+  Three skills: `blue-plugin-development` (the plugin-package path),
+  `editing-cordis-compositions` (adapted), `cordis-plugin-development`
+  (host half, including the Blue UI hot-mount surface).
 - The updater family (`blue-interaction/src/updater/`, D52) stays the
   in-app surface; the shell deliberately reimplements the ~30 lines of
   profile reading rather than adding an exports subpath to a plugin
