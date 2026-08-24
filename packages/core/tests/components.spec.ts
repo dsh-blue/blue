@@ -704,14 +704,20 @@ describe('createSettingsList', () => {
 
     const output = list.render(60).join('\n')
     // The selected row's label and value take the interaction primary (S12
-    // closes the S10 review item), the other row text, the description
-    // muted, and the cursor is the primary marker.
+    // closes the S10 review item), the other row's label AND value take
+    // plain text (the S38 contrast ruling: the value column is content, not
+    // de-emphasis), the description muted, and the cursor the primary
+    // marker.
     expect(output).toContain('«primary:Mode»')
     expect(output).toContain('«primary:a»')
     expect(output).toContain('«text:Note»')
-    expect(output).toContain('«muted:plain»')
+    expect(output).toContain('«text:plain»')
     expect(output).toContain('«muted:  the mode»')
     expect(output).toContain('«primary:❯ »')
+
+    // updateValue rewrites one entry's displayed value in place.
+    list.updateValue('note', 'edited')
+    expect(list.render(60).join('\n')).toContain('«text:edited»')
 
     // Enter cycles the first item's value; Escape cancels.
     list.handleInput('\r')

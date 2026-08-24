@@ -126,12 +126,15 @@ function imageTheme(colors: BlueSemanticColors): ImageTheme {
  * Map the palette to a settings-list theme; `cursor` is a plain string.
  * The selected row's label and value take the interaction primary (S12
  * closes the S10 review item that left them on accent — the selected row
- * is an interaction target, `primary` is its token).
+ * is an interaction target, `primary` is its token). Unselected values
+ * paint plain `text`, not `muted`: the value column is content, and a dim
+ * value column left the selected row indistinguishable (the S38 contrast
+ * finding).
  */
 function settingsListTheme(colors: BlueSemanticColors): SettingsListTheme {
   return {
     label: (text, selected) => (selected ? colors.primary(text) : colors.text(text)),
-    value: (text, selected) => (selected ? colors.primary(text) : colors.muted(text)),
+    value: (text, selected) => (selected ? colors.primary(text) : colors.text(text)),
     description: colors.muted,
     cursor: colors.primary('❯ '),
     hint: colors.muted,
@@ -467,8 +470,12 @@ class SelectListAdapter implements BlueSelectList {
 }
 
 /** Delegate exposing a pi-tui `SettingsList` through the Blue contract. */
-class SettingsListAdapter {
+class SettingsListAdapter implements BlueSettingsList {
   constructor(private readonly list: SettingsList) {}
+
+  updateValue(id: string, newValue: string): void {
+    this.list.updateValue(id, newValue)
+  }
 
   render(width: number): string[] {
     return this.list.render(width)

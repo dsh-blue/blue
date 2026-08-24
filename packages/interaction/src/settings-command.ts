@@ -14,15 +14,19 @@
  * omission semantics. A stale revision (`SettingsConflictError`) re-reads
  * and retries once; anything still failing flashes the editor notice.
  *
- * The core adapter is construct-only (pi-tui's `SettingsList` exposes
- * `updateValue` but no highlight getter, and the Blue adapter surfaces
- * neither), so refresh is a whole-panel rebuild: every accepted write and
- * every `settings/document-updated` emission (the host file watcher fires
- * it after an external edit) re-describes and remounts through one shared
- * `mount` closure. The generation counter keeps a write that already
- * announced itself through the event from rebuilding twice. The service
- * reads are lazy `ctx.get` — this fiber must never become a theme
- * dependent (the `/theme` swap disposes dependents).
+ * The core adapter surfaces pi-tui's `updateValue` (one entry's displayed
+ * value, in place), so refresh is diff-and-update instead of a whole-panel
+ * rebuild: an accepted write updates the panel's `lastKnown` value map and
+ * leaves the mounted list alone (pi-tui's own cycle already displays the
+ * value, and the commit's `settings/document-updated` emission diffs empty
+ * against the just-updated map), a failed write rolls the row back through
+ * `updateValue`, and a `settings/document-updated` emission (the host file
+ * watcher fires it after an external edit) re-describes and pushes only
+ * the changed rows' values into the live list. A changed row set (a
+ * namespace appeared or disappeared) falls back to the full remount
+ * through the shared `mount` closure. The service reads are lazy `ctx.get`
+ * — this fiber must never become a theme dependent (the `/theme` swap
+ * disposes dependents).
  *
  * @module @dsh-blue/blue-interaction/settings-command
  */
@@ -124,6 +128,16 @@ const ROWS: readonly SettingRow[] = [
 const ROWS_BY_ID: ReadonlyMap<string, SettingRow> = new Map(ROWS.map(row => [row.id, row]))
 
 /**
+ * Write metadata for the dynamic permission row. Its value cycle comes from
+ * the presets service at panel-build time, so it cannot live in `ROWS` —
+ * but the write path only needs the namespace/key/kind triple.
+ */
+const PERMISSION_ROW: SettingRow = {
+  id: 'permission.defaultPreset', ns: 'permission', key: 'defaultPreset',
+  label: 'Default permission preset', kind: 'string', values: [],
+}
+
+/**
  * Render a row's current value for the right column: booleans and numbers
  * stringify, an absent reasoning effort reads as its `default` preset (the
  * key is omitted from the section), anything else falls back to the first
@@ -159,6 +173,14 @@ function settingItem(row: SettingRow, raw: unknown): BlueSettingItem {
   }
 }
 
+/** The built panel rows plus their id → display-string map. */
+interface BuiltItems {
+  /** The item list, in group order. */
+  readonly items: BlueSettingItem[]
+  /** Each row's display value by id — the panel's last-known baseline. */
+  readonly values: Map<string, string>
+}
+
 /**
  * Build the panel's items from a fresh `describe()`: every static row
  * whose namespace the host registered (absent namespaces drop their rows),
@@ -166,30 +188,35 @@ function settingItem(row: SettingRow, raw: unknown): BlueSettingItem {
  * service exist, then the open-file action.
  * @param settings - the host settings service.
  * @param presets - the permission presets table, when the host has one.
- * @returns the item list, in group order.
+ * @returns the item list, in group order, plus the id → display map.
  */
-function buildItems(settings: SettingsProvider, presets: PermissionPresetsService | undefined): BlueSettingItem[] {
+function buildItems(settings: SettingsProvider, presets: PermissionPresetsService | undefined): BuiltItems {
   const described = new Map(settings.describe().map(descriptor => [String(descriptor.ns), descriptor]))
   const items: BlueSettingItem[] = []
+  const values = new Map<string, string>()
+  const push = (item: BlueSettingItem): void => {
+    items.push(item)
+    values.set(item.id, item.currentValue)
+  }
   for (const row of ROWS) {
     const descriptor = described.get(row.ns)
     if (descriptor === undefined) continue
-    items.push(settingItem(row, (descriptor.value as Record<string, unknown>)[row.key]))
+    push(settingItem(row, (descriptor.value as Record<string, unknown>)[row.key]))
   }
   const permission = described.get('permission')
   if (permission !== undefined && presets !== undefined) {
     const raw = (permission.value as Record<string, unknown>).defaultPreset
     const current = typeof raw === 'string' ? raw : String(presets.names[0] ?? '')
-    items.push({
-      id: 'permission.defaultPreset',
-      label: 'Default permission preset',
+    push({
+      id: PERMISSION_ROW.id,
+      label: PERMISSION_ROW.label,
       description: 'applies to new sessions',
       currentValue: current,
       values: presets.names.includes(current) ? [...presets.names] : [current, ...presets.names],
     })
   }
-  items.push({ id: OPEN_FILE_ID, label: 'Open settings.yaml in $EDITOR', currentValue: '', values: [''] })
-  return items
+  push({ id: OPEN_FILE_ID, label: 'Open settings.yaml in $EDITOR', currentValue: '', values: [''] })
+  return { items, values }
 }
 
 /** Parse a cycled string back into the row's value type. */
@@ -279,11 +306,13 @@ export function registerSettingsCommand(ctx: Context): () => void {
 
       let closed = false
       const inactive = (): boolean => unloaded || closed
-      /** Bumped per remount; a write whose commit already rebuilt skips its own. */
-      let generation = 0
       /* v8 ignore next -- the placeholder runs only if the panel settles
          before its mount returns, which the building order forbids */
       let restore: () => void = () => {}
+      /** The mounted list; `mount` assigns it before any reader can run. */
+      let list: BlueSettingsList
+      /** The id → display-string map of what the mounted list shows. */
+      let lastKnown: Map<string, string> = new Map()
 
       const notice = (text: string): void => {
         getSharedEditor()?.notice?.(text)
@@ -291,8 +320,6 @@ export function registerSettingsCommand(ctx: Context): () => void {
 
       /** Rebuild the whole panel from a fresh describe() and remount it. */
       const rebuild = (): void => {
-        if (inactive()) return
-        generation += 1
         restore()
         mount()
       }
@@ -309,10 +336,9 @@ export function registerSettingsCommand(ctx: Context): () => void {
           await openSettingsFile()
           return
         }
-        const row = ROWS_BY_ID.get(id)
+        const row = ROWS_BY_ID.get(id) ?? (id === PERMISSION_ROW.id ? PERMISSION_ROW : undefined)
         if (row === undefined) return
         const ns = settingsNamespace(row.ns)
-        const startedAt = generation
         for (let attempt = 0; attempt < 2; attempt += 1) {
           const descriptor = settings.describe().find(entry => String(entry.ns) === row.ns)
           if (descriptor === undefined) return
@@ -325,16 +351,22 @@ export function registerSettingsCommand(ctx: Context): () => void {
           } catch (error) {
             if (error instanceof SettingsConflictError && attempt === 0) continue
             if (!inactive()) {
+              // The list already displays the rejected cycle: roll the row
+              // back to the last committed display string.
+              const known = lastKnown.get(id)
+              if (known !== undefined) list.updateValue(id, known)
+              display.screen.requestRender()
               const message = error instanceof Error ? error.message : String(error)
               notice(display.colors.error(`could not update ${row.label.toLowerCase()}: ${message}`))
             }
             return
           }
           if (inactive()) return
+          // No rebuild: the list's own cycle already displays the value,
+          // and the commit's document-updated emission diffs empty against
+          // this lastKnown update.
+          lastKnown.set(id, newValue)
           notice(`${row.label.toLowerCase()} set to ${newValue}`)
-          // The commit's document-updated emission already rebuilt; only a
-          // commit that changed nothing raw leaves the panel to refresh.
-          if (generation === startedAt) rebuild()
           return
         }
       }
@@ -343,7 +375,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
        * The open-file row: materialize the document, hand it to the
        * external editor behind a screen suspend (the Ctrl-G discipline),
        * and write the edited text back — the host file watcher's
-       * document-updated emission rebuilds the panel.
+       * document-updated emission refreshes the panel.
        */
       const openSettingsFile = async (): Promise<void> => {
         const path = await settings.prepareDocument().catch(() => undefined)
@@ -379,8 +411,10 @@ export function registerSettingsCommand(ctx: Context): () => void {
       /** Mount a fresh panel built from the current describe(). */
       const mount = (): void => {
         const presets = ctx.get('permissionPresets') as PermissionPresetsService | undefined
-        const list = display.components.createSettingsList({
-          items: buildItems(settings, presets),
+        const built = buildItems(settings, presets)
+        lastKnown = built.values
+        list = display.components.createSettingsList({
+          items: built.items,
           onChange: (id, newValue) => {
             void write(id, newValue)
           },
@@ -402,9 +436,30 @@ export function registerSettingsCommand(ctx: Context): () => void {
       }
 
       // Live while the panel is open: the host file watcher announces
-      // external edits (and our own commits) here.
+      // external edits (and our own commits) here. Refresh diffs the fresh
+      // describe() against lastKnown and pushes only the changed rows'
+      // values into the live list — self-commits land after lastKnown
+      // moved, so they repaint nothing; a changed row set (a namespace
+      // appeared or disappeared) is the only remount.
       const offDocument = ctx.on('settings/document-updated', () => {
-        rebuild()
+        if (inactive()) return
+        const presets = ctx.get('permissionPresets') as PermissionPresetsService | undefined
+        const built = buildItems(settings, presets)
+        // buildItems' order is deterministic, so the joined keys compare
+        // the row set (same membership lands in the same order).
+        if ([...built.values.keys()].join('') !== [...lastKnown.keys()].join('')) {
+          rebuild()
+          return
+        }
+        let changed = false
+        for (const [id, value] of built.values) {
+          if (lastKnown.get(id) !== value) {
+            list.updateValue(id, value)
+            changed = true
+          }
+        }
+        lastKnown = built.values
+        if (changed) display.screen.requestRender()
       })
       mount()
       return { kind: 'success' }

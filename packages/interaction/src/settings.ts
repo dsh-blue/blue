@@ -7,31 +7,36 @@
  * host's settings service sees exactly one `blue` schema. Until a settings
  * service layers user overrides the thunk answers the composition defaults.
  *
- * The plugin also owns the persisted default theme: after the loader
- * settles it reads `blue.theme` and swaps the live provider when the
- * persisted key differs from the baseline bundle theme, and it re-reads on
- * every `settings/updated` commit of the `blue` namespace. The swap goes
- * through `./theme-switch.ts`'s `applyTheme` — the same provider exchange
- * `/theme` drives — so the command's live-provider record stays honest. A
- * session-level `/theme` pick survives unrelated `blue` writes: the plugin
- * records only the themes IT applied (`lastAppliedTheme`), so a commit that
- * leaves the persisted theme unchanged never touches the live provider.
- * The plugin never injects `blueTheme` (a swap disposes every dependent
- * fiber — injecting would self-dispose mid-swap); every service read is a
- * lazy `ctx.get`.
+ * The plugin also owns the persisted default theme: the initial apply is
+ * gated on session attach — when `blueSession.current` is already set the
+ * swap runs as soon as the resolved settings scope goes live (the section
+ * installer's `onChange`, one inject-beat after apply), otherwise the
+ * first `'blue/session-changed'` arms it (the app emits that event only
+ * after `boot()` returns, so disposing the baseline theme fiber can never
+ * race the loader's activation assertion; session-less headless hosts
+ * never swap — there is no UI to paint). After the attach the plugin
+ * re-reads on every `settings/updated` commit of the `blue` namespace.
+ * The swap goes through `./theme-switch.ts`'s `applyTheme` — the same
+ * provider exchange `/theme` drives — so the command's live-provider
+ * record stays honest. A session-level `/theme` pick survives unrelated
+ * `blue` writes: the plugin records only the themes IT applied
+ * (`lastAppliedTheme`), so a commit that leaves the persisted theme
+ * unchanged never touches the live provider. The plugin never injects
+ * `blueTheme` (a swap disposes every dependent fiber — injecting would
+ * self-dispose mid-swap); every service read is a lazy `ctx.get`.
  *
  * @module @dsh-blue/blue-interaction/settings
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-// Empty type import carries the loader Context merge for the settlement
-// await (the update check's own discipline).
-import type {} from '@deepseek-ai/cordis-plugin-loader'
 // Empty type import carries the `settings` Context merge and the
 // 'settings/updated' Events merge this plugin subscribes to.
 import type {} from '@deepseek-ai/dsh-settings'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
+// Empty type import carries the app-owned `blueSession` Context merge and
+// the 'blue/session-changed' Events merge this plugin waits on.
+import type {} from '@dsh-blue/blue-app'
 import { applyTheme } from './theme-switch.ts'
 
 /** The user-tunable Blue settings (the `blue` settings namespace). */
@@ -115,7 +120,7 @@ async function syncTheme(ctx: Context, isUnloaded: () => boolean): Promise<void>
 /**
  * Mount the settings consolidation: register the `blue` section (the
  * thunk flips to the resolved scope while a settings service lives), apply
- * the persisted theme once the tree settles, and follow later commits.
+ * the persisted theme at session attach, and follow later commits.
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
@@ -123,24 +128,43 @@ export function apply(ctx: Context): void {
   ctx.effect(() => () => {
     unloaded = true
   })
+  const sync = (): void => {
+    /* v8 ignore next 1 -- the defensive catch; syncTheme never rejects */
+    void syncTheme(ctx, () => unloaded).catch(() => {})
+  }
+  // `settings/updated` commits landing before the first attach need no
+  // follow: the attach-time sync reads the current value.
+  let attached = ctx.get('blueSession')?.current != null
+  // The initial sync must read the resolved scope, which goes live one
+  // inject-beat after apply — installSettingsSection fires onChange then,
+  // and re-fires it on every blue commit through the scope watch, so
+  // `primed` keeps that watch from doubling the settings/updated channel.
+  let primed = false
+  const prime = (): void => {
+    if (primed || !attached) return
+    primed = true
+    sync()
+  }
   installSettingsSection(ctx, settingsNamespace('blue'), Config, DEFAULT_SETTINGS, {
     setSource: next => {
       source = next
     },
-    onChange: () => {},
+    onChange: prime,
   })
   ctx.on('settings/updated', (ns) => {
-    if (String(ns) !== 'blue') return
-    /* v8 ignore next 1 -- the defensive catch; syncTheme never rejects */
-    void syncTheme(ctx, () => unloaded).catch(() => {})
+    if (String(ns) !== 'blue' || !attached) return
+    sync()
   })
-  // Fire-and-forget with the fiber's unload flag gating every continuation
-  // (the update check's discipline): the persisted theme applies only after
-  // the whole tree settles, never mid-boot.
-  /* v8 ignore next 1 -- the defensive catch; the boot body never rejects */
-  void (async () => {
-    await ctx.get('loader')?.await()
-    if (unloaded) return
-    await syncTheme(ctx, () => unloaded)
-  })().catch(() => {})
+  // Session attach is the post-boot signal (the terminal-title precedent):
+  // the app emits 'blue/session-changed' only after boot() returns, so the
+  // swap can never race the loader's entry-activation assertion. An
+  // already-attached session skips the wait: the onChange prime above
+  // carries the initial sync.
+  if (!attached) {
+    const off = ctx.on('blue/session-changed', () => {
+      off()
+      attached = true
+      prime()
+    })
+  }
 }

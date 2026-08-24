@@ -396,6 +396,21 @@ export class FakeBlueSettingsList implements BlueSettingsList {
    */
   constructor(readonly options: BlueSettingsListOptions) {}
 
+  /** updateValue calls, in order. */
+  readonly updates: [string, string][] = []
+
+  /**
+   * Mirror pi-tui's `updateValue`: set the matching item's displayed value
+   * without touching the highlight, and record the call.
+   * @param id - the item id.
+   * @param newValue - the value to display.
+   */
+  updateValue(id: string, newValue: string): void {
+    this.updates.push([id, newValue])
+    const item = this.options.items.find(entry => entry.id === id)
+    if (item !== undefined) item.currentValue = newValue
+  }
+
   handleInput(data: string): void {
     const { items } = this.options
     if (data === KEY.up || data === KEY.down) {

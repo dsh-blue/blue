@@ -3,7 +3,8 @@
  * guards, the group-ordered item list (namespace absence, off-preset
  * merges, the permission row's service gating), the write path (parsed
  * patches with descriptor revisions, the reasoning-effort unset, the
- * conflict retry, the notice channel), the rebuild-on-event refresh, and
+ * conflict retry, the notice channel, the no-remount success and the
+ * updateValue rollback on failure), the diff-and-update refresh, and
  * the open-file flow through the external-editor seam.
  */
 
@@ -295,10 +296,15 @@ describe('/settings writes', () => {
     await settle()
     expect(bench.settings.writes).toEqual([{ ns: 'blue', patch: { updateCheck: false }, revision: 1 }])
     expect(bench.notices).toEqual(['update check set to false'])
-    // The accepted write rebuilt the panel from the fresh describe().
-    expect(bench.components.settingsLists).toHaveLength(2)
-    expect(bench.components.settingsLists.at(-1)!.options.items[0]?.currentValue).toBe('false')
-    expect(bench.screen.overlays[0]?.hidden).toBe(true)
+    // The accepted write does NOT remount: the list's own cycle already
+    // displays the value, and lastKnown moved with it.
+    expect(bench.components.settingsLists).toHaveLength(1)
+    expect(bench.components.settingsLists[0]?.options.items[0]?.currentValue).toBe('false')
+    expect(bench.screen.renderRequests).toBe(0)
+    // A document-updated with no further change diffs empty: no updateValue.
+    bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
+    expect(bench.components.settingsLists[0]?.updates).toEqual([])
+    expect(bench.screen.renderRequests).toBe(0)
   })
 
   it('writes enum and number cycles as strings and numbers', async () => {
@@ -313,6 +319,18 @@ describe('/settings writes', () => {
       { ns: 'shell', patch: { timeoutMs: 120_000 }, revision: 1 },
     ])
     expect(bench.notices).toEqual(['theme set to ocean', 'shell timeout (ms) set to 120000'])
+  })
+
+  it('writes the permission preset row through to the permission namespace', async () => {
+    const bench = mount({ sections: fullSections(), presets: fakePresets() })
+    await bench.command.handler()
+    const onChange = bench.components.settingsLists.at(-1)!.options.onChange
+    onChange('permission.defaultPreset', 'read-only')
+    await settle()
+    expect(bench.settings.writes).toEqual([
+      { ns: 'permission', patch: { defaultPreset: 'read-only' }, revision: 1 },
+    ])
+    expect(bench.notices).toEqual(['default permission preset set to read-only'])
   })
 
   it('unsets the reasoning effort when cycled to default', async () => {
@@ -343,10 +361,10 @@ describe('/settings writes', () => {
     await settle()
     expect(calls).toBe(2)
     expect(bench.notices).toEqual(['theme set to paper'])
-    expect(bench.components.settingsLists).toHaveLength(2)
+    expect(bench.components.settingsLists).toHaveLength(1)
   })
 
-  it('flashes the error after the retry also conflicts', async () => {
+  it('flashes the error after the retry also conflicts and rolls the row back', async () => {
     const bench = mount({
       sections: fullSections(),
       updateImpl: ns => {
@@ -359,9 +377,14 @@ describe('/settings writes', () => {
     expect(bench.settings.writes).toHaveLength(2)
     expect(bench.notices).toHaveLength(1)
     expect(bench.notices[0]).toContain('could not update theme')
+    // The rejected cycle is rolled back to the last committed display.
+    const list = bench.components.settingsLists[0]!
+    expect(list.updates).toEqual([['blue.theme', 'dark']])
+    expect(list.options.items.find(item => item.id === 'blue.theme')?.currentValue).toBe('dark')
+    expect(bench.screen.renderRequests).toBe(1)
   })
 
-  it('flashes a plain write failure without retrying', async () => {
+  it('flashes a plain write failure without retrying and rolls the row back', async () => {
     const bench = mount({
       sections: fullSections(),
       updateImpl: () => Promise.reject(new Error('schema rejected')),
@@ -371,6 +394,7 @@ describe('/settings writes', () => {
     await settle()
     expect(bench.settings.writes).toHaveLength(1)
     expect(bench.notices[0]).toContain('could not update update check: schema rejected')
+    expect(bench.components.settingsLists[0]?.updates).toEqual([['blue.updateCheck', 'true']])
   })
 
   it('stringifies non-Error rejections in the failure notice', async () => {
@@ -396,7 +420,7 @@ describe('/settings writes', () => {
     expect(bench.notices).toEqual([])
   })
 
-  it('skips the notice and the rebuild when the panel closed behind a pending write', async () => {
+  it('skips the notice when the panel closed behind a pending write', async () => {
     let release!: () => void
     const gate = new Promise<void>(resolve => {
       release = resolve
@@ -429,6 +453,9 @@ describe('/settings writes', () => {
     reject(new Error('late failure'))
     await settle()
     expect(bench.notices).toEqual([])
+    // The rollback is gated on the panel too: no updateValue, no repaint.
+    expect(bench.components.settingsLists[0]?.updates).toEqual([])
+    expect(bench.screen.renderRequests).toBe(0)
   })
 
   it('flags continuations unloaded when the registration disposer runs', async () => {
@@ -451,35 +478,74 @@ describe('/settings writes', () => {
 })
 
 describe('/settings refresh', () => {
-  it('rebuilds the panel on settings/document-updated and stops after close', async () => {
+  it('ignores a document-updated whose values match the panel', async () => {
+    const bench = mount({ sections: fullSections() })
+    await bench.command.handler()
+    bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
+    await settle()
+    expect(bench.components.settingsLists).toHaveLength(1)
+    expect(bench.components.settingsLists[0]?.updates).toEqual([])
+    expect(bench.screen.renderRequests).toBe(0)
+  })
+
+  it('pushes changed values into the live list without remounting', async () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
     bench.settings.sections.blue!.theme = 'ocean'
+    bench.settings.sections.shell!.timeoutMs = 300_000
     bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
     await settle()
-    expect(bench.components.settingsLists).toHaveLength(2)
-    const rebuilt = new Map(bench.components.settingsLists.at(-1)!.options.items.map(item => [item.id, item]))
-    expect(rebuilt.get('blue.theme')?.currentValue).toBe('ocean')
-    // After Escape the subscription is gone: no further rebuilds.
-    panel(bench.screen).handleInput(KEY.escape)
+    const list = bench.components.settingsLists[0]!
+    // Exactly the deltas land on updateValue; one repaint, no remount.
+    expect(bench.components.settingsLists).toHaveLength(1)
+    expect(list.updates).toEqual([['blue.theme', 'ocean'], ['shell.timeoutMs', '300000']])
+    expect(list.options.items.find(item => item.id === 'blue.theme')?.currentValue).toBe('ocean')
+    expect(bench.screen.renderRequests).toBe(1)
+    // lastKnown moved with the diff: a second emission diffs empty.
     bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 3)
     await settle()
+    expect(list.updates).toHaveLength(2)
+    expect(bench.screen.renderRequests).toBe(1)
+  })
+
+  it('remounts only when the row set changed', async () => {
+    const bench = mount({ sections: fullSections() })
+    await bench.command.handler()
+    bench.settings.drop('shell')
+    bench.ctx.emit('settings/document-updated', settingsNamespace('shell'), 2)
+    await settle()
     expect(bench.components.settingsLists).toHaveLength(2)
+    const rebuilt = bench.components.settingsLists.at(-1)!
+    expect(rebuilt.options.items.some(item => item.id.startsWith('shell.'))).toBe(false)
+    expect(bench.screen.overlays[0]?.hidden).toBe(true)
+  })
+
+  it('stops refreshing after close', async () => {
+    const bench = mount({ sections: fullSections() })
+    await bench.command.handler()
+    panel(bench.screen).handleInput(KEY.escape)
+    bench.settings.sections.blue!.theme = 'ocean'
+    bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
+    await settle()
+    expect(bench.components.settingsLists).toHaveLength(1)
+    expect(bench.components.settingsLists[0]?.updates).toEqual([])
     expect(bench.screen.overlays.every(overlay => overlay.hidden)).toBe(true)
   })
 
-  it('skips the rebuild when the registration disposer ran before an event', async () => {
+  it('skips the refresh when the registration disposer ran before an event', async () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
+    bench.settings.sections.blue!.theme = 'ocean'
     bench.dispose()
     // The panel is still open (dispose only flags unloaded): the listener
-    // fires, and rebuild's inactive guard swallows it.
+    // fires, and the inactive guard swallows it.
     bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 5)
     await settle()
     expect(bench.components.settingsLists).toHaveLength(1)
+    expect(bench.components.settingsLists[0]?.updates).toEqual([])
   })
 
-  it('skips the explicit rebuild when the write already announced itself', async () => {
+  it('never remounts when the write commit announces itself through the event', async () => {
     const bench = mount({
       sections: fullSections(),
       onWrite: ns => {
@@ -487,11 +553,37 @@ describe('/settings refresh', () => {
       },
     })
     await bench.command.handler()
+    const list = () => bench.components.settingsLists[0]!
     bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'paper')
     await settle()
-    // One rebuild (the event), not two.
-    expect(bench.components.settingsLists).toHaveLength(2)
+    expect(bench.components.settingsLists).toHaveLength(1)
     expect(bench.notices).toEqual(['theme set to paper'])
+    // The synchronous watcher fired before lastKnown moved, so its diff
+    // pushed the fresh value once; a debounced real watcher lands after
+    // the write and diffs empty.
+    expect(list().updates).toEqual([['blue.theme', 'paper']])
+  })
+
+  it('skips the value rollback when a mid-write remount already dropped the row', async () => {
+    const bench = mount({
+      sections: fullSections(),
+      updateImpl: ns => {
+        // The namespace vanishes mid-write and the watcher announces it:
+        // the refresh remounts without the row before the write fails.
+        bench.settings.drop(ns)
+        bench.ctx.emit('settings/document-updated', settingsNamespace(ns), 2)
+        throw new Error('gone mid-write')
+      },
+    })
+    await bench.command.handler()
+    bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'paper')
+    await settle()
+    expect(bench.components.settingsLists).toHaveLength(2)
+    expect(bench.notices[0]).toContain('could not update theme')
+    // The rebuilt list has no blue rows to roll back; the failure still
+    // repaints for the notice.
+    expect(bench.components.settingsLists.at(-1)!.updates).toEqual([])
+    expect(bench.screen.renderRequests).toBe(1)
   })
 })
 
