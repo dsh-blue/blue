@@ -27,7 +27,11 @@
  * namespace appeared or disappeared) falls back to the full remount
  * through the shared `mount` closure. The service reads are lazy `ctx.get`
  * — this fiber must never become a theme dependent (the `/theme` swap
- * disposes dependents).
+ * disposes dependents). A theme commit from the panel's own Theme row still
+ * rebuilds the input fiber mid-swap, whose teardown unmounts the dock slot:
+ * the panel re-homes the SAME instance on a deferred
+ * `'blue/input-editor-changed'` emission (the `/theme` picker discipline, so
+ * the list keeps its highlight) and reads its palette through a live getter.
  *
  * @module @dsh-blue/blue-interaction/settings-command
  */
@@ -348,6 +352,8 @@ export function registerSettingsCommand(ctx: Context): () => void {
       let restore: () => void = () => {}
       /** The mounted list; `mount` assigns it before any reader can run. */
       let list: BlueSettingsList
+      /** The mounted panel; `mount` assigns it before any reader can run. */
+      let panel: SettingsPanel
       /** The id → display-string map of what the mounted list shows. */
       let lastKnown: Map<string, string> = new Map()
 
@@ -467,8 +473,17 @@ export function registerSettingsCommand(ctx: Context): () => void {
             close()
           },
         })
-        const panel = new SettingsPanel({
-          theme: display.theme,
+        panel = new SettingsPanel({
+          // Live palette read (the /theme picker discipline): a swap
+          // rebuilds the input fiber mid-commit, and the snapshot at open
+          // would freeze the frame in the opening theme.
+          theme: {
+            get colors() {
+              /* v8 ignore next -- the fallback arm only renders inside the
+                 provider gap of an in-flight swap, never in a settled state */
+              return ctx.get('blueTheme')?.colors ?? display.colors
+            },
+          },
           list,
           notice: panelNotice,
           truncate: (text, width) => display.components.truncateToWidth(text, width),
@@ -476,12 +491,32 @@ export function registerSettingsCommand(ctx: Context): () => void {
         restore = mountEditorReplacement(panel)
       }
 
+      /**
+       * Re-claim the editor's dock slot: a theme swap rebuilds the input
+       * fiber (unmounting the panel with the old one), so the SAME panel
+       * instance mounts fresh — the list keeps its highlight and the swap
+       * lands under the open panel.
+       */
+      const rehome = (): void => {
+        if (inactive()) return
+        restore()
+        restore = mountEditorReplacement(panel)
+      }
+
+      // The input fiber's mount emits before its slot-swap machinery
+      // installs; one microtask later the panel re-homes against the fresh
+      // swap (the /theme picker's deferral).
+      const offEditorChanged = ctx.on('blue/input-editor-changed', () => {
+        void Promise.resolve().then(rehome)
+      })
+
       /** Tear the panel down: unsubscribe, pop the dock slot. */
       const close = (): void => {
         /* v8 ignore next -- the list fires exactly one cancel per mount */
         if (closed) return
         closed = true
         offDocument()
+        offEditorChanged()
         restore()
       }
 

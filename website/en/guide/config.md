@@ -148,7 +148,7 @@ blue:
   collapseToolCalls: true  # tool output starts collapsed (ctrl+o toggles in the session)
 ```
 
-In the panel `Enter`/`Space` steps a row's preset value and every change lands on disk; `blue.theme` applies live and becomes the startup default (`/theme` stays the session-level switch — see [Theming](/en/guide/theme)). The panel also lists common keys of host sections like `shell:`, `agent-loop:`, and `web-search-deepseek:`, and its last row opens the whole settings.yaml in `$EDITOR`.
+In the panel `Enter`/`Space` steps a row's preset value and every change lands on disk; `blue.theme` applies live and becomes the startup default (`/theme` stays the session-level switch — see [Theming](/en/guide/theme)), and folding-default changes re-seed the already-mounted transcript entries immediately (an active Ctrl-O expansion still dominates). The panel also lists common keys of host sections like `shell:`, `agent-loop:`, and `web-search-deepseek:`, and its last row opens the whole settings.yaml in `$EDITOR`.
 
 ### Verifying your edits
 

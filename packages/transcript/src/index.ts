@@ -43,7 +43,7 @@ import {
 // `'blue/session-changed'` Events merge this plugin consumes.
 import type { BlueTurnRetraction } from '@dsh-blue/blue-app'
 // Carries the optional host `settings` service Context merge.
-import type {} from '@deepseek-ai/dsh-settings'
+import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
   AssistantMessageComponent,
   ErrorMessageComponent,
@@ -398,20 +398,28 @@ export function apply(ctx: Context): void {
   const colors = ctx.blueTheme.colors
   const toggle: CollapseToggle = { expanded: false, entries: [] }
 
-  const syncExpansionDefaults = (): void => {
-    const settings = ctx.get('settings')
-    if (settings === undefined) return
-    const descriptor = settings.describe().find(entry => String(entry.ns) === 'blue')
-    if (descriptor === undefined) return
-    const value = descriptor.value as Record<string, unknown>
+  const BLUE_NS = 'blue' as SettingsNamespace
+  const syncExpansionDefaults = (value: unknown): void => {
+    const section = typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
+    const before = `${defaultExpansion('thinking')}:${defaultExpansion('tools')}`
     setDefaultExpansion({
-      thinking: value.collapseThinking === false,
-      tools: value.collapseToolCalls === false,
+      thinking: typeof section.collapseThinking === 'boolean' ? !section.collapseThinking : defaultExpansion('thinking'),
+      tools: typeof section.collapseToolCalls === 'boolean' ? !section.collapseToolCalls : defaultExpansion('tools'),
     })
+    if (`${defaultExpansion('thinking')}:${defaultExpansion('tools')}` === before) return
+    for (const entry of toggle.entries) {
+      const expandable = entry.component as BlueIntentComponent
+      if (typeof expandable.setExpanded !== 'function') continue
+      const base = toggle.expanded
+        || (entry.item.kind === 'thinking' ? defaultExpansion('thinking')
+          : entry.item.kind === 'tool' ? defaultExpansion('tools') : false)
+      expandable.setExpanded(base)
+    }
+    screen.requestRender(true)
   }
-  syncExpansionDefaults()
-  ctx.on('settings/updated', ns => {
-    if (String(ns) === 'blue') syncExpansionDefaults()
+  syncExpansionDefaults(ctx.get('settings')?.get(BLUE_NS))
+  ctx.on('settings/updated', (ns, next) => {
+    if (ns === BLUE_NS) syncExpansionDefaults(next)
   })
 
   // Optional image wiring is renderer-owned. Both the legacy baseline and the
@@ -520,6 +528,45 @@ export function apply(ctx: Context): void {
       screen.requestRender(true)
     },
   }]))
+
+  // Expansion defaults ride the host settings document: the resolved `blue`
+  // namespace (schema owned by interaction) carries `collapseThinking` /
+  // `collapseToolCalls`. The service is optional and its value unknown here,
+  // so every read parses defensively — absent keys or non-boolean values keep
+  // the current default; a host without settings keeps both collapsed.
+  const BLUE_NS = 'blue' as SettingsNamespace
+  const applyFoldSettings = (value: unknown): void => {
+    const section = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>
+    const before = `${defaultExpansion('thinking')}:${defaultExpansion('tools')}`
+    setDefaultExpansion({
+      thinking: typeof section.collapseThinking === 'boolean'
+        ? !section.collapseThinking
+        : defaultExpansion('thinking'),
+      tools: typeof section.collapseToolCalls === 'boolean'
+        ? !section.collapseToolCalls
+        : defaultExpansion('tools'),
+    })
+    if (`${defaultExpansion('thinking')}:${defaultExpansion('tools')}` === before) return
+    // A fold-default commit also re-seeds the entries ALREADY mounted:
+    // "starts collapsed" is the mount semantics, but a toggle that leaves
+    // the visible transcript untouched reads as broken. The Ctrl-O state
+    // dominates exactly as it does at mount; categories the defaults do
+    // not cover (user folds) keep their state.
+    for (const entry of toggle.entries) {
+      const expandable = entry.component as BlueIntentComponent
+      if (typeof expandable.setExpanded !== 'function') continue
+      if (entry.item.kind === 'thinking') {
+        expandable.setExpanded(toggle.expanded || defaultExpansion('thinking'))
+      } else if (entry.item.kind === 'tool') {
+        expandable.setExpanded(toggle.expanded || defaultExpansion('tools'))
+      }
+    }
+    screen.requestRender(true)
+  }
+  applyFoldSettings(ctx.get('settings')?.get(BLUE_NS))
+  ctx.on('settings/updated', (ns, next) => {
+    if (ns === BLUE_NS) applyFoldSettings(next)
+  })
 
   ctx.on('blue/session-changed', (agent) => {
     activeAgent = agent

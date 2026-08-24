@@ -148,7 +148,7 @@ blue:
   collapseToolCalls: true  # 工具输出默认折叠（ctrl+o 在会话内切换）
 ```
 
-面板里 `Enter`/`Space` 步进预设值、每次改动即落盘；`blue.theme` 实时生效并成为启动默认（`/theme` 仍是会话级切换，见[主题](/guide/theme)）。面板还列出 `shell:`、`agent-loop:`、`web-search-deepseek:` 等宿主段的常用键，末行可在 `$EDITOR` 里打开整份 settings.yaml。
+面板里 `Enter`/`Space` 步进预设值、每次改动即落盘；`blue.theme` 实时生效并成为启动默认（`/theme` 仍是会话级切换，见[主题](/guide/theme)），折叠默认的改动同样立即作用于当前已挂载的 transcript 条目（Ctrl-O 的全局展开状态优先）。面板还列出 `shell:`、`agent-loop:`、`web-search-deepseek:` 等宿主段的常用键，末行可在 `$EDITOR` 里打开整份 settings.yaml。
 
 ### 改完怎么验证
 
