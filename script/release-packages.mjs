@@ -55,6 +55,19 @@ async function waitFor(pkg, expectedIntegrity) {
   throw new Error(`${pkg.name}@${pkg.version}: not visible after five minutes`)
 }
 
+async function waitForTag(pkg, tag, expectedVersion) {
+  for (let attempt = 1; attempt <= 20; attempt += 1) {
+    const current = npmView(pkg.name, `dist-tags.${tag}`)
+    if (current === expectedVersion) {
+      console.log(`${pkg.name}: ${tag} -> ${expectedVersion}`)
+      return
+    }
+    console.log(`${pkg.name}: ${tag} is still ${current ?? 'unset'} (${attempt}/20)`)
+    await new Promise(resolve => setTimeout(resolve, 15_000))
+  }
+  throw new Error(`${pkg.name}: ${tag} did not converge to ${expectedVersion} after five minutes`)
+}
+
 if (mode === 'publish' || mode === 'verify') {
   for (const pkg of packages) {
     const expected = localIntegrity(pkg.filename)
@@ -76,9 +89,7 @@ if (mode === 'promote') {
     for (const tag of tags) {
       const current = npmView(pkg.name, `dist-tags.${tag}`)
       if (current !== version) execFileSync('npm', ['dist-tag', 'add', `${pkg.name}@${version}`, tag], { cwd: ROOT, stdio: 'inherit' })
-      const verified = npmView(pkg.name, `dist-tags.${tag}`)
-      if (verified !== version) throw new Error(`${pkg.name}: ${tag} did not converge to ${version}`)
-      console.log(`${pkg.name}: ${tag} -> ${version}`)
+      await waitForTag(pkg, tag, version)
     }
   }
   for (const pkg of packages) {
