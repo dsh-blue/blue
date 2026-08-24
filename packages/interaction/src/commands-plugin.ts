@@ -66,6 +66,7 @@ import { CURRENT_MARK } from './symbols.ts'
 import { registerThemeCommand } from './theme-switch.ts'
 import { registerToolsCommands } from './tools-commands.ts'
 import { registerUpdateCommand } from './update-command.ts'
+import { registerTraceCommand } from './trace-command.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-commands'
@@ -385,6 +386,8 @@ export function apply(ctx: Context): void {
     const skillsCommand = registerSkillsCommand(ctx)
     // The MCP server browser (`/mcp`, S34): read-only over loader entries.
     const mcpBrowser = registerMcpCommands(ctx)
+    // `/trace` is a read-only timeline over the official session-query API.
+    const trace = registerTraceCommand(ctx)
     // The safe in-app upgrade (`/update`, D52).
     const update = registerUpdateCommand(ctx)
     return () => {
@@ -407,6 +410,7 @@ export function apply(ctx: Context): void {
       agentPresets()
       skillsCommand()
       mcpBrowser()
+      trace()
       update()
     }
   })

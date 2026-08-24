@@ -8,6 +8,22 @@ The bottom input editor (`src/input-plugin.ts`) is the pi-tui Editor behind `ctx
 
 ## Commands and aliases
 
+`/trace` (`src/trace-command.ts`) is a read-only execution timeline over the
+official `ctx.sessionQuery` service. It uses one `readSession()` snapshot plus
+the official `buildSessionEventRecords()` projection for the initial timeline,
+and calls `traceEvent()` only when copying a selected item for
+replacement/source relationships; Blue does not persist or redefine session
+events. Consecutive `assistant/chunk` reasoning/text deltas fold into one item
+per `turn:step:chunk.type`, matching transcript streaming slots, and retain
+their source sequence range. `TracePanel` is mounted through the D30
+editor-slot replacement and supports Up/Down item navigation, Enter opening a
+stacked full-detail window, PageUp/PageDown scrolling inside that fixed-height
+JSON viewport, `c` selected-item copy, `a` full-timeline copy, plus
+`/trace copy <seq>` and `/trace copy all`. The selected list row uses the
+theme's full-width `selectedBg`; current-surface dots and stream titles use
+semantic status colors, while detail JSON keys use the theme accent.
+Clipboard output uses the shared OSC52/native `copyTextToClipboard` pipeline.
+
 `src/commands-plugin.ts` registers `/quit` `/resume` `/new` `/fork` `/sessions` `/help` `/init` (`/new`/`/fork` emit the app layer's `blue/request-new`/`blue/request-fork`; `/sessions` is a persistence-list picker panel; `/help` enumerates `commands.list` + `keymap.list()`). `/theme` (`src/theme-switch.ts`) hot-swaps the `blueTheme` provider via `ctx.registry.delete` + `ctx.plugin`, restoring dark on mount failure. A bare invocation opens the theme picker (D54): every cursor move live-applies the highlighted palette through the shared `SelectListPanel` `onHighlight` callback, Enter keeps it, Escape reverts to the opening theme; without the display quartet the bare command falls back to the `← current` text listing (the selected settings-list row styles in `primary`, not `accent`). Each live swap rebuilds `blue-input`, so the picker re-homes its editor dock slot after every swap and on a deferred `blue/input-editor-changed` emission.
 
 The alias-relation registry `src/command-meta.ts`: `/quit` answers to `/q` and `/exit`, `/new` to `/clear` (S27) — the kimi style: aliases are not registered commands, `blue-input` rewrites an alias line to its canonical command before `ctx.commands.execute`, so the session log and every discovery surface stay canonical-only. Re-registering a canonical replaces its relation; an alias claimed by another canonical fails loud.
