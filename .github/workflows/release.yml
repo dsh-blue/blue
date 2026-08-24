@@ -78,7 +78,7 @@ jobs:
         node: ['22', '24']
     runs-on: ${{ matrix.os }}
     env:
-      DSH_HOME: ${{ runner.temp }}/blue-candidate-home
+      DSH_HOME: ${{ github.workspace }}/.blue-candidate-home
       # Exact candidate versions are intentionally younger than pnpm 11's
       # policy window. This exception exists only in the release verifier.
       PNPM_CONFIG_MINIMUM_RELEASE_AGE: '0'
