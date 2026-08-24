@@ -71,3 +71,9 @@ blue 修复登录页的空指针       # 直接执行任务
 - 随手问点什么，观察流式回复与工具卡片；
 - `/theme` 打开主题选择面板，上下键**实时预览**四套配色（`dark`/`light`/`ocean`/`paper`，横幅鲸鱼渐变随主题换色；输入草稿不会丢）；
 - 退出时最后一行是**会话遗言**：会话 id 与一行恢复命令（三击整行即选），下次直接续上。
+
+## 界面预览
+
+<p align="center">
+  <video src="/blue-demo.mp4" width="720" autoplay loop muted playsinline controls></video>
+</p>
