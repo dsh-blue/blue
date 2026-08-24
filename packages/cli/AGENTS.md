@@ -50,8 +50,11 @@ Scope boundaries:
   global prefix) warns once and boots with the shipped creative mode; the
   `version`/`plugin` surfaces never sync. The payload itself is the
   shipped `cordis` composition with the persona retargeted at Blue's three
-  planes (Blue source / bundle patch / host-half-only dynamic plugins) and
-  three skills: `blue-plugin-development` (new), `editing-cordis-compositions`
+  planes (distributable Blue plugin package via `dsh plugin add` /
+  composition rows / host-half-only dynamic plugins — a real Blue feature
+  never requires the dsh-blue source tree; verified by the S39 spike: a
+  plain ESM package layered after Blue's bundle mounts and renders) and
+  three skills: `blue-plugin-development` (the plugin-package path), `editing-cordis-compositions`
   (adapted), `cordis-plugin-development` (trimmed to the host half).
 - The updater family (`blue-interaction/src/updater/`, D52) stays the
   in-app surface; the shell deliberately reimplements the ~30 lines of
