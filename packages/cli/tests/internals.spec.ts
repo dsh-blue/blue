@@ -4,7 +4,7 @@
  * defaults, and the manifest resolution helper.
  */
 
-import { writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
@@ -105,3 +105,49 @@ describe('cli/internals fs and resolution defaults', () => {
   })
 })
 
+/** Stand a payload source tree up inside a fresh temp root. */
+function payloadSource(): { root: string, source: string } {
+  const root = mkdtempTracked('blue-cli-sync-')
+  const source = join(root, 'payload')
+  mkdirSync(join(source, 'skills', 'one'), { recursive: true })
+  writeFileSync(join(source, 'agent.cordis.yml'), '- id: persona\n')
+  writeFileSync(join(source, 'preset.yml'), 'name: 创造模式\n')
+  writeFileSync(join(source, 'skills', 'one', 'SKILL.md'), '# One\n')
+  return { root, source }
+}
+
+describe('cli/internals syncPresetTree (S39)', () => {
+  it('copies the payload tree wholesale and writes the stamp beside the target', () => {
+    const { root, source } = payloadSource()
+    const target = join(root, 'host', 'config', 'agent-presets', 'cordis')
+    expect(cliInternals.syncPresetTree(source, target, 'blue-cli 0.1.0-rc.7')).toBe('synced')
+    expect(readFileSync(join(target, 'agent.cordis.yml'), 'utf8')).toBe('- id: persona\n')
+    expect(readFileSync(join(target, 'skills', 'one', 'SKILL.md'), 'utf8')).toBe('# One\n')
+    expect(readFileSync(join(root, 'host', 'config', 'agent-presets', '.blue-cordis.stamp'), 'utf8')).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  it('skips an unchanged tree as fresh, and re-syncs on a payload or stamp change, clearing stale files', () => {
+    const { root, source } = payloadSource()
+    const target = join(root, 'cordis')
+    expect(cliInternals.syncPresetTree(source, target, 'v1')).toBe('synced')
+    expect(cliInternals.syncPresetTree(source, target, 'v1')).toBe('fresh')
+    // A stale stamp read failure (corrupt stamp file is unreadable content)
+    // takes the same re-sync path as a missing one.
+    writeFileSync(join(root, '.blue-cordis.stamp'), 'garbage')
+    writeFileSync(join(target, 'stale.md'), 'leftover')
+    expect(cliInternals.syncPresetTree(source, target, 'v1')).toBe('synced')
+    expect(existsSync(join(target, 'stale.md'))).toBe(false)
+    writeFileSync(join(source, 'preset.yml'), 'name: 新模式\n')
+    expect(cliInternals.syncPresetTree(source, target, 'v1')).toBe('synced')
+    expect(readFileSync(join(target, 'preset.yml'), 'utf8')).toBe('name: 新模式\n')
+    expect(cliInternals.syncPresetTree(source, target, 'v2')).toBe('synced')
+  })
+
+  it('reports an unwalkable source as an error instead of throwing', () => {
+    const root = mkdtempTracked('blue-cli-sync-')
+    const outcome = cliInternals.syncPresetTree(join(root, 'absent'), join(root, 'target'), 'v1')
+    expect(outcome).not.toBe('fresh')
+    expect(outcome).not.toBe('synced')
+    expect(typeof outcome === 'object' && outcome.error).toContain('ENOENT')
+  })
+})
