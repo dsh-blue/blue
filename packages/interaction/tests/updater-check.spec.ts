@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import SettingsProvider, { type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { Context } from '@deepseek-ai/cordis'
 import { mkdtempTracked } from '../../core/tests/temp-dir.ts'
+import { BLUE_VERSION } from '../../api/src/index.ts'
 import { fakeBlueContext } from './fakes.ts'
 import { updaterInternals } from '../src/updater/io.ts'
 import {
@@ -32,26 +33,29 @@ afterEach(() => {
   Object.assign(updaterInternals, REAL)
 })
 
-/** A packument whose `rc` tag offers rc.8 over the running rc.7. */
+/** A synthetic future release that remains ahead across preview bumps. */
+const OFFER_VERSION = '0.1.0-rc.999'
+
+/** A packument whose `rc` tag offers a release over the running version. */
 const OFFER_JSON = JSON.stringify({
-  'dist-tags': { rc: '0.1.0-rc.8', latest: '0.1.0-rc.7' },
+  'dist-tags': { rc: OFFER_VERSION, latest: BLUE_VERSION },
   versions: {
     '0.1.0-rc.6': { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.2' } },
-    '0.1.0-rc.7': { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.2' } },
-    '0.1.0-rc.8': { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.2' } },
+    [BLUE_VERSION]: { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.2' } },
+    [OFFER_VERSION]: { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.2' } },
   },
   time: {
     '0.1.0-rc.6': '2026-08-20T00:00:00.000Z',
-    '0.1.0-rc.7': '2026-08-22T00:00:00.000Z',
-    '0.1.0-rc.8': '2026-08-23T00:00:00.000Z',
+    [BLUE_VERSION]: '2026-08-22T00:00:00.000Z',
+    [OFFER_VERSION]: '2026-08-23T00:00:00.000Z',
   },
 })
 
 /** A packument already at the running version. */
 const CURRENT_JSON = JSON.stringify({
-  'dist-tags': { rc: '0.1.0-rc.7' },
-  versions: { '0.1.0-rc.7': {} },
-  time: { '0.1.0-rc.7': '2026-08-22T00:00:00.000Z' },
+  'dist-tags': { rc: BLUE_VERSION },
+  versions: { [BLUE_VERSION]: {} },
+  time: { [BLUE_VERSION]: '2026-08-22T00:00:00.000Z' },
 })
 
 /** One check world: temp DSH_HOME, fixed clock, scripted npm view. */
@@ -88,18 +92,18 @@ describe('updater/check runUpdateCheck', () => {
     expect(world.screen.children).toHaveLength(1)
     const rows = world.screen.children[0]!.render(80)
     expect(rows).toHaveLength(2)
-    expect(rows[0]).toContain('v0.1.0-rc.8')
-    expect(rows[0]).toContain('v0.1.0-rc.7')
+    expect(rows[0]).toContain(`v${OFFER_VERSION}`)
+    expect(rows[0]).toContain(`v${BLUE_VERSION}`)
     expect(rows[1]).toContain('run /update')
-    expect(rows[1]).toContain('dsh plugin --profile blue add @dsh-blue/blue@0.1.0-rc.8')
+    expect(rows[1]).toContain(`dsh plugin --profile blue add @dsh-blue/blue@${OFFER_VERSION}`)
     expect(world.screen.renderRequests).toBeGreaterThan(0)
     // Stateless render; invalidate is a harmless no-op.
     expect(() => world.screen.children[0]!.invalidate()).not.toThrow()
     const state = readUpdateCheckState()
     expect(state).toEqual({
       lastCheckAt: world.now,
-      lastNotifiedVersion: '0.1.0-rc.8',
-      lastOffer: { version: '0.1.0-rc.8', publishedAt: Date.parse('2026-08-23T00:00:00.000Z') },
+      lastNotifiedVersion: OFFER_VERSION,
+      lastOffer: { version: OFFER_VERSION, publishedAt: Date.parse('2026-08-23T00:00:00.000Z') },
     })
   })
 
@@ -107,14 +111,14 @@ describe('updater/check runUpdateCheck', () => {
     const world = makeCheck()
     writeUpdateCheckState({
       lastCheckAt: world.now - 1_000,
-      lastNotifiedVersion: '0.1.0-rc.8',
-      lastOffer: { version: '0.1.0-rc.8', publishedAt: Date.parse('2026-08-23T00:00:00.000Z') },
+      lastNotifiedVersion: OFFER_VERSION,
+      lastOffer: { version: OFFER_VERSION, publishedAt: Date.parse('2026-08-23T00:00:00.000Z') },
     })
     await runUpdateCheck(world.ctx, () => DEFAULT_SETTINGS, () => false)
     // No network read, but the notice is back.
     expect(world.spawns()).toBe(0)
     expect(world.screen.children).toHaveLength(1)
-    expect(world.screen.children[0]!.render(80)[0]).toContain('v0.1.0-rc.8')
+    expect(world.screen.children[0]!.render(80)[0]).toContain(`v${OFFER_VERSION}`)
   })
 
   it('stays quiet inside the window when the cached offer does not outrank the running version', async () => {
@@ -135,7 +139,7 @@ describe('updater/check runUpdateCheck', () => {
 
   it('re-checks and re-notifies once the cache window has passed', async () => {
     const world = makeCheck()
-    writeUpdateCheckState({ lastCheckAt: world.now - 25 * 60 * 60 * 1_000, lastNotifiedVersion: '0.1.0-rc.8' })
+    writeUpdateCheckState({ lastCheckAt: world.now - 25 * 60 * 60 * 1_000, lastNotifiedVersion: OFFER_VERSION })
     await runUpdateCheck(world.ctx, () => DEFAULT_SETTINGS, () => false)
     expect(world.spawns()).toBe(1)
     expect(world.screen.children).toHaveLength(1)
@@ -218,14 +222,14 @@ describe('updater/check runUpdateCheck', () => {
     })
     expect(world.spawns()).toBe(1)
     expect(world.screen.children).toHaveLength(0)
-    expect(readUpdateCheckState()?.lastNotifiedVersion).toBe('0.1.0-rc.8')
+    expect(readUpdateCheckState()?.lastNotifiedVersion).toBe(OFFER_VERSION)
   })
 
   it('skips the mount without throwing when no screen is mounted', async () => {
     makeCheck()
     const bare = new Context()
     await expect(runUpdateCheck(bare, () => DEFAULT_SETTINGS, () => false)).resolves.toBeUndefined()
-    expect(readUpdateCheckState()?.lastNotifiedVersion).toBe('0.1.0-rc.8')
+    expect(readUpdateCheckState()?.lastNotifiedVersion).toBe(OFFER_VERSION)
   })
 
   it('never mounts the offer notice on a link-lane dev profile', async () => {
@@ -237,7 +241,7 @@ describe('updater/check runUpdateCheck', () => {
     // stays away.
     expect(world.spawns()).toBe(1)
     expect(world.screen.children).toHaveLength(0)
-    expect(readUpdateCheckState()?.lastNotifiedVersion).toBe('0.1.0-rc.8')
+    expect(readUpdateCheckState()?.lastNotifiedVersion).toBe(OFFER_VERSION)
   })
 
   it('mounts the interrupted-update warning when a swap marker survives', async () => {
@@ -287,8 +291,8 @@ describe('updater/check runUpdateCheck', () => {
 
   it('records the offer without a publish stamp when the registry recorded none', async () => {
     const timeless = JSON.stringify({
-      'dist-tags': { rc: '0.1.0-rc.8' },
-      versions: { '0.1.0-rc.8': {} },
+      'dist-tags': { rc: OFFER_VERSION },
+      versions: { [OFFER_VERSION]: {} },
       time: {},
     })
     const world = makeCheck({ json: timeless })
@@ -296,8 +300,8 @@ describe('updater/check runUpdateCheck', () => {
     expect(world.screen.children).toHaveLength(1)
     expect(readUpdateCheckState()).toEqual({
       lastCheckAt: world.now,
-      lastNotifiedVersion: '0.1.0-rc.8',
-      lastOffer: { version: '0.1.0-rc.8' },
+      lastNotifiedVersion: OFFER_VERSION,
+      lastOffer: { version: OFFER_VERSION },
     })
   })
 })
@@ -348,7 +352,7 @@ describe('updater/check apply', () => {
     apply(world.ctx)
     await new Promise(resolve => setTimeout(resolve, 20))
     expect(world.screen.children).toHaveLength(1)
-    expect(readUpdateCheckState()?.lastNotifiedVersion).toBe('0.1.0-rc.8')
+    expect(readUpdateCheckState()?.lastNotifiedVersion).toBe(OFFER_VERSION)
     expect(name).toBe('blue-update-check')
   })
 

@@ -503,10 +503,13 @@ describe('registerSessionCommands', () => {
     expect(rows.some(row => row.includes('changelog'))).toBe(true)
     expect(rows.some(row => row.includes(`v${CHANGELOG_ENTRIES[0]!.version}`))).toBe(true)
     expect(rows.some(row => row.includes(CHANGELOG_ENTRIES[0]!.summary.slice(0, 30)))).toBe(true)
-    // The bullet rows wrap long lines; the first note's highlights overflow
-    // the window, so page down to reach the known-issues styling.
-    panel.handleInput('\x1b[6~')
-    const paged = panel.render(120).map(row => row.replace(/\x1b\[[0-9;]*m/g, ''))
+    // Release entries grow over time, so page until the newest note's
+    // known-issues heading enters the window instead of pinning one offset.
+    let paged = panel.render(120).map(row => row.replace(/\x1b\[[0-9;]*m/g, ''))
+    for (let page = 0; page < 10 && !paged.some(row => row.includes('Known issues')); page += 1) {
+      panel.handleInput('\x1b[6~')
+      paged = panel.render(120).map(row => row.replace(/\x1b\[[0-9;]*m/g, ''))
+    }
     expect(paged.some(row => row.includes('Known issues'))).toBe(true)
     overlay.component.handleInput?.('q')
     expect(overlay.hidden).toBe(true)

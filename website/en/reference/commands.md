@@ -27,6 +27,7 @@ Typing `/` triggers fuzzy autocomplete and discovery hints (see [Input editor](/
 | `/context` | — | — | Show token usage and the context window | `blue-usage` |
 | `/version` | — | — | Show the Blue and harness versions and the live model | `blue-commands` |
 | `/changelog` | — | — | Show the release changelog (what's new, one section per release, the running version badged `· current`) | `blue-commands` |
+| `/trace` | — | `[copy <seq> \| copy all]` | Inspect the current session's execution timeline; copy one item or the full trace | `blue-commands` |
 | `/update` | — | `[version]` | Safely update Blue (pre-flight, snapshot, boot smoke, automatic rollback; a bare call is a read-only check) | `blue-commands` (via update-command, D52) |
 | `/export` | — | `[path]` | Export the current session as a Markdown file | `blue-session-export` |
 | `/copy` | — | — | Copy the last assistant message to the clipboard | `blue-session-export` |
@@ -50,6 +51,7 @@ Typing `/` triggers fuzzy autocomplete and discovery hints (see [Input editor](/
 
 - **`/export [path]`** — exports the current session as Markdown; without a path it writes the default filename `blue-export-{id8}-{YYYYMMDD-HHMMSS}.md`.
 - **`/copy`** — the last assistant message's text goes to the clipboard: OSC 52 first (the escape sequence travels over stdout to the local terminal emulator, so **SSH sessions still reach the local clipboard**), with a fallback pipeline behind it.
+- **`/trace`** — reads the current execution timeline through the harness's official session query; Up/Down selects an item, Enter opens full JSON, PageUp/PageDown scrolls details, `c` copies one item, and `a` copies the complete trace.
 - **`/theme`** — full usage `usage: /theme [dark|light|ocean|paper|auto|custom <path> [dark|light|ocean|paper]]`, see [Theming](/en/guide/theme).
 - **`/quit`** — before the agent attaches it shows `no active session` (see the [FAQ](/en/guide/faq)).
 

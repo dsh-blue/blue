@@ -28,6 +28,20 @@ export interface ChangelogEntry {
 /** All shipped releases, newest first. */
 export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
+    version: '0.1.0-rc.8',
+    summary: 'Execution traces and crash-safe updates arrive, with fixes for creative presets and the side-question pane.',
+    highlights: [
+      'Local /trace timeline — inspect the current session through the harness\'s official query APIs, with streamed reasoning/text chunks merged into readable items. Copy one item with c, copy the complete trace with a, or press Enter to inspect the selected event\'s full scrollable JSON.',
+      'Crash-safe /update hardening — concurrent updates are blocked, every swap carries an interrupted-update marker, registry retries stay visible, snapshots are atomic, downgrades install the target release\'s complete package set, and rollback restores and re-verifies the original set.',
+      'Creative preset activation fixed — the bundle now mounts and ships the Cordis host runner required by the cordis preset, so switching to the creative preset no longer stalls on missing host services.',
+      'More reliable /btw conversations — side agents inherit the parent preset, replacement failures preserve the active pane, session changes dispose the side agent, and the pane frame now joins the editor cleanly.',
+      'Built-in /changelog and refreshed docs — release highlights and known issues are available inside Blue, and the README/site now include a short terminal demo plus the new command surfaces.',
+    ],
+    knownIssues: [
+      'Release-day cooldown: pnpm 11\'s default minimumReleaseAge (24h) can refuse the first-run calibration\'s exact-version install on the day of publishing — one line of error, retry after the window or pin minimumReleaseAge: 0. Self-corrects within 24h of this release.',
+    ],
+  },
+  {
     version: '0.1.0-rc.7',
     summary: 'Packaging hygiene: the published tarballs are now mechanically gated.',
     highlights: [

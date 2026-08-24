@@ -10,7 +10,7 @@
 
 Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的一个交互式终端 UI（TUI）插件：以 out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) 插件 bundle 的形式、骑在 `dsh-base` bundle 之上的 `pi-tui` 渲染器。它的核心主张：**TUI 不是一个包——而是一棵 Cordis 插件树。** 每个渲染组件、交互 provider、命令、状态栏条目都是独立插件，各有自己的 fiber 生命周期，可热替换、可省略。
 
-本仓库是 `@dsh-blue` scope 下五个 workspace 包的独立 home，它们从 `deepseek-harness` monorepo 抽出（原 `packages/blue/*` 与 `packages/bundle/blue`），现按 npm 上发布的 harness（`0.1.1-rc.2` 线）与 vendored Cordis 构建测试。
+本仓库是 `@dsh-blue` scope 下七个可发布包的独立 home，它们从 `deepseek-harness` monorepo 抽出（原 `packages/blue/*` 与 `packages/bundle/blue`），现按 npm 上发布的 harness（`0.1.1-rc.2` 线）与 vendored Cordis 构建测试。
 
 <p align="center">
   <video src="https://github.com/user-attachments/assets/9a058e97-228c-4975-85c2-884c12bcc8c9" width="720" autoplay loop muted playsinline></video>
@@ -32,7 +32,7 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 ## 快速开始
 
 > [!NOTE]
-> `0.1.0-rc.7` 为预览版，发布在 **`rc` dist-tag** 下——`latest` 留给稳定线，安装 spec 需带 `@rc` 后缀。
+> `0.1.0-rc.8` 为预览版。每个通过真实安装验证的预览版会同时推进 **`rc`** 与 **`latest`**；需要明确预览通道时可写 `@rc`。首个 stable 发布后，`latest` 才恢复只指向稳定线。
 
 前置：Node `^22.19 || >=24` 与 pnpm 11（两条安装路径都需要：宿主的 `plugin` 命令把安装转发给 pnpm——若缺失，首次运行 `blue` 会以一行报错指明装法：`npm i -g pnpm` 或 `corepack enable pnpm`）。壳包请用 **npm 安装，不要用 pnpm**——pnpm 的严格全局布局不会链接嵌套宿主的依赖，启动时以 `ERR_MODULE_NOT_FOUND` 失败。全局 `dsh` CLI 仅「dsh 直装」路径需要——壳包自带钉版宿主。
 
@@ -73,6 +73,7 @@ dsh --profile blue
 - **两行状态栏** —— 模型名、会话模式徽标、git 分支、上下文占用 `ctx N`；条目是注册表贡献，不是写死的。
 - **底部 dock 面板** —— agent 运行中的活动 spinner、排队消息、todo 列表、fork 当前会话的 `/btw` 旁路问答面板、子代理分组面板。
 - **主题** —— `/theme` 实时预览选择面板与热切换：`dark` / `light` / `ocean` / `paper` / `auto`（OSC 11 背景探测）/ `custom`（JSON 调色板）。
+- **诊断与升级** —— `/trace` 查看当前会话的执行轨迹，`/changelog` 阅读已发布变更，`/update` 为 dsh 直装 profile 提供带回滚的安全升级。
 - **天然可扩展** —— 命令、状态栏条目、编辑器增强都经下游插件同款的缝注册；补全菜单与 `/help` 反映实时注册表。
 
 面向用户的功能指南在文档站：[dsh-blue.dev/features](https://dsh-blue.dev/features/)（中文）· [dsh-blue.dev/en/features](https://dsh-blue.dev/en/features/)（English）。
@@ -118,6 +119,9 @@ dsh --profile blue
 | `/status` | — | 显示会话头、模型与上下文状态 |
 | `/context` | — | 显示 token 用量与上下文窗口 |
 | `/version` | — | 显示 Blue 与 harness 版本及实时模型 |
+| `/changelog` | — | 在 Blue 内查看版本亮点与已知问题 |
+| `/trace` | — | 查看并复制当前会话的执行轨迹 |
+| `/update` | — | 检查或安全安装指定 Blue 版本 |
 | `/export` | — | 把当前会话导出为 Markdown 文件 |
 | `/copy` | — | 复制最近一条助手消息到剪贴板 |
 
