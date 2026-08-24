@@ -16,6 +16,11 @@ The all-prompts row alone is inert from a session's second message on (D41): `ds
 
 Sibling rows mount concurrently, so the dock order is pinned by the `blueComponents` activation round: `blue-pane-activity`/`blue-pane-queue` carry a row-level `inject: [blueComponents]` (never `blueStatus` — `/theme` would dispose the handler's own fiber mid-swap).
 
+The whole-tree e2e keeps BTW's side stream asynchronous and asserts its first
+reply arrives while the parent Agent is still `running`. This is the
+concurrency contract for `/btw`; a test that only uses an immediately
+completed mock response would miss the production network timing.
+
 ## Thin-host migration (S28, D37)
 
 Two parts:

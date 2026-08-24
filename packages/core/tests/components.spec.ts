@@ -287,8 +287,23 @@ describe('createEditor', () => {
 
     editor.setConnectedAbove(true)
     const connected = editor.render(30)
-    expect(connected[0]?.startsWith(`${SGR.border}├${RESET}`)).toBe(true)
-    expect(connected.at(-1)).toBe(`${SGR.border}╰${'─'.repeat(28)}╯${RESET}`)
+    expect(connected[0]).toContain(`${SGR.border}├${RESET}`)
+    expect(connected.at(-1)).toBe(` ${SGR.border}╰${'─'.repeat(26)}╯${RESET}`)
+    stop()
+  })
+
+  it('shares the dock gutter when the editor is connected above a pane', () => {
+    const { tui, stop } = bootTui()
+    const components = createSgrService(tui)
+    const editor = components.createEditor({ paddingX: 4 })
+    editor.setConnectedAbove(true)
+    const lines = editor.render(30)
+    // The editor and a GutterComponent-wrapped pane both occupy columns
+    // 1..28; the outer padding restores the full terminal width.
+    expect(piVisibleWidth(lines[0] ?? '')).toBe(29)
+    expect(lines[0]).toContain('├')
+    expect(lines[0]).toContain('┤')
+    expect(lines[0]?.startsWith(' ')).toBe(true)
     stop()
   })
 

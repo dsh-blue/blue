@@ -13,6 +13,18 @@ export function textResponse(text: string): StreamChunk[] {
 }
 
 /**
+ * A text response whose first chunk is asynchronous, matching a network
+ * stream rather than the synchronous fixture path.
+ * @param text - the response text.
+ * @param delayMs - delay before the first chunk is yielded.
+ * @returns an async stream of response chunks.
+ */
+export async function* delayedTextResponse(text: string, delayMs = 10): AsyncIterable<StreamChunk> {
+  await new Promise<void>(resolve => setTimeout(resolve, delayMs))
+  yield* textResponse(text)
+}
+
+/**
  * Like {@link textResponse} but the stream ends with a `max-tokens` finish —
  * the model was cut off at the output-token ceiling (DeepSeek's `length`).
  * Used to exercise the turn-end `max-tokens` surfacing rule.
@@ -80,7 +92,8 @@ export function toolCallResponse(rawCallId: string, name: string, args: object, 
 /**
  * Mock adapter driven by a script: each model call consumes the next entry.
  * Records every request it receives for assertions. An entry may be a
- * function to compute chunks from the request, a 'hang' marker that
+ * function to compute chunks from the request, an async iterable for a
+ * network-like delayed stream, a 'hang' marker that
  * streams one chunk then waits until aborted, or 'hang-slow' which takes
  * 50ms to notice the abort — a stand-in for slow real-world teardown
  * (LLM stream cancellation, tool unwinding).
@@ -89,7 +102,15 @@ export class MockAdapter extends LlmAdapter {
   requests: GenerateOptions[] = []
 
   constructor(
-    private script: (StreamChunk[] | ((options: GenerateOptions) => StreamChunk[]) | 'hang' | 'hang-slow' | 'hang-silent' | 'hang-reasoning')[],
+    private script: (
+      | StreamChunk[]
+      | AsyncIterable<StreamChunk>
+      | ((options: GenerateOptions) => StreamChunk[] | AsyncIterable<StreamChunk>)
+      | 'hang'
+      | 'hang-slow'
+      | 'hang-silent'
+      | 'hang-reasoning'
+    )[],
     private readonly reasoning?: LlmModelReasoningInfo,
     private readonly defaultMaxTokens?: number,
     private readonly defaultContextWindow?: number,
@@ -151,7 +172,7 @@ export class MockAdapter extends LlmAdapter {
       return
     }
     const chunks = typeof entry === 'function' ? entry(options) : entry
-    for (const chunk of chunks) {
+    for await (const chunk of chunks) {
       if (options.signal?.aborted) throw new Error('aborted')
       yield chunk
     }
