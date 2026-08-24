@@ -11,6 +11,15 @@ on:
         description: 'Exact Blue version to release (for example 0.1.0-rc.7)'
         required: true
         type: string
+      promote_only:
+        description: 'Skip build/publish/verification and promote an existing candidate artifact'
+        required: false
+        default: false
+        type: boolean
+      source_run_id:
+        description: 'Workflow run ID containing the npm-tarballs artifact (required for promote-only)'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -27,6 +36,7 @@ env:
 jobs:
   candidate:
     name: gate + publish candidate
+    if: ${{ inputs.promote_only != true }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -73,6 +83,7 @@ jobs:
   registry-install:
     name: registry install (${{ matrix.os }}, node ${{ matrix.node }})
     needs: candidate
+    if: ${{ inputs.promote_only != true }}
     strategy:
       fail-fast: false
       matrix:
@@ -110,7 +121,8 @@ jobs:
 
   promote:
     name: promote rc/latest
-    needs: registry-install
+    needs: [candidate, registry-install]
+    if: ${{ always() && (inputs.promote_only == true || needs.registry-install.result == 'success') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -122,6 +134,7 @@ jobs:
         with:
           name: npm-tarballs
           path: .artifacts/pack
+          run-id: ${{ inputs.source_run_id || github.run_id }}
       - run: node script/release-packages.mjs promote
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
