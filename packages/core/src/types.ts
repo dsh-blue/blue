@@ -679,7 +679,16 @@ export interface BlueSettingsListOptions {
 }
 
 /** A key/value settings list. */
-export type BlueSettingsList = BlueComponent
+export interface BlueSettingsList extends BlueComponent {
+  /**
+   * Update one entry's displayed value in place, without remounting the
+   * list or moving its highlight — the channel for pushing external or
+   * rolled-back values into a live list.
+   * @param id - the entry id.
+   * @param newValue - the value to display.
+   */
+  updateValue(id: string, newValue: string): void
+}
 
 /** The outcome of a fuzzy subsequence probe; lower scores rank better. */
 export interface BlueFuzzyMatch {
