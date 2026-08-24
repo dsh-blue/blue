@@ -104,6 +104,22 @@ describe('blue bundle', () => {
     expect(patch.indexOf('- id: agent-presets')).toBeLessThan(patch.indexOf('- id: blue-core'))
   })
 
+  it('inserts the cordis host-runner row the shipped cordis preset\'s tool-cordis injects', () => {
+    // Host plane, mirroring the web-app bundle's own row: the runner provides
+    // `dynamicCordisRunner` + `cordisInspect`, without which the `cordis`
+    // preset's standing mount parks `tool-cordis` and the roster's activation
+    // audit fails the `/preset cordis` switch.
+    expect(patch).toContain('- id: cordis-host-runner')
+    expect(patch).toContain("name: '@deepseek-ai/dsh-cordis-host-runner'")
+    expect(patch.indexOf('- id: cordis-host-runner')).toBeLessThan(patch.indexOf('- id: blue-core'))
+    // The package must install with the bundle (dsh plugin add), exactly as
+    // the agent-presets roster's own runtime dependency rides it.
+    const manifest = JSON.parse(readFileSync(join(patchDir, '..', 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>
+    }
+    expect(manifest.dependencies?.['@deepseek-ai/dsh-cordis-host-runner']).toBeDefined()
+  })
+
   it('disables exactly the web-app bundle\'s thin-host agent-plane list, every id addressing a real base row', () => {
     // The thin-host migration mirrors the harness's own ruling: the set of
     // rows the web-app bundle disables must equal Blue's, so when the base
