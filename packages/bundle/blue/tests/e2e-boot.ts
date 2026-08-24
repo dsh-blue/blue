@@ -63,6 +63,7 @@ import * as officialTranscriptPlugin from '../../../transcript/src/official-mode
 import * as bannerPlugin from '../../../transcript/src/banner.ts'
 import * as intentDiffPlugin from '../../../transcript/src/intent-diff.ts'
 import * as intentTerminalPlugin from '../../../transcript/src/intent-terminal.ts'
+import * as intentCordisPlugin from '../../../transcript/src/intent-cordis.ts'
 import * as paneActivityPlugin from '../../../transcript/src/pane-activity.ts'
 import * as paneBtwPlugin from '../../../transcript/src/pane-btw.ts'
 import * as paneTodoPlugin from '../../../transcript/src/pane-todo.ts'
@@ -196,6 +197,7 @@ interface BlueE2EHooks {
   transcriptApply: typeof transcriptPlugin.apply
   intentDiffApply: typeof intentDiffPlugin.apply
   intentTerminalApply: typeof intentTerminalPlugin.apply
+  intentCordisApply: typeof intentCordisPlugin.apply
   statusBasicApply: typeof statusBasicPlugin.apply
   statusCwdApply: typeof statusCwdPlugin.apply
   statusGitApply: typeof statusGitPlugin.apply
@@ -328,6 +330,7 @@ export async function bootBlue(argv: string[], options: {
     transcriptApply: transcriptPlugin.apply,
     intentDiffApply: intentDiffPlugin.apply,
     intentTerminalApply: intentTerminalPlugin.apply,
+    intentCordisApply: intentCordisPlugin.apply,
     statusBasicApply: statusBasicPlugin.apply,
     statusCwdApply: statusCwdPlugin.apply,
     statusGitApply: statusGitPlugin.apply,
@@ -505,7 +508,7 @@ export const name = 'blue-status-mode'
 export const inject = ['blueStatusModels']
 export const apply = ctx => globalThis.__blueE2E.modeStatusApply(ctx)
 `)}`,
-    // The S7 intent rows mirror cordis.patch.yml: both inject the
+    // The S7 intent rows mirror cordis.patch.yml: all three inject the
     // transcript's blueIntents registry and register their render intents.
     '- id: blue-intent-diff',
     `  name: ${fixture('blue-intent-diff.mjs', `
@@ -518,6 +521,14 @@ export const apply = ctx => globalThis.__blueE2E.intentDiffApply(ctx)
 export const name = 'blue-intent-terminal'
 export const inject = ['blueIntents', 'blueTheme', 'blueComponents']
 export const apply = ctx => globalThis.__blueE2E.intentTerminalApply(ctx)
+`)}`,
+    // The S39 cordis intent row mirrors cordis.patch.yml: name-routed through
+    // the cordis_ prefix, same registry injection as the diff/terminal rows.
+    '- id: blue-intent-cordis',
+    `  name: ${fixture('blue-intent-cordis.mjs', `
+export const name = 'blue-intent-cordis'
+export const inject = ['blueIntents', 'blueTheme', 'blueComponents']
+export const apply = ctx => globalThis.__blueE2E.intentCordisApply(ctx)
 `)}`,
     // The enhancement-segment pane rows mirror cordis.patch.yml; each fixture
     // re-declares the source module's inject list (the activity pane injects

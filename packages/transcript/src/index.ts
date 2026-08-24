@@ -9,7 +9,9 @@
  * between the collapsed result preview and the full output, scoped to the
  * most recent {@link EXPAND_TURNS} turns (the S20 kimi range). Tool cards are
  * created through the `blueIntents` render-intent registry: the item's
- * resolved view selects an intent entry, and the entry's factory builds the
+ * resolved view selects an intent entry (the `cordis_` tool-name prefix is
+ * the one name-based exception, routed by `present.ts`'s
+ * `intentForToolItem`), and the entry's factory builds the
  * component (the built-in `'generic'` entry is the `ToolCallComponent`
  * baseline). Consecutive same-step Reads group into one
  * `ReadGroupComponent` at mount time (the S20 kimi contiguity rule). Long
@@ -57,7 +59,7 @@ import {
 } from './components.ts'
 import { retractedTurnNumbers, TranscriptFolder, type FoldUpdate } from './fold.ts'
 import { BlueIntentsService } from './intents.ts'
-import { isReadItem, resolveCallView, resolveResultView } from './present.ts'
+import { intentForToolItem, isReadItem, resolveCallView, resolveResultView } from './present.ts'
 import { ReadGroupComponent } from './read-group.ts'
 import { BlueStatusService, FooterShellComponent } from './status.ts'
 import { BlueStatusModelService } from './status-model.ts'
@@ -302,7 +304,7 @@ function mountSession(
     }
     let component: BlueComponent
     if (item.kind === 'tool') {
-      const intent = intents.resolve(item.view !== undefined && 'card' in item.view ? item.view.card : 'generic')
+      const intent = intents.resolve(intentForToolItem(item))
       component = intent.create({ item, colors, components, expanded: toggle.expanded || defaultExpansion('tools') })
     } else {
       component = createPlainComponent(item, colors, components, images, requestRender)
