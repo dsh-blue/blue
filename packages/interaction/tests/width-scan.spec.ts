@@ -18,6 +18,7 @@ import { InfoPanel, type InfoSection } from '../src/info-panel.ts'
 import { FrontendPanel } from '../src/frontend-panel.ts'
 import { PlanReviewPanel, planReviewChoices } from '../src/plan-review-panel.ts'
 import { Questionnaire } from '../src/questionnaire.ts'
+import { SettingsPanel } from '../src/settings-command.ts'
 import { fakeBlueContext, FakeBlueComponents, FakeKeymap } from './fakes.ts'
 import { ADVERSARIAL, SCAN_WIDTHS, expectLinesFit } from '../../core/tests/width-scan.ts'
 
@@ -193,6 +194,27 @@ describe('interaction width-scan', () => {
         expectLinesFit(`Questionnaire/${name}`, questionnaire.render(width), width)
       }
       questionnaire.handleInput('\x1b')
+    })
+    it(`SettingsPanel survives ${name}`, () => {
+      const components = new FakeBlueComponents()
+      const list = components.createSettingsList({
+        items: [
+          { id: 'a', label: text, description: text, currentValue: text, values: [text, 'other'] },
+          { id: 'b', label: 'Short', currentValue: '1', values: ['1', '2'] },
+        ],
+        onChange: vi.fn(),
+        onCancel: vi.fn(),
+      })
+      const panel = new SettingsPanel({
+        theme: IDENTITY_THEME as never,
+        list,
+        notice: { current: { text, error: true } },
+        truncate: (value, width) => components.truncateToWidth(value, width),
+      })
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`SettingsPanel/${name}`, panel.render(width), width)
+      }
+      panel.handleInput('\x1b')
     })
   }
 })

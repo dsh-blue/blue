@@ -3,7 +3,7 @@
  * guards, the group-ordered item list (namespace absence, off-preset
  * merges, the permission row's service gating), the write path (parsed
  * patches with descriptor revisions, the reasoning-effort unset, the
- * conflict retry, the notice channel, the no-remount success and the
+ * conflict retry, the in-panel feedback row, the no-remount success and the
  * updateValue rollback on failure), the diff-and-update refresh, and
  * the open-file flow through the external-editor seam.
  */
@@ -163,6 +163,15 @@ function panel(screen: FakeScreen): SettingsPanel {
   return entry.component as SettingsPanel
 }
 
+/**
+ * Render the last mounted panel to text. Feedback assertions read the
+ * panel's own notice row — the editor's hint line leaves the tree while a
+ * panel is open, so outcomes render inside the frame.
+ */
+function frameText(bench: { screen: FakeScreen }): string {
+  return panel(bench.screen).render(80).join('\n')
+}
+
 /** Flush the write path's async continuations. */
 function settle(ms = 10): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -295,16 +304,19 @@ describe('/settings writes', () => {
     surface.handleInput(KEY.enter)
     await settle()
     expect(bench.settings.writes).toEqual([{ ns: 'blue', patch: { updateCheck: false }, revision: 1 }])
-    expect(bench.notices).toEqual(['update check set to false'])
+    // The outcome paints in the panel's own feedback row (one repaint for
+    // it), never on the editor's hint line.
+    expect(frameText(bench)).toContain('update check set to false')
+    expect(bench.notices).toEqual([])
     // The accepted write does NOT remount: the list's own cycle already
     // displays the value, and lastKnown moved with it.
     expect(bench.components.settingsLists).toHaveLength(1)
     expect(bench.components.settingsLists[0]?.options.items[0]?.currentValue).toBe('false')
-    expect(bench.screen.renderRequests).toBe(0)
+    expect(bench.screen.renderRequests).toBe(1)
     // A document-updated with no further change diffs empty: no updateValue.
     bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
     expect(bench.components.settingsLists[0]?.updates).toEqual([])
-    expect(bench.screen.renderRequests).toBe(0)
+    expect(bench.screen.renderRequests).toBe(1)
   })
 
   it('writes enum and number cycles as strings and numbers', async () => {
@@ -318,7 +330,8 @@ describe('/settings writes', () => {
       { ns: 'blue', patch: { theme: 'ocean' }, revision: 1 },
       { ns: 'shell', patch: { timeoutMs: 120_000 }, revision: 1 },
     ])
-    expect(bench.notices).toEqual(['theme set to ocean', 'shell timeout (ms) set to 120000'])
+    // The feedback row carries the latest outcome.
+    expect(frameText(bench)).toContain('shell timeout (ms) set to 120000')
   })
 
   it('writes the permission preset row through to the permission namespace', async () => {
@@ -330,7 +343,7 @@ describe('/settings writes', () => {
     expect(bench.settings.writes).toEqual([
       { ns: 'permission', patch: { defaultPreset: 'read-only' }, revision: 1 },
     ])
-    expect(bench.notices).toEqual(['default permission preset set to read-only'])
+    expect(frameText(bench)).toContain('default permission preset set to read-only')
   })
 
   it('unsets the reasoning effort when cycled to default', async () => {
@@ -342,7 +355,7 @@ describe('/settings writes', () => {
     expect(bench.settings.writes).toEqual([
       { ns: 'agent-default-model', ops: [{ op: 'unset', path: ['reasoningEffort'] }], revision: 1 },
     ])
-    expect(bench.notices).toEqual(['default reasoning effort set to default'])
+    expect(frameText(bench)).toContain('default reasoning effort set to default')
   })
 
   it('retries a stale revision once and then succeeds', async () => {
@@ -360,7 +373,7 @@ describe('/settings writes', () => {
     bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'paper')
     await settle()
     expect(calls).toBe(2)
-    expect(bench.notices).toEqual(['theme set to paper'])
+    expect(frameText(bench)).toContain('theme set to paper')
     expect(bench.components.settingsLists).toHaveLength(1)
   })
 
@@ -375,8 +388,7 @@ describe('/settings writes', () => {
     bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'paper')
     await settle()
     expect(bench.settings.writes).toHaveLength(2)
-    expect(bench.notices).toHaveLength(1)
-    expect(bench.notices[0]).toContain('could not update theme')
+    expect(frameText(bench)).toContain('could not update theme')
     // The rejected cycle is rolled back to the last committed display.
     const list = bench.components.settingsLists[0]!
     expect(list.updates).toEqual([['blue.theme', 'dark']])
@@ -393,7 +405,7 @@ describe('/settings writes', () => {
     bench.components.settingsLists.at(-1)!.options.onChange('blue.updateCheck', 'false')
     await settle()
     expect(bench.settings.writes).toHaveLength(1)
-    expect(bench.notices[0]).toContain('could not update update check: schema rejected')
+    expect(frameText(bench)).toContain('could not update update check: schema rejected')
     expect(bench.components.settingsLists[0]?.updates).toEqual([['blue.updateCheck', 'true']])
   })
 
@@ -405,7 +417,7 @@ describe('/settings writes', () => {
     await bench.command.handler()
     bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'paper')
     await settle()
-    expect(bench.notices[0]).toContain('could not update theme: plain reject')
+    expect(frameText(bench)).toContain('could not update theme: plain reject')
   })
 
   it('returns silently for a vanished namespace or an unknown row id', async () => {
@@ -418,6 +430,7 @@ describe('/settings writes', () => {
     await settle()
     expect(bench.settings.writes).toEqual([])
     expect(bench.notices).toEqual([])
+    expect(frameText(bench)).not.toContain('could not')
   })
 
   it('skips the notice when the panel closed behind a pending write', async () => {
@@ -557,7 +570,7 @@ describe('/settings refresh', () => {
     bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'paper')
     await settle()
     expect(bench.components.settingsLists).toHaveLength(1)
-    expect(bench.notices).toEqual(['theme set to paper'])
+    expect(frameText(bench)).toContain('theme set to paper')
     // The synchronous watcher fired before lastKnown moved, so its diff
     // pushed the fresh value once; a debounced real watcher lands after
     // the write and diffs empty.
@@ -579,7 +592,7 @@ describe('/settings refresh', () => {
     bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'paper')
     await settle()
     expect(bench.components.settingsLists).toHaveLength(2)
-    expect(bench.notices[0]).toContain('could not update theme')
+    expect(frameText(bench)).toContain('could not update theme')
     // The rebuilt list has no blue rows to roll back; the failure still
     // repaints for the notice.
     expect(bench.components.settingsLists.at(-1)!.updates).toEqual([])
@@ -593,7 +606,7 @@ describe('/settings open-file', () => {
     await unavailable.command.handler()
     unavailable.components.settingsLists.at(-1)!.options.onChange('open-file', '')
     await settle()
-    expect(unavailable.notices).toEqual(['settings file unavailable'])
+    expect(frameText(unavailable)).toContain('settings file unavailable')
 
     const failing = mount({
       sections: fullSections(),
@@ -602,7 +615,7 @@ describe('/settings open-file', () => {
     await failing.command.handler()
     failing.components.settingsLists.at(-1)!.options.onChange('open-file', '')
     await settle()
-    expect(failing.notices).toEqual(['settings file unavailable'])
+    expect(frameText(failing)).toContain('settings file unavailable')
   })
 
   it('notices when no editor is configured', async () => {
@@ -615,7 +628,7 @@ describe('/settings open-file', () => {
     await bench.command.handler()
     bench.components.settingsLists.at(-1)!.options.onChange('open-file', '')
     await settle()
-    expect(bench.notices).toEqual(['no editor configured ($VISUAL/$EDITOR)'])
+    expect(frameText(bench)).toContain('no editor configured ($VISUAL/$EDITOR)')
     expect(bench.screen.suspends).toBe(0)
   })
 
@@ -670,7 +683,7 @@ describe('/settings open-file', () => {
     await unreadable.command.handler()
     unreadable.components.settingsLists.at(-1)!.options.onChange('open-file', '')
     await settle()
-    expect(unreadable.notices[0]).toContain('could not read settings file')
+    expect(frameText(unreadable)).toContain('could not read settings file')
     // The write failure: a permission-stripped document.
     const locked = join(dir, 'settings.yaml')
     await writeFile(locked, 'theme: dark\n', 'utf-8')
@@ -679,7 +692,7 @@ describe('/settings open-file', () => {
     await unwritable.command.handler()
     unwritable.components.settingsLists.at(-1)!.options.onChange('open-file', '')
     await settle()
-    expect(unwritable.notices[0]).toContain('could not write settings file')
+    expect(frameText(unwritable)).toContain('could not write settings file')
   })
 
   it('skips the write-back when the panel closed while the editor was open', async () => {
@@ -722,17 +735,35 @@ describe('/settings open-file', () => {
 })
 
 describe('SettingsPanel', () => {
+  it('ratchet-pads the body to the tallest height seen', () => {
+    let rows = ['a', 'b', 'c']
+    const surface = new SettingsPanel({
+      theme: { colors: new Proxy({}, { get: () => (text: string) => text }) } as never,
+      list: { render: () => rows, invalidate: () => {} } as never,
+      notice: {},
+      truncate: text => text,
+    })
+    // Rule, title, three body rows, blank feedback row, footer, blank, rule.
+    const tall = surface.render(40)
+    expect(tall).toHaveLength(8)
+    rows = ['a']
+    // A shorter follow-up (a wrapping description settled) keeps the height.
+    expect(surface.render(40)).toHaveLength(8)
+  })
+
   it('tolerates a list without input handling and forwards invalidate', () => {
     const invalidate = vi.fn()
     const surface = new SettingsPanel({
       theme: { colors: new Proxy({}, { get: () => (text: string) => text }) } as never,
       list: { render: () => ['row'], invalidate } as never,
+      notice: {},
+      truncate: text => text,
     })
     expect(surface.focused).toBe(false)
     expect(() => surface.handleInput('x')).not.toThrow()
     surface.invalidate()
     expect(invalidate).toHaveBeenCalledOnce()
-    // Rule, title, body row, key-hint footer, rule.
-    expect(surface.render(40)).toHaveLength(5)
+    // Rule, title, body row, blank feedback row, key-hint footer, rule.
+    expect(surface.render(40)).toHaveLength(6)
   })
 })
