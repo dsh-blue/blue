@@ -10,6 +10,7 @@ import { normalizePackument } from '../src/updater/registry.ts'
 import type { ProfileFacts } from '../src/updater/profile.ts'
 import {
   checkCooldown,
+  checkDowngrade,
   checkHostLine,
   checkLinkPollution,
   checkSetConsistency,
@@ -222,6 +223,7 @@ describe('updater/preflight runPreflight', () => {
       'version-floor',
       'host-line',
       'cooldown',
+      'downgrade',
     ])
     expect(verdicts.every(verdict => !verdict.blocking)).toBe(true)
   })
@@ -239,6 +241,22 @@ describe('updater/preflight runPreflight', () => {
     const blocking = verdicts.filter(verdict => verdict.blocking)
     expect(blocking).toHaveLength(1)
     expect(blocking[0]?.code).toBe('link-pollution')
+  })
+})
+
+describe('updater/preflight checkDowngrade', () => {
+  it('warns without blocking when the target is older than the installed version', () => {
+    const verdict = checkDowngrade(healthyFacts('0.1.0-rc.2'), '0.1.0-rc.1')
+    expect(verdict.blocking).toBe(false)
+    expect(verdict.message).toContain('downgrade reinstalls the full @dsh-blue set')
+    expect(verdict.message).toContain('0.1.0-rc.1')
+  })
+
+  it('passes silently for same-or-newer targets and absent installs', () => {
+    expect(checkDowngrade(healthyFacts('0.1.0-rc.2'), '0.1.0-rc.3').message).toBeUndefined()
+    expect(checkDowngrade(healthyFacts('0.1.0-rc.2'), '0.1.0-rc.2').message).toBeUndefined()
+    const bare: ProfileFacts = { ...healthyFacts(), installed: {} }
+    expect(checkDowngrade(bare, '0.1.0-rc.1').message).toBeUndefined()
   })
 })
 

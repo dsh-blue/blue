@@ -38,20 +38,44 @@ export function updateNoticeRows(content: UpdateNoticeContent): string[] {
   ]
 }
 
+/** The interrupted-update warning's facts (the swap's pending marker). */
+export interface InterruptedNoticeContent {
+  /** The version the interrupted swap targeted, when the marker recorded one. */
+  readonly target?: string
+  /** The backup directory the snapshot lives in. */
+  readonly backupPath: string
+}
+
+/**
+ * Compose the interrupted-update warning rows: a previous swap was killed
+ * mid-flight, the profile may be mixed, and recovery is manual (restore
+ * the backup or retry) — never automatic.
+ * @param content - the marker facts.
+ * @returns the two untruncated rows.
+ */
+export function interruptedNoticeRows(content: InterruptedNoticeContent): string[] {
+  const target = content.target === undefined ? '' : ` to v${content.target}`
+  return [
+    `a previous /update${target} was interrupted — the profile may be in a mixed state`,
+    `restore the backup at ${content.backupPath} — or run /update to retry`,
+  ]
+}
+
 /**
  * The two-row update notice. Renders the composed rows truncated to the
  * viewport; holds no state, so `invalidate` is a no-op.
  */
 export class UpdateNoticeComponent implements BlueComponent {
-  private readonly rows: string[]
+  private readonly rows: readonly string[]
   private readonly truncate: RowTruncator
 
   /**
    * @param truncate - the components service's width-safe truncator.
-   * @param content - the notice facts.
+   * @param rows - the composed rows (see {@link updateNoticeRows} and
+   * {@link interruptedNoticeRows}).
    */
-  constructor(truncate: RowTruncator, content: UpdateNoticeContent) {
-    this.rows = updateNoticeRows(content)
+  constructor(truncate: RowTruncator, rows: readonly string[]) {
+    this.rows = rows
     this.truncate = truncate
   }
 

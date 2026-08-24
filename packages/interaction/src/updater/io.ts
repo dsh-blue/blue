@@ -14,7 +14,7 @@
  */
 
 import { spawn } from 'node:child_process'
-import { appendFileSync, copyFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, copyFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir as osHomedir } from 'node:os'
 import { dirname } from 'node:path'
 
@@ -221,6 +221,18 @@ export const updaterInternals = {
     } catch {
       return undefined
     }
+  },
+  /** Remove a file; absent is a no-op. */
+  removeFile: (path: string): void => {
+    rmSync(path, { force: true })
+  },
+  /** Remove a directory tree; absent is a no-op. */
+  removeDir: (path: string): void => {
+    rmSync(path, { recursive: true, force: true })
+  },
+  /** Rename (move) a file or directory. */
+  rename: (from: string, to: string): void => {
+    renameSync(from, to)
   },
   /** The home directory (seamed for profile-root tests). */
   homedir: (): string => osHomedir(),

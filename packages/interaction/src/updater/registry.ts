@@ -42,7 +42,7 @@ export interface Packument {
 }
 
 /** Why a registry read failed — the caller picks the user-facing message. */
-export type RegistryFailure = 'network' | 'unparseable'
+export type RegistryFailure = 'network' | 'unparseable' | 'not-found'
 
 /** A registry read: the packument, or the failure class. */
 export type RegistryResult = { ok: true; packument: Packument } | { ok: false; reason: RegistryFailure }
@@ -125,7 +125,11 @@ async function npmView(): Promise<RegistryResult | undefined> {
   // A missing npm binary cannot be retried into existence — the caller
   // falls through to the direct fetch.
   if (outcome.spawnError !== undefined) return undefined
-  if (outcome.code !== 0) return { ok: false, reason: 'network' }
+  // E404 is its own class: the package is unknown to that registry (a
+  // misconfigured mirror), not a connectivity problem.
+  if (outcome.code !== 0) {
+    return { ok: false, reason: outcome.stderr.includes('E404') ? 'not-found' : 'network' }
+  }
   return parseViewOutput(outcome.stdout)
 }
 
@@ -139,18 +143,33 @@ async function directFetch(): Promise<RegistryResult> {
   }
 }
 
+/** Progress hooks for a packument read; the UI layers wire notices here. */
+export interface FetchPackumentHooks {
+  /**
+   * Fired before each retry attempt (never for the first): `attempt` and
+   * `total` are 1-based attempt numbers (2/3, 3/3).
+   */
+  readonly onRetry?: (attempt: number, total: number) => void
+}
+
 /**
  * Read the bundle's packument with bounded retries: up to three attempts
  * total with 1.5s/4s backoff (registry read lag after a publish), npm
  * view first and the direct fetch as fallback when npm is absent. Every
  * failure class collapses to one verdict — silent on the boot-check path,
  * messaged on `/update`.
+ * @param hooks - optional progress callbacks (the registry layer stays
+ * UI-free; callers flash their own notices).
  * @returns the packument, or the failure class for the caller's message.
  */
-export async function fetchPackument(): Promise<RegistryResult> {
+export async function fetchPackument(hooks: FetchPackumentHooks = {}): Promise<RegistryResult> {
   let last: RegistryResult = { ok: false, reason: 'network' }
+  const total = RETRY_DELAYS_MS.length + 1
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
-    if (attempt > 0) await updaterInternals.sleep(RETRY_DELAYS_MS[attempt - 1]!)
+    if (attempt > 0) {
+      hooks.onRetry?.(attempt + 1, total)
+      await updaterInternals.sleep(RETRY_DELAYS_MS[attempt - 1]!)
+    }
     const view = await npmView()
     if (view !== undefined) {
       last = view

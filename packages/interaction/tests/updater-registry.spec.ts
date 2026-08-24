@@ -236,6 +236,37 @@ describe('updater/registry fetchPackument', () => {
     expect(spawns).toBe(3)
     expect(delays).toEqual([1_500, 4_000])
   })
+
+  it('classifies an E404 stderr as not-found, distinct from network', async () => {
+    seam({
+      spawnOnce: () =>
+        Promise.resolve({ code: 1, signal: null, stdout: '', stderr: 'npm error code E404\n Not Found', timedOut: false }),
+      sleep: () => Promise.resolve(),
+    })
+    expect(await fetchPackument()).toEqual({ ok: false, reason: 'not-found' })
+  })
+
+  it('reports each retry through the onRetry hook, never the first attempt', async () => {
+    let spawns = 0
+    const retries: Array<[number, number]> = []
+    seam({
+      spawnOnce: () => {
+        spawns += 1
+        if (spawns < 3) {
+          return Promise.resolve({ code: 1, signal: null, stdout: '', stderr: 'ETIMEDOUT', timedOut: false })
+        }
+        return viewOk(JSON.stringify(RAW_DOCUMENT))
+      },
+      sleep: () => Promise.resolve(),
+    })
+    const result = await fetchPackument({ onRetry: (attempt, total) => retries.push([attempt, total]) })
+    expect(result.ok).toBe(true)
+    expect(retries).toEqual([[2, 3], [3, 3]])
+    // A first-attempt success never fires the hook.
+    retries.length = 0
+    await fetchPackument({ onRetry: (attempt, total) => retries.push([attempt, total]) })
+    expect(retries).toEqual([])
+  })
 })
 
 describe('updater/registry releaseFacts', () => {

@@ -1,13 +1,18 @@
 /**
- * Tests for `/update` (D52) over the real command runtime: the busy and
- * screen guards, every early-exit verdict (bad version, missing tag,
- * below-floor tag, up to date, link pollution, stale host, cooldown
- * window), the typed-y confirm and its Esc cancel, the full success path
- * (swap, panel, boot-check cache write), the rollback outcome, and the
- * progress panel's own rendering and close discipline.
+ * Tests for `/update` (D52) over the real command runtime: the busy,
+ * screen, and in-flight guards, every early-exit verdict (bad version,
+ * missing tag, below-floor tag, up to date, link pollution, stale host,
+ * cooldown window), the registry failure classes (network, E404,
+ * unparseable) with the hint-line progress and retry notices, the
+ * typed-y confirm and its Esc cancel, the full success path (swap,
+ * panel, boot-check cache write), the rollback outcomes (including the
+ * installed-set fallback when the registry does not know the old
+ * release), the downgrade full-set transaction, a thrown swap settling
+ * the panel, and the progress panel's own rendering and close
+ * discipline.
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -18,6 +23,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { mkdtempTracked } from '../../core/tests/temp-dir.ts'
 import * as updateCheck from '../src/updater/check.ts'
 import { updaterInternals, type InteractiveChild, type SpawnOutcome } from '../src/updater/io.ts'
+import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
 import { registerUpdateCommand, UpdatePanel } from '../src/update-command.ts'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
 import type { BlueTheme, BlueComponents, BlueKeymap } from '@dsh-blue/blue-core'
@@ -27,6 +33,7 @@ const REAL = { ...updaterInternals }
 
 afterEach(() => {
   Object.assign(updaterInternals, REAL)
+  clearSharedEditor()
 })
 
 /** The rc.2 release set (five packages — blue-api joins with rc.3). */
@@ -113,6 +120,7 @@ async function mountWorld(options: {
   installBehavior?: (specs: string[]) => SpawnOutcome
   agentStatus?: 'idle' | 'running'
   withScreen?: boolean
+  sessionCurrent?: 'agent' | 'null'
 } = {}) {
   const home = mkdtempTracked('blue-updater-cmd-')
   const root = join(home, '.dsh', 'profiles', 'blue')
@@ -179,7 +187,7 @@ async function mountWorld(options: {
   await ctx.plugin(CommandRuntime)
   const session = ctx.sessions.create(SessionId('update-spec'))
   const agent = { id: session.id, session, status: options.agentStatus ?? 'idle' } as unknown as Agent
-  ctx.provide('blueSession', { current: agent, modelRef: undefined })
+  ctx.provide('blueSession', { current: options.sessionCurrent === 'null' ? null : agent, modelRef: undefined })
   const dispose = registerUpdateCommand(ctx)
   return {
     ctx,
@@ -247,6 +255,19 @@ describe('/update guards', () => {
     const result = await world.run()
     if (result?.kind === 'error') expect(result.text).toContain('could not read the registry')
     else throw new Error('expected error')
+    world.dispose()
+  })
+
+  it('reports an E404 registry answer as a mirror misconfiguration', async () => {
+    const world = await mountWorld()
+    updaterInternals.spawnOnce = () =>
+      Promise.resolve({ code: 1, signal: null, stdout: '', stderr: 'npm error code E404\nnpm error 404 Not Found', timedOut: false })
+    const result = await world.run()
+    if (result?.kind === 'error') {
+      expect(result.text).toContain('could not read the registry')
+      expect(result.text).toContain('E404')
+      expect(result.text).toContain('npmrc registry/mirror')
+    } else throw new Error('expected error')
     world.dispose()
   })
 
@@ -518,9 +539,9 @@ describe('/update confirm and swap', () => {
     world.dispose()
   })
 
-  it('drops the detail line entirely when every part is unknown', async () => {
-    // No publish time for the target, an unreadable host probe, and no
-    // other warnings: the subtitle carries just the versions.
+  it('relays the unprobeable-host and unknown-publish-time warnings into the subtitle', async () => {
+    // No publish time for the target and an unreadable host probe: both
+    // gates warn instead of blocking, and the warnings ride the subtitle.
     const noTimePackument = JSON.stringify({
       'dist-tags': { rc: '0.1.0-rc.8' },
       versions: {
@@ -546,9 +567,13 @@ describe('/update confirm and swap', () => {
     const pending = world.ctx.commands.execute(world.agent, '/update', [], new AbortController().signal)
     const overlay = await world.waitOverlay()
     const form = overlay as { handleInput(data: string): void, render(width: number): string[] }
-    const subtitle = form.render(120).join('\n')
+    // Both warnings ride the one subtitle line; render wide enough that
+    // the panel does not truncate the second one away.
+    const subtitle = form.render(240).join('\n')
     expect(subtitle).toContain('v0.1.0-rc.6 → v0.1.0-rc.8')
-    expect(subtitle).not.toContain('published')
+    expect(subtitle).toContain('could not determine the installed dsh CLI version')
+    expect(subtitle).toContain('publish time unknown')
+    expect(subtitle).not.toContain('h ago')
     form.handleInput(KEY.escape)
     await pending
     world.dispose()
@@ -576,6 +601,204 @@ describe('/update confirm and swap', () => {
       expect(overlayRows(world.screen), probe).toContain('minimumReleaseAge')
       world.dispose()
     }
+  })
+
+  it('refuses a second concurrent run and releases the guard after settle', async () => {
+    const world = await mountWorld()
+    const pending = world.ctx.commands.execute(world.agent, '/update', [], new AbortController().signal)
+    const overlay = await world.waitOverlay()
+    // While the first run parks at the confirm form, a second /update is refused.
+    const second = await world.run()
+    expect(second).toEqual({ kind: 'error', text: 'an update is already in progress' })
+    ;(overlay as { handleInput(data: string): void }).handleInput(KEY.escape)
+    const execution = await pending
+    expect(execution?.result).toEqual({ kind: 'success', text: 'update cancelled' })
+    // The guard released with the settle: a third run reaches the confirm again.
+    const overlaysBefore = world.screen.overlays.length
+    const third = world.ctx.commands.execute(world.agent, '/update', [], new AbortController().signal)
+    // waitOverlay returns overlays.at(-1), which is still the first run's
+    // hidden form — wait for the NEW record before driving it.
+    let thirdOverlay: unknown
+    for (let i = 0; i < 100; i += 1) {
+      if (world.screen.overlays.length > overlaysBefore) {
+        thirdOverlay = world.screen.overlays.at(-1)!.component
+        break
+      }
+      await new Promise(resolve => setTimeout(resolve, 2))
+    }
+    expect(thirdOverlay).toBeDefined()
+    ;(thirdOverlay as { handleInput(data: string): void }).handleInput(KEY.escape)
+    const thirdExecution = await third
+    expect(thirdExecution?.result).toEqual({ kind: 'success', text: 'update cancelled' })
+    world.dispose()
+  })
+
+  it('settles the panel when the swap itself throws', async () => {
+    const world = await mountWorld()
+    // The snapshot's atomic rename dying (ENOSPC class) must not strand an
+    // unsettled panel — it refuses to close mid-swap by design.
+    updaterInternals.rename = () => {
+      throw new Error('ENOSPC: no space left on device')
+    }
+    const pending = world.ctx.commands.execute(world.agent, '/update', [], new AbortController().signal)
+    const overlay = await world.waitOverlay()
+    const form = overlay as { handleInput(data: string): void }
+    form.handleInput('y')
+    form.handleInput(KEY.enter)
+    const execution = await pending
+    expect(execution?.result).toEqual({ kind: 'error', text: 'update failed — the repair recipe is in the update panel' })
+    const rows = overlayRows(world.screen)
+    expect(rows).toContain('the swap crashed')
+    expect(rows).toContain('ENOSPC')
+    expect(rows).toContain('the snapshot is at')
+    const panelOverlay = world.screen.overlays.at(-1)?.component as { handleInput(data: string): void } | undefined
+    expect(panelOverlay).toBeDefined()
+    panelOverlay!.handleInput(KEY.escape)
+    world.dispose()
+  })
+
+  it('settles the panel with a stringified message when the throw is not an Error', async () => {
+    const world = await mountWorld()
+    updaterInternals.rename = () => {
+      throw 'disk full'
+    }
+    const pending = world.ctx.commands.execute(world.agent, '/update', [], new AbortController().signal)
+    const overlay = await world.waitOverlay()
+    const form = overlay as { handleInput(data: string): void }
+    form.handleInput('y')
+    form.handleInput(KEY.enter)
+    const execution = await pending
+    expect(execution?.result).toEqual({ kind: 'error', text: 'update failed — the repair recipe is in the update panel' })
+    expect(overlayRows(world.screen)).toContain('the swap crashed: disk full')
+    const panelOverlay = world.screen.overlays.at(-1)?.component as { handleInput(data: string): void } | undefined
+    panelOverlay?.handleInput(KEY.escape)
+    world.dispose()
+  })
+
+  it('flashes the registry-check progress and retry notices in the hint line', async () => {
+    const world = await mountWorld()
+    const notices: string[] = []
+    setSharedEditor({
+      editor: world.ctx.get('blueComponents')!.createEditor(),
+      submitPrompt: () => {},
+      notice: text => notices.push(text),
+    })
+    const stub = updaterInternals.spawnOnce
+    let npmFailures = 2
+    updaterInternals.spawnOnce = ((cmd: string, args: readonly string[], opts?: { cwd?: string; timeoutMs?: number }) => {
+      if (cmd === 'npm' && npmFailures > 0) {
+        npmFailures -= 1
+        return Promise.resolve({ code: 1, signal: null, stdout: '', stderr: 'ETIMEDOUT', timedOut: false })
+      }
+      return stub(cmd, args, opts)
+    }) as typeof updaterInternals.spawnOnce
+    const pending = world.ctx.commands.execute(world.agent, '/update', [], new AbortController().signal)
+    const overlay = await world.waitOverlay()
+    expect(notices).toContain('checking the registry for @dsh-blue/blue updates…')
+    expect(notices).toContain('registry unreachable, retrying (2/3)…')
+    expect(notices).toContain('registry unreachable, retrying (3/3)…')
+    ;(overlay as { handleInput(data: string): void }).handleInput(KEY.escape)
+    await pending
+    world.dispose()
+  })
+
+  it('falls back to the rc channel when the settings channel is blank', async () => {
+    const world = await mountWorld()
+    class MemorySettings extends SettingsProvider {
+      readonly writable = true
+      private doc: Record<string, unknown> = {}
+      protected async load(): Promise<Record<string, unknown>> {
+        return this.doc
+      }
+      protected async persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+        this.doc[String(ns)] = section
+      }
+    }
+    const settings = new MemorySettings(world.ctx)
+    // apply() registers the 'blue' settings namespace; the boot check's
+    // notice mounts as a dock child, never an overlay, so it cannot race
+    // the confirm form below.
+    updateCheck.apply(world.ctx)
+    await new Promise(resolve => setTimeout(resolve, 5))
+    await settings.update(settingsNamespace('blue'), { updateChannel: '' })
+    await new Promise(resolve => setTimeout(resolve, 5))
+    const pending = world.ctx.commands.execute(world.agent, '/update', [], new AbortController().signal)
+    const overlay = await world.waitOverlay()
+    ;(overlay as { handleInput(data: string): void }).handleInput(KEY.escape)
+    const execution = await pending
+    expect(execution?.result).toEqual({ kind: 'success', text: 'update cancelled' })
+    world.dispose()
+  })
+
+  it('proceeds when no session is current', async () => {
+    const world = await mountWorld({ sessionCurrent: 'null' })
+    const pending = world.ctx.commands.execute(world.agent, '/update', [], new AbortController().signal)
+    const overlay = await world.waitOverlay()
+    ;(overlay as { handleInput(data: string): void }).handleInput(KEY.escape)
+    const execution = await pending
+    expect(execution?.result).toEqual({ kind: 'success', text: 'update cancelled' })
+    world.dispose()
+  })
+
+  it('a downgrade target reinstalls the full target set in one transaction', async () => {
+    const world = await mountWorld()
+    // Move the profile to rc.7 (six packages) so rc.6 is a downgrade.
+    rmSync(join(world.root, 'node_modules', '@dsh-blue'), { recursive: true, force: true })
+    world.installAt('0.1.0-rc.7')
+    const manifest = JSON.parse(String(updaterInternals.readTextFile(join(world.root, 'package.json')))) as Record<string, unknown>
+    manifest.dependencies = { '@dsh-blue/blue': '0.1.0-rc.7' }
+    updaterInternals.writeTextFile(join(world.root, 'package.json'), JSON.stringify(manifest))
+    world.ctx.provide('agentDefaultModel', { currentSelection: () => ({ model: 'deepseek-chat marker', provider: 'x' }) })
+    const pending = world.ctx.commands.execute(world.agent, '/update 0.1.0-rc.6', [], new AbortController().signal)
+    const overlay = await world.waitOverlay()
+    const form = overlay as { handleInput(data: string): void, render(width: number): string[] }
+    // The downgrade warning rides the subtitle's tail; render wide enough
+    // that the publish-age and host-line parts do not truncate it away.
+    expect(form.render(260).join('\n')).toContain('downgrade reinstalls the full @dsh-blue set')
+    form.handleInput('y')
+    form.handleInput(KEY.enter)
+    const execution = await pending
+    expect(execution?.result?.kind).toBe('success')
+    // The rc.6 release set has five members (blue-api joins later); a
+    // bundle-only spec would leave the newer siblings behind.
+    const install = world.spawns.find(call => call.args[0] === 'plugin')
+    expect(install?.args).toEqual(['plugin', '--profile', 'blue', 'add', ...RC2_NAMES.map(name => `${name}@0.1.0-rc.6`)])
+    const panelOverlay = world.screen.overlays.at(-1)?.component as { handleInput(data: string): void } | undefined
+    panelOverlay?.handleInput(KEY.escape)
+    world.dispose()
+  })
+
+  it('rolls back with the installed set when the registry does not know the old release', async () => {
+    // The npm-view packument shape: versions are bare strings, so every
+    // per-release deps block rides the targeted query — which here answers
+    // nothing useful, leaving the from-release a one-member set and the
+    // rollback set the discovered install.
+    const npmViewPackument = JSON.stringify({
+      'dist-tags': { rc: '0.1.0-rc.8' },
+      versions: ['0.1.0-rc.6', '0.1.0-rc.7', '0.1.0-rc.8'],
+      time: { '0.1.0-rc.6': '2026-08-20T00:00:00.000Z', '0.1.0-rc.8': '2026-08-23T00:00:00.000Z' },
+    })
+    const world = await mountWorld({
+      packument: npmViewPackument,
+      installBehavior: specs => {
+        if (specs[0]?.endsWith('@0.1.0-rc.8') === true) {
+          return { code: 1, signal: null, stdout: '', stderr: 'ERR_PNPM broken', timedOut: false }
+        }
+        world.installAt('0.1.0-rc.6')
+        return ok()
+      },
+    })
+    world.ctx.provide('agentDefaultModel', { currentSelection: () => ({ model: 'deepseek-chat marker', provider: 'x' }) })
+    const pending = world.ctx.commands.execute(world.agent, '/update', [], new AbortController().signal)
+    const overlay = await world.waitOverlay()
+    const form = overlay as { handleInput(data: string): void }
+    form.handleInput('y')
+    form.handleInput(KEY.enter)
+    const execution = await pending
+    expect(execution?.result).toEqual({ kind: 'error', text: 'update failed — rolled back to v0.1.0-rc.6' })
+    const reinstall = world.spawns.filter(call => call.args[0] === 'plugin').at(-1)
+    expect(reinstall?.args.slice(4).sort()).toEqual(RC3_NAMES.map(name => `${name}@0.1.0-rc.6`).sort())
+    world.dispose()
   })
 })
 

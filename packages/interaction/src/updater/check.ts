@@ -5,7 +5,13 @@
  * npmrc mirrors, the registry API as fallback — at most once per 24h,
  * silently, and when the channel tag outranks the running version it
  * appends the two-row update notice to the scroll area and flashes the
- * editor hint line. The read is metadata, not remote content (the kimi
+ * editor hint line. A recorded offer (`lastOffer` in the state) re-mounts
+ * the notice on every cache-window boot without a network read, and a
+ * FAILED read never stamps the cache window, so the next boot retries. A
+ * `link:`/`file:`-installed dev profile never sees the offer notice (it
+ * would invite the `dsh plugin add` that half-overwrites the links), and
+ * a leftover swap `pending.json` marker mounts the interrupted-update
+ * warning instead. The read is metadata, not remote content (the kimi
  * remote-banner decline stands): one GET, a local timestamp, nothing
  * sent, and `blue.updateCheck: false` in `~/.dsh/settings.yaml` makes
  * Blue fully offline.
@@ -27,21 +33,25 @@ import z from '@deepseek-ai/schemastery'
 import { BLUE_VERSION } from '@dsh-blue/blue-api'
 import { join } from 'node:path'
 import { getSharedEditor } from '../editor-instance.ts'
-import { UpdateNoticeComponent } from '../update-notice.ts'
+import type { InterruptedNoticeContent } from '../update-notice.ts'
+import { interruptedNoticeRows, UpdateNoticeComponent, updateNoticeRows } from '../update-notice.ts'
 import { updaterInternals } from './io.ts'
-import { dshHome, profileNameFromArgv } from './profile.ts'
+import { backupDir, dshHome, profileNameFromArgv, profileRoot, readProfileFacts } from './profile.ts'
 import { resolveOffer } from './preflight.ts'
-import { fetchPackument } from './registry.ts'
+import { fetchPackument, publishedAt } from './registry.ts'
+import { compareVersions } from './version.ts'
 
 /** How often the boot check re-queries the registry. */
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1_000
 
 /** The check's persisted state, under `$DSH_HOME/storages/blue-update/`. */
 export interface UpdateCheckState {
-  /** Wall clock of the last registry read, epoch ms. */
+  /** Wall clock of the last SUCCESSFUL registry read, epoch ms (a failed check never stamps it — the next boot retries). */
   readonly lastCheckAt: number
   /** The newest version the check last notified about, when it did. */
   readonly lastNotifiedVersion?: string
+  /** The last offer seen, so a cache-window boot can re-mount the notice without a network read. */
+  readonly lastOffer?: { readonly version: string, readonly publishedAt?: number }
   /** The last failure class, for offline diagnosis. */
   readonly lastError?: string
 }
@@ -88,14 +98,24 @@ export function readUpdateCheckState(): UpdateCheckState | undefined {
     if (typeof lastCheckAt !== 'number') return undefined
     const lastNotifiedVersion = record.lastNotifiedVersion
     const lastError = record.lastError
+    const lastOffer = record.lastOffer
     return {
       lastCheckAt,
       ...(typeof lastNotifiedVersion === 'string' ? { lastNotifiedVersion } : {}),
       ...(typeof lastError === 'string' ? { lastError } : {}),
+      ...(isOfferShape(lastOffer) ? { lastOffer } : {}),
     }
   } catch {
     return undefined
   }
+}
+
+/** Tolerant read of the persisted offer shape. */
+function isOfferShape(value: unknown): value is { version: string, publishedAt?: number } {
+  if (typeof value !== 'object' || value === null) return false
+  const record = value as Record<string, unknown>
+  if (typeof record.version !== 'string') return false
+  return record.publishedAt === undefined || typeof record.publishedAt === 'number'
 }
 
 /**
@@ -123,16 +143,34 @@ export async function runUpdateCheck(
   // The whole tree first — the check never competes with boot.
   await ctx.get('loader')?.await()
   if (isUnloaded()) return
+  // A killed swap left its marker behind: warn (read-only — never an
+  // auto-restore). This is a local read, so it runs even when the
+  // registry check is switched off. No await intervenes after the unload
+  // check, so the flag cannot flip in between.
+  const pending = pendingSwapMarker()
+  if (pending !== undefined) mountInterruptedNotice(ctx, pending)
   if (!settings().updateCheck) return
   const now = updaterInternals.now()
   const previous = readUpdateCheckState()
-  if (previous !== undefined && now - previous.lastCheckAt < CHECK_INTERVAL_MS) return
+  if (previous !== undefined && now - previous.lastCheckAt < CHECK_INTERVAL_MS) {
+    // Inside the cache window the registry is not re-read, but a recorded
+    // offer that still outranks the running version re-mounts its notice
+    // from the cache — otherwise only the first boot of 24h ever showed it.
+    const offer = previous.lastOffer
+    if (offer !== undefined && compareVersions(offer.version, BLUE_VERSION) > 0) {
+      mountNotice(ctx, offer.version)
+    }
+    return
+  }
   const result = await fetchPackument()
   if (isUnloaded()) return
   if (!result.ok) {
+    // A failed read must NOT stamp lastCheckAt — the next boot retries
+    // instead of burning the 24h window on a transient error.
     writeUpdateCheckState({
-      lastCheckAt: now,
+      lastCheckAt: previous?.lastCheckAt ?? 0,
       ...(previous?.lastNotifiedVersion !== undefined ? { lastNotifiedVersion: previous.lastNotifiedVersion } : {}),
+      ...(previous?.lastOffer !== undefined ? { lastOffer: previous.lastOffer } : {}),
       lastError: result.reason,
     })
     return
@@ -140,11 +178,16 @@ export async function runUpdateCheck(
   const offer = resolveOffer(result.packument, settings().updateChannel, BLUE_VERSION)
   if (offer.kind !== 'offer') {
     // Up to date (or the channel is broken): a clean read clears the
-    // error and the notified marker.
+    // error, the notified marker, and any recorded offer.
     writeUpdateCheckState({ lastCheckAt: now })
     return
   }
-  writeUpdateCheckState({ lastCheckAt: now, lastNotifiedVersion: offer.target })
+  const published = publishedAt(result.packument, offer.target)
+  writeUpdateCheckState({
+    lastCheckAt: now,
+    lastNotifiedVersion: offer.target,
+    lastOffer: { version: offer.target, ...(published === undefined ? {} : { publishedAt: published }) },
+  })
   if (isUnloaded()) return
   mountNotice(ctx, offer.target)
 }
@@ -153,6 +196,9 @@ export async function runUpdateCheck(
  * Append the update notice to the scroll area and flash the editor hint
  * line. The mount is effect-bound (unloading the fiber removes it); the
  * plain component carries no theme dependency, so it survives `/theme`.
+ * A `link:`/`file:`-installed dev profile never sees the notice: it would
+ * invite `dsh plugin add`, the exact command that half-overwrites the
+ * links (and `/update` refuses those profiles by design).
  * @param ctx - plugin context.
  * @param target - the offered version.
  */
@@ -161,17 +207,58 @@ function mountNotice(ctx: Context, target: string): void {
   const components = ctx.get('blueComponents')
   if (screen === undefined || components === undefined) return
   const profile = profileNameFromArgv(process.argv)
+  if (readProfileFacts(profileRoot(profile)).linked.length > 0) return
   const notice = new UpdateNoticeComponent(
     (text, width) => components.truncateToWidth(text, width),
-    {
+    updateNoticeRows({
       current: BLUE_VERSION,
       target,
       command: `dsh plugin --profile ${profile} add @dsh-blue/blue@${target}`,
-    },
+    }),
   )
   ctx.effect(() => screen.addChild(notice))
   screen.requestRender()
   getSharedEditor()?.notice?.(`Blue v${target} available — /update to upgrade`)
+}
+
+/**
+ * Read the swap's pending marker from the profile's backup dir; `undefined`
+ * when no swap is recorded as in-flight. The marker's presence is the
+ * signal — even an unparseable body still warns.
+ * @returns the marker facts, or `undefined`.
+ */
+function pendingSwapMarker(): InterruptedNoticeContent | undefined {
+  const backup = backupDir(profileRoot(profileNameFromArgv(process.argv)))
+  const text = updaterInternals.readTextFile(join(backup, 'pending.json'))
+  if (text === undefined) return undefined
+  try {
+    const parsed: unknown = JSON.parse(text)
+    const to = typeof parsed === 'object' && parsed !== null
+      ? (parsed as Record<string, unknown>).to
+      : undefined
+    return { backupPath: backup, ...(typeof to === 'string' ? { target: to } : {}) }
+  } catch {
+    return { backupPath: backup }
+  }
+}
+
+/**
+ * Mount the interrupted-update warning row (the killed-swap recovery
+ * path): the profile may be mixed, the backup path is the repair, and the
+ * notice never auto-restores. Same mount discipline as the offer notice.
+ * @param ctx - plugin context.
+ * @param content - the marker facts.
+ */
+function mountInterruptedNotice(ctx: Context, content: InterruptedNoticeContent): void {
+  const screen = ctx.get('blueScreen')
+  const components = ctx.get('blueComponents')
+  if (screen === undefined || components === undefined) return
+  const notice = new UpdateNoticeComponent(
+    (text, width) => components.truncateToWidth(text, width),
+    interruptedNoticeRows(content),
+  )
+  ctx.effect(() => screen.addChild(notice))
+  screen.requestRender()
 }
 
 /**

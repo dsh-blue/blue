@@ -75,6 +75,7 @@ import { MockAdapter} from './mock-adapter.ts'
 // The wizard's models.dev lookup stays offline in the e2e (the fixture
 // gateways carry their own metadata paths).
 import { setModelsDevLoader} from '../../../interaction/src/models-dev.ts'
+import { updaterInternals} from '../../../interaction/src/updater/io.ts'
 import { mkdtempTracked, registerTempDirCleanup} from '../../../core/tests/temp-dir.ts'
 
 
@@ -287,6 +288,14 @@ export async function bootBlue(argv: string[], options: {
   terminal?: FakeTerminal
 }): Promise<BlueTree> {
   const dir = mkdtempTracked('dsh-blue-e2e-')
+  // The boot update check stays offline in the e2e (the models.dev
+  // precedent): its npm/fetch seams fail fast and its DSH_HOME points at
+  // the temp tree, so no spec ever waits on the real registry or touches
+  // the developer's own dsh home.
+  updaterInternals.env = { DSH_HOME: join(dir, 'dsh-home') }
+  updaterInternals.spawnOnce = () =>
+    Promise.resolve({ code: null, signal: null, stdout: '', stderr: '', timedOut: false, spawnError: 'ENOENT (e2e offline)' })
+  updaterInternals.fetchText = () => Promise.reject(new Error('e2e offline'))
   // S37 puts the dsh host in the workspace (blue-cli's pinned dependency),
   // and the host carries node-addon-require-builtin within the loader's
   // resolution — the loader's internal importer activates on Node 24, and
