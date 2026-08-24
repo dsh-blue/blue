@@ -58,7 +58,7 @@ describe('blue bundle', () => {
     // the same-round activation keeps it the first scroll child), transcript,
     // and the baseline footer entry. The enhancement rows mount order:
     // editor-plus first, the input-side attachment store + paste layer next,
-    // then the footer entries, then the two intent rows, then the panes, then
+    // then the footer entries, then the three intent rows, then the panes, then
     // the assembly segment.
     const ids = [...patch.matchAll(/^\s*- id: (blue-[\w-]+)$/gm)].map(match => match[1]!)
     expect(ids).toEqual([
@@ -78,6 +78,7 @@ describe('blue bundle', () => {
       'blue-status-context',
       'blue-intent-diff',
       'blue-intent-terminal',
+      'blue-intent-cordis',
       'blue-pane-activity',
       'blue-pane-queue',
       'blue-pane-todo',
@@ -90,6 +91,7 @@ describe('blue bundle', () => {
     // The S7/S8 rows resolve to their package subpath names.
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/intent-diff'")
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/intent-terminal'")
+    expect(patch).toContain("name: '@dsh-blue/blue-transcript/intent-cordis'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/attachments'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/paste-image'")
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/banner'")

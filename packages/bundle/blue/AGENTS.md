@@ -4,7 +4,7 @@ Implementation detail for this package (the user-facing surface is `README.md`/`
 
 ## Patch layout
 
-The installable unit. Its `cordis.patch.yml` inserts the Blue plugin rows over `dsh-base` in three commented segments. The baseline now starts with the stable `blue-api-host`, followed by `blue-core`, theme, banner, transcript, and the basic status; the API host owns capability-scoped third-party registrations before renderer packages activate. The enhancement and assembly segments retain the existing rows. The bundle module itself mounts nothing. The five library packages are its `workspace:^` dependencies. (The `blue-status-tips` footer row retired with the S30 footer swap.)
+The installable unit. Its `cordis.patch.yml` inserts the Blue plugin rows over `dsh-base` in three commented segments. The baseline now starts with the stable `blue-api-host`, followed by `blue-core`, theme, banner, transcript, and the basic status; the API host owns capability-scoped third-party registrations before renderer packages activate. The enhancement and assembly segments retain the existing rows; the enhancement segment's intent trio closed out with the S39 `blue-intent-cordis` row — the name-routed (`cordis_` prefix) card for the creative preset's self-referential toolset, sitting right after `blue-intent-terminal`. The bundle module itself mounts nothing. The five library packages are its `workspace:^` dependencies. (The `blue-status-tips` footer row retired with the S30 footer swap.)
 
 ## Session-title cadence swap (S30) + bridge (D41)
 

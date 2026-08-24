@@ -57,6 +57,10 @@
       "types": "./lib/types/intent-terminal.d.ts",
       "default": "./lib/intent-terminal.js"
     },
+    "./intent-cordis": {
+      "types": "./lib/types/intent-cordis.d.ts",
+      "default": "./lib/intent-cordis.js"
+    },
     "./banner": {
       "types": "./lib/types/banner.d.ts",
       "default": "./lib/banner.js"

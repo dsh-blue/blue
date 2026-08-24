@@ -95,6 +95,30 @@ export function resolveResultView(
 }
 
 /**
+ * The self-referential Cordis toolset's name prefix (`dsh-tool-cordis`, the
+ * S39 creative preset): `cordis_define`/`cordis_run`/`cordis_stop`/
+ * `cordis_undefine`/`cordis_inspect*`. Every one of them presents a
+ * `GenericCallView` (`card: 'generic'`), so the view card cannot select the
+ * cordis card — the name prefix is the only stable signal (the
+ * {@link isSubagentTool} precedent for a named-tool presentation exception).
+ */
+export const CORDIS_TOOL_PREFIX = 'cordis_'
+
+/**
+ * Resolve the render intent one tool item mounts through. `cordis_`-prefixed
+ * names take the `'cordis'` intent — the registry falls back to `'generic'`
+ * when no cordis entry is mounted, so a bundle without `blue-intent-cordis`
+ * keeps the generic card; everything else keeps the view-card rule (a view's
+ * `card` tag, `'generic'` when the item carries no card view).
+ * @param item - the folded tool item to route.
+ * @returns the intent name to resolve through `blueIntents`.
+ */
+export function intentForToolItem(item: TranscriptToolItem): string {
+  if (item.name.startsWith(CORDIS_TOOL_PREFIX)) return 'cordis'
+  return item.view !== undefined && 'card' in item.view ? item.view.card : 'generic'
+}
+
+/**
  * Whether one tool item is a file Read (the S20 Read-group signal). The
  * rc.7 view vocabulary is the name-independent marker: the harness read
  * tool's pending call presents a generic card tagged `kind: 'read'`, and

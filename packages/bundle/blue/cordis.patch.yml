@@ -295,6 +295,16 @@
     - id: blue-intent-terminal
       name: '@dsh-blue/blue-transcript/intent-terminal'
 
+    # Cordis render intent (S39): the name-routed 'cordis' entry — every
+    # cordis_* tool of the creative preset's self-referential toolset
+    # presents a GenericCallView, so present.ts routes the cordis_ name
+    # prefix here instead of the view card. define renders the submitted
+    # purpose and host-source preview, the inspect verbs render their JSON
+    # document as a highlighted fenced block instead of the generic card's
+    # raw JSON wall. Same blueIntents activation ordering as the rows above.
+    - id: blue-intent-cordis
+      name: '@dsh-blue/blue-transcript/intent-cordis'
+
     # Activity pane: the kimi mode machine over the attached session's event
     # stream — moon + teaching tip while waiting or running tools, braille
     # working… while composing, empty while thinking (the transcript's
