@@ -28,7 +28,6 @@ jobs:
   candidate:
     name: gate + publish candidate
     runs-on: ubuntu-latest
-    environment: npm-release
     steps:
       - uses: actions/checkout@v6
         with:
@@ -111,7 +110,6 @@ jobs:
     name: promote rc/latest
     needs: registry-install
     runs-on: ubuntu-latest
-    environment: npm-release
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
