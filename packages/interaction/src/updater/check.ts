@@ -13,7 +13,9 @@
  * Everything goes through the io seam, so the per-file gate drives the
  * retry ladder and cache from specs; the async body is fire-and-forget
  * with the fiber's unload flag gating every continuation (the
- * commands-plugin discipline).
+ * commands-plugin discipline). The `blue` namespace itself is registered
+ * once by `../settings.ts` (`blue-settings`); this plugin only reads the
+ * shared thunk.
  *
  * @module @dsh-blue/blue-interaction/updater/check
  */
@@ -22,11 +24,10 @@ import type { Context } from '@deepseek-ai/cordis'
 // Empty type import carries the loader Context merge for the settlement
 // await (the app driver's own discipline).
 import type {} from '@deepseek-ai/cordis-plugin-loader'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
-import z from '@deepseek-ai/schemastery'
 import { BLUE_VERSION } from '@dsh-blue/blue-api'
 import { join } from 'node:path'
 import { getSharedEditor } from '../editor-instance.ts'
+import { currentBlueSettings, type BlueSettings } from '../settings.ts'
 import { UpdateNoticeComponent } from '../update-notice.ts'
 import { updaterInternals } from './io.ts'
 import { dshHome, profileNameFromArgv } from './profile.ts'
@@ -46,23 +47,11 @@ export interface UpdateCheckState {
   readonly lastError?: string
 }
 
-/** The user-tunable update settings (the `blue` settings namespace). */
-export interface UpdateSettings {
-  /** Whether the boot check runs at all; `false` is the offline switch. */
-  readonly updateCheck: boolean
-  /** The dist-tag the check follows (`rc` today; `latest` once a stable
-   * line exists). */
-  readonly updateChannel: string
-}
-
-/** The settings schema; defaults double as the composition base. */
-export const Config: z<UpdateSettings> = z.object({
-  updateCheck: z.boolean().default(true),
-  updateChannel: z.string().default('rc'),
-})
-
-/** The resolved defaults, used until a settings service layers overrides. */
-export const DEFAULT_SETTINGS: UpdateSettings = { updateCheck: true, updateChannel: 'rc' }
+/**
+ * The user-tunable update settings: a view of the shared `blue` namespace
+ * (`../settings.ts` owns the schema and the one registration).
+ */
+export type UpdateSettings = Pick<BlueSettings, 'updateCheck' | 'updateChannel'>
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-update-check'
@@ -175,8 +164,8 @@ function mountNotice(ctx: Context, target: string): void {
 }
 
 /**
- * Mount the boot check: wire the `blue` settings section (defaults until
- * a settings service layers user overrides) and fire the check body.
+ * Mount the boot check: fire the check body against the shared `blue`
+ * settings thunk (defaults until a settings service layers overrides).
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
@@ -184,13 +173,6 @@ export function apply(ctx: Context): void {
   ctx.effect(() => () => {
     unloaded = true
   })
-  let source: () => UpdateSettings = () => DEFAULT_SETTINGS
-  installSettingsSection(ctx, settingsNamespace('blue'), Config, DEFAULT_SETTINGS, {
-    setSource: next => {
-      source = next
-    },
-    onChange: () => {},
-  })
   /* v8 ignore next 1 -- the defensive catch; runUpdateCheck never rejects */
-  void runUpdateCheck(ctx, source, () => unloaded).catch(() => {})
+  void runUpdateCheck(ctx, currentBlueSettings, () => unloaded).catch(() => {})
 }

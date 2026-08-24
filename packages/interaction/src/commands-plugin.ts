@@ -20,7 +20,8 @@
  * `./tools-commands.ts` and `./preset-commands.ts`; and `/skills` (the
  * `#` pipeline's read-only listing) lives in `./skills-command.ts`; and
  * the safe in-app upgrade (`/update`, D52) lives in
- * `./update-command.ts`.
+ * `./update-command.ts`; and the settings panel (`/settings`) lives in
+ * `./settings-command.ts`.
  * Registrations are
  * effect-bound, so unloading the fiber removes them. Only `commands` is
  * injected: the overlay commands read the Blue display services through
@@ -60,6 +61,7 @@ import { registerPresetCommands } from './preset-commands.ts'
 import { registerSessionCommands } from './session-commands.ts'
 import { registerExportCommands } from './session-export.ts'
 import { registerInitCommand } from './session-init.ts'
+import { registerSettingsCommand } from './settings-command.ts'
 import { registerSkillsCommand } from './skills-command.ts'
 import { SelectListPanel } from './select-list.ts'
 import { CURRENT_MARK } from './symbols.ts'
@@ -387,6 +389,8 @@ export function apply(ctx: Context): void {
     const mcpBrowser = registerMcpCommands(ctx)
     // The safe in-app upgrade (`/update`, D52).
     const update = registerUpdateCommand(ctx)
+    // The settings panel (`/settings`).
+    const settings = registerSettingsCommand(ctx)
     return () => {
       quit()
       quitAliases()
@@ -408,6 +412,7 @@ export function apply(ctx: Context): void {
       skillsCommand()
       mcpBrowser()
       update()
+      settings()
     }
   })
 }

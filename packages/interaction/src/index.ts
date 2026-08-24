@@ -13,7 +13,9 @@
  * terminal mirror (`blue-terminal-title`, the OSC 0 window title over the
  * upstream session-title fold) and the all-prompts cadence bridge
  * (`blue-session-title-cadence`, D41) mount with the baseline plugins, as
- * does the boot-time update check (`blue-update-check`, D52: one registry
+ * do the consolidated `blue` settings namespace (`blue-settings`, the one
+ * `installSettingsSection` registration plus the persisted default theme)
+ * and the boot-time update check (`blue-update-check`, D52: one registry
  * metadata read after the tree settles, silent-fail, 24h cache). All
  * registrations are effect-bound, so unloading the fiber reverts every
  * contribution.
@@ -28,6 +30,7 @@ import * as inputPlugin from './input-plugin.ts'
 import * as keysPlugin from './keys.ts'
 import * as questionsPlugin from './questions-plugin.ts'
 import * as sessionTitleCadencePlugin from './session-title-cadence.ts'
+import * as settingsPlugin from './settings.ts'
 import * as terminalTitlePlugin from './terminal-title.ts'
 import * as updateCheckPlugin from './updater/check.ts'
 
@@ -52,5 +55,8 @@ export function apply(ctx: Context): void {
   ctx.plugin(approvalPlugin)
   ctx.plugin(terminalTitlePlugin)
   ctx.plugin(sessionTitleCadencePlugin)
+  // The `blue` namespace consolidation mounts before the update check,
+  // whose boot read consumes the shared thunk.
+  ctx.plugin(settingsPlugin)
   ctx.plugin(updateCheckPlugin)
 }

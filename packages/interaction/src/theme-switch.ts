@@ -20,7 +20,8 @@
  * `'blue/input-editor-changed'` deferred one microtask, past the point
  * where the remounted input re-installs its slot-swap machinery). Without
  * the display quartet (a headless context) the bare command falls back to
- * the plain text listing.
+ * the plain text listing. `applyTheme` exposes the same swap by key for
+ * the persisted default theme (`./settings.ts`).
  *
  * @module @dsh-blue/blue-interaction/theme-switch
  */
@@ -208,8 +209,7 @@ async function openThemePicker(ctx: Context): Promise<CommandResult> {
  * @param config - the custom-theme config; omitted for built-ins.
  * @returns the command outcome.
  */
-async function switchTheme(ctx: Context, next: ThemeTarget, config?: themeCustom.Config): Promise<CommandResult> {
-  const runtime = ctx.registry.delete(current.module)
+async function switchTheme(ctx: Context, next: ThemeTarget, config?: themeCustom.Config): Promise<CommandResult> {  const runtime = ctx.registry.delete(current.module)
   // delete() removes the runtime record and starts disposal; awaiting each
   // fiber settles it before the remount (a second blueTheme registration
   // while the previous provider lives is rejected). dispose() is
@@ -231,6 +231,23 @@ async function switchTheme(ctx: Context, next: ThemeTarget, config?: themeCustom
   }
   current = next
   return { kind: 'success', text: `switched to theme "${next.key}"` }
+}
+
+/**
+ * Apply a built-in theme by key — the `/settings` default-theme channel
+ * (`./settings.ts`'s boot/committed applier). Unknown keys report an
+ * error; known keys drive the same provider swap `/theme` uses, so the
+ * live-provider record (`current`) stays honest.
+ * @param ctx - plugin context.
+ * @param key - the built-in theme key (`dark`/`light`/`ocean`/`paper`/`auto`).
+ * @returns the command outcome.
+ */
+export async function applyTheme(ctx: Context, key: string): Promise<CommandResult> {
+  const target = BUILTIN.get(key)
+  if (target === undefined) {
+    return { kind: 'error', text: `unknown theme "${key}" (known: ${[...BUILTIN.keys()].join(', ')})` }
+  }
+  return switchTheme(ctx, target)
 }
 
 /**

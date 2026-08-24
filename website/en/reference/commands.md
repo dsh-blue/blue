@@ -27,6 +27,7 @@ Typing `/` triggers fuzzy autocomplete and discovery hints (see [Input editor](/
 | `/context` | — | — | Show token usage and the context window | `blue-usage` |
 | `/version` | — | — | Show the Blue and harness versions and the live model | `blue-commands` |
 | `/update` | — | `[version]` | Safely update Blue (pre-flight, snapshot, boot smoke, automatic rollback; a bare call is a read-only check) | `blue-commands` (via update-command, D52) |
+| `/settings` | — | — | Open the settings panel (preset-cycle values; the last row opens settings.yaml in `$EDITOR`) | `blue-commands` (via settings-command) |
 | `/export` | — | `[path]` | Export the current session as a Markdown file | `blue-session-export` |
 | `/copy` | — | — | Copy the last assistant message to the clipboard | `blue-session-export` |
 
@@ -50,6 +51,7 @@ Typing `/` triggers fuzzy autocomplete and discovery hints (see [Input editor](/
 - **`/export [path]`** — exports the current session as Markdown; without a path it writes the default filename `blue-export-{id8}-{YYYYMMDD-HHMMSS}.md`.
 - **`/copy`** — the last assistant message's text goes to the clipboard: OSC 52 first (the escape sequence travels over stdout to the local terminal emulator, so **SSH sessions still reach the local clipboard**), with a fallback pipeline behind it.
 - **`/theme`** — full usage `usage: /theme [dark|light|ocean|paper|auto|custom <path> [dark|light|ocean|paper]]`, see [Theming](/en/guide/theme).
+- **`/settings`** — open the settings panel: `↑↓` selects a row, `Enter`/`Space` steps the preset value, every change writes straight to settings.yaml (the default theme applies live and persists as the startup default; `permission.defaultPreset` affects new sessions only); rows whose namespace the host never registered are omitted. The last row `Open settings.yaml in $EDITOR` opens the whole document in `$VISUAL`/`$EDITOR`, and external edits flow back into the panel live. The persisted `blue:` section is documented in [Configuration](/en/guide/config).
 - **`/quit`** — before the agent attaches it shows `no active session` (see the [FAQ](/en/guide/faq)).
 
 Commands never enter a model turn — success/error text flashes on the editor hint line. Commands registered by downstream plugins through `ctx.commands` appear automatically in the completion menu and `/help`; aliases are not registered as commands — the input layer rewrites them to the canonical name before dispatch (the kimi `aliases` port); **input-layer intercepted commands** like `/permission` are likewise outside the registry — present in the completion menu, absent from `/help`.
@@ -58,7 +60,7 @@ Commands never enter a model turn — success/error text flashes on the editor h
 
 These commands exist in the reference products (kimi/Claude Code); Blue **deliberately parks** them — waiting on upstream primitives or real demand (the full rulings live in the repository roadmap's parked ledger):
 
-- `/settings` `/reload` `/tasks` — deferred (configuration and task management go through profile/config files)
+- `/reload` `/tasks` — deferred (`/settings` has landed; task management still goes through profile/config files)
 - `/archive` `/delete` — upstream persistence has no delete/archive primitive yet
 - `/import` — session-format version strictness undecided
 - `/diff` (uncommitted-changes panel) and the full-screen approval diff preview — re-evaluated with dogfood feedback after release

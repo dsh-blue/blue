@@ -42,6 +42,10 @@ import {
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
 import type {} from '@dsh-blue/blue-app'
+// Type-only import: the `settings` Context merge and the `'settings/updated'`
+// Events merge this plugin consumes, plus the namespace brand — the `blue`
+// namespace schema itself is interaction-owned and never imported here.
+import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
   AssistantMessageComponent,
   ErrorMessageComponent,
@@ -51,6 +55,7 @@ import {
   UserMessageComponent,
   type UserMessageImages,
 } from './components.ts'
+import { defaultExpansion, setDefaultExpansion } from './fold-defaults.ts'
 import { TranscriptFolder, type FoldUpdate } from './fold.ts'
 import { BlueIntentsService } from './intents.ts'
 import { isReadItem, resolveCallView, resolveResultView } from './present.ts'
@@ -275,17 +280,30 @@ function mountSession(
     let component: BlueComponent
     if (item.kind === 'tool') {
       const intent = intents.resolve(item.view !== undefined && 'card' in item.view ? item.view.card : 'generic')
-      component = intent.create({ item, colors, components, expanded: toggle.expanded })
+      component = intent.create({ item, colors, components, expanded: toggle.expanded || defaultExpansion('tools') })
     } else {
       component = createPlainComponent(item, colors, components, images, requestRender)
     }
     const expandable = component as BlueIntentComponent
-    if (item.kind === 'thinking' || item.kind === 'user') {
-      // The thinking block and a foldable long user message mount at the
-      // live expansion state (kimi applies toolOutputExpanded at
+    if (item.kind === 'tool') {
+      // The intent props already carry the seed; the generic baseline reads
+      // its expansion only through `setExpanded`, so an expanding seed is
+      // applied here too. A collapsing seed is every component's
+      // construction default — skipping the call keeps the no-settings
+      // behavior byte-identical.
+      if (toggle.expanded || defaultExpansion('tools')) {
+        expandable.setExpanded?.(true)
+      }
+    } else if (item.kind === 'thinking') {
+      // The thinking block mounts at the live expansion state or its
+      // configured default (kimi applies toolOutputExpanded at
       // ThinkingComponent creation too); a freshly mounted entry is always
       // in the newest turn, so the creation-time state below is the same
       // shortcut for it.
+      expandable.setExpanded?.(toggle.expanded || defaultExpansion('thinking'))
+    } else if (item.kind === 'user') {
+      // A foldable long user message mounts at the live expansion state
+      // only — the settings defaults do not cover user messages.
       expandable.setExpanded?.(toggle.expanded)
     }
     // The kimi one-column gutter (D29, S21): every transcript entry mounts
@@ -413,14 +431,44 @@ export function apply(ctx: Context): void {
         ? boundaries[boundaries.length - EXPAND_TURNS]!
         : 0
       for (let index = 0; index < entries.length; index += 1) {
-        const expandable = entries[index]!.component as BlueIntentComponent
+        const entry = entries[index]!
+        const expandable = entry.component as BlueIntentComponent
         if (typeof expandable.setExpanded === 'function') {
-          expandable.setExpanded(toggle.expanded && index >= cutoff)
+          // Releasing the toggle returns each category to its configured
+          // default instead of unconditionally collapsing; with both
+          // defaults false this is byte-identical to the pre-settings
+          // behavior.
+          const base = toggle.expanded
+            || (entry.item.kind === 'thinking' ? defaultExpansion('thinking')
+              : entry.item.kind === 'tool' ? defaultExpansion('tools') : false)
+          expandable.setExpanded(base && index >= cutoff)
         }
       }
       screen.requestRender(true)
     },
   }]))
+
+  // Expansion defaults ride the host settings document: the resolved `blue`
+  // namespace (schema owned by interaction) carries `collapseThinking` /
+  // `collapseToolCalls`. The service is optional and its value unknown here,
+  // so every read parses defensively — absent keys or non-boolean values keep
+  // the current default; a host without settings keeps both collapsed.
+  const BLUE_NS = 'blue' as SettingsNamespace
+  const applyFoldSettings = (value: unknown): void => {
+    const section = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>
+    setDefaultExpansion({
+      thinking: typeof section.collapseThinking === 'boolean'
+        ? !section.collapseThinking
+        : defaultExpansion('thinking'),
+      tools: typeof section.collapseToolCalls === 'boolean'
+        ? !section.collapseToolCalls
+        : defaultExpansion('tools'),
+    })
+  }
+  applyFoldSettings(ctx.get('settings')?.get(BLUE_NS))
+  ctx.on('settings/updated', (ns, next) => {
+    if (ns === BLUE_NS) applyFoldSettings(next)
+  })
 
   let unmount: (() => void) | null = null
   ctx.on('blue/session-changed', (agent) => {

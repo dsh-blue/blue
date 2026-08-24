@@ -12,9 +12,9 @@ import { Context } from '@deepseek-ai/cordis'
 import { mkdtempTracked } from '../../core/tests/temp-dir.ts'
 import { fakeBlueContext } from './fakes.ts'
 import { updaterInternals } from '../src/updater/io.ts'
+import { apply as applySettings, DEFAULT_SETTINGS } from '../src/settings.ts'
 import {
   apply,
-  DEFAULT_SETTINGS,
   name,
   readUpdateCheckState,
   runUpdateCheck,
@@ -205,13 +205,24 @@ describe('updater/check state reader', () => {
 })
 
 describe('updater/check apply', () => {
-  /** A minimal in-memory settings provider so the section wiring runs. */
+  /**
+   * A minimal in-memory settings provider, mounted as a class plugin with
+   * the stored document as its config so init publishes it before the
+   * `blue-settings` attach resolves.
+   */
   class MemorySettings extends SettingsProvider {
     readonly writable = true
-    private doc: Record<string, unknown> = {}
+    private readonly doc: Record<string, unknown>
+
+    constructor(ctx: Context, doc?: Record<string, unknown>) {
+      super(ctx)
+      this.doc = doc ?? {}
+    }
+
     protected async load(): Promise<Record<string, unknown>> {
       return this.doc
     }
+
     protected async persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
       this.doc[String(ns)] = section
     }
@@ -226,13 +237,22 @@ describe('updater/check apply', () => {
     expect(name).toBe('blue-update-check')
   })
 
-  it('registers the blue namespace through a live settings service', async () => {
+  it('reads the off switch through the shared blue-settings thunk', async () => {
     const world = makeCheck()
-    // The provider's constructor registers the `settings` service itself.
-    const settings = new MemorySettings(world.ctx)
+    await world.ctx.plugin(MemorySettings, { blue: { updateCheck: false } })
+    applySettings(world.ctx)
     apply(world.ctx)
     await new Promise(resolve => setTimeout(resolve, 20))
-    expect(settings.describe().map(descriptor => String(descriptor.ns))).toContain('blue')
+    expect(world.spawns()).toBe(0)
+    expect(world.screen.children).toHaveLength(0)
+  })
+
+  it('runs the check when the shared thunk leaves the switch on', async () => {
+    const world = makeCheck()
+    await world.ctx.plugin(MemorySettings, { blue: { updateCheck: true } })
+    applySettings(world.ctx)
+    apply(world.ctx)
+    await new Promise(resolve => setTimeout(resolve, 20))
     expect(world.screen.children).toHaveLength(1)
   })
 })

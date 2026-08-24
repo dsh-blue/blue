@@ -25,7 +25,11 @@ import type {
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { BlueSessionRef } from '@dsh-blue/blue-app'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+// Type-only import: the branded namespace the `'settings/updated'` emissions
+// below are typed against (the plugin itself brands `'blue'` locally).
+import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { ACTION_TOGGLE_COLLAPSE, apply, setRecentStepsRetention, setWindowTurns } from '../src/index.ts'
+import { setDefaultExpansion } from '../src/fold-defaults.ts'
 import * as statusBasic from '../src/status-basic.ts'
 import { setThinkingTimers, type ThinkingTimers } from '../src/thinking.ts'
 import type { BlueIntentEntry } from '../src/types.ts'
@@ -52,6 +56,7 @@ const disposers: (() => Promise<void>)[] = []
 afterEach(async () => {
   for (const dispose of disposers.splice(0)) await dispose()
   setThinkingTimers(undefined)
+  setDefaultExpansion(undefined)
 })
 
 /** Identity colors so rendered assertions see structure, not escape codes. */
@@ -200,10 +205,12 @@ function fixtureApply(ctx: Context): void {
  * a custom `blueStatus` entry.
  * @param current - agent preloaded onto `blueSession.current`, if any.
  * @param options.fixture - append the downstream status-entry fixture row.
+ * @param options.settings - a fake settings service's per-namespace sections,
+ *   provided before the plugin loads so its initial read sees them.
  */
 async function bootTranscript(
   current: FakeAgent | null = null,
-  options: { fixture?: boolean, tools?: Record<string, unknown>, sessionEpoch?: number } = {},
+  options: { fixture?: boolean, tools?: Record<string, unknown>, sessionEpoch?: number, settings?: Record<string, unknown> } = {},
 ): Promise<Harness> {
   const dir = mkdtempTracked('dsh-blue-transcript-')
   writeFileSync(join(dir, 'blue-transcript.mjs'), `
@@ -255,6 +262,12 @@ export const apply = ctx => globalThis.__blueStatusFixtureApply(ctx)
     blueSession,
     tools: { get: (name: string) => options.tools?.[name] },
     ...(options.sessionEpoch === undefined ? {} : { blueRequests: { sessionEpoch: options.sessionEpoch } }),
+    // Minimal fake of the host settings service: only the `get(ns)` read the
+    // plugin's fold-defaults wiring consumes (updates arrive via the
+    // `'settings/updated'` event the specs emit directly).
+    ...(options.settings === undefined ? {} : {
+      settings: { get: (ns: string) => options.settings?.[ns] },
+    }),
   }
   for (const [serviceName, value] of Object.entries(serviceNames)) {
     ctx.reflect.provide(serviceName, value)
@@ -573,6 +586,129 @@ describe('blue-transcript plugin through the real Loader', () => {
     // The handler now reaches the new session's components.
     action?.handler?.()
     expect(contentLines(screen).some(line => line.includes('y'.repeat(76)))).toBe(true)
+  })
+
+  it('mounts tool cards expanded when the settings default uncollapses them', async () => {
+    resetSeq()
+    const { ctx, screen } = await bootTranscript(null, { settings: { blue: { collapseToolCalls: false } } })
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([
+      toolCallEvent(1, 1, 'c1', 'bash', '{}'),
+      toolResultEvent(1, 1, 'c1', `first line\nsecond line\n${'x'.repeat(300)}`),
+    ])))
+    // Seeded expanded at creation: the full wrapped output (the 300-char
+    // line wraps to 3 full-width rows; the collapsed preview shows only
+    // its first), no hint.
+    const lines = contentLines(screen)
+    expect(lines.filter(line => line.includes('x'.repeat(76)))).toHaveLength(3)
+    expect(lines.join('\n')).not.toContain('more lines')
+  })
+
+  it('mounts thinking blocks expanded when the settings default uncollapses them', async () => {
+    resetSeq()
+    const six = 'one\ntwo\nthree\nfour\nfive\nsix'
+    const { ctx, screen } = await bootTranscript(null, { settings: { blue: { collapseThinking: false } } })
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([
+      assistantEvent(1, 1, [{ type: 'reasoning', text: six }, { type: 'text', text: 'answer' }]),
+    ])))
+    const lines = contentLines(screen)
+    expect(lines.some(line => line.includes('six'))).toBe(true)
+    expect(lines.join('\n')).not.toContain('more lines')
+  })
+
+  it('keeps long user messages folded regardless of the expansion defaults', async () => {
+    resetSeq()
+    const { ctx, screen } = await bootTranscript(null, {
+      settings: { blue: { collapseThinking: false, collapseToolCalls: false } },
+    })
+    const long = Array.from({ length: 11 }, (_, index) => `row ${index}`).join('\n')
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([turnStart(1), userEvent(long), turnEnd(1)])))
+    // The defaults cover thinking and tools only: the user fold is untouched.
+    const collapsed = contentLines(screen)
+    expect(collapsed).toHaveLength(1 + 3 + 1)
+    expect(collapsed.at(-1)).toContain('(8 more lines, 11 total, ctrl+o to expand)')
+  })
+
+  it('returns each category to its configured default when ctrl+o releases', async () => {
+    resetSeq()
+    const six = 'one\ntwo\nthree\nfour\nfive\nsix'
+    const { ctx, screen, keymap } = await bootTranscript(null, { settings: { blue: { collapseToolCalls: false } } })
+    const agent = fakeAgent([
+      toolCallEvent(1, 1, 'c1', 'bash', '{}'),
+      toolResultEvent(1, 1, 'c1', `first line\nsecond line\n${'x'.repeat(300)}`),
+      assistantEvent(1, 1, [{ type: 'reasoning', text: six }, { type: 'text', text: 'answer' }]),
+    ])
+    ctx.emit('blue/session-changed', asAgent(agent))
+    const hints = (): string[] => contentLines(screen).filter(line => line.includes('more lines'))
+    // Mounted state: tools default-expanded, thinking default-collapsed.
+    expect(hints()).toHaveLength(1)
+    expect(contentLines(screen).filter(line => line.includes('x'.repeat(76)))).toHaveLength(3)
+
+    // Toggle on: everything in scope expands, thinking included; a tool
+    // mounted live while the toggle is on seeds expanded too.
+    const action = keymap.actions.find(a => a.id === ACTION_TOGGLE_COLLAPSE)?.handler
+    action!()
+    expect(hints()).toHaveLength(0)
+    ctx.emit('session/event', agent.session as unknown as Session, toolCallEvent(1, 1, 'c2', 'bash', '{}'))
+    ctx.emit('session/event', agent.session as unknown as Session, toolResultEvent(1, 1, 'c2', `third line\n${'y'.repeat(300)}`))
+    expect(contentLines(screen).filter(line => line.includes('y'.repeat(76)))).toHaveLength(3)
+
+    // Toggle off: thinking returns to its collapsed default, tools keep
+    // their expanded default — both the seeded and the live-mounted card.
+    action!()
+    expect(hints()).toHaveLength(1)
+    const released = contentLines(screen)
+    expect(released.filter(line => line.includes('x'.repeat(76)))).toHaveLength(3)
+    expect(released.filter(line => line.includes('y'.repeat(76)))).toHaveLength(3)
+  })
+
+  it('applies settings/updated to subsequently mounted entries', async () => {
+    resetSeq()
+    const blueNs = 'blue' as SettingsNamespace
+    const { ctx, screen } = await bootTranscript(null, { settings: { blue: {} } })
+    const agent = fakeAgent([
+      toolCallEvent(1, 1, 'c1', 'bash', '{}'),
+      toolResultEvent(1, 1, 'c1', `first line\nsecond line\n${'a'.repeat(300)}`),
+    ])
+    ctx.emit('blue/session-changed', asAgent(agent))
+    const hints = (): string[] => contentLines(screen).filter(line => line.includes('more lines'))
+    const mountTool = (id: string, ch: string): void => {
+      ctx.emit('session/event', agent.session as unknown as Session, toolCallEvent(1, 1, id, 'bash', '{}'))
+      ctx.emit('session/event', agent.session as unknown as Session, toolResultEvent(1, 1, id, `first line\nsecond line\n${ch.repeat(300)}`))
+    }
+    // The registered-but-empty section keeps the collapsed defaults.
+    expect(hints()).toHaveLength(1)
+
+    // Another namespace's update is ignored.
+    ctx.emit('settings/updated', 'other' as SettingsNamespace, { collapseToolCalls: false }, {}, 'provider')
+    mountTool('c2', 'b')
+    expect(hints()).toHaveLength(2)
+
+    // A blue update re-seeds the entries mounted after it.
+    ctx.emit('settings/updated', blueNs, { collapseToolCalls: false }, {}, 'provider')
+    mountTool('c3', 'c')
+    expect(hints()).toHaveLength(2)
+    expect(contentLines(screen).filter(line => line.includes('c'.repeat(76)))).toHaveLength(3)
+
+    // Collapse-true restores the collapsed default, and a non-object value
+    // (a dirty external edit) leaves it untouched.
+    ctx.emit('settings/updated', blueNs, { collapseToolCalls: true }, { collapseToolCalls: false }, 'provider')
+    ctx.emit('settings/updated', blueNs, null, { collapseToolCalls: true }, 'provider')
+    mountTool('c4', 'd')
+    expect(hints()).toHaveLength(3)
+  })
+
+  it('keeps the collapsed defaults for dirty (non-boolean) settings values', async () => {
+    resetSeq()
+    const six = 'one\ntwo\nthree\nfour\nfive\nsix'
+    const { ctx, screen } = await bootTranscript(null, {
+      settings: { blue: { collapseThinking: 'yes', collapseToolCalls: 1 } },
+    })
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([
+      toolCallEvent(1, 1, 'c1', 'bash', '{}'),
+      toolResultEvent(1, 1, 'c1', `first line\nsecond line\n${'x'.repeat(300)}`),
+      assistantEvent(1, 1, [{ type: 'reasoning', text: six }, { type: 'text', text: 'answer' }]),
+    ])))
+    expect(contentLines(screen).filter(line => line.includes('more lines'))).toHaveLength(2)
   })
 
   it('limits ctrl+o to the most recent three turns (kimi range)', async () => {

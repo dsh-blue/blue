@@ -16,7 +16,7 @@ import SettingsProvider, { settingsNamespace, type SettingsNamespace } from '@de
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { mkdtempTracked } from '../../core/tests/temp-dir.ts'
-import * as updateCheck from '../src/updater/check.ts'
+import * as settingsPlugin from '../src/settings.ts'
 import { updaterInternals, type InteractiveChild, type SpawnOutcome } from '../src/updater/io.ts'
 import { registerUpdateCommand, UpdatePanel } from '../src/update-command.ts'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
@@ -384,7 +384,9 @@ describe('/update early verdicts', () => {
       }
     }
     const settings = new MemorySettings(world.ctx)
-    updateCheck.apply(world.ctx)
+    // The `blue` namespace registration moved to blue-settings (S38); the
+    // command only reads the resolved value.
+    settingsPlugin.apply(world.ctx)
     await new Promise(resolve => setTimeout(resolve, 5))
     await settings.update(settingsNamespace('blue'), { updateChannel: 'beta' })
     await new Promise(resolve => setTimeout(resolve, 5))
