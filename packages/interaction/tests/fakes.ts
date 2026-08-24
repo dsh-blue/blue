@@ -255,6 +255,12 @@ export class FakeBlueEditor implements BlueEditor {
     return [...this.history]
   }
 
+  removeLatestHistory(text: string): boolean {
+    if (this.history[0] !== text) return false
+    this.history.shift()
+    return true
+  }
+
   /** The fake has no cursor model: insertion appends and fires onChange. */
   insertText(text: string): void {
     this.inserted.push(text)

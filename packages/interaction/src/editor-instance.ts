@@ -155,7 +155,14 @@ export function mountEditorReplacement(component: BlueFocusable): () => void {
  * owns, splitting text runs around its markers itself. An empty array means
  * "nothing to contribute" and the text passes through unchanged.
  */
-export type SubmitTransformer = (text: string) => ContentBlock[]
+export interface SubmitTransformation {
+  /** Content blocks contributed by this transformer. */
+  readonly blocks: ContentBlock[]
+  /** Restore submit-time state consumed while producing the blocks. */
+  readonly rollback?: () => void
+}
+
+export type SubmitTransformer = (text: string) => ContentBlock[] | SubmitTransformation
 
 /** Registered transformers, in registration order. */
 const submitTransformers: SubmitTransformer[] = []
@@ -186,7 +193,39 @@ export function registerSubmitTransformer(transformer: SubmitTransformer): () =>
  * @returns the message content blocks.
  */
 export function applySubmitTransformers(text: string): ContentBlock[] {
-  if (submitTransformers.length === 0) return [{ type: 'text', text }]
-  const blocks = submitTransformers.flatMap(transformer => transformer(text))
-  return blocks.length === 0 ? [{ type: 'text', text }] : blocks
+  return applyReversibleSubmitTransformers(text).blocks
+}
+
+/**
+ * Build submitted content and retain a composite rollback for transformers
+ * that consume editor-side state, such as pasted-image markers.
+ * @param text - the submitted line.
+ * @returns content blocks plus an optional idempotent rollback.
+ */
+export function applyReversibleSubmitTransformers(text: string): SubmitTransformation {
+  if (submitTransformers.length === 0) return { blocks: [{ type: 'text', text }] }
+  const blocks: ContentBlock[] = []
+  const rollbacks: Array<() => void> = []
+  for (const transformer of submitTransformers) {
+    const result = transformer(text)
+    if (Array.isArray(result)) {
+      blocks.push(...result)
+    } else {
+      blocks.push(...result.blocks)
+      if (result.rollback !== undefined) rollbacks.push(result.rollback)
+    }
+  }
+  let rolledBack = false
+  return {
+    blocks: blocks.length === 0 ? [{ type: 'text', text }] : blocks,
+    ...(rollbacks.length === 0
+      ? {}
+      : {
+          rollback: () => {
+            if (rolledBack) return
+            rolledBack = true
+            for (const rollback of rollbacks.reverse()) rollback()
+          },
+        }),
+  }
 }

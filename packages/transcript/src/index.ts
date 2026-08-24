@@ -41,7 +41,7 @@ import {
 } from '@dsh-blue/blue-core'
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
-import type {} from '@dsh-blue/blue-app'
+import type { BlueTurnRetraction } from '@dsh-blue/blue-app'
 import {
   AssistantMessageComponent,
   ErrorMessageComponent,
@@ -51,7 +51,7 @@ import {
   UserMessageComponent,
   type UserMessageImages,
 } from './components.ts'
-import { TranscriptFolder, type FoldUpdate } from './fold.ts'
+import { retractedTurnNumbers, TranscriptFolder, type FoldUpdate } from './fold.ts'
 import { BlueIntentsService } from './intents.ts'
 import { isReadItem, resolveCallView, resolveResultView } from './present.ts'
 import { ReadGroupComponent } from './read-group.ts'
@@ -221,6 +221,7 @@ function mountSession(
       call: (name, args) => resolveCallView(ctx.tools, name, args),
       result: (name, args, result) => resolveResultView(ctx.tools, name, args, result),
     },
+    retractedTurns: retractedTurnNumbers(agent.session.events),
   })
 
   /** Dispose and drop every entry matching the predicate. */
@@ -297,6 +298,11 @@ function mountSession(
   const present = (updates: readonly FoldUpdate[] | null): void => {
     if (updates === null) return
     for (const update of updates) {
+      if ('removed' in update) {
+        const removed = new Set(update.removed)
+        retire(item => removed.has(item))
+        continue
+      }
       if ('replaced' in update) {
         // In-turn step folding: dispose the folded items' components and mount
         // the summary. screen.addChild appends positionally correctly here
@@ -351,10 +357,19 @@ function mountSession(
     screen.requestRender(true)
   })
 
+  const offRetraction = ctx.on('blue/turn-retracted', (retraction: BlueTurnRetraction) => {
+    const requests = ctx.get('blueRequests') as { readonly sessionEpoch: number } | undefined
+    if (requests !== undefined && retraction.sessionEpoch !== requests.sessionEpoch) return
+    present(folder.retract(retraction.turn))
+    evict()
+    screen.requestRender()
+  })
+
   screen.requestRender(true)
   return () => {
     offEvent()
     offLifecycle()
+    offRetraction()
     toggle.expanded = false
     toggle.entries = []
     for (const entry of entries.splice(0)) retireEntry(entry)

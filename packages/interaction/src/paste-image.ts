@@ -42,7 +42,12 @@ import type {
   SaveImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { getSharedEditor, registerSubmitTransformer, type SharedEditor } from './editor-instance.ts'
+import {
+  getSharedEditor,
+  registerSubmitTransformer,
+  type SharedEditor,
+  type SubmitTransformation,
+} from './editor-instance.ts'
 import { ADMITTED_IMAGE_TYPES, EXT_BY_MEDIA_TYPE, sniffImageMediaType } from './attachments.ts'
 
 /** Stable Cordis plugin name. */
@@ -508,8 +513,9 @@ const IMAGE_MARKER = /\[image #\d+\]/g
  * @param text - the submitted line.
  * @returns the contributed content blocks, empty when nothing was split.
  */
-function transformImageMarkers(text: string): ContentBlock[] {
+function transformImageMarkers(text: string): ContentBlock[] | SubmitTransformation {
   const blocks: ContentBlock[] = []
+  const consumed: Array<readonly [string, ImageAttachmentRef]> = []
   let last = 0
   for (const match of text.matchAll(IMAGE_MARKER)) {
     const ref = pastedImages.get(match[0])
@@ -519,12 +525,18 @@ function transformImageMarkers(text: string): ContentBlock[] {
     if (run.length > 0) blocks.push({ type: 'text', text: run })
     blocks.push({ type: 'image', attachment: ref })
     pastedImages.delete(match[0])
+    consumed.push([match[0], ref])
     last = match.index + match[0].length
   }
   if (blocks.length === 0) return []
   const tail = text.slice(last)
   if (tail.length > 0) blocks.push({ type: 'text', text: tail })
-  return blocks
+  return {
+    blocks,
+    rollback: () => {
+      for (const [marker, ref] of consumed) pastedImages.set(marker, ref)
+    },
+  }
 }
 
 /**

@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import type { BlueComponent, BlueFocusable } from '@dsh-blue/blue-core'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import {
+  applyReversibleSubmitTransformers,
   ENHANCEMENT_EDITOR_PLUS,
   applySubmitTransformers,
   hasEditorEnhancement,
@@ -18,6 +19,37 @@ import {
 } from '../src/editor-instance.ts'
 
 describe('submit transformers', () => {
+  it('composes idempotent rollback functions in reverse registration order', () => {
+    const restored: string[] = []
+    const first = registerSubmitTransformer(() => ({
+      blocks: [{ type: 'text', text: 'first' }],
+      rollback: () => restored.push('first'),
+    }))
+    const second = registerSubmitTransformer(() => ({
+      blocks: [{ type: 'text', text: 'second' }],
+      rollback: () => restored.push('second'),
+    }))
+    try {
+      const result = applyReversibleSubmitTransformers('x')
+      expect(result.blocks.map(block => block.type === 'text' ? block.text : block.type)).toEqual(['first', 'second'])
+      result.rollback?.()
+      result.rollback?.()
+      expect(restored).toEqual(['second', 'first'])
+    } finally {
+      second()
+      first()
+    }
+  })
+
+  it('accepts an object contribution without a rollback', () => {
+    const dispose = registerSubmitTransformer(() => ({ blocks: [{ type: 'text', text: 'object' }] }))
+    try {
+      expect(applyReversibleSubmitTransformers('x')).toEqual({ blocks: [{ type: 'text', text: 'object' }] })
+    } finally {
+      dispose()
+    }
+  })
+
   it('returns the historical single text block with no transformers registered', () => {
     expect(applySubmitTransformers('plain')).toEqual([{ type: 'text', text: 'plain' }])
   })

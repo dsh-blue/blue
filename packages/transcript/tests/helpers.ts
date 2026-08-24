@@ -168,6 +168,17 @@ export function assistantEvent(turn: number, step: number, content: ContentBlock
   return event('assistant/message', { turn, step, message: assistantMessage(content) })
 }
 
+/** Blue's durable empty surface replacement for one retracted turn. */
+export function retractionEvent(turn: number, step: number, start: number, end: number): SessionEvent<'assistant/message'> {
+  const base = assistantEvent(turn, step, [])
+  return {
+    ...base,
+    data: { ...base.data, interrupted: true },
+    surfaceOp: { op: 'replace', start, end },
+    sourceEventSeqs: [start, end].filter((seq, index, values) => values.indexOf(seq) === index),
+  }
+}
+
 /** A `tool/call` event. */
 export function toolCallEvent(turn: number, step: number, callId: string, name: string, args: string): SessionEvent<'tool/call'> {
   return event('tool/call', { turn, step, callId: CallId(callId), name, arguments: args })

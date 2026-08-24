@@ -37,6 +37,8 @@ The recoverable suspend composes pi-tui 0.84.2's own lifecycle primitives — `T
 
 ## Component factory (`blueComponents`, `src/components.ts`)
 
+`BlueEditor.removeLatestHistory(text)` is the narrow retraction helper over pi-tui's private history array: it removes index 0 only on an exact match. The method stays optional on the L1 contract so structural fakes and out-of-tree adapters remain compatible; core's sole real adapter implements it.
+
 The pi-tui-backed component factory and width pure functions:
 
 - `createImage(options)` wraps pi-tui's Image with a styled-text fallback for terminals without an image protocol; the pure `imageDimensions(data)` probe covers PNG/JPEG/GIF/WebP.

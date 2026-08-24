@@ -30,10 +30,11 @@ import type {} from '@deepseek-ai/dsh-agent-presets'
 import { armExitEpitaph, epitaphFor, profileFromArgv } from './exit-epitaph.ts'
 import { createModelSelectionRef } from './model-ref.ts'
 import { createBlueRequestController } from './request-lifecycle.ts'
+import { installRetractionService } from './retraction.ts'
 import type { BlueModelSelectionRef } from './model-ref.ts'
 import type { BlueSessionRef } from './types.ts'
 
-export type { BlueSessionRef } from './types.ts'
+export type { BlueRetractionService, BlueSessionRef, BlueTurnRetraction } from './types.ts'
 export type { BlueModelSelectionRef } from './model-ref.ts'
 export { createBlueRequestController, type BlueRequestController } from './request-lifecycle.ts'
 export type { BlueRequestLifecycle, BlueRequestRef, BlueRequestState } from '@dsh-blue/blue-api'
@@ -174,6 +175,13 @@ export function apply(ctx: Context, config: Config): void {
   const session: BlueSessionRef = { current: null, modelRef: undefined }
   ctx.provide('blueSession', session)
   const requests = createBlueRequestController(ctx)
+  installRetractionService(
+    ctx,
+    () => session.current,
+    requests,
+    /* v8 ignore next -- retraction.spec covers the injected diagnostic sink; app wiring is declarative */
+    message => { io.stderr.write(`dsh: ${message}\n`) },
+  )
   ctx.on('session/event', (eventSession, event) => {
     if (eventSession !== session.current?.session) return
     const ref = requests.active()

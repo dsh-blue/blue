@@ -123,6 +123,8 @@ The `./pane-queue` subpath plugin (`src/pane-queue.ts`, `blue-pane-queue`) rende
 
 Overlay key handling resolves through `ctx.blueKeymap`; text-editing keys are owned by the pi-tui Editor; the main editor's contextual keys (Escape/Ctrl-C/Ctrl-S/Ctrl-G) resolve through the editor's `onKey` pre-dispatch hook. Key discipline: a keymap action without a `handler` is contextual (components resolve it via `matches`); a handler-carrying action is global and is consumed by core's dispatcher before focus routing.
 
+Escape's final running-agent branch first asks the app-owned `blueRetractions` service to retract the exact stable message id saved at ordinary follow-up submission. A success restores the original editor value, removes its newest history entry, and runs the reversible submit-transformer rollback (pasted-image markers regain their consumed refs); a refusal uses the historical Interrupted cancellation. Ctrl-C never asks the service. `applyReversibleSubmitTransformers` composes rollback functions in reverse registration order and keeps the legacy block-only helper for other callers.
+
 The side-question pane routes through the editor key chain: while `'blue/editor-connected-above'` is true (the listener mirrors it onto the editor via `setConnectedAbove` and the frame splices `├┤`), Escape closes the pane ahead of the draft clear — the draft survives — and Up/Down with an empty buffer scroll it, both emitted as `'blue/btw-command'`. The keymap's key-level conflict detection (Escape/Up/Down belong to the list surfaces) made a global-action registration impossible, so the editor chain is the sanctioned channel.
 
 ## External editor (S31, Ctrl-G)

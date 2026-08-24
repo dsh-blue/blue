@@ -510,6 +510,13 @@ export interface BlueEditor extends BlueFocusable {
    */
   getHistory(): readonly string[]
   /**
+   * Remove the newest history entry only when it exactly matches `text`.
+   * Optional for structural test editors; the core adapter implements it.
+   * @param text - expected newest submission.
+   * @returns whether the entry was removed.
+   */
+  removeLatestHistory?(text: string): boolean
+  /**
    * Restyle the editor frame (e.g. focused vs. unfocused border).
    * @param color - the new border color function.
    */

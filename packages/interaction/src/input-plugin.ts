@@ -61,12 +61,14 @@ import type {
 } from '@dsh-blue/blue-core'
 import { parseCommand } from '@deepseek-ai/dsh-commands'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+// Carries the app-owned retraction service and event/service declaration merges.
+import type {} from '@dsh-blue/blue-app'
 // Empty type import carries the `permissionPresets` Context merge the
 // bare-/permission interception probes (the service rides dsh-base).
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@dsh-blue/blue-transcript'
 import {
-  applySubmitTransformers,
+  applyReversibleSubmitTransformers,
   clearSharedEditor,
   setEditorSlotSwap,
   setSharedEditor,
@@ -208,6 +210,13 @@ export function apply(ctx: Context): void {
    * fresh.
    */
   let externalEditorRunning = false
+  /** The latest ordinary follow-up eligible to become an editor draft again. */
+  let retractionCandidate: {
+    readonly messageId: string
+    readonly editorText: string
+    readonly historyText: string
+    readonly rollback?: () => void
+  } | undefined
   /**
    * Set when this fiber unloads: a submitted command can dispose it while
    * `execute()` is still in flight (`/theme` swaps the provider, reloading
@@ -271,6 +280,7 @@ export function apply(ctx: Context): void {
    */
   function submitPrompt(value: string): void {
     const line = value.trim()
+    retractionCandidate = undefined
     // The side-question pane owns Enter while it is docked above the
     // editor: the input continues the side conversation (kimi's
     // `sendUserInput`). While the side agent is still answering the submit
@@ -314,18 +324,21 @@ export function apply(ctx: Context): void {
     }
     const parsed = parseCommand(line)
     if (parsed === undefined) {
-      ctx.get('blueRequests')?.begin('main')
-      agent.followup(createUserMessage({
-        // The S29 skill pipeline: `#name` tokens naming settled
-        // user-invocable skills rewrite into the `/name` gesture form the
-        // harness tool-skill pre-step scans for (the injection rides the
-        // session log, so replay is safe). The rewrite happens here —
-        // before the submit transformers build the content blocks — and
-        // only on the message text: the history entry above keeps the
-        // `#name` the user typed. Unknown tags pass through untouched.
-        content: applySubmitTransformers(rewriteSkillTokens(line)),
+      const transformed = applyReversibleSubmitTransformers(rewriteSkillTokens(line))
+      const message = createUserMessage({
+        content: transformed.blocks,
         source: { kind: 'user' },
-      }))
+      })
+      retractionCandidate = {
+        messageId: String(message.id),
+        editorText: value,
+        historyText: line,
+        ...(transformed.rollback === undefined ? {} : { rollback: transformed.rollback }),
+      }
+      ctx.get('blueRequests')?.begin('main')
+      // The S29 skill pipeline rewrites only model-facing text; the editor
+      // candidate and history retain exactly what the user submitted.
+      agent.followup(message)
       return
     }
     // A bare `/permission` opens the preset picker (S24b, D33) instead of
@@ -448,6 +461,21 @@ export function apply(ctx: Context): void {
     }
     const agent = currentBlueAgent(ctx)
     if (agent?.status !== 'running') return false
+    const candidate = retractionCandidate
+    if (candidate !== undefined
+      && ctx.get('blueRetractions')?.tryRetract(candidate.messageId) === true) {
+      candidate.rollback?.()
+      editor.removeLatestHistory?.(candidate.historyText)
+      stashHistory(editor.getHistory())
+      editor.setText(candidate.editorText)
+      currentText = editor.getText()
+      stashDraft(currentText)
+      retractionCandidate = undefined
+      refreshHint()
+      screen.requestRender()
+      return true
+    }
+    retractionCandidate = undefined
     ctx.get('blueRequests')?.interrupt()
     agent.cancel({ kind: 'user' })
     return true
@@ -500,7 +528,7 @@ export function apply(ctx: Context): void {
       // submitted follow-up: the gesture reaches the model either way.
       ctx.get('blueRequests')?.begin('main')
       agent.steer(createUserMessage({
-        content: applySubmitTransformers(rewriteSkillTokens(text)),
+        content: applyReversibleSubmitTransformers(rewriteSkillTokens(text)).blocks,
         source: { kind: 'user' },
       }))
       editor.setText('')
@@ -604,6 +632,7 @@ export function apply(ctx: Context): void {
   // command list, or the absence of an agent at all); the transient notice
   // tier alone owns this row now.
   ctx.on('blue/session-changed', () => {
+    retractionCandidate = undefined
     refreshHint()
   })
   // The side-question pane docks above the editor; its flag switches the

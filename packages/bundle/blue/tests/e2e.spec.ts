@@ -426,34 +426,33 @@ describe('blue whole-tree e2e', () => {
     expect(tree.exits).toEqual([])
   })
 
-  it('an Esc-interrupted thinking block settles: no ghost spinner beside the next turn', async () => {
-    // The S24a dogfood find: the interrupted turn ends with no
-    // assistant/message, so the thinking block's streaming flag never
-    // flipped and its spinner kept animating after the next message — two
-    // working rows. The settled block must render its folded form only.
+  it('Esc retracts a tool-free thinking turn into the editor with no tombstone or ghost', async () => {
     const tree = await bootBlue([], { script: ['hang-reasoning', reasoningResponse('second thought', 'done')] })
     const agent = await currentAgent(tree)
     typeLine(tree.terminal, 'first')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('pondering the question at hand') })
     tree.terminal.sendInput('\x1b')
     await agent.whenIdle()
-    // Interrupted and idle: the tombstone row replaces the stream, and no
-    // live thinking row may remain beside it.
     await vi.waitFor(async () => {
       const frame = await fullFrame(tree.terminal)
-      expect(frame.includes('⏹ interrupted')).toBe(true)
+      expect(frame.includes('⏹ interrupted')).toBe(false)
       expect(frame.includes('thinking...')).toBe(false)
+      expect(frame.includes('pondering the question at hand')).toBe(false)
+      expect(frame.includes('first')).toBe(true)
     })
-    // The next turn streams its own thinking and completes; still no ghost.
+    expect(agent.session.deriveMessages()).toEqual([])
+
+    // The restored draft owns the next Escape; clear it, then submit a
+    // genuinely new turn. The withdrawn thinking must never return.
+    tree.terminal.sendInput('\x1b')
     typeLine(tree.terminal, 'second')
     await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(2) })
     await agent.whenIdle()
     await vi.waitFor(async () => {
       expect((await fullFrame(tree.terminal)).includes('thinking...')).toBe(false)
     })
-    // Both reasonings stay readable in their settled folded form.
     const frame = await fullFrame(tree.terminal)
-    expect(frame).toContain('pondering the question at hand')
+    expect(frame).not.toContain('pondering the question at hand')
     expect(frame).toContain('second thought')
   })
 

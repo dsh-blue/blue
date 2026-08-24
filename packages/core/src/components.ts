@@ -262,6 +262,13 @@ class EditorAdapter implements BlueEditor {
     return [...history]
   }
 
+  removeLatestHistory(text: string): boolean {
+    const history = (this.editor as unknown as { history: string[] }).history
+    if (history[0] !== text) return false
+    history.shift()
+    return true
+  }
+
   setBorderColor(color: BlueColorFn): void {
     this.editor.borderColor = color
   }

@@ -10,6 +10,10 @@ Command-line startup (`src/startup.ts`): `[task]` positional, `--resume <id>`.
 
 `src/index.ts` creates/resumes sessions and publishes them via `blueSession`. It answers the payload-less `'blue/request-new'` and `'blue/request-fork'` events (fork: idle-guarded, seeded with the full event log plus `meta.{cwd,parentSession,seedLength}`). All switches serialize on one queue and share the commit point (dispose old → assign `current` → broadcast `'blue/session-changed'`), with creation parameters factored into the module-level `createOptions` helper.
 
+## Safe message retraction
+
+`src/retraction.ts` provides `blueRetractions.tryRetract(messageId)`: it matches the id to the current open main turn, rejects any assistant tool-call block or `tool/call`/`tool/result`, terminates the Blue lifecycle as `aborted/retracted`, emits `'blue/turn-retracted'`, and cancels with `keepInbox`. After the host `turn/end`, a microtask appends an empty interrupted `assistant/message` surface replacement over that turn's current nodes. The append-only audit remains, while `deriveMessages()` omits the withdrawn turn.
+
 ## Model selection (S23, D38)
 
 Every setup installs a three-tier selection reference (`src/model-ref.ts` — an in-session pick, the session log's last request header, then the process default; the harness web host's precedence), and the three commit points publish it as `blueSession.modelRef` beside `current`, so a resumed session keeps the model it was already using.
