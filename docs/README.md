@@ -14,6 +14,7 @@
 | [blue-decisions.md](./blue-decisions.md) | ADR 决策记录（D1-D38，按主题分组，编号稳定不回收） |
 | [upstream-dsh-win32-pnpm-issue.md](./upstream-dsh-win32-pnpm-issue.md) | 上游 issue 成稿：dsh win32 `shell:true` 吞 ENOENT（9009 误诊；D56 交付物，提交后本文件留档） |
 | [blue-commands-plan.md](./blue-commands-plan.md) | 内置命令实施清单：四家参照系合并、能力支撑矩阵、S23-S29 分期（S29 待实施；§1.3 是 p1-design §4.3 判定的更正正典） |
+| [release-notes/](./release-notes/) | npm 版本说明；内容与应用内 `/changelog` 的嵌入数据由测试锁步 |
 
 图源约定：架构分层与 bundle 组合两张 mermaid 图的单一来源在 [diagrams/](./diagrams/)（`.mmd`）；README（中英）与 blue-architecture.md 中的嵌入块由 `pnpm run diagrams:sync` 生成，CI 以 `pnpm run diagrams:check` 把关一致性——改图请改 `.mmd` 源，不要手改嵌入块。
 

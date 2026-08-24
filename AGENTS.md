@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository. Repo-wide conventions 
 
 ## Project overview
 
-**Blue** is the interactive terminal UI for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`). It is a renderer over the harness's [Cordis](https://github.com/deepseek-ai/cordis) plugin architecture, built on `@earendil-works/pi-tui`, and shipped as seven `@dsh-blue/blue-*` packages (all at version `0.1.0-rc.6` — the preview line, the number the website's tagline promises; blue-api first published with rc.3, the blue-cli launcher shell joins with its first release). The packages were extracted from the `deepseek-harness` monorepo; this standalone repository builds and tests against the published npm releases of the harness and vendored Cordis. Blue is **not** part of a default `dsh` installation — it is added to a `dsh` profile as an out-of-tree plugin bundle; the `@dsh-blue/blue-cli` shell (S37) wraps that into a single-command install carrying its own pinned host.
+**Blue** is the interactive terminal UI for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`). It is a renderer over the harness's [Cordis](https://github.com/deepseek-ai/cordis) plugin architecture, built on `@earendil-works/pi-tui`, and shipped as seven `@dsh-blue/blue-*` packages (all at version `0.1.0-rc.8` — the preview line, the number the website's tagline promises; blue-api first published with rc.3, the blue-cli launcher shell joins with its first release). The packages were extracted from the `deepseek-harness` monorepo; this standalone repository builds and tests against the published npm releases of the harness and vendored Cordis. Blue is **not** part of a default `dsh` installation — it is added to a `dsh` profile as an out-of-tree plugin bundle; the `@dsh-blue/blue-cli` shell (S37) wraps that into a single-command install carrying its own pinned host.
 
 - Language: TypeScript (ESM only, `"type": "module"` everywhere).
 - Runtime: Node `^22.19.0 || >=24.0.0`; package manager pnpm 11 (pinned, `pnpm@11.7.0`).
@@ -151,4 +151,4 @@ The `harness-drift` workflow (`.github/workflows/harness-drift.yml`) watches the
 
 ## Verification status
 
-As of 2026-08-22, `pnpm run test` (1844 tests, 103 files), `pnpm run test:coverage` (per-file 100%), `pnpm run typecheck`, `pnpm run lint`, and `pnpm run smoke:happy` (real-process width smoke) all pass on Node 22+/pnpm 11 against the 0.1.1-rc.2 harness line.
+As of 2026-08-25, `pnpm run test` (2302 tests, 130 files), `pnpm run test:coverage` (per-file 100%), `pnpm run typecheck`, `pnpm run lint`, and `pnpm run smoke:happy` (real-process width smoke) all pass on Node 22+/pnpm 11 against the 0.1.1-rc.2 harness line.

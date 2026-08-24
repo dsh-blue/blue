@@ -10,7 +10,7 @@ English | [中文](README.zh.md)
 
 Blue is an interactive terminal UI (TUI) plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`): a `pi-tui` renderer mounted as an out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) plugin bundle on top of the `dsh-base` bundle. Its core claim: **a TUI is not a package — it is a Cordis plugin tree.** Every render component, interaction provider, command, and status entry is a separate plugin with its own fiber lifecycle, hot-swappable and omittable.
 
-This repository is the standalone home of Blue's five workspace packages under the `@dsh-blue` scope, extracted from the `deepseek-harness` monorepo (`packages/blue/*` and `packages/bundle/blue`). They build and test against the published npm releases of the harness (`0.1.1-rc.2` line) and vendored Cordis.
+This repository is the standalone home of Blue's seven publishable packages under the `@dsh-blue` scope, extracted from the `deepseek-harness` monorepo (`packages/blue/*` and `packages/bundle/blue`). They build and test against the published npm releases of the harness (`0.1.1-rc.2` line) and vendored Cordis.
 
 <p align="center">
   <video src="https://github.com/user-attachments/assets/9a058e97-228c-4975-85c2-884c12bcc8c9" width="720" autoplay loop muted playsinline></video>
@@ -32,7 +32,7 @@ This repository is the standalone home of Blue's five workspace packages under t
 ## Quick start
 
 > [!NOTE]
-> `0.1.0-rc.7` is the preview release. Each verified preview advances both the **`rc`** and **`latest`** tags; use `@rc` when you want to state the preview channel explicitly. After the first stable release, `latest` returns to the stable line.
+> `0.1.0-rc.8` is the preview release. Each verified preview advances both the **`rc`** and **`latest`** tags; use `@rc` when you want to state the preview channel explicitly. After the first stable release, `latest` returns to the stable line.
 
 Prerequisites: Node `^22.19 || >=24` and pnpm 11 (both install paths; the host's `plugin` command forwards to pnpm — if it is missing, the first `blue` run says exactly how to install it: `npm i -g pnpm` or `corepack enable pnpm`). Install the shell with **npm, not pnpm** — pnpm's strict global layout does not link the nested dsh host's dependencies, and boot fails with `ERR_MODULE_NOT_FOUND`. A global `dsh` CLI is only needed on the direct-dsh path — the shell ships its own pinned host.
 
@@ -67,6 +67,7 @@ During preview, a bare spec and `@rc` resolve to the same verified version. To u
 - **Two-row status footer** — model name, session-mode badge, git branch, context occupancy `ctx N`; entries are registry contributions, not hardcoded.
 - **Bottom dock panes** — activity spinner while the agent runs, queued inbox messages, todo list, a `/btw` side-question pane that forks the live session, and the subagent-group pane.
 - **Theming** — `/theme` live-preview picker and hot-switching across `dark` / `light` / `ocean` / `paper` / `auto` (OSC 11 background detection) / `custom` (JSON palette).
+- **Diagnostics and upgrades** — `/trace` inspects the current session's execution timeline, `/changelog` shows shipped changes, and `/update` safely upgrades direct-dsh profiles with rollback.
 - **Extensible by construction** — commands, status entries, and editor enhancements register through the same seams downstream plugins use; the completion menu and `/help` reflect the live registry.
 
 User-facing feature guides live on the documentation website: [dsh-blue.dev/en/features](https://dsh-blue.dev/en/features/) (English) · [dsh-blue.dev/features](https://dsh-blue.dev/features/) (中文).
@@ -112,6 +113,9 @@ All commands auto-list in the editor's completion menu; `/help` is the live trut
 | `/status` | — | Show the session header, model, and context status |
 | `/context` | — | Show token usage and the context window |
 | `/version` | — | Show the Blue and harness versions and the live model |
+| `/changelog` | — | Show release highlights and known issues inside Blue |
+| `/trace` | — | Inspect and copy the current session's execution timeline |
+| `/update` | — | Check for or safely install a Blue release |
 | `/export` | — | Export the current session as a Markdown file |
 | `/copy` | — | Copy the last assistant message to the clipboard |
 

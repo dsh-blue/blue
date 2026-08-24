@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-transcript",
   "description": "Blue terminal UI transcript layer: folds session events into transcript items and renders them through dsh-blue-core",
-  "version": "0.1.0-rc.7",
+  "version": "0.1.0-rc.8",
   "publishConfig": {
     "access": "public"
   },

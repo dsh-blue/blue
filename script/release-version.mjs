@@ -2,7 +2,7 @@
  * Update the Blue release line as one transaction. This command is explicit;
  * normal builds never rewrite versions or user-facing release copy.
  *
- * Usage: pnpm release:version 0.1.0-rc.7
+ * Usage: pnpm release:version <version>
  * @module script/release-version
  */
 
@@ -19,6 +19,8 @@ if (old === next) throw new Error(`release line is already ${next}`)
 const manifestDirs = [...PACKAGE_DIRS, 'website']
 const files = new Set(manifestDirs.map(dir => join(ROOT, dir, 'package.json')))
 files.add(join(ROOT, 'packages/api/src/index.ts'))
+files.add(join(ROOT, 'packages/api/tests/api.spec.ts'))
+files.add(join(ROOT, 'packages/cli/tests/main.spec.ts'))
 files.add(join(ROOT, 'packages/transcript/tests/version.spec.ts'))
 files.add(join(ROOT, 'packages/cli/npm-shrinkwrap.json'))
 for (const file of execFileSync('git', ['ls-files', 'README.md', 'README.zh.md', 'website', 'packages'], { cwd: ROOT, encoding: 'utf8' }).trim().split('\n')) {

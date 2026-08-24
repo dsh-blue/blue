@@ -24,7 +24,8 @@ afterEach(() => {
 })
 
 /** The shell's own manifest version — the pin every fixture calibrates to. */
-const PIN = '0.1.0-rc.7'
+const PIN = '0.1.0-rc.8'
+const AHEAD = '0.1.0-rc.999'
 
 /** One captured write or exit. */
 const captures: { out: string[], err: string[], exits: number[] } = { out: [], err: [], exits: [] }
@@ -117,7 +118,7 @@ describe('main', () => {
 
   it('boots an ahead profile as-is with the reinstall pointer, never downgrading', async () => {
     const { calls, root } = fixtureLauncher()
-    installBundle(root, '0.1.0-rc.8')
+    installBundle(root, AHEAD)
     let once = false
     cliInternals.spawnOnce = async () => {
       once = true
@@ -130,7 +131,7 @@ describe('main', () => {
     await main(['task'])
     expect(once).toBe(false)
     expect(captures.err).toEqual([
-      `blue: profile 'blue' is at @dsh-blue/blue@0.1.0-rc.8, ahead of this shell (${PIN}) — reinstall to advance: npm i -g @dsh-blue/blue-cli@rc\n`,
+      `blue: profile 'blue' is at @dsh-blue/blue@${AHEAD}, ahead of this shell (${PIN}) — reinstall to advance: npm i -g @dsh-blue/blue-cli@rc\n`,
     ])
     expect(calls.inherit).toHaveLength(1)
     expect(captures.exits).toEqual([0])

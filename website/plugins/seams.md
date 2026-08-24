@@ -39,10 +39,10 @@ harness（dsh-base）开的缝，对你的插件同样开放：
 | `ctx.commands.register` | 注册斜杠命令，自动进入编辑器补全菜单与 `/help` |
 | `ctx.userQuestions.registerProvider` | 接管提问交互（问卷面板） |
 | `'approval/request'` waterfall | 审批应答（不调 `next()` 即短路） |
-| `attachments`（`AttachmentStore`） | 附件存储——rc.7 是纯缝，实现由 Blue 的 `blue-attachments` 提供，你的插件可消费 |
+| `attachments`（`AttachmentStore`） | 附件存储——rc.8 是纯缝，实现由 Blue 的 `blue-attachments` 提供，你的插件可消费 |
 | `ctx.tools` / `ctx.agents` / `ctx.sessions` | 工具注册/守卫、会话与 agent 操作 |
 
-harness 侧 `permissionPresets`、`sessionProjections` 等缝 rc.7 尚未开放——开放后 Blue 会同步适配呈现。
+harness 侧 `permissionPresets`、`sessionProjections` 等缝 rc.8 尚未开放——开放后 Blue 会同步适配呈现。
 
 ## 设计纪律
 

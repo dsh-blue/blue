@@ -3,7 +3,7 @@
 Blue is the terminal interface for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (**dsh**) — understanding a few core dsh concepts makes Blue much easier to use well. This handbook distills the dsh knowledge Blue users need; the complete engineering docs live at the [official reference site](https://deepseek-harness.github.io/deepseek-harness/reference/).
 
 ::: info Version basis
-This handbook tracks the npm release line `0.1.0-rc.7` / `rc.8` (`npm i -g @deepseek-ai/dsh`). Parts of the official reference site run ahead of the published releases — when in doubt, trust your installed `dsh --version` and `--dump-config`.
+This handbook tracks the npm release line `0.1.0-rc.8` / `rc.8` (`npm i -g @deepseek-ai/dsh`). Parts of the official reference site run ahead of the published releases — when in doubt, trust your installed `dsh --version` and `--dump-config`.
 :::
 
 ## What dsh is
