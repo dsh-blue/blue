@@ -456,6 +456,7 @@ export function apply(ctx: Context): void {
   const BLUE_NS = 'blue' as SettingsNamespace
   const applyFoldSettings = (value: unknown): void => {
     const section = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>
+    const before = `${defaultExpansion('thinking')}:${defaultExpansion('tools')}`
     setDefaultExpansion({
       thinking: typeof section.collapseThinking === 'boolean'
         ? !section.collapseThinking
@@ -464,6 +465,22 @@ export function apply(ctx: Context): void {
         ? !section.collapseToolCalls
         : defaultExpansion('tools'),
     })
+    if (`${defaultExpansion('thinking')}:${defaultExpansion('tools')}` === before) return
+    // A fold-default commit also re-seeds the entries ALREADY mounted:
+    // "starts collapsed" is the mount semantics, but a toggle that leaves
+    // the visible transcript untouched reads as broken. The Ctrl-O state
+    // dominates exactly as it does at mount; categories the defaults do
+    // not cover (user folds) keep their state.
+    for (const entry of toggle.entries) {
+      const expandable = entry.component as BlueIntentComponent
+      if (typeof expandable.setExpanded !== 'function') continue
+      if (entry.item.kind === 'thinking') {
+        expandable.setExpanded(toggle.expanded || defaultExpansion('thinking'))
+      } else if (entry.item.kind === 'tool') {
+        expandable.setExpanded(toggle.expanded || defaultExpansion('tools'))
+      }
+    }
+    screen.requestRender(true)
   }
   applyFoldSettings(ctx.get('settings')?.get(BLUE_NS))
   ctx.on('settings/updated', (ns, next) => {

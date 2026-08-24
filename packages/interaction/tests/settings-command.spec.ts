@@ -107,7 +107,7 @@ interface BenchOptions extends SettingsFakeOptions {
 
 /** Mount the command with fakes: commands registry, settings, presets, shared editor. */
 function mount(options: BenchOptions = {}) {
-  const { ctx, screen, components } = fakeBlueContext()
+  const { ctx, screen, components, theme } = fakeBlueContext()
   const registrations: RegisteredCommand[] = []
   ctx.provide('commands', {
     register: (definition: RegisteredCommand) => {
@@ -128,7 +128,7 @@ function mount(options: BenchOptions = {}) {
   })
   const dispose = registerSettingsCommand(ctx)
   const command = registrations.find(entry => entry.name === 'settings')!
-  return { ctx, screen, components, settings, notices, dispose, command }
+  return { ctx, screen, components, theme, settings, notices, dispose, command }
 }
 
 /** The presets table fake: two presets in table order. */
@@ -597,6 +597,52 @@ describe('/settings refresh', () => {
     // repaints for the notice.
     expect(bench.components.settingsLists.at(-1)!.updates).toEqual([])
     expect(bench.screen.renderRequests).toBe(1)
+  })
+})
+
+describe('/settings re-home', () => {
+  it('re-mounts the same panel on blue/input-editor-changed (the theme-swap rebuild)', async () => {
+    const bench = mount({ sections: fullSections() })
+    await bench.command.handler()
+    const first = panel(bench.screen)
+    bench.ctx.emit('blue/input-editor-changed')
+    await settle()
+    expect(bench.screen.overlays).toHaveLength(2)
+    expect(bench.screen.overlays[0]?.hidden).toBe(true)
+    // The SAME instance re-homes: no rebuild, so the list (and its
+    // highlight) survives the swap.
+    expect(panel(bench.screen)).toBe(first)
+    expect(bench.components.settingsLists).toHaveLength(1)
+  })
+
+  it('stays closed when the editor changes after close', async () => {
+    const bench = mount({ sections: fullSections() })
+    await bench.command.handler()
+    panel(bench.screen).handleInput(KEY.escape)
+    bench.ctx.emit('blue/input-editor-changed')
+    await settle()
+    expect(bench.screen.overlays).toHaveLength(1)
+    expect(bench.screen.overlays.every(overlay => overlay.hidden)).toBe(true)
+  })
+
+  it('skips the re-home when the registration disposer ran before the event', async () => {
+    const bench = mount({ sections: fullSections() })
+    await bench.command.handler()
+    bench.dispose()
+    bench.ctx.emit('blue/input-editor-changed')
+    await settle()
+    expect(bench.screen.overlays).toHaveLength(1)
+  })
+
+  it('reads the palette live across a theme swap', async () => {
+    const bench = mount({ sections: fullSections() })
+    await bench.command.handler()
+    const marked = (text: string) => `SWAPPED<${text}>`
+    ;(bench.theme as { colors: unknown }).colors = {
+      ...bench.theme.colors,
+      primary: marked,
+    }
+    expect(frameText(bench)).toContain('SWAPPED<  settings>')
   })
 })
 

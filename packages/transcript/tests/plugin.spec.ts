@@ -661,7 +661,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     expect(released.filter(line => line.includes('y'.repeat(76)))).toHaveLength(3)
   })
 
-  it('applies settings/updated to subsequently mounted entries', async () => {
+  it('applies settings/updated to mounted and subsequently mounted entries', async () => {
     resetSeq()
     const blueNs = 'blue' as SettingsNamespace
     const { ctx, screen } = await bootTranscript(null, { settings: { blue: {} } })
@@ -683,18 +683,72 @@ describe('blue-transcript plugin through the real Loader', () => {
     mountTool('c2', 'b')
     expect(hints()).toHaveLength(2)
 
-    // A blue update re-seeds the entries mounted after it.
+    // A blue update re-seeds the MOUNTED entries too (a toggle that left
+    // the visible transcript untouched would read as broken) and seeds the
+    // ones mounted after it.
     ctx.emit('settings/updated', blueNs, { collapseToolCalls: false }, {}, 'provider')
+    expect(hints()).toHaveLength(0)
+    expect(contentLines(screen).filter(line => line.includes('a'.repeat(76)))).toHaveLength(3)
     mountTool('c3', 'c')
-    expect(hints()).toHaveLength(2)
+    expect(hints()).toHaveLength(0)
     expect(contentLines(screen).filter(line => line.includes('c'.repeat(76)))).toHaveLength(3)
 
-    // Collapse-true restores the collapsed default, and a non-object value
-    // (a dirty external edit) leaves it untouched.
+    // Collapse-true re-seeds everything back, and a non-object value (a
+    // dirty external edit) leaves the default untouched.
     ctx.emit('settings/updated', blueNs, { collapseToolCalls: true }, { collapseToolCalls: false }, 'provider')
-    ctx.emit('settings/updated', blueNs, null, { collapseToolCalls: true }, 'provider')
-    mountTool('c4', 'd')
     expect(hints()).toHaveLength(3)
+    ctx.emit('settings/updated', blueNs, null, { collapseToolCalls: true }, 'provider')
+    expect(hints()).toHaveLength(3)
+    mountTool('c4', 'd')
+    expect(hints()).toHaveLength(4)
+  })
+
+  it('re-seeds mounted thinking blocks on a fold-default commit', async () => {
+    resetSeq()
+    const blueNs = 'blue' as SettingsNamespace
+    const six = 'one\ntwo\nthree\nfour\nfive\nsix'
+    const { ctx, screen } = await bootTranscript(null, { settings: { blue: {} } })
+    const agent = fakeAgent([
+      turnStart(1),
+      userEvent('q'),
+      assistantEvent(1, 1, [{ type: 'reasoning', text: six }, { type: 'text', text: 'answer' }]),
+      turnEnd(1),
+    ])
+    ctx.emit('blue/session-changed', asAgent(agent))
+    const lines = (): string[] => contentLines(screen)
+    // Mounted collapsed: the folded preview plus the hint, tail hidden.
+    expect(lines().some(line => line.includes('six'))).toBe(false)
+    expect(lines().some(line => line.includes('more lines'))).toBe(true)
+
+    // The commit expands the mounted block in place...
+    ctx.emit('settings/updated', blueNs, { collapseThinking: false }, {}, 'provider')
+    expect(lines().some(line => line.includes('six'))).toBe(true)
+    expect(lines().some(line => line.includes('more lines'))).toBe(false)
+
+    // ...and a same-value re-commit is a no-op (the guard return).
+    const renders = screen.renderRequests
+    ctx.emit('settings/updated', blueNs, { collapseThinking: false }, {}, 'provider')
+    expect(screen.renderRequests).toBe(renders)
+
+    // Collapse-true folds it back.
+    ctx.emit('settings/updated', blueNs, { collapseThinking: true }, { collapseThinking: false }, 'provider')
+    expect(lines().some(line => line.includes('six'))).toBe(false)
+  })
+
+  it('keeps the ctrl+o expansion dominant over a fold-default commit', async () => {
+    resetSeq()
+    const blueNs = 'blue' as SettingsNamespace
+    const six = 'one\ntwo\nthree\nfour\nfive\nsix'
+    const { ctx, screen, keymap } = await bootTranscript(null, { settings: { blue: {} } })
+    const agent = fakeAgent([
+      assistantEvent(1, 1, [{ type: 'reasoning', text: six }, { type: 'text', text: 'answer' }]),
+    ])
+    ctx.emit('blue/session-changed', asAgent(agent))
+    // Toggle on, then a collapse-true commit: the active toggle dominates,
+    // exactly as it does at mount.
+    keymap.actions.find(a => a.id === ACTION_TOGGLE_COLLAPSE)?.handler?.()
+    ctx.emit('settings/updated', blueNs, { collapseThinking: true }, {}, 'provider')
+    expect(contentLines(screen).some(line => line.includes('six'))).toBe(true)
   })
 
   it('keeps the collapsed defaults for dirty (non-boolean) settings values', async () => {
