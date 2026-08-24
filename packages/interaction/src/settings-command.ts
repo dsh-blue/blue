@@ -12,7 +12,8 @@
  * `agent-default-model.reasoningEffort: default` instead unsets the key
  * through `settings.mutate`, so the field re-inherits the schema's
  * omission semantics. A stale revision (`SettingsConflictError`) re-reads
- * and retries once; anything still failing flashes the editor notice.
+ * and retries once; outcomes land on the panel's own feedback row (the
+ * editor's hint line leaves the tree while a panel is open, D30).
  *
  * The core adapter surfaces pi-tui's `updateValue` (one entry's displayed
  * value, in place), so refresh is diff-and-update instead of a whole-panel
@@ -42,7 +43,7 @@ import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { BlueFocusable, BlueSettingItem, BlueSettingsList, BlueTheme } from '@dsh-blue/blue-core'
 import { framePanel } from '@dsh-blue/blue-core/chrome'
 import { displayServices } from './display-services.ts'
-import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
+import { mountEditorReplacement } from './editor-instance.ts'
 import { resolveExternalEditorCommand, runExternalEditor } from './external-editor.ts'
 import type { PermissionPresetsService } from './permission-panel.ts'
 
@@ -62,8 +63,10 @@ interface SettingRow {
   readonly key: string
   /** Display label (left side). */
   readonly label: string
-  /** One-line description shown while the row is highlighted. */
-  readonly description?: string
+  /** One-line description shown while the row is highlighted. Required: a
+   *  row without one drops the list's description zone and makes the panel
+   *  height jump as the highlight moves. */
+  readonly description: string
   /** Value parsing for the write: cycled strings become booleans/numbers. */
   readonly kind: 'boolean' | 'number' | 'string'
   /** The preset cycle, in cycle order. */
@@ -78,7 +81,7 @@ const ROWS: readonly SettingRow[] = [
   },
   {
     id: 'blue.updateChannel', ns: 'blue', key: 'updateChannel', label: 'Update channel',
-    kind: 'string', values: ['rc'],
+    description: 'dist-tag the boot check follows', kind: 'string', values: ['rc'],
   },
   {
     id: 'blue.theme', ns: 'blue', key: 'theme', label: 'Theme',
@@ -95,19 +98,20 @@ const ROWS: readonly SettingRow[] = [
   },
   {
     id: 'shell.timeoutMs', ns: 'shell', key: 'timeoutMs', label: 'Shell timeout (ms)',
-    kind: 'number', values: [30_000, 60_000, 120_000, 300_000, 600_000],
+    description: 'default bash command timeout', kind: 'number', values: [30_000, 60_000, 120_000, 300_000, 600_000],
   },
   {
     id: 'shell.maxTimeoutMs', ns: 'shell', key: 'maxTimeoutMs', label: 'Shell max timeout (ms)',
-    kind: 'number', values: [300_000, 600_000, 900_000, 1_800_000, 3_600_000],
+    description: 'longest bash timeout a call may request', kind: 'number', values: [300_000, 600_000, 900_000, 1_800_000, 3_600_000],
   },
   {
     id: 'shell.maxOutputBytes', ns: 'shell', key: 'maxOutputBytes', label: 'Shell max output (bytes)',
-    kind: 'number', values: [16_000, 32_000, 64_000, 128_000, 256_000],
+    description: 'captured bash output budget', kind: 'number', values: [16_000, 32_000, 64_000, 128_000, 256_000],
   },
   {
     id: 'agent-loop.maxParallelToolCalls', ns: 'agent-loop', key: 'maxParallelToolCalls',
-    label: 'Max parallel tool calls', kind: 'number', values: [1, 5, 10, 20, 50],
+    label: 'Max parallel tool calls', description: 'concurrent tool call cap',
+    kind: 'number', values: [1, 5, 10, 20, 50],
   },
   {
     id: EFFORT_ID, ns: 'agent-default-model', key: 'reasoningEffort', label: 'Default reasoning effort',
@@ -116,11 +120,13 @@ const ROWS: readonly SettingRow[] = [
   },
   {
     id: 'web-search-deepseek.maxUses', ns: 'web-search-deepseek', key: 'maxUses',
-    label: 'Web search max uses', kind: 'number', values: [1, 3, 5, 10, 25],
+    label: 'Web search max uses', description: 'search invocations per request',
+    kind: 'number', values: [1, 3, 5, 10, 25],
   },
   {
     id: 'web-search-deepseek.maxTokens', ns: 'web-search-deepseek', key: 'maxTokens',
-    label: 'Web search max tokens', kind: 'number', values: [2048, 4096, 8192, 16384],
+    label: 'Web search max tokens', description: 'search answer token budget',
+    kind: 'number', values: [2048, 4096, 8192, 16384],
   },
 ]
 
@@ -134,7 +140,8 @@ const ROWS_BY_ID: ReadonlyMap<string, SettingRow> = new Map(ROWS.map(row => [row
  */
 const PERMISSION_ROW: SettingRow = {
   id: 'permission.defaultPreset', ns: 'permission', key: 'defaultPreset',
-  label: 'Default permission preset', kind: 'string', values: [],
+  label: 'Default permission preset', description: 'fallback tool policy, per-call editable',
+  kind: 'string', values: [],
 }
 
 /**
@@ -167,7 +174,7 @@ function settingItem(row: SettingRow, raw: unknown): BlueSettingItem {
   return {
     id: row.id,
     label: row.label,
-    ...row.description === undefined ? {} : { description: row.description },
+    description: row.description,
     currentValue: current,
     values: presets.includes(current) ? presets : [current, ...presets],
   }
@@ -215,7 +222,11 @@ function buildItems(settings: SettingsProvider, presets: PermissionPresetsServic
       values: presets.names.includes(current) ? [...presets.names] : [current, ...presets.names],
     })
   }
-  push({ id: OPEN_FILE_ID, label: 'Open settings.yaml in $EDITOR', currentValue: '', values: [''] })
+  push({
+    id: OPEN_FILE_ID, label: 'Open settings.yaml in $EDITOR',
+    description: 'edit the raw document; changes hot-reload',
+    currentValue: '', values: [''],
+  })
   return { items, values }
 }
 
@@ -226,23 +237,40 @@ function parseValue(row: SettingRow, newValue: string): boolean | number | strin
   return newValue
 }
 
+/** The panel's feedback row state; shared with the handler across remounts. */
+export interface SettingsPanelNotice {
+  /** The latest outcome; `undefined` renders a blank (height-holding) row. */
+  current?: { readonly text: string; readonly error: boolean } | undefined
+}
+
 /** Constructor options for {@link SettingsPanel}. */
 export interface SettingsPanelOptions {
   /** Theme supplying the frame's rule/title/hint colors. */
   readonly theme: BlueTheme
   /** The settings list this panel frames. */
   readonly list: BlueSettingsList
+  /** The shared feedback-row state (write outcomes; the editor's hint line is unmounted while a panel is open). */
+  readonly notice: SettingsPanelNotice
+  /** ANSI-safe width truncation for the feedback row (the components service's truncateToWidth). */
+  readonly truncate: (text: string, width: number) => string
 }
 
 /**
  * The framed `/settings` surface: the pi-tui settings list wrapped in the
  * S12 dialog chrome (`settings` title, muted key-hint footer, full-width
  * rules). Input delegates to the list — its keybindings own Up/Down,
- * Enter/Space, and Escape.
+ * Enter/Space, and Escape. The body's last row is the feedback line (write
+ * outcomes — the editor hint line leaves the tree with the editor, so panel
+ * feedback must live in the frame), and the body is ratchet-padded to the
+ * tallest height seen: the description zone's wrap count varies per row,
+ * and an unpadded frame would grow and shrink on every cursor move.
  */
 export class SettingsPanel implements BlueFocusable {
   /** Whether the panel currently holds focus. Managed by the screen. */
   focused = false
+
+  /** The tallest body rendered so far; the panel never shrinks below it. */
+  private maxBodyRows = 0
 
   /**
    * @param options - see {@link SettingsPanelOptions}.
@@ -263,16 +291,25 @@ export class SettingsPanel implements BlueFocusable {
   }
 
   /**
-   * Render the framed dialog: the list's body rows between full-width
-   * rules with the title and the muted key-hint footer. `framePanel` owns
-   * the width discipline for the chrome and the degenerate-width cut; the
-   * list budgets its own rows at every normal width.
+   * Render the framed dialog: the list's body rows, then the feedback row
+   * (always exactly one — blank when no outcome is pending), ratchet-padded
+   * to the running max height, between full-width rules with the title and
+   * the muted key-hint footer. `framePanel` owns the width discipline for
+   * the chrome and the degenerate-width cut; the list budgets its own rows
+   * at every normal width.
    * @param width - current viewport width in columns.
    * @returns one string per rendered row.
    */
   render(width: number): string[] {
     const colors = this.options.theme.colors
-    return framePanel(this.options.list.render(width), width, {
+    const notice = this.options.notice.current
+    const noticeRow = notice === undefined
+      ? ''
+      : this.options.truncate((notice.error ? colors.error : colors.textMuted)(`  ${notice.text}`), width)
+    const body = [...this.options.list.render(width), noticeRow]
+    this.maxBodyRows = Math.max(this.maxBodyRows, body.length)
+    while (body.length < this.maxBodyRows) body.push('')
+    return framePanel(body, width, {
       title: 'settings',
       titlePaint: colors.primary,
       footer: ['↑↓ select', '↵ change', 'esc close'],
@@ -314,8 +351,17 @@ export function registerSettingsCommand(ctx: Context): () => void {
       /** The id → display-string map of what the mounted list shows. */
       let lastKnown: Map<string, string> = new Map()
 
-      const notice = (text: string): void => {
-        getSharedEditor()?.notice?.(text)
+      /** The feedback-row state shared with every mounted panel instance. */
+      const panelNotice: SettingsPanelNotice = {}
+      /**
+       * Flash an outcome in the panel's feedback row. The editor's hint
+       * line leaves the tree with the editor while a panel is open (D30),
+       * so `getSharedEditor()?.notice` is invisible here — panel feedback
+       * must render inside the frame.
+       */
+      const notice = (text: string, error = false): void => {
+        panelNotice.current = { text, error }
+        display.screen.requestRender()
       }
 
       /** Rebuild the whole panel from a fresh describe() and remount it. */
@@ -355,9 +401,8 @@ export function registerSettingsCommand(ctx: Context): () => void {
               // back to the last committed display string.
               const known = lastKnown.get(id)
               if (known !== undefined) list.updateValue(id, known)
-              display.screen.requestRender()
               const message = error instanceof Error ? error.message : String(error)
-              notice(display.colors.error(`could not update ${row.label.toLowerCase()}: ${message}`))
+              notice(`could not update ${row.label.toLowerCase()}: ${message}`, true)
             }
             return
           }
@@ -422,7 +467,12 @@ export function registerSettingsCommand(ctx: Context): () => void {
             close()
           },
         })
-        const panel = new SettingsPanel({ theme: display.theme, list })
+        const panel = new SettingsPanel({
+          theme: display.theme,
+          list,
+          notice: panelNotice,
+          truncate: (text, width) => display.components.truncateToWidth(text, width),
+        })
         restore = mountEditorReplacement(panel)
       }
 

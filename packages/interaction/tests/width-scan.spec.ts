@@ -207,7 +207,12 @@ describe('interaction width-scan', () => {
         onChange: vi.fn(),
         onCancel: vi.fn(),
       })
-      const panel = new SettingsPanel({ theme: IDENTITY_THEME as never, list })
+      const panel = new SettingsPanel({
+        theme: IDENTITY_THEME as never,
+        list,
+        notice: { current: { text, error: true } },
+        truncate: (value, width) => components.truncateToWidth(value, width),
+      })
       for (const width of SCAN_WIDTHS) {
         expectLinesFit(`SettingsPanel/${name}`, panel.render(width), width)
       }
