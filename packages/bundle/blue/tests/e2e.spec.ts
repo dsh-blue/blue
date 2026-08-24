@@ -36,7 +36,7 @@ import { MOON_SPINNER_FRAMES} from '../../../transcript/src/spinners.ts'
 import * as statusCwdPlugin from '../../../transcript/src/status-cwd.ts'
 import * as statusGitPlugin from '../../../transcript/src/status-git.ts'
 import { setRecentStepsRetention, setStepFoldingEnabled} from '../../../transcript/src/window.ts'
-import { reasoningResponse, textResponse, toolCallResponse} from './mock-adapter.ts'
+import { delayedTextResponse, reasoningResponse, textResponse, toolCallResponse} from './mock-adapter.ts'
 // The wizard's models.dev lookup stays offline in the e2e (the fixture
 // gateways carry their own metadata paths).
 import { setModelsDevLoader} from '../../../interaction/src/models-dev.ts'
@@ -2356,6 +2356,13 @@ describe('blue whole-tree e2e', () => {
     // the `╭` is replaced by the splice while the pane is connected.
     expect(tree.terminal.output).toContain(' BTW ')
     expect(tree.terminal.output).toContain('Esc close')
+    const btwFrame = await fullFrame(tree.terminal)
+    const btwTop = btwFrame.split('\n').find(row => stripSgr(row).includes('╭'))
+    const editorTop = btwFrame.split('\n').find(row => stripSgr(row).includes('├'))
+    expect(btwTop).toBeDefined()
+    expect(editorTop).toBeDefined()
+    expect(stripSgr(btwTop!).indexOf('╭')).toBe(stripSgr(editorTop!).indexOf('├'))
+    expect(stripSgr(btwTop!).length).toBe(stripSgr(editorTop!).length)
     expect(tree.terminal.output).toContain(`${EDITOR_BORDER_SGR}├`)
     // The exchange ran on the side agent: one model request, the main agent
     // untouched.
@@ -2382,6 +2389,25 @@ describe('blue whole-tree e2e', () => {
     await expect(executeCommand(tree, agent, '/btw'))
       .resolves.toEqual({ kind: 'success', text: 'dismissed the side question' })
     expect(await fullFrame(tree.terminal)).not.toContain('› hello again')
+  })
+
+  it('forks BTW from a balanced prefix while the main session is streaming', async () => {
+    const tree = await bootBlue([], { script: ['hang', delayedTextResponse('side stream reply')] })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'main stream')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('partial') })
+    expect(agent.status).toBe('running')
+
+    await expect(executeCommand(tree, agent, '/btw while main streams'))
+      .resolves.toEqual({ kind: 'success', text: 'asked the side question' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('side stream reply') })
+    // The side stream must become visible before the parent turn closes; a
+    // response that only appears after this point is not BTW concurrency.
+    expect(agent.status).toBe('running')
+    expect(tree.adapter.requests).toHaveLength(2)
+
+    tree.terminal.sendInput('\x03')
+    await agent.whenIdle()
   })
 
   it('remembers a session-scoped approval: the next request for the tool skips the overlay', async () => {
