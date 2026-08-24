@@ -2597,7 +2597,9 @@ describe('blue whole-tree e2e', () => {
     const agent = await currentAgent(tree)
     await expect(executeCommand(tree, agent, '/help')).resolves.toMatchObject({ kind: 'success' })
     // The command list outgrew the first window once S25 added the
-    // session-info family; one PageDown brings the tail commands in.
+    // session-info family; `/trace` (41 rows) pushed the tail commands past
+    // the second window too — two PageDowns bring them in.
+    tree.terminal.sendInput('\x1b[6~')
     tree.terminal.sendInput('\x1b[6~')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('/yolo (/yes)') })
     // The Keys section sits below the commands window; scroll to the very
