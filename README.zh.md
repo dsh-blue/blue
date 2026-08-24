@@ -12,9 +12,10 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 
 本仓库是 `@dsh-blue` scope 下五个 workspace 包的独立 home，它们从 `deepseek-harness` monorepo 抽出（原 `packages/blue/*` 与 `packages/bundle/blue`），现按 npm 上发布的 harness（`0.1.1-rc.2` 线）与 vendored Cordis 构建测试。
 
-<!-- TODO: 演示动图——录一段真实会话（vhs / asciinema；贡献者指南（开发手册）里的
-     script(1) 冒烟检查是种子），导出 GIF 到 docs/assets/ 后嵌到这里。
-     TUI 仓库的 README 成败系于演示。 -->
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/9a058e97-228c-4975-85c2-884c12bcc8c9" width="720" autoplay loop muted playsinline></video>
+</p>
+<p align="center"><i>Blue 运行演示：流式会话、工具卡片与底部面板。</i></p>
 
 ## 目录
 

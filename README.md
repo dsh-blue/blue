@@ -12,9 +12,10 @@ Blue is an interactive terminal UI (TUI) plugin for [DeepSeek Harness](https://g
 
 This repository is the standalone home of Blue's five workspace packages under the `@dsh-blue` scope, extracted from the `deepseek-harness` monorepo (`packages/blue/*` and `packages/bundle/blue`). They build and test against the published npm releases of the harness (`0.1.1-rc.2` line) and vendored Cordis.
 
-<!-- TODO: demo capture — record a real session (vhs / asciinema; the script(1)
-     smoke-check in the contributor guide is the seed), export a GIF into docs/assets/,
-     and embed it here. A TUI repo's README lives or dies on its demo. -->
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/9a058e97-228c-4975-85c2-884c12bcc8c9" width="720" autoplay loop muted playsinline></video>
+</p>
+<p align="center"><i>Blue in action: streaming transcript, tool cards, and dock panes.</i></p>
 
 ## Contents
 

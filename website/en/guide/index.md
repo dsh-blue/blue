@@ -68,3 +68,9 @@ A few things to try first:
 - ask something and watch the streaming reply and tool cards;
 - `/theme` to open the theme picker — arrow through `dark`/`light`/`ocean`/`paper` with a **live preview** of each palette (the banner whale gradient recolors with it; your draft survives);
 - on exit, the last line is the **session epitaph**: the session id and a one-line resume command (a triple-click selects exactly it) — pick the conversation right back up next time.
+
+## Interface preview
+
+<p align="center">
+  <video src="/blue-demo.mp4" width="720" autoplay loop muted playsinline controls></video>
+</p>
