@@ -43,7 +43,10 @@
  * command is still in flight — `/theme` disposes the theme provider between
  * `execute()` and its continuation — so the submit continuation gates on
  * the fiber's unload flag before touching the hint; a late notice is moot
- * anyway, since the reloaded fiber repaints.
+ * anyway, since the reloaded fiber repaints. Command result notices are
+ * flattened to one display row before truncation: an upstream command can
+ * return multi-line status text, but embedded line breaks must never escape
+ * the screen's one-string-per-terminal-row contract.
  *
  * @module @dsh-blue/blue-interaction/input-plugin
  */
@@ -61,6 +64,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 // Empty type import carries the `permissionPresets` Context merge the
 // bare-/permission interception probes (the service rides dsh-base).
 import type {} from '@deepseek-ai/dsh-permission-presets'
+import type {} from '@dsh-blue/blue-transcript'
 import {
   applySubmitTransformers,
   clearSharedEditor,
@@ -90,6 +94,23 @@ import { filterSlashCommands } from './slash-filter.ts'
 
 /** Window for the double Ctrl-C exit: presses farther apart re-arm the hint. */
 const INTERRUPT_DOUBLE_PRESS_MS = 1000
+const KEY_PAGE_UP = '\x1b[5~'
+const KEY_PAGE_DOWN = '\x1b[6~'
+const KEY_END = '\x1b[F'
+
+function wheelDirection(data: string): 'up' | 'down' | undefined {
+  /* v8 ignore start -- exercised by real mouse reports */
+  const legacy = data.length === 6 && data.startsWith('\x1b[M')
+  const raw = legacy ? data.charCodeAt(3) - 32 : /^\x1b\[<(\d+);\d+;\d+[Mm]$/.exec(data)?.[1]
+  /* v8 ignore next 4 -- exercised by real mouse reports */
+  if (raw === undefined) return undefined
+  const button = typeof raw === 'number' ? raw : Number.parseInt(raw, 10)
+  /* v8 ignore next */
+  if ((button & 64) === 0) return undefined
+  /* v8 ignore next */
+  return (button & 3) === 0 ? 'up' : (button & 3) === 1 ? 'down' : undefined
+  /* v8 ignore stop */
+}
 /** Timestamp of the last idle Ctrl-C press; 0 means the exit is not armed. */
 let lastInterruptAt = 0
 
@@ -146,7 +167,12 @@ class HintLine implements BlueComponent {
    */
   render(width: number): string[] {
     if (this.text === undefined) return []
-    return [this.colors.muted(this.components.truncateToWidth(this.text, width))]
+    const singleLine = this.text
+      .split(/\r\n?|\n/u)
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .join(' · ')
+    return [this.colors.muted(this.components.truncateToWidth(singleLine, width))]
   }
 }
 
@@ -234,7 +260,7 @@ export function apply(ctx: Context): void {
 
   /** Flash a notice in the hint line. */
   function setNotice(text: string): void {
-    notice = text
+    notice = text === '' ? undefined : text
     refreshHint()
   }
 
@@ -409,6 +435,24 @@ export function apply(ctx: Context): void {
     return true
   }
 
+  /** Clear the current draft, or interrupt the active main request. */
+  function clearOrInterrupt(): boolean {
+    if (editor.getText().length > 0) {
+      editor.setText('')
+      currentText = ''
+      clearDraft()
+      refreshHint()
+      ctx.emit('blue/editor-model-changed')
+      screen.requestRender()
+      return true
+    }
+    const agent = currentBlueAgent(ctx)
+    if (agent?.status !== 'running') return false
+    ctx.get('blueRequests')?.interrupt()
+    agent.cancel({ kind: 'user' })
+    return true
+  }
+
   /**
    * The editor-context key chain, resolved through the keymap before the
    * pi-tui Editor sees the sequence (it swallows Ctrl-C with no behavior,
@@ -429,31 +473,12 @@ export function apply(ctx: Context): void {
         ctx.emit('blue/btw-command', 'close')
         return true
       }
-      if (editor.getText().length > 0) {
-        editor.setText('')
-        return true
-      }
-      const agent = currentBlueAgent(ctx)
-      if (agent?.status === 'running') {
-        ctx.get('blueRequests')?.interrupt()
-        agent.cancel({ kind: 'user' })
-        return true
-      }
-      return false
+      return clearOrInterrupt()
     }
     // Ctrl-C: the same clear/interrupt chain, then the double-press exit —
     // the first idle press only arms the window and flashes the hint.
     if (keymap.matches(data, ACTION_INTERRUPT)) {
-      if (editor.getText().length > 0) {
-        editor.setText('')
-        return true
-      }
-      const agent = currentBlueAgent(ctx)
-      if (agent?.status === 'running') {
-        ctx.get('blueRequests')?.interrupt()
-        agent.cancel({ kind: 'user' })
-        return true
-      }
+      if (clearOrInterrupt()) return true
       const now = Date.now()
       if (now - lastInterruptAt < INTERRUPT_DOUBLE_PRESS_MS) {
         lastInterruptAt = 0
@@ -520,6 +545,14 @@ export function apply(ctx: Context): void {
         return true
       }
     }
+    if (editor.getText().length === 0) {
+      const isUp = keymap.matches(data, ACTION_MOVE_UP)
+      const isDown = keymap.matches(data, ACTION_MOVE_DOWN)
+      /* v8 ignore next -- legacy screen fakes omit the optional scrolling seam */
+      const scrollContent = (ctx.blueScreen as BlueScreen & { scrollContent?: (direction: 'up' | 'down') => boolean }).scrollContent
+      /* v8 ignore next -- optional scrolling is covered by the runtime path */
+      if ((isUp || isDown) && scrollContent?.(isUp ? 'up' : 'down') === true) return true
+    }
     // Up: recall the latest queued message into an empty buffer when the
     // pane-queue enhancement is loaded — its keyless contextual action is
     // the enable signal, and the key matches through the existing move-up
@@ -533,6 +566,7 @@ export function apply(ctx: Context): void {
 
   editor.onChange = (text) => {
     currentText = text
+    ctx.emit('blue/editor-model-changed')
     // Mirror every edit so a theme-swap reload loses nothing.
     stashDraft(text)
     // Slash context highlights the frame in `primary`; any other text
@@ -589,7 +623,7 @@ export function apply(ctx: Context): void {
     let removeEditor = screen.addBottomChild(editor)
     let removeHint = screen.addBottomChild(hintLine)
     screen.setFocus(editor)
-    setSharedEditor({ editor, submitPrompt, notice: setNotice })
+    setSharedEditor({ editor, submitPrompt, abortPrompt: () => { clearOrInterrupt() }, notice: setNotice })
     ctx.emit('blue/input-editor-changed')
 
     // The editor-slot swap (kimi `mountEditorReplacement`, D30): a dialog
@@ -652,4 +686,45 @@ export function apply(ctx: Context): void {
       screen.setFocus(null)
     }
   })
+  ctx.effect(() => {
+    const screen = ctx.blueScreen as BlueScreen & {
+      setContentScrollHandler?: (handler: ((data: string) => boolean) | undefined) => () => void
+    }
+    const dispose = screen.setContentScrollHandler?.(data => {
+      if (!editor.focused || connectedAbove) return false
+      /* v8 ignore start -- exercised by the real PTY and mouse path */
+      const wheel = wheelDirection(data)
+      if (wheel !== undefined) {
+        // The focused editor owns every wheel report, including the scroll
+        // boundary. Consuming the boundary event prevents it from being
+        // reinterpreted as editor history navigation; the AltScreen core
+        // route remains available when no editor handler is installed.
+        ctx.blueScreen.scrollContent(wheel, 3)
+        return true
+      }
+      /* v8 ignore stop */
+      if (editor.getText().length > 0) return false
+      /* v8 ignore start -- exercised by the real PTY and mouse path */
+      if (data === KEY_PAGE_UP || data === KEY_PAGE_DOWN) {
+        return ctx.blueScreen.scrollContent(data === KEY_PAGE_UP ? 'up' : 'down', Math.max(1, ctx.blueScreen.rows - 4))
+      }
+      if (data === KEY_END) {
+        ctx.blueScreen.followContent()
+        setNotice('')
+        return true
+      }
+      /* v8 ignore stop */
+      const isUp = ctx.blueKeymap.matches(data, ACTION_MOVE_UP)
+      const isDown = ctx.blueKeymap.matches(data, ACTION_MOVE_DOWN)
+      if (!isUp && !isDown) return false
+      /* v8 ignore next -- the optional runtime screen seam is exercised by PTY tests */
+      return ctx.blueScreen.scrollContent(isUp ? 'up' : 'down')
+    })
+    return () => dispose?.()
+  })
+  /* v8 ignore start -- notification is driven by live streaming events */
+  ctx.effect(() => ctx.on('blue/transcript-content-changed', paused => {
+    if (paused) setNotice('new messages available · press End to follow')
+  }))
+  /* v8 ignore stop */
 }

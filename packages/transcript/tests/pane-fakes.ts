@@ -59,14 +59,15 @@ export class PaneFakeScreen implements BlueScreen {
   setTitle(): void {}
 
   /**
-   * Every mounted bottom child's rendered rows, in mount order. Guttered
-   * passive panes have their leading gutter stripped for these source-plane
-   * assertions; full-width connected panes (btw) are left untouched.
+   * Every mounted bottom child's rendered rows, in mount order, with the
+   * kimi gutter column the mount layer wraps the panes in stripped — the
+   * gutter itself is a mount-layer concern covered by the core gutter spec
+   * and the bundle e2e; these specs assert the pane's own surface.
    */
   paneLines(width = 80): string[] {
     return this.bottomChildren
       .flatMap(component => component.render(width))
-      .map(line => line === ' ' ? '' : line.startsWith(' ') ? line.slice(1) : line)
+      .map(line => line === ' ' ? '' : line.slice(1))
   }
 }
 

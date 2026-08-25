@@ -76,6 +76,11 @@ describe('blue bundle', () => {
       'blue-status-title',
       'blue-status-mode',
       'blue-status-context',
+      'blue-context',
+      'blue-conversation',
+      'blue-transcript-official',
+      'blue-openpencil',
+      'blue-lark',
       'blue-intent-diff',
       'blue-intent-terminal',
       'blue-pane-activity',
@@ -93,6 +98,11 @@ describe('blue bundle', () => {
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/attachments'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/paste-image'")
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/banner'")
+    expect(patch).toContain("name: '@dsh-blue/blue-openpencil'")
+    expect(patch).toContain("name: '@dsh-blue/blue-lark'")
+    expect(patch).toContain("name: '@dsh-blue/blue-conversation'")
+    expect(patch).toContain("name: '@dsh-blue/blue-transcript/official-model'")
+    expect(patch).not.toMatch(/- id: blue-(?:context|conversation|transcript-official|openpencil|lark)\n\s+name:[^\n]+\n\s+disabled: true/gu)
   })
 
   it('inserts the upstream agent-presets roster row ahead of the Blue rows', () => {
@@ -104,20 +114,10 @@ describe('blue bundle', () => {
     expect(patch.indexOf('- id: agent-presets')).toBeLessThan(patch.indexOf('- id: blue-core'))
   })
 
-  it('inserts the cordis host-runner row the shipped cordis preset\'s tool-cordis injects', () => {
-    // Host plane, mirroring the web-app bundle's own row: the runner provides
-    // `dynamicCordisRunner` + `cordisInspect`, without which the `cordis`
-    // preset's standing mount parks `tool-cordis` and the roster's activation
-    // audit fails the `/preset cordis` switch.
-    expect(patch).toContain('- id: cordis-host-runner')
-    expect(patch).toContain("name: '@deepseek-ai/dsh-cordis-host-runner'")
-    expect(patch.indexOf('- id: cordis-host-runner')).toBeLessThan(patch.indexOf('- id: blue-core'))
-    // The package must install with the bundle (dsh plugin add), exactly as
-    // the agent-presets roster's own runtime dependency rides it.
-    const manifest = JSON.parse(readFileSync(join(patchDir, '..', 'package.json'), 'utf8')) as {
-      dependencies?: Record<string, string>
-    }
-    expect(manifest.dependencies?.['@deepseek-ai/dsh-cordis-host-runner']).toBeDefined()
+  it('keeps the host fallback persona valid for agents without preset model variables', () => {
+    const persona = /^- id: system-prompt\n {2}config:\n {4}persona: >-\n {6}([^\n]+)$/m.exec(patch)?.[1]
+    expect(persona).toBe('You are a coding agent. Your working directory is {{cwd}}.')
+    expect(persona).not.toContain('{{model}}')
   })
 
   it('disables exactly the web-app bundle\'s thin-host agent-plane list, every id addressing a real base row', () => {

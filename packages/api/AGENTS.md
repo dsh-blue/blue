@@ -9,11 +9,11 @@ Stable contracts contain readonly Blue-owned data only. Agent, SessionEvent,
 BlueComponent, BlueScreen, ANSI formatters, raw key sequences, and mutable
 session references remain implementation or experimental surfaces.
 
+`BlueResult` includes `BLUE_CAPABILITY_ABSENT` for adapters and features that
+probe an optional Harness capability. Consumers should render that result as a
+plain or read-only fallback and must not treat it as a thrown plugin failure.
+
 `BluePluginHostService` validates each manifest before opening a capability-
 scoped API. Registries and notification subscriptions are bound to the
 consumer's Cordis effect: consumer unload disposes every returned registration,
 while service unload also clears all remaining host-owned state.
-
-## Distribution contract
-
-The package publishes only `lib/*.js` and `lib/types/**/*.d.ts`. Runtime entries are derived from `exports` by `script/package-contract.mjs`; add a public entry by adding its manifest export and matching `src/<entry>.ts`, then run `pnpm check:pack`.

@@ -44,7 +44,7 @@ export function assertDshVersion(dshBin) {
 
 /**
  * A throwaway home with the Blue profile installed: builds the workspace,
- * link-installs the five packages via install-dev.sh, and isolates the
+ * link-installs the complete package closure via install-dev.sh, and isolates the
  * profile tree, the harness home, and pi-tui's log directory (pi-crash.log
  * and blue-overflow.log) under one temp root. The temp-HOME pnpm posture
  * (no purge prompts, no prepare re-builds, no frozen-lockfile refusal

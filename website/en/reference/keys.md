@@ -30,9 +30,7 @@ Text-editing keys (cursor movement, multi-line, undo, kill-ring) belong to the u
 | --- | --- | --- |
 | `Ctrl-C` | Clear → interrupt → exit | Clears the draft, then interrupts a running agent; a **second press within 1 second** exits Blue |
 | `Ctrl-S` | Steer | Inject the non-empty draft as a steering instruction into the current turn, clearing the buffer |
-| `Ctrl-V` (Windows: also `Alt-V`) | Paste image | Store the clipboard image in the attachment library, inserting an `[image #N]` marker at the cursor; Windows Terminal and conhost intercept `Ctrl-V` for their own text paste, so Windows binds `Alt-V` alongside |
-| `Ctrl-G` | External editor | Hand the draft to `$VISUAL`/`$EDITOR` for full-screen editing (Blue suspends and yields the terminal); quitting with `:cq` leaves the draft untouched |
-| `Alt+M` | Cycle session model | Step through the current provider's models (**session-only**, no persisted default; the press is consumed, the draft stays intact) |
+| `Ctrl-V` | Paste image | Store the clipboard image in the attachment library, inserting an `[image #N]` marker at the cursor |
 | `Backspace` | Delete / exit mode | Backspace on an empty `!` bash prompt exits back to prompt mode |
 | `↑` (empty buffer) | Recall queued message | Remove the most recent queued message into the draft (scrolling a side pane takes precedence; without the queue pane, ↑ is history) |
 | `Shift+Tab` | Cycle session mode | normal → plan → yolo (see [Session modes](/en/features/modes)). Effective only under editor focus — panels and questionnaires keep their own Tab navigation |

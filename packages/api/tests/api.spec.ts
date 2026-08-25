@@ -16,7 +16,7 @@ const packageDir = dirname(fileURLToPath(import.meta.url))
 describe('@dsh-blue/blue-api', () => {
   it('exports the public version owners', () => {
     expect(BLUE_API_VERSION).toBe('1.0.0')
-    expect(BLUE_VERSION).toBe('0.1.0-rc.8')
+    expect(BLUE_VERSION).toBe('0.1.0-rc.2')
   })
 
   it('accepts namespaced manifests and rejects malformed declarations', () => {
@@ -37,6 +37,6 @@ describe('@dsh-blue/blue-api', () => {
     }
     expect(Object.keys(manifest.exports)).toEqual(['.', './invariant', './package.json'])
     expect(Object.keys(manifest.exports).some(key => key.includes('/src'))).toBe(false)
-    expect(manifest.files).toEqual(['lib/*.js', 'lib/types/**/*.d.ts'])
+    expect(manifest.files).toEqual(['lib/**/*'])
   })
 })

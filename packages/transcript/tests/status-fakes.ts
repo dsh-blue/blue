@@ -15,6 +15,7 @@ import type {
 } from '@dsh-blue/blue-core'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type { BlueStatus, BlueStatusEntry } from '../src/types.ts'
+import { BlueStatusModelService } from '../src/status-model.ts'
 import { fakeBlueComponents } from './helpers.ts'
 
 /** Identity colors so rendered assertions see structure, not escape codes. */
@@ -26,8 +27,7 @@ export const COLORS = {
   mdHeading: id, mdLink: id, mdLinkUrl: id, mdCode: id, mdCodeBlock: id,
   mdCodeBlockBorder: id, mdQuote: id, mdQuoteBorder: id, mdHr: id, mdListBullet: id,
   diffAdded: id, diffRemoved: id, diffAddedStrong: id, diffRemovedStrong: id,
-  diffGutter: id, diffMeta: id, modelHighlight: id,
-  logoGradient: [id, id, id, id, id, id, id, id, id],
+  diffGutter: id, diffMeta: id,
 }
 // Structurally satisfies BlueSemanticColors; declared where consumed.
 
@@ -183,11 +183,15 @@ export async function bootStatusPlugin(
   const ctx = new Context()
   const screen = new StatusFakeScreen()
   const registry = new FakeStatusRegistry()
+  const colors = { ...COLORS, ...options.colors }
+  const statusModels = new BlueStatusModelService(ctx)
+  const components = fakeBlueComponents()
+  statusModels.attach(registry, screen, colors, components)
   const serviceNames: Record<string, unknown> = {
     blueStatus: registry,
     blueScreen: screen,
-    blueTheme: { colors: options.colors ?? COLORS },
-    blueComponents: fakeBlueComponents(),
+    blueTheme: { colors },
+    blueComponents: components,
     blueSession: { current: current === null ? null : asAgent(current) },
     ...options.services,
   }
@@ -195,11 +199,18 @@ export async function bootStatusPlugin(
     ctx.reflect.provide(serviceName, value)
   }
   const fiber = await ctx.plugin(plugin)
+  const entry: BlueStatusEntry = {
+    get id() { return registry.entries[0]?.id ?? '' },
+    get priority() { return registry.entries[0]?.priority ?? 0 },
+    get align() { return registry.entries[0]?.align },
+    get row() { return registry.entries[0]?.row },
+    render: width => registry.entries[0]?.render(width) ?? '',
+  }
   return {
     ctx,
     screen,
     registry,
-    entry: registry.entries[0]!,
+    entry,
     dispose: () => fiber.dispose(),
   }
 }

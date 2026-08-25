@@ -22,25 +22,11 @@ Commands run through Blue's own executor and echo as shell cards (sanitized, tru
 
 `@` triggers file-path completion: fd first, filesystem scan fallback, 200-entry cap, fuzzy-ranked. Completion covers file paths; command-argument completion is deferred.
 
-## `#` skill invocation
-
-`#` triggers skill-name completion (the same fuzzy matching as slash completion; the `/skills` panel, grouped by source layer, is the full catalog). On submit, `#name` is rewritten to `/name` and routed through the harness's skill gesture path — the transcript echoes the rewritten `/name`, and the skill's injection renders zero lines per the injected-context rule.
-
-## Large-paste folding
-
-Pasting more than 10 lines or 1000 characters folds into a `[paste #N +M lines]` marker (the full text lives in the editor and expands automatically before submit — the model receives everything); the transcript side folds the same message into a 3-line preview plus a hint row, with `Ctrl-O` expanding on equal terms. History recall (Up) brings back the expanded full text.
-
-## Ctrl-G external editor
-
-`Ctrl-G` hands the current draft to `$VISUAL` (falling back to `$EDITOR`) for full-screen editing: Blue suspends rendering and yields the terminal to the child process; on a normal editor exit the screen restores and the text is read back (paste markers survive the round trip). Quitting with `:cq` counts as cancellation — the draft stays as it was.
-
 ## Ctrl-V image paste
 
-Ctrl-V stores the clipboard image in the attachment library and inserts an `[image #N]` marker at the cursor; on submit the markers split into image content blocks. Markers survive theme switches. On Windows, `Alt-V` works too — Windows Terminal and conhost intercept `Ctrl-V` for their own text paste, so Blue binds both.
+Ctrl-V stores the clipboard image in the attachment library and inserts an `[image #N]` marker at the cursor; on submit the markers split into image content blocks. Markers survive theme switches.
 
-Dependencies and limits: probes `wl-paste` then `xclip` on Linux (3s timeout); on Windows one PowerShell call saves the clipboard image or the copied files (10s budget); on macOS osascript reads the clipboard classes and converts TIFF-only copies through sips (5s budget). 10MB per image, 8 images / 30MB / 16M pixels per message; the model must accept image input (see the [FAQ](/en/guide/faq)).
-
-Copied files paste as one ordered batch on every platform: `text/uri-list` in Ubuntu Files, a FileDropList in Windows Explorer, a Finder copy on macOS. Only local regular PNG/JPEG/WebP/GIF files are accepted; remote URIs, directories, and symlinks are refused with a reason.
+Dependencies and limits: probes `wl-paste` then `xclip` on Linux; 10MB per image, 8 images / 30MB / 16M pixels per message; the model must accept image input (see the [FAQ](/en/guide/faq)).
 
 ## Editor-context keys
 

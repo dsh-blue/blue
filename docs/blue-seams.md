@@ -24,7 +24,7 @@ Blue 自己向下游开的缝。下游插件只允许 import 这些契约与文�
 | 键位注册 | `ctx.blueKeymap` | `core/src/types.ts`（`BlueKeymap`/`BlueKeyAction`） | `core/src/keymap.ts` | — | 注册语境/全局快捷键；冲突在启动期暴露，而非运行时抢键 |
 | 组件工厂 | `ctx.blueComponents` | `core/src/types.ts:649`（`BlueComponents`） | `core/src/components.ts`（`BlueComponentsService`，inject blueTheme，换装自动重建） | — | 造 editor/markdown/select/settings/image 组件 + 宽度/模糊纯函数，全程不碰 pi-tui |
 | 终端事实 | `ctx.blueTerminalInfo` | `core/src/types.ts` | `core/src/terminal-info.ts` | — | 读 OSC 11 探测的背景色与 Kitty 键盘协议能力 |
-| 主题 | `blueTheme` provider 替换 | `core/src/types.ts`（`BlueTheme`/32 键的 `BlueSemanticColors`） | 六个 provider 子路径插件：`theme-dark` / `theme-light` / `theme-ocean` / `theme-paper` / `theme-auto`（inject blueTerminalInfo）/ `theme-custom`（JSON 叠加），共享 `core/src/theme-palette.ts` | `blue-theme-dark` | 提供整套新主题；运行时 `/theme` 热切换，依赖方自动 reload |
+| 主题 | `blueTheme` provider 替换 | `core/src/types.ts`（`BlueTheme`/28 token 的 `BlueSemanticColors`） | 四个 provider 子路径插件：`theme-dark` / `theme-light` / `theme-auto`（inject blueTerminalInfo）/ `theme-custom`（JSON 叠加），共享 `core/src/theme-palette.ts` | `blue-theme-dark` | 提供整套新主题；运行时 `/theme` 热切换，依赖方自动 reload |
 | 状态栏条目 | `ctx.blueStatus` | `packages/transcript/src/types.ts`（`BlueStatus`/`BlueStatusEntry`） | `transcript/src/status.ts`（`BlueStatusService` + 常驻两行 footer 壳，priority 升序 first-fit） | `blue-status-basic`（priority 0：`{model} · {status}`） | 注册 footer 条目（现存增强：`status-git` priority 10、`status-context` priority 20） |
 | 渲染意图 | `ctx.blueIntents` | `transcript/src/types.ts`（`BlueIntents`/`BlueIntentEntry`/`BlueIntentProps`） | `transcript/src/intents.ts`（exact → generic → 首个注册者回退） | generic 工具卡呈现器（apply 内首个注册） | 为新工具类型提供定制卡片（现存：`intent-diff`、`intent-terminal`） |
 | 会话事实 | `ctx.blueSession` + 事件 `blue/session-changed`、`blue/request-resume` / `-new` / `-fork` | `packages/app/src/types.ts:23` | `app/src/index.ts`（`blue-app` 启动即 provide） | — | 读当前 Agent、跟踪会话切换、发起 resume/new/fork |
@@ -45,7 +45,7 @@ harness（dsh-base）自己开的缝，Blue 作为下游插件实现——**用�
 | `ctx.tools` / `tools/*`、`ctx.agents` / `ctx.sessions` | 工具注册/守卫、会话与 agent 操作 | 直接消费方：`blue-app`（创建/恢复 Agent）、`blue-transcript`（工具调用经 `blueIntents` 呈现）、`pane-btw`（fork 旁路会话）；Blue 不包装 | ✅ |
 | `ctx.permissionPresets` | 权限预设（sandbox 模式 + approval policy 命名束） | ✅ S24b 已落地（2026-08-21，D33）：选择器面板读服务（`current(events)` ≡ 投影 fold——投影键未消费，留给未来消费者）、裸 `/permission` 输入层拦截开面、选中提交 `/permission <name>` 同一写路径、danger typed-y gate；命令本体 dsh-permission-presets 自带、零实现 | ✅ 服务在（rc.7+ base；rc.8 扩表 read-only） |
 | `ctx.planMode` + plan-review 问询 | plan 模式（`/plan` 命令 dsh-plan-mode 自带、`plan/mode` 事件、`plan` 投影、`exit_plan_mode` 工具经 `ctx.userQuestions` 以 `intent.kind === 'plan-review'` 问询） | 命令零实现（随 base 到货）；模式指示器 ✅ S24a（`blue-status-mode` 徽标 + Shift+Tab 三态循环）；plan-review 专用呈现 ✅ S24b（`plan-review-panel.ts`：Markdown 滚动窗 + 双选 + 反馈编辑器；dismissal 码勘误 `ASK_CANCELLED`） | ✅ 服务在（rc.7+ base）；呈现已落地 |
-| `ctx.skills` + 手势路径 | 技能发现/调用（分层注册表 + skill-filesystem 六层根 + `tool-skill` pre-step `/name` 手势注入） | ✅ S29 已落地（2026-08-21，D34）：`#` 提示符补全 + 提交重写 `#name`→`/name` 走手势路径 + `/skills` 只读列表（手势对用户不可见已记挂起发版后） | ✅ 服务在（rc.7+ base） |
+| `ctx.skills` + 手势路径 | 技能发现/调用（分层注册表 + skill-filesystem 六层根 + `tool-skill` pre-step `/name` 手势注入） | S29 待做（D34：`#` 提示符补全 + 提交重写 `#name`→`/name` 走手势路径 + `/skills` 列表） | ✅ 服务在（rc.7+ base） |
 | `ctx.agentPresets` | agent 组合预设（list/resolve/mount/recompose；`agent-preset/selected` 事件） | ✅ 已消费（2026-08-21，S28+D37）：`/preset` 命令（空会话守卫 + 事件配对）+ blue-app 建 agent 时 mount（resume 折事件重建）；bundle patch 已加行 + 带依赖，薄宿主迁移后为真替换语义 | ✅ |
 | `ctx.sessionProjections` | 会话投影（register/onChanged/checkpoint/restore） | rc.7+ 已在 base（dsh-session-projection）；`pane-todo` 维持 `todo/write` 会话事件折叠，改挂投影为可选项（未裁决） | ✅ 服务在 |
 
@@ -71,7 +71,7 @@ patch 在 `dsh-base` 之上插入三段 19 行。**拔掉整个增强段，基�
 |---|---|---|---|
 | `blue-editor-plus` | `@dsh-blue/blue-interaction/editor-plus` | 消费共享编辑器缝（`blue/input-editor-changed` 事件重挂） | `!` bash 模式（提示符与边框变色）+ slash/`@` 补全 |
 | `blue-attachments` | `@dsh-blue/blue-interaction/attachments` | 提供 harness `attachments` 纯缝的实现 | 无屏幕子组件（纯数据面） |
-| `blue-paste-image` | `@dsh-blue/blue-interaction/paste-image` | 消费共享编辑器缝（onKey + insertText + 提交变换）与 `attachments` | Ctrl-V 贴图（Windows 另绑 Alt-V，D55）：`[image #N]` 标记，提交拆为图像块 |
+| `blue-paste-image` | `@dsh-blue/blue-interaction/paste-image` | 消费共享编辑器缝（onKey + insertText + 提交变换）与 `attachments` | Ctrl-V 贴图：`[image #N]` 标记，提交拆为图像块 |
 | `blue-status-git` | `@dsh-blue/blue-transcript/status-git` | 向 `blueStatus` 贡献（priority 10） | git 分支条目（仓库外不渲染） |
 | `blue-status-context` | `@dsh-blue/blue-transcript/status-context` | 向 `blueStatus` 贡献（priority 20） | 上下文占用条目 `ctx N` / `ctx N.Nk` |
 | `blue-intent-diff` | `@dsh-blue/blue-transcript/intent-diff` | 向 `blueIntents` 贡献 `card:'diff'` | 带标题的 per-file 统一 diff 卡片 |

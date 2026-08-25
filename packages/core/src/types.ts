@@ -162,6 +162,14 @@ export interface BlueScreen {
    * @param component - the component to focus, or `null`.
    */
   setFocus(component: BlueComponent | null): void
+  /** Scroll the overflowing main content; returns true when it moved. */
+  scrollContent(direction: 'up' | 'down', amount?: number): boolean
+  /** Notify the renderer that new content arrived and preserve tail-follow. */
+  contentChanged(): boolean
+  /** Return the transcript viewport to the newest content. */
+  followContent(): void
+  /** Install the focused-editor content scroll input handler. */
+  setContentScrollHandler(handler: ((data: string) => boolean) | undefined): () => void
   /**
    * Mount a component as an overlay above the base content. Unless
    * `nonCapturing`, a visible overlay takes focus; hiding it restores the
@@ -216,10 +224,10 @@ export interface BlueScreen {
 export type BlueColorFn = (text: string) => string
 
 /**
- * The semantic color table. Keys name roles, not presentation. All 32
- * tokens are required so a palette is compile-checked for completeness.
- * `selectedBg` is a background color; `logoGradient` is an array of one
- * foreground style per banner logo row; every other entry styles the
+ * The semantic color table. Keys name roles, not presentation. All 28
+ * tokens are required so a palette is compile-checked for completeness; the
+ * diff group ships unused until P2 but must still carry colors.
+ * `selectedBg` is a background color; every other entry styles the
  * foreground.
  */
 export interface BlueSemanticColors {
@@ -283,13 +291,6 @@ export interface BlueSemanticColors {
   diffGutter: BlueColorFn
   /** Diff metadata (file paths, hunk ranges). */
   diffMeta: BlueColorFn
-  /** The banner's model-row highlight. */
-  modelHighlight: BlueColorFn
-  /**
-   * The banner logo's per-row sweep, one entry per row top-to-bottom. A
-   * shorter array clamps to its last entry for the remaining rows.
-   */
-  logoGradient: readonly BlueColorFn[]
 }
 
 /** `ctx.blueTheme` — the semantic color provider. */

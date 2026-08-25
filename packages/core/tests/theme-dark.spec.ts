@@ -1,10 +1,11 @@
 /**
  * `blue-theme-dark` plugin entry: registration and disposal on the fiber,
- * and the built-in dark semantic color table (32 tokens).
+ * and the built-in dark semantic color table (28 tokens).
  */
 
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { ThemeModelService } from '@dsh-blue/blue-frontend'
 import { apply, BlueThemeService, name } from '../src/theme-dark.ts'
 import type { BlueSemanticColors } from '../src/types.ts'
 
@@ -39,8 +40,6 @@ const EXPECTED_ROLES: (keyof BlueSemanticColors)[] = [
   'diffRemovedStrong',
   'diffGutter',
   'diffMeta',
-  'modelHighlight',
-  'logoGradient',
 ]
 
 describe('blue-theme-dark plugin', () => {
@@ -61,12 +60,16 @@ describe('blue-theme-dark plugin', () => {
     expect(Object.isFrozen(colors)).toBe(true)
     expect(Object.keys(colors).sort()).toEqual([...EXPECTED_ROLES].sort())
     for (const role of EXPECTED_ROLES) {
-      if (role === 'logoGradient') {
-        expect(colors.logoGradient.every(entry => typeof entry === 'function')).toBe(true)
-      } else {
-        expect(typeof colors[role]).toBe('function')
-      }
+      expect(typeof colors[role]).toBe('function')
     }
+  })
+
+  it('publishes the semantic companion model when the frontend registry is present', async () => {
+    const ctx = new Context()
+    await ctx.plugin(ThemeModelService)
+    await ctx.plugin({ name, apply })
+    expect(ctx.blueThemeModels.current?.id).toBe('dark')
+    expect(ctx.blueThemeModels.current?.colors.primary).toBe('#4fa8ff')
   })
 
   it('wraps text in truecolor foreground and background sequences', async () => {
@@ -83,21 +86,5 @@ describe('blue-theme-dark plugin', () => {
     expect(colors.selectedBg('hi')).toBe('\x1b[48;2;58;58;74mhi\x1b[49m')
     // shellMode #bd93f9 → rgb(189, 147, 249)
     expect(colors.shellMode('hi')).toBe('\x1b[38;2;189;147;249mhi\x1b[39m')
-    // modelHighlight #8ca8ff → rgb(140, 168, 255)
-    expect(colors.modelHighlight('hi')).toBe('\x1b[38;2;140;168;255mhi\x1b[39m')
-  })
-
-  it('carries one truecolor sweep entry per logo row, frozen', async () => {
-    const ctx = new Context()
-    await ctx.plugin({ name, apply })
-    const { logoGradient } = ctx.blueTheme.colors
-    expect(logoGradient).toHaveLength(9)
-    expect(Object.isFrozen(logoGradient)).toBe(true)
-    // The sweep: #2a3bd0 → rgb(42, 59, 208) at the top …
-    expect(logoGradient[0]!('hi')).toBe('\x1b[38;2;42;59;208mhi\x1b[39m')
-    // … through the brand blue #4d6bfe → rgb(77, 107, 254) at the waist …
-    expect(logoGradient[4]!('hi')).toBe('\x1b[38;2;77;107;254mhi\x1b[39m')
-    // … to #9db1ff → rgb(157, 177, 255) at the tail.
-    expect(logoGradient[8]!('hi')).toBe('\x1b[38;2;157;177;255mhi\x1b[39m')
   })
 })

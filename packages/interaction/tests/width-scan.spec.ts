@@ -15,10 +15,9 @@ import { FormPanel, type FormField } from '../src/form-panel.ts'
 import { ModelPanel, type ModelPanelItem } from '../src/model-panel.ts'
 import { HelpOverlay, type HelpSection } from '../src/help.ts'
 import { InfoPanel, type InfoSection } from '../src/info-panel.ts'
+import { FrontendPanel } from '../src/frontend-panel.ts'
 import { PlanReviewPanel, planReviewChoices } from '../src/plan-review-panel.ts'
 import { Questionnaire } from '../src/questionnaire.ts'
-import { UpdateNoticeComponent, updateNoticeRows } from '../src/update-notice.ts'
-import { UpdatePanel } from '../src/update-command.ts'
 import { fakeBlueContext, FakeBlueComponents, FakeKeymap } from './fakes.ts'
 import { ADVERSARIAL, SCAN_WIDTHS, expectLinesFit } from '../../core/tests/width-scan.ts'
 
@@ -67,46 +66,6 @@ function planAsk(text: string) {
 
 describe('interaction width-scan', () => {
   for (const { name, text } of ADVERSARIAL) {
-    it(`UpdateNoticeComponent survives ${name}`, () => {
-      const { components } = fakeBlueContext()
-      const notice = new UpdateNoticeComponent(
-        (line, width) => components.truncateToWidth(line, width),
-        updateNoticeRows({
-          current: '0.1.0-rc.2',
-          target: `${text.slice(0, 20)}`,
-          command: `dsh plugin --profile blue add @dsh-blue/blue@${text.slice(0, 12)}`,
-        }),
-      )
-      for (const width of SCAN_WIDTHS) {
-        expectLinesFit(`UpdateNotice/${name}`, notice.render(width), width)
-      }
-    })
-
-    it(`UpdatePanel survives ${name}`, () => {
-      const { keymap, components, screen } = fakeBlueContext()
-      const panel = new UpdatePanel({
-        keymap,
-        theme: IDENTITY_THEME as never,
-        components,
-        requestRender: () => screen.requestRender(),
-        fromVersion: text.slice(0, 20),
-        toVersion: text.slice(0, 20),
-      })
-      // Mid-swap ladder plus a settled outcome whose message and log path
-      // carry the fixture (the wrap rows are the adversarial surface).
-      panel.applyProgress({ step: 'install', state: 'start' })
-      panel.settle({
-        kind: 'rolled-back',
-        fromVersion: text,
-        toVersion: text,
-        message: text,
-        logPath: text,
-      })
-      for (const width of SCAN_WIDTHS) {
-        expectLinesFit(`UpdatePanel/${name}`, panel.render(width), width)
-      }
-    })
-
     it(`FormPanel survives ${name}`, () => {
       const { keymap, components } = fakeBlueContext()
       const fields: FormField[] = [
@@ -187,6 +146,20 @@ describe('interaction width-scan', () => {
       })
       for (const width of SCAN_WIDTHS) {
         expectLinesFit(`InfoPanel/${name}`, panel.render(width), width)
+      }
+    })
+
+    it(`FrontendPanel survives ${name}`, () => {
+      const panel = new FrontendPanel({
+        theme: IDENTITY_THEME as never,
+        components: new FakeBlueComponents(),
+        keymap: new FakeKeymap(),
+        model: () => ({ kind: 'panel', mode: 'info', title: text, view: { kind: 'sections', sections: [{ title: text, body: { kind: 'fields', fields: [{ label: text, value: text }] } }] } }),
+        onAction: vi.fn(),
+        onClose: vi.fn(),
+      })
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`FrontendPanel/${name}`, panel.render(width), width)
       }
     })
 

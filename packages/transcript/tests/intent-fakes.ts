@@ -19,8 +19,7 @@ export const COLORS = {
   mdHeading: id, mdLink: id, mdLinkUrl: id, mdCode: id, mdCodeBlock: id,
   mdCodeBlockBorder: id, mdQuote: id, mdQuoteBorder: id, mdHr: id, mdListBullet: id,
   diffAdded: id, diffRemoved: id, diffAddedStrong: id, diffRemovedStrong: id,
-  diffGutter: id, diffMeta: id, modelHighlight: id,
-  logoGradient: [id, id, id, id, id, id, id, id, id],
+  diffGutter: id, diffMeta: id,
 }
 // Structurally satisfies BlueSemanticColors; declared where consumed.
 

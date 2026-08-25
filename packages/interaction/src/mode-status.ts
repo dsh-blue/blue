@@ -24,15 +24,16 @@ import type {} from '@deepseek-ai/dsh-plan-mode'
 // Empty type import carries the app-owned `blueSession` Context merge and
 // the `'blue/session-changed'` Events merge this plugin consumes.
 import type {} from '@dsh-blue/blue-app'
-// The named import also carries that package's `blueStatus` Context merge.
-import type { BlueStatusEntry } from '@dsh-blue/blue-transcript'
+import type { StatusModel } from '@dsh-blue/blue-frontend'
+// Empty import carries the transcript-owned `blueStatusModels` Context merge.
+import type {} from '@dsh-blue/blue-transcript'
 import { yoloActive } from './mode-state.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-status-mode'
 
 /** Services required before the mode badge can register. */
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueStatusModels']
 
 /**
  * Register the mode badge. Yolo outranks the one transient where both
@@ -43,9 +44,6 @@ export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents'
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
-  const colors = ctx.blueTheme.colors
-  const components = ctx.blueComponents
-  const screen = ctx.blueScreen
   let agent: Agent | undefined = ctx.get('blueSession')?.current ?? undefined
   let text = ''
 
@@ -72,7 +70,7 @@ export function apply(ctx: Context): void {
   const refresh = (): void => {
     const before = text
     derive()
-    if (text !== before) screen.requestRender()
+    if (text !== before) ctx.blueStatusModels.refresh('blue.status.mode')
   }
 
   derive()
@@ -85,15 +83,6 @@ export function apply(ctx: Context): void {
     refresh()
   })
 
-  const entry: BlueStatusEntry = {
-    id: 'blue.status.mode',
-    priority: 2,
-    render(width: number): string {
-      if (text === '') return ''
-      const paint = text === 'yolo' ? colors.warning : colors.accent
-      return paint(components.truncateToWidth(text, width))
-    },
-  }
-  // Effect-bound so unloading this fiber unregisters the entry.
-  ctx.effect(() => ctx.blueStatus.register(entry))
+  const model = (): StatusModel => ({ kind: 'status', id: 'blue.status.mode', priority: 2, view: { kind: 'text', text, tone: text === 'yolo' ? 'warning' : 'accent' }, visible: text !== '' })
+  ctx.effect(() => ctx.blueStatusModels.register(model))
 }

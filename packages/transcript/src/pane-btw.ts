@@ -13,7 +13,7 @@
  * and a tail-following body fitted to `max(3, floor(rows/3)) - 1` rows with
  * manual ↑/↓ scrolling — the kimi `fitBodyLines` mechanics (min-body-height
  * ratchet, tail-follow reset on manual scroll, per-question scroll reset).
- * The pane fills the same full-width frame as the input editor, whose top
+ * A trailing blank row separates the pane from the input editor, whose top
  * corners splice to `├┤` while the pane is open: the pane emits
  * `'blue/editor-connected-above'` (true on open, false on dismiss or
  * unload) and `blue-input` mirrors it onto the editor. While a dialog
@@ -40,18 +40,19 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { AgentHandle } from '@deepseek-ai/dsh-agent'
-import type {
-  BlueComponent,
-  BlueComponents,
-  BlueMarkdown,
-  BlueSemanticColors,
+import {
+  GutterComponent,
+  type BlueComponent,
+  type BlueComponents,
+  type BlueMarkdown,
+  type BlueSemanticColors,
 } from '@dsh-blue/blue-core'
-import { clampRowsToWidth, padColumns, topRule } from '@dsh-blue/blue-core/chrome'
+import { topRule } from '@dsh-blue/blue-core/chrome'
 // The named import also carries the `commands` Context merge.
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { AssistantMessage } from '@deepseek-ai/dsh-llm'
-import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { SessionId } from '@deepseek-ai/dsh-session'
 // Empty type import carries the app-owned `blueSession` Context merge this
 // plugin reads through `ctx.get` (never `inject`, as the app plugin may
 // activate after this one).
@@ -81,8 +82,6 @@ interface BtwTurn {
   reply: string
   /** Whether the side agent has yet to return to idle for this turn. */
   thinking: boolean
-  /** A terminal side-agent failure, if this turn ended unsuccessfully. */
-  error?: string
 }
 
 /** The pane's render state, mutated by the command handler and subscriptions. */
@@ -119,60 +118,6 @@ function messageText(message: AssistantMessage): string {
     if (block.type === 'text') text += block.text
   }
   return text
-}
-
-/**
- * Keep only a balanced, completed-turn prefix for a side-session seed. The
- * command runtime records `command/run` before invoking `/btw`, and the main
- * agent may still be inside a turn, so blindly copying `session.events` can
- * seed an open turn or a half-paired command lifecycle.
- * @param events - the parent's current immutable event snapshot.
- * @returns a contiguous prefix that ends at the latest closed turn boundary.
- */
-function stableSeed(events: readonly SessionEvent[]): readonly SessionEvent[] {
-  let lastBoundary = -1
-  let lastBoundaryType: SessionEvent['type'] | undefined
-  for (const [index, event] of events.entries()) {
-    if (event.type === 'turn/start' || event.type === 'turn/end') {
-      lastBoundary = index
-      lastBoundaryType = event.type
-    }
-  }
-  if (lastBoundaryType === 'turn/start') return events.slice(0, lastBoundary)
-  if (lastBoundary >= 0) return events.slice(0, lastBoundary + 1)
-  // A brand-new session may have context events but no turn boundary yet.
-  // Preserve those, while excluding a command/run that the command runtime
-  // has appended immediately before entering this handler.
-  const lastCommand = events.findLastIndex(event => event.type === 'command/run' || event.type === 'command/done')
-  if (lastCommand >= 0 && events[lastCommand]?.type === 'command/run') return events.slice(0, lastCommand)
-  return events
-}
-
-/** Extract a useful message from a harness turn-end failure payload. */
-function turnError(reason: { error?: unknown }): string {
-  const value = reason
-  if (typeof value.error === 'object' && value.error !== null) {
-    const error = value.error as { message?: unknown, code?: unknown }
-    if (typeof error.message === 'string') return error.message
-    if (typeof error.code === 'string') return error.code
-  }
-  return 'the side session ended with an error'
-}
-
-/** Structural view of the optional preset roster; avoids a runtime dependency. */
-interface AgentPresetRoster {
-  mount(agentCtx: Context, preset?: string): Promise<void> | void
-}
-
-/** Resolve the preset selected by the parent session's durable history. */
-function sessionPreset(agent: AgentHandle['agent']): string | undefined {
-  const header = agent.session.header as { agentPreset?: string }
-  let preset = header.agentPreset
-  for (const event of agent.session.events) {
-    const candidate = event as unknown as { type: string, data?: { agentPreset?: string } }
-    if (candidate.type === 'agent-preset/selected') preset = candidate.data?.agentPreset
-  }
-  return preset
 }
 
 /**
@@ -240,6 +185,9 @@ class BtwPaneComponent implements BlueComponent {
     for (const line of body.lines) {
       lines.push(this.renderBodyLine(line, contentWidth))
     }
+    // One blank row separates the pane from the editor it splices into
+    // (kimi's Spacer(1)); the pane draws no bottom border.
+    lines.push('')
     return lines
   }
 
@@ -260,8 +208,7 @@ class BtwPaneComponent implements BlueComponent {
         this.markdown.setText(turn.reply)
         lines.push(...this.markdown.render(width))
       }
-      if (turn.error !== undefined) lines.push(this.colors.error(`error: ${turn.error}`))
-      else if (turn.thinking) lines.push(this.colors.muted('thinking…'))
+      if (turn.thinking) lines.push(this.colors.muted('thinking…'))
     }
     return lines
   }
@@ -327,31 +274,6 @@ class BtwPaneComponent implements BlueComponent {
 }
 
 /**
- * Inset the connected pane by the editor's one-column left border slot while
- * matching pi-tui's editor width cap. The root renderer can provide one extra
- * column during a resize; consuming two columns here leaves one leading slot
- * and produces the same visible frame width as the editor.
- */
-class ConnectedPaneComponent implements BlueComponent {
-  constructor(
-    private readonly child: BlueComponent,
-    private readonly components: BlueComponents,
-  ) {}
-
-  /** @param width - full terminal width. @returns the connected pane rows. */
-  render(width: number): string[] {
-    const inner = Math.max(1, width - 2)
-    const rows = padColumns(this.child.render(inner), 1)
-    return width >= 2 ? rows : clampRowsToWidth(rows, Math.max(1, width), this.components.truncateToWidth)
-  }
-
-  /** Forward cache invalidation to the pane. */
-  invalidate(): void {
-    this.child.invalidate()
-  }
-}
-
-/**
  * Mount the side-question pane and register `/btw`. The command handler owns
  * the whole lifecycle: validate the target session, replace the previous
  * slot, create the seeded side agent, subscribe its session's event feed and
@@ -375,10 +297,6 @@ export function apply(ctx: Context): void {
   }
   let slot: BtwSlot | undefined
   let unloaded = false
-  // Only the latest ask may publish a newly-created side agent. Older creates
-  // still get disposed when they settle, so a fast double `/btw` cannot leak a
-  // handle or resurrect an obsolete pane.
-  let askGeneration = 0
 
   /** Unsubscribe and dispose the live side agent, if any. */
   const clearSlot = async (): Promise<void> => {
@@ -391,37 +309,28 @@ export function apply(ctx: Context): void {
 
   /** Close the panel and dispose the side agent. */
   const dismiss = async (): Promise<CommandResult> => {
-    const wasOpen = state.open || slot !== undefined
-    askGeneration += 1
+    if (slot === undefined) return { kind: 'error', text: 'no side question is open' }
     await clearSlot()
     // Release the editor splice before clearing, so a render never shows the
     // `├┤` corners over a vanished pane.
     ctx.emit('blue/editor-connected-above', false)
     state.open = false
     state.turns = []
-    state.minBodyLines = 0
-    state.followTail = true
-    state.scrollTop = 0
-    state.maxScrollTop = 0
     screen.requestRender()
-    return wasOpen
-      ? { kind: 'success', text: 'dismissed the side question' }
-      : { kind: 'error', text: 'no side question is open' }
+    return { kind: 'success', text: 'dismissed the side question' }
   }
 
   const ask = async (question: string): Promise<CommandResult> => {
     if (question === '') return dismiss()
     const current = ctx.get('blueSession')?.current ?? null
     if (current === null) return { kind: 'error', text: 'no active session for a side question' }
-    const generation = ++askGeneration
+    // Single slot: a fresh question replaces the previous side agent.
+    await clearSlot()
     let handle: AgentHandle
     try {
-      const seed = stableSeed(current.session.events)
-      const parentPreset = sessionPreset(current)
-      const roster = ctx.get('agentPresets') as AgentPresetRoster | undefined
       handle = await ctx.agents.create({
         sessionId: SessionId(`btw-${randomUUID()}`),
-        seed,
+        seed: current.session.events,
         // The side agent answers on the same route as the session it forked
         // from: without agentOptions its requests would carry an empty
         // provider/model and fail at request assembly.
@@ -432,14 +341,8 @@ export function apply(ctx: Context): void {
         meta: {
           cwd: current.session.header.cwd ?? process.cwd(),
           parentSession: current.id,
-          seedLength: seed.length,
-          ...(parentPreset === undefined ? {} : { agentPreset: parentPreset }),
+          seedLength: current.session.events.length,
         },
-        ...(roster === undefined ? {} : {
-          setup: async (agentCtx: Context): Promise<void> => {
-            await roster.mount(agentCtx, parentPreset)
-          },
-        }),
       })
     } catch (error) {
       return {
@@ -449,23 +352,9 @@ export function apply(ctx: Context): void {
     }
     // The fiber may have unloaded (e.g. a theme swap) while creation was in
     // flight: dispose the fresh handle instead of publishing a dead pane.
-    if (unloaded || generation !== askGeneration) {
+    if (unloaded) {
       await handle.dispose()
-      return {
-        kind: 'error',
-        text: unloaded ? 'the side-question plugin was unloaded' : 'the side question was superseded',
-      }
-    }
-    // Commit replacement only after the new handle exists. A failed create
-    // therefore leaves the previous pane fully usable instead of orphaning
-    // its splice state.
-    await clearSlot()
-    if (unloaded || generation !== askGeneration) {
-      await handle.dispose()
-      return {
-        kind: 'error',
-        text: unloaded ? 'the side-question plugin was unloaded' : 'the side question was superseded',
-      }
+      return { kind: 'error', text: 'the side-question plugin was unloaded' }
     }
     const offEvent = ctx.on('session/event', (session, event) => {
       if (session !== handle.agent.session) return
@@ -478,9 +367,6 @@ export function apply(ctx: Context): void {
         turn.reply += event.data.chunk.text
       } else if (event.type === 'assistant/message') {
         turn.reply = messageText(event.data.message)
-      } else if (event.type === 'turn/end' && event.data.reason.kind === 'error') {
-        turn.error = turnError(event.data.reason)
-        turn.thinking = false
       } else {
         return
       }
@@ -513,22 +399,10 @@ export function apply(ctx: Context): void {
     state.scrollTop = 0
     state.maxScrollTop = 0
     ctx.emit('blue/editor-connected-above', true, true)
-    try {
-      handle.agent.followup(createUserMessage({
-        content: [{ type: 'text', text: question }],
-        source: { kind: 'user' },
-      }))
-    } catch (error) {
-      await clearSlot()
-      state.open = false
-      state.turns = []
-      ctx.emit('blue/editor-connected-above', false)
-      screen.requestRender()
-      return {
-        kind: 'error',
-        text: `could not ask the side question: ${error instanceof Error ? error.message : String(error)}`,
-      }
-    }
+    handle.agent.followup(createUserMessage({
+      content: [{ type: 'text', text: question }],
+      source: { kind: 'user' },
+    }))
     screen.requestRender(true)
     return { kind: 'success', text: 'asked the side question' }
   }
@@ -542,11 +416,8 @@ export function apply(ctx: Context): void {
   }))
 
   const pane = new BtwPaneComponent(colors, components, state, () => screen.rows)
-  // This pane is the editor's connected frame: it keeps the editor's one
-  // leading border slot but renders one extra content column, so its right
-  // edge reaches the same terminal column as the editor's `┤`. Other passive
-  // panes use the global two-column gutter.
-  ctx.effect(() => screen.addBottomChild(new ConnectedPaneComponent(pane, components)))
+  // Bottom panes render in mount order; a zero-row render occupies nothing.
+  ctx.effect(() => screen.addBottomChild(new GutterComponent(pane)))
   // The editor key chain routes close/scroll/submit here while the pane is
   // open.
   ctx.on('blue/btw-command', (command, text) => {
@@ -569,19 +440,10 @@ export function apply(ctx: Context): void {
       state.scrollTop = 0
       state.maxScrollTop = 0
       ctx.emit('blue/editor-connected-above', true, true)
-      try {
-        current.handle.agent.followup(createUserMessage({
-          content: [{ type: 'text', text: question }],
-          source: { kind: 'user' },
-        }))
-      } catch (error) {
-        const failedTurn = state.turns.at(-1)!
-        failedTurn.thinking = false
-        failedTurn.error = error instanceof Error ? error.message : String(error)
-        state.followTail = true
-        ctx.emit('blue/editor-connected-above', true, false)
-        screen.requestRender()
-      }
+      current.handle.agent.followup(createUserMessage({
+        content: [{ type: 'text', text: question }],
+        source: { kind: 'user' },
+      }))
       screen.requestRender()
       return
     }
@@ -602,13 +464,6 @@ export function apply(ctx: Context): void {
     if (!state.open) return
     const busy = state.turns.at(-1)?.thinking === true
     ctx.emit('blue/editor-connected-above', true, busy)
-  })
-  // A session switch invalidates the old side conversation. Keeping it open
-  // would route Enter into a fork of a session that is no longer visible.
-  ctx.on('blue/session-changed', () => {
-    // Invalidate an in-flight create even when no slot has been published yet.
-    askGeneration += 1
-    if (state.open || slot !== undefined) void dismiss()
   })
   // Disposers may be async and are awaited: unload disposes the side agent,
   // releases the editor splice (idempotent), and arms the guard any

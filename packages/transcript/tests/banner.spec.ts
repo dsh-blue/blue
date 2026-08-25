@@ -27,31 +27,18 @@ import {
 } from '../src/banner.ts'
 import { BLUE_VERSION } from '../src/banner-content.ts'
 import * as banner from '../src/banner.ts'
-import { LOGO_COLS } from '../src/banner-art.ts'
+import { LOGO_COLS, LOGO_GRADIENT } from '../src/banner-art.ts'
 import { visibleWidth } from '../../core/src/width.ts'
 import { fakeBlueComponents } from './helpers.ts'
 import { COLORS } from './status-fakes.ts'
 
-/**
- * The fake palette's logo sweep: arbitrary distinct hexes (the real values
- * are per-theme furniture, pinned in the theme specs, not here).
- */
-const FAKE_GRADIENT = [
-  '#aa0000', '#00aa00', '#0000aa', '#aaaa00', '#aa00aa',
-  '#00aaaa', '#aa4444', '#44aa44', '#4444aa',
-] as const
-
-/** One truecolor foreground wrapper, as the palette builder emits. */
-function truecolor(hex: string): (text: string) => string {
+/** Wrap a whale row in its brand-blue gradient ANSI, as the banner paints it. */
+function wrapLogo(row: string, index: number): string {
+  const hex = LOGO_GRADIENT[index]!
   const r = parseInt(hex.slice(1, 3), 16)
   const g = parseInt(hex.slice(3, 5), 16)
   const b = parseInt(hex.slice(5, 7), 16)
-  return text => `\x1b[38;2;${r};${g};${b}m${text}\x1b[39m`
-}
-
-/** Wrap a whale row in its sweep entry, as the banner paints it. */
-function wrapLogo(row: string, index: number): string {
-  return truecolor(FAKE_GRADIENT[index]!)(row)
+  return `\x1b[38;2;${r};${g};${b}m${row}\x1b[39m`
 }
 
 /** The whale logo's uniform column width from banner-art. */
@@ -61,10 +48,7 @@ const LOGO_WIDTH_COLS = LOGO_COLS
 /** Identity deps: structure assertions see text, not escape codes. */
 const components = fakeBlueComponents()
 const DEPS: BannerDeps = {
-  colors: {
-    ...COLORS,
-    logoGradient: FAKE_GRADIENT.map(truecolor),
-  } as BlueSemanticColors,
+  colors: COLORS as BlueSemanticColors,
   truncate: (text, width) => components.truncateToWidth(text, width),
   visibleWidth: text => components.visibleWidth(text),
 }
@@ -114,18 +98,18 @@ describe('bannerLayout', () => {
     expect(bannerLayout(BANNER_MIN_WIDTH - 1)).toBeNull()
   })
 
-  it('leaves a zero-column value cell at the minimum width', () => {
-    // The logo block (25) plus the gap (4) plus the widest label (11) leave
+  it('leaves a two-column value cell at the minimum width', () => {
+    // The logo block (25) plus the gap (2) plus the widest label (11) leave
     // the rest of the viewport to the status value.
     expect(bannerLayout(BANNER_MIN_WIDTH)).toEqual({
       total: BANNER_MIN_WIDTH,
-      valueWidth: 0,
+      valueWidth: 2,
     })
   })
 
   it('never caps: the banner fills very wide terminals', () => {
-    // 200 − 25 (logo) − 4 (gap) − 11 (label) = 160 columns of value.
-    expect(bannerLayout(200)).toEqual({ total: 200, valueWidth: 160 })
+    // 200 − 25 (logo) − 2 (gap) − 11 (label) = 162 columns of value.
+    expect(bannerLayout(200)).toEqual({ total: 200, valueWidth: 162 })
   })
 })
 
@@ -136,38 +120,32 @@ describe('composeBannerLines', () => {
 
   it('composes the frameless whale banner at one hundred columns', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 100)
-    // One blank margin row, then nine whale rows, then one blank margin row;
-    // the status column leads with the welcome/help lines then the three
-    // labels, vertically centered.
-    expect(lines).toHaveLength(11)
-    expect(lines[0]).toBe('')
-    expect(lines[10]).toBe('')
-    // The frameless block stacks the whale rows after the margin; the status
-    // column leads with the welcome/help lines and the three labels,
-    // vertically centered.
-    expect(lines[1]).toBe(`${wrapLogo(LOGO[0]!.padEnd(LOGO_COLS), 0)}    `)
-    expect(lines[2]).toContain('Welcome to Blue!')
-    expect(lines[2].startsWith(wrapLogo(LOGO[1]!.padEnd(LOGO_COLS), 1))).toBe(true)
-    expect(lines[3]).toContain('Send /help for help information.')
-    expect(lines[5]).toContain('Directory: ~/dev')
-    expect(lines[6]).toContain('Model:     m · p')
-    expect(lines[7]).toContain('Version:   9.9.9-test')
+    // Nine whale rows; the status column leads with the welcome/help lines
+    // then the three labels, vertically centered.
+    expect(lines).toHaveLength(9)
+    // The frameless block stacks the whale rows; the status column leads
+    // with the welcome/help lines and the three labels, vertically centered.
+    expect(lines[0]).toBe(`${wrapLogo(LOGO[0]!.padEnd(LOGO_COLS), 0)}  `)
+    expect(lines[1]).toContain('Welcome to Blue!')
+    expect(lines[1].startsWith(wrapLogo(LOGO[1]!.padEnd(LOGO_COLS), 1))).toBe(true)
+    expect(lines[2]).toContain('Send /help for help information.')
+    expect(lines[4]).toContain('Directory: ~/dev')
+    expect(lines[5]).toContain('Model:     m · p')
+    expect(lines[6]).toContain('Version:   9.9.9-test')
     for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(100)
   })
 
   it('composes the same frameless block at eighty columns', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 80)
-    expect(lines).toHaveLength(11)
+    expect(lines).toHaveLength(9)
     expect(lines.join('\n')).toContain('Welcome to Blue!')
     expect(lines.join('\n')).toContain('Send /help for help information.')
     expect(lines.join('\n')).toContain('Directory: ~/dev')
   })
 
   it('composes the same frameless block on narrow terminals', () => {
-    // Width 50 leaves a 10-column value budget — the welcome line keeps its
-    // first word ahead of the ellipsis.
-    const lines = composeBannerLines(DEPS, CONTENT, 50)
-    expect(lines).toHaveLength(11)
+    const lines = composeBannerLines(DEPS, CONTENT, 48)
+    expect(lines).toHaveLength(9)
     expect(lines.join('\n')).toContain('Welcome')
     expect(lines.join('\n')).toContain('Model')
   })
@@ -175,48 +153,34 @@ describe('composeBannerLines', () => {
   it('leaves the whale rows at their natural width on wide terminals', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 200)
     // The logo rows are frameless: they never stretch to the viewport width.
-    expect(visibleWidth(lines[1]!)).toBe(LOGO_WIDTH_COLS + 4)
+    expect(visibleWidth(lines[0]!)).toBe(LOGO_WIDTH_COLS + 2)
   })
 
-  it('clamps a short logo gradient to its last entry', () => {
-    // A custom palette may ship fewer sweep entries than logo rows; the
-    // remaining rows repeat the final entry.
-    const short: BannerDeps = {
-      ...DEPS,
-      colors: { ...DEPS.colors, logoGradient: FAKE_GRADIENT.slice(0, 2).map(truecolor) },
-    }
-    const lines = composeBannerLines(short, CONTENT, 100)
-    expect(lines[1]).toBe(`${wrapLogo(LOGO[0]!.padEnd(LOGO_COLS), 0)}    `)
-    expect(lines[8]).toBe(`${wrapLogo(LOGO[7]!.padEnd(LOGO_COLS), 1)}    `)
-    expect(lines[9]).toBe(`${wrapLogo(LOGO[8]!.padEnd(LOGO_COLS), 1)}    `)
-  })
-
-  it('drops the status column once the value budget runs out', () => {
+  it('truncates the /help line once the value budget runs out', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 40)
-    // valueWidth 0 collapses every status line to nothing — the whale rows
-    // carry the banner alone at the minimum width.
+    // valueWidth 2 collapses every status line to the ellipsis.
+    expect(lines.join('\n')).toContain('\x1b[0m..\x1b[0m')
     expect(lines.join('\n')).not.toContain('information.')
-    expect(lines.join('\n')).not.toContain('Welcome')
     for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(40)
   })
 
   it('truncates an over-long cwd to the value budget', () => {
     const lines = composeBannerLines(DEPS, { ...CONTENT, cwd: 'd'.repeat(200) }, 100)
-    // valueWidth 60 at width 100, minus the 11-column label, gives 49 value
+    // valueWidth 62 at width 100, minus the 11-column label, gives 51 value
     // columns plus the pi-tui ellipsis reset.
-    expect(lines.join('\n')).toContain(`Directory: ${'d'.repeat(46)}\x1b[0m...\x1b[0m`)
+    expect(lines.join('\n')).toContain(`Directory: ${'d'.repeat(48)}\x1b[0m...\x1b[0m`)
     expect(lines.join('\n')).not.toContain('d'.repeat(61))
   })
 
   it('truncates an over-long model line to the value budget', () => {
     const lines = composeBannerLines(DEPS, { ...CONTENT, model: 'm'.repeat(100) }, 100)
-    expect(lines.join('\n')).toContain(`Model:     ${'m'.repeat(46)}\x1b[0m...\x1b[0m`)
+    expect(lines.join('\n')).toContain(`Model:     ${'m'.repeat(48)}\x1b[0m...\x1b[0m`)
     expect(lines.join('\n')).not.toContain('m'.repeat(61))
   })
 
   it('truncates an over-long version value to the value budget', () => {
     const lines = composeBannerLines(DEPS, { ...CONTENT, version: 'v'.repeat(100) }, 100)
-    expect(lines.join('\n')).toContain(`Version:   ${'v'.repeat(46)}\x1b[0m...\x1b[0m`)
+    expect(lines.join('\n')).toContain(`Version:   ${'v'.repeat(48)}\x1b[0m...\x1b[0m`)
     expect(lines.join('\n')).not.toContain('v'.repeat(61))
   })
 })
@@ -264,14 +228,14 @@ class BannerFakeScreen implements BlueScreen {
 }
 
 /** Boot the banner plugin on a fresh root context with faked services. */
-async function bootBanner(): Promise<{ screen: BannerFakeScreen; dispose(): Promise<void> }> {
+async function bootBanner(config: banner.Config = {}): Promise<{ screen: BannerFakeScreen; dispose(): Promise<void> }> {
   const ctx = new Context()
   const screen = new BannerFakeScreen()
   ctx.reflect.provide('blueScreen', screen)
   ctx.reflect.provide('blueTheme', { colors: COLORS })
   ctx.reflect.provide('blueComponents', fakeBlueComponents())
   ctx.reflect.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'p', model: 'm' }) })
-  const fiber = await ctx.plugin(banner)
+  const fiber = await ctx.plugin(banner, config)
   return { screen, dispose: () => fiber.dispose() }
 }
 
@@ -289,17 +253,24 @@ describe('blue-banner plugin', () => {
     expect(joined).toContain('Welcome to Blue!')
     expect(joined).toContain(`Version:   ${BLUE_VERSION}`)
     expect(joined).toContain('m · p')
-    // The frameless banner's status value budget at render(100) clips a
-    // deep cwd (this spec also runs from worktree copies, whose path can
-    // exceed the composer's value budget — and the clip point varies with
-    // the paint). A cwd that fits renders whole; a deep one survives at
-    // least as its stable prefix.
-    const plain = joined.replace(/\x1b\[[0-9;]*m/g, '')
+    // The frameless banner's status value budget at render(100) is
+    // 100 − 25 (logo block) − 2 (gap) − 11 (label) = 62 columns; the pi-tui
+    // truncation appends a reset-wrapped ellipsis inside it. A cwd that
+    // fits renders whole, while a deeper checkout (this spec also runs from
+    // worktree copies) survives as its clipped prefix.
+    const budget = 100 - 25 - 2 - 11
     const cwd = shortenHome(process.cwd(), homedir())
-    expect(plain).toContain('Directory: ')
-    expect(plain).toContain(cwd.length <= 48 ? cwd : cwd.slice(0, 24))
+    expect(joined).toContain(cwd.length <= budget ? cwd : cwd.slice(0, budget - 3))
     // The banner is stateless; invalidation is a covered no-op.
     expect(() => screen.children[0]?.invalidate()).not.toThrow()
+  })
+
+  it('shows a profile-local identity without changing the release version', async () => {
+    const displayVersion = `${BLUE_VERSION}+frontend-runtime.test`
+    const { screen } = await bootBanner({ displayVersion })
+    const joined = screen.children[0]?.render(100).join('\n') ?? ''
+    expect(joined).toContain(`Version:   ${displayVersion}`)
+    expect(BLUE_VERSION).toBe('0.1.0-rc.2')
   })
 
   it('re-derives the model line on session and model changes', async () => {

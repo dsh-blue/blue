@@ -10,6 +10,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { BlueColorFn, BlueSemanticColors, BlueTheme } from './types.ts'
+import type { ThemeModel } from '@dsh-blue/blue-frontend'
 
 /**
  * Wrap text in a truecolor foreground.
@@ -36,32 +37,28 @@ export function backgroundColor(hex: string): BlueColorFn {
 }
 
 /**
- * The 30 single-hex foreground tokens of a palette as `#rrggbb` hexes.
- * `selectedBg` (the only background token) and `logoGradient` (the only
- * array token) are passed separately to {@link colorsFromForegrounds}.
+ * The 27 foreground tokens of a palette as `#rrggbb` hexes. `selectedBg`
+ * is excluded: it is the palette's only background token and is passed
+ * separately to {@link colorsFromForegrounds}.
  */
-export type BlueForegroundHexes = Record<Exclude<keyof BlueSemanticColors, 'selectedBg' | 'logoGradient'>, string>
+export type BlueForegroundHexes = Record<Exclude<keyof BlueSemanticColors, 'selectedBg'>, string>
+
+/** Build the renderer-neutral companion model for a semantic palette. */
+export function themeModel(id: string, name: string, dark: boolean, foregrounds: BlueForegroundHexes, selectedBg: string): Omit<ThemeModel, 'colors'> & { readonly colors: Readonly<Record<string, string>> } {
+  return { kind: 'theme', id, name, dark, colors: Object.freeze({ ...foregrounds, selectedBg }) }
+}
 
 /**
- * Build the frozen 32-token semantic color table from palette hexes.
- * @param foregrounds - one hex per single-hex foreground token.
+ * Build the frozen 28-token semantic color table from palette hexes.
+ * @param foregrounds - one hex per foreground token.
  * @param selectedBg - the hex behind the selected list entry.
- * @param logoGradient - one hex per banner logo row, top to bottom.
- * @returns the frozen semantic color table (the gradient array frozen too).
+ * @returns the frozen semantic color table.
  */
-export function colorsFromForegrounds(
-  foregrounds: BlueForegroundHexes,
-  selectedBg: string,
-  logoGradient: readonly string[],
-): BlueSemanticColors {
+export function colorsFromForegrounds(foregrounds: BlueForegroundHexes, selectedBg: string): BlueSemanticColors {
   const colors = Object.fromEntries(
     Object.entries(foregrounds).map(([role, hex]) => [role, foregroundColor(hex)]),
   )
-  return Object.freeze({
-    ...colors,
-    selectedBg: backgroundColor(selectedBg),
-    logoGradient: Object.freeze(logoGradient.map(hex => foregroundColor(hex))),
-  }) as BlueSemanticColors
+  return Object.freeze({ ...colors, selectedBg: backgroundColor(selectedBg) }) as BlueSemanticColors
 }
 
 /** Constructor shape of the `blueTheme` providers built by {@link defineThemeService}. */
@@ -74,7 +71,7 @@ export type BlueThemeServiceClass = new (ctx: Context) => Service & BlueTheme
  * @param colors - the frozen semantic color table to expose.
  * @returns a Service subclass mountable via `ctx.plugin`.
  */
-export function defineThemeService(colors: BlueSemanticColors): BlueThemeServiceClass {
+export function defineThemeService(colors: BlueSemanticColors, model?: Omit<ThemeModel, 'colors'> & { readonly colors: Readonly<Record<string, string>> }): BlueThemeServiceClass {
   return class extends Service implements BlueTheme {
     readonly colors = colors
 
@@ -84,6 +81,8 @@ export function defineThemeService(colors: BlueSemanticColors): BlueThemeService
      */
     constructor(ctx: Context) {
       super(ctx, 'blueTheme')
+      const models = ctx.get('blueThemeModels')
+      if (models !== undefined && model !== undefined) ctx.effect(() => models.register(model))
     }
   }
 }

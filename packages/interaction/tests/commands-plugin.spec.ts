@@ -354,6 +354,71 @@ describe('blue-commands plugin', () => {
     expect(rows[3]).toContain('s-one · 1970-01-01 00:00')
   })
 
+  it('/sessions keeps the skeleton when title hydration returns malformed data', async () => {
+    const { ctx, screen, agent } = await mount({
+      persistence: { list: () => Promise.resolve([header('s-one', 1_000, HERE)]) },
+      sessionQuery: {
+        readTitleSnapshots: async () => undefined as never,
+      },
+    })
+    await ctx.commands.execute(agent, '/sessions', [], signal())
+    await Promise.resolve()
+    const rows = screen.overlays[0]?.component.render(60) ?? []
+    expect(rows[2]).toContain('s-one · 1970-01-01 00:00')
+  })
+
+  it('/sessions hydrates only the visible title page as the cursor advances', async () => {
+    const headers = Array.from({ length: 10 }, (_, index) => header(`s-${index}`, 10_000 - index, HERE))
+    const calls: string[][] = []
+    const secondPage = Promise.withResolvers<ReadonlyArray<ReturnType<typeof titled>>>()
+    const { ctx, screen, agent } = await mount({
+      persistence: { list: () => Promise.resolve(headers) },
+      sessionQuery: {
+        readTitleSnapshots: async ids => {
+          calls.push(ids.map(String))
+          if (calls.length === 2) return secondPage.promise
+          return ids.map(id => titled(String(id), `Title ${String(id)}`))
+        },
+      },
+    })
+    await ctx.commands.execute(agent, '/sessions', [], signal())
+    expect(calls).toEqual([
+      headers.slice(0, 8).map(item => String(item.id)),
+      headers.slice(8).map(item => String(item.id)),
+    ])
+    const panel = overlay(screen)
+    for (let index = 0; index < 6; index += 1) panel.handleInput(KEY.down)
+    expect(calls).toHaveLength(2)
+    expect(calls[1]).toEqual(headers.slice(8).map(item => String(item.id)))
+    secondPage.resolve(headers.slice(8).map(item => titled(String(item.id), `Title ${String(item.id)}`)))
+    await vi.waitFor(() => expect(panel.render(80).some(row => row.includes('Title s-8'))).toBe(true))
+    const rows = panel.render(80)
+    expect(rows.some(row => row.includes('Title s-8'))).toBe(true)
+  })
+
+  it('/sessions drops a late page hydration after the picker fiber unloads', async () => {
+    const headers = Array.from({ length: 10 }, (_, index) => header(`late-${index}`, 10_000 - index, HERE))
+    const gate = Promise.withResolvers<ReadonlyArray<ReturnType<typeof titled>>>()
+    let call = 0
+    const { ctx, screen, agent, fiber } = await mount({
+      persistence: { list: () => Promise.resolve(headers) },
+      sessionQuery: {
+        readTitleSnapshots: async ids => {
+          call += 1
+          if (call === 2) return gate.promise
+          return ids.map(id => titled(String(id), `Title ${String(id)}`))
+        },
+      },
+    })
+    await ctx.commands.execute(agent, '/sessions', [], signal())
+    const panel = overlay(screen)
+    for (let index = 0; index < 8; index += 1) panel.handleInput(KEY.down)
+    await fiber.dispose()
+    gate.resolve([])
+    await Promise.resolve()
+    expect(screen.overlays).toHaveLength(1)
+  })
+
   it('/sessions filters rows by the typed query and clears it before cancelling', async () => {
     const { ctx, screen, agent } = await mount({
       persistence: {
@@ -428,17 +493,23 @@ describe('blue-commands plugin', () => {
     expect(screen.overlays).toHaveLength(0)
   })
 
-  it('/sessions shows no overlay when the fiber unloads while titles resolve', async () => {
+  it('/sessions waits for first-page title hydration and ignores a late result after unload', async () => {
     const gate = Promise.withResolvers<ReadonlyArray<{ sessionId: { toString(): string }, status: 'fulfilled', value: { title?: { title: string } } }>>()
     const { ctx, screen, agent, fiber } = await mount({
       persistence: { list: () => Promise.resolve([header('s-late', 1_000, HERE)]) },
       sessionQuery: { readTitleSnapshots: () => gate.promise },
     })
     const pending = ctx.commands.execute(agent, '/sessions', [], signal())
+    await Promise.resolve()
+    expect(screen.overlays).toHaveLength(0)
     await fiber.dispose()
     gate.resolve([])
     const execution = await pending
     expect(execution?.result).toEqual({ kind: 'success' })
+    // The fake screen does not model the editor-slot disposer; the important
+    // contract here is that the late title continuation is harmless after the
+    // owning fiber has unloaded.
+    await Promise.resolve()
     expect(screen.overlays).toHaveLength(0)
   })
 
@@ -472,28 +543,37 @@ describe('blue-commands plugin', () => {
     expect(rows[0]).toBe('^' + '─'.repeat(80) + '^')
     expect(rows[1]).toBe('^  help^ _· Esc / Enter / q to cancel · ↑↓ scroll_')
     expect(rows[3]).toBe('  #Commands#')
-    // The runtime lists commands alphabetically (`/changelog` leads);
-    // labels padEnd inside the primary span with the
+    // The runtime lists commands alphabetically (`/context` leads since
+    // the S25 rename); labels padEnd inside the primary span with the
     // description muted behind two spaces. The longest label is the
-    // aliased `/effort (/thinking)` (19 columns), which widens the whole
+    // aliased `/effort (/thinking)` (18 columns), which widens the whole
     // column.
-    expect(rows[4]).toBe('    ^/changelog         ^  ~Show the release changelog (what\'s new)~')
-    expect(rows.some(row => row.includes('^/context           ^  ~Show token usage and the context window~'))).toBe(true)
+    expect(rows[4]).toBe('    ^/context           ^  ~Show token usage and the context window~')
     expect(rows.some(row => row.includes('^/effort (/thinking)^  ~Switch the thinking effort of the current model~'))).toBe(true)
     expect(rows.some(row => row.includes('^/quit (/q, /exit)  ^  ~Exit Blue~'))).toBe(true)
-    // 41 rows with /changelog and /trace both in the command list (40 with
-    // /changelog alone at D52, 38 at S34, 37 at S31, 36 at S30, 34 at S28).
-    expect(rows.some(row => row.includes('_ showing 1-16 of 41_'))).toBe(true)
+    // 38 rows since S30 added alt+m and S31 added ctrl+g to the key list
+    // and S34 added /mcp to the command list (37 at S31, 36 at S30, 34 at
+    // S28).
+    expect(rows.some(row => row.includes('_ showing 1-16 of 38_'))).toBe(true)
     // Scrolling down reaches the Keys section with the two-column layout.
-    for (let i = 0; i < 12; i += 1) overlay(screen).handleInput(KEY.down)
+    for (let i = 0; i < 10; i += 1) overlay(screen).handleInput(KEY.down)
     const scrolled = screen.overlays[0]?.component.render(80) ?? []
     expect(scrolled.some(row => row.includes('  #Keys#'))).toBe(true)
     // Key labels padEnd to the longest label — `backspace` (9) since S13.
     expect(scrolled.some(row => row.includes('?enter    ?  ~Submit input / confirm selection~'))).toBe(true)
-    expect(scrolled.some(row => row.includes('_ showing 13-28 of 41_'))).toBe(true)
+    expect(scrolled.some(row => row.includes('_ showing 11-26 of 38_'))).toBe(true)
     screen.overlays[0]?.component.invalidate()
     overlay(screen).handleInput(KEY.escape)
     expect(screen.overlays[0]?.hidden).toBe(true)
+  })
+
+  it('/help consumes the renderer-neutral command model projection when available', async () => {
+    const { ctx, screen, agent, fiber } = await mount()
+    ctx.provide('blueCommandModels', { list: () => [{ kind: 'command', id: 'command.status', label: '/status', description: 'projected status', enabled: true }, { kind: 'command', id: 'command.version', label: '/version', enabled: true }] })
+    const execution = await ctx.commands.execute(agent, '/help', [], signal())
+    expect(execution?.result).toEqual({ kind: 'success' })
+    expect(screen.overlays[0]?.component.render(80).some(row => row.includes('projected status'))).toBe(true)
+    await fiber.dispose()
   })
 
   it('/help falls back to the action id when a binding has no description', async () => {
@@ -502,9 +582,9 @@ describe('blue-commands plugin', () => {
     const unregister = keymap?.register([{ id: 'spec.custom', keys: 'f9' }])
     await ctx.commands.execute(agent, '/help', [], signal())
     // The f9 row is the last key binding, beyond the first window; extra
-    // downs clamp at the scroll floor (26 clears the list: 42 rows with the
-    // extra f9 binding minus the 16-row window).
-    for (let i = 0; i < 26; i += 1) overlay(screen).handleInput(KEY.down)
+    // downs clamp at the scroll floor (23 clears the S30+S31+S34-extended
+    // list: 38 rows minus the 16-row window plus one).
+    for (let i = 0; i < 23; i += 1) overlay(screen).handleInput(KEY.down)
     const rows = screen.overlays[0]?.component.render(80) ?? []
     expect(rows.some(row => row.includes('f9') && row.includes('~spec.custom~'))).toBe(true)
     unregister?.()

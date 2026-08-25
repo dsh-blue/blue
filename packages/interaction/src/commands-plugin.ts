@@ -18,9 +18,7 @@
  * `./session-init.ts`; the config family (`/tools` over the live tool
  * catalog, `/preset` over the agent-preset roster) lives in
  * `./tools-commands.ts` and `./preset-commands.ts`; and `/skills` (the
- * `#` pipeline's read-only listing) lives in `./skills-command.ts`; and
- * the safe in-app upgrade (`/update`, D52) lives in
- * `./update-command.ts`.
+ * `#` pipeline's read-only listing) lives in `./skills-command.ts`.
  * Registrations are
  * effect-bound, so unloading the fiber removes them. Only `commands` is
  * injected: the overlay commands read the Blue display services through
@@ -37,7 +35,7 @@ import { resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionHeader } from '@deepseek-ai/dsh-session'
 // Empty type import carries the app-owned `blueSession` Context merge and
 // the `'blue/request-*'` Events merges this plugin emits.
 import type {} from '@dsh-blue/blue-app'
@@ -61,17 +59,21 @@ import { registerSessionCommands } from './session-commands.ts'
 import { registerExportCommands } from './session-export.ts'
 import { registerInitCommand } from './session-init.ts'
 import { registerSkillsCommand } from './skills-command.ts'
-import { SelectListPanel } from './select-list.ts'
+import { MAX_LIST_VISIBLE, SelectListPanel, type SelectRow } from './select-list.ts'
 import { CURRENT_MARK } from './symbols.ts'
 import { registerThemeCommand } from './theme-switch.ts'
 import { registerToolsCommands } from './tools-commands.ts'
-import { registerUpdateCommand } from './update-command.ts'
-import { registerTraceCommand } from './trace-command.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-commands'
 /** Services required before the commands can register. */
 export const inject = ['commands']
+
+/** Built-in command configuration forwarded by the interaction root. */
+export interface Config {
+  /** Optional profile-local identity shown by `/status` and `/version`. */
+  readonly displayVersion?: string
+}
 
 /** Render one failure reason for an error result. */
 function describe(error: unknown): string {
@@ -109,8 +111,9 @@ export function currentSessionTitleLimit(): number {
 /**
  * Register the built-in commands on `ctx.commands`.
  * @param ctx - plugin context.
+ * @param config - command presentation configuration.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: Config = {}): void {
   /**
    * Set when this fiber unloads: the `/sessions` listing can still be in
    * flight (a tree unload lands between `list()` and the overlay mount),
@@ -118,8 +121,10 @@ export function apply(ctx: Context): void {
    * context.
    */
   let unloaded = false
+  let loadingNoticeActive = false
   ctx.effect(() => () => {
     unloaded = true
+    if (loadingNoticeActive) getSharedEditor()?.notice?.('')
   })
 
   /**
@@ -131,17 +136,31 @@ export function apply(ctx: Context): void {
    * @returns the command outcome.
    */
   async function listSessions(signal: AbortSignal): Promise<CommandResult> {
+    // A persistence scan can be slow on large profiles. Acknowledge it before
+    // the first await so the user is not left staring at an unchanged editor.
+    getSharedEditor()?.notice?.('loading sessions...')
+    loadingNoticeActive = true
+    const clearLoadingNotice = (): void => {
+      if (!loadingNoticeActive) return
+      loadingNoticeActive = false
+      getSharedEditor()?.notice?.('')
+    }
     const persistence = ctx.get('sessionPersistence')
     if (persistence === undefined) {
+      clearLoadingNotice()
       return { kind: 'error', text: 'session persistence is unavailable' }
     }
     let headers: SessionHeader[]
     try {
       headers = await persistence.list(signal)
     } catch (error) {
+      clearLoadingNotice()
       return { kind: 'error', text: `could not list sessions: ${describe(error)}` }
     }
-    if (unloaded) return { kind: 'success' }
+    if (unloaded) {
+      clearLoadingNotice()
+      return { kind: 'success' }
+    }
     // The cwd scope (D46): only this directory's sessions — a global list
     // mixes every project the harness ever ran in. Exact match after
     // normalization, no subtree spread; headerless-cwd rows stay hidden.
@@ -149,42 +168,66 @@ export function apply(ctx: Context): void {
     const sorted = headers
       .filter(header => header.cwd !== undefined && resolve(header.cwd) === here)
       .sort((a, b) => b.createdAt - a.createdAt)
-    if (sorted.length === 0) return { kind: 'success', text: 'no sessions in this directory' }
+    if (sorted.length === 0) {
+      clearLoadingNotice()
+      return { kind: 'success', text: 'no sessions in this directory' }
+    }
     const display = displayServices(ctx)
     if (display === undefined) {
+      clearLoadingNotice()
       return { kind: 'error', text: 'session picker is unavailable: the Blue screen is not mounted' }
     }
     const currentId = ctx.get('blueSession')?.current?.id
-    const titles = await resolveTitles(sorted, signal)
-    // The title await can span a tree unload exactly like the listing
-    // above; the continuation must not mount a panel on the dead tree.
-    if (unloaded) return { kind: 'success' }
-    const list = new SelectListPanel({
+    const titleById = new Map<string, string>()
+    const loadingPages = new Set<number>()
+    const loadedPages = new Set<number>()
+    const buildRows = (): SelectRow[] => sorted.map(header => {
+      const id = String(header.id)
+      const date = formatDate(header.createdAt)
+      const title = titleById.get(id)
+      const label = title ?? `${id} · ${date}`
+      return {
+        value: id,
+        label,
+        ...(title === undefined ? {} : { description: `${id} · ${date}` }),
+        filterText: `${label} ${date}`,
+        ...(header.id === currentId ? { badge: CURRENT_MARK } : {}),
+      }
+    })
+    // Hydrate the first page before mounting so labels do not visibly change
+    // from session ids to titles. Later pages are prefetched near page ends.
+    let list!: SelectListPanel
+    const loadPage = (page: number, query: NonNullable<ReturnType<typeof ctx.get<'sessionQuery'>>>): Promise<void> => {
+      if (loadingPages.has(page) || loadedPages.has(page) || page * MAX_LIST_VISIBLE >= sessionTitleLimit) return Promise.resolve()
+      loadingPages.add(page)
+      const ids = sorted.slice(page * MAX_LIST_VISIBLE, Math.min((page + 1) * MAX_LIST_VISIBLE, sessionTitleLimit)).map(header => header.id)
+      return query.readTitleSnapshots(ids, signal).then(results => {
+        if (unloaded) return
+        for (const result of results ?? []) {
+          if (result.status === 'fulfilled' && result.value.title !== undefined) titleById.set(String(result.sessionId), result.value.title.title)
+        }
+        loadedPages.add(page)
+        list.setRows(buildRows())
+        display.screen.requestRender()
+      }).catch(() => undefined).finally(() => loadingPages.delete(page))
+    }
+    list = new SelectListPanel({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,
-      rows: sorted.map(header => {
-        const id = String(header.id)
-        const date = formatDate(header.createdAt)
-        const title = titles.get(id)
-        // A titled row leads with the title (the reason the picker is
-        // scannable); the id and date ride the description. Untitled rows
-        // (pre-title-era or zero-message sessions) keep the id-first form.
-        // The constant cwd is dropped from every form — one picker, one
-        // directory (D46).
-        const label = title ?? `${id} · ${date}`
-        return {
-          value: id,
-          label,
-          ...(title === undefined ? {} : { description: `${id} · ${date}` }),
-          filterText: `${label} ${date}`,
-          ...(header.id === currentId ? { badge: CURRENT_MARK } : {}),
-        }
-      }),
+      rows: buildRows(),
       title: 'Sessions',
       titleHint: '· esc cancel · ↵ resume',
       filter: true,
+      onCursorChanged: cursor => {
+        const query = ctx.get('sessionQuery')
+        if (query === undefined) return
+        const page = Math.floor(cursor / MAX_LIST_VISIBLE)
+        void loadPage(page, query)
+        if (cursor % MAX_LIST_VISIBLE >= Math.floor(MAX_LIST_VISIBLE / 2)) void loadPage(page + 1, query)
+      },
       onSelect: (row) => {
+        clearLoadingNotice()
         restore()
         if (row.value === String(currentId)) {
           getSharedEditor()?.notice?.(display.colors.error('already the current session'))
@@ -194,49 +237,23 @@ export function apply(ctx: Context): void {
         getSharedEditor()?.notice?.(`resuming session ${row.value}`)
       },
       onCancel: () => {
+        clearLoadingNotice()
         restore()
       },
     })
     // The kimi dialog mount (D30): the panel replaces the editor in its
     // dock slot, so below it only the footer remains — a floating overlay
     // would leave the editor's frame peeking around the panel.
-    const restore = mountEditorReplacement(list)
-    return { kind: 'success' }
-  }
-
-  /**
-   * Resolve titles for the newest sessions through the optional
-   * `sessionQuery` batch read (D46): each persisted title is one full
-   * event-log parse, so only the first {@link sessionTitleLimit} ids are
-   * requested. An absent service, a failed batch, and per-session
-   * rejections all degrade those rows to the id form — never the panel.
-   * @param sorted - the cwd-scoped sessions, newest-first.
-   * @param signal - the dispatching UI request's cancellation signal.
-   * @returns session id to title for every resolved snapshot.
-   */
-  async function resolveTitles(
-    sorted: readonly SessionHeader[],
-    signal: AbortSignal,
-  ): Promise<Map<string, string>> {
-    const titles = new Map<string, string>()
     const query = ctx.get('sessionQuery')
-    // The caller returns before the empty listing reaches here, so an
-    // absent query service is the only early exit.
-    if (query === undefined) return titles
-    const ids: SessionId[] = sorted.slice(0, sessionTitleLimit).map(header => header.id)
-    let results
-    try {
-      results = await query.readTitleSnapshots(ids, signal)
-    } catch {
-      // A whole-batch failure leaves every row untitled; per-session
-      // failures are isolated below by the allSettled result shape.
-      return titles
+    if (query !== undefined) await loadPage(0, query)
+    if (unloaded) {
+      clearLoadingNotice()
+      return { kind: 'success' }
     }
-    for (const result of results) {
-      const title = result.status === 'fulfilled' ? result.value.title : undefined
-      if (title !== undefined) titles.set(String(result.sessionId), title.title)
-    }
-    return titles
+    const restore = mountEditorReplacement(list)
+    clearLoadingNotice()
+    if (query !== undefined) void loadPage(1, query)
+    return { kind: 'success' }
   }
 
   /**
@@ -255,16 +272,19 @@ export function apply(ctx: Context): void {
       {
         heading: 'Commands',
         labelPaint: display.colors.primary,
-        rows: ctx.commands.list(agent).map(command => {
+        rows: (() => {
+          const models = ctx.get('blueCommandModels')?.list(agent)
+          if (models !== undefined) return models.map(model => ({ label: model.label, description: model.description ?? '' }))
+          return ctx.commands.list(agent).map(command => ({ name: command.name, description: command.description }))
+        })().map(command => {
           // The kimi help-panel label: aliases join the canonical label in
           // slashed parentheses (`/quit (/q, /exit)`), visible on every
           // listing — unlike the dropdown, which shows them only when the
           // query matched one.
-          const aliases = aliasesOf(command.name)
+          const commandName = 'name' in command ? command.name : command.label.slice(1)
+          const aliases = aliasesOf(commandName)
           return {
-            label: aliases.length === 0
-              ? `/${command.name}`
-              : `/${command.name} (${aliases.map(alias => `/${alias}`).join(', ')})`,
+            label: aliases.length === 0 ? ('label' in command ? command.label : `/${commandName}`) : `/${commandName} (${aliases.map(alias => `/${alias}`).join(', ')})`,
             description: command.description,
           }
         }),
@@ -373,7 +393,7 @@ export function apply(ctx: Context): void {
     const modes = registerModeCommands(ctx)
     const modeTracking = setupModeTracking(ctx)
     // The session-info family (`/status` `/usage` `/version`).
-    const sessionInfo = registerSessionCommands(ctx)
+    const sessionInfo = registerSessionCommands(ctx, config.displayVersion)
     // The session-export family (`/export` `/copy`).
     const sessionExport = registerExportCommands(ctx)
     // The canned-prompt command (`/init`).
@@ -386,10 +406,6 @@ export function apply(ctx: Context): void {
     const skillsCommand = registerSkillsCommand(ctx)
     // The MCP server browser (`/mcp`, S34): read-only over loader entries.
     const mcpBrowser = registerMcpCommands(ctx)
-    // `/trace` is a read-only timeline over the official session-query API.
-    const trace = registerTraceCommand(ctx)
-    // The safe in-app upgrade (`/update`, D52).
-    const update = registerUpdateCommand(ctx)
     return () => {
       quit()
       quitAliases()
@@ -410,8 +426,6 @@ export function apply(ctx: Context): void {
       agentPresets()
       skillsCommand()
       mcpBrowser()
-      trace()
-      update()
     }
   })
 }

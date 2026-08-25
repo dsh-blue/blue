@@ -1,16 +1,15 @@
 /**
  * The global version-control guard: Blue has ONE release version (the
- * first release line, `0.1.0-rc.4` — the number the website's tagline and
+ * first release line, `0.1.0-rc.2` — the number the website's tagline and
  * quickstart promise) and ONE harness dependency line (the `dsh-*` pins,
  * which stay on their own prerelease line while Blue's number moves).
  *
- * Blue side: the eight package.json versions (five plugin packages, the
- * bundle, the blue-cli launcher shell, and the website, whose
- * package.json must agree with its own tagline), and the `BLUE_VERSION`
- * constant the banner title and the `/version` notice read, all equal.
- * The website's user-facing version mentions (index.md tagline,
- * guide/faq) are pinned here too, so the site can never advertise a
- * different number than the code ships.
+ * Blue side: the fourteen package.json versions (thirteen publishable packages
+ * plus the website, whose package.json must agree with its own tagline),
+ * and the `BLUE_VERSION` constant the banner title and the `/version`
+ * notice read, all equal. The website's user-facing version mentions
+ * (index.md tagline, guide/faq) are pinned here too, so the site can
+ * never advertise a different number than the code ships.
  *
  * Harness side: every exact-pinned `@deepseek-ai/dsh-*` dev dependency,
  * every `^`-ranged dsh peer, every `pnpm-workspace.yaml`
@@ -18,7 +17,7 @@
  * line all agree with each other — and are NOT tied to Blue's release
  * number.
  *
- * A bump edits one side at a time: publishing Blue bumps the eight
+ * A bump edits one side at a time: publishing Blue bumps the fourteen
  * manifests + BLUE_VERSION + the website copy; upgrading the harness line
  * bumps the dsh pins + HARNESS_LINE. Any drift fails loudly here, so a
  * half-bumped tree can never ship.
@@ -30,7 +29,7 @@ import { BLUE_VERSION } from '../src/banner-content.ts'
 import { BLUE_VERSION as API_BLUE_VERSION } from '@dsh-blue/blue-api'
 
 /** The published first-release version (the website's advertised number). */
-const RELEASE_VERSION = '0.1.0-rc.8'
+const RELEASE_VERSION = '0.1.0-rc.2'
 /** The harness prerelease line the dsh pins ride. */
 const HARNESS_LINE = '0.1.1-rc.2'
 
@@ -43,19 +42,25 @@ interface Manifest {
   readonly devDependencies?: Readonly<Record<string, string>>
 }
 
-/** The eight manifests whose version must equal {@link RELEASE_VERSION}. */
+/** The fourteen manifests whose version must equal {@link RELEASE_VERSION}. */
 const MANIFESTS: readonly string[] = [
   '../../api/package.json',
+  '../../frontend/package.json',
+  '../../harness-adapter/package.json',
+  '../../context/package.json',
+  '../../conversation/package.json',
+  '../../remote/package.json',
   '../../core/package.json',
   '../package.json',
   '../../interaction/package.json',
   '../../app/package.json',
+  '../../openpencil/package.json',
+  '../../lark/package.json',
   '../../bundle/blue/package.json',
-  '../../cli/package.json',
   '../../../website/package.json',
 ]
 /** Publishable manifests that carry harness dependencies. */
-const HARNESS_MANIFESTS = MANIFESTS.filter(rel => !rel.endsWith('/api/package.json') && !rel.endsWith('/website/package.json'))
+const HARNESS_MANIFESTS = MANIFESTS.filter(rel => !rel.endsWith('/website/package.json'))
 
 /** Read one manifest relative to this spec. */
 function manifest(rel: string): Manifest {
@@ -68,8 +73,8 @@ function dshEntries(table: Readonly<Record<string, string>> | undefined): Readon
 }
 
 describe('the Blue release line', () => {
-  it('BLUE_VERSION is the version of all eight manifests', () => {
-    expect(MANIFESTS).toHaveLength(8)
+  it('BLUE_VERSION is the version of all fourteen manifests', () => {
+    expect(MANIFESTS).toHaveLength(14)
     for (const rel of MANIFESTS) {
       const pkg = manifest(rel)
       expect(pkg.version, `${pkg.name} version`).toBe(RELEASE_VERSION)
@@ -96,11 +101,9 @@ describe('the Blue release line', () => {
 
 describe('the harness dependency line', () => {
   it('every dsh runtime dependency is exact-pinned to one line', () => {
-    // The bundle ships the runtime dsh-* dependencies the patch references
-    // (agent-presets from D33, mcp-client from S34, the session-title bridge
-    // from D51): they install with Blue, so a range or a drifted line would
-    // ship a mixed tree. The blue-cli shell ships the dsh host itself —
-    // its bare-name pin is asserted in its own test below.
+    // The bundle is the only manifest that ships runtime dsh dependencies
+    // (agent-presets from D33, mcp-client from S34): they install with Blue,
+    // so a range or a drifted line would ship a mixed tree.
     const specs = new Set<string>()
     for (const rel of HARNESS_MANIFESTS) {
       const pkg = manifest(rel)
@@ -111,11 +114,6 @@ describe('the harness dependency line', () => {
     }
     expect(specs.size, 'runtime dsh pins exist').toBeGreaterThan(0)
     expect([...specs]).toEqual([`${HARNESS_LINE}`])
-  })
-
-  it('the blue-cli shell pins the dsh host CLI to the same line (S37)', () => {
-    const cli = manifest('../../cli/package.json')
-    expect(cli.dependencies?.['@deepseek-ai/dsh']).toBe(HARNESS_LINE)
   })
 
   it('every dsh dev dependency is exact-pinned to one line', () => {

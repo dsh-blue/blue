@@ -83,8 +83,11 @@ describe('blue-core plugin through the real Loader', () => {
     expect(ctx.get('blueTerminalInfo')).toBeDefined()
     expect(ctx.get('blueComponents')).toBeDefined()
     expect(ctx.get('blueTheme')).toBeDefined()
-    // ProcessTerminal.start enables bracketed paste on the real stdout.
+    // ProcessTerminal.start enables bracketed paste; Blue's production entry
+    // selects the alternate buffer with application-owned mouse handling.
     expect(output()).toContain('\x1b[?2004h')
+    expect(output()).toContain('\x1b[?1049h')
+    expect(output()).toContain('\x1b[?1002h')
   })
 
   it('broadcasts blue/terminal-theme-changed when the terminal reports a scheme', async () => {
@@ -135,6 +138,8 @@ describe('blue-core plugin through the real Loader', () => {
     await ctx.fiber.dispose()
     // TuiBase.stop shows the cursor; ProcessTerminal.stop disables bracketed paste.
     expect(output()).toContain('\x1b[?2004l')
+    expect(output()).toContain('\x1b[?1002l')
+    expect(output()).toContain('\x1b[?1049l')
     expect(ctx.get('blueScreen')).toBeUndefined()
     expect(ctx.get('blueKeymap')).toBeUndefined()
     expect(ctx.get('blueTerminalInfo')).toBeUndefined()

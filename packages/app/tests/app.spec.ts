@@ -709,15 +709,4 @@ describe('exit epitaph (D47)', () => {
       'blue · session saved · resume with:\ndsh --profile blue --resume session-abc\n',
     )
   })
-
-  it('names the shell bin as the resume command under the blue launcher (S37)', () => {
-    process.env.BLUE_LAUNCHER = 'blue'
-    try {
-      expect(epitaphFor('session-abc', 'blue')).toBe(
-        'blue · session saved · resume with:\nblue --resume session-abc\n',
-      )
-    } finally {
-      delete process.env.BLUE_LAUNCHER
-    }
-  })
 })

@@ -39,10 +39,10 @@ Seams the harness (dsh-base) opens — equally open to your plugins:
 | `ctx.commands.register` | Register slash commands, auto-listed in the editor's completion and `/help` |
 | `ctx.userQuestions.registerProvider` | Take over the question interaction (questionnaire panels) |
 | `'approval/request'` waterfall | Answer approvals (not calling `next()` short-circuits) |
-| `attachments` (`AttachmentStore`) | Attachment storage — a pure seam in rc.8, implemented by Blue's `blue-attachments`, consumable by your plugins |
+| `attachments` (`AttachmentStore`) | Attachment storage — a pure seam in rc.7, implemented by Blue's `blue-attachments`, consumable by your plugins |
 | `ctx.tools` / `ctx.agents` / `ctx.sessions` | Tool registration/guards, session and agent operations |
 
-Harness-side `permissionPresets`, `sessionProjections`, and similar seams are not open in rc.8 — Blue will adapt their presentation as they land.
+Harness-side `permissionPresets`, `sessionProjections`, and similar seams are not open in rc.7 — Blue will adapt their presentation as they land.
 
 ## Design discipline
 

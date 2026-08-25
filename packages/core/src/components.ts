@@ -37,7 +37,6 @@ import {
   highlightLeadingSlashToken,
   injectGhostHint,
   injectPromptSymbol,
-  padColumns,
   withSideBorders,
 } from './chrome.ts'
 import { WrappingSelectList } from './wrapping-select-list.ts'
@@ -322,12 +321,7 @@ class EditorAdapter implements BlueEditor {
   }
 
   render(width: number): string[] {
-    // Dock panes (notably /btw) are inset by the shared one-column gutter.
-    // When the editor is connected to one, render the editor at the same
-    // inner width and restore the gutter after chrome has painted its bars so
-    // the two borders share the exact same columns.
-    const renderWidth = this.connectedAbove ? Math.max(1, width - 2) : width
-    const lines = this.editor.render(renderWidth)
+    const lines = this.editor.render(width)
     // The first content row (row index 1 under the top border — a
     // scrolled-away top rule keeps that indexing) carries the S14
     // completion polish in the kimi order: the leading `/command` token
@@ -341,7 +335,7 @@ class EditorAdapter implements BlueEditor {
       row = highlightLeadingSlashToken(row, this.chrome.slashTokenPaint) ?? row
     }
     if (this.ghostHint !== undefined && this.cursorAtInputEnd()) {
-      row = injectGhostHint(row, this.ghostHint, this.editor.getText().length, renderWidth, this.chrome.ghostHintPaint)
+      row = injectGhostHint(row, this.ghostHint, this.editor.getText().length, width, this.chrome.ghostHintPaint)
     }
     // The bash `!` shares the border hue so the mode reads as one unit; the
     // neutral `>` stays in the terminal's default foreground (kimi rule).
@@ -358,11 +352,10 @@ class EditorAdapter implements BlueEditor {
     // Corners and bars route through the live `borderColor` property, so a
     // host recolor via `setBorderColor` (slash context, bash mode) repaints
     // the whole frame in sync without re-entering this adapter.
-    const framed = withSideBorders(lines, (text: string) => this.editor.borderColor(text), {
+    return withSideBorders(lines, (text: string) => this.editor.borderColor(text), {
       connectedAbove: this.connectedAbove,
       label: this.borderLabel,
     })
-    return this.connectedAbove ? padColumns(framed, 1) : framed
   }
 
   handleInput(data: string): void {

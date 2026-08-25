@@ -59,19 +59,6 @@ const IMAGE_LIMITS: ImageAttachmentLimits = {
 
 const tick = (): Promise<void> => new Promise(resolve => setImmediate(resolve))
 
-/** Octal-escape a byte array for a printf literal. */
-function shBytes(bytes: Uint8Array): string {
-  return Array.from(bytes, byte => `\\${byte.toString(8).padStart(3, '0')}`).join('')
-}
-
-/** Write one executable fake tool into the bin directory. */
-function tool(bin: string, name: string, body: string): string {
-  const path = join(bin, name)
-  writeFileSync(path, body)
-  chmodSync(path, 0o755)
-  return path
-}
-
 describe('blue-paste-image plugin', () => {
   let root: string
   let editor: FakeBlueEditor
@@ -111,7 +98,6 @@ describe('blue-paste-image plugin', () => {
   afterEach(async () => {
     pasteImage.setClipboardImageReader(undefined)
     pasteImage.setClipboardClock(undefined)
-    pasteImage.setClipboardPlatform(undefined)
     pasteImage.resetClipboardBackendCooldowns()
     clearSharedEditor()
     await fiber?.dispose()
@@ -447,166 +433,6 @@ describe('blue-paste-image plugin', () => {
   })
 })
 
-describe('platform seam', () => {
-  let editor: FakeBlueEditor
-  let notices: string[]
-  let saveImage: ReturnType<typeof vi.fn>
-  let saveImages: ReturnType<typeof vi.fn>
-  let imageLimits: ImageAttachmentLimits
-  let ctx: Context
-  let keymap: FakeKeymap
-  let fiber: { dispose(): Promise<void> } | undefined
-
-  beforeEach(() => {
-    editor = new FakeBlueEditor()
-    notices = []
-    imageLimits = { ...IMAGE_LIMITS }
-    let saved = 0
-    saveImage = vi.fn(async (input: SaveImageAttachment): Promise<ImageAttachmentRef> => ({
-      attachmentId: AttachmentId(`spec-platform-${saved += 1}`),
-      mediaType: input.mediaType,
-      bytes: input.data.byteLength,
-      width: 1,
-      height: 1,
-    }))
-    saveImages = vi.fn(async (inputs: readonly SaveImageAttachment[]) => Promise.all(inputs.map(input => saveImage(input))))
-    const blue = fakeBlueContext()
-    ctx = blue.ctx
-    keymap = blue.keymap
-    ctx.provide('attachments', { imageLimits, saveImage, saveImages })
-    setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
-  })
-
-  afterEach(async () => {
-    pasteImage.setClipboardImageReader(undefined)
-    pasteImage.setClipboardPlatform(undefined)
-    pasteImage.resetClipboardBackendCooldowns()
-    clearSharedEditor()
-    await fiber?.dispose()
-    fiber = undefined
-  })
-
-  /** Mount the plugin with the seam pinned to a platform. */
-  async function mountAs(platform: NodeJS.Platform): Promise<void> {
-    pasteImage.setClipboardPlatform(platform)
-    fiber = await ctx.plugin(pasteImage)
-  }
-
-  it('binds ctrl+v and alt+v on win32 and answers both sequences', async () => {
-    pasteImage.setClipboardImageReader(async () => ({ kind: 'image', data: PNG_1X1, mediaType: 'image/png', backend: 'win32' }))
-    await mountAs('win32')
-    expect(keymap.getKeys(ACTION_IMAGE_PASTE)).toEqual(['ctrl+v', 'alt+v'])
-    editor.handleInput(KEY.altV)
-    editor.handleInput(KEY.ctrlV)
-    await vi.waitFor(() => {
-      expect(editor.inserted).toHaveLength(2)
-    })
-    expect(notices).toEqual(['pasting image...', 'pasting image...'])
-  })
-
-  it('keeps ctrl+v alone on darwin', async () => {
-    await mountAs('darwin')
-    expect(keymap.getKeys(ACTION_IMAGE_PASTE)).toEqual(['ctrl+v'])
-  })
-
-  it('names powershell.exe as the win32 missing tool', async () => {
-    pasteImage.setClipboardImageReader(async () => ({ kind: 'missing-tool' }))
-    await mountAs('win32')
-    editor.handleInput(KEY.ctrlV)
-    await vi.waitFor(() => {
-      expect(notices).toEqual(['pasting image...', 'clipboard image tool missing: powershell.exe is not on PATH'])
-    })
-  })
-
-  it('names osascript as the darwin missing tool', async () => {
-    pasteImage.setClipboardImageReader(async () => ({ kind: 'missing-tool' }))
-    await mountAs('darwin')
-    editor.handleInput(KEY.ctrlV)
-    await vi.waitFor(() => {
-      expect(notices).toEqual(['pasting image...', 'clipboard image tool missing: osascript is not on PATH'])
-    })
-  })
-
-  it('never flashes a fallback notice for a native backend', async () => {
-    pasteImage.setClipboardImageReader(async () => ({ kind: 'image', data: PNG_1X1, mediaType: 'image/png', backend: 'win32', fallback: true }))
-    await mountAs('win32')
-    editor.handleInput(KEY.altV)
-    await vi.waitFor(() => {
-      expect(editor.inserted).toHaveLength(1)
-    })
-    expect(notices).toEqual(['pasting image...'])
-  })
-
-  it('maps a win32 run without powershell.exe to the platform notice', async () => {
-    const savedPath = process.env.PATH
-    const bin = mkdtempTracked('blue-paste-platform-bin-')
-    process.env.PATH = bin
-    try {
-      await mountAs('win32')
-      editor.handleInput(KEY.ctrlV)
-      await vi.waitFor(() => {
-        expect(notices).toEqual(['pasting image...', 'clipboard image tool missing: powershell.exe is not on PATH'])
-      })
-    } finally {
-      process.env.PATH = savedPath
-    }
-  })
-
-  it('maps a darwin run without osascript to the platform notice', async () => {
-    const savedPath = process.env.PATH
-    const bin = mkdtempTracked('blue-paste-platform-bin-')
-    process.env.PATH = bin
-    try {
-      await mountAs('darwin')
-      editor.handleInput(KEY.ctrlV)
-      await vi.waitFor(() => {
-        expect(notices).toEqual(['pasting image...', 'clipboard image tool missing: osascript is not on PATH'])
-      })
-    } finally {
-      process.env.PATH = savedPath
-    }
-  })
-
-  it('cools down a hung win32 probe and retries after expiry', { timeout: 40_000 }, async () => {
-    let now = 1_000
-    pasteImage.setClipboardClock(() => now)
-    const savedPath = process.env.PATH
-    const bin = mkdtempTracked('blue-paste-platform-bin-')
-    process.env.PATH = bin
-    try {
-      tool(bin, 'powershell.exe', '#!/bin/sh\ntrap \'\' TERM\nexec /bin/sleep 30\n')
-      process.env.PATH = bin
-      await mountAs('win32')
-      editor.handleInput(KEY.ctrlV)
-      await vi.waitFor(() => {
-        expect(notices).toEqual(['pasting image...', 'clipboard read timed out'])
-      }, { timeout: 20_000 })
-
-      // Inside the cooldown the skip resolves instantly with the timeout
-      // verdict — no second 10s wait.
-      editor.handleInput(KEY.altV)
-      await vi.waitFor(() => {
-        expect(notices).toHaveLength(4)
-      })
-      expect(notices.at(-1)).toBe('clipboard read timed out')
-      expect(editor.inserted).toHaveLength(0)
-
-      now += 60_000
-      tool(bin, 'powershell.exe', `#!/bin/sh
-mkdir -p "$BLUE_PASTE_STAGE"
-printf 'image' > "$BLUE_PASTE_STAGE/kind"
-printf '%b' '${shBytes(PNG_1X1)}' > "$BLUE_PASTE_STAGE/clipboard.png"
-`)
-      editor.handleInput(KEY.ctrlV)
-      await vi.waitFor(() => {
-        expect(editor.inserted).toHaveLength(1)
-      })
-    } finally {
-      process.env.PATH = savedPath
-    }
-  })
-})
-
 describe('default clipboard image reader', () => {
   const savedPath = process.env.PATH
   const savedDisplay = process.env.DISPLAY
@@ -651,12 +477,24 @@ describe('default clipboard image reader', () => {
     else process.env.XDG_RUNTIME_DIR = savedRuntimeDir
     pasteImage.setClipboardImageReader(undefined)
     pasteImage.setClipboardClock(undefined)
-    pasteImage.setClipboardPlatform(undefined)
     pasteImage.resetClipboardBackendCooldowns()
     clearSharedEditor()
     await fiber?.dispose()
     fiber = undefined
   })
+
+  /** Octal-escape a byte array for a printf literal. */
+  function shBytes(bytes: Uint8Array): string {
+    return Array.from(bytes, byte => `\\${byte.toString(8).padStart(3, '0')}`).join('')
+  }
+
+  /** Write one executable fake tool into the bin directory. */
+  function tool(bin: string, name: string, body: string): string {
+    const path = join(bin, name)
+    writeFileSync(path, body)
+    chmodSync(path, 0o755)
+    return path
+  }
 
   /** Pin the session env to "no display" for the env-gated aggregation. */
   function unsetDisplaySession(): void {

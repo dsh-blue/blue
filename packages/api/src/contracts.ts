@@ -11,6 +11,7 @@ import type { BluePluginManifest } from './manifest.ts'
 export type BlueErrorCode =
   | 'BLUE_API_INCOMPATIBLE'
   | 'BLUE_CAPABILITY_DENIED'
+  | 'BLUE_CAPABILITY_ABSENT'
   | 'BLUE_DUPLICATE_ID'
   | 'BLUE_INVALID_CONTRIBUTION'
   | 'BLUE_LIMIT_EXCEEDED'

@@ -16,9 +16,11 @@
 // Run after `pnpm build` (CI does, right between build and the test run;
 // locally a missing lib/ is an error, never a silent pass). Exits 1 with
 // one line per violation.
-import { existsSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
-import { PACKAGE_DIRS, ROOT as root, readManifest } from './package-contract.mjs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 /**
  * Every workspace package under packages/ carrying an exports map — the
@@ -26,11 +28,21 @@ import { PACKAGE_DIRS, ROOT as root, readManifest } from './package-contract.mjs
  * naturally, and future packages join the check without an edit here).
  * @returns the package directory, manifest name, and parsed manifest.
  */
-function publishablePackages() {
-  return PACKAGE_DIRS.map(relativeDir => {
-    const manifest = readManifest(relativeDir)
-    return { dir: join(root, relativeDir), name: manifest.name, manifest }
-  })
+function packagesWithExports() {
+  const found = []
+  const visit = dir => {
+    for (const entry of readdirSync(dir)) {
+      if (entry === 'node_modules') continue
+      const full = join(dir, entry)
+      if (!statSync(full).isDirectory()) continue
+      const manifestPath = join(full, 'package.json')
+      if (!existsSync(manifestPath)) continue
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+      if (manifest.exports !== undefined) found.push({ dir: full, name: manifest.name, manifest })
+    }
+  }
+  visit(join(root, 'packages'))
+  return found
 }
 
 /**
@@ -61,11 +73,7 @@ let checked = 0
  * npm files-list matching: a literal entry compares directly, a `**`
  * segment spans directories, and a lone `*` stays within one path segment
  * (the packages mix styles — literal lists, `lib` + `*.js`, and nested
- * `lib` + `types` + `*.d.ts` wildcard shapes). The `**` expansions are
- * staged through placeholder tokens first: the inserted regexes carry
- * their own `*` repeaters, and a later lone-`*` pass over the raw string
- * would rewrite them (the nested-types bug — a `lib` + `**` + `*` files
- * entry silently matched only one directory level).
+ * `lib` + `types` + `*.d.ts` wildcard shapes).
  * @param entry - one files-list string.
  * @param rel - the lib-relative path to test.
  * @returns whether the entry claims the path.
@@ -74,15 +82,13 @@ function filesEntryMatches(entry, rel) {
   if (!entry.includes('*')) return entry === rel
   const pattern = entry
     .replace(/[.+^${}()|[\]\\]/g, String.raw`\$&`)
-    .replace(/\*\*\//g, '__DIR__')
-    .replace(/\*\*/g, '__ANY__')
+    .replace(/\*\*\//g, '(?:.*/)?')
+    .replace(/\*\*/g, '.*')
     .replace(/\*/g, '[^/]*')
-    .replace(/__DIR__/g, '(?:.*/)?')
-    .replace(/__ANY__/g, '.*')
   return new RegExp(`^${pattern}$`).test(rel)
 }
 
-for (const pkg of publishablePackages()) {
+for (const pkg of packagesWithExports()) {
   if (!existsSync(join(pkg.dir, 'lib'))) {
     problems.push(`${pkg.name}: no lib/ — run pnpm build before this check`)
     continue
@@ -92,9 +98,6 @@ for (const pkg of publishablePackages()) {
   // The entry point behind "main" is a lib claim like any export.
   const claims = [...exportTargets(pkg.manifest.exports)]
   if (typeof pkg.manifest.main === 'string') claims.push(['(main)', pkg.manifest.main])
-  if (typeof pkg.manifest.types === 'string') claims.push(['(types)', pkg.manifest.types])
-  const bins = typeof pkg.manifest.bin === 'string' ? { [pkg.name]: pkg.manifest.bin } : pkg.manifest.bin ?? {}
-  for (const [name, target] of Object.entries(bins)) claims.push([`(bin:${name})`, target])
 
   for (const [subpath, target] of claims) {
     const rel = target.replace(/^\.\//, '')

@@ -36,7 +36,7 @@ import { MOON_SPINNER_FRAMES} from '../../../transcript/src/spinners.ts'
 import * as statusCwdPlugin from '../../../transcript/src/status-cwd.ts'
 import * as statusGitPlugin from '../../../transcript/src/status-git.ts'
 import { setRecentStepsRetention, setStepFoldingEnabled} from '../../../transcript/src/window.ts'
-import { delayedTextResponse, reasoningResponse, textResponse, toolCallResponse} from './mock-adapter.ts'
+import { reasoningResponse, textResponse, toolCallResponse} from './mock-adapter.ts'
 // The wizard's models.dev lookup stays offline in the e2e (the fixture
 // gateways carry their own metadata paths).
 import { setModelsDevLoader} from '../../../interaction/src/models-dev.ts'
@@ -169,6 +169,62 @@ describe('blue whole-tree e2e', () => {
     const output = tree.terminal.output
     expect(output).toContain('fix the build')
     expect(output).toContain('Blue online.')
+  })
+
+  it('replays and drives the official conversation model without duplicating the legacy transcript', async () => {
+    const root = mkdtempTracked('dsh-blue-e2e-official-transcript-')
+    const first = await bootBlue(['official replay question'], {
+      script: [textResponse('official replay answer')],
+      persistenceRoot: root,
+      officialTranscript: true,
+    })
+    const firstAgent = await currentAgent(first)
+    await vi.waitFor(() => { expect(first.adapter.requests).toHaveLength(1) })
+    await firstAgent.whenIdle()
+    const id = String(firstAgent.session.id)
+    await first.ctx.sessions.flush(firstAgent.session)
+    await first.ctx.fiber.dispose()
+
+    const resumed = await bootBlue(['--resume', id], {
+      script: [textResponse('official live answer')],
+      persistenceRoot: root,
+      officialTranscript: true,
+    })
+    const resumedAgent = await currentAgent(resumed)
+    await vi.waitFor(async () => {
+      const plain = stripSgr(await fullFrame(resumed.terminal))
+      expect(plain.split('official replay question')).toHaveLength(2)
+      expect(plain.split('official replay answer')).toHaveLength(2)
+    })
+
+    typeLine(resumed.terminal, 'official live question')
+    await vi.waitFor(() => { expect(resumed.adapter.requests).toHaveLength(1) })
+    await resumedAgent.whenIdle()
+    await vi.waitFor(async () => {
+      const plain = stripSgr(await fullFrame(resumed.terminal))
+      expect(plain.split('official replay answer')).toHaveLength(2)
+      expect(plain.split('official live answer')).toHaveLength(2)
+    })
+
+    const officialEntry = [...resumed.ctx.loader.entries()]
+      .find(entry => entry.options.id === 'blue-transcript-official')
+    expect(officialEntry).toBeDefined()
+    await resumed.ctx.loader.update(officialEntry!.id, { disabled: true })
+    await resumed.ctx.loader.await()
+    await vi.waitFor(async () => {
+      const plain = stripSgr(await fullFrame(resumed.terminal))
+      expect(plain.split('official replay answer')).toHaveLength(2)
+      expect(plain.split('official live answer')).toHaveLength(2)
+    })
+    const conversationEntry = [...resumed.ctx.loader.entries()]
+      .find(entry => entry.options.id === 'blue-conversation')
+    expect(conversationEntry).toBeDefined()
+    await resumed.ctx.loader.update(conversationEntry!.id, { disabled: true })
+    await resumed.ctx.loader.await()
+    await vi.waitFor(() => {
+      expect(resumed.ctx.get('blueConversationProjection')).toBeUndefined()
+      expect(resumed.ctx.sessionProjections.snapshot(resumedAgent.session).values.blueConversation).toBeUndefined()
+    })
   })
 
   it('renders the welcome banner at boot as the first scroll child', async () => {
@@ -1319,7 +1375,7 @@ describe('blue whole-tree e2e', () => {
         const rendered = tree.terminal.written.slice(beforeSwitch).join('')
         expect(rendered).toContain('show palette')
         expect(rendered).toContain('palette reply')
-        expect(rendered).toContain('\x1b[1m\x1b[38;2;31;62;194m» ')
+        expect(rendered).toContain('\x1b[1m\x1b[38;2;46;63;184m» ')
       })
     } finally {
       await backToDark(tree, agent)
@@ -1722,11 +1778,7 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('→ /theme') })
     await waitForRender()
     tree.terminal.sendInput('\r')
-    // A bare /theme opens the theme picker: wait for the panel frame,
-    // then Escape back to the editor before recalling.
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('esc revert') })
-    tree.terminal.sendInput('\x1b')
-    await waitForRender()
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('themes:') })
     tree.terminal.sendInput('\x1b[A')
     const frame = await fullFrame(tree.terminal)
     expect(frame).toContain('theme')
@@ -1941,9 +1993,7 @@ describe('blue whole-tree e2e', () => {
     await expect(executeCommand(tree, agent, '/help')).resolves.toEqual({ kind: 'success' })
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('/model') })
     expect(tree.terminal.output).toContain('/effort (/thinking)')
-    // /changelog pushed /provider past the first window; page the panel down.
-    tree.terminal.sendInput('\x1b[6~')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/provider') })
+    expect(tree.terminal.output).toContain('/provider')
   })
 
   it('opens the /model picker, commits the draft, and routes the next request', async () => {
@@ -2358,13 +2408,6 @@ describe('blue whole-tree e2e', () => {
     // the `╭` is replaced by the splice while the pane is connected.
     expect(tree.terminal.output).toContain(' BTW ')
     expect(tree.terminal.output).toContain('Esc close')
-    const btwFrame = await fullFrame(tree.terminal)
-    const btwTop = btwFrame.split('\n').find(row => stripSgr(row).includes('╭'))
-    const editorTop = btwFrame.split('\n').find(row => stripSgr(row).includes('├'))
-    expect(btwTop).toBeDefined()
-    expect(editorTop).toBeDefined()
-    expect(stripSgr(btwTop!).indexOf('╭')).toBe(stripSgr(editorTop!).indexOf('├'))
-    expect(stripSgr(btwTop!).length).toBe(stripSgr(editorTop!).length)
     expect(tree.terminal.output).toContain(`${EDITOR_BORDER_SGR}├`)
     // The exchange ran on the side agent: one model request, the main agent
     // untouched.
@@ -2391,25 +2434,6 @@ describe('blue whole-tree e2e', () => {
     await expect(executeCommand(tree, agent, '/btw'))
       .resolves.toEqual({ kind: 'success', text: 'dismissed the side question' })
     expect(await fullFrame(tree.terminal)).not.toContain('› hello again')
-  })
-
-  it('forks BTW from a balanced prefix while the main session is streaming', async () => {
-    const tree = await bootBlue([], { script: ['hang', delayedTextResponse('side stream reply')] })
-    const agent = await currentAgent(tree)
-    typeLine(tree.terminal, 'main stream')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('partial') })
-    expect(agent.status).toBe('running')
-
-    await expect(executeCommand(tree, agent, '/btw while main streams'))
-      .resolves.toEqual({ kind: 'success', text: 'asked the side question' })
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('side stream reply') })
-    // The side stream must become visible before the parent turn closes; a
-    // response that only appears after this point is not BTW concurrency.
-    expect(agent.status).toBe('running')
-    expect(tree.adapter.requests).toHaveLength(2)
-
-    tree.terminal.sendInput('\x03')
-    await agent.whenIdle()
   })
 
   it('remembers a session-scoped approval: the next request for the tool skips the overlay', async () => {
@@ -2597,9 +2621,7 @@ describe('blue whole-tree e2e', () => {
     const agent = await currentAgent(tree)
     await expect(executeCommand(tree, agent, '/help')).resolves.toMatchObject({ kind: 'success' })
     // The command list outgrew the first window once S25 added the
-    // session-info family; `/trace` (41 rows) pushed the tail commands past
-    // the second window too — two PageDowns bring them in.
-    tree.terminal.sendInput('\x1b[6~')
+    // session-info family; one PageDown brings the tail commands in.
     tree.terminal.sendInput('\x1b[6~')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('/yolo (/yes)') })
     // The Keys section sits below the commands window; scroll to the very
@@ -2731,6 +2753,32 @@ describe('blue whole-tree e2e', () => {
     const resumedAgent = await currentAgent(resumed)
     await expect(executeCommand(resumed, resumedAgent, '/context')).resolves.toEqual({ kind: 'success' })
     await vi.waitFor(() => { expect(stripSgr(resumed.terminal.output)).toContain('64.2k') })
+  })
+
+  it('/context consumes the optional frontend-runtime model over the official projection service', async () => {
+    const usageScript: StreamChunk[] = [
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'text-delta', index: 0, text: 'frontend context reply' },
+      { type: 'block-end', index: 0, block: { type: 'text', text: 'frontend context reply' } },
+      { type: 'usage', usage: { inputTokens: 2048, outputTokens: 32, cacheReadTokens: 1024 } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    const tree = await bootBlue([], { script: [usageScript], contextWindow: 8192, sessionProjections: true, frontendContext: true })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'render official context')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await agent.whenIdle()
+    const feature = (tree.ctx as unknown as { get(name: string): { model?: unknown } | undefined }).get('blueContextFeature')
+    await vi.waitFor(() => { expect(feature?.model).toBeDefined() })
+    await expect(executeCommand(tree, agent, '/context')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('usage')
+      expect(frame).toContain('input: 2k')
+      expect(frame).toContain('context pressure')
+      expect(frame).toContain('composition')
+    })
+    tree.terminal.sendInput('\x1b')
   })
 
   it('/context falls back to the assistant fold without the projection family', async () => {
@@ -3397,6 +3445,13 @@ describe('blue whole-tree e2e', () => {
     })
     const agent = await currentAgent(tree)
     const planMode = tree.ctx.get('planMode')!
+    agent.session.append('todo/write', {
+      todos: Array.from({ length: 6 }, (_, index) => ({
+        content: `plan-task-${index}`,
+        status: index === 0 ? 'in_progress' as const : 'pending' as const,
+      })),
+    })
+    await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('plan-task-0') })
     // /plan <message> enters plan mode and steers the draft request.
     await expect(executeCommand(tree, agent, '/plan draft it')).resolves.toMatchObject({ kind: 'success' })
     await vi.waitFor(async () => {
@@ -3406,6 +3461,7 @@ describe('blue whole-tree e2e', () => {
       expect(frame).toContain('1. Approve')
       expect(frame).toContain('2. Reject')
       expect(frame).toContain('3. Revise')
+      expect(frame).not.toContain('plan-task-0')
     })
     // The cursor seeds on the approving row.
     tree.terminal.sendInput('\r')
@@ -3414,6 +3470,7 @@ describe('blue whole-tree e2e', () => {
     expect(followUp).toContain('Plan approved')
     await agent.whenIdle()
     expect(planMode.get(agent).active).toBe(false)
+    await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('plan-task-0') })
   })
 
   it('rejects the plan through the second button and plan mode survives', async () => {

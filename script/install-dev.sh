@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # install-dev.sh — one-shot local development install of Blue into a dsh profile.
 #
-# Builds the Blue workspace and link-installs all six packages into a dev
+# Builds the Blue workspace and link-installs the bundle plus all twelve
+# runtime library packages into a dev
 # profile (no npm publish). Code changes take effect after `pnpm run build`;
 # re-run this script only when the dependency graph changes.
 #
@@ -35,17 +36,6 @@ if ! command -v "$DSH_BIN" >/dev/null 2>&1; then
   exit 1
 fi
 
-# WSL commonly inherits the Windows npm bin directory. Its dsh shim runs
-# Windows Node, which cannot resolve the Linux symlinks this script installs
-# under $HOME/.dsh and fails later with a misleading package-not-found storm.
-DSH_RESOLVED="$(command -v "$DSH_BIN")"
-if [ "$(uname -s)" = Linux ] && [[ "$DSH_RESOLVED" == /mnt/*/npm/dsh || "$DSH_RESOLVED" == /mnt/*/npm/dsh.exe || "$DSH_RESOLVED" == /mnt/*/npm/dsh.cmd ]]; then
-  echo "error: '$DSH_RESOLVED' is a Windows dsh shim; WSL profiles need a Linux dsh executable" >&2
-  echo "       set DSH_BIN to a Linux install, for example:" >&2
-  echo "       DSH_BIN=packages/cli/node_modules/.bin/dsh PROFILE=blue-dev script/install-dev.sh" >&2
-  exit 1
-fi
-
 echo "==> Building Blue workspace"
 pnpm --dir "$REPO_ROOT" run build
 
@@ -53,9 +43,16 @@ echo "==> Link-installing Blue packages into profile '$PROFILE'"
 "$DSH_BIN" plugin --profile "$PROFILE" add \
   "link:$REPO_ROOT/packages/bundle/blue" \
   "link:$REPO_ROOT/packages/api" \
+  "link:$REPO_ROOT/packages/frontend" \
+  "link:$REPO_ROOT/packages/harness-adapter" \
+  "link:$REPO_ROOT/packages/context" \
+  "link:$REPO_ROOT/packages/conversation" \
+  "link:$REPO_ROOT/packages/remote" \
   "link:$REPO_ROOT/packages/core" \
   "link:$REPO_ROOT/packages/interaction" \
   "link:$REPO_ROOT/packages/transcript" \
+  "link:$REPO_ROOT/packages/openpencil" \
+  "link:$REPO_ROOT/packages/lark" \
   "link:$REPO_ROOT/packages/app"
 
 # Harness packages the bundle patch references as loader entries resolve from
@@ -77,6 +74,6 @@ Done. Blue is linked into profile '$PROFILE'.
   Resume:   $DSH_BIN --profile $PROFILE --resume <sessionId>
   Iterate:  edit src -> pnpm --dir "$REPO_ROOT" run build -> re-run dsh
 
-Note: five "declares no dsh.bundle" warnings during install are expected —
+Note: twelve "declares no dsh.bundle" warnings during install are expected —
 only the bundle package contributes a layer.
 EOF

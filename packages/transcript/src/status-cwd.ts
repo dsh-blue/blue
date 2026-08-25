@@ -16,14 +16,13 @@ import type { Context } from '@deepseek-ai/cordis'
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
 import type {} from '@dsh-blue/blue-app'
-// The named import also carries this package's `blueStatus` Context merge.
-import type { BlueStatusEntry } from './types.ts'
+import type { StatusModel } from '@dsh-blue/blue-frontend'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-status-cwd'
 
 /** Services required before the cwd entry can register. */
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueStatusModels']
 
 /** How many trailing path segments a deep cwd keeps. */
 const MAX_CWD_SEGMENTS = 3
@@ -57,9 +56,6 @@ export function shortenCwd(path: string, home: string): string {
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
-  const colors = ctx.blueTheme.colors
-  const components = ctx.blueComponents
-  const screen = ctx.blueScreen
   let text = shortenCwd(
     ctx.get('blueSession')?.current?.session.header.cwd ?? process.cwd(),
     homedir(),
@@ -69,17 +65,9 @@ export function apply(ctx: Context): void {
     const next = shortenCwd(agent.session.header.cwd ?? process.cwd(), homedir())
     if (next === text) return
     text = next
-    screen.requestRender()
+    ctx.blueStatusModels.refresh('blue.status.cwd')
   })
 
-  const entry: BlueStatusEntry = {
-    id: 'blue.status.cwd',
-    priority: 5,
-    render(width: number): string {
-      if (text === '') return ''
-      return colors.muted(components.truncateToWidth(text, width))
-    },
-  }
-  // Effect-bound so unloading this fiber unregisters the entry.
-  ctx.effect(() => ctx.blueStatus.register(entry))
+  const model = (): StatusModel => ({ kind: 'status', id: 'blue.status.cwd', priority: 5, view: { kind: 'text', text, tone: 'muted' }, visible: text !== '' })
+  ctx.effect(() => ctx.blueStatusModels.register(model))
 }
