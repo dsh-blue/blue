@@ -310,13 +310,18 @@ function mountSession(
       component = createPlainComponent(item, colors, components, images, requestRender)
     }
     const expandable = component as BlueIntentComponent
-    if (item.kind === 'thinking' || item.kind === 'user') {
+    if (item.kind === 'thinking' || item.kind === 'user' || item.kind === 'tool') {
       // The thinking block and a foldable long user message mount at the
       // live expansion state (kimi applies toolOutputExpanded at
       // ThinkingComponent creation too); a freshly mounted entry is always
       // in the newest turn, so the creation-time state below is the same
       // shortcut for it.
-      expandable.setExpanded?.(toggle.expanded || (item.kind === 'thinking' && defaultExpansion('thinking')))
+      const fallback = item.kind === 'thinking'
+        ? defaultExpansion('thinking')
+        : item.kind === 'tool'
+          ? defaultExpansion('tools')
+          : false
+      if (toggle.expanded || fallback) expandable.setExpanded?.(true)
     }
     // The kimi one-column gutter (D29, S21): every transcript entry mounts
     // inset on both sides; the component itself never knows.
@@ -423,6 +428,7 @@ export function apply(ctx: Context): void {
   const toggle: CollapseToggle = { expanded: false, entries: [] }
 
   const BLUE_NS = 'blue' as SettingsNamespace
+
   const syncExpansionDefaults = (value: unknown): void => {
     const section = typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
     const before = `${defaultExpansion('thinking')}:${defaultExpansion('tools')}`
@@ -442,9 +448,6 @@ export function apply(ctx: Context): void {
     screen.requestRender(true)
   }
   syncExpansionDefaults(ctx.get('settings')?.get(BLUE_NS))
-  ctx.on('settings/updated', (ns, next) => {
-    if (ns === BLUE_NS) syncExpansionDefaults(next)
-  })
 
   // Optional image wiring is renderer-owned. Both the legacy baseline and the
   // official model consumer receive the same byte loader; the projected model
@@ -583,31 +586,7 @@ export function apply(ctx: Context): void {
       foldChars = n
     })
     if (foldLines !== folds.lines || foldChars !== folds.chars) setUserFoldThresholds(foldLines, foldChars)
-    const before = `${defaultExpansion('thinking')}:${defaultExpansion('tools')}`
-    setDefaultExpansion({
-      thinking: typeof section.collapseThinking === 'boolean'
-        ? !section.collapseThinking
-        : defaultExpansion('thinking'),
-      tools: typeof section.collapseToolCalls === 'boolean'
-        ? !section.collapseToolCalls
-        : defaultExpansion('tools'),
-    })
-    if (`${defaultExpansion('thinking')}:${defaultExpansion('tools')}` === before) return
-    // A fold-default commit also re-seeds the entries ALREADY mounted:
-    // "starts collapsed" is the mount semantics, but a toggle that leaves
-    // the visible transcript untouched reads as broken. The Ctrl-O state
-    // dominates exactly as it does at mount; categories the defaults do
-    // not cover (user folds) keep their state.
-    for (const entry of toggle.entries) {
-      const expandable = entry.component as BlueIntentComponent
-      if (typeof expandable.setExpanded !== 'function') continue
-      if (entry.item.kind === 'thinking') {
-        expandable.setExpanded(toggle.expanded || defaultExpansion('thinking'))
-      } else if (entry.item.kind === 'tool') {
-        expandable.setExpanded(toggle.expanded || defaultExpansion('tools'))
-      }
-    }
-    screen.requestRender(true)
+    syncExpansionDefaults(section)
   }
   applyFoldSettings(ctx.get('settings')?.get(BLUE_NS))
   ctx.on('settings/updated', (ns, next) => {

@@ -10,7 +10,7 @@
  * FAKE_* environment the specs set per case.
  */
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
@@ -21,6 +21,13 @@ import {
   probeDarwin,
   probeWindows,
 } from '../src/paste-image-native.ts'
+import {
+  classifyNativeFailure,
+  failureDetail,
+  readCopiedImage,
+  readCopiedPaths,
+  runTool,
+} from '../src/clipboard-probe.ts'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
 
 registerTempDirCleanup()
@@ -245,6 +252,72 @@ describe('escapeAppleScriptString', () => {
 
   it('escapes backslashes and double quotes', () => {
     expect(escapeAppleScriptString('a\\b"c')).toBe('a\\\\b\\"c')
+  })
+})
+
+describe('clipboard probe primitives', () => {
+  it('formats failed tool details and classifies native failures', () => {
+    expect(failureDetail('helper', { ok: false, code: 2, killed: false, stderr: '  first line  \nsecond' })).toBe('helper exited with code 2: first line')
+    expect(failureDetail('helper', { ok: false, code: undefined, killed: false, stderr: '\n  ' })).toBe('helper exited with code undefined')
+    expect(classifyNativeFailure('helper', { ok: false, code: 'ENOENT', killed: false, stderr: '' })).toEqual({ kind: 'missing-tool' })
+    expect(classifyNativeFailure('helper', { ok: false, code: 1, killed: true, stderr: '' })).toEqual({ kind: 'timeout' })
+    expect(classifyNativeFailure('helper', { ok: false, code: 1, killed: false, stderr: 'bad' })).toEqual({ kind: 'failed', detail: 'helper exited with code 1: bad' })
+  })
+
+  it('runs a helper with the default timeout and reports copied-file refusal bounds', async () => {
+    await expect(runTool(process.execPath, ['-e', 'process.stdout.write("ok")'])).resolves.toEqual({ ok: true, stdout: Buffer.from('ok') })
+    const dir = mkdtempTracked('blue-native-files-')
+    const first = join(dir, 'first.png')
+    const second = join(dir, 'second.png')
+    writeFileSync(first, PNG_1X1)
+    writeFileSync(second, PNG_1X1)
+    await expect(readCopiedPaths([], IMAGE_LIMITS)).resolves.toEqual({ kind: 'no-image' })
+    await expect(readCopiedPaths([first, first, second], { ...IMAGE_LIMITS, maxImagesPerMessage: 1 })).resolves.toEqual({
+      kind: 'file-failed',
+      detail: 'copied file selection exceeds the 1-image limit',
+    })
+    await expect(readCopiedPaths([first, second], { ...IMAGE_LIMITS, maxMessageImageBytes: PNG_1X1.byteLength })).resolves.toEqual({
+      kind: 'file-failed',
+      detail: 'copied file selection exceeds the aggregate image-byte limit',
+    })
+  })
+
+  it('reports direct copied-file open, type, size, and read failures', async () => {
+    const dir = mkdtempTracked('blue-native-files-')
+    const folder = join(dir, 'folder')
+    mkdirSync(folder)
+    const link = join(dir, 'link.png')
+    symlinkSync(folder, link)
+    await expect(readCopiedImage(join(dir, 'missing.png'), IMAGE_LIMITS.maxImageBytes)).resolves.toEqual({
+      kind: 'file-failed',
+      detail: 'missing.png could not be opened (ENOENT)',
+    })
+    await expect(readCopiedImage(folder, IMAGE_LIMITS.maxImageBytes)).resolves.toEqual({
+      kind: 'file-failed',
+      detail: 'folder is not a regular file',
+    })
+    await expect(readCopiedImage('/', IMAGE_LIMITS.maxImageBytes)).resolves.toEqual({
+      kind: 'file-failed',
+      detail: 'copied file is not a regular file',
+    })
+    await expect(readCopiedImage(link, IMAGE_LIMITS.maxImageBytes)).resolves.toEqual({
+      kind: 'file-failed',
+      detail: 'link.png symbolic links are not accepted',
+    })
+    await expect(readCopiedImage('/proc/version', 1)).resolves.toEqual({
+      kind: 'file-failed',
+      detail: 'version exceeds the per-image byte limit',
+    })
+    const oversized = join(dir, 'oversized.png')
+    writeFileSync(oversized, PNG_1X1)
+    await expect(readCopiedImage(oversized, 1)).resolves.toEqual({
+      kind: 'file-failed',
+      detail: 'oversized.png exceeds the per-image byte limit',
+    })
+    await expect(readCopiedImage('/proc/self/mem', IMAGE_LIMITS.maxImageBytes)).resolves.toEqual({
+      kind: 'file-failed',
+      detail: 'mem could not be read (EIO)',
+    })
   })
 })
 
@@ -646,4 +719,3 @@ describe('probeDarwin', () => {
 // The fake-bin scaffolding doubles as the staging-handoff witness: nothing
 // here runs the real PowerShell or AppleScript — the real-machine matrix in
 // the S39 acceptance checklist covers those.
-

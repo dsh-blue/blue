@@ -2721,6 +2721,7 @@ describe('blue whole-tree e2e', () => {
     // The command list outgrew the first window once S25 added the
     // session-info family; one PageDown brings the tail commands in.
     tree.terminal.sendInput('\x1b[6~')
+    tree.terminal.sendInput('\x1b[6~')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('/yolo (/yes)') })
     // The Keys section sits below the commands window; scroll to the very
     // end so the tail rows (shift+tab among them) enter the window.

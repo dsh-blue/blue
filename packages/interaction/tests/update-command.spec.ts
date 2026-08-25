@@ -26,6 +26,7 @@ import * as updateCheck from '../src/updater/check.ts'
 import { updaterInternals, type InteractiveChild, type SpawnOutcome } from '../src/updater/io.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
 import { registerUpdateCommand, UpdatePanel } from '../src/update-command.ts'
+import * as settingsPlugin from '../src/settings.ts'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
 import type { BlueTheme, BlueComponents, BlueKeymap } from '@dsh-blue/blue-core'
 
@@ -412,6 +413,7 @@ describe('/update early verdicts', () => {
       }
     }
     const settings = new MemorySettings(world.ctx)
+    settingsPlugin.apply(world.ctx)
     updateCheck.apply(world.ctx)
     await new Promise(resolve => setTimeout(resolve, 5))
     await settings.update(settingsNamespace('blue'), { updateChannel: 'beta' })
@@ -725,6 +727,7 @@ describe('/update confirm and swap', () => {
     // apply() registers the 'blue' settings namespace; the boot check's
     // notice mounts as a dock child, never an overlay, so it cannot race
     // the confirm form below.
+    settingsPlugin.apply(world.ctx)
     updateCheck.apply(world.ctx)
     await new Promise(resolve => setTimeout(resolve, 5))
     await settings.update(settingsNamespace('blue'), { updateChannel: '' })
@@ -911,4 +914,3 @@ describe('UpdatePanel', () => {
     panel.invalidate()
   })
 })
-

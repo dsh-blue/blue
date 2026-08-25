@@ -37,3 +37,5 @@ Three parts:
 ## Distribution contract
 
 The bundle tarball contains runtime JS, declarations, `cordis.patch.yml`, and the complete `presets/` roster. Its frontend-runtime Blue dependencies are `workspace:^` in the repository and exact versions after packing. The candidate release workflow installs this tarball in a scratch dsh profile before promoting any tag.
+
+The whole-tree e2e keeps `/help` scroll assertions aligned with the expanded command roster and the creative preset host-runner dependency; package composition remains the source of truth for both rows.

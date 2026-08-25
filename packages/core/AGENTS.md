@@ -99,3 +99,7 @@ Theme providers also publish a semantic companion through the optional `blueThem
 
 `blueNotifications` is the frontend runtime's immutable notification registry; core only hosts its lifecycle, while feature adapters push structured messages and consume snapshots.
 `frontend-renderer.ts` is the narrow TUI consumer for `@dsh-blue/blue-frontend` readonly views. `renderFrontendView`/`renderFrontendModel` and `FrontendModelComponent` are the only renderer-facing bridge for the new frontend model; width clamping delegates to pi-tui through `width.ts`. It does not read Harness events or session objects.
+
+## Verification note
+
+`theme-custom` accepts a validated `logoGradient` array as a frozen palette override; invalid arrays and entries retain the base gradient.

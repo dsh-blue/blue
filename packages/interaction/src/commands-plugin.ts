@@ -219,6 +219,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       rows: buildRows(),
       title: 'Sessions',
       titleHint: '· space toggle branch · esc cancel · ↵ resume',
+      ...(currentId === undefined ? {} : { initialValue: String(currentId) }),
       filter: true,
       onCursorChanged: cursor => {
         const query = ctx.get('sessionQuery')
@@ -271,8 +272,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     if (candidates.length === 0) return { kind: 'success', text: 'no user turns to rewind' }
     const display = displayServices(ctx)
     if (display === undefined) return { kind: 'error', text: 'rewind is unavailable: the Blue screen is not mounted' }
-    const first = candidates[0]
-    if (first === undefined) return { kind: 'success', text: 'no user turns to rewind' }
+    const first = candidates[0]!
     const list = new SelectListPanel({
       keymap: display.keymap,
       theme: display.theme,
