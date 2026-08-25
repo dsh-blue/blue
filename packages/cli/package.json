@@ -15,8 +15,7 @@
   "files": [
     "lib/bin.js",
     "npm-shrinkwrap.json",
-    "README.zh.md",
-    "presets/"
+    "README.zh.md"
   ],
   "license": "MIT",
   "repository": {

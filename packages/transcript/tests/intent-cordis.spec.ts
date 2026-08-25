@@ -2,7 +2,7 @@
  * `blue-intent-cordis` plugin: the cordis card's rendering (the shared kimi
  * header states, the define verb's purpose/halves/numbered-source preview
  * with its caps and error tail, the run/stop/undefine result preview, the
- * inspect verbs' fenced JSON and unparseable fallback, the unknown-verb
+ * inspect verbs' structured catalogs/details and plain-text fallback, the unknown-verb
  * fallback, expansion and caching, width truncation) and the registration
  * contract (effect-bound register/unregister, duplicate-intent conflict).
  */
@@ -237,54 +237,123 @@ describe('CordisCardComponent', () => {
   })
 
   describe('cordis_inspect*', () => {
-    it('renders a parseable result as a fenced json block through markdown', () => {
-      const item = toolItem({ name: 'cordis_inspect', parsedArguments: { what: 'services' } })
-      item.result = { text: JSON.stringify({ services: ['a', 'b'] }, null, 2), isError: false }
-      expect(new CordisCardComponent(props(item)).render(80)).toEqual([
+    it('renders Service.listService as a concise service catalog', () => {
+      const item = toolItem({ name: 'cordis_inspect_query' })
+      item.result = {
+        text: JSON.stringify({
+          platform: 'host',
+          provider: 'Service',
+          method: 'listService',
+          data: {
+            mode: 'catalog',
+            services: [
+              {
+                key: 'agentDefaultModel',
+                description: 'Read and persist the default model',
+                methods: [{ signature: 'getSelection(): ModelSelection' }],
+              },
+              { key: 'bluePluginHost', status: 'available' },
+            ],
+          },
+        }, null, 2),
+        isError: false,
+      }
+      expect(new CordisCardComponent(props(item)).render(120)).toEqual([
         '',
-        '✓ Used \x1b[1m[P]cordis_inspect[/P]\x1b[22m[M] (services)[/M]',
-        '  ```json',
-        '  {',
-        '    "services": [',
-        '      "a",',
-        '      "b"',
-        '    ]',
-        '  }',
-        '  ```',
+        '✓ Used \x1b[1m[P]cordis_inspect_query[/P]\x1b[22m',
+        '  [M]host · Service.listService · catalog · 2 services[/M]',
+        '  [A]•[/A] [P]agentDefaultModel[/P][M] — Read and persist the default model · 1 method[/M]',
+        '  [A]•[/A] [P]bluePluginHost[/P][M] — available[/M]',
       ])
     })
 
-    it('covers every inspect verb', () => {
-      for (const name of ['cordis_inspect_list', 'cordis_inspect_query', 'cordis_inspect_self']) {
-        const item = toolItem({ name })
-        item.result = { text: '{"ok":true}', isError: false }
-        expect(new CordisCardComponent(props(item)).render(80)).toContain('  ```json')
+    it('renders the provider directory with platform, descriptions, and method counts', () => {
+      const item = toolItem({ name: 'cordis_inspect_list' })
+      item.result = {
+        text: JSON.stringify({ providers: [
+          { id: 'Service', platform: 'host', description: 'Service discovery', methods: [{ name: 'listService' }] },
+          { id: 'Slots', platform: 'client', description: 'Slot discovery', methods: [] },
+        ] }),
+        isError: false,
       }
+      expect(new CordisCardComponent(props(item)).render(100).slice(2)).toEqual([
+        '  [M]2 providers[/M]',
+        '  [A]•[/A] [P]Service[/P][M] — Service discovery · host · 1 method[/M]',
+        '  [A]•[/A] [P]Slots[/P][M] — Slot discovery · client · 0 methods[/M]',
+      ])
     })
 
-    it('caps the fenced rows at ten collapsed and 200 expanded', () => {
-      const doc = JSON.stringify(Object.fromEntries(Array.from({ length: 30 }, (_, n) => [`k${n}`, n])), null, 2)
+    it('caps catalog items when collapsed and reveals more when expanded', () => {
+      const services = Array.from({ length: 12 }, (_, n) => ({ key: `service-${n}` }))
       const item = toolItem({ name: 'cordis_inspect_query' })
-      item.result = { text: doc, isError: false }
+      item.result = { text: JSON.stringify({
+        platform: 'host', provider: 'Service', method: 'listService',
+        data: { mode: 'catalog', services },
+      }), isError: false }
       const component = new CordisCardComponent(props(item))
       const collapsed = component.render(80)
-      // 30 keys render 32 document rows, 34 with the fence; ten shown plus the hint.
-      expect(collapsed).toHaveLength(2 + CORDIS_COLLAPSED_ROWS + 1)
-      expect(collapsed.at(-1)).toBe('[TM]... (24 more lines, 34 total, ctrl+o to expand)[/TM]')
+      expect(collapsed).toHaveLength(2 + 1 + CORDIS_COLLAPSED_ROWS + 1)
+      expect(collapsed.at(-1)).toBe('[TM]... (+2 more, 12 total, ctrl+o to expand)[/TM]')
       component.setExpanded(true)
-      expect(component.render(80)).toHaveLength(2 + 34)
+      expect(component.render(80)).toHaveLength(2 + 1 + 12)
     })
 
-    it('caps the expanded fenced rows at 200 with the hint', () => {
-      const doc = JSON.stringify(Object.fromEntries(Array.from({ length: 220 }, (_, n) => [`k${n}`, n])), null, 2)
+    it('keeps the expanded catalog bounded at 200 items', () => {
       const item = toolItem({ name: 'cordis_inspect' })
-      item.result = { text: doc, isError: false }
+      item.result = { text: JSON.stringify({ tools: Array.from({ length: 205 }, (_, n) => ({ name: `tool-${n}` })) }), isError: false }
       const component = new CordisCardComponent(props(item))
       component.setExpanded(true)
       const expanded = component.render(80)
-      // 220 keys render 222 document rows, 224 with the fence; 200 shown plus the hint.
-      expect(expanded).toHaveLength(2 + CORDIS_EXPANDED_ROWS + 1)
-      expect(expanded.at(-1)).toBe('[TM]... (24 more lines, 224 total, ctrl+o to expand)[/TM]')
+      expect(expanded).toHaveLength(2 + 1 + CORDIS_EXPANDED_ROWS + 1)
+      expect(expanded.at(-1)).toBe('[TM]... (+5 more, 205 total, ctrl+o to expand)[/TM]')
+    })
+
+    it('renders an exact Service contract without dumping referenced type declarations', () => {
+      const item = toolItem({ name: 'cordis_inspect_query' })
+      item.result = { text: JSON.stringify({
+        platform: 'host', provider: 'Service', method: 'listService',
+        data: {
+          mode: 'service',
+          service: {
+            key: 'timer',
+            description: 'Fiber-bound timers',
+            methods: [
+              { signature: 'timeout(callback: () => void, ms: number): () => void', description: 'Schedule once' },
+              { signature: 'interval(callback: () => void, ms: number): () => void' },
+            ],
+          },
+          referencedTypes: [{ name: 'TimerCallback', declaration: 'very long declaration' }],
+        },
+      }), isError: false }
+      expect(new CordisCardComponent(props(item)).render(120).slice(2)).toEqual([
+        '  [M]host · Service.listService · service · timer · 2 methods · 1 referenced type[/M]',
+        '  [A]•[/A] [P]timer[/P][M] — Fiber-bound timers · 2 methods[/M]',
+        '  [A]•[/A] [P]timeout(callback: () => void, ms: number): () => void[/P][M] — Schedule once[/M]',
+        '  [A]•[/A] [P]interval(callback: () => void, ms: number): () => void[/P]',
+      ])
+      expect(new CordisCardComponent(props(item)).render(200).join('\n')).not.toContain('very long declaration')
+    })
+
+    it('renders other query catalogs and exact entities through the structured fallback', () => {
+      const catalog = toolItem({ name: 'cordis_inspect_query' })
+      catalog.result = { text: JSON.stringify({
+        platform: 'client', provider: 'Event', method: 'listEvents',
+        data: { mode: 'catalog', events: [{ name: 'blue/change', mode: 'broadcast', summary: 'A change occurred' }] },
+      }), isError: false }
+      expect(new CordisCardComponent(props(catalog)).render(100).slice(2)).toEqual([
+        '  [M]client · Event.listEvents · catalog · 1 event[/M]',
+        '  [A]•[/A] [P]blue/change[/P][M] — A change occurred · broadcast[/M]',
+      ])
+
+      const exact = toolItem({ name: 'cordis_inspect_query' })
+      exact.result = { text: JSON.stringify({
+        platform: 'host', provider: 'Event', method: 'listEvents',
+        data: { mode: 'event', event: { name: 'blue/change', description: 'A change occurred', status: 'stable' } },
+      }), isError: false }
+      expect(new CordisCardComponent(props(exact)).render(100).slice(2)).toEqual([
+        '  [M]host · Event.listEvents · event · blue/change[/M]',
+        '  [A]•[/A] [P]blue/change[/P][M] — A change occurred · stable[/M]',
+      ])
     })
 
     it('falls back to the plain result rows when the text does not parse', () => {
@@ -299,9 +368,137 @@ describe('CordisCardComponent', () => {
 
     it('paints the unparseable failure in error red', () => {
       const item = toolItem({ name: 'cordis_inspect' })
-      item.result = { text: 'Error: no such plugin', isError: true }
-      expect(new CordisCardComponent(props(item)).render(80)[2])
-        .toBe('  [E]Error: no such plugin[/E]')
+      item.result = { text: '{\n  "error": "no such plugin"\n}', isError: true }
+      expect(new CordisCardComponent(props(item)).render(80).slice(2)).toEqual([
+        '  [E]{[/E]',
+        '  [E]  "error": "no such plugin"[/E]',
+        '  [E]}[/E]',
+      ])
+    })
+
+    it('caps long plain-text fallbacks and expands them', () => {
+      const item = toolItem({ name: 'cordis_inspect_self' })
+      item.result = { text: Array.from({ length: 12 }, (_, n) => `line ${n}`).join('\n'), isError: false }
+      const component = new CordisCardComponent(props(item))
+      expect(component.render(80).at(-1)).toBe('[TM]... (2 more lines, 12 total, ctrl+o to expand)[/TM]')
+      component.setExpanded(true)
+      expect(component.render(80)).toHaveLength(2 + 12)
+    })
+
+    it('summarizes arrays, scalar values, and shallow object fields', () => {
+      const render = (value: unknown): string[] => {
+        const item = toolItem({ name: 'cordis_inspect_self' })
+        item.result = { text: JSON.stringify(value), isError: false }
+        return new CordisCardComponent(props(item)).render(120).slice(2)
+      }
+      expect(render(['alpha', 2, null])).toEqual([
+        '  [M]3 items[/M]',
+        '  [A]•[/A] [P]alpha[/P]',
+        '  [A]•[/A] [P]2[/P]',
+        '  [A]•[/A] [P]null[/P]',
+      ])
+      expect(render(true)).toEqual(['  [M]value[/M]', '  [A]•[/A] [P]true[/P]'])
+      expect(render({
+        enabled: false,
+        retries: 3,
+        note: '  two\n lines ',
+        empty: '',
+        optional: null,
+        nested: { secret: { deep: true }, other: true },
+        single: { only: true },
+        values: [1, 2],
+      })).toEqual([
+        '  [M]8 fields[/M]',
+        '  [A]•[/A] [P]enabled[/P][M] — false[/M]',
+        '  [A]•[/A] [P]retries[/P][M] — 3[/M]',
+        '  [A]•[/A] [P]note[/P][M] — two lines[/M]',
+        '  [A]•[/A] [P]empty[/P][M] — (empty)[/M]',
+        '  [A]•[/A] [P]optional[/P][M] — null[/M]',
+        '  [A]•[/A] [P]nested[/P][M] — 2 fields[/M]',
+        '  [A]•[/A] [P]single[/P][M] — 1 field[/M]',
+        '  [A]•[/A] [P]values[/P][M] — 2 items[/M]',
+      ])
+    })
+
+    it('summarizes generic arrays and identity fields without recursive JSON', () => {
+      const item = toolItem({ name: 'cordis_inspect' })
+      item.result = { text: JSON.stringify({ records: [
+        { title: 'Title', purpose: 'Purpose' },
+        { path: '/tmp/example', provider: 'local' },
+        { kind: 'worker', packages: [{}] },
+        { type: 'leaf', referencedTypes: [] },
+        { name: '', unknown: { deep: { payload: 'hidden' } } },
+      ] }), isError: false }
+      const output = new CordisCardComponent(props(item)).render(100).slice(2)
+      expect(output[0]).toBe('  [M]5 items[/M]')
+      expect(output.slice(1)).toEqual([
+        '  [A]•[/A] [P]Title[/P][M] — Purpose[/M]',
+        '  [A]•[/A] [P]/tmp/example[/P][M] — local[/M]',
+        '  [A]•[/A] [P]worker[/P][M] — 1 package[/M]',
+        '  [A]•[/A] [P]leaf[/P][M] — 0 referenced types[/M]',
+        '  [A]•[/A] [P]item 5[/P]',
+      ])
+      expect(output.join('\n')).not.toContain('payload')
+    })
+
+    it('handles query envelopes with array, scalar, or missing data', () => {
+      const render = (value: object): string[] => {
+        const item = toolItem({ name: 'cordis_inspect_query' })
+        item.result = { text: JSON.stringify(value), isError: false }
+        return new CordisCardComponent(props(item)).render(100).slice(2)
+      }
+      expect(render({ platform: 'host', provider: 'Tool', data: [{ name: 'bash' }] })).toEqual([
+        '  [M]host · Tool · 1 item[/M]',
+        '  [A]•[/A] [P]bash[/P]',
+      ])
+      expect(render({ method: 'health', data: 'ok' })).toEqual([
+        '  [M]health[/M]',
+        '  [A]•[/A] [P]ok[/P]',
+      ])
+      expect(render({ platform: 'host', provider: 'Unknown' })).toEqual([
+        '  [M]host · Unknown[/M]',
+        '  [A]•[/A] [P]undefined[/P]',
+      ])
+      expect(render({ platform: 'host' })).toEqual([
+        '  [M]host[/M]',
+        '  [A]•[/A] [P]undefined[/P]',
+      ])
+      expect(render({ data: 'ok' })).toEqual([
+        '  [M]value[/M]',
+        '  [A]•[/A] [P]ok[/P]',
+      ])
+    })
+
+    it('renders explicit empty states for empty catalogs and objects', () => {
+      const catalog = toolItem({ name: 'cordis_inspect_query' })
+      catalog.result = { text: JSON.stringify({
+        platform: 'host', provider: 'Service', method: 'listService',
+        data: { mode: 'catalog', services: [] },
+      }), isError: false }
+      expect(new CordisCardComponent(props(catalog)).render(80).slice(2)).toEqual([
+        '  [M]host · Service.listService · catalog · 0 services[/M]',
+        '  [TM](no services)[/TM]',
+      ])
+      const empty = toolItem({ name: 'cordis_inspect_self' })
+      empty.result = { text: '{}', isError: false }
+      expect(new CordisCardComponent(props(empty)).render(80).slice(2)).toEqual([
+        '  [M]0 fields[/M]',
+        '  [TM](no fields)[/TM]',
+      ])
+      empty.result = { text: '{"only":1}', isError: false }
+      expect(new CordisCardComponent(props(empty)).render(80).slice(2)[0]).toBe('  [M]1 field[/M]')
+    })
+
+    it('handles an exact entity without optional details or method arrays', () => {
+      const item = toolItem({ name: 'cordis_inspect_query' })
+      item.result = { text: JSON.stringify({
+        platform: 'host', provider: 'Event', method: 'listEvents',
+        data: { mode: 'event', event: { name: 'bare/event' } },
+      }), isError: false }
+      expect(new CordisCardComponent(props(item)).render(80).slice(2)).toEqual([
+        '  [M]host · Event.listEvents · event · bare/event[/M]',
+        '  [A]•[/A] [P]bare/event[/P]',
+      ])
     })
 
     it('renders no body rows while pending or empty', () => {

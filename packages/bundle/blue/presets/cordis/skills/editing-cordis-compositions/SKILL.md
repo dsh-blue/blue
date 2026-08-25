@@ -11,7 +11,7 @@ Every capability in this harness is a plugin row in a `cordis.yml`. There is no 
 
 **Never edit, delete, or overwrite a preset that ships with the deployment** — the `agent-presets` directory beside the deployment's own config, which supplies `standard`, `code`, `minimal`, and `cordis`. Never escalate the sandbox to reach it, even when a change there looks quicker. An upgrade overwrites that install, and corrupting `cordis` disables preset authoring itself. Reading a shipped composition is the intended way to start; writing to one is not, and neither is editing the host composition to work around a preset limitation.
 
-In Blue there is one more off-limits subtlety: the `cordis` preset you are running on is Blue's own creative mode, synced over the nested host's shipped copy by the `blue` launcher at every boot. Editing the installed file edits a copy the next boot overwrites. To change Blue's creative mode itself, edit the payload at `packages/cli/presets/cordis/` in the dsh-blue repository and rebuild — that is a Blue source change (see the blue-plugin-development skill), not a composition edit.
+In Blue there is one more off-limits subtlety: the `cordis` preset you are running on is Blue's own creative mode, loaded from the immutable Blue bundle. To change Blue's creative mode itself, edit the payload at `packages/bundle/blue/presets/cordis/` in the dsh-blue repository and rebuild — that is a Blue source change (see the blue-plugin-development skill), not a composition edit.
 
 To change what any other shipped preset does, copy it and edit the copy. Locally authored presets under the user root are yours to create, edit, and delete.
 

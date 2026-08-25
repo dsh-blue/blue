@@ -1,11 +1,11 @@
 ---
 name: cordis-plugin-development
-description: Create, modify, debug, or roll back dynamic Cordis Plugins in this Blue session — including hot-mounting Blue UI prototypes the user sees immediately, with no reinstall or restart. Covers the discuss → inspect → define → run → iterate lifecycle, Blue's L1 services from the package façade, runtime diagnostics, dynamic model Tools, approval failures, and version management. A `code.client` half targets the browser slot system and has no surface in Blue. Dynamic packages vanish on restart: when the user accepts a prototype, package it as a distributable plugin package (blue-plugin-development skill).
+description: Create, modify, debug, or roll back dynamic Cordis Plugins in this Blue session — including hot-mounting additive Blue prototypes the user sees immediately, with no reinstall or restart. Covers the discuss → inspect → define → run → iterate lifecycle, Blue's capability-scoped public host, runtime diagnostics, dynamic model Tools, approval failures, and version management. A `code.client` half targets the browser slot system and has no surface in Blue. Dynamic packages vanish on restart: after acceptance, ask whether the user wants local source, GitHub, npm, or an ephemeral result before doing persistence work.
 ---
 
 # Develop Dynamic Cordis Plugins (host half)
 
-Dynamic plugins are temporary, process-local experiments: they live in the shared DSH process memory, are visible only to the session that defined them, and disappear on `cordis_stop`/`cordis_undefine`, toolset unload, or DSH restart. They create no plugin files, install no packages, and modify no `cordis.yml`. To keep an experiment, implement it as a composition row (editing-cordis-compositions) or a real Blue plugin (blue-plugin-development).
+Dynamic plugins are temporary, process-local experiments: they live in the shared DSH process memory, are visible only to the session that defined them, and disappear on toolset unload or DSH restart. `cordis_stop` pauses a run while retaining its immutable definitions; `cordis_undefine` removes them. They create no plugin files, install no packages, and modify no `cordis.yml`. To keep an experiment, implement it as a composition row (editing-cordis-compositions) or a real Blue plugin (blue-plugin-development).
 
 The vm sandbox isolates globals but is not a security boundary: host-realm helpers make escape possible, and granted services affect the live runtime. Treat this toolset like bash access.
 
@@ -19,7 +19,7 @@ The vm sandbox isolates globals but is not a security boundary: host-realm helpe
 5. Call `cordis_run` with the final `pluginId` and `packageId` returned by define.
 6. Handle approval, waiting, and failures from the Run card, steering messages, or `cordis_inspect_self`.
 7. Use `cordis_stop` to disable the Plugin temporarily. Use `cordis_undefine` only when it is no longer needed.
-8. **When the user accepts the prototype, package it.** A dynamic package vanishes on restart, so an accepted feature must not stay dynamic: load the blue-plugin-development skill, build the distributable plugin package, and ask the user whether to distribute it (npm) or install it into the local profile only.
+8. **When the user accepts the prototype, ask before persisting it.** Offer four explicit outcomes: keep a local plugin package, upload its repository to GitHub, publish it to npm, or leave it ephemeral. Do not create package files, repositories, commits, tags, or releases before the user chooses. After consent, load the blue-plugin-development skill and implement only the chosen path; identify login, 2FA, repository, organization, or token steps the user must perform. Warn that the ephemeral choice vanishes on restart.
 
 Do not wait in the same turn for user approval or asynchronous results. After `cordis_run` returns `awaiting-approval` or `starting`, end the current Tool flow and wait for the system to report the final outcome through state updates and steering.
 
@@ -46,37 +46,35 @@ Select methods from the actual `cordis_inspect_list` result. Common initial meth
 
 Provider names, methods, and inputs must come from the current list result. The Service/Event Catalog describes which interfaces this version permits; it does not guarantee that a Service is currently mounted. At runtime, use real Services and Events rather than caching or displaying Catalog query results.
 
-In a Blue session the host service store also carries Blue's own L1 services (`blueScreen`, `blueKeymap`, `blueTerminalInfo`, `blueComponents`, and the transcript/interaction registries) — inspect them the same way before consuming one. The inspect catalog is an incomplete, compile-time view: a service missing from the catalog can still be live and reachable. Runtime `ctx.get(name)` is the truth — probe with it before concluding a capability does not exist.
+In a Blue session the host service store also carries the capability-scoped `bluePluginHost`. Declare it as an injection and use that public facade for Blue contributions; do not probe or use raw `blueScreen`, `blueKeymap`, `blueTerminalInfo`, `blueComponents`, `blueTheme`, transcript registries, loader, or shared HMR services from dynamic code. The inspect catalog is an incomplete view of general host services, but Blue's owner boundary is explicit: absence of `bluePluginHost` means this runtime does not support a Blue UI prototype.
 
-## Mount Blue UI from the host half
+## Mount additive Blue UI from the host half
 
-The host half CAN mount Blue UI — this is the fast iteration path, because the user watches the feature appear in the running session with no reinstall and no restart. A UI component is a plain object with `render(width)` returning one string per row (visible width must not exceed `width`) plus an `invalidate()` that drops cached rows:
+The host half can prototype additive Blue UI through the capability-scoped `bluePluginHost` facade. The user sees contributions appear in the running session with no reinstall and no restart. Register renderer-neutral `dock`, `status`, `commands`, or `notifications` contributions:
 
 ```js
 return {
   name: 'my-probe',
+  inject: ['bluePluginHost'],
   apply(ctx) {
-    const screen = ctx.get('blueScreen')
-    const components = ctx.get('blueComponents')
-    const theme = ctx.get('blueTheme')
-    if (screen === undefined || components === undefined || theme === undefined) return
-    const pane = {
-      render(width) {
-        const row = theme.colors.muted(components.truncateToWidth('my probe pane', width))
-        return [row]
-      },
-      invalidate() {},
-    }
-    const unmount = screen.addBottomChild(pane)
-    ctx.on('dispose', unmount)
+    const opened = ctx.bluePluginHost.open(ctx, {
+      id: 'com.example.my-probe',
+      api: '^1.0.0',
+      capabilities: ['dock', 'notifications'],
+    })
+    if (!opened.ok || opened.value.dock === undefined) return
+    opened.value.dock.register({
+      id: 'my-probe-dock',
+      view: { kind: 'text', content: 'my probe pane', tone: 'muted' },
+    })
   },
 }
 ```
 
-- `blueScreen.addBottomChild(component)` docks a pane above the editor and returns the unmount disposer — retain it. `blueStatus.register({ id, priority, render(width) })` adds a footer entry and likewise returns a disposer.
-- The row-width contract applies inside the sandbox: measure every row with `blueComponents.truncateToWidth` / `visibleWidth`. Hand-rolled character counts mis-budget CJK and emoji and trip the render-exit clamp — a clamped row lands in `blue-overflow.log` and is a bug.
-- Render through `blueTheme.colors`, never color literals — themes are plugins and swap at runtime.
-- The package façade has no `ctx.effect()`: cleanup is the disposers the registration APIs return. Retain every disposer so stop/update leaves nothing mounted.
+- `dock`, `status`, `commands`, and `notifications` are the phase-one additive capabilities. Duplicate contribution IDs, Blue owner namespaces, and existing slash-command names are rejected.
+- `BlueView` is renderer-neutral. The TUI adapter owns width, theme, layout, and error fallback; dynamic code must not import pi-tui or assemble ANSI rows.
+- The host facade binds registrations to the dynamic plugin Fiber. Retain no raw Blue service or Agent/Session object in package state.
+- Activity pane internals, transcript fold rules, existing command handlers, editor internals, themes, and root composition are owner-only. Add a new dock/status/command or notification instead.
 
 ## Execution environment
 
@@ -117,7 +115,7 @@ Do not overuse `inject` merely to avoid an `undefined` check. Do not access `ctx
 
 ## Manage side effects
 
-Every contribution must be removed after the Plugin is stopped, updated, or removed. The package `ctx` façade does NOT expose `effect()` — the supported cleanup paths are the disposers returned by Cordis APIs:
+Every contribution must be removed after the Plugin is stopped, updated, or removed. `bluePluginHost.open(ctx, manifest)` binds all of its registrations to the package Fiber. For other APIs, use the lifecycle-safe context verbs and returned disposers:
 
 - Use `ctx.on()` to register Event listeners (removed with the fiber).
 - Retain disposers returned by Cordis Service, Tool, and timer APIs.

@@ -81,6 +81,10 @@
       "types": "./lib/types/intent-cordis.d.ts",
       "default": "./lib/intent-cordis.js"
     },
+    "./plugin-host-bridge": {
+      "types": "./lib/types/plugin-host-bridge.d.ts",
+      "default": "./lib/plugin-host-bridge.js"
+    },
     "./banner": {
       "types": "./lib/types/banner.d.ts",
       "default": "./lib/banner.js"

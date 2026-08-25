@@ -17,11 +17,9 @@
  */
 
 import { spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { cpSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir as osHomedir } from 'node:os'
-import { dirname, join, relative } from 'node:path'
 
 /** Options every spawn shape accepts. */
 export interface SpawnOptions {
@@ -51,9 +49,6 @@ export interface SpawnOutcome {
   spawnError?: string
 }
 
-/** The outcome of one creative-preset tree sync (S39). */
-export type PresetSyncResult = 'fresh' | 'synced' | { error: string }
-
 /** The shell's process seams; specs replace fields and restore them. */
 export interface CliInternals {
   /** The process environment (`DSH_HOME` is read here). */
@@ -72,15 +67,6 @@ export interface CliInternals {
    * discovery), `undefined` when the install is broken.
    */
   resolveNestedDshManifest(): string | undefined
-  /**
-   * Sync a preset payload tree over a target directory (the S39 creative
-   * preset over the nested host's shipped `cordis`): skip when the stamp
-   * file beside the target already matches the payload's content hash,
-   * otherwise replace the tree wholesale (clearing files the payload no
-   * longer carries) and rewrite the stamp. Any filesystem failure comes
-   * back as `{ error }` — the caller degrades, never refuses the boot.
-   */
-  syncPresetTree(sourceDir: string, targetDir: string, stamp: string): PresetSyncResult
   /** Spawn, capture both pipes, enforce the kill ladder on timeout. */
   spawnOnce(cmd: string, args: readonly string[], opts?: SpawnOptions): Promise<SpawnOutcome>
   /** Spawn with inherited stdio and no deadline; resolves on child exit. */
@@ -116,34 +102,6 @@ export function resolvePackageManifest(specifier: string): string | undefined {
   }
 }
 
-/** The stamp filename beside a synced preset tree (S39). */
-const PRESET_STAMP = '.blue-cordis.stamp'
-
-/**
- * Hash one payload tree: the caller's stamp string, then every file's
- * relative path and content in sorted order. Throws when the source cannot
- * be walked — the sync's `{ error }` branch.
- */
-function hashPresetTree(sourceDir: string, stamp: string): string {
-  const digest = createHash('sha256')
-  digest.update(stamp)
-  const walk = (dir: string): void => {
-    const entries = readdirSync(dir, { withFileTypes: true })
-      .sort((a, b) => a.name.localeCompare(b.name))
-    for (const entry of entries) {
-      const path = join(dir, entry.name)
-      if (entry.isDirectory()) {
-        walk(path)
-      } else {
-        digest.update(relative(sourceDir, path))
-        digest.update(readFileSync(path))
-      }
-    }
-  }
-  walk(sourceDir)
-  return digest.digest('hex')
-}
-
 /** The default seam bindings: the real process. */
 export const cliInternals: CliInternals = {
   env: process.env,
@@ -159,27 +117,6 @@ export const cliInternals: CliInternals = {
   },
   resolveNestedDshManifest(): string | undefined {
     return resolvePackageManifest('@deepseek-ai/dsh/package.json')
-  },
-  syncPresetTree(sourceDir, targetDir, stamp): PresetSyncResult {
-    try {
-      const want = hashPresetTree(sourceDir, stamp)
-      const stampPath = join(dirname(targetDir), PRESET_STAMP)
-      let current: string | undefined
-      try {
-        current = readFileSync(stampPath, 'utf8')
-      } catch {
-        current = undefined
-      }
-      if (current === want) return 'fresh'
-      rmSync(targetDir, { recursive: true, force: true })
-      cpSync(sourceDir, targetDir, { recursive: true })
-      writeFileSync(stampPath, want)
-      return 'synced'
-    } catch (error) {
-      // node fs failures are always Error instances; the String half is the
-      // defensive form for a foreign throw.
-      return { error: error instanceof Error ? error.message : /* v8 ignore next */ String(error) }
-    }
   },
   spawnOnce(cmd, args, opts = {}) {
     const graceMs = opts.killGraceMs ?? DEFAULT_KILL_GRACE_MS

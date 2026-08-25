@@ -41,6 +41,10 @@
       "types": "./lib/types/paste-image.d.ts",
       "default": "./lib/paste-image.js"
     },
+    "./plugin-host-bridge": {
+      "types": "./lib/types/plugin-host-bridge.d.ts",
+      "default": "./lib/plugin-host-bridge.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

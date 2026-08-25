@@ -204,13 +204,22 @@ describe('transcript width-scan', () => {
       }
     })
 
-    it(`CordisCardComponent (cordis_inspect, fenced json) survives ${name}`, () => {
+    it(`CordisCardComponent (cordis_inspect, structured catalog) survives ${name}`, () => {
       const components = fakeBlueComponents()
       const item = {
         ...bashItem(text),
         name: 'cordis_inspect',
         parsedArguments: { what: text },
-        result: { text: JSON.stringify({ payload: text }, null, 2), isError: false, endedAt: 0 },
+        result: {
+          text: JSON.stringify({
+            platform: text,
+            provider: text,
+            method: text,
+            data: { mode: text, services: [{ key: text, description: text, methods: [{ signature: text }] }] },
+          }),
+          isError: false,
+          endedAt: 0,
+        },
       } as TranscriptToolItem
       for (const expanded of [false, true]) {
         for (const width of SCAN_WIDTHS) {

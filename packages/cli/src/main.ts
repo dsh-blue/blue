@@ -15,7 +15,6 @@ import { calibrate } from './calibrate.ts'
 import type { CalibrationOutcome } from './calibrate.ts'
 import { cliInternals } from './internals.ts'
 import { nestedDsh } from './nested.ts'
-import { syncCreativePreset } from './presets.ts'
 import { translateArgv } from './translate.ts'
 
 /**
@@ -80,13 +79,6 @@ export async function main(argv: readonly string[]): Promise<void> {
       cliInternals.stderr(`blue: profile 'blue' is at @dsh-blue/blue@${outcome.installed}, ahead of this shell (${version}) — reinstall to advance: npm i -g @dsh-blue/blue-cli@rc\n`)
     } else if (outcome.action === 'link-lane') {
       cliInternals.stderr(`blue: profile 'blue' is a dev ${outcome.spec.split(':', 1)[0]} lane — calibration skipped\n`)
-    }
-    // The S39 creative-preset overlay: sync Blue's `cordis` payload over the
-    // nested host's shipped copy before the host boots. A failure degrades
-    // to the shipped creative mode for this boot — never a refused launch.
-    const sync = syncCreativePreset(version)
-    if (typeof sync !== 'string') {
-      cliInternals.stderr(`blue: creative-preset sync failed — ${sync.error}; this boot keeps the host's shipped creative mode\n`)
     }
   }
   const child = await cliInternals.spawnInherit(cliInternals.execPath, [host.binJs, ...translation.dshArgs], { env: LAUNCHER_ENV })

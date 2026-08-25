@@ -17,6 +17,7 @@ import { createServer} from 'node:http'
 import type { StreamChunk} from '@deepseek-ai/dsh-llm'
 import { createUserMessage} from '@deepseek-ai/dsh-llm'
 import type { ApprovalOutcome, ApprovalRequest} from '@deepseek-ai/dsh-user-approval'
+import type { BluePluginApi } from '../../../api/src/contracts.ts'
 // The theme modules come from the package subpaths — not relative core
 // source paths — because the /theme swap keys registry runtimes by apply
 // callback identity: only the module instance interaction's theme-switch
@@ -158,6 +159,48 @@ describe('blue whole-tree e2e', () => {
     expect(tree.sessionChanges).toEqual([agent])
     // The input editor mounted and the tree is idle, nothing rendered away.
     expect(tree.exits).toEqual([])
+    expect(tree.creativeIsolation.blueScreen === undefined).toBe(true)
+    expect(tree.creativeIsolation.commands === undefined).toBe(true)
+    expect(tree.creativeIsolation.bluePluginHost !== undefined).toBe(true)
+    expect(tree.creativeIsolation.tools !== undefined).toBe(true)
+  })
+
+  it('hot-mounts additive public dock, status, command, and notification contributions', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    let api: BluePluginApi | undefined
+    const fiber = tree.ctx.plugin({
+      name: 'e2e-public-plugin',
+      inject: ['bluePluginHost'],
+      apply(pluginCtx) {
+        const opened = pluginCtx.bluePluginHost.open(pluginCtx, {
+          id: '@acme/e2e-public-plugin',
+          api: '^1.0.0',
+          capabilities: ['dock', 'status', 'commands', 'notifications'],
+        })
+        if (!opened.ok) throw new Error(opened.message)
+        api = opened.value
+        const dock = api.dock!.register({ id: 'creative-dock', view: { kind: 'text', content: 'creative dock live' } })
+        const status = api.status!.register({ id: 'creative-status', render: () => ({ kind: 'text', content: 'creative status' }) })
+        const command = api.commands!.register({ id: 'creative', label: 'Run the creative command', execute: async () => ({ ok: true, value: undefined }) })
+        if (!dock.ok || !status.ok || !command.ok) throw new Error('public contribution registration failed')
+      },
+    })
+    await fiber.await()
+    await waitForRender()
+    const mounted = stripSgr(await fullFrame(tree.terminal))
+    expect(mounted).toContain('creative dock live')
+    expect(mounted).toContain('creative status')
+    await expect(executeCommand(tree, agent, '/creative')).resolves.toEqual({ kind: 'success' })
+    expect(api!.notifications!.publish({ id: 'creative-notice', tone: 'success', view: { kind: 'text', content: 'creative notice' } })).toEqual({ ok: true, value: undefined })
+    expect(stripSgr(await fullFrame(tree.terminal))).toContain('creative notice')
+
+    await fiber.dispose()
+    await waitForRender()
+    const unloaded = stripSgr(await fullFrame(tree.terminal))
+    expect(unloaded).not.toContain('creative dock live')
+    expect(unloaded).not.toContain('creative status')
+    await expect(executeCommand(tree, agent, '/creative')).resolves.toBeUndefined()
   })
 
   it('runs a startup task through the real loop and renders the reply', async () => {
@@ -2877,6 +2920,24 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(async () => {
       expect(stripSgr(await fullFrame(tree.terminal))).not.toContain(`v${BLUE_VERSION}`)
     })
+  })
+
+  it('loads Blue creative-mode metadata and persona into a real model request', async () => {
+    const tree = await bootBlue(['what mode are you in?'], {
+      script: [textResponse('Blue creative mode')],
+      presetFixtures: [{ id: 'cordis' }],
+      creativePersonaOnly: true,
+    })
+    const agent = await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    const preset = await tree.ctx.agentPresets.resolve('cordis')
+    expect(preset.name).toBe('创造模式')
+    expect(preset.description).toContain('Blue')
+    expect(tree.ctx.agentPresets.composedPreset(agent.ctx)).toBe('cordis')
+    const request = JSON.stringify(tree.adapter.requests[0]!)
+    expect(request).toContain('BLUE CREATIVE MODE')
+    expect(request).toContain('never describe this preset as ordinary')
+    expect(request).toContain('PROTOTYPE IN SESSION, THEN ASK, THEN PERSIST')
   })
 
   it('mounts every agent onto the roster default and honors the logged selection across a resume (thin-host)', async () => {

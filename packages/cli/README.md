@@ -12,4 +12,4 @@ blue
 
 The profile is managed by dsh's official pnpm workspace path. Once the profile already carries the shell's exact Blue version, ordinary starts do not invoke pnpm again. Reinstall the shell to upgrade; use `dsh plugin` for explicit profile management.
 
-The shell also carries Blue's own creative mode: at every boot it syncs a Blue-targeted `cordis` preset (Blue plugin and composition authoring guidance, in-session hot-mount prototyping with dynamic plugins) over the nested host's shipped copy. The id and the picker name stay `cordis` / 创造模式, so selecting 创造模式 in Blue always means Blue's version. This touches only the shell's own nested dsh install — another dsh installation on the same machine (for example the Web UI's) keeps the upstream creative mode untouched. If the nested host is not writable (a root-owned global prefix), that boot warns once and falls back to the shipped creative mode.
+Creative mode is supplied by the `@dsh-blue/blue` bundle itself. The shell does not rewrite its nested dsh installation, so `blue` and direct `dsh --profile` launches use the same isolated preset roster.
