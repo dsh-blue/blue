@@ -2,7 +2,7 @@
 # no release ever happens from a laptop — a vX.Y.Z-* tag on a master commit
 # is the release authority, and the granular NPM_TOKEN is the only credential
 # involved. The guard refuses tags that disagree with the manifest set (the
-# same number version.spec lockstep-checks across the six manifests, read
+# same number version.spec lockstep-checks across the ten release manifests, read
 # here without vitest so a mistyped tag dies in one second, not after the
 # gates), and the full gate re-runs before publish so a tag can never ship
 # what ci.yml wouldn't pass on the commit itself.
@@ -13,7 +13,7 @@
 # it needs the id-token permission below.
 #
 # Partial-failure note: pnpm -r publish walks topologically
-# (core→interaction→transcript→app→bundle) and does NOT skip versions that
+# (domain/runtime libraries → app → bundle → cli) and does NOT skip versions that
 # already exist — if a run dies mid-sequence, the verify step shows what
 # landed; rerun publishes only the missing tail by hand-editing this note's
 # recovery: re-run with `pnpm --filter <missing-pkg> publish ...` semantics
@@ -49,15 +49,15 @@ jobs:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
           cache: pnpm
       # Tag ↔ manifest guard, before any install: the tag IS the release
-      # version. version.spec holds the six-manifest lockstep; this reads
+      # version. version.spec holds the ten release-manifest lockstep; this reads
       # the number it guards (core's manifest) without dependencies, and
-      # test:coverage below fails the run if the other five disagree.
+      # test:coverage below fails the run if the others disagree.
       - name: guard (tag == manifest version, tag on master)
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           MANIFEST=$(node -p "require('./packages/core/package.json').version")
           if [ "$TAG" != "$MANIFEST" ]; then
-            echo "release: tag v$TAG != manifest $MANIFEST — bump the six manifests + BLUE_VERSION, or fix the tag" >&2
+            echo "release: tag v$TAG != manifest $MANIFEST — bump the ten release manifests + BLUE_VERSION, or fix the tag" >&2
             exit 1
           fi
           git fetch origin master
@@ -74,6 +74,7 @@ jobs:
       - run: pnpm diagrams:check
       - run: pnpm build
       - run: pnpm check:lib
+      - run: pnpm check:pack
       - run: pnpm test:coverage
       # Explicit .npmrc rather than NODE_AUTH_TOKEN: pnpm publish reads
       # npmrc config, and the written line is deterministic across pnpm
@@ -85,16 +86,16 @@ jobs:
       # Topological order is pnpm's default; --no-git-checks because a tag
       # checkout is a detached HEAD (pnpm would otherwise refuse); website
       # is private:true and skipped naturally.
-      - run: pnpm -r publish --tag rc --no-git-checks --provenance
-      - name: verify (npm view, five packages)
+      - run: pnpm --filter @dsh-blue/blue-api --filter @dsh-blue/blue-frontend --filter @dsh-blue/blue-harness-adapter --filter @dsh-blue/blue-conversation --filter @dsh-blue/blue-core --filter @dsh-blue/blue-app --filter @dsh-blue/blue-transcript --filter @dsh-blue/blue-interaction --filter @dsh-blue/blue --filter @dsh-blue/blue-cli publish --tag rc --no-git-checks --provenance
+      - name: verify (npm view, ten packages)
         run: |
           V="${GITHUB_REF_NAME#v}"
           # A version can 404 on `npm view` for a few seconds after its
           # publish lands (registry read lag measured on the rc.2 run:
           # core verified instantly, interaction 404'd 2s after publish,
-          # and all five were visible a minute later). Retry before
+          # and all packages were visible a minute later). Retry before
           # declaring the release broken.
-          for p in blue-core blue-interaction blue-transcript blue-app blue; do
+          for p in blue-api blue-frontend blue-harness-adapter blue-conversation blue-core blue-app blue-transcript blue-interaction blue blue-cli; do
             ok=""
             for attempt in 1 2 3 4 5; do
               GOT=$(npm view "@dsh-blue/$p@$V" version 2>/dev/null || true)
@@ -122,7 +123,7 @@ jobs:
       - name: dist-tag hygiene (latest must not point at the rc line)
         run: |
           V="${GITHUB_REF_NAME#v}"
-          for p in blue-core blue-interaction blue-transcript blue-app blue; do
+          for p in blue-api blue-frontend blue-harness-adapter blue-conversation blue-core blue-app blue-transcript blue-interaction blue blue-cli; do
             LATEST=$(npm view "@dsh-blue/$p" dist-tags.latest 2>/dev/null || true)
             if [ "$LATEST" = "$V" ]; then
               STABLE=$(npm view "@dsh-blue/$p" versions --json | jq -r '.[]?' | grep -v -- '-' | sort -V | tail -n 1)

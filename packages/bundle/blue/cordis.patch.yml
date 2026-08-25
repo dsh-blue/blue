@@ -9,7 +9,7 @@
 - id: system-prompt
   config:
     persona: >-
-      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+      You are a coding agent. Your working directory is {{cwd}}.
 
 # The shared module-reload HMR row stays off; the launcher's watch-only
 # fallback still keeps the user patch layers live until the run exits.
@@ -32,8 +32,9 @@
 # subagents), the sandbox and approval stack, persistence, the model route,
 # the token meter, shell-env, `tool-subagent-report` (registers a continuable
 # setup on the subagent singleton, which is not scope-aware), and the
-# `system-prompt` persona row (the fallback for agents bound to no preset —
-# its text matches the `standard` preset's persona verbatim).
+# `system-prompt` persona row (the fallback for agents bound to no preset).
+# The fallback uses only `cwd`: spawned children can reach this row without
+# inheriting the preset's `model` prompt variable.
 #
 # Keep this list in lockstep with the web-app bundle's disable list: when the
 # base grows a new agent-plane row, both surfaces must rule on it.
@@ -186,9 +187,11 @@
 
     # Baseline footer entry: the model name alone at priority 0, in the
     # full-strength text tier (the S15 kimi identity: the brightest thing in
-    # the footer), registered into the transcript's blueStatus registry.
+    # footer), registered as a renderer-neutral model and consumed by the
+    # transcript footer bridge. The old status-basic module remains the plain
+    # fallback when this row is omitted.
     - id: blue-status-basic
-      name: '@dsh-blue/blue-transcript/status-basic'
+      name: '@dsh-blue/blue-transcript/status-basic-model'
 
     # --- Enhancement segment --------------------------------------------------
     # Optional layers over the plain baseline; the whole segment can be
@@ -265,6 +268,20 @@
     # footer's second band).
     - id: blue-status-context
       name: '@dsh-blue/blue-transcript/status-context'
+
+    # Frontend-runtime transcript producer (F5): projects append-origin
+    # Harness conversation facts through the official session-projection
+    # registry. The effect-scoped readiness capability orders its consumer
+    # even though sibling loader rows activate concurrently.
+    - id: blue-conversation
+      name: '@dsh-blue/blue-conversation'
+
+    # Frontend-runtime transcript consumer (F5): replaces the legacy
+    # event-folded transcript model while blueConversation is present and
+    # restores that fallback on unload. It depends on the producer readiness
+    # capability, so resumed history is available in its first snapshot.
+    - id: blue-transcript-official
+      name: '@dsh-blue/blue-transcript/official-model'
 
     # Diff render intent: registers the 'diff' entry in the transcript's
     # blueIntents registry, so tool items whose presentCall/presentResult

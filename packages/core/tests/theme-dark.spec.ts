@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { ThemeModelService } from '@dsh-blue/blue-frontend'
 import { apply, BlueThemeService, name } from '../src/theme-dark.ts'
 import type { BlueSemanticColors } from '../src/types.ts'
 
@@ -39,6 +40,8 @@ const EXPECTED_ROLES: (keyof BlueSemanticColors)[] = [
   'diffRemovedStrong',
   'diffGutter',
   'diffMeta',
+  'modelHighlight',
+  'logoGradient',
 ]
 
 describe('blue-theme-dark plugin', () => {
@@ -59,8 +62,17 @@ describe('blue-theme-dark plugin', () => {
     expect(Object.isFrozen(colors)).toBe(true)
     expect(Object.keys(colors).sort()).toEqual([...EXPECTED_ROLES].sort())
     for (const role of EXPECTED_ROLES) {
-      expect(typeof colors[role]).toBe('function')
+      if (role === 'logoGradient') expect(colors.logoGradient.every(entry => typeof entry === 'function')).toBe(true)
+      else expect(typeof colors[role]).toBe('function')
     }
+  })
+
+  it('publishes the semantic companion model when the frontend registry is present', async () => {
+    const ctx = new Context()
+    await ctx.plugin(ThemeModelService)
+    await ctx.plugin({ name, apply })
+    expect(ctx.blueThemeModels.current?.id).toBe('dark')
+    expect(ctx.blueThemeModels.current?.colors.primary).toBe('#4fa8ff')
   })
 
   it('wraps text in truecolor foreground and background sequences', async () => {

@@ -16,3 +16,7 @@
 
 先用 `dsh-context` 迁移过程验证分类和诊断，再实现生成模板；用 `dsh-remote` 验证 session/remote adapter，最后用 `dsh-openpencil` 验证 renderer capability/fallback。
 
+当前实现：四份可复用 skill 文档位于 `docs/skills/`；
+`script/blue-plugin-validate.mjs` 执行边界、exports 和 lifecycle 静态审计，
+`script/blue-plugin-fixture.mjs --install` 在临时目录打包、独立安装并
+import 目标包，再输出 replay、abort、swap、width、unload 场景清单。

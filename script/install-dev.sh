@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # install-dev.sh — one-shot local development install of Blue into a dsh profile.
 #
-# Builds the Blue workspace and link-installs all six packages into a dev
+# Builds the Blue workspace and link-installs the bundle plus the ten formal
+# release packages into a dev
 # profile (no npm publish). Code changes take effect after `pnpm run build`;
 # re-run this script only when the dependency graph changes.
 #
@@ -42,6 +43,9 @@ echo "==> Link-installing Blue packages into profile '$PROFILE'"
 "$DSH_BIN" plugin --profile "$PROFILE" add \
   "link:$REPO_ROOT/packages/bundle/blue" \
   "link:$REPO_ROOT/packages/api" \
+  "link:$REPO_ROOT/packages/frontend" \
+  "link:$REPO_ROOT/packages/harness-adapter" \
+  "link:$REPO_ROOT/packages/conversation" \
   "link:$REPO_ROOT/packages/core" \
   "link:$REPO_ROOT/packages/interaction" \
   "link:$REPO_ROOT/packages/transcript" \
@@ -66,6 +70,6 @@ Done. Blue is linked into profile '$PROFILE'.
   Resume:   $DSH_BIN --profile $PROFILE --resume <sessionId>
   Iterate:  edit src -> pnpm --dir "$REPO_ROOT" run build -> re-run dsh
 
-Note: five "declares no dsh.bundle" warnings during install are expected —
+Note: package-level "declares no dsh.bundle" warnings during install are expected —
 only the bundle package contributes a layer.
 EOF

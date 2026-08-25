@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-Blue 终端 UI 核心：整棵树中唯一 import `@earendil-works/pi-tui` 的包。加载该插件先探测终端背景色（OSC 11，在 raw mode 之前），随即启动终端（`ProcessTerminal` 之上的主屏 `TuiMainScreen` 渲染器：raw mode、bracketed paste、Kitty 键盘协议协商），并注册 L1 服务；卸载插件即停止终端并恢复终端状态。本包不 import 任何 harness 包——只依赖 pi-tui 与 Cordis。
+Blue 终端 UI 核心：整棵树中唯一 import `@earendil-works/pi-tui` 的包。加载该插件先探测终端背景色（OSC 11，在 raw mode 之前），随即启动终端（`ProcessTerminal` 之上的备用屏 `TuiAltScreen` 渲染器：raw mode、bracketed paste、Kitty 键盘协议协商、应用内滚动与文本选择），并注册 L1 服务；卸载插件会恢复主屏，并把最终会话写回终端原生 scrollback。本包不 import 任何 harness 包——只依赖 pi-tui 与 Cordis。
 
 ## L1 服务
 
@@ -24,6 +24,8 @@ Blue 终端 UI 核心：整棵树中唯一 import `@earendil-works/pi-tui` 的�
 
 `createTerminalRelease()` 返回供 `@deepseek-ai/dsh-app-boot` 的 `installFailLoud(binName, proc, release)` 使用的 `release` 函数：发生致命加载失败时，它停止当前活跃的终端栈（先 drain 未决输入），使进程退出前恢复 raw mode 与 bracketed paste。没有活跃 Blue 终端时它是 no-op。各服务经由稳定的代理引用委托，未来切换渲染器（主屏/alt-screen）无需消费者改动。
 
+应用内拖选在直连终端中通过原生 OSC 52 复制；在 tmux 内则执行 `tmux load-buffer -w -`，同时更新 tmux paste buffer，并由 tmux 向外层剪贴板转发。该路径兼容 `set-clipboard external`（它会明确忽略应用发出的 OSC 52），也不依赖默认关闭的 DCS `allow-passthrough`。出现 `Copied!` 表示 tmux 命令已成功退出；外层终端仍须通过 tmux 的 `Ms` 能力声明剪贴板支持。
+
 ## 模型体验
 
 无影响，因为终端 UI 核心面向用户渲染，不注册任何模型可见的内容。
@@ -34,6 +36,6 @@ Blue 终端 UI 核心：整棵树中唯一 import `@earendil-works/pi-tui` 的�
 
 ## 已知限制与暂缓事项
 
-- **崩溃日志目录沿用 pi 默认值**——`TuiMainScreen` 把行宽溢出崩溃日志写到 `~/.pi/agent`（或 `PI_CODING_AGENT_DIR`），因为 pi-tui 硬编码了该默认值，而 Blue 尚无可传入的 dsh 侧路径；dsh 自有日志目录暂缓至 alt-screen 阶段。
+- **崩溃日志目录沿用 pi 默认值**——渲染器把行宽溢出崩溃日志写到 `~/.pi/agent`（或 `PI_CODING_AGENT_DIR`），因为 pi-tui 硬编码了该默认值，而 Blue 尚无可传入的 dsh 侧路径。
 - **仅主屏渲染器**——alternate-screen 视口与运行时渲染器切换暂缓；稳定代理引用是目前唯一预留的缝。
 - **键位冲突检测范围**——冲突检测只覆盖经 `ctx.blueKeymap` 注册的动作；pi-tui 组件（Editor、SelectList）从 pi-tui 的全局键位表解析各自绑定，本包不动该表。

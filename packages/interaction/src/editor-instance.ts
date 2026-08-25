@@ -38,8 +38,10 @@ export interface SharedEditor {
    * `ctx.commands` or an agent follow-up, with history recording and
    * buffer clearing.
    * @param text - the expanded editor content.
-   */
+  */
   readonly submitPrompt: (text: string) => void
+  /** Clear the draft or interrupt the active request through the input owner. */
+  readonly abortPrompt?: () => void
   /**
    * Flash a one-shot notice in the hint line; used by overlay-driven flows
    * (e.g. the `/sessions` picker) whose outcome settles after the command

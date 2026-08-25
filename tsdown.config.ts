@@ -1,17 +1,14 @@
 import { defineConfig } from 'tsdown'
+import { BUILD_PACKAGE_DIRS, packageDir, readManifest, sourceEntries } from './script/package-contract.mjs'
 
 /**
- * Bundle each workspace package's tsc-emitted entry points (lib/types/*.js)
- * into the published lib/ layout. tsc -b owns type emission; tsdown owns
- * runtime bundling. Package dependencies and peerDependencies stay external.
+ * Bundle each workspace package's TypeScript entry points into the published
+ * lib/ layout. tsc -b owns declaration emission; tsdown owns runtime bundling.
+ * Package dependencies and peerDependencies stay external.
  */
-export default defineConfig({
-  // Explicit package list: a bare 'packages/*' would also match the
-  // packages/bundle group directory (no package.json of its own).
-  workspace: {
-    include: ['packages/{api,core,interaction,transcript,app}', 'packages/bundle/blue'],
-  },
-  entry: ['lib/types/{index,invariant,chrome,startup,theme-dark,theme-light,theme-auto,theme-custom,editor-plus,status-basic,status-cwd,status-git,status-context,status-title,pane-activity,pane-todo,pane-btw,pane-queue,attachments,paste-image,intent-diff,intent-terminal,banner,banner-content,pane-agents,mode-status}.js'],
+export default defineConfig(BUILD_PACKAGE_DIRS.map(relativeDir => ({
+  cwd: packageDir(relativeDir),
+  entry: sourceEntries(relativeDir, readManifest(relativeDir)),
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',
@@ -19,4 +16,4 @@ export default defineConfig({
   fixedExtension: false,
   dts: false,
   clean: false,
-})
+})))

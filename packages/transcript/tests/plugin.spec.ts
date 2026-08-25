@@ -26,6 +26,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { BlueSessionRef } from '@dsh-blue/blue-app'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { ACTION_TOGGLE_COLLAPSE, apply, setRecentStepsRetention, setWindowTurns } from '../src/index.ts'
+import { createTranscriptModel, type TranscriptModelService } from '../src/transcript-model.ts'
 import * as statusBasic from '../src/status-basic.ts'
 import { setThinkingTimers, type ThinkingTimers } from '../src/thinking.ts'
 import type { BlueIntentEntry } from '../src/types.ts'
@@ -498,6 +499,75 @@ describe('blue-transcript plugin through the real Loader', () => {
     expect(screen.children).toHaveLength(0)
     expect(screen.bottomChildren).toHaveLength(0)
     disposers.length = 0
+  })
+
+  it('replaces the legacy fold while an official transcript model is present and restores it on unload', async () => {
+    resetSeq()
+    let semanticTick: (() => void) | undefined
+    setThinkingTimers({
+      setInterval(callback: () => void): ReturnType<typeof setInterval> {
+        semanticTick = callback
+        return 1 as unknown as ReturnType<typeof setInterval>
+      },
+      clearInterval(): void {},
+    })
+    const first = fakeAgent([userEvent('legacy first')])
+    const { ctx, screen, keymap } = await bootTranscript(first)
+    expect(contentLines(screen).join('\n')).toContain('legacy first')
+    const models = ctx.get('blueTranscriptModels') as TranscriptModelService
+    const remove = models.register(createTranscriptModel('official-conversation', [
+      { kind: 'transcript-assistant', id: 'official', seq: 1, turn: 1, step: 0, text: 'official only', streaming: false },
+      { kind: 'transcript-thinking', id: 'official-thinking', seq: 2, turn: 1, step: 0, text: 'official thought', streaming: true },
+    ]))
+    expect(contentLines(screen).join('\n')).toContain('official only')
+    expect(contentLines(screen).join('\n')).not.toContain('legacy first')
+    semanticTick?.()
+
+    resetSeq()
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([userEvent('legacy second')])))
+    expect(contentLines(screen).join('\n')).toContain('official only')
+    expect(contentLines(screen).join('\n')).not.toContain('legacy second')
+    keymap.actions.find(action => action.id === ACTION_TOGGLE_COLLAPSE)?.handler?.()
+
+    remove()
+    expect(contentLines(screen).join('\n')).toContain('legacy second')
+    expect(contentLines(screen).join('\n')).not.toContain('official only')
+
+    models.register(createTranscriptModel('official-conversation', [
+      { kind: 'transcript-assistant', id: 'last', seq: 3, turn: 2, step: 0, text: 'active at unload', streaming: false },
+    ]))
+    ctx.emit('blue/request-state-changed', {
+      ref: { sessionEpoch: 1, requestEpoch: 1, scope: 'btw' },
+      state: 'completed',
+    })
+    await ctx.fiber.dispose()
+    expect(screen.children).toHaveLength(0)
+    disposers.length = 0
+  })
+
+  it('keeps the legacy fallback absent before the first session when a model provider unloads', async () => {
+    const { ctx, screen } = await bootTranscript()
+    const models = ctx.get('blueTranscriptModels') as TranscriptModelService
+    const remove = models.register(createTranscriptModel('temporary', [
+      { kind: 'transcript-assistant', id: 'temporary', seq: 1, turn: 1, step: 0, text: 'temporary', streaming: false },
+    ]))
+    expect(contentLines(screen)).toEqual(['', '● temporary'])
+    remove()
+    expect(screen.children).toHaveLength(0)
+  })
+
+  it('renders a structured legacy turn failure', async () => {
+    resetSeq()
+    const { ctx, screen } = await bootTranscript()
+    ctx.emit('blue/session-changed', asAgent(fakeAgent([
+      turnStart(1),
+      turnEnd(1, { kind: 'error', error: { message: 'endpoint down', code: 'HTTP_404' } }),
+    ])))
+    ctx.emit('blue/request-state-changed', {
+      ref: { sessionEpoch: 1, requestEpoch: 1, scope: 'main' },
+      state: 'completed',
+    })
+    expect(contentLines(screen).join('\n')).toContain('request failed (HTTP_404): endpoint down')
   })
 
   it('registers the ctrl+o toggle action and unregisters it on dispose', async () => {

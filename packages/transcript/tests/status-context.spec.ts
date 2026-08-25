@@ -77,10 +77,7 @@ describe('blue-status-context', () => {
   it('renders nothing without a session or without usage data', async () => {
     const noSession = await bootStatusPlugin(context)
     expect(noSession.entry.render(80)).toBe('')
-    expect(noSession.entry.id).toBe('blue.status.context')
-    expect(noSession.entry.priority).toBe(20)
-    expect(noSession.entry.align).toBe('right')
-    expect(noSession.entry.row).toBe(2)
+    expect(noSession.registry.entries).toHaveLength(0)
     await noSession.dispose()
 
     resetSeq()
@@ -98,6 +95,10 @@ describe('blue-status-context', () => {
       reasoningDelta(1, 3, 'thinking'),
     ])
     const harness = await bootStatusPlugin(context, agent)
+    expect(harness.entry.id).toBe('blue.status.context')
+    expect(harness.entry.priority).toBe(20)
+    expect(harness.entry.align).toBe('right')
+    expect(harness.entry.row).toBe(2)
     expect(harness.entry.render(80)).toBe('ctx 12k')
     await harness.dispose()
   })
@@ -226,7 +227,8 @@ describe('blue-status-context', () => {
   })
 
   it('unregisters the entry when the fiber unloads', async () => {
-    const harness = await bootStatusPlugin(context, fakeAgent([]))
+    resetSeq()
+    const harness = await bootStatusPlugin(context, fakeAgent([usageEvent(1, 1, { inputTokens: 1, outputTokens: 1 })]))
     expect(harness.registry.entries).toHaveLength(1)
     await harness.dispose()
     expect(harness.registry.entries).toHaveLength(0)

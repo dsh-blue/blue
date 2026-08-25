@@ -72,6 +72,8 @@ export interface SelectListPanelOptions {
    * cancelling. Off by default — the shared consumers are unchanged.
    */
   readonly filter?: boolean
+  /** Called after navigation so callers can lazily hydrate the visible page. */
+  readonly onCursorChanged?: (cursor: number, rows: readonly SelectRow[]) => void
   /** Enter on an enabled row. */
   readonly onSelect: (row: SelectRow) => void
   /** Enter on a `disabled` row; absent handlers ignore the press. */
@@ -151,10 +153,13 @@ export class SelectListPanel implements BlueFocusable {
 
   private readonly filter: boolean
 
+  private rows: readonly SelectRow[]
+
   /**
    * @param options - see {@link SelectListPanelOptions}.
    */
   constructor(private readonly options: SelectListPanelOptions) {
+    this.rows = options.rows
     const seeded = options.initialValue === undefined
       ? -1
       : options.rows.findIndex(row => row.value === options.initialValue)
@@ -162,11 +167,26 @@ export class SelectListPanel implements BlueFocusable {
     this.filter = options.filter === true
   }
 
+  /**
+   * Replace the list rows while preserving the selected value when possible.
+   * This lets callers show an id/date skeleton immediately and hydrate labels
+   * from a slower persistence query without replacing the focused panel.
+   * @param rows - the refreshed rows in display order.
+   */
+  setRows(rows: readonly SelectRow[]): void {
+    const current = this.filtered()[this.cursor]?.value
+    this.rows = rows
+    const view = this.filtered()
+    const next = current === undefined ? -1 : view.findIndex(row => row.value === current)
+    this.cursor = next >= 0 ? next : Math.min(this.cursor, Math.max(0, view.length - 1))
+  }
+
   /** The rows under the live query: identity while the filter is off or
    * the query empty, else the fuzzy matches in list order (no re-rank —
    * the ModelPanel precedent). */
   private filtered(): readonly SelectRow[] {
-    const { rows, components } = this.options
+    const { components } = this.options
+    const rows = this.rows
     if (!this.filter || this.query.length === 0) return rows
     return rows.filter(row => components.fuzzyMatch(this.query, row.filterText ?? row.label).matches)
   }
@@ -192,10 +212,12 @@ export class SelectListPanel implements BlueFocusable {
     const view = this.filtered()
     if (keymap.matches(data, ACTION_MOVE_UP)) {
       this.cursor = cycle(this.cursor, view.length, -1)
+      this.options.onCursorChanged?.(this.cursor, view)
       return
     }
     if (keymap.matches(data, ACTION_MOVE_DOWN)) {
       this.cursor = cycle(this.cursor, view.length, 1)
+      this.options.onCursorChanged?.(this.cursor, view)
       return
     }
     if (keymap.matches(data, ACTION_SUBMIT)) {
@@ -210,6 +232,7 @@ export class SelectListPanel implements BlueFocusable {
       if (this.filter && this.query.length > 0) {
         this.query = ''
         this.reseedCursor()
+        this.options.onCursorChanged?.(this.cursor, this.filtered())
         return
       }
       this.options.onCancel()
@@ -227,6 +250,7 @@ export class SelectListPanel implements BlueFocusable {
     if (data.length === 1 && data >= ' ') {
       this.query += data
       this.reseedCursor()
+      this.options.onCursorChanged?.(this.cursor, this.filtered())
     }
   }
 

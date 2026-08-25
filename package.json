@@ -9,7 +9,7 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "scripts": {
-    "build": "tsc -b tsconfig.json && tsdown",
+    "build": "node script/clean-lib.mjs && tsc -b tsconfig.json --force && node script/prune-types.mjs && tsdown",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc -b tsconfig.json",
@@ -17,8 +17,16 @@
     "diagrams:sync": "node script/sync-diagrams.mjs",
     "diagrams:check": "node script/sync-diagrams.mjs --check",
     "check:lib": "node script/check-lib-exports.mjs",
+    "check:pack": "node script/check-pack.mjs",
+    "release:lock-cli": "node script/sync-cli-shrinkwrap.mjs",
+    "release:version": "node script/release-version.mjs",
     "smoke:happy": "node script/smoke-happy.mjs",
     "smoke:pty": "node script/smoke-pty.mjs",
+    "smoke:pty:mouse": "node script/smoke-pty-mouse.mjs",
+    "blue:plugin-validate": "node script/blue-plugin-validate.mjs",
+    "blue:plugin-fixture": "node script/blue-plugin-fixture.mjs",
+    "fixture:context-upstream": "node script/context-upstream-fixture.mjs",
+    "fixture:remote-upstream": "node script/remote-upstream-fixture.mjs",
     "website:dev": "pnpm --filter @dsh-blue/website run dev",
     "website:build": "pnpm --filter @dsh-blue/website run build",
     "website:preview": "pnpm --filter @dsh-blue/website run preview"
@@ -28,8 +36,11 @@
     "@types/node": "^22.20.0",
     "@vitest/coverage-v8": "^4.1.8",
     "@xterm/headless": "6.0.0",
+    "commander": "15.0.0",
     "node-pty": "1.2.0-beta.15",
     "oxlint": "1.76.0",
+    "publint": "0.3.24",
+    "tar": "7.5.22",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"

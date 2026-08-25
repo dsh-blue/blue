@@ -45,6 +45,12 @@ export const name = 'blue-banner'
 /** Services required before the banner can mount. */
 export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'agentDefaultModel']
 
+/** Banner configuration; the display override never changes Blue's release version. */
+export interface Config {
+  /** Optional profile-local identity shown instead of {@link BLUE_VERSION}. */
+  readonly displayVersion?: string
+}
+
 /** Below this viewport width the banner renders zero rows rather than overflow. */
 export const BANNER_MIN_WIDTH = 40
 
@@ -269,11 +275,13 @@ class BannerComponent implements BlueComponent {
  * effect-bound so unloading this fiber (a `/theme` swap) unmounts and
  * re-mounts it in place.
  * @param ctx - plugin context.
+ * @param config - optional profile-local display identity.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: Config = {}): void {
+  const displayVersion = config.displayVersion ?? BLUE_VERSION
   const boot = ctx.agentDefaultModel.currentSelection()
   const banner = new BannerComponent(ctx.blueTheme.colors, ctx.blueComponents, {
-    version: BLUE_VERSION,
+    version: displayVersion,
     model: boot.model,
     provider: boot.provider,
     cwd: shortenHome(process.cwd(), homedir()),
@@ -281,7 +289,7 @@ export function apply(ctx: Context): void {
   const rederive = (): void => {
     const selection = ctx.get('blueSession')?.modelRef?.current ?? ctx.agentDefaultModel.currentSelection()
     banner.update({
-      version: BLUE_VERSION,
+      version: displayVersion,
       model: selection.model,
       provider: selection.provider,
       cwd: shortenHome(process.cwd(), homedir()),

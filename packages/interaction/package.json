@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-interaction",
   "description": "Blue terminal UI interaction layer: input editor, slash commands, approval and user-question overlays over dsh-blue-core",
-  "version": "0.1.0-rc.2",
+  "version": "0.1.0-rc.8",
   "publishConfig": {
     "access": "public"
   },
@@ -29,6 +29,10 @@
       "types": "./lib/types/mode-status.d.ts",
       "default": "./lib/mode-status.js"
     },
+    "./command-model": {
+      "types": "./lib/types/command-model.d.ts",
+      "default": "./lib/command-model.js"
+    },
     "./attachments": {
       "types": "./lib/types/attachments.d.ts",
       "default": "./lib/attachments.js"
@@ -53,6 +57,7 @@
   },
   "peerDependencies": {
     "@dsh-blue/blue-api": "workspace:^",
+    "@dsh-blue/blue-frontend": "workspace:^",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-agent-default-model": "^0.1.1-rc.2",

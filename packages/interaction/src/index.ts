@@ -20,30 +20,50 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import * as approvalPlugin from './approval-plugin.ts'
 import * as commandsPlugin from './commands-plugin.ts'
+import { CommandModelService } from './command-model.ts'
 import * as inputPlugin from './input-plugin.ts'
 import * as keysPlugin from './keys.ts'
 import * as questionsPlugin from './questions-plugin.ts'
 import * as sessionTitleCadencePlugin from './session-title-cadence.ts'
 import * as terminalTitlePlugin from './terminal-title.ts'
+import { EditorModelService } from './editor-model.ts'
 
 // BluePanel is the package's public overlay container; BlueSelect stays
 // package-internal as the multi-select-only list (single-select moved to
 // ctx.blueComponents.createSelectList) and is no longer exported.
 export { BluePanel } from './select.ts'
+export { CommandModelService } from './command-model.ts'
+export { FrontendPanel } from './frontend-panel.ts'
+export { EditorModelService } from './editor-model.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-interaction'
+
+/** Interaction configuration; the override identifies acceptance profiles without changing the release line. */
+export interface Config {
+  /** Optional profile-local identity shown in version surfaces. */
+  readonly displayVersion?: string
+}
+
+/** Interaction configuration schema. */
+export const Config: z<Config> = z.object({
+  displayVersion: z.string(),
+})
 
 /**
  * Mount the Blue interaction plugins. The key batch registers first; the
  * other plugins resolve their keys against it.
  * @param ctx - plugin context.
+ * @param config - interaction presentation configuration.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: Config = {}): void {
   ctx.plugin(keysPlugin)
-  ctx.plugin(commandsPlugin)
+  ctx.plugin(CommandModelService)
+  ctx.plugin(EditorModelService)
+  ctx.plugin(commandsPlugin, config)
   ctx.plugin(inputPlugin)
   ctx.plugin(questionsPlugin)
   ctx.plugin(approvalPlugin)

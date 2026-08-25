@@ -13,9 +13,9 @@
 import { readFile } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { backgroundColor, defineThemeService, foregroundColor } from './theme-palette.ts'
-import { DARK_COLORS } from './theme-dark.ts'
-import { LIGHT_COLORS } from './theme-light.ts'
+import { backgroundColor, defineThemeService, foregroundColor, themeModel } from './theme-palette.ts'
+import { DARK_COLORS, DARK_FOREGROUNDS, DARK_SELECTED_BG } from './theme-dark.ts'
+import { LIGHT_COLORS, LIGHT_FOREGROUNDS, LIGHT_SELECTED_BG } from './theme-light.ts'
 import type { BlueColorFn, BlueSemanticColors } from './types.ts'
 
 /** Stable Cordis plugin name. */
@@ -46,23 +46,35 @@ const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const logger = ctx.logger(name)
   const base = config.base === 'light' ? LIGHT_COLORS : DARK_COLORS
+  const baseForegrounds = config.base === 'light' ? LIGHT_FOREGROUNDS : DARK_FOREGROUNDS
+  const baseSelectedBg = config.base === 'light' ? LIGHT_SELECTED_BG : DARK_SELECTED_BG
+  const baseModel = themeModel('custom', 'Custom', config.base !== 'light', baseForegrounds, baseSelectedBg)
   let parsed: unknown
   try {
     parsed = JSON.parse(await readFile(config.path, 'utf8'))
   } catch {
     logger.warn('cannot load theme file %s; using the %s base palette', config.path, config.base)
-    ctx.plugin(defineThemeService(base))
+    ctx.plugin(defineThemeService(base, baseModel))
     return
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     logger.warn('theme file %s is not a token object; using the %s base palette', config.path, config.base)
-    ctx.plugin(defineThemeService(base))
+    ctx.plugin(defineThemeService(base, baseModel))
     return
   }
-  const overrides: Record<string, BlueColorFn> = {}
+  const overrides: Record<string, BlueColorFn | readonly BlueColorFn[]> = {}
+  const rawOverrides: Record<string, string> = {}
   for (const [token, value] of Object.entries(parsed)) {
     if (!Object.hasOwn(base, token)) {
       logger.warn('ignoring unknown theme token %s', token)
+      continue
+    }
+    if (token === 'logoGradient') {
+      if (!Array.isArray(value) || value.length === 0 || value.some(entry => typeof entry !== 'string' || !HEX_COLOR.test(entry))) {
+        logger.warn('ignoring invalid gradient for theme token %s; using the base palette entry', token)
+        continue
+      }
+      overrides[token] = Object.freeze(value.map(entry => foregroundColor(entry)))
       continue
     }
     if (typeof value !== 'string' || !HEX_COLOR.test(value)) {
@@ -70,6 +82,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       continue
     }
     overrides[token] = token === 'selectedBg' ? backgroundColor(value) : foregroundColor(value)
+    rawOverrides[token] = value
   }
-  ctx.plugin(defineThemeService(Object.freeze({ ...base, ...overrides }) as BlueSemanticColors))
+  ctx.plugin(defineThemeService(Object.freeze({ ...base, ...overrides }) as BlueSemanticColors, { ...baseModel, colors: Object.freeze({ ...baseModel.colors, ...rawOverrides }) }))
 }

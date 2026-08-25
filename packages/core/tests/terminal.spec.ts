@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import { Terminal as HeadlessTerminal } from '@xterm/headless'
 import type { TUI } from '@earendil-works/pi-tui'
 import type { BlueComponent, BlueFocusable, BlueRgbColor } from '../src/types.ts'
 import { createStableTuiReference, createTerminalRelease, normalizeWheelInput, startBlueTerminal } from '../src/terminal.ts'
@@ -43,6 +44,35 @@ function focusableComponent(text: string): BlueFocusable {
   }
 }
 
+class AltScreenTerminal extends FakeTerminal {
+  private readonly vt: HeadlessTerminal
+
+  constructor(columns = 40, rows = 10) {
+    super(columns, rows)
+    this.vt = new HeadlessTerminal({ cols: columns, rows, scrollback: 1000, allowProposedApi: true })
+  }
+
+  override write(data: string): void {
+    super.write(data)
+    this.vt.write(data)
+  }
+
+  async screen(): Promise<string[]> {
+    await new Promise<void>(resolve => this.vt.write('', resolve))
+    const buffer = this.vt.buffer.active
+    return Array.from({ length: this.vt.rows }, (_, row) => buffer.getLine(row)?.translateToString(true) ?? '')
+  }
+
+  async bufferType(): Promise<string> {
+    await new Promise<void>(resolve => this.vt.write('', resolve))
+    return this.vt.buffer.active.type
+  }
+
+  dispose(): void {
+    this.vt.dispose()
+  }
+}
+
 describe('startBlueTerminal', () => {
   it('starts the renderer on the given terminal', async () => {
     const terminal = new FakeTerminal()
@@ -53,6 +83,23 @@ describe('startBlueTerminal', () => {
     terminal.resize(100, 40)
     expect(runtime.rows).toBe(40)
     return runtime.stop()
+  })
+
+  it('leaves mouse reporting disabled so native terminal selection remains available', async () => {
+    const terminal = new FakeTerminal()
+    const runtime = await startBlueTerminal(terminal, noProbe)
+
+    expect(terminal.output).not.toContain('\x1b[?1000h')
+    expect(terminal.output).not.toContain('\x1b[?1002h')
+    expect(terminal.output).not.toContain('\x1b[?1004h')
+    expect(terminal.output).not.toContain('\x1b[?1006h')
+
+    await runtime.stop()
+
+    expect(terminal.output).not.toContain('\x1b[?1000l')
+    expect(terminal.output).not.toContain('\x1b[?1002l')
+    expect(terminal.output).not.toContain('\x1b[?1004l')
+    expect(terminal.output).not.toContain('\x1b[?1006l')
   })
 
   it('runs the probe before the terminal starts and maps the reply', async () => {
@@ -178,7 +225,7 @@ describe('startBlueTerminal', () => {
     await runtime.stop()
   })
 
-  it('leaves a full viewport of content untouched', async () => {
+  it('keeps the bottom dock visible when content exceeds the viewport', async () => {
     const terminal = new FakeTerminal()
     const runtime = await startBlueTerminal(terminal, noProbe)
     runtime.addBottomChild(textComponent('dock-row'))
@@ -190,9 +237,29 @@ describe('startBlueTerminal', () => {
     await waitForRender()
     const frame = terminal.written.at(-1) ?? ''
     const rows = frame.split('\r\n')
-    // Thirty-one rendered lines: no filler, the dock right after the content.
-    expect(rows).toHaveLength(31)
-    expect(rows[30]).toContain('dock-row')
+    // The newest content rows are retained, while the dock remains visible in
+    // the terminal tail instead of being pushed below the viewport.
+    expect(rows).toHaveLength(24)
+    expect(rows[23]).toContain('dock-row')
+    expect(rows[0]).toContain('row-7')
+    await runtime.stop()
+  })
+
+  it('routes keyboard scroll input through the content handler', async () => {
+    const terminal = new FakeTerminal()
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    runtime.addBottomChild(textComponent('dock-row'))
+    runtime.addChild({
+      render: () => Array.from({ length: 30 }, (_, index) => `row-${index}`),
+      invalidate: () => {},
+    })
+    runtime.setContentScrollHandler(data => data === '\x1b[A' && runtime.scrollContent('up'))
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(runtime.tui.render(80)[0]).toContain('row-7')
+    terminal.sendInput('\x1b[A')
+    await waitForRender()
+    expect(runtime.tui.render(80)[0]).toContain('row-6')
     await runtime.stop()
   })
 
@@ -282,6 +349,200 @@ describe('startBlueTerminal', () => {
     await first.stop()
     await createTerminalRelease()()
     expect(secondTerminal.stopCount).toBe(1)
+  })
+})
+
+describe('alternate-screen runtime', () => {
+  it('keeps raw wheel reports for the native viewport when no editor handler is installed', async () => {
+    const terminal = new AltScreenTerminal(40, 10)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    runtime.addChild({
+      render: () => Array.from({ length: 20 }, (_, index) => `row-${index}`),
+      invalidate: () => {},
+    })
+    runtime.requestRender(true)
+    await waitForRender()
+
+    const before = (runtime.tui as TUI & { viewportTop?: number }).viewportTop ?? 0
+    expect(before).toBeGreaterThan(0)
+    terminal.sendInput('\x1b[<64;1;1M')
+    await waitForRender()
+    expect((runtime.tui as TUI & { viewportTop?: number }).viewportTop).toBe(before - 3)
+
+    await runtime.stop()
+    terminal.dispose()
+  })
+
+  it('keeps a focused editor from receiving wheel reports at the scroll boundary', async () => {
+    const terminal = new AltScreenTerminal(40, 10)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    const received: string[] = []
+    const editor: BlueFocusable & { handleInput(data: string): void } = {
+      focused: false,
+      render: () => ['editor'],
+      invalidate: () => {},
+      handleInput: data => received.push(data),
+    }
+    runtime.addBottomChild(editor)
+    runtime.addChild({
+      render: () => Array.from({ length: 20 }, (_, index) => `row-${index}`),
+      invalidate: () => {},
+    })
+    runtime.setFocus(editor)
+    runtime.setContentScrollHandler(data => {
+      const wheel = normalizeWheelInput(data)
+      if (wheel === undefined) return false
+      runtime.scrollContent(wheel === '\x1b[A' ? 'up' : 'down', 3)
+      return true
+    })
+    runtime.requestRender(true)
+    await waitForRender()
+
+    terminal.sendInput('\x1b[<65;1;1M')
+    await waitForRender()
+    expect(received).toEqual([])
+
+    await runtime.stop()
+    terminal.dispose()
+  })
+
+  it('keeps the dock fixed while wheel input scrolls the transcript by three rows', async () => {
+    const terminal = new AltScreenTerminal(40, 10)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    runtime.addBottomChild(textComponent('dock-row'), 'bottom')
+    runtime.addChild({
+      render: () => Array.from({ length: 20 }, (_, index) => `row-${index}`),
+      invalidate: () => {},
+    })
+    runtime.setContentScrollHandler(data => {
+      const normalized = normalizeWheelInput(data)
+      return normalized === '\x1b[A' && runtime.scrollContent('up', 3)
+    })
+    runtime.requestRender(true)
+    await waitForRender()
+
+    expect(runtime.tui.mode).toBe('fullscreen')
+    expect(terminal.output).toContain('\x1b[?1049h')
+    expect(terminal.output).toContain('\x1b[?1002h')
+    const tail = await terminal.screen()
+    expect(tail.at(-1)).toContain('dock-row')
+    expect(tail[0]).toContain('row-11')
+
+    terminal.sendInput('\x1b[<64;1;1M')
+    await waitForRender()
+    const scrolled = await terminal.screen()
+    expect(scrolled.at(-1)).toContain('dock-row')
+    expect(scrolled[0]).toContain('row-8')
+    expect(runtime.contentChanged()).toBe(true)
+
+    runtime.followContent()
+    await waitForRender()
+    expect(runtime.contentChanged()).toBe(false)
+    await runtime.stop()
+    expect(await terminal.bufferType()).toBe('normal')
+    expect(terminal.output).toContain('\x1b[?1049l')
+    terminal.dispose()
+  })
+
+  it('routes wheel and page keys to a focused replacement panel', async () => {
+    const terminal = new FakeTerminal(40, 10)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    const received: string[] = []
+    const panel: BlueFocusable & { handleInput(data: string): void } = {
+      focused: false,
+      render: () => ['panel'],
+      invalidate: () => {},
+      handleInput: data => received.push(data),
+    }
+    runtime.addBottomChild(panel)
+    runtime.setFocus(panel)
+    runtime.setContentScrollHandler(() => false)
+
+    terminal.sendInput('\x1b[<65;1;1M')
+    terminal.sendInput('\x1b[6~')
+
+    expect(received).toEqual(['\x1b[B', '\x1b[6~'])
+    await runtime.stop()
+  })
+
+  it('copies a mouse drag selection through OSC 52 outside tmux', async () => {
+    const savedTmux = process.env.TMUX
+    delete process.env.TMUX
+    const terminal = new AltScreenTerminal(40, 8)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    try {
+      runtime.addBottomChild(textComponent('dock-row'))
+      runtime.addChild(textComponent('select this text'))
+      runtime.requestRender(true)
+      await waitForRender()
+
+      terminal.sendInput('\x1b[<0;1;1M')
+      terminal.sendInput('\x1b[<32;7;1M')
+      terminal.sendInput('\x1b[<0;7;1m')
+      await waitForRender()
+
+      expect(terminal.output).toContain('\x1b]52;c;')
+      expect(terminal.output).not.toContain('\x1bPtmux;')
+      expect(terminal.output).toContain('Copied!')
+    } finally {
+      if (savedTmux === undefined) delete process.env.TMUX
+      else process.env.TMUX = savedTmux
+      await runtime.stop()
+      terminal.dispose()
+    }
+  })
+
+  it('reports a failed application-owned clipboard write without breaking selection', async () => {
+    const savedTmux = process.env.TMUX
+    delete process.env.TMUX
+    class FailingClipboardTerminal extends AltScreenTerminal {
+      override write(data: string): void {
+        if (data.includes('\x1b]52;c;')) throw new Error('clipboard unavailable')
+        super.write(data)
+      }
+    }
+    const terminal = new FailingClipboardTerminal(40, 8)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    try {
+      runtime.addChild(textComponent('select this text'))
+      runtime.requestRender(true)
+      await waitForRender()
+
+      terminal.sendInput('\x1b[<0;1;1M')
+      terminal.sendInput('\x1b[<32;7;1M')
+      terminal.sendInput('\x1b[<0;7;1m')
+      await waitForRender()
+
+      expect(terminal.output).toContain('Copy failed')
+    } finally {
+      if (savedTmux === undefined) delete process.env.TMUX
+      else process.env.TMUX = savedTmux
+      await runtime.stop()
+      terminal.dispose()
+    }
+  })
+
+  it('preserves the main screen during suspend and re-enters fullscreen afterwards', async () => {
+    const terminal = new FakeTerminal()
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    await runtime.suspend(async () => {
+      expect(terminal.output.lastIndexOf('\x1b[?1049l')).toBeGreaterThan(terminal.output.lastIndexOf('\x1b[?1049h'))
+    })
+    expect(terminal.output.lastIndexOf('\x1b[?1049h')).toBeGreaterThan(terminal.output.lastIndexOf('\x1b[?1049l'))
+    await runtime.stop()
+  })
+
+  it('clamps alternate-screen content through the injected overflow sink', async () => {
+    const terminal = new FakeTerminal(20, 8)
+    const entries: FrameOverflowEntry[] = []
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, {
+      record: entry => entries.push(entry),
+    }, 'alternate')
+    runtime.addChild(textComponent('x'.repeat(30)))
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(entries).toEqual([{ index: 0, columns: 20, width: 30, line: 'x'.repeat(30) }])
+    await runtime.stop()
   })
 })
 

@@ -12,6 +12,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import * as modeStatus from '../src/mode-status.ts'
 import type { BlueStatusEntry } from '@dsh-blue/blue-transcript'
+import { BlueStatusModelService } from '../../transcript/src/status-model.ts'
 import { setYolo } from '../src/mode-state.ts'
 import { fakeBlueContext, type FakeScreen } from './fakes.ts'
 
@@ -35,7 +36,7 @@ async function mount(options: MountOptions = {}): Promise<{
   const { ctx, screen } = fakeBlueContext()
   await ctx.plugin(SessionStore)
   const entries: BlueStatusEntry[] = []
-  ctx.provide('blueStatus', {
+  const target = {
     register: (entry: BlueStatusEntry) => {
       entries.push(entry)
       return () => {
@@ -43,7 +44,9 @@ async function mount(options: MountOptions = {}): Promise<{
         if (at >= 0) entries.splice(at, 1)
       }
     },
-  })
+  }
+  const models = new BlueStatusModelService(ctx)
+  models.attach(target, screen, ctx.blueTheme.colors, ctx.blueComponents)
   const planStates = new Map<Agent, PlanState>()
   if (options.plan !== false) {
     ctx.provide('planMode', {
@@ -74,8 +77,11 @@ async function mount(options: MountOptions = {}): Promise<{
 /** The registered badge entry. */
 function badge(entries: BlueStatusEntry[]): BlueStatusEntry {
   const entry = entries.find(item => item.id === 'blue.status.mode')
-  if (entry === undefined) throw new Error('mode badge not registered')
-  return entry
+  return entry ?? {
+    id: 'blue.status.mode',
+    priority: 2,
+    render: width => entries.find(item => item.id === 'blue.status.mode')?.render(width) ?? '',
+  }
 }
 
 /** A minimal agent shell over a fresh session. */

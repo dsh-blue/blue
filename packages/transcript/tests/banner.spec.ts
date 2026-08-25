@@ -228,14 +228,14 @@ class BannerFakeScreen implements BlueScreen {
 }
 
 /** Boot the banner plugin on a fresh root context with faked services. */
-async function bootBanner(): Promise<{ screen: BannerFakeScreen; dispose(): Promise<void> }> {
+async function bootBanner(config: banner.Config = {}): Promise<{ screen: BannerFakeScreen; dispose(): Promise<void> }> {
   const ctx = new Context()
   const screen = new BannerFakeScreen()
   ctx.reflect.provide('blueScreen', screen)
   ctx.reflect.provide('blueTheme', { colors: COLORS })
   ctx.reflect.provide('blueComponents', fakeBlueComponents())
   ctx.reflect.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'p', model: 'm' }) })
-  const fiber = await ctx.plugin(banner)
+  const fiber = await ctx.plugin(banner, config)
   return { screen, dispose: () => fiber.dispose() }
 }
 
@@ -263,6 +263,14 @@ describe('blue-banner plugin', () => {
     expect(joined).toContain(cwd.length <= budget ? cwd : cwd.slice(0, budget - 3))
     // The banner is stateless; invalidation is a covered no-op.
     expect(() => screen.children[0]?.invalidate()).not.toThrow()
+  })
+
+  it('shows a profile-local identity without changing the release version', async () => {
+    const displayVersion = `${BLUE_VERSION}+frontend-runtime.test`
+    const { screen } = await bootBanner({ displayVersion })
+    const joined = screen.children[0]?.render(100).join('\n') ?? ''
+    expect(joined).toContain(`Version:   ${displayVersion}`)
+    expect(BLUE_VERSION).toBe('0.1.0-rc.2')
   })
 
   it('re-derives the model line on session and model changes', async () => {

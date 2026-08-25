@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "../../node_modules/.cache/blue-types/cli",
+    "tsBuildInfoFile": "../../node_modules/.cache/blue-tsb/cli.tsbuildinfo"
+  },
+  "include": [
+    "src"
+  ]
+}
+

@@ -1,22 +1,23 @@
 # 功能总览
 
-Blue 不是一个大组件，而是一棵 **Cordis 插件树**：bundle 的 `cordis.patch.yml` 以 23 个插件行把 UI 装配到 `dsh-base` 之上。每个视觉表面都是一个可独立增删的插件行——这正是"一切皆插件"的字面意义。
+Blue 不是一个大组件，而是一棵 **Cordis 插件树**：bundle 的 `cordis.patch.yml` 以 29 个 Blue 插件行把 UI 装配到 `dsh-base` 之上；5 个已验收的 frontend-runtime/生态行默认启用，并保留 capability-absent fallback。每个视觉表面都是一个可独立增删的插件行——这正是"一切皆插件"的字面意义。
 
 ## 三段式装配
 
-### 基线段（5 行）—— 纯净 Blue
+### 基线段（6 行）—— 纯净 Blue
 
 去掉整个增强段后依然完整可用的最小 Blue UI：
 
 | 插件行 | 职责 |
 | --- | --- |
+| `blue-api-host` | 稳定 renderer-independent contract 与 capability 注册宿主 |
 | `blue-core` | 全树唯一的 pi-tui 适配器：终端生命周期与 `blueScreen` / `blueKeymap` / `blueTerminalInfo` / `blueComponents` 服务 |
 | `blue-theme-dark` | 内置 dark 调色板，提供 `blueTheme` 服务 |
 | `blue-banner` | 启动欢迎横幅：logo + Welcome/`/help` 头两行、Directory/Model/Version 信息行 |
 | `blue-transcript` | 会话事件 → transcript 渲染；`blueStatus` 注册表与两行 footer 壳 |
 | `blue-status-basic` | footer 基线条目：model 名（优先级 0，最亮档） |
 
-### 增强段（15 行）—— 可整体摘除
+### 增强段（20 行）—— 可整体摘除
 
 在纯基线之上的可选层，逐行可删，整段可删：
 
@@ -37,6 +38,11 @@ Blue 不是一个大组件，而是一棵 **Cordis 插件树**：bundle 的 `cor
 | `blue-pane-todo` | todo 面板（Ctrl-T 折叠切换） |
 | `blue-pane-btw` | `/btw` 侧问面板 |
 | `blue-pane-agents` | 子代理分组面板（运行中子代理的组卡片，dock 末行） |
+| `blue-context` | 默认的官方 context projection 与结构化 action vertical slice；旧 reader fallback 保留 |
+| `blue-conversation` | 默认的官方 append-origin conversation projection producer |
+| `blue-transcript-official` | 默认的 whole projection snapshot/change feed semantic transcript consumer |
+| `blue-openpencil` | 按 capability 激活的官方 tool-result presentation 与 plain fallback adapter |
+| `blue-lark` | 按 capability 激活的官方 command 与 loopback settings notification adapter |
 
 ### 装配段（3 行）—— 收口
 
@@ -48,7 +54,7 @@ Blue 不是一个大组件，而是一棵 **Cordis 插件树**：bundle 的 `cor
 
 ## plain-first
 
-基线段 + 装配段（共 8 行）就是完整、自洽的 Blue UI。Blue 自己的增强同样走下游插件可用的缝注册——删掉整个增强段，bundle 照常启动照常工作。这让每一个增强行都经受"没有它世界是否更好"的检验，也是下游插件获得与内置功能同等地位的机制保证。
+基线段 + 装配段（共 9 行）就是完整、自洽的 Blue UI。Blue 自己的增强同样走下游插件可用的缝注册——删掉整个增强段，bundle 照常启动照常工作。这让每一个增强行都经受"没有它世界是否更好"的检验，也是下游插件获得与内置功能同等地位的机制保证。
 
 ## 底部 dock 顺序
 

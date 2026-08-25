@@ -76,6 +76,8 @@ describe('blue bundle', () => {
       'blue-status-title',
       'blue-status-mode',
       'blue-status-context',
+      'blue-conversation',
+      'blue-transcript-official',
       'blue-intent-diff',
       'blue-intent-terminal',
       'blue-pane-activity',
@@ -93,6 +95,9 @@ describe('blue bundle', () => {
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/attachments'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/paste-image'")
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/banner'")
+    expect(patch).toContain("name: '@dsh-blue/blue-conversation'")
+    expect(patch).toContain("name: '@dsh-blue/blue-transcript/official-model'")
+    expect(patch).not.toMatch(/- id: blue-(?:context|conversation|transcript-official|openpencil|lark)\n\s+name:[^\n]+\n\s+disabled: true/gu)
   })
 
   it('inserts the upstream agent-presets roster row ahead of the Blue rows', () => {
@@ -102,6 +107,12 @@ describe('blue bundle', () => {
     // The roster row precedes the first Blue row: it is a host-plane row the
     // launcher keys on, not part of the UI stack.
     expect(patch.indexOf('- id: agent-presets')).toBeLessThan(patch.indexOf('- id: blue-core'))
+  })
+
+  it('keeps the host fallback persona valid for agents without preset model variables', () => {
+    const persona = /^- id: system-prompt\n {2}config:\n {4}persona: >-\n {6}([^\n]+)$/m.exec(patch)?.[1]
+    expect(persona).toBe('You are a coding agent. Your working directory is {{cwd}}.')
+    expect(persona).not.toContain('{{model}}')
   })
 
   it('disables exactly the web-app bundle\'s thin-host agent-plane list, every id addressing a real base row', () => {

@@ -71,14 +71,15 @@ flowchart TB
 
 依赖严格单向：`core ← transcript / interaction ← app ← bundle`。
 
-从 bundle 视角看同一棵树：`cordis.patch.yml` 分三段插入 23 条 Blue 行。plain 基线（基线段 + 组装段，共 8 行）自足可跑；增强段的每一行都可单独删掉——plain-first（ADR D21）的图景：
+从 bundle 视角看同一棵树：`cordis.patch.yml` 分三段插入 29 条 Blue 行。plain 基线（基线段 + 组装段，共 9 行）自足可跑；增强段的每一行都可单独删掉——plain-first（ADR D21）的图景：
 
 <!-- BEGIN diagram:blue-composition -->
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml — the 22 Blue rows · 22 条 Blue 行"]
-        subgraph baseline["plain baseline 基线 — 8 rows, self-sufficient 自足"]
+    subgraph bundle["cordis.patch.yml — the 29 Blue rows · 29 条 Blue 行"]
+        subgraph baseline["plain baseline 基线 — 9 rows, self-sufficient 自足"]
+            api["blue-api-host"]
             core["blue-core"]
             theme["blue-theme-dark"]
             banner["blue-banner"]
@@ -94,13 +95,15 @@ flowchart TB
             statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
             intents["blue-intent-diff · -terminal"]
             panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
+            runtime["blue-context · blue-conversation · blue-transcript-official · default-enabled"]
+            adapters["blue-openpencil · blue-lark · capability-gated"]
         end
     end
     dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]
     bundle -.-> dshbase
 
     classDef optional stroke-dasharray: 4 4;
-    class editorPlus,att,statusEnh,intents,panes optional;
+    class editorPlus,att,statusEnh,intents,panes,runtime,adapters optional;
 ```
 <!-- END diagram:blue-composition -->
 
@@ -108,7 +111,7 @@ Dock 顺序即插件行序——activity → queue → todo → btw → 子代�
 
 ### L0 — pi-tui 适配层（core 包内部）
 
-全树**只有 core import `@earendil-works/pi-tui`**。职责：`ProcessTerminal` + `TuiMainScreen` 启动（alt-screen 属 P1）；生命周期绑定 fiber（`ctx.effect(() => () => tui.stop())`）；Proxy 稳定 TUI 引用为渲染器热切换预留；`createTerminalRelease()` 作为 fail-loud 的 release 接入点（崩溃时恢复终端 raw mode）。
+全树**只有 core import `@earendil-works/pi-tui`**。职责：`ProcessTerminal` + `TuiAltScreen` 启动（主 `ScrollView` 管会话流，底部 dock 固定，鼠标滚动与应用内选择同归 renderer；退出把最终会话写回主屏 scrollback）；生命周期绑定 fiber（`ctx.effect(() => () => tui.stop())`）；Proxy 稳定 TUI 引用隔离具体 renderer；`createTerminalRelease()` 作为 fail-loud 的 release 接入点（崩溃时恢复终端 raw mode/备用屏/鼠标报告）。
 
 ### L1 — 内核服务（稳定核心）
 

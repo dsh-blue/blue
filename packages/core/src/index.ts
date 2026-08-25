@@ -1,7 +1,7 @@
 /**
  * @dsh-blue/blue-core — Blue terminal UI core: the tree's only
  * `@earendil-works/pi-tui` adapter. Loading the plugin probes the terminal
- * background (OSC 11, before raw mode), starts the main-screen renderer
+ * background (OSC 11, before raw mode), starts the alternate-screen renderer
  * over `ProcessTerminal`, and registers the `blueScreen`, `blueKeymap`,
  * `blueTerminalInfo`, and `blueComponents` services; `blueTheme` is
  * provided separately by the `blue-theme-dark` subpath plugin. A global key
@@ -18,6 +18,7 @@ import { BlueKeymapService } from './keymap.ts'
 import { BlueScreenService } from './screen.ts'
 import { BlueTerminalInfoService } from './terminal-info.ts'
 import { startBlueTerminal } from './terminal.ts'
+import { NotificationModelService, ThemeModelService } from '@dsh-blue/blue-frontend'
 
 export { BlueComponentsService, type BlueComponentsDeps } from './components.ts'
 export { GutterComponent } from './gutter.ts'
@@ -31,6 +32,8 @@ export {
   type BlueProbeProcess,
 } from './terminal-info.ts'
 export { createTerminalRelease } from './terminal.ts'
+export { FrontendModelComponent, renderFrontendModel, renderFrontendView } from './frontend-renderer.ts'
+export { visibleWidth } from './width.ts'
 export {
   TITLE_MAX_CHARS,
   buildClipboardOsc52,
@@ -87,9 +90,11 @@ export const name = 'blue-core'
  * @param ctx - plugin context.
  */
 export async function apply(ctx: Context): Promise<void> {
+  ctx.plugin(ThemeModelService)
+  ctx.plugin(NotificationModelService)
   const runtime = await startBlueTerminal(undefined, undefined, (scheme) => {
     ctx.emit('blue/terminal-theme-changed', scheme)
-  })
+  }, undefined, 'alternate')
   // The keymap instantiates directly instead of as a class plugin so the
   // dispatcher below can close over the instance: the runtime predates the
   // service, and the Context proxy rejects service access without an inject

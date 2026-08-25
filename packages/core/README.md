@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Blue terminal UI core: the only package in the tree that imports `@earendil-works/pi-tui`. Loading the plugin probes the terminal background (OSC 11, before raw mode), starts the terminal (a main-screen `TuiMainScreen` renderer over `ProcessTerminal`: raw mode, bracketed paste, Kitty keyboard negotiation), and registers the L1 services; unloading the plugin stops the terminal and restores its state. The package imports no harness package — only pi-tui and Cordis.
+Blue terminal UI core: the only package in the tree that imports `@earendil-works/pi-tui`. Loading the plugin probes the terminal background (OSC 11, before raw mode), starts the terminal (an alternate-screen `TuiAltScreen` renderer over `ProcessTerminal`: raw mode, bracketed paste, Kitty keyboard negotiation, application-owned scrolling and text selection), and registers the L1 services; unloading the plugin restores the main screen and writes the final transcript into native scrollback. The package imports no harness package — only pi-tui and Cordis.
 
 ## L1 services
 
@@ -24,6 +24,8 @@ All five contracts are mounted as Cordis `Service` subclasses (`blueTheme` by a 
 
 `createTerminalRelease()` returns the `release` function for `installFailLoud(binName, proc, release)` from `@deepseek-ai/dsh-app-boot`: on a fatal load failure it stops the active terminal stack (draining pending input first) so raw mode and bracketed paste are restored before the process exits. It is a no-op when no Blue terminal is active. Services delegate through a stable proxy reference so a future renderer swap (main/alt screen) needs no consumer change.
 
+Application-owned drag selections use bare OSC 52 on a direct terminal. Inside tmux they run `tmux load-buffer -w -`, which updates tmux's paste buffer and asks tmux to forward it to the outer clipboard. This works with `set-clipboard external` (which explicitly ignores application OSC 52) and does not require DCS passthrough's default-off `allow-passthrough`. `Copied!` means the tmux command exited successfully; the outer terminal must still advertise clipboard support through tmux's `Ms` capability.
+
 ## Model Experience
 
 None, as the terminal UI core renders to the user and registers nothing model-facing.
@@ -34,6 +36,6 @@ None; the package adds nothing to any model request prefix.
 
 ## Known Limitations and Deferred Work
 
-- **Crash-log directory is pi's default** — `TuiMainScreen` writes its width-overflow crash log to `~/.pi/agent` (or `PI_CODING_AGENT_DIR`) because pi-tui hardcodes that default and Blue has no dsh-owned path to thread through yet; a dsh-side log directory is deferred to the alt-screen phase.
+- **Crash-log directory is pi's default** — the renderer writes its width-overflow crash log to `~/.pi/agent` (or `PI_CODING_AGENT_DIR`) because pi-tui hardcodes that default and Blue has no dsh-owned path to thread through yet.
 - **Main-screen renderer only** — the alternate-screen viewport and runtime renderer swap are deferred; the stable proxy reference is the only seam in place.
 - **Keymap conflict scope** — conflict detection covers actions registered through `ctx.blueKeymap`; pi-tui components (Editor, SelectList) resolve their own bindings from pi-tui's global keybindings table, which this package leaves untouched.

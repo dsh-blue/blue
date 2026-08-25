@@ -1,22 +1,23 @@
 # Features overview
 
-Blue is not one big component — it is a **Cordis plugin tree**: the bundle's `cordis.patch.yml` assembles the UI over `dsh-base` with 23 plugin rows. Every visual surface is an individually removable row; that is "everything is a plugin" taken literally.
+Blue is not one big component — it is a **Cordis plugin tree**: the bundle's `cordis.patch.yml` assembles the UI over `dsh-base` with 29 Blue plugin rows. Five accepted frontend-runtime/ecosystem rows are default-enabled with capability-absent fallbacks. Every visual surface is an individually removable row; that is "everything is a plugin" taken literally.
 
 ## Three-segment assembly
 
-### Baseline segment (5 rows) — plain Blue
+### Baseline segment (6 rows) — plain Blue
 
 The minimal, self-sufficient Blue UI that remains when the whole enhancement segment is dropped:
 
 | Row | Responsibility |
 | --- | --- |
+| `blue-api-host` | stable renderer-independent contract and capability registration host |
 | `blue-core` | the tree's only pi-tui adapter: terminal lifecycle plus the `blueScreen` / `blueKeymap` / `blueTerminalInfo` / `blueComponents` services |
 | `blue-theme-dark` | built-in dark palette, providing `blueTheme` |
 | `blue-banner` | boot welcome banner: the logo-headed welcome/`/help` lines and the Directory/Model/Version rows |
 | `blue-transcript` | session events → transcript rendering; the `blueStatus` registry and two-row footer shell |
 | `blue-status-basic` | baseline footer entry: the model name (priority 0, brightest tier) |
 
-### Enhancement segment (15 rows) — droppable wholesale
+### Enhancement segment (20 rows) — droppable wholesale
 
 Optional layers over the plain baseline; each row deletes individually, the whole segment deletes together:
 
@@ -37,6 +38,11 @@ Optional layers over the plain baseline; each row deletes individually, the whol
 | `blue-pane-todo` | todo pane (Ctrl-T collapse toggle) |
 | `blue-pane-btw` | `/btw` side-question pane |
 | `blue-pane-agents` | subagent-group pane (running subagents' group card, last dock row) |
+| `blue-context` | default official context projection and structured-action vertical slice; legacy reader fallback retained |
+| `blue-conversation` | default official append-origin conversation projection producer |
+| `blue-transcript-official` | default semantic transcript consumer of whole projection snapshots/change feeds |
+| `blue-openpencil` | capability-gated official tool-result presentation and plain-fallback adapter |
+| `blue-lark` | capability-gated official command and loopback-settings notification adapter |
 
 ### Assembly segment (3 rows) — the closing rows
 
@@ -48,7 +54,7 @@ Optional layers over the plain baseline; each row deletes individually, the whol
 
 ## plain-first
 
-Baseline + assembly (8 rows total) is the complete, self-sufficient Blue UI. Blue's own enhancements register through the same seams downstream plugins use — drop the whole enhancement segment and the bundle still boots and works. Every enhancement row is thereby held to the test of "is the world better with it", and downstream plugins get mechanism-level parity with built-ins.
+Baseline + assembly (9 rows total) is the complete, self-sufficient Blue UI. Blue's own enhancements register through the same seams downstream plugins use — drop the whole enhancement segment and the bundle still boots and works. Every enhancement row is thereby held to the test of "is the world better with it", and downstream plugins get mechanism-level parity with built-ins.
 
 ## Bottom dock order
 

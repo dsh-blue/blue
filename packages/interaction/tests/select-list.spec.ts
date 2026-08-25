@@ -98,6 +98,15 @@ function mount(options: {
 }
 
 describe('SelectListPanel navigation', () => {
+  it('hydrates rows without losing a valid cursor or crashing on an empty view', () => {
+    const { panel } = mount({ initialValue: 'v1' })
+    panel.setRows([{ value: 'other', label: 'Other' }])
+    expect(panel.render(60).some(line => line.includes('Other'))).toBe(true)
+    panel.setRows([])
+    panel.setRows([{ value: 'fresh', label: 'Fresh' }])
+    expect(panel.render(60).some(line => line.includes('Fresh'))).toBe(true)
+  })
+
   it('wraps the cursor at both ends', () => {
     const { panel, onSelect } = mount()
     panel.handleInput(KEY.up)

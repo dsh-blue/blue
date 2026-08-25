@@ -134,11 +134,40 @@ describe('blue-input plugin', () => {
     expect(screen.children).toEqual([transcriptRow, editor, hint])
   })
 
+  it('pauses tail-follow, advertises new messages, and resumes on End', async () => {
+    const { ctx, screen, editor, hint, fiber } = await mount()
+    screen.contentScrollResult = true
+    screen.contentPaused = true
+    ctx.emit('blue/transcript-content-changed', screen.contentChanged())
+    expect(hint.render(80)).toEqual(['~new messages available · press End to follow~'])
+
+    expect(screen.sendContentInput('\x1b[5~')).toBe(true)
+    expect(screen.sendContentInput('\x1b[6~')).toBe(true)
+    expect(screen.contentScrolls).toEqual([
+      { direction: 'up', amount: 20 },
+      { direction: 'down', amount: 20 },
+    ])
+
+    type(editor, 'draft')
+    expect(screen.sendContentInput('\x1b[F')).toBe(false)
+    editor.setText('')
+    expect(screen.sendContentInput('\x1b[F')).toBe(true)
+    expect(screen.followCount).toBe(1)
+    expect(screen.contentPaused).toBe(false)
+    expect(hint.render(80)).toEqual([])
+
+    await fiber.dispose()
+    expect(screen.sendContentInput('\x1b[F')).toBe(false)
+  })
+
   it('publishes the editor and submit router through the shared reference', async () => {
     const { editor } = await mount()
     const shared = getSharedEditor()
     expect(shared?.editor).toBe(editor)
     expect(shared?.submitPrompt).toBeTypeOf('function')
+    type(editor, 'clear me')
+    shared?.abortPrompt?.()
+    expect(editor.getText()).toBe('')
   })
 
   it('submits plain text as a user follow-up message, records history, and clears the buffer', async () => {
@@ -351,6 +380,24 @@ describe('blue-input plugin', () => {
     await vi.waitFor(() => {
       expect(hint.render(80)).toEqual(['~!boom!~'])
     })
+  })
+
+  it('flattens a multi-line command result into one terminal row', async () => {
+    const { ctx, editor, hint } = await mount()
+    ctx.commands.register({
+      name: 'multiline',
+      description: 'Return a structured status notice',
+      handler: () => ({
+        kind: 'success',
+        text: 'Goal created\r\nStatus: active\n\n  Activation: armed',
+      }),
+    })
+    type(editor, '/multiline')
+    editor.handleInput(KEY.enter)
+    await vi.waitFor(() => {
+      expect(hint.render(120)).toEqual(['~Goal created · Status: active · Activation: armed~'])
+    })
+    expect(hint.render(120)[0]).not.toMatch(/[\r\n]/u)
   })
 
   it('drops the result notice when the fiber unloads before the command settles', async () => {

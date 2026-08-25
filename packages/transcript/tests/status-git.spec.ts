@@ -86,7 +86,21 @@ describe('blue-status-git', () => {
     git.setGitCommandRunner(runner)
     git.setGitClock(() => T0)
     const harness = await bootStatusPlugin(git, fakeAgent([], { cwd: '/elsewhere' }))
+    expect(harness.registry.entries).toHaveLength(1)
     expect(harness.entry.render(80)).toBe('')
+    await harness.dispose()
+  })
+
+  it('reveals a repository that appears after an initially empty probe', async () => {
+    let branch: string | null = null
+    git.setGitCommandRunner(args => args[0] === 'branch' ? branch : '## main\n')
+    let now = T0
+    git.setGitClock(() => now)
+    const harness = await bootStatusPlugin(git)
+    expect(harness.entry.render(80)).toBe('')
+    branch = 'main'
+    now += git.BRANCH_TTL_MS
+    expect(harness.entry.render(80)).toBe('main')
     await harness.dispose()
   })
 
@@ -316,4 +330,3 @@ describe('blue-status-git', () => {
     await harness.dispose()
   })
 })
-

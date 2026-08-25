@@ -10,10 +10,10 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { colorsFromForegrounds, defineThemeService } from './theme-palette.ts'
+import { colorsFromForegrounds, defineThemeService, themeModel } from './theme-palette.ts'
 import type { BlueSemanticColors } from './types.ts'
 
-const LIGHT_FOREGROUNDS = {
+export const LIGHT_FOREGROUNDS = {
   text: '#1f2328',
   textStrong: '#0a0c10',
   muted: '#6a737d',
@@ -43,18 +43,24 @@ const LIGHT_FOREGROUNDS = {
   diffRemovedStrong: '#a40e26',
   diffGutter: '#8c959f',
   diffMeta: '#6a737d',
+  modelHighlight: '#1d4fd7',
 } as const
 
-const LIGHT_SELECTED_BG = '#d0d7de'
+const LIGHT_LOGO_GRADIENT = [
+  '#0a2c6b', '#103581', '#164097', '#1d4ba9', '#2557bb',
+  '#2f66cd', '#3d77dd', '#4f8ae8', '#63a0f2',
+] as const
+
+export const LIGHT_SELECTED_BG = '#d0d7de'
 
 /** The built-in light palette as a frozen semantic color table. */
-export const LIGHT_COLORS: BlueSemanticColors = colorsFromForegrounds(LIGHT_FOREGROUNDS, LIGHT_SELECTED_BG)
+export const LIGHT_COLORS: BlueSemanticColors = colorsFromForegrounds(LIGHT_FOREGROUNDS, LIGHT_SELECTED_BG, LIGHT_LOGO_GRADIENT)
 
 /**
  * The light `blueTheme` provider. Exposes the frozen semantic color table;
  * unregistered automatically when the plugin's fiber unloads.
  */
-export class BlueThemeService extends defineThemeService(LIGHT_COLORS) {}
+export class BlueThemeService extends defineThemeService(LIGHT_COLORS, themeModel('light', 'Light', false, LIGHT_FOREGROUNDS, LIGHT_SELECTED_BG)) {}
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-theme-light'

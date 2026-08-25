@@ -21,17 +21,16 @@
 
 import { spawnSync } from 'node:child_process'
 import type { Context } from '@deepseek-ai/cordis'
+import type { StatusModel } from '@dsh-blue/blue-frontend'
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
 import type {} from '@dsh-blue/blue-app'
-// The named import also carries this package's `blueStatus` Context merge.
-import type { BlueStatusEntry } from './types.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-status-git'
 
 /** Services required before the git entry can register. */
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueStatusModels']
 
 /** Branch probe cadence in milliseconds. */
 export const BRANCH_TTL_MS = 5_000
@@ -247,26 +246,21 @@ export function formatGitBadge(status: GitBadgeStatus): string {
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
-  const colors = ctx.blueTheme.colors
-  const components = ctx.blueComponents
   let cache = createGitBadgeCache(
     ctx.get('blueSession')?.current?.session.header.cwd ?? process.cwd(),
   )
 
   ctx.on('blue/session-changed', (agent) => {
     cache = createGitBadgeCache(agent.session.header.cwd ?? process.cwd())
-    ctx.blueScreen.requestRender()
+    ctx.blueStatusModels.refresh('blue.status.git')
   })
 
-  const entry: BlueStatusEntry = {
-    id: 'blue.status.git',
-    priority: 10,
-    render(width: number): string {
-      const status = cache.getStatus()
-      if (status === null) return ''
-      return colors.muted(components.truncateToWidth(formatGitBadge(status), width))
-    },
+  const model = (): StatusModel => {
+    const status = cache.getStatus()
+    const text = status === null ? '' : formatGitBadge(status)
+    // Keep the empty entry mounted: any later footer redraw must be able to
+    // drive the TTL probe and reveal a repository that appeared in this cwd.
+    return { kind: 'status', id: 'blue.status.git', priority: 10, view: { kind: 'text', text, tone: 'muted' }, visible: true }
   }
-  // Effect-bound so unloading this fiber unregisters the entry.
-  ctx.effect(() => ctx.blueStatus.register(entry))
+  ctx.effect(() => ctx.blueStatusModels.register(model))
 }

@@ -80,11 +80,14 @@ let checked = 0
  */
 function filesEntryMatches(entry, rel) {
   if (!entry.includes('*')) return entry === rel
-  const pattern = entry
-    .replace(/[.+^${}()|[\]\\]/g, String.raw`\$&`)
-    .replace(/\*\*\//g, '(?:.*/)?')
-    .replace(/\*\*/g, '.*')
-    .replace(/\*/g, '[^/]*')
+  let pattern = ''
+  for (let index = 0; index < entry.length;) {
+    if (entry.startsWith('**/', index)) { pattern += '(?:.*/)?'; index += 3; continue }
+    if (entry.startsWith('**', index)) { pattern += '.*'; index += 2; continue }
+    if (entry[index] === '*') { pattern += '[^/]*'; index += 1; continue }
+    pattern += entry[index].replace(/[.+^${}()|[\]\\]/g, String.raw`\$&`)
+    index += 1
+  }
   return new RegExp(`^${pattern}$`).test(rel)
 }
 

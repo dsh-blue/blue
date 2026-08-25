@@ -27,6 +27,8 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     blueStatus: BlueStatus
     blueIntents: BlueIntents
+    blueStatusModels: import('./status-model.ts').BlueStatusModelService
+    blueDockModels: import('./dock-model.ts').BlueDockModelService
   }
 }
 

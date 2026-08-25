@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { ThemeModelService } from '@dsh-blue/blue-frontend'
 import { DARK_COLORS } from '../src/theme-dark.ts'
 import { LIGHT_COLORS } from '../src/theme-light.ts'
 import { apply, Config, name } from '../src/theme-custom.ts'
@@ -71,6 +72,15 @@ describe('blue-theme-custom plugin', () => {
     const { colors } = ctx.blueTheme
     expect(colors.accent('hi')).toBe('\x1b[38;2;17;34;51mhi\x1b[39m')
     expect(colors.muted).toBe(LIGHT_COLORS.muted)
+  })
+
+  it('publishes custom semantic tokens to the frontend registry', async () => {
+    const ctx = new Context()
+    await ctx.plugin(ThemeModelService)
+    await mount(ctx, JSON.stringify({ text: '#112233' }))
+    expect(ctx.blueThemeModels.current?.id).toBe('custom')
+    expect(ctx.blueThemeModels.current?.colors.text).toBe('#112233')
+    expect(ctx.blueThemeModels.current?.colors.muted).toBe('#888888')
   })
 
   it('drops invalid entries and falls back to the base palette entry', async () => {

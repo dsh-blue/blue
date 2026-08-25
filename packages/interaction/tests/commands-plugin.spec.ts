@@ -354,6 +354,71 @@ describe('blue-commands plugin', () => {
     expect(rows[3]).toContain('s-one · 1970-01-01 00:00')
   })
 
+  it('/sessions keeps the skeleton when title hydration returns malformed data', async () => {
+    const { ctx, screen, agent } = await mount({
+      persistence: { list: () => Promise.resolve([header('s-one', 1_000, HERE)]) },
+      sessionQuery: {
+        readTitleSnapshots: async () => undefined as never,
+      },
+    })
+    await ctx.commands.execute(agent, '/sessions', [], signal())
+    await Promise.resolve()
+    const rows = screen.overlays[0]?.component.render(60) ?? []
+    expect(rows[2]).toContain('s-one · 1970-01-01 00:00')
+  })
+
+  it('/sessions hydrates only the visible title page as the cursor advances', async () => {
+    const headers = Array.from({ length: 10 }, (_, index) => header(`s-${index}`, 10_000 - index, HERE))
+    const calls: string[][] = []
+    const secondPage = Promise.withResolvers<ReadonlyArray<ReturnType<typeof titled>>>()
+    const { ctx, screen, agent } = await mount({
+      persistence: { list: () => Promise.resolve(headers) },
+      sessionQuery: {
+        readTitleSnapshots: async ids => {
+          calls.push(ids.map(String))
+          if (calls.length === 2) return secondPage.promise
+          return ids.map(id => titled(String(id), `Title ${String(id)}`))
+        },
+      },
+    })
+    await ctx.commands.execute(agent, '/sessions', [], signal())
+    expect(calls).toEqual([
+      headers.slice(0, 8).map(item => String(item.id)),
+      headers.slice(8).map(item => String(item.id)),
+    ])
+    const panel = overlay(screen)
+    for (let index = 0; index < 6; index += 1) panel.handleInput(KEY.down)
+    expect(calls).toHaveLength(2)
+    expect(calls[1]).toEqual(headers.slice(8).map(item => String(item.id)))
+    secondPage.resolve(headers.slice(8).map(item => titled(String(item.id), `Title ${String(item.id)}`)))
+    await vi.waitFor(() => expect(panel.render(80).some(row => row.includes('Title s-8'))).toBe(true))
+    const rows = panel.render(80)
+    expect(rows.some(row => row.includes('Title s-8'))).toBe(true)
+  })
+
+  it('/sessions drops a late page hydration after the picker fiber unloads', async () => {
+    const headers = Array.from({ length: 10 }, (_, index) => header(`late-${index}`, 10_000 - index, HERE))
+    const gate = Promise.withResolvers<ReadonlyArray<ReturnType<typeof titled>>>()
+    let call = 0
+    const { ctx, screen, agent, fiber } = await mount({
+      persistence: { list: () => Promise.resolve(headers) },
+      sessionQuery: {
+        readTitleSnapshots: async ids => {
+          call += 1
+          if (call === 2) return gate.promise
+          return ids.map(id => titled(String(id), `Title ${String(id)}`))
+        },
+      },
+    })
+    await ctx.commands.execute(agent, '/sessions', [], signal())
+    const panel = overlay(screen)
+    for (let index = 0; index < 8; index += 1) panel.handleInput(KEY.down)
+    await fiber.dispose()
+    gate.resolve([])
+    await Promise.resolve()
+    expect(screen.overlays).toHaveLength(1)
+  })
+
   it('/sessions filters rows by the typed query and clears it before cancelling', async () => {
     const { ctx, screen, agent } = await mount({
       persistence: {
@@ -428,17 +493,23 @@ describe('blue-commands plugin', () => {
     expect(screen.overlays).toHaveLength(0)
   })
 
-  it('/sessions shows no overlay when the fiber unloads while titles resolve', async () => {
+  it('/sessions waits for first-page title hydration and ignores a late result after unload', async () => {
     const gate = Promise.withResolvers<ReadonlyArray<{ sessionId: { toString(): string }, status: 'fulfilled', value: { title?: { title: string } } }>>()
     const { ctx, screen, agent, fiber } = await mount({
       persistence: { list: () => Promise.resolve([header('s-late', 1_000, HERE)]) },
       sessionQuery: { readTitleSnapshots: () => gate.promise },
     })
     const pending = ctx.commands.execute(agent, '/sessions', [], signal())
+    await Promise.resolve()
+    expect(screen.overlays).toHaveLength(0)
     await fiber.dispose()
     gate.resolve([])
     const execution = await pending
     expect(execution?.result).toEqual({ kind: 'success' })
+    // The fake screen does not model the editor-slot disposer; the important
+    // contract here is that the late title continuation is harmless after the
+    // owning fiber has unloaded.
+    await Promise.resolve()
     expect(screen.overlays).toHaveLength(0)
   })
 
@@ -494,6 +565,15 @@ describe('blue-commands plugin', () => {
     screen.overlays[0]?.component.invalidate()
     overlay(screen).handleInput(KEY.escape)
     expect(screen.overlays[0]?.hidden).toBe(true)
+  })
+
+  it('/help consumes the renderer-neutral command model projection when available', async () => {
+    const { ctx, screen, agent, fiber } = await mount()
+    ctx.provide('blueCommandModels', { list: () => [{ kind: 'command', id: 'command.status', label: '/status', description: 'projected status', enabled: true }, { kind: 'command', id: 'command.version', label: '/version', enabled: true }] })
+    const execution = await ctx.commands.execute(agent, '/help', [], signal())
+    expect(execution?.result).toEqual({ kind: 'success' })
+    expect(screen.overlays[0]?.component.render(80).some(row => row.includes('projected status'))).toBe(true)
+    await fiber.dispose()
   })
 
   it('/help falls back to the action id when a binding has no description', async () => {

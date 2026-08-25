@@ -24,14 +24,13 @@ import type { Session } from '@deepseek-ai/dsh-session'
 // Empty type import carries the app-owned `blueSession` merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
 import type {} from '@dsh-blue/blue-app'
-// The named import also carries this package's `blueStatus` Context merge.
-import type { BlueStatusEntry } from './types.ts'
+import type { StatusModel } from '@dsh-blue/blue-frontend'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-status-title'
 
 /** Services required before the title entry can register. */
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueStatusModels']
 
 /**
  * The slice of the harness `sessionTitle` service this entry reads: the
@@ -65,9 +64,6 @@ function entryText(agent: Agent | undefined | null, service: TitleReading | unde
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
-  const colors = ctx.blueTheme.colors
-  const components = ctx.blueComponents
-  const screen = ctx.blueScreen
   let agent: Agent | undefined = ctx.get('blueSession')?.current ?? undefined
   let text = entryText(agent, ctx.get('sessionTitle') as TitleReading | undefined)
 
@@ -75,7 +71,7 @@ export function apply(ctx: Context): void {
     const next = entryText(agent, ctx.get('sessionTitle') as TitleReading | undefined)
     if (next === text) return
     text = next
-    screen.requestRender()
+    ctx.blueStatusModels.refresh('blue.status.title')
   }
 
   ctx.on('blue/session-changed', (next) => {
@@ -90,15 +86,6 @@ export function apply(ctx: Context): void {
     refresh()
   })
 
-  const entry: BlueStatusEntry = {
-    id: 'blue.status.title',
-    priority: 30,
-    align: 'right',
-    render(width: number): string {
-      if (text === '') return ''
-      return colors.muted(components.truncateToWidth(text, width))
-    },
-  }
-  // Effect-bound so unloading this fiber unregisters the entry.
-  ctx.effect(() => ctx.blueStatus.register(entry))
+  const model = (): StatusModel => ({ kind: 'status', id: 'blue.status.title', priority: 30, band: 'right', view: { kind: 'text', text, tone: 'muted' }, visible: text !== '' })
+  ctx.effect(() => ctx.blueStatusModels.register(model))
 }
