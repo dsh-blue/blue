@@ -24,6 +24,8 @@
 | [blue-plugin-validation.md](./blue-plugin-validation.md) | F6 外部插件验证、独立 fixture 与生态审计门禁 |
 | [blue-surface-migration-matrix.md](./blue-surface-migration-matrix.md) | F5 status、dock、command、tool、theme、editor、transcript 迁移矩阵与删除条件 |
 | [blue-frontend-runtime-task-checklist.md](./blue-frontend-runtime-task-checklist.md) | F3/F4/F5/F6 可执行开发任务、验收门禁与完成定义 |
+| [blue-frontend-runtime-cutover-spec.md](./blue-frontend-runtime-cutover-spec.md) | 完整主线迁移规格：发布包边界、当前/目标结构、master 与 #58-#63 功能、删除门禁与最终验收 |
+| [blue-runtime-cutover-ledger.md](./blue-runtime-cutover-ledger.md) | 冻结引用、surface parity、旧接口删除条件与证据状态台账 |
 
 F2 兼容适配层的实现位于 [`packages/harness-adapter`](../packages/harness-adapter)，按 session、projection、action、model 和 question/approval 能力拆分。
 
