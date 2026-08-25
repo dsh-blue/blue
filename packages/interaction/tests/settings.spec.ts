@@ -110,6 +110,13 @@ describe('blue-settings schema and registration', () => {
       theme: 'dark',
       collapseThinking: true,
       collapseToolCalls: true,
+      windowTurns: 15,
+      recentStepsRetention: 30,
+      expandTurns: 3,
+      userFoldLines: 10,
+      userFoldChars: 1000,
+      editorCommand: '',
+      pasteImageBackend: 'auto',
     })
     expect(settingsPlugin.name).toBe('blue-settings')
   })
@@ -127,6 +134,13 @@ describe('blue-settings schema and registration', () => {
       theme: 'dark',
       collapseThinking: true,
       collapseToolCalls: true,
+      windowTurns: 15,
+      recentStepsRetention: 30,
+      expandTurns: 3,
+      userFoldLines: 10,
+      userFoldChars: 1000,
+      editorCommand: '',
+      pasteImageBackend: 'auto',
     })
   })
 })

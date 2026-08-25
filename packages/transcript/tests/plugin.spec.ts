@@ -26,7 +26,18 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { BlueSessionRef } from '@dsh-blue/blue-app'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
-import { ACTION_TOGGLE_COLLAPSE, apply, setRecentStepsRetention, setWindowTurns } from '../src/index.ts'
+import {
+  ACTION_TOGGLE_COLLAPSE,
+  apply,
+  currentExpandTurns,
+  currentWindowTurns,
+  recentStepsRetention,
+  setExpandTurns,
+  setRecentStepsRetention,
+  setUserFoldThresholds,
+  setWindowTurns,
+} from '../src/index.ts'
+import { userFoldThresholds } from '../src/components.ts'
 import { setDefaultExpansion } from '../src/fold-defaults.ts'
 import { createTranscriptModel, type TranscriptModelService } from '../src/transcript-model.ts'
 import * as statusBasic from '../src/status-basic.ts'
@@ -57,6 +68,12 @@ afterEach(async () => {
   for (const dispose of disposers.splice(0)) await dispose()
   setThinkingTimers(undefined)
   setDefaultExpansion(undefined)
+  // The settings-driven tunables are module state: restore every default
+  // so one case's commit cannot leak into the next boot.
+  setWindowTurns(undefined)
+  setRecentStepsRetention(undefined)
+  setExpandTurns(undefined)
+  setUserFoldThresholds(undefined, undefined)
 })
 
 /** Identity colors so rendered assertions see structure, not escape codes. */
@@ -866,6 +883,41 @@ describe('blue-transcript plugin through the real Loader', () => {
     ])))
     expect(contentLines(screen).filter(line => line.includes('more lines'))).toHaveLength(2)
   })
+  it('drives the transcript tunables from the blue settings section', async () => {
+    resetSeq()
+    const blueNs = 'blue' as SettingsNamespace
+    const { ctx } = await bootTranscript(null, {
+      settings: {
+        blue: {
+          windowTurns: 5, recentStepsRetention: 20, expandTurns: 2,
+          userFoldLines: 25, userFoldChars: 750,
+        },
+      },
+    })
+    expect(currentWindowTurns()).toBe(5)
+    expect(recentStepsRetention()).toBe(20)
+    expect(currentExpandTurns()).toBe(2)
+    expect(userFoldThresholds()).toEqual({ lines: 25, chars: 750 })
+
+    // A partial section keeps the sibling threshold's current value.
+    ctx.emit('settings/updated', blueNs, { userFoldLines: 40 }, {}, 'provider')
+    expect(userFoldThresholds()).toEqual({ lines: 40, chars: 750 })
+
+    // Dirty values (non-positive, non-integer, wrong type) keep the live
+    // settings — the same keep-current discipline as the fold defaults.
+    ctx.emit('settings/updated', blueNs, {
+      windowTurns: -3,
+      recentStepsRetention: 1.5,
+      expandTurns: 'many',
+      userFoldLines: 0,
+      userFoldChars: null,
+    }, {}, 'provider')
+    expect(currentWindowTurns()).toBe(5)
+    expect(recentStepsRetention()).toBe(20)
+    expect(currentExpandTurns()).toBe(2)
+    expect(userFoldThresholds()).toEqual({ lines: 40, chars: 750 })
+  })
+
   it('limits ctrl+o to the most recent three turns (kimi range)', async () => {
     resetSeq()
     const { ctx, screen, keymap } = await bootTranscript()

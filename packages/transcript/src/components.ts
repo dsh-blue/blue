@@ -70,6 +70,15 @@ export function setUserFoldThresholds(lines: number | undefined, chars: number |
   userFoldChars = chars ?? DEFAULT_USER_FOLD_CHARS
 }
 
+/**
+ * Read the active user-message fold thresholds (the settings driver diffs
+ * against them so a partial section keeps the sibling's current value).
+ * @returns the current line and character bounds.
+ */
+export function userFoldThresholds(): { readonly lines: number, readonly chars: number } {
+  return { lines: userFoldLines, chars: userFoldChars }
+}
+
 /** Indent of the collapsed/expanded result preview rows (kimi's default). */
 const PREVIEW_INDENT = '  '
 

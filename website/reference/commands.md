@@ -47,7 +47,7 @@
 - **`/export [path]`** —— 当前会话导出为 Markdown；不带路径时写入默认文件名 `blue-export-{id8}-{YYYYMMDD-HHMMSS}.md`。
 - **`/copy`** —— 最近一条助手消息的文本进剪贴板：优先 OSC 52 转义序列（经 stdout 到达本地终端模拟器，**SSH 远程会话也能复制到本地剪贴板**），失败再走回退管线。
 - **`/theme`** —— 完整用法 `usage: /theme [dark|light|ocean|paper|auto|custom <path> [dark|light|ocean|paper]]`，详见[主题](/guide/theme)。
-- **`/settings`** —— 打开设置面板：`↑↓` 选择、`Enter`/`Space` 步进预设值；默认主题实时生效并作为启动默认持久化，宿主未注册的命名空间会隐藏。
+- **`/settings`** —— 打开两级设置面板：第一级按命名空间分组（未注册的命名空间整组省略），Enter 进入第二级；第二级 `↑↓` 选行、`Enter`/`Space` 步进预设值，每次改动即写入 settings.yaml（默认主题实时生效并落盘为启动默认；`permission.defaultPreset` 只影响新会话），Escape 退回第一级。第一级末行 `Open settings.yaml in $EDITOR` 在 `$VISUAL`/`$EDITOR` 里打开整份文件，外部编辑实时回灌面板。持久化的 `blue:` 段见[配置](/guide/config)。
 - **`/quit`** —— agent attach 前输入显示 `no active session`（见 [FAQ](/guide/faq)）。
 
 命令不进入模型轮——成功/错误文本在编辑器 hint 行闪现。下游插件经 `ctx.commands` 注册的命令会自动出现在补全菜单与 `/help` 里；别名不在 `ctx.commands` 注册，由输入层在分发前重写为规范名（kimi `aliases` 移植）。
