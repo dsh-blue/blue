@@ -51,6 +51,20 @@ export interface BlueSettings {
   readonly collapseThinking: boolean
   /** Whether tool output starts collapsed (ctrl+o toggles in the session). */
   readonly collapseToolCalls: boolean
+  /** Completed turns kept mounted in the transcript window (mirrors transcript's DEFAULT_WINDOW_TURNS). */
+  readonly windowTurns: number
+  /** Recent steps of a turn keeping their cards before step folding (mirrors DEFAULT_RECENT_STEPS_RETENTION). */
+  readonly recentStepsRetention: number
+  /** Turns the Ctrl-O expansion toggle reaches back (mirrors transcript's EXPAND_TURNS). */
+  readonly expandTurns: number
+  /** Lines of a user message before it folds (mirrors DEFAULT_USER_FOLD_LINES). */
+  readonly userFoldLines: number
+  /** Characters of a user message before it folds (mirrors DEFAULT_USER_FOLD_CHARS). */
+  readonly userFoldChars: number
+  /** External editor command overriding `$VISUAL`/`$EDITOR`; empty follows the environment. */
+  readonly editorCommand: string
+  /** Linux clipboard backend for image paste; `auto` probes the session (the plugin config stands when the user layer never sets this). */
+  readonly pasteImageBackend: 'auto' | 'wayland' | 'x11'
 }
 
 /** The settings schema; defaults double as the composition base. */
@@ -60,6 +74,13 @@ export const Config: z<BlueSettings> = z.object({
   theme: z.union([z.const('dark'), z.const('light'), z.const('ocean'), z.const('paper'), z.const('auto')]).default('dark'),
   collapseThinking: z.boolean().default(true),
   collapseToolCalls: z.boolean().default(true),
+  windowTurns: z.number().step(1).min(1).default(15),
+  recentStepsRetention: z.number().step(1).min(1).default(30),
+  expandTurns: z.number().step(1).min(1).default(3),
+  userFoldLines: z.number().step(1).min(1).default(10),
+  userFoldChars: z.number().step(1).min(1).default(1000),
+  editorCommand: z.string().default(''),
+  pasteImageBackend: z.union([z.const('auto'), z.const('wayland'), z.const('x11')]).default('auto'),
 })
 
 /** The resolved defaults, used until a settings service layers overrides. */
@@ -69,6 +90,13 @@ export const DEFAULT_SETTINGS: BlueSettings = {
   theme: 'dark',
   collapseThinking: true,
   collapseToolCalls: true,
+  windowTurns: 15,
+  recentStepsRetention: 30,
+  expandTurns: 3,
+  userFoldLines: 10,
+  userFoldChars: 1000,
+  editorCommand: '',
+  pasteImageBackend: 'auto',
 }
 
 /** Stable Cordis plugin name. */

@@ -8,7 +8,10 @@
 
 import { chmodSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import SettingsProvider, { type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import * as settingsPlugin from '../src/settings.ts'
 import {
   quoteShellArg,
   resolveExternalEditorCommand,
@@ -39,7 +42,38 @@ describe('resolveExternalEditorCommand', () => {
   it('trims surrounding whitespace', () => {
     expect(resolveExternalEditorCommand({ VISUAL: '  code --wait  ' })).toBe('code --wait')
   })
+
+  // Runs last in the file: the blue-settings thunk is module state (the
+  // settings.spec discipline), and mounting the plugin moves it for every
+  // later case.
+  it('prefers a configured blue.editorCommand over $VISUAL/$EDITOR', async () => {
+    const ctx = new Context()
+    await ctx.plugin(MemorySettings, { blue: { editorCommand: '  my-editor --wait  ' } })
+    await ctx.plugin(settingsPlugin)
+    await vi.waitFor(() => {
+      expect(resolveExternalEditorCommand({ VISUAL: 'vim', EDITOR: 'nano' })).toBe('my-editor --wait')
+    })
+  })
 })
+
+/** A settings provider with the stored document as its constructor config. */
+class MemorySettings extends SettingsProvider {
+  readonly writable = true
+  private readonly doc: Record<string, unknown>
+
+  constructor(ctx: Context, doc?: Record<string, unknown>) {
+    super(ctx)
+    this.doc = doc ?? {}
+  }
+
+  protected async load(): Promise<Record<string, unknown>> {
+    return this.doc
+  }
+
+  protected async persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+    this.doc[String(ns)] = section
+  }
+}
 
 describe('quoteShellArg', () => {
   it('single-quotes plain POSIX arguments', () => {

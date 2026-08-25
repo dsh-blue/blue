@@ -146,9 +146,16 @@ blue:
   theme: dark              # 持久默认主题：dark | light | ocean | paper | auto（启动时应用）
   collapseThinking: true   # thinking 块默认折叠
   collapseToolCalls: true  # 工具输出默认折叠（ctrl+o 在会话内切换）
+  windowTurns: 15          # transcript 窗口：只挂载最近 N 个已完成回合
+  recentStepsRetention: 30 # 回合内步骤折叠：保留最近 N 步的卡片展开
+  expandTurns: 3           # ctrl+o 展开的作用范围（自末尾起的回合数）
+  userFoldLines: 10        # 长用户消息折叠阈值（行数）
+  userFoldChars: 1000      # 长用户消息折叠阈值（字符数）
+  editorCommand: ''        # 外部编辑器命令（空 = 按 $VISUAL/$EDITOR 自动探测）
+  pasteImageBackend: auto  # Linux 剪贴板后端：auto | wayland | x11
 ```
 
-面板里 `Enter`/`Space` 步进预设值、每次改动即落盘；`blue.theme` 实时生效并成为启动默认（`/theme` 仍是会话级切换，见[主题](/guide/theme)），折叠默认的改动同样立即作用于当前已挂载的 transcript 条目（Ctrl-O 的全局展开状态优先）。面板还列出 `shell:`、`agent-loop:`、`web-search-deepseek:` 等宿主段的常用键，末行可在 `$EDITOR` 里打开整份 settings.yaml。
+面板分两级：第一级按命名空间分组（`blue`、`shell`、`agent-loop`、`web-search-deepseek:` 等宿主段在内），Enter 进入第二级逐行调整，`Enter`/`Space` 步进预设值、每次改动即落盘；`blue.theme` 实时生效并成为启动默认（`/theme` 仍是会话级切换，见[主题](/guide/theme)），折叠默认与 transcript 数值项的改动同样立即作用于当前会话（Ctrl-O 的全局展开状态优先）。第一级末行可在 `$EDITOR` 里打开整份 settings.yaml。
 
 ### 改完怎么验证
 

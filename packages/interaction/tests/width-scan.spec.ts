@@ -17,7 +17,7 @@ import { HelpOverlay, type HelpSection } from '../src/help.ts'
 import { InfoPanel, type InfoSection } from '../src/info-panel.ts'
 import { PlanReviewPanel, planReviewChoices } from '../src/plan-review-panel.ts'
 import { Questionnaire } from '../src/questionnaire.ts'
-import { SettingsPanel } from '../src/settings-command.ts'
+import { NoticeTail, SettingsPanel } from '../src/settings-command.ts'
 import { UpdateNoticeComponent } from '../src/update-notice.ts'
 import { fakeBlueContext, FakeBlueComponents, FakeKeymap } from './fakes.ts'
 import { ADVERSARIAL, SCAN_WIDTHS, expectLinesFit } from '../../core/tests/width-scan.ts'
@@ -209,6 +209,8 @@ describe('interaction width-scan', () => {
       })
       const panel = new SettingsPanel({
         theme: IDENTITY_THEME as never,
+        title: `settings › ${text}`,
+        footer: ['↑↓ select', text, 'esc back'],
         list,
         notice: { current: { text, error: true } },
         truncate: (value, width) => components.truncateToWidth(value, width),
@@ -217,6 +219,27 @@ describe('interaction width-scan', () => {
         expectLinesFit(`SettingsPanel/${name}`, panel.render(width), width)
       }
       panel.handleInput('\x1b')
+    })
+
+    it(`NoticeTail survives ${name}`, () => {
+      const components = new FakeBlueComponents()
+      const tail = new NoticeTail({
+        // The inner panel budgets its own rows (the SelectListPanel
+        // contract); the tail's own addition is the truncated notice row.
+        inner: {
+          focused: false,
+          render: (width: number) => [components.truncateToWidth(text, Math.max(0, width))],
+          invalidate: () => {},
+        },
+        theme: IDENTITY_THEME as never,
+        notice: { current: { text, error: false } },
+        truncate: (value, width) => components.truncateToWidth(value, width),
+      })
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`NoticeTail/${name}`, tail.render(width), width)
+      }
+      tail.handleInput('\x1b')
+      tail.invalidate()
     })
   }
 })

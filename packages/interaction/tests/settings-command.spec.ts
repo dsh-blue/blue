@@ -1,11 +1,14 @@
 /**
- * Tests for the `/settings` command and its panel: the service/display
- * guards, the group-ordered item list (namespace absence, off-preset
- * merges, the permission row's service gating), the write path (parsed
- * patches with descriptor revisions, the reasoning-effort unset, the
- * conflict retry, the in-panel feedback row, the no-remount success and the
- * updateValue rollback on failure), the diff-and-update refresh, and
- * the open-file flow through the external-editor seam.
+ * Tests for the `/settings` command and its two-level panel: the
+ * service/display guards, the level-one namespace list (namespace absence,
+ * the dynamic permission/agent-preset rows' gating, the open-file action),
+ * the level-two item lists (off-preset merges, unset tokens, the editable
+ * row's free-form form, the restart suffix), the write path (parsed patches
+ * with descriptor revisions, unsets through `mutate`, the conflict retry,
+ * the in-panel feedback row, the updateValue rollback on failure), the
+ * diff-and-update refresh (rebuild on a row-set change, level-one fallback
+ * when the open namespace disappears), the theme-swap re-home, and the
+ * open-file flow through the external-editor seam.
  */
 
 import { chmod, readFile, writeFile } from 'node:fs/promises'
@@ -24,8 +27,9 @@ import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
 import { setExternalEditorLauncher } from '../src/external-editor.ts'
+import { FormPanel } from '../src/form-panel.ts'
 import type { PermissionPresetsService } from '../src/permission-panel.ts'
-import { registerSettingsCommand, SettingsPanel } from '../src/settings-command.ts'
+import { NoticeTail, registerSettingsCommand, SettingsPanel } from '../src/settings-command.ts'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
 
 registerTempDirCleanup()
@@ -47,6 +51,8 @@ interface WriteCall {
 interface SettingsFakeOptions {
   /** Resolved section values per namespace; absent namespaces are undescribed. */
   readonly sections?: Record<string, Record<string, unknown>>
+  /** Per-namespace effect timing overrides (default 'live'). */
+  readonly applies?: Record<string, 'live' | 'restart'>
   /** Overrides the update behavior (throw to fail; call options.onWrite first to emit). */
   readonly updateImpl?: (ns: string, patch: object, revision: number | undefined) => Promise<void>
   /** Runs synchronously inside update/mutate before they resolve (event emission). */
@@ -67,7 +73,8 @@ function fakeSettings(options: SettingsFakeOptions = {}) {
   }
   const provider = {
     describe: () => Object.entries(sections).map(([ns, value]) => ({
-      ns, schema: {}, value, revision: revisions.get(ns) ?? 0, applies: 'live' as const,
+      ns, schema: {}, value, revision: revisions.get(ns) ?? 0,
+      applies: options.applies?.[ns] ?? ('live' as const),
     })),
     get: (ns: object) => sections[String(ns)],
     update: async (ns: object, patch: object, expected?: number) => {
@@ -100,12 +107,18 @@ interface RegisteredCommand {
   readonly handler: () => CommandResult | Promise<CommandResult>
 }
 
+/** The fake agent-presets roster: only `list()` reaches the panel. */
+interface FakeRoster {
+  readonly list: () => Promise<readonly { readonly id: string }[]>
+}
+
 interface BenchOptions extends SettingsFakeOptions {
   readonly withSettings?: boolean
   readonly presets?: PermissionPresetsService
+  readonly roster?: FakeRoster
 }
 
-/** Mount the command with fakes: commands registry, settings, presets, shared editor. */
+/** Mount the command with fakes: commands registry, settings, presets, roster, shared editor. */
 function mount(options: BenchOptions = {}) {
   const { ctx, screen, components, theme } = fakeBlueContext()
   const registrations: RegisteredCommand[] = []
@@ -118,6 +131,7 @@ function mount(options: BenchOptions = {}) {
   const settings = fakeSettings(options)
   if (options.withSettings !== false) ctx.provide('settings', settings.provider)
   if (options.presets !== undefined) ctx.provide('permissionPresets', options.presets as never)
+  if (options.roster !== undefined) ctx.provide('agentPresets', options.roster as never)
   const notices: string[] = []
   setSharedEditor({
     editor: { focused: false, render: () => [], invalidate: () => {} } as never,
@@ -141,35 +155,99 @@ function fakePresets(names: readonly string[] = ['read-only', 'workspace-write']
   }
 }
 
+/** The roster fake: two presets in roster order. */
+function fakeRoster(ids: readonly string[] = ['reviewer', 'default']): FakeRoster {
+  return { list: () => Promise.resolve(ids.map(id => ({ id }))) }
+}
+
 /** Every namespace the panel lists, with resolved values. */
 function fullSections(): Record<string, Record<string, unknown>> {
   return {
     blue: {
       updateCheck: true, updateChannel: 'rc', theme: 'dark',
       collapseThinking: true, collapseToolCalls: true,
+      windowTurns: 15, recentStepsRetention: 30, expandTurns: 3,
+      userFoldLines: 10, userFoldChars: 1000,
+      editorCommand: '', pasteImageBackend: 'auto',
     },
-    shell: { timeoutMs: 60_000, maxTimeoutMs: 600_000, maxOutputBytes: 64_000 },
+    shell: {
+      timeoutMs: 60_000, maxTimeoutMs: 600_000, maxOutputBytes: 64_000,
+      maxSpillBytes: 67_108_864, graceMs: 3_000,
+    },
     'agent-loop': { maxParallelToolCalls: 5 },
     'agent-default-model': { reasoningEffort: 'low' },
+    'llm-deepseek': { thinking: 'enabled' },
     'web-search-deepseek': { maxUses: 3, maxTokens: 4096 },
     permission: { defaultPreset: 'workspace-write' },
+    'agent-presets': { default: 'reviewer' },
   }
 }
 
-/** The panel component of the last shown overlay. */
-function panel(screen: FakeScreen): SettingsPanel {
-  const entry = screen.overlays.at(-1)
-  if (entry === undefined) throw new Error('no panel mounted')
-  return entry.component as SettingsPanel
+/** The last UNHIDDEN overlay whose component is of the given type. */
+function topOverlay<T>(screen: FakeScreen, type: new (...args: never[]) => T): T | undefined {
+  const entry = [...screen.overlays].reverse().find(overlay => !overlay.hidden && overlay.component instanceof type)
+  return entry?.component as T | undefined
+}
+
+/** The mounted level-one panel (the SelectListPanel's notice-tail wrapper). */
+function l1(screen: FakeScreen): NoticeTail {
+  const entry = topOverlay(screen, NoticeTail)
+  if (entry === undefined) throw new Error('no level-one panel mounted')
+  return entry
+}
+
+/** The mounted level-two panel, when a namespace is open. */
+function l2(screen: FakeScreen): SettingsPanel | undefined {
+  return topOverlay(screen, SettingsPanel)
+}
+
+/** The mounted free-form form, when an editable row is being edited. */
+function form(screen: FakeScreen): FormPanel | undefined {
+  return topOverlay(screen, FormPanel)
 }
 
 /**
- * Render the last mounted panel to text. Feedback assertions read the
- * panel's own notice row — the editor's hint line leaves the tree while a
- * panel is open, so outcomes render inside the frame.
+ * Render the topmost live panel to text. Feedback assertions read the
+ * panels' own notice row — the editor's hint line leaves the tree while a
+ * panel is open, so outcomes render with the panel (level two inside the
+ * frame, level one tailed under it).
  */
 function frameText(bench: { screen: FakeScreen }): string {
-  return panel(bench.screen).render(80).join('\n')
+  const entry = [...bench.screen.overlays].reverse().find(overlay => !overlay.hidden)
+  if (entry === undefined) throw new Error('no live panel mounted')
+  return entry.component.render(80).join('\n')
+}
+
+/** The label under the level-one cursor (the ❯ row's text, marker paints stripped). */
+function l1CursorLabel(panel: NoticeTail): string {
+  const row = panel.render(80)
+    .map(line => line.replaceAll('^', '').replaceAll('~', ''))
+    .find(line => line.includes('❯'))
+  return row?.split('❯ ')[1]?.split(' — ')[0]?.trim() ?? ''
+}
+
+/** Move the level-one cursor onto the row with the given label and press Enter. */
+async function selectL1(bench: { screen: FakeScreen }, label: string): Promise<void> {
+  const panel = l1(bench.screen)
+  for (let guard = 0; guard < 30 && l1CursorLabel(panel) !== label; guard += 1) {
+    panel.handleInput(KEY.down)
+  }
+  if (l1CursorLabel(panel) !== label) throw new Error(`level-one row not found: ${label}`)
+  panel.handleInput(KEY.enter)
+  await settle()
+}
+
+/** Open a namespace's level-two list. */
+async function openNamespace(bench: { screen: FakeScreen }, ns: string): Promise<void> {
+  await selectL1(bench, ns)
+  if (l2(bench.screen) === undefined) throw new Error(`namespace did not open: ${ns}`)
+}
+
+/** Close every open level: form, then level two, then level one. */
+function closeAll(bench: { screen: FakeScreen }): void {
+  form(bench.screen)?.handleInput(KEY.escape)
+  l2(bench.screen)?.handleInput(KEY.escape)
+  topOverlay(bench.screen, NoticeTail)?.handleInput(KEY.escape)
 }
 
 /** Flush the write path's async continuations. */
@@ -180,7 +258,9 @@ function settle(ms = 10): Promise<void> {
 describe('/settings registration and guards', () => {
   it('registers the command and errors when the settings service is absent', async () => {
     const { command } = mount({ withSettings: false })
-    expect(command.description).toBe('Edit user settings (update, theme, folding, shell, agent, search, permission)')
+    expect(command.description).toBe(
+      'Edit user settings by namespace (update, theme, folding, transcript, shell, agent, search, permission)',
+    )
     const result = await command.handler()
     expect(result).toEqual({ kind: 'error', text: 'settings service unavailable on this host' })
   })
@@ -199,13 +279,108 @@ describe('/settings registration and guards', () => {
     const result = await captured!.handler()
     expect(result).toEqual({ kind: 'error', text: 'settings panel is unavailable: the Blue screen is not mounted' })
   })
+
+  it('mounts nothing when the registration disposed behind the opening fetch', async () => {
+    let release!: (rows: readonly { readonly id: string }[]) => void
+    const gate = new Promise<readonly { readonly id: string }[]>(resolve => {
+      release = resolve
+    })
+    const bench = mount({ sections: fullSections(), roster: { list: () => gate } })
+    const pending = bench.command.handler()
+    bench.dispose()
+    release([{ id: 'reviewer' }])
+    expect(await pending).toEqual({ kind: 'success' })
+    expect(bench.screen.overlays).toHaveLength(0)
+  })
 })
 
-describe('/settings item list', () => {
-  it('renders every group in order, with the open-file action last', async () => {
-    const bench = mount({ sections: fullSections(), presets: fakePresets() })
+describe('/settings level one', () => {
+  it('renders every namespace in row order, with the open-file action last', async () => {
+    const bench = mount({ sections: fullSections(), presets: fakePresets(), roster: fakeRoster() })
     const result = await bench.command.handler()
     expect(result).toEqual({ kind: 'success' })
+    // Walk the cursor over all nine rows, collecting the pointer labels.
+    const panel = l1(bench.screen)
+    const labels: string[] = []
+    for (let count = 0; count < 9; count += 1) {
+      labels.push(l1CursorLabel(panel))
+      panel.handleInput(KEY.down)
+    }
+    expect(labels).toEqual([
+      'blue',
+      'shell',
+      'agent-loop',
+      'agent-default-model',
+      'llm-deepseek',
+      'web-search-deepseek',
+      'permission',
+      'agent-presets',
+      'Open settings.yaml in $EDITOR',
+    ])
+    // The frame carries the title and the muted title hint.
+    const frame = panel.render(80).join('\n')
+    expect(frame).toContain('settings')
+    expect(frame).toContain('· esc close · ↵ open')
+    expect(bench.components.settingsLists).toHaveLength(0)
+  })
+
+  it('omits namespaces the host did not register', async () => {
+    const bench = mount({ sections: { blue: fullSections().blue! } })
+    await bench.command.handler()
+    const panel = l1(bench.screen)
+    const labels: string[] = []
+    for (let count = 0; count < 2; count += 1) {
+      labels.push(l1CursorLabel(panel))
+      panel.handleInput(KEY.down)
+    }
+    expect(labels).toEqual(['blue', 'Open settings.yaml in $EDITOR'])
+  })
+
+  it('gates the dynamic rows on both their namespace and their value source', async () => {
+    // Namespace present, services absent: no rows.
+    const withoutServices = mount({
+      sections: { permission: { defaultPreset: 'read-only' }, 'agent-presets': {} },
+    })
+    await withoutServices.command.handler()
+    const first = l1CursorLabel(l1(withoutServices.screen))
+    expect(first).toBe('Open settings.yaml in $EDITOR')
+    // Services present, namespaces absent: no rows.
+    const withoutNs = mount({ sections: {}, presets: fakePresets(), roster: fakeRoster() })
+    await withoutNs.command.handler()
+    expect(l1CursorLabel(l1(withoutNs.screen))).toBe('Open settings.yaml in $EDITOR')
+    // A failing roster discovery degrades to omitting the agent-preset row.
+    const failing = mount({
+      sections: { 'agent-presets': {} },
+      roster: { list: () => Promise.reject(new Error('roster gone')) },
+    })
+    await failing.command.handler()
+    expect(l1CursorLabel(l1(failing.screen))).toBe('Open settings.yaml in $EDITOR')
+  })
+
+  it('stacks level two above level one and Escape walks back down', async () => {
+    const bench = mount({ sections: fullSections() })
+    await bench.command.handler()
+    await openNamespace(bench, 'blue')
+    expect(bench.screen.overlays).toHaveLength(2)
+    expect(l2(bench.screen)).toBeDefined()
+    // Escape on level two pops back to the namespace list, still open.
+    l2(bench.screen)!.handleInput(KEY.escape)
+    expect(l2(bench.screen)).toBeUndefined()
+    expect(topOverlay(bench.screen, NoticeTail)).toBeDefined()
+    // Escape on level one closes the panel; a second Escape is a no-op.
+    const groups = l1(bench.screen)
+    groups.handleInput(KEY.escape)
+    expect(bench.screen.overlays.every(overlay => overlay.hidden)).toBe(true)
+    groups.handleInput(KEY.escape)
+    expect(bench.screen.overlays).toHaveLength(2)
+  })
+})
+
+describe('/settings level two', () => {
+  it('lists the blue rows in order, with resolved values and the namespace frame', async () => {
+    const bench = mount({ sections: fullSections() })
+    await bench.command.handler()
+    await openNamespace(bench, 'blue')
     const items = bench.components.settingsLists.at(-1)!.options.items
     expect(items.map(item => item.id)).toEqual([
       'blue.updateCheck',
@@ -213,86 +388,98 @@ describe('/settings item list', () => {
       'blue.theme',
       'blue.collapseThinking',
       'blue.collapseToolCalls',
-      'shell.timeoutMs',
-      'shell.maxTimeoutMs',
-      'shell.maxOutputBytes',
-      'agent-loop.maxParallelToolCalls',
-      'agent-default-model.reasoningEffort',
-      'web-search-deepseek.maxUses',
-      'web-search-deepseek.maxTokens',
-      'permission.defaultPreset',
-      'open-file',
+      'blue.windowTurns',
+      'blue.recentStepsRetention',
+      'blue.expandTurns',
+      'blue.userFoldLines',
+      'blue.userFoldChars',
+      'blue.editorCommand',
+      'blue.pasteImageBackend',
     ])
-    // Resolved values land on the right column; the effort keeps its stored level.
     const byId = new Map(items.map(item => [item.id, item]))
     expect(byId.get('blue.updateCheck')?.currentValue).toBe('true')
-    expect(byId.get('shell.timeoutMs')?.currentValue).toBe('60000')
-    expect(byId.get('agent-default-model.reasoningEffort')?.currentValue).toBe('low')
-    expect(byId.get('permission.defaultPreset')?.currentValue).toBe('workspace-write')
-    expect(byId.get('permission.defaultPreset')?.values).toEqual(['read-only', 'workspace-write'])
-    // The frame carries the title and the muted key-hint row.
-    const frame = panel(bench.screen).render(80).join('\n')
-    expect(frame).toContain('settings')
-    expect(frame).toContain('↑↓ select · ↵ change · esc close')
-  })
-
-  it('omits rows whose namespace the host did not register', async () => {
-    const bench = mount({ sections: { blue: fullSections().blue! } })
-    await bench.command.handler()
-    const ids = bench.components.settingsLists.at(-1)!.options.items.map(item => item.id)
-    expect(ids).toEqual([
-      'blue.updateCheck',
-      'blue.updateChannel',
-      'blue.theme',
-      'blue.collapseThinking',
-      'blue.collapseToolCalls',
-      'open-file',
-    ])
-  })
-
-  it('gates the permission row on both the namespace and the presets service', async () => {
-    // Namespace present, presets service absent: no row.
-    const withoutService = mount({ sections: { permission: { defaultPreset: 'read-only' } } })
-    await withoutService.command.handler()
-    expect(withoutService.components.settingsLists.at(-1)!.options.items.map(item => item.id))
-      .toEqual(['open-file'])
-    // Presets service present, namespace absent: no row.
-    const withoutNs = mount({ sections: {}, presets: fakePresets() })
-    await withoutNs.command.handler()
-    expect(withoutNs.components.settingsLists.at(-1)!.options.items.map(item => item.id))
-      .toEqual(['open-file'])
+    expect(byId.get('blue.windowTurns')?.currentValue).toBe('15')
+    // The blank editor command displays through its emptyDisplay token.
+    expect(byId.get('blue.editorCommand')?.currentValue).toBe('auto')
+    expect(byId.get('blue.editorCommand')?.values).toEqual(['auto'])
+    // The frame carries the namespace title and the key-hint footer.
+    const frame = frameText(bench)
+    expect(frame).toContain('settings › blue')
+    expect(frame).toContain('↑↓ select · ↵ change · esc back')
   })
 
   it('merges off-preset and unresolved current values into the cycle', async () => {
     const bench = mount({
       sections: {
-        blue: { theme: 'ocean' },
+        blue: { theme: 'ocean', editorCommand: 42 },
         shell: { timeoutMs: 45_000 },
         'agent-default-model': {},
+        'llm-deepseek': {},
+        'agent-presets': {},
         permission: { defaultPreset: 'custom-x' },
       },
       presets: fakePresets(),
+      roster: fakeRoster(),
     })
     await bench.command.handler()
-    const items = bench.components.settingsLists.at(-1)!.options.items
-    const byId = new Map(items.map(item => [item.id, item]))
+    const itemsOf = async (ns: string) => {
+      await openNamespace(bench, ns)
+      const items = bench.components.settingsLists.at(-1)!.options.items
+      l2(bench.screen)!.handleInput(KEY.escape)
+      return new Map(items.map(item => [item.id, item]))
+    }
+    const blue = await itemsOf('blue')
     // A key absent from the resolved section falls back to the first preset.
-    expect(byId.get('blue.updateCheck')?.currentValue).toBe('true')
-    // An omitted reasoning effort displays as the default preset.
-    expect(byId.get('agent-default-model.reasoningEffort')?.currentValue).toBe('default')
+    expect(blue.get('blue.updateCheck')?.currentValue).toBe('true')
+    // A non-string raw on the editable row still stringifies for display.
+    expect(blue.get('blue.editorCommand')?.currentValue).toBe('42')
+    const shell = await itemsOf('shell')
     // An off-preset number merges in as the current selection.
-    expect(byId.get('shell.timeoutMs')?.values).toEqual(['45000', '30000', '60000', '120000', '300000', '600000'])
+    expect(shell.get('shell.timeoutMs')?.values).toEqual(['45000', '30000', '60000', '120000', '300000', '600000'])
+    const effort = await itemsOf('agent-default-model')
+    // An omitted reasoning effort displays as the unset token.
+    expect(effort.get('agent-default-model.reasoningEffort')?.currentValue).toBe('default')
+    expect(effort.get('agent-default-model.reasoningEffort')?.values)
+      .toEqual(['default', 'off', 'low', 'high', 'max'])
+    const thinking = await itemsOf('llm-deepseek')
+    expect(thinking.get('llm-deepseek.thinking')?.currentValue).toBe('default')
+    const agentPresets = await itemsOf('agent-presets')
+    expect(agentPresets.get('agent-presets.default')?.currentValue).toBe('none')
+    expect(agentPresets.get('agent-presets.default')?.values).toEqual(['none', 'reviewer', 'default'])
+    const permission = await itemsOf('permission')
     // An off-table preset merges in likewise.
-    expect(byId.get('permission.defaultPreset')?.values).toEqual(['custom-x', 'read-only', 'workspace-write'])
+    expect(permission.get('permission.defaultPreset')?.values).toEqual(['custom-x', 'read-only', 'workspace-write'])
   })
 
   it('keeps the permission row with an empty presets table', async () => {
-    const bench = mount({ sections: { permission: {} }, presets: fakePresets([]) })
+    const bench = mount({ sections: { permission: { defaultPreset: '' } }, presets: fakePresets([]) })
     await bench.command.handler()
+    await openNamespace(bench, 'permission')
     const row = bench.components.settingsLists.at(-1)!.options.items
       .find(item => item.id === 'permission.defaultPreset')
     expect(row?.currentValue).toBe('')
     expect(row?.values).toEqual([''])
+  })
+
+  it('renders a non-scalar stored value as the blank cycle fallback', async () => {
+    // Dirty data (an object where a preset name belongs) with an empty
+    // presets table: no cycle entry to fall back on, so the display is blank.
+    const bench = mount({ sections: { permission: { defaultPreset: {} } }, presets: fakePresets([]) })
+    await bench.command.handler()
+    await openNamespace(bench, 'permission')
+    const row = bench.components.settingsLists.at(-1)!.options.items
+      .find(item => item.id === 'permission.defaultPreset')
+    expect(row?.currentValue).toBe('')
+    expect(row?.values).toEqual([''])
+  })
+
+  it('marks restart-applied rows with a description suffix', async () => {
+    const bench = mount({ sections: fullSections(), applies: { shell: 'restart' } })
+    await bench.command.handler()
+    await openNamespace(bench, 'shell')
+    const row = bench.components.settingsLists.at(-1)!.options.items
+      .find(item => item.id === 'shell.timeoutMs')
+    expect(row?.description).toBe('default bash command timeout · restart to apply')
   })
 })
 
@@ -300,8 +487,8 @@ describe('/settings writes', () => {
   it('cycles a boolean through the list keys and writes the parsed patch with the revision', async () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
-    const surface = panel(bench.screen)
-    surface.handleInput(KEY.enter)
+    await openNamespace(bench, 'blue')
+    l2(bench.screen)!.handleInput(KEY.enter)
     await settle()
     expect(bench.settings.writes).toEqual([{ ns: 'blue', patch: { updateCheck: false }, revision: 1 }])
     // The outcome paints in the panel's own feedback row (one repaint for
@@ -315,6 +502,7 @@ describe('/settings writes', () => {
     expect(bench.screen.renderRequests).toBe(1)
     // A document-updated with no further change diffs empty: no updateValue.
     bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
+    await settle()
     expect(bench.components.settingsLists[0]?.updates).toEqual([])
     expect(bench.screen.renderRequests).toBe(1)
   })
@@ -322,9 +510,12 @@ describe('/settings writes', () => {
   it('writes enum and number cycles as strings and numbers', async () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
-    const onChange = bench.components.settingsLists.at(-1)!.options.onChange
-    onChange('blue.theme', 'ocean')
-    onChange('shell.timeoutMs', '120000')
+    await openNamespace(bench, 'blue')
+    bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'ocean')
+    await settle()
+    l2(bench.screen)!.handleInput(KEY.escape)
+    await openNamespace(bench, 'shell')
+    bench.components.settingsLists.at(-1)!.options.onChange('shell.timeoutMs', '120000')
     await settle()
     expect(bench.settings.writes).toEqual([
       { ns: 'blue', patch: { theme: 'ocean' }, revision: 1 },
@@ -337,8 +528,8 @@ describe('/settings writes', () => {
   it('writes the permission preset row through to the permission namespace', async () => {
     const bench = mount({ sections: fullSections(), presets: fakePresets() })
     await bench.command.handler()
-    const onChange = bench.components.settingsLists.at(-1)!.options.onChange
-    onChange('permission.defaultPreset', 'read-only')
+    await openNamespace(bench, 'permission')
+    bench.components.settingsLists.at(-1)!.options.onChange('permission.defaultPreset', 'read-only')
     await settle()
     expect(bench.settings.writes).toEqual([
       { ns: 'permission', patch: { defaultPreset: 'read-only' }, revision: 1 },
@@ -349,13 +540,45 @@ describe('/settings writes', () => {
   it('unsets the reasoning effort when cycled to default', async () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
-    const onChange = bench.components.settingsLists.at(-1)!.options.onChange
-    onChange('agent-default-model.reasoningEffort', 'default')
+    await openNamespace(bench, 'agent-default-model')
+    bench.components.settingsLists.at(-1)!.options.onChange('agent-default-model.reasoningEffort', 'default')
     await settle()
     expect(bench.settings.writes).toEqual([
       { ns: 'agent-default-model', ops: [{ op: 'unset', path: ['reasoningEffort'] }], revision: 1 },
     ])
     expect(frameText(bench)).toContain('default reasoning effort set to default')
+  })
+
+  it('writes and unsets the DeepSeek thinking switch', async () => {
+    const bench = mount({ sections: fullSections() })
+    await bench.command.handler()
+    await openNamespace(bench, 'llm-deepseek')
+    const onChange = bench.components.settingsLists.at(-1)!.options.onChange
+    onChange('llm-deepseek.thinking', 'disabled')
+    await settle()
+    onChange('llm-deepseek.thinking', 'default')
+    await settle()
+    expect(bench.settings.writes).toEqual([
+      { ns: 'llm-deepseek', patch: { thinking: 'disabled' }, revision: 1 },
+      { ns: 'llm-deepseek', ops: [{ op: 'unset', path: ['thinking'] }], revision: 2 },
+    ])
+    expect(frameText(bench)).toContain('deepseek thinking set to default')
+  })
+
+  it('cycles the default agent preset through the roster ids and none', async () => {
+    const bench = mount({ sections: fullSections(), roster: fakeRoster() })
+    await bench.command.handler()
+    await openNamespace(bench, 'agent-presets')
+    const onChange = bench.components.settingsLists.at(-1)!.options.onChange
+    onChange('agent-presets.default', 'default')
+    await settle()
+    onChange('agent-presets.default', 'none')
+    await settle()
+    expect(bench.settings.writes).toEqual([
+      { ns: 'agent-presets', patch: { default: 'default' }, revision: 1 },
+      { ns: 'agent-presets', ops: [{ op: 'unset', path: ['default'] }], revision: 2 },
+    ])
+    expect(frameText(bench)).toContain('default agent preset set to none')
   })
 
   it('retries a stale revision once and then succeeds', async () => {
@@ -370,6 +593,7 @@ describe('/settings writes', () => {
       },
     })
     await bench.command.handler()
+    await openNamespace(bench, 'blue')
     bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'paper')
     await settle()
     expect(calls).toBe(2)
@@ -385,6 +609,7 @@ describe('/settings writes', () => {
       },
     })
     await bench.command.handler()
+    await openNamespace(bench, 'blue')
     bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'paper')
     await settle()
     expect(bench.settings.writes).toHaveLength(2)
@@ -402,6 +627,7 @@ describe('/settings writes', () => {
       updateImpl: () => Promise.reject(new Error('schema rejected')),
     })
     await bench.command.handler()
+    await openNamespace(bench, 'blue')
     bench.components.settingsLists.at(-1)!.options.onChange('blue.updateCheck', 'false')
     await settle()
     expect(bench.settings.writes).toHaveLength(1)
@@ -415,6 +641,7 @@ describe('/settings writes', () => {
       updateImpl: () => Promise.reject('plain reject'),
     })
     await bench.command.handler()
+    await openNamespace(bench, 'blue')
     bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'paper')
     await settle()
     expect(frameText(bench)).toContain('could not update theme: plain reject')
@@ -423,6 +650,7 @@ describe('/settings writes', () => {
   it('returns silently for a vanished namespace or an unknown row id', async () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
+    await openNamespace(bench, 'blue')
     const onChange = bench.components.settingsLists.at(-1)!.options.onChange
     bench.settings.drop('shell')
     onChange('shell.timeoutMs', '120000')
@@ -443,8 +671,9 @@ describe('/settings writes', () => {
       updateImpl: () => gate,
     })
     await bench.command.handler()
+    await openNamespace(bench, 'blue')
     bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'light')
-    panel(bench.screen).handleInput(KEY.escape)
+    closeAll(bench)
     release()
     await settle()
     expect(bench.notices).toEqual([])
@@ -461,8 +690,9 @@ describe('/settings writes', () => {
       updateImpl: () => gate,
     })
     await bench.command.handler()
+    await openNamespace(bench, 'blue')
     bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'light')
-    panel(bench.screen).handleInput(KEY.escape)
+    closeAll(bench)
     reject(new Error('late failure'))
     await settle()
     expect(bench.notices).toEqual([])
@@ -481,6 +711,7 @@ describe('/settings writes', () => {
       updateImpl: () => gate,
     })
     await bench.command.handler()
+    await openNamespace(bench, 'blue')
     bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'light')
     bench.dispose()
     release()
@@ -490,10 +721,64 @@ describe('/settings writes', () => {
   })
 })
 
+describe('/settings editable rows', () => {
+  it('opens the free-form form on Enter and writes the submitted text', async () => {
+    const bench = mount({ sections: fullSections() })
+    await bench.command.handler()
+    await openNamespace(bench, 'blue')
+    // The single-entry cycle reports the current display unchanged; the
+    // callback opens the form instead of writing.
+    bench.components.settingsLists.at(-1)!.options.onChange('blue.editorCommand', 'auto')
+    const panel = form(bench.screen)
+    expect(panel).toBeDefined()
+    expect(bench.settings.writes).toEqual([])
+    for (const char of 'vim') panel!.handleInput(char)
+    panel!.handleInput(KEY.enter)
+    await settle()
+    expect(bench.settings.writes).toEqual([{ ns: 'blue', patch: { editorCommand: 'vim' }, revision: 1 }])
+    // The form path pushes the display itself (pi-tui's cycle never moved).
+    expect(bench.components.settingsLists[0]?.updates).toEqual([['blue.editorCommand', 'vim']])
+    expect(frameText(bench)).toContain('external editor set to vim')
+    expect(form(bench.screen)).toBeUndefined()
+  })
+
+  it('prefills the stored command and unsets the key on an empty submission', async () => {
+    const bench = mount({
+      sections: { ...fullSections(), blue: { ...fullSections().blue, editorCommand: 'nano' } },
+    })
+    await bench.command.handler()
+    await openNamespace(bench, 'blue')
+    bench.components.settingsLists.at(-1)!.options.onChange('blue.editorCommand', 'nano')
+    const panel = form(bench.screen)!
+    // The prefill is the stored raw, not the display token: clear it.
+    for (let count = 0; count < 4; count += 1) panel.handleInput('\x7f')
+    panel.handleInput(KEY.enter)
+    await settle()
+    expect(bench.settings.writes).toEqual([
+      { ns: 'blue', ops: [{ op: 'unset', path: ['editorCommand'] }], revision: 1 },
+    ])
+    expect(bench.components.settingsLists[0]?.updates).toEqual([['blue.editorCommand', 'auto']])
+    expect(frameText(bench)).toContain('external editor set to auto')
+  })
+
+  it('cancels the form without writing', async () => {
+    const bench = mount({ sections: fullSections() })
+    await bench.command.handler()
+    await openNamespace(bench, 'blue')
+    bench.components.settingsLists.at(-1)!.options.onChange('blue.editorCommand', 'auto')
+    form(bench.screen)!.handleInput(KEY.escape)
+    await settle()
+    expect(bench.settings.writes).toEqual([])
+    expect(form(bench.screen)).toBeUndefined()
+    expect(l2(bench.screen)).toBeDefined()
+  })
+})
+
 describe('/settings refresh', () => {
   it('ignores a document-updated whose values match the panel', async () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
+    await openNamespace(bench, 'blue')
     bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
     await settle()
     expect(bench.components.settingsLists).toHaveLength(1)
@@ -501,48 +786,110 @@ describe('/settings refresh', () => {
     expect(bench.screen.renderRequests).toBe(0)
   })
 
-  it('pushes changed values into the live list without remounting', async () => {
+  it('pushes changed values into the open list without remounting', async () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
+    await openNamespace(bench, 'blue')
     bench.settings.sections.blue!.theme = 'ocean'
     bench.settings.sections.shell!.timeoutMs = 300_000
     bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
     await settle()
     const list = bench.components.settingsLists[0]!
-    // Exactly the deltas land on updateValue; one repaint, no remount.
+    // Exactly the OPEN namespace's deltas land on updateValue; the closed
+    // shell change waits for its own list to open. One repaint, no remount.
     expect(bench.components.settingsLists).toHaveLength(1)
-    expect(list.updates).toEqual([['blue.theme', 'ocean'], ['shell.timeoutMs', '300000']])
+    expect(list.updates).toEqual([['blue.theme', 'ocean']])
     expect(list.options.items.find(item => item.id === 'blue.theme')?.currentValue).toBe('ocean')
     expect(bench.screen.renderRequests).toBe(1)
     // lastKnown moved with the diff: a second emission diffs empty.
     bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 3)
     await settle()
-    expect(list.updates).toHaveLength(2)
+    expect(list.updates).toHaveLength(1)
     expect(bench.screen.renderRequests).toBe(1)
   })
 
   it('remounts only when the row set changed', async () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
+    await openNamespace(bench, 'blue')
     bench.settings.drop('shell')
     bench.ctx.emit('settings/document-updated', settingsNamespace('shell'), 2)
     await settle()
+    // Level one remounted (its rows changed) and level two rebuilt for the
+    // still-present open namespace; the retired panels hide behind.
     expect(bench.components.settingsLists).toHaveLength(2)
-    const rebuilt = bench.components.settingsLists.at(-1)!
-    expect(rebuilt.options.items.some(item => item.id.startsWith('shell.'))).toBe(false)
+    expect(bench.screen.overlays).toHaveLength(4)
     expect(bench.screen.overlays[0]?.hidden).toBe(true)
+    expect(bench.screen.overlays[1]?.hidden).toBe(true)
+    const rebuiltGroups = frameText(bench)
+    expect(rebuiltGroups).not.toContain('shell ›')
+    expect(l1CursorLabel(l1(bench.screen))).toBe('blue')
+  })
+
+  it('drops back to level one when the open namespace disappears', async () => {
+    const bench = mount({ sections: fullSections() })
+    await bench.command.handler()
+    await openNamespace(bench, 'shell')
+    bench.settings.drop('shell')
+    bench.ctx.emit('settings/document-updated', settingsNamespace('shell'), 2)
+    await settle()
+    expect(bench.components.settingsLists).toHaveLength(1)
+    expect(l2(bench.screen)).toBeUndefined()
+    expect(topOverlay(bench.screen, NoticeTail)).toBeDefined()
+    expect(bench.screen.overlays).toHaveLength(3)
   })
 
   it('stops refreshing after close', async () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
-    panel(bench.screen).handleInput(KEY.escape)
+    await openNamespace(bench, 'blue')
+    closeAll(bench)
     bench.settings.sections.blue!.theme = 'ocean'
     bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
     await settle()
     expect(bench.components.settingsLists).toHaveLength(1)
     expect(bench.components.settingsLists[0]?.updates).toEqual([])
     expect(bench.screen.overlays.every(overlay => overlay.hidden)).toBe(true)
+  })
+
+  it('absorbs a same-rowset change at level one without touching the panel', async () => {
+    const bench = mount({ sections: fullSections() })
+    await bench.command.handler()
+    // No namespace open: the diff has no live list to push into, and the
+    // new baseline simply waits for the namespace to open.
+    bench.settings.sections.blue!.theme = 'ocean'
+    bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
+    await settle()
+    expect(bench.components.settingsLists).toHaveLength(0)
+    expect(bench.screen.renderRequests).toBe(0)
+    await openNamespace(bench, 'blue')
+    expect(bench.components.settingsLists[0]?.options.items
+      .find(item => item.id === 'blue.theme')?.currentValue).toBe('ocean')
+  })
+
+  it('drops the refresh when the registration disposes behind the fetch', async () => {
+    let release!: () => void
+    const gate = new Promise<readonly { id: string }[]>(resolve => {
+      release = () => resolve([{ id: 'reviewer' }])
+    })
+    const list = vi.fn()
+      .mockResolvedValueOnce([{ id: 'reviewer' }])
+      .mockReturnValueOnce(gate)
+    const bench = mount({ sections: fullSections(), roster: { list } })
+    await bench.command.handler()
+    await settle()
+    bench.settings.sections.blue!.theme = 'ocean'
+    bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
+    // Wait for the refresh's own fetch to be in flight, then dispose
+    // behind it: the continuation's inactive guard swallows the result.
+    await vi.waitFor(() => {
+      expect(list).toHaveBeenCalledTimes(2)
+    })
+    bench.dispose()
+    release()
+    await settle()
+    expect(bench.screen.renderRequests).toBe(0)
+    expect(bench.components.settingsLists).toHaveLength(0)
   })
 
   it('skips the refresh when the registration disposer ran before an event', async () => {
@@ -554,8 +901,7 @@ describe('/settings refresh', () => {
     // fires, and the inactive guard swallows it.
     bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 5)
     await settle()
-    expect(bench.components.settingsLists).toHaveLength(1)
-    expect(bench.components.settingsLists[0]?.updates).toEqual([])
+    expect(bench.screen.overlays).toHaveLength(1)
   })
 
   it('never remounts when the write commit announces itself through the event', async () => {
@@ -566,62 +912,82 @@ describe('/settings refresh', () => {
       },
     })
     await bench.command.handler()
+    await openNamespace(bench, 'blue')
     const list = () => bench.components.settingsLists[0]!
     bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'paper')
     await settle()
     expect(bench.components.settingsLists).toHaveLength(1)
     expect(frameText(bench)).toContain('theme set to paper')
-    // The synchronous watcher fired before lastKnown moved, so its diff
-    // pushed the fresh value once; a debounced real watcher lands after
-    // the write and diffs empty.
-    expect(list().updates).toEqual([['blue.theme', 'paper']])
+    // The synchronous watcher's refresh lands behind the commit continuation
+    // (fetchGroups yields), so lastKnown has already moved and the diff is
+    // empty; a debounced real watcher behaves the same.
+    expect(list().updates).toEqual([])
   })
 
-  it('skips the value rollback when a mid-write remount already dropped the row', async () => {
+  it('drops the rolled-back row with the mid-write rebuild', async () => {
     const bench = mount({
       sections: fullSections(),
       updateImpl: ns => {
         // The namespace vanishes mid-write and the watcher announces it:
-        // the refresh remounts without the row before the write fails.
+        // the refresh rebuilds without the row before the failure lands.
         bench.settings.drop(ns)
         bench.ctx.emit('settings/document-updated', settingsNamespace(ns), 2)
         throw new Error('gone mid-write')
       },
     })
     await bench.command.handler()
+    await openNamespace(bench, 'blue')
     bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'paper')
     await settle()
-    expect(bench.components.settingsLists).toHaveLength(2)
+    // The rebuild retired the open list (blue is gone): level one alone is
+    // live, and the failure notice renders on its notice tail.
+    expect(bench.components.settingsLists).toHaveLength(1)
+    expect(l2(bench.screen)).toBeUndefined()
     expect(frameText(bench)).toContain('could not update theme')
-    // The rebuilt list has no blue rows to roll back; the failure still
-    // repaints for the notice.
-    expect(bench.components.settingsLists.at(-1)!.updates).toEqual([])
-    expect(bench.screen.renderRequests).toBe(1)
+    expect(bench.screen.overlays).toHaveLength(3)
   })
 })
 
 describe('/settings re-home', () => {
-  it('re-mounts the same panel on blue/input-editor-changed (the theme-swap rebuild)', async () => {
+  it('re-mounts the same panels on blue/input-editor-changed (the theme-swap rebuild)', async () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
-    const first = panel(bench.screen)
+    await openNamespace(bench, 'blue')
+    const firstGroups = l1(bench.screen)
+    const firstList = l2(bench.screen)
     bench.ctx.emit('blue/input-editor-changed')
     await settle()
-    expect(bench.screen.overlays).toHaveLength(2)
+    expect(bench.screen.overlays).toHaveLength(4)
     expect(bench.screen.overlays[0]?.hidden).toBe(true)
-    // The SAME instance re-homes: no rebuild, so the list (and its
-    // highlight) survives the swap.
-    expect(panel(bench.screen)).toBe(first)
+    expect(bench.screen.overlays[1]?.hidden).toBe(true)
+    // The SAME instances re-home: no rebuild, so the lists (and their
+    // highlights) survive the swap.
+    expect(l1(bench.screen)).toBe(firstGroups)
+    expect(l2(bench.screen)).toBe(firstList)
     expect(bench.components.settingsLists).toHaveLength(1)
+  })
+
+  it('re-homes an open form on top of the re-homed stack', async () => {
+    const bench = mount({ sections: fullSections() })
+    await bench.command.handler()
+    await openNamespace(bench, 'blue')
+    bench.components.settingsLists.at(-1)!.options.onChange('blue.editorCommand', 'auto')
+    const firstForm = form(bench.screen)
+    expect(firstForm).toBeDefined()
+    bench.ctx.emit('blue/input-editor-changed')
+    await settle()
+    expect(bench.screen.overlays).toHaveLength(6)
+    expect(form(bench.screen)).toBe(firstForm)
   })
 
   it('stays closed when the editor changes after close', async () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
-    panel(bench.screen).handleInput(KEY.escape)
+    await openNamespace(bench, 'blue')
+    closeAll(bench)
     bench.ctx.emit('blue/input-editor-changed')
     await settle()
-    expect(bench.screen.overlays).toHaveLength(1)
+    expect(bench.screen.overlays).toHaveLength(2)
     expect(bench.screen.overlays.every(overlay => overlay.hidden)).toBe(true)
   })
 
@@ -647,11 +1013,15 @@ describe('/settings re-home', () => {
 })
 
 describe('/settings open-file', () => {
+  /** Select the level-one open-file row. */
+  const openFile = async (bench: { screen: FakeScreen }): Promise<void> => {
+    await selectL1(bench, 'Open settings.yaml in $EDITOR')
+  }
+
   it('notices when the document is unavailable or cannot be prepared', async () => {
     const unavailable = mount({ sections: fullSections() })
     await unavailable.command.handler()
-    unavailable.components.settingsLists.at(-1)!.options.onChange('open-file', '')
-    await settle()
+    await openFile(unavailable)
     expect(frameText(unavailable)).toContain('settings file unavailable')
 
     const failing = mount({
@@ -659,8 +1029,7 @@ describe('/settings open-file', () => {
       prepareDocument: () => Promise.reject(new Error('disk gone')),
     })
     await failing.command.handler()
-    failing.components.settingsLists.at(-1)!.options.onChange('open-file', '')
-    await settle()
+    await openFile(failing)
     expect(frameText(failing)).toContain('settings file unavailable')
   })
 
@@ -672,8 +1041,7 @@ describe('/settings open-file', () => {
     await writeFile(path, 'theme: dark\n', 'utf-8')
     const bench = mount({ sections: fullSections(), prepareDocument: () => Promise.resolve(path) })
     await bench.command.handler()
-    bench.components.settingsLists.at(-1)!.options.onChange('open-file', '')
-    await settle()
+    await openFile(bench)
     expect(frameText(bench)).toContain('no editor configured ($VISUAL/$EDITOR)')
     expect(bench.screen.suspends).toBe(0)
   })
@@ -692,8 +1060,7 @@ describe('/settings open-file', () => {
     })
     const bench = mount({ sections: fullSections(), prepareDocument: () => Promise.resolve(path) })
     await bench.command.handler()
-    bench.components.settingsLists.at(-1)!.options.onChange('open-file', '')
-    await settle()
+    await openFile(bench)
     expect(seen).toEqual({ text: 'theme: dark\n', command: 'test-editor' })
     expect(bench.screen.suspends).toBe(1)
     expect(await readFile(path, 'utf-8')).toBe('theme: ocean\n')
@@ -709,14 +1076,12 @@ describe('/settings open-file', () => {
     setExternalEditorLauncher(text => Promise.resolve(text === 'a: 1\n' ? undefined : text))
     const bench = mount({ sections: fullSections(), prepareDocument: () => Promise.resolve(quit) })
     await bench.command.handler()
-    bench.components.settingsLists.at(-1)!.options.onChange('open-file', '')
-    await settle()
+    await openFile(bench)
     expect(await readFile(quit, 'utf-8')).toBe('a: 1\n')
     // The unchanged-text arm: same bytes back, no write.
     const reopened = mount({ sections: fullSections(), prepareDocument: () => Promise.resolve(same) })
     await reopened.command.handler()
-    reopened.components.settingsLists.at(-1)!.options.onChange('open-file', '')
-    await settle()
+    await openFile(reopened)
     expect(await readFile(same, 'utf-8')).toBe('b: 2\n')
   })
 
@@ -727,8 +1092,7 @@ describe('/settings open-file', () => {
     const dir = mkdtempTracked('blue-settings-command-')
     const unreadable = mount({ sections: fullSections(), prepareDocument: () => Promise.resolve(dir) })
     await unreadable.command.handler()
-    unreadable.components.settingsLists.at(-1)!.options.onChange('open-file', '')
-    await settle()
+    await openFile(unreadable)
     expect(frameText(unreadable)).toContain('could not read settings file')
     // The write failure: a permission-stripped document.
     const locked = join(dir, 'settings.yaml')
@@ -736,8 +1100,7 @@ describe('/settings open-file', () => {
     await chmod(locked, 0o444)
     const unwritable = mount({ sections: fullSections(), prepareDocument: () => Promise.resolve(locked) })
     await unwritable.command.handler()
-    unwritable.components.settingsLists.at(-1)!.options.onChange('open-file', '')
-    await settle()
+    await openFile(unwritable)
     expect(frameText(unwritable)).toContain('could not write settings file')
   })
 
@@ -753,28 +1116,22 @@ describe('/settings open-file', () => {
     setExternalEditorLauncher(() => gate)
     const bench = mount({ sections: fullSections(), prepareDocument: () => Promise.resolve(path) })
     await bench.command.handler()
-    bench.components.settingsLists.at(-1)!.options.onChange('open-file', '')
-    await settle()
-    panel(bench.screen).handleInput(KEY.escape)
+    await openFile(bench)
+    closeAll(bench)
     release('theme: ocean\n')
     await settle()
     expect(await readFile(path, 'utf-8')).toBe('theme: dark\n')
   })
 
   it('skips everything when the panel closed before the document was prepared', async () => {
-    let release!: (path: string) => void
-    const gate = new Promise<string>(resolve => {
-      release = resolve
-    })
     const dir = mkdtempTracked('blue-settings-command-')
     const path = join(dir, 'settings.yaml')
     await writeFile(path, 'theme: dark\n', 'utf-8')
-    const bench = mount({ sections: fullSections(), prepareDocument: () => gate })
+    const bench = mount({ sections: fullSections(), prepareDocument: () => Promise.resolve(path) })
     await bench.command.handler()
-    bench.components.settingsLists.at(-1)!.options.onChange('open-file', '')
-    panel(bench.screen).handleInput(KEY.escape)
-    release(path)
-    await settle()
+    const opening = selectL1(bench, 'Open settings.yaml in $EDITOR')
+    closeAll(bench)
+    await opening
     expect(bench.notices).toEqual([])
     expect(bench.screen.suspends).toBe(0)
   })
@@ -785,6 +1142,8 @@ describe('SettingsPanel', () => {
     let rows = ['a', 'b', 'c']
     const surface = new SettingsPanel({
       theme: { colors: new Proxy({}, { get: () => (text: string) => text }) } as never,
+      title: 'settings › blue',
+      footer: ['↑↓ select', '↵ change', 'esc back'],
       list: { render: () => rows, invalidate: () => {} } as never,
       notice: {},
       truncate: text => text,
@@ -801,6 +1160,8 @@ describe('SettingsPanel', () => {
     const invalidate = vi.fn()
     const surface = new SettingsPanel({
       theme: { colors: new Proxy({}, { get: () => (text: string) => text }) } as never,
+      title: 'settings › blue',
+      footer: ['↑↓ select', '↵ change', 'esc back'],
       list: { render: () => ['row'], invalidate } as never,
       notice: {},
       truncate: text => text,

@@ -41,6 +41,9 @@ import type {
   ImageAttachmentRef,
 } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+// Empty type import carries the `settings` Context merge and the
+// 'settings/updated' Events merge the backend override subscribes to.
+import type {} from '@deepseek-ai/dsh-settings'
 import { getSharedEditor, registerSubmitTransformer, type SharedEditor } from './editor-instance.ts'
 import { ADMITTED_IMAGE_TYPES, EXT_BY_MEDIA_TYPE, sniffImageMediaType } from './attachments.ts'
 import {
@@ -77,6 +80,23 @@ export interface Config {
 export const Config: z<Config> = z.object({
   backend: z.union([z.const('auto'), z.const('wayland'), z.const('x11')]).default('auto'),
 })
+
+/**
+ * The user-layer `blue.pasteImageBackend` override. The composition config
+ * stays the base — the settings schema's `auto` default must not clobber a
+ * configured strict backend, so only a value the user actually wrote into
+ * the settings document lands here (the apply-time reader diffs the
+ * descriptor's raw `user` section, not the resolved value).
+ */
+let backendOverride: ClipboardBackendPolicy | undefined
+
+/**
+ * Replace the user-layer backend override.
+ * @param value - the override, or `undefined` to follow the plugin config.
+ */
+export function setClipboardBackendOverride(value: ClipboardBackendPolicy | undefined): void {
+  backendOverride = value
+}
 
 /**
  * Contextual action triggering the clipboard-image paste. Bound to Ctrl-V;
@@ -384,8 +404,9 @@ function aggregateOutcomes(outcomes: FailureResult[]): ClipboardImageResult {
 /** The default reader: probe each platform-resolved backend in order; the
  * first valid image wins, otherwise the failures aggregate into one verdict. */
 async function defaultClipboardImageReader(config: Config, limits: ImageAttachmentLimits): Promise<ClipboardImageResult> {
+  const policy = backendOverride ?? config.backend
   const outcomes: FailureResult[] = []
-  const probes = backendsFor(config.backend, clipboardPlatform())
+  const probes = backendsFor(policy, clipboardPlatform())
   for (const [index, probe] of probes.entries()) {
     const key = cooldownKey(probe.backend)
     const retryAt = backendCooldowns.get(key)
@@ -399,7 +420,7 @@ async function defaultClipboardImageReader(config: Config, limits: ImageAttachme
     if (outcome.kind === 'image' || outcome.kind === 'images') {
       return {
         ...outcome,
-        fallback: config.backend === 'auto' && index > 0,
+        fallback: policy === 'auto' && index > 0,
       }
     }
     outcomes.push(outcome)
@@ -591,6 +612,24 @@ export function apply(ctx: Context, config: Config): void {
     description: 'Paste a clipboard image into the prompt',
   }]))
   ctx.effect(() => registerSubmitTransformer(transformImageMarkers))
+  // The `blue.pasteImageBackend` user layer overrides the composition
+  // backend. Read the descriptor's RAW user section — the resolved value's
+  // `auto` schema default would clobber a configured strict backend — and
+  // re-read on every `blue` commit; a host without settings keeps the
+  // composition value.
+  const syncBackendOverride = (): void => {
+    const descriptor = ctx.get('settings')?.describe().find(entry => String(entry.ns) === 'blue')
+    const user = descriptor?.user
+    const raw = typeof user === 'object' && user !== null
+      ? (user as Record<string, unknown>).pasteImageBackend
+      : undefined
+    setClipboardBackendOverride(raw === 'auto' || raw === 'wayland' || raw === 'x11' ? raw : undefined)
+  }
+  syncBackendOverride()
+  ctx.on('settings/updated', (ns) => {
+    if (String(ns) === 'blue') syncBackendOverride()
+  })
+  ctx.effect(() => () => setClipboardBackendOverride(undefined))
   let detach: (() => void) | undefined
   const reattach = (): void => {
     detach?.()

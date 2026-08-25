@@ -146,9 +146,16 @@ blue:
   theme: dark              # persisted default theme: dark | light | ocean | paper | auto (applied at startup)
   collapseThinking: true   # thinking blocks start collapsed
   collapseToolCalls: true  # tool output starts collapsed (ctrl+o toggles in the session)
+  windowTurns: 15          # transcript window: only the newest N completed turns stay mounted
+  recentStepsRetention: 30 # in-turn step folding: keep the newest N steps' cards expanded
+  expandTurns: 3           # ctrl+o expansion scope (turns counted from the end)
+  userFoldLines: 10        # long user message fold threshold (lines)
+  userFoldChars: 1000      # long user message fold threshold (chars)
+  editorCommand: ''        # external editor command (empty = auto-detect via $VISUAL/$EDITOR)
+  pasteImageBackend: auto  # Linux clipboard backend: auto | wayland | x11
 ```
 
-In the panel `Enter`/`Space` steps a row's preset value and every change lands on disk; `blue.theme` applies live and becomes the startup default (`/theme` stays the session-level switch — see [Theming](/en/guide/theme)), and folding-default changes re-seed the already-mounted transcript entries immediately (an active Ctrl-O expansion still dominates). The panel also lists common keys of host sections like `shell:`, `agent-loop:`, and `web-search-deepseek:`, and its last row opens the whole settings.yaml in `$EDITOR`.
+The panel is two-level: level one groups rows by namespace (host sections like `shell:`, `agent-loop:`, and `web-search-deepseek:` included), Enter steps into level two's per-key rows, and `Enter`/`Space` there steps the preset value with every change landing on disk; `blue.theme` applies live and becomes the startup default (`/theme` stays the session-level switch — see [Theming](/en/guide/theme)), and folding-default and transcript-number changes apply to the running session just as immediately (an active Ctrl-O expansion still dominates). Level one's last row opens the whole settings.yaml in `$EDITOR`.
 
 ### Verifying your edits
 

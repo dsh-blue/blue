@@ -50,9 +50,11 @@ import {
   AssistantMessageComponent,
   ErrorMessageComponent,
   InterruptedMarkerComponent,
+  setUserFoldThresholds,
   StepSummaryComponent,
   ToolCallComponent,
   UserMessageComponent,
+  userFoldThresholds,
   type UserMessageImages,
 } from './components.ts'
 import { defaultExpansion, setDefaultExpansion } from './fold-defaults.ts'
@@ -63,7 +65,7 @@ import { ReadGroupComponent } from './read-group.ts'
 import { BlueStatusService, FooterShellComponent } from './status.ts'
 import { ThinkingComponent } from './thinking.ts'
 import type { BlueIntentComponent, TranscriptItem } from './types.ts'
-import { currentWindowTurns, windowEvictTurn } from './window.ts'
+import { currentWindowTurns, setRecentStepsRetention, setWindowTurns, windowEvictTurn } from './window.ts'
 
 export type { FoldUpdate } from './fold.ts'
 export { ellipsize, foldSessionEvents, RESULT_SUMMARY_MAX_CHARS, TranscriptFolder } from './fold.ts'
@@ -124,6 +126,26 @@ export const ACTION_TOGGLE_COLLAPSE = 'blue.transcript.toggle-collapse'
  * the most recent turns flip; older turns stay collapsed.
  */
 export const EXPAND_TURNS = 3
+
+/** The live Ctrl-O range; the settings driver and tests replace it (the `window.ts` setter precedent). */
+let expandTurns = EXPAND_TURNS
+
+/**
+ * Replace the Ctrl-O expansion range.
+ * @param n - the replacement, or `undefined` to restore the default.
+ */
+export function setExpandTurns(n: number | undefined): void {
+  expandTurns = n ?? EXPAND_TURNS
+}
+
+/**
+ * Read the live Ctrl-O expansion range (the `window.ts` reader precedent:
+ * the settings driver's specs assert through it).
+ * @returns the number of most-recent turns Ctrl-O reaches back.
+ */
+export function currentExpandTurns(): number {
+  return expandTurns
+}
 
 /**
  * The plugin-wide expansion toggle state plus the live session's mounted
@@ -427,8 +449,8 @@ export function apply(ctx: Context): void {
       for (let index = 0; index < entries.length; index += 1) {
         if (entries[index]!.item.kind === 'user') boundaries.push(index)
       }
-      const cutoff = boundaries.length > EXPAND_TURNS
-        ? boundaries[boundaries.length - EXPAND_TURNS]!
+      const cutoff = boundaries.length > expandTurns
+        ? boundaries[boundaries.length - expandTurns]!
         : 0
       for (let index = 0; index < entries.length; index += 1) {
         const entry = entries[index]!
@@ -448,14 +470,37 @@ export function apply(ctx: Context): void {
     },
   }]))
 
-  // Expansion defaults ride the host settings document: the resolved `blue`
-  // namespace (schema owned by interaction) carries `collapseThinking` /
-  // `collapseToolCalls`. The service is optional and its value unknown here,
-  // so every read parses defensively — absent keys or non-boolean values keep
-  // the current default; a host without settings keeps both collapsed.
+  // Blue settings ride the host settings document: the resolved `blue`
+  // namespace (schema owned by interaction) carries the fold defaults
+  // (`collapseThinking` / `collapseToolCalls`) and the transcript tunables
+  // (`windowTurns` / `recentStepsRetention` / `expandTurns` /
+  // `userFoldLines` / `userFoldChars`). The service is optional and its
+  // value unknown here, so every read parses defensively — absent keys or
+  // wrongly typed values keep the current setting; a host without settings
+  // keeps every shipped default.
   const BLUE_NS = 'blue' as SettingsNamespace
+  /** Replace one numeric tunable when the section carries a positive integer. */
+  const applyNumber = (raw: unknown, set: (n: number) => void): void => {
+    if (typeof raw === 'number' && Number.isInteger(raw) && raw > 0) set(raw)
+  }
   const applyFoldSettings = (value: unknown): void => {
     const section = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>
+    applyNumber(section.windowTurns, setWindowTurns)
+    applyNumber(section.recentStepsRetention, setRecentStepsRetention)
+    applyNumber(section.expandTurns, setExpandTurns)
+    // The fold thresholds are one pair-setter: diff against the live values
+    // so a section carrying only one of them keeps the sibling's current
+    // value (the fold-defaults keep-current discipline).
+    const folds = userFoldThresholds()
+    let foldLines = folds.lines
+    let foldChars = folds.chars
+    applyNumber(section.userFoldLines, n => {
+      foldLines = n
+    })
+    applyNumber(section.userFoldChars, n => {
+      foldChars = n
+    })
+    if (foldLines !== folds.lines || foldChars !== folds.chars) setUserFoldThresholds(foldLines, foldChars)
     const before = `${defaultExpansion('thinking')}:${defaultExpansion('tools')}`
     setDefaultExpansion({
       thinking: typeof section.collapseThinking === 'boolean'
