@@ -1938,9 +1938,12 @@ describe('blue whole-tree e2e', () => {
   it('lists the model-family commands in /help', async () => {
     const tree = await bootBlue([], { script: [] })
     const agent = await currentAgent(tree)
+    tree.terminal.resize(100, 40)
     await expect(executeCommand(tree, agent, '/help')).resolves.toEqual({ kind: 'success' })
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/model') })
-    expect(tree.terminal.output).toContain('/effort (/thinking)')
+    // Wait for a command label that cannot be confused with this feature
+    // worktree's `/model-config-…` cwd in the banner/footer.
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/effort (/thinking)') })
+    expect(tree.terminal.output).toContain('/model')
     // /changelog pushed /provider past the first window; page the panel down.
     tree.terminal.sendInput('\x1b[6~')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('/provider') })
@@ -2173,9 +2176,12 @@ describe('blue whole-tree e2e', () => {
     const address = server.address()
     const port = typeof address === 'object' && address !== null ? address.port : 0
     const dir = mkdtempTracked('dsh-blue-e2e-dead-')
+    const settingsPath = `${dir}/settings.yaml`
+    const credentialsPath = `${dir}/.credentials.yaml`
+    writeFileSync(credentialsPath, 'version: 1\nrefs:\n  DEEPSEEK_API_KEY: existing-test-key\n', { mode: 0o600 })
     const tree = await bootBlue([], {
       script: [textResponse('unused')],
-      realSettings: { settingsPath: `${dir}/settings.yaml`, credentialsPath: `${dir}/.credentials.yaml` },
+      realSettings: { settingsPath, credentialsPath },
       piAi: true,
     })
     const agent = await currentAgent(tree)
@@ -2221,6 +2227,7 @@ describe('blue whole-tree e2e', () => {
     const dir = mkdtempTracked('dsh-blue-e2e-vendor-')
     const settingsPath = `${dir}/settings.yaml`
     const credentialsPath = `${dir}/.credentials.yaml`
+    writeFileSync(credentialsPath, 'version: 1\nrefs:\n  DEEPSEEK_API_KEY: existing-test-key\n', { mode: 0o600 })
     const tree = await bootBlue([], {
       script: [],
       realSettings: { settingsPath, credentialsPath },
@@ -2236,9 +2243,8 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('amazon-bedrock') })
     const vendor = 'amazon-bedrock'
     tree.terminal.sendInput('\r')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('via the credentials service') })
-    // Field 1 is the optional baseURL override — skip it, then the key.
-    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('vendor default endpoint') })
+    expect(tree.terminal.output).not.toContain('Base URL')
     tree.terminal.sendInput('vendor-key')
     tree.terminal.sendInput('\r')
     await expect(outcome).resolves.toEqual({ kind: 'success', text: `provider "${vendor}" added` })
@@ -2248,6 +2254,22 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => {
       expect(tree.ctx.llm.listProviders().map(provider => provider.id)).toContain(vendor)
     })
+  })
+
+  it('stores the first-run DeepSeek key through the onboarding panel', async () => {
+    const set = vi.fn(async () => {})
+    const tree = await bootBlue([], {
+      script: [],
+      credentials: { describe: async () => ({ configured: false, writable: true }), set },
+    })
+    await currentAgent(tree)
+    tree.terminal.resize(160, 30)
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Connect to DeepSeek') })
+    tree.terminal.sendInput('sk-onboarding')
+    expect(tree.terminal.output).not.toContain('sk-onboarding')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('DeepSeek API key saved') })
+    expect(set).toHaveBeenCalledWith(expect.anything(), 'sk-onboarding')
   })
 
   it('answers the /provider add guard without the host settings services', async () => {

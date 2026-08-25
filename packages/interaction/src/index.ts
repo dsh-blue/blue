@@ -26,6 +26,7 @@ import * as approvalPlugin from './approval-plugin.ts'
 import * as commandsPlugin from './commands-plugin.ts'
 import * as inputPlugin from './input-plugin.ts'
 import * as keysPlugin from './keys.ts'
+import * as providerOnboardingPlugin from './provider-onboarding.ts'
 import * as questionsPlugin from './questions-plugin.ts'
 import * as sessionTitleCadencePlugin from './session-title-cadence.ts'
 import * as terminalTitlePlugin from './terminal-title.ts'
@@ -48,6 +49,7 @@ export function apply(ctx: Context): void {
   ctx.plugin(keysPlugin)
   ctx.plugin(commandsPlugin)
   ctx.plugin(inputPlugin)
+  ctx.plugin(providerOnboardingPlugin)
   ctx.plugin(questionsPlugin)
   ctx.plugin(approvalPlugin)
   ctx.plugin(terminalTitlePlugin)

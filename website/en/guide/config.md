@@ -35,8 +35,10 @@ One key can sit in four places, in **priority order**:
 | 3 | `./.env` in the launch directory | Project-level |
 | 4 | `~/.dsh/.env` | User-level fallback |
 
-::: tip It starts fine without a key
-The key resolves **per request** — booting, browsing models, and the `/model` panel never need it. The first real message with no key anywhere fails with `MISSING_CREDENTIAL` naming every configuration entry point; store the key and ask again — **no restart needed**.
+::: tip First-run setup is built in
+Once the session is ready, Blue checks the credentials for every registered provider. If none has a usable key, it opens a DeepSeek quick-setup form. Enter only `DEEPSEEK_API_KEY`; Blue uses the `deepseek-official` route at `https://api.deepseek.com`. Press Esc to skip setup for this run and use `/provider add` for another provider. Blue prompts again on the next launch while no usable key exists.
+
+Keys still resolve **per request**, so adding or rotating one while Blue is running needs no restart. `MISSING_CREDENTIAL` remains the fallback when a credential is removed or becomes unavailable.
 :::
 
 `~/.dsh` is the Harness home; `DSH_HOME` relocates it (full directory table in [Profiles & directories](/en/dsh/profiles)).
@@ -65,7 +67,7 @@ Selecting a configured route in the Providers panel opens its **edit form**: dis
 
 `/provider add` branches two ways:
 
-- **Known provider** (anthropic, openai, …) — pick a vendor from the host's configurable directory and enter the key (leave baseURL empty for the vendor default).
+- **Known provider** (anthropic, openai, …) — pick a vendor from the host's configurable directory and enter only the key. Base URL is not editable; the host catalog's vendor endpoint is always used.
 - **Custom endpoint** (self-hosted gateways, any OpenAI-compatible surface) — declare protocol and address:
   - one of three protocols: `anthropic-messages` / `openai-completions` / `openai-responses`;
   - baseURL conventions: the anthropic protocol takes **no trailing** `/v1` (the client appends `/v1/messages` itself); the openai protocols **need** the `/v1`;

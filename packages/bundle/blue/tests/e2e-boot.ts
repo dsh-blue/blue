@@ -237,6 +237,8 @@ export async function bootBlue(argv: string[], options: {
   reasoning?: LlmModelReasoningInfo
   /** Mount the real file-backed settings and credentials providers. */
   realSettings?: { settingsPath: string, credentialsPath: string }
+  /** Provide a structural credentials seam without local environment layers. */
+  credentials?: object
   /** Mount the real (dormant) llm-pi-ai adapter plugin. */
   piAi?: boolean
   /**
@@ -718,6 +720,8 @@ export const apply = (ctx) => {
   if (options.realSettings !== undefined) {
     await ctx.plugin(FileSettingsProvider, { path: options.realSettings.settingsPath, watch: false })
     await ctx.plugin(LocalCredentialsProvider, { path: options.realSettings.credentialsPath, watch: false })
+  } else if (options.credentials !== undefined) {
+    ctx.provide('credentials', options.credentials as never)
   }
   await ctx.plugin(AgentDefaultModelConfig, { provider: 'mock', model: 'mock' })
   if (options.piAi === true) {

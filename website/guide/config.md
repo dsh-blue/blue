@@ -35,8 +35,10 @@ DEEPSEEK_API_KEY: sk-...
 | 3 | 当前目录 `./.env` | 项目级 |
 | 4 | `~/.dsh/.env` | 用户级兜底 |
 
-::: tip 没有 key 也能启动
-key 在**每次请求时**才解析——启动、浏览模型列表、`/model` 面板都不需要它。第一次真正发消息时若无处可取，会报 `MISSING_CREDENTIAL` 并列出所有可配置入口；补好 key 再问一次即可，**无需重启**。
+::: tip 首次启动会引导配置
+Blue 在会话就绪后检查所有已注册 provider 的凭据。若一个可用 key 都没有，会直接弹出 DeepSeek 快速配置框；只需填入 `DEEPSEEK_API_KEY`，Blue 使用 `deepseek-official` 的官方端点 `https://api.deepseek.com`。按 Esc 可跳过本次引导，进入 Blue 后用 `/provider add` 配置其他 provider；在仍无可用 key 时，下次启动会再次提示。
+
+key 仍在**每次请求时**解析，因此运行期间补充或轮换凭据无需重启；`MISSING_CREDENTIAL` 保留为凭据被移除或失效时的兜底错误。
 :::
 
 `~/.dsh` 称为 Harness home，可用 `DSH_HOME` 改址（目录全表见 [Profile 与目录](/dsh/profiles)）。
@@ -65,7 +67,7 @@ Providers 面板里**选中一个已配置的路由即进入编辑**：可改显
 
 `/provider add` 有两条分支：
 
-- **Known provider**（anthropic、openai 等）—— 从宿主的可配置目录里挑一家，填 key（baseURL 留空用厂商默认端点）。
+- **Known provider**（anthropic、openai 等）—— 从宿主的可配置目录里挑一家，只填 key；Base URL 不可编辑，始终使用宿主目录提供的厂商默认端点。
 - **Custom endpoint**（自建网关、任意 OpenAI 兼容端点）—— 声明协议与地址：
   - 协议三选一：`anthropic-messages` / `openai-completions` / `openai-responses`；
   - baseURL 约定：anthropic 协议**不带**尾缀 `/v1`（客户端自己拼 `/v1/messages`）；openai 系协议**要带** `/v1`；
