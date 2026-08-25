@@ -561,7 +561,6 @@ export function apply(ctx: Context): void {
   // value unknown here, so every read parses defensively — absent keys or
   // wrongly typed values keep the current setting; a host without settings
   // keeps every shipped default.
-  const BLUE_NS = 'blue' as SettingsNamespace
   /** Replace one numeric tunable when the section carries a positive integer. */
   const applyNumber = (raw: unknown, set: (n: number) => void): void => {
     if (typeof raw === 'number' && Number.isInteger(raw) && raw > 0) set(raw)
