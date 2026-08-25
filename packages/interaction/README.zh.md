@@ -6,6 +6,8 @@
 
 Blue 终端 UI 交互层，构建于 [`dsh-blue-core`](../core/README.md) 之上：带斜杠命令分发的底部输入编辑器、内置 `/quit`、`/resume`、`/new`、`/fork`、`/sessions`、`/help`、`/theme`、`/model`、`/effort`、`/provider`、`/yolo` 与 `/status`、`/context`、`/version`、`/changelog`、`/update`、`/export`、`/copy` 命令、`ctx.userQuestions` 的 overlay 提供方（每个请求一个 tab 化问卷 overlay），以及 `approval/request` 的交互式四选项应答方（S24a 起：yolo 自动放行姿态与 Shift+Tab 三态循环 normal → plan → yolo 叠加其上）。本包不 import pi-tui：主编辑器是 `ctx.blueComponents.createEditor` 背后的 pi-tui Editor（多行、历史、kill-ring、undo 与粘贴标记内置），单选列表来自 `ctx.blueComponents.createSelectList`，`BlueSelect` 仅留存为包内多选专用列表（pi-tui 无多选组件）。所有对话框都经 core 的 `framePanel` chrome 渲染（S12）：全宽 `─` 框架 + 标题 + 按键行的 kimi 平线范式；S16 dogfood（D30）起挂载方式改为 **editor 槽位替换**——对话框经 `mountEditorReplacement` 顶替编辑器的 dock 槽位，编辑器离树（缓冲区、草稿与历史在组件内存活），面板打开期间其下只有两行 footer 壳，关闭时换回编辑器并还焦。面板栈在每次 空↔占用 迁移时 emit core 事件 `'blue/editor-slot-swapped'`（嵌套面板不再发，带面板卸载时同样释放占用）——`blue-pane-activity` 在面板打开期间隐藏其行，`blue-pane-btw` 围绕编辑器离树重申其拼接声明。`BluePanel` 是本包唯一的公开组件导出；对话框键位经 `ctx.blueKeymap` 解析，样式经 `ctx.blueTheme` 着色。`/update [<version>]`（D52）是应用内安全升级——预检门禁、profile 快照、双层冒烟（导入扫描 + 真实 boot）与自动回滚，全程步骤面板呈现：裸 `/update` 在 hint 行闪现 registry 检查进度、已最新时只读应答，降级目标则以单事务把整组 `@dsh-blue` 套装回旧版。
 
+首个会话就绪后，若所有已注册 provider 都没有可用凭据，Blue 会打开一个仅含 API key 的 DeepSeek 配置面板。它保存 `DEEPSEEK_API_KEY`，沿用 `deepseek-official` 的官方端点 `https://api.deepseek.com`；Esc 只跳过本次引导并提示使用 `/provider add`。宿主目录中的知名 provider 只要求 key，始终采用宿主提供的默认端点；自定义 endpoint 仍保留显式 Base URL 与模型发现流程。
+
 ## 插件
 
 单一入口插件 `blue-interaction` 挂载五个子插件；所有注册均经 effect 绑定，因此卸载 fiber 会摘除全部贡献（HMR 安全：provider/命令/键位注册随 fiber 消失）。

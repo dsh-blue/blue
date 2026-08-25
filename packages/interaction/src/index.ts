@@ -28,6 +28,7 @@ import * as commandsPlugin from './commands-plugin.ts'
 import { CommandModelService } from './command-model.ts'
 import * as inputPlugin from './input-plugin.ts'
 import * as keysPlugin from './keys.ts'
+import * as providerOnboardingPlugin from './provider-onboarding.ts'
 import * as questionsPlugin from './questions-plugin.ts'
 import * as sessionTitleCadencePlugin from './session-title-cadence.ts'
 import * as settingsPlugin from './settings.ts'
@@ -69,6 +70,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.plugin(EditorModelService)
   ctx.plugin(commandsPlugin, config)
   ctx.plugin(inputPlugin)
+  ctx.plugin(providerOnboardingPlugin)
   ctx.plugin(questionsPlugin)
   ctx.plugin(approvalPlugin)
   ctx.plugin(terminalTitlePlugin)
