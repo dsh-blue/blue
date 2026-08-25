@@ -1724,11 +1724,12 @@ describe('blue whole-tree e2e', () => {
     // once the throttled render settles. (The first press is awaited on
     // its own: /quit slid past the 16-row window when S34 added /mcp, and
     // back-to-back presses coalesce under the throttle — only awaited
-    // steps are guaranteed a repaint. Two more reach the scroll floor of
-    // the 39-row listing.)
+    // steps are guaranteed a repaint. Three more reach the scroll floor after
+    // the rewind command adds another row.)
     tree.terminal.sendInput('\x1b[6~')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('showing 11-26') })
     expect(tree.terminal.output).toContain('Exit Blue')
+    tree.terminal.sendInput('\x1b[6~')
     tree.terminal.sendInput('\x1b[6~')
     tree.terminal.sendInput('\x1b[6~')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Toggle todo list expansion') })
@@ -1859,7 +1860,7 @@ describe('blue whole-tree e2e', () => {
     clearDraft()
   })
 
-  it('switches sessions through /new and /fork, and lists them in the /sessions picker', async () => {
+  it('switches sessions through /new and /fork, and lists lineage in the /sessions tree', async () => {
     const root = mkdtempTracked('dsh-blue-e2e-sessions-')
     const tree = await bootBlue(['first', 'task'], {
       script: [textResponse('first answer'), textResponse('second answer')],
@@ -1905,19 +1906,52 @@ describe('blue whole-tree e2e', () => {
     expect(picker).toContain(String(first.id))
     expect(picker).toContain(String(second.id))
     expect(picker).toContain(String(forked.id))
+    expect(picker).toContain('└─')
     expect(picker).toContain('← current')
-    // Pick the live session: a notice flashes and no switch happens. Find its
-    // row deterministically by reproducing the picker's newest-first sort
-    // over the same persisted headers.
-    const persistence = tree.ctx.get('sessionPersistence')!
-    const headers = await persistence.list(new AbortController().signal)
-    const sorted = [...headers].sort((a, b) => b.createdAt - a.createdAt)
-    const currentRow = sorted.findIndex(header => String(header.id) === String(forked.id))
-    expect(currentRow).toBeGreaterThanOrEqual(0)
-    for (let row = 0; row < currentRow; row += 1) tree.terminal.sendInput('\x1b[B')
+    // The tree seeds its cursor on the live session even when it is nested.
+    // Picking it flashes a notice and no switch happens.
     tree.terminal.sendInput('\r')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('already the current session') })
     expect(tree.sessionChanges).toHaveLength(3)
+  })
+
+  it('/rewind creates a child from a complete earlier turn and preserves the parent', async () => {
+    const root = mkdtempTracked('dsh-blue-e2e-rewind-')
+    const tree = await bootBlue(['first prompt'], {
+      script: [textResponse('first answer'), textResponse('second answer')],
+      persistenceRoot: root,
+    })
+    const parent = await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await parent.whenIdle()
+    typeLine(tree.terminal, 'second prompt')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(2) })
+    await parent.whenIdle()
+    const secondUserIndex = parent.session.events.findIndex(event =>
+      event.type === 'user/message' && JSON.stringify(event.data).includes('second prompt'))
+    const secondTurnStart = parent.session.events.slice(0, secondUserIndex + 1)
+      .findLast(event => event.type === 'turn/start')?.seq
+    expect(secondTurnStart).toBeTypeOf('number')
+
+    await expect(executeCommand(tree, parent, '/rewind')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Rewind current session') })
+    expect(tree.terminal.output).toContain('second prompt')
+    expect(tree.terminal.output).toContain('The original session stays available')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.sessionChanges).toHaveLength(2) })
+    const child = tree.sessionChanges[1]!
+    expect(String(child.session.header.parentSession)).toBe(String(parent.id))
+    expect(child.session.header.seedLength).toBe(secondTurnStart)
+    expect(parent.session.events.some(event =>
+      event.type === 'user/message' && JSON.stringify(event.data).includes('second prompt'))).toBe(true)
+
+    await tree.ctx.sessions.flush(child.session)
+    tree.terminal.resize(300, 40)
+    await expect(executeCommand(tree, child, '/sessions')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Sessions') })
+    expect(tree.terminal.output).toContain(String(parent.id))
+    expect(tree.terminal.output).toContain(String(child.id))
+    expect(tree.terminal.output).toContain('└─')
   })
 
   it('/clear completes as an annotated alias of /new and runs its semantics', async () => {

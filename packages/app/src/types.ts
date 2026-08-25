@@ -113,5 +113,14 @@ declare module '@deepseek-ai/cordis' {
      * @mode emit
      */
     'blue/request-fork'(): void
+    /**
+     * A UI command asked the app to create a child session from a complete
+     * event prefix of the active session. The parent remains persisted and
+     * the new Agent is committed through the normal session switch path.
+     * @param sessionId - the session the UI inspected.
+     * @param boundarySeq - number of events to retain in the child seed.
+     * @mode emit
+     */
+    'blue/request-rewind'(sessionId: string, boundarySeq: number): void
   }
 }

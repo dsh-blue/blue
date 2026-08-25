@@ -188,7 +188,7 @@ alt-screen、主题切换、自定义键位、steer/cancel 的 UI、diff/termina
 | /diff | 未提交变更面板（DiffCardComponent + line-diff.ts 已备） | 2026-08-21 裁决发版后 | rc.1 dogfood 反馈收集后与审批 diff 预览同评 |
 | alt-screen 余项 | ✅ TuiAltScreen / 鼠标滚轮与选择 / transcript 全屏搜索已由 pi-tui viewport 接入；OSC 8 openUrl 尚未接线 | 主屏滚动冲突已由正式 renderer 切换消除 | dogfood 长 session、tmux/SSH 复制与退出 scrollback；另排 OSC 8 |
 | statusline 自定义脚本 | footer 脚本条目（CC statusLine JSON 契约，kimi 已显式镜像） | blueStatus 缝已备，缺脚本宿主与沙箱约定 | 首个真实消费者出现（"首个真实消费者驱动"纪律） |
-| Esc-Esc rewind | 会话原地撤销 / checkpoint（CC 双 Esc、kimi undo selector） | ⛔ persistence 无 truncate 原语（commands-plan §7 #2） | 上游落 `session.truncate` 或官方 undo 语义 |
+| Esc-Esc rewind | 快捷键仍暂缓；`/rewind` 已以安全分支语义落地，单层选择当前会话用户回合，原会话保留；`/sessions` 以 `parentSession` 展示 lineage 树 | ✅ slash 命令已覆盖，原地 truncate 仍无上游原语 | 若未来需要原地撤销，再等待官方 undo 语义 |
 | Ctrl+B 后台化 | 命令/子 agent 后台 + 任务查看器（kimi+CC 都有） | ⛔ harness 无 background 概念（p1 §4.2） | 上游 subagent 服务出现 background/handle 原语 |
 | /sessions 跨页搜索 | 跨会话内容搜索（kimi 跨页 drain） | S30 只落当前列表过滤；`ctx.sessionQuery`（SQLite FTS5）上游现成 | 正式版排期（纯工作量项） |
 | paste-burst 检测 | 非 bracketed 终端的快速粘贴识别（kimi fork `paste-burst.ts` 61 行） | pi-tui 折叠走 bracketed paste 路径，现代终端普遍支持；纯健壮性边缘项（2026-08-21 裁决砍出 S32） | 无 bracketed paste 环境的实际用户反馈出现 |
