@@ -62,6 +62,8 @@ describe('blue bundle', () => {
     // the assembly segment.
     const ids = [...patch.matchAll(/^\s*- id: (blue-[\w-]+)$/gm)].map(match => match[1]!)
     expect(ids).toEqual([
+      'blue-agent-presets',
+      'blue-creative-host',
       'blue-api-host',
       'blue-core',
       'blue-theme-dark',
@@ -84,7 +86,9 @@ describe('blue bundle', () => {
       'blue-pane-todo',
       'blue-pane-btw',
       'blue-pane-agents',
+      'blue-plugin-view-bridge',
       'blue-interaction',
+      'blue-plugin-interaction-bridge',
       'blue-startup',
       'blue-app',
     ])
@@ -95,15 +99,22 @@ describe('blue bundle', () => {
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/attachments'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/paste-image'")
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/banner'")
+    expect(patch).toContain("name: '@dsh-blue/blue-transcript/plugin-host-bridge'")
+    expect(patch).toContain("name: '@dsh-blue/blue-interaction/plugin-host-bridge'")
+    expect(patch).toContain("name: '@deepseek-ai/dsh-agent-presets'")
   })
 
-  it('inserts the upstream agent-presets roster row ahead of the Blue rows', () => {
-    expect(patch).toContain('- id: agent-presets')
+  it('inserts the Blue-owned agent-presets roster ahead of the Blue rows', () => {
+    expect(patch).toContain('- id: blue-agent-presets')
     expect(patch).toContain("name: '@deepseek-ai/dsh-agent-presets'")
     expect(patch).toContain('default: standard')
-    // The roster row precedes the first Blue row: it is a host-plane row the
-    // launcher keys on, not part of the UI stack.
-    expect(patch.indexOf('- id: agent-presets')).toBeLessThan(patch.indexOf('- id: blue-core'))
+    // The id deliberately differs from `agent-presets`: dsh only forces its
+    // own shared root onto that upstream id, while Blue's provider resolves
+    // the immutable root inside this bundle.
+    expect(patch).not.toContain('- id: agent-presets\n')
+    expect(patch).toContain("resolve('@dsh-blue/blue/package.json')")
+    expect(patch.indexOf('- id: blue-agent-presets')).toBeLessThan(patch.indexOf('- id: blue-core'))
+    expect(patch.indexOf('- id: blue-agent-presets')).toBeLessThan(patch.indexOf('- id: blue-app'))
   })
 
   it('inserts the cordis host-runner row the shipped cordis preset\'s tool-cordis injects', () => {
@@ -113,6 +124,9 @@ describe('blue bundle', () => {
     // audit fails the `/preset cordis` switch.
     expect(patch).toContain('- id: cordis-host-runner')
     expect(patch).toContain("name: '@deepseek-ai/dsh-cordis-host-runner'")
+    expect(patch).toContain('- id: blue-creative-host')
+    expect(patch).toMatch(/- id: blue-creative-host[\s\S]*?isolate:[\s\S]*?blueScreen: true[\s\S]*?commands: true[\s\S]*?planMode: true[\s\S]*?config:[\s\S]*?- id: cordis-host-runner/u)
+    expect(patch).not.toMatch(/isolate:[\s\S]*?bluePluginHost: true/u)
     expect(patch.indexOf('- id: cordis-host-runner')).toBeLessThan(patch.indexOf('- id: blue-core'))
     // The package must install with the bundle (dsh plugin add), exactly as
     // the agent-presets roster's own runtime dependency rides it.

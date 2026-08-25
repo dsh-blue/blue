@@ -36,30 +36,9 @@ Scope boundaries:
   reinstalling the shell is the upgrade.
 - The `BLUE_LAUNCHER=blue` child env rebrands the app's help and exit
   epitaph; nothing else in the app tree reads it.
-- The creative-preset overlay (S39): `src/presets.ts` syncs the payload at
-  `packages/cli/presets/cordis/` over the NESTED host's shipped `cordis`
-  preset on every boot (id and display name unchanged — Blue's 创造模式 IS
-  the Blue one), through the coarse `syncPresetTree` seam (the stamp file
-  `.blue-cordis.stamp` beside the target skips an unchanged tree; a
-  wholesale replace clears files the payload dropped). The nested host is
-  the shell's own dependency, so the overwrite is physically incapable of
-  touching another dsh installation — config-based shadowing is impossible
-  by upstream design (the dsh launcher's final overlay rewrites the
-  roster's `roots` to the shipped root, and the shared user root both
-  sorts after it and leaks into every profile). A sync failure (root-owned
-  global prefix) warns once and boots with the shipped creative mode; the
-  `version`/`plugin` surfaces never sync. The payload itself is the
-  shipped `cordis` composition with the persona retargeted at Blue's three
-  planes (distributable Blue plugin package via `dsh plugin add` /
-  composition rows / dynamic plugins — a real Blue feature never requires
-  the dsh-blue source tree; verified by the S39 spike: a plain ESM package
-  layered after Blue's bundle mounts and renders, and a live-session probe
-  confirmed the dynamic host half reaches all seven Blue L1 services and
-  hot-mounts UI). The persona's workflow is prototype-in-session (dynamic
-  hot-mount, user sees it immediately) then package-and-ask-distribute.
-  Three skills: `blue-plugin-development` (the plugin-package path),
-  `editing-cordis-compositions` (adapted), `cordis-plugin-development`
-  (host half, including the Blue UI hot-mount surface).
+- Creative mode belongs entirely to `@dsh-blue/blue`; the launcher carries
+  no preset payload and performs no host-installation writes. This keeps
+  `blue` and direct `dsh --profile` launches on the same bundle path.
 - The updater family (`blue-interaction/src/updater/`, D52) stays the
   in-app surface; the shell deliberately reimplements the ~30 lines of
   profile reading rather than adding an exports subpath to a plugin

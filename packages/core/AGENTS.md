@@ -35,6 +35,12 @@ The recoverable suspend composes pi-tui 0.84.2's own lifecycle primitives — `T
 
 The pi-tui-backed component factory and width pure functions:
 
+- `src/plugin-view.ts` is the public `BlueView` compiler used only by the
+  owner bridges. It strips caller ANSI/OSC/control bytes, applies semantic
+  tones from the live owner palette, caps text/depth/rows, delegates all width
+  math to `blueComponents`, and contains a dynamic render failure as one
+  bounded error row. Plugins never receive a `BlueComponent` from this seam.
+
 - `createImage(options)` wraps pi-tui's Image with a styled-text fallback for terminals without an image protocol; the pure `imageDimensions(data)` probe covers PNG/JPEG/GIF/WebP.
 - `BlueEditor.insertText(text)` — atomic insertion at the cursor; the seam the clipboard-image markers use.
 - `createFileMentionProvider(basePath, fdPath)` (D31) returns the renderer's combined autocomplete provider (constructed with no commands; structurally identical to `BlueAutocompleteProvider`, so it passes through unwrapped) as the `@`-mention source: fd-backed scoped queries, substring scoring, top-20, quoted values, `applyCompletion` stateless of fd. On the same seam, `EditorAdapter.handleInput` carries the kimi `reopenAutocompleteAfterInput` hook: after any input, text ending in `/` inside an `@` mention re-opens the dropdown (directory drill-down), gated on `isShowingAutocomplete` and calling 0.84.2's private `tryTriggerAutocomplete` through the `getHistory`-style structural cast.

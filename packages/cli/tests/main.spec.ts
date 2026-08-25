@@ -3,9 +3,7 @@
  * the `-V` three-segment self-answer, the missing-host bootstrap line, the
  * boot surface's calibration (current / installed / dev lane / failed with
  * its classified manual pointer and output tail) ahead of the inherited
- * exec, the creative-preset sync on the boot surface only (S39 — a sync
- * failure warns and still boots), the plugin surface's calibration and
- * sync skip, and the exit code propagation.
+ * exec, the plugin surface's calibration skip, and exit code propagation.
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -44,11 +42,9 @@ const OK: SpawnOutcome = { code: 0, signal: null, stdout: '', stderr: '', timedO
 /**
  * Stand the launcher up over fixtures: a nested-host directory and an
  * empty `blue` profile under a temp DSH_HOME, with every effect seam
- * captured. Returns the spawn recorders. The creative-preset sync seam is
- * stubbed fresh — its own specs own the sync behavior; here only the main
- * flow's handling of its outcomes matters.
+ * captured. Returns the spawn recorders.
  */
-function fixtureLauncher(): { calls: { once: Call[], inherit: Call[] }, root: string, tracker: { syncs: number } } {
+function fixtureLauncher(): { calls: { once: Call[], inherit: Call[] }, root: string } {
   const host = mkdtempTracked('blue-cli-main-host-')
   writeFileSync(join(host, 'package.json'), JSON.stringify({ version: '0.1.1-rc.2', bin: { dsh: 'lib/bin.js' } }))
   cliInternals.resolveNestedDshManifest = () => join(host, 'package.json')
@@ -63,12 +59,7 @@ function fixtureLauncher(): { calls: { once: Call[], inherit: Call[] }, root: st
   cliInternals.stderr = text => { captures.err.push(text) }
   cliInternals.exit = code => { captures.exits.push(code) }
   const calls = { once: [] as Call[], inherit: [] as Call[] }
-  const tracker = { syncs: 0 }
-  cliInternals.syncPresetTree = () => {
-    tracker.syncs += 1
-    return 'fresh'
-  }
-  return { calls, root, tracker }
+  return { calls, root }
 }
 
 /** Install the bundle at the pin inside a fixture profile root. */
@@ -251,44 +242,14 @@ describe('main', () => {
     expect(captures.exits).toEqual([0])
   })
 
-  it('syncs the creative preset on boot, ahead of the exec', async () => {
-    const { calls, root, tracker } = fixtureLauncher()
-    installBundle(root, PIN)
-    cliInternals.spawnInherit = async (cmd, args, opts) => {
-      calls.inherit.push({ cmd, args, env: opts?.env })
-      return OK
-    }
-    await main([])
-    expect(tracker.syncs).toBe(1)
-    expect(captures.err).toEqual([])
-    expect(calls.inherit).toHaveLength(1)
-  })
-
-  it('warns on a sync failure but still boots, exit code untouched', async () => {
-    const { calls, root } = fixtureLauncher()
-    installBundle(root, PIN)
-    cliInternals.syncPresetTree = () => ({ error: 'EACCES: permission denied' })
-    cliInternals.spawnInherit = async (cmd, args, opts) => {
-      calls.inherit.push({ cmd, args, env: opts?.env })
-      return OK
-    }
-    await main([])
-    expect(captures.err).toEqual([
-      "blue: creative-preset sync failed — EACCES: permission denied; this boot keeps the host's shipped creative mode\n",
-    ])
-    expect(calls.inherit).toHaveLength(1)
-    expect(captures.exits).toEqual([0])
-  })
-
-  it('skips the sync on the version and plugin surfaces', async () => {
-    const { calls, tracker } = fixtureLauncher()
+  it('skips calibration on the version and plugin surfaces', async () => {
+    const { calls } = fixtureLauncher()
     cliInternals.spawnInherit = async (cmd, args, opts) => {
       calls.inherit.push({ cmd, args, env: opts?.env })
       return OK
     }
     await main(['-V'])
     await main(['plugin', 'add', '@dsh-blue/blue@rc'])
-    expect(tracker.syncs).toBe(0)
   })
 })
 

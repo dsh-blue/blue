@@ -28,6 +28,13 @@ Clipboard output uses the shared OSC52/native `copyTextToClipboard` pipeline.
 
 The alias-relation registry `src/command-meta.ts`: `/quit` answers to `/q` and `/exit`, `/new` to `/clear` (S27) — the kimi style: aliases are not registered commands, `blue-input` rewrites an alias line to its canonical command before `ctx.commands.execute`, so the session log and every discovery surface stay canonical-only. Re-registering a canonical replaces its relation; an alias claimed by another canonical fails loud.
 
+`./plugin-host-bridge` is the owner-only public interaction adapter. It maps
+additive `bluePluginHost` commands into the real command registry (whose
+duplicate gate protects every built-in name), converts `BlueResult` into the
+durable command outcome, contains thrown plugin handlers, and sends public
+notifications through the current editor's transient notice channel. Its
+registrations disappear with either the contributing Fiber or the bridge.
+
 ## Dialog mount and framed surfaces (D26 view, D30 mount)
 
 Every dialog surface is a bottom full-width pull-up panel framed with the core `framePanel` chrome. Since D30 the mount is the kimi editor-slot replacement, not a floating overlay: every dialog mounts through `mountEditorReplacement` (see the shared editor seams below) — the panel takes over the editor's dock slot, the editor leaves the tree for the panel's lifetime (buffer, draft, and history survive in the component), only the footer remains below an open panel, and dismissing restores the editor with focus. Dock-mounted panels own their height (the old overlay `maxHeight` bounds are gone). Centered modal popups are rejected unless a surface explicitly calls for one; `showOverlay` stays reserved for genuinely floating surfaces.

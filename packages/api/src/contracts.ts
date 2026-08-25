@@ -38,7 +38,10 @@ export interface BlueContributionMeta {
 /** A stable command contribution exposed to plugins. */
 export interface BlueCommandContribution extends BlueContributionMeta {
   readonly label: string
-  readonly execute: (args: readonly string[], options?: { readonly signal?: AbortSignal }) => Promise<BlueResult>
+  readonly execute: (args: readonly string[], options?: {
+    readonly signal?: AbortSignal
+    readonly rawInput?: string
+  }) => Promise<BlueResult>
 }
 
 /** A renderer-neutral status contribution. */

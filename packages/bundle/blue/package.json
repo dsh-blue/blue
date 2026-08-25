@@ -23,7 +23,8 @@
   "files": [
     "lib/*.js",
     "lib/types/**/*.d.ts",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "presets/"
   ],
   "license": "MIT",
   "repository": {

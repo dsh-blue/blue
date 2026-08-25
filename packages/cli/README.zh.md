@@ -12,4 +12,4 @@ blue
 
 profile 继续由 dsh 官方的 pnpm 工作区路径管理。profile 已经携带壳包精确版本后，普通启动不会再次调用 pnpm。重装壳包即可升级；需要显式管理 profile 时使用 `dsh plugin`。
 
-壳包还自带 Blue 自己的创造模式：每次启动时把一份面向 Blue 的 `cordis` preset（Blue 插件与组装创作指导、动态插件会话内热挂载原型）同步覆盖嵌套宿主里的随附副本。id 与选择器显示名保持 `cordis` / 创造模式，因此在 Blue 中选择创造模式得到的一定是 Blue 版。这只改写壳包自己的嵌套 dsh 安装——同机器上的另一份 dsh 安装（比如 Web UI 所用）的官方创造模式不受任何影响。若嵌套宿主不可写（root 所有的全局前缀），当次启动会警告一次并退回随附的创造模式。
+创造模式完全由 `@dsh-blue/blue` bundle 提供。壳包不再改写其嵌套 dsh 安装，因此 `blue` 与直接 `dsh --profile` 启动使用同一套隔离的 preset roster。
