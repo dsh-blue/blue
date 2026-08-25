@@ -324,6 +324,17 @@ describe('/settings level one', () => {
     expect(bench.components.settingsLists).toHaveLength(0)
   })
 
+  it('annotates each namespace row with its blurb and row count', async () => {
+    const bench = mount({ sections: fullSections(), presets: fakePresets(), roster: fakeRoster() })
+    await bench.command.handler()
+    const frame = l1(bench.screen).render(100)
+      .map(line => line.replaceAll('^', '').replaceAll('~', '').replaceAll('_', ''))
+      .join('\n')
+    expect(frame).toContain('blue — Blue UI preferences · 12 settings')
+    expect(frame).toContain('shell — bash tool limits · 5 settings')
+    expect(frame).toContain('agent-presets — composition preset default · 1 settings')
+  })
+
   it('omits namespaces the host did not register', async () => {
     const bench = mount({ sections: { blue: fullSections().blue! } })
     await bench.command.handler()

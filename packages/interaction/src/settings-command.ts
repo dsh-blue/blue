@@ -222,6 +222,23 @@ const AGENT_PRESET_ROW: SettingRow = {
   kind: 'string', values: [], unsetValue: 'none',
 }
 
+/**
+ * One-line level-one blurbs per known namespace. The host's
+ * SettingsDescriptor carries no summary field, so the panel supplies its
+ * own; a namespace without an entry (a row added without its blurb) falls
+ * back to the bare count.
+ */
+const NS_BLURBS: Readonly<Record<string, string>> = {
+  blue: 'Blue UI preferences',
+  shell: 'bash tool limits',
+  'agent-loop': 'agent loop parallelism',
+  'agent-default-model': 'model request defaults',
+  'llm-deepseek': 'DeepSeek adapter options',
+  'web-search-deepseek': 'web search limits',
+  permission: 'tool policy presets',
+  'agent-presets': 'composition preset default',
+}
+
 /** All writable rows by id. */
 function rowById(id: string): SettingRow | undefined {
   if (id === PERMISSION_ROW.id) return PERMISSION_ROW
@@ -647,7 +664,11 @@ export function registerSettingsCommand(ctx: Context): () => void {
             ...built.groups.map(group => ({
               value: group.ns,
               label: group.ns,
-              description: `${group.items.length} settings`,
+              /* v8 ignore next -- every row namespace has a blurb; the
+                 fallback guards a row added without one */
+              description: NS_BLURBS[group.ns] === undefined
+                ? `${group.items.length} settings`
+                : `${NS_BLURBS[group.ns]} · ${group.items.length} settings`,
             })),
             {
               value: OPEN_FILE_ID,
