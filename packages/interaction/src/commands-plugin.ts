@@ -62,7 +62,7 @@ import { registerExportCommands } from './session-export.ts'
 import { registerInitCommand } from './session-init.ts'
 import { registerSkillsCommand } from './skills-command.ts'
 import { SelectListPanel } from './select-list.ts'
-import { flattenSessionTree } from './session-tree.ts'
+import { createSessionTree } from './session-tree.ts'
 import { CURRENT_MARK } from './symbols.ts'
 import { registerThemeCommand } from './theme-switch.ts'
 import { registerToolsCommands } from './tools-commands.ts'
@@ -161,22 +161,26 @@ export function apply(ctx: Context): void {
     // The title await can span a tree unload exactly like the listing
     // above; the continuation must not mount a panel on the dead tree.
     if (unloaded) return { kind: 'success' }
-    const tree = flattenSessionTree(sorted, titles, currentId === undefined ? undefined : String(currentId), formatDate)
+    const tree = createSessionTree(sorted, titles, currentId === undefined ? undefined : String(currentId), formatDate)
+    const treeRows = (query: string) => tree.rows(query.length > 0).map(row => ({
+      value: row.value,
+      label: row.label,
+      ...(row.description === undefined ? {} : { description: row.description }),
+      filterText: row.filterText,
+      ...(row.current === true ? { badge: CURRENT_MARK } : {}),
+    }))
     const list = new SelectListPanel({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,
-      rows: tree.map(row => ({
-        value: row.value,
-        label: row.label,
-        ...(row.description === undefined ? {} : { description: row.description }),
-        filterText: row.filterText,
-        ...(row.current === true ? { badge: CURRENT_MARK } : {}),
-      })),
+      rows: treeRows,
       title: 'Sessions',
-      titleHint: '· esc cancel · ↵ resume',
+      titleHint: '· space toggle branch · esc cancel · ↵ resume',
       ...(currentId === undefined ? {} : { initialValue: String(currentId) }),
       filter: true,
+      onToggle: (row) => {
+        tree.toggle(row.value)
+      },
       onSelect: (row) => {
         restore()
         if (row.value === String(currentId)) {

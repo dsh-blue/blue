@@ -64,13 +64,14 @@ function rows(count: number): SelectRow[] {
 }
 
 function mount(options: {
-  rows?: readonly SelectRow[]
+  rows?: readonly SelectRow[] | ((query: string) => readonly SelectRow[])
   title?: string
   titleHint?: string
   initialValue?: string
   filter?: boolean
   onSelect?: (row: SelectRow) => void
   onBlockedSelect?: (row: SelectRow) => void
+  onToggle?: (row: SelectRow) => void
   onCancel?: () => void
 } = {}): {
   panel: SelectListPanel
@@ -92,6 +93,7 @@ function mount(options: {
     filter: options.filter === true ? true : undefined,
     onSelect: options.onSelect ?? onSelect,
     onBlockedSelect: options.onBlockedSelect ?? onBlockedSelect,
+    ...(options.onToggle === undefined ? {} : { onToggle: options.onToggle }),
     onCancel: options.onCancel ?? onCancel,
   })
   return { panel, onSelect, onBlockedSelect, onCancel }
@@ -163,6 +165,37 @@ describe('SelectListPanel navigation', () => {
     panel.handleInput(KEY.escape)
     expect(onCancel).toHaveBeenCalledOnce()
     expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('toggles the focused row with Space and re-anchors dynamic rows', () => {
+    let expanded = false
+    const onToggle = vi.fn(() => { expanded = !expanded })
+    const { panel } = mount({
+      rows: () => expanded
+        ? [{ value: 'root', label: 'Root' }, { value: 'child', label: 'Child' }]
+        : [{ value: 'root', label: 'Root' }],
+      onToggle,
+    })
+    panel.handleInput(KEY.space)
+    expect(onToggle).toHaveBeenCalledWith(expect.objectContaining({ value: 'root' }))
+    panel.handleInput(KEY.enter)
+    expect(panel.render(40).some(row => row.includes('Child'))).toBe(true)
+  })
+
+  it('swallows a tree toggle on an empty view and falls back when a toggle removes the row', () => {
+    const emptyToggle = vi.fn()
+    const empty = mount({ rows: [], onToggle: emptyToggle })
+    empty.panel.handleInput(KEY.space)
+    expect(emptyToggle).not.toHaveBeenCalled()
+
+    let rowsAfterToggle: readonly SelectRow[] = [{ value: 'root', label: 'Root' }]
+    const changed = mount({
+      rows: () => rowsAfterToggle,
+      onToggle: () => { rowsAfterToggle = [{ value: 'next', label: 'Next' }] },
+    })
+    changed.panel.handleInput(KEY.space)
+    changed.panel.handleInput(KEY.enter)
+    expect(changed.onSelect).toHaveBeenCalledWith(expect.objectContaining({ value: 'next' }))
   })
 })
 
@@ -244,6 +277,18 @@ describe('SelectListPanel type-to-filter (S30②)', () => {
     expect(lines[3]).toBe('')
     expect(lines.some(line => line.includes('Item 0'))).toBe(true)
     expect(lines.some(line => line.includes('Xylophone'))).toBe(false)
+  })
+
+  it('keeps Space as a query character after tree search starts', () => {
+    const onToggle = vi.fn()
+    const { panel } = mount({
+      filter: true,
+      rows: [{ value: 'ab', label: 'Alpha Beta' }],
+      onToggle,
+    })
+    for (const char of 'Alpha Beta') panel.handleInput(char)
+    expect(onToggle).not.toHaveBeenCalled()
+    expect(panel.render(40).some(row => row.includes('Alpha Beta'))).toBe(true)
   })
 
   it('carries the type-to-search hint fragment only while the query is empty', () => {

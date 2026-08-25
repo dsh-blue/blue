@@ -141,6 +141,14 @@ describe('blue-input plugin', () => {
     expect(shared?.submitPrompt).toBeTypeOf('function')
   })
 
+  it('clears a navigation notice when the session switch settles', async () => {
+    const { ctx, hint, agent } = await mount()
+    getSharedEditor()?.notice?.('creating rewind branch...')
+    expect(hint.render(80)).toEqual(['~creating rewind branch...~'])
+    ctx.emit('blue/session-changed', agent)
+    expect(hint.render(80)).toEqual([])
+  })
+
   it('submits plain text as a user follow-up message, records history, and clears the buffer', async () => {
     const { editor, followup } = await mount()
     type(editor, 'hello there')

@@ -566,10 +566,11 @@ export function apply(ctx: Context): void {
   // walks it reversed to land the same order.
   for (const entry of [...getStashedHistory()].reverse()) editor.addToHistory(entry)
 
-  // Session switches re-derive the slash hint against the new agent (its
-  // command list, or the absence of an agent at all); the transient notice
-  // tier alone owns this row now.
+  // A session switch settles navigation notices such as "resuming" and
+  // "creating rewind branch". Clear the old session's transient text before
+  // re-deriving slash feedback against the new agent.
   ctx.on('blue/session-changed', () => {
+    notice = undefined
     refreshHint()
   })
   // The side-question pane docks above the editor; its flag switches the

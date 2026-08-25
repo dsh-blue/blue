@@ -322,9 +322,9 @@ describe('blue-commands plugin', () => {
     // and cwd-less rows never render.
     const rows = screen.overlays[0]?.component.render(72) ?? []
     expect(rows[0]).toBe('^' + '─'.repeat(72) + '^')
-    expect(rows[1]).toBe('^  Sessions^ _· type to search · esc cancel · ↵ resume_')
-    expect(rows[2]).toContain(`❯ ${agent.id} · 1970-01-01 00:00  ← current`)
-    expect(rows[3]).toContain('s-mid · 1970-01-01 00:00')
+    expect(rows[1]).toContain('type to search · space toggle branch')
+    expect(rows[2]).toContain(`❯   ${agent.id} · 1970-01-01 00:00  ← current`)
+    expect(rows[3]).toContain('  s-mid · 1970-01-01 00:00')
     expect(rows[4]).toContain('s-old · 1970-01-01 00:00')
     expect(rows.some(row => row.includes('s-away'))).toBe(false)
     expect(rows.some(row => row.includes('s-bare'))).toBe(false)
@@ -355,7 +355,7 @@ describe('blue-commands plugin', () => {
     expect(rows[2]).toContain('— s-fix · 1970-01-01 00:00')
     // The live session (older than s-fix) is second, led by its title with
     // the current badge; a rejected observation degrades to the id form.
-    expect(rows[3]).toContain('❯ Kimi-style welcome banner')
+    expect(rows[3]).toContain('❯   Kimi-style welcome banner')
     expect(rows[3]).toContain(`— ${agent.id} · 1970-01-01 00:00`)
     expect(rows[3]).toContain('← current')
     expect(rows[4]).toContain('s-plain · 1970-01-01 00:00')
@@ -373,10 +373,15 @@ describe('blue-commands plugin', () => {
       },
     })
     await ctx.commands.execute(agent, '/sessions', [], signal())
-    const rows = screen.overlays[0]?.component.render(72) ?? []
-    expect(rows.some(row => row.includes('root · 1970-01-01 00:00'))).toBe(true)
-    expect(rows.some(row => row.includes('├─ child-a'))).toBe(true)
-    expect(rows.some(row => row.includes('└─ child-b'))).toBe(true)
+    const collapsed = screen.overlays[0]?.component.render(90) ?? []
+    expect(collapsed.some(row => row.includes('space toggle branch'))).toBe(true)
+    expect(collapsed.some(row => row.includes('▸ root · 1970-01-01 00:00'))).toBe(true)
+    expect(collapsed.some(row => row.includes('child-a'))).toBe(false)
+    overlay(screen).handleInput(KEY.space)
+    const expanded = screen.overlays[0]?.component.render(90) ?? []
+    expect(expanded.some(row => row.includes('▾ root · 1970-01-01 00:00'))).toBe(true)
+    expect(expanded.some(row => row.includes('├─   child-a'))).toBe(true)
+    expect(expanded.some(row => row.includes('└─   child-b'))).toBe(true)
   })
 
   it('/sessions opens with the id form when no sessionQuery is mounted', async () => {
