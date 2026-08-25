@@ -562,6 +562,67 @@ describe('blue app driver', () => {
     await test.ctx.fiber.dispose()
   })
 
+  it('creates a rewind child from the requested complete prefix', async () => {
+    const test = bench({}, {
+      sessionEvents: [
+        { type: 'turn/start', data: { turn: 1 } },
+        { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+      ],
+    })
+    await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+    const first = test.ctx.blueSession.current!
+    test.ctx.emit('blue/request-rewind', String(first.id), 0)
+    await vi.waitFor(() => { expect(test.changes).toHaveLength(2) })
+    const created = test.recorded.created[1]!
+    expect(created.seed).toEqual([])
+    expect(created.meta).toEqual({ cwd: process.cwd(), parentSession: first.id, seedLength: 0 })
+    expect(test.ctx.blueSession.current?.id).toBe('agent-2')
+    await test.ctx.fiber.dispose()
+  })
+
+  it('rejects stale, unbalanced, and running rewind requests', async () => {
+    const test = bench({}, {
+      sessionEvents: [{ type: 'turn/start', data: { turn: 1 } }],
+    })
+    await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+    const first = test.ctx.blueSession.current!
+    test.ctx.emit('blue/request-rewind', 'other-session', 0)
+    await vi.waitFor(() => { expect(test.err()).toContain('rewind request is stale') })
+    test.ctx.emit('blue/request-rewind', String(first.id), first.session.events.length)
+    await vi.waitFor(() => { expect(test.err()).toContain('cannot rewind session') })
+    ;(first as unknown as { status: string }).status = 'running'
+    test.ctx.emit('blue/request-rewind', String(first.id), 0)
+    await vi.waitFor(() => { expect(test.err()).toContain('while it is running') })
+    expect(test.recorded.created).toHaveLength(1)
+    await test.ctx.fiber.dispose()
+  })
+
+  it('refuses rewind without a live session or its injected services', async () => {
+    const failed = bench({}, { createError: new Error('factory exploded') })
+    await vi.waitFor(() => { expect(failed.exits).toEqual([1]) })
+    failed.ctx.emit('blue/request-rewind', 'missing', 0)
+    await vi.waitFor(() => { expect(failed.err()).toContain('no live session to rewind') })
+    await failed.ctx.fiber.dispose()
+
+    const missingService = bench({}, { agents: false })
+    missingService.ctx.emit('blue/request-rewind', 'missing', 0)
+    await vi.waitFor(() => { expect(missingService.recorded.created).toEqual([]) })
+    await missingService.ctx.fiber.dispose()
+  })
+
+  it('keeps the parent session when rewind creation fails', async () => {
+    const test = bench({})
+    await vi.waitFor(() => { expect(test.ctx.blueSession.current).not.toBeNull() })
+    const parent = test.ctx.blueSession.current!
+    test.setCreateError(new Error('rewind factory busy'))
+    test.ctx.emit('blue/request-rewind', String(parent.id), 0)
+    await vi.waitFor(() => { expect(test.err()).toContain('could not rewind session agent-1: rewind factory busy') })
+    expect(test.ctx.blueSession.current).toBe(parent)
+    expect(test.recorded.disposed).toEqual([])
+    expect(test.changes).toHaveLength(1)
+    await test.ctx.fiber.dispose()
+  })
+
   it('validates config: both launch values are optional strings', () => {
     expect(new Config({})).toEqual({})
     expect(new Config({ task: 'x', resume: 'y' })).toEqual({ task: 'x', resume: 'y' })

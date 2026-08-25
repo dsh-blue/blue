@@ -3,7 +3,8 @@
  * bundle patch rides over dsh-base; the startup provider parses the launch
  * values, and this driver creates or resumes the Agent once the Loader
  * settles, publishes it through `blueSession`, answers the
- * `'blue/request-resume'`/`'blue/request-new'`/`'blue/request-fork'`
+ * `'blue/request-resume'`/`'blue/request-new'`/`'blue/request-fork'`/
+ * `'blue/request-rewind'`
  * switches for the interaction layer's session commands, and arms the
  * exit epitaph (D47) that the process 'exit' hook flushes after the
  * teardown — the saved session id and its resume command.
@@ -30,6 +31,7 @@ import type {} from '@deepseek-ai/dsh-agent-presets'
 import { armExitEpitaph, epitaphFor, profileFromArgv } from './exit-epitaph.ts'
 import { createModelSelectionRef } from './model-ref.ts'
 import { createBlueRequestController } from './request-lifecycle.ts'
+import { isBalancedRewindSeed } from './rewind-seed.ts'
 import type { BlueModelSelectionRef } from './model-ref.ts'
 import type { BlueSessionRef } from './types.ts'
 
@@ -328,6 +330,50 @@ export function apply(ctx: Context, config: Config): void {
         })
       } catch (error) {
         io.stderr.write(`dsh: could not fork session ${String(active.id)}: ${describe(error)}\n`)
+        return
+      }
+      await commitSwitch(next, holder)
+    })
+  })
+
+  ctx.on('blue/request-rewind', (sessionId: string, boundarySeq: number) => {
+    enqueue(async () => {
+      const agents = ctx.get('agents')
+      const defaultModel = ctx.get('agentDefaultModel')
+      if (agents === undefined || defaultModel === undefined) return
+      const active = session.current
+      if (active === null) {
+        io.stderr.write('dsh: no live session to rewind\n')
+        return
+      }
+      if (String(active.id) !== sessionId) {
+        io.stderr.write(`dsh: rewind request is stale for session ${sessionId}\n`)
+        return
+      }
+      if (active.status !== 'idle') {
+        io.stderr.write(`dsh: cannot rewind session ${String(active.id)} while it is ${active.status}\n`)
+        return
+      }
+      const events = active.session.events
+      if (!isBalancedRewindSeed(events, boundarySeq)) {
+        io.stderr.write(`dsh: cannot rewind session ${String(active.id)} at event boundary ${String(boundarySeq)}\n`)
+        return
+      }
+      const seed = events.slice(0, boundarySeq)
+      const holder: SelectionHolder = {}
+      let next: AgentHandle
+      try {
+        next = await agents.create({
+          ...createOptions(ctx, defaultModel, holder),
+          meta: {
+            cwd: active.session.header.cwd ?? process.cwd(),
+            parentSession: active.id,
+            seedLength: seed.length,
+          },
+          seed,
+        })
+      } catch (error) {
+        io.stderr.write(`dsh: could not rewind session ${String(active.id)}: ${describe(error)}\n`)
         return
       }
       await commitSwitch(next, holder)

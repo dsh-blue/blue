@@ -11,6 +11,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import type SessionQueryEngine from '@deepseek-ai/dsh-session-query'
 import * as commandsPlugin from '../src/commands-plugin.ts'
@@ -65,8 +66,14 @@ const signal = (): AbortSignal => new AbortController().signal
 /** The cwd the picker scopes to: the test runner's own directory. */
 const HERE = process.cwd()
 
-function header(id: string, createdAt: number, cwd?: string): SessionHeader {
-  return { version: 1, id: SessionId(id), createdAt, ...cwd === undefined ? {} : { cwd } }
+function header(id: string, createdAt: number, cwd?: string, parentSession?: string): SessionHeader {
+  return {
+    version: 1,
+    id: SessionId(id),
+    createdAt,
+    ...cwd === undefined ? {} : { cwd },
+    ...parentSession === undefined ? {} : { parentSession: SessionId(parentSession) },
+  }
 }
 
 /** A fulfilled batch-title result for `readTitleSnapshots` fakes. */
@@ -203,6 +210,64 @@ describe('blue-commands plugin', () => {
     expect(execution?.result).toEqual({ kind: 'success', text: 'forking the current session' })
   })
 
+  it('/rewind opens direct user turns and emits the selected safe boundary', async () => {
+    const notice = vi.fn()
+    const { ctx, screen, components, agent } = await mount()
+    agent.session.append('turn/start', { turn: 1 })
+    agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'fix the login flow' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    agent.session.append('assistant/message', {
+      turn: 1,
+      step: 0,
+      message: {
+        id: 'rewind-answer' as never,
+        role: 'assistant',
+        content: [{ type: 'text', text: 'login flow fixed' }],
+        source: { kind: 'model', provider: 'mock', model: 'mock' },
+      },
+    }, { surfaceOp: 'append' })
+    agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    setSharedEditor({ editor: components.createEditor(), submitPrompt: () => {}, notice })
+    try {
+      const onRewind = vi.fn()
+      ctx.on('blue/request-rewind', onRewind)
+      const execution = await ctx.commands.execute(agent, '/rewind', [], signal())
+      expect(execution?.result).toEqual({ kind: 'success' })
+      const rows = screen.overlays[0]?.component.render(72) ?? []
+      expect(rows.some(row => row.includes('Rewind current session'))).toBe(true)
+      expect(rows.some(row => row.includes('Turn 1 · fix the login flow'))).toBe(true)
+      expect(rows.some(row => row.includes('login flow fixed'))).toBe(true)
+      expect(rows.some(row => row.includes('The original session stays available'))).toBe(true)
+      overlay(screen).handleInput(KEY.enter)
+      expect(onRewind).toHaveBeenCalledWith(String(agent.id), 0)
+      expect(notice).toHaveBeenCalledWith('creating rewind branch...')
+    } finally {
+      clearSharedEditor()
+    }
+  })
+
+  it('/rewind handles unavailable, running, empty, and cancelled states', async () => {
+    const detached = await mount({ attach: false })
+    expect((await detached.ctx.commands.execute(detached.agent, '/rewind', [], signal()))?.result)
+      .toEqual({ kind: 'error', text: 'no active session' })
+    const running = await mount({ agentStatus: 'running' })
+    expect((await running.ctx.commands.execute(running.agent, '/rewind', [], signal()))?.result)
+      .toEqual({ kind: 'error', text: 'cannot rewind while the agent is running' })
+    const empty = await mount()
+    expect((await empty.ctx.commands.execute(empty.agent, '/rewind', [], signal()))?.result)
+      .toEqual({ kind: 'success', text: 'no user turns to rewind' })
+    empty.agent.session.append('turn/start', { turn: 1 })
+    empty.agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'cancel me' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    await empty.ctx.commands.execute(empty.agent, '/rewind', [], signal())
+    overlay(empty.screen).handleInput(KEY.escape)
+    expect(empty.screen.overlays[0]?.hidden).toBe(true)
+  })
+
   it('/sessions errors when session persistence is unavailable', async () => {
     const { ctx, agent } = await mount()
     const execution = await ctx.commands.execute(agent, '/sessions', [], signal())
@@ -286,15 +351,32 @@ describe('blue-commands plugin', () => {
     })
     await ctx.commands.execute(agent, '/sessions', [], signal())
     const rows = screen.overlays[0]?.component.render(88) ?? []
-    expect(rows[2]).toContain('❯ Fix the questionnaire width crash')
+    expect(rows[2]).toContain('Fix the questionnaire width crash')
     expect(rows[2]).toContain('— s-fix · 1970-01-01 00:00')
     // The live session (older than s-fix) is second, led by its title with
     // the current badge; a rejected observation degrades to the id form.
-    expect(rows[3]).toContain('Kimi-style welcome banner')
+    expect(rows[3]).toContain('❯ Kimi-style welcome banner')
     expect(rows[3]).toContain(`— ${agent.id} · 1970-01-01 00:00`)
     expect(rows[3]).toContain('← current')
     expect(rows[4]).toContain('s-plain · 1970-01-01 00:00')
     expect(rows[4]).not.toContain('—')
+  })
+
+  it('/sessions renders persisted parentSession lineage as a tree', async () => {
+    const { ctx, screen, agent } = await mount({
+      persistence: {
+        list: () => Promise.resolve([
+          header('root', 1_000, HERE),
+          header('child-a', 3_000, HERE, 'root'),
+          header('child-b', 2_000, HERE, 'root'),
+        ]),
+      },
+    })
+    await ctx.commands.execute(agent, '/sessions', [], signal())
+    const rows = screen.overlays[0]?.component.render(72) ?? []
+    expect(rows.some(row => row.includes('root · 1970-01-01 00:00'))).toBe(true)
+    expect(rows.some(row => row.includes('├─ child-a'))).toBe(true)
+    expect(rows.some(row => row.includes('└─ child-b'))).toBe(true)
   })
 
   it('/sessions opens with the id form when no sessionQuery is mounted', async () => {
@@ -305,6 +387,18 @@ describe('blue-commands plugin', () => {
     expect(execution?.result).toEqual({ kind: 'success' })
     const rows = screen.overlays[0]?.component.render(60) ?? []
     expect(rows[2]).toContain('s-one · 1970-01-01 00:00')
+  })
+
+  it('/sessions works without a currently attached Blue session', async () => {
+    const { ctx, screen, agent } = await mount({
+      attach: false,
+      persistence: { list: () => Promise.resolve([header('s-one', 1_000, HERE)]) },
+    })
+    const onResume = vi.fn()
+    ctx.on('blue/request-resume', onResume)
+    await ctx.commands.execute(agent, '/sessions', [], signal())
+    overlay(screen).handleInput(KEY.enter)
+    expect(onResume).toHaveBeenCalledWith('s-one')
   })
 
   it('/sessions resolves titles only for the newest sessions under the limit', async () => {
@@ -458,6 +552,17 @@ describe('blue-commands plugin', () => {
       kind: 'error',
       text: 'session picker is unavailable: the Blue screen is not mounted',
     })
+    ;(agent as unknown as { status: string }).status = 'idle'
+    ctx.provide('blueSession', { current: agent, modelRef: undefined })
+    session.append('turn/start', { turn: 1 })
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'rewind without a screen' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    expect((await ctx.commands.execute(agent, '/rewind', [], signal()))?.result).toEqual({
+      kind: 'error',
+      text: 'rewind is unavailable: the Blue screen is not mounted',
+    })
     await ctx.fiber.dispose()
   })
 
@@ -481,16 +586,15 @@ describe('blue-commands plugin', () => {
     expect(rows.some(row => row.includes('^/context           ^  ~Show token usage and the context window~'))).toBe(true)
     expect(rows.some(row => row.includes('^/effort (/thinking)^  ~Switch the thinking effort of the current model~'))).toBe(true)
     expect(rows.some(row => row.includes('^/quit (/q, /exit)  ^  ~Exit Blue~'))).toBe(true)
-    // 41 rows with /changelog and /trace both in the command list (40 with
-    // /changelog alone at D52, 38 at S34, 37 at S31, 36 at S30, 34 at S28).
-    expect(rows.some(row => row.includes('_ showing 1-16 of 41_'))).toBe(true)
+    // 42 rows with /changelog, /rewind, and /trace in the command list.
+    expect(rows.some(row => row.includes('_ showing 1-16 of 42_'))).toBe(true)
     // Scrolling down reaches the Keys section with the two-column layout.
-    for (let i = 0; i < 12; i += 1) overlay(screen).handleInput(KEY.down)
+    for (let i = 0; i < 13; i += 1) overlay(screen).handleInput(KEY.down)
     const scrolled = screen.overlays[0]?.component.render(80) ?? []
     expect(scrolled.some(row => row.includes('  #Keys#'))).toBe(true)
     // Key labels padEnd to the longest label — `backspace` (9) since S13.
     expect(scrolled.some(row => row.includes('?enter    ?  ~Submit input / confirm selection~'))).toBe(true)
-    expect(scrolled.some(row => row.includes('_ showing 13-28 of 41_'))).toBe(true)
+    expect(scrolled.some(row => row.includes('_ showing 14-29 of 42_'))).toBe(true)
     screen.overlays[0]?.component.invalidate()
     overlay(screen).handleInput(KEY.escape)
     expect(screen.overlays[0]?.hidden).toBe(true)
@@ -502,9 +606,9 @@ describe('blue-commands plugin', () => {
     const unregister = keymap?.register([{ id: 'spec.custom', keys: 'f9' }])
     await ctx.commands.execute(agent, '/help', [], signal())
     // The f9 row is the last key binding, beyond the first window; extra
-    // downs clamp at the scroll floor (26 clears the list: 42 rows with the
+    // downs clamp at the scroll floor (27 clears the list: 43 rows with the
     // extra f9 binding minus the 16-row window).
-    for (let i = 0; i < 26; i += 1) overlay(screen).handleInput(KEY.down)
+    for (let i = 0; i < 27; i += 1) overlay(screen).handleInput(KEY.down)
     const rows = screen.overlays[0]?.component.render(80) ?? []
     expect(rows.some(row => row.includes('f9') && row.includes('~spec.custom~'))).toBe(true)
     unregister?.()

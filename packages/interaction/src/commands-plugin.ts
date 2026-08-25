@@ -62,11 +62,13 @@ import { registerExportCommands } from './session-export.ts'
 import { registerInitCommand } from './session-init.ts'
 import { registerSkillsCommand } from './skills-command.ts'
 import { SelectListPanel } from './select-list.ts'
+import { flattenSessionTree } from './session-tree.ts'
 import { CURRENT_MARK } from './symbols.ts'
 import { registerThemeCommand } from './theme-switch.ts'
 import { registerToolsCommands } from './tools-commands.ts'
 import { registerUpdateCommand } from './update-command.ts'
 import { registerTraceCommand } from './trace-command.ts'
+import { rewindCandidates } from './rewind.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-commands'
@@ -159,30 +161,21 @@ export function apply(ctx: Context): void {
     // The title await can span a tree unload exactly like the listing
     // above; the continuation must not mount a panel on the dead tree.
     if (unloaded) return { kind: 'success' }
+    const tree = flattenSessionTree(sorted, titles, currentId === undefined ? undefined : String(currentId), formatDate)
     const list = new SelectListPanel({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,
-      rows: sorted.map(header => {
-        const id = String(header.id)
-        const date = formatDate(header.createdAt)
-        const title = titles.get(id)
-        // A titled row leads with the title (the reason the picker is
-        // scannable); the id and date ride the description. Untitled rows
-        // (pre-title-era or zero-message sessions) keep the id-first form.
-        // The constant cwd is dropped from every form — one picker, one
-        // directory (D46).
-        const label = title ?? `${id} · ${date}`
-        return {
-          value: id,
-          label,
-          ...(title === undefined ? {} : { description: `${id} · ${date}` }),
-          filterText: `${label} ${date}`,
-          ...(header.id === currentId ? { badge: CURRENT_MARK } : {}),
-        }
-      }),
+      rows: tree.map(row => ({
+        value: row.value,
+        label: row.label,
+        ...(row.description === undefined ? {} : { description: row.description }),
+        filterText: row.filterText,
+        ...(row.current === true ? { badge: CURRENT_MARK } : {}),
+      })),
       title: 'Sessions',
       titleHint: '· esc cancel · ↵ resume',
+      ...(currentId === undefined ? {} : { initialValue: String(currentId) }),
       filter: true,
       onSelect: (row) => {
         restore()
@@ -200,6 +193,54 @@ export function apply(ctx: Context): void {
     // The kimi dialog mount (D30): the panel replaces the editor in its
     // dock slot, so below it only the footer remains — a floating overlay
     // would leave the editor's frame peeking around the panel.
+    const restore = mountEditorReplacement(list)
+    return { kind: 'success' }
+  }
+
+  /**
+   * Open the single-level rewind picker for the live session. Selecting a
+   * row emits an additive Blue request; the app creates the child session and
+   * leaves the parent untouched.
+   * @returns the command outcome.
+   */
+  function rewindSession(): CommandResult {
+    const active = ctx.get('blueSession')?.current
+    if (active === undefined || active === null) return { kind: 'error', text: 'no active session' }
+    if (active.status !== 'idle') return { kind: 'error', text: 'cannot rewind while the agent is running' }
+    const candidates = rewindCandidates(active.session.events)
+    if (candidates.length === 0) return { kind: 'success', text: 'no user turns to rewind' }
+    const display = displayServices(ctx)
+    if (display === undefined) {
+      return { kind: 'error', text: 'rewind is unavailable: the Blue screen is not mounted' }
+    }
+    const rows = candidates.map(candidate => ({
+      value: String(candidate.boundarySeq),
+      label: `Turn ${String(candidate.turn)} · ${candidate.prompt}`,
+      ...(candidate.response === undefined ? {} : { description: `↳ ${candidate.response}` }),
+      filterText: `${candidate.prompt} ${candidate.response ?? ''} ${String(candidate.turn)}`,
+    }))
+    const first = candidates[0]
+    /* v8 ignore next -- candidates.length was checked above. */
+    if (first === undefined) return { kind: 'success', text: 'no user turns to rewind' }
+    const list = new SelectListPanel({
+      keymap: display.keymap,
+      theme: display.theme,
+      components: display.components,
+      rows,
+      title: 'Rewind current session',
+      titleHint: '· esc cancel · ↵ create branch',
+      footer: 'The original session stays available in /sessions.',
+      initialValue: String(first.boundarySeq),
+      filter: true,
+      onSelect: (row) => {
+        restore()
+        ctx.emit('blue/request-rewind', String(active.id), Number(row.value))
+        getSharedEditor()?.notice?.('creating rewind branch...')
+      },
+      onCancel: () => {
+        restore()
+      },
+    })
     const restore = mountEditorReplacement(list)
     return { kind: 'success' }
   }
@@ -341,6 +382,11 @@ export function apply(ctx: Context): void {
         return { kind: 'success' as const, text: 'forking the current session' }
       },
     })
+    const rewind = ctx.commands.register({
+      name: 'rewind',
+      description: 'Create a branch from an earlier user turn',
+      handler: () => rewindSession(),
+    })
     const sessions = ctx.commands.register({
       name: 'sessions',
       description: 'List persisted sessions and switch to one (an id resumes directly)',
@@ -396,6 +442,7 @@ export function apply(ctx: Context): void {
       fresh()
       freshAliases()
       fork()
+      rewind()
       sessions()
       sessionsAliases()
       help()

@@ -64,6 +64,8 @@ export interface SelectListPanelOptions {
   readonly title?: string
   /** Muted key row rendered beside the title (`· esc cancel · ↵ resume`). */
   readonly titleHint?: string
+  /** Optional muted safety/context line rendered below the choices. */
+  readonly footer?: string
   /** Seeds the cursor on this row's value (the current entry); head otherwise. */
   readonly initialValue?: string
   /**
@@ -294,6 +296,9 @@ export class SelectListPanel implements BlueFocusable {
     }
     const counter = counterRow(this.cursor, view.length, MAX_LIST_VISIBLE)
     if (counter !== undefined) lines.push(colors.textMuted(counter))
+    if (this.options.footer !== undefined) {
+      lines.push('', colors.textMuted(components.truncateToWidth(`  ${this.options.footer}`, width)))
+    }
     lines.push('')
     // The affordance hint rides the title-hint channel (the frame paints
     // it muted): while no query is live, every filtered panel advertises
