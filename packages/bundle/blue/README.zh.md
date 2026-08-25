@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-dsh Blue 组合包：交互式终端 UI profile。[`cordis.patch.yml`](cordis.patch.yml) 直接叠加在 [`dsh-base`](https://github.com/deepseek-ai/deepseek-harness) 之上，分三段插入 29 条 Blue 行。plain 基线保持自足，增强行可逐项移除。专用 profile 验收通过后，frontend-runtime 的 `blue-context`、`blue-conversation`、`blue-transcript-official` 以及生态 adapter `blue-openpencil`/`blue-lark` 已默认启用，并保留 capability-absent 与 unload fallback。OpenPencil 只投影官方 tool result 且丢弃签名 editor metadata；Lark 通过官方 command 注册 status/retry，不保存 credentials。
+dsh Blue 组合包：交互式终端 UI profile。[`cordis.patch.yml`](cordis.patch.yml) 直接叠加在 [`dsh-base`](https://github.com/deepseek-ai/deepseek-harness) 之上，分三段插入 29 条 Blue 行。plain 基线保持自足，增强行可逐项移除。frontend-runtime 的 `blue-conversation`、`blue-transcript-official` 默认启用，并保留 capability-absent 与 unload fallback。`blue-openpencil` 与 `blue-lark` 保持为 bundle 之外的 validation-only adapter，由独立 packed fixture 验证，不进入本 release 的依赖闭包。
 
 bundle 自己持有 Blue 的完整 Agent preset roster。标准、PTC 与极简模式跟随当前固定的 harness 版本；`cordis` / 创造模式携带认识 Blue 的 persona 与受能力约束的插件创作指导。无论通过 `blue` 还是直接 `dsh --profile` 启动，都会读取这份不可变的 bundle payload，不会改写宿主共享 preset。创造模式原型只能通过 `bluePluginHost` 增加 dock、status、command 与 notification 贡献，不能替换 Blue core 或 owner 功能 id。原型验收后，Agent 必须先询问用户是保留本地、创建 GitHub 仓库还是发布 npm 包。
 

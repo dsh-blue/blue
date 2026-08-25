@@ -49,8 +49,6 @@
     "@dsh-blue/blue-frontend": "workspace:^",
     "@dsh-blue/blue-harness-adapter": "workspace:^",
     "@dsh-blue/blue-interaction": "workspace:^",
-    "@dsh-blue/blue-lark": "workspace:^",
-    "@dsh-blue/blue-openpencil": "workspace:^",
     "@dsh-blue/blue-transcript": "workspace:^"
   },
   "peerDependencies": {

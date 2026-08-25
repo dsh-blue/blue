@@ -52,8 +52,6 @@ const MANIFESTS: readonly string[] = [
   '../package.json',
   '../../interaction/package.json',
   '../../app/package.json',
-  '../../openpencil/package.json',
-  '../../lark/package.json',
   '../../bundle/blue/package.json',
   '../../cli/package.json',
   '../../../website/package.json',

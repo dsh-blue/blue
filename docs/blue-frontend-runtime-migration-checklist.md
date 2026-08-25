@@ -346,6 +346,42 @@ dsh --profile blue-runtime-cutover
 
 Codex 必须等待用户明确回复“验收通过”。自动 smoke 不能替代该回复。
 
+### 7.4 Cutover evidence (2026-08-25)
+
+The final cutover worktree is `/home/x/dev/blue-runtime-cutover` on
+`p2/frontend-runtime-cutover`. The merge residual in `theme-palette.ts` was
+removed and the bundle manifest was corrected so validation-only `context`,
+`remote`, `openpencil`, and `lark` packages are not in the release or bundle
+dependency set.
+
+Machine evidence recorded in the ledger:
+
+- C0-C3 implementation and package contract: the ten release package set is
+  enforced by `script/package-contract.mjs`; all 14 package validators return
+  `valid: true`.
+- C5 fixtures: `context` and `openpencil` on Harness `0.1.1-rc.2`, and
+  `remote` and `lark` on `0.1.1-rc.1`, each report
+  `declared === executed`, empty `skipped`/`failures`, and
+  `fixtureCleaned: true`.
+- C6 automatic gates: 170 test files / 2711 tests, per-file coverage 100% on
+  statements/branches/functions/lines, typecheck, lint, build, lib exports,
+  package contract, diagrams, website build, and happy/PTY/mouse width smoke
+  all pass. `check:pack` produces exactly 10 tarballs.
+- The dedicated profile links every package to this worktree and a headless
+  pseudo-TTY boot exits 0 with bracketed paste enabled at boot and disabled at
+  exit.
+
+C4 remains intentionally pending. The official conversation/transcript path
+is the default product consumer, but the search audit still finds legitimate
+fallback/export/pane consumers of `fold.ts`, direct session facts, legacy
+`BlueStatusEntry`, and intent registries. Those rows must not be marked deleted
+until their documented replacement conditions are met and separately tested.
+
+C6 is therefore awaiting live human acceptance. C7 is locked: do not change
+the Blue version from `0.1.0-rc.8`, create a release PR, tag, merge, delete the
+profile, or publish npm until the user explicitly replies `验收通过` after
+running the full checklist against `dsh --profile blue-runtime-cutover`.
+
 ## 8. C7：版本、PR 和合并
 
 只有 C6 人工验收通过后：

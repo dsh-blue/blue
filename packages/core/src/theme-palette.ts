@@ -48,11 +48,6 @@ export function themeModel(id: string, name: string, dark: boolean, foregrounds:
   return { kind: 'theme', id, name, dark, colors: Object.freeze({ ...foregrounds, selectedBg }) }
 }
 
-/** Build the renderer-neutral companion model for a semantic palette. */
-export function themeModel(id: string, name: string, dark: boolean, foregrounds: BlueForegroundHexes, selectedBg: string): Omit<ThemeModel, 'colors'> & { readonly colors: Readonly<Record<string, string>> } {
-  return { kind: 'theme', id, name, dark, colors: Object.freeze({ ...foregrounds, selectedBg }) }
-}
-
 /**
  * Build the frozen 28-token semantic color table from palette hexes.
  * @param foregrounds - one hex per foreground token.

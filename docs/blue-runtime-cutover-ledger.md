@@ -1,6 +1,7 @@
 # Frontend Runtime Cutover Ledger
 
-> Status: active migration record. The cutover is complete only when every
+> Status: machine gates green; C4 deletion rows and dedicated-profile human
+> acceptance are still pending. The cutover is complete only when every
 > behavior row and deletion row is `complete`, all evidence gates pass, and the
 > dedicated profile receives explicit human acceptance.
 
@@ -21,22 +22,27 @@
 The remote master and PR heads are frozen for this migration. PR #34 and #38
 are out of scope; PR #36 is superseded by this cutover.
 
+The cutover merge is `02abd886995598ad7706752a59f45a16c43026b5`; the follow-up
+docs index commit is `9822f070e0a923260ec5bc687cd626189a5a3b76`. The final
+worktree is `/home/x/dev/blue-runtime-cutover` on
+`p2/frontend-runtime-cutover`.
+
 ## Behavior Migration
 
 | Surface | Domain / official input | Projection / action | Frontend model | Renderer / composition | Required evidence | Status |
 |---|---|---|---|---|---|---|
-| CLI and release pipeline | npm/package manifests | package contract and immutable tarball release | n/a | standalone CLI and workflows | CLI specs, `check:lib`, `check:pack`, packed install | in progress |
-| ocean/paper themes | semantic palette config | Fiber-owned theme registration | `ThemeModel` | core palette compiler and bundle rows | lifecycle, width, live theme swap | pending |
-| native image paste | platform clipboard capability | attachment save plus `editor.set` action | notification/editor models | interaction command and core input route | platform probes, abort/unload, PTY paste | pending |
-| update/changelog | npm/profile capability | cancellable update actions | command/panel/notification models | generic frontend panel | cooldown, rollback, late result, packed CLI | pending |
-| trace | official trace projection | session-scoped trace query/action | list/detail panel models | generic frontend panel | replay, switch, unload, width | pending |
-| btw | session action capability | side-session action/model | dock model | dock renderer | resize, scroll, unload, width | pending |
-| retract (#58) | cancellation plus durable surface replacement | `session.retract` | editor notification/action result | no transcript event fold | replay/restart, ordinary compaction, stale rejection | pending |
-| update cooldown (#59) | install eligibility/cache | startup notification action | `NotificationModel` | notification consumer | time/cache matrix, unload | pending |
-| creative mode (#60) | capability-scoped plugin host | effect-bound contribution registries | view/command/status/dock/notification models | standard consumers and preset composition | hostile plugin, unload, packed fixture | pending |
-| settings (#61) | official settings service | revisioned get/set/unset | `SettingsPanelModel` | generic form/list renderer | stale revision, restart marker, secret elision | pending |
-| rewind/tree (#62) | official session store/query | `session.rewind` and tree query | `SessionTreeModel` | generic select/info renderer | seed lineage, stale action, restart/replay | pending |
-| onboarding (#63) | official credentials/settings capability | `credentials.set` | secret `FormPanelModel` | generic form renderer | redaction, abort/unload, provider refresh | pending |
+| CLI and release pipeline | npm/package manifests | package contract and immutable tarball release | n/a | standalone CLI and workflows | CLI specs, `check:lib`, `check:pack`, packed install | machine-complete; human pending |
+| ocean/paper themes | semantic palette config | Fiber-owned theme registration | `ThemeModel` | core palette compiler and bundle rows | lifecycle, width, live theme swap | machine-complete; human pending |
+| native image paste | platform clipboard capability | attachment save plus `editor.set` action | notification/editor models | interaction command and core input route | platform probes, abort/unload, PTY paste | machine-complete; human pending |
+| update/changelog | npm/profile capability | cancellable update actions | command/panel/notification models | generic frontend panel | cooldown, rollback, late result, packed CLI | machine-complete; human pending |
+| trace | official trace projection | session-scoped trace query/action | list/detail panel models | generic frontend panel | replay, switch, unload, width | machine-complete; human pending |
+| btw | session action capability | side-session action/model | dock model | dock renderer | resize, scroll, unload, width | machine-complete; human pending |
+| retract (#58) | cancellation plus durable surface replacement | `session.retract` | editor notification/action result | no transcript event fold | replay/restart, ordinary compaction, stale rejection | machine-complete; human pending |
+| update cooldown (#59) | install eligibility/cache | startup notification action | `NotificationModel` | notification consumer | time/cache matrix, unload | machine-complete; human pending |
+| creative mode (#60) | capability-scoped plugin host | effect-bound contribution registries | view/command/status/dock/notification models | standard consumers and preset composition | hostile plugin, unload, packed fixture | machine-complete; human pending |
+| settings (#61) | official settings service | revisioned get/set/unset | `SettingsPanelModel` | generic form/list renderer | stale revision, restart marker, secret elision | machine-complete; human pending |
+| rewind/tree (#62) | official session store/query | `session.rewind` and tree query | `SessionTreeModel` | generic select/info renderer | seed lineage, stale action, restart/replay | machine-complete; human pending |
+| onboarding (#63) | official credentials/settings capability | `credentials.set` | secret `FormPanelModel` | generic form renderer | redaction, abort/unload, provider refresh | machine-complete; human pending |
 
 ## Legacy Deletion Gate
 
@@ -56,12 +62,26 @@ lines. Each adapter must state the upstream capability that permits its removal;
 none may expose or retain an Agent, Session, renderer object, or duplicate
 business state.
 
+The 2026-08-25 audit still finds runtime consumers for the legacy fold and
+session facts in export, activity/todo/agents/btw panes, status/context helpers,
+and app/session actions; `BlueStatusEntry` and the `blueIntents` registry also
+remain compatibility surfaces. The official transcript consumer is default and
+prevents duplicate rendering, but these consumers keep the corresponding C4
+rows `pending` until projection/model replacements are implemented.
+
 ## Final Evidence
 
 - Full unit, per-file coverage, typecheck, lint, diagrams, build, library-export,
   package, website, and all real-process smoke gates.
-- Validator passes for every runtime and migrated package.
-- Packed fixtures execute every declared scenario without skips on Harness
-  `0.1.1-rc.2` and `0.1.1-rc.1`.
-- `blue-runtime-cutover` profile exercises every behavior row above.
-- Explicit human acceptance precedes the rc.9 version change and atomic PR.
+- Validator passes for all 10 release packages and all 4 validation-only
+  packages (`valid: true`, no architecture/lifecycle/package violations).
+- Packed fixtures for `context`/`openpencil` on `0.1.1-rc.2` and
+  `remote`/`lark` on `0.1.1-rc.1` execute every declared scenario without
+  skips or failures and report `fixtureCleaned: true`.
+- `pnpm run test` reports 170 files / 2711 tests; coverage is 100% for every
+  executable source file; `check:pack` emits exactly 10 tarballs.
+- `pnpm smoke:happy`, `pnpm smoke:pty`, and `pnpm smoke:pty:mouse` pass; the
+  dedicated profile links to this worktree and headless `/quit` exits 0 with
+  bracketed paste lifecycle intact.
+- Explicit human acceptance still precedes the rc.9 version change and atomic
+  PR; no version, tag, merge, profile deletion, or npm publish has occurred.
