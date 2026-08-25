@@ -9,7 +9,9 @@
  * between the collapsed result preview and the full output, scoped to the
  * most recent {@link EXPAND_TURNS} turns (the S20 kimi range). Tool cards are
  * created through the `blueIntents` render-intent registry: the item's
- * resolved view selects an intent entry, and the entry's factory builds the
+ * resolved view selects an intent entry (the `cordis_` tool-name prefix is
+ * the one name-based exception, routed by `present.ts`'s
+ * `intentForToolItem`), and the entry's factory builds the
  * component (the built-in `'generic'` entry is the `ToolCallComponent`
  * baseline). Consecutive same-step Reads group into one
  * `ReadGroupComponent` at mount time (the S20 kimi contiguity rule). Long
@@ -41,19 +43,23 @@ import {
 } from '@dsh-blue/blue-core'
 // Empty type import carries the app-owned `blueSession` Context merge and the
 // `'blue/session-changed'` Events merge this plugin consumes.
-import type {} from '@dsh-blue/blue-app'
+import type { BlueTurnRetraction } from '@dsh-blue/blue-app'
+// Carries the optional host `settings` service Context merge.
+import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
   AssistantMessageComponent,
   ErrorMessageComponent,
   InterruptedMarkerComponent,
+  setUserFoldThresholds,
   StepSummaryComponent,
   ToolCallComponent,
   UserMessageComponent,
+  userFoldThresholds,
   type UserMessageImages,
 } from './components.ts'
-import { TranscriptFolder, type FoldUpdate } from './fold.ts'
+import { retractedTurnNumbers, TranscriptFolder, type FoldUpdate } from './fold.ts'
 import { BlueIntentsService } from './intents.ts'
-import { isReadItem, resolveCallView, resolveResultView } from './present.ts'
+import { intentForToolItem, isReadItem, resolveCallView, resolveResultView } from './present.ts'
 import { ReadGroupComponent } from './read-group.ts'
 import { BlueStatusService, FooterShellComponent } from './status.ts'
 import { BlueStatusModelService } from './status-model.ts'
@@ -61,8 +67,16 @@ import { BlueDockModelService } from './dock-model.ts'
 import { BlueModelToolService } from './tool-model.ts'
 import { TranscriptModelService } from './transcript-model.ts'
 import { ThinkingComponent } from './thinking.ts'
+import { defaultExpansion, setDefaultExpansion } from './fold-defaults.ts'
 import type { BlueIntentComponent, TranscriptItem } from './types.ts'
-import { currentWindowTurns, windowEvictTurn } from './window.ts'
+import { currentWindowTurns, setRecentStepsRetention, setWindowTurns, windowEvictTurn } from './window.ts'
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /** New transcript content arrived while the user was scrolled away. */
+    'blue/transcript-content-changed'(paused: boolean): void
+  }
+}
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -85,6 +99,7 @@ export {
   UserMessageComponent,
 } from './components.ts'
 export { ReadGroupComponent } from './read-group.ts'
+export { defaultExpansion, setDefaultExpansion } from './fold-defaults.ts'
 export { AgentGroupComponent, setAgentGroupTimers, type AgentGroupTimers } from './agent-group.ts'
 export { BlueIntentsError, BlueIntentsService } from './intents.ts'
 export { BlueStatusError, BlueStatusService, FOOTER_MAX_ROWS, FooterShellComponent } from './status.ts'
@@ -135,6 +150,26 @@ export const ACTION_TOGGLE_COLLAPSE = 'blue.transcript.toggle-collapse'
  * the most recent turns flip; older turns stay collapsed.
  */
 export const EXPAND_TURNS = 3
+
+/** The live Ctrl-O range; the settings driver and tests replace it (the `window.ts` setter precedent). */
+let expandTurns = EXPAND_TURNS
+
+/**
+ * Replace the Ctrl-O expansion range.
+ * @param n - the replacement, or `undefined` to restore the default.
+ */
+export function setExpandTurns(n: number | undefined): void {
+  expandTurns = n ?? EXPAND_TURNS
+}
+
+/**
+ * Read the live Ctrl-O expansion range (the `window.ts` reader precedent:
+ * the settings driver's specs assert through it).
+ * @returns the number of most-recent turns Ctrl-O reaches back.
+ */
+export function currentExpandTurns(): number {
+  return expandTurns
+}
 
 /**
  * The plugin-wide expansion toggle state plus the live session's mounted
@@ -221,6 +256,7 @@ function mountSession(
       call: (name, args) => resolveCallView(ctx.tools, name, args),
       result: (name, args, result) => resolveResultView(ctx.tools, name, args, result),
     },
+    retractedTurns: retractedTurnNumbers(agent.session.events),
   })
 
   /** Dispose and drop every entry matching the predicate. */
@@ -275,19 +311,24 @@ function mountSession(
     }
     let component: BlueComponent
     if (item.kind === 'tool') {
-      const intent = intents.resolve(item.view !== undefined && 'card' in item.view ? item.view.card : 'generic')
-      component = intent.create({ item, colors, components, expanded: toggle.expanded })
+      const intent = intents.resolve(intentForToolItem(item))
+      component = intent.create({ item, colors, components, expanded: toggle.expanded || defaultExpansion('tools') })
     } else {
       component = createPlainComponent(item, colors, components, images, requestRender)
     }
     const expandable = component as BlueIntentComponent
-    if (item.kind === 'thinking' || item.kind === 'user') {
+    if (item.kind === 'thinking' || item.kind === 'user' || item.kind === 'tool') {
       // The thinking block and a foldable long user message mount at the
       // live expansion state (kimi applies toolOutputExpanded at
       // ThinkingComponent creation too); a freshly mounted entry is always
       // in the newest turn, so the creation-time state below is the same
       // shortcut for it.
-      expandable.setExpanded?.(toggle.expanded)
+      const fallback = item.kind === 'thinking'
+        ? defaultExpansion('thinking')
+        : item.kind === 'tool'
+          ? defaultExpansion('tools')
+          : false
+      if (toggle.expanded || fallback) expandable.setExpanded?.(true)
     }
     // The kimi one-column gutter (D29, S21): every transcript entry mounts
     // inset on both sides; the component itself never knows.
@@ -297,6 +338,11 @@ function mountSession(
   const present = (updates: readonly FoldUpdate[] | null): void => {
     if (updates === null) return
     for (const update of updates) {
+      if ('removed' in update) {
+        const removed = new Set(update.removed)
+        retire(item => removed.has(item))
+        continue
+      }
       if ('replaced' in update) {
         // In-turn step folding: dispose the folded items' components and mount
         // the summary. screen.addChild appends positionally correctly here
@@ -351,10 +397,19 @@ function mountSession(
     screen.requestRender(true)
   })
 
+  const offRetraction = ctx.on('blue/turn-retracted', (retraction: BlueTurnRetraction) => {
+    const requests = ctx.get('blueRequests') as { readonly sessionEpoch: number } | undefined
+    if (requests !== undefined && retraction.sessionEpoch !== requests.sessionEpoch) return
+    present(folder.retract(retraction.turn))
+    evict()
+    screen.requestRender()
+  })
+
   screen.requestRender(true)
   return () => {
     offEvent()
     offLifecycle()
+    offRetraction()
     toggle.expanded = false
     toggle.entries = []
     for (const entry of entries.splice(0)) retireEntry(entry)
@@ -378,6 +433,28 @@ export function apply(ctx: Context): void {
   const screen = ctx.blueScreen
   const colors = ctx.blueTheme.colors
   const toggle: CollapseToggle = { expanded: false, entries: [] }
+
+  const BLUE_NS = 'blue' as SettingsNamespace
+
+  const syncExpansionDefaults = (value: unknown): void => {
+    const section = typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
+    const before = `${defaultExpansion('thinking')}:${defaultExpansion('tools')}`
+    setDefaultExpansion({
+      thinking: typeof section.collapseThinking === 'boolean' ? !section.collapseThinking : defaultExpansion('thinking'),
+      tools: typeof section.collapseToolCalls === 'boolean' ? !section.collapseToolCalls : defaultExpansion('tools'),
+    })
+    if (`${defaultExpansion('thinking')}:${defaultExpansion('tools')}` === before) return
+    for (const entry of toggle.entries) {
+      const expandable = entry.component as BlueIntentComponent
+      if (typeof expandable.setExpanded !== 'function') continue
+      const base = toggle.expanded
+        || (entry.item.kind === 'thinking' ? defaultExpansion('thinking')
+          : entry.item.kind === 'tool' ? defaultExpansion('tools') : false)
+      expandable.setExpanded(base)
+    }
+    screen.requestRender(true)
+  }
+  syncExpansionDefaults(ctx.get('settings')?.get(BLUE_NS))
 
   // Optional image wiring is renderer-owned. Both the legacy baseline and the
   // official model consumer receive the same byte loader; the projected model
@@ -466,19 +543,62 @@ export function apply(ctx: Context): void {
       for (let index = 0; index < entries.length; index += 1) {
         if (entries[index]!.item.kind === 'user') boundaries.push(index)
       }
-      const cutoff = boundaries.length > EXPAND_TURNS
-        ? boundaries[boundaries.length - EXPAND_TURNS]!
+      const cutoff = boundaries.length > expandTurns
+        ? boundaries[boundaries.length - expandTurns]!
         : 0
       for (let index = 0; index < entries.length; index += 1) {
         const expandable = entries[index]!.component as BlueIntentComponent
         if (typeof expandable.setExpanded === 'function') {
-          expandable.setExpanded(toggle.expanded && index >= cutoff)
+          const item = entries[index]!.item
+          const fallback = item.kind === 'thinking'
+            ? defaultExpansion('thinking')
+            : item.kind === 'tool'
+              ? defaultExpansion('tools')
+              : false
+          expandable.setExpanded((toggle.expanded || fallback) && index >= cutoff)
         }
       }
       transcriptModels.setExpanded(toggle.expanded)
       screen.requestRender(true)
     },
   }]))
+
+  // Blue settings ride the host settings document: the resolved `blue`
+  // namespace (schema owned by interaction) carries the fold defaults
+  // (`collapseThinking` / `collapseToolCalls`) and the transcript tunables
+  // (`windowTurns` / `recentStepsRetention` / `expandTurns` /
+  // `userFoldLines` / `userFoldChars`). The service is optional and its
+  // value unknown here, so every read parses defensively — absent keys or
+  // wrongly typed values keep the current setting; a host without settings
+  // keeps every shipped default.
+  /** Replace one numeric tunable when the section carries a positive integer. */
+  const applyNumber = (raw: unknown, set: (n: number) => void): void => {
+    if (typeof raw === 'number' && Number.isInteger(raw) && raw > 0) set(raw)
+  }
+  const applyFoldSettings = (value: unknown): void => {
+    const section = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>
+    applyNumber(section.windowTurns, setWindowTurns)
+    applyNumber(section.recentStepsRetention, setRecentStepsRetention)
+    applyNumber(section.expandTurns, setExpandTurns)
+    // The fold thresholds are one pair-setter: diff against the live values
+    // so a section carrying only one of them keeps the sibling's current
+    // value (the fold-defaults keep-current discipline).
+    const folds = userFoldThresholds()
+    let foldLines = folds.lines
+    let foldChars = folds.chars
+    applyNumber(section.userFoldLines, n => {
+      foldLines = n
+    })
+    applyNumber(section.userFoldChars, n => {
+      foldChars = n
+    })
+    if (foldLines !== folds.lines || foldChars !== folds.chars) setUserFoldThresholds(foldLines, foldChars)
+    syncExpansionDefaults(section)
+  }
+  applyFoldSettings(ctx.get('settings')?.get(BLUE_NS))
+  ctx.on('settings/updated', (ns, next) => {
+    if (ns === BLUE_NS) applyFoldSettings(next)
+  })
 
   ctx.on('blue/session-changed', (agent) => {
     activeAgent = agent

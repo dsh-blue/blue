@@ -37,7 +37,15 @@ The recoverable suspend composes pi-tui 0.84.2's own lifecycle primitives — `T
 
 ## Component factory (`blueComponents`, `src/components.ts`)
 
+`BlueEditor.removeLatestHistory(text)` is the narrow retraction helper over pi-tui's private history array: it removes index 0 only on an exact match. The method stays optional on the L1 contract so structural fakes and out-of-tree adapters remain compatible; core's sole real adapter implements it.
+
 The pi-tui-backed component factory and width pure functions:
+
+- `src/plugin-view.ts` is the public `BlueView` compiler used only by the
+  owner bridges. It strips caller ANSI/OSC/control bytes, applies semantic
+  tones from the live owner palette, caps text/depth/rows, delegates all width
+  math to `blueComponents`, and contains a dynamic render failure as one
+  bounded error row. Plugins never receive a `BlueComponent` from this seam.
 
 - `createImage(options)` wraps pi-tui's Image with a styled-text fallback for terminals without an image protocol; the pure `imageDimensions(data)` probe covers PNG/JPEG/GIF/WebP.
 - `BlueEditor.insertText(text)` — atomic insertion at the cursor; the seam the clipboard-image markers use.
@@ -91,3 +99,7 @@ Theme providers also publish a semantic companion through the optional `blueThem
 
 `blueNotifications` is the frontend runtime's immutable notification registry; core only hosts its lifecycle, while feature adapters push structured messages and consume snapshots.
 `frontend-renderer.ts` is the narrow TUI consumer for `@dsh-blue/blue-frontend` readonly views. `renderFrontendView`/`renderFrontendModel` and `FrontendModelComponent` are the only renderer-facing bridge for the new frontend model; width clamping delegates to pi-tui through `width.ts`. It does not read Harness events or session objects.
+
+## Verification note
+
+`theme-custom` accepts a validated `logoGradient` array as a frozen palette override; invalid arrays and entries retain the base gradient.

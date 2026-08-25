@@ -12,7 +12,17 @@ export {
   type BluePluginDefinition,
   type BluePluginManifest,
 } from './manifest.ts'
-export { BluePluginHostService, apply, apply as applyHost, name, name as hostName } from './host.ts'
+export {
+  BluePluginHostService,
+  apply,
+  apply as applyHost,
+  name,
+  name as hostName,
+  snapshotBluePluginHost,
+  subscribeBluePluginHost,
+  subscribeBluePluginNotifications,
+  type BluePluginHostSnapshot,
+} from './host.ts'
 export type { BluePluginHost } from './contracts.ts'
 export type {
   BlueCommandContribution,
@@ -34,6 +44,7 @@ export type {
   BlueSessionAction,
   BlueSessionReader,
   BlueSessionSnapshot,
+  BlueStatusContribution,
   BlueTone,
   BlueView,
 } from './contracts.ts'
@@ -42,4 +53,4 @@ export type {
 export const BLUE_API_VERSION = '1.0.0'
 
 /** Blue's release version, kept here as the public version owner. */
-export const BLUE_VERSION = '0.1.0-rc.2'
+export const BLUE_VERSION = '0.1.0-rc.8'

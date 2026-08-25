@@ -23,11 +23,13 @@ import { BLUE_VERSION } from '@dsh-blue/blue-transcript/banner-content'
 // the app-owned `blueSession` merge every handler reads.
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@dsh-blue/blue-app'
-import type { InfoRow, InfoSection, InfoSegment } from './info-panel.ts'
+import type { InfoRow, InfoSection, InfoSegment, InfoStyle } from './info-panel.ts'
 import { InfoPanel } from './info-panel.ts'
 import { FrontendPanel } from './frontend-panel.ts'
+import { CHANGELOG_ENTRIES, type ChangelogEntry } from './changelog-content.ts'
 import { displayServices } from './display-services.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
+import { wrapLines } from './tools-commands.ts'
 import {
   formatTokens,
   ratioSeverity,
@@ -95,6 +97,28 @@ export function buildVersionSections(displayVersion = BLUE_VERSION): InfoSection
       ],
     },
   ]
+}
+
+/** Format one changelog bullet with a stable continuation indent. */
+function changelogBulletRows(text: string, style: InfoStyle): InfoRow[] {
+  return wrapLines(text).map((line, index) => ({
+    label: '',
+    segments: [{ text: `${index === 0 ? '• ' : '  '}${line}`, style }],
+  }))
+}
+
+/** Build the read-only changelog sections from embedded release facts. */
+export function buildChangelogSections(entries: readonly ChangelogEntry[]): InfoSection[] {
+  return entries.map(entry => {
+    const rows: InfoRow[] = wrapLines(entry.summary).map(line => ({ label: '', segments: [{ text: line, style: 'muted' }] }))
+    rows.push({ label: 'Highlights', segments: [] })
+    for (const highlight of entry.highlights) rows.push(...changelogBulletRows(highlight, 'textMuted'))
+    if (entry.knownIssues.length > 0) {
+      rows.push({ label: 'Known issues', segments: [] })
+      for (const issue of entry.knownIssues) rows.push(...changelogBulletRows(issue, 'warning'))
+    }
+    return { heading: `v${entry.version}${entry.version === BLUE_VERSION ? ' · current' : ''}`, rows }
+  })
 }
 
 /** Map a usage severity onto the segment styling the panel paints. */
@@ -504,6 +528,21 @@ export function registerSessionCommands(ctx: Context, displayVersion = BLUE_VERS
     return { kind: 'success' }
   }
 
+  /** Mount the embedded release notes without requiring a live session. */
+  function showChangelog(): CommandResult {
+    const display = displayServices(ctx)
+    if (display === undefined) return { kind: 'error', text: 'changelog panel is unavailable: the Blue screen is not mounted' }
+    const restore = mountEditorReplacement(new InfoPanel({
+      keymap: display.keymap,
+      theme: display.theme,
+      components: display.components,
+      title: 'changelog',
+      sections: buildChangelogSections(CHANGELOG_ENTRIES),
+      onClose: () => restore(),
+    }))
+    return { kind: 'success' }
+  }
+
   const status = ctx.commands.register({
     name: 'status',
     description: 'Show the session header, model, and context status',
@@ -519,9 +558,15 @@ export function registerSessionCommands(ctx: Context, displayVersion = BLUE_VERS
     description: 'Show the Blue and harness versions and the live model',
     handler: () => showVersion(),
   })
+  const changelog = ctx.commands.register({
+    name: 'changelog',
+    description: "Show the release changelog (what's new)",
+    handler: () => showChangelog(),
+  })
   return () => {
     status()
     context()
     version()
+    changelog()
   }
 }

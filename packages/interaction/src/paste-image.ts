@@ -42,7 +42,15 @@ import type {
   SaveImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { getSharedEditor, registerSubmitTransformer, type SharedEditor } from './editor-instance.ts'
+// Empty type import carries the `settings` Context merge and the
+// 'settings/updated' Events merge the backend override subscribes to.
+import type {} from '@deepseek-ai/dsh-settings'
+import {
+  getSharedEditor,
+  registerSubmitTransformer,
+  type SharedEditor,
+  type SubmitTransformation,
+} from './editor-instance.ts'
 import { ADMITTED_IMAGE_TYPES, EXT_BY_MEDIA_TYPE, sniffImageMediaType } from './attachments.ts'
 
 /** Stable Cordis plugin name. */
@@ -66,6 +74,23 @@ export interface Config {
 export const Config: z<Config> = z.object({
   backend: z.union([z.const('auto'), z.const('wayland'), z.const('x11')]).default('auto'),
 })
+
+/**
+ * The user-layer `blue.pasteImageBackend` override. The composition config
+ * stays the base — the settings schema's `auto` default must not clobber a
+ * configured strict backend, so only a value the user actually wrote into
+ * the settings document lands here (the apply-time reader diffs the
+ * descriptor's raw `user` section, not the resolved value).
+ */
+let backendOverride: ClipboardBackendPolicy | undefined
+
+/**
+ * Replace the user-layer backend override.
+ * @param value - the override, or `undefined` to follow the plugin config.
+ */
+export function setClipboardBackendOverride(value: ClipboardBackendPolicy | undefined): void {
+  backendOverride = value
+}
 
 /**
  * Contextual action triggering the clipboard-image paste. Bound to Ctrl-V;
@@ -440,8 +465,9 @@ function aggregateOutcomes(outcomes: FailureResult[]): ClipboardImageResult {
 /** The default reader: probe each policy-selected tool in order; the first
  * valid image wins, otherwise the failures aggregate into one verdict. */
 async function defaultClipboardImageReader(config: Config, limits: ImageAttachmentLimits): Promise<ClipboardImageResult> {
+  const policy = backendOverride ?? config.backend
   const outcomes: FailureResult[] = []
-  const tools = clipboardToolsFor(config.backend)
+  const tools = clipboardToolsFor(policy)
   for (const [index, tool] of tools.entries()) {
     const key = cooldownKey(tool.backend)
     const retryAt = backendCooldowns.get(key)
@@ -455,7 +481,7 @@ async function defaultClipboardImageReader(config: Config, limits: ImageAttachme
     if (outcome.kind === 'image' || outcome.kind === 'images') {
       return {
         ...outcome,
-        fallback: config.backend === 'auto' && index > 0,
+        fallback: policy === 'auto' && index > 0,
       }
     }
     outcomes.push(outcome)
@@ -508,8 +534,9 @@ const IMAGE_MARKER = /\[image #\d+\]/g
  * @param text - the submitted line.
  * @returns the contributed content blocks, empty when nothing was split.
  */
-function transformImageMarkers(text: string): ContentBlock[] {
+function transformImageMarkers(text: string): ContentBlock[] | SubmitTransformation {
   const blocks: ContentBlock[] = []
+  const consumed: Array<readonly [string, ImageAttachmentRef]> = []
   let last = 0
   for (const match of text.matchAll(IMAGE_MARKER)) {
     const ref = pastedImages.get(match[0])
@@ -519,12 +546,18 @@ function transformImageMarkers(text: string): ContentBlock[] {
     if (run.length > 0) blocks.push({ type: 'text', text: run })
     blocks.push({ type: 'image', attachment: ref })
     pastedImages.delete(match[0])
+    consumed.push([match[0], ref])
     last = match.index + match[0].length
   }
   if (blocks.length === 0) return []
   const tail = text.slice(last)
   if (tail.length > 0) blocks.push({ type: 'text', text: tail })
-  return blocks
+  return {
+    blocks,
+    rollback: () => {
+      for (const [marker, ref] of consumed) pastedImages.set(marker, ref)
+    },
+  }
 }
 
 /**
@@ -635,6 +668,24 @@ export function apply(ctx: Context, config: Config): void {
     description: 'Paste a clipboard image into the prompt',
   }]))
   ctx.effect(() => registerSubmitTransformer(transformImageMarkers))
+  // The `blue.pasteImageBackend` user layer overrides the composition
+  // backend. Read the descriptor's RAW user section — the resolved value's
+  // `auto` schema default would clobber a configured strict backend — and
+  // re-read on every `blue` commit; a host without settings keeps the
+  // composition value.
+  const syncBackendOverride = (): void => {
+    const descriptor = ctx.get('settings')?.describe().find(entry => String(entry.ns) === 'blue')
+    const user = descriptor?.user
+    const raw = typeof user === 'object' && user !== null
+      ? (user as Record<string, unknown>).pasteImageBackend
+      : undefined
+    setClipboardBackendOverride(raw === 'auto' || raw === 'wayland' || raw === 'x11' ? raw : undefined)
+  }
+  syncBackendOverride()
+  ctx.on('settings/updated', (ns) => {
+    if (String(ns) === 'blue') syncBackendOverride()
+  })
+  ctx.effect(() => () => setClipboardBackendOverride(undefined))
   let detach: (() => void) | undefined
   const reattach = (): void => {
     detach?.()

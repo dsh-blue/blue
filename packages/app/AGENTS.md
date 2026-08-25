@@ -8,7 +8,11 @@ Command-line startup (`src/startup.ts`): `[task]` positional, `--resume <id>`.
 
 ## Agent driver
 
-`src/index.ts` creates/resumes sessions and publishes them via `blueSession`. It answers the payload-less `'blue/request-new'` and `'blue/request-fork'` events (fork: idle-guarded, seeded with the full event log plus `meta.{cwd,parentSession,seedLength}`). All switches serialize on one queue and share the commit point (dispose old → assign `current` → broadcast `'blue/session-changed'`), with creation parameters factored into the module-level `createOptions` helper.
+`src/index.ts` creates/resumes sessions and publishes them via `blueSession`. It answers the payload-less `'blue/request-new'` and `'blue/request-fork'` events (fork: idle-guarded, seeded with the full event log plus `meta.{cwd,parentSession,seedLength}`), and the additive `'blue/request-rewind'(sessionId, boundarySeq)` request. Rewind rejects stale session ids, non-idle agents, and prefixes with an open turn/step/tool call, then creates an ordinary child Agent from `events.slice(0, boundarySeq)` with the same lineage metadata; the parent log is never mutated. All switches serialize on one queue and share the commit point (dispose old → assign `current` → broadcast `'blue/session-changed'`), with creation parameters factored into the module-level `createOptions` helper.
+
+## Safe message retraction
+
+`src/retraction.ts` provides `blueRetractions.tryRetract(messageId)`: it matches the id to the current open main turn, rejects any assistant tool-call block or `tool/call`/`tool/result`, terminates the Blue lifecycle as `aborted/retracted`, emits `'blue/turn-retracted'`, and cancels with `keepInbox`. After the host `turn/end`, a microtask appends an empty interrupted `assistant/message` surface replacement over that turn's current nodes. The append-only audit remains, while `deriveMessages()` omits the withdrawn turn.
 
 ## Model selection (S23, D38)
 

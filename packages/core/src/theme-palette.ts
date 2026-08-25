@@ -41,7 +41,12 @@ export function backgroundColor(hex: string): BlueColorFn {
  * is excluded: it is the palette's only background token and is passed
  * separately to {@link colorsFromForegrounds}.
  */
-export type BlueForegroundHexes = Record<Exclude<keyof BlueSemanticColors, 'selectedBg'>, string>
+export type BlueForegroundHexes = Record<Exclude<keyof BlueSemanticColors, 'selectedBg' | 'logoGradient'>, string>
+
+/** Build the renderer-neutral companion model for a semantic palette. */
+export function themeModel(id: string, name: string, dark: boolean, foregrounds: BlueForegroundHexes, selectedBg: string): Omit<ThemeModel, 'colors'> & { readonly colors: Readonly<Record<string, string>> } {
+  return { kind: 'theme', id, name, dark, colors: Object.freeze({ ...foregrounds, selectedBg }) }
+}
 
 /** Build the renderer-neutral companion model for a semantic palette. */
 export function themeModel(id: string, name: string, dark: boolean, foregrounds: BlueForegroundHexes, selectedBg: string): Omit<ThemeModel, 'colors'> & { readonly colors: Readonly<Record<string, string>> } {
@@ -54,11 +59,15 @@ export function themeModel(id: string, name: string, dark: boolean, foregrounds:
  * @param selectedBg - the hex behind the selected list entry.
  * @returns the frozen semantic color table.
  */
-export function colorsFromForegrounds(foregrounds: BlueForegroundHexes, selectedBg: string): BlueSemanticColors {
+export function colorsFromForegrounds(foregrounds: BlueForegroundHexes, selectedBg: string, logoGradient: readonly string[]): BlueSemanticColors {
   const colors = Object.fromEntries(
     Object.entries(foregrounds).map(([role, hex]) => [role, foregroundColor(hex)]),
   )
-  return Object.freeze({ ...colors, selectedBg: backgroundColor(selectedBg) }) as BlueSemanticColors
+  return Object.freeze({
+    ...colors,
+    selectedBg: backgroundColor(selectedBg),
+    logoGradient: Object.freeze(logoGradient.map(hex => foregroundColor(hex))),
+  }) as BlueSemanticColors
 }
 
 /** Constructor shape of the `blueTheme` providers built by {@link defineThemeService}. */

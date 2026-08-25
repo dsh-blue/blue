@@ -15,6 +15,17 @@ usage: /theme [dark|light|auto|custom <path> [dark|light]]
 
 切换实现为 provider fiber 的整体替换：依赖主题的插件（transcript、输入层等）随之重载。挂载失败时会自动回退到内置 dark 调色板，界面永远不会没有主题。
 
+## 持久默认主题
+
+`/theme` 切换的是**会话级**主题；持久默认写在 settings.yaml 的 `blue:` 段（或用 `/settings` 面板的 Theme 行循环修改——实时生效、同时落盘）：
+
+```yaml
+blue:
+  theme: ocean   # dark | light | ocean | paper | auto
+```
+
+启动时应用该默认；会话内的 `/theme` 选择覆盖它，且无关的设置写入不会把会话选择冲掉。custom 调色板（`/theme custom <path>`）保持会话级，不落盘。
+
 ## custom：JSON 调色板
 
 custom 主题从 JSON 文件读取 token 到 `#rrggbb` 十六进制色的映射，叠在 `base`（dark 或 light）之上：

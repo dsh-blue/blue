@@ -91,11 +91,17 @@ export interface FoldReplacement {
   item: TranscriptStepSummaryItem
 }
 
+/** The fold removed a retracted turn without mounting a replacement item. */
+export interface FoldRemoval {
+  /** Items removed from the visible transcript, in session order. */
+  removed: TranscriptItem[]
+}
+
 /**
  * The fold's answer to one event: either an item creation/mutation or an
  * in-place step-summary replacement; `null` renders nothing.
  */
-export type FoldUpdate = FoldItemUpdate | FoldReplacement
+export type FoldUpdate = FoldItemUpdate | FoldReplacement | FoldRemoval
 
 /**
  * Tool-presentation hooks the folder resolves views through — typically the
@@ -123,6 +129,26 @@ export interface FoldPresent {
 export interface FoldHooks {
   /** Tool-presentation hooks; absent hooks leave every item view-less. */
   present?: FoldPresent
+  /** Turns durably marked as retracted in a complete replay snapshot. */
+  retractedTurns?: ReadonlySet<number>
+}
+
+/** Whether an empty replacement is Blue's durable turn-retraction marker. */
+export function isTurnRetraction(event: SessionEvent): boolean {
+  return event.type === 'assistant/message'
+    && event.data.interrupted === true
+    && event.data.message.content.length === 0
+    && event.surfaceOp !== undefined
+    && event.surfaceOp !== 'append'
+}
+
+/** Collect durable retraction markers before replaying a complete snapshot. */
+export function retractedTurnNumbers(events: readonly SessionEvent[]): ReadonlySet<number> {
+  const turns = new Set<number>()
+  for (const event of events) {
+    if (event.type === 'assistant/message' && isTurnRetraction(event)) turns.add(event.data.turn)
+  }
+  return turns
 }
 
 /** Join the visible text of content blocks; images fold to a placeholder. */
@@ -198,6 +224,8 @@ export class TranscriptFolder {
   private readonly finalizedSteps = new Set<string>()
   /** Turns that already have an interruption tombstone (synthetic or host). */
   private readonly interruptedTurns = new Set<number>()
+  /** Turns erased by a live signal or a durable replacement marker. */
+  private readonly retractedTurns: Set<number>
   private readonly toolsByCallId = new Map<string, TranscriptToolItem>()
   /** Call ids of suppressed `todo_write` calls, so their results render nothing either. */
   private readonly suppressedCalls = new Set<string>()
@@ -207,6 +235,7 @@ export class TranscriptFolder {
    */
   constructor(hooks: FoldHooks = {}) {
     this.present = hooks.present
+    this.retractedTurns = new Set(hooks.retractedTurns)
   }
 
   /** Completed turn numbers in ascending order; the window policy reads this. */
@@ -221,6 +250,7 @@ export class TranscriptFolder {
    *   the event renders nothing (log-only records, unknown types).
    */
   apply(event: SessionEvent): readonly FoldUpdate[] | null {
+    if (event.type === 'assistant/message' && isTurnRetraction(event)) return this.retract(event.data.turn)
     switch (event.type) {
       case 'turn/start': {
         this.currentTurn = event.data.turn
@@ -233,6 +263,7 @@ export class TranscriptFolder {
         this.currentTurn = turn
         const previous = this.lastStep
         this.lastStep = { turn, step }
+        if (this.retractedTurns.has(turn)) return null
         // A step boundary closes the previous step's streaming window even
         // when the step itself never closed (an aborted tool call): settle
         // anything left streaming before the new step's deltas open a
@@ -258,6 +289,11 @@ export class TranscriptFolder {
       }
 
       case 'turn/end': {
+        if (this.retractedTurns.has(event.data.turn)) {
+          this.lastStep = null
+          this.settleStreaming()
+          return null
+        }
         this.completed.push(event.data.turn)
         this.lastStep = null
         // An interrupted turn ends with no authoritative assistant/message,
@@ -303,7 +339,7 @@ export class TranscriptFolder {
         // ContextFormed injections like the runtime-context snapshot —
         // render nothing, not even a placeholder row. Only `kind: 'user'`
         // human input folds; the snapshot replay shares the rule (D16).
-        if (event.data.source.kind !== 'user') return null
+        if (this.retractedTurns.has(this.currentTurn) || event.data.source.kind !== 'user') return null
         const text = contentText(event.data.content)
         if (!text.trim()) return null
         const item: TranscriptUserItem = {
@@ -322,7 +358,7 @@ export class TranscriptFolder {
         // The request lifecycle can mark a turn interrupted before the host
         // drains its buffered assistant events. Keep the partial item that
         // was already visible, but never reopen the turn after its tombstone.
-        if (this.interruptedTurns.has(turn)) return null
+        if (this.interruptedTurns.has(turn) || this.retractedTurns.has(turn)) return null
         if (chunk.type !== 'text-delta' && chunk.type !== 'reasoning-delta') return null
         const stepKey = `${turn}:${step}`
         if (this.finalizedSteps.has(stepKey)) return null
@@ -371,7 +407,7 @@ export class TranscriptFolder {
 
       case 'assistant/message': {
         const { turn, step, message } = event.data
-        if (this.interruptedTurns.has(turn)) return null
+        if (this.interruptedTurns.has(turn) || this.retractedTurns.has(turn)) return null
         const stepKey = `${turn}:${step}`
         const text = contentText(message.content).trim()
         const reasoning = reasoningText(message.content)
@@ -412,6 +448,7 @@ export class TranscriptFolder {
       }
 
       case 'tool/call': {
+        if (this.retractedTurns.has(event.data.turn)) return null
         // The todo pane renders the list; the call itself would only echo it
         // into the stream. Track the id so the paired result stays hidden too.
         // The S33 acceptance ruling extends the same suppression to the
@@ -444,6 +481,7 @@ export class TranscriptFolder {
       }
 
       case 'tool/result': {
+        if (this.retractedTurns.has(event.data.turn)) return null
         const block = event.data.message.content[0]
         const callId = String(block.toolCallId)
         if (this.suppressedCalls.has(callId)) return null
@@ -506,12 +544,45 @@ export class TranscriptFolder {
    */
   interrupt(seq = -1): readonly FoldUpdate[] | null {
     const turn = this.streamingThinking?.turn ?? this.streamingItem?.turn ?? this.currentTurn
-    if (this.interruptedTurns.has(turn)) return null
+    if (this.interruptedTurns.has(turn) || this.retractedTurns.has(turn)) return null
     const settled = this.settleStreaming()
     this.interruptedTurns.add(turn)
     const item: TranscriptInterruptedItem = { kind: 'interrupted', seq, turn }
     this.items.push(item)
     return [...settled, { item, isNew: true }]
+  }
+
+  /**
+   * Remove one turn and suppress every late event belonging to it.
+   * @param turn - exact turn committed as safely retracted.
+   * @returns one removal update, or `null` when already retracted.
+   */
+  retract(turn: number): readonly FoldUpdate[] | null {
+    if (this.retractedTurns.has(turn)) return null
+    this.retractedTurns.add(turn)
+    const removed: TranscriptItem[] = []
+    for (let index = this.items.length - 1; index >= 0; index -= 1) {
+      const item = this.items[index]!
+      if (item.turn !== turn) continue
+      removed.unshift(item)
+      this.items.splice(index, 1)
+    }
+    for (let index = this.completed.length - 1; index >= 0; index -= 1) {
+      if (this.completed[index] === turn) this.completed.splice(index, 1)
+    }
+    for (const key of this.finalizedSteps) {
+      if (key.startsWith(`${turn}:`)) this.finalizedSteps.delete(key)
+    }
+    for (const [callId, item] of this.toolsByCallId) {
+      if (item.turn === turn) this.toolsByCallId.delete(callId)
+    }
+    if (this.streamingItem?.turn === turn) this.streamingItem = null
+    if (this.streamingThinking?.turn === turn) this.streamingThinking = null
+    if (this.streamingStep?.startsWith(`${turn}:`) === true) this.streamingStep = null
+    if (this.lastStep?.turn === turn) this.lastStep = null
+    this.pendingReasoning = ''
+    this.interruptedTurns.delete(turn)
+    return removed.length === 0 ? null : [{ removed }]
   }
 
   /**
@@ -625,7 +696,7 @@ export class TranscriptFolder {
  * @returns the folded transcript items.
  */
 export function foldSessionEvents(events: readonly SessionEvent[]): TranscriptItem[] {
-  const folder = new TranscriptFolder()
+  const folder = new TranscriptFolder({ retractedTurns: retractedTurnNumbers(events) })
   for (const event of events) folder.apply(event)
   return folder.items
 }

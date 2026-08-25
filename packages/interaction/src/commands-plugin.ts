@@ -18,7 +18,8 @@
  * `./session-init.ts`; the config family (`/tools` over the live tool
  * catalog, `/preset` over the agent-preset roster) lives in
  * `./tools-commands.ts` and `./preset-commands.ts`; and `/skills` (the
- * `#` pipeline's read-only listing) lives in `./skills-command.ts`.
+ * `#` pipeline's read-only listing) lives in `./skills-command.ts`; the
+ * settings panel (`/settings`) lives in `./settings-command.ts`.
  * Registrations are
  * effect-bound, so unloading the fiber removes them. Only `commands` is
  * injected: the overlay commands read the Blue display services through
@@ -58,11 +59,16 @@ import { registerPresetCommands } from './preset-commands.ts'
 import { registerSessionCommands } from './session-commands.ts'
 import { registerExportCommands } from './session-export.ts'
 import { registerInitCommand } from './session-init.ts'
+import { registerSettingsCommand } from './settings-command.ts'
 import { registerSkillsCommand } from './skills-command.ts'
 import { MAX_LIST_VISIBLE, SelectListPanel, type SelectRow } from './select-list.ts'
+import { createSessionTree } from './session-tree.ts'
 import { CURRENT_MARK } from './symbols.ts'
 import { registerThemeCommand } from './theme-switch.ts'
 import { registerToolsCommands } from './tools-commands.ts'
+import { registerUpdateCommand } from './update-command.ts'
+import { registerTraceCommand } from './trace-command.ts'
+import { rewindCandidates } from './rewind.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-commands'
@@ -179,21 +185,16 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
     const currentId = ctx.get('blueSession')?.current?.id
     const titleById = new Map<string, string>()
+    const tree = createSessionTree(sorted, titleById, currentId === undefined ? undefined : String(currentId), formatDate)
     const loadingPages = new Set<number>()
     const loadedPages = new Set<number>()
-    const buildRows = (): SelectRow[] => sorted.map(header => {
-      const id = String(header.id)
-      const date = formatDate(header.createdAt)
-      const title = titleById.get(id)
-      const label = title ?? `${id} · ${date}`
-      return {
-        value: id,
-        label,
-        ...(title === undefined ? {} : { description: `${id} · ${date}` }),
-        filterText: `${label} ${date}`,
-        ...(header.id === currentId ? { badge: CURRENT_MARK } : {}),
-      }
-    })
+    const buildRows = (): SelectRow[] => tree.rows().map(row => ({
+      value: row.value,
+      label: row.label,
+      ...(row.description === undefined ? {} : { description: row.description }),
+      filterText: row.filterText,
+      ...(row.current === true ? { badge: CURRENT_MARK } : {}),
+    }))
     // Hydrate the first page before mounting so labels do not visibly change
     // from session ids to titles. Later pages are prefetched near page ends.
     let list!: SelectListPanel
@@ -217,7 +218,8 @@ export function apply(ctx: Context, config: Config = {}): void {
       components: display.components,
       rows: buildRows(),
       title: 'Sessions',
-      titleHint: '· esc cancel · ↵ resume',
+      titleHint: '· space toggle branch · esc cancel · ↵ resume',
+      ...(currentId === undefined ? {} : { initialValue: String(currentId) }),
       filter: true,
       onCursorChanged: cursor => {
         const query = ctx.get('sessionQuery')
@@ -225,6 +227,11 @@ export function apply(ctx: Context, config: Config = {}): void {
         const page = Math.floor(cursor / MAX_LIST_VISIBLE)
         void loadPage(page, query)
         if (cursor % MAX_LIST_VISIBLE >= Math.floor(MAX_LIST_VISIBLE / 2)) void loadPage(page + 1, query)
+      },
+      onToggle: row => {
+        tree.toggle(row.value)
+        list.setRows(buildRows())
+        display.screen.requestRender()
       },
       onSelect: (row) => {
         clearLoadingNotice()
@@ -253,6 +260,42 @@ export function apply(ctx: Context, config: Config = {}): void {
     const restore = mountEditorReplacement(list)
     clearLoadingNotice()
     if (query !== undefined) void loadPage(1, query)
+    return { kind: 'success' }
+  }
+
+  /** Open a picker of safe branch points from the live session. */
+  function rewindSession(): CommandResult {
+    const active = ctx.get('blueSession')?.current
+    if (active === undefined || active === null) return { kind: 'error', text: 'no active session' }
+    if (active.status !== 'idle') return { kind: 'error', text: 'cannot rewind while the agent is running' }
+    const candidates = rewindCandidates(active.session.events)
+    if (candidates.length === 0) return { kind: 'success', text: 'no user turns to rewind' }
+    const display = displayServices(ctx)
+    if (display === undefined) return { kind: 'error', text: 'rewind is unavailable: the Blue screen is not mounted' }
+    const first = candidates[0]!
+    const list = new SelectListPanel({
+      keymap: display.keymap,
+      theme: display.theme,
+      components: display.components,
+      rows: candidates.map(candidate => ({
+        value: String(candidate.boundarySeq),
+        label: `Turn ${String(candidate.turn)} · ${candidate.prompt}`,
+        ...(candidate.response === undefined ? {} : { description: `↳ ${candidate.response}` }),
+        filterText: `${candidate.prompt} ${candidate.response ?? ''} ${String(candidate.turn)}`,
+      })),
+      title: 'Rewind current session',
+      titleHint: '· esc cancel · ↵ create branch',
+      footer: 'The original session stays available in /sessions.',
+      initialValue: String(first.boundarySeq),
+      filter: true,
+      onSelect: row => {
+        restore()
+        ctx.emit('blue/request-rewind', String(active.id), Number(row.value))
+        getSharedEditor()?.notice?.('creating rewind branch...')
+      },
+      onCancel: () => restore(),
+    })
+    const restore = mountEditorReplacement(list)
     return { kind: 'success' }
   }
 
@@ -361,6 +404,11 @@ export function apply(ctx: Context, config: Config = {}): void {
         return { kind: 'success' as const, text: 'forking the current session' }
       },
     })
+    const rewind = ctx.commands.register({
+      name: 'rewind',
+      description: 'Create a branch from an earlier user turn',
+      handler: () => rewindSession(),
+    })
     const sessions = ctx.commands.register({
       name: 'sessions',
       description: 'List persisted sessions and switch to one (an id resumes directly)',
@@ -406,12 +454,18 @@ export function apply(ctx: Context, config: Config = {}): void {
     const skillsCommand = registerSkillsCommand(ctx)
     // The MCP server browser (`/mcp`, S34): read-only over loader entries.
     const mcpBrowser = registerMcpCommands(ctx)
+    // `/trace` is a read-only view over the official session-query seam.
+    const trace = registerTraceCommand(ctx)
+    // `/update` is the crash-safe, preflighted profile swap.
+    const update = registerUpdateCommand(ctx)
+    const settings = registerSettingsCommand(ctx)
     return () => {
       quit()
       quitAliases()
       fresh()
       freshAliases()
       fork()
+      rewind()
       sessions()
       sessionsAliases()
       help()
@@ -426,6 +480,9 @@ export function apply(ctx: Context, config: Config = {}): void {
       agentPresets()
       skillsCommand()
       mcpBrowser()
+      trace()
+      update()
+      settings()
     }
   })
 }

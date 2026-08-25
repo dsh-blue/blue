@@ -62,11 +62,19 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     ctx.plugin(defineThemeService(base, baseModel))
     return
   }
-  const overrides: Record<string, BlueColorFn> = {}
+  const overrides: Record<string, BlueColorFn | readonly BlueColorFn[]> = {}
   const rawOverrides: Record<string, string> = {}
   for (const [token, value] of Object.entries(parsed)) {
     if (!Object.hasOwn(base, token)) {
       logger.warn('ignoring unknown theme token %s', token)
+      continue
+    }
+    if (token === 'logoGradient') {
+      if (!Array.isArray(value) || value.length === 0 || value.some(entry => typeof entry !== 'string' || !HEX_COLOR.test(entry))) {
+        logger.warn('ignoring invalid gradient for theme token %s; using the base palette entry', token)
+        continue
+      }
+      overrides[token] = Object.freeze(value.map(entry => foregroundColor(entry)))
       continue
     }
     if (typeof value !== 'string' || !HEX_COLOR.test(value)) {

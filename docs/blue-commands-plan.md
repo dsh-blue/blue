@@ -374,7 +374,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 | `/editor` | kimi | 外部编辑器 Ctrl-G 未实现（roadmap P2 挂起项） |
 | `/experiments` `/experimental` | kimi/Codex | 无实验特性管线 |
 | `/goal` | （已转 Adopt，§2.10/§8） | 上游 ctx.goals + /goal 命令现成，零实现 |
-| `/tree` `/branch` `/clone` | pi | /sessions + /fork 覆盖；lineage 仅可作 /sessions 可选增强列 |
+| `/tree` `/branch` `/clone` | pi | `/sessions` 已以标准 `parentSession` header 展示 lineage 树，`/fork` 与安全分支式 `/rewind` 覆盖创建路径；不冒充单 session event tree |
 | `/session` | pi | /status + /sessions 覆盖 |
 | `/scoped-models` | pi | 目录级模型无概念（agent 级 selection 已有，不做目录维度） |
 | `/trust` | pi | 信任文件夹无 harness 概念 |

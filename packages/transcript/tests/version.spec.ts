@@ -1,11 +1,11 @@
 /**
  * The global version-control guard: Blue has ONE release version (the
- * first release line, `0.1.0-rc.2` — the number the website's tagline and
+ * first release line, `0.1.0-rc.8` — the number the website's tagline and
  * quickstart promise) and ONE harness dependency line (the `dsh-*` pins,
  * which stay on their own prerelease line while Blue's number moves).
  *
- * Blue side: the fourteen package.json versions (thirteen publishable packages
- * plus the website, whose package.json must agree with its own tagline),
+ * Blue side: the ten release package.json versions plus the website (whose
+ * package.json must agree with its own tagline),
  * and the `BLUE_VERSION` constant the banner title and the `/version`
  * notice read, all equal. The website's user-facing version mentions
  * (index.md tagline, guide/faq) are pinned here too, so the site can
@@ -17,7 +17,7 @@
  * line all agree with each other — and are NOT tied to Blue's release
  * number.
  *
- * A bump edits one side at a time: publishing Blue bumps the fourteen
+ * A bump edits one side at a time: publishing Blue bumps the ten release
  * manifests + BLUE_VERSION + the website copy; upgrading the harness line
  * bumps the dsh pins + HARNESS_LINE. Any drift fails loudly here, so a
  * half-bumped tree can never ship.
@@ -29,7 +29,7 @@ import { BLUE_VERSION } from '../src/banner-content.ts'
 import { BLUE_VERSION as API_BLUE_VERSION } from '@dsh-blue/blue-api'
 
 /** The published first-release version (the website's advertised number). */
-const RELEASE_VERSION = '0.1.0-rc.2'
+const RELEASE_VERSION = '0.1.0-rc.8'
 /** The harness prerelease line the dsh pins ride. */
 const HARNESS_LINE = '0.1.1-rc.2'
 
@@ -42,14 +42,12 @@ interface Manifest {
   readonly devDependencies?: Readonly<Record<string, string>>
 }
 
-/** The fourteen manifests whose version must equal {@link RELEASE_VERSION}. */
+/** The ten release manifests plus website whose version must equal the release. */
 const MANIFESTS: readonly string[] = [
   '../../api/package.json',
   '../../frontend/package.json',
   '../../harness-adapter/package.json',
-  '../../context/package.json',
   '../../conversation/package.json',
-  '../../remote/package.json',
   '../../core/package.json',
   '../package.json',
   '../../interaction/package.json',
@@ -57,6 +55,7 @@ const MANIFESTS: readonly string[] = [
   '../../openpencil/package.json',
   '../../lark/package.json',
   '../../bundle/blue/package.json',
+  '../../cli/package.json',
   '../../../website/package.json',
 ]
 /** Publishable manifests that carry harness dependencies. */
@@ -73,8 +72,8 @@ function dshEntries(table: Readonly<Record<string, string>> | undefined): Readon
 }
 
 describe('the Blue release line', () => {
-  it('BLUE_VERSION is the version of all fourteen manifests', () => {
-    expect(MANIFESTS).toHaveLength(14)
+  it('BLUE_VERSION is the version of all release manifests and website', () => {
+    expect(MANIFESTS).toHaveLength(11)
     for (const rel of MANIFESTS) {
       const pkg = manifest(rel)
       expect(pkg.version, `${pkg.name} version`).toBe(RELEASE_VERSION)

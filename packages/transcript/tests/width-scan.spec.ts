@@ -27,6 +27,7 @@ import { createTranscriptModel, TranscriptModelComponent } from '../src/transcri
 import { BlueStatusService, FooterShellComponent } from '../src/status.ts'
 import { TerminalCardComponent } from '../src/intent-terminal.ts'
 import { DiffCardComponent } from '../src/intent-diff.ts'
+import { CordisCardComponent } from '../src/intent-cordis.ts'
 import { bannerLayout, composeBannerLines, shortenHome } from '../src/banner.ts'
 import type { TranscriptToolItem } from '../src/types.ts'
 import { fakeBlueComponents } from './helpers.ts'
@@ -184,6 +185,60 @@ describe('transcript width-scan', () => {
       for (const expanded of [false, true]) {
         for (const width of SCAN_WIDTHS) {
           expectLinesFit(`DiffCard/${name}`, new DiffCardComponent({ item, colors, components, expanded }).render(width), width)
+        }
+      }
+    })
+
+    it(`CordisCardComponent (cordis_define) survives ${name}`, () => {
+      const components = fakeBlueComponents()
+      const item = {
+        ...bashItem(text),
+        name: 'cordis_define',
+        parsedArguments: { name: 'p', purpose: text, code: { host: text, client: text } },
+        result: { text: `Error: ${text}`, isError: true, endedAt: 0 },
+      } as TranscriptToolItem
+      for (const expanded of [false, true]) {
+        for (const width of SCAN_WIDTHS) {
+          expectLinesFit(`CordisCard-define/${name}`, new CordisCardComponent({ item, colors, components, expanded }).render(width), width)
+        }
+      }
+    })
+
+    it(`CordisCardComponent (cordis_inspect, structured catalog) survives ${name}`, () => {
+      const components = fakeBlueComponents()
+      const item = {
+        ...bashItem(text),
+        name: 'cordis_inspect',
+        parsedArguments: { what: text },
+        result: {
+          text: JSON.stringify({
+            platform: text,
+            provider: text,
+            method: text,
+            data: { mode: text, services: [{ key: text, description: text, methods: [{ signature: text }] }] },
+          }),
+          isError: false,
+          endedAt: 0,
+        },
+      } as TranscriptToolItem
+      for (const expanded of [false, true]) {
+        for (const width of SCAN_WIDTHS) {
+          expectLinesFit(`CordisCard-inspect/${name}`, new CordisCardComponent({ item, colors, components, expanded }).render(width), width)
+        }
+      }
+    })
+
+    it(`CordisCardComponent (cordis_run result preview) survives ${name}`, () => {
+      const components = fakeBlueComponents()
+      const item = {
+        ...bashItem(text),
+        name: 'cordis_run',
+        parsedArguments: { mode: text },
+        result: { text, isError: false, endedAt: 0 },
+      } as TranscriptToolItem
+      for (const expanded of [false, true]) {
+        for (const width of SCAN_WIDTHS) {
+          expectLinesFit(`CordisCard-run/${name}`, new CordisCardComponent({ item, colors, components, expanded }).render(width), width)
         }
       }
     })

@@ -29,10 +29,30 @@ export interface BlueSessionRef {
   modelRef: BlueModelSelectionRef | undefined
 }
 
+/** Identity of one live turn removed from Blue's visible conversation. */
+export interface BlueTurnRetraction {
+  readonly sessionEpoch: number
+  readonly requestEpoch: number
+  readonly turn: number
+}
+
+/** App-owned gate for retracting the currently running human message. */
+export interface BlueRetractionService {
+  /**
+   * Retract the open main turn containing `messageId` when no tool activity
+   * has begun.
+   * @param messageId - stable id of the submitted human message.
+   * @returns whether retraction committed; false means the caller should use ordinary interruption.
+   */
+  tryRetract(messageId: string): boolean
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** The Blue app's live-session reference; provided by blue-app before it creates or resumes the first Agent. */
     blueSession: BlueSessionRef
+    /** Safe main-turn retraction gate provided beside `blueSession`. */
+    blueRetractions: BlueRetractionService
   }
 
   interface Events {
@@ -40,6 +60,8 @@ declare module '@deepseek-ai/cordis' {
     'blue/request-state-changed'(lifecycle: BlueRequestLifecycle): void
     /** A frame/session operation was committed and stale event guards may advance. */
     'blue/session-epoch-changed'(sessionEpoch: number): void
+    /** A safe retraction committed; transcript consumers remove this turn immediately. */
+    'blue/turn-retracted'(retraction: BlueTurnRetraction): void
     /**
      * The Blue app's active Agent changed: the initial create/resume
      * completed, or a `'blue/request-resume'` switch committed. Fired only
@@ -91,5 +113,14 @@ declare module '@deepseek-ai/cordis' {
      * @mode emit
      */
     'blue/request-fork'(): void
+    /**
+     * A UI command asked the app to create a child session from a complete
+     * event prefix of the active session. The parent remains persisted and
+     * the new Agent is committed through the normal session switch path.
+     * @param sessionId - the session the UI inspected.
+     * @param boundarySeq - number of events to retain in the child seed.
+     * @mode emit
+     */
+    'blue/request-rewind'(sessionId: string, boundarySeq: number): void
   }
 }

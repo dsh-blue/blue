@@ -40,6 +40,8 @@ const EXPECTED_ROLES: (keyof BlueSemanticColors)[] = [
   'diffRemovedStrong',
   'diffGutter',
   'diffMeta',
+  'modelHighlight',
+  'logoGradient',
 ]
 
 describe('blue-theme-dark plugin', () => {
@@ -60,7 +62,8 @@ describe('blue-theme-dark plugin', () => {
     expect(Object.isFrozen(colors)).toBe(true)
     expect(Object.keys(colors).sort()).toEqual([...EXPECTED_ROLES].sort())
     for (const role of EXPECTED_ROLES) {
-      expect(typeof colors[role]).toBe('function')
+      if (role === 'logoGradient') expect(colors.logoGradient.every(entry => typeof entry === 'function')).toBe(true)
+      else expect(typeof colors[role]).toBe('function')
     }
   })
 

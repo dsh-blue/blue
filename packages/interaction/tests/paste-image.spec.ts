@@ -20,8 +20,11 @@ import {
   type ImageAttachmentRef,
   type SaveImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import { applySubmitTransformers } from '../src/editor-instance.ts'
+import { applyReversibleSubmitTransformers, applySubmitTransformers } from '../src/editor-instance.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
+// The value import carries the `settings` Context merge and the
+// 'settings/updated' Events merge the override spec below uses.
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import * as pasteImage from '../src/paste-image.ts'
 import { ACTION_IMAGE_PASTE, type ClipboardImageResult } from '../src/paste-image.ts'
 import { fakeBlueContext, FakeBlueEditor, KEY, type FakeKeymap } from './fakes.ts'
@@ -217,13 +220,18 @@ describe('blue-paste-image plugin', () => {
     expect(thirdRef.name).toBe('pasted-image.jpg')
 
     // Submit splitting: known markers become image blocks with text runs.
-    const blocks = applySubmitTransformers(`before ${firstMarker} mid ${secondMarker} after`)
-    expect(blocks).toEqual([
+    const transformed = applyReversibleSubmitTransformers(`before ${firstMarker} mid ${secondMarker} after`)
+    expect(transformed.blocks).toEqual([
       { type: 'text', text: 'before ' },
       { type: 'image', attachment: expect.objectContaining({ mediaType: 'image/png' }) },
       { type: 'text', text: ' mid ' },
       { type: 'image', attachment: expect.objectContaining({ mediaType: 'image/gif' }) },
       { type: 'text', text: ' after' },
+    ])
+    transformed.rollback?.()
+    transformed.rollback?.()
+    expect(applySubmitTransformers(firstMarker)).toEqual([
+      { type: 'image', attachment: expect.objectContaining({ mediaType: 'image/png' }) },
     ])
     // Consumed markers leave the map: a resubmit keeps them literal.
     expect(applySubmitTransformers(`again ${firstMarker}`)).toEqual([
@@ -825,6 +833,101 @@ exit 1
       expect(editor.inserted).toHaveLength(1)
     })
     expect(saveImage.mock.calls[2]![0]).toMatchObject({ mediaType: 'image/gif' })
+  })
+
+  it('lets the blue.pasteImageBackend user layer override the composition backend', { timeout: 90_000 }, async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    // wl-paste offers nothing readable; xclip holds the image. The
+    // composition pins wayland (strict), so only a user-layer x11 override
+    // reads the clipboard.
+    tool(bin, 'wl-paste', '#!/bin/sh\nexit 1\n')
+    tool(bin, 'xclip', xclipFake('TARGETS\nimage/png\n', { 'image/png': shBytes(PNG_1X1) }))
+    process.env.PATH = bin
+    process.env.DISPLAY = ':1'
+    // The fake settings service: only the blue descriptor's RAW user layer
+    // the override sync reads (never the resolved value).
+    let present = true
+    let user: unknown
+    ctx.provide('settings', {
+      describe: () => present
+        ? [{ ns: 'blue', schema: {}, value: {}, revision: 1, applies: 'live', user }]
+        : [],
+    } as never)
+    const setUser = (next: unknown): void => {
+      present = true
+      user = next
+    }
+    const blueNs = settingsNamespace('blue')
+    /** One paste, awaited by its outcome notice (after the 'pasting image...' lead-in). */
+    const pasteAndSettle = async (): Promise<void> => {
+      const before = notices.length
+      editor.handleInput(KEY.ctrlV)
+      // The tool timeout path can take seconds on a slow spawn host.
+      await vi.waitFor(() => {
+        expect(notices.length).toBeGreaterThan(before)
+        expect(notices.at(-1)).not.toBe('pasting image...')
+      }, { timeout: 10_000, interval: 50 })
+    }
+    /** One paste expected to save an image (a plain success notices nothing). */
+    const pasteAndSave = async (count: number): Promise<void> => {
+      editor.handleInput(KEY.ctrlV)
+      await vi.waitFor(() => {
+        expect(editor.inserted).toHaveLength(count)
+      }, { timeout: 10_000, interval: 50 })
+    }
+
+    // The user layer's strict x11 wins over the composition's wayland.
+    setUser({ pasteImageBackend: 'x11' })
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    }, { timeout: 10_000, interval: 50 })
+    expect(saveImage.mock.calls[0]![0]).toMatchObject({ mediaType: 'image/png' })
+
+    // A blue commit re-reads the layer: strict wayland fails the paste.
+    setUser({ pasteImageBackend: 'wayland' })
+    ctx.emit('settings/updated', blueNs, {}, {}, 'update')
+    await pasteAndSettle()
+    expect(notices.at(-1)).toBe('clipboard read failed: wl-paste exited with code 1')
+
+    // 'auto' returns to the session-aware order — x11 first with DISPLAY
+    // set — and the paste reads the clipboard again.
+    setUser({ pasteImageBackend: 'auto' })
+    ctx.emit('settings/updated', blueNs, {}, {}, 'update')
+    await pasteAndSave(2)
+    expect(saveImage.mock.calls[1]![0]).toMatchObject({ mediaType: 'image/png' })
+
+    // An invalid value clears the override: the composition's strict
+    // wayland applies again.
+    setUser({ pasteImageBackend: 'bogus' })
+    ctx.emit('settings/updated', blueNs, {}, {}, 'update')
+    await pasteAndSettle()
+    expect(notices.at(-1)).toBe('clipboard read failed: wl-paste exited with code 1')
+
+    // A null user layer clears it likewise.
+    user = null
+    ctx.emit('settings/updated', blueNs, {}, {}, 'update')
+    await pasteAndSettle()
+    expect(notices.at(-1)).toBe('clipboard read failed: wl-paste exited with code 1')
+
+    // A non-object user layer clears it too.
+    setUser('junk')
+    ctx.emit('settings/updated', blueNs, {}, {}, 'update')
+    await pasteAndSettle()
+    expect(notices.at(-1)).toBe('clipboard read failed: wl-paste exited with code 1')
+
+    // Another namespace's commit is ignored even with a valid override
+    // sitting in the user layer.
+    setUser({ pasteImageBackend: 'x11' })
+    ctx.emit('settings/updated', settingsNamespace('shell'), {}, {}, 'update')
+    await pasteAndSettle()
+    expect(notices.at(-1)).toBe('clipboard read failed: wl-paste exited with code 1')
+
+    // The blue descriptor itself gone: same as no user layer.
+    present = false
+    ctx.emit('settings/updated', blueNs, {}, {}, 'update')
+    await pasteAndSettle()
+    expect(notices.at(-1)).toBe('clipboard read failed: wl-paste exited with code 1')
   })
 
   it('probes xclip after a silently failing wl-paste listing', async () => {

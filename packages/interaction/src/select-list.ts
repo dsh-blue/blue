@@ -27,7 +27,7 @@
 
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
 import { framePanel } from '@dsh-blue/blue-core/chrome'
-import { ACTION_CANCEL, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_SUBMIT } from './keys.ts'
+import { ACTION_CANCEL, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_SUBMIT, ACTION_TOGGLE } from './keys.ts'
 import { SELECT_POINTER } from './symbols.ts'
 
 /** One selectable row of a {@link SelectListPanel}. */
@@ -58,12 +58,14 @@ export interface SelectListPanelOptions {
   readonly theme: BlueTheme
   /** Component factory supplying the width measurement/truncation helpers. */
   readonly components: BlueComponents
-  /** Rows to choose from, in list order. */
-  readonly rows: readonly SelectRow[]
+  /** Rows to choose from, or a query-aware source for interactive trees. */
+  readonly rows: readonly SelectRow[] | ((query: string) => readonly SelectRow[])
   /** Dialog title; defaults to `Select`. */
   readonly title?: string
   /** Muted key row rendered beside the title (`· esc cancel · ↵ resume`). */
   readonly titleHint?: string
+  /** Optional muted safety/context line rendered below the choices. */
+  readonly footer?: string
   /** Seeds the cursor on this row's value (the current entry); head otherwise. */
   readonly initialValue?: string
   /**
@@ -78,6 +80,14 @@ export interface SelectListPanelOptions {
   readonly onSelect: (row: SelectRow) => void
   /** Enter on a `disabled` row; absent handlers ignore the press. */
   readonly onBlockedSelect?: (row: SelectRow) => void
+  /**
+   * The cursor moved onto a new row (Up/Down). Absent by default — the
+   * first consumer is the `/theme` picker, whose live preview applies the
+   * highlighted palette.
+   */
+  readonly onHighlight?: (row: SelectRow) => void
+  /** Space on the focused row while no filter query is live. */
+  readonly onToggle?: (row: SelectRow) => void
   /** Escape. */
   readonly onCancel: () => void
 }
@@ -159,10 +169,10 @@ export class SelectListPanel implements BlueFocusable {
    * @param options - see {@link SelectListPanelOptions}.
    */
   constructor(private readonly options: SelectListPanelOptions) {
-    this.rows = options.rows
+    this.rows = typeof options.rows === 'function' ? options.rows('') : options.rows
     const seeded = options.initialValue === undefined
       ? -1
-      : options.rows.findIndex(row => row.value === options.initialValue)
+      : this.sourceRows().findIndex(row => row.value === options.initialValue)
     this.cursor = seeded >= 0 ? seeded : 0
     this.filter = options.filter === true
   }
@@ -181,12 +191,19 @@ export class SelectListPanel implements BlueFocusable {
     this.cursor = next >= 0 ? next : Math.min(this.cursor, Math.max(0, view.length - 1))
   }
 
+  /** Resolve static rows or the caller's query-aware row projection. */
+  private sourceRows(): readonly SelectRow[] {
+    return typeof this.options.rows === 'function'
+      ? this.options.rows(this.query)
+      : this.rows
+  }
+
   /** The rows under the live query: identity while the filter is off or
    * the query empty, else the fuzzy matches in list order (no re-rank —
    * the ModelPanel precedent). */
   private filtered(): readonly SelectRow[] {
+    const rows = this.sourceRows()
     const { components } = this.options
-    const rows = this.rows
     if (!this.filter || this.query.length === 0) return rows
     return rows.filter(row => components.fuzzyMatch(this.query, row.filterText ?? row.label).matches)
   }
@@ -218,6 +235,19 @@ export class SelectListPanel implements BlueFocusable {
     if (keymap.matches(data, ACTION_MOVE_DOWN)) {
       this.cursor = cycle(this.cursor, view.length, 1)
       this.options.onCursorChanged?.(this.cursor, view)
+      return
+    }
+    // Space toggles tree disclosure only before a search starts. Once a
+    // query is live it remains an ordinary printable space, preserving
+    // multi-word title search.
+    if (this.query.length === 0 && this.options.onToggle !== undefined
+      && keymap.matches(data, ACTION_TOGGLE)) {
+      const row = view[this.cursor]
+      if (row === undefined) return
+      this.options.onToggle(row)
+      const next = this.filtered()
+      const anchored = next.findIndex(candidate => candidate.value === row.value)
+      this.cursor = anchored >= 0 ? anchored : 0
       return
     }
     if (keymap.matches(data, ACTION_SUBMIT)) {
@@ -304,6 +334,9 @@ export class SelectListPanel implements BlueFocusable {
     }
     const counter = counterRow(this.cursor, view.length, MAX_LIST_VISIBLE)
     if (counter !== undefined) lines.push(colors.textMuted(counter))
+    if (this.options.footer !== undefined) {
+      lines.push('', colors.textMuted(components.truncateToWidth(`  ${this.options.footer}`, width)))
+    }
     lines.push('')
     // The affordance hint rides the title-hint channel (the frame paints
     // it muted): while no query is live, every filtered panel advertises

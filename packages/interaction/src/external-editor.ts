@@ -1,11 +1,13 @@
 /**
  * External-editor primitives for the Ctrl-G draft hand-off (S31): resolve
- * `$VISUAL`/`$EDITOR`, spawn the command over the inherited tty with the
- * draft seeded into a private temp file, and read the edited contents back
- * — the kimi `external-editor.ts` port. A nonzero exit (vim's `:cq` among
- * them) resolves `undefined`, so the caller keeps the draft untouched. The
- * launcher is a module-level hook (the `setClipboardTextWriter` precedent
- * in `./clipboard-write.ts`) so specs inject fakes without spawning.
+ * the editor command — the persisted `blue.editorCommand` setting wins,
+ * then `$VISUAL`/`$EDITOR` — spawn the command over the inherited tty with
+ * the draft seeded into a private temp file, and read the edited contents
+ * back — the kimi `external-editor.ts` port. A nonzero exit (vim's `:cq`
+ * among them) resolves `undefined`, so the caller keeps the draft
+ * untouched. The launcher is a module-level hook (the
+ * `setClipboardTextWriter` precedent in `./clipboard-write.ts`) so specs
+ * inject fakes without spawning.
  *
  * @module @dsh-blue/blue-interaction/external-editor
  */
@@ -14,17 +16,20 @@ import { spawn } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { currentBlueSettings } from './settings.ts'
 
 /**
- * Resolve the external editor command: `$VISUAL` wins over `$EDITOR`, blank
- * values are skipped, and none set resolves `undefined` (the caller
- * notices). kimi's configured layer (`/editor` command) is not ported.
+ * Resolve the external editor command: a non-blank `blue.editorCommand`
+ * setting wins, then `$VISUAL` over `$EDITOR`, blank values are skipped,
+ * and none set resolves `undefined` (the caller notices).
  * @param env - the environment to read (tests inject a literal object).
  * @returns the trimmed command string, or `undefined` when nothing is set.
  */
 export function resolveExternalEditorCommand(
   env: { VISUAL?: string | undefined; EDITOR?: string | undefined } = process.env,
 ): string | undefined {
+  const configured = currentBlueSettings().editorCommand
+  if (configured.trim().length > 0) return configured.trim()
   for (const candidate of [env.VISUAL, env.EDITOR]) {
     if (candidate !== undefined && candidate.trim().length > 0) return candidate.trim()
   }

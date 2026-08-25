@@ -74,6 +74,16 @@ describe('blue-theme-custom plugin', () => {
     expect(colors.muted).toBe(LIGHT_COLORS.muted)
   })
 
+  it('accepts a valid logo gradient and freezes its color functions', async () => {
+    const ctx = new Context()
+    await mount(ctx, JSON.stringify({ logoGradient: ['#112233', '#aabbcc'] }))
+    const gradient = ctx.blueTheme.colors.logoGradient
+    expect(gradient).toHaveLength(2)
+    expect(Object.isFrozen(gradient)).toBe(true)
+    expect(gradient[0]!('hi')).toBe('\x1b[38;2;17;34;51mhi\x1b[39m')
+    expect(gradient[1]!('hi')).toBe('\x1b[38;2;170;187;204mhi\x1b[39m')
+  })
+
   it('publishes custom semantic tokens to the frontend registry', async () => {
     const ctx = new Context()
     await ctx.plugin(ThemeModelService)
@@ -86,12 +96,23 @@ describe('blue-theme-custom plugin', () => {
   it('drops invalid entries and falls back to the base palette entry', async () => {
     const ctx = new Context()
     const warns = recordWarnings(ctx)
-    await mount(ctx, JSON.stringify({ text: 'red', accent: 123, roleUser: '#0a7ea4' }))
+    await mount(ctx, JSON.stringify({ text: 'red', accent: 123, roleUser: '#0a7ea4', logoGradient: ['#112233', 'nope'] }))
     const { colors } = ctx.blueTheme
     expect(colors.text).toBe(DARK_COLORS.text)
     expect(colors.accent).toBe(DARK_COLORS.accent)
     expect(colors.roleUser('hi')).toBe('\x1b[38;2;10;126;164mhi\x1b[39m')
-    expect(warns).toHaveLength(2)
+    expect(warns).toHaveLength(3)
+  })
+
+  it.each([
+    ['not an array', '"logoGradient":"#112233"'],
+    ['empty', '"logoGradient":[]'],
+  ])('ignores an invalid %s logo gradient', async (_label, json) => {
+    const ctx = new Context()
+    const warns = recordWarnings(ctx)
+    await mount(ctx, `{${json}}`)
+    expect(ctx.blueTheme.colors.logoGradient).toBe(DARK_COLORS.logoGradient)
+    expect(warns).toHaveLength(1)
   })
 
   it('ignores unknown token names with a warning', async () => {

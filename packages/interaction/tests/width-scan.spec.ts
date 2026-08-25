@@ -18,6 +18,8 @@ import { InfoPanel, type InfoSection } from '../src/info-panel.ts'
 import { FrontendPanel } from '../src/frontend-panel.ts'
 import { PlanReviewPanel, planReviewChoices } from '../src/plan-review-panel.ts'
 import { Questionnaire } from '../src/questionnaire.ts'
+import { NoticeTail, SettingsPanel } from '../src/settings-command.ts'
+import { UpdateNoticeComponent } from '../src/update-notice.ts'
 import { fakeBlueContext, FakeBlueComponents, FakeKeymap } from './fakes.ts'
 import { ADVERSARIAL, SCAN_WIDTHS, expectLinesFit } from '../../core/tests/width-scan.ts'
 
@@ -66,6 +68,14 @@ function planAsk(text: string) {
 
 describe('interaction width-scan', () => {
   for (const { name, text } of ADVERSARIAL) {
+    it(`UpdateNoticeComponent survives ${name}`, () => {
+      const { components } = fakeBlueContext()
+      const notice = new UpdateNoticeComponent(
+        (line, width) => components.truncateToWidth(line, width),
+        { current: '0.1.0-rc.2', target: text.slice(0, 20), command: `dsh plugin --profile blue add @dsh-blue/blue@${text.slice(0, 12)}` },
+      )
+      for (const width of SCAN_WIDTHS) expectLinesFit(`UpdateNotice/${name}`, notice.render(width), width)
+    })
     it(`FormPanel survives ${name}`, () => {
       const { keymap, components } = fakeBlueContext()
       const fields: FormField[] = [
@@ -193,6 +203,50 @@ describe('interaction width-scan', () => {
         expectLinesFit(`Questionnaire/${name}`, questionnaire.render(width), width)
       }
       questionnaire.handleInput('\x1b')
+    })
+    it(`SettingsPanel survives ${name}`, () => {
+      const components = new FakeBlueComponents()
+      const list = components.createSettingsList({
+        items: [
+          { id: 'a', label: text, description: text, currentValue: text, values: [text, 'other'] },
+          { id: 'b', label: 'Short', currentValue: '1', values: ['1', '2'] },
+        ],
+        onChange: vi.fn(),
+        onCancel: vi.fn(),
+      })
+      const panel = new SettingsPanel({
+        theme: IDENTITY_THEME as never,
+        title: `settings › ${text}`,
+        footer: ['↑↓ select', text, 'esc back'],
+        list,
+        notice: { current: { text, error: true } },
+        truncate: (value, width) => components.truncateToWidth(value, width),
+      })
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`SettingsPanel/${name}`, panel.render(width), width)
+      }
+      panel.handleInput('\x1b')
+    })
+
+    it(`NoticeTail survives ${name}`, () => {
+      const components = new FakeBlueComponents()
+      const tail = new NoticeTail({
+        // The inner panel budgets its own rows (the SelectListPanel
+        // contract); the tail's own addition is the truncated notice row.
+        inner: {
+          focused: false,
+          render: (width: number) => [components.truncateToWidth(text, Math.max(0, width))],
+          invalidate: () => {},
+        },
+        theme: IDENTITY_THEME as never,
+        notice: { current: { text, error: false } },
+        truncate: (value, width) => components.truncateToWidth(value, width),
+      })
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`NoticeTail/${name}`, tail.render(width), width)
+      }
+      tail.handleInput('\x1b')
+      tail.invalidate()
     })
   }
 })

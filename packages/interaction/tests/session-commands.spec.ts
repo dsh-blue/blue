@@ -21,6 +21,7 @@ import {
   buildUsageSections,
   formatCreated,
   buildVersionSections,
+  buildChangelogSections,
   registerSessionCommands,
 } from '../src/session-commands.ts'
 import { BLUE_VERSION } from '@dsh-blue/blue-transcript/banner-content'
@@ -59,7 +60,35 @@ describe('buildVersionSections', () => {
       label: 'blue',
       segments: [{ text: `v${displayVersion}` }],
     })
-    expect(BLUE_VERSION).toBe('0.1.0-rc.2')
+    expect(BLUE_VERSION).toBe('0.1.0-rc.8')
+  })
+})
+
+describe('buildChangelogSections', () => {
+  it('wraps highlights, marks the current release, and includes known issues', () => {
+    const sections = buildChangelogSections([
+      {
+        version: BLUE_VERSION,
+        summary: 'short summary',
+        highlights: ['one short highlight', 'this highlight contains enough words to wrap across the fixed detail width while retaining its continuation indentation'],
+        knownIssues: ['one known issue'],
+      },
+      {
+        version: '0.0.0',
+        summary: 'older summary',
+        highlights: [],
+        knownIssues: [],
+      },
+    ])
+    expect(sections.map(section => section.heading)).toEqual([`v${BLUE_VERSION} · current`, 'v0.0.0'])
+    expect(sections[0]!.rows.map(row => row.label)).toEqual(['', 'Highlights', '', '', '', 'Known issues', ''])
+    expect(sections[0]!.rows[2]!.segments[0]).toEqual({ text: '• one short highlight', style: 'textMuted' })
+    expect(sections[0]!.rows[4]!.segments[0]!.text.startsWith('  ')).toBe(true)
+    expect(sections[0]!.rows[6]!.segments[0]).toEqual({ text: '• one known issue', style: 'warning' })
+    expect(sections[1]!.rows).toEqual([
+      { label: '', segments: [{ text: 'older summary', style: 'muted' }] },
+      { label: 'Highlights', segments: [] },
+    ])
   })
 })
 
@@ -326,6 +355,7 @@ describe('registerSessionCommands', () => {
     expect(names).toContain('status')
     expect(names).toContain('context')
     expect(names).toContain('version')
+    expect(names).toContain('changelog')
     await run(ctx, agent, '/version')
   })
 
@@ -505,6 +535,17 @@ describe('registerSessionCommands', () => {
     expect(rows.some(row => row.includes('harness'))).toBe(true)
   })
 
+  it('opens the embedded /changelog panel and closes it', async () => {
+    const { ctx, screen, agent } = await mount()
+    expect(await run(ctx, agent, '/changelog')).toEqual({ kind: 'success' })
+    const overlay = screen.overlays.at(-1)!
+    const rows = plain((overlay.component as InfoPanel).render(100))
+    expect(rows.some(row => row.includes('changelog'))).toBe(true)
+    expect(rows.some(row => row.includes('Execution traces'))).toBe(true)
+    overlay.component.handleInput?.('\x1b')
+    expect(overlay.hidden).toBe(true)
+  })
+
   it('guards /status and /usage with an error when no session is live', async () => {
     const { ctx, agent } = await mount({ attach: false })
     const status = await run(ctx, agent, '/status')
@@ -532,6 +573,8 @@ describe('registerSessionCommands', () => {
     expect(usage).toEqual({ kind: 'error', text: 'context panel is unavailable: the Blue screen is not mounted' })
     const version = await run(ctx, agent, '/version')
     expect(version).toEqual({ kind: 'error', text: 'version panel is unavailable: the Blue screen is not mounted' })
+    const changelog = await run(ctx, agent, '/changelog')
+    expect(changelog).toEqual({ kind: 'error', text: 'changelog panel is unavailable: the Blue screen is not mounted' })
   })
 
   it('unregisters with the plugin fiber', async () => {

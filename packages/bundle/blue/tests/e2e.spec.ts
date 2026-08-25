@@ -17,6 +17,7 @@ import { createServer} from 'node:http'
 import type { StreamChunk} from '@deepseek-ai/dsh-llm'
 import { createUserMessage} from '@deepseek-ai/dsh-llm'
 import type { ApprovalOutcome, ApprovalRequest} from '@deepseek-ai/dsh-user-approval'
+import type { BluePluginApi } from '../../../api/src/contracts.ts'
 // The theme modules come from the package subpaths — not relative core
 // source paths — because the /theme swap keys registry runtimes by apply
 // callback identity: only the module instance interaction's theme-switch
@@ -158,6 +159,48 @@ describe('blue whole-tree e2e', () => {
     expect(tree.sessionChanges).toEqual([agent])
     // The input editor mounted and the tree is idle, nothing rendered away.
     expect(tree.exits).toEqual([])
+    expect(tree.creativeIsolation.blueScreen === undefined).toBe(true)
+    expect(tree.creativeIsolation.commands === undefined).toBe(true)
+    expect(tree.creativeIsolation.bluePluginHost !== undefined).toBe(true)
+    expect(tree.creativeIsolation.tools !== undefined).toBe(true)
+  })
+
+  it('hot-mounts additive public dock, status, command, and notification contributions', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    let api: BluePluginApi | undefined
+    const fiber = tree.ctx.plugin({
+      name: 'e2e-public-plugin',
+      inject: ['bluePluginHost'],
+      apply(pluginCtx) {
+        const opened = pluginCtx.bluePluginHost.open(pluginCtx, {
+          id: '@acme/e2e-public-plugin',
+          api: '^1.0.0',
+          capabilities: ['dock', 'status', 'commands', 'notifications'],
+        })
+        if (!opened.ok) throw new Error(opened.message)
+        api = opened.value
+        const dock = api.dock!.register({ id: 'creative-dock', view: { kind: 'text', content: 'creative dock live' } })
+        const status = api.status!.register({ id: 'creative-status', render: () => ({ kind: 'text', content: 'creative status' }) })
+        const command = api.commands!.register({ id: 'creative', label: 'Run the creative command', execute: async () => ({ ok: true, value: undefined }) })
+        if (!dock.ok || !status.ok || !command.ok) throw new Error('public contribution registration failed')
+      },
+    })
+    await fiber.await()
+    await waitForRender()
+    const mounted = stripSgr(await fullFrame(tree.terminal))
+    expect(mounted).toContain('creative dock live')
+    expect(mounted).toContain('creative status')
+    await expect(executeCommand(tree, agent, '/creative')).resolves.toEqual({ kind: 'success' })
+    expect(api!.notifications!.publish({ id: 'creative-notice', tone: 'success', view: { kind: 'text', content: 'creative notice' } })).toEqual({ ok: true, value: undefined })
+    expect(stripSgr(await fullFrame(tree.terminal))).toContain('creative notice')
+
+    await fiber.dispose()
+    await waitForRender()
+    const unloaded = stripSgr(await fullFrame(tree.terminal))
+    expect(unloaded).not.toContain('creative dock live')
+    expect(unloaded).not.toContain('creative status')
+    await expect(executeCommand(tree, agent, '/creative')).resolves.toBeUndefined()
   })
 
   it('runs a startup task through the real loop and renders the reply', async () => {
@@ -426,34 +469,33 @@ describe('blue whole-tree e2e', () => {
     expect(tree.exits).toEqual([])
   })
 
-  it('an Esc-interrupted thinking block settles: no ghost spinner beside the next turn', async () => {
-    // The S24a dogfood find: the interrupted turn ends with no
-    // assistant/message, so the thinking block's streaming flag never
-    // flipped and its spinner kept animating after the next message — two
-    // working rows. The settled block must render its folded form only.
+  it('Esc retracts a tool-free thinking turn into the editor with no tombstone or ghost', async () => {
     const tree = await bootBlue([], { script: ['hang-reasoning', reasoningResponse('second thought', 'done')] })
     const agent = await currentAgent(tree)
     typeLine(tree.terminal, 'first')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('pondering the question at hand') })
     tree.terminal.sendInput('\x1b')
     await agent.whenIdle()
-    // Interrupted and idle: the tombstone row replaces the stream, and no
-    // live thinking row may remain beside it.
     await vi.waitFor(async () => {
       const frame = await fullFrame(tree.terminal)
-      expect(frame.includes('⏹ interrupted')).toBe(true)
+      expect(frame.includes('⏹ interrupted')).toBe(false)
       expect(frame.includes('thinking...')).toBe(false)
+      expect(frame.includes('pondering the question at hand')).toBe(false)
+      expect(frame.includes('first')).toBe(true)
     })
-    // The next turn streams its own thinking and completes; still no ghost.
+    expect(agent.session.deriveMessages()).toEqual([])
+
+    // The restored draft owns the next Escape; clear it, then submit a
+    // genuinely new turn. The withdrawn thinking must never return.
+    tree.terminal.sendInput('\x1b')
     typeLine(tree.terminal, 'second')
     await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(2) })
     await agent.whenIdle()
     await vi.waitFor(async () => {
       expect((await fullFrame(tree.terminal)).includes('thinking...')).toBe(false)
     })
-    // Both reasonings stay readable in their settled folded form.
     const frame = await fullFrame(tree.terminal)
-    expect(frame).toContain('pondering the question at hand')
+    expect(frame).not.toContain('pondering the question at hand')
     expect(frame).toContain('second thought')
   })
 
@@ -1725,11 +1767,12 @@ describe('blue whole-tree e2e', () => {
     // once the throttled render settles. (The first press is awaited on
     // its own: /quit slid past the 16-row window when S34 added /mcp, and
     // back-to-back presses coalesce under the throttle — only awaited
-    // steps are guaranteed a repaint. Two more reach the scroll floor of
-    // the 39-row listing.)
+    // steps are guaranteed a repaint. Three more reach the scroll floor after
+    // the rewind command adds another row.)
     tree.terminal.sendInput('\x1b[6~')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('showing 11-26') })
     expect(tree.terminal.output).toContain('Exit Blue')
+    tree.terminal.sendInput('\x1b[6~')
     tree.terminal.sendInput('\x1b[6~')
     tree.terminal.sendInput('\x1b[6~')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Toggle todo list expansion') })
@@ -1860,7 +1903,7 @@ describe('blue whole-tree e2e', () => {
     clearDraft()
   })
 
-  it('switches sessions through /new and /fork, and lists them in the /sessions picker', async () => {
+  it('switches sessions through /new and /fork, and lists lineage in the /sessions tree', async () => {
     const root = mkdtempTracked('dsh-blue-e2e-sessions-')
     const tree = await bootBlue(['first', 'task'], {
       script: [textResponse('first answer'), textResponse('second answer')],
@@ -1906,19 +1949,52 @@ describe('blue whole-tree e2e', () => {
     expect(picker).toContain(String(first.id))
     expect(picker).toContain(String(second.id))
     expect(picker).toContain(String(forked.id))
+    expect(picker).toContain('└─')
     expect(picker).toContain('← current')
-    // Pick the live session: a notice flashes and no switch happens. Find its
-    // row deterministically by reproducing the picker's newest-first sort
-    // over the same persisted headers.
-    const persistence = tree.ctx.get('sessionPersistence')!
-    const headers = await persistence.list(new AbortController().signal)
-    const sorted = [...headers].sort((a, b) => b.createdAt - a.createdAt)
-    const currentRow = sorted.findIndex(header => String(header.id) === String(forked.id))
-    expect(currentRow).toBeGreaterThanOrEqual(0)
-    for (let row = 0; row < currentRow; row += 1) tree.terminal.sendInput('\x1b[B')
+    // The tree seeds its cursor on the live session even when it is nested.
+    // Picking it flashes a notice and no switch happens.
     tree.terminal.sendInput('\r')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('already the current session') })
     expect(tree.sessionChanges).toHaveLength(3)
+  })
+
+  it('/rewind creates a child from a complete earlier turn and preserves the parent', async () => {
+    const root = mkdtempTracked('dsh-blue-e2e-rewind-')
+    const tree = await bootBlue(['first prompt'], {
+      script: [textResponse('first answer'), textResponse('second answer')],
+      persistenceRoot: root,
+    })
+    const parent = await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await parent.whenIdle()
+    typeLine(tree.terminal, 'second prompt')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(2) })
+    await parent.whenIdle()
+    const secondUserIndex = parent.session.events.findIndex(event =>
+      event.type === 'user/message' && JSON.stringify(event.data).includes('second prompt'))
+    const secondTurnStart = parent.session.events.slice(0, secondUserIndex + 1)
+      .findLast(event => event.type === 'turn/start')?.seq
+    expect(secondTurnStart).toBeTypeOf('number')
+
+    await expect(executeCommand(tree, parent, '/rewind')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Rewind current session') })
+    expect(tree.terminal.output).toContain('second prompt')
+    expect(tree.terminal.output).toContain('The original session stays available')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.sessionChanges).toHaveLength(2) })
+    const child = tree.sessionChanges[1]!
+    expect(String(child.session.header.parentSession)).toBe(String(parent.id))
+    expect(child.session.header.seedLength).toBe(secondTurnStart)
+    expect(parent.session.events.some(event =>
+      event.type === 'user/message' && JSON.stringify(event.data).includes('second prompt'))).toBe(true)
+
+    await tree.ctx.sessions.flush(child.session)
+    tree.terminal.resize(300, 40)
+    await expect(executeCommand(tree, child, '/sessions')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Sessions') })
+    expect(tree.terminal.output).toContain(String(parent.id))
+    expect(tree.terminal.output).toContain(String(child.id))
+    expect(tree.terminal.output).toContain('└─')
   })
 
   it('/clear completes as an annotated alias of /new and runs its semantics', async () => {
@@ -1990,10 +2066,13 @@ describe('blue whole-tree e2e', () => {
   it('lists the model-family commands in /help', async () => {
     const tree = await bootBlue([], { script: [] })
     const agent = await currentAgent(tree)
+    tree.terminal.resize(100, 40)
     await expect(executeCommand(tree, agent, '/help')).resolves.toEqual({ kind: 'success' })
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('/model') })
     expect(tree.terminal.output).toContain('/effort (/thinking)')
-    expect(tree.terminal.output).toContain('/provider')
+    // /changelog can push /provider past the first window; page the panel down.
+    tree.terminal.sendInput('\x1b[6~')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('/provider') })
   })
 
   it('opens the /model picker, commits the draft, and routes the next request', async () => {
@@ -2223,9 +2302,12 @@ describe('blue whole-tree e2e', () => {
     const address = server.address()
     const port = typeof address === 'object' && address !== null ? address.port : 0
     const dir = mkdtempTracked('dsh-blue-e2e-dead-')
+    const settingsPath = `${dir}/settings.yaml`
+    const credentialsPath = `${dir}/.credentials.yaml`
+    writeFileSync(credentialsPath, 'version: 1\nrefs:\n  DEEPSEEK_API_KEY: existing-test-key\n', { mode: 0o600 })
     const tree = await bootBlue([], {
       script: [textResponse('unused')],
-      realSettings: { settingsPath: `${dir}/settings.yaml`, credentialsPath: `${dir}/.credentials.yaml` },
+      realSettings: { settingsPath, credentialsPath },
       piAi: true,
     })
     const agent = await currentAgent(tree)
@@ -2271,6 +2353,7 @@ describe('blue whole-tree e2e', () => {
     const dir = mkdtempTracked('dsh-blue-e2e-vendor-')
     const settingsPath = `${dir}/settings.yaml`
     const credentialsPath = `${dir}/.credentials.yaml`
+    writeFileSync(credentialsPath, 'version: 1\nrefs:\n  DEEPSEEK_API_KEY: existing-test-key\n', { mode: 0o600 })
     const tree = await bootBlue([], {
       script: [],
       realSettings: { settingsPath, credentialsPath },
@@ -2286,9 +2369,8 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('amazon-bedrock') })
     const vendor = 'amazon-bedrock'
     tree.terminal.sendInput('\r')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('via the credentials service') })
-    // Field 1 is the optional baseURL override — skip it, then the key.
-    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('vendor default endpoint') })
+    expect(tree.terminal.output).not.toContain('Base URL')
     tree.terminal.sendInput('vendor-key')
     tree.terminal.sendInput('\r')
     await expect(outcome).resolves.toEqual({ kind: 'success', text: `provider "${vendor}" added` })
@@ -2298,6 +2380,22 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => {
       expect(tree.ctx.llm.listProviders().map(provider => provider.id)).toContain(vendor)
     })
+  })
+
+  it('stores the first-run DeepSeek key through the onboarding panel', async () => {
+    const set = vi.fn(async () => {})
+    const tree = await bootBlue([], {
+      script: [],
+      credentials: { describe: async () => ({ configured: false, writable: true }), set },
+    })
+    await currentAgent(tree)
+    tree.terminal.resize(160, 30)
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Connect to DeepSeek') })
+    tree.terminal.sendInput('sk-onboarding')
+    expect(tree.terminal.output).not.toContain('sk-onboarding')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('DeepSeek API key saved') })
+    expect(set).toHaveBeenCalledWith(expect.anything(), 'sk-onboarding')
   })
 
   it('answers the /provider add guard without the host settings services', async () => {
@@ -2623,6 +2721,7 @@ describe('blue whole-tree e2e', () => {
     // The command list outgrew the first window once S25 added the
     // session-info family; one PageDown brings the tail commands in.
     tree.terminal.sendInput('\x1b[6~')
+    tree.terminal.sendInput('\x1b[6~')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('/yolo (/yes)') })
     // The Keys section sits below the commands window; scroll to the very
     // end so the tail rows (shift+tab among them) enter the window.
@@ -2822,6 +2921,24 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(async () => {
       expect(stripSgr(await fullFrame(tree.terminal))).not.toContain(`v${BLUE_VERSION}`)
     })
+  })
+
+  it('loads Blue creative-mode metadata and persona into a real model request', async () => {
+    const tree = await bootBlue(['what mode are you in?'], {
+      script: [textResponse('Blue creative mode')],
+      presetFixtures: [{ id: 'cordis' }],
+      creativePersonaOnly: true,
+    })
+    const agent = await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    const preset = await tree.ctx.agentPresets.resolve('cordis')
+    expect(preset.name).toBe('创造模式')
+    expect(preset.description).toContain('Blue')
+    expect(tree.ctx.agentPresets.composedPreset(agent.ctx)).toBe('cordis')
+    const request = JSON.stringify(tree.adapter.requests[0]!)
+    expect(request).toContain('BLUE CREATIVE MODE')
+    expect(request).toContain('never describe this preset as ordinary')
+    expect(request).toContain('PROTOTYPE IN SESSION, THEN ASK, THEN PERSIST')
   })
 
   it('mounts every agent onto the roster default and honors the logged selection across a resume (thin-host)', async () => {

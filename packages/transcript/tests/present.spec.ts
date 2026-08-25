@@ -4,13 +4,37 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { isReadItem, isSubagentTool, parseToolArguments, resolveCallView, resolveResultView, type ToolPresentationSource } from '../src/present.ts'
+import { CORDIS_TOOL_PREFIX, intentForToolItem, isReadItem, isSubagentTool, parseToolArguments, resolveCallView, resolveResultView, type ToolPresentationSource } from '../src/present.ts'
 import type { TranscriptToolItem } from '../src/types.ts'
 
 /** A registry stub whose `get` returns the prearranged runtime (or nothing). */
 function tools(get: (name: string) => unknown): ToolPresentationSource {
   return { get } as ToolPresentationSource
 }
+
+describe('intentForToolItem', () => {
+  function named(name: string, view?: TranscriptToolItem['view']): TranscriptToolItem {
+    return { kind: 'tool', seq: 1, turn: 1, step: 1, callId: 'c1', name, arguments: '{}', startedAt: 0, ...(view === undefined ? {} : { view }) }
+  }
+
+  it('routes every cordis_-prefixed name to the cordis intent', () => {
+    expect(CORDIS_TOOL_PREFIX).toBe('cordis_')
+    expect(intentForToolItem(named('cordis_define'))).toBe('cordis')
+    expect(intentForToolItem(named('cordis_inspect_query'))).toBe('cordis')
+    // The name prefix wins over the view card (every cordis tool presents generic).
+    expect(intentForToolItem(named('cordis_run', { card: 'generic', title: 'x' }))).toBe('cordis')
+  })
+
+  it('keeps the view-card rule for every other tool', () => {
+    expect(intentForToolItem(named('edit', { card: 'diff' } as never))).toBe('diff')
+    expect(intentForToolItem(named('bash'))).toBe('generic')
+    // A view without a card tag degrades to generic.
+    expect(intentForToolItem(named('read', { title: 'x' } as never))).toBe('generic')
+    // Lookalike names without the full prefix keep the view rule.
+    expect(intentForToolItem(named('cordis'))).toBe('generic')
+    expect(intentForToolItem(named('cordisx'))).toBe('generic')
+  })
+})
 
 describe('isReadItem', () => {
   function readItem(view: TranscriptToolItem['view']): TranscriptToolItem {

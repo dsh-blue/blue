@@ -8,7 +8,8 @@ Blue 的配置分两层：**界面内的斜杠命令**（日常切换，推荐�
 | 默认模型 / 思考力度 | `/model`、`/effort`、`Alt+M` | `settings.yaml` 的 `agent-default-model:` 段 |
 | 新增 provider / 自定义网关 | `/provider add` | `settings.yaml` 的 `llm-pi-ai:` 段 + 凭据文件 |
 | DeepSeek 官方端点微调 | —（文件专属） | `settings.yaml` 的 `llm-deepseek:` 段 |
-| 主题 | `/theme` | 会话级，不落盘（[主题](/guide/theme)） |
+| 主题 | `/theme`（会话级）；`/settings` 或文件写持久默认 | `settings.yaml` 的 `blue:` 段（[主题](/guide/theme)） |
+| 更新检查 / 折叠默认等 Blue 偏好 | `/settings` | `settings.yaml` 的 `blue:` 段 |
 | 插件行 / 装配 | — | profile 的 `cordis.patch.yml`（[Profile 与目录](/dsh/profiles)） |
 
 ## 最小可用：一个 DEEPSEEK_API_KEY
@@ -35,8 +36,10 @@ DEEPSEEK_API_KEY: sk-...
 | 3 | 当前目录 `./.env` | 项目级 |
 | 4 | `~/.dsh/.env` | 用户级兜底 |
 
-::: tip 没有 key 也能启动
-key 在**每次请求时**才解析——启动、浏览模型列表、`/model` 面板都不需要它。第一次真正发消息时若无处可取，会报 `MISSING_CREDENTIAL` 并列出所有可配置入口；补好 key 再问一次即可，**无需重启**。
+::: tip 首次启动会引导配置
+Blue 在会话就绪后检查所有已注册 provider 的凭据。若一个可用 key 都没有，会直接弹出 DeepSeek 快速配置框；只需填入 `DEEPSEEK_API_KEY`，Blue 使用 `deepseek-official` 的官方端点 `https://api.deepseek.com`。按 Esc 可跳过本次引导，进入 Blue 后用 `/provider add` 配置其他 provider；在仍无可用 key 时，下次启动会再次提示。
+
+key 仍在**每次请求时**解析，因此运行期间补充或轮换凭据无需重启；`MISSING_CREDENTIAL` 保留为凭据被移除或失效时的兜底错误。
 :::
 
 `~/.dsh` 称为 Harness home，可用 `DSH_HOME` 改址（目录全表见 [Profile 与目录](/dsh/profiles)）。
@@ -65,7 +68,7 @@ Providers 面板里**选中一个已配置的路由即进入编辑**：可改显
 
 `/provider add` 有两条分支：
 
-- **Known provider**（anthropic、openai 等）—— 从宿主的可配置目录里挑一家，填 key（baseURL 留空用厂商默认端点）。
+- **Known provider**（anthropic、openai 等）—— 从宿主的可配置目录里挑一家，只填 key；Base URL 不可编辑，始终使用宿主目录提供的厂商默认端点。
 - **Custom endpoint**（自建网关、任意 OpenAI 兼容端点）—— 声明协议与地址：
   - 协议三选一：`anthropic-messages` / `openai-completions` / `openai-responses`；
   - baseURL 约定：anthropic 协议**不带**尾缀 `/v1`（客户端自己拼 `/v1/messages`）；openai 系协议**要带** `/v1`；
@@ -134,6 +137,28 @@ llm-pi-ai:
 - pi-ai 路由还有进阶字段：`modelOverrides:`（按模型 id 微调目录模型而不替换整个列表）、`compat:`（推理参数格式开关）、`defaultContextWindow:` / `defaultMaxTokens:`（整路由兜底）等，完整清单见[上游配置目录](https://deepseek-harness.github.io/deepseek-harness/reference/)。
 - 列表类字段（如 `models:`）是**整体替换**而非逐条合并。
 
+### blue: Blue 自己的设置段
+
+`/settings` 面板写到这段（全部可省略，默认值如下）：
+
+```yaml
+blue:
+  updateCheck: true        # 启动时的 Blue 更新检查（false 即离线开关）
+  updateChannel: rc        # 更新检查跟踪的 dist-tag
+  theme: dark              # 持久默认主题：dark | light | ocean | paper | auto（启动时应用）
+  collapseThinking: true   # thinking 块默认折叠
+  collapseToolCalls: true  # 工具输出默认折叠（ctrl+o 在会话内切换）
+  windowTurns: 15          # transcript 窗口：只挂载最近 N 个已完成回合
+  recentStepsRetention: 30 # 回合内步骤折叠：保留最近 N 步的卡片展开
+  expandTurns: 3           # ctrl+o 展开的作用范围（自末尾起的回合数）
+  userFoldLines: 10        # 长用户消息折叠阈值（行数）
+  userFoldChars: 1000      # 长用户消息折叠阈值（字符数）
+  editorCommand: ''        # 外部编辑器命令（空 = 按 $VISUAL/$EDITOR 自动探测）
+  pasteImageBackend: auto  # Linux 剪贴板后端：auto | wayland | x11
+```
+
+面板分两级：第一级按命名空间分组（`blue`、`shell`、`agent-loop`、`web-search-deepseek:` 等宿主段在内），Enter 进入第二级逐行调整，`Enter`/`Space` 步进预设值、每次改动即落盘；`blue.theme` 实时生效并成为启动默认（`/theme` 仍是会话级切换，见[主题](/guide/theme)），折叠默认与 transcript 数值项的改动同样立即作用于当前会话（Ctrl-O 的全局展开状态优先）。第一级末行可在 `$EDITOR` 里打开整份 settings.yaml。
+
 ### 改完怎么验证
 
 ```sh
@@ -144,7 +169,7 @@ settings.yaml 的效果则直接在界面里看：`/model` 面板列出各路由
 
 ## 主题
 
-`/theme dark|light|auto` 一键切换，`/theme custom <path>` 挂载自定义 JSON 调色板——热切换不丢输入草稿。完整语义 token 表与 custom 文件格式见[主题](/guide/theme)。
+`/theme dark|light|auto` 一键切换，`/theme custom <path>` 挂载自定义 JSON 调色板——热切换不丢输入草稿。`/theme` 是会话级切换；持久默认主题用 `/settings` 面板或 settings.yaml 的 `blue.theme` 设置（启动时应用）。完整语义 token 表与 custom 文件格式见[主题](/guide/theme)。
 
 ## 更多配置面
 
