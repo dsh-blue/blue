@@ -24,6 +24,9 @@
 | [blue-plugin-validation.md](./blue-plugin-validation.md) | F6 外部插件验证、独立 fixture 与生态审计门禁 |
 | [blue-surface-migration-matrix.md](./blue-surface-migration-matrix.md) | F5 status、dock、command、tool、theme、editor、transcript 迁移矩阵与删除条件 |
 | [blue-frontend-runtime-task-checklist.md](./blue-frontend-runtime-task-checklist.md) | F3/F4/F5/F6 可执行开发任务、验收门禁与完成定义 |
+| [blue-frontend-runtime-migration-checklist.md](./blue-frontend-runtime-migration-checklist.md) | C0-C7 完整 frontend-runtime cutover 执行清单与人工验收门禁 |
+| [blue-frontend-runtime-cutover-spec.md](./blue-frontend-runtime-cutover-spec.md) | rc.8 parity、发布边界、legacy deletion 与 C3 vertical-slice 规格 |
+| [blue-runtime-cutover-ledger.md](./blue-runtime-cutover-ledger.md) | frozen refs、surface parity、删除条件和最终证据状态 |
 
 F2 兼容适配层的实现位于 [`packages/harness-adapter`](../packages/harness-adapter)，按 session、projection、action、model 和 question/approval 能力拆分。
 
