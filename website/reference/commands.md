@@ -35,7 +35,7 @@
 
 ## 会话与模型
 
-- **`/resume <session-id>`** —— 不带参数返回 `usage: /resume <session-id>`。也可以用 `/sessions` 从 lineage 树里挑（按 `parentSession` 展开、兄弟节点按创建时间降序、当前会话标 `← current`；列表按当前工作目录圈定，每行显示会话标题，**直接输入即过滤**——`Esc` 先清过滤词、再按一次取消）。
+- **`/resume <session-id>`** —— 不带参数返回 `usage: /resume <session-id>`。也可以用 `/sessions` 从 lineage 树里挑（按 `parentSession` 组织、兄弟节点按创建时间降序、当前会话标 `← current`；当前会话的祖先路径自动展开且不带出旁支，其他分支用 **Space 切换展开/折叠**）。列表按当前工作目录圈定，每行显示会话标题，**直接输入即过滤**且能搜到折叠节点——`Esc` 先清过滤词、再按一次取消。
 - **`/fork`** —— agent 非 idle（正在运行）时返回 `cannot fork while the agent is running`。
 - **`/rewind`** —— 单层列出当前会话的直接用户回合；选择一个回合会从该完整回合之前创建普通子 session。父会话不截断、不删除，仍可从 `/sessions` 恢复；agent 运行时拒绝。
 - **`/model` / `/effort`** —— 无参数分别打开模型选择面板（含 footer 的思考力度 segment 控件）与横向力度选择器；面板内 `←` `→` 步进 segment，**`Alt+S` 以"仅本会话"确认**——下一步路由立即切换、不写回持久默认。带参数直接切换并持久化为新默认。免开面板的快路：**`Alt+M`** 在当前 provider 的模型列表里逐个切换（仅本会话，草稿保留；见[键位参考](/reference/keys)）。

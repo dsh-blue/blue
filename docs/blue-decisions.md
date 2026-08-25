@@ -468,4 +468,4 @@
 - **背景**：dsh session 是 append-only 日志；公开创建能力只允许 `agents.create({ seed, meta })`，其中 seed 必须是连续且 turn/step/tool-call 全闭合的前缀。persistence 没有 truncate/undo 原语。把 Blue 私自改盘或 monkey-patch Session 会破坏重放、投影和第三方插件；把多 session 分支冒充 pi 的单 session event tree 也会形成错误产品承诺。
 - **决策**：职责分开。`/rewind` 只显示当前 session 的直接用户回合，选择后从该回合的 `turn/start` 前创建普通子 session；父日志不改、创建失败不切换。`/sessions` 只用标准 header 的 `parentSession`/`createdAt` 构造可搜索 lineage 树，孤儿与循环数据提升为根节点。它表达 session 间谱系，不提供单 session event cursor。
 - **兼容边界**：interaction 只新增 Blue 命名空间事件 `'blue/request-rewind'(sessionId, boundarySeq)`；app 在既有串行 switch 队列中校验 session id、idle 状态与完整 seed，再走 `agents.create` 和既有 `blue/session-changed` commit point。dsh core API、事件词表、持久化格式和第三方插件生命周期均不变。
-- **UX**：rewind 面板默认最近回合，↑↓/Enter/Esc 与共享选择器一致，标题明确 `creates a branch`；sessions 保留标题批读、cwd 作用域、输入过滤、`← current` 和 id 直恢复制式，在行首增加 `├─`/`└─` 层级。
+- **UX**：rewind 面板默认最近回合，↑↓/Enter/Esc 与共享选择器一致，标题明确 `creates a branch`，成功切换后的 `blue/session-changed` 清掉创建中 notice；sessions 保留标题批读、cwd 作用域、输入过滤、`← current` 和 id 直恢复制式。当前 session 的祖先路径用 `▿` 自动展开但不带出各级旁支，其余分支以 `▸` 折叠、Space 切换为 `▾` 完整展开；标题明确提示按键，搜索临时遍历完整树以命中折叠节点。

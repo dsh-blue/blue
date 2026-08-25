@@ -62,7 +62,7 @@ import { registerInitCommand } from './session-init.ts'
 import { registerSettingsCommand } from './settings-command.ts'
 import { registerSkillsCommand } from './skills-command.ts'
 import { MAX_LIST_VISIBLE, SelectListPanel, type SelectRow } from './select-list.ts'
-import { flattenSessionTree } from './session-tree.ts'
+import { createSessionTree } from './session-tree.ts'
 import { CURRENT_MARK } from './symbols.ts'
 import { registerThemeCommand } from './theme-switch.ts'
 import { registerToolsCommands } from './tools-commands.ts'
@@ -185,14 +185,10 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
     const currentId = ctx.get('blueSession')?.current?.id
     const titleById = new Map<string, string>()
+    const tree = createSessionTree(sorted, titleById, currentId === undefined ? undefined : String(currentId), formatDate)
     const loadingPages = new Set<number>()
     const loadedPages = new Set<number>()
-    const buildRows = (): SelectRow[] => flattenSessionTree(
-      sorted,
-      titleById,
-      currentId === undefined ? undefined : String(currentId),
-      formatDate,
-    ).map(row => ({
+    const buildRows = (): SelectRow[] => tree.rows().map(row => ({
       value: row.value,
       label: row.label,
       ...(row.description === undefined ? {} : { description: row.description }),
@@ -222,7 +218,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       components: display.components,
       rows: buildRows(),
       title: 'Sessions',
-      titleHint: '· esc cancel · ↵ resume',
+      titleHint: '· space toggle branch · esc cancel · ↵ resume',
       filter: true,
       onCursorChanged: cursor => {
         const query = ctx.get('sessionQuery')
@@ -230,6 +226,11 @@ export function apply(ctx: Context, config: Config = {}): void {
         const page = Math.floor(cursor / MAX_LIST_VISIBLE)
         void loadPage(page, query)
         if (cursor % MAX_LIST_VISIBLE >= Math.floor(MAX_LIST_VISIBLE / 2)) void loadPage(page + 1, query)
+      },
+      onToggle: row => {
+        tree.toggle(row.value)
+        list.setRows(buildRows())
+        display.screen.requestRender()
       },
       onSelect: (row) => {
         clearLoadingNotice()
