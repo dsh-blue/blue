@@ -25,7 +25,8 @@ are out of scope; PR #36 is superseded by this cutover.
 The cutover merge is `02abd886995598ad7706752a59f45a16c43026b5`; the follow-up
 docs index commit is `9822f070e0a923260ec5bc687cd626189a5a3b76`. The final
 worktree is `/home/x/dev/blue-runtime-cutover` on
-`p2/frontend-runtime-cutover`.
+`p2/frontend-runtime-cutover`; evidence and merge-residual fixes are in
+`4819f91`.
 
 ## Behavior Migration
 
