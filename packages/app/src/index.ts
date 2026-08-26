@@ -158,6 +158,11 @@ interface SessionCatalogSource {
   }>
 }
 
+/** Optional official control surface for continuable subagents. */
+interface SubagentControlSource {
+  interrupt(targetSessionId: SessionId, authority: { readonly kind: 'ancestor', readonly agent: Agent }): void
+}
+
 /** Official command registry face consumed only inside the app boundary. */
 interface SessionCommandSource {
   list(agent: unknown): readonly { readonly name: string, readonly description?: string, readonly input?: { readonly hint?: string } }[]
@@ -369,6 +374,64 @@ export function apply(ctx: Context, config: Config): void {
     const value = snapshot()
     for (const listener of sessionListeners) listener(value)
   }
+  /** Live subagent descendants whose durable lineage starts at `root`. */
+  const descendantsOf = (root: Agent): readonly Agent[] => {
+    const lineage = new Set([String(root.id)])
+    const remaining = new Set(ctx.agents.list().filter(candidate => candidate !== root))
+    const descendants: Agent[] = []
+    let found = true
+    while (found) {
+      found = false
+      for (const candidate of remaining) {
+        const header = candidate.session.header
+        if (header.origin !== 'subagent' || header.parentSession === undefined || !lineage.has(String(header.parentSession))) continue
+        remaining.delete(candidate)
+        lineage.add(String(candidate.id))
+        descendants.push(candidate)
+        found = true
+      }
+    }
+    return descendants
+  }
+  /** Interrupt the current request and any detached continuable descendants. */
+  const interruptActive = (active: Agent): BlueResult => {
+    let interrupted = false
+    if (active.status === 'running') {
+      requests.interrupt()
+      active.cancel({ kind: 'user' })
+      interrupted = true
+    }
+    const descendants = descendantsOf(active).filter(candidate => candidate.status === 'running')
+    const subagents = ctx.get('subagents') as unknown as SubagentControlSource | undefined
+    if (descendants.length > 0 && subagents === undefined) {
+      return { ok: false, code: 'BLUE_CAPABILITY_ABSENT', message: 'Subagent interruption is unavailable' }
+    }
+    let controlError: unknown
+    for (const descendant of descendants) {
+      try {
+        subagents!.interrupt(descendant.id, { kind: 'ancestor', agent: active })
+        interrupted = true
+      } catch (error) {
+        controlError ??= error
+      }
+    }
+    if (controlError !== undefined) {
+      return { ok: false, code: 'BLUE_ACTION_REJECTED', message: describe(controlError) }
+    }
+    return interrupted
+      ? success(undefined)
+      : { ok: false, code: 'BLUE_ACTION_REJECTED', message: 'No active request or running subagent' }
+  }
+  let queueChangeScheduled = false
+  /** Publish one coalesced queue notification after the host mutation settles. */
+  const scheduleQueueChanged = (agent: Agent): void => {
+    if (agent !== session.current || queueChangeScheduled) return
+    queueChangeScheduled = true
+    queueMicrotask(() => {
+      queueChangeScheduled = false
+      if (agent === session.current) ctx.emit('blue/queue-changed')
+    })
+  }
   const sessionReader: BlueSessionReader = {
     current: snapshot,
     subscribe(listener): BlueRegistration {
@@ -388,10 +451,7 @@ export function apply(ctx: Context, config: Config): void {
       const active = session.current
       if (active === null) return unavailable()
       if (action.kind === 'interrupt') {
-        if (active.status !== 'running') return { ok: false, code: 'BLUE_ACTION_REJECTED', message: 'The active session is not running' }
-        requests.interrupt()
-        active.cancel({ kind: 'user' })
-        return success(undefined)
+        return interruptActive(active)
       }
       const message = createUserMessage({ content: [{ type: 'text', text: action.text }], source: { kind: 'user' } })
       if (action.kind === 'followup') active.followup(message)
@@ -477,12 +537,7 @@ export function apply(ctx: Context, config: Config): void {
     interrupt() {
       const active = session.current
       if (active === null) return unavailable()
-      if (active.status !== 'running') {
-        return { ok: false, code: 'BLUE_ACTION_REJECTED', message: 'The active session is not running' }
-      }
-      requests.interrupt()
-      active.cancel({ kind: 'user' })
-      return success(undefined)
+      return interruptActive(active)
     },
     queued() {
       const active = session.current
@@ -492,17 +547,6 @@ export function apply(ctx: Context, config: Config): void {
         ...active.inbox.nextStep.map(message => ({ id: String(message.id), target: 'step' as const, text: messageText(message) })),
       ]
       return Object.freeze(rows)
-    },
-    recallQueued() {
-      const active = session.current
-      if (active === null) return unavailable()
-      const latest = active.inbox.nextStep.at(-1) ?? active.inbox.nextTurn.at(-1)
-      if (latest === undefined) return { ok: false, code: 'BLUE_ACTION_REJECTED', message: 'No queued message is available' }
-      const text = messageText(latest)
-      if (text.length === 0) return { ok: false, code: 'BLUE_ACTION_REJECTED', message: 'The queued message has no text' }
-      if (!active.inbox.remove(latest.id)) return { ok: false, code: 'BLUE_ACTION_REJECTED', message: 'The queued message is no longer available' }
-      publishSession()
-      return success(text)
     },
     async flush() {
       const active = session.current
@@ -752,8 +796,8 @@ export function apply(ctx: Context, config: Config): void {
   ctx.on('agent/status', payload => {
     if (payload.agent === session.current) publishSession()
   })
-  const inboxChanged = (payload: { readonly agent: unknown }): void => {
-    if (payload.agent === session.current) publishSession()
+  const inboxChanged = (payload: { readonly agent: Agent }): void => {
+    scheduleQueueChanged(payload.agent)
   }
   ctx.on('agent/inbox/inserted', inboxChanged)
   ctx.on('agent/inbox/claimed', inboxChanged)

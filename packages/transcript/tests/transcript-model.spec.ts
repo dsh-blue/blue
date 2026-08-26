@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { BlueComponent, BlueScreen, BlueSemanticColors } from '@dsh-blue/blue-core'
 import type { TranscriptEntryModel, TranscriptModel } from '@dsh-blue/blue-frontend'
 import { appendTranscriptView, createTranscriptModel, TRANSCRIPT_MODEL_WINDOW, TranscriptModelComponent, TranscriptModelService, type TranscriptModelRenderer } from '../src/transcript-model.ts'
 import { DEFAULT_TRANSCRIPT_PRESENTATION, TranscriptPresentationPolicy } from '../src/presentation-policy.ts'
+import { setThinkingTimers } from '../src/thinking.ts'
 import { fakeBlueComponents } from './helpers.ts'
 import { COLORS } from './status-fakes.ts'
 
@@ -49,6 +50,10 @@ function renderer(
     ...(presentation === undefined ? {} : { presentation }),
   }
 }
+
+afterEach(() => {
+  setThinkingTimers(undefined)
+})
 
 describe('TranscriptModelService', () => {
   it('mounts dynamic entries and refreshes plain rows', () => { const ctx = new Context(); const f = fixture(); const service = new TranscriptModelService(ctx, f.screen); let current = model('one'); const dispose = service.register(() => current); const component = f.children[0] as TranscriptModelComponent; expect(component.render(20)).toEqual(['entry']); current = model('one', [{ kind: 'fields', fields: [{ label: 'a', value: 'b' }] }]); service.refresh('one'); expect((f.children[0] as TranscriptModelComponent).render(20)).toEqual(['a: b']); expect(service.list()).toHaveLength(1); service.refresh('missing'); dispose(); dispose(); expect(component.render(20)).toEqual([]); service.refresh('one') })
@@ -111,11 +116,39 @@ describe('TranscriptModelService', () => {
     expect(component.render(80)).toEqual([])
   })
 
-  it('does not retain aggregate rows while a model is streaming', () => {
-    const current = createTranscriptModel('streaming', semanticEntries(), true)
+  it('reuses aggregate rows for one streaming model identity and rerenders a replacement', () => {
+    let current = createTranscriptModel('streaming', semanticEntries(), true)
     const component = new TranscriptModelComponent(() => current, renderer())
     const first = component.render(80)
-    expect(component.render(80)).not.toBe(first)
+    expect(component.render(80)).toBe(first)
+    current = appendTranscriptView(current, { kind: 'text', text: 'fresh stream data' }, true)
+    const next = component.render(80)
+    expect(next).not.toBe(first)
+    expect(next.at(-1)).toContain('fresh stream data')
+    component.dispose()
+  })
+
+  it('invalidates streaming aggregate rows when a thinking spinner advances', () => {
+    let tick: (() => void) | undefined
+    setThinkingTimers({
+      setInterval: (callback) => {
+        tick = callback
+        return 1 as unknown as ReturnType<typeof setInterval>
+      },
+      clearInterval: () => {},
+    })
+    const requestRender = vi.fn()
+    const current = createTranscriptModel('thinking-stream', [{
+      kind: 'transcript-thinking', id: 'thinking-stream', seq: 1, turn: 1, step: 0, text: 'live', streaming: true,
+    }], true)
+    const component = new TranscriptModelComponent(() => current, renderer(requestRender))
+    const first = component.render(80)
+
+    tick?.()
+    const next = component.render(80)
+    expect(requestRender).toHaveBeenCalledOnce()
+    expect(next).not.toBe(first)
+    expect(next.join('\n')).toContain('⠙')
     component.dispose()
   })
 

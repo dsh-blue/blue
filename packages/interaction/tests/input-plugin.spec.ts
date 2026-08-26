@@ -136,6 +136,7 @@ describe('blue-input plugin', () => {
     ctx.emit('blue/transcript-content-changed', screen.contentChanged())
     expect(hint.render(80)).toEqual(['~new messages available · press End to follow~'])
 
+    type(editor, 'draft')
     expect(screen.sendContentInput('\x1b[5~')).toBe(true)
     expect(screen.sendContentInput('\x1b[6~')).toBe(true)
     expect(screen.sendContentInput(KEY.up)).toBe(false)
@@ -144,8 +145,6 @@ describe('blue-input plugin', () => {
       { direction: 'up', amount: 20 },
       { direction: 'down', amount: 20 },
     ])
-
-    type(editor, 'draft')
     expect(screen.sendContentInput('\x1b[F')).toBe(false)
     editor.setText('')
     expect(screen.sendContentInput('\x1b[F')).toBe(true)
@@ -982,78 +981,15 @@ describe('blue-input plugin', () => {
     })
   })
 
-  describe('queued-message recall (pane-queue enhancement)', () => {
-    it('leaves Up to the editor history when pane-queue is not loaded', async () => {
+  describe('queued-message pane key ownership', () => {
+    it('leaves Up/Down to editor history even while queued messages are visible', async () => {
       const inbox = fakeInbox({ nextTurn: [queued('queued draft')] })
-      const { editor, screen } = await mount({ inbox })
-      screen.contentScrollResult = true
+      const { ctx, editor } = await mount({ inbox })
+      await ctx.plugin(paneQueuePlugin)
       expect(editor.onKey?.(KEY.up)).toBe(false)
+      expect(editor.onKey?.(KEY.down)).toBe(false)
       expect(inbox.remove).not.toHaveBeenCalled()
-      expect(screen.contentScrolls).toEqual([])
-    })
-
-    it('recalls the latest queued message into an empty buffer on Up', async () => {
-      const first = queued('first')
-      const latest = queued('latest')
-      const inbox = fakeInbox({ nextTurn: [first, latest] })
-      const { ctx, editor } = await mount({ inbox })
-      await ctx.plugin(paneQueuePlugin)
-      expect(editor.onKey?.(KEY.up)).toBe(true)
-      expect(inbox.remove).toHaveBeenCalledWith(latest.id)
-      expect(editor.getText()).toBe('latest')
-    })
-
-    it('prefers pending steering over queued turns as the fresher intent', async () => {
-      const steering = queued('steer me')
-      const inbox = fakeInbox({ nextTurn: [queued('a turn')], nextStep: [steering] })
-      const { ctx, editor } = await mount({ inbox })
-      await ctx.plugin(paneQueuePlugin)
-      expect(editor.onKey?.(KEY.up)).toBe(true)
-      expect(inbox.remove).toHaveBeenCalledWith(steering.id)
-      expect(editor.getText()).toBe('steer me')
-    })
-
-    it('passes Up through when the buffer is not empty', async () => {
-      const inbox = fakeInbox({ nextTurn: [queued('queued')] })
-      const { ctx, editor } = await mount({ inbox })
-      await ctx.plugin(paneQueuePlugin)
-      type(editor, 'draft')
-      expect(editor.onKey?.(KEY.up)).toBe(false)
-      expect(inbox.remove).not.toHaveBeenCalled()
-      expect(editor.getText()).toBe('draft')
-    })
-
-    it('passes Up through when nothing is pending', async () => {
-      const inbox = fakeInbox()
-      const { ctx, editor } = await mount({ inbox })
-      await ctx.plugin(paneQueuePlugin)
-      expect(editor.onKey?.(KEY.up)).toBe(false)
-      expect(inbox.remove).not.toHaveBeenCalled()
-    })
-
-    it('passes Up through without an attached session', async () => {
-      const { ctx, editor } = await mount({ withAgent: false })
-      await ctx.plugin(paneQueuePlugin)
-      expect(editor.onKey?.(KEY.up)).toBe(false)
-    })
-
-    it('leaves the editor alone when the removal loses the race with a claim', async () => {
-      const pending = queued('claimed already')
-      const inbox = fakeInbox({ nextTurn: [pending], remove: () => false })
-      const { ctx, editor } = await mount({ inbox })
-      await ctx.plugin(paneQueuePlugin)
-      expect(editor.onKey?.(KEY.up)).toBe(false)
-      expect(inbox.remove).toHaveBeenCalledWith(pending.id)
       expect(editor.getText()).toBe('')
-    })
-
-    it('ignores a queued message without visible text', async () => {
-      const empty = { ...queued(''), content: [] } as UserMessage
-      const inbox = fakeInbox({ nextTurn: [empty] })
-      const { ctx, editor } = await mount({ inbox })
-      await ctx.plugin(paneQueuePlugin)
-      expect(editor.onKey?.(KEY.up)).toBe(false)
-      expect(inbox.remove).not.toHaveBeenCalled()
     })
   })
 
@@ -1099,14 +1035,21 @@ describe('blue-input plugin', () => {
       expect(command).not.toHaveBeenCalled()
     })
 
-    it('scrolls the pane on Up and Down with an empty buffer', async () => {
-      const { ctx, editor } = await mount()
+    it('keeps arrows on editor history and routes page keys and wheel to the pane', async () => {
+      const { ctx, editor, screen } = await mount()
       const command = vi.fn()
       ctx.on('blue/btw-command', command)
       ctx.emit('blue/editor-connected-above', true)
-      expect(editor.onKey?.(KEY.up)).toBe(true)
-      expect(editor.onKey?.(KEY.down)).toBe(true)
-      expect(command.mock.calls).toEqual([['scroll-up'], ['scroll-down']])
+      expect(editor.onKey?.(KEY.up)).toBe(false)
+      expect(editor.onKey?.(KEY.down)).toBe(false)
+      expect(screen.sendContentInput('\x1b[5~')).toBe(true)
+      expect(screen.sendContentInput('\x1b[6~')).toBe(true)
+      expect(screen.sendContentInput('\x1b[<64;1;1M')).toBe(true)
+      expect(command.mock.calls).toEqual([
+        ['scroll-up', undefined, 20],
+        ['scroll-down', undefined, 20],
+        ['scroll-up', undefined, 3],
+      ])
     })
 
     it('passes arrows through to the editor when the pane is up but the buffer is not empty', async () => {
@@ -1119,14 +1062,15 @@ describe('blue-input plugin', () => {
       expect(command).not.toHaveBeenCalled()
     })
 
-    it('leaves the queue recall in charge of Up when no pane is connected', async () => {
+    it('does not let the queue pane take Up when no BTW pane is connected', async () => {
       const inbox = fakeInbox({ nextTurn: [queued('queued draft')] })
       const { ctx, editor } = await mount({ inbox })
       await ctx.plugin(paneQueuePlugin)
       const command = vi.fn()
       ctx.on('blue/btw-command', command)
-      expect(editor.onKey?.(KEY.up)).toBe(true)
-      expect(editor.getText()).toBe('queued draft')
+      expect(editor.onKey?.(KEY.up)).toBe(false)
+      expect(editor.getText()).toBe('')
+      expect(inbox.remove).not.toHaveBeenCalled()
       expect(command).not.toHaveBeenCalled()
     })
 

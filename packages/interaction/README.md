@@ -25,7 +25,7 @@ Readable export uses the official `blueConversation` projection after flushing a
 ## Optional Subpaths
 
 - `./editor-plus`: shell mode and completion.
-- `./pane-queue`: queued-message dock model and empty-editor recall.
+- `./pane-queue`: queued-message dock model with immediate inbox-change refresh.
 - `./mode-status`: renderer-neutral footer status model.
 - `./attachments`: bounded filesystem image store.
 - `./paste-image`: native clipboard image/file ingestion.

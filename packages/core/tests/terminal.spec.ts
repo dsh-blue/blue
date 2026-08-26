@@ -428,11 +428,15 @@ describe('alternate-screen runtime', () => {
     expect(tail.at(-1)).toContain('dock-row')
     expect(tail[0]).toContain('row-11')
 
+    const fullRedraws = runtime.tui.fullRedraws
+    const outputAtScroll = terminal.output.length
     terminal.sendInput('\x1b[<64;1;1M')
     await waitForRender()
     const scrolled = await terminal.screen()
     expect(scrolled.at(-1)).toContain('dock-row')
     expect(scrolled[0]).toContain('row-8')
+    expect(runtime.tui.fullRedraws).toBe(fullRedraws)
+    expect(terminal.output.slice(outputAtScroll)).not.toContain('\x1b[2J')
     expect(runtime.contentChanged()).toBe(true)
 
     runtime.followContent()
@@ -441,6 +445,31 @@ describe('alternate-screen runtime', () => {
     await runtime.stop()
     expect(await terminal.bufferType()).toBe('normal')
     expect(terminal.output).toContain('\x1b[?1049l')
+    terminal.dispose()
+  })
+
+  it('reuses the clamped content frame while child row arrays stay stable', async () => {
+    const terminal = new AltScreenTerminal(40, 10)
+    const overflows: FrameOverflowEntry[] = []
+    const rows = ['x'.repeat(50)]
+    const runtime = await startBlueTerminal(
+      terminal,
+      noProbe,
+      undefined,
+      { record: entry => overflows.push(entry) },
+      'alternate',
+    )
+    runtime.addChild({ render: () => rows, invalidate: () => {} })
+    runtime.requestRender(true)
+    await waitForRender()
+    const scanned = overflows.length
+    expect(scanned).toBeGreaterThan(0)
+
+    runtime.requestRender()
+    await waitForRender()
+    expect(overflows).toHaveLength(scanned)
+
+    await runtime.stop()
     terminal.dispose()
   })
 
@@ -458,10 +487,12 @@ describe('alternate-screen runtime', () => {
     runtime.setFocus(panel)
     runtime.setContentScrollHandler(() => false)
 
+    terminal.sendInput('\x1b[A')
+    terminal.sendInput('\x1b[B')
     terminal.sendInput('\x1b[<65;1;1M')
     terminal.sendInput('\x1b[6~')
 
-    expect(received).toEqual(['\x1b[B', '\x1b[6~'])
+    expect(received).toEqual(['\x1b[A', '\x1b[B', '\x1b[B', '\x1b[6~'])
     await runtime.stop()
   })
 

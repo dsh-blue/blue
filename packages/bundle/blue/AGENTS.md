@@ -24,7 +24,7 @@ The all-prompts row alone is inert from a session's second message on (D41): `ds
 
 ## Dock order discipline
 
-Sibling rows mount concurrently. Activity/todo/agents explicitly inject `blueComponents` plus `blueSessionFacts`; queue injects components plus app reader/actions; BTW injects components plus app actions. Their row-level dependencies and `DockModel` priority/id ordering pin activity → queue → todo → btw → agents, with the interaction editor last.
+Sibling rows mount concurrently. Activity/todo/agents explicitly inject `blueComponents` plus `blueSessionFacts`; queue injects components plus app reader/actions and refreshes from the narrow app-owned queue-change notification; BTW injects components plus app actions. Their row-level dependencies and `DockModel` priority/id ordering pin activity → queue → todo → btw → agents, with the interaction editor last. Queue never claims Up/Down from editor history.
 
 ## Thin-host migration (S28, D37)
 

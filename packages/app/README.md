@@ -10,7 +10,7 @@ The main entry (`blue-app`) creates or resumes the Harness Agent, but keeps the 
 
 - `blueSessionReader` publishes immutable current-session snapshots and accepts the basic follow-up, steer, and interrupt actions defined by `@dsh-blue/blue-api`.
 - `blueSessionProjections` reads and subscribes to official current-session projection values, including direct child-session values, without exposing a Session handle.
-- `blueSessionActions` owns richer interaction operations such as model and mode changes, command execution, queue recall, rewind candidates, presets, skills, tools, session details, and disposable side sessions.
+- `blueSessionActions` owns richer interaction operations such as model and mode changes, command execution, queue projection, rewind candidates, presets, skills, tools, session details, and disposable side sessions. Interrupt requests also stop live continuable descendants of the current Agent.
 
 Create, resume, fork, rewind, and new-session requests are serialized through one switch queue. A switch creates or resumes the replacement first, disposes the previous Agent, installs the new internal binding, and only then publishes the next reader snapshot. Failures leave the current session intact and report to stderr. A startup task is submitted as the first ordinary user message.
 

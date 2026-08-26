@@ -20,7 +20,7 @@ Module-level replacements are allowed only for explicit test/system seams: fetch
 
 `EditorModelService` maps the current renderer editor into readonly `EditorModel` state and structured `editor.set`, `editor.submit`, and `editor.abort` actions. Third-party consumers never receive a `BlueEditor`.
 
-`blue-input` submits transformed blocks through `blueSessionActions.followup()` or `.steer()`, stores the stable message receipt for safe retraction, recalls queued text through the action service, and derives busy/session state from `blueSessionReader`. Escape and Ctrl-C preserve their distinct retraction/interruption behavior. Up/Down belong to editor history (or queue recall); transcript navigation is limited to raw wheel input, PageUp/PageDown, and End, except while BTW explicitly owns contextual Up/Down scrolling.
+`blue-input` submits transformed blocks through `blueSessionActions.followup()` or `.steer()`, stores the stable message receipt for safe retraction, and derives busy/session state from `blueSessionReader`. Escape and Ctrl-C preserve their distinct retraction/interruption behavior, including an idle parent with running continuable descendants. Up/Down always belong to editor history; raw wheel input and PageUp/PageDown scroll the transcript, or the BTW body while that pane is connected, and End resumes transcript tail-follow.
 
 `blue-editor-plus` layers shell mode and slash/`@`/`#` completion over the same editor host. The `fd`/`fdfind` detection result is cached in `InteractionStateService.fdProbe`; the replaceable probe function is test-only. Missing or failed executables use the bounded filesystem fallback.
 
@@ -47,7 +47,7 @@ Transcript tunables remain in this settings schema because interaction owns the 
 ## Optional Subpaths
 
 - `editor-plus`: shell/completion enhancement.
-- `pane-queue`: queue projection and recall action.
+- `pane-queue`: queue projection refreshed by the app-owned queue-change notification.
 - `mode-status`: `StatusModel` producer over app mode snapshots.
 - `attachments`: bounded filesystem `AttachmentStore`.
 - `paste-image`: platform clipboard ingestion and reversible submit transformation.

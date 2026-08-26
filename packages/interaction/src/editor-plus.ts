@@ -556,7 +556,7 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
   }
   editor.onKey = (data) => {
     // `blue-input`'s chain runs first: an open side-question pane or a
-    // non-empty draft owns Escape, and the queue recall owns Up.
+    // non-empty draft owns Escape; Up/Down continue to the editor history.
     if (previousOnKey?.(data) === true) return true
     // The kimi bash exit: Backspace or Escape on an empty `!` prompt
     // returns to prompt mode — the `!` is not in the buffer, so

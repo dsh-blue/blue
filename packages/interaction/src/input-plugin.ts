@@ -27,13 +27,10 @@
  * pi-tui Editor sees the sequence. The mounted editor and the submit router
  * are published through
  * `./editor-instance.ts` so `blue-editor-plus` can layer input modes and
- * autocomplete over the same component. When the `blue-pane-queue`
- * enhancement is loaded, an Up press with an empty buffer recalls the most
- * recently queued inbox message as the draft (gated on its keyless
- * `blue.queue.recall` action; the baseline leaves Up to the editor's
- * history). While the side-question pane is docked above the editor
+ * autocomplete over the same component. The `blue-pane-queue` enhancement
+ * shows pending messages without taking over editor history. While the side-question pane is docked above the editor
  * (`'blue/editor-connected-above'`), Esc closes it — the draft stays intact
- * — Up/Down with an empty buffer scroll it, and Enter submits the draft to
+ * — wheel and PageUp/PageDown scroll it contextually, and Enter submits the draft to
  * the side conversation instead of the main agent (refused with a notice
  * while the side agent is still answering, the draft restored). The
  * unsubmitted draft is mirrored
@@ -80,14 +77,11 @@ import {
   ACTION_CYCLE_MODEL,
   ACTION_EXTERNAL_EDITOR,
   ACTION_INTERRUPT,
-  ACTION_MOVE_DOWN,
-  ACTION_MOVE_UP,
   ACTION_STEER,
 } from './keys.ts'
 import { createModelListCache, cycleSessionModel } from './model-commands.ts'
 import { cycleMode } from './mode-commands.ts'
 import { openPermissionPanel } from './permission-panel.ts'
-import { ACTION_QUEUE_RECALL } from './pane-queue.ts'
 import { rewriteSkillTokens } from './skills-catalog.ts'
 import { filterSlashCommands } from './slash-filter.ts'
 
@@ -199,8 +193,8 @@ export function apply(ctx: Context): void {
   /**
    * Whether the side-question pane is docked above the editor (mirrors
    * `'blue/editor-connected-above'`). While true, Esc closes the pane,
-   * Up/Down scroll it, and Enter submits to it instead of clearing the
-   * draft, recalling the queue, or reaching the main agent.
+   * PageUp/PageDown or the wheel scroll it, and Enter submits to it instead
+   * of clearing the draft or reaching the main agent.
    */
   let connectedAbove = false
   /**
@@ -385,8 +379,8 @@ export function apply(ctx: Context): void {
    * written back inside the suspend window so the resumed full frame
    * already shows it. A nonzero exit (`:cq`) resolves `undefined` and the
    * draft stays untouched; a missing editor only flashes a notice. The
-   * mirrors re-sync explicitly (setText fires no onChange — the
-   * recallQueued precedent) so a theme-swap reload keeps the edited draft.
+   * mirrors re-sync explicitly because setText fires no onChange, so a
+   * theme-swap reload keeps the edited draft.
    */
   async function runExternalEditorFlow(): Promise<void> {
     const command = resolveExternalEditorCommand(process.env, currentBlueSettings(ctx).editorCommand)
@@ -419,27 +413,6 @@ export function apply(ctx: Context): void {
     }
   }
 
-  /**
-   * Recall the most recently queued inbox message into an empty editor:
-   * remove it from the inbox and make its text the draft. Steering
-   * (next-step) is preferred over queued turns as the fresher intent.
-   * @returns whether the recall consumed the key.
-   */
-  function recallQueued(): boolean {
-    // Only with an empty buffer — a drafted line keeps Up on history.
-    if (editor.getText().length > 0) return false
-    const recalled = ctx.blueSessionActions.recallQueued()
-    if (!recalled.ok) return false
-    editor.setText(recalled.value)
-    // Re-sync mirrors submitPrompt's caution about component-owned onChange
-    // timing; the recalled text is a draft, so the reload stash keeps it.
-    currentText = editor.getText()
-    draft.stashDraft(currentText)
-    refreshHint()
-    ctx.blueScreen.requestRender()
-    return true
-  }
-
   /** Clear the current draft, or interrupt the active main request. */
   function clearOrInterrupt(): boolean {
     if (editor.getText().length > 0) {
@@ -451,23 +424,27 @@ export function apply(ctx: Context): void {
       screen.requestRender()
       return true
     }
-    if (ctx.blueSessionReader.current()?.status !== 'running') return false
-    const candidate = retractionCandidate
-    if (candidate !== undefined
-      && ctx.get('blueRetractions')?.tryRetract(candidate.messageId) === true) {
-      candidate.rollback?.()
-      editor.removeLatestHistory?.(candidate.historyText)
-      draft.stashHistory(editor.getHistory())
-      editor.setText(candidate.editorText)
-      currentText = editor.getText()
-      draft.stashDraft(currentText)
-      retractionCandidate = undefined
-      refreshHint()
-      screen.requestRender()
-      return true
+    if (ctx.blueSessionReader.current()?.status === 'running') {
+      const candidate = retractionCandidate
+      if (candidate !== undefined
+        && ctx.get('blueRetractions')?.tryRetract(candidate.messageId) === true) {
+        candidate.rollback?.()
+        editor.removeLatestHistory?.(candidate.historyText)
+        draft.stashHistory(editor.getHistory())
+        editor.setText(candidate.editorText)
+        currentText = editor.getText()
+        draft.stashDraft(currentText)
+        retractionCandidate = undefined
+        refreshHint()
+        screen.requestRender()
+        return true
+      }
     }
     retractionCandidate = undefined
-    return ctx.blueSessionActions.interrupt().ok
+    const interrupted = ctx.blueSessionActions.interrupt()
+    if (!interrupted.ok) return false
+    setNotice('interrupt requested')
+    return true
   }
 
   /**
@@ -550,25 +527,6 @@ export function apply(ctx: Context): void {
       void cycleSessionModel(ctx, modelListCache)
       return true
     }
-    // Up/Down: with the side-question pane docked above and an empty buffer,
-    // the keys scroll the pane (kimi's canUseScrollKeys gate). The pane wins
-    // over the queue recall and the editor's history navigation, and the
-    // sequence is consumed even when the pane has nothing to scroll.
-    if (connectedAbove && editor.getText().length === 0) {
-      const isUp = keymap.matches(data, ACTION_MOVE_UP)
-      if (isUp || keymap.matches(data, ACTION_MOVE_DOWN)) {
-        ctx.emit('blue/btw-command', isUp ? 'scroll-up' : 'scroll-down')
-        return true
-      }
-    }
-    // Up: recall the latest queued message into an empty buffer when the
-    // pane-queue enhancement is loaded — its keyless contextual action is
-    // the enable signal, and the key matches through the existing move-up
-    // binding. The baseline leaves Up to the editor's history navigation.
-    if (keymap.matches(data, ACTION_MOVE_UP)
-      && keymap.list().some(action => action.id === ACTION_QUEUE_RECALL)) {
-      return recallQueued()
-    }
     return false
   }
 
@@ -618,8 +576,8 @@ export function apply(ctx: Context): void {
   })
   ctx.effect(() => () => sessionRegistration.dispose())
   // The side-question pane docks above the editor; its flag switches the
-  // editor's top corners to the spliced `├┤` and gates the Esc/arrow/Enter
-  // chain, and its busy flag refuses a submit while the side agent answers.
+  // editor's top corners to the spliced `├┤` and gates the Esc/Enter plus
+  // contextual page/wheel chain; its busy flag refuses a submit while the side agent answers.
   ctx.on('blue/editor-connected-above', (connected, busy) => {
     connectedAbove = connected
     btwBusy = busy === true
@@ -702,10 +660,14 @@ export function apply(ctx: Context): void {
       setContentScrollHandler?: (handler: ((data: string) => boolean) | undefined) => () => void
     }
     const dispose = screen.setContentScrollHandler?.(data => {
-      if (!editor.focused || connectedAbove) return false
+      if (!editor.focused) return false
       /* v8 ignore start -- exercised by the real PTY and mouse path */
       const wheel = wheelDirection(data)
       if (wheel !== undefined) {
+        if (connectedAbove) {
+          ctx.emit('blue/btw-command', wheel === 'up' ? 'scroll-up' : 'scroll-down', undefined, 3)
+          return true
+        }
         // The focused editor owns every wheel report, including the scroll
         // boundary. Consuming the boundary event prevents it from being
         // reinterpreted as editor history navigation; the AltScreen core
@@ -714,11 +676,17 @@ export function apply(ctx: Context): void {
         return true
       }
       /* v8 ignore stop */
-      if (editor.getText().length > 0) return false
       /* v8 ignore start -- exercised by the real PTY and mouse path */
       if (data === KEY_PAGE_UP || data === KEY_PAGE_DOWN) {
-        return ctx.blueScreen.scrollContent(data === KEY_PAGE_UP ? 'up' : 'down', Math.max(1, ctx.blueScreen.rows - 4))
+        const direction = data === KEY_PAGE_UP ? 'up' : 'down'
+        const amount = Math.max(1, ctx.blueScreen.rows - 4)
+        if (connectedAbove) {
+          ctx.emit('blue/btw-command', direction === 'up' ? 'scroll-up' : 'scroll-down', undefined, amount)
+          return true
+        }
+        return ctx.blueScreen.scrollContent(direction, amount)
       }
+      if (editor.getText().length > 0) return false
       if (data === KEY_END) {
         ctx.blueScreen.followContent()
         setNotice('')

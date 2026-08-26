@@ -319,7 +319,7 @@
       inject: [blueComponents, blueSessionFacts]
 
     # Queue pane: the attached agent's queued inbox messages, one row each,
-    # plus the keyless action gating the empty-editor Up recall in blue-input.
+    # refreshed after inbox mutations without taking editor-history keys.
     # Same blueComponents dock-order pin as the activity pane.
     - id: blue-pane-queue
       name: '@dsh-blue/blue-interaction/pane-queue'

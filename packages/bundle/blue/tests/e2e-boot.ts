@@ -595,7 +595,7 @@ export const apply = ctx => globalThis.__blueE2E.paneActivityApply(ctx)
     '- id: blue-pane-queue',
     `  name: ${fixture('blue-pane-queue.mjs', `
 export const name = 'blue-pane-queue'
-export const inject = ['blueScreen', 'blueTheme', 'blueKeymap', 'blueComponents', 'blueDockModels', 'blueSessionReader', 'blueSessionActions']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueDockModels', 'blueSessionReader', 'blueSessionActions']
 export const apply = ctx => globalThis.__blueE2E.paneQueueApply(ctx)
 `)}`,
     '  inject: [blueComponents, blueSessionReader, blueSessionActions]',

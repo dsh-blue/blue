@@ -12,6 +12,8 @@ Command-line startup (`src/startup.ts`): `[task]` positional, `--resume <id>`.
 
 The driver answers the payload-less `'blue/request-new'` and `'blue/request-fork'` events (fork: idle-guarded, seeded with the full event log plus `meta.{cwd,parentSession,seedLength}`), and `'blue/request-rewind'(sessionId, boundarySeq)`. Rewind rejects stale ids, non-idle agents, and prefixes with an open turn/step/tool call; the parent log is never mutated. All switches serialize on one queue and share the commit point: create/resume replacement → dispose old → assign internal current → publish the reader snapshot. No raw-session change event exists.
 
+Inbox mutations publish a coalesced `'blue/queue-changed'` notification instead of rebuilding the broad session snapshot, so the queue dock updates without invalidating unrelated transcript and editor state. `blueSessionActions.interrupt()` cancels the running current Agent and walks live `origin: 'subagent'` lineage through the official Agent registry; running continuable descendants are stopped through `ctx.subagents.interrupt()` with exact-ancestor authority, including when the current parent is already idle.
+
 ## Safe message retraction
 
 `src/retraction.ts` provides `blueRetractions.tryRetract(messageId)`: it matches the id to the current open main turn, rejects any assistant tool-call block or `tool/call`/`tool/result`, terminates the Blue lifecycle as `aborted/retracted`, emits `'blue/turn-retracted'`, and cancels with `keepInbox`. After the host `turn/end`, a microtask appends an empty interrupted `assistant/message` surface replacement over that turn's current nodes. The append-only audit remains, while `deriveMessages()` omits the withdrawn turn.

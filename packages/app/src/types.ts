@@ -200,12 +200,10 @@ export interface BlueSessionActions {
   followup(blocks: readonly BluePromptBlock[]): BlueResult<BluePromptReceipt>
   /** Submit structured prompt content at the next step boundary. */
   steer(blocks: readonly BluePromptBlock[]): BlueResult<BluePromptReceipt>
-  /** Interrupt the running current Agent. */
+  /** Interrupt the current request and any running continuable descendants. */
   interrupt(): BlueResult
   /** Project the current Agent's pending inbox without exposing it. */
   queued(): readonly BlueQueuedMessage[]
-  /** Remove and return the newest queued message, preferring next-step intent. */
-  recallQueued(): BlueResult<string>
   /** Flush the current session through the host persistence coordinator. */
   flush(): Promise<BlueResult>
   /** Project safe branch points from the current session, newest first. */
@@ -284,6 +282,8 @@ declare module '@deepseek-ai/cordis' {
   }
 
   interface Events {
+    /** The current Agent's pending inbox changed; emitted after the mutation. */
+    'blue/queue-changed'(): void
     /** A request lifecycle transition shared by transcript and activity projections. */
     'blue/request-state-changed'(lifecycle: BlueRequestLifecycle): void
     /** A frame/session operation was committed and stale event guards may advance. */

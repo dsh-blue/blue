@@ -25,7 +25,7 @@ Dialog 替换 editor slot，并复用 list、form、info、settings、question�
 ## 可选子路径
 
 - `./editor-plus`：shell mode 与 completion。
-- `./pane-queue`：排队消息 dock model 与空 editor recall。
+- `./pane-queue`：随 inbox 变化即时刷新的排队消息 dock model。
 - `./mode-status`：renderer-neutral footer status model。
 - `./attachments`：有界 filesystem image store。
 - `./paste-image`：原生 clipboard 图片/文件读取。

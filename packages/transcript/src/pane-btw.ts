@@ -5,11 +5,11 @@
  * posts the question as a follow-up, and renders the exchange from its
  * official projection. The pane is the kimi
  * btw-panel port (single-turn): a rounded top border with the in-border
- * title ` BTW ─ Esc close · ↑↓ scroll `, the question line in `roleUser`
+ * title ` BTW ─ Esc close · PgUp/PgDn or wheel `, the question line in `roleUser`
  * (`› question`), the answer rendered through the Markdown component as it
  * streams, a muted `thinking…` row until the side agent returns to idle,
  * and a tail-following body fitted to `max(3, floor(rows/3)) - 1` rows with
- * manual ↑/↓ scrolling — the kimi `fitBodyLines` mechanics (min-body-height
+ * manual PageUp/PageDown or wheel scrolling — the kimi `fitBodyLines` mechanics (min-body-height
  * ratchet, tail-follow reset on manual scroll, per-question scroll reset).
  * The pane fills the same connected frame as the input editor, whose top
  * corners splice to `├┤` while the pane is open: the pane emits
@@ -20,10 +20,9 @@
  * re-asserts it on `'blue/editor-slot-swapped'` when the editor returns.
  * The pane is a passive bottom child — it renders zero rows while closed
  * and never consumes keyboard input — so closing and scrolling live in
- * `blue-input`'s editor key chain, which routes Esc and ↑/↓ through the
- * `'blue/btw-command'` event while the splice is connected (the keymap
- * claims `escape`/`up`/`down` for the list surfaces, so the pane cannot
- * register its own keys).
+ * `blue-input`'s editor key chain, which routes Esc, wheel, and
+ * PageUp/PageDown through the `'blue/btw-command'` event while the splice is
+ * connected.
  *
  * `/btw` without input dismisses the panel and disposes the side agent; a
  * new question while one is open disposes the previous side agent first
@@ -141,17 +140,19 @@ class BtwPaneComponent {
   }
 
   /**
-   * Scroll the body by one row; returns whether the pane moved (kimi
+   * Scroll the body by a bounded row count; returns whether the pane moved (kimi
    * semantics — a scroll call with nothing to scroll is a no-op).
    * @param direction - the scroll direction.
+   * @param amount - requested row count; values below one become one.
    * @returns whether the viewport moved.
    */
-  scroll(direction: 'up' | 'down'): boolean {
+  scroll(direction: 'up' | 'down', amount = 1): boolean {
     if (this.state.maxScrollTop <= 0) return false
     const current = this.state.followTail ? this.state.maxScrollTop : this.state.scrollTop
+    const step = Math.max(1, Math.floor(amount))
     const next = direction === 'up'
-      ? Math.max(0, current - 1)
-      : Math.min(this.state.maxScrollTop, current + 1)
+      ? Math.max(0, current - step)
+      : Math.min(this.state.maxScrollTop, current + step)
     this.state.scrollTop = next
     this.state.followTail = next === this.state.maxScrollTop
     return true
@@ -170,7 +171,7 @@ class BtwPaneComponent {
     const body = this.fitBodyLines(this.renderBody(contentWidth))
     const lines = [topRule(safeWidth, {
       title: this.colors.primary(`${BOLD_OPEN} BTW ${BOLD_CLOSE}`),
-      hint: this.colors.textMuted(body.truncated ? 'Esc close · ↑↓ scroll ' : 'Esc close '),
+      hint: this.colors.textMuted(body.truncated ? 'Esc close · PgUp/PgDn or wheel ' : 'Esc close '),
       paint: this.colors.border,
     })]
     for (const line of body.lines) {
@@ -397,7 +398,7 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.blueDockModels.register(model, (_model, width) => pane.render(width)))
   // The editor key chain routes close/scroll/submit here while the pane is
   // open.
-  ctx.on('blue/btw-command', (command, text) => {
+  ctx.on('blue/btw-command', (command, text, amount) => {
     if (!state.open) return
     if (command === 'close') {
       void dismiss()
@@ -421,7 +422,7 @@ export function apply(ctx: Context): void {
       refreshDock()
       return
     }
-    if (pane.scroll(command === 'scroll-up' ? 'up' : 'down')) {
+    if (pane.scroll(command === 'scroll-up' ? 'up' : 'down', amount)) {
       refreshDock()
     }
   })

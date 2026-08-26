@@ -131,7 +131,7 @@ function visibleWidth(text: string): number {
  * fake width function, mirroring `topRule` itself.
  */
 function rule(truncated: boolean, width = 78): string {
-  const hint = truncated ? 'Esc close · ↑↓ scroll ' : 'Esc close '
+  const hint = truncated ? 'Esc close · PgUp/PgDn or wheel ' : 'Esc close '
   const composite = `\x1b[1m BTW \x1b[22m─ ${hint}`
   return `╭${composite}${'─'.repeat(Math.max(0, width - 2 - visibleWidth(composite)))}╮`
 }
@@ -407,6 +407,12 @@ describe('blue-pane-btw', () => {
     expect(lines[0]).toBe(rule(true))
     expect(lines[1]).toBe(bodyRow('line20'))
     expect(lines.at(-1)).toBe(bodyRow('thinking…'))
+
+    // Page-sized commands move several rows in one bounded step.
+    ctx.emit('blue/btw-command', 'scroll-up', undefined, 3)
+    expect(screen.paneLines()[1]).toBe(bodyRow('line17'))
+    ctx.emit('blue/btw-command', 'scroll-down', undefined, 3)
+    expect(screen.paneLines()[1]).toBe(bodyRow('line20'))
 
     // Scroll up one row: the viewport steps back and stops following.
     ctx.emit('blue/btw-command', 'scroll-up')

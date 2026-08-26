@@ -157,8 +157,7 @@ export class TranscriptModelComponent implements BlueComponent {
     const bounded = model.entries.slice(-TRANSCRIPT_MODEL_WINDOW)
     const policy = this.presentation()
     const rendered = this.renderedRows
-    if (model.streaming !== true
-      && rendered?.model === model
+    if (rendered?.model === model
       && rendered.width === width
       && rendered.expanded === this.expanded
       && rendered.policy === policy) return rendered.rows
@@ -171,9 +170,7 @@ export class TranscriptModelComponent implements BlueComponent {
     const rows = entries.flatMap(entry => isSemantic(entry)
       ? this.renderSemantic(entry, width, expandableTurns.has(entry.turn))
       : renderFrontendView(entry, width))
-    this.renderedRows = model.streaming === true
-      ? undefined
-      : { model, width, expanded: this.expanded, policy, rows }
+    this.renderedRows = { model, width, expanded: this.expanded, policy, rows }
     return rows
   }
 
@@ -252,7 +249,10 @@ export class TranscriptModelComponent implements BlueComponent {
       case 'transcript-thinking': {
         const component = new ThinkingComponent({
           kind: 'thinking', seq: entry.seq, turn: entry.turn, step: entry.step, text: entry.text, streaming: entry.streaming,
-        }, renderer.colors, renderer.components, renderer.requestRender)
+        }, renderer.colors, renderer.components, () => {
+          this.renderedRows = undefined
+          renderer.requestRender()
+        })
         return component
       }
       case 'transcript-tool': {

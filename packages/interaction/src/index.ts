@@ -8,7 +8,7 @@
  * request), and the interactive four-choice `approval/request` answerer
  * (`blue-approval`). The optional bash-mode and autocomplete enhancement
  * layer ships as the `./editor-plus` subpath plugin (`blue-editor-plus`),
- * and the queued-message pane with the empty-editor Up recall as the
+ * and the queued-message pane with app-owned live refresh as the
  * `./pane-queue` subpath plugin (`blue-pane-queue`). The session-title
  * terminal mirror (`blue-terminal-title`, the OSC 0 window title over the
  * upstream session-title fold), the consolidated `blue` settings namespace

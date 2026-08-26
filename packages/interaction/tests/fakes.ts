@@ -926,6 +926,7 @@ export function fakeBlueContext(options: { readonly display?: boolean; readonly 
     interrupt() {
       const agent = active()
       if (agent === undefined) return { ok: false as const, code: 'BLUE_SESSION_UNAVAILABLE' as const, message: 'No session' }
+      if (agent.status !== 'running') return { ok: false as const, code: 'BLUE_ACTION_REJECTED' as const, message: 'No active request' }
       agent.cancel({ kind: 'user' })
       return { ok: true as const, value: undefined }
     },
@@ -936,19 +937,6 @@ export function fakeBlueContext(options: { readonly display?: boolean; readonly 
         ...agent.inbox.nextTurn.map(message => ({ id: String(message.id), target: 'turn' as const, text: textOf(message) })),
         ...agent.inbox.nextStep.map(message => ({ id: String(message.id), target: 'step' as const, text: textOf(message) })),
       ]
-    },
-    recallQueued() {
-      const agent = active()
-      const latest = agent?.inbox.nextStep.at(-1) ?? agent?.inbox.nextTurn.at(-1)
-      if (agent === undefined || latest === undefined) {
-        return { ok: false as const, code: 'BLUE_ACTION_REJECTED' as const, message: 'No queued message' }
-      }
-      const text = textOf(latest)
-      if (text.length === 0 || !agent.inbox.remove(latest.id)) {
-        return { ok: false as const, code: 'BLUE_ACTION_REJECTED' as const, message: 'Queued message unavailable' }
-      }
-      publishSession()
-      return { ok: true as const, value: text }
     },
     async flush() {
       const agent = active()

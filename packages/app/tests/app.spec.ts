@@ -200,6 +200,8 @@ function bench(config: Config, options: {
         await resumeOptions.setup?.(recordingAgentCtx(recorded, handle.agent))
         return handle
       },
+      list: () => [...recorded.agents],
+      get: (id: string) => recorded.agents.find(agent => String(agent.id) === String(id)),
     } as never)
   }
   if (options.defaultModel !== false) {
@@ -394,7 +396,6 @@ describe('blue app driver', () => {
     expect(actions.steer([{ type: 'text', text: 'x' }])).toMatchObject({ code: 'BLUE_SESSION_UNAVAILABLE' })
     expect(actions.interrupt()).toMatchObject({ code: 'BLUE_SESSION_UNAVAILABLE' })
     expect(actions.queued()).toEqual([])
-    expect(actions.recallQueued()).toMatchObject({ code: 'BLUE_SESSION_UNAVAILABLE' })
     await expect(actions.flush()).resolves.toMatchObject({ code: 'BLUE_SESSION_UNAVAILABLE' })
     expect(actions.rewindCandidates()).toEqual([])
     expect(actions.commands()).toEqual([])
@@ -451,7 +452,6 @@ describe('blue app driver', () => {
     const inbox = agent.inbox as unknown as {
       nextTurn: unknown[]
       nextStep: unknown[]
-      remove: ReturnType<typeof vi.fn>
     }
     const events = agent.session.events as unknown as unknown[]
     events.splice(0)
@@ -495,19 +495,14 @@ describe('blue app driver', () => {
     expect(test.ctx.blueSessionReader.current()).toMatchObject({ status: 'running' })
     ;(agent as unknown as { status: string }).status = 'idle'
 
-    expect(test.ctx.blueSessionActions.recallQueued()).toMatchObject({ code: 'BLUE_ACTION_REJECTED' })
     inbox.nextTurn.push({ id: 'empty', content: [{ type: 'image' }] })
     expect(test.ctx.blueSessionActions.queued()).toEqual([{ id: 'empty', target: 'turn', text: '' }])
-    expect(test.ctx.blueSessionActions.recallQueued()).toMatchObject({ message: 'The queued message has no text' })
     inbox.nextTurn.splice(0, 1, { id: 'turn', content: [{ type: 'text', text: 'turn text' }] })
     inbox.nextStep.push({ id: 'step', content: [{ type: 'text', text: 'step text' }, { type: 'text', text: 'two' }] })
-    inbox.remove.mockReturnValueOnce(false).mockReturnValue(true)
     expect(test.ctx.blueSessionActions.queued()).toEqual([
       { id: 'turn', target: 'turn', text: 'turn text' },
       { id: 'step', target: 'step', text: 'step text\ntwo' },
     ])
-    expect(test.ctx.blueSessionActions.recallQueued()).toMatchObject({ message: 'The queued message is no longer available' })
-    expect(test.ctx.blueSessionActions.recallQueued()).toEqual({ ok: true, value: 'step text\ntwo' })
     await expect(test.ctx.blueSessionActions.flush()).resolves.toEqual({ ok: true, value: undefined })
     expect(flush).toHaveBeenCalledWith(agent.session)
 
@@ -576,15 +571,115 @@ describe('blue app driver', () => {
     plan.active = false
 
     const beforeChanges = test.changes.length
+    const queueChanges = vi.fn()
+    test.ctx.on('blue/queue-changed', queueChanges)
     test.ctx.emit('agent/status', { agent, status: 'idle' } as never)
     test.ctx.emit('agent/inbox/inserted', { agent } as never)
     test.ctx.emit('agent/inbox/claimed', { agent } as never)
     test.ctx.emit('agent/inbox/discarded', { agent } as never)
     test.ctx.emit('agent/inbox/inserted', { agent: {} } as never)
     test.ctx.emit('commands/change')
-    expect(test.changes.length).toBe(beforeChanges + 5)
+    expect(test.changes.length).toBe(beforeChanges + 2)
+    expect(queueChanges).not.toHaveBeenCalled()
+    await Promise.resolve()
+    expect(queueChanges).toHaveBeenCalledOnce()
+    expect(test.changes.length).toBe(beforeChanges + 2)
     test.ctx.emit('session/event', {}, { type: 'turn/start', data: { turn: 1 } } as never)
     expect(test.ctx.blueRetractions.tryRetract('missing')).toBe(false)
+    await test.ctx.fiber.dispose()
+  })
+
+  it('interrupts all running continuable descendants while the active parent is idle', async () => {
+    const interrupt = vi.fn()
+    const test = bench({}, {
+      setupContext(ctx) {
+        ctx.provide('subagents', { interrupt } as never)
+      },
+    })
+    await vi.waitFor(() => { expect(test.current()).not.toBeNull() })
+    const parent = test.current()!
+    // Insert the grandchild first so lineage discovery needs a second pass.
+    const grandchild = makeHandle('continuable-grandchild', test.recorded).agent
+    Object.assign(grandchild.session.header, {
+      origin: 'subagent',
+      parentSession: 'continuable-child',
+    })
+    ;(grandchild as unknown as { status: string }).status = 'running'
+    const child = makeHandle('continuable-child', test.recorded).agent
+    Object.assign(child.session.header, {
+      origin: 'subagent',
+      parentSession: parent.id,
+    })
+    ;(child as unknown as { status: string }).status = 'running'
+    const unrelated = makeHandle('unrelated', test.recorded).agent
+    Object.assign(unrelated.session.header, { origin: 'subagent', parentSession: 'another-parent' })
+    ;(unrelated as unknown as { status: string }).status = 'running'
+
+    expect(test.ctx.blueSessionActions.interrupt()).toEqual({ ok: true, value: undefined })
+    expect(test.recorded.cancels).toEqual([])
+    expect(interrupt).toHaveBeenCalledTimes(2)
+    expect(interrupt).toHaveBeenCalledWith(child.id, { kind: 'ancestor', agent: parent })
+    expect(interrupt).toHaveBeenCalledWith(grandchild.id, { kind: 'ancestor', agent: parent })
+
+    await test.ctx.fiber.dispose()
+  })
+
+  it('reports missing or rejected subagent interruption instead of claiming success', async () => {
+    const absent = bench({}, {})
+    await vi.waitFor(() => { expect(absent.current()).not.toBeNull() })
+    const absentParent = absent.current()!
+    const absentChild = makeHandle('uncontrolled-child', absent.recorded).agent
+    Object.assign(absentChild.session.header, { origin: 'subagent', parentSession: absentParent.id })
+    ;(absentChild as unknown as { status: string }).status = 'running'
+    expect(absent.ctx.blueSessionActions.interrupt()).toMatchObject({
+      code: 'BLUE_CAPABILITY_ABSENT',
+      message: 'Subagent interruption is unavailable',
+    })
+    await absent.ctx.fiber.dispose()
+
+    const interrupt = vi.fn((id: string) => {
+      if (id === 'rejected-child') throw new Error('control denied')
+    })
+    const rejected = bench({}, {
+      setupContext(ctx) {
+        ctx.provide('subagents', { interrupt } as never)
+      },
+    })
+    await vi.waitFor(() => { expect(rejected.current()).not.toBeNull() })
+    const rejectedParent = rejected.current()!
+    for (const id of ['rejected-child', 'accepted-child']) {
+      const child = makeHandle(id, rejected.recorded).agent
+      Object.assign(child.session.header, { origin: 'subagent', parentSession: rejectedParent.id })
+      ;(child as unknown as { status: string }).status = 'running'
+    }
+    expect(rejected.ctx.blueSessionActions.interrupt()).toMatchObject({
+      code: 'BLUE_ACTION_REJECTED',
+      message: 'control denied',
+    })
+    expect(interrupt).toHaveBeenCalledTimes(2)
+
+    await rejected.ctx.fiber.dispose()
+  })
+
+  it('drops a queued inbox notification after its session is replaced', async () => {
+    const test = bench({}, {})
+    await vi.waitFor(() => { expect(test.current()).not.toBeNull() })
+    const previous = test.current()!
+    const queueChanges = vi.fn()
+    test.ctx.on('blue/queue-changed', queueChanges)
+    let scheduled: VoidFunction | undefined
+    const microtask = vi.spyOn(globalThis, 'queueMicrotask').mockImplementation((callback) => {
+      scheduled = callback
+    })
+
+    test.ctx.emit('agent/inbox/inserted', { agent: previous } as never)
+    expect(scheduled).toBeTypeOf('function')
+    microtask.mockRestore()
+    test.ctx.emit('blue/request-new')
+    await vi.waitFor(() => { expect(test.current()).not.toBe(previous) })
+    scheduled?.()
+    expect(queueChanges).not.toHaveBeenCalled()
+
     await test.ctx.fiber.dispose()
   })
 

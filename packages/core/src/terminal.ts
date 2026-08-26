@@ -14,6 +14,7 @@ import {
   TuiAltScreen,
   TuiMainScreen,
   VStack,
+  type Component,
   type Terminal,
   type TUI,
   type TuiInputListener,
@@ -35,12 +36,29 @@ export type BlueScreenMode = 'main' | 'alternate'
 
 /** Container-level width backstop used by both alternate-screen layout bands. */
 class FrameClampedContainer extends Container {
+  private cached: {
+    readonly width: number
+    readonly children: readonly Component[]
+    readonly childRows: readonly string[][]
+    readonly rows: string[]
+  } | undefined
+
   constructor(private readonly overflow: OverflowSink) {
     super()
   }
 
   override render(width: number): string[] {
-    return clampFrame(super.render(width), width, this.overflow)
+    const children = [...this.children]
+    const childRows = children.map(child => child.render(width))
+    const cached = this.cached
+    if (cached?.width === width
+      && cached.children.length === children.length
+      && children.every((child, index) => cached.children[index] === child && cached.childRows[index] === childRows[index])) {
+      return cached.rows
+    }
+    const rows = clampFrame(childRows.flat(), width, this.overflow)
+    this.cached = { width, children, childRows, rows }
+    return rows
   }
 }
 
@@ -284,8 +302,12 @@ export async function startBlueTerminal(
     : current.addInputListener(data => {
         // These keys are contextual in Blue. If the editor's transcript
         // handler did not consume them, the focused editor/panel must see
-        // them instead of the global viewport.
-        if (data === KEY_PAGE_UP || data === KEY_PAGE_DOWN || data === KEY_HOME || data === KEY_END) return undefined
+        // them instead of the global viewport. Bare Up/Down are always
+        // editor history/navigation, even if host keybindings assign the
+        // AltScreen line-scroll actions to those sequences.
+        if (data === KEY_UP || data === KEY_DOWN
+          || data === KEY_PAGE_UP || data === KEY_PAGE_DOWN
+          || data === KEY_HOME || data === KEY_END) return undefined
         return viewportInput(data)
       })
   // Bottom-pinned components (the input editor dock) must render after
@@ -436,7 +458,6 @@ export async function startBlueTerminal(
         const before = current.viewportTop
         current.scrollBy(direction === 'up' ? -Math.max(1, Math.floor(amount)) : Math.max(1, Math.floor(amount)))
         const moved = current.viewportTop !== before
-        if (moved) stable.requestRender(true)
         return moved
       }
       const lines = collectLines(current.terminal.columns)

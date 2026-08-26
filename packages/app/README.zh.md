@@ -10,7 +10,7 @@ Blue 交互式 `dsh --profile blue` 界面的命令行启动提供方与 Agent �
 
 - `blueSessionReader` 发布不可变的当前会话快照，并接收 `@dsh-blue/blue-api` 定义的基础 follow-up、steer 与 interrupt action。
 - `blueSessionProjections` 读取并订阅官方当前会话 projection 值，也可读取直接子会话 projection，但不暴露 Session handle。
-- `blueSessionActions` 承担更丰富的交互操作，包括模型与模式切换、命令执行、队列召回、rewind 候选、preset、skill、tool、会话详情以及可释放的旁路会话。
+- `blueSessionActions` 承担更丰富的交互操作，包括模型与模式切换、命令执行、队列投影、rewind 候选、preset、skill、tool、会话详情以及可释放的旁路会话。Interrupt 请求也会停止当前 Agent 仍在运行的 continuable 后代。
 
 创建、恢复、fork、rewind 与新建会话请求共用一条串行切换队列。切换时先创建或恢复替代 Agent，再释放旧 Agent、安装新的内部绑定，最后发布 reader 快照。失败会保留当前会话并写入 stderr。启动任务作为第一条普通用户消息提交。
 

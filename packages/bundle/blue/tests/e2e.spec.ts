@@ -1692,7 +1692,7 @@ describe('blue whole-tree e2e', () => {
     expect(shown).not.toContain('todos updated')
   })
 
-  it('renders queued inbox messages and recalls the latest into the empty editor on Up', async () => {
+  it('renders queued inbox messages without taking Up from editor history', async () => {
     const tree = await bootBlue([], { script: [] })
     const agent = await currentAgent(tree)
     // The draft stash is module state shared across this worker's cases: make
@@ -1715,17 +1715,13 @@ describe('blue whole-tree e2e', () => {
     expect(footerAt).toBeGreaterThanOrEqual(0)
     expect(borderAt).toBeGreaterThan(queuedAt)
     expect(footerAt).toBeGreaterThan(borderAt)
-    // Empty editor + Up: the pane-queue recall action moves the message out
-    // of the inbox and into the draft.
+    // Up remains editor history navigation; the queue stays pending.
     tree.terminal.sendInput('\x1b[A')
-    expect(agent.inbox.hasPending).toBe(false)
+    expect(agent.inbox.hasPending).toBe(true)
     const frame = await fullFrame(tree.terminal)
     expect(frame).toContain('queued-task')
-    expect(frame).not.toContain('queued ↑ turn:')
-    // The recall only drafts the text: the model saw nothing.
+    // History navigation does not submit anything to the model.
     expect(tree.adapter.requests).toHaveLength(0)
-    // Leave no stashed draft for the next case's editor to restore.
-    tree.terminal.sendInput('\x1b')
   })
 
   it('lists the registered commands and key bindings in the /help overlay', async () => {
