@@ -53,8 +53,12 @@ jobs:
           VERSION="${RELEASE_VERSION#v}"
           MANIFEST=$(node -p "require('./packages/core/package.json').version")
           test "$VERSION" = "$MANIFEST" || { echo "tag $VERSION != manifest $MANIFEST" >&2; exit 1; }
-          git fetch origin master
-          git merge-base --is-ancestor HEAD origin/master || { echo 'tag commit is not on master' >&2; exit 1; }
+          # Test packages are intentionally published from their acceptance
+          # branch before merge; stable/rc tags remain master-only.
+          if [[ "$VERSION" != *-test.* ]]; then
+            git fetch origin master
+            git merge-base --is-ancestor HEAD origin/master || { echo 'release tag commit is not on master' >&2; exit 1; }
+          fi
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint
@@ -124,7 +128,7 @@ jobs:
   promote:
     name: promote rc/latest
     needs: [candidate, registry-install]
-    if: ${{ always() && (inputs.promote_only == true || needs.registry-install.result == 'success') }}
+    if: ${{ always() && !contains(env.RELEASE_VERSION, '-test.') && (inputs.promote_only == true || needs.registry-install.result == 'success') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

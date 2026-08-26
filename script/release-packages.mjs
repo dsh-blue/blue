@@ -69,11 +69,12 @@ async function waitForTag(pkg, tag, expectedVersion) {
 }
 
 if (mode === 'publish' || mode === 'verify') {
+  const publishTag = process.env.RELEASE_TAG ?? (version.includes('-test.') ? 'rc9-test' : 'candidate')
   for (const pkg of packages) {
     const expected = localIntegrity(pkg.filename)
     const current = npmView(`${pkg.name}@${pkg.version}`, 'dist.integrity')
     if (current === undefined && mode === 'publish') {
-      execFileSync('npm', ['publish', pkg.filename, '--tag', 'candidate', '--access', 'public', '--provenance'], { cwd: ROOT, stdio: 'inherit' })
+      execFileSync('npm', ['publish', pkg.filename, '--tag', publishTag, '--access', 'public', '--provenance'], { cwd: ROOT, stdio: 'inherit' })
     } else if (current !== undefined && current !== expected) {
       throw new Error(`${pkg.name}@${pkg.version}: immutable registry version has different integrity`)
     } else if (current === undefined) {
