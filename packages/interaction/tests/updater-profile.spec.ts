@@ -7,7 +7,9 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempTracked } from '../../core/tests/temp-dir.ts'
+import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
+
+registerTempDirCleanup()
 import { updaterInternals } from '../src/updater/io.ts'
 import {
   appendUpdateLog,
@@ -261,4 +263,3 @@ describe('updater/profile snapshot and restore', () => {
     expect(() => readFileSync(join(`${backupDir(root)}.tmp`, 'stale.txt'), 'utf8')).toThrow()
   })
 })
-

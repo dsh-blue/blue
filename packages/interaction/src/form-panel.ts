@@ -1,14 +1,13 @@
 /**
  * `FormPanel` — the multi-field dialog form (the kimi
  * `CustomRegistryImportDialogComponent` port over Blue's input primitive):
- * labeled single-line inputs, Tab/↑/↓ moving between fields, Enter
+ * labeled two-row inputs, Tab/↑/↓ moving between fields, Enter
  * advancing (submitting from the last field), and an in-panel error line
- * that swaps the subtitle without closing the panel. The embedded editors
- * own the text but never render — every field draws one derived row (the
- * S23 dogfood ruling: the masked API-key row's look, minus the masking),
- * the active one carrying a trailing inverse-video cursor block, so a
- * pasted key is never echoed raw and no boxed editor stacks inside the
- * panel. Form keys are intercepted ahead of the editors, so Enter never
+ * below the failing field without closing the panel. The embedded editors
+ * own the text but never render — every field draws a description row and a
+ * plain prompt row (the S23 dogfood ruling: the masked API-key row's look,
+ * minus the masking), with no nested editor frame. Form keys are intercepted
+ * ahead of the editors, so Enter never
  * inserts a newline and arrows never move the caret across lines.
  *
  * @module @dsh-blue/blue-interaction/form-panel
@@ -75,7 +74,7 @@ export interface FormPanelOptions {
   readonly onDelete?: () => void
 }
 
-/** The trailing cursor block on the active field's row. */
+/** The trailing cursor block on the active field's prompt row. */
 const CURSOR_BLOCK = '\u001b[7m \u001b[0m'
 
 /**
@@ -101,6 +100,7 @@ export class FormPanel implements BlueFocusable {
   private readonly editors: BlueEditor[]
   private readonly values: Record<string, string> = {}
   private error: string | undefined
+  private errorField = -1
 
   /**
    * @param options - see {@link FormPanelOptions}.
@@ -114,6 +114,7 @@ export class FormPanel implements BlueFocusable {
         this.values[field.id] = text
         // Any edit clears the error line (kimi's subtitle-swap behavior).
         this.error = undefined
+        this.errorField = -1
       }
       if (field.initial !== undefined && field.initial.length > 0) editor.setText(field.initial)
       return editor
@@ -127,6 +128,7 @@ export class FormPanel implements BlueFocusable {
    */
   setError(text: string | undefined): void {
     this.error = text
+    this.errorField = text === undefined ? -1 : this.active
   }
 
   /**
@@ -145,11 +147,11 @@ export class FormPanel implements BlueFocusable {
    */
   handleInput(data: string): void {
     const { keymap } = this.options
-    if (keymap.matches(data, ACTION_MOVE_DOWN) || data === '\t' || data === '\x1b[Z') {
+    if (keymap.matches(data, ACTION_MOVE_DOWN) || data === '\t') {
       this.active = (this.active + 1) % this.editors.length
       return
     }
-    if (keymap.matches(data, ACTION_MOVE_UP)) {
+    if (keymap.matches(data, ACTION_MOVE_UP) || data === '\x1b[Z') {
       this.active = (this.active - 1 + this.editors.length) % this.editors.length
       return
     }
@@ -175,10 +177,9 @@ export class FormPanel implements BlueFocusable {
   }
 
   /**
-   * Render the kimi ApiKeyInput dialog geometry: a rounded box whose first
-   * row is the bold title, then the subtitle-or-error line, then per field
-   * a label and a `> ` input row (bullets when masked, trailing cursor
-   * block on the active field), and the key footer inside the box.
+   * Render the two-row form geometry: a label/hint row followed by a plain
+   * arrow prompt row for every field, validation text beneath the failing
+   * field, and a short key footer inside the box.
    * @param width - current viewport width in columns.
    * @returns one string per rendered row.
    */
@@ -192,29 +193,37 @@ export class FormPanel implements BlueFocusable {
       '',
       `${boldOpen}${colors.textStrong(`  ${this.options.title}`)}${boldClose}`,
       '',
-      this.error !== undefined
-        ? colors.error(`  ${this.error}`)
-        : colors.muted(`  ${this.subtitleOrBlank()}`),
-      '',
     ]
+    if (this.error === undefined) body.push(colors.muted(`  ${this.subtitleOrBlank()}`))
+    const contentWidth = Math.max(1, inner - 2)
+    const labelWidth = Math.min(24, Math.max(8, ...fields.map(field => components.visibleWidth(field.label))))
     fields.forEach((field, index) => {
       const active = index === this.active
-      const label = active
-        ? `${boldOpen}${colors.accent(`  ${field.label}`)}${boldClose}`
-        : colors.muted(`  ${field.label}`)
-      body.push(label)
-      if (field.hint !== undefined) body.push(colors.textMuted(`    ${field.hint}`))
       /* v8 ignore next -- fields and editors stay index-aligned */
       if (this.editors[index] === undefined) return
       const value = (this.values[field.id] ?? '').replace(/[\r\n]+/g, ' ')
       const shown = field.mask === true ? maskRow(value) : value
+      const valueWidth = Math.max(1, contentWidth - 4)
+      const cursorWidth = active && this.focused ? 1 : 0
+      const valueText = components.truncateToWidth(shown, Math.max(1, valueWidth - cursorWidth))
       const cursor = active && this.focused ? CURSOR_BLOCK : ''
-      const prefix = active ? colors.primary('> ') : colors.textMuted('> ')
-      const painted = active
-        ? `${prefix}${colors.text(shown)}${cursor}`
-        : `${prefix}${colors.muted(shown)}`
-      body.push(`  ${painted}`)
-      body.push('')
+      const label = components.truncateToWidth(field.label, labelWidth)
+      const paddedLabel = label + ' '.repeat(Math.max(0, labelWidth - components.visibleWidth(label)))
+      const paintedLabel = active
+        ? `${boldOpen}${colors.accent(paddedLabel)}${boldClose}`
+        : colors.muted(paddedLabel)
+      let description = `  ${paintedLabel}`
+      if (field.hint !== undefined) {
+        const hintWidth = contentWidth - components.visibleWidth(description) - 3
+        if (hintWidth > 4) description += colors.textMuted(components.truncateToWidth(` · ${field.hint}`, hintWidth))
+      }
+      body.push(components.truncateToWidth(description, contentWidth))
+      const marker = active ? colors.primary('>') : colors.textMuted(' ')
+      const valuePaint = active ? colors.text(valueText) : colors.muted(valueText)
+      body.push(components.truncateToWidth(`  ${marker} ${valuePaint}${cursor}`, contentWidth))
+      if (this.error !== undefined && this.errorField === index) {
+        body.push(colors.error(`  ${this.error}`))
+      }
     })
     const last = fields.length - 1
     const deletePart = this.options.onDelete !== undefined
@@ -226,13 +235,13 @@ export class FormPanel implements BlueFocusable {
       : this.active === last
         ? `${colors.textStrong('Tab')} / ↑↓ fields  ·  ${colors.textStrong('Enter')} to submit  ·  ${colors.textStrong('Esc')} to ${cancelLabel}${deletePart}`
         : `${colors.textStrong('Tab')} / ↑↓ fields  ·  ${colors.textStrong('Enter')} for next field  ·  ${colors.textStrong('Esc')} to ${cancelLabel}${deletePart}`
-    body.push(components.truncateToWidth(`  ${footer}`, inner - 2))
+    body.push('')
+    body.push(components.truncateToWidth(`  ${footer}`, contentWidth))
     body.push('')
     // Explicit borders: every content row is wrapped in `│  …  │` with the
     // content clipped to the inner width — SGR-led rows keep their left
     // border (the space-guessing withSideBorders overlay loses it).
     // │ + content(rows carry their own 2-space indent) + │ = inner.
-    const contentWidth = inner - 2
     const bar = colors.border('│')
     const wrap = (row: string): string => {
       const cut = components.truncateToWidth(row, contentWidth)
@@ -261,12 +270,14 @@ export class FormPanel implements BlueFocusable {
       const value = (this.values[field.id] ?? '').trim()
       if (field.required === true && value.length === 0) {
         this.error = `${field.label} cannot be empty`
+        this.errorField = this.options.fields.indexOf(field)
         this.focusField(field.id)
         return
       }
       const verdict = field.validate?.(value)
       if (verdict !== undefined) {
         this.error = verdict
+        this.errorField = this.options.fields.indexOf(field)
         this.focusField(field.id)
         return
       }
