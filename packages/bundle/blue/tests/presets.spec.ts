@@ -5,7 +5,27 @@
  * @module @dsh-blue/blue/tests/presets
  */
 
+import { readFileSync, readdirSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+
+interface SkillFrontmatter {
+  readonly name?: unknown
+  readonly description?: unknown
+}
+
+const require = createRequire(import.meta.url)
+const skillFilesystemRoot = dirname(require.resolve('@deepseek-ai/dsh-skill-filesystem/package.json'))
+const { parse } = createRequire(join(skillFilesystemRoot, 'package.json'))('yaml') as {
+  parse(source: string): unknown
+}
+
+function skillFrontmatter(source: string): SkillFrontmatter {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(source)
+  expect(match, 'skill must start with YAML frontmatter').not.toBeNull()
+  return parse(match![1]!) as SkillFrontmatter
+}
 
 describe('Blue preset roster', () => {
   it('ships all four metadata rows with a Blue-specific creative mode', () => {
@@ -17,7 +37,6 @@ describe('Blue preset roster', () => {
   })
 
   it('keeps the non-creative presets byte-for-byte on the pinned harness line', () => {
-    const require = createRequire(import.meta.url)
     const harnessRoot = join(dirname(require.resolve('@deepseek-ai/dsh/package.json')), 'config', 'agent-presets')
     const blueRoot = new URL('../presets/', import.meta.url)
     for (const id of ['standard', 'code', 'minimal']) {
@@ -26,7 +45,24 @@ describe('Blue preset roster', () => {
       }
     }
   })
+
+  it('ships discoverable creative skills with valid frontmatter', () => {
+    const skillsRoot = new URL('../presets/cordis/skills/', import.meta.url)
+    const directories = readdirSync(skillsRoot, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name)
+      .sort()
+
+    expect(directories).toEqual([
+      'blue-plugin-development',
+      'cordis-plugin-development',
+      'editing-cordis-compositions',
+    ])
+    for (const directory of directories) {
+      const frontmatter = skillFrontmatter(readFileSync(new URL(`${directory}/SKILL.md`, skillsRoot), 'utf8'))
+      expect(frontmatter.name).toBe(directory)
+      expect(typeof frontmatter.description).toBe('string')
+      expect((frontmatter.description as string).trim().length).toBeGreaterThan(0)
+    }
+  })
 })
-import { readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'

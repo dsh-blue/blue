@@ -1,6 +1,9 @@
 ---
 name: cordis-plugin-development
-description: Create, modify, debug, or roll back dynamic Cordis Plugins in this Blue session — including hot-mounting additive Blue prototypes the user sees immediately, with no reinstall or restart. Covers the discuss → inspect → define → run → iterate lifecycle, Blue's capability-scoped public host, runtime diagnostics, dynamic model Tools, approval failures, and version management. A `code.client` half targets the browser slot system and has no surface in Blue. Dynamic packages vanish on restart: after acceptance, ask whether the user wants local source, GitHub, npm, or an ephemeral result before doing persistence work.
+description: >-
+  Create, modify, debug, or roll back dynamic Cordis plugins in a Blue session,
+  including hot-mounted additive UI prototypes. Use for the inspect, define,
+  run, iterate, and rollback lifecycle before packaging an accepted feature.
 ---
 
 # Develop Dynamic Cordis Plugins (host half)
