@@ -11,9 +11,9 @@ English | [中文](README.zh.md)
 Blue is an interactive terminal UI (TUI) for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`): a `pi-tui` renderer mounted as an out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) plugin bundle on top of the `dsh-base` bundle. This repository contains fourteen workspace packages — ten in the `0.1.0-rc.8` release set and four validation-only adapters — built and tested against the published Harness `0.1.1-rc.2` line.
 
 <p align="center">
-  <video src="https://dsh-blue.dev/blue-demo.mp4" width="720" autoplay loop muted playsinline controls></video>
+  <video src="https://github.com/dsh-blue/blue/raw/master/website/public/blue-demo.mp4" width="720" autoplay loop muted playsinline controls></video>
 </p>
-<p align="center"><i>Blue in action: streaming transcript, tool cards, and dock panes.</i></p>
+<p align="center"><i>Blue in action: streaming transcript, tool cards, and dock panes — <a href="https://github.com/dsh-blue/blue/raw/master/website/public/blue-demo.mp4">watch the demo video</a>.</i></p>
 
 ## Design philosophy
 
