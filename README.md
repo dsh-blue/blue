@@ -8,7 +8,7 @@
 
 English | [中文](README.zh.md)
 
-Blue is an interactive terminal UI (TUI) for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`): a `pi-tui` renderer mounted as an out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) plugin bundle on top of the `dsh-base` bundle. This repository contains fourteen workspace packages — ten in the `0.1.0-rc.9-test.6` release set and four validation-only adapters — built and tested against the published Harness `0.1.1-rc.2` line.
+Blue is an interactive terminal UI (TUI) for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`): a `pi-tui` renderer mounted as an out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) plugin bundle on top of the `dsh-base` bundle. This repository contains fourteen workspace packages — ten in the `0.1.0-rc.9-test.7` release set and four validation-only adapters — built and tested against the published Harness `0.1.1-rc.2` line.
 
 <p align="center">
   <a href="https://dsh-blue.dev/blue-demo.mp4"><img src="docs/assets/demo.gif" width="720" alt="Blue demo — streaming transcript, tool cards, and dock panes"></a>
@@ -29,7 +29,7 @@ The full story: [docs/blue-architecture.md](docs/blue-architecture.md) · decisi
 ## Usage
 
 > [!NOTE]
-> `0.1.0-rc.9-test.6` is a preview release published under the **`rc` dist-tag** — install specs carry the `@rc` suffix; upgrading is the same command again.
+> `0.1.0-rc.9-test.7` is a preview release published under the **`rc` dist-tag** — install specs carry the `@rc` suffix; upgrading is the same command again.
 
 Prerequisites: Node `^22.19 || >=24`, pnpm 11, and a `dsh` CLI ≥ `0.1.1-rc.2`.
 

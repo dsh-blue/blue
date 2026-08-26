@@ -55,7 +55,7 @@ SIGTERM→SIGKILL ladder included).
 
 ## Distribution contract
 
-The CLI publishes `lib/bin.js`, bilingual README files, and `npm-shrinkwrap.json`. The shrinkwrap is regenerated only by `pnpm release:lock-cli` in an isolated npm project and must contain registry records, never pnpm `link:` entries. `pnpm check:pack` verifies the executable mode, shebang, single runtime file, shrinkwrap root pin, and 30 KB launcher budget.
+The CLI publishes `lib/bin.js` and bilingual README files. Its exact `@deepseek-ai/dsh` dependency is resolved by npm from the registry at install time; no lockfile is shipped because pnpm workspace lock entries are not valid in a globally installed npm package. `pnpm check:pack` verifies the executable mode, shebang, single runtime file, and 30 KB launcher budget.
 
 CLI specs that create temporary homes or nested installs register the shared
 tracked-temp cleanup hook so Vitest worker reuse does not accumulate fixtures

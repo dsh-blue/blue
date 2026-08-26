@@ -18,7 +18,6 @@
     "diagrams:check": "node script/sync-diagrams.mjs --check",
     "check:lib": "node script/check-lib-exports.mjs",
     "check:pack": "node script/check-pack.mjs",
-    "release:lock-cli": "node script/sync-cli-shrinkwrap.mjs",
     "release:version": "node script/release-version.mjs",
     "smoke:happy": "node script/smoke-happy.mjs",
     "smoke:pty": "node script/smoke-pty.mjs",

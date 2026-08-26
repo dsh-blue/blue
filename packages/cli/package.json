@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-cli",
   "description": "The blue launcher: pins the dsh host, calibrates the Blue bundle into its profile, and boots the TUI",
-  "version": "0.1.0-rc.9-test.6",
+  "version": "0.1.0-rc.9-test.7",
   "publishConfig": {
     "access": "public"
   },
@@ -14,7 +14,6 @@
   },
   "files": [
     "lib/bin.js",
-    "npm-shrinkwrap.json",
     "README.md",
     "README.zh.md"
   ],
@@ -42,4 +41,3 @@
     "command-line"
   ]
 }
-
