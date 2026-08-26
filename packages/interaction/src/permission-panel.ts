@@ -20,8 +20,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type {} from '@dsh-blue/blue-app'
 // Empty type imports carry the `permissionPresets` Context merge
 // (dsh-permission-presets) and the `commands` merge the dispatch uses.
 import type {} from '@deepseek-ai/dsh-permission-presets'
@@ -52,8 +51,8 @@ export interface PermissionPresetSpec {
 export interface PermissionPresetsService {
   /** Switchable preset names in table order; `custom` is never listed. */
   readonly names: readonly string[]
-  /** The preset matching the session's effective knobs, or `custom`. */
-  current(events: readonly SessionEvent[]): string
+  /** Domain projection used by the app boundary, retained in the structural service shape. */
+  current(events: readonly unknown[]): string
   /** The sandbox + approval bundle of a table preset; throws when unknown. */
   resolve(name: string): PermissionPresetSpec
   /** The display option of a table key or `custom`; throws when unknown. */
@@ -73,17 +72,17 @@ const CUSTOM_BLOCKED = 'custom is the derived state — pick a preset'
  * Fire-and-forget: the caller (`blue-input`'s bare-`/permission`
  * interception) never awaits the panel.
  * @param ctx - plugin context (`commands` via the calling plugin).
- * @param agent - the agent whose session the presets pin.
  */
-export function openPermissionPanel(ctx: Context, agent: Agent): void {
+export function openPermissionPanel(ctx: Context): void {
   const presets = ctx.get('permissionPresets') as PermissionPresetsService | undefined
   if (presets === undefined) return
   const display = displayServices(ctx)
   if (display === undefined) {
-    getSharedEditor()?.notice?.('permission picker is unavailable: the Blue screen is not mounted')
+    getSharedEditor(ctx)?.notice?.('permission picker is unavailable: the Blue screen is not mounted')
     return
   }
-  const current = presets.current(agent.session.events)
+  const current = ctx.blueSessionActions.permissionPreset()
+  if (current === undefined) return
   const rows: SelectRow[] = presets.names.map(name => ({
     value: name,
     label: presets.optionOf(name).name,
@@ -95,13 +94,13 @@ export function openPermissionPanel(ctx: Context, agent: Agent): void {
   }
 
   const dispatch = (name: string): void => {
-    void ctx.commands.execute(agent, `/permission ${name}`, [], new AbortController().signal).then(
+    void ctx.blueSessionActions.executeCommand(`/permission ${name}`, new AbortController().signal).then(
       execution => {
         if (execution === undefined) return
         const { result } = execution
         if (result.text === undefined) return
         const paint = result.kind === 'error' ? displayServices(ctx)?.colors.error : undefined
-        getSharedEditor()?.notice?.(paint === undefined ? result.text : paint(result.text))
+        getSharedEditor(ctx)?.notice?.(paint === undefined ? result.text : paint(result.text))
       },
       error => {
         // execute() rethrows handler failures and append failures alike;
@@ -144,7 +143,7 @@ export function openPermissionPanel(ctx: Context, agent: Agent): void {
         restoreForm()
       },
     })
-    const restoreForm = mountEditorReplacement(form)
+    const restoreForm = mountEditorReplacement(ctx, form)
   }
 
   const panel = new SelectListPanel({
@@ -164,11 +163,11 @@ export function openPermissionPanel(ctx: Context, agent: Agent): void {
       dispatch(row.value)
     },
     onBlockedSelect: () => {
-      getSharedEditor()?.notice?.(display.colors.warning(CUSTOM_BLOCKED))
+      getSharedEditor(ctx)?.notice?.(display.colors.warning(CUSTOM_BLOCKED))
     },
     onCancel: () => {
       restoreList()
     },
   })
-  restoreList = mountEditorReplacement(panel)
+  restoreList = mountEditorReplacement(ctx, panel)
 }

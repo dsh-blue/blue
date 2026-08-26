@@ -1,56 +1,42 @@
 # Seam reference
 
-## What is a seam
+Blue's current seams are explicit Cordis services, projection/action boundaries, renderer-neutral model registries, and patch rows. The old mutable `blueSession` binding, `blue/session-changed`, `blueStatus`, `blueIntents`, and shared-editor module singleton have been removed.
 
-The **seam** is Blue's core architectural concept: **a joint deliberately left open for replacement and contribution**. Blue has no literal `Seam` type or `registerSeam()` API — seams take five code forms:
+## Stable third-party entry
 
-1. **Cordis service + declaration merging** — a `Service` subclass mounted on the `Context` (`ctx.blueScreen`, `ctx.blueStatus`, …); inject and use;
-2. **registry + disposer** — `register(entry): () => void`, duplicate ids throw; the plugin fiber's unload rolls everything back ("registration is an effect");
-3. **provider replacement** — one active provider (themes), with Cordis auto-reloading every dependent on swap;
-4. **module-level seam** — a cross-plugin shared singleton (the shared editor) that senses mounting and remounting through events;
-5. **subpath plugin + patch row** — each enhancement is a package subpath export, toggled by a `cordis.patch.yml` row in the composition layer (zero-code customization).
+External plugins request capabilities through `ctx.bluePluginHost.open(ctx, manifest)`:
 
-Each seam splits three roles: **definition** (the contract, owned by the host package), **provider / contributor** (the implementation — the plain default is the first registrant), and **consumer** (depends on the contract, never the implementation). This is the mechanical foundation of "everything is a plugin" — your plugins and Blue's built-in enhancements go through the same seams.
+| Capability | Contribution | Blue consumer |
+|---|---|---|
+| `status` | `BlueStatusContribution` returning a renderer-neutral `BlueView` | view bridge into footer `StatusModel` |
+| `dock` | `BlueDockContribution` | view bridge into a `DockModel` lane |
+| `commands` | `BlueCommandContribution` plus async `BlueResult` | interaction bridge into the Harness command registry |
+| `notifications` | `BlueNotification` | interaction bridge into the editor notice consumer |
 
-## Blue's own seams
+`@dsh-blue/blue-api` owns manifest validation, capability restriction, duplicate ids, the owner namespace, and lifecycle. Registrations bind to the caller's Fiber and disappear on unload.
 
-Downstream plugins may only import documented contracts and subpaths — never Blue package internals:
+## Internal Blue boundaries
 
-| Seam | Entry | Contract | Plain default | What you can do |
-| --- | --- | --- | --- | --- |
-| Screen mount | `ctx.blueScreen` | `BlueScreen` / `BlueComponent` | — (core capability) | Mount components (`addChild` returns a disposer), open overlays, `setFocus`, request renders |
-| Key registration | `ctx.blueKeymap` | `BlueKeymap` / `BlueKeyAction` | — | Register contextual/global keys; conflicts surface at registration, never fight at runtime |
-| Component factory | `ctx.blueComponents` | `BlueComponents` | — | Create editor/markdown/select/image components + width/fuzzy pure functions — no pi-tui anywhere |
-| Terminal facts | `ctx.blueTerminalInfo` | `BlueTerminalInfo` | — | Read the OSC 11 background probe and keyboard-protocol capabilities |
-| Theme | `blueTheme` provider swap | `BlueTheme` (28-token palette) | `blue-theme-dark` | Provide a whole palette; hot-switched by `/theme`, dependents auto-reload |
-| Status bar | `ctx.blueStatus` | `BlueStatus` / `BlueStatusEntry` | `blue-status-basic` | Register footer entries (priority / row / align) |
-| Render intents | `ctx.blueIntents` | `BlueIntents` / `BlueIntentEntry` | generic tool card | Provide custom cards for new tool kinds (how diff and terminal cards exist) |
-| Session facts | `ctx.blueSession` + events | `BlueSession` + `blue/session-changed` etc. | — | Read the current Agent, track switches, trigger resume/new/fork |
-| Shared editor | module-level `editor-instance` + `blue/input-editor-changed` | `SharedEditor` / `SubmitTransformer` | factory plain editor | Layer autocomplete providers, `onKey` interception, `insertText`, submit transformers |
-| Chrome helpers | `@dsh-blue/blue-core/chrome` subpath | pure functions (no service) | — | Theme-agnostic frame/rule/hint drawing (`framePanel`, `topRule`, …), color functions injected by the caller |
-| Composition | `cordis.patch.yml` rows | — | baseline 8 rows | Zero-code toggling and reordering of any plugin row |
+| Owner | Seam | Purpose |
+|---|---|---|
+| core | `blueScreen` / `blueKeymap` / `blueComponents` / `blueTerminalInfo` / theme | TUI kernel; only core touches pi-tui/raw terminal |
+| app | `blueSessionReader` | readonly current-session snapshot and request |
+| app | `blueSessionProjections` | consistent-cut projection values, seq, children, and subscriptions |
+| app | `blueSessionActions` | followup/steer/interrupt plus mode/model/preset/tool/skill/rewind/side-session actions |
+| conversation | `blueConversation` / `blueConversationFacts` | official replay/live transcript and status/dock facts |
+| transcript | transcript/status/dock/tool model services | readonly models into the TUI renderer |
+| interaction | `blueEditorHost` / `blueInteractionState` | frontend-tree-scoped editor slot, draft, settings/probe/paste state |
+| bundle | `cordis.patch.yml` | 28 Blue-owned rows and explicit dependency ordering |
 
-## Seams inherited from the harness
-
-Seams the harness (dsh-base) opens — equally open to your plugins:
-
-| Seam | Purpose |
-| --- | --- |
-| `ctx.commands.register` | Register slash commands, auto-listed in the editor's completion and `/help` |
-| `ctx.userQuestions.registerProvider` | Take over the question interaction (questionnaire panels) |
-| `'approval/request'` waterfall | Answer approvals (not calling `next()` short-circuits) |
-| `attachments` (`AttachmentStore`) | Attachment storage — a pure seam in rc.7, implemented by Blue's `blue-attachments`, consumable by your plugins |
-| `ctx.tools` / `ctx.agents` / `ctx.sessions` | Tool registration/guards, session and agent operations |
-
-Harness-side `permissionPresets`, `sessionProjections`, and similar seams are not open in rc.7 — Blue will adapt their presentation as they land.
+Session-switch events such as `blue/request-resume`, `-new`, `-fork`, and `-rewind` are commands addressed to the app owner, not broadcasts carrying Session objects into renderers.
 
 ## Design discipline
 
-1. Every seam: contract owned by the host package, registration returns a disposer, the plain default is the first registrant, unknown inputs fall back to plain;
-2. New seams open only when a first real consumer appears — never for hypothetical needs; signatures freeze in P3;
-3. Downstream code depends only on documented seams and contract packages, never Blue package internals;
-4. plain-first: Blue's own enhancements and downstream plugins register through the same seams; the baseline with every enhancement row removed still works.
+- frontend models contain no Promise, ANSI, terminal width, focus handle, Agent, Session, or renderer object;
+- UI code never folds the Harness event log;
+- registrations, listeners, timers, screen mounts, and async tasks have unload/abort paths;
+- late results check session/provider generation;
+- packages import only public exports;
+- absent optional capabilities return structured absent/plain behavior without pending the tree.
 
-::: tip The full engineering catalog
-Contract source locations, which file implements each seam, and the row-by-row patch mapping live in the repository's engineering doc [`docs/blue-seams.md`](https://github.com/dsh-blue/blue/blob/master/docs/blue-seams.md) (Chinese).
-:::
+The engineering-level map lives in [`docs/blue-seams.md`](https://github.com/dsh-blue/blue/blob/master/docs/blue-seams.md).

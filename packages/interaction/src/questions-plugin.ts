@@ -107,7 +107,7 @@ function askAll(ctx: Context, request: AskUserQuestionRequest): Promise<AskUserQ
       })
     // The kimi dialog mount (D30): the panel replaces the editor in its
     // dock slot, so below it only the footer remains.
-    const restore = mountEditorReplacement(panel)
+    const restore = mountEditorReplacement(ctx, panel)
     request.signal?.addEventListener('abort', onAbort, { once: true })
   })
 }

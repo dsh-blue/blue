@@ -88,6 +88,22 @@ export const apply = ctx => globalThis.__blueInteractionFixtures.interactionAppl
   })
 
   const ctx = new Context()
+  ctx.provide('blueSessionReader', {
+    current: () => null,
+    subscribe: () => ({ disposed: false, dispose() {} }),
+    request: async () => ({ ok: false, code: 'BLUE_SESSION_UNAVAILABLE', message: 'No session' }),
+  })
+  ctx.provide('blueSessionActions', {
+    skillSnapshot: async () => ({ ok: false, code: 'BLUE_CAPABILITY_ABSENT', absent: { capability: 'skills', reason: 'not composed' } }),
+    subscribeSkillChanges: () => ({ disposed: false, dispose() {} }),
+  } as never)
+  ctx.provide('blueSessionProjections', {
+    current: () => undefined,
+    currentMany: () => undefined,
+    subscribe: () => () => {},
+    children: () => [],
+    subscribeChildren: () => () => {},
+  })
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(join(dir, 'cordis.yml')).href } })

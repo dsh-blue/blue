@@ -13,14 +13,11 @@
  * `filter: true` opts a panel into type-to-filter (S30②, `/sessions`
  * being the first consumer): printable characters grow a query, the
  * rows narrow through `fuzzyMatch` over `filterText ?? label`, and
- * Escape clears the query before it cancels (the kimi rule, as in
- * `ModelPanel`). Opt-in keeps the other six consumers byte-identical.
+ * Escape clears the query before it cancels (the kimi rule shared with
+ * `FrontendPanel`). Opt-in keeps the other six consumers byte-identical.
  *
- * `BlueSelect` (the multi-select checkbox list) and `ModelPanel` (the
- * tabbed, type-to-search model picker) keep their own geometry: the
- * former toggles rather than selects, the latter interleaves tab and
- * search chrome the plain list shape cannot carry (revisit when a
- * second tabbed panel appears). Both consume the helpers.
+ * `BlueSelect` keeps its own multi-select checkbox geometry. Grouped,
+ * filterable single-select models use the generic `FrontendPanel` consumer.
  *
  * @module @dsh-blue/blue-interaction/select-list
  */
@@ -200,7 +197,7 @@ export class SelectListPanel implements BlueFocusable {
 
   /** The rows under the live query: identity while the filter is off or
    * the query empty, else the fuzzy matches in list order (no re-rank —
-   * the ModelPanel precedent). */
+   * the shared filterable-list precedent). */
   private filtered(): readonly SelectRow[] {
     const rows = this.sourceRows()
     const { components } = this.options
@@ -269,7 +266,7 @@ export class SelectListPanel implements BlueFocusable {
       return
     }
     // Type-to-filter bytes (only when opted in; other consumers keep
-    // swallowing printables). ModelPanel matches the same raw bytes —
+    // swallowing printables). FrontendPanel matches the same raw bytes —
     // no keymap action exists for these and the freeze holds.
     if (!this.filter) return
     if (data === '\x7f') {

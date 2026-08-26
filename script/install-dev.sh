@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # install-dev.sh — one-shot local development install of Blue into a dsh profile.
 #
-# Builds the Blue workspace and link-installs the bundle plus the ten formal
-# release packages into a dev
-# profile (no npm publish). Code changes take effect after `pnpm run build`;
+# Builds the Blue workspace and link-installs the product plugin closure plus
+# the OpenPencil/Lark validation adapters into a dev profile (no npm publish).
+# Code changes take effect after `pnpm run build`;
 # re-run this script only when the dependency graph changes.
 #
 # Environment overrides:

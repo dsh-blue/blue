@@ -60,6 +60,8 @@ export type UpdateSettings = Pick<BlueSettings, 'updateCheck' | 'updateChannel'>
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-update-check'
+/** Tree-scoped settings state required by the boot check. */
+export const inject = ['blueInteractionState']
 
 /** The state file's path under the plugin storage convention. */
 export function updateCheckStatePath(): string {
@@ -202,7 +204,7 @@ function mountNotice(ctx: Context, target: string): void {
   )
   ctx.effect(() => screen.addChild(notice))
   screen.requestRender()
-  getSharedEditor()?.notice?.(`Blue v${target} available — /update to upgrade`)
+  getSharedEditor(ctx)?.notice?.(`Blue v${target} available — /update to upgrade`)
 }
 
 /**
@@ -255,5 +257,5 @@ export function apply(ctx: Context): void {
     unloaded = true
   })
   /* v8 ignore next 1 -- the defensive catch; runUpdateCheck never rejects */
-  void runUpdateCheck(ctx, () => currentBlueSettings(), () => unloaded).catch(() => {})
+  void runUpdateCheck(ctx, () => currentBlueSettings(ctx), () => unloaded).catch(() => {})
 }

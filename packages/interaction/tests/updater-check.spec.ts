@@ -74,7 +74,7 @@ function makeCheck(options: { json?: string; fail?: boolean } = {}) {
     }
     return Promise.resolve({ code: 0, signal: null, stdout: options.json ?? OFFER_JSON, stderr: '', timedOut: false })
   }
-  const { ctx, screen } = fakeBlueContext()
+  const { ctx, screen } = fakeBlueContext({ dock: false })
   /** The profile the boot check inspects (default: absent). */
   const profileRootDir = join(home, 'profiles', 'blue')
   /** Install a profile manifest with the given dependency specs. */
@@ -386,4 +386,3 @@ describe('updater/check apply', () => {
     expect(world.screen.children).toHaveLength(1)
   })
 })
-

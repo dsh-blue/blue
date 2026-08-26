@@ -1,69 +1,79 @@
-import { describe, expect, it } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
-import type { StatusModel } from '@dsh-blue/blue-frontend'
-import { BlueStatusModelService, plainView } from '../src/status-model.ts'
-import * as basicModel from '../src/status-basic-model.ts'
-import { fakeBlueComponents } from './helpers.ts'
-import { asAgent, COLORS, fakeAgent, FakeStatusRegistry, StatusFakeScreen } from './status-fakes.ts'
+/** Renderer-neutral status registry and footer layout coverage. */
 
-const screen = () => new StatusFakeScreen()
-const model = (id: string, view: StatusModel['view'], extra: Partial<StatusModel> = {}): StatusModel => ({ kind: 'status', id, view, visible: true, ...extra })
+import { Context } from '@deepseek-ai/cordis'
+import type { StatusModel, View } from '@dsh-blue/blue-frontend'
+import { describe, expect, it, vi } from 'vitest'
+import { BlueStatusModelService, plainView, StatusModelFooterComponent } from '../src/status-model.ts'
+import { COLORS, StatusFakeScreen } from './status-fakes.ts'
+import { fakeBlueComponents } from './helpers.ts'
+
+function model(id: string, view: View, options: Partial<StatusModel> = {}): StatusModel {
+  return { kind: 'status', id, view, visible: true, ...options }
+}
 
 describe('BlueStatusModelService', () => {
-  it('converts every renderer-neutral view to plain text', () => {
-    expect(plainView({ kind: 'text', text: 'text' })).toBe('text')
+  it('registers dynamic models, refreshes, rejects duplicates, and disposes idempotently', () => {
+    const screen = new StatusFakeScreen()
+    const service = new BlueStatusModelService(new Context(), screen)
+    let current: StatusModel | null = model('dynamic', { kind: 'text', text: 'first' })
+    const dispose = service.register(() => current)
+    expect(service.list()[0]?.view).toEqual({ kind: 'text', text: 'first' })
+    expect(() => service.register(model('dynamic', { kind: 'text', text: 'duplicate' }))).toThrow(/already registered/)
+    current = model('dynamic', { kind: 'text', text: 'second' })
+    service.refresh('dynamic')
+    service.refresh('missing')
+    expect(screen.renderRequests.length).toBe(2)
+    dispose()
+    dispose()
+    expect(service.list()).toEqual([])
+    const absent = service.register(() => null)
+    absent()
+    service.dispose()
+    expect(service.list()).toEqual([])
+  })
+
+  it('can attach a renderer after producers register', () => {
+    const service = new BlueStatusModelService(new Context())
+    service.register(model('late', { kind: 'text', text: 'late' }))
+    const screen = new StatusFakeScreen()
+    service.attach(screen)
+    expect(screen.renderRequests).toHaveLength(1)
+  })
+})
+
+describe('StatusModelFooterComponent', () => {
+  it('lays out two bands, priorities, right alignment, tones, and overflow', () => {
+    const components = fakeBlueComponents()
+    const service = new BlueStatusModelService(new Context())
+    service.register(model('left', { kind: 'text', text: 'left', tone: 'accent' }, { priority: 0 }))
+    service.register(model('hidden', { kind: 'text', text: 'hidden' }, { visible: false }))
+    service.register(model('right', { kind: 'text', text: 'right', tone: 'success' }, { band: 'right', row: 1, priority: 1 }))
+    service.register(model('second', { kind: 'text', text: 'second', tone: 'warning' }, { row: 2 }))
+    service.register(model('too-wide', { kind: 'text', text: '0123456789' }, { row: 2, overflow: 'hide', priority: 2 }))
+    const footer = new StatusModelFooterComponent(service, components, COLORS)
+    expect(footer.render(14)).toEqual(['left     right', 'second        '])
+    expect(footer.render(14)).toBe(footer.render(14))
+    footer.invalidate()
+    expect(footer.render(4)).toEqual(['left', 's\x1b[0m...\x1b[0m'])
+  })
+
+  it('flattens every renderer-neutral view kind', () => {
     expect(plainView({ kind: 'rich-text', spans: [{ text: 'a' }, { text: 'b' }] })).toBe('ab')
-    expect(plainView({ kind: 'fields', fields: [{ label: 'a', value: '1' }] })).toBe('a: 1')
-    expect(plainView({ kind: 'sections', sections: [{ title: 's', body: { kind: 'text', text: 'b' } }] })).toBe('s: b')
+    expect(plainView({ kind: 'fields', fields: [{ label: 'state', value: 'ok' }] })).toBe('state: ok')
+    expect(plainView({ kind: 'sections', sections: [{ title: 'one', body: { kind: 'text', text: 'body' } }] })).toBe('one: body')
     expect(plainView({ kind: 'list', items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B', disabled: true }] })).toBe('A')
     expect(plainView({ kind: 'code', code: 'const x = 1' })).toBe('const x = 1')
     expect(plainView({ kind: 'diff', before: 'old', after: 'new' })).toBe('new')
   })
 
-  it('registers, renders, refreshes, lists, and unloads model contributions', () => {
-    const ctx = new Context(); const target = new FakeStatusRegistry(); const service = new BlueStatusModelService(ctx); const current = { value: model('dynamic', { kind: 'text', text: 'first', tone: 'muted' }) }; service.attach(target, screen(), COLORS, fakeBlueComponents())
-    const dispose = service.register(() => current.value); service.register(model('listed', { kind: 'text', text: 'listed' })); expect(target.entries.find(entry => entry.id === 'dynamic')!.render(20)).toBe('first'); current.value = model('dynamic', { kind: 'text', text: 'second', tone: 'accent' }); service.refresh('dynamic'); expect(target.entries.find(entry => entry.id === 'dynamic')!.render(20)).toBe('second'); expect(service.list()).toHaveLength(2); dispose(); dispose(); expect(target.entries).toHaveLength(1)
-    const absent = service.register(() => null); absent(); const hidden = service.register(model('hidden', { kind: 'text', text: 'hidden' }, { visible: false })); expect(target.entries).toHaveLength(1); service.refresh('hidden'); service.refresh('missing'); hidden(); let show = true; const toggled = service.register(() => show ? model('toggled', { kind: 'rich-text', spans: [{ text: 'rich' }] }) : null); expect(target.entries.some(entry => entry.id === 'toggled')).toBe(true); show = false; service.refresh('toggled'); toggled(); service.register(model('right', { kind: 'text', text: 'right', tone: 'success' }, { band: 'right', priority: 2 })); expect(target.entries.find(entry => entry.id === 'right')!.align).toBe('right'); service.register(model('error', { kind: 'text', text: 'error', tone: 'danger' })); service.register(model('warning', { kind: 'text', text: 'warning', tone: 'warning' })); service.register(model('default', { kind: 'text', text: 'default' })); service.dispose(); expect(target.entries).toHaveLength(0)
-  })
-
-  it('rejects duplicate ids and can attach after registration', () => {
-    const ctx = new Context(); const target = new FakeStatusRegistry(); const service = new BlueStatusModelService(ctx); const registration = service.register(model('late', { kind: 'text', text: 'late' })); expect(target.entries).toHaveLength(0); service.attach(target, screen(), COLORS, fakeBlueComponents()); expect(target.entries).toHaveLength(1); expect(() => service.register(model('late', { kind: 'text', text: 'again' }))).toThrow(/already registered/); registration(); expect(service.list()).toEqual([])
-  })
-
-  it('covers reattach, static tones, zero width, and late hidden sources', () => {
-    const first = new FakeStatusRegistry()
-    const second = new FakeStatusRegistry()
+  it('handles zero width, danger tone, and non-text footer views', () => {
+    const error = vi.fn((text: string) => `!${text}!`)
     const service = new BlueStatusModelService(new Context())
-    service.attach(first, screen(), COLORS, fakeBlueComponents())
-    service.register(model('success', { kind: 'text', text: 'ok', tone: 'success' }))
-    service.register(model('danger', { kind: 'text', text: 'bad', tone: 'danger' }))
-    expect(first.entries.map(entry => entry.render(20))).toEqual(['ok', 'bad'])
-    expect(first.entries[0]!.render(0)).toBe('')
-    service.attach(second, screen(), COLORS, fakeBlueComponents())
-    expect(first.entries).toHaveLength(0)
-    expect(second.entries.map(entry => entry.render(20))).toEqual(['ok', 'bad'])
-    let current: StatusModel | null = model('dynamic-view', { kind: 'rich-text', spans: [{ text: 'rich' }] })
-    service.register(() => current)
-    const dynamic = second.entries.find(entry => entry.id === 'dynamic-view')!
-    expect(dynamic.render(20)).toBe('rich')
-    current = null
-    expect(dynamic.render(20)).toBe('')
-    service.dispose()
-  })
-})
-
-describe('blue-status-basic-model', () => {
-  it('publishes a model and refreshes on session/model events', async () => {
-    const ctx = new Context(); const target = new FakeStatusRegistry(); const service = new BlueStatusModelService(ctx); service.attach(target, screen(), COLORS, fakeBlueComponents()); const first = fakeAgent([], { model: 'first' }); ctx.reflect.provide('blueSession', { current: asAgent(first) }); const fiber = await ctx.plugin(basicModel); expect(target.entries[0]!.render(80)).toBe('first'); const second = fakeAgent([], { provider: 'second-provider' }); ctx.emit('blue/session-changed', asAgent(second)); expect(target.entries[0]!.render(80)).toBe('second-provider'); ctx.emit('blue/model-changed'); ctx.emit('session/event', second.session); await fiber.dispose(); expect(target.entries).toHaveLength(0)
-  })
-
-  it('handles absent sessions, header fallback, and foreign events', async () => {
-    const ctx = new Context(); const target = new FakeStatusRegistry(); const service = new BlueStatusModelService(ctx); service.attach(target, screen(), COLORS, fakeBlueComponents()); ctx.reflect.provide('blueSession', { current: null }); const fiber = await ctx.plugin(basicModel); expect(target.entries).toHaveLength(0); const agent = fakeAgent([], { headerModel: 'header' }); ctx.emit('blue/session-changed', asAgent(agent)); expect(target.entries[0]!.render(80)).toBe('header'); const foreign = fakeAgent([], { model: 'foreign' }); ctx.emit('session/event', foreign.session); expect(target.entries[0]!.render(80)).toBe('header'); await fiber.dispose()
-  })
-
-  it('uses the live model selection and lower-priority fallbacks', async () => {
-    const ctx = new Context(); const target = new FakeStatusRegistry(); const service = new BlueStatusModelService(ctx); service.attach(target, screen(), COLORS, fakeBlueComponents()); const agent = fakeAgent([], { model: 'option-model', provider: 'provider' }); ctx.reflect.provide('blueSession', { current: asAgent(agent), modelRef: { current: { model: 'selected' } } }); const fiber = await ctx.plugin(basicModel); expect(target.entries[0]!.render(80)).toBe('selected'); await fiber.dispose()
-    const fallbackCtx = new Context(); const fallbackTarget = new FakeStatusRegistry(); const fallbackService = new BlueStatusModelService(fallbackCtx); fallbackService.attach(fallbackTarget, screen(), COLORS, fakeBlueComponents()); const providerAgent = fakeAgent([], { provider: 'provider' }); fallbackCtx.reflect.provide('blueSession', { current: asAgent(providerAgent) }); const fallbackFiber = await fallbackCtx.plugin(basicModel); expect(fallbackTarget.entries[0]!.render(80)).toBe('provider'); await fallbackFiber.dispose()
-    const emptyCtx = new Context(); const emptyTarget = new FakeStatusRegistry(); const emptyService = new BlueStatusModelService(emptyCtx); emptyService.attach(emptyTarget, screen(), COLORS, fakeBlueComponents()); const emptyAgent = fakeAgent([]); emptyCtx.reflect.provide('blueSession', { current: asAgent(emptyAgent) }); const emptyFiber = await emptyCtx.plugin(basicModel); expect(emptyTarget.entries[0]!.render(80)).toBe('no model'); await emptyFiber.dispose()
+    service.register(model('danger', { kind: 'text', text: 'boom', tone: 'danger' }))
+    service.register(model('fields', { kind: 'fields', fields: [{ label: 'state', value: 'ok' }] }, { row: 2 }))
+    const footer = new StatusModelFooterComponent(service, fakeBlueComponents(), { ...COLORS, error })
+    expect(footer.render(0)).toEqual([])
+    expect(footer.render(20)).toEqual(['!boom!              ', 'state: ok           '])
+    expect(error).toHaveBeenCalledWith('boom')
   })
 })

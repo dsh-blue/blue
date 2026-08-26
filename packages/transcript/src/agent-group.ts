@@ -1,28 +1,24 @@
 /**
  * `AgentGroupComponent` — the S33 kimi `agent-group` port: two or more
  * spawn-class subagent calls (`subagent` / `subagent_fork`) in the same step
- * render as one group instead of individual cards. The mounter (`src/index.ts`)
- * forms the group exactly the ReadGroup way — a second consecutive same-step
- * call retires the lone card and mounts this component over the pair, later
- * calls attach — so the group's bookkeeping item is the first member and step
- * folding / window eviction retire it with its members.
+ * render as one group instead of individual cards. `pane-agents.ts` projects
+ * spawn facts into the established card item shape, mounts the first member,
+ * and attaches the remaining same-step members.
  *
- * The fold baseline (A+) derives everything from the member items: the label
+ * The projected baseline derives everything from the member items: the label
  * and description from `parsedArguments` (`description` is the harness
  * tool's required display field, the raw arguments ellipsize as the
  * fallback), the phase from the result's presence and `isError`, and
- * elapsed seconds from the envelope wall clocks the fold records. On the
- * live path an optional lookup (`agent-live.ts`, the S33 child-session
- * tracker) overlays kimi-level depth: the running/waiting split (which also
+ * elapsed seconds from projected envelope wall clocks. An optional lookup
+ * from `child-agent-model.ts` overlays projected child-session depth: the running/waiting split (which also
  * corrects the background ack's premature "finished"), per-child tool and
  * token counts, the model/effort line, and the running activity second
- * line. Replay never provides the lookup, so it degrades to A+
- * structurally (D39).
+ * line. Missing child projection capability degrades to the parent facts.
  *
  * Kimi's 200ms group throttle is not ported: it rate-limits a push model
  * (snapshot listeners rebuilding on every child event). This component pulls
  * at render with a cache key, and pi-tui's `requestRender` already
- * coalesces per tick — the ReadGroup proof. The only timer is the 1 Hz tick
+ * coalesces per tick. The only timer is the 1 Hz tick
  * that advances non-terminal members' elapsed seconds; it stands itself down
  * on the first tick that finds none left (the ThinkingTimers retire pattern
  * — a replay of settled steps starts zero timers). No `setExpanded`: the

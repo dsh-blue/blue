@@ -1,32 +1,16 @@
 /**
- * Transcript item model produced by the fold (`src/fold.ts`) plus the pure
- * `blueStatus` and `blueIntents` contracts behind the footer shell
- * (`src/status.ts`) and the render-intent registry (`src/intents.ts`). The
- * `blueSession` service and the `'blue/session-changed'` event this package
- * consumes are owned and declared by `@dsh-blue/blue-app`; the merge
- * arrives through the type import in `src/index.ts`.
+ * Renderer-only transcript item shapes shared by semantic components.
  *
  * @module @dsh-blue/blue-transcript/types
  */
 
-// Pulls in Cordis `Context` for the `blueStatus`/`blueIntents` declaration
-// merges below; the merges live in the contract layer so the registry
-// implementations and the contributing subpath plugins share one declaration
-// site.
+// Pulls in Cordis `Context` for the model-service declaration merges below.
 import type {} from '@deepseek-ai/cordis'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type {
-  BlueComponent,
-  BlueComponents,
-  BlueSemanticColors,
-} from '@dsh-blue/blue-core'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import type { ToolCallView, ToolResult, ToolResultView } from '@deepseek-ai/dsh-tools'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    blueStatus: BlueStatus
-    blueIntents: BlueIntents
     blueStatusModels: import('./status-model.ts').BlueStatusModelService
     blueDockModels: import('./dock-model.ts').BlueDockModelService
   }
@@ -123,17 +107,6 @@ export interface TranscriptToolItem {
   parsedArguments?: unknown
   /** Present once the paired `tool/result` event has folded in. */
   result?: TranscriptToolResult
-  /**
-   * The reconstructed `ToolResult` (`content`, `isError`, optional `meta`)
-   * handed to the `presentResult` hook; set alongside {@link result}.
-   */
-  rawResult?: ToolResult
-  /**
-   * The resolved render intent: the call view once `tool/call` folds, replaced
-   * by the result view when `presentResult` returns one. Absent without a
-   * `present` hook or when the presenters decline.
-   */
-  view?: ToolCallView | ToolResultView
 }
 
 /** A turn that failed: the `turn/end` error reason rendered as a row, so a
@@ -193,116 +166,6 @@ export type TranscriptItem =
   | TranscriptStepSummaryItem
   | TranscriptErrorItem
   | TranscriptInterruptedItem
-
-/**
- * One footer status contribution. `render` returns a single styled line
- * (ANSI allowed) whose visible width never exceeds the offered budget; an
- * empty string hides the entry for the frame — it then occupies nothing, not
- * even a separator slot.
- */
-export interface BlueStatusEntry {
-  /** Stable, unique entry id (dotted, plugin-owned). */
-  readonly id: string
-  /**
-   * Layout order: entries fill the footer in ascending priority, and ties
-   * keep registration order. The baseline entry (`blue-status-basic`) is 0,
-   * the bundled enhancements 5/10/20/30, leaving room between and after.
-   */
-  readonly priority: number
-  /**
-   * Which footer band the entry lays out in — 1 (above) or 2 (below). The
-   * default is 1. Values outside the shell's band budget are clamped into
-   * it, never dropped.
-   */
-  readonly row?: 1 | 2
-  /**
-   * The horizontal cluster the entry joins within its band. The default is
-   * `'left'`. A `'right'` entry is right-aligned after a minimum gap and
-   * yields before the left cluster under width pressure; any other value is
-   * treated as `'left'`.
-   */
-  readonly align?: 'left' | 'right'
-  /**
-   * Render the entry within the offered width budget. Called exactly once
-   * per frame the shell lays out: a left-cluster entry's budget is the width
-   * remaining in its band's left cluster, a right-cluster entry's is what
-   * remains after the left cluster and the inter-cluster gap.
-   * @param width - remaining cluster width in columns.
-   * @returns one styled line, or '' to hide the entry this frame.
-   */
-  render(width: number): string
-}
-
-/** `ctx.blueStatus` — the status-entry registry feeding the footer shell. */
-export interface BlueStatus {
-  /**
-   * Register one entry. A duplicate id throws (same conflict discipline as
-   * the keymap): every live id is claimed by at most one entry.
-   * @param entry - the entry to add.
-   * @returns a disposer unregistering the entry; safe to call twice.
-   */
-  register(entry: BlueStatusEntry): () => void
-}
-
-/** The props handed to a {@link BlueIntentEntry} factory. */
-export interface BlueIntentProps {
-  /** The tool item to render (carries the resolved `view`). */
-  readonly item: TranscriptToolItem
-  /** The semantic color table. */
-  readonly colors: BlueSemanticColors
-  /** The component factory providing width helpers and Markdown/image parts. */
-  readonly components: BlueComponents
-  /** The current Ctrl-O expansion state to assume at creation. */
-  readonly expanded: boolean
-}
-
-/**
- * A component created through an intent entry. `setExpanded` is optional:
- * entries without it are skipped by the Ctrl-O expansion toggle.
- */
-export interface BlueIntentComponent extends BlueComponent {
-  /**
-   * Switch between the collapsed and expanded presentation, if supported.
-   * @param expanded - true renders the full detail, false the summary.
-   */
-  setExpanded?(expanded: boolean): void
-}
-
-/**
- * One render-intent contribution: `create` builds the component for a tool
- * item whose resolved view selects this intent. The built-in `'generic'`
- * entry is the fallback for every unknown intent.
- */
-export interface BlueIntentEntry {
-  /** The intent name, matched against a view's `card` tag. */
-  readonly intent: string
-  /**
-   * Create the component rendering one tool item.
-   * @param props - the item, colors, factory, and expansion state.
-   * @returns the component to mount.
-   */
-  create(props: BlueIntentProps): BlueIntentComponent
-}
-
-/** `ctx.blueIntents` — the render-intent registry behind tool-card creation. */
-export interface BlueIntents {
-  /**
-   * Register one entry. A duplicate intent throws (same conflict discipline
-   * as the status registry): every live intent is claimed by at most one
-   * entry.
-   * @param entry - the entry to add.
-   * @returns a disposer unregistering the entry; safe to call twice.
-   */
-  register(entry: BlueIntentEntry): () => void
-  /**
-   * Resolve the entry for one intent: exact match, else the `'generic'`
-   * entry, else the first registered entry. Never throws for an unknown
-   * intent — only for a registry with no entries at all.
-   * @param intent - the intent name (a view's `card` tag).
-   * @returns the entry to create the component with.
-   */
-  resolve(intent: string): BlueIntentEntry
-}
 
 /** Re-exported so consumers of the fold model need no second import site. */
 export type { SessionEvent }

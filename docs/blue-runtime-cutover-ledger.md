@@ -1,9 +1,6 @@
 # Frontend Runtime Cutover Ledger
 
-> Status: machine gates green; C4 deletion rows and dedicated-profile human
-> acceptance are still pending. The cutover is complete only when every
-> behavior row and deletion row is `complete`, all evidence gates pass, and the
-> dedicated profile receives explicit human acceptance.
+> Status: C4 legacy deletion and all current-tree machine/profile gates are complete. Explicit live human acceptance is pending. No merge, version change, tag, publish, or production-profile mutation is authorized before acceptance.
 
 ## Frozen Inputs
 
@@ -19,70 +16,101 @@
 | PR #62 | `dac99a4cb24278bef10e3672b59530d5eb3d9d6c` | rewind and session tree |
 | PR #63 | `f2d8ab2514ace94c3a07a30d9d2d247ac2af1a33` | provider onboarding |
 
-The remote master and PR heads are frozen for this migration. PR #34 and #38
-are out of scope; PR #36 is superseded by this cutover.
-
-The cutover merge is `02abd886995598ad7706752a59f45a16c43026b5`; the follow-up
-docs index commit is `9822f070e0a923260ec5bc687cd626189a5a3b76`. The final
-worktree is `/home/x/dev/blue-runtime-cutover` on
-`p2/frontend-runtime-cutover`; evidence and merge-residual fixes are in
-`4819f91`.
+PR #34 and #38 are out of scope; PR #36 is superseded. Work continues only in `/home/x/dev/blue-runtime-cutover` on `p2/frontend-runtime-cutover`.
 
 ## Behavior Migration
 
-| Surface | Domain / official input | Projection / action | Frontend model | Renderer / composition | Required evidence | Status |
-|---|---|---|---|---|---|---|
-| CLI and release pipeline | npm/package manifests | package contract and immutable tarball release | n/a | standalone CLI and workflows | CLI specs, `check:lib`, `check:pack`, packed install | machine-complete; human pending |
-| ocean/paper themes | semantic palette config | Fiber-owned theme registration | `ThemeModel` | core palette compiler and bundle rows | lifecycle, width, live theme swap | machine-complete; human pending |
-| native image paste | platform clipboard capability | attachment save plus `editor.set` action | notification/editor models | interaction command and core input route | platform probes, abort/unload, PTY paste | machine-complete; human pending |
-| update/changelog | npm/profile capability | cancellable update actions | command/panel/notification models | generic frontend panel | cooldown, rollback, late result, packed CLI | machine-complete; human pending |
-| trace | official trace projection | session-scoped trace query/action | list/detail panel models | generic frontend panel | replay, switch, unload, width | machine-complete; human pending |
-| btw | session action capability | side-session action/model | dock model | dock renderer | resize, scroll, unload, width | machine-complete; human pending |
-| retract (#58) | cancellation plus durable surface replacement | `session.retract` | editor notification/action result | no transcript event fold | replay/restart, ordinary compaction, stale rejection | machine-complete; human pending |
-| update cooldown (#59) | install eligibility/cache | startup notification action | `NotificationModel` | notification consumer | time/cache matrix, unload | machine-complete; human pending |
-| creative mode (#60) | capability-scoped plugin host | effect-bound contribution registries | view/command/status/dock/notification models | standard consumers and preset composition | hostile plugin, unload, packed fixture | machine-complete; human pending |
-| settings (#61) | official settings service | revisioned get/set/unset | `SettingsPanelModel` | generic form/list renderer | stale revision, restart marker, secret elision | machine-complete; human pending |
-| rewind/tree (#62) | official session store/query | `session.rewind` and tree query | `SessionTreeModel` | generic select/info renderer | seed lineage, stale action, restart/replay | machine-complete; human pending |
-| onboarding (#63) | official credentials/settings capability | `credentials.set` | secret `FormPanelModel` | generic form renderer | redaction, abort/unload, provider refresh | machine-complete; human pending |
+| Surface | Domain / official input | Projection / action | Frontend model / renderer | Status |
+|---|---|---|---|---|
+| CLI and release pipeline | package manifests/profile | immutable package contract | standalone CLI/workflows | machine evidence to rerun; human pending |
+| ocean/paper themes | semantic palette config | Fiber-owned theme registration | `ThemeModel` + core compiler | source-complete; human pending |
+| native image paste | clipboard capability | attachment save/editor action | editor/notification models | source-complete; human pending |
+| update/changelog | npm/profile capability | cancellable update actions | panel/notification models | source-complete; human pending |
+| trace | official session query | scoped query/copy action | list/detail panels | source-complete; human pending |
+| btw | app side-session action | opaque projection session + owned handle | `DockModel` renderer | source-complete; human pending |
+| retract (#58) | request cancellation/durable replacement | app retract lifecycle | semantic transcript removal/notice | source-complete; human pending |
+| update cooldown (#59) | install eligibility/cache | startup notification action | `NotificationModel` | source-complete; human pending |
+| creative mode (#60) | capability-scoped plugin host | effect-bound registries | view/command/status/dock/notification bridges | source-complete; human pending |
+| settings (#61) | official settings | revisioned get/set/unset | settings/form panels | source-complete; human pending |
+| rewind/tree (#62) | session store/query | rewind action/tree query | select/info panels | source-complete; human pending |
+| onboarding (#63) | credentials/settings | secret write action | secret-aware form flow | source-complete; human pending |
 
 ## Legacy Deletion Gate
 
-| Superseded surface | Replacement required before deletion | Status |
+| Superseded surface | Replacement | Status |
 |---|---|---|
-| transcript `fold.ts` and direct session-event subscription | official conversation projection covers live/replay/tool/thinking/image/interruption/retraction | pending |
-| direct `BlueStatusEntry` compatibility | every status producer publishes `StatusModel` | pending |
-| legacy tool intent presenters | official tool projection/presentation model covers every card | pending |
-| command-specific dialog implementations | generic renderer-neutral panel models cover all commands | pending |
-| activity/todo/agents/queue/btw pane-owned folds | official feature projections publish `DockModel` | pending |
-| shared editor module singleton | frontend-tree-scoped editor host and structured actions | pending |
-| implicit bundle ordering | explicit dependencies and composition assertions | pending |
-| package-internal imports | public exports or narrow adapter contracts | pending |
+| transcript `fold.ts` and direct session-event subscription | official `blueConversation` replay/live projection and semantic consumer | complete |
+| direct `BlueStatusEntry` compatibility | all status producers publish `StatusModel` | complete |
+| legacy tool intent presenters | canonical tool presentation -> `ToolPresentationModel` | complete |
+| command-specific dialog implementations | generic renderer-neutral panel models, structured actions and shared `FrontendPanel` | complete; model/effort, trace/detail and update renderer classes deleted |
+| activity/todo/agents/queue/btw pane-owned folds | `blueConversationFacts`/app actions -> `DockModel` | complete |
+| shared editor module singleton | frontend-tree `EditorHostService` and `InteractionStateService` | complete |
+| implicit bundle ordering | explicit inject dependencies and composition assertions | complete |
+| package-internal imports | public exports and narrow adapter/app contracts | complete |
 
-Compatibility adapters may remain only for the current and previous Harness
-lines. Each adapter must state the upstream capability that permits its removal;
-none may expose or retain an Agent, Session, renderer object, or duplicate
-business state.
+The deletion audit distinguishes renderer event folding from legitimate domain ownership. App helpers may inspect a private Agent/session log to perform rewind, retraction, title cadence, mode restoration or audit export; trace formatting may consume official query records. None of those values enter a frontend model as Agent, Session or raw renderer state.
 
-The 2026-08-25 audit still finds runtime consumers for the legacy fold and
-session facts in export, activity/todo/agents/btw panes, status/context helpers,
-and app/session actions; `BlueStatusEntry` and the `blueIntents` registry also
-remain compatibility surfaces. The official transcript consumer is default and
-prevents duplicate rendering, but these consumers keep the corresponding C4
-rows `pending` until projection/model replacements are implemented.
+`blue-conversation` now owns both `blueConversation` and `blueConversationFacts`. Transcript rendering, status producers and activity/todo/agents panes consume projection values through app-owned reader/projection seams. BTW uses an owned opaque side-session handle; queue uses app actions. `BlueStatusEntry`, `blueIntents`, intent subpaths, child-event tracking, the shared editor singleton, `ModelPanel`/`EffortPanel`, `TracePanel`/`TraceDetailPanel`, `UpdatePanel`, and their retired thinking-segment renderer are physically absent.
+
+## Package And Composition Record
+
+- Release line stays `0.1.0-rc.8` until the acceptance gate authorizes the later release step.
+- Validation-only packages remain outside the release/bundle closure; `packages/context/package.json` remains `0.1.0-rc.2`.
+- The bundle contains 28 Blue-owned rows: 2 host-support, 8 baseline, 14 enhancement and 4 assembly rows.
+- Conversation projection and official transcript consumption are baseline rows. Context, remote, OpenPencil and Lark are validation-only, not bundle rows.
+- No operation may mutate the production `blue` profile.
 
 ## Final Evidence
 
-- Full unit, per-file coverage, typecheck, lint, diagrams, build, library-export,
-  package, website, and all real-process smoke gates.
-- Validator passes for all 10 release packages and all 4 validation-only
-  packages (`valid: true`, no architecture/lifecycle/package violations).
-- Packed fixtures for `context`/`openpencil` on `0.1.1-rc.2` and
-  `remote`/`lark` on `0.1.1-rc.1` execute every declared scenario without
-  skips or failures and report `fixtureCleaned: true`.
-- `pnpm run test` reports 170 files / 2711 tests; coverage is 100% for every
-  executable source file; `check:pack` emits exactly 10 tarballs.
-- `pnpm smoke:happy`, `pnpm smoke:pty`, and `pnpm smoke:pty:mouse` pass; the
-  dedicated profile links to this worktree and headless `/quit` exits 0 with
-  bracketed paste lifecycle intact.
-- Explicit human acceptance still precedes the rc.9 version change and atomic
-  PR; no version, tag, merge, profile deletion, or npm publish has occurred.
+Current-tree machine evidence (2026-08-26):
+
+- `pnpm run test`: exit 0; 162 files, 2419 passed, 36 skipped.
+- `pnpm run test:coverage`: exit 0; 100% of 11757 statements, 7444
+  branches, 2476 functions, and 9694 lines.
+- `pnpm run typecheck`: exit 0. `pnpm run lint`: exit 0 with ten existing
+  warnings and no errors.
+- `pnpm run build`: the first clean forced build exposed context's missing
+  `../app` project reference; after adding that dependency arm, the clean build
+  exits 0. `pnpm run check:lib` verifies 67 built/shipped export claims.
+- `pnpm run diagrams:check` and `pnpm run website:build`: exit 0.
+- `pnpm run check:pack`: exit 0; exactly 10 tarballs, all publint-clean, with
+  160 library files / 1163271 bytes and no workspace/link/file spec leak.
+- All 14 `node script/blue-plugin-validate.mjs <package>` runs exit 0 with
+  `valid: true` and zero package, architecture, or lifecycle violations. JSON
+  reports are preserved under `.artifacts/validation/`.
+
+Packed fixture matrix, each from an independent tarball install and public
+package exports only:
+
+| Target | Harness `0.1.1-rc.2` | Harness `0.1.1-rc.1` |
+|---|---:|---:|
+| context | 7/7 | 7/7 |
+| remote | 7/7 | 7/7 |
+| conversation | 11/11 | 11/11 |
+| transcript | 11/11 | 11/11 |
+| openpencil | 9/9 | 9/9 |
+| lark | 9/9 | 9/9 |
+
+Every fixture report has exact requested `harnessPackages`, empty `skipped`
+and `failures`, `declared === executed`, `independentInstall: true`, and
+`fixtureCleaned: true`. The fixture runner itself was updated from the retired
+context/conversation service shapes to the public app projection seams before
+this matrix was accepted; both failing pre-fix JSON reports remain preserved.
+
+Process/profile evidence:
+
+- `pnpm smoke:happy`: `HAPPY_SMOKE_PASS exit=0` at 40 columns with the real
+  CLI and width-hostile mock stream.
+- `pnpm smoke:pty`: `PTY_SMOKE_PASS exit=0`.
+- `pnpm smoke:pty:mouse`: `PTY_MOUSE_SMOKE_PASS exit=0`.
+- `PROFILE=blue-runtime-cutover script/install-dev.sh`: exit 0; all 11 linked
+  Blue packages resolve into `/home/x/dev/blue-runtime-cutover`; production
+  profile `blue` was not modified.
+- The pseudo-TTY `/quit` smoke exits 0. Its preserved transcript
+  `.artifacts/blue-runtime-cutover-headless-20260826-c4.typescript` contains
+  one bracketed-paste enable and one disable, no width error, and a clean
+  session-save exit; no `blue-overflow.log` exists in the profile.
+
+Machine C6 is complete. The remaining gate is the user's live test of
+`dsh --profile blue-runtime-cutover` and exact acceptance response
+`验收通过`; automated evidence cannot substitute for it.

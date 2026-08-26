@@ -1,5 +1,5 @@
 /**
- * `blue-status-basic` plugin: the baseline model-name entry. Covers the
+ * `blue-status-basic-model` plugin: the baseline model-name entry. Covers the
  * model-source preference order (request header → options.model →
  * options.provider → 'no model'), the no-session empty render, the `text`
  * color tier, session-change rebinding, and the `session/event`
@@ -8,15 +8,15 @@
 
 import { describe, expect, it } from 'vitest'
 import type { Session } from '@deepseek-ai/dsh-session'
-import * as basic from '../src/status-basic.ts'
+import * as basic from '../src/status-basic-model.ts'
 import { userEvent } from './helpers.ts'
 import { asAgent, bootStatusPlugin, COLORS, fakeAgent } from './status-fakes.ts'
 
-describe('blue-status-basic', () => {
+describe('blue-status-basic-model', () => {
   it('renders nothing without an attached agent', async () => {
     const harness = await bootStatusPlugin(basic)
     expect(harness.entry.render(80)).toBe('')
-    expect(harness.entry.id).toBe('blue.status.basic')
+    expect(harness.entry.id).toBe('')
     expect(harness.entry.priority).toBe(0)
     // Events arriving before any session attaches leave the entry empty.
     const stray = fakeAgent([])
@@ -57,13 +57,13 @@ describe('blue-status-basic', () => {
     await harness.dispose()
   })
 
-  it('rebinds on blue/session-changed and ignores the old agent afterwards', async () => {
+  it('rebinds on test/session-changed and ignores the old agent afterwards', async () => {
     const first = fakeAgent([], { model: 'first-model' })
     const { ctx, entry, dispose } = await bootStatusPlugin(basic, first)
     expect(entry.render(80)).toBe('first-model')
 
     const second = fakeAgent([], { model: 'second-model' })
-    ctx.emit('blue/session-changed', asAgent(second))
+    ctx.emit('test/session-changed', asAgent(second))
     expect(entry.render(80)).toBe('second-model')
 
     first.status = 'running'
@@ -99,8 +99,8 @@ describe('blue-status-basic', () => {
 
   it('unregisters the entry when the fiber unloads', async () => {
     const harness = await bootStatusPlugin(basic, fakeAgent([], { model: 'm' }))
-    expect(harness.registry.entries).toHaveLength(1)
+    expect(harness.models.list()).toHaveLength(1)
     await harness.dispose()
-    expect(harness.registry.entries).toHaveLength(0)
+    expect(harness.models.list()).toHaveLength(0)
   })
 })

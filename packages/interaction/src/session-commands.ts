@@ -6,7 +6,7 @@
  * CC-style heuristic composition section, read through the
  * session-projection seam (`dsh-token-meter`/`dsh-session-stats` in the
  * base composition) with the local `usage.ts` fold as the degraded host's
- * fallback; and `/version` — the banner constant and the live model as a
+ * fallback inside blue-app; and `/version` — the banner constant and the live model as a
  * notice (the kimi shape). The panels are read-only `InfoPanel`s mounted
  * through the D30 editor-slot swap; this module injects nothing and
  * resolves every service through `ctx.get` (the `/theme` fiber-dispose
@@ -20,7 +20,7 @@ import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import type { Action, PanelModel } from '@dsh-blue/blue-frontend'
 import { BLUE_VERSION } from '@dsh-blue/blue-transcript/banner-content'
 // Empty type imports carry the `commands` merge the registration uses and
-// the app-owned `blueSession` merge every handler reads.
+// the app-owned session boundary every handler reads.
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@dsh-blue/blue-app'
 import type { InfoRow, InfoSection, InfoSegment, InfoStyle } from './info-panel.ts'
@@ -287,7 +287,7 @@ export function buildCompositionSection(input: CompositionInput): InfoSection | 
 /** The header facts the `/status` panel reads. */
 export interface StatusInput {
   /** The session's durable header facts. */
-  readonly header: { readonly id: string, readonly cwd?: string, readonly createdAt: number }
+  readonly header: { readonly id: string, readonly cwd?: string | undefined, readonly createdAt: number }
   /** Whole-log turn and step counts. */
   readonly turns: number
   readonly steps: number
@@ -386,32 +386,6 @@ export function buildUsageSections(
 }
 
 /**
- * Read the live session's model facts: the S23 `modelRef` selection (what
- * the next request uses), falling back to the last logged request header.
- * @param ctx - plugin context (`blueSession` resolved lazily).
- * @param agent - the live agent.
- * @returns the model facts, when either source answers.
- */
-function readModelFacts(ctx: Context, agent: { session: { requestHeader(): { config: { provider: string, model: string, reasoningEffort?: string } } | undefined } }): StatusModelFacts | undefined {
-  const ref = ctx.get('blueSession')?.modelRef
-  if (ref !== undefined) {
-    const selection = ref.current
-    return {
-      provider: selection.provider,
-      model: selection.model,
-      ...(selection.reasoningEffort !== undefined ? { effort: String(selection.reasoningEffort) } : {}),
-    }
-  }
-  const config = agent.session.requestHeader()?.config
-  if (config === undefined) return undefined
-  return {
-    provider: config.provider,
-    model: config.model,
-    ...(config.reasoningEffort !== undefined ? { effort: String(config.reasoningEffort) } : {}),
-  }
-}
-
-/**
  * Register the session-info commands (`/status`, `/context`, `/version`) on
  * `ctx.commands`.
  * @param ctx - plugin context.
@@ -425,29 +399,35 @@ export function registerSessionCommands(ctx: Context, displayVersion = BLUE_VERS
    * @returns the command outcome.
    */
   function showStatus(): CommandResult {
-    const session = ctx.get('blueSession')
-    const agent = session?.current
-    if (session === undefined || agent === undefined || agent === null) {
+    const details = ctx.blueSessionActions.sessionDetails()
+    if (details === undefined) {
       return { kind: 'error', text: 'no session is live yet' }
     }
     const display = displayServices(ctx)
     if (display === undefined) {
       return { kind: 'error', text: 'status panel is unavailable: the Blue screen is not mounted' }
     }
-    const counts = readTurnCounts(ctx, agent)
-    const model = readModelFacts(ctx, agent) ?? { provider: 'unknown', model: 'not set' }
-    const restore = mountEditorReplacement(new InfoPanel({
+    const counts = readTurnCounts(ctx)
+    const selection = details.model
+    const model: StatusModelFacts = selection === undefined
+      ? { provider: 'unknown', model: 'not set' }
+      : {
+          provider: selection.provider,
+          model: selection.model,
+          ...(selection.reasoningEffort === undefined ? {} : { effort: selection.reasoningEffort }),
+        }
+    const restore = mountEditorReplacement(ctx, new InfoPanel({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,
       title: 'status',
       sections: buildStatusSections({
-        header: agent.session.header,
+        header: details.header,
         turns: counts.turns,
         steps: counts.steps,
-        agentStatus: agent.status,
+        agentStatus: details.status,
         model,
-        context: readUsageFacts(ctx, agent).context,
+        context: details.usage.context,
       }, displayVersion),
       onClose: () => {
         restore()
@@ -462,9 +442,8 @@ export function registerSessionCommands(ctx: Context, displayVersion = BLUE_VERS
    * @returns the command outcome.
    */
   function showContext(): CommandResult {
-    const session = ctx.get('blueSession')
-    const agent = session?.current
-    if (session === undefined || agent === undefined || agent === null) {
+    const details = ctx.blueSessionActions.sessionDetails()
+    if (details === undefined) {
       return { kind: 'error', text: 'no session is live yet' }
     }
     const display = displayServices(ctx)
@@ -485,18 +464,21 @@ export function registerSessionCommands(ctx: Context, displayVersion = BLUE_VERS
         onAction: async action => { await projected.execute(action) },
         onClose: close,
       })
-      cleanups.push(mountEditorReplacement(panel))
+      cleanups.push(mountEditorReplacement(ctx, panel))
       cleanups.push(projected.subscribe(() => panel.invalidate()))
       return { kind: 'success' }
     }
-    const facts = readUsageFacts(ctx, agent)
-    const model = readModelFacts(ctx, agent) ?? { provider: 'unknown', model: 'not set' }
-    const restore = mountEditorReplacement(new InfoPanel({
+    const facts = readUsageFacts(ctx)
+    const selection = details.model
+    const model = selection === undefined
+      ? { provider: 'unknown', model: 'not set' }
+      : { provider: selection.provider, model: selection.model }
+    const restore = mountEditorReplacement(ctx, new InfoPanel({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,
       title: 'context',
-      sections: buildUsageSections(facts, `${model.model} (${model.provider})`, readCompositionFacts(ctx, agent)),
+      sections: buildUsageSections(facts, `${model.model} (${model.provider})`, readCompositionFacts(ctx)),
       onClose: () => {
         restore()
       },
@@ -515,7 +497,7 @@ export function registerSessionCommands(ctx: Context, displayVersion = BLUE_VERS
     if (display === undefined) {
       return { kind: 'error', text: 'version panel is unavailable: the Blue screen is not mounted' }
     }
-    const restore = mountEditorReplacement(new InfoPanel({
+    const restore = mountEditorReplacement(ctx, new InfoPanel({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,
@@ -532,7 +514,7 @@ export function registerSessionCommands(ctx: Context, displayVersion = BLUE_VERS
   function showChangelog(): CommandResult {
     const display = displayServices(ctx)
     if (display === undefined) return { kind: 'error', text: 'changelog panel is unavailable: the Blue screen is not mounted' }
-    const restore = mountEditorReplacement(new InfoPanel({
+    const restore = mountEditorReplacement(ctx, new InfoPanel({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,

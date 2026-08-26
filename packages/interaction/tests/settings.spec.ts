@@ -6,10 +6,7 @@
  * commit-follow, pre-attach commit silence, failure restore, and the
  * unload guard).
  *
- * Module state (`source`/`lastAppliedTheme` in settings.ts, `current` in
- * theme-switch.ts) is shared across this file, so the cases run
- * sequentially and each leaves a known theme active — the
- * theme-switch.spec discipline. The theme modules come from the package
+ * Settings and live-theme identity are frontend-tree scoped. The theme modules come from the package
  * subpaths (never relative core source paths) so the swap's registry keys
  * match the modules theme-switch statically imports.
  */
@@ -22,13 +19,14 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-settings'
 import SettingsProvider, { settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 // Empty type import carries the app-owned `blueSession` Context merge and
-// the 'blue/session-changed' Events merge the attach helper emits.
+// the 'test/session-changed' Events merge the attach helper emits.
 import type {} from '@dsh-blue/blue-app'
 import * as themeDark from '@dsh-blue/blue-core/theme-dark'
 import * as themeOcean from '@dsh-blue/blue-core/theme-ocean'
 import * as themePaper from '@dsh-blue/blue-core/theme-paper'
 import * as settingsPlugin from '../src/settings.ts'
 import { applyTheme } from '../src/theme-switch.ts'
+import { InteractionStateService } from '../src/runtime-state.ts'
 
 /**
  * The theme applier's failure branch needs a swap that actually fails; a
@@ -69,18 +67,50 @@ class MemorySettings extends SettingsProvider {
   }
 }
 
+/** Create one isolated frontend tree with interaction runtime state. */
+function createContext(): Context {
+  const ctx = new Context()
+  new InteractionStateService(ctx, settingsPlugin.DEFAULT_SETTINGS)
+  return ctx
+}
+
+/** Provide the app-owned session reader over the mutable compatibility ref. */
+function provideSessionReader(ctx: Context, session: { current: Agent | null }): void {
+  const snapshot = () => session.current === null ? null : {
+    id: String(session.current.id),
+    cwd: process.cwd(),
+    status: 'idle' as const,
+    mode: 'normal' as const,
+  }
+  const listeners = new Set<(snapshot: ReturnType<typeof snapshot>) => void>()
+  ctx.provide('blueSessionReader', {
+    current: snapshot,
+    subscribe(listener) {
+      listeners.add(listener)
+      listener(snapshot())
+      return { disposed: false, dispose: () => { listeners.delete(listener) } }
+    },
+    request: async () => ({ ok: false, code: 'BLUE_SESSION_UNAVAILABLE', message: 'not used' }),
+  })
+  ctx.on('test/session-changed', () => {
+    const value = snapshot()
+    for (const listener of listeners) listener(value)
+  })
+}
+
 /** Mount the provider, a null-current `blueSession` ref, and the settings plugin. */
 async function mount(doc: Record<string, unknown> = {}): Promise<{
   ctx: Context
   settings: SettingsProvider
   attach: () => void
 }> {
-  const ctx = new Context()
+  const ctx = createContext()
   await ctx.plugin(MemorySettings, doc)
   // The real app updates `blueSession.current` before broadcasting the
   // switch event; the fake mirrors that contract by staying mutable.
   const session = { current: null as Agent | null }
-  ctx.provide('blueSession', session)
+  ctx.provide('testSession', session)
+  provideSessionReader(ctx, session)
   await ctx.plugin(settingsPlugin)
   await settle()
   return {
@@ -89,7 +119,7 @@ async function mount(doc: Record<string, unknown> = {}): Promise<{
     attach: () => {
       const agent = { id: 'settings-spec' } as unknown as Agent
       session.current = agent
-      ctx.emit('blue/session-changed', agent)
+      ctx.emit('test/session-changed', agent)
     },
   }
 }
@@ -101,8 +131,8 @@ function settle(ms = 30): Promise<void> {
 
 describe('blue-settings schema and registration', () => {
   it('resolves every schema default and starts on the composition defaults', () => {
-    // Must run before any attach: the thunk starts at the composition entry.
-    expect(settingsPlugin.currentBlueSettings()).toEqual(settingsPlugin.DEFAULT_SETTINGS)
+    const ctx = createContext()
+    expect(settingsPlugin.currentBlueSettings(ctx)).toEqual(settingsPlugin.DEFAULT_SETTINGS)
     expect(settingsPlugin.Config({})).toEqual(settingsPlugin.DEFAULT_SETTINGS)
     expect(settingsPlugin.DEFAULT_SETTINGS).toEqual({
       updateCheck: true,
@@ -122,13 +152,13 @@ describe('blue-settings schema and registration', () => {
   })
 
   it('registers the blue namespace exactly once and reflects user overrides', async () => {
-    const { settings } = await mount({ blue: { updateCheck: false, updateChannel: 'beta' } })
+    const { ctx, settings } = await mount({ blue: { updateCheck: false, updateChannel: 'beta' } })
     const blue = settings.describe().filter(descriptor => String(descriptor.ns) === 'blue')
     expect(blue).toHaveLength(1)
     // The namespace is taken: a second registration fails loud upstream.
     expect(() => settings.register(settingsNamespace('blue'), settingsPlugin.Config)).toThrow(/already registered/u)
     // The thunk resolves schema defaults layered with the user document.
-    expect(settingsPlugin.currentBlueSettings()).toEqual({
+    expect(settingsPlugin.currentBlueSettings(ctx)).toEqual({
       updateCheck: false,
       updateChannel: 'beta',
       theme: 'dark',
@@ -147,7 +177,8 @@ describe('blue-settings schema and registration', () => {
 
 describe('blue-settings theme applier', () => {
   it('degrades without a settings service or a session', async () => {
-    const ctx = new Context()
+    const ctx = createContext()
+    provideSessionReader(ctx, { current: null })
     await ctx.plugin(settingsPlugin)
     await settle()
     expect(ctx.get('blueTheme')).toBeUndefined()
@@ -220,9 +251,11 @@ describe('blue-settings theme applier', () => {
 
   it('syncs immediately when a session is already attached at load', async () => {
     themeMock.calls.length = 0
-    const ctx = new Context()
+    const ctx = createContext()
     await ctx.plugin(MemorySettings, { blue: { theme: 'ocean' } })
-    ctx.provide('blueSession', { current: { id: 'settings-spec' } as unknown as Agent })
+    const session = { current: { id: 'settings-spec' } as unknown as Agent }
+    ctx.provide('testSession', session)
+    provideSessionReader(ctx, session)
     await ctx.plugin(settingsPlugin)
     await vi.waitFor(() => {
       expect(ctx.get('blueTheme')?.colors).toBe(themeOcean.OCEAN_COLORS)
@@ -238,18 +271,19 @@ describe('blue-settings theme applier', () => {
   it('does not record a failed swap: the error result warns and the provider stays put', async () => {
     themeMock.forceFailure = true
     try {
-      const ctx = new Context()
+      const ctx = createContext()
       const warn = vi.spyOn(ctx.logger, 'warn')
       await ctx.plugin(MemorySettings, { blue: { theme: 'ocean' } })
       const session = { current: null as Agent | null }
-      ctx.provide('blueSession', session)
+      ctx.provide('testSession', session)
+      provideSessionReader(ctx, session)
       await ctx.plugin(settingsPlugin)
       // Let the settings inject resolve before the attach: the prime reads
       // the resolved scope.
       await settle()
       const agent = { id: 'settings-spec' } as unknown as Agent
       session.current = agent
-      ctx.emit('blue/session-changed', agent)
+      ctx.emit('test/session-changed', agent)
       await vi.waitFor(() => {
         expect(warn).toHaveBeenCalledWith('forced failure for ocean')
       })
@@ -261,16 +295,17 @@ describe('blue-settings theme applier', () => {
   })
 
   it('never attaches once the fiber unloaded before the first session', async () => {
-    const ctx = new Context()
+    const ctx = createContext()
     await ctx.plugin(MemorySettings, { blue: { theme: 'ocean' } })
     const session = { current: null as Agent | null }
-    ctx.provide('blueSession', session)
+    ctx.provide('testSession', session)
+    provideSessionReader(ctx, session)
     const fiber = await ctx.plugin(settingsPlugin)
     await fiber.dispose()
     // The attach listener left with the fiber: the emission swaps nothing.
     const agent = { id: 'settings-spec' } as unknown as Agent
     session.current = agent
-    ctx.emit('blue/session-changed', agent)
+    ctx.emit('test/session-changed', agent)
     await settle()
     expect(ctx.get('blueTheme')).toBeUndefined()
   })
@@ -278,7 +313,7 @@ describe('blue-settings theme applier', () => {
 
 describe('applyTheme', () => {
   it('rejects unknown theme keys without touching the live provider', async () => {
-    const ctx = new Context()
+    const ctx = createContext()
     const result = await applyTheme(ctx, 'bogus')
     expect(result.kind).toBe('error')
     expect(result.text).toContain('unknown theme "bogus"')

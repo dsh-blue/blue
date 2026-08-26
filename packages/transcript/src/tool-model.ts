@@ -48,7 +48,7 @@ export function toolCallView(view: ToolCallView): View {
     }
     case 'terminal': {
       const sections: { title: string; body: View }[] = []
-      if (view.description !== undefined) sections.push({ title: view.description, body: { kind: 'text', text: view.cwd ?? '' } })
+      if (view.description !== undefined || view.cwd !== undefined) sections.push({ title: view.description ?? 'cwd', body: { kind: 'text', text: view.cwd ?? '' } })
       sections.push({ title: 'Command', body: { kind: 'code', code: view.title, language: 'shell' } })
       return { kind: 'sections', sections }
     }
@@ -117,13 +117,16 @@ function contentText(content: readonly ContentBlock[] | undefined): string | und
 }
 
 class ToolModelComponent implements BlueComponent {
+  private expandedOverride: boolean | undefined
   constructor(private readonly source: () => ToolPresentationModel | null) {}
   render(width: number): string[] {
     const model = this.source()
     if (model === null) return []
-    const view = model.expanded === false ? model.call : model.result ?? model.call
+    const expanded = this.expandedOverride ?? model.expanded ?? false
+    const view = expanded ? model.result ?? model.call : model.call
     return view === undefined ? [] : [...renderFrontendView(view, width)]
   }
+  setExpanded(expanded: boolean): void { this.expandedOverride = expanded }
   invalidate(): void {}
 }
 

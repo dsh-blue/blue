@@ -88,7 +88,7 @@ describe('blue-pane-activity', () => {
   it('mounts one bottom pane that renders the kimi placeholder row while idle', async () => {
     const { screen, dispose } = await boot()
     expect(activity.name).toBe('blue-pane-activity')
-    expect(activity.inject).toEqual(['blueScreen', 'blueTheme', 'blueComponents'])
+    expect(activity.inject).toEqual(['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionFacts', 'blueDockModels'])
     expect(screen.bottomChildren).toHaveLength(1)
     // kimi's Spacer(1): the placeholder row is always present when the
     // spinner is not, so the dock never jumps at the activity edges.
@@ -137,6 +137,7 @@ describe('blue-pane-activity', () => {
     // A tool result re-enters the moon kind with the next rotation slot;
     // the shared frame counter survived the style flip, so the moon picks
     // up where the cycle left off.
+    emit2(ctx, agent, toolCallEvent(1, 1, 'c0', 'worker', '{}'))
     emit2(ctx, agent, toolResultEvent(1, 1, 'c0', 'done'))
     expect(screen.paneLines()).toEqual([`${MOON_SPINNER_FRAMES[1]!} ↓2 · Tip: ${buildTipRotation(STATUS_TIPS)[2]!.text}`])
     await dispose()
@@ -161,6 +162,7 @@ describe('blue-pane-activity', () => {
     expect(unwrapped(pane, visible)).toEqual([`⠋ working... ↓2 · Tip: ${tip}`])
     // The moon row keeps the frame over the counter under the same
     // pressure, and renders nothing below the two-cell moon itself.
+    emit2(ctx, agent, toolCallEvent(1, 1, 'c0', 'worker', '{}'))
     emit2(ctx, agent, toolResultEvent(1, 1, 'c0', 'done'))
     expect(unwrapped(pane, 2)).toEqual([MOON_SPINNER_FRAMES[0]!])
     expect(unwrapped(pane, 0)).toEqual([])
@@ -189,6 +191,7 @@ describe('blue-pane-activity', () => {
     // per-token heuristic); both counters ride together.
     emit2(ctx, agent, textDelta(1, 2, 'answering'))
     emit2(ctx, agent, reasoningDelta(1, 2, 'thinking hard'))
+    emit2(ctx, agent, toolCallEvent(1, 2, 'c0', 'worker', '{}'))
     emit2(ctx, agent, toolResultEvent(1, 2, 'c0', 'done'))
     expect(screen.paneLines()[0]).toContain('↑3k ↓5')
     // A new turn resets both (the tip rotation is independent — assert the

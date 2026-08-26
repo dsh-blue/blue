@@ -1,7 +1,16 @@
 /** The models.dev catalog index: parsing, matching, and the offline fallback. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { buildIndex, setModelsDevFetch, setModelsDevLoader } from '../src/models-dev.ts'
+import { Context } from '@deepseek-ai/cordis'
+import { buildIndex, loadModelsDevIndex, setModelsDevFetch, setModelsDevLoader } from '../src/models-dev.ts'
+import { InteractionStateService } from '../src/runtime-state.ts'
+import { DEFAULT_SETTINGS } from '../src/settings.ts'
+
+function createContext(): Context {
+  const ctx = new Context()
+  new InteractionStateService(ctx, DEFAULT_SETTINGS)
+  return ctx
+}
 
 /** A small catalog payload covering every field this module reads. */
 function samplePayload(): unknown {
@@ -89,12 +98,14 @@ describe('buildIndex', () => {
 
 describe('loadModelsDevIndex', () => {
   it('surfaces an HTTP failure as the quiet offline path', async () => {
+    const ctx = createContext()
     setModelsDevLoader(undefined)
     setModelsDevFetch(async () => { throw new Error('HTTP 503') })
-    expect(await (await import('../src/models-dev.ts')).loadModelsDevIndex()).toBeUndefined()
+    expect(await loadModelsDevIndex(ctx)).toBeUndefined()
   })
 
   it('fetches, caches within the TTL, and survives failures quietly', async () => {
+    const ctx = createContext()
     const setDefaultLoader = (): void => { setModelsDevLoader(undefined) }
     setDefaultLoader()
     let calls = 0
@@ -102,15 +113,15 @@ describe('loadModelsDevIndex', () => {
       calls += 1
       return samplePayload()
     })
-    const first = await (await import('../src/models-dev.ts')).loadModelsDevIndex()
-    const second = await (await import('../src/models-dev.ts')).loadModelsDevIndex()
+    const first = await loadModelsDevIndex(ctx)
+    const second = await loadModelsDevIndex(ctx)
     expect(first?.lookup('glm-4.6')).toBeDefined()
     expect(second).toBe(first)
     expect(calls).toBe(1)
 
     setModelsDevFetch(async () => { throw new Error('offline') })
     setModelsDevLoader(undefined)
-    expect(await (await import('../src/models-dev.ts')).loadModelsDevIndex()).toBeUndefined()
+    expect(await loadModelsDevIndex(createContext())).toBeUndefined()
   })
 
   it('runs the default fetch seam against a stubbed global fetch', async () => {
@@ -121,7 +132,7 @@ describe('loadModelsDevIndex', () => {
     })
     setModelsDevLoader(undefined)
     setModelsDevFetch(undefined)
-    const index = await (await import('../src/models-dev.ts')).loadModelsDevIndex()
+    const index = await loadModelsDevIndex(createContext())
     expect(index).toBeDefined()
     expect(calls[0]?.url).toBe('https://models.dev/api.json')
     expect(calls[0]?.headers.accept).toBe('application/json')
@@ -130,7 +141,7 @@ describe('loadModelsDevIndex', () => {
     // A non-2xx answer throws inside the seam; the loader swallows it.
     vi.stubGlobal('fetch', async () => new Response('nope', { status: 503 }))
     setModelsDevLoader(undefined)
-    expect(await (await import('../src/models-dev.ts')).loadModelsDevIndex()).toBeUndefined()
+    expect(await loadModelsDevIndex(createContext())).toBeUndefined()
     vi.unstubAllGlobals()
   })
 

@@ -1,95 +1,97 @@
 # Built-in plugins
 
-Every surface in Blue is a plugin (a patch row) — this page is the directory of the 29 built-ins, including five accepted frontend-runtime/ecosystem rows that are default-enabled and capability-gated. They double as living examples of what plugins can do: status entries, tool cards, editor enhancements, whole panes — all registered through the seams in the [Seam reference](/en/plugins/seams), each removable.
-
-The three-segment structure at a glance (same single source as the repo READMEs, `docs/diagrams/blue-composition.mmd`):
+The installable Blue bundle contains 28 Blue-owned rows: two host-support rows and 26 product rows split into baseline, enhancement, and assembly segments. External plugins integrate through the renderer-neutral public API; internal rows connect through explicit `inject` dependencies and model/action seams.
 
 <!-- BEGIN diagram:blue-composition -->
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml — the 29 Blue rows · 29 条 Blue 行"]
-        subgraph baseline["plain baseline 基线 — 9 rows, self-sufficient 自足"]
-            api["blue-api-host"]
-            core["blue-core"]
-            theme["blue-theme-dark"]
-            banner["blue-banner"]
-            transcript["blue-transcript"]
-            sbasic["blue-status-basic"]
-            interaction["blue-interaction"]
-            startup["blue-startup"]
-            bapp["blue-app"]
+    subgraph bundle["cordis.patch.yml - 28 Blue-owned rows · 28 条 Blue 自有行"]
+        subgraph host["host support 宿主支撑 - 2 rows"]
+            presets["blue-agent-presets"]
+            creative["blue-creative-host"]
         end
-        subgraph enhancement["enhancement segment 增强段 — every row droppable 每行皆可删"]
-            editorPlus["blue-editor-plus"]
-            att["blue-attachments · blue-paste-image"]
-            statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
-            intents["blue-intent-diff · -terminal"]
-            panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
-            runtime["blue-context · blue-conversation · blue-transcript-official · default-enabled"]
-            adapters["blue-openpencil · blue-lark · capability-gated"]
+        subgraph product["product UI 产品 UI - 26 rows"]
+            subgraph baseline["baseline 基线 - 8 rows"]
+                api["blue-api-host"]
+                core["blue-core · blue-theme-dark"]
+                chrome["blue-banner · blue-transcript · blue-status-basic"]
+                conversation["blue-conversation · blue-transcript-official"]
+            end
+            subgraph enhancement["enhancement 增强 - 14 droppable rows"]
+                editorPlus["blue-editor-plus"]
+                att["blue-attachments · blue-paste-image"]
+                statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
+                panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
+                viewBridge["blue-plugin-view-bridge"]
+            end
+            subgraph assembly["assembly 装配 - 4 rows"]
+                interaction["blue-interaction · blue-plugin-interaction-bridge"]
+                startup["blue-startup · blue-app"]
+            end
         end
     end
-    dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]
+    validation["validation-only, not bundle rows\nblue-context · blue-remote · blue-openpencil · blue-lark"]
+    dshbase["dsh-base - agent plane composed behind presets"]
     bundle -.-> dshbase
 
     classDef optional stroke-dasharray: 4 4;
-    class editorPlus,att,statusEnh,intents,panes,runtime,adapters optional;
+    class editorPlus,att,statusEnh,panes,viewBridge,validation optional;
 ```
 <!-- END diagram:blue-composition -->
 
-## Baseline plugins (6)
-
-The six plugins composing the minimal usable Blue UI — the plain baseline, best kept as a group:
+## Host support (2 rows)
 
 | Plugin | Description |
-| --- | --- |
-| `blue-api-host` | stable renderer-independent contract and capability registration host |
-| `blue-core` | terminal core: the tree's only pi-tui adapter, providing the screen/keymap/component-factory/terminal-facts services |
-| `blue-theme-dark` | built-in dark palette (the plain default provider of `blueTheme`) |
-| `blue-banner` | boot welcome banner: the logo-headed welcome/`/help` lines and the Directory/Model/Version rows |
-| `blue-transcript` | the transcript body: event folding and rendering, the status registry and two-row footer shell |
-| `blue-status-basic` | baseline status entry: the model name (priority 0) |
+|---|---|
+| `blue-agent-presets` | Blue-owned preset root composing the standard/code/minimal agent planes |
+| `blue-creative-host` | isolated dynamic Cordis host whose only UI route is the public plugin host |
 
-## Enhancement plugins (20)
+## Baseline (8 rows)
 
-Optional layers over the plain baseline — every row deletes on its own without breaking it:
+These eight rows plus assembly form the minimum usable UI. The conversation producer and consumer are baseline because no legacy event fold remains.
 
 | Plugin | Description |
-| --- | --- |
-| `blue-editor-plus` | editor enhancements: `!` bash mode + slash/`@` autocomplete + argument ghost hints |
-| `blue-attachments` | attachment store: filesystem image library (magic-byte sniffing, size caps) |
-| `blue-paste-image` | Ctrl-V clipboard paste with `[image #N]` markers, split into image blocks on submit |
-| `blue-status-cwd` | status: session cwd (priority 5, deep-path shortening) |
-| `blue-status-git` | status: git badge `branch [+a -d ↑u↓v]` (priority 10, TTL-cached probe) |
-| `blue-status-mode` | status: session-mode badge `plan`/`yolo` (priority 2, hidden in normal) |
-| `blue-status-title` | status: the session title (priority 30, row 1 right-aligned; the slot the rotating tips occupied before the S30 footer swap) |
-| `blue-status-context` | status: context occupancy `context: N%` (priority 20, row 2 right-aligned) |
-| `blue-intent-diff` | dedicated diff tool card (unified-diff coloring for Write/Edit) |
-| `blue-intent-terminal` | dedicated terminal-output tool card (`$ command` + exit badge) |
-| `blue-pane-activity` | activity pane: waiting/running/composing mode indicator (moon and braille spinners) |
-| `blue-pane-queue` | queued-messages pane + empty-editor Up recall |
-| `blue-pane-todo` | todo pane (Ctrl-T collapse toggle, auto-close when all done) |
-| `blue-pane-btw` | `/btw` side-question pane: fork the live session for a by-the-way question |
-| `blue-pane-agents` | subagent-group pane: running subagent group card (last dock row, the kimi swarm-pane semantics) |
-| `blue-context` | default official context projection and structured-action frontend-runtime vertical slice; legacy reader fallback retained |
-| `blue-conversation` | official append-origin conversation projection producer; accepted together with the official transcript consumer |
-| `blue-transcript-official` | default semantic transcript consumer of whole projection snapshots/change feeds only |
-| `blue-openpencil` | capability-gated official tool-result presentation and plain-fallback adapter |
-| `blue-lark` | capability-gated official command and loopback-settings notification adapter |
+|---|---|
+| `blue-api-host` | manifest validation and capability-scoped command/status/dock/notification registries |
+| `blue-core` | only pi-tui/raw-terminal adapter; screen, keymap, components, and terminal facts |
+| `blue-theme-dark` | default dark theme provider |
+| `blue-banner` | startup welcome banner |
+| `blue-transcript` | transcript/status/dock/tool model hosts and TUI renderer |
+| `blue-status-basic` | model-name footer `StatusModel` producer |
+| `blue-conversation` | official append-origin conversation and shared-facts projections |
+| `blue-transcript-official` | semantic consumer of whole projection snapshots/change feeds |
 
-## Assembly plugins (3)
-
-The closing assembly layer providing input interaction and the Agent driver:
+## Enhancements (14 rows)
 
 | Plugin | Description |
-| --- | --- |
-| `blue-interaction` | input editor, built-in commands, questionnaire provider, approval answerer |
-| `blue-startup` | startup values provider: `[task]` positional and `--resume` parsing |
-| `blue-app` | Agent driver: creates/resumes the session and publishes `blueSession` |
+|---|---|
+| `blue-editor-plus` | bash mode, slash/`@`/`#` completion, and argument hints |
+| `blue-attachments` | bounded filesystem image store |
+| `blue-paste-image` | Ctrl-V clipboard images and reversible submit transformation |
+| `blue-status-cwd` | current session cwd |
+| `blue-status-git` | TTL-cached git badge |
+| `blue-status-mode` | plan/yolo mode badge |
+| `blue-status-title` | projected session title |
+| `blue-status-context` | projected context occupancy |
+| `blue-pane-activity` | projection-backed activity model |
+| `blue-pane-queue` | app-action-backed queued-message model and recall |
+| `blue-pane-todo` | projection-backed todo model |
+| `blue-pane-btw` | opaque owned side-session action plus official projection |
+| `blue-pane-agents` | projected subagent-group model |
+| `blue-plugin-view-bridge` | public status/dock contributions into owner model registries |
 
-## Toggling and customization
+## Assembly (4 rows)
 
-Built-in plugins need no install — they are the bundle's `cordis.patch.yml` rows. To customize the set, edit your profile's patch file directly (after `dsh plugin --profile blue add link:…`, the patch lives in the profile directory); the three-segment assembly and dock-order mechanics are covered in the [features overview](/en/features/).
+| Plugin | Description |
+|---|---|
+| `blue-interaction` | editor, commands, panels, and question/approval providers |
+| `blue-plugin-interaction-bridge` | public command/notification contributions into Harness/editor consumers |
+| `blue-startup` | `[task]` and `--resume` startup values |
+| `blue-app` | Agent driver providing readonly session reader/projections and structured actions |
 
-For discovering and one-line-installing ecosystem plugins, see the [plugin marketplace](/en/marketplace/) (under construction).
+## Validation-only packages
+
+`blue-context`, `blue-remote`, `blue-openpencil`, and `blue-lark` prove adapter architecture through independent fixtures. They are not bundle rows and are outside the release dependency closure.
+
+A profile patch can customize composition. Removing a projection-backed baseline row removes a core product capability; the 14 enhancement rows are the layer designed for independent removal.

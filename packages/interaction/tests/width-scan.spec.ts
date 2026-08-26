@@ -12,7 +12,6 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { FormPanel, type FormField } from '../src/form-panel.ts'
-import { ModelPanel, type ModelPanelItem } from '../src/model-panel.ts'
 import { HelpOverlay, type HelpSection } from '../src/help.ts'
 import { InfoPanel, type InfoSection } from '../src/info-panel.ts'
 import { FrontendPanel } from '../src/frontend-panel.ts'
@@ -95,24 +94,6 @@ describe('interaction width-scan', () => {
       }
     })
 
-    it(`ModelPanel survives ${name}`, () => {
-      const { keymap, components } = fakeBlueContext()
-      const items: ModelPanelItem[] = [
-        { provider: text.slice(0, 60), providerLabel: text, id: 'm1', name: text, current: true },
-        { provider: 'p2', providerLabel: 'p2', id: 'm2', name: 'other', current: false },
-      ]
-      const panel = new ModelPanel({
-        keymap, theme: IDENTITY_THEME as never, components, items,
-        ...(text.length % 2 === 0 ? { warning: text } : {}),
-        onSelect: vi.fn(),
-        onSessionOnlySelect: vi.fn(),
-        onCancel: vi.fn(),
-      })
-      for (const width of SCAN_WIDTHS) {
-        expectLinesFit(`ModelPanel/${name}`, panel.render(width), width)
-      }
-    })
-
     it(`HelpOverlay survives ${name}`, () => {
       const sections: HelpSection[] = [
         {
@@ -164,7 +145,14 @@ describe('interaction width-scan', () => {
         theme: IDENTITY_THEME as never,
         components: new FakeBlueComponents(),
         keymap: new FakeKeymap(),
-        model: () => ({ kind: 'panel', mode: 'info', title: text, view: { kind: 'sections', sections: [{ title: text, body: { kind: 'fields', fields: [{ label: text, value: text }] } }] } }),
+        model: () => ({
+          kind: 'panel', mode: 'select', title: text,
+          header: { kind: 'text', text },
+          view: { kind: 'list', filterable: true, grouped: true, items: [
+            { id: 'a', label: text, detail: text, group: text, variants: [{ id: 'v', label: text, action: { kind: 'pick' } }] },
+            { id: 'b', label: text, group: 'other', action: { kind: 'pick' } },
+          ] },
+        }),
         onAction: vi.fn(),
         onClose: vi.fn(),
       })

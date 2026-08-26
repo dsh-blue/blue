@@ -4,6 +4,12 @@ Harness-domain projection for the durable human transcript. This package depends
 
 The projection owns replay/live convergence for human messages, streamed and finalized assistant text/reasoning, image references, tool call/result pairing, turn failures, and interruption markers. Tool entries carry `channel: 'todo' | 'agents' | 'transcript'` so frontend feature plugins can route them without re-reading the session log. State is plain JSON and state-versioned for the official projection cache.
 
+`blueConversationFacts` is the companion whole-value projection for status and
+dock facts: phase/lifecycle, token usage, request model/provider metadata, todo
+snapshots, and subagent call/result summaries. It is registered in the same
+Fiber and uses the same replay/live watermark, so consumers read facts through
+`sessionProjections` instead of folding `session/event` themselves.
+
 Scope is one projection cell per Harness session. The official `SessionProjectionRegistry` owns eager drive, checkpointing, watermarking, subscriptions, and Fiber removal. After registration the plugin publishes the effect-scoped `blueConversationProjection` readiness capability; consumers inject it so their initial resumed-session snapshot cannot run before the projection exists. The marker and projection disappear with the same Fiber. The package owns no timer, renderer object, Agent/Session reference, mutable module singleton, action, or direct event subscription.
 
 Deletion condition: remove this package only when Harness publishes an equivalent append-origin conversation projection covering the same replay/live/tool/thinking/image/interruption contract on every supported line. A Blue adapter may then consume that upstream key directly.

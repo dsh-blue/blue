@@ -16,7 +16,6 @@ import { spawn } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { currentBlueSettings } from './settings.ts'
 
 /**
  * Resolve the external editor command: a non-blank `blue.editorCommand`
@@ -27,8 +26,8 @@ import { currentBlueSettings } from './settings.ts'
  */
 export function resolveExternalEditorCommand(
   env: { VISUAL?: string | undefined; EDITOR?: string | undefined } = process.env,
+  configured = '',
 ): string | undefined {
-  const configured = currentBlueSettings().editorCommand
   if (configured.trim().length > 0) return configured.trim()
   for (const candidate of [env.VISUAL, env.EDITOR]) {
     if (candidate !== undefined && candidate.trim().length > 0) return candidate.trim()

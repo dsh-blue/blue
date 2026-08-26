@@ -1,6 +1,6 @@
 # 编写第一个插件
 
-Blue 的一切表面都是 Cordis 插件——你自己的增强与 Blue 内置功能**同权**：走同样的缝注册、同样可被 `/theme` 热切换 reload、卸载时同样自动回滚全部贡献。本篇带你从零写出第一个可用的插件；Blue 开放了哪些接合面，见 [Seam 参考](/plugins/seams)。
+Blue 的扩展表面由 Cordis plugin host 管理：你的插件声明 capability，贡献 renderer-neutral view/action，卸载时自动回滚。本篇用稳定的 `@dsh-blue/blue-api` 写出第一个插件；完整接合面见 [Seam 参考](/plugins/seams)。
 
 ::: warning 预览阶段提醒
 缝的签名计划在 Phase 3 冻结；当前接入的插件随版本升级可能需要适配。本站会随每次发布同步更新。
@@ -14,14 +14,14 @@ Blue 的一切表面都是 Cordis 插件——你自己的增强与 Blue 内置�
 import type { Context } from '@deepseek-ai/cordis'
 
 export const name = 'my-plugin.hello'
-export const inject = ['blueComponents']
+export const inject = ['bluePluginHost']
 
 export function apply(ctx: Context): void {
-  // …注册你的贡献
+  // 通过 capability-scoped API 注册贡献
 }
 ```
 
-**注册即 effect**：所有注册（组件挂载、命令、键位、状态条目）都包在 `ctx.effect(() => ...)` 里——插件 fiber 卸载时贡献自动回滚，`/theme` 热切换 reload 依赖方时不留残迹。
+`bluePluginHost.open(ctx, manifest)` 把 API 和调用方 Fiber 绑定；所有 contribution registration 在插件卸载时一并回滚。
 
 ## 第一个插件：状态栏时钟
 
@@ -29,29 +29,40 @@ export function apply(ctx: Context): void {
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@dsh-blue/blue-api'
 
 export const name = 'my-plugin.clock'
-export const inject = ['blueStatus', 'commands']
+export const inject = ['bluePluginHost']
 
 export function apply(ctx: Context): void {
-  ctx.effect(() => ctx.blueStatus.register({
+  const opened = ctx.bluePluginHost.open(ctx, {
     id: 'my-plugin.clock',
-    priority: 25,                     // 内置条目占 0/5/10/20/30，空档任用
-    render: (width) => new Date().toLocaleTimeString(),
-  }))
+    api: '^1.0.0',
+    capabilities: ['status', 'commands'],
+  })
+  if (!opened.ok) throw new Error(opened.message)
 
-  ctx.effect(() => ctx.commands.register({
-    name: 'now',
-    description: 'Print the current time',
-    handler: () => ({ kind: 'success', text: new Date().toLocaleString() }),
-  }))
+  const status = opened.value.status!.register({
+    id: 'clock.status',
+    priority: 25,
+    render: () => ({ kind: 'text', content: new Date().toLocaleTimeString() }),
+  })
+  if (!status.ok) throw new Error(status.message)
+
+  const command = opened.value.commands!.register({
+    id: 'now',
+    label: 'Print the current time',
+    execute: async () => ({ ok: true, value: undefined }),
+  })
+  if (!command.ok) throw new Error(command.message)
 }
 ```
 
 几个要点：
 
-- `inject` 声明依赖——服务没就位前插件不激活，不用自己写等待逻辑；
-- 两个注册都返回 disposer、都由 effect 托管——插件卸载即消失；
+- `inject` 声明稳定 host 依赖——服务没就位前插件不激活；
+- manifest 只开放声明过的 capability，注册失败返回结构化错误；
+- 两个注册都绑定当前 Fiber，插件卸载即消失；
 - `/now` 自动出现在编辑器的斜杠补全与 `/help` 里，不需要额外注册 UI。
 
 ## 打包与装配
@@ -70,12 +81,12 @@ export function apply(ctx: Context): void {
 
 ## 下一步
 
-- [Seam 参考](/plugins/seams) —— Blue 开放的接合面全目录：屏幕、键位、组件工厂、主题、状态栏、渲染意图、共享编辑器……以及各缝能做什么；
-- [内置插件](/plugins/builtins) —— 21 个内置插件就是"插件能做什么"的活例子，逐个可拆。
+- [Seam 参考](/plugins/seams) —— stable plugin host 与 Blue 内部 projection/action/model 边界；
+- [内置插件](/plugins/builtins) —— bundle 的 28 条 Blue 自有行与 validation-only 包。
 
 ## 设计纪律
 
-1. 只依赖文档化缝与契约包（`@dsh-blue/blue-core` 等的类型导出），不得 import Blue 包内部模块；
-2. 注册一律返回 disposer 并包进 `ctx.effect`；
-3. plain-first：你的插件与 Blue 内置增强同权，不存在"内部通道"；
-4. 新缝只在首个真实消费者出现时开，签名冻结前可能调整。
+1. 只依赖 `@dsh-blue/blue-api` 等公开 contract，不 import package internals；
+2. 只申请实际需要的 capability，并处理 `BlueResult`；
+3. contribution 必须是 renderer-neutral data/action；
+4. 不持有 Agent、Session、renderer object 或跨 Fiber mutable singleton。

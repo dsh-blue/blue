@@ -12,6 +12,6 @@
   },
   "files": ["lib/**/*"],
   "license": "MIT",
-  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@dsh-blue/blue-api": "^0.1.0-rc.2", "@dsh-blue/blue-frontend": "^0.1.0-rc.2", "@dsh-blue/blue-harness-adapter": "^0.1.0-rc.2" },
-  "devDependencies": { "@deepseek-ai/cordis": "4.0.1", "@dsh-blue/blue-api": "workspace:*", "@dsh-blue/blue-frontend": "workspace:*", "@dsh-blue/blue-harness-adapter": "workspace:*" }
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@dsh-blue/blue-api": "^0.1.0-rc.2", "@dsh-blue/blue-app": "^0.1.0-rc.2", "@dsh-blue/blue-frontend": "^0.1.0-rc.2", "@dsh-blue/blue-harness-adapter": "^0.1.0-rc.2" },
+  "devDependencies": { "@deepseek-ai/cordis": "4.0.1", "@dsh-blue/blue-api": "workspace:*", "@dsh-blue/blue-app": "workspace:*", "@dsh-blue/blue-frontend": "workspace:*", "@dsh-blue/blue-harness-adapter": "workspace:*" }
 }

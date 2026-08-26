@@ -1,10 +1,9 @@
 /**
  * Tests for the editor draft stash: `blue-input` mirrors editor text into
- * the module-level stash, the editor mounted after a reload (a theme swap
+ * the frontend-tree stash, the editor mounted after a reload (a theme swap
  * re-runs this fiber) restores it, and consuming the draft — submit or an
  * Escape buffer clear — clears the stash so the next reload starts empty.
- * The stash is module state shared across this file, so the cases run
- * sequentially.
+ * A separate tree receives a separate stash.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -13,7 +12,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import * as inputPlugin from '../src/input-plugin.ts'
-import { getStashedDraft, getStashedInputMode, stashDraft, stashInputMode, clearDraft } from '../src/draft-stash.ts'
+import { DraftStash } from '../src/draft-stash.ts'
 import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeBlueEditor } from './fakes.ts'
 
 function type(editor: FakeBlueEditor, text: string): void {
@@ -31,7 +30,7 @@ async function boot(): Promise<{
   const session = ctx.sessions.create(SessionId('draft-spec'))
   const followup = vi.fn()
   const agent = { id: session.id, session, status: 'idle', followup } as unknown as Agent
-  ctx.provide('blueSession', { current: agent, modelRef: undefined })
+  ctx.provide('testSession', { current: agent, modelRef: undefined })
   return { ctx, components, followup }
 }
 
@@ -41,7 +40,7 @@ describe('editor draft stash', () => {
     const firstFiber = await ctx.plugin(inputPlugin)
     const first = components.editors[0] as FakeBlueEditor
     type(first, 'half-written thought')
-    expect(getStashedDraft()).toBe('half-written thought')
+    expect(ctx.blueInteractionState.draft.getStashedDraft()).toBe('half-written thought')
     // The reload: the fiber disposes and re-runs, rebuilding the editor.
     await firstFiber.dispose()
     const secondFiber = await ctx.plugin(inputPlugin)
@@ -51,7 +50,7 @@ describe('editor draft stash', () => {
     // Submitting consumes the draft; the stash goes with it.
     second.handleInput(KEY.enter)
     expect(followup).toHaveBeenCalledOnce()
-    expect(getStashedDraft()).toBe('')
+    expect(ctx.blueInteractionState.draft.getStashedDraft()).toBe('')
     // A second reload therefore starts empty.
     await secondFiber.dispose()
     await ctx.plugin(inputPlugin)
@@ -63,22 +62,23 @@ describe('editor draft stash', () => {
     const firstFiber = await ctx.plugin(inputPlugin)
     const first = components.editors[0] as FakeBlueEditor
     type(first, 'draft')
-    expect(getStashedDraft()).toBe('draft')
+    expect(ctx.blueInteractionState.draft.getStashedDraft()).toBe('draft')
     first.handleInput(KEY.escape)
     expect(first.getText()).toBe('')
-    expect(getStashedDraft()).toBe('')
+    expect(ctx.blueInteractionState.draft.getStashedDraft()).toBe('')
     await firstFiber.dispose()
     await ctx.plugin(inputPlugin)
     expect(components.editors[1]?.getText()).toBe('')
   })
 
   it('stashes the input mode beside the draft and resets both on submit', () => {
-    stashInputMode('bash')
-    expect(getStashedInputMode()).toBe('bash')
+    const stash = new DraftStash()
+    stash.stashInputMode('bash')
+    expect(stash.getStashedInputMode()).toBe('bash')
     // Consuming the draft resets the mode with it.
-    stashDraft('ls')
-    clearDraft()
-    expect(getStashedInputMode()).toBe('prompt')
-    expect(getStashedDraft()).toBe('')
+    stash.stashDraft('ls')
+    stash.clearDraft()
+    expect(stash.getStashedInputMode()).toBe('prompt')
+    expect(stash.getStashedDraft()).toBe('')
   })
 })

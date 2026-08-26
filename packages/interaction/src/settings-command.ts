@@ -59,9 +59,9 @@ import { framePanel } from '@dsh-blue/blue-core/chrome'
 import { displayServices } from './display-services.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
 import { resolveExternalEditorCommand, runExternalEditor } from './external-editor.ts'
+import { currentBlueSettings } from './settings.ts'
 import { FormPanel } from './form-panel.ts'
 import type { PermissionPresetsService } from './permission-panel.ts'
-import type { AgentPresetsRoster } from './preset-commands.ts'
 import { SelectListPanel } from './select-list.ts'
 
 /** The level-one action row opening the settings document in an editor. */
@@ -590,7 +590,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
       /**
        * Flash an outcome in the panel's feedback row. The editor's hint
        * line leaves the tree with the editor while a panel is open (D30),
-       * so `getSharedEditor()?.notice` is invisible here — panel feedback
+       * so `getSharedEditor(ctx)?.notice` is invisible here — panel feedback
        * must render inside the frame.
        */
       const notice = (text: string, error = false): void => {
@@ -614,12 +614,10 @@ export function registerSettingsCommand(ctx: Context): () => void {
       /** Build the groups, fetching the dynamic rows' value sources. */
       const fetchGroups = async (): Promise<BuiltGroups> => {
         const presets = ctx.get('permissionPresets') as PermissionPresetsService | undefined
-        const roster = ctx.get('agentPresets') as AgentPresetsRoster | undefined
         // Discovery failures degrade to omitting the row, like a host
         // without the roster.
-        const agentPresetIds = roster === undefined
-          ? undefined
-          : await roster.list().then(rows => rows.map(row => row.id)).catch(() => undefined)
+        const listed = await ctx.blueSessionActions.presets()
+        const agentPresetIds = listed.ok ? listed.value.map(row => row.id) : undefined
         return buildGroups(settings, { presets, agentPresetIds })
       }
 
@@ -647,7 +645,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
           notice: panelNotice,
           truncate: (text, width) => display.components.truncateToWidth(text, width),
         })
-        restoreList = mountEditorReplacement(listPanel)
+        restoreList = mountEditorReplacement(ctx, listPanel)
       }
 
       /**
@@ -696,7 +694,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
           notice: panelNotice,
           truncate: (text, width) => display.components.truncateToWidth(text, width),
         })
-        restoreGroups = mountEditorReplacement(groupsTail)
+        restoreGroups = mountEditorReplacement(ctx, groupsTail)
       }
 
       /** Pop the free-form form, if one is open. */
@@ -727,9 +725,9 @@ export function registerSettingsCommand(ctx: Context): () => void {
         restoreForm?.()
         restoreList?.()
         restoreGroups()
-        restoreGroups = mountEditorReplacement(groupsTail)
-        if (listPanel !== undefined) restoreList = mountEditorReplacement(listPanel)
-        if (formPanel !== undefined) restoreForm = mountEditorReplacement(formPanel)
+        restoreGroups = mountEditorReplacement(ctx, groupsTail)
+        if (listPanel !== undefined) restoreList = mountEditorReplacement(ctx, listPanel)
+        if (formPanel !== undefined) restoreForm = mountEditorReplacement(ctx, formPanel)
       }
 
       // The input fiber's mount emits before its slot-swap machinery
@@ -847,7 +845,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
           },
         })
         formPanel = form
-        restoreForm = mountEditorReplacement(form)
+        restoreForm = mountEditorReplacement(ctx, form)
       }
 
       /**
@@ -863,7 +861,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
           notice('settings file unavailable')
           return
         }
-        const command = resolveExternalEditorCommand()
+        const command = resolveExternalEditorCommand(process.env, currentBlueSettings(ctx).editorCommand)
         if (command === undefined) {
           notice('no editor configured ($VISUAL/$EDITOR)')
           return

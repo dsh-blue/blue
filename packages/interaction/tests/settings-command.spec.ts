@@ -25,7 +25,7 @@ import { SettingsConflictError, settingsNamespace } from '@deepseek-ai/dsh-setti
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
-import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
+import { setSharedEditor } from '../src/editor-instance.ts'
 import { setExternalEditorLauncher } from '../src/external-editor.ts'
 import { FormPanel } from '../src/form-panel.ts'
 import type { PermissionPresetsService } from '../src/permission-panel.ts'
@@ -35,7 +35,6 @@ import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
 registerTempDirCleanup()
 
 afterEach(() => {
-  clearSharedEditor()
   setExternalEditorLauncher(undefined)
   vi.unstubAllEnvs()
 })
@@ -133,7 +132,7 @@ function mount(options: BenchOptions = {}) {
   if (options.presets !== undefined) ctx.provide('permissionPresets', options.presets as never)
   if (options.roster !== undefined) ctx.provide('agentPresets', options.roster as never)
   const notices: string[] = []
-  setSharedEditor({
+  setSharedEditor(ctx, {
     editor: { focused: false, render: () => [], invalidate: () => {} } as never,
     submitPrompt: () => {},
     notice: text => {

@@ -51,19 +51,13 @@ const CUSTOM: ThemeTarget = { key: 'custom', module: themeCustom }
 const KNOWN_KEYS = ['dark', 'light', 'ocean', 'paper', 'auto', 'custom'] as const
 
 /**
- * The live provider. Initialized to dark: the baseline bundle patch loads
- * `blue-theme-dark`, and its loader-resolved module is this same reference.
- */
-let current: ThemeTarget = DARK
-
-/**
  * The `/theme` listing: every known key, the live one marked with the
  * shared `← current` selector mark (the same vocabulary as the session
  * picker's badge).
  * @returns the listing text.
  */
-function listText(): string {
-  const entries = KNOWN_KEYS.map(key => key === current.key ? `${key} ${CURRENT_MARK}` : key)
+function listText(ctx: Context): string {
+  const entries = KNOWN_KEYS.map(key => key === ctx.blueInteractionState.currentThemeKey ? `${key} ${CURRENT_MARK}` : key)
   return `themes: ${entries.join(', ')}`
 }
 
@@ -76,6 +70,9 @@ function listText(): string {
  * @returns the command outcome.
  */
 async function switchTheme(ctx: Context, next: ThemeTarget, config?: themeCustom.Config): Promise<CommandResult> {
+  const current = ctx.blueInteractionState.currentThemeKey === 'custom'
+    ? CUSTOM
+    : BUILTIN.get(ctx.blueInteractionState.currentThemeKey) ?? DARK
   const runtime = ctx.registry.delete(current.module)
   // delete() removes the runtime record and starts disposal; awaiting each
   // fiber settles it before the remount (a second blueTheme registration
@@ -87,7 +84,7 @@ async function switchTheme(ctx: Context, next: ThemeTarget, config?: themeCustom
   try {
     await (config === undefined ? ctx.plugin(next.module) : ctx.plugin(next.module, config))
   } catch (error) {
-    current = DARK
+    ctx.blueInteractionState.currentThemeKey = DARK.key
     // A restore failure propagates and settles as a command error.
     await ctx.plugin(themeDark)
     return {
@@ -96,7 +93,7 @@ async function switchTheme(ctx: Context, next: ThemeTarget, config?: themeCustom
       text: `failed to apply theme "${next.key}": ${error instanceof Error ? error.message : String(error)}`,
     }
   }
-  current = next
+  ctx.blueInteractionState.currentThemeKey = next.key
   return { kind: 'success', text: `switched to theme "${next.key}"` }
 }
 
@@ -123,7 +120,7 @@ export function registerThemeCommand(ctx: Context): () => void {
       const trimmed = invocation.rawInput.trim()
       const args = trimmed.length === 0 ? [] : trimmed.split(/\s+/)
       const name = args.shift()
-      if (name === undefined) return { kind: 'success', text: listText() }
+      if (name === undefined) return { kind: 'success', text: listText(ctx) }
       const builtin = BUILTIN.get(name)
       if (builtin !== undefined) {
         if (args.length > 0) return { kind: 'error', text: USAGE }

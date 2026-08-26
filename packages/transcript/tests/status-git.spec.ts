@@ -86,7 +86,7 @@ describe('blue-status-git', () => {
     git.setGitCommandRunner(runner)
     git.setGitClock(() => T0)
     const harness = await bootStatusPlugin(git, fakeAgent([], { cwd: '/elsewhere' }))
-    expect(harness.registry.entries).toHaveLength(1)
+    expect(harness.models.list()).toHaveLength(1)
     expect(harness.entry.render(80)).toBe('')
     await harness.dispose()
   })
@@ -251,7 +251,7 @@ describe('blue-status-git', () => {
     await harness.dispose()
   })
 
-  it('rebuilds the cache for the new session cwd on blue/session-changed', async () => {
+  it('rebuilds the cache for the new session cwd on test/session-changed', async () => {
     const dumps: Record<string, string | null> = {
       'branch --show-current': 'alpha',
       'status --porcelain -b': '## alpha\n',
@@ -269,7 +269,7 @@ describe('blue-status-git', () => {
     const baseline = screen.renderRequests.length
 
     dumps['branch --show-current'] = 'beta'
-    ctx.emit('blue/session-changed', asAgent(fakeAgent([], { cwd: '/repo-b' })))
+    ctx.emit('test/session-changed', asAgent(fakeAgent([], { cwd: '/repo-b' })))
     // The rebuilt cache probes lazily: the next render drives it.
     expect(entry.render(80)).toBe('beta')
     expect(cwds.at(-1)).toBe('/repo-b')
@@ -277,7 +277,7 @@ describe('blue-status-git', () => {
 
     // An unchanged probe result still requests its one redraw per switch; a
     // session without a header cwd falls back to the process cwd.
-    ctx.emit('blue/session-changed', asAgent(fakeAgent([])))
+    ctx.emit('test/session-changed', asAgent(fakeAgent([])))
     expect(entry.render(80)).toBe('beta')
     expect(cwds.at(-1)).toBe(process.cwd())
     expect(screen.renderRequests.length).toBe(baseline + 2)
@@ -304,9 +304,9 @@ describe('blue-status-git', () => {
     git.setGitCommandRunner(runner)
     git.setGitClock(() => T0)
     const harness = await bootStatusPlugin(git)
-    expect(harness.registry.entries).toHaveLength(1)
+    expect(harness.models.list()).toHaveLength(1)
     await harness.dispose()
-    expect(harness.registry.entries).toHaveLength(0)
+    expect(harness.models.list()).toHaveLength(0)
   })
 
   it('default runner reads the branch of a real repository', async () => {

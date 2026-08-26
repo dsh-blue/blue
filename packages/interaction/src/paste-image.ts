@@ -18,11 +18,11 @@
  * around on the user's behalf (D49). Images are admitted through
  * `ctx.attachments.saveImage` — the store cross-checks the declared type
  * against the sniffed bytes — and land in the editor as an `[image #N]`
- * marker recorded in a module-level marker→ref map. A submit transformer
+ * marker recorded in the frontend tree's marker→ref map. A submit transformer
  * (`./editor-instance.ts`) then splits submitted text on known markers into
  * text and image content blocks; unknown markers stay literal text. The map
- * and counter are module-level so markers survive theme-swap reloads, which
- * restore the editor text from the draft stash. Ships as a subpath plugin so
+ * and counter live in `InteractionStateService`, so markers survive same-tree
+ * theme reloads without leaking into another tree. Ships as a subpath plugin so
  * the baseline bundle keeps the plain text editor.
  *
  * @module @dsh-blue/blue-interaction/paste-image
@@ -56,7 +56,7 @@ import { ADMITTED_IMAGE_TYPES, EXT_BY_MEDIA_TYPE, sniffImageMediaType } from './
 /** Stable Cordis plugin name. */
 export const name = 'blue-paste-image'
 /** Services required before the paste flow can run. */
-export const inject = ['attachments', 'blueKeymap']
+export const inject = ['attachments', 'blueKeymap', 'blueEditorHost', 'blueInteractionState']
 
 /** Clipboard backend policy: automatic session order, or one strict backend. */
 export type ClipboardBackendPolicy = 'auto' | 'wayland' | 'x11'
@@ -74,23 +74,6 @@ export interface Config {
 export const Config: z<Config> = z.object({
   backend: z.union([z.const('auto'), z.const('wayland'), z.const('x11')]).default('auto'),
 })
-
-/**
- * The user-layer `blue.pasteImageBackend` override. The composition config
- * stays the base — the settings schema's `auto` default must not clobber a
- * configured strict backend, so only a value the user actually wrote into
- * the settings document lands here (the apply-time reader diffs the
- * descriptor's raw `user` section, not the resolved value).
- */
-let backendOverride: ClipboardBackendPolicy | undefined
-
-/**
- * Replace the user-layer backend override.
- * @param value - the override, or `undefined` to follow the plugin config.
- */
-export function setClipboardBackendOverride(value: ClipboardBackendPolicy | undefined): void {
-  backendOverride = value
-}
 
 /**
  * Contextual action triggering the clipboard-image paste. Bound to Ctrl-V;
@@ -167,17 +150,14 @@ export type ClipboardClock = () => number
 const defaultClipboardClock: ClipboardClock = () => Date.now()
 let clipboardClock: ClipboardClock = defaultClipboardClock
 
-/** Retry deadline per backend and display-environment identity. */
-const backendCooldowns = new Map<string, number>()
-
 /** Replace the cooldown clock in tests. */
 export function setClipboardClock(clock: ClipboardClock | undefined): void {
   clipboardClock = clock ?? defaultClipboardClock
 }
 
 /** Clear every remembered backend timeout. */
-export function resetClipboardBackendCooldowns(): void {
-  backendCooldowns.clear()
+export function resetClipboardBackendCooldowns(ctx: Context): void {
+  ctx.blueInteractionState.pasteImage.backendCooldowns.clear()
 }
 
 /** The display identity whose failures may be reused safely. */
@@ -464,20 +444,21 @@ function aggregateOutcomes(outcomes: FailureResult[]): ClipboardImageResult {
 
 /** The default reader: probe each policy-selected tool in order; the first
  * valid image wins, otherwise the failures aggregate into one verdict. */
-async function defaultClipboardImageReader(config: Config, limits: ImageAttachmentLimits): Promise<ClipboardImageResult> {
-  const policy = backendOverride ?? config.backend
+async function defaultClipboardImageReader(ctx: Context, config: Config, limits: ImageAttachmentLimits): Promise<ClipboardImageResult> {
+  const state = ctx.blueInteractionState.pasteImage
+  const policy = state.backendOverride ?? config.backend
   const outcomes: FailureResult[] = []
   const tools = clipboardToolsFor(policy)
   for (const [index, tool] of tools.entries()) {
     const key = cooldownKey(tool.backend)
-    const retryAt = backendCooldowns.get(key)
+    const retryAt = state.backendCooldowns.get(key)
     if (retryAt !== undefined && clipboardClock() < retryAt) {
       outcomes.push({ kind: 'timeout' })
       continue
     }
-    backendCooldowns.delete(key)
+    state.backendCooldowns.delete(key)
     const outcome = await probeTool(tool, limits)
-    if (outcome.kind === 'timeout') backendCooldowns.set(key, clipboardClock() + BACKEND_COOLDOWN_MS)
+    if (outcome.kind === 'timeout') state.backendCooldowns.set(key, clipboardClock() + BACKEND_COOLDOWN_MS)
     if (outcome.kind === 'image' || outcome.kind === 'images') {
       return {
         ...outcome,
@@ -517,11 +498,6 @@ function failureNotice(result: FailureResult): string {
   }
 }
 
-/** Marker→attachment map for images pasted into the editor. */
-const pastedImages = new Map<string, ImageAttachmentRef>()
-/** Running paste counter; gives each marker a unique number. */
-let pasteCount = 0
-
 /** The marker shape inserted into the editor text. */
 const IMAGE_MARKER = /\[image #\d+\]/g
 
@@ -534,7 +510,8 @@ const IMAGE_MARKER = /\[image #\d+\]/g
  * @param text - the submitted line.
  * @returns the contributed content blocks, empty when nothing was split.
  */
-function transformImageMarkers(text: string): ContentBlock[] | SubmitTransformation {
+function transformImageMarkers(ctx: Context, text: string): ContentBlock[] | SubmitTransformation {
+  const pastedImages = ctx.blueInteractionState.pasteImage.pastedImages
   const blocks: ContentBlock[] = []
   const consumed: Array<readonly [string, ImageAttachmentRef]> = []
   let last = 0
@@ -579,7 +556,7 @@ async function pasteFlow(ctx: Context, config: Config, shared: SharedEditor, isU
   notice('pasting image...')
   let result: ClipboardImageResult
   try {
-    result = await (clipboardImageReader?.() ?? defaultClipboardImageReader(config, ctx.attachments.imageLimits))
+    result = await (clipboardImageReader?.() ?? defaultClipboardImageReader(ctx, config, ctx.attachments.imageLimits))
   } catch (error) {
     // An injected reader rejecting degrades to the same notice family.
     if (isUnloaded()) return
@@ -605,9 +582,10 @@ async function pasteFlow(ctx: Context, config: Config, shared: SharedEditor, isU
       : await ctx.attachments.saveImages(result.images)
     if (isUnloaded()) return
     const markers = refs.map(ref => {
-      pasteCount += 1
-      const marker = `[image #${pasteCount}]`
-      pastedImages.set(marker, ref)
+      const state = ctx.blueInteractionState.pasteImage
+      state.pasteCount += 1
+      const marker = `[image #${state.pasteCount}]`
+      state.pastedImages.set(marker, ref)
       return marker
     })
     shared.editor.insertText(markers.join(' '))
@@ -667,7 +645,7 @@ export function apply(ctx: Context, config: Config): void {
     keys: ['ctrl+v'],
     description: 'Paste a clipboard image into the prompt',
   }]))
-  ctx.effect(() => registerSubmitTransformer(transformImageMarkers))
+  ctx.effect(() => registerSubmitTransformer(ctx, text => transformImageMarkers(ctx, text)))
   // The `blue.pasteImageBackend` user layer overrides the composition
   // backend. Read the descriptor's RAW user section — the resolved value's
   // `auto` schema default would clobber a configured strict backend — and
@@ -679,18 +657,20 @@ export function apply(ctx: Context, config: Config): void {
     const raw = typeof user === 'object' && user !== null
       ? (user as Record<string, unknown>).pasteImageBackend
       : undefined
-    setClipboardBackendOverride(raw === 'auto' || raw === 'wayland' || raw === 'x11' ? raw : undefined)
+    ctx.blueInteractionState.pasteImage.backendOverride = raw === 'auto' || raw === 'wayland' || raw === 'x11' ? raw : undefined
   }
   syncBackendOverride()
   ctx.on('settings/updated', (ns) => {
     if (String(ns) === 'blue') syncBackendOverride()
   })
-  ctx.effect(() => () => setClipboardBackendOverride(undefined))
+  ctx.effect(() => () => {
+    ctx.blueInteractionState.pasteImage.backendOverride = undefined
+  })
   let detach: (() => void) | undefined
   const reattach = (): void => {
     detach?.()
     detach = undefined
-    const shared = getSharedEditor()
+    const shared = getSharedEditor(ctx)
     if (shared !== undefined) detach = attach(ctx, config, shared, () => unloaded)
   }
   ctx.effect(() => () => {

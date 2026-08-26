@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SettingsProvider, { type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import * as settingsPlugin from '../src/settings.ts'
+import { InteractionStateService } from '../src/runtime-state.ts'
 import {
   quoteShellArg,
   resolveExternalEditorCommand,
@@ -43,15 +44,21 @@ describe('resolveExternalEditorCommand', () => {
     expect(resolveExternalEditorCommand({ VISUAL: '  code --wait  ' })).toBe('code --wait')
   })
 
-  // Runs last in the file: the blue-settings thunk is module state (the
-  // settings.spec discipline), and mounting the plugin moves it for every
-  // later case.
   it('prefers a configured blue.editorCommand over $VISUAL/$EDITOR', async () => {
     const ctx = new Context()
+    new InteractionStateService(ctx, settingsPlugin.DEFAULT_SETTINGS)
+    ctx.provide('blueSessionReader', {
+      current: () => null,
+      subscribe: () => ({ disposed: false, dispose() {} }),
+      request: async () => ({ ok: false, code: 'BLUE_SESSION_UNAVAILABLE', message: 'No session' }),
+    })
     await ctx.plugin(MemorySettings, { blue: { editorCommand: '  my-editor --wait  ' } })
     await ctx.plugin(settingsPlugin)
     await vi.waitFor(() => {
-      expect(resolveExternalEditorCommand({ VISUAL: 'vim', EDITOR: 'nano' })).toBe('my-editor --wait')
+      expect(resolveExternalEditorCommand(
+        { VISUAL: 'vim', EDITOR: 'nano' },
+        settingsPlugin.currentBlueSettings(ctx).editorCommand,
+      )).toBe('my-editor --wait')
     })
   })
 })

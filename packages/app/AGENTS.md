@@ -8,15 +8,21 @@ Command-line startup (`src/startup.ts`): `[task]` positional, `--resume <id>`.
 
 ## Agent driver
 
-`src/index.ts` creates/resumes sessions and publishes them via `blueSession`. It answers the payload-less `'blue/request-new'` and `'blue/request-fork'` events (fork: idle-guarded, seeded with the full event log plus `meta.{cwd,parentSession,seedLength}`), and the additive `'blue/request-rewind'(sessionId, boundarySeq)` request. Rewind rejects stale session ids, non-idle agents, and prefixes with an open turn/step/tool call, then creates an ordinary child Agent from `events.slice(0, boundarySeq)` with the same lineage metadata; the parent log is never mutated. All switches serialize on one queue and share the commit point (dispose old → assign `current` → broadcast `'blue/session-changed'`), with creation parameters factored into the module-level `createOptions` helper.
+`src/index.ts` creates/resumes sessions while keeping the mutable Agent, Session, and model-selection reference private. It synchronously provides `blueSessionReader`, `blueSessionProjections`, and `blueSessionActions` before waiting for Loader settlement. Consumers receive readonly snapshots, official projection values, and structured result-bearing actions only.
+
+The driver answers the payload-less `'blue/request-new'` and `'blue/request-fork'` events (fork: idle-guarded, seeded with the full event log plus `meta.{cwd,parentSession,seedLength}`), and `'blue/request-rewind'(sessionId, boundarySeq)`. Rewind rejects stale ids, non-idle agents, and prefixes with an open turn/step/tool call; the parent log is never mutated. All switches serialize on one queue and share the commit point: create/resume replacement → dispose old → assign internal current → publish the reader snapshot. No raw-session change event exists.
 
 ## Safe message retraction
 
 `src/retraction.ts` provides `blueRetractions.tryRetract(messageId)`: it matches the id to the current open main turn, rejects any assistant tool-call block or `tool/call`/`tool/result`, terminates the Blue lifecycle as `aborted/retracted`, emits `'blue/turn-retracted'`, and cancels with `keepInbox`. After the host `turn/end`, a microtask appends an empty interrupted `assistant/message` surface replacement over that turn's current nodes. The append-only audit remains, while `deriveMessages()` omits the withdrawn turn.
 
+## Side-session actions
+
+`blueSessionActions.createSideSession()` is the narrow app-owned boundary used by the BTW pane. It snapshots the active Agent's full event prefix, cwd, parent id, and provider/model route into a throwaway `btw-*` child, while keeping the Harness Agent and Session inside `blue-app`. The returned owned handle exposes only an opaque projection identity, plain-text follow-up, admitted `running`/`idle` status subscription, and idempotent disposal; no side session is committed to the current-session reader or the main switch queue.
+
 ## Model selection (S23, D38)
 
-Every setup installs a three-tier selection reference (`src/model-ref.ts` — an in-session pick, the session log's last request header, then the process default; the harness web host's precedence), and the three commit points publish it as `blueSession.modelRef` beside `current`, so a resumed session keeps the model it was already using.
+Every setup installs a three-tier selection reference (`src/model-ref.ts` — an in-session pick, the session log's last request header, then the process default; the harness web host's precedence). `blueSessionActions.modelSelection()` and `selectModel()` are its readonly/write boundaries, so a resumed session keeps the model it was already using without exporting the mutable reference.
 
 ## Preset mount (S28, D37)
 

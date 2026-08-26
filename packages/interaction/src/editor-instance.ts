@@ -1,231 +1,132 @@
 /**
- * Module-level shared reference to the input editor mounted by `blue-input`.
- * `blue-editor-plus` lives on a separate plugin fiber (an optional
- * enhancement row in the bundle patch), and `blue-input` provides no Cordis
- * service, so `inject` cannot order the enhancement after the editor mount.
- * Instead `blue-input` publishes the editor and its submit router here on
- * mount, clears them on unmount, and emits `'blue/input-editor-changed'` on
- * each transition; subscribers re-read the reference on every emission,
- * which also covers theme reloads rebuilding both plugins.
+ * Frontend-tree-scoped editor host. The service owns renderer references,
+ * panel-slot replacement, enhancement presence, and submit transformations;
+ * this module contains no product-level singleton state.
  *
  * @module @dsh-blue/blue-interaction/editor-instance
  */
 
-import type { BlueEditor, BlueFocusable } from '@dsh-blue/blue-core'
-// Empty type import carries the Cordis `Events` interface this file merges into.
-import type {} from '@deepseek-ai/cordis'
+import { Service, type Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { BlueEditor, BlueFocusable } from '@dsh-blue/blue-core'
 
 declare module '@deepseek-ai/cordis' {
-  interface Events {
-    /**
-     * The shared input editor reference changed: `blue-input` mounted a new
-     * editor or unmounted the previous one. Consumers re-read
-     * `getSharedEditor()` instead of caching the reference.
-     * Unfiltered: the editor is a singleton owned by `blue-input`.
-     * @mode emit
-     */
-    'blue/input-editor-changed'(): void
-  }
+  interface Context { blueEditorHost: EditorHostService }
+  interface Events { 'blue/input-editor-changed'(): void }
 }
 
-/** The editor and callbacks `blue-input` publishes while mounted. */
+/** The editor and callbacks published by `blue-input` while mounted. */
 export interface SharedEditor {
-  /** The mounted input editor. */
   readonly editor: BlueEditor
-  /**
-   * Route one submitted line: slash-command dispatch through
-   * `ctx.commands` or an agent follow-up, with history recording and
-   * buffer clearing.
-   * @param text - the expanded editor content.
-  */
   readonly submitPrompt: (text: string) => void
-  /** Clear the draft or interrupt the active request through the input owner. */
   readonly abortPrompt?: () => void
-  /**
-   * Flash a one-shot notice in the hint line; used by overlay-driven flows
-   * (e.g. the `/sessions` picker) whose outcome settles after the command
-   * handler already returned.
-   * @param text - the notice text; styling is the caller's.
-   */
   readonly notice?: (text: string) => void
 }
 
-let shared: SharedEditor | undefined
-
-/**
- * The presence id of the `blue-editor-plus` enhancement: bash mode and the
- * slash/`@` autocomplete live on its optional fiber.
- */
-export const ENHANCEMENT_EDITOR_PLUS = 'blue-editor-plus'
-
-/** Currently attached enhancement ids. */
-const enhancements = new Set<string>()
-
-/**
- * Mark an enhancement as attached to the shared editor; called inside a
- * `ctx.effect` so unloading reverts the mark.
- * @param id - the enhancement presence id.
- * @returns an idempotent disposer removing exactly this mark.
- */
-export function markEditorEnhancement(id: string): () => void {
-  enhancements.add(id)
-  let disposed = false
-  return () => {
-    if (disposed) return
-    disposed = true
-    enhancements.delete(id)
-  }
-}
-
-/**
- * Whether an enhancement is currently attached.
- * @param id - the enhancement presence id.
- * @returns the attachment state.
- */
-export function hasEditorEnhancement(id: string): boolean {
-  return enhancements.has(id)
-}
-
-/**
- * Publish the mounted editor; called by `blue-input` on mount.
- * @param value - the editor and its submit router.
- */
-export function setSharedEditor(value: SharedEditor): void {
-  shared = value
-}
-
-/** Clear the reference; called by `blue-input` on unmount. */
-export function clearSharedEditor(): void {
-  shared = undefined
-}
-
-/**
- * Read the currently mounted editor, if any.
- * @returns the shared editor entry, or `undefined` while `blue-input` is
- *   unmounted.
- */
-export function getSharedEditor(): SharedEditor | undefined {
-  return shared
-}
-
-/**
- * The editor-slot swap `blue-input` installs while mounted (the kimi
- * `mountEditorReplacement` mechanism): a dialog panel takes over the
- * editor's dock slot, so the editor disappears for the panel's lifetime
- * instead of peeking around a floating overlay. The returned disposer
- * restores whatever was beneath (a prior panel, or the editor itself).
- */
+/** Editor-slot replacement machinery installed by `blue-input`. */
 export interface EditorSlotSwap {
-  /**
-   * Mount a dialog panel over the editor's dock slot and focus it.
-   * @param component - the panel; a focusable dock child.
-   * @returns an idempotent disposer popping back to the previous occupant.
-   */
   readonly mount: (component: BlueFocusable) => () => void
 }
 
-/** The installed swap; present exactly while `blue-input` is mounted. */
-let slotSwap: EditorSlotSwap | undefined
-
-/**
- * Publish the slot-swap machinery; called by `blue-input` on mount.
- * @param value - the swap implementation.
- */
-export function setEditorSlotSwap(value: EditorSlotSwap | undefined): void {
-  slotSwap = value
-}
-
-/**
- * Mount a dialog panel over the editor's dock slot, hiding the editor
- * (kimi dialog parity: below an open panel only the footer remains). A
- * no-op while `blue-input` is unmounted, so a dialog opening outside a
- * mounted input layer degrades instead of crashing.
- * @param component - the panel; a focusable dock child.
- * @returns an idempotent disposer restoring the previous occupant.
- */
-export function mountEditorReplacement(component: BlueFocusable): () => void {
-  return slotSwap?.mount(component) ?? (() => {})
-}
-
-/**
- * Rewrites one submitted line into content blocks. Enhancement plugins (e.g.
- * `blue-paste-image`) register one to contribute non-text blocks: the
- * transformer receives the ORIGINAL submitted text and returns the blocks it
- * owns, splitting text runs around its markers itself. An empty array means
- * "nothing to contribute" and the text passes through unchanged.
- */
+/** Reversible content produced by one submit transformer. */
 export interface SubmitTransformation {
-  /** Content blocks contributed by this transformer. */
   readonly blocks: ContentBlock[]
-  /** Restore submit-time state consumed while producing the blocks. */
   readonly rollback?: () => void
 }
 
 export type SubmitTransformer = (text: string) => ContentBlock[] | SubmitTransformation
 
-/** Registered transformers, in registration order. */
-const submitTransformers: SubmitTransformer[] = []
+/** Presence id of the optional editor-plus enhancement. */
+export const ENHANCEMENT_EDITOR_PLUS = 'blue-editor-plus'
 
-/**
- * Register a submit transformer; called by enhancement plugins inside a
- * `ctx.effect` so unloading reverts the contribution.
- * @param transformer - the transformer to append.
- * @returns an idempotent disposer removing exactly this registration.
- */
-export function registerSubmitTransformer(transformer: SubmitTransformer): () => void {
-  submitTransformers.push(transformer)
-  let disposed = false
-  return () => {
-    if (disposed) return
-    disposed = true
-    submitTransformers.splice(submitTransformers.indexOf(transformer), 1)
+/** Per-frontend-tree editor host. */
+export class EditorHostService extends Service {
+  private shared: SharedEditor | undefined
+  private slotSwap: EditorSlotSwap | undefined
+  private readonly enhancements = new Set<string>()
+  private readonly submitTransformers: SubmitTransformer[] = []
+
+  constructor(ctx: Context) {
+    super(ctx, 'blueEditorHost')
   }
-}
 
-/**
- * Build the content blocks for one submitted line: the concatenation of
- * every registered transformer's contribution, in registration order. With
- * no transformers registered — or when every transformer declines (returns
- * an empty array) — the result is the historical single text block, so the
- * baseline behavior is unchanged.
- * @param text - the submitted line.
- * @returns the message content blocks.
- */
-export function applySubmitTransformers(text: string): ContentBlock[] {
-  return applyReversibleSubmitTransformers(text).blocks
-}
+  get current(): SharedEditor | undefined { return this.shared }
 
-/**
- * Build submitted content and retain a composite rollback for transformers
- * that consume editor-side state, such as pasted-image markers.
- * @param text - the submitted line.
- * @returns content blocks plus an optional idempotent rollback.
- */
-export function applyReversibleSubmitTransformers(text: string): SubmitTransformation {
-  if (submitTransformers.length === 0) return { blocks: [{ type: 'text', text }] }
-  const blocks: ContentBlock[] = []
-  const rollbacks: Array<() => void> = []
-  for (const transformer of submitTransformers) {
-    const result = transformer(text)
-    if (Array.isArray(result)) {
-      blocks.push(...result)
-    } else {
-      blocks.push(...result.blocks)
-      if (result.rollback !== undefined) rollbacks.push(result.rollback)
+  setCurrent(value: SharedEditor | undefined): void { this.shared = value }
+
+  setSlotSwap(value: EditorSlotSwap | undefined): void { this.slotSwap = value }
+
+  mountReplacement(component: BlueFocusable): () => void {
+    return this.slotSwap?.mount(component) ?? (() => {})
+  }
+
+  markEnhancement(id: string): () => void {
+    this.enhancements.add(id)
+    let disposed = false
+    return () => {
+      if (disposed) return
+      disposed = true
+      this.enhancements.delete(id)
     }
   }
-  let rolledBack = false
-  return {
-    blocks: blocks.length === 0 ? [{ type: 'text', text }] : blocks,
-    ...(rollbacks.length === 0
-      ? {}
-      : {
-          rollback: () => {
-            if (rolledBack) return
-            rolledBack = true
-            for (const rollback of rollbacks.reverse()) rollback()
-          },
-        }),
+
+  hasEnhancement(id: string): boolean { return this.enhancements.has(id) }
+
+  registerSubmitTransformer(transformer: SubmitTransformer): () => void {
+    this.submitTransformers.push(transformer)
+    let disposed = false
+    return () => {
+      if (disposed) return
+      disposed = true
+      const index = this.submitTransformers.indexOf(transformer)
+      if (index >= 0) this.submitTransformers.splice(index, 1)
+    }
+  }
+
+  applySubmitTransformers(text: string): ContentBlock[] {
+    return this.applyReversibleSubmitTransformers(text).blocks
+  }
+
+  applyReversibleSubmitTransformers(text: string): SubmitTransformation {
+    if (this.submitTransformers.length === 0) return { blocks: [{ type: 'text', text }] }
+    const blocks: ContentBlock[] = []
+    const rollbacks: Array<() => void> = []
+    for (const transformer of this.submitTransformers) {
+      const result = transformer(text)
+      if (Array.isArray(result)) blocks.push(...result)
+      else {
+        blocks.push(...result.blocks)
+        if (result.rollback !== undefined) rollbacks.push(result.rollback)
+      }
+    }
+    let rolledBack = false
+    return {
+      blocks: blocks.length === 0 ? [{ type: 'text', text }] : blocks,
+      ...(rollbacks.length === 0 ? {} : {
+        rollback: () => {
+          if (rolledBack) return
+          rolledBack = true
+          for (const rollback of rollbacks.reverse()) rollback()
+        },
+      }),
+    }
+  }
+
+  dispose(): void {
+    this.shared = undefined
+    this.slotSwap = undefined
+    this.enhancements.clear()
+    this.submitTransformers.splice(0)
   }
 }
+
+export const setSharedEditor = (ctx: Context, value: SharedEditor): void => { ctx.blueEditorHost.setCurrent(value) }
+export const clearSharedEditor = (ctx: Context): void => { ctx.blueEditorHost.setCurrent(undefined) }
+export const getSharedEditor = (ctx: Context): SharedEditor | undefined => ctx.blueEditorHost.current
+export const setEditorSlotSwap = (ctx: Context, value: EditorSlotSwap | undefined): void => { ctx.blueEditorHost.setSlotSwap(value) }
+export const mountEditorReplacement = (ctx: Context, component: BlueFocusable): (() => void) => ctx.blueEditorHost.mountReplacement(component)
+export const markEditorEnhancement = (ctx: Context, id: string): (() => void) => ctx.blueEditorHost.markEnhancement(id)
+export const hasEditorEnhancement = (ctx: Context, id: string): boolean => ctx.blueEditorHost.hasEnhancement(id)
+export const registerSubmitTransformer = (ctx: Context, transformer: SubmitTransformer): (() => void) => ctx.blueEditorHost.registerSubmitTransformer(transformer)
+export const applySubmitTransformers = (ctx: Context, text: string): ContentBlock[] => ctx.blueEditorHost.applySubmitTransformers(text)
+export const applyReversibleSubmitTransformers = (ctx: Context, text: string): SubmitTransformation => ctx.blueEditorHost.applyReversibleSubmitTransformers(text)

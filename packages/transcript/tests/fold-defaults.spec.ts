@@ -1,40 +1,60 @@
 /**
- * The per-category expansion defaults: shipped collapsed defaults, partial
- * merge semantics of the setter, and the undefined reset (specs must restore
- * the defaults so other suites stay deterministic — the window.spec pattern).
+ * Frontend-tree transcript presentation policy parsing and isolation.
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
-import { defaultExpansion, setDefaultExpansion } from '../src/fold-defaults.ts'
+import { describe, expect, it } from 'vitest'
+import {
+  DEFAULT_TRANSCRIPT_PRESENTATION,
+  TranscriptPresentationPolicy,
+} from '../src/presentation-policy.ts'
 
-afterEach(() => {
-  setDefaultExpansion(undefined)
-})
-
-describe('fold defaults', () => {
-  it('collapses both categories by default', () => {
-    expect(defaultExpansion('thinking')).toBe(false)
-    expect(defaultExpansion('tools')).toBe(false)
+describe('transcript presentation policy', () => {
+  it('starts with immutable shipped defaults', () => {
+    const policy = new TranscriptPresentationPolicy()
+    expect(policy.snapshot()).toBe(DEFAULT_TRANSCRIPT_PRESENTATION)
+    expect(Object.isFrozen(policy.snapshot())).toBe(true)
   })
 
-  it('merges partial updates, keeping untouched categories', () => {
-    setDefaultExpansion({ tools: true })
-    expect(defaultExpansion('tools')).toBe(true)
-    expect(defaultExpansion('thinking')).toBe(false)
-
-    setDefaultExpansion({ thinking: true })
-    expect(defaultExpansion('thinking')).toBe(true)
-    expect(defaultExpansion('tools')).toBe(true)
-
-    setDefaultExpansion({ tools: false })
-    expect(defaultExpansion('tools')).toBe(false)
-    expect(defaultExpansion('thinking')).toBe(true)
+  it('applies booleans and positive integer tunables', () => {
+    const policy = new TranscriptPresentationPolicy()
+    expect(policy.apply({
+      collapseThinking: false,
+      collapseToolCalls: false,
+      windowTurns: 5,
+      recentStepsRetention: 20,
+      expandTurns: 2,
+      userFoldLines: 25,
+      userFoldChars: 750,
+    })).toBe(true)
+    expect(policy.snapshot()).toEqual({
+      thinkingExpanded: true,
+      toolsExpanded: true,
+      windowTurns: 5,
+      recentStepsRetention: 20,
+      expandTurns: 2,
+      userFoldLines: 25,
+      userFoldChars: 750,
+    })
   })
 
-  it('restores both shipped defaults on undefined', () => {
-    setDefaultExpansion({ thinking: true, tools: true })
-    setDefaultExpansion(undefined)
-    expect(defaultExpansion('thinking')).toBe(false)
-    expect(defaultExpansion('tools')).toBe(false)
+  it('retains current values for missing and malformed fields', () => {
+    const policy = new TranscriptPresentationPolicy()
+    policy.apply({ windowTurns: 5, userFoldChars: 750 })
+    expect(policy.apply(null)).toBe(false)
+    expect(policy.apply({
+      collapseThinking: 'yes', collapseToolCalls: 1,
+      windowTurns: -3, recentStepsRetention: 1.5, expandTurns: 'many',
+      userFoldLines: 0, userFoldChars: null,
+    })).toBe(false)
+    expect(policy.snapshot().windowTurns).toBe(5)
+    expect(policy.snapshot().userFoldChars).toBe(750)
+  })
+
+  it('does not share updates between trees', () => {
+    const first = new TranscriptPresentationPolicy()
+    const second = new TranscriptPresentationPolicy()
+    first.apply({ collapseThinking: false })
+    expect(first.snapshot().thinkingExpanded).toBe(true)
+    expect(second.snapshot().thinkingExpanded).toBe(false)
   })
 })

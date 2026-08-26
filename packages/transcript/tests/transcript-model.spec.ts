@@ -3,8 +3,9 @@ import { Context } from '@deepseek-ai/cordis'
 import type { BlueComponent, BlueScreen, BlueSemanticColors } from '@dsh-blue/blue-core'
 import type { TranscriptEntryModel, TranscriptModel } from '@dsh-blue/blue-frontend'
 import { appendTranscriptView, createTranscriptModel, TRANSCRIPT_MODEL_WINDOW, TranscriptModelComponent, TranscriptModelService, type TranscriptModelRenderer } from '../src/transcript-model.ts'
+import { DEFAULT_TRANSCRIPT_PRESENTATION, TranscriptPresentationPolicy } from '../src/presentation-policy.ts'
 import { fakeBlueComponents } from './helpers.ts'
-import { COLORS } from './intent-fakes.ts'
+import { COLORS } from './status-fakes.ts'
 
 function fixture() { const children: BlueComponent[] = []; const screen = { addChild: (component: BlueComponent) => { children.push(component); return () => { const index = children.indexOf(component); if (index >= 0) children.splice(index, 1) } }, contentChanged: () => false, requestRender: () => {} } as unknown as BlueScreen; return { screen, children } }
 const model = (id: string, entries = [{ kind: 'text' as const, text: 'entry' }]): TranscriptModel => ({ kind: 'transcript', id, entries })
@@ -36,13 +37,16 @@ const semanticEntries = (): TranscriptEntryModel[] => [
   { kind: 'transcript-interrupted', id: 'interrupted', seq: 10, turn: 1 },
 ]
 
-function renderer(requestRender = () => {}): TranscriptModelRenderer {
+function renderer(
+  requestRender = () => {},
+  presentation?: TranscriptPresentationPolicy,
+): TranscriptModelRenderer {
   return {
     colors: COLORS as BlueSemanticColors,
     components: fakeBlueComponents(),
     images: () => ({}),
-    intents: {} as never,
     requestRender,
+    ...(presentation === undefined ? {} : { presentation }),
   }
 }
 
@@ -56,6 +60,7 @@ describe('TranscriptModelService', () => {
 
   it('renders every semantic entry through the plain capability fallback', () => {
     const component = new TranscriptModelComponent(() => model('plain', semanticEntries()))
+    component.setExpanded(true)
     const rows = component.render(80)
     expect(rows).toEqual(expect.arrayContaining([
       'user text',
@@ -78,6 +83,7 @@ describe('TranscriptModelService', () => {
     let current = model('semantic', semanticEntries())
     const requestRender = vi.fn()
     const component = new TranscriptModelComponent(() => current, renderer(requestRender))
+    component.setExpanded(true)
     const first = component.render(80)
     expect(first.some(row => row.includes('user text'))).toBe(true)
     expect(first.some(row => row.includes('assistant text'))).toBe(true)
@@ -100,6 +106,30 @@ describe('TranscriptModelService', () => {
     expect(component.render(80)).toEqual(changed)
     current = null as never
     expect(component.render(80)).toEqual([])
+  })
+
+  it('applies tree-local turn windows and recent Ctrl-O expansion', () => {
+    const policy = new TranscriptPresentationPolicy()
+    policy.apply({ windowTurns: 2, expandTurns: 1 })
+    const entries: TranscriptEntryModel[] = [
+      { kind: 'transcript-assistant', id: 'old', seq: 1, turn: 1, step: 0, text: 'old answer', streaming: false },
+      { kind: 'transcript-thinking', id: 'middle', seq: 2, turn: 2, step: 0, text: 'middle one\nmiddle two\nmiddle three\nmiddle four', streaming: false },
+      { kind: 'transcript-thinking', id: 'new', seq: 3, turn: 3, step: 0, text: 'new one\nnew two\nnew three\nnew four', streaming: false },
+    ]
+    const scoped = new TranscriptModelComponent(() => model('scoped', entries), renderer(() => {}, policy))
+    scoped.setExpanded(true)
+    const scopedText = scoped.render(80).join('\n')
+
+    expect(scopedText).not.toContain('old answer')
+    expect(scopedText).not.toContain('middle four')
+    expect(scopedText).toContain('new four')
+    expect(scopedText).toContain('ctrl+o to expand')
+
+    const otherTree = new TranscriptModelComponent(() => model('default', entries), renderer())
+    otherTree.setExpanded(true)
+    const otherText = otherTree.render(80).join('\n')
+    expect(otherText).toContain('old answer')
+    expect(otherText).toContain('middle four')
   })
 
   it('reports model presence and tail-follow state across attach, refresh, unregister, and dispose', () => {
@@ -133,5 +163,10 @@ describe('TranscriptModelService', () => {
     active.register(model('active'))
     active.dispose()
     expect(presence.slice(-2)).toEqual([true, false])
+  })
+
+  it('reports the shipped presentation policy without a renderer', () => {
+    const service = new TranscriptModelService(new Context())
+    expect(service.presentationPolicy()).toEqual(DEFAULT_TRANSCRIPT_PRESENTATION)
   })
 })

@@ -16,7 +16,7 @@ import { getSharedEditor } from './editor-instance.ts'
 export const name = 'blue-plugin-interaction-bridge'
 
 /** Owner services required before commands and notices can be projected. */
-export const inject = ['bluePluginHost', 'commands', 'blueTheme']
+export const inject = ['bluePluginHost', 'commands', 'blueTheme', 'blueEditorHost']
 
 function commandResult(result: BlueResult): CommandResult {
   if (result.ok) return { kind: 'success' }
@@ -65,7 +65,7 @@ export function apply(ctx: Context): void {
   const notices = subscribeBluePluginNotifications(ctx.bluePluginHost, (notification) => {
     const text = summarizePluginView(notification.view)
     const painted = paintPluginTone(ctx.blueTheme.colors, notification.tone)(text)
-    getSharedEditor()?.notice?.(painted)
+    getSharedEditor(ctx)?.notice?.(painted)
   })
   ctx.effect(() => () => {
     subscription.dispose()

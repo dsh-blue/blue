@@ -5,10 +5,9 @@
  * @module @dsh-blue/blue-interaction/command-model
  */
 import { Service, type Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { CommandDescriptor, CommandExecution } from '@deepseek-ai/dsh-commands'
 import type { Action, CommandModel } from '@dsh-blue/blue-frontend'
-import type {} from '@deepseek-ai/dsh-commands'
+import type { BlueSessionCommand, BlueSessionCommandExecution } from '@dsh-blue/blue-app'
+import type {} from '@dsh-blue/blue-app'
 
 declare module '@deepseek-ai/cordis' {
   interface Context { blueCommandModels: CommandModelService }
@@ -24,21 +23,23 @@ export class CommandModelService extends Service {
   constructor(ctx: Context) {
     super(ctx, 'blueCommandModels')
     this.context = ctx
-    this.offChange = ctx.on('commands/change', () => { for (const listener of this.listeners) listener() })
-    ctx.effect(() => () => this.offChange())
+    const registration = ctx.get('blueSessionReader')?.subscribe(() => {
+      for (const listener of this.listeners) listener()
+    })
+    this.offChange = () => registration?.dispose()
+    ctx.effect(() => this.offChange)
   }
-  list(agent?: Agent): readonly CommandModel[] {
-    if (agent === undefined || this.disposed) return []
-    const commands = ctxCommands(this.context)
-    return commands === undefined ? [] : commands.list(agent).map(toModel)
+  list(): readonly CommandModel[] {
+    if (this.disposed) return []
+    return this.context.get('blueSessionActions')?.commands().map(toModel) ?? []
   }
-  async execute(agent: Agent | undefined, action: Action, signal: AbortSignal = new AbortController().signal): Promise<CommandExecution | undefined> {
-    if (agent === undefined || this.disposed || action.kind !== 'command.execute') return undefined
+  async execute(action: Action | undefined, signal: AbortSignal = new AbortController().signal): Promise<BlueSessionCommandExecution | undefined> {
+    if (this.disposed || action?.kind !== 'command.execute') return undefined
     const name = action.name
     const input = action.input
     if (typeof name !== 'string' || (input !== undefined && typeof input !== 'string')) return undefined
-    const commands = ctxCommands(this.context)
-    if (commands === undefined) return undefined
+    const actions = this.context.get('blueSessionActions')
+    if (actions === undefined) return undefined
     const controller = new AbortController()
     const forward = (): void => controller.abort(signal.reason)
     signal.addEventListener('abort', forward, { once: true })
@@ -46,7 +47,7 @@ export class CommandModelService extends Service {
     this.active.add(controller)
     const separator = input === undefined || input === '' || /^\s/u.test(input) ? '' : ' '
     try {
-      const execution = await commands.execute(agent, `/${name}${separator}${input ?? ''}`, [], controller.signal)
+      const execution = await actions.executeCommand(`/${name}${separator}${input ?? ''}`, controller.signal)
       return this.disposed ? undefined : execution
     } finally {
       signal.removeEventListener('abort', forward)
@@ -57,10 +58,13 @@ export class CommandModelService extends Service {
   dispose(): void { if (this.disposed) return; this.disposed = true; for (const controller of this.active) controller.abort(); this.active.clear(); this.listeners.clear(); this.offChange() }
 }
 
-function ctxCommands(ctx: Context): { list(agent: Agent): readonly CommandDescriptor[]; execute(agent: Agent, line: string, images: readonly never[], signal: AbortSignal): Promise<CommandExecution | undefined> } | undefined {
-  return ctx.get('commands') as unknown as { list(agent: Agent): readonly CommandDescriptor[]; execute(agent: Agent, line: string, images: readonly never[], signal: AbortSignal): Promise<CommandExecution | undefined> } | undefined
-}
-
-function toModel(command: CommandDescriptor): CommandModel {
-  return Object.freeze({ kind: 'command', id: `command.${command.name}`, label: `/${command.name}`, description: command.description, enabled: true, action: { kind: 'command.execute', name: command.name } })
+function toModel(command: BlueSessionCommand): CommandModel {
+  return Object.freeze({
+    kind: 'command',
+    id: `command.${command.name}`,
+    label: `/${command.name}`,
+    ...(command.description === undefined ? {} : { description: command.description }),
+    enabled: true,
+    action: { kind: 'command.execute', name: command.name },
+  })
 }

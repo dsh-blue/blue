@@ -1,6 +1,6 @@
 # Writing your first plugin
 
-Every surface in Blue is a Cordis plugin — your own enhancements stand **level** with the built-ins: the same seams, the same `/theme` hot-swap reload behavior, the same automatic rollback of every contribution on unload. This page walks you from zero to a working first plugin; for the full catalog of integration surfaces, see the [Seam reference](/en/plugins/seams).
+Blue's extension surfaces are managed by a Cordis plugin host: your plugin declares capabilities, contributes renderer-neutral views/actions, and is rolled back automatically on unload. This page builds a first plugin against stable `@dsh-blue/blue-api`; see the [Seam reference](/en/plugins/seams) for the complete map.
 
 ::: warning Preview-stage caveat
 Seam signatures are planned to freeze in Phase 3; plugins integrating today may need adaptation across upgrades. This page is kept in sync with every release.
@@ -14,14 +14,14 @@ A Blue plugin is a Cordis plugin — export `name` (a stable string), an optiona
 import type { Context } from '@deepseek-ai/cordis'
 
 export const name = 'my-plugin.hello'
-export const inject = ['blueComponents']
+export const inject = ['bluePluginHost']
 
 export function apply(ctx: Context): void {
-  // …register your contributions
+  // Register through the capability-scoped API
 }
 ```
 
-**Registration is an effect**: wrap every registration (component mounts, commands, keys, status entries) in `ctx.effect(() => ...)` — unloading the plugin's fiber rolls everything back, and `/theme` hot-swap reloads of dependents leave no residue.
+`bluePluginHost.open(ctx, manifest)` binds the API to the caller's Fiber; every contribution registration is rolled back when the plugin unloads.
 
 ## Your first plugin: a status-bar clock
 
@@ -29,29 +29,40 @@ Goal: add the current time to the status bar and register a `/now` command. The 
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@dsh-blue/blue-api'
 
 export const name = 'my-plugin.clock'
-export const inject = ['blueStatus', 'commands']
+export const inject = ['bluePluginHost']
 
 export function apply(ctx: Context): void {
-  ctx.effect(() => ctx.blueStatus.register({
+  const opened = ctx.bluePluginHost.open(ctx, {
     id: 'my-plugin.clock',
-    priority: 25,                     // built-ins occupy 0/5/10/20/30 — gaps are yours
-    render: (width) => new Date().toLocaleTimeString(),
-  }))
+    api: '^1.0.0',
+    capabilities: ['status', 'commands'],
+  })
+  if (!opened.ok) throw new Error(opened.message)
 
-  ctx.effect(() => ctx.commands.register({
-    name: 'now',
-    description: 'Print the current time',
-    handler: () => ({ kind: 'success', text: new Date().toLocaleString() }),
-  }))
+  const status = opened.value.status!.register({
+    id: 'clock.status',
+    priority: 25,
+    render: () => ({ kind: 'text', content: new Date().toLocaleTimeString() }),
+  })
+  if (!status.ok) throw new Error(status.message)
+
+  const command = opened.value.commands!.register({
+    id: 'now',
+    label: 'Print the current time',
+    execute: async () => ({ ok: true, value: undefined }),
+  })
+  if (!command.ok) throw new Error(command.message)
 }
 ```
 
 Notes:
 
-- `inject` declares dependencies — the plugin activates only when the services exist, no hand-rolled waiting;
-- both registrations return disposers and are effect-managed — everything vanishes on unload;
+- `inject` declares the stable host dependency, so the plugin activates only when it exists;
+- the manifest exposes only requested capabilities and failures are structured results;
+- both registrations bind to the current Fiber and vanish on unload;
 - `/now` appears in the editor's slash completion and `/help` automatically; no extra UI registration.
 
 ## Packaging and assembly
@@ -70,12 +81,12 @@ Rows add, delete, and reorder freely — zero-code customization: don't want a s
 
 ## Next steps
 
-- [Seam reference](/en/plugins/seams) — the full catalog of seams Blue opens: screen, keymap, component factory, themes, status bar, render intents, the shared editor, and what each enables;
-- [Built-in plugins](/en/plugins/builtins) — Blue's 21 built-ins are living examples of what plugins can do, each removable.
+- [Seam reference](/en/plugins/seams) — the stable plugin host and Blue's internal projection/action/model boundaries;
+- [Built-in plugins](/en/plugins/builtins) — the bundle's 28 Blue-owned rows and validation-only packages.
 
 ## Design discipline
 
-1. Depend only on documented seams and contract packages (the `@dsh-blue/blue-*` type exports) — never Blue package internals;
-2. Every registration returns a disposer and lives inside `ctx.effect`;
-3. plain-first: your plugin stands level with Blue's built-in enhancements — there is no "internal channel";
-4. New seams open only when a first real consumer appears, and may adjust before the signature freeze.
+1. Depend only on public contracts such as `@dsh-blue/blue-api`, never package internals;
+2. Request only capabilities you use and handle every `BlueResult`;
+3. Contributions are renderer-neutral data/actions;
+4. Do not retain Agent, Session, renderer objects, or cross-Fiber mutable singletons.

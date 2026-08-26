@@ -60,7 +60,6 @@ import type {
   BlueSemanticColors,
 } from '@dsh-blue/blue-core'
 import { parseCommand } from '@deepseek-ai/dsh-commands'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
 // Carries the app-owned retraction service and event/service declaration merges.
 import type {} from '@dsh-blue/blue-app'
 // Empty type import carries the `permissionPresets` Context merge the
@@ -73,9 +72,8 @@ import {
   setEditorSlotSwap,
   setSharedEditor,
 } from './editor-instance.ts'
-import { canonicalOf, withCommandAliases } from './command-meta.ts'
-import { clearDraft, getStashedDraft, getStashedHistory, stashDraft, stashHistory } from './draft-stash.ts'
 import { resolveExternalEditorCommand, runExternalEditor } from './external-editor.ts'
+import { currentBlueSettings } from './settings.ts'
 import {
   ACTION_CANCEL,
   ACTION_CYCLE_MODE,
@@ -86,12 +84,11 @@ import {
   ACTION_MOVE_UP,
   ACTION_STEER,
 } from './keys.ts'
-import { cycleSessionModel } from './model-commands.ts'
+import { createModelListCache, cycleSessionModel } from './model-commands.ts'
 import { cycleMode } from './mode-commands.ts'
 import { openPermissionPanel } from './permission-panel.ts'
-import { ACTION_QUEUE_RECALL, queuedMessageText } from './pane-queue.ts'
-import { attachSkillsCatalog, rewriteSkillTokens } from './skills-catalog.ts'
-import { currentBlueAgent } from './session.ts'
+import { ACTION_QUEUE_RECALL } from './pane-queue.ts'
+import { rewriteSkillTokens } from './skills-catalog.ts'
 import { filterSlashCommands } from './slash-filter.ts'
 
 /** Window for the double Ctrl-C exit: presses farther apart re-arm the hint. */
@@ -99,6 +96,15 @@ const INTERRUPT_DOUBLE_PRESS_MS = 1000
 const KEY_PAGE_UP = '\x1b[5~'
 const KEY_PAGE_DOWN = '\x1b[6~'
 const KEY_END = '\x1b[F'
+
+/** Command descriptors projected through the app-owned session boundary. */
+function availableCommands(ctx: Context) {
+  return ctx.blueSessionActions.commands().map(command => ({
+    name: command.name,
+    ...(command.description === undefined ? {} : { description: command.description }),
+    ...(command.inputHint === undefined ? {} : { input: { hint: command.inputHint } }),
+  }))
+}
 
 function wheelDirection(data: string): 'up' | 'down' | undefined {
   /* v8 ignore start -- exercised by real mouse reports */
@@ -113,13 +119,10 @@ function wheelDirection(data: string): 'up' | 'down' | undefined {
   return (button & 3) === 0 ? 'up' : (button & 3) === 1 ? 'down' : undefined
   /* v8 ignore stop */
 }
-/** Timestamp of the last idle Ctrl-C press; 0 means the exit is not armed. */
-let lastInterruptAt = 0
-
 /** Stable Cordis plugin name. */
 export const name = 'blue-input'
 /** Services required before the editor can mount. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'commands']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'commands', 'blueSessionReader', 'blueSessionActions', 'blueSkillsCatalog', 'blueInteractionState']
 
 /**
  * The single-line hint rendered under the input editor. Only the transient
@@ -186,6 +189,9 @@ class HintLine implements BlueComponent {
 export function apply(ctx: Context): void {
   const screen = ctx.blueScreen
   const colors = ctx.blueTheme.colors
+  const aliases = ctx.blueInteractionState.aliases
+  const draft = ctx.blueInteractionState.draft
+  const modelListCache = createModelListCache()
   /** One-shot notice shown in the hint line until the next edit. */
   let notice: string | undefined
   /** Current editor text, captured through `onChange` for the slash hint. */
@@ -210,6 +216,8 @@ export function apply(ctx: Context): void {
    * fresh.
    */
   let externalEditorRunning = false
+  /** Timestamp of the last idle Ctrl-C press; 0 means the exit is not armed. */
+  let lastInterruptAt = 0
   /** The latest ordinary follow-up eligible to become an editor draft again. */
   let retractionCandidate: {
     readonly messageId: string
@@ -227,10 +235,6 @@ export function apply(ctx: Context): void {
   ctx.effect(() => () => {
     unloaded = true
   })
-  // The S29 skills catalog stays warm for the `#` completion branch
-  // (`blue-editor-plus`) and the submit/steer rewrite below.
-  ctx.effect(() => attachSkillsCatalog(ctx))
-
   const editor = ctx.blueComponents.createEditor({ paddingX: 4 })
   // The padding reserves columns 0-3 for the side border, its gap, and the
   // `>` prompt symbol the rounded-box chrome overlays.
@@ -248,13 +252,12 @@ export function apply(ctx: Context): void {
     const parsed = parseCommand(currentText)
     // A bare slash cannot parse (parseCommand requires a leading letter).
     if (parsed === undefined && currentText !== '/') return undefined
-    const agent = currentBlueAgent(ctx)
-    if (agent === undefined) return undefined
+    if (ctx.blueSessionReader.current() === null) return undefined
     // The same S14 fuzzy filter the dropdown uses, so the feedback agrees
     // with what the dropdown just failed to list. The dropdown closes
     // itself on an empty match, so this notice is the only signal.
     const matches = filterSlashCommands(
-      withCommandAliases(ctx.commands.list(agent)),
+      aliases.withCommandAliases(availableCommands(ctx)),
       parsed?.name ?? '',
       ctx.blueComponents,
     )
@@ -298,7 +301,7 @@ export function apply(ctx: Context): void {
       notice = undefined
       editor.setText('')
       currentText = ''
-      clearDraft()
+      draft.clearDraft()
       refreshHint()
       return
     }
@@ -308,7 +311,7 @@ export function apply(ctx: Context): void {
     // own behavior, and the hint must never lag the buffer.
     currentText = editor.getText()
     // The draft was consumed; drop the reload stash with it.
-    clearDraft()
+    draft.clearDraft()
     refreshHint()
     if (line.length === 0) return
     editor.addToHistory(line)
@@ -316,21 +319,22 @@ export function apply(ctx: Context): void {
     // rebuilds this fiber (and the editor) as its own effect, so the new
     // entry must reach the reload stash before the swap tears the
     // component down.
-    stashHistory(editor.getHistory())
-    const agent = currentBlueAgent(ctx)
-    if (agent === undefined) {
+    draft.stashHistory(editor.getHistory())
+    if (ctx.blueSessionReader.current() === null) {
       setNotice('no active session')
       return
     }
     const parsed = parseCommand(line)
     if (parsed === undefined) {
-      const transformed = applyReversibleSubmitTransformers(rewriteSkillTokens(line))
-      const message = createUserMessage({
-        content: transformed.blocks,
-        source: { kind: 'user' },
-      })
+      const transformed = applyReversibleSubmitTransformers(ctx, rewriteSkillTokens(ctx, line))
+      const submitted = ctx.blueSessionActions.followup(transformed.blocks)
+      if (!submitted.ok) {
+        transformed.rollback?.()
+        setNotice(colors.error(submitted.message))
+        return
+      }
       retractionCandidate = {
-        messageId: String(message.id),
+        messageId: submitted.value.messageId,
         editorText: value,
         historyText: line,
         ...(transformed.rollback === undefined ? {} : { rollback: transformed.rollback }),
@@ -338,7 +342,6 @@ export function apply(ctx: Context): void {
       ctx.get('blueRequests')?.begin('main')
       // The S29 skill pipeline rewrites only model-facing text; the editor
       // candidate and history retain exactly what the user submitted.
-      agent.followup(message)
       return
     }
     // A bare `/permission` opens the preset picker (S24b, D33) instead of
@@ -348,20 +351,16 @@ export function apply(ctx: Context): void {
     // <name>` stays the upstream write path the picker itself dispatches.
     if (parsed.name === 'permission' && parsed.rawInput.trim().length === 0
       && ctx.get('permissionPresets') !== undefined) {
-      openPermissionPanel(ctx, agent)
+      openPermissionPanel(ctx)
       return
     }
     // An alias line (`/q`) is rewritten to its canonical command before
     // dispatch — the kimi resolution: aliases are not registered commands,
     // the canonical name owns the handler and the session log. The raw
     // input after the name travels untouched.
-    const canonical = canonicalOf(parsed.name)
-    void ctx.commands.execute(
-      agent,
+    const canonical = aliases.canonicalOf(parsed.name)
+    void ctx.blueSessionActions.executeCommand(
       canonical === undefined ? line : `/${canonical}${parsed.rawInput}`,
-      // No image attachments ride a typed slash line (0.1.1's execute
-      // takes the images array ahead of the signal).
-      [],
       new AbortController().signal,
     ).then(
       (execution) => {
@@ -369,7 +368,7 @@ export function apply(ctx: Context): void {
         // the reloaded fiber repaints, so a late notice is moot.
         if (unloaded) return
         if (execution === undefined) setNotice(`unknown command: ${line}`)
-        else if (execution.result.kind === 'error') setNotice(colors.error(execution.result.text))
+        else if (execution.result.kind === 'error') setNotice(colors.error(execution.result.text ?? 'command failed'))
         else if (execution.result.text !== undefined) setNotice(execution.result.text)
       },
       (error: unknown) => {
@@ -390,7 +389,7 @@ export function apply(ctx: Context): void {
    * recallQueued precedent) so a theme-swap reload keeps the edited draft.
    */
   async function runExternalEditorFlow(): Promise<void> {
-    const command = resolveExternalEditorCommand()
+    const command = resolveExternalEditorCommand(process.env, currentBlueSettings(ctx).editorCommand)
     if (command === undefined) {
       setNotice('set $VISUAL or $EDITOR to edit drafts externally')
       return
@@ -400,7 +399,7 @@ export function apply(ctx: Context): void {
       // Seed through getExpandedText(): large pastes materialize as their
       // full text (the upstream-sanctioned external-editor form). Image
       // markers ride as literal text and keep resolving at submit — the
-      // paste-image map is module-level and unaffected by setText.
+      // paste-image state is tree-owned and unaffected by setText.
       const seed = editor.getExpandedText()
       await screen.suspend(async () => {
         const edited = await runExternalEditor(seed, command)
@@ -408,7 +407,7 @@ export function apply(ctx: Context): void {
         if (edited === undefined || unloaded) return
         editor.setText(edited.replaceAll('\r\n', '\n').replace(/\n$/, ''))
         currentText = editor.getText()
-        stashDraft(currentText)
+        draft.stashDraft(currentText)
         refreshHint()
       })
     } catch (error) {
@@ -429,20 +428,13 @@ export function apply(ctx: Context): void {
   function recallQueued(): boolean {
     // Only with an empty buffer — a drafted line keeps Up on history.
     if (editor.getText().length > 0) return false
-    const agent = currentBlueAgent(ctx)
-    if (agent === undefined || !agent.inbox.hasPending) return false
-    const latest = agent.inbox.nextStep.at(-1) ?? agent.inbox.nextTurn.at(-1)
-    /* v8 ignore next -- hasPending guarantees one pending list is non-empty */
-    if (latest === undefined) return false
-    const text = queuedMessageText(latest)
-    if (text.length === 0) return false
-    // Lost the race with a claim: leave the editor alone.
-    if (!agent.inbox.remove(latest.id)) return false
-    editor.setText(text)
+    const recalled = ctx.blueSessionActions.recallQueued()
+    if (!recalled.ok) return false
+    editor.setText(recalled.value)
     // Re-sync mirrors submitPrompt's caution about component-owned onChange
     // timing; the recalled text is a draft, so the reload stash keeps it.
     currentText = editor.getText()
-    stashDraft(currentText)
+    draft.stashDraft(currentText)
     refreshHint()
     ctx.blueScreen.requestRender()
     return true
@@ -453,32 +445,29 @@ export function apply(ctx: Context): void {
     if (editor.getText().length > 0) {
       editor.setText('')
       currentText = ''
-      clearDraft()
+      draft.clearDraft()
       refreshHint()
       ctx.emit('blue/editor-model-changed')
       screen.requestRender()
       return true
     }
-    const agent = currentBlueAgent(ctx)
-    if (agent?.status !== 'running') return false
+    if (ctx.blueSessionReader.current()?.status !== 'running') return false
     const candidate = retractionCandidate
     if (candidate !== undefined
       && ctx.get('blueRetractions')?.tryRetract(candidate.messageId) === true) {
       candidate.rollback?.()
       editor.removeLatestHistory?.(candidate.historyText)
-      stashHistory(editor.getHistory())
+      draft.stashHistory(editor.getHistory())
       editor.setText(candidate.editorText)
       currentText = editor.getText()
-      stashDraft(currentText)
+      draft.stashDraft(currentText)
       retractionCandidate = undefined
       refreshHint()
       screen.requestRender()
       return true
     }
     retractionCandidate = undefined
-    ctx.get('blueRequests')?.interrupt()
-    agent.cancel({ kind: 'user' })
-    return true
+    return ctx.blueSessionActions.interrupt().ok
   }
 
   /**
@@ -522,18 +511,17 @@ export function apply(ctx: Context): void {
     // a turn, a running one consumes it at the next step boundary.
     if (keymap.matches(data, ACTION_STEER)) {
       const text = editor.getText().trim()
-      const agent = currentBlueAgent(ctx)
-      if (text.length === 0 || agent === undefined) return false
+      if (text.length === 0 || ctx.blueSessionReader.current() === null) return false
       // Steered text runs the same `#name` → `/name` skill rewrite as a
       // submitted follow-up: the gesture reaches the model either way.
       ctx.get('blueRequests')?.begin('main')
-      agent.steer(createUserMessage({
-        content: applyReversibleSubmitTransformers(rewriteSkillTokens(text)).blocks,
-        source: { kind: 'user' },
-      }))
+      const steered = ctx.blueSessionActions.steer(
+        applyReversibleSubmitTransformers(ctx, rewriteSkillTokens(ctx, text)).blocks,
+      )
+      if (!steered.ok) return false
       editor.setText('')
       // Steered text is consumed too: keep no stashed copy for a reload.
-      clearDraft()
+      draft.clearDraft()
       return true
     }
     // Shift+Tab: cycle the session mode (normal → plan → yolo, S24a). The
@@ -559,7 +547,7 @@ export function apply(ctx: Context): void {
     // the same reasons as the mode cycle, and it fires in bash mode too
     // (input mode and model are orthogonal axes).
     if (keymap.matches(data, ACTION_CYCLE_MODEL)) {
-      void cycleSessionModel(ctx)
+      void cycleSessionModel(ctx, modelListCache)
       return true
     }
     // Up/Down: with the side-question pane docked above and an empty buffer,
@@ -596,7 +584,7 @@ export function apply(ctx: Context): void {
     currentText = text
     ctx.emit('blue/editor-model-changed')
     // Mirror every edit so a theme-swap reload loses nothing.
-    stashDraft(text)
+    draft.stashDraft(text)
     // Slash context highlights the frame in `primary`; any other text
     // returns the neutral border. `blue-editor-plus` re-asserts its shell
     // hue on top while bash mode is active.
@@ -616,7 +604,7 @@ export function apply(ctx: Context): void {
   // fires neither a submit nor an input-mode transition. The explicit
   // re-sync mirrors submitPrompt's caution about component-owned onChange
   // timing.
-  const stashed = getStashedDraft()
+  const stashed = draft.getStashedDraft()
   if (stashed.length > 0) {
     editor.setText(stashed)
     currentText = editor.getText()
@@ -626,16 +614,17 @@ export function apply(ctx: Context): void {
   // editor's Up-recall entries died with it when the reload rebuilt this
   // fiber. The stash is newest-first and pi-tui prepends, so the replay
   // walks it reversed to land the same order.
-  for (const entry of [...getStashedHistory()].reverse()) editor.addToHistory(entry)
+  for (const entry of [...draft.getStashedHistory()].reverse()) editor.addToHistory(entry)
 
   // A session switch settles navigation notices such as "resuming" and
   // "creating rewind branch". Clear the old session's transient text before
   // re-deriving slash feedback against the new agent.
-  ctx.on('blue/session-changed', () => {
+  const sessionRegistration = ctx.blueSessionReader.subscribe(() => {
     retractionCandidate = undefined
     notice = undefined
     refreshHint()
   })
+  ctx.effect(() => () => sessionRegistration.dispose())
   // The side-question pane docks above the editor; its flag switches the
   // editor's top corners to the spliced `├┤` and gates the Esc/arrow/Enter
   // chain, and its busy flag refuses a submit while the side agent answers.
@@ -653,7 +642,7 @@ export function apply(ctx: Context): void {
     let removeEditor = screen.addBottomChild(editor)
     let removeHint = screen.addBottomChild(hintLine)
     screen.setFocus(editor)
-    setSharedEditor({ editor, submitPrompt, abortPrompt: () => { clearOrInterrupt() }, notice: setNotice })
+    setSharedEditor(ctx, { editor, submitPrompt, abortPrompt: () => { clearOrInterrupt() }, notice: setNotice })
     ctx.emit('blue/input-editor-changed')
 
     // The editor-slot swap (kimi `mountEditorReplacement`, D30): a dialog
@@ -672,7 +661,7 @@ export function apply(ctx: Context): void {
       removeHint = screen.addBottomChild(hintLine)
       screen.setFocus(editor)
     }
-    setEditorSlotSwap({
+    setEditorSlotSwap(ctx, {
       mount: (component) => {
         if (panels.length === 0) hideEditor()
         const remove = screen.addBottomChild(component)
@@ -703,13 +692,13 @@ export function apply(ctx: Context): void {
     })
 
     return () => {
-      setEditorSlotSwap(undefined)
+      setEditorSlotSwap(ctx, undefined)
       // Panels still open when this fiber unloads (a /theme swap with a
       // dialog up) unmount with it; their disposers turn into no-ops.
       const wasOccupied = panels.length > 0
       for (const entry of panels.splice(0)) entry.remove()
       if (wasOccupied) ctx.emit('blue/editor-slot-swapped', false)
-      clearSharedEditor()
+      clearSharedEditor(ctx)
       ctx.emit('blue/input-editor-changed')
       removeHint()
       removeEditor()

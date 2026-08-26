@@ -33,10 +33,16 @@ import {
   UserMessageComponent,
   type UserMessageImages,
 } from './components.ts'
-import type { BlueIntentsService } from './intents.ts'
 import { ThinkingComponent } from './thinking.ts'
 import { ToolModelComponent } from './tool-model.ts'
-import type { BlueIntentComponent, TranscriptToolItem } from './types.ts'
+import type { TranscriptToolItem } from './types.ts'
+import {
+  DEFAULT_TRANSCRIPT_PRESENTATION,
+  type TranscriptPresentationPolicy,
+  type TranscriptPresentationSnapshot,
+} from './presentation-policy.ts'
+
+interface ExpandableComponent extends BlueComponent { setExpanded?(expanded: boolean): void }
 
 declare module '@deepseek-ai/cordis' { interface Context { blueTranscriptModels: TranscriptModelService } }
 type Source = TranscriptModel | (() => TranscriptModel | null)
@@ -49,8 +55,8 @@ export interface TranscriptModelRenderer {
   readonly colors: BlueSemanticColors
   readonly components: BlueComponents
   readonly images: () => UserMessageImages
-  readonly intents: BlueIntentsService
   readonly requestRender: () => void
+  readonly presentation?: TranscriptPresentationPolicy
 }
 
 /** Optional service hooks used by the legacy/plain fallback owner. */
@@ -135,19 +141,23 @@ export class TranscriptModelComponent implements BlueComponent {
       this.prune(new Set())
       return []
     }
-    const entries = model.entries.slice(-TRANSCRIPT_MODEL_WINDOW)
+    const bounded = model.entries.slice(-TRANSCRIPT_MODEL_WINDOW)
+    const policy = this.presentation()
+    const turns = [...new Set(bounded.filter(isSemantic).map(entry => entry.turn))]
+    const visibleTurns = new Set(turns.slice(-policy.windowTurns))
+    const entries = bounded.filter(entry => !isSemantic(entry) || visibleTurns.has(entry.turn))
+    const expandableTurns = new Set(turns.slice(-policy.expandTurns))
     const live = new Set(entries.filter(isSemantic).map(entry => entry.id))
     this.prune(live)
-    return entries.flatMap(entry => isSemantic(entry) ? this.renderSemantic(entry, width) : renderFrontendView(entry, width))
+    return entries.flatMap(entry => isSemantic(entry)
+      ? this.renderSemantic(entry, width, expandableTurns.has(entry.turn))
+      : renderFrontendView(entry, width))
   }
 
   /** Apply the global recent-detail expansion state to mounted entries. */
   setExpanded(expanded: boolean): void {
     this.expanded = expanded
-    for (const { target } of this.cached.values()) {
-      ;(target as BlueIntentComponent).setExpanded?.(expanded)
-      target.invalidate()
-    }
+    for (const { target } of this.cached.values()) target.invalidate()
   }
 
   invalidate(): void {
@@ -159,7 +169,7 @@ export class TranscriptModelComponent implements BlueComponent {
     this.prune(new Set())
   }
 
-  private renderSemantic(entry: TranscriptEntryModel, width: number): string[] {
+  private renderSemantic(entry: TranscriptEntryModel, width: number, expandable: boolean): string[] {
     if (this.renderer === undefined) return [...renderFrontendView({ kind: 'text', text: this.plainText(entry) }, width)]
     const currentSignature = signature(entry)
     let cached = this.cached.get(entry.id)
@@ -169,7 +179,26 @@ export class TranscriptModelComponent implements BlueComponent {
       cached = { signature: currentSignature, target, component: new GutterComponent(target) }
       this.cached.set(entry.id, cached)
     }
+    this.applyExpansion(cached.target, entry, expandable)
     return cached.component.render(width)
+  }
+
+  /** Current tree policy, or immutable shipped defaults for standalone consumers. */
+  private presentation(): TranscriptPresentationSnapshot {
+    return this.renderer?.presentation?.snapshot() ?? DEFAULT_TRANSCRIPT_PRESENTATION
+  }
+
+  /** Compose Ctrl-O's recent-turn override over category defaults. */
+  private applyExpansion(target: BlueComponent, entry: TranscriptEntryModel, expandable: boolean): void {
+    const policy = this.presentation()
+    const expanded = this.expanded && expandable
+      ? true
+      : entry.kind === 'transcript-thinking'
+        ? policy.thinkingExpanded
+        : entry.kind === 'transcript-tool'
+          ? policy.toolsExpanded
+          : false
+    ;(target as ExpandableComponent).setExpanded?.(expanded)
   }
 
   private createComponent(entry: TranscriptEntryModel): BlueComponent {
@@ -178,8 +207,10 @@ export class TranscriptModelComponent implements BlueComponent {
       case 'transcript-user': {
         const component = new UserMessageComponent({
           kind: 'user', seq: entry.seq, turn: entry.turn, text: entry.text, images: entry.images.map(asImageRef),
-        }, renderer.colors, renderer.components, renderer.images())
-        component.setExpanded(this.expanded)
+        }, renderer.colors, renderer.components, {
+          ...renderer.images(),
+          presentation: () => this.presentation(),
+        })
         return component
       }
       case 'transcript-assistant':
@@ -190,12 +221,14 @@ export class TranscriptModelComponent implements BlueComponent {
         const component = new ThinkingComponent({
           kind: 'thinking', seq: entry.seq, turn: entry.turn, step: entry.step, text: entry.text, streaming: entry.streaming,
         }, renderer.colors, renderer.components, renderer.requestRender)
-        component.setExpanded(this.expanded)
         return component
       }
       case 'transcript-tool': {
         const presentation = entry.presentation
-        if (presentation !== undefined) return new ToolModelComponent(() => presentation)
+        if (presentation !== undefined) {
+          const component = new ToolModelComponent(() => presentation)
+          return component
+        }
         return new ToolCallComponent(asToolItem(entry), renderer.colors, renderer.components)
       }
       case 'transcript-error':
@@ -290,6 +323,17 @@ export class TranscriptModelService extends Service {
   setExpanded(expanded: boolean): void {
     this.expanded = expanded
     for (const { component } of this.mounted.values()) component.setExpanded(expanded)
+  }
+
+  /** Re-read presentation policy and invalidate mounted semantic components. */
+  refreshPresentationPolicy(): void {
+    for (const { component } of this.mounted.values()) component.invalidate()
+    this.screen?.requestRender(true)
+  }
+
+  /** Expose the current immutable policy for diagnostics and tests. */
+  presentationPolicy(): TranscriptPresentationSnapshot {
+    return this.hooks.renderer?.presentation?.snapshot() ?? DEFAULT_TRANSCRIPT_PRESENTATION
   }
 
   hasModels(): boolean {

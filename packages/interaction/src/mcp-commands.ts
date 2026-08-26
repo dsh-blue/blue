@@ -17,9 +17,9 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import type { ToolSchema } from '@deepseek-ai/dsh-llm'
+import type { BlueSessionToolSchema } from '@dsh-blue/blue-app'
 // Empty type imports carry the `commands` Context merge the registration
-// uses and the app-owned `blueSession` merge the collector resolves.
+// uses and the app-owned session action merge the collector resolves.
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@dsh-blue/blue-app'
 import { displayServices } from './display-services.ts'
@@ -126,7 +126,7 @@ export function buildServerPickerRows(catalog: McpCatalog): SelectRow[] {
  * @param schema - the tool's schema.
  * @returns the name with the `mcp__<server>__` prefix stripped.
  */
-export function rawToolName(server: McpServerView, schema: ToolSchema): string {
+export function rawToolName(server: McpServerView, schema: BlueSessionToolSchema): string {
   return schema.name.slice(`${MCP_PREFIX}${server.serverName}__`.length)
 }
 
@@ -296,7 +296,7 @@ export function registerMcpCommands(ctx: Context): () => void {
       return { kind: 'error', text: `could not read the MCP catalog: ${describe(error)}` }
     }
     if (catalog.servers.length === 0) {
-      const restoreEmpty = mountEditorReplacement(new InfoPanel({
+      const restoreEmpty = mountEditorReplacement(ctx, new InfoPanel({
         keymap: display.keymap,
         theme: display.theme,
         components: display.components,
@@ -309,8 +309,8 @@ export function registerMcpCommands(ctx: Context): () => void {
       return { kind: 'success' }
     }
     const byEntryId = new Map(catalog.servers.map(server => [server.entryId, server]))
-    const openTool = (schema: ToolSchema): void => {
-      const restoreTool = mountEditorReplacement(new InfoPanel({
+    const openTool = (schema: BlueSessionToolSchema): void => {
+      const restoreTool = mountEditorReplacement(ctx, new InfoPanel({
         keymap: display.keymap,
         theme: display.theme,
         components: display.components,
@@ -323,7 +323,7 @@ export function registerMcpCommands(ctx: Context): () => void {
     }
     const openServer = (server: McpServerView): void => {
       const byName = new Map(server.toolsVisible.map(schema => [schema.name, schema]))
-      const restoreServer = mountEditorReplacement(new SelectListPanel({
+      const restoreServer = mountEditorReplacement(ctx, new SelectListPanel({
         keymap: display.keymap,
         theme: display.theme,
         components: display.components,
@@ -332,7 +332,7 @@ export function registerMcpCommands(ctx: Context): () => void {
         titleHint: `· ${STATUS_LABEL[server.status]} · esc back`,
         onSelect: selected => {
           if (selected.value === CONFIG_ROW_VALUE) {
-            const restoreConfig = mountEditorReplacement(new InfoPanel({
+            const restoreConfig = mountEditorReplacement(ctx, new InfoPanel({
               keymap: display.keymap,
               theme: display.theme,
               components: display.components,
@@ -351,7 +351,7 @@ export function registerMcpCommands(ctx: Context): () => void {
         },
       }))
     }
-    const restorePicker = mountEditorReplacement(new SelectListPanel({
+    const restorePicker = mountEditorReplacement(ctx, new SelectListPanel({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,

@@ -1,24 +1,40 @@
+/**
+ * Renderer-neutral baseline model footer row. The producer reads the current
+ * app session snapshot and official conversation facts; the renderer owns
+ * styling and width handling.
+ *
+ * @module @dsh-blue/blue-transcript/status-basic-model
+ */
+
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@dsh-blue/blue-app'
 import type { StatusModel } from '@dsh-blue/blue-frontend'
+import type { ConversationFacts } from '@dsh-blue/blue-conversation'
+import type { SessionFactsService } from './session-facts.ts'
 
+/** Stable Cordis plugin name. */
 export const name = 'blue-status-basic-model'
-export const inject = ['blueStatusModels']
+/** Services required before the baseline model can register. */
+export const inject = ['blueStatusModels', 'blueSessionFacts']
 
+/** Register the baseline model row. */
 export function apply(ctx: Context): void {
-  let agent: Agent | undefined = ctx.get('blueSession')?.current ?? undefined
+  const factsService = ctx.get('blueSessionFacts') as SessionFactsService
+  let facts: ConversationFacts = factsService.current
+  let session = factsService.currentSession
   let text = ''
   const derive = (): void => {
-    if (agent === undefined) { text = ''; return }
-    const selection = ctx.get('blueSession')?.modelRef?.current
-    text = selection?.model ?? agent.session.requestHeader()?.config.model ?? agent.options.model ?? agent.options.provider ?? 'no model'
+    text = session?.model?.id
+      ?? facts.model
+      ?? facts.provider
+      ?? (session === null ? '' : 'no model')
   }
   derive()
   const model = (): StatusModel => ({ kind: 'status', id: 'blue.status.basic', priority: 0, view: { kind: 'text', text, tone: 'default' }, visible: text !== '' })
   const refresh = (): void => { derive(); ctx.blueStatusModels.refresh('blue.status.basic') }
-  ctx.on('blue/session-changed', next => { agent = next; refresh() })
-  ctx.on('blue/model-changed', refresh)
-  ctx.on('session/event', (session) => { if (agent !== undefined && session === agent.session) refresh() })
+  const offFacts = factsService.subscribe(next => { facts = next; refresh() })
+  const offSession = factsService.subscribeSession(next => { session = next; refresh() })
+  ctx.effect(() => () => offFacts())
+  ctx.effect(() => () => offSession())
   ctx.effect(() => ctx.blueStatusModels.register(model))
 }

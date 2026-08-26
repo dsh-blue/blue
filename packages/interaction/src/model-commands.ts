@@ -2,8 +2,8 @@
  * The model-family commands: `/model` (picker over the llm catalog with the
  * footer thinking-segment control, or a direct id switch), `/effort`
  * (horizontal segment selector or a direct level switch), and the shared
- * commit path they both funnel into — write `blueSession.modelRef.current`
- * (the next step's route) plus, unless session-only, persist the new
+ * commit path they both funnel into — call the app-owned model action for
+ * the next step's route and, unless session-only, persist the new
  * default through `agentDefaultModel.saveSelection`. The Alt+M hotkey
  * cycle (`cycleSessionModel`, matched in the editor key chain) funnels
  * into the same commit path on the session-only channel. The S23 seam
@@ -15,19 +15,23 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import type { BlueSessionReader } from '@dsh-blue/blue-api'
 // Empty type imports carry the `llm` and `agentDefaultModel` Context merges
-// plus the app-owned `blueSession` merge this module reads.
+// plus the app-owned session-action merge this module reads.
 import type {} from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
-import type { BlueModelSelectionRef } from '@dsh-blue/blue-app'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import { registerCommandAliases } from './command-meta.ts'
+import type { BlueSessionActions, BlueSessionModelSelection } from '@dsh-blue/blue-app'
+import type { Action } from '@dsh-blue/blue-frontend'
 import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
-import { EffortPanel, ModelPanel, type ModelPanelItem } from './model-panel.ts'
+import { FrontendPanel } from './frontend-panel.ts'
+import {
+  effortPickerPanelModel,
+  modelPickerPanelModel,
+  type ModelPickerItem,
+} from './model-picker-model.ts'
 import { isProviderFlowError, runProviderAdd, runProviderEdit } from './provider-add.ts'
 import { SelectListPanel, type SelectRow } from './select-list.ts'
 import { CURRENT_MARK } from './symbols.ts'
@@ -40,28 +44,23 @@ function describe(error: unknown): string {
 /** The `/provider` picker's trailing wizard row — routes Enter to the Add flow. */
 const ADD_PROVIDER = '__add__'
 
-/** The live-session reads every model command starts from. */
-interface SelectionRead {
-  readonly agent: Agent
-  readonly modelRef: BlueModelSelectionRef
-}
-
 /**
- * Read the live session and its model-selection handle.
+ * Read the live session's immutable model selection.
  * @param ctx - plugin context.
- * @returns the agent plus handle, or the guard's error text.
+ * @returns the selection, or the guard's error text.
  */
-function readSelection(ctx: Context): { read: SelectionRead } | { error: string } {
-  const session = ctx.get('blueSession')
-  const agent = session?.current
-  if (session === undefined || agent === undefined || agent === null) {
+function readSelection(
+  reader: BlueSessionReader,
+  actions: BlueSessionActions,
+): { read: BlueSessionModelSelection } | { error: string } {
+  if (reader.current() === null) {
     return { error: 'no session is live yet' }
   }
-  const modelRef = session.modelRef
-  if (modelRef === undefined) {
+  const selection = actions.modelSelection()
+  if (selection === undefined) {
     return { error: 'model selection is unavailable for this session' }
   }
-  return { read: { agent, modelRef } }
+  return { read: selection }
 }
 
 /**
@@ -70,7 +69,7 @@ function readSelection(ctx: Context): { read: SelectionRead } | { error: string 
  * @param b - the other selection.
  * @returns `true` when provider, model, and effort all match.
  */
-function sameSelection(a: ModelSelection, b: ModelSelection): boolean {
+function sameSelection(a: BlueSessionModelSelection, b: BlueSessionModelSelection): boolean {
   return a.provider === b.provider && a.model === b.model && a.reasoningEffort === b.reasoningEffort
 }
 
@@ -87,8 +86,8 @@ export type ModelSaveState = 'saved' | 'skipped' | 'session-only' | 'unavailable
  * @returns the single-line notice text.
  */
 export function modelSwitchNotice(
-  previous: ModelSelection,
-  next: ModelSelection,
+  previous: BlueSessionModelSelection,
+  next: BlueSessionModelSelection,
   saveState: ModelSaveState,
   failureDetail?: string,
 ): string {
@@ -119,26 +118,22 @@ export function modelSwitchNotice(
 }
 
 /**
- * Commit one selection: route the next step through `modelRef.current` and,
- * unless session-only, persist the new default.
+ * Commit one selection through the app-owned action and, unless
+ * session-only, persist the new default.
  * @param ctx - plugin context (`agentDefaultModel` resolved lazily).
- * @param modelRef - the live session's selection handle.
  * @param next - the selection to commit.
  * @param persist - `false` for the Alt+S session-only channel.
  * @returns the notice text describing the outcome.
  */
 async function commitModelSelection(
   ctx: Context,
-  modelRef: BlueModelSelectionRef,
-  next: ModelSelection,
+  actions: BlueSessionActions,
+  next: BlueSessionModelSelection,
   persist: boolean,
 ): Promise<string> {
-  const previous = modelRef.current
-  modelRef.current = next
-  // The pick routes the next request; the footer's model entry and the
-  // banner's model line show it immediately (the S24a dogfood ruling —
-  // they used to wait for the next logged request/header).
-  ctx.emit('blue/model-changed')
+  const selected = actions.selectModel(next)
+  if (!selected.ok) return selected.message
+  const previous = selected.value
   if (!persist) return modelSwitchNotice(previous, next, 'session-only')
   const defaults = ctx.get('agentDefaultModel')
   if (defaults === undefined) return modelSwitchNotice(previous, next, 'unavailable')
@@ -146,7 +141,13 @@ async function commitModelSelection(
     return modelSwitchNotice(previous, next, 'skipped')
   }
   try {
-    await defaults.saveSelection(next)
+    await defaults.saveSelection({
+      provider: next.provider,
+      model: next.model,
+      ...(next.reasoningEffort === undefined
+        ? {}
+        : { reasoningEffort: ReasoningEffortId(next.reasoningEffort) }),
+    })
     return modelSwitchNotice(previous, next, 'saved')
   } catch (error) {
     return modelSwitchNotice(previous, next, 'failed', describe(error))
@@ -162,21 +163,20 @@ interface ListingLlm {
 const MODEL_CACHE_TTL_MS = 60_000
 
 /** The cached provider model listing behind the Alt+M cycle. */
-interface ModelListCache {
+interface ModelListCacheValue {
   readonly provider: string
   readonly ids: string[]
   readonly fetchedAt: number
 }
 
-let modelListCache: ModelListCache | undefined
+/** Fiber-owned cache state for the Alt+M model cycle. */
+export interface ModelListCache {
+  value?: ModelListCacheValue
+}
 
-/**
- * Drop the hotkey cycle's provider model cache. Specs call this between
- * cases; production never needs it (the TTL and the provider key bound the
- * staleness window).
- */
-export function resetModelListCache(): void {
-  modelListCache = undefined
+/** Create empty cache state for one input-plugin Fiber. */
+export function createModelListCache(): ModelListCache {
+  return {}
 }
 
 /**
@@ -191,8 +191,9 @@ export function resetModelListCache(): void {
 async function providerModelIds(
   ctx: Context,
   provider: string,
+  cache: ModelListCache,
 ): Promise<{ ids: string[] } | { error: string }> {
-  const cached = modelListCache
+  const cached = cache.value
   if (cached !== undefined && cached.provider === provider
     && Date.now() - cached.fetchedAt < MODEL_CACHE_TTL_MS) {
     return { ids: cached.ids }
@@ -202,7 +203,7 @@ async function providerModelIds(
   try {
     const models = await llm.listModels(provider)
     const ids = models.map(model => model.id)
-    modelListCache = { provider, ids, fetchedAt: Date.now() }
+    cache.value = { provider, ids, fetchedAt: Date.now() }
     return { ids }
   } catch (error) {
     return { error: `could not list the provider's models: ${describe(error)}` }
@@ -219,34 +220,36 @@ async function providerModelIds(
  * reaches the Editor, so the typed draft is intact by construction.
  * @param ctx - plugin context.
  */
-export async function cycleSessionModel(ctx: Context): Promise<void> {
-  const selection = readSelection(ctx)
+export async function cycleSessionModel(ctx: Context, cache: ModelListCache): Promise<void> {
+  const reader = ctx.blueSessionReader
+  const actions = ctx.blueSessionActions
+  const selection = readSelection(reader, actions)
   if ('error' in selection) {
-    getSharedEditor()?.notice?.(selection.error)
+    getSharedEditor(ctx)?.notice?.(selection.error)
     return
   }
-  const { modelRef } = selection.read
-  const listing = await providerModelIds(ctx, modelRef.current.provider)
+  const currentSelection = selection.read
+  const listing = await providerModelIds(ctx, currentSelection.provider, cache)
   if ('error' in listing) {
     const paint = displayServices(ctx)?.colors.error
-    getSharedEditor()?.notice?.(paint === undefined ? listing.error : paint(listing.error))
+    getSharedEditor(ctx)?.notice?.(paint === undefined ? listing.error : paint(listing.error))
     return
   }
   if (listing.ids.length === 0) {
-    getSharedEditor()?.notice?.('the current provider advertises no models')
+    getSharedEditor(ctx)?.notice?.('the current provider advertises no models')
     return
   }
-  const current = modelRef.current.model
+  const current = currentSelection.model
   const index = listing.ids.indexOf(current)
   const next = listing.ids[index === -1 ? 0 : (index + 1) % listing.ids.length]!
   try {
     const text = await commitModelSelection(
       ctx,
-      modelRef,
-      { provider: modelRef.current.provider, model: next },
+      actions,
+      { provider: currentSelection.provider, model: next },
       false,
     )
-    getSharedEditor()?.notice?.(text)
+    getSharedEditor(ctx)?.notice?.(text)
   } catch (error) {
     /* v8 ignore next -- the catch guards only the append-failure loud path
        (the cycleMode discipline); commitModelSelection itself never throws
@@ -267,7 +270,7 @@ function providerDisplayName(llm: ListingLlm, id: string): string {
 }
 
 /** The catalog rows with their resolved metadata, or the guard's error text. */
-type CatalogResult = { items: ModelPanelItem[] } | { error: string }
+type CatalogResult = { items: ModelPickerItem[] } | { error: string }
 
 /**
  * Collect the advertised models across the configured providers, attaching
@@ -325,7 +328,7 @@ async function catalogRows(
       ...(reasoning?.defaultEffort !== undefined
         ? { defaultEffort: String(reasoning.defaultEffort) }
         : {}),
-    } satisfies ModelPanelItem
+    } satisfies ModelPickerItem
   })
   return { items }
 }
@@ -337,6 +340,8 @@ async function catalogRows(
  * @returns the disposer removing both registrations and the alias relation.
  */
 export function registerModelCommands(ctx: Context): () => void {
+  const reader = ctx.blueSessionReader
+  const actions = ctx.blueSessionActions
   /**
    * Set when this fiber unloads: the catalog awaits can still be in flight
    * (a tree unload lands between `listModels` and the panel mount), and the
@@ -356,9 +361,9 @@ export function registerModelCommands(ctx: Context): () => void {
    */
   async function openModelPicker(signal: AbortSignal, filterProvider?: string): Promise<CommandResult> {
     const llm = ctx.get('llm')
-    const selection = readSelection(ctx)
+    const selection = readSelection(reader, actions)
     if ('error' in selection) return { kind: 'error', text: selection.error }
-    const { agent, modelRef } = selection.read
+    const current = selection.read
     // A freshly added route registers asynchronously on the real host —
     // the settings file's watcher fires the update pi-ai reacts to, which
     // can land a beat after the wizard's writes resolve (the first
@@ -390,34 +395,29 @@ export function registerModelCommands(ctx: Context): () => void {
     if (display === undefined) {
       return { kind: 'error', text: 'model picker is unavailable: the Blue screen is not mounted' }
     }
-    const current = modelRef.current
-    const applySwitch = (item: ModelPanelItem, effort: string | undefined, persist: boolean): void => {
+    const applySwitch = (provider: string, model: string, effort: string | undefined, persist: boolean): void => {
       void (async () => {
         const text = await commitModelSelection(
           ctx,
-          modelRef,
+          actions,
           {
-            provider: item.provider,
-            model: item.id,
+            provider,
+            model,
             ...(effort === undefined ? {} : { reasoningEffort: ReasoningEffortId(effort) }),
           },
           persist,
         )
-        if (!unloaded) getSharedEditor()?.notice?.(text)
+        if (!unloaded) getSharedEditor(ctx)?.notice?.(text)
       })()
     }
-    const panel = new ModelPanel({
-      keymap: display.keymap,
-      theme: display.theme,
-      components: display.components,
-      items: catalog.items.map(item => ({
+    const model = modelPickerPanelModel(catalog.items.map(item => ({
         ...item,
         current: item.provider === current.provider && item.id === current.model,
-      })),
+      })), {
       ...(current.reasoningEffort !== undefined
         ? { currentEffort: String(current.reasoningEffort) }
         : {}),
-      ...(agent.session.requestHeader() !== undefined
+      ...(actions.hasRequestHeader()
         ? { warning: 'switching models starts a fresh prompt cache' }
         : {}),
       ...(filterProvider !== undefined
@@ -425,21 +425,28 @@ export function registerModelCommands(ctx: Context): () => void {
            service for a scoped picker */
         ? { title: `Select a model · ${providerDisplayName(llm!, filterProvider)}` }
         : {}),
-      onSelect: (item, effort) => {
-        restore()
-        applySwitch(item, effort, true)
-      },
-      onSessionOnlySelect: (item, effort) => {
-        restore()
-        applySwitch(item, effort, false)
-      },
-      onCancel: () => {
+    })
+    const execute = (action: Action): void => {
+      if (action.kind !== 'model.select') return
+      const provider = typeof action.provider === 'string' ? action.provider : undefined
+      const nextModel = typeof action.model === 'string' ? action.model : undefined
+      if (provider === undefined || nextModel === undefined) return
+      const effort = typeof action.effort === 'string' ? action.effort : undefined
+      const persist = action.persist !== false
+      restore()
+      applySwitch(provider, nextModel, effort, persist)
+    }
+    const panel = new FrontendPanel({
+      ...display,
+      model: () => model,
+      onAction: execute,
+      onClose: () => {
         restore()
       },
     })
     // The kimi dialog mount (D30): the panel replaces the editor in its
     // dock slot, so below it only the footer remains.
-    const restore = mountEditorReplacement(panel)
+    const restore = mountEditorReplacement(ctx, panel)
     return { kind: 'success' }
   }
 
@@ -453,14 +460,13 @@ export function registerModelCommands(ctx: Context): () => void {
    * @returns the command outcome.
    */
   async function switchModel(rawInput: string, signal: AbortSignal): Promise<CommandResult> {
-    const selection = readSelection(ctx)
+    const selection = readSelection(reader, actions)
     if ('error' in selection) return { kind: 'error', text: selection.error }
-    const { modelRef } = selection.read
+    const current = selection.read
     const catalog = await catalogRows(ctx, signal)
     if ('error' in catalog) return { kind: 'error', text: catalog.error }
     if (unloaded) return { kind: 'success' }
     const argument = rawInput.trim()
-    const current = modelRef.current
     if (argument !== '') {
       const exact = catalog.items.filter(item => item.id === argument)
       if (exact.length === 0) {
@@ -477,7 +483,7 @@ export function registerModelCommands(ctx: Context): () => void {
       }
       const text = await commitModelSelection(
         ctx,
-        modelRef,
+        actions,
         { provider: chosen.provider, model: chosen.id },
         true,
       )
@@ -496,12 +502,11 @@ export function registerModelCommands(ctx: Context): () => void {
    * @returns the command outcome.
    */
   async function switchEffort(rawInput: string, signal: AbortSignal): Promise<CommandResult> {
-    const selection = readSelection(ctx)
+    const selection = readSelection(reader, actions)
     if ('error' in selection) return { kind: 'error', text: selection.error }
-    const { modelRef } = selection.read
+    const current = selection.read
     const llm = ctx.get('llm')
     if (llm === undefined) return { kind: 'error', text: 'the llm service is unavailable' }
-    const current = modelRef.current
     let info
     try {
       info = await llm.resolveModelInfo(current.provider, current.model, signal)
@@ -524,12 +529,12 @@ export function registerModelCommands(ctx: Context): () => void {
         ...efforts.map(effort => ({ id: String(effort.id), label: String(effort.name) })),
       ]
       const currentId = current.reasoningEffort === undefined ? undefined : String(current.reasoningEffort)
-      const activeIndex = Math.max(0, segments.findIndex(segment => segment.id === currentId))
+      const activeId = segments.some(segment => segment.id === currentId) ? currentId : 'default'
       const applyEffort = (id: string, persist: boolean): void => {
         void (async () => {
           const text = await commitModelSelection(
             ctx,
-            modelRef,
+            actions,
             {
               provider: current.provider,
               model: current.model,
@@ -537,34 +542,30 @@ export function registerModelCommands(ctx: Context): () => void {
             },
             persist,
           )
-          if (!unloaded) getSharedEditor()?.notice?.(text)
+          if (!unloaded) getSharedEditor(ctx)?.notice?.(text)
         })()
       }
-      const panel = new EffortPanel({
-        keymap: display.keymap,
-        theme: display.theme,
-        components: display.components,
-        segments,
-        activeIndex,
-        onSelect: (id) => {
+      const model = effortPickerPanelModel(segments, activeId)
+      const panel = new FrontendPanel({
+        ...display,
+        model: () => model,
+        onAction: (action) => {
+          if (action.kind !== 'effort.select') return
+          const id = typeof action.effort === 'string' ? action.effort : 'default'
           restore()
-          applyEffort(id, true)
+          applyEffort(id, action.persist !== false)
         },
-        onSessionOnlySelect: (id) => {
-          restore()
-          applyEffort(id, false)
-        },
-        onCancel: () => {
+        onClose: () => {
           restore()
         },
       })
-      const restore = mountEditorReplacement(panel)
+      const restore = mountEditorReplacement(ctx, panel)
       return { kind: 'success' }
     }
     if (argument === 'default') {
       const text = await commitModelSelection(
         ctx,
-        modelRef,
+        actions,
         { provider: current.provider, model: current.model },
         true,
       )
@@ -582,7 +583,7 @@ export function registerModelCommands(ctx: Context): () => void {
     }
     const text = await commitModelSelection(
       ctx,
-      modelRef,
+      actions,
       {
         provider: current.provider,
         model: current.model,
@@ -658,8 +659,8 @@ export function registerModelCommands(ctx: Context): () => void {
     // live behind the Add wizard's known-provider branch. The trailing CTA
     // row routes to the wizard (the shared list panel's uniform row shape,
     // S24b: the CTA windows and wraps like any other row).
-    const selection = readSelection(ctx)
-    const currentProvider = 'error' in selection ? '' : selection.read.modelRef.current.provider
+    const selection = readSelection(reader, actions)
+    const currentProvider = 'error' in selection ? '' : selection.read.provider
     const rows: SelectRow[] = llm.listProviders().map(provider => ({
       value: provider.id,
       label: provider.name.length > 0 ? provider.name : provider.id,
@@ -681,14 +682,14 @@ export function registerModelCommands(ctx: Context): () => void {
             : await runProviderEdit(ctx, display, row.value)
           /* v8 ignore next -- cordis disposal kills the continuation on a
              dead context before the notice could fire */
-          if (!unloaded) getSharedEditor()?.notice?.(paintFlowOutcome(display, text))
+          if (!unloaded) getSharedEditor(ctx)?.notice?.(paintFlowOutcome(display, text))
         })()
       },
       onCancel: () => {
         restore()
       },
     })
-    const restore = mountEditorReplacement(panel)
+    const restore = mountEditorReplacement(ctx, panel)
     return { kind: 'success' }
   }
 
@@ -712,7 +713,7 @@ export function registerModelCommands(ctx: Context): () => void {
   })
   // The kimi alias: `/thinking` is not a separate registration — the input
   // layer rewrites it to `/effort` before `ctx.commands.execute`.
-  const effortAliases = registerCommandAliases('effort', ['thinking'])
+  const effortAliases = ctx.blueInteractionState.aliases.register('effort', ['thinking'])
   return () => {
     model()
     effort()

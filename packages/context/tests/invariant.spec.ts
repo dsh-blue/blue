@@ -18,64 +18,85 @@ describe('context plugin', () => {
     contextPlugin().apply(ctx)
     apply(ctx)
     expect(provided.get('blueContextFeature')).toBeDefined()
-    expect(plugins).toEqual([expect.objectContaining({ name: 'blue-context-official', inject: ['sessionProjections', 'blueSession'] })])
+    expect(plugins).toEqual([expect.objectContaining({ name: 'blue-context-official', inject: ['blueSessionProjections', 'blueSessionReader'] })])
     for (const cleanup of cleanups) cleanup()
     feature.dispose()
   })
 
   it('attaches the official source to the current session and follows session changes', async () => {
-    const sessions = { current: { id: 's1', session: { marker: 1 } } as unknown | null }
+    let current: { readonly id: string; readonly cwd: string; readonly status: 'idle'; readonly mode: 'normal' } | null = { id: 's1', cwd: '/one', status: 'idle', mode: 'normal' }
     const provided = new Map<string, unknown>()
     const cleanups: (() => void)[] = []
-    let changed: ((session: unknown, key: string, value: unknown, seq: number) => void) | undefined
-    let sessionChanged: ((agent: unknown) => void) | undefined
+    let changed: ((key: string, value: unknown, seq: number) => void) | undefined
+    let sessionChanged: ((session: typeof current) => void) | undefined
+    let sessionDisposed = false
     const projections = {
-      snapshot: (session: unknown) => ({ asOfSeq: 1, values: { tokenUsage: { uncachedInputTokens: session === (sessions.current as { session: unknown }).session ? 2 : 0, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 } } }),
-      onChanged: (listener: typeof changed) => { changed = listener; return () => { changed = undefined } },
+      currentMany: (keys: readonly string[]) => current === null ? undefined : {
+        asOfSeq: 1,
+        values: Object.fromEntries(keys.map(key => [key, key === 'tokenUsage' ? { uncachedInputTokens: current?.id === 's1' ? 2 : 3, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 } : undefined])),
+      },
+      subscribe: (listener: typeof changed) => { changed = listener; return () => { changed = undefined } },
+    }
+    const reader = {
+      current: () => current,
+      subscribe: (listener: typeof sessionChanged) => {
+        sessionChanged = listener
+        listener?.(current)
+        return {
+          get disposed() { return sessionDisposed },
+          dispose() { sessionDisposed = true; sessionChanged = undefined },
+        }
+      },
     }
     const ctx = {
-      get: (key: string) => key === 'sessionProjections' ? projections : sessions,
+      blueSessionProjections: projections,
+      blueSessionReader: reader,
       provide: (key: string, value: unknown) => provided.set(key, value),
       effect: (effect: () => () => void) => { cleanups.push(effect()); return cleanups.at(-1) },
-      on: (_event: string, listener: (agent: unknown) => void) => { sessionChanged = listener; return () => { sessionChanged = undefined } },
     } as never
     officialContextPlugin().apply(ctx)
     await vi.waitFor(() => expect((provided.get('blueContextFeature') as ContextFeature).snapshot).toBeDefined())
     const feature = provided.get('blueContextFeature') as ContextFeature
     expect(feature.snapshot).toMatchObject({ sessionId: 's1', facts: { input: 2 } })
-    const next = { session: { id: 's2', marker: 2 } }
-    sessions.current = next
+    const next = { id: 's2', cwd: '/two', status: 'idle', mode: 'normal' } as const
+    current = next
     sessionChanged?.(next)
     await vi.waitFor(() => expect(feature.snapshot?.sessionId).toBe('s2'))
     expect(feature.snapshot).toMatchObject({ sessionId: 's2' })
-    changed?.(next.session, 'tokenUsage', {}, 2)
+    changed?.('tokenUsage', {}, 2)
     await Promise.resolve()
     expect(feature.snapshot?.watermark).toBe(2)
-    const third = { session: { header: { id: 's3' }, marker: 3 } }
-    sessions.current = third
+    const third = { id: 's3', cwd: '/three', status: 'idle', mode: 'normal' } as const
+    current = third
     sessionChanged?.(third)
     await vi.waitFor(() => expect(feature.snapshot?.sessionId).toBe('s3'))
     await feature.attach('missing')
-    sessionChanged?.({ id: 4, session: {} })
     expect(feature.snapshot).toBeUndefined()
-    sessionChanged?.('invalid')
-    sessions.current = null
+    current = null
     sessionChanged?.(null)
     expect(feature.snapshot).toBeUndefined()
     for (const cleanup of cleanups) cleanup()
+    expect(sessionDisposed).toBe(true)
+    expect(changed).toBeUndefined()
   })
 
   it('stays inert before the first current session exists', () => {
     const cleanups: Array<() => void> = []
+    let disposed = false
     const ctx = {
-      get: (key: string) => key === 'sessionProjections'
-        ? { snapshot: () => ({ asOfSeq: -1, values: {} }), onChanged: () => () => undefined }
-        : { current: null },
+      blueSessionProjections: { currentMany: () => undefined, subscribe: () => () => undefined },
+      blueSessionReader: {
+        current: () => null,
+        subscribe: (listener: (session: null) => void) => {
+          listener(null)
+          return { get disposed() { return disposed }, dispose() { disposed = true } }
+        },
+      },
       provide: () => undefined,
       effect: (effect: () => () => void) => { cleanups.push(effect()); return cleanups.at(-1) },
-      on: () => () => undefined,
     } as never
     officialContextPlugin().apply(ctx)
     for (const cleanup of cleanups) cleanup()
+    expect(disposed).toBe(true)
   })
 })

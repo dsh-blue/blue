@@ -6,7 +6,7 @@ The Blue ecosystem plugin marketplace will be implemented as a separate reposito
 
 ## What this will be
 
-A marketplace for **Blue downstream developers'** ecosystem plugins: whatever you write through the [seams](/en/plugins/seams) — status-bar entries, tool cards, editor enhancements, whole new themes, complete panes — publishes to npm, gets listed here, and installs for other users in one line.
+A marketplace for **Blue downstream developers'** ecosystem plugins: status, dock, command, and notification plugins built through the stable [seams and public API](/en/plugins/seams) can be published to npm, listed here, and installed by other users in one line.
 
 Each card will look roughly like this:
 
@@ -22,5 +22,5 @@ Each card will look roughly like this:
 ## Until it opens
 
 - To develop a plugin: start with [Writing your first plugin](/en/plugins/); the seam catalog is the [Seam reference](/en/plugins/seams);
-- To see what plugins can do: Blue's 21 built-ins are living examples — see [Built-in plugins](/en/plugins/builtins);
+- To inspect the current composition: see the Blue bundle's 28 owned rows in [Built-in plugins](/en/plugins/builtins);
 - Watch the [GitHub repository](https://github.com/dsh-blue/blue) for the marketplace announcement.

@@ -1,12 +1,11 @@
 /**
- * Renderer-neutral status registry and the legacy footer consumer bridge.
+ * Renderer-neutral status registry and footer consumer.
  *
  * @module @dsh-blue/blue-transcript/status-model
  */
 import { Service, type Context } from '@deepseek-ai/cordis'
-import type { BlueComponents, BlueSemanticColors, BlueScreen } from '@dsh-blue/blue-core'
+import type { BlueComponent, BlueComponents, BlueSemanticColors, BlueScreen } from '@dsh-blue/blue-core'
 import type { StatusModel, Tone, View } from '@dsh-blue/blue-frontend'
-import type { BlueStatus, BlueStatusEntry } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context { blueStatusModels: BlueStatusModelService }
@@ -47,62 +46,96 @@ function toneColor(tone: Tone | undefined, colors: BlueSemanticColors): (text: s
 /** Renderer-neutral status registry with a TUI consumer bridge. */
 export class BlueStatusModelService extends Service {
   private readonly models = new Map<string, Source>()
-  private readonly rendered = new Map<string, () => void>()
-  private target: BlueStatus | undefined
-  private screen: BlueScreen | undefined
-  private colors: BlueSemanticColors | undefined
-  private components: BlueComponents | undefined
-  constructor(ctx: Context, screen?: BlueScreen, colors?: BlueSemanticColors, components?: BlueComponents) {
+  constructor(ctx: Context, private screen?: BlueScreen) {
     super(ctx, 'blueStatusModels')
-    this.screen = screen
-    this.colors = colors
-    this.components = components
   }
-  attach(target: BlueStatus, screen: BlueScreen, colors: BlueSemanticColors, components: BlueComponents): void {
-    for (const dispose of this.rendered.values()) dispose()
-    this.rendered.clear()
-    this.target = target; this.screen = screen; this.colors = colors
-    this.components = components
-    for (const id of this.models.keys()) this.render(id)
+  attach(screen: BlueScreen): void {
+    this.screen = screen
+    screen.requestRender()
   }
   register(source: Source): () => void {
     const initial = typeof source === 'function' ? source() : source
     if (initial === null) return () => undefined
     if (this.models.has(initial.id)) throw new Error(`status model "${initial.id}" is already registered`)
-    this.models.set(initial.id, source); this.render(initial.id)
-    let disposed = false
-    return () => { if (disposed) return; disposed = true; this.models.delete(initial.id); this.rendered.get(initial.id)?.(); this.rendered.delete(initial.id); this.screen?.requestRender() }
-  }
-  refresh(id: string): void { if (!this.models.has(id)) return; this.render(id) }
-  list(): readonly StatusModel[] { return [...this.models.values()].map(source => typeof source === 'function' ? source() : source).filter((model): model is StatusModel => model !== null) }
-  dispose(): void { for (const dispose of this.rendered.values()) dispose(); this.rendered.clear(); this.models.clear(); this.target = undefined }
-  private render(id: string): void {
-    const target = this.target; const colors = this.colors; const components = this.components; const source = this.models.get(id)
-    if (target === undefined || colors === undefined || components === undefined || source === undefined) return
-    const previous = this.rendered.get(id)
-    previous?.(); this.rendered.delete(id)
-    const model = typeof source === 'function' ? source() : source
-    if (model === null || !model.visible) {
-      if (previous !== undefined) this.screen?.requestRender()
-      return
-    }
-    const entry: BlueStatusEntry = {
-      id: model.id,
-      priority: model.priority ?? 0,
-      align: model.band === 'right' ? 'right' : 'left',
-      ...(model.row === undefined ? {} : { row: model.row }),
-      render: width => {
-        if (width <= 0) return ''
-        const current = typeof source === 'function' ? source() : source
-        if (current === null || !current.visible) return ''
-        const paint = toneColor(current.view.kind === 'text' ? current.view.tone : undefined, colors)
-        const text = plainView(current.view)
-        if (current.overflow === 'hide' && components.visibleWidth(text) > width) return ''
-        return paint(components.truncateToWidth(text, width))
-      },
-    }
-    this.rendered.set(id, target.register(entry))
+    this.models.set(initial.id, source)
     this.screen?.requestRender()
+    let disposed = false
+    return () => { if (disposed) return; disposed = true; this.models.delete(initial.id); this.screen?.requestRender() }
+  }
+  refresh(id: string): void { if (this.models.has(id)) this.screen?.requestRender() }
+  list(): readonly StatusModel[] { return [...this.models.values()].map(source => typeof source === 'function' ? source() : source).filter((model): model is StatusModel => model !== null) }
+  dispose(): void { this.models.clear(); this.screen?.requestRender(); this.screen = undefined }
+}
+
+/**
+ * Renderer-owned footer for the renderer-neutral status registry.
+ *
+ * The component reads the current model snapshot on every frame.
+ */
+export class StatusModelFooterComponent implements BlueComponent {
+  private cache: { key: string, lines: string[] } | null = null
+
+  constructor(
+    private readonly models: BlueStatusModelService,
+    private readonly components: BlueComponents,
+    private readonly colors: BlueSemanticColors,
+  ) {}
+
+  invalidate(): void { this.cache = null }
+
+  render(width: number): string[] {
+    const visible = this.models.list().filter(model => model.visible)
+    const bands: { left: StatusModel[], right: StatusModel[] }[] = [{ left: [], right: [] }, { left: [], right: [] }]
+    for (const model of visible) {
+      const band = Math.min(2, Math.max(1, model.row ?? 1)) - 1
+      bands[band]![model.band === 'right' ? 'right' : 'left'].push(model)
+    }
+    const lines: string[] = []
+    const keys: string[] = []
+    for (const band of bands) {
+      const leftText = this.renderCluster(band.left, width)
+      const leftWidth = this.components.visibleWidth(leftText)
+      const rightBudget = band.right.length === 0 ? 0 : Math.max(0, width - leftWidth - (leftText === '' ? 0 : 2))
+      const rightText = rightBudget > 0 ? this.renderCluster(band.right, rightBudget) : ''
+      if (leftText === '' && rightText === '') continue
+      const rightWidth = this.components.visibleWidth(rightText)
+      const line = leftText === ''
+        ? ' '.repeat(Math.max(0, width - rightWidth)) + rightText
+        : rightText === ''
+          ? leftText + ' '.repeat(Math.max(0, width - leftWidth))
+          : leftText + ' '.repeat(Math.max(0, width - leftWidth - rightWidth)) + rightText
+      lines.push(line)
+      keys.push(`${leftText}\x00${rightText}`)
+    }
+    const key = `${width}:${keys.join('\x01')}`
+    if (this.cache?.key === key) return this.cache.lines
+    this.cache = { key, lines }
+    return lines
+  }
+
+  private renderCluster(models: readonly StatusModel[], width: number): string {
+    if (width <= 0) return ''
+    const parts: string[] = []
+    let used = 0
+    for (const model of models) {
+      const remaining = width - used - (parts.length > 0 ? 2 : 0)
+      if (remaining <= 0) break
+      const text = plainView(model.view)
+      if (text === '' || (model.overflow === 'hide' && this.components.visibleWidth(text) > remaining)) continue
+      const part = this.paint(model.view.kind === 'text' ? model.view.tone : undefined, this.components.truncateToWidth(text, remaining))
+      /* c8 ignore next -- renderer width helpers never return an empty paint for non-empty input. */
+      if (part === '') continue
+      const partWidth = this.components.visibleWidth(part)
+      /* c8 ignore next -- the core truncation seam guarantees this invariant. */
+      if (partWidth > remaining) continue
+      parts.push(part)
+      used += (parts.length > 1 ? 2 : 0) + partWidth
+    }
+    return parts.join('  ')
+  }
+
+  private paint(tone: Tone | undefined, text: string): string {
+    return toneColor(tone, this.colors)(text)
   }
 }
 

@@ -8,6 +8,7 @@
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { Context } from '@deepseek-ai/cordis'
+import type { BlueSessionSnapshot } from '@dsh-blue/blue-api'
 import type {
   BlueComponent,
   BlueOverlayHandle,
@@ -227,6 +228,33 @@ class BannerFakeScreen implements BlueScreen {
   setTitle(): void {}
 }
 
+/** Renderer-neutral current-session reader used by the banner plugin fixture. */
+function bannerSessionReader(initial: BlueSessionSnapshot | null = null): {
+  service: { current(): BlueSessionSnapshot | null, subscribe(listener: (session: BlueSessionSnapshot | null) => void): { readonly disposed: boolean, dispose(): void } }
+  publish(session: BlueSessionSnapshot | null): void
+} {
+  let current = initial
+  const listeners = new Set<(session: BlueSessionSnapshot | null) => void>()
+  return {
+    service: {
+      current: () => current,
+      subscribe(listener) {
+        listeners.add(listener)
+        listener(current)
+        let disposed = false
+        return {
+          get disposed() { return disposed },
+          dispose() { disposed = true; listeners.delete(listener) },
+        }
+      },
+    },
+    publish(session) {
+      current = session
+      for (const listener of listeners) listener(session)
+    },
+  }
+}
+
 /** Boot the banner plugin on a fresh root context with faked services. */
 async function bootBanner(config: banner.Config = {}): Promise<{ screen: BannerFakeScreen; dispose(): Promise<void> }> {
   const ctx = new Context()
@@ -234,6 +262,7 @@ async function bootBanner(config: banner.Config = {}): Promise<{ screen: BannerF
   ctx.reflect.provide('blueScreen', screen)
   ctx.reflect.provide('blueTheme', { colors: COLORS })
   ctx.reflect.provide('blueComponents', fakeBlueComponents())
+  ctx.reflect.provide('blueSessionReader', bannerSessionReader().service)
   ctx.reflect.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'p', model: 'm' }) })
   const fiber = await ctx.plugin(banner, config)
   return { screen, dispose: () => fiber.dispose() }
@@ -242,7 +271,7 @@ async function bootBanner(config: banner.Config = {}): Promise<{ screen: BannerF
 describe('blue-banner plugin', () => {
   it('declares its name and injects', () => {
     expect(name).toBe('blue-banner')
-    expect(inject).toEqual(['blueScreen', 'blueTheme', 'blueComponents', 'agentDefaultModel'])
+    expect(inject).toEqual(['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionReader', 'agentDefaultModel'])
   })
 
   it('mounts one scroll child with the snapshotted facts and requests a render', async () => {
@@ -280,22 +309,15 @@ describe('blue-banner plugin', () => {
     ctx.reflect.provide('blueTheme', { colors: COLORS })
     ctx.reflect.provide('blueComponents', fakeBlueComponents())
     ctx.reflect.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'p', model: 'm' }) })
-    let selection: { provider: string, model: string } | undefined
-    ctx.reflect.provide('blueSession', {
-      get current() { return { id: 'a' } },
-      get modelRef() {
-        return selection === undefined ? undefined : { get current() { return selection! } }
-      },
-    })
+    const sessions = bannerSessionReader()
+    ctx.reflect.provide('blueSessionReader', sessions.service)
     await ctx.plugin(banner)
     expect(screen.children[0]?.render(100).join('\n')).toContain('m · p')
     // A committed pick shows through the live ref.
-    selection = { provider: 'mock', model: 'mock-pro' }
-    ctx.emit('blue/model-changed')
+    sessions.publish({ id: 'a', cwd: '/tmp', status: 'idle', mode: 'normal', model: { id: 'mock-pro', provider: 'mock' } })
     expect(screen.children[0]?.render(100).join('\n')).toContain('mock-pro · mock')
     // A session switch without a published ref falls back to the default.
-    selection = undefined
-    ctx.emit('blue/session-changed', { id: 'a' })
+    sessions.publish({ id: 'b', cwd: '/tmp', status: 'idle', mode: 'normal' })
     expect(screen.children[0]?.render(100).join('\n')).toContain('m · p')
   })
 

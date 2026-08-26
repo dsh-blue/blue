@@ -1,15 +1,11 @@
 /** Boot-time provider onboarding: credential detection, setup, and skip. */
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import * as onboardingPlugin from '../src/provider-onboarding.ts'
-import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
+import { setSharedEditor } from '../src/editor-instance.ts'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
-
-afterEach(() => {
-  clearSharedEditor()
-})
 
 function current(screen: FakeScreen): { handleInput(data: string): void, render(width: number): string[] } {
   const entry = screen.overlays.at(-1)
@@ -70,13 +66,13 @@ async function mount(options: {
     base.ctx.provide('credentials', { describe, set } as never)
   }
   if (options.session !== false) {
-    base.ctx.provide('blueSession', { current: options.session === 'null' ? null : {}, modelRef: undefined })
+    base.ctx.provide('testSession', { current: options.session === 'null' ? null : {}, modelRef: undefined })
   }
   if (options.loader !== undefined) {
     base.ctx.provide('loader', { await: () => options.loader } as never)
   }
   if (options.sharedEditor !== false) {
-    setSharedEditor({
+    setSharedEditor(base.ctx, {
       editor: { focused: false, render: () => [], invalidate: () => {} } as never,
       submitPrompt: () => {},
       notice: text => { notices.push(text) },
@@ -191,16 +187,16 @@ describe('provider onboarding', () => {
     const bench = await mount({ credentials: false, session: false })
     expect(bench.screen.overlays).toHaveLength(0)
     bench.ctx.provide('credentials', { describe: async () => ({ configured: false }), set: async () => {} } as never)
-    bench.ctx.provide('blueSession', { current: {}, modelRef: undefined })
-    bench.ctx.emit('blue/session-changed', {} as never)
+    bench.ctx.provide('testSession', { current: {}, modelRef: undefined })
+    bench.ctx.emit('test/session-changed', {} as never)
     await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
   })
 
   it('waits while the session reference is empty', async () => {
     const bench = await mount({ session: 'null' })
     expect(bench.screen.overlays).toHaveLength(0)
-    bench.ctx.set('blueSession', { current: {}, modelRef: undefined })
-    bench.ctx.emit('blue/session-changed', {} as never)
+    bench.ctx.set('testSession', { current: {}, modelRef: undefined })
+    bench.ctx.emit('test/session-changed', {} as never)
     await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(1) })
   })
 
@@ -208,11 +204,11 @@ describe('provider onboarding', () => {
     let resolveDescribe: ((value: { configured: boolean }) => void) | undefined
     const describing = new Promise<{ configured: boolean }>(resolve => { resolveDescribe = resolve })
     const checking = await mount({ describeImpl: () => describing })
-    checking.ctx.emit('blue/session-changed', {} as never)
-    checking.ctx.emit('blue/session-changed', {} as never)
+    checking.ctx.emit('test/session-changed', {} as never)
+    checking.ctx.emit('test/session-changed', {} as never)
     resolveDescribe?.({ configured: false })
     await vi.waitFor(() => { expect(checking.screen.overlays).toHaveLength(1) })
-    checking.ctx.emit('blue/session-changed', {} as never)
+    checking.ctx.emit('test/session-changed', {} as never)
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(checking.screen.overlays).toHaveLength(1)
 

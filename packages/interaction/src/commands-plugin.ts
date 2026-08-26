@@ -34,11 +34,10 @@
 
 import { resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
-// Empty type import carries the app-owned `blueSession` Context merge and
-// the `'blue/request-*'` Events merges this plugin emits.
+// Empty type import carries the app-owned session reader/actions Context
+// merges and the `'blue/request-*'` Events merges this plugin emits.
 import type {} from '@dsh-blue/blue-app'
 // Empty type import carries the `sessionPersistence` Context merge; the
 // service itself is optional and resolved lazily.
@@ -47,14 +46,13 @@ import type {} from '@deepseek-ai/dsh-session-persistence'
 // `session-query-sqlite` row with `openAt: never` keeps batch title reads
 // available); optional and resolved lazily like persistence.
 import type {} from '@deepseek-ai/dsh-session-query'
-import { aliasesOf, registerCommandAliases } from './command-meta.ts'
 import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
 import type { HelpSection } from './help.ts'
 import { HelpOverlay } from './help.ts'
 import { registerMcpCommands } from './mcp-commands.ts'
 import { registerModelCommands } from './model-commands.ts'
-import { registerModeCommands, setupModeTracking } from './mode-commands.ts'
+import { registerModeCommands } from './mode-commands.ts'
 import { registerPresetCommands } from './preset-commands.ts'
 import { registerSessionCommands } from './session-commands.ts'
 import { registerExportCommands } from './session-export.ts'
@@ -68,12 +66,11 @@ import { registerThemeCommand } from './theme-switch.ts'
 import { registerToolsCommands } from './tools-commands.ts'
 import { registerUpdateCommand } from './update-command.ts'
 import { registerTraceCommand } from './trace-command.ts'
-import { rewindCandidates } from './rewind.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-commands'
 /** Services required before the commands can register. */
-export const inject = ['commands']
+export const inject = ['commands', 'blueSessionReader', 'blueSessionActions', 'blueSessionProjections', 'blueSkillsCatalog', 'blueInteractionState']
 
 /** Built-in command configuration forwarded by the interaction root. */
 export interface Config {
@@ -120,6 +117,7 @@ export function currentSessionTitleLimit(): number {
  * @param config - command presentation configuration.
  */
 export function apply(ctx: Context, config: Config = {}): void {
+  const aliasRegistry = ctx.blueInteractionState.aliases
   /**
    * Set when this fiber unloads: the `/sessions` listing can still be in
    * flight (a tree unload lands between `list()` and the overlay mount),
@@ -130,7 +128,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   let loadingNoticeActive = false
   ctx.effect(() => () => {
     unloaded = true
-    if (loadingNoticeActive) getSharedEditor()?.notice?.('')
+    if (loadingNoticeActive) getSharedEditor(ctx)?.notice?.('')
   })
 
   /**
@@ -144,12 +142,12 @@ export function apply(ctx: Context, config: Config = {}): void {
   async function listSessions(signal: AbortSignal): Promise<CommandResult> {
     // A persistence scan can be slow on large profiles. Acknowledge it before
     // the first await so the user is not left staring at an unchanged editor.
-    getSharedEditor()?.notice?.('loading sessions...')
+    getSharedEditor(ctx)?.notice?.('loading sessions...')
     loadingNoticeActive = true
     const clearLoadingNotice = (): void => {
       if (!loadingNoticeActive) return
       loadingNoticeActive = false
-      getSharedEditor()?.notice?.('')
+      getSharedEditor(ctx)?.notice?.('')
     }
     const persistence = ctx.get('sessionPersistence')
     if (persistence === undefined) {
@@ -183,7 +181,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       clearLoadingNotice()
       return { kind: 'error', text: 'session picker is unavailable: the Blue screen is not mounted' }
     }
-    const currentId = ctx.get('blueSession')?.current?.id
+    const currentId = ctx.blueSessionReader.current()?.id
     const titleById = new Map<string, string>()
     const tree = createSessionTree(sorted, titleById, currentId === undefined ? undefined : String(currentId), formatDate)
     const loadingPages = new Set<number>()
@@ -237,11 +235,11 @@ export function apply(ctx: Context, config: Config = {}): void {
         clearLoadingNotice()
         restore()
         if (row.value === String(currentId)) {
-          getSharedEditor()?.notice?.(display.colors.error('already the current session'))
+          getSharedEditor(ctx)?.notice?.(display.colors.error('already the current session'))
           return
         }
         ctx.emit('blue/request-resume', row.value)
-        getSharedEditor()?.notice?.(`resuming session ${row.value}`)
+        getSharedEditor(ctx)?.notice?.(`resuming session ${row.value}`)
       },
       onCancel: () => {
         clearLoadingNotice()
@@ -257,7 +255,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       clearLoadingNotice()
       return { kind: 'success' }
     }
-    const restore = mountEditorReplacement(list)
+    const restore = mountEditorReplacement(ctx, list)
     clearLoadingNotice()
     if (query !== undefined) void loadPage(1, query)
     return { kind: 'success' }
@@ -265,10 +263,10 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   /** Open a picker of safe branch points from the live session. */
   function rewindSession(): CommandResult {
-    const active = ctx.get('blueSession')?.current
-    if (active === undefined || active === null) return { kind: 'error', text: 'no active session' }
+    const active = ctx.blueSessionReader.current()
+    if (active === null) return { kind: 'error', text: 'no active session' }
     if (active.status !== 'idle') return { kind: 'error', text: 'cannot rewind while the agent is running' }
-    const candidates = rewindCandidates(active.session.events)
+    const candidates = ctx.blueSessionActions.rewindCandidates()
     if (candidates.length === 0) return { kind: 'success', text: 'no user turns to rewind' }
     const display = displayServices(ctx)
     if (display === undefined) return { kind: 'error', text: 'rewind is unavailable: the Blue screen is not mounted' }
@@ -290,12 +288,12 @@ export function apply(ctx: Context, config: Config = {}): void {
       filter: true,
       onSelect: row => {
         restore()
-        ctx.emit('blue/request-rewind', String(active.id), Number(row.value))
-        getSharedEditor()?.notice?.('creating rewind branch...')
+        ctx.emit('blue/request-rewind', active.id, Number(row.value))
+        getSharedEditor(ctx)?.notice?.('creating rewind branch...')
       },
       onCancel: () => restore(),
     })
-    const restore = mountEditorReplacement(list)
+    const restore = mountEditorReplacement(ctx, list)
     return { kind: 'success' }
   }
 
@@ -303,10 +301,9 @@ export function apply(ctx: Context, config: Config = {}): void {
    * The `/help` handler: the framed, scrollable overlay listing the
    * registered commands and key bindings in two aligned columns; Escape,
    * Enter, or `q` closes it.
-   * @param agent - the agent the command was dispatched to.
    * @returns the command outcome.
    */
-  function showHelp(agent: Agent): CommandResult {
+  function showHelp(): CommandResult {
     const display = displayServices(ctx)
     if (display === undefined) {
       return { kind: 'error', text: 'help is unavailable: the Blue screen is not mounted' }
@@ -316,16 +313,16 @@ export function apply(ctx: Context, config: Config = {}): void {
         heading: 'Commands',
         labelPaint: display.colors.primary,
         rows: (() => {
-          const models = ctx.get('blueCommandModels')?.list(agent)
+          const models = ctx.get('blueCommandModels')?.list()
           if (models !== undefined) return models.map(model => ({ label: model.label, description: model.description ?? '' }))
-          return ctx.commands.list(agent).map(command => ({ name: command.name, description: command.description }))
+          return ctx.blueSessionActions.commands().map(command => ({ name: command.name, description: command.description ?? '' }))
         })().map(command => {
           // The kimi help-panel label: aliases join the canonical label in
           // slashed parentheses (`/quit (/q, /exit)`), visible on every
           // listing — unlike the dropdown, which shows them only when the
           // query matched one.
           const commandName = 'name' in command ? command.name : command.label.slice(1)
-          const aliases = aliasesOf(commandName)
+          const aliases = aliasRegistry.aliasesOf(commandName)
           return {
             label: aliases.length === 0 ? ('label' in command ? command.label : `/${commandName}`) : `/${commandName} (${aliases.map(alias => `/${alias}`).join(', ')})`,
             description: command.description,
@@ -352,7 +349,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     })
     // The kimi dialog mount (D30): the panel replaces the editor in its
     // dock slot, so below it only the footer remains.
-    const restore = mountEditorReplacement(overlay)
+    const restore = mountEditorReplacement(ctx, overlay)
     return { kind: 'success' }
   }
 
@@ -376,7 +373,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     // `/q` and `/exit` are not separate registrations — the input layer
     // rewrites an alias line to `/quit` before `ctx.commands.execute`, so
     // the session log records the canonical command.
-    const quitAliases = registerCommandAliases('quit', ['q', 'exit'])
+    const quitAliases = aliasRegistry.register('quit', ['q', 'exit'])
     const fresh = ctx.commands.register({
       name: 'new',
       description: 'Start a new session',
@@ -389,15 +386,15 @@ export function apply(ctx: Context, config: Config = {}): void {
     // CC/Codex users reach for /clear to wipe the conversation), not a
     // registration — the input layer rewrites the line to `/new` before
     // dispatch, exactly like `/q` → `/quit`.
-    const freshAliases = registerCommandAliases('new', ['clear'])
+    const freshAliases = aliasRegistry.register('new', ['clear'])
     const fork = ctx.commands.register({
       name: 'fork',
       description: 'Fork the current session into a new one',
       handler: () => {
         // The command target is the UI's current session, not necessarily
         // the dispatching agent; the app layer operates on the same value.
-        const current = ctx.get('blueSession')?.current
-        if (current !== undefined && current !== null && current.status !== 'idle') {
+        const current = ctx.blueSessionReader.current()
+        if (current !== null && current.status !== 'idle') {
           return { kind: 'error' as const, text: 'cannot fork while the agent is running' }
         }
         ctx.emit('blue/request-fork')
@@ -426,11 +423,11 @@ export function apply(ctx: Context, config: Config = {}): void {
     // input layer rewrites it to `/sessions` (with the id argument intact)
     // before `ctx.commands.execute` (the S24a dogfood ruling: /resume and
     // /sessions were one command wearing two names).
-    const sessionsAliases = registerCommandAliases('sessions', ['resume'])
+    const sessionsAliases = aliasRegistry.register('sessions', ['resume'])
     const help = ctx.commands.register({
       name: 'help',
       description: 'Show available commands and key bindings',
-      handler: (invocation) => showHelp(invocation.agent),
+      handler: () => showHelp(),
     })
     const theme = registerThemeCommand(ctx)
     // The model-family commands (`/model`, `/effort`, later `/provider`)
@@ -439,7 +436,6 @@ export function apply(ctx: Context, config: Config = {}): void {
     // The mode-family command (`/yolo`) plus the session-switch restore and
     // the plan/yolo exclusivity watcher.
     const modes = registerModeCommands(ctx)
-    const modeTracking = setupModeTracking(ctx)
     // The session-info family (`/status` `/usage` `/version`).
     const sessionInfo = registerSessionCommands(ctx, config.displayVersion)
     // The session-export family (`/export` `/copy`).
@@ -472,7 +468,6 @@ export function apply(ctx: Context, config: Config = {}): void {
       theme()
       models()
       modes()
-      modeTracking()
       sessionInfo()
       sessionExport()
       init()

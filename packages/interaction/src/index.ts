@@ -11,9 +11,8 @@
  * and the queued-message pane with the empty-editor Up recall as the
  * `./pane-queue` subpath plugin (`blue-pane-queue`). The session-title
  * terminal mirror (`blue-terminal-title`, the OSC 0 window title over the
- * upstream session-title fold) and the all-prompts cadence bridge
- * (`blue-session-title-cadence`, D41) mount with the baseline plugins, as
- * do the consolidated `blue` settings namespace (`blue-settings`) and the
+ * upstream session-title fold), the consolidated `blue` settings namespace
+ * (`blue-settings`), and the
  * boot-time update check (`blue-update-check`). All
  * registrations are effect-bound, so unloading the fiber reverts every
  * contribution.
@@ -30,11 +29,14 @@ import * as inputPlugin from './input-plugin.ts'
 import * as keysPlugin from './keys.ts'
 import * as providerOnboardingPlugin from './provider-onboarding.ts'
 import * as questionsPlugin from './questions-plugin.ts'
-import * as sessionTitleCadencePlugin from './session-title-cadence.ts'
 import * as settingsPlugin from './settings.ts'
 import * as terminalTitlePlugin from './terminal-title.ts'
 import * as updateCheckPlugin from './updater/check.ts'
 import { EditorModelService } from './editor-model.ts'
+import { EditorHostService } from './editor-instance.ts'
+import { SkillsCatalogService } from './skills-catalog.ts'
+import { InteractionStateService } from './runtime-state.ts'
+import { DEFAULT_SETTINGS } from './settings.ts'
 
 // BluePanel is the package's public overlay container; BlueSelect stays
 // package-internal as the multi-select-only list (single-select moved to
@@ -43,9 +45,14 @@ export { BluePanel } from './select.ts'
 export { CommandModelService } from './command-model.ts'
 export { FrontendPanel } from './frontend-panel.ts'
 export { EditorModelService } from './editor-model.ts'
+export { EditorHostService } from './editor-instance.ts'
+export { SkillsCatalogService } from './skills-catalog.ts'
+export { InteractionStateService } from './runtime-state.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-interaction'
+/** App-owned session boundaries required before child interaction fibers mount. */
+export const inject = ['blueSessionReader', 'blueSessionActions']
 
 /** Interaction configuration; the override identifies acceptance profiles without changing the release line. */
 export interface Config {
@@ -65,6 +72,12 @@ export const Config: z<Config> = z.object({
  * @param config - interaction presentation configuration.
  */
 export function apply(ctx: Context, config: Config = {}): void {
+  const runtimeState = new InteractionStateService(ctx, DEFAULT_SETTINGS)
+  ctx.effect(() => () => runtimeState.dispose())
+  const editorHost = new EditorHostService(ctx)
+  ctx.effect(() => () => editorHost.dispose())
+  const skillsCatalog = new SkillsCatalogService(ctx)
+  ctx.effect(() => () => skillsCatalog.dispose())
   ctx.plugin(keysPlugin)
   ctx.plugin(CommandModelService)
   ctx.plugin(EditorModelService)
@@ -74,7 +87,6 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.plugin(questionsPlugin)
   ctx.plugin(approvalPlugin)
   ctx.plugin(terminalTitlePlugin)
-  ctx.plugin(sessionTitleCadencePlugin)
   ctx.plugin(settingsPlugin)
   ctx.plugin(updateCheckPlugin)
 }

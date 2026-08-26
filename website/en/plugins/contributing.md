@@ -21,7 +21,7 @@ script/install-dev.sh
 # overrides: DSH_BIN=/path/to/dsh PROFILE=my-profile DSH_HOME=/custom/home script/install-dev.sh
 ```
 
-The script builds the workspace and link-installs the bundle plus twelve runtime libraries (thirteen packages total) into the profile.
+The script builds the workspace and link-installs the authoritative 11-package list from `script/install-dev.sh`: the product plugin closure plus the OpenPencil/Lark validation adapters.
 
 ## Manual, equivalent
 
@@ -34,9 +34,7 @@ dsh plugin --profile blue-dev add \
   link:/path/to/blue/packages/api \
   link:/path/to/blue/packages/frontend \
   link:/path/to/blue/packages/harness-adapter \
-  link:/path/to/blue/packages/context \
   link:/path/to/blue/packages/conversation \
-  link:/path/to/blue/packages/remote \
   link:/path/to/blue/packages/core \
   link:/path/to/blue/packages/interaction \
   link:/path/to/blue/packages/transcript \
@@ -48,7 +46,7 @@ dsh --profile blue-dev [task]           # run a task, or start interactive
 dsh --profile blue-dev --resume <id>    # resume a persisted session
 ```
 
-**Why all thirteen links**: the twelve library packages are the bundle's `workspace:^` dependencies, unresolvable outside this workspace. `dsh plugin` forwards verbatim to pnpm, whose `link:` protocol installs the checkout itself as a symlink; the linked bundle then resolves its siblings through the profile's own `node_modules` links. The twelve non-bundle links are plain dependencies — expect one `declares no dsh.bundle` warning each; they are libraries, not layers. `script/install-dev.sh` is the authoritative list.
+**Why 11 links**: the bundle's local `workspace:^` closure must be linked explicitly outside the workspace, and OpenPencil/Lark join the dogfood validation lane. Expect a `declares no dsh.bundle` warning for each of the ten non-bundle links. `script/install-dev.sh` is authoritative; context/remote run in independent fixtures instead of the product profile.
 
 ::: tip Three lanes — never mix them
 - **`blue`** = the production profile, **npm installs only** (`@dsh-blue/blue@rc` / an exact version). Never `link:` into it — a later npm upgrade overwrites only the named packages, the leftover links dangle, and boot dies with `ERR_MODULE_NOT_FOUND` (`pnpm add` does not warn about the mix).

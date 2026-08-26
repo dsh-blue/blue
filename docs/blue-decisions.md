@@ -1,5 +1,7 @@
 # Blue 决策记录（ADR）
 
+> Cutover note (2026-08-26): ADR 正文保留作历史记录。旧 `blueSession`、`blueStatus`、`blueIntents` 和 event-fold 决策已由 frontend-runtime cutover 取代；当前契约见 `blue-architecture.md`、`blue-seams.md` 与 package `AGENTS.md`。
+
 > 每条记录：背景 → 决策 → 理由 → 后果。按主题分组，编号稳定不回收。
 > 架构总览见 [blue-architecture.md](./blue-architecture.md)；阶段规划见 [blue-roadmap.md](./blue-roadmap.md)。
 

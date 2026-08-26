@@ -1,33 +1,33 @@
 /**
- * The S29 skills catalog: the module-level cache of the current session's
- * user-invocable skills (the `draft-stash.ts` shape — module state surviving
- * fiber reloads), the pure `#`-token helpers, and the attach helper keeping
- * the cache warm. The catalog feeds three consumers from one settle: the
+ * The S29 skills catalog: a frontend-tree-scoped cache of the current
+ * session's user-invocable skills, the pure `#`-token helpers, and the
+ * service keeping the cache warm. The catalog feeds three consumers from one settle: the
  * `blue-editor-plus` `#` autocomplete branch (fuzzy over the same
  * `./slash-filter.ts` the slash dropdown uses), the `blue-input` submit
  * rewrite (`#name` → `/name`, mirroring the harness tool-skill gesture
  * boundary verbatim so every rewritten token is one the upstream pre-step
  * recognizes), and the `/skills` listing panel (`./skills-command.ts`).
  *
- * The seam is the harness `skills` service (`@deepseek-ai/dsh-skill`, read
- * optionally through `ctx.get('skills')` — never injected, so a degraded
- * host without skill support keeps every Blue fiber loadable). Settling
- * goes through `snapshot` rather than `list`: an incomplete observation
+ * The seam is the app-owned skill snapshot and invalidation boundary; no
+ * Harness Agent, scope key, or registry object reaches interaction. An
+ * incomplete observation
  * (`complete: false` — a provider mid-revision) is never cached, and the
  * last good catalog survives until a complete one replaces it. Invalidation
- * rides the registry's `skills/change` event (no payload — consumers refetch
- * for their own options) and Blue's own `blue/session-changed` (a different
- * agent may resolve a different layered catalog); both drop the cache and
+ * rides the app's skill-change registration and session reader; both drop the cache and
  * preheat, and an epoch counter keeps a refresh that started under the old
  * session from repopulating the cache after the drop.
  *
  * @module @dsh-blue/blue-interaction/skills-catalog
  */
 
-import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { SkillSummary } from '@deepseek-ai/dsh-skill'
-import { currentBlueAgent } from './session.ts'
+import { Service, type Context } from '@deepseek-ai/cordis'
+import type { BlueRegistration } from '@dsh-blue/blue-api'
+import type { BlueSessionActions, BlueSessionSkill } from '@dsh-blue/blue-app'
+import type {} from '@dsh-blue/blue-app'
+
+declare module '@deepseek-ai/cordis' {
+  interface Context { blueSkillsCatalog: SkillsCatalogService }
+}
 
 /**
  * A `#name` skill token: the harness tool-skill gesture boundary with `#`
@@ -48,34 +48,95 @@ const SKILL_TOKEN = /(^|\s)#([a-z0-9]+(?:-[a-z0-9]+)*)(?=\s|$)/g
  */
 const SKILL_PREFIX = /(^|\s)#([a-z0-9-]*)$/
 
-/** One settled catalog: the owning agent, its cwd, and the complete snapshot. */
-interface SkillsCache {
-  /** The agent whose layered registry produced the settled list. */
-  readonly key: Agent | undefined
-  /** The session cwd the settle read (project-scoped roots key on it). */
-  readonly cwd: string | undefined
-  /** The complete snapshot's summaries, invocation-neutral as delivered. */
-  readonly settled: readonly SkillSummary[]
+/** Frontend-tree-scoped skill cache and invalidation owner. */
+export class SkillsCatalogService extends Service {
+  private settled: readonly BlueSessionSkill[] | undefined
+  private epoch = 0
+  private flight: { readonly epoch: number, readonly promise: Promise<void> } | undefined
+  private observedSessionId: string | undefined
+  private readonly actions: BlueSessionActions
+  private readonly sessionRegistration: BlueRegistration
+  private readonly skillRegistration: BlueRegistration
+  private disposed = false
+
+  /** @param ctx - interaction-root context carrying app session services. */
+  constructor(ctx: Context) {
+    super(ctx, 'blueSkillsCatalog')
+    this.actions = ctx.blueSessionActions
+    this.observedSessionId = ctx.blueSessionReader.current()?.id
+    this.sessionRegistration = ctx.blueSessionReader.subscribe(snapshot => {
+      const next = snapshot?.id
+      if (next === this.observedSessionId) return
+      this.observedSessionId = next
+      this.drop()
+      void this.refresh()
+    })
+    this.skillRegistration = this.actions.subscribeSkillChanges(() => {
+      this.drop()
+      void this.refresh()
+    })
+    void this.refresh()
+  }
+
+  /** Settled user-invocable skills, synchronously readable by autocomplete. */
+  userInvocable(): readonly BlueSessionSkill[] {
+    return this.settled?.filter(skill => skill.invocation.userInvocable) ?? []
+  }
+
+  /** Refresh once per epoch, preserving a last-good complete observation. */
+  refresh(): Promise<void> {
+    if (this.disposed) return Promise.resolve()
+    const currentId = this.ctx.blueSessionReader.current()?.id
+    if (currentId !== this.observedSessionId) {
+      this.observedSessionId = currentId
+      this.drop()
+    }
+    if (this.flight?.epoch === this.epoch) return this.flight.promise
+    const ticket = this.epoch
+    const promise = this.settle(ticket)
+    this.flight = { epoch: ticket, promise }
+    void promise.finally(() => {
+      if (this.flight?.promise === promise) this.flight = undefined
+    })
+    return promise
+  }
+
+  /** Release listeners and prevent late refreshes from publishing. */
+  dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    this.sessionRegistration.dispose()
+    this.skillRegistration.dispose()
+    this.drop()
+  }
+
+  /** Test-only direct settlement seam, scoped to this service instance. */
+  setForTest(skills: readonly BlueSessionSkill[] | undefined): void {
+    this.epoch += 1
+    this.settled = skills === undefined ? undefined : [...skills]
+  }
+
+  private drop(): void {
+    this.epoch += 1
+    this.settled = undefined
+  }
+
+  private async settle(ticket: number): Promise<void> {
+    const result = await this.actions.skillSnapshot()
+    if (this.disposed || ticket !== this.epoch) return
+    if (!result.ok) {
+      if (result.code === 'BLUE_SESSION_UNAVAILABLE' || result.code === 'BLUE_CAPABILITY_ABSENT') {
+        this.settled = undefined
+      }
+      return
+    }
+    if (result.value.complete) this.settled = result.value.skills
+  }
 }
 
-/** The settled catalog; `undefined` until a complete snapshot lands. */
-let cache: SkillsCache | undefined
-
-/** Invalidation epoch: bumped on every drop, so a stale in-flight settle cannot write. */
-let epoch = 0
-
-/** The in-flight settle; same-epoch callers share it (single-flight per epoch). */
-let flight: Promise<void> | undefined
-
-/**
- * Read the settled user-invocable skills. Synchronous by design — the
- * `#` autocomplete branch answers within the editor's suggestion round;
- * warmth is `attachSkillsCatalog`'s job, not the reader's.
- * @returns the settled user-invocable summaries, or an empty list while
- *   nothing has settled (no session, no skills service, or mid-refresh).
- */
-export function userInvocableSkills(): readonly SkillSummary[] {
-  return cache?.settled.filter(skill => skill.invocation.userInvocable) ?? []
+/** Read the current tree's settled user-invocable skills. */
+export function userInvocableSkills(ctx: Context): readonly BlueSessionSkill[] {
+  return ctx.blueSkillsCatalog.userInvocable()
 }
 
 /**
@@ -91,8 +152,8 @@ export function userInvocableSkills(): readonly SkillSummary[] {
  * @param text - the submitted line.
  * @returns the line with recognized skill tokens rewritten.
  */
-export function rewriteSkillTokens(text: string): string {
-  const names = new Set(userInvocableSkills().map(skill => skill.name))
+export function rewriteSkillTokens(ctx: Context, text: string): string {
+  const names = new Set(userInvocableSkills(ctx).map(skill => skill.name))
   if (names.size === 0) return text
   return text.replace(SKILL_TOKEN, (token, lead: string, name: string) =>
     names.has(name) ? `${lead}/${name}` : token)
@@ -113,92 +174,8 @@ export function extractSkillPrefix(textBeforeCursor: string): string | null {
   return match === null ? null : match[2] ?? ''
 }
 
-/**
- * Drop the settled catalog (and arm the epoch against a stale in-flight
- * settle). Called on `skills/change` and `blue/session-changed` ahead of
- * the preheat, so readers see an honest empty catalog instead of the
- * previous session's skills.
- */
-function dropCatalog(): void {
-  epoch += 1
-  cache = undefined
-}
-
-/**
- * Settle the catalog from the live session: the current agent's layered
- * registry read through `snapshot`, cached only when the observation is
- * complete. Never rejects — a throwing or missing service keeps the last
- * good catalog (the same resilience posture as an incomplete snapshot).
- * Same-epoch callers share one in-flight settle (the registry dedupes
- * snapshots behind its own collect cache; the guard just avoids stampedes).
- * @param ctx - any context in the tree.
- * @returns a promise settling when the refresh attempt is done.
- */
 export function refresh(ctx: Context): Promise<void> {
-  if (flight !== undefined && settledEpoch === epoch) return flight
-  const ticket = epoch
-  const attempt = settle(ctx, ticket)
-  flight = attempt
-  settledEpoch = ticket
-  void attempt.finally(() => {
-    flight = undefined
-  })
-  return attempt
-}
-
-/** The epoch the in-flight settle started under. */
-let settledEpoch = -1
-
-/**
- * One settle attempt: resolve the agent and service, snapshot, and write the
- * cache only when the attempt is current and the observation complete.
- * @param ctx - any context in the tree.
- * @param ticket - the epoch this attempt started under.
- */
-async function settle(ctx: Context, ticket: number): Promise<void> {
-  const agent = currentBlueAgent(ctx)
-  const skills = ctx.get('skills')
-  if (agent === undefined || skills === undefined) {
-    // No session (or a host without skill support): the honest catalog is
-    // empty, not stale — drop whatever an earlier session settled.
-    cache = undefined
-    return
-  }
-  const cwd = agent.session.header.cwd
-  try {
-    const snapshot = await skills.snapshot({ cwd, scope: agent })
-    if (ticket === epoch && snapshot.complete) {
-      cache = { key: agent, cwd, settled: snapshot.skills }
-    }
-  } catch {
-    // A disposed service or aborted discovery keeps the last good catalog.
-  }
-}
-
-/**
- * Keep the catalog warm for one fiber's lifetime: preheat once, drop and
- * preheat on every `skills/change` (filesystem skill edits land there after
- * the watcher's stability threshold) and on `blue/session-changed` (a new
- * agent resolves its own layered catalog).
- * @param ctx - plugin context.
- * @returns the cleanup dropping the listeners and the cache; call inside a
- *   `ctx.effect` so unloading the fiber tears the attachment down.
- */
-export function attachSkillsCatalog(ctx: Context): () => void {
-  const offSkills = ctx.on('skills/change', () => {
-    dropCatalog()
-    void refresh(ctx)
-  })
-  const offSession = ctx.on('blue/session-changed', () => {
-    dropCatalog()
-    void refresh(ctx)
-  })
-  void refresh(ctx)
-  return () => {
-    offSkills()
-    offSession()
-    dropCatalog()
-  }
+  return ctx.blueSkillsCatalog.refresh()
 }
 
 /**
@@ -207,6 +184,6 @@ export function attachSkillsCatalog(ctx: Context): () => void {
  * `skills` service pin the settled list and assert the pure readers).
  * @param skills - the summaries to settle, or `undefined` to drop.
  */
-export function __setCatalogForTest(skills: readonly SkillSummary[] | undefined): void {
-  cache = skills === undefined ? undefined : { key: undefined, cwd: undefined, settled: [...skills] }
+export function __setCatalogForTest(ctx: Context, skills: readonly BlueSessionSkill[] | undefined): void {
+  ctx.blueSkillsCatalog.setForTest(skills)
 }

@@ -1,68 +1,43 @@
 # Blue Surface Migration Matrix
 
-This is the F5 control document for the frontend-runtime branch. A row is
-complete only after the official consumer, independent fixture, unload/late
-result checks, width scan, golden or e2e comparison, bundle composition, and
-real-profile acceptance are all recorded. An additive model or registry alone
-does not satisfy the row.
+This is the current F5/cutover control document. `source-complete` means the old runtime path was physically removed and focused evidence exists; final release readiness still requires the current full gate, packed fixtures, isolated-profile smoke, and explicit human acceptance.
 
-| Surface / owner | Official API or input facts | Model and consumer | Capability / fallback | Bundle row | Automated evidence | Exact deletion condition |
-|---|---|---|---|---|---|---|
-| status / transcript + interaction mode | `sessionTitle`, request context facts, `blueSession` binding, `planMode`, cwd/git probes | `StatusModel` -> `BlueStatusModelService` -> two-band footer; basic/cwd/git/title/context/mode all publish models | missing/empty facts render zero columns; normal entries truncate, context hides; git keeps an empty mounted entry for lazy TTL recovery | service in `blue-transcript`; provider rows `blue-status-basic/cwd/git/title/context/mode` | status model/provider specs; transcript width scan; bundle e2e + VT golden; unload/reattach/duplicate/hidden transition coverage | retire direct `BlueStatusEntry` provider compatibility after `blue-frontend-runtime` live footer parity; retain the footer renderer while TUI exists |
-| dock / transcript | already-projected `DockModel` contributions; legacy panes still own their official domain subscriptions | `BlueDockModelService` -> screen content/bottom lanes; placement, priority, id, `preferredRows`, collapse | absent model is omitted; legacy activity/queue/todo/btw/agents panes remain the product fallback | service in `blue-transcript`; existing pane rows unchanged | dock lifecycle/order specs and adversarial width scan; bundle e2e retains editor/footer order | replace each legacy pane only after an official feature publishes its model and PTY mouse/PageUp/PageDown, focus, tail-follow, and End behavior pass |
-| command + panel / interaction | official `commands.list/execute` and `commands/change`; optional `blueContextFeature` action surface | immutable `CommandModel`; `CommandModelService.execute`; `FrontendPanel` for select/form/info/loading/error | missing command service returns empty/absent; `/context` falls back to `InfoPanel`; legacy dialogs remain | service in `blue-interaction`; default-enabled `blue-context` row | command abort/late-result specs; panel action/cancel/loading/slot tests; interaction width scan; bundle e2e; accepted `blue-frontend-runtime` profile | remove a legacy dialog only after its official model producer, slot/focus/mouse fixture, and live acceptance exist; remove command-list fallback after every host provides the official service |
-| tool presentation / transcript | official `dsh-tools` `ToolCallView`, `ToolResultView`, and canonical `ToolResult` | `createToolPresentationModel` -> `BlueModelToolService` -> `renderFrontendView`; generic/terminal/diff/search/read/web converters | absent presentation uses canonical raw result; errors use danger text; unknown calls use tool name | service in `blue-transcript`; legacy `blue-intent-diff/terminal` rows remain | canonical converter and lifecycle specs; transcript shared width scan; bundle VT/e2e legacy comparison | remove fold-owned card presenters only after an official projection publishes every live/replay tool model and Ctrl-O/long-output golden + PTY acceptance pass |
-| theme / frontend + core | Blue semantic token configuration; no Harness session input | `ThemeModelService`; core compiles semantic colors into terminal paint functions | activation failure/absent provider selects built-in dark/plain model; legacy aliases stay | theme rows `blue-theme-dark/light/auto/custom` | frontend theme lifecycle/duplicate/unload tests; core dark/light/custom and width suites | remove compatibility aliases only after all model consumers use semantic tokens and dark/light/auto/custom live acceptance passes |
-| editor / interaction | input owner's shared set/submit/clear-or-interrupt actions | `EditorModelService` publishes `set`/`submit`/`abort`; existing pi-tui editor remains the TUI consumer | absent editor returns no model/false action; existing plain editor is fallback | service in `blue-interaction`; `blue-editor-plus` stays optional | editor model + real input owner specs; paste/history/completion/slot suites; interaction width scan | remove shared-editor compatibility only after a replacement consumer passes paste/history/completion/resize/mouse/selection/scroll and PTY acceptance |
-| transcript / conversation + transcript | official `SessionProjectionRegistry` -> append-origin `blueConversation`; no Harness event input reaches the consumer | `@dsh-blue/blue-conversation` -> `./official-model` -> semantic `TranscriptModelService`; user/assistant/thinking/tool/error/interruption components; newest 200 entries rendered | `blueConversationProjection` readiness orders resumed replay; official model replaces rather than duplicates the legacy fold; consumer/provider unload restores legacy fallback and rejects late values | default-enabled `blue-conversation` + `blue-transcript-official`; service/fallback in `blue-transcript` | projection replay/live/checkpoint/restore/unload specs; source stale/wrong-session/late-result specs; semantic width scan; whole-tree resume/live/no-duplicate/fallback e2e; installed tarball fixtures 11/11 on rc.2 and rc.1; accepted PTY tail-follow/new-message/End/resize/copy profile | retire the legacy fold only after export and every tool/pane consumer no longer needs its items; acceptance alone does not satisfy this deletion condition |
+| Surface / owner | Official input | Model and consumer | Fallback / scope | Bundle composition | Current status |
+|---|---|---|---|---|---|
+| status / transcript + mode | `blueConversationFacts`, session reader/actions, title, cwd/git probes | `StatusModel` -> `BlueStatusModelService` -> two-band footer | absent values render no column; git probe and presentation policy are tree/Fiber scoped | baseline service/basic row; cwd/git/title/context/mode enhancements | source-complete; direct `BlueStatusEntry` service deleted |
+| dock / transcript + interaction | `blueConversationFacts`, app queue/actions, opaque side-session projection | each pane publishes `DockModel` into `BlueDockModelService` | local expanded/scroll/timer state only; no pane folds session events | activity/queue/todo/btw/agents rows with explicit inject pins | source-complete; pane-owned event folds and child Session tracking deleted |
+| command + panel / interaction | official commands and app structured actions | `CommandModel`, readonly `PanelModel` snapshots and structured actions -> shared `FrontendPanel`; reusable list/form/info/settings/question/approval/plan-review controls remain | execution aborts on unload and rejects late completion; update progress is action state, not renderer state | interaction + public interaction bridge | source-complete; model/effort, trace/detail and update renderer classes deleted |
+| tool presentation / transcript | official dsh-tools canonical call/result views | `ToolPresentationModel` -> `BlueModelToolService` -> semantic transcript tool component | raw canonical text/plain tool name on absent or unknown presentation | transcript baseline; no intent rows | source-complete; `blueIntents` and diff/terminal/cordis presenters deleted |
+| theme / frontend + core | semantic theme config | `ThemeModelService`; core compiles terminal paint functions | activation failure selects dark/plain; provider state is Fiber scoped | theme-dark baseline; light/auto/custom/ocean/paper package entries | complete |
+| editor / interaction | input-owner set/submit/abort and submit transformations | `EditorModelService` plus tree-scoped `EditorHostService` | plain editor remains the concrete TUI consumer; no module singleton | interaction baseline; editor-plus/paste-image enhancements | source-complete; shared editor singleton deleted |
+| transcript / conversation + transcript | official `SessionProjectionRegistry` -> `blueConversation` | whole projection snapshot/feed -> semantic `TranscriptModelService`; newest 200 entries | readiness capability orders resumed replay; stale session/seq callbacks rejected | conversation + official-model are baseline rows | source-complete; legacy fold/direct subscription deleted |
+| context validation adapter | app `blueSessionProjections.currentMany/subscribe` | renderer-neutral context feature model/action | epoch rejection, multi-key coalescing, capability absence | validation-only; not a bundle row | complete as independent adapter |
+| public plugin contributions | stable manifest and `BlueView` | plugin host -> view/interaction owner bridges | capability denial and duplicate-id errors are structured; all registrations Fiber owned | API host baseline; two bridge rows | complete |
 
-## Current Evidence
+## Deletion Record
 
-The core model adapter is renderer-neutral and width-bounded. The context
-vertical slice now consumes the official four-key projection cut and has an
-independent tarball fixture, a real dsh-context 0.25.3 host fixture, a TUI
-panel consumer, width scan, and bundle e2e. Its bundle row is default-enabled
-after live profile acceptance; `blue-status-context` remains the
-capability-absent/unload fallback.
-Remote v2 negotiation and lease transport now have real authenticated Unix and
-fingerprint-pinned SSH daemon fixtures. They cover two sessions, authorization,
-structured action failures, timeout/cancel outcome-unknown results, duplicate
-response rejection, lease contention/expiry/disconnect cleanup, transport
-loss, same-identity reconnect, sequence resume, and late-event cleanup. The
-separate `blue-remote-frontend-runtime` profile mounts the headless runtime and
-passes PTY/tmux resize, copy-mode, and clean-exit smoke. The shared user
-live-acceptance gate passed on 2026-08-24.
+| Deleted or superseded path | Replacement | Status |
+|---|---|---|
+| transcript `fold.ts` and direct event subscription | `blueConversation` + official transcript consumer | complete |
+| direct `BlueStatusEntry` compatibility | `StatusModel` producers and footer service | complete |
+| `blueIntents` and intent subpaths | canonical tool view/result -> `ToolPresentationModel` | complete |
+| pane-owned activity/todo/agents/btw event folds | `blueConversationFacts`, app actions and `DockModel` | complete |
+| shared editor module singleton | frontend-tree `EditorHostService` / `InteractionStateService` | complete |
+| implicit bundle ordering | explicit inject dependencies plus bundle assertions | complete |
+| package-internal cross-imports | public exports and narrow app/adapter contracts | complete |
+| command-specific dialog render/state classes (`ModelPanel`/`EffortPanel`, `TracePanel`/`TraceDetailPanel`, `UpdatePanel`, thinking-segment chrome) | generic renderer-neutral panel models, structured actions and shared `FrontendPanel` | complete |
 
-Status providers have crossed the model boundary and retain footer golden
-parity. Command execution, generic panels, canonical tool conversion, editor
-actions, dock ordering, and the bounded transcript viewport have official
-consumers and lifecycle fixtures. Transcript now has a real official producer
-and replacement consumer: append-origin Harness events fold in the domain-only
-`blueConversation` projection, and the semantic TUI model replaces the legacy
-fold while present. Both rows are default-enabled after acceptance.
-Dock/tool/editor paths remain additive, and no default bundle producer
-duplicates legacy content.
+Raw `SessionEvent` use that remains inside app-owned domain/action helpers, persistence audit export, and trace-query formatting is not a renderer fold. Those owners may inspect durable facts as part of their official responsibility; no raw event or Session object crosses into frontend models.
 
-The acceptance profile for every row is `blue-frontend-runtime`. The user ran
-the live profile, verified the specialized version, subagent and tmux-copy
-fixes, reported no further issues, and responded `验收通过` on 2026-08-24.
-The accepted rows covered install, live official streaming, resume, `/context`,
-manual-scroll/new-message/End, resize, OSC 52/tmux copy, and clean exit. The
-production bundle now enables them while preserving capability-absent and
-unload fallbacks.
-
-## Required Record Per Row
-
-Focused F5 evidence is reproducible with:
+## Reproducible Focused Evidence
 
 ```sh
-pnpm exec vitest run packages/conversation/tests packages/transcript/tests/status-model.spec.ts packages/transcript/tests/dock-model.spec.ts packages/transcript/tests/tool-model.spec.ts packages/transcript/tests/transcript-model.spec.ts packages/transcript/tests/official-model.spec.ts packages/interaction/tests/command-model.spec.ts packages/interaction/tests/editor-model.spec.ts packages/interaction/tests/frontend-panel.spec.ts packages/transcript/tests/width-scan.spec.ts packages/interaction/tests/width-scan.spec.ts packages/bundle/blue/tests/e2e.spec.ts packages/bundle/blue/tests/vt-snapshot.spec.ts
-pnpm run test:coverage
-node script/blue-plugin-fixture.mjs packages/conversation --install
-node script/blue-plugin-fixture.mjs packages/transcript --install --harness-line 0.1.1-rc.1
+pnpm exec vitest run packages/conversation/tests packages/transcript/tests packages/interaction/tests
+pnpm exec vitest run packages/bundle/blue/tests/e2e.spec.ts packages/bundle/blue/tests/vt-snapshot.spec.ts
+node script/blue-plugin-validate.mjs packages/transcript
+node script/blue-plugin-validate.mjs packages/context
+node script/blue-plugin-validate.mjs packages/app
+node script/blue-plugin-validate.mjs packages/interaction
 ```
 
-The packed fixture runner owns the multi-package closure and installed-export
-checks for frontend, conversation, transcript, and external adapters. Live
-acceptance is complete. Legacy deletion remains pending independently until
-each row's exact deletion condition is satisfied.
+The final evidence record belongs in [blue-runtime-cutover-ledger.md](./blue-runtime-cutover-ledger.md). Validation-only package acceptance does not imply that the package is shipped in the Blue bundle.

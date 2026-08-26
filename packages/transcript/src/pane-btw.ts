@@ -1,11 +1,9 @@
 /**
  * `blue-pane-btw` plugin: a side-question bottom pane plus the `/btw`
  * command that drives it. `/btw <question>` forks the live session into a
- * throwaway side agent — `agents.create` with the full event log as seed,
- * the parent's model route as `agentOptions`, and the fork-lineage meta
- * (cwd, `parentSession`, `seedLength`), the same construction as the app
- * driver's fork switch — posts the question as a
- * follow-up, and renders the exchange in the pane. The pane is the kimi
+ * throwaway side session through the app-owned `blueSessionActions` seam,
+ * posts the question as a follow-up, and renders the exchange from its
+ * official projection. The pane is the kimi
  * btw-panel port (single-turn): a rounded top border with the in-border
  * title ` BTW ─ Esc close · ↑↓ scroll `, the question line in `roleUser`
  * (`› question`), the answer rendered through the Markdown component as it
@@ -37,32 +35,24 @@
  * @module @dsh-blue/blue-transcript/pane-btw
  */
 
-import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
-import type { AgentHandle } from '@deepseek-ai/dsh-agent'
 import {
-  GutterComponent,
-  type BlueComponent,
   type BlueComponents,
   type BlueMarkdown,
   type BlueSemanticColors,
 } from '@dsh-blue/blue-core'
+import type { DockModel } from '@dsh-blue/blue-frontend'
 import { topRule } from '@dsh-blue/blue-core/chrome'
 // The named import also carries the `commands` Context merge.
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { AssistantMessage } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
-// Empty type import carries the app-owned `blueSession` Context merge this
-// plugin reads through `ctx.get` (never `inject`, as the app plugin may
-// activate after this one).
-import type {} from '@dsh-blue/blue-app'
+import type { ConversationProjection } from '@dsh-blue/blue-conversation'
+import type { BlueSideSession } from '@dsh-blue/blue-app'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-pane-btw'
 
 /** Services required before the pane and command can register. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'commands', 'agents']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'commands', 'blueSessionActions', 'blueDockModels']
 
 /** The pane never renders shorter than this panel height (kimi value). */
 const BTW_MIN_PANEL_LINES = 3
@@ -100,24 +90,27 @@ interface BtwState {
   maxScrollTop: number
 }
 
-/** The live side agent plus its subscription unbinder. */
+/** The live side session plus its projection/status subscription unbinders. */
 interface BtwSlot {
-  handle: AgentHandle
+  handle: BlueSideSession
   unbind: () => void
 }
 
-/**
- * The joined text of one assistant message's text blocks (reasoning and
- * other block kinds do not render in the pane).
- * @param message - the finalized assistant message.
- * @returns the concatenated text.
- */
-function messageText(message: AssistantMessage): string {
-  let text = ''
-  for (const block of message.content) {
-    if (block.type === 'text') text += block.text
+interface ProjectionSource {
+  snapshot(session: unknown): { readonly values: Record<string, unknown> }
+  onChanged(listener: (session: unknown, key: string, value: unknown, seq: number) => void): () => void
+}
+
+function projectionReply(value: unknown): { reply: string, thinking: boolean } {
+  if (value === null || typeof value !== 'object') return { reply: '', thinking: false }
+  const row = value as { readonly entries?: unknown, readonly streaming?: unknown }
+  if (!Array.isArray(row.entries)) return { reply: '', thinking: false }
+  const projection = row as ConversationProjection
+  const assistant = [...projection.entries].reverse().find(entry => typeof entry === 'object' && entry !== null && entry.kind === 'assistant')
+  return {
+    reply: assistant?.kind === 'assistant' ? assistant.text : '',
+    thinking: projection.streaming === true,
   }
-  return text
 }
 
 /**
@@ -126,7 +119,7 @@ function messageText(message: AssistantMessage): string {
  * reply, and a `thinking…` row, fitted to a row budget from the terminal
  * height with tail-follow scrolling. Closed renders zero rows.
  */
-class BtwPaneComponent implements BlueComponent {
+class BtwPaneComponent {
   private readonly rows: () => number
   private readonly markdown: BlueMarkdown
 
@@ -146,9 +139,6 @@ class BtwPaneComponent implements BlueComponent {
     this.rows = rows
     this.markdown = this.components.createMarkdown({ text: '' })
   }
-
-  /** No cached render state. */
-  invalidate(): void {}
 
   /**
    * Scroll the body by one row; returns whether the pane moved (kimi
@@ -172,6 +162,7 @@ class BtwPaneComponent implements BlueComponent {
    * @returns the framed exchange rows; none while closed.
    */
   render(width: number): string[] {
+    /* c8 ignore next -- the dock registry skips this renderer while its model is collapsed. */
     if (!this.state.open) return []
     if (width < BTW_MIN_WIDTH) return []
     const safeWidth = Math.max(4, width)
@@ -297,6 +288,9 @@ export function apply(ctx: Context): void {
   }
   let slot: BtwSlot | undefined
   let unloaded = false
+  const refreshDock = (): void => {
+    ctx.blueDockModels.refresh('blue.dock.btw')
+  }
 
   /** Unsubscribe and dispose the live side agent, if any. */
   const clearSlot = async (): Promise<void> => {
@@ -316,79 +310,41 @@ export function apply(ctx: Context): void {
     ctx.emit('blue/editor-connected-above', false)
     state.open = false
     state.turns = []
-    screen.requestRender()
+    refreshDock()
     return { kind: 'success', text: 'dismissed the side question' }
   }
 
   const ask = async (question: string): Promise<CommandResult> => {
     if (question === '') return dismiss()
-    const current = ctx.get('blueSession')?.current ?? null
-    if (current === null) return { kind: 'error', text: 'no active session for a side question' }
     // Single slot: a fresh question replaces the previous side agent.
     await clearSlot()
-    let handle: AgentHandle
+    let handle: BlueSideSession | undefined
     try {
-      handle = await ctx.agents.create({
-        sessionId: SessionId(`btw-${randomUUID()}`),
-        seed: current.session.events,
-        // The side agent answers on the same route as the session it forked
-        // from: without agentOptions its requests would carry an empty
-        // provider/model and fail at request assembly.
-        agentOptions: {
-          ...current.options.provider === undefined ? {} : { provider: current.options.provider },
-          ...current.options.model === undefined ? {} : { model: current.options.model },
-        },
-        meta: {
-          cwd: current.session.header.cwd ?? process.cwd(),
-          parentSession: current.id,
-          seedLength: current.session.events.length,
-        },
-      })
+      handle = await ctx.blueSessionActions.createSideSession()
     } catch (error) {
       return {
         kind: 'error',
         text: `could not start the side session: ${error instanceof Error ? error.message : String(error)}`,
       }
     }
+    if (handle === undefined) return { kind: 'error', text: 'no active session for a side question' }
     // The fiber may have unloaded (e.g. a theme swap) while creation was in
     // flight: dispose the fresh handle instead of publishing a dead pane.
     if (unloaded) {
       await handle.dispose()
       return { kind: 'error', text: 'the side-question plugin was unloaded' }
     }
-    const offEvent = ctx.on('session/event', (session, event) => {
-      if (session !== handle.agent.session) return
+    const projections = ctx.get('sessionProjections') as ProjectionSource | undefined
+    const updateFromProjection = (value: unknown): void => {
       const turn = state.turns.at(-1)
-      /* v8 ignore next -- the listeners never outlive the turns they feed:
-         dismiss unbinds before clearing, and no await separates registration
-         from the first turn push */
+      /* c8 ignore next -- ask seeds the first turn before any projection callback is bound. */
       if (turn === undefined) return
-      if (event.type === 'assistant/chunk' && event.data.chunk.type === 'text-delta') {
-        turn.reply += event.data.chunk.text
-      } else if (event.type === 'assistant/message') {
-        turn.reply = messageText(event.data.message)
-      } else {
-        return
-      }
-      screen.requestRender()
-    })
-    const offStatus = ctx.on('agent/status', (payload) => {
-      if (payload.agent !== handle.agent) return
-      if (payload.status !== 'idle') return
-      const turn = state.turns.at(-1)
-      /* v8 ignore next -- same invariant as the event listener above */
-      if (turn === undefined) return
-      turn.thinking = false
-      // The busy flag gates the editor's Enter routing; report the flip.
-      ctx.emit('blue/editor-connected-above', true, false)
-      screen.requestRender()
-    })
-    slot = {
-      handle,
-      unbind: () => {
-        offEvent()
-        offStatus()
-      },
+      const next = projectionReply(value)
+      const thinking = next.thinking || turn.thinking
+      if (turn.reply === next.reply && turn.thinking === thinking) return
+      turn.reply = next.reply
+      turn.thinking = thinking
+      refreshDock()
     }
     // A fresh question starts the panel from the top: height ratchet and
     // scroll state reset, tail-following restored, the slot busy.
@@ -398,12 +354,33 @@ export function apply(ctx: Context): void {
     state.followTail = true
     state.scrollTop = 0
     state.maxScrollTop = 0
+    const initial = projections?.snapshot(handle.projectionSession).values['blueConversation']
+    updateFromProjection(initial)
+    const offProjection = projections?.onChanged((session, key, value) => {
+      if (session !== handle.projectionSession || key !== 'blueConversation') return
+      updateFromProjection(value)
+    })
+    const offStatus = handle.subscribeStatus(status => {
+      const turn = state.turns.at(-1)
+      /* v8 ignore next -- an open slot always seeds one turn before status
+         subscription; this guard protects a hostile host callback. */
+      if (turn === undefined) return
+      const thinking = status === 'running'
+      if (turn.thinking === thinking) return
+      turn.thinking = thinking
+      if (!thinking) ctx.emit('blue/editor-connected-above', true, false)
+      refreshDock()
+    })
+    slot = {
+      handle,
+      unbind: () => {
+        offProjection?.()
+        offStatus()
+      },
+    }
     ctx.emit('blue/editor-connected-above', true, true)
-    handle.agent.followup(createUserMessage({
-      content: [{ type: 'text', text: question }],
-      source: { kind: 'user' },
-    }))
-    screen.requestRender(true)
+    handle.followup(question)
+    ctx.blueDockModels.refresh('blue.dock.btw', true)
     return { kind: 'success', text: 'asked the side question' }
   }
 
@@ -416,8 +393,11 @@ export function apply(ctx: Context): void {
   }))
 
   const pane = new BtwPaneComponent(colors, components, state, () => screen.rows)
-  // Bottom panes render in mount order; a zero-row render occupies nothing.
-  ctx.effect(() => screen.addBottomChild(new GutterComponent(pane)))
+  const model = (): DockModel => ({
+    kind: 'dock', id: 'blue.dock.btw', placement: 'bottom', priority: 40,
+    view: { kind: 'text', text: state.open ? 'BTW' : '' }, collapsed: !state.open,
+  })
+  ctx.effect(() => ctx.blueDockModels.register(model, (_model, width) => pane.render(width)))
   // The editor key chain routes close/scroll/submit here while the pane is
   // open.
   ctx.on('blue/btw-command', (command, text) => {
@@ -440,15 +420,12 @@ export function apply(ctx: Context): void {
       state.scrollTop = 0
       state.maxScrollTop = 0
       ctx.emit('blue/editor-connected-above', true, true)
-      current.handle.agent.followup(createUserMessage({
-        content: [{ type: 'text', text: question }],
-        source: { kind: 'user' },
-      }))
-      screen.requestRender()
+      current.handle.followup(question)
+      refreshDock()
       return
     }
     if (pane.scroll(command === 'scroll-up' ? 'up' : 'down')) {
-      screen.requestRender()
+      refreshDock()
     }
   })
   // While a dialog panel occupies the editor slot the splice flag would

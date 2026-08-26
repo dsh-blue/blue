@@ -7,6 +7,7 @@
 
 import type {} from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-session-projection/types'
+import type { TodoItem } from '@deepseek-ai/dsh-session'
 
 /** Readiness capability published only after `blueConversation` is registered. */
 export interface BlueConversationProjectionCapability {
@@ -118,13 +119,69 @@ export interface ConversationProjectionState {
   readonly toolEntryIds: Readonly<Record<string, string>>
 }
 
+/**
+ * Renderer-independent facts shared by status and dock consumers. The
+ * projection owns event reduction; consumers never need the Session object or
+ * a second event fold. Every field is a whole current value so replay and live
+ * drives converge identically.
+ */
+export interface ConversationFacts {
+  readonly phase: 'idle' | 'waiting' | 'thinking' | 'composing' | 'tool'
+  readonly active: boolean
+  readonly turn: number
+  readonly flowUp?: number | undefined
+  readonly flowDownChars: number
+  readonly todos: readonly TodoItem[]
+  readonly contextTokens: number
+  readonly contextWindow?: number | undefined
+  readonly model?: string | undefined
+  readonly provider?: string | undefined
+  readonly reasoningEffort?: string | undefined
+  /** Latest human prompt in the current run, used for fork-child correlation. */
+  readonly promptText?: string | undefined
+  /** Per-run dispatched tool count, reset by `turn/start`. */
+  readonly epochToolCount?: number | undefined
+  /** Per-run token total with replace-per-step usage semantics. */
+  readonly epochTokens?: number | undefined
+  /** Projection-private usage buckets retained as plain readonly data. */
+  readonly usageByStep?: Readonly<Record<string, number>> | undefined
+  /** Latest running activity marker. */
+  readonly activity?: Readonly<{ readonly kind: 'reasoning' | 'text' | 'tool', readonly name?: string | undefined }> | undefined
+  /** Terminal outcome of the latest run. */
+  readonly runOutcome?: 'completed' | 'failed' | undefined
+  /** Envelope timestamp of the latest terminal outcome. */
+  readonly endedAt?: number | undefined
+  readonly agentCalls: readonly ConversationAgentCall[]
+}
+
+/** Projection facts for one `subagent`/`subagent_fork` call. */
+export interface ConversationAgentCall {
+  readonly seq: number
+  readonly turn: number
+  readonly step: number
+  readonly callId: string
+  readonly name: 'subagent' | 'subagent_fork'
+  readonly arguments: string
+  readonly startedAt: number
+  readonly result?: {
+    readonly text: string
+    readonly isError: boolean
+    readonly endedAt: number
+  } | undefined
+}
+
+/** Plain-JSON state checkpointed for {@link ConversationFacts}. */
+export interface ConversationFactsState extends ConversationFacts {}
+
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
     blueConversation: ConversationProjection
+    blueConversationFacts: ConversationFacts
   }
 
   interface SessionProjectionStateMap {
     blueConversation: ConversationProjectionState
+    blueConversationFacts: ConversationFactsState
   }
 }
 

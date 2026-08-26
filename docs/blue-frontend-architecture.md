@@ -1,6 +1,6 @@
 # Blue 前端目标架构
 
-> 状态：目标架构，2026-08。本文描述重构后的边界，不把尚未迁移的代码写成现状。当前实现仍以 `blue-architecture.md`、`blue-seams.md` 和包级 `AGENTS.md` 为准。
+> 状态：已落地的架构原则，2026-08。当前实现与剩余删除门禁以 `blue-architecture.md`、`blue-seams.md`、`blue-runtime-cutover-ledger.md` 和包级 `AGENTS.md` 为准。
 
 ## 目标
 
@@ -73,4 +73,3 @@ UI 不直接折叠 Harness event。事件表达事实，projection 表达当前�
 ## 迁移纪律
 
 旧实现先保留为行为基线；新实现按 vertical slice 接入。一个 slice 必须同时有 domain/adapter、interaction model、TUI renderer、headless fixture、unload 测试和现有 golden/e2e 对比，之后才能替换旧 provider。
-

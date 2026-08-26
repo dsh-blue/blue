@@ -1,26 +1,13 @@
 /**
- * Pure rewind projection: direct user turns become safe, single-level branch
- * points. The projection never mutates a Session and deliberately ignores
- * synthetic user messages injected by skills, instructions, or tools.
+ * App-owned projection of safe rewind points from the active Harness session.
+ * Agent and SessionEvent values stay inside blue-app; consumers receive only
+ * immutable renderer-neutral candidate rows.
  *
- * @module @dsh-blue/blue-interaction/rewind
+ * @module @dsh-blue/blue-app/rewind
  */
 
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-
-/** A user-facing rewind candidate for one direct user turn. */
-export interface RewindCandidate {
-  /** Number of the turn in the session log. */
-  readonly turn: number
-  /** Event count retained by the child session seed. */
-  readonly boundarySeq: number
-  /** One-line direct user prompt preview. */
-  readonly prompt: string
-  /** One-line assistant preview, when the turn produced one. */
-  readonly response?: string
-  /** Event time used for stable display. */
-  readonly time: number
-}
+import type { BlueRewindCandidate } from './types.ts'
 
 interface MessageLike {
   readonly content?: readonly { readonly type?: string, readonly text?: string }[]
@@ -28,9 +15,9 @@ interface MessageLike {
 }
 
 /**
- * Collapse a message content block into a compact text preview.
- * @param message - a dsh user or assistant message.
- * @returns the first textual content, or an empty string.
+ * Collapse message content into a compact text preview.
+ * @param message - a user or assistant message value.
+ * @returns the visible one-line text, or an empty string.
  */
 export function messagePreview(message: MessageLike): string {
   const text = message.content
@@ -43,14 +30,12 @@ export function messagePreview(message: MessageLike): string {
 }
 
 /**
- * Find direct-user rewind points in event order, newest first. A point is the
- * event boundary immediately before that user message, so the selected turn
- * and all later work are left out of the child branch.
- * @param events - the immutable session event snapshot.
- * @returns rewind candidates ordered from newest to oldest.
+ * Project direct-user rewind points in newest-first order.
+ * @param events - the active session's immutable event snapshot.
+ * @returns renderer-neutral candidate rows.
  */
-export function rewindCandidates(events: readonly SessionEvent[]): readonly RewindCandidate[] {
-  const candidates: RewindCandidate[] = []
+export function rewindCandidates(events: readonly SessionEvent[]): readonly BlueRewindCandidate[] {
+  const candidates: BlueRewindCandidate[] = []
   let turn = 0
   let turnStartSeq = 0
   for (let index = 0; index < events.length; index += 1) {
@@ -74,20 +59,20 @@ export function rewindCandidates(events: readonly SessionEvent[]): readonly Rewi
       .find(text => text.length > 0)
     const previous = candidates.at(-1)
     if (previous?.boundarySeq === turnStartSeq) {
-      candidates[candidates.length - 1] = {
+      candidates[candidates.length - 1] = Object.freeze({
         ...previous,
         prompt: `${previous.prompt} · ${messagePreview(message) || '(empty prompt)'}`,
         ...(response === undefined ? {} : { response }),
-      }
+      })
       continue
     }
-    candidates.push({
+    candidates.push(Object.freeze({
       turn,
       boundarySeq: turnStartSeq,
       prompt: messagePreview(message) || '(empty prompt)',
       ...(response === undefined ? {} : { response }),
       time: event.time,
-    })
+    }))
   }
-  return candidates.reverse()
+  return Object.freeze(candidates.reverse())
 }

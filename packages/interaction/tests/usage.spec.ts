@@ -13,7 +13,6 @@ import { MessageId, type AssistantMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   CONTEXT_BAR_WIDTH,
-  foldTokenBuckets,
   formatTokens,
   ratioSeverity,
   readCompositionFacts,
@@ -24,6 +23,10 @@ import {
   usagePercent,
   usageRatio,
 } from '../src/usage.ts'
+import {
+  foldSessionTokenBuckets as foldTokenBuckets,
+  sessionDetails,
+} from '../../app/src/session-details.ts'
 
 let messageSeq = 0
 
@@ -81,6 +84,14 @@ async function sessionOver(events: readonly SessionEvent[]): Promise<{ ctx: Cont
     session.append(event.type, event.data, event.type === 'assistant/message' ? { surfaceOp: 'append' } : undefined)
   }
   const agent = { id: session.id, session, status: 'idle' } as unknown as Agent
+  ctx.provide('blueSessionActions', {
+    sessionDetails: () => {
+      const projections = ctx.get('sessionProjections') as unknown as {
+        snapshot(session: unknown): { values: Readonly<Record<string, unknown>> }
+      } | undefined
+      return sessionDetails(agent, undefined, projections?.snapshot(session).values)
+    },
+  } as never)
   return { ctx, session, agent }
 }
 
@@ -282,5 +293,15 @@ describe('readTurnCounts', () => {
     const { ctx, agent } = await sessionOver([a, b, c, d])
     ctx.provide('sessionProjections', { snapshot: () => ({ values: {} }) })
     expect(readTurnCounts(ctx, agent)).toEqual({ turns: 1, steps: 1 })
+  })
+
+  it('returns zeroed facts when no current session details exist', () => {
+    const ctx = new Context()
+    ctx.provide('blueSessionActions', { sessionDetails: () => undefined } as never)
+    expect(readUsageFacts(ctx)).toEqual({
+      buckets: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 },
+      context: {},
+    })
+    expect(readTurnCounts(ctx)).toEqual({ turns: 0, steps: 0 })
   })
 })

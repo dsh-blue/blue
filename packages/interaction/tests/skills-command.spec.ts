@@ -5,7 +5,7 @@
  * service, its Escape close, and the no-session / empty-catalog guards.
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SkillSummary } from '@deepseek-ai/dsh-skill'
@@ -13,15 +13,8 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import * as commandsPlugin from '../src/commands-plugin.ts'
 import type { InfoPanel } from '../src/info-panel.ts'
-import { clearSharedEditor } from '../src/editor-instance.ts'
-import { __setCatalogForTest } from '../src/skills-catalog.ts'
 import { buildSkillsSections } from '../src/skills-command.ts'
 import { fakeBlueContext, type FakeScreen } from './fakes.ts'
-
-afterEach(() => {
-  clearSharedEditor()
-  __setCatalogForTest(undefined)
-})
 
 /** One summary double. */
 function skill(name: string, options: {
@@ -85,21 +78,22 @@ async function mount(options: {
   display?: boolean
   skills?: readonly SkillSummary[]
 } = {}): Promise<{ ctx: Context, screen: FakeScreen | undefined, agent: Agent }> {
-  const base = options.display === false ? { ctx: new Context() } : fakeBlueContext()
+  const base = fakeBlueContext({ display: options.display })
   const { ctx } = base
-  const screen = 'screen' in base ? base.screen : undefined
+  const screen = base.screen
   await ctx.plugin(SessionStore)
   await ctx.plugin(CommandRuntime)
   const session = ctx.sessions.create(SessionId('skills-spec'))
   const agent = { id: session.id, session, status: 'idle' } as unknown as Agent
   if (options.withAgent !== false) {
-    ctx.provide('blueSession', { current: agent, modelRef: undefined })
+    ctx.provide('testSession', { current: agent, modelRef: undefined })
   }
   if (options.skills !== undefined) {
     ctx.provide('skills', {
       snapshot: () => Promise.resolve({ skills: options.skills!, complete: true }),
     })
   }
+  ctx.emit('test/session-changed', agent)
   await ctx.plugin(commandsPlugin)
   return { ctx, screen, agent }
 }

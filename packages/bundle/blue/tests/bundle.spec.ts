@@ -53,13 +53,10 @@ describe('blue bundle', () => {
     await ctx.fiber.dispose()
   })
 
-  it('inserts every Blue row the bundle ships, with the intent and paste rows in the enhancement segment', () => {
-    // The baseline segment: core, theme, banner (before the transcript so
-    // the same-round activation keeps it the first scroll child), transcript,
-    // and the baseline footer entry. The enhancement rows mount order:
-    // editor-plus first, the input-side attachment store + paste layer next,
-    // then the footer entries, then the three intent rows, then the panes, then
-    // the assembly segment.
+  it('inserts every Blue row with the projection-backed transcript in the baseline segment', () => {
+    // The eight-row baseline ends with the conversation producer/consumer.
+    // Enhancements then add editor/attachment, status, pane, and public-view
+    // contributions before the four-row assembly closes the tree.
     const ids = [...patch.matchAll(/^\s*- id: (blue-[\w-]+)$/gm)].map(match => match[1]!)
     expect(ids).toEqual([
       'blue-agent-presets',
@@ -70,6 +67,8 @@ describe('blue bundle', () => {
       'blue-banner',
       'blue-transcript',
       'blue-status-basic',
+      'blue-conversation',
+      'blue-transcript-official',
       'blue-editor-plus',
       'blue-attachments',
       'blue-paste-image',
@@ -78,11 +77,6 @@ describe('blue bundle', () => {
       'blue-status-title',
       'blue-status-mode',
       'blue-status-context',
-      'blue-conversation',
-      'blue-transcript-official',
-      'blue-intent-diff',
-      'blue-intent-terminal',
-      'blue-intent-cordis',
       'blue-pane-activity',
       'blue-pane-queue',
       'blue-pane-todo',
@@ -94,10 +88,10 @@ describe('blue bundle', () => {
       'blue-startup',
       'blue-app',
     ])
-    // The S7/S8 rows resolve to their package subpath names.
-    expect(patch).toContain("name: '@dsh-blue/blue-transcript/intent-diff'")
-    expect(patch).toContain("name: '@dsh-blue/blue-transcript/intent-terminal'")
-    expect(patch).toContain("name: '@dsh-blue/blue-transcript/intent-cordis'")
+    // Legacy intent rows are deliberately absent; tool presentation is model-owned.
+    expect(patch).not.toContain("name: '@dsh-blue/blue-transcript/intent-diff'")
+    expect(patch).not.toContain("name: '@dsh-blue/blue-transcript/intent-terminal'")
+    expect(patch).not.toContain("name: '@dsh-blue/blue-transcript/intent-cordis'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/attachments'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/paste-image'")
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/banner'")

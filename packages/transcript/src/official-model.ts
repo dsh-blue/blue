@@ -1,14 +1,15 @@
 /**
  * Narrow interaction adapter from the official `blueConversation` session
- * projection to Blue's renderer-neutral transcript model. It retains only the
- * current opaque session handle and never folds Harness events.
+ * projection to Blue's renderer-neutral transcript model. It reads only the
+ * app-owned current-session projection façade and never folds Harness events.
  *
  * @module @dsh-blue/blue-transcript/official-model
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type { BlueSessionSnapshot } from '@dsh-blue/blue-api'
+import type { BlueSessionProjectionReader } from '@dsh-blue/blue-app'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type {} from '@deepseek-ai/dsh-session-projection'
 import type { ToolResult } from '@deepseek-ai/dsh-tools'
 import {
   conversationProjectionSchema,
@@ -17,21 +18,14 @@ import {
   type ConversationToolEntry,
 } from '@dsh-blue/blue-conversation'
 import type { TranscriptEntryModel, TranscriptModel } from '@dsh-blue/blue-frontend'
-import type {} from '@dsh-blue/blue-app'
 import { createToolPresentationModel } from './tool-model.ts'
 import { createTranscriptModel } from './transcript-model.ts'
 import { parseToolArguments, resolveCallView, resolveResultView, type ToolPresentationSource } from './present.ts'
 
 /** Official projection read face consumed by this compatibility adapter. */
 export interface ConversationProjectionSource {
-  snapshot(session: unknown): { readonly asOfSeq: number; readonly values: Readonly<Record<string, unknown>> }
-  onChanged(listener: (session: unknown, key: string, value: unknown, seq: number) => void): () => void
-}
-
-/** Structural current-session binding; the Agent object never crosses this file. */
-export interface ConversationSessionBinding {
-  readonly id: string
-  readonly session: unknown
+  current(key: string): { readonly asOfSeq: number, readonly value: unknown } | undefined
+  subscribe(listener: (key: string, value: unknown, seq: number) => void): () => void
 }
 
 function toolResult(entry: ConversationToolEntry): ToolResult | undefined {
@@ -129,7 +123,7 @@ export function conversationTranscriptModel(
 /** Projection-to-model source scoped to one frontend tree and provider Fiber. */
 export class OfficialConversationModelSource {
   private model: TranscriptModel = createTranscriptModel('official-conversation', [], false)
-  private session: unknown
+  private active = false
   private watermark = -1
   private disposed = false
   private readonly offChanged: () => void
@@ -139,8 +133,8 @@ export class OfficialConversationModelSource {
     private readonly tools: ToolPresentationSource,
     private readonly publish: (model: TranscriptModel) => void,
   ) {
-    this.offChanged = projections.onChanged((session, key, value, seq) => {
-      if (this.disposed || session !== this.session || key !== 'blueConversation' || seq <= this.watermark) return
+    this.offChanged = projections.subscribe((key, value, seq) => {
+      if (this.disposed || !this.active || key !== 'blueConversation' || seq <= this.watermark) return
       const parsed = conversationProjectionSchema.safeParse(value)
       if (!parsed.success) return
       this.watermark = seq
@@ -154,18 +148,18 @@ export class OfficialConversationModelSource {
     return this.model
   }
 
-  /** Attach to a new opaque session snapshot, clearing stale content first. */
-  attach(binding: ConversationSessionBinding | undefined): void {
-    this.session = binding?.session
+  /** Attach to the app's current session, clearing stale content first. */
+  attach(active: boolean): void {
+    this.active = active
     this.watermark = -1
-    if (binding === undefined) {
+    if (!active) {
       this.model = createTranscriptModel('official-conversation', [], false)
       this.publish(this.model)
       return
     }
-    const snapshot = this.projections.snapshot(binding.session)
-    const parsed = conversationProjectionSchema.safeParse(snapshot.values.blueConversation)
-    this.watermark = snapshot.asOfSeq
+    const snapshot = this.projections.current('blueConversation')
+    const parsed = conversationProjectionSchema.safeParse(snapshot?.value)
+    this.watermark = snapshot?.asOfSeq ?? -1
     this.model = parsed.success
       ? conversationTranscriptModel(parsed.data, this.tools)
       : createTranscriptModel('official-conversation', [], false)
@@ -177,7 +171,7 @@ export class OfficialConversationModelSource {
     if (this.disposed) return
     this.disposed = true
     this.offChanged()
-    this.session = undefined
+    this.active = false
     this.model = createTranscriptModel('official-conversation', [], false)
   }
 }
@@ -186,24 +180,22 @@ export class OfficialConversationModelSource {
 export const name = 'blue-transcript-official'
 
 /** Official projection/model services and current frontend binding. */
-export const inject = ['blueConversationProjection', 'sessionProjections', 'blueTranscriptModels', 'blueSession', 'tools']
-
-function bindingOf(value: unknown): ConversationSessionBinding | undefined {
-  if (value === null || typeof value !== 'object') return undefined
-  const row = value as { readonly id?: unknown, readonly session?: unknown }
-  if (typeof row.id !== 'string' || row.session === undefined) return undefined
-  return { id: row.id, session: row.session }
-}
+export const inject = ['blueConversationProjection', 'blueSessionProjections', 'blueSessionReader', 'blueTranscriptModels', 'tools']
 
 /** Mount the official projection consumer and bind it to session switches. */
 export function apply(ctx: Context): void {
   const source = new OfficialConversationModelSource(
-    ctx.sessionProjections as unknown as ConversationProjectionSource,
+    ctx.blueSessionProjections as BlueSessionProjectionReader,
     ctx.tools,
     () => ctx.blueTranscriptModels.refresh('official-conversation'),
   )
   ctx.effect(() => () => source.dispose())
   ctx.effect(() => ctx.blueTranscriptModels.register(() => source.snapshot()))
-  ctx.on('blue/session-changed', agent => source.attach(bindingOf(agent)))
-  source.attach(bindingOf(ctx.blueSession.current))
+  let sessionId: string | undefined
+  const registration = ctx.blueSessionReader.subscribe((session: BlueSessionSnapshot | null) => {
+    if (session?.id === sessionId) return
+    sessionId = session?.id
+    source.attach(session !== null)
+  })
+  ctx.effect(() => () => registration.dispose())
 }

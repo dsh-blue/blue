@@ -9,9 +9,9 @@
  * kimi cadences) refreshed lazily inside `render` — Blue's redraws are
  * event-driven, so a branch switch lands on the next redraw of any kind
  * (typing, streaming, the tips ticker's 10 s beat) rather than on a watcher.
- * The working directory comes from the current session's durable header
- * (`header.cwd`), falling back to `process.cwd()`, and a session switch
- * rebuilds the cache for the new cwd. Outside a git repository (or on any
+ * The working directory comes from the app-owned current-session snapshot,
+ * falling back to `process.cwd()`, and a session switch rebuilds the cache
+ * for the new cwd. Outside a git repository (or on any
  * probe failure) the entry renders '' and occupies nothing. The git
  * invocation and the clock are module-level replaceable so tests inject
  * fakes (the `editor-plus` runner precedent).
@@ -22,15 +22,13 @@
 import { spawnSync } from 'node:child_process'
 import type { Context } from '@deepseek-ai/cordis'
 import type { StatusModel } from '@dsh-blue/blue-frontend'
-// Empty type import carries the app-owned `blueSession` Context merge and the
-// `'blue/session-changed'` Events merge this plugin consumes.
-import type {} from '@dsh-blue/blue-app'
+import type { SessionFactsService } from './session-facts.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-status-git'
 
 /** Services required before the git entry can register. */
-export const inject = ['blueStatusModels']
+export const inject = ['blueStatusModels', 'blueSessionFacts']
 
 /** Branch probe cadence in milliseconds. */
 export const BRANCH_TTL_MS = 5_000
@@ -240,20 +238,24 @@ export function formatGitBadge(status: GitBadgeStatus): string {
 
 /**
  * Register the git entry. Builds the cache for the current session's cwd on
- * load and rebuilds it on every `'blue/session-changed'`; the badge itself
+ * load and rebuilds it on session snapshot changes; the badge itself
  * re-reads the cache (refreshing whatever expired) each time the shell lays
  * the entry out.
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
-  let cache = createGitBadgeCache(
-    ctx.get('blueSession')?.current?.session.header.cwd ?? process.cwd(),
-  )
+  const facts = ctx.get('blueSessionFacts') as SessionFactsService
+  let cwd = facts.currentSession?.cwd ?? process.cwd()
+  let cache = createGitBadgeCache(cwd)
 
-  ctx.on('blue/session-changed', (agent) => {
-    cache = createGitBadgeCache(agent.session.header.cwd ?? process.cwd())
+  const offSession = facts.subscribeSession((session) => {
+    const next = session?.cwd ?? process.cwd()
+    if (next === cwd) return
+    cwd = next
+    cache = createGitBadgeCache(cwd)
     ctx.blueStatusModels.refresh('blue.status.git')
   })
+  ctx.effect(() => () => offSession())
 
   const model = (): StatusModel => {
     const status = cache.getStatus()

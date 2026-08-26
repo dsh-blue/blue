@@ -114,7 +114,7 @@ interface EndpointDraft {
  * @param build - constructs the panel with `done` wired into its callbacks.
  * @returns the step's value, or `undefined` when cancelled.
  */
-function step<T>(build: (done: (value: T | undefined) => void) => BlueFocusable): Promise<T | undefined> {
+function step<T>(ctx: Context, build: (done: (value: T | undefined) => void) => BlueFocusable): Promise<T | undefined> {
   return new Promise(resolve => {
     /* v8 ignore next -- the placeholder only runs if a panel settles
        before its mount returns, which the building order forbids */
@@ -124,7 +124,7 @@ function step<T>(build: (done: (value: T | undefined) => void) => BlueFocusable)
       resolve(value)
     }
     const panel = build(done)
-    restore = mountEditorReplacement(panel)
+    restore = mountEditorReplacement(ctx, panel)
   })
 }
 
@@ -135,8 +135,8 @@ interface Choice {
 }
 
 /** Mount a single-choice list step and await its value. */
-function choose(display: ProviderAddDisplay, title: string, items: readonly Choice[]): Promise<string | undefined> {
-  return step<string>(done => new SelectListPanel({
+function choose(ctx: Context, display: ProviderAddDisplay, title: string, items: readonly Choice[]): Promise<string | undefined> {
+  return step<string>(ctx, done => new SelectListPanel({
     keymap: display.keymap,
     theme: display.theme,
     components: display.components,
@@ -150,10 +150,11 @@ function choose(display: ProviderAddDisplay, title: string, items: readonly Choi
 
 /** Mount a form step and await its values. */
 function fillForm(
+  ctx: Context,
   display: ProviderAddDisplay,
   options: { title: string, subtitle: string, fields: readonly FormField[] },
 ): Promise<Record<string, string> | undefined> {
-  return step<Record<string, string>>(done => new FormPanel({
+  return step<Record<string, string>>(ctx, done => new FormPanel({
     keymap: display.keymap,
     theme: display.theme,
     components: display.components,
@@ -259,6 +260,7 @@ type CollectedModels =
   | { error: string }
 
 async function collectModels(
+  ctx: Context,
   display: ProviderAddDisplay,
   llm: DiscoveryLlm,
   ns: string,
@@ -289,7 +291,7 @@ async function collectModels(
   if (found !== undefined) {
     {
       const catalog = found.models
-      const adopted = await step<string[]>(done => new BlueSelect({
+      const adopted = await step<string[]>(ctx, done => new BlueSelect({
         keymap: display.keymap,
         theme: display.theme,
         components: display.components,
@@ -356,11 +358,12 @@ function applyCatalogMatch(
  * thinking-effort set, both skippable with two Enters.
  */
 async function fillModelDefaults(
+  ctx: Context,
   display: ProviderAddDisplay,
   models: NonNullable<EndpointDraft['models']>,
   catalogReached: boolean,
 ): Promise<NonNullable<EndpointDraft['models']> | undefined> {
-  const defaults = await fillForm(display, {
+  const defaults = await fillForm(ctx, display, {
     title: 'Model defaults',
     subtitle: catalogReached
       ? 'models.dev did not describe every model — fill the gap or press enter to skip'
@@ -482,7 +485,7 @@ export async function runProviderEdit(ctx: Context, display: ProviderAddDisplay,
     }],
     { id: 'key', label: 'API key', mask: true, hint: 'empty keeps the stored key' },
   ]
-  const outcome = await step<EditOutcome>(done => new FormPanel({
+  const outcome = await step<EditOutcome>(ctx, done => new FormPanel({
     keymap: display.keymap,
     theme: display.theme,
     components: display.components,
@@ -495,7 +498,7 @@ export async function runProviderEdit(ctx: Context, display: ProviderAddDisplay,
   }))
   if (outcome === undefined || 'cancelled' in outcome) return 'provider edit cancelled'
   if ('delete' in outcome) {
-    const confirm = await fillForm(display, {
+    const confirm = await fillForm(ctx, display, {
       title: `Delete ${route}`,
       subtitle: 'type y to remove the provider and its stored key',
       fields: [
@@ -594,7 +597,7 @@ export async function runProviderAdd(
   const ns = settingsNamespace('llm-pi-ai')
 
   // Step 1: the source branch.
-  const source = await choose(display, 'Add provider', [
+  const source = await choose(ctx, display, 'Add provider', [
     { value: 'known', label: 'Known provider (anthropic, openai, …)' },
     { value: 'custom', label: 'Custom endpoint (own baseURL and key)' },
   ])
@@ -609,10 +612,10 @@ export async function runProviderAdd(
     if (vendors.length === 0) {
       return 'every catalog vendor is already active — switch with /provider switch'
     }
-    const route = await choose(display, 'Known provider', vendors)
+    const route = await choose(ctx, display, 'Known provider', vendors)
     if (route === undefined) return 'add provider cancelled'
     const ref = deriveKeyRef(route)
-    const values = await fillForm(display, {
+    const values = await fillForm(ctx, display, {
       title: `Configure ${route}`,
       subtitle: `the vendor default endpoint will be used; the key is stored under ${ref}`,
       fields: [
@@ -628,7 +631,7 @@ export async function runProviderAdd(
       models: undefined,
     }
   } else {
-    const protocol = await choose(display, 'Endpoint protocol',
+    const protocol = await choose(ctx, display, 'Endpoint protocol',
       ENDPOINT_PROTOCOLS.map(value => ({ value, label: value })))
     if (protocol === undefined) return 'add provider cancelled'
     // The form loops: a failed listing re-opens the same panel with the
@@ -665,7 +668,7 @@ export async function runProviderAdd(
       onSubmit: values => settle?.(values),
       onCancel: () => settle?.(undefined),
     })
-    let restore = mountEditorReplacement(panel)
+    let restore = mountEditorReplacement(ctx, panel)
     let declared: Record<string, string> | undefined
     let collected: Extract<CollectedModels, { models: unknown }> | undefined
     for (;;) {
@@ -678,7 +681,7 @@ export async function runProviderAdd(
       }
       /* v8 ignore next 2 -- both fields are required, the fallbacks are
          exactOptionalPropertyTypes artifacts */
-      const outcome = await collectModels(display, llm, ns, protocol, values.baseURL ?? '', values.key ?? '')
+      const outcome = await collectModels(ctx, display, llm, ns, protocol, values.baseURL ?? '', values.key ?? '')
       if (outcome === undefined) {
         restore()
         return 'add provider cancelled'
@@ -700,7 +703,7 @@ export async function runProviderAdd(
     // Match the ids against the models.dev catalog first (the kimi flow):
     // well-known models get their context window and effort set without
     // asking, and a fully-matched set skips the defaults form entirely.
-    const index = await loadModelsDevIndex()
+    const index = await loadModelsDevIndex(ctx)
     const enriched = collected.models.map(model => {
       const match = index?.lookup(model.id)
       return match === undefined ? model : applyCatalogMatch(model, match)
@@ -709,7 +712,7 @@ export async function runProviderAdd(
       model.contextWindow !== undefined && model.reasoningEfforts !== undefined)
     const models = described
       ? enriched
-      : await fillModelDefaults(display, enriched, index !== undefined)
+      : await fillModelDefaults(ctx, display, enriched, index !== undefined)
     if (models === undefined) return 'add provider cancelled'
     /* v8 ignore next -- same required-field artifacts */
     draft = { route: declared.route ?? '', protocol, baseURL, key: declared.key ?? '', models }

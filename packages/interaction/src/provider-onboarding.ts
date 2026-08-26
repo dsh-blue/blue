@@ -38,10 +38,6 @@ interface Settings {
   get(ns: object): unknown
 }
 
-interface ProviderSession {
-  current: unknown | null
-}
-
 /** Read credential references advertised by active provider profiles. */
 function credentialRefs(ctx: Context): string[] {
   const refs = new Set<string>([DEEPSEEK_KEY])
@@ -101,7 +97,7 @@ function mountOnboarding(
           await credentials.set(credentialRef(DEEPSEEK_KEY), values.key ?? '')
           if (isUnloaded()) return
           restore()
-          getSharedEditor()?.notice?.('DeepSeek API key saved')
+          getSharedEditor(ctx)?.notice?.('DeepSeek API key saved')
         } catch (error) {
           if (isUnloaded()) return
           panel.setError(error instanceof Error ? error.message : String(error))
@@ -112,10 +108,10 @@ function mountOnboarding(
     },
     onCancel: () => {
       restore()
-      getSharedEditor()?.notice?.('Provider setup skipped — use /provider add to configure a provider')
+      getSharedEditor(ctx)?.notice?.('Provider setup skipped — use /provider add to configure a provider')
     },
   })
-  restore = mountEditorReplacement(panel)
+  restore = mountEditorReplacement(ctx, panel)
   ctx.effect(() => restore)
   return restore
 }
@@ -133,9 +129,8 @@ export function apply(ctx: Context): void {
     if (unloaded || attempted || checking) return
     await ctx.get('loader')?.await()
     if (unloaded || attempted || checking) return
-    const session = ctx.get('blueSession') as ProviderSession | undefined
     const credentials = ctx.get('credentials') as Credentials | undefined
-    if (session === undefined || session.current === null || credentials === undefined) return
+    if (ctx.blueSessionReader.current() === null || credentials === undefined) return
     checking = true
     try {
       const configured = await hasConfiguredCredential(ctx, credentials)
@@ -147,9 +142,10 @@ export function apply(ctx: Context): void {
     }
   }
 
-  ctx.on('blue/session-changed', () => {
+  const registration = ctx.blueSessionReader.subscribe(() => {
     queueMicrotask(() => { void check() })
   })
+  ctx.effect(() => () => registration.dispose())
   queueMicrotask(() => { void check() })
 }
 

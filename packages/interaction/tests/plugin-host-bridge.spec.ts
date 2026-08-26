@@ -10,7 +10,7 @@ import { BluePluginHostService } from '../../api/src/host.ts'
 import type { BluePluginManifest } from '../../api/src/manifest.ts'
 import type { BlueSemanticColors } from '@dsh-blue/blue-core'
 import type { CommandDefinition, CommandInvocation } from '@deepseek-ai/dsh-commands'
-import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
+import { clearSharedEditor, EditorHostService, setSharedEditor } from '../src/editor-instance.ts'
 import { apply } from '../src/plugin-host-bridge.ts'
 
 const colors = new Proxy({}, { get: (_target, role: string) => (text: string) => `<${role}>${text}</${role}>` }) as BlueSemanticColors
@@ -28,11 +28,14 @@ function consumer() {
 
 describe('plugin host interaction bridge', () => {
   it('protects owner commands, executes plugin commands, publishes notices, and unloads cleanly', async () => {
-    const host = new BluePluginHostService(new Context())
+    const root = new Context()
+    const host = new BluePluginHostService(root)
+    const editorHost = new EditorHostService(root)
     const definitions = new Map<string, CommandDefinition>([['trace', { name: 'trace', description: 'owner', handler: () => ({ kind: 'success' }) }]])
     const effects: (() => void)[] = []
     const ctx = {
       bluePluginHost: host,
+      blueEditorHost: editorHost,
       blueTheme: { colors },
       commands: {
         register(definition: CommandDefinition): () => void {
@@ -80,10 +83,10 @@ describe('plugin host interaction bridge', () => {
     await expect(definitions.get('odd')!.handler(invocation)).resolves.toEqual({ kind: 'error', text: 'plugin command failed: bad' })
 
     const notices: string[] = []
-    setSharedEditor({ notice: text => notices.push(text) } as never)
+    setSharedEditor(ctx, { notice: text => notices.push(text) } as never)
     expect(opened.value.notifications!.publish({ id: 'ready', tone: 'success', view: { kind: 'text', content: 'ready' } })).toEqual({ ok: true, value: undefined })
     expect(notices).toEqual(['<success>ready</success>'])
-    clearSharedEditor()
+    clearSharedEditor(ctx)
     expect(opened.value.notifications!.publish({ id: 'quiet', view: { kind: 'text', content: 'no editor' } })).toEqual({ ok: true, value: undefined })
 
     for (const cleanup of effects.splice(0)) cleanup()

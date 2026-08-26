@@ -15,10 +15,12 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import type SessionQueryEngine from '@deepseek-ai/dsh-session-query'
 import * as commandsPlugin from '../src/commands-plugin.ts'
-import { canonicalOf } from '../src/command-meta.ts'
-import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
+import { rewindCandidates } from '../../app/src/rewind.ts'
+import { clearSharedEditor, EditorHostService, setSharedEditor } from '../src/editor-instance.ts'
 import type {} from '@dsh-blue/blue-app'
 import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeScreen } from './fakes.ts'
+import { InteractionStateService } from '../src/runtime-state.ts'
+import { DEFAULT_SETTINGS } from '../src/settings.ts'
 
 /** The structural slice of `sessionQuery` the `/sessions` titles read. */
 interface TitleQueryFake {
@@ -50,7 +52,7 @@ async function mount(options: {
   if (options.appExit !== undefined) ctx.provide('appExit', options.appExit)
   const session = ctx.sessions.create(SessionId('commands-spec'))
   const agent = { id: session.id, session, status: options.agentStatus ?? 'idle' } as unknown as Agent
-  if (options.attach !== false) ctx.provide('blueSession', { current: agent, modelRef: undefined })
+  if (options.attach !== false) ctx.provide('testSession', { current: agent, modelRef: undefined })
   if (options.persistence !== undefined) {
     ctx.provide('sessionPersistence', options.persistence as unknown as SessionPersistence)
   }
@@ -62,6 +64,46 @@ async function mount(options: {
 }
 
 const signal = (): AbortSignal => new AbortController().signal
+
+/** Provide the app-owned seams without mounting any Blue renderer services. */
+function provideAppBoundary(ctx: Context): void {
+  const active = (): Agent | null => ctx.get('testSession')?.current ?? null
+  ctx.provide('blueSessionReader', {
+    current: () => {
+      const agent = active()
+      return agent === null ? null : {
+        id: String(agent.id),
+        cwd: agent.session.header.cwd ?? process.cwd(),
+        status: agent.status === 'running' ? 'running' : 'idle',
+        mode: 'normal',
+      }
+    },
+    subscribe: () => ({ disposed: false, dispose() {} }),
+    request: async () => ({ ok: false, code: 'BLUE_SESSION_UNAVAILABLE', message: 'not used' }),
+  })
+  ctx.provide('blueSessionActions', {
+    commands: () => {
+      const agent = active()
+      return agent === null ? [] : ctx.commands.list(agent)
+    },
+    rewindCandidates: () => {
+      const agent = active()
+      return agent === null ? [] : rewindCandidates(agent.session.events)
+    },
+  } as never)
+  ctx.provide('blueSessionProjections', {
+    current: () => undefined,
+    currentMany: () => undefined,
+    subscribe: () => () => {},
+    children: () => [],
+    subscribeChildren: () => () => {},
+  })
+  ctx.provide('blueSkillsCatalog', {
+    userInvocable: () => [],
+    refresh: () => Promise.resolve(),
+    setForTest: () => {},
+  } as never)
+}
 
 /** The cwd the picker scopes to: the test runner's own directory. */
 const HERE = process.cwd()
@@ -127,9 +169,9 @@ describe('blue-commands plugin', () => {
     // The alias relation lives in the Blue-side metadata registry, and only
     // `/quit` is a real registration: the input layer rewrites an alias line
     // before dispatch, so the harness registry stays canonical-only.
-    expect(canonicalOf('q')).toBe('quit')
-    expect(canonicalOf('exit')).toBe('quit')
-    expect(canonicalOf('quit')).toBeUndefined()
+    expect(ctx.blueInteractionState.aliases.canonicalOf('q')).toBe('quit')
+    expect(ctx.blueInteractionState.aliases.canonicalOf('exit')).toBe('quit')
+    expect(ctx.blueInteractionState.aliases.canonicalOf('quit')).toBeUndefined()
     expect(ctx.commands.find(agent, 'q')).toBeUndefined()
     expect(ctx.commands.find(agent, 'exit')).toBeUndefined()
     expect(await ctx.commands.execute(agent, '/q', [], signal())).toBeUndefined()
@@ -156,7 +198,7 @@ describe('blue-commands plugin', () => {
     expect(execution?.result).toEqual({ kind: 'success' })
     expect(onResume).not.toHaveBeenCalled()
     // The alias rewrites to /sessions with the id argument intact.
-    expect(canonicalOf('resume')).toBe('sessions')
+    expect(ctx.blueInteractionState.aliases.canonicalOf('resume')).toBe('sessions')
   })
 
   it('/new emits blue/request-new', async () => {
@@ -173,7 +215,7 @@ describe('blue-commands plugin', () => {
     // The S27 alias relation: the input layer rewrites `/clear` to `/new`
     // before dispatch (kimi's one-command-two-names rule), so the harness
     // registry stays canonical-only and the session log records /new.
-    expect(canonicalOf('clear')).toBe('new')
+    expect(ctx.blueInteractionState.aliases.canonicalOf('clear')).toBe('new')
     expect(ctx.commands.find(agent, 'clear')).toBeUndefined()
     expect(await ctx.commands.execute(agent, '/clear', [], signal())).toBeUndefined()
     const onNew = vi.fn()
@@ -229,7 +271,7 @@ describe('blue-commands plugin', () => {
       },
     }, { surfaceOp: 'append' })
     agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-    setSharedEditor({ editor: components.createEditor(), submitPrompt: () => {}, notice })
+    setSharedEditor(ctx, { editor: components.createEditor(), submitPrompt: () => {}, notice })
     try {
       const onRewind = vi.fn()
       ctx.on('blue/request-rewind', onRewind)
@@ -244,7 +286,7 @@ describe('blue-commands plugin', () => {
       expect(onRewind).toHaveBeenCalledWith(String(agent.id), 0)
       expect(notice).toHaveBeenCalledWith('creating rewind branch...')
     } finally {
-      clearSharedEditor()
+      clearSharedEditor(ctx)
     }
   })
 
@@ -545,7 +587,7 @@ describe('blue-commands plugin', () => {
     const { ctx, screen, components, agent } = await mount({
       persistence: { list: () => Promise.resolve([header('s-other', 2_000, HERE), header(String(agent.id), 3_000, HERE)]) },
     })
-    setSharedEditor({ editor: components.createEditor(), submitPrompt: () => {}, notice })
+    setSharedEditor(ctx, { editor: components.createEditor(), submitPrompt: () => {}, notice })
     try {
       const onResume = vi.fn()
       ctx.on('blue/request-resume', onResume)
@@ -556,7 +598,7 @@ describe('blue-commands plugin', () => {
       expect(onResume).toHaveBeenCalledWith('s-other')
       expect(notice).toHaveBeenCalledWith('resuming session s-other')
     } finally {
-      clearSharedEditor()
+      clearSharedEditor(ctx)
     }
   })
 
@@ -565,7 +607,7 @@ describe('blue-commands plugin', () => {
     const { ctx, screen, components, agent } = await mount({
       persistence: { list: () => Promise.resolve([header(String(agent.id), 3_000, HERE)]) },
     })
-    setSharedEditor({ editor: components.createEditor(), submitPrompt: () => {}, notice })
+    setSharedEditor(ctx, { editor: components.createEditor(), submitPrompt: () => {}, notice })
     try {
       const onResume = vi.fn()
       ctx.on('blue/request-resume', onResume)
@@ -575,7 +617,7 @@ describe('blue-commands plugin', () => {
       expect(onResume).not.toHaveBeenCalled()
       expect(notice).toHaveBeenCalledWith('!already the current session!')
     } finally {
-      clearSharedEditor()
+      clearSharedEditor(ctx)
     }
   })
 
@@ -615,6 +657,8 @@ describe('blue-commands plugin', () => {
   it('/sessions errors when the Blue display services are not mounted', async () => {
     // A bare context without the Blue services: persistence alone is present.
     const ctx = new Context()
+    new InteractionStateService(ctx, DEFAULT_SETTINGS)
+    new EditorHostService(ctx)
     await ctx.plugin(SessionStore)
     await ctx.plugin(CommandRuntime)
     ctx.provide('sessionPersistence', {
@@ -622,6 +666,7 @@ describe('blue-commands plugin', () => {
     } as unknown as SessionPersistence)
     const session = ctx.sessions.create(SessionId('commands-bare'))
     const agent = { id: session.id, session } as unknown as Agent
+    provideAppBoundary(ctx)
     await ctx.plugin(commandsPlugin)
     const execution = await ctx.commands.execute(agent, '/sessions', [], signal())
     expect(execution?.result).toEqual({
@@ -629,7 +674,7 @@ describe('blue-commands plugin', () => {
       text: 'session picker is unavailable: the Blue screen is not mounted',
     })
     ;(agent as unknown as { status: string }).status = 'idle'
-    ctx.provide('blueSession', { current: agent, modelRef: undefined })
+    ctx.provide('testSession', { current: agent, modelRef: undefined })
     session.append('turn/start', { turn: 1 })
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'rewind without a screen' }],
@@ -685,6 +730,14 @@ describe('blue-commands plugin', () => {
     await fiber.dispose()
   })
 
+  it('/help renders an empty description for a fallback command without one', async () => {
+    const { ctx, screen, agent } = await mount()
+    ;(ctx.blueSessionActions as unknown as { commands: () => readonly { name: string }[] }).commands
+      = () => [{ name: 'bare' }]
+    await ctx.commands.execute(agent, '/help', [], signal())
+    expect(screen.overlays[0]?.component.render(80).some(row => row.includes('/bare'))).toBe(true)
+  })
+
   it('/help falls back to the action id when a binding has no description', async () => {
     const { ctx, screen, agent } = await mount()
     const keymap = ctx.get('blueKeymap')
@@ -730,10 +783,12 @@ describe('blue-commands plugin', () => {
 
   it('/help errors when the Blue display services are not mounted', async () => {
     const ctx = new Context()
+    new InteractionStateService(ctx, DEFAULT_SETTINGS)
     await ctx.plugin(SessionStore)
     await ctx.plugin(CommandRuntime)
     const session = ctx.sessions.create(SessionId('commands-bare-help'))
     const agent = { id: session.id, session } as unknown as Agent
+    provideAppBoundary(ctx)
     await ctx.plugin(commandsPlugin)
     const execution = await ctx.commands.execute(agent, '/help', [], signal())
     expect(execution?.result).toEqual({
@@ -754,7 +809,7 @@ describe('blue-commands plugin', () => {
     }
     // The alias metadata follows the fiber: the relation is gone too, so a
     // later mount can re-register it without tripping the conflict guard.
-    expect(canonicalOf('q')).toBeUndefined()
-    expect(canonicalOf('exit')).toBeUndefined()
+    expect(ctx.blueInteractionState.aliases.canonicalOf('q')).toBeUndefined()
+    expect(ctx.blueInteractionState.aliases.canonicalOf('exit')).toBeUndefined()
   })
 })

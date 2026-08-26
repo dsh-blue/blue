@@ -24,7 +24,7 @@ import type { BlueTree } from './e2e-boot.ts'
 import { textResponse, toolCallResponse } from './mock-adapter.ts'
 import { cwdNormalizer, VtTerminal } from './vt-terminal.ts'
 import { waitForRender } from '../../../core/tests/fake-terminal.ts'
-import { setStepFoldingEnabled } from '../../../transcript/src/window.ts'
+import { setActivityTimers } from '../../../transcript/src/pane-activity.ts'
 import { setGitCommandRunner } from '../../../transcript/src/status-git.ts'
 import { setClipboardImageReader } from '../../../interaction/src/paste-image.ts'
 import { ADVERSARIAL } from '../../../core/tests/width-scan.ts'
@@ -99,6 +99,7 @@ async function captureGolden(tree: BlueTree, vt: VtTerminal, name: string): Prom
 
 afterEach(async () => {
   await resetBlueModuleState()
+  setActivityTimers(undefined)
   setGitCommandRunner(undefined)
   delete process.env.DSH_BLUE_ATTACHMENT_DIR
 })
@@ -145,7 +146,10 @@ describe('blue VT layout snapshots (R2)', () => {
 
   it('tool cards: collapsed, failed, then ctrl+o expanded', async () => {
     setGitCommandRunner(NO_GIT)
-    setStepFoldingEnabled(false)
+    setActivityTimers({
+      setInterval: () => 0 as unknown as ReturnType<typeof setInterval>,
+      clearInterval: () => {},
+    })
     const vt = new VtTerminal(80, 40)
     const tree = await bootBlue([], {
       script: [
@@ -173,12 +177,12 @@ describe('blue VT layout snapshots (R2)', () => {
     typeLine(tree.terminal, 'run both')
     await agent.whenIdle()
     const collapsed = await captureGolden(tree, vt, 'tool-card-collapsed-80')
-    expect(collapsed).toContain('Used long-output')
+    expect(collapsed).toContain('long-output')
     expect(collapsed).not.toContain('TAILMARKER')
     tree.terminal.sendInput('\x0f')
     await waitForRender()
     const expanded = await captureGolden(tree, vt, 'tool-card-expanded-80')
-    expect(expanded).toContain('Used long-output')
+    expect(expanded).toContain('long-output')
   })
 
   it.each([80, 40])('the footer under full load at %i columns', async (columns) => {

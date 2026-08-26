@@ -20,22 +20,19 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 // Empty type imports carry the `planMode` Context merge (dsh-plan-mode),
 // the `command/run`/`command/done` SessionEventMap members this module's
-// persistence rides, and the app-owned `'blue/session-changed'` Events
-// merge the tracking listeners use.
+// persistence rides, and the app-owned renderer-neutral session services.
 import type {} from '@deepseek-ai/dsh-plan-mode'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@dsh-blue/blue-app'
-import { registerCommandAliases } from './command-meta.ts'
 import { displayServices } from './display-services.ts'
 import { getSharedEditor } from './editor-instance.ts'
-import { currentMode, restoreYolo, setYolo, yoloActive, type BlueMode } from './mode-state.ts'
-import { currentBlueAgent } from './session.ts'
+import type { BlueSessionModeState } from '@dsh-blue/blue-app'
 
 /** The full three-state cycle order (D5). */
+type BlueMode = BlueSessionModeState['mode']
 const CYCLE: Record<BlueMode, BlueMode> = { normal: 'plan', plan: 'yolo', yolo: 'normal' }
 /**
  * The degraded order when dsh-plan-mode is not composed. The `plan` slot
@@ -55,18 +52,15 @@ function describe(error: unknown): string {
  * Turning yolo on leaves plan first — a queued plan exit lands at the next
  * step boundary, and until then yolo is the operative stance.
  * @param ctx - plugin context (`planMode` probed, absent = no exit needed).
- * @param agent - the agent to switch.
  * @param active - whether approvals should auto-allow.
  * @returns the command outcome describing the new stance.
  */
-function applyYolo(ctx: Context, agent: Agent, active: boolean): CommandResult {
-  if (active) {
-    ctx.get('planMode')?.set(agent, false)
-    setYolo(agent, true)
-    return { kind: 'success', text: 'yolo on — tool calls run without asking (questions still pop)' }
-  }
-  setYolo(agent, false)
-  return { kind: 'success', text: 'yolo off — tool calls ask again' }
+function applyYolo(ctx: Context, active: boolean): CommandResult {
+  const result = ctx.blueSessionActions.setYolo(active)
+  if (!result.ok) return { kind: 'error', text: result.message }
+  return active
+    ? { kind: 'success', text: 'yolo on — tool calls run without asking (questions still pop)' }
+    : { kind: 'success', text: 'yolo off — tool calls ask again' }
 }
 
 /**
@@ -79,23 +73,25 @@ function applyYolo(ctx: Context, agent: Agent, active: boolean): CommandResult {
  * on); turning OFF re-dispatches the explicit `/yolo off` so the last
  * record disambiguates.
  * @param ctx - plugin context.
- * @param agent - the dispatching invocation's agent.
  * @param rawInput - the verbatim argument text after the command name.
  * @param signal - the dispatching UI request's cancellation signal.
  * @returns the command outcome.
  */
 async function toggleYolo(
   ctx: Context,
-  agent: Agent,
   rawInput: string,
   signal: AbortSignal,
 ): Promise<CommandResult> {
   const arg = rawInput.trim()
-  if (arg === 'off') return applyYolo(ctx, agent, false)
-  if (arg.length > 0) return applyYolo(ctx, agent, true)
-  if (!yoloActive(agent)) return applyYolo(ctx, agent, true)
-  const execution = await ctx.commands.execute(agent, '/yolo off', [], signal)
-  return execution?.result ?? { kind: 'error', text: 'failed to turn yolo off' }
+  if (arg === 'off') return applyYolo(ctx, false)
+  if (arg.length > 0) return applyYolo(ctx, true)
+  if (ctx.blueSessionActions.modeState()?.mode !== 'yolo') return applyYolo(ctx, true)
+  const execution = await ctx.blueSessionActions.executeCommand('/yolo off', signal)
+  if (execution === undefined) return { kind: 'error', text: 'failed to turn yolo off' }
+  if (execution.result.kind === 'error') return { kind: 'error', text: execution.result.text ?? 'failed to turn yolo off' }
+  return execution.result.text === undefined
+    ? { kind: 'success' }
+    : { kind: 'success', text: execution.result.text }
 }
 
 /**
@@ -106,21 +102,20 @@ async function toggleYolo(
  * @param ctx - plugin context.
  */
 export async function cycleMode(ctx: Context): Promise<void> {
-  const agent = currentBlueAgent(ctx)
-  if (agent === undefined) {
-    getSharedEditor()?.notice?.('no session is live yet')
+  if (ctx.blueSessionReader.current() === null) {
+    getSharedEditor(ctx)?.notice?.('no session is live yet')
     return
   }
-  const current = currentMode(ctx, agent)
-  const next = (ctx.get('planMode') === undefined ? CYCLE_WITHOUT_PLAN : CYCLE)[current]
+  const current = ctx.blueSessionActions.modeState()?.mode ?? 'normal'
+  const next = (ctx.blueSessionActions.planModeAvailable() ? CYCLE : CYCLE_WITHOUT_PLAN)[current]
   const line = next === 'plan' ? '/plan' : next === 'yolo' ? '/yolo on' : '/yolo off'
   try {
-    const execution = await ctx.commands.execute(agent, line, [], new AbortController().signal)
+    const execution = await ctx.blueSessionActions.executeCommand(line)
     if (execution === undefined) return
     const { result } = execution
     if (result.text !== undefined) {
       const paint = result.kind === 'error' ? displayServices(ctx)?.colors.error : undefined
-      getSharedEditor()?.notice?.(paint === undefined ? result.text : paint(result.text))
+      getSharedEditor(ctx)?.notice?.(paint === undefined ? result.text : paint(result.text))
     }
   } catch (error) {
     /* v8 ignore next -- execute() normalizes handler rejections; this
@@ -139,46 +134,6 @@ export async function cycleMode(ctx: Context): Promise<void> {
  * @param ctx - plugin context.
  * @returns the disposer removing both listeners.
  */
-export function setupModeTracking(ctx: Context): () => void {
-  let unloaded = false
-  const stopUnloaded = ctx.effect(() => () => {
-    unloaded = true
-  })
-  const offSessionChanged = ctx.on('blue/session-changed', (agent) => {
-    restoreYolo(agent)
-  })
-  // Late activation: the fiber may mount after a session already attached
-  // (the status-basic discipline).
-  const attached = currentBlueAgent(ctx)
-  if (attached !== undefined) restoreYolo(attached)
-  const offSessionEvent = ctx.on('session/event', (session, event) => {
-    if (event.type !== 'plan/mode' || !event.data.active) return
-    const agent = currentBlueAgent(ctx)
-    if (agent === undefined || agent.session !== session || !yoloActive(agent)) return
-    queueMicrotask(() => {
-      /* v8 ignore next -- reachable only when the fiber unloads inside the
-         append-to-microtask window; disposal removes the listener, so the
-         flag is a belt-and-braces guard for exactly that race */
-      if (unloaded) return
-      void ctx.commands.execute(agent, '/yolo off', [], new AbortController().signal).then(
-        (execution) => {
-          const text = execution?.result.text
-          if (!unloaded && text !== undefined) getSharedEditor()?.notice?.(text)
-        },
-        (error: unknown) => {
-          /* v8 ignore next -- the append-failure loud path only */
-          ctx.logger.warn(`yolo exclusivity dispatch failed: ${describe(error)}`)
-        },
-      )
-    })
-  })
-  return () => {
-    offSessionChanged()
-    offSessionEvent()
-    stopUnloaded()
-  }
-}
-
 /**
  * Register the `/yolo` command and its `/yes` alias on `ctx.commands`.
  * @param ctx - plugin context.
@@ -189,13 +144,17 @@ export function registerModeCommands(ctx: Context): () => void {
     name: 'yolo',
     description: 'Toggle auto-approval of tool calls (questions still pop)',
     input: { hint: '[on|off]' },
-    handler: invocation => toggleYolo(ctx, invocation.agent, invocation.rawInput, invocation.signal),
+    handler: invocation => toggleYolo(ctx, invocation.rawInput, invocation.signal),
   })
   // The kimi alias: `/yes` is not a separate registration — the input
   // layer rewrites it to `/yolo` before `ctx.commands.execute`.
-  const yoloAliases = registerCommandAliases('yolo', ['yes'])
+  const yoloAliases = ctx.blueInteractionState.aliases.register('yolo', ['yes'])
+  const offNotice = ctx.on('blue/mode-notice', text => {
+    getSharedEditor(ctx)?.notice?.(text)
+  })
   return () => {
     yolo()
     yoloAliases()
+    offNotice()
   }
 }

@@ -7,33 +7,76 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { buildSessionEventRecords } from '@deepseek-ai/dsh-session-query'
 import type { SessionEventRecord } from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-session-query'
+import type { Action, PanelModel } from '@dsh-blue/blue-frontend'
 import { copyTextToClipboard } from './clipboard-write.ts'
 import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
+import { FrontendPanel } from './frontend-panel.ts'
 import { formatTraceAll, formatTraceItem, type TraceItem } from './trace-format.ts'
 import { aggregateTraceItems } from './trace-aggregate.ts'
-import { TracePanel } from './trace-panel.ts'
-import { TraceDetailPanel } from './trace-detail-panel.ts'
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+function traceTime(time: number): string {
+  const date = new Date(time)
+  return Number.isFinite(date.getTime()) ? date.toISOString().slice(11, 19) : '??:??:??'
+}
+
+/** Build the renderer-neutral trace timeline model. */
+export function tracePanelModel(sessionId: string, items: readonly TraceItem[]): PanelModel {
+  if (items.length === 0) {
+    return { kind: 'panel', mode: 'info', title: `Trace · ${sessionId}`, view: { kind: 'text', text: 'no trace events yet', tone: 'muted' } }
+  }
+  return {
+    kind: 'panel',
+    mode: 'select',
+    title: `Trace · ${sessionId}`,
+    view: {
+      kind: 'list',
+      selectedId: String(items[0]!.seq),
+      items: items.map(item => ({
+        id: String(item.seq),
+        label: `${traceTime(item.time)} ${item.surface === 'current' ? '●' : '·'} #${String(item.seq)}${item.lastSeq === item.seq ? '' : `-${String(item.lastSeq)}`} ${item.title}`,
+        detail: item.summary.replaceAll(/\s+/g, ' ').trim(),
+        action: { kind: 'trace.detail', seq: item.seq },
+        secondaryAction: { kind: 'trace.copy', seq: item.seq },
+      })),
+    },
+    cancel: { kind: 'trace.close' },
+  }
+}
+
+/** Build the renderer-neutral raw detail model for one trace item. */
+export function traceDetailPanelModel(item: TraceItem, text: string): PanelModel {
+  return {
+    kind: 'panel',
+    mode: 'info',
+    title: `Trace detail ${item.lastSeq === item.seq ? `#${String(item.seq)}` : `#${String(item.seq)}-${String(item.lastSeq)}`}`,
+    view: { kind: 'sections', sections: [
+      { title: `${item.type} · ${item.surface} · source #${String(item.seq)}`, body: { kind: 'code', code: text, language: 'json' } },
+    ] },
+    cancel: { kind: 'trace.detail.close' },
+  }
+}
+
 /** Register `/trace` and its copy subcommands. */
 export function registerTraceCommand(ctx: Context): () => void {
   async function loadItems(): Promise<{ sessionId: SessionId, records: SessionEventRecord[], events: SessionEvent[], items: TraceItem[] } | undefined> {
-    const current = ctx.get('blueSession')?.current
+    const current = ctx.blueSessionReader.current()
     const query = ctx.get('sessionQuery')
-    if (current === undefined || current === null) return undefined
+    if (current === null) return undefined
     if (query === undefined) throw new Error('session query is unavailable')
-    const snapshot = await query.readSession(current.id)
-    const records = buildSessionEventRecords(current.id, snapshot.events)
-    return { sessionId: current.id, records, events: snapshot.events, items: aggregateTraceItems(records, snapshot.events) }
+    const sessionId = SessionId(current.id)
+    const snapshot = await query.readSession(sessionId)
+    const records = buildSessionEventRecords(sessionId, snapshot.events)
+    return { sessionId, records, events: snapshot.events, items: aggregateTraceItems(records, snapshot.events) }
   }
 
   async function copyItem(sessionId: SessionId, item: TraceItem, events: readonly SessionEvent[]): Promise<CommandResult> {
@@ -51,7 +94,7 @@ export function registerTraceCommand(ctx: Context): () => void {
         return event === undefined ? [] : [event]
       })
       const method = await copyTextToClipboard(formatTraceItem(item, undefined, relation, rawEvents))
-      getSharedEditor()?.notice?.(`copied trace item #${String(item.seq)}${method === 'osc52' ? ' via terminal escape sequence (unverified)' : ''}`)
+      getSharedEditor(ctx)?.notice?.(`copied trace item #${String(item.seq)}${method === 'osc52' ? ' via terminal escape sequence (unverified)' : ''}`)
       return { kind: 'success' }
     } catch (error) {
       return { kind: 'error', text: `could not copy trace item: ${describe(error)}` }
@@ -71,7 +114,7 @@ export function registerTraceCommand(ctx: Context): () => void {
     if (input === 'copy all') {
       const method = await copyTextToClipboard(formatTraceAll(loaded.items, String(loaded.sessionId)))
       /* v8 ignore next -- notices are verified by the shared editor harness. */
-      getSharedEditor()?.notice?.(`copied ${String(loaded.items.length)} trace events${method === 'osc52' ? ' via terminal escape sequence (unverified)' : ''}`)
+      getSharedEditor(ctx)?.notice?.(`copied ${String(loaded.items.length)} trace events${method === 'osc52' ? ' via terminal escape sequence (unverified)' : ''}`)
       return { kind: 'success' }
     }
     const match = /^copy\s+(\d+)$/.exec(input)
@@ -80,41 +123,58 @@ export function registerTraceCommand(ctx: Context): () => void {
       if (item === undefined) return { kind: 'error', text: `trace event #${match[1]} was not found` }
       return copyItem(loaded.sessionId, item, loaded.events)
     }
-    /* v8 ignore start -- editor-slot callbacks require the live Blue input
-     * plugin; TracePanel itself has source-plane coverage. */
     const display = displayServices(ctx)
     if (display === undefined) return { kind: 'error', text: 'trace is unavailable: the Blue screen is not mounted' }
-    let restore = () => {}
-    const panel = new TracePanel({
-      ...display,
-      sessionId: String(loaded.sessionId),
-      items: loaded.items,
-      onClose: () => restore(),
-      onCopyItem: (item) => { void copyItem(loaded.sessionId, item, loaded.events) },
-      onCopyAll: () => {
+    let restore: () => void
+    const model = tracePanelModel(String(loaded.sessionId), loaded.items)
+    const execute = (action: Action): void => {
+      if (action.kind === 'trace.copy-all') {
         void copyTextToClipboard(formatTraceAll(loaded.items, String(loaded.sessionId))).then(method => {
-          getSharedEditor()?.notice?.(`copied ${String(loaded.items.length)} trace events${method === 'osc52' ? ' via terminal escape sequence (unverified)' : ''}`)
-        }).catch(error => getSharedEditor()?.notice?.(`could not copy trace: ${describe(error)}`))
-      },
-      onLoadDetail: (item) => {
+          getSharedEditor(ctx)?.notice?.(`copied ${String(loaded.items.length)} trace events${method === 'osc52' ? ' via terminal escape sequence (unverified)' : ''}`)
+        }).catch(error => getSharedEditor(ctx)?.notice?.(`could not copy trace: ${describe(error)}`))
+        return
+      }
+      const seq = typeof action.seq === 'number' ? action.seq : undefined
+      const item = seq === undefined ? undefined : loaded.items.find(entry => entry.seq === seq)
+      if (item === undefined) return
+      if (action.kind === 'trace.copy') {
+        void copyItem(loaded.sessionId, item, loaded.events)
+        return
+      }
+      if (action.kind === 'trace.detail') {
         const eventBySeq = new Map(loaded.events.map(event => [event.seq, event]))
         const rawEvents = item.eventSeqs.flatMap(seq => {
           const event = eventBySeq.get(seq)
+          /* v8 ignore next -- aggregateTraceItems derives these seqs from
+             the same immutable event snapshot used to build this map. */
           return event === undefined ? [] : [event]
         })
-        let restoreDetail = () => {}
-        const detail = new TraceDetailPanel({
+        let restoreDetail: () => void
+        const detail = new FrontendPanel({
           ...display,
-          item,
-          text: JSON.stringify(rawEvents, null, 2),
+          model: () => traceDetailPanelModel(item, JSON.stringify(rawEvents, null, 2)),
+          onAction: () => undefined,
           onClose: () => restoreDetail(),
+          maxVisible: 14,
         })
-        restoreDetail = mountEditorReplacement(detail)
+        restoreDetail = mountEditorReplacement(ctx, detail)
+      }
+    }
+    const panel = new FrontendPanel({
+      ...display,
+      model: () => model,
+      onAction: execute,
+      onClose: () => restore(),
+      onUnhandledInput: (data, selectedId) => {
+        if (data === 'a' || data === 'A') return { kind: 'trace.copy-all' }
+        if (data !== 'c' && data !== 'C') return undefined
+        const seq = selectedId === undefined ? Number.NaN : Number(selectedId)
+        return Number.isFinite(seq) ? { kind: 'trace.copy', seq } : undefined
       },
+      maxVisible: 12,
     })
-    restore = mountEditorReplacement(panel)
+    restore = mountEditorReplacement(ctx, panel)
     return { kind: 'success' }
-    /* v8 ignore stop */
   }
 
   const command = ctx.commands.register({
@@ -125,4 +185,3 @@ export function registerTraceCommand(ctx: Context): () => void {
   })
   return () => command()
 }
-

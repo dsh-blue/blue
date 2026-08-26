@@ -12,6 +12,8 @@
  * @module @dsh-blue/blue-interaction/models-dev
  */
 
+import type { Context } from '@deepseek-ai/cordis'
+
 /** The thinking levels a pi-ai profile may declare (pi-ai's own gate set). */
 const PI_AI_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
 
@@ -54,29 +56,28 @@ let catalogFetch: (url: string, signal: AbortSignal) => Promise<unknown> = defau
 /** Replace the catalog fetch (tests); restores the network default when omitted. */
 export function setModelsDevFetch(replacement?: (url: string, signal: AbortSignal) => Promise<unknown>): void {
   catalogFetch = replacement ?? defaultCatalogFetch
-  cache = undefined
 }
 
-/** The loaded index plus its load time. */
-let cache: { at: number, index: ModelsDevIndex } | undefined
-
 /** The loader the wizard calls — module-replaceable for tests. */
-export let loadModelsDevIndex: () => Promise<ModelsDevIndex | undefined> = defaultLoadIndex
+let modelsDevLoader: (() => Promise<ModelsDevIndex | undefined>) | undefined
 
 /** Replace the index loader (tests); restores the default when omitted. */
 export function setModelsDevLoader(replacement?: () => Promise<ModelsDevIndex | undefined>): void {
-  loadModelsDevIndex = replacement ?? defaultLoadIndex
-  cache = undefined
+  modelsDevLoader = replacement
 }
 
-async function defaultLoadIndex(): Promise<ModelsDevIndex | undefined> {
+/** Load through the optional test seam or this frontend tree's cache. */
+export async function loadModelsDevIndex(ctx: Context): Promise<ModelsDevIndex | undefined> {
+  if (modelsDevLoader !== undefined) return modelsDevLoader()
+  const state = ctx.blueInteractionState
+  const cache = state.modelsDevCache
   if (cache !== undefined && Date.now() - cache.at < CACHE_TTL_MS) return cache.index
   try {
     // Best-effort: a slow or unreachable endpoint must never block the
     // wizard, so the fetch carries its own short deadline.
     const payload = await catalogFetch(MODELS_DEV_URL, AbortSignal.timeout(4000))
     const index = buildIndex(payload)
-    cache = { at: Date.now(), index }
+    state.modelsDevCache = { at: Date.now(), index }
     return index
   } catch {
     return undefined

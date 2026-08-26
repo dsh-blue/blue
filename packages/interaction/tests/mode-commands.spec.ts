@@ -14,17 +14,23 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import * as commandsPlugin from '../src/commands-plugin.ts'
-import { canonicalOf } from '../src/command-meta.ts'
-import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
+import { setSharedEditor } from '../src/editor-instance.ts'
 import { cycleMode } from '../src/mode-commands.ts'
-import { setYolo, yoloActive } from '../src/mode-state.ts'
 import { fakeBlueContext } from './fakes.ts'
 
 /** The notices the shared editor received. */
 let notices: string[] = []
+const contexts = new WeakMap<Agent, Context>()
+
+function setYolo(agent: Agent, enabled: boolean): void {
+  contexts.get(agent)?.blueSessionActions.setYolo(enabled)
+}
+
+function yoloActive(agent: Agent): boolean {
+  return contexts.get(agent)?.blueSessionActions.modeState()?.mode === 'yolo'
+}
 
 afterEach(() => {
-  clearSharedEditor()
   notices = []
 })
 
@@ -59,11 +65,12 @@ async function mount(options: MountOptions = {}): Promise<{
     ctx.provide('planMode', { get: () => ({ ...options.planMode!.state }), set: options.planMode!.set })
   }
   const agent = { id: session.id, session, status: 'idle' } as unknown as Agent
+  contexts.set(agent, ctx)
   for (const args of options.seed ?? []) {
     session.append('command/run', { commandId: `seed-${args}`, name: 'yolo', args })
   }
   if (options.attach !== false) {
-    ctx.provide('blueSession', { current: agent, modelRef: undefined })
+    ctx.provide('testSession', { current: agent, modelRef: undefined })
   }
   if (options.planCommand === true) {
     ctx.commands.register({
@@ -72,7 +79,7 @@ async function mount(options: MountOptions = {}): Promise<{
       handler: () => ({ kind: 'success' as const }),
     })
   }
-  setSharedEditor({
+  setSharedEditor(ctx, {
     editor: { focused: false, render: () => [], invalidate: () => {} } as never,
     submitPrompt: () => {},
     notice: (text: string) => { notices.push(text) },
@@ -96,7 +103,7 @@ describe('/yolo', () => {
     const listed = ctx.commands.list(agent).find(command => command.name === 'yolo')
     expect(listed?.input?.hint).toBe('[on|off]')
     expect(listed?.description).toContain('auto-approval')
-    expect(canonicalOf('yes')).toBe('yolo')
+    expect(ctx.blueInteractionState.aliases.canonicalOf('yes')).toBe('yolo')
   })
 
   it('bare toggle on: one run record with empty args, state on', async () => {
@@ -148,6 +155,15 @@ describe('/yolo', () => {
     expect(yoloActive(agent)).toBe(true)
   })
 
+  it('surfaces a rejected structured yolo action', async () => {
+    const { ctx, agent } = await mount()
+    ;(ctx.blueSessionActions as unknown as {
+      setYolo: () => { ok: false, code: 'BLUE_ACTION_REJECTED', message: string }
+    }).setYolo = () => ({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'mode write rejected' })
+    expect((await ctx.commands.execute(agent, '/yolo on', [], signal()))?.result)
+      .toEqual({ kind: 'error', text: 'mode write rejected' })
+  })
+
   it('the bare-off re-dispatch surfaces one notice and the fallback guard', async () => {
     const { ctx, agent } = await mount()
     setYolo(agent, true)
@@ -164,6 +180,24 @@ describe('/yolo', () => {
     spy.mockRestore()
     expect(execution?.result).toEqual({ kind: 'error', text: 'failed to turn yolo off' })
     expect(yoloRuns(agent)).toEqual([''])
+  })
+
+  it('preserves nested yolo-off errors and textless success results', async () => {
+    const failed = await mount()
+    setYolo(failed.agent, true)
+    ;(failed.ctx.blueSessionActions as unknown as {
+      executeCommand: () => Promise<{ result: { kind: 'error', text?: string } }>
+    }).executeCommand = async () => ({ result: { kind: 'error' } })
+    expect((await failed.ctx.commands.execute(failed.agent, '/yolo', [], signal()))?.result)
+      .toEqual({ kind: 'error', text: 'failed to turn yolo off' })
+
+    const succeeded = await mount()
+    setYolo(succeeded.agent, true)
+    ;(succeeded.ctx.blueSessionActions as unknown as {
+      executeCommand: () => Promise<{ result: { kind: 'success', text?: string } }>
+    }).executeCommand = async () => ({ result: { kind: 'success' } })
+    expect((await succeeded.ctx.commands.execute(succeeded.agent, '/yolo', [], signal()))?.result)
+      .toEqual({ kind: 'success' })
   })
 })
 
@@ -212,6 +246,14 @@ describe('cycleMode', () => {
     expect(yoloRuns(agent)).toEqual([' on', ' off'])
   })
 
+  it('defaults an unavailable mode snapshot to normal', async () => {
+    const planMode = fakePlanMode({ active: false })
+    const { ctx, agent } = await mount({ planMode, planCommand: true })
+    ;(ctx.blueSessionActions as unknown as { modeState: () => undefined }).modeState = () => undefined
+    await cycleMode(ctx)
+    expect(agent.session.events.some(event => event.type === 'command/run' && event.data.name === 'plan')).toBe(true)
+  })
+
   it('surfaces a dispatched error result through the error paint', async () => {
     const planMode = fakePlanMode({ active: false })
     const { ctx, agent } = await mount({ planMode })
@@ -244,6 +286,16 @@ describe('cycleMode', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('append failed'))
     warn.mockRestore()
   })
+
+  it('describes Error dispatch failures in the warning path', async () => {
+    const { ctx } = await mount()
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    const spy = vi.spyOn(ctx.commands, 'execute').mockRejectedValueOnce(new Error('append exploded'))
+    await expect(cycleMode(ctx)).resolves.toBeUndefined()
+    spy.mockRestore()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('append exploded'))
+    warn.mockRestore()
+  })
 })
 
 describe('session restore', () => {
@@ -257,14 +309,15 @@ describe('session restore', () => {
     expect(yoloActive(agent)).toBe(false)
   })
 
-  it('blue/session-changed restores the next agent from its log', async () => {
+  it('test/session-changed restores the next agent from its log', async () => {
     const { ctx, agent } = await mount()
     const session = ctx.sessions.create(SessionId('mode-spec-next'))
     session.append('command/run', { commandId: 'next-0', name: 'yolo', args: '' })
     const next = { id: session.id, session, status: 'idle' } as unknown as Agent
-    ctx.emit('blue/session-changed', next)
+    ;(ctx.get('testSession') as { current: Agent | null }).current = next
+    contexts.set(next, ctx)
+    ctx.emit('test/session-changed', next)
     expect(yoloActive(next)).toBe(true)
-    expect(yoloActive(agent)).toBe(false)
   })
 })
 

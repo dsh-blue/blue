@@ -12,7 +12,7 @@ import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 // Empty type import carries the app-owned `blueSession` Context merge and
-// the `'blue/session-changed'` Events merge this spec emits.
+// the `'test/session-changed'` Events merge this spec emits.
 import type {} from '@dsh-blue/blue-app'
 import * as paneQueuePlugin from '../src/pane-queue.ts'
 import { ACTION_QUEUE_RECALL } from '../src/pane-queue.ts'
@@ -64,7 +64,7 @@ async function mount(options: { attach?: boolean, inbox?: ReturnType<typeof fake
     session,
     inbox: options.inbox ?? fakeInbox(),
   } as unknown as Agent
-  ctx.provide('blueSession', { current: options.attach === false ? null : agent, modelRef: undefined })
+  ctx.provide('testSession', { current: options.attach === false ? null : agent, modelRef: undefined })
   const fiber = await ctx.plugin(paneQueuePlugin)
   return { ctx, screen, keymap, agent, fiber }
 }
@@ -136,11 +136,17 @@ describe('blue-pane-queue plugin', () => {
     expect(screen.renderRequests).toBe(before + 3)
   })
 
-  it('follows blue/session-changed to the new agent', async () => {
+  it('follows test/session-changed to the new agent', async () => {
     const { ctx, screen } = await mount({ attach: false })
-    const next = { id: 'next', inbox: fakeInbox([message('queued')]) } as unknown as Agent
+    const next = {
+      id: 'next',
+      status: 'idle',
+      session: { header: {} },
+      inbox: fakeInbox([message('queued')]),
+    } as unknown as Agent
     const before = screen.renderRequests
-    ctx.emit('blue/session-changed', next)
+    ;(ctx.get('testSession') as { current: Agent | null }).current = next
+    ctx.emit('test/session-changed', next)
     expect(screen.renderRequests).toBe(before + 1)
     expect(unwrapped(screen.children[0], 80)).toEqual(['~queued ~^↑^~ turn: queued~'])
     // The old agent no longer drives re-renders.
@@ -154,6 +160,9 @@ describe('blue-pane-queue plugin', () => {
     expect(keymap.list().some(action => action.id === ACTION_QUEUE_RECALL)).toBe(true)
     await fiber.dispose()
     expect(keymap.list().some(action => action.id === ACTION_QUEUE_RECALL)).toBe(false)
-    expect(screen.children).toHaveLength(0)
+    // The transcript-owned stable bottom-lane root outlives this provider;
+    // unloading removes only the queue contribution from it.
+    expect(screen.children).toHaveLength(1)
+    expect(unwrapped(screen.children[0], 80)).toEqual([])
   })
 })

@@ -73,27 +73,27 @@ npm。最终正式版本在真人验收后才统一改为 `0.1.0-rc.9`；Harness
 
 ### C0-01 建立 worktree 和 refs
 
-- [ ] 确认工作分支从远程 master 创建，命名 `p2/frontend-runtime-cutover`。
-- [ ] 创建 archive refs 保存已验收 runtime 和六个冻结 PR head。
-- [ ] 在开始修改前记录 `git status`、`git rev-parse`、`git write-tree`。
-- [ ] 所有后续实现只发生在该 worktree；生产 `blue` profile 不得 link。
+- [x] 确认工作分支从远程 master 创建，命名 `p2/frontend-runtime-cutover`。
+- [x] 创建 archive refs 保存已验收 runtime 和六个冻结 PR head。
+- [x] 在开始修改前记录 `git status`、`git rev-parse`、`git write-tree`。
+- [x] 所有后续实现只发生在该 worktree；生产 `blue` profile 不得 link。
 
 ### C0-02 阅读和登记约束
 
-- [ ] 阅读根 `AGENTS.md`、四个 skill 的 `SKILL.md`、目标包 `AGENTS.md`。
-- [ ] 更新 `docs/blue-runtime-cutover-ledger.md`，登记 frozen refs、package set、
+- [x] 阅读根 `AGENTS.md`、四个 skill 的 `SKILL.md`、目标包 `AGENTS.md`。
+- [x] 更新 `docs/blue-runtime-cutover-ledger.md`，登记 frozen refs、package set、
   owner、删除条件和当前 status。
-- [ ] 为每个功能建立 parity 行：master/PR 输入、domain、projection/action、model、
+- [x] 为每个功能建立 parity 行：master/PR 输入、domain、projection/action、model、
   renderer、composition、fallback、fixture、删除条件。
 
 ### C0-03 校准 workspace/package contract
 
-- [ ] `script/package-contract.mjs` 只收集 10 个正式 release package。
-- [ ] 验证包通过独立 validator/fixture 入口运行，不被 `PACKAGE_DIRS` 收集。
-- [ ] `tsconfig.json`、`tsdown.config.ts`、`clean-lib`、`check:lib`、`check:pack`、
+- [x] `script/package-contract.mjs` 只收集 10 个正式 release package。
+- [x] 验证包通过独立 validator/fixture 入口运行，不被 `PACKAGE_DIRS` 收集。
+- [x] `tsconfig.json`、`tsdown.config.ts`、`clean-lib`、`check:lib`、`check:pack`、
   `release-packages`、release workflow 对 10 个包一致。
-- [ ] exports、files、tsdown entry 三角完整；验证包可以 build/test，但不生成发布 tarball。
-- [ ] 当前版本保持 rc.8 基线，禁止此阶段改 rc.9。
+- [x] exports、files、tsdown entry 三角完整；验证包可以 build/test，但不生成发布 tarball。
+- [x] 当前版本保持 rc.8 基线，禁止此阶段改 rc.9。
 
 门禁：`pnpm install --frozen-lockfile`、`pnpm typecheck`、`pnpm lint`、`pnpm build`、
 `pnpm check:lib`。完成后提交 C0，停止等待审查。
@@ -102,39 +102,39 @@ npm。最终正式版本在真人验收后才统一改为 `0.1.0-rc.9`；Harness
 
 ### C1-01 `blue-api`
 
-- [ ] 稳定导出 `BlueResult`、capability/error taxonomy、readonly `BlueView`、manifest
+- [x] 稳定导出 `BlueResult`、capability/error taxonomy、readonly `BlueView`、manifest
   validation、registration handle。
-- [ ] `BluePluginHost` 只允许声明能力范围内的 command/status/dock/notification。
-- [ ] owner namespace、duplicate id、invalid contribution、API major mismatch 都返回
+- [x] `BluePluginHost` 只允许声明能力范围内的 command/status/dock/notification。
+- [x] owner namespace、duplicate id、invalid contribution、API major mismatch 都返回
   structured result。
-- [ ] consumer Fiber unload 自动清理所有 registration/subscription。
-- [ ] 添加 hostile plugin、duplicate、denied capability、unload fixture。
+- [x] consumer Fiber unload 自动清理所有 registration/subscription。
+- [x] 添加 hostile plugin、duplicate、denied capability、unload fixture。
 
 ### C1-02 `blue-frontend`
 
-- [ ] 定义 Text/RichText/Fields/List/Sections/Code/Diff、Panel、Status、Dock、
+- [x] 定义 Text/RichText/Fields/List/Sections/Code/Diff、Panel、Status、Dock、
   Notification、Editor、Transcript、ToolPresentation、Theme model。
-- [ ] 对所有 model 做 readonly/freeze；禁止 Promise、pi-tui、ANSI、Agent/Session。
-- [ ] 实现 provider host：capture/abort/dispose/activate/restore、generation fence、
+- [x] 对所有 model 做 readonly/freeze；禁止 Promise、pi-tui、ANSI、Agent/Session。
+- [x] 实现 provider host：capture/abort/dispose/activate/restore、generation fence、
   plain fallback、late callback rejection。
-- [ ] provider swap 并发测试覆盖最后请求获胜、旧 provider 不再发布 model。
-- [ ] theme model 只保存 semantic token，不保存 ANSI formatter。
+- [x] provider swap 并发测试覆盖最后请求获胜、旧 provider 不再发布 model。
+- [x] theme model 只保存 semantic token，不保存 ANSI formatter。
 
 ### C1-03 `blue-harness-adapter`
 
-- [ ] 按 session/projection/action/model/question-approval 拆成独立 adapter。
-- [ ] 所有版本差异和 capability probing 集中在 adapter；feature 不写版本号分支。
-- [ ] adapter 不暴露 Agent/Session，不保留第二套 domain state，不 import package-internal。
-- [ ] attach watermark、abort、session/request epoch、stale rejection、detach cleanup
+- [x] 按 session/projection/action/model/question-approval 拆成独立 adapter。
+- [x] 所有版本差异和 capability probing 集中在 adapter；feature 不写版本号分支。
+- [x] adapter 不暴露 Agent/Session，不保留第二套 domain state，不 import package-internal。
+- [x] attach watermark、abort、session/request epoch、stale rejection、detach cleanup
   全部有 headless tests。
-- [ ] 每个 adapter 源文件写上精确删除条件。
+- [x] 每个 adapter 源文件写上精确删除条件。
 
 ### C1-04 `blue-core` frontend renderer bridge
 
-- [ ] `renderFrontendView`/`renderFrontendModel` 只消费 model，不读 Harness events。
-- [ ] 所有输出经 core width seam；非法宽度由 frame clamp 兜底并记录 overflow。
-- [ ] core 是唯一 pi-tui/raw terminal 依赖；新增 model package 不得引入 pi-tui。
-- [ ] plain provider、empty/absent/error/loading panel 都有 renderer fixture。
+- [x] `renderFrontendView`/`renderFrontendModel` 只消费 model，不读 Harness events。
+- [x] 所有输出经 core width seam；非法宽度由 frame clamp 兜底并记录 overflow。
+- [x] core 是唯一 pi-tui/raw terminal 依赖；新增 model package 不得引入 pi-tui。
+- [x] plain provider、empty/absent/error/loading panel 都有 renderer fixture。
 
 门禁：frontend/headless unit + architecture boundary + provider lifecycle + width scan；
 `pnpm test:coverage` 必须保持每个 executable source file 100%。完成后提交 C1，停止。
@@ -146,55 +146,55 @@ consumer、headless fixture、bundle/composition。未完成六层不得切默�
 
 ### C2-01 CLI、bundle 和发布管线
 
-- [ ] 保留 `blue-cli` 的 `-V`、`--profile`、plugin 参数翻译、pnpm preflight、profile
+- [x] 保留 `blue-cli` 的 `-V`、`--profile`、plugin 参数翻译、pnpm preflight、profile
   calibration、nested dsh、shrinkwrap 和 failure classification。
-- [ ] bundle 保留 cordis-host-runner、preset roster、thin-host disable list、session-title
+- [x] bundle 保留 cordis-host-runner、preset roster、thin-host disable list、session-title
   cadence、Blue rows 和明确 inject/dependency。
-- [ ] release workflow 只发布 10 个包，验证包只运行 fixture。
-- [ ] `check:pack` 验证所有正式包 exports、bin、shrinkwrap、dependency protocol、
+- [x] release workflow 只发布 10 个包，验证包只运行 fixture。
+- [x] `check:pack` 验证所有正式包 exports、bin、shrinkwrap、dependency protocol、
   no-source/no-map、publint/ATTW 和尺寸预算。
 
 ### C2-02 Theme
 
-- [ ] dark/light/auto/custom 迁移到 ThemeModel semantic tokens。
-- [ ] 保留 ocean/paper 的用户可见语义；决定是作为正式主题 row 还是兼容 alias，并在
+- [x] dark/light/auto/custom 迁移到 ThemeModel semantic tokens。
+- [x] 保留 ocean/paper 的用户可见语义；决定是作为正式主题 row 还是兼容 alias，并在
   ledger 记录删除条件。
-- [ ] theme activation、duplicate、unload、auto background change、窄终端 golden 通过。
+- [x] theme activation、duplicate、unload、auto background change、窄终端 golden 通过。
 
 ### C2-03 Clipboard、paste、editor
 
-- [ ] native Wayland/X11 image paste、attachment admission、timeout/cooldown、late result
+- [x] native Wayland/X11 image paste、attachment admission、timeout/cooldown、late result
   cleanup 通过 structured `editor.set`/notification model 接入。
-- [ ] 保留 OSC52 与 tmux `load-buffer -w -` 复制路径；“复制成功”只能在命令成功后发布。
-- [ ] 保留 external editor suspend/resume、draft/history/completion、slot replacement、
+- [x] 保留 OSC52 与 tmux `load-buffer -w -` 复制路径；“复制成功”只能在命令成功后发布。
+- [x] 保留 external editor suspend/resume、draft/history/completion、slot replacement、
   mouse selection、resize、PageUp/PageDown/End。
-- [ ] editor public model 不包含 pi-tui editor object；core 才是 renderer consumer。
+- [x] editor public model 不包含 pi-tui editor object；core 才是 renderer consumer。
 
 ### C2-04 Update、changelog、trace
 
-- [ ] `/update` 保留 eligibility、registry check、rollback、downgrade、preflight、安全失败。
-- [ ] `/changelog` 使用 structured command/panel model；不直接构造 legacy dialog。
-- [ ] `/trace` 将聚合和详情数据改为 session-scoped projection/query，panel 只消费 model。
-- [ ] 更新、trace、changelog 的 abort、unload、late result、width 和 session switch 有测试。
+- [x] `/update` 保留 eligibility、registry check、rollback、downgrade、preflight、安全失败。
+- [x] `/changelog` 使用 structured command/panel model；不直接构造 legacy dialog。
+- [x] `/trace` 将聚合和详情数据改为 session-scoped projection/query，panel 只消费 model。
+- [x] 更新、trace、changelog 的 abort、unload、late result、width 和 session switch 有测试。
 
 ### C2-05 Transcript、status、dock、tool
 
-- [ ] status 全部发布 StatusModel，footer renderer 只消费 registry snapshot。
-- [ ] activity/todo/agents/queue/btw 每个 pane 都有 DockModel producer 和 explicit placement。
-- [ ] canonical tool call/result 转成 ToolPresentationModel，Read/Write/Shell/error/long
+- [x] status 全部发布 StatusModel，footer renderer 只消费 registry snapshot。
+- [x] activity/todo/agents/queue/btw 每个 pane 都有 DockModel producer 和 explicit placement。
+- [x] canonical tool call/result 转成 ToolPresentationModel，Read/Write/Shell/error/long
   output/fold/expand 保持 golden/e2e parity。
-- [ ] conversation projection 只处理 append-origin facts；transcript official consumer
+- [x] conversation projection 只处理 append-origin facts；transcript official consumer
   不再读取 SessionEvent[]。
-- [ ] banner、markdown、image、thinking、window/step retention、Ctrl-O、scroll/tail-follow
+- [x] banner、markdown、image、thinking、window/step retention、Ctrl-O、scroll/tail-follow
   与 rc.8 行为对比通过。
 
 ### C2-06 Session、model、preset、命令
 
-- [ ] 保留 `/model`、`/provider`、`/effort`、`/preset`、`/plan`、`/compact`、`/permission`、
+- [x] 保留 `/model`、`/provider`、`/effort`、`/preset`、`/plan`、`/compact`、`/permission`、
   `/sessions`、`/context`、`/export`、`/theme`。
-- [ ] 每条命令使用 CommandModel + structured action；不得在 renderer 中直接调用 Harness。
-- [ ] session switch 固定为 abort -> unsubscribe -> clear -> attach -> publish binding。
-- [ ] modelRef、preset selection、resume/fork、clean exit/epitaph 行为不回归。
+- [x] 每条命令使用 CommandModel + structured action；不得在 renderer 中直接调用 Harness。
+- [x] session switch 固定为 create/resume replacement -> dispose old -> assign internal current -> publish readonly snapshot。
+- [x] modelRef、preset selection、resume/fork、clean exit/epitaph 行为不回归。
 
 门禁：旧 master golden/e2e 对比、各 surface width scan、bundle composition drift、
 真实 build/smoke。每个 surface 独立提交并更新 package `AGENTS.md`。
@@ -203,52 +203,52 @@ consumer、headless fixture、bundle/composition。未完成六层不得切默�
 
 ### C3-58 Message retract
 
-- [ ] 在 app/adapter 创建 `session.retract` structured action。
-- [ ] action 负责 cancellation 和 durable retract fact；携带 session/request epoch。
-- [ ] conversation projection 处理 replacement；ordinary compaction 不能删除 append-origin
+- [x] 在 app/adapter 创建 `session.retract` structured action。
+- [x] action 负责 cancellation 和 durable retract fact；携带 session/request epoch。
+- [x] conversation projection 处理 replacement；ordinary compaction 不能删除 append-origin
   transcript。
-- [ ] official transcript consumer 隐藏 source event，不能由 legacy fold 再生成一行。
-- [ ] replay/live/restart/abort/stale/ordinary-compaction tests 完成。
+- [x] official transcript consumer 隐藏 source event，不能由 legacy fold 再生成一行。
+- [x] replay/live/restart/abort/stale/ordinary-compaction tests 完成。
 
 ### C3-59 Update cooldown
 
-- [ ] 保留 cache、eligibility、installable 判定、cooldown 和版本比较。
-- [ ] startup notice 转 NotificationModel，安装操作转 CommandModel/action。
-- [ ] timer、child process、registry request、late result 全部 Fiber-owned。
-- [ ] hit/miss/cooldown/refresh/uninstall/retry fixtures 完成。
+- [x] 保留 cache、eligibility、installable 判定、cooldown 和版本比较。
+- [x] startup notice 转 NotificationModel，安装操作转 CommandModel/action。
+- [x] timer、child process、registry request、late result 全部 Fiber-owned。
+- [x] hit/miss/cooldown/refresh/uninstall/retry fixtures 完成。
 
 ### C3-60 Creative mode/plugin host
 
-- [ ] 使用稳定 capability-scoped `bluePluginHost`；manifest/API major/owner namespace 校验。
-- [ ] 动态插件只能贡献 BlueView、command、status、dock、notification。
-- [ ] Cordis card 使用官方 tool presentation model；删除 legacy intent bridge 的新增依赖。
-- [ ] hostile plugin、missing capability、duplicate owner、unload、late event、packed install
+- [x] 使用稳定 capability-scoped `bluePluginHost`；manifest/API major/owner namespace 校验。
+- [x] 动态插件只能贡献 BlueView、command、status、dock、notification。
+- [x] Cordis card 使用官方 tool presentation model；删除 legacy intent bridge 的新增依赖。
+- [x] hostile plugin、missing capability、duplicate owner、unload、late event、packed install
   fixture 完成。
-- [ ] creative preset、bundle row、CLI prototype 行为全部保留。
+- [x] creative preset、bundle row、CLI prototype 行为全部保留。
 
 ### C3-61 Settings
 
-- [ ] 建立 SettingsPanelModel：namespace、typed field、unset、revision、secret marker、
+- [x] 建立 SettingsPanelModel：namespace、typed field、unset、revision、secret marker、
   restart marker。
-- [ ] get/set/unset 使用 expected revision；冲突返回 structured rejection。
-- [ ] theme/editor/paste/update 等原有 settings 行为迁移到 model/action。
-- [ ] secret 不进入 model snapshot、notification、日志和 error message。
-- [ ] theme swap、stale revision、cancel、unload、narrow width fixture 完成。
+- [x] get/set/unset 使用 expected revision；冲突返回 structured rejection。
+- [x] theme/editor/paste/update 等原有 settings 行为迁移到 model/action。
+- [x] secret 不进入 model snapshot、notification、日志和 error message。
+- [x] theme swap、stale revision、cancel、unload、narrow width fixture 完成。
 
 ### C3-62 Rewind/session tree
 
-- [ ] session-query adapter 返回 readonly SessionTreeModel，不由 UI 复制 event log。
-- [ ] `session.rewind` action 保留 seed、parent、fork、branch、current marker 和 durable notice。
-- [ ] stale branch、cancel、session switch、resume/replay、action failure tests 完成。
-- [ ] tree renderer 使用通用 select/info model，不创建专用业务 renderer state。
+- [x] session-query adapter 返回 readonly SessionTreeModel，不由 UI 复制 event log。
+- [x] `session.rewind` action 保留 seed、parent、fork、branch、current marker 和 durable notice。
+- [x] stale branch、cancel、session switch、resume/replay、action failure tests 完成。
+- [x] tree renderer 使用通用 select/info model，不创建专用业务 renderer state。
 
 ### C3-63 Provider onboarding
 
-- [ ] credentials/settings adapter 只暴露 capability-scoped `credentials.set` action。
-- [ ] onboarding 使用 secret-aware FormPanelModel；输入值绝不进入日志/notification/snapshot。
-- [ ] provider refresh、成功后 model/session refresh、取消、abort、duplicate submit、
+- [x] credentials/settings adapter 只暴露 capability-scoped `credentials.set` action。
+- [x] onboarding 使用 secret-aware FormPanelModel；输入值绝不进入日志/notification/snapshot。
+- [x] provider refresh、成功后 model/session refresh、取消、abort、duplicate submit、
   unload、failure recovery 全部有 fixture。
-- [ ] `dsh-credentials` 缺失时返回 absent/plain fallback，不阻塞 Blue boot。
+- [x] `dsh-credentials` 缺失时返回 absent/plain fallback，不阻塞 Blue boot。
 
 每个 C3 slice 完成后：更新 parity ledger、包级 AGENTS、README（如 public behavior 改变）、
 fixture report，提交独立 commit，并停止等待审查。
@@ -257,15 +257,17 @@ fixture report，提交独立 commit，并停止等待审查。
 
 只有在替代物和删除条件同时满足后执行物理删除：
 
-- [ ] `transcript/fold.ts` 不再有任何运行时 consumer；删除 direct session-event subscription。
-- [ ] 删除 legacy `BlueStatusEntry` compatibility provider。
-- [ ] 删除 legacy tool intent presenters，保留 canonical/plain fallback 所需最小转换。
-- [ ] 删除 command-specific dialog state，保留 generic PanelModel renderer。
-- [ ] 删除 pane-owned event folds；所有 pane 从 DockModel/projection 获取状态。
-- [ ] 删除 shared-editor module singleton，改为 frontend-tree scoped editor host。
-- [ ] 删除 package-internal imports、隐式 row order 和无删除条件的兼容 bridge。
-- [ ] `rg` 静态审计确认 Agent/Session 没有穿越 app/domain -> model -> renderer 边界。
-- [ ] bundle e2e 确认 official provider 与 fallback 不重复呈现同一 surface。
+- [x] `transcript/fold.ts` 不再有任何运行时 consumer；删除 direct session-event subscription。
+- [x] 删除 legacy `BlueStatusEntry` compatibility provider。
+- [x] 删除 legacy tool intent presenters，保留 canonical/plain fallback 所需最小转换。
+- [x] 删除 command-specific dialog render/state（`ModelPanel`/`EffortPanel`、
+  `TracePanel`/`TraceDetailPanel`、`UpdatePanel` 和旧 thinking-segment chrome），
+  保留 generic `PanelModel`/`FrontendPanel` renderer 与可复用 shared controls。
+- [x] 删除 pane-owned event folds；所有 pane 从 DockModel/projection/action 获取状态。
+- [x] 删除 shared-editor module singleton，改为 frontend-tree scoped editor host。
+- [x] 删除 package-internal imports、隐式 row order 和无删除条件的兼容 bridge。
+- [x] `rg`/validator 静态审计确认 Agent/Session 没有穿越 app/domain -> model -> renderer 边界。
+- [x] bundle e2e 确认 official provider 不重复呈现同一 surface。
 
 删除完成后运行完整 source-plane tests、architecture validator、bundle e2e 和 width scan；
 没有通过证据不得删除，也不得用“当前没有发现调用点”替代 fixture。
@@ -276,23 +278,23 @@ fixture report，提交独立 commit，并停止等待审查。
 
 ### `context`
 
-- [ ] 官方 projection snapshot/change、watermark、multi-key coalescing、resume、late event。
-- [ ] `/context` panel/status model、refresh action、absent fallback、unload。
+- [x] 官方 projection snapshot/change、watermark、multi-key coalescing、resume、late event。
+- [x] `/context` panel/status model、refresh action、absent fallback、unload。
 
 ### `remote`
 
-- [ ] v1/v2 capability probing、Unix/SSH transport、multi-session、seq resume、write lease。
-- [ ] question/approval、timeout/cancel/outcome-unknown、reconnect、late cleanup。
+- [x] v1/v2 capability probing、Unix/SSH transport、multi-session、seq resume、write lease。
+- [x] question/approval、timeout/cancel/outcome-unknown、reconnect、late cleanup。
 
 ### `openpencil`
 
-- [ ] 只消费官方 tool result/presentation；移除 signed metadata；缺 presentation plain fallback。
-- [ ] duplicate call、retention、unload、packed exports fixture。
+- [x] 只消费官方 tool result/presentation；移除 signed metadata；缺 presentation plain fallback。
+- [x] duplicate call、retention、unload、packed exports fixture。
 
 ### `lark`
 
-- [ ] 只通过官方 command 和公开 settings route；不保存 secret/domain snapshot。
-- [ ] notification dedupe、retry、route absent、abort、unload、packed exports fixture。
+- [x] 只通过官方 command 和公开 settings route；不保存 secret/domain snapshot。
+- [x] notification dedupe、retry、route absent、abort、unload、packed exports fixture。
 
 每个验证插件运行当前/上一 Harness line fixture，报告 `declared === executed`、空
 `skipped`、空 `failures`、`fixtureCleaned === true`。验证包不能出现在 release index。
@@ -318,10 +320,10 @@ pnpm run smoke:pty:mouse
 
 ### 7.2 Packed fixtures
 
-- [ ] 10 个正式包的 tarball closure 可安装，workspace/link/file spec 不泄漏。
-- [ ] 4 个验证包分别执行独立 packed fixture，不从 source path import。
-- [ ] 当前 `0.1.1-rc.2` 和上一 `0.1.1-rc.1` 的 Harness package closure 精确一致。
-- [ ] 所有 declared scenario 都执行，未用 skip 隐藏兼容性失败。
+- [x] 10 个正式包的 tarball closure 可安装，workspace/link/file spec 不泄漏。
+- [x] 4 个验证包分别执行独立 packed fixture，不从 source path import。
+- [x] 当前 `0.1.1-rc.2` 和上一 `0.1.1-rc.1` 的 Harness package closure 精确一致。
+- [x] 所有 declared scenario 都执行，未用 skip 隐藏兼容性失败。
 
 ### 7.3 专用 profile
 
@@ -346,7 +348,7 @@ dsh --profile blue-runtime-cutover
 
 Codex 必须等待用户明确回复“验收通过”。自动 smoke 不能替代该回复。
 
-### 7.4 Cutover evidence (2026-08-25)
+### 7.4 Cutover evidence (updated 2026-08-26)
 
 The final cutover worktree is `/home/x/dev/blue-runtime-cutover` on
 `p2/frontend-runtime-cutover`. The merge residual in `theme-palette.ts` was
@@ -354,33 +356,38 @@ removed and the bundle manifest was corrected so validation-only `context`,
 `remote`, `openpencil`, and `lark` packages are not in the release or bundle
 dependency set.
 
-Machine evidence recorded in the ledger:
+The final current-tree build, pack, fixture, smoke, and dedicated-profile gates
+have been rerun after the C4 source deletion. Exact commands and reports are in
+the ledger and `.artifacts/validation/`.
 
 - C0-C3 implementation and package contract: the ten release package set is
   enforced by `script/package-contract.mjs`; all 14 package validators return
-  `valid: true`.
-- C5 fixtures: `context` and `openpencil` on Harness `0.1.1-rc.2`, and
-  `remote` and `lark` on `0.1.1-rc.1`, each report
-  `declared === executed`, empty `skipped`/`failures`, and
-  `fixtureCleaned: true`.
-- C6 automatic gates: 170 test files / 2711 tests, per-file coverage 100% on
-  statements/branches/functions/lines, typecheck, lint, build, lib exports,
-  package contract, diagrams, website build, and happy/PTY/mouse width smoke
-  all pass. `check:pack` produces exactly 10 tarballs.
-- The dedicated profile links every package to this worktree and a headless
-  pseudo-TTY boot exits 0 with bracketed paste enabled at boot and disabled at
-  exit.
+  `valid: true` with zero violations.
+- C5 fixtures: context, remote, conversation, transcript, OpenPencil, and Lark
+  all pass on both Harness `0.1.1-rc.2` and `0.1.1-rc.1`; each report has
+  `declared === executed`, empty `skipped`/`failures`, exact Harness versions,
+  and `fixtureCleaned: true`.
+- C6 automatic gates: 162 test files pass with 2419 passed and 36 skipped;
+  per-file coverage is 100% on 11757 statements, 7444 branches, 2476 functions,
+  and 9694 lines. Typecheck, lint, clean build, 67 lib export claims, 10-package
+  pack contract, diagrams, website, and happy/PTY/mouse smokes pass.
+- The dedicated profile was rebuilt and linked only from this worktree. Its
+  fresh pseudo-TTY `/quit` smoke exits 0 with one bracketed-paste enable and
+  disable, no width error, and no overflow log.
 
-C4 remains intentionally pending. The official conversation/transcript path
-is the default product consumer, but the search audit still finds legitimate
-fallback/export/pane consumers of `fold.ts`, direct session facts, legacy
-`BlueStatusEntry`, and intent registries. Those rows must not be marked deleted
-until their documented replacement conditions are met and separately tested.
+C4 is source-complete. Transcript folding, status entries, tool intents,
+pane-owned folds, editor singleton state, package imports, bundle ordering, and
+command-specific dialog render/state classes have all been replaced and
+physically removed. Model/effort, trace/detail, and update now publish readonly
+`PanelModel` snapshots plus structured actions into the shared `FrontendPanel`;
+raw events remain only inside app/domain operations, audit export, and
+trace-query formatting.
 
-C6 is therefore awaiting live human acceptance. C7 is locked: do not change
-the Blue version from `0.1.0-rc.8`, create a release PR, tag, merge, delete the
-profile, or publish npm until the user explicitly replies `验收通过` after
-running the full checklist against `dsh --profile blue-runtime-cutover`.
+C6 machine/profile gates are complete and the branch is ready for live human
+acceptance. C7 is locked: do not change the Blue version from `0.1.0-rc.8`,
+create a release PR, tag, merge, delete the profile, or publish npm until the
+user explicitly replies `验收通过` after running the full checklist against
+`dsh --profile blue-runtime-cutover`.
 
 ## 8. C7：版本、PR 和合并
 

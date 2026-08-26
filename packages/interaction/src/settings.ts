@@ -2,16 +2,16 @@
  * `blue-settings` plugin: the consolidated `blue` settings namespace. This
  * is the tree's ONE `installSettingsSection` registration for
  * `settingsNamespace('blue')` — every consumer (the boot update check, the
- * `/settings` panel, the `/update` channel read) resolves the shared thunk
- * {@link currentBlueSettings} instead of registering its own section, so a
+ * `/settings` panel, the `/update` channel read) resolves the tree-scoped
+ * {@link currentBlueSettings} source instead of registering its own section, so a
  * host's settings service sees exactly one `blue` schema. Until a settings
  * service layers user overrides the thunk answers the composition defaults.
  *
  * The plugin also owns the persisted default theme: the initial apply is
- * gated on session attach — when `blueSession.current` is already set the
+ * gated on session attach — when `blueSessionReader.current()` is non-null the
  * swap runs as soon as the resolved settings scope goes live (the section
  * installer's `onChange`, one inject-beat after apply), otherwise the
- * first `'blue/session-changed'` arms it (the app emits that event only
+ * first reader notification arms it (the app publishes that snapshot only
  * after `boot()` returns, so disposing the baseline theme fiber can never
  * race the loader's activation assertion; session-less headless hosts
  * never swap — there is no UI to paint). After the attach the plugin
@@ -34,8 +34,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-settings'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
-// Empty type import carries the app-owned `blueSession` Context merge and
-// the 'blue/session-changed' Events merge this plugin waits on.
+// Empty type import carries the app-owned reader Context merge.
 import type {} from '@dsh-blue/blue-app'
 import { applyTheme } from './theme-switch.ts'
 
@@ -101,9 +100,8 @@ export const DEFAULT_SETTINGS: BlueSettings = {
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-settings'
-
-/** The active source: the resolved scope while a settings service is attached, the composition entry otherwise. */
-let source: () => BlueSettings = () => DEFAULT_SETTINGS
+/** Runtime state and session boundary required by the settings owner. */
+export const inject = ['blueInteractionState', 'blueSessionReader']
 
 /**
  * Read the current `blue` settings: schema defaults layered with the user
@@ -111,8 +109,8 @@ let source: () => BlueSettings = () => DEFAULT_SETTINGS
  * otherwise.
  * @returns the resolved Blue settings.
  */
-export function currentBlueSettings(): BlueSettings {
-  return source()
+export function currentBlueSettings(ctx: Context): BlueSettings {
+  return ctx.blueInteractionState.settingsSource()
 }
 
 /**
@@ -121,8 +119,6 @@ export function currentBlueSettings(): BlueSettings {
  * session-level `/theme` pick never moves it, which is what lets unrelated
  * `blue` namespace writes leave the live provider alone.
  */
-let lastAppliedTheme: BlueSettings['theme'] = 'dark'
-
 /**
  * Swap the live theme provider to the persisted default when it moved.
  * Records only successful swaps, so a failed mount retries on the next
@@ -131,14 +127,15 @@ let lastAppliedTheme: BlueSettings['theme'] = 'dark'
  * @param isUnloaded - the fiber's unload flag.
  */
 async function syncTheme(ctx: Context, isUnloaded: () => boolean): Promise<void> {
-  const theme = currentBlueSettings().theme
-  if (theme === lastAppliedTheme) return
+  const state = ctx.blueInteractionState
+  const theme = currentBlueSettings(ctx).theme
+  if (theme === state.lastAppliedTheme) return
   const result = await applyTheme(ctx, theme)
   /* v8 ignore next 1 -- a fiber unload landing inside the swap's awaits is
      a shutdown race no spec can stage deterministically */
   if (isUnloaded()) return
   if (result.kind === 'success') {
-    lastAppliedTheme = theme
+    state.lastAppliedTheme = theme
   } else {
     /* v8 ignore next 1 -- the swap's error results always carry text */
     ctx.logger.warn(result.text ?? `could not apply theme "${theme}"`)
@@ -162,7 +159,7 @@ export function apply(ctx: Context): void {
   }
   // `settings/updated` commits landing before the first attach need no
   // follow: the attach-time sync reads the current value.
-  let attached = ctx.get('blueSession')?.current != null
+  let attached = ctx.blueSessionReader.current() !== null
   // The initial sync must read the resolved scope, which goes live one
   // inject-beat after apply — installSettingsSection fires onChange then,
   // and re-fires it on every blue commit through the scope watch, so
@@ -175,7 +172,7 @@ export function apply(ctx: Context): void {
   }
   installSettingsSection(ctx, settingsNamespace('blue'), Config, DEFAULT_SETTINGS, {
     setSource: next => {
-      source = next
+      ctx.blueInteractionState.settingsSource = next
     },
     onChange: prime,
   })
@@ -184,15 +181,15 @@ export function apply(ctx: Context): void {
     sync()
   })
   // Session attach is the post-boot signal (the terminal-title precedent):
-  // the app emits 'blue/session-changed' only after boot() returns, so the
+  // the app publishes the first non-null reader snapshot only after boot()
+  // returns, so the
   // swap can never race the loader's entry-activation assertion. An
   // already-attached session skips the wait: the onChange prime above
   // carries the initial sync.
-  if (!attached) {
-    const off = ctx.on('blue/session-changed', () => {
-      off()
-      attached = true
-      prime()
-    })
-  }
+  const registration = ctx.blueSessionReader.subscribe((snapshot) => {
+    if (attached || snapshot === null) return
+    attached = true
+    prime()
+  })
+  ctx.effect(() => () => registration.dispose())
 }
