@@ -87,7 +87,7 @@ export async function main(argv: readonly string[]): Promise<void> {
       cliInternals.stderr(`blue: profile 'blue' is a dev ${outcome.spec.split(':', 1)[0]} lane — calibration skipped\n`)
     }
   }
-  const child = await cliInternals.spawnInherit(cliInternals.execPath, [host.binJs, ...translation.dshArgs], { env: LAUNCHER_ENV })
+  const child = await cliInternals.spawnInherit(cliInternals.execPath, [host.binJs, ...translation.dshArgs], { env: { ...LAUNCHER_ENV, BLUE_DSH_BIN: host.binJs } })
   cliInternals.exit(child.code ?? 1)
 }
 

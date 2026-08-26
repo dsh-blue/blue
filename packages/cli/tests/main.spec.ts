@@ -107,7 +107,8 @@ describe('main', () => {
     expect(calls.inherit[0]?.cmd).toBe(cliInternals.execPath)
     expect(calls.inherit[0]?.args?.slice(1)).toEqual(['--profile', 'blue', 'fix', 'the', 'build'])
     expect(calls.inherit[0]?.args?.[0]).toMatch(/lib[/\\]bin\.js$/)
-    expect(calls.inherit[0]?.env).toEqual({ BLUE_LAUNCHER: 'blue' })
+    expect(calls.inherit[0]?.env).toMatchObject({ BLUE_LAUNCHER: 'blue' })
+    expect(calls.inherit[0]?.env?.BLUE_DSH_BIN).toMatch(/lib[/\\]bin\.js$/)
     expect(captures.exits).toEqual([0])
     inherit = { code: null, signal: 'SIGKILL', stdout: '', stderr: '', timedOut: false }
     captures.exits = []
@@ -267,4 +268,3 @@ describe('shellVersion', () => {
     expect(shellVersion()).toBe('unknown')
   })
 })
-
