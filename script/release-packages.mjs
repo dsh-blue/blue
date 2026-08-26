@@ -85,6 +85,19 @@ if (mode === 'publish' || mode === 'verify') {
     }
     if (!testRelease) await waitFor(pkg, expected)
   }
+  if (testRelease && mode === 'publish') {
+    // npm assigns `latest` on a package's first publish even when a custom
+    // tag is supplied. Keep production consumers on the previous rc line.
+    for (const pkg of packages) {
+      const latest = npmView(pkg.name, 'dist-tags.latest')
+      if (latest !== version) continue
+      const stableRc = npmView(pkg.name, 'dist-tags.rc')
+      if (typeof stableRc === 'string' && stableRc !== version) {
+        execFileSync('npm', ['dist-tag', 'add', `${pkg.name}@${stableRc}`, 'latest'], { cwd: ROOT, stdio: 'inherit' })
+        console.log(`${pkg.name}: restored latest -> ${stableRc}`)
+      }
+    }
+  }
 }
 
 if (mode === 'promote') {
