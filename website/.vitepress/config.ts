@@ -139,7 +139,7 @@ const sidebarZh = {
     {
       text: '插件开发',
       items: [
-        { text: '编写第一个插件', link: '/plugins/' },
+        { text: '对接 Blue（下游插件指南）', link: '/plugins/' },
         { text: 'Seam 参考', link: '/plugins/seams' },
         { text: '内置插件', link: '/plugins/builtins' },
         { text: '贡献本仓库', link: '/plugins/contributing' },
@@ -198,7 +198,7 @@ const sidebarEn = {
     {
       text: 'Plugin development',
       items: [
-        { text: 'Writing your first plugin', link: '/en/plugins/' },
+        { text: 'Integrating with Blue', link: '/en/plugins/' },
         { text: 'Seam reference', link: '/en/plugins/seams' },
         { text: 'Built-in plugins', link: '/en/plugins/builtins' },
         { text: 'Contributing to Blue', link: '/en/plugins/contributing' },
