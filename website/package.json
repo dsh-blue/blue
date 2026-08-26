@@ -1,6 +1,6 @@
 {
   "name": "@dsh-blue/website",
-  "version": "0.1.0-rc.9-test.2",
+  "version": "0.1.0-rc.9-test.3",
   "private": true,
   "type": "module",
   "scripts": {

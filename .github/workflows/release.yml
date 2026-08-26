@@ -65,7 +65,12 @@ jobs:
       - run: pnpm diagrams:check
       - run: pnpm build
       - run: pnpm check:lib
-      - run: pnpm test:coverage
+      - name: full coverage gate (正式 rc/stable)
+        if: ${{ !contains(inputs.version || github.ref_name, '-test.') }}
+        run: pnpm test:coverage
+      - name: test-package contract smoke
+        if: ${{ contains(inputs.version || github.ref_name, '-test.') }}
+        run: pnpm vitest run packages/api/tests/api.spec.ts packages/cli/tests/plugin.spec.ts packages/interaction/tests/commands-plugin.spec.ts
       - run: pnpm check:pack
       - uses: actions/upload-artifact@v4
         with:
