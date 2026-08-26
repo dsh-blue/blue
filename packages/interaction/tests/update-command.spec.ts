@@ -20,7 +20,9 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SettingsProvider, { settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { mkdtempTracked } from '../../core/tests/temp-dir.ts'
+import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
+
+registerTempDirCleanup()
 import { BLUE_VERSION } from '../../api/src/index.ts'
 import * as updateCheck from '../src/updater/check.ts'
 import { updaterInternals, type InteractiveChild, type SpawnOutcome } from '../src/updater/io.ts'

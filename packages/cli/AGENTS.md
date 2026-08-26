@@ -57,3 +57,6 @@ SIGTERM→SIGKILL ladder included).
 
 The CLI publishes `lib/bin.js`, bilingual README files, and `npm-shrinkwrap.json`. The shrinkwrap is regenerated only by `pnpm release:lock-cli` in an isolated npm project and must contain registry records, never pnpm `link:` entries. `pnpm check:pack` verifies the executable mode, shebang, single runtime file, shrinkwrap root pin, and 30 KB launcher budget.
 
+CLI specs that create temporary homes or nested installs register the shared
+tracked-temp cleanup hook so Vitest worker reuse does not accumulate fixtures
+under the OS temp directory.

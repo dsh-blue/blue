@@ -8,7 +8,9 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempTracked } from '../../core/tests/temp-dir.ts'
+import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
+
+registerTempDirCleanup()
 import { cliInternals } from '../src/internals.ts'
 import { nestedDsh } from '../src/nested.ts'
 
@@ -67,4 +69,3 @@ describe('nestedDsh', () => {
     expect(nested.binJs).toMatch(/@deepseek-ai[/\\]dsh[/\\]lib[/\\]bin\.js$/)
   })
 })
-

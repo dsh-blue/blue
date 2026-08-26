@@ -67,19 +67,40 @@ function removeTracked(): void {
   tracked.clear()
 }
 
+/** Install the process-exit safety net for callers that omit eager cleanup. */
+function installExitHook(): void {
+  if (!exitHookInstalled) {
+    exitHookInstalled = true
+    process.on('exit', removeTracked)
+    process.once('SIGINT', () => {
+      removeTracked()
+      process.exit(130)
+    })
+    process.once('SIGTERM', () => {
+      removeTracked()
+      process.exit(143)
+    })
+    process.once('SIGHUP', () => {
+      removeTracked()
+      process.exit(129)
+    })
+  }
+}
+
+// Install this at module load as well as from the explicit opt-in below. A
+// forgotten registration may defer cleanup until worker exit, but it must not
+// leak across an interrupted test worker indefinitely.
+installExitHook()
+
 /**
  * Opt the current spec file into eager cleanup: removes the file's tracked
- * roots in an afterAll. The process-exit hook is installed regardless, so
- * a spec that forgets this call still leaks nothing past the worker's exit.
+ * roots in an afterAll. The process-exit hook remains the safety net for a
+ * spec that forgets this call.
  */
 export function registerTempDirCleanup(): void {
   afterAll(() => {
     removeTracked()
   })
-  if (!exitHookInstalled) {
-    exitHookInstalled = true
-    process.on('exit', removeTracked)
-  }
 }
 
 /**

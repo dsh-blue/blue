@@ -29,8 +29,7 @@ import { setGitCommandRunner } from '../../../transcript/src/status-git.ts'
 import { setClipboardImageReader } from '../../../interaction/src/paste-image.ts'
 import { ADVERSARIAL } from '../../../core/tests/width-scan.ts'
 import { mkdtempTracked } from '../../../core/tests/temp-dir.ts'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 // Pin the session cwd to a fixed-length throwaway directory: the banner and
@@ -39,7 +38,7 @@ import { join } from 'node:path'
 // deeply nested a worktree) runs them. The random suffix is six chars every
 // time, so every rendering decision is stable and the normalizer's tokens
 // erase the rest.
-process.chdir(mkdtempSync(join(tmpdir(), 'blue-vt-frame-')))
+process.chdir(mkdtempTracked('blue-vt-frame-'))
 
 /** A 1x1 PNG (the paste-image spec's literal). */
 const PNG_1X1 = new Uint8Array([
@@ -229,6 +228,59 @@ describe('blue VT layout snapshots (R2)', () => {
     // rounded frame is expected to remain in the history above).
     expect(frame).toContain('Select a model')
     expect(frame).toContain('← current')
+  })
+
+  it('the provider form uses compact focused field rows', async () => {
+    setGitCommandRunner(NO_GIT)
+    const dir = mkdtempTracked('blue-vt-form-')
+    const credentialsPath = join(dir, 'credentials.yaml')
+    writeFileSync(credentialsPath, 'version: 1\nrefs:\n  DEEPSEEK_API_KEY: existing-test-key\n', { mode: 0o600 })
+    const vt = new VtTerminal(80, 30)
+    const tree = await bootBlue(['start'], {
+      script: [textResponse('booted')],
+      realSettings: { settingsPath: join(dir, 'settings.yaml'), credentialsPath },
+      piAi: true,
+      terminal: vt,
+    })
+    const agent = await currentAgent(tree)
+    await agent.whenIdle()
+    const outcome = executeCommand(tree, agent, '/provider add')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Add provider') })
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Endpoint protocol') })
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Custom endpoint') })
+    const frame = await captureGolden(tree, vt, 'form-panel-80')
+    expect(frame).toContain('Provider Name')
+    expect(frame).toContain('Base URL')
+    expect(frame).toContain('API key')
+    tree.terminal.sendInput('\x1b')
+    await expect(outcome).resolves.toEqual({ kind: 'success', text: 'add provider cancelled' })
+  })
+
+  it('the questionnaire uses progress and a shared compact input row', async () => {
+    setGitCommandRunner(NO_GIT)
+    const vt = new VtTerminal(80, 30)
+    const tree = await bootBlue([], { script: [], terminal: vt })
+    await currentAgent(tree)
+    const answer = tree.ctx.userQuestions.ask({
+      questions: [
+        { id: 'q1', question: 'What should we call this project?', header: 'Name' },
+        { id: 'q2', question: 'Which runtime?', header: 'Runtime', options: [{ label: 'Node' }, { label: 'Deno' }] },
+      ],
+    })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('What should we call this project?') })
+    const inputFrame = await captureGolden(tree, vt, 'questionnaire-input-80')
+    expect(inputFrame).toContain('Answer')
+    tree.terminal.sendInput('blue')
+    tree.terminal.sendInput('\t')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Which runtime?') })
+    const choiceFrame = await captureGolden(tree, vt, 'questionnaire-choice-80')
+    expect(choiceFrame).toContain('Runtime')
+    tree.terminal.sendInput('\x1b')
+    await expect(answer).rejects.toBeDefined()
   })
 
   it('CJK width: the D48 adversarial corpus at 40 columns', async () => {

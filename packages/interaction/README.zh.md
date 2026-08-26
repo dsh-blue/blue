@@ -20,6 +20,8 @@ Draft text、prompt/bash mode、history、command alias、settings/theme identit
 
 Dialog 替换 editor slot，并复用 list、form、info、settings、question、approval、model 与 plan-review panel。Question 与 approval 工作绑定 Fiber、支持 abort，并拒绝 unload 或会话切换后的迟到结果。第三方 renderer-neutral command 与 notification 通过 `./plugin-host-bridge` 进入。
 
+Form 使用双行字段：第一行显示标签和说明，第二行使用无边框箭头提示符编辑，校验错误紧跟在失败字段下方。Enter 在字段间前进或提交最后一个字段；Tab/Down 前进，Shift-Tab/Up 后退。Question panel 显示有界的答题进度，free-text 与 `Other` 共用同一种输入行，并在切换问题时保留草稿。
+
 可读 export 在 flush 并读取 durable artifact 后使用官方 `blueConversation` projection；full export 则有意输出解码后的审计 event stream。`/copy` 使用官方 conversation 值与 OSC 52/native clipboard 管线。
 
 ## 可选子路径

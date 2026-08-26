@@ -44,7 +44,7 @@ describe('FormPanel', () => {
     expect(onSubmit).toHaveBeenCalledWith({ route: 'gw', key: 'secret' })
   })
 
-  it('moves back with Up and forward with Down and Shift-Tab', () => {
+  it('moves back with Up and Shift-Tab and forward with Down', () => {
     const { component, onSubmit } = form([
       { id: 'a', label: 'A' },
       { id: 'b', label: 'B' },
@@ -53,14 +53,14 @@ describe('FormPanel', () => {
     input(component).handleInput('1')
     input(component).handleInput(KEY.down)
     input(component).handleInput('2')
-    // Shift-Tab also moves forward (the kimi toggle).
+    // Shift-Tab returns to the previous field.
     input(component).handleInput('\x1b[Z')
     input(component).handleInput('3')
-    input(component).handleInput(KEY.up)
-    // Enter off the last field advances; the second submits.
+    input(component).handleInput(KEY.down)
+    // Enter advances to the last field; the second Enter submits.
     input(component).handleInput(KEY.enter)
     input(component).handleInput(KEY.enter)
-    expect(onSubmit).toHaveBeenCalledWith({ a: '1', b: '2', c: '3' })
+    expect(onSubmit).toHaveBeenCalledWith({ a: '13', b: '2', c: '' })
   })
 
   it('submits a single-field form with one Enter', () => {
@@ -135,6 +135,16 @@ describe('FormPanel', () => {
     ])
     input(component).handleInput(KEY.enter)
     expect(onSubmit).toHaveBeenCalledWith({ route: 'preset' })
+  })
+
+  it('shows hints when the value column has room and hides them when it does not', () => {
+    const { component } = form([{ id: 'route', label: 'Route', hint: 'optional route' }])
+    const rows = component.render(60)
+    expect(rows.some(row => row.includes('Route') && row.includes('optional route'))).toBe(true)
+    expect(rows.filter(row => row.includes('Route')).length).toBe(1)
+    expect(rows.some(row => row.includes('>') && row.includes('Route'))).toBe(false)
+    input(component).handleInput('x'.repeat(80))
+    expect(component.render(20).some(row => row.includes('optional route'))).toBe(false)
   })
 
   it('cancels with Escape and drops cached render state', () => {

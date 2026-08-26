@@ -11,7 +11,9 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import SettingsProvider, { type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { Context } from '@deepseek-ai/cordis'
-import { mkdtempTracked } from '../../core/tests/temp-dir.ts'
+import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
+
+registerTempDirCleanup()
 import { BLUE_VERSION } from '../../api/src/index.ts'
 import { fakeBlueContext } from './fakes.ts'
 import { updaterInternals } from '../src/updater/io.ts'
