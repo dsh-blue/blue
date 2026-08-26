@@ -143,10 +143,9 @@ describe('blue-pane-queue plugin', () => {
   it('unregisters its queue subscription and dock contribution on dispose', async () => {
     const { ctx, screen, fiber } = await mount()
     await fiber.dispose()
-    // The transcript-owned stable bottom-lane root outlives this provider;
-    // unloading removes only the queue contribution from it.
-    expect(screen.children).toHaveLength(1)
-    expect(unwrapped(screen.children[0], 80)).toEqual([])
+    // Bottom models mount independently so unloading removes the queue
+    // component itself instead of leaving an empty lane root behind.
+    expect(screen.children).toHaveLength(0)
     const before = screen.renderRequests
     ctx.emit('blue/queue-changed')
     expect(screen.renderRequests).toBe(before)

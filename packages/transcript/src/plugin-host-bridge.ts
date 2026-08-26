@@ -8,7 +8,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { subscribeBluePluginHost, type BlueDockContribution, type BluePluginHostSnapshot, type BlueStatusContribution, type BlueView } from '@dsh-blue/blue-api'
-import { BluePluginViewComponent, GutterComponent, PLUGIN_VIEW_MAX_ROWS } from '@dsh-blue/blue-core'
+import { BluePluginViewComponent, GutterComponent, mountDockChild, PLUGIN_VIEW_MAX_ROWS } from '@dsh-blue/blue-core'
 import type { StatusModel, View } from '@dsh-blue/blue-frontend'
 
 /** Stable Cordis plugin name. */
@@ -85,7 +85,9 @@ export function apply(ctx: Context): void {
         ctx.blueTheme.colors,
         rowBudget(entry),
       ))
-      dock.set(entry.id, ctx.blueScreen.addBottomChild(component))
+      dock.set(entry.id, mountDockChild(ctx.blueScreen, component, {
+        priority: entry.priority ?? 50,
+      }))
     }
     dockOrder = nextOrder
     ctx.blueScreen.requestRender()

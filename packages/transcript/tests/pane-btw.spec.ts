@@ -37,9 +37,9 @@ interface FakeSide {
 }
 
 /** Build one fake side-session action handle. */
-function makeSide(): FakeSide {
+function makeSide(seed: SessionEvent[] = []): FakeSide {
   const side = {
-    projectionSession: { events: [] },
+    projectionSession: { events: [...seed] },
     followups: [],
     listeners: new Set(),
     disposed: 0,
@@ -67,6 +67,7 @@ class FakeSessionActions implements BlueSessionActions {
   failure: unknown
   available = true
   hold = false
+  seed: SessionEvent[] = []
   private pendingResolve: (() => void) | undefined
 
   get pending(): boolean {
@@ -77,7 +78,7 @@ class FakeSessionActions implements BlueSessionActions {
     if (!this.available) return Promise.resolve(undefined)
     this.creates.push(true)
     if (this.failure !== undefined) return Promise.reject(this.failure)
-    const side = makeSide()
+    const side = makeSide(this.seed)
     this.sides.push(side)
     if (this.hold) {
       return new Promise((resolve) => {
@@ -238,6 +239,27 @@ describe('blue-pane-btw', () => {
     expect(splice).toHaveBeenLastCalledWith(false)
   })
 
+  it('does not paint inherited fork replies into a new question', async () => {
+    resetSeq()
+    const inherited = [
+      userEvent('old question'),
+      assistantEvent(1, 1, [{ type: 'text', text: 'old answer' }]),
+    ]
+    const agents = new FakeSessionActions()
+    agents.seed = inherited
+    const { ctx, commands, screen, dispose } = await boot(fakeAgent(inherited), agents)
+
+    expect(await run(commands, 'new question')).toEqual({ kind: 'success', text: 'asked the side question' })
+    expect(screen.paneLines()).toEqual(frame(['› new question', 'thinking…']))
+
+    const session = agents.sides[0]!.projectionSession
+    ctx.emit('session/event', session, reasoningDelta(2, 1, 'working'))
+    expect(screen.paneLines()).toEqual(frame(['› new question', 'thinking…']))
+    ctx.emit('session/event', session, textDelta(2, 1, 'new answer'))
+    expect(screen.paneLines()).toEqual(frame(['› new question', 'new answer', 'thinking…']))
+    await dispose()
+  })
+
   it('drops the editor splice while a dialog occupies the slot and re-asserts on return', async () => {
     resetSeq()
     const current = fakeAgent([], { cwd: '/repo' })
@@ -307,6 +329,28 @@ describe('blue-pane-btw', () => {
     await dispose()
   })
 
+  it('replaces the visible answer while side creation is still pending', async () => {
+    resetSeq()
+    const agents = new FakeSessionActions()
+    const { ctx, commands, screen, dispose } = await boot(fakeAgent([]), agents)
+    await run(commands, 'first?')
+    const first = agents.sides[0]!
+    ctx.emit('session/event', first.projectionSession, textDelta(1, 1, 'old answer'))
+    agents.emitStatus(first, 'idle')
+    expect(screen.paneLines()).toEqual(frame(['› first?', 'old answer']))
+
+    agents.hold = true
+    const pending = run(commands, 'second?')
+    await vi.waitFor(() => {
+      expect(agents.pending).toBe(true)
+    })
+    expect(screen.paneLines()).toEqual(frame(['› second?', 'thinking…']))
+
+    agents.resolvePending()
+    expect(await pending).toEqual({ kind: 'success', text: 'asked the side question' })
+    await dispose()
+  })
+
   it('settles a replacement side question without a projection service', async () => {
     resetSeq()
     const agents = new FakeSessionActions()
@@ -318,6 +362,8 @@ describe('blue-pane-btw', () => {
     const side = agents.sides[1]!
     agents.emitStatus(side, 'running')
     agents.emitStatus(side, 'idle')
+    harness.ctx.emit('blue/btw-command', 'submit', 'third?')
+    expect(side.followups).toEqual(['second?', 'third?'])
     await harness.dispose()
   })
 
@@ -551,6 +597,7 @@ describe('blue-pane-btw', () => {
     const side = agents.sides[0]!
     const session = side.projectionSession
     // The first turn settles; the busy flag flips with it.
+    ctx.emit('session/event', session, textDelta(1, 1, 'first reply'))
     agents.emitStatus(side, 'idle')
     expect(splice).toHaveBeenLastCalledWith(true, false)
     expect(side.followups).toHaveLength(1)
@@ -563,11 +610,16 @@ describe('blue-pane-btw', () => {
     expect(side.followups).toEqual(['first?', 'and then?'])
     // The first turn settled before the submit, so its thinking row is gone;
     // the blank separator row sits between the two turns.
-    expect(screen.paneLines()).toEqual(frame(['› first?', '', '› and then?', 'thinking…']))
+    expect(screen.paneLines()).toEqual(frame(['› first?', 'first reply', '', '› and then?', 'thinking…']))
 
-    ctx.emit('session/event', session, assistantEvent(1, 1, [{ type: 'text', text: 'second reply' }]))
+    // Reasoning starts the new run but must not copy the previous assistant
+    // entry into the new turn while no second answer exists yet.
+    ctx.emit('session/event', session, reasoningDelta(2, 1, 'working'))
+    expect(screen.paneLines()).toEqual(frame(['› first?', 'first reply', '', '› and then?', 'thinking…']))
+
+    ctx.emit('session/event', session, assistantEvent(2, 1, [{ type: 'text', text: 'second reply' }]))
     agents.emitStatus(side, 'idle')
-    expect(screen.paneLines()).toEqual(frame(['› first?', '', '› and then?', 'second reply']))
+    expect(screen.paneLines()).toEqual(frame(['› first?', 'first reply', '', '› and then?', 'second reply']))
     await dispose()
   })
 

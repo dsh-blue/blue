@@ -146,10 +146,11 @@ export class PaneFakeCommands {
 export class FakeProjectionService {
   private readonly listeners = new Set<(session: unknown, key: string, value: unknown, seq: number) => void>()
   private readonly states = new WeakMap<object, ConversationProjectionState>()
+  private readonly watermarks = new WeakMap<object, number>()
   snapshot(session: { readonly events?: readonly import('@deepseek-ai/dsh-session').SessionEvent[] }): { readonly values: Record<string, unknown>, readonly asOfSeq: number } {
     const key = session as object
     const state = this.states.get(key) ?? (session.events ?? []).reduce((current, event) => this.reduce(current, event), initialConversationState())
-    return { values: { blueConversation: conversationProjectionDefinition.wire.view(state) }, asOfSeq: session.events?.at(-1)?.seq ?? -1 }
+    return { values: { blueConversation: conversationProjectionDefinition.wire.view(state) }, asOfSeq: this.watermarks.get(key) ?? session.events?.at(-1)?.seq ?? -1 }
   }
   onChanged(listener: (session: unknown, key: string, value: unknown, seq: number) => void): () => void {
     this.listeners.add(listener)
@@ -160,6 +161,7 @@ export class FakeProjectionService {
     const current = this.states.get(key) ?? (session as { readonly events?: readonly import('@deepseek-ai/dsh-session').SessionEvent[] }).events?.slice(0, -1).reduce((state, row) => this.reduce(state, row), initialConversationState()) ?? initialConversationState()
     const next = this.reduce(current, event)
     this.states.set(key, next)
+    this.watermarks.set(key, event.seq)
     const snapshot = this.snapshot(session as { readonly events?: readonly import('@deepseek-ai/dsh-session').SessionEvent[] })
     for (const listener of this.listeners) listener(session, 'blueConversation', snapshot.values.blueConversation as ConversationProjection, event.seq)
   }
