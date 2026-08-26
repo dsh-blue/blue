@@ -8,7 +8,7 @@ Command-line startup (`src/startup.ts`): `[task]` positional, `--resume <id>`.
 
 ## Agent driver
 
-`src/index.ts` creates/resumes sessions while keeping the mutable Agent, Session, and model-selection reference private. It synchronously provides `blueSessionReader`, `blueSessionProjections`, and `blueSessionActions` before waiting for Loader settlement. Consumers receive readonly snapshots, official projection values, and structured result-bearing actions only.
+`src/index.ts` creates/resumes sessions while keeping the mutable Agent, Session, and model-selection reference private. It synchronously provides `blueSessionReader`, `blueSessionProjections`, `blueSessionActions`, and `blueToolPresentations` before waiting for Loader settlement. Consumers receive readonly snapshots, official projection values, and structured result-bearing actions only. `blueToolPresentations` is the presenter-view seam: Harness tool registrations are agent-scoped (the plain global `tools.get(name)` view misses the builtins), so the session commit point binds the active Agent as the viewing scope and the service resolves presenter hooks through it — the host Agent object never crosses the seam.
 
 The driver answers the payload-less `'blue/request-new'` and `'blue/request-fork'` events (fork: idle-guarded, seeded with the full event log plus `meta.{cwd,parentSession,seedLength}`), and `'blue/request-rewind'(sessionId, boundarySeq)`. Rewind rejects stale ids, non-idle agents, and prefixes with an open turn/step/tool call; the parent log is never mutated. All switches serialize on one queue and share the commit point: create/resume replacement → dispose old → assign internal current → publish the reader snapshot. No raw-session change event exists.
 

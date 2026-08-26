@@ -289,13 +289,13 @@ export class OfficialConversationModelSource {
 export const name = 'blue-transcript-official'
 
 /** Official projection/model services and current frontend binding. */
-export const inject = ['blueConversationProjection', 'blueSessionProjections', 'blueSessionReader', 'blueTranscriptModels', 'tools']
+export const inject = ['blueConversationProjection', 'blueSessionProjections', 'blueSessionReader', 'blueTranscriptModels', 'blueToolPresentations']
 
 /** Mount the official projection consumer and bind it to session switches. */
 export function apply(ctx: Context): void {
   const source = new OfficialConversationModelSource(
     ctx.blueSessionProjections as BlueSessionProjectionReader,
-    ctx.tools,
+    ctx.blueToolPresentations,
     () => ctx.blueTranscriptModels.refresh('official-conversation'),
   )
   ctx.effect(() => () => source.dispose())

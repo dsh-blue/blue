@@ -399,7 +399,7 @@ describe('official conversation plugin', () => {
 
     apply(ctx as never)
     expect(name).toBe('blue-transcript-official')
-    expect(inject).toEqual(['blueConversationProjection', 'blueSessionProjections', 'blueSessionReader', 'blueTranscriptModels', 'tools'])
+    expect(inject).toEqual(['blueConversationProjection', 'blueSessionProjections', 'blueSessionReader', 'blueTranscriptModels', 'blueToolPresentations'])
     expect(registered?.()).toMatchObject({ id: 'official-conversation' })
     expect(refresh).toHaveBeenCalledWith('official-conversation')
 

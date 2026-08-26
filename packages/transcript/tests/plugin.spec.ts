@@ -222,7 +222,7 @@ async function bootTranscript(
   const dir = mkdtempTracked('dsh-blue-transcript-')
   writeFileSync(join(dir, 'blue-transcript.mjs'), `
 export const name = 'blue-transcript'
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'blueSessionReader', 'blueSessionProjections', 'tools']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'blueSessionReader', 'blueSessionProjections']
 export const apply = ctx => globalThis.__blueTranscriptApply(ctx)
 `)
   writeFileSync(join(dir, 'blue-status-basic.mjs'), `
@@ -232,7 +232,7 @@ export const apply = ctx => globalThis.__blueStatusBasicApply(ctx)
 `)
   writeFileSync(join(dir, 'blue-transcript-official.mjs'), `
 export const name = 'blue-transcript-official'
-export const inject = ['blueConversationProjection', 'blueSessionProjections', 'blueSessionReader', 'blueTranscriptModels', 'tools']
+export const inject = ['blueConversationProjection', 'blueSessionProjections', 'blueSessionReader', 'blueTranscriptModels', 'blueToolPresentations']
 export const apply = ctx => globalThis.__blueTranscriptOfficialApply(ctx)
 `)
   writeFileSync(join(dir, 'blue-status-fixture.mjs'), `
@@ -320,6 +320,7 @@ export const apply = ctx => globalThis.__blueStatusFixtureApply(ctx)
     sessionProjections: projections,
     blueConversationProjection: { key: 'blueConversation' },
     tools: { get: (name: string) => options.tools?.[name] },
+    blueToolPresentations: { bind: () => {}, get: (name: string) => options.tools?.[name] },
     ...(options.sessionEpoch === undefined ? {} : { blueRequests: { sessionEpoch: options.sessionEpoch } }),
     ...(options.settings === undefined ? {} : { settings: { get: (ns: string) => options.settings?.[ns] } }),
     ...(options.attachments === undefined ? {} : { attachments: options.attachments }),

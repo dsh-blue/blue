@@ -14,12 +14,14 @@ import type {
   ToolCallView,
   ToolResult,
   ToolResultView,
-  ToolRuntime,
 } from '@deepseek-ai/dsh-tools'
 import type { TranscriptToolItem } from './types.ts'
 
-/** The slice of the host tool registry the resolvers read. */
-export type ToolPresentationSource = Pick<ToolRuntime, 'get'>
+/** The presenter-bearing face of a tool registry the resolvers read (structural, scope-agnostic). */
+export interface ToolPresentationSource {
+  /** The presenter-bearing definition the source resolves, or `undefined` when none is visible. */
+  get(name: string): { readonly presentCall?: (args: unknown) => unknown; readonly presentResult?: (args: unknown, result: unknown) => unknown } | undefined
+}
 
 /** Maximum length of the key argument shown on a card header. */
 export const KEY_ARG_MAX_CHARS = 60
@@ -101,7 +103,7 @@ export function resolveCallView(
   args: unknown,
 ): ToolCallView | undefined {
   try {
-    return tools.get(name)?.presentCall?.(args)
+    return tools.get(name)?.presentCall?.(args) as ToolCallView | undefined
   } catch {
     return undefined
   }
@@ -123,7 +125,7 @@ export function resolveResultView(
   result: ToolResult,
 ): ToolResultView | undefined {
   try {
-    return tools.get(name)?.presentResult?.(args, result)
+    return tools.get(name)?.presentResult?.(args, result) as ToolResultView | undefined
   } catch {
     return undefined
   }
