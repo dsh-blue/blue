@@ -35,6 +35,7 @@ import {
 } from './components.ts'
 import { ThinkingComponent } from './thinking.ts'
 import { ToolModelComponent } from './tool-model.ts'
+import { parseToolArguments } from './present.ts'
 import type { TranscriptToolItem } from './types.ts'
 import {
   DEFAULT_TRANSCRIPT_PRESENTATION,
@@ -88,6 +89,7 @@ function isSemantic(entry: View | TranscriptEntryModel): entry is TranscriptEntr
 }
 
 function asToolItem(entry: TranscriptToolModel): TranscriptToolItem {
+  const parsedArguments = parseToolArguments(entry.arguments)
   return {
     kind: 'tool',
     seq: entry.seq,
@@ -96,6 +98,7 @@ function asToolItem(entry: TranscriptToolModel): TranscriptToolItem {
     callId: entry.callId,
     name: entry.name,
     arguments: entry.arguments,
+    ...(parsedArguments === undefined ? {} : { parsedArguments }),
     startedAt: entry.startedAt,
     ...(entry.result === undefined ? {} : { result: entry.result }),
   }
@@ -125,10 +128,19 @@ interface CachedComponent {
   readonly target: BlueComponent
 }
 
+interface RenderedRowsCache {
+  readonly model: TranscriptModel
+  readonly width: number
+  readonly expanded: boolean
+  readonly policy: TranscriptPresentationSnapshot
+  readonly rows: string[]
+}
+
 /** Bounded semantic transcript component with id-based reconciliation. */
 export class TranscriptModelComponent implements BlueComponent {
   private readonly cached = new Map<string, CachedComponent>()
   private expanded = false
+  private renderedRows: RenderedRowsCache | undefined
 
   constructor(
     private readonly source: () => TranscriptModel | null,
@@ -138,34 +150,49 @@ export class TranscriptModelComponent implements BlueComponent {
   render(width: number): string[] {
     const model = this.source()
     if (model === null) {
+      this.renderedRows = undefined
       this.prune(new Set())
       return []
     }
     const bounded = model.entries.slice(-TRANSCRIPT_MODEL_WINDOW)
     const policy = this.presentation()
+    const rendered = this.renderedRows
+    if (model.streaming !== true
+      && rendered?.model === model
+      && rendered.width === width
+      && rendered.expanded === this.expanded
+      && rendered.policy === policy) return rendered.rows
     const turns = [...new Set(bounded.filter(isSemantic).map(entry => entry.turn))]
     const visibleTurns = new Set(turns.slice(-policy.windowTurns))
     const entries = bounded.filter(entry => !isSemantic(entry) || visibleTurns.has(entry.turn))
     const expandableTurns = new Set(turns.slice(-policy.expandTurns))
     const live = new Set(entries.filter(isSemantic).map(entry => entry.id))
     this.prune(live)
-    return entries.flatMap(entry => isSemantic(entry)
+    const rows = entries.flatMap(entry => isSemantic(entry)
       ? this.renderSemantic(entry, width, expandableTurns.has(entry.turn))
       : renderFrontendView(entry, width))
+    this.renderedRows = model.streaming === true
+      ? undefined
+      : { model, width, expanded: this.expanded, policy, rows }
+    return rows
   }
 
   /** Apply the global recent-detail expansion state to mounted entries. */
   setExpanded(expanded: boolean): void {
+    if (this.expanded === expanded) return
     this.expanded = expanded
+    this.renderedRows = undefined
     for (const { target } of this.cached.values()) target.invalidate()
   }
 
   invalidate(): void {
+    this.renderedRows = undefined
     for (const { component } of this.cached.values()) component.invalidate()
   }
 
   /** Dispose timers and async renderer resources held by cached components. */
   dispose(): void {
+    this.renderedRows = undefined
     this.prune(new Set())
   }
 
@@ -205,10 +232,15 @@ export class TranscriptModelComponent implements BlueComponent {
     const renderer = this.renderer!
     switch (entry.kind) {
       case 'transcript-user': {
+        const images = renderer.images()
         const component = new UserMessageComponent({
           kind: 'user', seq: entry.seq, turn: entry.turn, text: entry.text, images: entry.images.map(asImageRef),
         }, renderer.colors, renderer.components, {
-          ...renderer.images(),
+          ...images,
+          onReady: () => {
+            this.invalidate()
+            images.onReady?.()
+          },
           presentation: () => this.presentation(),
         })
         return component
@@ -225,11 +257,8 @@ export class TranscriptModelComponent implements BlueComponent {
       }
       case 'transcript-tool': {
         const presentation = entry.presentation
-        if (presentation !== undefined) {
-          const component = new ToolModelComponent(() => presentation)
-          return component
-        }
-        return new ToolCallComponent(asToolItem(entry), renderer.colors, renderer.components)
+        const body = presentation === undefined ? undefined : new ToolModelComponent(() => presentation)
+        return new ToolCallComponent(asToolItem(entry), renderer.colors, renderer.components, body)
       }
       case 'transcript-error':
         return new ErrorMessageComponent({

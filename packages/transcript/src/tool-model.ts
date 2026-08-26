@@ -14,6 +14,9 @@ declare module '@deepseek-ai/cordis' { interface Context { blueToolModels: BlueM
 
 type Source = ToolPresentationModel | (() => ToolPresentationModel | null)
 
+const COLLAPSED_ROW_LIMIT = 12
+const EXPANDED_ROW_LIMIT = 200
+
 /** Official facts required to build one renderer-neutral tool card. */
 export interface ToolPresentationFacts {
   readonly id: string
@@ -124,7 +127,16 @@ class ToolModelComponent implements BlueComponent {
     if (model === null) return []
     const expanded = this.expandedOverride ?? model.expanded ?? false
     const view = expanded ? model.result ?? model.call : model.call
-    return view === undefined ? [] : [...renderFrontendView(view, width)]
+    if (view === undefined) return []
+    const rows = [...renderFrontendView(view, width)]
+    const limit = expanded ? EXPANDED_ROW_LIMIT : COLLAPSED_ROW_LIMIT
+    if (rows.length <= limit) return rows
+    const remaining = rows.length - limit + 1
+    const hint = expanded
+      ? `... (${String(remaining)} more lines)`
+      : `... (${String(remaining)} more lines, ctrl+o to expand)`
+    const hintRow = renderFrontendView({ kind: 'text', text: hint }, width)[0]!
+    return [...rows.slice(0, limit - 1), hintRow]
   }
   setExpanded(expanded: boolean): void { this.expandedOverride = expanded }
   invalidate(): void {}

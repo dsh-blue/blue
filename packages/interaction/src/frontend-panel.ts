@@ -214,7 +214,15 @@ export class FrontendPanel implements BlueFocusable {
       const variant = this.selectedVariant(item)
       return variant === undefined
         ? item
-        : { ...item, detail: [item.detail, `[${variant.label}]`].filter(value => value !== undefined && value !== '').join(' ') }
+        : {
+            ...item,
+            detail: [item.detail, item.variants!.map(entry => {
+              const label = `[${entry.label}]`
+              return entry.id === variant.id
+                ? this.options.theme.colors.primary(label)
+                : this.options.theme.colors.textMuted(label)
+            }).join(' ')].filter(value => value !== undefined && value !== '').join(' '),
+          }
     })
   }
 

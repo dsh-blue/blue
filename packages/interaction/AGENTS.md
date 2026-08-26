@@ -20,7 +20,7 @@ Module-level replacements are allowed only for explicit test/system seams: fetch
 
 `EditorModelService` maps the current renderer editor into readonly `EditorModel` state and structured `editor.set`, `editor.submit`, and `editor.abort` actions. Third-party consumers never receive a `BlueEditor`.
 
-`blue-input` submits transformed blocks through `blueSessionActions.followup()` or `.steer()`, stores the stable message receipt for safe retraction, recalls queued text through the action service, and derives busy/session state from `blueSessionReader`. Escape and Ctrl-C preserve their distinct retraction/interruption behavior.
+`blue-input` submits transformed blocks through `blueSessionActions.followup()` or `.steer()`, stores the stable message receipt for safe retraction, recalls queued text through the action service, and derives busy/session state from `blueSessionReader`. Escape and Ctrl-C preserve their distinct retraction/interruption behavior. Up/Down belong to editor history (or queue recall); transcript navigation is limited to raw wheel input, PageUp/PageDown, and End, except while BTW explicitly owns contextual Up/Down scrolling.
 
 `blue-editor-plus` layers shell mode and slash/`@`/`#` completion over the same editor host. The `fd`/`fdfind` detection result is cached in `InteractionStateService.fdProbe`; the replaceable probe function is test-only. Missing or failed executables use the bounded filesystem fallback.
 
@@ -28,7 +28,7 @@ Module-level replacements are allowed only for explicit test/system seams: fetch
 
 `commands-plugin.ts` registers the base command families and owns the tree-scoped alias registrations through `InteractionStateService.aliases`. Session navigation emits the app-owned switch request events; model/mode/preset/tool/skill/session-info operations call `blueSessionActions`. Read operations use readonly reader/projection values.
 
-The command-model service projects canonical commands into `CommandModel` values and executes only structured `command.execute` actions. Active executions receive owned abort controllers and resolve to no result after service disposal. Model/effort, trace, and update dialogs publish `PanelModel` snapshots and structured actions into the shared `FrontendPanel`; no command-specific focusable renderer or renderer-owned business state remains.
+The command-model service projects canonical commands into `CommandModel` values and executes only structured `command.execute` actions. Active executions receive owned abort controllers and resolve to no result after service disposal. Model/effort, trace, and update dialogs publish `PanelModel` snapshots and structured actions into the shared `FrontendPanel`; no command-specific focusable renderer or renderer-owned business state remains. List-item variants render as one horizontal bracketed selector row, with Left/Right moving the theme-highlighted variant; `/effort` uses this path and only displays levels supplied by provider metadata.
 
 `session-export.ts` has two deliberate paths. Readable export/copy use the official `blueConversation` projection after flushing and reading the durable artifact; full export decodes the raw append-only artifact for audit fidelity. No display command may introduce a new event fold.
 

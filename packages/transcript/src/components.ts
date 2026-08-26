@@ -343,7 +343,12 @@ export class ToolCallComponent implements BlueComponent {
    * @param colors - the semantic color table.
    * @param components - the component factory providing the width helpers.
    */
-  constructor(item: TranscriptToolItem, colors: BlueSemanticColors, components: BlueComponents) {
+  constructor(
+    item: TranscriptToolItem,
+    colors: BlueSemanticColors,
+    components: BlueComponents,
+    private readonly presentedBody?: BlueComponent & { setExpanded?(expanded: boolean): void },
+  ) {
     this.item = item
     this.colors = colors
     this.components = components
@@ -352,6 +357,7 @@ export class ToolCallComponent implements BlueComponent {
   /** Drop the cached lines; the next render rebuilds from the item. */
   invalidate(): void {
     this.cache = null
+    this.presentedBody?.invalidate()
   }
 
   /**
@@ -362,6 +368,7 @@ export class ToolCallComponent implements BlueComponent {
    */
   setExpanded(expanded: boolean): void {
     this.expanded = expanded
+    this.presentedBody?.setExpanded?.(expanded)
   }
 
   /** The header row: bullet, verb, bold name, key arg, and the lines chip. */
@@ -472,7 +479,10 @@ export class ToolCallComponent implements BlueComponent {
     const body = result === undefined ? '' : (result.fullText ?? result.text)
     const key = `${width}:${this.expanded}:${result ? `${result.isError}:${body}` : 'pending'}`
     if (this.cache?.key === key) return this.cache.lines
-    const lines = ['', this.renderHeader(width), ...this.renderBody(width, result)]
+    const presentedWidth = Math.max(1, width - this.components.visibleWidth(PREVIEW_INDENT))
+    const presentedRows = this.presentedBody?.render(presentedWidth)
+      .map(row => this.components.truncateToWidth(`${PREVIEW_INDENT}${row}`, width))
+    const lines = ['', this.renderHeader(width), ...(presentedRows ?? this.renderBody(width, result))]
     this.cache = { key, lines }
     return lines
   }

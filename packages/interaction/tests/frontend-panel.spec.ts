@@ -109,6 +109,8 @@ describe('FrontendPanel', () => {
       ] },
     })
     expect(fixture.panel.render(50).join('\n')).toContain('[All]')
+    expect(fixture.panel.render(50).join('\n')).toContain('[Low]')
+    expect(fixture.panel.render(50).join('\n')).toContain('[High]')
     fixture.panel.handleInput('\t')
     expect(fixture.panel.render(50).join('\n')).toContain('[one]')
     fixture.panel.handleInput('\x1b[C')

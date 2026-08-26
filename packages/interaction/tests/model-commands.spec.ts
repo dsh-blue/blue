@@ -427,6 +427,9 @@ describe('model-family commands', () => {
     const rows = overlay(screen).render?.(60) ?? []
     const segmentRow = rows.find(row => row.includes('Default') || row.includes('[ '))
     expect(segmentRow).toBeDefined()
+    expect(segmentRow).toContain('[Default]')
+    expect(segmentRow).toContain('[Low]')
+    expect(segmentRow).toContain('[High]')
     overlay(screen).handleInput(KEY.left)
     overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => { expect(writes).toHaveLength(1) })

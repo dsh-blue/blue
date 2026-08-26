@@ -19,6 +19,27 @@ describe('BlueModelToolService', () => {
     const ctx = new Context(); const service = new BlueModelToolService(ctx); const absent = service.register(() => null); absent(); const late = service.register(tool('late')); expect(service.list()).toHaveLength(1); const fixture = screenFixture(); service.attach(fixture.screen); expect(fixture.children).toHaveLength(1); expect(() => service.register(tool('late'))).toThrow(/already registered/); const hidden = service.register(tool('hidden', false)); hidden(); late(); service.register(tool('active')); expect(fixture.children).toHaveLength(1); service.dispose(); expect(fixture.children).toHaveLength(0)
   })
   it('renders missing views and invalidates safely', () => { const empty = new ToolModelComponent(() => ({ kind: 'tool', id: 'empty', name: 'empty' })); expect(empty.render(10)).toEqual([]); empty.invalidate(); const none = new ToolModelComponent(() => null); expect(none.render(10)).toEqual([]); none.invalidate() })
+  it('falls back to the call view when expanded without a result', () => {
+    const component = new ToolModelComponent(() => ({
+      kind: 'tool', id: 'call-only', name: 'call-only', expanded: true,
+      call: { kind: 'text', text: 'pending call' },
+    }))
+    expect(component.render(20)).toEqual(['pending call'])
+  })
+  it('bounds both collapsed and expanded presenter output', () => {
+    const rows = Array.from({ length: 220 }, (_, index) => `row ${String(index)}`).join('\n')
+    const component = new ToolModelComponent(() => ({
+      kind: 'tool', id: 'bounded', name: 'bounded',
+      call: { kind: 'code', code: rows }, result: { kind: 'code', code: rows },
+    }))
+    const collapsed = component.render(40)
+    expect(collapsed).toHaveLength(12)
+    expect(collapsed.at(-1)).toContain('ctrl+o to expand')
+    component.setExpanded(true)
+    const expanded = component.render(40)
+    expect(expanded).toHaveLength(200)
+    expect(expanded.at(-1)).toContain('more lines')
+  })
   it('renders a statically registered model through the mounted closure', () => { const ctx = new Context(); const fixture = screenFixture(); const service = new BlueModelToolService(ctx, fixture.screen); service.register(tool('static')); expect((fixture.children[0] as ToolModelComponent).render(10)).toEqual(['result']); service.dispose() })
   it('cleans the previous screen when reattached', () => { const first = screenFixture(); const second = screenFixture(); const service = new BlueModelToolService(new Context(), first.screen); service.register(tool('reattach')); service.attach(second.screen); expect(first.children).toHaveLength(0); expect(second.children).toHaveLength(1); service.dispose() })
 })

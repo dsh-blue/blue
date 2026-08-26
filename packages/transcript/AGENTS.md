@@ -10,7 +10,7 @@ This package is the renderer adapter over `@dsh-blue/blue-frontend` models. It m
 
 ## Official Conversation Consumer
 
-`src/official-model.ts` injects the effect-scoped `blueConversationProjection` readiness capability before reading `blueConversation`. It snapshots and subscribes through `blueSessionProjections`, rejects wrong keys/sessions and non-increasing sequence values, maps semantic entries by stable id, and drops late work after unload. Tool presentation is resolved through the official `tools` service outside the domain projection.
+`src/official-model.ts` injects the effect-scoped `blueConversationProjection` readiness capability before reading `blueConversation`. It snapshots and subscribes through `blueSessionProjections`, rejects wrong keys/sessions and non-increasing sequence values, maps at most the newest `TRANSCRIPT_MODEL_WINDOW` entries by stable id, and drops late work after unload. Tool presentation is resolved through the official `tools` service outside the domain projection.
 
 `src/session-facts.ts` reads `blueConversationFacts` for status and dock producers. It tracks the current reader epoch, current-session projection, title, and direct child projections. Session changes clear child state before notifying consumers; stale or late projection callbacks cannot repopulate a retired epoch.
 
@@ -18,7 +18,7 @@ This package is the renderer adapter over `@dsh-blue/blue-frontend` models. It m
 
 `TranscriptPresentationPolicy` is allocated by `apply()` and passed into the semantic renderer. It owns thinking/tool initial expansion, completed-turn visibility, recent-turn Ctrl-O scope, user-message fold thresholds, and the retained recent-step setting value. Settings updates mutate only this tree's policy and invalidate mounted semantic components. Standalone services use the immutable shipped defaults.
 
-`TranscriptModelComponent` first caps entries to `TRANSCRIPT_MODEL_WINDOW = 200`, then filters semantic entries to the newest `windowTurns`. Ctrl-O applies only to the newest `expandTurns`; older cards use their category default. Reconciliation replaces components only when an entry signature changes and disposes timers/resources on replacement, eviction, unregister, reattach, or service disposal.
+`TranscriptModelComponent` first caps entries to `TRANSCRIPT_MODEL_WINDOW = 200`, then filters semantic entries to the newest `windowTurns`. Ctrl-O applies only to the newest `expandTurns`; older cards use their category default. Reconciliation replaces components only when an entry signature changes and disposes timers/resources on replacement, eviction, unregister, reattach, or service disposal. A stable non-streaming model reuses its aggregate rendered-row array for the same width, expansion state, and policy snapshot; streaming models bypass that cache, and invalidation, image readiness, policy refresh, resize, expansion, and disposal clear it.
 
 ## Components And Width
 
@@ -40,11 +40,11 @@ User, assistant, thinking, tool, error, and interruption models reuse the packag
 
 Activity, todo, and agents consume `blueSessionFacts`. Activity derives its phase from projection facts and owns only its presentation timer. Todo renders the projected whole list and keeps only its local expanded/collapsed view state. Agents renders projected spawn-class facts plus bounded direct-child overlays; no child Session or event subscription enters the renderer.
 
-BTW calls `blueSessionActions.createSideSession()`, holds the returned owned handle for one pane lifetime, reads its official `blueConversation` projection through the opaque identity, and disposes the handle on close/unload. Parent seeding and Agent status filtering remain in app.
+BTW calls `blueSessionActions.createSideSession()`, holds the returned owned handle for one pane lifetime, reads its official `blueConversation` projection through the opaque identity, and disposes the handle on close/unload. Its dock renderer has no trailing spacer: the gutter-wrapped pane side borders meet the connected editor's `├┤` row directly. Parent seeding and Agent status filtering remain in app.
 
 ## Tool And Plugin Models
 
-`BlueModelToolService` converts official generic/terminal/diff/search/read/web presentation facts into readonly frontend views and never reads session events. There is no `blueIntents` registry and no intent subpath export.
+`BlueModelToolService` converts official generic/terminal/diff/search/read/web presentation facts into readonly frontend views and never reads session events. The semantic transcript renderer keeps `ToolCallComponent` as the status/header/key-argument/shell chrome and nests the official view as its bounded body; tools without a presenter retain the generic rich fallback instead of receiving a synthetic name-only view. There is no `blueIntents` registry and no intent subpath export.
 
 `plugin-host-bridge.ts` is the only route from public plugin dock/status models into owner registries. Reordering replaces the mounted public dock block atomically; unload runs every screen/status disposer.
 

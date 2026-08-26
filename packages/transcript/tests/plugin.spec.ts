@@ -479,7 +479,8 @@ describe('blue-transcript plugin through the real Loader', () => {
     // The seeded tool call pairs with its live result.
     ctx.emit('session/event', agent.session as unknown as Session, toolResultEvent(2, 1, 'c1', 'file.txt'))
     expect(screen.children).toHaveLength(1)
-    expect(contentLines(screen).join('\n')).toContain('bash')
+    expect(contentLines(screen).join('\n')).toContain('Ran a command')
+    expect(contentLines(screen).join('\n')).toContain('$ ls')
   })
 
   it.skip('rejects an interrupted lifecycle event from a stale session epoch', async () => {

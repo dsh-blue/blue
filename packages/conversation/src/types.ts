@@ -116,6 +116,8 @@ export interface ConversationProjectionState {
   readonly pendingReasoning: string
   readonly finalizedSteps: readonly string[]
   readonly interruptedTurns: readonly number[]
+  /** Turns durably erased by Blue's safe-retraction surface marker. */
+  readonly retractedTurns: readonly number[]
   readonly toolEntryIds: Readonly<Record<string, string>>
 }
 

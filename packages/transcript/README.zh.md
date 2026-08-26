@@ -8,9 +8,9 @@ Blue 的 projection-backed transcript、status、tool 与 dock model 终端渲�
 
 `./official-model` 插件通过 app 所有的 `blueSessionProjections` 消费完整 `blueConversation` 值。它把 user、assistant、thinking、tool、error、interruption、image 与 retraction fact 映射为稳定的 renderer-neutral entry，并在 domain projection 之外解析官方 tool presentation。过期、畸形、异会话与卸载后的值都会被丢弃。
 
-`TranscriptModelService` 按稳定 id 协调 semantic component，把每个 model 限制为最新 200 项，应用配置后的 turn window，只向最近若干 turn 转发 Ctrl-O 展开，并在条目退役时释放 timer。User message 折叠阈值、thinking/tool 默认展开状态、turn window 与展开范围都属于 frontend-tree-scoped presentation policy，因此 theme/provider reload 可保留设置，同时不同 tree 之间不会泄漏状态。
+`TranscriptModelService` 按稳定 id 协调 semantic component，把每个 model 限制为最新 200 项，缓存稳定的已完成 frame，应用配置后的 turn window，只向最近若干 turn 转发 Ctrl-O 展开，并在条目退役时释放 timer。User message 折叠阈值、thinking/tool 默认展开状态、turn window 与展开范围都属于 frontend-tree-scoped presentation policy，因此 theme/provider reload 可保留设置，同时不同 tree 之间不会泄漏状态。
 
-当前 runtime 不折叠 Harness session event，也没有旧 tool-intent registry。Generic、terminal、diff、search、read 与 web tool 形态通过 canonical projection/presentation model 到达渲染层。
+当前 runtime 不折叠 Harness session event，也没有旧 tool-intent registry。Generic、terminal、diff、search、read 与 web tool 形态通过 canonical projection/presentation model 到达渲染层，同时保留共享的状态、参数、命令与展开 chrome。BTW pane 与连接的 editor 共用对齐的左右边框，不再插入 spacer 行。
 
 ## Status 与 Dock
 

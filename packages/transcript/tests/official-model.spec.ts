@@ -74,6 +74,21 @@ function sourceFixture(initial: ConversationProjection | unknown = projection(),
 }
 
 describe('official conversation model mapping', () => {
+  it('bounds conversion before freezing a long projection', () => {
+    const entries = Array.from({ length: 203 }, (_, index) => ({
+      kind: 'assistant' as const,
+      id: `assistant-${String(index)}`,
+      seq: index,
+      turn: index,
+      step: 0,
+      text: `answer ${String(index)}`,
+      streaming: false,
+    }))
+    const model = conversationTranscriptModel(projection(entries), toolSource())
+    expect(model.entries).toHaveLength(200)
+    expect(model.entries[0]).toMatchObject({ id: 'assistant-3' })
+  })
+
   it('maps every semantic entry and filters tool-owned dock channels', () => {
     const model = conversationTranscriptModel(projection([
       {
@@ -129,8 +144,8 @@ describe('official conversation model mapping', () => {
     ]), toolSource({ throws: true }))
     expect(pending.entries[0]).toMatchObject({
       kind: 'transcript-tool',
-      presentation: { call: { kind: 'text', text: 'missing' } },
     })
+    expect((pending.entries[0] as { presentation?: unknown }).presentation).toBeUndefined()
 
     const failed = conversationTranscriptModel(projection([
       transcriptTool({
@@ -139,6 +154,19 @@ describe('official conversation model mapping', () => {
     ]), toolSource())
     expect(failed.entries[0]).toMatchObject({
       presentation: { result: { kind: 'text', text: 'failure', tone: 'danger' } },
+    })
+
+    const resultOnly = conversationTranscriptModel(projection([
+      transcriptTool({
+        result: { content: [{ type: 'text', text: 'done' }], text: 'done', isError: false, endedAt: 210 },
+      }),
+    ]), {
+      get: () => ({
+        presentResult: () => ({ card: 'generic', title: 'Result only' }),
+      } as never),
+    } as ToolPresentationSource)
+    expect(resultOnly.entries[0]).toMatchObject({
+      presentation: { call: { kind: 'text', text: 'read' }, result: { kind: 'sections' } },
     })
   })
 })

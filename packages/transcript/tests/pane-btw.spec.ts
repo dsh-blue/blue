@@ -141,9 +141,9 @@ function bodyRow(text: string, width = 78): string {
   return `│ ${text}${' '.repeat(Math.max(0, width - 4 - text.length))} │`
 }
 
-/** The default frame: rule + fitted body rows + the trailing spacer. */
+/** The default frame: rule plus fitted body rows, joined directly to the editor. */
 function frame(rows: readonly string[], truncated = false): string[] {
-  return [rule(truncated), ...rows.map(text => bodyRow(text)), '']
+  return [rule(truncated), ...rows.map(text => bodyRow(text))]
 }
 
 describe('blue-pane-btw', () => {
@@ -226,7 +226,7 @@ describe('blue-pane-btw', () => {
 
     // The app-owned handle admits only this side session's status changes.
     agents.emitStatus(side, 'running')
-    expect(screen.paneLines()).toHaveLength(5)
+    expect(screen.paneLines()).toHaveLength(4)
     agents.emitStatus(side, 'idle')
     // The thinking row leaves but the high-water height stays: the third
     // body row pads blank (the min-height ratchet).
@@ -375,17 +375,17 @@ describe('blue-pane-btw', () => {
     ctx.emit('session/event', session, assistantEvent(1, 1, [{ type: 'text', text: ten }]))
     // Body = question + 10 lines + thinking = 12 rows. rows = 24 → budget
     // = max(3, 8) - 1 = 7: rule + 7 body rows + spacer, tail-followed.
-    expect(screen.paneLines()).toHaveLength(1 + 7 + 1)
+    expect(screen.paneLines()).toHaveLength(1 + 7)
     expect(screen.paneLines()[1]).toBe(bodyRow('line5'))
 
     // A resize re-fits live: rows = 15 → budget = max(3, 5) - 1 = 4.
     screen.rows = 15
-    expect(screen.paneLines()).toHaveLength(1 + 4 + 1)
+    expect(screen.paneLines()).toHaveLength(1 + 4)
     expect(screen.paneLines()[1]).toBe(bodyRow('line8'))
 
     // rows = 4 → budget = max(3, 1) - 1 = 2, never below the panel minimum.
     screen.rows = 4
-    expect(screen.paneLines()).toHaveLength(1 + 2 + 1)
+    expect(screen.paneLines()).toHaveLength(1 + 2)
     expect(screen.paneLines()[1]).toBe(bodyRow('line10'))
     await dispose()
   })
@@ -403,11 +403,10 @@ describe('blue-pane-btw', () => {
     // Question + 25 reply rows + thinking = 27 rows; the last 7 show
     // (tail-follow), and the hint advertises the scroll keys.
     const lines = screen.paneLines()
-    expect(lines).toHaveLength(1 + 7 + 1)
+    expect(lines).toHaveLength(1 + 7)
     expect(lines[0]).toBe(rule(true))
     expect(lines[1]).toBe(bodyRow('line20'))
-    expect(lines.at(-2)).toBe(bodyRow('thinking…'))
-    expect(lines.at(-1)).toBe('')
+    expect(lines.at(-1)).toBe(bodyRow('thinking…'))
 
     // Scroll up one row: the viewport steps back and stops following.
     ctx.emit('blue/btw-command', 'scroll-up')
@@ -423,7 +422,7 @@ describe('blue-pane-btw', () => {
     // New content while tail-following pins to the new bottom.
     ctx.emit('session/event', session, textDelta(1, 1, 'tail'))
     expect(screen.paneLines()[1]).toBe(bodyRow('line20'))
-    expect(screen.paneLines().at(-2)).toBe(bodyRow('thinking…'))
+    expect(screen.paneLines().at(-1)).toBe(bodyRow('thinking…'))
     await dispose()
   })
 
@@ -500,7 +499,7 @@ describe('blue-pane-btw', () => {
     const session = side.projectionSession
     ctx.emit('session/event', session, assistantEvent(1, 1, [{ type: 'text', text: 'l1\nl2\nl3' }]))
     // Body = question + 3 lines + thinking = 5 rows → the panel grows to 5.
-    expect(screen.paneLines()).toHaveLength(1 + 5 + 1)
+    expect(screen.paneLines()).toHaveLength(1 + 5)
 
     // The finalize shrinks the body to question + 1 line, and the idle flip
     // drops the thinking row — but the panel stays at its high-water height
@@ -508,7 +507,7 @@ describe('blue-pane-btw', () => {
     ctx.emit('session/event', session, assistantEvent(1, 1, [{ type: 'text', text: 'done' }]))
     agents.emitStatus(side, 'idle')
     const lines = screen.paneLines()
-    expect(lines).toHaveLength(1 + 5 + 1)
+    expect(lines).toHaveLength(1 + 5)
     expect(lines[1]).toBe(bodyRow('› q?'))
     expect(lines[2]).toBe(bodyRow('done'))
     // The padding rows render through the border machinery, like the rest.
@@ -528,11 +527,11 @@ describe('blue-pane-btw', () => {
     const long = Array.from({ length: 25 }, (_, index) => `line${index + 1}`).join('\n')
     ctx.emit('session/event', session, assistantEvent(1, 1, [{ type: 'text', text: long }]))
     const lines = screen.paneLines()
-    // 1 + 27 + 1: every body row renders, untruncated.
-    expect(lines).toHaveLength(1 + 27 + 1)
+    // One rule plus every body row renders, untruncated.
+    expect(lines).toHaveLength(1 + 27)
     expect(lines[0]).toBe(rule(false))
     expect(lines[1]).toBe(bodyRow('› q?'))
-    expect(lines.at(-2)).toBe(bodyRow('thinking…'))
+    expect(lines.at(-1)).toBe(bodyRow('thinking…'))
     await dispose()
   })
 

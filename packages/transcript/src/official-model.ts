@@ -19,7 +19,7 @@ import {
 } from '@dsh-blue/blue-conversation'
 import type { TranscriptEntryModel, TranscriptModel } from '@dsh-blue/blue-frontend'
 import { createToolPresentationModel } from './tool-model.ts'
-import { createTranscriptModel } from './transcript-model.ts'
+import { createTranscriptModel, TRANSCRIPT_MODEL_WINDOW } from './transcript-model.ts'
 import { parseToolArguments, resolveCallView, resolveResultView, type ToolPresentationSource } from './present.ts'
 
 /** Official projection read face consumed by this compatibility adapter. */
@@ -42,13 +42,15 @@ function toolModel(entry: ConversationToolEntry, tools: ToolPresentationSource):
   const outcome = toolResult(entry)
   const call = resolveCallView(tools, entry.name, args)
   const resultView = outcome === undefined ? undefined : resolveResultView(tools, entry.name, args, outcome)
-  const presentation = createToolPresentationModel({
-    id: entry.id,
-    name: entry.name,
-    ...(call === undefined ? {} : { call }),
-    ...(resultView === undefined ? {} : { result: resultView }),
-    ...(outcome === undefined ? {} : { outcome }),
-  })
+  const presentation = call === undefined && resultView === undefined
+    ? undefined
+    : createToolPresentationModel({
+        id: entry.id,
+        name: entry.name,
+        ...(call === undefined ? {} : { call }),
+        ...(resultView === undefined ? {} : { result: resultView }),
+        ...(outcome === undefined ? {} : { outcome }),
+      })
   return {
     kind: 'transcript-tool',
     id: entry.id,
@@ -67,7 +69,7 @@ function toolModel(entry: ConversationToolEntry, tools: ToolPresentationSource):
         endedAt: entry.result.endedAt,
       },
     }),
-    presentation,
+    ...(presentation === undefined ? {} : { presentation }),
   }
 }
 
@@ -113,7 +115,7 @@ export function conversationTranscriptModel(
   projection: ConversationProjection,
   tools: ToolPresentationSource,
 ): TranscriptModel {
-  const entries = projection.entries.flatMap((entry): TranscriptEntryModel[] => {
+  const entries = projection.entries.slice(-TRANSCRIPT_MODEL_WINDOW).flatMap((entry): TranscriptEntryModel[] => {
     if (entry.kind === 'tool') return entry.channel === 'transcript' ? [toolModel(entry, tools)] : []
     return [entryModel(entry)]
   })

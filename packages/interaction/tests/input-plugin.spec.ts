@@ -138,6 +138,8 @@ describe('blue-input plugin', () => {
 
     expect(screen.sendContentInput('\x1b[5~')).toBe(true)
     expect(screen.sendContentInput('\x1b[6~')).toBe(true)
+    expect(screen.sendContentInput(KEY.up)).toBe(false)
+    expect(screen.sendContentInput(KEY.down)).toBe(false)
     expect(screen.contentScrolls).toEqual([
       { direction: 'up', amount: 20 },
       { direction: 'down', amount: 20 },
@@ -983,10 +985,11 @@ describe('blue-input plugin', () => {
   describe('queued-message recall (pane-queue enhancement)', () => {
     it('leaves Up to the editor history when pane-queue is not loaded', async () => {
       const inbox = fakeInbox({ nextTurn: [queued('queued draft')] })
-      const { editor } = await mount({ inbox })
+      const { editor, screen } = await mount({ inbox })
+      screen.contentScrollResult = true
       expect(editor.onKey?.(KEY.up)).toBe(false)
       expect(inbox.remove).not.toHaveBeenCalled()
-      expect(editor.getText()).toBe('')
+      expect(screen.contentScrolls).toEqual([])
     })
 
     it('recalls the latest queued message into an empty buffer on Up', async () => {

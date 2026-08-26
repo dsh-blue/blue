@@ -468,7 +468,7 @@ describe('blue whole-tree e2e', () => {
     expect(tree.exits).toEqual([])
   })
 
-  it.skip('Esc retracts a tool-free thinking turn into the editor with no tombstone or ghost', async () => {
+  it('Esc retracts a tool-free thinking turn into the editor with no tombstone or ghost', async () => {
     const tree = await bootBlue([], { script: ['hang-reasoning', reasoningResponse('second thought', 'done')] })
     const agent = await currentAgent(tree)
     typeLine(tree.terminal, 'first')

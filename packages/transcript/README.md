@@ -8,9 +8,9 @@ Blue's terminal renderer for projection-backed transcript, status, tool, and doc
 
 The `./official-model` plugin consumes whole `blueConversation` values through app-owned `blueSessionProjections`. It maps user, assistant, thinking, tool, error, interruption, image, and retraction facts into stable renderer-neutral entries, resolving official tool presentations outside the domain projection. Stale, malformed, foreign-session, and late values are ignored.
 
-`TranscriptModelService` reconciles semantic components by stable id, bounds each model to the newest 200 entries, applies the configured turn window, forwards Ctrl-O expansion to the most recent configured turns, and disposes timers when entries retire. User-message fold thresholds, thinking/tool defaults, turn windows, and expansion range live in a frontend-tree-scoped presentation policy, so theme/provider reloads preserve settings without leaking them between trees.
+`TranscriptModelService` reconciles semantic components by stable id, bounds each model to the newest 200 entries, caches stable completed frames, applies the configured turn window, forwards Ctrl-O expansion to the most recent configured turns, and disposes timers when entries retire. User-message fold thresholds, thinking/tool defaults, turn windows, and expansion range live in a frontend-tree-scoped presentation policy, so theme/provider reloads preserve settings without leaking them between trees.
 
-The active runtime does not fold Harness session events and contains no legacy tool-intent registry. Generic, terminal, diff, search, read, and web tool shapes arrive through canonical projection/presentation models.
+The active runtime does not fold Harness session events and contains no legacy tool-intent registry. Generic, terminal, diff, search, read, and web tool shapes arrive through canonical projection/presentation models while retaining the shared status, argument, command, and expansion chrome. The BTW pane and connected editor share aligned side borders without a spacer row.
 
 ## Status And Dock
 

@@ -27,7 +27,7 @@ const semanticEntries = (): TranscriptEntryModel[] => [
     kind: 'transcript-tool', id: 'tool-text', seq: 5, turn: 1, step: 0, callId: 'call-2', name: 'bash', arguments: '{"command":"pwd"}', startedAt: 130,
     result: { text: 'text only', isError: false, endedAt: 140 },
   },
-  { kind: 'transcript-tool', id: 'tool-pending', seq: 6, turn: 1, step: 0, callId: 'call-3', name: 'custom', arguments: '{}', startedAt: 150 },
+  { kind: 'transcript-tool', id: 'tool-pending', seq: 6, turn: 1, step: 0, callId: 'call-3', name: 'custom', arguments: '{bad', startedAt: 150 },
   {
     kind: 'transcript-tool', id: 'tool-presented', seq: 7, turn: 1, step: 0, callId: 'call-4', name: 'read', arguments: '{}', startedAt: 160,
     presentation: { kind: 'tool', id: 'presentation', name: 'read', call: { kind: 'text', text: 'call view' }, result: { kind: 'text', text: 'result view' } },
@@ -68,7 +68,7 @@ describe('TranscriptModelService', () => {
       'thinking text',
       'result full',
       'text only',
-      'custom {}',
+      'custom {bad',
       'read {}',
       'down (HTTP_404)',
       'unknown',
@@ -90,11 +90,14 @@ describe('TranscriptModelService', () => {
     expect(first.some(row => row.includes('thinking text'))).toBe(true)
     expect(first.some(row => row.includes('result full'))).toBe(true)
     expect(first.some(row => row.includes('result view'))).toBe(true)
+    expect(first.some(row => row.includes('Used') && row.includes('read'))).toBe(true)
+    expect(first.some(row => row.includes('Ran a command'))).toBe(true)
     expect(first.some(row => row.includes('request failed'))).toBe(true)
     expect(first.some(row => row.includes('interrupted'))).toBe(true)
 
-    expect(component.render(80)).toEqual(first)
-    component.setExpanded(true)
+    expect(component.render(80)).toBe(first)
+    component.setExpanded(false)
+    expect(component.render(80)).not.toBe(first)
     component.invalidate()
     const entries = semanticEntries()
     entries[1] = { kind: 'transcript-assistant', id: 'assistant', seq: 2, turn: 1, step: 0, text: 'changed answer', streaming: false }
@@ -106,6 +109,14 @@ describe('TranscriptModelService', () => {
     expect(component.render(80)).toEqual(changed)
     current = null as never
     expect(component.render(80)).toEqual([])
+  })
+
+  it('does not retain aggregate rows while a model is streaming', () => {
+    const current = createTranscriptModel('streaming', semanticEntries(), true)
+    const component = new TranscriptModelComponent(() => current, renderer())
+    const first = component.render(80)
+    expect(component.render(80)).not.toBe(first)
+    component.dispose()
   })
 
   it('applies tree-local turn windows and recent Ctrl-O expansion', () => {

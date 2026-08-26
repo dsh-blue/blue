@@ -24,7 +24,7 @@
 
 ────────────────────────────────────────────────────────────────────────────────
   Select a model · Enter to choose · Esc / q to close · ↑↓ scroll
-  > mock/Mock - ← current [High]
-    mock/Mock Pro - [High]
+  > mock/Mock - ← current [Low] [High]
+    mock/Mock Pro - [Low] [High]
 ────────────────────────────────────────────────────────────────────────────────
  mock  «cwd»

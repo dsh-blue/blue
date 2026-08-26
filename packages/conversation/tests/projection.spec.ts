@@ -21,6 +21,7 @@ import {
   conversationProjectionStateSchema,
   foldConversationProjection,
   initialConversationState,
+  isTurnRetraction,
 } from '../src/projection.ts'
 import type { ConversationProjectionState } from '../src/types.ts'
 
@@ -238,6 +239,111 @@ describe('blueConversation projection', () => {
     ])
   })
 
+  it('durably removes a safely retracted turn and rejects its late events', () => {
+    let state = fold([
+      event('turn/start', { turn: 6 }),
+      event('user/message', userMessage('revise this'), { append: true }),
+      event('step/start', { turn: 6, step: 0 }),
+      event('assistant/chunk', { turn: 6, step: 0, chunk: { type: 'reasoning-delta', index: 0, text: 'partial thought' } }),
+      event('assistant/chunk', { turn: 6, step: 0, chunk: { type: 'text-delta', index: 1, text: 'partial answer' } }),
+      event('assistant/message', {
+        turn: 6,
+        step: 0,
+        message: assistantMessage([
+          { type: 'reasoning', text: 'partial thought' },
+          { type: 'text', text: 'partial answer' },
+        ]),
+      }, { append: true }),
+      event('turn/end', { turn: 6, reason: { kind: 'aborted', reason: { kind: 'user' } } }),
+    ])
+    expect(state.entries.map(entry => entry.kind)).toEqual(['user', 'thinking', 'assistant', 'interrupted'])
+
+    const marker = event('assistant/message', {
+      turn: 6,
+      step: 0,
+      message: assistantMessage([]),
+      interrupted: true,
+    }, { replace: true })
+    expect(isTurnRetraction(marker)).toBe(true)
+    state = foldConversationProjection(state, marker)
+    expect(state.entries).toEqual([])
+    expect(state.active).toBe(false)
+    expect(state.retractedTurns).toEqual([6])
+    expect(state.interruptedTurns).toEqual([])
+    expect(state.finalizedSteps).toEqual([])
+
+    const retracted = state
+    state = foldConversationProjection(state, event('turn/start', { turn: 6 }))
+    state = foldConversationProjection(state, event('step/start', { turn: 6, step: 1 }))
+    state = foldConversationProjection(state, event('user/message', userMessage('late user'), { append: true }))
+    state = foldConversationProjection(state, event('assistant/chunk', {
+      turn: 6, step: 0, chunk: { type: 'text-delta', index: 0, text: 'late answer' },
+    }))
+    state = foldConversationProjection(state, event('assistant/message', {
+      turn: 6, step: 0, message: assistantMessage([{ type: 'text', text: 'late final' }]),
+    }, { append: true }))
+    state = foldConversationProjection(state, event('tool/call', {
+      turn: 6, step: 0, callId: CallId('late-tool'), name: 'read', arguments: '{}',
+    }))
+    state = foldConversationProjection(state, event('turn/end', {
+      turn: 6, reason: { kind: 'interrupted' },
+    }))
+    expect(state).toBe(retracted)
+    expect(isTurnRetraction(event('assistant/message', {
+      turn: 7, step: 0, message: assistantMessage([]), interrupted: true,
+    }, { append: true }))).toBe(false)
+    expect(foldConversationProjection(state, marker)).toBe(state)
+  })
+
+  it('recognizes only the exact retraction marker and preserves other active turns', () => {
+    expect(isTurnRetraction(event('turn/start', { turn: 1 }))).toBe(false)
+    expect(isTurnRetraction(event('assistant/message', {
+      turn: 1, step: 0, message: assistantMessage([]), interrupted: false,
+    }, { replace: true }))).toBe(false)
+    expect(isTurnRetraction(event('assistant/message', {
+      turn: 1, step: 0, message: assistantMessage([{ type: 'text', text: 'kept' }]), interrupted: true,
+    }, { replace: true }))).toBe(false)
+    expect(isTurnRetraction(event('assistant/message', {
+      turn: 1, step: 0, message: assistantMessage([]), interrupted: true,
+    }))).toBe(false)
+
+    const active = fold([
+      event('turn/start', { turn: 8 }),
+      event('step/start', { turn: 8, step: 0 }),
+      event('assistant/chunk', { turn: 8, step: 0, chunk: { type: 'reasoning-delta', index: 0, text: 'kept thought' } }),
+      event('assistant/chunk', { turn: 8, step: 0, chunk: { type: 'text-delta', index: 1, text: 'kept answer' } }),
+      event('tool/call', { turn: 8, step: 0, callId: CallId('kept-tool'), name: 'read', arguments: '{}' }),
+    ])
+    const retracted = foldConversationProjection(active, event('assistant/message', {
+      turn: 7, step: 0, message: assistantMessage([]), interrupted: true,
+    }, { replace: true }))
+    expect(retracted.active).toBe(true)
+    expect(retracted.streamingStep).toBe(active.streamingStep)
+    expect(retracted.streamingAssistantId).toBe(active.streamingAssistantId)
+    expect(retracted.streamingThinkingId).toBe(active.streamingThinkingId)
+    expect(retracted.pendingReasoning).toBe(active.pendingReasoning)
+    expect(retracted.toolEntryIds).toEqual(active.toolEntryIds)
+    expect(retracted.entries).toEqual(active.entries)
+  })
+
+  it('clears active streaming lookup state when retracting before turn end', () => {
+    const active = fold([
+      event('turn/start', { turn: 9 }),
+      event('step/start', { turn: 9, step: 0 }),
+      event('assistant/chunk', { turn: 9, step: 0, chunk: { type: 'reasoning-delta', index: 0, text: 'thought' } }),
+      event('assistant/chunk', { turn: 9, step: 0, chunk: { type: 'text-delta', index: 1, text: 'answer' } }),
+      event('tool/call', { turn: 9, step: 0, callId: CallId('removed-tool'), name: 'read', arguments: '{}' }),
+    ])
+    const retracted = foldConversationProjection(active, event('assistant/message', {
+      turn: 9, step: 0, message: assistantMessage([]), interrupted: true,
+    }, { replace: true }))
+    expect(retracted).toMatchObject({
+      entries: [], active: false, streamingStep: null,
+      streamingAssistantId: null, streamingThinkingId: null,
+      pendingReasoning: '', toolEntryIds: {}, retractedTurns: [9],
+    })
+  })
+
   it('settles incomplete steps, ignores unrelated chunks, and validates checkpoints', () => {
     let state = initialConversationState()
     const unrelated = event('request/context', { provider: 'mock', model: 'mock' })
@@ -271,7 +377,7 @@ describe('blueConversation projection', () => {
     expect(conversationProjectionSchema.safeParse({ entries: [], streaming: 'yes' }).success).toBe(false)
     expect(conversationProjectionStateSchema.safeParse(state).success).toBe(true)
     expect(conversationProjectionStateSchema.safeParse({ ...state, finalizedSteps: [1] }).success).toBe(false)
-    expect(conversationProjectionDefinition.stateVersion).toBe(1)
+    expect(conversationProjectionDefinition.stateVersion).toBe(2)
   })
 
   it('covers final-only replay, mid-stream settling, nested result text, and defensive restored ids', () => {
@@ -413,7 +519,7 @@ describe('SessionProjectionRegistry integration', () => {
     expect(changes).toEqual([2, 3])
 
     const checkpoint = ctx.sessionProjections.checkpoint(session)
-    expect(checkpoint.blueConversation).toMatchObject({ ver: 1, seq: 3 })
+    expect(checkpoint.blueConversation).toMatchObject({ ver: 2, seq: 3 })
     expect(ctx.sessionProjections.viewCheckpoint(checkpoint)).toMatchObject({
       blueConversation: { entries: expect.arrayContaining([expect.objectContaining({ kind: 'assistant', text: 'live' })]) },
     })

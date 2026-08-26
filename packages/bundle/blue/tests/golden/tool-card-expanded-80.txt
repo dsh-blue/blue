@@ -9,8 +9,8 @@
      ⠃⠏⠿⣿⣿⣿⣿⣿⠿⠟⠇⠂⠃⠃⠃
 
  » run both
- long-output
 
+ ● Using long-output
 
 
 

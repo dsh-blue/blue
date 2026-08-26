@@ -11,7 +11,7 @@
  * and a tail-following body fitted to `max(3, floor(rows/3)) - 1` rows with
  * manual ↑/↓ scrolling — the kimi `fitBodyLines` mechanics (min-body-height
  * ratchet, tail-follow reset on manual scroll, per-question scroll reset).
- * A trailing blank row separates the pane from the input editor, whose top
+ * The pane fills the same connected frame as the input editor, whose top
  * corners splice to `├┤` while the pane is open: the pane emits
  * `'blue/editor-connected-above'` (true on open, false on dismiss or
  * unload) and `blue-input` mirrors it onto the editor. While a dialog
@@ -176,9 +176,6 @@ class BtwPaneComponent {
     for (const line of body.lines) {
       lines.push(this.renderBodyLine(line, contentWidth))
     }
-    // One blank row separates the pane from the editor it splices into
-    // (kimi's Spacer(1)); the pane draws no bottom border.
-    lines.push('')
     return lines
   }
 

@@ -561,14 +561,6 @@ export function apply(ctx: Context): void {
         return true
       }
     }
-    if (editor.getText().length === 0) {
-      const isUp = keymap.matches(data, ACTION_MOVE_UP)
-      const isDown = keymap.matches(data, ACTION_MOVE_DOWN)
-      /* v8 ignore next -- legacy screen fakes omit the optional scrolling seam */
-      const scrollContent = (ctx.blueScreen as BlueScreen & { scrollContent?: (direction: 'up' | 'down') => boolean }).scrollContent
-      /* v8 ignore next -- optional scrolling is covered by the runtime path */
-      if ((isUp || isDown) && scrollContent?.(isUp ? 'up' : 'down') === true) return true
-    }
     // Up: recall the latest queued message into an empty buffer when the
     // pane-queue enhancement is loaded — its keyless contextual action is
     // the enable signal, and the key matches through the existing move-up
@@ -733,11 +725,7 @@ export function apply(ctx: Context): void {
         return true
       }
       /* v8 ignore stop */
-      const isUp = ctx.blueKeymap.matches(data, ACTION_MOVE_UP)
-      const isDown = ctx.blueKeymap.matches(data, ACTION_MOVE_DOWN)
-      if (!isUp && !isDown) return false
-      /* v8 ignore next -- the optional runtime screen seam is exercised by PTY tests */
-      return ctx.blueScreen.scrollContent(isUp ? 'up' : 'down')
+      return false
     })
     return () => dispose?.()
   })

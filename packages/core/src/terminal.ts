@@ -435,7 +435,9 @@ export async function startBlueTerminal(
       if (current instanceof TuiAltScreen) {
         const before = current.viewportTop
         current.scrollBy(direction === 'up' ? -Math.max(1, Math.floor(amount)) : Math.max(1, Math.floor(amount)))
-        return current.viewportTop !== before
+        const moved = current.viewportTop !== before
+        if (moved) stable.requestRender(true)
+        return moved
       }
       const lines = collectLines(current.terminal.columns)
       let dockRows = 0
