@@ -460,6 +460,19 @@ describe('ToolCallComponent', () => {
     expect(expanded[2]).toBe('  [M]<path>src/a.ts</path>[/M]')
   })
 
+  it('collapses a bare-JSON result (the ask-user answers shape) while collapsed', () => {
+    const payload = '{"answers":[{"id":"ui_target","selected":["只是演示工具能力"]}]}'
+    const item = toolItem({ name: 'ask_user_question' })
+    item.result = { text: payload, fullText: payload, isError: false }
+    const component = new ToolCallComponent(item, tagged(), setup())
+    const collapsed = component.render(80)
+    expect(collapsed[2]).toBe('  [M]answers: id=ui_target, selected=只是演示工具能力[/M]')
+    expect(collapsed).toHaveLength(3)
+
+    component.setExpanded(true)
+    expect(component.render(80)[2]).toBe(`  [M]${String(payload)}[/M]`)
+  })
+
   it('counts wrapped visual rows for the preview cap and hint', () => {
     const item = toolItem({ name: 'probe' })
     item.result = { text: 'word', fullText: 'word '.repeat(30).trim(), isError: false }

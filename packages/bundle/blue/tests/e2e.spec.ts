@@ -567,6 +567,38 @@ describe('blue whole-tree e2e', () => {
     expect(expanded).toContain('TAILMARKER')
   })
 
+  it('summarizes a presenter-less JSON result instead of echoing raw JSON', async () => {
+    const tree = await bootBlue([], {
+      script: [toolCallResponse('call-ask', 'responder', {}), textResponse('answered')],
+    })
+    const agent = await currentAgent(tree)
+    const tools = (tree.ctx as unknown as { tools: { register(definition: unknown): () => void } }).tools
+    tools.register({
+      name: 'responder',
+      description: 'test tool returning the ask-user answers payload',
+      parameters: { type: 'object', properties: {} },
+      output: {
+        schema: { type: 'string' },
+        render: (_args: unknown, value: unknown) => [{ type: 'text', text: String(value) }],
+      },
+      execute: () => Promise.resolve('{"answers":[{"id":"ui_target","selected":["演示"]}]}'),
+    })
+    typeLine(tree.terminal, 'ask the user')
+    await agent.whenIdle()
+    await waitForRender()
+    const strip = (text: string): string => text
+      .replace(/\x1b\[[0-9;]*m/g, '')
+      .replace(/\x1b\]8;;[^\x07]*\x07/g, '')
+    const shown = strip(tree.terminal.output)
+    // Collapsed: the flattened summary line, never the raw JSON.
+    expect(shown).toContain('answers: id=ui_target, selected=演示')
+    expect(shown).not.toContain('{"answers"')
+    tree.terminal.sendInput('\x0f')
+    await waitForRender()
+    const expanded = strip(tree.terminal.written.join(''))
+    expect(expanded).toContain('{"answers"')
+  })
+
   it('renders a diff-intent tool through the DiffCard: kimi header, chip, and +/- rows', async () => {
     const tree = await bootBlue([], {
       script: [toolCallResponse('call-diff', 'edit-file', {}), textResponse('edited')],

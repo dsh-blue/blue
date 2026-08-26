@@ -21,7 +21,7 @@ import type {
 } from '@dsh-blue/blue-core'
 import { clampRowsToWidth } from '@dsh-blue/blue-core/chrome'
 import { extractKeyArgument, isPlanDecline, KEY_ARG_MAX_CHARS } from './present.ts'
-import { parseXmlEnvelope, summarizeToolText } from './envelope.ts'
+import { summarizeToolText } from './envelope.ts'
 import {
   DEFAULT_USER_FOLD_CHARS,
   DEFAULT_USER_FOLD_LINES,
@@ -463,13 +463,14 @@ export class ToolCallComponent implements BlueComponent {
         : result.isError ? colors.error(line)
           : colors.muted(line)
     }`
-    // An XML envelope (file-tool model-facing text) collapses to its one
-    // summary line while collapsed; the expanded card keeps the raw text as
-    // the debug view.
+    // A recognized raw shape (XML envelope, incremental job read, or bare
+    // JSON payload) collapses to its one summary line while collapsed; the
+    // expanded card keeps the raw text as the debug view.
+    const summary = summarizeToolText(text)
     const shown = this.expanded
       ? allLines
-      : parseXmlEnvelope(text) !== undefined
-        ? components.wrapText(summarizeToolText(text), contentWidth)
+      : summary !== text
+        ? components.wrapText(summary, contentWidth)
         : allLines.slice(0, RESULT_PREVIEW_LINES)
     lines.push(...shown.map(paint))
     if (shown.length < allLines.length) {

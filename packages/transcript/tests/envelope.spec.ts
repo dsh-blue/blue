@@ -99,4 +99,30 @@ describe('summarizeToolText', () => {
     expect(summarizeToolText('[status: noted] but more text follows')).toBe('[status: noted] but more text follows')
     expect(summarizeToolText('')).toBe('')
   })
+
+  it('flattens whole-text JSON payloads into key/value summaries', () => {
+    // The ask-user reader's answers payload: nested object in a single-item
+    // list unwraps, arrays of one string read plainly.
+    expect(summarizeToolText('{"answers":[{"id":"ui_target","selected":["只是演示工具能力"]}]}'))
+      .toBe('answers: id=ui_target, selected=只是演示工具能力')
+    expect(summarizeToolText('{\n  "ok": true,\n  "count": 3\n}')).toBe('ok: true · count: 3')
+    expect(summarizeToolText('{}')).toBe('{}')
+    expect(summarizeToolText('[]')).toBe('[]')
+    expect(summarizeToolText('[1, 2, 3]')).toBe('1 · 2 · 3')
+    expect(summarizeToolText('{"text":""}')).toBe('text: ""')
+    expect(summarizeToolText('{"choices":["a","b","c","d"]}')).toBe('choices: [a, b, c, +1]')
+    expect(summarizeToolText('{"job":null}')).toBe('job: null')
+    const wide = Object.fromEntries(Array.from({ length: 6 }, (_, index) => [`k${String(index)}`, index]))
+    expect(summarizeToolText(JSON.stringify(wide))).toBe('k0: 0 · k1: 1 · k2: 2 · k3: 3 · +2 more')
+    expect(summarizeToolText('["a","b","c","d","e"]')).toBe('a · b · c · +2 more')
+    expect(summarizeToolText('{"empty":[],"pair":["x","y"],"blank":{},"big":{"k1":1,"k2":2,"k3":3,"k4":4,"k5":5}}'))
+      .toBe('empty: [] · pair: [x, y] · blank: {} · big: k1=1, k2=2, k3=3, k4=4, +1 more')
+  })
+
+  it('leaves JSON-shaped-but-invalid text and bare scalars untouched', () => {
+    expect(summarizeToolText('{"answers":[}]')).toBe('{"answers":[}]')
+    expect(summarizeToolText('{"unclosed": ')).toBe('{"unclosed": ')
+    expect(summarizeToolText('"a json string"')).toBe('"a json string"')
+    expect(summarizeToolText('42')).toBe('42')
+  })
 })
