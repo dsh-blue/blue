@@ -1,6 +1,6 @@
 # 贡献本仓库
 
-面向 **Blue 仓库贡献者**的本地开发安装:从源码检出、link 安装进 dsh profile、迭代回路与冒烟检查。在自己的仓库里写 Blue 插件的下游开发者请看[编写第一个插件](/plugins/)——那条路径不需要本页。
+面向 **Blue 仓库贡献者**的本地开发安装:从源码检出、link 安装进 dsh profile、迭代回路与冒烟检查。在自己的仓库里写 Blue 插件的下游开发者请看[开发手册](/plugins/)（从[快速开始](/plugins/quickstart)入手）——那条路径不需要本页。
 
 ::: info
 用户安装路径是 npm——`dsh plugin --profile blue add @dsh-blue/blue@rc`,见[快速上手](/guide/)。本页只服务改 Blue 本体的贡献者。

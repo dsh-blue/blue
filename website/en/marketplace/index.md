@@ -21,6 +21,6 @@ Each card will look roughly like this:
 
 ## Until it opens
 
-- To develop a plugin: start with [Writing your first plugin](/en/plugins/); the seam catalog is the [Seam reference](/en/plugins/seams);
+- To develop a plugin: start with the [quickstart](/en/plugins/quickstart); the seam catalog is the [Seam reference](/en/plugins/seams);
 - To inspect the current composition: see the Blue bundle's 28 owned rows in [Built-in plugins](/en/plugins/builtins);
 - Watch the [GitHub repository](https://github.com/dsh-blue/blue) for the marketplace announcement.

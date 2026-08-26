@@ -1,6 +1,6 @@
 # Contributing to Blue
 
-The local development install for **contributors to the Blue repository itself**: checkout, link install into a dsh profile, the iteration loop, and the smoke check. Downstream developers writing Blue plugins in their own repository should read [Writing your first plugin](/en/plugins/) instead — that path does not need this page.
+The local development install for **contributors to the Blue repository itself**: checkout, link install into a dsh profile, the iteration loop, and the smoke check. Downstream developers writing Blue plugins in their own repository should read the [developer manual](/en/plugins/) (start with the [quickstart](/en/plugins/quickstart)) instead — that path does not need this page.
 
 ::: info
 The user install path is npm — `dsh plugin --profile blue add @dsh-blue/blue@rc`, see [Quickstart](/en/guide/). This page only serves contributors hacking on Blue itself.
