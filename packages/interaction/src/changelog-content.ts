@@ -28,6 +28,20 @@ export interface ChangelogEntry {
 /** All shipped releases, newest first. */
 export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
+    version: '0.1.0-rc.9',
+    summary: 'Creative mode now reaches the screen through a capability-safe, fully tested Cordis path.',
+    highlights: [
+      'Capability-ready creative bridges — bluePluginHost.open() now succeeds only when every requested owner bridge is active. Registrations and notices recheck readiness at write time, return BLUE_CAPABILITY_ABSENT during a bridge gap, and restore retained contributions when the bridge reloads.',
+      'Strict creative-realm isolation — dynamic packages retain tools and bluePluginHost, while every Blue owner/runtime service is withheld. A source-derived drift gate fails when a new blue* service is not isolated or explicitly allowlisted.',
+      'Real Cordis lifecycle coverage — the whole-tree fixture now drives the published cordis_define, cordis_run, and cordis_stop tools through the host runner VM, covering rendering, slash commands, notifications, unload, restart, update, rollback, process restart, and missing-bridge diagnostics.',
+      'Corrected creative-mode skills — examples now show the complete define envelope, the ^[a-z]{3,6}$ prefix rule, apply(ctx) scope, mandatory BlueResult checks, and the prohibition on owner-registry fallbacks.',
+      'Verified candidate releases restored — tags publish immutable tarballs to candidate, verify exact registry installs on Linux, macOS, and Windows with Node 22 and 24, run a real PTY boot, then promote the verified artifacts.',
+    ],
+    knownIssues: [
+      'Release-day cooldown: pnpm 11\'s default minimumReleaseAge (24h) can refuse the first-run calibration\'s exact-version install on the day of publishing — one line of error, retry after the window or pin minimumReleaseAge: 0. Self-corrects within 24h of this release.',
+    ],
+  },
+  {
     version: '0.1.0-rc.8',
     summary: 'Execution traces and crash-safe updates arrive, with fixes for creative presets and the side-question pane.',
     highlights: [
@@ -80,4 +94,3 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
     ],
   },
 ]
-

@@ -31,9 +31,24 @@ Do not wait in the same turn for user approval or asynchronous results. After `c
 | `cordis_inspect_query` | Confirm exact Service methods, Event modes, Builtins, or Tool schemas before writing code | Use it instead of calling a real Service from the Plugin |
 | `cordis_inspect_self` | List current Plugins, inspect version pointers, or read exact Package source and runtime diagnostics | Fetch all source just to build a list; use it to modify or start a Plugin |
 | `cordis_define` | Create a Plugin's first version or append an immutable Package to an existing Plugin; let the user preview the code first | Expect define to execute `apply`, request approval, or update current |
-| `cordis_run` | Activate an exact Package; use `run` for first activation, restart, or rollback, and `update` to switch versions | Use `run` to switch versions implicitly; treat pending or starting as success |
+| `cordis_run` | Activate an exact Package; use `run` for first activation or the current Package, and `update` to switch to any different Package (including an older rollback target) | Use `run` to switch versions implicitly; treat pending or starting as success |
 | `cordis_stop` | Pause current effects while preserving Packages, grants, and version pointers for later use | Use stop to mean permanent deletion |
 | `cordis_undefine` | Permanently remove a Plugin and all of its Packages and clear historical business views | Call it while rollback, inspection, or restart is still needed |
+
+`cordis_define` accepts one exact envelope. For a new Plugin it has this shape:
+
+```json
+{
+  "plugin": { "kind": "new", "idPrefix": "probe" },
+  "name": "Readable package name",
+  "purpose": "One sentence describing the user-visible result.",
+  "code": {
+    "host": "return { name: 'probe', inject: ['bluePluginHost'], apply(ctx) { /* work */ } }"
+  }
+}
+```
+
+`plugin.idPrefix` must match `^[a-z]{3,6}$`: three through six lowercase English letters, with no digits, punctuation, or final numeric suffix. `code` has only `host` and `client`; `inject` belongs on the Plugin object returned by `code.host`, never beside `code.host` or in a `code.inject` property. The host string is evaluated as a function body, so `ctx` exists only as the parameter of `apply(ctx)` (or another callback that receives it). Top-level statements in `code.host` cannot refer to `ctx`.
 
 ## Provider navigation
 
@@ -46,7 +61,7 @@ Select methods from the actual `cordis_inspect_list` result. Common initial meth
 
 Provider names, methods, and inputs must come from the current list result. The Service/Event Catalog describes which interfaces this version permits; it does not guarantee that a Service is currently mounted. At runtime, use real Services and Events rather than caching or displaying Catalog query results.
 
-In a Blue session the host service store also carries the capability-scoped `bluePluginHost`. Declare it as an injection and use that public facade for Blue contributions; do not probe or use raw `blueScreen`, `blueKeymap`, `blueTerminalInfo`, `blueComponents`, `blueTheme`, transcript registries, loader, or shared HMR services from dynamic code. The inspect catalog is an incomplete view of general host services, but Blue's owner boundary is explicit: absence of `bluePluginHost` means this runtime does not support a Blue UI prototype.
+In a Blue session the host service store also carries the capability-scoped `bluePluginHost`. Declare it as an injection and use that public facade for Blue contributions; do not probe or use raw `blueScreen`, `blueKeymap`, `blueTerminalInfo`, `blueComponents`, `blueTheme`, `blueDockModels`, `blueStatusModels`, `blueToolModels`, `blueTranscriptModels`, `blueEditorHost`, `blueCommandModels`, session services, loader, or shared HMR services from dynamic code. Never fall back to an owner registry when a public capability is absent: owner services are deliberately isolated from the creative realm, and a profile that exposes one is misconfigured rather than granting a compatibility route. The inspect catalog is an incomplete view of general host services, but Blue's owner boundary is explicit: absence of `bluePluginHost` means this runtime does not support a Blue UI prototype.
 
 ## Mount additive Blue UI from the host half
 
@@ -62,11 +77,12 @@ return {
       api: '^1.0.0',
       capabilities: ['dock', 'notifications'],
     })
-    if (!opened.ok || opened.value.dock === undefined) return
-    opened.value.dock.register({
+    if (!opened.ok) throw new Error(opened.code + ': ' + opened.message)
+    const registered = opened.value.dock.register({
       id: 'my-probe-dock',
       view: { kind: 'text', content: 'my probe pane', tone: 'muted' },
     })
+    if (!registered.ok) throw new Error(registered.code + ': ' + registered.message)
   },
 }
 ```
@@ -75,6 +91,9 @@ return {
 - `BlueView` is renderer-neutral. The TUI adapter owns width, theme, layout, and error fallback; dynamic code must not import pi-tui or assemble ANSI rows.
 - The host facade binds registrations to the dynamic plugin Fiber. Retain no raw Blue service or Agent/Session object in package state.
 - Activity pane internals, transcript fold rules, existing command handlers, editor internals, themes, and root composition are owner-only. Add a new dock/status/command or notification instead.
+- Check every `open()`, `register()`, and `publish()` result. These APIs report ordinary failures as `BlueResult`; they do not throw. Throwing only after checking is appropriate when the Package must fail activation instead of pretending that a contribution is live. A command may return the `BlueResult` from `publish()` directly.
+- `BLUE_CAPABILITY_ABSENT` means the requested owner bridge is not active. At `open()` it means at least one requested capability cannot currently render or execute; from `register()` or `publish()` it means a bridge unloaded after the API was opened. Do not retry through internal registries. Report the missing capability, keep a plain/read-only fallback when the feature has one, or stop and ask the user to upgrade/restart the Blue profile.
+- `BLUE_CAPABILITY_DENIED` means the capability is outside the phase-one public set, not that an internal service should be probed. Duplicate and invalid contribution failures are likewise structured diagnostics; surface their `code` and `message`.
 
 ## Execution environment
 
@@ -204,5 +223,9 @@ If the reference is unavailable, explain that the Plugin was removed, belongs to
 | `service "x" is not declared` | Whether code uses `ctx.x` without declaring `inject: ['x']` on the Plugin object; switch to `ctx.get('x')` with an absence check or declare a true hard dependency |
 | `dynamic tool registration must use a tool returned by harness.defineTool(...)` | The Tool object was hand-assembled; build it with the `harness` Builtin's `defineTool` (query its exact signature with `Builtin.listBuiltins` first) and register that return value |
 | `cannot get property "timer" without inject` | Query the timer Service and declare `inject: ['timer']` |
+| `BLUE_CAPABILITY_ABSENT` | The matching Blue owner bridge is not mounted or unloaded; do not use `blueDockModels`, `blueStatusModels`, command registries, or any other owner service as a fallback |
+| `code.inject is not a declared property` | Move `inject` onto the Plugin object returned inside `code.host`; the `code` envelope accepts only `host` and `client` |
+| `plugin.idPrefix must contain 3-6 lowercase English letters` | Use a semantic prefix matching `^[a-z]{3,6}$`; the Host appends the numeric suffix |
+| `ctx is not defined` | Move the statement into the returned Plugin's `apply(ctx)`; `code.host` top level has no `ctx` variable |
 | Parse failure | Whether the code uses TypeScript, `import`/`require`, or an unavailable global |
 | Update failure | Preserve current/next semantics; repair next and update, or run current to roll back |

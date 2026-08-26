@@ -43,7 +43,7 @@ import { mkdtempTracked} from '../../../core/tests/temp-dir.ts'
 
 // The boot infrastructure (bootBlue, helpers, module reset) lives in
 // e2e-boot.ts, shared with the VT snapshot spec.
-import { bootBlue, currentAgent, typeLine, executeCommand, resetBlueModuleState, disposers, twoToolCallsResponse} from './e2e-boot.ts'
+import { bootBlue, CREATIVE_BLUE_INTERNAL_SERVICES, currentAgent, typeLine, executeCommand, resetBlueModuleState, disposers, twoToolCallsResponse} from './e2e-boot.ts'
 
 
 /** The idle editor frame's border SGR: dark palette `border` #5a5a5a (S11). */
@@ -148,6 +148,40 @@ async function fullFrame(terminal: FakeTerminal): Promise<string> {
   return frame
 }
 
+function creativeHostCode(version: string): string {
+  const internalServices = JSON.stringify(CREATIVE_BLUE_INTERNAL_SERVICES)
+  return `
+return {
+  name: 'blue-creative-e2e-${version}',
+  apply(ctx) {
+    for (const service of ${internalServices}) {
+      if (ctx.get(service) !== undefined) throw new Error('creative isolation leaked ' + service)
+    }
+    if (ctx.get('tools') === undefined) throw new Error('creative tools service is absent')
+    const host = ctx.get('bluePluginHost')
+    if (host === undefined) throw new Error('bluePluginHost is absent')
+    const opened = host.open(ctx, {
+      id: '@acme/creative-e2e',
+      api: '^1.0.0',
+      capabilities: ['dock', 'status', 'commands', 'notifications'],
+    })
+    if (!opened.ok) throw new Error(opened.code + ': ' + opened.message)
+    const api = opened.value
+    const dock = api.dock.register({ id: 'creative-dock', view: { kind: 'text', content: 'creative dock ${version}' } })
+    const status = api.status.register({ id: 'creative-status', render: () => ({ kind: 'text', content: 'creative status ${version}' }) })
+    const command = api.commands.register({
+      id: 'creative',
+      label: 'Run creative ${version}',
+      execute: async () => api.notifications.publish({ id: 'creative-notice', tone: 'success', view: { kind: 'text', content: 'creative notice ${version}' } }),
+    })
+    for (const [label, result] of [['dock', dock], ['status', status], ['command', command]]) {
+      if (!result.ok) throw new Error(label + ': ' + result.code + ': ' + result.message)
+    }
+  },
+}
+`
+}
+
 setModelsDevLoader(() => Promise.resolve(undefined))
 
 describe('blue whole-tree e2e', () => {
@@ -157,7 +191,7 @@ describe('blue whole-tree e2e', () => {
     expect(tree.sessionChanges).toEqual([agent])
     // The input editor mounted and the tree is idle, nothing rendered away.
     expect(tree.exits).toEqual([])
-    expect(tree.creativeIsolation.blueScreen === undefined).toBe(true)
+    for (const service of CREATIVE_BLUE_INTERNAL_SERVICES) expect(tree.creativeIsolation[service], service).toBeUndefined()
     expect(tree.creativeIsolation.commands === undefined).toBe(true)
     expect(tree.creativeIsolation.bluePluginHost !== undefined).toBe(true)
     expect(tree.creativeIsolation.tools !== undefined).toBe(true)
@@ -199,6 +233,106 @@ describe('blue whole-tree e2e', () => {
     expect(unloaded).not.toContain('creative dock live')
     expect(unloaded).not.toContain('creative status')
     await expect(executeCommand(tree, agent, '/creative')).resolves.toBeUndefined()
+  })
+
+  it('drives creative contributions through the real cordis tools, sandbox, and runner lifecycle', async () => {
+    const defineV1 = {
+      plugin: { kind: 'new', idPrefix: 'dyn' },
+      name: 'Blue creative v1',
+      purpose: 'Exercise the complete Blue creative host path.',
+      code: { host: creativeHostCode('v1') },
+    }
+    const defineV2 = {
+      plugin: { kind: 'existing', pluginId: 'dyn-1' },
+      name: 'Blue creative v2',
+      purpose: 'Exercise dynamic update and rollback.',
+      code: { host: creativeHostCode('v2') },
+    }
+    const tree = await bootBlue([], {
+      presetFixtures: [{ id: 'creative', dynamicCordis: true }],
+      script: [
+        toolCallResponse('define-v1', 'cordis_define', defineV1),
+        toolCallResponse('run-v1', 'cordis_run', { pluginId: 'dyn-1', packageId: 'pkg-1', mode: 'run' }),
+        textResponse('creative v1 ready'),
+        toolCallResponse('define-v2', 'cordis_define', defineV2),
+        toolCallResponse('run-v2', 'cordis_run', { pluginId: 'dyn-1', packageId: 'pkg-2', mode: 'update' }),
+        textResponse('creative v2 ready'),
+        toolCallResponse('stop-v2', 'cordis_stop', { pluginId: 'dyn-1' }),
+        textResponse('creative stopped'),
+        toolCallResponse('restart-v2', 'cordis_run', { pluginId: 'dyn-1', packageId: 'pkg-2', mode: 'run' }),
+        textResponse('creative restarted'),
+        toolCallResponse('rollback-v1', 'cordis_run', { pluginId: 'dyn-1', packageId: 'pkg-1', mode: 'update' }),
+        textResponse('creative rolled back'),
+      ],
+    })
+    const agent = await currentAgent(tree)
+    expect(tree.ctx.tools.get('cordis_define', agent)).toBeDefined()
+
+    let expectedRequests = 0
+    const runTurn = async (text: string, requests: number): Promise<void> => {
+      typeLine(tree.terminal, text)
+      expectedRequests += requests
+      await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(expectedRequests) })
+      await agent.whenIdle()
+      await waitForRender()
+    }
+
+    await runTurn('define and run v1', 3)
+    let frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).toContain('creative dock v1')
+    expect(frame).toContain('creative status v1')
+    await expect(executeCommand(tree, agent, '/creative')).resolves.toEqual({ kind: 'success' })
+    expect(stripSgr(await fullFrame(tree.terminal))).toContain('creative notice v1')
+
+    await runTurn('update to v2', 3)
+    frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).toContain('creative dock v2')
+    expect(frame).toContain('creative status v2')
+    expect(frame).not.toContain('creative dock v1')
+
+    await runTurn('stop the plugin', 2)
+    frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).not.toContain('creative dock v2')
+    expect(frame).not.toContain('creative status v2')
+    await expect(executeCommand(tree, agent, '/creative')).resolves.toBeUndefined()
+
+    await runTurn('restart v2', 2)
+    expect(stripSgr(await fullFrame(tree.terminal))).toContain('creative dock v2')
+
+    await runTurn('roll back to v1', 2)
+    frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).toContain('creative dock v1')
+    expect(frame).not.toContain('creative dock v2')
+
+    const restarted = await bootBlue([], { presetFixtures: [{ id: 'creative', dynamicCordis: true }], script: [] })
+    await currentAgent(restarted)
+    const restartedFrame = stripSgr(await fullFrame(restarted.terminal))
+    expect(restartedFrame).not.toContain('creative dock v1')
+    expect(restartedFrame).not.toContain('creative status v1')
+  })
+
+  it('reports a missing owner bridge as capability absence through the real runner', async () => {
+    const tree = await bootBlue([], {
+      viewBridge: false,
+      presetFixtures: [{ id: 'creative', dynamicCordis: true }],
+      script: [
+        toolCallResponse('define-missing', 'cordis_define', {
+          plugin: { kind: 'new', idPrefix: 'miss' },
+          name: 'Missing bridge probe',
+          purpose: 'Prove that registrations cannot succeed without an owner bridge.',
+          code: { host: creativeHostCode('missing') },
+        }),
+        toolCallResponse('run-missing', 'cordis_run', { pluginId: 'miss-1', packageId: 'pkg-1', mode: 'run' }),
+        textResponse('missing bridge reported'),
+      ],
+    })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'probe the missing bridge')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(3) })
+    await agent.whenIdle()
+    expect(JSON.stringify(agent.session.events)).toContain('BLUE_CAPABILITY_ABSENT')
+    expect(JSON.stringify(agent.session.events)).toContain('has no active Blue owner adapter')
+    expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('creative dock missing')
   })
 
   it('runs a startup task through the real loop and renders the reply', async () => {

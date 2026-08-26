@@ -10,7 +10,7 @@ English | [中文](README.zh.md)
 
 Blue is an interactive terminal UI (TUI) plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`): a `pi-tui` renderer mounted as an out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) plugin bundle on top of the `dsh-base` bundle. Its core claim: **a TUI is not a package — it is a Cordis plugin tree.** Every render component, interaction provider, command, and status entry is a separate plugin with its own fiber lifecycle, hot-swappable and omittable.
 
-This repository contains fourteen workspace packages: ten in the `0.1.0-rc.8` release set and four validation-only adapters. They build and test against the published Harness `0.1.1-rc.2` line and vendored Cordis.
+This repository contains fourteen workspace packages: ten in the `0.1.0-rc.9` release set and four validation-only adapters. They build and test against the published Harness `0.1.1-rc.2` line and vendored Cordis.
 
 <!-- TODO: demo capture — record a real session (vhs / asciinema; the script(1)
      smoke-check in the contributor guide is the seed), export a GIF into docs/assets/,
@@ -31,7 +31,7 @@ This repository contains fourteen workspace packages: ten in the `0.1.0-rc.8` re
 ## Quick start
 
 > [!NOTE]
-> `0.1.0-rc.8` is the preview release, published under the **`rc` dist-tag** — `latest` stays reserved for the stable line, so install specs carry the `@rc` suffix.
+> `0.1.0-rc.9` is the preview release, published under the **`rc` dist-tag** — `latest` stays reserved for the stable line, so install specs carry the `@rc` suffix.
 
 Prerequisites: Node `^22.19 || >=24`, pnpm 11, and a `dsh` CLI ≥ `0.1.1-rc.2` (`npm i -g @deepseek-ai/dsh`).
 

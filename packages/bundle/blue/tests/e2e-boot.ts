@@ -166,8 +166,44 @@ export interface BlueTree {
   adapter: MockAdapter
   exits: number[]
   sessionChanges: Agent[]
-  creativeIsolation: { blueScreen?: unknown, commands?: unknown, bluePluginHost?: unknown, tools?: unknown }
+  creativeIsolation: Record<string, unknown>
 }
+
+/** Blue-owned services withheld from the dynamic creative realm. */
+export const CREATIVE_BLUE_INTERNAL_SERVICES = [
+  'blueCommandModels',
+  'blueComponents',
+  'blueContextFeature',
+  'blueConversationProjection',
+  'blueDockModels',
+  'blueEditorHost',
+  'blueEditorModels',
+  'blueHarnessActionAdapter',
+  'blueHarnessModelAdapter',
+  'blueHarnessProjectionAdapter',
+  'blueHarnessQuestionAdapter',
+  'blueHarnessSessionAdapter',
+  'blueInteractionState',
+  'blueKeymap',
+  'blueNotifications',
+  'blueProjectionRegistry',
+  'blueRequests',
+  'blueRetractions',
+  'blueScreen',
+  'blueSessionActions',
+  'blueSessionBinding',
+  'blueSessionFacts',
+  'blueSessionProjections',
+  'blueSessionReader',
+  'blueSkillsCatalog',
+  'blueStartup',
+  'blueStatusModels',
+  'blueTerminalInfo',
+  'blueTheme',
+  'blueThemeModels',
+  'blueToolModels',
+  'blueTranscriptModels',
+] as const
 
 /** One fixture preset the e2e roster's temp root ships. */
 export interface PresetFixture {
@@ -175,6 +211,8 @@ export interface PresetFixture {
   id: string
   /** A tool the preset's composition registers (`e2e` tool names stay distinct). */
   tool?: string
+  /** Mount the published model-facing Cordis toolset in this Agent scope. */
+  dynamicCordis?: boolean
   /** Ship an invalid composition: the roster lists the preset as broken. */
   broken?: boolean
   /** The display order (preset.yml metadata). */
@@ -230,6 +268,8 @@ export async function bootBlue(argv: string[], options: {
   script: ConstructorParameters<typeof MockAdapter>[0]
   /** Keep only the shipped persona row when exercising prompt assembly. */
   creativePersonaOnly?: boolean
+  /** Omit the public view bridge while retaining the rest of the composition. */
+  viewBridge?: boolean
   persistenceRoot?: string
   footerExtra?: string
   contextWindow?: number
@@ -312,8 +352,14 @@ export async function bootBlue(argv: string[], options: {
   // profile has node_modules beside its cordis.yml; link the one
   // bare-name package in so the temp profile resolves it the same way.
   const mcpClientRoot = dirname(createRequire(import.meta.url).resolve('@deepseek-ai/dsh-mcp-client/package.json'))
+  const cordisHostRunnerRoot = dirname(createRequire(import.meta.url).resolve('@deepseek-ai/dsh-cordis-host-runner/package.json'))
   mkdirSync(join(dir, 'node_modules', '@deepseek-ai'), { recursive: true })
   symlinkSync(mcpClientRoot, join(dir, 'node_modules', '@deepseek-ai', 'dsh-mcp-client'))
+  symlinkSync(cordisHostRunnerRoot, join(dir, 'node_modules', '@deepseek-ai', 'dsh-cordis-host-runner'))
+  if (options.presetFixtures?.some(preset => preset.dynamicCordis === true) === true) {
+    const toolCordisRoot = dirname(createRequire(import.meta.url).resolve('@deepseek-ai/dsh-tool-cordis/package.json'))
+    symlinkSync(toolCordisRoot, join(dir, 'node_modules', '@deepseek-ai', 'dsh-tool-cordis'))
+  }
   // A real dsh profile carries every package referenced by its shipped
   // presets. The e2e profile is otherwise intentionally thin, so mirror
   // that resolution surface for Blue's bundle-owned cordis payload.
@@ -335,7 +381,7 @@ export async function bootBlue(argv: string[], options: {
     apiHostApply: apiHostPlugin.apply,
     presetsApply: (ctx) => { ctx.plugin(AgentPresetsService, { default: (options.presetFixtures ?? [{ id: 'e2e' }])[0]!.id, roots: [{ path: presetRoot, trust: 'system' }], includeUserRoot: false }) },
     creativeIsolationApply: (ctx) => {
-      creativeIsolation.blueScreen = ctx.get('blueScreen')
+      for (const service of CREATIVE_BLUE_INTERNAL_SERVICES) creativeIsolation[service] = ctx.get(service)
       creativeIsolation.commands = ctx.get('commands')
       creativeIsolation.bluePluginHost = ctx.get('bluePluginHost')
       creativeIsolation.tools = ctx.get('tools')
@@ -379,7 +425,7 @@ export async function bootBlue(argv: string[], options: {
     paneQueueApply: paneQueuePlugin.apply,
     paneTodoApply: paneTodoPlugin.apply,
     paneBtwApply: paneBtwPlugin.apply,
-    viewBridgeApply: viewBridgePlugin.apply,
+    viewBridgeApply: options.viewBridge === false ? () => {} : viewBridgePlugin.apply,
     interactionApply: interactionPlugin.apply,
     interactionBridgeApply: interactionBridgePlugin.apply,
     editorPlusApply: editorPlusPlugin.apply,
@@ -407,7 +453,7 @@ export const apply = ctx => globalThis.__blueE2E.presetsApply(ctx)
     '  name: cordis:group',
     '  group: true',
     '  isolate:',
-    '    blueScreen: true',
+    ...CREATIVE_BLUE_INTERNAL_SERVICES.map(service => `    ${service}: true`),
     '    commands: true',
     '  config:',
     '    - id: creative-isolation-probe',
@@ -416,6 +462,8 @@ export const name = 'creative-isolation-probe'
 export const inject = ['bluePluginHost', 'tools']
 export const apply = ctx => globalThis.__blueE2E.creativeIsolationApply(ctx)
 `)}`,
+    '    - id: cordis-host-runner',
+    "      name: '@deepseek-ai/dsh-cordis-host-runner'",
     '- id: blue-api-host',
     `  name: ${fixture('blue-api-host.mjs', `
 export const name = 'blue-api-host'
@@ -773,6 +821,8 @@ export const apply = (ctx) => {
     } else if (preset.broken === true) {
       // Parses, then fails the entry-list audit: the roster lists it broken.
       writeFileSync(join(presetDir, 'agent.cordis.yml'), 'not-a-list: true\n')
+    } else if (preset.dynamicCordis === true) {
+      writeFileSync(join(presetDir, 'agent.cordis.yml'), "- id: tool-cordis\n  name: '@deepseek-ai/dsh-tool-cordis'\n")
     } else if (preset.tool !== undefined) {
       const tool = JSON.stringify(preset.tool)
       const toolRow = fixture(`${preset.id}-tool.mjs`, `

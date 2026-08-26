@@ -10,7 +10,7 @@
 
 Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的一个交互式终端 UI（TUI）插件：以 out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) 插件 bundle 的形式、骑在 `dsh-base` bundle 之上的 `pi-tui` 渲染器。它的核心主张：**TUI 不是一个包——而是一棵 Cordis 插件树。** 每个渲染组件、交互 provider、命令、状态栏条目都是独立插件，各有自己的 fiber 生命周期，可热替换、可省略。
 
-本仓库包含十四个 workspace 包：十个属于 `0.1.0-rc.8` release set，四个是 validation-only adapter。它们按 npm 上发布的 Harness `0.1.1-rc.2` 线与 vendored Cordis 构建测试。
+本仓库包含十四个 workspace 包：十个属于 `0.1.0-rc.9` release set，四个是 validation-only adapter。它们按 npm 上发布的 Harness `0.1.1-rc.2` 线与 vendored Cordis 构建测试。
 
 <!-- TODO: 演示动图——录一段真实会话（vhs / asciinema；贡献者指南（开发手册）里的
      script(1) 冒烟检查是种子），导出 GIF 到 docs/assets/ 后嵌到这里。
@@ -31,7 +31,7 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 ## 快速开始
 
 > [!NOTE]
-> `0.1.0-rc.8` 为预览版，发布在 **`rc` dist-tag** 下——`latest` 留给稳定线，安装 spec 需带 `@rc` 后缀。
+> `0.1.0-rc.9` 为预览版，发布在 **`rc` dist-tag** 下——`latest` 留给稳定线，安装 spec 需带 `@rc` 后缀。
 
 前置：Node `^22.19 || >=24`、pnpm 11、`dsh` CLI ≥ `0.1.1-rc.2`（`npm i -g @deepseek-ai/dsh`）。
 

@@ -18,7 +18,7 @@ The optional `./editor-plus` plugin adds `!` shell mode, slash completion, `@` f
 
 Built-in command families cover session navigation and rewind, help, themes, models and reasoning effort, providers, permissions and presets, modes, status/context/version/changelog, export/copy, tools, skills, MCP, trace, settings, and profile updates. The effort panel presents the provider's available levels in one horizontal bracketed row and moves the highlight with Left/Right. Commands read immutable snapshots and invoke `blueSessionActions`; they do not fold session events or mutate Harness objects.
 
-Dialogs replace the editor slot and render through shared list, form, info, settings, question, approval, model, and plan-review panels. Question and approval work is Fiber-bound, abort-aware, and rejects late completion after unload or session changes. Third-party renderer-neutral commands and notifications enter through `./plugin-host-bridge`.
+Dialogs replace the editor slot and render through shared list, form, info, settings, question, approval, model, and plan-review panels. Question and approval work is Fiber-bound, abort-aware, and rejects late completion after unload or session changes. Third-party renderer-neutral commands and notifications enter through `./plugin-host-bridge`, which advertises those capabilities only while its owner Fiber is active and restores retained commands after replacement.
 
 Readable export uses the official `blueConversation` projection after flushing and reading the durable artifact. Full export deliberately emits the decoded audit event stream. `/copy` uses the official conversation value and the OSC 52/native clipboard pipeline.
 

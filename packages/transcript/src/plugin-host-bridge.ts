@@ -7,7 +7,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { subscribeBluePluginHost, type BlueDockContribution, type BluePluginHostSnapshot, type BlueStatusContribution, type BlueView } from '@dsh-blue/blue-api'
+import { attachBluePluginHostCapabilities, subscribeBluePluginHost, type BlueDockContribution, type BluePluginHostSnapshot, type BlueStatusContribution, type BlueView } from '@dsh-blue/blue-api'
 import { BluePluginViewComponent, GutterComponent, PLUGIN_VIEW_MAX_ROWS } from '@dsh-blue/blue-core'
 import type { StatusModel, View } from '@dsh-blue/blue-frontend'
 
@@ -35,6 +35,7 @@ function statusView(view: BlueView): View {
 
 /** Mount additive dock and status contributions behind owner adapters. */
 export function apply(ctx: Context): void {
+  attachBluePluginHostCapabilities(ctx.bluePluginHost, ctx, ['dock', 'status'])
   const dock = new Map<string, () => void>()
   const status = new Map<string, { dispose: () => void, contribution: BlueStatusContribution }>()
   let dockOrder = ''

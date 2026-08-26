@@ -54,6 +54,12 @@ Transcript tunables remain in this settings schema because interaction owns the 
 - `command-model`: renderer-neutral command registry.
 - `plugin-host-bridge`: public command/notification contributions.
 
+The plugin-host bridge advertises `commands` and `notifications` only for its
+active Fiber. Unload removes concrete command/notice adapters and withdraws
+readiness without deleting API-host aggregate contributions; a replacement
+Fiber replays the command snapshot. Public writes during the gap return
+`BLUE_CAPABILITY_ABSENT`.
+
 `paste-image` state belongs to `InteractionStateService`; readers/clocks remain explicit test seams. Late clipboard results must check unload before saving, inserting markers, or notifying.
 
 ## Package And Tests

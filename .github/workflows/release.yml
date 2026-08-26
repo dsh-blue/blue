@@ -1,45 +1,44 @@
-# R3 (release roadmap): tag-driven npm publish. CI-only publishing (D50):
-# no release ever happens from a laptop — a vX.Y.Z-* tag on a master commit
-# is the release authority, and the granular NPM_TOKEN is the only credential
-# involved. The guard refuses tags that disagree with the manifest set (the
-# same number version.spec lockstep-checks across the ten release manifests, read
-# here without vitest so a mistyped tag dies in one second, not after the
-# gates), and the full gate re-runs before publish so a tag can never ship
-# what ci.yml wouldn't pass on the commit itself.
-#
-# Dist-tag is `rc` (D50): latest stays reserved for the stable line, so the
-# documented install spec must carry the tag suffix (@dsh-blue/blue@rc).
-# --provenance links each tarball to this build (public repo, pnpm ≥8.4);
-# it needs the id-token permission below.
-#
-# Partial-failure note: pnpm -r publish walks topologically
-# (domain/runtime libraries → app → bundle → cli) and does NOT skip versions that
-# already exist — if a run dies mid-sequence, the verify step shows what
-# landed; rerun publishes only the missing tail by hand-editing this note's
-# recovery: re-run with `pnpm --filter <missing-pkg> publish ...` semantics
-# in a dispatch job, never by republishing the whole set.
+# Publish verified tarballs to a candidate channel, exercise exact registry
+# installs, then promote dist-tags. Every transition is safely rerunnable.
 name: release
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Exact Blue version to release (for example 0.1.0-rc.9)'
+        required: true
+        type: string
+      promote_only:
+        description: 'Skip build/publish/verification and promote an existing candidate artifact'
+        required: false
+        default: false
+        type: boolean
+      source_run_id:
+        description: 'Workflow run ID containing the npm-tarballs artifact (required for promote-only)'
+        required: false
+        type: string
 
 permissions:
   contents: read
-  id-token: write # npm provenance attestation
+  id-token: write
+
+concurrency:
+  group: npm-release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 env:
   PRIMARY_NODE_VERSION: '24'
+  RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
 
 jobs:
-  publish:
-    name: gate + publish (dist-tag rc)
+  candidate:
+    name: gate + publish candidate
+    if: ${{ inputs.promote_only != true }}
     runs-on: ubuntu-latest
     steps:
-      # Full history: the master-ancestor guard below runs merge-base over
-      # the fetched refs, and a depth-1 checkout carries neither remote
-      # tracking refs nor the parent chain — the guard would false-fail
-      # (or resolve wrongly) on the one commit it must never misjudge.
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -48,90 +47,96 @@ jobs:
         with:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
           cache: pnpm
-      # Tag ↔ manifest guard, before any install: the tag IS the release
-      # version. version.spec holds the ten release-manifest lockstep; this reads
-      # the number it guards (core's manifest) without dependencies, and
-      # test:coverage below fails the run if the others disagree.
-      - name: guard (tag == manifest version, tag on master)
+          registry-url: https://registry.npmjs.org
+      - name: guard tag, version, and master ancestry
         run: |
-          TAG="${GITHUB_REF_NAME#v}"
+          VERSION="${RELEASE_VERSION#v}"
           MANIFEST=$(node -p "require('./packages/core/package.json').version")
-          if [ "$TAG" != "$MANIFEST" ]; then
-            echo "release: tag v$TAG != manifest $MANIFEST — bump the ten release manifests + BLUE_VERSION, or fix the tag" >&2
-            exit 1
-          fi
+          test "$VERSION" = "$MANIFEST" || { echo "tag $VERSION != manifest $MANIFEST" >&2; exit 1; }
           git fetch origin master
-          if ! git merge-base --is-ancestor HEAD origin/master; then
-            echo "release: tag commit is not on master — releases cut from master only" >&2
-            exit 1
-          fi
+          git merge-base --is-ancestor HEAD origin/master || { echo 'tag commit is not on master' >&2; exit 1; }
       - run: pnpm install --frozen-lockfile
-      # The gate mirrors ci.yml exactly (fast checks first, lib/export
-      # integrity before the test minute). The real-process smoke stays in
-      # ci.yml: the tagged commit is a master commit that already passed it.
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm diagrams:check
       - run: pnpm build
       - run: pnpm check:lib
-      - run: pnpm check:pack
       - run: pnpm test:coverage
-      # Explicit .npmrc rather than NODE_AUTH_TOKEN: pnpm publish reads
-      # npmrc config, and the written line is deterministic across pnpm
-      # versions. The token is org-scoped granular (D50), never a classic.
-      - name: npm auth (NPM_TOKEN granular)
-        run: printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" >> ~/.npmrc
+      - run: pnpm check:pack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarballs
+          path: |
+            .artifacts/pack/*.tgz
+            .artifacts/pack/index.json
+          if-no-files-found: error
+      # OIDC migration replaces this isolated auth step only. Candidate and
+      # promotion behavior deliberately know nothing about credential source.
+      - name: verify npm publisher identity
+        run: npm whoami --registry=https://registry.npmjs.org
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-      # Topological order is pnpm's default; --no-git-checks because a tag
-      # checkout is a detached HEAD (pnpm would otherwise refuse); website
-      # is private:true and skipped naturally.
-      - run: pnpm --filter @dsh-blue/blue-api --filter @dsh-blue/blue-frontend --filter @dsh-blue/blue-harness-adapter --filter @dsh-blue/blue-conversation --filter @dsh-blue/blue-core --filter @dsh-blue/blue-app --filter @dsh-blue/blue-transcript --filter @dsh-blue/blue-interaction --filter @dsh-blue/blue --filter @dsh-blue/blue-cli publish --tag rc --no-git-checks --provenance
-      - name: verify (npm view, ten packages)
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - run: node script/release-packages.mjs publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  registry-install:
+    name: registry install (${{ matrix.os }}, node ${{ matrix.node }})
+    needs: candidate
+    if: ${{ inputs.promote_only != true }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: ['22', '24']
+    runs-on: ${{ matrix.os }}
+    env:
+      DSH_HOME: ${{ github.workspace }}/.blue-candidate-home
+      # Exact candidate versions are intentionally younger than pnpm 11's
+      # policy window. This exception exists only in the release verifier.
+      PNPM_CONFIG_MINIMUM_RELEASE_AGE: '0'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          registry-url: https://registry.npmjs.org
+      - name: install exact candidate CLI
+        shell: bash
+        run: npm install -g "@dsh-blue/blue-cli@${RELEASE_VERSION#v}"
+      - run: blue -V
+      - name: calibrate exact bundle and compose profile
+        run: blue --dump-config
+      - name: verify installed Blue set
+        shell: bash
+        run: node script/verify-installed-blue.mjs "${RELEASE_VERSION#v}"
+      - name: real PTY boot and clean exit
+        if: runner.os == 'Linux' && matrix.node == '24'
+        shell: bash
         run: |
-          V="${GITHUB_REF_NAME#v}"
-          # A version can 404 on `npm view` for a few seconds after its
-          # publish lands (registry read lag measured on the rc.2 run:
-          # core verified instantly, interaction 404'd 2s after publish,
-          # and all packages were visible a minute later). Retry before
-          # declaring the release broken.
-          for p in blue-api blue-frontend blue-harness-adapter blue-conversation blue-core blue-app blue-transcript blue-interaction blue blue-cli; do
-            ok=""
-            for attempt in 1 2 3 4 5; do
-              GOT=$(npm view "@dsh-blue/$p@$V" version 2>/dev/null || true)
-              if [ "$GOT" = "$V" ]; then ok=1; break; fi
-              echo "($p: not visible yet, attempt $attempt — retrying in 15s)"
-              sleep 15
-            done
-            if [ -z "$ok" ]; then
-              echo "::error::@dsh-blue/$p@$V not visible on npm after 5 attempts"
-              exit 1
-            fi
-            echo "@dsh-blue/$p@$V → $GOT"
-          done
-      # Dist-tag hygiene (D50): npm ALWAYS writes `latest` on a package's
-      # first publish, even with an explicit --tag — measured live on the
-      # @dsh-blue/smoke canary (published --tag canary, latest still set).
-      # Unedited, the first rc publish would squat latest=rc against the
-      # "latest is the stable line" ruling. `npm dist-tag rm <pkg> latest`
-      # is NOT a valid repair: the registry 403s deleting latest outright
-      # (measured live on the rc.1 publish). latest can only be re-pointed
-      # at an existing version, so: if a stable version exists, add latest
-      # back onto the newest stable; if the rc line is all the package has
-      # (first-publish window), latest is registry-locked to the rc and we
-      # warn — it self-corrects when a stable release ships (--tag latest).
-      - name: dist-tag hygiene (latest must not point at the rc line)
-        run: |
-          V="${GITHUB_REF_NAME#v}"
-          for p in blue-api blue-frontend blue-harness-adapter blue-conversation blue-core blue-app blue-transcript blue-interaction blue blue-cli; do
-            LATEST=$(npm view "@dsh-blue/$p" dist-tags.latest 2>/dev/null || true)
-            if [ "$LATEST" = "$V" ]; then
-              STABLE=$(npm view "@dsh-blue/$p" versions --json | jq -r '.[]?' | grep -v -- '-' | sort -V | tail -n 1)
-              if [ -n "$STABLE" ]; then
-                npm dist-tag add "@dsh-blue/$p@$STABLE" latest
-                echo "re-pointed latest (= $V) back to stable $STABLE on @dsh-blue/$p"
-              else
-                echo "::warning::@dsh-blue/$p latest=$V with no stable version published yet; the registry requires a latest, so it stays on the rc line until a stable release re-points it"
-              fi
-            fi
-          done
+          (sleep 10; printf '/quit\r'; sleep 3) | timeout 90 script -qec blue "$RUNNER_TEMP/blue-candidate.typescript"
+          grep -q $'\033\[?2004h' "$RUNNER_TEMP/blue-candidate.typescript"
+          grep -q $'\033\[?2004l' "$RUNNER_TEMP/blue-candidate.typescript"
+
+  promote:
+    name: promote rc/latest
+    needs: [candidate, registry-install]
+    if: ${{ always() && (inputs.promote_only == true || needs.registry-install.result == 'success') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-tarballs
+          path: .artifacts/pack
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run_id || github.run_id }}
+      - run: node script/release-packages.mjs promote
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

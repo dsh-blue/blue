@@ -35,6 +35,10 @@ User, assistant, thinking, tool, error, and interruption models reuse the packag
 - `status-context`: context occupancy from conversation facts.
 
 `plugin-host-bridge.ts` maps public API status views into this registry and owns the corresponding disposers. It does not restore the deleted `BlueStatusEntry` service.
+Its Fiber advertises the public `status` and `dock` capabilities before taking
+the aggregate snapshot. Unload withdraws that readiness and owner mounts while
+leaving consumer contributions in the API host; a replacement bridge restores
+them from the snapshot.
 
 ## Dock Models
 
