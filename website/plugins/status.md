@@ -59,5 +59,5 @@ export function apply(ctx: Context): void {
 
 ## 参考
 
-- 内置状态条目（model、cwd、git、mode、title、context）的实现见 `blue-transcript`（[内置插件](/plugins/builtins)）；
+- 内置状态条目分处两个包：model、cwd、git、title、context 在 `blue-transcript`，mode 在 `blue-interaction`（[内置插件](/plugins/builtins)）；
 - 状态条目在 Blue 内部的流转：public contribution → view bridge → footer `StatusModel`，见 [Seam 参考](/plugins/seams)。

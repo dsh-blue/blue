@@ -11,9 +11,9 @@
 Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的交互式终端界面（TUI）：一个 `pi-tui` 渲染器，以树外 [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) 插件 bundle 的形式挂载在 `dsh-base` bundle 之上。本仓库包含十四个 workspace 包——十个属于 `0.1.0-rc.8` 发布集，四个为 validation-only adapter——针对已发布的 Harness `0.1.1-rc.2` 线构建与测试。
 
 <p align="center">
-  <video src="https://github.com/dsh-blue/blue/raw/master/website/public/blue-demo.mp4" width="720" autoplay loop muted playsinline controls></video>
+  <a href="https://dsh-blue.dev/blue-demo.mp4"><img src="docs/assets/demo.gif" width="720" alt="Blue 演示——流式回复、工具卡片与底部 dock 面板"></a>
 </p>
-<p align="center"><i>Blue 实拍：流式回复、工具卡片与底部 dock 面板——<a href="https://github.com/dsh-blue/blue/raw/master/website/public/blue-demo.mp4">观看演示视频</a>。</i></p>
+<p align="center"><i>Blue 实拍：流式回复、工具卡片与底部 dock 面板——<a href="https://dsh-blue.dev/blue-demo.mp4">观看完整演示视频</a>。</i></p>
 
 ## 设计哲学
 

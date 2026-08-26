@@ -59,5 +59,5 @@ export function apply(ctx: Context): void {
 
 ## Reference
 
-- The built-in status entries (model, cwd, git, mode, title, context) are implemented in `blue-transcript` ([Built-in plugins](/en/plugins/builtins));
+- The built-in status entries live in two packages: model, cwd, git, title, and context in `blue-transcript`, mode in `blue-interaction` ([Built-in plugins](/en/plugins/builtins));
 - How a status entry flows inside Blue: public contribution → view bridge → footer `StatusModel`, see the [Seam reference](/en/plugins/seams).

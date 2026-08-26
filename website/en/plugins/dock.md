@@ -76,5 +76,5 @@ view: {
 
 ## Reference
 
-- The built-in panes (activity/queue/todo/btw/agents) are implemented in `blue-transcript` ([Built-in plugins](/en/plugins/builtins));
+- The built-in panes live in two packages: activity, todo, btw, and agents in `blue-transcript`, queue in `blue-interaction` ([Built-in plugins](/en/plugins/builtins));
 - How a dock contribution flows inside Blue: public contribution → view bridge → a `DockModel` lane, see the [Seam reference](/en/plugins/seams).

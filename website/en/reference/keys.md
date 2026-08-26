@@ -43,7 +43,8 @@ Text-editing keys (cursor movement, multi-line, undo, kill-ring) belong to the u
 | `/help` overlay | ↑↓ / PageUp / PageDown scroll; `Escape` / `Enter` / `q` close |
 | `/sessions` picker | ↑↓ navigate, `Enter` resume, `Esc` cancel |
 | Approval panel | ↑↓ + `Enter`, or number keys `1`–`4` directly; `Escape` rejects |
-| Questionnaire | `Tab` / `Shift-Tab` between questions; single-choice ↑↓ + `Enter`; multi-choice `Space` + `Enter` |
+| Questionnaire | `Tab` / `Shift-Tab` between questions; single-choice ↑↓ + `Enter`; multi-choice `Space` + `Enter`; `Esc` inside the Other editor returns to the list |
+| Form panel | `Tab` / `↓` forward, `Shift-Tab` / `↑` backward; `Enter` advances, submits from the last field |
 | `/model` · `/effort` panels | `←` `→` step the segment control; `Enter` confirms and persists the new default; `Alt+S` confirms **session-only** (the persisted default stays untouched) |
 | `/btw` pane | `Esc` close; mouse wheel / `PageUp` / `PageDown` scroll; `Enter` follow-up |
 

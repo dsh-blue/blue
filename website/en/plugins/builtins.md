@@ -94,6 +94,6 @@ These eight rows plus assembly form the minimum usable UI. The conversation prod
 
 ## Validation-only packages
 
-`blue-context`, `blue-remote`, `blue-openpencil`, and `blue-lark` prove adapter architecture through independent fixtures. They are not bundle rows and are outside the release dependency closure.
+`blue-context` and `blue-remote` prove adapter architecture through independent fixtures; `blue-openpencil` and `blue-lark` are exercised by their own vitest suites plus the dev-profile link. None of the four are bundle rows or enter the release dependency closure.
 
 A profile patch can customize composition. Removing a projection-backed baseline row removes a core product capability; the 14 enhancement rows are the layer designed for independent removal.

@@ -76,5 +76,5 @@ view: {
 
 ## 参考
 
-- 内置面板（activity/queue/todo/btw/agents）的实现见 `blue-transcript`（[内置插件](/plugins/builtins)）；
+- 内置面板分处两个包：activity、todo、btw、agents 在 `blue-transcript`，queue 在 `blue-interaction`（[内置插件](/plugins/builtins)）；
 - dock 贡献在 Blue 内部的流转：public contribution → view bridge → `DockModel` lane，见 [Seam 参考](/plugins/seams)。

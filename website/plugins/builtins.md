@@ -94,6 +94,6 @@ flowchart TB
 
 ## Validation-only 包
 
-`blue-context`、`blue-remote`、`blue-openpencil`、`blue-lark` 通过独立 fixture 验证 adapter 架构，但不是 bundle row，也不进入正式 release dependency closure。
+`blue-context` 与 `blue-remote` 通过独立 fixture 验证 adapter 架构；`blue-openpencil` 与 `blue-lark` 由各自 vitest 套件加 dev profile link 同车验证。四者均不是 bundle row，也不进入正式 release dependency closure。
 
 想定制组合时可编辑 profile 的 patch；删除 projection-backed baseline row 会移除核心产品能力，14 条 enhancement row 才是设计为逐项可移除的层。
