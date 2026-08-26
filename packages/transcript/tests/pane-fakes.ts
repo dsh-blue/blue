@@ -15,17 +15,25 @@ import type {
 } from '@dsh-blue/blue-core'
 import type { CommandDefinition, CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { fakeBlueComponents } from './helpers.ts'
-import { asAgent, COLORS, type FakeAgent } from './status-fakes.ts'
+import { asAgent, COLORS, FakeFactsService, type FakeAgent } from './status-fakes.ts'
+import { conversationProjectionDefinition, foldConversationProjection, initialConversationState, type ConversationProjectionState } from '../../conversation/src/projection.ts'
+import type { ConversationProjection } from '../../conversation/src/types.ts'
+import { BlueDockModelService } from '../src/dock-model.ts'
 
 /** Records bottom mounts and render requests; the other mounts throw. */
 export class PaneFakeScreen implements BlueScreen {
+  readonly children: BlueComponent[] = []
   readonly bottomChildren: BlueComponent[] = []
   readonly renderRequests: (boolean | undefined)[] = []
   readonly columns = 80
   rows = 24
 
-  addChild(): () => void {
-    throw new Error('fake addChild is out of scope for pane plugin tests')
+  addChild(component: BlueComponent): () => void {
+    this.children.push(component)
+    return () => {
+      const index = this.children.indexOf(component)
+      if (index !== -1) this.children.splice(index, 1)
+    }
   }
 
   addBottomChild(component: BlueComponent): () => void {
@@ -59,14 +67,15 @@ export class PaneFakeScreen implements BlueScreen {
   setTitle(): void {}
 
   /**
-   * Every mounted bottom child's rendered rows, in mount order. Guttered
-   * passive panes have their leading gutter stripped for these source-plane
-   * assertions; full-width connected panes (btw) are left untouched.
+   * Every mounted bottom child's rendered rows, in mount order, with the
+   * kimi gutter column the mount layer wraps the panes in stripped — the
+   * gutter itself is a mount-layer concern covered by the core gutter spec
+   * and the bundle e2e; these specs assert the pane's own surface.
    */
   paneLines(width = 80): string[] {
     return this.bottomChildren
       .flatMap(component => component.render(width))
-      .map(line => line === ' ' ? '' : line.startsWith(' ') ? line.slice(1) : line)
+      .map(line => line === ' ' ? '' : line.slice(1))
   }
 }
 
@@ -133,6 +142,43 @@ export class PaneFakeCommands {
   }
 }
 
+/** Minimal official projection read-face for side-session pane fixtures. */
+export class FakeProjectionService {
+  private readonly listeners = new Set<(session: unknown, key: string, value: unknown, seq: number) => void>()
+  private readonly states = new WeakMap<object, ConversationProjectionState>()
+  snapshot(session: { readonly events?: readonly import('@deepseek-ai/dsh-session').SessionEvent[] }): { readonly values: Record<string, unknown>, readonly asOfSeq: number } {
+    const key = session as object
+    const state = this.states.get(key) ?? (session.events ?? []).reduce((current, event) => this.reduce(current, event), initialConversationState())
+    return { values: { blueConversation: conversationProjectionDefinition.wire.view(state) }, asOfSeq: session.events?.at(-1)?.seq ?? -1 }
+  }
+  onChanged(listener: (session: unknown, key: string, value: unknown, seq: number) => void): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+  emit(session: unknown, event: import('@deepseek-ai/dsh-session').SessionEvent): void {
+    const key = session as object
+    const current = this.states.get(key) ?? (session as { readonly events?: readonly import('@deepseek-ai/dsh-session').SessionEvent[] }).events?.slice(0, -1).reduce((state, row) => this.reduce(state, row), initialConversationState()) ?? initialConversationState()
+    const next = this.reduce(current, event)
+    this.states.set(key, next)
+    const snapshot = this.snapshot(session as { readonly events?: readonly import('@deepseek-ai/dsh-session').SessionEvent[] })
+    for (const listener of this.listeners) listener(session, 'blueConversation', snapshot.values.blueConversation as ConversationProjection, event.seq)
+  }
+  private reduce(state: ConversationProjectionState, event: import('@deepseek-ai/dsh-session').SessionEvent): ConversationProjectionState {
+    if (event.type === 'tool/result') {
+      const message = event.data.message as { readonly content?: unknown } | undefined
+      const block = Array.isArray(message?.content) ? message.content[0] as { readonly toolCallId?: unknown, readonly content?: unknown } | undefined : undefined
+      if (block?.toolCallId === undefined || !Array.isArray(block.content)) return state
+    }
+    const projectedEvent = event.type === 'user/message' || event.type === 'assistant/message' || event.type === 'tool/result'
+      ? { ...event, surfaceOp: event.surfaceOp ?? 'append' } as import('@deepseek-ai/dsh-session').SessionEvent
+      : event
+    const replayCurrent = projectedEvent.type === 'assistant/message'
+      ? { ...state, finalizedSteps: state.finalizedSteps.filter(key => key !== `${String(projectedEvent.data.turn)}:${String(projectedEvent.data.step)}`) }
+      : state
+    return foldConversationProjection(replayCurrent, projectedEvent)
+  }
+}
+
 /** A plugin module shape accepted by `ctx.plugin`. */
 export interface PanePluginModule {
   name: string
@@ -164,12 +210,18 @@ export async function bootPanePlugin(
   const screen = new PaneFakeScreen()
   const keymap = new PaneFakeKeymap()
   const commands = new PaneFakeCommands()
+  const facts = new FakeFactsService(ctx, current)
+  const dockModels = new BlueDockModelService(ctx, screen)
+  const projections = new FakeProjectionService()
+  ctx.on('session/event', (session, event) => projections.emit(session, event))
   const serviceNames: Record<string, unknown> = {
     blueScreen: screen,
     blueTheme: { colors: COLORS },
     blueComponents: fakeBlueComponents(),
     blueKeymap: keymap,
     blueSession: { current: current === null ? null : asAgent(current) },
+    blueSessionFacts: facts,
+    sessionProjections: projections,
     commands,
     ...extras,
   }
@@ -182,6 +234,9 @@ export async function bootPanePlugin(
     screen,
     keymap,
     commands,
-    dispose: () => fiber.dispose(),
+    dispose: async () => {
+      await fiber.dispose()
+      dockModels.dispose()
+    },
   }
 }

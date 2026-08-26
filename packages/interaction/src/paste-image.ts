@@ -1,21 +1,16 @@
 /**
  * `blue-paste-image` plugin: Ctrl-V pastes a clipboard image into the input
  * editor as an attachment. The contextual `blue.image.paste` key action is
- * registered keyless-style (bound to ctrl+v — plus alt+v on Windows, where
- * Windows Terminal and conhost intercept ctrl+v for their own text paste —
- * no handler) and resolved in a wrapper chained onto the shared editor's
- * `onKey` hook — ahead of the pi-tui Editor, which has no clipboard-image
- * handling of its own. The paste flow is fire-and-forget: an injectable
- * reader probes the platform's native backend — the Linux stdout-form
- * tools `wl-paste` and `xclip` in session-aware order, one PowerShell
- * staging spawn on Windows, osascript's list-then-read negotiation on
- * macOS (`./paste-image-native.ts`) — resolving to direct image bytes
- * tagged with the clipboard's declared type, or to local image files
- * copied through `text/uri-list` / GNOME's copied-files representation on
- * Linux, a FileDropList staging on Windows, or a Finder furl listing on
- * macOS. Copied files are opened without following a final symlink,
- * bounded by the attachment deployment limits, magic-byte sniffed, and
- * admitted as one ordered batch. Otherwise the reader returns a failure
+ * registered keyless-style (bound to ctrl+v, no handler) and resolved in a
+ * wrapper chained onto the shared editor's `onKey` hook — ahead of the
+ * pi-tui Editor, which has no clipboard-image handling of its own. The paste
+ * flow is fire-and-forget: an injectable reader (the default negotiates with
+ * the Linux stdout-form tools `wl-paste` and `xclip` in session-aware order)
+ * resolves to direct image bytes tagged with the clipboard's declared type,
+ * or to local image files copied through `text/uri-list` / GNOME's copied-
+ * files representation. Copied files are opened without following a final
+ * symlink, bounded by the attachment deployment limits, magic-byte sniffed,
+ * and admitted as one ordered batch. Otherwise the reader returns a failure
  * kind
  * naming what is missing: the tool absent, the display session unreachable,
  * no image, an unsupported image type, a timeout, or a raw tool failure.
@@ -23,53 +18,55 @@
  * around on the user's behalf (D49). Images are admitted through
  * `ctx.attachments.saveImage` — the store cross-checks the declared type
  * against the sniffed bytes — and land in the editor as an `[image #N]`
- * marker recorded in a module-level marker→ref map. A submit transformer
+ * marker recorded in the frontend tree's marker→ref map. A submit transformer
  * (`./editor-instance.ts`) then splits submitted text on known markers into
  * text and image content blocks; unknown markers stay literal text. The map
- * and counter are module-level so markers survive theme-swap reloads, which
- * restore the editor text from the draft stash. Ships as a subpath plugin so
+ * and counter live in `InteractionStateService`, so markers survive same-tree
+ * theme reloads without leaking into another tree. Ships as a subpath plugin so
  * the baseline bundle keeps the plain text editor.
  *
  * @module @dsh-blue/blue-interaction/paste-image
  */
 
+import { execFile } from 'node:child_process'
+import { constants as fsConstants } from 'node:fs'
+import { open } from 'node:fs/promises'
+import { basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
+  ImageMediaType,
+  SaveImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { getSharedEditor, registerSubmitTransformer, type SharedEditor } from './editor-instance.ts'
-import { ADMITTED_IMAGE_TYPES, EXT_BY_MEDIA_TYPE, sniffImageMediaType } from './attachments.ts'
+// Empty type import carries the `settings` Context merge and the
+// 'settings/updated' Events merge the backend override subscribes to.
+import type {} from '@deepseek-ai/dsh-settings'
 import {
-  type ClipboardBackend,
-  type ClipboardImageResult,
-  type FailedRun,
-  type FailureKind,
-  type FailureResult,
-  failureDetail,
-  readCopiedPaths,
-  runTool,
-} from './clipboard-probe.ts'
-import { probeDarwin, probeWindows } from './paste-image-native.ts'
-
-export type { ClipboardBackend, ClipboardImageResult } from './clipboard-probe.ts'
+  getSharedEditor,
+  registerSubmitTransformer,
+  type SharedEditor,
+  type SubmitTransformation,
+} from './editor-instance.ts'
+import { ADMITTED_IMAGE_TYPES, EXT_BY_MEDIA_TYPE, sniffImageMediaType } from './attachments.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-paste-image'
 /** Services required before the paste flow can run. */
-export const inject = ['attachments', 'blueKeymap']
+export const inject = ['attachments', 'blueKeymap', 'blueEditorHost', 'blueInteractionState']
 
 /** Clipboard backend policy: automatic session order, or one strict backend. */
 export type ClipboardBackendPolicy = 'auto' | 'wayland' | 'x11'
 
+/** Concrete clipboard backend that produced an image. */
+export type ClipboardBackend = Exclude<ClipboardBackendPolicy, 'auto'>
+
 /** Plugin configuration for clipboard backend selection. */
 export interface Config {
-  /** Linux display-protocol policy; ignored on win32/darwin, where the
-   * platform selects the native probe. Strict modes never cross the
-   * Wayland/X11 boundary. */
+  /** Backend policy; strict modes never cross the Wayland/X11 boundary. */
   backend: ClipboardBackendPolicy
 }
 
@@ -86,18 +83,30 @@ export const Config: z<Config> = z.object({
 export const ACTION_IMAGE_PASTE = 'blue.image.paste'
 
 /**
+ * One clipboard read: direct image bytes, an ordered copied-file image
+ * batch, or a failure kind naming what is missing.
+ */
+export type ClipboardImageResult =
+  | { kind: 'image'; data: Uint8Array; mediaType: ImageMediaType; backend?: ClipboardBackend; fallback?: boolean }
+  | { kind: 'images'; images: readonly SaveImageAttachment[]; backend?: ClipboardBackend; fallback?: boolean }
+  | { kind: 'no-image' }
+  | { kind: 'unsupported'; mediaType: string }
+  | { kind: 'file-failed'; detail: string }
+  | { kind: 'unreachable' }
+  | { kind: 'missing-tool' }
+  | { kind: 'timeout' }
+  | { kind: 'failed'; detail: string }
+
+/**
  * Reads the clipboard's current image, or resolves the failure kind. Never
  * rejects (the injected test readers may).
  */
 export type ClipboardImageReader = () => Promise<ClipboardImageResult>
 
-/** The Linux display-protocol backends the `backend` config can select. */
-type LinuxBackend = Exclude<ClipboardBackend, 'win32' | 'darwin'>
-
 /** How one clipboard tool lists the offered types and reads one back. */
 type ClipboardTool = {
   /** Stable backend identity used by policy selection and cooldowns. */
-  backend: LinuxBackend
+  backend: ClipboardBackend
   /** The probe command. */
   command: string
   /** stderr signature meaning "no display session is reachable". */
@@ -112,7 +121,7 @@ type ClipboardTool = {
 const FILE_URI_TYPES = ['text/uri-list', 'x-special/gnome-copied-files'] as const
 
 /** Clipboard image tools keyed by their display protocol. */
-const CLIPBOARD_TOOLS: Readonly<Record<LinuxBackend, ClipboardTool>> = {
+const CLIPBOARD_TOOLS: Readonly<Record<ClipboardBackend, ClipboardTool>> = {
   wayland: {
     backend: 'wayland',
     command: 'wl-paste',
@@ -129,6 +138,9 @@ const CLIPBOARD_TOOLS: Readonly<Record<LinuxBackend, ClipboardTool>> = {
   },
 }
 
+/** Per-tool timeout; a hung clipboard helper must not wedge the editor. */
+const CLIPBOARD_TOOL_TIMEOUT_MS = 3000
+
 /** A timed-out backend stays skipped briefly, then is retried automatically. */
 const BACKEND_COOLDOWN_MS = 60_000
 
@@ -138,17 +150,14 @@ export type ClipboardClock = () => number
 const defaultClipboardClock: ClipboardClock = () => Date.now()
 let clipboardClock: ClipboardClock = defaultClipboardClock
 
-/** Retry deadline per backend and display-environment identity. */
-const backendCooldowns = new Map<string, number>()
-
 /** Replace the cooldown clock in tests. */
 export function setClipboardClock(clock: ClipboardClock | undefined): void {
   clipboardClock = clock ?? defaultClipboardClock
 }
 
 /** Clear every remembered backend timeout. */
-export function resetClipboardBackendCooldowns(): void {
-  backendCooldowns.clear()
+export function resetClipboardBackendCooldowns(ctx: Context): void {
+  ctx.blueInteractionState.pasteImage.backendCooldowns.clear()
 }
 
 /** The display identity whose failures may be reused safely. */
@@ -156,8 +165,8 @@ function cooldownKey(backend: ClipboardBackend): string {
   return [backend, process.env.DISPLAY ?? '', process.env.WAYLAND_DISPLAY ?? '', process.env.XDG_RUNTIME_DIR ?? ''].join('\0')
 }
 
-/** Resolve the Linux backend order against the current display session. */
-function linuxClipboardTools(policy: ClipboardBackendPolicy): readonly ClipboardTool[] {
+/** Resolve the configured backend order against the current display session. */
+function clipboardToolsFor(policy: ClipboardBackendPolicy): readonly ClipboardTool[] {
   if (policy === 'wayland') return [CLIPBOARD_TOOLS.wayland]
   if (policy === 'x11') return [CLIPBOARD_TOOLS.x11]
   if ((process.env.WAYLAND_DISPLAY ?? '') !== '') return [CLIPBOARD_TOOLS.wayland, CLIPBOARD_TOOLS.x11]
@@ -165,63 +174,19 @@ function linuxClipboardTools(policy: ClipboardBackendPolicy): readonly Clipboard
   return [CLIPBOARD_TOOLS.wayland, CLIPBOARD_TOOLS.x11]
 }
 
-let clipboardPlatformOverride: NodeJS.Platform | undefined
+/** Outcome of one clipboard tool invocation. */
+type ToolRun =
+  | { ok: true; stdout: Buffer }
+  | { ok: false; code: string | number | undefined; killed: boolean; stderr: string }
 
-/**
- * Replace the platform used for backend, notice, and key selection (tests
- * inject a platform here).
- * @param platform - the replacement, or `undefined` to restore the host.
- */
-export function setClipboardPlatform(platform: NodeJS.Platform | undefined): void {
-  clipboardPlatformOverride = platform
-}
+/** The failed half of {@link ToolRun}. */
+type FailedRun = Extract<ToolRun, { ok: false }>
 
-/** The platform clipboard decisions run against: the test seam, else the host. */
-function clipboardPlatform(): NodeJS.Platform {
-  return clipboardPlatformOverride ?? process.platform
-}
+/** Every unsuccessful clipboard result. */
+type FailureResult = Exclude<ClipboardImageResult, { kind: 'image' | 'images' }>
 
-/** One resolved clipboard backend: its stable identity and its read. */
-interface BackendProbe {
-  /** Stable backend identity used by cooldowns and fallback notices. */
-  readonly backend: ClipboardBackend
-  /** One clipboard read attempt, bounded by the deployment limits. */
-  readonly read: (limits: ImageAttachmentLimits) => Promise<ClipboardImageResult>
-}
-
-/** Wrap the Linux tool order as probes. */
-function linuxProbes(policy: ClipboardBackendPolicy): readonly BackendProbe[] {
-  return linuxClipboardTools(policy).map(tool => ({
-    backend: tool.backend,
-    read: (limits: ImageAttachmentLimits) => probeTool(tool, limits),
-  }))
-}
-
-/**
- * Resolve the probe list for a policy on a platform: win32/darwin select
- * their single native probe regardless of the Linux-only `backend` knob;
- * everything else resolves the Linux display-protocol order.
- * @param policy - the configured Linux backend policy.
- * @param platform - the host platform (tested directly for all three).
- * @returns the probes to try, in order.
- */
-function backendsFor(policy: ClipboardBackendPolicy, platform: NodeJS.Platform): readonly BackendProbe[] {
-  if (platform === 'win32') return [{ backend: 'win32', read: probeWindows }]
-  if (platform === 'darwin') return [{ backend: 'darwin', read: probeDarwin }]
-  return linuxProbes(policy)
-}
-
-/**
- * The keys bound to the paste action on a platform: Windows Terminal and
- * conhost intercept ctrl+v for their own text paste, so win32 binds alt+v
- * alongside it (the Gemini CLI convention) while passthrough terminals
- * keep the ctrl+v muscle memory (D55).
- * @param platform - the host platform (tested directly for all three).
- * @returns the key ids to register.
- */
-export function pasteKeysForPlatform(platform: NodeJS.Platform): readonly string[] {
-  return platform === 'win32' ? ['ctrl+v', 'alt+v'] : ['ctrl+v']
-}
+/** The non-image result kinds. */
+type FailureKind = FailureResult['kind']
 
 /**
  * Failure kinds in cross-tool aggregation order: a completed clipboard query
@@ -237,6 +202,53 @@ const OUTCOME_RANK: Readonly<Record<FailureKind, number>> = {
   failed: 4,
   timeout: 5,
   'missing-tool': 6,
+}
+
+/**
+ * Run one clipboard tool to completion. Never rejects; a nonzero exit or a
+ * spawn failure resolves as a failed run carrying the exit code, kill flag,
+ * and stderr text for classification.
+ * @param command - the tool to run.
+ * @param args - its arguments.
+ * @returns the stdout bytes, or the failure details.
+ */
+function runTool(command: string, args: readonly string[]): Promise<ToolRun> {
+  return new Promise(resolve => {
+    // SIGKILL, not the default SIGTERM: wl-clipboard traps TERM for its own
+    // cleanup and, wedged on an unresponsive compositor (GNOME's core-
+    // protocol fallback never gains focus from a background process), never
+    // returns from the handler — a TERM'd tool survives as a zombie and the
+    // exit event never settles this promise.
+    execFile(command, args, { encoding: 'buffer', timeout: CLIPBOARD_TOOL_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error === null) {
+        resolve({ ok: true, stdout })
+        return
+      }
+      resolve({
+        ok: false,
+        // `null` arrives only from a killed run without an exit code; the
+        // detail formatter prints it like any other code.
+        code: error.code ?? undefined,
+        killed: error.killed ?? false,
+        stderr: stderr.toString(),
+      })
+    })
+  })
+}
+
+/**
+ * Build the raw-failure detail in the `clipboard-write` idiom: the command,
+ * its exit code, and the first non-empty stderr line.
+ * @param command - the tool that failed.
+ * @param run - its failed run.
+ * @returns the one-line detail.
+ */
+function failureDetail(command: string, run: FailedRun): string {
+  const code = String(run.code)
+  const firstLine = run.stderr.split('\n').map(line => line.trim()).find(line => line.length > 0)
+  return firstLine === undefined
+    ? `${command} exited with code ${code}`
+    : `${command} exited with code ${code}: ${firstLine}`
 }
 
 /**
@@ -259,7 +271,7 @@ type ParsedFileUris =
   | { ok: true; paths: readonly string[] }
   | { ok: false; detail: string }
 
-/** Parse standard URI-list or GNOME copied-files bytes into local paths. */
+/** Parse standard URI-list or GNOME copied-files bytes into unique local paths. */
 function parseFileUris(data: Buffer, mediaType: typeof FILE_URI_TYPES[number]): ParsedFileUris {
   const lines = data.toString('utf8').split(/\r?\n/).map(line => line.trim())
   if (mediaType === 'x-special/gnome-copied-files') {
@@ -269,6 +281,7 @@ function parseFileUris(data: Buffer, mediaType: typeof FILE_URI_TYPES[number]): 
     }
   }
   const paths: string[] = []
+  const seen = new Set<string>()
   for (const line of lines) {
     if (line === '' || line.startsWith('#')) continue
     let url: URL
@@ -286,16 +299,64 @@ function parseFileUris(data: Buffer, mediaType: typeof FILE_URI_TYPES[number]): 
     } catch {
       return { ok: false, detail: 'clipboard file URI does not name a local path' }
     }
-    paths.push(path)
+    if (!seen.has(path)) {
+      seen.add(path)
+      paths.push(path)
+    }
   }
   return { ok: true, paths }
 }
 
-/** Read one copied-file representation as an ordered batch through the shared path preflight. */
+/** Read one copied local file without following a final symlink. */
+async function readCopiedImage(path: string, maxBytes: number): Promise<SaveImageAttachment | FailureResult> {
+  const displayName = basename(path) || 'copied file'
+  let handle
+  try {
+    handle = await open(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    const reason = code === 'ELOOP' ? 'symbolic links are not accepted' : `could not be opened (${String(code)})`
+    return { kind: 'file-failed', detail: `${displayName} ${reason}` }
+  }
+  try {
+    const stat = await handle.stat()
+    if (!stat.isFile()) return { kind: 'file-failed', detail: `${displayName} is not a regular file` }
+    if (stat.size > maxBytes) return { kind: 'file-failed', detail: `${displayName} exceeds the per-image byte limit` }
+    const data = await handle.readFile()
+    if (data.byteLength > maxBytes) return { kind: 'file-failed', detail: `${displayName} exceeds the per-image byte limit` }
+    const mediaType = sniffImageMediaType(data)
+    if (mediaType === undefined) {
+      return { kind: 'file-failed', detail: `${displayName} is not a supported PNG, JPEG, WebP, or GIF image` }
+    }
+    return { data, mediaType, name: displayName }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    return { kind: 'file-failed', detail: `${displayName} could not be read (${String(code)})` }
+  } finally {
+    await handle.close()
+  }
+}
+
+/** Read and preflight one copied-file representation as an ordered batch. */
 async function readCopiedImages(data: Buffer, mediaType: typeof FILE_URI_TYPES[number], limits: ImageAttachmentLimits): Promise<ClipboardImageResult> {
   const parsed = parseFileUris(data, mediaType)
   if (!parsed.ok) return { kind: 'file-failed', detail: parsed.detail }
-  return readCopiedPaths(parsed.paths, limits)
+  if (parsed.paths.length === 0) return { kind: 'no-image' }
+  if (parsed.paths.length > limits.maxImagesPerMessage) {
+    return { kind: 'file-failed', detail: `copied file selection exceeds the ${limits.maxImagesPerMessage}-image limit` }
+  }
+  const images: SaveImageAttachment[] = []
+  let totalBytes = 0
+  for (const path of parsed.paths) {
+    const image = await readCopiedImage(path, limits.maxImageBytes)
+    if ('kind' in image) return image
+    totalBytes += image.data.byteLength
+    if (totalBytes > limits.maxMessageImageBytes) {
+      return { kind: 'file-failed', detail: 'copied file selection exceeds the aggregate image-byte limit' }
+    }
+    images.push(image)
+  }
+  return { kind: 'images', images }
 }
 
 /**
@@ -381,25 +442,27 @@ function aggregateOutcomes(outcomes: FailureResult[]): ClipboardImageResult {
   return hasDisplaySession ? { kind: 'missing-tool' } : { kind: 'unreachable' }
 }
 
-/** The default reader: probe each platform-resolved backend in order; the
- * first valid image wins, otherwise the failures aggregate into one verdict. */
-async function defaultClipboardImageReader(config: Config, limits: ImageAttachmentLimits): Promise<ClipboardImageResult> {
+/** The default reader: probe each policy-selected tool in order; the first
+ * valid image wins, otherwise the failures aggregate into one verdict. */
+async function defaultClipboardImageReader(ctx: Context, config: Config, limits: ImageAttachmentLimits): Promise<ClipboardImageResult> {
+  const state = ctx.blueInteractionState.pasteImage
+  const policy = state.backendOverride ?? config.backend
   const outcomes: FailureResult[] = []
-  const probes = backendsFor(config.backend, clipboardPlatform())
-  for (const [index, probe] of probes.entries()) {
-    const key = cooldownKey(probe.backend)
-    const retryAt = backendCooldowns.get(key)
+  const tools = clipboardToolsFor(policy)
+  for (const [index, tool] of tools.entries()) {
+    const key = cooldownKey(tool.backend)
+    const retryAt = state.backendCooldowns.get(key)
     if (retryAt !== undefined && clipboardClock() < retryAt) {
       outcomes.push({ kind: 'timeout' })
       continue
     }
-    backendCooldowns.delete(key)
-    const outcome = await probe.read(limits)
-    if (outcome.kind === 'timeout') backendCooldowns.set(key, clipboardClock() + BACKEND_COOLDOWN_MS)
+    state.backendCooldowns.delete(key)
+    const outcome = await probeTool(tool, limits)
+    if (outcome.kind === 'timeout') state.backendCooldowns.set(key, clipboardClock() + BACKEND_COOLDOWN_MS)
     if (outcome.kind === 'image' || outcome.kind === 'images') {
       return {
         ...outcome,
-        fallback: config.backend === 'auto' && index > 0,
+        fallback: policy === 'auto' && index > 0,
       }
     }
     outcomes.push(outcome)
@@ -417,25 +480,15 @@ export function setClipboardImageReader(reader: ClipboardImageReader | undefined
   clipboardImageReader = reader
 }
 
-/** The missing-tool notice names the platform's own clipboard tool. */
-function missingToolNotice(): string {
-  const platform = clipboardPlatform()
-  if (platform === 'win32') return 'clipboard image tool missing: powershell.exe is not on PATH'
-  if (platform === 'darwin') return 'clipboard image tool missing: osascript is not on PATH'
-  return 'clipboard image tool missing: install wl-clipboard (wl-paste) or xclip'
-}
-
 /**
  * Notice text per failure kind: each names what is missing so the user can
- * fix it (D49: diagnose, never work around). The missing-tool text is
- * platform-aware; unreachable can only arise from the Linux tools, whose
- * env-var names it cites.
+ * fix it (D49: diagnose, never work around).
  * @param result - the non-image reader outcome.
  * @returns the notice text.
  */
 function failureNotice(result: FailureResult): string {
   switch (result.kind) {
-    case 'missing-tool': return missingToolNotice()
+    case 'missing-tool': return 'clipboard image tool missing: install wl-clipboard (wl-paste) or xclip'
     case 'unreachable': return 'clipboard unreachable: DISPLAY/WAYLAND_DISPLAY is not set in this session'
     case 'no-image': return 'no image available from the clipboard'
     case 'unsupported': return `clipboard image type ${result.mediaType} is not supported`
@@ -444,11 +497,6 @@ function failureNotice(result: FailureResult): string {
     case 'failed': return `clipboard read failed: ${result.detail}`
   }
 }
-
-/** Marker→attachment map for images pasted into the editor. */
-const pastedImages = new Map<string, ImageAttachmentRef>()
-/** Running paste counter; gives each marker a unique number. */
-let pasteCount = 0
 
 /** The marker shape inserted into the editor text. */
 const IMAGE_MARKER = /\[image #\d+\]/g
@@ -462,8 +510,10 @@ const IMAGE_MARKER = /\[image #\d+\]/g
  * @param text - the submitted line.
  * @returns the contributed content blocks, empty when nothing was split.
  */
-function transformImageMarkers(text: string): ContentBlock[] {
+function transformImageMarkers(ctx: Context, text: string): ContentBlock[] | SubmitTransformation {
+  const pastedImages = ctx.blueInteractionState.pasteImage.pastedImages
   const blocks: ContentBlock[] = []
+  const consumed: Array<readonly [string, ImageAttachmentRef]> = []
   let last = 0
   for (const match of text.matchAll(IMAGE_MARKER)) {
     const ref = pastedImages.get(match[0])
@@ -473,12 +523,18 @@ function transformImageMarkers(text: string): ContentBlock[] {
     if (run.length > 0) blocks.push({ type: 'text', text: run })
     blocks.push({ type: 'image', attachment: ref })
     pastedImages.delete(match[0])
+    consumed.push([match[0], ref])
     last = match.index + match[0].length
   }
   if (blocks.length === 0) return []
   const tail = text.slice(last)
   if (tail.length > 0) blocks.push({ type: 'text', text: tail })
-  return blocks
+  return {
+    blocks,
+    rollback: () => {
+      for (const [marker, ref] of consumed) pastedImages.set(marker, ref)
+    },
+  }
 }
 
 /**
@@ -500,7 +556,7 @@ async function pasteFlow(ctx: Context, config: Config, shared: SharedEditor, isU
   notice('pasting image...')
   let result: ClipboardImageResult
   try {
-    result = await (clipboardImageReader?.() ?? defaultClipboardImageReader(config, ctx.attachments.imageLimits))
+    result = await (clipboardImageReader?.() ?? defaultClipboardImageReader(ctx, config, ctx.attachments.imageLimits))
   } catch (error) {
     // An injected reader rejecting degrades to the same notice family.
     if (isUnloaded()) return
@@ -526,17 +582,16 @@ async function pasteFlow(ctx: Context, config: Config, shared: SharedEditor, isU
       : await ctx.attachments.saveImages(result.images)
     if (isUnloaded()) return
     const markers = refs.map(ref => {
-      pasteCount += 1
-      const marker = `[image #${pasteCount}]`
-      pastedImages.set(marker, ref)
+      const state = ctx.blueInteractionState.pasteImage
+      state.pasteCount += 1
+      const marker = `[image #${state.pasteCount}]`
+      state.pastedImages.set(marker, ref)
       return marker
     })
     shared.editor.insertText(markers.join(' '))
     if (result.fallback === true && result.backend !== undefined) {
-      // Only the Linux auto policy ever sets fallback (win32/darwin are
-      // single-backend), so the label stays exhaustive over its producers.
-      const label = result.backend === 'x11' ? 'X11' : result.backend === 'wayland' ? 'Wayland' : undefined
-      if (label !== undefined) notice(`pasted image via ${label} fallback; verify it is current`)
+      const label = result.backend === 'x11' ? 'X11' : 'Wayland'
+      notice(`pasted image via ${label} fallback; verify it is current`)
     }
   } catch (error) {
     if (isUnloaded()) return
@@ -587,15 +642,35 @@ export function apply(ctx: Context, config: Config): void {
   })
   ctx.effect(() => ctx.blueKeymap.register([{
     id: ACTION_IMAGE_PASTE,
-    keys: [...pasteKeysForPlatform(clipboardPlatform())],
+    keys: ['ctrl+v'],
     description: 'Paste a clipboard image into the prompt',
   }]))
-  ctx.effect(() => registerSubmitTransformer(transformImageMarkers))
+  ctx.effect(() => registerSubmitTransformer(ctx, text => transformImageMarkers(ctx, text)))
+  // The `blue.pasteImageBackend` user layer overrides the composition
+  // backend. Read the descriptor's RAW user section — the resolved value's
+  // `auto` schema default would clobber a configured strict backend — and
+  // re-read on every `blue` commit; a host without settings keeps the
+  // composition value.
+  const syncBackendOverride = (): void => {
+    const descriptor = ctx.get('settings')?.describe().find(entry => String(entry.ns) === 'blue')
+    const user = descriptor?.user
+    const raw = typeof user === 'object' && user !== null
+      ? (user as Record<string, unknown>).pasteImageBackend
+      : undefined
+    ctx.blueInteractionState.pasteImage.backendOverride = raw === 'auto' || raw === 'wayland' || raw === 'x11' ? raw : undefined
+  }
+  syncBackendOverride()
+  ctx.on('settings/updated', (ns) => {
+    if (String(ns) === 'blue') syncBackendOverride()
+  })
+  ctx.effect(() => () => {
+    ctx.blueInteractionState.pasteImage.backendOverride = undefined
+  })
   let detach: (() => void) | undefined
   const reattach = (): void => {
     detach?.()
     detach = undefined
-    const shared = getSharedEditor()
+    const shared = getSharedEditor(ctx)
     if (shared !== undefined) detach = attach(ctx, config, shared, () => unloaded)
   }
   ctx.effect(() => () => {

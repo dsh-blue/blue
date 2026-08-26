@@ -20,7 +20,13 @@ import type {
   BlueSemanticColors,
 } from '@dsh-blue/blue-core'
 import { clampRowsToWidth } from '@dsh-blue/blue-core/chrome'
-import { extractKeyArgument, isPlanDecline, isReadItem, KEY_ARG_MAX_CHARS } from './present.ts'
+import { extractKeyArgument, isPlanDecline, KEY_ARG_MAX_CHARS } from './present.ts'
+import {
+  DEFAULT_USER_FOLD_CHARS,
+  DEFAULT_USER_FOLD_LINES,
+  DEFAULT_TRANSCRIPT_PRESENTATION,
+  type TranscriptPresentationSnapshot,
+} from './presentation-policy.ts'
 import type {
   TranscriptAssistantItem,
   TranscriptStepSummaryItem,
@@ -46,29 +52,14 @@ export const USER_PREVIEW_LINES = 3
  * pi-tui editor's paste-fold line ("> 10 lines") so what folds in the
  * editor folds in the transcript echo too (D46).
  */
-export const DEFAULT_USER_FOLD_LINES = 10
+export { DEFAULT_USER_FOLD_LINES }
 
 /**
  * Default raw character count above which a user message folds — the
  * pi-tui editor's second paste-fold criterion ("> 1000 characters"), so a
  * single long line (a big one-line JSON, say) folds as well.
  */
-export const DEFAULT_USER_FOLD_CHARS = 1000
-
-let userFoldLines = DEFAULT_USER_FOLD_LINES
-let userFoldChars = DEFAULT_USER_FOLD_CHARS
-
-/**
- * Replace the user-message fold thresholds (tests inject small bounds
- * here; the values are read at render time, so set them before the first
- * render or invalidate).
- * @param lines - the raw-line replacement, or `undefined` to restore the default.
- * @param chars - the raw-character replacement, or `undefined` to restore the default.
- */
-export function setUserFoldThresholds(lines: number | undefined, chars: number | undefined): void {
-  userFoldLines = lines ?? DEFAULT_USER_FOLD_LINES
-  userFoldChars = chars ?? DEFAULT_USER_FOLD_CHARS
-}
+export { DEFAULT_USER_FOLD_CHARS }
 
 /** Indent of the collapsed/expanded result preview rows (kimi's default). */
 const PREVIEW_INDENT = '  '
@@ -101,6 +92,8 @@ export interface UserMessageImages {
   loadImage?: UserImageLoader
   /** Nudge called after an image resolves so the screen re-renders. */
   onReady?(): void
+  /** Tree-scoped policy getter; omitted consumers use shipped defaults. */
+  presentation?: () => TranscriptPresentationSnapshot
 }
 
 /** Cache keyed on the inputs a component's rendered lines depend on. */
@@ -138,6 +131,7 @@ export class UserMessageComponent implements BlueComponent {
   private readonly components: BlueComponents
   private readonly loadImage: UserImageLoader | undefined
   private readonly onReady: (() => void) | undefined
+  private readonly presentation: () => TranscriptPresentationSnapshot
   /** Per-image outcome: the image component, null for a failed load. */
   private readonly resolved = new Map<number, BlueImage | null>()
   private imagesRequested = false
@@ -162,6 +156,7 @@ export class UserMessageComponent implements BlueComponent {
     this.components = components
     this.loadImage = images.loadImage
     this.onReady = images.onReady
+    this.presentation = images.presentation ?? (() => DEFAULT_TRANSCRIPT_PRESENTATION)
   }
 
   /** Drop the cached lines; the next render rebuilds from the item. */
@@ -182,7 +177,8 @@ export class UserMessageComponent implements BlueComponent {
 
   /** Whether the raw-text metrics put this message over a fold threshold. */
   private isFoldable(): boolean {
-    return this.item.text.split('\n').length > userFoldLines || this.item.text.length > userFoldChars
+    const policy = this.presentation()
+    return this.item.text.split('\n').length > policy.userFoldLines || this.item.text.length > policy.userFoldChars
   }
 
   /** Kick off all image loads once; each settle stores its outcome. */
@@ -329,10 +325,8 @@ export class AssistantMessageComponent implements BlueComponent {
  * wrapped at the content width, capped at {@link RESULT_PREVIEW_LINES}
  * visual rows, under a dim `... (N more lines, M total, ctrl+o to expand)`
  * hint — the two-column kimi indent replaces the retired `⎿` connector
- * (kimi has no such glyph; the dogfood rules its fate). A Read item (the
- * view-contract `isReadItem`) collapses harder — the kimi Read card shows
- * its header and lines chip only, the file content stays hidden until
- * Ctrl-O. Expanded (Ctrl-O) renders every wrapped line. MCP tools need no
+ * (kimi has no such glyph; the dogfood rules its fate). Expanded (Ctrl-O)
+ * renders every wrapped line. MCP tools need no
  * dim suffix yet: the rc.7 harness has no MCP surface, and Blue does not
  * build for a consumer that does not exist.
  */
@@ -349,7 +343,12 @@ export class ToolCallComponent implements BlueComponent {
    * @param colors - the semantic color table.
    * @param components - the component factory providing the width helpers.
    */
-  constructor(item: TranscriptToolItem, colors: BlueSemanticColors, components: BlueComponents) {
+  constructor(
+    item: TranscriptToolItem,
+    colors: BlueSemanticColors,
+    components: BlueComponents,
+    private readonly presentedBody?: BlueComponent & { setExpanded?(expanded: boolean): void },
+  ) {
     this.item = item
     this.colors = colors
     this.components = components
@@ -358,6 +357,7 @@ export class ToolCallComponent implements BlueComponent {
   /** Drop the cached lines; the next render rebuilds from the item. */
   invalidate(): void {
     this.cache = null
+    this.presentedBody?.invalidate()
   }
 
   /**
@@ -368,6 +368,7 @@ export class ToolCallComponent implements BlueComponent {
    */
   setExpanded(expanded: boolean): void {
     this.expanded = expanded
+    this.presentedBody?.setExpanded?.(expanded)
   }
 
   /** The header row: bullet, verb, bold name, key arg, and the lines chip. */
@@ -459,9 +460,6 @@ export class ToolCallComponent implements BlueComponent {
       lines.push(...allLines.map(paint))
       return lines
     }
-    // The kimi Read collapse (S20 dogfood): a Read card shows its header
-    // and lines chip only — the file content stays hidden until Ctrl-O.
-    if (isReadItem(this.item)) return lines
     const shown = allLines.slice(0, RESULT_PREVIEW_LINES)
     lines.push(...shown.map(paint))
     if (allLines.length > shown.length) {
@@ -481,7 +479,10 @@ export class ToolCallComponent implements BlueComponent {
     const body = result === undefined ? '' : (result.fullText ?? result.text)
     const key = `${width}:${this.expanded}:${result ? `${result.isError}:${body}` : 'pending'}`
     if (this.cache?.key === key) return this.cache.lines
-    const lines = ['', this.renderHeader(width), ...this.renderBody(width, result)]
+    const presentedWidth = Math.max(1, width - this.components.visibleWidth(PREVIEW_INDENT))
+    const presentedRows = this.presentedBody?.render(presentedWidth)
+      .map(row => this.components.truncateToWidth(`${PREVIEW_INDENT}${row}`, width))
+    const lines = ['', this.renderHeader(width), ...(presentedRows ?? this.renderBody(width, result))]
     this.cache = { key, lines }
     return lines
   }
@@ -530,7 +531,7 @@ export class ErrorMessageComponent implements BlueComponent {
 }
 
 /**
- * One cut-turn row: the `⏹` marker and the `interrupted` label in error
+ * One cut-turn row: the text-presentation `■` marker and the `interrupted` label in error
  * red — the visible tombstone of an Esc interrupt (or a crash-recovery
  * close), so the stream going quiet always carries its reason (the S24a
  * dogfood ruling; round 4 moved it from textMuted to the error paint for
@@ -556,7 +557,7 @@ export class InterruptedMarkerComponent implements BlueComponent {
    * @returns one string.
    */
   render(width: number): string[] {
-    return [this.components.truncateToWidth(this.colors.error('⏹ interrupted'), width)]
+    return [this.components.truncateToWidth(this.colors.error('■ interrupted'), width)]
   }
 }
 

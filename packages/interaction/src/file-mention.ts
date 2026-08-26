@@ -75,26 +75,30 @@ const defaultFdProbe: FdProbe = async () => {
 }
 
 let fdProbe: FdProbe = defaultFdProbe
-let fdProbeResult: Promise<string | null> | undefined
+
+/** Frontend-tree-owned cache for the executable capability probe. */
+export interface FdProbeRuntimeState {
+  result: Promise<string | null> | undefined
+}
 
 /**
- * Replace the `fd` probe (tests inject a fake here); also drops the cached
- * result so the next detection re-runs.
+ * Replace the `fd` probe (tests inject a fake here). Cached results belong
+ * to each frontend tree and are intentionally unaffected.
  * @param probe - the replacement, or `undefined` to restore the default.
  */
 export function setFdProbe(probe: FdProbe | undefined): void {
   fdProbe = probe ?? defaultFdProbe
-  fdProbeResult = undefined
 }
 
 /**
- * Detect the `fd` binary once per probe generation; concurrent callers
- * share the in-flight promise.
+ * Detect the `fd` binary once per frontend tree; concurrent callers share
+ * the in-flight promise without leaking the result into another tree.
+ * @param state - the owning frontend tree's cache.
  * @returns the binary name, or `null` when unavailable.
  */
-export function detectFdPath(): Promise<string | null> {
-  fdProbeResult ??= fdProbe()
-  return fdProbeResult
+export function detectFdPath(state: FdProbeRuntimeState): Promise<string | null> {
+  state.result ??= fdProbe()
+  return state.result
 }
 
 /** One fallback candidate: a project-relative path and its kind. */

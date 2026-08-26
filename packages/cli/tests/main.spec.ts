@@ -3,8 +3,7 @@
  * the `-V` three-segment self-answer, the missing-host bootstrap line, the
  * boot surface's calibration (current / installed / dev lane / failed with
  * its classified manual pointer and output tail) ahead of the inherited
- * exec, the plugin surface's calibration skip, and the exit code
- * propagation.
+ * exec, the plugin surface's calibration skip, and exit code propagation.
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -242,6 +241,16 @@ describe('main', () => {
     expect(calls.inherit[0]?.args?.slice(1)).toEqual(['plugin', '--profile', 'blue', 'add', '@dsh-blue/blue@rc'])
     expect(captures.exits).toEqual([0])
   })
+
+  it('skips calibration on the version and plugin surfaces', async () => {
+    const { calls } = fixtureLauncher()
+    cliInternals.spawnInherit = async (cmd, args, opts) => {
+      calls.inherit.push({ cmd, args, env: opts?.env })
+      return OK
+    }
+    await main(['-V'])
+    await main(['plugin', 'add', '@dsh-blue/blue@rc'])
+  })
 })
 
 describe('shellVersion', () => {
@@ -258,3 +267,4 @@ describe('shellVersion', () => {
     expect(shellVersion()).toBe('unknown')
   })
 })
+

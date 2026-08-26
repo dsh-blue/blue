@@ -13,8 +13,11 @@ import { fileURLToPath } from 'node:url'
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 /** Publish order is dependency order; the launcher is always last. */
-export const PACKAGE_DIRS = [
+export const RELEASE_PACKAGE_DIRS = [
   'packages/api',
+  'packages/frontend',
+  'packages/harness-adapter',
+  'packages/conversation',
   'packages/core',
   'packages/app',
   'packages/transcript',
@@ -22,6 +25,20 @@ export const PACKAGE_DIRS = [
   'packages/bundle/blue',
   'packages/cli',
 ]
+
+/** Packages validated independently but deliberately excluded from release. */
+export const VALIDATION_PACKAGE_DIRS = [
+  'packages/context',
+  'packages/remote',
+  'packages/openpencil',
+  'packages/lark',
+]
+
+/** Backward-compatible name used by release/check-pack callers. */
+export const PACKAGE_DIRS = RELEASE_PACKAGE_DIRS
+
+/** All packages with buildable runtime entries, including validation plugins. */
+export const BUILD_PACKAGE_DIRS = [...RELEASE_PACKAGE_DIRS, ...VALIDATION_PACKAGE_DIRS]
 
 /** Read one package manifest. */
 export function readManifest(relativeDir) {

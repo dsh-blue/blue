@@ -121,6 +121,6 @@ export function cwdNormalizer(): (row: string) => string {
     // bare token — the truncation threshold itself is unit-tested upstream.
     out = out.replace(/«cwd»\/[A-Za-z0-9._-]{1,12}\.\.\./g, '«cwd»')
     out = out.replace(/«cwd»(\/…|\.\.\.|…)/g, '«cwd»')
-    return out
+    return out.trimEnd()
   }
 }

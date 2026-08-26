@@ -14,8 +14,13 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import * as approvalPlugin from '../src/approval-plugin.ts'
-import { setYolo } from '../src/mode-state.ts'
 import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeScreen } from './fakes.ts'
+
+const contexts = new WeakMap<Agent, Context>()
+
+function setYolo(agent: Agent, enabled: boolean): void {
+  contexts.get(agent)?.blueSessionActions.setYolo(enabled)
+}
 
 async function mount(options: { attach?: boolean } = {}): Promise<{
   ctx: Context
@@ -29,7 +34,8 @@ async function mount(options: { attach?: boolean } = {}): Promise<{
   const session = ctx.sessions.create(SessionId('approval-spec'))
   const steer = vi.fn()
   const agent = { id: session.id, session, steer } as unknown as Agent
-  ctx.provide('blueSession', { current: options.attach === false ? null : agent, modelRef: undefined })
+  contexts.set(agent, ctx)
+  ctx.provide('testSession', { current: options.attach === false ? null : agent, modelRef: undefined })
   await ctx.plugin(approvalPlugin)
   return { ctx, screen, components, agent, steer }
 }
@@ -252,11 +258,68 @@ describe('blue-approval answerer', () => {
     const controller = new AbortController()
     const second = decide(ctx, request(agent, { toolName: 'write', signal: controller.signal }))
     expect(screen.overlays).toHaveLength(1)
+    await Promise.resolve()
     controller.abort()
+    await expect(second).resolves.toBe('cancelled')
+    overlay(screen).handleInput(KEY.enter)
+    await expect(first).resolves.toBe('allowed-once')
+    expect(screen.overlays).toHaveLength(1)
+  })
+
+  it('cancels visible and queued prompts when the session changes', async () => {
+    const { ctx, screen, agent } = await mount()
+    const first = decide(ctx, request(agent))
+    const second = decide(ctx, request(agent, { toolName: 'write' }))
+    expect(screen.overlays).toHaveLength(1)
+    ;(ctx.get('testSession') as { current: Agent | null }).current = { id: 'next' } as Agent
+    ctx.emit('test/session-changed')
+    await expect(first).resolves.toBe('cancelled')
+    await expect(second).resolves.toBe('cancelled')
+    expect(screen.overlays[0]?.hidden).toBe(true)
+  })
+
+  it('cancels visible and queued prompts when the plugin Fiber unloads', async () => {
+    const { ctx, agent } = await mount()
+    const first = decide(ctx, request(agent))
+    const second = decide(ctx, request(agent, { toolName: 'write' }))
+    await ctx.fiber.dispose()
+    await expect(first).resolves.toBe('cancelled')
+    await expect(second).resolves.toBe('cancelled')
+  })
+
+  it('delegates when the reader has no committed snapshot despite matching ownership', async () => {
+    const { ctx, screen, agent } = await mount()
+    const current = ctx.blueSessionReader.current
+    ctx.blueSessionReader.current = () => null
+    const pending = decide(ctx, request(agent))
+    await expect(pending).resolves.toBe('unavailable')
+    expect(screen.overlays).toHaveLength(0)
+    ctx.blueSessionReader.current = current
+  })
+
+  it('rejects a queued prompt whose request owner becomes stale before it mounts', async () => {
+    const { ctx, screen, agent } = await mount()
+    const first = decide(ctx, request(agent))
+    const second = decide(ctx, request(agent, { toolName: 'write' }))
+    ;(ctx.get('testSession') as { current: Agent | null }).current = { id: 'next' } as Agent
     overlay(screen).handleInput(KEY.enter)
     await expect(first).resolves.toBe('allowed-once')
     await expect(second).resolves.toBe('cancelled')
     expect(screen.overlays).toHaveLength(1)
+  })
+
+  it('does not retain a session allowance after the reader identity changes', async () => {
+    const { ctx, screen, agent } = await mount()
+    const current = ctx.blueSessionReader.current
+    const first = decide(ctx, request(agent))
+    ctx.blueSessionReader.current = () => ({ id: 'next', cwd: '/', status: 'idle', mode: 'normal' })
+    overlay(screen).handleInput('2')
+    await expect(first).resolves.toBe('allowed-once')
+    ctx.blueSessionReader.current = current
+    const second = decide(ctx, request(agent))
+    expect(screen.overlays).toHaveLength(2)
+    overlay(screen).handleInput(KEY.escape)
+    await expect(second).resolves.toBe('rejected')
   })
 
   it('delegates down the waterfall for an agent the UI does not own', async () => {

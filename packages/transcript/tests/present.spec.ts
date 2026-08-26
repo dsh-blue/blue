@@ -4,55 +4,12 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { isReadItem, isSubagentTool, parseToolArguments, resolveCallView, resolveResultView, type ToolPresentationSource } from '../src/present.ts'
-import type { TranscriptToolItem } from '../src/types.ts'
+import { parseToolArguments, resolveCallView, resolveResultView, type ToolPresentationSource } from '../src/present.ts'
 
 /** A registry stub whose `get` returns the prearranged runtime (or nothing). */
 function tools(get: (name: string) => unknown): ToolPresentationSource {
   return { get } as ToolPresentationSource
 }
-
-describe('isReadItem', () => {
-  function readItem(view: TranscriptToolItem['view']): TranscriptToolItem {
-    return { kind: 'tool', seq: 1, callId: 'c1', name: 'read', arguments: '{}', view }
-  }
-
-  it('marks the pending read call view (generic card, read kind)', () => {
-    expect(isReadItem(readItem({ card: 'generic', title: 'Read x', kind: 'read' }))).toBe(true)
-  })
-
-  it('marks the completed ReadResultView', () => {
-    expect(isReadItem(readItem({
-      card: 'read', path: 'x', offset: 1, lines: [], totalLines: 0,
-    }))).toBe(true)
-  })
-
-  it('rejects other generic kinds and view-less items', () => {
-    expect(isReadItem(readItem({ card: 'generic', title: 'Search', kind: 'search' }))).toBe(false)
-    expect(isReadItem(readItem(undefined))).toBe(false)
-  })
-
-  it('defends against a malformed view missing the card tag', () => {
-    expect(isReadItem(readItem({ title: 'x' } as never))).toBe(false)
-  })
-})
-
-describe('isSubagentTool', () => {
-  function named(name: string): TranscriptToolItem {
-    return { kind: 'tool', seq: 1, turn: 1, step: 1, callId: 'c1', name, arguments: '{}', startedAt: 0 }
-  }
-
-  it('marks the spawn-class tools eligible for the agent group', () => {
-    expect(isSubagentTool(named('subagent'))).toBe(true)
-    expect(isSubagentTool(named('subagent_fork'))).toBe(true)
-  })
-
-  it('rejects the control tools, reads, and ordinary tools', () => {
-    for (const name of ['send_message', 'interrupt_agent', 'list_agents', 'report', 'job_output', 'read', 'bash']) {
-      expect(isSubagentTool(named(name))).toBe(false)
-    }
-  })
-})
 
 describe('parseToolArguments', () => {
   it('parses valid JSON', () => {

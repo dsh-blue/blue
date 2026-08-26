@@ -11,3 +11,5 @@ blue
 ```
 
 The profile is managed by dsh's official pnpm workspace path. Once the profile already carries the shell's exact Blue version, ordinary starts do not invoke pnpm again. Reinstall the shell to upgrade; use `dsh plugin` for explicit profile management.
+
+Creative mode is supplied by the `@dsh-blue/blue` bundle itself. The shell does not rewrite its nested dsh installation, so `blue` and direct `dsh --profile` launches use the same isolated preset roster.

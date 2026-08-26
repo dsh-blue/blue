@@ -2,7 +2,7 @@
  * `blue-status-cwd` plugin: the abbreviated working-directory entry.
  * `shortenCwd` is asserted pure (home shortening, three-segment tail, the
  * shallow and empty passthroughs); the entry spec covers the session-cwd
- * source, the rebind on `'blue/session-changed'`, the muted tier, and the
+ * source, the rebind on `'test/session-changed'`, the muted tier, and the
  * fiber unload.
  */
 
@@ -61,21 +61,21 @@ describe('blue-status-cwd', () => {
     await harness.dispose()
   })
 
-  it('re-abbreviates from the new session cwd on blue/session-changed', async () => {
+  it('re-abbreviates from the new session cwd on test/session-changed', async () => {
     const first = fakeAgent([], { cwd: '/one/two' })
     const { ctx, screen, entry, dispose } = await bootStatusPlugin(cwd, first)
     expect(entry.render(80)).toBe('/one/two')
     const baseline = screen.renderRequests.length
 
-    ctx.emit('blue/session-changed', asAgent(fakeAgent([], { cwd: '/a/b/c/d' })))
+    ctx.emit('test/session-changed', asAgent(fakeAgent([], { cwd: '/a/b/c/d' })))
     expect(entry.render(80)).toBe('…/b/c/d')
     expect(screen.renderRequests.length).toBe(baseline + 1)
 
     // An unchanged abbreviation requests no redraw; a session without a
     // header cwd falls back to the process cwd.
-    ctx.emit('blue/session-changed', asAgent(fakeAgent([], { cwd: '/a/b/c/d' })))
+    ctx.emit('test/session-changed', asAgent(fakeAgent([], { cwd: '/a/b/c/d' })))
     expect(screen.renderRequests.length).toBe(baseline + 1)
-    ctx.emit('blue/session-changed', asAgent(fakeAgent([])))
+    ctx.emit('test/session-changed', asAgent(fakeAgent([])))
     expect(screen.renderRequests.length).toBe(baseline + 2)
     await dispose()
   })
@@ -88,8 +88,8 @@ describe('blue-status-cwd', () => {
 
   it('unregisters the entry when the fiber unloads', async () => {
     const harness = await bootStatusPlugin(cwd, fakeAgent([], { cwd: '/a' }))
-    expect(harness.registry.entries).toHaveLength(1)
+    expect(harness.models.list()).toHaveLength(1)
     await harness.dispose()
-    expect(harness.registry.entries).toHaveLength(0)
+    expect(harness.models.list()).toHaveLength(0)
   })
 })

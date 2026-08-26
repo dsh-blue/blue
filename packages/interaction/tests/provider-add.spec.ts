@@ -722,6 +722,29 @@ describe('runProviderAdd', () => {
     expect(bench.credentialSet).not.toHaveBeenCalled()
   })
 
+  it('does not expose base URL when editing a known provider', async () => {
+    const bench = mountWizard({}, {
+      settings: { section: { providers: { anthropic: {
+        baseURL: 'https://legacy-proxy.example.com',
+        apiKeyEnv: 'ANTHROPIC_API_KEY',
+      } } } },
+    })
+    const outcome = runProviderEdit(bench.ctx, bench.display, 'anthropic')
+    await vi.waitFor(() => {
+      const rows = (current(bench.screen).render?.(100) ?? []).join('\n')
+      expect(rows).toContain('Configure anthropic')
+      expect(rows).not.toContain('Base URL')
+    })
+    const form = current(bench.screen)
+    form.handleInput(KEY.tab)
+    form.handleInput('replacement-key')
+    form.handleInput(KEY.enter)
+    await expect(outcome).resolves.toBe('provider "anthropic" updated')
+    const op = ((bench.mutations[0] ?? { ops: [] }).ops as { value?: Record<string, unknown> }[])[0]!
+    expect(op.value).toMatchObject({ baseURL: 'https://legacy-proxy.example.com' })
+    expect(bench.credentialSet).toHaveBeenCalledWith(credentialRef('ANTHROPIC_API_KEY'), 'replacement-key')
+  })
+
   it('reports a failed edit write', async () => {
     const bench = mountWizard({}, {
       settings: {
@@ -961,13 +984,11 @@ describe('runProviderAdd', () => {
     current(bench.screen).handleInput(KEY.enter)
     await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(3) })
     const form = current(bench.screen)
-    form.handleInput('https://proxy.example.com')
-    form.handleInput(KEY.enter)
     form.handleInput('vendor-key')
     form.handleInput(KEY.enter)
     await expect(outcome).resolves.toBe('provider "anthropic" added')
     const profile = ((bench.mutations[0] ?? { ops: [] }).ops as { value: Record<string, unknown> }[])[0]!.value
-    expect(profile).toEqual({ baseURL: 'https://proxy.example.com', apiKeyEnv: 'ANTHROPIC_API_KEY' })
+    expect(profile).toEqual({ apiKeyEnv: 'ANTHROPIC_API_KEY' })
     expect(bench.credentialSet).toHaveBeenCalledWith(credentialRef('ANTHROPIC_API_KEY'), 'vendor-key')
   })
 

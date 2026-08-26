@@ -1,64 +1,31 @@
 # Features overview
 
-Blue is not one big component — it is a **Cordis plugin tree**: the bundle's `cordis.patch.yml` assembles the UI over `dsh-base` with 23 plugin rows. Every visual surface is an individually removable row; that is "everything is a plugin" taken literally.
+Blue is a Cordis plugin tree. The bundle currently has 28 Blue-owned rows: two host-support rows, eight baseline rows, 14 enhancement rows, and four assembly rows.
 
-## Three-segment assembly
+## Baseline
 
-### Baseline segment (5 rows) — plain Blue
+`blue-api-host`, `blue-core`, `blue-theme-dark`, `blue-banner`, `blue-transcript`, `blue-status-basic`, `blue-conversation`, and `blue-transcript-official` form the projection-backed renderer baseline. Harness official projections drive the conversation; the TUI no longer folds session events.
 
-The minimal, self-sufficient Blue UI that remains when the whole enhancement segment is dropped:
+## Enhancements
 
-| Row | Responsibility |
-| --- | --- |
-| `blue-core` | the tree's only pi-tui adapter: terminal lifecycle plus the `blueScreen` / `blueKeymap` / `blueTerminalInfo` / `blueComponents` services |
-| `blue-theme-dark` | built-in dark palette, providing `blueTheme` |
-| `blue-banner` | boot welcome banner: the logo-headed welcome/`/help` lines and the Directory/Model/Version rows |
-| `blue-transcript` | session events → transcript rendering; the `blueStatus` registry and two-row footer shell |
-| `blue-status-basic` | baseline footer entry: the model name (priority 0, brightest tier) |
+- editor/attachments: `blue-editor-plus`, `blue-attachments`, `blue-paste-image`
+- status: cwd, git, mode, title, and context `StatusModel` producers
+- dock: activity, queue, todo, btw, and agents `DockModel` producers
+- public view bridge: routes third-party status/dock `BlueView` contributions into owner registries
 
-### Enhancement segment (15 rows) — droppable wholesale
+These 14 rows can be removed independently. Diff/terminal/search/read/web tool rendering comes from canonical `ToolPresentationModel` conversion; there are no intent rows.
 
-Optional layers over the plain baseline; each row deletes individually, the whole segment deletes together:
+## Assembly
 
-| Row | Responsibility |
-| --- | --- |
-| `blue-editor-plus` | `!` bash mode + slash/`@` autocomplete |
-| `blue-attachments` | attachment store (filesystem image library) |
-| `blue-paste-image` | Ctrl-V clipboard paste (`Alt-V` too on Windows), `[image #N]` markers |
-| `blue-status-cwd` | footer: session working directory (priority 5) |
-| `blue-status-git` | footer: git badge `branch [+a -d ↑u↓v]` (priority 10) |
-| `blue-status-mode` | footer: session-mode badge `plan`/`yolo` (priority 2, hidden in normal) |
-| `blue-status-title` | footer: session title (priority 30, row 1 right-aligned) |
-| `blue-status-context` | footer: context occupancy (priority 20, row 2 right-aligned) |
-| `blue-intent-diff` | dedicated diff tool card |
-| `blue-intent-terminal` | dedicated terminal-output tool card (`$ command` + exit badge) |
-| `blue-pane-activity` | activity pane (waiting/running/composing indicator) |
-| `blue-pane-queue` | queued-messages pane + empty-editor Up recall |
-| `blue-pane-todo` | todo pane (Ctrl-T collapse toggle) |
-| `blue-pane-btw` | `/btw` side-question pane |
-| `blue-pane-agents` | subagent-group pane (running subagents' group card, last dock row) |
+`blue-interaction`, `blue-plugin-interaction-bridge`, `blue-startup`, and `blue-app` close the tree with input, commands, notifications, startup, and the Agent driver. App exposes only readonly session readers/projection values and structured actions to renderers.
 
-### Assembly segment (3 rows) — the closing rows
+`blue-context`, `blue-remote`, `blue-openpencil`, and `blue-lark` are validation-only packages, not bundle rows.
 
-| Row | Responsibility |
-| --- | --- |
-| `blue-interaction` | input editor, built-in commands, questionnaire provider, approval answerer |
-| `blue-startup` | startup values provider (task positional, `--resume`) |
-| `blue-app` | Agent driver: creates/resumes the session and publishes `blueSession` |
+## Read on
 
-## plain-first
-
-Baseline + assembly (8 rows total) is the complete, self-sufficient Blue UI. Blue's own enhancements register through the same seams downstream plugins use — drop the whole enhancement segment and the bundle still boots and works. Every enhancement row is thereby held to the test of "is the world better with it", and downstream plugins get mechanism-level parity with built-ins.
-
-## Bottom dock order
-
-Bottom-pinned components (footer, panes, editor) render in mount order. Assembly pins the dock order through the `blueComponents` activation round: **activity → queue → todo → btw → agents, editor last** (the editor always sits directly above the bottom row, panes stacked above it).
-
-## Where to read more
-
-- [Streaming transcript & tool cards](/en/features/streaming)
+- [Streaming transcript and tool cards](/en/features/streaming)
 - [Input editor](/en/features/editor)
-- [Approvals & questionnaires](/en/features/approval)
+- [Approvals and questionnaires](/en/features/approval)
 - [Status bar](/en/features/status-bar)
-- [Session modes](/en/features/modes) — normal / plan / yolo and plan review
+- [Session modes](/en/features/modes)
 - [Bottom panes](/en/features/panes)

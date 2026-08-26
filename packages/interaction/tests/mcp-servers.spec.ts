@@ -22,7 +22,6 @@ import {
   MCP_CLIENT_MODULE,
   readSecretKeys,
 } from '../src/mcp-servers.ts'
-import { resolveToolViewScope } from '../src/tool-scope.ts'
 
 /** A tool schema carrying only what the read layer joins on. */
 function tool(name: string): ToolSchema {
@@ -71,6 +70,7 @@ function collectContext(over: {
   readonly drop?: 'loader' | 'tools'
 }): Context {
   const ctx = new Context()
+  let agentCtx: Context | undefined
   if (over.drop !== 'loader') {
     const entries = over.entries ?? []
     ctx.provide('loader', { entries: function* () { yield* entries } } as never)
@@ -83,8 +83,8 @@ function collectContext(over: {
     } as never)
   }
   if (over.session !== false) {
-    const agentCtx = new Context()
-    ctx.provide('blueSession', { current: { ctx: agentCtx } } as never)
+    agentCtx = new Context()
+    ctx.provide('testSession', { current: { ctx: agentCtx } } as never)
     if (over.roster !== false) {
       const scope = { scope: true }
       ctx.provide('agentPresets', {
@@ -93,6 +93,27 @@ function collectContext(over: {
       } as never)
     }
   }
+  ctx.provide('blueSessionActions', {
+    async toolCatalog() {
+      const tools = ctx.get('tools') as unknown as { schemas(scope?: unknown): readonly ToolSchema[] } | undefined
+      if (tools === undefined) {
+        return { ok: false as const, code: 'BLUE_CAPABILITY_ABSENT' as const, message: 'tool registry is unavailable: the host composes no tools service' }
+      }
+      const registered = tools.schemas()
+      if (agentCtx === undefined) return { ok: true as const, value: { sessionLive: false, registered, visible: registered } }
+      const roster = ctx.get('agentPresets') as unknown as {
+        composedPreset(scope: Context): string | undefined
+        standingKeyFor(id: string): Promise<unknown>
+      } | undefined
+      try {
+        const preset = roster?.composedPreset(agentCtx)
+        const scope = preset === undefined ? undefined : await roster?.standingKeyFor(preset)
+        return { ok: true as const, value: { sessionLive: true, registered, visible: scope === undefined ? registered : tools.schemas(scope) } }
+      } catch (error) {
+        return { ok: false as const, code: 'BLUE_ACTION_REJECTED' as const, message: `could not resolve the preset composition: ${error instanceof Error ? error.message : String(error)}` }
+      }
+    },
+  } as never)
   return ctx
 }
 
@@ -306,16 +327,13 @@ describe('collectMcpServers', () => {
   })
 
   it('rejects when the host composes no loader or tools service', async () => {
-    await expect(collectMcpServers(collectContext({ drop: 'loader' }))).rejects.toThrow(/loader or tools/)
-    await expect(collectMcpServers(collectContext({ drop: 'tools' }))).rejects.toThrow(/loader or tools/)
+    await expect(collectMcpServers(collectContext({ drop: 'loader' }))).rejects.toThrow(/loader/)
+    await expect(collectMcpServers(collectContext({ drop: 'tools' }))).rejects.toThrow(/tools/)
   })
 
   it('propagates roster failures to the caller', async () => {
-    const ctx = new Context()
-    ctx.provide('loader', { entries: function* () {} } as never)
-    ctx.provide('tools', { schemas: () => [] } as never)
-    ctx.provide('blueSession', { current: { ctx: new Context() } } as never)
-    ctx.provide('agentPresets', {
+    const ctx = collectContext({ entries: [], global: [] })
+    ctx.set('agentPresets', {
       composedPreset: () => 'standard',
       standingKeyFor: () => Promise.reject(new Error('roster boom')),
     } as never)
@@ -349,25 +367,5 @@ describe('collectMcpServers', () => {
     const catalog = await collectMcpServers(ctx)
     expect(catalog.sessionLive).toBe(true)
     expect(catalog.servers[0]!.toolsVisible).toHaveLength(1)
-  })
-})
-
-describe('resolveToolViewScope', () => {
-  it('returns the global view for no live agent, no roster, or no bound preset', async () => {
-    const ctx = new Context()
-    expect(await resolveToolViewScope(ctx, undefined)).toBeUndefined()
-    expect(await resolveToolViewScope(ctx, new Context())).toBeUndefined()
-    ctx.provide('agentPresets', { composedPreset: () => undefined } as never)
-    expect(await resolveToolViewScope(ctx, new Context())).toBeUndefined()
-  })
-
-  it('returns the standing-mount key for a preset-bound agent', async () => {
-    const ctx = new Context()
-    const scope = { standing: true }
-    ctx.provide('agentPresets', {
-      composedPreset: () => 'standard',
-      standingKeyFor: (id?: string) => Promise.resolve(id === 'standard' ? scope : {}),
-    } as never)
-    await expect(resolveToolViewScope(ctx, new Context())).resolves.toBe(scope)
   })
 })

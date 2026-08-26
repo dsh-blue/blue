@@ -13,3 +13,4 @@ for (const name of ['blue-api', 'blue-core', 'blue-app', 'blue-transcript', 'blu
   if (manifest.version !== expected) throw new Error(`@dsh-blue/${name}: expected ${expected}, got ${manifest.version}`)
 }
 console.log(`installed Blue set: six packages at ${expected}`)
+

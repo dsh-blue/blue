@@ -93,3 +93,4 @@ export function compareVersions(a: string, b: string): number {
 export function isVersion(value: string): boolean {
   return parseVersion(value) !== undefined
 }
+

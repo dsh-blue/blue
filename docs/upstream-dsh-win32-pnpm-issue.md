@@ -42,3 +42,4 @@ With `shell: true` on win32, Node spawns `cmd.exe /d /s /c "pnpm ..."`. When cmd
 3. Pre-probe with `where.exe pnpm` (win32) / `command -v pnpm` (posix) before the real spawn.
 
 **Downstream impact:** `@dsh-blue/blue-cli`'s first-run bootstrap spawns the nested dsh `plugin add`; on a fresh Windows machine with only npm installed, users saw `blue: bootstrap failed — dsh: pnpm failed in profile directory …` instead of the pnpm install hint. We now classify the 9009 exit ourselves (dsh-blue/blue D56: pre-flight probe through ComSpec + post-install 9009 mapping), but an upstream fix removes the need for every downstream consumer to work around it.
+

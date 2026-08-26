@@ -101,3 +101,4 @@ describe('blue-theme-ocean plugin', () => {
     expect(logoGradient[8]!('hi')).toBe('\x1b[38;2;168;244;250mhi\x1b[39m')
   })
 })
+

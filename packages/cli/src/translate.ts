@@ -63,3 +63,4 @@ export function translateArgv(argv: readonly string[]): Translation {
   }
   return { kind: 'boot', dshArgs: ['--profile', PROFILE, ...positional] }
 }
+

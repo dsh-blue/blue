@@ -2,7 +2,7 @@
 
 import { rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { PACKAGE_DIRS, ROOT } from './package-contract.mjs'
+import { BUILD_PACKAGE_DIRS, ROOT } from './package-contract.mjs'
 
-for (const relativeDir of PACKAGE_DIRS) rmSync(join(ROOT, relativeDir, 'lib'), { recursive: true, force: true })
+for (const relativeDir of BUILD_PACKAGE_DIRS) rmSync(join(ROOT, relativeDir, 'lib'), { recursive: true, force: true })
 rmSync(join(ROOT, 'node_modules', '.cache', 'blue-tsb'), { recursive: true, force: true })

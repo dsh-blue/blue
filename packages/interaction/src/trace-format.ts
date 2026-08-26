@@ -107,3 +107,4 @@ export function formatTraceAll(items: readonly TraceItem[], sessionId: string): 
   }
   return lines.join('\n')
 }
+

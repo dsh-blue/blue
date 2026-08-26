@@ -56,3 +56,4 @@ function recordItem(record: SessionEventRecord, event: SessionEvent | undefined)
     summary,
   }
 }
+

@@ -101,3 +101,4 @@ describe('blue-theme-paper plugin', () => {
     expect(logoGradient[8]!('hi')).toBe('\x1b[38;2;240;208;171mhi\x1b[39m')
   })
 })
+

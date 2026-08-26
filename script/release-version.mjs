@@ -33,3 +33,4 @@ for (const file of files) {
   if (text.includes(old)) writeFileSync(file, text.replaceAll(old, next))
 }
 console.log(`release line: ${old} -> ${next}; updated ${files.size} controlled files`)
+

@@ -1,6 +1,6 @@
 {
   "name": "@dsh-blue/blue-core",
-  "description": "Blue terminal UI core: the tree's only @earendil-works/pi-tui adapter, owning terminal lifecycle and the blueScreen/blueKeymap/blueTerminalInfo/blueComponents services plus the blue-theme-dark/light/ocean/paper/auto/custom palette entries",
+  "description": "Blue terminal UI core: the tree's only @earendil-works/pi-tui adapter, owning terminal lifecycle and the blueScreen/blueKeymap/blueTerminalInfo/blueComponents services plus the blue-theme-dark/light/auto/custom palette entries",
   "version": "0.1.0-rc.8",
   "publishConfig": {
     "access": "public"
@@ -25,14 +25,6 @@
       "types": "./lib/types/theme-light.d.ts",
       "default": "./lib/theme-light.js"
     },
-    "./theme-ocean": {
-      "types": "./lib/types/theme-ocean.d.ts",
-      "default": "./lib/theme-ocean.js"
-    },
-    "./theme-paper": {
-      "types": "./lib/types/theme-paper.d.ts",
-      "default": "./lib/theme-paper.js"
-    },
     "./theme-auto": {
       "types": "./lib/types/theme-auto.d.ts",
       "default": "./lib/theme-auto.js"
@@ -41,6 +33,14 @@
       "types": "./lib/types/theme-custom.d.ts",
       "default": "./lib/theme-custom.js"
     },
+    "./theme-ocean": {
+      "types": "./lib/types/theme-ocean.d.ts",
+      "default": "./lib/theme-ocean.js"
+    },
+    "./theme-paper": {
+      "types": "./lib/types/theme-paper.d.ts",
+      "default": "./lib/theme-paper.js"
+    },
     "./chrome": {
       "types": "./lib/types/chrome.d.ts",
       "default": "./lib/chrome.js"
@@ -48,8 +48,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/*.js",
-    "lib/types/**/*.d.ts"
+    "lib/**/*"
   ],
   "license": "MIT",
   "repository": {
@@ -58,16 +57,18 @@
     "directory": "packages/core"
   },
   "dependencies": {
-    "@dsh-blue/blue-api": "workspace:*",
+    "@dsh-blue/blue-api": "workspace:^",
     "@deepseek-ai/schemastery": "3.18.1",
     "@earendil-works/pi-tui": "^0.84.2",
     "cli-highlight": "^2.1.11"
   },
   "peerDependencies": {
+    "@dsh-blue/blue-frontend": "workspace:^",
     "@deepseek-ai/dsh-invariants": "^0.1.1-rc.2",
     "@deepseek-ai/cordis": "^4.0.1"
   },
   "devDependencies": {
+    "@dsh-blue/blue-frontend": "workspace:^",
     "@deepseek-ai/dsh-invariants": "0.1.1-rc.2",
     "@deepseek-ai/cordis": "4.0.1",
     "@deepseek-ai/cordis-plugin-include": "1.0.6",

@@ -9,7 +9,8 @@ Typing `/` triggers fuzzy autocomplete and discovery hints (see [Input editor](/
 | `/quit` | `/q` `/exit` | — | Exit Blue | `blue-commands` |
 | `/new` | `/clear` | — | Start a new session | `blue-commands` |
 | `/fork` | — | — | Fork the current session into a new one | `blue-commands` |
-| `/sessions` | `/resume` | `<session-id>` | List persisted sessions and switch (title rows + type-to-filter); an id resumes directly | `blue-commands` |
+| `/rewind` | — | — | Create a safe branch from an earlier user turn | `blue-commands` |
+| `/sessions` | `/resume` | `<session-id>` | List persisted sessions as a lineage tree and switch; an id resumes directly | `blue-commands` |
 | `/btw` | — | `<question>` | Side question: fork the live session and ask | `blue-pane-btw` |
 | `/help` | — | — | Show available commands and key bindings | `blue-commands` |
 | `/model` | — | `[id]` | Switch the session model (no argument opens the picker) | `blue-model-commands` |
@@ -34,8 +35,9 @@ Typing `/` triggers fuzzy autocomplete and discovery hints (see [Input editor](/
 
 ## Sessions and models
 
-- **`/resume <session-id>`** — without an argument it returns `usage: /resume <session-id>`. `/sessions` offers a picker instead (newest first, the current session badged `← current`; the list is scoped to the current working directory, rows show session titles, and **typing filters live** — `Esc` clears the filter first, a second press cancels).
+- **`/resume <session-id>`** — without an argument it returns `usage: /resume <session-id>`. `/sessions` offers a lineage tree instead (`parentSession` defines nesting, siblings are newest first, and the current session is badged `← current`; its ancestor path opens automatically without sibling branches, while **Space toggles** other branches). The list is scoped to the current working directory, rows show session titles, and **typing filters live** across collapsed descendants — `Esc` clears the filter first, a second press cancels.
 - **`/fork`** — returns `cannot fork while the agent is running` while the agent is not idle.
+- **`/rewind`** — lists the current session's direct user turns in one level. Selecting a turn creates an ordinary child session from the complete boundary before it; the parent is never truncated or deleted and remains resumable through `/sessions`. A running agent is refused.
 - **`/model` / `/effort`** — no argument opens the model picker (with the footer's thinking-effort segment control) and the horizontal effort selector respectively; inside a panel `←` `→` step the segments and **`Alt+S` confirms session-only** — the next step's route switches immediately without persisting a new default. With an argument they switch directly and persist. The panel-free shortcut: **`Alt+M`** cycles through the current provider's models (session-only, draft preserved; see the [key reference](/en/reference/keys)).
 - **`/provider`** — three subcommands: `list` shows providers and the current route; `switch <name>` switches; `add` starts the add-provider flow.
 - **`/preset`** — switches the agent composition over the thin-host preset roster (`standard` / `code` / `minimal` / `cordis`): a session's tool surface, persona, and plan mode come from its preset. Switching is allowed only on **blank sessions** — a started one returns `cannot switch presets: this session has already started (blank sessions only)`.

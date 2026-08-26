@@ -1,5 +1,7 @@
 # Blue API Foundation
 
+> **目标架构迁移说明（2026-08）**：本文记录 PR 23/35 的 API foundation、host 和生命周期阶段，不再是后续前端重构的唯一目标。新的 Domain/Interaction/Renderer/Composition 边界见 [blue-frontend-architecture.md](./blue-frontend-architecture.md)，session runtime 见 [blue-session-runtime.md](./blue-session-runtime.md)。本文中的 host/contract 仍是现有实现和兼容迁移的参考。
+
 This implementation starts the stable API work described by PR 23
 (`0769e068`). `@dsh-blue/blue-api` is a leaf package: it owns readonly,
 renderer-independent contracts and manifest validation, while Cordis remains

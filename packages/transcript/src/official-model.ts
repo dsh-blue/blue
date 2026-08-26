@@ -1,0 +1,203 @@
+/**
+ * Narrow interaction adapter from the official `blueConversation` session
+ * projection to Blue's renderer-neutral transcript model. It reads only the
+ * app-owned current-session projection façade and never folds Harness events.
+ *
+ * @module @dsh-blue/blue-transcript/official-model
+ */
+
+import type { Context } from '@deepseek-ai/cordis'
+import type { BlueSessionSnapshot } from '@dsh-blue/blue-api'
+import type { BlueSessionProjectionReader } from '@dsh-blue/blue-app'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ToolResult } from '@deepseek-ai/dsh-tools'
+import {
+  conversationProjectionSchema,
+  type ConversationEntry,
+  type ConversationProjection,
+  type ConversationToolEntry,
+} from '@dsh-blue/blue-conversation'
+import type { TranscriptEntryModel, TranscriptModel } from '@dsh-blue/blue-frontend'
+import { createToolPresentationModel } from './tool-model.ts'
+import { createTranscriptModel, TRANSCRIPT_MODEL_WINDOW } from './transcript-model.ts'
+import { parseToolArguments, resolveCallView, resolveResultView, type ToolPresentationSource } from './present.ts'
+
+/** Official projection read face consumed by this compatibility adapter. */
+export interface ConversationProjectionSource {
+  current(key: string): { readonly asOfSeq: number, readonly value: unknown } | undefined
+  subscribe(listener: (key: string, value: unknown, seq: number) => void): () => void
+}
+
+function toolResult(entry: ConversationToolEntry): ToolResult | undefined {
+  if (entry.result === undefined) return undefined
+  return {
+    content: entry.result.content as unknown as ContentBlock[],
+    isError: entry.result.isError,
+    ...(entry.result.meta === undefined ? {} : { meta: entry.result.meta }),
+  }
+}
+
+function toolModel(entry: ConversationToolEntry, tools: ToolPresentationSource): TranscriptEntryModel {
+  const args = parseToolArguments(entry.arguments)
+  const outcome = toolResult(entry)
+  const call = resolveCallView(tools, entry.name, args)
+  const resultView = outcome === undefined ? undefined : resolveResultView(tools, entry.name, args, outcome)
+  const presentation = call === undefined && resultView === undefined
+    ? undefined
+    : createToolPresentationModel({
+        id: entry.id,
+        name: entry.name,
+        ...(call === undefined ? {} : { call }),
+        ...(resultView === undefined ? {} : { result: resultView }),
+        ...(outcome === undefined ? {} : { outcome }),
+      })
+  return {
+    kind: 'transcript-tool',
+    id: entry.id,
+    seq: entry.seq,
+    turn: entry.turn,
+    step: entry.step,
+    callId: entry.callId,
+    name: entry.name,
+    arguments: entry.arguments,
+    startedAt: entry.startedAt,
+    ...(entry.result === undefined ? {} : {
+      result: {
+        text: entry.result.text,
+        fullText: entry.result.text,
+        isError: entry.result.isError,
+        endedAt: entry.result.endedAt,
+      },
+    }),
+    ...(presentation === undefined ? {} : { presentation }),
+  }
+}
+
+function entryModel(entry: Exclude<ConversationEntry, ConversationToolEntry>): TranscriptEntryModel {
+  switch (entry.kind) {
+    case 'user':
+      return {
+        kind: 'transcript-user', id: entry.id, seq: entry.seq, turn: entry.turn, text: entry.text,
+        images: entry.images.map(image => ({
+          attachmentId: image.attachmentId,
+          mediaType: image.mediaType,
+          bytes: image.bytes,
+          width: image.width,
+          height: image.height,
+          ...(image.name === undefined ? {} : { name: image.name }),
+          ...(image.originalDimensions === undefined ? {} : {
+            originalDimensions: { ...image.originalDimensions },
+          }),
+        })),
+      }
+    case 'assistant':
+      return {
+        kind: 'transcript-assistant', id: entry.id, seq: entry.seq, turn: entry.turn, step: entry.step,
+        text: entry.text, streaming: entry.streaming,
+      }
+    case 'thinking':
+      return {
+        kind: 'transcript-thinking', id: entry.id, seq: entry.seq, turn: entry.turn, step: entry.step,
+        text: entry.text, streaming: entry.streaming,
+      }
+    case 'error':
+      return {
+        kind: 'transcript-error', id: entry.id, seq: entry.seq, turn: entry.turn, message: entry.message,
+        ...(entry.code === undefined ? {} : { code: entry.code }),
+      }
+    case 'interrupted':
+      return { kind: 'transcript-interrupted', id: entry.id, seq: entry.seq, turn: entry.turn }
+  }
+}
+
+/** Convert one validated official whole value to a frozen Blue model. */
+export function conversationTranscriptModel(
+  projection: ConversationProjection,
+  tools: ToolPresentationSource,
+): TranscriptModel {
+  const entries = projection.entries.slice(-TRANSCRIPT_MODEL_WINDOW).flatMap((entry): TranscriptEntryModel[] => {
+    if (entry.kind === 'tool') return entry.channel === 'transcript' ? [toolModel(entry, tools)] : []
+    return [entryModel(entry)]
+  })
+  return createTranscriptModel('official-conversation', entries, projection.streaming)
+}
+
+/** Projection-to-model source scoped to one frontend tree and provider Fiber. */
+export class OfficialConversationModelSource {
+  private model: TranscriptModel = createTranscriptModel('official-conversation', [], false)
+  private active = false
+  private watermark = -1
+  private disposed = false
+  private readonly offChanged: () => void
+
+  constructor(
+    private readonly projections: ConversationProjectionSource,
+    private readonly tools: ToolPresentationSource,
+    private readonly publish: (model: TranscriptModel) => void,
+  ) {
+    this.offChanged = projections.subscribe((key, value, seq) => {
+      if (this.disposed || !this.active || key !== 'blueConversation' || seq <= this.watermark) return
+      const parsed = conversationProjectionSchema.safeParse(value)
+      if (!parsed.success) return
+      this.watermark = seq
+      this.model = conversationTranscriptModel(parsed.data, this.tools)
+      this.publish(this.model)
+    })
+  }
+
+  /** Current dynamic registry value. */
+  snapshot(): TranscriptModel {
+    return this.model
+  }
+
+  /** Attach to the app's current session, clearing stale content first. */
+  attach(active: boolean): void {
+    this.active = active
+    this.watermark = -1
+    if (!active) {
+      this.model = createTranscriptModel('official-conversation', [], false)
+      this.publish(this.model)
+      return
+    }
+    const snapshot = this.projections.current('blueConversation')
+    const parsed = conversationProjectionSchema.safeParse(snapshot?.value)
+    this.watermark = snapshot?.asOfSeq ?? -1
+    this.model = parsed.success
+      ? conversationTranscriptModel(parsed.data, this.tools)
+      : createTranscriptModel('official-conversation', [], false)
+    this.publish(this.model)
+  }
+
+  /** Drop the subscription and reject every late projection callback. */
+  dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    this.offChanged()
+    this.active = false
+    this.model = createTranscriptModel('official-conversation', [], false)
+  }
+}
+
+/** Stable Cordis plugin name. */
+export const name = 'blue-transcript-official'
+
+/** Official projection/model services and current frontend binding. */
+export const inject = ['blueConversationProjection', 'blueSessionProjections', 'blueSessionReader', 'blueTranscriptModels', 'tools']
+
+/** Mount the official projection consumer and bind it to session switches. */
+export function apply(ctx: Context): void {
+  const source = new OfficialConversationModelSource(
+    ctx.blueSessionProjections as BlueSessionProjectionReader,
+    ctx.tools,
+    () => ctx.blueTranscriptModels.refresh('official-conversation'),
+  )
+  ctx.effect(() => () => source.dispose())
+  ctx.effect(() => ctx.blueTranscriptModels.register(() => source.snapshot()))
+  let sessionId: string | undefined
+  const registration = ctx.blueSessionReader.subscribe((session: BlueSessionSnapshot | null) => {
+    if (session?.id === sessionId) return
+    sessionId = session?.id
+    source.attach(session !== null)
+  })
+  ctx.effect(() => () => registration.dispose())
+}

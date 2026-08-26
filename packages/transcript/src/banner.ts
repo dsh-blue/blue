@@ -4,25 +4,24 @@
  * whale logo on the left, the welcome/help/status lines on the right, no
  * box frame. Below {@link BANNER_MIN_WIDTH} the banner renders nothing.
  *
- * The banner is a boot snapshot except the model line: it reads
- * `blueSession.modelRef.current` (never `inject` — resolved lazily, so the
- * mount keeps no ordering coupling with the transcript's history mounting)
- * and re-derives on `'blue/session-changed'`/`'blue/model-changed'` (the
- * S24a dogfood ruling). In the bundle patch the row sits before
+ * The banner is a boot snapshot except the model line: it reads the app-owned
+ * renderer-neutral session snapshot and re-derives whenever that snapshot
+ * changes (the S24a dogfood ruling). In the bundle patch the row sits before
  * `blue-transcript` so the two fibers resolve in the same `blueComponents`
  * activation round in row order — the banner stays the first scroll child
  * across initial mounts and `/theme` reloads.
  *
  * Every over-wide run truncates; nothing ever wraps. Styling uses only
- * frozen theme tokens — the logo carries the palette's `logoGradient` sweep,
- * the welcome line shares `primary`, the labels stay muted, and the model
- * row paints `modelHighlight`, so the whole banner follows the live theme.
+ * frozen theme tokens — the logo and the welcome line share `primary`, the
+ * labels stay muted and the model value accent, so the banner reads as one
+ * brand-blue unit.
  *
  * @module @dsh-blue/blue-transcript/banner
  */
 
 import { homedir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
+import type { BlueSessionSnapshot } from '@dsh-blue/blue-api'
 import {
   GutterComponent,
   type BlueComponent,
@@ -32,30 +31,28 @@ import {
 // Empty type import carries the `agentDefaultModel` Context merge this
 // plugin's inject resolves.
 import type {} from '@deepseek-ai/dsh-agent-default-model'
-// Empty type import carries the app-owned `blueSession` Context merge and
-// the `'blue/session-changed'`/`'blue/model-changed'` Events merges the
-// model-line tracking consumes.
+// Empty type import carries the app-owned session reader service.
 import type {} from '@dsh-blue/blue-app'
-import { LOGO_ART, LOGO_ROWS } from './banner-art.ts'
+import { LOGO_ART, LOGO_GRADIENT, LOGO_ROWS } from './banner-art.ts'
 import { BLUE_VERSION } from './banner-content.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-banner'
 
 /** Services required before the banner can mount. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'agentDefaultModel']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionReader', 'agentDefaultModel']
+
+/** Banner configuration; the display override never changes Blue's release version. */
+export interface Config {
+  /** Optional profile-local identity shown instead of {@link BLUE_VERSION}. */
+  readonly displayVersion?: string
+}
 
 /** Below this viewport width the banner renders zero rows rather than overflow. */
 export const BANNER_MIN_WIDTH = 40
 
-/** Blank rows above the logo block — the banner's top margin. */
-const BANNER_TOP_PAD = 1
-
-/** Blank rows below the logo block — the banner's bottom margin. */
-const BANNER_BOTTOM_PAD = 1
-
 /** Blank columns between the logo block and the right-hand status column. */
-const LOGO_TEXT_GAP = 4
+const LOGO_TEXT_GAP = 2
 
 /** The info rows' labels, hand-aligned to {@link LABEL_WIDTH} columns. */
 const DIRECTORY_LABEL = 'Directory: '
@@ -114,7 +111,10 @@ export interface BannerContent {
 }
 
 /** The theme tokens the banner paints with, keyed by segment role. */
-type BannerStyle = 'strong' | 'accent' | 'muted' | 'text' | 'highlight'
+type BannerStyle = 'logo' | 'strong' | 'accent' | 'muted' | 'text' | 'highlight'
+
+/** The model row's brand-light-blue highlight (theme-independent, like the logo). */
+const MODEL_HIGHLIGHT = '#8ca8ff'
 
 /** One styled run of a rendered banner line. */
 interface BannerSegment {
@@ -142,10 +142,9 @@ interface StatusLine {
  * Compose the banner's lines for one viewport width — the pure layout core
  * the component delegates to. Identity color functions (the spec fakes)
  * yield plain, measurable text. The frameless horizontal block stacks the
- * whale logo rows down the left and centers the status column beside them,
- * between {@link BANNER_TOP_PAD} blank rows above and
- * {@link BANNER_BOTTOM_PAD} below; nothing ever wraps — an over-wide status
- * value or welcome line truncates first.
+ * whale logo rows down the left and centers the status column beside them;
+ * nothing ever wraps — an over-wide status value or welcome line truncates
+ * first.
  * @param deps - colors plus the truncate/measure primitives.
  * @param content - the snapshotted banner facts.
  * @param width - current viewport width in columns.
@@ -160,14 +159,25 @@ export function composeBannerLines(
   if (layout === null) return []
   const { valueWidth } = layout
   const paint: Record<BannerStyle, (text: string) => string> = {
+    logo: deps.colors.primary,
     strong: deps.colors.primary,
     accent: deps.colors.accent,
     muted: deps.colors.muted,
     text: deps.colors.text,
-    highlight: deps.colors.modelHighlight,
+    highlight: text => gradientWrap(MODEL_HIGHLIGHT, text),
   }
   const line = (segments: readonly BannerSegment[]): string =>
     segments.map(segment => paint[segment.style](segment.text)).join('')
+
+  // The logo's brand-blue gradient, one hex per row, applied directly (the
+  // mark is brand identity — the same sweep in every theme). The gap after
+  // the whale stays the frame's neutral tint.
+  const gradientWrap = (hex: string, text: string): string => {
+    const r = parseInt(hex.slice(1, 3), 16)
+    const g = parseInt(hex.slice(3, 5), 16)
+    const b = parseInt(hex.slice(5, 7), 16)
+    return `\x1b[38;2;${r};${g};${b}m${text}\x1b[39m`
+  }
 
   // The right-hand status column; the welcome and help lines lead, then the
   // three info rows. A blank spacer row separates the two groups.
@@ -192,22 +202,19 @@ export function composeBannerLines(
   }
 
   const rows: string[] = []
-  for (let i = 0; i < BANNER_TOP_PAD; i += 1) rows.push('')
-  // The logo's per-row sweep comes from the palette; a short gradient (a
-  // custom theme) clamps to its last entry for the remaining rows. The gap
-  // after the whale stays unpainted spaces — a foreground color on
-  // whitespace shows nothing.
-  const gradient = deps.colors.logoGradient
   for (let i = 0; i < LOGO_ROWS; i += 1) {
-    const rowPaint = gradient[i] ?? gradient[gradient.length - 1]!
+    const logo = LOGO_ART[i]!
     const statusIndex = i - statusTopPad
     const statusLine = status[statusIndex]
-    const statusPart = statusLine === undefined
-      ? ''
-      : line([fit(statusLine.text, statusLine.style, valueWidth)])
-    rows.push(`${rowPaint(LOGO_ART[i]!)}${' '.repeat(LOGO_TEXT_GAP)}${statusPart}`)
+    const segments: BannerSegment[] = [
+      { text: gradientWrap(LOGO_GRADIENT[i]!, logo), style: 'logo' },
+      { text: ' '.repeat(LOGO_TEXT_GAP), style: 'logo' },
+    ]
+    if (statusLine !== undefined) {
+      segments.push(fit(statusLine.text, statusLine.style, valueWidth))
+    }
+    rows.push(line(segments))
   }
-  for (let i = 0; i < BANNER_BOTTOM_PAD; i += 1) rows.push('')
   return rows
 }
 
@@ -257,39 +264,38 @@ class BannerComponent implements BlueComponent {
 
 /**
  * Mount the welcome banner as the scroll area's first child. The cwd
- * snapshots at boot; the model line re-derives from the live session's
- * selection ref on session switches and committed model picks (the S24a
+ * snapshots at boot; the model line re-derives from the live session
+ * snapshot on session switches and committed model picks (the S24a
  * dogfood ruling — the banner used to freeze the boot-time default,
  * surviving `/model` switches and even `/new`), falling back to the
- * default-model service before the app publishes the ref. The mount is
+ * default-model service before the app publishes a selection. The mount is
  * effect-bound so unloading this fiber (a `/theme` swap) unmounts and
  * re-mounts it in place.
  * @param ctx - plugin context.
+ * @param config - optional profile-local display identity.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: Config = {}): void {
+  const displayVersion = config.displayVersion ?? BLUE_VERSION
   const boot = ctx.agentDefaultModel.currentSelection()
   const banner = new BannerComponent(ctx.blueTheme.colors, ctx.blueComponents, {
-    version: BLUE_VERSION,
+    version: displayVersion,
     model: boot.model,
     provider: boot.provider,
     cwd: shortenHome(process.cwd(), homedir()),
   })
-  const rederive = (): void => {
-    const selection = ctx.get('blueSession')?.modelRef?.current ?? ctx.agentDefaultModel.currentSelection()
+  const rederive = (session: BlueSessionSnapshot | null): void => {
+    const fallback = ctx.agentDefaultModel.currentSelection()
+    const selection = session?.model
     banner.update({
-      version: BLUE_VERSION,
-      model: selection.model,
-      provider: selection.provider,
+      version: displayVersion,
+      model: selection?.id ?? fallback.model,
+      provider: selection?.provider ?? fallback.provider,
       cwd: shortenHome(process.cwd(), homedir()),
     })
     ctx.blueScreen.requestRender()
   }
-  ctx.on('blue/session-changed', () => {
-    rederive()
-  })
-  ctx.on('blue/model-changed', () => {
-    rederive()
-  })
+  const registration = ctx.blueSessionReader.subscribe(rederive)
+  ctx.effect(() => () => registration.dispose())
   // Effect-bound so unloading this fiber unmounts the banner.
   ctx.effect(() => ctx.blueScreen.addChild(new GutterComponent(banner)))
   // addChild schedules no render on its own.

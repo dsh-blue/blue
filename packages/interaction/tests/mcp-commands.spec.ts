@@ -7,7 +7,7 @@
  * three-level stack, Escape walking back, and the guard chain.
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
@@ -15,7 +15,6 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import * as commandsPlugin from '../src/commands-plugin.ts'
-import { clearSharedEditor } from '../src/editor-instance.ts'
 import type { InfoPanel } from '../src/info-panel.ts'
 import {
   buildConfigSections,
@@ -26,10 +25,6 @@ import {
 import type { McpCatalog, McpServerView } from '../src/mcp-servers.ts'
 import { FIBER_ACTIVE, FIBER_FAILED, MCP_CLIENT_MODULE } from '../src/mcp-servers.ts'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
-
-afterEach(() => {
-  clearSharedEditor()
-})
 
 /** Strip SGR and the fake palette's marker characters so assertions read visible text. */
 function plain(rows: readonly string[]): readonly string[] {
@@ -238,15 +233,15 @@ describe('registerMcpCommands', () => {
     readonly dropLoader?: boolean
     readonly rosterError?: unknown
   } = {}): Promise<{ ctx: Context, screen: FakeScreen, agent: Agent }> {
-    const base = options.display === false ? { ctx: new Context() } : fakeBlueContext()
+    const base = fakeBlueContext({ display: options.display })
     const { ctx } = base
-    const screen = 'screen' in base ? base.screen : undefined
+    const screen = base.screen
     await ctx.plugin(SessionStore)
     await ctx.plugin(CommandRuntime)
     const session = ctx.sessions.create(SessionId('mcp-spec'), { meta: { cwd: '/tmp/spec' } })
     const agent = { id: session.id, session, status: 'idle', ctx: new Context() } as unknown as Agent
     if (options.session !== false) {
-      ctx.provide('blueSession', { current: agent })
+      ctx.provide('testSession', { current: agent })
       // The roster fake routes the scoped read through a standing key, so
       // the two views (global health / scoped visibility) genuinely diverge
       // when a case passes an explicit scoped list.
@@ -377,7 +372,14 @@ describe('registerMcpCommands', () => {
     const crashed = await mount({ rosterError: 'plain roster failure' })
     expect(await run(crashed.ctx, crashed.agent, '/mcp')).toMatchObject({
       kind: 'error',
-      text: 'could not read the MCP catalog: plain roster failure',
+      text: 'could not read the MCP catalog: could not resolve the preset composition: plain roster failure',
+    })
+    const raw = await mount()
+    ;(raw.ctx.blueSessionActions as unknown as { toolCatalog: () => Promise<never> }).toolCatalog
+      = async () => { throw 'raw catalog failure' }
+    expect(await run(raw.ctx, raw.agent, '/mcp')).toEqual({
+      kind: 'error',
+      text: 'could not read the MCP catalog: raw catalog failure',
     })
   })
 })

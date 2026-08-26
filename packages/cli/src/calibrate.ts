@@ -273,3 +273,4 @@ function tailLines(output: string, verdict: string): readonly string[] | undefin
     .filter(line => line !== verdict)
   return lines.length > 0 ? lines : undefined
 }
+

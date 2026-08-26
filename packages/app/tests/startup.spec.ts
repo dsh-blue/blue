@@ -119,17 +119,6 @@ describe('blue command-line provider', () => {
     expect(observed.exits).toEqual([0])
   })
 
-  it('rebrands help to the blue shell when BLUE_LAUNCHER marks it (S37)', async () => {
-    process.env.BLUE_LAUNCHER = 'blue'
-    try {
-      const { observed } = await bootStartup(['--help'])
-      expect(observed.out).toContain('blue "fix the build"')
-      expect(observed.out).not.toContain('dsh --profile blue')
-    } finally {
-      delete process.env.BLUE_LAUNCHER
-    }
-  })
-
   it('rejects an unknown option and leaves the driver pending', async () => {
     const { startup, observed } = await bootStartup(['--bogus'])
     expect(observed.out).toContain('unknown option')

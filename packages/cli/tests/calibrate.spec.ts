@@ -451,3 +451,4 @@ describe('compareVersions', () => {
     expect(compareVersions('v0.1.0', '0.1.0')).toBe(0)
   })
 })
+

@@ -66,6 +66,8 @@ export interface FormPanelOptions {
   readonly onSubmit: (values: Record<string, string>) => void
   /** Called when the cancel key is pressed. */
   readonly onCancel: () => void
+  /** Footer wording after the Esc key; defaults to `cancel`. */
+  readonly cancelLabel?: string
   /**
    * Called when Ctrl+D is pressed (the delete affordance — the provider
    * edit form). Absent fields never see the key.
@@ -218,11 +220,12 @@ export class FormPanel implements BlueFocusable {
     const deletePart = this.options.onDelete !== undefined
       ? `  ·  ${colors.textStrong('Ctrl+D')} delete`
       : ''
+    const cancelLabel = this.options.cancelLabel ?? 'cancel'
     const footer = this.editors.length === 1
-      ? `${colors.textStrong('Enter')} to submit  ·  ${colors.textStrong('Esc')} to cancel${deletePart}`
+      ? `${colors.textStrong('Enter')} to submit  ·  ${colors.textStrong('Esc')} to ${cancelLabel}${deletePart}`
       : this.active === last
-        ? `${colors.textStrong('Tab')} / ↑↓ fields  ·  ${colors.textStrong('Enter')} to submit  ·  ${colors.textStrong('Esc')} to cancel${deletePart}`
-        : `${colors.textStrong('Tab')} / ↑↓ fields  ·  ${colors.textStrong('Enter')} for next field  ·  ${colors.textStrong('Esc')} to cancel${deletePart}`
+        ? `${colors.textStrong('Tab')} / ↑↓ fields  ·  ${colors.textStrong('Enter')} to submit  ·  ${colors.textStrong('Esc')} to ${cancelLabel}${deletePart}`
+        : `${colors.textStrong('Tab')} / ↑↓ fields  ·  ${colors.textStrong('Enter')} for next field  ·  ${colors.textStrong('Esc')} to ${cancelLabel}${deletePart}`
     body.push(components.truncateToWidth(`  ${footer}`, inner - 2))
     body.push('')
     // Explicit borders: every content row is wrapped in `│  …  │` with the

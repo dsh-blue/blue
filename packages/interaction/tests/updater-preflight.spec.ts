@@ -289,3 +289,4 @@ describe('updater/preflight resolveOffer', () => {
     expect(resolveOffer(oldTag, 'rc', '0.1.0-rc.0')).toEqual({ kind: 'target-below-floor', target: '0.1.0-rc.1' })
   })
 })
+

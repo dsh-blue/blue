@@ -1,6 +1,6 @@
 {
   "name": "@dsh-blue/blue-transcript",
-  "description": "Blue terminal UI transcript layer: folds session events into transcript items and renders them through dsh-blue-core",
+  "description": "Blue terminal UI renderer for projection-backed transcript, status, and dock models",
   "version": "0.1.0-rc.8",
   "publishConfig": {
     "access": "public"
@@ -17,9 +17,25 @@
       "types": "./lib/types/invariant.d.ts",
       "default": "./lib/invariant.js"
     },
-    "./status-basic": {
-      "types": "./lib/types/status-basic.d.ts",
-      "default": "./lib/status-basic.js"
+    "./status-basic-model": {
+      "types": "./lib/types/status-basic-model.d.ts",
+      "default": "./lib/status-basic-model.js"
+    },
+    "./dock-model": {
+      "types": "./lib/types/dock-model.d.ts",
+      "default": "./lib/dock-model.js"
+    },
+    "./tool-model": {
+      "types": "./lib/types/tool-model.d.ts",
+      "default": "./lib/tool-model.js"
+    },
+    "./transcript-model": {
+      "types": "./lib/types/transcript-model.d.ts",
+      "default": "./lib/transcript-model.js"
+    },
+    "./official-model": {
+      "types": "./lib/types/official-model.d.ts",
+      "default": "./lib/official-model.js"
     },
     "./status-cwd": {
       "types": "./lib/types/status-cwd.d.ts",
@@ -49,13 +65,9 @@
       "types": "./lib/types/pane-btw.d.ts",
       "default": "./lib/pane-btw.js"
     },
-    "./intent-diff": {
-      "types": "./lib/types/intent-diff.d.ts",
-      "default": "./lib/intent-diff.js"
-    },
-    "./intent-terminal": {
-      "types": "./lib/types/intent-terminal.d.ts",
-      "default": "./lib/intent-terminal.js"
+    "./plugin-host-bridge": {
+      "types": "./lib/types/plugin-host-bridge.d.ts",
+      "default": "./lib/plugin-host-bridge.js"
     },
     "./banner": {
       "types": "./lib/types/banner.d.ts",
@@ -72,8 +84,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/*.js",
-    "lib/types/**/*.d.ts"
+    "lib/**/*"
   ],
   "license": "MIT",
   "repository": {
@@ -82,33 +93,38 @@
     "directory": "packages/transcript"
   },
   "peerDependencies": {
-    "@dsh-blue/blue-api": "workspace:*",
+    "@dsh-blue/blue-api": "workspace:^",
+    "@dsh-blue/blue-conversation": "workspace:^",
+    "@dsh-blue/blue-frontend": "workspace:^",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-agent-default-model": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-attachment": "^0.1.1-rc.2",
-    "@dsh-blue/blue-app": "workspace:*",
-    "@dsh-blue/blue-core": "workspace:*",
+    "@dsh-blue/blue-app": "workspace:^",
+    "@dsh-blue/blue-core": "workspace:^",
     "@deepseek-ai/dsh-commands": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-invariants": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-llm": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-session": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-settings": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-tools": "^0.1.1-rc.2"
   },
   "devDependencies": {
-    "@dsh-blue/blue-api": "workspace:*",
+    "@dsh-blue/blue-api": "workspace:^",
+    "@dsh-blue/blue-conversation": "workspace:^",
     "@deepseek-ai/cordis": "4.0.1",
     "@deepseek-ai/cordis-plugin-include": "1.0.6",
     "@deepseek-ai/cordis-plugin-loader": "1.0.2",
     "@deepseek-ai/dsh-agent": "0.1.1-rc.2",
     "@deepseek-ai/dsh-agent-default-model": "0.1.1-rc.2",
     "@deepseek-ai/dsh-attachment": "0.1.1-rc.2",
-    "@dsh-blue/blue-app": "workspace:*",
-    "@dsh-blue/blue-core": "workspace:*",
+    "@dsh-blue/blue-app": "workspace:^",
+    "@dsh-blue/blue-core": "workspace:^",
     "@deepseek-ai/dsh-commands": "0.1.1-rc.2",
     "@deepseek-ai/dsh-invariants": "0.1.1-rc.2",
     "@deepseek-ai/dsh-llm": "0.1.1-rc.2",
     "@deepseek-ai/dsh-session": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-settings": "0.1.1-rc.2",
     "@deepseek-ai/dsh-tools": "0.1.1-rc.2"
   }
 }

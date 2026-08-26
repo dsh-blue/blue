@@ -77,10 +77,7 @@ describe('blue-status-context', () => {
   it('renders nothing without a session or without usage data', async () => {
     const noSession = await bootStatusPlugin(context)
     expect(noSession.entry.render(80)).toBe('')
-    expect(noSession.entry.id).toBe('blue.status.context')
-    expect(noSession.entry.priority).toBe(20)
-    expect(noSession.entry.align).toBe('right')
-    expect(noSession.entry.row).toBe(2)
+    expect(noSession.models.list()).toHaveLength(1)
     await noSession.dispose()
 
     resetSeq()
@@ -98,6 +95,10 @@ describe('blue-status-context', () => {
       reasoningDelta(1, 3, 'thinking'),
     ])
     const harness = await bootStatusPlugin(context, agent)
+    expect(harness.entry.id).toBe('blue.status.context')
+    expect(harness.entry.priority).toBe(20)
+    expect(harness.entry.align).toBe('right')
+    expect(harness.entry.row).toBe(2)
     expect(harness.entry.render(80)).toBe('ctx 12k')
     await harness.dispose()
   })
@@ -178,7 +179,7 @@ describe('blue-status-context', () => {
     await dispose()
   })
 
-  it('rebinds on blue/session-changed and goes quiet on a usage-less session', async () => {
+  it('rebinds on test/session-changed and goes quiet on a usage-less session', async () => {
     resetSeq()
     const first = fakeAgent([usageEvent(1, 1, { inputTokens: 500, outputTokens: 1 })])
     const { ctx, screen, entry, dispose } = await bootStatusPlugin(context, first)
@@ -187,7 +188,7 @@ describe('blue-status-context', () => {
     resetSeq()
     const second = fakeAgent([userEvent('fresh')])
     const baseline = screen.renderRequests.length
-    ctx.emit('blue/session-changed', asAgent(second))
+    ctx.emit('test/session-changed', asAgent(second))
     expect(entry.render(80)).toBe('')
     expect(screen.renderRequests.length).toBe(baseline + 1)
 
@@ -200,7 +201,7 @@ describe('blue-status-context', () => {
     await dispose()
   })
 
-  it('re-reads the window off the new session on blue/session-changed', async () => {
+  it('re-reads the window off the new session on test/session-changed', async () => {
     resetSeq()
     const first = fakeAgent([usageEvent(1, 1, { inputTokens: 500, outputTokens: 1 })])
     const { ctx, entry, dispose } = await bootStatusPlugin(context, first)
@@ -211,7 +212,7 @@ describe('blue-status-context', () => {
       [usageEvent(1, 1, { inputTokens: 2048, outputTokens: 1 })],
       { contextWindow: 4096 },
     )
-    ctx.emit('blue/session-changed', asAgent(second))
+    ctx.emit('test/session-changed', asAgent(second))
     expect(entry.render(80)).toBe('context: 50% (2k/4k)')
     await dispose()
   })
@@ -226,9 +227,10 @@ describe('blue-status-context', () => {
   })
 
   it('unregisters the entry when the fiber unloads', async () => {
-    const harness = await bootStatusPlugin(context, fakeAgent([]))
-    expect(harness.registry.entries).toHaveLength(1)
+    resetSeq()
+    const harness = await bootStatusPlugin(context, fakeAgent([usageEvent(1, 1, { inputTokens: 1, outputTokens: 1 })]))
+    expect(harness.models.list()).toHaveLength(1)
     await harness.dispose()
-    expect(harness.registry.entries).toHaveLength(0)
+    expect(harness.models.list()).toHaveLength(0)
   })
 })

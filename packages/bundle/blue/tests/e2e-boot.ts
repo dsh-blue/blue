@@ -7,14 +7,14 @@
  * re-register every e2e case in this fork).
  */
 
-import { mkdirSync, symlinkSync, writeFileSync} from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync} from 'node:fs'
 import { createRequire} from 'node:module'
 import { dirname, join} from 'node:path'
 import { pathToFileURL} from 'node:url'
 import { expect, vi} from 'vitest'
 import { Context} from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import Loader from '@deepseek-ai/cordis-plugin-loader'
+import Loader, { Group } from '@deepseek-ai/cordis-plugin-loader'
 import AgentPresetsService from '@deepseek-ai/dsh-agent-presets'
 import type { Agent} from '@deepseek-ai/dsh-agent'
 import type { LlmModelInfo, LlmModelReasoningInfo} from '@deepseek-ai/dsh-llm'
@@ -45,31 +45,33 @@ import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 // statically imports (this same lib file) shares a registry record with the
 // baseline provider fiber it replaces.
 import * as themeDarkPlugin from '@dsh-blue/blue-core/theme-dark'
+import * as apiHostPlugin from '../../../api/src/host.ts'
 import { BlueComponentsService, BlueKeymapService, BlueScreenService, BlueTerminalInfoService} from '../../../core/src/index.ts'
 import * as appPlugin from '../../../app/src/index.ts'
 import * as startupPlugin from '../../../app/src/startup.ts'
 import { startBlueTerminal} from '../../../core/src/terminal.ts'
 import { FakeTerminal} from '../../../core/tests/fake-terminal.ts'
 import * as interactionPlugin from '../../../interaction/src/index.ts'
-import { clearDraft, stashHistory} from '../../../interaction/src/draft-stash.ts'
+import * as contextPlugin from '../../../context/src/index.ts'
+import * as conversationPlugin from '../../../conversation/src/index.ts'
 import * as editorPlusPlugin from '../../../interaction/src/editor-plus.ts'
 import * as attachmentsPlugin from '../../../interaction/src/attachments.ts'
 import * as pasteImagePlugin from '../../../interaction/src/paste-image.ts'
 import * as modeStatusPlugin from '../../../interaction/src/mode-status.ts'
 import * as paneQueuePlugin from '../../../interaction/src/pane-queue.ts'
+import * as interactionBridgePlugin from '../../../interaction/src/plugin-host-bridge.ts'
 import * as transcriptPlugin from '../../../transcript/src/index.ts'
+import * as officialTranscriptPlugin from '../../../transcript/src/official-model.ts'
 import * as bannerPlugin from '../../../transcript/src/banner.ts'
-import * as intentDiffPlugin from '../../../transcript/src/intent-diff.ts'
-import * as intentTerminalPlugin from '../../../transcript/src/intent-terminal.ts'
 import * as paneActivityPlugin from '../../../transcript/src/pane-activity.ts'
 import * as paneBtwPlugin from '../../../transcript/src/pane-btw.ts'
 import * as paneTodoPlugin from '../../../transcript/src/pane-todo.ts'
-import * as statusBasicPlugin from '../../../transcript/src/status-basic.ts'
+import * as viewBridgePlugin from '../../../transcript/src/plugin-host-bridge.ts'
+import * as statusBasicPlugin from '../../../transcript/src/status-basic-model.ts'
 import * as statusContextPlugin from '../../../transcript/src/status-context.ts'
 import * as statusCwdPlugin from '../../../transcript/src/status-cwd.ts'
 import * as statusGitPlugin from '../../../transcript/src/status-git.ts'
 import * as statusTitlePlugin from '../../../transcript/src/status-title.ts'
-import { setRecentStepsRetention, setStepFoldingEnabled} from '../../../transcript/src/window.ts'
 import { CallId} from '@deepseek-ai/dsh-llm'
 import { MockAdapter} from './mock-adapter.ts'
 // The wizard's models.dev lookup stays offline in the e2e (the fixture
@@ -155,15 +157,6 @@ process.stdin.on('end', () => { process.exit(0) })
 
 export async function resetBlueModuleState(): Promise<void> {
   for (const dispose of disposers.splice(0)) await dispose()
-  // In-turn step folding is module-global; restore the defaults so the next
-  // spec decides its own policy.
-  setStepFoldingEnabled(true)
-  setRecentStepsRetention(undefined)
-  // The editor stash is module state shared by every booted tree in this
-  // worker: don't leak one case's submitted history into the next case's
-  // fresh editor.
-  clearDraft()
-  stashHistory([])
 }
 
 /** One booted Blue tree plus its observations. */
@@ -173,6 +166,7 @@ export interface BlueTree {
   adapter: MockAdapter
   exits: number[]
   sessionChanges: Agent[]
+  creativeIsolation: { blueScreen?: unknown, commands?: unknown, bluePluginHost?: unknown, tools?: unknown }
 }
 
 /** One fixture preset the e2e roster's temp root ships. */
@@ -189,23 +183,29 @@ export interface PresetFixture {
 
 /** Test-scope hooks the Loader fixtures delegate to. */
 interface BlueE2EHooks {
+  apiHostApply: typeof apiHostPlugin.apply
+  presetsApply: (ctx: Context) => void
+  creativeIsolationApply: (ctx: Context) => void
   coreApply: (ctx: Context) => Promise<void>
   themeDarkApply: typeof themeDarkPlugin.apply
   bannerApply: typeof bannerPlugin.apply
   transcriptApply: typeof transcriptPlugin.apply
-  intentDiffApply: typeof intentDiffPlugin.apply
-  intentTerminalApply: typeof intentTerminalPlugin.apply
   statusBasicApply: typeof statusBasicPlugin.apply
   statusCwdApply: typeof statusCwdPlugin.apply
   statusGitApply: typeof statusGitPlugin.apply
   statusTitleApply: typeof statusTitlePlugin.apply
   statusContextApply: typeof statusContextPlugin.apply
+  contextApply: typeof contextPlugin.apply
+  conversationApply: typeof conversationPlugin.apply
+  officialTranscriptApply: typeof officialTranscriptPlugin.apply
   modeStatusApply: typeof modeStatusPlugin.apply
   paneActivityApply: typeof paneActivityPlugin.apply
   paneQueueApply: typeof paneQueuePlugin.apply
   paneTodoApply: typeof paneTodoPlugin.apply
   paneBtwApply: typeof paneBtwPlugin.apply
+  viewBridgeApply: typeof viewBridgePlugin.apply
   interactionApply: typeof interactionPlugin.apply
+  interactionBridgeApply: typeof interactionBridgePlugin.apply
   editorPlusApply: typeof editorPlusPlugin.apply
   attachmentsApply: typeof attachmentsPlugin.apply
   pasteImageApply: typeof pasteImagePlugin.apply
@@ -224,10 +224,12 @@ interface BlueE2EHooks {
  * @param argv - inner command-line arguments (`dsh --profile blue <argv>`).
  * @param options - the mock model script, an optional persistence root, and
  *   an optional downstream footer-entry text (adds a fixture row registering
- *   it through `blueStatus`).
+ *   it through the status-model registry).
  */
 export async function bootBlue(argv: string[], options: {
   script: ConstructorParameters<typeof MockAdapter>[0]
+  /** Keep only the shipped persona row when exercising prompt assembly. */
+  creativePersonaOnly?: boolean
   persistenceRoot?: string
   footerExtra?: string
   contextWindow?: number
@@ -237,6 +239,8 @@ export async function bootBlue(argv: string[], options: {
   reasoning?: LlmModelReasoningInfo
   /** Mount the real file-backed settings and credentials providers. */
   realSettings?: { settingsPath: string, credentialsPath: string }
+  /** Provide a structural credentials seam without local environment layers. */
+  credentials?: object
   /** Mount the real (dormant) llm-pi-ai adapter plugin. */
   piAi?: boolean
   /**
@@ -253,6 +257,10 @@ export async function bootBlue(argv: string[], options: {
    * the production path, the fold without it is the degraded host's.
    */
   sessionProjections?: boolean
+  /** Mount the default F3 context row in focused source-plane cases. */
+  frontendContext?: boolean
+  /** Mount the default F5 conversation rows in focused source-plane cases. */
+  officialTranscript?: boolean
   /**
    * The fixture presets the roster's temp root ships, replacing the default
    * single empty composition (which keeps every other case's tool surface
@@ -306,8 +314,32 @@ export async function bootBlue(argv: string[], options: {
   const mcpClientRoot = dirname(createRequire(import.meta.url).resolve('@deepseek-ai/dsh-mcp-client/package.json'))
   mkdirSync(join(dir, 'node_modules', '@deepseek-ai'), { recursive: true })
   symlinkSync(mcpClientRoot, join(dir, 'node_modules', '@deepseek-ai', 'dsh-mcp-client'))
+  // A real dsh profile carries every package referenced by its shipped
+  // presets. The e2e profile is otherwise intentionally thin, so mirror
+  // that resolution surface for Blue's bundle-owned cordis payload.
+  if (options.creativePersonaOnly === true) {
+    const presetComposition = readFileSync(new URL('../presets/cordis/agent.cordis.yml', import.meta.url), 'utf8')
+    const presetPackages = new Set([...presetComposition.matchAll(/name: '(@deepseek-ai\/[^']+)'/g)]
+      .map(match => match[1]!.split('/').slice(0, 2).join('/')))
+    const require = createRequire(import.meta.url)
+    for (const packageName of presetPackages) {
+      const packageRoot = dirname(require.resolve(`${packageName}/package.json`))
+      const target = join(dir, 'node_modules', ...packageName.split('/'))
+      if (!existsSync(target)) symlinkSync(packageRoot, target)
+    }
+  }
   const terminal = options.terminal ?? new FakeTerminal()
+  const creativeIsolation: BlueTree['creativeIsolation'] = {}
+  let presetRoot = ''
   const hooks: BlueE2EHooks = {
+    apiHostApply: apiHostPlugin.apply,
+    presetsApply: (ctx) => { ctx.plugin(AgentPresetsService, { default: (options.presetFixtures ?? [{ id: 'e2e' }])[0]!.id, roots: [{ path: presetRoot, trust: 'system' }], includeUserRoot: false }) },
+    creativeIsolationApply: (ctx) => {
+      creativeIsolation.blueScreen = ctx.get('blueScreen')
+      creativeIsolation.commands = ctx.get('commands')
+      creativeIsolation.bluePluginHost = ctx.get('bluePluginHost')
+      creativeIsolation.tools = ctx.get('tools')
+    },
     coreApply: async (ctx) => {
       // startBlueTerminal went async with the OSC 11 probe; the e2e skips the
       // probe (FakeTerminal answers no queries) and awaits the runtime. The
@@ -334,19 +366,22 @@ export async function bootBlue(argv: string[], options: {
     themeDarkApply: themeDarkPlugin.apply,
     bannerApply: bannerPlugin.apply,
     transcriptApply: transcriptPlugin.apply,
-    intentDiffApply: intentDiffPlugin.apply,
-    intentTerminalApply: intentTerminalPlugin.apply,
     statusBasicApply: statusBasicPlugin.apply,
     statusCwdApply: statusCwdPlugin.apply,
     statusGitApply: statusGitPlugin.apply,
     statusTitleApply: statusTitlePlugin.apply,
     statusContextApply: statusContextPlugin.apply,
+    contextApply: contextPlugin.apply,
+    conversationApply: conversationPlugin.apply,
+    officialTranscriptApply: officialTranscriptPlugin.apply,
     modeStatusApply: modeStatusPlugin.apply,
     paneActivityApply: paneActivityPlugin.apply,
     paneQueueApply: paneQueuePlugin.apply,
     paneTodoApply: paneTodoPlugin.apply,
     paneBtwApply: paneBtwPlugin.apply,
+    viewBridgeApply: viewBridgePlugin.apply,
     interactionApply: interactionPlugin.apply,
+    interactionBridgeApply: interactionBridgePlugin.apply,
     editorPlusApply: editorPlusPlugin.apply,
     attachmentsApply: attachmentsPlugin.apply,
     pasteImageApply: pasteImagePlugin.apply,
@@ -363,6 +398,29 @@ export async function bootBlue(argv: string[], options: {
     return pathToFileURL(join(dir, file)).href
   }
   const rows = [
+    '- id: blue-agent-presets',
+    `  name: ${fixture('blue-agent-presets.mjs', `
+export const name = 'blue-agent-presets'
+export const apply = ctx => globalThis.__blueE2E.presetsApply(ctx)
+`)}`,
+    '- id: blue-creative-host',
+    '  name: cordis:group',
+    '  group: true',
+    '  isolate:',
+    '    blueScreen: true',
+    '    commands: true',
+    '  config:',
+    '    - id: creative-isolation-probe',
+    `      name: ${fixture('creative-isolation-probe.mjs', `
+export const name = 'creative-isolation-probe'
+export const inject = ['bluePluginHost', 'tools']
+export const apply = ctx => globalThis.__blueE2E.creativeIsolationApply(ctx)
+`)}`,
+    '- id: blue-api-host',
+    `  name: ${fixture('blue-api-host.mjs', `
+export const name = 'blue-api-host'
+export const apply = ctx => globalThis.__blueE2E.apiHostApply(ctx)
+`)}`,
     '- id: blue-core',
     `  name: ${fixture('blue-core.mjs', `
 export const name = 'blue-core'
@@ -384,23 +442,20 @@ export const apply = globalThis.__blueE2E.themeDarkApply
     '- id: blue-banner',
     `  name: ${fixture('blue-banner.mjs', `
 export const name = 'blue-banner'
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'agentDefaultModel']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionReader', 'agentDefaultModel']
 export const apply = ctx => globalThis.__blueE2E.bannerApply(ctx)
 `)}`,
     '- id: blue-transcript',
     `  name: ${fixture('blue-transcript.mjs', `
 export const name = 'blue-transcript'
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'tools']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'blueSessionReader', 'blueSessionProjections', 'tools']
 export const apply = ctx => globalThis.__blueE2E.transcriptApply(ctx)
 `)}`,
-    // The baseline-segment status row mirrors cordis.patch.yml: the
-    // '{model} · {status}' footer entry registers into the transcript row's
-    // blueStatus registry. Plain delegation — no registry-identity constraint
-    // like the theme rows.
+    // The baseline status row publishes a renderer-neutral StatusModel.
     '- id: blue-status-basic',
     `  name: ${fixture('blue-status-basic.mjs', `
 export const name = 'blue-status-basic'
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueStatusModels', 'blueSessionFacts']
 export const apply = ctx => globalThis.__blueE2E.statusBasicApply(ctx)
 `)}`,
     // The enhancement segment mirrors cordis.patch.yml's row order: the
@@ -415,7 +470,7 @@ export const apply = ctx => globalThis.__blueE2E.statusBasicApply(ctx)
     '- id: blue-editor-plus',
     `  name: ${fixture('blue-editor-plus.mjs', `
 export const name = 'blue-editor-plus'
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'commands']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'blueEditorHost', 'blueSessionReader', 'blueSessionActions', 'blueSkillsCatalog', 'blueInteractionState', 'commands']
 export const apply = ctx => globalThis.__blueE2E.editorPlusApply(ctx)
 `)}`,
     // The input-side S7 rows mirror cordis.patch.yml: the attachment store
@@ -430,7 +485,7 @@ export const apply = ctx => globalThis.__blueE2E.attachmentsApply(ctx)
     '- id: blue-paste-image',
     `  name: ${fixture('blue-paste-image.mjs', `
 export const name = 'blue-paste-image'
-export const inject = ['attachments', 'blueKeymap']
+export const inject = ['attachments', 'blueKeymap', 'blueEditorHost', 'blueInteractionState']
 export const Config = globalThis.__blueE2E.pasteImageConfig
 export const apply = (ctx, config) => globalThis.__blueE2E.pasteImageApply(ctx, config)
 `)}`,
@@ -440,13 +495,13 @@ export const apply = (ctx, config) => globalThis.__blueE2E.pasteImageApply(ctx, 
     '- id: blue-status-cwd',
     `  name: ${fixture('blue-status-cwd.mjs', `
 export const name = 'blue-status-cwd'
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueStatusModels', 'blueSessionFacts']
 export const apply = ctx => globalThis.__blueE2E.statusCwdApply(ctx)
 `)}`,
     '- id: blue-status-git',
     `  name: ${fixture('blue-status-git.mjs', `
 export const name = 'blue-status-git'
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueStatusModels', 'blueSessionFacts']
 export const apply = ctx => globalThis.__blueE2E.statusGitApply(ctx)
 `)}`,
     // The harness session-title service stand-in (the thin e2e tree boots no
@@ -455,53 +510,77 @@ export const apply = ctx => globalThis.__blueE2E.statusGitApply(ctx)
     '- id: e2e-session-title',
     `  name: ${fixture('e2e-session-title.mjs', `
 export const name = 'e2e-session-title'
-export const apply = ctx => ctx.provide('sessionTitle', {
-  get: session => {
-    for (let i = session.events.length - 1; i >= 0; i--) {
-      const event = session.events[i]
-      if (event.type === 'session/title') return { title: event.data.title }
-    }
-    return undefined
-  },
-  refresh: session => {
-    globalThis.__blueE2E.sessionTitleRefreshes.push(session.id)
-    return Promise.resolve(undefined)
-  },
-})
+export const inject = ['sessionProjections']
+export const apply = ctx => {
+  const titleSchema = {
+    parse: value => {
+      if (value === null || typeof value === 'string') return value
+      throw new Error('invalid title projection')
+    },
+  }
+  ctx.sessionProjections.register({
+    key: 'title',
+    stateSchema: titleSchema,
+    init: () => null,
+    apply: (state, event) => event.type === 'session/title' ? event.data.title : state,
+    wire: { viewSchema: titleSchema, view: state => state },
+    stateVersion: 1,
+  })
+  ctx.provide('sessionTitle', {
+    get: session => {
+      for (let i = session.events.length - 1; i >= 0; i--) {
+        const event = session.events[i]
+        if (event.type === 'session/title') return { title: event.data.title }
+      }
+      return undefined
+    },
+    refresh: session => {
+      globalThis.__blueE2E.sessionTitleRefreshes.push(session.id)
+      return Promise.resolve(undefined)
+    },
+  })
+}
 `)}`,
     '- id: blue-status-title',
     `  name: ${fixture('blue-status-title.mjs', `
 export const name = 'blue-status-title'
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueStatusModels', 'blueSessionFacts']
 export const apply = ctx => globalThis.__blueE2E.statusTitleApply(ctx)
 `)}`,
     '- id: blue-status-context',
     `  name: ${fixture('blue-status-context.mjs', `
 export const name = 'blue-status-context'
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme']
+export const inject = ['blueStatusModels', 'blueSessionFacts']
 export const apply = ctx => globalThis.__blueE2E.statusContextApply(ctx)
 `)}`,
+    ...(options.frontendContext === true ? [
+      '- id: blue-context',
+      `  name: ${fixture('blue-context.mjs', `
+export const name = 'blue-context'
+export const apply = ctx => globalThis.__blueE2E.contextApply(ctx)
+`)}`,
+    ] : []),
+    ...(options.officialTranscript !== false ? [
+      '- id: blue-conversation',
+      `  name: ${fixture('blue-conversation.mjs', `
+export const name = 'blue-conversation'
+export const inject = ['sessionProjections']
+export const apply = ctx => globalThis.__blueE2E.conversationApply(ctx)
+`)}`,
+      '- id: blue-transcript-official',
+      `  name: ${fixture('blue-transcript-official.mjs', `
+export const name = 'blue-transcript-official'
+export const inject = ['blueConversationProjection', 'blueSessionProjections', 'blueSessionReader', 'blueTranscriptModels', 'tools']
+export const apply = ctx => globalThis.__blueE2E.officialTranscriptApply(ctx)
+`)}`,
+    ] : []),
     // The S24a mode badge row mirrors cordis.patch.yml: display-only fiber
     // reading the yolo WeakMap and the planMode controller.
     '- id: blue-status-mode',
     `  name: ${fixture('blue-status-mode.mjs', `
 export const name = 'blue-status-mode'
-export const inject = ['blueStatus', 'blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueStatusModels', 'blueSessionReader', 'blueSessionActions']
 export const apply = ctx => globalThis.__blueE2E.modeStatusApply(ctx)
-`)}`,
-    // The S7 intent rows mirror cordis.patch.yml: both inject the
-    // transcript's blueIntents registry and register their render intents.
-    '- id: blue-intent-diff',
-    `  name: ${fixture('blue-intent-diff.mjs', `
-export const name = 'blue-intent-diff'
-export const inject = ['blueIntents', 'blueTheme', 'blueComponents']
-export const apply = ctx => globalThis.__blueE2E.intentDiffApply(ctx)
-`)}`,
-    '- id: blue-intent-terminal',
-    `  name: ${fixture('blue-intent-terminal.mjs', `
-export const name = 'blue-intent-terminal'
-export const inject = ['blueIntents', 'blueTheme', 'blueComponents']
-export const apply = ctx => globalThis.__blueE2E.intentTerminalApply(ctx)
 `)}`,
     // The enhancement-segment pane rows mirror cordis.patch.yml; each fixture
     // re-declares the source module's inject list (the activity pane injects
@@ -509,34 +588,50 @@ export const apply = ctx => globalThis.__blueE2E.intentTerminalApply(ctx)
     '- id: blue-pane-activity',
     `  name: ${fixture('blue-pane-activity.mjs', `
 export const name = 'blue-pane-activity'
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionFacts', 'blueDockModels']
 export const apply = ctx => globalThis.__blueE2E.paneActivityApply(ctx)
 `)}`,
+    '  inject: [blueComponents, blueSessionFacts]',
     '- id: blue-pane-queue',
     `  name: ${fixture('blue-pane-queue.mjs', `
 export const name = 'blue-pane-queue'
-export const inject = ['blueScreen', 'blueTheme', 'blueKeymap']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueDockModels', 'blueSessionReader', 'blueSessionActions']
 export const apply = ctx => globalThis.__blueE2E.paneQueueApply(ctx)
 `)}`,
-    '  inject: [blueComponents]',
+    '  inject: [blueComponents, blueSessionReader, blueSessionActions]',
     '- id: blue-pane-todo',
     `  name: ${fixture('blue-pane-todo.mjs', `
 export const name = 'blue-pane-todo'
-export const inject = ['blueScreen', 'blueTheme', 'blueKeymap', 'blueComponents']
+export const inject = ['blueScreen', 'blueTheme', 'blueKeymap', 'blueComponents', 'blueSessionFacts', 'blueDockModels']
 export const apply = ctx => globalThis.__blueE2E.paneTodoApply(ctx)
 `)}`,
+    '  inject: [blueComponents, blueSessionFacts]',
     '- id: blue-pane-btw',
     `  name: ${fixture('blue-pane-btw.mjs', `
 export const name = 'blue-pane-btw'
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'commands', 'agents']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'commands', 'blueSessionActions', 'blueDockModels']
 export const apply = ctx => globalThis.__blueE2E.paneBtwApply(ctx)
+`)}`,
+    '  inject: [blueComponents, blueSessionActions]',
+    '- id: blue-plugin-view-bridge',
+    `  name: ${fixture('blue-plugin-view-bridge.mjs', `
+export const name = 'blue-plugin-view-bridge'
+export const inject = ['bluePluginHost', 'blueScreen', 'blueStatusModels', 'blueTheme', 'blueComponents']
+export const apply = ctx => globalThis.__blueE2E.viewBridgeApply(ctx)
 `)}`,
     // The assembly segment closes the plain baseline: the interaction row
     // mounts the input editor below every pane row above.
     '- id: blue-interaction',
     `  name: ${fixture('blue-interaction.mjs', `
 export const name = 'blue-interaction'
+export const inject = ['blueSessionReader', 'blueSessionActions']
 export const apply = ctx => globalThis.__blueE2E.interactionApply(ctx)
+`)}`,
+    '- id: blue-plugin-interaction-bridge',
+    `  name: ${fixture('blue-plugin-interaction-bridge.mjs', `
+export const name = 'blue-plugin-interaction-bridge'
+export const inject = ['bluePluginHost', 'commands', 'blueTheme', 'blueEditorHost']
+export const apply = ctx => globalThis.__blueE2E.interactionBridgeApply(ctx)
 `)}`,
     '- id: blue-startup',
     `  name: ${fixture('blue-startup.mjs', `
@@ -553,7 +648,7 @@ export const inject = ['blueStartup', 'agentDefaultModel', 'agents', 'sessions',
 export const Config = globalThis.__blueE2E.appConfig
 export const apply = (ctx, config) => globalThis.__blueE2E.appApply(ctx, config)
 `)}`,
-    '  inject: [blueStartup]',
+    '  inject: [blueStartup, agentPresets]',
     '  config:',
     '    task: !!js ctx.blueStartup.task',
     '    resume: !!js ctx.blueStartup.resume',
@@ -598,16 +693,16 @@ export const apply = (ctx, config) => globalThis.__blueE2E.appApply(ctx, config)
     }
   }
   // A stand-in downstream plugin: one fixture row registering a fixed-text
-  // entry through the blueStatus registry, after every bundle row.
+  // model through the status-model registry, after every bundle row.
   if (options.footerExtra !== undefined) {
     const text = JSON.stringify(options.footerExtra)
     rows.push(
       '- id: blue-e2e-extra',
       `  name: ${fixture('blue-e2e-extra.mjs', `
 export const name = 'blue-e2e-extra'
-export const inject = ['blueStatus']
+export const inject = ['blueStatusModels']
 export const apply = (ctx) => {
-  ctx.effect(() => ctx.blueStatus.register({ id: 'e2e-extra', priority: 30, render: () => ${text} }))
+  ctx.effect(() => ctx.blueStatusModels.register({ kind: 'status', id: 'e2e-extra', priority: 30, view: { kind: 'text', text: ${text} }, visible: true }))
 }
 `)}`,
     )
@@ -621,6 +716,7 @@ export const apply = (ctx) => {
   // regardless of the base.
   await ctx.plugin(Loader, { baseUrl: new URL('..', import.meta.url).href })
   ctx.loader.builtins.include = Include
+  ctx.loader.builtins.group = Group
   const exits: number[] = []
   provideCmdline(ctx, { args: argv, exit: code => void exits.push(code) })
 
@@ -631,7 +727,7 @@ export const apply = (ctx) => {
   // self-registered and plan/mode events hit the log (S24a e2e).
   await ctx.plugin(PlanModeController, { section: 'Plan mode (e2e): draft only — no mutations.' })
   await ctx.plugin(UserQuestionService)
-  if (options.sessionProjections === true) {
+  if (options.sessionProjections !== false || options.officialTranscript !== false) {
     // The projection family as dsh-base composes it: the registry drives
     // the token-meter and session-stats units over every committed event.
     await ctx.plugin(SessionProjectionRegistry)
@@ -662,11 +758,19 @@ export const apply = (ctx) => {
   // surface stays exactly what it registers itself, unchanged from before
   // the migration; preset cases pass richer fixtures.
   const presets = options.presetFixtures ?? [{ id: 'e2e' }]
-  const presetRoot = join(dir, 'agent-presets')
+  presetRoot = join(dir, 'agent-presets')
   for (const preset of presets) {
     const presetDir = join(presetRoot, preset.id)
     mkdirSync(presetDir, { recursive: true })
-    if (preset.broken === true) {
+    if (preset.id === 'cordis' && options.creativePersonaOnly === true) {
+      cpSync(new URL('../presets/cordis/', import.meta.url), presetDir, { recursive: true })
+      const compositionPath = join(presetDir, 'agent.cordis.yml')
+      const composition = readFileSync(compositionPath, 'utf8')
+      const personaStart = composition.indexOf('- id: persona\n')
+      const personaEnd = composition.indexOf('\n- id: agent-instructions\n', personaStart)
+      if (personaStart < 0 || personaEnd < 0) throw new Error('Blue creative persona row is missing')
+      writeFileSync(compositionPath, `${composition.slice(personaStart, personaEnd)}\n`)
+    } else if (preset.broken === true) {
       // Parses, then fails the entry-list audit: the roster lists it broken.
       writeFileSync(join(presetDir, 'agent.cordis.yml'), 'not-a-list: true\n')
     } else if (preset.tool !== undefined) {
@@ -692,11 +796,6 @@ export const apply = (ctx) => {
       writeFileSync(join(presetDir, 'preset.yml'), `order: ${preset.order}\n`)
     }
   }
-  await ctx.plugin(AgentPresetsService, {
-    default: presets[0]!.id,
-    roots: [{ path: presetRoot, trust: 'system' }],
-    includeUserRoot: false,
-  })
   if (options.skills !== undefined) {
     // The skill family (S29): the real registry, the filesystem provider
     // isolated to the fixture root (no default project/user/bundled
@@ -718,6 +817,8 @@ export const apply = (ctx) => {
   if (options.realSettings !== undefined) {
     await ctx.plugin(FileSettingsProvider, { path: options.realSettings.settingsPath, watch: false })
     await ctx.plugin(LocalCredentialsProvider, { path: options.realSettings.credentialsPath, watch: false })
+  } else if (options.credentials !== undefined) {
+    ctx.provide('credentials', options.credentials as never)
   }
   await ctx.plugin(AgentDefaultModelConfig, { provider: 'mock', model: 'mock' })
   if (options.piAi === true) {
@@ -737,19 +838,33 @@ export const apply = (ctx) => {
   )
   ctx.llm.registerAdapter(['mock'], adapter)
 
-  const sessionChanges: Agent[] = []
-  ctx.on('blue/session-changed', (agent) => { sessionChanges.push(agent) })
-
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(join(dir, 'cordis.yml')).href } })
   await ctx.loader.await()
+  const sessionChanges: Agent[] = []
+  let lastSessionId: string | undefined
+  const sessionRegistration = ctx.blueSessionReader.subscribe(snapshot => {
+    if (snapshot === null || snapshot.id === lastSessionId) return
+    const agent = ctx.agents.get(snapshot.id as never)
+    if (agent !== undefined) {
+      lastSessionId = snapshot.id
+      sessionChanges.push(agent)
+    }
+  })
+  ctx.effect(() => () => sessionRegistration.dispose())
   disposers.push(async () => { await ctx.fiber.dispose() })
-  return { ctx, terminal, adapter, exits, sessionChanges }
+  return { ctx, terminal, adapter, exits, sessionChanges, creativeIsolation }
 }
 
 /** Wait until the app driver has published its first Agent. */
 export async function currentAgent(tree: BlueTree): Promise<Agent> {
-  await vi.waitFor(() => { expect(tree.ctx.get('blueSession')?.current).not.toBeNull() })
-  return tree.ctx.get('blueSession')!.current!
+  let current: Agent | undefined
+  await vi.waitFor(() => {
+    const session = tree.ctx.blueSessionReader.current()
+    expect(session).not.toBeNull()
+    current = session === null ? undefined : tree.ctx.agents.get(session.id as never)
+    expect(current).toBeDefined()
+  })
+  return current!
 }
 
 /** Type one line into the focused editor and submit it. */

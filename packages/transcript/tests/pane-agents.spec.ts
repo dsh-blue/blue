@@ -99,7 +99,7 @@ describe('blue-pane-agents plugin', () => {
   it('survives result shapes without text and unparsable spawn arguments', async () => {
     const rig = await boot()
     const agent = fakeAgent([turnStart(1)])
-    rig.ctx.emit('blue/session-changed', agent)
+    rig.ctx.emit('test/session-changed', agent)
     // A result whose message carries no content at all.
     rig.ctx.emit('session/event', agent.session, {
       type: 'tool/result', seq: 50, time: T0 + 1_000,
@@ -150,7 +150,7 @@ describe('blue-pane-agents plugin', () => {
     // A result event without a toolCallId block pairs nothing and throws
     // nothing (the pane's defensive guard).
     const agent = fakeAgent([turnStart(1)])
-    harness.ctx.emit('blue/session-changed', agent)
+    harness.ctx.emit('test/session-changed', agent)
     harness.ctx.emit('session/event', agent.session, {
       type: 'tool/result', seq: 50, time: T0 + 1_000,
       data: { turn: 1, step: 1, message: { role: 'user', content: [] } },
@@ -271,8 +271,16 @@ describe('blue-pane-agents plugin', () => {
       toolResultEvent(1, 1, 'a1', 'started subagent 9f5c4086a0674b55b621c3eaf8b88c0e', { time: T0 + 5_000 }),
     ])
     expect(rig.screen.paneLines(140)[1]).toContain('1 agents finished')
-    rig.ctx.emit('blue/session-changed', fakeAgent([]))
+    rig.ctx.emit('test/session-changed', fakeAgent([]))
     expect(rig.screen.paneLines(140)).toEqual([])
+  })
+
+  it('ignores bindings without a string session id', async () => {
+    const rig = await boot()
+    rig.ctx.emit('test/session-binding-changed', { session: { id: 42 } })
+    rig.ctx.emit('test/session-binding-changed', undefined as never)
+    expect(rig.screen.paneLines(80)).toEqual([])
+    await rig.dispose()
   })
 
   it('forwards invalidate to the mounted card and unmounts with its fiber', async () => {

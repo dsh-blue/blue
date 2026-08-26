@@ -8,13 +8,12 @@
  * request), and the interactive four-choice `approval/request` answerer
  * (`blue-approval`). The optional bash-mode and autocomplete enhancement
  * layer ships as the `./editor-plus` subpath plugin (`blue-editor-plus`),
- * and the queued-message pane with the empty-editor Up recall as the
+ * and the queued-message pane with app-owned live refresh as the
  * `./pane-queue` subpath plugin (`blue-pane-queue`). The session-title
  * terminal mirror (`blue-terminal-title`, the OSC 0 window title over the
- * upstream session-title fold) and the all-prompts cadence bridge
- * (`blue-session-title-cadence`, D41) mount with the baseline plugins, as
- * does the boot-time update check (`blue-update-check`, D52: one registry
- * metadata read after the tree settles, silent-fail, 24h cache). All
+ * upstream session-title fold), the consolidated `blue` settings namespace
+ * (`blue-settings`), and the
+ * boot-time update check (`blue-update-check`). All
  * registrations are effect-bound, so unloading the fiber reverts every
  * contribution.
  *
@@ -22,35 +21,72 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import * as approvalPlugin from './approval-plugin.ts'
 import * as commandsPlugin from './commands-plugin.ts'
+import { CommandModelService } from './command-model.ts'
 import * as inputPlugin from './input-plugin.ts'
 import * as keysPlugin from './keys.ts'
+import * as providerOnboardingPlugin from './provider-onboarding.ts'
 import * as questionsPlugin from './questions-plugin.ts'
-import * as sessionTitleCadencePlugin from './session-title-cadence.ts'
+import * as settingsPlugin from './settings.ts'
 import * as terminalTitlePlugin from './terminal-title.ts'
 import * as updateCheckPlugin from './updater/check.ts'
+import { EditorModelService } from './editor-model.ts'
+import { EditorHostService } from './editor-instance.ts'
+import { SkillsCatalogService } from './skills-catalog.ts'
+import { InteractionStateService } from './runtime-state.ts'
+import { DEFAULT_SETTINGS } from './settings.ts'
 
 // BluePanel is the package's public overlay container; BlueSelect stays
 // package-internal as the multi-select-only list (single-select moved to
 // ctx.blueComponents.createSelectList) and is no longer exported.
 export { BluePanel } from './select.ts'
+export { CommandModelService } from './command-model.ts'
+export { FrontendPanel } from './frontend-panel.ts'
+export { EditorModelService } from './editor-model.ts'
+export { EditorHostService } from './editor-instance.ts'
+export { SkillsCatalogService } from './skills-catalog.ts'
+export { InteractionStateService } from './runtime-state.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-interaction'
+/** App-owned session boundaries required before child interaction fibers mount. */
+export const inject = ['blueSessionReader', 'blueSessionActions']
+
+/** Interaction configuration; the override identifies acceptance profiles without changing the release line. */
+export interface Config {
+  /** Optional profile-local identity shown in version surfaces. */
+  readonly displayVersion?: string
+}
+
+/** Interaction configuration schema. */
+export const Config: z<Config> = z.object({
+  displayVersion: z.string(),
+})
 
 /**
  * Mount the Blue interaction plugins. The key batch registers first; the
  * other plugins resolve their keys against it.
  * @param ctx - plugin context.
+ * @param config - interaction presentation configuration.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: Config = {}): void {
+  const runtimeState = new InteractionStateService(ctx, DEFAULT_SETTINGS)
+  ctx.effect(() => () => runtimeState.dispose())
+  const editorHost = new EditorHostService(ctx)
+  ctx.effect(() => () => editorHost.dispose())
+  const skillsCatalog = new SkillsCatalogService(ctx)
+  ctx.effect(() => () => skillsCatalog.dispose())
   ctx.plugin(keysPlugin)
-  ctx.plugin(commandsPlugin)
+  ctx.plugin(CommandModelService)
+  ctx.plugin(EditorModelService)
+  ctx.plugin(commandsPlugin, config)
   ctx.plugin(inputPlugin)
+  ctx.plugin(providerOnboardingPlugin)
   ctx.plugin(questionsPlugin)
   ctx.plugin(approvalPlugin)
   ctx.plugin(terminalTitlePlugin)
-  ctx.plugin(sessionTitleCadencePlugin)
+  ctx.plugin(settingsPlugin)
   ctx.plugin(updateCheckPlugin)
 }

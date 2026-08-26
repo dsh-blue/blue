@@ -1,6 +1,6 @@
 # 状态栏
 
-状态栏（footer）是终端最底两行的**注册表驱动**表面：不是写死的组件，任何插件都能经 `blueStatus` 注册条目。壳组件把条目排进至多两条带（band）——第一行左簇 + 右簇，第二行右簇。
+状态栏（footer）是终端最底两行的 **`StatusModel` 驱动**表面。内置 producer 向 `BlueStatusModelService` 发布 readonly model；第三方插件经稳定 `bluePluginHost` status capability 贡献 renderer-neutral `BlueView`，由 view bridge 转成同一种 model。
 
 ## 布局与灰阶
 
@@ -28,22 +28,28 @@
 
 ## 排序与让位规则
 
-- 同带同簇内按 priority 升序（同优先级保持注册顺序）；
+- 同带同簇内按 priority、稳定 id 升序；
 - 右侧簇右对齐，宽度压力下先于左侧簇让位；
 - 每个条目在簇内预算中自行截断；两行都放不下的条目按最低优先级丢弃。
 
 ## 下游贡献
 
-注册一个条目就是实现 `BlueStatusEntry`：
+第三方插件先打开 status capability，再注册 `BlueStatusContribution`：
 
 ```ts
-ctx.blueStatus.register({
-  id: 'my-plugin.build',        // 稳定的点分插件自有字符串，重复注册会被拒绝
-  priority: 15,                 // 内置条目占 0/2/5/10/20/30，空档任你使用
-  row: 1,                       // 选带：1（默认）或 2
-  align: 'left',                // 选边：'left'（默认）或 'right'
-  render: (width) => myLine,    // 一行带样式文本，宽度不超预算；返回 '' 本帧不占位
+const opened = ctx.bluePluginHost.open(ctx, {
+  id: 'my-plugin.build',
+  api: '^1.0.0',
+  capabilities: ['status'],
 })
+if (!opened.ok) throw new Error(opened.message)
+
+const registered = opened.value.status!.register({
+  id: 'build.status',
+  priority: 15,
+  render: () => ({ kind: 'text', content: myLine, tone: 'muted' }),
+})
+if (!registered.ok) throw new Error(registered.message)
 ```
 
-注册应包在 `ctx.effect` 里——插件 fiber 卸载时条目随之注销。
+Host 将 registration 绑定到调用方 Fiber；卸载时条目随之注销。Public status contribution 当前进入默认 footer lane；row/alignment 是 Blue 内部 `StatusModel` 布局策略，不是第三方 renderer contract。

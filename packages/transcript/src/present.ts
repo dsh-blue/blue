@@ -1,12 +1,11 @@
 /**
  * Pure tool-presentation resolution: parse raw argument JSON and ask the host
- * tool registry's `presentCall`/`presentResult` hooks for a render intent.
- * Cordis-free like the fold it serves; every presenter call is contained —
+ * tool registry's `presentCall`/`presentResult` hooks for canonical views.
+ * Every presenter call is contained —
  * an unknown tool, a missing presenter, or a throwing presenter all yield
  * `undefined` and the generic presentation carries on. The module also owns
- * the shared presentation pure helpers: {@link ellipsize} (moved here from
- * the fold so the key-arg extraction below stays cycle-free) and
- * {@link extractKeyArgument}.
+ * shared presentation pure helpers {@link ellipsize} and
+ * {@link extractKeyArgument} for the plain fallback card.
  *
  * @module @dsh-blue/blue-transcript/present
  */
@@ -53,7 +52,7 @@ export function parseToolArguments(raw: string): unknown {
 }
 
 /**
- * Resolve the pending-call render intent for one tool call.
+ * Resolve the pending-call canonical view for one tool call.
  * @param tools - the host tool registry.
  * @param name - the tool name exactly as the model requested it.
  * @param args - the parsed arguments (`undefined` when parsing failed).
@@ -73,7 +72,7 @@ export function resolveCallView(
 }
 
 /**
- * Resolve the completed-call render intent for one tool call.
+ * Resolve the completed-call canonical view for one tool call.
  * @param tools - the host tool registry.
  * @param name - the tool name exactly as the model requested it.
  * @param args - the parsed arguments (`undefined` when parsing failed).
@@ -94,49 +93,8 @@ export function resolveResultView(
   }
 }
 
-/**
- * Whether one tool item is a file Read (the S20 Read-group signal). The
- * rc.7 view vocabulary is the name-independent marker: the harness read
- * tool's pending call presents a generic card tagged `kind: 'read'`, and
- * its completed state the `card: 'read'` `ReadResultView` — Blue's repo
- * never sees the harness's concrete tool set, so the documented view
- * contract is the only stable signal (kimi groups by its own `Read` name).
- * @param item - the folded tool item to classify.
- * @returns true when the item's resolved view marks a read.
- */
-export function isReadItem(item: TranscriptToolItem): boolean {
-  const view = item.view
-  if (view === undefined) return false
-  if (!('card' in view)) return false
-  if (view.card === 'read') return true
-  return view.card === 'generic' && 'kind' in view && view.kind === 'read'
-}
-
 /** dsh-plan-mode's plan-review exit tool — a named-tool presentation exception. */
 const PLAN_REVIEW_TOOL = 'exit_plan_mode'
-
-/**
- * The spawn-class subagent tool names — the calls that delegate work to a
- * child agent session (dsh-subagent registers `subagent` continuable and
- * `subagent_fork` one-shot over the base composition). The control tools
- * (`send_message`, `interrupt_agent`, `list_agents`, `report`, `job_output`)
- * stay normal cards: kimi's group aggregates only its Agent tool, and the
- * group's semantics are "a run of parallel delegated agents", which a
- * steering call in a later step is not (the S33 D39 ruling).
- */
-const SUBAGENT_SPAWN_TOOLS: ReadonlySet<string> = new Set(['subagent', 'subagent_fork'])
-
-/**
- * Whether a tool item is a spawn-class subagent call eligible for the S33
- * agent group. Named-tool classification like {@link isPlanDecline}: the
- * view contract has no agent kind (`ToolCallKind` lists read/edit/…/other),
- * so the name is the only stable signal.
- * @param item - the folded tool item to classify.
- * @returns true when the call's tool name is spawn-class.
- */
-export function isSubagentTool(item: TranscriptToolItem): boolean {
-  return SUBAGENT_SPAWN_TOOLS.has(item.name)
-}
 
 /**
  * Whether a tool item is a declined plan review: dsh-plan-mode's

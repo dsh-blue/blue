@@ -10,7 +10,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { colorsFromForegrounds, defineThemeService } from './theme-palette.ts'
+import { colorsFromForegrounds, defineThemeService, themeModel } from './theme-palette.ts'
 import type { BlueSemanticColors } from './types.ts'
 
 const OCEAN_FOREGROUNDS = {
@@ -61,7 +61,7 @@ export const OCEAN_COLORS: BlueSemanticColors = colorsFromForegrounds(OCEAN_FORE
  * The ocean `blueTheme` provider. Exposes the frozen semantic color table;
  * unregistered automatically when the plugin's fiber unloads.
  */
-export class BlueThemeService extends defineThemeService(OCEAN_COLORS) {}
+export class BlueThemeService extends defineThemeService(OCEAN_COLORS, themeModel('ocean', 'Ocean', true, OCEAN_FOREGROUNDS, OCEAN_SELECTED_BG)) {}
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-theme-ocean'

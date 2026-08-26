@@ -53,3 +53,4 @@ function binEntry(bin: BinField): string | undefined {
   const first = Object.values(bin)[0]
   return typeof first === 'string' ? first : undefined
 }
+

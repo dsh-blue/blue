@@ -82,3 +82,4 @@ describe('updater/version VERSION_FLOOR', () => {
     expect(compareVersions(VERSION_FLOOR, VERSION_FLOOR)).toBe(0)
   })
 })
+

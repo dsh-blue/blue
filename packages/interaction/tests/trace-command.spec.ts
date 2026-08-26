@@ -3,18 +3,23 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import type { Action } from '@dsh-blue/blue-frontend'
 import { fakeBlueContext } from './fakes.ts'
 import { setClipboardOsc52Emitter, setClipboardTextWriter } from '../src/clipboard-write.ts'
-import { registerTraceCommand } from '../src/trace-command.ts'
+import { setSharedEditor } from '../src/editor-instance.ts'
+import { registerTraceCommand, traceDetailPanelModel, tracePanelModel } from '../src/trace-command.ts'
+import type { TraceItem } from '../src/trace-format.ts'
 
 const record = { sessionId: SessionId('trace-test'), seq: 0, time: 1, type: 'user/message', surface: 'current' as const }
 const target = { type: 'user/message', seq: 0, time: 1, surfaceOp: 'append', data: { content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' } } }
 
 describe('registerTraceCommand', () => {
   let copied: string[]
+  let notices: string[]
 
   beforeEach(() => {
     copied = []
+    notices = []
     setClipboardTextWriter(async text => { copied.push(text) })
     setClipboardOsc52Emitter(() => false)
   })
@@ -24,12 +29,27 @@ describe('registerTraceCommand', () => {
     setClipboardOsc52Emitter(undefined)
   })
 
-  async function mount(options: { session?: boolean, query?: boolean, throwRead?: unknown } = {}) {
-    const { ctx, screen } = fakeBlueContext()
+  it('builds empty, aggregated, and raw-detail panel models', () => {
+    expect(tracePanelModel('session', [])).toMatchObject({ mode: 'info', view: { text: 'no trace events yet' } })
+    const item: TraceItem = {
+      seq: 3, lastSeq: 5, eventSeqs: [3, 4, 5], time: Number.NaN,
+      type: 'assistant/chunk', surface: 'shadowed', title: 'Thinking', summary: 'first\nsecond',
+    }
+    expect(tracePanelModel('session', [item])).toMatchObject({
+      mode: 'select',
+      view: { items: [{ id: '3', label: expect.stringContaining('??:??:?? · #3-5'), detail: 'first second' }] },
+    })
+    expect(traceDetailPanelModel(item, '[{"type":"assistant/chunk"}]')).toMatchObject({
+      mode: 'info', title: 'Trace detail #3-5', view: { kind: 'sections' },
+    })
+  })
+
+  async function mount(options: { session?: boolean, query?: boolean, display?: boolean, throwRead?: unknown } = {}) {
+    const { ctx, screen } = fakeBlueContext({ display: options.display })
     await ctx.plugin(CommandRuntime)
     await ctx.plugin(SessionStore)
     const session = ctx.sessions.create(SessionId('trace-test'))
-    if (options.session !== false) ctx.provide('blueSession', { current: { id: SessionId('trace-test') } as never })
+    if (options.session !== false) ctx.provide('testSession', { current: { id: SessionId('trace-test') } as never })
     if (options.query !== false) {
       ctx.provide('sessionQuery', {
         readSession: vi.fn(async () => options.throwRead === undefined ? ({ session: {}, events: [target] }) : Promise.reject(options.throwRead)),
@@ -37,6 +57,11 @@ describe('registerTraceCommand', () => {
         traceEvent: vi.fn(async () => ({ session: {}, target: record, replacementChain: [], replacedEventSeqs: [], sourceEventSeqs: [], derivedEventSeqs: [] })),
       } as never)
     }
+    setSharedEditor(ctx, {
+      editor: { focused: false, render: () => [], invalidate: () => {} } as never,
+      submitPrompt: () => {},
+      notice: text => { notices.push(text) },
+    })
     const dispose = registerTraceCommand(ctx)
     const agent = { id: session.id, session } as never
     return { ctx, dispose, agent, screen }
@@ -67,12 +92,25 @@ describe('registerTraceCommand', () => {
     detail?.handleInput('\x1b[6~')
     detail?.handleInput('\x1b')
     panel?.handleInput('a')
-    await Promise.resolve()
+    await vi.waitFor(() => { expect(notices).toContain('copied 1 trace events') })
     panel?.handleInput('c')
     await Promise.resolve()
-    setClipboardTextWriter(async () => { throw new Error('clipboard down') })
+    const options = (panel as unknown as {
+      options: {
+        onAction(action: Action): void
+        onUnhandledInput?(data: string, selectedId: string | undefined): Action | undefined
+      }
+    }).options
+    options.onAction({ kind: 'trace.unknown', seq: 0 })
+    expect(options.onUnhandledInput?.('c', undefined)).toBeUndefined()
+    setClipboardTextWriter(async () => { throw new Error('native clipboard unavailable') })
+    setClipboardOsc52Emitter(() => true)
     panel?.handleInput('a')
-    await Promise.resolve()
+    await vi.waitFor(() => { expect(notices.some(notice => notice.includes('terminal escape sequence'))).toBe(true) })
+    setClipboardTextWriter(async () => { throw new Error('clipboard down') })
+    setClipboardOsc52Emitter(() => false)
+    panel?.handleInput('a')
+    await vi.waitFor(() => { expect(notices).toContain('could not copy trace: clipboard down') })
     panel?.handleInput('\x1b')
     dispose()
   })
@@ -88,5 +126,9 @@ describe('registerTraceCommand', () => {
     const { ctx: broken, agent: brokenAgent, dispose: disposeBroken } = await mount({ throwRead: 'broken' })
     expect(await broken.commands.execute(brokenAgent, '/trace', [], new AbortController().signal)).toMatchObject({ result: { text: 'could not read trace: broken' } })
     disposeBroken()
+    const noDisplay = await mount({ display: false })
+    expect(await noDisplay.ctx.commands.execute(noDisplay.agent, '/trace', [], new AbortController().signal))
+      .toMatchObject({ result: { kind: 'error', text: 'trace is unavailable: the Blue screen is not mounted' } })
+    noDisplay.dispose()
   })
 })

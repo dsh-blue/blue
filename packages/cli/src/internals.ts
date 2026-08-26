@@ -180,3 +180,4 @@ export const cliInternals: CliInternals = {
   stderr: process.stderr.write.bind(process.stderr),
   exit: process.exit,
 }
+

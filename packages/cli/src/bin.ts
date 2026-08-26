@@ -10,3 +10,4 @@ import { main } from './main.ts'
 // Run-as-binary only: under vitest (source-plane imports) this never fires.
 /* v8 ignore next */
 await main(process.argv.slice(2))
+

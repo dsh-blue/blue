@@ -65,3 +65,4 @@ describe('trace-format', () => {
     expect(toTraceItem(record).summary).toBe('')
   })
 })
+

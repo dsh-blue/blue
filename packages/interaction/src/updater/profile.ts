@@ -230,3 +230,4 @@ export function appendUpdateLog(root: string, line: string): void {
   }
   updaterInternals.appendTextFile(path, `${line}\n`)
 }
+

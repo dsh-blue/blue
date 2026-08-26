@@ -1,4 +1,4 @@
-# R0 (release roadmap): test/typecheck/lint gate for the five packages.
+# R0 (release roadmap): test/typecheck/lint gate for the workspace packages.
 # Runs on every master push and PR (except website-only PRs — those are
 # covered by website-pages.yml's build check). Install is pinned by the
 # root packageManager field (pnpm/action-setup reads it) with a frozen
@@ -51,19 +51,14 @@ jobs:
       # exports ↔ built lib/ output ↔ the files tarball whitelist. Runs
       # before the test minute so the cheap check fails first.
       - run: pnpm check:lib
-      - run: pnpm check:pack
       - run: pnpm test:coverage
       # The real-process width smoke (D45): boots the built plugin tree
       # through the real dsh CLI at COLUMNS=40 against a mock LLM streaming
       # width-hostile content — any untruncated row must fail the run, not
-      # crash a user session. The CLI is NOT a ROOT devDependency on
-      # purpose: a root-level subtree reshapes hoisting. S37 changed the
-      # picture one level down — packages/cli's isolated dependency brings
-      # the host (and node-addon-require-builtin) into the .pnpm store,
-      # which activates the loader's internal importer on Node 24; the /mcp
-      # e2e's temp profile now links dsh-mcp-client beside its cordis.yml
-      # (e2e-boot) and passes under both importer branches. The smoke's own
-      # dsh stays a separate global install, pinned against HARNESS_LINE.
+      # crash a user session. The CLI is NOT a workspace devDependency on
+      # purpose: its subtree reshapes hoisting and breaks the S34 /mcp e2e's
+      # bare-specifier resolution, so CI installs it globally instead and
+      # the smoke pins its version against HARNESS_LINE.
       #
       # npm, not `pnpm add -g`: action-setup installs pnpm itself under
       # /home/runner/setup-pnpm, and with no PNPM_HOME set `pnpm add -g`

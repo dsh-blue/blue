@@ -349,3 +349,4 @@ export async function probeDarwin(limits: ImageAttachmentLimits): Promise<Clipbo
     return { kind: 'no-image' }
   })
 }
+

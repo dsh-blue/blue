@@ -349,3 +349,4 @@ describe('updater/registry releaseFacts', () => {
     expect(publishedAt(packument, '1.0.0')).toBeUndefined()
   })
 })
+

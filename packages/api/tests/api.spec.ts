@@ -37,6 +37,6 @@ describe('@dsh-blue/blue-api', () => {
     }
     expect(Object.keys(manifest.exports)).toEqual(['.', './invariant', './package.json'])
     expect(Object.keys(manifest.exports).some(key => key.includes('/src'))).toBe(false)
-    expect(manifest.files).toEqual(['lib/*.js', 'lib/types/**/*.d.ts'])
+    expect(manifest.files).toEqual(['lib/**/*'])
   })
 })

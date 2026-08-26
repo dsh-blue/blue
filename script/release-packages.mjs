@@ -17,7 +17,7 @@ if (!['publish', 'verify', 'promote'].includes(mode)) throw new Error('usage: re
 
 const index = JSON.parse(readFileSync(join(ROOT, '.artifacts', 'pack', 'index.json'), 'utf8'))
 const packages = index.packages
-if (!Array.isArray(packages) || packages.length !== 7) throw new Error('pack index must contain exactly seven packages')
+if (!Array.isArray(packages) || packages.length !== 10) throw new Error('pack index must contain exactly ten packages')
 const versions = new Set(packages.map(pkg => pkg.version))
 if (versions.size !== 1) throw new Error(`pack index contains mixed versions: ${[...versions].join(', ')}`)
 const version = [...versions][0]

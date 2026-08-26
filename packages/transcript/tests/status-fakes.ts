@@ -8,13 +8,16 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { BlueSessionSnapshot } from '@dsh-blue/blue-api'
 import type {
   BlueComponent,
   BlueOverlayHandle,
   BlueScreen,
 } from '@dsh-blue/blue-core'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
-import type { BlueStatus, BlueStatusEntry } from '../src/types.ts'
+import { foldConversationFacts, initialConversationFacts, type ConversationFacts } from '../../conversation/src/facts.ts'
+import { projectChildSessionFacts, type ChildSessionFacts } from '../src/session-facts.ts'
+import { BlueStatusModelService, plainView } from '../src/status-model.ts'
 import { fakeBlueComponents } from './helpers.ts'
 
 /** Identity colors so rendered assertions see structure, not escape codes. */
@@ -26,8 +29,7 @@ export const COLORS = {
   mdHeading: id, mdLink: id, mdLinkUrl: id, mdCode: id, mdCodeBlock: id,
   mdCodeBlockBorder: id, mdQuote: id, mdQuoteBorder: id, mdHr: id, mdListBullet: id,
   diffAdded: id, diffRemoved: id, diffAddedStrong: id, diffRemovedStrong: id,
-  diffGutter: id, diffMeta: id, modelHighlight: id,
-  logoGradient: [id, id, id, id, id, id, id, id, id],
+  diffGutter: id, diffMeta: id,
 }
 // Structurally satisfies BlueSemanticColors; declared where consumed.
 
@@ -70,20 +72,13 @@ export class StatusFakeScreen implements BlueScreen {
   }
 }
 
-/** Structural `blueStatus`: remembers entries, honors the disposer contract. */
-export class FakeStatusRegistry implements BlueStatus {
-  readonly entries: BlueStatusEntry[] = []
-
-  register(entry: BlueStatusEntry): () => void {
-    this.entries.push(entry)
-    let done = false
-    return () => {
-      if (done) return
-      done = true
-      const index = this.entries.indexOf(entry)
-      if (index !== -1) this.entries.splice(index, 1)
-    }
-  }
+/** Status-model facade retained for concise producer assertions. */
+export interface StatusEntryView {
+  readonly id: string
+  readonly priority: number
+  readonly align: 'left' | 'right' | undefined
+  readonly row: 1 | 2 | undefined
+  render(width: number): string
 }
 
 /** Structural stand-in for the parts of `Session` the status plugins read. */
@@ -100,6 +95,141 @@ export interface FakeAgent {
   status: 'idle' | 'running'
   options: { provider?: string, model?: string }
   session: FakeSession
+}
+
+/** Projection-shaped facts feed used by source-plane status/pane fixtures. */
+export class FakeFactsService {
+  private agent: FakeAgent | null = null
+  private binding: FakeSession | undefined
+  private session: BlueSessionSnapshot | null = null
+  private value: ConversationFacts = initialConversationFacts()
+  private title: string | undefined
+  private readonly listeners = new Set<(facts: ConversationFacts) => void>()
+  private readonly titleListeners = new Set<(title: string | undefined) => void>()
+  private readonly sessionListeners = new Set<(session: BlueSessionSnapshot | null) => void>()
+  private readonly childStates = new Map<string, { parentId: string, facts: ConversationFacts }>()
+  private readonly childListeners = new Set<(facts: readonly ChildSessionFacts[]) => void>()
+
+  constructor(private readonly ctx: Context, current: FakeAgent | null, private readonly titleProjection = true) {
+    this.attach(current)
+    ctx.on('test/session-changed', next => {
+      const agent = next === null ? null : next as unknown as FakeAgent
+      this.attach(agent)
+    })
+    ctx.on('session/event', (session, event) => {
+      if (session === this.binding) {
+        if (this.titleProjection && event.type === 'session/title') {
+          this.title = event.data.title
+          this.publishTitle()
+        }
+        const next = foldConversationFacts(this.value, event)
+        if (next !== this.value) this.value = next
+        this.publish()
+        const sessionSnapshot = this.snapshot(this.agent)
+        if (JSON.stringify(sessionSnapshot) !== JSON.stringify(this.session)) {
+          this.session = sessionSnapshot
+          this.publishSession()
+        }
+      }
+      const child = session as unknown as { id?: unknown, header?: { origin?: unknown, parentSession?: unknown } }
+      if (typeof child.id !== 'string' || child.header?.origin !== 'subagent' || typeof child.header.parentSession !== 'string') return
+      const current = this.childStates.get(child.id)?.facts ?? initialConversationFacts()
+      this.childStates.set(child.id, { parentId: child.header.parentSession, facts: foldConversationFacts(current, event) })
+      this.publishChildren(child.header.parentSession)
+    })
+    ctx.on('agent/status', payload => {
+      const row = payload as { readonly agent?: { readonly session?: unknown }, readonly status?: unknown }
+      if (row.agent?.session !== this.binding) return
+      if (row.status === 'running' || row.status === 'idle') {
+        this.session = this.session === null ? null : { ...this.session, status: row.status }
+        this.publishSession()
+      }
+      if (row.status === 'running' && (!this.value.active || this.value.phase === 'idle')) {
+        this.value = { ...this.value, active: true, phase: 'waiting' }
+        this.publish()
+      }
+    })
+  }
+
+  get current(): ConversationFacts { return this.value }
+
+  get currentTitle(): string | undefined { return this.title }
+
+  get currentSession(): BlueSessionSnapshot | null { return this.session }
+
+  subscribe(listener: (facts: ConversationFacts) => void): () => void {
+    this.listeners.add(listener)
+    listener(this.value)
+    return () => this.listeners.delete(listener)
+  }
+
+  subscribeTitle(listener: (title: string | undefined) => void): () => void {
+    this.titleListeners.add(listener)
+    listener(this.title)
+    return () => this.titleListeners.delete(listener)
+  }
+
+  subscribeSession(listener: (session: BlueSessionSnapshot | null) => void): () => void {
+    this.sessionListeners.add(listener)
+    listener(this.session)
+    return () => this.sessionListeners.delete(listener)
+  }
+
+  subscribeChildren(listener: (facts: readonly ChildSessionFacts[]) => void): () => void {
+    this.childListeners.add(listener)
+    listener(this.children())
+    return () => this.childListeners.delete(listener)
+  }
+
+  private attach(agent: FakeAgent | null): void {
+    this.agent = agent
+    this.binding = agent?.session
+    this.session = this.snapshot(agent)
+    this.publishSession()
+    const titleEvent = agent?.session.events.findLast((event): event is SessionEvent<'session/title'> => event.type === 'session/title')
+    this.title = this.titleProjection ? titleEvent?.data.title : undefined
+    this.value = agent === null ? initialConversationFacts() : agent.session.events.reduce(foldConversationFacts, {
+      ...initialConversationFacts(),
+      ...(agent.options?.provider === undefined ? {} : { provider: agent.options.provider }),
+      ...(typeof agent.session.requestContext === 'function' && agent.session.requestContext()?.contextWindow === undefined ? {} : typeof agent.session.requestContext === 'function' ? { contextWindow: agent.session.requestContext()!.contextWindow } : {}),
+      ...(agent.status === 'running' ? { active: true, phase: 'waiting' as const } : {}),
+    })
+    this.publish()
+    this.publishTitle()
+  }
+
+  private snapshot(agent: FakeAgent | null): BlueSessionSnapshot | null {
+    if (agent === null) return null
+    const session = agent.session as FakeSession & { readonly id?: unknown }
+    const options = agent.options ?? {}
+    const selectedModel = session.requestHeader?.()?.config.model ?? options.model
+    return {
+      id: String(session.id ?? agent.id),
+      cwd: session.header.cwd ?? process.cwd(),
+      status: agent.status === 'running' ? 'running' : 'idle',
+      mode: 'normal',
+      ...(selectedModel === undefined ? {} : {
+        model: { id: selectedModel, ...(options.provider === undefined ? {} : { provider: options.provider }) },
+      }),
+    }
+  }
+
+  private publish(): void { for (const listener of this.listeners) listener(this.value) }
+
+  private publishTitle(): void { for (const listener of this.titleListeners) listener(this.title) }
+
+  private publishSession(): void { for (const listener of this.sessionListeners) listener(this.session) }
+
+  private publishChildren(parentId: string): void {
+    if (parentId !== this.session?.id) return
+    const children = this.children()
+    for (const listener of this.childListeners) listener(children)
+  }
+
+  private children(): readonly ChildSessionFacts[] {
+    return [...this.childStates].filter(([, child]) => child.parentId === this.session?.id)
+      .map(([id, child]) => projectChildSessionFacts(id, child.facts))
+  }
 }
 
 let agentCounter = 0
@@ -158,8 +288,8 @@ export interface StatusPluginModule {
 export interface StatusPluginHarness {
   ctx: Context
   screen: StatusFakeScreen
-  registry: FakeStatusRegistry
-  entry: BlueStatusEntry
+  entry: StatusEntryView
+  models: BlueStatusModelService
   dispose(): Promise<void>
 }
 
@@ -178,16 +308,20 @@ export async function bootStatusPlugin(
   options: {
     colors?: Record<string, (text: string) => string>
     services?: Record<string, unknown>
+    titleProjection?: boolean
   } = {},
 ): Promise<StatusPluginHarness> {
   const ctx = new Context()
   const screen = new StatusFakeScreen()
-  const registry = new FakeStatusRegistry()
+  const colors = { ...COLORS, ...options.colors }
+  const statusModels = new BlueStatusModelService(ctx, screen)
+  const components = fakeBlueComponents()
+  const facts = new FakeFactsService(ctx, current, options.titleProjection ?? true)
   const serviceNames: Record<string, unknown> = {
-    blueStatus: registry,
+    blueSessionFacts: facts,
     blueScreen: screen,
-    blueTheme: { colors: options.colors ?? COLORS },
-    blueComponents: fakeBlueComponents(),
+    blueTheme: { colors },
+    blueComponents: components,
     blueSession: { current: current === null ? null : asAgent(current) },
     ...options.services,
   }
@@ -195,11 +329,33 @@ export async function bootStatusPlugin(
     ctx.reflect.provide(serviceName, value)
   }
   const fiber = await ctx.plugin(plugin)
+  if (current !== null) ctx.emit('test/session-binding-changed', { id: String(current.id), session: current.session, cwd: current.session.header.cwd })
+  const currentModel = () => statusModels.list().find(model => model.visible)
+  const entry: StatusEntryView = {
+    get id() { return currentModel()?.id ?? '' },
+    get priority() { return currentModel()?.priority ?? 0 },
+    get align() { return currentModel()?.band === 'right' ? 'right' : currentModel() === undefined ? undefined : 'left' },
+    get row() { return currentModel()?.row },
+    render: width => {
+      const model = currentModel()
+      if (model === undefined || width <= 0) return ''
+      const text = plainView(model.view)
+      if (model.overflow === 'hide' && components.visibleWidth(text) > width) return ''
+      const clipped = components.truncateToWidth(text, width)
+      if (model.view.kind !== 'text') return clipped
+      const paint = model.view.tone === 'muted' ? colors.muted
+        : model.view.tone === 'accent' ? colors.accent
+          : model.view.tone === 'success' ? colors.success
+            : model.view.tone === 'warning' ? colors.warning
+              : model.view.tone === 'danger' ? colors.error : colors.text
+      return paint(clipped)
+    },
+  }
   return {
     ctx,
     screen,
-    registry,
-    entry: registry.entries[0]!,
+    entry,
+    models: statusModels,
     dispose: () => fiber.dispose(),
   }
 }

@@ -52,3 +52,4 @@ describe('aggregateTraceItems', () => {
     expect(aggregateTraceItems(records, events)).toEqual([])
   })
 })
+

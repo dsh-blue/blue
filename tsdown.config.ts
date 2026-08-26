@@ -1,12 +1,12 @@
 import { defineConfig } from 'tsdown'
-import { PACKAGE_DIRS, packageDir, readManifest, sourceEntries } from './script/package-contract.mjs'
+import { BUILD_PACKAGE_DIRS, packageDir, readManifest, sourceEntries } from './script/package-contract.mjs'
 
 /**
- * Bundle runtime entries directly from source. Each package config derives its
- * entry map from exports/bin, removing the hand-maintained third side of the
- * old exports/files/tsdown triangle. tsc owns declaration-only emission.
+ * Bundle each workspace package's TypeScript entry points into the published
+ * lib/ layout. tsc -b owns declaration emission; tsdown owns runtime bundling.
+ * Package dependencies and peerDependencies stay external.
  */
-export default defineConfig(PACKAGE_DIRS.map(relativeDir => ({
+export default defineConfig(BUILD_PACKAGE_DIRS.map(relativeDir => ({
   cwd: packageDir(relativeDir),
   entry: sourceEntries(relativeDir, readManifest(relativeDir)),
   outDir: 'lib',

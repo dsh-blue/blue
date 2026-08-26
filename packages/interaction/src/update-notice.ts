@@ -74,8 +74,8 @@ export class UpdateNoticeComponent implements BlueComponent {
    * @param rows - the composed rows (see {@link updateNoticeRows} and
    * {@link interruptedNoticeRows}).
    */
-  constructor(truncate: RowTruncator, rows: readonly string[]) {
-    this.rows = rows
+  constructor(truncate: RowTruncator, rows: readonly string[] | UpdateNoticeContent) {
+    this.rows = Array.isArray(rows) ? rows : updateNoticeRows(rows as UpdateNoticeContent)
     this.truncate = truncate
   }
 

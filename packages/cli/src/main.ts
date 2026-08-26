@@ -100,3 +100,4 @@ export function shellVersion(): string {
     return 'unknown'
   }
 }
+

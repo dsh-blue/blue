@@ -11,10 +11,10 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { colorsFromForegrounds, defineThemeService } from './theme-palette.ts'
+import { colorsFromForegrounds, defineThemeService, themeModel } from './theme-palette.ts'
 import type { BlueSemanticColors } from './types.ts'
 
-const DARK_FOREGROUNDS = {
+export const DARK_FOREGROUNDS = {
   text: '#e0e0e0',
   textStrong: '#ffffff',
   muted: '#888888',
@@ -47,13 +47,12 @@ const DARK_FOREGROUNDS = {
   modelHighlight: '#8ca8ff',
 } as const
 
-/** The dark banner logo sweep: deep navy up top to sky at the tail. */
 const DARK_LOGO_GRADIENT = [
   '#2a3bd0', '#3247db', '#3b53e7', '#445ff2', '#4d6bfe',
   '#617cfe', '#758efe', '#899ffe', '#9db1ff',
 ] as const
 
-const DARK_SELECTED_BG = '#3a3a4a'
+export const DARK_SELECTED_BG = '#3a3a4a'
 
 /** The built-in dark palette as a frozen semantic color table. */
 export const DARK_COLORS: BlueSemanticColors = colorsFromForegrounds(DARK_FOREGROUNDS, DARK_SELECTED_BG, DARK_LOGO_GRADIENT)
@@ -62,7 +61,7 @@ export const DARK_COLORS: BlueSemanticColors = colorsFromForegrounds(DARK_FOREGR
  * The built-in `blueTheme` provider. Exposes the frozen semantic color
  * table; unregistered automatically when the plugin's fiber unloads.
  */
-export class BlueThemeService extends defineThemeService(DARK_COLORS) {}
+export class BlueThemeService extends defineThemeService(DARK_COLORS, themeModel('dark', 'Dark', true, DARK_FOREGROUNDS, DARK_SELECTED_BG)) {}
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-theme-dark'

@@ -39,3 +39,4 @@
 | 成功路径 `/update 0.1.0-rc.4`（关窗 no-op） | ✅ 12s 全程：confirm y → 装幂等 → 真冒烟 → "restart dsh to apply" |
 
 另：rc.3 的 target-exists 误判（npm-view 裸键）即由本矩阵第 2 轮真机抓出 → rc.4 修复（`Object.hasOwn`）+ 回归 fixture。
+

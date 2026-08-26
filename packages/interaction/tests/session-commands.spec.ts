@@ -1,37 +1,32 @@
 /**
  * Unit tests for the session-info family: the pure section builders
- * (`/status`, `/context`, the shared context section, `/version`'s notice,
- * `/changelog`'s release-notes sections), and the commands over the real
- * command runtime — panel mount, close, and the no-session / no-display
- * guards.
+ * (`/status`, `/context`, the shared context section, `/version`'s notice),
+ * and the three commands over the real command runtime — panel mount,
+ * close, and the no-session / no-display guards.
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import * as commandsPlugin from '../src/commands-plugin.ts'
 import type { InfoPanel } from '../src/info-panel.ts'
-import { clearSharedEditor } from '../src/editor-instance.ts'
-import { CHANGELOG_ENTRIES } from '../src/changelog-content.ts'
+import type { FrontendPanel } from '../src/frontend-panel.ts'
 import {
-  buildChangelogSections,
   buildCompositionSection,
   buildContextSection,
   buildStatusSections,
   buildUsageSections,
   formatCreated,
   buildVersionSections,
+  buildChangelogSections,
   registerSessionCommands,
 } from '../src/session-commands.ts'
 import { BLUE_VERSION } from '@dsh-blue/blue-transcript/banner-content'
 import { fakeBlueContext, type FakeScreen } from './fakes.ts'
-
-afterEach(() => {
-  clearSharedEditor()
-})
-
+import { InteractionStateService } from '../src/runtime-state.ts'
+import { DEFAULT_SETTINGS } from '../src/settings.ts'
 
 /** Strip SGR and the fake palette's marker characters so assertions read visible text. */
 function plain(rows: readonly string[]): readonly string[] {
@@ -54,36 +49,42 @@ describe('buildVersionSections', () => {
       { label: 'harness', segments: [{ text: '0.1.1-rc.2' }] },
     ])
   })
+
+  it('uses a profile-local display identity without changing the release constant', () => {
+    const displayVersion = `${BLUE_VERSION}+frontend-runtime.test`
+    expect(buildVersionSections(displayVersion)[0]!.rows[0]).toEqual({
+      label: 'blue',
+      segments: [{ text: `v${displayVersion}` }],
+    })
+    expect(BLUE_VERSION).toBe('0.1.0-rc.8')
+  })
 })
 
 describe('buildChangelogSections', () => {
-  it('badges the running release and wraps the bullets', () => {
-    const long = 'word '.repeat(30).trim()
+  it('wraps highlights, marks the current release, and includes known issues', () => {
     const sections = buildChangelogSections([
-      { version: BLUE_VERSION, summary: 'current summary', highlights: [long], knownIssues: ['one issue'] },
-      { version: '0.0.1', summary: 'old summary', highlights: ['old highlight'], knownIssues: [] },
+      {
+        version: BLUE_VERSION,
+        summary: 'short summary',
+        highlights: ['one short highlight', 'this highlight contains enough words to wrap across the fixed detail width while retaining its continuation indentation'],
+        knownIssues: ['one known issue'],
+      },
+      {
+        version: '0.0.0',
+        summary: 'older summary',
+        highlights: [],
+        knownIssues: [],
+      },
     ])
-    expect(sections.map(section => section.heading)).toEqual([`v${BLUE_VERSION} · current`, 'v0.0.1'])
-    const current = sections[0]!.rows
-    expect(current[0]).toEqual({ label: '', segments: [{ text: 'current summary', style: 'muted' }] })
-    expect(current.some(row => row.label === 'Highlights')).toBe(true)
-    expect(current.some(row => row.label === 'Known issues')).toBe(true)
-    const bullets = current.filter(row => row.label === '' && row.segments[0]?.style === 'textMuted')
-    expect(bullets.length).toBeGreaterThan(1)
-    expect(bullets[0]!.segments[0]!.text.startsWith('• ')).toBe(true)
-    expect(bullets[1]!.segments[0]!.text.startsWith('  ')).toBe(true)
-    const issues = current.filter(row => row.segments[0]?.style === 'warning')
-    expect(issues[0]!.segments[0]!.text).toBe('• one issue')
-    // A release without known issues omits the sub-label entirely.
-    const old = sections[1]!.rows
-    expect(old.some(row => row.label === 'Known issues')).toBe(false)
-  })
-
-  it('carries the shipped entries', () => {
-    const sections = buildChangelogSections(CHANGELOG_ENTRIES)
-    expect(sections.map(section => section.heading)).toEqual(
-      CHANGELOG_ENTRIES.map(entry => `v${entry.version}${entry.version === BLUE_VERSION ? ' · current' : ''}`),
-    )
+    expect(sections.map(section => section.heading)).toEqual([`v${BLUE_VERSION} · current`, 'v0.0.0'])
+    expect(sections[0]!.rows.map(row => row.label)).toEqual(['', 'Highlights', '', '', '', 'Known issues', ''])
+    expect(sections[0]!.rows[2]!.segments[0]).toEqual({ text: '• one short highlight', style: 'textMuted' })
+    expect(sections[0]!.rows[4]!.segments[0]!.text.startsWith('  ')).toBe(true)
+    expect(sections[0]!.rows[6]!.segments[0]).toEqual({ text: '• one known issue', style: 'warning' })
+    expect(sections[1]!.rows).toEqual([
+      { label: '', segments: [{ text: 'older summary', style: 'muted' }] },
+      { label: 'Highlights', segments: [] },
+    ])
   })
 })
 
@@ -291,6 +292,7 @@ interface MountOptions {
   display?: boolean
   modelRef?: { current: { provider: string, model: string, reasoningEffort?: string } }
   seed?: 'usage' | 'header'
+  displayVersion?: string
 }
 
 async function mount(options: MountOptions = {}): Promise<{
@@ -301,6 +303,7 @@ async function mount(options: MountOptions = {}): Promise<{
 }> {
   const base = options.display === false ? { ctx: new Context() } : fakeBlueContext()
   const { ctx } = base
+  if (options.display === false) new InteractionStateService(ctx, DEFAULT_SETTINGS)
   const screen = 'screen' in base ? base.screen : undefined
   await ctx.plugin(SessionStore)
   await ctx.plugin(CommandRuntime)
@@ -331,9 +334,39 @@ async function mount(options: MountOptions = {}): Promise<{
   }
   const agent = { id: session.id, session, status: 'idle' } as unknown as Agent
   if (options.attach !== false) {
-    ctx.provide('blueSession', { current: agent, modelRef: options.modelRef })
+    ctx.provide('testSession', { current: agent, modelRef: options.modelRef })
   }
-  const fiber = await ctx.plugin(commandsPlugin)
+  if (options.display === false) {
+    ctx.provide('blueSessionReader', {
+      current: () => options.attach === false
+        ? null
+        : { id: String(agent.id), cwd: '/tmp/spec', status: 'idle', mode: 'normal' },
+    } as never)
+    ctx.provide('blueSessionActions', {
+      sessionDetails: () => options.attach === false
+        ? undefined
+        : {
+            header: session.header,
+            turns: 0,
+            steps: 0,
+            status: 'idle',
+            usage: { buckets: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 }, context: {} },
+          },
+    } as never)
+    ctx.provide('blueSessionProjections', {
+      current: () => undefined,
+      currentMany: () => undefined,
+      subscribe: () => () => {},
+      children: () => [],
+      subscribeChildren: () => () => {},
+    })
+    ctx.provide('blueSkillsCatalog', {
+      userInvocable: () => [],
+      refresh: () => Promise.resolve(),
+      setForTest: () => {},
+    } as never)
+  }
+  const fiber = await ctx.plugin(commandsPlugin, { displayVersion: options.displayVersion })
   return { ctx, screen: screen as FakeScreen, agent, fiber }
 }
 
@@ -343,7 +376,7 @@ async function run(ctx: Context, agent: Agent, line: string) {
 }
 
 describe('registerSessionCommands', () => {
-  it('registers the four commands on the runtime', async () => {
+  it('registers the three commands on the runtime', async () => {
     const { ctx, agent } = await mount()
     const names = ctx.commands.list().map(command => command.name)
     expect(names).toContain('status')
@@ -407,6 +440,31 @@ describe('registerSessionCommands', () => {
     expect(rows.some(row => row.includes('61.5k / 8k'))).toBe(true)
     overlay.component.handleInput?.('q')
     expect(overlay.hidden).toBe(true)
+  })
+
+  it('prefers the renderer-neutral context model and falls back when it unloads', async () => {
+    const { ctx, screen, agent } = await mount({ seed: 'usage' })
+    const execute = vi.fn(async () => ({ ok: true }))
+    const unsubscribe = vi.fn()
+    const feature = {
+      model: { panel: { kind: 'panel', mode: 'info', title: 'Context', view: { kind: 'text', text: 'official context projection' }, submit: { kind: 'context.refresh', sessionId: 'status-spec' } } },
+      subscribe: (listener: () => void) => { listener(); return unsubscribe },
+      execute,
+    }
+    ;(ctx as unknown as { provide(name: string, value: unknown): void }).provide('blueContextFeature', feature)
+    expect(await run(ctx, agent, '/context')).toEqual({ kind: 'success' })
+    const projected = screen.overlays.at(-1)!.component as FrontendPanel
+    expect(plain(projected.render(80)).some(row => row.includes('official context projection'))).toBe(true)
+    projected.handleInput('\r')
+    await Promise.resolve()
+    expect(execute).toHaveBeenCalledWith({ kind: 'context.refresh', sessionId: 'status-spec' })
+    feature.model = undefined as never
+    expect(plain(projected.render(80)).some(row => row.includes('context unavailable'))).toBe(true)
+    projected.handleInput('\x1b')
+    expect(unsubscribe).toHaveBeenCalledOnce()
+    expect(await run(ctx, agent, '/context')).toEqual({ kind: 'success' })
+    expect(screen.overlays.at(-1)!.component).toBeInstanceOf(Object)
+    expect(screen.overlays.at(-1)!.component.constructor.name).toBe('InfoPanel')
   })
 
   it('reads the projection snapshot when the seam is composed', async () => {
@@ -484,6 +542,17 @@ describe('registerSessionCommands', () => {
     expect(overlay.hidden).toBe(true)
   })
 
+  it('shows the same profile-local identity in /status and /version', async () => {
+    const displayVersion = `${BLUE_VERSION}+frontend-runtime.test`
+    const { ctx, screen, agent } = await mount({ displayVersion })
+    await run(ctx, agent, '/status')
+    const statusRows = plain((screen.overlays.at(-1)!.component as InfoPanel).render(100))
+    expect(statusRows.some(row => row.includes(`Blue v${displayVersion}`))).toBe(true)
+    await run(ctx, agent, '/version')
+    const versionRows = plain((screen.overlays.at(-1)!.component as InfoPanel).render(100))
+    expect(versionRows.some(row => row.includes(`v${displayVersion}`))).toBe(true)
+  })
+
   it('opens the /version panel on an empty slot too', async () => {
     const { ctx, screen, agent } = await mount({ attach: false })
     const result = await run(ctx, agent, '/version')
@@ -493,25 +562,14 @@ describe('registerSessionCommands', () => {
     expect(rows.some(row => row.includes('harness'))).toBe(true)
   })
 
-  it('opens the /changelog panel over the release notes and closes on q', async () => {
-    const { ctx, screen, agent } = await mount({ attach: false })
-    const result = await run(ctx, agent, '/changelog')
-    expect(result).toEqual({ kind: 'success' })
+  it('opens the embedded /changelog panel and closes it', async () => {
+    const { ctx, screen, agent } = await mount()
+    expect(await run(ctx, agent, '/changelog')).toEqual({ kind: 'success' })
     const overlay = screen.overlays.at(-1)!
-    const panel = overlay.component as InfoPanel
-    const rows = plain(panel.render(120))
+    const rows = plain((overlay.component as InfoPanel).render(100))
     expect(rows.some(row => row.includes('changelog'))).toBe(true)
-    expect(rows.some(row => row.includes(`v${CHANGELOG_ENTRIES[0]!.version}`))).toBe(true)
-    expect(rows.some(row => row.includes(CHANGELOG_ENTRIES[0]!.summary.slice(0, 30)))).toBe(true)
-    // Release entries grow over time, so page until the newest note's
-    // known-issues heading enters the window instead of pinning one offset.
-    let paged = panel.render(120).map(row => row.replace(/\x1b\[[0-9;]*m/g, ''))
-    for (let page = 0; page < 10 && !paged.some(row => row.includes('Known issues')); page += 1) {
-      panel.handleInput('\x1b[6~')
-      paged = panel.render(120).map(row => row.replace(/\x1b\[[0-9;]*m/g, ''))
-    }
-    expect(paged.some(row => row.includes('Known issues'))).toBe(true)
-    overlay.component.handleInput?.('q')
+    expect(rows.some(row => row.includes('Execution traces'))).toBe(true)
+    overlay.component.handleInput?.('\x1b')
     expect(overlay.hidden).toBe(true)
   })
 
@@ -523,7 +581,7 @@ describe('registerSessionCommands', () => {
     expect(usage).toEqual({ kind: 'error', text: 'no session is live yet' })
     // A published-but-empty slot (the app driver before its first agent)
     // answers the same guard.
-    ctx.provide('blueSession', { current: null })
+    ctx.provide('testSession', { current: null })
     const empty = await run(ctx, agent, '/status')
     expect(empty).toEqual({ kind: 'error', text: 'no session is live yet' })
     const emptyUsage = await run(ctx, agent, '/context')
@@ -534,7 +592,7 @@ describe('registerSessionCommands', () => {
     expect(emptyVersion).toEqual({ kind: 'success' })
   })
 
-  it('guards /status, /context, /version, and /changelog when the display services are missing', async () => {
+  it('guards /status, /context, and /version when the display services are missing', async () => {
     const { ctx, agent } = await mount({ display: false })
     const status = await run(ctx, agent, '/status')
     expect(status).toEqual({ kind: 'error', text: 'status panel is unavailable: the Blue screen is not mounted' })

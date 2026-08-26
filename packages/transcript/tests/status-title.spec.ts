@@ -53,7 +53,9 @@ describe('blue-status-title', () => {
     expect(untitled.entry.render(80)).toBe('')
     await untitled.dispose()
 
-    const thinHost = await bootStatusPlugin(statusTitle, titledAgent(['titled but no service']))
+    const thinHost = await bootStatusPlugin(statusTitle, titledAgent(['titled but no service']), {
+      titleProjection: false,
+    })
     expect(thinHost.entry.render(80)).toBe('')
     await thinHost.dispose()
 
@@ -70,15 +72,15 @@ describe('blue-status-title', () => {
     })
     const baseline = harness.screen.renderRequests.length
 
-    harness.ctx.emit('blue/session-changed', asAgent(titledAgent(['second'])))
+    harness.ctx.emit('test/session-changed', asAgent(titledAgent(['second'])))
     expect(harness.entry.render(80)).toBe('second')
     expect(harness.screen.renderRequests.length).toBe(baseline + 1)
 
     // An unchanged fold requests no redraw.
-    harness.ctx.emit('blue/session-changed', asAgent(titledAgent(['second'])))
+    harness.ctx.emit('test/session-changed', asAgent(titledAgent(['second'])))
     expect(harness.screen.renderRequests.length).toBe(baseline + 1)
 
-    harness.ctx.emit('blue/session-changed', null as never)
+    harness.ctx.emit('test/session-changed', null as never)
     expect(harness.entry.render(80)).toBe('')
     await harness.dispose()
   })
@@ -88,11 +90,15 @@ describe('blue-status-title', () => {
     const harness = await bootStatusPlugin(statusTitle, agent, {
       services: { sessionTitle: titleService() },
     })
-    harness.ctx.emit('session/event', titledAgent(['foreign']).session as never, {} as never)
+    harness.ctx.emit('session/event', titledAgent(['foreign']).session as never, {
+      type: 'session/title', data: { title: 'foreign' },
+    } as never)
     expect(harness.entry.render(80)).toBe('first')
 
     agent.session.events.push({ type: 'session/title', data: { title: 'second' } } as unknown as SessionEvent)
-    harness.ctx.emit('session/event', agent.session as never, {} as never)
+    harness.ctx.emit('session/event', agent.session as never, {
+      type: 'session/title', data: { title: 'second' },
+    } as never)
     expect(harness.entry.render(80)).toBe('second')
     await harness.dispose()
   })
@@ -109,8 +115,8 @@ describe('blue-status-title', () => {
     const harness = await bootStatusPlugin(statusTitle, titledAgent(['x']), {
       services: { sessionTitle: titleService() },
     })
-    expect(harness.registry.entries).toHaveLength(1)
+    expect(harness.models.list()).toHaveLength(1)
     await harness.dispose()
-    expect(harness.registry.entries).toHaveLength(0)
+    expect(harness.models.list()).toHaveLength(0)
   })
 })

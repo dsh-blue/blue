@@ -11,7 +11,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { colorsFromForegrounds, defineThemeService } from './theme-palette.ts'
+import { colorsFromForegrounds, defineThemeService, themeModel } from './theme-palette.ts'
 import type { BlueSemanticColors } from './types.ts'
 
 const PAPER_FOREGROUNDS = {
@@ -62,7 +62,7 @@ export const PAPER_COLORS: BlueSemanticColors = colorsFromForegrounds(PAPER_FORE
  * The paper `blueTheme` provider. Exposes the frozen semantic color table;
  * unregistered automatically when the plugin's fiber unloads.
  */
-export class BlueThemeService extends defineThemeService(PAPER_COLORS) {}
+export class BlueThemeService extends defineThemeService(PAPER_COLORS, themeModel('paper', 'Paper', false, PAPER_FOREGROUNDS, PAPER_SELECTED_BG)) {}
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-theme-paper'

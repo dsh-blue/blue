@@ -281,3 +281,4 @@ export function resolveOffer(packument: Packument, channel: string, currentVersi
   }
   return { kind: 'up-to-date', target }
 }
+

@@ -80,3 +80,4 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
     ],
   },
 ]
+

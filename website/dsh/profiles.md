@@ -34,6 +34,6 @@ dsh --profile blue --dump-config     # 打印实际组装的完整插件树
 
 `dsh plugin --profile <name> add <pkg>` 原样转发给 profile 目录里的 pnpm——所以：
 
-- 开发期装本地检出用 `link:` 协议（Blue 的[快速上手](/guide/)正是这样链入五个包）；
+- 开发期装本地检出用 `link:` 协议（Blue 的[贡献指南](/plugins/contributing)按脚本权威列表链入产品 closure 与验证 adapter）；
 - profile 的依赖图变化才需要重新 `add`/`install`，改代码只需重建；
 - 不想要哪个 profile，删掉 `$DSH_HOME/profiles/<name>/` 即可（自包含，无全局残留）。

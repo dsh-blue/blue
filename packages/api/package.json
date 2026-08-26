@@ -20,8 +20,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/*.js",
-    "lib/types/**/*.d.ts"
+    "lib/**/*"
   ],
   "license": "MIT",
   "repository": {

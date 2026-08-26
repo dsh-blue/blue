@@ -36,6 +36,9 @@ Scope boundaries:
   reinstalling the shell is the upgrade.
 - The `BLUE_LAUNCHER=blue` child env rebrands the app's help and exit
   epitaph; nothing else in the app tree reads it.
+- Creative mode belongs entirely to `@dsh-blue/blue`; the launcher carries
+  no preset payload and performs no host-installation writes. This keeps
+  `blue` and direct `dsh --profile` launches on the same bundle path.
 - The updater family (`blue-interaction/src/updater/`, D52) stays the
   in-app surface; the shell deliberately reimplements the ~30 lines of
   profile reading rather than adding an exports subpath to a plugin
@@ -53,3 +56,4 @@ SIGTERM→SIGKILL ladder included).
 ## Distribution contract
 
 The CLI publishes `lib/bin.js`, bilingual README files, and `npm-shrinkwrap.json`. The shrinkwrap is regenerated only by `pnpm release:lock-cli` in an isolated npm project and must contain registry records, never pnpm `link:` entries. `pnpm check:pack` verifies the executable mode, shebang, single runtime file, shrinkwrap root pin, and 30 KB launcher budget.
+

@@ -1,8 +1,7 @@
 /**
  * Tests for the `blue-pane-queue` plugin: the bottom-pinned queued-message
- * pane (rendering, live inbox events filtered to the current agent, session
- * switches) and the keyless `blue.queue.recall` action it registers to gate
- * the empty-editor Up recall in `blue-input`.
+ * pane rendering, app-owned queue notifications, session switches, and
+ * unload behavior.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -12,11 +11,10 @@ import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 // Empty type import carries the app-owned `blueSession` Context merge and
-// the `'blue/session-changed'` Events merge this spec emits.
+// the `'test/session-changed'` Events merge this spec emits.
 import type {} from '@dsh-blue/blue-app'
 import * as paneQueuePlugin from '../src/pane-queue.ts'
-import { ACTION_QUEUE_RECALL } from '../src/pane-queue.ts'
-import { fakeBlueContext, type FakeKeymap, type FakeScreen } from './fakes.ts'
+import { fakeBlueContext, type FakeScreen } from './fakes.ts'
 
 /**
  * Render the mounted (gutter-wrapped) pane as if the child saw `width`:
@@ -52,11 +50,10 @@ function message(text: string): UserMessage {
 async function mount(options: { attach?: boolean, inbox?: ReturnType<typeof fakeInbox> } = {}): Promise<{
   ctx: Context
   screen: FakeScreen
-  keymap: FakeKeymap
   agent: Agent
   fiber: { dispose(): Promise<void> }
 }> {
-  const { ctx, screen, keymap } = fakeBlueContext()
+  const { ctx, screen } = fakeBlueContext()
   await ctx.plugin(SessionStore)
   const session = ctx.sessions.create(SessionId('pane-queue-spec'))
   const agent = {
@@ -64,9 +61,9 @@ async function mount(options: { attach?: boolean, inbox?: ReturnType<typeof fake
     session,
     inbox: options.inbox ?? fakeInbox(),
   } as unknown as Agent
-  ctx.provide('blueSession', { current: options.attach === false ? null : agent, modelRef: undefined })
+  ctx.provide('testSession', { current: options.attach === false ? null : agent, modelRef: undefined })
   const fiber = await ctx.plugin(paneQueuePlugin)
-  return { ctx, screen, keymap, agent, fiber }
+  return { ctx, screen, agent, fiber }
 }
 
 describe('blue-pane-queue plugin', () => {
@@ -121,39 +118,37 @@ describe('blue-pane-queue plugin', () => {
     expect(unwrapped(screen.children[0], 80)).toEqual(['~queued ~^↑^~ turn: ~'])
   })
 
-  it('re-renders on inbox events of the current agent only', async () => {
-    const { ctx, screen, agent } = await mount()
-    const other = { id: 'other' } as unknown as Agent
-    const inserted = message('hello')
+  it('re-renders on the app-owned queue notification', async () => {
+    const { ctx, screen } = await mount()
     const before = screen.renderRequests
-    ctx.emit('agent/inbox/inserted', { agent: other, message: inserted })
-    expect(screen.renderRequests).toBe(before)
-    ctx.emit('agent/inbox/inserted', { agent, message: inserted })
+    ctx.emit('blue/queue-changed')
     expect(screen.renderRequests).toBe(before + 1)
-    ctx.emit('agent/inbox/claimed', { agent, message: inserted, turn: 1 })
-    expect(screen.renderRequests).toBe(before + 2)
-    ctx.emit('agent/inbox/discarded', { agent, message: inserted })
-    expect(screen.renderRequests).toBe(before + 3)
   })
 
-  it('follows blue/session-changed to the new agent', async () => {
+  it('follows test/session-changed to the new agent', async () => {
     const { ctx, screen } = await mount({ attach: false })
-    const next = { id: 'next', inbox: fakeInbox([message('queued')]) } as unknown as Agent
+    const next = {
+      id: 'next',
+      status: 'idle',
+      session: { header: {} },
+      inbox: fakeInbox([message('queued')]),
+    } as unknown as Agent
     const before = screen.renderRequests
-    ctx.emit('blue/session-changed', next)
+    ;(ctx.get('testSession') as { current: Agent | null }).current = next
+    ctx.emit('test/session-changed', next)
     expect(screen.renderRequests).toBe(before + 1)
     expect(unwrapped(screen.children[0], 80)).toEqual(['~queued ~^↑^~ turn: queued~'])
-    // The old agent no longer drives re-renders.
-    const stale = { id: 'stale' } as unknown as Agent
-    ctx.emit('agent/inbox/inserted', { agent: stale, message: message('x') })
-    expect(screen.renderRequests).toBe(before + 1)
   })
 
-  it('registers the keyless recall action and unregisters it with the pane on dispose', async () => {
-    const { screen, keymap, fiber } = await mount()
-    expect(keymap.list().some(action => action.id === ACTION_QUEUE_RECALL)).toBe(true)
+  it('unregisters its queue subscription and dock contribution on dispose', async () => {
+    const { ctx, screen, fiber } = await mount()
     await fiber.dispose()
-    expect(keymap.list().some(action => action.id === ACTION_QUEUE_RECALL)).toBe(false)
-    expect(screen.children).toHaveLength(0)
+    // The transcript-owned stable bottom-lane root outlives this provider;
+    // unloading removes only the queue contribution from it.
+    expect(screen.children).toHaveLength(1)
+    expect(unwrapped(screen.children[0], 80)).toEqual([])
+    const before = screen.renderRequests
+    ctx.emit('blue/queue-changed')
+    expect(screen.renderRequests).toBe(before)
   })
 })

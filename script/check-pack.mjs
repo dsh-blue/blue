@@ -1,5 +1,5 @@
 /**
- * Build the seven publishable tarballs once and verify their consumer-facing
+ * Build the ten publishable tarballs once and verify their consumer-facing
  * contract. The resulting .artifacts/pack/index.json is also the release
  * workflow's immutable publish input.
  *
@@ -54,7 +54,8 @@ function validateManifest(name, manifest, root) {
   for (const tableName of ['dependencies', 'peerDependencies', 'optionalDependencies', 'devDependencies']) {
     for (const [dependency, spec] of Object.entries(manifest[tableName] ?? {})) {
       if (typeof spec === 'string' && /^(workspace|link|file):/.test(spec)) fail(`${name}: packed ${tableName}.${dependency} leaked ${spec}`)
-      if (dependency.startsWith('@dsh-blue/') && spec !== manifest.version) {
+      const validBlueSpec = spec === manifest.version || spec === `^${manifest.version}`
+      if (dependency.startsWith('@dsh-blue/') && !validBlueSpec) {
         fail(`${name}: packed ${tableName}.${dependency} must equal ${manifest.version}, got ${spec}`)
       }
     }

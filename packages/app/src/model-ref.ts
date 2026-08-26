@@ -1,7 +1,6 @@
 /**
- * The three-tier model-selection reference the app publishes on
- * `blueSession.modelRef` — the seam that lets the interaction layer's model
- * commands read and switch the live Agent's model selection.
+ * The app-private three-tier model-selection reference behind the
+ * renderer-neutral session reader and action services.
  *
  * Reading `current` resolves three tiers in order: a pick made through this
  * reference for the live session (a `/model` switch not yet captured by a
@@ -19,7 +18,7 @@
 import type { Agent, ModelSelection, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 
 /**
- * The narrowed selection reference Blue publishes: `current` always resolves
+ * The narrowed selection reference Blue owns: `current` always resolves
  * to a selection because the default tier never fails.
  */
 export type BlueModelSelectionRef = ModelSelectionRef & { current: ModelSelection }

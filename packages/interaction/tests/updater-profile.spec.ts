@@ -261,3 +261,4 @@ describe('updater/profile snapshot and restore', () => {
     expect(() => readFileSync(join(`${backupDir(root)}.tmp`, 'stale.txt'), 'utf8')).toThrow()
   })
 })
+

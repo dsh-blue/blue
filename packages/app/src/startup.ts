@@ -28,35 +28,23 @@ export interface BlueStartupValues {
 }
 
 /**
- * The command name help shows: `blue` under the `@dsh-blue/blue-cli`
- * launcher (its `BLUE_LAUNCHER` marker, S37), the profile form for a
- * direct `dsh --profile blue` invocation.
- */
-function launcherName(): string {
-  return process.env.BLUE_LAUNCHER === 'blue' ? 'blue' : 'dsh --profile blue'
-}
-
-/**
  * This app's command: the optional task positional, the resume option, and
  * the help text.
  * @returns a fresh program, so one process can parse more than once (tests).
  */
 function blueCommand(): Command {
-  const launcher = launcherName()
-  const examples: readonly (readonly [string, string])[] = [
-    [launcher, 'open the interactive UI'],
-    [`${launcher} "fix the build"`, 'open the UI and send a task first'],
-    [`${launcher} --resume abc123`, 'resume session abc123'],
-  ]
-  const width = Math.max(...examples.map(([cmd]) => cmd.length))
-  const body = examples.map(([cmd, text]) => `  ${cmd.padEnd(width)}  ${text}`).join('\n')
   return new Command()
-    .name(launcher)
+    .name('dsh --profile blue')
     .description('Open the Blue interactive terminal UI.')
     .helpOption('-h, --help', 'show this help')
     .argument('[task...]', 'an optional task sent immediately; multiple words are joined by spaces')
     .option('--resume <id>', 'resume a persisted session instead of creating one')
-    .addHelpText('after', `\nExamples:\n${body}\n`)
+    .addHelpText('after', `
+Examples:
+  dsh --profile blue                    open the interactive UI
+  dsh --profile blue "fix the build"    open the UI and send a task first
+  dsh --profile blue --resume abc123    resume session abc123
+`)
 }
 
 /**

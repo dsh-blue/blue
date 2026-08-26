@@ -24,17 +24,24 @@ import { mkdtempTracked } from '../../core/tests/temp-dir.ts'
 import { BLUE_VERSION } from '../../api/src/index.ts'
 import * as updateCheck from '../src/updater/check.ts'
 import { updaterInternals, type InteractiveChild, type SpawnOutcome } from '../src/updater/io.ts'
-import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
-import { registerUpdateCommand, UpdatePanel } from '../src/update-command.ts'
+import { setSharedEditor } from '../src/editor-instance.ts'
+import {
+  applyUpdateProgress,
+  createUpdateProgressState,
+  registerUpdateCommand,
+  updatePanelModel,
+  updatePanelSummary,
+} from '../src/update-command.ts'
+import { FrontendPanel } from '../src/frontend-panel.ts'
+import * as settingsPlugin from '../src/settings.ts'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
-import type { BlueTheme, BlueComponents, BlueKeymap } from '@dsh-blue/blue-core'
+import { InteractionStateService } from '../src/runtime-state.ts'
 
 /** The real seams, restored after every test. */
 const REAL = { ...updaterInternals }
 
 afterEach(() => {
   Object.assign(updaterInternals, REAL)
-  clearSharedEditor()
 })
 
 /** The rc.2 release set (five packages — blue-api joins with rc.3). */
@@ -190,11 +197,12 @@ async function mountWorld(options: {
 
   const blue = options.withScreen === false ? undefined : fakeBlueContext()
   const ctx = blue?.ctx ?? new Context()
+  if (blue === undefined) new InteractionStateService(ctx, settingsPlugin.DEFAULT_SETTINGS)
   await ctx.plugin(SessionStore)
   await ctx.plugin(CommandRuntime)
   const session = ctx.sessions.create(SessionId('update-spec'))
   const agent = { id: session.id, session, status: options.agentStatus ?? 'idle' } as unknown as Agent
-  ctx.provide('blueSession', { current: options.sessionCurrent === 'null' ? null : agent, modelRef: undefined })
+  ctx.provide('testSession', { current: options.sessionCurrent === 'null' ? null : agent, modelRef: undefined })
   const dispose = registerUpdateCommand(ctx)
   return {
     ctx,
@@ -375,6 +383,7 @@ describe('/update early verdicts', () => {
     expect(rows).toContain('nothing was changed')
     // Esc closes the blocked panel through the bound restore path.
     const component = world.screen.overlays.at(-1)?.component as { handleInput(data: string): void } | undefined
+    dispatchUnknownPanelAction(component)
     expect(() => component?.handleInput(KEY.escape)).not.toThrow()
     world.dispose()
   })
@@ -412,6 +421,7 @@ describe('/update early verdicts', () => {
       }
     }
     const settings = new MemorySettings(world.ctx)
+    settingsPlugin.apply(world.ctx)
     updateCheck.apply(world.ctx)
     await new Promise(resolve => setTimeout(resolve, 5))
     await settings.update(settingsNamespace('blue'), { updateChannel: 'beta' })
@@ -449,6 +459,7 @@ describe('/update confirm and swap', () => {
     // restore path.
     const panelOverlay = world.screen.overlays.at(-1)?.component as { handleInput(data: string): void } | undefined
     expect(panelOverlay).toBeDefined()
+    dispatchUnknownPanelAction(panelOverlay)
     panelOverlay!.handleInput(KEY.escape)
     world.dispose()
   })
@@ -685,7 +696,7 @@ describe('/update confirm and swap', () => {
   it('flashes the registry-check progress and retry notices in the hint line', async () => {
     const world = await mountWorld()
     const notices: string[] = []
-    setSharedEditor({
+    setSharedEditor(world.ctx, {
       editor: world.ctx.get('blueComponents')!.createEditor(),
       submitPrompt: () => {},
       notice: text => notices.push(text),
@@ -725,6 +736,7 @@ describe('/update confirm and swap', () => {
     // apply() registers the 'blue' settings namespace; the boot check's
     // notice mounts as a dock child, never an overlay, so it cannot race
     // the confirm form below.
+    settingsPlugin.apply(world.ctx)
     updateCheck.apply(world.ctx)
     await new Promise(resolve => setTimeout(resolve, 5))
     await settings.update(settingsNamespace('blue'), { updateChannel: '' })
@@ -819,95 +831,72 @@ function overlayRows(screen: FakeScreen): string {
   return plain(component?.render(120) ?? [])
 }
 
-describe('UpdatePanel', () => {
+/** Dispatch a deliberately unknown action through a mounted generic panel. */
+function dispatchUnknownPanelAction(component: unknown): void {
+  ;(component as { options: { onAction(action: { readonly kind: string }): void } })
+    .options.onAction({ kind: 'fixture.unknown' })
+}
 
-  /** Panel fakes from the shared context. */
-  function panelFakes() {
-    const { theme, components, keymap, screen } = fakeBlueContext()
-    return {
-      theme: theme as unknown as BlueTheme,
-      components: components as unknown as BlueComponents,
-      keymap: keymap as unknown as BlueKeymap,
-      requestRender: vi.fn(() => screen.requestRender()),
-    }
+describe('update panel model', () => {
+  function mount(state = createUpdateProgressState()) {
+    const display = fakeBlueContext()
+    const closed = vi.fn()
+    const panel = new FrontendPanel({
+      ...display,
+      model: () => updatePanelModel(state, '0.1.0-rc.6', '0.1.0-rc.7'),
+      onAction: vi.fn(),
+      onClose: closed,
+    })
+    return { state, panel, closed }
   }
 
-  it('renders the step ladder, refuses Esc mid-swap, and closes after settle', () => {
-    const fakes = panelFakes()
-    const panel = new UpdatePanel({ ...fakes, fromVersion: '0.1.0-rc.6', toVersion: '0.1.0-rc.7' })
-    // Before anything settles, the close summary is neutral.
-    expect(panel.settledSummary()).toBe('update panel closed')
-    panel.applyProgress({ step: 'snapshot', state: 'ok' })
-    panel.applyProgress({ step: 'install', state: 'start' })
-    const closed = vi.fn()
-    panel.bindClose(closed)
-    // Mid-swap: Esc and Enter are refused.
+  it('renders the step ladder, refuses close mid-swap, and closes after settle', () => {
+    const { state, panel, closed } = mount()
+    expect(updatePanelSummary(state)).toBe('update panel closed')
+    applyUpdateProgress(state, { step: 'snapshot', state: 'ok' })
+    applyUpdateProgress(state, { step: 'install', state: 'start' })
     panel.handleInput(KEY.escape)
     panel.handleInput(KEY.enter)
     expect(closed).not.toHaveBeenCalled()
-    expect(fakes.requestRender).toHaveBeenCalled()
     let rows = plain(panel.render(80))
     expect(rows).toContain('v0.1.0-rc.6 → v0.1.0-rc.7')
     expect(rows).toContain('✓ snapshot')
     expect(rows).toContain('… install')
     expect(rows).not.toContain('rollback')
-    panel.settle({
-      kind: 'success',
-      fromVersion: '0.1.0-rc.6',
-      toVersion: '0.1.0-rc.7',
-      message: 'updated — restart dsh to apply',
-      logPath: '/tmp/update.log',
-    })
+    expect(rows).toContain('updating - do not close')
+    state.outcome = {
+      kind: 'success', fromVersion: '0.1.0-rc.6', toVersion: '0.1.0-rc.7',
+      message: 'updated — restart dsh to apply', logPath: '/tmp/update.log',
+    }
     rows = plain(panel.render(80))
     expect(rows).toContain('restart dsh to apply')
     expect(rows).toContain('log: /tmp/update.log')
-    expect(rows).toContain('Esc to close')
     panel.handleInput('\r')
     expect(closed).toHaveBeenCalledOnce()
-    expect(panel.settledSummary()).toContain('restart dsh to apply')
+    expect(updatePanelSummary(state)).toContain('restart dsh to apply')
   })
 
-  it('renders a blocked verdict with close keys and a neutral summary', () => {
-    const fakes = panelFakes()
-    const panel = new UpdatePanel({ ...fakes, fromVersion: '0.1.0-rc.6', toVersion: '0.1.0-rc.7' })
-    panel.showBlocking('the profile mixes link/file specs (@dsh-blue/blue)\nrepair: dsh plugin --profile <name> add …')
-    const rows = plain(panel.render(100))
-    expect(rows).toContain('the profile mixes link/file specs (@dsh-blue/blue)')
-    expect(rows).toContain('repair: dsh plugin --profile <name> add …')
-    expect(rows).toContain('nothing was changed')
-    expect(rows).toContain('Esc to close')
-    expect(panel.settledSummary()).toContain('update blocked')
-    const closed = vi.fn()
-    panel.bindClose(closed)
-    panel.handleInput(KEY.escape)
-    expect(closed).toHaveBeenCalledOnce()
-    panel.invalidate()
-  })
+  it('renders blocked and rollback outcomes and summarizes failures', () => {
+    const blocked = createUpdateProgressState()
+    blocked.blockedMessage = 'the profile mixes link/file specs (@dsh-blue/blue)\nrepair the profile'
+    expect(updatePanelModel(blocked, 'old', 'new')).toMatchObject({ mode: 'error', dismissible: true })
+    expect(updatePanelSummary(blocked)).toContain('update blocked')
 
-  it('renders the rollback row and its fail mark, and summarizes failures', () => {
-    const fakes = panelFakes()
-    const panel = new UpdatePanel({ ...fakes, fromVersion: '0.1.0-rc.6', toVersion: '0.1.0-rc.7' })
-    panel.applyProgress({ step: 'smoke-boot', state: 'fail' })
-    panel.applyProgress({ step: 'rollback', state: 'ok' })
-    panel.settle({
-      kind: 'rolled-back',
-      fromVersion: '0.1.0-rc.6',
-      toVersion: '0.1.0-rc.7',
-      message: 'boot smoke failed; rolled back',
-      logPath: '/tmp/update.log',
-    })
+    const { state, panel, closed } = mount()
+    applyUpdateProgress(state, { step: 'smoke-boot', state: 'fail' })
+    applyUpdateProgress(state, { step: 'rollback', state: 'ok' })
+    state.outcome = {
+      kind: 'rolled-back', fromVersion: '0.1.0-rc.6', toVersion: '0.1.0-rc.7',
+      message: 'boot smoke failed; rolled back', logPath: '/tmp/update.log',
+    }
     const rows = plain(panel.render(80))
     expect(rows).toContain('✗ smoke: boot')
     expect(rows).toContain('✓ rollback')
-    expect(panel.settledSummary()).toContain('did not complete')
-    // q and Q close too once settled; an unrelated key does nothing.
-    const closed = vi.fn()
-    panel.bindClose(closed)
+    expect(updatePanelSummary(state)).toContain('did not complete')
     panel.handleInput('x')
     expect(closed).not.toHaveBeenCalled()
     panel.handleInput('q')
     panel.handleInput('Q')
     expect(closed).toHaveBeenCalledTimes(2)
-    panel.invalidate()
   })
 })

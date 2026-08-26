@@ -22,10 +22,12 @@ interface AliasEntry {
   readonly aliases: readonly string[]
 }
 
-/** Alias name → the entry that owns it. */
-const byAlias = new Map<string, AliasEntry>()
-/** Canonical name → its entry. */
-const byCanonical = new Map<string, AliasEntry>()
+/** Frontend-tree-scoped command alias registry. */
+export class CommandAliasRegistry {
+  /** Alias name → the entry that owns it. */
+  private readonly byAlias = new Map<string, AliasEntry>()
+  /** Canonical name → its entry. */
+  private readonly byCanonical = new Map<string, AliasEntry>()
 
 /**
  * Record the aliases of one canonical command. Re-registering the same
@@ -37,35 +39,35 @@ const byCanonical = new Map<string, AliasEntry>()
  * @param aliases - the extra names the command answers to, without slashes.
  * @returns the disposer removing only this registration's entries.
  */
-export function registerCommandAliases(canonical: string, aliases: readonly string[]): () => void {
-  if (aliases.includes(canonical)) {
-    throw new Error(`command alias: /${canonical} cannot be its own alias`)
-  }
-  const previous = byCanonical.get(canonical)
-  for (const alias of aliases) {
-    const claimed = byAlias.get(alias)
-    if (claimed !== undefined && claimed !== previous) {
-      throw new Error(`command alias: /${alias} is already an alias of /${claimed.canonical}`)
+  register(canonical: string, aliases: readonly string[]): () => void {
+    if (aliases.includes(canonical)) {
+      throw new Error(`command alias: /${canonical} cannot be its own alias`)
     }
-  }
-  if (previous !== undefined) {
-    for (const alias of previous.aliases) {
-      // The conflict check above already rejected an alias held by another
-      // canonical, so a replaced entry's aliases can only point back at it.
-      /* v8 ignore next -- the stale-pointer branch is unreachable */
-      if (byAlias.get(alias) === previous) byAlias.delete(alias)
-    }
-  }
-  const entry: AliasEntry = { canonical, aliases: [...aliases] }
-  for (const alias of aliases) byAlias.set(alias, entry)
-  byCanonical.set(canonical, entry)
-  return () => {
-    if (byCanonical.get(canonical) === entry) byCanonical.delete(canonical)
+    const previous = this.byCanonical.get(canonical)
     for (const alias of aliases) {
-      if (byAlias.get(alias) === entry) byAlias.delete(alias)
+      const claimed = this.byAlias.get(alias)
+      if (claimed !== undefined && claimed !== previous) {
+        throw new Error(`command alias: /${alias} is already an alias of /${claimed.canonical}`)
+      }
+    }
+    if (previous !== undefined) {
+      for (const alias of previous.aliases) {
+        // The conflict check above already rejected an alias held by another
+        // canonical, so a replaced entry's aliases can only point back at it.
+        /* v8 ignore next -- the stale-pointer branch is unreachable */
+        if (this.byAlias.get(alias) === previous) this.byAlias.delete(alias)
+      }
+    }
+    const entry: AliasEntry = { canonical, aliases: [...aliases] }
+    for (const alias of aliases) this.byAlias.set(alias, entry)
+    this.byCanonical.set(canonical, entry)
+    return () => {
+      if (this.byCanonical.get(canonical) === entry) this.byCanonical.delete(canonical)
+      for (const alias of aliases) {
+        if (this.byAlias.get(alias) === entry) this.byAlias.delete(alias)
+      }
     }
   }
-}
 
 /**
  * Resolve one typed name to its canonical command name.
@@ -73,18 +75,18 @@ export function registerCommandAliases(canonical: string, aliases: readonly stri
  * @returns the canonical name when `name` is a registered alias, else
  *   `undefined` — a canonical name itself is not its own alias.
  */
-export function canonicalOf(name: string): string | undefined {
-  return byAlias.get(name)?.canonical
-}
+  canonicalOf(name: string): string | undefined {
+    return this.byAlias.get(name)?.canonical
+  }
 
 /**
  * The aliases of one command, queried by canonical or alias name alike.
  * @param name - a command name, canonical or alias, without a slash.
  * @returns the command's aliases; empty for an unknown or alias-less command.
  */
-export function aliasesOf(name: string): readonly string[] {
-  return byCanonical.get(byAlias.get(name)?.canonical ?? name)?.aliases ?? []
-}
+  aliasesOf(name: string): readonly string[] {
+    return this.byCanonical.get(this.byAlias.get(name)?.canonical ?? name)?.aliases ?? []
+  }
 
 /**
  * Attach each command's aliases for the shared fuzzy filter, so a query
@@ -94,8 +96,14 @@ export function aliasesOf(name: string): readonly string[] {
  * @param commands - the registered command descriptors.
  * @returns the same descriptors with their alias lists attached.
  */
-export function withCommandAliases<T extends { readonly name: string }>(
-  commands: readonly T[],
-): Array<T & { readonly aliases: readonly string[] }> {
-  return commands.map(command => ({ ...command, aliases: aliasesOf(command.name) }))
+  withCommandAliases<T extends { readonly name: string }>(
+    commands: readonly T[],
+  ): Array<T & { readonly aliases: readonly string[] }> {
+    return commands.map(command => ({ ...command, aliases: this.aliasesOf(command.name) }))
+  }
+
+  clear(): void {
+    this.byAlias.clear()
+    this.byCanonical.clear()
+  }
 }

@@ -21,7 +21,7 @@ script/install-dev.sh
 # 覆盖项：DSH_BIN=/path/to/dsh PROFILE=my-profile DSH_HOME=/custom/home script/install-dev.sh
 ```
 
-脚本会构建整个 workspace，并把五个包 link 安装进 dsh profile。
+脚本会构建整个 workspace，并按 `script/install-dev.sh` 的权威列表 link 安装 11 个包：产品 plugin closure 加 OpenPencil/Lark validation adapter。
 
 ## 手动安装（等价步骤）
 
@@ -31,23 +31,29 @@ pnpm install && pnpm run build   # lib/ 是每个包的运行时入口
 # 一次性 profile 设置：
 dsh plugin --profile blue-dev add \
   link:/path/to/blue/packages/bundle/blue \
+  link:/path/to/blue/packages/api \
+  link:/path/to/blue/packages/frontend \
+  link:/path/to/blue/packages/harness-adapter \
+  link:/path/to/blue/packages/conversation \
   link:/path/to/blue/packages/core \
   link:/path/to/blue/packages/interaction \
   link:/path/to/blue/packages/transcript \
+  link:/path/to/blue/packages/openpencil \
+  link:/path/to/blue/packages/lark \
   link:/path/to/blue/packages/app
 
 dsh --profile blue-dev [task]           # 执行任务，或进入交互模式
 dsh --profile blue-dev --resume <id>    # 恢复一个已持久化的会话
 ```
 
-**为什么要 link 五个包**：四个库包是 bundle 的 `workspace:^` 依赖，在 workspace 之外无法解析。`dsh plugin` 原样转发给 pnpm，`link:` 协议把检出本身安装为符号链接；链入的 bundle 再经 profile 自己的 `node_modules` 链接解析它的兄弟包。四个非 bundle 链接是普通依赖——各会有一条 `declares no dsh.bundle` 警告，属预期行为（它们是库，不是装配层）。
+**为什么 link 11 个包**：bundle 的本地 `workspace:^` closure 在 workspace 外需要显式 link，OpenPencil/Lark 同时进入 dogfood validation lane。十个非 bundle 链接会出现 `declares no dsh.bundle` 警告，属预期行为。`script/install-dev.sh` 是列表权威来源；context/remote 用独立 fixture，不装入产品 profile。
 
 ::: tip 三条泳道，别混
 - **`blue`** = 生产 profile,**只走 npm 安装**（`@dsh-blue/blue@rc` / 精确版本号）。永远不要往里 `link:`——后续 npm 升级只会覆盖点名的包，残留的链接悬空后启动即 `ERR_MODULE_NOT_FOUND`（且 `pnpm add` 对混装零告警）。
 - **`blue-dev`** = 本检出（主仓 master）的 link 开发 profile，`script/install-dev.sh` 的默认目标。
 - **`blue-<tag>`** = worktree 验收 profile（`PROFILE=blue-<tag> script/install-dev.sh` 从 worktree 内跑）；分支合并后连同 profile 目录一起删。
 
-若你的 profile 在包改名之前链过（当时包名为 `@dsh-blue/blue*`），或混装过 link 与 npm 包：最省事的修复是把六项一起精确版本重装——`dsh plugin --profile <name> add @dsh-blue/blue@<v> @dsh-blue/blue-core@<v> … @deepseek-ai/dsh-session-title-all-prompts-llm@0.1.1-rc.2`（或干脆删除 profile 目录重来）。
+若你的 profile 在包改名之前链过（当时包名为 `@dsh-blue/blue*`），或混装过 link 与 npm 包：开发 profile 最省事的修复是删除 profile 目录后重跑 `script/install-dev.sh`；生产 profile 则删除后重新安装 `@dsh-blue/blue@<v>`，让包管理器一次解析完整依赖闭包。
 :::
 
 ## 迭代开发

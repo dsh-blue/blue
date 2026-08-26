@@ -27,9 +27,3 @@ features:
     link: /en/plugins/
     linkText: Learn more →
 ---
-
-## Demo
-
-<p align="center">
-  <video src="/blue-demo.mp4" width="720" autoplay loop muted playsinline controls></video>
-</p>

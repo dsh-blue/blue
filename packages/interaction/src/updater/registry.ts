@@ -253,3 +253,4 @@ export function publishedAt(packument: Packument, version: string): number | und
   const parsed = Date.parse(stamp)
   return Number.isNaN(parsed) ? undefined : parsed
 }
+

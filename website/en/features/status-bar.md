@@ -1,6 +1,6 @@
 # Status bar
 
-The footer — the terminal's bottom two rows — is a **registry-driven** surface: not a hardcoded component, but entries any plugin can register through `blueStatus`. A shell component arranges entries into at most two bands: row one with a left and right cluster, row two with a right cluster.
+The footer is a **`StatusModel`-driven** two-row surface. Built-in producers publish readonly models to `BlueStatusModelService`; third-party plugins contribute renderer-neutral `BlueView` values through the stable `bluePluginHost` status capability, and the view bridge maps them into the same model path.
 
 ## Layout and gray tiers
 
@@ -28,22 +28,28 @@ A running agent's status is **not** in the footer — that's the activity pane's
 
 ## Ordering and yielding
 
-- same band and cluster sort by ascending priority (registration order on ties);
+- the same band and cluster sort by ascending priority, then stable id;
 - right clusters right-align and yield before left ones under width pressure;
 - each entry truncates within its cluster budget; entries that fit neither row drop lowest-priority-first.
 
 ## Contributing
 
-Registering an entry means implementing `BlueStatusEntry`:
+A third-party plugin opens the status capability, then registers a `BlueStatusContribution`:
 
 ```ts
-ctx.blueStatus.register({
-  id: 'my-plugin.build',        // stable dotted plugin-owned string; duplicates rejected
-  priority: 15,                 // built-ins occupy 0/2/5/10/20/30 — gaps are yours
-  row: 1,                       // band: 1 (default) or 2
-  align: 'left',                // side: 'left' (default) or 'right'
-  render: (width) => myLine,    // one styled line within budget; '' sits this frame out
+const opened = ctx.bluePluginHost.open(ctx, {
+  id: 'my-plugin.build',
+  api: '^1.0.0',
+  capabilities: ['status'],
 })
+if (!opened.ok) throw new Error(opened.message)
+
+const registered = opened.value.status!.register({
+  id: 'build.status',
+  priority: 15,
+  render: () => ({ kind: 'text', content: myLine, tone: 'muted' }),
+})
+if (!registered.ok) throw new Error(registered.message)
 ```
 
-Wrap registration in `ctx.effect` — the entry unregisters with the plugin fiber.
+The host binds the registration to the caller's Fiber, so the entry disappears on unload. Public status contributions currently enter the default footer lane; row/alignment are internal `StatusModel` layout policy, not a third-party renderer contract.

@@ -67,3 +67,4 @@ describe('nestedDsh', () => {
     expect(nested.binJs).toMatch(/@deepseek-ai[/\\]dsh[/\\]lib[/\\]bin\.js$/)
   })
 })
+

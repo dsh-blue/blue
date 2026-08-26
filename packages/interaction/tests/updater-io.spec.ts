@@ -256,3 +256,4 @@ describe('updater/io environment passthroughs', () => {
     expect(updaterInternals.now()).toBeGreaterThan(0)
   })
 })
+

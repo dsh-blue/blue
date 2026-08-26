@@ -1,0 +1,15 @@
+# `@dsh-blue/blue-conversation`
+
+Harness-domain projection for the durable human transcript. This package depends only on official Cordis, session, and session-projection contracts; it must never depend on a Blue frontend or renderer package. `conversationProjectionDefinition` folds committed session events into the client-visible `blueConversation` whole value. Surface replacements are intentionally ignored through `isAppendSurfaceEvent()`: model-visible compaction may replace `Session.surface`, but it must not erase transcript rows a human already saw. The sole exception is Blue's empty interrupted non-append `assistant/message` retraction marker: it removes every row owned by that turn, records the turn in state, and rejects late events that would otherwise resurrect it.
+
+The projection owns replay/live convergence for human messages, streamed and finalized assistant text/reasoning, image references, tool call/result pairing, turn failures, and interruption markers. Tool entries carry `channel: 'todo' | 'agents' | 'transcript'` so frontend feature plugins can route them without re-reading the session log. State is plain JSON and state-versioned for the official projection cache.
+
+`blueConversationFacts` is the companion whole-value projection for status and
+dock facts: phase/lifecycle, token usage, request model/provider metadata, todo
+snapshots, and subagent call/result summaries. It is registered in the same
+Fiber and uses the same replay/live watermark, so consumers read facts through
+`sessionProjections` instead of folding `session/event` themselves.
+
+Scope is one projection cell per Harness session. The official `SessionProjectionRegistry` owns eager drive, checkpointing, watermarking, subscriptions, and Fiber removal. After registration the plugin publishes the effect-scoped `blueConversationProjection` readiness capability; consumers inject it so their initial resumed-session snapshot cannot run before the projection exists. The marker and projection disappear with the same Fiber. The package owns no timer, renderer object, Agent/Session reference, mutable module singleton, action, or direct event subscription.
+
+Deletion condition: remove this package only when Harness publishes an equivalent append-origin conversation projection covering the same replay/live/tool/thinking/image/interruption contract on every supported line. A Blue adapter may then consume that upstream key directly.

@@ -15,22 +15,11 @@ import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { SkillSummary } from '@deepseek-ai/dsh-skill'
 import * as inputPlugin from '../src/input-plugin.ts'
-import { registerCommandAliases } from '../src/command-meta.ts'
 import { __setCatalogForTest } from '../src/skills-catalog.ts'
 import * as paneQueuePlugin from '../src/pane-queue.ts'
 import { getSharedEditor, mountEditorReplacement } from '../src/editor-instance.ts'
-import { clearDraft, getStashedDraft, stashHistory } from '../src/draft-stash.ts'
 import { setExternalEditorLauncher } from '../src/external-editor.ts'
 import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeBlueEditor, type FakeScreen } from './fakes.ts'
-
-// The draft stash is module state: a test that leaves unsubmitted text
-// or submitted history would see it restored into the next test's
-// freshly mounted editor.
-afterEach(() => {
-  clearDraft()
-  stashHistory([])
-  __setCatalogForTest(undefined)
-})
 
 /** One settled-skill double for the catalog seam. */
 function skillOf(name: string): SkillSummary {
@@ -71,6 +60,7 @@ async function mount(options: {
   appExit?: (code: number) => void
   inbox?: ReturnType<typeof fakeInbox>
   modelRef?: unknown
+  retract?: (messageId: string) => boolean
 } = {}): Promise<{
   ctx: Context
   screen: FakeScreen
@@ -83,6 +73,10 @@ async function mount(options: {
   fiber: { dispose(): Promise<void> }
 }> {
   const { ctx, screen } = fakeBlueContext()
+  // This suite exercises only the editor slot. The shared fake now owns the
+  // transcript dock service's stable empty bottom root; remove that unrelated
+  // fixture root so the existing slot assertions stay local to blue-input.
+  for (const child of [...screen.children]) screen.removeChild(child)
   await ctx.plugin(SessionStore)
   await ctx.plugin(CommandRuntime)
   const session = ctx.sessions.create(SessionId('input-spec'))
@@ -98,7 +92,8 @@ async function mount(options: {
     steer,
     inbox: options.inbox ?? fakeInbox(),
   } as unknown as Agent
-  ctx.provide('blueSession', { current: options.withAgent === false ? null : agent, modelRef: options.modelRef ?? undefined })
+  ctx.provide('testSession', { current: options.withAgent === false ? null : agent, modelRef: options.modelRef ?? undefined })
+  if (options.retract !== undefined) ctx.provide('blueRetractions', { tryRetract: options.retract })
   if (options.appExit !== undefined) ctx.provide('appExit', options.appExit)
   const fiber = await ctx.plugin(inputPlugin)
   const editor = screen.children[0] as FakeBlueEditor
@@ -134,11 +129,49 @@ describe('blue-input plugin', () => {
     expect(screen.children).toEqual([transcriptRow, editor, hint])
   })
 
+  it('pauses tail-follow, advertises new messages, and resumes on End', async () => {
+    const { ctx, screen, editor, hint, fiber } = await mount()
+    screen.contentScrollResult = true
+    screen.contentPaused = true
+    ctx.emit('blue/transcript-content-changed', screen.contentChanged())
+    expect(hint.render(80)).toEqual(['~new messages available · press End to follow~'])
+
+    type(editor, 'draft')
+    expect(screen.sendContentInput('\x1b[5~')).toBe(true)
+    expect(screen.sendContentInput('\x1b[6~')).toBe(true)
+    expect(screen.sendContentInput(KEY.up)).toBe(false)
+    expect(screen.sendContentInput(KEY.down)).toBe(false)
+    expect(screen.contentScrolls).toEqual([
+      { direction: 'up', amount: 20 },
+      { direction: 'down', amount: 20 },
+    ])
+    expect(screen.sendContentInput('\x1b[F')).toBe(false)
+    editor.setText('')
+    expect(screen.sendContentInput('\x1b[F')).toBe(true)
+    expect(screen.followCount).toBe(1)
+    expect(screen.contentPaused).toBe(false)
+    expect(hint.render(80)).toEqual([])
+
+    await fiber.dispose()
+    expect(screen.sendContentInput('\x1b[F')).toBe(false)
+  })
+
   it('publishes the editor and submit router through the shared reference', async () => {
-    const { editor } = await mount()
-    const shared = getSharedEditor()
+    const { ctx, editor } = await mount()
+    const shared = getSharedEditor(ctx)
     expect(shared?.editor).toBe(editor)
     expect(shared?.submitPrompt).toBeTypeOf('function')
+    type(editor, 'clear me')
+    shared?.abortPrompt?.()
+    expect(editor.getText()).toBe('')
+  })
+
+  it('clears a navigation notice when the session switch settles', async () => {
+    const { ctx, hint, agent } = await mount()
+    getSharedEditor(ctx)?.notice?.('creating rewind branch...')
+    expect(hint.render(80)).toEqual(['~creating rewind branch...~'])
+    ctx.emit('test/session-changed', agent)
+    expect(hint.render(80)).toEqual([])
   })
 
   it('submits plain text as a user follow-up message, records history, and clears the buffer', async () => {
@@ -166,9 +199,20 @@ describe('blue-input plugin', () => {
     expect(editor.history).toEqual([])
   })
 
+  it('restores the action failure notice when a follow-up is rejected', async () => {
+    const { ctx, editor, hint, followup } = await mount()
+    ;(ctx.blueSessionActions as unknown as {
+      followup: () => { ok: false, code: 'BLUE_ACTION_REJECTED', message: string }
+    }).followup = () => ({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'follow-up rejected' })
+    type(editor, 'cannot send')
+    editor.handleInput(KEY.enter)
+    expect(followup).not.toHaveBeenCalled()
+    expect(hint.render(80)).toEqual(['~!follow-up rejected!~'])
+  })
+
   it('rewrites #skill tokens on the follow-up path while history keeps the original', async () => {
-    const { editor, followup } = await mount()
-    __setCatalogForTest([skillOf('deploy-check')])
+    const { ctx, editor, followup } = await mount()
+    __setCatalogForTest(ctx, [skillOf('deploy-check')])
     type(editor, 'run #deploy-check now')
     editor.handleInput(KEY.enter)
     expect(followup).toHaveBeenCalledOnce()
@@ -182,8 +226,8 @@ describe('blue-input plugin', () => {
   })
 
   it('passes unknown #tags through untouched on the follow-up path', async () => {
-    const { editor, followup } = await mount()
-    __setCatalogForTest([skillOf('deploy-check')])
+    const { ctx, editor, followup } = await mount()
+    __setCatalogForTest(ctx, [skillOf('deploy-check')])
     // The unknown tag stays; the trailing period breaks the recognized
     // token's end boundary, so it stays too.
     type(editor, 'see #unknown-tag and #deploy-check.')
@@ -226,7 +270,7 @@ describe('blue-input plugin', () => {
       description: 'Exit Blue',
       handler: (invocation) => ({ kind: 'success', text: `bye${invocation.rawInput}` }),
     })
-    const clear = registerCommandAliases('quit', ['q', 'exit'])
+    const clear = ctx.blueInteractionState.aliases.register('quit', ['q', 'exit'])
     try {
       // `/q now` reaches the `/quit` handler with its raw input intact — the
       // kimi resolution: the alias is not a registered command, the rewrite
@@ -257,6 +301,9 @@ describe('blue-input plugin', () => {
       description: 'Poke the agent',
       handler: () => ({ kind: 'success' as const, text: 'poked' }),
     })
+    const commands = ctx.blueSessionActions.commands()
+    ;(ctx.blueSessionActions as unknown as { commands: () => readonly unknown[] }).commands
+      = () => [...commands, { name: 'plain' }]
     // A match (bare slash or a prefix) renders nothing whether the dropdown
     // is up or closed — the S34 dogfood verdict retired the discovery tier
     // that double-rendered the catalog next to it; only the empty-result
@@ -267,6 +314,8 @@ describe('blue-input plugin', () => {
     expect(hint.render(80)).toEqual([])
     editor.showingAutocomplete = false
     type(editor, 'po')
+    expect(hint.render(80)).toEqual([])
+    editor.setText('/plain')
     expect(hint.render(80)).toEqual([])
     hint.invalidate()
   })
@@ -351,6 +400,36 @@ describe('blue-input plugin', () => {
     await vi.waitFor(() => {
       expect(hint.render(80)).toEqual(['~!boom!~'])
     })
+  })
+
+  it('uses the generic command failure notice when an error has no text', async () => {
+    const { ctx, editor, hint } = await mount()
+    ;(ctx.blueSessionActions as unknown as {
+      executeCommand: () => Promise<{ result: { kind: 'error' } }>
+    }).executeCommand = async () => ({ result: { kind: 'error' } })
+    type(editor, '/fail-quietly')
+    editor.handleInput(KEY.enter)
+    await vi.waitFor(() => {
+      expect(hint.render(80)).toEqual(['~!command failed!~'])
+    })
+  })
+
+  it('flattens a multi-line command result into one terminal row', async () => {
+    const { ctx, editor, hint } = await mount()
+    ctx.commands.register({
+      name: 'multiline',
+      description: 'Return a structured status notice',
+      handler: () => ({
+        kind: 'success',
+        text: 'Goal created\r\nStatus: active\n\n  Activation: armed',
+      }),
+    })
+    type(editor, '/multiline')
+    editor.handleInput(KEY.enter)
+    await vi.waitFor(() => {
+      expect(hint.render(120)).toEqual(['~Goal created · Status: active · Activation: armed~'])
+    })
+    expect(hint.render(120)[0]).not.toMatch(/[\r\n]/u)
   })
 
   it('drops the result notice when the fiber unloads before the command settles', async () => {
@@ -470,13 +549,13 @@ describe('blue-input plugin', () => {
   })
 
   it('unmounts the editor, clears the shared reference, and releases focus on dispose', async () => {
-    const { screen, fiber } = await mount()
+    const { ctx, screen, fiber } = await mount()
     expect(screen.children).toHaveLength(2)
-    expect(getSharedEditor()).toBeDefined()
+    expect(getSharedEditor(ctx)).toBeDefined()
     await fiber.dispose()
     expect(screen.children).toHaveLength(0)
     expect(screen.focused).toBeNull()
-    expect(getSharedEditor()).toBeUndefined()
+    expect(getSharedEditor(ctx)).toBeUndefined()
   })
 
   it('restores the prompt history across the theme-swap reload', async () => {
@@ -490,8 +569,9 @@ describe('blue-input plugin', () => {
     first.editor.handleInput(KEY.enter)
     expect(first.editor.history).toEqual(['/theme dark', 'hello'])
     await first.fiber.dispose()
-    const second = await mount()
-    expect(second.editor.history).toEqual(['/theme dark', 'hello'])
+    await first.ctx.plugin(inputPlugin)
+    const second = first.screen.children[0] as FakeBlueEditor
+    expect(second.history).toEqual(['/theme dark', 'hello'])
   })
 
   describe('editor-slot swap (D30 dialog mount)', () => {
@@ -507,9 +587,9 @@ describe('blue-input plugin', () => {
     }
 
     it('hides the editor for the panel and restores it with focus on dispose', async () => {
-      const { screen, editor, hint } = await mount()
+      const { ctx, screen, editor, hint } = await mount()
       const first = panel('first')
-      const restore = mountEditorReplacement(first)
+      const restore = mountEditorReplacement(ctx, first)
       // The editor and hint left the dock; the panel took the slot and
       // the focus.
       expect(screen.children).toEqual([first])
@@ -520,11 +600,11 @@ describe('blue-input plugin', () => {
     })
 
     it('stacks nested panels: disposing the top refocuses the one beneath', async () => {
-      const { screen, editor } = await mount()
+      const { ctx, screen, editor } = await mount()
       const outer = panel('outer')
       const inner = panel('inner')
-      const restoreOuter = mountEditorReplacement(outer)
-      const restoreInner = mountEditorReplacement(inner)
+      const restoreOuter = mountEditorReplacement(ctx, outer)
+      const restoreInner = mountEditorReplacement(ctx, inner)
       expect(screen.children).toEqual([outer, inner])
       restoreInner()
       // The outer panel stays mounted and regains focus.
@@ -536,11 +616,11 @@ describe('blue-input plugin', () => {
     })
 
     it('keeps the editor hidden when the bottom panel of a stack disposes first', async () => {
-      const { screen, editor } = await mount()
+      const { ctx, screen, editor } = await mount()
       const outer = panel('outer')
       const inner = panel('inner')
-      const restoreOuter = mountEditorReplacement(outer)
-      const restoreInner = mountEditorReplacement(inner)
+      const restoreOuter = mountEditorReplacement(ctx, outer)
+      const restoreInner = mountEditorReplacement(ctx, inner)
       // Out-of-order: the first-mounted panel goes while the top stays.
       restoreOuter()
       expect(screen.children).toEqual([inner])
@@ -550,9 +630,9 @@ describe('blue-input plugin', () => {
     })
 
     it('unmounts an open panel with the fiber and turns its disposer into a no-op', async () => {
-      const { screen, fiber } = await mount()
+      const { ctx, screen, fiber } = await mount()
       const open = panel('open')
-      const restore = mountEditorReplacement(open)
+      const restore = mountEditorReplacement(ctx, open)
       await fiber.dispose()
       // The teardown unmounted the panel; the late disposer must not
       // resurrect the editor against the disposed fiber's screen handle.
@@ -563,9 +643,9 @@ describe('blue-input plugin', () => {
     })
 
     it('keeps the editor buffer across a swap round-trip', async () => {
-      const { editor } = await mount()
+      const { ctx, editor } = await mount()
       type(editor, 'draft survives')
-      const restore = mountEditorReplacement(panel('modal'))
+      const restore = mountEditorReplacement(ctx, panel('modal'))
       restore()
       expect(editor.getText()).toBe('draft survives')
     })
@@ -575,16 +655,16 @@ describe('blue-input plugin', () => {
       const swaps: boolean[] = []
       ctx.on('blue/editor-slot-swapped', occupied => swaps.push(occupied))
 
-      const restoreOuter = mountEditorReplacement(panel('outer'))
+      const restoreOuter = mountEditorReplacement(ctx, panel('outer'))
       // A nested panel does not re-emit: the slot stayed occupied.
-      const restoreInner = mountEditorReplacement(panel('inner'))
+      const restoreInner = mountEditorReplacement(ctx, panel('inner'))
       restoreInner()
       expect(swaps).toEqual([true])
       restoreOuter()
       expect(swaps).toEqual([true, false])
 
       // Unloading with a panel open releases the occupancy too.
-      mountEditorReplacement(panel('gone'))
+      mountEditorReplacement(ctx, panel('gone'))
       expect(swaps).toEqual([true, false, true])
       await fiber.dispose()
       expect(swaps).toEqual([true, false, true, false])
@@ -604,6 +684,22 @@ describe('blue-input plugin', () => {
       const { editor, cancel } = await mount({ running: true })
       expect(editor.onKey?.(KEY.escape)).toBe(true)
       expect(cancel).toHaveBeenCalledWith({ kind: 'user' })
+    })
+
+    it('restores the submitted message and removes its history entry after a safe Escape retraction', async () => {
+      const retract = vi.fn(() => true)
+      const { editor, followup, cancel } = await mount({ running: true, retract })
+      type(editor, 'revise this prompt')
+      editor.handleInput(KEY.enter)
+      const message = followup.mock.calls[0]?.[0] as { id: string }
+      expect(editor.getText()).toBe('')
+      expect(editor.history).toEqual(['revise this prompt'])
+
+      expect(editor.onKey?.(KEY.escape)).toBe(true)
+      expect(retract).toHaveBeenCalledWith(String(message.id))
+      expect(editor.getText()).toBe('revise this prompt')
+      expect(editor.history).toEqual([])
+      expect(cancel).not.toHaveBeenCalled()
     })
 
     it('passes Escape through with an empty buffer and an idle agent', async () => {
@@ -715,13 +811,24 @@ describe('blue-input plugin', () => {
     })
 
     it('rewrites #skill tokens on the Ctrl-S steer path too', async () => {
-      const { editor, steer } = await mount()
-      __setCatalogForTest([skillOf('deploy-check')])
+      const { ctx, editor, steer } = await mount()
+      __setCatalogForTest(ctx, [skillOf('deploy-check')])
       type(editor, 'steer #deploy-check')
       editor.handleInput(KEY.ctrlS)
       expect(steer).toHaveBeenCalledOnce()
       const message = steer.mock.calls[0]?.[0] as { content: Array<{ type: string, text: string }> }
       expect(message.content).toEqual([{ type: 'text', text: 'steer /deploy-check' }])
+    })
+
+    it('keeps the draft when the structured steer action is rejected', async () => {
+      const { ctx, editor, steer } = await mount()
+      ;(ctx.blueSessionActions as unknown as {
+        steer: () => { ok: false, code: 'BLUE_ACTION_REJECTED', message: string }
+      }).steer = () => ({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'steer rejected' })
+      type(editor, 'keep this')
+      expect(editor.onKey?.(KEY.ctrlS)).toBe(false)
+      expect(editor.getText()).toBe('keep this')
+      expect(steer).not.toHaveBeenCalled()
     })
 
     it('passes Ctrl-S through with an empty buffer', async () => {
@@ -770,7 +877,7 @@ describe('blue-input plugin', () => {
     }
 
     it('hands the draft over, suspends once, and writes the edit back with the mirrors synced', async () => {
-      const { editor, screen } = await mount()
+      const { ctx, editor, screen } = await mount()
       const seeds = fakeLauncher(() => Promise.resolve('edited\r\n\r\n'))
       type(editor, 'draft here')
       editor.handleInput(KEY.ctrlG)
@@ -781,11 +888,11 @@ describe('blue-input plugin', () => {
       // $VISUAL; the CRLF pair collapses and one trailing newline drops.
       expect(seeds).toEqual(['blue-spec-editor: draft here'])
       expect(screen.suspends).toBe(1)
-      expect(getStashedDraft()).toBe('edited\n')
+      expect(ctx.blueInteractionState.draft.getStashedDraft()).toBe('edited\n')
     })
 
     it('keeps the draft untouched on a nonzero editor exit (:cq)', async () => {
-      const { editor, screen, hint } = await mount()
+      const { ctx, editor, screen, hint } = await mount()
       fakeLauncher(() => Promise.resolve(undefined))
       type(editor, 'keep me')
       editor.handleInput(KEY.ctrlG)
@@ -794,7 +901,7 @@ describe('blue-input plugin', () => {
       })
       await settle()
       expect(editor.getText()).toBe('keep me')
-      expect(getStashedDraft()).toBe('keep me')
+      expect(ctx.blueInteractionState.draft.getStashedDraft()).toBe('keep me')
       expect(hint.render(80)).toEqual([])
     })
 
@@ -874,77 +981,15 @@ describe('blue-input plugin', () => {
     })
   })
 
-  describe('queued-message recall (pane-queue enhancement)', () => {
-    it('leaves Up to the editor history when pane-queue is not loaded', async () => {
+  describe('queued-message pane key ownership', () => {
+    it('leaves Up/Down to editor history even while queued messages are visible', async () => {
       const inbox = fakeInbox({ nextTurn: [queued('queued draft')] })
-      const { editor } = await mount({ inbox })
+      const { ctx, editor } = await mount({ inbox })
+      await ctx.plugin(paneQueuePlugin)
       expect(editor.onKey?.(KEY.up)).toBe(false)
+      expect(editor.onKey?.(KEY.down)).toBe(false)
       expect(inbox.remove).not.toHaveBeenCalled()
       expect(editor.getText()).toBe('')
-    })
-
-    it('recalls the latest queued message into an empty buffer on Up', async () => {
-      const first = queued('first')
-      const latest = queued('latest')
-      const inbox = fakeInbox({ nextTurn: [first, latest] })
-      const { ctx, editor } = await mount({ inbox })
-      await ctx.plugin(paneQueuePlugin)
-      expect(editor.onKey?.(KEY.up)).toBe(true)
-      expect(inbox.remove).toHaveBeenCalledWith(latest.id)
-      expect(editor.getText()).toBe('latest')
-    })
-
-    it('prefers pending steering over queued turns as the fresher intent', async () => {
-      const steering = queued('steer me')
-      const inbox = fakeInbox({ nextTurn: [queued('a turn')], nextStep: [steering] })
-      const { ctx, editor } = await mount({ inbox })
-      await ctx.plugin(paneQueuePlugin)
-      expect(editor.onKey?.(KEY.up)).toBe(true)
-      expect(inbox.remove).toHaveBeenCalledWith(steering.id)
-      expect(editor.getText()).toBe('steer me')
-    })
-
-    it('passes Up through when the buffer is not empty', async () => {
-      const inbox = fakeInbox({ nextTurn: [queued('queued')] })
-      const { ctx, editor } = await mount({ inbox })
-      await ctx.plugin(paneQueuePlugin)
-      type(editor, 'draft')
-      expect(editor.onKey?.(KEY.up)).toBe(false)
-      expect(inbox.remove).not.toHaveBeenCalled()
-      expect(editor.getText()).toBe('draft')
-    })
-
-    it('passes Up through when nothing is pending', async () => {
-      const inbox = fakeInbox()
-      const { ctx, editor } = await mount({ inbox })
-      await ctx.plugin(paneQueuePlugin)
-      expect(editor.onKey?.(KEY.up)).toBe(false)
-      expect(inbox.remove).not.toHaveBeenCalled()
-    })
-
-    it('passes Up through without an attached session', async () => {
-      const { ctx, editor } = await mount({ withAgent: false })
-      await ctx.plugin(paneQueuePlugin)
-      expect(editor.onKey?.(KEY.up)).toBe(false)
-    })
-
-    it('leaves the editor alone when the removal loses the race with a claim', async () => {
-      const pending = queued('claimed already')
-      const inbox = fakeInbox({ nextTurn: [pending], remove: () => false })
-      const { ctx, editor } = await mount({ inbox })
-      await ctx.plugin(paneQueuePlugin)
-      expect(editor.onKey?.(KEY.up)).toBe(false)
-      expect(inbox.remove).toHaveBeenCalledWith(pending.id)
-      expect(editor.getText()).toBe('')
-    })
-
-    it('ignores a queued message without visible text', async () => {
-      const empty = { ...queued(''), content: [] } as UserMessage
-      const inbox = fakeInbox({ nextTurn: [empty] })
-      const { ctx, editor } = await mount({ inbox })
-      await ctx.plugin(paneQueuePlugin)
-      expect(editor.onKey?.(KEY.up)).toBe(false)
-      expect(inbox.remove).not.toHaveBeenCalled()
     })
   })
 
@@ -990,14 +1035,21 @@ describe('blue-input plugin', () => {
       expect(command).not.toHaveBeenCalled()
     })
 
-    it('scrolls the pane on Up and Down with an empty buffer', async () => {
-      const { ctx, editor } = await mount()
+    it('keeps arrows on editor history and routes page keys and wheel to the pane', async () => {
+      const { ctx, editor, screen } = await mount()
       const command = vi.fn()
       ctx.on('blue/btw-command', command)
       ctx.emit('blue/editor-connected-above', true)
-      expect(editor.onKey?.(KEY.up)).toBe(true)
-      expect(editor.onKey?.(KEY.down)).toBe(true)
-      expect(command.mock.calls).toEqual([['scroll-up'], ['scroll-down']])
+      expect(editor.onKey?.(KEY.up)).toBe(false)
+      expect(editor.onKey?.(KEY.down)).toBe(false)
+      expect(screen.sendContentInput('\x1b[5~')).toBe(true)
+      expect(screen.sendContentInput('\x1b[6~')).toBe(true)
+      expect(screen.sendContentInput('\x1b[<64;1;1M')).toBe(true)
+      expect(command.mock.calls).toEqual([
+        ['scroll-up', undefined, 20],
+        ['scroll-down', undefined, 20],
+        ['scroll-up', undefined, 3],
+      ])
     })
 
     it('passes arrows through to the editor when the pane is up but the buffer is not empty', async () => {
@@ -1010,14 +1062,15 @@ describe('blue-input plugin', () => {
       expect(command).not.toHaveBeenCalled()
     })
 
-    it('leaves the queue recall in charge of Up when no pane is connected', async () => {
+    it('does not let the queue pane take Up when no BTW pane is connected', async () => {
       const inbox = fakeInbox({ nextTurn: [queued('queued draft')] })
       const { ctx, editor } = await mount({ inbox })
       await ctx.plugin(paneQueuePlugin)
       const command = vi.fn()
       ctx.on('blue/btw-command', command)
-      expect(editor.onKey?.(KEY.up)).toBe(true)
-      expect(editor.getText()).toBe('queued draft')
+      expect(editor.onKey?.(KEY.up)).toBe(false)
+      expect(editor.getText()).toBe('')
+      expect(inbox.remove).not.toHaveBeenCalled()
       expect(command).not.toHaveBeenCalled()
     })
 
@@ -1071,9 +1124,9 @@ describe('blue-input plugin', () => {
 
 describe('the Alt+M model cycle key', () => {
   /** Capture the shared editor's notice channel for assertions. */
-  function captureNotices(): string[] {
+  function captureNotices(ctx: Context): string[] {
     const notices: string[] = []
-    const shared = getSharedEditor() as { notice?: (text: string) => void } | undefined
+    const shared = getSharedEditor(ctx) as { notice?: (text: string) => void } | undefined
     expect(shared).toBeDefined()
     shared!.notice = (text: string) => { notices.push(text) }
     return notices
@@ -1090,7 +1143,7 @@ describe('the Alt+M model cycle key', () => {
     ctx.provide('llm', {
       listModels: async () => [{ id: 'mock', name: 'Mock' }, { id: 'mock-pro', name: 'Mock Pro' }],
     } as never)
-    const notices = captureNotices()
+    const notices = captureNotices(ctx)
     type(editor, 'keep this draft')
     editor.handleInput(KEY.altM)
     // The press is consumed before the Editor sees it, so the draft
@@ -1102,8 +1155,8 @@ describe('the Alt+M model cycle key', () => {
   })
 
   it('still consumes the press without a session, flashing the guard notice', async () => {
-    const { editor } = await mount({ withAgent: false })
-    const notices = captureNotices()
+    const { ctx, editor } = await mount({ withAgent: false })
+    const notices = captureNotices(ctx)
     type(editor, 'draft')
     editor.handleInput(KEY.altM)
     expect(editor.getText()).toBe('draft')

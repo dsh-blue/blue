@@ -6,13 +6,12 @@
  * with Escape walking back, the empty catalog, and the guard chain.
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import * as commandsPlugin from '../src/commands-plugin.ts'
 import type { InfoPanel } from '../src/info-panel.ts'
-import { clearSharedEditor } from '../src/editor-instance.ts'
 import {
   buildToolDetailSections,
   buildToolPickerRows,
@@ -23,10 +22,6 @@ import {
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Context } from '@deepseek-ai/cordis'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
-
-afterEach(() => {
-  clearSharedEditor()
-})
 
 /** Strip SGR and the fake palette's marker characters so assertions read visible text. */
 function plain(rows: readonly string[]): readonly string[] {
@@ -172,15 +167,15 @@ describe('registerToolsCommands', () => {
     /** Provide the roster fake answering `composedPreset`/`standingKeyFor`. */
     roster?: { current?: string, key?: Promise<unknown>, keyError?: unknown }
   } = {}): Promise<{ ctx: Context, screen: FakeScreen, agent: Agent, fiber: { dispose(): Promise<void> } }> {
-    const base = options.display === false ? { ctx: new Context() } : fakeBlueContext()
+    const base = fakeBlueContext({ display: options.display })
     const { ctx } = base
-    const screen = 'screen' in base ? base.screen : undefined
+    const screen = base.screen
     await ctx.plugin(SessionStore)
     await ctx.plugin(CommandRuntime)
     const session = ctx.sessions.create(SessionId('tools-spec'), { meta: { cwd: '/tmp/spec' } })
     const agent = { id: session.id, session, status: 'idle', ctx: new Context() } as unknown as Agent
     if (options.attach !== false) {
-      ctx.provide('blueSession', { current: agent })
+      ctx.provide('testSession', { current: agent })
     }
     if (options.schemas !== undefined) {
       ctx.provide('tools', { schemas: options.schemas } as never)
@@ -265,7 +260,7 @@ describe('registerToolsCommands', () => {
       roster: { current: 'alpha' },
     })
     expect(await run(ctx, agent, '/tools')).toEqual({ kind: 'success' })
-    expect(scopes).toEqual([STANDING_KEY])
+    expect(scopes).toEqual([undefined, STANDING_KEY])
   })
 
   it('falls back to the global view when the roster is absent or binds nothing', async () => {

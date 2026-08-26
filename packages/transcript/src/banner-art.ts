@@ -1,8 +1,8 @@
 /**
  * The welcome banner's logo — the DeepSeek whale in braille block art, nine
  * rows tall, rendered frameless to the left of the status column. This
- * module stays the logo's single home for its ART; the per-row color sweep
- * is palette furniture and lives in each theme's `logoGradient` token.
+ * module stays the logo's single home; every consumer imports the rows from
+ * here and never hardcodes a copy.
  *
  * Rows are written left-padded to a uniform width so the right-hand status
  * text lands on one aligned column whatever the whale's silhouette.
@@ -32,4 +32,22 @@ export const LOGO_ART: readonly string[] = [
 
 /** The logo's row count — the status column's vertical anchor. */
 export const LOGO_ROWS = LOGO_ART.length
+
+/**
+ * The logo's brand-blue gradient, one hex per row: deep navy at the top,
+ * through the DeepSeek brand blue at the waist, to a light sky blue at the
+ * bottom. Each entry maps to the same-index {@link LOGO_ART} row, so the
+ * whale reads as one sweeping gradient down its body.
+ */
+export const LOGO_GRADIENT: readonly string[] = [
+  '#2a3bd0',
+  '#3247db',
+  '#3b53e7',
+  '#445ff2',
+  '#4d6bfe',
+  '#617cfe',
+  '#758efe',
+  '#899ffe',
+  '#9db1ff',
+]
 

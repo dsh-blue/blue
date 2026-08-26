@@ -8,32 +8,44 @@ Core is the tree's ONLY package allowed to import `@earendil-works/pi-tui` (plus
 
 ## L1 services and the global key dispatcher
 
-- **`blueScreen`** (`src/screen.ts`) — the screen contract carries `readonly rows` (the btw panel's height budget reads it live) and `addBottomChild(component, position?)`: the optional `'bottom'` position renders the component below the rest of the dock. The footer shell mounts pinned there, putting the two-row status on the terminal's last rows beneath the editor — the kimi dock layout the pull-up dialog panels leave visible. `setTitle(title)` (S30) delegates to the runtime, which writes a sanitized OSC 0 sequence through the terminal (pi-tui's own `Terminal.setTitle` is bypassed — it hardcodes `process.stdout`); the sequence paints no cell, so it never disturbs differential rendering, and inside tmux it becomes the tmux window name (deliberately no DCS passthrough wrap — unlike OSC 52, tmux consumes rather than swallows it). The pure helpers live in `src/terminal-escape.ts` beside the OSC 52 emitters: `sanitizeTitleText` (strips C0/C1 plus directional/invisible controls, collapses whitespace), `TITLE_MAX_CHARS` (32 code points), `buildTitleOsc0`. Since S31 the contract also carries `suspend(fn)` (see below).
+- **`blueScreen`** (`src/screen.ts`) — the screen contract carries `readonly rows` (the btw panel's height budget reads it live) and `addBottomChild(component, position?)`: the optional `'bottom'` position renders the component below the rest of the dock. The footer shell mounts pinned there, putting the two-row status on the terminal's last rows beneath the editor — the kimi dock layout the pull-up dialog panels leave visible. `setTitle(title)` (S30) delegates to the runtime, which writes a sanitized OSC 0 sequence through the terminal (pi-tui's own `Terminal.setTitle` is bypassed — it hardcodes `process.stdout`); the sequence paints no cell, so it never disturbs differential rendering, and inside tmux it becomes the tmux window name. The helpers live in `src/terminal-escape.ts`: direct terminals receive bare OSC 52, while tmux selection runs `tmux load-buffer -w -`. The latter is required for the common `set-clipboard external` policy, which forwards tmux-owned clipboard writes but explicitly ignores application OSC 52; it also avoids DCS passthrough's independent, default-off `allow-passthrough` gate. `sanitizeTitleText` strips C0/C1 plus directional/invisible controls and collapses whitespace; `TITLE_MAX_CHARS` caps titles at 32 code points. Since S31 the contract also carries `suspend(fn)` (see below).
 - **`blueKeymap`** (`src/keymap.ts`) — `list()` gives a registration-order snapshot for `/help`-style enumeration; registration runs key-level conflict detection.
 - **`blueTerminalInfo`** (`src/terminal-info.ts`) — read-only terminal facts from the startup OSC 11 background probe.
 - **Global key dispatcher** — core's `apply` mounts a pi-tui input listener ahead of focus routing that consumes keymap actions carrying a `handler`. The service is instantiated directly in `apply`, not via `ctx.plugin`: the Cordis Context proxy rejects uninjected services, and a service cannot inject itself.
 
-  The terminal runtime also installs one input-boundary normalizer for SGR and
-  legacy X10 wheel reports. Main-screen mode does not enable mouse reporting,
-  but a multiplexer or inherited terminal mode can still send these sequences;
-  they are converted to pi-tui's standard up/down key sequences before focus
-  routing, so panels share one scroll seam. The listener is removed with the
-  runtime stop lifecycle.
+  The production runtime is `TuiAltScreen`. Its primary `ScrollView` owns the
+  transcript viewport (`follow: end`, three rows per wheel event, automatic
+  scrollbar) while a sibling dock container keeps panes/editor/footer fixed at
+  the bottom. SGR mouse tracking therefore has a complete owner: wheel reports
+  scroll the primary view; drag reports paint an application selection and copy
+  it through direct OSC 52 or tmux's own `load-buffer -w -` path. The callback
+  reports success only after tmux exits zero. `TuiMainScreen` remains only as
+  the explicit `'main'` compatibility mode used by source-plane fixtures; there
+  it never enables mouse reporting, so a multiplexer-provided SGR/X10 wheel
+  report is merely normalized to up/down before focus routing.
 
-Dock sinking lives in `startBlueTerminal`: the renderer instance's `render` is wrapped so that when the mounted tree is shorter than the viewport, blank filler is inserted between the scroll content and the bottom-pinned block, keeping the footer/editor dock on the terminal's last rows. Full viewports, empty trees, and dock-less trees render untouched.
+Both alternate-screen layout bands use `FrameClampedContainer`, preserving the D48 render-exit width backstop before pi-tui lays out the frame. The container reuses a checked frame for the same width, child identities, and child row-array identities, so stable long transcript rows do not repeat ANSI-aware width scans on editor or dock-only redraws. `scrollContent()` delegates to the primary `ScrollView`; its ordinary differential render keeps the dock fixed without resetting render state or emitting a full-screen clear. `contentChanged()` preserves follow-end until the user scrolls away, and `followContent()` returns to the tail. Raw wheel reports remain available to the renderer's native viewport route; the focused editor consumes its wheel reports before the AltScreen listener, while focused replacement panels receive normalized Up/Down input. `setContentScrollHandler()` retains the editor-context wheel/PageUp/PageDown/End path without stealing Up/Down from editor history or converting the main viewport's raw mouse event.
 
 ## Suspend/resume seam (S31, `runtime.suspend` → `blueScreen.suspend`)
 
 The recoverable suspend composes pi-tui 0.84.2's own lifecycle primitives — `TUI.stop()` / `TUI.start()` / `requestRender(true)` — and is deliberately NOT the teardown `runtime.stop()`. State machine (closure flags `stopped`/`suspended` inside `startBlueTerminal`):
 
-- **suspend(fn)**: exclusive (a second in-flight call rejects) and refused once stopped. `current.stop()` with NO `preserveScreen` — Blue is always `TuiMainScreen`, so the child appends below the content in the scrollback tail (kimi's main-screen ordering; `preserveScreen` is only meaningful for an alt-screen takeover). One `setImmediate` beat flushes the stop escapes before the child takes the tty, then `fn` runs with the terminal released (raw mode off, pi-tui detached).
+- **suspend(fn)**: exclusive (a second in-flight call rejects) and refused once stopped. Production AltScreen stops with `preserveScreen: true`, restoring the untouched main screen while a child owns the tty and avoiding a full transcript replay on every external-editor round trip; compatibility MainScreen uses its ordinary stop. One `setImmediate` beat flushes the stop escapes before the child takes the tty, then `fn` runs with the terminal released (raw mode off, pi-tui detached).
 - **resume** (fn settlement, in a `finally`): `process.stdin.pause()` BEFORE `start()` — bytes buffered while suspended must not surface as application input once raw mode re-arms — then, unless the runtime was torn down mid-suspend (`stopped || activeRuntime !== runtime`), `current.start()` (its self-SIGWINCH on Unix refreshes dimensions stale from a resize while suspended) → `setTerminalColorSchemeNotifications(true)` (the stop wrote `\x1b[?2031l`; the registered `onTerminalColorSchemeChange` callback itself survives stop/start) → `requestRender(true)` (forced full repaint). fn's rejection propagates unchanged — resume never swallows.
 - **stop() during suspend** (fiber unload / fail-loud release while a child owns the tty): `stopped = true` but NO `terminal.drainInput()` (the parent drain would steal the child's input) and NO second `current.stop()` (the renderer is already stopped; a replay of teardown sequences would corrupt the child's screen). It only unregisters `activeRuntime`; the later resume detects the teardown and skips the restart.
 - Render ticker: pi-tui has no standing render loop — `stop()` cancels the 16ms throttle timer for free. Application-level timers (footer tips, spinners) keep firing into `requestRender` and no-op inside the stopped renderer's early exit; accepted as harmless spinning (kimi does the same), not gated.
 
 ## Component factory (`blueComponents`, `src/components.ts`)
 
+`BlueEditor.removeLatestHistory(text)` is the narrow retraction helper over pi-tui's private history array: it removes index 0 only on an exact match. The method stays optional on the L1 contract so structural fakes and out-of-tree adapters remain compatible; core's sole real adapter implements it.
+
 The pi-tui-backed component factory and width pure functions:
+
+- `src/plugin-view.ts` is the public `BlueView` compiler used only by the
+  owner bridges. It strips caller ANSI/OSC/control bytes, applies semantic
+  tones from the live owner palette, caps text/depth/rows, delegates all width
+  math to `blueComponents`, and contains a dynamic render failure as one
+  bounded error row. Plugins never receive a `BlueComponent` from this seam.
 
 - `createImage(options)` wraps pi-tui's Image with a styled-text fallback for terminals without an image protocol; the pure `imageDimensions(data)` probe covers PNG/JPEG/GIF/WebP.
 - `BlueEditor.insertText(text)` — atomic insertion at the cursor; the seam the clipboard-image markers use.
@@ -43,16 +55,14 @@ The pi-tui-backed component factory and width pure functions:
 
 ## Themes and markdown rendering
 
-The 32-key palette maps onto the component themes: selection/cursor rows take `primary`, hints take `textMuted`, markdown headings carry their level through bold, unordered markers normalize to `•`, and fenced code goes through cli-highlight behind the markdown `highlightCode` hook. The internal `src/highlight.ts` wrapper gates on `supportsLanguage`, resets cli-highlight's red scopes to the palette base, and falls back to the raw split so line count never changes.
+The v2 28-token palette maps onto the component themes: selection/cursor rows take `primary`, hints take `textMuted`, markdown headings carry their level through bold, unordered markers normalize to `•`, and fenced code goes through cli-highlight behind the markdown `highlightCode` hook. The internal `src/highlight.ts` wrapper gates on `supportsLanguage`, resets cli-highlight's red scopes to the palette base, and falls back to the raw split so line count never changes.
 
 The markdown adapter carries a horizontal-rule post-process: pi-tui caps rules at 80 columns regardless of the render width, so the adapter re-paints the capped rule to the full render width (exact string match on the theme's known output, tolerating row padding — fenced code lines keep their own styling).
 
-The `blueTheme` contract lives in `src/types.ts`; implementations ship as six subpath plugins, all built on the internal `src/theme-palette.ts` palette helpers:
+The `blueTheme` contract lives in `src/types.ts`; implementations ship as four subpath plugins, all built on the internal `src/theme-palette.ts` palette helpers:
 
-- `./theme-dark` (`src/theme-dark.ts`, `blue-theme-dark`) — the built-in dark palette, the plain-baseline default.
+- `./theme-dark` (`src/theme-dark.ts`, `blue-theme-dark`) — the built-in 28-token dark palette, the plain-baseline default.
 - `./theme-light` (`src/theme-light.ts`, `blue-theme-light`).
-- `./theme-ocean` (`src/theme-ocean.ts`, `blue-theme-ocean`) — the blue-tinted dark palette.
-- `./theme-paper` (`src/theme-paper.ts`, `blue-theme-paper`) — the warm light palette.
 - `./theme-auto` (`src/theme-auto.ts`, `blue-theme-auto`) — picks dark/light from `blueTerminalInfo` and re-provides on `'blue/terminal-theme-changed'`.
 - `./theme-custom` (`src/theme-custom.ts`, `blue-theme-custom`) — a schemastery-validated JSON file palette over a built-in base.
 
@@ -60,7 +70,7 @@ The `blueTheme` contract lives in `src/types.ts`; implementations ship as six su
 
 The pure `src/chrome.ts` — re-exported as the `./chrome` subpath, theme-agnostic functions over `string[]` rows:
 
-- `EditorAdapter.render` post-processes the editor into a rounded box (`withSideBorders`/`injectPromptSymbol`, the kimi port: rules stripped and repainted through the live `borderColor` property so host `setBorderColor` recolors the whole frame, `│` bars overlaid only on literal outer spaces, labels never entering scroll indicators). `BlueEditor` exposes `setPromptSymbol('>' | '!' | undefined)` / `setBorderLabel(text)` / `setConnectedAbove(bool)` / `setGhostHint(…)`. The editor theme's default border is the neutral `border` token; slash/bash contexts carry the color.
+- `EditorAdapter.render` post-processes the editor into a rounded box (`withSideBorders`/`injectPromptSymbol`, the kimi port: rules stripped and repainted through the live `borderColor` property so host `setBorderColor` recolors the whole frame, `│` bars overlaid only on literal outer spaces, labels never entering scroll indicators). `BlueEditor` exposes `setPromptSymbol('>' | '!' | undefined)` / `setBorderLabel(text)` / `setConnectedAbove(bool)` / `setGhostHint(…)`. When connected above, the adapter renders at the dock's `width - 2` inner budget and restores the shared left gutter, aligning both side borders with the pane above. The editor theme's default border is the neutral `border` token; slash/bash contexts carry the color.
 - `framePanel(body, width, opts)` frames a body in kimi's full-width flat `─` rules — title + optional muted title hint + optional key-row footer, all paints defaulting to identity, ANSI-safe truncated. The five overlay dialogs (approval/questionnaire//help//sessions/BlueSelect) render through it. Below `FRAME_DEGENERATE_WIDTH` (8) the framer also cuts its body rows (D48): callers pre-budget rows for normal widths, but a degenerate viewport can sit under the rows' fixed furniture — wider frames emit the body untouched.
 - `clampRowsToWidth(rows, width, truncate)` (D48) is the component-level width backstop: every hand-assembled frame passes through it after assembly (fits return untouched). `src/frame-clamp.ts` holds the render-exit backstop itself (`clampFrame` + the deduplicating `blue-overflow.log` sink wired into terminal.ts's render wrapper), and `src/width.ts` is the tree's single re-export seam for pi-tui's width utilities (runtime consumers reach them through the components service or this module — no other package names pi-tui).
 - `hintRow(parts, paint)` joins key-hint parts with ` · `.
@@ -68,11 +78,6 @@ The pure `src/chrome.ts` — re-exported as the `./chrome` subpath, theme-agnost
 - `padColumns(lines, n)` is the pure gutter equivalent of kimi's `GutterContainer`.
 - `injectGhostHint` splices the dimmed hint after the inverse-video cursor, consuming trailing padding so the row width holds, ellipsizing on overflow, and leaving mid-text cursors untouched (`setGhostHint`'s first consumer).
 - `highlightLeadingSlashToken` re-paints the leading `/command` token through visible-index math so ANSI pass-through survives (bold `primary` at the call site).
-
-When `BlueEditor.setConnectedAbove(true)` is active, `EditorAdapter.render` uses
-the same `width - 2` inner budget as `GutterComponent` and restores the left
-gutter after painting `├┤` chrome. This keeps the editor splice aligned with
-inset dock panes such as `/btw`; the editor remains full-width when disconnected.
 
 ## Gutter and dock mechanics (D29)
 
@@ -90,6 +95,11 @@ Three events live on the core Events merge:
 - `'blue/btw-command'` — editor key chain → pane close/scroll routing.
 - `'blue/editor-slot-swapped'` — blue-input emits on its replacement-panel stack's empty↔occupied transitions (nested panels re-emit nothing; unloading with one open releases the occupancy). pane-activity hides while occupied and pane-btw re-asserts its splice on return.
 
-## Distribution contract
+Theme providers also publish a semantic companion through the optional `blueThemeModels` frontend registry. ANSI color functions remain core-only; the companion contains the source palette hexes and is removed with the theme provider Fiber.
 
-Published output contains runtime JS and declarations only; hashed chunks are allowed under `lib/` and are covered by the directory files rule and `pnpm check:pack`. Internal Blue dependencies use `workspace:*` so packed manifests resolve to the exact lockstep release.
+`blueNotifications` is the frontend runtime's immutable notification registry; core only hosts its lifecycle, while feature adapters push structured messages and consume snapshots.
+`frontend-renderer.ts` is the narrow TUI consumer for `@dsh-blue/blue-frontend` readonly views. `renderFrontendView`/`renderFrontendModel` and `FrontendModelComponent` are the only renderer-facing bridge for the new frontend model; width clamping delegates to pi-tui through `width.ts`. It does not read Harness events or session objects.
+
+## Verification note
+
+`theme-custom` accepts a validated `logoGradient` array as a frozen palette override; invalid arrays and entries retain the base gradient.

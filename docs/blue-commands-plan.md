@@ -1,5 +1,7 @@
 # Blue 内置命令实施清单：四家参照系合并、能力支撑矩阵与 S23-S29 分期
 
+> Cutover note (2026-08-26): 本文记录命令落地时的方案。旧 `blueSession`/`blueStatus`/`fold.ts` 接线已由 app reader/projection/action、`StatusModel` 与 `blueConversation` 取代。
+
 > 姊妹文档：[blue-p1-design.md](./history/blue-p1-design.md)（§4.3 命令对照前身，本文档是其全量升级）、[blue-roadmap.md](./blue-roadmap.md)（P2"模式命令随上游能力缝落地逐个接入"条目）、[blue-seams.md](./blue-seams.md)（缝清单）、[blue-decisions.md](./blue-decisions.md)（ADR；本文档为规划文档，实施期的决策记入 ADR）
 > 参照系：kimi-code（MoonshotAI，本地源码 `apps/kimi-code/src/tui/commands/registry.ts` 逐条核实，40 内置）、pi（Earendil Works，官方文档 pi.dev/docs/latest/usage，23）、Claude Code（官方文档 code.claude.com/docs/en/commands，~80 内置 + [Skill]/[Workflow] 标记）、Codex（OpenAI，官方 developer-commands 文档，~30 会话内）
 > 核实基准：三源复核——① Blue 已安装 `@deepseek-ai/*@0.1.0-rc.7` 包 .d.ts；② npm 已发布清单（`next` 标签达 rc.8）；③ harness 源码 + CLI base 组合（`apps/cli/composition.md`、`agent.cordis.yml`）。2026-08-20 首轮后补一轮系统复核（plan-mode 漏检 + 初版 ⛔/🚫 判定偏窄，见 §1.3 ③④）；本文 ✅/⚠️/⛔/🚫 均带证据
@@ -92,7 +94,7 @@ p1-design §4.3 是本文档的前身（MVP 后命令面调研）。本次逐符
 | `/help` (`h`,`?`) | ✅ | — | ✅ | ✅ | ✅ 已发货（HelpOverlay 双列） |
 | `/hotkeys` | — | ✅ | — | — | 🚫 不做（用户裁决 2026-08-21：低价值，/help 已覆盖键位面） |
 | `/keybindings` / `/keymap` | — | — | ✅ | ✅ | 🚫 /help 已覆盖查看；编辑面不做 |
-| `/changelog` | — | ✅ | — | — | ✅ 已发货（面板形式：`InfoPanel` 逐版本分节 + `· current` 徽章；内容内嵌 `changelog-content.ts`，drift spec 对齐 docs/release-notes；banner what's-new 已随 S35 退役） |
+| `/changelog` | — | ✅ | — | — | 🚫 banner what's-new 已承担（面板形式 ⚠️ 顺延） |
 | `/whereami` | — | — | ✅ | — | 🚫 = /status 子集 |
 | `/recap` | — | — | ✅ | — | 🚫 会话摘要无上游 |
 
@@ -333,7 +335,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 
 ### 4.4 🚫 明确不做命令（互链 §6）
 
-见 §6 全表。要点：产品特定（/llama /swarm /web /share /dance /radio /mobile /desktop /powerup /passes /autofix-pr /batch）、无上游能力（/login /logout /goal /cd /vim /memory /trust /scoped-models /tree /branch /clone /session /cost /fast /approve /raw /personality /mute /memories）、既有面覆盖（/plugins /apps /hooks = 组合层；/hotkeys → /help；/git → `!` shell；/export-debug-zip → /debug；/keybindings → /help 查看）、评审/诊断族留缝（/security-review /code-review /doctor 仅做 /init 一个罐头提示）。
+见 §6 全表。要点：产品特定（/llama /swarm /web /share /dance /radio /mobile /desktop /powerup /passes /autofix-pr /batch）、无上游能力（/login /logout /goal /cd /vim /memory /trust /scoped-models /tree /branch /clone /session /cost /fast /approve /raw /personality /mute /memories）、既有面覆盖（/plugins /apps /hooks = 组合层；/hotkeys → /help；/changelog → banner；/git → `!` shell；/export-debug-zip → /debug；/keybindings → /help 查看）、评审/诊断族留缝（/security-review /code-review /doctor 仅做 /init 一个罐头提示）。
 
 ## 5. 分期实施（S23-S29；S27 于 2026-08-21 两度砍剩——首砍 S27'：/hotkeys 🚫、/diff 发版后、注入显隐定名 /injections；再砍 /injections 🚫（用户裁决维持 D28 默认隐藏），S27' 终版仅 /init /clear，✅ 已落地 2026-08-21）
 
@@ -374,10 +376,11 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 | `/editor` | kimi | 外部编辑器 Ctrl-G 未实现（roadmap P2 挂起项） |
 | `/experiments` `/experimental` | kimi/Codex | 无实验特性管线 |
 | `/goal` | （已转 Adopt，§2.10/§8） | 上游 ctx.goals + /goal 命令现成，零实现 |
-| `/tree` `/branch` `/clone` | pi | /sessions + /fork 覆盖；lineage 仅可作 /sessions 可选增强列 |
+| `/tree` `/branch` `/clone` | pi | `/sessions` 已以标准 `parentSession` header 展示 lineage 树，`/fork` 与安全分支式 `/rewind` 覆盖创建路径；不冒充单 session event tree |
 | `/session` | pi | /status + /sessions 覆盖 |
 | `/scoped-models` | pi | 目录级模型无概念（agent 级 selection 已有，不做目录维度） |
 | `/trust` | pi | 信任文件夹无 harness 概念 |
+| `/changelog` | pi | banner-content 的 what's-new 已承担；面板形式可选（⚠️ 顺延） |
 | `/cd` | CC | 会话 cwd 创建时钉死，无切换原语 |
 | `/cost` | CC | 无 usage/cost 服务；定价表 Blue 侧维护不值 |
 | `/vim` `/keymap` `/keybindings` | CC/Codex | vim 需编辑器 provider 实现（P3 缝槽，rc.7 无）；keymap 编辑面不做（/help 已覆盖查看） |

@@ -1,12 +1,10 @@
 /**
  * The banner logo literal: the DeepSeek whale rows pinned exactly, so an
- * accidental edit of {@link LOGO_ART} surfaces in review. The per-row color
- * sweep is palette furniture (each theme's `logoGradient`), pinned in the
- * theme specs — this file owns the ART alone.
+ * accidental edit of {@link LOGO_ART} surfaces in review.
  */
 
 import { describe, expect, it } from 'vitest'
-import { LOGO_ART, LOGO_COLS, LOGO_ROWS } from '../src/banner-art.ts'
+import { LOGO_ART, LOGO_COLS, LOGO_GRADIENT, LOGO_ROWS } from '../src/banner-art.ts'
 
 describe('LOGO_ART', () => {
   it('pins the whale logo rows', () => {
@@ -31,5 +29,12 @@ describe('LOGO_ART', () => {
 
   it('exposes the row count the layout anchors on', () => {
     expect(LOGO_ROWS).toBe(LOGO_ART.length)
+  })
+
+  it('carries one brand-blue gradient hex per logo row', () => {
+    expect(LOGO_GRADIENT).toHaveLength(LOGO_ROWS)
+    for (const hex of LOGO_GRADIENT) {
+      expect(hex).toMatch(/^#[0-9a-f]{6}$/)
+    }
   })
 })

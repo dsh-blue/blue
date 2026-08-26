@@ -252,3 +252,4 @@ export function cleanOutput(value: string): string {
     .replace(/\x1b\]8;;[^\x07]*\x07/g, '')
     .replace(/\r/g, '')
 }
+
