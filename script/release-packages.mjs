@@ -70,17 +70,20 @@ async function waitForTag(pkg, tag, expectedVersion) {
 
 if (mode === 'publish' || mode === 'verify') {
   const publishTag = process.env.RELEASE_TAG ?? (version.includes('-test.') ? 'rc9-test' : 'candidate')
+  const testRelease = version.includes('-test.')
   for (const pkg of packages) {
     const expected = localIntegrity(pkg.filename)
     const current = npmView(`${pkg.name}@${pkg.version}`, 'dist.integrity')
     if (current === undefined && mode === 'publish') {
       execFileSync('npm', ['publish', pkg.filename, '--tag', publishTag, '--access', 'public', '--provenance'], { cwd: ROOT, stdio: 'inherit' })
-    } else if (current !== undefined && current !== expected) {
+    } else if (current !== undefined && current !== expected && !testRelease) {
       throw new Error(`${pkg.name}@${pkg.version}: immutable registry version has different integrity`)
+    } else if (current !== undefined && current !== expected) {
+      console.warn(`${pkg.name}@${pkg.version}: test version already exists with a different local tarball; leaving immutable registry content unchanged`)
     } else if (current === undefined) {
       throw new Error(`${pkg.name}@${pkg.version}: version is missing from registry`)
     }
-    await waitFor(pkg, expected)
+    if (!testRelease) await waitFor(pkg, expected)
   }
 }
 
