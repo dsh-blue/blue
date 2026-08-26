@@ -8,7 +8,11 @@
 
 import { chmodSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import SettingsProvider, { type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import * as settingsPlugin from '../src/settings.ts'
+import { InteractionStateService } from '../src/runtime-state.ts'
 import {
   quoteShellArg,
   resolveExternalEditorCommand,
@@ -39,7 +43,44 @@ describe('resolveExternalEditorCommand', () => {
   it('trims surrounding whitespace', () => {
     expect(resolveExternalEditorCommand({ VISUAL: '  code --wait  ' })).toBe('code --wait')
   })
+
+  it('prefers a configured blue.editorCommand over $VISUAL/$EDITOR', async () => {
+    const ctx = new Context()
+    new InteractionStateService(ctx, settingsPlugin.DEFAULT_SETTINGS)
+    ctx.provide('blueSessionReader', {
+      current: () => null,
+      subscribe: () => ({ disposed: false, dispose() {} }),
+      request: async () => ({ ok: false, code: 'BLUE_SESSION_UNAVAILABLE', message: 'No session' }),
+    })
+    await ctx.plugin(MemorySettings, { blue: { editorCommand: '  my-editor --wait  ' } })
+    await ctx.plugin(settingsPlugin)
+    await vi.waitFor(() => {
+      expect(resolveExternalEditorCommand(
+        { VISUAL: 'vim', EDITOR: 'nano' },
+        settingsPlugin.currentBlueSettings(ctx).editorCommand,
+      )).toBe('my-editor --wait')
+    })
+  })
 })
+
+/** A settings provider with the stored document as its constructor config. */
+class MemorySettings extends SettingsProvider {
+  readonly writable = true
+  private readonly doc: Record<string, unknown>
+
+  constructor(ctx: Context, doc?: Record<string, unknown>) {
+    super(ctx)
+    this.doc = doc ?? {}
+  }
+
+  protected async load(): Promise<Record<string, unknown>> {
+    return this.doc
+  }
+
+  protected async persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+    this.doc[String(ns)] = section
+  }
+}
 
 describe('quoteShellArg', () => {
   it('single-quotes plain POSIX arguments', () => {

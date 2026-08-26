@@ -16,13 +16,12 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import type { SkillSource, SkillSummary } from '@deepseek-ai/dsh-skill'
+import type { BlueSessionSkill } from '@dsh-blue/blue-app'
 import type { InfoRow, InfoSection } from './info-panel.ts'
 import { InfoPanel } from './info-panel.ts'
 import { displayServices } from './display-services.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
 import { refresh, userInvocableSkills } from './skills-catalog.ts'
-import { currentBlueAgent } from './session.ts'
 
 /**
  * The folded section order: the conventional layers first, then any other
@@ -38,7 +37,7 @@ const SECTION_ORDER: readonly string[] = ['Project', 'User']
  * @param source - the summary's discovery source.
  * @returns the section heading.
  */
-function sectionHeading(source: SkillSource): string {
+function sectionHeading(source: string): string {
   if (source === 'project-dsh' || source === 'project-agents') return 'Project'
   if (source === 'user-dsh' || source === 'user-agents') return 'User'
   return source
@@ -53,8 +52,8 @@ function sectionHeading(source: SkillSource): string {
  * @param skills - the user-invocable summaries to list.
  * @returns the sections in display order.
  */
-export function buildSkillsSections(skills: readonly SkillSummary[]): InfoSection[] {
-  const byHeading = new Map<string, SkillSummary[]>()
+export function buildSkillsSections(skills: readonly BlueSessionSkill[]): InfoSection[] {
+  const byHeading = new Map<string, BlueSessionSkill[]>()
   for (const skill of skills) {
     const heading = sectionHeading(skill.source)
     const bucket = byHeading.get(heading)
@@ -71,7 +70,7 @@ export function buildSkillsSections(skills: readonly SkillSummary[]): InfoSectio
 }
 
 /** The rows of one skill: name (with the user-only marker), description, whenToUse. */
-function skillRows(skill: SkillSummary): InfoRow[] {
+function skillRows(skill: BlueSessionSkill): InfoRow[] {
   return [
     {
       label: skill.name,
@@ -94,14 +93,13 @@ export function registerSkillsCommand(ctx: Context): () => void {
     name: 'skills',
     description: 'List available skills (the # prompt invokes one)',
     handler: async (): Promise<CommandResult> => {
-      const agent = currentBlueAgent(ctx)
-      if (agent === undefined) {
+      if (ctx.blueSessionReader.current() === null) {
         return { kind: 'error', text: 'no active session' }
       }
       // Refresh before listing: the panel and the `#` dropdown share the
       // catalog, and a fresh filesystem edit should surface here.
       await refresh(ctx)
-      const skills = userInvocableSkills()
+      const skills = userInvocableSkills(ctx)
       if (skills.length === 0) {
         return { kind: 'success', text: 'no skills' }
       }
@@ -109,7 +107,7 @@ export function registerSkillsCommand(ctx: Context): () => void {
       if (display === undefined) {
         return { kind: 'error', text: 'skills panel is unavailable: the Blue screen is not mounted' }
       }
-      const restore = mountEditorReplacement(new InfoPanel({
+      const restore = mountEditorReplacement(ctx, new InfoPanel({
         keymap: display.keymap,
         theme: display.theme,
         components: display.components,

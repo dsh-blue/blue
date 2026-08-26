@@ -8,12 +8,12 @@
  * the list for an inline reason editor whose submission steers the agent
  * with the rejection reason. The panel replaces the editor in its dock
  * slot (D30), so below it only the footer remains. Session-scoped
- * allowances are remembered per agent in a module-level WeakMap and
+ * allowances are remembered by the frontend tree and session id and
  * short-circuit later prompts for the same tool. Yolo (`/yolo`, S24a)
  * short-circuits every prompt while on — the policy stays `'ask'`, this
  * answerer is the auto-approve surface (see `./mode-state.ts`).
  * Concurrent requests
- * serialize on a module-level FIFO chain so only one prompt is visible at
+ * serialize on a Fiber-owned FIFO chain so only one prompt is visible at
  * a time. Requests for any other agent — and requests arriving before a
  * session attaches — delegate down the chain with `next()`. Returning
  * without `next()` short-circuits the waterfall with the chosen outcome.
@@ -22,56 +22,21 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { BlueComponents, BlueEditor, BlueFocusable, BlueScreen, BlueTheme } from '@dsh-blue/blue-core'
 import { framePanel } from '@dsh-blue/blue-core/chrome'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { mountEditorReplacement } from './editor-instance.ts'
-import { yoloActive } from './mode-state.ts'
-import { currentBlueAgent } from './session.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-approval'
 /** Services required before the answerer can listen. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionReader', 'blueSessionActions']
 
 /** Decoded input sequences the prompt handles directly (no keymap actions). */
 const KEY_UP = '\x1b[A'
 const KEY_DOWN = '\x1b[B'
 const KEY_ENTER = '\r'
 const KEY_ESCAPE = '\x1b'
-
-/** Tool names approved for the rest of a session, per agent (choice 2). */
-const sessionAllowances = new WeakMap<Agent, Set<string>>()
-
-/** Prompts waiting for the visible one to settle, in arrival order. */
-const queuedPrompts: Array<() => void> = []
-/** Whether a prompt is currently visible (or settling). */
-let promptActive = false
-
-/**
- * Run one prompt through the FIFO: an idle queue starts it synchronously so
- * the overlay is visible before the waterfall dispatch returns; otherwise
- * the prompt waits its turn. A settling prompt releases the next.
- * @param task - the prompt to run once earlier prompts settle.
- * @returns the prompt's outcome.
- */
-function enqueueApproval(task: () => Promise<ApprovalOutcome>): Promise<ApprovalOutcome> {
-  return new Promise<ApprovalOutcome>((resolve) => {
-    const run = (): void => {
-      promptActive = true
-      // The only task is the internal prompt below, which never rejects.
-      void task().then((outcome) => {
-        promptActive = false
-        resolve(outcome)
-        queuedPrompts.shift()?.()
-      })
-    }
-    if (promptActive) queuedPrompts.push(run)
-    else run()
-  })
-}
 
 /** Construction options for {@link ApprovalPrompt}. */
 interface ApprovalPromptOptions {
@@ -243,37 +208,109 @@ class ApprovalPrompt implements BlueFocusable {
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
-  ctx.on('approval/request', (req, next) => answer(ctx, req, next))
-}
+  const reader = ctx.blueSessionReader
+  const actions = ctx.blueSessionActions
+  const sessionAllowances = new Map<string, Set<string>>()
+  const queuedPrompts: Array<() => void> = []
+  const cancelPrompts = new Set<() => void>()
+  let promptActive = false
+  let disposed = false
 
-/**
- * Answer one approval request interactively, or delegate when this UI does
- * not own the requesting agent.
- * @param ctx - plugin context carrying the Blue services.
- * @param req - the pending decision.
- * @param next - delegates to the remaining answerers.
- * @returns the chosen outcome.
- */
-function answer(
-  ctx: Context,
-  req: ApprovalRequest,
-  next: () => Promise<ApprovalOutcome>,
-): Promise<ApprovalOutcome> {
-  const agent = currentBlueAgent(ctx)
-  // eslint-disable-next-line no-console
-  if (agent === undefined || agent !== req.agent) return next()
-  // A session-scoped allowance short-circuits the prompt entirely.
-  if (sessionAllowances.get(req.agent)?.has(req.toolName) === true) {
-    return Promise.resolve<ApprovalOutcome>('allowed-once')
+  /** Run one cancellable prompt through this Fiber's FIFO. */
+  const enqueueApproval = (
+    task: (registerCancel: (cancel: () => void) => void) => Promise<ApprovalOutcome>,
+    signal?: AbortSignal,
+  ): Promise<ApprovalOutcome> => new Promise<ApprovalOutcome>((resolve) => {
+    let started = false
+    let finished = false
+    /* v8 ignore next -- a started task registers its synchronous cancel hook before external code can run. */
+    let cancelTask = (): void => {}
+    const release = (): void => {
+      if (!started) return
+      promptActive = false
+      queuedPrompts.shift()?.()
+    }
+    const finish = (outcome: ApprovalOutcome): void => {
+      /* v8 ignore next -- finish removes every external cancel source before resolving. */
+      if (finished) return
+      finished = true
+      cancelPrompts.delete(cancel)
+      signal?.removeEventListener('abort', cancel)
+      resolve(outcome)
+      release()
+    }
+    const cancel = (): void => {
+      /* v8 ignore next -- settled prompts remove this callback from both the set and signal. */
+      if (finished) return
+      if (started) {
+        cancelTask()
+        return
+      }
+      const index = queuedPrompts.indexOf(run)
+      // A non-started task is necessarily in this Fiber's queue: external
+      // cancellation cannot run between listener registration and enqueue.
+      queuedPrompts.splice(index, 1)
+      finish('cancelled')
+    }
+    const run = (): void => {
+      started = true
+      promptActive = true
+      /* v8 ignore next -- Fiber cleanup cancels and removes every queued task before it can run. */
+      if (disposed) {
+        finish('cancelled')
+        return
+      }
+      void task(next => { cancelTask = next }).then(finish)
+    }
+    cancelPrompts.add(cancel)
+    signal?.addEventListener('abort', cancel, { once: true })
+    if (promptActive) queuedPrompts.push(run)
+    else run()
+  })
+
+  const answer = (
+    req: ApprovalRequest,
+    next: () => Promise<ApprovalOutcome>,
+  ): Promise<ApprovalOutcome> => {
+    if (!actions.isCurrentAgent(req.agent)) return next()
+    const sessionId = reader.current()?.id
+    if (sessionId === undefined) return next()
+    if (sessionAllowances.get(sessionId)?.has(req.toolName) === true) {
+      return Promise.resolve<ApprovalOutcome>('allowed-once')
+    }
+    if (req.signal?.aborted) return Promise.resolve<ApprovalOutcome>('cancelled')
+    if (actions.modeState()?.mode === 'yolo') return Promise.resolve<ApprovalOutcome>('allowed-once')
+    return enqueueApproval((registerCancel) => {
+      if (!actions.isCurrentAgent(req.agent)) return Promise.resolve<ApprovalOutcome>('cancelled')
+      return prompt(ctx, req, registerCancel, () => {
+        if (!actions.isCurrentAgent(req.agent) || reader.current()?.id !== sessionId) return
+        let tools = sessionAllowances.get(sessionId)
+        if (tools === undefined) {
+          tools = new Set()
+          sessionAllowances.set(sessionId, tools)
+        }
+        tools.add(req.toolName)
+      }, (reason) => {
+        actions.steerCurrentAgent(req.agent, `User rejected ${req.toolName}: ${reason}`)
+      })
+    }, req.signal)
   }
-  // Yolo (S24a) short-circuits every prompt for the attached agent. The
-  // harness approval policy deliberately stays `'ask'` — `'never'` resolves
-  // asks as rejected BEFORE the waterfall dispatch, so this answerer is the
-  // only auto-approve surface. An already-aborted request cancels rather
-  // than allows, matching the queued-prompt guard below.
-  if (req.signal?.aborted) return Promise.resolve<ApprovalOutcome>('cancelled')
-  if (yoloActive(req.agent)) return Promise.resolve<ApprovalOutcome>('allowed-once')
-  return enqueueApproval(() => prompt(ctx, req))
+
+  ctx.on('approval/request', (req, next) => answer(req, next))
+  let observedSessionId = reader.current()?.id
+  const sessionRegistration = reader.subscribe(snapshot => {
+    const next = snapshot?.id
+    if (next === observedSessionId) return
+    observedSessionId = next
+    for (const cancel of [...cancelPrompts]) cancel()
+  })
+  ctx.effect(() => () => {
+    disposed = true
+    sessionRegistration.dispose()
+    for (const cancel of [...cancelPrompts]) cancel()
+    queuedPrompts.splice(0)
+    sessionAllowances.clear()
+  })
 }
 
 /**
@@ -283,8 +320,13 @@ function answer(
  * @param req - the pending decision.
  * @returns the chosen outcome.
  */
-function prompt(ctx: Context, req: ApprovalRequest): Promise<ApprovalOutcome> {
-  if (req.signal?.aborted) return Promise.resolve<ApprovalOutcome>('cancelled')
+function prompt(
+  ctx: Context,
+  req: ApprovalRequest,
+  registerCancel: (cancel: () => void) => void,
+  allowForSession: () => void,
+  steer: (reason: string) => void,
+): Promise<ApprovalOutcome> {
   return new Promise<ApprovalOutcome>((resolve) => {
     let settled = false
     const settle = (outcome: ApprovalOutcome): void => {
@@ -301,31 +343,20 @@ function prompt(ctx: Context, req: ApprovalRequest): Promise<ApprovalOutcome> {
       toolName: req.toolName,
       ...req.reason === undefined ? {} : { reason: req.reason },
       settle,
-      allowForSession: () => {
-        /* v8 ignore next -- the prompt settles right after recording, so a replay cannot reach this */
-        if (settled) return
-        let tools = sessionAllowances.get(req.agent)
-        if (tools === undefined) {
-          tools = new Set()
-          sessionAllowances.set(req.agent, tools)
-        }
-        tools.add(req.toolName)
-      },
+      allowForSession,
       steer: (reason) => {
         /* v8 ignore next -- the prompt settles right after steering, so a replay cannot reach this */
         if (settled) return
-        req.agent.steer(createUserMessage({
-          content: [{ type: 'text', text: `User rejected ${req.toolName}: ${reason}` }],
-          source: { kind: 'user' },
-        }))
+        steer(reason)
       },
     })
     // The kimi dialog mount (D30): the prompt replaces the editor in its
     // dock slot, so below it only the footer remains.
-    const restore = mountEditorReplacement(component)
+    const restore = mountEditorReplacement(ctx, component)
     const onAbort = (): void => {
       settle('cancelled')
     }
+    registerCancel(onAbort)
     req.signal?.addEventListener('abort', onAbort, { once: true })
   })
 }

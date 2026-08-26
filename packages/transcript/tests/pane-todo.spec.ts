@@ -374,7 +374,7 @@ describe('blue-pane-todo', () => {
     await dispose()
   })
 
-  it('re-attaches on blue/session-changed and drops the stale subscription', async () => {
+  it('re-attaches on test/session-changed and drops the stale subscription', async () => {
     resetSeq()
     const first = fakeAgent([todoWrite([{ content: 'first', status: 'pending' }])])
     const { ctx, screen, dispose } = await bootPanePlugin(todo, first)
@@ -382,7 +382,7 @@ describe('blue-pane-todo', () => {
 
     resetSeq()
     const second = fakeAgent([userEvent('fresh')])
-    ctx.emit('blue/session-changed', asAgent(second))
+    ctx.emit('test/session-changed', asAgent(second))
     expect(screen.paneLines()).toEqual([])
 
     // The stale subscription to the first session stays inert.

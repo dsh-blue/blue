@@ -6,9 +6,9 @@
  * the JSONL chunk rows expanded with the dsh decoder), and `/copy` pushes
  * the last assistant message's text through the `./clipboard-write.ts`
  * pipeline. Both commands share one read path — raw artifact → decoded
- * events → `foldSessionEvents` — so the export mirrors exactly what the
- * transcript renders (the D28 injection filter included) and survives
- * compaction and resume. This module injects nothing and resolves every
+ * events plus the current official `blueConversation` projection. Readable
+ * output mirrors the projected transcript; `full` deliberately preserves the
+ * decoded append-only audit. This module injects nothing and resolves every
  * service through `ctx.get` (the `/theme` fiber-dispose trap).
  *
  * @module @dsh-blue/blue-interaction/session-export
@@ -18,17 +18,18 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import { decodeStorageRecord } from '@deepseek-ai/dsh-session'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import { decodeStorageRecord, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { foldSessionEvents } from '@dsh-blue/blue-transcript'
 import type { TranscriptItem, TranscriptToolItem } from '@dsh-blue/blue-transcript'
 // Empty type imports carry the `commands` merge the registration uses, the
-// app-owned `blueSession` merge every handler reads, and the
+// app-owned reader/action/projection merges every handler reads, and the
 // `sessionPersistence` merge the read path resolves.
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@dsh-blue/blue-app'
 import type {} from '@deepseek-ai/dsh-session-persistence'
+import type {} from '@deepseek-ai/dsh-session-projection'
 import { copyTextToClipboard } from './clipboard-write.ts'
 import { getSharedEditor } from './editor-instance.ts'
 /** The key-arg whitelist for the tool-call hint, in priority order (the
@@ -46,6 +47,17 @@ const TOPIC_MAX_CHARS = 80
 
 /** The shortest id prefix kept in default filenames. */
 const ID_PREFIX_LENGTH = 8
+
+interface ProjectionImage { readonly attachmentId: string; readonly mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'; readonly bytes: number; readonly width: number; readonly height: number; readonly name?: string; readonly originalDimensions?: { readonly width: number; readonly height: number } }
+interface ProjectionEntryBase { readonly id: string; readonly seq: number; readonly turn: number }
+type ProjectionEntry =
+  | (ProjectionEntryBase & { readonly kind: 'user'; readonly text: string; readonly images: readonly ProjectionImage[] })
+  | (ProjectionEntryBase & { readonly kind: 'assistant'; readonly step: number; readonly text: string; readonly streaming: boolean })
+  | (ProjectionEntryBase & { readonly kind: 'thinking'; readonly step: number; readonly text: string; readonly streaming: boolean })
+  | (ProjectionEntryBase & { readonly kind: 'tool'; readonly step: number; readonly callId: string; readonly name: string; readonly arguments: string; readonly startedAt: number; readonly result?: { readonly text: string; readonly isError: boolean; readonly endedAt: number } })
+  | (ProjectionEntryBase & { readonly kind: 'error'; readonly message: string; readonly code?: string })
+  | (ProjectionEntryBase & { readonly kind: 'interrupted' })
+interface ConversationProjection { readonly entries: readonly ProjectionEntry[]; readonly streaming: boolean }
 
 /** Flatten and ellipsize one hint string. */
 function shorten(text: string, maxChars: number): string {
@@ -355,6 +367,47 @@ function format1024(count: number): string {
   return String(count)
 }
 
+/** Convert the official conversation view into the Markdown item vocabulary. */
+function projectionItems(projection: ConversationProjection): TranscriptItem[] {
+  return projection.entries.map((entry): TranscriptItem => {
+    switch (entry.kind) {
+      case 'user':
+        return {
+          kind: 'user', seq: entry.seq, turn: entry.turn, text: entry.text,
+          images: entry.images.map(image => ({
+            attachmentId: AttachmentId(image.attachmentId), mediaType: image.mediaType, bytes: image.bytes,
+            width: image.width, height: image.height,
+            ...(image.name === undefined ? {} : { name: image.name }),
+            ...(image.originalDimensions === undefined ? {} : { originalDimensions: { ...image.originalDimensions } }),
+          })),
+        }
+      case 'assistant':
+        return { kind: 'assistant', seq: entry.seq, turn: entry.turn, step: entry.step, text: entry.text }
+      case 'thinking':
+        return { kind: 'thinking', seq: entry.seq, turn: entry.turn, step: entry.step, text: entry.text, streaming: entry.streaming }
+      case 'tool':
+        return {
+          kind: 'tool', seq: entry.seq, turn: entry.turn, step: entry.step, callId: entry.callId,
+          name: entry.name, arguments: entry.arguments, startedAt: entry.startedAt,
+          ...(entry.result === undefined ? {} : {
+            result: {
+              text: entry.result.text, fullText: entry.result.text,
+              isError: entry.result.isError, endedAt: entry.result.endedAt,
+            },
+          }),
+        }
+      case 'error':
+        return { kind: 'error', seq: entry.seq, turn: entry.turn, message: entry.message, ...(entry.code === undefined ? {} : { code: entry.code }) }
+      case 'interrupted':
+        return { kind: 'interrupted', seq: entry.seq, turn: entry.turn }
+    }
+  })
+}
+
+function isConversationProjection(value: unknown): value is ConversationProjection {
+  return value !== null && typeof value === 'object' && Array.isArray((value as { entries?: unknown }).entries)
+}
+
 /** The facts the full (event-stream) export renders. */
 export interface FullExportInput {
   /** The persisted session id. */
@@ -401,8 +454,8 @@ export function buildFullExportMarkdown(input: FullExportInput): string {
  * @returns a disposer unregistering both commands.
  */
 export function registerExportCommands(ctx: Context): () => void {
-  /** The shared read path's outcome: the session identity, its decoded
-   * event stream, and the fold built from it. */
+  /** The shared read path's outcome: session identity, decoded audit events,
+   * and the current official projected transcript. */
   interface SessionExportSource {
     /** The persisted session id. */
     readonly id: string
@@ -410,19 +463,19 @@ export function registerExportCommands(ctx: Context): () => void {
     readonly cwd: string | undefined
     /** The decoded event stream, in seq order (the full export's view). */
     readonly events: readonly SessionEvent[]
-    /** The folded transcript, in session order (the readable export's view). */
+    /** The projected transcript, in session order (the readable export's view). */
     readonly items: readonly TranscriptItem[]
   }
 
   /**
-   * The shared read path: the current session's raw artifact, decoded into
-   * events and folded. Resolves `undefined` when no session is live yet;
+   * The shared read path: the current session's raw artifact plus its current
+   * official conversation projection. Resolves `undefined` when no session is live yet;
    * throws the classified failure for every other stop.
    * @param signal - the dispatching UI request's cancellation signal.
    */
   async function readSessionSource(signal: AbortSignal): Promise<SessionExportSource | undefined> {
-    const agent = ctx.get('blueSession')?.current
-    if (agent === undefined || agent === null) return undefined
+    const session = ctx.blueSessionReader.current()
+    if (session === null) return undefined
     const persistence = ctx.get('sessionPersistence')
     if (persistence === undefined) throw new Error('session persistence is unavailable')
     if (persistence.supportsRawArtifacts === false) {
@@ -432,8 +485,9 @@ export function registerExportCommands(ctx: Context): () => void {
     // write-behind), so a durable read must flush first — the SessionStore's
     // documented pre-read channel (`ctx.get`, never the inject proxy).
     // Safe with no store, no listener (flush returns false), or any backend.
-    await ctx.get('sessions')?.flush(agent.session)
-    const raw = await persistence.readRaw(agent.id, signal)
+    const flushed = await ctx.blueSessionActions.flush()
+    if (!flushed.ok) throw new Error(flushed.message)
+    const raw = await persistence.readRaw(SessionId(session.id), signal)
     if (raw === undefined) throw new Error('the session has no stored artifact yet')
     const events: SessionEvent[] = []
     for (const line of raw.content.split('\n')) {
@@ -446,11 +500,13 @@ export function registerExportCommands(ctx: Context): () => void {
       }
       events.push(...decodeStorageRecord(value))
     }
-    return { id: agent.id, cwd: agent.session.header.cwd, events, items: foldSessionEvents(events) }
+    const projection = ctx.blueSessionProjections.current('blueConversation')?.value
+    const items = isConversationProjection(projection) ? projectionItems(projection) : []
+    return { id: session.id, cwd: session.cwd, events, items }
   }
 
   /**
-   * The `/export` handler: write the folded transcript (`/export [path]`)
+   * The `/export` handler: write the projected transcript (`/export [path]`)
    * or the full event stream (`/export full [path]`) as Markdown and flash
    * the path in the hint line.
    * @param rawInput - the command's raw argument string (`[full] [<path>]`).
@@ -493,7 +549,7 @@ export function registerExportCommands(ctx: Context): () => void {
     } catch (error) {
       return { kind: 'error', text: `could not write export: ${describe(error)}` }
     }
-    getSharedEditor()?.notice?.(`exported ${String(count)} ${full ? 'events' : 'items'} to ${outputPath}`)
+    getSharedEditor(ctx)?.notice?.(`exported ${String(count)} ${full ? 'events' : 'items'} to ${outputPath}`)
     return { kind: 'success' }
   }
 
@@ -522,7 +578,7 @@ export function registerExportCommands(ctx: Context): () => void {
     // The OSC 52 leg cannot be confirmed from this side — the terminal
     // honors it silently or ignores it silently — so it reports as
     // unverified (the kimi wording).
-    getSharedEditor()?.notice?.(method === 'native'
+    getSharedEditor(ctx)?.notice?.(method === 'native'
       ? `copied the last assistant message (${String(text.length)} characters)`
       : `copied via terminal escape sequence (unverified, ${String(text.length)} characters)`)
     return { kind: 'success' }

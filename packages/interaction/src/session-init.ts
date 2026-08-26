@@ -2,7 +2,7 @@
  * The `/init` command: one canned prompt, the kimi registry's `init`
  * spirit — analyze the current codebase and write the findings to
  * `AGENTS.md` in the project root. The prompt goes to the UI's current
- * agent as an ordinary user follow-up (`agent.followup`), so the
+ * session through the app-owned follow-up action, so the
  * exploration runs as a normal turn of the live session; the reading side
  * is already upstream (dsh-agent-instructions feeds `AGENTS.md` into later
  * sessions), the command only seeds the writing side. A non-idle agent
@@ -15,8 +15,6 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { currentBlueAgent } from './session.ts'
 
 /**
  * The canned exploration prompt `/init` submits as a follow-up turn: the
@@ -48,17 +46,15 @@ export function registerInitCommand(ctx: Context): () => void {
     name: 'init',
     description: 'Analyze the codebase and write AGENTS.md',
     handler: (): CommandResult => {
-      const agent = currentBlueAgent(ctx)
-      if (agent === undefined) {
+      const session = ctx.blueSessionReader.current()
+      if (session === null) {
         return { kind: 'error', text: 'no active session' }
       }
-      if (agent.status !== 'idle') {
+      if (session.status !== 'idle') {
         return { kind: 'error', text: 'cannot run /init while the agent is running' }
       }
-      agent.followup(createUserMessage({
-        content: [{ type: 'text', text: INIT_PROMPT }],
-        source: { kind: 'user' },
-      }))
+      const submitted = ctx.blueSessionActions.followup([{ type: 'text', text: INIT_PROMPT }])
+      if (!submitted.ok) return { kind: 'error', text: submitted.message }
       return { kind: 'success', text: 'analyzing the codebase to write AGENTS.md' }
     },
   })

@@ -29,12 +29,9 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
-import type { ToolSchema } from '@deepseek-ai/dsh-llm'
-// Empty type imports carry the `tools` Context merge (dsh-tools) and the
-// app-owned `blueSession` merge the collector reads.
-import type {} from '@deepseek-ai/dsh-tools'
+import type { BlueSessionToolSchema } from '@dsh-blue/blue-app'
+// Empty type import carries the app-owned tool-catalog action service.
 import type {} from '@dsh-blue/blue-app'
-import { resolveToolViewScope } from './tool-scope.ts'
 
 /** The loader module specifier an MCP server entry declares. */
 export const MCP_CLIENT_MODULE = '@deepseek-ai/dsh-mcp-client'
@@ -94,7 +91,7 @@ export interface McpServerView {
   /** Tools registered under this server's namespace (global registry view). */
   readonly registeredCount: number
   /** The session-visible tools of this server (equals the global view when no session is live). */
-  readonly toolsVisible: readonly ToolSchema[]
+  readonly toolsVisible: readonly BlueSessionToolSchema[]
 }
 
 /** The whole `/mcp` read: servers plus the join's honest leftovers. */
@@ -201,22 +198,20 @@ function serverPrefix(serverName: string): string {
  * Collect the MCP server catalog. Reads the loader entry tree once, the
  * global registry view once, and — when a session is live — the agent's
  * visible view once more.
- * @param ctx - plugin context (`loader`, `tools`, `blueSession`, and the
- *   optional `agentPresets` roster).
+ * @param ctx - plugin context carrying the loader and app-owned tool-catalog
+ *   action boundary.
  * @returns the joined catalog.
  * @throws when the preset roster cannot resolve its standing mount (the
  *   caller owns the error surface).
  */
-export function collectMcpServers(ctx: Context): Promise<McpCatalog> {
+export async function collectMcpServers(ctx: Context): Promise<McpCatalog> {
   const loader = ctx.get('loader') as
     | { entries(): Generator<Entry, void, void> }
     | undefined
-  const tools = ctx.get('tools') as
-    | { schemas(scope?: unknown): readonly ToolSchema[] }
-    | undefined
-  if (loader === undefined || tools === undefined) {
-    return Promise.reject(new Error('the host composes no loader or tools service'))
-  }
+  if (loader === undefined) throw new Error('the host composes no loader service')
+  const observed = await ctx.blueSessionActions.toolCatalog()
+  if (!observed.ok) throw new Error(observed.message)
+  const catalog = observed.value
 
   // The declared servers, in entry-tree order; the normalized fiber config
   // is preferred, the raw options config covers never-started entries.
@@ -233,7 +228,7 @@ export function collectMcpServers(ctx: Context): Promise<McpCatalog> {
 
   // The global registry view: the registered (health) counts, and the
   // orphans — mcp__-named tools no declared server owns.
-  const globalSchemas = tools.schemas()
+  const globalSchemas = catalog.registered
   const registered = new Map<string, number>()
   let orphanCount = 0
   const prefixes = configs
@@ -253,11 +248,9 @@ export function collectMcpServers(ctx: Context): Promise<McpCatalog> {
   // The session-visible view: the agent's preset scope when a session is
   // live, the global view otherwise (the process-level truth /mcp degrades
   // to — the panel notes the missing session).
-  const agent = ctx.get('blueSession')?.current
-  const sessionLive = agent !== undefined && agent !== null
-  return resolveToolViewScope(ctx, agent?.ctx).then(scope => {
-    const visibleSchemas = scope === undefined ? globalSchemas : tools.schemas!(scope)
-    const visible = new Map<string, ToolSchema[]>()
+  const sessionLive = catalog.sessionLive
+  const visibleSchemas = catalog.visible
+  const visible = new Map<string, BlueSessionToolSchema[]>()
     for (const schema of visibleSchemas) {
       if (!schema.name.startsWith(MCP_PREFIX)) continue
       const owner = prefixes.find(prefix => schema.name.startsWith(prefix))
@@ -267,7 +260,7 @@ export function collectMcpServers(ctx: Context): Promise<McpCatalog> {
       visible.set(owner, list)
     }
 
-    const servers = configs.map(({ entry, config }) => {
+  const servers = configs.map(({ entry, config }) => {
       const serverName = readString(config.serverName) ?? entry.id
       const prefix = serverPrefix(serverName)
       const registeredCount = registered.get(prefix) ?? 0
@@ -296,7 +289,6 @@ export function collectMcpServers(ctx: Context): Promise<McpCatalog> {
         registeredCount,
         toolsVisible,
       } satisfies McpServerView
-    })
-    return { servers, orphanCount, sessionLive }
   })
+  return { servers, orphanCount, sessionLive }
 }

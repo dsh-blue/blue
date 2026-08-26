@@ -1,95 +1,97 @@
 # 内置插件
 
-Blue 的一切表面都是插件（patch 行）——本页是 29 个内置插件的目录，其中 5 个已验收的 frontend-runtime/生态行默认启用并按 capability 降级。它们同时也是"插件能做什么"的活例子：状态栏条目、工具卡片、编辑器增强、完整面板，全部经 [Seam 参考](/plugins/seams)里的缝注册，逐个可拆。
-
-三段结构一张图（与仓库 README 同源，单一来源 `docs/diagrams/blue-composition.mmd`）：
+Blue 的 installable bundle 含 28 条 Blue 自有行：2 条宿主支撑行，以及按基线、增强、装配三段组织的 26 条产品行。外部插件通过 renderer-neutral public API 接入；内部 row 之间用显式 `inject` 和 model/action seam 连接。
 
 <!-- BEGIN diagram:blue-composition -->
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml — the 29 Blue rows · 29 条 Blue 行"]
-        subgraph baseline["plain baseline 基线 — 9 rows, self-sufficient 自足"]
-            api["blue-api-host"]
-            core["blue-core"]
-            theme["blue-theme-dark"]
-            banner["blue-banner"]
-            transcript["blue-transcript"]
-            sbasic["blue-status-basic"]
-            interaction["blue-interaction"]
-            startup["blue-startup"]
-            bapp["blue-app"]
+    subgraph bundle["cordis.patch.yml - 28 Blue-owned rows · 28 条 Blue 自有行"]
+        subgraph host["host support 宿主支撑 - 2 rows"]
+            presets["blue-agent-presets"]
+            creative["blue-creative-host"]
         end
-        subgraph enhancement["enhancement segment 增强段 — every row droppable 每行皆可删"]
-            editorPlus["blue-editor-plus"]
-            att["blue-attachments · blue-paste-image"]
-            statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
-            intents["blue-intent-diff · -terminal"]
-            panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
-            runtime["blue-context · blue-conversation · blue-transcript-official · default-enabled"]
-            adapters["blue-openpencil · blue-lark · capability-gated"]
+        subgraph product["product UI 产品 UI - 26 rows"]
+            subgraph baseline["baseline 基线 - 8 rows"]
+                api["blue-api-host"]
+                core["blue-core · blue-theme-dark"]
+                chrome["blue-banner · blue-transcript · blue-status-basic"]
+                conversation["blue-conversation · blue-transcript-official"]
+            end
+            subgraph enhancement["enhancement 增强 - 14 droppable rows"]
+                editorPlus["blue-editor-plus"]
+                att["blue-attachments · blue-paste-image"]
+                statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
+                panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
+                viewBridge["blue-plugin-view-bridge"]
+            end
+            subgraph assembly["assembly 装配 - 4 rows"]
+                interaction["blue-interaction · blue-plugin-interaction-bridge"]
+                startup["blue-startup · blue-app"]
+            end
         end
     end
-    dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]
+    validation["validation-only, not bundle rows\nblue-context · blue-remote · blue-openpencil · blue-lark"]
+    dshbase["dsh-base - agent plane composed behind presets"]
     bundle -.-> dshbase
 
     classDef optional stroke-dasharray: 4 4;
-    class editorPlus,att,statusEnh,intents,panes,runtime,adapters optional;
+    class editorPlus,att,statusEnh,panes,viewBridge,validation optional;
 ```
 <!-- END diagram:blue-composition -->
 
-## 基线插件（6 个）
-
-组成最小可用 Blue UI 的六个插件——纯基线，建议整组保留：
+## 宿主支撑（2 行）
 
 | 插件 | 说明 |
-| --- | --- |
-| `blue-api-host` | 稳定 renderer-independent contract 与 capability 注册宿主 |
-| `blue-core` | 终端核心：全树唯一的 pi-tui 适配器，提供屏幕/键位/组件工厂/终端事实四项服务 |
-| `blue-theme-dark` | 内置 dark 调色板（`blueTheme` 服务的 plain 默认提供方） |
-| `blue-banner` | 启动欢迎横幅：logo + Welcome/`/help` 头两行、Directory/Model/Version 信息行 |
-| `blue-transcript` | 会话流主体：事件折叠与渲染、状态栏注册表与两行 footer 壳 |
-| `blue-status-basic` | 状态栏基线条目：model 名（优先级 0） |
+|---|---|
+| `blue-agent-presets` | Blue 自有 preset root，组成 standard/code/minimal agent plane |
+| `blue-creative-host` | 隔离的 dynamic Cordis host；只经 public plugin host 向 UI 贡献 |
 
-## 增强插件（20 个）
+## 基线（8 行）
 
-在纯基线之上的可选层——每一行都可单独删除而不破坏基线：
+这 8 行加装配段构成最小可用 UI。Conversation producer/consumer 已是基线，因为旧 event fold 不再存在。
 
 | 插件 | 说明 |
-| --- | --- |
-| `blue-editor-plus` | 输入编辑器增强：`!` bash 模式 + 斜杠/`@` 补全 + 参数幽灵提示 |
-| `blue-attachments` | 附件存储：文件系统图片库（魔数嗅探、容量上限） |
-| `blue-paste-image` | Ctrl-V 剪贴板贴图，`[image #N]` 标记，提交拆为图片块 |
-| `blue-status-cwd` | 状态栏：会话工作目录（优先级 5，深路径缩写） |
-| `blue-status-git` | 状态栏：git 徽章 `branch [+a -d ↑u↓v]`（优先级 10，TTL 缓存探测） |
-| `blue-status-mode` | 状态栏：会话模式徽标 `plan`/`yolo`（优先级 2，normal 态隐藏） |
-| `blue-status-title` | 状态栏：会话标题（优先级 30，行 1 右对齐；S30 换位前是轮换教学提示的槽位） |
-| `blue-status-context` | 状态栏：context 占用 `context: N%`（优先级 20，第二行右对齐） |
-| `blue-intent-diff` | diff 专属工具卡（Write/Edit 的统一 diff 着色呈现） |
-| `blue-intent-terminal` | 终端输出专属工具卡（`$ command` + exit 徽章） |
-| `blue-pane-activity` | 活动面板：等待/运行/撰写的模式指示（月亮与 braille spinner） |
-| `blue-pane-queue` | 排队消息面板 + 空编辑器 Up 召回 |
-| `blue-pane-todo` | todo 面板（Ctrl-T 折叠切换，全完成自动收起） |
-| `blue-pane-btw` | `/btw` 侧问面板：fork 当前会话问旁路问题 |
-| `blue-pane-agents` | 子代理分组面板：运行中的子代理组卡片（dock 末行，kimi swarm-pane 语义） |
-| `blue-context` | 默认的官方 context projection 与结构化 action frontend-runtime vertical slice；旧 reader fallback 保留 |
-| `blue-conversation` | 官方 append-origin conversation projection producer；与 official transcript consumer 配对验收 |
-| `blue-transcript-official` | 默认的 whole projection snapshot/change feed semantic transcript consumer |
-| `blue-openpencil` | 按 capability 激活的官方 tool-result presentation 与 plain fallback adapter |
-| `blue-lark` | 按 capability 激活的官方 command 与 loopback settings notification adapter |
+|---|---|
+| `blue-api-host` | manifest 校验与 capability-scoped command/status/dock/notification registries |
+| `blue-core` | 唯一 pi-tui/raw-terminal adapter，提供 screen/keymap/components/terminal facts |
+| `blue-theme-dark` | 默认 dark theme provider |
+| `blue-banner` | 启动欢迎横幅 |
+| `blue-transcript` | transcript/status/dock/tool model host 与 TUI renderer |
+| `blue-status-basic` | model 名 footer `StatusModel` producer |
+| `blue-conversation` | official append-origin conversation + shared facts projections |
+| `blue-transcript-official` | whole projection snapshot/feed 的 semantic transcript consumer |
 
-## 装配插件（3 个）
-
-收尾装配层，提供输入交互与 Agent 驱动：
+## 增强（14 行）
 
 | 插件 | 说明 |
-| --- | --- |
-| `blue-interaction` | 输入编辑器、内置命令、问卷 provider、审批应答方 |
-| `blue-startup` | 启动值提供方：`[task]` 位置参数与 `--resume` 解析 |
-| `blue-app` | Agent 驱动：创建/恢复会话并发布 `blueSession` |
+|---|---|
+| `blue-editor-plus` | bash mode、slash/`@`/`#` completion 与参数提示 |
+| `blue-attachments` | 有界文件系统图片 store |
+| `blue-paste-image` | Ctrl-V 剪贴板图片与可回滚 submit transformation |
+| `blue-status-cwd` | 当前 session cwd |
+| `blue-status-git` | TTL-cached git badge |
+| `blue-status-mode` | plan/yolo mode badge |
+| `blue-status-title` | projected session title |
+| `blue-status-context` | projected context occupancy |
+| `blue-pane-activity` | projection-backed activity model |
+| `blue-pane-queue` | app action-backed queued-message model/recall |
+| `blue-pane-todo` | projection-backed todo model |
+| `blue-pane-btw` | opaque owned side-session action + official projection |
+| `blue-pane-agents` | projected subagent group model |
+| `blue-plugin-view-bridge` | public status/dock contributions -> owner model registries |
 
-## 启停与定制
+## 装配（4 行）
 
-内置插件无需安装——它们就是 bundle 的 `cordis.patch.yml` 行。想定制组合时，直接编辑 profile 的 patch 文件增删行即可（`dsh plugin --profile blue add link:…` 装入后，patch 位于 profile 目录下）；三段式装配与 dock 顺序的机制说明见[功能总览](/features/)。
+| 插件 | 说明 |
+|---|---|
+| `blue-interaction` | editor、commands、panels、question/approval providers |
+| `blue-plugin-interaction-bridge` | public command/notification contributions -> Harness/editor consumer |
+| `blue-startup` | `[task]` 与 `--resume` 启动值 |
+| `blue-app` | Agent driver；提供 readonly session reader/projections 和 structured actions |
 
-生态插件的发现与一键安装见[插件市场](/marketplace/)（建设中）。
+## Validation-only 包
+
+`blue-context`、`blue-remote`、`blue-openpencil`、`blue-lark` 通过独立 fixture 验证 adapter 架构，但不是 bundle row，也不进入正式 release dependency closure。
+
+想定制组合时可编辑 profile 的 patch；删除 projection-backed baseline row 会移除核心产品能力，14 条 enhancement row 才是设计为逐项可移除的层。

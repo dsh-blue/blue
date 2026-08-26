@@ -37,6 +37,7 @@ import {
   highlightLeadingSlashToken,
   injectGhostHint,
   injectPromptSymbol,
+  padColumns,
   withSideBorders,
 } from './chrome.ts'
 import { WrappingSelectList } from './wrapping-select-list.ts'
@@ -126,12 +127,15 @@ function imageTheme(colors: BlueSemanticColors): ImageTheme {
  * Map the palette to a settings-list theme; `cursor` is a plain string.
  * The selected row's label and value take the interaction primary (S12
  * closes the S10 review item that left them on accent — the selected row
- * is an interaction target, `primary` is its token).
+ * is an interaction target, `primary` is its token). Unselected values
+ * paint plain `text`, not `muted`: the value column is content, and a dim
+ * value column left the selected row indistinguishable (the S38 contrast
+ * finding).
  */
 function settingsListTheme(colors: BlueSemanticColors): SettingsListTheme {
   return {
     label: (text, selected) => (selected ? colors.primary(text) : colors.text(text)),
-    value: (text, selected) => (selected ? colors.primary(text) : colors.muted(text)),
+    value: (text, selected) => (selected ? colors.primary(text) : colors.text(text)),
     description: colors.muted,
     cursor: colors.primary('❯ '),
     hint: colors.muted,
@@ -262,6 +266,13 @@ class EditorAdapter implements BlueEditor {
     return [...history]
   }
 
+  removeLatestHistory(text: string): boolean {
+    const history = (this.editor as unknown as { history: string[] }).history
+    if (history[0] !== text) return false
+    history.shift()
+    return true
+  }
+
   setBorderColor(color: BlueColorFn): void {
     this.editor.borderColor = color
   }
@@ -321,7 +332,8 @@ class EditorAdapter implements BlueEditor {
   }
 
   render(width: number): string[] {
-    const lines = this.editor.render(width)
+    const renderWidth = this.connectedAbove ? Math.max(1, width - 2) : width
+    const lines = this.editor.render(renderWidth)
     // The first content row (row index 1 under the top border — a
     // scrolled-away top rule keeps that indexing) carries the S14
     // completion polish in the kimi order: the leading `/command` token
@@ -335,7 +347,7 @@ class EditorAdapter implements BlueEditor {
       row = highlightLeadingSlashToken(row, this.chrome.slashTokenPaint) ?? row
     }
     if (this.ghostHint !== undefined && this.cursorAtInputEnd()) {
-      row = injectGhostHint(row, this.ghostHint, this.editor.getText().length, width, this.chrome.ghostHintPaint)
+      row = injectGhostHint(row, this.ghostHint, this.editor.getText().length, renderWidth, this.chrome.ghostHintPaint)
     }
     // The bash `!` shares the border hue so the mode reads as one unit; the
     // neutral `>` stays in the terminal's default foreground (kimi rule).
@@ -352,10 +364,11 @@ class EditorAdapter implements BlueEditor {
     // Corners and bars route through the live `borderColor` property, so a
     // host recolor via `setBorderColor` (slash context, bash mode) repaints
     // the whole frame in sync without re-entering this adapter.
-    return withSideBorders(lines, (text: string) => this.editor.borderColor(text), {
+    const framed = withSideBorders(lines, (text: string) => this.editor.borderColor(text), {
       connectedAbove: this.connectedAbove,
       label: this.borderLabel,
     })
+    return this.connectedAbove ? padColumns(framed, 1) : framed
   }
 
   handleInput(data: string): void {
@@ -467,8 +480,12 @@ class SelectListAdapter implements BlueSelectList {
 }
 
 /** Delegate exposing a pi-tui `SettingsList` through the Blue contract. */
-class SettingsListAdapter {
+class SettingsListAdapter implements BlueSettingsList {
   constructor(private readonly list: SettingsList) {}
+
+  updateValue(id: string, newValue: string): void {
+    this.list.updateValue(id, newValue)
+  }
 
   render(width: number): string[] {
     return this.list.render(width)

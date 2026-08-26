@@ -12,12 +12,12 @@ import {
   AssistantMessageComponent,
   ErrorMessageComponent,
   InterruptedMarkerComponent,
-  setUserFoldThresholds,
   StepSummaryComponent,
   ToolCallComponent,
   UserMessageComponent,
   USER_PREVIEW_LINES,
 } from '../src/components.ts'
+import { DEFAULT_TRANSCRIPT_PRESENTATION } from '../src/presentation-policy.ts'
 import type {
   TranscriptAssistantItem,
   TranscriptErrorItem,
@@ -60,6 +60,11 @@ function tagged(): BlueSemanticColors {
 /** One shared fake factory; stateless across components. */
 function setup(): BlueComponents {
   return fakeBlueComponents()
+}
+
+/** Component wiring with tree-local presentation overrides. */
+function presentation(overrides: Partial<typeof DEFAULT_TRANSCRIPT_PRESENTATION>) {
+  return { presentation: () => ({ ...DEFAULT_TRANSCRIPT_PRESENTATION, ...overrides }) }
 }
 
 function userItem(text: string): TranscriptUserItem {
@@ -186,14 +191,11 @@ describe('UserMessageComponent', () => {
     // The chars criterion catches what the line count cannot: one long
     // line (a big one-line JSON, say). Four wrapped rows at this width,
     // so the preview genuinely hides content and the hint row appears.
-    setUserFoldThresholds(10, 300)
-    try {
-      const lines = new UserMessageComponent(userItem('x'.repeat(400)), COLORS, setup()).render(80)
-      expect(lines).toHaveLength(1 + USER_PREVIEW_LINES + 1)
-      expect(lines.at(-1)).toContain('more lines, 6 total, ctrl+o to expand')
-    } finally {
-      setUserFoldThresholds(undefined, undefined)
-    }
+    const lines = new UserMessageComponent(
+      userItem('x'.repeat(400)), COLORS, setup(), presentation({ userFoldChars: 300 }),
+    ).render(80)
+    expect(lines).toHaveLength(1 + USER_PREVIEW_LINES + 1)
+    expect(lines.at(-1)).toContain('more lines, 6 total, ctrl+o to expand')
   })
 
   it('never refolds an expanded message on resize', () => {
@@ -220,14 +222,11 @@ describe('UserMessageComponent', () => {
     expect(component.render(80)).toEqual(before)
   })
 
-  it('honors setUserFoldThresholds and restores the defaults', () => {
-    setUserFoldThresholds(3, 1000)
-    try {
-      const four = new UserMessageComponent(userItem('a\nb\nc\nd'), COLORS, setup()).render(80)
-      expect(four.some(line => line.includes('1 more lines, 4 total'))).toBe(true)
-    } finally {
-      setUserFoldThresholds(undefined, undefined)
-    }
+  it('keeps user-fold thresholds local to the owning tree', () => {
+    const four = new UserMessageComponent(
+      userItem('a\nb\nc\nd'), COLORS, setup(), presentation({ userFoldLines: 3 }),
+    ).render(80)
+    expect(four.some(line => line.includes('1 more lines, 4 total'))).toBe(true)
     const fourAgain = new UserMessageComponent(userItem('a\nb\nc\nd'), COLORS, setup()).render(80)
     expect(fourAgain.some(line => line.includes('more lines'))).toBe(false)
   })
@@ -249,6 +248,11 @@ describe('UserMessageComponent', () => {
 })
 
 describe('AssistantMessageComponent', () => {
+  it('renders an empty assistant body as only its separator row', () => {
+    const component = new AssistantMessageComponent({ kind: 'assistant', seq: 1, turn: 1, step: 0, text: '   ' }, COLORS, setup())
+    expect(component.render(80)).toEqual([''])
+  })
+
   it('renders markdown text behind the bullet with a leading separator', () => {
     const lines = new AssistantMessageComponent(assistantItem({ text: '**hi**' }), COLORS, setup()).render(80)
     expect(lines).toEqual(['', '● **hi**'])
@@ -468,21 +472,13 @@ describe('ToolCallComponent', () => {
     expect(lines).toEqual(['', '[S]✓ [/S]Used \x1b[1m[P]probe[/P]\x1b[22m'])
   })
 
-  it('collapses a Read card to its header until expanded (kimi)', () => {
-    const item = toolItem({
-      name: 'read',
-      view: { card: 'read', path: 'x', offset: 1, lines: [], totalLines: 0 },
-    })
-    item.result = { text: 'l1', fullText: 'l1\nl2\nl3', isError: false }
+  it('caps a generic result preview until expanded', () => {
+    const item = toolItem({ name: 'read' })
+    item.result = { text: 'l1', fullText: 'l1\nl2\nl3\nl4', isError: false }
     const component = new ToolCallComponent(item, tagged(), setup())
-    // The kimi Read card: header + lines chip only — the file content
-    // stays hidden behind Ctrl-O.
-    expect(component.render(80)).toEqual([
-      '',
-      '[S]✓ [/S]Used \x1b[1m[P]read[/P]\x1b[22m[M] · 3 lines[/M]',
-    ])
+    expect(component.render(80)).toHaveLength(1 + 1 + 3 + 1)
     component.setExpanded(true)
-    expect(component.render(80)).toHaveLength(1 + 1 + 3)
+    expect(component.render(80)).toHaveLength(1 + 1 + 4)
   })
 
   it('surfaces the bash command in the body behind the kimi shell chrome', () => {
@@ -554,7 +550,7 @@ describe('ErrorMessageComponent', () => {
 describe('InterruptedMarkerComponent', () => {
   it('renders the single muted tombstone row', () => {
     const component = new InterruptedMarkerComponent(tagged(), setup())
-    expect(component.render(80)).toEqual(['[E]⏹ interrupted[/E]'])
+    expect(component.render(80)).toEqual(['[E]■ interrupted[/E]'])
     component.invalidate()
   })
 })

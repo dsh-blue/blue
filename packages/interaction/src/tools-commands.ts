@@ -7,48 +7,31 @@
  * back one panel at a time (picker → editor), the danger-gate stacking
  * the permission picker already uses.
  *
- * The view scope is the composition the agent runs on: under the thin-host
- * migration (D37) the agent's tool surface lives in its preset's standing
- * mount, so the enumeration reads `schemas(roster.standingKeyFor(...))` —
- * the upstream API built for exactly this "host reader with no agent"
- * case. `scopeOf(agent.ctx)` is deliberately NOT used: `kScope` is a
- * module-level Symbol in dsh-scope, and a dev-linked Blue loads its own
- * dsh-scope instance beside the CLI's — two Symbols, so the CLI-side tag
- * never reads back (the registry install may dedupe to one instance, but
- * the panel must work on the dogfood link too). With no roster — or an
- * agent bound to no preset — the enumeration falls back to the global
- * view, which is the honest catalog on hosts that keep their own agent
- * plane. The panels are display-only: managing MCP servers is a
- * profile-patch concern upstream (⛔ commands-plan §7 #6).
+ * The app action boundary resolves the current preset's standing scope and
+ * returns only immutable visible schemas; Agent context and registry scope
+ * keys never cross into interaction. The panels are display-only: managing
+ * MCP servers is a profile-patch concern upstream.
  *
  * @module @dsh-blue/blue-interaction/tools-commands
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import type { ToolSchema } from '@deepseek-ai/dsh-llm'
-// Empty type imports carry the `tools` Context merge (dsh-tools) the probe
-// reads, the `commands` merge the registration uses, and the app-owned
-// `blueSession` merge the handler resolves the agent through.
-import type {} from '@deepseek-ai/dsh-tools'
+import type { BlueSessionToolSchema } from '@dsh-blue/blue-app'
+// Empty type imports carry the commands registration and app-owned session
+// action services.
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@dsh-blue/blue-app'
 import { displayServices } from './display-services.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
 import { InfoPanel, type InfoSection } from './info-panel.ts'
 import { SelectListPanel, type SelectRow } from './select-list.ts'
-import { resolveToolViewScope } from './tool-scope.ts'
 
 /** The public prefix of MCP-served tool names (`mcp__<server>__<raw>`). */
 const MCP_PREFIX = 'mcp__'
 
 /** Character budget the detail panel word-wraps description lines to. */
 const DETAIL_WRAP = 64
-
-/** Render one failure reason for an error result. */
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
 
 /**
  * The one-line brief the picker shows: the description's first non-empty
@@ -107,7 +90,7 @@ export function wrapLines(text: string): string[] {
  * @param schemas - the live per-scope tool enumeration.
  * @returns the panel rows, display order.
  */
-export function buildToolPickerRows(schemas: readonly ToolSchema[]): SelectRow[] {
+export function buildToolPickerRows(schemas: readonly BlueSessionToolSchema[]): SelectRow[] {
   return [...schemas]
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(schema => {
@@ -131,7 +114,7 @@ interface ParameterFacts {
  * @returns the parameter facts, property order; `undefined` when the
  *   schema declares no usable properties object.
  */
-export function readParameters(parameters: Record<string, unknown> | undefined): ParameterFacts[] | undefined {
+export function readParameters(parameters: Readonly<Record<string, unknown>> | undefined): ParameterFacts[] | undefined {
   if (parameters === undefined || typeof parameters !== 'object') return undefined
   const properties = parameters.properties
   if (properties === undefined || properties === null || typeof properties !== 'object') return undefined
@@ -160,7 +143,7 @@ export function readParameters(parameters: Record<string, unknown> | undefined):
  * @param schema - the tool's schema.
  * @returns the panel sections, display order.
  */
-export function buildToolDetailSections(schema: ToolSchema): InfoSection[] {
+export function buildToolDetailSections(schema: BlueSessionToolSchema): InfoSection[] {
   const sections: InfoSection[] = [{
     heading: 'Tool',
     rows: [
@@ -208,6 +191,8 @@ function emptyCatalogSections(): InfoSection[] {
  * @returns the disposer removing the registration.
  */
 export function registerToolsCommands(ctx: Context): () => void {
+  const reader = ctx.blueSessionReader
+  const actions = ctx.blueSessionActions
   // The fiber-unload flag: the standing-key await can span a tree unload.
   let unloaded = false
   ctx.effect(() => () => {
@@ -219,31 +204,20 @@ export function registerToolsCommands(ctx: Context): () => void {
    * @returns the command outcome.
    */
   async function showTools(): Promise<CommandResult> {
-    const agent = ctx.get('blueSession')?.current
-    if (agent === undefined || agent === null) {
+    if (reader.current() === null) {
       return { kind: 'error', text: 'no session is live yet' }
     }
-    const tools = ctx.get('tools')
-    if (tools === undefined) {
-      return { kind: 'error', text: 'tool registry is unavailable: the host composes no tools service' }
-    }
-    // The standing-mount key when the agent runs on a preset's composition;
-    // the global view otherwise. The key's identity is what layers the view.
-    let scope: object | undefined
-    try {
-      scope = await resolveToolViewScope(ctx, agent.ctx)
-    } catch (error) {
-      return { kind: 'error', text: `could not resolve the preset composition: ${describe(error)}` }
-    }
+    const catalog = await actions.toolCatalog()
+    if (!catalog.ok) return { kind: 'error', text: catalog.message }
     if (unloaded) return { kind: 'success' }
     const display = displayServices(ctx)
     if (display === undefined) {
       return { kind: 'error', text: 'tools panel is unavailable: the Blue screen is not mounted' }
     }
-    const schemas = tools.schemas(scope as never)
+    const schemas = catalog.value.visible
     if (schemas.length === 0) {
       // Nothing to select: the read-only empty panel stays the honest view.
-      const restoreEmpty = mountEditorReplacement(new InfoPanel({
+      const restoreEmpty = mountEditorReplacement(ctx, new InfoPanel({
         keymap: display.keymap,
         theme: display.theme,
         components: display.components,
@@ -258,8 +232,8 @@ export function registerToolsCommands(ctx: Context): () => void {
     const byName = new Map(schemas.map(schema => [schema.name, schema]))
     // The picker stays mounted under the detail panel: closing the detail
     // pops the stack back onto the picker instead of rebuilding it.
-    const openDetail = (schema: ToolSchema): void => {
-      const restoreDetail = mountEditorReplacement(new InfoPanel({
+    const openDetail = (schema: BlueSessionToolSchema): void => {
+      const restoreDetail = mountEditorReplacement(ctx, new InfoPanel({
         keymap: display.keymap,
         theme: display.theme,
         components: display.components,
@@ -270,7 +244,7 @@ export function registerToolsCommands(ctx: Context): () => void {
         },
       }))
     }
-    const restorePicker = mountEditorReplacement(new SelectListPanel({
+    const restorePicker = mountEditorReplacement(ctx, new SelectListPanel({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,

@@ -49,35 +49,46 @@ function transcriptTool(overrides: Partial<ConversationToolEntry> = {}): Convers
 }
 
 function sourceFixture(initial: ConversationProjection | unknown = projection(), initialSeq = 0) {
-  const session = { id: 'session-1' }
-  const other = { id: 'session-2' }
   let snapshotValue = initial
   let snapshotSeq = initialSeq
-  let changed: ((session: unknown, key: string, value: unknown, seq: number) => void) | undefined
+  let changed: ((key: string, value: unknown, seq: number) => void) | undefined
   const off = vi.fn()
   const source: ConversationProjectionSource = {
-    snapshot: vi.fn(() => ({ asOfSeq: snapshotSeq, values: { blueConversation: snapshotValue } })),
-    onChanged: vi.fn(listener => {
+    current: vi.fn(() => ({ asOfSeq: snapshotSeq, value: snapshotValue })),
+    subscribe: vi.fn(listener => {
       changed = listener
       return off
     }),
   }
   return {
-    session,
-    other,
     source,
     off,
     set(value: unknown, seq: number) {
       snapshotValue = value
       snapshotSeq = seq
     },
-    emit(target: unknown, key: string, value: unknown, seq: number) {
-      changed?.(target, key, value, seq)
+    emit(key: string, value: unknown, seq: number) {
+      changed?.(key, value, seq)
     },
   }
 }
 
 describe('official conversation model mapping', () => {
+  it('bounds conversion before freezing a long projection', () => {
+    const entries = Array.from({ length: 203 }, (_, index) => ({
+      kind: 'assistant' as const,
+      id: `assistant-${String(index)}`,
+      seq: index,
+      turn: index,
+      step: 0,
+      text: `answer ${String(index)}`,
+      streaming: false,
+    }))
+    const model = conversationTranscriptModel(projection(entries), toolSource())
+    expect(model.entries).toHaveLength(200)
+    expect(model.entries[0]).toMatchObject({ id: 'assistant-3' })
+  })
+
   it('maps every semantic entry and filters tool-owned dock channels', () => {
     const model = conversationTranscriptModel(projection([
       {
@@ -133,8 +144,8 @@ describe('official conversation model mapping', () => {
     ]), toolSource({ throws: true }))
     expect(pending.entries[0]).toMatchObject({
       kind: 'transcript-tool',
-      presentation: { call: { kind: 'text', text: 'missing' } },
     })
+    expect((pending.entries[0] as { presentation?: unknown }).presentation).toBeUndefined()
 
     const failed = conversationTranscriptModel(projection([
       transcriptTool({
@@ -144,11 +155,24 @@ describe('official conversation model mapping', () => {
     expect(failed.entries[0]).toMatchObject({
       presentation: { result: { kind: 'text', text: 'failure', tone: 'danger' } },
     })
+
+    const resultOnly = conversationTranscriptModel(projection([
+      transcriptTool({
+        result: { content: [{ type: 'text', text: 'done' }], text: 'done', isError: false, endedAt: 210 },
+      }),
+    ]), {
+      get: () => ({
+        presentResult: () => ({ card: 'generic', title: 'Result only' }),
+      } as never),
+    } as ToolPresentationSource)
+    expect(resultOnly.entries[0]).toMatchObject({
+      presentation: { call: { kind: 'text', text: 'read' }, result: { kind: 'sections' } },
+    })
   })
 })
 
 describe('OfficialConversationModelSource', () => {
-  it('publishes baseline and live whole values while rejecting stale, malformed, and foreign changes', () => {
+  it('publishes baseline and live whole values while rejecting stale and malformed changes', () => {
     const f = sourceFixture(projection([
       { kind: 'assistant', id: 'a-1', seq: 1, turn: 0, step: 0, text: 'baseline', streaming: false },
     ]), 4)
@@ -157,31 +181,41 @@ describe('OfficialConversationModelSource', () => {
       const entry = model.entries[0]
       published.push(entry?.kind === 'transcript-assistant' ? entry.text : 'empty')
     })
-    source.attach({ id: 'session-1', session: f.session })
+    source.attach(true)
     expect(source.snapshot().entries[0]).toMatchObject({ text: 'baseline' })
     expect(published).toEqual(['baseline'])
 
-    f.emit(f.other, 'blueConversation', projection(), 5)
-    f.emit(f.session, 'other', projection(), 5)
-    f.emit(f.session, 'blueConversation', projection(), 4)
-    f.emit(f.session, 'blueConversation', { entries: 'bad', streaming: false }, 5)
+    f.emit('other', projection(), 5)
+    f.emit('blueConversation', projection(), 4)
+    f.emit('blueConversation', { entries: 'bad', streaming: false }, 5)
     expect(published).toEqual(['baseline'])
 
-    f.emit(f.session, 'blueConversation', projection([
+    f.emit('blueConversation', projection([
       { kind: 'assistant', id: 'a-2', seq: 5, turn: 0, step: 0, text: 'live', streaming: true },
     ], true), 6)
     expect(source.snapshot().streaming).toBe(true)
     expect(published).toEqual(['baseline', 'live'])
 
     f.set({ entries: 'bad', streaming: false }, 7)
-    source.attach({ id: 'session-2', session: f.other })
+    source.attach(true)
     expect(source.snapshot().entries).toEqual([])
-    source.attach(undefined)
+    source.attach(false)
     expect(published.at(-1)).toBe('empty')
     source.dispose()
     source.dispose()
-    f.emit(f.other, 'blueConversation', projection(), 8)
+    f.emit('blueConversation', projection(), 8)
     expect(f.off).toHaveBeenCalledOnce()
+  })
+
+  it('accepts a projection snapshot without sequence metadata', () => {
+    const fixture = sourceFixture(projection(), 4)
+    fixture.source.current = vi.fn(() => ({ value: projection([
+      { kind: 'assistant', id: 'a-1', seq: 1, turn: 0, step: 0, text: 'baseline', streaming: false },
+    ]) }) as never)
+    const source = new OfficialConversationModelSource(fixture.source, toolSource(), () => undefined)
+    source.attach(true)
+    expect(source.snapshot().entries[0]).toMatchObject({ text: 'baseline' })
+    source.dispose()
   })
 })
 
@@ -192,9 +226,10 @@ describe('official conversation plugin', () => {
     const unregister = vi.fn()
     const cleanups: Array<() => void> = []
     let registered: (() => unknown) | undefined
-    let sessionChanged: ((agent: unknown) => void) | undefined
+    let sessionChanged: ((session: { readonly id: string } | null) => void) | undefined
+    let registrationDisposed = false
     const ctx = {
-      sessionProjections: f.source,
+      blueSessionProjections: f.source,
       tools: toolSource(),
       blueTranscriptModels: {
         refresh,
@@ -203,31 +238,32 @@ describe('official conversation plugin', () => {
           return unregister
         },
       },
-      blueSession: { current: { id: 'session-1', session: f.session } },
+      blueSessionReader: {
+        subscribe(listener: typeof sessionChanged) {
+          sessionChanged = listener
+          listener?.({ id: 'session-1' })
+          return { get disposed() { return registrationDisposed }, dispose() { registrationDisposed = true; sessionChanged = undefined } }
+        },
+      },
       effect(effect: () => () => void) {
         const cleanup = effect()
         cleanups.push(cleanup)
         return cleanup
       },
-      on(_event: string, listener: (agent: unknown) => void) {
-        sessionChanged = listener
-        return () => { sessionChanged = undefined }
-      },
     }
 
     apply(ctx as never)
     expect(name).toBe('blue-transcript-official')
-    expect(inject).toEqual(['blueConversationProjection', 'sessionProjections', 'blueTranscriptModels', 'blueSession', 'tools'])
+    expect(inject).toEqual(['blueConversationProjection', 'blueSessionProjections', 'blueSessionReader', 'blueTranscriptModels', 'tools'])
     expect(registered?.()).toMatchObject({ id: 'official-conversation' })
     expect(refresh).toHaveBeenCalledWith('official-conversation')
 
     sessionChanged?.(null)
-    sessionChanged?.({ id: 4, session: {} })
-    sessionChanged?.({ id: 'missing-session' })
-    sessionChanged?.({ id: 'session-2', session: f.other })
-    expect(f.source.snapshot).toHaveBeenCalledTimes(2)
+    sessionChanged?.({ id: 'session-2' })
+    expect(f.source.current).toHaveBeenCalledTimes(2)
     for (const cleanup of cleanups.reverse()) cleanup()
     expect(unregister).toHaveBeenCalledOnce()
     expect(f.off).toHaveBeenCalledOnce()
+    expect(registrationDisposed).toBe(true)
   })
 })

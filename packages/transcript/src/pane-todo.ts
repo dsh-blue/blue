@@ -1,11 +1,9 @@
 /**
  * `blue-pane-todo` plugin: a bottom pane rendering the attached session's
- * todo list. The list comes from the whole-list `todo/write` snapshots
- * (last-write-wins): the durable `agent.session.events` snapshot is scanned
- * first on every attach, then the live `session/event` feed — filtered by
- * session object, as in the transcript plugin — carries the increments.
- * The fold hides the `todo_write` tool calls from the stream (this pane owns
- * the presentation), so the pane is the list's only surface.
+ * todo list. The list comes from the replay/live whole value exposed by
+ * `blueSessionFacts`, backed by the official `blueConversationFacts`
+ * projection. The conversation projection routes `todo_write` calls away
+ * from transcript presentation, so this pane is the list's only surface.
  *
  * Rendering is the kimi todo panel (S13 dogfood rulings): a flat full-width
  * `─` rule, a bold `primary` `  Todo` title, two-column-indented rows with
@@ -28,23 +26,20 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import {
-  GutterComponent,
-  type BlueComponent,
   type BlueComponents,
   type BlueSemanticColors,
 } from '@dsh-blue/blue-core'
 import type { TodoItem } from '@deepseek-ai/dsh-session'
-// Empty type import carries the app-owned `blueSession` Context merge and the
-// `'blue/session-changed'` Events merge this plugin consumes.
-import type {} from '@dsh-blue/blue-app'
+import type { ConversationFacts } from '@dsh-blue/blue-conversation'
+import type { DockModel } from '@dsh-blue/blue-frontend'
+import type { SessionFactsService } from './session-facts.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-pane-todo'
 
 /** Services required before the pane can mount. */
-export const inject = ['blueScreen', 'blueTheme', 'blueKeymap', 'blueComponents']
+export const inject = ['blueScreen', 'blueTheme', 'blueKeymap', 'blueComponents', 'blueSessionFacts', 'blueDockModels']
 
 /** The global action toggling the todo panel's expansion (Ctrl-T). */
 export const ACTION_TOGGLE_TODO = 'blue.todo.toggle'
@@ -230,7 +225,7 @@ function signature(state: TodoState): string {
  * The todo pane: zero rows without a list, the folded selection with its
  * footer by default, the full list with its footer when expanded.
  */
-class TodoPaneComponent implements BlueComponent {
+class TodoPaneComponent {
   /**
    * @param colors - the semantic color table.
    * @param components - the component factory providing width truncation.
@@ -275,16 +270,12 @@ class TodoPaneComponent implements BlueComponent {
     return lines.map(line => this.components.truncateToWidth(line, width))
   }
 
-  /** Stateless render; nothing to drop. */
-  invalidate(): void {}
 }
 
 /**
- * Mount the todo pane. Attaches to `blueSession.current` when present and
- * re-attaches on every `'blue/session-changed'` (the stale session's
- * subscription is dropped first, as in `status-context`); each attach scans
- * the snapshot for the latest `todo/write` and then subscribes the live
- * feed. A settled list (every entry completed) closes the pane and resets
+ * Mount the todo pane over the current projection-backed facts. A current
+ * session identity change clears the previous list and expansion before the
+ * new whole-value facts arrive. A settled list (every entry completed) closes the pane and resets
  * the expansion; the expansion otherwise persists across writes (kimi
  * `setTodos` semantics). Redraws are requested only when the render
  * signature changed. Also registers the global Ctrl-T action whose handler
@@ -296,10 +287,8 @@ class TodoPaneComponent implements BlueComponent {
 export function apply(ctx: Context): void {
   const colors = ctx.blueTheme.colors
   const components = ctx.blueComponents
-  const screen = ctx.blueScreen
   const state: TodoState = { todos: [], expanded: false, dialog: false }
   let rendered = signature(state)
-  let detach: (() => void) | undefined
 
   /**
    * Install a new whole-list snapshot. A list whose every entry completed
@@ -316,42 +305,25 @@ export function apply(ctx: Context): void {
     const next = signature(state)
     if (next === rendered) return
     rendered = next
-    screen.requestRender()
+    ctx.blueDockModels.refresh('blue.dock.todo')
   }
 
-  const attach = (agent: Agent): void => {
-    // Drop the previous session's subscription first: its session filter
-    // matches the old session, not the new one.
-    detach?.()
-    // A new session starts from the folded default (kimi clears the panel).
+  const facts = ctx.get('blueSessionFacts') as SessionFactsService | undefined
+  let sessionId = facts?.currentSession?.id
+  const offSession = facts?.subscribeSession((session) => {
+    if (session?.id === sessionId) return
+    sessionId = session?.id
     state.expanded = false
-    // Snapshot first, last write wins; the subscription then carries newer
-    // writes. Both happen in one synchronous turn, so no committed write can
-    // fall between them.
-    let latest: readonly TodoItem[] = []
-    for (let index = agent.session.events.length - 1; index >= 0; index -= 1) {
-      const event = agent.session.events[index]!
-      if (event.type === 'todo/write') {
-        latest = event.data.todos
-        break
-      }
-    }
-    detach = ctx.on('session/event', (session, event) => {
-      if (session !== agent.session) return
-      if (event.type !== 'todo/write') return
-      update(event.data.todos)
-    })
-    update(latest)
-  }
-
-  const current = ctx.get('blueSession')?.current
-  if (current) attach(current)
-  ctx.on('blue/session-changed', attach)
+    update([])
+  })
+  const offFacts = facts?.subscribe((next: ConversationFacts) => update(next.todos))
+  ctx.effect(() => () => offSession?.())
+  ctx.effect(() => () => offFacts?.())
   ctx.on('blue/editor-slot-swapped', (occupied) => {
     if (state.dialog === occupied) return
     state.dialog = occupied
     rendered = signature(state)
-    screen.requestRender()
+    ctx.blueDockModels.refresh('blue.dock.todo')
   })
 
   // Effect-bound so unloading this fiber unregisters the action.
@@ -362,11 +334,14 @@ export function apply(ctx: Context): void {
     handler: () => {
       state.expanded = !state.expanded
       rendered = signature(state)
-      screen.requestRender(true)
+      ctx.blueDockModels.refresh('blue.dock.todo', true)
     },
   }]))
 
   const pane = new TodoPaneComponent(colors, components, state)
-  // Bottom panes render in mount order; a zero-row render occupies nothing.
-  ctx.effect(() => screen.addBottomChild(new GutterComponent(pane)))
+  const model = (): DockModel => ({
+    kind: 'dock', id: 'blue.dock.todo', placement: 'bottom', priority: 30,
+    view: { kind: 'text', text: state.todos.length === 0 ? '' : 'Todo' },
+  })
+  ctx.effect(() => ctx.blueDockModels.register(model, (_model, width) => pane.render(width)))
 }

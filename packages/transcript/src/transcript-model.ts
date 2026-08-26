@@ -33,10 +33,17 @@ import {
   UserMessageComponent,
   type UserMessageImages,
 } from './components.ts'
-import type { BlueIntentsService } from './intents.ts'
 import { ThinkingComponent } from './thinking.ts'
 import { ToolModelComponent } from './tool-model.ts'
-import type { BlueIntentComponent, TranscriptToolItem } from './types.ts'
+import { parseToolArguments } from './present.ts'
+import type { TranscriptToolItem } from './types.ts'
+import {
+  DEFAULT_TRANSCRIPT_PRESENTATION,
+  type TranscriptPresentationPolicy,
+  type TranscriptPresentationSnapshot,
+} from './presentation-policy.ts'
+
+interface ExpandableComponent extends BlueComponent { setExpanded?(expanded: boolean): void }
 
 declare module '@deepseek-ai/cordis' { interface Context { blueTranscriptModels: TranscriptModelService } }
 type Source = TranscriptModel | (() => TranscriptModel | null)
@@ -49,8 +56,8 @@ export interface TranscriptModelRenderer {
   readonly colors: BlueSemanticColors
   readonly components: BlueComponents
   readonly images: () => UserMessageImages
-  readonly intents: BlueIntentsService
   readonly requestRender: () => void
+  readonly presentation?: TranscriptPresentationPolicy
 }
 
 /** Optional service hooks used by the legacy/plain fallback owner. */
@@ -82,6 +89,7 @@ function isSemantic(entry: View | TranscriptEntryModel): entry is TranscriptEntr
 }
 
 function asToolItem(entry: TranscriptToolModel): TranscriptToolItem {
+  const parsedArguments = parseToolArguments(entry.arguments)
   return {
     kind: 'tool',
     seq: entry.seq,
@@ -90,6 +98,7 @@ function asToolItem(entry: TranscriptToolModel): TranscriptToolItem {
     callId: entry.callId,
     name: entry.name,
     arguments: entry.arguments,
+    ...(parsedArguments === undefined ? {} : { parsedArguments }),
     startedAt: entry.startedAt,
     ...(entry.result === undefined ? {} : { result: entry.result }),
   }
@@ -119,10 +128,19 @@ interface CachedComponent {
   readonly target: BlueComponent
 }
 
+interface RenderedRowsCache {
+  readonly model: TranscriptModel
+  readonly width: number
+  readonly expanded: boolean
+  readonly policy: TranscriptPresentationSnapshot
+  readonly rows: string[]
+}
+
 /** Bounded semantic transcript component with id-based reconciliation. */
 export class TranscriptModelComponent implements BlueComponent {
   private readonly cached = new Map<string, CachedComponent>()
   private expanded = false
+  private renderedRows: RenderedRowsCache | undefined
 
   constructor(
     private readonly source: () => TranscriptModel | null,
@@ -132,34 +150,50 @@ export class TranscriptModelComponent implements BlueComponent {
   render(width: number): string[] {
     const model = this.source()
     if (model === null) {
+      this.renderedRows = undefined
       this.prune(new Set())
       return []
     }
-    const entries = model.entries.slice(-TRANSCRIPT_MODEL_WINDOW)
+    const bounded = model.entries.slice(-TRANSCRIPT_MODEL_WINDOW)
+    const policy = this.presentation()
+    const rendered = this.renderedRows
+    if (rendered?.model === model
+      && rendered.width === width
+      && rendered.expanded === this.expanded
+      && rendered.policy === policy) return rendered.rows
+    const turns = [...new Set(bounded.filter(isSemantic).map(entry => entry.turn))]
+    const visibleTurns = new Set(turns.slice(-policy.windowTurns))
+    const entries = bounded.filter(entry => !isSemantic(entry) || visibleTurns.has(entry.turn))
+    const expandableTurns = new Set(turns.slice(-policy.expandTurns))
     const live = new Set(entries.filter(isSemantic).map(entry => entry.id))
     this.prune(live)
-    return entries.flatMap(entry => isSemantic(entry) ? this.renderSemantic(entry, width) : renderFrontendView(entry, width))
+    const rows = entries.flatMap(entry => isSemantic(entry)
+      ? this.renderSemantic(entry, width, expandableTurns.has(entry.turn))
+      : renderFrontendView(entry, width))
+    this.renderedRows = { model, width, expanded: this.expanded, policy, rows }
+    return rows
   }
 
   /** Apply the global recent-detail expansion state to mounted entries. */
   setExpanded(expanded: boolean): void {
+    if (this.expanded === expanded) return
     this.expanded = expanded
-    for (const { target } of this.cached.values()) {
-      ;(target as BlueIntentComponent).setExpanded?.(expanded)
-      target.invalidate()
-    }
+    this.renderedRows = undefined
+    for (const { target } of this.cached.values()) target.invalidate()
   }
 
   invalidate(): void {
+    this.renderedRows = undefined
     for (const { component } of this.cached.values()) component.invalidate()
   }
 
   /** Dispose timers and async renderer resources held by cached components. */
   dispose(): void {
+    this.renderedRows = undefined
     this.prune(new Set())
   }
 
-  private renderSemantic(entry: TranscriptEntryModel, width: number): string[] {
+  private renderSemantic(entry: TranscriptEntryModel, width: number, expandable: boolean): string[] {
     if (this.renderer === undefined) return [...renderFrontendView({ kind: 'text', text: this.plainText(entry) }, width)]
     const currentSignature = signature(entry)
     let cached = this.cached.get(entry.id)
@@ -169,17 +203,43 @@ export class TranscriptModelComponent implements BlueComponent {
       cached = { signature: currentSignature, target, component: new GutterComponent(target) }
       this.cached.set(entry.id, cached)
     }
+    this.applyExpansion(cached.target, entry, expandable)
     return cached.component.render(width)
+  }
+
+  /** Current tree policy, or immutable shipped defaults for standalone consumers. */
+  private presentation(): TranscriptPresentationSnapshot {
+    return this.renderer?.presentation?.snapshot() ?? DEFAULT_TRANSCRIPT_PRESENTATION
+  }
+
+  /** Compose Ctrl-O's recent-turn override over category defaults. */
+  private applyExpansion(target: BlueComponent, entry: TranscriptEntryModel, expandable: boolean): void {
+    const policy = this.presentation()
+    const expanded = this.expanded && expandable
+      ? true
+      : entry.kind === 'transcript-thinking'
+        ? policy.thinkingExpanded
+        : entry.kind === 'transcript-tool'
+          ? policy.toolsExpanded
+          : false
+    ;(target as ExpandableComponent).setExpanded?.(expanded)
   }
 
   private createComponent(entry: TranscriptEntryModel): BlueComponent {
     const renderer = this.renderer!
     switch (entry.kind) {
       case 'transcript-user': {
+        const images = renderer.images()
         const component = new UserMessageComponent({
           kind: 'user', seq: entry.seq, turn: entry.turn, text: entry.text, images: entry.images.map(asImageRef),
-        }, renderer.colors, renderer.components, renderer.images())
-        component.setExpanded(this.expanded)
+        }, renderer.colors, renderer.components, {
+          ...images,
+          onReady: () => {
+            this.invalidate()
+            images.onReady?.()
+          },
+          presentation: () => this.presentation(),
+        })
         return component
       }
       case 'transcript-assistant':
@@ -189,14 +249,16 @@ export class TranscriptModelComponent implements BlueComponent {
       case 'transcript-thinking': {
         const component = new ThinkingComponent({
           kind: 'thinking', seq: entry.seq, turn: entry.turn, step: entry.step, text: entry.text, streaming: entry.streaming,
-        }, renderer.colors, renderer.components, renderer.requestRender)
-        component.setExpanded(this.expanded)
+        }, renderer.colors, renderer.components, () => {
+          this.renderedRows = undefined
+          renderer.requestRender()
+        })
         return component
       }
       case 'transcript-tool': {
         const presentation = entry.presentation
-        if (presentation !== undefined) return new ToolModelComponent(() => presentation)
-        return new ToolCallComponent(asToolItem(entry), renderer.colors, renderer.components)
+        const body = presentation === undefined ? undefined : new ToolModelComponent(() => presentation)
+        return new ToolCallComponent(asToolItem(entry), renderer.colors, renderer.components, body)
       }
       case 'transcript-error':
         return new ErrorMessageComponent({
@@ -290,6 +352,17 @@ export class TranscriptModelService extends Service {
   setExpanded(expanded: boolean): void {
     this.expanded = expanded
     for (const { component } of this.mounted.values()) component.setExpanded(expanded)
+  }
+
+  /** Re-read presentation policy and invalidate mounted semantic components. */
+  refreshPresentationPolicy(): void {
+    for (const { component } of this.mounted.values()) component.invalidate()
+    this.screen?.requestRender(true)
+  }
+
+  /** Expose the current immutable policy for diagnostics and tests. */
+  presentationPolicy(): TranscriptPresentationSnapshot {
+    return this.hooks.renderer?.presentation?.snapshot() ?? DEFAULT_TRANSCRIPT_PRESENTATION
   }
 
   hasModels(): boolean {

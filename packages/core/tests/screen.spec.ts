@@ -18,6 +18,7 @@ interface Recorded {
   renders: (boolean | undefined)[]
   suspends: unknown[]
   titles: string[]
+  scrolls: { direction: 'up' | 'down', amount: number | undefined }[]
 }
 
 function recordingRuntime(): BlueTerminalRuntime & Recorded {
@@ -29,7 +30,7 @@ function recordingRuntime(): BlueTerminalRuntime & Recorded {
     unfocus: () => {},
     isFocused: () => true,
   }
-  const recorded: Recorded = { added: [], bottomAdded: [], removed: [], focused: [], overlays: [], renders: [], suspends: [], titles: [] }
+  const recorded: Recorded = { added: [], bottomAdded: [], removed: [], focused: [], overlays: [], renders: [], suspends: [], titles: [], scrolls: [] }
   return {
     ...recorded,
     columns: 120,
@@ -52,6 +53,10 @@ function recordingRuntime(): BlueTerminalRuntime & Recorded {
     },
     requestRender(force) {
       recorded.renders.push(force)
+    },
+    scrollContent(direction, amount) {
+      recorded.scrolls.push({ direction, amount })
+      return true
     },
     async suspend<T>(fn: () => Promise<T>): Promise<T> {
       const value = await fn()
@@ -112,6 +117,9 @@ describe('BlueScreenService', () => {
     screen.requestRender()
     screen.requestRender(true)
     expect(runtime.renders).toEqual([undefined, true])
+
+    expect(screen.scrollContent('up', 3)).toBe(true)
+    expect(runtime.scrolls).toEqual([{ direction: 'up', amount: 3 }])
 
     await expect(screen.suspend(async () => 'ok')).resolves.toBe('ok')
     expect(runtime.suspends).toEqual(['ok'])

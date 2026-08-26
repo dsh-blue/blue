@@ -16,31 +16,25 @@
  * outright — below an open panel only the footer stays (the S16 dogfood
  * ruling).
  *
- * The phase is the fold's streaming stage: `StreamingPhaseTracker` over the
- * attached session's events (`session/event`, filtered like the transcript
- * mounter), seeded from the durable snapshot on attach so a resumed
- * mid-stream agent lands in the right phase at once. rc.7's event surface
- * carries no step-retry record, so kimi's retry label/detail row is cropped
- * — retries read as plain `waiting`. The moon glyph is two cells wide; row
- * width math goes through the live `blueComponents.visibleWidth`.
+ * The phase comes from the `blueSessionFacts` bridge over the official
+ * `blueConversationFacts` projection, so replay and live updates share one
+ * whole value. The moon glyph is two cells wide; row width math goes through
+ * the live `blueComponents.visibleWidth`.
  *
  * @module @dsh-blue/blue-transcript/pane-activity
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
-  GutterComponent,
-  type BlueComponent,
   type BlueComponents,
   type BlueSemanticColors,
 } from '@dsh-blue/blue-core'
-// Empty type import carries the app-owned `blueSession` Context merge and the
-// `'blue/session-changed'` Events merge this plugin consumes.
+// Empty type import carries the app-owned opaque binding event merge.
 import type {} from '@dsh-blue/blue-app'
-import { StreamingPhaseTracker } from './phase.ts'
-import { contextTokens, formatTokens } from './status-context.ts'
+import type { ConversationFacts } from '@dsh-blue/blue-conversation'
+import type { DockModel } from '@dsh-blue/blue-frontend'
+import type { SessionFactsService } from './session-facts.ts'
+import { formatTokens } from './status-context.ts'
 import { buildTipRotation } from './status-tips.ts'
 import { STATUS_TIPS } from './tips-content.ts'
 import {
@@ -54,7 +48,7 @@ import {
 export const name = 'blue-pane-activity'
 
 /** Services required before the pane can mount. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionFacts', 'blueDockModels']
 
 /** The joiner between the frame and the teaching tip (kimi format). */
 const TIP_LEAD = ' · Tip: '
@@ -122,24 +116,6 @@ interface TurnFlow {
 }
 
 /** Fold one event into the turn flow. */
-function applyFlowEvent(flow: TurnFlow, event: SessionEvent): void {
-  if (event.type === 'turn/start') {
-    flow.up = undefined
-    flow.downChars = 0
-    return
-  }
-  if (event.type === 'assistant/chunk') {
-    const chunk = event.data.chunk
-    if (chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') {
-      flow.downChars += chunk.text.length
-    }
-    return
-  }
-  if (event.type === 'assistant/message' && event.data.usage !== undefined) {
-    flow.up = contextTokens(event.data.usage)
-  }
-}
-
 /** The spinner row's counter text: `↑30.2k ↓4.1k`, parts omitted at zero. */
 function flowCounter(flow: TurnFlow): string {
   const down = Math.floor(flow.downChars / 4)
@@ -154,7 +130,7 @@ function flowCounter(flow: TurnFlow): string {
  * `Spacer(1)` blank placeholder row otherwise, and none while a dialog
  * occupies the editor slot.
  */
-class ActivityPaneComponent implements BlueComponent {
+class ActivityPaneComponent {
   /**
    * @param colors - the semantic color table (primary frame, muted tip).
    * @param components - the factory providing the width helpers.
@@ -209,15 +185,13 @@ class ActivityPaneComponent implements BlueComponent {
     }
   }
 
-  /** Stateless render; nothing to drop. */
-  invalidate(): void {}
 }
 
 /**
  * Mount the activity pane. The row reconciles against three facts: the
- * editor-slot occupancy (dialogs hide the pane), the attached agent's
- * status (idle parks the placeholder), and the streaming phase tracker over
- * the attached session's events. The frame timer runs only while a spinner
+ * editor-slot occupancy (dialogs hide the pane), the current session's
+ * admitted status (idle parks the placeholder), and the projection-backed phase. The
+ * frame timer runs only while a spinner
  * state is live, at the style's interval (moon 120 ms, braille 80 ms); each
  * tick advances the shared frame counter and requests a redraw. `sync`
  * requests a redraw only when the mode or the tip actually changed.
@@ -231,11 +205,14 @@ export function apply(ctx: Context): void {
   const state: ActivityState = {
     mode: 'idle', frame: 0, tip: '', flow: '', dialog: false,
   }
-  let agent: Agent | undefined
-  // Never null: attach re-seeds it per session, and before any attach the
-  // agent is undefined so the tracker's phase is unreachable.
-  let tracker = new StreamingPhaseTracker()
-  const flow: TurnFlow = { up: undefined, downChars: 0 }
+  const factsService = ctx.get('blueSessionFacts') as SessionFactsService | undefined
+  /* v8 ignore next -- blueSessionFacts is an injected service; the fallback
+     keeps direct thin-host construction renderer-neutral but cannot occur in
+     a Cordis activation that satisfies this plugin's contract. */
+  let facts: ConversationFacts = factsService?.current ?? {
+    phase: 'idle', active: false, turn: 0, flowDownChars: 0, todos: [], contextTokens: 0, agentCalls: [],
+  }
+  let statusActive = factsService?.currentSession?.status === 'running'
   let timer: ReturnType<typeof setInterval> | undefined
   let timerMs = 0
   let tipKind: TipKind | undefined
@@ -261,11 +238,10 @@ export function apply(ctx: Context): void {
 
   /** Reconcile the row (mode, tip, timer) with the pane's three facts. */
   const sync = (): void => {
-    const running = agent?.status === 'running'
     const mode: ActivityPaneMode = state.dialog
       ? 'hidden'
-      : running
-        ? tracker.current
+      : facts.active || statusActive
+        ? facts.active ? facts.phase : 'waiting'
         : 'idle'
     const kind: TipKind | undefined = mode === 'composing'
       ? 'composing'
@@ -289,51 +265,37 @@ export function apply(ctx: Context): void {
     } else {
       stopTimer()
     }
-    const nextFlow = flowCounter(flow)
+    const nextFlow = flowCounter({ up: facts.flowUp, downChars: facts.flowDownChars })
     const changed = mode !== state.mode || tipChanged || nextFlow !== state.flow
     state.mode = mode
     state.flow = nextFlow
-    if (changed) screen.requestRender()
-  }
-
-  /** Bind to a session's agent: fresh tracker and flow seeded from the snapshot. */
-  const attach = (next: Agent): void => {
-    agent = next
-    tracker = new StreamingPhaseTracker()
-    flow.up = undefined
-    flow.downChars = 0
-    for (const event of next.session.events) {
-      tracker.apply(event)
-      applyFlowEvent(flow, event)
+    if (changed) {
+      ctx.blueDockModels.refresh('blue.dock.activity')
     }
-    sync()
   }
 
-  const current = ctx.get('blueSession')?.current
-  if (current) attach(current)
-  ctx.on('blue/session-changed', attach)
-  ctx.on('agent/status', (payload) => {
-    if (payload.agent !== agent) return
-    // A stale `idle` phase belongs to the previous turn's end; waking the
-    // agent starts a new one, which reads as `waiting` until its first
-    // event lands.
-    if (payload.status === 'running' && tracker.current === 'idle') tracker = new StreamingPhaseTracker()
+  const offFacts = factsService?.subscribe(next => {
+    facts = next
+    if (!next.active && next.turn > 0) statusActive = false
     sync()
   })
-  ctx.on('session/event', (session, event) => {
-    if (agent === undefined || session !== agent.session) return
-    tracker.apply(event)
-    applyFlowEvent(flow, event)
+  const offSession = factsService?.subscribeSession((session) => {
+    statusActive = session?.status === 'running'
     sync()
   })
+  ctx.effect(() => () => offFacts?.())
+  ctx.effect(() => () => offSession?.())
   ctx.on('blue/editor-slot-swapped', (occupied) => {
     state.dialog = occupied
     sync()
   })
 
   const pane = new ActivityPaneComponent(colors, components, state)
-  // Bottom panes render in mount order; a zero-row render occupies nothing.
-  ctx.effect(() => screen.addBottomChild(new GutterComponent(pane)))
+  const model = (): DockModel => ({
+    kind: 'dock', id: 'blue.dock.activity', placement: 'bottom', priority: 10,
+    view: { kind: 'text', text: state.mode === 'idle' ? 'idle' : state.mode },
+  })
+  ctx.effect(() => ctx.blueDockModels.register(model, (_model, width) => pane.render(width)))
   // Effect-bound so unloading this fiber stops the animation.
   ctx.effect(() => () => stopTimer())
 }

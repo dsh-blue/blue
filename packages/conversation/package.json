@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-conversation",
   "description": "Harness-native conversation projection for renderer-independent frontend consumers",
-  "version": "0.1.0-rc.2",
+  "version": "0.1.0-rc.8",
   "publishConfig": {
     "access": "public"
   },

@@ -11,7 +11,7 @@
 import { homedir } from 'node:os'
 import { describe, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { BlueScreen, BlueSemanticColors } from '@dsh-blue/blue-core'
+import type { BlueSemanticColors } from '@dsh-blue/blue-core'
 import {
   AssistantMessageComponent,
   ErrorMessageComponent,
@@ -21,16 +21,13 @@ import {
   UserMessageComponent,
 } from '../src/components.ts'
 import { AgentGroupComponent } from '../src/agent-group.ts'
-import { ReadGroupComponent } from '../src/read-group.ts'
 import { ThinkingComponent } from '../src/thinking.ts'
 import { createTranscriptModel, TranscriptModelComponent } from '../src/transcript-model.ts'
-import { BlueStatusService, FooterShellComponent } from '../src/status.ts'
-import { TerminalCardComponent } from '../src/intent-terminal.ts'
-import { DiffCardComponent } from '../src/intent-diff.ts'
+import { BlueStatusModelService, StatusModelFooterComponent } from '../src/status-model.ts'
 import { bannerLayout, composeBannerLines, shortenHome } from '../src/banner.ts'
 import type { TranscriptToolItem } from '../src/types.ts'
 import { fakeBlueComponents } from './helpers.ts'
-import { COLORS } from './intent-fakes.ts'
+import { COLORS } from './status-fakes.ts'
 import { ADVERSARIAL, SCAN_WIDTHS, expectLinesFit } from '../../core/tests/width-scan.ts'
 
 /** Identity colors satisfy BlueSemanticColors where consumed. */
@@ -138,7 +135,6 @@ describe('transcript width-scan', () => {
         colors,
         components,
         images: () => ({}),
-        intents: {} as never,
         requestRender: () => undefined,
       })
       for (const width of SCAN_WIDTHS) {
@@ -147,44 +143,10 @@ describe('transcript width-scan', () => {
       component.dispose()
     })
 
-    it(`ReadGroupComponent survives ${name}`, () => {
-      const components = fakeBlueComponents()
-      for (const width of SCAN_WIDTHS) {
-        expectLinesFit(`ReadGroup/${name}`, new ReadGroupComponent(bashItem(text), colors, components).render(width), width)
-      }
-    })
-
     it(`AgentGroupComponent survives ${name}`, () => {
       const components = fakeBlueComponents()
       for (const width of SCAN_WIDTHS) {
         expectLinesFit(`AgentGroup/${name}`, new AgentGroupComponent(subagentItem(text), colors, components).render(width), width)
-      }
-    })
-
-    it(`TerminalCardComponent survives ${name}`, () => {
-      const components = fakeBlueComponents()
-      for (const expanded of [false, true]) {
-        for (const width of SCAN_WIDTHS) {
-          expectLinesFit(`TerminalCard/${name}`, new TerminalCardComponent({
-            item: bashItem(text),
-            colors,
-            components,
-            expanded,
-          }).render(width), width)
-        }
-      }
-    })
-
-    it(`DiffCardComponent survives ${name}`, () => {
-      const components = fakeBlueComponents()
-      const item = {
-        ...bashItem(text),
-        parsedArguments: { path: text, old_string: `${text}\nsecond`, new_string: `${text}!\nother` },
-      } as TranscriptToolItem
-      for (const expanded of [false, true]) {
-        for (const width of SCAN_WIDTHS) {
-          expectLinesFit(`DiffCard/${name}`, new DiffCardComponent({ item, colors, components, expanded }).render(width), width)
-        }
       }
     })
 
@@ -208,19 +170,13 @@ describe('transcript width-scan', () => {
     })
   }
 
-  it('FooterShellComponent survives a truncating long entry at every width', () => {
-    class FakeScreen {
-      readonly renderRequests: (boolean | undefined)[] = []
-      requestRender(force?: boolean): void {
-        this.renderRequests.push(force)
-      }
-    }
+  it('StatusModelFooterComponent survives truncating long models at every width', () => {
     for (const { name, text } of ADVERSARIAL) {
       const components = fakeBlueComponents()
-      const status = new BlueStatusService(new Context(), new FakeScreen() as unknown as BlueScreen)
-      const footer = new FooterShellComponent(status, components)
-      status.register({ id: 'scan-title', priority: 90, render: width => components.truncateToWidth(text, width) })
-      status.register({ id: 'scan-left', priority: 10, render: width => components.truncateToWidth(text, width) })
+      const status = new BlueStatusModelService(new Context())
+      const footer = new StatusModelFooterComponent(status, components, colors)
+      status.register({ kind: 'status', id: 'scan-title', priority: 90, visible: true, view: { kind: 'text', text } })
+      status.register({ kind: 'status', id: 'scan-left', priority: 10, visible: true, view: { kind: 'text', text } })
       for (const width of SCAN_WIDTHS) {
         expectLinesFit(`FooterShell/${name}`, footer.render(width), width)
       }

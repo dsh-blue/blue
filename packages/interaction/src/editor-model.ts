@@ -22,13 +22,13 @@ export class EditorModelService extends Service {
     ctx.on('blue/editor-model-changed', () => this.emit())
   }
   get current(): EditorModel | undefined {
-    const shared = getSharedEditor()
+    const shared = getSharedEditor(this.ctx)
     if (shared === undefined) return undefined
     return Object.freeze({ kind: 'editor', id: 'prompt', value: shared.editor.getText(), placeholder: 'Message', enabled: !shared.editor.disableSubmit, set: { kind: 'editor.set' }, submit: { kind: 'editor.submit' }, abort: { kind: 'editor.abort' } })
   }
-  update(value: string): boolean { const shared = getSharedEditor(); if (shared === undefined) return false; shared.editor.setText(value); this.emit(); return true }
+  update(value: string): boolean { const shared = getSharedEditor(this.ctx); if (shared === undefined) return false; shared.editor.setText(value); this.emit(); return true }
   execute(action: Action): boolean {
-    const shared = getSharedEditor()
+    const shared = getSharedEditor(this.ctx)
     if (shared === undefined) return false
     if (action.kind === 'editor.set') return typeof action.value === 'string' && this.update(action.value)
     if (action.kind === 'editor.submit') {

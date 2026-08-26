@@ -24,7 +24,7 @@ Core is the tree's ONLY package allowed to import `@earendil-works/pi-tui` (plus
   it never enables mouse reporting, so a multiplexer-provided SGR/X10 wheel
   report is merely normalized to up/down before focus routing.
 
-Both alternate-screen layout bands use `FrameClampedContainer`, preserving the D48 render-exit width backstop before pi-tui lays out the frame. `scrollContent()` delegates to the primary `ScrollView`; `contentChanged()` preserves follow-end until the user scrolls away, and `followContent()` returns to the tail. Raw wheel reports remain available to the renderer's native viewport route; the focused editor consumes its wheel reports before the AltScreen listener, while focused replacement panels receive normalized Up/Down input. `setContentScrollHandler()` retains the editor-context Up/Down/PageUp/PageDown/End path without converting the main viewport's raw mouse event.
+Both alternate-screen layout bands use `FrameClampedContainer`, preserving the D48 render-exit width backstop before pi-tui lays out the frame. The container reuses a checked frame for the same width, child identities, and child row-array identities, so stable long transcript rows do not repeat ANSI-aware width scans on editor or dock-only redraws. `scrollContent()` delegates to the primary `ScrollView`; its ordinary differential render keeps the dock fixed without resetting render state or emitting a full-screen clear. `contentChanged()` preserves follow-end until the user scrolls away, and `followContent()` returns to the tail. Raw wheel reports remain available to the renderer's native viewport route; the focused editor consumes its wheel reports before the AltScreen listener, while focused replacement panels receive normalized Up/Down input. `setContentScrollHandler()` retains the editor-context wheel/PageUp/PageDown/End path without stealing Up/Down from editor history or converting the main viewport's raw mouse event.
 
 ## Suspend/resume seam (S31, `runtime.suspend` → `blueScreen.suspend`)
 
@@ -37,7 +37,15 @@ The recoverable suspend composes pi-tui 0.84.2's own lifecycle primitives — `T
 
 ## Component factory (`blueComponents`, `src/components.ts`)
 
+`BlueEditor.removeLatestHistory(text)` is the narrow retraction helper over pi-tui's private history array: it removes index 0 only on an exact match. The method stays optional on the L1 contract so structural fakes and out-of-tree adapters remain compatible; core's sole real adapter implements it.
+
 The pi-tui-backed component factory and width pure functions:
+
+- `src/plugin-view.ts` is the public `BlueView` compiler used only by the
+  owner bridges. It strips caller ANSI/OSC/control bytes, applies semantic
+  tones from the live owner palette, caps text/depth/rows, delegates all width
+  math to `blueComponents`, and contains a dynamic render failure as one
+  bounded error row. Plugins never receive a `BlueComponent` from this seam.
 
 - `createImage(options)` wraps pi-tui's Image with a styled-text fallback for terminals without an image protocol; the pure `imageDimensions(data)` probe covers PNG/JPEG/GIF/WebP.
 - `BlueEditor.insertText(text)` — atomic insertion at the cursor; the seam the clipboard-image markers use.
@@ -62,7 +70,7 @@ The `blueTheme` contract lives in `src/types.ts`; implementations ship as four s
 
 The pure `src/chrome.ts` — re-exported as the `./chrome` subpath, theme-agnostic functions over `string[]` rows:
 
-- `EditorAdapter.render` post-processes the editor into a rounded box (`withSideBorders`/`injectPromptSymbol`, the kimi port: rules stripped and repainted through the live `borderColor` property so host `setBorderColor` recolors the whole frame, `│` bars overlaid only on literal outer spaces, labels never entering scroll indicators). `BlueEditor` exposes `setPromptSymbol('>' | '!' | undefined)` / `setBorderLabel(text)` / `setConnectedAbove(bool)` / `setGhostHint(…)`. The editor theme's default border is the neutral `border` token; slash/bash contexts carry the color.
+- `EditorAdapter.render` post-processes the editor into a rounded box (`withSideBorders`/`injectPromptSymbol`, the kimi port: rules stripped and repainted through the live `borderColor` property so host `setBorderColor` recolors the whole frame, `│` bars overlaid only on literal outer spaces, labels never entering scroll indicators). `BlueEditor` exposes `setPromptSymbol('>' | '!' | undefined)` / `setBorderLabel(text)` / `setConnectedAbove(bool)` / `setGhostHint(…)`. When connected above, the adapter renders at the dock's `width - 2` inner budget and restores the shared left gutter, aligning both side borders with the pane above. The editor theme's default border is the neutral `border` token; slash/bash contexts carry the color.
 - `framePanel(body, width, opts)` frames a body in kimi's full-width flat `─` rules — title + optional muted title hint + optional key-row footer, all paints defaulting to identity, ANSI-safe truncated. The five overlay dialogs (approval/questionnaire//help//sessions/BlueSelect) render through it. Below `FRAME_DEGENERATE_WIDTH` (8) the framer also cuts its body rows (D48): callers pre-budget rows for normal widths, but a degenerate viewport can sit under the rows' fixed furniture — wider frames emit the body untouched.
 - `clampRowsToWidth(rows, width, truncate)` (D48) is the component-level width backstop: every hand-assembled frame passes through it after assembly (fits return untouched). `src/frame-clamp.ts` holds the render-exit backstop itself (`clampFrame` + the deduplicating `blue-overflow.log` sink wired into terminal.ts's render wrapper), and `src/width.ts` is the tree's single re-export seam for pi-tui's width utilities (runtime consumers reach them through the components service or this module — no other package names pi-tui).
 - `hintRow(parts, paint)` joins key-hint parts with ` · `.
@@ -91,3 +99,7 @@ Theme providers also publish a semantic companion through the optional `blueThem
 
 `blueNotifications` is the frontend runtime's immutable notification registry; core only hosts its lifecycle, while feature adapters push structured messages and consume snapshots.
 `frontend-renderer.ts` is the narrow TUI consumer for `@dsh-blue/blue-frontend` readonly views. `renderFrontendView`/`renderFrontendModel` and `FrontendModelComponent` are the only renderer-facing bridge for the new frontend model; width clamping delegates to pi-tui through `width.ts`. It does not read Harness events or session objects.
+
+## Verification note
+
+`theme-custom` accepts a validated `logoGradient` array as a frozen palette override; invalid arrays and entries retain the base gradient.

@@ -1,10 +1,10 @@
 # Blue Frontend Runtime 实施计划
 
-> 分支：p2/frontend-runtime。本文是目标架构文档之后的执行正典；每个阶段保持可启动、可测试、可从 master 同步。
+> 分支：p2/frontend-runtime-cutover。F0-F6 的当前完成/删除状态以 `blue-runtime-cutover-ledger.md` 为准；本文保留阶段目标并同步已落地边界。
 
 ## 目标与边界
 
-在现有 master 行为基线上实现新的 frontend runtime。Harness 仍是 Agent/domain 能力的所有者；Blue 实现 renderer-neutral interaction model 和 TUI renderer。首期建立新路径并以旧路径作行为基线，不重写现有 transcript/editor。
+在 master 行为基线上完成 renderer-neutral frontend runtime cutover。Harness 仍是 Agent/domain 能力的所有者；Blue 实现 projection/action boundary、readonly interaction model 和 TUI renderer。旧 transcript event fold、status entry、intent registry 与 editor singleton 已删除。
 
 必须保持：
 
@@ -45,7 +45,7 @@
 
 验收：数据和 watermark 与 Harness/Web 语义一致；CJK/窄终端通过 width contract；真实 Blue profile 完成 smoke 和用户 dogfood。
 
-当前实现：`packages/context` 已通过窄 structural adapter 直读官方 `sessionProjections.snapshot/onChanged`，消费 dsh-context 的 `contextTimeline` 及 token-meter 的三个 projection key；同 seq 多 key 经 microtask 合并后读取一致 snapshot，baseline/subscription 缝隙有 buffer，domain/Fiber unload 会清除旧 timeline。`FrontendPanel` 是 `/context` 的 TUI consumer，旧 `InfoPanel` 保持 fallback。真实 upstream fixture `pnpm fixture:context-upstream -- --upstream <checkout>` 已对 `dsh-context@0.25.3` 验证四 key baseline、push、domain unload 和 Blue unload。`blue-frontend-runtime` 专用 profile 已通过 `/context`、窄终端、resize 和用户 live acceptance；bundle 中 `blue-context` 已默认启用，能力缺失或 provider unload 时仍回退到旧 facts reader。
+当前实现：`packages/context` 通过 app-owned `blueSessionProjections.currentMany()/subscribe()` 读取四个官方 projection key；同一 cut 读取、microtask coalescing、attach buffer、session epoch rejection 和 unload cleanup 均有 fixture。该包保持 validation-only，不进入 bundle；产品 `/context` 与 footer 消费 app-owned session details/`blueConversationFacts`。
 
 ### F4：session runtime 和 dsh-remote
 
@@ -59,13 +59,13 @@
 
 按 status、dock、command、tool presentation、theme、editor、transcript 顺序迁移。每项必须有新 provider/registry、官方 consumer、replacement fixture、unload/reload、width-scan、golden/e2e、bundle row 和 plain fallback。旧实现只在对应验收后删除。
 
-当前进度：status 的 basic/cwd/git/title/context/mode provider 已全部切到 `StatusModel` 和正式 footer bridge；dock 固定 placement/priority/id 顺序并支持 `preferredRows`/collapsed；command action 只经官方 `commands.execute` 且 unload abort/丢弃 late result；`FrontendPanel` 覆盖 select/form/info/loading/error 和 submit/cancel；tool presentation 只转换官方 dsh-tools canonical view/result；editor 暴露 set/submit/abort 结构化 action。Transcript 已补齐真正的官方 producer/consumer：domain-only `packages/conversation` 经官方 `SessionProjectionRegistry` 把 append-origin 事件投影为 `blueConversation`，`@dsh-blue/blue-transcript/official-model` 只消费 whole snapshot/change feed 并生成 user/assistant/thinking/tool/error/interruption 语义条目；`TranscriptModelService` 复用现有组件、限制最新 200 项、清理 timer、转发 Ctrl-O，并把 contentChanged 连接到 tail-follow 通知。官方 model 存在时旧 event fold 会卸载，provider/consumer 卸载后恢复 fallback。`blue-frontend-runtime` 已通过 official live/resume、scroll/End/new-message、resize/copy 的 PTY dogfood 和用户 live acceptance；bundle 的 `blue-conversation`/`blue-transcript-official` 已默认启用。旧 editor、pane renderer 和 event fold 仍是 capability-absent/unload 回退与 golden/plain baseline；删除条件见 surface migration matrix。
+当前进度：status producer 全部发布 `StatusModel`；五个 pane 发布 `DockModel` 并从 `blueConversationFacts` 或 app action seam 取值；tool presentation 只转换 canonical dsh-tools view/result；editor host 与 interaction mutable state 都是 frontend-tree scoped。`blueConversation`/`blueConversationFacts` + official transcript consumer 是 bundle baseline。旧 event fold、direct status provider、intent presenter、pane event fold、child-event tracker 和 editor module singleton 已物理删除。Command model/action 已落地；model/effort、trace/detail 与 update 均发布 readonly `PanelModel` snapshot 和 structured action，由共享 `FrontendPanel` 消费，command-specific renderer/state class 与旧 thinking-segment chrome 已物理删除。C4 source deletion 完成，最终 build/pack/fixture/smoke/profile 与人工验收仍按 ledger 门禁执行。
 
 ### F6：skills 和生态验证
 
 实现 plugin-development、plugin-migration、plugin-fixture、plugin-validation；完成 dsh-openpencil capability/fallback 和 dsh-lark action/notification 审计；验证独立安装包 fixture。
 
-当前进度：四份 skill 已作为 `.agents/skills/*/SKILL.md` 可加载，并有对应人读文档；静态 validator 输出稳定 code/group/reproduce JSON，进程测试固定成功、违规和缺 manifest 三类退出。packed fixture 会打包递归完整的本地 workspace closure，在临时 npm 项目中只经安装后的 exports 执行 7 个共享 runtime 场景；OpenPencil/Lark 各追加 2 个生态场景。Conversation/transcript 各执行 11 个场景，新增真实 `SessionProjectionRegistry` replay/live/checkpoint/restore/unload、stale/wrong-session/late rejection 和 20/40/80/120 语义/plain width scan；当前 Harness `0.1.1-rc.2` 与上一线 `0.1.1-rc.1` 都是 `declared === executed`、`skipped` 为空，rc.1 lane 递归解析并精确 pin 官方 Harness peer closure。`packages/openpencil` 只观察官方 tool result/presentation、剥离 signed meta 并提供 text/diff fallback；`packages/lark` 只通过官方 command 和 loopback settings route 暴露 status/retry 与通知，两个生态 row 都以 capability-gated 方式默认启用。人工验收已于 2026-08-24 通过：版本标识正确，subagent 和 tmux 复制修复已确认，未发现更多问题。自动门禁以本次合并前最终运行结果为准；验收记录见 `docs/history/blue-frontend-runtime-acceptance-2026-08-24.md`。
+当前进度：四份 skill 和 validator/fixture runner 已落地。Conversation/transcript packed fixtures覆盖 official replay/live/checkpoint/restore/unload、stale/wrong-session/late rejection 和 width scan。Context/remote/OpenPencil/Lark 均为 validation-only package；OpenPencil/Lark 不是默认 bundle row。最终 current-tree gate 与 `blue-runtime-cutover` profile 的人工验收仍以 ledger 为准，不能沿用 2026-08-24 参考 runtime 的接受记录。
 
 ## Master 同步和合并
 

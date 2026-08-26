@@ -22,8 +22,11 @@ import * as themeDark from '@dsh-blue/blue-core/theme-dark'
 import * as themeLight from '@dsh-blue/blue-core/theme-light'
 import { BlueTerminalInfoService } from '../../core/src/terminal-info.ts'
 import * as commandsPlugin from '../src/commands-plugin.ts'
+import { SkillsCatalogService } from '../src/skills-catalog.ts'
+import { InteractionStateService } from '../src/runtime-state.ts'
+import { DEFAULT_SETTINGS } from '../src/settings.ts'
 
-const USAGE = 'usage: /theme [dark|light|auto|custom <path> [dark|light]]'
+const USAGE = 'usage: /theme [dark|light|ocean|paper|auto|custom <path> [dark|light|ocean|paper]]'
 
 let dir: string
 beforeAll(async () => {
@@ -39,10 +42,30 @@ async function mount(): Promise<{
   fiber: { dispose(): Promise<void> }
 }> {
   const ctx = new Context()
+  new InteractionStateService(ctx, DEFAULT_SETTINGS)
   await ctx.plugin(SessionStore)
   await ctx.plugin(CommandRuntime)
   const session = ctx.sessions.create(SessionId('theme-spec'))
   const agent = { id: session.id, session } as unknown as Agent
+  ctx.provide('blueSessionReader', {
+    current: () => ({ id: String(agent.id), cwd: process.cwd(), status: 'idle', mode: 'normal' }),
+    subscribe: () => ({ disposed: false, dispose() {} }),
+    request: async () => ({ ok: true, value: undefined }),
+  })
+  ctx.provide('blueSessionActions', {
+    commands: () => [],
+    rewindCandidates: () => [],
+    skillSnapshot: async () => ({ ok: false, code: 'BLUE_CAPABILITY_ABSENT', absent: { capability: 'skills', reason: 'not composed' } }),
+    subscribeSkillChanges: () => ({ disposed: false, dispose() {} }),
+  } as never)
+  ctx.provide('blueSessionProjections', {
+    current: () => undefined,
+    currentMany: () => undefined,
+    subscribe: () => () => {},
+    children: () => [],
+    subscribeChildren: () => () => {},
+  })
+  new SkillsCatalogService(ctx)
   const fiber = await ctx.plugin(commandsPlugin)
   return { ctx, agent, fiber }
 }
@@ -56,7 +79,7 @@ describe('/theme command', () => {
   it('lists the known themes, marking the live one', async () => {
     const { ctx, agent } = await mount()
     const result = await execute(ctx, agent, '/theme')
-    expect(result).toEqual({ kind: 'success', text: 'themes: dark ← current, light, auto, custom' })
+    expect(result).toEqual({ kind: 'success', text: 'themes: dark ← current, light, ocean, paper, auto, custom' })
   })
 
   it('swaps built-in palettes through the real registry', async () => {
@@ -92,7 +115,17 @@ describe('/theme command', () => {
     expect(colors?.accent('x')).toBe('\x1b[38;2;255;0;0mx\x1b[39m')
     expect(colors?.text).toBe(themeDark.DARK_COLORS.text)
     const list = await execute(ctx, agent, '/theme')
-    expect(list).toEqual({ kind: 'success', text: 'themes: dark, light, auto, custom ← current' })
+    expect(list).toEqual({ kind: 'success', text: 'themes: dark, light, ocean, paper, auto, custom ← current' })
+    expect(await execute(ctx, agent, '/theme dark')).toEqual({ kind: 'success', text: 'switched to theme "dark"' })
+  })
+
+  it('falls back to dark when the remembered key is unknown', async () => {
+    const { ctx, agent } = await mount()
+    await ctx.plugin(themeDark)
+    ctx.blueInteractionState.currentThemeKey = 'retired-theme'
+    expect(await execute(ctx, agent, '/theme light')).toEqual({ kind: 'success', text: 'switched to theme "light"' })
+    expect(ctx.get('blueTheme')?.colors).toBe(themeLight.LIGHT_COLORS)
+    await execute(ctx, agent, '/theme dark')
   })
 
   it('loads a custom palette over the light base', async () => {
@@ -114,7 +147,7 @@ describe('/theme command', () => {
     expect(await execute(ctx, agent, `/theme custom ${join(dir, 'x.json')} light extra`))
       .toEqual({ kind: 'error', text: USAGE })
     const list = await execute(ctx, agent, '/theme')
-    expect(list).toEqual({ kind: 'success', text: 'themes: dark, light, auto, custom ← current' })
+    expect(list).toEqual({ kind: 'success', text: 'themes: dark ← current, light, ocean, paper, auto, custom' })
   })
 
   it('restores the dark palette when the custom mount fails validation', async () => {
@@ -126,7 +159,7 @@ describe('/theme command', () => {
     if (result?.kind === 'error') expect(result.text).toContain('failed to apply theme "custom"')
     expect(ctx.get('blueTheme')?.colors).toBe(themeDark.DARK_COLORS)
     const list = await execute(ctx, agent, '/theme')
-    expect(list).toEqual({ kind: 'success', text: 'themes: dark ← current, light, auto, custom' })
+    expect(list).toEqual({ kind: 'success', text: 'themes: dark ← current, light, ocean, paper, auto, custom' })
   })
 
   it('unregisters the command when the fiber disposes', async () => {

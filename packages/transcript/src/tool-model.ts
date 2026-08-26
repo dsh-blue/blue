@@ -14,6 +14,9 @@ declare module '@deepseek-ai/cordis' { interface Context { blueToolModels: BlueM
 
 type Source = ToolPresentationModel | (() => ToolPresentationModel | null)
 
+const COLLAPSED_ROW_LIMIT = 12
+const EXPANDED_ROW_LIMIT = 200
+
 /** Official facts required to build one renderer-neutral tool card. */
 export interface ToolPresentationFacts {
   readonly id: string
@@ -48,7 +51,7 @@ export function toolCallView(view: ToolCallView): View {
     }
     case 'terminal': {
       const sections: { title: string; body: View }[] = []
-      if (view.description !== undefined) sections.push({ title: view.description, body: { kind: 'text', text: view.cwd ?? '' } })
+      if (view.description !== undefined || view.cwd !== undefined) sections.push({ title: view.description ?? 'cwd', body: { kind: 'text', text: view.cwd ?? '' } })
       sections.push({ title: 'Command', body: { kind: 'code', code: view.title, language: 'shell' } })
       return { kind: 'sections', sections }
     }
@@ -117,13 +120,25 @@ function contentText(content: readonly ContentBlock[] | undefined): string | und
 }
 
 class ToolModelComponent implements BlueComponent {
+  private expandedOverride: boolean | undefined
   constructor(private readonly source: () => ToolPresentationModel | null) {}
   render(width: number): string[] {
     const model = this.source()
     if (model === null) return []
-    const view = model.expanded === false ? model.call : model.result ?? model.call
-    return view === undefined ? [] : [...renderFrontendView(view, width)]
+    const expanded = this.expandedOverride ?? model.expanded ?? false
+    const view = expanded ? model.result ?? model.call : model.call
+    if (view === undefined) return []
+    const rows = [...renderFrontendView(view, width)]
+    const limit = expanded ? EXPANDED_ROW_LIMIT : COLLAPSED_ROW_LIMIT
+    if (rows.length <= limit) return rows
+    const remaining = rows.length - limit + 1
+    const hint = expanded
+      ? `... (${String(remaining)} more lines)`
+      : `... (${String(remaining)} more lines, ctrl+o to expand)`
+    const hintRow = renderFrontendView({ kind: 'text', text: hint }, width)[0]!
+    return [...rows.slice(0, limit - 1), hintRow]
   }
+  setExpanded(expanded: boolean): void { this.expandedOverride = expanded }
   invalidate(): void {}
 }
 

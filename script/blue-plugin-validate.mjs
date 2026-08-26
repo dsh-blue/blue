@@ -82,11 +82,14 @@ function exportTarget(value) {
 function filesEntryMatches(entry, target) {
   const normalized = target.replace(/^\.\//u, '')
   if (!entry.includes('*')) return normalized === entry || normalized.startsWith(`${entry}/`)
-  const pattern = entry
-    .replace(/[.+^${}()|[\]\\]/gu, String.raw`\$&`)
-    .replace(/\*\*\//gu, '(?:.*/)?')
-    .replace(/\*\*/gu, '.*')
-    .replace(/\*/gu, '[^/]*')
+  let pattern = ''
+  for (let index = 0; index < entry.length;) {
+    if (entry.startsWith('**/', index)) { pattern += '(?:.*/)?'; index += 3; continue }
+    if (entry.startsWith('**', index)) { pattern += '.*'; index += 2; continue }
+    if (entry[index] === '*') { pattern += '[^/]*'; index += 1; continue }
+    pattern += entry[index].replace(/[.+^${}()|[\]\\]/gu, String.raw`\$&`)
+    index += 1
+  }
   return new RegExp(`^${pattern}$`, 'u').test(normalized)
 }
 

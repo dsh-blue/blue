@@ -51,7 +51,7 @@ describe('FrontendPanel', () => {
     fixture.panel.render(40)
     fixture.setModel({ kind: 'panel', mode: 'error', title: 'Failure', view: { kind: 'text', text: 'down' } })
     const rows = fixture.panel.render(30.8)
-    expect(rows.some(row => row.includes('failure'))).toBe(true)
+    expect(rows.some(row => row.includes('Failure'))).toBe(true)
     expect(rows.some(row => row.includes('down'))).toBe(true)
   })
 
@@ -95,5 +95,86 @@ describe('FrontendPanel', () => {
     expect(fixture.panel.render(40).some(row => row.includes('> First'))).toBe(true)
     fixture.panel.handleInput('\r')
     expect(fixture.onAction).toHaveBeenCalledWith({ kind: 'fixture.first' })
+  })
+
+  it('filters grouped lists, cycles variants, and dispatches secondary actions', () => {
+    const fixture = panelFixture({
+      kind: 'panel', mode: 'select', title: 'Models',
+      view: { kind: 'list', filterable: true, grouped: true, items: [
+        { id: 'a', label: 'alpha', group: 'one', variants: [
+          { id: 'low', label: 'Low', action: { kind: 'pick', id: 'low' }, secondaryAction: { kind: 'session', id: 'low' } },
+          { id: 'high', label: 'High', action: { kind: 'pick', id: 'high' }, secondaryAction: { kind: 'session', id: 'high' } },
+        ], selectedVariantId: 'low' },
+        { id: 'b', label: 'beta', group: 'two', action: { kind: 'pick', id: 'b' } },
+      ] },
+    })
+    expect(fixture.panel.render(50).join('\n')).toContain('[All]')
+    expect(fixture.panel.render(50).join('\n')).toContain('[Low]')
+    expect(fixture.panel.render(50).join('\n')).toContain('[High]')
+    fixture.panel.handleInput('\t')
+    expect(fixture.panel.render(50).join('\n')).toContain('[one]')
+    fixture.panel.handleInput('\x1b[C')
+    expect(fixture.panel.render(50).join('\n')).toContain('[High]')
+    fixture.panel.handleInput('\x1bs')
+    fixture.panel.handleInput('\r')
+    expect(fixture.onAction.mock.calls.map(call => call[0])).toEqual([
+      { kind: 'session', id: 'high' },
+      { kind: 'pick', id: 'high' },
+    ])
+    fixture.panel.handleInput('a')
+    expect(fixture.panel.render(50).join('\n')).toContain('search: a')
+    fixture.panel.handleInput('\x7f')
+    fixture.panel.handleInput('\x1b')
+    expect(fixture.onClose).toHaveBeenCalledOnce()
+  })
+
+  it('supports model-level input actions, top/end scrolling, and locked loading panels', () => {
+    const loading = panelFixture({ kind: 'panel', mode: 'loading', title: 'Busy', dismissible: false })
+    loading.panel.handleInput('\x1b')
+    expect(loading.onClose).not.toHaveBeenCalled()
+
+    const fixture = panelFixture()
+    const action = vi.fn(() => ({ kind: 'fixture.shortcut' }))
+    const panel = new FrontendPanel({
+      ...fakeBlueContext(),
+      model: () => ({ kind: 'panel', mode: 'select', title: 'Keys', view: { kind: 'list', items: [{ id: 'a', label: 'A' }] } }),
+      onAction: fixture.onAction,
+      onClose: fixture.onClose,
+      onUnhandledInput: (data, selectedId) => data === 'c' && selectedId === 'a' ? action() : undefined,
+      maxVisible: 5,
+    })
+    panel.handleInput('c')
+    panel.handleInput('G')
+    panel.render(40)
+    panel.handleInput('g')
+    expect(fixture.onAction).toHaveBeenCalledWith({ kind: 'fixture.shortcut' })
+  })
+
+  it('clears filtering before close and safely resets stale list controls', () => {
+    const fixture = panelFixture({
+      kind: 'panel', mode: 'select', title: 'Grouped',
+      view: { kind: 'list', filterable: true, grouped: true, items: [
+        { id: 'a', label: 'alpha', group: 'one', action: { kind: 'fixture.a' }, secondaryAction: { kind: 'fixture.a.session' } },
+        { id: 'b', label: 'beta', group: 'two', action: { kind: 'fixture.b' } },
+      ] },
+    })
+    fixture.panel.handleInput('a')
+    expect(fixture.panel.render(40).join('\n')).toContain('search: a')
+    fixture.panel.handleInput('\x1b')
+    expect(fixture.onClose).not.toHaveBeenCalled()
+    expect(fixture.panel.render(40).join('\n')).not.toContain('search:')
+
+    fixture.panel.handleInput('\x1bs')
+    fixture.panel.handleInput('\x1b[C')
+    fixture.panel.handleInput('\t')
+    fixture.panel.handleInput('\t')
+    fixture.panel.handleInput('\x1bs')
+    expect(fixture.onAction).toHaveBeenCalledWith({ kind: 'fixture.a.session' })
+
+    fixture.setModel({
+      kind: 'panel', mode: 'select', title: 'Regrouped',
+      view: { kind: 'list', grouped: true, items: [{ id: 'a', label: 'alpha', group: 'one' }] },
+    })
+    expect(fixture.panel.render(40).join('\n')).toContain('alpha')
   })
 })

@@ -1,23 +1,22 @@
 /**
- * Narrow adapter over the official Harness session-projection read face.
- * It consumes only `snapshot()` and `onChanged()` and never exposes the
- * Session object outside this compatibility boundary.
+ * Narrow adapter over blue-app's current-session projection read face. It
+ * consumes only immutable values and sequence facts; Agent and Session
+ * objects remain private to the app boundary.
  *
  * @module @dsh-blue/blue-context/official-source
  */
 
+import type { BlueSessionProjectionReader } from '@dsh-blue/blue-app'
 import type { ContextEvent, ContextSource, ContextTimelineCurrent, ContextTimelineEvent, ContextTimelineFacts, ContextTimelineRequest, OfficialContextProjection } from './types.ts'
 
-const CONTEXT_KEYS = new Set(['contextTimeline', 'contextPressure', 'contextBreakdown', 'tokenUsage'])
+const CONTEXT_KEYS = ['contextTimeline', 'contextPressure', 'contextBreakdown', 'tokenUsage'] as const
+const CONTEXT_KEY_SET = new Set<string>(CONTEXT_KEYS)
 
-/** Official session-projection service surface consumed by this adapter. */
-export interface OfficialSessionProjectionService {
-  snapshot(session: unknown): { readonly asOfSeq: number; readonly values: Readonly<Record<string, unknown>> }
-  onChanged(listener: (session: unknown, key: string, value: unknown, seq: number) => void): () => void
-}
+/** App-owned projection surface consumed by this feature adapter. */
+export type OfficialSessionProjectionService = Pick<BlueSessionProjectionReader, 'currentMany' | 'subscribe'>
 
-/** Resolve a renderer-independent session id to the opaque Harness handle. */
-export type ContextSessionResolver = (sessionId: string) => unknown | undefined
+/** Read the renderer-independent identity of blue-app's active session. */
+export type CurrentContextSessionId = () => string | undefined
 
 function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -194,6 +193,12 @@ interface Listener {
   readonly accept: (event: { readonly seq: number; readonly sessionId: string; readonly event: ContextEvent }) => void
 }
 
+interface ScheduledCut {
+  readonly sessionId: string
+  readonly epoch: number
+  seq: number
+}
+
 /**
  * Context source over the official projection registry. Change notifications
  * are microtask-coalesced per session because the registry emits once per key
@@ -202,25 +207,32 @@ interface Listener {
  */
 export class OfficialContextSource implements ContextSource {
   readonly capabilities = ['context', 'breakdown', 'status'] as const
-  private readonly sessionIds = new Map<unknown, string>()
   private readonly listeners = new Map<string, Set<Listener>>()
   private readonly buffered = new Map<string, { readonly seq: number; readonly event: ContextEvent }>()
-  private readonly scheduled = new Map<unknown, number>()
+  private activeSessionId: string | undefined
+  private epoch = 0
+  private scheduled: ScheduledCut | undefined
   private readonly offChanged: () => void
   private disposed = false
 
-  constructor(private readonly service: OfficialSessionProjectionService, private readonly resolveSession: ContextSessionResolver) {
-    this.offChanged = service.onChanged((session, key, _value, seq) => {
-      if (!this.disposed && CONTEXT_KEYS.has(key)) this.schedule(session, seq)
+  constructor(private readonly service: OfficialSessionProjectionService, private readonly currentSessionId: CurrentContextSessionId) {
+    this.offChanged = service.subscribe((key, _value, seq) => {
+      const sessionId = this.currentSessionId()
+      if (!this.disposed && sessionId !== undefined && sessionId === this.activeSessionId && CONTEXT_KEY_SET.has(key)) {
+        this.schedule(sessionId, seq, this.epoch)
+      }
     })
   }
 
   async snapshot(sessionId: string, signal: AbortSignal): Promise<{ readonly watermark: number; readonly events: readonly ContextEvent[] }> {
     if (signal.aborted) throw new Error('Context projection attach aborted')
-    const session = this.resolveSession(sessionId)
-    if (session === undefined) throw new Error(`Context session ${JSON.stringify(sessionId)} is unavailable`)
-    this.sessionIds.set(session, sessionId)
-    const snapshot = this.service.snapshot(session)
+    if (this.currentSessionId() !== sessionId) throw new Error(`Context session ${JSON.stringify(sessionId)} is unavailable`)
+    const snapshot = this.service.currentMany(CONTEXT_KEYS)
+    if (snapshot === undefined || this.currentSessionId() !== sessionId) throw new Error(`Context session ${JSON.stringify(sessionId)} is unavailable`)
+    this.activeSessionId = sessionId
+    this.epoch += 1
+    this.scheduled = undefined
+    this.buffered.delete(sessionId)
     const event = officialContextEvent(snapshot.values)
     return { watermark: snapshot.asOfSeq, events: event === undefined ? [] : [event] }
   }
@@ -245,26 +257,30 @@ export class OfficialContextSource implements ContextSource {
     if (this.disposed) return
     this.disposed = true
     this.offChanged()
-    this.sessionIds.clear()
+    this.activeSessionId = undefined
+    this.epoch += 1
     this.listeners.clear()
     this.buffered.clear()
-    this.scheduled.clear()
+    this.scheduled = undefined
   }
 
-  private schedule(session: unknown, seq: number): void {
-    const previous = this.scheduled.get(session)
-    this.scheduled.set(session, previous === undefined ? seq : Math.max(previous, seq))
-    if (previous !== undefined) return
+  private schedule(sessionId: string, seq: number, epoch: number): void {
+    const previous = this.scheduled
+    if (previous !== undefined && previous.sessionId === sessionId && previous.epoch === epoch) {
+      previous.seq = Math.max(previous.seq, seq)
+      return
+    }
+    const scheduled: ScheduledCut = { sessionId, epoch, seq }
+    this.scheduled = scheduled
     queueMicrotask(() => {
-      const scheduledSeq = this.scheduled.get(session)
-      this.scheduled.delete(session)
-      if (this.disposed || scheduledSeq === undefined) return
-      const sessionId = this.sessionIds.get(session)
-      if (sessionId === undefined) return
-      const snapshot = this.service.snapshot(session)
+      if (this.disposed || this.scheduled !== scheduled) return
+      this.scheduled = undefined
+      if (this.epoch !== epoch || this.activeSessionId !== sessionId || this.currentSessionId() !== sessionId) return
+      const snapshot = this.service.currentMany(CONTEXT_KEYS)
+      if (snapshot === undefined || this.epoch !== epoch || this.currentSessionId() !== sessionId) return
       const event = officialContextEvent(snapshot.values)
       if (event === undefined) return
-      this.publish(sessionId, Math.max(scheduledSeq, snapshot.asOfSeq), event)
+      this.publish(sessionId, Math.max(scheduled.seq, snapshot.asOfSeq), event)
     })
   }
 

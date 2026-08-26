@@ -1,9 +1,11 @@
 # `@dsh-blue/blue-context`
 
-F3 dsh-context vertical slice. `OfficialContextSource` is the narrow compatibility adapter over the official `sessionProjections.snapshot()` / `onChanged()` surface. It reads the dsh-context-owned `contextTimeline` projection and token-meter-owned `contextPressure`, `contextBreakdown`, and `tokenUsage` keys as one renderer-neutral whole-value model. It never exports or retains an Agent/Session outside the adapter; the opaque current-session handle exists only long enough to call the official service.
+Implementation detail for this package. Repo-wide conventions live in the root [AGENTS.md](../../AGENTS.md).
 
-The projection registry emits once per changed key while driving a committed event. The adapter coalesces those callbacks through one microtask and then reads a consistent snapshot, so multiple keys at one seq cannot be lost to watermark dedupe. It buffers the newest cut across the baseline-to-subscribe gap, drops late events after disposal, and re-attaches on `blue/session-changed`. Invalid projection keys degrade independently.
+`OfficialContextSource` is the narrow adapter over app-owned `blueSessionProjections.currentMany()` and `subscribe()`. It reads `contextTimeline`, `contextPressure`, `contextBreakdown`, and `tokenUsage` from one consistent current-session cut, then maps them into the renderer-neutral context feature. No Agent, Session, renderer object, or Promise enters the model.
 
-The model includes usage, pressure, composition, current-surface categories, request/event summaries, and a status provider. Official projections are push-driven and expose no refresh action; compatibility `ContextSource` implementations may still advertise `refresh`, in which case the panel publishes the structured `context.refresh` action. Remove that bridge once every supported host has the official projection path.
+The package imports only blue-app's public projection/reader types. Keep the `@dsh-blue/blue-app` peer/dev dependency and the `../app` TypeScript project reference together; without the reference, a clean `tsc -b --force` can resolve only stale emitted declarations.
 
-The legacy `blue-status-context` and old `/context` facts reader remain capability-absent/unload fallbacks after live TUI acceptance. The default-enabled `blue-context` bundle row supplies the official feature; it does not own or duplicate the dsh-context domain fold.
+The projection registry notifies once per changed key during a committed event. The adapter coalesces relevant notifications through one microtask before calling `currentMany()`, buffers the newest cut across attach, rejects stale epochs after session switches, drops late callbacks after disposal, and lets malformed keys degrade independently. `blueSessionReader` supplies only the active session id and attach lifecycle.
+
+The package is independently validated and is not mounted by the Blue bundle in this cutover. The in-bundle `/context` and footer use the app-owned session detail/facts services. Add a bundle row only when the context feature model becomes their sole consumer and the bundle fixture covers swap, unload, replay, and width behavior.

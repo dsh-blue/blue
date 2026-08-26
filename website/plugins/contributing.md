@@ -21,7 +21,7 @@ script/install-dev.sh
 # 覆盖项：DSH_BIN=/path/to/dsh PROFILE=my-profile DSH_HOME=/custom/home script/install-dev.sh
 ```
 
-脚本会构建整个 workspace，并把 bundle 加十二个 runtime 库（共十三个包）link 安装进 dsh profile。
+脚本会构建整个 workspace，并按 `script/install-dev.sh` 的权威列表 link 安装 11 个包：产品 plugin closure 加 OpenPencil/Lark validation adapter。
 
 ## 手动安装（等价步骤）
 
@@ -34,9 +34,7 @@ dsh plugin --profile blue-dev add \
   link:/path/to/blue/packages/api \
   link:/path/to/blue/packages/frontend \
   link:/path/to/blue/packages/harness-adapter \
-  link:/path/to/blue/packages/context \
   link:/path/to/blue/packages/conversation \
-  link:/path/to/blue/packages/remote \
   link:/path/to/blue/packages/core \
   link:/path/to/blue/packages/interaction \
   link:/path/to/blue/packages/transcript \
@@ -48,7 +46,7 @@ dsh --profile blue-dev [task]           # 执行任务，或进入交互模式
 dsh --profile blue-dev --resume <id>    # 恢复一个已持久化的会话
 ```
 
-**为什么要 link 十三个包**：十二个库包是 bundle 的 `workspace:^` 依赖，在 workspace 之外无法解析。`dsh plugin` 原样转发给 pnpm，`link:` 协议把检出本身安装为符号链接；链入的 bundle 再经 profile 自己的 `node_modules` 链接解析它的兄弟包。十二个非 bundle 链接是普通依赖——各会有一条 `declares no dsh.bundle` 警告，属预期行为（它们是库，不是装配层）。`script/install-dev.sh` 是这份列表的权威来源。
+**为什么 link 11 个包**：bundle 的本地 `workspace:^` closure 在 workspace 外需要显式 link，OpenPencil/Lark 同时进入 dogfood validation lane。十个非 bundle 链接会出现 `declares no dsh.bundle` 警告，属预期行为。`script/install-dev.sh` 是列表权威来源；context/remote 用独立 fixture，不装入产品 profile。
 
 ::: tip 三条泳道，别混
 - **`blue`** = 生产 profile,**只走 npm 安装**（`@dsh-blue/blue@rc` / 精确版本号）。永远不要往里 `link:`——后续 npm 升级只会覆盖点名的包，残留的链接悬空后启动即 `ERR_MODULE_NOT_FOUND`（且 `pnpm add` 对混装零告警）。

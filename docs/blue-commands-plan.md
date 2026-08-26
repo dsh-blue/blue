@@ -1,5 +1,7 @@
 # Blue 内置命令实施清单：四家参照系合并、能力支撑矩阵与 S23-S29 分期
 
+> Cutover note (2026-08-26): 本文记录命令落地时的方案。旧 `blueSession`/`blueStatus`/`fold.ts` 接线已由 app reader/projection/action、`StatusModel` 与 `blueConversation` 取代。
+
 > 姊妹文档：[blue-p1-design.md](./history/blue-p1-design.md)（§4.3 命令对照前身，本文档是其全量升级）、[blue-roadmap.md](./blue-roadmap.md)（P2"模式命令随上游能力缝落地逐个接入"条目）、[blue-seams.md](./blue-seams.md)（缝清单）、[blue-decisions.md](./blue-decisions.md)（ADR；本文档为规划文档，实施期的决策记入 ADR）
 > 参照系：kimi-code（MoonshotAI，本地源码 `apps/kimi-code/src/tui/commands/registry.ts` 逐条核实，40 内置）、pi（Earendil Works，官方文档 pi.dev/docs/latest/usage，23）、Claude Code（官方文档 code.claude.com/docs/en/commands，~80 内置 + [Skill]/[Workflow] 标记）、Codex（OpenAI，官方 developer-commands 文档，~30 会话内）
 > 核实基准：三源复核——① Blue 已安装 `@deepseek-ai/*@0.1.0-rc.7` 包 .d.ts；② npm 已发布清单（`next` 标签达 rc.8）；③ harness 源码 + CLI base 组合（`apps/cli/composition.md`、`agent.cordis.yml`）。2026-08-20 首轮后补一轮系统复核（plan-mode 漏检 + 初版 ⛔/🚫 判定偏窄，见 §1.3 ③④）；本文 ✅/⚠️/⛔/🚫 均带证据
@@ -374,7 +376,7 @@ kimi `KimiSlashCommand`（`apps/kimi-code/src/tui/commands/types.ts`）声明的
 | `/editor` | kimi | 外部编辑器 Ctrl-G 未实现（roadmap P2 挂起项） |
 | `/experiments` `/experimental` | kimi/Codex | 无实验特性管线 |
 | `/goal` | （已转 Adopt，§2.10/§8） | 上游 ctx.goals + /goal 命令现成，零实现 |
-| `/tree` `/branch` `/clone` | pi | /sessions + /fork 覆盖；lineage 仅可作 /sessions 可选增强列 |
+| `/tree` `/branch` `/clone` | pi | `/sessions` 已以标准 `parentSession` header 展示 lineage 树，`/fork` 与安全分支式 `/rewind` 覆盖创建路径；不冒充单 session event tree |
 | `/session` | pi | /status + /sessions 覆盖 |
 | `/scoped-models` | pi | 目录级模型无概念（agent 级 selection 已有，不做目录维度） |
 | `/trust` | pi | 信任文件夹无 harness 概念 |

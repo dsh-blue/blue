@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-interaction",
   "description": "Blue terminal UI interaction layer: input editor, slash commands, approval and user-question overlays over dsh-blue-core",
-  "version": "0.1.0-rc.2",
+  "version": "0.1.0-rc.8",
   "publishConfig": {
     "access": "public"
   },
@@ -41,6 +41,10 @@
       "types": "./lib/types/paste-image.d.ts",
       "default": "./lib/paste-image.js"
     },
+    "./plugin-host-bridge": {
+      "types": "./lib/types/plugin-host-bridge.d.ts",
+      "default": "./lib/plugin-host-bridge.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -59,9 +63,7 @@
     "@dsh-blue/blue-api": "workspace:^",
     "@dsh-blue/blue-frontend": "workspace:^",
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-agent": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-agent-default-model": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-agent-presets": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-attachment": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-commands": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-credentials": "^0.1.1-rc.2",
@@ -74,18 +76,11 @@
     "@deepseek-ai/dsh-session-projection": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-session-query": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-settings": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-skill": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-tools": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-user-approval": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-user-questions": "^0.1.1-rc.2",
     "@dsh-blue/blue-app": "workspace:^",
     "@dsh-blue/blue-core": "workspace:^",
     "@dsh-blue/blue-transcript": "workspace:^"
-  },
-  "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-agent-presets": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@dsh-blue/blue-api": "workspace:^",

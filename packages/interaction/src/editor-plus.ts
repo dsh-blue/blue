@@ -34,7 +34,6 @@
 
 import { exec } from 'node:child_process'
 import type { Context } from '@deepseek-ai/cordis'
-import type { CommandDescriptor } from '@deepseek-ai/dsh-commands'
 import type {
   BlueAutocompleteItem,
   BlueAutocompleteProvider,
@@ -49,19 +48,27 @@ import {
   markEditorEnhancement,
   type SharedEditor,
 } from './editor-instance.ts'
-import { canonicalOf, withCommandAliases } from './command-meta.ts'
 import { detectFdPath, extractAtPrefix, fsMentionSuggestions, listDirectoryMentions } from './file-mention.ts'
-import { getStashedInputMode, stashHistory, stashInputMode } from './draft-stash.ts'
 import { ACTION_BACKSPACE, ACTION_CANCEL } from './keys.ts'
 import { extractSkillPrefix, refresh, userInvocableSkills } from './skills-catalog.ts'
 import { sanitizeShellOutput } from './shell-sanitize.ts'
-import { currentBlueAgent } from './session.ts'
 import { filterSlashCommands, slashCommandLabel } from './slash-filter.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-editor-plus'
 /** Services required before the enhancement layer can attach. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'commands']
+export const inject = [
+  'blueScreen',
+  'blueTheme',
+  'blueComponents',
+  'blueKeymap',
+  'blueEditorHost',
+  'blueSessionReader',
+  'blueSessionActions',
+  'blueSkillsCatalog',
+  'blueInteractionState',
+  'commands',
+]
 
 /** Shell echo output caps: both bounds apply, whichever trips first. */
 const SHELL_MAX_LINES = 200
@@ -118,9 +125,12 @@ function withLine(lines: string[], index: number, line: string): string[] {
  * @param command - the registered command descriptor.
  * @returns the description text.
  */
-function slashItemDescription(command: CommandDescriptor): string {
-  const hint = command.input?.hint
-  return hint === undefined ? command.description : `${hint} — ${command.description}`
+function slashItemDescription(command: {
+  readonly description?: string | undefined
+  readonly inputHint?: string | undefined
+}): string {
+  const description = command.description ?? ''
+  return command.inputHint === undefined ? description : `${command.inputHint} — ${description}`
 }
 
 /**
@@ -159,7 +169,7 @@ function createAutocompleteProvider(
   // then fdPath is null and the @ branch runs the filesystem fallback.
   let fdPath: string | null = null
   let inner = components.createFileMentionProvider(cwd, null)
-  void detectFdPath().then(resolved => {
+  void detectFdPath(ctx.blueInteractionState.fdProbe).then(resolved => {
     fdPath = resolved
     inner = components.createFileMentionProvider(cwd, resolved)
   })
@@ -209,7 +219,7 @@ function createAutocompleteProvider(
       const skillQuery = extractSkillPrefix(line.slice(0, cursorCol))
       if (skillQuery !== null) {
         if (mode() === 'bash') return null
-        const skills = userInvocableSkills()
+        const skills = userInvocableSkills(ctx)
         if (skills.length === 0) {
           // A fresh session's settle can lag the first keystrokes by one
           // snapshot; warm the catalog so the next keystroke (pi-tui
@@ -235,8 +245,7 @@ function createAutocompleteProvider(
       }
       const slash = /^\/(\S*)$/.exec(line.slice(0, cursorCol))
       if (slash === null || mode() === 'bash') return null
-      const agent = currentBlueAgent(ctx)
-      if (agent === undefined) return null
+      if (ctx.blueSessionReader.current() === null) return null
       /* v8 ignore next -- a successful exec always defines the capture group */
       const query = slash[1] ?? ''
       // The kimi match rule: the canonical name scores first, aliases count
@@ -244,7 +253,7 @@ function createAutocompleteProvider(
       // with its alias list (`/quit (q, exit)`) so the user sees why it
       // surfaced; the value always completes to the canonical name.
       const items = filterSlashCommands(
-        withCommandAliases(ctx.commands.list(agent)),
+        ctx.blueInteractionState.aliases.withCommandAliases(ctx.blueSessionActions.commands()),
         query,
         ctx.blueComponents,
       ).map((match): BlueAutocompleteItem => ({
@@ -446,7 +455,9 @@ const BASH_LABEL = '! shell mode'
 function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): () => void {
   const { editor } = shared
   const colors = ctx.blueTheme.colors
-  let mode: 'prompt' | 'bash' = getStashedInputMode()
+  const aliases = ctx.blueInteractionState.aliases
+  const draft = ctx.blueInteractionState.draft
+  let mode: 'prompt' | 'bash' = draft.getStashedInputMode()
   const previousOnChange = editor.onChange
   const previousOnSubmit = editor.onSubmit
   const previousOnKey = editor.onKey
@@ -454,7 +465,7 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
   /** Apply the bash triple: `!` symbol, border label, and shell hue. */
   const enterBash = (): void => {
     mode = 'bash'
-    stashInputMode('bash')
+    draft.stashInputMode('bash')
     editor.setPromptSymbol('!')
     editor.setBorderLabel(` ${colors.shellMode(BASH_LABEL)} `)
     editor.setBorderColor(colors.shellMode)
@@ -470,7 +481,7 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
   /** Leave bash mode: prompt frame plus the stash update. */
   const exitBash = (): void => {
     mode = 'prompt'
-    stashInputMode('prompt')
+    draft.stashInputMode('prompt')
     applyPromptFrame()
   }
 
@@ -491,14 +502,13 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
     if (mode === 'bash') return undefined
     const match = /^\/(\S+)( ?)$/.exec(text)
     if (match === null) return undefined
-    const agent = currentBlueAgent(ctx)
-    if (agent === undefined) return undefined
+    if (ctx.blueSessionReader.current() === null) return undefined
     /* v8 ignore next -- a successful exec always defines the capture group */
     const name = match[1] ?? ''
     // An alias token (`/q `) resolves to its canonical command for the hint,
     // mirroring the dispatch rewrite — aliases are not registered commands.
-    const canonical = canonicalOf(name) ?? name
-    const hint = ctx.commands.list(agent).find(command => command.name === canonical)?.input?.hint
+    const canonical = aliases.canonicalOf(name) ?? name
+    const hint = ctx.blueSessionActions.commands().find(command => command.name === canonical)?.inputHint
     if (hint === undefined || hint.length === 0) return undefined
     return match[2] === ' ' ? hint : ` ${hint}`
   }
@@ -508,7 +518,7 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
     editor.setGhostHint(ghostHintFor(text))
   }
 
-  const unmark = markEditorEnhancement(ENHANCEMENT_EDITOR_PLUS)
+  const unmark = markEditorEnhancement(ctx, ENHANCEMENT_EDITOR_PLUS)
   editor.onChange = (text) => {
     previousOnChange?.(text)
     // A buffer holding exactly '!' switches to bash mode without polluting
@@ -541,12 +551,12 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
     // stash mirror matches `blue-input`'s, so bash entries survive a
     // theme-swap rebuild too.
     editor.addToHistory(command)
-    stashHistory(editor.getHistory())
+    draft.stashHistory(editor.getHistory())
     runShell(ctx, command, isUnloaded)
   }
   editor.onKey = (data) => {
     // `blue-input`'s chain runs first: an open side-question pane or a
-    // non-empty draft owns Escape, and the queue recall owns Up.
+    // non-empty draft owns Escape; Up/Down continue to the editor history.
     if (previousOnKey?.(data) === true) return true
     // The kimi bash exit: Backspace or Escape on an empty `!` prompt
     // returns to prompt mode — the `!` is not in the buffer, so
@@ -596,7 +606,7 @@ export function apply(ctx: Context): void {
   const reattach = (): void => {
     detach?.()
     detach = undefined
-    const shared = getSharedEditor()
+    const shared = getSharedEditor(ctx)
     if (shared !== undefined) detach = attach(ctx, shared, () => unloaded)
   }
   ctx.effect(() => () => {

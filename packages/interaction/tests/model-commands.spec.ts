@@ -14,22 +14,24 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { AgentDefaultModelConfig } from '@deepseek-ai/dsh-agent-default-model'
 import type { BlueModelSelectionRef } from '@dsh-blue/blue-app'
+import type { Action } from '@dsh-blue/blue-frontend'
 import * as commandsPlugin from '../src/commands-plugin.ts'
-import { canonicalOf } from '../src/command-meta.ts'
-import { cycleSessionModel, resetModelListCache } from '../src/model-commands.ts'
-import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
+import { createModelListCache, cycleSessionModel, type ModelListCache } from '../src/model-commands.ts'
+import { EditorHostService, setSharedEditor } from '../src/editor-instance.ts'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
 import { setModelsDevLoader } from '../src/models-dev.ts'
+import { InteractionStateService } from '../src/runtime-state.ts'
+import { DEFAULT_SETTINGS } from '../src/settings.ts'
 
 // Tests never touch the network catalog.
 setModelsDevLoader(() => Promise.resolve(undefined))
 
 /** The notices the shared editor received. */
 let notices: string[] = []
+let modelListCache: ModelListCache = createModelListCache()
 
 afterEach(() => {
-  clearSharedEditor()
-  resetModelListCache()
+  modelListCache = createModelListCache()
   notices = []
 })
 
@@ -46,6 +48,49 @@ function fakeModelRef(selection: ModelSelection): { ref: BlueModelSelectionRef, 
     assembled: undefined,
   } as BlueModelSelectionRef
   return { ref, writes }
+}
+
+/** Provide the renderer-neutral app boundary to standalone command contexts. */
+function provideModelBoundary(
+  ctx: Context,
+  agent: Agent | undefined,
+  modelRef?: BlueModelSelectionRef,
+): void {
+  ctx.provide('blueSessionReader', {
+    current: () => agent === undefined
+      ? null
+      : { id: String(agent.id), cwd: process.cwd(), status: 'idle', mode: 'normal' },
+    subscribe: () => ({ disposed: false, dispose() {} }),
+    request: async () => ({ ok: true, value: undefined }),
+  } as never)
+  ctx.provide('blueSessionActions', {
+    modelSelection: () => modelRef?.current,
+    hasRequestHeader: () => agent?.session.requestHeader() !== undefined,
+    selectModel: (selection: ModelSelection) => {
+      if (modelRef === undefined) {
+        return { ok: false, code: 'BLUE_SESSION_UNAVAILABLE', message: 'No session' }
+      }
+      const previous = modelRef.current
+      modelRef.current = selection
+      return { ok: true, value: previous }
+    },
+  } as never)
+  if (ctx.get('blueSessionProjections') === undefined) {
+    ctx.provide('blueSessionProjections', {
+      current: () => undefined,
+      currentMany: () => undefined,
+      subscribe: () => () => {},
+      children: () => [],
+      subscribeChildren: () => () => {},
+    })
+  }
+  if (ctx.get('blueSkillsCatalog') === undefined) {
+    ctx.provide('blueSkillsCatalog', {
+      userInvocable: () => [],
+      refresh: () => Promise.resolve(),
+      setForTest: () => {},
+    } as never)
+  }
 }
 
 /** The fake llm catalog: providers → models, with per-model metadata. */
@@ -145,11 +190,11 @@ async function mount(options: {
     } as unknown as AgentDefaultModelConfig)
   }
   if (options.attach !== false) {
-    ctx.provide('blueSession', { current: agent, modelRef })
+    ctx.provide('testSession', { current: agent, modelRef })
   }
   if (options.settings !== undefined) ctx.provide('settings', options.settings as never)
   if (options.credentials !== undefined) ctx.provide('credentials', options.credentials as never)
-  setSharedEditor({
+  setSharedEditor(ctx, {
     editor: { focused: false, render: () => [], invalidate: () => {} } as never,
     submitPrompt: () => {},
     notice: (text: string) => { notices.push(text) },
@@ -174,7 +219,7 @@ describe('model-family commands', () => {
     expect(names).toContain('model')
     expect(names).toContain('effort')
     expect(names).toContain('provider')
-    expect(canonicalOf('thinking')).toBe('effort')
+    expect(ctx.blueInteractionState.aliases.canonicalOf('thinking')).toBe('effort')
     expect(ctx.commands.find(agent, 'model')?.input?.hint).toBe('[name]')
     expect(ctx.commands.find(agent, 'provider')?.input?.hint).toBe('[list | switch <provider> | add]')
   })
@@ -185,7 +230,7 @@ describe('model-family commands', () => {
     expect(ctx.commands.find(agent, 'model')).toBeUndefined()
     expect(ctx.commands.find(agent, 'effort')).toBeUndefined()
     expect(ctx.commands.find(agent, 'provider')).toBeUndefined()
-    expect(canonicalOf('thinking')).toBeUndefined()
+    expect(ctx.blueInteractionState.aliases.canonicalOf('thinking')).toBeUndefined()
   })
 
   it('/model guards: no session and no selection handle', async () => {
@@ -199,7 +244,7 @@ describe('model-family commands', () => {
     handleless.ctx.provide('llm', fakeLlm())
     const bareSession = handleless.ctx.sessions.create(SessionId('handleless'))
     const bareAgent = { id: bareSession.id, session: bareSession, status: 'idle' } as unknown as Agent
-    handleless.ctx.provide('blueSession', { current: bareAgent, modelRef: undefined })
+    handleless.ctx.provide('testSession', { current: bareAgent, modelRef: undefined })
     await handleless.ctx.plugin(commandsPlugin)
     expect((await handleless.ctx.commands.execute(bareAgent, '/model', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'model selection is unavailable for this session' })
@@ -214,7 +259,7 @@ describe('model-family commands', () => {
     const session = bare.ctx.sessions.create(SessionId('no-llm'))
     const bareAgent = { id: session.id, session, status: 'idle' } as unknown as Agent
     const fake = fakeModelRef({ provider: 'mock', model: 'mock' })
-    bare.ctx.provide('blueSession', { current: bareAgent, modelRef: fake.ref })
+    bare.ctx.provide('testSession', { current: bareAgent, modelRef: fake.ref })
     bare.ctx.provide('agentDefaultModel', {
       currentSelection: () => ({ provider: 'mock', model: 'mock' }),
       saveSelection: vi.fn(),
@@ -231,11 +276,9 @@ describe('model-family commands', () => {
     const rows = overlay(screen).render?.(80) ?? []
     const currentRow = rows.find(row => row.includes('← current'))
     expect(currentRow).toBeDefined()
-    expect(currentRow).toContain('_· ctx 64k_')
+    expect(currentRow).toContain('· ctx 64k')
     expect(rows.some(row => row.includes('Mock Pro'))).toBe(true)
-    const caption = rows.find(row => row.includes('Thinking  (←→ to switch)'))
-    expect(caption).toBeDefined()
-    expect((rows[rows.indexOf(caption ?? '') + 1] ?? '')).toContain('[ High ]')
+    expect(currentRow).toContain('[High]')
   })
 
   it('/model shows the cache warning row when the session already has a request header', async () => {
@@ -319,6 +362,24 @@ describe('model-family commands', () => {
     expect(notices[0]).toBe('Switched to mock-pro (mock) · thinking high · session only')
   })
 
+  it('rejects malformed picker actions without mutating the selection', async () => {
+    const { ctx, screen, agent, writes } = await mount()
+    await ctx.commands.execute(agent, '/model', [], signal())
+    const modelOptions = (screen.overlays.at(-1)!.component as unknown as {
+      options: { onAction(action: Action): void }
+    }).options
+    modelOptions.onAction({ kind: 'fixture.invalid' })
+    modelOptions.onAction({ kind: 'model.select', provider: 42, model: 'mock' })
+    modelOptions.onAction({ kind: 'model.select', provider: 'mock', model: 42 })
+
+    await ctx.commands.execute(agent, '/effort', [], signal())
+    const effortOptions = (screen.overlays.at(-1)!.component as unknown as {
+      options: { onAction(action: Action): void }
+    }).options
+    effortOptions.onAction({ kind: 'fixture.invalid' })
+    expect(writes).toEqual([])
+  })
+
   it('/model direct switch skips the save when the default already matches', async () => {
     const { ctx, agent, saveSelection } = await mount({
       defaults: { selection: { provider: 'mock', model: 'mock-pro' } },
@@ -339,6 +400,15 @@ describe('model-family commands', () => {
     })
   })
 
+  it('/model surfaces a rejected structured selection action', async () => {
+    const mounted = await mount()
+    ;(mounted.ctx.blueSessionActions as unknown as {
+      selectModel: () => { ok: false, code: 'BLUE_ACTION_REJECTED', message: string }
+    }).selectModel = () => ({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'selection rejected' })
+    expect((await mounted.ctx.commands.execute(mounted.agent, '/model mock-pro', [], signal()))?.result)
+      .toEqual({ kind: 'success', text: 'selection rejected' })
+  })
+
   it('/effort guards: no reasoning metadata and resolve failure', async () => {
     const plain = await mount({ catalog: { reasoning: null } })
     expect((await plain.ctx.commands.execute(plain.agent, '/effort', [], signal()))?.result)
@@ -357,6 +427,9 @@ describe('model-family commands', () => {
     const rows = overlay(screen).render?.(60) ?? []
     const segmentRow = rows.find(row => row.includes('Default') || row.includes('[ '))
     expect(segmentRow).toBeDefined()
+    expect(segmentRow).toContain('[Default]')
+    expect(segmentRow).toContain('[Low]')
+    expect(segmentRow).toContain('[High]')
     overlay(screen).handleInput(KEY.left)
     overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => { expect(writes).toHaveLength(1) })
@@ -416,13 +489,15 @@ describe('model-family commands', () => {
 
   it('/model and /effort report the missing display services', async () => {
     const ctx = new Context()
+    new InteractionStateService(ctx, DEFAULT_SETTINGS)
     await ctx.plugin(SessionStore)
     await ctx.plugin(CommandRuntime)
     ctx.provide('llm', fakeLlm())
     const session = ctx.sessions.create(SessionId('no-display'))
     const agent = { id: session.id, session, status: 'idle' } as unknown as Agent
     const fake = fakeModelRef({ provider: 'mock', model: 'mock' })
-    ctx.provide('blueSession', { current: agent, modelRef: fake.ref })
+    ctx.provide('testSession', { current: agent, modelRef: fake.ref })
+    provideModelBoundary(ctx, agent, fake.ref)
     ctx.provide('agentDefaultModel', {
       currentSelection: () => ({ provider: 'mock', model: 'mock' }),
       saveSelection: vi.fn(),
@@ -445,12 +520,14 @@ describe('model-family commands', () => {
 
   it('/effort guards the llm service before resolving', async () => {
     const ctx = new Context()
+    new InteractionStateService(ctx, DEFAULT_SETTINGS)
     await ctx.plugin(SessionStore)
     await ctx.plugin(CommandRuntime)
     const session = ctx.sessions.create(SessionId('effort-no-llm'))
     const agent = { id: session.id, session, status: 'idle' } as unknown as Agent
     const fake = fakeModelRef({ provider: 'mock', model: 'mock' })
-    ctx.provide('blueSession', { current: agent, modelRef: fake.ref })
+    ctx.provide('testSession', { current: agent, modelRef: fake.ref })
+    provideModelBoundary(ctx, agent, fake.ref)
     await ctx.plugin(commandsPlugin)
     expect((await ctx.commands.execute(agent, '/effort', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'the llm service is unavailable' })
@@ -538,12 +615,12 @@ describe('model-family commands', () => {
     const { ctx, screen, agent } = await mount({ modelRef: preset.ref })
     await ctx.commands.execute(agent, '/model', [], signal())
     const rows = overlay(screen).render?.(80) ?? []
-    const segmentRow = rows[rows.findIndex(r => r.includes('Thinking  (←→ to switch)')) + 1] ?? ''
-    expect(segmentRow).toContain('[ Low ]')
+    const segmentRow = rows.find(row => row.includes('← current')) ?? ''
+    expect(segmentRow).toContain('[Low]')
     await ctx.commands.execute(agent, '/effort', [], signal())
     const effortRows = overlay(screen).render?.(60) ?? []
-    const effortSegments = effortRows.find(r => r.includes('[ Low ]') || r.includes('[ Default ]'))
-    expect(effortSegments).toContain('[ Low ]')
+    const effortSegments = effortRows.find(r => r.includes('[Low]') || r.includes('[Default]'))
+    expect(effortSegments).toContain('[Low]')
   })
 
   it('/effort panel commits the default segment directly', async () => {
@@ -690,21 +767,25 @@ describe('model-family commands', () => {
 
   it('/provider guards the llm and display services', async () => {
     const ctx = new Context()
+    new InteractionStateService(ctx, DEFAULT_SETTINGS)
     await ctx.plugin(SessionStore)
     await ctx.plugin(CommandRuntime)
     const session = ctx.sessions.create(SessionId('provider-no-llm'))
     const agent = { id: session.id, session, status: 'idle' } as unknown as Agent
+    provideModelBoundary(ctx, agent)
     await ctx.plugin(commandsPlugin)
     expect((await ctx.commands.execute(agent, '/provider', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'the llm service is unavailable' })
     await ctx.fiber.dispose()
 
     const bare = new Context()
+    new InteractionStateService(bare, DEFAULT_SETTINGS)
     await bare.plugin(SessionStore)
     await bare.plugin(CommandRuntime)
     bare.provide('llm', fakeLlm())
     const bareSession = bare.sessions.create(SessionId('provider-no-display'))
     const bareAgent = { id: bareSession.id, session: bareSession, status: 'idle' } as unknown as Agent
+    provideModelBoundary(bare, bareAgent)
     await bare.plugin(commandsPlugin)
     expect((await bare.commands.execute(bareAgent, '/provider', [], signal()))?.result)
       .toEqual({ kind: 'error', text: 'provider picker is unavailable: the Blue screen is not mounted' })
@@ -900,7 +981,7 @@ describe('model-family commands', () => {
 describe('cycleSessionModel (the Alt+M hotkey)', () => {
   it('cycles to the provider\'s next model through the session-only channel', async () => {
     const { ctx, writes, saveSelection } = await mount()
-    await cycleSessionModel(ctx)
+    await cycleSessionModel(ctx, modelListCache)
     expect(writes).toEqual([{ provider: 'mock', model: 'mock-pro' }])
     // A one-press switch never rewrites the persisted default.
     expect(saveSelection).not.toHaveBeenCalled()
@@ -910,7 +991,7 @@ describe('cycleSessionModel (the Alt+M hotkey)', () => {
   it('drops the reasoning effort, matching the /model <id> direct switch', async () => {
     const fake = fakeModelRef({ provider: 'mock', model: 'mock', reasoningEffort: 'high' as never })
     const { ctx } = await mount({ modelRef: fake.ref })
-    await cycleSessionModel(ctx)
+    await cycleSessionModel(ctx, modelListCache)
     expect(fake.writes).toEqual([{ provider: 'mock', model: 'mock-pro' }])
   })
 
@@ -918,8 +999,8 @@ describe('cycleSessionModel (the Alt+M hotkey)', () => {
     const llm = fakeLlm()
     const listModels = vi.fn(llm.listModels)
     const { ctx } = await mount({ llm: { ...llm, listModels } as unknown as LlmRuntime })
-    await cycleSessionModel(ctx)
-    await cycleSessionModel(ctx)
+    await cycleSessionModel(ctx, modelListCache)
+    await cycleSessionModel(ctx, modelListCache)
     // mock → mock-pro, then the wrap back to mock — one listing for both.
     expect(listModels).toHaveBeenCalledTimes(1)
     expect(notices[1]).toBe('Switched to mock (mock) · session only')
@@ -929,14 +1010,14 @@ describe('cycleSessionModel (the Alt+M hotkey)', () => {
     const { ctx, saveSelection } = await mount({
       catalog: { models: { mock: [{ id: 'mock', name: 'Mock' }] } },
     })
-    await cycleSessionModel(ctx)
+    await cycleSessionModel(ctx, modelListCache)
     expect(saveSelection).not.toHaveBeenCalled()
     expect(notices).toEqual(['Already using mock (mock) · session only'])
   })
 
   it('declines when the provider advertises no models', async () => {
     const { ctx } = await mount({ catalog: { models: { mock: [] } } })
-    await cycleSessionModel(ctx)
+    await cycleSessionModel(ctx, modelListCache)
     expect(notices).toEqual(['the current provider advertises no models'])
   })
 
@@ -946,7 +1027,7 @@ describe('cycleSessionModel (the Alt+M hotkey)', () => {
       modelRef: fake.ref,
       catalog: { models: { mock: [{ id: 'other', name: 'Other' }, { id: 'mock-pro', name: 'Mock Pro' }] } },
     })
-    await cycleSessionModel(ctx)
+    await cycleSessionModel(ctx, modelListCache)
     expect(fake.writes).toEqual([{ provider: 'mock', model: 'other' }])
   })
 
@@ -956,10 +1037,11 @@ describe('cycleSessionModel (the Alt+M hotkey)', () => {
    */
   async function bareContext(llm?: LlmRuntime): Promise<Context> {
     const ctx = new Context()
+    new EditorHostService(ctx)
     const agent = { id: 'bare', session: { events: [] }, status: 'idle' } as unknown as Agent
-    ctx.provide('blueSession', { current: agent, modelRef: fakeModelRef({ provider: 'mock', model: 'mock' }).ref })
+    provideModelBoundary(ctx, agent, fakeModelRef({ provider: 'mock', model: 'mock' }).ref)
     if (llm !== undefined) ctx.provide('llm', llm)
-    setSharedEditor({
+    setSharedEditor(ctx, {
       editor: { focused: false, render: () => [], invalidate: () => {} } as never,
       submitPrompt: () => {},
       notice: (text: string) => { notices.push(text) },
@@ -969,27 +1051,27 @@ describe('cycleSessionModel (the Alt+M hotkey)', () => {
 
   it('declines without the llm service, unpainted', async () => {
     const ctx = await bareContext()
-    await cycleSessionModel(ctx)
+    await cycleSessionModel(ctx, modelListCache)
     expect(notices).toEqual(['the llm service is unavailable'])
   })
 
   it('flashes the listing failure unpainted on a display-less host', async () => {
     const ctx = await bareContext(fakeLlm({ failListFor: ['mock'] }))
-    await cycleSessionModel(ctx)
+    await cycleSessionModel(ctx, modelListCache)
     expect(notices).toEqual([`could not list the provider's models: catalog down`])
   })
 
   it('flashes the listing failure and retries on the next press', async () => {
     const llm = fakeLlm({ failListFor: ['mock'] })
     const { ctx } = await mount({ llm })
-    await cycleSessionModel(ctx)
+    await cycleSessionModel(ctx, modelListCache)
     expect(notices[0]).toContain("could not list the provider's models")
     expect(notices[0]).toContain('catalog down')
   })
 
   it('declines without a live session', async () => {
     const { ctx } = await mount({ attach: false })
-    await cycleSessionModel(ctx)
+    await cycleSessionModel(ctx, modelListCache)
     expect(notices).toEqual(['no session is live yet'])
   })
 })

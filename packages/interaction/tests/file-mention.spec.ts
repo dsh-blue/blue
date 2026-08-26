@@ -21,6 +21,7 @@ import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-di
 registerTempDirCleanup()
 
 const signal = (): AbortSignal => new AbortController().signal
+const probeState = (): { result: Promise<string | null> | undefined } => ({ result: undefined })
 
 const savedPath = process.env.PATH
 const savedCwd = process.cwd()
@@ -79,20 +80,23 @@ describe('detectFdPath', () => {
   it('shares one cached promise across concurrent detections', async () => {
     const probe = vi.fn(async () => 'fd')
     setFdProbe(probe)
-    await Promise.all([detectFdPath(), detectFdPath()])
+    const state = probeState()
+    await Promise.all([detectFdPath(state), detectFdPath(state)])
     expect(probe).toHaveBeenCalledTimes(1)
   })
 
-  it('re-probes after the test seam resets the cache', async () => {
+  it('isolates cached results between frontend trees', async () => {
     setFdProbe(async () => 'fd')
-    await detectFdPath()
+    const first = probeState()
+    await detectFdPath(first)
     setFdProbe(async () => null)
-    await expect(detectFdPath()).resolves.toBeNull()
+    await expect(detectFdPath(first)).resolves.toBe('fd')
+    await expect(detectFdPath(probeState())).resolves.toBeNull()
   })
 
   it('finds fd on the PATH through the default probe', async () => {
     process.env.PATH = `${fakeFdBin('src/')}:${savedPath ?? ''}`
-    await expect(detectFdPath()).resolves.toBe('fd')
+    await expect(detectFdPath(probeState())).resolves.toBe('fd')
   })
 
   it('falls back to fdfind when fd is absent', async () => {
@@ -105,12 +109,12 @@ describe('detectFdPath', () => {
     writeFileSync(fdfind, '#!/bin/sh\necho fdfind 8.0\n')
     chmodSync(fdfind, 0o755)
     process.env.PATH = bin
-    await expect(detectFdPath()).resolves.toBe('fdfind')
+    await expect(detectFdPath(probeState())).resolves.toBe('fdfind')
   })
 
   it('resolves null with no usable binary on the PATH', async () => {
     process.env.PATH = mkdtempTracked('blue-mention-empty-')
-    await expect(detectFdPath()).resolves.toBeNull()
+    await expect(detectFdPath(probeState())).resolves.toBeNull()
   })
 })
 

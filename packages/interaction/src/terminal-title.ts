@@ -4,71 +4,39 @@
  * The title itself is generated upstream — the harness session-title
  * service derives it from the conversation with an auxiliary model (the
  * Blue bundle runs the all-prompts cadence, so it tracks the latest task)
- * — so this plugin only folds the latest logged title and re-emits:
- *
- * - on load, for a fiber that activates after a session already attached
- *   (the status-basic discipline);
- * - on `'blue/session-changed'` — `/new`, resume, and `/sessions` switches;
- *   a resumed log replays no live events, so the fold over `session.events`
- *   is the only correct source there;
- * - on the current session's events — the `session/title` append runs the
- *   observers synchronously, so an accepted title lands on the terminal
- *   immediately.
+ * — so this plugin mirrors the official `title` session projection through
+ * `blueSessionFacts`. It never receives an Agent or folds Harness events.
  *
  * Emission is deduped: the fold is re-derived cheaply on every event, but
  * an unchanged title writes nothing. No session, no service, or an
  * untitled session falls back to the product name `'blue'` (the kimi
  * PRODUCT_NAME shape); a missing screen silently skips — a plugin fiber
  * waiting on `blueScreen` never races the core plugin that provides it.
- * Nothing is injected beyond the screen: `blueSession` and `sessionTitle`
- * resolve lazily through `ctx.get` (the `/theme` fiber-dispose trap), and
- * the title service is read through a structural interface so this package
- * needs no harness session-title dependency.
+ * The renderer only receives the projection's readonly string.
  *
  * @module @dsh-blue/blue-interaction/terminal-title
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { Session } from '@deepseek-ai/dsh-session'
-// Empty type import carries the app-owned `blueSession` merge and the
-// `'blue/session-changed'` Events merge this plugin consumes.
-import type {} from '@dsh-blue/blue-app'
+import type { SessionFactsService } from '@dsh-blue/blue-transcript'
 
 /** The title shown while nothing is attached or titled yet. */
 export const PRODUCT_TITLE = 'blue'
-
-/**
- * The slice of the harness `sessionTitle` service this plugin reads: the
- * log fold over a session's events. Structural, so the package carries no
- * dependency on the service's own package.
- */
-export interface TitleReading {
-  get(session: Session): { title: string } | undefined
-}
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-terminal-title'
 
 /** The terminal mirror requires the screen; everything else resolves lazily. */
-export const inject = ['blueScreen']
+export const inject = ['blueScreen', 'blueSessionFacts']
 
 /**
  * Derive the title text to mirror: the given session's folded title, or
  * {@link PRODUCT_TITLE} while no agent is attached, the service is absent
  * (a thin host), or the session is not yet titled.
- * @param agent - the tracked current agent (the event-argument discipline:
- *   `'blue/session-changed'` fires after the app moved the ref, so the
- *   plugin's tracked value is the source, not a re-read).
- * @param service - the title service, resolved lazily per derivation.
+ * @param title - the current renderer-neutral title fact.
  * @returns the text for the terminal title.
  */
-export function currentTitleText(
-  agent: Agent | undefined | null,
-  service: TitleReading | undefined,
-): string {
-  if (agent === undefined || agent === null) return PRODUCT_TITLE
-  const title = service?.get(agent.session)?.title
+export function currentTitleText(title: string | undefined): string {
   return title !== undefined && title.length > 0 ? title : PRODUCT_TITLE
 }
 
@@ -78,23 +46,16 @@ export function currentTitleText(
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
-  let agent: Agent | undefined = ctx.get('blueSession')?.current ?? undefined
+  const facts = ctx.get('blueSessionFacts') as SessionFactsService
   let emitted: string | undefined
 
-  const emit = (): void => {
-    const next = currentTitleText(agent, ctx.get('sessionTitle') as TitleReading | undefined)
+  const emit = (title: string | undefined): void => {
+    const next = currentTitleText(title)
     if (next === emitted) return
     emitted = next
     ctx.blueScreen.setTitle(next)
   }
 
-  emit()
-  ctx.on('blue/session-changed', (next) => {
-    agent = next
-    emit()
-  })
-  ctx.on('session/event', (session) => {
-    if (agent === undefined || session !== agent.session) return
-    emit()
-  })
+  const offTitle = facts.subscribeTitle(emit)
+  ctx.effect(() => () => offTitle())
 }

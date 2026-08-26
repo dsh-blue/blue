@@ -224,11 +224,10 @@ export interface BlueScreen {
 export type BlueColorFn = (text: string) => string
 
 /**
- * The semantic color table. Keys name roles, not presentation. All 28
- * tokens are required so a palette is compile-checked for completeness; the
- * diff group ships unused until P2 but must still carry colors.
- * `selectedBg` is a background color; every other entry styles the
- * foreground.
+ * The semantic color table. Keys name roles, not presentation. Every token is
+ * required so a palette is compile-checked for completeness. `selectedBg` is
+ * a background color and `logoGradient` is the banner's row-wise foreground
+ * sweep; all other entries style one foreground role.
  */
 export interface BlueSemanticColors {
   /** Default foreground. */
@@ -291,6 +290,10 @@ export interface BlueSemanticColors {
   diffGutter: BlueColorFn
   /** Diff metadata (file paths, hunk ranges). */
   diffMeta: BlueColorFn
+  /** Banner model-row highlight. */
+  modelHighlight: BlueColorFn
+  /** Banner logo foregrounds from top row to bottom row. */
+  logoGradient: readonly BlueColorFn[]
 }
 
 /** `ctx.blueTheme` — the semantic color provider. */
@@ -507,6 +510,13 @@ export interface BlueEditor extends BlueFocusable {
    */
   getHistory(): readonly string[]
   /**
+   * Remove the newest history entry only when it exactly matches `text`.
+   * Optional for structural test editors; the core adapter implements it.
+   * @param text - expected newest submission.
+   * @returns whether the entry was removed.
+   */
+  removeLatestHistory?(text: string): boolean
+  /**
    * Restyle the editor frame (e.g. focused vs. unfocused border).
    * @param color - the new border color function.
    */
@@ -669,7 +679,16 @@ export interface BlueSettingsListOptions {
 }
 
 /** A key/value settings list. */
-export type BlueSettingsList = BlueComponent
+export interface BlueSettingsList extends BlueComponent {
+  /**
+   * Update one entry's displayed value in place, without remounting the
+   * list or moving its highlight — the channel for pushing external or
+   * rolled-back values into a live list.
+   * @param id - the entry id.
+   * @param newValue - the value to display.
+   */
+  updateValue(id: string, newValue: string): void
+}
 
 /** The outcome of a fuzzy subsequence probe; lower scores rank better. */
 export interface BlueFuzzyMatch {
@@ -811,7 +830,7 @@ declare module '@deepseek-ai/cordis' {
      * connected. Emitted by `blue-pane-btw` on open (true, with the busy
      * flag), on dismiss or unload (false), and whenever the side agent's
      * running state flips; `blue-input` listens, mirrors the flag onto the
-     * editor, and gates its Esc/arrow/Enter routing on it.
+     * editor, and gates its Esc/Enter plus page/wheel routing on it.
      * Unfiltered: the flag is broadcast to every fiber.
      * @param connected - whether the pane is docked above the editor.
      * @param busy - whether the side agent is still answering; a submit
@@ -821,16 +840,17 @@ declare module '@deepseek-ai/cordis' {
     'blue/editor-connected-above'(connected: boolean, busy?: boolean): void
     /**
      * A key command for the open side-question pane, routed through the
-     * editor's context key chain (the keymap claims `escape`/`up`/`down`
-     * for the list surfaces, so the pane cannot register its own keys).
+     * editor's context key chain. Escape closes it, while wheel and
+     * PageUp/PageDown scroll it without taking Up/Down from editor history.
      * Emitted by `blue-input`; `blue-pane-btw` listens and runs the pane
      * close/scroll/submit action. No-ops when the pane is closed; `submit`
      * is refused while the side agent is still running.
      * @param command - the pane action to run.
      * @param text - the submitted follow-up text for `submit`.
+     * @param amount - row count for a scroll action.
      * @mode emit
      */
-    'blue/btw-command'(command: 'close' | 'scroll-up' | 'scroll-down' | 'submit', text?: string): void
+    'blue/btw-command'(command: 'close' | 'scroll-up' | 'scroll-down' | 'submit', text?: string, amount?: number): void
     /**
      * A dialog panel took over the input editor's dock slot, or the last
      * one left and the editor returned (the D30 editor-slot swap).

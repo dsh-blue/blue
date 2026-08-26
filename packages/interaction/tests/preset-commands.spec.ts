@@ -7,19 +7,15 @@
  * unload flag.
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import * as commandsPlugin from '../src/commands-plugin.ts'
-import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
+import { setSharedEditor } from '../src/editor-instance.ts'
 import { buildPresetRows, type PresetRow } from '../src/preset-commands.ts'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
-
-afterEach(() => {
-  clearSharedEditor()
-})
 
 describe('buildPresetRows', () => {
   it('sorts by roster order then id, unordered after ordered, and badges the current entry', () => {
@@ -98,9 +94,9 @@ describe('registerPresetCommands', () => {
     notices: string[]
     resolveList: (presets: PresetRow[]) => void
   }> {
-    const base = options.display === false ? { ctx: new Context() } : fakeBlueContext()
+    const base = fakeBlueContext({ display: options.display })
     const { ctx } = base
-    const screen = 'screen' in base ? base.screen : undefined
+    const screen = base.screen
     await ctx.plugin(SessionStore)
     await ctx.plugin(CommandRuntime)
     const session = ctx.sessions.create(SessionId('preset-spec'))
@@ -112,7 +108,7 @@ describe('registerPresetCommands', () => {
       ctx: new Context(),
     } as unknown as Agent
     if (options.attach !== false) {
-      ctx.provide('blueSession', { current: agent })
+      ctx.provide('testSession', { current: agent })
     }
     // The deferred-list gate: the resolver lands only when the handler calls
     // list(), so the returned callable must read through the holder, never a
@@ -137,7 +133,7 @@ describe('registerPresetCommands', () => {
       ctx.provide('agentPresets', roster)
     }
     const notices: string[] = []
-    setSharedEditor({
+    setSharedEditor(ctx, {
       editor: { focused: false, render: () => [], invalidate: () => {} } as never,
       submitPrompt: () => {},
       notice: (text: string) => { notices.push(text) },
@@ -344,5 +340,20 @@ describe('registerPresetCommands', () => {
     top(screen).component.handleInput(KEY.down)
     top(screen).component.handleInput(KEY.enter)
     await vi.waitFor(() => { expect(notices).toContain('!unknown preset beta, available: standard!') })
+  })
+
+  it('logs Error and non-Error picker dispatch rejections', async () => {
+    for (const failure of [new Error('dispatch exploded'), 'raw dispatch failure']) {
+      const mounted = await mount({ roster: { presets: [{ id: 'standard', trust: 'system' }] } })
+      const warn = vi.spyOn(mounted.ctx.logger, 'warn').mockImplementation(() => {})
+      ;(mounted.ctx.blueSessionActions as unknown as { executeCommand: () => Promise<never> }).executeCommand
+        = async () => { throw failure }
+      await run(mounted.ctx, mounted.agent, '/preset')
+      top(mounted.screen).component.handleInput(KEY.enter)
+      await vi.waitFor(() => {
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining(failure instanceof Error ? failure.message : failure))
+      })
+      warn.mockRestore()
+    }
   })
 })

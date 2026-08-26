@@ -2,11 +2,13 @@
 
 English | [中文](README.zh.md)
 
-The dsh Blue bundle: the interactive terminal UI profile. [`cordis.patch.yml`](cordis.patch.yml) rides directly over [`dsh-base`](https://github.com/deepseek-ai/deepseek-harness) and inserts 29 Blue rows in three segments. The plain baseline remains self-contained; enhancements are individually removable. Following dedicated-profile acceptance, the frontend-runtime `blue-context`, `blue-conversation`, and `blue-transcript-official` rows and the ecosystem `blue-openpencil`/`blue-lark` adapters are default-enabled with capability-absent and unload fallbacks. OpenPencil projects official tool results without signed editor metadata; Lark registers status/retry through official commands and stores no credentials.
+The dsh Blue bundle: the interactive terminal UI profile. [`cordis.patch.yml`](cordis.patch.yml) rides directly over [`dsh-base`](https://github.com/deepseek-ai/deepseek-harness) and inserts 28 Blue-owned rows: two host-support rows plus 26 product rows in baseline, enhancement, and assembly segments. The projection-backed `blue-conversation` and `blue-transcript-official` rows are part of the self-contained baseline; the 14 enhancement rows are individually removable. `blue-context`, `blue-remote`, `blue-openpencil`, and `blue-lark` remain validation-only packages outside the bundle dependency closure.
+
+The bundle owns Blue's complete agent-preset roster. Standard, PTC, and minimal modes track the pinned harness line; `cordis` / 创造模式 carries the Blue-aware persona and capability-scoped plugin guidance. Both `blue` and direct `dsh --profile` launches resolve this immutable bundle payload, without rewriting the host's shared presets. Creative prototypes may add dock, status, command, and notification contributions through `bluePluginHost`; they cannot replace Blue core or owner feature IDs. After prototype acceptance, the Agent asks before keeping local code, creating a GitHub repository, or publishing an npm package.
 
 ## Model Experience
 
-Indirectly, through the inserted rows: this bundle is a patch-list carrier and contributes no model-visible text of its own beyond the host fallback persona quoted in the patch. That fallback uses the universally available working-directory variable and leaves model-specific wording to preset personas, so preset-less subagents can assemble it safely.
+The selected preset supplies the model-visible persona. In creative mode it explicitly identifies Blue and defines the prototype-first, ask-before-persisting workflow.
 
 #### KV Cache effect
 

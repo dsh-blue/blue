@@ -293,6 +293,7 @@ try {
 
   await scenario('context.official-baseline-push-unload', async () => {
     let changed
+    let unsubscribed = false
     let sequence = 7
     let values = {
       tokenUsage: { uncachedInputTokens: 32, outputTokens: 4, cacheReadTokens: 8, cacheWriteTokens: 1 },
@@ -300,18 +301,24 @@ try {
       contextBreakdown: { systemTokens: 2, toolsTokens: 3, messageTokens: 40 },
       contextTimeline: { current: { system: 2, tools: 3, user: 10, inject: 0, assistant: 20, tool: 5, total: 40 }, requests: [{ turn: 1, step: 1, time: 1, seq: 6, total: 40 }], events: [], droppedNodes: 0, images: 0 },
     }
-    const sessionHandle = {}
-    const source = new context.OfficialContextSource({ snapshot: () => ({ asOfSeq: sequence, values }), onChanged: listener => { changed = listener; return () => { changed = undefined } } }, sessionId => sessionId === 'official' ? sessionHandle : undefined)
+    const source = new context.OfficialContextSource({
+      currentMany: keys => ({ asOfSeq: sequence, values: Object.fromEntries(keys.map(key => [key, values[key]])) }),
+      subscribe: listener => { changed = listener; return () => { unsubscribed = true; changed = undefined } },
+    }, () => 'official')
     const feature = new context.ContextFeature(source)
     await feature.attach('official')
     ensure(feature.snapshot?.facts.timeline?.requests.length === 1 && feature.snapshot.facts.input === 32, 'FIXTURE_OFFICIAL_BASELINE', 'official projection baseline drifted')
     sequence = 8
     values = { ...values }
     delete values.contextTimeline
-    changed?.(sessionHandle, 'tokenUsage', values.tokenUsage, sequence)
+    changed?.('contextTimeline', undefined, sequence)
     await new Promise(resolveImmediate => setImmediate(resolveImmediate))
     ensure(feature.snapshot?.facts.timeline === undefined, 'FIXTURE_OFFICIAL_UNLOAD', 'unloaded official projection stayed stale')
+    const late = changed
     feature.dispose()
+    late?.('tokenUsage', values.tokenUsage, 9)
+    await new Promise(resolveImmediate => setImmediate(resolveImmediate))
+    ensure(unsubscribed && feature.snapshot === undefined, 'FIXTURE_OFFICIAL_LATE_CALLBACK', 'official projection survived feature unload')
   })
 
   await scenario('remote.resume-action-lease-question-unload', async () => {
@@ -399,38 +406,40 @@ try {
       await ctx.fiber.dispose()
     })
 
-    await scenario('conversation.source-stale-duplicate-and-wrong-session', async () => {
-      const session = {}
-      const other = {}
+    await scenario('conversation.source-stale-malformed-and-inactive', async () => {
       let changed
       const baseline = { entries: [{ kind: 'assistant', id: 'assistant-1', seq: 1, turn: 0, step: 0, text: 'baseline', streaming: false }], streaming: false }
       const source = new officialTranscript.OfficialConversationModelSource({
-        snapshot: () => ({ asOfSeq: 4, values: { blueConversation: baseline } }),
-        onChanged: listener => { changed = listener; return () => { changed = undefined } },
+        current: () => ({ asOfSeq: 4, value: baseline }),
+        subscribe: listener => { changed = listener; return () => { changed = undefined } },
       }, { get: () => undefined }, () => undefined)
-      source.attach({ id: 'packed', session })
+      source.attach(true)
       const live = { entries: [{ kind: 'assistant', id: 'assistant-2', seq: 5, turn: 0, step: 0, text: 'live', streaming: true }], streaming: true }
-      changed?.(other, 'blueConversation', live, 5)
-      changed?.(session, 'blueConversation', live, 4)
-      ensure(source.snapshot().entries[0]?.text === 'baseline', 'FIXTURE_CONVERSATION_STALE', 'foreign or duplicate sequence replaced the baseline')
-      changed?.(session, 'blueConversation', live, 5)
+      changed?.('other', live, 5)
+      changed?.('blueConversation', live, 4)
+      changed?.('blueConversation', { entries: 'bad', streaming: false }, 5)
+      ensure(source.snapshot().entries[0]?.text === 'baseline', 'FIXTURE_CONVERSATION_STALE', 'stale or malformed projection replaced the baseline')
+      source.attach(false)
+      changed?.('blueConversation', live, 5)
+      ensure(source.snapshot().entries.length === 0, 'FIXTURE_CONVERSATION_INACTIVE', 'inactive source accepted a live projection')
+      source.attach(true)
+      changed?.('blueConversation', live, 5)
       ensure(source.snapshot().entries[0]?.text === 'live' && source.snapshot().streaming === true, 'FIXTURE_CONVERSATION_SEQUENCE', 'fresh conversation sequence was rejected')
       source.dispose()
     })
 
     await scenario('conversation.provider-unload-and-late-callback', async () => {
-      const session = {}
       let changed
       let unsubscribed = false
       const published = []
       const source = new officialTranscript.OfficialConversationModelSource({
-        snapshot: () => ({ asOfSeq: 0, values: { blueConversation: { entries: [], streaming: false } } }),
-        onChanged: listener => { changed = listener; return () => { unsubscribed = true } },
+        current: () => ({ asOfSeq: 0, value: { entries: [], streaming: false } }),
+        subscribe: listener => { changed = listener; return () => { unsubscribed = true; changed = undefined } },
       }, { get: () => undefined }, model => published.push(model.entries.length))
-      source.attach({ id: 'packed', session })
+      source.attach(true)
       const late = changed
       source.dispose()
-      late?.(session, 'blueConversation', {
+      late?.('blueConversation', {
         entries: [{ kind: 'assistant', id: 'late', seq: 1, turn: 0, step: 0, text: 'late', streaming: false }],
         streaming: false,
       }, 1)

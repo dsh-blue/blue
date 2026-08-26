@@ -88,6 +88,7 @@ export const conversationProjectionStateSchema = z.object({
   pendingReasoning: z.string(),
   finalizedSteps: z.array(z.string()),
   interruptedTurns: z.array(z.number().int().nonnegative()),
+  retractedTurns: z.array(z.number().int().nonnegative()),
   toolEntryIds: z.record(z.string(), z.string()),
 }) satisfies z.ZodType<ConversationProjectionState>
 
@@ -103,6 +104,7 @@ export function initialConversationState(): ConversationProjectionState {
     pendingReasoning: '',
     finalizedSteps: [],
     interruptedTurns: [],
+    retractedTurns: [],
     toolEntryIds: {},
   }
 }
@@ -181,6 +183,44 @@ function toolChannel(name: string): ConversationToolEntry['channel'] {
 
 function appendEntry(state: ConversationProjectionState, entry: ConversationEntry): ConversationProjectionState {
   return { ...state, entries: [...state.entries, entry] }
+}
+
+/** Whether an empty non-append assistant replacement is Blue's durable retraction marker. */
+export function isTurnRetraction(event: SessionEvent): boolean {
+  return event.type === 'assistant/message'
+    && event.data.interrupted === true
+    && event.data.message.content.length === 0
+    && event.surfaceOp !== undefined
+    && event.surfaceOp !== 'append'
+}
+
+/** Remove one safely retracted turn and suppress any late events from reopening it. */
+function retractTurn(state: ConversationProjectionState, turn: number): ConversationProjectionState {
+  if (state.retractedTurns.includes(turn)) return state
+  const entries = state.entries.filter(entry => entry.turn !== turn)
+  const liveEntryIds = new Set(entries.map(entry => entry.id))
+  const toolEntryIds = Object.fromEntries(
+    Object.entries(state.toolEntryIds).filter(([, id]) => liveEntryIds.has(id)),
+  )
+  const prefix = `${String(turn)}:`
+  const ownsStreaming = state.streamingStep?.startsWith(prefix) === true || state.currentTurn === turn
+  return {
+    ...state,
+    entries,
+    ...(state.currentTurn === turn ? { active: false } : {}),
+    streamingStep: state.streamingStep?.startsWith(prefix) === true ? null : state.streamingStep,
+    streamingAssistantId: entries.some(entry => entry.id === state.streamingAssistantId)
+      ? state.streamingAssistantId
+      : null,
+    streamingThinkingId: entries.some(entry => entry.id === state.streamingThinkingId)
+      ? state.streamingThinkingId
+      : null,
+    pendingReasoning: ownsStreaming ? '' : state.pendingReasoning,
+    finalizedSteps: state.finalizedSteps.filter(key => !key.startsWith(prefix)),
+    interruptedTurns: state.interruptedTurns.filter(value => value !== turn),
+    retractedTurns: [...state.retractedTurns, turn],
+    toolEntryIds,
+  }
 }
 
 function openStreamingStep(state: ConversationProjectionState, turn: number, step: number): ConversationProjectionState {
@@ -345,14 +385,18 @@ export function foldConversationProjection(
   state: ConversationProjectionState,
   event: SessionEvent,
 ): ConversationProjectionState {
+  if (event.type === 'assistant/message' && isTurnRetraction(event)) return retractTurn(state, event.data.turn)
   switch (event.type) {
     case 'turn/start':
+      if (state.retractedTurns.includes(event.data.turn)) return state
       return { ...state, currentTurn: event.data.turn, active: true }
     case 'step/start': {
+      if (state.retractedTurns.includes(event.data.turn)) return state
       const settled = settleStreaming(state)
       return { ...settled, currentTurn: event.data.turn, active: true }
     }
     case 'turn/end': {
+      if (state.retractedTurns.includes(event.data.turn)) return state
       let next = { ...settleStreaming(state), currentTurn: event.data.turn, active: false }
       if (event.data.reason.kind === 'error') {
         const failure = event.data.reason.error
@@ -373,6 +417,7 @@ export function foldConversationProjection(
       return { ...next, interruptedTurns: [...next.interruptedTurns, event.data.turn] }
     }
     case 'user/message': {
+      if (state.retractedTurns.includes(state.currentTurn)) return state
       if (!isAppendSurfaceEvent(event) || event.data.source.kind !== 'user') return state
       const text = visibleText(event.data.content)
       if (text.trim() === '') return state
@@ -387,6 +432,7 @@ export function foldConversationProjection(
     }
     case 'assistant/chunk': {
       const { turn, step, chunk } = event.data
+      if (state.retractedTurns.includes(turn)) return state
       const key = stepKey(turn, step)
       if (state.interruptedTurns.includes(turn) || state.finalizedSteps.includes(key)) return state
       if (chunk.type !== 'text-delta' && chunk.type !== 'reasoning-delta') return state
@@ -396,8 +442,11 @@ export function foldConversationProjection(
         : applyTextChunk(opened, event, chunk.text)
     }
     case 'assistant/message':
-      return isAppendSurfaceEvent(event) ? finalizeAssistant(state, event) : state
+      return state.retractedTurns.includes(event.data.turn) || !isAppendSurfaceEvent(event)
+        ? state
+        : finalizeAssistant(state, event)
     case 'tool/call': {
+      if (state.retractedTurns.includes(event.data.turn)) return state
       const id = `tool:${String(event.data.callId)}`
       const entry: ConversationToolEntry = {
         kind: 'tool',
@@ -417,7 +466,9 @@ export function foldConversationProjection(
       }
     }
     case 'tool/result':
-      return isAppendSurfaceEvent(event) ? applyToolResult(state, event) : state
+      return state.retractedTurns.includes(event.data.turn) || !isAppendSurfaceEvent(event)
+        ? state
+        : applyToolResult(state, event)
     default:
       return state
   }
@@ -438,5 +489,5 @@ export const conversationProjectionDefinition: ConversationProjectionDefinition 
     viewSchema: conversationProjectionSchema,
     view: state => ({ entries: state.entries, streaming: state.active }),
   },
-  stateVersion: 1,
+  stateVersion: 2,
 }

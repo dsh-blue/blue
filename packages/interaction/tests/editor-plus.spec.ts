@@ -16,11 +16,9 @@ import type { BlueAutocompleteProvider, BlueComponent } from '@dsh-blue/blue-cor
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import * as inputPlugin from '../src/input-plugin.ts'
-import { registerCommandAliases } from '../src/command-meta.ts'
 import * as editorPlus from '../src/editor-plus.ts'
 import * as fileMention from '../src/file-mention.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
-import { clearDraft, stashHistory } from '../src/draft-stash.ts'
 import { __setCatalogForTest } from '../src/skills-catalog.ts'
 import { fakeBlueContext, FakeBlueEditor, KEY, type FakeBlueComponents, type FakeScreen } from './fakes.ts'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
@@ -33,12 +31,6 @@ const signal = (): AbortSignal => new AbortController().signal
 afterEach(() => {
   editorPlus.setShellExecutor(undefined)
   fileMention.setFdProbe(undefined)
-  clearSharedEditor()
-  // The draft stash is module state: don't leak unsubmitted text or
-  // submitted history into the next test's freshly mounted editor.
-  clearDraft()
-  stashHistory([])
-  __setCatalogForTest(undefined)
   vi.restoreAllMocks()
 })
 
@@ -59,12 +51,12 @@ async function mount(options: { withAgent?: boolean, plusFirst?: boolean } = {})
   const session = ctx.sessions.create(SessionId('editor-plus-spec'))
   const followup = vi.fn()
   const agent = { id: session.id, session, status: 'idle', followup } as unknown as Agent
-  ctx.provide('blueSession', { current: options.withAgent === false ? null : agent, modelRef: undefined })
+  ctx.provide('testSession', { current: options.withAgent === false ? null : agent, modelRef: undefined })
   const plusFiber = options.plusFirst === true ? await ctx.plugin(editorPlus) : undefined
   const inputFiber = await ctx.plugin(inputPlugin)
-  const editor = screen.children[0] as FakeBlueEditor
+  const editor = components.editors.at(-1)!
   // blue-input mounts the editor first, then the hint line below it.
-  const hint = screen.children[1] as BlueComponent
+  const hint = screen.children.at(-1) as BlueComponent
   return {
     ctx,
     screen,
@@ -90,14 +82,14 @@ function echoes(screen: FakeScreen): BlueComponent[] {
 
 describe('blue-editor-plus input modes', () => {
   it("switches to bash mode on a bare '!' without polluting the buffer", async () => {
-    const { editor } = await mount()
+    const { ctx, editor } = await mount()
     type(editor, '!')
     expect(editor.getText()).toBe('')
     expect(editor.borderColor('x')).toBe('$x$')
   })
 
   it('applies the bash triple: ! symbol, border label, and shell hue', async () => {
-    const { editor } = await mount()
+    const { ctx, editor } = await mount()
     expect(editor.promptSymbol).toBe('>')
     type(editor, '!')
     expect(editor.promptSymbol).toBe('!')
@@ -106,7 +98,7 @@ describe('blue-editor-plus input modes', () => {
   })
 
   it('keeps the shell hue over the slash-context resolution while bash is active', async () => {
-    const { editor } = await mount()
+    const { ctx, editor } = await mount()
     type(editor, '!')
     // A leading `/` is a path separator in bash mode; blue-input's
     // primary-highlight must not win over the re-asserted shell hue.
@@ -436,7 +428,7 @@ describe('blue-editor-plus attach lifecycle', () => {
   })
 
   it('re-attaches to the new editor when blue-input remounts (theme reload)', async () => {
-    const { ctx, screen, editor, inputFiber } = await mount()
+    const { ctx, components, editor, inputFiber } = await mount()
     type(editor, '!')
     expect(editor.borderColor('x')).toBe('$x$')
     await inputFiber.dispose()
@@ -444,19 +436,19 @@ describe('blue-editor-plus attach lifecycle', () => {
     expect(editor.borderColor('x')).toBe('x')
     expect(editor.promptSymbol).toBe('>')
     await ctx.plugin(inputPlugin)
-    const remounted = screen.children[0] as FakeBlueEditor
+    const remounted = components.editors.at(-1)!
     expect(remounted).not.toBe(editor)
     type(remounted, '!')
     expect(remounted.borderColor('x')).toBe('$x$')
   })
 
   it('rebuilds bash mode on the remounted editor from the reload stash', async () => {
-    const { ctx, screen, editor, inputFiber } = await mount()
+    const { ctx, components, editor, inputFiber } = await mount()
     type(editor, '!')
     type(editor, 'ls -la')
     await inputFiber.dispose()
     await ctx.plugin(inputPlugin)
-    const remounted = screen.children[0] as FakeBlueEditor
+    const remounted = components.editors.at(-1)!
     // The draft text and the bash triple both survive the rebuild.
     expect(remounted.getText()).toBe('ls -la')
     expect(remounted.promptSymbol).toBe('!')
@@ -468,7 +460,7 @@ describe('blue-editor-plus attach lifecycle', () => {
     const { ctx } = await mount({ plusFirst: true })
     const bare = new FakeBlueEditor()
     const submitPrompt = vi.fn()
-    setSharedEditor({ editor: bare, submitPrompt })
+    setSharedEditor(ctx, { editor: bare, submitPrompt })
     ctx.emit('blue/input-editor-changed')
     type(bare, '!')
     expect(bare.borderColor('x')).toBe('$x$')
@@ -477,12 +469,12 @@ describe('blue-editor-plus attach lifecycle', () => {
     bare.handleInput(KEY.enter)
     expect(bare.promptSymbol).toBe('>')
     // Detach restores the (undefined) handlers without crashing.
-    clearSharedEditor()
+    clearSharedEditor(ctx)
     ctx.emit('blue/input-editor-changed')
     expect(bare.onChange).toBeUndefined()
     expect(bare.onSubmit).toBeUndefined()
     // A prompt-mode submit after re-attaching falls through to the router.
-    setSharedEditor({ editor: bare, submitPrompt })
+    setSharedEditor(ctx, { editor: bare, submitPrompt })
     ctx.emit('blue/input-editor-changed')
     type(bare, 'hello')
     bare.handleInput(KEY.enter)
@@ -504,7 +496,7 @@ describe('blue-editor-plus slash completion', () => {
 
   it('suggests commands fuzzy-matching the slash prefix, ties keeping registry order', async () => {
     const { provider, ctx } = await providerOf()
-    const agent = ctx.get('blueSession')?.current as Agent
+    const agent = ctx.get('testSession')?.current as Agent
     ctx.commands.register({ name: 'resume', description: 'Resume a previous session', handler: () => ({ kind: 'success' }) })
     ctx.commands.register({ name: 'restart', description: 'Restart everything', handler: () => ({ kind: 'success' }) })
     ctx.commands.register({ name: 'quit', description: 'Exit Blue', handler: () => ({ kind: 'success' }) })
@@ -546,18 +538,22 @@ describe('blue-editor-plus slash completion', () => {
       description: 'Route the conversation',
       handler: () => ({ kind: 'success' }),
     })
+    const commands = ctx.blueSessionActions.commands()
+    ;(ctx.blueSessionActions as unknown as { commands: () => readonly unknown[] }).commands
+      = () => [...commands, { name: 'raw' }]
     const suggestions = await provider.getSuggestions(['/r'], 0, 2, { signal: signal() })
     const byName = new Map(suggestions?.items.map(item => [item.label, item.description]))
     expect(byName.get('/resume')).toBe('<question> — Resume a previous session')
     // A command without an argument hint keeps its plain summary.
     expect(byName.get('/router')).toBe('Route the conversation')
+    expect(byName.get('/raw')).toBe('')
   })
 
   it('matches aliases behind the canonical name, labeling alias hits with the alias list', async () => {
     const { provider, ctx } = await providerOf()
     ctx.commands.register({ name: 'exist', description: 'Exists in the workspace', handler: () => ({ kind: 'success' }) })
     ctx.commands.register({ name: 'quit', description: 'Exit Blue', handler: () => ({ kind: 'success' }) })
-    const clear = registerCommandAliases('quit', ['q', 'exit'])
+    const clear = ctx.blueInteractionState.aliases.register('quit', ['q', 'exit'])
     try {
       // `exi` misses the canonical names (`exist` matches it fully, `quit`
       // cannot) but hits `quit`'s alias `exit`: the canonical command
@@ -632,9 +628,9 @@ describe('blue-editor-plus # skill completion', () => {
   }
 
   it('suggests settled skills fuzzy-matching the # prefix, values carrying their #', async () => {
-    const { editor } = await mount()
+    const { ctx, editor } = await mount()
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
-    __setCatalogForTest([skill('deploy-check'), skill('summarize')])
+    __setCatalogForTest(ctx, [skill('deploy-check'), skill('summarize')])
     const suggestions = await provider.getSuggestions(['#deploy-ch'], 0, 10, { signal: signal() })
     // The value and the returned prefix carry the `#` so pi-tui's
     // best-match preselection keys on the typed text — and Enter, seeing a
@@ -647,18 +643,18 @@ describe('blue-editor-plus # skill completion', () => {
   })
 
   it('a bare # lists every settled skill', async () => {
-    const { editor } = await mount()
+    const { ctx, editor } = await mount()
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
-    __setCatalogForTest([skill('deploy-check'), skill('summarize')])
+    __setCatalogForTest(ctx, [skill('deploy-check'), skill('summarize')])
     const suggestions = await provider.getSuggestions(['#'], 0, 1, { signal: signal() })
     expect(suggestions?.prefix).toBe('#')
     expect(suggestions?.items.map(item => item.value)).toEqual(['#deploy-check', '#summarize'])
   })
 
   it('marks user-only skills in the dropdown description', async () => {
-    const { editor } = await mount()
+    const { ctx, editor } = await mount()
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
-    __setCatalogForTest([skill('deploy-check', { modelInvocable: false })])
+    __setCatalogForTest(ctx, [skill('deploy-check', { modelInvocable: false })])
     const suggestions = await provider.getSuggestions(['#de'], 0, 3, { signal: signal() })
     expect(suggestions?.items).toEqual([
       { value: '#deploy-check', label: '#deploy-check', description: 'user-only · The deploy-check skill' },
@@ -666,18 +662,18 @@ describe('blue-editor-plus # skill completion', () => {
   })
 
   it('completes a # token mid-line after other words', async () => {
-    const { editor } = await mount()
+    const { ctx, editor } = await mount()
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
-    __setCatalogForTest([skill('deploy-check')])
+    __setCatalogForTest(ctx, [skill('deploy-check')])
     const suggestions = await provider.getSuggestions(['please run #de'], 0, 14, { signal: signal() })
     expect(suggestions?.prefix).toBe('#de')
     expect(suggestions?.items[0]?.value).toBe('#deploy-check')
   })
 
   it('declines outside a skill token: mid-word #, doubled #, uppercase, closed and empty matches', async () => {
-    const { editor } = await mount()
+    const { ctx, editor } = await mount()
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
-    __setCatalogForTest([skill('deploy-check')])
+    __setCatalogForTest(ctx, [skill('deploy-check')])
     // `C#` (mid-word), `##` (hash before the token), and `#De` (uppercase
     // sits outside the name grammar) never trigger.
     await expect(provider.getSuggestions(['C#'], 0, 2, { signal: signal() })).resolves.toBeNull()
@@ -690,15 +686,15 @@ describe('blue-editor-plus # skill completion', () => {
   })
 
   it('declines with nothing settled', async () => {
-    const { editor } = await mount()
+    const { ctx, editor } = await mount()
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
     await expect(provider.getSuggestions(['#de'], 0, 3, { signal: signal() })).resolves.toBeNull()
   })
 
   it('declines # suggestions in bash mode so Enter keeps the shell line', async () => {
-    const { editor } = await mount()
+    const { ctx, editor } = await mount()
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
-    __setCatalogForTest([skill('deploy-check')])
+    __setCatalogForTest(ctx, [skill('deploy-check')])
     type(editor, '!')
     await expect(provider.getSuggestions(['#de'], 0, 3, { signal: signal() })).resolves.toBeNull()
   })
@@ -767,7 +763,7 @@ describe('blue-editor-plus argument-hint ghost', () => {
       input: { hint: '<session-id>' },
       handler: () => ({ kind: 'success' }),
     })
-    const clear = registerCommandAliases('resume', ['r'])
+    const clear = ctx.blueInteractionState.aliases.register('resume', ['r'])
     try {
       // `/r ` is an alias token: the ghost looks the hint up on the
       // canonical command, mirroring the dispatch rewrite.
@@ -863,8 +859,8 @@ describe('blue-editor-plus @ mentions', () => {
 
   it('delegates @ suggestions to the L0 mention source while fd is available', async () => {
     fileMention.setFdProbe(async () => 'fd')
-    const { editor, components } = await mount()
-    await fileMention.detectFdPath()
+    const { ctx, editor, components } = await mount()
+    await fileMention.detectFdPath(ctx.blueInteractionState.fdProbe)
     const delegated = vi.fn(async () => ({
       items: [{ value: '@src/a.ts', label: 'a.ts', description: 'src/a.ts' }],
       prefix: '@sr',
@@ -905,13 +901,13 @@ describe('blue-editor-plus @ mentions', () => {
   it('lists one level for a bare @ without consulting fd, and drills on request', async () => {
     fileMention.setFdProbe(async () => 'fd')
     const { ctx, editor, components } = await mount()
-    await fileMention.detectFdPath()
+    await fileMention.detectFdPath(ctx.blueInteractionState.fdProbe)
     const delegated = vi.fn(async () => ({ items: [{ value: '@zz.ts', label: 'zz.ts' }], prefix: '@' }))
     components.mentionGetSuggestions = delegated
     const root = fixture()
     process.chdir(root)
     reattach(ctx)
-    await fileMention.detectFdPath()
+    await fileMention.detectFdPath(ctx.blueInteractionState.fdProbe)
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
     // The empty-tail token takes the deterministic one-level listing —
     // fd is never asked.
@@ -961,14 +957,14 @@ describe('blue-editor-plus @ mentions', () => {
   it('falls back to the fs scanner when the fd source throws mid-session', async () => {
     fileMention.setFdProbe(async () => 'fd')
     const { ctx, editor, components } = await mount()
-    await fileMention.detectFdPath()
+    await fileMention.detectFdPath(ctx.blueInteractionState.fdProbe)
     components.mentionGetSuggestions = async () => {
       throw new Error('fd spawn failed')
     }
     const root = fixture()
     process.chdir(root)
     reattach(ctx)
-    await fileMention.detectFdPath()
+    await fileMention.detectFdPath(ctx.blueInteractionState.fdProbe)
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
     const suggestions = await provider.getSuggestions(['@top'], 0, 4, { signal: signal() })
     expect(suggestions?.items).toEqual([{ value: '@top.md', label: 'top.md', description: 'top.md' }])

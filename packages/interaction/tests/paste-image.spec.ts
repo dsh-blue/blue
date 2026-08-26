@@ -20,8 +20,11 @@ import {
   type ImageAttachmentRef,
   type SaveImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import { applySubmitTransformers } from '../src/editor-instance.ts'
+import { applyReversibleSubmitTransformers, applySubmitTransformers } from '../src/editor-instance.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
+// The value import carries the `settings` Context merge and the
+// 'settings/updated' Events merge the override spec below uses.
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import * as pasteImage from '../src/paste-image.ts'
 import { ACTION_IMAGE_PASTE, type ClipboardImageResult } from '../src/paste-image.ts'
 import { fakeBlueContext, FakeBlueEditor, KEY, type FakeKeymap } from './fakes.ts'
@@ -92,14 +95,14 @@ describe('blue-paste-image plugin', () => {
     ctx = blue.ctx
     keymap = blue.keymap
     ctx.provide('attachments', { imageLimits, saveImage, saveImages })
-    setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+    setSharedEditor(ctx, { editor, submitPrompt: () => {}, notice: text => notices.push(text) })
   })
 
   afterEach(async () => {
     pasteImage.setClipboardImageReader(undefined)
     pasteImage.setClipboardClock(undefined)
-    pasteImage.resetClipboardBackendCooldowns()
-    clearSharedEditor()
+    pasteImage.resetClipboardBackendCooldowns(ctx)
+    clearSharedEditor(ctx)
     await fiber?.dispose()
     fiber = undefined
     rmSync(root, { recursive: true, force: true })
@@ -118,7 +121,7 @@ describe('blue-paste-image plugin', () => {
   it('registers the ctrl+v action and the submit transformer until dispose', async () => {
     await mount()
     expect(keymap.getKeys(ACTION_IMAGE_PASTE)).toEqual(['ctrl+v'])
-    expect(applySubmitTransformers('[image #99]')).toEqual([{ type: 'text', text: '[image #99]' }])
+    expect(applySubmitTransformers(ctx, '[image #99]')).toEqual([{ type: 'text', text: '[image #99]' }])
     await fiber!.dispose()
     fiber = undefined
     expect(keymap.getKeys(ACTION_IMAGE_PASTE)).toEqual([])
@@ -138,7 +141,7 @@ describe('blue-paste-image plugin', () => {
     expect(consumed).toEqual([KEY.escape])
     // No prior handler for a wrapped bare editor: the wrapper reports false.
     const bare = new FakeBlueEditor()
-    setSharedEditor({ editor: bare, submitPrompt: () => {} })
+    setSharedEditor(ctx, { editor: bare, submitPrompt: () => {} })
     ctx.emit('blue/input-editor-changed')
     expect(bare.onKey?.('x')).toBe(false)
     expect(bare.getText()).toBe('')
@@ -162,7 +165,7 @@ describe('blue-paste-image plugin', () => {
     await mount()
     const first = editor.onKey
     const second = new FakeBlueEditor()
-    setSharedEditor({ editor: second, submitPrompt: () => {} })
+    setSharedEditor(ctx, { editor: second, submitPrompt: () => {} })
     ctx.emit('blue/input-editor-changed')
     // The first editor's handler chain was restored (undefined originally).
     expect(editor.onKey).toBeUndefined()
@@ -171,15 +174,15 @@ describe('blue-paste-image plugin', () => {
     // A second emission replaces, not stacks: the wrapper delegates through
     // at most one paste wrapper, observable by both keys still routing.
     const third = new FakeBlueEditor()
-    setSharedEditor({ editor: third, submitPrompt: () => {} })
+    setSharedEditor(ctx, { editor: third, submitPrompt: () => {} })
     ctx.emit('blue/input-editor-changed')
     expect(second.onKey).toBeUndefined()
     expect(third.onKey).toBeDefined()
     // And a clearing emission with no mounted editor is tolerated.
-    clearSharedEditor()
+    clearSharedEditor(ctx)
     ctx.emit('blue/input-editor-changed')
     // Re-arming for afterEach teardown checks.
-    setSharedEditor({ editor: third, submitPrompt: () => {} })
+    setSharedEditor(ctx, { editor: third, submitPrompt: () => {} })
   })
 
   it('pastes a declared image as an incrementing marker and splits it on submit', async () => {
@@ -217,26 +220,31 @@ describe('blue-paste-image plugin', () => {
     expect(thirdRef.name).toBe('pasted-image.jpg')
 
     // Submit splitting: known markers become image blocks with text runs.
-    const blocks = applySubmitTransformers(`before ${firstMarker} mid ${secondMarker} after`)
-    expect(blocks).toEqual([
+    const transformed = applyReversibleSubmitTransformers(ctx, `before ${firstMarker} mid ${secondMarker} after`)
+    expect(transformed.blocks).toEqual([
       { type: 'text', text: 'before ' },
       { type: 'image', attachment: expect.objectContaining({ mediaType: 'image/png' }) },
       { type: 'text', text: ' mid ' },
       { type: 'image', attachment: expect.objectContaining({ mediaType: 'image/gif' }) },
       { type: 'text', text: ' after' },
     ])
+    transformed.rollback?.()
+    transformed.rollback?.()
+    expect(applySubmitTransformers(ctx, firstMarker)).toEqual([
+      { type: 'image', attachment: expect.objectContaining({ mediaType: 'image/png' }) },
+    ])
     // Consumed markers leave the map: a resubmit keeps them literal.
-    expect(applySubmitTransformers(`again ${firstMarker}`)).toEqual([
+    expect(applySubmitTransformers(ctx, `again ${firstMarker}`)).toEqual([
       { type: 'text', text: `again ${firstMarker}` },
     ])
     // A marker-only line yields just the image block (the third, unconsumed
     // paste).
     const thirdMarker = editor.inserted[2]!
-    expect(applySubmitTransformers(thirdMarker)).toEqual([
+    expect(applySubmitTransformers(ctx, thirdMarker)).toEqual([
       { type: 'image', attachment: expect.objectContaining({ mediaType: 'image/jpeg' }) },
     ])
     // No known markers at all: the fallback single text block.
-    expect(applySubmitTransformers('plain line')).toEqual([{ type: 'text', text: 'plain line' }])
+    expect(applySubmitTransformers(ctx, 'plain line')).toEqual([{ type: 'text', text: 'plain line' }])
   })
 
   it('reports a successful automatic backend fallback after inserting its marker', async () => {
@@ -286,7 +294,7 @@ describe('blue-paste-image plugin', () => {
       expect.objectContaining({ mediaType: 'image/gif', name: 'second.gif' }),
     ])
     expect(editor.inserted[0]!.match(/\[image #\d+\]/g)).toHaveLength(2)
-    expect(applySubmitTransformers(editor.inserted[0]!)).toEqual([
+    expect(applySubmitTransformers(ctx, editor.inserted[0]!)).toEqual([
       { type: 'image', attachment: expect.objectContaining({ mediaType: 'image/png' }) },
       { type: 'text', text: ' ' },
       { type: 'image', attachment: expect.objectContaining({ mediaType: 'image/gif' }) },
@@ -365,7 +373,7 @@ describe('blue-paste-image plugin', () => {
   it('stays silent without a notice callback', async () => {
     await mount()
     const plain = new FakeBlueEditor()
-    setSharedEditor({ editor: plain, submitPrompt: () => {} })
+    setSharedEditor(ctx, { editor: plain, submitPrompt: () => {} })
     ctx.emit('blue/input-editor-changed')
     pasteImage.setClipboardImageReader(() => Promise.resolve({ kind: 'no-image' }))
     plain.handleInput(KEY.ctrlV)
@@ -464,7 +472,7 @@ describe('default clipboard image reader', () => {
     const blue = fakeBlueContext()
     ctx = blue.ctx
     ctx.provide('attachments', { imageLimits, saveImage, saveImages })
-    setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+    setSharedEditor(ctx, { editor, submitPrompt: () => {}, notice: text => notices.push(text) })
   })
 
   afterEach(async () => {
@@ -477,8 +485,8 @@ describe('default clipboard image reader', () => {
     else process.env.XDG_RUNTIME_DIR = savedRuntimeDir
     pasteImage.setClipboardImageReader(undefined)
     pasteImage.setClipboardClock(undefined)
-    pasteImage.resetClipboardBackendCooldowns()
-    clearSharedEditor()
+    pasteImage.resetClipboardBackendCooldowns(ctx)
+    clearSharedEditor(ctx)
     await fiber?.dispose()
     fiber = undefined
   })
@@ -584,7 +592,7 @@ exit 1
     fiber = undefined
     editor = new FakeBlueEditor()
     notices = []
-    setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+    setSharedEditor(ctx, { editor, submitPrompt: () => {}, notice: text => notices.push(text) })
     tool(bin, 'wl-paste', wlPasteFake('image/png\nimage/jpeg\n', {
       'image/png': shBytes(GIF_1X1),
       'image/jpeg': shBytes(JPEG_PREFIX),
@@ -690,7 +698,7 @@ exit 1
       fiber = undefined
       editor = new FakeBlueEditor()
       notices = []
-      setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+      setSharedEditor(ctx, { editor, submitPrompt: () => {}, notice: text => notices.push(text) })
     }
   })
 
@@ -722,7 +730,7 @@ exit 1
       fiber = undefined
       editor = new FakeBlueEditor()
       notices = []
-      setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+      setSharedEditor(ctx, { editor, submitPrompt: () => {}, notice: text => notices.push(text) })
     }
   })
 
@@ -756,7 +764,7 @@ exit 1
       fiber = undefined
       editor = new FakeBlueEditor()
       notices = []
-      setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+      setSharedEditor(ctx, { editor, submitPrompt: () => {}, notice: text => notices.push(text) })
     }
     expect(saveImages).not.toHaveBeenCalled()
   })
@@ -778,7 +786,7 @@ exit 1
       fiber = undefined
       editor = new FakeBlueEditor()
       notices = []
-      setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+      setSharedEditor(ctx, { editor, submitPrompt: () => {}, notice: text => notices.push(text) })
     }
   })
 
@@ -807,7 +815,7 @@ exit 1
     await fiber!.dispose()
     fiber = undefined
     editor = new FakeBlueEditor()
-    setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+    setSharedEditor(ctx, { editor, submitPrompt: () => {}, notice: text => notices.push(text) })
     await mountDefault('wayland')
     await vi.waitFor(() => {
       expect(editor.inserted).toHaveLength(1)
@@ -817,7 +825,7 @@ exit 1
     await fiber!.dispose()
     fiber = undefined
     editor = new FakeBlueEditor()
-    setSharedEditor({ editor, submitPrompt: () => {}, notice: text => notices.push(text) })
+    setSharedEditor(ctx, { editor, submitPrompt: () => {}, notice: text => notices.push(text) })
     process.env.WAYLAND_DISPLAY = 'wayland-1'
     process.env.XDG_RUNTIME_DIR = '/tmp/blue-runtime'
     await mountDefault()
@@ -825,6 +833,101 @@ exit 1
       expect(editor.inserted).toHaveLength(1)
     })
     expect(saveImage.mock.calls[2]![0]).toMatchObject({ mediaType: 'image/gif' })
+  })
+
+  it('lets the blue.pasteImageBackend user layer override the composition backend', { timeout: 90_000 }, async () => {
+    const bin = mkdtempTracked('blue-paste-bin-')
+    // wl-paste offers nothing readable; xclip holds the image. The
+    // composition pins wayland (strict), so only a user-layer x11 override
+    // reads the clipboard.
+    tool(bin, 'wl-paste', '#!/bin/sh\nexit 1\n')
+    tool(bin, 'xclip', xclipFake('TARGETS\nimage/png\n', { 'image/png': shBytes(PNG_1X1) }))
+    process.env.PATH = bin
+    process.env.DISPLAY = ':1'
+    // The fake settings service: only the blue descriptor's RAW user layer
+    // the override sync reads (never the resolved value).
+    let present = true
+    let user: unknown
+    ctx.provide('settings', {
+      describe: () => present
+        ? [{ ns: 'blue', schema: {}, value: {}, revision: 1, applies: 'live', user }]
+        : [],
+    } as never)
+    const setUser = (next: unknown): void => {
+      present = true
+      user = next
+    }
+    const blueNs = settingsNamespace('blue')
+    /** One paste, awaited by its outcome notice (after the 'pasting image...' lead-in). */
+    const pasteAndSettle = async (): Promise<void> => {
+      const before = notices.length
+      editor.handleInput(KEY.ctrlV)
+      // The tool timeout path can take seconds on a slow spawn host.
+      await vi.waitFor(() => {
+        expect(notices.length).toBeGreaterThan(before)
+        expect(notices.at(-1)).not.toBe('pasting image...')
+      }, { timeout: 10_000, interval: 50 })
+    }
+    /** One paste expected to save an image (a plain success notices nothing). */
+    const pasteAndSave = async (count: number): Promise<void> => {
+      editor.handleInput(KEY.ctrlV)
+      await vi.waitFor(() => {
+        expect(editor.inserted).toHaveLength(count)
+      }, { timeout: 10_000, interval: 50 })
+    }
+
+    // The user layer's strict x11 wins over the composition's wayland.
+    setUser({ pasteImageBackend: 'x11' })
+    await mountDefault('wayland')
+    await vi.waitFor(() => {
+      expect(editor.inserted).toHaveLength(1)
+    }, { timeout: 10_000, interval: 50 })
+    expect(saveImage.mock.calls[0]![0]).toMatchObject({ mediaType: 'image/png' })
+
+    // A blue commit re-reads the layer: strict wayland fails the paste.
+    setUser({ pasteImageBackend: 'wayland' })
+    ctx.emit('settings/updated', blueNs, {}, {}, 'update')
+    await pasteAndSettle()
+    expect(notices.at(-1)).toBe('clipboard read failed: wl-paste exited with code 1')
+
+    // 'auto' returns to the session-aware order — x11 first with DISPLAY
+    // set — and the paste reads the clipboard again.
+    setUser({ pasteImageBackend: 'auto' })
+    ctx.emit('settings/updated', blueNs, {}, {}, 'update')
+    await pasteAndSave(2)
+    expect(saveImage.mock.calls[1]![0]).toMatchObject({ mediaType: 'image/png' })
+
+    // An invalid value clears the override: the composition's strict
+    // wayland applies again.
+    setUser({ pasteImageBackend: 'bogus' })
+    ctx.emit('settings/updated', blueNs, {}, {}, 'update')
+    await pasteAndSettle()
+    expect(notices.at(-1)).toBe('clipboard read failed: wl-paste exited with code 1')
+
+    // A null user layer clears it likewise.
+    user = null
+    ctx.emit('settings/updated', blueNs, {}, {}, 'update')
+    await pasteAndSettle()
+    expect(notices.at(-1)).toBe('clipboard read failed: wl-paste exited with code 1')
+
+    // A non-object user layer clears it too.
+    setUser('junk')
+    ctx.emit('settings/updated', blueNs, {}, {}, 'update')
+    await pasteAndSettle()
+    expect(notices.at(-1)).toBe('clipboard read failed: wl-paste exited with code 1')
+
+    // Another namespace's commit is ignored even with a valid override
+    // sitting in the user layer.
+    setUser({ pasteImageBackend: 'x11' })
+    ctx.emit('settings/updated', settingsNamespace('shell'), {}, {}, 'update')
+    await pasteAndSettle()
+    expect(notices.at(-1)).toBe('clipboard read failed: wl-paste exited with code 1')
+
+    // The blue descriptor itself gone: same as no user layer.
+    present = false
+    ctx.emit('settings/updated', blueNs, {}, {}, 'update')
+    await pasteAndSettle()
+    expect(notices.at(-1)).toBe('clipboard read failed: wl-paste exited with code 1')
   })
 
   it('probes xclip after a silently failing wl-paste listing', async () => {

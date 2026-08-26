@@ -10,7 +10,7 @@
 
 Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的一个交互式终端 UI（TUI）插件：以 out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) 插件 bundle 的形式、骑在 `dsh-base` bundle 之上的 `pi-tui` 渲染器。它的核心主张：**TUI 不是一个包——而是一棵 Cordis 插件树。** 每个渲染组件、交互 provider、命令、状态栏条目都是独立插件，各有自己的 fiber 生命周期，可热替换、可省略。
 
-本仓库是 `@dsh-blue` scope 下十三个 workspace 包的独立 home：主体从 `deepseek-harness` monorepo 抽出，并扩展了 renderer-neutral frontend runtime。它们按 npm 上发布的 harness（`0.1.1-rc.2` 线）与 vendored Cordis 构建测试。
+本仓库包含十四个 workspace 包：十个属于 `0.1.0-rc.8` release set，四个是 validation-only adapter。它们按 npm 上发布的 Harness `0.1.1-rc.2` 线与 vendored Cordis 构建测试。
 
 <!-- TODO: 演示动图——录一段真实会话（vhs / asciinema；贡献者指南（开发手册）里的
      script(1) 冒烟检查是种子），导出 GIF 到 docs/assets/ 后嵌到这里。
@@ -31,7 +31,7 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 ## 快速开始
 
 > [!NOTE]
-> `0.1.0-rc.2` 为预览版，发布在 **`rc` dist-tag** 下——`latest` 留给稳定线，安装 spec 需带 `@rc` 后缀。
+> `0.1.0-rc.8` 为预览版，发布在 **`rc` dist-tag** 下——`latest` 留给稳定线，安装 spec 需带 `@rc` 后缀。
 
 前置：Node `^22.19 || >=24`、pnpm 11、`dsh` CLI ≥ `0.1.1-rc.2`（`npm i -g @deepseek-ai/dsh`）。
 
@@ -48,13 +48,13 @@ dsh plugin --profile blue add @dsh-blue/blue@rc
 
 ## 功能
 
-- **流式会话记录** —— 用户/助手消息边流式边渲染 Markdown；工具调用渲染为卡片，默认 generic 呈现，diff（`intent-diff`）与终端输出（`intent-terminal`）有专属卡片。
+- **流式会话记录** —— projection-backed 用户/助手消息边流式边渲染 Markdown；diff、terminal、search、read、web 工具卡由 canonical presentation 驱动。
 - **输入编辑器** —— 圆角框编辑器：slash 命令模糊补全、参数幽灵提示、`!` bash 模式、`@` 文件补全、`#` 技能补全、Ctrl-V 剪贴板贴图。
 - **Overlay** —— 四选项审批面板（session 级"总是允许"继承）与 tab 化用户问卷 overlay。
-- **两行状态栏** —— 模型名、会话模式徽标、git 分支、上下文占用 `ctx N`；条目是注册表贡献，不是写死的。
+- **两行状态栏** —— 模型名、会话模式徽标、git 分支、上下文占用 `ctx N`，全部由 readonly `StatusModel` 发布。
 - **底部 dock 面板** —— agent 运行中的活动 spinner、排队消息、todo 列表、fork 当前会话的 `/btw` 旁路问答面板、子代理分组面板。
 - **主题** —— `/theme` 热切换：`dark` / `light` / `auto`（OSC 11 背景探测）/ `custom`（JSON 调色板）。
-- **天然可扩展** —— 命令、状态栏条目、编辑器增强都经下游插件同款的缝注册；补全菜单与 `/help` 反映实时注册表。
+- **天然可扩展** —— 外部 command/status/dock/notification 统一走 capability-scoped `bluePluginHost`；补全菜单与 `/help` 反映实时注册表。
 
 面向用户的功能指南在文档站：[dsh-blue.dev/features](https://dsh-blue.dev/features/)（中文）· [dsh-blue.dev/en/features](https://dsh-blue.dev/en/features/)（English）。
 
@@ -121,96 +121,97 @@ dsh plugin --profile blue add @dsh-blue/blue@rc
 <!-- single source 单一来源: docs/diagrams/blue-layers.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph L4["L4 composition 组合层 — @dsh-blue/blue (bundle)"]
-        patch["cordis.patch.yml — inserts the Blue rows over dsh-base"]
-        app["blue-app · blue-startup — CLI startup + Agent driver"]
+    subgraph C["Composition 组合 - @dsh-blue/blue"]
+        patch["cordis.patch.yml · presets · explicit inject ordering"]
     end
-    subgraph L3["L3 render 渲染插件 — @dsh-blue/blue-transcript · hot-swappable 可热替换、可省略"]
-        fold["event folds → streamed Markdown + tool cards"]
-        status["blueStatus registry + two-row footer shell"]
-        dock["dock panes — activity · todo · btw · subagents"]
+    subgraph H["Harness domain 宿主领域"]
+        harness["agents · sessions · projections · commands · tools · approval"]
     end
-    subgraph L2["L2 interaction 交互插件 — @dsh-blue/blue-interaction · implements harness seams"]
-        input["blue-input — editor + completion"]
-        cmds["blue-commands — built-in commands"]
-        qa["blue-approval · blue-questions — overlays"]
-        enh2["enhancements — editor-plus · paste-image · attachments · pane-queue · mode-status"]
+    subgraph D["Domain and action boundary 领域与动作边界"]
+        conversation["blue-conversation\nblueConversation + blueConversationFacts"]
+        app["blue-app\nreadonly session reader/projections + structured actions"]
     end
-    subgraph L1["L1 kernel services 内核服务 — @dsh-blue/blue-core"]
-        services["blueScreen · blueTheme · blueKeymap · blueComponents · blueTerminalInfo"]
+    subgraph F["Renderer-neutral frontend runtime"]
+        api["blue-api\nmanifest · capability-scoped contributions"]
+        models["blue-frontend\nreadonly status · dock · transcript · editor models"]
     end
-    subgraph L0["L0 pi-tui adapter 适配 — @dsh-blue/blue-core"]
-        adapter["terminal lifecycle ↔ fiber binding — the tree's only pi-tui import"]
+    subgraph R["TUI feature adapters TUI 功能适配"]
+        transcript["blue-transcript\nprojection/model consumers · footer · dock"]
+        interaction["blue-interaction\ncommands · panels · tree-scoped editor state"]
     end
-    subgraph BASE["dsh-base host bundle 宿主"]
-        seams["agents · sessions · commands · userQuestions · approval · agentPresets"]
+    subgraph K["TUI kernel - @dsh-blue/blue-core"]
+        core["blueScreen · blueTheme · blueKeymap · blueComponents · width truth"]
     end
-    pitui["pi-tui ^0.84.2 (npm)"]
+    pitui["pi-tui · raw terminal"]
 
-    L4 --> L3
-    L4 --> L2
-    L3 --> L1
-    L2 --> L1
-    L1 --> L0
-    L0 --> pitui
-    L2 -. implements interaction seams 实现交互缝 .-> BASE
-    L4 -. rides on 骑在 dsh-base 上 .-> BASE
+    H --> D
+    D --> F
+    F --> R
+    R --> K
+    K --> pitui
+    C -. composes .-> H
+    C -. composes .-> D
+    C -. composes .-> R
 ```
 <!-- END diagram:blue-layers -->
 
-旧 renderer 依赖仍严格单向：`core ← transcript / interaction ← app ← bundle`。frontend-runtime 包新增 renderer-neutral contract 与窄 Harness/生态 adapter；只有 core import pi-tui。
+当前数据流是 `Harness domain -> conversation/app projection 与 action 边界 -> frontend model -> transcript/interaction TUI adapter -> core`。只有 core import pi-tui；Agent/Session 对象不会越过 app/domain 边界进入 renderer。
 
 | 包 | 层 | 职责 |
 | --- | --- | --- |
 | [`@dsh-blue/blue-api`](packages/api) | Contract | 稳定、renderer-independent 的生命周期、结果、capability 与 contribution contract。 |
 | [`@dsh-blue/blue-frontend`](packages/frontend) | Runtime | Renderer-neutral model、notification/theme 与可热替换 provider host。 |
 | [`@dsh-blue/blue-harness-adapter`](packages/harness-adapter) | Adapter | 基于 Harness 官方 service、按 capability 收窄的 bridge。 |
-| [`@dsh-blue/blue-context`](packages/context) | Feature | 默认的官方 context projection 与结构化 action consumer，旧 facts reader 保留为 fallback。 |
+| [`@dsh-blue/blue-context`](packages/context) | Validation feature | 独立的官方 context projection adapter；经 fixture 验证，刻意不进入产品 bundle。 |
 | [`@dsh-blue/blue-conversation`](packages/conversation) | Domain | 面向 replay/live renderer consumer 的默认 append-origin conversation projection。 |
 | [`@dsh-blue/blue-remote`](packages/remote) | Adapter | Renderer-neutral remote session、action、lease 与 question/approval transport。 |
 | [`@dsh-blue/blue-core`](packages/core) | L0 + L1 | 全树唯一 `@earendil-works/pi-tui` 适配器：终端生命周期 + `blueScreen` / `blueTheme` / `blueKeymap` / `blueComponents` / `blueTerminalInfo` 服务。 |
-| [`@dsh-blue/blue-interaction`](packages/interaction) | L2 | 输入编辑器、slash 命令、审批与提问 overlay、排队消息面板，以及增强子路径插件（bash 模式、贴图、附件）。 |
-| [`@dsh-blue/blue-transcript`](packages/transcript) | L3 | 会话事件折叠为 transcript 项并渲染（流式 Markdown、工具卡片）、`blueStatus` 注册表与 footer 壳、dock 面板（activity / todo / `/btw` / 子代理分组）。 |
+| [`@dsh-blue/blue-interaction`](packages/interaction) | Interaction/TUI | 输入编辑器、slash 命令、panel、审批/提问 provider、frontend-tree editor/state service 与可选 editor/attachment 行。 |
+| [`@dsh-blue/blue-transcript`](packages/transcript) | Renderer | 消费 semantic transcript/status/dock/tool model 并经 core 渲染；不折叠 Harness session events。 |
 | [`@dsh-blue/blue-openpencil`](packages/openpencil) | Adapter | 按 capability 激活的官方 tool-result presentation 与错误 notification adapter。 |
 | [`@dsh-blue/blue-lark`](packages/lark) | Adapter | 按 capability 激活的官方 command 与 loopback settings notification adapter。 |
-| [`@dsh-blue/blue-app`](packages/app) | L4 | 命令行启动（`[task]`、`--resume <id>`）与发布 `blueSession` 的 Agent 驱动。 |
+| [`@dsh-blue/blue-app`](packages/app) | Domain boundary | 命令行启动与 Agent driver；提供 readonly session reader/projection values 和 structured actions。 |
 | [`@dsh-blue/blue`](packages/bundle/blue) | L4 | 可安装 bundle：`cordis.patch.yml` 在 `dsh-base` 之上插入 Blue 插件行。 |
 
 每个入口都是 Cordis 插件形态（`export const name`、可选 `inject`、`apply(ctx)`）；Cordis 与 dsh 服务包是 `peerDependencies`，由宿主 `dsh` 安装提供。
 
-**同一棵树，换成 bundle 视角。** `cordis.patch.yml` 分三段插入 29 条 Blue 行。plain 基线（基线段 + 组装段，共 9 行）自足可跑；已验收的 frontend-runtime/生态行默认启用并保留 capability-absent fallback，增强段每一行均可单独删除。
+**同一棵树，换成 bundle 视角。** `cordis.patch.yml` 插入 28 条 Blue 自有行：2 条 host-support，加上 26 条产品行（8 baseline、14 enhancement、4 assembly）。Conversation projection 与 official consumer 属于基线；context/remote/OpenPencil/Lark 是 bundle 外的 validation-only 包。
 
 <!-- BEGIN diagram:blue-composition -->
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml — the 29 Blue rows · 29 条 Blue 行"]
-        subgraph baseline["plain baseline 基线 — 9 rows, self-sufficient 自足"]
-            api["blue-api-host"]
-            core["blue-core"]
-            theme["blue-theme-dark"]
-            banner["blue-banner"]
-            transcript["blue-transcript"]
-            sbasic["blue-status-basic"]
-            interaction["blue-interaction"]
-            startup["blue-startup"]
-            bapp["blue-app"]
+    subgraph bundle["cordis.patch.yml - 28 Blue-owned rows · 28 条 Blue 自有行"]
+        subgraph host["host support 宿主支撑 - 2 rows"]
+            presets["blue-agent-presets"]
+            creative["blue-creative-host"]
         end
-        subgraph enhancement["enhancement segment 增强段 — every row droppable 每行皆可删"]
-            editorPlus["blue-editor-plus"]
-            att["blue-attachments · blue-paste-image"]
-            statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
-            intents["blue-intent-diff · -terminal"]
-            panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
-            runtime["blue-context · blue-conversation · blue-transcript-official · default-enabled"]
-            adapters["blue-openpencil · blue-lark · capability-gated"]
+        subgraph product["product UI 产品 UI - 26 rows"]
+            subgraph baseline["baseline 基线 - 8 rows"]
+                api["blue-api-host"]
+                core["blue-core · blue-theme-dark"]
+                chrome["blue-banner · blue-transcript · blue-status-basic"]
+                conversation["blue-conversation · blue-transcript-official"]
+            end
+            subgraph enhancement["enhancement 增强 - 14 droppable rows"]
+                editorPlus["blue-editor-plus"]
+                att["blue-attachments · blue-paste-image"]
+                statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
+                panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
+                viewBridge["blue-plugin-view-bridge"]
+            end
+            subgraph assembly["assembly 装配 - 4 rows"]
+                interaction["blue-interaction · blue-plugin-interaction-bridge"]
+                startup["blue-startup · blue-app"]
+            end
         end
     end
-    dshbase["dsh-base — agent-plane rows disabled, agents composed behind agent-presets"]
+    validation["validation-only, not bundle rows\nblue-context · blue-remote · blue-openpencil · blue-lark"]
+    dshbase["dsh-base - agent plane composed behind presets"]
     bundle -.-> dshbase
 
     classDef optional stroke-dasharray: 4 4;
-    class editorPlus,att,statusEnh,intents,panes,runtime,adapters optional;
+    class editorPlus,att,statusEnh,panes,viewBridge,validation optional;
 ```
 <!-- END diagram:blue-composition -->
 
@@ -222,7 +223,7 @@ Dock 顺序即插件行序——activity → queue → todo → btw → 子代�
 
 - **契约（L1）**——`BlueEditor` 是 `packages/core/src/types.ts` 里的接口，刻意不含任何 pi-tui 类型、任何 harness 类型。
 - **实现（L0）**——获得编辑器的唯一入口是 `ctx.blueComponents.createEditor()`；core 内部的适配器包装 pi-tui `Editor`，是唯一知道背后是 pi-tui 的代码。未来的 vim 模式编辑器可以实现同一接口，消费者毫无感知。
-- **消费（L2）**——`blue-input` 插件创建并挂载编辑器，经共享编辑器缝发布，后挂插件无论行序如何都能找到它。
+- **消费（interaction）**——`blue-input` 创建并挂载编辑器，经 frontend-tree-scoped `EditorHostService` 发布；不存在跨 tree 的 module singleton。
 - **增强（L2 子路径插件）**——`blue-editor-plus`（bash 模式、补全 provider）与 `blue-paste-image`（Ctrl-V 贴图标记）是 `cordis.patch.yml` 里的行：单独删掉任一行，plain 编辑器照常工作。
 
 带代码的完整走查见 [docs/blue-editor-walkthrough.md](docs/blue-editor-walkthrough.md)；Blue 开的每条缝、契约与 plain 默认的完整清单见 [docs/blue-seams.md](docs/blue-seams.md)。
@@ -258,7 +259,7 @@ pnpm run typecheck      # tsc -b
 
 ## 与 deepseek-harness 的关系
 
-- 运行时与测试依赖（`@deepseek-ai/cordis` 4.0.1、`@deepseek-ai/dsh-*` 0.1.1-rc.2、`@earendil-works/pi-tui` ^0.84.2）来自 npm registry；Blue 的十三个包在本地开发时保持 workspace 链接。
+- 运行时与测试依赖（`@deepseek-ai/cordis` 4.0.1、`@deepseek-ai/dsh-*` 0.1.1-rc.2、`@earendil-works/pi-tui` ^0.84.2）来自 npm registry；本地 package 在开发时保持 workspace 链接。
 - harness 仓库的门禁（文档 i18n 配对、README 门禁、snapshot/e2e 车道）不适用于本仓库；本仓保留构建、全量测试套件与逐文件 100% src 覆盖率门禁。
 
 ## 许可证

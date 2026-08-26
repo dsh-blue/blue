@@ -53,21 +53,22 @@ describe('blue bundle', () => {
     await ctx.fiber.dispose()
   })
 
-  it('inserts every Blue row the bundle ships, with the intent and paste rows in the enhancement segment', () => {
-    // The baseline segment: core, theme, banner (before the transcript so
-    // the same-round activation keeps it the first scroll child), transcript,
-    // and the baseline footer entry. The enhancement rows mount order:
-    // editor-plus first, the input-side attachment store + paste layer next,
-    // then the footer entries, then the two intent rows, then the panes, then
-    // the assembly segment.
+  it('inserts every Blue row with the projection-backed transcript in the baseline segment', () => {
+    // The eight-row baseline ends with the conversation producer/consumer.
+    // Enhancements then add editor/attachment, status, pane, and public-view
+    // contributions before the four-row assembly closes the tree.
     const ids = [...patch.matchAll(/^\s*- id: (blue-[\w-]+)$/gm)].map(match => match[1]!)
     expect(ids).toEqual([
+      'blue-agent-presets',
+      'blue-creative-host',
       'blue-api-host',
       'blue-core',
       'blue-theme-dark',
       'blue-banner',
       'blue-transcript',
       'blue-status-basic',
+      'blue-conversation',
+      'blue-transcript-official',
       'blue-editor-plus',
       'blue-attachments',
       'blue-paste-image',
@@ -76,42 +77,68 @@ describe('blue bundle', () => {
       'blue-status-title',
       'blue-status-mode',
       'blue-status-context',
-      'blue-context',
-      'blue-conversation',
-      'blue-transcript-official',
-      'blue-openpencil',
-      'blue-lark',
-      'blue-intent-diff',
-      'blue-intent-terminal',
       'blue-pane-activity',
       'blue-pane-queue',
       'blue-pane-todo',
       'blue-pane-btw',
       'blue-pane-agents',
+      'blue-plugin-view-bridge',
       'blue-interaction',
+      'blue-plugin-interaction-bridge',
       'blue-startup',
       'blue-app',
     ])
-    // The S7/S8 rows resolve to their package subpath names.
-    expect(patch).toContain("name: '@dsh-blue/blue-transcript/intent-diff'")
-    expect(patch).toContain("name: '@dsh-blue/blue-transcript/intent-terminal'")
+    // Legacy intent rows are deliberately absent; tool presentation is model-owned.
+    expect(patch).not.toContain("name: '@dsh-blue/blue-transcript/intent-diff'")
+    expect(patch).not.toContain("name: '@dsh-blue/blue-transcript/intent-terminal'")
+    expect(patch).not.toContain("name: '@dsh-blue/blue-transcript/intent-cordis'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/attachments'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/paste-image'")
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/banner'")
-    expect(patch).toContain("name: '@dsh-blue/blue-openpencil'")
-    expect(patch).toContain("name: '@dsh-blue/blue-lark'")
     expect(patch).toContain("name: '@dsh-blue/blue-conversation'")
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/official-model'")
     expect(patch).not.toMatch(/- id: blue-(?:context|conversation|transcript-official|openpencil|lark)\n\s+name:[^\n]+\n\s+disabled: true/gu)
+    expect(patch).toContain("name: '@dsh-blue/blue-transcript/plugin-host-bridge'")
+    expect(patch).toContain("name: '@dsh-blue/blue-interaction/plugin-host-bridge'")
+    expect(patch).toContain("name: '@deepseek-ai/dsh-agent-presets'")
   })
 
-  it('inserts the upstream agent-presets roster row ahead of the Blue rows', () => {
-    expect(patch).toContain('- id: agent-presets')
+  it('inserts the Blue-owned agent-presets roster ahead of the Blue rows', () => {
+    expect(patch).toContain('- id: blue-agent-presets')
     expect(patch).toContain("name: '@deepseek-ai/dsh-agent-presets'")
     expect(patch).toContain('default: standard')
-    // The roster row precedes the first Blue row: it is a host-plane row the
-    // launcher keys on, not part of the UI stack.
-    expect(patch.indexOf('- id: agent-presets')).toBeLessThan(patch.indexOf('- id: blue-core'))
+    // The id deliberately differs from `agent-presets`: dsh only forces its
+    // own shared root onto that upstream id, while Blue's provider resolves
+    // the immutable root inside this bundle.
+    expect(patch).not.toContain('- id: agent-presets\n')
+    expect(patch).toContain("resolve('@dsh-blue/blue/package.json')")
+    expect(patch.indexOf('- id: blue-agent-presets')).toBeLessThan(patch.indexOf('- id: blue-core'))
+    expect(patch.indexOf('- id: blue-agent-presets')).toBeLessThan(patch.indexOf('- id: blue-app'))
+  })
+
+  it('keeps the host fallback persona valid for agents without preset model variables', () => {
+    const persona = /^- id: system-prompt\n {2}config:\n {4}persona: >-\n {6}([^\n]+)$/m.exec(patch)?.[1]
+    expect(persona).toBe('You are a coding agent. Your working directory is {{cwd}}.')
+    expect(persona).not.toContain('{{model}}')
+  })
+
+  it('inserts the cordis host-runner row the shipped cordis preset\'s tool-cordis injects', () => {
+    // Host plane, mirroring the web-app bundle's own row: the runner provides
+    // `dynamicCordisRunner` + `cordisInspect`, without which the `cordis`
+    // preset's standing mount parks `tool-cordis` and the roster's activation
+    // audit fails the `/preset cordis` switch.
+    expect(patch).toContain('- id: cordis-host-runner')
+    expect(patch).toContain("name: '@deepseek-ai/dsh-cordis-host-runner'")
+    expect(patch).toContain('- id: blue-creative-host')
+    expect(patch).toMatch(/- id: blue-creative-host[\s\S]*?isolate:[\s\S]*?blueScreen: true[\s\S]*?commands: true[\s\S]*?planMode: true[\s\S]*?config:[\s\S]*?- id: cordis-host-runner/u)
+    expect(patch).not.toMatch(/isolate:[\s\S]*?bluePluginHost: true/u)
+    expect(patch.indexOf('- id: cordis-host-runner')).toBeLessThan(patch.indexOf('- id: blue-core'))
+    // The package must install with the bundle (dsh plugin add), exactly as
+    // the agent-presets roster's own runtime dependency rides it.
+    const manifest = JSON.parse(readFileSync(join(patchDir, '..', 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>
+    }
+    expect(manifest.dependencies?.['@deepseek-ai/dsh-cordis-host-runner']).toBeDefined()
   })
 
   it('keeps the host fallback persona valid for agents without preset model variables', () => {

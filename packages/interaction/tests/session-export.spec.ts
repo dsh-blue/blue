@@ -11,12 +11,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { decodeStorageRecord, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import type { TranscriptItem } from '@dsh-blue/blue-transcript'
+import { conversationProjectionDefinition, foldConversationProjection, initialConversationState } from '../../conversation/src/projection.ts'
 import { setClipboardOsc52Emitter, setClipboardTextWriter } from '../src/clipboard-write.ts'
-import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
+import { setSharedEditor } from '../src/editor-instance.ts'
 import * as commandsPlugin from '../src/commands-plugin.ts'
 import { buildExportMarkdown, buildFullExportMarkdown, lastAssistantText } from '../src/session-export.ts'
 import { fakeBlueContext, FakeBlueEditor } from './fakes.ts'
@@ -79,6 +80,12 @@ describe('buildExportMarkdown', () => {
       kind: 'step-summary', seq: 7, turn: 3, step: 0, toolNames: ['read', 'read'], thinking: 1,
     },
   ])
+
+  it('renders an empty work directory in the full audit front matter', () => {
+    expect(buildFullExportMarkdown({
+      sessionId: 's', workDir: undefined, events: [], exportedAt: new Date('2026-08-21T00:00:00.000Z'),
+    })).toContain('work_dir: ')
+  })
 
   it('writes front-matter, overview, and per-turn sections in fold order', () => {
     const markdown = buildExportMarkdown({
@@ -389,11 +396,6 @@ describe('registerExportCommands', () => {
     notices = []
     copied = []
     osc52Emitted = []
-    setSharedEditor({
-      editor: new FakeBlueEditor(),
-      submitPrompt: () => {},
-      notice: text => notices.push(text),
-    })
     setClipboardTextWriter(async text => {
       copied.push(text)
     })
@@ -403,7 +405,6 @@ describe('registerExportCommands', () => {
   afterEach(() => {
     setClipboardTextWriter(undefined)
     setClipboardOsc52Emitter(undefined)
-    clearSharedEditor()
   })
 
   interface MountOptions {
@@ -411,6 +412,7 @@ describe('registerExportCommands', () => {
     attach?: boolean | 'null'
     persistence?: FakePersistence | undefined
     cwd?: string
+    projection?: unknown
   }
 
   interface FakePersistence {
@@ -429,6 +431,11 @@ describe('registerExportCommands', () => {
     fiber: { dispose(): Promise<void> }
   }> {
     const { ctx } = fakeBlueContext()
+    setSharedEditor(ctx, {
+      editor: new FakeBlueEditor(),
+      submitPrompt: () => {},
+      notice: text => notices.push(text),
+    })
     await ctx.plugin(SessionStore)
     await ctx.plugin(CommandRuntime)
     const session = ctx.sessions.create(
@@ -437,9 +444,9 @@ describe('registerExportCommands', () => {
     )
     const agent = { id: session.id, session, status: 'idle' } as unknown as Agent
     if (options.attach === 'null') {
-      ctx.provide('blueSession', { current: null, modelRef: undefined })
+      ctx.provide('testSession', { current: null, modelRef: undefined })
     } else if (options.attach !== false) {
-      ctx.provide('blueSession', { current: agent, modelRef: { current: { provider: 'mock', model: 'mock' } } })
+      ctx.provide('testSession', { current: agent, modelRef: { current: { provider: 'mock', model: 'mock' } } })
     }
     const persistence = options.persistence
     if (persistence !== undefined) {
@@ -456,6 +463,26 @@ describe('registerExportCommands', () => {
         }),
       } as unknown as SessionPersistence
       ctx.provide('sessionPersistence', service)
+      const projectionEvents = persistence.content.split('\n')
+        .filter(line => line.trim() !== '')
+        .flatMap(line => {
+          try {
+            return decodeStorageRecord(JSON.parse(line))
+          } catch {
+            return []
+          }
+        })
+        .map(event => event.type === 'user/message' || event.type === 'assistant/message' || event.type === 'tool/result'
+          ? { ...event, surfaceOp: event.surfaceOp ?? 'append' } as SessionEvent
+          : event)
+      const projection = options.projection ?? {
+        snapshot: () => ({ values: {
+          blueConversation: conversationProjectionDefinition.wire.view(
+            projectionEvents.reduce(foldConversationProjection, initialConversationState()),
+          ),
+        } }),
+      }
+      ctx.provide('sessionProjections', projection)
     }
     const fiber = await ctx.plugin(commandsPlugin)
     return { ctx, agent, fiber }
@@ -486,6 +513,52 @@ describe('registerExportCommands', () => {
     expect(readFileSync(target, 'utf8')).toContain('# Blue Session Export')
     expect(readFileSync(target, 'utf8')).toContain('hello')
     expect(notices.join('\n')).toContain(`exported 2 items to ${target}`)
+    await fiber.dispose()
+  })
+
+  it('exports every official projection entry shape through the shared read path', async () => {
+    const root = mkdtempTracked('blue-export-projection-')
+    const target = join(root, 'projection.md')
+    const projection = {
+      snapshot: () => ({ values: {
+        blueConversation: {
+          streaming: false,
+          entries: [
+            { kind: 'user', id: 'u', seq: 1, turn: 0, text: 'question', images: [
+              { attachmentId: 'a1', mediaType: 'image/png', bytes: 1, width: 1, height: 1, name: 'shot.png', originalDimensions: { width: 2, height: 2 } },
+              { attachmentId: 'a2', mediaType: 'image/jpeg', bytes: 2, width: 2, height: 2 },
+            ] },
+            { kind: 'assistant', id: 'a', seq: 2, turn: 0, step: 0, text: 'answer', streaming: false },
+            { kind: 'thinking', id: 't', seq: 3, turn: 0, step: 0, text: 'reasoning', streaming: false },
+            { kind: 'tool', id: 'tool', seq: 4, turn: 0, step: 0, callId: 'c', name: 'read', arguments: '{}', startedAt: 1 },
+            { kind: 'tool', id: 'tool-result', seq: 5, turn: 0, step: 0, callId: 'c2', name: 'write', arguments: '{}', startedAt: 2, result: { text: 'written', isError: false, endedAt: 3 } },
+            { kind: 'error', id: 'e', seq: 5, turn: 0, message: 'failed' },
+            { kind: 'error', id: 'e-code', seq: 6, turn: 0, message: 'coded', code: 'E_CODE' },
+            { kind: 'interrupted', id: 'i', seq: 7, turn: 0 },
+          ],
+        },
+      } }),
+    }
+    const { ctx, agent, fiber } = await mount({ persistence: { content: singleTurnLog('raw', 'raw answer') }, projection })
+    expect(await run(ctx, agent, `/export ${target}`)).toEqual({ kind: 'success' })
+    const markdown = readFileSync(target, 'utf8')
+    expect(markdown).toContain('question')
+    expect(markdown).toContain('reasoning')
+    expect(markdown).toContain('Tool Call: read')
+    expect(markdown).toContain('request failed: failed')
+    expect(markdown).toContain('(interrupted)')
+    expect(notices.join('\n')).toContain('exported 8 items')
+    await fiber.dispose()
+  })
+
+  it('falls back to an empty readable projection when the host value is invalid', async () => {
+    const root = mkdtempTracked('blue-export-invalid-projection-')
+    const target = join(root, 'invalid.md')
+    const { ctx, agent, fiber } = await mount({
+      persistence: { content: singleTurnLog('raw', 'raw answer') },
+      projection: { snapshot: () => ({ values: { blueConversation: null } }) },
+    })
+    expect(await run(ctx, agent, `/export ${target}`)).toEqual({ kind: 'error', text: 'nothing to export yet' })
     await fiber.dispose()
   })
 
@@ -533,6 +606,9 @@ describe('registerExportCommands', () => {
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(root)
     try {
       const { ctx, agent, fiber } = await mount({ persistence: { content: singleTurnLog('hi', 'hello') } })
+      const snapshot = ctx.blueSessionReader.current()
+      ;(ctx.blueSessionReader as unknown as { current: () => unknown }).current = () =>
+        snapshot === null ? null : { ...snapshot, cwd: undefined }
       const result = await run(ctx, agent, '/export')
       expect(result).toEqual({ kind: 'success' })
       const matches = readdirSync(root).filter(name => name.startsWith('blue-export-') && name.endsWith('.md'))
@@ -593,6 +669,13 @@ describe('registerExportCommands', () => {
     expect(await run(noRaw.ctx, noRaw.agent, '/export'))
       .toEqual({ kind: 'error', text: 'this session persistence backend does not expose raw artifacts' })
     await noRaw.fiber.dispose()
+    const flushFailure = await mount({ persistence: { content: singleTurnLog('hi', 'hello') } })
+    ;(flushFailure.ctx.blueSessionActions as unknown as {
+      flush: () => Promise<{ ok: false, code: 'BLUE_ACTION_REJECTED', message: string }>
+    }).flush = async () => ({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'flush failed' })
+    expect(await run(flushFailure.ctx, flushFailure.agent, '/export'))
+      .toEqual({ kind: 'error', text: 'flush failed' })
+    await flushFailure.fiber.dispose()
     // No stored artifact.
     const noArtifact = await mount({ persistence: { content: '', rawResult: undefined } })
     expect(await run(noArtifact.ctx, noArtifact.agent, '/export'))

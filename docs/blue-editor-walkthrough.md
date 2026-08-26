@@ -23,8 +23,8 @@ export interface BlueEditor extends BlueFocusable {
 
 **2. 实现（L0）。** 获得编辑器的唯一入口是 `ctx.blueComponents.createEditor()`（`packages/core/src/types.ts:655`）。core 内部，`EditorAdapter`（`packages/core/src/components.ts:162`）包装 pi-tui `Editor`，每次 render 后经 chrome 辅助层后处理，画出圆角框、提示符与幽灵提示。适配器是唯一知道背后是 pi-tui 的代码；未来的 vim 模式编辑器可以实现同一接口，消费者毫无感知。
 
-**3. 消费（L2）。** `blue-input` 插件（`packages/interaction/src/input-plugin.ts:169`）创建编辑器、把它挂为屏幕底部子组件（`input-plugin.ts:469`），并经共享编辑器缝（`editor-instance.ts`）发布——提交路由、增强在场标记，以及让后挂插件无论行序如何都能找到编辑器的 `blue/input-editor-changed` 事件。
+**3. 消费（interaction）。** `blue-input` 创建并挂载编辑器，再通过 frontend-tree-scoped `EditorHostService` 发布 editor、slot replacement、submit transformer 与 enhancement presence；`blue/input-editor-changed` 只通知同一 tree 的后挂插件，不存在 module singleton。
 
-**4. 增强（L2 子路径插件）。** `blue-editor-plus` 在共享编辑器上叠 `!` bash 模式与 slash/`@` 补全 provider；`blue-paste-image` 经 `onKey` 钩子拦截 Ctrl-V、用 `insertText` 插入 `[image #N]` 标记、提交时经提交变换器展开。两者都不碰 core——它们是 `cordis.patch.yml` 里的行，可以单独删掉，plain 编辑器照常工作。
+**4. 增强（interaction 子路径插件）。** `blue-editor-plus` 经 `EditorHostService` 叠 `!` bash 模式与 slash/`@` 补全 provider；`blue-paste-image` 拦截 Ctrl-V、插入 `[image #N]` 标记并注册可回滚 submit transformer。两者都不持有跨 tree 状态，可以单独删除。
 
 契约在 L1、实现锁在 L0、增强经缝在 L2——这就是"凡表面皆插件"在实践中的含义。完整清单——Blue 开的每条缝、契约位置、plain 默认、每个视觉表面由哪个插件实现——见 [blue-seams.md](./blue-seams.md)。

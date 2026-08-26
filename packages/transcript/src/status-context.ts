@@ -4,9 +4,8 @@
  * `text` foreground (priority 20), the kimi footer's readout. Occupancy is
  * the `assistant/message` usage's disjoint input side — `inputTokens +
  * cacheReadTokens + cacheWriteTokens` (output and reasoning tokens are new
- * generation, not occupied context). When the session's request context
- * advertises a context window — `session.requestContext()?.contextWindow`,
- * the durable `'request/context'` fold fed by the adapter's `resolveModel`
+ * generation, not occupied context). When the session-facts projection
+ * advertises a context window — its durable `contextWindow` value —
  * — the entry renders `context: N% (K/M)`: N is the occupancy share rounded
  * up (a non-zero share always at least 1, clamped to 100), K and M the
  * 1024-base-abbreviated counts (`x.yk` from 1024, `x.yM` from 1 MiB,
@@ -14,27 +13,24 @@
  * `256k`). The share is a lower bound: the window covers request and
  * response combined while K counts the input side only. Without a window
  * the entry degrades to `ctx N` (the pre-S15 form); a session with no usage
- * data yet renders ''. Attach follows the transcript plugin's own
- * discipline: the durable `agent.session.events` snapshot is scanned first,
- * then the live `session/event` feed carries the increments.
+ * data yet renders ''. Attach follows the session-facts projection's
+ * replay/live whole-value feed; this producer never scans an Agent or Session
+ * event log.
  *
  * @module @dsh-blue/blue-transcript/status-context
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
-import type { RequestContext, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { StatusModel } from '@dsh-blue/blue-frontend'
-// Empty type import carries the app-owned `blueSession` Context merge and the
-// `'blue/session-changed'` Events merge this plugin consumes.
-import type {} from '@dsh-blue/blue-app'
+import type { ConversationFacts } from '@dsh-blue/blue-conversation'
+import type { SessionFactsService } from './session-facts.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-status-context'
 
 /** Services required before the context entry can register. */
-export const inject = ['blueStatusModels']
+export const inject = ['blueStatusModels', 'blueSessionFacts']
 
 /**
  * The context occupancy of one step: the disjoint input-side token counts.
@@ -105,77 +101,30 @@ function normalizeWindow(contextWindow: number | undefined): number | undefined 
  * @param events - the session events, in ascending seq order.
  * @returns the newest usage's context tokens, or 0 when none exists.
  */
-function snapshotTokens(events: readonly SessionEvent[]): number {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index]!
-    if (event.type === 'assistant/message' && event.data.usage !== undefined) {
-      return contextTokens(event.data.usage)
-    }
-  }
-  return 0
-}
-
 /**
- * The advertised window in a request-context snapshot, if any.
- * @param context - the session's request context, when it has one.
- * @returns the usable window, or undefined when not advertised.
- */
-function snapshotWindow(context: RequestContext | undefined): number | undefined {
-  return normalizeWindow(context?.contextWindow)
-}
-
-/**
- * Register the context entry. Attaches to `blueSession.current` when present
- * and re-attaches on every `'blue/session-changed'`; each attach scans the
- * snapshot (usage and request context) and subscribes the live feed —
- * `assistant/message` usage updates the occupancy, `request/context` updates
- * the advertised window (a model switch can drop it, degrading the entry
- * back to `ctx N`). Redraws are requested only when the rendered values
- * changed.
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
-  let tokens = 0
-  let max: number | undefined
-  let detach: (() => void) | undefined
-
-  const attach = (agent: Agent): void => {
-    // Drop the previous session's subscription first: its session filter
-    // matches the old session, not the new one, so without an explicit
-    // detach a stale subscription would keep tracking the detached session.
-    detach?.()
-    const beforeTokens = tokens
-    const beforeMax = max
-    tokens = snapshotTokens(agent.session.events)
-    max = snapshotWindow(agent.session.requestContext())
-    detach = ctx.on('session/event', (session, event) => {
-      if (session !== agent.session) return
-      if (event.type === 'request/context') {
-        const next = normalizeWindow(event.data.contextWindow)
-        if (next === max) return
-        max = next
-        ctx.blueStatusModels.refresh('blue.status.context')
-        return
-      }
-      if (event.type !== 'assistant/message' || event.data.usage === undefined) return
-      const next = contextTokens(event.data.usage)
-      if (next === tokens) return
-      tokens = next
-      ctx.blueStatusModels.refresh('blue.status.context')
-    })
-    if (tokens !== beforeTokens || max !== beforeMax) ctx.blueStatusModels.refresh('blue.status.context')
+  const factsService = ctx.get('blueSessionFacts') as SessionFactsService | undefined
+  /* v8 ignore next -- blueSessionFacts is an injected service; the fallback
+     only supports direct structural construction outside Cordis activation. */
+  let facts: ConversationFacts = factsService?.current ?? {
+    phase: 'idle', active: false, turn: 0, flowDownChars: 0, todos: [], contextTokens: 0, agentCalls: [],
   }
-
-  const current = ctx.get('blueSession')?.current
-  if (current) attach(current)
-  ctx.on('blue/session-changed', attach)
+  const offFacts = factsService?.subscribe(next => {
+    const changed = next.contextTokens !== facts.contextTokens || next.contextWindow !== facts.contextWindow
+    facts = next
+    if (changed) ctx.blueStatusModels.refresh('blue.status.context')
+  })
+  ctx.effect(() => () => offFacts?.())
 
   const model = (): StatusModel => {
-    const text = tokens <= 0
+    const max = normalizeWindow(facts.contextWindow)
+    const text = facts.contextTokens <= 0
       ? ''
       : max === undefined
-        ? `ctx ${formatTokens(tokens)}`
-        : `context: ${String(contextPercent(tokens, max))}% (${formatTokens(tokens)}/${formatTokens(max)})`
+        ? `ctx ${formatTokens(facts.contextTokens)}`
+        : `context: ${String(contextPercent(facts.contextTokens, max))}% (${formatTokens(facts.contextTokens)}/${formatTokens(max)})`
     return { kind: 'status', id: 'blue.status.context', priority: 20, band: 'right', row: 2, overflow: 'hide', view: { kind: 'text', text }, visible: text !== '' }
   }
   ctx.effect(() => ctx.blueStatusModels.register(model))

@@ -8,7 +8,8 @@ Blue's configuration lives on two layers: **in-app slash commands** (the everyda
 | Default model / thinking effort | `/model`, `/effort`, `Alt+M` | the `agent-default-model:` section of `settings.yaml` |
 | New provider / custom gateway | `/provider add` | the `llm-pi-ai:` section of `settings.yaml` + the credentials file |
 | DeepSeek official endpoint tuning | — (files only) | the `llm-deepseek:` section of `settings.yaml` |
-| Theme | `/theme` | session-only, no file ([Theming](/en/guide/theme)) |
+| Theme | `/theme` (session-level); `/settings` or the file for the persisted default | the `blue:` section of `settings.yaml` ([Theming](/en/guide/theme)) |
+| Blue preferences (update check, fold defaults, …) | `/settings` | the `blue:` section of `settings.yaml` |
 | Plugin rows / composition | — | the profile's `cordis.patch.yml` ([Profiles & directories](/en/dsh/profiles)) |
 
 ## Minimal setup: one DEEPSEEK_API_KEY
@@ -35,8 +36,10 @@ One key can sit in four places, in **priority order**:
 | 3 | `./.env` in the launch directory | Project-level |
 | 4 | `~/.dsh/.env` | User-level fallback |
 
-::: tip It starts fine without a key
-The key resolves **per request** — booting, browsing models, and the `/model` panel never need it. The first real message with no key anywhere fails with `MISSING_CREDENTIAL` naming every configuration entry point; store the key and ask again — **no restart needed**.
+::: tip First-run setup is built in
+Once the session is ready, Blue checks the credentials for every registered provider. If none has a usable key, it opens a DeepSeek quick-setup form. Enter only `DEEPSEEK_API_KEY`; Blue uses the `deepseek-official` route at `https://api.deepseek.com`. Press Esc to skip setup for this run and use `/provider add` for another provider. Blue prompts again on the next launch while no usable key exists.
+
+Keys still resolve **per request**, so adding or rotating one while Blue is running needs no restart. `MISSING_CREDENTIAL` remains the fallback when a credential is removed or becomes unavailable.
 :::
 
 `~/.dsh` is the Harness home; `DSH_HOME` relocates it (full directory table in [Profiles & directories](/en/dsh/profiles)).
@@ -65,7 +68,7 @@ Selecting a configured route in the Providers panel opens its **edit form**: dis
 
 `/provider add` branches two ways:
 
-- **Known provider** (anthropic, openai, …) — pick a vendor from the host's configurable directory and enter the key (leave baseURL empty for the vendor default).
+- **Known provider** (anthropic, openai, …) — pick a vendor from the host's configurable directory and enter only the key. Base URL is not editable; the host catalog's vendor endpoint is always used.
 - **Custom endpoint** (self-hosted gateways, any OpenAI-compatible surface) — declare protocol and address:
   - one of three protocols: `anthropic-messages` / `openai-completions` / `openai-responses`;
   - baseURL conventions: the anthropic protocol takes **no trailing** `/v1` (the client appends `/v1/messages` itself); the openai protocols **need** the `/v1`;
@@ -134,6 +137,28 @@ Notes:
 - pi-ai routes take further fields: `modelOverrides:` (reshape one catalog model without replacing the list), `compat:` (reasoning-parameter format switches), `defaultContextWindow:` / `defaultMaxTokens:` (route-wide fallbacks), and more — the complete list lives in the [upstream config catalog](https://deepseek-harness.github.io/deepseek-harness/reference/).
 - List fields (like `models:`) **replace wholesale**, they never merge entry by entry.
 
+### blue: Blue's own settings section
+
+The `/settings` panel writes here (every key optional; defaults shown):
+
+```yaml
+blue:
+  updateCheck: true        # the boot update check (false is the offline switch)
+  updateChannel: rc        # the dist-tag the update check follows
+  theme: dark              # persisted default theme: dark | light | ocean | paper | auto (applied at startup)
+  collapseThinking: true   # thinking blocks start collapsed
+  collapseToolCalls: true  # tool output starts collapsed (ctrl+o toggles in the session)
+  windowTurns: 15          # transcript window: only the newest N completed turns stay mounted
+  recentStepsRetention: 30 # in-turn step folding: keep the newest N steps' cards expanded
+  expandTurns: 3           # ctrl+o expansion scope (turns counted from the end)
+  userFoldLines: 10        # long user message fold threshold (lines)
+  userFoldChars: 1000      # long user message fold threshold (chars)
+  editorCommand: ''        # external editor command (empty = auto-detect via $VISUAL/$EDITOR)
+  pasteImageBackend: auto  # Linux clipboard backend: auto | wayland | x11
+```
+
+The panel is two-level: level one groups rows by namespace (host sections like `shell:`, `agent-loop:`, and `web-search-deepseek:` included), Enter steps into level two's per-key rows, and `Enter`/`Space` there steps the preset value with every change landing on disk; `blue.theme` applies live and becomes the startup default (`/theme` stays the session-level switch — see [Theming](/en/guide/theme)), and folding-default and transcript-number changes apply to the running session just as immediately (an active Ctrl-O expansion still dominates). Level one's last row opens the whole settings.yaml in `$EDITOR`.
+
 ### Verifying your edits
 
 ```sh
@@ -144,7 +169,7 @@ settings.yaml effects show up right in the UI: the `/model` panel lists each rou
 
 ## Themes
 
-`/theme dark|light|auto` switches instantly; `/theme custom <path>` mounts a custom JSON palette — hot switches never lose your draft. The full semantic token table and the custom file format are in [Theming](/en/guide/theme).
+`/theme dark|light|auto` switches instantly; `/theme custom <path>` mounts a custom JSON palette — hot switches never lose your draft. `/theme` is the session-level switch; the persisted default theme is set through the `/settings` panel or `blue.theme` in settings.yaml (applied at startup). The full semantic token table and the custom file format are in [Theming](/en/guide/theme).
 
 ## Other configuration surfaces
 
