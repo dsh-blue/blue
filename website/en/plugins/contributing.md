@@ -1,6 +1,6 @@
 # Contributing to Blue
 
-The local development install for **contributors to the Blue repository itself**: checkout, link install into a dsh profile, the iteration loop, and the smoke check. Downstream developers writing Blue plugins in their own repository should read [Writing your first plugin](/en/plugins/) instead — that path does not need this page.
+The local development install for **contributors to the Blue repository itself**: checkout, link install into a dsh profile, the iteration loop, and the smoke check. Downstream developers writing Blue plugins in their own repository should read the [developer manual](/en/plugins/) (start with the [quickstart](/en/plugins/quickstart)) instead — that path does not need this page.
 
 ::: info
 The user install path is npm — `dsh plugin --profile blue add @dsh-blue/blue@rc`, see [Quickstart](/en/guide/). This page only serves contributors hacking on Blue itself.
@@ -21,7 +21,7 @@ script/install-dev.sh
 # overrides: DSH_BIN=/path/to/dsh PROFILE=my-profile DSH_HOME=/custom/home script/install-dev.sh
 ```
 
-The script builds the workspace and link-installs the authoritative 11-package list from `script/install-dev.sh`: the product plugin closure plus the OpenPencil/Lark validation adapters.
+The script builds the workspace and link-installs the authoritative 11-entry list from `script/install-dev.sh`: the bundle itself plus ten library packages (api, frontend, harness-adapter, conversation, core, interaction, transcript, openpencil, lark, app) — OpenPencil/Lark ride along as validation adapters; the two validation-only packages context/remote are not in the link list — they are exercised through independent fixtures.
 
 ## Manual, equivalent
 

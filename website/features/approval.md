@@ -24,12 +24,42 @@ agent 需要用户裁决时，Blue 以全宽上拉面板应答。面板采用 **
 
 ## 问卷面板
 
-`ctx.userQuestions` 请求（如澄清式提问）以 tab 化问卷面板打开，每个问题一个 tab：
+`ctx.userQuestions` 请求（如澄清式提问）以逐题问卷面板打开，一次聚焦一题：
 
-- tab 行显示问题标题（无标题则 `Q{i+1}`），当前 tab 高亮，已答 `(✓)`、未答 `(○)`；
-- **Tab / Shift-Tab** 切题；单选题 ↑↓ + Enter，多选题 Space 切换 + Enter 确认；
-- 每题固定的末尾 **Other** 伪项打开内联编辑器，自由文本作为答案；
-- 无选项的题直接给编辑器；
-- 全部答完自动提交；Escape 拒绝整个请求，请求中止时同样关闭并拒绝。
+- 面板标题 `Question {i} of {N}`；首行进度 `{i}/{N}` 后逐题列出标题（无标题则 `Q{i+1}`）——当前题 `●`、已答 `✓`、未答 `○`；
+- **Tab / Shift-Tab** 切题；未提交的编辑内容按题存草稿，切回即恢复；Enter 记录当前题答案并跳到下一未答题；
+- 单选题 ↑↓ + Enter，多选题 Space 切换 + Enter 确认；光标行整行高亮（含 Other 行）；
+- 每题末尾固定的 **Other** 伪项进入紧凑单行输入：`> Answer` 反显行，多行文本拍平为单行；
+- 无选项的题直接进入同样的单行输入；
+- 底部键位随状态分化：编辑中为 `↵ save · tab next · esc back`（无选项题 `esc cancel`），列表态多选含 `space toggle`、单选不含；
+- 全部答完自动提交。Escape 拒绝整个请求——但 Other 编辑器内 Escape 先存草稿、返回选项列表；请求中止时同样关闭并拒绝。
 
 问卷答案作为用户可见内容进入会话，模型可见。
+
+## 多字段表单
+
+自定义 provider 接入引导与 danger 权限预设的打字确认（`y`）走多字段表单面板：
+
+- 每字段两行：上行「标签 · 提示」（提示按宽度截断、标签列对齐），下行输入行——仅活动字段带 `>` 提示符；
+- **Tab / ↓** 前进、**Shift-Tab / ↑** 后退；**Enter** 前进，末字段 Enter 提交；
+- 校验失败时错误行显示在出错字段正下方，面板不关闭，任意编辑清除错误；
+- 输入值按面板宽度截断，长值（如粘贴的 API key）不会撑破边框。
+
+## plan 评审面板
+
+plan 模式下 agent 调 `exit_plan_mode` 收尾时，评审请求以专用问询形态打开（经 `ctx.userQuestions` 的 `plan-review` intent）：**边框盒里的 plan 全文滚动窗**（Markdown 渲染）+ 编号三选：
+
+```
+1. Approve
+2. Reject
+3. Revise（行内联反馈编辑器）
+```
+
+- **Revise** 行自带反馈输入框；提交后作为「带反馈的拒绝」答回（harness 侧折叠为 "their feedback: …"），agent 拿到修改意见继续迭代 plan；空提交等价于普通 Reject；
+- Approve/Reject 直接定案；请求中止时面板随取消码关闭（`ASK_CANCELLED`）。
+
+plan 模式的进入/退出走 `Shift+Tab` 三态循环（normal → plan → yolo，见[会话模式](/features/modes)），footer 的模式徽标实时反映。
+
+## 权限预设切换面板
+
+`/permission` 打开权限预设选择器（与 `/sessions` `/preset` 同款单选列表面板）：每行一个预设名（sandbox 模式 + 审批策略的命名束），当前预设带 `← current` 标记；Enter 切换走宿主同一写路径，**danger 级预设需打字 `y` 确认**（防误触）。裸调用由输入层拦截开面；命令本身由上游 `dsh-permission-presets` 注册，带参调用透传。

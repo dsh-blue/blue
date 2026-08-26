@@ -31,7 +31,7 @@
 - id: system-prompt
   config:
     persona: >-
-      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+      You are a coding agent. Your working directory is {{cwd}}.
 ```
 
 - 工具在提示词中的顺序经 `systemPrompt.toolOrder` 配置（完整键名与默认值见官方 [config catalog](https://deepseek-harness.github.io/deepseek-harness/reference/config-catalog)）；

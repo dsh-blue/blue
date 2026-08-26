@@ -1,32 +1,36 @@
 flowchart TB
-    subgraph C["Composition 组合 - @dsh-blue/blue"]
-        patch["cordis.patch.yml · presets · explicit inject ordering"]
-    end
-    subgraph H["Harness domain 宿主领域"]
-        harness["agents · sessions · projections · commands · tools · approval"]
-    end
-    subgraph D["Domain and action boundary 领域与动作边界"]
-        conversation["blue-conversation\nblueConversation + blueConversationFacts"]
-        app["blue-app\nreadonly session reader/projections + structured actions"]
-    end
-    subgraph F["Renderer-neutral frontend runtime"]
-        api["blue-api\nmanifest · capability-scoped contributions"]
-        models["blue-frontend\nreadonly status · dock · transcript · editor models"]
-    end
-    subgraph R["TUI feature adapters TUI 功能适配"]
-        transcript["blue-transcript\nprojection/model consumers · footer · dock"]
-        interaction["blue-interaction\ncommands · panels · tree-scoped editor state"]
-    end
-    subgraph K["TUI kernel - @dsh-blue/blue-core"]
-        core["blueScreen · blueTheme · blueKeymap · blueComponents · width truth"]
-    end
-    pitui["pi-tui · raw terminal"]
+    ROOT["dsh 进程 — 一棵 Cordis 树<br/>Loader · Fiber 生命周期 · 事件/服务总线"]
 
-    H --> D
-    D --> F
-    F --> R
-    R --> K
-    K --> pitui
-    C -. composes .-> H
-    C -. composes .-> D
-    C -. composes .-> R
+    subgraph BASE["dsh-base 行 · Harness domain 插件"]
+        HAR["agents · sessions · tools · approval<br/>commands · events"]
+    end
+
+    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 28 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
+        direction TB
+        subgraph DOM["Domain 侧 — 唯一持有 Agent/Session 对象"]
+            direction LR
+            CONV["blue-conversation<br/>Harness 事件 → projection 投影"]
+            APP["blue-app<br/>blueSessionReader · blueSessionActions"]
+        end
+        subgraph UI["UI 侧 — 只见 readonly 数据与 action"]
+            direction TB
+            FE["blue-api · blue-frontend<br/>BlueView 契约 · readonly models · provider host"]
+            ADP["blue-transcript · blue-interaction<br/>transcript · 命令 · 面板 · 状态栏 · dock"]
+            KRN["blue-core — TUI kernel<br/>全树唯一 import pi-tui"]
+            FE --> ADP
+            ADP --> KRN
+        end
+        CONV -- "projection · 当前状态" --> FE
+        APP -- "readonly snapshot" --> FE
+        UI -- "action · 带 BlueResult 的写请求" --> DOM
+    end
+
+    TERM["终端 — pi-tui · ANSI · 键盘"]
+
+    ROOT --> BASE
+    ROOT --> BLUE
+    HAR ==> CONV
+    HAR ==> APP
+    KRN --> TERM
+
+    linkStyle 2,3,4 stroke:#2bc8e8,stroke-width:3px

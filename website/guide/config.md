@@ -169,7 +169,7 @@ settings.yaml 的效果则直接在界面里看：`/model` 面板列出各路由
 
 ## 主题
 
-`/theme dark|light|auto` 一键切换，`/theme custom <path>` 挂载自定义 JSON 调色板——热切换不丢输入草稿。`/theme` 是会话级切换；持久默认主题用 `/settings` 面板或 settings.yaml 的 `blue.theme` 设置（启动时应用）。完整语义 token 表与 custom 文件格式见[主题](/guide/theme)。
+`/theme dark|light|ocean|paper|auto` 一键切换，`/theme custom <path>` 挂载自定义 JSON 调色板——热切换不丢输入草稿。`/theme` 是会话级切换；持久默认主题用 `/settings` 面板或 settings.yaml 的 `blue.theme` 设置（启动时应用）。完整语义 token 表与 custom 文件格式见[主题](/guide/theme)。
 
 ## 更多配置面
 

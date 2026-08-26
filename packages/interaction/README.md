@@ -16,7 +16,7 @@ The optional `./editor-plus` plugin adds `!` shell mode, slash completion, `@` f
 
 ## Commands And Panels
 
-Built-in command families cover session navigation and rewind, help, themes, models and reasoning effort, providers, permissions and presets, modes, status/context/version/changelog, export/copy, tools, skills, MCP, trace, settings, and profile updates. The effort panel presents the provider's available levels in one horizontal bracketed row and moves the highlight with Left/Right. Commands read immutable snapshots and invoke `blueSessionActions`; they do not fold session events or mutate Harness objects.
+Built-in command families cover project init (`/init`), session navigation and rewind, help, themes, models and reasoning effort, providers, permissions and presets, modes, status/context/version/changelog, export/copy, tools, skills, MCP, trace, settings, and profile updates. The effort panel presents the provider's available levels in one horizontal bracketed row and moves the highlight with Left/Right. Commands read immutable snapshots and invoke `blueSessionActions`; they do not fold session events or mutate Harness objects.
 
 Dialogs replace the editor slot and render through shared list, form, info, settings, question, approval, model, and plan-review panels. Question and approval work is Fiber-bound, abort-aware, and rejects late completion after unload or session changes. Third-party renderer-neutral commands and notifications enter through `./plugin-host-bridge`.
 

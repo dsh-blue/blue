@@ -1,34 +1,12 @@
-# 编写第一个插件
+# 开发手册概览
 
-Blue 的扩展表面由 Cordis plugin host 管理：你的插件声明 capability，贡献 renderer-neutral view/action，卸载时自动回滚。本篇用稳定的 `@dsh-blue/blue-api` 写出第一个插件；完整接合面见 [Seam 参考](/plugins/seams)。
+Blue 插件是一个普通的 Cordis 插件：它声明一份 manifest，向 `bluePluginHost` 申请能力，然后注册 renderer-neutral 的贡献（view、命令、通知）。渲染统一由 Blue 的 TUI kernel 完成——你的代码永远不接触 pi-tui、ANSI 转义或终端宽度。
 
-::: warning 预览阶段提醒
-缝的签名计划在 Phase 3 冻结；当前接入的插件随版本升级可能需要适配。本站会随每次发布同步更新。
-:::
-
-## 插件模型
-
-一个 Blue 插件就是一个 Cordis 插件——导出 `name`（稳定字符串）、可选 `inject`（依赖的服务，等它们出现才激活）与 `apply(ctx)`：
+一个最小插件长这样：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
-
-export const name = 'my-plugin.hello'
-export const inject = ['bluePluginHost']
-
-export function apply(ctx: Context): void {
-  // 通过 capability-scoped API 注册贡献
-}
-```
-
-`bluePluginHost.open(ctx, manifest)` 把 API 和调用方 Fiber 绑定；所有 contribution registration 在插件卸载时一并回滚。
-
-## 第一个插件：状态栏时钟
-
-目标：状态栏里加一条当前时间，并注册一个 `/now` 命令。完整代码：
-
-```ts
-import type { Context } from '@deepseek-ai/cordis'
+// 空类型导入：拉入 Context.bluePluginHost 的声明合并
 import type {} from '@dsh-blue/blue-api'
 
 export const name = 'my-plugin.clock'
@@ -38,55 +16,64 @@ export function apply(ctx: Context): void {
   const opened = ctx.bluePluginHost.open(ctx, {
     id: 'my-plugin.clock',
     api: '^1.0.0',
-    capabilities: ['status', 'commands'],
+    capabilities: ['status'],
   })
-  if (!opened.ok) throw new Error(opened.message)
-
-  const status = opened.value.status!.register({
+  if (!opened.ok) return // 结构性失败：放弃挂载，不向宿主抛异常
+  opened.value.status?.register({
     id: 'clock.status',
-    priority: 25,
-    render: () => ({ kind: 'text', content: new Date().toLocaleTimeString() }),
+    render: () => ({ kind: 'text', content: new Date().toLocaleTimeString(), tone: 'muted' }),
   })
-  if (!status.ok) throw new Error(status.message)
-
-  const command = opened.value.commands!.register({
-    id: 'now',
-    label: 'Print the current time',
-    execute: async () => ({ ok: true, value: undefined }),
-  })
-  if (!command.ok) throw new Error(command.message)
 }
 ```
 
-几个要点：
+把它插进 profile 的 `cordis.patch.yml`，状态栏就多了一行时钟。从零跑通这个插件见[快速开始](/plugins/quickstart)。
 
-- `inject` 声明稳定 host 依赖——服务没就位前插件不激活；
-- manifest 只开放声明过的 capability，注册失败返回结构化错误；
-- 两个注册都绑定当前 Fiber，插件卸载即消失；
-- `/now` 自动出现在编辑器的斜杠补全与 `/help` 里，不需要额外注册 UI。
+::: warning 预览阶段提醒
+缝的签名计划在 Phase 3 冻结；当前接入的插件随版本升级可能需要适配。本站会随每次发布同步更新。
+:::
 
-## 打包与装配
+## 对接模型一图
 
-1. **导出子路径**：在你的包 `package.json` 里导出插件入口（如 `"./clock": "./lib/clock.js"`）；插件形态与 Blue 内置插件完全一致（见[内置插件](/plugins/builtins)）。
-2. **加 patch 行**：在 profile 的 `cordis.patch.yml` 加一行：
+Blue 不是独立应用，而是 dsh 进程里一棵 Cordis 插件树上的一组插件行。你的插件与 Blue、Harness domain 运行在同一棵树里，通过 Cordis 服务注入对接，不需要 SDK 进程、IPC 或配置文件：
 
-```yaml
-- id: my-plugin-clock
-  name: 'my-scope/my-pkg/clock'
+```text
+dsh process 进程（one Cordis tree 一棵 Cordis 树）
+├── dsh-base rows 行    — Harness domain: agents · sessions · tools · approval
+├── Blue rows 行        — TUI: bluePluginHost serves here 在这里提供服务
+└── your plugin row 你的插件行 — inserted via 经 cordis.patch.yml, inject bluePluginHost
 ```
 
-3. **装入**：`dsh plugin --profile blue add link:/path/to/your/pkg`（开发期）或未来的市场一键安装。
+对接动作只有一个：**声明 manifest → `open()` 拿到按能力裁剪的 API → 注册贡献**。贡献是数据（`BlueView`）和结构化 action，不是 UI 组件。每次注册都绑定调用方 Fiber，插件卸载时贡献自动回滚。
 
-行可增、可删、可重排——零代码定制：不想要哪个表面，删那行即可。
+## 当前开放的能力
 
-## 下一步
+| 能力 | 贡献内容 | 效果 |
+| --- | --- | --- |
+| [`commands`](/plugins/commands) | slash 命令 + 异步 handler | 出现在斜杠补全与 `/help` |
+| [`status`](/plugins/status) | 返回 `BlueView` 的 render 函数 | 底部 footer 状态条目 |
+| [`dock`](/plugins/dock) | 静态或函数式 `BlueView` | 编辑器上方的底部面板 |
+| [`notifications`](/plugins/notifications) | 发布/订阅 `BlueNotification` | 编辑器通知条 |
 
-- [Seam 参考](/plugins/seams) —— stable plugin host 与 Blue 内部 projection/action/model 边界；
-- [内置插件](/plugins/builtins) —— bundle 的 28 条 Blue 自有行与 validation-only 包。
+manifest schema 还声明了 `tools`、`editor`、`panels`、`session.read`、`session.act` 五个能力，但当前阶段申请其中任何一个都会被 `open()` 拒绝（`BLUE_CAPABILITY_DENIED`）——它们预留给后续阶段，签名未定。
 
-## 设计纪律
+## 文档地图
 
-1. 只依赖 `@dsh-blue/blue-api` 等公开 contract，不 import package internals；
-2. 只申请实际需要的 capability，并处理 `BlueResult`；
-3. contribution 必须是 renderer-neutral data/action；
-4. 不持有 Agent、Session、renderer object 或跨 Fiber mutable singleton。
+**开始**
+
+- [快速开始](/plugins/quickstart) —— 十分钟从零跑通一个插件：包骨架、manifest、安装、验证、卸载；
+- [核心概念](/plugins/concepts) —— Cordis 树与 Fiber 生命周期、capability 裁剪、`BlueView` 词汇表、`BlueResult` 错误码、domain/adapter 拆分。
+
+**贡献能力** —— 每个能力一页：契约表、完整示例、行为细节与常见错误。
+
+- [命令](/plugins/commands) · [状态栏](/plugins/status) · [Dock 面板](/plugins/dock) · [通知](/plugins/notifications)
+
+**验证与发布**
+
+- [调试与验证](/plugins/testing) —— profile 安装、迭代回路、validate/fixture 脚本、卸载语义检查；
+- [发布插件](/plugins/publishing) —— npm 发布与用户安装路径。
+
+**参考**
+
+- [Seam 参考](/plugins/seams) —— 稳定 plugin host 与 Blue 内部边界的完整清单；
+- [内置插件](/plugins/builtins) —— bundle 的 28 条 Blue 自有行，是最完整的插件范例集；
+- [贡献本仓库](/plugins/contributing) —— 给 Blue 本体贡献代码的本地开发流程。

@@ -22,6 +22,6 @@ Blue 交互式 `dsh --profile blue` 界面的命令行启动提供方与 Agent �
 
 本包不添加 prompt 前缀。用户输入以普通 user message 提交；prompt 与 tool 由组合后的 Harness profile 提供。
 
-## 已知限制
+## 启动器与覆盖
 
-Blue 当前仍运行于通用 `dsh` launcher，而非独立 binary。bundle 的全树 e2e 与真实进程 smoke 覆盖完整 profile。
+Blue 已有独立启动器：`@dsh-blue/blue-cli` 提供的独立 `blue` binary，内嵌固定且经过测试的 dsh 宿主，并在首次使用时校准 `blue` profile。通过通用 `dsh --profile blue` 启动会解析同一份不可变 bundle。bundle 的全树 e2e 与真实进程 smoke 覆盖完整 profile。

@@ -169,7 +169,7 @@ settings.yaml effects show up right in the UI: the `/model` panel lists each rou
 
 ## Themes
 
-`/theme dark|light|auto` switches instantly; `/theme custom <path>` mounts a custom JSON palette — hot switches never lose your draft. `/theme` is the session-level switch; the persisted default theme is set through the `/settings` panel or `blue.theme` in settings.yaml (applied at startup). The full semantic token table and the custom file format are in [Theming](/en/guide/theme).
+`/theme dark|light|ocean|paper|auto` switches instantly; `/theme custom <path>` mounts a custom JSON palette — hot switches never lose your draft. `/theme` is the session-level switch; the persisted default theme is set through the `/settings` panel or `blue.theme` in settings.yaml (applied at startup). The full semantic token table and the custom file format are in [Theming](/en/guide/theme).
 
 ## Other configuration surfaces
 

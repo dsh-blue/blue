@@ -27,7 +27,7 @@ Footer subplugins provide model, cwd, git, title, context, and session-mode fact
 
 ## Other Subpaths
 
-`./banner` mounts the welcome banner. `./status-basic-model`, `./status-cwd`, `./status-title`, `./status-git`, and `./status-context` publish footer models. `./pane-activity`, `./pane-todo`, `./pane-btw`, and `./pane-agents` publish dock models. `./dock-model`, `./tool-model`, and `./transcript-model` expose the renderer-neutral registries for composition.
+`./banner` mounts the welcome banner; `./banner-content` exports the displayed `BLUE_VERSION` constant, kept in lockstep with `package.json`. `./status-basic-model`, `./status-cwd`, `./status-title`, `./status-git`, and `./status-context` publish footer models. `./pane-activity`, `./pane-todo`, `./pane-btw`, and `./pane-agents` publish dock models. `./dock-model`, `./tool-model`, and `./transcript-model` expose the renderer-neutral registries for composition.
 
 All rendered rows obey the core visible-width contract, including narrow and CJK viewports.
 
