@@ -21,7 +21,7 @@ script/install-dev.sh
 # 覆盖项：DSH_BIN=/path/to/dsh PROFILE=my-profile DSH_HOME=/custom/home script/install-dev.sh
 ```
 
-脚本会构建整个 workspace，并按 `script/install-dev.sh` 的权威列表 link 安装 11 个包：产品 plugin closure 加 OpenPencil/Lark validation adapter。
+脚本会构建整个 workspace，并按 `script/install-dev.sh` 的权威列表 link 安装 11 个条目：bundle 本体加 10 个库包（api、frontend、harness-adapter、conversation、core、interaction、transcript、openpencil、lark、app）——OpenPencil/Lark 以 validation adapter 身份同车 dogfood；context/remote 两个 validation-only 包不在链接列表里，它们经独立 fixture 验证。
 
 ## 手动安装（等价步骤）
 

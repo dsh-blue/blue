@@ -10,32 +10,33 @@
 | `/new` | `/clear` | — | 开始新会话 | `blue-commands` |
 | `/fork` | — | — | 把当前会话 fork 成新会话 | `blue-commands` |
 | `/rewind` | — | — | 从当前会话较早的用户回合创建安全分支 | `blue-commands` |
-| `/sessions` | `/resume` | `<session-id>` | 以 lineage 树列出持久化会话并切换；带 id 直接恢复 | `blue-commands` |
-| `/btw` | — | `<question>` | 旁路侧问：fork 当前会话问一个问题 | `blue-pane-btw` |
+| `/sessions` | `/resume` | `[<session-id>]` | 以 lineage 树列出持久化会话并切换；带 id 直接恢复 | `blue-commands` |
+| `/btw` | — | `<question>` | 旁路侧问：fork 当前会话问一个问题 | `blue-pane-btw`（transcript） |
 | `/help` | — | — | 显示可用命令与键位 | `blue-commands` |
-| `/model` | — | `[id]` | 切换会话模型；无参数打开选择面板 | `blue-model-commands` |
-| `/effort` | `/thinking` | `[level]` | 切换当前模型的思考力度；无参数打开横向选择器 | `blue-model-commands` |
-| `/provider` | — | `[list \| switch <name> \| add]` | 列出 provider、切换路由或新增 | `blue-model-commands` |
-| `/preset` | — | `[name]` | 列出 agent 预设或切换（仅空会话） | `blue-preset-commands` |
-| `/permission` | — | `[name]` | 列出权限预设或切换（输入层拦截，不在 `/help` 注册表） | `blue-interaction`（S24b） |
-| `/yolo` | `/yes` | `[on\|off]` | 开关工具调用自动放行（提问照常弹） | `blue-mode-commands` |
-| `/tools` | — | — | 列出当前会话可见的工具 | `blue-tools-commands` |
-| `/mcp` | — | — | 浏览宿主连接的 MCP 服务器与其工具 | `blue-mcp-commands`（S34） |
-| `/skills` | — | — | 列出可用技能（`#` 前缀调用） | `blue-skills-command` |
-| `/theme` | — | 见[主题](/guide/theme) | 列出或切换主题 | `blue-commands`（经 theme-switch） |
-| `/init` | — | — | 分析代码库并在项目根写 `AGENTS.md` | `blue-session-init` |
-| `/status` | — | — | 显示会话头、模型与上下文状态 | `blue-commands` |
-| `/context` | — | — | 显示 token 用量与上下文窗口 | `blue-usage` |
-| `/version` | — | — | 显示 Blue 与 harness 版本及实时模型 | `blue-commands` |
-| `/changelog` | — | — | 显示发版 changelog（what's new，逐版本分节，当前版本带 `· current` 徽章） | `blue-commands` |
-| `/trace` | — | `[copy <seq> \| copy all]` | 查看当前会话执行轨迹；可复制单项或完整轨迹 | `blue-commands` |
-| `/update` | — | `[version]` | 安全升级 Blue（预检/快照/装机冒烟/失败自动回滚；不带参数即只读检查） | `blue-commands`（经 update-command，D52） |
-| `/export` | — | `[path]` | 把当前会话导出为 Markdown 文件 | `blue-session-export` |
-| `/copy` | — | — | 复制最近一条助手消息到剪贴板 | `blue-session-export` |
+| `/model` | — | `[id]` | 切换会话模型；无参数打开选择面板 | `blue-commands`（model-commands） |
+| `/effort` | `/thinking` | `[level]` | 切换当前模型的思考力度；无参数打开横向选择器 | `blue-commands`（model-commands） |
+| `/provider` | — | `[list \| switch <name> \| add]` | 列出 provider、切换路由或新增 | `blue-commands`（model-commands） |
+| `/preset` | — | `[name]` | 列出 agent 预设或切换（仅空会话） | `blue-commands`（preset-commands） |
+| `/permission` | — | `[name]` | 空参数被输入层拦截、打开权限预设面板；带参数透传给宿主命令 | `blue-input`（输入层拦截，不在 `/help` 注册表） |
+| `/yolo` | `/yes` | `[on\|off]` | 开关工具调用自动放行（提问照常弹） | `blue-commands`（mode-commands） |
+| `/tools` | — | — | 列出当前会话可见的工具 | `blue-commands`（tools-commands） |
+| `/mcp` | — | — | 浏览宿主连接的 MCP 服务器与其工具 | `blue-commands`（mcp-commands，S34） |
+| `/skills` | — | — | 列出可用技能（`#` 前缀调用） | `blue-commands`（skills-command） |
+| `/theme` | — | 见[主题](/guide/theme) | 列出或切换主题 | `blue-commands`（theme-switch） |
+| `/init` | — | — | 分析代码库并在项目根写 `AGENTS.md` | `blue-commands`（session-init） |
+| `/status` | — | — | 显示会话头、模型与上下文状态 | `blue-commands`（session-commands） |
+| `/context` | — | — | 显示 token 用量与上下文窗口 | `blue-commands`（session-commands） |
+| `/version` | — | — | 显示 Blue 与 harness 版本及实时模型 | `blue-commands`（session-commands） |
+| `/changelog` | — | — | 显示发版 changelog（what's new，逐版本分节，当前版本带 `· current` 徽章） | `blue-commands`（session-commands） |
+| `/trace` | — | `[copy <seq> \| copy all]` | 查看当前会话执行轨迹；可复制单项或完整轨迹 | `blue-commands`（trace-command） |
+| `/update` | — | `[version]` | 安全升级 Blue（预检/快照/装机冒烟/失败自动回滚；不带参数即只读检查） | `blue-commands`（update-command，D52） |
+| `/settings` | — | — | 按命名空间编辑用户设置（两级面板，改动即落盘；详见[配置](/guide/config)） | `blue-commands`（settings-command） |
+| `/export` | — | `[path]` | 把当前会话导出为 Markdown 文件 | `blue-commands`（session-export） |
+| `/copy` | — | — | 复制最近一条助手消息到剪贴板 | `blue-commands`（session-export） |
 
 ## 会话与模型
 
-- **`/resume <session-id>`** —— 不带参数返回 `usage: /resume <session-id>`。也可以用 `/sessions` 从 lineage 树里挑（按 `parentSession` 组织、兄弟节点按创建时间降序、当前会话标 `← current`；当前会话的祖先路径自动展开且不带出旁支，其他分支用 **Space 切换展开/折叠**）。列表按当前工作目录圈定，每行显示会话标题，**直接输入即过滤**且能搜到折叠节点——`Esc` 先清过滤词、再按一次取消。
+- **`/resume <session-id>`** —— `/sessions` 的别名：带 id 直接恢复，不带参数与 `/sessions` 一样打开 lineage 树选择器（按 `parentSession` 组织、兄弟节点按创建时间降序、当前会话标 `← current`；当前会话的祖先路径自动展开且不带出旁支，其他分支用 **Space 切换展开/折叠**）。列表按当前工作目录圈定，每行显示会话标题，**直接输入即过滤**且能搜到折叠节点——`Esc` 先清过滤词、再按一次取消。
 - **`/fork`** —— agent 非 idle（正在运行）时返回 `cannot fork while the agent is running`。
 - **`/rewind`** —— 单层列出当前会话的直接用户回合；选择一个回合会从该完整回合之前创建普通子 session。父会话不截断、不删除，仍可从 `/sessions` 恢复；agent 运行时拒绝。
 - **`/model` / `/effort`** —— 无参数分别打开模型选择面板（含 footer 的思考力度 segment 控件）与横向力度选择器；面板内 `←` `→` 步进 segment，**`Alt+S` 以"仅本会话"确认**——下一步路由立即切换、不写回持久默认。带参数直接切换并持久化为新默认。免开面板的快路：**`Alt+M`** 在当前 provider 的模型列表里逐个切换（仅本会话，草稿保留；见[键位参考](/reference/keys)）。
@@ -63,7 +64,7 @@
 
 以下命令在参照系产品（kimi/Claude Code）中存在，Blue 侧**有意暂缓**——或等上游开出原语，或等真实需求出现（完整裁定见仓库 roadmap 挂起区）：
 
-- `/settings` `/reload` `/tasks` —— 顺延（配置与任务管理走 profile/config 文件）
+- `/reload` `/tasks` —— 顺延（任务管理走 profile/config 文件）
 - `/archive` `/delete` —— 上游 persistence 暂无删除/归档原语
 - `/import` —— 会话格式版本严格性未定
 - `/diff`（未提交变更面板）、审批 diff 全屏预览 —— 发版后随 dogfood 反馈同评

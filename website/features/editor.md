@@ -8,7 +8,7 @@
 
 - **模糊补全** —— 查询按空白分 token、每个 token 做 subsequence 匹配、按得分排序；下拉里每条是 `hint — description` 两段描述，Enter 接受预选项并提交。
 - **发现提示** —— 未按下拉时，hint 行闪现最多三条模糊匹配命令，与下拉共用同一过滤逻辑——这是斜杠命令的发现入口。
-- **参数幽灵提示** —— `/command` 后至多一个空格时显示参数 hint（如 `/resume <session-id>`）；未输分隔符时前置空格。
+- **参数幽灵提示** —— `/command` 后至多一个空格时显示参数 hint（如 `/sessions [<session-id>]`）；未输分隔符时前置空格。
 
 全部命令见[斜杠命令参考](/reference/commands)。
 

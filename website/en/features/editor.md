@@ -8,7 +8,7 @@ Input starting with `/` turns the frame `primary` blue and enters command contex
 
 - **Fuzzy autocomplete** — the query splits on whitespace into tokens, each matched as a subsequence, ranked by score; every dropdown entry shows a two-part `hint — description`, Enter accepts the preselected entry and submits.
 - **Discovery hints** — while the dropdown is closed, the hint line flashes up to three fuzzy matches sharing the same filter — the discovery path into slash commands.
-- **Argument ghost hints** — shown at most one space after `/command` (e.g. `/resume <session-id>`); a leading space is added before you type the separator.
+- **Argument ghost hints** — shown at most one space after `/command` (e.g. `/sessions [<session-id>]`); a leading space is added before you type the separator.
 
 All commands live in the [Slash commands reference](/en/reference/commands).
 

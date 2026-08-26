@@ -22,6 +22,6 @@ The package also owns safe open-turn retraction and BTW side sessions. A side-se
 
 The app adds no prompt prefix. It submits user input as ordinary user messages; prompts and tools belong to the composed Harness profile.
 
-## Known Limitation
+## Launcher and Coverage
 
-Blue currently rides the generic `dsh` launcher rather than shipping a dedicated binary. The bundle's whole-tree e2e and real-process smoke suites cover the assembled profile.
+Blue ships a dedicated launcher: the standalone `blue` binary from `@dsh-blue/blue-cli`, which pins a nested, tested dsh host and calibrates the `blue` profile on first use. Booting through the generic `dsh --profile blue` launcher resolves the same immutable bundle. The bundle's whole-tree e2e and real-process smoke suites cover the assembled profile.

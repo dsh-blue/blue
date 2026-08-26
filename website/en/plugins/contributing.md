@@ -21,7 +21,7 @@ script/install-dev.sh
 # overrides: DSH_BIN=/path/to/dsh PROFILE=my-profile DSH_HOME=/custom/home script/install-dev.sh
 ```
 
-The script builds the workspace and link-installs the authoritative 11-package list from `script/install-dev.sh`: the product plugin closure plus the OpenPencil/Lark validation adapters.
+The script builds the workspace and link-installs the authoritative 11-entry list from `script/install-dev.sh`: the bundle itself plus ten library packages (api, frontend, harness-adapter, conversation, core, interaction, transcript, openpencil, lark, app) — OpenPencil/Lark ride along as validation adapters; the two validation-only packages context/remote are not in the link list — they are exercised through independent fixtures.
 
 ## Manual, equivalent
 

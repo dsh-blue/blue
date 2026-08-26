@@ -5,11 +5,11 @@ Every visual surface in Blue is driven by one **semantic color table**. The `/th
 ## /theme usage
 
 ```
-usage: /theme [dark|light|auto|custom <path> [dark|light]]
+usage: /theme [dark|light|ocean|paper|auto|custom <path> [dark|light|ocean|paper]]
 ```
 
-- `/theme` — list every theme and mark the current one (`dark, light, auto, custom`)
-- `/theme dark` / `/theme light` — switch to a built-in palette
+- `/theme` — list every theme and mark the current one (`dark, light, ocean, paper, auto, custom`)
+- `/theme dark` / `/theme light` / `/theme ocean` / `/theme paper` — switch to a built-in palette
 - `/theme auto` — follow the terminal background (OSC 11 detection)
 - `/theme custom <path> [dark|light]` — mount a file palette, with `base` as the fallback (default `dark`)
 

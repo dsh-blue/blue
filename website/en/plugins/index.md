@@ -23,6 +23,8 @@ export function apply(ctx: Context): void {
 
 `bluePluginHost.open(ctx, manifest)` binds the API to the caller's Fiber; every contribution registration is rolled back when the plugin unloads.
 
+In the current phase `open()` accepts only four capabilities: `commands`, `status`, `dock`, `notifications`. The manifest schema also declares `tools`, `editor`, `panels`, `session.read`, and `session.act`, but requesting any of them is rejected with `BLUE_CAPABILITY_DENIED` (see the [Seam reference](/en/plugins/seams)).
+
 ## Your first plugin: a status-bar clock
 
 Goal: add the current time to the status bar and register a `/now` command. The complete code:

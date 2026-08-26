@@ -16,4 +16,4 @@ fallback persona 是静态前缀；各插入行的前缀影响由所属包各自
 
 ## 已知限制与暂缓事项
 
-- **无已知的组合包级限制**——组合后的 profile 由全树 e2e 端到端覆盖（`tests/e2e.spec.ts`，72 个用例：启动、任务执行、输入路由、审批 overlay（含 session 级放行记忆）、tab 化问卷、编辑器键语义、resume、`/theme` 调色板换装（含草稿保留与转录重渲染）、四个 dock pane、`/help`、`/sessions` + `/new` + `/fork`、`/btw`、diff 卡、terminal 卡（含 exit 徽章）、图片粘贴以图片块传递、step-summary 渲染、S23 模型族——picker 元数据与段控件草稿、session-only 与持久默认、resume 的 header 层、`/provider` 列表/切换、以及走真 settings/credentials/pi-ai 栈与 fixture 发现端点的 Add Provider 向导、卸载），使用脚本化 mock LLM adapter 与 core 的录制型 FakeTerminal——仅模型与进程终端被替换。
+- **无已知的组合包级限制**——组合后的 profile 由全树 e2e 端到端覆盖（`tests/e2e.spec.ts`，120 个用例——117 个启用，3 个跳过：启动、任务执行、输入路由、审批 overlay（含 session 级放行记忆）、tab 化问卷、编辑器键语义、resume、`/theme` 调色板换装（含草稿保留与转录重渲染）、五个 dock pane、`/help`、`/sessions` + `/new` + `/fork`、`/btw`、diff 卡、terminal 卡（含 exit 徽章）、图片粘贴以图片块传递、step-summary 渲染、S23 模型族——picker 元数据与段控件草稿、session-only 与持久默认、resume 的 header 层、`/provider` 列表/切换、以及走真 settings/credentials/pi-ai 栈与 fixture 发现端点的 Add Provider 向导、卸载），使用脚本化 mock LLM adapter 与 core 的录制型 FakeTerminal——仅模型与进程终端被替换。

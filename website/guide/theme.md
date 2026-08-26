@@ -5,11 +5,11 @@ Blue 的视觉表面全部由一张**语义色表**驱动。`/theme` 命令在�
 ## /theme 用法
 
 ```
-usage: /theme [dark|light|auto|custom <path> [dark|light]]
+usage: /theme [dark|light|ocean|paper|auto|custom <path> [dark|light|ocean|paper]]
 ```
 
-- `/theme` —— 列出全部主题并标出当前项（`dark, light, auto, custom`）
-- `/theme dark` / `/theme light` —— 切到内置调色板
+- `/theme` —— 列出全部主题并标出当前项（`dark, light, ocean, paper, auto, custom`）
+- `/theme dark` / `/theme light` / `/theme ocean` / `/theme paper` —— 切到内置调色板
 - `/theme auto` —— 跟随终端背景色（OSC 11 探测）自动选择明暗
 - `/theme custom <path> [dark|light]` —— 挂载文件调色板，`base` 指定兜底基线（默认 `dark`）
 

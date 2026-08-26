@@ -15,6 +15,8 @@ Blue 的当前架构用显式 Cordis service、projection/action、renderer-neut
 
 Manifest 校验、capability 限权、重复 id、owner namespace 和生命周期都由 `@dsh-blue/blue-api` 处理。注册绑定调用方 Fiber，卸载自动清理。
 
+当前阶段 `open()` 只开放上表四个 capability。manifest  schema 还声明了另外五个（`tools`、`editor`、`panels`、`session.read`、`session.act`），但申请其中任何一个都会被拒绝，返回 `BLUE_CAPABILITY_DENIED`——它们预留给后续阶段，签名未定。
+
 ## Blue 内部边界
 
 | Owner | Seam | 用途 |

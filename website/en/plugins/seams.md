@@ -15,6 +15,8 @@ External plugins request capabilities through `ctx.bluePluginHost.open(ctx, mani
 
 `@dsh-blue/blue-api` owns manifest validation, capability restriction, duplicate ids, the owner namespace, and lifecycle. Registrations bind to the caller's Fiber and disappear on unload.
 
+In the current phase `open()` grants only the four capabilities in the table above. The manifest schema declares five more (`tools`, `editor`, `panels`, `session.read`, `session.act`), but requesting any of them fails with `BLUE_CAPABILITY_DENIED` — they are reserved for later phases and their signatures are not settled.
+
 ## Internal Blue boundaries
 
 | Owner | Seam | Purpose |

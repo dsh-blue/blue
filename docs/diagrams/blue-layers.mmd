@@ -1,32 +1,20 @@
 flowchart TB
-    subgraph C["Composition 组合 - @dsh-blue/blue"]
-        patch["cordis.patch.yml · presets · explicit inject ordering"]
+    subgraph H["Harness domain 宿主领域 (dsh)"]
+        harness["agents · sessions · tools · approval · events"]
     end
-    subgraph H["Harness domain 宿主领域"]
-        harness["agents · sessions · projections · commands · tools · approval"]
+    subgraph TREE["Blue = a Cordis plugin tree 一棵 Cordis 插件树"]
+        direction TB
+        D["Domain & action boundary 领域与动作边界\nblue-conversation 投影 · blue-app reader/actions"]
+        F["Renderer-neutral runtime\nblue-api 契约 · blue-frontend readonly models"]
+        R["TUI feature plugins 功能插件\nblue-transcript · blue-interaction"]
+        K["TUI kernel — the only pi-tui adapter\nblue-core"]
+        D --> F --> R --> K
     end
-    subgraph D["Domain and action boundary 领域与动作边界"]
-        conversation["blue-conversation\nblueConversation + blueConversationFacts"]
-        app["blue-app\nreadonly session reader/projections + structured actions"]
-    end
-    subgraph F["Renderer-neutral frontend runtime"]
-        api["blue-api\nmanifest · capability-scoped contributions"]
-        models["blue-frontend\nreadonly status · dock · transcript · editor models"]
-    end
-    subgraph R["TUI feature adapters TUI 功能适配"]
-        transcript["blue-transcript\nprojection/model consumers · footer · dock"]
-        interaction["blue-interaction\ncommands · panels · tree-scoped editor state"]
-    end
-    subgraph K["TUI kernel - @dsh-blue/blue-core"]
-        core["blueScreen · blueTheme · blueKeymap · blueComponents · width truth"]
-    end
-    pitui["pi-tui · raw terminal"]
+    C["Composition 组合\ncordis.patch.yml · 28 Blue rows · presets"]
+    S["every row is a fiber-scoped plugin 每行都是 Fiber 插件\nhot-swap 热替换 · unload rolls back 卸载回滚 · omittable 可省略"]
+    P["pi-tui · raw terminal"]
 
     H --> D
-    D --> F
-    F --> R
-    R --> K
-    K --> pitui
-    C -. composes .-> H
-    C -. composes .-> D
-    C -. composes .-> R
+    K --> P
+    C -. composes 组合 .-> TREE
+    S -.-> TREE

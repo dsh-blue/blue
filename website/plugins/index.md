@@ -23,6 +23,8 @@ export function apply(ctx: Context): void {
 
 `bluePluginHost.open(ctx, manifest)` 把 API 和调用方 Fiber 绑定；所有 contribution registration 在插件卸载时一并回滚。
 
+当前阶段 `open()` 只接受四个 capability：`commands`、`status`、`dock`、`notifications`。manifest 里还声明了 `tools`、`editor`、`panels`、`session.read`、`session.act` 五个能力，但申请它们会被拒绝并返回 `BLUE_CAPABILITY_DENIED`（见 [Seam 参考](/plugins/seams)）。
+
 ## 第一个插件：状态栏时钟
 
 目标：状态栏里加一条当前时间，并注册一个 `/now` 命令。完整代码：
