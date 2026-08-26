@@ -28,6 +28,11 @@ describe('@dsh-blue/blue-api', () => {
     expect(validateBlueManifest({ id: 'example', api: '^1.0.0', capabilities: [null as never] })).toMatchObject({ ok: false, code: 'BLUE_INVALID_CAPABILITY' })
     expect(validateBlueManifest(null as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_MANIFEST' })
     expect(validateBlueManifest({ id: 'example', api: '^1.0.0', capabilities: null as never })).toMatchObject({ ok: false, code: 'BLUE_INVALID_MANIFEST' })
+    expect(validateBlueManifest({ id: 'example', api: '^1.0.0', capabilities: [], schemaVersion: 2 as never })).toMatchObject({ ok: false, code: 'BLUE_UNSUPPORTED_MANIFEST_VERSION' })
+    expect(validateBlueManifest({ id: 'example', api: '^1.0.0', capabilities: [], blue: '???' })).toMatchObject({ ok: false, code: 'BLUE_INVALID_COMPATIBILITY_RANGE' })
+    expect(validateBlueManifest({ id: 'example', api: '^1.0.0', capabilities: [], entry: 'index.js' })).toMatchObject({ ok: false, code: 'BLUE_INVALID_ENTRY' })
+    expect(validateBlueManifest({ id: 'example', api: '^1.0.0', capabilities: [], integrity: 'md5-abc' })).toMatchObject({ ok: false, code: 'BLUE_INVALID_INTEGRITY' })
+    expect(validateBlueManifest({ id: '@acme/example', api: '^1.0.0', capabilities: ['commands'], schemaVersion: 1, entry: './index.js', blue: '>=0.1.0', harness: '^0.1.1', node: '>=22', integrity: 'sha512-abc' })).toEqual({ ok: true })
   })
 
   it('keeps the published boundary free of source-plane exports', () => {

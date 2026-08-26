@@ -166,6 +166,7 @@ const sidebarZh = {
       text: '参考',
       items: [
         { text: 'Seam 参考', link: '/plugins/seams' },
+        { text: '插件包规范', link: '/plugins/manifest' },
         { text: '内置插件', link: '/plugins/builtins' },
         { text: '贡献本仓库', link: '/plugins/contributing' },
         { text: '仓库设计文档（GitHub）', link: 'https://github.com/dsh-blue/blue/blob/master/docs/README.md' },
@@ -257,6 +258,7 @@ const sidebarEn = {
       text: 'Reference',
       items: [
         { text: 'Seam reference', link: '/en/plugins/seams' },
+        { text: 'Plugin package spec', link: '/en/plugins/manifest' },
         { text: 'Built-in plugins', link: '/en/plugins/builtins' },
         { text: 'Contributing to Blue', link: '/en/plugins/contributing' },
         { text: 'Design docs (GitHub, 中文)', link: 'https://github.com/dsh-blue/blue/blob/master/docs/README.md' },

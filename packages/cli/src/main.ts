@@ -16,6 +16,7 @@ import type { CalibrationOutcome } from './calibrate.ts'
 import { cliInternals } from './internals.ts'
 import { nestedDsh } from './nested.ts'
 import { translateArgv } from './translate.ts'
+import { handlePluginCommand } from './plugin.ts'
 
 /**
  * The marker the shell's children carry: the app's help text and exit
@@ -59,6 +60,11 @@ export async function main(argv: readonly string[]): Promise<void> {
     cliInternals.exit(1)
     return
   }
+  if (translation.kind === 'plugin') {
+    const profileIndex = translation.dshArgs.indexOf('--profile')
+    const pluginArgs = profileIndex >= 0 ? translation.dshArgs.slice(profileIndex + 2) : translation.dshArgs.slice(1)
+    if (await handlePluginCommand(pluginArgs)) return
+  }
   if (translation.kind === 'boot') {
     const version = shellVersion()
     const outcome = await calibrate({ version, dshBinJs: host.binJs })
@@ -100,4 +106,3 @@ export function shellVersion(): string {
     return 'unknown'
   }
 }
-

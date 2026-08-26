@@ -32,6 +32,7 @@ if (!existsSync(packageFile)) {
 const manifest = JSON.parse(readFileSync(packageFile, 'utf8'))
 const packageName = typeof manifest.name === 'string' ? manifest.name : root
 const sourceRoot = resolve(root, 'src')
+const distributionManifestPath = resolve(root, 'blue.plugin.json')
 const files = []
 
 /** Collect executable source files without following symlinks. */
@@ -53,7 +54,34 @@ function violate(group, code, message) {
 }
 
 if (!/blue|frontend|adapter/iu.test(packageName)) violate('package', 'PACKAGE_NAME_INVALID', 'package name does not identify a Blue frontend package or adapter')
-if (files.length === 0) violate('package', 'PACKAGE_SOURCE_MISSING', 'src contains no executable source files')
+if (files.length === 0 && !existsSync(distributionManifestPath)) violate('package', 'PACKAGE_SOURCE_MISSING', 'src contains no executable source files and blue.plugin.json is missing')
+
+/** Validate the distribution manifest without executing plugin code. */
+if (existsSync(distributionManifestPath)) {
+  let distribution
+  try {
+    distribution = JSON.parse(readFileSync(distributionManifestPath, 'utf8'))
+  } catch {
+    violate('package', 'PLUGIN_MANIFEST_INVALID_JSON', 'blue.plugin.json is not valid JSON')
+  }
+  if (distribution !== undefined) {
+    const required = ['schemaVersion', 'id', 'entry', 'api', 'capabilities']
+    for (const field of required) if (!(field in distribution)) violate('package', 'PLUGIN_MANIFEST_FIELD_MISSING', `blue.plugin.json is missing ${field}`)
+    if (distribution.id !== packageName) violate('package', 'PLUGIN_ID_PACKAGE_MISMATCH', `manifest id ${String(distribution.id)} does not match package name ${packageName}`)
+    const entry = typeof distribution.entry === 'string' ? distribution.entry : undefined
+    if (entry === undefined || !entry.startsWith('./')) violate('package', 'PLUGIN_ENTRY_INVALID', 'manifest entry must be a relative path')
+    else {
+      const entryPath = resolve(root, entry)
+      if (!existsSync(entryPath)) violate('package', 'PLUGIN_ENTRY_MISSING', `manifest entry is missing: ${entry}`)
+      const entrySource = existsSync(entryPath) ? readFileSync(entryPath, 'utf8') : ''
+      if (!/export\s+const\s+name\s*=\s*['"][^'"]+['"]/u.test(entrySource)) violate('package', 'PLUGIN_NAME_UNSTABLE', 'manifest entry must export a literal name')
+      if (!/export\s+(?:(?:async\s+)?function\s+apply\b|const\s+apply\s*=)/u.test(entrySource)) violate('package', 'PLUGIN_APPLY_MISSING', 'manifest entry must export apply')
+      const entryName = /export\s+const\s+name\s*=\s*['"]([^'"]+)['"]/u.exec(entrySource)?.[1]
+      if (entryName !== undefined && entryName !== packageName) violate('package', 'PLUGIN_NAME_PACKAGE_MISMATCH', `entry name ${entryName} does not match package name ${packageName}`)
+      if (Array.isArray(manifest.files) && !manifest.files.some(pattern => filesEntryMatches(String(pattern), entry))) violate('package', 'PLUGIN_ENTRY_NOT_SHIPPED', `manifest entry is not covered by files: ${entry}`)
+    }
+  }
+}
 
 const sourceEntries = files
   .filter(file => !/(?:^|[\\/])invariant\.(?:mjs|cjs|js|ts)$/u.test(file))

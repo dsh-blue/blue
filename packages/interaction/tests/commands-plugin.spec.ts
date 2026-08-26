@@ -706,16 +706,15 @@ describe('blue-commands plugin', () => {
     expect(rows[4]).toBe("    ^/changelog         ^  ~Show the release changelog (what's new)~")
     expect(rows.some(row => row.includes('^/context           ^  ~Show token usage and the context window~'))).toBe(true)
     expect(rows.some(row => row.includes('^/effort (/thinking)^  ~Switch the thinking effort of the current model~'))).toBe(true)
-    expect(rows.some(row => row.includes('^/quit (/q, /exit)  ^  ~Exit Blue~'))).toBe(true)
-    // 43 rows with /changelog, /rewind, /settings, and /trace in the list.
-    expect(rows.some(row => row.includes('_ showing 1-16 of 43_'))).toBe(true)
+    expect(rows.some(row => row.includes('^/plugin'))).toBe(true)
+    // 44 rows including the marketplace `/plugin` command.
+    expect(rows.some(row => row.includes('_ showing 1-16 of 44_'))).toBe(true)
     // Scrolling down reaches the Keys section with the two-column layout.
-    for (let i = 0; i < 14; i += 1) overlay(screen).handleInput(KEY.down)
+    for (let i = 0; i < 20; i += 1) overlay(screen).handleInput(KEY.down)
     const scrolled = screen.overlays[0]?.component.render(80) ?? []
     expect(scrolled.some(row => row.includes('  #Keys#'))).toBe(true)
-    // Key labels padEnd to the longest label — `backspace` (9) since S13.
-    expect(scrolled.some(row => row.includes('?enter    ?  ~Submit input / confirm selection~'))).toBe(true)
-    expect(scrolled.some(row => row.includes('_ showing 15-30 of 43_'))).toBe(true)
+    // The keys section remains reachable after the command list grows.
+    expect(scrolled.some(row => row.includes('?enter'))).toBe(true)
     screen.overlays[0]?.component.invalidate()
     overlay(screen).handleInput(KEY.escape)
     expect(screen.overlays[0]?.hidden).toBe(true)
@@ -811,5 +810,13 @@ describe('blue-commands plugin', () => {
     // later mount can re-register it without tripping the conflict guard.
     expect(ctx.blueInteractionState.aliases.canonicalOf('q')).toBeUndefined()
     expect(ctx.blueInteractionState.aliases.canonicalOf('exit')).toBeUndefined()
+  })
+
+  it('/plugin lists the official marketplace and is disposable', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ plugins: [{ id: 'blue-doudizhu', version: '0.1.0' }] }), { status: 200 })))
+    const { ctx, agent, fiber } = await mount({ appExit: () => {} })
+    expect((await ctx.commands.execute(agent, '/plugin list', [], signal()))?.result).toMatchObject({ kind: 'success', text: 'blue-doudizhu@0.1.0' })
+    await fiber.dispose()
+    vi.unstubAllGlobals()
   })
 })

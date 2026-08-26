@@ -82,3 +82,8 @@ Specs that create filesystem fixtures use the shared `mkdtempTracked` helper
 and call `registerTempDirCleanup()` at module scope. This is required for
 eager `afterAll` cleanup when Vitest reuses a worker; the helper's process-exit
 hook is only the recovery path for an interrupted worker.
+
+`blue-commands` also owns `/plugin`. Read-only marketplace operations query the
+official registry; installation delegates to the profile owner (`dsh plugin`)
+and reports that a restart is required. GitHub specs must be pinned to a commit
+before this command will invoke the installer.

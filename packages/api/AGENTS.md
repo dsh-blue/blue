@@ -46,3 +46,9 @@ snapshot and stale-event guarantees.
 ## Distribution contract
 
 The package publishes only `lib/*.js` and `lib/types/**/*.d.ts`. Runtime entries are derived from `exports` by `script/package-contract.mjs`; add a public entry by adding its manifest export and matching `src/<entry>.ts`, then run `pnpm check:pack`.
+
+Distribution manifests may add `schemaVersion: 1`, `entry`, `blue`, `harness`,
+`node`, and `integrity` to the inline `id`/`api`/`capabilities` contract. The
+repository validator compares `blue.plugin.json`, package exports, and the
+entry's literal `name`; legacy inline manifests remain accepted for built-in
+rows.

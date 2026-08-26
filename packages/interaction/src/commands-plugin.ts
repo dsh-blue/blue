@@ -66,6 +66,7 @@ import { registerThemeCommand } from './theme-switch.ts'
 import { registerToolsCommands } from './tools-commands.ts'
 import { registerUpdateCommand } from './update-command.ts'
 import { registerTraceCommand } from './trace-command.ts'
+import { registerPluginCommand } from './plugin-command.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-commands'
@@ -454,6 +455,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     const trace = registerTraceCommand(ctx)
     // `/update` is the crash-safe, preflighted profile swap.
     const update = registerUpdateCommand(ctx)
+    const plugin = registerPluginCommand(ctx)
     const settings = registerSettingsCommand(ctx)
     return () => {
       quit()
@@ -477,6 +479,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       mcpBrowser()
       trace()
       update()
+      plugin()
       settings()
     }
   })

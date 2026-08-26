@@ -1,13 +1,11 @@
 # Publishing a plugin
 
-A Blue plugin is an ordinary npm package — there is no dedicated registry or signing process.
+A Blue plugin is an ordinary npm package with `blue.plugin.json`. Official Blue packages are published by CI; do not run `npm publish` locally.
 
 ## Publishing
 
 ```sh
-npm publish
-# 预览期建议用 dist-tag 与 Blue 线对齐：
-npm publish --tag rc
+# npm publish is executed by the protected CI release workflow
 ```
 
 Confirm before publishing:
@@ -19,7 +17,7 @@ Confirm before publishing:
 ## User install path
 
 ```sh
-dsh plugin --profile blue add my-scope/blue-clock
+blue plugin install my-scope/blue-clock
 ```
 
 Then add the plugin row to the profile's `cordis.patch.yml`:
@@ -40,3 +38,9 @@ A package without a `dsh.bundle` declaration installs as a plain dependency only
 ## Plugin marketplace
 
 The [plugin marketplace](/en/marketplace/) is live: after publishing, submit a listing to [dsh-blue/marketplace](https://github.com/dsh-blue/marketplace) and users can install your plugin from the marketplace in one line (any plugin installable from GitHub qualifies — npm is not a requirement). The listing process and field reference are in the [submission guide](/en/marketplace/submit). The distribution mechanism is still an npm/GitHub source plus a patch row — keep your package independently installable (this is what the fixture verifies), and listing requires no rework of the package.
+## Plugin protocol and marketplace
+
+Published plugins must include `blue.plugin.json` and pass the static validator
+and packed fixture before marketplace submission. Use `blue plugin install` or
+`/plugin install`; GitHub sources must be pinned to a commit. See the [plugin
+package specification](/en/plugins/manifest) and the marketplace submission guide.

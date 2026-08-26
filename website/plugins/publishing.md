@@ -1,13 +1,11 @@
 # 发布插件
 
-Blue 插件就是普通 npm 包，没有专属仓库或签名流程。
+Blue 插件是带 `blue.plugin.json` 的普通 npm 包。Blue 官方包由 CI 发布；本地不执行 `npm publish`。
 
 ## 发布
 
 ```sh
-npm publish
-# 预览期建议用 dist-tag 与 Blue 线对齐：
-npm publish --tag rc
+# 由 CI 在受保护的发布工作流中执行 npm publish
 ```
 
 发布前确认：
@@ -19,7 +17,7 @@ npm publish --tag rc
 ## 用户安装路径
 
 ```sh
-dsh plugin --profile blue add my-scope/blue-clock
+blue plugin install my-scope/blue-clock
 ```
 
 然后在 profile 的 `cordis.patch.yml` 加上插件行：
@@ -40,3 +38,9 @@ dsh plugin --profile blue add my-scope/blue-clock
 ## 插件市场
 
 [插件市场](/marketplace/)已上线：发布后往 [dsh-blue/marketplace](https://github.com/dsh-blue/marketplace) 提交收录，用户即可在市场一行安装（GitHub 可安装的插件就能收录，npm 不是门槛）。收录流程与字段说明见[收录指南](/marketplace/submit)。分发机制依旧是 npm/GitHub 源 + patch 行——保持包的独立可安装性（fixture 验证的意义就在这里），收录不需要对包做任何改造。
+## Plugin protocol and marketplace
+
+Published plugins must include `blue.plugin.json` and pass the static validator
+and packed fixture before marketplace submission. Use `blue plugin install` or
+`/plugin install`; GitHub sources must be pinned to a commit. See the [plugin
+package specification](/plugins/manifest) and the marketplace submission guide.
