@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Blue
   text: dsh 的插件化终端界面
-  tagline: v0.1.0-rc.9-test.5 · 预览版 —— 流式会话、工具卡片、审批浮层与底部面板，一切皆插件。
+  tagline: v0.1.0-rc.9-test.6 · 预览版 —— 流式会话、工具卡片、审批浮层与底部面板，一切皆插件。
   actions:
     - theme: brand
       text: 快速上手

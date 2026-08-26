@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-harness-adapter",
   "description": "Narrow capability-scoped Harness compatibility adapters for Blue",
-  "version": "0.1.0-rc.9-test.5",
+  "version": "0.1.0-rc.9-test.6",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -12,6 +12,7 @@
   },
   "files": ["lib/**/*"],
   "license": "MIT",
-  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@dsh-blue/blue-api": "^0.1.0-rc.9-test.5", "@dsh-blue/blue-frontend": "^0.1.0-rc.9-test.5" },
+  "repository": { "type": "git", "url": "git+https://github.com/dsh-blue/blue.git", "directory": "packages/harness-adapter" },
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@dsh-blue/blue-api": "^0.1.0-rc.9-test.6", "@dsh-blue/blue-frontend": "^0.1.0-rc.9-test.6" },
   "devDependencies": { "@deepseek-ai/cordis": "4.0.1", "@dsh-blue/blue-api": "workspace:*", "@dsh-blue/blue-frontend": "workspace:*" }
 }
