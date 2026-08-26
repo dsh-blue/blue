@@ -7,10 +7,11 @@
 
 import { describe, expect, it } from 'vitest'
 import { Terminal as HeadlessTerminal } from '@xterm/headless'
-import type { TUI } from '@earendil-works/pi-tui'
+import { CURSOR_MARKER, type TUI } from '@earendil-works/pi-tui'
 import type { BlueComponent, BlueFocusable, BlueRgbColor } from '../src/types.ts'
 import { createStableTuiReference, createTerminalRelease, normalizeWheelInput, startBlueTerminal } from '../src/terminal.ts'
 import type { FrameOverflowEntry } from '../src/frame-clamp.ts'
+import type { AmbientOutputStream } from '../src/output-recovery.ts'
 import { visibleWidth } from '../src/width.ts'
 import { FakeTerminal, waitForRender } from './fake-terminal.ts'
 
@@ -57,6 +58,10 @@ class AltScreenTerminal extends FakeTerminal {
     this.vt.write(data)
   }
 
+  externalWrite(data: string): void {
+    this.vt.write(data)
+  }
+
   async screen(): Promise<string[]> {
     await new Promise<void>(resolve => this.vt.write('', resolve))
     const buffer = this.vt.buffer.active
@@ -71,6 +76,17 @@ class AltScreenTerminal extends FakeTerminal {
   dispose(): void {
     this.vt.dispose()
   }
+}
+
+class TerminalOutputStream implements AmbientOutputStream {
+  constructor(private readonly terminal: AltScreenTerminal) {}
+
+  write = ((chunk: string | Uint8Array, encodingOrCallback?: BufferEncoding | (() => void), callback?: () => void): boolean => {
+    this.terminal.externalWrite(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString())
+    if (typeof encodingOrCallback === 'function') encodingOrCallback()
+    callback?.()
+    return true
+  }) as NodeJS.WriteStream['write']
 }
 
 describe('startBlueTerminal', () => {
@@ -353,6 +369,89 @@ describe('startBlueTerminal', () => {
 })
 
 describe('alternate-screen runtime', () => {
+  it('restores editor and footer cells overwritten by a large ambient JSON write', async () => {
+    const terminal = new AltScreenTerminal(40, 12)
+    const stdout = new TerminalOutputStream(terminal)
+    const stderr = new TerminalOutputStream(terminal)
+    const runtime = await startBlueTerminal(
+      terminal,
+      noProbe,
+      undefined,
+      undefined,
+      'alternate',
+      { stdout, stderr },
+    )
+    runtime.addChild({
+      render: () => Array.from({ length: 30 }, (_, index) => `transcript-${String(index).padStart(2, '0')}`),
+      invalidate: () => {},
+    })
+    runtime.addBottomChild(textComponent('editor-top'))
+    runtime.addBottomChild(textComponent(`editor-draft ${CURSOR_MARKER}`))
+    runtime.addBottomChild(textComponent('editor-bottom'))
+    runtime.addBottomChild(textComponent('footer-model'), 'bottom')
+    runtime.addBottomChild(textComponent('footer-hints'), 'bottom')
+    runtime.requestRender(true)
+    await waitForRender()
+
+    const clean = await terminal.screen()
+    expect(clean.slice(-5)).toEqual([
+      'editor-top',
+      'editor-draft ',
+      'editor-bottom',
+      'footer-model',
+      'footer-hints',
+    ])
+
+    const ambientJson = Array.from({ length: 10 }, (_, index) => {
+      return JSON.stringify({ code: `host-${String(index)}-${'x'.repeat(80)}` })
+    }).join('\r\n')
+    terminal.externalWrite(ambientJson)
+    const polluted = await terminal.screen()
+    expect(polluted.join('\n')).toContain('host-')
+
+    runtime.requestRender(true)
+    await waitForRender()
+    stdout.write(ambientJson)
+    await waitForRender()
+    const recovered = await terminal.screen()
+    expect(recovered.join('\n')).not.toContain('host-')
+    expect(recovered.slice(-5)).toEqual(clean.slice(-5))
+
+    await runtime.stop()
+    terminal.dispose()
+  })
+
+  it('releases ambient output during suspend and restores it on resume and stop', async () => {
+    const terminal = new AltScreenTerminal(40, 8)
+    const stdout = new TerminalOutputStream(terminal)
+    const stderr = new TerminalOutputStream(terminal)
+    const originalStdoutWrite = stdout.write
+    const originalStderrWrite = stderr.write
+    const runtime = await startBlueTerminal(
+      terminal,
+      noProbe,
+      undefined,
+      undefined,
+      'alternate',
+      { stdout, stderr },
+    )
+    const activeStdoutWrite = stdout.write
+    expect(activeStdoutWrite).not.toBe(originalStdoutWrite)
+    expect(stderr.write).not.toBe(originalStderrWrite)
+
+    await runtime.suspend(async () => {
+      expect(stdout.write).toBe(originalStdoutWrite)
+      expect(stderr.write).toBe(originalStderrWrite)
+    })
+    expect(stdout.write).not.toBe(originalStdoutWrite)
+    expect(stdout.write).toBe(activeStdoutWrite)
+
+    await runtime.stop()
+    expect(stdout.write).toBe(originalStdoutWrite)
+    expect(stderr.write).toBe(originalStderrWrite)
+    terminal.dispose()
+  })
+
   it('keeps raw wheel reports for the native viewport when no editor handler is installed', async () => {
     const terminal = new AltScreenTerminal(40, 10)
     const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')

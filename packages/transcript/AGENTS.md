@@ -48,7 +48,7 @@ BTW calls `blueSessionActions.createSideSession()`, holds the returned owned han
 
 ## Tool And Plugin Models
 
-`BlueModelToolService` converts official generic/terminal/diff/search/read/web presentation facts into readonly frontend views and never reads session events. The semantic transcript renderer keeps `ToolCallComponent` as the status/header/key-argument/shell chrome and nests the official view as its bounded body; tools without a presenter retain the generic rich fallback instead of receiving a synthetic name-only view. Ordinary collapsed presenter bodies retain the 12-row budget; bodies exceeding 40 rendered rows collapse to the first row plus the Ctrl-O expansion hint so giant raw-input objects cannot visually dominate the editor boundary. Expanded output remains capped at 200 rows. There is no `blueIntents` registry and no intent subpath export.
+`BlueModelToolService` converts official generic/terminal/diff/search/read/web presentation facts into readonly frontend views and never reads session events. The semantic transcript renderer keeps `ToolCallComponent` as the status/header/key-argument/shell chrome and nests the official view as its bounded body; tools without a presenter retain the generic rich fallback instead of receiving a synthetic name-only view. There is no `blueIntents` registry and no intent subpath export.
 
 `plugin-host-bridge.ts` is the only route from public plugin dock/status models into owner registries. Reordering replaces the mounted public dock block atomically; unload runs every screen/status disposer.
 

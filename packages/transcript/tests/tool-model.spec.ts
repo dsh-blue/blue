@@ -33,42 +33,12 @@ describe('BlueModelToolService', () => {
       call: { kind: 'code', code: rows }, result: { kind: 'code', code: rows },
     }))
     const collapsed = component.render(40)
-    expect(collapsed).toHaveLength(2)
-    expect(collapsed[0]).toBe('row 0')
+    expect(collapsed).toHaveLength(12)
     expect(collapsed.at(-1)).toContain('ctrl+o to expand')
     component.setExpanded(true)
     const expanded = component.render(40)
     expect(expanded).toHaveLength(200)
     expect(expanded.at(-1)).toContain('more lines')
-  })
-  it('keeps the ordinary twelve-row collapsed preview below the large-view threshold', () => {
-    const rows = Array.from({ length: 20 }, (_, index) => `row ${String(index)}`).join('\n')
-    const component = new ToolModelComponent(() => ({
-      kind: 'tool', id: 'ordinary', name: 'ordinary',
-      call: { kind: 'code', code: rows },
-    }))
-    const collapsed = component.render(40)
-    expect(collapsed).toHaveLength(12)
-    expect(collapsed[0]).toBe('row 0')
-    expect(collapsed.at(-1)).toContain('ctrl+o to expand')
-  })
-  it('keeps a giant generic raw-input object out of the collapsed editor boundary', () => {
-    const call = toolCallView({
-      card: 'generic',
-      title: 'Register Cordis Plugin',
-      rawInput: { host: `return { apply(ctx) { ${'x'.repeat(2_000)} } }` },
-    })
-    const component = new ToolModelComponent(() => ({
-      kind: 'tool', id: 'cordis', name: 'cordis_define', call,
-    }))
-    expect(component.render(40)).toEqual([
-      'Register Cordis Plugin',
-      expect.stringContaining('ctrl+o to expand'),
-    ])
-    component.setExpanded(true)
-    const expanded = component.render(40)
-    expect(expanded.length).toBeGreaterThan(2)
-    expect(expanded.join('\n')).toContain('"host"')
   })
   it('renders a statically registered model through the mounted closure', () => { const ctx = new Context(); const fixture = screenFixture(); const service = new BlueModelToolService(ctx, fixture.screen); service.register(tool('static')); expect((fixture.children[0] as ToolModelComponent).render(10)).toEqual(['result']); service.dispose() })
   it('cleans the previous screen when reattached', () => { const first = screenFixture(); const second = screenFixture(); const service = new BlueModelToolService(new Context(), first.screen); service.register(tool('reattach')); service.attach(second.screen); expect(first.children).toHaveLength(0); expect(second.children).toHaveLength(1); service.dispose() })

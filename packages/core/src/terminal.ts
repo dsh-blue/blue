@@ -20,6 +20,7 @@ import {
   type TuiInputListener,
 } from '@earendil-works/pi-tui'
 import { clampFrame, createFileOverflowSink, defaultOverflowDirectory, type OverflowSink } from './frame-clamp.ts'
+import { createOutputRecovery, type AmbientOutput } from './output-recovery.ts'
 import { buildTitleOsc0, copySelectionText } from './terminal-escape.ts'
 import { probeTerminalBackground, backgroundFromRgb, type BlueProbeProcess } from './terminal-info.ts'
 import type { BlueComponent, BlueOverlayHandle, BlueOverlayOptions, BlueRgbColor } from './types.ts'
@@ -246,6 +247,9 @@ export function createTerminalRelease(): () => Promise<void> {
  *   inject a recorder.
  * @param screenMode - renderer buffer mode. The Blue plugin selects
  *   `'alternate'`; `'main'` remains available for compatibility fixtures.
+ * @param ambientOutput - stdout/stderr streams that host plugins may write
+ *   around the renderer. Production passes process streams; source-plane VT
+ *   tests inject recording streams.
  * @returns the running stack's Blue-typed face.
  */
 export async function startBlueTerminal(
@@ -254,6 +258,7 @@ export async function startBlueTerminal(
   onSchemeChange?: (scheme: 'dark' | 'light') => void,
   overflow: OverflowSink = createFileOverflowSink({ directory: defaultOverflowDirectory() }),
   screenMode: BlueScreenMode = 'main',
+  ambientOutput?: AmbientOutput,
 ): Promise<BlueTerminalRuntime> {
   const alternate = screenMode === 'alternate'
   const current: TUI = alternate
@@ -387,6 +392,16 @@ export async function startBlueTerminal(
   }
   const background = backgroundFromRgb(await probe())
   current.start()
+  // Dynamic Host plugins intentionally log straight to process stdout/stderr.
+  // In alternate-screen mode that bypasses the renderer at its hardware
+  // cursor (normally inside the editor), so the text can overwrite both the
+  // draft and footer until another input happens to redraw them. Preserve the
+  // host write, then force a full frame on the next tick. Renderer writes are
+  // excluded by the recovery handle's terminal-write guard.
+  const outputRecovery = alternate && ambientOutput !== undefined
+    ? createOutputRecovery(terminal, ambientOutput, () => current.requestRender(true))
+    : undefined
+  outputRecovery?.activate()
   current.setTerminalColorSchemeNotifications(true)
   if (onSchemeChange !== undefined) current.onTerminalColorSchemeChange(onSchemeChange)
   let stopped = false
@@ -513,6 +528,7 @@ export async function startBlueTerminal(
       if (suspended) throw new Error('blue terminal suspend is already in flight')
       if (stopped) throw new Error('blue terminal is stopped; suspend refused')
       suspended = true
+      outputRecovery?.deactivate()
       // Main-screen mode: the child appends below the content in the
       // scrollback tail, so stop() takes no preserveScreen option — the
       // cursor drops below the rendered content and the external editor
@@ -532,6 +548,7 @@ export async function startBlueTerminal(
         // renderer must not restart; the settlement propagates as-is.
         if (!stopped && activeRuntime === runtime) {
           current.start()
+          outputRecovery?.activate()
           // stop() disabled OSC 2031 notifications; re-arm them, then force
           // a full repaint — start()'s self-SIGWINCH (Unix) has already
           // refreshed dimensions stale from any resize while suspended.
@@ -556,12 +573,14 @@ export async function startBlueTerminal(
         removeWheelNormalizer()
         removeViewportInput()
         removeContentScrollHandler()
+        outputRecovery?.deactivate()
         if (activeRuntime === runtime) activeRuntime = undefined
         return
       }
       // Drain before stopping so in-flight Kitty key releases cannot leak
       // into the parent shell as literal escape sequences.
       await terminal.drainInput()
+      outputRecovery?.deactivate()
       current.stop()
       removeWheelNormalizer()
       removeViewportInput()
