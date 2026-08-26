@@ -672,7 +672,7 @@ export const apply = ctx => globalThis.__blueE2E.viewBridgeApply(ctx)
     '- id: blue-interaction',
     `  name: ${fixture('blue-interaction.mjs', `
 export const name = 'blue-interaction'
-export const inject = ['blueSessionReader', 'blueSessionActions']
+export const inject = ['blueSessionReader', 'blueSessionActions', 'blueRequests', 'blueRetractions']
 export const apply = ctx => globalThis.__blueE2E.interactionApply(ctx)
 `)}`,
     '- id: blue-plugin-interaction-bridge',

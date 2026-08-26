@@ -906,6 +906,8 @@ export function fakeBlueContext(options: { readonly display?: boolean; readonly 
       return { ok: true as const, value: undefined }
     },
   })
+  ctx.provide('blueRequests', { begin: () => ({ sessionEpoch: 0, requestEpoch: 1, scope: 'main' }) } as never)
+  ctx.provide('blueRetractions', { tryRetract: () => false })
   const textOf = (message: FakeAgent['inbox']['nextTurn'][number]): string =>
     message.content.flatMap(block => block.type === 'text' && block.text !== undefined ? [block.text] : []).join('\n')
   const sessionActions = {

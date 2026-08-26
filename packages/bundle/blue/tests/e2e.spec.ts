@@ -607,6 +607,10 @@ describe('blue whole-tree e2e', () => {
     const agent = await currentAgent(tree)
     typeLine(tree.terminal, 'first')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('pondering the question at hand') })
+    // Creative plugins can register or replace commands while a turn is
+    // streaming. The app republishes the same session snapshot on that
+    // signal; it must not discard the input fiber's retraction receipt.
+    tree.ctx.emit('commands/change')
     tree.terminal.sendInput('\x1b')
     await agent.whenIdle()
     await vi.waitFor(async () => {
