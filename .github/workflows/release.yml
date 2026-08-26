@@ -128,7 +128,7 @@ jobs:
   promote:
     name: promote rc/latest
     needs: [candidate, registry-install]
-    if: ${{ always() && !contains(env.RELEASE_VERSION, '-test.') && (inputs.promote_only == true || needs.registry-install.result == 'success') }}
+    if: ${{ always() && !contains(inputs.version || github.ref_name, '-test.') && (inputs.promote_only == true || needs.registry-install.result == 'success') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
