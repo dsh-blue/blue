@@ -35,6 +35,7 @@ import {
 } from './components.ts'
 import { ThinkingComponent } from './thinking.ts'
 import { ToolModelComponent } from './tool-model.ts'
+import { ReadGroupComponent, groupReadsByFile } from './read-group.ts'
 import { parseToolArguments, summarizeToolCall } from './present.ts'
 import { summarizeToolText } from './envelope.ts'
 import type { TranscriptToolItem } from './types.ts'
@@ -220,7 +221,7 @@ export class TranscriptModelComponent implements BlueComponent {
       ? true
       : entry.kind === 'transcript-thinking'
         ? policy.thinkingExpanded
-        : entry.kind === 'transcript-tool'
+        : entry.kind === 'transcript-tool' || entry.kind === 'transcript-read-group'
           ? policy.toolsExpanded
           : false
     ;(target as ExpandableComponent).setExpanded?.(expanded)
@@ -261,6 +262,8 @@ export class TranscriptModelComponent implements BlueComponent {
         const body = presentation === undefined ? undefined : new ToolModelComponent(() => presentation, renderer.colors)
         return new ToolCallComponent(asToolItem(entry), renderer.colors, renderer.components, body)
       }
+      case 'transcript-read-group':
+        return new ReadGroupComponent(entry, renderer.colors, renderer.components)
       case 'transcript-error':
         return new ErrorMessageComponent({
           kind: 'error', seq: entry.seq, turn: entry.turn, message: entry.message,
@@ -279,6 +282,10 @@ export class TranscriptModelComponent implements BlueComponent {
       case 'transcript-tool': {
         const text = entry.result?.fullText ?? entry.result?.text
         return text === undefined ? summarizeToolCall(entry.name, entry.arguments) : summarizeToolText(text)
+      }
+      case 'transcript-read-group': {
+        const paths = groupReadsByFile(entry.reads).map(group => group.path)
+        return `Read ${String(entry.reads.length)} ${entry.reads.length === 1 ? 'call' : 'calls'}${paths.length === 0 ? '' : `: ${paths.join(', ')}`}`
       }
       case 'transcript-error': return entry.code === undefined ? entry.message : `${entry.message} (${entry.code})`
       case 'transcript-interrupted': return 'Interrupted'

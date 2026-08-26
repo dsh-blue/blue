@@ -26,9 +26,33 @@ export interface TranscriptAssistantModel { readonly kind: 'transcript-assistant
 export interface TranscriptThinkingModel { readonly kind: 'transcript-thinking'; readonly id: string; readonly seq: number; readonly turn: number; readonly step: number; readonly text: string; readonly streaming: boolean }
 export interface TranscriptToolResultModel { readonly text: string; readonly fullText?: string; readonly isError: boolean; readonly endedAt: number }
 export interface TranscriptToolModel { readonly kind: 'transcript-tool'; readonly id: string; readonly seq: number; readonly turn: number; readonly step: number; readonly callId: string; readonly name: string; readonly arguments: string; readonly startedAt: number; readonly result?: TranscriptToolResultModel; readonly presentation?: ToolPresentationModel }
+/** One bounded preview line carried for a read window's expanded view. */
+export interface ReadPreviewLine { readonly number: number; readonly text: string }
+/**
+ * One read call's renderer-neutral facts: what was asked for (the argument
+ * window), what came back (the actual line range and totals), and a bounded
+ * content preview. The model records per-call facts only — grouping reads by
+ * file is a renderer concern, so any presentation shape (per-file trees,
+ * flat rows) can be derived without touching producers.
+ */
+export interface ReadCallModel {
+  readonly callId: string
+  readonly seq: number
+  readonly turn: number
+  readonly step: number
+  readonly path?: string
+  readonly requestedRange?: { readonly first: number; readonly last: number }
+  readonly range?: { readonly first: number; readonly last: number }
+  readonly totalLines?: number
+  readonly state: 'pending' | 'ok' | 'error'
+  readonly error?: string
+  readonly previewLines?: readonly ReadPreviewLine[]
+}
+/** A run of consecutive read calls collapsed into one transcript entry. */
+export interface TranscriptReadGroupModel { readonly kind: 'transcript-read-group'; readonly id: string; readonly seq: number; readonly turn: number; readonly step: number; readonly reads: readonly ReadCallModel[] }
 export interface TranscriptErrorModel { readonly kind: 'transcript-error'; readonly id: string; readonly seq: number; readonly turn: number; readonly message: string; readonly code?: string }
 export interface TranscriptInterruptedModel { readonly kind: 'transcript-interrupted'; readonly id: string; readonly seq: number; readonly turn: number }
-export type TranscriptEntryModel = TranscriptUserModel | TranscriptAssistantModel | TranscriptThinkingModel | TranscriptToolModel | TranscriptErrorModel | TranscriptInterruptedModel
+export type TranscriptEntryModel = TranscriptUserModel | TranscriptAssistantModel | TranscriptThinkingModel | TranscriptToolModel | TranscriptReadGroupModel | TranscriptErrorModel | TranscriptInterruptedModel
 export interface TranscriptModel { readonly kind: 'transcript'; readonly id: string; readonly entries: readonly (View | TranscriptEntryModel)[]; readonly streaming?: boolean }
 
 export function freezeModel<T>(value: T): Readonly<T> {

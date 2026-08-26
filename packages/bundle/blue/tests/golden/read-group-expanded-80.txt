@@ -1,0 +1,40 @@
+    ⢀⣀⣰⣰⣰⣰⣰⣼⣼⠜   ⣺⣵⡀    ⢀⡀
+  ⢀⣸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣵⣐  ⢯⣿⣿⣵⣸⣼⣼⣿⠕  Welcome to Blue!
+ ⢨⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣽⣐⠂⠯⣿⣿⣿⣿⠿⠇   Send /help for help information.
+ ⣿⡟⠃⠃⠋⠏⠿⣿⣿⣿⣿⣿⣿⠯⢿⣿⣽⣴⣿⣿⡕
+ ⣿⣿      ⠋⢿⣿⣿⣿⣿ ⠋⣿⣿⣿⣿⠁      Directory: «cwd»
+ ⢯⣿⣵       ⠫⣿⣿⣿⣽⣼⣿⣿⣿⠗       Model:     mock · mock
+ ⠂⢯⣿⣵⡀   ⣰⣀ ⠊⢿⣿⣿⣿⣿⡿⠇        Version:   0.1.0-rc.8
+   ⠋⣿⣿⣼⣰⣰⣻⣿⣽⣰⣀⠋⢿⣿⣿⣼⣰⡀
+     ⠃⠏⠿⣿⣿⣿⣿⣿⠿⠟⠇⠂⠃⠃⠃
+
+ » read them
+
+ ✓ Read 2 files · 3 reads
+   ├─ src/a.ts
+   │  ├─ 1-100 of 130 ✓
+   │  │  1  line 1 of a
+   │  │  2  line 2 of a
+   │  │  3  line 3 of a
+   │  │  4  line 4 of a
+   │  │  5  line 5 of a
+   │  └─ 101-130 ✓
+   │     101  line 101 of a
+   │     102  line 102 of a
+   │     103  line 103 of a
+   │     104  line 104 of a
+   │     105  line 105 of a
+   └─ src/b.ts · 1-40 ✓
+      1  line 1 of b
+      2  line 2 of b
+      3  line 3 of b
+      4  line 4 of b
+      5  line 5 of b
+
+ ● read done
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ >                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ mock  «cwd»
+                                                                         ctx 10

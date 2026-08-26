@@ -99,6 +99,42 @@ describe('TranscriptModelService', () => {
     expect(rows).toContain('  file_path: a.ts')
   })
 
+  it('renders read groups through the tree component with tools-category expansion', () => {
+    const groupEntry: TranscriptEntryModel = {
+      kind: 'transcript-read-group', id: 'read-group:r1', seq: 4, turn: 1, step: 0,
+      reads: [
+        { callId: 'r1', seq: 4, turn: 1, step: 0, path: 'src/a.ts', range: { first: 1, last: 3 }, totalLines: 9, state: 'ok', previewLines: [{ number: 1, text: 'first line' }] },
+        { callId: 'r2', seq: 5, turn: 1, step: 0, path: 'src/a.ts', requestedRange: { first: 4, last: 6 }, state: 'pending' },
+        { callId: 'r3', seq: 6, turn: 1, step: 0, path: 'gone.ts', state: 'error', error: 'file not found' },
+      ],
+    }
+    const collapsedRows = new TranscriptModelComponent(() => model('reads', [groupEntry]), renderer()).render(80)
+    expect(collapsedRows.join('\n')).toContain('Reading 2 files')
+    expect(collapsedRows.join('\n')).toContain('├─ src/a.ts')
+    expect(collapsedRows.join('\n')).toContain('└─ gone.ts')
+    expect(collapsedRows.join('\n')).not.toContain('first line')
+
+    const expanded = new TranscriptModelComponent(() => model('reads', [groupEntry]), renderer())
+    expanded.setExpanded(true)
+    const expandedText = expanded.render(80).join('\n')
+    expect(expandedText).toContain('first line')
+    expect(expandedText).toContain('1  first line')
+
+    const plain = new TranscriptModelComponent(() => model('reads', [groupEntry])).render(80).join('\n')
+    expect(plain).toContain('Read 3 calls: src/a.ts, gone.ts')
+    const plainSingle = new TranscriptModelComponent(() => model('reads', [{
+      kind: 'transcript-read-group', id: 'read-group:solo', seq: 1, turn: 1, step: 0,
+      reads: [{ callId: 'solo', seq: 1, turn: 1, step: 0, path: 'solo.ts', state: 'ok' }],
+    }])).render(80).join('\n')
+    expect(plainSingle).toContain('Read 1 call: solo.ts')
+    const plainPathless = new TranscriptModelComponent(() => model('reads', [{
+      kind: 'transcript-read-group', id: 'read-group:none', seq: 1, turn: 1, step: 0,
+      reads: [{ callId: 'none', seq: 1, turn: 1, step: 0, state: 'ok' }],
+    }])).render(80).join('\n')
+    expect(plainPathless).toContain('Read 1 call')
+    expect(plainPathless).not.toContain(':')
+  })
+
   it('reconciles semantic renderer components, forwards expansion, and disposes retired entries', () => {
     let current = model('semantic', semanticEntries())
     const requestRender = vi.fn()

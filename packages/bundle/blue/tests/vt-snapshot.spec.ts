@@ -247,6 +247,60 @@ describe('blue VT layout snapshots (R2)', () => {
     expect(expanded).toContain('unchanged lines')
   })
 
+  it('read group: by-file tree collapsed, previews expanded', async () => {
+    setGitCommandRunner(NO_GIT)
+    const vt = new VtTerminal(80, 40)
+    const files: Record<string, string[]> = {
+      'src/a.ts': Array.from({ length: 130 }, (_, index) => `line ${String(index + 1)} of a`),
+      'src/b.ts': Array.from({ length: 40 }, (_, index) => `line ${String(index + 1)} of b`),
+    }
+    const readResultView = (path: string, offset: number, count: number) => ({
+      card: 'read' as const,
+      path,
+      offset,
+      lines: files[path]!.slice(offset - 1, offset - 1 + count).map((text, index) => ({ number: offset + index, text })),
+      totalLines: files[path]!.length,
+    })
+    const tree = await bootBlue([], {
+      script: [
+        toolCallResponse('call-ra1', 'read', { file_path: 'src/a.ts', offset: 1, limit: 100 }),
+        toolCallResponse('call-ra2', 'read', { file_path: 'src/a.ts', offset: 101, limit: 30 }),
+        toolCallResponse('call-rb', 'read', { file_path: 'src/b.ts', offset: 1, limit: 40 }),
+        textResponse('read done'),
+      ],
+      terminal: vt,
+    })
+    tree.ctx.tools.register({
+      name: 'read',
+      description: 'read a file',
+      parameters: { type: 'object', properties: {} },
+      presentCall: () => ({ card: 'generic', title: 'Read', kind: 'read' }),
+      presentResult: (args: unknown) => {
+        const { file_path: path, offset = 1, limit = 100 } = args as { file_path: string; offset?: number; limit?: number }
+        return readResultView(path, offset, Math.min(limit, (files[path] ?? []).length - offset + 1))
+      },
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: 'read' }] },
+      execute: () => Promise.resolve('read'),
+    })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'read them')
+    await agent.whenIdle()
+    // Collapsed: one tree card — files as parents, a.ts's windows nested —
+    // and never the file content.
+    const collapsed = await captureGolden(tree, vt, 'read-group-80')
+    expect(collapsed).toContain('Read 2 files · 3 reads')
+    expect(collapsed).toContain('├─ src/a.ts')
+    expect(collapsed).toContain('│  ├─ 1-100 of 130')
+    expect(collapsed).toContain('│  └─ 101-130')
+    expect(collapsed).toContain('└─ src/b.ts · 1-40')
+    expect(collapsed).not.toContain('line 1 of a')
+    tree.terminal.sendInput('\x0f')
+    await waitForRender()
+    // Expanded: bounded previews with file line numbers.
+    const expanded = await captureGolden(tree, vt, 'read-group-expanded-80')
+    expect(expanded).toContain('1  line 1 of a')
+  })
+
   it.each([80, 40])('the footer under full load at %i columns', async (columns) => {
     setGitCommandRunner((args) => {
       if (args[0] === 'branch') return 'main\n'

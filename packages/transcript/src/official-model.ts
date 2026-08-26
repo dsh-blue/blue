@@ -10,22 +10,34 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { BlueSessionSnapshot } from '@dsh-blue/blue-api'
 import type { BlueSessionProjectionReader } from '@dsh-blue/blue-app'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { ToolResult } from '@deepseek-ai/dsh-tools'
+import type { ToolCallView, ToolResult, ToolResultView } from '@deepseek-ai/dsh-tools'
 import {
   conversationProjectionSchema,
   type ConversationEntry,
   type ConversationProjection,
   type ConversationToolEntry,
 } from '@dsh-blue/blue-conversation'
-import type { TranscriptEntryModel, TranscriptModel } from '@dsh-blue/blue-frontend'
+import type { ReadCallModel, TranscriptEntryModel, TranscriptModel, TranscriptReadGroupModel } from '@dsh-blue/blue-frontend'
 import { createToolPresentationModel } from './tool-model.ts'
 import { createTranscriptModel, TRANSCRIPT_MODEL_WINDOW } from './transcript-model.ts'
-import { parseToolArguments, resolveCallView, resolveResultView, type ToolPresentationSource } from './present.ts'
+import { ellipsize, parseToolArguments, resolveCallView, resolveResultView, type ToolPresentationSource } from './present.ts'
 
 /** Official projection read face consumed by this compatibility adapter. */
 export interface ConversationProjectionSource {
   current(key: string): { readonly asOfSeq: number, readonly value: unknown } | undefined
   subscribe(listener: (key: string, value: unknown, seq: number) => void): () => void
+}
+
+/** Preview lines a read window carries for the expanded group view. */
+export const READ_PREVIEW_LINE_LIMIT = 5
+
+/** One tool entry with its presenter views resolved exactly once. */
+interface ResolvedTool {
+  readonly entry: ConversationToolEntry
+  readonly args: unknown
+  readonly outcome: ToolResult | undefined
+  readonly call: ToolCallView | undefined
+  readonly result: ToolResultView | undefined
 }
 
 function toolResult(entry: ConversationToolEntry): ToolResult | undefined {
@@ -37,18 +49,89 @@ function toolResult(entry: ConversationToolEntry): ToolResult | undefined {
   }
 }
 
-function toolModel(entry: ConversationToolEntry, tools: ToolPresentationSource): TranscriptEntryModel {
+/** Resolve one tool entry's presenter views (contained; void on any failure). */
+function resolveTool(entry: ConversationToolEntry, tools: ToolPresentationSource): ResolvedTool {
   const args = parseToolArguments(entry.arguments)
   const outcome = toolResult(entry)
   const call = resolveCallView(tools, entry.name, args)
-  const resultView = outcome === undefined ? undefined : resolveResultView(tools, entry.name, args, outcome)
-  const presentation = call === undefined && resultView === undefined
+  const result = outcome === undefined ? undefined : resolveResultView(tools, entry.name, args, outcome)
+  return { entry, args, outcome, call, result }
+}
+
+/**
+ * Whether a tool entry presents as a read — by presenter vocabulary, not
+ * tool name: the pending call declares `kind: 'read'`, or the settled result
+ * carries the read card.
+ */
+function isReadTool(resolved: ResolvedTool): boolean {
+  if (resolved.call?.card === 'generic' && resolved.call.kind === 'read') return true
+  return resolved.result?.card === 'read'
+}
+
+/** The read arguments this adapter understands, degraded to unknowns. */
+function readArgumentRecord(args: unknown): Record<string, unknown> {
+  if (args === undefined || typeof args !== 'object' || args === null) return {}
+  return args as Record<string, unknown>
+}
+
+function firstNonEmptyLine(text: string): string | undefined {
+  return text.split('\n').find(line => line.trim() !== '')
+}
+
+/** Build one read call's renderer-neutral facts from entry, arguments, and views. */
+function readCallModel(resolved: ResolvedTool): ReadCallModel {
+  const { entry, args, outcome, result } = resolved
+  const record = readArgumentRecord(args)
+  const view = result?.card === 'read' ? result : undefined
+  const path = typeof record['file_path'] === 'string' && record['file_path'] !== ''
+    ? record['file_path']
+    : typeof record['path'] === 'string' && record['path'] !== ''
+      ? record['path']
+      : view?.path
+  const offset = typeof record['offset'] === 'number' && record['offset'] > 0 ? record['offset'] : 1
+  const limit = typeof record['limit'] === 'number' ? record['limit'] : undefined
+  const lines = view?.lines ?? []
+  const state = outcome === undefined ? 'pending' : outcome.isError ? 'error' : 'ok'
+  // state 'error' implies entry.result exists: the outcome derives from it.
+  return {
+    callId: entry.callId,
+    seq: entry.seq,
+    turn: entry.turn,
+    step: entry.step,
+    ...(path === undefined ? {} : { path }),
+    ...(limit === undefined ? {} : { requestedRange: { first: offset, last: offset + limit - 1 } }),
+    ...(lines.length === 0 ? {} : { range: { first: lines[0]!.number, last: lines.at(-1)!.number } }),
+    ...(view?.totalLines === undefined ? {} : { totalLines: view.totalLines }),
+    state,
+    ...(state === 'error' ? { error: ellipsize(firstNonEmptyLine(entry.result!.text) ?? 'read failed', 120) } : {}),
+    ...(lines.length === 0 ? {} : {
+      previewLines: lines.slice(0, READ_PREVIEW_LINE_LIMIT).map(line => ({ number: line.number, text: line.text })),
+    }),
+  }
+}
+
+/** Fold a run of resolved read entries into one group model. */
+function readGroupModel(run: readonly ResolvedTool[]): TranscriptReadGroupModel {
+  const first = run[0]!
+  return {
+    kind: 'transcript-read-group',
+    id: `read-group:${String(first.entry.id)}`,
+    seq: first.entry.seq,
+    turn: first.entry.turn,
+    step: first.entry.step,
+    reads: run.map(readCallModel),
+  }
+}
+
+function toolModel(resolved: ResolvedTool): TranscriptEntryModel {
+  const { entry, outcome, call, result } = resolved
+  const presentation = call === undefined && result === undefined
     ? undefined
     : createToolPresentationModel({
         id: entry.id,
         name: entry.name,
         ...(call === undefined ? {} : { call }),
-        ...(resultView === undefined ? {} : { result: resultView }),
+        ...(result === undefined ? {} : { result }),
         ...(outcome === undefined ? {} : { outcome }),
       })
   return {
@@ -115,10 +198,34 @@ export function conversationTranscriptModel(
   projection: ConversationProjection,
   tools: ToolPresentationSource,
 ): TranscriptModel {
-  const entries = projection.entries.slice(-TRANSCRIPT_MODEL_WINDOW).flatMap((entry): TranscriptEntryModel[] => {
-    if (entry.kind === 'tool') return entry.channel === 'transcript' ? [toolModel(entry, tools)] : []
-    return [entryModel(entry)]
-  })
+  const entries: TranscriptEntryModel[] = []
+  let run: ResolvedTool[] = []
+  const flushRun = (): void => {
+    if (run.length === 0) return
+    entries.push(readGroupModel(run))
+    run = []
+  }
+  for (const entry of projection.entries.slice(-TRANSCRIPT_MODEL_WINDOW)) {
+    if (entry.kind !== 'tool') {
+      // Thinking is meta, not content: it neither renders into the run nor
+      // breaks it — reads stay grouped across the model's reasoning.
+      if (entry.kind !== 'thinking') flushRun()
+      entries.push(entryModel(entry))
+      continue
+    }
+    if (entry.channel !== 'transcript') continue
+    const resolved = resolveTool(entry, tools)
+    const continuesRun = run.length > 0
+      && entry.turn === run[0]!.entry.turn
+      && isReadTool(resolved)
+    if (!continuesRun) flushRun()
+    if (isReadTool(resolved)) {
+      run.push(resolved)
+      continue
+    }
+    entries.push(toolModel(resolved))
+  }
+  flushRun()
   return createTranscriptModel('official-conversation', entries, projection.streaming)
 }
 

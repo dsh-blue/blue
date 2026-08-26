@@ -84,8 +84,20 @@ export function toolResultView(view: ToolResultView | undefined, outcome: ToolRe
       return { kind: 'sections', sections: view.files.length === 0
         ? [{ title: view.title ?? name, body: { kind: 'text', text: '(no matches)' } }]
         : view.files.map(file => ({ title: file.path, body: { kind: 'code', code: file.matches.map(match => `${String(match.lineNumber)}: ${match.line}`).join('\n') } })) }
-    case 'read':
-      return { kind: 'sections', sections: [{ title: view.title ?? view.path, body: { kind: 'code', code: view.lines.map(line => `${String(line.number)}  ${line.text}`).join('\n'), ...(view.lang === undefined ? {} : { language: view.lang }) } }] }
+    case 'read': {
+      // The compact registry shape: the window facts, never the content —
+      // the transcript's grouped card renders from the group model instead.
+      const first = view.lines[0]?.number
+      const last = view.lines.at(-1)?.number
+      const window = first === undefined || last === undefined
+        ? `from line ${String(view.offset)}`
+        : `${String(first)}-${String(last)}`
+      const open = view.totalLines > (last ?? view.offset - 1) ? ` of ${String(view.totalLines)}` : ''
+      return { kind: 'fields', fields: [
+        { label: 'path', value: view.path },
+        { label: 'lines', value: `${window}${String(open)}` },
+      ] }
+    }
     case 'web':
       if (view.kind === 'fetch') return { kind: 'fields', fields: [
         { label: 'url', value: view.url },
