@@ -26,6 +26,15 @@ Core is the tree's ONLY package allowed to import `@earendil-works/pi-tui` (plus
 
 Both alternate-screen layout bands preserve the D48 render-exit width backstop before pi-tui lays out the frame. The transcript's `FrameClampedContainer` reuses a checked frame for the same width, child identities, and child row-array identities, so stable long transcript rows do not repeat ANSI-aware width scans on dock-only redraws. The height-aware dock container renders every child once, reserves fixed editor/dialog/footer rows, then allocates the remainder to passive panes by descending priority while retaining one transcript row whenever possible. `scrollContent()` delegates to the primary `ScrollView`; its ordinary differential render keeps the dock fixed without resetting render state or emitting a full-screen clear. `contentChanged()` preserves follow-end until the user scrolls away, and `followContent()` returns to the tail. Raw wheel reports remain available to the renderer's native viewport route; the focused editor consumes its wheel reports before the AltScreen listener, while focused replacement panels receive normalized Up/Down input. `setContentScrollHandler()` retains the editor-context wheel/PageUp/PageDown/End path without stealing Up/Down from editor history or converting the main viewport's raw mouse event.
 
+`output-recovery.ts` protects that alternate screen from Host code that writes
+directly to process stdout/stderr (the dynamic Cordis Host console is the
+canonical consumer). The original write still lands, then a forced frame on
+the next tick restores the renderer-owned editor/footer cells. Renderer
+terminal writes are reentrantly excluded. Suspend deactivates the guards before
+releasing the tty, resume reactivates them after terminal start, and stop
+restores the original stream methods so no process-global hook escapes the
+runtime Fiber.
+
 ## Suspend/resume seam (S31, `runtime.suspend` → `blueScreen.suspend`)
 
 The recoverable suspend composes pi-tui 0.84.2's own lifecycle primitives — `TUI.stop()` / `TUI.start()` / `requestRender(true)` — and is deliberately NOT the teardown `runtime.stop()`. State machine (closure flags `stopped`/`suspended` inside `startBlueTerminal`):

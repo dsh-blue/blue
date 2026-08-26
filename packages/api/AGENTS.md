@@ -22,6 +22,14 @@ across consumers, reserves Blue's owner namespace, and synchronously notifies
 the Blue-owned adapters. An adapter admission failure rolls the registration
 back before `register()` returns, so an existing slash-command name cannot be
 shadowed temporarily.
+Capability availability is owned by active adapter Fibers rather than the
+hard-coded public capability list. View and interaction bridges attach their
+exact capability sets through `attachBluePluginHostCapabilities`; reference
+counts allow overlapping owner generations. `open()` returns
+`BLUE_CAPABILITY_ABSENT` unless every requested capability has an active owner,
+and existing registry/publish handles recheck before each write. Aggregate
+contributions survive a bridge unload so a replacement bridge restores them
+from its initial snapshot; consumer or host unload still deletes them.
 Owner state lives in a Host-realm `Symbol.for`-keyed WeakMap rather than on the
 service object or in one module-local singleton: source/build or link/store
 copies in the same lockstep profile share it (the D37 cross-store lesson),

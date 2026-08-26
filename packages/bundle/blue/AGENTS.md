@@ -34,13 +34,25 @@ Three parts:
 2. Ahead of the insert, the web-app bundle's own ruling is ported row-for-row: twenty-three dsh-base agent-plane rows disabled (`tool-*`, plan-mode, the compaction trio, the delegation four, the workflow trio, `agent-instructions`; `tool-subagent-report` and `system-prompt` stay host-plane), which moves the agent plane behind the presets and gives `/preset` true replacement semantics.
 3. The host-plane `cordis-host-runner` row (also the web-app's own ruling — dsh-base mounts no provider) supplies `dynamicCordisRunner` + `cordisInspect`, the inject of the shipped `cordis` preset's `tool-cordis` row; without it that preset's standing mount fails the roster's activation audit. Blue wraps it in `blue-creative-host`, a Cordis isolate realm that withholds raw Blue services, commands, session projections, and approval/plan controls from every dynamic child while leaving `bluePluginHost` inherited as the additive UI route. The runner's required `tools` and Agent ownership plane stay inherited. The web client's half (`cordis-client-runner`) is deliberately not ported.
 
+The creative isolate enumerates every `blue*` Context service except
+`bluePluginHost`, including validation-only adapters so installing one cannot
+widen a dynamic child's authority. `bundle.spec.ts` mechanically extracts
+Context declarations, literal providers, and Blue service constants from all
+package sources; a new service fails until the isolate or explicit public
+allowlist is updated. Owner registries are never a compatibility fallback.
+
+The three creative authoring skills resolve from the preset-local `baseUrl`.
+Every `SKILL.md` frontmatter must parse through the pinned filesystem skill
+provider and declare the same name as its directory; `presets.spec.ts` guards
+this discovery contract because a malformed file is ignored even when shipped.
+
 `bundle.spec.ts` pins the disable list to the web-app's (drift guard) and asserts every id addresses a real base row. The runtime dependencies `@deepseek-ai/dsh-agent-presets` and `@deepseek-ai/dsh-cordis-host-runner` ride the bundle's `dependencies` so `dsh plugin add` installs them.
 
 ## Distribution contract
 
 The bundle tarball contains runtime JS, declarations, `cordis.patch.yml`, and the complete `presets/` roster. Its frontend-runtime Blue dependencies are `workspace:^` in the repository and exact versions after packing. The candidate release workflow installs this tarball in a scratch dsh profile before promoting any tag.
 
-The whole-tree e2e keeps `/help` scroll assertions aligned with the expanded command roster and the creative preset host-runner dependency; package composition remains the source of truth for both rows. Cases that mount real file-backed settings without exercising first-run onboarding seed their temporary credentials file explicitly, so the fixture never inherits success from a developer-machine API key. VT goldens pin the composed tool-card chrome (including bounded official presenter bodies) and horizontal model/effort variants, so renderer changes update both behavior assertions and the affected snapshots.
+The whole-tree e2e keeps `/help` scroll assertions aligned with the expanded command roster and mounts the published host runner plus tool-cordis package for creative-mode coverage. Scripted model calls exercise `cordis_define`/`cordis_run`, VM isolation, dock/status/command/notice rendering, stop, restart, update, rollback, process restart, and missing-bridge diagnostics through the real chain. The safe-retraction case emits a creative-style `commands/change` during streamed thinking and requires the same-session reader refresh to preserve the editor receipt, erase the whole turn, and leave no interruption tombstone. Cases that mount real file-backed settings without exercising first-run onboarding seed their temporary credentials file explicitly, so the fixture never inherits success from a developer-machine API key. VT goldens pin the composed tool-card chrome (including bounded official presenter bodies) and horizontal model/effort variants, so renderer changes update both behavior assertions and the affected snapshots.
 
 VT snapshot fixtures use the shared tracked-temp helper for their fixed cwd as
 well as per-case settings and attachment roots, so a worker cannot leave one

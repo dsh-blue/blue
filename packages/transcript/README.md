@@ -23,7 +23,7 @@ The main plugin owns four renderer bridges:
 
 Footer subplugins provide model, cwd, git, title, context, and session-mode facts. Activity, todo, and agents panes consume the `blueConversationFacts` projection through `blueSessionFacts`; the BTW pane obtains a disposable side session through `blueSessionActions` and renders its official conversation projection. No pane receives an Agent or Session.
 
-`./plugin-host-bridge` is the owner adapter for third-party renderer-neutral dock and status contributions. Every registration, subscription, timer, and screen child is Fiber-bound and removed on unload.
+`./plugin-host-bridge` is the owner adapter for third-party renderer-neutral dock and status contributions. It advertises those capabilities only while its Fiber is active; a replacement bridge restores retained public contributions from the host snapshot. Every registration, subscription, timer, and screen child is Fiber-bound and removed on unload.
 
 ## Other Subpaths
 

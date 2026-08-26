@@ -23,7 +23,7 @@ Blue 的 projection-backed transcript、status、tool 与 dock model 终端渲�
 
 Footer 子插件提供 model、cwd、git、title、context 与 session mode 信息。Activity、todo 与 agents pane 通过 `blueSessionFacts` 消费 `blueConversationFacts` projection；BTW pane 通过 `blueSessionActions` 获取可释放的旁路会话并渲染其官方 conversation projection。任何 pane 都不会接收 Agent 或 Session。
 
-`./plugin-host-bridge` 是第三方 renderer-neutral dock/status contribution 的 owner adapter。所有 registration、subscription、timer 与 screen child 都绑定 Fiber，并在 unload 时移除。
+`./plugin-host-bridge` 是第三方 renderer-neutral dock/status contribution 的 owner adapter。只有其 Fiber 存活时才会宣告这些 capability；替换后的 bridge 会从 host snapshot 恢复仍由公开 API 持有的 contribution。所有 registration、subscription、timer 与 screen child 都绑定 Fiber，并在 unload 时移除。
 
 ## 其他子路径
 

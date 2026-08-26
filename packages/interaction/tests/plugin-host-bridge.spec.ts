@@ -91,6 +91,13 @@ describe('plugin host interaction bridge', () => {
 
     for (const cleanup of effects.splice(0)) cleanup()
     expect(definitions.has('spark')).toBe(false)
+    expect(opened.value.commands!.register({ id: 'absent', label: 'Absent', execute: async () => ({ ok: true, value: undefined }) })).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
+    expect(opened.value.notifications!.publish({ id: 'absent', view: { kind: 'text', content: 'absent' } })).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
+
+    apply(ctx)
+    expect(definitions.has('spark')).toBe(true)
+    expect(opened.value.notifications!.publish({ id: 'restored', view: { kind: 'text', content: 'restored' } })).toEqual({ ok: true, value: undefined })
+    for (const cleanup of effects.splice(0)) cleanup()
     owner.dispose()
     expect(definitions.has('trace')).toBe(true)
   })

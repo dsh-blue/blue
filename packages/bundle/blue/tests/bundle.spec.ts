@@ -4,7 +4,7 @@
  * empty installer.
  */
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -21,6 +21,7 @@ const patch = readFileSync(join(patchDir, '..', 'cordis.patch.yml'), 'utf8')
 const basePatch = readFileSync(join(patchDir, '..', 'node_modules', '@deepseek-ai', 'dsh-base', 'cordis.patch.yml'), 'utf8')
 /** The web-app bundle patch: the harness's own thin-host ruling Blue mirrors. */
 const webAppPatch = readFileSync(join(patchDir, '..', 'node_modules', '@deepseek-ai', 'dsh-web-app', 'cordis.patch.yml'), 'utf8')
+const packagesRoot = join(patchDir, '..', '..', '..')
 
 /**
  * The top-level rows a patch disables: row ids addressed at column 0 whose
@@ -36,6 +37,21 @@ function disabledIds(text: string): string[] {
     if (id !== undefined && /^ {2}disabled: true$/m.test(row)) ids.push(id)
   }
   return ids
+}
+
+function declaredBlueServices(): string[] {
+  const names = new Set<string>()
+  for (const relativePath of readdirSync(packagesRoot, { recursive: true })) {
+    const portablePath = relativePath.replaceAll('\\', '/')
+    if (!/(?:^|\/)src\/.*\.ts$/u.test(portablePath)) continue
+    const source = readFileSync(join(packagesRoot, relativePath), 'utf8')
+    for (const declaration of source.matchAll(/interface Context\s*\{([^}]*)\}/gsu)) {
+      for (const property of declaration[1]!.matchAll(/\b(blue[A-Z][A-Za-z0-9]*)\s*:/gu)) names.add(property[1]!)
+    }
+    for (const provider of source.matchAll(/\b(?:super|provide)\s*\([^'"]*['"](blue[A-Z][A-Za-z0-9]*)['"]/gu)) names.add(provider[1]!)
+    for (const constant of source.matchAll(/BLUE_[A-Z_]+_SERVICE\s*=\s*['"](blue[A-Z][A-Za-z0-9]*)['"]/gu)) names.add(constant[1]!)
+  }
+  return [...names].sort()
 }
 
 describe('blue bundle', () => {
@@ -139,6 +155,15 @@ describe('blue bundle', () => {
       dependencies?: Record<string, string>
     }
     expect(manifest.dependencies?.['@deepseek-ai/dsh-cordis-host-runner']).toBeDefined()
+  })
+
+  it('isolates every declared Blue runtime service except the public plugin host', () => {
+    const creativeBlock = /^ {4}- id: blue-creative-host$([\s\S]*?)^ {6}config:$/mu.exec(patch)?.[1] ?? ''
+    const isolated = new Set([...creativeBlock.matchAll(/^ {8}([A-Za-z][A-Za-z0-9]*): true$/gmu)].map(match => match[1]!))
+    const allowlisted = new Set(['bluePluginHost'])
+    const internal = declaredBlueServices().filter(service => !allowlisted.has(service))
+    expect([...isolated].filter(service => service.startsWith('blue')).sort()).toEqual(internal)
+    expect(isolated.has('bluePluginHost')).toBe(false)
   })
 
   it('keeps the host fallback persona valid for agents without preset model variables', () => {

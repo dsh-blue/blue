@@ -78,6 +78,7 @@ export default globalThis.__blueInteractionFixtures.userQuestions
 `)
   writeFileSync(join(dir, 'interaction.mjs'), `
 export const name = 'blue-interaction'
+export const inject = ['blueSessionReader', 'blueSessionActions', 'blueRequests', 'blueRetractions']
 export const apply = ctx => globalThis.__blueInteractionFixtures.interactionApply(ctx)
 `)
 
@@ -97,6 +98,8 @@ export const apply = ctx => globalThis.__blueInteractionFixtures.interactionAppl
     skillSnapshot: async () => ({ ok: false, code: 'BLUE_CAPABILITY_ABSENT', absent: { capability: 'skills', reason: 'not composed' } }),
     subscribeSkillChanges: () => ({ disposed: false, dispose() {} }),
   } as never)
+  ctx.provide('blueRequests', { begin: () => ({ sessionEpoch: 0, requestEpoch: 1, scope: 'main' }) } as never)
+  ctx.provide('blueRetractions', { tryRetract: () => false })
   ctx.provide('blueSessionProjections', {
     current: () => undefined,
     currentMany: () => undefined,

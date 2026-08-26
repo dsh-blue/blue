@@ -116,7 +116,7 @@ function wheelDirection(data: string): 'up' | 'down' | undefined {
 /** Stable Cordis plugin name. */
 export const name = 'blue-input'
 /** Services required before the editor can mount. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'commands', 'blueSessionReader', 'blueSessionActions', 'blueSkillsCatalog', 'blueInteractionState']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'commands', 'blueSessionReader', 'blueSessionActions', 'blueRequests', 'blueRetractions', 'blueSkillsCatalog', 'blueInteractionState']
 
 /**
  * The single-line hint rendered under the input editor. Only the transient
@@ -333,7 +333,7 @@ export function apply(ctx: Context): void {
         historyText: line,
         ...(transformed.rollback === undefined ? {} : { rollback: transformed.rollback }),
       }
-      ctx.get('blueRequests')?.begin('main')
+      ctx.blueRequests.begin('main')
       // The S29 skill pipeline rewrites only model-facing text; the editor
       // candidate and history retain exactly what the user submitted.
       return
@@ -427,7 +427,7 @@ export function apply(ctx: Context): void {
     if (ctx.blueSessionReader.current()?.status === 'running') {
       const candidate = retractionCandidate
       if (candidate !== undefined
-        && ctx.get('blueRetractions')?.tryRetract(candidate.messageId) === true) {
+        && ctx.blueRetractions.tryRetract(candidate.messageId)) {
         candidate.rollback?.()
         editor.removeLatestHistory?.(candidate.historyText)
         draft.stashHistory(editor.getHistory())
@@ -491,7 +491,7 @@ export function apply(ctx: Context): void {
       if (text.length === 0 || ctx.blueSessionReader.current() === null) return false
       // Steered text runs the same `#name` → `/name` skill rewrite as a
       // submitted follow-up: the gesture reaches the model either way.
-      ctx.get('blueRequests')?.begin('main')
+      ctx.blueRequests.begin('main')
       const steered = ctx.blueSessionActions.steer(
         applyReversibleSubmitTransformers(ctx, rewriteSkillTokens(ctx, text)).blocks,
       )
@@ -569,8 +569,13 @@ export function apply(ctx: Context): void {
   // A session switch settles navigation notices such as "resuming" and
   // "creating rewind branch". Clear the old session's transient text before
   // re-deriving slash feedback against the new agent.
-  const sessionRegistration = ctx.blueSessionReader.subscribe(() => {
-    retractionCandidate = undefined
+  let sessionId = ctx.blueSessionReader.current()?.id
+  const sessionRegistration = ctx.blueSessionReader.subscribe((session) => {
+    const nextId = session?.id
+    if (nextId !== sessionId) {
+      sessionId = nextId
+      retractionCandidate = undefined
+    }
     notice = undefined
     refreshHint()
   })

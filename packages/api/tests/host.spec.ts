@@ -9,6 +9,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import {
   BluePluginHostService,
+  attachBluePluginHostCapabilities,
   apply,
   name,
   snapshotBluePluginHost,
@@ -40,6 +41,12 @@ function command(id: string) {
   return { id, label: id, execute: async () => ({ ok: true as const, value: undefined }) }
 }
 
+function attach(host: BluePluginHostService, capabilities: BluePluginManifest['capabilities'] = ['commands', 'status', 'dock', 'notifications']) {
+  const owner = consumer()
+  attachBluePluginHostCapabilities(host, owner, capabilities)
+  return owner
+}
+
 describe('BluePluginHostService', () => {
   it('rejects malformed and incompatible manifests at the API boundary', () => {
     const host = new BluePluginHostService(new Context())
@@ -54,6 +61,7 @@ describe('BluePluginHostService', () => {
 
   it('exposes only declared capabilities and freezes the public projection', () => {
     const host = new BluePluginHostService(new Context())
+    attach(host, ['status'])
     const apiResult = host.open(consumer(), manifest(['status']))
     expect(apiResult.ok).toBe(true)
     if (!apiResult.ok) return
@@ -73,6 +81,7 @@ describe('BluePluginHostService', () => {
 
   it('enforces registry capability, contribution shape, and duplicate ids', () => {
     const host = new BluePluginHostService(new Context())
+    attach(host, ['commands'])
     const apiResult = host.open(consumer(), manifest(['commands']))
     expect(apiResult.ok).toBe(true)
     if (!apiResult.ok) return
@@ -93,6 +102,7 @@ describe('BluePluginHostService', () => {
 
   it('disposes registrations when the consumer effect unloads', () => {
     const host = new BluePluginHostService(new Context())
+    attach(host, ['commands', 'status', 'dock'])
     const c = consumer()
     const apiResult = host.open(c, manifest(['commands', 'status', 'dock']))
     expect(apiResult.ok).toBe(true)
@@ -115,6 +125,7 @@ describe('BluePluginHostService', () => {
 
   it('fans notifications to all consumers and removes listeners on dispose', () => {
     const host = new BluePluginHostService(new Context())
+    attach(host, ['notifications'])
     const first = consumer()
     const second = consumer()
     const firstApi = host.open(first, manifest(['notifications']))
@@ -136,6 +147,7 @@ describe('BluePluginHostService', () => {
 
   it('aggregates contributions globally, sorts them, and rejects cross-plugin duplicates', () => {
     const host = new BluePluginHostService(new Context())
+    attach(host, ['status'])
     const snapshots: string[][] = []
     const observed = subscribeBluePluginHost(host, snapshot => snapshots.push(snapshot.status.map(entry => entry.id)))
     const first = host.open(consumer(), manifest(['status']))
@@ -153,6 +165,7 @@ describe('BluePluginHostService', () => {
 
   it('rejects owner ids, malformed capability payloads, and adapter admission failures', () => {
     const host = new BluePluginHostService(new Context())
+    attach(host, ['commands', 'status', 'dock'])
     const opened = host.open(consumer(), manifest(['commands', 'status', 'dock']))
     expect(opened.ok).toBe(true)
     if (!opened.ok) return
@@ -182,6 +195,7 @@ describe('BluePluginHostService', () => {
 
   it('validates owner notifications and contains notification adapter failures', () => {
     const host = new BluePluginHostService(new Context())
+    attach(host, ['notifications'])
     const opened = host.open(consumer(), manifest(['notifications']))
     expect(opened.ok).toBe(true)
     if (!opened.ok) return
@@ -199,6 +213,7 @@ describe('BluePluginHostService', () => {
   it('clears all registries and listeners when the host service unloads', async () => {
     const ctx = new Context()
     const host = new BluePluginHostService(ctx)
+    const bridge = attach(host)
     const c = consumer()
     const apiResult = host.open(c, manifest())
     expect(apiResult.ok).toBe(true)
@@ -213,9 +228,39 @@ describe('BluePluginHostService', () => {
     expect(api.commands!.list()).toEqual([])
     expect(api.status!.list()).toEqual([])
     expect(api.dock!.list()).toEqual([])
-    expect(api.notifications!.publish({ id: 'after-dispose', view })).toEqual({ ok: true, value: undefined })
+    expect(api.notifications!.publish({ id: 'after-dispose', view })).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
     expect(received).toEqual([])
     expect(() => snapshotBluePluginHost(host)).toThrow('not active')
+    bridge.dispose()
+  })
+
+  it('tracks owner adapter readiness across unload and reload without dropping contributions', () => {
+    const host = new BluePluginHostService(new Context())
+    expect(host.open(consumer(), manifest(['dock']))).toEqual({
+      ok: false,
+      code: 'BLUE_CAPABILITY_ABSENT',
+      message: 'capability "dock" has no active Blue owner adapter',
+    })
+    expect(() => attachBluePluginHostCapabilities(host, consumer(), ['dock', 'tools'])).toThrow('unsupported capability "tools"')
+    expect(host.open(consumer(), manifest(['dock']))).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
+
+    const firstOwner = attach(host, ['dock', 'notifications'])
+    const secondOwner = attach(host, ['dock'])
+    const opened = host.open(consumer(), manifest(['dock', 'notifications']))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    expect(opened.value.dock!.register({ id: 'persistent', view })).toMatchObject({ ok: true })
+
+    firstOwner.dispose()
+    expect(opened.value.dock!.register({ id: 'while-second-owner-lives', view })).toMatchObject({ ok: true })
+    expect(opened.value.notifications!.publish({ id: 'notice', view })).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
+    secondOwner.dispose()
+    expect(opened.value.dock!.register({ id: 'while-absent', view })).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
+    expect(snapshotBluePluginHost(host).dock.map(entry => entry.id)).toEqual(['persistent', 'while-second-owner-lives'])
+
+    attach(host, ['dock'])
+    expect(host.open(consumer(), manifest(['dock']))).toMatchObject({ ok: true })
+    expect(snapshotBluePluginHost(host).dock.map(entry => entry.id)).toEqual(['persistent', 'while-second-owner-lives'])
   })
 
   it('mounts as a Cordis plugin entry', () => {
