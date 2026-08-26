@@ -7,11 +7,12 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { BlueScreenService } from '../src/screen.ts'
 import type { BlueTerminalRuntime } from '../src/terminal.ts'
-import type { BlueComponent, BlueOverlayHandle } from '../src/types.ts'
+import type { BlueComponent, BlueDockOptions, BlueOverlayHandle } from '../src/types.ts'
 
 interface Recorded {
   added: BlueComponent[]
   bottomAdded: BlueComponent[]
+  dockAdded: { component: BlueComponent, options: BlueDockOptions | undefined }[]
   removed: BlueComponent[]
   focused: (BlueComponent | null)[]
   overlays: { component: BlueComponent; options?: unknown }[]
@@ -30,7 +31,7 @@ function recordingRuntime(): BlueTerminalRuntime & Recorded {
     unfocus: () => {},
     isFocused: () => true,
   }
-  const recorded: Recorded = { added: [], bottomAdded: [], removed: [], focused: [], overlays: [], renders: [], suspends: [], titles: [], scrolls: [] }
+  const recorded: Recorded = { added: [], bottomAdded: [], dockAdded: [], removed: [], focused: [], overlays: [], renders: [], suspends: [], titles: [], scrolls: [] }
   return {
     ...recorded,
     columns: 120,
@@ -40,6 +41,9 @@ function recordingRuntime(): BlueTerminalRuntime & Recorded {
     },
     addBottomChild(component) {
       recorded.bottomAdded.push(component)
+    },
+    addDockChild(component, options) {
+      recorded.dockAdded.push({ component, options })
     },
     removeChild(component) {
       recorded.removed.push(component)
@@ -105,6 +109,11 @@ describe('BlueScreenService', () => {
     expect(runtime.bottomAdded).toEqual([component])
     bottomDispose()
     expect(runtime.removed).toEqual([component, component, component])
+
+    const dockDispose = screen.addDockChild?.(component, { priority: 40 })
+    expect(runtime.dockAdded).toEqual([{ component, options: { priority: 40 } }])
+    dockDispose?.()
+    expect(runtime.removed).toEqual([component, component, component, component])
 
     screen.setFocus(component)
     screen.setFocus(null)

@@ -392,7 +392,7 @@ export function apply(ctx: Context): void {
 
   const pane = new BtwPaneComponent(colors, components, state, () => screen.rows)
   const model = (): DockModel => ({
-    kind: 'dock', id: 'blue.dock.btw', placement: 'bottom', priority: 40,
+    kind: 'dock', id: 'blue.dock.btw', placement: 'bottom', priority: 100,
     view: { kind: 'text', text: state.open ? 'BTW' : '' }, collapsed: !state.open,
   })
   ctx.effect(() => ctx.blueDockModels.register(model, (_model, width) => pane.render(width)))

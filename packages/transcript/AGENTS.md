@@ -40,13 +40,15 @@ User, assistant, thinking, tool, error, and interruption models reuse the packag
 
 Activity, todo, and agents consume `blueSessionFacts`. Activity derives its phase from projection facts and owns only its presentation timer. Todo renders the projected whole list and keeps only its local expanded/collapsed view state. Agents renders projected spawn-class facts plus bounded direct-child overlays; no child Session or event subscription enters the renderer.
 
-BTW calls `blueSessionActions.createSideSession()`, holds the returned owned handle for one pane lifetime, reads its official `blueConversation` projection through the opaque identity, and disposes the handle on close/unload. Its dock renderer has no trailing spacer: the gutter-wrapped pane side borders meet the connected editor's `├┤` row directly. Parent seeding and Agent status filtering remain in app.
+Bottom `DockModel` entries mount individually through core's shared dock allocator instead of rendering as one unbudgeted group. Their existing renderer-neutral `priority` controls both scarce-row allocation (larger first) and visual proximity to the fixed editor; public plugin dock contributions use the same seam. Left/right placement lanes retain stable group roots.
+
+BTW calls `blueSessionActions.createSideSession()`, holds the returned owned handle for one pane lifetime, reads its official `blueConversation` projection through the opaque identity, and disposes the handle on close/unload. Its interactive dock model uses priority 100 so it receives scarce rows before passive agents/todo/queue panes. Its renderer has no trailing spacer: the gutter-wrapped pane side borders meet the connected editor's `├┤` row directly. Parent seeding and Agent status filtering remain in app.
 
 ## Tool And Plugin Models
 
 `BlueModelToolService` converts official generic/terminal/diff/search/read/web presentation facts into readonly frontend views and never reads session events. The semantic transcript renderer keeps `ToolCallComponent` as the status/header/key-argument/shell chrome and nests the official view as its bounded body; tools without a presenter retain the generic rich fallback instead of receiving a synthetic name-only view. There is no `blueIntents` registry and no intent subpath export.
 
-`plugin-host-bridge.ts` is the only route from public plugin dock/status models into owner registries. Reordering replaces the mounted public dock block atomically; unload runs every screen/status disposer.
+`plugin-host-bridge.ts` is the only route from public plugin dock/status models into owner registries. Reordering replaces the individually budgeted public dock mounts atomically; unload runs every screen/status disposer.
 
 ## Package Surface
 

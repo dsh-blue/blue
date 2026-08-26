@@ -57,6 +57,11 @@ class AltScreenTerminal extends FakeTerminal {
     this.vt.write(data)
   }
 
+  override resize(columns: number, rows: number): void {
+    this.vt.resize(columns, rows)
+    super.resize(columns, rows)
+  }
+
   async screen(): Promise<string[]> {
     await new Promise<void>(resolve => this.vt.write('', resolve))
     const buffer = this.vt.buffer.active
@@ -353,6 +358,64 @@ describe('startBlueTerminal', () => {
 })
 
 describe('alternate-screen runtime', () => {
+  it('budgets passive panes without hiding fixed slots and recomputes on resize', async () => {
+    const terminal = new AltScreenTerminal(40, 10)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    const counts = new Map<string, number>()
+    const counted = (label: string, rows: number): BlueComponent => ({
+      render: () => {
+        counts.set(label, (counts.get(label) ?? 0) + 1)
+        return Array.from({ length: rows }, (_, index) => `${label}-${index}`)
+      },
+      invalidate: () => {},
+    })
+    runtime.addDockChild(counted('low', 6), { priority: 10 })
+    runtime.addDockChild(counted('peer', 0), { priority: 10 })
+    runtime.addDockChild(counted('high', 6), { priority: 20 })
+    runtime.addBottomChild(counted('editor', 2))
+    runtime.addBottomChild(counted('footer', 1), 'bottom')
+    runtime.addChild(textComponent('transcript-row'))
+    counts.clear()
+
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(await terminal.screen()).toEqual([
+      'transcript-row',
+      'high-0',
+      'high-1',
+      'high-2',
+      'high-3',
+      'high-4',
+      'high-5',
+      'editor-0',
+      'editor-1',
+      'footer-0',
+    ])
+    expect(Object.fromEntries(counts)).toEqual({ low: 1, peer: 1, high: 1, editor: 1, footer: 1 })
+
+    terminal.resize(40, 14)
+    await waitForRender()
+    expect(await terminal.screen()).toEqual([
+      'transcript-row',
+      'low-2',
+      'low-3',
+      'low-4',
+      'low-5',
+      'high-0',
+      'high-1',
+      'high-2',
+      'high-3',
+      'high-4',
+      'high-5',
+      'editor-0',
+      'editor-1',
+      'footer-0',
+    ])
+
+    await runtime.stop()
+    terminal.dispose()
+  })
+
   it('keeps raw wheel reports for the native viewport when no editor handler is installed', async () => {
     const terminal = new AltScreenTerminal(40, 10)
     const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')

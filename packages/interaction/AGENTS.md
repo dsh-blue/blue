@@ -47,7 +47,7 @@ Transcript tunables remain in this settings schema because interaction owns the 
 ## Optional Subpaths
 
 - `editor-plus`: shell/completion enhancement.
-- `pane-queue`: queue projection refreshed by the app-owned queue-change notification.
+- `pane-queue`: queue projection refreshed by the app-owned queue-change notification; its bottom `DockModel` mounts independently through transcript's shared dock allocator and leaves no empty lane root on unload.
 - `mode-status`: `StatusModel` producer over app mode snapshots.
 - `attachments`: bounded filesystem `AttachmentStore`.
 - `paste-image`: platform clipboard ingestion and reversible submit transformation.

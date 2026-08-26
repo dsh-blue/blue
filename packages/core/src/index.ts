@@ -21,6 +21,7 @@ import { startBlueTerminal } from './terminal.ts'
 import { NotificationModelService, ThemeModelService } from '@dsh-blue/blue-frontend'
 
 export { BlueComponentsService, type BlueComponentsDeps } from './components.ts'
+export { mountDockChild } from './dock.ts'
 export { GutterComponent } from './gutter.ts'
 export { BlueKeymapError, BlueKeymapService } from './keymap.ts'
 export { BlueScreenService } from './screen.ts'
@@ -59,6 +60,7 @@ export type {
   BlueColorFn,
   BlueComponent,
   BlueComponents,
+  BlueDockOptions,
   BlueEditor,
   BlueEditorOptions,
   BlueFocusable,
