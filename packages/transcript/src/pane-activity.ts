@@ -143,6 +143,20 @@ class ActivityPaneComponent {
   ) {}
 
   /**
+   * Paint the deep-sea ripple: the frame rides the banner's brand gradient,
+   * stepping one hue per tick so the wave breathes through the brand blues;
+   * a theme without a gradient falls back to `primary` (the composing
+   * spinner's color).
+   * @param frame - the raw wave glyphs.
+   * @returns the colored frame.
+   */
+  private paintWave(frame: string): string {
+    const gradient = this.colors.logoGradient
+    if (gradient.length === 0) return this.colors.primary(frame)
+    return gradient[this.state.frame % gradient.length]!(frame)
+  }
+
+  /**
    * @param width - current viewport width in columns.
    * @returns the pane's row, or none for the empty modes.
    */
@@ -160,7 +174,7 @@ class ActivityPaneComponent {
         return ['']
       case 'waiting':
       case 'tool': {
-        const frame = MOON_SPINNER_FRAMES[this.state.frame % MOON_SPINNER_FRAMES.length]!
+        const frame = this.paintWave(MOON_SPINNER_FRAMES[this.state.frame % MOON_SPINNER_FRAMES.length]!)
         // Priority under width pressure: the frame, then the flow counter,
         // then the tip (the counter is the liveness signal — round 5).
         const flow = this.state.flow === '' ? '' : this.colors.muted(` ${this.state.flow}`)

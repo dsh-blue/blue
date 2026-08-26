@@ -82,18 +82,23 @@ function footerDescriptor(content: string): string | undefined {
   return undefined
 }
 
+/** The incremental-output trailer the jobs reader (and friends) document: `[status: ...]`. */
+const STATUS_TRAILER = /^\[status: ([^\]]+)\]$/
+
 /**
- * Collapse a tool result text to one summary line when it is an XML envelope.
+ * Collapse a tool result text to one summary line when it is an XML envelope
+ * or an incremental job read.
  * @param text - the model-facing result text.
  * @param maxChars - the flattened summary cap (defaults to
  *   {@link SUMMARY_MAX_CHARS}).
- * @returns `path · descriptor` for an envelope (read window / write
- *   confirmation / image facts), or the original text untouched when it is
- *   not one — plain output and error messages never lose content here.
+ * @returns `path · descriptor` for an envelope, `+N lines · status X` for an
+ *   incremental read carrying the jobs `[status: ...]` trailer, or the
+ *   original text untouched when it is neither — plain output and error
+ *   messages never lose content here.
  */
 export function summarizeToolText(text: string, maxChars = SUMMARY_MAX_CHARS): string {
   const pairs = parseXmlEnvelope(text)
-  if (pairs === undefined) return text
+  if (pairs === undefined) return summarizeIncrementalRead(text, maxChars)
   const path = pairs.find(pair => pair.tag === 'path')?.value
   const content = pairs.find(pair => pair.tag === 'content')?.value ?? ''
   const firstLine = content.split('\n').find(line => line.trim() !== '') ?? ''
@@ -101,4 +106,18 @@ export function summarizeToolText(text: string, maxChars = SUMMARY_MAX_CHARS): s
   if (descriptor === '') descriptor = pairs.find(pair => pair.tag !== 'path' && pair.tag !== 'content')?.value ?? ''
   const summary = path === undefined || path === '' ? descriptor : descriptor === '' ? path : `${path} · ${descriptor}`
   return ellipsize(summary, maxChars)
+}
+
+/** `+N lines · status X` for a `[status: ...]`-trailed incremental read, or the original text. */
+function summarizeIncrementalRead(text: string, maxChars: number): string {
+  const lines = text.split('\n')
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]!.trim()
+    if (line === '') continue
+    const status = STATUS_TRAILER.exec(line)
+    if (status === null) return text
+    const body = lines.slice(0, index).filter(part => part.trim() !== '').length
+    return ellipsize(`+${String(body)} ${body === 1 ? 'line' : 'lines'} · status ${String(status[1]!)}`, maxChars)
+  }
+  return text
 }

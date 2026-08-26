@@ -17,7 +17,7 @@ import {
   type ConversationProjection,
   type ConversationToolEntry,
 } from '@dsh-blue/blue-conversation'
-import type { ReadCallModel, TranscriptEntryModel, TranscriptModel, TranscriptReadGroupModel } from '@dsh-blue/blue-frontend'
+import type { ReadCallModel, SearchCallModel, TranscriptEntryModel, TranscriptModel, TranscriptReadGroupModel, TranscriptSearchGroupModel } from '@dsh-blue/blue-frontend'
 import { createToolPresentationModel } from './tool-model.ts'
 import { createTranscriptModel, TRANSCRIPT_MODEL_WINDOW } from './transcript-model.ts'
 import { ellipsize, parseToolArguments, resolveCallView, resolveResultView, type ToolPresentationSource } from './present.ts'
@@ -30,6 +30,12 @@ export interface ConversationProjectionSource {
 
 /** Preview lines a read window carries for the expanded group view. */
 export const READ_PREVIEW_LINE_LIMIT = 5
+
+/** Match previews a search group's file row carries when expanded. */
+export const SEARCH_PREVIEW_MATCH_LIMIT = 3
+
+/** Path rows a search group's glob call carries when expanded. */
+export const SEARCH_PATH_LIMIT = 16
 
 /** One tool entry with its presenter views resolved exactly once. */
 interface ResolvedTool {
@@ -68,10 +74,38 @@ function isReadTool(resolved: ResolvedTool): boolean {
   return resolved.result?.card === 'read'
 }
 
+/**
+ * Whether a tool entry presents as a search (grep or glob) — by presenter
+ * vocabulary: the pending call declares `kind: 'search'`, or the settled
+ * result carries the search card (whose `shape` separates content matches
+ * from path lists).
+ */
+function isSearchTool(resolved: ResolvedTool): boolean {
+  if (resolved.call?.card === 'generic' && resolved.call.kind === 'search') return true
+  return resolved.result?.card === 'search'
+}
+
+/** The card family a tool entry groups into, or `undefined` when it stays a lone card. */
+type ToolFamily = 'read' | 'search'
+
+function toolFamily(resolved: ResolvedTool): ToolFamily | undefined {
+  if (isReadTool(resolved)) return 'read'
+  if (isSearchTool(resolved)) return 'search'
+  return undefined
+}
+
 /** The read arguments this adapter understands, degraded to unknowns. */
 function readArgumentRecord(args: unknown): Record<string, unknown> {
   if (args === undefined || typeof args !== 'object' || args === null) return {}
   return args as Record<string, unknown>
+}
+
+/** A row label for a read-kind call without a file: the first short string argument, prefixed by its key. */
+function salientArgument(record: Record<string, unknown>): string | undefined {
+  for (const [key, value] of Object.entries(record)) {
+    if (typeof value === 'string' && value !== '' && value.length <= 60) return `${key}: ${value}`
+  }
+  return undefined
 }
 
 function firstNonEmptyLine(text: string): string | undefined {
@@ -88,6 +122,9 @@ function readCallModel(resolved: ResolvedTool): ReadCallModel {
     : typeof record['path'] === 'string' && record['path'] !== ''
       ? record['path']
       : view?.path
+  // Read-kind calls without a file (the jobs reader, for one) still group;
+  // their row falls back to the salient argument so the member stays visible.
+  const label = path === undefined ? salientArgument(record) : undefined
   const offset = typeof record['offset'] === 'number' && record['offset'] > 0 ? record['offset'] : 1
   const limit = typeof record['limit'] === 'number' ? record['limit'] : undefined
   const lines = view?.lines ?? []
@@ -99,6 +136,7 @@ function readCallModel(resolved: ResolvedTool): ReadCallModel {
     turn: entry.turn,
     step: entry.step,
     ...(path === undefined ? {} : { path }),
+    ...(label === undefined ? {} : { label }),
     ...(limit === undefined ? {} : { requestedRange: { first: offset, last: offset + limit - 1 } }),
     ...(lines.length === 0 ? {} : { range: { first: lines[0]!.number, last: lines.at(-1)!.number } }),
     ...(view?.totalLines === undefined ? {} : { totalLines: view.totalLines }),
@@ -120,6 +158,48 @@ function readGroupModel(run: readonly ResolvedTool[]): TranscriptReadGroupModel 
     turn: first.entry.turn,
     step: first.entry.step,
     reads: run.map(readCallModel),
+  }
+}
+
+/** Build one search call's renderer-neutral facts from entry, arguments, and views. */
+function searchCallModel(resolved: ResolvedTool): SearchCallModel {
+  const { entry, args, outcome, result } = resolved
+  const record = readArgumentRecord(args)
+  const pattern = typeof record['pattern'] === 'string' && record['pattern'] !== '' ? record['pattern'] : undefined
+  const view = result?.card === 'search' ? result : undefined
+  const state = outcome === undefined ? 'pending' : outcome.isError ? 'error' : 'ok'
+  return {
+    callId: entry.callId,
+    seq: entry.seq,
+    turn: entry.turn,
+    step: entry.step,
+    ...(pattern === undefined ? {} : { pattern }),
+    ...(view === undefined ? {} : { shape: view.shape }),
+    ...(view?.shape === 'matches' ? {
+      files: view.files.map(file => ({
+        path: file.path,
+        count: file.matches.length,
+        previews: file.matches.slice(0, SEARCH_PREVIEW_MATCH_LIMIT).map(match => ({ lineNumber: match.lineNumber, line: match.line })),
+      })),
+    } : {}),
+    ...(view?.shape === 'paths' ? { paths: view.paths.slice(0, SEARCH_PATH_LIMIT), pathsTotal: view.total } : {}),
+    ...(view === undefined ? {} : { truncated: view.truncated }),
+    ...(view?.total === undefined ? {} : { total: view.total }),
+    state,
+    ...(state === 'error' ? { error: ellipsize(firstNonEmptyLine(entry.result!.text) ?? 'search failed', 120) } : {}),
+  }
+}
+
+/** Fold a run of resolved search entries into one group model. */
+function searchGroupModel(run: readonly ResolvedTool[]): TranscriptSearchGroupModel {
+  const first = run[0]!
+  return {
+    kind: 'transcript-search-group',
+    id: `search-group:${String(first.entry.id)}`,
+    seq: first.entry.seq,
+    turn: first.entry.turn,
+    step: first.entry.step,
+    searches: run.map(searchCallModel),
   }
 }
 
@@ -200,30 +280,35 @@ export function conversationTranscriptModel(
 ): TranscriptModel {
   const entries: TranscriptEntryModel[] = []
   let run: ResolvedTool[] = []
+  let runFamily: ToolFamily | undefined
   const flushRun = (): void => {
     if (run.length === 0) return
-    entries.push(readGroupModel(run))
+    entries.push(runFamily === 'search' ? searchGroupModel(run) : readGroupModel(run))
     run = []
+    runFamily = undefined
   }
   for (const entry of projection.entries.slice(-TRANSCRIPT_MODEL_WINDOW)) {
     if (entry.kind !== 'tool') {
       // Thinking is meta, not content: it neither renders into the run nor
-      // breaks it — reads stay grouped across the model's reasoning.
+      // breaks it — reads and searches stay grouped across the model's
+      // reasoning.
       if (entry.kind !== 'thinking') flushRun()
       entries.push(entryModel(entry))
       continue
     }
     if (entry.channel !== 'transcript') continue
     const resolved = resolveTool(entry, tools)
-    const continuesRun = run.length > 0
+    const family = toolFamily(resolved)
+    const continuesRun = runFamily !== undefined
+      && family === runFamily
       && entry.turn === run[0]!.entry.turn
-      && isReadTool(resolved)
     if (!continuesRun) flushRun()
-    if (isReadTool(resolved)) {
-      run.push(resolved)
+    if (family === undefined) {
+      entries.push(toolModel(resolved))
       continue
     }
-    entries.push(toolModel(resolved))
+    run.push(resolved)
+    runFamily = family
   }
   flushRun()
   return createTranscriptModel('official-conversation', entries, projection.streaming)

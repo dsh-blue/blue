@@ -487,6 +487,17 @@ describe('ToolCallComponent', () => {
     expect(lines).toEqual(['', '[S]✓ [/S]Used \x1b[1m[P]probe[/P]\x1b[22m'])
   })
 
+  it('prefers the semantic chip over the raw line count when provided', () => {
+    const item = toolItem({ name: 'write', parsedArguments: { file_path: 'a.ts' } })
+    item.result = { text: '<path>a.ts</path>\n<type>file</type>\n<content>\nCreated file\n</content>', isError: false }
+    const lines = new ToolCallComponent(item, tagged(), setup(), undefined, '+3 −2').render(80)
+    expect(lines[1]).toContain('[M] · +3 −2[/M]')
+    expect(lines[1]).not.toContain('lines')
+    const failed = new ToolCallComponent(item, tagged(), setup(), undefined, '+3 −2')
+    item.result = { text: 'boom', isError: true }
+    expect(failed.render(80)[1]).toContain('[E] · +3 −2[/E]')
+  })
+
   it('caps a generic result preview until expanded', () => {
     const item = toolItem({ name: 'read' })
     item.result = { text: 'l1', fullText: 'l1\nl2\nl3\nl4', isError: false }

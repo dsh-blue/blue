@@ -10,7 +10,7 @@
 
  » write it
 
- ✓ Used write (src/demo.ts) · 1 line
+ ✓ Used write (src/demo.ts) · +3 −2
    src/demo.ts · new file, +16 lines
    + import { Service } from '@deepseek-ai/cordis'
    +

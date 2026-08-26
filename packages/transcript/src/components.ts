@@ -349,6 +349,7 @@ export class ToolCallComponent implements BlueComponent {
     colors: BlueSemanticColors,
     components: BlueComponents,
     private readonly presentedBody?: BlueComponent & { setExpanded?(expanded: boolean): void },
+    private readonly resultChip?: string,
   ) {
     this.item = item
     this.colors = colors
@@ -398,11 +399,16 @@ export class ToolCallComponent implements BlueComponent {
     if (declined) {
       header += colors.warning(' · plan declined')
     } else if (result !== undefined) {
-      const text = result.fullText ?? result.text
-      const count = text.split('\n').filter(line => line.length > 0).length
-      if (count > 0) {
-        const chip = ` · ${count} ${count === 1 ? 'line' : 'lines'}`
-        header += result.isError ? colors.error(chip) : colors.muted(chip)
+      const chipText = this.resultChip
+      if (chipText !== undefined) {
+        header += result.isError ? colors.error(` · ${chipText}`) : colors.muted(` · ${chipText}`)
+      } else {
+        const text = result.fullText ?? result.text
+        const count = text.split('\n').filter(line => line.length > 0).length
+        if (count > 0) {
+          const chip = ` · ${count} ${count === 1 ? 'line' : 'lines'}`
+          header += result.isError ? colors.error(chip) : colors.muted(chip)
+        }
       }
     }
     return this.components.truncateToWidth(header, width)

@@ -8,26 +8,26 @@
    ⠋⣿⣿⣼⣰⣰⣻⣿⣽⣰⣀⠋⢿⣿⣿⣼⣰⡀
      ⠃⠏⠿⣿⣿⣿⣿⣿⠿⠟⠇⠂⠃⠃⠃
 
- » write it
+ » search around
 
- ✓ Used write (src/demo.ts) · +3 −2
-   src/demo.ts · +3 −2
-     import { Service } from '@deepseek-ai/cordis'
+ ✓ Searched 3 patterns · 2 files, 3 matches, 12 paths
+   ├─ "export const" · 2 files, 3 matches ✓
+   │  ├─ src/core/a.ts · 2
+   │  │  3: export const one = 1
+   │  │  9: export const two = 2
+   │  └─ src/core/b.ts · 1
+   │     41: export const three = 3
+   ├─ "TODO" · 0 matches ✓
+   └─ src/**/*.ts · 12 paths ✓
+      ├─ src/core/a.ts
+      └─ src/core/b.ts
+      … 10 more paths
 
-   - const COUNT = 1
-   - const LABEL = 'beta'
-   + const COUNT = 2
-   + const LABEL = 'stable'
-   + const OWNER = 'blue'
-     const MODE = 'draft'
+ ● search done
 
-     export const name = 'demo'
-   ⋯ 5 unchanged lines
-     // trailing note 6
-     // trailing note 7
-     // trailing note 8
 
- ● done
+
+
 
 
 

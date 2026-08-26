@@ -79,11 +79,20 @@ export function toolResultView(view: ToolResultView | undefined, outcome: ToolRe
     }
     case 'diff':
       return diffSections(view.title ?? name, view.diffs)
-    case 'search':
-      if (view.shape === 'paths') return { kind: 'list', items: view.paths.map((path, index) => ({ id: `path-${String(index)}`, label: path })), selectedId: view.paths.length > 0 ? 'path-0' : undefined } as View
-      return { kind: 'sections', sections: view.files.length === 0
-        ? [{ title: view.title ?? name, body: { kind: 'text', text: '(no matches)' } }]
-        : view.files.map(file => ({ title: file.path, body: { kind: 'code', code: file.matches.map(match => `${String(match.lineNumber)}: ${match.line}`).join('\n') } })) }
+    case 'search': {
+      // The compact registry shape: counts, never the match corpus — the
+      // transcript's grouped card renders from the group model instead.
+      if (view.shape === 'paths') {
+        const count = view.total
+        return { kind: 'fields', fields: [{ label: 'paths', value: count === view.paths.length ? String(count) : `${String(view.paths.length)} of ${String(count)}` }] }
+      }
+      const kept = view.files.reduce((sum, file) => sum + file.matches.length, 0)
+      const matches = view.truncated && view.total !== kept ? `${String(kept)} of ${String(view.total)}` : String(kept)
+      return { kind: 'fields', fields: [
+        { label: 'files', value: String(view.files.length) },
+        { label: 'matches', value: matches },
+      ] }
+    }
     case 'read': {
       // The compact registry shape: the window facts, never the content —
       // the transcript's grouped card renders from the group model instead.
@@ -122,6 +131,32 @@ function diffSections(title: string, diffs: readonly { readonly path: string; re
   return { kind: 'sections', sections: diffs.length === 0
     ? [{ title, body: { kind: 'text', text: '(no changes)' } }]
     : diffs.map(diff => ({ title: diffSectionTitle(diff), body: { kind: 'diff', before: diff.oldText ?? '', after: diff.newText } })) }
+}
+
+/**
+ * The semantic result chip for a tool card's header: summed `+A −D` when the
+ * presentation's result is diff-shaped, or `undefined` to keep the plain line
+ * count (the raw-result line count misleads on envelope-backed results).
+ * @param presentation - the tool's presentation model, if any.
+ * @returns the chip text, or `undefined` when no diff view contributes.
+ */
+export function toolResultChip(presentation: ToolPresentationModel | undefined): string | undefined {
+  if (presentation === undefined) return undefined
+  let added = 0
+  let removed = 0
+  const walk = (view: View | undefined): void => {
+    if (view === undefined) return
+    if (view.kind === 'diff') {
+      const counts = diffChangeCounts(view.before, view.after)
+      added += counts.added
+      removed += counts.removed
+      return
+    }
+    if (view.kind === 'sections') for (const section of view.sections) walk(section.body)
+  }
+  walk(presentation.result)
+  if (added === 0 && removed === 0) return undefined
+  return `+${String(added)} −${String(removed)}`
 }
 
 function readableValue(value: unknown): string {

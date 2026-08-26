@@ -790,6 +790,55 @@ describe('blue whole-tree e2e', () => {
     expect(expanded).toContain('1  first line of the file')
   })
 
+  it('groups consecutive searches into one tree card that hides match text', async () => {
+    const tree = await bootBlue([], {
+      script: [
+        toolCallResponse('call-g1', 'grep', { pattern: 'export const' }),
+        toolCallResponse('call-p1', 'glob', { pattern: 'src/**/*.ts' }),
+        textResponse('search done'),
+      ],
+    })
+    const agent = await currentAgent(tree)
+    const tools = (tree.ctx as unknown as { tools: { register(definition: unknown): () => void } }).tools
+    tools.register({
+      name: 'grep',
+      description: 'search contents',
+      parameters: { type: 'object', properties: {} },
+      presentCall: () => ({ card: 'generic', title: 'Grep', kind: 'search' }),
+      presentResult: () => ({
+        card: 'search',
+        shape: 'matches',
+        files: [{ path: 'a.ts', matches: [{ lineNumber: 3, line: 'the matched line text' }] }],
+        truncated: false,
+        total: 1,
+      }),
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: 'match' }] },
+      execute: () => Promise.resolve('match'),
+    })
+    tools.register({
+      name: 'glob',
+      description: 'find files',
+      parameters: { type: 'object', properties: {} },
+      presentCall: () => ({ card: 'generic', title: 'Glob', kind: 'search' }),
+      presentResult: () => ({ card: 'search', shape: 'paths', paths: ['a.ts'], truncated: false, total: 1 }),
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: 'paths' }] },
+      execute: () => Promise.resolve('paths'),
+    })
+    typeLine(tree.terminal, 'search them')
+    await agent.whenIdle()
+    await waitForRender()
+    const strip = (text: string): string => text.replace(/\x1b\[[0-9;]*m/g, '')
+    const shown = strip(tree.terminal.output)
+    expect(shown).toContain('Searched 2 patterns · 1 file, 1 match, 1 path')
+    expect(shown).toContain('├─ "export const" · 1 file, 1 match')
+    expect(shown).toContain('└─ src/**/*.ts · 1 path')
+    expect(shown).not.toContain('the matched line text')
+    tree.terminal.sendInput('\x0f')
+    await waitForRender()
+    const expanded = strip(tree.terminal.written.join(''))
+    expect(expanded).toContain('3: the matched line text')
+  })
+
   it('breaks read groups on other tools while grouping across thinking', async () => {
     const tree = await bootBlue([], {
       script: [

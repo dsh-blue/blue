@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { BlueComponent, BlueScreen } from '@dsh-blue/blue-core'
 import type { ToolPresentationModel } from '@dsh-blue/blue-frontend'
-import { createToolPresentationModel, toolCallView, toolResultView, BlueModelToolService, ToolModelComponent } from '../src/tool-model.ts'
+import { createToolPresentationModel, toolCallView, toolResultView, toolResultChip, BlueModelToolService, ToolModelComponent } from '../src/tool-model.ts'
 
 function screenFixture() {
   const children: BlueComponent[] = []; const renders: number[] = []
@@ -68,11 +68,11 @@ describe('canonical tool presentation builder', () => {
     expect(toolResultView({ card: 'terminal', signal: 'SIGTERM' }, undefined, 'tool')).toMatchObject({ sections: [{ body: { code: '(no output)' } }, { body: { text: 'signal SIGTERM' } }] })
     expect(toolResultView({ card: 'terminal' }, undefined, 'tool')).toMatchObject({ sections: [{}, { body: { text: 'complete' } }] })
     expect(toolResultView({ card: 'diff', diffs: [{ path: 'new.ts', oldText: null, newText: 'new' }] }, undefined, 'tool')).toMatchObject({ sections: [{ title: 'new.ts · new file, +1 lines', body: { before: '', after: 'new' } }] })
-    expect(toolResultView({ card: 'search', shape: 'paths', paths: ['a.ts'], truncated: false, total: 1 }, undefined, 'tool')).toMatchObject({ kind: 'list', selectedId: 'path-0' })
-    expect(toolResultView({ card: 'search', shape: 'paths', paths: [], truncated: false, total: 0 }, undefined, 'tool')).toMatchObject({ kind: 'list', items: [] })
-    expect(toolResultView({ card: 'search', shape: 'matches', files: [{ path: 'a.ts', matches: [{ lineNumber: 2, line: 'hit' }] }], truncated: false, total: 1 }, undefined, 'tool')).toMatchObject({ sections: [{ title: 'a.ts', body: { code: '2: hit' } }] })
-    expect(toolResultView({ card: 'search', shape: 'matches', title: 'Search', files: [], truncated: false, total: 0 }, undefined, 'tool')).toMatchObject({ sections: [{ title: 'Search', body: { text: '(no matches)' } }] })
-    expect(toolResultView({ card: 'search', shape: 'matches', files: [], truncated: false, total: 0 }, undefined, 'tool')).toMatchObject({ sections: [{ title: 'tool', body: { text: '(no matches)' } }] })
+    expect(toolResultView({ card: 'search', shape: 'paths', paths: ['a.ts'], truncated: false, total: 1 }, undefined, 'tool')).toMatchObject({ fields: [{ label: 'paths', value: '1' }] })
+    expect(toolResultView({ card: 'search', shape: 'paths', paths: ['a.ts', 'b.ts'], truncated: true, total: 40 }, undefined, 'tool')).toMatchObject({ fields: [{ label: 'paths', value: '2 of 40' }] })
+    expect(toolResultView({ card: 'search', shape: 'matches', files: [{ path: 'a.ts', matches: [{ lineNumber: 2, line: 'hit' }] }], truncated: false, total: 1 }, undefined, 'tool')).toMatchObject({ fields: [{ label: 'files', value: '1' }, { label: 'matches', value: '1' }] })
+    expect(toolResultView({ card: 'search', shape: 'matches', files: [{ path: 'a.ts', matches: [{ lineNumber: 2, line: 'hit' }, { lineNumber: 4, line: 'hit' }] }], truncated: true, total: 250 }, undefined, 'tool')).toMatchObject({ fields: [{}, { label: 'matches', value: '2 of 250' }] })
+    expect(toolResultView({ card: 'search', shape: 'matches', files: [], truncated: false, total: 0 }, undefined, 'tool')).toMatchObject({ fields: [{ label: 'files', value: '0' }, { label: 'matches', value: '0' }] })
     expect(toolResultView({ card: 'read', path: 'a.ts', offset: 1, lines: [{ number: 1, text: 'const x = 1' }], totalLines: 1, lang: 'ts' }, undefined, 'tool')).toMatchObject({ fields: [{ label: 'path', value: 'a.ts' }, { label: 'lines', value: '1-1' }] })
     expect(toolResultView({ card: 'read', path: 'a.ts', offset: 1, lines: [{ number: 3, text: 'x' }, { number: 9, text: 'y' }], totalLines: 40 }, undefined, 'tool')).toMatchObject({ fields: [{}, { value: '3-9 of 40' }] })
     expect(toolResultView({ card: 'read', title: 'Read', path: 'a', offset: 5, lines: [], totalLines: 0 }, undefined, 'tool')).toMatchObject({ fields: [{ label: 'path', value: 'a' }, { label: 'lines', value: 'from line 5' }] })
@@ -98,5 +98,16 @@ describe('canonical tool presentation builder', () => {
     const model = createToolPresentationModel({ id: 'c1', name: 'read', call: { card: 'generic', title: 'Read' }, result: { card: 'read', path: 'a', offset: 1, lines: [], totalLines: 0 }, outcome: { content: [], isError: false }, expanded: false })
     expect(model).toMatchObject({ id: 'c1', expanded: false, action: { kind: 'tool.toggle', id: 'c1' } }); expect(Object.isFrozen(model)).toBe(true); expect(Object.isFrozen(model.call)).toBe(true)
     const plain = createToolPresentationModel({ id: 'c2', name: 'unknown' }); expect(plain.call).toEqual({ kind: 'text', text: 'unknown' }); expect(plain.result).toBeUndefined()
+  })
+
+  it('derives the diff change-count chip from a presentation result', () => {
+    expect(toolResultChip(undefined)).toBeUndefined()
+    const read = createToolPresentationModel({ id: 'r', name: 'read', call: { card: 'generic', title: 'Read' }, result: { card: 'read', path: 'a', offset: 1, lines: [{ number: 1, text: 'x' }], totalLines: 1 } })
+    expect(toolResultChip(read)).toBeUndefined()
+    const write = createToolPresentationModel({
+      id: 'w', name: 'write', call: { card: 'diff', title: 'Write', diffs: [{ path: 'a.ts', oldText: null, newText: 'one\ntwo' }] },
+      result: { card: 'diff', title: 'Write', diffs: [{ path: 'a.ts', oldText: 'one\nx\nthree', newText: 'one\ny\nz\nthree' }] },
+    })
+    expect(toolResultChip(write)).toBe('+2 −1')
   })
 })

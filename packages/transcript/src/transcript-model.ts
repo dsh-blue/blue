@@ -34,8 +34,9 @@ import {
   type UserMessageImages,
 } from './components.ts'
 import { ThinkingComponent } from './thinking.ts'
-import { ToolModelComponent } from './tool-model.ts'
+import { ToolModelComponent, toolResultChip } from './tool-model.ts'
 import { ReadGroupComponent, groupReadsByFile } from './read-group.ts'
+import { SearchGroupComponent } from './search-group.ts'
 import { parseToolArguments, summarizeToolCall } from './present.ts'
 import { summarizeToolText } from './envelope.ts'
 import type { TranscriptToolItem } from './types.ts'
@@ -221,7 +222,7 @@ export class TranscriptModelComponent implements BlueComponent {
       ? true
       : entry.kind === 'transcript-thinking'
         ? policy.thinkingExpanded
-        : entry.kind === 'transcript-tool' || entry.kind === 'transcript-read-group'
+        : entry.kind === 'transcript-tool' || entry.kind === 'transcript-read-group' || entry.kind === 'transcript-search-group'
           ? policy.toolsExpanded
           : false
     ;(target as ExpandableComponent).setExpanded?.(expanded)
@@ -260,10 +261,12 @@ export class TranscriptModelComponent implements BlueComponent {
       case 'transcript-tool': {
         const presentation = entry.presentation
         const body = presentation === undefined ? undefined : new ToolModelComponent(() => presentation, renderer.colors)
-        return new ToolCallComponent(asToolItem(entry), renderer.colors, renderer.components, body)
+        return new ToolCallComponent(asToolItem(entry), renderer.colors, renderer.components, body, toolResultChip(presentation))
       }
       case 'transcript-read-group':
         return new ReadGroupComponent(entry, renderer.colors, renderer.components)
+      case 'transcript-search-group':
+        return new SearchGroupComponent(entry, renderer.colors, renderer.components)
       case 'transcript-error':
         return new ErrorMessageComponent({
           kind: 'error', seq: entry.seq, turn: entry.turn, message: entry.message,
@@ -286,6 +289,10 @@ export class TranscriptModelComponent implements BlueComponent {
       case 'transcript-read-group': {
         const paths = groupReadsByFile(entry.reads).map(group => group.path)
         return `Read ${String(entry.reads.length)} ${entry.reads.length === 1 ? 'call' : 'calls'}${paths.length === 0 ? '' : `: ${paths.join(', ')}`}`
+      }
+      case 'transcript-search-group': {
+        const patterns = entry.searches.map(call => call.pattern ?? 'search')
+        return `Searched ${String(entry.searches.length)} ${entry.searches.length === 1 ? 'time' : 'times'}: ${patterns.join(', ')}`
       }
       case 'transcript-error': return entry.code === undefined ? entry.message : `${entry.message} (${entry.code})`
       case 'transcript-interrupted': return 'Interrupted'

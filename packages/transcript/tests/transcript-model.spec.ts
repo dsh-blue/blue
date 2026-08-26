@@ -135,6 +135,34 @@ describe('TranscriptModelService', () => {
     expect(plainPathless).not.toContain(':')
   })
 
+  it('renders search groups through the tree component with tools-category expansion', () => {
+    const searchEntry: TranscriptEntryModel = {
+      kind: 'transcript-search-group', id: 'search-group:s1', seq: 3, turn: 1, step: 0,
+      searches: [
+        { callId: 's1', seq: 3, turn: 1, step: 0, pattern: 'const', shape: 'matches', files: [{ path: 'a.ts', count: 2, previews: [{ lineNumber: 1, line: 'const hit' }] }], state: 'ok' },
+        { callId: 's2', seq: 4, turn: 1, step: 0, pattern: '*.ts', shape: 'paths', paths: ['a.ts'], pathsTotal: 2, total: 2, state: 'ok' },
+      ],
+    }
+    const collapsedText = new TranscriptModelComponent(() => model('searches', [searchEntry]), renderer()).render(80).join('\n')
+    expect(collapsedText).toContain('Searched 2 patterns')
+    expect(collapsedText).toContain('├─ "const" · 1 file, 2 matches')
+    expect(collapsedText).not.toContain('const hit')
+
+    const expanded = new TranscriptModelComponent(() => model('searches', [searchEntry]), renderer())
+    expanded.setExpanded(true)
+    const expandedText = expanded.render(80).join('\n')
+    expect(expandedText).toContain('1: const hit')
+    expect(expandedText).toContain('… 1 more paths')
+
+    const plain = new TranscriptModelComponent(() => model('searches', [searchEntry])).render(80).join('\n')
+    expect(plain).toContain('Searched 2 times: const, *.ts')
+    const plainBare = new TranscriptModelComponent(() => model('searches', [{
+      kind: 'transcript-search-group', id: 'search-group:bare', seq: 1, turn: 1, step: 0,
+      searches: [{ callId: 'bare', seq: 1, turn: 1, step: 0, state: 'ok' }],
+    }])).render(80).join('\n')
+    expect(plainBare).toContain('Searched 1 time: search')
+  })
+
   it('reconciles semantic renderer components, forwards expansion, and disposes retired entries', () => {
     let current = model('semantic', semanticEntries())
     const requestRender = vi.fn()

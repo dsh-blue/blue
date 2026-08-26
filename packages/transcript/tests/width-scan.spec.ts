@@ -22,6 +22,7 @@ import {
 } from '../src/components.ts'
 import { AgentGroupComponent } from '../src/agent-group.ts'
 import { ReadGroupComponent } from '../src/read-group.ts'
+import { SearchGroupComponent } from '../src/search-group.ts'
 import { ThinkingComponent } from '../src/thinking.ts'
 import { createTranscriptModel, TranscriptModelComponent } from '../src/transcript-model.ts'
 import { BlueStatusModelService, StatusModelFooterComponent } from '../src/status-model.ts'
@@ -104,6 +105,29 @@ describe('transcript width-scan', () => {
         const expanded = new ReadGroupComponent(model, colors, components)
         expanded.setExpanded(true)
         expectLinesFit(`ReadGroupExpanded/${name}`, expanded.render(width), width)
+      }
+    })
+
+    it(`SearchGroupComponent survives ${name}`, () => {
+      const components = fakeBlueComponents()
+      const model = {
+        kind: 'transcript-search-group' as const,
+        id: 'search-group:s1',
+        seq: 1,
+        turn: 1,
+        step: 0,
+        searches: [
+          { callId: 's1', seq: 1, turn: 1, step: 0, pattern: text, shape: 'matches' as const, files: [{ path: text, count: 2, previews: [{ lineNumber: 4, line: text }] }], truncated: true, total: 9, state: 'ok' as const },
+          { callId: 's2', seq: 2, turn: 1, step: 0, pattern: text, shape: 'paths' as const, paths: [text], pathsTotal: 9, total: 9, state: 'ok' as const },
+          { callId: 's3', seq: 3, turn: 1, step: 0, pattern: text, state: 'pending' as const },
+          { callId: 's4', seq: 4, turn: 1, step: 0, pattern: text, state: 'error' as const, error: text },
+        ],
+      }
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`SearchGroup/${name}`, new SearchGroupComponent(model, colors, components).render(width), width)
+        const expanded = new SearchGroupComponent(model, colors, components)
+        expanded.setExpanded(true)
+        expectLinesFit(`SearchGroupExpanded/${name}`, expanded.render(width), width)
       }
     })
 

@@ -33,20 +33,23 @@ interface RenderDeps {
 }
 
 /**
- * Group read calls by path, keeping first-read order; a call without a path
- * joins no group (it still counts in the header).
+ * Group read calls by their row identity — the file path, or the salient
+ * label of a read-kind call without a file (the jobs reader) — keeping
+ * first-read order; a call with neither joins no group (it still counts in
+ * the header).
  * @param reads - the group model's per-call facts.
- * @returns one group per distinct path, empty when no read carries a path.
+ * @returns one group per distinct row identity, empty when no read carries one.
  */
 export function groupReadsByFile(reads: readonly ReadCallModel[]): readonly ReadFileGroup[] {
   const groups: { path: string; reads: ReadCallModel[] }[] = []
   const byPath = new Map<string, { path: string; reads: ReadCallModel[] }>()
   for (const read of reads) {
-    if (read.path === undefined) continue
-    let group = byPath.get(read.path)
+    const identity = read.path ?? read.label
+    if (identity === undefined) continue
+    let group = byPath.get(identity)
     if (group === undefined) {
-      group = { path: read.path, reads: [] }
-      byPath.set(read.path, group)
+      group = { path: identity, reads: [] }
+      byPath.set(identity, group)
       groups.push(group)
     }
     group.reads.push(read)

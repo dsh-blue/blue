@@ -90,4 +90,13 @@ describe('summarizeToolText', () => {
     const plain = 'line one\nline two'
     expect(summarizeToolText(plain)).toBe(plain)
   })
+
+  it('summarizes incremental job reads by their status trailer', () => {
+    expect(summarizeToolText('chunk one\nchunk two\nchunk three\n[status: running]\n')).toBe('+3 lines · status running')
+    expect(summarizeToolText('only chunk\n[status: done]')).toBe('+1 line · status done')
+    expect(summarizeToolText('[status: done]')).toBe('+0 lines · status done')
+    // Text without the trailer — or with it mid-body — passes through whole.
+    expect(summarizeToolText('[status: noted] but more text follows')).toBe('[status: noted] but more text follows')
+    expect(summarizeToolText('')).toBe('')
+  })
 })

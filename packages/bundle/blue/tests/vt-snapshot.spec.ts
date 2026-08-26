@@ -301,6 +301,72 @@ describe('blue VT layout snapshots (R2)', () => {
     expect(expanded).toContain('1  line 1 of a')
   })
 
+  it('search group: pattern rows collapsed, file previews expanded', async () => {
+    setGitCommandRunner(NO_GIT)
+    const vt = new VtTerminal(80, 40)
+    const tree = await bootBlue([], {
+      script: [
+        toolCallResponse('call-g1', 'grep', { pattern: 'export const', path: 'src' }),
+        toolCallResponse('call-g2', 'grep', { pattern: 'TODO' }),
+        toolCallResponse('call-p1', 'glob', { pattern: 'src/**/*.ts' }),
+        textResponse('search done'),
+      ],
+      terminal: vt,
+    })
+    tree.ctx.tools.register({
+      name: 'grep',
+      description: 'search file contents',
+      parameters: { type: 'object', properties: {} },
+      presentCall: () => ({ card: 'generic', title: 'Grep', kind: 'search' }),
+      presentResult: (args: unknown) => ({
+        card: 'search',
+        shape: 'matches',
+        files: (args as { pattern: string }).pattern === 'TODO'
+          ? []
+          : [
+            { path: 'src/core/a.ts', matches: [{ lineNumber: 3, line: 'export const one = 1' }, { lineNumber: 9, line: 'export const two = 2' }] },
+            { path: 'src/core/b.ts', matches: [{ lineNumber: 41, line: 'export const three = 3' }] },
+          ],
+        truncated: false,
+        total: (args as { pattern: string }).pattern === 'TODO' ? 0 : 3,
+      }),
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: 'matches' }] },
+      execute: () => Promise.resolve('matches'),
+    })
+    tree.ctx.tools.register({
+      name: 'glob',
+      description: 'find files by pattern',
+      parameters: { type: 'object', properties: {} },
+      presentCall: () => ({ card: 'generic', title: 'Glob', kind: 'search' }),
+      presentResult: () => ({
+        card: 'search',
+        shape: 'paths',
+        paths: ['src/core/a.ts', 'src/core/b.ts'],
+        truncated: true,
+        total: 12,
+      }),
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: 'paths' }] },
+      execute: () => Promise.resolve('paths'),
+    })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'search around')
+    await agent.whenIdle()
+    // Collapsed: one tree card of pattern rows — counts and capped-search
+    // honesty, never the match text.
+    const collapsed = await captureGolden(tree, vt, 'search-group-80')
+    expect(collapsed).toContain('Searched 3 patterns · 2 files, 3 matches, 12 paths')
+    expect(collapsed).toContain('├─ "export const" · 2 files, 3 matches')
+    expect(collapsed).toContain('├─ "TODO" · 0 matches')
+    expect(collapsed).toContain('└─ src/**/*.ts · 12 paths')
+    expect(collapsed).not.toContain('export const one')
+    tree.terminal.sendInput('\x0f')
+    await waitForRender()
+    // Expanded: file rows with bounded match previews and the capped path page.
+    const expanded = await captureGolden(tree, vt, 'search-group-expanded-80')
+    expect(expanded).toContain('3: export const one = 1')
+    expect(expanded).toContain('… 10 more paths')
+  })
+
   it.each([80, 40])('the footer under full load at %i columns', async (columns) => {
     setGitCommandRunner((args) => {
       if (args[0] === 'branch') return 'main\n'

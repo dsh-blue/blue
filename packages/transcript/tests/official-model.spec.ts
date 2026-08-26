@@ -66,7 +66,67 @@ function readSource(): ToolPresentationSource {
   } as Pick<ToolRuntime, 'get'>
 }
 
+/** A presenter vocabulary that declares searches: `kind: 'search'` calls and search result cards from meta. */
+function searchSource(): ToolPresentationSource {
+  return {
+    get(name: string) {
+      if (name !== 'grep' && name !== 'glob') return undefined
+      return {
+        presentCall: (args: unknown) => ({ card: 'generic', title: `Search ${String((args as { pattern?: string }).pattern ?? '')}`, kind: 'search' }),
+        presentResult: (_args: unknown, result: { readonly isError: boolean; readonly meta?: unknown }) => {
+          if (result.isError) return undefined
+          const meta = result.meta as { readonly shape: 'matches' | 'paths'; readonly files?: { readonly path: string; readonly matches: { readonly lineNumber: number; readonly line: string }[] }[]; readonly paths?: readonly string[]; readonly truncated: boolean; readonly total: number } | undefined
+          if (meta === undefined) return undefined
+          return meta.shape === 'matches'
+            ? { card: 'search', shape: 'matches', files: meta.files ?? [], truncated: meta.truncated, total: meta.total }
+            : { card: 'search', shape: 'paths', paths: meta.paths ?? [], truncated: meta.truncated, total: meta.total }
+        },
+      } as never
+    },
+  } as Pick<ToolRuntime, 'get'>
+}
+
+interface SearchMeta {
+  readonly shape: 'matches' | 'paths'
+  readonly files?: { readonly path: string; readonly matches: { readonly lineNumber: number; readonly line: string }[] }[]
+  readonly paths?: readonly string[]
+  readonly truncated: boolean
+  readonly total: number
+}
+
+function searchResult(meta: SearchMeta | undefined, isError = false): ConversationToolEntry['result'] {
+  return {
+    content: [{ type: 'text', text: isError ? 'pattern rejected' : 'raw' }],
+    text: isError ? 'pattern rejected' : 'raw',
+    isError,
+    endedAt: 180,
+    ...(meta === undefined ? {} : { meta }),
+  }
+}
+
+
 interface ReadMeta { readonly path: string; readonly offset: number; readonly lines: readonly { readonly number: number; readonly text: string }[]; readonly totalLines: number }
+
+/** A registry resolving both families at once for mixed-run fixtures. */
+function combinedSource(): ToolPresentationSource {
+  const read = readSource()
+  const search = searchSource()
+  return {
+    get(name: string) {
+      return read.get(name) ?? search.get(name)
+    },
+  } as Pick<ToolRuntime, 'get'>
+}
+
+/** The jobs reader's presenter: a `kind: 'read'` call view and no result card. */
+function jobSource(): ToolPresentationSource {
+  return {
+    get(name: string) {
+      if (name !== 'job_output') return undefined
+      return { presentCall: () => ({ card: 'generic', title: 'Read output from background job 5', kind: 'read' }) } as never
+    },
+  } as Pick<ToolRuntime, 'get'>
+}
 
 function readResult(meta: ReadMeta | undefined, isError = false): ConversationToolEntry['result'] {
   return {
@@ -313,6 +373,76 @@ describe('official conversation model mapping', () => {
     const group = model.entries[0] as unknown as { reads: Array<Record<string, unknown>> }
     expect(group.reads[0]).toMatchObject({ callId: 'c-viewpath', path: 'from-view.ts', range: { first: 2, last: 2 } })
     expect(group.reads[1]).toMatchObject({ callId: 'c-blank', state: 'error', error: 'read failed' })
+  })
+
+  it('labels read-kind calls without a file by their salient argument', () => {
+    const model = conversationTranscriptModel(projection([
+      transcriptTool({ id: 'j1', callId: 'c-j1', seq: 1, name: 'job_output', arguments: '{"job_id":"5","wait":true}' }),
+      transcriptTool({ id: 'j2', callId: 'c-j2', seq: 2, name: 'job_output', arguments: '{"job_id":"5"}', result: { content: [{ type: 'text', text: 'chunk\n[status: running]' }], text: 'chunk\n[status: running]', isError: false, endedAt: 9 } }),
+      transcriptTool({ id: 'j3', callId: 'c-j3', seq: 3, name: 'job_output', arguments: `{\"payload\":\"${'x'.repeat(70)}\"}` }),
+    ]), jobSource())
+    const group = model.entries[0] as unknown as { reads: Array<Record<string, unknown>> }
+    expect(model.entries).toHaveLength(1)
+    expect(group.reads[0]).toMatchObject({ callId: 'c-j1', label: 'job_id: 5', state: 'pending' })
+    expect(group.reads[1]).toMatchObject({ callId: 'c-j2', label: 'job_id: 5', state: 'ok' })
+    // No short string argument at all: the member joins the count but no row.
+    expect(group.reads[2]).toMatchObject({ callId: 'c-j3', state: 'pending' })
+    expect(group.reads[2]!['label']).toBeUndefined()
+  })
+
+  it('groups mixed grep and glob runs while reads keep their own family', () => {
+    const matches: SearchMeta = {
+      shape: 'matches',
+      files: [
+        { path: 'a.ts', matches: [{ lineNumber: 1, line: 'x' }, { lineNumber: 2, line: 'y' }, { lineNumber: 3, line: 'z' }, { lineNumber: 4, line: 'w' }] },
+      ],
+      truncated: true, total: 40,
+    }
+    const paths: SearchMeta = { shape: 'paths', paths: ['a.ts', 'b.ts'], truncated: false, total: 2 }
+    const grep = (id: string, callId: string, seq: number, args: string, result: ConversationToolEntry['result']): ConversationToolEntry =>
+      transcriptTool({ id, callId, seq, name: 'grep', arguments: args, result })
+    const model = conversationTranscriptModel(projection([
+      transcriptTool({ id: 'r0', callId: 'c-r0', seq: 1, name: 'read', arguments: '{"file_path":"a.ts"}' }),
+      grep('s1', 'c-s1', 2, '{"pattern":"export"}', searchResult(matches)),
+      { kind: 'thinking', id: 't1', seq: 3, turn: 1, step: 1, text: 'narrow it', streaming: false },
+      grep('s2', 'c-s2', 4, '{"pattern":"*.ts"}', searchResult(paths)),
+      grep('s3', 'c-s3', 5, '{"pattern":"gone"}', searchResult(undefined, true)),
+      grep('s4', 'c-s4', 6, '{"pattern":"deep"}', undefined as never),
+    ]), combinedSource())
+    expect(model.entries.map(entry => entry.kind)).toEqual([
+      'transcript-read-group',
+      'transcript-thinking',
+      'transcript-search-group',
+    ])
+    const search = model.entries[2] as unknown as { searches: Array<Record<string, unknown>> }
+    expect(search.searches[0]).toMatchObject({
+      callId: 'c-s1', pattern: 'export', shape: 'matches',
+      files: [{ path: 'a.ts', count: 4, previews: { length: 3 } }], truncated: true, total: 40, state: 'ok',
+    })
+    expect(search.searches[1]).toMatchObject({ callId: 'c-s2', pattern: '*.ts', shape: 'paths', paths: ['a.ts', 'b.ts'], pathsTotal: 2, state: 'ok' })
+    expect(search.searches[2]).toMatchObject({ callId: 'c-s3', pattern: 'gone', state: 'error', error: 'pattern rejected' })
+    expect(search.searches[3]).toMatchObject({ callId: 'c-s4', pattern: 'deep', state: 'pending' })
+    expect(Object.isFrozen(search)).toBe(true)
+
+    // Degraded search facts: an empty pattern, a paths view without totals,
+    // and a blank-text failure keep their arms honest.
+    const degraded = conversationTranscriptModel(projection([
+      grep('d1', 'c-d1', 1, '{"pattern":""}', searchResult(paths)),
+      grep('d2', 'c-d2', 2, '{"pattern":"p"}', searchResult({ shape: 'paths', paths: ['a.ts'], truncated: false, total: 1 })),
+      grep('d3', 'c-d3', 3, '{"pattern":"q"}', { content: [{ type: 'text', text: ' \n' }], text: ' \n', isError: true, endedAt: 1 }),
+    ]), combinedSource())
+    const degradedGroup = degraded.entries[0] as unknown as { searches: Array<Record<string, unknown>> }
+    expect(degradedGroup.searches[0]!['pattern']).toBeUndefined()
+    expect(degradedGroup.searches[1]).toMatchObject({ shape: 'paths', paths: ['a.ts'], pathsTotal: 1 })
+    expect(degradedGroup.searches[2]).toMatchObject({ state: 'error', error: 'search failed' })
+
+    // A read between two searches splits the families apart.
+    const split = conversationTranscriptModel(projection([
+      grep('s1', 'c-s1', 1, '{"pattern":"a"}', searchResult(paths)),
+      transcriptTool({ id: 'r0', callId: 'c-r0', seq: 2, name: 'read', arguments: '{"file_path":"a.ts"}' }),
+      grep('s2', 'c-s2', 3, '{"pattern":"b"}', searchResult(paths)),
+    ]), combinedSource())
+    expect(split.entries.map(entry => entry.kind)).toEqual(['transcript-search-group', 'transcript-read-group', 'transcript-search-group'])
   })
 })
 
