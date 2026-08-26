@@ -550,7 +550,7 @@ describe('ErrorMessageComponent', () => {
 describe('InterruptedMarkerComponent', () => {
   it('renders the single muted tombstone row', () => {
     const component = new InterruptedMarkerComponent(tagged(), setup())
-    expect(component.render(80)).toEqual(['[E]⏹ interrupted[/E]'])
+    expect(component.render(80)).toEqual(['[E]■ interrupted[/E]'])
     component.invalidate()
   })
 })

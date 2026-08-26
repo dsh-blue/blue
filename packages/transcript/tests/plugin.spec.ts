@@ -506,7 +506,7 @@ describe('blue-transcript plugin through the real Loader', () => {
       ref: { sessionEpoch: 2, requestEpoch: 1, scope: 'main' },
       state: 'interrupted',
     })
-    expect(contentLines(screen)).toContain('⏹ interrupted')
+    expect(contentLines(screen)).toContain('■ interrupted')
     expect(screen.renderRequests).toHaveLength(baseline + 1)
   })
 
@@ -525,7 +525,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     expect(contentLines(screen).join('\n')).not.toContain('bring this back')
     expect(contentLines(screen).join('\n')).not.toContain('discard me')
     ctx.emit('session/event', agent.session as unknown as Session, turnEnd(4, { kind: 'aborted' }))
-    expect(contentLines(screen)).not.toContain('⏹ interrupted')
+    expect(contentLines(screen)).not.toContain('■ interrupted')
   })
 
   it.skip('rejects a retraction signal from a stale session epoch', async () => {
@@ -546,7 +546,7 @@ describe('blue-transcript plugin through the real Loader', () => {
     const { ctx, screen } = await bootTranscript(null)
     ctx.emit('test/session-changed', asAgent(fakeAgent([start, user, end, marker])))
     expect(contentLines(screen).join('\n')).not.toContain('withdrawn snapshot')
-    expect(contentLines(screen)).not.toContain('⏹ interrupted')
+    expect(contentLines(screen)).not.toContain('■ interrupted')
   })
 
   it('mounts live thinking above the answer, finalizes it in place, and joins ctrl+o', async () => {

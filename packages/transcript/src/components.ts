@@ -531,7 +531,7 @@ export class ErrorMessageComponent implements BlueComponent {
 }
 
 /**
- * One cut-turn row: the `⏹` marker and the `interrupted` label in error
+ * One cut-turn row: the text-presentation `■` marker and the `interrupted` label in error
  * red — the visible tombstone of an Esc interrupt (or a crash-recovery
  * close), so the stream going quiet always carries its reason (the S24a
  * dogfood ruling; round 4 moved it from textMuted to the error paint for
@@ -557,7 +557,7 @@ export class InterruptedMarkerComponent implements BlueComponent {
    * @returns one string.
    */
   render(width: number): string[] {
-    return [this.components.truncateToWidth(this.colors.error('⏹ interrupted'), width)]
+    return [this.components.truncateToWidth(this.colors.error('■ interrupted'), width)]
   }
 }
 

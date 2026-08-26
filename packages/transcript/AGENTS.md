@@ -22,7 +22,7 @@ This package is the renderer adapter over `@dsh-blue/blue-frontend` models. It m
 
 ## Components And Width
 
-User, assistant, thinking, tool, error, and interruption models reuse the package components. Image bytes remain renderer-owned and late-bound through the attachment store. Every assembled row must fit the width passed to `render(width)`; use `blueComponents` width helpers or `@dsh-blue/blue-core/chrome`, never local codepoint counting. Add every content renderer to `tests/width-scan.spec.ts`.
+User, assistant, thinking, tool, error, and interruption models reuse the package components. The interruption tombstone is the text-presentation `■ interrupted` row in the theme error color, without an emoji marker. Image bytes remain renderer-owned and late-bound through the attachment store. Every assembled row must fit the width passed to `render(width)`; use `blueComponents` width helpers or `@dsh-blue/blue-core/chrome`, never local codepoint counting. Add every content renderer to `tests/width-scan.spec.ts`.
 
 ## Status Models
 

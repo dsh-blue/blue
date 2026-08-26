@@ -477,7 +477,7 @@ describe('blue whole-tree e2e', () => {
     await agent.whenIdle()
     await vi.waitFor(async () => {
       const frame = await fullFrame(tree.terminal)
-      expect(frame.includes('⏹ interrupted')).toBe(false)
+      expect(frame.includes('■ interrupted')).toBe(false)
       expect(frame.includes('thinking...')).toBe(false)
       expect(frame.includes('pondering the question at hand')).toBe(false)
       expect(frame.includes('first')).toBe(true)
