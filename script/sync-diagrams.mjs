@@ -16,8 +16,6 @@ import { readFileSync, writeFileSync } from 'node:fs'
 const DIAGRAMS = {
   'blue-layers': ['README.md', 'README.zh.md', 'docs/blue-architecture.md'],
   'blue-composition': [
-    'README.md',
-    'README.zh.md',
     'docs/blue-architecture.md',
     'website/plugins/builtins.md',
     'website/en/plugins/builtins.md',

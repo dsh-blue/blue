@@ -1,34 +1,12 @@
-# Writing your first plugin
+# Developer manual overview
 
-Blue's extension surfaces are managed by a Cordis plugin host: your plugin declares capabilities, contributes renderer-neutral views/actions, and is rolled back automatically on unload. This page builds a first plugin against stable `@dsh-blue/blue-api`; see the [Seam reference](/en/plugins/seams) for the complete map.
+A Blue plugin is an ordinary Cordis plugin: it declares a manifest, requests capabilities from `bluePluginHost`, then registers renderer-neutral contributions (views, commands, notifications). All rendering is done by Blue's TUI kernel — your code never touches pi-tui, ANSI escapes, or terminal width.
 
-::: warning Preview-stage caveat
-Seam signatures are planned to freeze in Phase 3; plugins integrating today may need adaptation across upgrades. This page is kept in sync with every release.
-:::
-
-## The plugin model
-
-A Blue plugin is a Cordis plugin — export `name` (a stable string), an optional `inject` (the services it waits for), and `apply(ctx)`:
+A minimal plugin looks like this:
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
-
-export const name = 'my-plugin.hello'
-export const inject = ['bluePluginHost']
-
-export function apply(ctx: Context): void {
-  // Register through the capability-scoped API
-}
-```
-
-`bluePluginHost.open(ctx, manifest)` binds the API to the caller's Fiber; every contribution registration is rolled back when the plugin unloads.
-
-## Your first plugin: a status-bar clock
-
-Goal: add the current time to the status bar and register a `/now` command. The complete code:
-
-```ts
-import type { Context } from '@deepseek-ai/cordis'
+// 空类型导入：拉入 Context.bluePluginHost 的声明合并
 import type {} from '@dsh-blue/blue-api'
 
 export const name = 'my-plugin.clock'
@@ -38,55 +16,64 @@ export function apply(ctx: Context): void {
   const opened = ctx.bluePluginHost.open(ctx, {
     id: 'my-plugin.clock',
     api: '^1.0.0',
-    capabilities: ['status', 'commands'],
+    capabilities: ['status'],
   })
-  if (!opened.ok) throw new Error(opened.message)
-
-  const status = opened.value.status!.register({
+  if (!opened.ok) return // 结构性失败：放弃挂载，不向宿主抛异常
+  opened.value.status?.register({
     id: 'clock.status',
-    priority: 25,
-    render: () => ({ kind: 'text', content: new Date().toLocaleTimeString() }),
+    render: () => ({ kind: 'text', content: new Date().toLocaleTimeString(), tone: 'muted' }),
   })
-  if (!status.ok) throw new Error(status.message)
-
-  const command = opened.value.commands!.register({
-    id: 'now',
-    label: 'Print the current time',
-    execute: async () => ({ ok: true, value: undefined }),
-  })
-  if (!command.ok) throw new Error(command.message)
 }
 ```
 
-Notes:
+Insert it into the profile's `cordis.patch.yml` and the status bar gains a clock entry. To run this plugin end to end from scratch, see the [quickstart](/en/plugins/quickstart).
 
-- `inject` declares the stable host dependency, so the plugin activates only when it exists;
-- the manifest exposes only requested capabilities and failures are structured results;
-- both registrations bind to the current Fiber and vanish on unload;
-- `/now` appears in the editor's slash completion and `/help` automatically; no extra UI registration.
+::: warning Preview-stage caveat
+Seam signatures are planned to freeze in Phase 3; plugins integrating today may need adaptation across upgrades. This site is kept in sync with every release.
+:::
 
-## Packaging and assembly
+## The integration model at a glance
 
-1. **Export a subpath**: expose the plugin entry in your package's `package.json` (e.g. `"./clock": "./lib/clock.js"`); the shape is identical to Blue's built-in plugins (see [Built-in plugins](/en/plugins/builtins)).
-2. **Add a patch row** to the profile's `cordis.patch.yml`:
+Blue is not a standalone application — it is a set of plugin rows on the Cordis plugin tree inside the dsh process. Your plugin runs in the same tree as Blue and the Harness domain, integrating through Cordis service injection — no SDK process, IPC, or config file:
 
-```yaml
-- id: my-plugin-clock
-  name: 'my-scope/my-pkg/clock'
+```text
+dsh process 进程（one Cordis tree 一棵 Cordis 树）
+├── dsh-base rows 行    — Harness domain: agents · sessions · tools · approval
+├── Blue rows 行        — TUI: bluePluginHost serves here 在这里提供服务
+└── your plugin row 你的插件行 — inserted via 经 cordis.patch.yml, inject bluePluginHost
 ```
 
-3. **Install**: `dsh plugin --profile blue add link:/path/to/your/pkg` during development, or the marketplace's one-liner once it opens.
+Integration is a single move: **declare a manifest → `open()` to receive a capability-scoped API → register contributions**. Contributions are data (`BlueView`) and structured actions, not UI components. Every registration binds to the caller's Fiber, so contributions roll back automatically when the plugin unloads.
 
-Rows add, delete, and reorder freely — zero-code customization: don't want a surface? Delete its row.
+## Capabilities open today
 
-## Next steps
+| Capability | Contribution | Effect |
+| --- | --- | --- |
+| [`commands`](/en/plugins/commands) | slash command + async handler | appears in slash completion and `/help` |
+| [`status`](/en/plugins/status) | a render function returning `BlueView` | status bar entry in the bottom footer |
+| [`dock`](/en/plugins/dock) | static or functional `BlueView` | bottom pane above the editor |
+| [`notifications`](/en/plugins/notifications) | publish/subscribe `BlueNotification` | editor notice bar |
 
-- [Seam reference](/en/plugins/seams) — the stable plugin host and Blue's internal projection/action/model boundaries;
-- [Built-in plugins](/en/plugins/builtins) — the bundle's 28 Blue-owned rows and validation-only packages.
+The manifest schema also declares five more capabilities — `tools`, `editor`, `panels`, `session.read`, `session.act` — but in the current phase requesting any of them is rejected by `open()` (`BLUE_CAPABILITY_DENIED`): they are reserved for later phases and their signatures are not settled.
 
-## Design discipline
+## Documentation map
 
-1. Depend only on public contracts such as `@dsh-blue/blue-api`, never package internals;
-2. Request only capabilities you use and handle every `BlueResult`;
-3. Contributions are renderer-neutral data/actions;
-4. Do not retain Agent, Session, renderer objects, or cross-Fiber mutable singletons.
+**Getting started**
+
+- [Quickstart](/en/plugins/quickstart) — run a plugin end to end in ten minutes: package skeleton, manifest, install, verification, unload;
+- [Core concepts](/en/plugins/concepts) — the Cordis tree and Fiber lifecycle, capability scoping, the `BlueView` vocabulary, `BlueResult` error codes, the domain/adapter split.
+
+**Contributing capabilities** — one page per capability: contract table, full example, behavior details, and common pitfalls.
+
+- [Commands](/en/plugins/commands) · [Status bar](/en/plugins/status) · [Dock panes](/en/plugins/dock) · [Notifications](/en/plugins/notifications)
+
+**Validation and publishing**
+
+- [Debugging & validation](/en/plugins/testing) — profile install, the iteration loop, the validate/fixture scripts, unload-semantics checks;
+- [Publishing](/en/plugins/publishing) — npm publishing and the user install path.
+
+**Reference**
+
+- [Seam reference](/en/plugins/seams) — the complete list of the stable plugin host and Blue's internal boundaries;
+- [Built-in plugins](/en/plugins/builtins) — the bundle's 28 Blue-owned rows, the most complete set of plugin examples;
+- [Contributing to Blue](/en/plugins/contributing) — the local development flow for contributing code to Blue itself.

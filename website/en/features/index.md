@@ -15,6 +15,10 @@ Blue is a Cordis plugin tree. The bundle currently has 28 Blue-owned rows: two h
 
 These 14 rows can be removed independently. Diff/terminal/search/read/web tool rendering comes from canonical `ToolPresentationModel` conversion; there are no intent rows.
 
+## plain-first
+
+Baseline plus assembly is the complete, self-sufficient Blue UI. Blue's own enhancements register through the same seams downstream plugins use — drop the whole enhancement segment and the bundle still boots and works. Every enhancement row is thereby held to the test of "is the world better with it", and downstream plugins get mechanism-level parity with built-ins.
+
 ## Assembly
 
 `blue-interaction`, `blue-plugin-interaction-bridge`, `blue-startup`, and `blue-app` close the tree with input, commands, notifications, startup, and the Agent driver. App exposes only readonly session readers/projection values and structured actions to renderers.

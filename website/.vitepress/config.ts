@@ -4,10 +4,10 @@ import { withMermaid } from 'vitepress-plugin-mermaid'
 const base = process.env.DOCS_BASE ?? '/'
 
 /**
- * 站点版本（ADR D32）：当前预览线。未来五包首次发包时统一使用该版本号，
+ * 站点版本（ADR D32）：当前预览线，与十包发布线一致。
  * 升级时只改这一处（首页 hero 文案与 footer 同步引用语义，见各 index.md）。
  */
-const SITE_VERSION = '0.1.0-rc.2'
+const SITE_VERSION = '0.1.0-rc.8'
 
 /**
  * 站点正式域名（dsh-blue.dev，经 Cloudflare DNS 指向 GitHub Pages）。
@@ -137,9 +137,32 @@ const sidebarZh = {
   ],
   '/plugins/': [
     {
-      text: '插件开发',
+      text: '开始',
       items: [
-        { text: '编写第一个插件', link: '/plugins/' },
+        { text: '概览', link: '/plugins/' },
+        { text: '快速开始', link: '/plugins/quickstart' },
+        { text: '核心概念', link: '/plugins/concepts' },
+      ],
+    },
+    {
+      text: '贡献能力',
+      items: [
+        { text: '命令', link: '/plugins/commands' },
+        { text: '状态栏', link: '/plugins/status' },
+        { text: 'Dock 面板', link: '/plugins/dock' },
+        { text: '通知', link: '/plugins/notifications' },
+      ],
+    },
+    {
+      text: '验证与发布',
+      items: [
+        { text: '调试与验证', link: '/plugins/testing' },
+        { text: '发布插件', link: '/plugins/publishing' },
+      ],
+    },
+    {
+      text: '参考',
+      items: [
         { text: 'Seam 参考', link: '/plugins/seams' },
         { text: '内置插件', link: '/plugins/builtins' },
         { text: '贡献本仓库', link: '/plugins/contributing' },
@@ -196,9 +219,32 @@ const sidebarEn = {
   ],
   '/en/plugins/': [
     {
-      text: 'Plugin development',
+      text: 'Getting started',
       items: [
-        { text: 'Writing your first plugin', link: '/en/plugins/' },
+        { text: 'Overview', link: '/en/plugins/' },
+        { text: 'Quickstart', link: '/en/plugins/quickstart' },
+        { text: 'Core concepts', link: '/en/plugins/concepts' },
+      ],
+    },
+    {
+      text: 'Contribution capabilities',
+      items: [
+        { text: 'Commands', link: '/en/plugins/commands' },
+        { text: 'Status bar', link: '/en/plugins/status' },
+        { text: 'Dock panes', link: '/en/plugins/dock' },
+        { text: 'Notifications', link: '/en/plugins/notifications' },
+      ],
+    },
+    {
+      text: 'Verify & publish',
+      items: [
+        { text: 'Debugging & validation', link: '/en/plugins/testing' },
+        { text: 'Publishing', link: '/en/plugins/publishing' },
+      ],
+    },
+    {
+      text: 'Reference',
+      items: [
         { text: 'Seam reference', link: '/en/plugins/seams' },
         { text: 'Built-in plugins', link: '/en/plugins/builtins' },
         { text: 'Contributing to Blue', link: '/en/plugins/contributing' },

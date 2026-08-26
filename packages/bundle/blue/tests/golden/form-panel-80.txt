@@ -1,0 +1,30 @@
+    ⢀⣀⣰⣰⣰⣰⣰⣼⣼⠜   ⣺⣵⡀    ⢀⡀
+  ⢀⣸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣵⣐  ⢯⣿⣿⣵⣸⣼⣼⣿⠕  Welcome to Blue!
+ ⢨⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣽⣐⠂⠯⣿⣿⣿⣿⠿⠇   Send /help for help information.
+ ⣿⡟⠃⠃⠋⠏⠿⣿⣿⣿⣿⣿⣿⠯⢿⣿⣽⣴⣿⣿⡕
+ ⣿⣿      ⠋⢿⣿⣿⣿⣿ ⠋⣿⣿⣿⣿⠁      Directory: «cwd»
+ ⢯⣿⣵       ⠫⣿⣿⣿⣽⣼⣿⣿⣿⠗       Model:     mock · mock
+ ⠂⢯⣿⣵⡀   ⣰⣀ ⠊⢿⣿⣿⣿⣿⡿⠇        Version:   0.1.0-rc.9
+   ⠋⣿⣿⣼⣰⣰⣻⣿⣽⣰⣀⠋⢿⣿⣿⣼⣰⡀
+     ⠃⠏⠿⣿⣿⣿⣿⣿⠿⠟⠇⠂⠃⠃⠃
+
+ » start
+
+ ● booted
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│  Custom endpoint                                                             │
+│                                                                              │
+│  the profile is written to the llm-pi-ai settings namespace                  │
+│  Provider Name · lowercase kebab-case, e.g. my-gateway                       │
+│  >                                                                           │
+│  Base URL      · include /v1, e.g. https://gw.example.com/v1                 │
+│                                                                              │
+│  API key                                                                     │
+│                                                                              │
+│                                                                              │
+│  Tab / ↑↓ fields  ·  Enter for next field  ·  Esc to cancel                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ mock  «cwd»
+                                                                         ctx 10

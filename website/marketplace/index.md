@@ -21,6 +21,6 @@ Blue 生态插件市场将以独立仓库实现（收录、索引与卡片展示
 
 ## 上线之前
 
-- 想开发插件：从[编写第一个插件](/plugins/)开始，缝的目录见 [Seam 参考](/plugins/seams)；
+- 想开发插件：从[快速开始](/plugins/quickstart)入手，缝的目录见 [Seam 参考](/plugins/seams)；
 - 想看当前组合：Blue bundle 的 28 条自有行见[内置插件](/plugins/builtins)；
 - 关注 [GitHub 仓库](https://github.com/dsh-blue/blue)获取市场开放公告。

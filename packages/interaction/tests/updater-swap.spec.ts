@@ -10,7 +10,9 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempTracked } from '../../core/tests/temp-dir.ts'
+import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
+
+registerTempDirCleanup()
 import type { InteractiveChild, SpawnOutcome } from '../src/updater/io.ts'
 import { updaterInternals } from '../src/updater/io.ts'
 import {
@@ -661,4 +663,3 @@ describe('updater/swap import sweep real execution', () => {
     expect(outcome.code).toBe(0)
   })
 })
-

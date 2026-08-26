@@ -36,6 +36,18 @@ The command-model service projects canonical commands into `CommandModel` values
 
 Dialogs mount through `EditorHostService.mountReplacement()` and the shared list/form/info/settings/question/approval/model/plan-review components. They own focus and use core width helpers. Async panels capture a generation/session identity, abort on unload where possible, and reject stale completion before mutating UI or session actions.
 
+`FormPanel` renders two ANSI-width-bounded rows per field: a label/hint
+description row followed by an unframed arrow prompt row. The active field
+owns the primary marker, accent label, and cursor; validation text is attached
+below the failing field and editing clears it. Enter advances or submits from
+the last field, Tab/Down moves forward, and Shift-Tab/Up moves backward.
+`Questionnaire` uses the same compact input row
+for optionless and `Other` answers, shows a bounded progress summary instead
+of a full tab strip, and keeps one draft per question while navigating. Escape
+backs out of an `Other` editor before cancelling the request. Both components
+retain renderer-neutral answer protocols and use only `BlueComponents`,
+`BlueTheme`, and core width helpers; they do not expose pi-tui objects.
+
 Approval allowances and prompt serialization are local to one approval plugin apply. Reject feedback uses `steerCurrentAgent()` with the opaque request owner, so a session switch cannot steer a replacement Agent. Question panels follow the same abort/late-result discipline.
 
 ## Settings And Themes
@@ -65,3 +77,8 @@ Fiber replays the command snapshot. Public writes during the gap return
 ## Package And Tests
 
 Keep `README.md` and `README.zh.md` synchronized. Any new subpath updates package exports, `files`, and `tsdown.config.ts` together. New content components join width scans. State changes require same-tree reload, separate-tree isolation, unload, abort, and late-result coverage proportional to the affected workflow.
+
+Specs that create filesystem fixtures use the shared `mkdtempTracked` helper
+and call `registerTempDirCleanup()` at module scope. This is required for
+eager `afterAll` cleanup when Vitest reuses a worker; the helper's process-exit
+hook is only the recovery path for an interrupted worker.

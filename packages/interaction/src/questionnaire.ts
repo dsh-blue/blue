@@ -1,5 +1,5 @@
 /**
- * `Questionnaire`: the tabbed multi-question overlay component behind the
+ * `Questionnaire`: the progress-driven multi-question overlay component behind the
  * `blue-questions` provider. One overlay carries the whole request: a tab
  * row (one entry per question, the current one highlighted, answered ones
  * check-marked) above the active question's body — an option list (Space
@@ -27,6 +27,9 @@ const KEY_DOWN = '\x1b[B'
 const KEY_ENTER = '\r'
 const KEY_SPACE = ' '
 const KEY_ESCAPE = '\x1b'
+
+/** Inverse-video cursor block used by the compact input row. */
+const CURSOR_BLOCK = '\x1b[7m \x1b[0m'
 
 /**
  * Option rows rendered at once; longer lists truncate with an ellipsis row.
@@ -58,17 +61,19 @@ interface QuestionState {
   cursor: number
   readonly toggled: Set<string>
   custom: string | undefined
+  draft: string
   answer: AskUserQuestionAnswerItem | undefined
 }
 
 /**
  * The tabbed questionnaire overlay. The presence of {@link editor} is the
  * editing state: it exists for the active optionless question, or while an
- * `Other` row is being answered with custom text.
+ * `Other` row is being answered with custom text. One draft is retained per
+ * question while the user navigates.
  */
 export class Questionnaire implements BlueFocusable {
   /** Whether the questionnaire currently holds focus. Managed by the screen. */
-  focused = false
+  private panelFocused = false
 
   private tab = 0
   private readonly states: QuestionState[]
@@ -83,10 +88,20 @@ export class Questionnaire implements BlueFocusable {
       cursor: 0,
       toggled: new Set(),
       custom: undefined,
+      draft: '',
       answer: undefined,
     }))
     // An optionless question is edited directly, with no list to show.
     if (this.isOptionless(this.current())) this.openEditor()
+  }
+
+  get focused(): boolean {
+    return this.panelFocused
+  }
+
+  set focused(value: boolean) {
+    this.panelFocused = value
+    if (this.editor !== undefined) this.editor.focused = value
   }
 
   /** The active question. */
@@ -125,7 +140,11 @@ export class Questionnaire implements BlueFocusable {
     const editor = this.editor
     if (editor !== undefined) {
       if (data === KEY_ESCAPE) {
-        this.options.onCancel()
+        if (this.isOptionless(this.current())) this.options.onCancel()
+        else {
+          this.saveEditorDraft()
+          this.editor = undefined
+        }
         return
       }
       if (data === KEY_TAB) {
@@ -168,8 +187,9 @@ export class Questionnaire implements BlueFocusable {
     if (data === KEY_ESCAPE) this.options.onCancel()
   }
 
-  /** Switch tabs, dropping any open editor (unsaved custom text is lost). */
+  /** Switch questions while retaining any unfinished editor draft. */
   private move(delta: number): void {
+    this.saveEditorDraft()
     this.editor = undefined
     const count = this.options.questions.length
     this.tab = (this.tab + delta + count) % count
@@ -228,7 +248,14 @@ export class Questionnaire implements BlueFocusable {
     editor.onSubmit = (text) => {
       this.submitCustom(question, state, text)
     }
+    if (state.draft.length > 0) editor.setText(state.draft)
+    editor.focused = this.panelFocused
     this.editor = editor
+  }
+
+  /** Keep an unfinished answer when the user changes questions. */
+  private saveEditorDraft(): void {
+    if (this.editor !== undefined) this.state().draft = this.editor.getExpandedText()
   }
 
   /**
@@ -238,6 +265,7 @@ export class Questionnaire implements BlueFocusable {
    * to the list for a multi-select.
    */
   private submitCustom(question: AskUserQuestionItem, state: QuestionState, text: string): void {
+    state.draft = text
     if (this.isOptionless(question)) {
       this.recordAnswer(state, {
         id: question.id,
@@ -278,8 +306,8 @@ export class Questionnaire implements BlueFocusable {
   }
 
   /**
-   * Render the framed dialog: title, the `(○)`/`(✓)` tab row, the active
-   * question, and its list or editor, closed by a key row. Option lists
+   * Render the framed dialog: progress summary, active question, and its
+   * list or compact editor, closed by a state-specific key row. Option lists
    * longer than {@link MAX_OPTION_ROWS} truncate the tail behind a muted
    * ellipsis row, and an option row budgets its description into the width
    * its label leaves (the select-list discipline, so no row exceeds the
@@ -292,15 +320,15 @@ export class Questionnaire implements BlueFocusable {
     const components = this.options.components
     const question = this.current()
     const state = this.state()
-    const tabs = this.options.questions.map((entry, at) => {
+    const progress = this.options.questions.map((entry, at) => {
       const label = entry.header ?? `Q${at + 1}`
-      if (at === this.tab) return colors.primary(label)
+      if (at === this.tab) return colors.primary(`● ${label}`)
       return this.states[at]?.answer === undefined
-        ? colors.muted(`(○) ${label}`)
-        : colors.success(`(✓) ${label}`)
+        ? colors.muted(`○ ${label}`)
+        : colors.success(`✓ ${label}`)
     }).join('  ')
     const rows = [
-      components.truncateToWidth(`  ${tabs}`, width),
+      components.truncateToWidth(`  ${this.tab + 1}/${this.options.questions.length} · ${progress}`, width),
       '',
       colors.primary(components.truncateToWidth(`  ${question.question}`, width)),
     ]
@@ -309,9 +337,9 @@ export class Questionnaire implements BlueFocusable {
     }
     const editor = this.editor
     if (editor !== undefined) {
-      rows.push(...editor.render(width))
+      rows.push(this.renderEditorRow(editor, width))
       return framePanel(rows, width, {
-        title: 'question',
+        title: `Question ${this.tab + 1} of ${this.options.questions.length}`,
         titlePaint: colors.primary,
         rulePaint: colors.primary,
         footer: this.footerParts(),
@@ -334,12 +362,23 @@ export class Questionnaire implements BlueFocusable {
       const description = option.description !== undefined && descriptionWidth > 4
         ? colors.muted(components.truncateToWidth(` — ${oneLine(option.description)}`, descriptionWidth))
         : ''
-      entries.push(at === state.cursor ? colors.primary(label) + description : label + description)
+      const row = at === state.cursor ? colors.primary(label) + description : label + description
+      if (at === state.cursor) {
+        const clipped = components.truncateToWidth(row, width)
+        entries.push(colors.selectedBg(clipped + ' '.repeat(Math.max(0, width - components.visibleWidth(clipped)))))
+      } else {
+        entries.push(row)
+      }
     }
     const otherPrefix = state.cursor === options.length ? '  → ' : '    '
     const otherLabel = state.custom === undefined ? 'Other' : `Other: ${state.custom}`
     const other = components.truncateToWidth(`${otherPrefix}${otherLabel}`, width)
-    entries.push(state.cursor === options.length ? colors.primary(other) : other)
+    if (state.cursor === options.length) {
+      const clipped = components.truncateToWidth(colors.primary(other), width)
+      entries.push(colors.selectedBg(clipped + ' '.repeat(Math.max(0, width - components.visibleWidth(clipped)))))
+    } else {
+      entries.push(other)
+    }
     if (entries.length > MAX_OPTION_ROWS) {
       rows.push(...entries.slice(0, MAX_OPTION_ROWS), colors.muted('…'))
     } else {
@@ -347,7 +386,7 @@ export class Questionnaire implements BlueFocusable {
     }
     rows.push('')
     return framePanel(rows, width, {
-      title: 'question',
+      title: `Question ${this.tab + 1} of ${this.options.questions.length}`,
       titlePaint: colors.primary,
       rulePaint: colors.primary,
       footer: this.footerParts(),
@@ -357,6 +396,29 @@ export class Questionnaire implements BlueFocusable {
 
   /** Footer key-row parts for the framed dialog. */
   private footerParts(): string[] {
-    return ['↑↓ select', 'space toggle', '↵ choose', 'tab switch', 'esc cancel']
+    if (this.editor !== undefined) {
+      return this.isOptionless(this.current())
+        ? ['↵ save', 'tab next', 'esc cancel']
+        : ['↵ save', 'tab next', 'esc back']
+    }
+    return this.current().multiSelect === true
+      ? ['↑↓ select', 'space toggle', '↵ choose', 'tab next', 'esc cancel']
+      : ['↑↓ select', '↵ choose', 'tab next', 'esc cancel']
+  }
+
+  /** Render free text with the same compact field treatment as FormPanel. */
+  private renderEditorRow(editor: BlueEditor, width: number): string {
+    const colors = this.options.theme.colors
+    const components = this.options.components
+    const contentWidth = Math.max(1, width - 4)
+    const valueWidth = Math.max(1, contentWidth - 12)
+    const value = components.truncateToWidth(
+      editor.getExpandedText().replace(/[\r\n]+/g, ' '),
+      Math.max(1, valueWidth - 1),
+    )
+    const cursor = this.panelFocused ? CURSOR_BLOCK : ''
+    const row = `  ${colors.primary('>')} ${colors.accent('Answer')}   ${colors.text(value)}${cursor}`
+    const clipped = components.truncateToWidth(row, contentWidth)
+    return colors.selectedBg(clipped + ' '.repeat(Math.max(0, contentWidth - components.visibleWidth(clipped))))
   }
 }

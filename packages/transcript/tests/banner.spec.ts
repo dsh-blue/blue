@@ -282,14 +282,17 @@ describe('blue-banner plugin', () => {
     expect(joined).toContain('Welcome to Blue!')
     expect(joined).toContain(`Version:   ${BLUE_VERSION}`)
     expect(joined).toContain('m · p')
-    // The frameless banner's status value budget at render(100) is
-    // 100 − 25 (logo block) − 2 (gap) − 11 (label) = 62 columns; the pi-tui
-    // truncation appends a reset-wrapped ellipsis inside it. A cwd that
-    // fits renders whole, while a deeper checkout (this spec also runs from
-    // worktree copies) survives as its clipped prefix.
-    const budget = 100 - 25 - 2 - 11
+    // The banner mounts inside a GutterComponent that insets 1 column on
+    // each side, so render(100) hands the banner 98 columns; the status
+    // value budget is 98 − 25 (logo block) − 2 (gap) − 11 (label
+    // reservation) = 60, and the whole status text — label included —
+    // truncates to it, pi-tui appending a reset-wrapped three-dot ellipsis.
+    // A cwd that fits renders whole; a deeper checkout (this spec also runs
+    // from worktree copies) survives as its clipped prefix — 60 − 11 (the
+    // in-budget label) − 3.
+    const budget = 100 - 2 - 25 - 2 - 11
     const cwd = shortenHome(process.cwd(), homedir())
-    expect(joined).toContain(cwd.length <= budget ? cwd : cwd.slice(0, budget - 3))
+    expect(joined).toContain(cwd.length + 11 <= budget ? cwd : cwd.slice(0, budget - 11 - 3))
     // The banner is stateless; invalidation is a covered no-op.
     expect(() => screen.children[0]?.invalidate()).not.toThrow()
   })

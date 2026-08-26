@@ -112,3 +112,8 @@ Theme providers also publish a semantic companion through the optional `blueThem
 ## Verification note
 
 `theme-custom` accepts a validated `logoGradient` array as a frozen palette override; invalid arrays and entries retain the base gradient.
+
+Shared filesystem fixtures in `tests/temp-dir.ts` are tracked per worker and
+must opt into `registerTempDirCleanup()` for eager `afterAll` removal. The
+module-level exit hook is the fallback for specs that are interrupted before
+their cleanup hook can run.

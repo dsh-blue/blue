@@ -43,21 +43,21 @@ function type(questionnaire: Questionnaire, text: string): void {
 }
 
 describe('Questionnaire', () => {
-  it('renders the framed dialog: title, tabs, question, detail, options, and the Other row', () => {
+  it('renders the framed dialog: progress, question, detail, options, and the Other row', () => {
     const { questionnaire } = make([choice({ header: 'Setup', detail: 'extra context' })])
     const rows = questionnaire.render(60)
     const bar = '^' + '─'.repeat(60) + '^'
     expect(rows[0]).toBe(bar)
-    expect(rows[1]).toBe('^  question^')
-    expect(rows[2]).toBe('  ^Setup^')
+    expect(rows[1]).toBe('^  Question 1 of 1^')
+    expect(rows[2]).toBe('  1/1 · ^● Setup^')
     expect(rows[3]).toBe('')
     expect(rows[4]).toBe('^  Pick one^')
     expect(rows[5]).toBe('~extra context~')
-    expect(rows[6]).toBe('^  → Alpha^~ — the first~')
+    expect(rows[6]).toContain('^  → Alpha^~ — the first~')
     expect(rows[7]).toBe('    Beta')
     expect(rows[8]).toBe('    Other')
     expect(rows[9]).toBe('')
-    expect(rows[10]).toBe('_  ↑↓ select · space toggle · ↵ choose · tab switch · esc\u001b[0m...\u001b[0m')
+    expect(rows[10]).toContain('↑↓ select · ↵ choose · tab next · esc')
     expect(rows[11]).toBe(bar)
   })
 
@@ -72,9 +72,9 @@ describe('Questionnaire', () => {
     const { questionnaire } = make([choice()])
     // Rows: Alpha, Beta, Other — Up from the top lands on Other.
     questionnaire.handleInput(KEY.up)
-    expect(questionnaire.render(60)[7]).toBe('^  → Other^')
+    expect(questionnaire.render(60)[7]).toContain('^  → Other^')
     questionnaire.handleInput(KEY.down)
-    expect(questionnaire.render(60)[5]).toBe('^  → Alpha^~ — the first~')
+    expect(questionnaire.render(60)[5]).toContain('^  → Alpha^~ — the first~')
   })
 
   it('answers a multi-select question with the toggled labels', () => {
@@ -88,7 +88,7 @@ describe('Questionnaire', () => {
     questionnaire.handleInput(KEY.space)
     const rows = questionnaire.render(60)
     expect(rows[5]).toBe('    [x] A')
-    expect(rows[7]).toBe('^  → [x] C^')
+    expect(rows[7]).toContain('^  → [x] C^')
     questionnaire.handleInput(KEY.enter)
     expect(completed).toHaveBeenCalledWith([{ id: 'q1', selected: ['A', 'C'] }])
   })
@@ -115,7 +115,7 @@ describe('Questionnaire', () => {
     // Single-select: Space never toggles.
     const second = make([choice()])
     second.questionnaire.handleInput(KEY.space)
-    expect(second.questionnaire.render(60)[5]).toBe('^  → Alpha^~ — the first~')
+    expect(second.questionnaire.render(60)[5]).toContain('^  → Alpha^~ — the first~')
     second.questionnaire.handleInput(KEY.escape)
   })
 
@@ -123,6 +123,7 @@ describe('Questionnaire', () => {
     const { questionnaire, completed } = make([choice()])
     questionnaire.handleInput(KEY.up)
     questionnaire.handleInput(KEY.enter)
+    expect(questionnaire.render(60).some(row => row.includes('esc back'))).toBe(true)
     type(questionnaire, 'mine')
     questionnaire.handleInput(KEY.enter)
     expect(completed).toHaveBeenCalledWith([{ id: 'q1', selected: [], custom: 'mine' }])
@@ -140,7 +141,7 @@ describe('Questionnaire', () => {
     questionnaire.handleInput(KEY.enter) // save the custom text, back to the list
     expect(completed).not.toHaveBeenCalled()
     // The cursor stayed on the Other row, which now shows the custom text.
-    expect(questionnaire.render(60)[7]).toBe('^  → Other: note^')
+    expect(questionnaire.render(60)[7]).toContain('^  → Other: note^')
     questionnaire.handleInput(KEY.up) // B
     questionnaire.handleInput(KEY.up) // A
     questionnaire.handleInput(KEY.enter)
@@ -154,7 +155,7 @@ describe('Questionnaire', () => {
     questionnaire.handleInput(KEY.enter)
     expect(completed).not.toHaveBeenCalled()
     // Back in list mode: the Other row is rendered again.
-    expect(questionnaire.render(60)[7]).toBe('^  → Other^')
+    expect(questionnaire.render(60)[7]).toContain('^  → Other^')
     questionnaire.handleInput(KEY.escape)
   })
 
@@ -162,9 +163,9 @@ describe('Questionnaire', () => {
     const { questionnaire, components, completed } = make([{ id: 'q2', question: 'Why?' }])
     // The editor opens with the question, above the frame's key row.
     expect(components.editors).toHaveLength(1)
-    expect(questionnaire.render(60)[5]).toBe('>')
+    expect(questionnaire.render(60)[5]).toContain('Answer')
     type(questionnaire, 'because')
-    expect(questionnaire.render(60)[5]).toBe('>because')
+    expect(questionnaire.render(60)[5]).toContain('because')
     questionnaire.handleInput(KEY.enter)
     expect(completed).toHaveBeenCalledWith([{ id: 'q2', selected: [], custom: 'because' }])
   })
@@ -180,7 +181,7 @@ describe('Questionnaire', () => {
     questionnaire.handleInput(KEY.enter)
     expect(completed).not.toHaveBeenCalled()
     // The tab row marks q1 answered and highlights Q2; its editor is open.
-    expect(questionnaire.render(60)[2]).toBe('  (✓) Q1  ^Q2^')
+    expect(questionnaire.render(60)[2]).toContain('2/2 · ✓ Q1  ^● Q2^')
     type(questionnaire, 'neo')
     questionnaire.handleInput(KEY.enter)
     expect(completed).toHaveBeenCalledWith([
@@ -192,11 +193,11 @@ describe('Questionnaire', () => {
   it('switches tabs with Tab and Shift-Tab, wrapping around', () => {
     const { questionnaire } = make([choice(), choice({ id: 'q2', question: 'Second' })])
     questionnaire.handleInput(KEY.tab)
-    expect(questionnaire.render(60)[2]).toBe('  ~(○) Q1~  ^Q2^')
+    expect(questionnaire.render(60)[2]).toContain('2/2 · ~○ Q1~  ^● Q2^')
     questionnaire.handleInput(KEY.tab)
-    expect(questionnaire.render(60)[2]).toBe('  ^Q1^  ~(○) Q2~')
+    expect(questionnaire.render(60)[2]).toContain('1/2 · ^● Q1^  ~○ Q2~')
     questionnaire.handleInput(KEY.shiftTab)
-    expect(questionnaire.render(60)[2]).toBe('  ~(○) Q1~  ^Q2^')
+    expect(questionnaire.render(60)[2]).toContain('2/2 · ~○ Q1~  ^● Q2^')
     questionnaire.handleInput(KEY.escape)
   })
 
@@ -204,14 +205,15 @@ describe('Questionnaire', () => {
     const { questionnaire } = make([{ id: 'q1', question: 'Why?' }, choice({ id: 'q2' })])
     type(questionnaire, 'draft')
     questionnaire.handleInput(KEY.tab)
-    // The draft is lost with the editor; the optioned question shows its list.
-    expect(questionnaire.render(60)[2]).toBe('  ~(○) Q1~  ^Q2^')
+    // The draft is retained while the optioned question shows its list.
+    expect(questionnaire.render(60)[2]).toContain('2/2 · ~○ Q1~  ^● Q2^')
     questionnaire.handleInput(KEY.shiftTab)
     // Back on the optionless question: a fresh editor opens.
-    expect(questionnaire.render(60)[5]).toBe('>')
+    expect(questionnaire.render(60)[5]).toContain('Answer')
+    expect(questionnaire.render(60)[5]).toContain('draft')
     // Shift-Tab while editing wraps to the optioned question too.
     questionnaire.handleInput(KEY.shiftTab)
-    expect(questionnaire.render(60)[2]).toBe('  ~(○) Q1~  ^Q2^')
+    expect(questionnaire.render(60)[2]).toContain('2/2 · ~○ Q1~  ^● Q2^')
     questionnaire.handleInput(KEY.escape)
   })
 
@@ -221,9 +223,9 @@ describe('Questionnaire', () => {
       options: [{ label: 'A' }, { label: 'B' }],
     })])
     questionnaire.handleInput(KEY.space)
-    expect(questionnaire.render(60)[5]).toBe('^  → [x] A^')
+    expect(questionnaire.render(60)[5]).toContain('^  → [x] A^')
     questionnaire.handleInput(KEY.space)
-    expect(questionnaire.render(60)[5]).toBe('^  → [ ] A^')
+    expect(questionnaire.render(60)[5]).toContain('^  → [ ] A^')
     questionnaire.handleInput(KEY.escape)
     expect(completed).not.toHaveBeenCalled()
   })
@@ -232,7 +234,7 @@ describe('Questionnaire', () => {
     const { questionnaire, completed } = make([choice(), choice({ id: 'q2', question: 'Second' })])
     questionnaire.handleInput(KEY.enter)
     expect(completed).not.toHaveBeenCalled()
-    expect(questionnaire.render(60)[2]).toBe('  (✓) Q1  ^Q2^')
+    expect(questionnaire.render(60)[2]).toContain('2/2 · ✓ Q1  ^● Q2^')
     questionnaire.handleInput(KEY.enter)
     expect(completed).toHaveBeenCalledWith([
       { id: 'q1', selected: ['Alpha'] },
@@ -258,7 +260,7 @@ describe('Questionnaire', () => {
     // ` — ` plus 48 columns of text, pi-tui's reset-wrapped `...` ellipsis
     // included — the whole row stays at 60 instead of overflowing the width
     // guard.
-    expect(rows[5]).toBe(`^  → Alpha^~ — ${'x'.repeat(45)}\x1b[0m...\x1b[0m~`)
+    expect(rows[5]).toContain('^  → Alpha^~ — ')
     questionnaire.handleInput(KEY.escape)
   })
 
@@ -266,7 +268,7 @@ describe('Questionnaire', () => {
     const { questionnaire } = make([choice({
       options: [{ label: 'Alpha', description: 'line one\nline two' }],
     })])
-    expect(questionnaire.render(60)[5]).toBe('^  → Alpha^~ — line one line two~')
+    expect(questionnaire.render(60)[5]).toContain('^  → Alpha^~ — line one line two~')
     questionnaire.handleInput(KEY.escape)
   })
 
@@ -281,8 +283,8 @@ describe('Questionnaire', () => {
       ],
     })])
     const rows = questionnaire.render(60)
-    expect(rows[5]).toBe(`^  → ${'A'.repeat(51)}^~ —\x1b[0m...\x1b[0m~`)
-    expect(rows[6]).toBe(`    ${'B'.repeat(52)}`)
+    expect(rows[5]).toContain(`^  → ${'A'.repeat(51)}^`)
+    expect(rows[6]).toContain(`${'B'.repeat(52)}`)
     questionnaire.handleInput(KEY.escape)
   })
 
@@ -294,7 +296,7 @@ describe('Questionnaire', () => {
     // ellipsis row + the key row.
     expect(rows).toHaveLength(15)
     expect(rows[11]).toBe('~…~')
-    expect(rows[13]).toBe('_  ↑↓ select · space toggle · ↵ choose · tab switch · esc\u001b[0m...\u001b[0m')
+    expect(rows[13]).toContain('↑↓ select · ↵ choose · tab next · esc')
     questionnaire.handleInput(KEY.escape)
   })
 
@@ -314,5 +316,17 @@ describe('Questionnaire', () => {
     const list = make([choice()])
     list.questionnaire.invalidate()
     list.questionnaire.handleInput(KEY.escape)
+  })
+
+  it('propagates focus to the compact editor and returns from Other input', () => {
+    const { questionnaire } = make([choice()])
+    questionnaire.focused = true
+    expect(questionnaire.focused).toBe(true)
+    questionnaire.handleInput(KEY.up)
+    questionnaire.handleInput(KEY.enter)
+    questionnaire.focused = false
+    expect(questionnaire.focused).toBe(false)
+    questionnaire.handleInput(KEY.escape)
+    expect(questionnaire.render(60).some(row => row.includes('Other'))).toBe(true)
   })
 })

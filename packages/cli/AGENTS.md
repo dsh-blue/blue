@@ -34,8 +34,8 @@ Scope boundaries:
   budget is 1200s (the updater swap's parity; slow networks measured at
   18 min for 455 packages). No `blue upgrade` exists by ruling —
   reinstalling the shell is the upgrade.
-- The `BLUE_LAUNCHER=blue` child env rebrands the app's help and exit
-  epitaph; nothing else in the app tree reads it.
+- The `BLUE_LAUNCHER=blue` child env is a reserved branding seam; nothing
+  reads it yet (the exit epitaph still prints `dsh --profile blue --resume`).
 - Creative mode belongs entirely to `@dsh-blue/blue`; the launcher carries
   no preset payload and performs no host-installation writes. This keeps
   `blue` and direct `dsh --profile` launches on the same bundle path.
@@ -57,3 +57,6 @@ SIGTERM→SIGKILL ladder included).
 
 The CLI publishes `lib/bin.js`, bilingual README files, and `npm-shrinkwrap.json`. The shrinkwrap is regenerated only by `pnpm release:lock-cli` in an isolated npm project and must contain registry records, never pnpm `link:` entries. `pnpm check:pack` verifies the executable mode, shebang, single runtime file, shrinkwrap root pin, and 30 KB launcher budget.
 
+CLI specs that create temporary homes or nested installs register the shared
+tracked-temp cleanup hook so Vitest worker reuse does not accumulate fixtures
+under the OS temp directory.
