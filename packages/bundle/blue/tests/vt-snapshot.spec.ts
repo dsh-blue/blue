@@ -29,6 +29,7 @@ import { setGitCommandRunner } from '../../../transcript/src/status-git.ts'
 import { setClipboardImageReader } from '../../../interaction/src/paste-image.ts'
 import { ADVERSARIAL } from '../../../core/tests/width-scan.ts'
 import { mkdtempTracked } from '../../../core/tests/temp-dir.ts'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 // Pin the session cwd to a fixed-length throwaway directory: the banner and
@@ -232,10 +233,12 @@ describe('blue VT layout snapshots (R2)', () => {
   it('the provider form uses compact focused field rows', async () => {
     setGitCommandRunner(NO_GIT)
     const dir = mkdtempTracked('blue-vt-form-')
+    const credentialsPath = join(dir, 'credentials.yaml')
+    writeFileSync(credentialsPath, 'version: 1\nrefs:\n  DEEPSEEK_API_KEY: existing-test-key\n', { mode: 0o600 })
     const vt = new VtTerminal(80, 30)
     const tree = await bootBlue(['start'], {
       script: [textResponse('booted')],
-      realSettings: { settingsPath: join(dir, 'settings.yaml'), credentialsPath: join(dir, 'credentials.yaml') },
+      realSettings: { settingsPath: join(dir, 'settings.yaml'), credentialsPath },
       piAi: true,
       terminal: vt,
     })
