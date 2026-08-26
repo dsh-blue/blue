@@ -53,7 +53,8 @@ The custom theme reads a JSON file mapping tokens to `#rrggbb` hexes, layered ov
 Rules:
 
 - only write the tokens you want to override; the rest fall through to base;
-- **unknown tokens** (not in the table below) and **invalid colors** (not `#rrggbb`) are dropped with a warning, falling back to the base entry;
+- **unknown tokens** (not in the table below, nor `logoGradient`) and **invalid colors** (not `#rrggbb`) are dropped with a warning, falling back to the base entry;
+- `logoGradient` is the only token taking an array — a non-empty list of `#rrggbb` hexes painting the banner logo row by row, top to bottom;
 - an unreadable or non-object file falls back to the whole base palette.
 
 ## Semantic tokens
@@ -76,8 +77,9 @@ Reference values from the dark palette (light/ocean/paper have their own; auto p
 | `error` | `#e85454` | error |
 | `warning` | `#e8a838` | warning |
 | `selectedBg` | `#3a3a4a` | selected list-row background |
-| `roleUser` | `#4d6bfe` | user-message `❯` rail |
+| `roleUser` | `#4d6bfe` | user-message `»` rail |
 | `shellMode` | `#bd93f9` | `!` bash mode (editor frame, `$ ` prefix) |
+| `modelHighlight` | `#8ca8ff` | banner model-row highlight |
 
 ### Markdown
 

@@ -28,7 +28,12 @@ npm i -g pnpm@11
 # or: corepack enable && corepack prepare pnpm@11.7.0 --activate
 ```
 
-The first `blue` run downloads the full dependency tree into the profile — hundreds of packages; expect minutes on slow links (the budget is ~20 minutes, and re-running `blue` resumes from the cache). npm itself is silent for most of its own install while resolving the tree — that stillness is normal, not a hang.
+The first `blue` run downloads the full dependency tree into the profile — hundreds of packages; expect minutes on slow links (the budget is ~20 minutes, and re-running `blue` resumes from the cache). The assembly runs through `dsh plugin add` → pnpm, and the shell captures all of its output — total stillness is normal, not a hang (a failure prints the last few output lines plus one manual command). On slow or metered networks in China, point the registries at a mirror — the profile assembly and `/update`'s install both run through pnpm and share this configuration; `/update`'s new-version check reads metadata through `npm view` (npm's own npmrc), so set both:
+
+```sh
+pnpm config set registry https://registry.npmmirror.com
+npm config set registry https://registry.npmmirror.com   # /update's version check goes through npm
+```
 
 **Or install over your own dsh** (bring your own host — for existing dsh users):
 
@@ -40,7 +45,7 @@ dsh --profile blue
 
 After installing, follow the two sections below — one key, then a first run; models, providers, themes, and API keys are covered in detail in [Configuration](/en/guide/config).
 
-- The `@rc` suffix is required: preview releases only carry the `rc` dist-tag — `latest` stays reserved for the stable line, so a bare spec finds nothing.
+- The `@rc` suffix is the documented channel: preview releases publish only under the `rc` dist-tag and `latest` stays reserved for the stable line. Note that npm refuses to delete `latest` before the first stable exists, so it currently aliases the newest rc — that is a registry placeholder, not a contract.
 - Upgrading to a newer preview: shell users re-run `npm i -g @dsh-blue/blue-cli@rc` (reinstalling is the upgrade — the shell calibrates the profile's Blue to its own version and pins the host line with it); direct-dsh users type `/update` inside Blue (the in-app safe upgrade: pre-flight, snapshot, boot smoke, automatic rollback), or re-run the same `plugin add`.
 
 ## One key before you ride

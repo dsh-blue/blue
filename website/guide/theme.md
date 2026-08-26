@@ -53,7 +53,8 @@ custom 主题从 JSON 文件读取 token 到 `#rrggbb` 十六进制色的映射�
 规则：
 
 - 只需写想覆盖的 token，其余落到 base 的对应项；
-- **未知 token**（不在下表中）与**非法颜色**（非 `#rrggbb` 格式）会被丢弃并打印警告，回退 base 对应项；
+- **未知 token**（不在下表中，亦非下方的 `logoGradient`）与**非法颜色**（非 `#rrggbb` 格式）会被丢弃并打印警告，回退 base 对应项；
+- `logoGradient` 是唯一接受数组的 token——一个非空 `#rrggbb` 数组，自上而下逐行染横幅 logo；
 - 文件不可读或不是 JSON 对象时，整表回退 base。
 
 ## 语义 token 表
@@ -76,8 +77,9 @@ custom 主题从 JSON 文件读取 token 到 `#rrggbb` 十六进制色的映射�
 | `error` | `#e85454` | 错误态 |
 | `warning` | `#e8a838` | 警告态 |
 | `selectedBg` | `#3a3a4a` | 列表选中行背景 |
-| `roleUser` | `#4d6bfe` | 用户消息 `❯` 边栏 |
+| `roleUser` | `#4d6bfe` | 用户消息 `»` 边栏 |
 | `shellMode` | `#bd93f9` | `!` bash 模式（编辑框、`$ ` 前缀） |
+| `modelHighlight` | `#8ca8ff` | 横幅模型行高亮 |
 
 ### Markdown 渲染
 

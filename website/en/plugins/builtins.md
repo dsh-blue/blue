@@ -77,7 +77,7 @@ These eight rows plus assembly form the minimum usable UI. The conversation prod
 | `blue-status-title` | projected session title |
 | `blue-status-context` | projected context occupancy |
 | `blue-pane-activity` | projection-backed activity model |
-| `blue-pane-queue` | app-action-backed queued-message model and recall |
+| `blue-pane-queue` | app-action-backed queued-message model |
 | `blue-pane-todo` | projection-backed todo model (Ctrl-T collapse toggle, auto-close when all done) |
 | `blue-pane-btw` | `/btw` side-question pane: fork the live session for a by-the-way question (opaque owned side-session action plus official projection) |
 | `blue-pane-agents` | projected subagent-group model (last dock row, the kimi swarm-pane semantics) |

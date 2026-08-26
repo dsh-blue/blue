@@ -8,7 +8,7 @@ In effect regardless of focus:
 
 | Key | Action | Description |
 | --- | --- | --- |
-| `Ctrl-O` | Toggle tool output expansion | Switch the most recent **3 turns** of tool cards and thinking blocks between one-line summary and full output; resets on session change |
+| `Ctrl-O` | Toggle tool output expansion | Switch the most recent **3 turns** of tool cards and thinking blocks between one-line summary and full output |
 | `Ctrl-T` | Toggle todo pane folding | Five-row folded view ↔ full list |
 
 ## Shared interaction keys
@@ -31,10 +31,9 @@ Text-editing keys (cursor movement, multi-line, undo, kill-ring) belong to the u
 | `Ctrl-C` | Clear → interrupt → exit | Clears the draft, then interrupts a running agent; a **second press within 1 second** exits Blue |
 | `Ctrl-S` | Steer | Inject the non-empty draft as a steering instruction into the current turn, clearing the buffer |
 | `Ctrl-V` | Paste image | Store the clipboard image in the attachment library, inserting an `[image #N]` marker at the cursor |
-| `Ctrl-G` | External editor | Hand the draft to `$VISUAL`/`$EDITOR` for full-screen editing (Blue suspends and yields the terminal); quitting with `:cq` leaves the draft untouched |
+| `Ctrl-G` | External editor | Hand the draft to an external editor for full-screen editing (`blue.editorCommand` setting → `$VISUAL` → `$EDITOR`; Blue suspends and yields the terminal); quitting with `:cq` leaves the draft untouched |
 | `Alt+M` | Cycle session model | Step through the current provider's models (**session-only**, no persisted default; the press is consumed, the draft stays intact) |
 | `Backspace` | Delete / exit mode | Backspace on an empty `!` bash prompt exits back to prompt mode |
-| `↑` (empty buffer) | Recall queued message | Remove the most recent queued message into the draft (scrolling a side pane takes precedence; without the queue pane, ↑ is history) |
 | `Shift+Tab` | Cycle session mode | normal → plan → yolo (see [Session modes](/en/features/modes)). Effective only under editor focus — panels and questionnaires keep their own Tab navigation |
 
 ## Panel contexts
@@ -46,7 +45,7 @@ Text-editing keys (cursor movement, multi-line, undo, kill-ring) belong to the u
 | Approval panel | ↑↓ + `Enter`, or number keys `1`–`4` directly; `Escape` rejects |
 | Questionnaire | `Tab` / `Shift-Tab` between questions; single-choice ↑↓ + `Enter`; multi-choice `Space` + `Enter` |
 | `/model` · `/effort` panels | `←` `→` step the segment control; `Enter` confirms and persists the new default; `Alt+S` confirms **session-only** (the persisted default stays untouched) |
-| `/btw` pane | `Esc` close; `↑` `↓` scroll; `Enter` follow-up |
+| `/btw` pane | `Esc` close; mouse wheel / `PageUp` / `PageDown` scroll; `Enter` follow-up |
 
 ## Custom bindings
 

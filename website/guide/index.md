@@ -28,10 +28,11 @@ npm i -g pnpm@11
 # 或：corepack enable && corepack prepare pnpm@11.7.0 --activate
 ```
 
-首次运行 `blue` 会在 profile 内下载完整依赖树——数百个包，慢速网络下需要数分钟（预算约 20 分钟，中途超时重跑 `blue` 即从缓存续传）；npm 自身在解析依赖树的大部分时间里没有输出，这种安静是正常现象，不是卡死。国内网络建议配置镜像加速（profile 内装配与 `/update` 走同一份 registry 配置）：
+首次运行 `blue` 会在 profile 内下载完整依赖树——数百个包，慢速网络下需要数分钟（预算约 20 分钟，中途超时重跑 `blue` 即从缓存续传）。装配经 `dsh plugin add` 转 pnpm 执行，且壳把安装输出全部捕获——全程没有动静是正常现象，不是卡死（失败时会打印末尾几行输出和一条手动命令）。国内网络建议配置镜像加速——profile 装配与 `/update` 的安装都经 pnpm 执行、共用这份配置；`/update` 的新版检查另经 `npm view` 读取元数据（走 npm 自己的 npmrc），一并设置：
 
 ```sh
 pnpm config set registry https://registry.npmmirror.com
+npm config set registry https://registry.npmmirror.com   # /update 的新版检查走 npm
 ```
 
 **或 dsh 直装**（宿主自理，适合已有 dsh 的用户）：
@@ -44,7 +45,7 @@ dsh --profile blue
 
 安装完成后，按下方「开跑前配一个 key」与「首次运行」两节启动；模型、Provider、主题与密钥的详细配置见[配置：模型、Provider 与主题](/guide/config)。
 
-- `@rc` 后缀是必须的：预览版只打 `rc` dist-tag，`latest` 留给稳定线，裸 spec 什么都找不到。
+- `@rc` 是文档约定的安装通道：预览版只按 `rc` dist-tag 发布，`latest` 为稳定线保留。注意 npm 在首个稳定版发布前不允许包没有 `latest`（注册表拒绝删除），所以它目前同样指向最新 rc——那只是占位，不是契约。
 - 升级到更新的预览版：壳包用户重跑 `npm i -g @dsh-blue/blue-cli@rc`（重装即升级——壳按自身版本校准 profile 里的 Blue，宿主线随之固定）；dsh 直装用户在 Blue 中输入 `/update`（应用内安全升级：预检、快照、装机冒烟、失败自动回滚），或重跑同一条 `plugin add`。
 
 ## 开跑前配一个 key

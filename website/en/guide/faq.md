@@ -1,8 +1,8 @@
 # FAQ
 
-## Why does a bare `npm install @dsh-blue/blue` find nothing?
+## Why not a plain `npm install @dsh-blue/blue`?
 
-Preview releases are published only under the **`rc` dist-tag** (`latest` stays reserved for the stable line), and a bare install resolves `latest` — an uncontrolled version. Install the `blue` shell with `npm i -g @dsh-blue/blue-cli@rc`, or use `dsh plugin --profile blue add @dsh-blue/blue@rc`, see [Quickstart](/en/guide/). The current preview is `v0.1.0-rc.8`; `0.1.0-rc.1` shipped broken tarballs (missing files) — if it is installed, upgrade. The contributor development install lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
+Blue is a plugin bundle installed into a dsh profile, not a standalone app — a bare install only drops the package into node_modules, with no host and no profile assembly, so there is nothing to run. The supported paths: the `blue` shell (`npm i -g @dsh-blue/blue-cli@rc`), or `dsh plugin --profile blue add @dsh-blue/blue@rc`; see [Quickstart](/en/guide/). Preview releases publish only under the **`rc` dist-tag** (`latest` is reserved for the stable line; npm refuses to delete `latest` before the first stable exists, so it currently aliases the newest rc as a mere placeholder). The current preview is `v0.1.0-rc.8`; `0.1.0-rc.1` shipped broken tarballs (missing files) — if it is installed, upgrade. The contributor development install lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
 
 ## `@rc` does not resolve the newest preview?
 
@@ -22,7 +22,7 @@ Two paths:
   - **In-app (recommended)**: type `/update` in the session — it runs the safety pre-flight first (profile health, whether the global dsh CLI meets the target release's harness line, the cooldown window), then after a typed `y` confirmation it snapshots the current install, installs the exact version in one transaction, verifies the whole package set, and boot-smokes the result (a module import sweep plus a real boot); any failure **rolls back automatically** to the previous version, with a progress panel and a log path throughout. `/update <version>` pins an explicit target; a bare `/update` doubles as a read-only check. After a successful update the current session keeps running the old version — a restart applies it.
   - **Manually**: re-run the same `dsh plugin --profile blue add @dsh-blue/blue@rc` (or the exact-version form in the previous question).
 
-Blue also checks for a newer release in the background at startup (at most once per 24h, silent on failure, reads registry metadata only, sends nothing); when one exists it posts a two-line notice at the top of the scroll area. To turn the startup check off, write this into `~/.dsh/settings.yaml`:
+Blue also checks for a newer release in the background at startup (at most once per 24h, silent on failure, reads registry metadata only, sends nothing); when one exists it appends a two-line notice to the scroll area (below the banner at boot). To turn the startup check off, write this into `~/.dsh/settings.yaml`:
 
 ```yaml
 blue:
@@ -42,7 +42,7 @@ You can copy image content from an application or copy one or more local PNG/JPE
 
 ## Why doesn't the injected AGENTS.md context show up in the transcript?
 
-The harness injects workspace instructions (AGENTS.md and friends) and runtime-context snapshots into the session as synthetic user messages. Blue sorts by message source: human input renders as usual (`❯` bubbles); **synthetic messages render as nothing** — no item, no placeholder — keeping the transcript clean. The content is still sent to the model in full; it is just not rendered.
+The harness injects workspace instructions (AGENTS.md and friends) and runtime-context snapshots into the session as synthetic user messages. Blue sorts by message source: human input renders as usual (`»` message blocks); **synthetic messages render as nothing** — no item, no placeholder — keeping the transcript clean. The content is still sent to the model in full; it is just not rendered.
 
 ## Can I customize key bindings?
 
@@ -54,11 +54,11 @@ In the brief window before the agent attaches, `/quit` shows `no active session`
 
 ## When does the status-bar git badge refresh?
 
-The git badge probes lazily through a TTL cache (branch 5s, status 15s), but the probe is session-scoped: switching branches mid-session waits until the next session switch (`/new`, `/resume`, or restart) to show the new branch.
+The git badge probes lazily through a TTL cache (branch 5s, status 15s), refreshed on whatever redraw comes next (typing and streaming both trigger one) — switching branches in the same directory shows up within seconds. The cache is built per working directory: a session switch (`/new`, `/resume`, or a restart) that lands on a new cwd rebuilds the cache for it.
 
 ## What happens when the status bar runs out of room?
 
-The footer has at most two rows. Entries that don't fit are dropped lowest-priority-first; over-wide entries truncate within their cluster budget. Ordering and eviction come from registry priorities (built-in entries occupy 0 / 5 / 10 / 20 / 30), not hardcoded positions.
+The footer has at most two rows, each split into a left and a right cluster (entries land via their `band`/`row`). When width runs short, an over-wide entry truncates to the remaining budget (entries declaring `overflow: hide` hide entirely rather than truncate), and once a cluster is full, later entries stop appearing. The order is registration order (the bundle's row order); the priority tiers the built-ins declare (0 / 5 / 10 / 20 / 30) are metadata the status footer does not currently consume (priority ordering applies to dock panes).
 
 ## Does bash-mode output enter the session history?
 

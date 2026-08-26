@@ -7,7 +7,7 @@ The input editor is the rounded-box component at the bottom of the terminal: `>`
 Input starting with `/` turns the frame `primary` blue and enters command context:
 
 - **Fuzzy autocomplete** — the query splits on whitespace into tokens, each matched as a subsequence, ranked by score; every dropdown entry shows a two-part `hint — description`, Enter accepts the preselected entry and submits.
-- **Discovery hints** — while the dropdown is closed, the hint line flashes up to three fuzzy matches sharing the same filter — the discovery path into slash commands.
+- **No-match notice** — when the fuzzy filter matches nothing, the hint line says `no matching command: /…` (command discovery lives in the autocomplete dropdown, which closes itself on an empty match; this notice is the only signal).
 - **Argument ghost hints** — shown at most one space after `/command` (e.g. `/sessions [<session-id>]`); a leading space is added before you type the separator.
 
 All commands live in the [Slash commands reference](/en/reference/commands).
@@ -20,7 +20,7 @@ Commands run through Blue's own executor and echo as shell cards (sanitized, tru
 
 ## `@` file completion
 
-`@` triggers file-path completion: fd first, filesystem scan fallback, 200-entry cap, fuzzy-ranked. Completion covers file paths; command-argument completion is deferred.
+`@` triggers file-path completion: fd first (fuzzy-scored, top 20 suggestions), with a filesystem scan as fallback when fd is missing (2000 scanned entries, 50 suggestions). Completion covers file paths; command-argument completion is deferred.
 
 ## `#` skill invocation
 
@@ -32,7 +32,7 @@ Pasting more than 10 lines or 1000 characters folds into a `[paste #N +M lines]`
 
 ## Ctrl-G external editor
 
-`Ctrl-G` hands the current draft to `$VISUAL` (falling back to `$EDITOR`) for full-screen editing: Blue suspends rendering and yields the terminal to the child process; on a normal editor exit the screen restores and the text is read back (paste markers survive the round trip). Quitting with `:cq` counts as cancellation — the draft stays as it was.
+`Ctrl-G` hands the current draft to an external editor (the `blue.editorCommand` setting wins, then `$VISUAL`, then `$EDITOR`) for full-screen editing: Blue suspends rendering and yields the terminal to the child process; on a normal editor exit the screen restores and the text is read back (paste markers survive the round trip). Quitting with `:cq` counts as cancellation — the draft stays as it was.
 
 ## Ctrl-V image paste
 
@@ -44,7 +44,7 @@ Copied files paste as one ordered batch on every platform: `text/uri-list` in Ub
 
 ## Editor-context keys
 
-With the editor focused, a contextual key chain applies (see [Key bindings](/en/reference/keys)): Escape first dismisses the completion popup, then closes a side-question pane mounted above, then clears the draft, then interrupts a running agent; Ctrl-C clears → interrupts → a second press within 1 second exits; Ctrl-S steers the non-empty draft into the current turn; ↑/↓ on an empty buffer scroll the side pane first, then recall queued messages (without the queue pane, they go to editor history).
+With the editor focused, a contextual key chain applies (see [Key bindings](/en/reference/keys)): Escape first dismisses the completion popup, then closes a side-question pane mounted above, then clears the draft, then interrupts a running agent; Ctrl-C clears → interrupts → a second press within 1 second exits; Ctrl-S steers the non-empty draft into the current turn. ↑/↓ always belong to editor history (the queue pane only lists pending messages — it never takes those keys); the mouse wheel and PageUp/PageDown scroll a docked side-question pane when one is mounted, and the transcript otherwise.
 
 ## Draft survival
 
