@@ -142,6 +142,7 @@ const sidebarZh = {
         { text: '概览', link: '/plugins/' },
         { text: '快速开始', link: '/plugins/quickstart' },
         { text: '核心概念', link: '/plugins/concepts' },
+        { text: '创造模式实战', link: '/plugins/creative-mode' },
       ],
     },
     {
@@ -224,6 +225,7 @@ const sidebarEn = {
         { text: 'Overview', link: '/en/plugins/' },
         { text: 'Quickstart', link: '/en/plugins/quickstart' },
         { text: 'Core concepts', link: '/en/plugins/concepts' },
+        { text: 'Creative mode walkthrough', link: '/en/plugins/creative-mode' },
       ],
     },
     {
