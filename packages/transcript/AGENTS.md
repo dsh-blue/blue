@@ -42,7 +42,7 @@ Activity, todo, and agents consume `blueSessionFacts`. Activity derives its phas
 
 Bottom `DockModel` entries mount individually through core's shared dock allocator instead of rendering as one unbudgeted group. Their existing renderer-neutral `priority` controls both scarce-row allocation (larger first) and visual proximity to the fixed editor; public plugin dock contributions use the same seam. Left/right placement lanes retain stable group roots.
 
-BTW calls `blueSessionActions.createSideSession()`, holds the returned owned handle for one pane lifetime, reads its official `blueConversation` projection through the opaque identity, and disposes the handle on close/unload. Its interactive dock model uses priority 100 so it receives scarce rows before passive agents/todo/queue panes. Its renderer has no trailing spacer: the gutter-wrapped pane side borders meet the connected editor's `├┤` row directly. Parent seeding and Agent status filtering remain in app.
+BTW calls `blueSessionActions.createSideSession()`, holds the returned owned handle for one pane lifetime, reads its official `blueConversation` projection through the opaque identity, and disposes the handle on close/unload. A new question replaces the visible turn before async creation begins; the fork snapshot `asOfSeq` (and a fresh snapshot for each continuation) separates inherited assistant history from replies created after that question. Its interactive dock model uses priority 100 so it receives scarce rows before passive agents/todo/queue panes. Its renderer has no trailing spacer: the gutter-wrapped pane side borders meet the connected editor's `├┤` row directly. Parent seeding and Agent status filtering remain in app.
 
 ## Tool And Plugin Models
 
