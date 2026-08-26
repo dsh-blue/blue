@@ -15,6 +15,8 @@ declare module '@deepseek-ai/cordis' { interface Context { blueToolModels: BlueM
 type Source = ToolPresentationModel | (() => ToolPresentationModel | null)
 
 const COLLAPSED_ROW_LIMIT = 12
+const LARGE_COLLAPSED_ROW_LIMIT = 2
+const LARGE_VIEW_ROW_THRESHOLD = 40
 const EXPANDED_ROW_LIMIT = 200
 
 /** Official facts required to build one renderer-neutral tool card. */
@@ -129,7 +131,15 @@ class ToolModelComponent implements BlueComponent {
     const view = expanded ? model.result ?? model.call : model.call
     if (view === undefined) return []
     const rows = [...renderFrontendView(view, width)]
-    const limit = expanded ? EXPANDED_ROW_LIMIT : COLLAPSED_ROW_LIMIT
+    // A huge raw-input presenter (notably cordis_define's source object)
+    // can otherwise fill the viewport immediately above the editor and look
+    // like draft text. Keep ordinary call previews unchanged, but reduce a
+    // large collapsed view to its title plus the explicit expansion hint.
+    const limit = expanded
+      ? EXPANDED_ROW_LIMIT
+      : rows.length > LARGE_VIEW_ROW_THRESHOLD
+        ? LARGE_COLLAPSED_ROW_LIMIT
+        : COLLAPSED_ROW_LIMIT
     if (rows.length <= limit) return rows
     const remaining = rows.length - limit + 1
     const hint = expanded

@@ -750,6 +750,7 @@ export function apply(ctx: Context, config: Config): void {
       const active = session.current
       if (active === null) return undefined
       const seed = active.session.events
+      const holder: SelectionHolder = {}
       const handle = await ctx.agents.create({
         sessionId: SessionId(`btw-${randomUUID()}`),
         seed,
@@ -762,6 +763,10 @@ export function apply(ctx: Context, config: Config): void {
           parentSession: active.id,
           seedLength: seed.length,
         },
+        // A seed copies history, not the Agent Fiber composition. Re-run the
+        // shared setup so the side Agent mounts the seed-selected preset and
+        // receives the same scoped prompt, skills, and tools as its parent.
+        setup: agentSetup(ctx, ctx.agentDefaultModel, holder),
       })
       const listeners = new Set<(status: BlueSideSessionStatus) => void>()
       const offStatus = ctx.on('agent/status', payload => {
