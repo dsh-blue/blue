@@ -44,6 +44,8 @@ export {
   UserMessageComponent,
 } from './components.ts'
 export { AgentGroupComponent, setAgentGroupTimers, type AgentGroupTimers } from './agent-group.ts'
+export { parseXmlEnvelope, summarizeToolText, type EnvelopePair } from './envelope.ts'
+export { ellipsize, parseToolArguments, summarizeToolCall, TOOL_ARG_PAIR_LIMIT, TOOL_ARG_VALUE_MAX_CHARS } from './present.ts'
 export { BlueStatusModelService, StatusModelFooterComponent, plainView } from './status-model.ts'
 export { SessionFactsService } from './session-facts.ts'
 export { BlueDockModelService, ModelDockComponent } from './dock-model.ts'

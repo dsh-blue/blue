@@ -35,7 +35,8 @@ import {
 } from './components.ts'
 import { ThinkingComponent } from './thinking.ts'
 import { ToolModelComponent } from './tool-model.ts'
-import { parseToolArguments } from './present.ts'
+import { parseToolArguments, summarizeToolCall } from './present.ts'
+import { summarizeToolText } from './envelope.ts'
 import type { TranscriptToolItem } from './types.ts'
 import {
   DEFAULT_TRANSCRIPT_PRESENTATION,
@@ -275,7 +276,10 @@ export class TranscriptModelComponent implements BlueComponent {
       case 'transcript-user': return entry.text
       case 'transcript-assistant': return entry.text
       case 'transcript-thinking': return entry.text
-      case 'transcript-tool': return entry.result?.fullText ?? entry.result?.text ?? `${entry.name} ${entry.arguments}`
+      case 'transcript-tool': {
+        const text = entry.result?.fullText ?? entry.result?.text
+        return text === undefined ? summarizeToolCall(entry.name, entry.arguments) : summarizeToolText(text)
+      }
       case 'transcript-error': return entry.code === undefined ? entry.message : `${entry.message} (${entry.code})`
       case 'transcript-interrupted': return 'Interrupted'
     }

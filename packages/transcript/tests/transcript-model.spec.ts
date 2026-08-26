@@ -73,8 +73,8 @@ describe('TranscriptModelService', () => {
       'thinking text',
       'result full',
       'text only',
-      'custom {bad',
-      'read {}',
+      'custom({bad)',
+      'read',
       'down (HTTP_404)',
       'unknown',
       'Interrupted',
@@ -82,6 +82,21 @@ describe('TranscriptModelService', () => {
     component.setExpanded(true)
     component.invalidate()
     component.dispose()
+  })
+
+  it('summarizes envelope results and pending arguments in the plain fallback', () => {
+    const envelope = '<path>src/a.ts</path>\n<type>file</type>\n<content>\n1: x\n\n(Showing lines 1-1 of 9. Use offset=2 to continue.)\n</content>'
+    const entries: TranscriptEntryModel[] = [
+      {
+        kind: 'transcript-tool', id: 'enveloped', seq: 1, turn: 1, step: 0, callId: 'c1', name: 'read', arguments: '{}', startedAt: 1,
+        result: { text: envelope, isError: false, endedAt: 2 },
+      },
+      { kind: 'transcript-tool', id: 'argish', seq: 2, turn: 1, step: 0, callId: 'c2', name: 'write', arguments: '{"file_path":"a.ts"}', startedAt: 3 },
+    ]
+    const rows = new TranscriptModelComponent(() => model('plain', entries)).render(80)
+    expect(rows).toContain('src/a.ts · lines 1-1 of 9')
+    expect(rows).toContain('write')
+    expect(rows).toContain('  file_path: a.ts')
   })
 
   it('reconciles semantic renderer components, forwards expansion, and disposes retired entries', () => {

@@ -82,6 +82,17 @@ describe('canonical tool presentation builder', () => {
     expect(toolResultView(undefined, { content: [{ type: 'text', text: 'failed' }], isError: true }, 'tool')).toEqual({ kind: 'text', text: 'failed', tone: 'danger' })
   })
 
+  it('summarizes XML-envelope fallbacks and formats inlined tool-call arguments', () => {
+    const envelope = '<path>src/a.ts</path>\n<type>file</type>\n<content>\n1: x\n\n(Showing lines 1-1 of 9. Use offset=2 to continue.)\n</content>'
+    expect(toolResultView(undefined, { content: [{ type: 'text', text: envelope }], isError: false }, 'read'))
+      .toEqual({ kind: 'text', text: 'src/a.ts · lines 1-1 of 9' })
+    expect(toolResultView(undefined, { content: [{ type: 'text', text: envelope }], isError: true }, 'read'))
+      .toEqual({ kind: 'text', text: 'src/a.ts · lines 1-1 of 9', tone: 'danger' })
+    const blocks = [{ type: 'tool-call' as const, id: 'c' as never, name: 'read', arguments: '{"file_path":"a.ts","limit":5}' }, { type: 'text' as const, text: 'tail' }] as never
+    expect(toolResultView({ card: 'generic', title: 'Nested', content: blocks }, undefined, 'tool'))
+      .toMatchObject({ sections: [{ title: 'Nested', body: { text: 'read\n  file_path: a.ts\n  limit: 5\ntail' } }] })
+  })
+
   it('creates a deeply frozen model with structured toggle action', () => {
     const model = createToolPresentationModel({ id: 'c1', name: 'read', call: { card: 'generic', title: 'Read' }, result: { card: 'read', path: 'a', offset: 1, lines: [], totalLines: 0 }, outcome: { content: [], isError: false }, expanded: false })
     expect(model).toMatchObject({ id: 'c1', expanded: false, action: { kind: 'tool.toggle', id: 'c1' } }); expect(Object.isFrozen(model)).toBe(true); expect(Object.isFrozen(model.call)).toBe(true)

@@ -55,7 +55,7 @@ export const BANNER_MIN_WIDTH = 40
 const LOGO_TEXT_GAP = 2
 
 /** The info rows' labels, hand-aligned to {@link LABEL_WIDTH} columns. */
-const DIRECTORY_LABEL = 'Directory: '
+export const DIRECTORY_LABEL = 'Directory: '
 const MODEL_LABEL = 'Model:     '
 const VERSION_LABEL = 'Version:   '
 

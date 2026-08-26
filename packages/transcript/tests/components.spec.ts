@@ -445,6 +445,21 @@ describe('ToolCallComponent', () => {
     expect(component.render(80)).toEqual(collapsed)
   })
 
+  it('collapses an XML-envelope result to its summary while collapsed', () => {
+    const envelope = '<path>src/a.ts</path>\n<type>file</type>\n<content>\n1: const x = 1\n2: const y = 2\n\n(Showing lines 1-2 of 342. Use offset=3 to continue.)\n</content>'
+    const item = toolItem({ name: 'probe' })
+    item.result = { text: 'envelope', fullText: envelope, isError: false }
+    const component = new ToolCallComponent(item, tagged(), setup())
+    const collapsed = component.render(80)
+    expect(collapsed[2]).toBe('  [M]src/a.ts · lines 1-2 of 342[/M]')
+    expect(collapsed.at(-1)).toContain('7 more lines, 8 total, ctrl+o to expand')
+
+    component.setExpanded(true)
+    const expanded = component.render(80)
+    expect(expanded).toHaveLength(1 + 1 + 8)
+    expect(expanded[2]).toBe('  [M]<path>src/a.ts</path>[/M]')
+  })
+
   it('counts wrapped visual rows for the preview cap and hint', () => {
     const item = toolItem({ name: 'probe' })
     item.result = { text: 'word', fullText: 'word '.repeat(30).trim(), isError: false }

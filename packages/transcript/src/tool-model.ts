@@ -9,6 +9,8 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ToolCallView, ToolResult, ToolResultView } from '@deepseek-ai/dsh-tools'
 import { renderFrontendView, type BlueComponent, type BlueScreen } from '@dsh-blue/blue-core'
 import { freezeModel, type ToolPresentationModel, type View } from '@dsh-blue/blue-frontend'
+import { summarizeToolText } from './envelope.ts'
+import { summarizeToolCall } from './present.ts'
 
 declare module '@deepseek-ai/cordis' { interface Context { blueToolModels: BlueModelToolService } }
 
@@ -62,7 +64,7 @@ export function toolCallView(view: ToolCallView): View {
 
 /** Map one official settled-result view, or its canonical raw fallback. */
 export function toolResultView(view: ToolResultView | undefined, outcome: ToolResult | undefined, name: string): View {
-  const fallback = contentText(outcome?.content) ?? '(no output)'
+  const fallback = summarizeToolText(contentText(outcome?.content) ?? '(no output)')
   if (outcome?.isError === true) return { kind: 'text', text: fallback, tone: 'danger' }
   if (view === undefined) return { kind: 'text', text: fallback }
   switch (view.card) {
@@ -112,7 +114,7 @@ function contentText(content: readonly ContentBlock[] | undefined): string | und
       case 'text':
       case 'reasoning': return block.text
       case 'image': return '[image]'
-      case 'tool-call': return `${block.name}(${block.arguments})`
+      case 'tool-call': return summarizeToolCall(block.name, block.arguments)
       case 'tool-result': return contentText(block.content) ?? '[tool result]'
       default: return `[${String((block as { type: unknown }).type)}]`
     }
