@@ -69,7 +69,8 @@ describe('blue-questions provider', () => {
     // The questionnaire renders the inline editor above the frame's key row
     // and invalidates through it.
     const panel = screen.overlays[0]?.component
-    expect(panel?.render(60)[5]).toBe('>because')
+    expect(panel?.render(60)[5]).toContain('Answer')
+    expect(panel?.render(60)[5]).toContain('because')
     panel?.invalidate()
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({ answers: [{ id: 'q2', selected: [], custom: 'because' }] })
@@ -107,11 +108,10 @@ describe('blue-questions provider', () => {
       questions: [choice({ header: 'Setup', detail: 'extra context' })],
     })
     const rendered = screen.overlays[0]?.component.render(60) ?? []
-    // The framed pull-up panel: primary rules, the indented `question`
-    // title, the header tab, then the question and detail rows.
+    // The framed pull-up panel: progress title, summary, question and detail rows.
     expect(rendered[0]).toBe('^' + '─'.repeat(60) + '^')
-    expect(rendered[1]).toBe('^  question^')
-    expect(rendered[2]).toBe('  ^Setup^')
+    expect(rendered[1]).toBe('^  Question 1 of 1^')
+    expect(rendered[2]).toBe('  1/1 · ^● Setup^')
     expect(rendered[3]).toBe('')
     expect(rendered[4]).toBe('^  Pick one^')
     expect(rendered[5]).toBe('~extra context~')
@@ -256,7 +256,7 @@ describe('blue-questions plan-review intent', () => {
     })
     // The generic questionnaire: its title and the fixed Other row.
     const frame = screen.overlays[0]?.component.render(60).join('\n') ?? ''
-    expect(frame).toContain('question')
+    expect(frame).toContain('Question 1 of 1')
     expect(frame).toContain('Other')
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({ answers: [{ id: 'plan-review', selected: ['Ship it'] }] })

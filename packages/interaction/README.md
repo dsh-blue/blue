@@ -20,6 +20,8 @@ Built-in command families cover session navigation and rewind, help, themes, mod
 
 Dialogs replace the editor slot and render through shared list, form, info, settings, question, approval, model, and plan-review panels. Question and approval work is Fiber-bound, abort-aware, and rejects late completion after unload or session changes. Third-party renderer-neutral commands and notifications enter through `./plugin-host-bridge`.
 
+Forms use two-row fields: a label/comment row followed by an unframed arrow prompt row, with inline validation below the failing field. Enter advances fields or submits the last field; Tab/Down moves forward and Shift-Tab/Up moves backward. Question panels show bounded progress, use the same input row for free-text and `Other` answers, and preserve drafts while moving between questions.
+
 Readable export uses the official `blueConversation` projection after flushing and reading the durable artifact. Full export deliberately emits the decoded audit event stream. `/copy` uses the official conversation value and the OSC 52/native clipboard pipeline.
 
 ## Optional Subpaths

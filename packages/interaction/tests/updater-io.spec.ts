@@ -10,7 +10,9 @@ import { createServer } from 'node:http'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { mkdtempTracked } from '../../core/tests/temp-dir.ts'
+import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
+
+registerTempDirCleanup()
 import { cleanOutput, updaterInternals } from '../src/updater/io.ts'
 
 /** Child scripts run with the test runner's own Node. */
@@ -256,4 +258,3 @@ describe('updater/io environment passthroughs', () => {
     expect(updaterInternals.now()).toBeGreaterThan(0)
   })
 })
-
