@@ -54,25 +54,41 @@ blue
 <!-- single source 单一来源: docs/diagrams/blue-layers.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph H["Harness domain 宿主领域 (dsh)"]
-        harness["agents · sessions · tools · approval · events"]
-    end
-    subgraph TREE["Blue = a Cordis plugin tree 一棵 Cordis 插件树"]
-        direction TB
-        D["Domain & action boundary 领域与动作边界\nblue-conversation 投影 · blue-app reader/actions"]
-        F["Renderer-neutral runtime\nblue-api 契约 · blue-frontend readonly models"]
-        R["TUI feature plugins 功能插件\nblue-transcript · blue-interaction"]
-        K["TUI kernel — the only pi-tui adapter\nblue-core"]
-        D --> F --> R --> K
-    end
-    C["Composition 组合\ncordis.patch.yml · 28 Blue rows · presets"]
-    S["every row is a fiber-scoped plugin 每行都是 Fiber 插件\nhot-swap 热替换 · unload rolls back 卸载回滚 · omittable 可省略"]
-    P["pi-tui · raw terminal"]
+    ROOT["dsh 进程 — 一棵 Cordis 树<br/>Loader · Fiber 生命周期 · 事件/服务总线"]
 
-    H --> D
-    K --> P
-    C -. composes 组合 .-> TREE
-    S -.-> TREE
+    subgraph BASE["dsh-base 行 · Harness domain 插件"]
+        HAR["agents · sessions · tools · approval<br/>commands · events"]
+    end
+
+    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 28 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
+        direction TB
+        subgraph DOM["Domain 侧 — 唯一持有 Agent/Session 对象"]
+            direction LR
+            CONV["blue-conversation<br/>Harness 事件 → projection 投影"]
+            APP["blue-app<br/>blueSessionReader · blueSessionActions"]
+        end
+        subgraph UI["UI 侧 — 只见 readonly 数据与 action"]
+            direction TB
+            FE["blue-api · blue-frontend<br/>BlueView 契约 · readonly models · provider host"]
+            ADP["blue-transcript · blue-interaction<br/>transcript · 命令 · 面板 · 状态栏 · dock"]
+            KRN["blue-core — TUI kernel<br/>全树唯一 import pi-tui"]
+            FE --> ADP
+            ADP --> KRN
+        end
+        CONV -- "projection · 当前状态" --> FE
+        APP -- "readonly snapshot" --> FE
+        UI -- "action · 带 BlueResult 的写请求" --> DOM
+    end
+
+    TERM["终端 — pi-tui · ANSI · 键盘"]
+
+    ROOT --> BASE
+    ROOT --> BLUE
+    HAR ==> CONV
+    HAR ==> APP
+    KRN --> TERM
+
+    linkStyle 2,3,4 stroke:#2bc8e8,stroke-width:3px
 ```
 <!-- END diagram:blue-layers -->
 
