@@ -60,7 +60,10 @@ export function registerPluginCommand(ctx: Context): () => void {
           const spec = rest[0]
           if (spec === undefined) return { kind: 'error', text: 'usage: /plugin install <marketplace id, npm spec, or pinned GitHub commit>' }
           if (/github\.com\//u.test(spec) && !/@[0-9a-f]{7,40}$/iu.test(spec) && !/^github:[^/]+\/[^@]+@[0-9a-f]{7,40}$/iu.test(spec)) return { kind: 'error', text: 'GitHub plugins must be pinned to a commit (append @<sha>)' }
-          const result = await run('dsh', ['plugin', '--profile', profile(), 'add', spec], { encoding: 'utf8', timeout: 120000 })
+          const host = process.env.BLUE_DSH_BIN
+          const command = host === undefined ? 'dsh' : process.execPath
+          const args = host === undefined ? ['plugin', '--profile', profile(), 'add', spec] : [host, 'plugin', '--profile', profile(), 'add', spec]
+          const result = await run(command, args, { encoding: 'utf8', timeout: 120000 })
           const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
           return { kind: 'success', text: `${output}\ninstalled; restart Blue to apply` } satisfies CommandResult
         }
