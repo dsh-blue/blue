@@ -70,17 +70,17 @@ flowchart TB
 |---|---|
 | `blue-editor-plus` | bash mode、slash/`@`/`#` completion 与参数提示 |
 | `blue-attachments` | 有界文件系统图片 store |
-| `blue-paste-image` | Ctrl-V 剪贴板图片与可回滚 submit transformation |
-| `blue-status-cwd` | 当前 session cwd |
-| `blue-status-git` | TTL-cached git badge |
+| `blue-paste-image` | Ctrl-V 剪贴板贴图，`[image #N]` 标记，提交拆为图片块（submit transformation 可回滚） |
+| `blue-status-cwd` | 当前 session cwd（深路径缩写） |
+| `blue-status-git` | TTL-cached git badge `branch [+a -d ↑u↓v]` |
 | `blue-status-mode` | plan/yolo mode badge |
 | `blue-status-title` | projected session title |
 | `blue-status-context` | projected context occupancy |
 | `blue-pane-activity` | projection-backed activity model |
 | `blue-pane-queue` | app action-backed queued-message model/recall |
-| `blue-pane-todo` | projection-backed todo model |
-| `blue-pane-btw` | opaque owned side-session action + official projection |
-| `blue-pane-agents` | projected subagent group model |
+| `blue-pane-todo` | projection-backed todo model（Ctrl-T 折叠切换，全完成自动收起） |
+| `blue-pane-btw` | `/btw` 侧问面板：fork 当前会话问旁路问题（opaque owned side-session action + official projection） |
+| `blue-pane-agents` | projected subagent group model（dock 末行，kimi swarm-pane 语义） |
 | `blue-plugin-view-bridge` | public status/dock contributions -> owner model registries |
 
 ## 装配（4 行）

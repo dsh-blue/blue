@@ -2,7 +2,7 @@
 
 ## 为什么裸 `npm install @dsh-blue/blue` 装不到？
 
-预览版只发布在 **`rc` dist-tag** 下（`latest` 留给稳定线），而裸安装解析 `latest`、拿到的版本不受控——请用 `dsh plugin --profile blue add @dsh-blue/blue@rc`，见[快速上手](/guide/)。当前预览版为 `v0.1.0-rc.8`；`0.1.0-rc.1` 因打包缺失文件不可用，装到请升级。贡献者的本地开发安装见开发手册的[贡献本仓库](/plugins/contributing)页。
+预览版只发布在 **`rc` dist-tag** 下（`latest` 留给稳定线），而裸安装解析 `latest`、拿到的版本不受控——请装 `blue` 壳包 `npm i -g @dsh-blue/blue-cli@rc`，或用 `dsh plugin --profile blue add @dsh-blue/blue@rc`，见[快速上手](/guide/)。当前预览版为 `v0.1.0-rc.8`；`0.1.0-rc.1` 因打包缺失文件不可用，装到请升级。贡献者的本地开发安装见开发手册的[贡献本仓库](/plugins/contributing)页。
 
 ## `@rc` 装到的不是最新预览版？
 
@@ -11,16 +11,34 @@ pnpm 11 默认开启 `minimumReleaseAge` 冷却期：dist-tag 解析会静默跳
 - 立即装到新版：改用精确版本号——`dsh plugin --profile blue add @dsh-blue/blue@0.1.0-rc.8`（版本号以仓库最新 tag 为准）；
 - 或等冷却窗口过去后重跑同一条 `@rc` 命令（升级 = 重跑同一条 `plugin add`）。
 
+用 `/update` 升级的用户不受此坑影响：它按 registry 元数据解析目标、始终精确钉版，冷却窗口内会直接给出可重试的时间（ETA）而不是装到旧版。
+
+## 如何升级 Blue？
+
+两条路：
+
+- **壳包用户**：重跑 `npm i -g @dsh-blue/blue-cli@rc`——重装即升级（壳按自身版本把 profile 里的 Blue 校准到同一版，宿主线随之固定），之后照常 `blue` 启动。
+- **dsh 直装用户**：
+  - **应用内（推荐）**：会话里输入 `/update`——先做安全预检（profile 健康度、全局 dsh 版本是否满足目标版本的 harness 线、冷却期窗口），打字 `y` 确认后自动执行：快照当前安装 → 精确版本单事务安装 → 装后整套包的版本校验 → 装机冒烟（模块导入扫描 + 真实启动）→ 任一失败**自动回滚**到原版本，全程有进度面板与日志路径。`/update <版本号>` 可显式指定目标版本；不带参数的 `/update` 兼作只读检查。升级完成后当前会话继续运行旧版，重启后生效。
+  - **手工**：重跑同一条 `dsh plugin --profile blue add @dsh-blue/blue@rc`（或上一条 FAQ 的精确版本号形式）。
+
+此外 Blue 启动后会后台检查一次新版（每 24h 至多一次、失败静默、只读 registry 元数据、不做任何上报），有新版时在会话流顶部给出两行提示。不想要启动检查，在 `~/.dsh/settings.yaml` 写入：
+
+```yaml
+blue:
+  updateCheck: false
+```
+
 ## 粘贴图片没有反应？
 
 Ctrl-V 粘贴依赖两个条件：
 
-1. **终端环境**：需要剪贴板工具——Linux 上依次探测 `wl-paste`、`xclip`（3 秒超时）；
+1. **终端环境**：按平台探测各自的剪贴板通道——Linux 依次探测 `wl-paste`、`xclip`（3 秒超时），Windows 单次 PowerShell 调用（10 秒），macOS 走 osascript（5 秒）；
 2. **模型能力**：粘贴的图片以图片内容块进入消息。如果当前模型路由不支持图片输入，包含图片块的消息会被拒绝——这是上游 harness 的能力协商行为，换用具备视觉输入的模型即可。
 
 图片落入附件存储（默认 `~/.dsh/attachments`，可用 `DSH_BLUE_ATTACHMENT_DIR` 或 `DSH_HOME` 改址），单图上限 10MB、每条消息至多 8 张 / 30MB / 16M 像素。
 
-既可以复制应用中的图片内容，也可以在 Ubuntu 文件管理器中复制一个或多个本地 PNG/JPEG/WebP/GIF 文件。文件管理器路径只接受本地普通文件；远程 URI、目录、符号链接和特殊文件会显示拒绝原因。
+既可以复制应用中的图片内容，也可以在文件管理器（Ubuntu 文件、Windows 资源管理器、macOS Finder）中复制一个或多个本地 PNG/JPEG/WebP/GIF 文件——三平台都按原顺序整批粘贴。文件管理器路径只接受本地普通文件；远程 URI、目录、符号链接和特殊文件会显示拒绝原因。
 
 ## 为什么 AGENTS.md 等注入的上下文不显示在会话流里？
 

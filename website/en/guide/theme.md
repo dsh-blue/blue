@@ -15,6 +15,17 @@ usage: /theme [dark|light|ocean|paper|auto|custom <path> [dark|light|ocean|paper
 
 A switch replaces the provider's fiber wholesale; theme-dependent plugins (transcript, input) reload with it. A failed mount falls back to the built-in dark palette — the UI is never left without a theme.
 
+## Built-in palettes
+
+| key | style |
+| --- | --- |
+| `dark` | the default dark (pi lineage, brand-blue highlights) |
+| `light` | light (GitHub primer family, one gray tier deeper so it never reads pale) |
+| `ocean` | blue-tinted dark (sky-blue primary, teal accent) |
+| `paper` | warm light (burnt-orange primary, ink-teal accent) |
+
+`auto` is not a palette of its own — it picks between `dark` and `light` from the terminal background; `custom` is covered below.
+
 ## The persisted default theme
 
 `/theme` switches the theme **for the session**; the persisted default lives in the `blue:` section of settings.yaml (or the `/settings` panel's Theme row — it cycles the value, applies live, and writes through):
@@ -47,7 +58,7 @@ Rules:
 
 ## Semantic tokens
 
-Reference values from the dark palette (light/auto have their own; auto picks per OSC 11):
+Reference values from the dark palette (light/ocean/paper have their own; auto picks between dark and light per OSC 11):
 
 ### Base
 
@@ -57,7 +68,7 @@ Reference values from the dark palette (light/auto have their own; auto picks pe
 | `textStrong` | `#ffffff` | emphasized text |
 | `muted` | `#888888` | secondary text, middle footer tier (cwd, git badge) |
 | `textMuted` | `#6b6b6b` | dimmest tier (tool summary lines, tips, code-block borders) |
-| `accent` | `#5bc0be` | accent (banner model line) |
+| `accent` | `#2bc8e8` | secondary highlight (pointers, secondary emphasis) |
 | `primary` | `#4fa8ff` | primary (slash-context editor frame, running tool dot, links) |
 | `border` | `#5a5a5a` | regular borders |
 | `borderFocus` | `#e8a838` | focused border (approval panel rule) |
@@ -65,7 +76,7 @@ Reference values from the dark palette (light/auto have their own; auto picks pe
 | `error` | `#e85454` | error |
 | `warning` | `#e8a838` | warning |
 | `selectedBg` | `#3a3a4a` | selected list-row background |
-| `roleUser` | `#ffcb6b` | user-message `❯` gutter |
+| `roleUser` | `#4d6bfe` | user-message `❯` rail |
 | `shellMode` | `#bd93f9` | `!` bash mode (editor frame, `$ ` prefix) |
 
 ### Markdown

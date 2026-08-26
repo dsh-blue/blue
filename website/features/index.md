@@ -15,6 +15,10 @@ Blue 是一棵 Cordis 插件树。Bundle 当前有 28 条 Blue 自有行：2 条
 
 这些 14 行可逐项移除。Tool diff/terminal/search/read/web 呈现来自 canonical `ToolPresentationModel`，不存在独立 intent row。
 
+## plain-first
+
+基线 + 装配段就是完整、自洽的 Blue UI。Blue 自己的增强同样走下游插件可用的缝注册——删掉整个增强段，bundle 照常启动照常工作。这让每一个增强行都经受"没有它世界是否更好"的检验，也是下游插件获得与内置功能同等地位的机制保证。
+
 ## 装配
 
 `blue-interaction`、`blue-plugin-interaction-bridge`、`blue-startup` 和 `blue-app` 收口输入、命令、通知、启动与 Agent driver。App 对 renderer 只提供 readonly session reader/projection values 和 structured actions。
