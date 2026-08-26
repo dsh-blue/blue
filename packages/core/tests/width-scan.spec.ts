@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SelectItem, SelectListTheme } from '@earendil-works/pi-tui'
 import { clampRowsToWidth, framePanel } from '../src/chrome.ts'
+import { renderFrontendView } from '../src/frontend-renderer.ts'
 import { GutterComponent } from '../src/gutter.ts'
 import { WrappingSelectList } from '../src/wrapping-select-list.ts'
 import { truncateToWidth, wrapTextWithAnsi } from '../src/width.ts'
@@ -61,6 +62,21 @@ describe('core width-scan', () => {
       })
       for (const width of SCAN_WIDTHS) {
         expectLinesFit(`WrappingSelectList/${name}`, list.render(width), width)
+      }
+    })
+
+    it(`renderFrontendView diff panel survives ${name}`, () => {
+      // A write-style panel: the hostile line replaced by a sibling, with a
+      // long shared context run on both sides exercising the elision path.
+      const shared = Array.from({ length: 14 }, (_, index) => `ctx ${String(index)}`).join('\n')
+      const views = [
+        { kind: 'diff' as const, before: `${shared}\n${text}`, after: `${shared}\n+ ${text}\nextra` },
+        { kind: 'diff' as const, before: '', after: `${text}\n${text}` },
+      ]
+      for (const view of views) {
+        for (const width of SCAN_WIDTHS) {
+          expectLinesFit(`diff/${name}`, renderFrontendView(view, width), width)
+        }
       }
     })
   }

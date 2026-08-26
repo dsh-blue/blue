@@ -132,7 +132,7 @@ export function apply(ctx: Context): void {
   ctx.effect(() => () => sessionFacts.dispose())
   const statusModels = new BlueStatusModelService(ctx, screen)
   const dockModels = new BlueDockModelService(ctx)
-  const toolModels = new BlueModelToolService(ctx)
+  const toolModels = new BlueModelToolService(ctx, undefined, colors)
   const transcriptModels = new TranscriptModelService(ctx, undefined, {
     renderer: {
       colors,

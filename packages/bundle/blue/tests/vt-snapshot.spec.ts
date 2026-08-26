@@ -184,6 +184,69 @@ describe('blue VT layout snapshots (R2)', () => {
     expect(expanded).toContain('long-output')
   })
 
+  it('write diff card: new-file panel, then aligned hunks expanded', async () => {
+    setGitCommandRunner(NO_GIT)
+    const vt = new VtTerminal(80, 40)
+    const notes = Array.from({ length: 8 }, (_, index) => `// trailing note ${String(index + 1)}`)
+    const before = [
+      'import { Service } from \'@deepseek-ai/cordis\'',
+      '',
+      'const COUNT = 1',
+      'const LABEL = \'beta\'',
+      'const MODE = \'draft\'',
+      '',
+      'export const name = \'demo\'',
+      ...notes,
+    ].join('\n')
+    const after = before
+      .replace('const COUNT = 1', 'const COUNT = 2')
+      .replace('const LABEL = \'beta\'', 'const LABEL = \'stable\'\nconst OWNER = \'blue\'')
+    const tree = await bootBlue([], {
+      script: [
+        toolCallResponse('call-write', 'write', { file_path: 'src/demo.ts', content: after }),
+        textResponse('done'),
+      ],
+      terminal: vt,
+    })
+    tree.ctx.tools.register({
+      name: 'write',
+      description: 'Write a file.',
+      parameters: { type: 'object', properties: {} },
+      output: {
+        schema: { type: 'string' },
+        render: () => [{ type: 'text', text: 'wrote src/demo.ts' }],
+      },
+      execute: () => Promise.resolve('ok'),
+      presentCall: (args: unknown) => ({
+        card: 'diff',
+        title: `Write ${(args as { file_path: string }).file_path}`,
+        diffs: [{ path: 'src/demo.ts', oldText: null, newText: after }],
+      }),
+      presentResult: () => ({
+        card: 'diff',
+        title: 'Write src/demo.ts',
+        diffs: [{ path: 'src/demo.ts', oldText: before, newText: after }],
+      }),
+    })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'write it')
+    await agent.whenIdle()
+    // Collapsed shows the call-time create panel: whole-file additions.
+    const collapsed = await captureGolden(tree, vt, 'diff-card-80')
+    expect(collapsed).toContain('src/demo.ts · new file, +')
+    expect(collapsed).toContain('+ const COUNT = 2')
+    expect(collapsed).not.toContain('- const COUNT = 1')
+    tree.terminal.sendInput('\x0f')
+    await waitForRender()
+    // Expanded shows the applied result: aligned hunks with change counts and
+    // the long shared tail elided.
+    const expanded = await captureGolden(tree, vt, 'diff-card-expanded-80')
+    expect(expanded).toContain('src/demo.ts · +3 −2')
+    expect(expanded).toContain('- const COUNT = 1')
+    expect(expanded).toContain('+ const OWNER = \'blue\'')
+    expect(expanded).toContain('unchanged lines')
+  })
+
   it.each([80, 40])('the footer under full load at %i columns', async (columns) => {
     setGitCommandRunner((args) => {
       if (args[0] === 'branch') return 'main\n'

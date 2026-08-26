@@ -7,7 +7,7 @@
 import { Service, type Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ToolCallView, ToolResult, ToolResultView } from '@deepseek-ai/dsh-tools'
-import { renderFrontendView, type BlueComponent, type BlueScreen } from '@dsh-blue/blue-core'
+import { diffChangeCounts, renderFrontendView, type BlueComponent, type BlueScreen, type BlueSemanticColors } from '@dsh-blue/blue-core'
 import { freezeModel, type ToolPresentationModel, type View } from '@dsh-blue/blue-frontend'
 import { summarizeToolText } from './envelope.ts'
 import { summarizeToolCall } from './present.ts'
@@ -96,10 +96,20 @@ export function toolResultView(view: ToolResultView | undefined, outcome: ToolRe
   }
 }
 
+/** One file section title: change counts, or the new-file shape for a create. */
+function diffSectionTitle(diff: { readonly path: string; readonly oldText: string | null; readonly newText: string }): string {
+  if (diff.oldText === null) {
+    const { added } = diffChangeCounts('', diff.newText)
+    return `${diff.path} · new file, +${String(added)} lines`
+  }
+  const { added, removed } = diffChangeCounts(diff.oldText, diff.newText)
+  return `${diff.path} · +${String(added)} −${String(removed)}`
+}
+
 function diffSections(title: string, diffs: readonly { readonly path: string; readonly oldText: string | null; readonly newText: string }[]): View {
   return { kind: 'sections', sections: diffs.length === 0
     ? [{ title, body: { kind: 'text', text: '(no changes)' } }]
-    : diffs.map(diff => ({ title: diff.path, body: { kind: 'diff', before: diff.oldText ?? '', after: diff.newText } })) }
+    : diffs.map(diff => ({ title: diffSectionTitle(diff), body: { kind: 'diff', before: diff.oldText ?? '', after: diff.newText } })) }
 }
 
 function readableValue(value: unknown): string {
@@ -123,14 +133,17 @@ function contentText(content: readonly ContentBlock[] | undefined): string | und
 
 class ToolModelComponent implements BlueComponent {
   private expandedOverride: boolean | undefined
-  constructor(private readonly source: () => ToolPresentationModel | null) {}
+  constructor(
+    private readonly source: () => ToolPresentationModel | null,
+    private readonly colors?: BlueSemanticColors,
+  ) {}
   render(width: number): string[] {
     const model = this.source()
     if (model === null) return []
     const expanded = this.expandedOverride ?? model.expanded ?? false
     const view = expanded ? model.result ?? model.call : model.call
     if (view === undefined) return []
-    const rows = [...renderFrontendView(view, width)]
+    const rows = [...renderFrontendView(view, width, this.colors === undefined ? undefined : { colors: this.colors })]
     const limit = expanded ? EXPANDED_ROW_LIMIT : COLLAPSED_ROW_LIMIT
     if (rows.length <= limit) return rows
     const remaining = rows.length - limit + 1
@@ -149,7 +162,7 @@ export class BlueModelToolService extends Service {
   private readonly models = new Map<string, Source>()
   private readonly mounted = new Map<string, () => void>()
   private screen: BlueScreen | undefined
-  constructor(ctx: Context, screen?: BlueScreen) { super(ctx, 'blueToolModels'); this.screen = screen }
+  constructor(ctx: Context, screen?: BlueScreen, private readonly colors?: BlueSemanticColors) { super(ctx, 'blueToolModels'); this.screen = screen }
   attach(screen: BlueScreen): void { for (const dispose of this.mounted.values()) dispose(); this.mounted.clear(); this.screen = screen; for (const id of this.models.keys()) this.mount(id) }
   register(source: Source): () => void {
     const initial = typeof source === 'function' ? source() : source
@@ -167,7 +180,7 @@ export class BlueModelToolService extends Service {
     if (screen === undefined || source === undefined) return
     this.mounted.get(id)?.(); this.mounted.delete(id)
     /* c8 ignore next -- the closure's deleted-source branch is exercised by unload fixtures. */
-    const component = new ToolModelComponent(() => { const current = this.models.get(id); return current === undefined ? null : typeof current === 'function' ? current() : current })
+    const component = new ToolModelComponent(() => { const current = this.models.get(id); return current === undefined ? null : typeof current === 'function' ? current() : current }, this.colors)
     this.mounted.set(id, screen.addChild(component)); screen.requestRender()
   }
 }

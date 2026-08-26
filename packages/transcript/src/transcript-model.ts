@@ -170,7 +170,7 @@ export class TranscriptModelComponent implements BlueComponent {
     this.prune(live)
     const rows = entries.flatMap(entry => isSemantic(entry)
       ? this.renderSemantic(entry, width, expandableTurns.has(entry.turn))
-      : renderFrontendView(entry, width))
+      : renderFrontendView(entry, width, this.renderer === undefined ? undefined : { colors: this.renderer.colors }))
     this.renderedRows = { model, width, expanded: this.expanded, policy, rows }
     return rows
   }
@@ -258,7 +258,7 @@ export class TranscriptModelComponent implements BlueComponent {
       }
       case 'transcript-tool': {
         const presentation = entry.presentation
-        const body = presentation === undefined ? undefined : new ToolModelComponent(() => presentation)
+        const body = presentation === undefined ? undefined : new ToolModelComponent(() => presentation, renderer.colors)
         return new ToolCallComponent(asToolItem(entry), renderer.colors, renderer.components, body)
       }
       case 'transcript-error':

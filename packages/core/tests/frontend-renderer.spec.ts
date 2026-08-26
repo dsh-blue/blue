@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { FrontendModelComponent, renderFrontendModel, renderFrontendView } from '../src/frontend-renderer.ts'
+import { FrontendModelComponent, renderFrontendModel, renderFrontendView, type FrontendRenderOptions } from '../src/frontend-renderer.ts'
 import { visibleWidth } from '../src/width.ts'
+
+/** Tagged diff palette: assertions see structure, not escape codes. */
+const COLORS = {
+  diffAdded: (text: string): string => `<A>${text}</A>`,
+  diffRemoved: (text: string): string => `<R>${text}</R>`,
+  diffMeta: (text: string): string => `<M>${text}</M>`,
+} as const
+const OPTS: FrontendRenderOptions = { colors: COLORS as unknown as FrontendRenderOptions['colors'] }
 
 describe('frontend renderer adapter', () => {
   it('renders every renderer-neutral view shape and clamps adversarial content', () => {
@@ -33,5 +41,29 @@ describe('frontend renderer adapter', () => {
     component.setModel({ providerId: 'component', capabilities: [], views: [{ kind: 'text', text: 'new' }] })
     expect(component.render(20)).toEqual(['new'])
     component.invalidate()
+  })
+
+  it('renders aligned diff rows, colored only when colors are supplied', () => {
+    const view = { kind: 'diff' as const, before: 'a\nb', after: 'a\nc' }
+    expect(renderFrontendView(view, 20)).toEqual(['  a', '- b', '+ c'])
+    expect(renderFrontendView(view, 20, OPTS)).toEqual(['  a', '<R>- b</R>', '<A>+ c</A>'])
+    // The same frozen view object renders identically across frames (the
+    // alignment memo) and wraps over-wide diff rows like any other content.
+    const wide = { kind: 'diff' as const, before: `${'x'.repeat(30)}\nq`, after: `${'y'.repeat(30)}\nq` }
+    const once = renderFrontendView(wide, 12, OPTS)
+    const twice = renderFrontendView(wide, 12, OPTS)
+    expect(once).toEqual(twice)
+    expect(once.every(row => visibleWidth(row) <= 12)).toBe(true)
+  })
+
+  it('elides long unchanged runs inside a rendered diff', () => {
+    const lines = Array.from({ length: 20 }, (_, index) => `line ${String(index)}`)
+    const before = [...lines.slice(0, 10), 'old', ...lines.slice(10)].join('\n')
+    const after = [...lines.slice(0, 10), 'new', ...lines.slice(10)].join('\n')
+    const rows = renderFrontendView({ kind: 'diff', before, after }, 40, OPTS)
+    expect(rows).toContain('<R>- old</R>')
+    expect(rows).toContain('<A>+ new</A>')
+    expect(rows.some(row => row.includes('unchanged lines'))).toBe(true)
+    expect(rows.length).toBeLessThan(lines.length)
   })
 })

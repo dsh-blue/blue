@@ -8,6 +8,7 @@
  */
 
 import type { BlueInlineSpan, BlueTone, BlueView } from '@dsh-blue/blue-api'
+import { alignDiffLines, paintDiffRows } from './diff-align.ts'
 import { clampRowsToWidth } from './chrome.ts'
 import type { BlueComponent, BlueComponents, BlueSemanticColors } from './types.ts'
 
@@ -89,11 +90,12 @@ function renderView(
       return [...heading, ...body]
     }
     case 'diff': {
-      const before = checkedText(view.before, 'diff before').split('\n')
-        .flatMap(line => wrapped(colors.diffRemoved(`- ${line}`), width, components))
-      const after = checkedText(view.after, 'diff after').split('\n')
-        .flatMap(line => wrapped(colors.diffAdded(`+ ${line}`), width, components))
-      return [...before, ...after]
+      // Same alignment and paint as the tool-card panel (diff-align); only
+      // the wrapping primitive differs (the components service's width truth).
+      const before = checkedText(view.before, 'diff before')
+      const after = checkedText(view.after, 'diff after')
+      return paintDiffRows(alignDiffLines(before, after), colors)
+        .flatMap(row => wrapped(row, width, components))
     }
     case 'sections': {
       if (!Array.isArray(view.sections)) throw new TypeError('sections must be an array')

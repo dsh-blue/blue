@@ -56,7 +56,7 @@ describe('canonical tool presentation builder', () => {
     expect(toolCallView({ card: 'terminal', title: 'pnpm test', description: 'Tests', cwd: '/repo' })).toMatchObject({ kind: 'sections', sections: [{ title: 'Tests' }, { title: 'Command', body: { kind: 'code' } }] })
     expect((toolCallView({ card: 'terminal', title: 'pnpm test', description: 'Tests' }) as { sections: readonly unknown[] }).sections[0]).toMatchObject({ title: 'Tests', body: { text: '' } })
     expect(toolCallView({ card: 'terminal', title: 'pwd' })).toMatchObject({ sections: [{ title: 'Command' }] })
-    expect(toolCallView({ card: 'diff', title: 'Write', diffs: [{ path: 'a.ts', oldText: 'old', newText: 'new' }] })).toMatchObject({ sections: [{ title: 'a.ts', body: { kind: 'diff', before: 'old', after: 'new' } }] })
+    expect(toolCallView({ card: 'diff', title: 'Write', diffs: [{ path: 'a.ts', oldText: 'old', newText: 'new' }] })).toMatchObject({ sections: [{ title: 'a.ts · +1 −1', body: { kind: 'diff', before: 'old', after: 'new' } }] })
     expect(toolCallView({ card: 'diff', title: 'Write', diffs: [] })).toMatchObject({ sections: [{ title: 'Write', body: { text: '(no changes)' } }] })
   })
 
@@ -67,7 +67,7 @@ describe('canonical tool presentation builder', () => {
     expect(toolResultView({ card: 'terminal', title: 'Shell', output: 'ok', exitCode: 0 }, undefined, 'tool')).toMatchObject({ sections: [{ body: { code: 'ok' } }, { body: { text: 'exit 0' } }] })
     expect(toolResultView({ card: 'terminal', signal: 'SIGTERM' }, undefined, 'tool')).toMatchObject({ sections: [{ body: { code: '(no output)' } }, { body: { text: 'signal SIGTERM' } }] })
     expect(toolResultView({ card: 'terminal' }, undefined, 'tool')).toMatchObject({ sections: [{}, { body: { text: 'complete' } }] })
-    expect(toolResultView({ card: 'diff', diffs: [{ path: 'new.ts', oldText: null, newText: 'new' }] }, undefined, 'tool')).toMatchObject({ sections: [{ body: { before: '', after: 'new' } }] })
+    expect(toolResultView({ card: 'diff', diffs: [{ path: 'new.ts', oldText: null, newText: 'new' }] }, undefined, 'tool')).toMatchObject({ sections: [{ title: 'new.ts · new file, +1 lines', body: { before: '', after: 'new' } }] })
     expect(toolResultView({ card: 'search', shape: 'paths', paths: ['a.ts'], truncated: false, total: 1 }, undefined, 'tool')).toMatchObject({ kind: 'list', selectedId: 'path-0' })
     expect(toolResultView({ card: 'search', shape: 'paths', paths: [], truncated: false, total: 0 }, undefined, 'tool')).toMatchObject({ kind: 'list', items: [] })
     expect(toolResultView({ card: 'search', shape: 'matches', files: [{ path: 'a.ts', matches: [{ lineNumber: 2, line: 'hit' }] }], truncated: false, total: 1 }, undefined, 'tool')).toMatchObject({ sections: [{ title: 'a.ts', body: { code: '2: hit' } }] })
