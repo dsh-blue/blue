@@ -30,7 +30,7 @@ The key `package.json` fields:
   "version": "0.1.0",
   "type": "module",
   "exports": { ".": "./lib/index.js" },
-  "dependencies": { "@dsh-blue/blue-api": "^0.1.0-rc.9-test.3" },
+  "dependencies": { "@dsh-blue/blue-api": "^0.1.0-rc.9-test.4" },
   "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" }
 }
 ```
