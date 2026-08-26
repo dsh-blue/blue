@@ -1,26 +1,13 @@
 # Plugin marketplace
 
-::: info Under construction
-The Blue ecosystem plugin marketplace will be implemented as a separate repository (listing, indexing, and card display); it is currently in the planning stage. This page is a placeholder and will go live together with the marketplace.
+The place to discover and install Blue ecosystem plugins: third-party plugins built on the stable [seams](/en/plugins/seams) and public APIs, listed here and installed into your Blue with one line.
+
+::: info Before installing a plugin
+Every plugin in the marketplace runs on top of Blue — [install Blue](/en/guide/) first. The install command is always `blue plugin add <spec>` (equivalent to `dsh plugin --profile blue add <spec>`), where `<spec>` is the source shown on the card or detail page; see the [dsh plugin docs](/en/dsh/plugins) for the mechanism.
 :::
 
-## What this will be
+<MarketplaceGrid />
 
-A marketplace for **Blue downstream developers'** ecosystem plugins: status, dock, command, and notification plugins built through the stable [seams and public API](/en/plugins/seams) can be published to npm, listed here, and installed by other users in one line.
+## List your plugin
 
-Each card will look roughly like this:
-
-```
-┌─────────────────────────────────────┐
-│ my-plugin-clock              v0.1.0 │
-│ status-bar clock + /now command     │
-│ ★ 12 · status bar / commands        │
-│ dsh plugin add my-scope/my-pkg      │
-└─────────────────────────────────────┘
-```
-
-## Until it opens
-
-- To develop a plugin: start with the [quickstart](/en/plugins/quickstart); the seam catalog is the [Seam reference](/en/plugins/seams);
-- To inspect the current composition: see the Blue bundle's 28 owned rows in [Built-in plugins](/en/plugins/builtins);
-- Watch the [GitHub repository](https://github.com/dsh-blue/blue) for the marketplace announcement.
+Built something others would enjoy? Submit it to the [dsh-blue/marketplace](https://github.com/dsh-blue/marketplace) repository — **any plugin installable from GitHub qualifies; npm is not a requirement** (an npm source can be added after publishing). The full process, field reference, and writing guidelines are in the [submission guide](/en/marketplace/submit).
