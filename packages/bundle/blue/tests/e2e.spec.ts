@@ -2093,6 +2093,7 @@ describe('blue whole-tree e2e', () => {
     const dir = mkdtempTracked('dsh-blue-e2e-model-')
     const settingsPath = `${dir}/settings.yaml`
     const credentialsPath = `${dir}/.credentials.yaml`
+    writeFileSync(credentialsPath, 'version: 1\nrefs:\n  DEEPSEEK_API_KEY: existing-test-key\n', { mode: 0o600 })
     const boot = async () => bootBlue([], {
       script: [],
       realSettings: { settingsPath, credentialsPath },
