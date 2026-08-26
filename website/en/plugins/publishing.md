@@ -39,4 +39,4 @@ A package without a `dsh.bundle` declaration installs as a plain dependency only
 
 ## Plugin marketplace
 
-One-command install and discovery (the [plugin marketplace](/en/marketplace/)) are on the roadmap. The distribution mechanism of the current phase is npm + a patch row — keep your package independently installable (this is what the fixture verifies), and your package needs no rework when the marketplace lands.
+The [plugin marketplace](/en/marketplace/) is live: after publishing, submit a listing to [dsh-blue/marketplace](https://github.com/dsh-blue/marketplace) and users can install your plugin from the marketplace in one line (any plugin installable from GitHub qualifies — npm is not a requirement). The listing process and field reference are in the [submission guide](/en/marketplace/submit). The distribution mechanism is still an npm/GitHub source plus a patch row — keep your package independently installable (this is what the fixture verifies), and listing requires no rework of the package.

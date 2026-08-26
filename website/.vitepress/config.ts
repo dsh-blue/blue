@@ -90,7 +90,8 @@ const navEn = [
 
 // ── 侧边栏：按路径分册 ─────────────────────────────────────────────────────
 // '/' = 用户手册（指南 / dsh 手册 / 功能 / 参考）；'/plugins/' = 开发手册；
-// '/marketplace/' 单页不给侧边栏。文件不动、链接不变，仅导航重组。
+// '/marketplace/' = 插件市场（列表 + 收录指南；插件详情页由 marketplace 仓
+// 数据生成，不进 sidebar——清单功能与卡片网格重复，数据缺失也不该炸配置）。
 const sidebarZh = {
   '/': [
     {
@@ -171,7 +172,15 @@ const sidebarZh = {
       ],
     },
   ],
-  '/marketplace/': [],
+  '/marketplace/': [
+    {
+      text: '市场',
+      items: [
+        { text: '插件列表', link: '/marketplace/' },
+        { text: '收录指南', link: '/marketplace/submit' },
+      ],
+    },
+  ],
 }
 
 const sidebarEn = {
@@ -254,7 +263,15 @@ const sidebarEn = {
       ],
     },
   ],
-  '/en/marketplace/': [],
+  '/en/marketplace/': [
+    {
+      text: 'Marketplace',
+      items: [
+        { text: 'All plugins', link: '/en/marketplace/' },
+        { text: 'Submission guide', link: '/en/marketplace/submit' },
+      ],
+    },
+  ],
 }
 
 const config = defineConfig({

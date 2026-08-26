@@ -39,4 +39,4 @@ dsh plugin --profile blue add my-scope/blue-clock
 
 ## 插件市场
 
-一键安装与发现（[插件市场](/marketplace/)）在路线图上。当前阶段的分发方式就是 npm + patch 行——保持包的独立可安装性（fixture 验证的意义就在这里），市场落地时你的包无需改造。
+[插件市场](/marketplace/)已上线：发布后往 [dsh-blue/marketplace](https://github.com/dsh-blue/marketplace) 提交收录，用户即可在市场一行安装（GitHub 可安装的插件就能收录，npm 不是门槛）。收录流程与字段说明见[收录指南](/marketplace/submit)。分发机制依旧是 npm/GitHub 源 + patch 行——保持包的独立可安装性（fixture 验证的意义就在这里），收录不需要对包做任何改造。

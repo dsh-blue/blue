@@ -1,5 +1,8 @@
 import DefaultTheme from 'vitepress/theme'
 import type { Theme } from 'vitepress'
+import MarketplaceGrid from './components/MarketplaceGrid.vue'
+import InstallCommand from './components/InstallCommand.vue'
+import PluginMeta from './components/PluginMeta.vue'
 
 // 粘性语言切换（ADR D32）：head 内联脚本负责整页加载时的自动分流且不写偏好；
 // 这里在 SPA 导航（含手动切换语言）时把落点 locale 盖章为偏好，此后自动分流
@@ -8,7 +11,13 @@ const PREF_KEY = 'dsh-blue-docs-lang'
 
 export default {
   extends: DefaultTheme,
-  enhanceApp({ router }) {
+  enhanceApp({ app, router }) {
+    // 市场全局组件。必须注册在下方 window 守卫之前——SSR 构建不执行守卫后的
+    // 代码，放守卫后组件不会注册；InstallCommand/PluginMeta 还被 marketplace
+    // 仓拷入的外部 md 使用，只能走全局注册。
+    app.component('MarketplaceGrid', MarketplaceGrid)
+    app.component('InstallCommand', InstallCommand)
+    app.component('PluginMeta', PluginMeta)
     if (typeof window === 'undefined') return
     // 注意必须先剥 Vite base（Pages 下为 /blue/）再判 locale，
     // 否则所有导航都会被误判为根路径语言（中文）。
