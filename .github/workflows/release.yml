@@ -173,7 +173,7 @@ jobs:
             blue-api blue-frontend blue-harness-adapter blue-conversation \
             blue-core blue-app blue-transcript blue-interaction blue blue-cli
           do
-            npm dist-tag rm "@dsh-blue/${package}" rc9-test
+            npm dist-tag add "@dsh-blue/${package}@0.1.0-rc.8" rc9-test
           done
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
