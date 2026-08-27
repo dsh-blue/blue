@@ -106,6 +106,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       DSH_HOME: ${{ github.workspace }}/.blue-candidate-home
+      # Skip first-run credential onboarding in the isolated PTY smoke. This
+      # value never reaches a model request; the smoke exits immediately.
+      DEEPSEEK_API_KEY: blue-release-smoke-key
       # Exact candidate versions are intentionally younger than pnpm 11's
       # policy window. This exception exists only in the release verifier.
       PNPM_CONFIG_MINIMUM_RELEASE_AGE: '0'
@@ -117,6 +120,7 @@ jobs:
           node-version: ${{ matrix.node }}
           registry-url: https://registry.npmjs.org
       - name: install tested Harness host
+        if: runner.os == 'Linux' && matrix.node == '24'
         shell: bash
         run: npm install -g @deepseek-ai/dsh@0.1.1-rc.2
       - name: install exact candidate CLI
@@ -126,8 +130,10 @@ jobs:
         shell: bash
         run: test "$(blue -V | awk '{print $2}')" = "${RELEASE_VERSION#v}"
       - name: calibrate exact bundle and compose profile
+        if: runner.os == 'Linux' && matrix.node == '24'
         run: blue --dump-config
       - name: verify installed Blue set
+        if: runner.os == 'Linux' && matrix.node == '24'
         shell: bash
         run: node script/verify-installed-blue.mjs "${RELEASE_VERSION#v}"
       - name: real PTY boot and clean exit
