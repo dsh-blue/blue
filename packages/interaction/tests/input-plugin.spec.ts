@@ -76,7 +76,7 @@ async function mount(options: {
   // This suite exercises only the editor slot. The shared fake now owns the
   // transcript dock service's stable empty bottom root; remove that unrelated
   // fixture root so the existing slot assertions stay local to blue-input.
-  for (const child of [...screen.children]) screen.removeChild(child)
+  for (const child of screen.children) screen.removeChild(child)
   await ctx.plugin(SessionStore)
   await ctx.plugin(CommandRuntime)
   const session = ctx.sessions.create(SessionId('input-spec'))
@@ -532,6 +532,14 @@ describe('blue-input plugin', () => {
       expect(agent.session.events.some(event => event.type === 'command/done')).toBe(true)
     })
     expect(hint.render(80)).toEqual([])
+  })
+
+  it('folds a long multi-line notice into the hint row', async () => {
+    const { ctx, hint } = await mount()
+    getSharedEditor(ctx)?.notice?.(Array.from({ length: 10 }, (_, index) => `notice ${String(index)}`).join('\n'))
+    const rows = hint.render(80)
+    expect(rows).toHaveLength(8)
+    expect(rows.at(-1)).toBe('~... more~')
   })
 
   it('renders no persistent row in any state — the footer tips teach the affordances', async () => {

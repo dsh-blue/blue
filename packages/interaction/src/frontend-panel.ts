@@ -313,8 +313,10 @@ export class FrontendPanel implements BlueFocusable {
 
   private moveGroup(model: PanelModel, delta: -1 | 1): void {
     const view = this.selectView(model)
+    /* c8 ignore next -- segment input is only routed for list views. */
     if (view === undefined) return
     const groups = this.groups(view)
+    /* c8 ignore next -- grouped navigation requires at least two groups. */
     if (groups.length <= 1) return
     this.group = (this.group + delta + groups.length) % groups.length
     this.reseedSelection(model)

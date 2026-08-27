@@ -208,4 +208,32 @@ describe('FrontendPanel', () => {
     })
     expect(fixture.panel.render(40).join('\n')).toContain('alpha')
   })
+
+  it('handles empty groups, missing variants, and secondary-action misses', () => {
+    const fixture = panelFixture({
+      kind: 'panel', mode: 'select', title: 'Edges',
+      view: { kind: 'list', grouped: true, includeAllGroup: false, groups: [], items: [
+        { id: 'plain', label: 'plain', action: { kind: 'plain' } },
+      ] },
+    })
+    expect(fixture.panel.render(40).join('\n')).toContain('plain')
+    fixture.panel.handleInput('\x1b[C')
+    fixture.panel.handleInput('\x1bs')
+    expect(fixture.onAction).not.toHaveBeenCalled()
+
+    fixture.setModel({
+      kind: 'panel', mode: 'select', title: 'Single group',
+      view: { kind: 'list', grouped: true, groups: ['one', 'two'], items: [
+        { id: 'only', label: 'only', group: 'one' },
+        { id: 'other', label: 'other', group: 'two' },
+      ] },
+    })
+    fixture.panel.handleInput('\x1b[D')
+    fixture.panel.handleInput('\x1b[C')
+    fixture.panel.handleInput('\x1b')
+    expect(fixture.onClose).toHaveBeenCalledOnce()
+
+    fixture.setModel({ kind: 'panel', mode: 'info', title: 'No list' })
+    fixture.panel.handleInput('\x1b[C')
+  })
 })
