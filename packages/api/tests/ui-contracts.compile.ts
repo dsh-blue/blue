@@ -141,12 +141,12 @@ export const manifest = {
   id: '@acme/inspector', api: '^1.0.0', capabilities: ['panes', 'status'],
 } satisfies BluePluginManifest
 
-declare const statusEntries: NonNullable<BluePluginApi['statusEntries']>
-statusEntries.register({ id: '@acme/status/branch', render: () => ({ kind: 'text', content: 'main' }) })
+declare const status: NonNullable<BluePluginApi['status']>
+status.register({ id: '@acme/status/branch', render: () => ({ kind: 'text', content: 'main' }) })
 // @ts-expect-error code is outside the recursive status subset
-statusEntries.register({ id: '@acme/status/code', render: () => ({ kind: 'code', code: 'unsafe status' }) })
+status.register({ id: '@acme/status/code', render: () => ({ kind: 'code', code: 'unsafe status' }) })
 // @ts-expect-error actions are interactive and cannot enter status
-statusEntries.register({ id: '@acme/status/action', render: () => ({ kind: 'actions', id: 'bad', items: [] }) })
+status.register({ id: '@acme/status/action', render: () => ({ kind: 'actions', id: 'bad', items: [] }) })
 
 // @ts-expect-error editor-control is provider-only
 export const invalidPaneNode: BlueUiNode = { kind: 'editor-control' }

@@ -172,13 +172,10 @@ export interface BlueRegistry<T> { register(contribution: T): BlueResult<BlueReg
 export interface BluePluginApi {
   readonly manifest: BluePluginManifest
   readonly commands?: BlueRegistry<BlueCommandContribution>
-  /** @deprecated W2-C replaces this legacy BlueView adapter with final `status`. */
-  readonly status?: BlueRegistry<BlueStatusContribution>
+  readonly status?: BlueStatusEntryRegistry
   /** @deprecated Internal bridge until W2-C migrates dock consumers to panes. */
   readonly dock?: BlueRegistry<BlueDockContribution>
   readonly notifications?: { publish(notification: BlueNotification): BlueResult, subscribe(listener: (notification: BlueNotification) => void): BlueRegistration }
-  /** W1 transition name for the frozen additive status contract. */
-  readonly statusEntries?: BlueStatusEntryRegistry
   readonly panes?: BluePaneRegistry
   readonly overlays?: BlueOverlayRegistry
   readonly editorExtensions?: BlueEditorExtensionRegistry

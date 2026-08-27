@@ -57,13 +57,13 @@ one. Public validation rejects `dock/panels/editor/tools` with an actionable
 
 W1 compatibility exception: `host.ts` uses the non-root-exported
 `validateBlueHostManifest` to admit the existing built-in `dock` bridge, and
-`contracts.ts` retains deprecated dock/status adapter shapes. The frozen status
-registry is temporarily `BluePluginApi.statusEntries`; `status` still names the
-deprecated bridge. W2-C must atomically remove the old `status`, rename
-`statusEntries` to `status`, and remove the host transition validator,
-`BluePluginApi.dock`, `BlueDockContribution`, host dock registry/snapshot, and
-`BlueHostManifest` when pane/status owners migrate. No new plugin may depend on
-this transition.
+`contracts.ts` retains deprecated dock/status adapter shapes for owner
+snapshots only. `BluePluginApi.status` already has its final narrowed type;
+`host.ts` explicitly casts the old registry behind that boundary. W2-C replaces
+the cast and old status registry without changing the public field, then removes
+the host transition validator, `BluePluginApi.dock`, `BlueDockContribution`,
+host dock registry/snapshot, and `BlueHostManifest` when pane/status owners
+migrate. No new plugin may depend on this transition.
 
 ## Distribution contract
 

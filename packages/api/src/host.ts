@@ -6,7 +6,7 @@
  */
 
 import { Service, symbols, type Context } from '@deepseek-ai/cordis'
-import type { BlueCommandContribution, BlueDockContribution, BlueNotification, BluePluginApi, BluePluginHost, BlueRegistration, BlueRegistry, BlueResult, BlueStatusContribution } from './contracts.ts'
+import type { BlueCommandContribution, BlueDockContribution, BlueNotification, BluePluginApi, BluePluginHost, BlueRegistration, BlueRegistry, BlueResult, BlueStatusContribution, BlueStatusEntryRegistry } from './contracts.ts'
 import { validateBlueHostManifest, type BlueCapability, type BlueHostManifest, type BluePluginManifest } from './manifest.ts'
 import type { BlueErrorCode } from './contracts.ts'
 
@@ -345,7 +345,9 @@ export class BluePluginHostService extends Service implements BluePluginHost {
     const api: BluePluginApi = {
       manifest: Object.freeze({ ...manifest, capabilities: Object.freeze([...capabilities]) }) as BluePluginManifest,
       ...(capabilities.includes('commands') ? { commands } : {}),
-      ...(capabilities.includes('status') ? { status } : {}),
+      // W2-C replaces the legacy BlueView registry itself; the cast keeps that
+      // runtime bridge from widening the already-frozen public status shape.
+      ...(capabilities.includes('status') ? { status: status as unknown as BlueStatusEntryRegistry } : {}),
       ...(capabilities.includes('dock') ? { dock } : {}),
       ...(capabilities.includes('notifications') ? { notifications } : {}),
     }
