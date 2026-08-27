@@ -1,6 +1,7 @@
 # Blue UI API 与组件系统重构方案
 
-> 状态：目标架构与实施蓝图，尚未实现。本文以分支 `p2/ui-enhancement` 当前代码和
+> 状态：目标架构与实施蓝图，W0 可行性探针已验收，产品实现尚未开始。本文以
+> `master@1d0f01e` 和
 > `@earendil-works/pi-tui@0.84.2` 为事实基线。现状描述以代码为准，目标契约以本文为准；
 > 实施完成后，公开 API 文档与各包 `AGENTS.md` 接替本文成为运行时真相。
 >
@@ -136,6 +137,14 @@ Terminal
 - Loader 必须显式 stop；overlay handle 必须随贡献卸载；两者不能留给插件管理。
 - `BlueOverlayOptions` 当前没有透传上游的 `row/col/margin`。内部包装应补齐，但公共 API 不照抄全部上游字段。
 
+### 3.4 W0 renderer 探针裁决
+
+- AltScreen 使用一个 layout root 和唯一 primary transcript `ScrollView`；HStack/VStack 的 viewport predicate 足以支持 120/80/40 列重排。
+- 一个 surface 对 pi-tui 只表现为一个复合 `Focusable`。复合控件先合成完整行，再用 pi-tui 的可见列工具插入唯一 `CURSOR_MARKER`；marker 不能由 HStack child 直接输出，否则其后的文本会丢失。
+- 响应式节点消失前由 Blue 迁移焦点；pi-tui 的 `visible` predicate 不负责 focus reconciliation。
+- pi-tui 接受嵌套 `ScrollView`，但内层获得 natural/unbounded height，不能形成有效 viewport；Blue validator 必须拒绝 scroll descendant。
+- `TuiMainScreen` 不消费 layout root。兼容模式按文档序编译为线性 VStack，不承诺与 AltScreen 等价的多栏、子滚动或 overlay 几何。
+
 ## 4. 视觉系统：“深海工作台”
 
 差异化不能只靠鲸鱼、蓝色或换一个箭头。Blue 的视觉签名由层级、状态和动效共同构成。
@@ -258,7 +267,7 @@ import { defineBlueComponent, ui } from '@dsh-blue/blue-ui'
 
 export const metricBoard = defineBlueComponent<MetricBoardProps>({
   id: '@acme/metric-board',
-  api: '^0.1.1-rc.1',
+  api: '^1.0.0',
   render: props => ui.stack.column([
     ui.progress({ label: props.label, value: props.value, max: props.max }),
     ui.fields(props.metrics),
@@ -279,6 +288,8 @@ const node = metricBoard.render({ label: 'Context', value: 42, max: 100, metrics
 发布和消费 UI Kit 不需要额外 capability。真正向屏幕注册 pane/overlay/status 的消费插件仍必须申请对应 capability；kit 本身没有 host、session 或 terminal 权限。
 
 rc.1 不提供全局 runtime component registry，理由是它会引入跨插件加载顺序、版本冲突、卸载悬挂和自定义 renderer 风险。共享通过包依赖完成，行为可重复、可锁版本、可独立测试。
+
+`api` 是独立的公共协议版本，不是 Blue 产品版本；rc.1 保持 `BLUE_API_VERSION = 1.0.0` 和 manifest `schemaVersion = 1`。官方包使用精确 lockstep 产品版本。第三方 kit 将 `@dsh-blue/blue-ui` 声明为 peer；如需限定本次 preview 窗口，使用 `>=0.1.1-rc.1 <0.1.2`，不能把 `^0.1.1-rc.1` 描述成 rc line。
 
 ### 5.5 primitives 与 patterns
 
@@ -385,7 +396,7 @@ Blue 按 profile 持久化：显示/隐藏、lane、顺序、active pane、pin�
 
 ### 7.1 原则
 
-- 数据和事件 renderer-neutral、readonly、JSON-shaped。
+- node、event payload 和 snapshot renderer-neutral、readonly、JSON-shaped；`render`、`onEvent`、`AbortSignal` 和 registration handle 是进程内执行边界，不声称可序列化。
 - 业务状态由插件持有；focus、edit buffer、scroll 和 pending event 由 Blue surface 持有。
 - node 中只引用 control/action id；统一 `onEvent` 是贡献执行边界。
 - 普通插件永远拿不到 `BlueComponent`、`BlueScreen`、pi-tui 或 raw key。
@@ -407,6 +418,8 @@ export type BlueUiNode =
   | BlueLoaderNode
   | BlueEmptyNode
   | BlueProgressNode
+  | BlueSpacerNode
+  | BlueDividerNode
 
 export interface BlueStackNode {
   readonly kind: 'stack'
@@ -434,7 +447,7 @@ export interface BlueViewportCondition {
 }
 ```
 
-`when` 相对 pane viewport 计算，不允许函数。数值先校验再 clamp；深度、children 数和总节点数有统一上限。
+`when` 相对 pane viewport 计算，不允许函数；responsive 只存在于 `BlueUiChild.when`，没有独立 node kind。`editor-control` 不属于 `BlueUiNode`，只存在于递归收窄的 `BlueEditorShellNode` union。数值先校验再 clamp；深度、children 数和总节点数有统一上限。
 
 ### 7.3 控件事件
 
@@ -450,12 +463,19 @@ export type BlueUiEvent =
   | { readonly kind: 'dismiss' }
 
 export interface BlueUiEventContext {
+  readonly surfaceId: string
   readonly signal: AbortSignal
   readonly revision: number
+  readonly userGesture?: BlueUserGesture
 }
 ```
 
-同一 surface 默认串行处理事件。新 revision 使旧异步结果失效；unload abort 当前事件；late completion 不得刷新已销毁 contribution。
+事件分两条确定性通道：
+
+- `value-change`、`selection-change` 和 `tab-change` 按 `surfaceId + controlId` latest-wins；新 revision abort 同控件旧 handler。
+- `activate`、`submit` 和 `dismiss` 按 surface FIFO 串行；一个 handler 完成或在 30 秒超时后才执行下一项。
+
+handler 不持有 refresh registration。host 只在成功结果仍是当前 revision 时合并一次 refresh；unload abort 当前和排队事件，late completion 不得刷新已销毁 contribution。`BlueUserGesture` 是 host 在明确键盘 action/command dispatch 时签发的一次性 opaque token，只在当前 dispatch 中有效并在首次消费后失效。
 
 ## 8. 插件 Surface API
 
@@ -500,7 +520,7 @@ export interface BluePaneRegistration extends BlueRegistration {
 export interface BlueOverlayRequest {
   readonly id: string
   readonly title?: string
-  readonly modal?: boolean
+  readonly capturing?: boolean
   readonly dismissible?: boolean
   readonly anchor?: 'center' | 'top' | 'bottom' | 'left' | 'right'
   readonly width?: number | `${number}%`
@@ -517,7 +537,7 @@ export interface BluePublicOverlayHandle {
 }
 ```
 
-- capturing overlay 只能从明确用户 action 打开；后台通知使用 notifications。
+- `capturing` 默认 `false`，`dismissible` 默认 `true`。只有 capturing overlay 可获得焦点和包含交互控件；打开时必须消费当前 event/command 的 `BlueUserGesture`。后台通知使用 notifications。
 - 每插件最多一个 capturing overlay，整个栈有深度上限。
 - 插件不能指定绝对 row/col、负 offset 或越过安全 margin。
 - overlay unload/throw/timeout 后恢复前一焦点。
@@ -560,6 +580,8 @@ Editor shell
 
 每个 editor shell 必须恰好包含一个 `editor-control`；Blue 在注册期验证这一不变量。Provider 可在它上下组合公开 UI Kit 节点，但不能复制、隐藏或在多个位置挂载编辑内核。
 
+`BlueEditorSnapshot` 只包含 mode、busy、只读 attachment metadata 和已接纳 extension；不公开 draft 内容、history、cursor 或 IME 状态。它们由 Blue 在热换事务内部 capture/restore。`BlueStatusSnapshot` 只包含公共 `BlueSessionSnapshot | null`、经过清洗的 additive entries 和 busy 状态。
+
 真正替换编辑引擎需要受信 renderer/composition 插件，不属于普通动态插件，也不进入 rc.1 公共 capability。未来只有在存在第二个真实 renderer、包信任和独立 dogfood 方案时才另立契约。
 
 Editor provider 热换必须事务化：
@@ -595,7 +617,7 @@ status.provider
 editor.provider
 ```
 
-`dock`、`panels`、含义不清的 `editor` 从 rc.1 公共 manifest 删除。`renderer.provider` 不预留空 capability，避免重复“manifest 有、运行时无”的历史。`tools` 是否保留必须以现有 host adapter 的真实公共能力为准，不借 UI 重构扩大权限。
+`dock`、`panels`、含义不清的 `editor` 和没有公共 registry/owner 的 `tools` 从 rc.1 公共 manifest 删除。`renderer.provider` 不预留空 capability，避免重复“manifest 有、运行时无”的历史。
 
 ## 9. Focus、生命周期与安全
 
@@ -605,7 +627,7 @@ editor.provider
 
 - Tab/Shift-Tab 移动控件焦点；
 - 方向键由 active control 解释；
-- Esc 先退出局部编辑，再释放 pane focus；modal overlay 按 dismissible 关闭；
+- Esc 先退出局部编辑，再释放 pane focus；capturing overlay 按 dismissible 关闭；
 - lane 切换走 Blue keymap action，不硬编码原始键；
 - 失去 focus 后保留 controlled selection，但不绘制 selectedBg 焦点带。
 
@@ -621,7 +643,7 @@ editor.provider
 
 ### 9.3 资源限制
 
-至少限制：单 view 20,000 字符、递归深度 8、总节点数 256、单 collection 200 项、单插件 pane 数、overlay 深度和每秒 refresh 次数。具体常量在首个实现期由 fixture 固化，不能由配置无限放大。
+rc.1 固定：单 view 20,000 字符、递归深度 8、总节点数 256、单 collection 200 项、每插件 8 个 pane、每插件 1 个 capturing overlay、全局 overlay 栈深度 4、每 contribution 每秒 20 次 refresh（同一 render tick 合并）。provider 在 60 秒内连续 3 次 render/runtime failure 后触发 circuit breaker，回退默认；一次成功 dry-render 重置计数。side lane 在 transcript 可保留至少 40 列时进入，在可保留至少 44 列时才从窄屏状态恢复，形成 4 列 hysteresis。
 
 插件不能：
 
@@ -723,13 +745,13 @@ status
 
 ## 12. `0.1.1-rc.1` Agent 实施编排
 
-本项目按依赖波次交给 Codex 等代码 Agent 执行，不按传统工程师工期组织。目标是 16–20 个边界明确的 agent task、7 个顺序集成门，单波最多 3 个实现 Agent 并行；更多并发会因 core、interaction 和共享测试 fixture 冲突而降低吞吐。
+本项目按依赖波次交给 Codex 等代码 Agent 执行，不按传统工程师工期组织。目标是 16–20 个边界明确的 agent task、7 个顺序集成门。当前执行环境一次只运行一个 subagent，由主 Agent 分派、验收和集成；依赖图保留任务边界，但所有任务严格串行。
 
 ### 12.1 执行纪律
 
-1. 每个 task 使用独立 worktree 和分支，基于上一集成门已经验收并合入的 master；不得让多个 Agent 在同一 checkout 工作。
+1. 每个 task 使用独立 worktree 和分支，基于上一集成门已经验收并合入的集成分支；不得让多个 Agent 在同一 checkout 工作。
 2. 一个文件在一个波次只归一个 task owner。`package-contract`、版本 spec、bundle patch、共享 fake 和 release docs 明确归集成 owner，其他 Agent 不顺手修改。
-3. 公共类型先合入，消费方才可并行；并行分支不得各自复制临时 type，避免合并后出现同名双契约。
+3. 公共类型先合入，消费方才开始；后续分支不得复制临时 type，避免集成后出现同名双契约。
 4. 每个 task 同时交付实现、测试、所属包 `AGENTS.md`、需要的双语 README 和变更说明，不把文档债留给末期 Agent。
 5. 每个用户可见波次在自己的 profile dogfood，并等待真人验收；未验收分支不能成为下一波的共同基线。
 6. Agent 不直接发布、修改 dist-tag 或合并 master。集成 owner 负责按顺序合并已验收分支、重跑全量门禁和生成候选 tarball。
@@ -739,31 +761,31 @@ status
 ### 12.2 依赖图
 
 ```text
-W0 可行性探针（并行，只产证据）
+W0 可行性探针（P0 → P1 → P2，只产证据）
  ├─ P0 API wire/type specimen
  ├─ P1 pi-tui layout/focus/resize spike
  └─ P2 新包 pack/install/user-kit spike
                  ↓ G0 决策冻结
 W1 blue-api 契约（顺序，单 owner）
                  ↓ G1 类型冻结
-W2 基础设施（并行）
+W2 基础设施（A → B → C）
  ├─ A blue-ui builders/package
  ├─ B core validator/compiler/focus engine
  └─ C api host registries/capability admission
                  ↓ G2 compiler 集成
-W3 运行时（并行）
- ├─ A surface manager/root layout
+W3 运行时（B → A → C）
  ├─ B reusable pattern adapters
+ ├─ A surface manager/root layout
  └─ C pane/overlay owner bridges
                  ↓ G3 首个端到端插件
-W4a 内置迁移（并行、按包所有权）
+W4a 内置迁移（A → B → C，按包所有权）
  ├─ A core dropdown/frontend renderers
  ├─ B interaction lists/forms/settings
  └─ C transcript dock/status
                  ↓
 W4b interaction dialogs（顺序接 W4a-B）
                  ↓ G4 旧组件退出
-W5 生态与 provider（部分并行）
+W5 生态与 provider（顺序）
  ├─ A status.provider
  ├─ B editor.extensions → editor.provider（支线内顺序）
  └─ C 示例插件/用户 kit/开发文档
@@ -774,15 +796,15 @@ W6 清理、版本、打包、真人验收（顺序）
 
 ### 12.3 W0：可行性探针
 
-三个探针可同时运行，产物不直接进入产品：
+三个探针按 P0 → P1 → P2 顺序运行，产物不直接进入产品：
 
 | Task | 研究目标 | 必须回答的问题 | 产出 |
 |---|---|---|---|
 | P0 | 用 TS specimen 表达 node/events/panes/providers | controlled state、event revision、status 子集是否无环 | 决策记录 + 编译 fixture |
 | P1 | 最小 HStack/VStack/ScrollView + 复合焦点 | 120→40 列降级、嵌套 scroll、IME cursor 是否可控 | VT 录制 + spike test |
-| P2 | 最小 `blue-ui` tarball + 外部 kit + 消费插件 | peer 版本、exports、ATTW、独立 npm 安装是否成立 | 三个临时 tarball 的报告 |
+| P2 | 最小 `blue-ui` tarball + 外部 kit + 消费插件 | peer 版本、exports、ATTW、独立 npm 安装是否成立 | api/ui/kit/consumer 四个临时 tarball 的报告 |
 
-**G0 验收：**所有问题有代码证据；删除或归档 spike，不把临时 API 带入生产；更新本文中的最终接口。若复合焦点或 HStack 高度模型不成立，在此处缩减范围，不能留到组件迁移后处理。
+**G0 验收：**P0 `b64d42a` 的 TypeScript/revision specimen、P1 `6540d47` 的 9 项 pi-tui probe 和 P2 `19231a6` 的四级 tarball/install probe 已由集成 owner 独立复跑。上述 probe 分支只作为证据归档，不合入产品；本文已经吸收最终接口和 renderer/package 裁决。
 
 ### 12.4 W1：契约冻结
 
@@ -796,21 +818,21 @@ W6 清理、版本、打包、真人验收（顺序）
 - 旧 capability 的迁移结果有明确错误，而不是静默忽略。
 - API review 冻结字段名称；G1 后的 breaking change 必须退回本门重新验收。
 
-### 12.5 W2：基础设施并行波
+### 12.5 W2：基础设施顺序波
 
-G1 合入后启动三个 worktree：
+G1 合入后按 A → B → C 启动三个独立 worktree；前一个完成并由主 Agent 验收后才启动下一个：
 
 | Owner | 允许范围 | 产出目标 | 不得触碰 |
 |---|---|---|---|
-| W2-A | 新 `packages/ui`、package contract 中该包条目 | builders、`defineBlueComponent`、freeze、官方 composition helpers | core renderer、host registries |
+| W2-A | 新 `packages/ui` | builders、`defineBlueComponent`、freeze、官方 composition helpers | core renderer、host registries、package contract |
 | W2-B | `packages/core/src/ui-*` 新模块及 core tests | validator、sanitizer、compiler、复合 focus、错误 surface | terminal 根布局、api types |
 | W2-C | `packages/api/src/host.ts`、manifest admission 及 API tests | panes/overlays/provider registry、readiness、配额、Fiber disposal | core、transcript、interaction |
 
-合并顺序固定为 A → B → C；每次合并后后续分支同步最新 master 并重跑自己的门禁。
+集成顺序固定为 A → B → C；每次集成后后续 worktree 基于最新集成 commit 创建并重跑自己的门禁。package contract、根 references 和 lockfile 由集成 owner 在 A 交付后统一接入，避免 package 数量和发布顺序出现第二 owner。
 
 **G2 验收：**builders 与手写 wire node 深相等；所有 node kind 可编译或返回结构化拒绝；恶意深树/ANSI/超限输入被收容；每个新增源文件 100% coverage；`build/check:lib/check:pack` 包含新 UI 包；外部 kit tarball 能独立安装。
 
-### 12.6 W3：运行时并行波
+### 12.6 W3：运行时顺序波
 
 - **W3-A Surface Manager：**独占 `terminal.ts/screen.ts` 和新的 lane 模块，实现可选 header、真实 left/right HStack、bottom budget、用户布局 state、tabs/overflow、fallback 和 hysteresis。
 - **W3-B Patterns：**独占新的 core pattern adapter 与 `packages/ui` pattern builders，实现 surface/tabs/list/form/actions/loader/empty/progress 的状态矩阵。
@@ -833,7 +855,7 @@ G3 是第一个必须真人 live-test 的门；通过后 surface API 才允许�
 
 ### 12.7 W4：内置组件迁移
 
-W4a 三个 worktree 可并行，但严格按包所有权：
+W4a 三个 worktree 按 A → B → C 严格串行，并保持包所有权：
 
 - **W4a-A Core：**WrappingSelectList、frontend renderer、公共 chrome 私有化；不修改 interaction。
 - **W4a-B Interaction：**SelectListPanel、BlueSelect、FormPanel、settings；它独占 interaction 的 `fakes.ts` 和 `width-scan.spec.ts`。
@@ -852,7 +874,7 @@ W4b 在 W4a-B 合入后由一个 Agent 迁移 Approval、Questionnaire、PlanRev
 
 ### 12.8 W5：生态与 provider
 
-G4 后可并行 status 和 editor 两条包边界不同的支线：
+G4 后按 Status → Editor extensions → Editor provider → Ecosystem 顺序执行：
 
 - **W5-A Status：**实现 additive status snapshot、provider candidate、用户选择、dry-render、原子替换和失败回滚。
 - **W5-B Editor：**先交付并验收 extensions，再在下一 task 实现 shell provider；保存 draft/history/mode/attachments，恰好一个 editor-control，失败回退默认。两个 task 不并行。
@@ -871,12 +893,12 @@ G4 后可并行 status 和 editor 两条包边界不同的支线：
 
 W6 不并行，按以下顺序执行：
 
-1. 删除旧 `dock/panels/editor` capability、兼容类型、死 bridge 和旧文档；确认没有未实现的公开 capability。
-2. 将 release set、`BLUE_VERSION`、网站中英文、CLI pin、version specs 和新 UI 包统一到 `0.1.1-rc.1`。
+1. 删除旧 `dock/panels/editor/tools` capability、兼容类型、死 bridge 和旧文档；确认没有未实现的公开 capability。
+2. 将 11 包 release set、`BLUE_VERSION`、网站中英文、CLI pin、version specs 和新 UI 包统一到 `0.1.1-rc.1`；发布顺序固定为 api → ui → frontend → harness-adapter → conversation → core → app → transcript → interaction → blue → cli。
 3. 运行 test、coverage、typecheck、lint、build、check:lib、check:pack、smoke:happy、smoke:pty。
 4. 在 worktree profile dogfood 默认单列、120 列多插件、80/40 列降级、provider swap、theme swap、session switch。
 5. 邀请用户 live-test；等待明确“验收通过”，此前不合并、不删除 profile、不发布。
-6. 合并 master，主 checkout rebuild；生成一次候选 tarball，后续 registry smoke 和 dist-tag promotion 使用同一 artifact。
+6. 合并 master，主 checkout rebuild；release workflow 生成一次候选 Actions artifact，后续 registry smoke 和 dist-tag promotion 按 source run id 复用同一 artifact。本地 pre-merge tarball 只作为验收证据，不宣称是最终发布物。
 
 **G6 验收：**所有自动门禁、dogfood 日志、真人验收和 registry install smoke 完整；七类示例场景有结果；发布 tarball 不含 workspace protocol、缺失 subpath 或未声明依赖。
 
@@ -935,7 +957,7 @@ commit id
 7. 普通插件只做 additive contribution；完整 statusline 和 Editor shell 由独占 provider 提供。
 8. editing engine 和 renderer 替换属于更高信任层级，不能伪装成普通 UI 插件。
 9. `BlueView` 保留为安全内容叶子；`BlueUiNode` 承担布局和交互。
-10. `dock/panels/editor` 半成品 capability 在 rc.1 清理，不固化错误兼容层。
+10. `dock/panels/editor/tools` 半成品或无 owner capability 在 rc.1 清理，不固化错误兼容层。
 11. Blue 内置组件全部迁移并通过真实终端验收，才允许宣称 API 稳定。
 12. 上述全部完成是 `0.1.1-rc.1` 的发布标志。
 
