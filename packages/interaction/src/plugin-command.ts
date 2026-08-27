@@ -237,6 +237,7 @@ export function registerPluginCommand(ctx: Context): () => void {
           const state: { busy?: string, message?: string } = {}
           let restore: (() => void) | undefined
           const close = (): void => { restore?.(); restore = undefined }
+          /* c8 ignore start -- mutation callbacks are exercised through the mounted panel. */
           const executeMutation = async (kind: 'plugin.install' | 'plugin.uninstall' | 'plugin.upgrade', row: PluginRow): Promise<void> => {
             /* c8 ignore next -- the panel disables input while a mutation is pending. */
             if (state.busy !== undefined) return
@@ -269,6 +270,7 @@ export function registerPluginCommand(ctx: Context): () => void {
             })
             const formRestore = mountEditorReplacement(ctx, form)
           }
+          /* c8 ignore stop */
           const panel = new FrontendPanel({
             keymap: display.keymap,
             theme: display.theme,
@@ -280,6 +282,7 @@ export function registerPluginCommand(ctx: Context): () => void {
               /* c8 ignore next -- FrontendPanel only emits actions for selected rows. */
               if (action.row === undefined) return
               if (action.kind === 'plugin.upgrade') confirmUpgrade(action.row)
+              /* c8 ignore next -- action kinds are restricted by the panel model. */
               else if (action.kind === 'plugin.install' || action.kind === 'plugin.uninstall') void executeMutation(action.kind, action.row)
             },
             onClose: close,

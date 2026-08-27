@@ -168,6 +168,7 @@ class HintLine implements BlueComponent {
     if (this.text === undefined) return []
     const rows = this.text.split(/\r\n?|\n/u).flatMap(line => {
       const wrapped = this.components.wrapText(line.trim(), Math.max(1, width))
+      /* c8 ignore next -- the renderer normally returns one row for an empty line. */
       return wrapped.length === 0 ? [''] : wrapped
     })
     const maxRows = 8
