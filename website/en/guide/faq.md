@@ -2,13 +2,13 @@
 
 ## Why not a plain `npm install @dsh-blue/blue`?
 
-Blue is a plugin bundle installed into a dsh profile, not a standalone app — a bare install only drops the package into node_modules, with no host and no profile assembly, so there is nothing to run. The supported paths are the `blue` shell or `dsh plugin --profile blue add`; see [Quickstart](/en/guide/). The current release candidate is `v0.1.0-rc.9`; npm's `rc` and `latest` tags point to this release. `0.1.0-rc.1` shipped broken tarballs (missing files) — if it is installed, upgrade. The contributor development install lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
+Blue is a plugin bundle installed into a dsh profile, not a standalone app — a bare install only drops the package into node_modules, with no host and no profile assembly, so there is nothing to run. The supported paths are the `blue` shell or `dsh plugin --profile blue add`; see [Quickstart](/en/guide/). The current release candidate is `v0.1.0-rc.10`; npm's `rc` and `latest` tags point to this release. `0.1.0-rc.1` shipped broken tarballs (missing files) — if it is installed, upgrade. The contributor development install lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
 
 ## `@rc` does not resolve the newest preview?
 
 pnpm 11 enables a `minimumReleaseAge` cooldown by default: dist-tag resolution silently skips versions published inside the window and falls back to an older one. If `dsh plugin --profile blue add @dsh-blue/blue@rc` installs a stale version, either:
 
-- install the exact version right away — `dsh plugin --profile blue add @dsh-blue/blue@0.1.0-rc.9` (match the repository's newest tag);
+- install the exact version right away — `dsh plugin --profile blue add @dsh-blue/blue@0.1.0-rc.10` (match the repository's newest tag);
 - or re-run the same `@rc` command once the cooldown window has passed (upgrading = re-running the same `plugin add`).
 
 Upgrading through `/update` avoids the trap entirely: it resolves the target from registry metadata, always pins the exact version, and inside the cooldown window it answers with the retry time (an ETA) instead of installing a stale build.

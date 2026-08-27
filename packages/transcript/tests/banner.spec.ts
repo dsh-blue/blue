@@ -302,7 +302,7 @@ describe('blue-banner plugin', () => {
     const { screen } = await bootBanner({ displayVersion })
     const joined = screen.children[0]?.render(100).join('\n') ?? ''
     expect(joined).toContain(`Version:   ${displayVersion}`)
-    expect(BLUE_VERSION).toBe('0.1.0-rc.9')
+    expect(BLUE_VERSION).toBe('0.1.0-rc.10')
   })
 
   it('re-derives the model line on session and model changes', async () => {

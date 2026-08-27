@@ -8,7 +8,7 @@
 
 [English](README.md) | 中文
 
-Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的交互式终端界面（TUI）：一个 `pi-tui` 渲染器，以树外 [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) 插件 bundle 的形式挂载在 `dsh-base` bundle 之上。本仓库包含十四个 workspace 包——十个属于 `0.1.0-rc.9` 发布集，四个为 validation-only adapter——针对已发布的 Harness `0.1.1-rc.2` 线构建与测试。
+Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的交互式终端界面（TUI）：一个 `pi-tui` 渲染器，以树外 [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) 插件 bundle 的形式挂载在 `dsh-base` bundle 之上。本仓库包含十四个 workspace 包——十个属于 `0.1.0-rc.10` 发布集，四个为 validation-only adapter——针对已发布的 Harness `0.1.1-rc.2` 线构建与测试。
 
 <p align="center">
   <a href="https://dsh-blue.dev/blue-demo.mp4"><img src="docs/assets/demo.gif" width="720" alt="Blue 演示——流式回复、工具卡片与底部 dock 面板"></a>
@@ -29,7 +29,7 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 ## 用法
 
 > [!NOTE]
-> `0.1.0-rc.9` 是当前正式候选版本；npm 的 `rc` 与 `latest` 标签均指向此版本。
+> `0.1.0-rc.10` 是当前正式候选版本；npm 的 `rc` 与 `latest` 标签均指向此版本。
 
 前置条件：Node `^22.19 || >=24` 与 pnpm 11。推荐的启动器已经内含经过测试的 dsh 运行时。
 
@@ -42,7 +42,7 @@ dsh --profile blue
 或者使用推荐的一条命令安装 `blue` 启动器；它把经过测试的 Harness 树封装成公共层和平台层归档，npm 安装时不会解析该依赖图：
 
 ```sh
-npm i -g @dsh-blue/blue-cli@0.1.0-rc.9
+npm i -g @dsh-blue/blue-cli@0.1.0-rc.10
 blue
 ```
 

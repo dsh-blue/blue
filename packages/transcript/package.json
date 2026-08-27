@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-transcript",
   "description": "Blue terminal UI renderer for projection-backed transcript, status, and dock models",
-  "version": "0.1.0-rc.9",
+  "version": "0.1.0-rc.10",
   "publishConfig": {
     "access": "public"
   },

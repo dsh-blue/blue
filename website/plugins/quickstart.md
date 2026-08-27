@@ -30,7 +30,7 @@ blue-clock/
   "version": "0.1.0",
   "type": "module",
   "exports": { ".": "./lib/index.js" },
-  "dependencies": { "@dsh-blue/blue-api": "^0.1.0-rc.9" },
+  "dependencies": { "@dsh-blue/blue-api": "^0.1.0-rc.10" },
   "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" }
 }
 ```
