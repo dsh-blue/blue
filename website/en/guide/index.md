@@ -1,7 +1,7 @@
 # Quickstart
 
 ::: info Preview stage
-`v0.1.0-rc.9` is the current release candidate; npm's **`rc`** and **`latest`** tags point to this release. This page is the user install path; the contributor development install (checkout, link install, iteration loop) lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
+`v0.1.0-rc.10` is the current release candidate; npm's **`rc`** and **`latest`** tags point to this release. This page is the user install path; the contributor development install (checkout, link install, iteration loop) lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
 :::
 
 ## Prerequisites
@@ -17,7 +17,7 @@
 **Recommended: the integrated `blue` launcher.** It carries the pinned Harness closure as common and platform archives, so npm installs one dependency-free package without resolving the Harness graph or running its install scripts:
 
 ```sh
-npm i -g @dsh-blue/blue-cli@0.1.0-rc.9
+npm i -g @dsh-blue/blue-cli@0.1.0-rc.10
 blue
 ```
 

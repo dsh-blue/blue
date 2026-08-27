@@ -28,6 +28,15 @@ export interface ChangelogEntry {
 /** All shipped releases, newest first. */
 export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
+    version: '0.1.0-rc.10',
+    summary: 'Registry installs now keep the complete Blue release set on one exact version.',
+    highlights: [
+      'Exact internal Blue dependencies — published packages no longer use prerelease ranges, so an existing internal test version cannot be selected during registry installation.',
+      'Deterministic terminal snapshots — renderer tests pin terminal hyperlink capabilities and remain stable across local terminals and CI runners.',
+    ],
+    knownIssues: [],
+  },
+  {
     version: '0.1.0-rc.9',
     summary: 'Creative mode now reaches the screen through a capability-safe, fully tested Cordis path.',
     highlights: [
