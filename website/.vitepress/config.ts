@@ -283,6 +283,14 @@ const config = defineConfig({
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: `${base}favicon.svg` }],
     ['script', {}, `(${langRedirect.toString()})(${JSON.stringify(base)})`],
+    [
+      'script',
+      {
+        type: 'module',
+        src: 'https://static.cloudflareinsights.com/beacon.min.js',
+        'data-cf-beacon': '{"token": "78f084a06ca54e528103657960a14b43"}',
+      },
+    ],
   ],
   locales: {
     root: {
