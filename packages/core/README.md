@@ -20,6 +20,14 @@ The `./chrome` subpath (`src/chrome.ts`, opened by S11) exports the theme-agnost
 
 All five contracts are mounted as Cordis `Service` subclasses (`blueTheme` by a theme subpath plugin, the rest by this plugin's `apply`); each unregisters automatically when its plugin's fiber unloads. Components consume the interfaces, never pi-tui types.
 
+## Public UI validation and compilation
+
+`validateBlueUiNode`, `validateBlueStatusNode`, and `validateBlueEditorShellNode` are the admission boundary for renderer-neutral public trees. They copy only known fields, strip terminal control strings (including ESC and C1 CSI/OSC/DCS/SOS/PM/APC forms), freeze the canonical copy without freezing caller data, and return a stable `BlueResult`. One tree is limited to 20,000 UTF-16 source units, depth 8, 256 nodes, and 200 entries per collection. Status trees are recursively non-interactive. Editor shells require exactly one host-owned `editor-control`, admitted only in an editor root, stack child, or surface child/footer; an ordinary descendant such as a scroll tree cannot reopen that slot. Nested public `scroll` nodes are rejected.
+
+`compileBlueUiNode(value, { components, colors, getViewport, screenMode, emit })` always runs that validator before producing the canonical node, a pi-tui-backed component, and at most one composite focus target. The composite owns roving focus, live responsive visibility reconciliation, and contained event/render failures; individual controls never escape as focusables. Public text cannot inject pi-tui's cursor marker or core's private focus sentinel. A focused composite inserts exactly one cursor marker only after full layout, while an unfocused composite inserts none. This is a deliberate compatibility constraint: leaf components must continue emitting the private sentinel, and HStack children must never emit `CURSOR_MARKER` directly.
+
+On AltScreen, public scroll compiles to a non-primary contained `ScrollView`; `follow: 'end'` follows the tail, while `'start'` and `'none'` start at the top, and the component is clipped to the live pane height. On MainScreen, scroll unwraps into native linear output, row stacks become vertical document order, and output is not clipped to viewport rows so terminal scrollback remains complete. Responsive conditions and focus reconciliation use the live pane viewport on every render. Stack sizing values use a viewport-independent safety ceiling of 1,000,000, so a resize can redistribute beyond the dimensions present at compile time.
+
 ## Terminal lifecycle
 
 `createTerminalRelease()` returns the `release` function for `installFailLoud(binName, proc, release)` from `@deepseek-ai/dsh-app-boot`: on a fatal load failure it stops the active terminal stack (draining pending input first) so raw mode and bracketed paste are restored before the process exits. It is a no-op when no Blue terminal is active. Services delegate through a stable proxy reference so a future renderer swap (main/alt screen) needs no consumer change.
@@ -39,5 +47,5 @@ None; the package adds nothing to any model request prefix.
 ## Known Limitations and Deferred Work
 
 - **Crash-log directory is pi's default** — the renderer writes its width-overflow crash log to `~/.pi/agent` (or `PI_CODING_AGENT_DIR`) because pi-tui hardcodes that default and Blue has no dsh-owned path to thread through yet.
-- **Main-screen renderer only** — the alternate-screen viewport and runtime renderer swap are deferred; the stable proxy reference is the only seam in place.
+- **Public UI host integration is deferred** — this package now owns admission and compilation, but W2-C/W3 still own registry/host wiring and application migration onto the compiler.
 - **Keymap conflict scope** — conflict detection covers actions registered through `ctx.blueKeymap`; pi-tui components (Editor, SelectList) resolve their own bindings from pi-tui's global keybindings table, which this package leaves untouched.

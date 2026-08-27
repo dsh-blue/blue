@@ -20,6 +20,14 @@ Blue 终端 UI 核心：整棵树中唯一 import `@earendil-works/pi-tui` 的�
 
 五个契约都以 Cordis `Service` 子类挂载（`blueTheme` 由主题子路径插件挂载，其余由本插件的 `apply` 挂载）；插件 fiber 卸载时各自自动摘除。组件只消费这些接口，绝不接触 pi-tui 类型。
 
+## 公共 UI 校验与编译
+
+`validateBlueUiNode`、`validateBlueStatusNode` 与 `validateBlueEditorShellNode` 是 renderer-neutral 公共树的准入边界。它们只复制已知字段，剥除终端控制字符串（包括 ESC 与 C1 两种 CSI/OSC/DCS/SOS/PM/APC 形式），递归冻结 canonical 副本但不冻结调用方对象，并返回稳定的 `BlueResult`。单棵树上限为 20,000 个 UTF-16 source unit、深度 8、256 个节点、每个 collection 200 项。Status 树递归限制为非交互节点。Editor shell 必须恰有一个宿主持有的 `editor-control`，且它只能出现在 editor 根、stack child 或 surface child/footer；scroll 等普通 UI 后代不能重新开放该 slot。嵌套公共 `scroll` 会被拒绝。
+
+`compileBlueUiNode(value, { components, colors, getViewport, screenMode, emit })` 必定先经过上述 validator，再返回 canonical node、pi-tui 支撑的 component，以及至多一个 composite focus target。该 composite 独占 roving focus、实时响应式可见性协调和 event/render 异常隔离；单个控件不会作为 focusable 泄漏。公共文本无法注入 pi-tui cursor marker 或 core 私有 focus sentinel。获得焦点时，composite 只在整体布局完成后插入恰好一个 cursor marker；失焦时一个也不插入。这是一项明确的兼容约束：叶组件必须继续输出私有 sentinel，HStack child 绝不能直接输出 `CURSOR_MARKER`。
+
+AltScreen 中，公共 scroll 编译为非 primary、overscroll contained 的 `ScrollView`；`follow: 'end'` 跟随尾部，`'start'` 与 `'none'` 从顶部开始，并按实时 pane 高度裁剪。MainScreen 中 scroll 展开为原生线性输出，row stack 降级为纵向文档顺序，而且不按 viewport rows 截断，从而保留完整终端 scrollback。每次 render 都用实时 pane viewport 计算响应式条件与焦点协调。Stack sizing 只采用与 viewport 无关的 1,000,000 安全上限，因此 resize 后可重新分配到 compile 时尺寸以外的空间。
+
 ## 终端生命周期
 
 `createTerminalRelease()` 返回供 `@deepseek-ai/dsh-app-boot` 的 `installFailLoud(binName, proc, release)` 使用的 `release` 函数：发生致命加载失败时，它停止当前活跃的终端栈（先 drain 未决输入），使进程退出前恢复 raw mode 与 bracketed paste。没有活跃 Blue 终端时它是 no-op。各服务经由稳定的代理引用委托，未来切换渲染器（主屏/alt-screen）无需消费者改动。
@@ -39,5 +47,5 @@ Blue 终端 UI 核心：整棵树中唯一 import `@earendil-works/pi-tui` 的�
 ## 已知限制与暂缓事项
 
 - **崩溃日志目录沿用 pi 默认值**——渲染器把行宽溢出崩溃日志写到 `~/.pi/agent`（或 `PI_CODING_AGENT_DIR`），因为 pi-tui 硬编码了该默认值，而 Blue 尚无可传入的 dsh 侧路径。
-- **仅主屏渲染器**——alternate-screen 视口与运行时渲染器切换暂缓；稳定代理引用是目前唯一预留的缝。
+- **公共 UI 的 Host 接线仍暂缓**——本包现已持有准入和编译边界，但 registry/host 接线及应用迁移仍归 W2-C/W3。
 - **键位冲突检测范围**——冲突检测只覆盖经 `ctx.blueKeymap` 注册的动作；pi-tui 组件（Editor、SelectList）从 pi-tui 的全局键位表解析各自绑定，本包不动该表。

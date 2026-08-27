@@ -46,6 +46,12 @@ The recoverable suspend composes pi-tui 0.84.2's own lifecycle primitives — `T
 
 ## Component factory (`blueComponents`, `src/components.ts`)
 
+### Public UI admission/compiler boundary
+
+`src/ui-validator.ts` is the only admission path for public `BlueUiNode`, recursively narrowed `BlueStatusNode`, and `BlueEditorShellNode` trees. Preserve the 20,000-text-unit, depth-8, 256-node, and 200-entry quotas; copy known fields and recursively freeze only the canonical copy; strip ESC and C1 terminal strings plus the private focus sentinel and pi-tui cursor marker. Status recursion must remain non-interactive. An editor control is legal only at the editor root or through editor stack/surface slots; ordinary descendants (especially `scroll`) must parse as `BlueUiNode` and cannot reopen the editor slot. Nested scroll remains rejected.
+
+`src/ui-compiler.ts` is the sole canonical `BlueUiNode` -> pi-tui compiler and must call the validator itself. Its returned composite is the only `BlueFocusable`: it owns roving state, live viewport reconciliation, event containment, and exactly-one cursor-marker insertion after complete composition. Leaves emit only the private sentinel; never pass pi-tui's `CURSOR_MARKER` into an HStack child. AltScreen scroll is non-primary/contained and clips to pane rows. MainScreen unwraps scroll, linearizes row stacks, and preserves all document rows. Do not clamp stack sizing to the compile-time viewport; the fixed safety ceiling exists solely to bound hostile safe integers during later live resize.
+
 `BlueEditor.removeLatestHistory(text)` is the narrow retraction helper over pi-tui's private history array: it removes index 0 only on an exact match. The method stays optional on the L1 contract so structural fakes and out-of-tree adapters remain compatible; core's sole real adapter implements it.
 
 The pi-tui-backed component factory and width pure functions:

@@ -47,6 +47,23 @@ export { FrontendModelComponent, renderFrontendModel, renderFrontendView, type F
 export { alignDiffLines, diffChangeCounts, paintDiffRows, DIFF_ALIGN_MAX_ROWS, CTX_EDGE_ROWS, type DiffOp, type DiffPaintColors } from './diff-align.ts'
 export { visibleWidth } from './width.ts'
 export {
+  compileBlueUiNode,
+  type BlueCompiledUi,
+  type BlueUiCompileFailure,
+  type BlueUiCompileResult,
+  type BlueUiCompilerOptions,
+  type BlueUiViewport,
+} from './ui-compiler.ts'
+export {
+  BLUE_UI_MAX_COLLECTION,
+  BLUE_UI_MAX_DEPTH,
+  BLUE_UI_MAX_NODES,
+  BLUE_UI_MAX_TEXT,
+  validateBlueEditorShellNode,
+  validateBlueStatusNode,
+  validateBlueUiNode,
+} from './ui-validator.ts'
+export {
   TITLE_MAX_CHARS,
   buildClipboardOsc52,
   buildTitleOsc0,
