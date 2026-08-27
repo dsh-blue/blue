@@ -20,6 +20,11 @@ on:
         description: 'Workflow run ID containing the npm-tarballs artifact (required for promote-only)'
         required: false
         type: string
+      retract_test:
+        description: 'Emergency removal of the rc9-test dist-tag; performs no build or publish'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -36,7 +41,7 @@ env:
 jobs:
   candidate:
     name: gate + publish candidate
-    if: ${{ inputs.promote_only != true }}
+    if: ${{ inputs.promote_only != true && inputs.retract_test != true }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -92,7 +97,7 @@ jobs:
   registry-install:
     name: registry install (${{ matrix.os }}, node ${{ matrix.node }})
     needs: candidate
-    if: ${{ inputs.promote_only != true }}
+    if: ${{ inputs.promote_only != true && inputs.retract_test != true }}
     strategy:
       fail-fast: false
       matrix:
@@ -149,5 +154,26 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ inputs.source_run_id || github.run_id }}
       - run: node script/release-packages.mjs promote
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  retract-test:
+    name: retract rc9-test tag
+    if: ${{ inputs.retract_test == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          registry-url: https://registry.npmjs.org
+      - name: remove test dist-tag
+        shell: bash
+        run: |
+          for package in \
+            blue-api blue-frontend blue-harness-adapter blue-conversation \
+            blue-core blue-app blue-transcript blue-interaction blue blue-cli
+          do
+            npm dist-tag rm "@dsh-blue/${package}" rc9-test
+          done
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
