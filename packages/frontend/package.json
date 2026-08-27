@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-frontend",
   "description": "Renderer-neutral frontend models and provider host for Blue",
-  "version": "0.1.0-rc.8",
+  "version": "0.1.0-rc.9-test.9",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -12,6 +12,7 @@
   },
   "files": ["lib/**/*"],
   "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/dsh-blue/blue.git", "directory": "packages/frontend" },
   "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" },
   "devDependencies": { "@deepseek-ai/cordis": "4.0.1" }
 }

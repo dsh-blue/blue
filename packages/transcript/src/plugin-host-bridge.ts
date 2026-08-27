@@ -7,8 +7,8 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { subscribeBluePluginHost, type BlueDockContribution, type BluePluginHostSnapshot, type BlueStatusContribution, type BlueView } from '@dsh-blue/blue-api'
-import { BluePluginViewComponent, GutterComponent, PLUGIN_VIEW_MAX_ROWS } from '@dsh-blue/blue-core'
+import { attachBluePluginHostCapabilities, subscribeBluePluginHost, type BlueDockContribution, type BluePluginHostSnapshot, type BlueStatusContribution, type BlueView } from '@dsh-blue/blue-api'
+import { BluePluginViewComponent, GutterComponent, mountDockChild, PLUGIN_VIEW_MAX_ROWS } from '@dsh-blue/blue-core'
 import type { StatusModel, View } from '@dsh-blue/blue-frontend'
 
 /** Stable Cordis plugin name. */
@@ -35,6 +35,7 @@ function statusView(view: BlueView): View {
 
 /** Mount additive dock and status contributions behind owner adapters. */
 export function apply(ctx: Context): void {
+  attachBluePluginHostCapabilities(ctx.bluePluginHost, ctx, ['dock', 'status'])
   const dock = new Map<string, () => void>()
   const status = new Map<string, { dispose: () => void, contribution: BlueStatusContribution }>()
   let dockOrder = ''
@@ -85,7 +86,9 @@ export function apply(ctx: Context): void {
         ctx.blueTheme.colors,
         rowBudget(entry),
       ))
-      dock.set(entry.id, ctx.blueScreen.addBottomChild(component))
+      dock.set(entry.id, mountDockChild(ctx.blueScreen, component, {
+        priority: entry.priority ?? 50,
+      }))
     }
     dockOrder = nextOrder
     ctx.blueScreen.requestRender()

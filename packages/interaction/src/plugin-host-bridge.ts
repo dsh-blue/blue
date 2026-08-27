@@ -7,7 +7,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { subscribeBluePluginHost, subscribeBluePluginNotifications, type BlueCommandContribution, type BluePluginHostSnapshot, type BlueResult } from '@dsh-blue/blue-api'
+import { attachBluePluginHostCapabilities, subscribeBluePluginHost, subscribeBluePluginNotifications, type BlueCommandContribution, type BluePluginHostSnapshot, type BlueResult } from '@dsh-blue/blue-api'
 import { paintPluginTone, summarizePluginView } from '@dsh-blue/blue-core'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import { getSharedEditor } from './editor-instance.ts'
@@ -30,6 +30,7 @@ function commandArgs(rawInput: string): readonly string[] {
 
 /** Register public commands and route public notifications without exposing owner services. */
 export function apply(ctx: Context): void {
+  attachBluePluginHostCapabilities(ctx.bluePluginHost, ctx, ['commands', 'notifications'])
   const commands = new Map<string, () => void>()
 
   const syncCommands = (entries: readonly BlueCommandContribution[]): void => {

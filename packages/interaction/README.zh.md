@@ -16,9 +16,9 @@ Draft text、prompt/bash mode、history、command alias、settings/theme identit
 
 ## 命令与 Panel
 
-内置命令族覆盖会话导航与 rewind、help、theme、model 与 reasoning effort、provider、permission 与 preset、mode、status/context/version/changelog、export/copy、tool、skill、MCP、trace、settings 与 profile update。Effort panel 将 provider 提供的可选级别显示为一行 bracket 选项，并通过 Left/Right 移动高亮。命令读取不可变 snapshot 并调用 `blueSessionActions`，不会折叠 session event 或直接修改 Harness object。
+内置命令族覆盖项目初始化（`/init`）、会话导航与 rewind、help、theme、model 与 reasoning effort、provider、permission 与 preset、mode、status/context/version/changelog、export/copy、tool、skill、MCP、trace、settings 与 profile update。Effort panel 将 provider 提供的可选级别显示为一行 bracket 选项，并通过 Left/Right 移动高亮。命令读取不可变 snapshot 并调用 `blueSessionActions`，不会折叠 session event 或直接修改 Harness object。
 
-Dialog 替换 editor slot，并复用 list、form、info、settings、question、approval、model 与 plan-review panel。Question 与 approval 工作绑定 Fiber、支持 abort，并拒绝 unload 或会话切换后的迟到结果。第三方 renderer-neutral command 与 notification 通过 `./plugin-host-bridge` 进入。
+Dialog 替换 editor slot，并复用 list、form、info、settings、question、approval、model 与 plan-review panel。Question 与 approval 工作绑定 Fiber、支持 abort，并拒绝 unload 或会话切换后的迟到结果。第三方 renderer-neutral command 与 notification 通过 `./plugin-host-bridge` 进入；它只在 owner Fiber 存活时宣告这些 capability，并会在替换后恢复仍由 host 持有的 command。
 
 Form 使用双行字段：第一行显示标签和说明，第二行使用无边框箭头提示符编辑，校验错误紧跟在失败字段下方。Enter 在字段间前进或提交最后一个字段；Tab/Down 前进，Shift-Tab/Up 后退。Question panel 显示有界的答题进度，free-text 与 `Other` 共用同一种输入行，并在切换问题时保留草稿。
 

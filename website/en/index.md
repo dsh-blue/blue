@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Blue
   text: A plugin-powered terminal UI for dsh
-  tagline: v0.1.0-rc.8 · Preview — streaming transcript, tool cards, approval overlays and dock panes, everything a plugin.
+  tagline: v0.1.0-rc.9-test.9 · Preview — streaming transcript, tool cards, approval overlays and dock panes, everything a plugin.
   actions:
     - theme: brand
       text: Get started
@@ -27,3 +27,9 @@ features:
     link: /en/plugins/
     linkText: Learn more →
 ---
+
+## Demo
+
+<p align="center">
+  <video src="/blue-demo.mp4" width="720" autoplay loop muted playsinline controls></video>
+</p>

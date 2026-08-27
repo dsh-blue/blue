@@ -1,267 +1,106 @@
 # Blue
 
 [![CI](https://github.com/dsh-blue/blue/actions/workflows/ci.yml/badge.svg)](https://github.com/dsh-blue/blue/actions/workflows/ci.yml)
-[![Node](https://img.shields.io/badge/node-%5E22.19%20%7C%7C%20%3E%3D24-339933)](#快速开始)
-[![pnpm](https://img.shields.io/badge/pnpm-11-F69220)](#快速开始)
+[![Node](https://img.shields.io/badge/node-%5E22.19%20%7C%7C%20%3E%3D24-339933)](#用法)
+[![pnpm](https://img.shields.io/badge/pnpm-11-F69220)](#用法)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-dsh--blue.dev-8B5CF6)](https://dsh-blue.dev/)
 
 [English](README.md) | 中文
 
-Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的一个交互式终端 UI（TUI）插件：以 out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) 插件 bundle 的形式、骑在 `dsh-base` bundle 之上的 `pi-tui` 渲染器。它的核心主张：**TUI 不是一个包——而是一棵 Cordis 插件树。** 每个渲染组件、交互 provider、命令、状态栏条目都是独立插件，各有自己的 fiber 生命周期，可热替换、可省略。
+Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的交互式终端界面（TUI）：一个 `pi-tui` 渲染器，以树外 [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) 插件 bundle 的形式挂载在 `dsh-base` bundle 之上。本仓库包含十四个 workspace 包——十个属于 `0.1.0-rc.9-test.9` 发布集，四个为 validation-only adapter——针对已发布的 Harness `0.1.1-rc.2` 线构建与测试。
 
-本仓库包含十四个 workspace 包：十个属于 `0.1.0-rc.8` release set，四个是 validation-only adapter。它们按 npm 上发布的 Harness `0.1.1-rc.2` 线与 vendored Cordis 构建测试。
+<p align="center">
+  <a href="https://dsh-blue.dev/blue-demo.mp4"><img src="docs/assets/demo.gif" width="720" alt="Blue 演示——流式回复、工具卡片与底部 dock 面板"></a>
+</p>
+<p align="center"><i>Blue 实拍：流式回复、工具卡片与底部 dock 面板——<a href="https://dsh-blue.dev/blue-demo.mp4">观看完整演示视频</a>。</i></p>
 
-<!-- TODO: 演示动图——录一段真实会话（vhs / asciinema；贡献者指南（开发手册）里的
-     script(1) 冒烟检查是种子），导出 GIF 到 docs/assets/ 后嵌到这里。
-     TUI 仓库的 README 成败系于演示。 -->
+## 设计哲学
 
-## 目录
+**TUI 不是一个包，而是一棵 Cordis 插件树。** 每个渲染组件、交互 provider、命令和状态条目都是独立的插件，拥有自己的 Fiber 生命周期：可以随意热替换、可以省略。
 
-- [快速开始](#快速开始)
-- [功能](#功能) — [键位](#键位) · [Slash 命令](#slash-命令)
-- [设计哲学](#设计哲学)
-- [分层架构](#分层架构)
-- [Editor 缝速览](#editor-缝速览)
-- [开发](#开发)
-- [文档](#文档)
-- [与 deepseek-harness 的关系](#与-deepseek-harness-的关系)
-- [许可证](#许可证)
+- **注册即副作用**——组件挂载、provider 注册、键位绑定都通过 `ctx.effect`/`ctx.on` 绑定，插件卸载即全部回滚；HMR 和会话切换因此免费获得。
+- **依赖推导加载**——插件通过 `inject` 声明所需服务并等待其就位；provider 热替换会自动卸载并重载它的依赖方。
+- **plain 优先**——每个非平凡表面都是一条缝加一个 plain 默认实现。Blue 自己的增强与下游插件走同一批缝注册；删掉全部增强行的 bundle 依然能启动、能工作。
+- **唯一的 pi-tui 入口**——只有 `packages/core` 引入 `@earendil-works/pi-tui`，任何公开契约都不出现 pi-tui 类型。
 
-## 快速开始
+完整论述见 [docs/blue-architecture.md](docs/blue-architecture.md)；决策记录（ADR）见 [docs/blue-decisions.md](docs/blue-decisions.md)。
+
+## 用法
 
 > [!NOTE]
-> `0.1.0-rc.8` 为预览版，发布在 **`rc` dist-tag** 下——`latest` 留给稳定线，安装 spec 需带 `@rc` 后缀。
+> `0.1.0-rc.9-test.9` 是发布在 **`rc9-test`** 下的验收包。真人验收前，生产 `rc` 与 `latest` 标签仍停留在 rc.8。
 
-前置：Node `^22.19 || >=24`、pnpm 11、`dsh` CLI ≥ `0.1.1-rc.2`（`npm i -g @deepseek-ai/dsh`）。
-
-### npm 安装
+前置条件：Node `^22.19 || >=24` 与 pnpm 11。推荐的启动器已经内含经过测试的 dsh 运行时。
 
 ```sh
 npm i -g @deepseek-ai/dsh
 dsh plugin --profile blue add @dsh-blue/blue@rc
+dsh --profile blue
 ```
 
-安装完成后，启动与首次运行见[快速上手](https://dsh-blue.dev/guide/)；模型、Provider、主题与 API 密钥的配置见[配置教程](https://dsh-blue.dev/guide/config/)。
+或者使用推荐的一条命令安装 `blue` 启动器；它把经过测试的 Harness 树封装成公共层和平台层归档，npm 安装时不会解析该依赖图：
 
-`@rc` 后缀是必须的：预览版只打 `rc` dist-tag，裸 spec 解析 `latest`、什么都找不到。升级到更新的预览版 = 重跑同一条 `plugin add`（spec 会重新解析）。
+```sh
+npm i -g @dsh-blue/blue-cli@0.1.0-rc.9-test.9
+blue
+```
 
-## 功能
+首次运行前设置 `DEEPSEEK_API_KEY`。键位与 slash 命令以 `/help` 的实时清单为准，文档见[键位参考](https://dsh-blue.dev/reference/keys/)与[命令参考](https://dsh-blue.dev/reference/commands/)；[快速上手](https://dsh-blue.dev/guide/)带你完成首次运行，[配置指南](https://dsh-blue.dev/guide/config/)覆盖 provider、模型与主题。
 
-- **流式会话记录** —— projection-backed 用户/助手消息边流式边渲染 Markdown；diff、terminal、search、read、web 工具卡由 canonical presentation 驱动。
-- **输入编辑器** —— 圆角框编辑器：slash 命令模糊补全、参数幽灵提示、`!` bash 模式、`@` 文件补全、`#` 技能补全、Ctrl-V 剪贴板贴图。
-- **Overlay** —— 四选项审批面板（session 级"总是允许"继承）与 tab 化用户问卷 overlay。
-- **两行状态栏** —— 模型名、会话模式徽标、git 分支、上下文占用 `ctx N`，全部由 readonly `StatusModel` 发布。
-- **底部 dock 面板** —— agent 运行中的活动 spinner、排队消息、todo 列表、fork 当前会话的 `/btw` 旁路问答面板、子代理分组面板。
-- **主题** —— `/theme` 热切换：`dark` / `light` / `auto`（OSC 11 背景探测）/ `custom`（JSON 调色板）。
-- **天然可扩展** —— 外部 command/status/dock/notification 统一走 capability-scoped `bluePluginHost`；补全菜单与 `/help` 反映实时注册表。
-
-面向用户的功能指南在文档站：[dsh-blue.dev/features](https://dsh-blue.dev/features/)（中文）· [dsh-blue.dev/en/features](https://dsh-blue.dev/en/features/)（English）。
-
-### 键位
-
-`/help` overlay 实时列出所有已注册键位——它才是权威来源：
-
-| 键 | 作用 |
-| --- | --- |
-| `Shift+Tab` | 循环会话模式：normal → plan → yolo（`/yolo` 自动放行工具审批，提问照常弹） |
-| `Ctrl-C` | 清空草稿 → 打断 agent；1 秒内再按一次退出 |
-| `Ctrl-S` | 用草稿内容 steer 当前运行中的回合 |
-| `Ctrl-V` | 粘贴剪贴板图片为 `[image #N]` 标记 |
-| `Ctrl-O` | 展开/折叠最近 3 回合的工具输出与思考块 |
-| `Ctrl-T` | 折叠/展开 todo 面板 |
-| `↑`（空编辑器） | 召回最近一条排队消息 |
-
-编辑器内，前缀 `/` `!` `@` `#` 分别触发命令、bash、文件、技能补全；行内任意位置的 `#name` 标记在提交时重写为上游 `/name` 技能手势。
-
-### Slash 命令
-
-全部命令自动进入编辑器补全菜单；`/help` 是实时真相：
-
-| 命令 | 别名 | 说明 |
-| --- | --- | --- |
-| `/quit` | `/q` `/exit` | 退出 Blue |
-| `/new` | `/clear` | 开始新会话 |
-| `/fork` | — | 把当前会话 fork 成新会话 |
-| `/sessions` | `/resume` | 列出持久化会话并切换；带 id 直接恢复 |
-| `/btw` | — | 旁路提问：fork 当前会话发问 |
-| `/help` | — | 显示可用命令与键位 |
-| `/model` | — | 切换会话模型（无参数打开选择器） |
-| `/effort` | `/thinking` | 切换当前模型的思考力度 |
-| `/provider` | — | 列出 provider、切换路由或新增 |
-| `/preset` | — | 列出 agent 预设或切换（仅空会话） |
-| `/yolo` | `/yes` | 开关工具调用自动放行 |
-| `/tools` | — | 列出当前会话可见的工具 |
-| `/mcp` | — | 浏览宿主连接的 MCP 服务器（只读） |
-| `/skills` | — | 列出可用技能（`#` 前缀调用） |
-| `/theme` | — | 切换配色主题 |
-| `/init` | — | 分析代码库并写 `AGENTS.md` |
-| `/status` | — | 显示会话头、模型与上下文状态 |
-| `/context` | — | 显示 token 用量与上下文窗口 |
-| `/version` | — | 显示 Blue 与 harness 版本及实时模型 |
-| `/export` | — | 把当前会话导出为 Markdown 文件 |
-| `/copy` | — | 复制最近一条助手消息到剪贴板 |
-
-## 设计哲学
-
-**TUI 不是一个包，而是一棵 Cordis 插件树。** pi 自家的 coding agent 把它的 pi-tui UI 收成了一个 6.5k 行的 `InteractiveMode` 上帝类。Blue 的核心主张恰恰相反：
-
-- **Everything is a plugin** —— 渲染组件、交互 provider、命令、状态栏条目都是独立插件，各有自己的 fiber 生命周期。
-- **注册即 effect** —— 组件挂载、provider 注册、键位注册全部经 `ctx.effect`/`ctx.on` 绑定，插件卸载自动回滚；HMR 和会话切换是免费的。
-- **能力缝三角色** —— 每项能力拆成 definition / provider / consumer。Blue 消费 harness 的缝（`agents`、`sessions`、`commands`、`userQuestions`、审批），也向下游开自己的缝（[docs/blue-seams.md](docs/blue-seams.md)）。
-- **依赖推导加载** —— 插件 `inject` 所需服务，不齐就等待；provider 热替换时依赖方自动 unload/reload。
-- **plain-first**（ADR D21）—— 每个非平凡表面 = 缝 + plain 默认实现。Blue 自家增强与下游插件经同一条缝注册；拔掉全部增强行的 bundle 仍能启动、可用。
-- **全树唯一 pi-tui import** —— 只有 `packages/core` import `@earendil-works/pi-tui`。pi-tui 的破坏性变更传导不出 L0，任何契约都不出现 pi-tui 类型。
-
-完整架构文档见 [docs/blue-architecture.md](docs/blue-architecture.md)；决策记录见 [docs/blue-decisions.md](docs/blue-decisions.md)。
-
-## 分层架构
+## 架构
 
 <!-- BEGIN diagram:blue-layers -->
 <!-- single source 单一来源: docs/diagrams/blue-layers.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph C["Composition 组合 - @dsh-blue/blue"]
-        patch["cordis.patch.yml · presets · explicit inject ordering"]
-    end
-    subgraph H["Harness domain 宿主领域"]
-        harness["agents · sessions · projections · commands · tools · approval"]
-    end
-    subgraph D["Domain and action boundary 领域与动作边界"]
-        conversation["blue-conversation\nblueConversation + blueConversationFacts"]
-        app["blue-app\nreadonly session reader/projections + structured actions"]
-    end
-    subgraph F["Renderer-neutral frontend runtime"]
-        api["blue-api\nmanifest · capability-scoped contributions"]
-        models["blue-frontend\nreadonly status · dock · transcript · editor models"]
-    end
-    subgraph R["TUI feature adapters TUI 功能适配"]
-        transcript["blue-transcript\nprojection/model consumers · footer · dock"]
-        interaction["blue-interaction\ncommands · panels · tree-scoped editor state"]
-    end
-    subgraph K["TUI kernel - @dsh-blue/blue-core"]
-        core["blueScreen · blueTheme · blueKeymap · blueComponents · width truth"]
-    end
-    pitui["pi-tui · raw terminal"]
+    ROOT["dsh 进程 — 一棵 Cordis 树<br/>Loader · Fiber 生命周期 · 事件/服务总线"]
 
-    H --> D
-    D --> F
-    F --> R
-    R --> K
-    K --> pitui
-    C -. composes .-> H
-    C -. composes .-> D
-    C -. composes .-> R
+    subgraph BASE["dsh-base 行 · Harness domain 插件"]
+        HAR["agents · sessions · tools · approval<br/>commands · events"]
+    end
+
+    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 28 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
+        direction TB
+        subgraph DOM["Domain 侧 — 唯一持有 Agent/Session 对象"]
+            direction LR
+            CONV["blue-conversation<br/>Harness 事件 → projection 投影"]
+            APP["blue-app<br/>blueSessionReader · blueSessionActions"]
+        end
+        subgraph UI["UI 侧 — 只见 readonly 数据与 action"]
+            direction TB
+            FE["blue-api · blue-frontend<br/>BlueView 契约 · readonly models · provider host"]
+            ADP["blue-transcript · blue-interaction<br/>transcript · 命令 · 面板 · 状态栏 · dock"]
+            KRN["blue-core — TUI kernel<br/>全树唯一 import pi-tui"]
+            FE --> ADP
+            ADP --> KRN
+        end
+        CONV -- "projection · 当前状态" --> FE
+        APP -- "readonly snapshot" --> FE
+        UI -- "action · 带 BlueResult 的写请求" --> DOM
+    end
+
+    TERM["终端 — pi-tui · ANSI · 键盘"]
+
+    ROOT --> BASE
+    ROOT --> BLUE
+    HAR ==> CONV
+    HAR ==> APP
+    KRN --> TERM
+
+    linkStyle 2,3,4 stroke:#2bc8e8,stroke-width:3px
 ```
 <!-- END diagram:blue-layers -->
 
-当前数据流是 `Harness domain -> conversation/app projection 与 action 边界 -> frontend model -> transcript/interaction TUI adapter -> core`。只有 core import pi-tui；Agent/Session 对象不会越过 app/domain 边界进入 renderer。
-
-| 包 | 层 | 职责 |
-| --- | --- | --- |
-| [`@dsh-blue/blue-api`](packages/api) | Contract | 稳定、renderer-independent 的生命周期、结果、capability 与 contribution contract。 |
-| [`@dsh-blue/blue-frontend`](packages/frontend) | Runtime | Renderer-neutral model、notification/theme 与可热替换 provider host。 |
-| [`@dsh-blue/blue-harness-adapter`](packages/harness-adapter) | Adapter | 基于 Harness 官方 service、按 capability 收窄的 bridge。 |
-| [`@dsh-blue/blue-context`](packages/context) | Validation feature | 独立的官方 context projection adapter；经 fixture 验证，刻意不进入产品 bundle。 |
-| [`@dsh-blue/blue-conversation`](packages/conversation) | Domain | 面向 replay/live renderer consumer 的默认 append-origin conversation projection。 |
-| [`@dsh-blue/blue-remote`](packages/remote) | Adapter | Renderer-neutral remote session、action、lease 与 question/approval transport。 |
-| [`@dsh-blue/blue-core`](packages/core) | L0 + L1 | 全树唯一 `@earendil-works/pi-tui` 适配器：终端生命周期 + `blueScreen` / `blueTheme` / `blueKeymap` / `blueComponents` / `blueTerminalInfo` 服务。 |
-| [`@dsh-blue/blue-interaction`](packages/interaction) | Interaction/TUI | 输入编辑器、slash 命令、panel、审批/提问 provider、frontend-tree editor/state service 与可选 editor/attachment 行。 |
-| [`@dsh-blue/blue-transcript`](packages/transcript) | Renderer | 消费 semantic transcript/status/dock/tool model 并经 core 渲染；不折叠 Harness session events。 |
-| [`@dsh-blue/blue-openpencil`](packages/openpencil) | Adapter | 按 capability 激活的官方 tool-result presentation 与错误 notification adapter。 |
-| [`@dsh-blue/blue-lark`](packages/lark) | Adapter | 按 capability 激活的官方 command 与 loopback settings notification adapter。 |
-| [`@dsh-blue/blue-app`](packages/app) | Domain boundary | 命令行启动与 Agent driver；提供 readonly session reader/projection values 和 structured actions。 |
-| [`@dsh-blue/blue`](packages/bundle/blue) | L4 | 可安装 bundle：`cordis.patch.yml` 在 `dsh-base` 之上插入 Blue 插件行。 |
-
-每个入口都是 Cordis 插件形态（`export const name`、可选 `inject`、`apply(ctx)`）；Cordis 与 dsh 服务包是 `peerDependencies`，由宿主 `dsh` 安装提供。
-
-**同一棵树，换成 bundle 视角。** `cordis.patch.yml` 插入 28 条 Blue 自有行：2 条 host-support，加上 26 条产品行（8 baseline、14 enhancement、4 assembly）。Conversation projection 与 official consumer 属于基线；context/remote/OpenPencil/Lark 是 bundle 外的 validation-only 包。
-
-<!-- BEGIN diagram:blue-composition -->
-<!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
-```mermaid
-flowchart TB
-    subgraph bundle["cordis.patch.yml - 28 Blue-owned rows · 28 条 Blue 自有行"]
-        subgraph host["host support 宿主支撑 - 2 rows"]
-            presets["blue-agent-presets"]
-            creative["blue-creative-host"]
-        end
-        subgraph product["product UI 产品 UI - 26 rows"]
-            subgraph baseline["baseline 基线 - 8 rows"]
-                api["blue-api-host"]
-                core["blue-core · blue-theme-dark"]
-                chrome["blue-banner · blue-transcript · blue-status-basic"]
-                conversation["blue-conversation · blue-transcript-official"]
-            end
-            subgraph enhancement["enhancement 增强 - 14 droppable rows"]
-                editorPlus["blue-editor-plus"]
-                att["blue-attachments · blue-paste-image"]
-                statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
-                panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
-                viewBridge["blue-plugin-view-bridge"]
-            end
-            subgraph assembly["assembly 装配 - 4 rows"]
-                interaction["blue-interaction · blue-plugin-interaction-bridge"]
-                startup["blue-startup · blue-app"]
-            end
-        end
-    end
-    validation["validation-only, not bundle rows\nblue-context · blue-remote · blue-openpencil · blue-lark"]
-    dshbase["dsh-base - agent plane composed behind presets"]
-    bundle -.-> dshbase
-
-    classDef optional stroke-dasharray: 4 4;
-    class editorPlus,att,statusEnh,panes,viewBridge,validation optional;
-```
-<!-- END diagram:blue-composition -->
-
-Dock 顺序即插件行序——activity → queue → todo → btw → 子代理分组，编辑器最后挂载。宿主的 agent 面（工具、plan 模式……）被进程级禁用、按 agent 在预设后面重新组合（ADR D37 薄宿主）；`/preset` 切换组合。
-
-## Editor 缝速览
-
-输入编辑器用四个角色走通整套哲学，层间没有捷径：
-
-- **契约（L1）**——`BlueEditor` 是 `packages/core/src/types.ts` 里的接口，刻意不含任何 pi-tui 类型、任何 harness 类型。
-- **实现（L0）**——获得编辑器的唯一入口是 `ctx.blueComponents.createEditor()`；core 内部的适配器包装 pi-tui `Editor`，是唯一知道背后是 pi-tui 的代码。未来的 vim 模式编辑器可以实现同一接口，消费者毫无感知。
-- **消费（interaction）**——`blue-input` 创建并挂载编辑器，经 frontend-tree-scoped `EditorHostService` 发布；不存在跨 tree 的 module singleton。
-- **增强（L2 子路径插件）**——`blue-editor-plus`（bash 模式、补全 provider）与 `blue-paste-image`（Ctrl-V 贴图标记）是 `cordis.patch.yml` 里的行：单独删掉任一行，plain 编辑器照常工作。
-
-带代码的完整走查见 [docs/blue-editor-walkthrough.md](docs/blue-editor-walkthrough.md)；Blue 开的每条缝、契约与 plain 默认的完整清单见 [docs/blue-seams.md](docs/blue-seams.md)。
-
-## 开发
-
-```sh
-pnpm run test           # vitest：单元套件 + bundle 的全树 e2e
-pnpm run test:coverage  # packages/*/src 逐文件 100% 覆盖率门禁
-pnpm run build          # tsc -b 产 lib/types，tsdown 打包 lib/
-pnpm run lint           # oxlint
-pnpm run typecheck      # tsc -b
-```
-
-测试从源码跑：spec 经相对 `../src/*.ts` 路径 import 被测包，所有 `@deepseek-ai/*` 依赖从 `node_modules` 解析。
-
-本地开发安装（从源码检出、link 安装）与迭代环在文档站的贡献者指南：[dsh-blue.dev/plugins/contributing](https://dsh-blue.dev/plugins/contributing/)（English: [dsh-blue.dev/en/plugins/contributing](https://dsh-blue.dev/en/plugins/contributing/)）。
+运行时流向为 `Harness domain -> projection/action 边界 -> renderer-neutral model -> TUI 功能插件 -> core`。事件表达已发生的事实，projection 表达当前状态，action 是带结构化结果的写请求；Blue 不维护第二套 Agent 真相，Agent/Session 对象也从不越界进入 renderer。bundle 的逐行组合（`dsh-base` 之上的 28 行 Blue 自有插件）见 [bundle 指南](https://dsh-blue.dev/plugins/builtins/)，功能巡览见[网站功能页](https://dsh-blue.dev/features/)。
 
 ## 文档
 
-**面向用户的文档**在文档站：<https://dsh-blue.dev/>（中文）· <https://dsh-blue.dev/en/>（English）。下方设计文档仍仅在仓库内。
-
-**设计文档**（中文）在 [docs/](docs/)；在用/存档索引见 [docs/README.md](docs/README.md)：
-
-- [docs/blue-architecture.md](docs/blue-architecture.md) —— 架构：哲学、L0–L4 分层、稳定性规则。
-- [docs/blue-seams.md](docs/blue-seams.md) —— 缝清单：Blue 开的每条缝（契约、plain 默认），以及 harness 侧每个视觉表面由哪个 Blue 插件实现。
-- [docs/blue-editor-walkthrough.md](docs/blue-editor-walkthrough.md) —— Editor 缝实例走查：四角色，含代码。
-- [docs/blue-decisions.md](docs/blue-decisions.md) —— 决策记录（ADR）。
-- [docs/blue-roadmap.md](docs/blue-roadmap.md) 与 [blue-commands-plan.md](docs/blue-commands-plan.md) —— 路线图，以及内置命令实施清单（四家参照系合并、能力矩阵、分期）。
-- [AGENTS.md](AGENTS.md) 与各包自带的 `AGENTS.md` —— 当前代码的权威描述（仓库级约定在根文件；包级实现细节在 `packages/*/AGENTS.md`）。
-
-已归档的各阶段设计与调研（MVP、P1、P2、pi-tui/harness 选型）在 [docs/history/](docs/history/)。
-
-## 与 deepseek-harness 的关系
-
-- 运行时与测试依赖（`@deepseek-ai/cordis` 4.0.1、`@deepseek-ai/dsh-*` 0.1.1-rc.2、`@earendil-works/pi-tui` ^0.84.2）来自 npm registry；本地 package 在开发时保持 workspace 链接。
-- harness 仓库的门禁（文档 i18n 配对、README 门禁、snapshot/e2e 车道）不适用于本仓库；本仓保留构建、全量测试套件与逐文件 100% src 覆盖率门禁。
+- **用户手册**——[快速上手](https://dsh-blue.dev/guide/) · [功能](https://dsh-blue.dev/features/) · [键位与命令参考](https://dsh-blue.dev/reference/commands/)（English: [guide](https://dsh-blue.dev/en/guide/) · [features](https://dsh-blue.dev/en/features/) · [reference](https://dsh-blue.dev/en/reference/commands/)）
+- **开发手册**——[编写插件](https://dsh-blue.dev/plugins/) · [Seam 参考](https://dsh-blue.dev/plugins/seams/) · [贡献指南](https://dsh-blue.dev/plugins/contributing/)
+- **Harness 手册**——[dsh 概念、profile、工具、MCP](https://dsh-blue.dev/dsh/)
+- **设计文档**（仓库内部）——living/archived 索引见 [docs/README.md](docs/README.md)；仓库级约定见 [AGENTS.md](AGENTS.md) 与各包自己的 `AGENTS.md`。
 
 ## 许可证
 
-[MIT](LICENSE)。`@dsh-blue` scope 下每个包的 `license` 字段均为 MIT。
+[MIT](LICENSE)。`@dsh-blue` 作用域下的每个包都声明 `license: MIT`。

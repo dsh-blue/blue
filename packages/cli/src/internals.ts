@@ -1,6 +1,6 @@
 /**
  * The shell's process seams: every side effect the launcher performs —
- * resolving the nested host, reading the profile and the shell's own
+ * materializing the bundled host, reading the profile and the shell's own
  * manifest, spawning the calibration install and the booted child,
  * writing output, exiting — goes through the `cliInternals` object, the
  * `internals` seam pattern `@deepseek-ai/dsh-cmdline` established and the
@@ -17,9 +17,9 @@
  */
 
 import { spawn } from 'node:child_process'
-import { readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { homedir as osHomedir } from 'node:os'
+import { x as extractTar } from 'tar'
 
 /** Options every spawn shape accepts. */
 export interface SpawnOptions {
@@ -53,20 +53,26 @@ export interface SpawnOutcome {
 export interface CliInternals {
   /** The process environment (`DSH_HOME` is read here). */
   env: Record<string, string | undefined>
-  /** The running Node binary (children run `node <entry>`). */
+  /** The running Node binary. */
   execPath: string
   /** The process platform — the win32 branches are seam-tested (CI runs ubuntu only). */
   platform: string
+  /** The process CPU architecture used to select a native runtime layer. */
+  arch: string
   /** The user's home directory. */
   homedir(): string
   /** Read a UTF-8 file, `undefined` when missing or unreadable. */
   readTextFile(path: string): string | undefined
-  /**
-   * Resolve the nested `@deepseek-ai/dsh` manifest (the D50 decision-4
-   * plan-A host — pinned as this package's own dependency, never PATH
-   * discovery), `undefined` when the install is broken.
-   */
-  resolveNestedDshManifest(): string | undefined
+  /** Create a directory and its parents. */
+  makeDirectory(path: string): void
+  /** Create a uniquely named directory below an existing parent. */
+  makeTempDirectory(prefix: string): string
+  /** Atomically move a prepared runtime directory into place. */
+  renamePath(from: string, to: string): void
+  /** Remove one launcher-owned runtime tree. */
+  removeTree(path: string): void
+  /** Safely extract the packaged runtime archive. */
+  extractRuntimeArchive(file: string, cwd: string): Promise<void>
   /** Spawn, capture both pipes, enforce the kill ladder on timeout. */
   spawnOnce(cmd: string, args: readonly string[], opts?: SpawnOptions): Promise<SpawnOutcome>
   /** Spawn with inherited stdio and no deadline; resolves on child exit. */
@@ -85,28 +91,29 @@ function childEnv(extra: Record<string, string> | undefined): Record<string, str
   return { ...process.env, ...extra }
 }
 
+/**
+ * Admit only files below the runtime's node_modules root.
+ * @param path - one tar entry path.
+ * @returns whether the entry belongs to the runtime tree.
+ */
+export function safeRuntimeArchivePath(path: string): boolean {
+  const normalized = path.replaceAll('\\', '/')
+  const segments = normalized.split('/')
+  if (normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized) || segments.includes('..')) {
+    throw new Error(`unsafe runtime archive path: ${path}`)
+  }
+  return normalized === 'node_modules' || normalized.startsWith('node_modules/')
+}
+
 /** The default SIGTERM→SIGKILL grace (the install scripts' posture). */
 const DEFAULT_KILL_GRACE_MS = 5000
-
-/**
- * Resolve one package manifest from this module's resolution roots,
- * `undefined` when the specifier resolves nowhere. The default
- * `resolveNestedDshManifest` seam delegates here; the helper takes the
- * specifier so the failure branch is drivable.
- */
-export function resolvePackageManifest(specifier: string): string | undefined {
-  try {
-    return createRequire(import.meta.url).resolve(specifier)
-  } catch {
-    return undefined
-  }
-}
 
 /** The default seam bindings: the real process. */
 export const cliInternals: CliInternals = {
   env: process.env,
   execPath: process.execPath,
   platform: process.platform,
+  arch: process.arch,
   homedir: osHomedir,
   readTextFile(path: string): string | undefined {
     try {
@@ -115,8 +122,28 @@ export const cliInternals: CliInternals = {
       return undefined
     }
   },
-  resolveNestedDshManifest(): string | undefined {
-    return resolvePackageManifest('@deepseek-ai/dsh/package.json')
+  makeDirectory(path: string): void {
+    mkdirSync(path, { recursive: true })
+  },
+  makeTempDirectory(prefix: string): string {
+    return mkdtempSync(prefix)
+  },
+  renamePath(from: string, to: string): void {
+    renameSync(from, to)
+  },
+  removeTree(path: string): void {
+    rmSync(path, { recursive: true, force: true })
+  },
+  async extractRuntimeArchive(file: string, cwd: string): Promise<void> {
+    extractTar({
+      cwd,
+      file,
+      maxReadSize: 1024 * 1024,
+      preservePaths: false,
+      strict: true,
+      sync: true,
+      filter: safeRuntimeArchivePath,
+    })
   },
   spawnOnce(cmd, args, opts = {}) {
     const graceMs = opts.killGraceMs ?? DEFAULT_KILL_GRACE_MS
@@ -180,4 +207,3 @@ export const cliInternals: CliInternals = {
   stderr: process.stderr.write.bind(process.stderr),
   exit: process.exit,
 }
-

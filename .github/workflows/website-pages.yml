@@ -10,6 +10,7 @@ on:
     paths:
       - .github/workflows/website-pages.yml
       - website/**
+      - script/marketplace-fetch.mjs
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
@@ -17,9 +18,14 @@ on:
     paths:
       - .github/workflows/website-pages.yml
       - website/**
+      - script/marketplace-fetch.mjs
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
+  # 每日重建：marketplace 仓的收录合并不会触发本仓 workflow，市场的更新
+  # （以及坏数据的暴露）最迟滞后到下一次定时构建；Pages 保留最后一个好产物。
+  schedule:
+    - cron: '17 3 * * *'
   workflow_dispatch:
 
 permissions:
@@ -47,6 +53,8 @@ jobs:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # 严格模式：拿不到市场数据直接 fail——绝不部署一个渲染成“暂无收录”的空市场。
+      - run: node script/marketplace-fetch.mjs
       - run: pnpm --filter @dsh-blue/website run build
 
   build:
@@ -66,6 +74,8 @@ jobs:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # 严格模式：拿不到市场数据直接 fail——绝不部署一个渲染成“暂无收录”的空市场。
+      - run: node script/marketplace-fetch.mjs
       - uses: actions/configure-pages@v6
         id: pages
       - run: pnpm --filter @dsh-blue/website run build

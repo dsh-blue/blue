@@ -390,7 +390,7 @@ describe('blue-transcript plugin through the real Loader', () => {
   it('mounts only the empty footer before any session exists', async () => {
     const { screen } = await bootTranscript()
     expect(screen.children).toHaveLength(1)
-    expect(screen.bottomChildren).toHaveLength(2)
+    expect(screen.bottomChildren).toHaveLength(1)
     expect(footerLines(screen)).toEqual([])
   })
 

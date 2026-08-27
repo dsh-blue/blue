@@ -7,7 +7,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { BlueTerminalRuntime } from './terminal.ts'
-import type { BlueComponent, BlueOverlayHandle, BlueOverlayOptions, BlueScreen } from './types.ts'
+import type { BlueComponent, BlueDockOptions, BlueOverlayHandle, BlueOverlayOptions, BlueScreen } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -69,6 +69,19 @@ export class BlueScreenService extends Service implements BlueScreen {
    */
   addBottomChild(component: BlueComponent, position?: 'bottom'): () => void {
     this.runtime.addBottomChild(component, position)
+    return () => {
+      this.runtime.removeChild(component)
+    }
+  }
+
+  /**
+   * Mount a flexible component in the shared bottom-dock row allocator.
+   * @param component - the flexible component to mount.
+   * @param options - row-allocation metadata.
+   * @returns a disposer that unmounts the component; safe to call twice.
+   */
+  addDockChild(component: BlueComponent, options?: BlueDockOptions): () => void {
+    this.runtime.addDockChild(component, options)
     return () => {
       this.runtime.removeChild(component)
     }

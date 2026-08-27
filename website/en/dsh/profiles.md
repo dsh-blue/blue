@@ -34,6 +34,6 @@ The `DSH_HOME` environment variable names the Harness home (default `~/.dsh`):
 
 `dsh plugin --profile <name> add <pkg>` forwards verbatim to pnpm inside the profile directory — so:
 
-- local checkouts install the release closure plus selected validation adapters via the `link:` protocol during development;
+- local checkouts install via the `link:` protocol during development (Blue's [contributor guide](/en/plugins/contributing) links the script's authoritative list — the release closure plus selected validation adapters — exactly this way);
 - only dependency-graph changes need another `add`/`install` — code changes just need a rebuild;
 - done with a profile? Delete `$DSH_HOME/profiles/<name>/` — it's self-contained with no global residue.

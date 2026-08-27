@@ -56,7 +56,7 @@ describe('buildVersionSections', () => {
       label: 'blue',
       segments: [{ text: `v${displayVersion}` }],
     })
-    expect(BLUE_VERSION).toBe('0.1.0-rc.8')
+    expect(BLUE_VERSION).toBe('0.1.0-rc.9-test.9')
   })
 })
 
@@ -568,7 +568,7 @@ describe('registerSessionCommands', () => {
     const overlay = screen.overlays.at(-1)!
     const rows = plain((overlay.component as InfoPanel).render(100))
     expect(rows.some(row => row.includes('changelog'))).toBe(true)
-    expect(rows.some(row => row.includes('Execution traces'))).toBe(true)
+    expect(rows.some(row => row.includes('Creative mode'))).toBe(true)
     overlay.component.handleInput?.('\x1b')
     expect(overlay.hidden).toBe(true)
   })

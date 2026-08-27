@@ -23,11 +23,11 @@ The main plugin owns four renderer bridges:
 
 Footer subplugins provide model, cwd, git, title, context, and session-mode facts. Activity, todo, and agents panes consume the `blueConversationFacts` projection through `blueSessionFacts`; the BTW pane obtains a disposable side session through `blueSessionActions` and renders its official conversation projection. No pane receives an Agent or Session.
 
-`./plugin-host-bridge` is the owner adapter for third-party renderer-neutral dock and status contributions. Every registration, subscription, timer, and screen child is Fiber-bound and removed on unload.
+`./plugin-host-bridge` is the owner adapter for third-party renderer-neutral dock and status contributions. It advertises those capabilities only while its Fiber is active; a replacement bridge restores retained public contributions from the host snapshot. Every registration, subscription, timer, and screen child is Fiber-bound and removed on unload.
 
 ## Other Subpaths
 
-`./banner` mounts the welcome banner. `./status-basic-model`, `./status-cwd`, `./status-title`, `./status-git`, and `./status-context` publish footer models. `./pane-activity`, `./pane-todo`, `./pane-btw`, and `./pane-agents` publish dock models. `./dock-model`, `./tool-model`, and `./transcript-model` expose the renderer-neutral registries for composition.
+`./banner` mounts the welcome banner; `./banner-content` exports the displayed `BLUE_VERSION` constant, kept in lockstep with `package.json`. `./status-basic-model`, `./status-cwd`, `./status-title`, `./status-git`, and `./status-context` publish footer models. `./pane-activity`, `./pane-todo`, `./pane-btw`, and `./pane-agents` publish dock models. `./dock-model`, `./tool-model`, and `./transcript-model` expose the renderer-neutral registries for composition.
 
 All rendered rows obey the core visible-width contract, including narrow and CJK viewports.
 

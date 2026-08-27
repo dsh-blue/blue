@@ -8,7 +8,7 @@
 
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
 import { cliInternals, type SpawnOutcome } from '../src/internals.ts'
 import { main, shellVersion } from '../src/main.ts'
@@ -20,11 +20,12 @@ const REAL = { ...cliInternals }
 
 afterEach(() => {
   Object.assign(cliInternals, REAL)
+  vi.unstubAllGlobals()
 })
 
 /** The shell's own manifest version — the pin every fixture calibrates to. */
-const PIN = '0.1.0-rc.8'
-const AHEAD = '0.1.0-rc.999'
+const PIN = '0.1.0-rc.9-test.9'
+const AHEAD = '0.1.0-rc.9-test.999'
 
 /** One captured write or exit. */
 const captures: { out: string[], err: string[], exits: number[] } = { out: [], err: [], exits: [] }
@@ -38,19 +39,20 @@ interface Call {
 
 /** A successful spawn outcome. */
 const OK: SpawnOutcome = { code: 0, signal: null, stdout: '', stderr: '', timedOut: false }
-
 /**
- * Stand the launcher up over fixtures: a nested-host directory and an
- * empty `blue` profile under a temp DSH_HOME, with every effect seam
+ * Stand the launcher up over a materialized nested host and an empty `blue`
+ * profile under a temp DSH_HOME,
+ * with every effect seam
  * captured. Returns the spawn recorders.
  */
-function fixtureLauncher(): { calls: { once: Call[], inherit: Call[] }, root: string } {
-  const host = mkdtempTracked('blue-cli-main-host-')
-  writeFileSync(join(host, 'package.json'), JSON.stringify({ version: '0.1.1-rc.2', bin: { dsh: 'lib/bin.js' } }))
-  cliInternals.resolveNestedDshManifest = () => join(host, 'package.json')
+function fixtureLauncher(): { calls: { once: Call[], inherit: Call[] }, root: string, hostBin: string } {
   const home = mkdtempTracked('blue-cli-main-home-')
   const root = join(home, 'profiles', 'blue')
+  const host = join(home, 'cache', 'blue-cli-runtime', `${PIN}-0.1.1-rc.2`, 'node_modules', '@deepseek-ai', 'dsh')
+  const hostBin = join(host, 'lib', 'bin.js')
   mkdirSync(root, { recursive: true })
+  mkdirSync(host, { recursive: true })
+  writeFileSync(join(host, 'package.json'), JSON.stringify({ version: '0.1.1-rc.2', bin: { dsh: 'lib/bin.js' } }))
   cliInternals.env = { DSH_HOME: home }
   captures.out = []
   captures.err = []
@@ -58,8 +60,9 @@ function fixtureLauncher(): { calls: { once: Call[], inherit: Call[] }, root: st
   cliInternals.stdout = text => { captures.out.push(text) }
   cliInternals.stderr = text => { captures.err.push(text) }
   cliInternals.exit = code => { captures.exits.push(code) }
+  cliInternals.spawnOnce = async () => OK
   const calls = { once: [] as Call[], inherit: [] as Call[] }
-  return { calls, root }
+  return { calls, root, hostBin }
 }
 
 /** Install the bundle at the pin inside a fixture profile root. */
@@ -76,25 +79,17 @@ describe('main', () => {
     expect(captures.exits).toEqual([])
   })
 
-  it('answers -V with "not installed" when the nested host is broken', async () => {
+  it('refuses to boot when the bundled runtime cannot be materialized', async () => {
     fixtureLauncher()
-    cliInternals.resolveNestedDshManifest = () => undefined
-    await main(['--version'])
-    expect(captures.out).toEqual([`blue ${PIN} (Blue @dsh-blue/blue@${PIN} · harness @deepseek-ai/dsh@not installed)\n`])
-  })
-
-  it('refuses to boot with one line when the pinned host carries no bin entry', async () => {
-    const host = mkdtempTracked('blue-cli-main-host-')
-    writeFileSync(join(host, 'package.json'), JSON.stringify({ version: '0.1.1-rc.2' }))
-    fixtureLauncher()
-    cliInternals.resolveNestedDshManifest = () => join(host, 'package.json')
+    cliInternals.readTextFile = path => path.includes('@deepseek-ai') ? undefined : REAL.readTextFile(path)
+    cliInternals.extractRuntimeArchive = async () => { throw new Error('corrupt payload') }
     await main(['task'])
-    expect(captures.err).toEqual(['blue: the pinned @deepseek-ai/dsh host is missing — reinstall @dsh-blue/blue-cli\n'])
+    expect(captures.err).toEqual(['blue: bundled dsh runtime is unavailable — corrupt payload; reinstall @dsh-blue/blue-cli\n'])
     expect(captures.exits).toEqual([1])
   })
 
   it('boots without a word when the profile already carries the pin, marking the child BLUE_LAUNCHER', async () => {
-    const { calls, root } = fixtureLauncher()
+    const { calls, root, hostBin } = fixtureLauncher()
     installBundle(root, PIN)
     let inherit: SpawnOutcome = OK
     cliInternals.spawnInherit = async (cmd, args, opts) => {
@@ -105,9 +100,9 @@ describe('main', () => {
     expect(captures.err).toEqual([])
     expect(calls.inherit).toHaveLength(1)
     expect(calls.inherit[0]?.cmd).toBe(cliInternals.execPath)
-    expect(calls.inherit[0]?.args?.slice(1)).toEqual(['--profile', 'blue', 'fix', 'the', 'build'])
-    expect(calls.inherit[0]?.args?.[0]).toMatch(/lib[/\\]bin\.js$/)
-    expect(calls.inherit[0]?.env).toEqual({ BLUE_LAUNCHER: 'blue' })
+    expect(calls.inherit[0]?.args).toEqual([hostBin, '--profile', 'blue', 'fix', 'the', 'build'])
+    expect(calls.inherit[0]?.env).toMatchObject({ BLUE_LAUNCHER: 'blue' })
+    expect(calls.inherit[0]?.env?.BLUE_DSH_BIN).toBe(hostBin)
     expect(captures.exits).toEqual([0])
     inherit = { code: null, signal: 'SIGKILL', stdout: '', stderr: '', timedOut: false }
     captures.exits = []
@@ -119,10 +114,7 @@ describe('main', () => {
     const { calls, root } = fixtureLauncher()
     installBundle(root, AHEAD)
     let once = false
-    cliInternals.spawnOnce = async () => {
-      once = true
-      return OK
-    }
+    cliInternals.spawnOnce = async () => { once = true; return OK }
     cliInternals.spawnInherit = async (cmd, args, opts) => {
       calls.inherit.push({ cmd, args, env: opts?.env })
       return OK
@@ -228,10 +220,7 @@ describe('main', () => {
   it('forwards the plugin surface without calibrating', async () => {
     const { calls } = fixtureLauncher()
     let once = false
-    cliInternals.spawnOnce = async () => {
-      once = true
-      return OK
-    }
+    cliInternals.spawnOnce = async () => { once = true; return OK }
     cliInternals.spawnInherit = async (cmd, args, opts) => {
       calls.inherit.push({ cmd, args, env: opts?.env })
       return OK
@@ -240,6 +229,14 @@ describe('main', () => {
     expect(once).toBe(false)
     expect(calls.inherit[0]?.args?.slice(1)).toEqual(['plugin', '--profile', 'blue', 'add', '@dsh-blue/blue@rc'])
     expect(captures.exits).toEqual([0])
+  })
+
+  it('handles read-only plugin commands without probing or execing dsh', async () => {
+    fixtureLauncher()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ plugins: [] }), { status: 200 })))
+    await main(['plugin', 'list'])
+    expect(captures.err).toEqual([])
+    expect(captures.exits).toEqual([])
   })
 
   it('skips calibration on the version and plugin surfaces', async () => {
@@ -267,4 +264,3 @@ describe('shellVersion', () => {
     expect(shellVersion()).toBe('unknown')
   })
 })
-

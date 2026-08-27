@@ -20,7 +20,7 @@ Inbox mutations publish a coalesced `'blue/queue-changed'` notification instead 
 
 ## Side-session actions
 
-`blueSessionActions.createSideSession()` is the narrow app-owned boundary used by the BTW pane. It snapshots the active Agent's full event prefix, cwd, parent id, and provider/model route into a throwaway `btw-*` child, while keeping the Harness Agent and Session inside `blue-app`. The returned owned handle exposes only an opaque projection identity, plain-text follow-up, admitted `running`/`idle` status subscription, and idempotent disposal; no side session is committed to the current-session reader or the main switch queue.
+`blueSessionActions.createSideSession()` is the narrow app-owned boundary used by the BTW pane. It snapshots the active Agent's full event prefix, cwd, parent id, and provider/model route into a throwaway `btw-*` child, then runs the same Agent setup as create/resume/fork so the seed-selected preset remounts its scoped prompt, skills, and tools. A seed copies history only; it does not substitute for the child Agent Fiber's composition. The returned owned handle exposes only an opaque projection identity, plain-text follow-up, admitted `running`/`idle` status subscription, and idempotent disposal; no side session is committed to the current-session reader or the main switch queue.
 
 ## Model selection (S23, D38)
 

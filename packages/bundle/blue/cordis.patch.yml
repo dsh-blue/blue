@@ -151,7 +151,33 @@
         blueTerminalInfo: true
         blueComponents: true
         blueTheme: true
+        blueThemeModels: true
+        blueNotifications: true
         blueStartup: true
+        blueCommandModels: true
+        blueContextFeature: true
+        blueConversationProjection: true
+        blueDockModels: true
+        blueEditorHost: true
+        blueEditorModels: true
+        blueHarnessActionAdapter: true
+        blueHarnessModelAdapter: true
+        blueHarnessProjectionAdapter: true
+        blueHarnessQuestionAdapter: true
+        blueHarnessSessionAdapter: true
+        blueInteractionState: true
+        blueProjectionRegistry: true
+        blueRequests: true
+        blueRetractions: true
+        blueSessionActions: true
+        blueSessionBinding: true
+        blueSessionFacts: true
+        blueSessionProjections: true
+        blueSessionReader: true
+        blueSkillsCatalog: true
+        blueStatusModels: true
+        blueToolModels: true
+        blueTranscriptModels: true
         commands: true
         attachments: true
         sessionProjections: true

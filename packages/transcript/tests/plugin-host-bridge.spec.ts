@@ -89,6 +89,13 @@ describe('plugin host view bridge', () => {
     for (const cleanup of effects.splice(0)) cleanup()
     expect(mounted).toEqual([])
     expect(statusModels.list()).toHaveLength(0)
+    expect(opened.value.dock!.register({ id: 'absent', view: { kind: 'text', content: 'absent' } })).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
+
+    apply(ctx)
+    expect(mounted).toHaveLength(3)
+    expect(mounted[0]!.render(80)).toEqual([' later'])
+    expect(statusModels.list().find(model => model.id === 'plugin.status.health')?.visible).toBe(true)
+    for (const cleanup of effects.splice(0)) cleanup()
     owner.dispose()
   })
 })

@@ -93,7 +93,9 @@ async function mount(options: {
     inbox: options.inbox ?? fakeInbox(),
   } as unknown as Agent
   ctx.provide('testSession', { current: options.withAgent === false ? null : agent, modelRef: options.modelRef ?? undefined })
-  if (options.retract !== undefined) ctx.provide('blueRetractions', { tryRetract: options.retract })
+  if (options.retract !== undefined) {
+    ctx.set('blueRetractions', { tryRetract: options.retract })
+  }
   if (options.appExit !== undefined) ctx.provide('appExit', options.appExit)
   const fiber = await ctx.plugin(inputPlugin)
   const editor = screen.children[0] as FakeBlueEditor
@@ -106,6 +108,11 @@ function type(editor: FakeBlueEditor, text: string): void {
 }
 
 describe('blue-input plugin', () => {
+  it('declares the app-owned retraction service required by its Escape path', () => {
+    expect(inputPlugin.inject).toContain('blueRequests')
+    expect(inputPlugin.inject).toContain('blueRetractions')
+  })
+
   it('mounts the editor and hint line focused at the bottom of the tree', async () => {
     const { ctx, screen, editor, hint } = await mount()
     expect(screen.children).toEqual([editor, hint])
@@ -688,13 +695,16 @@ describe('blue-input plugin', () => {
 
     it('restores the submitted message and removes its history entry after a safe Escape retraction', async () => {
       const retract = vi.fn(() => true)
-      const { editor, followup, cancel } = await mount({ running: true, retract })
+      const { ctx, editor, followup, cancel } = await mount({ running: true, retract })
       type(editor, 'revise this prompt')
       editor.handleInput(KEY.enter)
       const message = followup.mock.calls[0]?.[0] as { id: string }
       expect(editor.getText()).toBe('')
       expect(editor.history).toEqual(['revise this prompt'])
 
+      // Status, command, and mode updates republish the same session. They
+      // are not session switches and must not discard the receipt.
+      ctx.emit('test/session-changed')
       expect(editor.onKey?.(KEY.escape)).toBe(true)
       expect(retract).toHaveBeenCalledWith(String(message.id))
       expect(editor.getText()).toBe('revise this prompt')

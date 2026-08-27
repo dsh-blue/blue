@@ -21,6 +21,7 @@ import { startBlueTerminal } from './terminal.ts'
 import { NotificationModelService, ThemeModelService } from '@dsh-blue/blue-frontend'
 
 export { BlueComponentsService, type BlueComponentsDeps } from './components.ts'
+export { mountDockChild } from './dock.ts'
 export { GutterComponent } from './gutter.ts'
 export { BlueKeymapError, BlueKeymapService } from './keymap.ts'
 export { BlueScreenService } from './screen.ts'
@@ -60,6 +61,7 @@ export type {
   BlueColorFn,
   BlueComponent,
   BlueComponents,
+  BlueDockOptions,
   BlueEditor,
   BlueEditorOptions,
   BlueFocusable,
@@ -105,7 +107,7 @@ export async function apply(ctx: Context): Promise<void> {
   ctx.plugin(NotificationModelService)
   const runtime = await startBlueTerminal(undefined, undefined, (scheme) => {
     ctx.emit('blue/terminal-theme-changed', scheme)
-  }, undefined, 'alternate')
+  }, undefined, 'alternate', { stdout: process.stdout, stderr: process.stderr })
   // The keymap instantiates directly instead of as a class plugin so the
   // dispatcher below can close over the instance: the runtime predates the
   // service, and the Context proxy rejects service access without an inject

@@ -1,6 +1,6 @@
 # 贡献本仓库
 
-面向 **Blue 仓库贡献者**的本地开发安装:从源码检出、link 安装进 dsh profile、迭代回路与冒烟检查。在自己的仓库里写 Blue 插件的下游开发者请看[编写第一个插件](/plugins/)——那条路径不需要本页。
+面向 **Blue 仓库贡献者**的本地开发安装:从源码检出、link 安装进 dsh profile、迭代回路与冒烟检查。在自己的仓库里写 Blue 插件的下游开发者请看[开发手册](/plugins/)（从[快速开始](/plugins/quickstart)入手）——那条路径不需要本页。
 
 ::: info
 用户安装路径是 npm——`dsh plugin --profile blue add @dsh-blue/blue@rc`,见[快速上手](/guide/)。本页只服务改 Blue 本体的贡献者。
@@ -21,7 +21,7 @@ script/install-dev.sh
 # 覆盖项：DSH_BIN=/path/to/dsh PROFILE=my-profile DSH_HOME=/custom/home script/install-dev.sh
 ```
 
-脚本会构建整个 workspace，并按 `script/install-dev.sh` 的权威列表 link 安装 11 个包：产品 plugin closure 加 OpenPencil/Lark validation adapter。
+脚本会构建整个 workspace，并按 `script/install-dev.sh` 的权威列表 link 安装 11 个条目：bundle 本体加 10 个库包（api、frontend、harness-adapter、conversation、core、interaction、transcript、openpencil、lark、app）——OpenPencil/Lark 以 validation adapter 身份同车 dogfood；context/remote 两个 validation-only 包不在链接列表里，它们经独立 fixture 验证。
 
 ## 手动安装（等价步骤）
 

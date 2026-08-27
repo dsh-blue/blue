@@ -20,9 +20,10 @@ import {
   type TuiInputListener,
 } from '@earendil-works/pi-tui'
 import { clampFrame, createFileOverflowSink, defaultOverflowDirectory, type OverflowSink } from './frame-clamp.ts'
+import { createOutputRecovery, type AmbientOutput } from './output-recovery.ts'
 import { buildTitleOsc0, copySelectionText } from './terminal-escape.ts'
 import { probeTerminalBackground, backgroundFromRgb, type BlueProbeProcess } from './terminal-info.ts'
-import type { BlueComponent, BlueOverlayHandle, BlueOverlayOptions, BlueRgbColor } from './types.ts'
+import type { BlueComponent, BlueDockOptions, BlueOverlayHandle, BlueOverlayOptions, BlueRgbColor } from './types.ts'
 
 const KEY_UP = '\x1b[A'
 const KEY_DOWN = '\x1b[B'
@@ -59,6 +60,90 @@ class FrameClampedContainer extends Container {
     const rows = clampFrame(childRows.flat(), width, this.overflow)
     this.cached = { width, children, childRows, rows }
     return rows
+  }
+}
+
+interface DockLayoutEntry {
+  readonly component: Component
+  readonly rows: string[]
+  readonly priority: number
+  readonly fixed: boolean
+  readonly bottom: boolean
+  readonly order: number
+}
+
+/** Height-aware bottom dock that reserves fixed slots before passive panes. */
+class DockLayoutContainer extends Container {
+  private readonly metadata = new Map<Component, {
+    readonly priority: number
+    readonly fixed: boolean
+    readonly bottom: boolean
+  }>()
+
+  constructor(
+    private readonly overflow: OverflowSink,
+    private readonly viewportRows: () => number,
+  ) {
+    super()
+  }
+
+  addDockChild(
+    component: Component,
+    options: BlueDockOptions = {},
+    fixed = false,
+    bottom = false,
+  ): void {
+    this.removeChild(component)
+    this.metadata.set(component, {
+      priority: options.priority ?? 0,
+      fixed,
+      bottom,
+    })
+    this.addChild(component)
+  }
+
+  override removeChild(component: Component): void {
+    this.metadata.delete(component)
+    super.removeChild(component)
+  }
+
+  override render(width: number): string[] {
+    const entries: DockLayoutEntry[] = this.children.map((component, order) => {
+      const metadata = this.metadata.get(component)!
+      return {
+        component,
+        rows: component.render(width),
+        priority: metadata.priority,
+        fixed: metadata.fixed,
+        bottom: metadata.bottom,
+        order,
+      }
+    })
+    // Keep one transcript row whenever the viewport can hold both bands.
+    let remaining = Math.max(0, this.viewportRows() - 1)
+    const allocations = new Map<Component, number>()
+    const ranked = [...entries].sort((left, right) => {
+      return Number(right.fixed) - Number(left.fixed)
+        || right.priority - left.priority
+        || left.order - right.order
+    })
+    for (const entry of ranked) {
+      const rows = Math.min(remaining, entry.rows.length)
+      allocations.set(entry.component, rows)
+      remaining -= rows
+    }
+    const ordered = [...entries].sort((left, right) => {
+      return Number(left.bottom) - Number(right.bottom)
+        || Number(left.fixed) - Number(right.fixed)
+        || left.priority - right.priority
+        || left.order - right.order
+    })
+    const rows = ordered.flatMap(entry => {
+      const allocated = allocations.get(entry.component)!
+      if (allocated === 0) return []
+      return allocated === entry.rows.length ? entry.rows : entry.rows.slice(-allocated)
+    })
+    return clampFrame(rows, width, this.overflow)
   }
 }
 
@@ -116,6 +201,8 @@ export interface BlueTerminalRuntime {
    *   that pulls up over it).
    */
   addBottomChild(component: BlueComponent, position?: 'bottom'): void
+  /** Mount a flexible component in the shared bottom-dock row allocator. */
+  addDockChild(component: BlueComponent, options?: BlueDockOptions): void
   /**
    * Unmount a root component from the live renderer.
    * @param component - the component to unmount.
@@ -246,6 +333,9 @@ export function createTerminalRelease(): () => Promise<void> {
  *   inject a recorder.
  * @param screenMode - renderer buffer mode. The Blue plugin selects
  *   `'alternate'`; `'main'` remains available for compatibility fixtures.
+ * @param ambientOutput - stdout/stderr streams that host plugins may write
+ *   around the renderer. Production passes process streams; source-plane VT
+ *   tests inject recording streams.
  * @returns the running stack's Blue-typed face.
  */
 export async function startBlueTerminal(
@@ -254,6 +344,7 @@ export async function startBlueTerminal(
   onSchemeChange?: (scheme: 'dark' | 'light') => void,
   overflow: OverflowSink = createFileOverflowSink({ directory: defaultOverflowDirectory() }),
   screenMode: BlueScreenMode = 'main',
+  ambientOutput?: AmbientOutput,
 ): Promise<BlueTerminalRuntime> {
   const alternate = screenMode === 'alternate'
   const current: TUI = alternate
@@ -319,7 +410,7 @@ export async function startBlueTerminal(
   // the editor, the kimi layout (its dialogs pull up from the editor's
   // slot while the statusline remains visible below).
   const contentContainer = alternate ? new FrameClampedContainer(overflow) : undefined
-  const dockContainer = alternate ? new FrameClampedContainer(overflow) : undefined
+  const dockContainer = alternate ? new DockLayoutContainer(overflow, () => terminal.rows) : undefined
   if (current instanceof TuiAltScreen && contentContainer !== undefined && dockContainer !== undefined) {
     const scrollView = new ScrollView(contentContainer, {
       follow: 'end',
@@ -387,6 +478,16 @@ export async function startBlueTerminal(
   }
   const background = backgroundFromRgb(await probe())
   current.start()
+  // Dynamic Host plugins intentionally log straight to process stdout/stderr.
+  // In alternate-screen mode that bypasses the renderer at its hardware
+  // cursor (normally inside the editor), so the text can overwrite both the
+  // draft and footer until another input happens to redraw them. Preserve the
+  // host write, then force a full frame on the next tick. Renderer writes are
+  // excluded by the recovery handle's terminal-write guard.
+  const outputRecovery = alternate && ambientOutput !== undefined
+    ? createOutputRecovery(terminal, ambientOutput, () => current.requestRender(true))
+    : undefined
+  outputRecovery?.activate()
   current.setTerminalColorSchemeNotifications(true)
   if (onSchemeChange !== undefined) current.onTerminalColorSchemeChange(onSchemeChange)
   let stopped = false
@@ -424,8 +525,7 @@ export async function startBlueTerminal(
         // row order — keeps them after every regular dock child.
         bottomPinned.add(component)
         if (dockContainer !== undefined) {
-          dockContainer.removeChild(component)
-          dockContainer.addChild(component)
+          dockContainer.addDockChild(component, { priority: Number.MAX_SAFE_INTEGER }, true, true)
         } else {
           stable.removeChild(component)
           stable.addChild(component)
@@ -436,10 +536,24 @@ export async function startBlueTerminal(
         // append when none is pinned), preserving mount order among
         // themselves while the pinned tail stays last.
         const children = dockContainer?.children ?? stable.children
-        const index = children.findIndex(child => bottomPinned.has(child as BlueComponent))
-        /* v8 ignore next -- pinned components are always mounted on the renderer, so findIndex cannot miss */
-        children.splice(index === -1 ? children.length : index, 0, component)
+        if (dockContainer !== undefined) dockContainer.addDockChild(component, {}, true)
+        else {
+          const index = children.findIndex(child => bottomPinned.has(child as BlueComponent))
+          /* v8 ignore next -- pinned components are always mounted on the renderer, so findIndex cannot miss */
+          children.splice(index === -1 ? children.length : index, 0, component)
+        }
       }
+    },
+    addDockChild(component, options) {
+      bottomChildren.add(component)
+      bottomPinned.delete(component)
+      if (dockContainer !== undefined) {
+        dockContainer.addDockChild(component, options)
+        return
+      }
+      const index = stable.children.findIndex(child => bottomPinned.has(child as BlueComponent))
+      /* v8 ignore next -- pinned components are always mounted on the renderer, so findIndex cannot miss */
+      stable.children.splice(index === -1 ? stable.children.length : index, 0, component)
     },
     removeChild(component) {
       bottomChildren.delete(component)
@@ -513,6 +627,7 @@ export async function startBlueTerminal(
       if (suspended) throw new Error('blue terminal suspend is already in flight')
       if (stopped) throw new Error('blue terminal is stopped; suspend refused')
       suspended = true
+      outputRecovery?.deactivate()
       // Main-screen mode: the child appends below the content in the
       // scrollback tail, so stop() takes no preserveScreen option — the
       // cursor drops below the rendered content and the external editor
@@ -532,6 +647,7 @@ export async function startBlueTerminal(
         // renderer must not restart; the settlement propagates as-is.
         if (!stopped && activeRuntime === runtime) {
           current.start()
+          outputRecovery?.activate()
           // stop() disabled OSC 2031 notifications; re-arm them, then force
           // a full repaint — start()'s self-SIGWINCH (Unix) has already
           // refreshed dimensions stale from any resize while suspended.
@@ -556,12 +672,14 @@ export async function startBlueTerminal(
         removeWheelNormalizer()
         removeViewportInput()
         removeContentScrollHandler()
+        outputRecovery?.deactivate()
         if (activeRuntime === runtime) activeRuntime = undefined
         return
       }
       // Drain before stopping so in-flight Kitty key releases cannot leak
       // into the parent shell as literal escape sequences.
       await terminal.drainInput()
+      outputRecovery?.deactivate()
       current.stop()
       removeWheelNormalizer()
       removeViewportInput()

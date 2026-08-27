@@ -327,6 +327,14 @@ describe('blue app driver', () => {
     expect(options.seed).toBe(parent.session.events)
     expect(options.meta).toEqual({ cwd: '/repo', parentSession: parent.id, seedLength: 2 })
     expect(options.agentOptions).toEqual({ provider: 'mock', model: 'mock-1' })
+    expect(options.setup).toBeDefined()
+    expect(test.recorded.setups).toBe(2)
+    expect(test.recorded.listeners).toEqual([
+      'system-prompt/assemble',
+      'agent/request',
+      'system-prompt/assemble',
+      'agent/request',
+    ])
     const sideAgent = test.recorded.agents[1]!
     expect(side!.projectionSession).toBe(sideAgent.session)
 
@@ -1435,6 +1443,25 @@ describe('blue app driver', () => {
       await vi.waitFor(() => { expect(test.current()).not.toBeNull() })
       test.ctx.emit('blue/request-new')
       await vi.waitFor(() => { expect(mount).toHaveBeenCalledTimes(2) })
+      await test.ctx.fiber.dispose()
+    })
+
+    it('mounts the seed-selected preset for a side session', async () => {
+      const mount = vi.fn(async () => 'cordis')
+      const test = bench({}, {
+        roster: { mount },
+        headerAgentPreset: 'standard',
+        sessionEvents: [
+          { type: 'user/message' },
+          { type: 'agent-preset/selected', data: { agentPreset: 'cordis' } },
+        ],
+      })
+      await vi.waitFor(() => { expect(test.current()).not.toBeNull() })
+      const side = await test.ctx.blueSessionActions.createSideSession()
+      expect(side).toBeDefined()
+      expect(mount).toHaveBeenCalledTimes(2)
+      expect(mount.mock.calls[1]![1]).toBe('cordis')
+      await side!.dispose()
       await test.ctx.fiber.dispose()
     })
 

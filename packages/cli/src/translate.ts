@@ -22,7 +22,7 @@ export type Invocation = 'boot' | 'plugin' | 'version'
 export interface Translation {
   /** The surface: answered by the shell (`version`) or forwarded. */
   readonly kind: Invocation
-  /** The nested dsh's argv (without `node` and the entry path). */
+  /** The bundled dsh argv. */
   readonly dshArgs: readonly string[]
 }
 
@@ -63,4 +63,3 @@ export function translateArgv(argv: readonly string[]): Translation {
   }
   return { kind: 'boot', dshArgs: ['--profile', PROFILE, ...positional] }
 }
-

@@ -20,7 +20,7 @@ Module-level replacements are allowed only for explicit test/system seams: fetch
 
 `EditorModelService` maps the current renderer editor into readonly `EditorModel` state and structured `editor.set`, `editor.submit`, and `editor.abort` actions. Third-party consumers never receive a `BlueEditor`.
 
-`blue-input` submits transformed blocks through `blueSessionActions.followup()` or `.steer()`, stores the stable message receipt for safe retraction, and derives busy/session state from `blueSessionReader`. Escape and Ctrl-C preserve their distinct retraction/interruption behavior, including an idle parent with running continuable descendants. Up/Down always belong to editor history; raw wheel input and PageUp/PageDown scroll the transcript, or the BTW body while that pane is connected, and End resumes transcript tail-follow.
+`blue-input` submits transformed blocks through `blueSessionActions.followup()` or `.steer()`, stores the stable message receipt for safe retraction, and derives busy/session state from `blueSessionReader`. Both the parent interaction plugin and the child input Fiber explicitly inject app-owned `blueRequests` and `blueRetractions`; submission opens the declared request lifecycle and the Escape/Ctrl-C path calls the declared retraction service directly, so Cordis service visibility cannot silently degrade a safe retraction into an ordinary interruption. Same-session reader refreshes retain the receipt; only a changed session id clears it. Escape and Ctrl-C preserve their distinct retraction/interruption behavior, including an idle parent with running continuable descendants. Up/Down always belong to editor history; raw wheel input and PageUp/PageDown scroll the transcript, or the BTW body while that pane is connected, and End resumes transcript tail-follow.
 
 `blue-editor-plus` layers shell mode and slash/`@`/`#` completion over the same editor host. The `fd`/`fdfind` detection result is cached in `InteractionStateService.fdProbe`; the replaceable probe function is test-only. Missing or failed executables use the bounded filesystem fallback.
 
@@ -59,12 +59,18 @@ Transcript tunables remain in this settings schema because interaction owns the 
 ## Optional Subpaths
 
 - `editor-plus`: shell/completion enhancement.
-- `pane-queue`: queue projection refreshed by the app-owned queue-change notification.
+- `pane-queue`: queue projection refreshed by the app-owned queue-change notification; its bottom `DockModel` mounts independently through transcript's shared dock allocator and leaves no empty lane root on unload.
 - `mode-status`: `StatusModel` producer over app mode snapshots.
 - `attachments`: bounded filesystem `AttachmentStore`.
 - `paste-image`: platform clipboard ingestion and reversible submit transformation.
 - `command-model`: renderer-neutral command registry.
 - `plugin-host-bridge`: public command/notification contributions.
+
+The plugin-host bridge advertises `commands` and `notifications` only for its
+active Fiber. Unload removes concrete command/notice adapters and withdraws
+readiness without deleting API-host aggregate contributions; a replacement
+Fiber replays the command snapshot. Public writes during the gap return
+`BLUE_CAPABILITY_ABSENT`.
 
 `paste-image` state belongs to `InteractionStateService`; readers/clocks remain explicit test seams. Late clipboard results must check unload before saving, inserting markers, or notifying.
 
@@ -72,7 +78,16 @@ Transcript tunables remain in this settings schema because interaction owns the 
 
 Keep `README.md` and `README.zh.md` synchronized. Any new subpath updates package exports, `files`, and `tsdown.config.ts` together. New content components join width scans. State changes require same-tree reload, separate-tree isolation, unload, abort, and late-result coverage proportional to the affected workflow.
 
+`changelog-content.ts` mirrors `docs/release-notes/` exactly; historical
+entries remain unchanged, while current-release behavior changes update both
+sources in the same commit.
+
 Specs that create filesystem fixtures use the shared `mkdtempTracked` helper
 and call `registerTempDirCleanup()` at module scope. This is required for
 eager `afterAll` cleanup when Vitest reuses a worker; the helper's process-exit
 hook is only the recovery path for an interrupted worker.
+
+`blue-commands` also owns `/plugin`. Read-only marketplace operations query the
+official registry; installation delegates to the profile owner (`dsh plugin`)
+and reports that a restart is required. GitHub specs must be pinned to a commit
+before this command will invoke the installer.

@@ -4,7 +4,7 @@
  * @module @dsh-blue/blue-transcript/dock-model
  */
 import { Service, type Context } from '@deepseek-ai/cordis'
-import { GutterComponent, renderFrontendView, type BlueComponent, type BlueScreen } from '@dsh-blue/blue-core'
+import { GutterComponent, mountDockChild, renderFrontendView, type BlueComponent, type BlueScreen } from '@dsh-blue/blue-core'
 import type { DockModel } from '@dsh-blue/blue-frontend'
 
 declare module '@deepseek-ai/cordis' {
@@ -48,9 +48,10 @@ export class BlueDockModelService extends Service {
   private readonly groups = {
     left: new ModelDockGroupComponent(() => this.orderedComponents('left')),
     right: new ModelDockGroupComponent(() => this.orderedComponents('right')),
-    bottom: new ModelDockGroupComponent(() => this.orderedComponents('bottom')),
   }
-  private readonly mounted = new Map<DockModel['placement'], () => void>()
+  private readonly sideMounted = new Map<'left' | 'right', () => void>()
+  private readonly bottomMounted = new Map<string, () => void>()
+  private bottomSignature = ''
   private screen: BlueScreen | undefined
   constructor(ctx: Context, screen?: BlueScreen) {
     super(ctx, 'blueDockModels')
@@ -67,7 +68,7 @@ export class BlueDockModelService extends Service {
       renderer,
     )
     this.components.set(initial.id, renderer === undefined ? component : new GutterComponent(component))
-    this.syncSideGroups()
+    this.syncMounts()
     this.screen?.requestRender()
     let disposed = false
     return () => {
@@ -75,45 +76,76 @@ export class BlueDockModelService extends Service {
       disposed = true
       this.models.delete(initial.id)
       this.components.delete(initial.id)
-      this.syncSideGroups()
+      this.syncMounts()
       this.screen?.requestRender()
     }
   }
   refresh(id: string, force?: boolean): void {
     if (!this.models.has(id)) return
-    this.syncSideGroups()
+    this.syncMounts()
     this.components.get(id)?.invalidate()
     this.screen?.requestRender(force)
   }
   list(): readonly DockModel[] { return [...this.models.values()].map(source => typeof source === 'function' ? source() : source).filter((model): model is DockModel => model !== null) }
   dispose(): void { this.unmountAll(); this.models.clear(); this.components.clear(); this.screen = undefined }
-  private unmountAll(): void { for (const dispose of this.mounted.values()) dispose(); this.mounted.clear() }
+  private unmountAll(): void {
+    for (const dispose of this.sideMounted.values()) dispose()
+    for (const dispose of this.bottomMounted.values()) dispose()
+    this.sideMounted.clear()
+    this.bottomMounted.clear()
+    this.bottomSignature = ''
+  }
   private mountGroups(screen: BlueScreen): void {
-    this.mounted.set('bottom', screen.addBottomChild(this.groups.bottom))
-    this.syncSideGroups()
+    this.syncMounts()
     screen.requestRender()
+  }
+  private syncMounts(): void {
+    this.syncBottomComponents()
+    this.syncSideGroups()
+  }
+  private syncBottomComponents(): void {
+    const screen = this.screen
+    if (screen === undefined) return
+    const rows = this.orderedRows('bottom')
+    const signature = JSON.stringify(rows.map(row => [row.id, row.model.priority ?? 0]))
+    if (signature === this.bottomSignature) return
+    for (const dispose of this.bottomMounted.values()) dispose()
+    this.bottomMounted.clear()
+    for (const row of rows) {
+      this.bottomMounted.set(row.id, mountDockChild(screen, row.component, {
+        priority: row.model.priority ?? 0,
+      }))
+    }
+    this.bottomSignature = signature
   }
   private syncSideGroups(): void {
     const screen = this.screen
     if (screen === undefined) return
     for (const placement of ['left', 'right'] as const) {
       const present = this.orderedComponents(placement).length > 0
-      const dispose = this.mounted.get(placement)
-      if (present && dispose === undefined) this.mounted.set(placement, screen.addChild(this.groups[placement]))
+      const dispose = this.sideMounted.get(placement)
+      if (present && dispose === undefined) this.sideMounted.set(placement, screen.addChild(this.groups[placement]))
       if (!present && dispose !== undefined) {
         dispose()
-        this.mounted.delete(placement)
+        this.sideMounted.delete(placement)
       }
     }
   }
-  private orderedComponents(placement: DockModel['placement']): readonly BlueComponent[] {
+  private orderedRows(placement: DockModel['placement']): readonly {
+    readonly id: string
+    readonly model: DockModel
+    readonly component: BlueComponent
+  }[] {
     return [...this.models.entries()].map(([id, source]) => ({ id, model: typeof source === 'function' ? source() : source }))
       .filter((row): row is { id: string; model: DockModel } => row.model !== null)
       .filter(row => row.model.placement === placement)
       .sort((left, right) => (left.model.priority ?? 0) - (right.model.priority ?? 0)
         || left.id.localeCompare(right.id))
-      .map(row => this.components.get(row.id))
-      .filter((component): component is BlueComponent => component !== undefined)
+      .map(row => ({ ...row, component: this.components.get(row.id) }))
+      .filter((row): row is { id: string; model: DockModel; component: BlueComponent } => row.component !== undefined)
+  }
+  private orderedComponents(placement: DockModel['placement']): readonly BlueComponent[] {
+    return this.orderedRows(placement).map(row => row.component)
   }
 }
 

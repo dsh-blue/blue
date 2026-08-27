@@ -31,7 +31,7 @@ The `systemPrompt` config block (the dsh-base system-prompt plugin) defines the 
 - id: system-prompt
   config:
     persona: >-
-      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+      You are a coding agent. Your working directory is {{cwd}}.
 ```
 
 - Tool ordering in the prompt is configured via `systemPrompt.toolOrder` (full keys and defaults live in the official [config catalog](https://deepseek-harness.github.io/deepseek-harness/reference/config-catalog));

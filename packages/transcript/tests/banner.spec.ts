@@ -282,14 +282,13 @@ describe('blue-banner plugin', () => {
     expect(joined).toContain('Welcome to Blue!')
     expect(joined).toContain(`Version:   ${BLUE_VERSION}`)
     expect(joined).toContain('m · p')
-    // The frameless banner's status value budget at render(100) is
     // The mounted child is a GutterComponent (one column each side), so the
     // banner composes at width−2 and its info rows clip label+value TOGETHER
     // to the value-column budget (bannerLayout(98) = 98 − 25 logo block − 2
     // gap − 11 label = 60 columns); the pi-tui truncation appends a
     // reset-wrapped ellipsis inside it. Deriving the expectation from the
     // same primitives keeps the assertion honest for a deep checkout too
-    // (this spec also runs from worktree copies): a cwd that fits renders
+    // (this spec also runs in worktree copies): a cwd that fits renders
     // whole, a deeper one as its exact clipped row text.
     const budget = banner.bannerLayout(98)!.valueWidth
     const row = `${banner.DIRECTORY_LABEL}${shortenHome(process.cwd(), homedir())}`
@@ -303,7 +302,7 @@ describe('blue-banner plugin', () => {
     const { screen } = await bootBanner({ displayVersion })
     const joined = screen.children[0]?.render(100).join('\n') ?? ''
     expect(joined).toContain(`Version:   ${displayVersion}`)
-    expect(BLUE_VERSION).toBe('0.1.0-rc.8')
+    expect(BLUE_VERSION).toBe('0.1.0-rc.9-test.9')
   })
 
   it('re-derives the model line on session and model changes', async () => {

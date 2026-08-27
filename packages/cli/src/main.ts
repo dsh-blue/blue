@@ -1,7 +1,7 @@
 /**
  * The launcher's main flow (S37, D50 decision 4): answer `-V` from the
  * shell's own manifests (shell · Blue pin · harness line, one line),
- * resolve the nested host, calibrate the `blue` profile on the boot
+ * materialize the prepacked host, calibrate the `blue` profile on the boot
  * surface, then exec the host with inherited stdio and propagate the
  * child's exit code. Every failure is one verdict line, an optional
  * bounded output tail, and a manual pointer — the bootstrap contract's
@@ -14,8 +14,9 @@ import { fileURLToPath } from 'node:url'
 import { calibrate } from './calibrate.ts'
 import type { CalibrationOutcome } from './calibrate.ts'
 import { cliInternals } from './internals.ts'
-import { nestedDsh } from './nested.ts'
 import { translateArgv } from './translate.ts'
+import { handlePluginCommand } from './plugin.ts'
+import { bundledDsh, HARNESS_LINE } from './runtime.ts'
 
 /**
  * The marker the shell's children carry: the app's help text and exit
@@ -48,19 +49,24 @@ function manualLine(outcome: FailedOutcome, version: string): string {
  */
 export async function main(argv: readonly string[]): Promise<void> {
   const translation = translateArgv(argv)
-  const host = nestedDsh()
+  const version = shellVersion()
   if (translation.kind === 'version') {
-    const version = shellVersion()
-    cliInternals.stdout(`blue ${version} (Blue @dsh-blue/blue@${version} · harness @deepseek-ai/dsh@${host.version ?? 'not installed'})\n`)
+    cliInternals.stdout(`blue ${version} (Blue @dsh-blue/blue@${version} · harness @deepseek-ai/dsh@${HARNESS_LINE})\n`)
     return
   }
-  if (host.binJs === undefined) {
-    cliInternals.stderr('blue: the pinned @deepseek-ai/dsh host is missing — reinstall @dsh-blue/blue-cli\n')
+  if (translation.kind === 'plugin') {
+    const pluginArgs = translation.dshArgs.slice(3)
+    if (await handlePluginCommand(pluginArgs)) return
+  }
+  let host
+  try {
+    host = await bundledDsh(version)
+  } catch (error) {
+    cliInternals.stderr(`blue: bundled dsh runtime is unavailable — ${String(error).replace(/^Error:\s*/, '')}; reinstall @dsh-blue/blue-cli\n`)
     cliInternals.exit(1)
     return
   }
   if (translation.kind === 'boot') {
-    const version = shellVersion()
     const outcome = await calibrate({ version, dshBinJs: host.binJs })
     if (outcome.action === 'failed') {
       cliInternals.stderr([
@@ -81,7 +87,9 @@ export async function main(argv: readonly string[]): Promise<void> {
       cliInternals.stderr(`blue: profile 'blue' is a dev ${outcome.spec.split(':', 1)[0]} lane — calibration skipped\n`)
     }
   }
-  const child = await cliInternals.spawnInherit(cliInternals.execPath, [host.binJs, ...translation.dshArgs], { env: LAUNCHER_ENV })
+  const child = await cliInternals.spawnInherit(cliInternals.execPath, [host.binJs, ...translation.dshArgs], {
+    env: { ...LAUNCHER_ENV, BLUE_DSH_BIN: host.binJs },
+  })
   cliInternals.exit(child.code ?? 1)
 }
 
@@ -100,4 +108,3 @@ export function shellVersion(): string {
     return 'unknown'
   }
 }
-

@@ -7,7 +7,7 @@
 
 import { Service, symbols, type Context } from '@deepseek-ai/cordis'
 import type { BlueCommandContribution, BlueDockContribution, BlueNotification, BluePluginApi, BluePluginHost, BlueRegistration, BlueRegistry, BlueResult, BlueStatusContribution } from './contracts.ts'
-import { validateBlueManifest, type BluePluginManifest } from './manifest.ts'
+import { validateBlueManifest, type BlueCapability, type BluePluginManifest } from './manifest.ts'
 import type { BlueErrorCode } from './contracts.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -17,6 +17,7 @@ declare module '@deepseek-ai/cordis' {
 }
 
 type Capability = 'commands' | 'status' | 'dock' | 'notifications'
+type EffectOwner = { effect(callback: () => () => void): unknown }
 
 /** Readonly aggregate consumed only by Blue-owned renderer adapters. */
 export interface BluePluginHostSnapshot {
@@ -116,9 +117,11 @@ class ScopedRegistry<T extends { readonly id: string, readonly priority?: number
   constructor(
     private readonly capability: Capability,
     private readonly aggregate: AggregateRegistry<T>,
+    private readonly isReady: () => boolean,
   ) {}
 
   register(contribution: T): BlueResult<BlueRegistration> {
+    if (!this.isReady()) return capabilityAbsent(this.capability)
     if (typeof contribution !== 'object' || contribution === null || typeof contribution.id !== 'string' || contribution.id.length === 0) {
       return failure('BLUE_INVALID_CONTRIBUTION', 'contribution id must be a non-empty string')
     }
@@ -157,8 +160,10 @@ class ScopedNotifications {
   constructor(
     private readonly publishGlobal: (n: BlueNotification) => void,
     private readonly effect: (callback: () => void | (() => void)) => unknown,
+    private readonly isReady: () => boolean,
   ) {}
   publish(notification: BlueNotification): BlueResult {
+    if (!this.isReady()) return capabilityAbsent('notifications')
     if (!notification || typeof notification.id !== 'string' || !/^[a-z0-9][a-z0-9._/-]{0,127}$/u.test(notification.id)) return failure('BLUE_INVALID_CONTRIBUTION', 'notification id must be 1-128 lowercase namespace characters')
     if (typeof notification.view !== 'object' || notification.view === null) return failure('BLUE_INVALID_CONTRIBUTION', 'notification view must be an object')
     const copy = Object.freeze({ ...notification })
@@ -192,6 +197,7 @@ interface BluePluginHostState {
   readonly commandContributions: AggregateRegistry<BlueCommandContribution>
   readonly statusContributions: AggregateRegistry<BlueStatusContribution>
   readonly dockContributions: AggregateRegistry<BlueDockContribution>
+  readonly capabilityOwners: Map<Capability, number>
 }
 
 const HOST_STATE_KEY = Symbol.for('@dsh-blue/blue-api/plugin-host-states/v1')
@@ -207,6 +213,42 @@ function stateOf(host: BluePluginHostService): BluePluginHostState {
   const state = HOST_STATES.get(original ?? host)
   if (state === undefined) throw new Error('Blue plugin host is not active')
   return state
+}
+
+function capabilityAbsent(capability: Capability): BlueResult<never> {
+  return failure('BLUE_CAPABILITY_ABSENT', `capability "${capability}" has no active Blue owner adapter`)
+}
+
+function capabilityReady(state: BluePluginHostState, capability: Capability): boolean {
+  return (state.capabilityOwners.get(capability) ?? 0) > 0
+}
+
+/** Attach the capabilities implemented by one Blue-owned adapter Fiber. */
+export function attachBluePluginHostCapabilities(
+  host: BluePluginHostService,
+  owner: EffectOwner,
+  capabilities: readonly BlueCapability[],
+): BlueRegistration {
+  const state = stateOf(host)
+  const owned = [...new Set(capabilities)]
+  for (const capability of owned) {
+    if (!PHASE_ONE_CAPABILITIES.has(capability as Capability)) {
+      throw new Error(`Blue owner adapter cannot attach unsupported capability "${capability}"`)
+    }
+  }
+  for (const capability of owned) {
+    const key = capability as Capability
+    state.capabilityOwners.set(key, (state.capabilityOwners.get(key) ?? 0) + 1)
+  }
+  const registration = new BlueRegistrationImpl(() => {
+    for (const capability of owned as Capability[]) {
+      const remaining = (state.capabilityOwners.get(capability) ?? 1) - 1
+      if (remaining === 0) state.capabilityOwners.delete(capability)
+      else state.capabilityOwners.set(capability, remaining)
+    }
+  })
+  owner.effect(() => () => registration.dispose())
+  return registration
 }
 
 /** Snapshot all additive contributions for Blue-owned adapters. */
@@ -255,6 +297,7 @@ function disposeHost(host: BluePluginHostService): void {
   state.statusContributions.clear()
   state.dockContributions.clear()
   state.notificationObservers.clear()
+  state.capabilityOwners.clear()
   HOST_STATES.delete(host)
 }
 
@@ -271,6 +314,7 @@ export class BluePluginHostService extends Service implements BluePluginHost {
       commandContributions: new AggregateRegistry(),
       statusContributions: new AggregateRegistry(),
       dockContributions: new AggregateRegistry(),
+      capabilityOwners: new Map(),
     })
     ctx.effect(() => () => disposeHost(this))
   }
@@ -286,13 +330,15 @@ export class BluePluginHostService extends Service implements BluePluginHost {
     const capabilities = [...manifest.capabilities]
     const unavailable = capabilities.find(capability => !PHASE_ONE_CAPABILITIES.has(capability as Capability))
     if (unavailable !== undefined) return failure('BLUE_CAPABILITY_DENIED', `capability "${unavailable}" is not available in Blue creative mode phase one`)
-    const commands = new ScopedRegistry<BlueCommandContribution>('commands', state.commandContributions)
-    const status = new ScopedRegistry<BlueStatusContribution>('status', state.statusContributions)
-    const dock = new ScopedRegistry<BlueDockContribution>('dock', state.dockContributions)
+    const absent = capabilities.find(capability => !capabilityReady(state, capability as Capability))
+    if (absent !== undefined) return capabilityAbsent(absent as Capability)
+    const commands = new ScopedRegistry<BlueCommandContribution>('commands', state.commandContributions, () => capabilityReady(state, 'commands'))
+    const status = new ScopedRegistry<BlueStatusContribution>('status', state.statusContributions, () => capabilityReady(state, 'status'))
+    const dock = new ScopedRegistry<BlueDockContribution>('dock', state.dockContributions, () => capabilityReady(state, 'dock'))
     const notifications = new ScopedNotifications(notification => {
       for (const target of state.notifications) target.emit(notification)
       for (const observer of state.notificationObservers) observer(notification)
-    }, callback => consumer.effect(callback))
+    }, callback => consumer.effect(callback), () => capabilityReady(state, 'notifications'))
     state.registries.add(commands); state.registries.add(status); state.registries.add(dock); state.notifications.add(notifications)
     const api: BluePluginApi = {
       manifest: Object.freeze({ ...manifest, capabilities: Object.freeze([...capabilities]) }),

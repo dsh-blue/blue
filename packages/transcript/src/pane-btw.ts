@@ -71,6 +71,8 @@ interface BtwTurn {
   reply: string
   /** Whether the side agent has yet to return to idle for this turn. */
   thinking: boolean
+  /** Projection sequence already present before this question was posted. */
+  afterSeq: number
 }
 
 /** The pane's render state, mutated by the command handler and subscriptions. */
@@ -96,16 +98,19 @@ interface BtwSlot {
 }
 
 interface ProjectionSource {
-  snapshot(session: unknown): { readonly values: Record<string, unknown> }
+  snapshot(session: unknown): { readonly asOfSeq: number, readonly values: Record<string, unknown> }
   onChanged(listener: (session: unknown, key: string, value: unknown, seq: number) => void): () => void
 }
 
-function projectionReply(value: unknown): { reply: string, thinking: boolean } {
+function projectionReply(value: unknown, afterSeq: number): { reply: string, thinking: boolean } {
   if (value === null || typeof value !== 'object') return { reply: '', thinking: false }
   const row = value as { readonly entries?: unknown, readonly streaming?: unknown }
   if (!Array.isArray(row.entries)) return { reply: '', thinking: false }
   const projection = row as ConversationProjection
-  const assistant = [...projection.entries].reverse().find(entry => typeof entry === 'object' && entry !== null && entry.kind === 'assistant')
+  const assistant = [...projection.entries].reverse().find(entry => typeof entry === 'object'
+    && entry !== null
+    && entry.kind === 'assistant'
+    && entry.seq > afterSeq)
   return {
     reply: assistant?.kind === 'assistant' ? assistant.text : '',
     thinking: projection.streaming === true,
@@ -286,6 +291,7 @@ export function apply(ctx: Context): void {
   }
   let slot: BtwSlot | undefined
   let unloaded = false
+  const projections = ctx.get('sessionProjections') as ProjectionSource | undefined
   const refreshDock = (): void => {
     ctx.blueDockModels.refresh('blue.dock.btw')
   }
@@ -314,45 +320,61 @@ export function apply(ctx: Context): void {
 
   const ask = async (question: string): Promise<CommandResult> => {
     if (question === '') return dismiss()
+    // Replace the visible turn before either disposal or side creation can
+    // yield. The fork may take long enough to otherwise leave the previous
+    // answer painted as if it belonged to this question.
+    state.open = true
+    state.turns = [{ question, reply: '', thinking: true, afterSeq: Number.MAX_SAFE_INTEGER }]
+    state.minBodyLines = 0
+    state.followTail = true
+    state.scrollTop = 0
+    state.maxScrollTop = 0
+    ctx.emit('blue/editor-connected-above', true, true)
+    ctx.blueDockModels.refresh('blue.dock.btw', true)
     // Single slot: a fresh question replaces the previous side agent.
     await clearSlot()
     let handle: BlueSideSession | undefined
     try {
       handle = await ctx.blueSessionActions.createSideSession()
     } catch (error) {
+      ctx.emit('blue/editor-connected-above', false)
+      state.open = false
+      state.turns = []
+      refreshDock()
       return {
         kind: 'error',
         text: `could not start the side session: ${error instanceof Error ? error.message : String(error)}`,
       }
     }
-    if (handle === undefined) return { kind: 'error', text: 'no active session for a side question' }
+    if (handle === undefined) {
+      ctx.emit('blue/editor-connected-above', false)
+      state.open = false
+      state.turns = []
+      refreshDock()
+      return { kind: 'error', text: 'no active session for a side question' }
+    }
     // The fiber may have unloaded (e.g. a theme swap) while creation was in
     // flight: dispose the fresh handle instead of publishing a dead pane.
     if (unloaded) {
       await handle.dispose()
       return { kind: 'error', text: 'the side-question plugin was unloaded' }
     }
-    const projections = ctx.get('sessionProjections') as ProjectionSource | undefined
     const updateFromProjection = (value: unknown): void => {
       const turn = state.turns.at(-1)
       /* c8 ignore next -- ask seeds the first turn before any projection callback is bound. */
       if (turn === undefined) return
-      const next = projectionReply(value)
+      const next = projectionReply(value, turn.afterSeq)
       const thinking = next.thinking || turn.thinking
       if (turn.reply === next.reply && turn.thinking === thinking) return
       turn.reply = next.reply
       turn.thinking = thinking
       refreshDock()
     }
-    // A fresh question starts the panel from the top: height ratchet and
-    // scroll state reset, tail-following restored, the slot busy.
-    state.open = true
-    state.turns = [{ question, reply: '', thinking: true }]
-    state.minBodyLines = 0
-    state.followTail = true
-    state.scrollTop = 0
-    state.maxScrollTop = 0
-    const initial = projections?.snapshot(handle.projectionSession).values['blueConversation']
+    // The fork snapshot contains the parent conversation. Its watermark is
+    // the hard boundary between inherited history and this question.
+    const initialSnapshot = projections?.snapshot(handle.projectionSession)
+    const initial = initialSnapshot?.values['blueConversation']
+    state.turns[0]!.afterSeq = initialSnapshot?.asOfSeq ?? -1
     updateFromProjection(initial)
     const offProjection = projections?.onChanged((session, key, value) => {
       if (session !== handle.projectionSession || key !== 'blueConversation') return
@@ -376,7 +398,6 @@ export function apply(ctx: Context): void {
         offStatus()
       },
     }
-    ctx.emit('blue/editor-connected-above', true, true)
     handle.followup(question)
     ctx.blueDockModels.refresh('blue.dock.btw', true)
     return { kind: 'success', text: 'asked the side question' }
@@ -392,7 +413,7 @@ export function apply(ctx: Context): void {
 
   const pane = new BtwPaneComponent(colors, components, state, () => screen.rows)
   const model = (): DockModel => ({
-    kind: 'dock', id: 'blue.dock.btw', placement: 'bottom', priority: 40,
+    kind: 'dock', id: 'blue.dock.btw', placement: 'bottom', priority: 100,
     view: { kind: 'text', text: state.open ? 'BTW' : '' }, collapsed: !state.open,
   })
   ctx.effect(() => ctx.blueDockModels.register(model, (_model, width) => pane.render(width)))
@@ -413,7 +434,13 @@ export function apply(ctx: Context): void {
       if (current === undefined || question === undefined || question === '') return
       const turn = state.turns.at(-1)
       if (turn?.thinking === true) return
-      state.turns.push({ question, reply: '', thinking: true })
+      const snapshot = projections?.snapshot(current.handle.projectionSession)
+      state.turns.push({
+        question,
+        reply: '',
+        thinking: true,
+        afterSeq: snapshot?.asOfSeq ?? -1,
+      })
       state.followTail = true
       state.scrollTop = 0
       state.maxScrollTop = 0

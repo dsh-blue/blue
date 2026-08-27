@@ -49,11 +49,11 @@ export type CalibrationOutcome =
       readonly detail?: readonly string[] | undefined
     }
 
-/** What calibration needs: the pin and the nested host entry. */
+/** What calibration needs: the Blue pin and nested host entry. */
 export interface CalibrateOptions {
   /** The pinned Blue bundle version (the shell's own manifest version). */
   readonly version: string
-  /** The nested dsh CLI entry (see `nestedDsh()`). */
+  /** The nested dsh CLI entry. */
   readonly dshBinJs: string
 }
 
@@ -114,7 +114,7 @@ export function blueProfileRoot(): string {
  * `main` prints the verdict, the tail, and the class's manual pointer, then
  * exits non-zero (D50 decision 4's bootstrap contract, failure form extended
  * by D56).
- * @param options - the pin and the nested host entry.
+ * @param options - the Blue pin and nested host entry.
  * @returns what calibration did.
  */
 export async function calibrate(options: CalibrateOptions): Promise<CalibrationOutcome> {
@@ -273,4 +273,3 @@ function tailLines(output: string, verdict: string): readonly string[] | undefin
     .filter(line => line !== verdict)
   return lines.length > 0 ? lines : undefined
 }
-

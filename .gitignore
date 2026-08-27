@@ -5,3 +5,8 @@ coverage/
 website/.vitepress/dist/
 website/.vitepress/cache/
 .claude/tmp/
+.marketplace-cache/
+website/.vitepress/marketplace-data/
+website/marketplace/*/
+website/en/marketplace/*/
+packages/cli/runtime*.tgz

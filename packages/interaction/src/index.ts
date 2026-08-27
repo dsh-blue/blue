@@ -52,7 +52,7 @@ export { InteractionStateService } from './runtime-state.ts'
 /** Stable Cordis plugin name. */
 export const name = 'blue-interaction'
 /** App-owned session boundaries required before child interaction fibers mount. */
-export const inject = ['blueSessionReader', 'blueSessionActions']
+export const inject = ['blueSessionReader', 'blueSessionActions', 'blueRequests', 'blueRetractions']
 
 /** Interaction configuration; the override identifies acceptance profiles without changing the release line. */
 export interface Config {

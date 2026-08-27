@@ -18,18 +18,19 @@
     "diagrams:check": "node script/sync-diagrams.mjs --check",
     "check:lib": "node script/check-lib-exports.mjs",
     "check:pack": "node script/check-pack.mjs",
-    "release:lock-cli": "node script/sync-cli-shrinkwrap.mjs",
     "release:version": "node script/release-version.mjs",
     "smoke:happy": "node script/smoke-happy.mjs",
     "smoke:pty": "node script/smoke-pty.mjs",
     "smoke:pty:mouse": "node script/smoke-pty-mouse.mjs",
+    "smoke:pty:output": "node script/smoke-pty-output-recovery.mjs",
     "blue:plugin-validate": "node script/blue-plugin-validate.mjs",
     "blue:plugin-fixture": "node script/blue-plugin-fixture.mjs",
     "fixture:context-upstream": "node script/context-upstream-fixture.mjs",
     "fixture:remote-upstream": "node script/remote-upstream-fixture.mjs",
-    "website:dev": "pnpm --filter @dsh-blue/website run dev",
-    "website:build": "pnpm --filter @dsh-blue/website run build",
-    "website:preview": "pnpm --filter @dsh-blue/website run preview"
+    "website:dev": "node script/marketplace-fetch.mjs --allow-missing && pnpm --filter @dsh-blue/website run dev",
+    "website:build": "node script/marketplace-fetch.mjs && pnpm --filter @dsh-blue/website run build",
+    "website:preview": "pnpm --filter @dsh-blue/website run preview",
+    "marketplace:fetch": "node script/marketplace-fetch.mjs"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-llm-mock-server": "0.1.1-rc.2",

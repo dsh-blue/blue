@@ -8,9 +8,22 @@ if (expected === undefined) throw new Error('usage: verify-installed-blue.mjs <v
 const home = process.env.DSH_HOME
 if (home === undefined || home === '') throw new Error('DSH_HOME is required')
 
-for (const name of ['blue-api', 'blue-core', 'blue-app', 'blue-transcript', 'blue-interaction', 'blue']) {
+// The profile receives the bundle and its eight runtime library dependencies;
+// blue-cli itself is installed globally and is checked by the release workflow.
+const PROFILE_PACKAGES = [
+  'blue-api',
+  'blue-frontend',
+  'blue-harness-adapter',
+  'blue-conversation',
+  'blue-core',
+  'blue-app',
+  'blue-transcript',
+  'blue-interaction',
+  'blue',
+]
+
+for (const name of PROFILE_PACKAGES) {
   const manifest = JSON.parse(readFileSync(join(home, 'profiles', 'blue', 'node_modules', '@dsh-blue', name, 'package.json'), 'utf8'))
   if (manifest.version !== expected) throw new Error(`@dsh-blue/${name}: expected ${expected}, got ${manifest.version}`)
 }
-console.log(`installed Blue set: six packages at ${expected}`)
-
+console.log(`installed Blue set: ${PROFILE_PACKAGES.length} profile packages at ${expected}`)

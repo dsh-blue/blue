@@ -34,6 +34,12 @@ export interface BlueComponent {
   invalidate(): void
 }
 
+/** Row-allocation metadata for a flexible component in the bottom dock. */
+export interface BlueDockOptions {
+  /** Larger values receive scarce rows first and render closer to fixed slots. */
+  readonly priority?: number
+}
+
 /**
  * A {@link BlueComponent} that can hold keyboard focus and display the
  * hardware cursor. The screen sets `focused` on focus changes; focused
@@ -129,6 +135,16 @@ export interface BlueOverlayHandle {
  * or keybinding responsibility.
  */
 export interface BlueScreen {
+  /**
+   * Mount a flexible bottom-dock component. Flexible components share the
+   * rows left after the editor, dialogs, and footer have been reserved.
+   * Older structural screen adapters may omit this method; use the exported
+   * `mountDockChild` helper when mounting a flexible pane.
+   * @param component - the flexible component to mount.
+   * @param options - row-allocation metadata.
+   * @returns a disposer that unmounts the component; safe to call twice.
+   */
+  addDockChild?(component: BlueComponent, options?: BlueDockOptions): () => void
   /**
    * Mount a component at the root of the tree, above every bottom-pinned
    * component regardless of mount order.
