@@ -1,5 +1,4 @@
 /** Pure builders for Blue's renderer-independent public UI wire format. */
-import { BLUE_API_VERSION, validateBlueManifest } from '@dsh-blue/blue-api'
 import type {
   BlueActionsNode,
   BlueDividerNode,
@@ -21,7 +20,7 @@ import type {
   BlueView,
 } from '@dsh-blue/blue-api'
 
-export * from '@dsh-blue/blue-api'
+export type * from '@dsh-blue/blue-api'
 
 type BlueTextNode = Extract<BlueView, { readonly kind: 'text' }>
 type BlueFieldsNode = Extract<BlueView, { readonly kind: 'fields' }>
@@ -34,10 +33,11 @@ type CodeOptions = Omit<BlueCodeNode, 'kind' | 'code'>
 type ChildOptions = Omit<BlueUiChild, 'node'>
 type StackOptions = Omit<BlueStackNode, 'kind' | 'direction' | 'children'>
 type ScrollOptions = Omit<BlueScrollNode, 'kind' | 'child'>
-const API_MAJOR = BLUE_API_VERSION.slice(0, BLUE_API_VERSION.indexOf('.'))
-const SUPPORTED_API_RANGE = new RegExp(`^\\^?${API_MAJOR}(?:\\.|$)`)
+const COMPONENT_ID_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/
+const API_RANGE_PATTERN = /^[~^=<>*0-9xX|.\-+\s]+$/
+const SUPPORTED_API_RANGE = /^\^?1(?:\.|$)/
 
-/** Deeply freeze JSON-shaped data while tolerating cycles in hostile input. */
+/** Deeply freeze a value in place while tolerating object cycles. */
 export function deepFreeze<Value>(value: Value): Value {
   const seen = new WeakSet<object>()
   const visit = (current: unknown): void => {
@@ -50,8 +50,26 @@ export function deepFreeze<Value>(value: Value): Value {
   return value
 }
 
+function cloneWire<Value>(value: Value): Value {
+  const clones = new WeakMap<object, object>()
+  const active = new WeakSet<object>()
+  const clone = (current: unknown): unknown => {
+    if (current === null || typeof current !== 'object') return current
+    if (active.has(current)) throw new TypeError('Blue UI wire data must not contain cycles')
+    const existing = clones.get(current)
+    if (existing !== undefined) return existing
+    const copy: unknown[] | Record<string, unknown> = Array.isArray(current) ? [] : {}
+    clones.set(current, copy)
+    active.add(current)
+    for (const [key, child] of Object.entries(current)) (copy as Record<string, unknown>)[key] = clone(child)
+    active.delete(current)
+    return copy
+  }
+  return clone(value) as Value
+}
+
 function frozen<Value>(value: Value): Value {
-  return deepFreeze(value)
+  return deepFreeze(cloneWire(value))
 }
 
 function text(content: string, options: TextOptions = {}): BlueTextNode {
@@ -82,8 +100,19 @@ function child(node: BlueUiNode, options: ChildOptions = {}): BlueUiChild {
   return frozen({ ...options, node })
 }
 
-function stack(direction: BlueStackNode['direction'], children: readonly BlueUiChild[], options: StackOptions = {}): BlueStackNode {
-  return frozen({ ...options, kind: 'stack', direction, children })
+type BlueStackBareNode = BlueUiNode & {
+  readonly basis?: never
+  readonly grow?: never
+  readonly shrink?: never
+  readonly minSize?: never
+  readonly maxSize?: never
+  readonly when?: never
+}
+export type BlueStackItem = BlueStackBareNode | (BlueUiChild & { readonly kind?: never })
+
+function stack(direction: BlueStackNode['direction'], children: readonly BlueStackItem[], options: StackOptions = {}): BlueStackNode {
+  const normalized: BlueUiChild[] = children.map(item => 'kind' in item ? { node: item as BlueUiNode } : item)
+  return frozen({ ...options, kind: 'stack', direction, children: normalized })
 }
 
 function surface(options: Omit<BlueSurfaceNode, 'kind'>): BlueSurfaceNode {
@@ -140,8 +169,8 @@ export const ui = Object.freeze({
   richText,
   child,
   stack: Object.freeze({
-    row: (children: readonly BlueUiChild[], options?: StackOptions) => stack('row', children, options),
-    column: (children: readonly BlueUiChild[], options?: StackOptions) => stack('column', children, options),
+    row: (children: readonly BlueStackItem[], options?: StackOptions) => stack('row', children, options),
+    column: (children: readonly BlueStackItem[], options?: StackOptions) => stack('column', children, options),
   }),
   surface,
   scroll,
@@ -173,13 +202,13 @@ export interface BlueComponentFactory<Props> {
 /** Define a pure component factory; core remains responsible for node validation. */
 export function defineBlueComponent<Props>(definition: BlueComponentDefinition<Props>): BlueComponentFactory<Props> {
   if (definition === null || typeof definition !== 'object') throw new TypeError('Blue component definition must be an object')
-  const validation = validateBlueManifest({ id: definition.id, api: definition.api, capabilities: [] })
-  if (!validation.ok) throw new TypeError(`Invalid Blue component: ${validation.message}`)
+  if (typeof definition.id !== 'string' || !COMPONENT_ID_PATTERN.test(definition.id)) throw new TypeError('Blue component id must be a namespaced lowercase identifier')
+  if (typeof definition.api !== 'string' || definition.api.trim().length === 0 || !API_RANGE_PATTERN.test(definition.api)) throw new TypeError('Blue component api must be a semver-compatible range')
   if (!SUPPORTED_API_RANGE.test(definition.api)) throw new TypeError(`Unsupported Blue component API range "${definition.api}"`)
   if (typeof definition.render !== 'function') throw new TypeError('Blue component render must be a function')
   return Object.freeze({
     id: definition.id,
     api: definition.api,
-    render: (props: Props): BlueUiNode => deepFreeze(definition.render(props)),
+    render: (props: Props): BlueUiNode => frozen(definition.render(props)),
   })
 }

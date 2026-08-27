@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BLUE_API_VERSION, deepFreeze, defineBlueComponent, ui } from '../src/index.ts'
+import { deepFreeze, defineBlueComponent, ui } from '../src/index.ts'
 
 function expectDeepFrozen(value: unknown, seen = new WeakSet<object>()): void {
   if (value === null || typeof value !== 'object' || seen.has(value)) return
@@ -35,8 +35,8 @@ describe('ui builders', () => {
       when: { minWidth: 40, maxWidth: 120, minHeight: 10, maxHeight: 50 },
     })
     const second = ui.child(ui.scroll(ui.text('second'), { follow: 'end', scrollbar: true }))
-    const row = ui.stack.row([first], { gap: 1, align: 'center' })
-    const column = ui.stack.column([ui.child(row), second], { gap: 2, align: 'stretch' })
+    const row = ui.stack.row([ui.text('direct'), first], { gap: 1, align: 'center' })
+    const column = ui.stack.column([row, second], { gap: 2, align: 'stretch' })
     const node = ui.surface({
       title: 'Inspector', subtitle: 'Live', badges: [{ text: '2' }], chrome: 'surface', padding: 1,
       child: column, footer: ui.divider({ label: 'End' }),
@@ -45,7 +45,9 @@ describe('ui builders', () => {
       kind: 'surface', title: 'Inspector', subtitle: 'Live', badges: [{ text: '2' }], chrome: 'surface', padding: 1,
       child: {
         kind: 'stack', direction: 'column', gap: 2, align: 'stretch', children: [
-          { node: { kind: 'stack', direction: 'row', gap: 1, align: 'center', children: [first] } },
+          { node: { kind: 'stack', direction: 'row', gap: 1, align: 'center', children: [
+            { node: { kind: 'text', content: 'direct' } }, first,
+          ] } },
           { node: { kind: 'scroll', child: { kind: 'text', content: 'second' }, follow: 'end', scrollbar: true } },
         ],
       },
@@ -89,6 +91,40 @@ describe('ui builders', () => {
     expect(Object.isFrozen(ui)).toBe(true)
     expect(Object.isFrozen(ui.stack)).toBe(true)
   })
+
+  it('clones caller-owned wire data before freezing it', () => {
+    const span = { text: 'main' }
+    const rows = [{ label: 'branch', value: [span] }, { label: 'head', value: [span] }]
+    const when = { minWidth: 40 }
+    const childOptions = { grow: 1, when }
+    const items = [{ id: 'one', label: 'One' }]
+    const fields = ui.fields(rows)
+    const child = ui.child(ui.text('content'), childOptions)
+    const tabs = ui.tabs({ id: 'tabs', activeId: 'one', items })
+
+    expect(Object.isFrozen(rows)).toBe(false)
+    expect(Object.isFrozen(span)).toBe(false)
+    expect(Object.isFrozen(childOptions)).toBe(false)
+    expect(Object.isFrozen(when)).toBe(false)
+    expect(Object.isFrozen(items)).toBe(false)
+    span.text = 'changed'
+    rows.push({ label: 'cwd', value: [{ text: '/tmp' }] })
+    when.minWidth = 80
+    items[0]!.label = 'Changed'
+    expect(fields).toEqual({ kind: 'fields', rows: [
+      { label: 'branch', value: [{ text: 'main' }] },
+      { label: 'head', value: [{ text: 'main' }] },
+    ] })
+    expect(fields.rows[0]!.value[0]).toBe(fields.rows[1]!.value[0])
+    expect(child.when).toEqual({ minWidth: 40 })
+    expect(tabs.items).toEqual([{ id: 'one', label: 'One' }])
+  })
+
+  it('rejects cyclic wire input instead of producing cyclic nodes', () => {
+    const cyclic = { kind: 'text', content: 'cycle' } as { kind: 'text', content: string, self?: unknown }
+    cyclic.self = cyclic
+    expect(() => ui.child(cyclic as never)).toThrow('wire data must not contain cycles')
+  })
 })
 
 describe('deepFreeze', () => {
@@ -108,7 +144,7 @@ describe('deepFreeze', () => {
 describe('defineBlueComponent', () => {
   it('returns frozen metadata and deeply freezes each render result', () => {
     const component = defineBlueComponent<{ readonly label: string }>({
-      id: '@acme/metric-board', api: `^${BLUE_API_VERSION}`,
+      id: '@acme/metric-board', api: '^1.0.0',
       render: props => ui.surface({ child: ui.text(props.label) }),
     })
     expect(component.id).toBe('@acme/metric-board')
@@ -120,19 +156,31 @@ describe('defineBlueComponent', () => {
   })
 
   it('validates only definition metadata and leaves schema admission to core', () => {
+    const output = { kind: 'future-node', payload: { acceptedByBuilder: true } }
     const component = defineBlueComponent({
       id: '@acme/future-node', api: '^1.0.0',
-      render: () => ({ kind: 'future-node', payload: { acceptedByBuilder: true } } as never),
+      render: () => output as never,
     })
     const result = component.render(undefined)
     expect(result).toEqual({ kind: 'future-node', payload: { acceptedByBuilder: true } })
     expectDeepFrozen(result)
+    expect(Object.isFrozen(output)).toBe(false)
+    output.payload.acceptedByBuilder = false
+    expect(result).toEqual({ kind: 'future-node', payload: { acceptedByBuilder: true } })
+  })
+
+  it('rejects cyclic component output', () => {
+    const output = { kind: 'text', content: 'cycle' } as { kind: 'text', content: string, self?: unknown }
+    output.self = output
+    const component = defineBlueComponent({ id: '@acme/cycle', api: '^1.0.0', render: () => output as never })
+    expect(() => component.render(undefined)).toThrow('wire data must not contain cycles')
+    expect(Object.isFrozen(output)).toBe(false)
   })
 
   it('rejects invalid definitions, ids, API ranges, and render functions', () => {
     expect(() => defineBlueComponent(null as never)).toThrow('definition must be an object')
-    expect(() => defineBlueComponent({ id: 'Bad ID', api: '^1.0.0', render: () => ui.text('x') })).toThrow('plugin id')
-    expect(() => defineBlueComponent({ id: '@acme/kit', api: 'latest', render: () => ui.text('x') })).toThrow('plugin api')
+    expect(() => defineBlueComponent({ id: 'Bad ID', api: '^1.0.0', render: () => ui.text('x') })).toThrow('component id')
+    expect(() => defineBlueComponent({ id: '@acme/kit', api: 'latest', render: () => ui.text('x') })).toThrow('component api')
     expect(() => defineBlueComponent({ id: '@acme/kit', api: '^2.0.0', render: () => ui.text('x') })).toThrow('Unsupported Blue component API')
     expect(() => defineBlueComponent({ id: '@acme/kit', api: '^1.0.0', render: null as never })).toThrow('render must be a function')
   })

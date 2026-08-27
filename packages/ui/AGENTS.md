@@ -1,14 +1,15 @@
 # `@dsh-blue/blue-ui`
 
 This package is the pure construction layer for the `BlueUiNode` wire types
-owned by `@dsh-blue/blue-api`. It may depend on and re-export API, but must not
-depend on Cordis, Harness, frontend, core, pi-tui, terminal objects, or mutable
-host state.
+owned by `@dsh-blue/blue-api`. It may depend on API and re-export API types, but
+its JavaScript must have no API root or Cordis import. It must not depend on
+Harness, frontend, core, pi-tui, terminal objects, or mutable host state.
 
 Builders must remain side-effect free and preserve the handwritten wire shape.
-Every returned node is deeply frozen. Flex sizing and viewport conditions live
-only in explicit `ui.child(node, options)` wrappers; do not add hidden layout
-metadata or renderer callbacks to nodes.
+They recursively clone caller-owned wire data before freezing the result and
+reject cycles. Stacks normalize plain nodes to `{ node }`; flex sizing and
+viewport conditions still require explicit `ui.child(node, options)` wrappers.
+Do not add hidden layout metadata or renderer callbacks to nodes.
 
 `defineBlueComponent` is a package-level composition factory. It validates
 component id/API metadata and the render function, then freezes render output.

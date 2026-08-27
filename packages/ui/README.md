@@ -1,10 +1,11 @@
 # @dsh-blue/blue-ui
 
 Pure, renderer-neutral builders for Blue's public UI wire format. The `ui`
-namespace creates deeply frozen `BlueUiNode` objects with the same shape a
-plugin can write by hand. It includes every content leaf, explicit flex and
-viewport children, row/column stacks, surfaces, scrolling, controlled patterns,
-progress, spacers, and dividers.
+namespace recursively clones caller data, then creates deeply frozen
+`BlueUiNode` objects with the same shape a plugin can write by hand. It includes
+every content leaf, flex and viewport children, row/column stacks, surfaces,
+scrolling, controlled patterns, progress, spacers, and dividers. Plain nodes can
+enter a stack directly; use `ui.child` only when child layout metadata is needed.
 
 ```ts
 import { defineBlueComponent, ui } from '@dsh-blue/blue-ui'
@@ -29,5 +30,6 @@ deeply freezes each rendered node. It is a pure package-level factory, not a
 runtime registry. Core still validates node kinds, values, depth, quotas, and
 renderer safety when a plugin contributes the expanded tree.
 
-This package re-exports `@dsh-blue/blue-api` and has no dependency on Cordis,
-Harness, frontend state, core, pi-tui, or a terminal runtime.
+This package re-exports `@dsh-blue/blue-api` types only. Its JavaScript has no
+API host or Cordis import and has no dependency on Harness, frontend state,
+core, pi-tui, or a terminal runtime.
