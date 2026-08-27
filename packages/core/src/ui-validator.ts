@@ -126,8 +126,17 @@ function enumeration<Value extends string | number>(value: unknown, values: read
 
 function collection(value: unknown, path: string): readonly unknown[] {
   if (!Array.isArray(value)) invalid(`${path} must be an array`)
-  if (value.length > BLUE_UI_MAX_COLLECTION) limit(`${path} exceeds ${String(BLUE_UI_MAX_COLLECTION)} entries`)
-  return value
+  if (Object.getPrototypeOf(value) !== Array.prototype) invalid(`${path} must be a plain array`)
+  const length = Object.getOwnPropertyDescriptor(value, 'length')!.value as number
+  if (length > BLUE_UI_MAX_COLLECTION) limit(`${path} exceeds ${String(BLUE_UI_MAX_COLLECTION)} entries`)
+  const copy: unknown[] = []
+  for (let index = 0; index < length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
+    if (descriptor === undefined) invalid(`${path} must be a dense array`)
+    if (!('value' in descriptor)) invalid(`${path}[${String(index)}] must be data`)
+    copy.push(descriptor.value)
+  }
+  return copy
 }
 
 function optional<Value>(value: Value | undefined, key: string): { readonly [name: string]: Value } | {} {

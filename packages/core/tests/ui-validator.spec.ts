@@ -172,6 +172,53 @@ describe('validateBlueUiNode', () => {
     expect(reads).toBe(0)
     expect(Object.isFrozen(caller)).toBe(false)
   })
+
+  it('copies only dense plain arrays without invoking index or method accessors', () => {
+    let indexReads = 0
+    const accessorChildren: unknown[] = []
+    Object.defineProperty(accessorChildren, '0', {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        indexReads += 1
+        return { node: ui.text('unsafe') }
+      },
+    })
+    accessorChildren.length = 1
+    expect(validateBlueUiNode({ kind: 'stack', direction: 'column', children: accessorChildren })).toMatchObject({
+      ok: false,
+      code: 'BLUE_INVALID_CONTRIBUTION',
+      message: expect.stringContaining('must be data'),
+    })
+    expect(indexReads).toBe(0)
+
+    const sparseChildren: unknown[] = []
+    sparseChildren.length = 1
+    expect(validateBlueUiNode({ kind: 'stack', direction: 'column', children: sparseChildren })).toMatchObject({
+      ok: false,
+      code: 'BLUE_INVALID_CONTRIBUTION',
+      message: expect.stringContaining('dense array'),
+    })
+
+    let methodReads = 0
+    const safeChildren = [{ node: ui.text('safe') }]
+    Object.defineProperty(safeChildren, 'map', {
+      configurable: true,
+      get: () => {
+        methodReads += 1
+        throw new Error('must not execute caller methods')
+      },
+    })
+    expect(validateBlueUiNode({ kind: 'stack', direction: 'column', children: safeChildren })).toMatchObject({ ok: true })
+    expect(methodReads).toBe(0)
+
+    class ArraySubclass extends Array<unknown> {}
+    expect(validateBlueUiNode({ kind: 'stack', direction: 'column', children: new ArraySubclass() })).toMatchObject({
+      ok: false,
+      code: 'BLUE_INVALID_CONTRIBUTION',
+      message: expect.stringContaining('plain array'),
+    })
+  })
 })
 
 describe('narrow validators', () => {
