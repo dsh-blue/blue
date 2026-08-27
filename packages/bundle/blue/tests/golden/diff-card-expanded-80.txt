@@ -1,3 +1,6 @@
+    ⢀⣀⣰⣰⣰⣰⣰⣼⣼⠜   ⣺⣵⡀    ⢀⡀
+  ⢀⣸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣵⣐  ⢯⣿⣿⣵⣸⣼⣼⣿⠕  Welcome to Blue!
+ ⢨⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣽⣐⠂⠯⣿⣿⣿⣿⠿⠇   Send /help for help information.
  ⣿⡟⠃⠃⠋⠏⠿⣿⣿⣿⣿⣿⣿⠯⢿⣿⣽⣴⣿⣿⡕
  ⣿⣿      ⠋⢿⣿⣿⣿⣿ ⠋⣿⣿⣿⣿⠁      Directory: «cwd»
  ⢯⣿⣵       ⠫⣿⣿⣿⣽⣼⣿⣿⣿⠗       Model:     mock · mock
@@ -5,17 +8,30 @@
    ⠋⣿⣿⣼⣰⣰⣻⣿⣽⣰⣀⠋⢿⣿⣿⣼⣰⡀
      ⠃⠏⠿⣿⣿⣿⣿⣿⠿⠟⠇⠂⠃⠃⠃
 
- » show markdown
+ » write it
 
- ● Title
+ ✓ Used write (src/demo.ts) · +3 −2
+   src/demo.ts · +3 −2
+     import { Service } from '@deepseek-ai/cordis'
 
-   • item
+   - const COUNT = 1
+   - const LABEL = 'beta'
+   + const COUNT = 2
+   + const LABEL = 'stable'
+   + const OWNER = 'blue'
+     const MODE = 'draft'
 
-   link (https://example.com)
+     export const name = 'demo'
+   ⋯ 5 unchanged lines
+     // trailing note 6
+     // trailing note 7
+     // trailing note 8
 
-   ```js
-     const x = 1
-   ```
+ ● done
+
+
+
+
 
 ╭──────────────────────────────────────────────────────────────────────────────╮
 │ >                                                                            │

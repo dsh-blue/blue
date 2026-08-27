@@ -65,6 +65,13 @@ describe('plugin BlueView adapter', () => {
       '<diffRemoved>- old</diffRemoved>',
       '<diffAdded>+ new</diffAdded>',
     ])
+    // The plugin path delegates to the shared alignment: context renders
+    // once between the removal and the addition.
+    expect(renderPluginView({ kind: 'diff', before: 'a\nb', after: 'a\nc' }, 80, components, colors)).toEqual([
+      '  a',
+      '<diffRemoved>- b</diffRemoved>',
+      '<diffAdded>+ c</diffAdded>',
+    ])
     expect(renderPluginView({
       kind: 'sections',
       sections: [

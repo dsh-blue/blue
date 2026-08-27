@@ -222,7 +222,7 @@ async function bootTranscript(
   const dir = mkdtempTracked('dsh-blue-transcript-')
   writeFileSync(join(dir, 'blue-transcript.mjs'), `
 export const name = 'blue-transcript'
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'blueSessionReader', 'blueSessionProjections', 'tools']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'blueSessionReader', 'blueSessionProjections']
 export const apply = ctx => globalThis.__blueTranscriptApply(ctx)
 `)
   writeFileSync(join(dir, 'blue-status-basic.mjs'), `
@@ -232,7 +232,7 @@ export const apply = ctx => globalThis.__blueStatusBasicApply(ctx)
 `)
   writeFileSync(join(dir, 'blue-transcript-official.mjs'), `
 export const name = 'blue-transcript-official'
-export const inject = ['blueConversationProjection', 'blueSessionProjections', 'blueSessionReader', 'blueTranscriptModels', 'tools']
+export const inject = ['blueConversationProjection', 'blueSessionProjections', 'blueSessionReader', 'blueTranscriptModels', 'blueToolPresentations']
 export const apply = ctx => globalThis.__blueTranscriptOfficialApply(ctx)
 `)
   writeFileSync(join(dir, 'blue-status-fixture.mjs'), `
@@ -320,6 +320,7 @@ export const apply = ctx => globalThis.__blueStatusFixtureApply(ctx)
     sessionProjections: projections,
     blueConversationProjection: { key: 'blueConversation' },
     tools: { get: (name: string) => options.tools?.[name] },
+    blueToolPresentations: { bind: () => {}, get: (name: string) => options.tools?.[name] },
     ...(options.sessionEpoch === undefined ? {} : { blueRequests: { sessionEpoch: options.sessionEpoch } }),
     ...(options.settings === undefined ? {} : { settings: { get: (ns: string) => options.settings?.[ns] } }),
     ...(options.attachments === undefined ? {} : { attachments: options.attachments }),
@@ -1102,76 +1103,11 @@ describe('blue-transcript plugin through the real Loader', () => {
     expect(collapsed.some(line => line.includes('next-10'))).toBe(false)
   })
 
-  it.skip('groups consecutive same-step Reads into one tree (kimi contiguity)', async () => {
-    resetSeq()
-    const { ctx, screen } = await bootTranscript(null, {
-      tools: {
-        read: { presentCall: () => ({ card: 'generic', title: 'Read', kind: 'read' }) },
-      },
-    })
-    ctx.emit('test/session-changed', asAgent(fakeAgent([
-      turnStart(1),
-      stepStart(1, 1),
-      toolCallEvent(1, 1, 'r1', 'read', '{"file_path":"a.ts"}'),
-      toolCallEvent(1, 1, 'r2', 'read', '{"file_path":"b.ts"}'),
-      toolCallEvent(1, 1, 'r3', 'read', '{"file_path":"c.ts"}'),
-      toolResultEvent(1, 1, 'r1', 'one'),
-      toolResultEvent(1, 1, 'r2', 'two\nthree'),
-      toolResultEvent(1, 1, 'r3', 'x'),
-      turnEnd(1),
-    ])))
-    // The three reads mount as one group — the lone first card retired.
-    expect(screen.children).toHaveLength(1)
-    const lines = contentLines(screen)
-    expect(lines[1]).toContain('Read 3 files')
-    expect(lines[1]).toContain('· 4 lines')
-    expect(lines[2]).toContain('├─ a.ts')
-    expect(lines[3]).toContain('├─ b.ts')
-    expect(lines[4]).toContain('└─ c.ts')
-  })
-
-  it.skip('breaks the Read chain when another tool mounts between them', async () => {
-    resetSeq()
-    const { ctx, screen } = await bootTranscript(null, {
-      tools: {
-        read: { presentCall: () => ({ card: 'generic', title: 'Read', kind: 'read' }) },
-      },
-    })
-    ctx.emit('test/session-changed', asAgent(fakeAgent([
-      turnStart(1),
-      stepStart(1, 1),
-      toolCallEvent(1, 1, 'r1', 'read', '{"file_path":"a.ts"}'),
-      toolCallEvent(1, 1, 'b1', 'bash', '{}'),
-      toolCallEvent(1, 1, 'r2', 'read', '{"file_path":"b.ts"}'),
-      turnEnd(1),
-    ])))
-    // The bash card between the reads keeps both lone — kimi's rule.
-    expect(screen.children).toHaveLength(3)
-    expect(contentLines(screen).join('\n')).not.toContain('Read 2 files')
-  })
-
-  it.skip('retires the read group when its step folds into the summary', async () => {
-    resetSeq()
-    const { ctx, screen } = await bootTranscript(null, {
-      tools: {
-        read: { presentCall: () => ({ card: 'generic', title: 'Read', kind: 'read' }) },
-      },
-    })
-    ctx.emit('test/session-changed', asAgent(fakeAgent([
-      turnStart(1),
-      stepStart(1, 1),
-      toolCallEvent(1, 1, 'r1', 'read', '{"file_path":"a.ts"}'),
-      toolCallEvent(1, 1, 'r2', 'read', '{"file_path":"b.ts"}'),
-      stepStart(1, 2),
-      assistantEvent(1, 2, [{ type: 'text', text: 'done' }]),
-      turnEnd(1),
-    ])))
-    // The group's bookkeeping item is its first member, so the fold retires
-    // the whole group and mounts the summary.
-    expect(screen.children).toHaveLength(2)
-    expect(contentLines(screen).join('\n')).toContain('… step 1 · call 2 tools')
-    expect(contentLines(screen).join('\n')).not.toContain('Read 2 files')
-  })
+  // The read-group fossils (same-step grouping, chain breaks, step-fold
+  // retirement) drove the retired event-fold mounter; the projection-layer
+  // grouping they described now lives in official-model.spec.ts and the
+  // bundle e2e read-group cases, so the skipped shells are deleted rather
+  // than kept as architecture lies.
 
   it.skip('suppresses spawn-class subagent calls and results from the stream (S33 pane ruling)', async () => {
     resetSeq()

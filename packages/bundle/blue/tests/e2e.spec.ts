@@ -705,6 +705,38 @@ describe('blue whole-tree e2e', () => {
     expect(expanded).toContain('TAILMARKER')
   })
 
+  it('summarizes a presenter-less JSON result instead of echoing raw JSON', async () => {
+    const tree = await bootBlue([], {
+      script: [toolCallResponse('call-ask', 'responder', {}), textResponse('answered')],
+    })
+    const agent = await currentAgent(tree)
+    const tools = (tree.ctx as unknown as { tools: { register(definition: unknown): () => void } }).tools
+    tools.register({
+      name: 'responder',
+      description: 'test tool returning the ask-user answers payload',
+      parameters: { type: 'object', properties: {} },
+      output: {
+        schema: { type: 'string' },
+        render: (_args: unknown, value: unknown) => [{ type: 'text', text: String(value) }],
+      },
+      execute: () => Promise.resolve('{"answers":[{"id":"ui_target","selected":["演示"]}]}'),
+    })
+    typeLine(tree.terminal, 'ask the user')
+    await agent.whenIdle()
+    await waitForRender()
+    const strip = (text: string): string => text
+      .replace(/\x1b\[[0-9;]*m/g, '')
+      .replace(/\x1b\]8;;[^\x07]*\x07/g, '')
+    const shown = strip(tree.terminal.output)
+    // Collapsed: the flattened summary line, never the raw JSON.
+    expect(shown).toContain('answers: id=ui_target, selected=演示')
+    expect(shown).not.toContain('{"answers"')
+    tree.terminal.sendInput('\x0f')
+    await waitForRender()
+    const expanded = strip(tree.terminal.written.join(''))
+    expect(expanded).toContain('{"answers"')
+  })
+
   it('renders a diff-intent tool through the DiffCard: kimi header, chip, and +/- rows', async () => {
     const tree = await bootBlue([], {
       script: [toolCallResponse('call-diff', 'edit-file', {}), textResponse('edited')],
@@ -873,7 +905,7 @@ describe('blue whole-tree e2e', () => {
     expect(shown).toContain('done')
   })
 
-  it.skip('groups two same-step Reads into the kimi tree', async () => {
+  it('groups two same-step Reads into one tree card that hides file content', async () => {
     // One request carrying both tool calls keeps them in one agent-loop
     // step (the grouping unit); the second request's text starts the next
     // step, which — under the default retention — leaves the group mounted.
@@ -893,6 +925,16 @@ describe('blue whole-tree e2e', () => {
       description: 'read a file',
       parameters: { type: 'object', properties: {} },
       presentCall: () => ({ card: 'generic', title: 'Read', kind: 'read' }),
+      presentResult: (args: unknown) => ({
+        card: 'read',
+        path: (args as { file_path: string }).file_path,
+        offset: 1,
+        lines: [
+          { number: 1, text: 'first line of the file' },
+          { number: 2, text: 'second line of the file' },
+        ],
+        totalLines: 2,
+      }),
       output: {
         schema: { type: 'string' },
         render: () => [{ type: 'text', text: 'l1\nl2\nl3' }],
@@ -903,12 +945,112 @@ describe('blue whole-tree e2e', () => {
     await agent.whenIdle()
     await waitForRender()
     expect(tree.adapter.requests.length).toBe(2)
-    const shown = tree.terminal.output.replace(/\x1b\[[0-9;]*m/g, '')
+    const strip = (text: string): string => text.replace(/\x1b\[[0-9;]*m/g, '')
+    const shown = strip(tree.terminal.output)
+    // Collapsed: the by-file tree with per-window ranges — never the content.
     expect(shown).toContain('Read 2 files')
-    expect(shown).toContain('· 6 lines')
-    expect(shown).toContain('├─ src/a.ts')
-    expect(shown).toContain('└─ src/b.ts')
+    expect(shown).toContain('├─ src/a.ts · 1-2')
+    expect(shown).toContain('└─ src/b.ts · 1-2')
+    expect(shown).not.toContain('second line of the file')
     expect(shown).toContain('read done')
+    // Ctrl-O expands the group's bounded previews with file line numbers.
+    tree.terminal.sendInput('\x0f')
+    await waitForRender()
+    const expanded = strip(tree.terminal.written.join(''))
+    expect(expanded).toContain('1  first line of the file')
+  })
+
+  it('groups consecutive searches into one tree card that hides match text', async () => {
+    const tree = await bootBlue([], {
+      script: [
+        toolCallResponse('call-g1', 'grep', { pattern: 'export const' }),
+        toolCallResponse('call-p1', 'glob', { pattern: 'src/**/*.ts' }),
+        textResponse('search done'),
+      ],
+    })
+    const agent = await currentAgent(tree)
+    const tools = (tree.ctx as unknown as { tools: { register(definition: unknown): () => void } }).tools
+    tools.register({
+      name: 'grep',
+      description: 'search contents',
+      parameters: { type: 'object', properties: {} },
+      presentCall: () => ({ card: 'generic', title: 'Grep', kind: 'search' }),
+      presentResult: () => ({
+        card: 'search',
+        shape: 'matches',
+        files: [{ path: 'a.ts', matches: [{ lineNumber: 3, line: 'the matched line text' }] }],
+        truncated: false,
+        total: 1,
+      }),
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: 'match' }] },
+      execute: () => Promise.resolve('match'),
+    })
+    tools.register({
+      name: 'glob',
+      description: 'find files',
+      parameters: { type: 'object', properties: {} },
+      presentCall: () => ({ card: 'generic', title: 'Glob', kind: 'search' }),
+      presentResult: () => ({ card: 'search', shape: 'paths', paths: ['a.ts'], truncated: false, total: 1 }),
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: 'paths' }] },
+      execute: () => Promise.resolve('paths'),
+    })
+    typeLine(tree.terminal, 'search them')
+    await agent.whenIdle()
+    await waitForRender()
+    const strip = (text: string): string => text.replace(/\x1b\[[0-9;]*m/g, '')
+    const shown = strip(tree.terminal.output)
+    expect(shown).toContain('Searched 2 patterns · 1 file, 1 match, 1 path')
+    expect(shown).toContain('├─ "export const" · 1 file, 1 match')
+    expect(shown).toContain('└─ src/**/*.ts · 1 path')
+    expect(shown).not.toContain('the matched line text')
+    tree.terminal.sendInput('\x0f')
+    await waitForRender()
+    const expanded = strip(tree.terminal.written.join(''))
+    expect(expanded).toContain('3: the matched line text')
+  })
+
+  it('breaks read groups on other tools while grouping across thinking', async () => {
+    const tree = await bootBlue([], {
+      script: [
+        toolCallResponse('call-r1', 'read', { file_path: 'src/a.ts' }),
+        toolCallResponse('call-sh', 'bash', { command: 'ls' }),
+        toolCallResponse('call-r2', 'read', { file_path: 'src/b.ts' }),
+        textResponse('done'),
+      ],
+    })
+    const agent = await currentAgent(tree)
+    const tools = (tree.ctx as unknown as { tools: { register(definition: unknown): () => void } }).tools
+    tools.register({
+      name: 'read',
+      description: 'read a file',
+      parameters: { type: 'object', properties: {} },
+      presentCall: () => ({ card: 'generic', title: 'Read', kind: 'read' }),
+      presentResult: (args: unknown) => ({
+        card: 'read',
+        path: (args as { file_path: string }).file_path,
+        offset: 1,
+        lines: [{ number: 1, text: 'one' }],
+        totalLines: 1,
+      }),
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: 'one' }] },
+      execute: () => Promise.resolve('one'),
+    })
+    tools.register({
+      name: 'bash',
+      description: 'run a command',
+      parameters: { type: 'object', properties: {} },
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: 'a.ts' }] },
+      execute: () => Promise.resolve('a.ts'),
+    })
+    typeLine(tree.terminal, 'read between commands')
+    await agent.whenIdle()
+    await waitForRender()
+    const shown = tree.terminal.output.replace(/\x1b\[[0-9;]*m/g, '')
+    // Two single-file groups, one per run, with the command card between.
+    expect(shown.split('Read 1 file').length - 1).toBe(2)
+    expect(shown).toContain('Ran a command')
+    expect(shown).toContain('└─ src/a.ts · 1-1')
+    expect(shown).toContain('└─ src/b.ts · 1-1')
   })
 
   it.skip('keeps a multi-step turn\'s tool cards expanded under the kimi 30-step retention', async () => {

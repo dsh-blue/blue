@@ -60,6 +60,8 @@ import type {
   BlueSessionSkill,
   BlueSessionToolSchema,
   BlueSideSessionStatus,
+  BlueToolPresenterHost,
+  BlueToolPresentationSource,
 } from './types.ts'
 
 export type {
@@ -190,6 +192,7 @@ interface PresetRosterSource {
 
 /** Host tool-registry face retained inside the app boundary. */
 interface ToolRegistrySource {
+  get(name: string, scope?: unknown): BlueToolPresenterHost | undefined
   schemas(scope?: unknown): readonly {
     readonly name: string
     readonly description: string
@@ -460,6 +463,17 @@ export function apply(ctx: Context, config: Config): void {
     },
   }
   ctx.provide('blueSessionReader', sessionReader)
+
+  // Presenter-view resolution for the rendered session's tool cards. Tool
+  // registrations are agent-scoped on the Harness side; the viewing scope is
+  // the active Agent, bound at the session commit point below. The host
+  // object stays inside this closure — consumers see presenter hooks only.
+  let toolViewScope: object | undefined
+  const toolPresentations: BlueToolPresentationSource = {
+    bind: scope => { toolViewScope = scope },
+    get: name => (ctx.get('tools') as unknown as ToolRegistrySource | undefined)?.get(name, toolViewScope),
+  }
+  ctx.provide('blueToolPresentations', toolPresentations)
 
   const projectionSource = ctx.get('sessionProjections') as SessionProjectionSource | undefined
   const childSessions = (): readonly { readonly id: string, readonly session: unknown }[] => {
@@ -878,6 +892,7 @@ export function apply(ctx: Context, config: Config): void {
     current = next
     if (previous !== undefined) await previous.dispose()
     session.current = next.agent
+    toolPresentations.bind(next.agent)
     session.modelRef = holder.selection
     yoloByAgent.set(next.agent, foldYolo(next.agent.session.events))
     requests.commitSession()

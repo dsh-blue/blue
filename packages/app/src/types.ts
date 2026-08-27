@@ -145,6 +145,26 @@ export interface BlueChildSessionProjectionSnapshot extends BlueSessionProjectio
   readonly id: string
 }
 
+/** The presenter hooks a resolved tool definition may carry (host face, structural). */
+export interface BlueToolPresenterHost {
+  readonly presentCall?: (args: unknown) => unknown
+  readonly presentResult?: (args: unknown, result: unknown) => unknown
+}
+
+/**
+ * Presenter-view resolution for the tool cards of the session being rendered.
+ * Harness tool registrations are agent-scoped — the plain global view misses
+ * the builtins — so the app, the tree's only Agent owner, binds the active
+ * Agent as the viewing scope at the session commit point. The host object
+ * never crosses this seam; consumers see only presenter hooks.
+ */
+export interface BlueToolPresentationSource {
+  /** Bind the viewing scope (the active Agent); `undefined` restores the global view. */
+  bind(scope: object | undefined): void
+  /** The presenter-bearing definition the scope resolves, or `undefined` when none is visible. */
+  get(name: string): BlueToolPresenterHost | undefined
+}
+
 /**
  * Current-session projection reader. It keeps the Harness Session private to
  * blue-app and publishes only immutable projection values and sequence facts.
@@ -279,6 +299,8 @@ declare module '@deepseek-ai/cordis' {
     blueSessionReader: BlueSessionReader
     /** Official projection values for the active session, with no Session handle. */
     blueSessionProjections: BlueSessionProjectionReader
+    /** Presenter-view resolution for the session being rendered (scope bound by blue-app). */
+    blueToolPresentations: BlueToolPresentationSource
   }
 
   interface Events {

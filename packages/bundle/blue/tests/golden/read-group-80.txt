@@ -1,3 +1,6 @@
+    ⢀⣀⣰⣰⣰⣰⣰⣼⣼⠜   ⣺⣵⡀    ⢀⡀
+  ⢀⣸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣵⣐  ⢯⣿⣿⣵⣸⣼⣼⣿⠕  Welcome to Blue!
+ ⢨⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣽⣐⠂⠯⣿⣿⣿⣿⠿⠇   Send /help for help information.
  ⣿⡟⠃⠃⠋⠏⠿⣿⣿⣿⣿⣿⣿⠯⢿⣿⣽⣴⣿⣿⡕
  ⣿⣿      ⠋⢿⣿⣿⣿⣿ ⠋⣿⣿⣿⣿⠁      Directory: «cwd»
  ⢯⣿⣵       ⠫⣿⣿⣿⣽⣼⣿⣿⣿⠗       Model:     mock · mock
@@ -5,17 +8,30 @@
    ⠋⣿⣿⣼⣰⣰⣻⣿⣽⣰⣀⠋⢿⣿⣿⣼⣰⡀
      ⠃⠏⠿⣿⣿⣿⣿⣿⠿⠟⠇⠂⠃⠃⠃
 
- » show markdown
+ » read them
 
- ● Title
+ ✓ Read 2 files · 3 reads
+   ├─ src/a.ts
+   │  ├─ 1-100 of 130 ✓
+   │  └─ 101-130 ✓
+   └─ src/b.ts · 1-40 ✓
 
-   • item
+ ● read done
 
-   link (https://example.com)
 
-   ```js
-     const x = 1
-   ```
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ╭──────────────────────────────────────────────────────────────────────────────╮
 │ >                                                                            │

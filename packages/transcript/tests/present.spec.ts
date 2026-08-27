@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { parseToolArguments, resolveCallView, resolveResultView, type ToolPresentationSource } from '../src/present.ts'
+import { parseToolArguments, resolveCallView, resolveResultView, summarizeToolCall, type ToolPresentationSource } from '../src/present.ts'
 
 /** A registry stub whose `get` returns the prearranged runtime (or nothing). */
 function tools(get: (name: string) => unknown): ToolPresentationSource {
@@ -20,6 +20,29 @@ describe('parseToolArguments', () => {
   it('returns undefined for invalid JSON', () => {
     expect(parseToolArguments('{"command":')).toBeUndefined()
     expect(parseToolArguments('')).toBeUndefined()
+  })
+})
+
+describe('summarizeToolCall', () => {
+  it('renders object arguments as key/value lines under the tool name', () => {
+    expect(summarizeToolCall('read', '{"file_path":"src/a.ts","limit":100}')).toBe('read\n  file_path: src/a.ts\n  limit: 100')
+  })
+
+  it('caps pairs, flattens values, and counts the dropped tail', () => {
+    const args = JSON.stringify(Object.fromEntries(Array.from({ length: 8 }, (_, index) => [`k${String(index)}`, index])))
+    expect(summarizeToolCall('probe', args)).toBe(
+      'probe\n  k0: 0\n  k1: 1\n  k2: 2\n  k3: 3\n  k4: 4\n  k5: 5\n  … +2 more',
+    )
+    const long = JSON.stringify({ command: 'a\nb'.repeat(30) })
+    expect(summarizeToolCall('bash', long)).not.toContain('\nb')
+    expect(summarizeToolCall('probe', JSON.stringify({ flag: true, nested: { deep: [1, 2] } }))).toContain('flag: true')
+    expect(summarizeToolCall('probe', JSON.stringify({ nested: { deep: [1, 2] } }))).toContain('nested: {"deep":[1,2]}')
+  })
+
+  it('keeps the inline form for non-object and unparseable arguments', () => {
+    expect(summarizeToolCall('probe', '"just-a-string"')).toBe('probe("just-a-string")')
+    expect(summarizeToolCall('probe', '[1,2]')).toBe('probe([1,2])')
+    expect(summarizeToolCall('probe', 'not json')).toBe('probe(not json)')
   })
 })
 

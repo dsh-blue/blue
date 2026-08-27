@@ -44,10 +44,15 @@ export {
   UserMessageComponent,
 } from './components.ts'
 export { AgentGroupComponent, setAgentGroupTimers, type AgentGroupTimers } from './agent-group.ts'
+export { ReadGroupComponent, groupReadsByFile, READ_GROUP_ROW_LIMIT, READ_GROUP_EXPANDED_ROW_LIMIT, type ReadFileGroup } from './read-group.ts'
+export { SearchGroupComponent, SEARCH_GROUP_ROW_LIMIT, SEARCH_GROUP_EXPANDED_ROW_LIMIT } from './search-group.ts'
+export { READ_PREVIEW_LINE_LIMIT, SEARCH_PREVIEW_MATCH_LIMIT, SEARCH_PATH_LIMIT } from './official-model.ts'
+export { parseXmlEnvelope, summarizeToolText, type EnvelopePair } from './envelope.ts'
+export { ellipsize, parseToolArguments, summarizeToolCall, TOOL_ARG_PAIR_LIMIT, TOOL_ARG_VALUE_MAX_CHARS } from './present.ts'
 export { BlueStatusModelService, StatusModelFooterComponent, plainView } from './status-model.ts'
 export { SessionFactsService } from './session-facts.ts'
 export { BlueDockModelService, ModelDockComponent } from './dock-model.ts'
-export { createToolPresentationModel, toolCallView, toolResultView, BlueModelToolService, ToolModelComponent, ToolModelService } from './tool-model.ts'
+export { createToolPresentationModel, toolCallView, toolResultView, toolResultChip, BlueModelToolService, ToolModelComponent, ToolModelService } from './tool-model.ts'
 export type { ToolPresentationFacts } from './tool-model.ts'
 export { appendTranscriptView, createTranscriptModel, TRANSCRIPT_MODEL_WINDOW, TranscriptModelService, TranscriptModelComponent } from './transcript-model.ts'
 export {
@@ -80,7 +85,7 @@ export {
 export const name = 'blue-transcript'
 
 /** Services the plugin requires before it can mount. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'blueSessionReader', 'blueSessionProjections', 'tools']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'blueSessionReader', 'blueSessionProjections']
 
 /** The global action toggling tool-output expansion (Ctrl-O). */
 export const ACTION_TOGGLE_COLLAPSE = 'blue.transcript.toggle-collapse'
@@ -130,7 +135,7 @@ export function apply(ctx: Context): void {
   ctx.effect(() => () => sessionFacts.dispose())
   const statusModels = new BlueStatusModelService(ctx, screen)
   const dockModels = new BlueDockModelService(ctx)
-  const toolModels = new BlueModelToolService(ctx)
+  const toolModels = new BlueModelToolService(ctx, undefined, colors)
   const transcriptModels = new TranscriptModelService(ctx, undefined, {
     renderer: {
       colors,

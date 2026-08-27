@@ -12,7 +12,7 @@ import { buildTipRotation } from '../src/status-tips.ts'
 import { MOON_SPINNER_FRAMES, MOON_SPINNER_INTERVAL_MS } from '../src/spinners.ts'
 import { STATUS_TIPS } from '../src/tips-content.ts'
 import { bootPanePlugin, type PanePluginHarness } from './pane-fakes.ts'
-import { asAgent, fakeAgent, type FakeAgent } from './status-fakes.ts'
+import { asAgent, COLORS, fakeAgent, type FakeAgent } from './status-fakes.ts'
 import {
   assistantEvent,
   event,
@@ -116,6 +116,25 @@ describe('blue-pane-activity', () => {
     // Unloading stops the animation.
     await dispose()
     expect(timers.cleared).toBe(1)
+  })
+
+  it('paints the wave through the brand gradient, cycling one hue per tick', async () => {
+    const agent = runningAgent(fakeAgent([]))
+    const tag = (letter: string) => (text: string): string => `[${letter}]${text}[/${letter}]`
+    const timers = new FakeTimers()
+    activity.setActivityTimers(timers)
+    const { screen, dispose } = await bootPanePlugin(activity, agent, {
+      blueTheme: { colors: { ...COLORS, logoGradient: [tag('G1'), tag('G2'), tag('G3')] } },
+    })
+    expect(screen.paneLines()).toEqual([`[G1]${MOON_SPINNER_FRAMES[0]!}[/G1] · Tip: ${FIRST_TIP}`])
+    timers.ticks[0]!()
+    expect(screen.paneLines()).toEqual([`[G2]${MOON_SPINNER_FRAMES[1]!}[/G2] · Tip: ${FIRST_TIP}`])
+    timers.ticks[0]!()
+    expect(screen.paneLines()).toEqual([`[G3]${MOON_SPINNER_FRAMES[2]!}[/G3] · Tip: ${FIRST_TIP}`])
+    timers.ticks[0]!()
+    // The hue cycle wraps with the gradient, independent of the wave cycle.
+    expect(screen.paneLines()).toEqual([`[G1]${MOON_SPINNER_FRAMES[3]!}[/G1] · Tip: ${FIRST_TIP}`])
+    await dispose()
   })
 
   it('shows the kimi working row with a fresh tip while composing', async () => {
