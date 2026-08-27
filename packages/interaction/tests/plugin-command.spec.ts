@@ -264,6 +264,9 @@ describe('registerPluginCommand', () => {
     cancelledForm.handleInput(KEY.escape)
     panel.handleInput(KEY.enter)
     const form = world.screen.overlays.at(-1)?.component as { handleInput(data: string): void }
+    form.handleInput('n')
+    form.handleInput(KEY.enter)
+    form.handleInput('\x7f')
     form.handleInput('y')
     form.handleInput(KEY.enter)
     await vi.waitFor(() => expect(panel.render(100).join('\n')).toContain('upgraded; restart Blue to apply'))

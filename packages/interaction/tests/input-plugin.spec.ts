@@ -536,7 +536,7 @@ describe('blue-input plugin', () => {
 
   it('folds a long multi-line notice into the hint row', async () => {
     const { ctx, hint } = await mount()
-    getSharedEditor(ctx)?.notice?.(Array.from({ length: 10 }, (_, index) => `notice ${String(index)}`).join('\n'))
+    getSharedEditor(ctx)?.notice?.(Array.from({ length: 10 }, (_, index) => index === 0 ? '' : `notice ${String(index)}`).join('\n'))
     const rows = hint.render(80)
     expect(rows).toHaveLength(8)
     expect(rows.at(-1)).toBe('~... more~')
