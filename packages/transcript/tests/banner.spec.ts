@@ -29,7 +29,7 @@ import {
 import { BLUE_VERSION } from '../src/banner-content.ts'
 import * as banner from '../src/banner.ts'
 import { LOGO_COLS, LOGO_GRADIENT } from '../src/banner-art.ts'
-import { visibleWidth } from '../../core/src/width.ts'
+import { visibleWidth, truncateToWidth } from '../../core/src/width.ts'
 import { fakeBlueComponents } from './helpers.ts'
 import { COLORS } from './status-fakes.ts'
 
@@ -282,17 +282,17 @@ describe('blue-banner plugin', () => {
     expect(joined).toContain('Welcome to Blue!')
     expect(joined).toContain(`Version:   ${BLUE_VERSION}`)
     expect(joined).toContain('m · p')
-    // The banner mounts inside a GutterComponent that insets 1 column on
-    // each side, so render(100) hands the banner 98 columns; the status
-    // value budget is 98 − 25 (logo block) − 2 (gap) − 11 (label
-    // reservation) = 60, and the whole status text — label included —
-    // truncates to it, pi-tui appending a reset-wrapped three-dot ellipsis.
-    // A cwd that fits renders whole; a deeper checkout (this spec also runs
-    // from worktree copies) survives as its clipped prefix — 60 − 11 (the
-    // in-budget label) − 3.
-    const budget = 100 - 2 - 25 - 2 - 11
-    const cwd = shortenHome(process.cwd(), homedir())
-    expect(joined).toContain(cwd.length + 11 <= budget ? cwd : cwd.slice(0, budget - 11 - 3))
+    // The mounted child is a GutterComponent (one column each side), so the
+    // banner composes at width−2 and its info rows clip label+value TOGETHER
+    // to the value-column budget (bannerLayout(98) = 98 − 25 logo block − 2
+    // gap − 11 label = 60 columns); the pi-tui truncation appends a
+    // reset-wrapped ellipsis inside it. Deriving the expectation from the
+    // same primitives keeps the assertion honest for a deep checkout too
+    // (this spec also runs in worktree copies): a cwd that fits renders
+    // whole, a deeper one as its exact clipped row text.
+    const budget = banner.bannerLayout(98)!.valueWidth
+    const row = `${banner.DIRECTORY_LABEL}${shortenHome(process.cwd(), homedir())}`
+    expect(joined).toContain(truncateToWidth(row, budget))
     // The banner is stateless; invalidation is a covered no-op.
     expect(() => screen.children[0]?.invalidate()).not.toThrow()
   })

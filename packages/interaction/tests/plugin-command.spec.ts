@@ -55,6 +55,7 @@ async function mountPanel(): Promise<{
   ctx: Context
   screen: ReturnType<typeof fakeBlueContext>['screen']
   host: string
+  dsh: string
   execute(input: string): Promise<unknown>
   dispose(): void
 }> {
@@ -84,9 +85,15 @@ async function mountPanel(): Promise<{
   writeFileSync(join(brokenRoot, 'package.json'), '{broken')
   const noVersionRoot = join(profileRoot, 'node_modules', '@scope', 'noversion')
   mkdirSync(noVersionRoot, { recursive: true })
-  writeFileSync(join(noVersionRoot, 'package.json'), JSON.stringify({ name: '@scope/noversion' }))
+  writeFileSync(join(noVersionRoot, 'package.json'), JSON.stringify({ name: '@scope/noversion', version: '5.0.0' }))
+  const unscopedRoot = join(profileRoot, 'node_modules', 'plain-package')
+  mkdirSync(unscopedRoot, { recursive: true })
+  writeFileSync(join(unscopedRoot, 'package.json'), JSON.stringify({ name: 'plain-package', version: '1.2.3' }))
   const host = join(home, 'dsh-host.mjs')
   writeFileSync(host, "console.log('profile operation complete')\n")
+  const dsh = join(home, 'dsh')
+  writeFileSync(dsh, "#!/usr/bin/env node\nconsole.log('profile operation complete')\n")
+  chmodSync(dsh, 0o755)
   process.env.DSH_HOME = home
   process.env.BLUE_DSH_BIN = host
   registry({ plugins: [
@@ -96,6 +103,11 @@ async function mountPanel(): Promise<{
     { package: '@scope/noversion', title: { zh: 'No version' } },
     { id: 'not-installed', package: '@scope/not-installed', version: '1.0.0' },
     { id: 'available', package: '@scope/available', version: '3.0.0', title: { en: 'Available plugin' }, install: [{ kind: 'npm', spec: '@scope/available@3.0.0' }] },
+    { id: 'fallback', package: '@scope/fallback', version: '4.0.0', title: { en: 'Fallback plugin' }, install: [{ kind: 'npm' }] },
+    { id: 'unversioned', package: '@scope/unversioned', title: { en: 'Unversioned plugin' } },
+    { id: 'plain', package: 'plain-package', version: '1.2.3', title: { en: 'Plain package' } },
+    { package: '@scope/no-id', version: '6.0.0', title: { en: 'No id' } },
+    { id: 'metadata-only' },
   ] })
   setSharedEditor(ctx, { editor: display.components.createEditor(), submitPrompt: () => {}, notice: vi.fn() })
   const dispose = registerPluginCommand(ctx)
@@ -103,6 +115,7 @@ async function mountPanel(): Promise<{
     ctx,
     screen: display.screen,
     host,
+    dsh,
     execute: async input => (await ctx.commands.execute(agent, `/plugin ${input}`, [], new AbortController().signal))?.result,
     dispose,
   }
@@ -249,6 +262,13 @@ describe('registerPluginCommand', () => {
       result: { kind: 'error', text: 'plugin operation failed: fetch failed; configure BLUE_MARKETPLACE_REGISTRY to a reachable registry URL' },
     })
     dispose()
+
+    vi.stubGlobal('fetch', vi.fn(async () => { throw 'offline' }))
+    const stringErrorDispose = registerPluginCommand(display.ctx)
+    await expect(display.ctx.commands.execute(agent, '/plugin', [], new AbortController().signal)).resolves.toMatchObject({
+      result: { kind: 'error', text: 'plugin operation failed: offline' },
+    })
+    stringErrorDispose()
   })
 
   it('opens the plugin panel and runs install, upgrade, and uninstall actions', async () => {
@@ -283,11 +303,34 @@ describe('registerPluginCommand', () => {
     panel.handleInput(KEY.down)
     panel.handleInput(KEY.enter)
     await vi.waitFor(() => expect(panel.render(100).join('\n')).toContain('uninstalled; restart Blue to apply'))
-    await new Promise<void>(resolve => setImmediate(resolve))
+    const panelOptions = panel as unknown as { options: { onAction(action: unknown): void } }
+    const runPanelAction = async (row: { packageName: string, label: string, spec: string }, output: string): Promise<void> => {
+      writeFileSync(world.host, `console.log('${output}')\n`)
+      panelOptions.options.onAction({ kind: 'plugin.install', row })
+      await vi.waitFor(() => {
+        const rendered = panel.render(100).join('\n')
+        expect(rendered).toContain(output)
+        expect(rendered).toContain('installed; restart Blue to apply')
+      })
+    }
+    process.env.BLUE_MARKETPLACE_GITHUB_PROXY = 'https://proxy.test/'
+    await runPanelAction({ packageName: '@scope/github-short', label: 'GitHub short', spec: 'github:owner/repo' }, 'short')
+    await runPanelAction({ packageName: '@scope/github-suffixed', label: 'GitHub suffixed', spec: 'github:owner/repo.git' }, 'suffixed')
+    await runPanelAction({ packageName: '@scope/github-url', label: 'GitHub URL', spec: 'https://github.com/owner/repo' }, 'url')
+    await runPanelAction({ packageName: '@scope/github-pinned-url', label: 'GitHub pinned URL', spec: 'https://github.com/owner/repo#deadbeef' }, 'pinned-url')
+    delete process.env.BLUE_DSH_BIN
+    process.env.PATH = `${join(world.dsh, '..')}:${process.env.PATH ?? ''}`
+    await runPanelAction({ packageName: '@scope/no-latest', label: 'No latest', spec: '@scope/no-latest' }, 'profile operation complete')
+    process.env.BLUE_DSH_BIN = world.host
+    writeFileSync(world.host, "process.exit(0)\n")
+    panelOptions.options.onAction({ kind: 'plugin.install', row: { packageName: '@scope/empty-output', label: 'Empty output', spec: '@scope/empty-output' } })
+    await vi.waitFor(() => expect(panel.render(100).join('\n')).toContain('add completed'))
     writeFileSync(world.host, "console.error('operation failed'); process.exit(1)\n")
     panel.handleInput(KEY.down)
     panel.handleInput(KEY.enter)
     await vi.waitFor(() => expect(panel.render(100).join('\n')).toContain('plugin operation failed'))
+    panelOptions.options.onAction({ kind: 'plugin.unknown', row: { packageName: '@scope/unknown', label: 'Unknown', spec: '@scope/unknown' } })
+    panel.handleInput(KEY.escape)
     panel.handleInput(KEY.escape)
     world.dispose()
   })

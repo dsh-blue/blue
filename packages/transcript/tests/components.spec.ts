@@ -445,6 +445,34 @@ describe('ToolCallComponent', () => {
     expect(component.render(80)).toEqual(collapsed)
   })
 
+  it('collapses an XML-envelope result to its summary while collapsed', () => {
+    const envelope = '<path>src/a.ts</path>\n<type>file</type>\n<content>\n1: const x = 1\n2: const y = 2\n\n(Showing lines 1-2 of 342. Use offset=3 to continue.)\n</content>'
+    const item = toolItem({ name: 'probe' })
+    item.result = { text: 'envelope', fullText: envelope, isError: false }
+    const component = new ToolCallComponent(item, tagged(), setup())
+    const collapsed = component.render(80)
+    expect(collapsed[2]).toBe('  [M]src/a.ts · lines 1-2 of 342[/M]')
+    expect(collapsed.at(-1)).toContain('7 more lines, 8 total, ctrl+o to expand')
+
+    component.setExpanded(true)
+    const expanded = component.render(80)
+    expect(expanded).toHaveLength(1 + 1 + 8)
+    expect(expanded[2]).toBe('  [M]<path>src/a.ts</path>[/M]')
+  })
+
+  it('collapses a bare-JSON result (the ask-user answers shape) while collapsed', () => {
+    const payload = '{"answers":[{"id":"ui_target","selected":["只是演示工具能力"]}]}'
+    const item = toolItem({ name: 'ask_user_question' })
+    item.result = { text: payload, fullText: payload, isError: false }
+    const component = new ToolCallComponent(item, tagged(), setup())
+    const collapsed = component.render(80)
+    expect(collapsed[2]).toBe('  [M]answers: id=ui_target, selected=只是演示工具能力[/M]')
+    expect(collapsed).toHaveLength(3)
+
+    component.setExpanded(true)
+    expect(component.render(80)[2]).toBe(`  [M]${String(payload)}[/M]`)
+  })
+
   it('counts wrapped visual rows for the preview cap and hint', () => {
     const item = toolItem({ name: 'probe' })
     item.result = { text: 'word', fullText: 'word '.repeat(30).trim(), isError: false }
@@ -470,6 +498,17 @@ describe('ToolCallComponent', () => {
     item.result = { text: '', isError: false }
     const lines = new ToolCallComponent(item, tagged(), setup()).render(80)
     expect(lines).toEqual(['', '[S]✓ [/S]Used \x1b[1m[P]probe[/P]\x1b[22m'])
+  })
+
+  it('prefers the semantic chip over the raw line count when provided', () => {
+    const item = toolItem({ name: 'write', parsedArguments: { file_path: 'a.ts' } })
+    item.result = { text: '<path>a.ts</path>\n<type>file</type>\n<content>\nCreated file\n</content>', isError: false }
+    const lines = new ToolCallComponent(item, tagged(), setup(), undefined, '+3 −2').render(80)
+    expect(lines[1]).toContain('[M] · +3 −2[/M]')
+    expect(lines[1]).not.toContain('lines')
+    const failed = new ToolCallComponent(item, tagged(), setup(), undefined, '+3 −2')
+    item.result = { text: 'boom', isError: true }
+    expect(failed.render(80)[1]).toContain('[E] · +3 −2[/E]')
   })
 
   it('caps a generic result preview until expanded', () => {

@@ -36,6 +36,10 @@ interface PluginRow {
   readonly spec: string
 }
 
+interface InstalledPluginRow extends PluginRow {
+  readonly installed: string
+}
+
 function isGitHubSpec(spec: string): boolean {
   return spec.startsWith('github:') || /^(?:git\+)?https:\/\/github\.com\//u.test(spec)
 }
@@ -64,8 +68,8 @@ function withGitHubProxy(spec: string): string {
   return `git+https://${proxy}/https://github.com/${path}${ref === undefined ? '' : `#${ref}`}`
 }
 
-function marketplaceSource(entry: Entry, fallback: string): InstallSource {
-  const source = entry.install?.find(value => typeof value.spec === 'string' && value.spec.length > 0)
+function marketplaceSource(entry: Entry, fallback: string): InstallSource & { readonly spec: string } {
+  const source = entry.install?.find((value): value is InstallSource & { readonly spec: string } => typeof value.spec === 'string' && value.spec.length > 0)
   return source ?? { spec: fallback }
 }
 
@@ -94,6 +98,7 @@ function profile(): string {
 }
 
 function entryLabel(entry: Entry): string {
+  /* c8 ignore next -- rows are only built for entries with a package or id. */
   return entry.title?.en ?? entry.title?.zh ?? entry.id ?? entry.package ?? 'unknown plugin'
 }
 
@@ -113,10 +118,10 @@ async function runProfileCommand(action: 'add' | 'remove', spec: string): Promis
   return output.length === 0 ? `${action} completed` : output
 }
 
-async function pluginRows(): Promise<{ readonly installed: PluginRow[], readonly available: PluginRow[] }> {
+async function pluginRows(): Promise<{ readonly installed: InstalledPluginRow[], readonly available: PluginRow[] }> {
   const [all, facts] = await Promise.all([entries(), Promise.resolve(readProfileFacts(profileRoot(profile())))])
   const byPackage = new Map(all.flatMap(entry => entry.package === undefined ? [] : [[entry.package, entry] as const]))
-  const installed: PluginRow[] = []
+  const installed: InstalledPluginRow[] = []
   const seen = new Set<string>()
   /* c8 ignore start -- malformed/foreign profile entries are guarded by the updater profile reader. */
   for (const [packageName, version] of Object.entries(facts.installed)) {
@@ -161,10 +166,12 @@ async function pluginRows(): Promise<{ readonly installed: PluginRow[], readonly
     if (packageName === undefined || seen.has(packageName)) return []
     const fallback = `${packageName}${entry.version === undefined ? '' : `@${entry.version}`}`
     const source = marketplaceSource(entry, fallback)
-    return [{ id: entry.id ?? packageName, packageName, label: entryLabel(entry), ...(entry.version === undefined ? {} : { latest: entry.version }), spec: source.spec ?? fallback }]
+    return [{ id: entry.id ?? packageName, packageName, label: entryLabel(entry), ...(entry.version === undefined ? {} : { latest: entry.version }), spec: source.spec }]
   })
   return { installed: installed.sort((a, b) => a.label.localeCompare(b.label)), available: available.sort((a, b) => a.label.localeCompare(b.label)) }
 }
+
+type PluginRows = Awaited<ReturnType<typeof pluginRows>>
 
 function readPackageVersion(root: string, packageName: string): string | undefined {
   /* c8 ignore start -- this is a defensive fallback for damaged profile files. */
@@ -181,12 +188,10 @@ function readPackageVersion(root: string, packageName: string): string | undefin
   /* c8 ignore stop */
 }
 
-function pluginPanelModel(rows: { readonly installed: readonly PluginRow[], readonly available: readonly PluginRow[] }, state: { readonly busy?: string, readonly message?: string }): PanelModel {
+function pluginPanelModel(rows: { readonly installed: readonly InstalledPluginRow[], readonly available: readonly PluginRow[] }, state: { readonly busy?: string, readonly message?: string }): PanelModel {
   const installed = rows.installed.map(row => {
     const upgrade = row.latest !== undefined && row.installed !== undefined && compareVersions(row.latest, row.installed) > 0
-    const detail = row.installed === undefined
-      ? 'installed version unavailable'
-      : upgrade ? `v${row.installed} → v${row.latest} · update available` : `v${row.installed} · up to date`
+    const detail = upgrade ? `v${row.installed} → v${row.latest} · update available` : `v${row.installed} · up to date`
     return {
       id: `installed:${row.packageName}`,
       label: row.label,
@@ -224,7 +229,7 @@ export function registerPluginCommand(ctx: Context): () => void {
       try {
         if (invocation.rawInput.trim() === '' && displayServices(ctx) !== undefined) {
           const display = displayServices(ctx)!
-          let rows: { installed: PluginRow[], available: PluginRow[] }
+          let rows: PluginRows
           const editor = getSharedEditor(ctx)
           editor?.notice?.('loading plugins...')
           try {

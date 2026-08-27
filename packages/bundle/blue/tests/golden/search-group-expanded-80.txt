@@ -1,0 +1,40 @@
+    ⢀⣀⣰⣰⣰⣰⣰⣼⣼⠜   ⣺⣵⡀    ⢀⡀
+  ⢀⣸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣵⣐  ⢯⣿⣿⣵⣸⣼⣼⣿⠕  Welcome to Blue!
+ ⢨⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣽⣐⠂⠯⣿⣿⣿⣿⠿⠇   Send /help for help information.
+ ⣿⡟⠃⠃⠋⠏⠿⣿⣿⣿⣿⣿⣿⠯⢿⣿⣽⣴⣿⣿⡕
+ ⣿⣿      ⠋⢿⣿⣿⣿⣿ ⠋⣿⣿⣿⣿⠁      Directory: «cwd»
+ ⢯⣿⣵       ⠫⣿⣿⣿⣽⣼⣿⣿⣿⠗       Model:     mock · mock
+ ⠂⢯⣿⣵⡀   ⣰⣀ ⠊⢿⣿⣿⣿⣿⡿⠇        Version:   0.1.0-rc.9-test.9
+   ⠋⣿⣿⣼⣰⣰⣻⣿⣽⣰⣀⠋⢿⣿⣿⣼⣰⡀
+     ⠃⠏⠿⣿⣿⣿⣿⣿⠿⠟⠇⠂⠃⠃⠃
+
+ » search around
+
+ ✓ Searched 3 patterns · 2 files, 3 matches, 12 paths
+   ├─ "export const" · 2 files, 3 matches ✓
+   │  ├─ src/core/a.ts · 2
+   │  │  3: export const one = 1
+   │  │  9: export const two = 2
+   │  └─ src/core/b.ts · 1
+   │     41: export const three = 3
+   ├─ "TODO" · 0 matches ✓
+   └─ src/**/*.ts · 12 paths ✓
+      ├─ src/core/a.ts
+      └─ src/core/b.ts
+      … 10 more paths
+
+ ● search done
+
+
+
+
+
+
+
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ >                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ mock  «cwd»
+                                                                         ctx 10

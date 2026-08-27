@@ -148,10 +148,10 @@ export class FrontendPanel implements BlueFocusable {
     const groupRows = model.mode === 'select' && model.view?.kind === 'list'
       ? this.renderFilterRows(model.view)
       : []
-    const headerRows = model.header === undefined ? [] : [...renderFrontendView(model.header, budget)]
+    const headerRows = model.header === undefined ? [] : [...renderFrontendView(model.header, budget, { colors: theme.colors })]
     const renderedView = view?.kind === 'list'
       ? this.renderListView(view, selected, budget)
-      : view === undefined ? [] : [...renderFrontendView(view, budget)]
+      : view === undefined ? [] : [...renderFrontendView(view, budget, { colors: theme.colors })]
     const content = view === undefined
       ? fallback === undefined ? [] : [`  ${fallback}`]
       : [...headerRows, ...groupRows, ...renderedView].map(row => `  ${components.truncateToWidth(row, budget)}`)

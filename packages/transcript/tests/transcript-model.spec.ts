@@ -73,8 +73,8 @@ describe('TranscriptModelService', () => {
       'thinking text',
       'result full',
       'text only',
-      'custom {bad',
-      'read {}',
+      'custom({bad)',
+      'read',
       'down (HTTP_404)',
       'unknown',
       'Interrupted',
@@ -82,6 +82,85 @@ describe('TranscriptModelService', () => {
     component.setExpanded(true)
     component.invalidate()
     component.dispose()
+  })
+
+  it('summarizes envelope results and pending arguments in the plain fallback', () => {
+    const envelope = '<path>src/a.ts</path>\n<type>file</type>\n<content>\n1: x\n\n(Showing lines 1-1 of 9. Use offset=2 to continue.)\n</content>'
+    const entries: TranscriptEntryModel[] = [
+      {
+        kind: 'transcript-tool', id: 'enveloped', seq: 1, turn: 1, step: 0, callId: 'c1', name: 'read', arguments: '{}', startedAt: 1,
+        result: { text: envelope, isError: false, endedAt: 2 },
+      },
+      { kind: 'transcript-tool', id: 'argish', seq: 2, turn: 1, step: 0, callId: 'c2', name: 'write', arguments: '{"file_path":"a.ts"}', startedAt: 3 },
+    ]
+    const rows = new TranscriptModelComponent(() => model('plain', entries)).render(80)
+    expect(rows).toContain('src/a.ts · lines 1-1 of 9')
+    expect(rows).toContain('write')
+    expect(rows).toContain('  file_path: a.ts')
+  })
+
+  it('renders read groups through the tree component with tools-category expansion', () => {
+    const groupEntry: TranscriptEntryModel = {
+      kind: 'transcript-read-group', id: 'read-group:r1', seq: 4, turn: 1, step: 0,
+      reads: [
+        { callId: 'r1', seq: 4, turn: 1, step: 0, path: 'src/a.ts', range: { first: 1, last: 3 }, totalLines: 9, state: 'ok', previewLines: [{ number: 1, text: 'first line' }] },
+        { callId: 'r2', seq: 5, turn: 1, step: 0, path: 'src/a.ts', requestedRange: { first: 4, last: 6 }, state: 'pending' },
+        { callId: 'r3', seq: 6, turn: 1, step: 0, path: 'gone.ts', state: 'error', error: 'file not found' },
+      ],
+    }
+    const collapsedRows = new TranscriptModelComponent(() => model('reads', [groupEntry]), renderer()).render(80)
+    expect(collapsedRows.join('\n')).toContain('Reading 2 files')
+    expect(collapsedRows.join('\n')).toContain('├─ src/a.ts')
+    expect(collapsedRows.join('\n')).toContain('└─ gone.ts')
+    expect(collapsedRows.join('\n')).not.toContain('first line')
+
+    const expanded = new TranscriptModelComponent(() => model('reads', [groupEntry]), renderer())
+    expanded.setExpanded(true)
+    const expandedText = expanded.render(80).join('\n')
+    expect(expandedText).toContain('first line')
+    expect(expandedText).toContain('1  first line')
+
+    const plain = new TranscriptModelComponent(() => model('reads', [groupEntry])).render(80).join('\n')
+    expect(plain).toContain('Read 3 calls: src/a.ts, gone.ts')
+    const plainSingle = new TranscriptModelComponent(() => model('reads', [{
+      kind: 'transcript-read-group', id: 'read-group:solo', seq: 1, turn: 1, step: 0,
+      reads: [{ callId: 'solo', seq: 1, turn: 1, step: 0, path: 'solo.ts', state: 'ok' }],
+    }])).render(80).join('\n')
+    expect(plainSingle).toContain('Read 1 call: solo.ts')
+    const plainPathless = new TranscriptModelComponent(() => model('reads', [{
+      kind: 'transcript-read-group', id: 'read-group:none', seq: 1, turn: 1, step: 0,
+      reads: [{ callId: 'none', seq: 1, turn: 1, step: 0, state: 'ok' }],
+    }])).render(80).join('\n')
+    expect(plainPathless).toContain('Read 1 call')
+    expect(plainPathless).not.toContain(':')
+  })
+
+  it('renders search groups through the tree component with tools-category expansion', () => {
+    const searchEntry: TranscriptEntryModel = {
+      kind: 'transcript-search-group', id: 'search-group:s1', seq: 3, turn: 1, step: 0,
+      searches: [
+        { callId: 's1', seq: 3, turn: 1, step: 0, pattern: 'const', shape: 'matches', files: [{ path: 'a.ts', count: 2, previews: [{ lineNumber: 1, line: 'const hit' }] }], state: 'ok' },
+        { callId: 's2', seq: 4, turn: 1, step: 0, pattern: '*.ts', shape: 'paths', paths: ['a.ts'], pathsTotal: 2, total: 2, state: 'ok' },
+      ],
+    }
+    const collapsedText = new TranscriptModelComponent(() => model('searches', [searchEntry]), renderer()).render(80).join('\n')
+    expect(collapsedText).toContain('Searched 2 patterns')
+    expect(collapsedText).toContain('├─ "const" · 1 file, 2 matches')
+    expect(collapsedText).not.toContain('const hit')
+
+    const expanded = new TranscriptModelComponent(() => model('searches', [searchEntry]), renderer())
+    expanded.setExpanded(true)
+    const expandedText = expanded.render(80).join('\n')
+    expect(expandedText).toContain('1: const hit')
+    expect(expandedText).toContain('… 1 more paths')
+
+    const plain = new TranscriptModelComponent(() => model('searches', [searchEntry])).render(80).join('\n')
+    expect(plain).toContain('Searched 2 times: const, *.ts')
+    const plainBare = new TranscriptModelComponent(() => model('searches', [{
+      kind: 'transcript-search-group', id: 'search-group:bare', seq: 1, turn: 1, step: 0,
+      searches: [{ callId: 'bare', seq: 1, turn: 1, step: 0, state: 'ok' }],
+    }])).render(80).join('\n')
+    expect(plainBare).toContain('Searched 1 time: search')
   })
 
   it('reconciles semantic renderer components, forwards expansion, and disposes retired entries', () => {

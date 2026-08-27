@@ -239,6 +239,33 @@ describe('blue app driver', () => {
     expect(() => { apply(ctx, {}) }).toThrow('must provide ctx.appExit')
   })
 
+  it('binds the tool-presentation scope to the active agent at the commit point', async () => {
+    let active: object | undefined
+    const test = bench({ task: 'scope the cards' }, {
+      setupContext: ctx => {
+        ctx.provide('tools', {
+          get: (name: string, scope?: unknown) => scope === active ? { presentCall: () => ({ card: 'generic', title: name }) } : undefined,
+          schemas: () => [],
+        })
+      },
+    })
+    await vi.waitFor(() => { expect(test.recorded.followups).toHaveLength(1) })
+    // No tools registry means the seam resolves nothing, not a crash.
+    const bare = bench({})
+    await vi.waitFor(() => { expect(bare.current()).not.toBeNull() })
+    expect(bare.ctx.blueToolPresentations.get('probe')).toBeUndefined()
+
+    // The commit point bound the active Agent: presenters resolve through
+    // the scoped view only while that exact object is the viewing scope.
+    active = test.current()
+    expect(active).not.toBeUndefined()
+    expect(test.ctx.blueToolPresentations.get('probe')).toMatchObject({ presentCall: expect.any(Function) })
+    test.ctx.blueToolPresentations.bind(undefined)
+    expect(test.ctx.blueToolPresentations.get('probe')).toBeUndefined()
+    test.ctx.blueToolPresentations.bind(active!)
+    expect(test.ctx.blueToolPresentations.get('probe')).toMatchObject({ presentCall: expect.any(Function) })
+  })
+
   it('creates an Agent with the default model, publishes it, and sends the task', async () => {
     const test = bench({ task: 'fix the build' })
     await vi.waitFor(() => { expect(test.recorded.followups).toHaveLength(1) })

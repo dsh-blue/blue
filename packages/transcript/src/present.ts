@@ -14,12 +14,14 @@ import type {
   ToolCallView,
   ToolResult,
   ToolResultView,
-  ToolRuntime,
 } from '@deepseek-ai/dsh-tools'
 import type { TranscriptToolItem } from './types.ts'
 
-/** The slice of the host tool registry the resolvers read. */
-export type ToolPresentationSource = Pick<ToolRuntime, 'get'>
+/** The presenter-bearing face of a tool registry the resolvers read (structural, scope-agnostic). */
+export interface ToolPresentationSource {
+  /** The presenter-bearing definition the source resolves, or `undefined` when none is visible. */
+  get(name: string): { readonly presentCall?: (args: unknown) => unknown; readonly presentResult?: (args: unknown, result: unknown) => unknown } | undefined
+}
 
 /** Maximum length of the key argument shown on a card header. */
 export const KEY_ARG_MAX_CHARS = 60
@@ -36,6 +38,42 @@ const KEY_ARG_KEYS = ['file_path', 'command', 'pattern']
 export function ellipsize(text: string, maxChars: number): string {
   const flat = text.replace(/\s+/g, ' ').trim()
   return flat.length <= maxChars ? flat : `${flat.slice(0, maxChars - 1)}…`
+}
+
+/** Maximum key/value pairs shown by {@link summarizeToolCall}. */
+export const TOOL_ARG_PAIR_LIMIT = 6
+
+/** Maximum length of one value shown by {@link summarizeToolCall}. */
+export const TOOL_ARG_VALUE_MAX_CHARS = 40
+
+function argumentValueText(value: unknown): string {
+  if (typeof value === 'string') return value
+  // Only JSON.parse output reaches here, so stringify always returns a
+  // string — the undefined-returning shapes (undefined/functions/symbols)
+  // cannot occur in parsed data.
+  return JSON.stringify(value) as string
+}
+
+/**
+ * Render one tool call's raw argument JSON as readable `key: value` lines
+ * instead of a naked JSON dump. Non-object arguments (arrays, scalars) and
+ * unparseable JSON keep the `name(args)` inline form.
+ * @param name - the tool name exactly as the model requested it.
+ * @param args - the raw arguments string.
+ * @returns the first line `name`, then one `  key: value` line per shown
+ *   pair (capped at {@link TOOL_ARG_PAIR_LIMIT}, values flattened at
+ *   {@link TOOL_ARG_VALUE_MAX_CHARS}), plus a `… +N more` line when pairs
+ *   were dropped.
+ */
+export function summarizeToolCall(name: string, args: string): string {
+  const parsed = parseToolArguments(args)
+  if (parsed === undefined || typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return `${name}(${args})`
+  const entries = Object.entries(parsed as Record<string, unknown>)
+  const shown = entries.slice(0, TOOL_ARG_PAIR_LIMIT)
+    .map(([key, value]) => `  ${key}: ${ellipsize(argumentValueText(value), TOOL_ARG_VALUE_MAX_CHARS)}`)
+  const hidden = entries.length - Math.min(entries.length, TOOL_ARG_PAIR_LIMIT)
+  const rows = [name, ...shown, ...(hidden > 0 ? [`  … +${String(hidden)} more`] : [])]
+  return rows.join('\n')
 }
 
 /**
@@ -65,7 +103,7 @@ export function resolveCallView(
   args: unknown,
 ): ToolCallView | undefined {
   try {
-    return tools.get(name)?.presentCall?.(args)
+    return tools.get(name)?.presentCall?.(args) as ToolCallView | undefined
   } catch {
     return undefined
   }
@@ -87,7 +125,7 @@ export function resolveResultView(
   result: ToolResult,
 ): ToolResultView | undefined {
   try {
-    return tools.get(name)?.presentResult?.(args, result)
+    return tools.get(name)?.presentResult?.(args, result) as ToolResultView | undefined
   } catch {
     return undefined
   }

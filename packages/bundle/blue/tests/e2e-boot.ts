@@ -496,7 +496,7 @@ export const apply = ctx => globalThis.__blueE2E.bannerApply(ctx)
     '- id: blue-transcript',
     `  name: ${fixture('blue-transcript.mjs', `
 export const name = 'blue-transcript'
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'blueSessionReader', 'blueSessionProjections', 'tools']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'blueSessionReader', 'blueSessionProjections']
 export const apply = ctx => globalThis.__blueE2E.transcriptApply(ctx)
 `)}`,
     // The baseline status row publishes a renderer-neutral StatusModel.
@@ -618,7 +618,7 @@ export const apply = ctx => globalThis.__blueE2E.conversationApply(ctx)
       '- id: blue-transcript-official',
       `  name: ${fixture('blue-transcript-official.mjs', `
 export const name = 'blue-transcript-official'
-export const inject = ['blueConversationProjection', 'blueSessionProjections', 'blueSessionReader', 'blueTranscriptModels', 'tools']
+export const inject = ['blueConversationProjection', 'blueSessionProjections', 'blueSessionReader', 'blueTranscriptModels', 'blueToolPresentations']
 export const apply = ctx => globalThis.__blueE2E.officialTranscriptApply(ctx)
 `)}`,
     ] : []),

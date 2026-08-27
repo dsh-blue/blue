@@ -21,6 +21,7 @@ import type {
 } from '@dsh-blue/blue-core'
 import { clampRowsToWidth } from '@dsh-blue/blue-core/chrome'
 import { extractKeyArgument, isPlanDecline, KEY_ARG_MAX_CHARS } from './present.ts'
+import { summarizeToolText } from './envelope.ts'
 import {
   DEFAULT_USER_FOLD_CHARS,
   DEFAULT_USER_FOLD_LINES,
@@ -348,6 +349,7 @@ export class ToolCallComponent implements BlueComponent {
     colors: BlueSemanticColors,
     components: BlueComponents,
     private readonly presentedBody?: BlueComponent & { setExpanded?(expanded: boolean): void },
+    private readonly resultChip?: string,
   ) {
     this.item = item
     this.colors = colors
@@ -397,11 +399,16 @@ export class ToolCallComponent implements BlueComponent {
     if (declined) {
       header += colors.warning(' · plan declined')
     } else if (result !== undefined) {
-      const text = result.fullText ?? result.text
-      const count = text.split('\n').filter(line => line.length > 0).length
-      if (count > 0) {
-        const chip = ` · ${count} ${count === 1 ? 'line' : 'lines'}`
-        header += result.isError ? colors.error(chip) : colors.muted(chip)
+      const chipText = this.resultChip
+      if (chipText !== undefined) {
+        header += result.isError ? colors.error(` · ${chipText}`) : colors.muted(` · ${chipText}`)
+      } else {
+        const text = result.fullText ?? result.text
+        const count = text.split('\n').filter(line => line.length > 0).length
+        if (count > 0) {
+          const chip = ` · ${count} ${count === 1 ? 'line' : 'lines'}`
+          header += result.isError ? colors.error(chip) : colors.muted(chip)
+        }
       }
     }
     return this.components.truncateToWidth(header, width)
@@ -456,13 +463,17 @@ export class ToolCallComponent implements BlueComponent {
         : result.isError ? colors.error(line)
           : colors.muted(line)
     }`
-    if (this.expanded) {
-      lines.push(...allLines.map(paint))
-      return lines
-    }
-    const shown = allLines.slice(0, RESULT_PREVIEW_LINES)
+    // A recognized raw shape (XML envelope, incremental job read, or bare
+    // JSON payload) collapses to its one summary line while collapsed; the
+    // expanded card keeps the raw text as the debug view.
+    const summary = summarizeToolText(text)
+    const shown = this.expanded
+      ? allLines
+      : summary !== text
+        ? components.wrapText(summary, contentWidth)
+        : allLines.slice(0, RESULT_PREVIEW_LINES)
     lines.push(...shown.map(paint))
-    if (allLines.length > shown.length) {
+    if (shown.length < allLines.length) {
       const remaining = allLines.length - shown.length
       const hint = `... (${remaining} more lines, ${allLines.length} total, ctrl+o to expand)`
       lines.push(colors.textMuted(components.truncateToWidth(hint, width)))

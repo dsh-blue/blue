@@ -184,6 +184,189 @@ describe('blue VT layout snapshots (R2)', () => {
     expect(expanded).toContain('long-output')
   })
 
+  it('write diff card: new-file panel, then aligned hunks expanded', async () => {
+    setGitCommandRunner(NO_GIT)
+    const vt = new VtTerminal(80, 40)
+    const notes = Array.from({ length: 8 }, (_, index) => `// trailing note ${String(index + 1)}`)
+    const before = [
+      'import { Service } from \'@deepseek-ai/cordis\'',
+      '',
+      'const COUNT = 1',
+      'const LABEL = \'beta\'',
+      'const MODE = \'draft\'',
+      '',
+      'export const name = \'demo\'',
+      ...notes,
+    ].join('\n')
+    const after = before
+      .replace('const COUNT = 1', 'const COUNT = 2')
+      .replace('const LABEL = \'beta\'', 'const LABEL = \'stable\'\nconst OWNER = \'blue\'')
+    const tree = await bootBlue([], {
+      script: [
+        toolCallResponse('call-write', 'write', { file_path: 'src/demo.ts', content: after }),
+        textResponse('done'),
+      ],
+      terminal: vt,
+    })
+    tree.ctx.tools.register({
+      name: 'write',
+      description: 'Write a file.',
+      parameters: { type: 'object', properties: {} },
+      output: {
+        schema: { type: 'string' },
+        render: () => [{ type: 'text', text: 'wrote src/demo.ts' }],
+      },
+      execute: () => Promise.resolve('ok'),
+      presentCall: (args: unknown) => ({
+        card: 'diff',
+        title: `Write ${(args as { file_path: string }).file_path}`,
+        diffs: [{ path: 'src/demo.ts', oldText: null, newText: after }],
+      }),
+      presentResult: () => ({
+        card: 'diff',
+        title: 'Write src/demo.ts',
+        diffs: [{ path: 'src/demo.ts', oldText: before, newText: after }],
+      }),
+    })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'write it')
+    await agent.whenIdle()
+    // Collapsed shows the call-time create panel: whole-file additions.
+    const collapsed = await captureGolden(tree, vt, 'diff-card-80')
+    expect(collapsed).toContain('src/demo.ts · new file, +')
+    expect(collapsed).toContain('+ const COUNT = 2')
+    expect(collapsed).not.toContain('- const COUNT = 1')
+    tree.terminal.sendInput('\x0f')
+    await waitForRender()
+    // Expanded shows the applied result: aligned hunks with change counts and
+    // the long shared tail elided.
+    const expanded = await captureGolden(tree, vt, 'diff-card-expanded-80')
+    expect(expanded).toContain('src/demo.ts · +3 −2')
+    expect(expanded).toContain('- const COUNT = 1')
+    expect(expanded).toContain('+ const OWNER = \'blue\'')
+    expect(expanded).toContain('unchanged lines')
+  })
+
+  it('read group: by-file tree collapsed, previews expanded', async () => {
+    setGitCommandRunner(NO_GIT)
+    const vt = new VtTerminal(80, 40)
+    const files: Record<string, string[]> = {
+      'src/a.ts': Array.from({ length: 130 }, (_, index) => `line ${String(index + 1)} of a`),
+      'src/b.ts': Array.from({ length: 40 }, (_, index) => `line ${String(index + 1)} of b`),
+    }
+    const readResultView = (path: string, offset: number, count: number) => ({
+      card: 'read' as const,
+      path,
+      offset,
+      lines: files[path]!.slice(offset - 1, offset - 1 + count).map((text, index) => ({ number: offset + index, text })),
+      totalLines: files[path]!.length,
+    })
+    const tree = await bootBlue([], {
+      script: [
+        toolCallResponse('call-ra1', 'read', { file_path: 'src/a.ts', offset: 1, limit: 100 }),
+        toolCallResponse('call-ra2', 'read', { file_path: 'src/a.ts', offset: 101, limit: 30 }),
+        toolCallResponse('call-rb', 'read', { file_path: 'src/b.ts', offset: 1, limit: 40 }),
+        textResponse('read done'),
+      ],
+      terminal: vt,
+    })
+    tree.ctx.tools.register({
+      name: 'read',
+      description: 'read a file',
+      parameters: { type: 'object', properties: {} },
+      presentCall: () => ({ card: 'generic', title: 'Read', kind: 'read' }),
+      presentResult: (args: unknown) => {
+        const { file_path: path, offset = 1, limit = 100 } = args as { file_path: string; offset?: number; limit?: number }
+        return readResultView(path, offset, Math.min(limit, (files[path] ?? []).length - offset + 1))
+      },
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: 'read' }] },
+      execute: () => Promise.resolve('read'),
+    })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'read them')
+    await agent.whenIdle()
+    // Collapsed: one tree card — files as parents, a.ts's windows nested —
+    // and never the file content.
+    const collapsed = await captureGolden(tree, vt, 'read-group-80')
+    expect(collapsed).toContain('Read 2 files · 3 reads')
+    expect(collapsed).toContain('├─ src/a.ts')
+    expect(collapsed).toContain('│  ├─ 1-100 of 130')
+    expect(collapsed).toContain('│  └─ 101-130')
+    expect(collapsed).toContain('└─ src/b.ts · 1-40')
+    expect(collapsed).not.toContain('line 1 of a')
+    tree.terminal.sendInput('\x0f')
+    await waitForRender()
+    // Expanded: bounded previews with file line numbers.
+    const expanded = await captureGolden(tree, vt, 'read-group-expanded-80')
+    expect(expanded).toContain('1  line 1 of a')
+  })
+
+  it('search group: pattern rows collapsed, file previews expanded', async () => {
+    setGitCommandRunner(NO_GIT)
+    const vt = new VtTerminal(80, 40)
+    const tree = await bootBlue([], {
+      script: [
+        toolCallResponse('call-g1', 'grep', { pattern: 'export const', path: 'src' }),
+        toolCallResponse('call-g2', 'grep', { pattern: 'TODO' }),
+        toolCallResponse('call-p1', 'glob', { pattern: 'src/**/*.ts' }),
+        textResponse('search done'),
+      ],
+      terminal: vt,
+    })
+    tree.ctx.tools.register({
+      name: 'grep',
+      description: 'search file contents',
+      parameters: { type: 'object', properties: {} },
+      presentCall: () => ({ card: 'generic', title: 'Grep', kind: 'search' }),
+      presentResult: (args: unknown) => ({
+        card: 'search',
+        shape: 'matches',
+        files: (args as { pattern: string }).pattern === 'TODO'
+          ? []
+          : [
+            { path: 'src/core/a.ts', matches: [{ lineNumber: 3, line: 'export const one = 1' }, { lineNumber: 9, line: 'export const two = 2' }] },
+            { path: 'src/core/b.ts', matches: [{ lineNumber: 41, line: 'export const three = 3' }] },
+          ],
+        truncated: false,
+        total: (args as { pattern: string }).pattern === 'TODO' ? 0 : 3,
+      }),
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: 'matches' }] },
+      execute: () => Promise.resolve('matches'),
+    })
+    tree.ctx.tools.register({
+      name: 'glob',
+      description: 'find files by pattern',
+      parameters: { type: 'object', properties: {} },
+      presentCall: () => ({ card: 'generic', title: 'Glob', kind: 'search' }),
+      presentResult: () => ({
+        card: 'search',
+        shape: 'paths',
+        paths: ['src/core/a.ts', 'src/core/b.ts'],
+        truncated: true,
+        total: 12,
+      }),
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: 'paths' }] },
+      execute: () => Promise.resolve('paths'),
+    })
+    const agent = await currentAgent(tree)
+    typeLine(tree.terminal, 'search around')
+    await agent.whenIdle()
+    // Collapsed: one tree card of pattern rows — counts and capped-search
+    // honesty, never the match text.
+    const collapsed = await captureGolden(tree, vt, 'search-group-80')
+    expect(collapsed).toContain('Searched 3 patterns · 2 files, 3 matches, 12 paths')
+    expect(collapsed).toContain('├─ "export const" · 2 files, 3 matches')
+    expect(collapsed).toContain('├─ "TODO" · 0 matches')
+    expect(collapsed).toContain('└─ src/**/*.ts · 12 paths')
+    expect(collapsed).not.toContain('export const one')
+    tree.terminal.sendInput('\x0f')
+    await waitForRender()
+    // Expanded: file rows with bounded match previews and the capped path page.
+    const expanded = await captureGolden(tree, vt, 'search-group-expanded-80')
+    expect(expanded).toContain('3: export const one = 1')
+    expect(expanded).toContain('… 10 more paths')
+  })
+
   it.each([80, 40])('the footer under full load at %i columns', async (columns) => {
     setGitCommandRunner((args) => {
       if (args[0] === 'branch') return 'main\n'

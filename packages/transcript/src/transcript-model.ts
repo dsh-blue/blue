@@ -34,8 +34,11 @@ import {
   type UserMessageImages,
 } from './components.ts'
 import { ThinkingComponent } from './thinking.ts'
-import { ToolModelComponent } from './tool-model.ts'
-import { parseToolArguments } from './present.ts'
+import { ToolModelComponent, toolResultChip } from './tool-model.ts'
+import { ReadGroupComponent, groupReadsByFile } from './read-group.ts'
+import { SearchGroupComponent } from './search-group.ts'
+import { parseToolArguments, summarizeToolCall } from './present.ts'
+import { summarizeToolText } from './envelope.ts'
 import type { TranscriptToolItem } from './types.ts'
 import {
   DEFAULT_TRANSCRIPT_PRESENTATION,
@@ -169,7 +172,7 @@ export class TranscriptModelComponent implements BlueComponent {
     this.prune(live)
     const rows = entries.flatMap(entry => isSemantic(entry)
       ? this.renderSemantic(entry, width, expandableTurns.has(entry.turn))
-      : renderFrontendView(entry, width))
+      : renderFrontendView(entry, width, this.renderer === undefined ? undefined : { colors: this.renderer.colors }))
     this.renderedRows = { model, width, expanded: this.expanded, policy, rows }
     return rows
   }
@@ -219,7 +222,7 @@ export class TranscriptModelComponent implements BlueComponent {
       ? true
       : entry.kind === 'transcript-thinking'
         ? policy.thinkingExpanded
-        : entry.kind === 'transcript-tool'
+        : entry.kind === 'transcript-tool' || entry.kind === 'transcript-read-group' || entry.kind === 'transcript-search-group'
           ? policy.toolsExpanded
           : false
     ;(target as ExpandableComponent).setExpanded?.(expanded)
@@ -257,9 +260,13 @@ export class TranscriptModelComponent implements BlueComponent {
       }
       case 'transcript-tool': {
         const presentation = entry.presentation
-        const body = presentation === undefined ? undefined : new ToolModelComponent(() => presentation)
-        return new ToolCallComponent(asToolItem(entry), renderer.colors, renderer.components, body)
+        const body = presentation === undefined ? undefined : new ToolModelComponent(() => presentation, renderer.colors)
+        return new ToolCallComponent(asToolItem(entry), renderer.colors, renderer.components, body, toolResultChip(presentation))
       }
+      case 'transcript-read-group':
+        return new ReadGroupComponent(entry, renderer.colors, renderer.components)
+      case 'transcript-search-group':
+        return new SearchGroupComponent(entry, renderer.colors, renderer.components)
       case 'transcript-error':
         return new ErrorMessageComponent({
           kind: 'error', seq: entry.seq, turn: entry.turn, message: entry.message,
@@ -275,7 +282,18 @@ export class TranscriptModelComponent implements BlueComponent {
       case 'transcript-user': return entry.text
       case 'transcript-assistant': return entry.text
       case 'transcript-thinking': return entry.text
-      case 'transcript-tool': return entry.result?.fullText ?? entry.result?.text ?? `${entry.name} ${entry.arguments}`
+      case 'transcript-tool': {
+        const text = entry.result?.fullText ?? entry.result?.text
+        return text === undefined ? summarizeToolCall(entry.name, entry.arguments) : summarizeToolText(text)
+      }
+      case 'transcript-read-group': {
+        const paths = groupReadsByFile(entry.reads).map(group => group.path)
+        return `Read ${String(entry.reads.length)} ${entry.reads.length === 1 ? 'call' : 'calls'}${paths.length === 0 ? '' : `: ${paths.join(', ')}`}`
+      }
+      case 'transcript-search-group': {
+        const patterns = entry.searches.map(call => call.pattern ?? 'search')
+        return `Searched ${String(entry.searches.length)} ${entry.searches.length === 1 ? 'time' : 'times'}: ${patterns.join(', ')}`
+      }
       case 'transcript-error': return entry.code === undefined ? entry.message : `${entry.message} (${entry.code})`
       case 'transcript-interrupted': return 'Interrupted'
     }
