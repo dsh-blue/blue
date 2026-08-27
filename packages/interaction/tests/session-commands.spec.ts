@@ -56,7 +56,7 @@ describe('buildVersionSections', () => {
       label: 'blue',
       segments: [{ text: `v${displayVersion}` }],
     })
-    expect(BLUE_VERSION).toBe('0.1.0-rc.9-test.9')
+    expect(BLUE_VERSION).toBe('0.1.0-rc.9')
   })
 })
 
