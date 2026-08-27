@@ -32,5 +32,6 @@
 | [blue-commands-plan.md](./blue-commands-plan.md) | 内置命令实施记录；旧 `blueSession`/`fold.ts` 描述是当时方案 |
 | [blue-decisions.md](./blue-decisions.md) | ADR 历史；被 cutover 取代的接口不再代表当前代码 |
 | [blue-frontend-runtime-task-checklist.md](./blue-frontend-runtime-task-checklist.md) | F3-F6 已执行任务记录 |
+| [blue-ui-component-enhancement.md](./blue-ui-component-enhancement.md) | `0.1.1-rc.1` UI 架构蓝图：公开 UI Kit、声明式节点、surface/plugin provider API、组件迁移与 Agent 实施门禁 |
 
 `packages/context`、`packages/remote`、`packages/openpencil` 和 `packages/lark` 是 validation-only packages，不进入 Blue bundle/release closure。正式 package contract 由 `script/package-contract.mjs` 定义。
