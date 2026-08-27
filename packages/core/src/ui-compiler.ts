@@ -8,6 +8,7 @@
 
 import type { BlueErrorCode, BlueTone, BlueUiEvent, BlueUiNode, BlueViewportCondition, BlueView } from '@dsh-blue/blue-api'
 import { CURSOR_MARKER, HStack, ScrollView, VStack, type Component } from '@earendil-works/pi-tui'
+import { getLayoutNode, LAYOUT_NODE, type LayoutNode, type LayoutViewport } from '@earendil-works/pi-tui/dist/layout-node.js'
 import { paintPluginTone, renderPluginView } from './plugin-view.ts'
 import type { BlueComponent, BlueComponents, BlueFocusable, BlueSemanticColors } from './types.ts'
 import { sliceByColumn, visibleWidth } from './width.ts'
@@ -60,8 +61,10 @@ interface FocusState {
   activeKey: string | undefined
   lastIndex: number
   focused: boolean
+  layoutPass: boolean
   controls(): readonly ControlDescriptor[]
   emit(event: BlueUiEvent): void
+  setLayoutViewport(viewport: BlueUiViewport): void
 }
 
 function safeViewport(getViewport: () => BlueUiViewport): BlueUiViewport {
@@ -118,8 +121,17 @@ class ErrorComponent implements BlueComponent {
   invalidate(): void {}
 }
 
-function staticComponent(render: (width: number) => string[]): BlueComponent {
-  return { render, invalidate: () => {} }
+function staticComponent(render: (width: number) => string[], options: BlueUiCompilerOptions): BlueComponent {
+  return {
+    render: width => {
+      try {
+        return render(width)
+      } catch (error) {
+        return errorRows(error instanceof Error ? error.message : 'unknown render failure', width, options.colors)
+      }
+    },
+    invalidate: () => {},
+  }
 }
 
 function safePaint(colors: BlueSemanticColors, tone: BlueTone | undefined, value: string): string {
@@ -135,11 +147,11 @@ function labelComponent(
 ): BlueComponent {
   return staticComponent(width => {
     const active = state.focused && state.activeKey === key
-    const prefix = active ? FOCUS_SENTINEL : ' '
+    const prefix = active ? state.layoutPass ? `${CURSOR_MARKER} ` : FOCUS_SENTINEL : ' '
     const value = `${prefix}${disabled ? '-' : '>'} ${label}`
     const painted = disabled ? options.colors.muted(value) : active ? options.colors.primary(value) : options.colors.text(value)
     return [visibleWidth(painted) <= width ? painted : sliceByColumn(painted, 0, Math.max(1, width), true)]
-  })
+  }, options)
 }
 
 function joinSpans(node: { readonly spans: readonly { readonly text: string, readonly tone?: BlueTone, readonly emphasis?: 'normal' | 'strong' }[] }, colors: BlueSemanticColors): string {
@@ -149,23 +161,24 @@ function joinSpans(node: { readonly spans: readonly { readonly text: string, rea
   }).join('')
 }
 
-function pad(component: Component, amount: number): BlueComponent {
-  return staticComponent(width => {
-    if (amount === 0) return component.render(width)
-    const inner = Math.max(1, width - amount * 2)
-    const prefix = ' '.repeat(Math.min(amount, Math.max(0, width - 1)))
-    return component.render(inner).map(row => `${prefix}${row}`)
-  })
+function pad(component: Component, amount: number, options: BlueUiCompilerOptions): Component {
+  if (amount === 0) return component
+  const padded = new HStack()
+  const spacer = (): BlueComponent => staticComponent(() => [''], options)
+  padded.addChild(spacer(), { basis: amount, grow: 0, shrink: 1 })
+  padded.addChild(component, { basis: 0, grow: 1, shrink: 1, minSize: 1 })
+  padded.addChild(spacer(), { basis: amount, grow: 0, shrink: 1 })
+  return padded
 }
 
 function surfaceComponent(node: Extract<BlueUiNode, { readonly kind: 'surface' }>, child: Component, footer: Component | undefined, options: BlueUiCompilerOptions): BlueComponent {
   const component = new VStack()
-  if (node.title !== undefined) component.addChild(staticComponent(width => options.components.wrapText(options.colors.textStrong(node.title!), width)))
-  if (node.subtitle !== undefined) component.addChild(staticComponent(width => options.components.wrapText(options.colors.muted(node.subtitle!), width)))
-  if (node.badges !== undefined) component.addChild(staticComponent(width => options.components.wrapText(joinSpans({ spans: node.badges! }, options.colors), width)))
+  if (node.title !== undefined) component.addChild(staticComponent(width => options.components.wrapText(options.colors.textStrong(node.title!), width), options))
+  if (node.subtitle !== undefined) component.addChild(staticComponent(width => options.components.wrapText(options.colors.muted(node.subtitle!), width), options))
+  if (node.badges !== undefined) component.addChild(staticComponent(width => options.components.wrapText(joinSpans({ spans: node.badges! }, options.colors), width), options))
   component.addChild(child)
   if (footer !== undefined) component.addChild(footer)
-  return pad(component, node.padding ?? 0)
+  return pad(component, node.padding ?? 0, options)
 }
 
 function controlsForNode(node: BlueUiNode, options: BlueUiCompilerOptions, path = '$', includeHidden = false): ControlDescriptor[] {
@@ -222,8 +235,8 @@ function compileNode(node: BlueUiNode, state: FocusState, options: BlueUiCompile
     case 'fields':
     case 'code':
     case 'diff':
-    case 'sections': return staticComponent(width => renderPluginView(node as BlueView, width, options.components, options.colors, 20))
-    case 'rich-text': return staticComponent(width => options.components.wrapText(joinSpans(node, options.colors), Math.max(1, width)))
+    case 'sections': return staticComponent(width => renderPluginView(node as BlueView, width, options.components, options.colors, 20), options)
+    case 'rich-text': return staticComponent(width => options.components.wrapText(joinSpans(node, options.colors), Math.max(1, width)), options)
     case 'stack': {
       const stackOptions = {
         ...(node.gap === undefined ? {} : { gap: node.gap }),
@@ -242,7 +255,16 @@ function compileNode(node: BlueUiNode, state: FocusState, options: BlueUiCompile
               ...(child.shrink === undefined ? {} : { shrink: Math.min(child.shrink, LAYOUT_VALUE_MAX) }),
               ...(child.minSize === undefined ? {} : { minSize: Math.min(child.minSize, LAYOUT_VALUE_MAX) }),
               ...(child.maxSize === undefined ? {} : { maxSize: Math.min(child.maxSize, LAYOUT_VALUE_MAX) }),
-              visible: () => conditionMatches(child.when, safeViewport(options.getViewport)),
+              visible: (viewport: LayoutViewport) => {
+                const current = state.layoutPass
+                  ? { columns: viewport.width, rows: viewport.height }
+                  : safeViewport(options.getViewport)
+                if (state.layoutPass) {
+                  state.setLayoutViewport(current)
+                  reconcile(state)
+                }
+                return conditionMatches(child.when, current)
+              },
             }
         stack.addChild(compiled, layout)
       }
@@ -260,7 +282,7 @@ function compileNode(node: BlueUiNode, state: FocusState, options: BlueUiCompile
       return stack
     }
     case 'list': {
-      if (node.items.length === 0) return node.empty === undefined ? staticComponent(() => []) : compileNode(node.empty, state, options, `${path}.empty`)
+      if (node.items.length === 0) return node.empty === undefined ? staticComponent(() => [], options) : compileNode(node.empty, state, options, `${path}.empty`)
       const stack = new VStack()
       for (const item of node.items) {
         const selected = node.selectedIds.includes(item.id) ? '[x] ' : node.mode === 'multiple' ? '[ ] ' : ''
@@ -286,14 +308,14 @@ function compileNode(node: BlueUiNode, state: FocusState, options: BlueUiCompile
     }
     case 'loader': {
       const stack = new VStack()
-      stack.addChild(staticComponent(width => options.components.wrapText(`${node.variant === 'tide' ? '~' : '⠋'} ${node.message}${node.elapsedMs === undefined ? '' : ` ${String(node.elapsedMs)}ms`}`, width)))
+      stack.addChild(staticComponent(width => options.components.wrapText(`${node.variant === 'tide' ? '~' : '⠋'} ${node.message}${node.elapsedMs === undefined ? '' : ` ${String(node.elapsedMs)}ms`}`, width), options))
       if (node.cancelActionId !== undefined) stack.addChild(labelComponent(`${path}:cancel`, node.cancelActionId, false, state, options))
       return stack
     }
     case 'empty': {
       const stack = new VStack()
-      stack.addChild(staticComponent(width => options.components.wrapText(options.colors.textStrong(node.title), width)))
-      if (node.description !== undefined) stack.addChild(staticComponent(width => options.components.wrapText(options.colors.muted(node.description!), width)))
+      stack.addChild(staticComponent(width => options.components.wrapText(options.colors.textStrong(node.title), width), options))
+      if (node.description !== undefined) stack.addChild(staticComponent(width => options.components.wrapText(options.colors.muted(node.description!), width), options))
       if (node.actions !== undefined) stack.addChild(compileNode(node.actions, state, options, `${path}.actions`))
       return stack
     }
@@ -302,12 +324,12 @@ function compileNode(node: BlueUiNode, state: FocusState, options: BlueUiCompile
       const available = Math.max(1, width - visibleWidth(prefix) - 8)
       const filled = Math.round((node.value / node.max) * available)
       return [`${prefix}${'█'.repeat(filled)}${'░'.repeat(Math.max(0, available - filled))} ${String(node.value)}/${String(node.max)}`]
-    })
-    case 'spacer': return staticComponent(() => Array.from({ length: node.size ?? 1 }, () => ''))
+    }, options)
+    case 'spacer': return staticComponent(() => Array.from({ length: node.size ?? 1 }, () => ''), options)
     case 'divider': return staticComponent(width => {
       const label = node.label === undefined ? '' : ` ${node.label} `
       return [`${label}${'─'.repeat(Math.max(0, width - visibleWidth(label)))}`]
-    })
+    }, options)
   }
 }
 
@@ -341,10 +363,12 @@ class CompiledSurface implements BlueFocusable {
       activeKey: undefined,
       lastIndex: 0,
       focused: false,
+      layoutPass: false,
       controls: () => controlsForNode(node, runtimeOptions),
       emit: event => {
         try { options.emit(event) } catch { /* event failures are host-owned */ }
       },
+      setLayoutViewport: viewport => { this.viewport = viewport },
     }
     this.root = compileNode(node, this.state, runtimeOptions)
   }
@@ -352,9 +376,22 @@ class CompiledSurface implements BlueFocusable {
   get focused(): boolean { return this.state.focused }
   set focused(value: boolean) { this.state.focused = value }
 
+  [LAYOUT_NODE](): LayoutNode {
+    this.viewport = safeViewport(this.options.getViewport)
+    reconcile(this.state)
+    this.state.layoutPass = true
+    return getLayoutNode(this.root) ?? {
+      type: 'vstack',
+      entries: [{ component: this.root, basis: 'auto', grow: 1, shrink: 1 }],
+      gap: 0,
+      align: 'stretch',
+    }
+  }
+
   render(width: number): string[] {
     const safeWidth = Math.max(1, Number.isFinite(width) ? Math.floor(width) : 1)
     try {
+      this.state.layoutPass = false
       this.viewport = safeViewport(this.options.getViewport)
       reconcile(this.state)
       const rows = this.root.render(safeWidth)

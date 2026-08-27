@@ -24,9 +24,9 @@ Blue 终端 UI 核心：整棵树中唯一 import `@earendil-works/pi-tui` 的�
 
 `validateBlueUiNode`、`validateBlueStatusNode` 与 `validateBlueEditorShellNode` 是 renderer-neutral 公共树的准入边界。它们只复制已知字段，剥除终端控制字符串（包括 ESC 与 C1 两种 CSI/OSC/DCS/SOS/PM/APC 形式），递归冻结 canonical 副本但不冻结调用方对象，并返回稳定的 `BlueResult`。单棵树上限为 20,000 个 UTF-16 source unit、深度 8、256 个节点、每个 collection 200 项。Status 树递归限制为非交互节点。Editor shell 必须恰有一个宿主持有的 `editor-control`，且它只能出现在 editor 根、stack child 或 surface child/footer；scroll 等普通 UI 后代不能重新开放该 slot。嵌套公共 `scroll` 会被拒绝。
 
-`compileBlueUiNode(value, { components, colors, getViewport, screenMode, emit })` 必定先经过上述 validator，再返回 canonical node、pi-tui 支撑的 component，以及至多一个 composite focus target。该 composite 独占 roving focus、实时响应式可见性协调和 event/render 异常隔离；单个控件不会作为 focusable 泄漏。公共文本无法注入 pi-tui cursor marker 或 core 私有 focus sentinel。获得焦点时，composite 只在整体布局完成后插入恰好一个 cursor marker；失焦时一个也不插入。这是一项明确的兼容约束：叶组件必须继续输出私有 sentinel，HStack child 绝不能直接输出 `CURSOR_MARKER`。
+`compileBlueUiNode(value, { components, colors, getViewport, screenMode, emit })` 必定先经过上述 validator，再返回 canonical node、pi-tui 支撑的 component，以及至多一个 composite focus target。该 composite 独占 roving focus、实时响应式可见性协调和 event/render 异常隔离；单个控件不会作为 focusable 泄漏。公共文本无法注入 pi-tui cursor marker 或 core 私有 focus sentinel。Component 会暴露真实的 pi-tui layout node，使嵌套 stack/scroll 获得实际分配高度。Direct render（包括 AltScreen stop replay）使用私有 sentinel，在完整合成后替换；AltScreen layout pass 中 pi-tui 会刻意绕过 wrapper `render`，因此 active leaf 在 composite focus 协调后使用等宽 cursor-marker adapter。两条路径均保证聚焦时恰好一个 marker、失焦时没有 marker，并由真实 layout-frame 测试锁定 HStack 文本完整性。
 
-AltScreen 中，公共 scroll 编译为非 primary、overscroll contained 的 `ScrollView`；`follow: 'end'` 跟随尾部，`'start'` 与 `'none'` 从顶部开始，并按实时 pane 高度裁剪。MainScreen 中 scroll 展开为原生线性输出，row stack 降级为纵向文档顺序，而且不按 viewport rows 截断，从而保留完整终端 scrollback。每次 render 都用实时 pane viewport 计算响应式条件与焦点协调。Stack sizing 只采用与 viewport 无关的 1,000,000 安全上限，因此 resize 后可重新分配到 compile 时尺寸以外的空间。
+AltScreen 中，公共 scroll 编译为非 primary、overscroll contained 的 `ScrollView`；`follow: 'end'` 跟随尾部，`'start'` 与 `'none'` 从顶部开始，由 pi-tui 按 stack 实际分配的 pane 高度裁剪。MainScreen 中 scroll 展开为原生线性输出，row stack 降级为纵向文档顺序，而且不按 viewport rows 截断，从而保留完整终端 scrollback。Layout pass 的响应式条件使用 layout engine 的实际 frame 尺寸，direct render 使用实时 pane viewport；焦点协调使用实时 pane snapshot。Stack sizing 只采用与 viewport 无关的 1,000,000 安全上限，因此 resize 后可重新分配到 compile 时尺寸以外的空间。
 
 ## 终端生命周期
 

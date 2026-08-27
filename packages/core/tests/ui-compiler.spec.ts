@@ -1,5 +1,6 @@
 /** Canonical compiler layout, focus, event, width, and failure containment. */
-import { CURSOR_MARKER, HStack, ScrollView } from '@earendil-works/pi-tui'
+import { CURSOR_MARKER, HStack, ScrollView, type Component } from '@earendil-works/pi-tui'
+import { renderLayoutFrame, type LayoutBox, type LayoutFrame } from '@earendil-works/pi-tui/dist/layout.js'
 import { describe, expect, it } from 'vitest'
 import { ui } from '../../ui/src/index.ts'
 import { compileBlueUiNode, type BlueUiCompilerOptions } from '../src/ui-compiler.ts'
@@ -36,6 +37,14 @@ function compiled(value: unknown, options: BlueUiCompilerOptions) {
   expect(result.ok).toBe(true)
   if (!result.ok) throw new Error(result.message)
   return result.value
+}
+
+function layout(component: Component, columns: number, rows: number): LayoutFrame {
+  return renderLayoutFrame(component, columns, rows, () => {})
+}
+
+function scrollViews(box: LayoutBox): ScrollView[] {
+  return [...(box.scrollView === undefined ? [] : [box.scrollView]), ...box.children.flatMap(scrollViews)]
 }
 
 describe('compileBlueUiNode', () => {
@@ -85,17 +94,45 @@ describe('compileBlueUiNode', () => {
     expect(rows.join('\n')).not.toContain('hidden')
   })
 
-  it('builds alternate public scroll as non-primary and omits it in main mode', () => {
-    const node = ui.scroll(ui.text('scroll'), { follow: 'end', scrollbar: true })
-    const alternate = compiled(node, fixture().options)
-    const altRoot = (alternate.component as unknown as { root: unknown }).root
-    expect(altRoot).toBeInstanceOf(ScrollView)
-    expect((altRoot as ScrollView).primary).toBe(false)
+  it('lays out alternate scroll with real start/end state and unwraps it in main mode', () => {
+    const content = ui.stack.column(Array.from({ length: 10 }, (_, index) => ui.text(`line-${String(index)}`)))
+    for (const follow of ['none', 'start'] as const) {
+      const result = compiled(ui.scroll(content, { follow, scrollbar: true }), fixture().options)
+      const frame = layout(result.component as Component, 20, 3)
+      const [scroll] = scrollViews(frame.root)
+      expect(frame.lines).toEqual(['line-0', 'line-1', 'line-2'])
+      expect(scroll).toMatchObject({ primary: false, overscroll: 'contain', scrollTop: 0, viewportHeight: 3 })
+    }
+
+    const end = compiled(ui.scroll(content, { follow: 'end', scrollbar: true }), fixture().options)
+    const endFrame = layout(end.component as Component, 20, 3)
+    const [endScroll] = scrollViews(endFrame.root)
+    expect(endFrame.lines).toEqual(['line-7', 'line-8', 'line-9'])
+    expect(endScroll).toMatchObject({ primary: false, overscroll: 'contain', scrollTop: 7, viewportHeight: 3 })
 
     const mainFixture = fixture({ screenMode: 'main' })
-    const main = compiled(node, mainFixture.options)
+    const main = compiled(ui.scroll(content, { follow: 'end' }), mainFixture.options)
     expect((main.component as unknown as { root: unknown }).root).not.toBeInstanceOf(ScrollView)
-    expect(main.component.render(20).join('')).toContain('scroll')
+    expect(main.component.render(20)).toHaveLength(10)
+  })
+
+  it('passes stack-allocated height to a nested scroll', () => {
+    const content = ui.stack.column(Array.from({ length: 10 }, (_, index) => ui.text(`line-${String(index)}`)))
+    const tree = ui.stack.column([
+      ui.child(ui.text('header'), { basis: 1, shrink: 0 }),
+      ui.child(ui.scroll(content, { follow: 'end' }), { basis: 0, grow: 1, minSize: 1 }),
+    ])
+    const frame = layout(compiled(tree, fixture().options).component as Component, 20, 4)
+    const [scroll] = scrollViews(frame.root)
+    expect(frame.lines).toEqual(['header', 'line-7', 'line-8', 'line-9'])
+    expect(scroll).toMatchObject({ scrollTop: 7, viewportHeight: 3, primary: false })
+
+    const padded = compiled(ui.surface({ padding: 1, child: ui.scroll(content, { follow: 'end' }) }), fixture().options)
+    const paddedFrame = layout(padded.component as Component, 20, 3)
+    const [paddedScroll] = scrollViews(paddedFrame.root)
+    expect(paddedFrame.lines.join('\n')).toContain('line-7')
+    expect(paddedFrame.lines.join('\n')).toContain('line-9')
+    expect(paddedScroll).toMatchObject({ scrollTop: 7, viewportHeight: 3, primary: false })
   })
 
   it('degrades row stacks into MainScreen document order', () => {
@@ -164,6 +201,26 @@ describe('compileBlueUiNode', () => {
     expect(compiled(tree, options).component.render(80)).toEqual([])
   })
 
+  it('uses the height allocated by the layout engine for responsive children', () => {
+    const { options } = fixture({ getViewport: () => ({ columns: 80, rows: 99 }) })
+    const tree = ui.stack.column([
+      ui.child(ui.text('short'), { when: { maxHeight: 9 } }),
+      ui.child(ui.text('tall'), { when: { minHeight: 10 } }),
+    ])
+    expect(layout(compiled(tree, options).component as Component, 80, 9).lines).toContain('short')
+    expect(layout(compiled(tree, options).component as Component, 80, 9).lines).not.toContain('tall')
+    expect(layout(compiled(tree, options).component as Component, 80, 10).lines).toContain('tall')
+
+    const responsive = compiled(ui.stack.column([
+      ui.child(ui.actions({ id: 'short-actions', items: [{ id: 'short-action', label: 'Short action' }] }), { when: { maxHeight: 9 } }),
+      ui.child(ui.actions({ id: 'tall-actions', items: [{ id: 'tall-action', label: 'Tall action' }] }), { when: { minHeight: 10 } }),
+    ]), options)
+    responsive.focusTarget!.focused = true
+    const shortFrame = layout(responsive.component as Component, 80, 9).lines.join('')
+    expect(shortFrame).toContain('Short action')
+    expect(shortFrame.match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
+  })
+
   it('retains a structural focus target when every control starts hidden', () => {
     const { options, viewport } = fixture()
     viewport.columns = 40
@@ -201,6 +258,21 @@ describe('compileBlueUiNode', () => {
     expect(row).toContain('alpha')
     expect(row).toContain('beta')
     expect(row.match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
+  })
+
+  it('preserves focused HStack labels in layout and subsequent direct replay', () => {
+    const { options } = fixture()
+    const focus = compiled(ui.actions({ id: 'actions', items: [{ id: 'alpha', label: 'alpha' }, { id: 'beta', label: 'beta' }] }), options).focusTarget!
+    focus.focused = true
+    const frameRow = layout(focus as Component, 40, 3).lines.join('')
+    expect(frameRow).toContain('alpha')
+    expect(frameRow).toContain('beta')
+    expect(frameRow.match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
+
+    const replay = focus.render(40).join('')
+    expect(replay).toContain('alpha')
+    expect(replay).toContain('beta')
+    expect(replay.match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
   })
 
   it('cannot be tricked into extra markers by canonical user text', () => {
@@ -316,9 +388,16 @@ describe('compileBlueUiNode', () => {
 
     const nonErrorComponents = { ...components, wrapText: () => { throw 'non-error' } } as BlueComponents
     expect(compiled(ui.richText([{ text: 'x' }]), fixture({ components: nonErrorComponents }).options).component.render(12).join('')).toContain('unknown')
+    expect(layout(compiled(ui.richText([{ text: 'x' }]), fixture({ components: nonErrorComponents }).options).component as Component, 12, 3).lines.join('')).toContain('unknown')
 
     const overwideComponents = { ...components, wrapText: () => ['overwide row'] } as BlueComponents
     expect(compiled(ui.richText([{ text: 'x' }]), fixture({ components: overwideComponents }).options).component.render(4).every(row => visibleWidth(row) <= 4)).toBe(true)
+
+    const brokenRoot = compiled(ui.stack.column([ui.text('x')]), fixture().options).component as unknown as { root: { render: (width: number) => string[] }, render: (width: number) => string[] }
+    brokenRoot.root.render = () => { throw new Error('root exploded') }
+    expect(brokenRoot.render(20).join('')).toContain('root exploded')
+    brokenRoot.root.render = () => { throw 'root non-error' }
+    expect(brokenRoot.render(20).join('')).toContain('unknown')
   })
 
   it('contains viewport and semantic paint failures', () => {
