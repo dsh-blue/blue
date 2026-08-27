@@ -34,6 +34,8 @@ export interface FrontendPanelOptions {
   readonly onClose: () => void
   readonly onUnhandledInput?: (data: string, selectedId: string | undefined) => Action | undefined
   readonly maxVisible?: number
+  /** Optional extra affordances appended to the default footer hint. */
+  readonly hint?: string
 }
 
 /** Framed, scrollable consumer for renderer-neutral info/loading/error panels. */
@@ -82,7 +84,11 @@ export class FrontendPanel implements BlueFocusable {
       return
     }
     if (keymap.matches(data, ACTION_SEGMENT_LEFT) || keymap.matches(data, ACTION_SEGMENT_RIGHT)) {
-      this.moveVariant(model, keymap.matches(data, ACTION_SEGMENT_LEFT) ? -1 : 1)
+      const delta = keymap.matches(data, ACTION_SEGMENT_LEFT) ? -1 : 1
+      const grouped = view?.grouped === true && this.groups(view).length > 1
+      const item = this.selectedItem(model)
+      if (grouped && (item?.variants === undefined || item.variants.length === 0)) this.moveGroup(model, delta)
+      else this.moveVariant(model, delta)
       return
     }
     if (data === KEY_UP) {
@@ -112,7 +118,8 @@ export class FrontendPanel implements BlueFocusable {
       return
     }
     if (view?.grouped === true && (data === '\t' || data === '\x1b[Z')) {
-      this.group = (this.group + 1) % this.groups(view).length
+      const delta = data === '\x1b[Z' ? -1 : 1
+      this.group = (this.group + delta + this.groups(view).length) % this.groups(view).length
       this.reseedSelection(model)
       return
     }
@@ -142,9 +149,12 @@ export class FrontendPanel implements BlueFocusable {
       ? this.renderFilterRows(model.view)
       : []
     const headerRows = model.header === undefined ? [] : [...renderFrontendView(model.header, budget)]
+    const renderedView = view?.kind === 'list'
+      ? this.renderListView(view, selected, budget)
+      : view === undefined ? [] : [...renderFrontendView(view, budget)]
     const content = view === undefined
       ? fallback === undefined ? [] : [`  ${fallback}`]
-      : [...headerRows, ...groupRows, ...renderFrontendView(view, budget)].map(row => `  ${components.truncateToWidth(row, budget)}`)
+      : [...headerRows, ...groupRows, ...renderedView].map(row => `  ${components.truncateToWidth(row, budget)}`)
     const maxVisible = Math.max(5, this.options.maxVisible ?? DEFAULT_MAX_VISIBLE)
     const body: string[] = []
     if (content.length > maxVisible) {
@@ -165,10 +175,11 @@ export class FrontendPanel implements BlueFocusable {
       : model.mode === 'loading'
         ? 'Esc / q to cancel'
       : model.submit === undefined && !hasSelectAction ? 'Esc / q to close' : 'Enter to choose · Esc / q to close'
+    const affordance = this.options.hint === undefined ? submit : `${submit} · ${this.options.hint}`
     return framePanel(body, width, {
       title: model.title,
       titlePaint: model.mode === 'error' ? theme.colors.error : theme.colors.primary,
-      titleHint: `· ${submit} · ↑↓ scroll`,
+      titleHint: `· ${affordance} · ↑↓ scroll`,
       hintPaint: theme.colors.textMuted,
       rulePaint: model.mode === 'error' ? theme.colors.error : theme.colors.primary,
     })
@@ -194,7 +205,10 @@ export class FrontendPanel implements BlueFocusable {
   }
 
   private groups(view: ListView): readonly string[] {
-    const groups = [...new Set(view.items.flatMap(item => item.group === undefined ? [] : [item.group]))]
+    const groups = view.groups === undefined
+      ? [...new Set(view.items.flatMap(item => item.group === undefined ? [] : [item.group]))]
+      : [...view.groups]
+    if (view.includeAllGroup === false) return groups.length > 0 ? groups : ['All']
     return groups.length > 1 ? ['All', ...groups] : ['All']
   }
 
@@ -223,6 +237,19 @@ export class FrontendPanel implements BlueFocusable {
                 : this.options.theme.colors.textMuted(label)
             }).join(' ')].filter(value => value !== undefined && value !== '').join(' '),
           }
+    })
+  }
+
+  private renderListView(view: ListView, selectedId: string | undefined, width: number): readonly string[] {
+    const colors = this.options.theme.colors
+    return this.filteredItems(view).map(item => {
+      const selected = item.id === selectedId
+      // Keep the pointer plain so the selected label remains easy to scan;
+      // this mirrors SelectListPanel's `❯ ` marker + primary label treatment.
+      const marker = selected ? '> ' : '  '
+      const label = selected ? colors.primary(item.label) : colors.text(item.label)
+      const detail = item.detail === undefined ? '' : colors.muted(` - ${item.detail}`)
+      return this.options.components.truncateToWidth(`${marker}${label}${detail}`, width)
     })
   }
 
@@ -282,5 +309,14 @@ export class FrontendPanel implements BlueFocusable {
     const index = Math.max(0, variants.findIndex(variant => variant.id === current?.id))
     this.selectedVariants.set(item.id, variants[(index + delta + variants.length) % variants.length]!.id)
     return true
+  }
+
+  private moveGroup(model: PanelModel, delta: -1 | 1): void {
+    const view = this.selectView(model)
+    if (view === undefined) return
+    const groups = this.groups(view)
+    if (groups.length <= 1) return
+    this.group = (this.group + delta + groups.length) % groups.length
+    this.reseedSelection(model)
   }
 }

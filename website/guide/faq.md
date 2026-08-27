@@ -13,6 +13,35 @@ pnpm 11 默认开启 `minimumReleaseAge` 冷却期：dist-tag 解析会静默跳
 
 用 `/update` 升级的用户不受此坑影响：它按 registry 元数据解析目标、始终精确钉版，冷却窗口内会直接给出可重试的时间（ETA）而不是装到旧版。
 
+## `/plugin` 提示 `fetch failed` 怎么办？
+
+`/plugin` 面板和 `blue plugin list/search/info` 默认从 GitHub 的 `raw.githubusercontent.com` 读取插件市场注册表。国内网络无法直连时，先在启动 Blue 的同一个终端设置 `BLUE_MARKETPLACE_REGISTRY`，再按[插件市场页的推荐顺序](/marketplace/#国内网络访问-github)尝试代理地址：
+
+```sh
+# 推荐 1：gh-proxy.com
+export BLUE_MARKETPLACE_REGISTRY='https://gh-proxy.com/https://raw.githubusercontent.com/dsh-blue/marketplace/master/registry.json'
+
+# 推荐 2：gh.jasonzeng.dev
+export BLUE_MARKETPLACE_REGISTRY='https://gh.jasonzeng.dev/https://raw.githubusercontent.com/dsh-blue/marketplace/master/registry.json'
+
+# 推荐 3：GitProxy（网页入口为 gitproxy.dev，命令需使用 api 子域名）
+export BLUE_MARKETPLACE_REGISTRY='https://api.gitproxy.dev/https://raw.githubusercontent.com/dsh-blue/marketplace/master/registry.json'
+```
+
+每次只保留一个地址即可；可先运行 `curl -fL "$BLUE_MARKETPLACE_REGISTRY"`，确认返回 JSON 后再启动 `blue` 或 `dsh --profile blue`。环境变量只对当前终端会话有效。
+
+如果插件使用 GitHub 仓库安装源，还要配置仓库代理，否则市场列表虽然能打开，下载插件时仍可能失败。`/plugin` 面板和 `/plugin install` 会读取 `BLUE_MARKETPLACE_GITHUB_PROXY` 并自动改写 GitHub 源：
+
+```sh
+# 与上面的注册表代理保持一致，每次只保留一个
+export BLUE_MARKETPLACE_GITHUB_PROXY='https://gh-proxy.com/'
+# export BLUE_MARKETPLACE_GITHUB_PROXY='https://gh.jasonzeng.dev/'
+# GitProxy 使用 API 端点（网页入口为 https://gitproxy.dev/）
+# export BLUE_MARKETPLACE_GITHUB_PROXY='https://api.gitproxy.dev/'
+```
+
+若使用网页卡片上的 `blue plugin add <spec>` 或直接执行 dsh，请按[插件市场页的仓库代理说明](/marketplace/#国内网络访问-github)配置 Git 的 `url.*.insteadOf`；npm 安装源不需要这项配置。
+
 ## 如何升级 Blue？
 
 两条路：

@@ -64,8 +64,8 @@ describe('FrontendPanel', () => {
         { id: 'c', label: 'C', action: { kind: 'fixture.c' } },
       ] },
     })
-    expect(fixture.panel.render(40).some(row => row.includes('> A'))).toBe(true)
-    fixture.panel.handleInput('\x1b[B'); expect(fixture.panel.render(40).some(row => row.includes('> C'))).toBe(true); fixture.panel.handleInput('\r')
+    expect(fixture.panel.render(40).some(row => row.includes('> ^A^'))).toBe(true)
+    fixture.panel.handleInput('\x1b[B'); expect(fixture.panel.render(40).some(row => row.includes('> ^C^'))).toBe(true); fixture.panel.handleInput('\r')
     fixture.panel.handleInput('\x1b[A'); fixture.panel.handleInput('\r'); fixture.panel.handleInput('\x1b')
     expect(fixture.onAction.mock.calls.map(call => call[0])).toEqual([{ kind: 'fixture.c' }, { kind: 'fixture.a' }, { kind: 'fixture.cancel' }])
     expect(fixture.onClose).toHaveBeenCalledOnce()
@@ -92,7 +92,7 @@ describe('FrontendPanel', () => {
         { id: 'first', label: 'First', action: { kind: 'fixture.first' } },
       ] },
     })
-    expect(fixture.panel.render(40).some(row => row.includes('> First'))).toBe(true)
+    expect(fixture.panel.render(40).some(row => row.includes('> ^First^'))).toBe(true)
     fixture.panel.handleInput('\r')
     expect(fixture.onAction).toHaveBeenCalledWith({ kind: 'fixture.first' })
   })
@@ -126,6 +126,37 @@ describe('FrontendPanel', () => {
     fixture.panel.handleInput('\x7f')
     fixture.panel.handleInput('\x1b')
     expect(fixture.onClose).toHaveBeenCalledOnce()
+  })
+
+  it('switches explicit groups with Tab and arrow keys and renders custom affordances', () => {
+    const fixture = panelFixture({
+      kind: 'panel', mode: 'select', title: 'Plugins',
+      view: { kind: 'list', grouped: true, includeAllGroup: false, groups: ['Installed', 'Available'], items: [
+        { id: 'installed', label: 'Installed plugin', group: 'Installed', action: { kind: 'remove' } },
+        { id: 'available', label: 'Available plugin', group: 'Available', action: { kind: 'add' } },
+      ] },
+    })
+    const panel = new FrontendPanel({
+      keymap: fakeBlueContext().keymap,
+      theme: fakeBlueContext().theme,
+      components: fakeBlueContext().components,
+      model: () => ({ kind: 'panel', mode: 'select', title: 'Plugins', view: { kind: 'list', grouped: true, includeAllGroup: false, groups: ['Installed', 'Available'], items: [
+        { id: 'installed', label: 'Installed plugin', group: 'Installed', action: { kind: 'remove' } },
+        { id: 'available', label: 'Available plugin', group: 'Available', action: { kind: 'add' } },
+      ] } }),
+      onAction: fixture.onAction,
+      onClose: fixture.onClose,
+      hint: 'Tab switch · Alt+S uninstall',
+    })
+    expect(panel.render(120).join('\n')).toContain('[Installed]')
+    expect(panel.render(120).join('\n')).toContain('^Installed plugin^')
+    expect(panel.render(120).join('\n')).toContain('Tab switch')
+    panel.handleInput('\x1b[C')
+    expect(panel.render(120).join('\n')).toContain('[Available]')
+    panel.handleInput('\x1b[D')
+    expect(panel.render(120).join('\n')).toContain('[Installed]')
+    panel.handleInput('\x1b[Z')
+    expect(panel.render(120).join('\n')).toContain('[Available]')
   })
 
   it('supports model-level input actions, top/end scrolling, and locked loading panels', () => {

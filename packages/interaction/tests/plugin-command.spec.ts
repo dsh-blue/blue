@@ -116,6 +116,19 @@ describe('registerPluginCommand', () => {
     })
   })
 
+  it('rewrites GitHub installs through the configured marketplace proxy', async () => {
+    const dir = mkdtempTracked('blue-plugin-command-proxy-')
+    const host = join(dir, 'host.mjs')
+    writeFileSync(host, "console.log(process.argv.slice(2).join('|'))\n")
+    process.env.BLUE_DSH_BIN = host
+    process.env.BLUE_MARKETPLACE_GITHUB_PROXY = 'https://gh-proxy.com/'
+    const world = await mount()
+    await expect(world.execute('install github:owner/repo@deadbeef')).resolves.toEqual({
+      kind: 'success',
+      text: 'plugin|--profile|blue|add|git+https://gh-proxy.com/https://github.com/owner/repo.git#deadbeef\ninstalled; restart Blue to apply',
+    })
+  })
+
   it('delegates npm installs to global dsh with spaced and default profiles', async () => {
     const dir = mkdtempTracked('blue-plugin-command-path-')
     const dsh = join(dir, 'dsh')

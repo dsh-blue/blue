@@ -421,7 +421,7 @@ describe('blue-input plugin', () => {
     })
   })
 
-  it('flattens a multi-line command result into one terminal row', async () => {
+  it('preserves and wraps a multi-line command result', async () => {
     const { ctx, editor, hint } = await mount()
     ctx.commands.register({
       name: 'multiline',
@@ -434,9 +434,9 @@ describe('blue-input plugin', () => {
     type(editor, '/multiline')
     editor.handleInput(KEY.enter)
     await vi.waitFor(() => {
-      expect(hint.render(120)).toEqual(['~Goal created · Status: active · Activation: armed~'])
+      expect(hint.render(120)).toEqual(['~Goal created~', '~Status: active~', '~~', '~Activation: armed~'])
     })
-    expect(hint.render(120)[0]).not.toMatch(/[\r\n]/u)
+    expect(hint.render(120)).toHaveLength(4)
   })
 
   it('drops the result notice when the fiber unloads before the command settles', async () => {
@@ -512,11 +512,11 @@ describe('blue-input plugin', () => {
     expect(hint.render(80)).toEqual([])
   })
 
-  it('truncates an over-wide hint to the viewport width', async () => {
+  it('wraps an over-wide hint to the viewport width', async () => {
     const { editor, hint } = await mount({ withAgent: false })
     type(editor, 'hello')
     editor.handleInput(KEY.enter)
-    expect(hint.render(10)).toEqual(['~no acti\x1b[0m...\x1b[0m~'])
+    expect(hint.render(10)).toEqual(['~no active~', '~session~'])
   })
 
   it('renders no hint row when a command succeeds without text', async () => {
