@@ -1,11 +1,12 @@
 /** Canonical compiler layout, focus, event, width, and failure containment. */
 import { CURSOR_MARKER, HStack, ScrollView, type Component } from '@earendil-works/pi-tui'
 import { renderLayoutFrame, type LayoutBox, type LayoutFrame } from '@earendil-works/pi-tui/dist/layout.js'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ui } from '../../ui/src/index.ts'
 import { compileBlueUiNode, type BlueUiCompilerOptions } from '../src/ui-compiler.ts'
 import type { BlueComponents, BlueSemanticColors } from '../src/types.ts'
 import { sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '../src/width.ts'
+import { ADVERSARIAL, expectLinesFit, SCAN_WIDTHS } from './width-scan.ts'
 
 const identity = (value: string): string => value
 const colors = new Proxy({ logoGradient: [identity] }, { get: (target, key) => key === 'logoGradient' ? target.logoGradient : identity }) as BlueSemanticColors
@@ -355,6 +356,65 @@ describe('compileBlueUiNode', () => {
 
     const main = compiled(tree, fixture({ screenMode: 'main' }).options)
     expect(main.component.render(80).join('\n')).toContain('done')
+  })
+
+  it('keeps active, selected, and focused pattern states visually distinct', () => {
+    const selectedBg = vi.fn(identity)
+    const trackedColors = new Proxy(colors, { get: (target, key, receiver) => key === 'selectedBg' ? selectedBg : Reflect.get(target, key, receiver) })
+    const tabs = compiled(ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'Active' }, { id: 'b', label: 'Focused' }] }), fixture({ colors: trackedColors }).options)
+    tabs.focusTarget!.focused = true
+    tabs.focusTarget!.handleInput?.('\t')
+    const tabRow = tabs.component.render(40).join('')
+    expect(tabRow).toContain('‹ Active ›')
+    expect(tabRow).toContain(`${CURSOR_MARKER} Focused`)
+
+    const list = compiled(ui.list({ id: 'list', mode: 'multiple', selectedIds: ['selected'], items: [
+      { id: 'plain', label: 'Plain' },
+      { id: 'selected', label: 'Selected' },
+    ] }), fixture({ colors: trackedColors }).options)
+    expect(list.component.render(40).join('')).toContain('● Selected')
+    expect(selectedBg).not.toHaveBeenCalled()
+    list.focusTarget!.focused = true
+    expect(list.component.render(40).join('')).toContain(`${CURSOR_MARKER} → Selected`)
+    expect(selectedBg).toHaveBeenCalledOnce()
+  })
+
+  it('windows a focused list against the live viewport and keeps validation on the next row', () => {
+    const { options, viewport } = fixture()
+    viewport.rows = 3
+    const list = compiled(ui.list({ id: 'list', selectedIds: ['six'], items: Array.from({ length: 8 }, (_, index) => ({ id: index === 6 ? 'six' : String(index), label: `row-${String(index)}` })) }), options)
+    list.focusTarget!.focused = true
+    const rows = list.component.render(20)
+    expect(rows).toHaveLength(3)
+    expect(rows.join('\n')).toContain('row-6')
+    expect(rows.join('\n')).not.toContain('row-0')
+
+    const form = compiled(ui.form({ id: 'form', fields: [{ kind: 'input', id: 'name', label: 'Name', value: '', placeholder: 'Ada', error: 'Required' }] }), fixture().options)
+    expect(form.component.render(40)).toEqual(['   Name: Ada', '   ! Required'])
+    const formActions = compiled(ui.form({ id: 'form-actions', fields: [], submitActionId: 'Save', cancelActionId: 'Cancel' }), fixture().options)
+    expect(formActions.component.render(40).join('\n')).toContain('Save')
+    expect(formActions.component.render(40).join('\n')).toContain('Cancel')
+  })
+
+  it('width-scans every L2 pattern with adversarial canonical content', () => {
+    for (const [adversarialIndex, { name, text }] of ADVERSARIAL.entries()) {
+      const suffix = String(adversarialIndex)
+      const content = text.slice(0, 700)
+      const tree = ui.stack.column([
+        ui.surface({ chrome: 'overlay', title: content, subtitle: content, badges: [{ text: content, tone: 'warning' }], child: ui.text(content), footer: ui.divider({ label: content }) }),
+        ui.tabs({ id: `tabs-${suffix}`, activeId: 'a', items: [{ id: 'a', label: content, count: 123 }, { id: 'b', label: content }] }),
+        ui.list({ id: `list-${suffix}`, mode: 'multiple', selectedIds: ['a'], filter: content, items: [{ id: 'a', label: content, detail: content, badge: content, group: content }, { id: 'b', label: content }] }),
+        ui.form({ id: `form-${suffix}`, fields: [{ kind: 'input', id: `field-${suffix}`, label: content, value: content, error: content }] }),
+        ui.actions({ id: `actions-${suffix}`, items: [{ id: `action-${suffix}`, label: content, intent: 'danger', confirm: content }] }),
+        ui.loader({ message: content, elapsedMs: 12 }),
+        ui.empty({ title: content, description: content }),
+        ui.progress({ label: content, value: 1, max: 3 }),
+      ])
+      const { options, viewport } = fixture()
+      viewport.rows = 200
+      const component = compiled(tree, options).component
+      for (const width of SCAN_WIDTHS) expectLinesFit(`${name} patterns`, component.render(width), width)
+    }
   })
 
   it('returns bounded error surfaces and contains render/event sink failures', () => {

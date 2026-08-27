@@ -11,6 +11,18 @@ import { CURSOR_MARKER, HStack, ScrollView, VStack, type Component } from '@eare
 import { getLayoutNode, LAYOUT_NODE, type LayoutNode, type LayoutViewport } from '@earendil-works/pi-tui/dist/layout-node.js'
 import { paintPluginTone, renderPluginView } from './plugin-view.ts'
 import type { BlueComponent, BlueComponents, BlueFocusable, BlueSemanticColors } from './types.ts'
+import {
+  renderActions,
+  renderDivider,
+  renderFormField,
+  renderList,
+  renderLoader,
+  renderProgress,
+  renderSurfaceHead,
+  renderSurfaceTail,
+  renderTabs,
+  type PatternFocus,
+} from './ui-patterns.ts'
 import { sliceByColumn, visibleWidth } from './width.ts'
 import { validateBlueUiNode } from './ui-validator.ts'
 
@@ -138,20 +150,12 @@ function safePaint(colors: BlueSemanticColors, tone: BlueTone | undefined, value
   return paintPluginTone(colors, tone)(value)
 }
 
-function labelComponent(
-  key: string,
-  label: string,
-  disabled: boolean,
-  state: FocusState,
-  options: BlueUiCompilerOptions,
-): BlueComponent {
-  return staticComponent(width => {
-    const active = state.focused && state.activeKey === key
-    const prefix = active ? state.layoutPass ? `${CURSOR_MARKER} ` : FOCUS_SENTINEL : ' '
-    const value = `${prefix}${disabled ? '-' : '>'} ${label}`
-    const painted = disabled ? options.colors.muted(value) : active ? options.colors.primary(value) : options.colors.text(value)
-    return [visibleWidth(painted) <= width ? painted : sliceByColumn(painted, 0, Math.max(1, width), true)]
-  }, options)
+function patternFocus(state: FocusState, prefix: string): PatternFocus {
+  return {
+    key: state.activeKey?.startsWith(prefix) === true ? state.activeKey.slice(prefix.length) : '',
+    focused: state.focused,
+    marker: state.layoutPass ? `${CURSOR_MARKER} ` : FOCUS_SENTINEL,
+  }
 }
 
 function joinSpans(node: { readonly spans: readonly { readonly text: string, readonly tone?: BlueTone, readonly emphasis?: 'normal' | 'strong' }[] }, colors: BlueSemanticColors): string {
@@ -173,11 +177,10 @@ function pad(component: Component, amount: number, options: BlueUiCompilerOption
 
 function surfaceComponent(node: Extract<BlueUiNode, { readonly kind: 'surface' }>, child: Component, footer: Component | undefined, options: BlueUiCompilerOptions): BlueComponent {
   const component = new VStack()
-  if (node.title !== undefined) component.addChild(staticComponent(width => options.components.wrapText(options.colors.textStrong(node.title!), width), options))
-  if (node.subtitle !== undefined) component.addChild(staticComponent(width => options.components.wrapText(options.colors.muted(node.subtitle!), width), options))
-  if (node.badges !== undefined) component.addChild(staticComponent(width => options.components.wrapText(joinSpans({ spans: node.badges! }, options.colors), width), options))
+  component.addChild(staticComponent(width => renderSurfaceHead(node, width, options.colors), options))
   component.addChild(child)
   if (footer !== undefined) component.addChild(footer)
+  component.addChild(staticComponent(width => renderSurfaceTail(node, width, options.colors), options))
   return pad(component, node.padding ?? 0, options)
 }
 
@@ -277,39 +280,28 @@ function compileNode(node: BlueUiNode, state: FocusState, options: BlueUiCompile
       return new ScrollView(child, { follow: node.follow === 'end' ? 'end' : 'none', primary: false, overscroll: 'contain', scrollbar: node.scrollbar === true ? 'auto' : 'hidden' })
     }
     case 'tabs': {
-      const stack = options.screenMode === 'main' ? new VStack() : new HStack([], { gap: 1 })
-      for (const item of node.items) stack.addChild(labelComponent(`${path}:${item.id}`, `${item.label}${item.count === undefined ? '' : ` (${String(item.count)})`}`, item.disabled === true, state, options))
-      return stack
+      return staticComponent(width => renderTabs(node, width, patternFocus(state, `${path}:`), options.colors), options)
     }
     case 'list': {
       if (node.items.length === 0) return node.empty === undefined ? staticComponent(() => [], options) : compileNode(node.empty, state, options, `${path}.empty`)
-      const stack = new VStack()
-      for (const item of node.items) {
-        const selected = node.selectedIds.includes(item.id) ? '[x] ' : node.mode === 'multiple' ? '[ ] ' : ''
-        const suffix = [item.detail, item.badge].filter(value => value !== undefined).join(' · ')
-        stack.addChild(labelComponent(`${path}:${item.id}`, `${selected}${item.label}${suffix.length === 0 ? '' : ` — ${suffix}`}`, item.disabled === true, state, options))
-      }
-      return stack
+      return staticComponent(width => renderList(node, width, safeViewport(options.getViewport).rows, patternFocus(state, `${path}:`), options.colors), options)
     }
     case 'form': {
       const stack = new VStack()
       for (const field of node.fields) {
-        const value = field.kind === 'secret' ? '*'.repeat(field.value.length) : field.kind === 'toggle' ? field.value ? 'on' : 'off' : field.kind === 'select' ? field.value ?? '-' : field.value
-        stack.addChild(labelComponent(`${path}:field:${field.id}`, `${field.label}: ${value}${field.error === undefined ? '' : ` (${field.error})`}`, field.disabled === true, state, options))
+        stack.addChild(staticComponent(width => renderFormField(field, width, patternFocus(state, `${path}:field:`), options.colors), options))
       }
-      if (node.submitActionId !== undefined) stack.addChild(labelComponent(`${path}:submit`, node.submitActionId, false, state, options))
-      if (node.cancelActionId !== undefined) stack.addChild(labelComponent(`${path}:cancel`, node.cancelActionId, false, state, options))
+      if (node.submitActionId !== undefined) stack.addChild(staticComponent(width => renderActions({ kind: 'actions', id: node.id, items: [{ id: 'submit', label: node.submitActionId!, intent: 'primary' }] }, width, patternFocus(state, `${path}:`), options.colors, true), options))
+      if (node.cancelActionId !== undefined) stack.addChild(staticComponent(width => renderActions({ kind: 'actions', id: node.id, items: [{ id: 'cancel', label: node.cancelActionId! }] }, width, patternFocus(state, `${path}:`), options.colors, true), options))
       return stack
     }
     case 'actions': {
-      const stack = options.screenMode === 'main' ? new VStack() : new HStack([], { gap: 1 })
-      for (const item of node.items) stack.addChild(labelComponent(`${path}:${item.id}`, item.busy === true ? `${item.label}...` : item.label, item.disabled === true || item.busy === true, state, options))
-      return stack
+      return staticComponent(width => renderActions(node, width, patternFocus(state, `${path}:`), options.colors, options.screenMode === 'main'), options)
     }
     case 'loader': {
       const stack = new VStack()
-      stack.addChild(staticComponent(width => options.components.wrapText(`${node.variant === 'tide' ? '~' : '⠋'} ${node.message}${node.elapsedMs === undefined ? '' : ` ${String(node.elapsedMs)}ms`}`, width), options))
-      if (node.cancelActionId !== undefined) stack.addChild(labelComponent(`${path}:cancel`, node.cancelActionId, false, state, options))
+      stack.addChild(staticComponent(width => renderLoader(node, width, options.colors), options))
+      if (node.cancelActionId !== undefined) stack.addChild(staticComponent(width => renderActions({ kind: 'actions', id: node.cancelActionId!, items: [{ id: 'cancel', label: node.cancelActionId! }] }, width, patternFocus(state, `${path}:`), options.colors, true), options))
       return stack
     }
     case 'empty': {
@@ -319,17 +311,9 @@ function compileNode(node: BlueUiNode, state: FocusState, options: BlueUiCompile
       if (node.actions !== undefined) stack.addChild(compileNode(node.actions, state, options, `${path}.actions`))
       return stack
     }
-    case 'progress': return staticComponent(width => {
-      const prefix = node.label === undefined ? '' : `${node.label} `
-      const available = Math.max(1, width - visibleWidth(prefix) - 8)
-      const filled = Math.round((node.value / node.max) * available)
-      return [`${prefix}${'█'.repeat(filled)}${'░'.repeat(Math.max(0, available - filled))} ${String(node.value)}/${String(node.max)}`]
-    }, options)
+    case 'progress': return staticComponent(width => renderProgress(node, width, options.colors), options)
     case 'spacer': return staticComponent(() => Array.from({ length: node.size ?? 1 }, () => ''), options)
-    case 'divider': return staticComponent(width => {
-      const label = node.label === undefined ? '' : ` ${node.label} `
-      return [`${label}${'─'.repeat(Math.max(0, width - visibleWidth(label)))}`]
-    }, options)
+    case 'divider': return staticComponent(width => renderDivider(node.label, width, options.colors), options)
   }
 }
 
