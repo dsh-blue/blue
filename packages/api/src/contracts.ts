@@ -123,6 +123,7 @@ export type BlueStatusFieldsNode = Extract<BlueView, { readonly kind: 'fields' }
 export interface BlueStatusChild extends Omit<BlueUiChild, 'node'> { readonly node: BlueStatusNode }
 export interface BlueStatusStackNode extends Omit<BlueStackNode, 'children'> { readonly children: readonly BlueStatusChild[] }
 export interface BlueStatusEntryContribution extends BlueContributionMeta { readonly render: () => BlueStatusNode | null }
+export interface BlueStatusEntryRegistry { register(contribution: BlueStatusEntryContribution): BlueResult<BlueRefreshRegistration>, list(): readonly BlueStatusEntryContribution[] }
 export interface BlueStatusEntrySnapshot { readonly id: string, readonly node: BlueStatusNode }
 export interface BlueStatusSnapshot { readonly session: BlueSessionSnapshot | null, readonly entries: readonly BlueStatusEntrySnapshot[], readonly busy: boolean }
 export interface BlueStatusProvider { readonly id: string, readonly render: (snapshot: BlueStatusSnapshot) => BlueStatusNode }
@@ -171,10 +172,13 @@ export interface BlueRegistry<T> { register(contribution: T): BlueResult<BlueReg
 export interface BluePluginApi {
   readonly manifest: BluePluginManifest
   readonly commands?: BlueRegistry<BlueCommandContribution>
+  /** @deprecated W2-C replaces this legacy BlueView adapter with final `status`. */
   readonly status?: BlueRegistry<BlueStatusContribution>
   /** @deprecated Internal bridge until W2-C migrates dock consumers to panes. */
   readonly dock?: BlueRegistry<BlueDockContribution>
   readonly notifications?: { publish(notification: BlueNotification): BlueResult, subscribe(listener: (notification: BlueNotification) => void): BlueRegistration }
+  /** W1 transition name for the frozen additive status contract. */
+  readonly statusEntries?: BlueStatusEntryRegistry
   readonly panes?: BluePaneRegistry
   readonly overlays?: BlueOverlayRegistry
   readonly editorExtensions?: BlueEditorExtensionRegistry

@@ -18,6 +18,6 @@ Blue Cordis 插件的稳定、renderer-independent 公共契约。本包不含 r
 
 node、event payload 和 snapshot 是 readonly、JSON-shaped 数据；`render`、`onEvent`、`AbortSignal` 和 registration handle 是进程内执行边界。插件只收到语义事件，不接触 raw key。value/selection/tab change 按 control latest-wins；activate/submit/dismiss 按 surface FIFO。revision、abort、timeout 和合并 refresh 由 Blue 托管。
 
-`BlueStatusNode` 递归只允许 text、rich text、fields、progress 和 stack。`BlueEditorShellNode` 是 provider-only 独立树，包含 `editor-control` slot；普通 `BlueUiNode` 无法构造该 slot，host admission 还必须验证恰好一个。status/editor provider 注册后只是候选，只有 Blue 持有的用户配置能激活。
+`BlueStatusNode` 递归只允许 text、rich text、fields、progress 和 stack。W1 中冻结后的 additive contract 暂以 `BluePluginApi.statusEntries` 暴露；现有 `status` 属性仍是 deprecated `BlueView` bridge。W2-C 必须原子删除旧 bridge，并把 `statusEntries` 改为最终的 `status`。`BlueEditorShellNode` 是 provider-only 独立树，包含 `editor-control` slot；普通 `BlueUiNode` 无法构造该 slot，host admission 还必须验证恰好一个。status/editor provider 注册后只是候选，只有 Blue 持有的用户配置能激活。
 
 W1 只声明新 registry，不实现它们。现有 host 暂留 deprecated 内建 `dock` bridge，使仓库在 W2-C 把 owner 迁移到 `panes` 前仍可运行；发布 manifest 已无法通过 `dock` 的公共校验。

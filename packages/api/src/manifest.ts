@@ -17,14 +17,13 @@ export type BlueCapability =
   | 'status.provider'
   | 'editor.provider'
 
-/** @deprecated Compile-only input removed after built-in dock consumers migrate in W2-C. */
 type BlueLegacyCapability = 'dock' | 'panels' | 'editor' | 'tools'
 
 /** A plugin's static compatibility declaration. */
 export interface BluePluginManifest {
   readonly id: string
   readonly api: string
-  readonly capabilities: readonly (BlueCapability | BlueLegacyCapability)[]
+  readonly capabilities: readonly BlueCapability[]
   /** Versioned on-disk manifest format. Omitted for legacy inline manifests. */
   readonly schemaVersion?: 1
   /** Published package entry, relative to the package root. */
@@ -35,6 +34,11 @@ export interface BluePluginManifest {
   readonly node?: string
   /** Optional npm/GitHub tarball integrity recorded by the installer. */
   readonly integrity?: string
+}
+
+/** @internal Runtime input for the built-in dock bridge; never export from the package root. */
+export type BlueHostManifest = Omit<BluePluginManifest, 'capabilities'> & {
+  readonly capabilities: readonly (BlueCapability | BlueLegacyCapability)[]
 }
 
 /** Public definition consumed by the Cordis adapter in a later phase. */
@@ -76,7 +80,7 @@ const LEGACY_CAPABILITIES: Readonly<Record<BlueLegacyCapability, string>> = {
   tools: 'no replacement; tool presentation remains Blue-owned',
 }
 
-function validateManifest(manifest: BluePluginManifest, allowLegacyDock: boolean): BlueManifestResult {
+function validateManifest(manifest: BlueHostManifest, allowLegacyDock: boolean): BlueManifestResult {
   if (manifest === null || typeof manifest !== 'object') {
     return { ok: false, code: 'BLUE_INVALID_MANIFEST', message: 'manifest must be an object' }
   }
@@ -131,6 +135,6 @@ export function validateBlueManifest(manifest: BluePluginManifest): BlueManifest
 }
 
 /** @internal W1 compatibility for the existing built-in dock owner; remove in W2-C. */
-export function validateBlueHostManifest(manifest: BluePluginManifest): BlueManifestResult {
+export function validateBlueHostManifest(manifest: BlueHostManifest): BlueManifestResult {
   return validateManifest(manifest, true)
 }

@@ -7,7 +7,7 @@
 
 import { Service, symbols, type Context } from '@deepseek-ai/cordis'
 import type { BlueCommandContribution, BlueDockContribution, BlueNotification, BluePluginApi, BluePluginHost, BlueRegistration, BlueRegistry, BlueResult, BlueStatusContribution } from './contracts.ts'
-import { validateBlueHostManifest, type BlueCapability, type BluePluginManifest } from './manifest.ts'
+import { validateBlueHostManifest, type BlueCapability, type BlueHostManifest, type BluePluginManifest } from './manifest.ts'
 import type { BlueErrorCode } from './contracts.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -325,10 +325,11 @@ export class BluePluginHostService extends Service implements BluePluginHost {
     if (typeof consumer !== 'object' || consumer === null || typeof consumer.effect !== 'function') {
       return failure('BLUE_INVALID_CONTRIBUTION', 'consumer must expose a Cordis effect function')
     }
-    const valid = validateBlueHostManifest(manifest)
+    const hostManifest = manifest as BlueHostManifest
+    const valid = validateBlueHostManifest(hostManifest)
     if (!valid.ok) return failure(valid.code === 'BLUE_INVALID_MANIFEST' ? 'BLUE_INVALID_CONTRIBUTION' : 'BLUE_API_INCOMPATIBLE', valid.message)
     if (!API_MAJOR.test(manifest.api)) return failure('BLUE_API_INCOMPATIBLE', `unsupported Blue API range "${manifest.api}"`)
-    const capabilities = [...manifest.capabilities]
+    const capabilities = [...hostManifest.capabilities]
     const unavailable = capabilities.find(capability => !PHASE_ONE_CAPABILITIES.has(capability as Capability))
     if (unavailable !== undefined) return failure('BLUE_CAPABILITY_DENIED', `capability "${unavailable}" is not available in Blue creative mode phase one`)
     const absent = capabilities.find(capability => !capabilityReady(state, capability as Capability))
@@ -342,7 +343,7 @@ export class BluePluginHostService extends Service implements BluePluginHost {
     }, callback => consumer.effect(callback), () => capabilityReady(state, 'notifications'))
     state.registries.add(commands); state.registries.add(status); state.registries.add(dock); state.notifications.add(notifications)
     const api: BluePluginApi = {
-      manifest: Object.freeze({ ...manifest, capabilities: Object.freeze([...capabilities]) }),
+      manifest: Object.freeze({ ...manifest, capabilities: Object.freeze([...capabilities]) }) as BluePluginManifest,
       ...(capabilities.includes('commands') ? { commands } : {}),
       ...(capabilities.includes('status') ? { status } : {}),
       ...(capabilities.includes('dock') ? { dock } : {}),

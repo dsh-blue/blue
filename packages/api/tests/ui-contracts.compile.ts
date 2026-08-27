@@ -4,6 +4,8 @@ import type {
   BlueEditorShellNode,
   BlueOverlayRequest,
   BluePaneContribution,
+  BluePluginApi,
+  BluePluginManifest,
   BlueStatusNode,
   BlueStatusProvider,
   BlueUiEvent,
@@ -135,6 +137,17 @@ export const capabilities = [
   'editor.extensions', 'session.read', 'session.act', 'status.provider', 'editor.provider',
 ] as const satisfies readonly BlueCapability[]
 
+export const manifest = {
+  id: '@acme/inspector', api: '^1.0.0', capabilities: ['panes', 'status'],
+} satisfies BluePluginManifest
+
+declare const statusEntries: NonNullable<BluePluginApi['statusEntries']>
+statusEntries.register({ id: '@acme/status/branch', render: () => ({ kind: 'text', content: 'main' }) })
+// @ts-expect-error code is outside the recursive status subset
+statusEntries.register({ id: '@acme/status/code', render: () => ({ kind: 'code', code: 'unsafe status' }) })
+// @ts-expect-error actions are interactive and cannot enter status
+statusEntries.register({ id: '@acme/status/action', render: () => ({ kind: 'actions', id: 'bad', items: [] }) })
+
 // @ts-expect-error editor-control is provider-only
 export const invalidPaneNode: BlueUiNode = { kind: 'editor-control' }
 // @ts-expect-error status is non-interactive
@@ -143,3 +156,5 @@ export const invalidStatusNode: BlueStatusNode = { kind: 'actions', id: 'bad', i
 export const invalidDockCapability: BlueCapability = 'dock'
 // @ts-expect-error tools has no public registry or owner
 export const invalidToolsCapability: BlueCapability = 'tools'
+// @ts-expect-error removed values do not leak through BluePluginManifest
+export const invalidDockManifest: BluePluginManifest = { id: '@acme/old', api: '^1.0.0', capabilities: ['dock'] }
