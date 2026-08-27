@@ -6,7 +6,7 @@ export interface FieldsView { readonly kind: 'fields'; readonly fields: readonly
 export interface SectionsView { readonly kind: 'sections'; readonly sections: readonly { readonly title: string; readonly body: View; readonly collapsed?: boolean }[] }
 export interface ListItemVariant { readonly id: string; readonly label: string; readonly action?: Action; readonly secondaryAction?: Action }
 export interface ListViewItem { readonly id: string; readonly label: string; readonly detail?: string; readonly disabled?: boolean; readonly action?: Action; readonly secondaryAction?: Action; readonly group?: string; readonly variants?: readonly ListItemVariant[]; readonly selectedVariantId?: string }
-export interface ListView { readonly kind: 'list'; readonly items: readonly ListViewItem[]; readonly selectedId?: string; readonly filterable?: boolean; readonly grouped?: boolean }
+export interface ListView { readonly kind: 'list'; readonly items: readonly ListViewItem[]; readonly selectedId?: string; readonly filterable?: boolean; readonly grouped?: boolean; readonly includeAllGroup?: boolean; readonly groups?: readonly string[] }
 export interface CodeView { readonly kind: 'code'; readonly code: string; readonly language?: string }
 export interface DiffView { readonly kind: 'diff'; readonly before: string; readonly after: string; readonly language?: string }
 export type View = TextView | RichTextView | FieldsView | SectionsView | ListView | CodeView | DiffView

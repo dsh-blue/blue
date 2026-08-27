@@ -819,4 +819,48 @@ describe('blue-commands plugin', () => {
     await fiber.dispose()
     vi.unstubAllGlobals()
   })
+
+  it('/plugin opens the installed and available management panel', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ plugins: [
+      { id: 'blue-doudizhu', package: '@dsh-blue/blue-doudizhu', version: '1.0.0', title: { en: 'Doudizhu' } },
+    ] }), { status: 200 })))
+    const { ctx, screen, agent } = await mount({ appExit: () => {} })
+    const execution = await ctx.commands.execute(agent, '/plugin', [], signal())
+    expect(execution?.result).toEqual({ kind: 'success' })
+    const panel = screen.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
+    expect(panel.render(100).join('\n')).toContain('[Installed]')
+    expect(panel.render(100).join('\n')).toContain('Available')
+    panel.handleInput(KEY.right)
+    expect(panel.render(100).join('\n')).toContain('[Available]')
+  })
+
+  it('/plugin shows a loading notice while marketplace data is pending', async () => {
+    const gate = Promise.withResolvers<Response>()
+    vi.stubGlobal('fetch', vi.fn(() => gate.promise))
+    const notice = vi.fn()
+    const { ctx, components, agent } = await mount({ appExit: () => {} })
+    setSharedEditor(ctx, { editor: components.createEditor(), submitPrompt: () => {}, notice })
+    try {
+      const pending = ctx.commands.execute(agent, '/plugin', [], signal())
+      await vi.waitFor(() => { expect(notice).toHaveBeenCalledWith('loading plugins...') })
+      gate.resolve(new Response(JSON.stringify({ plugins: [] }), { status: 200 }))
+      await expect(pending).resolves.toMatchObject({ result: { kind: 'success' } })
+      expect(notice.mock.calls.map(call => call[0])).toEqual(['loading plugins...', ''])
+    } finally {
+      clearSharedEditor(ctx)
+    }
+  })
+
+  it('does not expose Blue runtime dependencies as marketplace plugins', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ plugins: [
+      { id: 'market-plugin', package: '@scope/market-plugin', version: '1.0.0', title: { en: 'Market plugin' } },
+    ] }), { status: 200 })))
+    const { ctx, screen, agent } = await mount({ appExit: () => {} })
+    const execution = await ctx.commands.execute(agent, '/plugin', [], signal())
+    expect(execution?.result).toEqual({ kind: 'success' })
+    const panel = screen.overlays.at(-1)?.component as { render(width: number): string[] }
+    const output = panel.render(100).join('\n')
+    expect(output).toContain('0 installed · 1 available')
+    expect(output).not.toContain('@dsh-blue/blue')
+  })
 })

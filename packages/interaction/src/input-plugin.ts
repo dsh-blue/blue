@@ -158,20 +158,24 @@ class HintLine implements BlueComponent {
   invalidate(): void {}
 
   /**
-   * Render the hint as one width-truncated row, or nothing. Truncation goes
-   * through `blueComponents`, so rows carrying ANSI styling (error notices)
-   * are never cut mid-sequence.
+   * Render the hint as wrapped rows, or nothing. Width handling goes through
+   * `blueComponents`, so rows carrying ANSI styling (error notices) are never
+   * cut mid-sequence.
    * @param width - current viewport width in columns.
    * @returns one string per rendered row.
    */
   render(width: number): string[] {
     if (this.text === undefined) return []
-    const singleLine = this.text
-      .split(/\r\n?|\n/u)
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
-      .join(' · ')
-    return [this.colors.muted(this.components.truncateToWidth(singleLine, width))]
+    const rows = this.text.split(/\r\n?|\n/u).flatMap(line => {
+      const wrapped = this.components.wrapText(line.trim(), Math.max(1, width))
+      /* c8 ignore next -- the renderer normally returns one row for an empty line. */
+      return wrapped.length === 0 ? [''] : wrapped
+    })
+    const maxRows = 8
+    if (rows.length <= maxRows) return rows.map(row => this.colors.muted(row))
+    const visible = rows.slice(0, maxRows - 1)
+    visible.push(this.components.truncateToWidth('... more', width))
+    return visible.map(row => this.colors.muted(row))
   }
 }
 

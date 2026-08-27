@@ -76,7 +76,7 @@ async function mount(options: {
   // This suite exercises only the editor slot. The shared fake now owns the
   // transcript dock service's stable empty bottom root; remove that unrelated
   // fixture root so the existing slot assertions stay local to blue-input.
-  for (const child of [...screen.children]) screen.removeChild(child)
+  for (const child of screen.children) screen.removeChild(child)
   await ctx.plugin(SessionStore)
   await ctx.plugin(CommandRuntime)
   const session = ctx.sessions.create(SessionId('input-spec'))
@@ -421,7 +421,7 @@ describe('blue-input plugin', () => {
     })
   })
 
-  it('flattens a multi-line command result into one terminal row', async () => {
+  it('preserves and wraps a multi-line command result', async () => {
     const { ctx, editor, hint } = await mount()
     ctx.commands.register({
       name: 'multiline',
@@ -434,9 +434,9 @@ describe('blue-input plugin', () => {
     type(editor, '/multiline')
     editor.handleInput(KEY.enter)
     await vi.waitFor(() => {
-      expect(hint.render(120)).toEqual(['~Goal created · Status: active · Activation: armed~'])
+      expect(hint.render(120)).toEqual(['~Goal created~', '~Status: active~', '~~', '~Activation: armed~'])
     })
-    expect(hint.render(120)[0]).not.toMatch(/[\r\n]/u)
+    expect(hint.render(120)).toHaveLength(4)
   })
 
   it('drops the result notice when the fiber unloads before the command settles', async () => {
@@ -512,11 +512,11 @@ describe('blue-input plugin', () => {
     expect(hint.render(80)).toEqual([])
   })
 
-  it('truncates an over-wide hint to the viewport width', async () => {
+  it('wraps an over-wide hint to the viewport width', async () => {
     const { editor, hint } = await mount({ withAgent: false })
     type(editor, 'hello')
     editor.handleInput(KEY.enter)
-    expect(hint.render(10)).toEqual(['~no acti\x1b[0m...\x1b[0m~'])
+    expect(hint.render(10)).toEqual(['~no active~', '~session~'])
   })
 
   it('renders no hint row when a command succeeds without text', async () => {
@@ -532,6 +532,14 @@ describe('blue-input plugin', () => {
       expect(agent.session.events.some(event => event.type === 'command/done')).toBe(true)
     })
     expect(hint.render(80)).toEqual([])
+  })
+
+  it('folds a long multi-line notice into the hint row', async () => {
+    const { ctx, hint } = await mount()
+    getSharedEditor(ctx)?.notice?.(Array.from({ length: 10 }, (_, index) => index === 0 ? '' : `notice ${String(index)}`).join('\n'))
+    const rows = hint.render(80)
+    expect(rows).toHaveLength(8)
+    expect(rows.at(-1)).toBe('~... more~')
   })
 
   it('renders no persistent row in any state — the footer tips teach the affordances', async () => {

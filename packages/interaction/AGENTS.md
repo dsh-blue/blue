@@ -88,6 +88,8 @@ eager `afterAll` cleanup when Vitest reuses a worker; the helper's process-exit
 hook is only the recovery path for an interrupted worker.
 
 `blue-commands` also owns `/plugin`. Read-only marketplace operations query the
-official registry; installation delegates to the profile owner (`dsh plugin`)
-and reports that a restart is required. GitHub specs must be pinned to a commit
-before this command will invoke the installer.
+official registry; the bare command opens the grouped Installed/Available panel,
+whose mutations delegate to the profile owner (`dsh plugin`) and report that a
+restart is required. GitHub specs must be pinned to a commit before this
+command will invoke the installer; `BLUE_MARKETPLACE_GITHUB_PROXY` may rewrite
+GitHub sources for networks that cannot reach github.com directly.
