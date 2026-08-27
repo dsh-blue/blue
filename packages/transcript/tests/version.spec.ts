@@ -4,7 +4,7 @@
  * quickstart promise) and ONE harness dependency line (the `dsh-*` pins,
  * which stay on their own prerelease line while Blue's number moves).
  *
- * Blue side: the ten release package.json versions plus the website (whose
+ * Blue side: the eleven release package.json versions plus the website (whose
  * package.json must agree with its own tagline),
  * and the `BLUE_VERSION` constant the banner title and the `/version`
  * notice read, all equal. The website's user-facing version mentions
@@ -17,7 +17,7 @@
  * line all agree with each other — and are NOT tied to Blue's release
  * number.
  *
- * A bump edits one side at a time: publishing Blue bumps the ten release
+ * A bump edits one side at a time: publishing Blue bumps the eleven release
  * manifests + BLUE_VERSION + the website copy; upgrading the harness line
  * bumps the dsh pins + HARNESS_LINE. Any drift fails loudly here, so a
  * half-bumped tree can never ship.
@@ -43,9 +43,10 @@ interface Manifest {
   readonly devDependencies?: Readonly<Record<string, string>>
 }
 
-/** The ten release manifests plus website whose version must equal the release. */
+/** The eleven release manifests plus website whose version must equal the release. */
 const MANIFESTS: readonly string[] = [
   '../../api/package.json',
+  '../../ui/package.json',
   '../../frontend/package.json',
   '../../harness-adapter/package.json',
   '../../conversation/package.json',
@@ -72,7 +73,7 @@ function dshEntries(table: Readonly<Record<string, string>> | undefined): Readon
 
 describe('the Blue release line', () => {
   it('BLUE_VERSION is the version of all release manifests and website', () => {
-    expect(MANIFESTS).toHaveLength(11)
+    expect(MANIFESTS).toHaveLength(12)
     for (const rel of MANIFESTS) {
       const pkg = manifest(rel)
       expect(pkg.version, `${pkg.name} version`).toBe(RELEASE_VERSION)

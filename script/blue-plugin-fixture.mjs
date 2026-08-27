@@ -131,6 +131,7 @@ try {
   function localClosure() {
     const forced = [
       '@dsh-blue/blue-api',
+      '@dsh-blue/blue-ui',
       '@dsh-blue/blue-frontend',
       '@dsh-blue/blue-harness-adapter',
       '@dsh-blue/blue-context',

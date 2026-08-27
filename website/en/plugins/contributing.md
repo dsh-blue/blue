@@ -21,7 +21,7 @@ script/install-dev.sh
 # overrides: DSH_BIN=/path/to/dsh PROFILE=my-profile DSH_HOME=/custom/home script/install-dev.sh
 ```
 
-The script builds the workspace and link-installs the authoritative 11-entry list from `script/install-dev.sh`: the bundle itself plus ten library packages (api, frontend, harness-adapter, conversation, core, interaction, transcript, openpencil, lark, app) — OpenPencil/Lark ride along as validation adapters; the two validation-only packages context/remote are not in the link list — they are exercised through independent fixtures.
+The script builds the workspace and link-installs the authoritative 12-entry list from `script/install-dev.sh`: the bundle itself plus eleven library packages (api, ui, frontend, harness-adapter, conversation, core, interaction, transcript, openpencil, lark, app) — OpenPencil/Lark ride along as validation adapters; the two validation-only packages context/remote are not in the link list — they are exercised through independent fixtures.
 
 ## Manual, equivalent
 
@@ -32,6 +32,7 @@ pnpm install && pnpm run build   # lib/ is the runtime entry of every package
 dsh plugin --profile blue-dev add \
   link:/path/to/blue/packages/bundle/blue \
   link:/path/to/blue/packages/api \
+  link:/path/to/blue/packages/ui \
   link:/path/to/blue/packages/frontend \
   link:/path/to/blue/packages/harness-adapter \
   link:/path/to/blue/packages/conversation \
@@ -46,7 +47,7 @@ dsh --profile blue-dev [task]           # run a task, or start interactive
 dsh --profile blue-dev --resume <id>    # resume a persisted session
 ```
 
-**Why 11 links**: the bundle's local `workspace:^` closure must be linked explicitly outside the workspace, and OpenPencil/Lark join the dogfood validation lane. Expect a `declares no dsh.bundle` warning for each of the ten non-bundle links. `script/install-dev.sh` is authoritative; context/remote run in independent fixtures instead of the product profile.
+**Why 12 links**: the bundle's local `workspace:*` closure must be linked explicitly outside the workspace, and OpenPencil/Lark join the dogfood validation lane. Expect a `declares no dsh.bundle` warning for each of the eleven non-bundle links. `script/install-dev.sh` is authoritative; context/remote run in independent fixtures instead of the product profile.
 
 ::: tip Three lanes — never mix them
 - **`blue`** = the production profile, **npm installs only** (`@dsh-blue/blue@rc` / an exact version). Never `link:` into it — a later npm upgrade overwrites only the named packages, the leftover links dangle, and boot dies with `ERR_MODULE_NOT_FOUND` (`pnpm add` does not warn about the mix).

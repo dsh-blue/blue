@@ -1,5 +1,5 @@
 /**
- * Build the ten publishable tarballs once and verify their consumer-facing
+ * Build the eleven publishable tarballs once and verify their consumer-facing
  * contract. The resulting .artifacts/pack/index.json is also the release
  * workflow's immutable publish input.
  *
@@ -7,7 +7,8 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { x as extractTar } from 'tar'
 import { PACKAGE_DIRS, ROOT, readManifest } from './package-contract.mjs'
@@ -17,6 +18,7 @@ const outDir = resolve(process.env.BLUE_PACK_DIR ?? join(ROOT, '.artifacts', 'pa
 const unpackDir = join(outDir, 'unpacked')
 const problems = []
 const records = []
+const tarballs = new Map()
 let libraryFiles = 0
 let libraryBytes = 0
 
@@ -83,6 +85,93 @@ function validateManifest(name, manifest, root) {
   }
 }
 
+function verifyExternalUiKit(apiTarball, uiTarball) {
+  if (apiTarball === undefined || uiTarball === undefined) {
+    fail('external UI kit fixture requires packed API and UI tarballs')
+    return
+  }
+  const fixtureRoot = mkdtempSync(join(tmpdir(), 'blue-ui-kit-pack-'))
+  const kitRoot = join(fixtureRoot, 'kit')
+  const consumerRoot = join(fixtureRoot, 'consumer')
+  const kitTarballs = join(fixtureRoot, 'tarballs')
+  try {
+    mkdirSync(join(kitRoot, 'lib', 'types'), { recursive: true })
+    mkdirSync(consumerRoot)
+    mkdirSync(kitTarballs)
+    const version = readManifest('packages/ui').version
+    writeFileSync(join(kitRoot, 'package.json'), `${JSON.stringify({
+      name: '@blue-pack-fixture/user-kit',
+      version,
+      type: 'module',
+      main: 'lib/index.js',
+      types: 'lib/types/index.d.ts',
+      exports: { '.': { types: './lib/types/index.d.ts', default: './lib/index.js' } },
+      files: ['lib/**/*'],
+      peerDependencies: { '@dsh-blue/blue-ui': version },
+    }, null, 2)}\n`)
+    writeFileSync(join(kitRoot, 'lib', 'index.js'), `
+import { defineBlueComponent, ui } from '@dsh-blue/blue-ui'
+export const metric = defineBlueComponent({
+  id: '@blue-pack-fixture/metric',
+  api: '^1.0.0',
+  render: ({ label, value }) => ui.stack.row([
+    ui.text(label),
+    ui.progress({ value, max: 100 }),
+  ]),
+})
+`)
+    writeFileSync(join(kitRoot, 'lib', 'types', 'index.d.ts'), `
+import type { BlueComponentFactory } from '@dsh-blue/blue-ui'
+export interface MetricProps { readonly label: string, readonly value: number }
+export declare const metric: BlueComponentFactory<MetricProps>
+`)
+    const packedKit = JSON.parse(execFileSync('npm', ['pack', '--json', '--pack-destination', kitTarballs], { cwd: kitRoot, encoding: 'utf8' }))[0]
+    const kitTarball = join(kitTarballs, packedKit.filename)
+    writeFileSync(join(consumerRoot, 'package.json'), `${JSON.stringify({
+      private: true,
+      type: 'module',
+      dependencies: {
+        '@dsh-blue/blue-api': `file:${apiTarball}`,
+        '@dsh-blue/blue-ui': `file:${uiTarball}`,
+        '@blue-pack-fixture/user-kit': `file:${kitTarball}`,
+      },
+    }, null, 2)}\n`)
+    execFileSync('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: consumerRoot, stdio: 'ignore' })
+    writeFileSync(join(consumerRoot, 'verify.mjs'), `
+import { metric } from '@blue-pack-fixture/user-kit'
+const node = metric.render({ label: 'Context', value: 42 })
+const text = node.children?.[0]?.node
+const progress = node.children?.[1]?.node
+if (node.kind !== 'stack' || node.direction !== 'row' || node.children?.length !== 2 ||
+    text?.kind !== 'text' || text.content !== 'Context' ||
+    progress?.kind !== 'progress' || progress.value !== 42 || progress.max !== 100) {
+  throw new Error('external UI kit runtime contract failed')
+}
+for (const value of [node, node.children, node.children[0], node.children[1], text, progress]) {
+  if (!Object.isFrozen(value)) throw new Error('external UI kit result was not deeply frozen')
+}
+`)
+    execFileSync('node', ['verify.mjs'], { cwd: consumerRoot, stdio: 'inherit' })
+    writeFileSync(join(consumerRoot, 'verify.ts'), `
+import { metric, type MetricProps } from '@blue-pack-fixture/user-kit'
+import type { BlueUiNode } from '@dsh-blue/blue-ui'
+const props: MetricProps = { label: 'Context', value: 42 }
+const node: BlueUiNode = metric.render(props)
+void node
+`)
+    writeFileSync(join(consumerRoot, 'tsconfig.json'), `${JSON.stringify({
+      compilerOptions: { module: 'NodeNext', moduleResolution: 'NodeNext', target: 'ES2024', strict: true, noEmit: true },
+      include: ['verify.ts'],
+    }, null, 2)}\n`)
+    execFileSync(join(ROOT, 'node_modules', '.bin', 'tsc'), ['-p', '.'], { cwd: consumerRoot, stdio: 'inherit' })
+    console.log('external UI kit: packed install, runtime, and types passed')
+  } catch (error) {
+    fail(`external UI kit fixture failed: ${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true })
+  }
+}
+
 for (const relativeDir of PACKAGE_DIRS) {
   const sourceManifest = readManifest(relativeDir)
   const output = execFileSync('pnpm', ['--filter', sourceManifest.name, 'pack', '--json', '--pack-destination', outDir], {
@@ -91,6 +180,7 @@ for (const relativeDir of PACKAGE_DIRS) {
   })
   const packed = parsePackOutput(output, sourceManifest.name)
   const tarball = resolve(packed.filename)
+  tarballs.set(sourceManifest.name, tarball)
   const packageRoot = join(unpackDir, sourceManifest.name.replace(/[^a-z0-9]+/gi, '-'))
   mkdirSync(packageRoot, { recursive: true })
   await extractTar({ file: tarball, cwd: packageRoot, strip: 1 })
@@ -125,6 +215,8 @@ for (const relativeDir of PACKAGE_DIRS) {
   }
   records.push({ name: manifest.name, version: manifest.version, filename: basename(tarball), files: files.length, bytes: files.reduce((sum, file) => sum + file.size, 0) })
 }
+
+verifyExternalUiKit(tarballs.get('@dsh-blue/blue-api'), tarballs.get('@dsh-blue/blue-ui'))
 
 if (libraryFiles > 210) fail(`library lib output has ${libraryFiles} files; budget is 210`)
 if (libraryBytes > 1_500_000) fail(`library lib output has ${libraryBytes} bytes; budget is 1500000`)

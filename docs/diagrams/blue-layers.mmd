@@ -14,7 +14,7 @@ flowchart TB
         end
         subgraph UI["UI 侧 — 只见 readonly 数据与 action"]
             direction TB
-            FE["blue-api · blue-frontend<br/>BlueView 契约 · readonly models · provider host"]
+            FE["blue-api · blue-ui · blue-frontend<br/>UI wire/builders · readonly models · provider host"]
             ADP["blue-transcript · blue-interaction<br/>transcript · 命令 · 面板 · 状态栏 · dock"]
             KRN["blue-core — TUI kernel<br/>全树唯一 import pi-tui"]
             FE --> ADP

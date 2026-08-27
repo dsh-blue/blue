@@ -150,6 +150,9 @@ importers:
       '@dsh-blue/blue-transcript':
         specifier: workspace:*
         version: link:../../transcript
+      '@dsh-blue/blue-ui':
+        specifier: workspace:*
+        version: link:../../ui
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.1
@@ -299,6 +302,9 @@ importers:
       '@dsh-blue/blue-api':
         specifier: workspace:*
         version: link:../api
+      '@dsh-blue/blue-ui':
+        specifier: workspace:*
+        version: link:../ui
       '@earendil-works/pi-tui':
         specifier: ^0.84.2
         version: 0.84.2
@@ -524,6 +530,12 @@ importers:
       '@dsh-blue/blue-core':
         specifier: workspace:*
         version: link:../core
+
+  packages/ui:
+    dependencies:
+      '@dsh-blue/blue-api':
+        specifier: workspace:*
+        version: link:../api
 
   website:
     devDependencies:

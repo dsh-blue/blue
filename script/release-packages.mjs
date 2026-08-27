@@ -10,14 +10,18 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ROOT } from './package-contract.mjs'
+import { RELEASE_PACKAGE_DIRS, ROOT, readManifest } from './package-contract.mjs'
 
 const mode = process.argv[2]
 if (!['publish', 'verify', 'promote'].includes(mode)) throw new Error('usage: release-packages.mjs publish|verify|promote')
 
 const index = JSON.parse(readFileSync(join(ROOT, '.artifacts', 'pack', 'index.json'), 'utf8'))
 const packages = index.packages
-if (!Array.isArray(packages) || packages.length !== 10) throw new Error('pack index must contain exactly ten packages')
+const expectedNames = RELEASE_PACKAGE_DIRS.map(relativeDir => readManifest(relativeDir).name)
+const actualNames = Array.isArray(packages) ? packages.map(pkg => pkg.name) : []
+if (JSON.stringify(actualNames) !== JSON.stringify(expectedNames)) {
+  throw new Error(`pack index package order mismatch: expected ${expectedNames.join(', ')}, got ${actualNames.join(', ')}`)
+}
 const versions = new Set(packages.map(pkg => pkg.version))
 if (versions.size !== 1) throw new Error(`pack index contains mixed versions: ${[...versions].join(', ')}`)
 const version = [...versions][0]

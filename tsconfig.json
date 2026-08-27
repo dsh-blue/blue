@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "packages/api" },
+    { "path": "packages/ui" },
     { "path": "packages/frontend" },
     { "path": "packages/conversation" },
     { "path": "packages/harness-adapter" },

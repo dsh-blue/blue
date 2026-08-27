@@ -15,6 +15,7 @@ export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 /** Publish order is dependency order; the launcher is always last. */
 export const RELEASE_PACKAGE_DIRS = [
   'packages/api',
+  'packages/ui',
   'packages/frontend',
   'packages/harness-adapter',
   'packages/conversation',

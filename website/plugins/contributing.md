@@ -21,7 +21,7 @@ script/install-dev.sh
 # 覆盖项：DSH_BIN=/path/to/dsh PROFILE=my-profile DSH_HOME=/custom/home script/install-dev.sh
 ```
 
-脚本会构建整个 workspace，并按 `script/install-dev.sh` 的权威列表 link 安装 11 个条目：bundle 本体加 10 个库包（api、frontend、harness-adapter、conversation、core、interaction、transcript、openpencil、lark、app）——OpenPencil/Lark 以 validation adapter 身份同车 dogfood；context/remote 两个 validation-only 包不在链接列表里，它们经独立 fixture 验证。
+脚本会构建整个 workspace，并按 `script/install-dev.sh` 的权威列表 link 安装 12 个条目：bundle 本体加 11 个库包（api、ui、frontend、harness-adapter、conversation、core、interaction、transcript、openpencil、lark、app）——OpenPencil/Lark 以 validation adapter 身份同车 dogfood；context/remote 两个 validation-only 包不在链接列表里，它们经独立 fixture 验证。
 
 ## 手动安装（等价步骤）
 
@@ -32,6 +32,7 @@ pnpm install && pnpm run build   # lib/ 是每个包的运行时入口
 dsh plugin --profile blue-dev add \
   link:/path/to/blue/packages/bundle/blue \
   link:/path/to/blue/packages/api \
+  link:/path/to/blue/packages/ui \
   link:/path/to/blue/packages/frontend \
   link:/path/to/blue/packages/harness-adapter \
   link:/path/to/blue/packages/conversation \
@@ -46,7 +47,7 @@ dsh --profile blue-dev [task]           # 执行任务，或进入交互模式
 dsh --profile blue-dev --resume <id>    # 恢复一个已持久化的会话
 ```
 
-**为什么 link 11 个包**：bundle 的本地 `workspace:^` closure 在 workspace 外需要显式 link，OpenPencil/Lark 同时进入 dogfood validation lane。十个非 bundle 链接会出现 `declares no dsh.bundle` 警告，属预期行为。`script/install-dev.sh` 是列表权威来源；context/remote 用独立 fixture，不装入产品 profile。
+**为什么 link 12 个包**：bundle 的本地 `workspace:*` closure 在 workspace 外需要显式 link，OpenPencil/Lark 同时进入 dogfood validation lane。十一个非 bundle 链接会出现 `declares no dsh.bundle` 警告，属预期行为。`script/install-dev.sh` 是列表权威来源；context/remote 用独立 fixture，不装入产品 profile。
 
 ::: tip 三条泳道，别混
 - **`blue`** = 生产 profile,**只走 npm 安装**（`@dsh-blue/blue@rc` / 精确版本号）。永远不要往里 `link:`——后续 npm 升级只会覆盖点名的包，残留的链接悬空后启动即 `ERR_MODULE_NOT_FOUND`（且 `pnpm add` 对混装零告警）。
