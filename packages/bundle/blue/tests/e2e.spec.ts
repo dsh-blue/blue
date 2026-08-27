@@ -2222,6 +2222,10 @@ describe('blue whole-tree e2e', () => {
     typeLine(tree.terminal, 'second prompt')
     await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(2) })
     await parent.whenIdle()
+    // Persist the completed parent turn before creating the rewind child. The
+    // rewind request disposes the parent's live Agent, so flushing afterward
+    // is invalid and a profile scan can otherwise miss the parent on CI.
+    await tree.ctx.sessions.flush(parent.session)
     const secondUserIndex = parent.session.events.findIndex(event =>
       event.type === 'user/message' && JSON.stringify(event.data).includes('second prompt'))
     const secondTurnStart = parent.session.events.slice(0, secondUserIndex + 1)
