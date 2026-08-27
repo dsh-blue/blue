@@ -9,6 +9,18 @@ Stable contracts contain readonly Blue-owned data only. Agent, SessionEvent,
 BlueComponent, BlueScreen, ANSI formatters, raw key sequences, and mutable
 session references remain implementation or experimental surfaces.
 
+`BlueView` remains the sanitized content leaf. `BlueUiNode` adds only the
+closed layout/pattern vocabulary; responsive visibility is `BlueUiChild.when`,
+not a renderer callback or node kind. `BlueStatusNode` is recursively narrowed
+to text/rich-text/fields/progress/stack. `editor-control` exists only in the
+provider shell union and runtime admission must count exactly one.
+
+Node/event/snapshot data is JSON-shaped. Render callbacks, event handlers,
+`AbortSignal`, opaque one-shot `BlueUserGesture`, and registration handles are
+the process-local boundary. Change events are latest-wins per control;
+activate/submit/dismiss are FIFO per surface. The host owns revision fencing,
+abort, timeout, and coalesced refresh.
+
 `BlueResult` includes `BLUE_CAPABILITY_ABSENT` for adapters and features that
 probe an optional Harness capability. Consumers should render that result as a
 plain or read-only fallback and must not treat it as a thrown plugin failure.
@@ -36,12 +48,19 @@ copies in the same lockstep profile share it (the D37 cross-store lesson),
 while a dynamic VM has a separate global and sees only `version/open` on the
 guarded service.
 
-The first creative-mode surface is additive only: `dock`, `status`, `commands`,
-and `notifications` are public capabilities. Duplicate contribution ids are
-rejected; no API permits replacing an existing Blue feature or reaching the
-root Loader, HMR, renderer, Agent, or Session objects. `session.read` remains a
-declared contract until the app projection/runtime vertical slice supplies its
-snapshot and stale-event guarantees.
+The public capability vocabulary is `commands`, `notifications`, `status`,
+`panes`, `overlays`, `editor.extensions`, `session.read`, `session.act`,
+`status.provider`, and `editor.provider`. The two provider registries contain
+inert candidates; user configuration, never priority or installation, selects
+one. Public validation rejects `dock/panels/editor/tools` with an actionable
+`BLUE_LEGACY_CAPABILITY` result.
+
+W1 compatibility exception: `host.ts` uses the non-root-exported
+`validateBlueHostManifest` to admit the existing built-in `dock` bridge, and
+`contracts.ts` retains deprecated dock/status adapter shapes. W2-C must remove
+that validator, `BluePluginApi.dock`, `BlueDockContribution`, the host dock
+registry/snapshot, and the compile-only legacy capability input when pane and
+status owners migrate. No new plugin may depend on this transition.
 
 ## Distribution contract
 

@@ -8,19 +8,23 @@
 export type BlueCapability =
   | 'commands'
   | 'status'
-  | 'tools'
-  | 'dock'
-  | 'editor'
-  | 'panels'
   | 'notifications'
+  | 'panes'
+  | 'overlays'
+  | 'editor.extensions'
   | 'session.read'
   | 'session.act'
+  | 'status.provider'
+  | 'editor.provider'
+
+/** @deprecated Compile-only input removed after built-in dock consumers migrate in W2-C. */
+type BlueLegacyCapability = 'dock' | 'panels' | 'editor' | 'tools'
 
 /** A plugin's static compatibility declaration. */
 export interface BluePluginManifest {
   readonly id: string
   readonly api: string
-  readonly capabilities: readonly BlueCapability[]
+  readonly capabilities: readonly (BlueCapability | BlueLegacyCapability)[]
   /** Versioned on-disk manifest format. Omitted for legacy inline manifests. */
   readonly schemaVersion?: 1
   /** Published package entry, relative to the package root. */
@@ -49,6 +53,7 @@ export type BlueManifestErrorCode =
   | 'BLUE_INVALID_ENTRY'
   | 'BLUE_INVALID_INTEGRITY'
   | 'BLUE_INVALID_CAPABILITY'
+  | 'BLUE_LEGACY_CAPABILITY'
   | 'BLUE_DUPLICATE_CAPABILITY'
 
 /** Structured validation result. */
@@ -59,12 +64,19 @@ export type BlueManifestResult =
 const ID_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/
 const RANGE_PATTERN = /^[~^=<>*0-9xX|.\-+\s]+$/
 const CAPABILITIES = new Set<BlueCapability>([
-  'commands', 'status', 'tools', 'dock', 'editor', 'panels',
-  'notifications', 'session.read', 'session.act',
+  'commands', 'status', 'notifications', 'panes', 'overlays',
+  'editor.extensions', 'session.read', 'session.act',
+  'status.provider', 'editor.provider',
 ])
 
-/** Validate a manifest without executing plugin code. */
-export function validateBlueManifest(manifest: BluePluginManifest): BlueManifestResult {
+const LEGACY_CAPABILITIES: Readonly<Record<BlueLegacyCapability, string>> = {
+  dock: 'use "panes"',
+  panels: 'use "panes" or "overlays"',
+  editor: 'use "editor.extensions" or the user-selected "editor.provider"',
+  tools: 'no replacement; tool presentation remains Blue-owned',
+}
+
+function validateManifest(manifest: BluePluginManifest, allowLegacyDock: boolean): BlueManifestResult {
   if (manifest === null || typeof manifest !== 'object') {
     return { ok: false, code: 'BLUE_INVALID_MANIFEST', message: 'manifest must be an object' }
   }
@@ -93,6 +105,15 @@ export function validateBlueManifest(manifest: BluePluginManifest): BlueManifest
   }
   const capabilities = new Set<string>()
   for (const capability of manifest.capabilities) {
+    if (capability === 'dock' && allowLegacyDock) {
+      if (capabilities.has(capability)) return { ok: false, code: 'BLUE_DUPLICATE_CAPABILITY', message: `capability "${capability}" is repeated` }
+      capabilities.add(capability)
+      continue
+    }
+    if (typeof capability === 'string' && capability in LEGACY_CAPABILITIES) {
+      const migration = LEGACY_CAPABILITIES[capability as BlueLegacyCapability]
+      return { ok: false, code: 'BLUE_LEGACY_CAPABILITY', message: `capability "${capability}" was removed; ${migration}` }
+    }
     if (typeof capability !== 'string' || !CAPABILITIES.has(capability as BlueCapability)) {
       return { ok: false, code: 'BLUE_INVALID_CAPABILITY', message: `unknown capability "${String(capability)}"` }
     }
@@ -102,4 +123,14 @@ export function validateBlueManifest(manifest: BluePluginManifest): BlueManifest
     capabilities.add(capability)
   }
   return { ok: true }
+}
+
+/** Validate a public manifest without executing plugin code. */
+export function validateBlueManifest(manifest: BluePluginManifest): BlueManifestResult {
+  return validateManifest(manifest, false)
+}
+
+/** @internal W1 compatibility for the existing built-in dock owner; remove in W2-C. */
+export function validateBlueHostManifest(manifest: BluePluginManifest): BlueManifestResult {
+  return validateManifest(manifest, true)
 }

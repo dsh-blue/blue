@@ -35,6 +35,22 @@ describe('@dsh-blue/blue-api', () => {
     expect(validateBlueManifest({ id: '@acme/example', api: '^1.0.0', capabilities: ['commands'], schemaVersion: 1, entry: './index.js', blue: '>=0.1.0', harness: '^0.1.1', node: '>=22', integrity: 'sha512-abc' })).toEqual({ ok: true })
   })
 
+  it('rejects removed capabilities with actionable migrations', () => {
+    expect(validateBlueManifest({ id: '@acme/example', api: '^1.0.0', capabilities: ['dock'] })).toEqual({
+      ok: false, code: 'BLUE_LEGACY_CAPABILITY', message: 'capability "dock" was removed; use "panes"',
+    })
+    expect(validateBlueManifest({ id: '@acme/example', api: '^1.0.0', capabilities: ['panels'] })).toMatchObject({
+      ok: false, code: 'BLUE_LEGACY_CAPABILITY', message: expect.stringContaining('"panes" or "overlays"'),
+    })
+    expect(validateBlueManifest({ id: '@acme/example', api: '^1.0.0', capabilities: ['editor'] })).toMatchObject({
+      ok: false, code: 'BLUE_LEGACY_CAPABILITY', message: expect.stringContaining('"editor.extensions"'),
+    })
+    expect(validateBlueManifest({ id: '@acme/example', api: '^1.0.0', capabilities: ['tools'] })).toEqual({
+      ok: false, code: 'BLUE_LEGACY_CAPABILITY', message: 'capability "tools" was removed; no replacement; tool presentation remains Blue-owned',
+    })
+    expect(validateBlueManifest({ id: '@acme/example', api: '^1.0.0', capabilities: ['panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'] })).toEqual({ ok: true })
+  })
+
   it('keeps the published boundary free of source-plane exports', () => {
     const manifest = JSON.parse(readFileSync(join(packageDir, '..', 'package.json'), 'utf8')) as {
       exports: Record<string, unknown>

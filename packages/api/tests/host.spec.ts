@@ -56,6 +56,7 @@ describe('BluePluginHostService', () => {
     expect(host.open(c, null as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
     expect(host.open(c, { id: '@acme/plugin', api: '^2.0.0', capabilities: [] })).toMatchObject({ ok: false, code: 'BLUE_API_INCOMPATIBLE' })
     expect(host.open(null as never, manifest([]))).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
+    expect(host.open(c, manifest(['dock', 'dock']))).toMatchObject({ ok: false, code: 'BLUE_API_INCOMPATIBLE' })
     expect(host.open(c, manifest(['session.read']))).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_DENIED' })
   })
 

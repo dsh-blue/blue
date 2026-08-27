@@ -7,7 +7,7 @@
 
 import { Service, symbols, type Context } from '@deepseek-ai/cordis'
 import type { BlueCommandContribution, BlueDockContribution, BlueNotification, BluePluginApi, BluePluginHost, BlueRegistration, BlueRegistry, BlueResult, BlueStatusContribution } from './contracts.ts'
-import { validateBlueManifest, type BlueCapability, type BluePluginManifest } from './manifest.ts'
+import { validateBlueHostManifest, type BlueCapability, type BluePluginManifest } from './manifest.ts'
 import type { BlueErrorCode } from './contracts.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -17,6 +17,7 @@ declare module '@deepseek-ai/cordis' {
 }
 
 type Capability = 'commands' | 'status' | 'dock' | 'notifications'
+type HostCapability = BlueCapability | 'dock'
 type EffectOwner = { effect(callback: () => () => void): unknown }
 
 /** Readonly aggregate consumed only by Blue-owned renderer adapters. */
@@ -227,7 +228,7 @@ function capabilityReady(state: BluePluginHostState, capability: Capability): bo
 export function attachBluePluginHostCapabilities(
   host: BluePluginHostService,
   owner: EffectOwner,
-  capabilities: readonly BlueCapability[],
+  capabilities: readonly HostCapability[],
 ): BlueRegistration {
   const state = stateOf(host)
   const owned = [...new Set(capabilities)]
@@ -324,7 +325,7 @@ export class BluePluginHostService extends Service implements BluePluginHost {
     if (typeof consumer !== 'object' || consumer === null || typeof consumer.effect !== 'function') {
       return failure('BLUE_INVALID_CONTRIBUTION', 'consumer must expose a Cordis effect function')
     }
-    const valid = validateBlueManifest(manifest)
+    const valid = validateBlueHostManifest(manifest)
     if (!valid.ok) return failure(valid.code === 'BLUE_INVALID_MANIFEST' ? 'BLUE_INVALID_CONTRIBUTION' : 'BLUE_API_INCOMPATIBLE', valid.message)
     if (!API_MAJOR.test(manifest.api)) return failure('BLUE_API_INCOMPATIBLE', `unsupported Blue API range "${manifest.api}"`)
     const capabilities = [...manifest.capabilities]

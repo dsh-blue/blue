@@ -24,31 +24,7 @@ export {
   subscribeBluePluginNotifications,
   type BluePluginHostSnapshot,
 } from './host.ts'
-export type { BluePluginHost } from './contracts.ts'
-export type {
-  BlueCommandContribution,
-  BlueContributionMeta,
-  BlueDockContribution,
-  BlueErrorCode,
-  BlueField,
-  BlueInlineSpan,
-  BlueNotification,
-  BluePluginApi,
-  BlueRegistry,
-  BlueJson,
-  BlueRegistration,
-  BlueRequestLifecycle,
-  BlueRequestRef,
-  BlueRequestState,
-  BlueResult,
-  BlueSection,
-  BlueSessionAction,
-  BlueSessionReader,
-  BlueSessionSnapshot,
-  BlueStatusContribution,
-  BlueTone,
-  BlueView,
-} from './contracts.ts'
+export type * from './contracts.ts'
 
 /** Blue's public API major version. */
 export const BLUE_API_VERSION = '1.0.0'
