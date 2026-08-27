@@ -2,8 +2,8 @@
 
 The leaf package for Blue's stable, renderer-independent plugin contracts. It
 must not import core, transcript, interaction, app, pi-tui, or a concrete dsh
-service. Runtime code is limited to pure manifest validation and the stable
-version constant; Cordis owns plugin activation and Fiber lifetime.
+service. Runtime code is limited to manifest validation and the renderer-free
+plugin host; Cordis owns plugin activation and Fiber lifetime.
 
 Stable contracts contain readonly Blue-owned data only. Agent, SessionEvent,
 BlueComponent, BlueScreen, ANSI formatters, raw key sequences, and mutable
@@ -13,7 +13,8 @@ session references remain implementation or experimental surfaces.
 closed layout/pattern vocabulary; responsive visibility is `BlueUiChild.when`,
 not a renderer callback or node kind. `BlueStatusNode` is recursively narrowed
 to text/rich-text/fields/progress/stack. `editor-control` exists only in the
-provider shell union and runtime admission must count exactly one.
+provider shell union. Provider admission checks callback shape only; the
+selected owner validates a rendered tree and its single editor-control slot.
 
 Node/event/snapshot data is JSON-shaped. Render callbacks, event handlers,
 `AbortSignal`, opaque one-shot `BlueUserGesture`, and registration handles are
@@ -55,15 +56,24 @@ inert candidates; user configuration, never priority or installation, selects
 one. Public validation rejects `dock/panels/editor/tools` with an actionable
 `BLUE_LEGACY_CAPABILITY` result.
 
-W1 compatibility exception: `host.ts` uses the non-root-exported
+The host implements `status`, `panes`, `overlays`, `editor.extensions`, and
+both provider registries without rendering plugin callbacks. Pane state keeps
+owner-only hidden metadata. Overlay snapshots preserve global stack order and
+normalize `capturing=false` / `dismissible=true`; capturing admission consumes
+an owner-minted `BlueUserGesture` by object identity. Refresh handles enforce
+20 successful calls per rolling second and cancel pending coalesced ticks when
+their contribution is disposed. Owner gaps retain contributions but reject
+new writes with `BLUE_CAPABILITY_ABSENT`; `session.read/session.act` remain
+denied because no owner/API seam exists.
+
+W2-C compatibility exception: `host.ts` uses the non-root-exported
 `validateBlueHostManifest` to admit the existing built-in `dock` bridge, and
 `contracts.ts` retains deprecated dock/status adapter shapes for owner
-snapshots only. `BluePluginApi.status` already has its final narrowed type;
-`host.ts` explicitly casts the old registry behind that boundary. W2-C replaces
-the cast and old status registry without changing the public field, then removes
-the host transition validator, `BluePluginApi.dock`, `BlueDockContribution`,
-host dock registry/snapshot, and `BlueHostManifest` when pane/status owners
-migrate. No new plugin may depend on this transition.
+compatibility. `BluePluginApi.status` uses its final narrowed registry with no
+cast; the deprecated status shape is snapshot compatibility only. Remove the
+host transition validator, `BluePluginApi.dock`, `BlueDockContribution`, host
+dock registry/snapshot, and `BlueHostManifest` when dock owners migrate. No new
+plugin may depend on this transition.
 
 ## Distribution contract
 

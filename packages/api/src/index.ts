@@ -15,6 +15,7 @@ export {
 export {
   BluePluginHostService,
   attachBluePluginHostCapabilities,
+  createBlueUserGesture,
   apply,
   apply as applyHost,
   name,
@@ -23,6 +24,9 @@ export {
   subscribeBluePluginHost,
   subscribeBluePluginNotifications,
   type BluePluginHostSnapshot,
+  type BluePluginHostOptions,
+  type BluePluginHostOverlayEntry,
+  type BluePluginHostPaneEntry,
 } from './host.ts'
 export type * from './contracts.ts'
 

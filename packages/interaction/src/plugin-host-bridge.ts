@@ -6,7 +6,7 @@
  * @module @dsh-blue/blue-interaction/plugin-host-bridge
  */
 
-import type { Context } from '@deepseek-ai/cordis'
+import { symbols, type Context } from '@deepseek-ai/cordis'
 import { attachBluePluginHostCapabilities, subscribeBluePluginHost, subscribeBluePluginNotifications, type BlueCommandContribution, type BluePluginHostSnapshot, type BlueResult } from '@dsh-blue/blue-api'
 import { paintPluginTone, summarizePluginView } from '@dsh-blue/blue-core'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
@@ -30,7 +30,8 @@ function commandArgs(rawInput: string): readonly string[] {
 
 /** Register public commands and route public notifications without exposing owner services. */
 export function apply(ctx: Context): void {
-  attachBluePluginHostCapabilities(ctx.bluePluginHost, ctx, ['commands', 'notifications'])
+  const host = (ctx.bluePluginHost as unknown as Record<symbol, typeof ctx.bluePluginHost | undefined>)[symbols.original] ?? ctx.bluePluginHost
+  attachBluePluginHostCapabilities(host, ctx, ['commands', 'notifications'])
   const commands = new Map<string, () => void>()
 
   const syncCommands = (entries: readonly BlueCommandContribution[]): void => {

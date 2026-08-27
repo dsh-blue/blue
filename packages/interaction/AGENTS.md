@@ -64,7 +64,7 @@ Transcript tunables remain in this settings schema because interaction owns the 
 - `attachments`: bounded filesystem `AttachmentStore`.
 - `paste-image`: platform clipboard ingestion and reversible submit transformation.
 - `command-model`: renderer-neutral command registry.
-- `plugin-host-bridge`: public command/notification contributions.
+- `plugin-host-bridge`: public command/notification contributions. It unwraps the guarded host only for the Blue-owned readiness attach; snapshots and notification observation stay on guarded seams.
 
 The plugin-host bridge advertises `commands` and `notifications` only for its
 active Fiber. Unload removes concrete command/notice adapters and withdraws

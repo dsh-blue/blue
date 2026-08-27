@@ -54,7 +54,7 @@ BTW calls `blueSessionActions.createSideSession()`, holds the returned owned han
 
 `BlueModelToolService` converts official generic/terminal/diff/search/read/web presentation facts into readonly frontend views and never reads session events. The semantic transcript renderer keeps `ToolCallComponent` as the status/header/key-argument/shell chrome and nests the official view as its bounded body; tools without a presenter retain the generic rich fallback instead of receiving a synthetic name-only view. There is no `blueIntents` registry and no intent subpath export.
 
-`plugin-host-bridge.ts` is the only route from public plugin dock/status models into owner registries. Reordering replaces the individually budgeted public dock mounts atomically; unload runs every screen/status disposer.
+`plugin-host-bridge.ts` is the only route from public plugin dock/status models into owner registries. It unwraps the guarded host only for the owner-only readiness attach call; snapshot subscription stays guarded. The W2-C snapshot status cast is temporary until W3-C routes final status nodes through the core status compiler. Reordering replaces the individually budgeted public dock mounts atomically; unload runs every screen/status disposer.
 
 ## Package Surface
 

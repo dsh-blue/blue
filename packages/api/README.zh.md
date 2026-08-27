@@ -18,6 +18,8 @@ Blue Cordis 插件的稳定、renderer-independent 公共契约。本包不含 r
 
 node、event payload 和 snapshot 是 readonly、JSON-shaped 数据；`render`、`onEvent`、`AbortSignal` 和 registration handle 是进程内执行边界。插件只收到语义事件，不接触 raw key。value/selection/tab change 按 control latest-wins；activate/submit/dismiss 按 surface FIFO。revision、abort、timeout 和合并 refresh 由 Blue 托管。
 
-`BlueStatusNode` 递归只允许 text、rich text、fields、progress 和 stack，`BluePluginApi.status` 现在就暴露最终 additive contract。现有 host 只在该边界内部 cast deprecated `BlueView` registry，W2-C 将替换这一 runtime bridge。`BlueEditorShellNode` 是 provider-only 独立树，包含 `editor-control` slot；普通 `BlueUiNode` 无法构造该 slot，host admission 还必须验证恰好一个。status/editor provider 注册后只是候选，只有 Blue 持有的用户配置能激活。
+`BlueStatusNode` 递归只允许 text、rich text、fields、progress 和 stack，`BluePluginApi.status` 已由最终 additive registry 实现。host 同时接纳 pane、overlay、editor extension 和 status/editor provider 候选。每个 contribution 在滚动一秒内最多成功 refresh 20 次，同 tick 调用会合并 owner 通知。capturing overlay 必须携带 host 为 owner 创建的 `BlueUserGesture`；proof 只消费一次，owner 卸载时其未消费 proof 全部失效。
 
-W1 只声明新 registry，不实现它们。现有 host 暂留 deprecated 内建 `dock` bridge，使仓库在 W2-C 把 owner 迁移到 `panes` 前仍可运行；发布 manifest 已无法通过 `dock` 的公共校验。
+`BlueEditorShellNode` 是 provider-only 独立树，包含 `editor-control` slot；普通 `BlueUiNode` 无法构造该 slot。provider registration 只校验 callback 形状，不调用 `render`、不检查其返回树，也不选择 winner；只有 Blue 持有的用户配置能激活 inert candidate。`session.read` 与 `session.act` 在真正的 owner/API seam 能提供 snapshot 与 action 保证前继续拒绝。
+
+host 暂留 deprecated 内建 `dock` bridge 作为仓库兼容层，供 owner 迁移到 `panes`；发布 manifest 已无法通过 `dock` 的公共校验。
