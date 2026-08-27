@@ -83,7 +83,7 @@ describe('calibrate', () => {
       calls.push({ cmd, args, opts })
       return OK
     }
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({ action: 'current' })
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({ action: 'current' })
     expect(calls).toEqual([])
   })
 
@@ -94,14 +94,14 @@ describe('calibrate', () => {
       spawned = true
       return OK
     }
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({
       action: 'link-lane',
       spec: 'link:/checkout/packages/bundle/blue',
     })
     expect(spawned).toBe(false)
   })
 
-  it('installs the pin through the global host and verifies the result', async () => {
+  it('installs the pin through the nested host and verifies the result', async () => {
     const { root } = fixtureHome({})
     const calls: Call[] = []
     cliInternals.spawnOnce = withProbe(async (cmd, args, opts) => {
@@ -110,10 +110,10 @@ describe('calibrate', () => {
       writeFileSync(join(root, 'node_modules', '@dsh-blue', 'blue', 'package.json'), installedManifest(PIN))
       return OK
     })
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({ action: 'installed' })
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({ action: 'installed' })
     expect(calls).toEqual([{
-      cmd: 'dsh',
-      args: ['plugin', '--profile', 'blue', 'add', `@dsh-blue/blue@${PIN}`],
+      cmd: process.execPath,
+      args: ['nested-dsh.js', 'plugin', '--profile', 'blue', 'add', `@dsh-blue/blue@${PIN}`],
       opts: { timeoutMs: 1_200_000 },
     }])
   })
@@ -128,7 +128,7 @@ describe('calibrate', () => {
       writeFileSync(join(root, 'node_modules', '@dsh-blue', 'blue', 'package.json'), installedManifest(PIN))
       return OK
     }
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({ action: 'installed' })
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({ action: 'installed' })
     expect(calls[0]).toEqual({ cmd: 'pnpm', args: ['--version'], opts: { timeoutMs: 30_000 } })
     expect(calls).toHaveLength(2)
   })
@@ -140,7 +140,7 @@ describe('calibrate', () => {
       spawned = true
       return OK
     }
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({
       action: 'ahead',
       installed: '0.1.0-rc.6',
     })
@@ -161,10 +161,10 @@ describe('calibrate', () => {
       writeFileSync(join(root, 'node_modules', '@dsh-blue', 'blue', 'package.json'), installedManifest(PIN))
       return OK
     })
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({ action: 'installed' })
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({ action: 'installed' })
     expect(calls.map(call => call.args.join(' '))).toEqual([
-      `plugin --profile blue add @dsh-blue/blue@${PIN}`,
-      `plugin --profile blue add -w @dsh-blue/blue@${PIN}`,
+      `nested-dsh.js plugin --profile blue add @dsh-blue/blue@${PIN}`,
+      `nested-dsh.js plugin --profile blue add -w @dsh-blue/blue@${PIN}`,
     ])
   })
 
@@ -175,7 +175,7 @@ describe('calibrate', () => {
       stderr: 'dsh: pnpm not found on PATH — install pnpm to manage profile plugins\n',
       timedOut: false,
     }))
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'pnpm is missing on PATH — npm i -g pnpm@11 (or: corepack enable pnpm@11)',
       kind: 'pnpm-missing',
@@ -190,7 +190,7 @@ describe('calibrate', () => {
       installSpawned = true
       return OK
     }, { ...OK, stdout: '10.4.1\n' })
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'pnpm 11 is required — npm i -g pnpm@11 (or: corepack enable pnpm@11)',
       kind: 'pnpm-version',
@@ -205,7 +205,7 @@ describe('calibrate', () => {
       installSpawned = true
       return OK
     }, PROBE_ENOENT)
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'pnpm is missing on PATH — npm i -g pnpm@11 (or: corepack enable pnpm@11)',
       kind: 'pnpm-missing',
@@ -223,7 +223,7 @@ describe('calibrate', () => {
       probes.push({ cmd, args, opts })
       return { code: 9009, signal: null, stdout: '', stderr: "'pnpm' is not recognized as an internal or external command\r\n", timedOut: false }
     }
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'pnpm is missing on PATH — npm i -g pnpm@11 (or: corepack enable pnpm@11)',
       kind: 'pnpm-missing',
@@ -235,7 +235,7 @@ describe('calibrate', () => {
     fixtureHome({})
     cliInternals.platform = 'win32'
     cliInternals.spawnOnce = async () => ({ code: 127, signal: null, stdout: '', stderr: 'pnpm: not found\n', timedOut: false })
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'pnpm is missing on PATH — npm i -g pnpm@11 (or: corepack enable pnpm@11)',
       kind: 'pnpm-missing',
@@ -257,7 +257,7 @@ describe('calibrate', () => {
       }
       cliInternals.platform = 'win32'
       cliInternals.spawnOnce = withProbe(install, probe)
-      await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({ action: 'installed' })
+      await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({ action: 'installed' })
     }
   })
 
@@ -269,7 +269,7 @@ describe('calibrate', () => {
       stderr: 'dsh: pnpm failed in profile directory C:\\Users\\x\\.dsh\\profiles\\blue\n',
       timedOut: false,
     }))
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'pnpm is missing on PATH — npm i -g pnpm@11 (or: corepack enable pnpm@11)',
       kind: 'pnpm-missing',
@@ -284,7 +284,7 @@ describe('calibrate', () => {
       stderr: 'pnpm: downloading…\nblue: install timed out',
       timedOut: true,
     }))
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'install timed out after 20 minutes',
       kind: 'timeout',
@@ -295,7 +295,7 @@ describe('calibrate', () => {
   it('fails one-line on a rejected install, quoting the output tail', async () => {
     fixtureHome({})
     cliInternals.spawnOnce = withProbe(async () => ({ code: 1, signal: null, stdout: '', stderr: 'pnpm: install\nETARGET no match\n', timedOut: false }))
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'ETARGET no match',
       kind: 'install',
@@ -306,14 +306,14 @@ describe('calibrate', () => {
   it('fails on a spawn error and on a post-install mismatch', async () => {
     fixtureHome({})
     cliInternals.spawnOnce = withProbe(async () => ({ code: 0, signal: null, stdout: '', stderr: '', timedOut: false, spawnError: 'ENOENT' }))
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'ENOENT',
       kind: 'install',
     })
     fixtureHome({})
     cliInternals.spawnOnce = withProbe(async () => OK)
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'profile reports @dsh-blue/blue@uninstalled after install',
       kind: 'verify',
@@ -323,7 +323,7 @@ describe('calibrate', () => {
   it('reads broken manifests as absent and installs through them', async () => {
     fixtureHome({ 'package.json': '{ broken', 'node_modules/@dsh-blue/blue/package.json': '{ also broken' })
     cliInternals.spawnOnce = withProbe(async () => OK)
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'profile reports @dsh-blue/blue@uninstalled after install',
       kind: 'verify',
@@ -333,7 +333,7 @@ describe('calibrate', () => {
   it('reads a non-string installed version as absent', async () => {
     fixtureHome({ 'package.json': JSON.stringify({ dependencies: {} }), 'node_modules/@dsh-blue/blue/package.json': JSON.stringify({ version: 3 }) })
     cliInternals.spawnOnce = withProbe(async () => OK)
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'profile reports @dsh-blue/blue@uninstalled after install',
       kind: 'verify',
@@ -344,7 +344,7 @@ describe('calibrate', () => {
     fixtureHome({})
     const long = `y`.repeat(400)
     cliInternals.spawnOnce = withProbe(async () => ({ code: 1, signal: null, stdout: '', stderr: `${long}\nETARGET no match\n`, timedOut: false }))
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'ETARGET no match',
       kind: 'install',
@@ -356,14 +356,14 @@ describe('calibrate', () => {
     fixtureHome({})
     const long = `x`.repeat(400)
     cliInternals.spawnOnce = withProbe(async () => ({ code: 1, signal: null, stdout: '', stderr: `${long}\n`, timedOut: false }))
-    const outcome = await calibrate({ version: PIN, dshCommand: 'dsh' })
+    const outcome = await calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })
     expect(outcome).toEqual({ action: 'failed', reason: `${'x'.repeat(197)}...`, kind: 'install' })
   })
 
   it('falls back to a generic reason when the install died wordlessly', async () => {
     fixtureHome({})
     cliInternals.spawnOnce = withProbe(async () => ({ code: 1, signal: null, stdout: '', stderr: '', timedOut: false }))
-    await expect(calibrate({ version: PIN, dshCommand: 'dsh' })).resolves.toEqual({
+    await expect(calibrate({ version: PIN, dshBinJs: 'nested-dsh.js' })).resolves.toEqual({
       action: 'failed',
       reason: 'install failed',
       kind: 'install',

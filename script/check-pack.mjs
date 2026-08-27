@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, wri
 import { basename, join, resolve } from 'node:path'
 import { x as extractTar } from 'tar'
 import { PACKAGE_DIRS, ROOT, readManifest } from './package-contract.mjs'
+import { buildCliRuntime } from './pack-cli-runtime.mjs'
 
 const outDir = resolve(process.env.BLUE_PACK_DIR ?? join(ROOT, '.artifacts', 'pack'))
 const unpackDir = join(outDir, 'unpacked')
@@ -21,6 +22,8 @@ let libraryBytes = 0
 
 rmSync(outDir, { recursive: true, force: true })
 mkdirSync(unpackDir, { recursive: true })
+
+const cliRuntime = await buildCliRuntime()
 
 function fail(message) {
   problems.push(message)
@@ -103,8 +106,13 @@ for (const relativeDir of PACKAGE_DIRS) {
   if (sourceManifest.name === '@dsh-blue/blue-cli') {
     const runtime = files.filter(file => file.path.startsWith('lib/'))
     if (runtime.length !== 1 || runtime[0]?.path !== 'lib/bin.js') fail(`${sourceManifest.name}: lib must contain only lib/bin.js`)
-    if ((runtime[0]?.size ?? Infinity) > 30_000) fail(`${sourceManifest.name}: lib/bin.js exceeds the 30 KB budget`)
+    if ((runtime[0]?.size ?? Infinity) > 400_000) fail(`${sourceManifest.name}: lib/bin.js exceeds the 400 KB budget`)
     if (Object.keys(manifest.dependencies ?? {}).length > 0) fail(`${sourceManifest.name}: launcher must remain dependency-free`)
+    const payloads = files.filter(file => /^runtime-(?:common|(?:linux|darwin|win32)-(?:x64|arm64))\.tgz$/.test(file.path))
+    if (payloads.length !== cliRuntime.archives.length) fail(`${sourceManifest.name}: expected ${cliRuntime.archives.length} runtime archives, got ${payloads.length}`)
+    const payloadBytes = payloads.reduce((sum, file) => sum + file.size, 0)
+    if (payloadBytes !== cliRuntime.bytes) fail(`${sourceManifest.name}: runtime archives changed after assembly`)
+    if (cliRuntime.bytes > 150_000_000) fail(`${sourceManifest.name}: runtime archives exceed the 150 MB budget`)
   } else {
     libraryFiles += files.filter(file => file.path.startsWith('lib/')).length
     libraryBytes += files.filter(file => file.path.startsWith('lib/')).reduce((sum, file) => sum + file.size, 0)

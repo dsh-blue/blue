@@ -22,7 +22,7 @@ export type Invocation = 'boot' | 'plugin' | 'version'
 export interface Translation {
   /** The surface: answered by the shell (`version`) or forwarded. */
   readonly kind: Invocation
-  /** The global dsh argv. */
+  /** The bundled dsh argv. */
   readonly dshArgs: readonly string[]
 }
 

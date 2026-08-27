@@ -16,4 +16,5 @@ export default defineConfig(BUILD_PACKAGE_DIRS.map(relativeDir => ({
   fixedExtension: false,
   dts: false,
   clean: false,
+  deps: relativeDir === 'packages/cli' ? { alwaysBundle: ['tar'] } : undefined,
 })))

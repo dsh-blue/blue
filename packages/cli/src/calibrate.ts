@@ -49,14 +49,12 @@ export type CalibrationOutcome =
       readonly detail?: readonly string[] | undefined
     }
 
-/** What calibration needs: the pin and global host invocation. */
+/** What calibration needs: the Blue pin and nested host entry. */
 export interface CalibrateOptions {
   /** The pinned Blue bundle version (the shell's own manifest version). */
   readonly version: string
-  /** The global dsh command. */
-  readonly dshCommand: string
-  /** Platform wrapper arguments before the dsh arguments (cmd.exe on Windows). */
-  readonly dshPrefix?: readonly string[]
+  /** The nested dsh CLI entry. */
+  readonly dshBinJs: string
 }
 
 /**
@@ -116,7 +114,7 @@ export function blueProfileRoot(): string {
  * `main` prints the verdict, the tail, and the class's manual pointer, then
  * exits non-zero (D50 decision 4's bootstrap contract, failure form extended
  * by D56).
- * @param options - the pin and global host invocation.
+ * @param options - the Blue pin and nested host entry.
  * @returns what calibration did.
  */
 export async function calibrate(options: CalibrateOptions): Promise<CalibrationOutcome> {
@@ -142,8 +140,8 @@ export async function calibrate(options: CalibrateOptions): Promise<CalibrationO
   }
   const major = pnpmMajor(probe)
   if (major !== undefined && major !== 11) return { action: 'failed', reason: PNPM_VERSION_REASON, kind: 'pnpm-version' }
-  const runInstall = (extra: readonly string[]) => cliInternals.spawnOnce(options.dshCommand, [
-    ...(options.dshPrefix ?? []), 'plugin', '--profile', PROFILE, 'add', ...extra, `@dsh-blue/blue@${options.version}`,
+  const runInstall = (extra: readonly string[]) => cliInternals.spawnOnce(cliInternals.execPath, [
+    options.dshBinJs, 'plugin', '--profile', PROFILE, 'add', ...extra, `@dsh-blue/blue@${options.version}`,
   ], { timeoutMs: INSTALL_TIMEOUT_MS })
   let install = await runInstall([])
   if (install.spawnError === undefined && install.code !== 0) {

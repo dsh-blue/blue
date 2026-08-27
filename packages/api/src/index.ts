@@ -54,4 +54,4 @@ export type {
 export const BLUE_API_VERSION = '1.0.0'
 
 /** Blue's release version, kept here as the public version owner. */
-export const BLUE_VERSION = '0.1.0-rc.9-test.8'
+export const BLUE_VERSION = '0.1.0-rc.9-test.9'

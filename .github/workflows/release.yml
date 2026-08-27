@@ -119,16 +119,15 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           registry-url: https://registry.npmjs.org
-      - name: install tested Harness host
-        if: runner.os == 'Linux' && matrix.node == '24'
-        shell: bash
-        run: npm install -g @deepseek-ai/dsh@0.1.1-rc.2
       - name: install exact candidate CLI
         shell: bash
         run: npm install -g "@dsh-blue/blue-cli@${RELEASE_VERSION#v}"
       - name: verify exact CLI version
         shell: bash
         run: test "$(blue -V | awk '{print $2}')" = "${RELEASE_VERSION#v}"
+      - name: materialize and execute bundled Harness host
+        shell: bash
+        run: blue plugin --help
       - name: calibrate exact bundle and compose profile
         if: runner.os == 'Linux' && matrix.node == '24'
         run: blue --dump-config

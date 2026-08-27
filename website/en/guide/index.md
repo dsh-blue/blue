@@ -1,7 +1,7 @@
 # Quickstart
 
 ::: info Preview stage
-`v0.1.0-rc.9-test.8` is published on npm under the **`rc` dist-tag** (`latest` stays reserved for the stable line, so install specs carry the `@rc` suffix). This page is the user install path; the contributor development install (checkout, link install, iteration loop) lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
+`v0.1.0-rc.9-test.9` is an acceptance build published under npm's **`rc9-test`** tag. Production `rc` and `latest` remain on rc.8 until live acceptance. This page is the user install path; the contributor development install (checkout, link install, iteration loop) lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
 :::
 
 ## Prerequisites
@@ -10,15 +10,14 @@
 | --- | --- |
 | Node | `^22.19.0 \|\| >=24.0.0` |
 | pnpm | 11 (needed for first assembly, upgrades, and `plugin` management; an already-calibrated profile does not check it on every boot. Run `npm i -g pnpm@11`, or `corepack enable && corepack prepare pnpm@11.7.0 --activate`) |
-| dsh CLI | exactly `0.1.1-rc.2` (`npm i -g @deepseek-ai/dsh@0.1.1-rc.2`); both launch paths use this global host |
+| dsh CLI | the recommended `blue` launcher includes exactly `0.1.1-rc.2`; only the direct-dsh path below installs it separately |
 
 ## Install (preview)
 
-**Recommended: the lightweight `blue` shell.** Install the Harness host once, then the dependency-free launcher. Keeping the packages separate prevents npm from resolving the full Harness graph again while installing Blue:
+**Recommended: the integrated `blue` launcher.** It carries the pinned Harness closure as common and platform archives, so npm installs one dependency-free package without resolving the Harness graph or running its install scripts:
 
 ```sh
-npm i -g @deepseek-ai/dsh@0.1.1-rc.2
-npm i -g @dsh-blue/blue-cli@rc
+npm i -g @dsh-blue/blue-cli@0.1.0-rc.9-test.9
 blue
 ```
 
@@ -29,7 +28,7 @@ npm i -g pnpm@11
 # or: corepack enable && corepack prepare pnpm@11.7.0 --activate
 ```
 
-The launcher npm install is a single small package. The first `blue` run still assembles the Blue profile through `dsh plugin add` and pnpm; that separate operation downloads the Blue runtime closure and can be resumed from pnpm's cache. On slow or metered networks in China, point both registries at a mirror:
+The launcher npm install writes the shell and compressed runtime layers. The first command that needs dsh expands only the common and current-platform layers into a user cache with bounded memory and no network request. The first `blue` run still assembles the Blue profile through `dsh plugin add` and pnpm; that separate operation downloads the Blue plugin closure and can be resumed from pnpm's cache. On slow or metered networks in China, point both registries at a mirror:
 
 ```sh
 pnpm config set registry https://registry.npmmirror.com

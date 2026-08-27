@@ -1,7 +1,7 @@
 /**
  * The launcher's main flow (S37, D50 decision 4): answer `-V` from the
  * shell's own manifests (shell · Blue pin · harness line, one line),
- * verify the separately installed host, calibrate the `blue` profile on the boot
+ * materialize the prepacked host, calibrate the `blue` profile on the boot
  * surface, then exec the host with inherited stdio and propagate the
  * child's exit code. Every failure is one verdict line, an optional
  * bounded output tail, and a manual pointer — the bootstrap contract's
@@ -16,6 +16,7 @@ import type { CalibrationOutcome } from './calibrate.ts'
 import { cliInternals } from './internals.ts'
 import { translateArgv } from './translate.ts'
 import { handlePluginCommand } from './plugin.ts'
+import { bundledDsh, HARNESS_LINE } from './runtime.ts'
 
 /**
  * The marker the shell's children carry: the app's help text and exit
@@ -23,28 +24,6 @@ import { handlePluginCommand } from './plugin.ts'
  * (the S37 seam in blue-app).
  */
 const LAUNCHER_ENV: Record<string, string> = { BLUE_LAUNCHER: 'blue' }
-const HARNESS_LINE = '0.1.1-rc.2'
-const HOST_PROBE_TIMEOUT_MS = 30_000
-
-interface DshInvocation {
-  readonly command: string
-  readonly prefix: readonly string[]
-}
-
-/** Resolve the global dsh command without importing its dependency tree. */
-export function dshInvocation(platform: string, comspec: string | undefined): DshInvocation {
-  return platform === 'win32'
-    ? { command: comspec ?? 'cmd.exe', prefix: ['/d', '/c', 'dsh'] }
-    : { command: 'dsh', prefix: [] }
-}
-
-/** Probe the global host and return its exact version when healthy. */
-async function globalDshVersion(host: DshInvocation): Promise<string | undefined> {
-  const probe = await cliInternals.spawnOnce(host.command, [...host.prefix, '-V'], { timeoutMs: HOST_PROBE_TIMEOUT_MS })
-  if (probe.spawnError !== undefined || probe.code !== 0) return undefined
-  const version = `${probe.stdout}\n${probe.stderr}`.trim()
-  return /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version) ? version : undefined
-}
 
 /** The failed half of `CalibrationOutcome` — the `manualLine` input shape. */
 type FailedOutcome = Extract<CalibrationOutcome, { action: 'failed' }>
@@ -70,27 +49,25 @@ function manualLine(outcome: FailedOutcome, version: string): string {
  */
 export async function main(argv: readonly string[]): Promise<void> {
   const translation = translateArgv(argv)
-  const host = dshInvocation(cliInternals.platform, cliInternals.env.ComSpec)
+  const version = shellVersion()
   if (translation.kind === 'version') {
-    const version = shellVersion()
-    const hostVersion = await globalDshVersion(host)
-    cliInternals.stdout(`blue ${version} (Blue @dsh-blue/blue@${version} · harness @deepseek-ai/dsh@${hostVersion ?? 'not installed'})\n`)
+    cliInternals.stdout(`blue ${version} (Blue @dsh-blue/blue@${version} · harness @deepseek-ai/dsh@${HARNESS_LINE})\n`)
     return
   }
   if (translation.kind === 'plugin') {
     const pluginArgs = translation.dshArgs.slice(3)
     if (await handlePluginCommand(pluginArgs)) return
   }
-  const hostVersion = await globalDshVersion(host)
-  if (hostVersion !== HARNESS_LINE) {
-    const found = hostVersion ?? 'not installed'
-    cliInternals.stderr(`blue: global @deepseek-ai/dsh must be ${HARNESS_LINE} (found ${found}); install the Harness host separately before running Blue\n`)
+  let host
+  try {
+    host = await bundledDsh(version)
+  } catch (error) {
+    cliInternals.stderr(`blue: bundled dsh runtime is unavailable — ${String(error).replace(/^Error:\s*/, '')}; reinstall @dsh-blue/blue-cli\n`)
     cliInternals.exit(1)
     return
   }
   if (translation.kind === 'boot') {
-    const version = shellVersion()
-    const outcome = await calibrate({ version, dshCommand: host.command, dshPrefix: host.prefix })
+    const outcome = await calibrate({ version, dshBinJs: host.binJs })
     if (outcome.action === 'failed') {
       cliInternals.stderr([
         `blue: bootstrap failed — ${outcome.reason}`,
@@ -110,7 +87,9 @@ export async function main(argv: readonly string[]): Promise<void> {
       cliInternals.stderr(`blue: profile 'blue' is a dev ${outcome.spec.split(':', 1)[0]} lane — calibration skipped\n`)
     }
   }
-  const child = await cliInternals.spawnInherit(host.command, [...host.prefix, ...translation.dshArgs], { env: LAUNCHER_ENV })
+  const child = await cliInternals.spawnInherit(cliInternals.execPath, [host.binJs, ...translation.dshArgs], {
+    env: { ...LAUNCHER_ENV, BLUE_DSH_BIN: host.binJs },
+  })
   cliInternals.exit(child.code ?? 1)
 }
 

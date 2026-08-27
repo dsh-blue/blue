@@ -2,13 +2,13 @@
 
 ## Why not a plain `npm install @dsh-blue/blue`?
 
-Blue is a plugin bundle installed into a dsh profile, not a standalone app — a bare install only drops the package into node_modules, with no host and no profile assembly, so there is nothing to run. The supported paths: the `blue` shell (`npm i -g @dsh-blue/blue-cli@rc`), or `dsh plugin --profile blue add @dsh-blue/blue@rc`; see [Quickstart](/en/guide/). Preview releases publish only under the **`rc` dist-tag** (`latest` is reserved for the stable line; npm refuses to delete `latest` before the first stable exists, so it currently aliases the newest rc as a mere placeholder). The current preview is `v0.1.0-rc.9-test.8`; `0.1.0-rc.1` shipped broken tarballs (missing files) — if it is installed, upgrade. The contributor development install lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
+Blue is a plugin bundle installed into a dsh profile, not a standalone app — a bare install only drops the package into node_modules, with no host and no profile assembly, so there is nothing to run. The supported paths are the `blue` shell or `dsh plugin --profile blue add`; see [Quickstart](/en/guide/). The current acceptance build is `v0.1.0-rc.9-test.9` under **`rc9-test`**; production `rc` and `latest` remain on rc.8. `0.1.0-rc.1` shipped broken tarballs (missing files) — if it is installed, upgrade. The contributor development install lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
 
 ## `@rc` does not resolve the newest preview?
 
 pnpm 11 enables a `minimumReleaseAge` cooldown by default: dist-tag resolution silently skips versions published inside the window and falls back to an older one. If `dsh plugin --profile blue add @dsh-blue/blue@rc` installs a stale version, either:
 
-- install the exact version right away — `dsh plugin --profile blue add @dsh-blue/blue@0.1.0-rc.9-test.8` (match the repository's newest tag);
+- install the exact version right away — `dsh plugin --profile blue add @dsh-blue/blue@0.1.0-rc.9-test.9` (match the repository's newest tag);
 - or re-run the same `@rc` command once the cooldown window has passed (upgrading = re-running the same `plugin add`).
 
 Upgrading through `/update` avoids the trap entirely: it resolves the target from registry metadata, always pins the exact version, and inside the cooldown window it answers with the retry time (an ETA) instead of installing a stale build.
@@ -19,7 +19,7 @@ Two paths:
 
 - **Shell users**: re-run `npm i -g @dsh-blue/blue-cli@rc` — reinstalling is the upgrade (the shell calibrates the profile's Blue to its own version and pins the host line with it); start with `blue` as usual afterwards.
 - **Direct-dsh users**:
-  - **In-app (recommended)**: type `/update` in the session — it runs the safety pre-flight first (profile health, whether the global dsh CLI meets the target release's harness line, the cooldown window), then after a typed `y` confirmation it snapshots the current install, installs the exact version in one transaction, verifies the whole package set, and boot-smokes the result (a module import sweep plus a real boot); any failure **rolls back automatically** to the previous version, with a progress panel and a log path throughout. `/update <version>` pins an explicit target; a bare `/update` doubles as a read-only check. After a successful update the current session keeps running the old version — a restart applies it.
+  - **In-app (recommended)**: type `/update` in the session — it runs the safety pre-flight first (profile health, whether the active dsh runtime meets the target release's harness line, the cooldown window), then after a typed `y` confirmation it snapshots the current install, installs the exact version in one transaction, verifies the whole package set, and boot-smokes the result (a module import sweep plus a real boot); any failure **rolls back automatically** to the previous version, with a progress panel and a log path throughout. `/update <version>` pins an explicit target; a bare `/update` doubles as a read-only check. After a successful update the current session keeps running the old version — a restart applies it.
   - **Manually**: re-run the same `dsh plugin --profile blue add @dsh-blue/blue@rc` (or the exact-version form in the previous question).
 
 Blue also checks for a newer release in the background at startup (at most once per 24h, silent on failure, reads registry metadata only, sends nothing); when one exists it appends a two-line notice to the scroll area (below the banner at boot). To turn the startup check off, write this into `~/.dsh/settings.yaml`:

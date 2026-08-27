@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-cli",
-  "description": "The lightweight Blue launcher: verifies a global dsh host, calibrates its profile, and boots the TUI",
-  "version": "0.1.0-rc.9-test.8",
+  "description": "The Blue launcher with a prepacked, pinned dsh runtime",
+  "version": "0.1.0-rc.9-test.9",
   "publishConfig": {
     "access": "public"
   },
@@ -14,6 +14,7 @@
   },
   "files": [
     "lib/bin.js",
+    "runtime-*.tgz",
     "README.md",
     "README.zh.md"
   ],
@@ -25,6 +26,9 @@
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
+  },
+  "devDependencies": {
+    "tar": "7.5.22"
   },
   "keywords": [
     "dsh",

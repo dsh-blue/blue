@@ -248,7 +248,11 @@ importers:
         specifier: 0.1.1-rc.2
         version: 0.1.1-rc.2(0ed3b6061fc777010895c073004fbcbe)
 
-  packages/cli: {}
+  packages/cli:
+    devDependencies:
+      tar:
+        specifier: 7.5.22
+        version: 7.5.22
 
   packages/context:
     devDependencies:

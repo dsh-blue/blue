@@ -1,6 +1,6 @@
 /**
  * The global version-control guard: Blue has ONE release version (the
- * first release line, `0.1.0-rc.9-test.8` — the number the website's tagline and
+ * first release line, `0.1.0-rc.9-test.9` — the number the website's tagline and
  * quickstart promise) and ONE harness dependency line (the `dsh-*` pins,
  * which stay on their own prerelease line while Blue's number moves).
  *
@@ -29,7 +29,7 @@ import { BLUE_VERSION } from '../src/banner-content.ts'
 import { BLUE_VERSION as API_BLUE_VERSION } from '@dsh-blue/blue-api'
 
 /** The published first-release version (the website's advertised number). */
-const RELEASE_VERSION = '0.1.0-rc.9-test.8'
+const RELEASE_VERSION = '0.1.0-rc.9-test.9'
 /** The harness prerelease line the dsh pins ride. */
 const HARNESS_LINE = '0.1.1-rc.2'
 
@@ -123,6 +123,13 @@ describe('the harness dependency line', () => {
       }
     }
     expect([...specs]).toEqual([`${HARNESS_LINE}`])
+  })
+
+  it('the archived CLI runtime seed and extractor pin the same host line', () => {
+    const seed = manifest('../../cli/runtime/package.json')
+    expect(seed.dependencies?.['@deepseek-ai/dsh']).toBe(HARNESS_LINE)
+    const source = readFileSync(new URL('../../cli/src/runtime.ts', import.meta.url), 'utf8')
+    expect(source).toContain(`export const HARNESS_LINE = '${HARNESS_LINE}'`)
   })
 
   it('every dsh peer dependency ranges exactly one line up from the pins', () => {

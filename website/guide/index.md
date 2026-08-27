@@ -1,7 +1,7 @@
 # 快速上手
 
 ::: info 预览阶段说明
-`v0.1.0-rc.9-test.8` 已发布在 npm 的 **`rc` dist-tag** 下（`latest` 留给稳定线，安装 spec 需带 `@rc` 后缀）。本页是用户安装路径；贡献者的本地开发安装（源码检出、link 安装、迭代环）在开发手册的[贡献本仓库](/plugins/contributing)页。
+`v0.1.0-rc.9-test.9` 是发布在 npm **`rc9-test`** 标签下的验收包；真人验收前，生产 `rc` 与 `latest` 标签仍停留在 rc.8。本页是用户安装路径；贡献者的本地开发安装（源码检出、link 安装、迭代环）在开发手册的[贡献本仓库](/plugins/contributing)页。
 :::
 
 ## 前置条件
@@ -10,15 +10,14 @@
 | --- | --- |
 | Node | `^22.19.0 \|\| >=24.0.0` |
 | pnpm | 11（首次装配、升级和 `plugin` 管理需要；日常启动已校准的 profile 不会重复检查。推荐先执行 `npm i -g pnpm@11`，或 `corepack enable && corepack prepare pnpm@11.7.0 --activate`） |
-| dsh CLI | 精确版本 `0.1.1-rc.2`（`npm i -g @deepseek-ai/dsh@0.1.1-rc.2`）；两种启动路径共用这个全局宿主 |
+| dsh CLI | 推荐的 `blue` 启动器已内含精确版本 `0.1.1-rc.2`；只有下方“dsh 直装”路径需要单独安装 |
 
 ## 安装（预览版）
 
-**推荐：轻量 `blue` 壳包。** 先安装一次 Harness 宿主，再安装无依赖的启动器。两者分开可以避免 npm 在安装 Blue 时再次解析完整 Harness 依赖图：
+**推荐：一体化 `blue` 启动器。** 它把固定的 Harness 闭包封装为公共层和平台层归档，npm 安装时只处理一个无依赖包，不解析 Harness 图，也不运行其中的安装脚本：
 
 ```sh
-npm i -g @deepseek-ai/dsh@0.1.1-rc.2
-npm i -g @dsh-blue/blue-cli@rc
+npm i -g @dsh-blue/blue-cli@0.1.0-rc.9-test.9
 blue
 ```
 
@@ -29,7 +28,7 @@ npm i -g pnpm@11
 # 或：corepack enable && corepack prepare pnpm@11.7.0 --activate
 ```
 
-壳包的 npm 安装只包含一个小包。首次运行 `blue` 仍会经 `dsh plugin add` 和 pnpm 装配 Blue profile；这是独立操作，下载的是 Blue 运行时闭包，并可从 pnpm 缓存续传。国内网络建议同时配置两个 registry：
+壳包的 npm 安装只写入启动器与压缩运行时层。第一个需要 dsh 的命令只会把公共层和当前平台层以有界内存展开到用户缓存，不再联网；首次运行 `blue` 仍会经 `dsh plugin add` 和 pnpm 装配 Blue profile，这个独立操作下载 Blue 插件闭包，并可从 pnpm 缓存续传。国内网络建议同时配置两个 registry：
 
 ```sh
 pnpm config set registry https://registry.npmmirror.com
