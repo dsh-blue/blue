@@ -16,6 +16,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import {
   TuiMainScreen,
+  setCapabilities,
   truncateToWidth as piTruncateToWidth,
   visibleWidth as piVisibleWidth,
   wrapTextWithAnsi,
@@ -89,6 +90,9 @@ function taggedTheme(): BlueTheme {
 
 /** Boot a real renderer over a FakeTerminal for the editor factory. */
 function bootTui(): { tui: TuiMainScreen; terminal: FakeTerminal; stop(): void } {
+  // Markdown has a legacy URL fallback and an OSC 8 path; pin the fake
+  // terminal to the fallback so this unit spec is independent of the host.
+  setCapabilities({ images: null, trueColor: false, hyperlinks: false })
   const terminal = new FakeTerminal()
   const tui = new TuiMainScreen(terminal)
   tui.start()

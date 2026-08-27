@@ -39,6 +39,7 @@ interface Manifest {
   readonly version: string
   readonly dependencies?: Readonly<Record<string, string>>
   readonly peerDependencies?: Readonly<Record<string, string>>
+  readonly optionalDependencies?: Readonly<Record<string, string>>
   readonly devDependencies?: Readonly<Record<string, string>>
 }
 
@@ -93,6 +94,19 @@ describe('the Blue release line', () => {
     const enGuide = readFileSync(new URL('../../../website/en/guide/index.md', import.meta.url), 'utf8')
     expect(zhGuide).toContain(`v${RELEASE_VERSION}`)
     expect(enGuide).toContain(`v${RELEASE_VERSION}`)
+  })
+
+  it('release packages pin every internal Blue dependency exactly', () => {
+    const releaseNames = new Set(MANIFESTS.map(rel => manifest(rel).name))
+    for (const rel of MANIFESTS.filter(rel => !rel.endsWith('/website/package.json'))) {
+      const pkg = manifest(rel)
+      for (const table of ['dependencies', 'peerDependencies', 'optionalDependencies', 'devDependencies'] as const) {
+        for (const [name, spec] of Object.entries(pkg[table] ?? {})) {
+          if (!name.startsWith('@dsh-blue/') || name === pkg.name || !releaseNames.has(name)) continue
+          expect(spec, `${pkg.name} ${table} ${name}`).toBe('workspace:*')
+        }
+      }
+    }
   })
 })
 

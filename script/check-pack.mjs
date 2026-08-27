@@ -57,8 +57,7 @@ function validateManifest(name, manifest, root) {
   for (const tableName of ['dependencies', 'peerDependencies', 'optionalDependencies', 'devDependencies']) {
     for (const [dependency, spec] of Object.entries(manifest[tableName] ?? {})) {
       if (typeof spec === 'string' && /^(workspace|link|file):/.test(spec)) fail(`${name}: packed ${tableName}.${dependency} leaked ${spec}`)
-      const validBlueSpec = spec === manifest.version || spec === `^${manifest.version}`
-      if (dependency.startsWith('@dsh-blue/') && !validBlueSpec) {
+      if (dependency.startsWith('@dsh-blue/') && spec !== manifest.version) {
         fail(`${name}: packed ${tableName}.${dependency} must equal ${manifest.version}, got ${spec}`)
       }
     }

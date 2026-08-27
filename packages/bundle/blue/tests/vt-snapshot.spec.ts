@@ -23,7 +23,7 @@ import { bootBlue, currentAgent, executeCommand, resetBlueModuleState, typeLine 
 import type { BlueTree } from './e2e-boot.ts'
 import { textResponse, toolCallResponse } from './mock-adapter.ts'
 import { cwdNormalizer, VtTerminal } from './vt-terminal.ts'
-import { waitForRender } from '../../../core/tests/fake-terminal.ts'
+import { pinTestTerminalCapabilities, waitForRender } from '../../../core/tests/fake-terminal.ts'
 import { setActivityTimers } from '../../../transcript/src/pane-activity.ts'
 import { setGitCommandRunner } from '../../../transcript/src/status-git.ts'
 import { setClipboardImageReader } from '../../../interaction/src/paste-image.ts'
@@ -39,6 +39,7 @@ import { join } from 'node:path'
 // time, so every rendering decision is stable and the normalizer's tokens
 // erase the rest.
 process.chdir(mkdtempTracked('blue-vt-frame-'))
+pinTestTerminalCapabilities()
 
 /** A 1x1 PNG (the paste-image spec's literal). */
 const PNG_1X1 = new Uint8Array([
