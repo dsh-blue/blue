@@ -1,12 +1,11 @@
 # `@dsh-blue/blue-cli`
 
 The `blue` launcher shell (S37, decision D50④): a standalone global package,
-not a plugin — it never loads inside a dsh tree. It pins `@deepseek-ai/dsh`
-as its own dependency (plan A: the nested host IS the runtime host, present
-or absent on the user's PATH, always the tested line), calibrates the `blue`
-profile to its own manifest version (the version.spec lockstep makes the
-shell's version the bundle pin), and execs the host with translated
-arguments.
+not a plugin — it never loads inside a dsh tree. It is deliberately
+dependency-free: npm global installation must not resolve the full Harness
+graph. At runtime it probes the separately installed global `dsh`, requires
+the exact tested line, calibrates the `blue` profile to its own manifest
+version, and execs that host with translated arguments.
 
 Scope boundaries:
 
@@ -34,8 +33,9 @@ Scope boundaries:
   budget is 1200s (the updater swap's parity; slow networks measured at
   18 min for 455 packages). No `blue upgrade` exists by ruling —
   reinstalling the shell is the upgrade.
-- The `BLUE_LAUNCHER=blue` child env is a reserved branding seam; nothing
-  reads it yet (the exit epitaph still prints `dsh --profile blue --resume`).
+- The `BLUE_LAUNCHER=blue` child env is the branding seam. No nested host
+  path is exported; in-app `/plugin install` delegates to the same global
+  `dsh` command.
 - Creative mode belongs entirely to `@dsh-blue/blue`; the launcher carries
   no preset payload and performs no host-installation writes. This keeps
   `blue` and direct `dsh --profile` launches on the same bundle path.
@@ -55,7 +55,7 @@ SIGTERM→SIGKILL ladder included).
 
 ## Distribution contract
 
-The CLI publishes `lib/bin.js` and bilingual README files. Its exact `@deepseek-ai/dsh` dependency is resolved by npm from the registry at install time; no lockfile is shipped because pnpm workspace lock entries are not valid in a globally installed npm package. `pnpm check:pack` verifies the executable mode, shebang, single runtime file, and 30 KB launcher budget.
+The CLI publishes `lib/bin.js` and bilingual README files and has no runtime dependencies. The global Harness host is a checked runtime prerequisite rather than an npm dependency; this keeps launcher installation bounded and prevents npm's peer resolver from consuming a server while traversing the Harness graph. `pnpm check:pack` verifies the executable mode, shebang, single runtime file, dependency-free manifest, and 30 KB launcher budget.
 
 CLI specs that create temporary homes or nested installs register the shared
 tracked-temp cleanup hook so Vitest worker reuse does not accumulate fixtures

@@ -16,7 +16,9 @@ const registry = {
 }
 
 function mount(): { out: string[], err: string[], exits: number[] } {
-  const out: string[] = []; const err: string[] = []; const exits: number[] = []
+  const out: string[] = []
+  const err: string[] = []
+  const exits: number[] = []
   cliInternals.env = {}
   cliInternals.stdout = value => out.push(value)
   cliInternals.stderr = value => err.push(value)
@@ -46,5 +48,53 @@ describe('handlePluginCommand', () => {
     expect(await handlePluginCommand(['list'])).toBe(true)
     expect(capture.exits).toEqual([1])
     expect(await handlePluginCommand(['verify', 'x'])).toBe(false)
+  })
+
+  it('handles sparse entries, title fallbacks, flags, and empty registries', async () => {
+    const capture = mount()
+    const sparse = {
+      plugins: [
+        { id: 'zh-only', title: { zh: '中文标题' } },
+        { id: 7, package: '@scope/seven', title: { en: 42 }, capabilities: undefined, verified: false },
+        {},
+      ],
+    }
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(sparse), { status: 200 })))
+    expect(await handlePluginCommand(['--json', 'list'])).toBe(true)
+    expect(await handlePluginCommand(['search', '--all', '中文'])).toBe(true)
+    expect(await handlePluginCommand(['search'])).toBe(true)
+    expect(await handlePluginCommand(['info', '@scope/seven'])).toBe(true)
+    expect(await handlePluginCommand(['info'])).toBe(true)
+    expect(capture.out.join('')).toContain('zh-only\t\t中文标题')
+    expect(capture.out.join('')).toContain('"capabilities": []')
+    expect(capture.out.join('')).toContain('"verified": false')
+
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })))
+    expect(await handlePluginCommand(['list'])).toBe(true)
+  })
+
+  it('reports missing entries, malformed registry roots, and non-Error failures', async () => {
+    const capture = mount()
+    expect(await handlePluginCommand(['info', 'missing'])).toBe(true)
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('null', { status: 200 })))
+    expect(await handlePluginCommand(['list'])).toBe(true)
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('3', { status: 200 })))
+    expect(await handlePluginCommand(['list'])).toBe(true)
+    vi.stubGlobal('fetch', vi.fn(async () => { throw 'offline' }))
+    expect(await handlePluginCommand(['list'])).toBe(true)
+    expect(capture.exits).toEqual([1, 1, 1, 1])
+    expect(capture.err.join('')).toContain('plugin not found')
+    expect(capture.err.join('')).toContain('registry is not an object')
+    expect(capture.err.join('')).toContain('offline')
+  })
+
+  it('uses a configured marketplace registry URL', async () => {
+    const capture = mount()
+    cliInternals.env.BLUE_MARKETPLACE_REGISTRY = 'https://registry.example.test/blue.json'
+    const request = vi.fn(async () => new Response(JSON.stringify(registry), { status: 200 }))
+    vi.stubGlobal('fetch', request)
+    expect(await handlePluginCommand(['list'])).toBe(true)
+    expect(request).toHaveBeenCalledWith('https://registry.example.test/blue.json', { headers: { accept: 'application/json' } })
+    expect(capture.exits).toEqual([])
   })
 })

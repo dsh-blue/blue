@@ -49,12 +49,14 @@ export type CalibrationOutcome =
       readonly detail?: readonly string[] | undefined
     }
 
-/** What calibration needs: the pin and the nested host entry. */
+/** What calibration needs: the pin and global host invocation. */
 export interface CalibrateOptions {
   /** The pinned Blue bundle version (the shell's own manifest version). */
   readonly version: string
-  /** The nested dsh CLI entry (see `nestedDsh()`). */
-  readonly dshBinJs: string
+  /** The global dsh command. */
+  readonly dshCommand: string
+  /** Platform wrapper arguments before the dsh arguments (cmd.exe on Windows). */
+  readonly dshPrefix?: readonly string[]
 }
 
 /**
@@ -114,7 +116,7 @@ export function blueProfileRoot(): string {
  * `main` prints the verdict, the tail, and the class's manual pointer, then
  * exits non-zero (D50 decision 4's bootstrap contract, failure form extended
  * by D56).
- * @param options - the pin and the nested host entry.
+ * @param options - the pin and global host invocation.
  * @returns what calibration did.
  */
 export async function calibrate(options: CalibrateOptions): Promise<CalibrationOutcome> {
@@ -140,8 +142,8 @@ export async function calibrate(options: CalibrateOptions): Promise<CalibrationO
   }
   const major = pnpmMajor(probe)
   if (major !== undefined && major !== 11) return { action: 'failed', reason: PNPM_VERSION_REASON, kind: 'pnpm-version' }
-  const runInstall = (extra: readonly string[]) => cliInternals.spawnOnce(cliInternals.execPath, [
-    options.dshBinJs, 'plugin', '--profile', PROFILE, 'add', ...extra, `@dsh-blue/blue@${options.version}`,
+  const runInstall = (extra: readonly string[]) => cliInternals.spawnOnce(options.dshCommand, [
+    ...(options.dshPrefix ?? []), 'plugin', '--profile', PROFILE, 'add', ...extra, `@dsh-blue/blue@${options.version}`,
   ], { timeoutMs: INSTALL_TIMEOUT_MS })
   let install = await runInstall([])
   if (install.spawnError === undefined && install.code !== 0) {
@@ -273,4 +275,3 @@ function tailLines(output: string, verdict: string): readonly string[] | undefin
     .filter(line => line !== verdict)
   return lines.length > 0 ? lines : undefined
 }
-

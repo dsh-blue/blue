@@ -1,14 +1,14 @@
 /**
  * Tests for the io seam's default bindings: the one-shot spawn (capture,
  * the SIGTERM→SIGKILL ladder, spawn errors), the inherit spawn, the fs
- * defaults, and the manifest resolution helper.
+ * defaults.
  */
 
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
-import { cliInternals, resolvePackageManifest } from '../src/internals.ts'
+import { cliInternals } from '../src/internals.ts'
 
 registerTempDirCleanup()
 
@@ -94,9 +94,7 @@ describe('cli/internals fs and resolution defaults', () => {
     expect(cliInternals.readTextFile(join(dir, 'absent.txt'))).toBeUndefined()
   })
 
-  it('resolves the nested dsh manifest and reads an unresolvable specifier as undefined', () => {
-    expect(resolvePackageManifest('@deepseek-ai/dsh/package.json')).toMatch(/@deepseek-ai[/\\]dsh[/\\]package\.json$/)
-    expect(resolvePackageManifest('@dsh-blue/definitely-not-a-package-x/package.json')).toBeUndefined()
+  it('exposes the real home directory', () => {
     expect(cliInternals.homedir()).toContain('/')
   })
 

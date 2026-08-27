@@ -8,10 +8,10 @@
 
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
 import { cliInternals, type SpawnOutcome } from '../src/internals.ts'
-import { main, shellVersion } from '../src/main.ts'
+import { dshInvocation, main, shellVersion } from '../src/main.ts'
 
 registerTempDirCleanup()
 
@@ -20,11 +20,12 @@ const REAL = { ...cliInternals }
 
 afterEach(() => {
   Object.assign(cliInternals, REAL)
+  vi.unstubAllGlobals()
 })
 
 /** The shell's own manifest version — the pin every fixture calibrates to. */
-const PIN = '0.1.0-rc.9-test.7'
-const AHEAD = '0.1.0-rc.9-test.799'
+const PIN = '0.1.0-rc.9-test.8'
+const AHEAD = '0.1.0-rc.9-test.899'
 
 /** One captured write or exit. */
 const captures: { out: string[], err: string[], exits: number[] } = { out: [], err: [], exits: [] }
@@ -38,16 +39,19 @@ interface Call {
 
 /** A successful spawn outcome. */
 const OK: SpawnOutcome = { code: 0, signal: null, stdout: '', stderr: '', timedOut: false }
+const HOST: SpawnOutcome = { ...OK, stdout: '0.1.1-rc.2\n' }
+
+/** Keep the global-host probe healthy while a test controls later spawns. */
+function withHost(run: typeof cliInternals.spawnOnce): typeof cliInternals.spawnOnce {
+  return (cmd, args, opts) => cmd === 'dsh' && args[args.length - 1] === '-V' ? Promise.resolve(HOST) : run(cmd, args, opts)
+}
 
 /**
- * Stand the launcher up over fixtures: a nested-host directory and an
- * empty `blue` profile under a temp DSH_HOME, with every effect seam
+ * Stand the launcher up over an empty `blue` profile under a temp DSH_HOME,
+ * with every effect seam
  * captured. Returns the spawn recorders.
  */
 function fixtureLauncher(): { calls: { once: Call[], inherit: Call[] }, root: string } {
-  const host = mkdtempTracked('blue-cli-main-host-')
-  writeFileSync(join(host, 'package.json'), JSON.stringify({ version: '0.1.1-rc.2', bin: { dsh: 'lib/bin.js' } }))
-  cliInternals.resolveNestedDshManifest = () => join(host, 'package.json')
   const home = mkdtempTracked('blue-cli-main-home-')
   const root = join(home, 'profiles', 'blue')
   mkdirSync(root, { recursive: true })
@@ -58,6 +62,7 @@ function fixtureLauncher(): { calls: { once: Call[], inherit: Call[] }, root: st
   cliInternals.stdout = text => { captures.out.push(text) }
   cliInternals.stderr = text => { captures.err.push(text) }
   cliInternals.exit = code => { captures.exits.push(code) }
+  cliInternals.spawnOnce = withHost(async () => OK)
   const calls = { once: [] as Call[], inherit: [] as Call[] }
   return { calls, root }
 }
@@ -76,20 +81,36 @@ describe('main', () => {
     expect(captures.exits).toEqual([])
   })
 
-  it('answers -V with "not installed" when the nested host is broken', async () => {
+  it('answers -V with "not installed" when the global host is missing', async () => {
     fixtureLauncher()
-    cliInternals.resolveNestedDshManifest = () => undefined
+    cliInternals.spawnOnce = async () => ({ ...OK, code: null, spawnError: 'Error: spawn dsh ENOENT' })
     await main(['--version'])
     expect(captures.out).toEqual([`blue ${PIN} (Blue @dsh-blue/blue@${PIN} · harness @deepseek-ai/dsh@not installed)\n`])
   })
 
-  it('refuses to boot with one line when the pinned host carries no bin entry', async () => {
-    const host = mkdtempTracked('blue-cli-main-host-')
-    writeFileSync(join(host, 'package.json'), JSON.stringify({ version: '0.1.1-rc.2' }))
+  it('treats a failing or malformed global host probe as unavailable', async () => {
     fixtureLauncher()
-    cliInternals.resolveNestedDshManifest = () => join(host, 'package.json')
+    cliInternals.spawnOnce = async () => ({ ...OK, code: 1 })
+    await main(['-V'])
+    cliInternals.spawnOnce = async () => ({ ...OK, stdout: 'dsh unknown\n' })
+    await main(['-V'])
+    expect(captures.out).toEqual([
+      `blue ${PIN} (Blue @dsh-blue/blue@${PIN} · harness @deepseek-ai/dsh@not installed)\n`,
+      `blue ${PIN} (Blue @dsh-blue/blue@${PIN} · harness @deepseek-ai/dsh@not installed)\n`,
+    ])
+  })
+
+  it('refuses to boot when the global host is missing or on another line', async () => {
+    fixtureLauncher()
+    cliInternals.spawnOnce = async () => ({ ...OK, stdout: '0.1.0\n' })
     await main(['task'])
-    expect(captures.err).toEqual(['blue: the pinned @deepseek-ai/dsh host is missing — reinstall @dsh-blue/blue-cli\n'])
+    expect(captures.err).toEqual(['blue: global @deepseek-ai/dsh must be 0.1.1-rc.2 (found 0.1.0); install the Harness host separately before running Blue\n'])
+    expect(captures.exits).toEqual([1])
+    captures.err = []
+    captures.exits = []
+    cliInternals.spawnOnce = async () => ({ ...OK, code: null, spawnError: 'Error: spawn dsh ENOENT' })
+    await main(['task'])
+    expect(captures.err).toEqual(['blue: global @deepseek-ai/dsh must be 0.1.1-rc.2 (found not installed); install the Harness host separately before running Blue\n'])
     expect(captures.exits).toEqual([1])
   })
 
@@ -104,11 +125,10 @@ describe('main', () => {
     await main(['fix', 'the', 'build'])
     expect(captures.err).toEqual([])
     expect(calls.inherit).toHaveLength(1)
-    expect(calls.inherit[0]?.cmd).toBe(cliInternals.execPath)
-    expect(calls.inherit[0]?.args?.slice(1)).toEqual(['--profile', 'blue', 'fix', 'the', 'build'])
-    expect(calls.inherit[0]?.args?.[0]).toMatch(/lib[/\\]bin\.js$/)
+    expect(calls.inherit[0]?.cmd).toBe('dsh')
+    expect(calls.inherit[0]?.args).toEqual(['--profile', 'blue', 'fix', 'the', 'build'])
     expect(calls.inherit[0]?.env).toMatchObject({ BLUE_LAUNCHER: 'blue' })
-    expect(calls.inherit[0]?.env?.BLUE_DSH_BIN).toMatch(/lib[/\\]bin\.js$/)
+    expect(calls.inherit[0]?.env?.BLUE_DSH_BIN).toBeUndefined()
     expect(captures.exits).toEqual([0])
     inherit = { code: null, signal: 'SIGKILL', stdout: '', stderr: '', timedOut: false }
     captures.exits = []
@@ -120,10 +140,7 @@ describe('main', () => {
     const { calls, root } = fixtureLauncher()
     installBundle(root, AHEAD)
     let once = false
-    cliInternals.spawnOnce = async () => {
-      once = true
-      return OK
-    }
+    cliInternals.spawnOnce = withHost(async () => { once = true; return OK })
     cliInternals.spawnInherit = async (cmd, args, opts) => {
       calls.inherit.push({ cmd, args, env: opts?.env })
       return OK
@@ -148,10 +165,10 @@ describe('main', () => {
     expect(captures.err).toEqual(["blue: profile 'blue' is a dev link lane — calibration skipped\n"])
     expect(calls.inherit).toHaveLength(1)
     writeFileSync(join(root, 'package.json'), JSON.stringify({ dependencies: {} }))
-    cliInternals.spawnOnce = async () => {
+    cliInternals.spawnOnce = withHost(async () => {
       installBundle(root, PIN)
       return OK
-    }
+    })
     captures.err = []
     await main([])
     expect(captures.err).toEqual([`blue: installed @dsh-blue/blue@${PIN} into profile 'blue'\n`])
@@ -159,7 +176,7 @@ describe('main', () => {
 
   it('fails bootstrap with the classified manual pointer and output tail, never execing', async () => {
     fixtureLauncher()
-    cliInternals.spawnOnce = async () => ({ code: 1, signal: null, stdout: '', stderr: 'pnpm: ETARGET\n', timedOut: false })
+    cliInternals.spawnOnce = withHost(async () => ({ code: 1, signal: null, stdout: '', stderr: 'pnpm: ETARGET\n', timedOut: false }))
     let inherited = false
     cliInternals.spawnInherit = async () => {
       inherited = true
@@ -175,9 +192,9 @@ describe('main', () => {
 
   it('routes a pnpm-missing bootstrap to the pnpm manual line', async () => {
     fixtureLauncher()
-    cliInternals.spawnOnce = async (cmd, args) => args[args.length - 1] === '--version'
+    cliInternals.spawnOnce = withHost(async (cmd, args) => args[args.length - 1] === '--version'
       ? { code: null, signal: null, stdout: '', stderr: '', timedOut: false, spawnError: 'Error: spawn pnpm ENOENT' }
-      : OK
+      : OK)
     let inherited = false
     cliInternals.spawnInherit = async () => {
       inherited = true
@@ -193,9 +210,9 @@ describe('main', () => {
 
   it('routes an unsupported pnpm major to the pnpm 11 manual line', async () => {
     fixtureLauncher()
-    cliInternals.spawnOnce = async (cmd, args) => args[args.length - 1] === '--version'
+    cliInternals.spawnOnce = withHost(async (cmd, args) => args[args.length - 1] === '--version'
       ? { code: 0, signal: null, stdout: '10.4.1\n', stderr: '', timedOut: false }
-      : OK
+      : OK)
     await main(['task'])
     expect(captures.err).toEqual([
       'blue: bootstrap failed — pnpm 11 is required — npm i -g pnpm@11 (or: corepack enable pnpm@11)\n  manual: npm i -g pnpm@11 (or: corepack enable pnpm@11), then re-run blue\n',
@@ -205,7 +222,7 @@ describe('main', () => {
 
   it('routes a timed-out bootstrap to the resume manual line', async () => {
     fixtureLauncher()
-    cliInternals.spawnOnce = async () => ({ code: null, signal: null, stdout: '', stderr: 'blue: install timed out', timedOut: true })
+    cliInternals.spawnOnce = withHost(async () => ({ code: null, signal: null, stdout: '', stderr: 'blue: install timed out', timedOut: true }))
     await main(['task'])
     expect(captures.err).toEqual([
       'blue: bootstrap failed — install timed out after 20 minutes\n  blue: install timed out\n  manual: re-run blue — downloaded packages are cached and the install resumes\n',
@@ -215,9 +232,9 @@ describe('main', () => {
 
   it('prints the failure tail as indented lines between verdict and manual', async () => {
     fixtureLauncher()
-    cliInternals.spawnOnce = async (cmd, args) => args[args.length - 1] === '--version'
+    cliInternals.spawnOnce = withHost(async (cmd, args) => args[args.length - 1] === '--version'
       ? OK
-      : { code: 1, signal: null, stdout: '', stderr: 'first line\nsecond line\nETARGET no match\n', timedOut: false }
+      : { code: 1, signal: null, stdout: '', stderr: 'first line\nsecond line\nETARGET no match\n', timedOut: false })
     await main(['task'])
     expect(captures.err).toEqual([
       'blue: bootstrap failed — ETARGET no match\n  first line\n  second line\n  manual: fix the cause and re-run blue (with a global dsh: dsh plugin --profile blue add @dsh-blue/blue@'
@@ -229,18 +246,23 @@ describe('main', () => {
   it('forwards the plugin surface without calibrating', async () => {
     const { calls } = fixtureLauncher()
     let once = false
-    cliInternals.spawnOnce = async () => {
-      once = true
-      return OK
-    }
+    cliInternals.spawnOnce = withHost(async () => { once = true; return OK })
     cliInternals.spawnInherit = async (cmd, args, opts) => {
       calls.inherit.push({ cmd, args, env: opts?.env })
       return OK
     }
     await main(['plugin', 'add', '@dsh-blue/blue@rc'])
     expect(once).toBe(false)
-    expect(calls.inherit[0]?.args?.slice(1)).toEqual(['plugin', '--profile', 'blue', 'add', '@dsh-blue/blue@rc'])
+    expect(calls.inherit[0]?.args).toEqual(['plugin', '--profile', 'blue', 'add', '@dsh-blue/blue@rc'])
     expect(captures.exits).toEqual([0])
+  })
+
+  it('handles read-only plugin commands without probing or execing dsh', async () => {
+    fixtureLauncher()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ plugins: [] }), { status: 200 })))
+    await main(['plugin', 'list'])
+    expect(captures.err).toEqual([])
+    expect(captures.exits).toEqual([])
   })
 
   it('skips calibration on the version and plugin surfaces', async () => {
@@ -251,6 +273,17 @@ describe('main', () => {
     }
     await main(['-V'])
     await main(['plugin', 'add', '@dsh-blue/blue@rc'])
+  })
+})
+
+describe('dshInvocation', () => {
+  it('uses PATH directly on posix and ComSpec on Windows', () => {
+    expect(dshInvocation('linux', undefined)).toEqual({ command: 'dsh', prefix: [] })
+    expect(dshInvocation('win32', 'C:\\Windows\\System32\\cmd.exe')).toEqual({
+      command: 'C:\\Windows\\System32\\cmd.exe',
+      prefix: ['/d', '/c', 'dsh'],
+    })
+    expect(dshInvocation('win32', undefined)).toEqual({ command: 'cmd.exe', prefix: ['/d', '/c', 'dsh'] })
   })
 })
 

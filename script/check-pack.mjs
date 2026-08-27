@@ -104,6 +104,7 @@ for (const relativeDir of PACKAGE_DIRS) {
     const runtime = files.filter(file => file.path.startsWith('lib/'))
     if (runtime.length !== 1 || runtime[0]?.path !== 'lib/bin.js') fail(`${sourceManifest.name}: lib must contain only lib/bin.js`)
     if ((runtime[0]?.size ?? Infinity) > 30_000) fail(`${sourceManifest.name}: lib/bin.js exceeds the 30 KB budget`)
+    if (Object.keys(manifest.dependencies ?? {}).length > 0) fail(`${sourceManifest.name}: launcher must remain dependency-free`)
   } else {
     libraryFiles += files.filter(file => file.path.startsWith('lib/')).length
     libraryBytes += files.filter(file => file.path.startsWith('lib/')).reduce((sum, file) => sum + file.size, 0)

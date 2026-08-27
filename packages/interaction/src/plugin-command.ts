@@ -50,21 +50,24 @@ export function registerPluginCommand(ctx: Context): () => void {
             const found = all.filter(entry => JSON.stringify(entry).toLowerCase().includes(query))
             return { kind: 'success', text: found.map(entry => `${entry.id ?? ''} — ${entry.title?.en ?? entry.title?.zh ?? ''}`).join('\n') || 'no matching plugins' } satisfies CommandResult
           }
-          const entry = all.find(value => value.id === rest[0] || value.package === rest[0])
+          const id = rest[0]
+          if (id === undefined) return { kind: 'error', text: 'usage: /plugin info <id-or-package>' }
+          const entry = all.find(value => value.id === id || value.package === id)
           return entry === undefined
-            ? { kind: 'error', text: `plugin not found: ${rest[0] ?? ''}` }
+            ? { kind: 'error', text: `plugin not found: ${id}` }
             : { kind: 'success', text: JSON.stringify(entry) } satisfies CommandResult
         }
         if (action === 'verify') return { kind: 'success', text: `verification requested for ${rest[0] ?? ''}; use blue-plugin-validate and the packed fixture before enabling` } satisfies CommandResult
         if (action === 'install') {
           const spec = rest[0]
           if (spec === undefined) return { kind: 'error', text: 'usage: /plugin install <marketplace id, npm spec, or pinned GitHub commit>' }
-          if (/github\.com\//u.test(spec) && !/@[0-9a-f]{7,40}$/iu.test(spec) && !/^github:[^/]+\/[^@]+@[0-9a-f]{7,40}$/iu.test(spec)) return { kind: 'error', text: 'GitHub plugins must be pinned to a commit (append @<sha>)' }
+          const github = /github\.com\//u.test(spec) || spec.startsWith('github:')
+          if (github && !/@[0-9a-f]{7,40}$/iu.test(spec)) return { kind: 'error', text: 'GitHub plugins must be pinned to a commit (append @<sha>)' }
           const host = process.env.BLUE_DSH_BIN
           const command = host === undefined ? 'dsh' : process.execPath
           const args = host === undefined ? ['plugin', '--profile', profile(), 'add', spec] : [host, 'plugin', '--profile', profile(), 'add', spec]
           const result = await run(command, args, { encoding: 'utf8', timeout: 120000 })
-          const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
+          const output = `${result.stdout}${result.stderr}`.trim()
           return { kind: 'success', text: `${output}\ninstalled; restart Blue to apply` } satisfies CommandResult
         }
         return { kind: 'error', text: `unknown plugin action: ${action}` } satisfies CommandResult

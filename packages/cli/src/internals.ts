@@ -1,6 +1,6 @@
 /**
  * The shell's process seams: every side effect the launcher performs —
- * resolving the nested host, reading the profile and the shell's own
+ * probing the global host, reading the profile and the shell's own
  * manifest, spawning the calibration install and the booted child,
  * writing output, exiting — goes through the `cliInternals` object, the
  * `internals` seam pattern `@deepseek-ai/dsh-cmdline` established and the
@@ -18,7 +18,6 @@
 
 import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { homedir as osHomedir } from 'node:os'
 
 /** Options every spawn shape accepts. */
@@ -53,7 +52,7 @@ export interface SpawnOutcome {
 export interface CliInternals {
   /** The process environment (`DSH_HOME` is read here). */
   env: Record<string, string | undefined>
-  /** The running Node binary (children run `node <entry>`). */
+  /** The running Node binary. */
   execPath: string
   /** The process platform — the win32 branches are seam-tested (CI runs ubuntu only). */
   platform: string
@@ -61,12 +60,6 @@ export interface CliInternals {
   homedir(): string
   /** Read a UTF-8 file, `undefined` when missing or unreadable. */
   readTextFile(path: string): string | undefined
-  /**
-   * Resolve the nested `@deepseek-ai/dsh` manifest (the D50 decision-4
-   * plan-A host — pinned as this package's own dependency, never PATH
-   * discovery), `undefined` when the install is broken.
-   */
-  resolveNestedDshManifest(): string | undefined
   /** Spawn, capture both pipes, enforce the kill ladder on timeout. */
   spawnOnce(cmd: string, args: readonly string[], opts?: SpawnOptions): Promise<SpawnOutcome>
   /** Spawn with inherited stdio and no deadline; resolves on child exit. */
@@ -88,20 +81,6 @@ function childEnv(extra: Record<string, string> | undefined): Record<string, str
 /** The default SIGTERM→SIGKILL grace (the install scripts' posture). */
 const DEFAULT_KILL_GRACE_MS = 5000
 
-/**
- * Resolve one package manifest from this module's resolution roots,
- * `undefined` when the specifier resolves nowhere. The default
- * `resolveNestedDshManifest` seam delegates here; the helper takes the
- * specifier so the failure branch is drivable.
- */
-export function resolvePackageManifest(specifier: string): string | undefined {
-  try {
-    return createRequire(import.meta.url).resolve(specifier)
-  } catch {
-    return undefined
-  }
-}
-
 /** The default seam bindings: the real process. */
 export const cliInternals: CliInternals = {
   env: process.env,
@@ -114,9 +93,6 @@ export const cliInternals: CliInternals = {
     } catch {
       return undefined
     }
-  },
-  resolveNestedDshManifest(): string | undefined {
-    return resolvePackageManifest('@deepseek-ai/dsh/package.json')
   },
   spawnOnce(cmd, args, opts = {}) {
     const graceMs = opts.killGraceMs ?? DEFAULT_KILL_GRACE_MS
@@ -180,4 +156,3 @@ export const cliInternals: CliInternals = {
   stderr: process.stderr.write.bind(process.stderr),
   exit: process.exit,
 }
-

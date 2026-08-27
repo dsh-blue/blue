@@ -8,7 +8,7 @@
 
 [English](README.md) | 中文
 
-Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的交互式终端界面（TUI）：一个 `pi-tui` 渲染器，以树外 [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) 插件 bundle 的形式挂载在 `dsh-base` bundle 之上。本仓库包含十四个 workspace 包——十个属于 `0.1.0-rc.9-test.7` 发布集，四个为 validation-only adapter——针对已发布的 Harness `0.1.1-rc.2` 线构建与测试。
+Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的交互式终端界面（TUI）：一个 `pi-tui` 渲染器，以树外 [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) 插件 bundle 的形式挂载在 `dsh-base` bundle 之上。本仓库包含十四个 workspace 包——十个属于 `0.1.0-rc.9-test.8` 发布集，四个为 validation-only adapter——针对已发布的 Harness `0.1.1-rc.2` 线构建与测试。
 
 <p align="center">
   <a href="https://dsh-blue.dev/blue-demo.mp4"><img src="docs/assets/demo.gif" width="720" alt="Blue 演示——流式回复、工具卡片与底部 dock 面板"></a>
@@ -29,7 +29,7 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 ## 用法
 
 > [!NOTE]
-> `0.1.0-rc.9-test.7` 是预览版，发布在 **`rc` dist-tag** 下——安装 spec 需要带 `@rc` 后缀；升级就是再跑一遍同样的命令。
+> `0.1.0-rc.9-test.8` 是预览版，发布在 **`rc` dist-tag** 下——安装 spec 需要带 `@rc` 后缀；升级就是再跑一遍同样的命令。
 
 前置条件：Node `^22.19 || >=24`、pnpm 11、`dsh` CLI ≥ `0.1.1-rc.2`。
 
@@ -39,9 +39,10 @@ dsh plugin --profile blue add @dsh-blue/blue@rc
 dsh --profile blue
 ```
 
-或者安装独立的 `blue` 启动器——它内置钉住的 dsh 宿主并自行管理 `blue` profile：
+或者在经过测试的全局 dsh 宿主之上安装轻量 `blue` 启动器；它自行管理 `blue` profile，但不会把 Harness 树作为 npm 嵌套依赖重复安装：
 
 ```sh
+npm i -g @deepseek-ai/dsh@0.1.1-rc.2
 npm i -g @dsh-blue/blue-cli@rc
 blue
 ```

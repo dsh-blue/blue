@@ -38,6 +38,7 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
       'Stable Host-console rendering — stdout/stderr written outside the renderer now triggers a forced alternate-screen frame, so large dynamic plugin JSON logs cannot remain inside the editor or overwrite the footer; Up history continues to contain only submitted user prompts.',
       'Creative BTW sessions — side sessions now receive the same model and preset setup as the parent, preserving structured tools instead of showing raw DSML as assistant text.',
       'Verified candidate releases restored — tags publish immutable tarballs to candidate, verify exact registry installs on Linux, macOS, and Windows with Node 22 and 24, run a real PTY boot, then promote the verified artifacts.',
+      'Bounded launcher installs — @dsh-blue/blue-cli is now dependency-free and verifies a separately installed dsh host at runtime, so installing the launcher no longer asks npm to solve the complete Harness graph.',
     ],
     knownIssues: [
       'Release-day cooldown: pnpm 11\'s default minimumReleaseAge (24h) can refuse the first-run calibration\'s exact-version install on the day of publishing — one line of error, retry after the window or pin minimumReleaseAge: 0. Self-corrects within 24h of this release.',
@@ -63,7 +64,7 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
     highlights: [
       'pnpm check:pack packaging gate — the exact seven publish tarballs are created and validated on every check: publint, ATTW, manifest/bin checks, protocol leakage, shrinkwrap, and size budgets.',
       'Release workflow hardening — publishing goes to a candidate tag, runs registry install smoke across Linux/macOS/Windows, then promotes rc and latest; the workflow never rebuilds a second artifact, and the candidate promotion gains recovery paths.',
-      '@dsh-blue/blue-cli pins the dsh host as an exact npm dependency; the published package intentionally ships no pnpm workspace lockfile, so global npm installs resolve only registry packages.',
+      '@dsh-blue/blue-cli ships npm-shrinkwrap.json — the shell\'s pinned dsh host tree is locked, and pnpm release:lock-cli refreshes it in an isolated npm project so workspace links cannot enter the published lock.',
     ],
     knownIssues: [
       'Release-day cooldown: pnpm 11\'s default minimumReleaseAge (24h) can refuse the first-run calibration\'s exact-version install on the day of publishing — one line of error, retry after the window or pin minimumReleaseAge: 0. Self-corrects within 24h of this release.',

@@ -25,8 +25,8 @@ interface Registry {
 
 const REGISTRY_URL = 'https://raw.githubusercontent.com/dsh-blue/marketplace/master/registry.json'
 
-function label(value: MarketplaceEntry, locale: 'zh' | 'en' = 'en'): string {
-  const title = value.title?.[locale] ?? value.title?.en ?? value.id
+function label(value: MarketplaceEntry): string {
+  const title = value.title?.en ?? value.title?.zh ?? value.id
   return typeof title === 'string' ? title : String(value.id ?? 'unknown')
 }
 
@@ -57,8 +57,9 @@ export async function handlePluginCommand(args: readonly string[]): Promise<bool
       return true
     }
     const id = args[args.indexOf(command) + 1]
+    if (id === undefined) throw new Error('usage: blue plugin info <id-or-package>')
     const entry = entries.find(value => value.id === id || value.package === id)
-    if (entry === undefined) throw new Error(`plugin not found in official marketplace: ${String(id ?? '')}`)
+    if (entry === undefined) throw new Error(`plugin not found in official marketplace: ${id}`)
     cliInternals.stdout(JSON.stringify({
       id: entry.id,
       package: entry.package,

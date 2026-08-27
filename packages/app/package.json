@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-app",
   "description": "Blue terminal UI application: command-line startup and the Agent driver that wires sessions to the Blue transcript and interaction layers",
-  "version": "0.1.0-rc.9-test.7",
+  "version": "0.1.0-rc.9-test.8",
   "publishConfig": {
     "access": "public"
   },

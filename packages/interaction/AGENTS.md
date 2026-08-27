@@ -78,6 +78,10 @@ Fiber replays the command snapshot. Public writes during the gap return
 
 Keep `README.md` and `README.zh.md` synchronized. Any new subpath updates package exports, `files`, and `tsdown.config.ts` together. New content components join width scans. State changes require same-tree reload, separate-tree isolation, unload, abort, and late-result coverage proportional to the affected workflow.
 
+`changelog-content.ts` mirrors `docs/release-notes/` exactly; historical
+entries remain unchanged, while current-release behavior changes update both
+sources in the same commit.
+
 Specs that create filesystem fixtures use the shared `mkdtempTracked` helper
 and call `registerTempDirCleanup()` at module scope. This is required for
 eager `afterAll` cleanup when Vitest reuses a worker; the helper's process-exit

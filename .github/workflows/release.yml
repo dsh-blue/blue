@@ -116,6 +116,9 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           registry-url: https://registry.npmjs.org
+      - name: install tested Harness host
+        shell: bash
+        run: npm install -g @deepseek-ai/dsh@0.1.1-rc.2
       - name: install exact candidate CLI
         shell: bash
         run: npm install -g "@dsh-blue/blue-cli@${RELEASE_VERSION#v}"
