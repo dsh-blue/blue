@@ -19,10 +19,8 @@ const PI_AI_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh'
 
 /** One model's catalog match: what the wizard can adopt without asking. */
 export interface ModelsDevMatch {
-  /** The declared context window (`limit.context`). */
+  /** The declared context window (`limit.context`) — a pure capability fact. */
   readonly contextWindow?: number
-  /** The declared output ceiling (`limit.output`). */
-  readonly maxTokens?: number
   /** Selectable effort levels (`reasoning_options` effort values minus the
    * off tier), intersected with pi-ai's gate — empty matches carry nothing. */
   readonly efforts?: readonly string[]
@@ -131,17 +129,22 @@ function bareKey(id: string): string {
   return slash === -1 ? modelsDevKey(id) : modelsDevKey(id.slice(slash + 1))
 }
 
-/** Extract the wizard-usable match from one raw entry, if any. */
+/** Extract the wizard-usable match from one raw entry, if any.
+ *
+ * `limit.output` is deliberately NOT adopted: since the harness 0.1.2 line a
+ * profile `models[].maxTokens` doubles as the per-request output default
+ * (capability vs request cap, upstream `llm-pi-ai` `configuredMaxTokens`), so
+ * auto-writing third-party catalog data would silently cap every request. The
+ * endpoint's own advertised listing and the user remain the sources for it.
+ */
 function matchOf(model: RawModelEntry): ModelsDevMatch | undefined {
   const contextWindow = positiveNumber(model.limit?.context)
-  const maxTokens = positiveNumber(model.limit?.output)
   const { efforts, nonReasoning } = effortFacts(model)
   if (contextWindow === undefined && efforts === undefined && nonReasoning === undefined) {
     return undefined
   }
   return {
     ...(contextWindow !== undefined ? { contextWindow } : {}),
-    ...(maxTokens !== undefined ? { maxTokens } : {}),
     ...(efforts !== undefined ? { efforts } : {}),
     ...(nonReasoning === true ? { nonReasoning: true } : {}),
   }

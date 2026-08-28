@@ -41,7 +41,7 @@
 - **`/rewind`** —— 单层列出当前会话的直接用户回合；选择一个回合会从该完整回合之前创建普通子 session。父会话不截断、不删除，仍可从 `/sessions` 恢复；agent 运行时拒绝。
 - **`/model` / `/effort`** —— 无参数分别打开模型选择面板（含 footer 的思考力度 segment 控件）与横向力度选择器；面板内 `←` `→` 步进 segment，**`Alt+S` 以"仅本会话"确认**——下一步路由立即切换、不写回持久默认。带参数直接切换并持久化为新默认。免开面板的快路：**`Alt+M`** 在当前 provider 的模型列表里逐个切换（仅本会话，草稿保留；见[键位参考](/reference/keys)）。
 - **`/provider`** —— 三条子命令：`list` 列出可用 provider 与当前路由；`switch <name>` 切换；`add` 进入新增 provider 流程。
-- **`/preset`** —— 在薄宿主预设名册（`standard` / `code` / `minimal` / `cordis`）上切换 agent 组合：工具面、人格与 plan 模式都来自当前预设。仅在**空会话**允许切换——已开始的会话返回 `cannot switch presets: this session has already started (blank sessions only)`。
+- **`/preset`** —— 在薄宿主预设名册（`standard` / `ptc` / `minimal` / `cordis`）上切换 agent 组合：工具面、人格与 plan 模式都来自当前预设。仅在**空会话**允许切换——已开始的会话返回 `cannot switch presets: this session has already started (blank sessions only)`。
 
 ## 模式与审批
 

@@ -1,4 +1,4 @@
-# The `code` agent preset: the standard coding agent, presented as Code Mode.
+# The `ptc` agent preset: the standard coding agent, presented as PTC mode.
 #
 # Everything in `standard` is here unchanged. What is added is the `tool-presentation`
 # row: instead of one tool call per action, the model writes a TypeScript
@@ -95,12 +95,12 @@
 
 # ── goals ───────────────────────────────────────────────────────────────────
 
-# Only the model-facing tool. The goal SERVICE, its session driver, and the
-# `/goal` command stay on the host plane: the Gateway serves the goal domain as
-# Remote endpoints whose receiver comes from a generated descriptor, so it
-# resolves `goals` on the host and an entry-local realm here would hide it. The
-# registry is keyed by session anyway, so one host instance serves every
-# session. What a preset chooses is whether its agent can call the goal tool.
+# The goal service and session driver stay on the host plane, where the Gateway
+# can resolve them. The human command and model-facing tool register into this
+# preset's scoped layers.
+- id: command-goal
+  name: '@deepseek-ai/dsh-command-goal'
+
 - id: tool-goal
   name: '@deepseek-ai/dsh-tool-goal'
 
@@ -189,8 +189,13 @@
       config:
         provider: spawn
         toolName: subagent
+        modelSelectionSettings: true
         backgroundMode: continuable
 
+    # Fork omits model selection so provider/model stay equal to the parent and
+    # the inherited history remains eligible for KV Cache reuse. This preset
+    # keeps fork continuable and accepts its child-scoped `report` additions invalidating
+    # that prefix; issue #2124 tracks cache-preserving continuable fork.
     - id: tool-subagent-fork
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
@@ -249,15 +254,15 @@
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'
   config:
-    fetch: false
+    fetch: true
     searchTimeoutMs: 60000
 
 # ── presentation ────────────────────────────────────────────────────────────
 
-# Code Mode for this agent alone. The row waits for the host's `codeRuntime`
+# PTC mode for this agent alone. The row waits for the host's `codeRuntime`
 # rather than assuming it: a deployment that composes no TypeScript runtime
 # fails this preset at mount, naming this id, instead of at the first request.
 - id: tool-presentation
   name: '@deepseek-ai/dsh-agent-tool-presentation'
   config:
-    mode: code
+    mode: ptc

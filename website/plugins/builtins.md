@@ -46,7 +46,7 @@ flowchart TB
 
 | 插件 | 说明 |
 |---|---|
-| `blue-agent-presets` | Blue 自有 preset root，组成 standard/code/minimal agent plane |
+| `blue-agent-presets` | Blue 自有 preset root，组成 standard/ptc/minimal agent plane |
 | `blue-creative-host` | 隔离的 dynamic Cordis host；只经 public plugin host 向 UI 贡献 |
 
 ## 基线（8 行）

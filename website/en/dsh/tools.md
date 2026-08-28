@@ -1,6 +1,6 @@
 # Built-in tools
 
-The catalog of dsh's built-in tools, grouped by purpose. Which tools actually appear in your session depends on the profile composition and the [agent preset](/en/dsh/modes) (Minimal has two tools; under Code mode most tools fold into `run_code`); experimental tools are off by default.
+The catalog of dsh's built-in tools, grouped by purpose. Which tools actually appear in your session depends on the profile composition and the [agent preset](/en/dsh/modes) (Minimal has two tools; under PTC mode most tools fold into `run_code`); experimental tools are off by default.
 
 ## Interaction & planning
 
@@ -59,11 +59,11 @@ The catalog of dsh's built-in tools, grouped by purpose. Which tools actually ap
 | `todo_write` | replace the full structured task list (rendered by Blue's [todo pane](/en/features/panes)) |
 | `web_fetch` · `web_search` | fetch and decode a URL to text; web search over 1–4 merged queries |
 
-## Code mode & dynamic plugins (opt-in)
+## PTC mode & dynamic plugins (opt-in)
 
 | Tool | Description |
 | --- | --- |
-| `run_code` | execute a TypeScript program (async function body) calling other tools through bindings — the reserved transport under `tools.mode: code/both` |
+| `run_code` | execute a TypeScript program (async function body) calling other tools through bindings — the reserved transport under `tools.mode: ptc/both` |
 | `cordis_*` (opt-in) | `cordis_define` / `cordis_inspect_*` / `cordis_run` / `cordis_stop` / `cordis_undefine`: define, inspect, activate, and remove dynamic Cordis plugins at runtime |
 
 ::: tip Full schemas

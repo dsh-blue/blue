@@ -2800,9 +2800,13 @@ describe('blue whole-tree e2e', () => {
     const next = await currentAgent(resumed)
     const planMode = resumed.ctx.get('planMode')!
     expect(planMode.get(next).active).toBe(true)
-    // The badge follows the folded state.
-    await vi.waitFor(async () => { expect(await fullFrame(resumed.terminal)).toContain('plan') })
-  })
+    // The badge follows the folded state. The resume-side plan-mode bridge
+    // publishes on a debounce: measured ~2.5s after the resumed boot settles
+    // (and the status footer's synchronous git probes stall the loop along
+    // the way), so the waitFor default window (1s) is marginal — the
+    // forward-preset CI red that surfaced this was this race, not logic.
+    await vi.waitFor(async () => { expect(await fullFrame(resumed.terminal)).toContain('plan') }, { timeout: 4_000 })
+  }, 10_000)
 
   it('/new resets the mode to normal', async () => {
     const tree = await bootBlue([], { script: [] })

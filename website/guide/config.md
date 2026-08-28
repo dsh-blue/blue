@@ -174,7 +174,7 @@ settings.yaml 的效果则直接在界面里看：`/model` 面板列出各路由
 ## 更多配置面
 
 - **权限与沙箱** —— 权限预设（workspace-write / danger-full-access）、审批策略，见[权限与模式](/dsh/modes)；会话内 `Shift+Tab` 循环 normal → plan → yolo，`/yolo` 开关。
-- **Agent 预设** —— `/preset` 在 `standard` / `code` / `minimal` / `cordis` 间切换工具面与人格（仅空会话）。
+- **Agent 预设** —— `/preset` 在 `standard` / `ptc` / `minimal` / `cordis` 间切换工具面与人格（仅空会话）。
 - **Skills** —— 用户级技能放 `~/.dsh/skills/`，见 [Skills](/dsh/skills)。
 - **MCP** —— MCP server 的接入配置见 [MCP 配置](/dsh/mcp)。
 

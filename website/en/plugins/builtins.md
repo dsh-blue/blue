@@ -46,7 +46,7 @@ flowchart TB
 
 | Plugin | Description |
 |---|---|
-| `blue-agent-presets` | Blue-owned preset root composing the standard/code/minimal agent planes |
+| `blue-agent-presets` | Blue-owned preset root composing the standard/ptc/minimal agent planes |
 | `blue-creative-host` | isolated dynamic Cordis host whose only UI route is the public plugin host |
 
 ## Baseline (8 rows)

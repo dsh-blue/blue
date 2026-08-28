@@ -8,7 +8,7 @@ The `dsh-base` default assembly (78 plugin rows) already covers the full capabil
 | --- | --- | --- | --- |
 | **Persistent terminal (PTY)** | `@deepseek-ai/dsh-terminal-bash` + `@deepseek-ai/dsh-tool-terminal` | six tools: `terminal_open` / `send` / `read` / `signal` / `close` / `list` | the interactive terminal of Codex / Claude Code: persistent sessions keeping cwd/env, foreground process groups, signalling |
 | **LSP navigation** | `@deepseek-ai/dsh-lsp-stdio` + `@deepseek-ai/dsh-tool-lsp` | one read-only `lsp` tool: goToDefinition / findReferences / goToImplementation / hover | precise code navigation — when textual matches are ambiguous or a change needs exact definitions |
-| **Code Mode runtime** | `@deepseek-ai/dsh-code-runtime-worker-thread` (TypeScript) or `@deepseek-ai/dsh-code-runtime-python` | the execution environment behind `run_code` | a prerequisite of PTC mode: **no runtime by default**, `tools.mode: code/both` requires one |
+| **PTC runtime** | `@deepseek-ai/dsh-code-runtime-worker-thread` (TypeScript) or `@deepseek-ai/dsh-code-runtime-python` | the execution environment behind `run_code` | a prerequisite of PTC mode: **no runtime by default**, `tools.mode: ptc/both` requires one |
 | **MCP** | `@deepseek-ai/dsh-mcp-client` | `mcp__server__tool` external tools | the external-tool protocol, see [MCP setup](/en/dsh/mcp) |
 | **ACP** | `@deepseek-ai/dsh-acp` | an Agent Client Protocol server (JSON-RPC stdio) | automation clients (CLIs) driving harness agents programmatically |
 
@@ -33,7 +33,7 @@ dsh plugin --profile <name> add @deepseek-ai/dsh-terminal-bash @deepseek-ai/dsh-
 - id: tool-lsp
   name: '@deepseek-ai/dsh-tool-lsp'
 
-# Code Mode runtime (TypeScript): one row, a code-execution environment
+# PTC runtime (TypeScript): one row, a code-execution environment
 - id: code-runtime
   name: '@deepseek-ai/dsh-code-runtime-worker-thread'
   config:
@@ -47,14 +47,14 @@ Notes:
 
 - **PTY composes with the sandbox**: `terminal-bash` injects `sandboxPolicy`; confined modes wrap the shell argv through `ctx.sandbox`, `danger-full-access` starts it directly. A session-mode downgrade is rejected while that owner holds an open PTY — close terminals before downgrading;
 - **LSP needs a workspace**: the `lsp` tool requires the session `cwd` for its workspace root — absence fails as `LSP_WORKSPACE_REQUIRED`; timeout, location count, and result length are configurable (defaults 60s / 100 locations / 16KB);
-- **The Code Mode runtime is containment, not a security boundary**: `worker-thread` runs each program in one fresh worker (empty environment, heap cap, hard termination) — trust posture is bash-equivalent by design;
+- **The PTC runtime is containment, not a security boundary**: `worker-thread` runs each program in one fresh worker (empty environment, heap cap, hard termination) — trust posture is bash-equivalent by design;
 - **tool-terminal details**: `run_in_background: true` reuses `ctx.jobs` (present by default); foreground sends render as terminal cards, background sends as generic execute cards; every operation requires the exact initiating agent, so a model cannot address another agent's terminal.
 
 ## Relation to Blue
 
 - **terminal tools** → Blue renders the dedicated **terminal card** (`$ command` + exit badge + capped output, see [Streaming transcript & tool cards](/en/features/streaming));
 - **lsp tool** → the generic tool card (no dedicated card yet);
-- **Code Mode**: PTC mode switches in Blue as usual, but the profile must mount a runtime before the model can actually use `run_code` — no code-runtime row in `--dump-config` means it isn't installed;
+- **PTC runtime**: PTC mode switches in Blue as usual, but the profile must mount a runtime before the model can actually use `run_code` — no code-runtime row in `--dump-config` means it isn't installed;
 - every request pays the schema token cost of installed tools (see [System prompt](/en/dsh/system-prompt)).
 
 ::: tip Boundary note

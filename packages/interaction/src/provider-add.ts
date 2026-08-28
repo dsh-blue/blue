@@ -342,7 +342,9 @@ function applyCatalogMatch(
     ...(model.contextWindow === undefined && match.contextWindow !== undefined
       ? { contextWindow: match.contextWindow }
       : {}),
-    ...(model.maxTokens === undefined && match.maxTokens !== undefined ? { maxTokens: match.maxTokens } : {}),
+    // No maxTokens fold: on the 0.1.2 line a profile maxTokens becomes the
+    // per-request output default, so only first-party data (the endpoint's
+    // own listing, above) or the user sets it — never the catalog.
     ...(model.reasoningEfforts === undefined && match.efforts !== undefined
       ? { reasoningEfforts: Object.fromEntries(match.efforts.map(level => [level, level])) }
       : {}),

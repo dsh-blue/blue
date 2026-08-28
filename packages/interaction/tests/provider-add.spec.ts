@@ -1025,7 +1025,9 @@ describe('runProviderAdd', () => {
     expect(profile.models).toEqual([{
       id: 'glm-5.3',
       contextWindow: 1_048_576,
-      maxTokens: 65_536,
+      // No maxTokens: the catalog's limit.output is not folded into the
+      // profile anymore (0.1.2 request-default semantics — first-party or
+      // manual only).
       reasoningEfforts: { low: 'low', high: 'high' },
     }])
   })

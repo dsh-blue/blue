@@ -196,7 +196,7 @@ presentation row 插件 `dsh-agent-tool-presentation` 的 `Config.mode` 为 requ
 
 **Blue 现状**：`packages/remote`（validation-only，非发布集）**结构化**适配独立产品 dsh-remote 的 wire（不 import 其包）：`wire-transport.ts` 走 HTTP `host.fetch`（如 `POST /api/respond`）+ SSE `host.subscribe('mux')`，握手 `system.describe`/`system.negotiate` 报 `bridge {major:2}` + `acceptedAbis`；配对码 + 服务器指纹鉴权；写租约/围栏 token。集成门禁 `pnpm fixture:remote-upstream` 从本地 dsh-remote-core checkout（`--upstream`/`DSH_REMOTE_DIR`）加载真实 daemon，其 `daemonModule.apply({ remoteBackend, apiProxy, connection })` 正是 0.1.2 中被删除的接线形状。ABI 记录：`packages/remote/AGENTS.md`（rc.6 期）。
 
-**判定：届时重验，暂不动**。关键认知：Blue 的 remote 耦合对象是**独立的 dsh-remote 产品**（sibling 仓库），不是 harness npm 包；harness 0.1.2 删除 ApiProxy 意味着 dsh-remote 的 0.1.2 对齐版大概率要换宿主接线（改基于 `typertGateway` 注册 remoteBackend，或直接消费 `@Remote` 装饰器面），届时其对外 wire ABI 可能升 major。**触发点**：dsh-remote 发布 harness-0.1.2 对齐版 → 跑 `fixture:remote-upstream`（换新 checkout）→ 按差异更新 `wire-transport.ts` 与 `packages/remote/AGENTS.md` 的 ABI 记录。SSE→WS-mux 的传输迁移是潜在最大工作量，本文档不预写方案。
+**判定：暂缓适配——remote 将迁出至独立仓库（D58，2026-08-28 用户裁决）**。关键认知：Blue 的 remote 耦合对象是**独立的 dsh-remote 产品**（sibling 仓库），不是 harness npm 包；harness 0.1.2 删除 ApiProxy 意味着 dsh-remote 的 0.1.2 对齐版大概率要换宿主接线（改基于 `typertGateway` 注册 remoteBackend，或直接消费 `@Remote` 装饰器面），届时其对外 wire ABI 可能升 major。**remote 的 0.1.2 对齐（`fixture:remote-upstream` 重验、SSE→WS-mux 潜在迁移、ABI 记录更新）将随 `packages/remote` 迁移到独立仓库后在彼仓库进行**，不阻塞 Blue 主线的钉版 bump。
 
 **附带（一次性 token）**：0.1.2 的 Web 鉴权在 client connection 层（`packages/client/connection/src/browser-auth.ts`），URL `?token=` 换 HMAC cookie，**loopback 也不豁免**（README：「Every Host RPC method and WebSocket stream requires one browser session; there is no method-specific loopback tier」）。Blue 不挂 web host，不受直接影响；`blue-lark` 打的是 `dsh-host-webserver`（另一服务）的 loopback `127.0.0.1:<port>/dsh-lark/settings`——**bump 时验证点**：确认该 webserver 未并入 connection 鉴权层。
 
@@ -216,16 +216,16 @@ presentation row 插件 `dsh-agent-tool-presentation` 的 `Config.mode` 为 requ
 
 前置：0.1.2 线出现在 npm `next` → drift 开 MINOR_JUMP issue → 人工裁决本文档 → 按 R1 式钉版执行（runbook：`script/harness-drift-task.mjs` 生成的 prompt + `AGENTS.md`「Bumping the line」节 + `docs/blue-roadmap.md` R1 行追加记录）。
 
-钉版之外的本版特定动作（按本文档章节）：
+钉版之外的本版特定动作（按本文档章节；标注 ✅ 者已随 PR #75 的前向适配落地，见 D58）：
 
-1. [ ] §1 放宽 version.spec 正则（仅当 pin alpha）；prune `dsh-host-apiproxy` exclude 行（`pnpm-workspace.yaml:139`）
-2. [ ] §8 `presets/code` → `ptc`：mode 值、preset id、文案、e2e 断言（**阻断项**）
-3. [ ] §7 models-dev 的 `maxTokens` 语义复核与表单文案；（可选）向导新增 `thinkingBudgets`/`transport` 档
-4. [ ] §9 换 dsh-remote 0.1.2 对齐 checkout 重跑 `fixture:remote-upstream`；更新 `packages/remote/AGENTS.md` ABI 记录
-5. [ ] §9 验证 blue-lark 的 loopback webserver 不在 token 鉴权层内
-6. [ ] §10 smoke 全套（`translate`/`calibrate`/`plugin-command` 路径即被覆盖）
-7. [ ] §11 README/website/compat 文档的隐私说明
-8. [ ] 全套 gates：`typecheck / lint / diagrams:check / build / check:lib / test:coverage / smoke:happy`（对新高线）+ `fixture:context-upstream` + registry-install 矩阵
+1. [x] §1 放宽 version.spec 正则（已接受 `-alpha.N`；✅ 本 PR）；prune `dsh-host-apiproxy` exclude 行（`pnpm-workspace.yaml:139`——随 bump，钉版期该行仍覆盖 rc.2 树的传递依赖）
+2. [x] §8 `presets/code` → `ptc`：preset 目录整体换为 0.1.2 拷贝（mode 值、preset id、文案一并；✅ 本 PR——byte-for-byte 断言在钉版 bump 前预期红）
+3. [x] §7 models-dev 不再自动采纳 `maxTokens`（✅ 本 PR）；（可选）向导新增 `thinkingBudgets`/`transport` 档——bump 后
+4. [ ] §9 remote 的 0.1.2 对齐：**随 `packages/remote` 迁移独立仓库后在彼仓库执行**（D58）；本仓库仅保留现状
+5. [ ] §9 验证 blue-lark 的 loopback webserver 不在 token 鉴权层内（随 bump）
+6. [ ] §10 smoke 全套（`translate`/`calibrate`/`plugin-command` 路径即被覆盖）（随 bump）
+7. [x] §11 compat 文档的隐私说明（✅ 本 PR，`docs/blue-compatibility-and-rollout.md`）
+8. [ ] 全套 gates：`typecheck / lint / diagrams:check / build / check:lib / test:coverage / smoke:happy`（对新高线）+ `fixture:context-upstream` + registry-install 矩阵（随 bump）
 
 ## 附录 B：官方源码引点索引（tag `dsh-v0.1.2-alpha.1`，commit `cd5ef81`）
 

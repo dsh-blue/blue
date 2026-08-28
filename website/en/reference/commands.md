@@ -41,7 +41,7 @@ Typing `/` triggers fuzzy autocomplete and discovery hints (see [Input editor](/
 - **`/rewind`** — lists the current session's direct user turns in one level. Selecting a turn creates an ordinary child session from the complete boundary before it; the parent is never truncated or deleted and remains resumable through `/sessions`. A running agent is refused.
 - **`/model` / `/effort`** — no argument opens the model picker (with the footer's thinking-effort segment control) and the horizontal effort selector respectively; inside a panel `←` `→` step the segments and **`Alt+S` confirms session-only** — the next step's route switches immediately without persisting a new default. With an argument they switch directly and persist. The panel-free shortcut: **`Alt+M`** cycles through the current provider's models (session-only, draft preserved; see the [key reference](/en/reference/keys)).
 - **`/provider`** — three subcommands: `list` shows providers and the current route; `switch <name>` switches; `add` starts the add-provider flow.
-- **`/preset`** — switches the agent composition over the thin-host preset roster (`standard` / `code` / `minimal` / `cordis`): a session's tool surface, persona, and plan mode come from its preset. Switching is allowed only on **blank sessions** — a started one returns `cannot switch presets: this session has already started (blank sessions only)`.
+- **`/preset`** — switches the agent composition over the thin-host preset roster (`standard` / `ptc` / `minimal` / `cordis`): a session's tool surface, persona, and plan mode come from its preset. Switching is allowed only on **blank sessions** — a started one returns `cannot switch presets: this session has already started (blank sessions only)`.
 
 ## Modes and approval
 

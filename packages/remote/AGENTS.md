@@ -3,6 +3,14 @@
 F4 session runtime and dsh-remote proxy adapter. This package is headless and must
 not import pi-tui, ANSI, DOM, React, or raw terminal APIs.
 
+> **Migration note (D58, 2026-08-28)**: this package is planned to move to a
+> dedicated repository. Its 0.1.2 alignment — re-verifying `fixture:remote-upstream`
+> against the dsh-remote release that tracks harness 0.1.2 (whose gateway removed
+> the ApiProxy surface this adapter's daemon wiring targets), the potential
+> SSE→WS-mux transport migration, and the ABI record below — happens THERE, not
+> in the Blue repo, and does not gate Blue's harness-line bump. Until the move,
+> the contents below record the 0.1.1-rc.2-era state as-is.
+
 `tests/adversarial.spec.ts` covers cancellation during a projection baseline load and asserts that an aborted attach cannot leave a session slot behind.
 The remote adapter accepts the legacy dsh-remote v1 health shape and the authenticated v2 `system.describe`/`system.negotiate` contract. `DshRemoteTransport` maps v2 capability aliases, `host.events` SSE chunks, `session.prompt`/`session.cancel`, and `lease.acquire`/`lease.release` to Blue's narrow transport and `WriteLease` contracts. v2 callers pass `acceptedAbis` to the constructor; an empty or omitted list preserves health-only probing for legacy clients. `requestTimeoutMs` bounds official list/history/prompt/cancel calls; upstream mutation deadlines may return `OUTCOME_UNKNOWN`, so callers must not retry a write as if it definitely failed.
 

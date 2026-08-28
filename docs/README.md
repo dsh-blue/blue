@@ -34,4 +34,4 @@
 | [blue-decisions.md](./blue-decisions.md) | ADR 历史；被 cutover 取代的接口不再代表当前代码 |
 | [blue-frontend-runtime-task-checklist.md](./blue-frontend-runtime-task-checklist.md) | F3-F6 已执行任务记录 |
 
-`packages/context`、`packages/remote`、`packages/openpencil` 和 `packages/lark` 是 validation-only packages，不进入 Blue bundle/release closure。正式 package contract 由 `script/package-contract.mjs` 定义。
+`packages/context`、`packages/remote`、`packages/openpencil` 和 `packages/lark` 是 validation-only packages，不进入 Blue bundle/release closure。正式 package contract 由 `script/package-contract.mjs` 定义。其中 `packages/remote` 计划迁出至独立仓库（D58），其 harness 0.1.2 对齐将在彼仓库进行。

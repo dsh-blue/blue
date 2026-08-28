@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository. Repo-wide conventions 
 
 ## Project overview
 
-**Blue** is the interactive terminal UI for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`). It is a renderer over the harness's [Cordis](https://github.com/deepseek-ai/cordis) plugin architecture, built on `@earendil-works/pi-tui`. Ten packages form the `0.1.0-rc.9` release set; context, remote, OpenPencil, and Lark are validation-only packages outside the release/bundle closure. The repository builds and tests against published Harness packages. Blue is **not** part of a default `dsh` installation — it is added to a profile as an out-of-tree plugin bundle.
+**Blue** is the interactive terminal UI for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`). It is a renderer over the harness's [Cordis](https://github.com/deepseek-ai/cordis) plugin architecture, built on `@earendil-works/pi-tui`. Ten packages form the `0.1.0-rc.9` release set; context, remote, OpenPencil, and Lark are validation-only packages outside the release/bundle closure (remote is planned to move to a dedicated repository — D58). The repository builds and tests against published Harness packages. Blue is **not** part of a default `dsh` installation — it is added to a profile as an out-of-tree plugin bundle.
 
 - Language: TypeScript (ESM only, `"type": "module"` everywhere).
 - Runtime: Node `^22.19.0 || >=24.0.0`; package manager pnpm 11 (pinned, `pnpm@11.7.0`).

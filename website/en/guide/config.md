@@ -174,7 +174,7 @@ settings.yaml effects show up right in the UI: the `/model` panel lists each rou
 ## Other configuration surfaces
 
 - **Permissions & sandbox** — permission presets (workspace-write / danger-full-access), approval policies, see [Modes & permissions](/en/dsh/modes); in-session `Shift+Tab` cycles normal → plan → yolo, `/yolo` toggles.
-- **Agent presets** — `/preset` switches tool surface and persona across `standard` / `code` / `minimal` / `cordis` (blank sessions only).
+- **Agent presets** — `/preset` switches tool surface and persona across `standard` / `ptc` / `minimal` / `cordis` (blank sessions only).
 - **Skills** — user-level skills live under `~/.dsh/skills/`, see [Skills](/en/dsh/skills).
 - **MCP** — wiring MCP servers is covered in [MCP setup](/en/dsh/mcp).
 

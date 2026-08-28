@@ -30,16 +30,20 @@ function skillFrontmatter(source: string): SkillFrontmatter {
 describe('Blue preset roster', () => {
   it('ships all four metadata rows with a Blue-specific creative mode', () => {
     const blueRoot = new URL('../presets/', import.meta.url)
-    const metadata = ['standard', 'code', 'minimal', 'cordis'].map(id => readFileSync(new URL(`${id}/preset.yml`, blueRoot), 'utf8'))
+    const metadata = ['standard', 'ptc', 'minimal', 'cordis'].map(id => readFileSync(new URL(`${id}/preset.yml`, blueRoot), 'utf8'))
     expect(metadata).toHaveLength(4)
     expect(metadata[3]).toContain('name: 创造模式')
     expect(metadata[3]).toContain('Blue')
   })
 
   it('keeps the non-creative presets byte-for-byte on the pinned harness line', () => {
+    // Forward alignment (D58): the roster already carries the dsh 0.1.2
+    // presets (ptc rename included) while the pinned harness line is still
+    // 0.1.1-rc.2, so this assertion is EXPECTED TO FAIL until the line bump
+    // lands — it is the honest forward state, documented in PR #75.
     const harnessRoot = join(dirname(require.resolve('@deepseek-ai/dsh/package.json')), 'config', 'agent-presets')
     const blueRoot = new URL('../presets/', import.meta.url)
-    for (const id of ['standard', 'code', 'minimal']) {
+    for (const id of ['standard', 'ptc', 'minimal']) {
       for (const file of ['agent.cordis.yml', 'preset.yml']) {
         expect(readFileSync(new URL(`${id}/${file}`, blueRoot), 'utf8')).toBe(readFileSync(join(harnessRoot, id, file), 'utf8'))
       }

@@ -105,7 +105,7 @@ describe('the harness dependency line', () => {
     for (const rel of HARNESS_MANIFESTS) {
       const pkg = manifest(rel)
       for (const [name, spec] of dshEntries(pkg.dependencies)) {
-        expect(spec, `${pkg.name} dependencies ${name}`).toMatch(/^0\.1\.[0-9]+-rc\.[0-9]+$/)
+        expect(spec, `${pkg.name} dependencies ${name}`).toMatch(/^0\.1\.[0-9]+-(rc|alpha)\.[0-9]+$/)
         specs.add(spec)
       }
     }
@@ -118,7 +118,7 @@ describe('the harness dependency line', () => {
     for (const rel of HARNESS_MANIFESTS) {
       const pkg = manifest(rel)
       for (const [name, spec] of dshEntries(pkg.devDependencies)) {
-        expect(spec, `${pkg.name} devDependencies ${name}`).toMatch(/^0\.1\.[0-9]+-rc\.[0-9]+$/)
+        expect(spec, `${pkg.name} devDependencies ${name}`).toMatch(/^0\.1\.[0-9]+-(rc|alpha)\.[0-9]+$/)
         specs.add(spec)
       }
     }

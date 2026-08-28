@@ -471,3 +471,12 @@
 - **决策**：职责分开。`/rewind` 只显示当前 session 的直接用户回合，选择后从该回合的 `turn/start` 前创建普通子 session；父日志不改、创建失败不切换。`/sessions` 只用标准 header 的 `parentSession`/`createdAt` 构造可搜索 lineage 树，孤儿与循环数据提升为根节点。它表达 session 间谱系，不提供单 session event cursor。
 - **兼容边界**：interaction 只新增 Blue 命名空间事件 `'blue/request-rewind'(sessionId, boundarySeq)`；app 在既有串行 switch 队列中校验 session id、idle 状态与完整 seed，再走 `agents.create` 和既有 `blue/session-changed` commit point。dsh core API、事件词表、持久化格式和第三方插件生命周期均不变。
 - **UX**：rewind 面板默认最近回合，↑↓/Enter/Esc 与共享选择器一致，标题明确 `creates a branch`，成功切换后的 `blue/session-changed` 清掉创建中 notice；sessions 保留标题批读、cwd 作用域、输入过滤、`← current` 和 id 直恢复制式。当前 session 的祖先路径用 `▿` 自动展开但不带出各级旁支，其余分支以 `▸` 折叠、Space 切换为 `▾` 完整展开；标题明确提示按键，搜索临时遍历完整树以命中折叠节点。
+
+### D58. dsh 0.1.2 前向适配策略：纯前向、预期红、remote 迁出（用户裁决，2026-08-28）
+
+- **背景**：上游 dsh v0.1.2-alpha.1（tag `cd5ef81`，2026-08-27）带 PTC 更名（`ToolPresentationMode` 无兼容层）等破坏性变化，但 npm 全家族未发布（dist-tags 仍 0.1.1-rc.2）。对齐预研见 `docs/blue-upstream-0.1.2-interface-alignment.md`（PR #75）。备选的双线兼容 shim（preset `!!js` 探测宿主线选 `ptc`/`code`）被否决：rc 本身也是开发者预览，Blue 的对齐目标就是 dsh 正式版方向，不为过渡期维护垫片。
+- **决策①（纯前向）**：preset 名册直接携带 0.1.2 内容——`presets/code` 整体更名为 `presets/ptc`（0.1.2 逐字节拷贝：`mode: ptc`、`command-goal` 行、`modelSelectionSettings: true`、`tool-web` `fetch: true`、描述改「PTC 模式 SDK」），`standard` 同步换 0.1.2 版，`minimal` 无变化；provider 向导不再自动采纳 models.dev 的 `maxTokens`（0.1.2 起该字段兼作每请求默认输出上限，第三方目录数据不得静默封顶请求；端点第一手 listing 与手动输入仍是来源）；`version.spec.ts` 钉版正则放宽接受 `-alpha.N`。
+- **决策②（预期红）**：钉版保持 0.1.1-rc.2（无包可装），`presets.spec.ts` 的 byte-for-byte 断言对照安装的 rc.2 在 bump 前必红——前向状态的诚实呈现，不 skip 不降级。PR #75 合并前置 = 0.1.2 上 npm `next` → R1 式钉版 bump（含 prune `dsh-host-apiproxy` exclude 行）→ 全 gates 绿。
+- **决策③（remote 迁出）**：`packages/remote` 计划迁至独立仓库；其 harness 0.1.2 对齐（`fixture:remote-upstream` 对 dsh-remote 0.1.2 对齐版重验、SSE→WS-mux 潜在迁移、ABI 记录更新）在彼仓库进行，不阻塞 Blue 钉版。`packages/remote/AGENTS.md` 顶部已加迁移注记，现 ABI 记录（rc.6 期）原样保留。
+- **后果**：旧会话记录中的 preset `code` 引用随上游更名同等不可解析；"Code Mode" 文案全树清扫为 PTC（bundle README/AGENTS、website 六页、commands-plan 注记）；隐私三项（DeepSeek 适配器默认上报已启用插件名+版本可配置关闭、session 日志增量上传默认关、公网 WebFetch 默认开启）在 `docs/blue-compatibility-and-rollout.md` 向用户说明。
+- **落地（2026-08-28，PR #75）**：preset 拷贝与更名（presets.spec/app.spec 同步）+ models-dev/provider-add maxTokens 适配 + version.spec 正则 + 文案清扫 + 本条 + 对齐文档 §8/§9/附录 A 状态回填 + compat 隐私节。

@@ -895,10 +895,10 @@ describe('blue app driver', () => {
     })
     await vi.waitFor(() => { expect(test.current()).not.toBeNull() })
 
-    const preset = test.ctx.blueSessionActions.selectPreset('code')
+    const preset = test.ctx.blueSessionActions.selectPreset('ptc')
     test.ctx.emit('blue/request-new')
     await vi.waitFor(() => { expect(test.changes).toHaveLength(2) })
-    resolvePreset?.({ id: 'code' })
+    resolvePreset?.({ id: 'ptc' })
     await expect(preset).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
 
     const tools = test.ctx.blueSessionActions.toolCatalog()

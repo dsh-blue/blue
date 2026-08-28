@@ -59,11 +59,11 @@ dsh 自带的工具目录，按用途分组。哪些工具真正出现在你的�
 | `todo_write` | 整表替换结构化任务清单（Blue 中由 [todo 面板](/features/panes)呈现） |
 | `web_fetch` · `web_search` | 抓取并解码 URL 为文本；1–4 个查询合并的网页搜索 |
 
-## Code Mode 与动态插件（按需启用）
+## PTC 模式与动态插件（按需启用）
 
 | 工具 | 说明 |
 | --- | --- |
-| `run_code` | 执行一段 TypeScript 程序（async 函数体），经绑定调用其他工具——`tools.mode: code/both` 时的保留传输 |
+| `run_code` | 执行一段 TypeScript 程序（async 函数体），经绑定调用其他工具——`tools.mode: ptc/both` 时的保留传输 |
 | `cordis_*`（opt-in） | `cordis_define` / `cordis_inspect_*` / `cordis_run` / `cordis_stop` / `cordis_undefine`：运行时定义、检查、启停动态 Cordis 插件 |
 
 ::: tip 完整 Schema

@@ -9,7 +9,7 @@ These decide which capabilities the session's agent has and how its tools are pr
 | Preset | Description |
 | --- | --- |
 | **标准模式 (Standard)** | the full-featured coding agent: file editing, shell, file & web retrieval, skills, planning, goals, subagents, and workflows |
-| **PTC mode** | everything Standard has, with tools presented through the Code Mode SDK — the model composes multi-step operations as one TypeScript program (the `run_code` transport) |
+| **PTC mode** | everything Standard has, with tools presented through the PTC-mode SDK — the model composes multi-step operations as one TypeScript program (the `run_code` transport) |
 | **极简模式 (Minimal)** | a two-tool coding agent: the persistent bash shell and `str_replace_editor` |
 | **创造模式 (Creator)** | for authors of custom agent presets: Standard capabilities plus runtime inspection, plugin experimentation, and preset-authoring guidance |
 

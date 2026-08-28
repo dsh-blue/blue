@@ -27,3 +27,13 @@ provider host 永存；旧 provider 可以卸载，新 provider 立即挂载，�
 5. headless/TUI composition 和 width-scan 通过；
 6. 真实安装、PTY smoke 和用户 dogfood 通过后才替换官方 surface。
 
+
+## 0.1.2 跟发后的用户可见行为（D58 前向说明）
+
+Blue 随 dsh 0.1.2 线（钉版 bump 后）生效的三项上游默认行为，提前向用户说明：
+
+1. **插件元数据上报**：DeepSeek 官方适配器默认随请求附带已启用插件的包名与版本——`@dsh-blue/blue@<version>` 在内；部署可配置关闭（上游 `dsh-llm-pi-ai` 配置项）。
+2. **Session 日志增量上传**：官方适配器新增的可选行为，**默认关闭**；开启时对话日志增量上传至 DeepSeek。
+3. **公网 WebFetch 默认开启**：内置 SSRF 防护，公网请求不再逐次审批（preset 已随之将 `tool-web` 的 `fetch` 置 `true`）；内网目标仍受审批与防护约束。
+
+另：preset `code` 已随上游更名为 `ptc`（能力不变）；旧会话记录里引用 `code` 的地方将显示为未解析预设名。

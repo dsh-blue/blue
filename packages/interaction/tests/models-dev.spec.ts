@@ -43,11 +43,14 @@ afterEach(() => {
 })
 
 describe('buildIndex', () => {
-  it('maps the context window, output ceiling, and pi-ai-gated efforts', () => {
+  it('maps the context window and pi-ai-gated efforts, never the output ceiling', () => {
     const index = buildIndex(samplePayload())
     const glm = index.lookup('glm-4.6')!
     expect(glm.contextWindow).toBe(200_000)
-    expect(glm.maxTokens).toBe(32_768)
+    // limit.output is deliberately not adopted: on the 0.1.2 harness line a
+    // profile maxTokens doubles as the per-request output default, so
+    // third-party catalog data must not become a silent request cap.
+    expect(glm).not.toHaveProperty('maxTokens')
     expect(glm.efforts).toEqual(['low', 'high'])
   })
 
