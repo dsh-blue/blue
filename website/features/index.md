@@ -1,6 +1,6 @@
 # 功能总览
 
-Blue 是一棵 Cordis 插件树。Bundle 当前有 29 条 Blue 自有行：2 条宿主支撑行、8 条基线行、15 条增强行和 4 条装配行。
+Blue 是一棵 Cordis 插件树。Bundle 当前有 30 条 Blue 自有行：2 条宿主支撑行、8 条基线行、15 条增强行和 5 条装配行。
 
 ## 基线
 
@@ -13,6 +13,7 @@ Blue 是一棵 Cordis 插件树。Bundle 当前有 29 条 Blue 自有行：2 条
 - bottom panes：activity、queue、todo、btw、agents 五个 canonical `BlueUiNode` producer，经私有 bottom-only composition 挂载
 - public view bridge：把第三方 status node 接入 footer，把 dock `BlueView` 直接交给 core bounded mount
 - status provider owner：按 `blue.statusProvider` 选择一个独占 footer provider，candidate 在未选中时保持 inert
+- editor provider owner：按 `blue.editorProvider` 选择一个独占 editor shell，candidate 在未选中时保持 inert
 
 这些 15 行可逐项移除。Tool diff/terminal/search/read/web 呈现来自 canonical `ToolPresentationModel`，不存在独立 intent row。
 

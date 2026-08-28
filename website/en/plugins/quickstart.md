@@ -119,5 +119,6 @@ Once validated, run the Blue repository's static checks and packed-install fixtu
 ## Next steps
 
 - [Core concepts](/en/plugins/concepts) — understand capability scoping, the `BlueView` vocabulary, and the domain/adapter split;
-- [Commands](/en/plugins/commands), [Status bar and exclusive provider](/en/plugins/status), [Dock panes](/en/plugins/dock), [Notifications](/en/plugins/notifications) — the full contracts of the five capabilities;
-- [Built-in plugins](/en/plugins/builtins) — Blue's own 29 rows are the most complete set of examples.
+- [Commands](/en/plugins/commands), [Status bar and exclusive provider](/en/plugins/status), [Panes](/en/plugins/dock), [Notifications](/en/plugins/notifications), [Editor extensions](/en/plugins/editor-extensions), and [Editor providers](/en/plugins/editor-providers) — contracts for each public surface;
+- [Core concepts](/en/plugins/concepts#capability-scoping) — the complete table of eight public capabilities, including `overlays`;
+- [Built-in plugins](/en/plugins/builtins) — Blue's own 30 rows are the most complete set of examples.

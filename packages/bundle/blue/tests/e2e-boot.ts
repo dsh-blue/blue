@@ -60,6 +60,7 @@ import * as pasteImagePlugin from '../../../interaction/src/paste-image.ts'
 import * as modeStatusPlugin from '../../../interaction/src/mode-status.ts'
 import * as paneQueuePlugin from '../../../interaction/src/pane-queue.ts'
 import * as interactionBridgePlugin from '../../../interaction/src/plugin-host-bridge.ts'
+import * as editorProviderOwnerPlugin from '../../../interaction/src/editor-provider-owner.ts'
 import * as transcriptPlugin from '../../../transcript/src/index.ts'
 import * as officialTranscriptPlugin from '../../../transcript/src/official-model.ts'
 import * as bannerPlugin from '../../../transcript/src/banner.ts'
@@ -245,6 +246,7 @@ interface BlueE2EHooks {
   paneBtwApply: typeof paneBtwPlugin.apply
   viewBridgeApply: typeof viewBridgePlugin.apply
   statusProviderOwnerApply: typeof statusProviderOwnerPlugin.apply
+  editorProviderOwnerApply: typeof editorProviderOwnerPlugin.apply
   interactionApply: typeof interactionPlugin.apply
   interactionBridgeApply: typeof interactionBridgePlugin.apply
   editorPlusApply: typeof editorPlusPlugin.apply
@@ -430,6 +432,7 @@ export async function bootBlue(argv: string[], options: {
     paneBtwApply: paneBtwPlugin.apply,
     viewBridgeApply: options.viewBridge === false ? () => {} : viewBridgePlugin.apply,
     statusProviderOwnerApply: statusProviderOwnerPlugin.apply,
+    editorProviderOwnerApply: editorProviderOwnerPlugin.apply,
     interactionApply: interactionPlugin.apply,
     interactionBridgeApply: interactionBridgePlugin.apply,
     editorPlusApply: editorPlusPlugin.apply,
@@ -686,6 +689,13 @@ export const name = 'blue-interaction'
 export const inject = ['blueSessionReader', 'blueSessionActions', 'blueRequests', 'blueRetractions']
 export const apply = ctx => globalThis.__blueE2E.interactionApply(ctx)
 `)}`,
+    '- id: blue-editor-provider-owner',
+    `  name: ${fixture('blue-editor-provider-owner.mjs', `
+export const name = 'blue-editor-provider-owner'
+export const inject = ['bluePluginHost', 'blueEditorHost']
+export const apply = ctx => globalThis.__blueE2E.editorProviderOwnerApply(ctx)
+`)}`,
+    '  inject: [blueEditorHost]',
     '- id: blue-plugin-interaction-bridge',
     `  name: ${fixture('blue-plugin-interaction-bridge.mjs', `
 export const name = 'blue-plugin-interaction-bridge'

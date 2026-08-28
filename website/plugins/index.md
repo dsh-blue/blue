@@ -53,10 +53,12 @@ dsh process 进程（one Cordis tree 一棵 Cordis 树）
 | [`status`](/plugins/status) | 返回 `BlueView` 的 render 函数 | 底部 footer 状态条目 |
 | [`status.provider`](/plugins/status#独占-status-provider) | 接收 readonly status snapshot 的 render 函数 | 替换整个 footer 的候选 provider |
 | [`editor.extensions`](/plugins/editor-extensions) | passive shell、补全、action、submit transform | 增强 Blue 自有编辑器而不读取其状态 |
-| [`dock`](/plugins/dock) | 静态或函数式 `BlueView` | 编辑器上方的底部面板 |
+| [`editor.provider`](/plugins/editor-providers) | 接收 readonly editor snapshot 的 shell render 函数 | 用户选择的独占 editor shell 候选 |
+| `panes` | 布局位置、canonical node 与结构化 event | header/left/right/bottom 插件面 |
+| `overlays` | canonical overlay request 与结构化 event | 受 Blue focus/lifecycle 托管的浮层 |
 | [`notifications`](/plugins/notifications) | 发布/订阅 `BlueNotification` | 编辑器通知条 |
 
-manifest schema 还声明了 `tools`、`editor`、`panels`、`session.read`、`session.act` 五个能力，但当前阶段申请其中任何一个都会被 `open()` 拒绝（`BLUE_CAPABILITY_DENIED`）——它们预留给后续阶段，签名未定。
+manifest schema 还声明了 `session.read` 与 `session.act`，但当前阶段申请会被 `open()` 拒绝（`BLUE_CAPABILITY_DENIED`）。旧名 `dock`、`panels`、`editor` 与 `tools` 已从公开 manifest 删除；校验器会返回具体迁移提示。
 
 ## 文档地图
 
@@ -67,7 +69,7 @@ manifest schema 还声明了 `tools`、`editor`、`panels`、`session.read`、`s
 
 **贡献能力** —— 每个能力一页：契约表、完整示例、行为细节与常见错误。
 
-- [命令](/plugins/commands) · [状态栏与独占 provider](/plugins/status) · [编辑器扩展](/plugins/editor-extensions) · [Dock 面板](/plugins/dock) · [通知](/plugins/notifications)
+- [命令](/plugins/commands) · [状态栏与独占 provider](/plugins/status) · [编辑器扩展](/plugins/editor-extensions) · [编辑器 Provider](/plugins/editor-providers) · [Pane](/plugins/dock) · [通知](/plugins/notifications)
 
 **验证与发布**
 
@@ -77,5 +79,5 @@ manifest schema 还声明了 `tools`、`editor`、`panels`、`session.read`、`s
 **参考**
 
 - [Seam 参考](/plugins/seams) —— 稳定 plugin host 与 Blue 内部边界的完整清单；
-- [内置插件](/plugins/builtins) —— bundle 的 29 条 Blue 自有行，是最完整的插件范例集；
+- [内置插件](/plugins/builtins) —— bundle 的 30 条 Blue 自有行，是最完整的插件范例集；
 - [贡献本仓库](/plugins/contributing) —— 给 Blue 本体贡献代码的本地开发流程。

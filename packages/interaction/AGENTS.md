@@ -41,6 +41,33 @@ and only `onEvent` receives an owner-minted user gesture.
 Changing whether the BTW pane is connected likewise fences a pending main
 submit transform before Enter can cross routes; a busy-only refresh does not.
 
+The same stable outer delegate composes the selected `editor.provider` shell.
+`./editor-provider-owner` advertises the capability only after
+`blueEditorHost` exists, follows the persisted `blue.editorProvider` id, and
+publishes inert candidates plus an owner-minted gesture dispatch boundary.
+Installation order and priority never select a candidate. The runtime invokes
+only the desired candidate after the actual editor width is known, validates
+its exactly-one-visible-`editor-control` invariant, dry-renders through core's
+checked shell seam, then atomically replaces only the inner component and
+focus target. The screen child, outer focus identity, and injected
+`BlueEditor` remain unchanged, preserving draft, cursor, history, IME, paste,
+attachments, completion, and submit barriers across provider swaps.
+
+Blue automatically wraps a valid provider shell with the admitted extension
+envelope. If extension composition fails the canonical budget, the provider
+shell stays usable without that envelope and the owner reports a bounded
+notice; extension failure is not charged to the provider. Same-session
+candidate failure retains the previous interactive shell, while first
+activation, session switch, active-provider unload, and owner unload use
+`blue.default`. Contained live render failure switches display and input to
+the same fallback in the current frame. Three failures for one desired
+candidate object in a rolling 60 seconds open a timer-free breaker; a new
+same-id object may retry. Only a successful committed live frame from the
+latest candidate generation resets its failure history; dry-render success and
+a retained LKG frame do not. Provider change events are latest-wins, discrete
+events are FIFO, and every callback is bounded, abortable, gesture-scoped, and
+rejected after refresh/session/unload.
+
 Async public submit transforms run behind core's pre-clear submission barrier,
 in priority order. The editor stays intact until every transform succeeds.
 Image markers are captured into one frozen public attachment snapshot, remain
@@ -102,14 +129,13 @@ Approval allowances and prompt serialization are local to one approval plugin ap
 
 `settings.ts` is the sole owner of the `blue` settings namespace. `currentBlueSettings()` reads the tree-scoped thunk; update check, `/settings`, paste image, and transcript settings must not register duplicate sections. Persisted theme changes go through `theme-switch.ts`; `currentThemeKey` and `lastAppliedTheme` live in the interaction state service, preserving same-tree reload behavior without cross-tree leakage.
 
-The same schema owns the persisted `statusProvider` id. Its default sentinel is
-`blue.default`; arbitrary non-empty ids remain stored so a temporarily absent
-provider can become active after installation or owner reload. When the
-consolidated settings source becomes readable, this owner emits
-`'blue/settings-source-ready'` with the resolved value. The transcript
-status-provider owner listens to that event because its sibling Fiber may
-activate before settings; the event is an initialization handoff, not another
-settings registry or a write-back path.
+The same schema owns the persisted `statusProvider` and `editorProvider` ids.
+Their default sentinel is `blue.default`; arbitrary non-empty ids remain stored
+so a temporarily absent provider can become active after installation or owner
+reload. When the consolidated settings source becomes readable, this owner
+emits `'blue/settings-source-ready'` with the resolved value. Provider owners
+use that initialization handoff plus ordinary `settings/updated` commits;
+neither channel is another settings registry or a write-back path.
 
 Transcript tunables remain in this settings schema because interaction owns the settings UI, while transcript parses and applies them through its own tree-scoped presentation policy.
 
@@ -122,6 +148,7 @@ Transcript tunables remain in this settings schema because interaction owns the 
 - `paste-image`: platform clipboard ingestion and reversible submit transformation.
 - `command-model`: renderer-neutral command registry.
 - `plugin-host-bridge`: public command/notification/editor-extension contributions. It unwraps the guarded host only for Blue-owned readiness, snapshot, gesture, and notification owner helpers; those helpers reject the guarded public service.
+- `editor-provider-owner`: persisted exclusive editor-shell selection and owner-scoped event dispatch over the stable input runtime.
 
 The plugin-host bridge advertises `commands`, `notifications`, and
 `editor.extensions` only for its active Fiber. Unload removes concrete

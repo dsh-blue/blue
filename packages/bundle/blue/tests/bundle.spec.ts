@@ -56,7 +56,7 @@ describe('blue bundle', () => {
   it('inserts every Blue row with the projection-backed transcript in the baseline segment', () => {
     // The eight-row baseline ends with the conversation producer/consumer.
     // Enhancements then add editor/attachment, status, pane, and public-view
-    // contributions before the four-row assembly closes the tree.
+    // contributions before the five-row assembly closes the tree.
     const ids = [...patch.matchAll(/^\s*- id: (blue-[\w-]+)$/gm)].map(match => match[1]!)
     expect(ids).toEqual([
       'blue-agent-presets',
@@ -85,6 +85,7 @@ describe('blue bundle', () => {
       'blue-plugin-view-bridge',
       'blue-status-provider-owner',
       'blue-interaction',
+      'blue-editor-provider-owner',
       'blue-plugin-interaction-bridge',
       'blue-startup',
       'blue-app',
@@ -101,6 +102,7 @@ describe('blue bundle', () => {
     expect(patch).not.toMatch(/- id: blue-(?:context|conversation|transcript-official|openpencil|lark)\n\s+name:[^\n]+\n\s+disabled: true/gu)
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/plugin-host-bridge'")
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/status-provider-owner'")
+    expect(patch).toContain("name: '@dsh-blue/blue-interaction/editor-provider-owner'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/plugin-host-bridge'")
     expect(patch).toContain("name: '@deepseek-ai/dsh-agent-presets'")
   })

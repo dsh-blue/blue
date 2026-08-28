@@ -12,6 +12,7 @@ import {
   applyReversibleSubmitTransformers,
   clearSharedEditor,
   clearEditorExtensions,
+  clearEditorProviders,
   EditorHostService,
   ENHANCEMENT_EDITOR_PLUS,
   applySubmitTransformers,
@@ -22,9 +23,11 @@ import {
   registerEditorAutocompleteSource,
   registerSubmitTransformer,
   setEditorExtensions,
+  setEditorProviders,
   setSharedEditor,
   setEditorSlotSwap,
   type EditorExtensionBinding,
+  type EditorProviderBinding,
   type SharedEditor,
 } from '../src/editor-instance.ts'
 
@@ -40,6 +43,15 @@ function extensionBinding(revision: number): EditorExtensionBinding {
     entries: [],
     complete: async () => ({ ok: true, value: [] }),
     transform: async (_entry, request) => ({ ok: true, value: { text: request.text } }),
+    dispatch: async () => ({ ok: true, value: undefined }),
+  }
+}
+
+function providerBinding(revision: number): EditorProviderBinding {
+  return {
+    revision,
+    desiredId: 'blue.default',
+    entries: [],
     dispatch: async () => ({ ok: true, value: undefined }),
   }
 }
@@ -118,6 +130,29 @@ describe('editor extension host state', () => {
     unsubscribe()
     setEditorExtensions(ctx, first)
     expect(notifications).toBe(3)
+  })
+
+  it('notifies only for provider changes and fences stale owner cleanup', () => {
+    const ctx = editorContext()
+    const first = providerBinding(1)
+    const second = providerBinding(2)
+    let notifications = 0
+    const unsubscribe = ctx.blueEditorHost.subscribeEditorState(() => { notifications += 1 })
+
+    setEditorProviders(ctx, first)
+    setEditorProviders(ctx, first)
+    expect(notifications).toBe(1)
+
+    setEditorProviders(ctx, second)
+    clearEditorProviders(ctx, first)
+    expect(ctx.blueEditorHost.providers).toBe(second)
+    expect(notifications).toBe(2)
+
+    clearEditorProviders(ctx, second)
+    expect(ctx.blueEditorHost.providers).toBeUndefined()
+    expect(notifications).toBe(3)
+
+    unsubscribe()
   })
 
   it('keeps autocomplete sources ordered, unique, frozen, and lifecycle-notified', () => {

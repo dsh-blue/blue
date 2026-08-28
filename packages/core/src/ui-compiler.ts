@@ -88,8 +88,34 @@ export interface BlueCompiledUi {
 /** Successful editor-shell compilation around the injected editing engine. */
 export interface BlueCompiledEditorShell {
   readonly node: BlueEditorShellNode
-  readonly component: BlueComponent
-  readonly focusTarget: BlueFocusable
+  readonly component: BlueEditorShellComponent
+  readonly focusTarget: BlueEditorShellComponent
+}
+
+/** One editor-shell render plus a contained renderer failure, when present. */
+export interface BlueEditorShellRenderResult {
+  readonly rows: string[]
+  readonly runtimeFailure?: string
+}
+
+/** Checked-render options used before an editor provider is committed. */
+export interface BlueEditorShellRenderOptions {
+  /** Restore composite/editor focus and roving state after the render. */
+  readonly dryRun?: boolean
+}
+
+/** Focusable editor shell with a provider-owned checked-render boundary. */
+export interface BlueEditorShellComponent extends BlueFocusable {
+  /**
+   * Render with structured failure reporting. A dry run restores all focus
+   * state after measuring the candidate.
+   * @param width - assigned editor-shell width.
+   * @param options - optional dry-run behavior.
+   * @returns rendered rows and the first contained runtime failure.
+   */
+  renderChecked(width: number, options?: BlueEditorShellRenderOptions): BlueEditorShellRenderResult
+  /** Select the host editor inside this shell without taking screen focus. */
+  focusEditor(): void
 }
 
 /** One bounded status render and whether the assigned viewport hid content. */
@@ -561,7 +587,7 @@ function reconcile(state: FocusState): readonly ControlDescriptor[] {
   return controls
 }
 
-class CompiledSurface implements BlueFocusable {
+class CompiledSurface implements BlueEditorShellComponent {
   private readonly state: FocusState
   private readonly root: Component
   private viewport: BlueUiViewport
@@ -696,7 +722,53 @@ class CompiledSurface implements BlueFocusable {
     }
   }
 
-  render(width: number): string[] { return this.renderFrame(width, undefined).rows }
+  render(width: number): string[] { return this.renderChecked(width).rows }
+
+  renderChecked(width: number, options: BlueEditorShellRenderOptions = {}): BlueEditorShellRenderResult {
+    if (options.dryRun !== true) {
+      const rendered = this.renderFrame(width, undefined)
+      return rendered.runtimeFailure === undefined
+        ? { rows: rendered.rows }
+        : { rows: rendered.rows, runtimeFailure: rendered.runtimeFailure }
+    }
+    // `dryRun` is exposed only by the validated editor-shell result, whose
+    // compiler contract guarantees the injected editor and its one control.
+    const editor = this.editor!
+    const focus = {
+      activeKey: this.state.activeKey,
+      lastIndex: this.state.lastIndex,
+      focused: this.state.focused,
+      layoutPass: this.state.layoutPass,
+      pendingConfirmation: this.state.pendingConfirmation,
+      viewport: this.viewport,
+      runtimeFailure: this.runtimeFailure,
+      editorFocused: editor.focused,
+    }
+    try {
+      const rendered = this.renderFrame(width, undefined)
+      return rendered.runtimeFailure === undefined
+        ? { rows: rendered.rows }
+        : { rows: rendered.rows, runtimeFailure: rendered.runtimeFailure }
+    } finally {
+      this.state.activeKey = focus.activeKey
+      this.state.lastIndex = focus.lastIndex
+      this.state.focused = focus.focused
+      this.state.layoutPass = focus.layoutPass
+      this.state.pendingConfirmation = focus.pendingConfirmation
+      this.viewport = focus.viewport
+      this.runtimeFailure = focus.runtimeFailure
+      editor.focused = focus.editorFocused
+    }
+  }
+
+  focusEditor(): void {
+    this.viewport = safeViewport(this.options.getViewport)
+    const controls = this.state.controls()
+    const index = controls.findIndex(control => control.kind === 'editor')
+    this.state.activeKey = controls[index]!.key
+    this.state.lastIndex = index
+    this.state.pendingConfirmation = undefined
+  }
 
   /** Render a passive status surface with a fixed row budget and overflow signal. */
   renderStatus(width: number, maxRows: number): BlueStatusRenderResult { return this.renderFrame(width, maxRows) }

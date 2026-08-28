@@ -45,6 +45,10 @@
       "types": "./lib/types/plugin-host-bridge.d.ts",
       "default": "./lib/plugin-host-bridge.js"
     },
+    "./editor-provider-owner": {
+      "types": "./lib/types/editor-provider-owner.d.ts",
+      "default": "./lib/editor-provider-owner.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

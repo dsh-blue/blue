@@ -35,7 +35,7 @@ interface BluePluginManifest {
 `open()` 的行为分三层：
 
 1. **静态校验**（`validateBlueManifest`，不执行插件代码）：id 格式、api 范围格式、capability 拼写与去重。失败返回 `BLUE_API_INCOMPATIBLE`（或 manifest 根本不是对象时的 `BLUE_INVALID_CONTRIBUTION`）；
-2. **能力开放检查**：当前阶段开放 `commands`、`status`、`status.provider`、`dock`、`notifications`。申请 `tools` / `editor` / `panels` / `session.read` / `session.act` 中任何一个都会被整体拒绝（`BLUE_CAPABILITY_DENIED`）——不是降级，是拒绝；
+2. **能力开放检查**：当前阶段开放 `commands`、`status`、`notifications`、`panes`、`overlays`、`editor.extensions`、`status.provider` 与 `editor.provider`。申请尚未实现的 `session.read` / `session.act` 会被整体拒绝（`BLUE_CAPABILITY_DENIED`）——不是降级，是拒绝；
 3. **按能力裁剪返回**：`BluePluginApi` 上只有声明过的 capability 字段有值，其余是 `undefined`。所以访问时总是 `api.commands?.register(...)` 这样的可选链形态。
 
 裁剪是双向契约：你只拿到你声明的，宿主也只暴露你声明的。插件升级时要新能力，就在 manifest 里加一行——宿主版本不够会在 `open()` 阶段明确失败，而不是运行时才出错。
@@ -107,5 +107,5 @@ Blue 自己的 validation-only 包（`blue-context`、`blue-remote`、`blue-open
 
 ## 下一步
 
-- 五个能力的契约表与完整示例：[命令](/plugins/commands) · [状态栏与独占 provider](/plugins/status) · [Dock 面板](/plugins/dock) · [通知](/plugins/notifications)；
+- 公开能力的契约表与完整示例：[命令](/plugins/commands) · [状态栏与独占 provider](/plugins/status) · [编辑器扩展](/plugins/editor-extensions) · [编辑器 Provider](/plugins/editor-providers) · [Pane](/plugins/dock) · [通知](/plugins/notifications)；
 - Blue 内部 projection/action 边界的完整清单见 [Seam 参考](/plugins/seams)。

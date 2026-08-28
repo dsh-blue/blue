@@ -10,6 +10,7 @@ Blue's configuration lives on two layers: **in-app slash commands** (the everyda
 | DeepSeek official endpoint tuning | — (files only) | the `llm-deepseek:` section of `settings.yaml` |
 | Theme | `/theme` (session-level); `/settings` or the file for the persisted default | the `blue:` section of `settings.yaml` ([Theming](/en/guide/theme)) |
 | Status provider | — (files only) | `blue.statusProvider` in `settings.yaml` ([Status bar](/en/plugins/status#exclusive-status-provider)) |
+| Editor provider | — (files only) | `blue.editorProvider` in `settings.yaml` ([Editor providers](/en/plugins/editor-providers)) |
 | Blue preferences (update check, fold defaults, …) | `/settings` | the `blue:` section of `settings.yaml` |
 | Plugin rows / composition | — | the profile's `cordis.patch.yml` ([Profiles & directories](/en/dsh/profiles)) |
 
@@ -140,7 +141,7 @@ Notes:
 
 ### blue: Blue's own settings section
 
-The `/settings` panel writes the fields below except `statusProvider`, which is edited directly in the file. Every key is optional; defaults are shown:
+The `/settings` panel writes the fields below except `statusProvider` and `editorProvider`, which are edited directly in the file. Every key is optional; defaults are shown:
 
 ```yaml
 blue:
@@ -157,9 +158,10 @@ blue:
   editorCommand: ''        # external editor command (empty = auto-detect via $VISUAL/$EDITOR)
   pasteImageBackend: auto  # Linux clipboard backend: auto | wayland | x11
   statusProvider: blue.default # exclusive status-provider id; built-in additive footer by default
+  editorProvider: blue.default # exclusive editor-provider id; built-in editor shell by default
 ```
 
-The panel is two-level: level one groups rows by namespace (host sections like `shell:`, `agent-loop:`, and `web-search-deepseek:` included), Enter steps into level two's per-key rows, and `Enter`/`Space` there steps the preset value with every change landing on disk; `blue.theme` applies live and becomes the startup default (`/theme` stays the session-level switch — see [Theming](/en/guide/theme)), and folding-default and transcript-number changes apply to the running session just as immediately (an active Ctrl-O expansion still dominates). `statusProvider` is not a panel row; enter the third-party provider id in the file. Level one's last row opens the whole settings.yaml in `$EDITOR`.
+The panel is two-level: level one groups rows by namespace (host sections like `shell:`, `agent-loop:`, and `web-search-deepseek:` included), Enter steps into level two's per-key rows, and `Enter`/`Space` there steps the preset value with every change landing on disk; `blue.theme` applies live and becomes the startup default (`/theme` stays the session-level switch — see [Theming](/en/guide/theme)), and folding-default and transcript-number changes apply to the running session just as immediately (an active Ctrl-O expansion still dominates). `statusProvider` and `editorProvider` are not panel rows; enter third-party provider ids in the file. If a desired id is absent or fails activation, Blue preserves that value and uses its fallback instead of rewriting settings. Level one's last row opens the whole settings.yaml in `$EDITOR`.
 
 ### Verifying your edits
 

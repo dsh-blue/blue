@@ -558,6 +558,7 @@ export function apply(ctx: Context): void {
     ctx.emit('blue/editor-model-changed')
     // Mirror every edit so a theme-swap reload loses nothing.
     draft.stashDraft(text)
+    extensionRuntime.refreshProviderSnapshot()
     // Slash context highlights the frame in `primary`; any other text
     // returns the neutral border. `blue-editor-plus` re-asserts its shell
     // hue on top while bash mode is active.
@@ -598,8 +599,8 @@ export function apply(ctx: Context): void {
     if (nextId !== sessionId) {
       sessionId = nextId
       retractionCandidate = undefined
-      extensionRuntime.invalidateSession()
     }
+    extensionRuntime.updateSession(session)
     notice = undefined
     refreshHint()
   })
@@ -608,7 +609,7 @@ export function apply(ctx: Context): void {
   // editor's top corners to the spliced `├┤` and gates the Esc/Enter plus
   // contextual page/wheel chain; its busy flag refuses a submit while the side agent answers.
   ctx.on('blue/editor-connected-above', (connected, busy) => {
-    if (connected !== connectedAbove) extensionRuntime.invalidateSession()
+    if (connected !== connectedAbove) extensionRuntime.invalidateRoute()
     connectedAbove = connected
     btwBusy = busy === true
     editor.setConnectedAbove(connected)

@@ -377,6 +377,7 @@ try {
     const blueApi = await load('@dsh-blue/blue-api')
     const interaction = await load('@dsh-blue/blue-interaction')
     const interactionBridge = await load('@dsh-blue/blue-interaction/plugin-host-bridge')
+    const editorProviderOwner = await load('@dsh-blue/blue-interaction/editor-provider-owner')
 
     function effectOwner() {
       const cleanups = []
@@ -399,6 +400,171 @@ try {
       const identity = value => value
       ctx.reflect.provide('blueTheme', { colors: new Proxy({}, { get: () => identity }) })
       return { ctx, host, editorHost }
+    }
+
+    class PackedEditor {
+      constructor(components) {
+        this.components = components
+        this.focused = false
+        this.disableSubmit = false
+        this.text = ''
+        this.cursor = 0
+        this.history = []
+        this.barrier = undefined
+      }
+      setSubmitBarrier(barrier) { this.barrier = barrier }
+      submit() {
+        if (this.disableSubmit) return
+        if (this.barrier === undefined) { this.onSubmit?.(this.text); return }
+        const controller = new AbortController()
+        let settled = false
+        this.barrier(Object.freeze({
+          text: this.text.trim(),
+          signal: controller.signal,
+          revision: 1,
+          commit: () => {
+            if (settled) return false
+            settled = true
+            this.onSubmit?.(this.text)
+            return true
+          },
+          cancel: () => { if (!settled) { settled = true; controller.abort() } },
+        }))
+      }
+      isShowingAutocomplete() { return false }
+      getText() { return this.text }
+      setText(text) { this.text = text; this.cursor = text.length }
+      addToHistory(text) { this.history.unshift(text) }
+      getHistory() { return [...this.history] }
+      removeLatestHistory(text) {
+        if (this.history[0] !== text) return false
+        this.history.shift()
+        return true
+      }
+      setBorderColor() {}
+      setPromptSymbol() {}
+      setBorderLabel() {}
+      setConnectedAbove() {}
+      setGhostHint() {}
+      setAutocompleteProvider(provider) { this.autocompleteProvider = provider }
+      getExpandedText() { return this.text }
+      renderContent(width) { return [this.components.truncateToWidth(this.text, Math.max(1, width), '')] }
+      insertText(text) {
+        this.text = `${this.text.slice(0, this.cursor)}${text}${this.text.slice(this.cursor)}`
+        this.cursor += text.length
+        this.onChange?.(this.text)
+      }
+      handleInput(data) {
+        if (this.onKey?.(data) === true) return
+        if (data === '\x1b[D') { this.cursor = Math.max(0, this.cursor - 1); return }
+        if (data === '\x1b[C') { this.cursor = Math.min(this.text.length, this.cursor + 1); return }
+        if (data === '\r' || data === '\n') { this.submit(); return }
+        if (!/^[^\x00-\x1f\x7f-\x9f]+$/u.test(data)) return
+        this.insertText(data)
+      }
+      render(width) { return this.renderContent(width) }
+      invalidate() {}
+    }
+
+    async function editorProviderFixture() {
+      const ctx = new cordis.Context()
+      const host = new blueApi.BluePluginHostService(ctx)
+      const identity = value => value
+      const colors = new Proxy({ logoGradient: [identity] }, {
+        get(target, key) { return key === 'logoGradient' ? target.logoGradient : identity },
+      })
+      const bottom = []
+      const screen = {
+        columns: 80,
+        rows: 24,
+        focus: null,
+        requestRender() {},
+        addBottomChild(component) {
+          bottom.push(component)
+          return () => {
+            const index = bottom.indexOf(component)
+            if (index >= 0) bottom.splice(index, 1)
+          }
+        },
+        setFocus(component) {
+          if (this.focus === component) return
+          if (this.focus !== null) this.focus.focused = false
+          this.focus = component
+          if (component !== null) component.focused = true
+        },
+        scrollContent: () => false,
+        followContent() {},
+        setContentScrollHandler() { return () => {} },
+        setTitle() {},
+        async suspend(run) { return run() },
+      }
+      ctx.reflect.provide('blueScreen', screen)
+      ctx.reflect.provide('blueTheme', { colors })
+      class PackedComponents extends core.BlueComponentsService {
+        createEditor() {
+          const editor = new PackedEditor(this)
+          this.editors ??= []
+          this.editors.push(editor)
+          return editor
+        }
+      }
+      new PackedComponents(ctx, { theme: { colors }, tui: {} })
+      new core.BlueKeymapService(ctx)
+      ctx.reflect.provide('commands', { register: () => () => {} })
+      const session = Object.freeze({ id: 'packed-session', cwd: '/packed', status: 'idle', mode: 'normal' })
+      const sessionListeners = new Set()
+      ctx.reflect.provide('blueSessionReader', {
+        current: () => session,
+        subscribe(listener) {
+          sessionListeners.add(listener)
+          return { dispose: () => sessionListeners.delete(listener) }
+        },
+        request: async () => ({ ok: true, value: undefined }),
+      })
+      ctx.reflect.provide('blueSessionActions', {
+        commands: () => [],
+        followup: () => ({ ok: true, value: { messageId: 'packed-message' } }),
+        steer: () => ({ ok: true, value: undefined }),
+        interrupt: () => ({ ok: true, value: undefined }),
+        executeCommand: async () => undefined,
+        skillSnapshot: async () => ({ ok: true, value: { complete: true, skills: [] } }),
+        subscribeSkillChanges: () => ({ disposed: false, dispose() { this.disposed = true } }),
+      })
+      ctx.reflect.provide('blueRequests', { begin() {} })
+      ctx.reflect.provide('blueRetractions', { tryRetract: () => false })
+      const loaderGate = Promise.withResolvers()
+      ctx.reflect.provide('loader', { await: () => loaderGate.promise })
+      const interactionFiber = await ctx.plugin(interaction)
+      ctx.blueInteractionState.settingsSource = () => ({ updateCheck: false, updateChannel: 'next' })
+      loaderGate.resolve()
+      await new Promise(resolveImmediate => setImmediate(resolveImmediate))
+      const ownerFiber = await ctx.plugin(editorProviderOwner)
+      const editor = ctx.blueEditorHost.current?.editor
+      ensure(editor !== undefined && screen.focus !== null, 'FIXTURE_EDITOR_PROVIDER_MOUNT', 'packed blue-input did not publish its editor runtime')
+      const outer = screen.focus
+      const consumer = effectOwner()
+      const opened = host.open(consumer, {
+        id: '@fixture/editor-provider',
+        api: '^1.0.0',
+        capabilities: ['editor.provider'],
+      })
+      ensure(opened.ok, 'FIXTURE_EDITOR_PROVIDER_OPEN', opened.ok ? '' : opened.message)
+      return {
+        ctx,
+        host,
+        screen,
+        editor,
+        outer,
+        opened: opened.value,
+        ownerFiber,
+        render(width = 60) { return outer.render(width) },
+        select(id) { ctx.emit('blue/settings-source-ready', { editorProvider: id }) },
+        async dispose() {
+          consumer.dispose()
+          await interactionFiber.dispose()
+          await ctx.fiber.dispose()
+        },
+      }
     }
 
     const extensionManifest = Object.freeze({
@@ -571,7 +737,138 @@ try {
         await ctx.fiber.dispose()
       }
     })
-    report.observations.push('interaction editor.extensions exercised through packed public host, editor-host, and bridge exports')
+
+    await scenario('interaction.editor-provider-selection-identity-fallback-inert', async () => {
+      const fixture = await editorProviderFixture()
+      const shell = label => ({
+        kind: 'stack',
+        direction: 'column',
+        children: [
+          { node: { kind: 'text', content: label } },
+          { node: { kind: 'editor-control' } },
+        ],
+      })
+      let firstRenders = 0
+      let secondRenders = 0
+      let badRenders = 0
+      let frozenSnapshot = false
+      const first = fixture.opened.editorProviders.register({
+        id: 'packed.first',
+        render(snapshot) {
+          firstRenders += 1
+          frozenSnapshot = Object.isFrozen(snapshot)
+            && Object.isFrozen(snapshot.attachments)
+            && Object.isFrozen(snapshot.extensions)
+            && !Object.hasOwn(snapshot, 'draft')
+          return shell('packed first')
+        },
+      })
+      const second = fixture.opened.editorProviders.register({
+        id: 'packed.second',
+        render() { secondRenders += 1; return shell('packed second') },
+      })
+      const bad = fixture.opened.editorProviders.register({
+        id: 'packed.bad',
+        render() {
+          badRenders += 1
+          return {
+            kind: 'stack',
+            direction: 'column',
+            children: [
+              { node: { kind: 'editor-control' } },
+              { node: { kind: 'editor-control' } },
+            ],
+          }
+        },
+      })
+      try {
+        ensure(first.ok && second.ok && bad.ok, 'FIXTURE_EDITOR_PROVIDER_REGISTER', 'packed editor providers did not register')
+        fixture.editor.handleInput('ab')
+        fixture.editor.addToHistory('older')
+        fixture.outer.handleInput('\x1b[D')
+        fixture.render()
+        ensure(firstRenders === 0 && secondRenders === 0 && badRenders === 0, 'FIXTURE_EDITOR_PROVIDER_INERT', 'installing editor provider candidates invoked one without user selection')
+
+        fixture.select('packed.first')
+        const firstRows = fixture.render().join('\n')
+        ensure(firstRows.includes('packed first') && firstRenders === 1 && secondRenders === 0 && frozenSnapshot, 'FIXTURE_EDITOR_PROVIDER_PERSISTED_SELECTION', 'persisted selection did not activate only the chosen frozen candidate')
+        fixture.select('packed.second')
+        const secondRows = fixture.render().join('\n')
+        ensure(secondRows.includes('packed second') && secondRenders === 1, 'FIXTURE_EDITOR_PROVIDER_SWITCH', 'settings selection did not atomically switch editor shells')
+        ensure(fixture.ctx.blueEditorHost.current?.editor === fixture.editor && fixture.screen.focus === fixture.outer && fixture.outer.focused && fixture.editor.focused, 'FIXTURE_EDITOR_PROVIDER_IDENTITY_FOCUS', 'editor provider switch replaced the editor engine or stable focus delegate')
+        ensure(fixture.editor.getText() === 'ab' && fixture.editor.getHistory().join() === 'older', 'FIXTURE_EDITOR_PROVIDER_DRAFT_HISTORY', 'editor provider switch lost draft or history state')
+        fixture.outer.handleInput('X')
+        ensure(fixture.editor.getText() === 'aXb', 'FIXTURE_EDITOR_PROVIDER_CURSOR', 'editor provider switch did not preserve the cursor position')
+
+        fixture.select('packed.bad')
+        const fallbackRows = fixture.render().join('\n')
+        ensure(badRenders === 1 && fallbackRows.includes('packed second'), 'FIXTURE_EDITOR_PROVIDER_BAD_FALLBACK', 'bad candidate dismantled the last-known-good editor shell')
+        bad.value.dispose()
+        second.value.dispose()
+        ensure(!fixture.render().join('\n').includes('packed second') && fixture.ctx.blueEditorHost.current?.editor === fixture.editor, 'FIXTURE_EDITOR_PROVIDER_UNLOAD_DEFAULT', 'active provider unload did not restore the default around the same editor')
+      } finally {
+        if (first.ok) first.value.dispose()
+        if (second.ok) second.value.dispose()
+        if (bad.ok) bad.value.dispose()
+        await fixture.dispose()
+      }
+    })
+
+    await scenario('interaction.editor-provider-owner-unload-event-abort-late', async () => {
+      const fixture = await editorProviderFixture()
+      const late = Promise.withResolvers()
+      let eventContext
+      let eventCalls = 0
+      const provider = fixture.opened.editorProviders.register({
+        id: 'packed.events',
+        render: () => ({
+          kind: 'stack',
+          direction: 'column',
+          children: [
+            { node: { kind: 'actions', id: 'packed-actions', items: [{ id: 'go', label: 'Go' }] } },
+            { node: { kind: 'text', content: 'packed event provider' } },
+            { node: { kind: 'editor-control' } },
+          ],
+        }),
+        onEvent(_event, context) {
+          eventCalls += 1
+          eventContext = context
+          return late.promise
+        },
+      })
+      let replayOwner
+      try {
+        ensure(provider.ok, 'FIXTURE_EDITOR_PROVIDER_EVENT_REGISTER', provider.ok ? '' : provider.message)
+        fixture.render()
+        fixture.select('packed.events')
+        ensure(fixture.render().join('\n').includes('packed event provider'), 'FIXTURE_EDITOR_PROVIDER_EVENT_SELECTION', 'event provider did not activate')
+        fixture.outer.handleInput('\t')
+        fixture.outer.handleInput('\r')
+        for (let turn = 0; turn < 8 && eventContext === undefined; turn += 1) await Promise.resolve()
+        ensure(eventCalls === 1 && eventContext?.userGesture !== undefined && eventContext.signal.aborted === false, 'FIXTURE_EDITOR_PROVIDER_EVENT_CONTEXT', 'provider event did not receive one live owner-scoped context')
+
+        const revisionBeforeUnload = blueApi.snapshotBluePluginHost(fixture.host).editorProvidersRevision
+        await fixture.ownerFiber.dispose()
+        ensure(eventContext.signal.aborted && fixture.ctx.blueEditorHost.providers === undefined, 'FIXTURE_EDITOR_PROVIDER_EVENT_ABORT', 'owner unload did not abort the active provider event')
+        ensure(!provider.value.refresh().ok, 'FIXTURE_EDITOR_PROVIDER_OWNER_GAP', 'provider refresh survived its owner gap')
+        ensure(!fixture.render().join('\n').includes('packed event provider'), 'FIXTURE_EDITOR_PROVIDER_OWNER_FALLBACK', 'owner unload did not restore the default editor shell')
+        late.resolve({ ok: true, value: undefined })
+        await new Promise(resolveImmediate => setImmediate(resolveImmediate))
+        ensure(!fixture.render().join('\n').includes('packed event provider') && blueApi.snapshotBluePluginHost(fixture.host).editorProvidersRevision === revisionBeforeUnload, 'FIXTURE_EDITOR_PROVIDER_LATE_REJECTION', 'late provider event republished after owner unload')
+
+        replayOwner = await fixture.ctx.plugin(editorProviderOwner)
+        fixture.select('packed.events')
+        ensure(fixture.render().join('\n').includes('packed event provider'), 'FIXTURE_EDITOR_PROVIDER_OWNER_REPLAY', 'owner reload did not replay the retained candidate and persisted selection')
+        provider.value.dispose()
+        ensure(!fixture.render().join('\n').includes('packed event provider'), 'FIXTURE_EDITOR_PROVIDER_CONSUMER_UNLOAD', 'provider consumer unload left its shell mounted')
+      } finally {
+        late.resolve({ ok: true, value: undefined })
+        if (provider.ok) provider.value.dispose()
+        await replayOwner?.dispose()
+        await fixture.dispose()
+      }
+    })
+    report.observations.push('interaction editor.extensions and editor.provider exercised through packed public host, editor runtime, owner, and bridge exports')
   }
 
   if (manifest.name === '@dsh-blue/blue-conversation' || manifest.name === '@dsh-blue/blue-transcript') {

@@ -960,6 +960,61 @@ describe('compileBlueEditorShellNode', () => {
     result.component.invalidate()
   })
 
+  it('reports checked failures, preserves dry-run focus, and restores the editor roving target', () => {
+    const editor = createTestEditor()
+    editor.setText('draft')
+    const shell = {
+      kind: 'stack',
+      direction: 'column',
+      children: [
+        { node: { kind: 'editor-control' } },
+        { node: ui.actions({ id: 'actions', items: [{ id: 'apply', label: 'Apply' }] }) },
+      ],
+    }
+    const { events, result } = compiledEditorShell(shell, editor)
+
+    result.focusTarget.focused = true
+    result.component.render(20)
+    expect(editor.focused).toBe(true)
+    result.focusTarget.handleInput?.('\t')
+    result.component.render(20)
+    expect(editor.focused).toBe(false)
+
+    const checked = result.component.renderChecked(2, { dryRun: true })
+    expectLinesFit('editor shell checked dry render', checked.rows, 2)
+    expect(result.focusTarget.focused).toBe(true)
+    expect(editor.focused).toBe(false)
+    result.focusTarget.handleInput?.('\r')
+    expect(events).toEqual([{ kind: 'activate', controlId: 'apply' }])
+
+    result.focusTarget.focused = false
+    result.focusTarget.focusEditor()
+    expect(result.focusTarget.focused).toBe(false)
+    expect(editor.focused).toBe(false)
+    result.focusTarget.focused = true
+    result.focusTarget.handleInput?.('!')
+    expect(editor.getText()).toBe('draft!')
+
+    const candidate = compiledEditorShell(shell, editor).result
+    editor.focused = true
+    expect(candidate.focusTarget.focused).toBe(false)
+    candidate.component.renderChecked(20, { dryRun: true })
+    expect(candidate.focusTarget.focused).toBe(false)
+    expect(editor.focused).toBe(true)
+
+    const broken = createTestEditor()
+    broken.render = () => { throw new Error('checked editor exploded') }
+    const brokenShell = compiledEditorShell({ kind: 'editor-control' }, broken).result.component
+    const failed = brokenShell.renderChecked(20)
+    expect(failed.runtimeFailure).toBe('checked editor exploded')
+    expect(failed.rows.join('')).toContain('checked editor exploded')
+    expectLinesFit('editor shell checked runtime failure', failed.rows, 20)
+    broken.focused = true
+    const failedDry = brokenShell.renderChecked(20, { dryRun: true })
+    expect(failedDry.runtimeFailure).toBe('checked editor exploded')
+    expect(broken.focused).toBe(true)
+  })
+
   it('compiles a root slot and contains validation, setup, and editor render failures', () => {
     const editor = createTestEditor()
     editor.setText('same object')

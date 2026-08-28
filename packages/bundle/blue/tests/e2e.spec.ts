@@ -312,6 +312,90 @@ describe('blue whole-tree e2e', () => {
     await fiber.dispose()
   })
 
+  it('swaps a persisted editor provider around the same live draft and replays owner reload', async () => {
+    const dir = mkdtempTracked('dsh-blue-e2e-editor-provider-')
+    const settingsPath = join(dir, 'settings.yaml')
+    const credentialsPath = join(dir, '.credentials.yaml')
+    writeFileSync(settingsPath, 'blue:\n  editorProvider: e2e.editor\n')
+    writeFileSync(credentialsPath, 'version: 1\nrefs: {}\n', { mode: 0o600 })
+    const tree = await bootBlue([], { script: [], realSettings: { settingsPath, credentialsPath } })
+    let renders = 0
+    let inertRenders = 0
+    let frozen = false
+    const editorBefore = tree.ctx.blueEditorHost.current?.editor
+    const fiber = tree.ctx.plugin({
+      name: 'e2e-editor-provider-candidates',
+      inject: ['bluePluginHost'],
+      apply(pluginCtx) {
+        const opened = pluginCtx.bluePluginHost.open(pluginCtx, {
+          id: '@acme/e2e-editor-provider',
+          api: '^1.0.0',
+          capabilities: ['editor.provider'],
+        })
+        if (!opened.ok) throw new Error(opened.message)
+        const selected = opened.value.editorProviders!.register({
+          id: 'e2e.editor',
+          render(snapshot) {
+            renders += 1
+            frozen = Object.isFrozen(snapshot)
+              && Object.isFrozen(snapshot.attachments)
+              && Object.isFrozen(snapshot.extensions)
+            return {
+              kind: 'stack',
+              direction: 'column',
+              children: [
+                { node: { kind: 'text', content: `selected editor ${snapshot.mode}` } },
+                { node: { kind: 'editor-control' } },
+              ],
+            }
+          },
+        })
+        const inert = opened.value.editorProviders!.register({
+          id: 'e2e.other-editor',
+          render: () => {
+            inertRenders += 1
+            return { kind: 'editor-control' }
+          },
+        })
+        if (!selected.ok || !inert.ok) throw new Error('editor provider registration failed')
+      },
+    })
+    await fiber.await()
+    await waitForRender()
+    expect(stripSgr(await fullFrame(tree.terminal))).toContain('selected editor normal')
+    expect(frozen).toBe(true)
+    expect(renders).toBeGreaterThan(0)
+    expect(inertRenders).toBe(0)
+
+    tree.terminal.sendInput('draft survives')
+    await waitForRender()
+    expect(stripSgr(await fullFrame(tree.terminal))).toContain('draft survives')
+    expect(tree.ctx.blueEditorHost.current?.editor).toBe(editorBefore)
+
+    const ownerEntry = [...tree.ctx.loader.entries()].find(entry => entry.options.id === 'blue-editor-provider-owner')
+    expect(ownerEntry).toBeDefined()
+    await tree.ctx.loader.update(ownerEntry!.id, { disabled: true })
+    await tree.ctx.loader.await()
+    const defaultFrame = stripSgr(await fullFrame(tree.terminal))
+    expect(defaultFrame).not.toContain('selected editor normal')
+    expect(defaultFrame).toContain('draft survives')
+    expect(tree.ctx.blueEditorHost.current?.editor).toBe(editorBefore)
+
+    await tree.ctx.loader.update(ownerEntry!.id, { disabled: false })
+    await tree.ctx.loader.await()
+    await waitForRender()
+    const restored = stripSgr(await fullFrame(tree.terminal))
+    expect(restored).toContain('selected editor normal')
+    expect(restored).toContain('draft survives')
+    expect(inertRenders).toBe(0)
+
+    await fiber.dispose()
+    await waitForRender()
+    const unloaded = stripSgr(await fullFrame(tree.terminal))
+    expect(unloaded).not.toContain('selected editor normal')
+    expect(unloaded).toContain('draft survives')
+  })
+
   it('drives creative contributions through the real cordis tools, sandbox, and runner lifecycle', async () => {
     const defineV1 = {
       plugin: { kind: 'new', idPrefix: 'dyn' },

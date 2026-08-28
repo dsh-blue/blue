@@ -8,15 +8,18 @@ External plugins request capabilities through `ctx.bluePluginHost.open(ctx, mani
 
 | Capability | Contribution | Blue consumer |
 |---|---|---|
+| `commands` | `BlueCommandContribution` plus async `BlueResult` | interaction bridge into the Harness command registry |
 | `status` | `BlueStatusEntryContribution` returning a renderer-neutral `BlueStatusNode` | view bridge into the private footer entry registry and core status compiler |
 | `status.provider` | `BlueStatusProvider` returning an exclusive renderer-neutral `BlueStatusNode` | status-provider owner into the core status compiler |
-| `dock` | `BlueDockContribution` | view bridge into core's bounded dock mount |
-| `commands` | `BlueCommandContribution` plus async `BlueResult` | interaction bridge into the Harness command registry |
 | `notifications` | `BlueNotification` | interaction bridge into the editor notice consumer |
+| `panes` | `BluePaneContribution` | view bridge into the private pane registry and core bounded pane mount |
+| `overlays` | `BlueOverlayRequest` | public overlay host into the core overlay mount |
+| `editor.extensions` | `BlueEditorExtensionContribution` | interaction bridge into editor extension binding |
+| `editor.provider` | `BlueEditorProvider` returning an exclusive renderer-neutral editor shell | editor-provider owner into the core editor-shell compiler |
 
 `@dsh-blue/blue-api` owns manifest validation, capability restriction, duplicate ids, the owner namespace, and lifecycle. Registrations bind to the caller's Fiber and disappear on unload.
 
-In the current phase `open()` grants the five capabilities in the table above. The manifest schema declares five more (`tools`, `editor`, `panels`, `session.read`, `session.act`), but requesting any of them fails with `BLUE_CAPABILITY_DENIED` — they are reserved for later phases and their signatures are not settled. See [Status bar](/en/plugins/status#exclusive-status-provider) for persisted provider selection and fallback behavior.
+In the current phase `open()` grants the eight capabilities in the table above. `session.read` and `session.act` remain closed, and requesting either returns `BLUE_CAPABILITY_DENIED`. Candidates for both exclusive-provider capabilities stay inert until their id is selected in settings. See [Status bar](/en/plugins/status#exclusive-status-provider) and [Editor providers](/en/plugins/editor-providers) for persisted selection and fallback behavior.
 
 ## Internal Blue boundaries
 
@@ -26,10 +29,10 @@ In the current phase `open()` grants the five capabilities in the table above. T
 | app | `blueSessionReader` | readonly current-session snapshot and request |
 | app | `blueSessionProjections` | consistent-cut projection values, seq, children, and subscriptions |
 | app | `blueSessionActions` | followup/steer/interrupt plus mode/model/preset/tool/skill/rewind/side-session actions |
-| conversation | `blueConversation` / `blueConversationFacts` | official replay/live transcript and status/dock facts |
+| conversation | `blueConversation` / `blueConversationFacts` | official replay/live transcript and status/pane facts |
 | transcript | transcript model, private status/bottom-pane registries, and tool model service | readonly models/canonical nodes into the TUI renderer |
-| interaction | `blueEditorHost` / `blueInteractionState` | frontend-tree-scoped editor slot, completion multiplexer, pre-clear submit barrier, public extension binding, draft/settings/paste state |
-| bundle | `cordis.patch.yml` | 29 Blue-owned rows and explicit dependency ordering |
+| interaction | `blueEditorHost` / `blueInteractionState` | frontend-tree-scoped editor slot, completion multiplexer, pre-clear submit barrier, public extension/provider binding, draft/settings/paste state |
+| bundle | `cordis.patch.yml` | 30 Blue-owned rows and explicit dependency ordering |
 
 Session-switch events such as `blue/request-resume`, `-new`, `-fork`, and `-rewind` are commands addressed to the app owner, not broadcasts carrying Session objects into renderers.
 

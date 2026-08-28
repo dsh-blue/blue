@@ -28,7 +28,7 @@ Blue 终端 UI 核心：整棵树中唯一 import `@earendil-works/pi-tui` 的�
 
 `compileBlueUiNode(value, { components, colors, getViewport, screenMode, emit })` 必定先经过上述 validator，再返回 canonical node、pi-tui 支撑的 component，以及至多一个 composite focus target。该 composite 独占 roving focus、实时响应式可见性协调和 event/render 异常隔离；单个控件不会作为 focusable 泄漏。公共文本无法注入 pi-tui cursor marker 或 core 私有 focus sentinel。Component 会暴露真实的 pi-tui layout node，使嵌套 stack/scroll 获得实际分配高度。Direct render（包括 AltScreen stop replay）使用私有 sentinel，在完整合成后替换；AltScreen layout pass 中 pi-tui 会刻意绕过 wrapper `render`，因此 active leaf 在 composite focus 协调后使用等宽 cursor-marker adapter。两条路径均保证聚焦时恰好一个 marker、失焦时没有 marker，并由真实 layout-frame 测试锁定 HStack 文本完整性。
 
-`compileBlueEditorShellNode(value, { editor, ...compilerOptions })` 独立校验 editor-shell 子集，并围绕调用方提供的同一个宿主持有 `BlueEditor` 对象编译唯一 `editor-control`。因此 shell 刷新不会丢失 renderer 的光标、IME、粘贴、undo 或 history 状态；返回的 composite 仍是唯一 focus target，在该 editor 与同级 canonical 控件之间路由输入。
+`compileBlueEditorShellNode(value, { editor, ...compilerOptions })` 独立校验 editor-shell 子集，并围绕调用方提供的同一个宿主持有 `BlueEditor` 对象编译唯一 `editor-control`。因此 shell 刷新不会丢失 renderer 的光标、IME、粘贴、undo 或 history 状态；返回的 composite 仍是唯一 focus target，在该 editor 与同级 canonical 控件之间路由输入。新增的 `renderChecked(width, { dryRun })` 会结构化报告已收容的 `runtimeFailure`；dry run 在测量 provider candidate 后恢复 editor 与 composite focus 状态。`focusEditor()` 只选择内部 editor-control，不会获取 screen focus。
 
 `compileBlueStatusNode` 使用收窄后的 status validator，并返回被动的 1-3 行 component。每次 `renderStatus` 都报告 overflow；若 leaf 或 root 在正常的安全错误渲染背后失败，还会报告该帧首个 `runtimeFailure`。Renderer owner 因此能拒绝失败的 dry render 或执行 fallback，而异常不会逃出 compiler boundary。
 

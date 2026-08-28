@@ -26,7 +26,7 @@ blue-feature/
   cordis.patch.yml      # inserts the entry into a profile
 ```
 
-The entry exports a stable `name`, `inject`, and `apply(ctx)`. It requests the public capabilities `commands`, `status`, `status.provider`, `dock`, and `notifications` with `ctx.bluePluginHost.open(ctx, manifest)`. `open()`, `register()`, and `publish()` return structured `BlueResult` values and must be checked. Registrations belong to the caller's Fiber and are removed on unload, update, or profile reload.
+The entry exports a stable `name`, `inject`, and `apply(ctx)`. It requests capabilities through `ctx.bluePluginHost.open(ctx, manifest)`. The public set is `commands`, `status`, `notifications`, `panes`, `overlays`, `editor.extensions`, `status.provider`, and `editor.provider`. `open()`, `register()`, and `publish()` return structured `BlueResult` values and must be checked. Registrations belong to the caller's Fiber and are removed on unload, update, or profile reload. Candidates registered through either exclusive-provider capability stay inert until their id is selected in settings.
 
 Plugin code returns renderer-neutral `BlueView` data and structured actions:
 
@@ -53,11 +53,11 @@ return {
     const opened = ctx.bluePluginHost.open(ctx, {
       id: 'com.example.blue-doudizhu',
       api: '^1.0.0',
-      capabilities: ['commands', 'dock', 'notifications'],
+      capabilities: ['commands', 'panes', 'notifications'],
     })
     if (!opened.ok) throw new Error(opened.code + ': ' + opened.message)
     opened.value.commands.register({ id: 'poker', label: '斗地主牌局', execute })
-    opened.value.dock.register({ id: 'doudizhu-board', priority: 30, view: () => renderBoard(state) })
+    opened.value.panes.register({ id: 'doudizhu-board', priority: 30, placement: 'bottom', render: () => renderBoard(state) })
   },
 }
 ```
@@ -81,8 +81,8 @@ Each change used `cordis_define` followed by `cordis_run update`, preserving dia
 The package has the expected shape:
 
 - stable `name`, `inject: ['bluePluginHost']`, and `apply(ctx)` exports;
-- a manifest requesting only `commands`, `dock`, and `notifications`;
-- command, Dock, and notification registrations obtained from the `open()` result;
+- a manifest requesting only `commands`, `panes`, and `notifications`;
+- command, bottom-pane, and notification registrations obtained from the `open()` result;
 - a patch containing only the `blue-doudizhu` insertion, with Fiber-owned cleanup;
 - `@deepseek-ai/cordis` and `@dsh-blue/blue` as peer dependencies, and a `dsh.bundle.patch` entry for profile loading.
 

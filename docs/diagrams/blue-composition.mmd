@@ -1,10 +1,10 @@
 flowchart TB
-    subgraph bundle["cordis.patch.yml - 29 Blue-owned rows · 29 条 Blue 自有行"]
+    subgraph bundle["cordis.patch.yml - 30 Blue-owned rows · 30 条 Blue 自有行"]
         subgraph host["host support 宿主支撑 - 2 rows"]
             presets["blue-agent-presets"]
             creative["blue-creative-host"]
         end
-        subgraph product["product UI 产品 UI - 27 rows"]
+        subgraph product["product UI 产品 UI - 28 rows"]
             subgraph baseline["baseline 基线 - 8 rows"]
                 api["blue-api-host"]
                 core["blue-core · blue-theme-dark"]
@@ -19,8 +19,9 @@ flowchart TB
                 viewBridge["blue-plugin-view-bridge"]
                 statusOwner["blue-status-provider-owner"]
             end
-            subgraph assembly["assembly 装配 - 4 rows"]
+            subgraph assembly["assembly 装配 - 5 rows"]
                 interaction["blue-interaction · blue-plugin-interaction-bridge"]
+                editorOwner["blue-editor-provider-owner"]
                 startup["blue-startup · blue-app"]
             end
         end

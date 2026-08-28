@@ -53,10 +53,12 @@ Integration is a single move: **declare a manifest → `open()` to receive a cap
 | [`status`](/en/plugins/status) | a render function returning `BlueView` | status bar entry in the bottom footer |
 | [`status.provider`](/en/plugins/status#exclusive-status-provider) | a render function receiving a readonly status snapshot | candidate replacing the entire footer |
 | [`editor.extensions`](/en/plugins/editor-extensions) | passive shell, completion, actions, submit transforms | enhances Blue's owned editor without reading its state |
-| [`dock`](/en/plugins/dock) | static or functional `BlueView` | bottom pane above the editor |
+| [`editor.provider`](/en/plugins/editor-providers) | a shell render function receiving a readonly editor snapshot | user-selected exclusive editor-shell candidate |
+| `panes` | placement, canonical node, and structured events | plugin surfaces in header/left/right/bottom lanes |
+| `overlays` | canonical overlay request and structured events | overlays managed by Blue focus and lifecycle |
 | [`notifications`](/en/plugins/notifications) | publish/subscribe `BlueNotification` | editor notice bar |
 
-The manifest schema also declares five more capabilities — `tools`, `editor`, `panels`, `session.read`, `session.act` — but in the current phase requesting any of them is rejected by `open()` (`BLUE_CAPABILITY_DENIED`): they are reserved for later phases and their signatures are not settled.
+The manifest schema also declares `session.read` and `session.act`, but requesting either in the current phase is rejected by `open()` (`BLUE_CAPABILITY_DENIED`). The old `dock`, `panels`, `editor`, and `tools` names have been removed from the public manifest; validation returns a concrete migration message.
 
 ## Documentation map
 
@@ -67,7 +69,7 @@ The manifest schema also declares five more capabilities — `tools`, `editor`, 
 
 **Contributing capabilities** — one page per capability: contract table, full example, behavior details, and common pitfalls.
 
-- [Commands](/en/plugins/commands) · [Status bar and exclusive provider](/en/plugins/status) · [Editor extensions](/en/plugins/editor-extensions) · [Dock panes](/en/plugins/dock) · [Notifications](/en/plugins/notifications)
+- [Commands](/en/plugins/commands) · [Status bar and exclusive provider](/en/plugins/status) · [Editor extensions](/en/plugins/editor-extensions) · [Editor providers](/en/plugins/editor-providers) · [Panes](/en/plugins/dock) · [Notifications](/en/plugins/notifications)
 
 **Validation and publishing**
 
@@ -77,5 +79,5 @@ The manifest schema also declares five more capabilities — `tools`, `editor`, 
 **Reference**
 
 - [Seam reference](/en/plugins/seams) — the complete list of the stable plugin host and Blue's internal boundaries;
-- [Built-in plugins](/en/plugins/builtins) — the bundle's 29 Blue-owned rows, the most complete set of plugin examples;
+- [Built-in plugins](/en/plugins/builtins) — the bundle's 30 Blue-owned rows, the most complete set of plugin examples;
 - [Contributing to Blue](/en/plugins/contributing) — the local development flow for contributing code to Blue itself.
