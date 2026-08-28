@@ -50,6 +50,7 @@ import {
 } from './editor-instance.ts'
 import { detectFdPath, extractAtPrefix, fsMentionSuggestions, listDirectoryMentions } from './file-mention.ts'
 import { ACTION_BACKSPACE, ACTION_CANCEL } from './keys.ts'
+import { interactionTranslator } from './locale.ts'
 import { extractSkillPrefix, refresh, userInvocableSkills } from './skills-catalog.ts'
 import { sanitizeShellOutput } from './shell-sanitize.ts'
 import { filterSlashCommands, slashCommandLabel } from './slash-filter.ts'
@@ -128,8 +129,8 @@ function withLine(lines: string[], index: number, line: string): string[] {
 function slashItemDescription(command: {
   readonly description?: string | undefined
   readonly inputHint?: string | undefined
-}): string {
-  const description = command.description ?? ''
+}, t: (key: string) => string): string {
+  const description = command.description === undefined ? '' : t(command.description)
   return command.inputHint === undefined ? description : `${command.inputHint} — ${description}`
 }
 
@@ -159,6 +160,7 @@ function createAutocompleteProvider(
   mode: () => 'prompt' | 'bash',
   notice: (text: string) => void,
 ): BlueAutocompleteProvider {
+  const t = interactionTranslator(ctx)
   const cwd = process.cwd()
   // Captured before any unload: the fd probe settles asynchronously and a
   // theme-swap reload may dispose this fiber first — the service object
@@ -202,7 +204,7 @@ function createAutocompleteProvider(
         // trace — the empty-session-cwd corner read as "@ is dead". Flash
         // the hint line instead; a superseded (aborted) round stays quiet.
         if (suggestions === null && !options.signal.aborted) {
-          notice('no matching files under the session cwd')
+          notice(t('no matching files under the session cwd'))
         }
         return suggestions
       }
@@ -259,7 +261,7 @@ function createAutocompleteProvider(
       ).map((match): BlueAutocompleteItem => ({
         value: `/${match.command.name}`,
         label: slashCommandLabel(match),
-        description: slashItemDescription(match.command),
+        description: slashItemDescription(match.command, t),
       }))
       // The value carries the slash so pi-tui's best-match preselection
       // (exact `value === prefix`, then `startsWith`) keys on the same text
@@ -332,6 +334,7 @@ class ShellEchoComponent implements BlueComponent {
     private readonly stderr: string,
     private readonly truncated: boolean,
     private readonly code: number,
+    private readonly t: (key: string, values?: Readonly<Record<string, string | number>>) => string,
   ) {}
 
   /** No cached render state. */
@@ -362,10 +365,10 @@ class ShellEchoComponent implements BlueComponent {
     if (body.length > 0) {
       lines.push(...body)
     } else {
-      lines.push(this.colors.textMuted('(no output)'))
+      lines.push(this.colors.textMuted(this.t('(no output)')))
     }
-    if (this.truncated) lines.push(this.colors.muted('… output truncated'))
-    if (this.code !== 0) lines.push(this.colors.error(`exit code ${this.code}`))
+    if (this.truncated) lines.push(this.colors.muted(this.t('… output truncated')))
+    if (this.code !== 0) lines.push(this.colors.error(this.t('exit code {code}', { code: this.code })))
     return lines
   }
 }
@@ -407,6 +410,7 @@ function runShell(ctx: Context, command: string, isUnloaded: () => boolean): voi
       stderr.text,
       stdout.truncated || stderr.truncated,
       result.code,
+      interactionTranslator(ctx),
     )
     // Effect-bound so unloading this fiber also removes its echoes. The
     // mount lands after the input-driven frame — the shell settles

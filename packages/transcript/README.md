@@ -12,6 +12,8 @@ The `./official-model` plugin consumes whole `blueConversation` values through a
 
 The active runtime does not fold Harness session events and contains no legacy tool-intent registry. Generic, terminal, diff, search, read, and web tool shapes arrive through canonical projection/presentation models while retaining the shared status, argument, command, and expansion chrome. The BTW pane and connected editor share aligned side borders without a spacer row.
 
+Blue-owned banner, activity, expansion, image, and interruption chrome follows the active English or Simplified Chinese locale. Locale revisions invalidate renderer caches in place; conversation and tool payloads remain verbatim.
+
 ## Status And Dock
 
 The main plugin owns four renderer bridges:

@@ -25,7 +25,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { BlueComponents, BlueEditor, BlueFocusable, BlueScreen, BlueTheme } from '@dsh-blue/blue-core'
 import { framePanel } from '@dsh-blue/blue-core/chrome'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
+import type { BlueTranslate } from '@dsh-blue/blue-frontend'
 import { mountEditorReplacement } from './editor-instance.ts'
+import { interactionTranslator } from './locale.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-approval'
@@ -56,6 +58,8 @@ interface ApprovalPromptOptions {
   readonly allowForSession: () => void
   /** Steer the agent with the rejection reason (choice 4). */
   readonly steer: (reason: string) => void
+  /** Dynamic translator for Blue-owned prompt chrome. */
+  readonly t: BlueTranslate
 }
 
 /**
@@ -79,7 +83,8 @@ class ApprovalPrompt implements BlueFocusable {
   /** The four choice labels in display order. */
   private labels(): string[] {
     const tool = this.options.toolName
-    return ['Allow once', `Allow ${tool} for this session`, 'Reject', 'Reject with feedback']
+    const t = this.options.t
+    return [t('Allow once'), t('Allow {tool} for this session', { tool }), t('Reject'), t('Reject with feedback')]
   }
 
   /**
@@ -170,14 +175,14 @@ class ApprovalPrompt implements BlueFocusable {
     rows.push('')
     const editor = this.editor
     if (editor !== undefined) {
-      rows.push(colors.muted('reason:'))
+      rows.push(colors.muted(this.options.t('reason:')))
       rows.push(...editor.render(width))
       rows.push('')
       return framePanel(rows, width, {
-        title: `▶ Approve ${toolName}?`,
+        title: this.options.t('▶ Approve {tool}?', { tool: toolName }),
         titlePaint: colors.borderFocus,
         rulePaint: colors.borderFocus,
-        footer: ['type feedback', '↵ submit', 'esc cancel'],
+        footer: [this.options.t('type feedback'), this.options.t('↵ submit'), this.options.t('esc cancel')],
         footerPaint: colors.textMuted,
       })
     }
@@ -193,10 +198,10 @@ class ApprovalPrompt implements BlueFocusable {
     }
     rows.push('')
     return framePanel(rows, width, {
-      title: `▶ Approve ${toolName}?`,
+      title: this.options.t('▶ Approve {tool}?', { tool: toolName }),
       titlePaint: colors.borderFocus,
       rulePaint: colors.borderFocus,
-      footer: ['↑/↓ select', '1-4 choose', '↵ confirm'],
+      footer: [this.options.t('↑/↓ select'), this.options.t('1-4 choose'), this.options.t('↵ confirm')],
       footerPaint: colors.textMuted,
     })
   }
@@ -349,6 +354,7 @@ function prompt(
         if (settled) return
         steer(reason)
       },
+      t: interactionTranslator(ctx),
     })
     // The kimi dialog mount (D30): the prompt replaces the editor in its
     // dock slot, so below it only the footer remains.

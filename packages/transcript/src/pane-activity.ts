@@ -37,6 +37,7 @@ import type { SessionFactsService } from './session-facts.ts'
 import { formatTokens } from './status-context.ts'
 import { buildTipRotation } from './status-tips.ts'
 import { STATUS_TIPS } from './tips-content.ts'
+import { ACTIVITY_LOCALE, registerTranscriptLocale, transcriptTranslator } from './locale.ts'
 import {
   BRAILLE_SPINNER_FRAMES,
   BRAILLE_SPINNER_INTERVAL_MS,
@@ -140,6 +141,7 @@ class ActivityPaneComponent {
     private readonly colors: BlueSemanticColors,
     private readonly components: BlueComponents,
     private readonly state: ActivityState,
+    private readonly t: (key: string) => string,
   ) {}
 
   /**
@@ -178,7 +180,7 @@ class ActivityPaneComponent {
         // Priority under width pressure: the frame, then the flow counter,
         // then the tip (the counter is the liveness signal — round 5).
         const flow = this.state.flow === '' ? '' : this.colors.muted(` ${this.state.flow}`)
-        const full = frame + flow + this.colors.muted(`${TIP_LEAD}${this.state.tip}`)
+        const full = frame + flow + this.colors.muted(`${this.t(TIP_LEAD)}${this.t(this.state.tip)}`)
         if (this.components.visibleWidth(full) <= width) return [full]
         const withFlow = frame + flow
         if (this.components.visibleWidth(withFlow) <= width) return [withFlow]
@@ -188,10 +190,10 @@ class ActivityPaneComponent {
         const frame = BRAILLE_SPINNER_FRAMES[this.state.frame % BRAILLE_SPINNER_FRAMES.length]!
         // kimi parity: the primary frame with the plain label; the flow
         // counter rides inside the base so it survives over the tip.
-        const base = `${this.colors.primary(frame)}${WORKING_LABEL}`
+        const base = `${this.colors.primary(frame)}${this.t(WORKING_LABEL)}`
         const flow = this.state.flow === '' ? '' : this.colors.muted(` ${this.state.flow}`)
         const withFlow = base + flow
-        const row = withFlow + this.colors.muted(`${TIP_LEAD}${this.state.tip}`)
+        const row = withFlow + this.colors.muted(`${this.t(TIP_LEAD)}${this.t(this.state.tip)}`)
         if (this.components.visibleWidth(row) <= width) return [row]
         if (this.components.visibleWidth(withFlow) <= width) return [withFlow]
         return this.components.visibleWidth(base) <= width ? [base] : []
@@ -213,6 +215,9 @@ class ActivityPaneComponent {
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
+  const localeRegistration = registerTranscriptLocale(ctx, 'transcript.activity', ACTIVITY_LOCALE)
+  ctx.effect(() => localeRegistration)
+  const t = transcriptTranslator(ctx, 'transcript.activity')
   const colors = ctx.blueTheme.colors
   const screen = ctx.blueScreen
   const components = ctx.blueComponents
@@ -304,7 +309,7 @@ export function apply(ctx: Context): void {
     sync()
   })
 
-  const pane = new ActivityPaneComponent(colors, components, state)
+  const pane = new ActivityPaneComponent(colors, components, state, t)
   const model = (): DockModel => ({
     kind: 'dock', id: 'blue.dock.activity', placement: 'bottom', priority: 10,
     view: { kind: 'text', text: state.mode === 'idle' ? 'idle' : state.mode },

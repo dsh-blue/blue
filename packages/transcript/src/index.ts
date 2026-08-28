@@ -27,6 +27,7 @@ import {
   DEFAULT_EXPAND_TURNS,
   TranscriptPresentationPolicy,
 } from './presentation-policy.ts'
+import { registerTranscriptLocale, TRANSCRIPT_LOCALE, transcriptTranslator } from './locale.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -105,6 +106,9 @@ interface CollapseToggle { expanded: boolean }
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
+  const localeRegistration = registerTranscriptLocale(ctx, 'transcript', TRANSCRIPT_LOCALE)
+  ctx.effect(() => localeRegistration)
+  const t = transcriptTranslator(ctx, 'transcript')
   const screen = ctx.blueScreen
   const colors = ctx.blueTheme.colors
   const toggle: CollapseToggle = { expanded: false }
@@ -143,6 +147,7 @@ export function apply(ctx: Context): void {
       images: imageDependencies,
       requestRender: () => screen.requestRender(),
       presentation,
+      t,
     },
   })
   ctx.effect(() => () => statusModels.dispose())
@@ -161,7 +166,7 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.blueKeymap.register([{
     id: ACTION_TOGGLE_COLLAPSE,
     keys: 'ctrl+o',
-    description: 'Toggle detail expansion (tool output, long messages)',
+    description: t('Toggle detail expansion (tool output, long messages)'),
     handler: () => {
       toggle.expanded = !toggle.expanded
       transcriptModels.setExpanded(toggle.expanded)
@@ -183,5 +188,14 @@ export function apply(ctx: Context): void {
   ctx.on('settings/updated', (ns, next) => {
     if (ns === BLUE_NS) applyFoldSettings(next)
   })
+
+  let localePrimed = false
+  /* v8 ignore next 3 -- refreshLocale is unit-tested; this callback requires the composed locale/core fibers */
+  const offLocale = ctx.get('blueLocale')?.subscribe(() => {
+    if (!localePrimed) { localePrimed = true; return }
+    transcriptModels.refreshLocale()
+  })
+  /* v8 ignore next -- paired with the composed locale subscription above */
+  ctx.effect(() => () => offLocale?.())
 
 }

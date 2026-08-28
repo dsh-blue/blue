@@ -75,5 +75,5 @@ manifest schema 还声明了 `tools`、`editor`、`panels`、`session.read`、`s
 **参考**
 
 - [Seam 参考](/plugins/seams) —— 稳定 plugin host 与 Blue 内部边界的完整清单；
-- [内置插件](/plugins/builtins) —— bundle 的 28 条 Blue 自有行，是最完整的插件范例集；
+- [内置插件](/plugins/builtins) —— bundle 的 29 条 Blue 自有行，是最完整的插件范例集；
 - [贡献本仓库](/plugins/contributing) —— 给 Blue 本体贡献代码的本地开发流程。

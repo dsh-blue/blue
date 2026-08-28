@@ -423,6 +423,14 @@ export class FakeBlueSettingsList implements BlueSettingsList {
     if (item !== undefined) item.currentValue = newValue
   }
 
+  updateItems(items: readonly import('@dsh-blue/blue-core').BlueSettingItem[]): void {
+    for (const next of items) {
+      const item = this.options.items.find(candidate => candidate.id === next.id)
+      if (item === undefined) continue
+      Object.assign(item, next)
+    }
+  }
+
   handleInput(data: string): void {
     const { items } = this.options
     if (data === KEY.up || data === KEY.down) {

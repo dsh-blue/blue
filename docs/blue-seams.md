@@ -41,8 +41,8 @@ Blue 的 seam 不是单一类型，而是五类显式边界：
 | conversation | `blueConversation`、`blueConversationFacts` + `blueConversationProjection` readiness | official `SessionProjectionRegistry` owns replay/live/checkpoint/watermark | official transcript model、status 和 dock facts |
 | transcript | `blueTranscriptModels`、`blueStatusModels`、`blueDockModels`、tool model service | readonly frontend models + effect-bound registration | semantic TUI components、footer、dock |
 | interaction | `blueEditorHost`、`blueInteractionState` | frontend-tree-scoped editor slot/enhancements/transformers and mutable product state | input and interaction child Fibers |
-| frontend | theme/notification/provider hosts | renderer-neutral model registries and generation-scoped provider swap | renderer adapters |
-| bundle | `cordis.patch.yml` | 28 Blue-owned rows with explicit `inject` ordering where lifecycle order matters | dsh profile composition |
+| frontend | theme/notification/locale/provider hosts | renderer-neutral model registries and generation-scoped provider swap | renderer adapters |
+| bundle | `cordis.patch.yml` | 29 Blue-owned rows with explicit `inject` ordering where lifecycle order matters | dsh profile composition |
 
 Session switch requests remain events such as `blue/request-resume`, `blue/request-new`, `blue/request-fork`, and `blue/request-rewind`. They are commands addressed to the app owner, not a raw session-fact broadcast. The deleted `blue/session-changed` and `blue/session-binding-changed` events must not be restored.
 
@@ -61,9 +61,9 @@ Session switch requests remain events such as `blue/request-resume`, `blue/reque
 
 ## 5. Bundle mapping
 
-The patch owns 28 Blue rows: two host-support rows plus 26 product rows.
+The patch owns 29 Blue rows: two host-support rows plus 27 product rows.
 
-- Baseline, 8 rows: API host, core/theme, banner, transcript model hosts/footer, conversation projection, official transcript consumer.
+- Baseline, 9 rows: API host, locale runtime/settings adapter, core/theme, banner, transcript model hosts/footer, conversation projection, official transcript consumer.
 - Enhancement, 14 rows: editor/attachment helpers, five status producers, five dock panes, and the public view bridge.
 - Assembly, 4 rows: interaction, public interaction bridge, startup and app.
 - Validation-only, not bundle rows: `blue-context`, `blue-remote`, `blue-openpencil`, `blue-lark`.

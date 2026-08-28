@@ -75,5 +75,5 @@ The manifest schema also declares five more capabilities — `tools`, `editor`, 
 **Reference**
 
 - [Seam reference](/en/plugins/seams) — the complete list of the stable plugin host and Blue's internal boundaries;
-- [Built-in plugins](/en/plugins/builtins) — the bundle's 28 Blue-owned rows, the most complete set of plugin examples;
+- [Built-in plugins](/en/plugins/builtins) — the bundle's 29 Blue-owned rows, the most complete set of plugin examples;
 - [Contributing to Blue](/en/plugins/contributing) — the local development flow for contributing code to Blue itself.

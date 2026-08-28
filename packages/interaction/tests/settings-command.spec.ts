@@ -24,10 +24,12 @@ import type {} from '@deepseek-ai/dsh-settings'
 import { SettingsConflictError, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
+import { BlueLocaleService } from '@dsh-blue/blue-frontend'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
 import { setSharedEditor } from '../src/editor-instance.ts'
 import { setExternalEditorLauncher } from '../src/external-editor.ts'
 import { FormPanel } from '../src/form-panel.ts'
+import { registerInteractionLocale } from '../src/locale.ts'
 import type { PermissionPresetsService } from '../src/permission-panel.ts'
 import { NoticeTail, registerSettingsCommand, SettingsPanel } from '../src/settings-command.ts'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
@@ -115,11 +117,16 @@ interface BenchOptions extends SettingsFakeOptions {
   readonly withSettings?: boolean
   readonly presets?: PermissionPresetsService
   readonly roster?: FakeRoster
+  readonly locale?: 'en' | 'zh'
 }
 
 /** Mount the command with fakes: commands registry, settings, presets, roster, shared editor. */
 function mount(options: BenchOptions = {}) {
   const { ctx, screen, components, theme } = fakeBlueContext()
+  const locale = options.locale === undefined
+    ? undefined
+    : new BlueLocaleService(ctx, { systemLocale: options.locale })
+  if (locale !== undefined) registerInteractionLocale(ctx)
   const registrations: RegisteredCommand[] = []
   ctx.provide('commands', {
     register: (definition: RegisteredCommand) => {
@@ -141,7 +148,7 @@ function mount(options: BenchOptions = {}) {
   })
   const dispose = registerSettingsCommand(ctx)
   const command = registrations.find(entry => entry.name === 'settings')!
-  return { ctx, screen, components, theme, settings, notices, dispose, command }
+  return { ctx, screen, components, theme, settings, notices, dispose, command, locale }
 }
 
 /** The presets table fake: two presets in table order. */
@@ -490,6 +497,49 @@ describe('/settings level two', () => {
     const row = bench.components.settingsLists.at(-1)!.options.items
       .find(item => item.id === 'shell.timeoutMs')
     expect(row?.description).toBe('default bash command timeout · restart to apply')
+  })
+})
+
+describe('/settings locale', () => {
+  it('shows locale first, writes Harness-compatible preference values, and switches copy in place', async () => {
+    const sections = { locale: {}, ...fullSections() }
+    const bench = mount({ sections, presets: fakePresets(), roster: fakeRoster(), locale: 'en' })
+    await bench.command.handler()
+    expect(l1CursorLabel(l1(bench.screen))).toBe('locale')
+    await openNamespace(bench, 'locale')
+    const panel = l2(bench.screen)!
+    const list = bench.components.settingsLists[0]!
+    expect(frameText(bench)).toContain('Language: Follow system')
+    list.handleInput(KEY.space)
+    await settle()
+    expect(bench.settings.writes).toEqual([
+      { ns: 'locale', patch: { preference: 'zh' }, revision: 1 },
+    ])
+    bench.locale!.setPreference('zh')
+    await settle()
+    expect(l2(bench.screen)).toBe(panel)
+    expect(bench.components.settingsLists[0]).toBe(list)
+    expect(frameText(bench)).toContain('语言: 中文')
+    expect(frameText(bench)).toContain('设置 › locale')
+    list.handleInput(KEY.space)
+    await settle()
+    expect(frameText(bench)).toContain('语言已设为 English')
+  })
+
+  it('keeps an open editable form and its draft when the locale changes', async () => {
+    const bench = mount({ sections: { locale: {}, ...fullSections() }, locale: 'en' })
+    await bench.command.handler()
+    await openNamespace(bench, 'blue')
+    const list = bench.components.settingsLists[0]!
+    for (let index = 0; index < 10; index += 1) list.handleInput(KEY.down)
+    list.handleInput(KEY.enter)
+    const open = form(bench.screen)!
+    open.handleInput('v')
+    open.handleInput('i')
+    bench.locale!.setPreference('zh')
+    await settle()
+    expect(form(bench.screen)).toBe(open)
+    expect(open.render(80).join('\n')).toContain('vi')
   })
 })
 

@@ -28,7 +28,7 @@ In the current phase `open()` grants only the four capabilities in the table abo
 | conversation | `blueConversation` / `blueConversationFacts` | official replay/live transcript and status/dock facts |
 | transcript | transcript/status/dock/tool model services | readonly models into the TUI renderer |
 | interaction | `blueEditorHost` / `blueInteractionState` | frontend-tree-scoped editor slot, draft, settings/probe/paste state |
-| bundle | `cordis.patch.yml` | 28 Blue-owned rows and explicit dependency ordering |
+| bundle | `cordis.patch.yml` | 29 Blue-owned rows and explicit dependency ordering |
 
 Session-switch events such as `blue/request-resume`, `-new`, `-fork`, and `-rewind` are commands addressed to the app owner, not broadcasts carrying Session objects into renderers.
 

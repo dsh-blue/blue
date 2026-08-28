@@ -1,10 +1,10 @@
 # 功能总览
 
-Blue 是一棵 Cordis 插件树。Bundle 当前有 28 条 Blue 自有行：2 条宿主支撑行、8 条基线行、14 条增强行和 4 条装配行。
+Blue 是一棵 Cordis 插件树。Bundle 当前有 29 条 Blue 自有行：2 条宿主支撑行、9 条基线行、14 条增强行和 4 条装配行。
 
 ## 基线
 
-`blue-api-host`、`blue-core`、`blue-theme-dark`、`blue-banner`、`blue-transcript`、`blue-status-basic`、`blue-conversation`、`blue-transcript-official` 组成 projection-backed renderer 基线。Conversation 由 Harness official projection 驱动，不再由 TUI 折叠 session events。
+`blue-api-host`、`blue-locale`、`blue-core`、`blue-theme-dark`、`blue-banner`、`blue-transcript`、`blue-status-basic`、`blue-conversation`、`blue-transcript-official` 组成 projection-backed renderer 基线。`blue-locale` 按系统语言提供英文/简体中文并支持 `/settings` 热切换；Conversation 由 Harness official projection 驱动，不再由 TUI 折叠 session events。
 
 ## 增强
 

@@ -37,6 +37,7 @@ import { EditorHostService } from './editor-instance.ts'
 import { SkillsCatalogService } from './skills-catalog.ts'
 import { InteractionStateService } from './runtime-state.ts'
 import { DEFAULT_SETTINGS } from './settings.ts'
+import { registerInteractionLocale } from './locale.ts'
 
 // BluePanel is the package's public overlay container; BlueSelect stays
 // package-internal as the multi-select-only list (single-select moved to
@@ -72,6 +73,8 @@ export const Config: z<Config> = z.object({
  * @param config - interaction presentation configuration.
  */
 export function apply(ctx: Context, config: Config = {}): void {
+  const localeRegistration = registerInteractionLocale(ctx)
+  ctx.effect(() => localeRegistration)
   const runtimeState = new InteractionStateService(ctx, DEFAULT_SETTINGS)
   ctx.effect(() => () => runtimeState.dispose())
   const editorHost = new EditorHostService(ctx)

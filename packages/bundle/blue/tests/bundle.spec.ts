@@ -62,6 +62,7 @@ describe('blue bundle', () => {
       'blue-agent-presets',
       'blue-creative-host',
       'blue-api-host',
+      'blue-locale',
       'blue-core',
       'blue-theme-dark',
       'blue-banner',

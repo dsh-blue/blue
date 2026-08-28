@@ -8,6 +8,8 @@ This package is the renderer adapter over `@dsh-blue/blue-frontend` models. It m
 
 `src/index.ts` creates `SessionFactsService`, `BlueStatusModelService`, `BlueDockModelService`, `BlueModelToolService`, and `TranscriptModelService` once per parent transcript Fiber. Each service and screen contribution has an effect-bound disposer. Theme reloads rebuild renderer objects; no mutable presentation state is stored in a module singleton.
 
+Transcript-owned locale catalogs are registered per contributing Fiber. Banner, activity, fold/image/interruption chrome, and the transcript expansion key description read a dynamic translator; user/assistant/tool content, paths, ids, and upstream errors are never translated. A locale revision invalidates mounted transcript renderer caches, while core owns the single terminal repaint. Catalog registrations and subscriptions unload with their frontend-tree Fibers.
+
 ## Official Conversation Consumer
 
 `src/official-model.ts` injects the effect-scoped `blueConversationProjection` readiness capability before reading `blueConversation`. It snapshots and subscribes through `blueSessionProjections`, rejects wrong keys/sessions and non-increasing sequence values, maps at most the newest `TRANSCRIPT_MODEL_WINDOW` entries by stable id, and drops late work after unload. Tool presentation is resolved through `blueToolPresentations` (blue-app's agent-scoped presenter seam) outside the domain projection — the plain global `tools.get(name)` view misses the Harness's agent-scoped builtin registrations, which the D58 dogfood exposed when no presenter view resolved on a real profile.

@@ -24,6 +24,7 @@ import {
   type TranscriptModel,
   type TranscriptToolModel,
   type View,
+  type BlueTranslate,
 } from '@dsh-blue/blue-frontend'
 import {
   AssistantMessageComponent,
@@ -61,6 +62,7 @@ export interface TranscriptModelRenderer {
   readonly images: () => UserMessageImages
   readonly requestRender: () => void
   readonly presentation?: TranscriptPresentationPolicy
+  readonly t?: BlueTranslate
 }
 
 /** Optional service hooks used by the legacy/plain fallback owner. */
@@ -242,6 +244,7 @@ export class TranscriptModelComponent implements BlueComponent {
             images.onReady?.()
           },
           presentation: () => this.presentation(),
+          ...(renderer.t === undefined ? {} : { t: renderer.t }),
         })
         return component
       }
@@ -273,7 +276,7 @@ export class TranscriptModelComponent implements BlueComponent {
           ...(entry.code === undefined ? {} : { code: entry.code }),
         }, renderer.colors, renderer.components)
       case 'transcript-interrupted':
-        return new InterruptedMarkerComponent(renderer.colors, renderer.components)
+        return new InterruptedMarkerComponent(renderer.colors, renderer.components, renderer.t)
     }
   }
 
@@ -376,6 +379,11 @@ export class TranscriptModelService extends Service {
   refreshPresentationPolicy(): void {
     for (const { component } of this.mounted.values()) component.invalidate()
     this.screen?.requestRender(true)
+  }
+
+  /** Invalidate renderer-owned copy after an active-locale switch. */
+  refreshLocale(): void {
+    for (const { component } of this.mounted.values()) component.invalidate()
   }
 
   /** Expose the current immutable policy for diagnostics and tests. */

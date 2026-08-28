@@ -10,6 +10,7 @@
 
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
 import { framePanel } from '@dsh-blue/blue-core/chrome'
+import type { BlueTranslate } from '@dsh-blue/blue-frontend'
 import { ACTION_CANCEL, ACTION_SUBMIT } from './keys.ts'
 
 /** Decoded input sequences the overlay handles directly (no keymap actions). */
@@ -56,6 +57,8 @@ export interface HelpOverlayOptions {
   readonly onClose: () => void
   /** Content rows visible without scrolling; defaults to 10. */
   readonly maxVisible?: number
+  /** Dynamic translator; omitted by renderer unit tests for English copy. */
+  readonly t?: BlueTranslate
 }
 
 /**
@@ -128,7 +131,11 @@ export class HelpOverlay implements BlueFocusable {
       const slice = content.slice(this.scrollTop, this.scrollTop + maxVisible)
       body.push(...slice)
       body.push(colors.textMuted(components.truncateToWidth(
-        ` showing ${String(this.scrollTop + 1)}-${String(this.scrollTop + slice.length)} of ${String(content.length)}`,
+        ` ${this.translate('showing {start}-{end} of {total}', {
+          start: this.scrollTop + 1,
+          end: this.scrollTop + slice.length,
+          total: content.length,
+        })}`,
         width,
       )))
     } else {
@@ -136,9 +143,9 @@ export class HelpOverlay implements BlueFocusable {
       body.push(...content)
     }
     return framePanel(body, width, {
-      title: 'help',
+      title: this.translate('help'),
       titlePaint: colors.primary,
-      titleHint: '· Esc / Enter / q to cancel · ↑↓ scroll',
+      titleHint: this.translate('· Esc / Enter / q to cancel · ↑↓ scroll'),
       hintPaint: colors.textMuted,
       rulePaint: colors.primary,
     })
@@ -153,12 +160,23 @@ export class HelpOverlay implements BlueFocusable {
       const labelWidth = Math.max(8, ...section.rows.map(row => row.label.length))
       const paint = section.labelPaint ?? ((text: string): string => text)
       lines.push('')
-      lines.push(`  ${components.truncateToWidth(colors.textStrong(section.heading), Math.max(1, width - 4))}`)
+      lines.push(`  ${components.truncateToWidth(colors.textStrong(this.translate(section.heading)), Math.max(1, width - 4))}`)
       for (const row of section.rows) {
-        const styled = `${paint(row.label.padEnd(labelWidth))}  ${colors.muted(row.description)}`
+        const styled = `${paint(row.label.padEnd(labelWidth))}  ${colors.muted(this.translate(row.description))}`
         lines.push(`    ${components.truncateToWidth(styled, Math.max(1, width - 4))}`)
       }
     }
     return lines
+  }
+
+  /** Resolve package copy without touching user/model content. */
+  private translate(key: string, values?: Readonly<Record<string, string | number>>): string {
+    if (this.options.t !== undefined) return this.options.t(key, values)
+    if (values === undefined) return key
+    return key.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/gu, (placeholder, name: string) => {
+      const value = values[name]
+      /* v8 ignore next -- built-in help messages supply every literal placeholder */
+      return value === undefined ? placeholder : String(value)
+    })
   }
 }

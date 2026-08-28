@@ -58,11 +58,11 @@ export interface SelectListPanelOptions {
   /** Rows to choose from, or a query-aware source for interactive trees. */
   readonly rows: readonly SelectRow[] | ((query: string) => readonly SelectRow[])
   /** Dialog title; defaults to `Select`. */
-  readonly title?: string
+  readonly title?: string | (() => string)
   /** Muted key row rendered beside the title (`· esc cancel · ↵ resume`). */
-  readonly titleHint?: string
+  readonly titleHint?: string | (() => string)
   /** Optional muted safety/context line rendered below the choices. */
-  readonly footer?: string
+  readonly footer?: string | (() => string)
   /** Seeds the cursor on this row's value (the current entry); head otherwise. */
   readonly initialValue?: string
   /**
@@ -332,19 +332,24 @@ export class SelectListPanel implements BlueFocusable {
     const counter = counterRow(this.cursor, view.length, MAX_LIST_VISIBLE)
     if (counter !== undefined) lines.push(colors.textMuted(counter))
     if (this.options.footer !== undefined) {
-      lines.push('', colors.textMuted(components.truncateToWidth(`  ${this.options.footer}`, width)))
+      const footer = typeof this.options.footer === 'function' ? this.options.footer() : this.options.footer
+      lines.push('', colors.textMuted(components.truncateToWidth(`  ${footer}`, width)))
     }
     lines.push('')
     // The affordance hint rides the title-hint channel (the frame paints
     // it muted): while no query is live, every filtered panel advertises
     // type-to-search, with the caller's own hint fragments behind it.
-    const hint = this.filter && this.query.length === 0
-      ? this.options.titleHint === undefined
-        ? '· type to search'
-        : `· type to search ${this.options.titleHint}`
+    const titleHint = typeof this.options.titleHint === 'function'
+      ? this.options.titleHint()
       : this.options.titleHint
+    const hint = this.filter && this.query.length === 0
+      ? titleHint === undefined
+        ? '· type to search'
+        : `· type to search ${titleHint}`
+      : titleHint
+    const title = typeof this.options.title === 'function' ? this.options.title() : this.options.title
     return framePanel(lines, width, {
-      title: this.options.title ?? 'Select',
+      title: title ?? 'Select',
       titlePaint: colors.primary,
       ...hint === undefined ? {} : { titleHint: hint },
       hintPaint: colors.textMuted,

@@ -84,6 +84,7 @@ export type {
   BlueSemanticColors,
   BlueSettingItem,
   BlueSettingsList,
+  BlueSettingsListMessages,
   BlueSettingsListOptions,
   BlueTerminalInfo,
   BlueTheme,
@@ -121,6 +122,12 @@ export async function apply(ctx: Context): Promise<void> {
   )
   ctx.plugin(BlueTerminalInfoService, { background: runtime.background, kittyKeyboard: runtime.kittyKeyboard })
   ctx.plugin(BlueScreenService, runtime)
+  let localePrimed = false
+  const offLocale = ctx.get('blueLocale')?.subscribe(() => {
+    if (!localePrimed) { localePrimed = true; return }
+    runtime.requestRender(true)
+  })
+  ctx.effect(() => () => offLocale?.())
   ctx.plugin({
     name: 'blue-components',
     inject: ['blueTheme'],

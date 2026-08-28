@@ -60,6 +60,7 @@ The pi-tui-backed component factory and width pure functions:
 - `BlueEditor.insertText(text)` — atomic insertion at the cursor; the seam the clipboard-image markers use.
 - `createFileMentionProvider(basePath, fdPath)` (D31) returns the renderer's combined autocomplete provider (constructed with no commands; structurally identical to `BlueAutocompleteProvider`, so it passes through unwrapped) as the `@`-mention source: fd-backed scoped queries, substring scoring, top-20, quoted values, `applyCompletion` stateless of fd. On the same seam, `EditorAdapter.handleInput` carries the kimi `reopenAutocompleteAfterInput` hook: after any input, text ending in `/` inside an `@` mention re-opens the dropdown (directory drill-down), gated on `isShowingAutocomplete` and calling 0.84.2's private `tryTriggerAutocomplete` through the `getHistory`-style structural cast.
 - `createEditor` wires completion through an own-property shadow of the Editor's private `createAutocompleteList`: a `/`-prefixed dropdown gets the wrapping list with the `{12, 32}` slash layout; every other completion keeps the stock `SelectList`.
+- `createSettingsList` accepts localized built-in messages and supports `updateItems()` by stable id. Copy, value cycles, and descriptions refresh in place while the pi-tui list identity, cursor, and submenu state survive a locale change; this adapter is the disposable legacy seam until the settings panel moves fully onto frozen frontend UI nodes.
 - The `BlueComponents` contract re-exports pi-tui's pure fuzzy helpers: `fuzzyMatch(query, text) → {matches, score}` (lower is better) and the token-splitting `fuzzyFilter`.
 
 ## Themes and markdown rendering
@@ -109,6 +110,7 @@ Three events live on the core Events merge:
 Theme providers also publish a semantic companion through the optional `blueThemeModels` frontend registry. ANSI color functions remain core-only; the companion contains the source palette hexes and is removed with the theme provider Fiber.
 
 `blueNotifications` is the frontend runtime's immutable notification registry; core only hosts its lifecycle, while feature adapters push structured messages and consume snapshots.
+When `blueLocale` is present, core subscribes for the terminal Fiber lifetime and forces one full frame after each locale revision. The immediate subscription snapshot only primes the listener and does not cause an extra boot repaint.
 `frontend-renderer.ts` is the narrow TUI consumer for `@dsh-blue/blue-frontend` readonly views. `renderFrontendView`/`renderFrontendModel` and `FrontendModelComponent` are the only renderer-facing bridge for the new frontend model; width clamping delegates to pi-tui through `width.ts`. It does not read Harness events or session objects. `renderFrontendView` accepts optional colors: the diff view renders through `diff-align.ts` (prefix/suffix trim + LCS middle, a size guard degrading oversized inputs to whole blocks) with the diff palette tokens, context rendered once, and long unchanged runs elided; the plugin `BlueView` path delegates to the same painter. Alignments are memoized per frozen diff view object.
 
 ## Verification note

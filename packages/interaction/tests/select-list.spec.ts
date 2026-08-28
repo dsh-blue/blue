@@ -67,6 +67,7 @@ function mount(options: {
   rows?: readonly SelectRow[] | ((query: string) => readonly SelectRow[])
   title?: string
   titleHint?: string
+  footer?: string | (() => string)
   initialValue?: string
   filter?: boolean
   onSelect?: (row: SelectRow) => void
@@ -89,6 +90,7 @@ function mount(options: {
     rows: options.rows ?? rows(3),
     title: options.title,
     titleHint: options.titleHint,
+    footer: options.footer,
     initialValue: options.initialValue,
     filter: options.filter === true ? true : undefined,
     onSelect: options.onSelect ?? onSelect,
@@ -230,6 +232,14 @@ describe('SelectListPanel rendering', () => {
   it('defaults the title and omits the hint row', () => {
     const { panel } = mount({ title: 'Sessions' })
     expect(panel.render(40)[1]).toBe('^  Sessions^')
+  })
+
+  it('reads a dynamic footer when rendering', () => {
+    let footer = 'first footer'
+    const { panel } = mount({ footer: () => footer })
+    expect(panel.render(40).join('\n')).toContain('first footer')
+    footer = 'second footer'
+    expect(panel.render(40).join('\n')).toContain('second footer')
   })
 
   it('drops the description when the row is too narrow', () => {

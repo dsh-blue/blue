@@ -50,8 +50,8 @@ Each package has the same shape: `src/` (source), `tests/` (vitest specs), `lib/
 | Package | Import name | Role | Owns (key surfaces) | Detail |
 |---|---|---|---|---|
 | api | `@dsh-blue/blue-api` | stable renderer-independent public contracts and manifest validation | `BlueView` · readonly session/request lifecycle · `BlueResult` · capabilities | [AGENTS.md](packages/api/AGENTS.md) |
-| frontend | `@dsh-blue/blue-frontend` | renderer-neutral runtime models and provider host | readonly models · notifications/themes · provider swap/fallback | [AGENTS.md](packages/frontend/AGENTS.md) |
-| harness-adapter | `@dsh-blue/blue-harness-adapter` | narrow official Harness compatibility adapters | capability probes · projection/action/session/question bridges | [AGENTS.md](packages/harness-adapter/AGENTS.md) |
+| frontend | `@dsh-blue/blue-frontend` | renderer-neutral runtime models and provider host | readonly models · notifications/themes/locale · provider swap/fallback | [AGENTS.md](packages/frontend/AGENTS.md) |
+| harness-adapter | `@dsh-blue/blue-harness-adapter` | narrow official Harness compatibility adapters | capability probes · projection/action/session/question/locale bridges | [AGENTS.md](packages/harness-adapter/AGENTS.md) |
 | context | `@dsh-blue/blue-context` | official context projection consumer | context projection/model/action · `/context` frontend slice | [AGENTS.md](packages/context/AGENTS.md) |
 | conversation | `@dsh-blue/blue-conversation` | Harness-domain conversation projection | append-origin replay/live/tool/thinking/image/interruption facts · readiness capability | [AGENTS.md](packages/conversation/AGENTS.md) |
 | remote | `@dsh-blue/blue-remote` | renderer-neutral remote session adapter | seq resume · actions · lease · question/approval bridge | [AGENTS.md](packages/remote/AGENTS.md) |
@@ -61,7 +61,7 @@ Each package has the same shape: `src/` (source), `tests/` (vitest specs), `lib/
 | app | `@dsh-blue/blue-app` | CLI startup + Agent/domain boundary | startup (`[task]`, `--resume`) · readonly session reader/projections · structured actions · switch queue · preset mount | [AGENTS.md](packages/app/AGENTS.md) |
 | openpencil | `@dsh-blue/blue-openpencil` | optional ecosystem interaction adapter | official tool-result presentation · signed-meta elision · bounded lifecycle | [AGENTS.md](packages/openpencil/AGENTS.md) |
 | lark | `@dsh-blue/blue-lark` | optional ecosystem interaction adapter | official command · loopback settings client · notifications | [AGENTS.md](packages/lark/AGENTS.md) |
-| bundle/blue | `@dsh-blue/blue` | installable unit | `cordis.patch.yml` (28 Blue-owned rows: 2 host-support + 26 product rows) · thin-host roster/disables · `presets/` · drift guard | [AGENTS.md](packages/bundle/blue/AGENTS.md) |
+| bundle/blue | `@dsh-blue/blue` | installable unit | `cordis.patch.yml` (29 Blue-owned rows: 2 host-support + 27 product rows) · thin-host roster/disables · `presets/` · drift guard | [AGENTS.md](packages/bundle/blue/AGENTS.md) |
 | cli | `@dsh-blue/blue-cli` | the `blue` launcher shell — dependency-free global bin, outside the plugin tree | exact global `dsh` probe · profile calibration (`blue`, link-lane skip) · argv translation (`-V` self-answer, `plugin` subcommand, `--profile` swallow) · `BLUE_LAUNCHER` rebrand env | [AGENTS.md](packages/cli/AGENTS.md) |
 
 The runtime direction is Harness domain → conversation/app projection/action boundaries → frontend models → transcript/interaction TUI adapters → core; only core crosses into pi-tui. Context/remote/OpenPencil/Lark exercise the same boundary as validation-only adapters. `@deepseek-ai/cordis` and dsh service packages are host-provided peers, mirrored as pinned dev dependencies for local builds and tests.

@@ -56,7 +56,9 @@ import type {
   BlueSelectList,
   BlueSelectListOptions,
   BlueSemanticColors,
+  BlueSettingItem,
   BlueSettingsList,
+  BlueSettingsListMessages,
   BlueSettingsListOptions,
   BlueTheme,
 } from './types.ts'
@@ -481,14 +483,51 @@ class SelectListAdapter implements BlueSelectList {
 
 /** Delegate exposing a pi-tui `SettingsList` through the Blue contract. */
 class SettingsListAdapter implements BlueSettingsList {
-  constructor(private readonly list: SettingsList) {}
+  private messages: BlueSettingsListMessages | undefined
+
+  constructor(
+    private readonly list: SettingsList,
+    private readonly items: BlueSettingItem[],
+    messages?: BlueSettingsListMessages,
+  ) {
+    this.messages = messages
+  }
 
   updateValue(id: string, newValue: string): void {
     this.list.updateValue(id, newValue)
   }
 
+  updateItems(items: readonly BlueSettingItem[], messages?: BlueSettingsListMessages): void {
+    const next = new Map(items.map(item => [item.id, item]))
+    for (const item of this.items) {
+      const update = next.get(item.id)
+      if (update === undefined) continue
+      item.label = update.label
+      if (update.description === undefined) delete item.description
+      else item.description = update.description
+      item.currentValue = update.currentValue
+      if (update.values === undefined) delete item.values
+      else item.values = [...update.values]
+      if (update.submenu === undefined) delete item.submenu
+      else item.submenu = update.submenu
+    }
+    this.messages = messages
+  }
+
   render(width: number): string[] {
-    return this.list.render(width)
+    const rows = this.list.render(width)
+    if (this.messages === undefined) return rows
+    const replacements: readonly (readonly [string, string])[] = [
+      ['No settings available', this.messages.empty],
+      ['No matching settings', this.messages.noMatch],
+      ['Type to search · Enter/Space to change · Esc to cancel', this.messages.searchHint],
+      ['Enter/Space to change · Esc to cancel', this.messages.hint],
+    ]
+    return rows.map((row) => {
+      let localized = row
+      for (const [source, replacement] of replacements) localized = localized.replace(source, replacement)
+      return localized
+    })
   }
 
   handleInput(data: string): void {
@@ -648,15 +687,18 @@ export class BlueComponentsService extends Service implements BlueComponents {
     // BlueSettingItem and pi-tui's SettingItem are structurally identical
     // (the BlueComponent submenu result satisfies pi-tui's Component), so
     // the item list passes through unchanged.
+    const items = options.items as SettingItem[]
     return new SettingsListAdapter(
       new SettingsList(
-        options.items as SettingItem[],
+        items,
         options.maxVisible ?? 10,
         settingsListTheme(this.theme.colors),
         options.onChange,
         options.onCancel,
         listOptions,
       ),
+      options.items,
+      options.messages,
     )
   }
 

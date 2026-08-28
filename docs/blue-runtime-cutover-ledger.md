@@ -56,7 +56,7 @@ The deletion audit distinguishes renderer event folding from legitimate domain o
 
 - Release line stays `0.1.0-rc.8` until the acceptance gate authorizes the later release step.
 - Validation-only packages remain outside the release/bundle closure; `packages/context/package.json` remains `0.1.0-rc.2`.
-- The bundle contains 28 Blue-owned rows: 2 host-support, 8 baseline, 14 enhancement and 4 assembly rows.
+- The bundle contains 29 Blue-owned rows: 2 host-support, 9 baseline, 14 enhancement and 4 assembly rows.
 - Conversation projection and official transcript consumption are baseline rows. Context, remote, OpenPencil and Lark are validation-only, not bundle rows.
 - No operation may mutate the production `blue` profile.
 

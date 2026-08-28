@@ -56,6 +56,8 @@ Approval allowances and prompt serialization are local to one approval plugin ap
 
 Transcript tunables remain in this settings schema because interaction owns the settings UI, while transcript parses and applies them through its own tree-scoped presentation policy.
 
+The `/settings` inventory starts with the Harness-owned `locale` namespace. `locale.preference` cycles raw `undefined` (follow system), `zh`, and `en`; display labels and all Blue-owned settings chrome are translated through the tree's `blueLocale` service. A locale revision refreshes level-one rows and the live settings list in place, preserving list/panel identity, selection, an open form, and its draft. Command descriptions, slash completion copy, help, question/approval chrome, and shell notices use the same dynamic translator; command models notify subscribers after a locale revision without changing command/action identity. User/model/tool text, paths, ids, command names, provider/model names, and upstream error details remain untranslated.
+
 ## Optional Subpaths
 
 - `editor-plus`: shell/completion enhancement.

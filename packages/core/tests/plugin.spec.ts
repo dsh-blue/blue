@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import { BlueLocaleService } from '../../frontend/src/locale.ts'
 import { apply } from '../src/index.ts'
 import { apply as themeDarkApply } from '../src/theme-dark.ts'
 import { mkdtempTracked, registerTempDirCleanup } from './temp-dir.ts'
@@ -34,7 +35,7 @@ afterEach(async () => {
  * resolver, which cannot reach tsconfig paths).
  * @returns the root context and the terminal output observed so far.
  */
-async function bootBlueCore(): Promise<{ ctx: Context; output: () => string }> {
+async function bootBlueCore(locale = false): Promise<{ ctx: Context; output: () => string }> {
   const dir = mkdtempTracked('dsh-blue-core-')
   // The fixtures re-export the real plugins' namespace shape (name + apply)
   // so the Loader exercises the same unwrap path as a packaged install.
@@ -67,6 +68,7 @@ export const apply = ctx => globalThis.__blueThemeDarkApply(ctx)
   })
 
   const ctx = new Context()
+  if (locale) new BlueLocaleService(ctx, { systemLocale: 'en' })
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(join(dir, 'cordis.yml')).href } })
@@ -98,6 +100,17 @@ describe('blue-core plugin through the real Loader', () => {
     process.stdin.emit('data', Buffer.from('\x1b[?997;2n', 'utf8'))
     await new Promise<void>(resolve => setTimeout(resolve, 50))
     expect(schemes).toEqual(['light'])
+  })
+
+  it('forces one frame after a locale revision', async () => {
+    const { ctx } = await bootBlueCore(true)
+    const render = vi.fn(() => ['locale probe'])
+    ctx.blueScreen.addChild({ render, invalidate: () => {} })
+    await new Promise<void>(resolve => setTimeout(resolve, 50))
+    const baseline = render.mock.calls.length
+    ctx.blueLocale.setPreference('zh')
+    await new Promise<void>(resolve => setTimeout(resolve, 50))
+    expect(render.mock.calls.length).toBe(baseline + 1)
   })
 
   it('routes input through the global dispatcher before the focused component', async () => {

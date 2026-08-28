@@ -692,6 +692,20 @@ export interface BlueSettingsListOptions {
   onChange(id: string, newValue: string): void
   /** Called when the user dismisses the list. */
   onCancel(): void
+  /** Localized copy replacing pi-tui's built-in settings-list messages. */
+  messages?: BlueSettingsListMessages
+}
+
+/** Renderer-owned settings-list copy not configurable by pi-tui itself. */
+export interface BlueSettingsListMessages {
+  /** Empty list message. */
+  readonly empty: string
+  /** Empty filtered result message. */
+  readonly noMatch: string
+  /** Search-enabled key hint. */
+  readonly searchHint: string
+  /** Ordinary key hint. */
+  readonly hint: string
 }
 
 /** A key/value settings list. */
@@ -704,6 +718,13 @@ export interface BlueSettingsList extends BlueComponent {
    * @param newValue - the value to display.
    */
   updateValue(id: string, newValue: string): void
+  /**
+   * Update display copy and cycles in place by stable item id. Selection,
+   * submenu state, and component identity remain unchanged.
+   * @param items - current localized items.
+   * @param messages - current localized built-in copy.
+   */
+  updateItems(items: readonly BlueSettingItem[], messages?: BlueSettingsListMessages): void
 }
 
 /** The outcome of a fuzzy subsequence probe; lower scores rank better. */

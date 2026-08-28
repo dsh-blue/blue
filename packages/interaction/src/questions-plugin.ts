@@ -22,6 +22,7 @@ import type { AskUserQuestionAnswer, AskUserQuestionRequest } from '@deepseek-ai
 import { mountEditorReplacement } from './editor-instance.ts'
 import { PlanReviewPanel, planReviewChoices } from './plan-review-panel.ts'
 import { Questionnaire } from './questionnaire.ts'
+import { interactionTranslator } from './locale.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-questions'
@@ -98,6 +99,7 @@ function askAll(ctx: Context, request: AskUserQuestionRequest): Promise<AskUserQ
         theme: ctx.blueTheme,
         components: ctx.blueComponents,
         questions: request.questions,
+        t: interactionTranslator(ctx),
         onComplete: (answers) => {
           settle(() => {
             resolve({ answers })

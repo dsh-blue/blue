@@ -17,6 +17,7 @@
 import type { BlueComponents, BlueEditor, BlueFocusable, BlueTheme } from '@dsh-blue/blue-core'
 import { framePanel } from '@dsh-blue/blue-core/chrome'
 import type { AskUserQuestionAnswerItem, AskUserQuestionItem, AskUserQuestionOption } from '@deepseek-ai/dsh-user-questions'
+import type { BlueTranslate } from '@dsh-blue/blue-frontend'
 import { oneLine } from './select-list.ts'
 
 /** Decoded input sequences the questionnaire handles (no keymap actions). */
@@ -52,6 +53,8 @@ export interface QuestionnaireOptions {
   readonly onComplete: (answers: AskUserQuestionAnswerItem[]) => void
   /** Called when the user dismisses the questionnaire (Escape). */
   readonly onCancel: () => void
+  /** Dynamic translator for Blue-owned questionnaire chrome. */
+  readonly t?: BlueTranslate
 }
 
 /** Per-question scratch state: normalized options, list cursor, multi-select toggles, custom text, settled answer. */
@@ -339,7 +342,7 @@ export class Questionnaire implements BlueFocusable {
     if (editor !== undefined) {
       rows.push(this.renderEditorRow(editor, width))
       return framePanel(rows, width, {
-        title: `Question ${this.tab + 1} of ${this.options.questions.length}`,
+        title: this.translate('Question {current} of {total}', { current: this.tab + 1, total: this.options.questions.length }),
         titlePaint: colors.primary,
         rulePaint: colors.primary,
         footer: this.footerParts(),
@@ -371,7 +374,9 @@ export class Questionnaire implements BlueFocusable {
       }
     }
     const otherPrefix = state.cursor === options.length ? '  → ' : '    '
-    const otherLabel = state.custom === undefined ? 'Other' : `Other: ${state.custom}`
+    const otherLabel = state.custom === undefined
+      ? this.translate('Other')
+      : this.translate('Other: {value}', { value: state.custom })
     const other = components.truncateToWidth(`${otherPrefix}${otherLabel}`, width)
     if (state.cursor === options.length) {
       const clipped = components.truncateToWidth(colors.primary(other), width)
@@ -386,7 +391,7 @@ export class Questionnaire implements BlueFocusable {
     }
     rows.push('')
     return framePanel(rows, width, {
-      title: `Question ${this.tab + 1} of ${this.options.questions.length}`,
+      title: this.translate('Question {current} of {total}', { current: this.tab + 1, total: this.options.questions.length }),
       titlePaint: colors.primary,
       rulePaint: colors.primary,
       footer: this.footerParts(),
@@ -398,12 +403,12 @@ export class Questionnaire implements BlueFocusable {
   private footerParts(): string[] {
     if (this.editor !== undefined) {
       return this.isOptionless(this.current())
-        ? ['↵ save', 'tab next', 'esc cancel']
-        : ['↵ save', 'tab next', 'esc back']
+        ? [this.translate('↵ save'), this.translate('tab next'), this.translate('esc cancel')]
+        : [this.translate('↵ save'), this.translate('tab next'), this.translate('esc back')]
     }
     return this.current().multiSelect === true
-      ? ['↑↓ select', 'space toggle', '↵ choose', 'tab next', 'esc cancel']
-      : ['↑↓ select', '↵ choose', 'tab next', 'esc cancel']
+      ? [this.translate('↑↓ select'), this.translate('space toggle'), this.translate('↵ choose'), this.translate('tab next'), this.translate('esc cancel')]
+      : [this.translate('↑↓ select'), this.translate('↵ choose'), this.translate('tab next'), this.translate('esc cancel')]
   }
 
   /** Render free text with the same compact field treatment as FormPanel. */
@@ -417,8 +422,19 @@ export class Questionnaire implements BlueFocusable {
       Math.max(1, valueWidth - 1),
     )
     const cursor = this.panelFocused ? CURSOR_BLOCK : ''
-    const row = `  ${colors.primary('>')} ${colors.accent('Answer')}   ${colors.text(value)}${cursor}`
+    const row = `  ${colors.primary('>')} ${colors.accent(this.translate('Answer'))}   ${colors.text(value)}${cursor}`
     const clipped = components.truncateToWidth(row, contentWidth)
     return colors.selectedBg(clipped + ' '.repeat(Math.max(0, contentWidth - components.visibleWidth(clipped))))
+  }
+
+  /** Resolve Blue-owned chrome while leaving question content untouched. */
+  private translate(key: string, values?: Readonly<Record<string, string | number>>): string {
+    if (this.options.t !== undefined) return this.options.t(key, values)
+    if (values === undefined) return key
+    return key.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/gu, (placeholder, name: string) => {
+      const value = values[name]
+      /* v8 ignore next -- built-in questionnaire messages supply every literal placeholder */
+      return value === undefined ? placeholder : String(value)
+    })
   }
 }

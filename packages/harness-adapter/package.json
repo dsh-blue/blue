@@ -8,11 +8,13 @@
   "exports": {
     ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
     "./invariant": { "types": "./lib/types/invariant.d.ts", "default": "./lib/invariant.js" },
+    "./locale": { "types": "./lib/types/locale.d.ts", "default": "./lib/locale.js" },
     "./package.json": "./package.json"
   },
   "files": ["lib/**/*"],
   "license": "MIT",
   "repository": { "type": "git", "url": "git+https://github.com/dsh-blue/blue.git", "directory": "packages/harness-adapter" },
-  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@dsh-blue/blue-api": "workspace:*", "@dsh-blue/blue-frontend": "workspace:*" },
-  "devDependencies": { "@deepseek-ai/cordis": "4.0.1", "@dsh-blue/blue-api": "workspace:*", "@dsh-blue/blue-frontend": "workspace:*" }
+  "dependencies": { "@deepseek-ai/schemastery": "3.18.1" },
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@deepseek-ai/dsh-settings": "^0.1.1-rc.2", "@dsh-blue/blue-api": "workspace:*", "@dsh-blue/blue-frontend": "workspace:*" },
+  "devDependencies": { "@deepseek-ai/cordis": "4.0.1", "@deepseek-ai/dsh-settings": "0.1.1-rc.2", "@dsh-blue/blue-api": "workspace:*", "@dsh-blue/blue-frontend": "workspace:*" }
 }

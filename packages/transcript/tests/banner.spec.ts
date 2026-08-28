@@ -144,6 +144,21 @@ describe('composeBannerLines', () => {
     expect(lines.join('\n')).toContain('Directory: ~/dev')
   })
 
+  it('composes localized banner chrome without translating runtime facts', () => {
+    const messages: Record<string, string> = {
+      'Welcome to Blue!': '欢迎使用 Blue！',
+      'Send /help for help information.': '输入 /help 查看帮助信息。',
+      'Directory: ': '目录：     ',
+      'Model:     ': '模型：     ',
+      'Version:   ': '版本：     ',
+    }
+    const lines = composeBannerLines({ ...DEPS, t: key => messages[key] ?? key }, CONTENT, 100)
+    const text = lines.join('\n')
+    expect(text).toContain('欢迎使用 Blue！')
+    expect(text).toContain('目录：     ~/dev')
+    expect(text).toContain('模型：     m · p')
+  })
+
   it('composes the same frameless block on narrow terminals', () => {
     const lines = composeBannerLines(DEPS, CONTENT, 48)
     expect(lines).toHaveLength(9)

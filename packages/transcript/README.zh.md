@@ -12,6 +12,8 @@ Blue 的 projection-backed transcript、status、tool 与 dock model 终端渲�
 
 当前 runtime 不折叠 Harness session event，也没有旧 tool-intent registry。Generic、terminal、diff、search、read 与 web tool 形态通过 canonical projection/presentation model 到达渲染层，同时保留共享的状态、参数、命令与展开 chrome。BTW pane 与连接的 editor 共用对齐的左右边框，不再插入 spacer 行。
 
+Blue 自有 banner、activity、展开、图片与中断 chrome 跟随当前英文或简体中文 locale。语言 revision 会原地失效 renderer cache；conversation 与 tool payload 保持原文。
+
 ## Status 与 Dock
 
 主插件拥有四个 renderer bridge：

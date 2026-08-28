@@ -738,6 +738,34 @@ describe('createSettingsList', () => {
     // updateValue rewrites one entry's displayed value in place.
     list.updateValue('note', 'edited')
     expect(list.render(60).join('\n')).toContain('«text:edited»')
+    const submenu = { render: () => ['submenu'], invalidate: () => {} }
+    list.updateItems([
+      { id: 'missing', label: 'Missing', currentValue: 'x' },
+      { id: 'mode', label: '模式', currentValue: '乙', values: ['甲', '乙'], submenu: () => submenu },
+      { id: 'note', label: '备注', description: '说明', currentValue: '已编辑', values: ['已编辑'] },
+    ], {
+      empty: '没有设置',
+      noMatch: '没有匹配设置',
+      searchHint: '输入搜索',
+      hint: '回车修改',
+    })
+    const localized = list.render(60).join('\n')
+    expect(localized).toContain('模式')
+    expect(localized).toContain('备注')
+    expect(localized).toContain('回车修改')
+    list.handleInput('\x1b[B')
+    expect(list.render(60).join('\n')).toContain('说明')
+    list.handleInput('\x1b[A')
+    list.updateItems([
+      { id: 'mode', label: 'Mode', currentValue: 'a', values: ['a', 'b'] },
+      { id: 'note', label: 'Note', currentValue: 'plain' },
+    ])
+    expect(list.render(60).join('\n')).not.toContain('说明')
+    // Existing rows absent from a copy refresh keep their current content.
+    list.updateItems([
+      { id: 'mode', label: 'Mode', currentValue: 'a', values: ['a', 'b'] },
+    ])
+    expect(list.render(60).join('\n')).toContain('Note')
 
     // Enter cycles the first item's value; Escape cancels.
     list.handleInput('\r')
@@ -759,8 +787,19 @@ describe('createSettingsList', () => {
       enableSearch: true,
       onChange: () => {},
       onCancel: () => {},
+      messages: {
+        empty: 'empty', noMatch: 'no match', searchHint: 'search help', hint: 'plain help',
+      },
     })
-    expect(list.render(60).join('\n')).toContain('Mode')
+    expect(list.render(120).join('\n')).toContain('Mode')
+    list.handleInput('z')
+    expect(list.render(120).join('\n')).toContain('no match')
+    expect(list.render(120).join('\n')).toContain('search help')
+    const empty = components.createSettingsList({
+      items: [], onChange: () => {}, onCancel: () => {},
+      messages: { empty: 'empty', noMatch: 'no match', searchHint: 'search help', hint: 'plain help' },
+    })
+    expect(empty.render(60).join('\n')).toContain('empty')
     stop()
   })
 })

@@ -54,13 +54,15 @@ import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-settings'
 import { SettingsConflictError, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsDescriptor, SettingsProvider } from '@deepseek-ai/dsh-settings'
-import type { BlueFocusable, BlueSettingItem, BlueSettingsList, BlueTheme } from '@dsh-blue/blue-core'
+import type { BlueFocusable, BlueSettingItem, BlueSettingsList, BlueSettingsListMessages, BlueTheme } from '@dsh-blue/blue-core'
+import type { BlueTranslate } from '@dsh-blue/blue-frontend'
 import { framePanel } from '@dsh-blue/blue-core/chrome'
 import { displayServices } from './display-services.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
 import { resolveExternalEditorCommand, runExternalEditor } from './external-editor.ts'
 import { currentBlueSettings } from './settings.ts'
 import { FormPanel } from './form-panel.ts'
+import { interactionTranslator } from './locale.ts'
 import type { PermissionPresetsService } from './permission-panel.ts'
 import { SelectListPanel } from './select-list.ts'
 
@@ -99,10 +101,18 @@ interface SettingRow {
   readonly editable?: boolean
   /** What an editable row displays while unset (the raw value is blank). */
   readonly emptyDisplay?: string
+  /** Optional raw token to user-facing label mapping. */
+  readonly valueLabels?: Readonly<Record<string, string>>
 }
 
 /** The static rows, in panel order; the dynamic rows join per namespace. */
 const ROWS: readonly SettingRow[] = [
+  {
+    id: 'locale.preference', ns: 'locale', key: 'preference', label: 'Language',
+    description: 'Blue display language; system follows the operating system', kind: 'string',
+    values: ['zh', 'en'], unsetValue: 'system',
+    valueLabels: { system: 'Follow system', zh: '中文', en: 'English' },
+  },
   {
     id: 'blue.updateCheck', ns: 'blue', key: 'updateCheck', label: 'Update check',
     description: 'boot update check on/off', kind: 'boolean', values: [true, false],
@@ -229,6 +239,7 @@ const AGENT_PRESET_ROW: SettingRow = {
  * back to the bare count.
  */
 const NS_BLURBS: Readonly<Record<string, string>> = {
+  locale: 'Blue display language; system follows the operating system',
   blue: 'Blue UI preferences',
   shell: 'bash tool limits',
   'agent-loop': 'agent loop parallelism',
@@ -272,6 +283,22 @@ function displayValue(
   return String(cycle[0] ?? '')
 }
 
+/** Translate a raw value token when the row declares user-facing labels. */
+function valueLabel(row: SettingRow, raw: string, t: BlueTranslate): string {
+  const label = row.valueLabels?.[raw]
+  return label === undefined ? raw : t(label)
+}
+
+/** Recover a raw cycle token from its localized display label. */
+function rawValue(row: SettingRow, display: string, t: BlueTranslate): string {
+  if (row.valueLabels === undefined) return display
+  for (const [raw, label] of Object.entries(row.valueLabels)) {
+    if (t(label) === display) return raw
+  }
+  /* v8 ignore next -- pi-tui can emit only the localized values supplied by settingItem */
+  return display
+}
+
 /**
  * Build one list entry for a row: the preset cycle as strings (an
  * `unsetValue` cycling first), with a current value outside the cycle
@@ -289,14 +316,17 @@ function settingItem(
   row: SettingRow,
   raw: unknown,
   cycle: readonly (boolean | number | string)[] = row.values,
-  applies?: SettingsDescriptor['applies'],
+  applies: SettingsDescriptor['applies'] | undefined,
+  t: BlueTranslate,
 ): BlueSettingItem {
-  const current = displayValue(row, raw, cycle)
-  const presets = [...(row.unsetValue === undefined ? [] : [row.unsetValue]), ...cycle.map(String)]
+  const currentRaw = displayValue(row, raw, cycle)
+  const current = valueLabel(row, currentRaw, t)
+  const presetValues = [...(row.unsetValue === undefined ? [] : [row.unsetValue]), ...cycle.map(String)]
+  const presets = presetValues.map(value => valueLabel(row, value, t))
   return {
     id: row.id,
-    label: row.label,
-    description: applies === 'restart' ? `${row.description} · restart to apply` : row.description,
+    label: t(row.label),
+    description: applies === 'restart' ? `${t(row.description)} · ${t('restart to apply')}` : t(row.description),
     currentValue: current,
     values: row.editable === true ? [current] : presets.includes(current) ? presets : [current, ...presets],
   }
@@ -338,7 +368,7 @@ interface RowDynamics {
  * @param dynamics - the dynamic rows' value sources.
  * @returns the groups, plus the id → display and id → raw maps.
  */
-function buildGroups(settings: SettingsProvider, dynamics: RowDynamics): BuiltGroups {
+function buildGroups(settings: SettingsProvider, dynamics: RowDynamics, t: BlueTranslate): BuiltGroups {
   const described = new Map(settings.describe().map(descriptor => [String(descriptor.ns), descriptor]))
   const groups: SettingGroup[] = []
   const values = new Map<string, string>()
@@ -356,18 +386,18 @@ function buildGroups(settings: SettingsProvider, dynamics: RowDynamics): BuiltGr
     const descriptor = described.get(row.ns)
     if (descriptor === undefined) continue
     const raw = (descriptor.value as Record<string, unknown>)[row.key]
-    push(row.ns, settingItem(row, raw, row.values, descriptor.applies))
+    push(row.ns, settingItem(row, raw, row.values, descriptor.applies, t))
     if (row.editable === true) raws.set(row.id, typeof raw === 'string' ? raw : '')
   }
   const permission = described.get('permission')
   if (permission !== undefined && dynamics.presets !== undefined) {
     const raw = (permission.value as Record<string, unknown>).defaultPreset
-    push('permission', settingItem(PERMISSION_ROW, raw, [...dynamics.presets.names], permission.applies))
+    push('permission', settingItem(PERMISSION_ROW, raw, [...dynamics.presets.names], permission.applies, t))
   }
   const agentPresets = described.get('agent-presets')
   if (agentPresets !== undefined && dynamics.agentPresetIds !== undefined) {
     const raw = (agentPresets.value as Record<string, unknown>).default
-    push('agent-presets', settingItem(AGENT_PRESET_ROW, raw, [...dynamics.agentPresetIds], agentPresets.applies))
+    push('agent-presets', settingItem(AGENT_PRESET_ROW, raw, [...dynamics.agentPresetIds], agentPresets.applies, t))
   }
   return { groups, values, raws }
 }
@@ -412,9 +442,9 @@ export interface SettingsPanelOptions {
   /** The settings list this panel frames. */
   readonly list: BlueSettingsList
   /** The frame title (`settings › <namespace>` on level two). */
-  readonly title: string
+  readonly title: string | (() => string)
   /** The muted key-hint footer cells. */
-  readonly footer: readonly string[]
+  readonly footer: readonly string[] | (() => readonly string[])
   /** The shared feedback-row state (write outcomes; the editor's hint line is unmounted while a panel is open). */
   readonly notice: SettingsPanelNotice
   /** ANSI-safe width truncation for the feedback row (the components service's truncateToWidth). */
@@ -469,6 +499,8 @@ export class SettingsPanel implements BlueFocusable {
    */
   render(width: number): string[] {
     const colors = this.options.theme.colors
+    const title = typeof this.options.title === 'function' ? this.options.title() : this.options.title
+    const footer = typeof this.options.footer === 'function' ? this.options.footer() : this.options.footer
     const body = [
       ...this.options.list.render(width),
       noticeRow(this.options.notice, colors, this.options.truncate, width),
@@ -476,9 +508,9 @@ export class SettingsPanel implements BlueFocusable {
     this.maxBodyRows = Math.max(this.maxBodyRows, body.length)
     while (body.length < this.maxBodyRows) body.push('')
     return framePanel(body, width, {
-      title: this.options.title,
+      title,
       titlePaint: colors.primary,
-      footer: [...this.options.footer],
+      footer: [...footer],
       footerPaint: colors.textMuted,
       rulePaint: colors.primary,
     })
@@ -548,18 +580,19 @@ export class NoticeTail implements BlueFocusable {
  */
 export function registerSettingsCommand(ctx: Context): () => void {
   let unloaded = false
+  const t = interactionTranslator(ctx)
 
   const dispose = ctx.commands.register({
     name: 'settings',
-    description: 'Edit user settings by namespace (update, theme, folding, transcript, shell, agent, search, permission)',
+    description: t('Edit user settings by namespace (update, theme, folding, transcript, shell, agent, search, permission)'),
     handler: async (): Promise<CommandResult> => {
       const settings = ctx.get('settings')
       if (settings === undefined) {
-        return { kind: 'error', text: 'settings service unavailable on this host' }
+        return { kind: 'error', text: t('settings service unavailable on this host') }
       }
       const display = displayServices(ctx)
       if (display === undefined) {
-        return { kind: 'error', text: 'settings panel is unavailable: the Blue screen is not mounted' }
+        return { kind: 'error', text: t('settings panel is unavailable: the Blue screen is not mounted') }
       }
 
       let closed = false
@@ -584,6 +617,39 @@ export function registerSettingsCommand(ctx: Context): () => void {
       let lastKnown: Map<string, string> = new Map()
       /** The latest build; `refreshGroups` reassigns before any rebuild. */
       let built: BuiltGroups = { groups: [], values: new Map(), raws: new Map() }
+      let offLocale: () => void
+
+      /** Localized copy owned by pi-tui's otherwise hard-coded list surface. */
+      const listMessages = (): BlueSettingsListMessages => ({
+        empty: t('No settings available'),
+        noMatch: t('No matching settings'),
+        searchHint: t('Type to search · Enter/Space to change · Esc to cancel'),
+        hint: t('Enter/Space to change · Esc to cancel'),
+      })
+
+      /** Current localized level-one namespace rows. */
+      const groupRows = (): readonly import('./select-list.ts').SelectRow[] => [
+        ...built.groups.map(group => {
+          const blurb = NS_BLURBS[group.ns]
+          return {
+            value: group.ns,
+            label: group.ns,
+            /* v8 ignore next -- buildGroups emits only the static and two
+               dynamic namespaces listed in NS_BLURBS */
+            description: blurb === undefined
+              ? t('{count} settings', { count: group.items.length })
+              : t('{description} · {count} settings', {
+                  description: t(blurb),
+                  count: group.items.length,
+                }),
+          }
+        }),
+        {
+          value: OPEN_FILE_ID,
+          label: t('Open settings.yaml in $EDITOR'),
+          description: t('edit the raw document; changes hot-reload'),
+        },
+      ]
 
       /** The feedback-row state shared with every mounted panel instance. */
       const panelNotice: SettingsPanelNotice = {}
@@ -596,6 +662,12 @@ export function registerSettingsCommand(ctx: Context): () => void {
       const notice = (text: string, error = false): void => {
         panelNotice.current = { text, error }
         display.screen.requestRender()
+      }
+
+      /** Lowercase English feedback labels while leaving CJK copy unchanged. */
+      const feedbackLabel = (row: SettingRow): string => {
+        const label = t(row.label)
+        return ctx.get('blueLocale')?.locale === 'zh' ? label : label.toLocaleLowerCase('en')
       }
 
       /**
@@ -618,7 +690,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
         // without the roster.
         const listed = await ctx.blueSessionActions.presets()
         const agentPresetIds = listed.ok ? listed.value.map(row => row.id) : undefined
-        return buildGroups(settings, { presets, agentPresetIds })
+        return buildGroups(settings, { presets, agentPresetIds }, t)
       }
 
       /** Mount level two for one namespace on top of the level-one panel. */
@@ -636,11 +708,12 @@ export function registerSettingsCommand(ctx: Context): () => void {
           onCancel: () => {
             backToGroups()
           },
+          messages: listMessages(),
         })
         listPanel = new SettingsPanel({
           theme: liveTheme,
-          title: `settings › ${ns}`,
-          footer: ['↑↓ select', '↵ change', 'esc back'],
+          title: () => t('settings › {namespace}', { namespace: ns }),
+          footer: () => [t('↑↓ select'), t('↵ change'), t('esc back')],
           list,
           notice: panelNotice,
           truncate: (text, width) => display.components.truncateToWidth(text, width),
@@ -658,24 +731,9 @@ export function registerSettingsCommand(ctx: Context): () => void {
           keymap: display.keymap,
           theme: liveTheme,
           components: display.components,
-          rows: [
-            ...built.groups.map(group => ({
-              value: group.ns,
-              label: group.ns,
-              /* v8 ignore next -- every row namespace has a blurb; the
-                 fallback guards a row added without one */
-              description: NS_BLURBS[group.ns] === undefined
-                ? `${group.items.length} settings`
-                : `${NS_BLURBS[group.ns]} · ${group.items.length} settings`,
-            })),
-            {
-              value: OPEN_FILE_ID,
-              label: 'Open settings.yaml in $EDITOR',
-              description: 'edit the raw document; changes hot-reload',
-            },
-          ],
-          title: 'settings',
-          titleHint: '· esc close · ↵ open',
+          rows: groupRows(),
+          title: () => t('settings'),
+          titleHint: () => t('· esc close · ↵ open'),
           ...(seed === undefined ? {} : { initialValue: seed }),
           onSelect: (row) => {
             if (row.value === OPEN_FILE_ID) {
@@ -743,6 +801,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
         closed = true
         offDocument()
         offEditorChanged()
+        offLocale()
         restoreForm?.()
         restoreList?.()
         restoreGroups()
@@ -787,7 +846,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
                  guard only fires when a mid-write rebuild already dropped it */
               if (known !== undefined) list?.updateValue(row.id, known)
               const message = error instanceof Error ? error.message : String(error)
-              notice(`could not update ${row.label.toLowerCase()}: ${message}`, true)
+              notice(t('could not update {label}: {message}', { label: feedbackLabel(row), message }), true)
             }
             return
           }
@@ -797,7 +856,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
           lastKnown.set(row.id, display)
           built.raws.set(row.id, unset ? '' : String(value))
           if (pushToList) list?.updateValue(row.id, display)
-          notice(`${row.label.toLowerCase()} set to ${display}`)
+          notice(t('{label} set to {value}', { label: feedbackLabel(row), value: display }))
           return
         }
       }
@@ -814,8 +873,9 @@ export function registerSettingsCommand(ctx: Context): () => void {
           openForm(row)
           return
         }
-        const unset = row.unsetValue !== undefined && newValue === row.unsetValue
-        await commitRow(row, unset, unset ? undefined : parseValue(row, newValue), newValue, false)
+        const raw = rawValue(row, newValue, t)
+        const unset = row.unsetValue !== undefined && raw === row.unsetValue
+        await commitRow(row, unset, unset ? undefined : parseValue(row, raw), newValue, false)
       }
 
       /** Open the single-field form for an editable row, stacked above level two. */
@@ -824,11 +884,11 @@ export function registerSettingsCommand(ctx: Context): () => void {
           keymap: display.keymap,
           theme: liveTheme,
           components: display.components,
-          title: row.label,
-          subtitle: row.description,
+          title: t(row.label),
+          subtitle: t(row.description),
           fields: [{
             id: 'value',
-            label: row.label,
+            label: t(row.label),
             /* v8 ignore next -- buildGroups records a raw for every
                editable row it pushes, and only editable rows open a form */
             initial: built.raws.get(row.id) ?? '',
@@ -858,12 +918,12 @@ export function registerSettingsCommand(ctx: Context): () => void {
         const path = await settings.prepareDocument().catch(() => undefined)
         if (inactive()) return
         if (path === undefined) {
-          notice('settings file unavailable')
+          notice(t('settings file unavailable'))
           return
         }
         const command = resolveExternalEditorCommand(process.env, currentBlueSettings(ctx).editorCommand)
         if (command === undefined) {
-          notice('no editor configured ($VISUAL/$EDITOR)')
+          notice(t('no editor configured ($VISUAL/$EDITOR)'))
           return
         }
         let text: string
@@ -871,7 +931,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
           text = await readFile(path, 'utf-8')
         } catch (error) {
           /* v8 ignore next 1 -- node fs rejections are always Error instances */
-          notice(`could not read settings file: ${error instanceof Error ? error.message : String(error)}`)
+          notice(t('could not read settings file: {message}', { message: error instanceof Error ? error.message : String(error) }))
           return
         }
         const edited = await display.screen.suspend(() => runExternalEditor(text, command))
@@ -881,7 +941,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
           await writeFile(path, edited, 'utf-8')
         } catch (error) {
           /* v8 ignore next 1 -- node fs rejections are always Error instances */
-          notice(`could not write settings file: ${error instanceof Error ? error.message : String(error)}`)
+          notice(t('could not write settings file: {message}', { message: error instanceof Error ? error.message : String(error) }))
         }
       }
 
@@ -903,7 +963,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
        * push changed values into the live level-two list. Self-commits land
        * after lastKnown moved, so they repaint nothing.
        */
-      const refresh = async (): Promise<void> => {
+      const refresh = async (forceCopy = false): Promise<void> => {
         if (inactive()) return
         const next = await fetchGroups()
         if (inactive()) return
@@ -917,20 +977,23 @@ export function registerSettingsCommand(ctx: Context): () => void {
           rebuildPanels()
           return
         }
+        if (forceCopy) groupsPanel.setRows(groupRows())
         let changed = false
         if (list !== undefined && openNs !== undefined) {
           const group = next.groups.find(entry => entry.ns === openNs)
           /* v8 ignore next -- the row-set compare above rebuilds (and returns)
              when the open namespace left the build, so its group is present */
-          for (const item of group?.items ?? []) {
+          if (group === undefined) return
+          for (const item of group.items) {
             if (lastKnown.get(item.id) !== item.currentValue) {
               list.updateValue(item.id, item.currentValue)
               changed = true
             }
           }
+          if (forceCopy) list.updateItems(group.items, listMessages())
         }
         lastKnown = next.values
-        if (changed) display.screen.requestRender()
+        if (changed || forceCopy) display.screen.requestRender()
       }
 
       // Live while the panel is open: the host file watcher announces
@@ -939,8 +1002,17 @@ export function registerSettingsCommand(ctx: Context): () => void {
       // rebuild with a diff.
       let chain: Promise<void> = Promise.resolve()
       const offDocument = ctx.on('settings/document-updated', () => {
-        chain = chain.then(refresh)
+        chain = chain.then(() => refresh())
       })
+
+      const locale = ctx.get('blueLocale')
+      let localeRevision = locale?.snapshot.revision
+      offLocale = locale?.subscribe((snapshot) => {
+        if (snapshot.revision === localeRevision) return
+        localeRevision = snapshot.revision
+        panelNotice.current = undefined
+        chain = chain.then(() => refresh(true))
+      }) ?? (() => {})
 
       built = await fetchGroups()
       if (inactive()) return { kind: 'success' }

@@ -58,6 +58,7 @@ import { registerSessionCommands } from './session-commands.ts'
 import { registerExportCommands } from './session-export.ts'
 import { registerInitCommand } from './session-init.ts'
 import { registerSettingsCommand } from './settings-command.ts'
+import { interactionTranslator } from './locale.ts'
 import { registerSkillsCommand } from './skills-command.ts'
 import { MAX_LIST_VISIBLE, SelectListPanel, type SelectRow } from './select-list.ts'
 import { createSessionTree } from './session-tree.ts'
@@ -118,6 +119,7 @@ export function currentSessionTitleLimit(): number {
  * @param config - command presentation configuration.
  */
 export function apply(ctx: Context, config: Config = {}): void {
+  const t = interactionTranslator(ctx)
   const aliasRegistry = ctx.blueInteractionState.aliases
   /**
    * Set when this fiber unloads: the `/sessions` listing can still be in
@@ -344,6 +346,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       components: display.components,
       keymap: display.keymap,
       sections,
+      t,
       onClose: () => {
         restore()
       },
