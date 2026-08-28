@@ -18,6 +18,37 @@ Module-level replacements are allowed only for explicit test/system seams: fetch
 
 `EditorHostService` owns the live renderer editor reference, editor-slot replacement, enhancement presence, and ordered submit transformers per frontend tree. Every accessor takes `ctx`; no shared editor singleton exists. Reversible transformers register rollback callbacks in contribution order and execute them in reverse order after a safe retraction.
 
+`EditorExtensionRuntime` is the frontend-tree owner for public
+`editor.extensions` contributions. The plugin-host bridge publishes only an
+inert, frozen callback binding; registration and host snapshots never execute
+third-party code. The runtime validates passive before/after rows, diagnostics,
+and actions, then recompiles the shell around the exact same `BlueEditor`
+object so draft, history, undo, IME, paste state, and editor-plus hooks survive
+an extension refresh. Action callbacks run FIFO per extension id with an
+owner-minted user gesture. Refresh/unload aborts the old generation and clears
+its queue, so a same-id replacement can run immediately.
+
+The same runtime multiplexes Blue-owned slash/`@`/`#` sources with public `/`,
+`@`, `#`, and manual completion. Accepted items retain their source and prefix;
+one source cannot change another source's replacement range. Extension
+completion has a 5-second bound. Action and submit callbacks have 30-second
+bounds. Timeout, unload, extension refresh, buffer change, and session switch
+abort pending work and reject late results without mutating the editor.
+The API 1.0 `complete` callback remains limited to `/`, `@`, and manual
+requests; the additive `completeV2` callback opts into `#` and takes precedence
+when both exist. Callback revisions are local to one editor runtime generation,
+and only `onEvent` receives an owner-minted user gesture.
+Changing whether the BTW pane is connected likewise fences a pending main
+submit transform before Enter can cross routes; a busy-only refresh does not.
+
+Async public submit transforms run behind core's pre-clear submission barrier,
+in priority order. The editor stays intact until every transform succeeds.
+Image markers are captured into one frozen public attachment snapshot, remain
+attached through every text transform, and are consumed only after commit;
+follow-up failure or safe retraction restores the exact marker/ref entries.
+Commands, bash submissions, side-pane submissions, missing sessions, and other
+owner-declined paths bypass public transforms.
+
 `EditorModelService` maps the current renderer editor into readonly `EditorModel` state and structured `editor.set`, `editor.submit`, and `editor.abort` actions. Third-party consumers never receive a `BlueEditor`.
 
 `blue-input` submits transformed blocks through `blueSessionActions.followup()` or `.steer()`, stores the stable message receipt for safe retraction, and derives busy/session state from `blueSessionReader`. Both the parent interaction plugin and the child input Fiber explicitly inject app-owned `blueRequests` and `blueRetractions`; submission opens the declared request lifecycle and the Escape/Ctrl-C path calls the declared retraction service directly, so Cordis service visibility cannot silently degrade a safe retraction into an ordinary interruption. Same-session reader refreshes retain the receipt; only a changed session id clears it. Escape and Ctrl-C preserve their distinct retraction/interruption behavior, including an idle parent with running continuable descendants. Up/Down always belong to editor history; raw wheel input and PageUp/PageDown scroll the transcript, or the BTW body while that pane is connected, and End resumes transcript tail-follow.
@@ -90,22 +121,30 @@ Transcript tunables remain in this settings schema because interaction owns the 
 - `attachments`: bounded filesystem `AttachmentStore`.
 - `paste-image`: platform clipboard ingestion and reversible submit transformation.
 - `command-model`: renderer-neutral command registry.
-- `plugin-host-bridge`: public command/notification contributions. It unwraps the guarded host only for Blue-owned readiness, snapshot, gesture, and notification owner helpers; those helpers reject the guarded public service.
+- `plugin-host-bridge`: public command/notification/editor-extension contributions. It unwraps the guarded host only for Blue-owned readiness, snapshot, gesture, and notification owner helpers; those helpers reject the guarded public service.
 
-The plugin-host bridge advertises `commands` and `notifications` only for its
-active Fiber. Unload removes concrete command/notice adapters and withdraws
-readiness without deleting API-host aggregate contributions; a replacement
-Fiber replays the command snapshot. Public writes during the gap return
-`BLUE_CAPABILITY_ABSENT`. Each public command execution receives an owner-minted
+The plugin-host bridge advertises `commands`, `notifications`, and
+`editor.extensions` only for its active Fiber. Unload removes concrete
+command/notice/extension adapters and withdraws readiness without deleting
+API-host aggregate contributions; a replacement Fiber replays the retained
+snapshot. Public writes during the gap return `BLUE_CAPABILITY_ABSENT`. Each
+public command or editor action execution receives an owner-minted
 `userGesture` whose authority lasts through legal asynchronous handler work;
 the invocation abort signal and final settlement both revoke it, so a plugin
-cannot retain the proof for a later capturing overlay.
+cannot retain the proof for a later capturing overlay. Completion and submit
+callbacks never receive a gesture.
 
 `paste-image` state belongs to `InteractionStateService`; readers/clocks remain explicit test seams. Late clipboard results must check unload before saving, inserting markers, or notifying.
 
 ## Package And Tests
 
 Keep `README.md` and `README.zh.md` synchronized. Any new subpath updates package exports, `files`, and `tsdown.config.ts` together. New content components join width scans. State changes require same-tree reload, separate-tree isolation, unload, abort, and late-result coverage proportional to the affected workflow.
+
+`editor-extension-runtime.spec.ts` is the contract suite for inert shell
+refresh, source-aware completion application, timeout/abort/stale behavior,
+per-id action FIFO, async submit barriers, and attachment preservation.
+`input-plugin.spec.ts` additionally proves attachment rollback at the real
+follow-up rejection and safe-retraction boundaries.
 
 `changelog-content.ts` mirrors `docs/release-notes/` exactly; historical
 entries remain unchanged, while current-release behavior changes update both

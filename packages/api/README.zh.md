@@ -22,6 +22,8 @@ node、event payload 和 snapshot 是 readonly、JSON-shaped 数据；`render`�
 
 `BlueEditorShellNode` 是 provider-only 独立树，包含 `editor-control` slot；普通 `BlueUiNode` 无法构造该 slot。provider registration 只校验 callback 形状，不调用 `render`、不检查其返回树，也不选择 winner；只有 Blue 持有的用户配置能激活 inert candidate。`session.read` 与 `session.act` 在真正的 owner/API seam 能提供 snapshot 与 action 保证前继续拒绝。
 
-Blue 自有 adapter 会收到 capability-local 的 `statusRevision` 与 `statusProvidersRevision` snapshot fence。Additive status refresh 与 provider candidate refresh 各自独立递增，因此无关 command、pane 或 provider 的安装不会触发当前 status provider 重渲染。
+Editor extension 可贡献静态辅助行、提示、诊断、结构化 action、completion 和异步 submit transform。`before` 与 `after` 保留 G1 的 `BlueUiNode` 源码类型，而 registration 只接纳递归的被动 `BlueEditorExtensionNode` 子集：text/rich-text/fields/code/diff/sections/progress/spacer/divider 加 stack/surface；交互控件会以 `BLUE_INVALID_CONTRIBUTION` 拒绝，extension action 通过独立的 `actions` + `onEvent` 路径处理。兼容 `complete` callback 只接收 `/`、`@` 和手动请求；插件通过 `completeV2` 与 `BlueEditorCompletionRequestV2` 显式选择接收 `#`，两者同时存在时优先 V2。registration 保持 inert：host 会克隆并冻结静态数据、保留 callback identity，但不会调用 callback。submit transform 只读 attachment metadata 且只能返回文本，因此附件继续由 Blue 持有。interaction owner 提供可中止、带 revision fence 的 callback context，并拒绝过期异步结果。
+
+Blue 自有 adapter 会收到 capability-local 的 `statusRevision`、`statusProvidersRevision` 与 `editorExtensionsRevision` snapshot fence。各 capability 独立递增，因此无关 mutation 不会重建当前 status provider 或 editor extension。
 
 host 暂留 deprecated 内建 `dock` bridge 作为仓库兼容层，供 owner 迁移到 `panes`；发布 manifest 已无法通过 `dock` 的公共校验。

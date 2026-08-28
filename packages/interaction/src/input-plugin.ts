@@ -69,6 +69,7 @@ import {
   setEditorSlotSwap,
   setSharedEditor,
 } from './editor-instance.ts'
+import { EditorExtensionRuntime } from './editor-extension-runtime.ts'
 import { resolveExternalEditorCommand, runExternalEditor } from './external-editor.ts'
 import { currentBlueSettings } from './settings.ts'
 import {
@@ -239,6 +240,15 @@ export function apply(ctx: Context): void {
   editor.setPromptSymbol('>')
 
   const hintLine = new HintLine(screen, colors, ctx.blueComponents)
+  const extensionRuntime = new EditorExtensionRuntime({
+    ctx,
+    editor,
+    notice: text => setNotice(text),
+    shouldTransformSubmit: text => !connectedAbove
+      && ctx.blueSessionReader.current() !== null
+      && draft.getStashedInputMode() !== 'bash'
+      && parseCommand(text.trim()) === undefined,
+  })
 
   /**
    * Empty-result feedback for slash-prefixed input (D43: the discovery
@@ -324,7 +334,16 @@ export function apply(ctx: Context): void {
     }
     const parsed = parseCommand(line)
     if (parsed === undefined) {
-      const transformed = applyReversibleSubmitTransformers(ctx, rewriteSkillTokens(ctx, line))
+      const prepared = extensionRuntime.takePrepared(value)
+      const preparedTransformation = prepared?.transformation
+      const transformed = preparedTransformation === undefined
+        ? applyReversibleSubmitTransformers(ctx, rewriteSkillTokens(ctx, prepared?.text ?? line))
+        : {
+            ...preparedTransformation,
+            blocks: preparedTransformation.blocks.map(block => block.type === 'text'
+              ? { ...block, text: rewriteSkillTokens(ctx, block.text) }
+              : block),
+          }
       const submitted = ctx.blueSessionActions.followup(transformed.blocks)
       if (!submitted.ok) {
         transformed.rollback?.()
@@ -579,6 +598,7 @@ export function apply(ctx: Context): void {
     if (nextId !== sessionId) {
       sessionId = nextId
       retractionCandidate = undefined
+      extensionRuntime.invalidateSession()
     }
     notice = undefined
     refreshHint()
@@ -588,6 +608,7 @@ export function apply(ctx: Context): void {
   // editor's top corners to the spliced `├┤` and gates the Esc/Enter plus
   // contextual page/wheel chain; its busy flag refuses a submit while the side agent answers.
   ctx.on('blue/editor-connected-above', (connected, busy) => {
+    if (connected !== connectedAbove) extensionRuntime.invalidateSession()
     connectedAbove = connected
     btwBusy = busy === true
     editor.setConnectedAbove(connected)
@@ -598,9 +619,9 @@ export function apply(ctx: Context): void {
     // Pin below the transcript: pi-tui renders root children in mount order,
     // and transcript components only appear once a session exists. The hint
     // line mounts after the editor so it renders beneath it.
-    let removeEditor = screen.addBottomChild(editor)
+    let removeEditor = screen.addBottomChild(extensionRuntime)
     let removeHint = screen.addBottomChild(hintLine)
-    screen.setFocus(editor)
+    screen.setFocus(extensionRuntime)
     setSharedEditor(ctx, { editor, submitPrompt, abortPrompt: () => { clearOrInterrupt() }, notice: setNotice })
     ctx.emit('blue/input-editor-changed')
 
@@ -616,9 +637,9 @@ export function apply(ctx: Context): void {
       removeEditor()
     }
     const showEditor = (): void => {
-      removeEditor = screen.addBottomChild(editor)
+      removeEditor = screen.addBottomChild(extensionRuntime)
       removeHint = screen.addBottomChild(hintLine)
-      screen.setFocus(editor)
+      screen.setFocus(extensionRuntime)
     }
     setEditorSlotSwap(ctx, {
       mount: (component) => {
@@ -659,6 +680,7 @@ export function apply(ctx: Context): void {
       if (wasOccupied) ctx.emit('blue/editor-slot-swapped', false)
       clearSharedEditor(ctx)
       ctx.emit('blue/input-editor-changed')
+      extensionRuntime.dispose()
       removeHint()
       removeEditor()
       screen.setFocus(null)
@@ -669,7 +691,7 @@ export function apply(ctx: Context): void {
       setContentScrollHandler?: (handler: ((data: string) => boolean) | undefined) => () => void
     }
     const dispose = screen.setContentScrollHandler?.(data => {
-      if (!editor.focused) return false
+      if (!extensionRuntime.focused) return false
       /* v8 ignore start -- exercised by the real PTY and mouse path */
       const wheel = wheelDirection(data)
       if (wheel !== undefined) {

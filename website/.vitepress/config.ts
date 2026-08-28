@@ -151,6 +151,7 @@ const sidebarZh = {
       items: [
         { text: '命令', link: '/plugins/commands' },
         { text: '状态栏', link: '/plugins/status' },
+        { text: '编辑器扩展', link: '/plugins/editor-extensions' },
         { text: 'Dock 面板', link: '/plugins/dock' },
         { text: '通知', link: '/plugins/notifications' },
       ],
@@ -243,6 +244,7 @@ const sidebarEn = {
       items: [
         { text: 'Commands', link: '/en/plugins/commands' },
         { text: 'Status bar', link: '/en/plugins/status' },
+        { text: 'Editor extensions', link: '/en/plugins/editor-extensions' },
         { text: 'Dock panes', link: '/en/plugins/dock' },
         { text: 'Notifications', link: '/en/plugins/notifications' },
       ],

@@ -12,9 +12,12 @@ session references remain implementation or experimental surfaces.
 `BlueView` remains the sanitized content leaf. `BlueUiNode` adds only the
 closed layout/pattern vocabulary; responsive visibility is `BlueUiChild.when`,
 not a renderer callback or node kind. `BlueStatusNode` is recursively narrowed
-to text/rich-text/fields/progress/stack. `editor-control` exists only in the
-provider shell union. Provider admission checks callback shape only; the
-selected owner validates a rendered tree and its single editor-control slot.
+to text/rich-text/fields/progress/stack. `BlueEditorExtensionNode` recursively
+permits the passive text/rich-text/fields/code/diff/sections/progress/spacer/
+divider leaves plus stack/surface; interactive controls remain outside it.
+`editor-control` exists only in the provider shell union. Provider admission
+checks callback shape only; the selected owner validates a rendered tree and
+its single editor-control slot.
 `BlueListItem.detail` remains the plain compatibility field;
 `detailSpans` carries renderer-neutral tone/emphasis when a row needs semantic
 inline detail without exposing ANSI.
@@ -25,18 +28,33 @@ the process-local boundary. Change events are latest-wins per control;
 activate/submit/dismiss are FIFO per surface. The host owns revision fencing,
 abort, timeout, and coalesced refresh.
 
+Editor extensions are inert registrations. The host clones and freezes their
+static UI/data fields, preserves callback identity, and never invokes
+`complete`, `completeV2`, `onEvent`, or `transformSubmit`. `before` and `after`
+retain their G1 `BlueUiNode` static type for source compatibility, while host
+admission recursively rejects anything outside the recommended passive
+`BlueEditorExtensionNode` subset. Extension actions use the separate `actions`
+plus `onEvent` path. The compatibility `complete` callback receives only slash,
+`@`, and manual requests; extensions explicitly opt into `#` through
+`completeV2` and `BlueEditorCompletionRequestV2`, which takes precedence when
+both callbacks exist. Submit transformers receive readonly attachment metadata
+but return text only, so Blue retains attachment ownership across the async
+submit barrier. The interaction owner supplies callback contexts and owns
+abort, timeout, ordering, and stale-result rejection.
+
 Owner snapshots carry one monotonic aggregate revision plus capability-local
-`statusRevision` and `statusProvidersRevision` fences; pane/overlay entries
-carry independent render revisions. Register, coalesced refresh, dispose, and
-admission rollback advance only the affected status fence, so unrelated host
-mutations do not rebuild the active footer/provider. These owner fields are
-optional in the TypeScript shape for source-compatible mocks, while every real
-host snapshot supplies them. Snapshot subscriptions attach before their
-initial replay so a reentrant admission cannot be missed; a throwing replay
-removes every just-attached listener. `runBlueUserGesture` is the owner-only
-async dispatch scope: commands, panes, and overlays may mint one-shot proofs;
-abort or owner unload revokes immediately, and normal settlement revokes after
-the complete handler promise settles.
+`statusRevision`, `statusProvidersRevision`, and `editorExtensionsRevision`
+fences; pane/overlay entries carry independent render revisions. Register,
+coalesced refresh, dispose, and admission rollback advance only the affected
+capability fence, so unrelated host mutations do not rebuild the active
+footer/provider/editor extensions. These owner fields are optional in the
+TypeScript shape for source-compatible mocks, while every real host snapshot
+supplies them. Snapshot subscriptions attach before their initial replay so a
+reentrant admission cannot be missed; a throwing replay removes every
+just-attached listener. `runBlueUserGesture` is the owner-only async dispatch
+scope: commands, panes, overlays, and editor extensions may mint one-shot
+proofs; abort or owner unload revokes immediately, and normal settlement
+revokes after the complete handler promise settles.
 
 `BlueResult` includes `BLUE_CAPABILITY_ABSENT` for adapters and features that
 probe an optional Harness capability. Consumers should render that result as a

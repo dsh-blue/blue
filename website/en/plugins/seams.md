@@ -28,7 +28,7 @@ In the current phase `open()` grants the five capabilities in the table above. T
 | app | `blueSessionActions` | followup/steer/interrupt plus mode/model/preset/tool/skill/rewind/side-session actions |
 | conversation | `blueConversation` / `blueConversationFacts` | official replay/live transcript and status/dock facts |
 | transcript | transcript model, private status/bottom-pane registries, and tool model service | readonly models/canonical nodes into the TUI renderer |
-| interaction | `blueEditorHost` / `blueInteractionState` | frontend-tree-scoped editor slot, draft, settings/probe/paste state |
+| interaction | `blueEditorHost` / `blueInteractionState` | frontend-tree-scoped editor slot, completion multiplexer, pre-clear submit barrier, public extension binding, draft/settings/paste state |
 | bundle | `cordis.patch.yml` | 29 Blue-owned rows and explicit dependency ordering |
 
 Session-switch events such as `blue/request-resume`, `-new`, `-fork`, and `-rewind` are commands addressed to the app owner, not broadcasts carrying Session objects into renderers.

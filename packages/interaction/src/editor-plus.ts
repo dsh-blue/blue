@@ -46,6 +46,7 @@ import {
   ENHANCEMENT_EDITOR_PLUS,
   getSharedEditor,
   markEditorEnhancement,
+  registerEditorAutocompleteSource,
   type SharedEditor,
 } from './editor-instance.ts'
 import { detectFdPath, extractAtPrefix, fsMentionSuggestions, listDirectoryMentions } from './file-mention.ts'
@@ -152,7 +153,7 @@ function slashItemDescription(command: {
  * @param ctx - plugin context carrying the command registry.
  * @param mode - reports the live input mode.
  * @param notice - flashes the empty-result notice into the hint line.
- * @returns the provider to hand to `BlueEditor.setAutocompleteProvider`.
+ * @returns the provider to register with the editor-host multiplexer.
  */
 function createAutocompleteProvider(
   ctx: Context,
@@ -569,13 +570,18 @@ function attach(ctx: Context, shared: SharedEditor, isUnloaded: () => boolean): 
     }
     return false
   }
-  editor.setAutocompleteProvider(createAutocompleteProvider(ctx, () => mode, text => shared.notice?.(text)))
+  const unregisterAutocomplete = registerEditorAutocompleteSource(
+    ctx,
+    ENHANCEMENT_EDITOR_PLUS,
+    createAutocompleteProvider(ctx, () => mode, text => shared.notice?.(text)),
+  )
   // A draft restored before this attach (a theme-swap reload) deserves its
   // ghost without waiting for the next edit.
   refreshGhost(editor.getText())
 
   return () => {
     unmark()
+    unregisterAutocomplete()
     editor.onChange = previousOnChange
     editor.onSubmit = previousOnSubmit
     editor.onKey = previousOnKey

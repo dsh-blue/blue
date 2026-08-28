@@ -20,6 +20,7 @@ import type {
   BlueComponents,
   BlueEditor,
   BlueEditorOptions,
+  BlueEditorSubmitAttempt,
   BlueFocusable,
   BlueFuzzyMatch,
   BlueKeyAction,
@@ -239,6 +240,9 @@ export class FakeBlueEditor implements BlueEditor {
   autocompleteProvider: BlueAutocompleteProvider | undefined
   private text = ''
   private cursor = 0
+  private submitRevision = 0
+  private pendingSubmit: AbortController | undefined
+  private submitBarrier: ((attempt: BlueEditorSubmitAttempt) => void) | undefined
 
   getText(): string {
     return this.text
@@ -255,6 +259,7 @@ export class FakeBlueEditor implements BlueEditor {
   }
 
   setText(text: string): void {
+    this.abortPendingSubmit()
     this.text = text
     this.cursor = text.length
     this.onChange?.(text)
@@ -278,6 +283,7 @@ export class FakeBlueEditor implements BlueEditor {
 
   /** Insert at the current fake cursor and fire onChange once. */
   insertText(text: string): void {
+    this.abortPendingSubmit()
     this.inserted.push(text)
     this.text = `${this.text.slice(0, this.cursor)}${text}${this.text.slice(this.cursor)}`
     this.cursor += text.length
@@ -312,22 +318,60 @@ export class FakeBlueEditor implements BlueEditor {
     return this.showingAutocomplete
   }
 
+  setSubmitBarrier(barrier: ((attempt: BlueEditorSubmitAttempt) => void) | undefined): void {
+    this.abortPendingSubmit()
+    this.submitBarrier = barrier
+  }
+
+  submit(): void {
+    if (this.disableSubmit) return
+    this.abortPendingSubmit()
+    const submitted = this.text
+    const handler = this.submitBarrier
+    if (handler === undefined) {
+      this.commitSubmit(submitted)
+      return
+    }
+    const controller = new AbortController()
+    this.pendingSubmit = controller
+    const revision = ++this.submitRevision
+    let settled = false
+    const active = (): boolean => !settled
+      && !controller.signal.aborted
+      && this.pendingSubmit === controller
+      && this.submitRevision === revision
+      && this.text === submitted
+    handler(Object.freeze({
+      text: submitted,
+      signal: controller.signal,
+      revision,
+      commit: () => {
+        if (!active()) return false
+        settled = true
+        this.pendingSubmit = undefined
+        this.commitSubmit(submitted)
+        return true
+      },
+      cancel: () => {
+        if (!active()) return
+        settled = true
+        this.pendingSubmit = undefined
+        controller.abort()
+      },
+    }))
+  }
+
   handleInput(data: string): void {
     if (this.onKey?.(data) === true) return
     if (data === KEY.enter) {
-      if (!this.disableSubmit) {
-        const submitted = this.text
-        this.text = ''
-        this.cursor = 0
-        this.onChange?.('')
-        this.onSubmit?.(submitted)
-      }
+      this.submit()
       return
     }
     if (data === KEY.left) { this.cursor = Math.max(0, this.cursor - 1); return }
     if (data === KEY.right) { this.cursor = Math.min(this.text.length, this.cursor + 1); return }
     if (data === '\x7f') {
       if (this.cursor === 0) return
+      this.abortPendingSubmit()
       const before = Array.from(this.text.slice(0, this.cursor))
       before.pop()
       const prefix = before.join('')
@@ -338,6 +382,7 @@ export class FakeBlueEditor implements BlueEditor {
     }
     const paste = /^\x1b\[200~([\s\S]*)\x1b\[201~$/u.exec(data)
     const inserted = paste?.[1] ?? data
+    this.abortPendingSubmit()
     this.text = `${this.text.slice(0, this.cursor)}${inserted}${this.text.slice(this.cursor)}`
     this.cursor += inserted.length
     this.onChange?.(this.text)
@@ -348,6 +393,20 @@ export class FakeBlueEditor implements BlueEditor {
   }
 
   invalidate(): void {}
+
+  private abortPendingSubmit(): void {
+    const pending = this.pendingSubmit
+    if (pending === undefined) return
+    this.pendingSubmit = undefined
+    pending.abort()
+  }
+
+  private commitSubmit(submitted: string): void {
+    this.text = ''
+    this.cursor = 0
+    this.onChange?.('')
+    this.onSubmit?.(submitted)
+  }
 }
 
 /**

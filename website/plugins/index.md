@@ -52,6 +52,7 @@ dsh process 进程（one Cordis tree 一棵 Cordis 树）
 | [`commands`](/plugins/commands) | slash 命令 + 异步 handler | 出现在斜杠补全与 `/help` |
 | [`status`](/plugins/status) | 返回 `BlueView` 的 render 函数 | 底部 footer 状态条目 |
 | [`status.provider`](/plugins/status#独占-status-provider) | 接收 readonly status snapshot 的 render 函数 | 替换整个 footer 的候选 provider |
+| [`editor.extensions`](/plugins/editor-extensions) | passive shell、补全、action、submit transform | 增强 Blue 自有编辑器而不读取其状态 |
 | [`dock`](/plugins/dock) | 静态或函数式 `BlueView` | 编辑器上方的底部面板 |
 | [`notifications`](/plugins/notifications) | 发布/订阅 `BlueNotification` | 编辑器通知条 |
 
@@ -66,7 +67,7 @@ manifest schema 还声明了 `tools`、`editor`、`panels`、`session.read`、`s
 
 **贡献能力** —— 每个能力一页：契约表、完整示例、行为细节与常见错误。
 
-- [命令](/plugins/commands) · [状态栏与独占 provider](/plugins/status) · [Dock 面板](/plugins/dock) · [通知](/plugins/notifications)
+- [命令](/plugins/commands) · [状态栏与独占 provider](/plugins/status) · [编辑器扩展](/plugins/editor-extensions) · [Dock 面板](/plugins/dock) · [通知](/plugins/notifications)
 
 **验证与发布**
 

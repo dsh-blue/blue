@@ -41,7 +41,7 @@ Blue 的 seam 不是单一类型，而是五类显式边界：
 | app | `blueRetractions` / `blueRequests` | request/session epoch guard 与 retract lifecycle | input、conversation/transcript lifecycle |
 | conversation | `blueConversation`、`blueConversationFacts` + `blueConversationProjection` readiness | official `SessionProjectionRegistry` owns replay/live/checkpoint/watermark | official transcript model、status 和 dock facts |
 | transcript | `blueTranscriptModels`、`blueStatusEntries`、`blueStatusComposition`、`blueBottomPanes`、tool model service | transcript model + canonical node + effect-bound registration + selected-provider composition | semantic TUI components、default/provider footer、Blue-owned bottom panes |
-| interaction | `blueEditorHost`、`blueInteractionState` | frontend-tree-scoped editor slot/enhancements/transformers and mutable product state | input and interaction child Fibers |
+| interaction | `blueEditorHost`、`blueInteractionState` | frontend-tree-scoped editor slot、completion multiplexer、pre-clear submit barrier、public extension binding and mutable product state | input、plugin-host bridge and interaction child Fibers |
 | frontend | theme/notification/provider hosts | renderer-neutral model registries and generation-scoped provider swap | renderer adapters |
 | bundle | `cordis.patch.yml` | 29 Blue-owned rows with explicit `inject` ordering where lifecycle order matters | dsh profile composition |
 

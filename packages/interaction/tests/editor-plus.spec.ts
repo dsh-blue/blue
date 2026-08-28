@@ -584,12 +584,14 @@ describe('blue-editor-plus slash completion', () => {
   })
 
   it('applies a slash completion by replacing the command token', async () => {
-    const { provider } = await providerOf()
+    const { provider, ctx } = await providerOf()
+    ctx.commands.register({ name: 'resume', description: 'Resume', handler: () => ({ kind: 'success' }) })
+    const item = (await provider.getSuggestions(['/res'], 0, 4, { signal: signal() }))!.items[0]!
     const applied = provider.applyCompletion(
       ['/res abc', 'second line'],
       0,
       4,
-      { value: '/resume', label: '/resume' },
+      item,
       '/res',
     )
     expect(applied).toEqual({ lines: ['/resume abc', 'second line'], cursorLine: 0, cursorCol: 8 })
@@ -609,8 +611,10 @@ describe('blue-editor-plus slash completion', () => {
   })
 
   it('returns the lines unchanged when applying outside any completion context', async () => {
-    const { provider } = await providerOf()
-    expect(provider.applyCompletion([], 0, 0, { value: 'x', label: 'x' }, ''))
+    const { provider, ctx } = await providerOf()
+    ctx.commands.register({ name: 'resume', description: 'Resume', handler: () => ({ kind: 'success' }) })
+    const item = (await provider.getSuggestions(['/res'], 0, 4, { signal: signal() }))!.items[0]!
+    expect(provider.applyCompletion([], 0, 0, item, ''))
       .toEqual({ lines: [], cursorLine: 0, cursorCol: 0 })
   })
 })
@@ -700,8 +704,10 @@ describe('blue-editor-plus # skill completion', () => {
   })
 
   it('applies a # completion by replacing the token mid-line with a trailing space', async () => {
-    const { editor } = await mount()
+    const { ctx, editor } = await mount()
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
+    __setCatalogForTest(ctx, [skill('deploy-check')])
+    const item = (await provider.getSuggestions(['please run #de'], 0, 14, { signal: signal() }))!.items[0]!
     // Unlike a slash command the token sits mid-line: the leading words
     // survive, the applied value takes its trailing space, and the text
     // after the cursor joins trimmed.
@@ -709,16 +715,18 @@ describe('blue-editor-plus # skill completion', () => {
       ['please run #de now', 'second line'],
       0,
       14,
-      { value: '#deploy-check', label: '#deploy-check' },
+      item,
       '#de',
     )
     expect(applied).toEqual({ lines: ['please run #deploy-check now', 'second line'], cursorLine: 0, cursorCol: 25 })
   })
 
   it('returns the lines unchanged when applying a # item outside a skill token', async () => {
-    const { editor } = await mount()
+    const { ctx, editor } = await mount()
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
-    expect(provider.applyCompletion(['plain'], 0, 5, { value: '#x', label: '#x' }, '#x'))
+    __setCatalogForTest(ctx, [skill('deploy-check')])
+    const item = (await provider.getSuggestions(['#de'], 0, 3, { signal: signal() }))!.items[0]!
+    expect(provider.applyCompletion(['plain'], 0, 5, item, '#x'))
       .toEqual({ lines: ['plain'], cursorLine: 0, cursorCol: 5 })
   })
 })
@@ -873,18 +881,27 @@ describe('blue-editor-plus @ mentions', () => {
       items: [{ value: '@src/a.ts', label: 'a.ts', description: 'src/a.ts' }],
       prefix: '@sr',
     })
-    expect(delegated).toHaveBeenCalledWith(['see @sr'], 0, 7, options)
+    expect(delegated).toHaveBeenCalledOnce()
+    const delegatedCall = delegated.mock.calls[0]!
+    expect(delegatedCall.slice(0, 3)).toEqual([['see @sr'], 0, 7])
+    expect(delegatedCall[3]).toMatchObject({ signal: expect.any(AbortSignal) })
+    expect(delegatedCall[3].signal.aborted).toBe(false)
   })
 
   it('applies an @ completion through the delegated source', async () => {
     const { editor, components } = await mount()
+    components.mentionGetSuggestions = async () => ({
+      items: [{ value: '@src/a.ts', label: 'a.ts' }],
+      prefix: '@sr',
+    })
     components.mentionApplyCompletion = (lines, cursorLine, cursorCol) => ({
       lines: ['applied'],
       cursorLine,
       cursorCol,
     })
     const provider = editor.autocompleteProvider as BlueAutocompleteProvider
-    const applied = provider.applyCompletion(['see @sr'], 0, 7, { value: '@src/a.ts', label: 'a.ts' }, '@sr')
+    const item = (await provider.getSuggestions(['see @sr'], 0, 7, { signal: signal() }))!.items[0]!
+    const applied = provider.applyCompletion(['see @sr'], 0, 7, item, '@sr')
     expect(applied).toEqual({ lines: ['applied'], cursorLine: 0, cursorCol: 7 })
   })
 

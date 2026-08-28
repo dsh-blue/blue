@@ -52,6 +52,7 @@ Integration is a single move: **declare a manifest → `open()` to receive a cap
 | [`commands`](/en/plugins/commands) | slash command + async handler | appears in slash completion and `/help` |
 | [`status`](/en/plugins/status) | a render function returning `BlueView` | status bar entry in the bottom footer |
 | [`status.provider`](/en/plugins/status#exclusive-status-provider) | a render function receiving a readonly status snapshot | candidate replacing the entire footer |
+| [`editor.extensions`](/en/plugins/editor-extensions) | passive shell, completion, actions, submit transforms | enhances Blue's owned editor without reading its state |
 | [`dock`](/en/plugins/dock) | static or functional `BlueView` | bottom pane above the editor |
 | [`notifications`](/en/plugins/notifications) | publish/subscribe `BlueNotification` | editor notice bar |
 
@@ -66,7 +67,7 @@ The manifest schema also declares five more capabilities — `tools`, `editor`, 
 
 **Contributing capabilities** — one page per capability: contract table, full example, behavior details, and common pitfalls.
 
-- [Commands](/en/plugins/commands) · [Status bar and exclusive provider](/en/plugins/status) · [Dock panes](/en/plugins/dock) · [Notifications](/en/plugins/notifications)
+- [Commands](/en/plugins/commands) · [Status bar and exclusive provider](/en/plugins/status) · [Editor extensions](/en/plugins/editor-extensions) · [Dock panes](/en/plugins/dock) · [Notifications](/en/plugins/notifications)
 
 **Validation and publishing**
 

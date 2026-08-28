@@ -6,7 +6,7 @@
  * @module @dsh-blue/blue-core/ui-compiler
  */
 
-import type { BlueErrorCode, BlueFormField, BlueStatusNode, BlueTone, BlueUiEvent, BlueUiNode, BlueViewportCondition, BlueView } from '@dsh-blue/blue-api'
+import type { BlueEditorShellNode, BlueErrorCode, BlueFormField, BlueStatusNode, BlueTone, BlueUiEvent, BlueUiNode, BlueViewportCondition, BlueView } from '@dsh-blue/blue-api'
 import { CURSOR_MARKER, HStack, ScrollView, VStack, type Component } from '@earendil-works/pi-tui'
 import { getLayoutNode, LAYOUT_NODE, type LayoutNode, type LayoutViewport } from '@earendil-works/pi-tui/dist/layout-node.js'
 import { paintPluginTone, renderCanonicalView } from './plugin-view.ts'
@@ -25,7 +25,7 @@ import {
   type PatternFocus,
 } from './ui-patterns.ts'
 import { sliceByColumn, visibleWidth } from './width.ts'
-import { validateBlueStatusNode, validateBlueUiNode } from './ui-validator.ts'
+import { validateBlueEditorShellNode, validateBlueStatusNode, validateBlueUiNode } from './ui-validator.ts'
 
 const FOCUS_SENTINEL = '\uf8ff'
 const ERROR_MAX_ROWS = 3
@@ -63,6 +63,11 @@ export interface BlueUiCompilerOptions {
   readonly onUnhandledEscape?: () => void
 }
 
+/** Canonical shell dependencies, including the one host-owned editing engine. */
+export interface BlueEditorShellCompilerOptions extends BlueUiCompilerOptions {
+  readonly editor: BlueEditor
+}
+
 /** Passive dependencies and bounded height for one compact status tree. */
 export interface BlueStatusCompilerOptions {
   readonly components: BlueComponents
@@ -78,6 +83,13 @@ export interface BlueCompiledUi {
   readonly node: BlueUiNode
   readonly component: BlueComponent
   readonly focusTarget: BlueFocusable | null
+}
+
+/** Successful editor-shell compilation around the injected editing engine. */
+export interface BlueCompiledEditorShell {
+  readonly node: BlueEditorShellNode
+  readonly component: BlueComponent
+  readonly focusTarget: BlueFocusable
 }
 
 /** One bounded status render and whether the assigned viewport hid content. */
@@ -115,6 +127,9 @@ export interface BlueUiCompileFailure {
 /** Result returned by the no-bypass UI compiler. */
 export type BlueUiCompileResult = { readonly ok: true, readonly value: BlueCompiledUi } | BlueUiCompileFailure
 
+/** Result returned by the no-bypass editor-shell compiler. */
+export type BlueEditorShellCompileResult = { readonly ok: true, readonly value: BlueCompiledEditorShell } | BlueUiCompileFailure
+
 /** Status compile failure with a passive, height-bounded error component. */
 export interface BlueStatusCompileFailure {
   readonly ok: false
@@ -126,9 +141,12 @@ export interface BlueStatusCompileFailure {
 /** Result returned by the no-bypass status compiler. */
 export type BlueStatusCompileResult = { readonly ok: true, readonly value: BlueCompiledStatus } | BlueStatusCompileFailure
 
-type CompilerMode = 'ui' | 'status'
+type CompilerMode = 'ui' | 'status' | 'editor'
+
+type CompilableNode = BlueUiNode | BlueEditorShellNode
 
 interface RuntimeCompilerOptions extends BlueUiCompilerOptions {
+  readonly editor?: BlueEditor
   readonly reportRuntimeFailure: (message: string) => void
 }
 
@@ -150,6 +168,7 @@ type ControlDescriptor =
   | (ControlBase & { readonly kind: 'select', readonly field: SelectField })
   | (ControlBase & { readonly kind: 'toggle', readonly field: ToggleField })
   | (ControlBase & { readonly kind: 'submit', readonly form: FormNode, readonly formPath: string })
+  | (ControlBase & { readonly kind: 'editor' })
 
 interface FocusState {
   activeKey: string | undefined
@@ -338,7 +357,7 @@ function pad(component: Component, amount: number, options: RuntimeCompilerOptio
   return padded
 }
 
-function surfaceComponent(node: Extract<BlueUiNode, { readonly kind: 'surface' }>, child: Component, footer: Component | undefined, options: RuntimeCompilerOptions): BlueComponent {
+function surfaceComponent(node: Extract<CompilableNode, { readonly kind: 'surface' }>, child: Component, footer: Component | undefined, options: RuntimeCompilerOptions): BlueComponent {
   const component = new VStack()
   component.addChild(staticComponent(width => renderSurfaceHead(node, width, options.colors), options))
   component.addChild(child)
@@ -347,10 +366,13 @@ function surfaceComponent(node: Extract<BlueUiNode, { readonly kind: 'surface' }
   return pad(component, node.padding ?? 0, options)
 }
 
-function controlsForNode(node: BlueUiNode, options: BlueUiCompilerOptions, path = '$', includeHidden = false): ControlDescriptor[] {
+function controlsForNode(node: CompilableNode, options: BlueUiCompilerOptions, path = '$', includeHidden = false): ControlDescriptor[] {
   const controls: ControlDescriptor[] = []
-  const visit = (current: BlueUiNode, currentPath: string): void => {
+  const visit = (current: CompilableNode, currentPath: string): void => {
     switch (current.kind) {
+      case 'editor-control':
+        controls.push({ kind: 'editor', key: currentPath, preferred: true, group: currentPath, navigation: 'none' })
+        break
       case 'stack':
         for (const [index, child] of current.children.entries()) {
           if (includeHidden || conditionMatches(child.when, safeViewport(options.getViewport))) visit(child.node, `${currentPath}.${String(index)}`)
@@ -397,8 +419,25 @@ function controlsForNode(node: BlueUiNode, options: BlueUiCompilerOptions, path 
   return controls
 }
 
-function compileNode(node: BlueUiNode, state: FocusState, options: RuntimeCompilerOptions, path = '$', mode: CompilerMode = 'ui'): Component {
+function compileNode(node: CompilableNode, state: FocusState, options: RuntimeCompilerOptions, path = '$', mode: CompilerMode = 'ui'): Component {
   switch (node.kind) {
+    case 'editor-control': {
+      const editor = options.editor
+      if (editor === undefined) throw new Error('editor-control requires a host editor')
+      return {
+        render: width => {
+          try {
+            editor.focused = state.focused && state.activeKey === path
+            return editor.render(Math.max(1, width))
+          } catch (error) {
+            const message = renderFailure(error, 'unknown editor failure')
+            options.reportRuntimeFailure(message)
+            return errorRows(message, width, options.colors)
+          }
+        },
+        invalidate: () => editor.invalidate(),
+      }
+    }
     case 'text': if (options.markdownLeafPath === path) return markdownLeafComponent(node, path, options)
       return staticComponent(width => windowLeafRows(renderCanonicalView(
         node,
@@ -528,10 +567,11 @@ class CompiledSurface implements BlueFocusable {
   private viewport: BlueUiViewport
   private runtimeFailure: string | undefined
 
-  constructor(node: BlueUiNode, private readonly options: BlueUiCompilerOptions, mode: CompilerMode) {
+  constructor(node: CompilableNode, private readonly options: BlueUiCompilerOptions, mode: CompilerMode, private readonly editor?: BlueEditor) {
     this.viewport = safeViewport(options.getViewport)
     const runtimeOptions: RuntimeCompilerOptions = {
       ...options,
+      ...(editor === undefined ? {} : { editor }),
       getViewport: () => this.viewport,
       reportRuntimeFailure: message => { this.runtimeFailure ??= message },
     }
@@ -607,6 +647,7 @@ class CompiledSurface implements BlueFocusable {
   get focused(): boolean { return this.state.focused }
   set focused(value: boolean) {
     this.state.focused = value
+    if (!value && this.editor !== undefined) this.editor.focused = false
     if (!value) this.state.pendingConfirmation = undefined
   }
 
@@ -685,6 +726,10 @@ class CompiledSurface implements BlueFocusable {
       this.state.textEditor(active.field, active.key).handleInput?.(data)
       return
     }
+    if (active.kind === 'editor') {
+      this.editor?.handleInput?.(data)
+      return
+    }
     const direction = data === '\x1b[A' || data === '\x1b[D' ? -1 : data === '\x1b[B' || data === '\x1b[C' ? 1 : 0
     if (active.kind === 'select' && direction !== 0) {
       const enabled = active.field.options.filter(option => option.disabled !== true)
@@ -756,8 +801,8 @@ class StatusErrorComponent implements BlueStatusComponent {
   invalidate(): void { this.error.invalidate() }
 }
 
-function admittedSurface(node: BlueUiNode, options: BlueUiCompilerOptions, mode: CompilerMode): CompiledSurface {
-  return new CompiledSurface(node, options, mode)
+function admittedSurface(node: CompilableNode, options: BlueUiCompilerOptions, mode: CompilerMode, editor?: BlueEditor): CompiledSurface {
+  return new CompiledSurface(node, options, mode, editor)
 }
 
 function statusRowLimit(value: BlueStatusCompilerOptions['maxRows']): number {
@@ -776,6 +821,21 @@ export function compileBlueUiNode(value: unknown, options: BlueUiCompilerOptions
     return { ok: true, value: { node: admitted.value, component: surface, focusTarget } }
   } catch {
     const message = 'Blue UI compilation failed safely'
+    return { ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message, errorComponent: new ErrorComponent(message, options.colors) }
+  }
+}
+
+/** Validate an editor shell, then compile it around the exact injected engine. */
+export function compileBlueEditorShellNode(value: unknown, options: BlueEditorShellCompilerOptions): BlueEditorShellCompileResult {
+  const admitted = validateBlueEditorShellNode(value)
+  if (!admitted.ok) {
+    return { ok: false, code: admitted.code, message: admitted.message, errorComponent: new ErrorComponent(admitted.message, options.colors) }
+  }
+  try {
+    const surface = admittedSurface(admitted.value, options, 'editor', options.editor)
+    return { ok: true, value: { node: admitted.value, component: surface, focusTarget: surface } }
+  } catch {
+    const message = 'Blue editor shell compilation failed safely'
     return { ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message, errorComponent: new ErrorComponent(message, options.colors) }
   }
 }

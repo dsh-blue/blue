@@ -14,10 +14,17 @@ import CommandRuntime, { type CommandResult } from '@deepseek-ai/dsh-commands'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { SkillSummary } from '@deepseek-ai/dsh-skill'
+import { AttachmentId, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { BlueEditorSubmitRequest, BlueEditorSubmitValue, BlueResult } from '@dsh-blue/blue-api'
 import * as inputPlugin from '../src/input-plugin.ts'
 import { __setCatalogForTest } from '../src/skills-catalog.ts'
 import * as paneQueuePlugin from '../src/pane-queue.ts'
-import { getSharedEditor, mountEditorReplacement } from '../src/editor-instance.ts'
+import {
+  getSharedEditor,
+  mountEditorReplacement,
+  setEditorExtensions,
+  type EditorExtensionBinding,
+} from '../src/editor-instance.ts'
 import { setExternalEditorLauncher } from '../src/external-editor.ts'
 import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeBlueEditor, type FakeScreen } from './fakes.ts'
 
@@ -54,6 +61,34 @@ function queued(text: string): UserMessage {
   return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
 }
 
+function installEditorTransform(
+  ctx: Context,
+  transform: (
+    request: BlueEditorSubmitRequest,
+    signal?: AbortSignal,
+  ) => BlueResult<BlueEditorSubmitValue> | Promise<BlueResult<BlueEditorSubmitValue>>,
+): void {
+  const entry = { id: 'spec.input-transform', transformSubmit: (request: BlueEditorSubmitRequest) => transform(request) }
+  const binding: EditorExtensionBinding = {
+    revision: 1,
+    entries: [entry],
+    async complete() { return { ok: true, value: [] } },
+    async transform(_entry, request, signal) { return transform(request, signal) },
+    async dispatch() { return { ok: true, value: undefined } },
+  }
+  setEditorExtensions(ctx, binding)
+}
+
+function imageRef(id: string): ImageAttachmentRef {
+  return {
+    attachmentId: AttachmentId(id),
+    mediaType: 'image/png',
+    bytes: 12,
+    width: 2,
+    height: 2,
+  }
+}
+
 async function mount(options: {
   withAgent?: boolean
   running?: boolean
@@ -65,6 +100,7 @@ async function mount(options: {
   ctx: Context
   screen: FakeScreen
   editor: FakeBlueEditor
+  editorRoot: BlueFocusable & BlueComponent
   hint: BlueComponent
   agent: Agent
   followup: ReturnType<typeof vi.fn>
@@ -72,7 +108,7 @@ async function mount(options: {
   steer: ReturnType<typeof vi.fn>
   fiber: { dispose(): Promise<void> }
 }> {
-  const { ctx, screen } = fakeBlueContext()
+  const { ctx, screen, components } = fakeBlueContext()
   // This suite exercises only the editor slot. The shared fake now owns the
   // transcript dock service's stable empty bottom root; remove that unrelated
   // fixture root so the existing slot assertions stay local to blue-input.
@@ -98,9 +134,13 @@ async function mount(options: {
   }
   if (options.appExit !== undefined) ctx.provide('appExit', options.appExit)
   const fiber = await ctx.plugin(inputPlugin)
-  const editor = screen.children[0] as FakeBlueEditor
+  const editor = components.editors.at(-1)!
+  const editorRoot = screen.children[0] as BlueFocusable & BlueComponent
   const hint = screen.children[1] as BlueComponent
-  return { ctx, screen, editor, hint, agent, followup, cancel, steer, fiber }
+  // The terminal paints one frame before it can deliver focused input. The
+  // shell compiler synchronizes its nested editor focus during that frame.
+  editorRoot.render(screen.columns)
+  return { ctx, screen, editor, editorRoot, hint, agent, followup, cancel, steer, fiber }
 }
 
 function type(editor: FakeBlueEditor, text: string): void {
@@ -114,9 +154,9 @@ describe('blue-input plugin', () => {
   })
 
   it('mounts the editor and hint line focused at the bottom of the tree', async () => {
-    const { ctx, screen, editor, hint } = await mount()
-    expect(screen.children).toEqual([editor, hint])
-    expect(screen.focused).toBe(editor)
+    const { ctx, screen, editor, editorRoot, hint } = await mount()
+    expect(screen.children).toEqual([editorRoot, hint])
+    expect(screen.focused).toBe(editorRoot)
     expect(editor.focused).toBe(true)
     // The editor mounts with the rounded-box chrome's prerequisites — the
     // prompt symbol and the padding that reserves its columns — and the hint
@@ -128,12 +168,12 @@ describe('blue-input plugin', () => {
   })
 
   it('stays pinned below transcript content mounted after it', async () => {
-    const { screen, editor, hint } = await mount()
+    const { screen, editorRoot, hint } = await mount()
     // Transcript components only mount once a session exists — long after
     // the editor — yet must render above it.
     const transcriptRow: Parameters<FakeScreen['addChild']>[0] = { render: () => ['transcript'], invalidate: () => {} }
     screen.addChild(transcriptRow)
-    expect(screen.children).toEqual([transcriptRow, editor, hint])
+    expect(screen.children).toEqual([transcriptRow, editorRoot, hint])
   })
 
   it('pauses tail-follow, advertises new messages, and resumes on End', async () => {
@@ -215,6 +255,58 @@ describe('blue-input plugin', () => {
     editor.handleInput(KEY.enter)
     expect(followup).not.toHaveBeenCalled()
     expect(hint.render(80)).toEqual(['~!follow-up rejected!~'])
+  })
+
+  it('restores transformed image attachments when the follow-up is rejected', async () => {
+    const { ctx, editor, hint, followup } = await mount()
+    const ref = imageRef('rejected-extension-image')
+    ctx.blueInteractionState.pasteImage.pastedImages.set('[image #1]', ref)
+    installEditorTransform(ctx, request => ({ ok: true, value: { text: `extended:${request.text}` } }))
+    ;(ctx.blueSessionActions as unknown as {
+      followup: () => { ok: false, code: 'BLUE_ACTION_REJECTED', message: string }
+    }).followup = () => ({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'extension follow-up rejected' })
+
+    type(editor, '[image #1] caption')
+    editor.handleInput(KEY.enter)
+    await vi.waitFor(() => expect(hint.render(80)).toEqual(['~!extension follow-up rejected!~']))
+    expect(followup).not.toHaveBeenCalled()
+    expect(ctx.blueInteractionState.pasteImage.pastedImages.get('[image #1]')).toBe(ref)
+  })
+
+  it('routes an editor extension failure notice through the hint line', async () => {
+    const { ctx, editor, hint, followup } = await mount()
+    installEditorTransform(ctx, () => ({
+      ok: false,
+      code: 'BLUE_ACTION_REJECTED',
+      message: 'extension transform rejected',
+    }))
+
+    type(editor, 'keep this draft')
+    editor.handleInput(KEY.enter)
+
+    await vi.waitFor(() => expect(hint.render(80)).toEqual(['~extension transform rejected~']))
+    expect(editor.getText()).toBe('keep this draft')
+    expect(followup).not.toHaveBeenCalled()
+  })
+
+  it('restores transformed image attachments after a safe retraction', async () => {
+    const retract = vi.fn(() => true)
+    const { ctx, editor, followup } = await mount({ running: true, retract })
+    const ref = imageRef('retracted-extension-image')
+    ctx.blueInteractionState.pasteImage.pastedImages.set('[image #1]', ref)
+    installEditorTransform(ctx, request => ({ ok: true, value: { text: `extended:${request.text}` } }))
+
+    type(editor, '[image #1] caption')
+    editor.handleInput(KEY.enter)
+    await vi.waitFor(() => expect(followup).toHaveBeenCalledOnce())
+    expect(ctx.blueInteractionState.pasteImage.pastedImages.has('[image #1]')).toBe(false)
+    const message = followup.mock.calls[0]?.[0] as { readonly content: readonly { readonly type: string, readonly text?: string }[] }
+    expect(message.content.map(block => block.type === 'text' ? block.text : block.type)).toEqual(['extended:caption', 'image'])
+
+    expect(editor.onKey?.(KEY.escape)).toBe(true)
+    expect(retract).toHaveBeenCalledOnce()
+    expect(ctx.blueInteractionState.pasteImage.pastedImages.get('[image #1]')).toBe(ref)
+    expect(editor.getText()).toBe('[image #1] caption')
   })
 
   it('rewrites #skill tokens on the follow-up path while history keeps the original', async () => {
@@ -328,7 +420,7 @@ describe('blue-input plugin', () => {
   })
 
   it('opens the permission picker on a bare /permission instead of dispatching', async () => {
-    const { ctx, screen, editor, hint } = await mount()
+    const { ctx, screen, editor, editorRoot, hint } = await mount()
     const handler = vi.fn(() => ({ kind: 'success' as const, text: 'should not run' }))
     ctx.commands.register({ name: 'permission', description: 'spy standing in for the upstream command', handler })
     ctx.provide('permissionPresets', {
@@ -352,8 +444,8 @@ describe('blue-input plugin', () => {
     // Esc closes back to the editor, still without a dispatch.
     panel.handleInput(KEY.escape)
     expect(handler).not.toHaveBeenCalled()
-    expect(screen.children).toEqual([editor, expect.anything()])
-    expect(screen.focused).toBe(editor)
+    expect(screen.children).toEqual([editorRoot, expect.anything()])
+    expect(screen.focused).toBe(editorRoot)
   })
 
   it('passes a with-argument /permission line through to the command', async () => {
@@ -585,7 +677,7 @@ describe('blue-input plugin', () => {
     expect(first.editor.history).toEqual(['/theme dark', 'hello'])
     await first.fiber.dispose()
     await first.ctx.plugin(inputPlugin)
-    const second = first.screen.children[0] as FakeBlueEditor
+    const second = (first.ctx.blueComponents as FakeBlueComponents).editors.at(-1)!
     expect(second.history).toEqual(['/theme dark', 'hello'])
   })
 
@@ -602,7 +694,7 @@ describe('blue-input plugin', () => {
     }
 
     it('hides the editor for the panel and restores it with focus on dispose', async () => {
-      const { ctx, screen, editor, hint } = await mount()
+      const { ctx, screen, editorRoot, hint } = await mount()
       const first = panel('first')
       const restore = mountEditorReplacement(ctx, first)
       // The editor and hint left the dock; the panel took the slot and
@@ -610,12 +702,12 @@ describe('blue-input plugin', () => {
       expect(screen.children).toEqual([first])
       expect(screen.focused).toBe(first)
       restore()
-      expect(screen.children).toEqual([editor, hint])
-      expect(screen.focused).toBe(editor)
+      expect(screen.children).toEqual([editorRoot, hint])
+      expect(screen.focused).toBe(editorRoot)
     })
 
     it('stacks nested panels: disposing the top refocuses the one beneath', async () => {
-      const { ctx, screen, editor } = await mount()
+      const { ctx, screen, editorRoot } = await mount()
       const outer = panel('outer')
       const inner = panel('inner')
       const restoreOuter = mountEditorReplacement(ctx, outer)
@@ -626,12 +718,12 @@ describe('blue-input plugin', () => {
       expect(screen.children).toEqual([outer])
       expect(screen.focused).toBe(outer)
       restoreOuter()
-      expect(screen.children).toEqual([editor, expect.anything()])
-      expect(screen.focused).toBe(editor)
+      expect(screen.children).toEqual([editorRoot, expect.anything()])
+      expect(screen.focused).toBe(editorRoot)
     })
 
     it('keeps the editor hidden when the bottom panel of a stack disposes first', async () => {
-      const { ctx, screen, editor } = await mount()
+      const { ctx, screen, editorRoot } = await mount()
       const outer = panel('outer')
       const inner = panel('inner')
       const restoreOuter = mountEditorReplacement(ctx, outer)
@@ -641,7 +733,7 @@ describe('blue-input plugin', () => {
       expect(screen.children).toEqual([inner])
       expect(screen.focused).toBe(inner)
       restoreInner()
-      expect(screen.focused).toBe(editor)
+      expect(screen.focused).toBe(editorRoot)
     })
 
     it('unmounts an open panel with the fiber and turns its disposer into a no-op', async () => {
@@ -1135,6 +1227,36 @@ describe('blue-input plugin', () => {
       type(editor, 'plain')
       editor.handleInput(KEY.enter)
       expect(followup).toHaveBeenCalledOnce()
+      expect(command).not.toHaveBeenCalled()
+    })
+
+    it('fences a pending main transform when the side pane connects but not on a busy-only refresh', async () => {
+      const { ctx, editor, followup } = await mount({ withAgent: true })
+      const command = vi.fn()
+      const gate = Promise.withResolvers<BlueResult<BlueEditorSubmitValue>>()
+      let signal: AbortSignal | undefined
+      ctx.on('blue/btw-command', command)
+      installEditorTransform(ctx, (_request, currentSignal) => {
+        signal = currentSignal
+        return gate.promise
+      })
+
+      type(editor, 'route-sensitive draft')
+      editor.handleInput(KEY.enter)
+      await vi.waitFor(() => expect(signal).toBeDefined())
+
+      ctx.emit('blue/editor-connected-above', false, true)
+      expect(signal?.aborted).toBe(false)
+
+      ctx.emit('blue/editor-connected-above', true, true)
+      expect(signal?.aborted).toBe(true)
+      expect(editor.getText()).toBe('route-sensitive draft')
+
+      gate.resolve({ ok: true, value: { text: 'late transformed draft' } })
+      await gate.promise
+      await Promise.resolve()
+      expect(editor.getText()).toBe('route-sensitive draft')
+      expect(followup).not.toHaveBeenCalled()
       expect(command).not.toHaveBeenCalled()
     })
   })
