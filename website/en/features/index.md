@@ -9,9 +9,9 @@ Blue is a Cordis plugin tree. The bundle currently has 28 Blue-owned rows: two h
 ## Enhancements
 
 - editor/attachments: `blue-editor-plus`, `blue-attachments`, `blue-paste-image`
-- status: cwd, git, mode, title, and context `StatusModel` producers
-- dock: activity, queue, todo, btw, and agents `DockModel` producers
-- public view bridge: routes third-party status/dock `BlueView` contributions into owner registries
+- status: cwd, git, mode, title, and context canonical `BlueStatusNode` producers
+- bottom panes: activity, queue, todo, btw, and agents canonical `BlueUiNode` producers mounted through private bottom-only composition
+- public view bridge: routes third-party status nodes into the footer and dock `BlueView` contributions directly into core's bounded mount
 
 These 14 rows can be removed independently. Diff/terminal/search/read/web tool rendering comes from canonical `ToolPresentationModel` conversion; there are no intent rows.
 

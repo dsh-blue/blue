@@ -22,15 +22,15 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
-import type { StatusModel } from '@dsh-blue/blue-frontend'
 import type { ConversationFacts } from '@dsh-blue/blue-conversation'
 import type { SessionFactsService } from './session-facts.ts'
+import type { BlueStatusEntry } from './status-model.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-status-context'
 
 /** Services required before the context entry can register. */
-export const inject = ['blueStatusModels', 'blueSessionFacts']
+export const inject = ['blueStatusEntries', 'blueSessionFacts']
 
 /**
  * The context occupancy of one step: the disjoint input-side token counts.
@@ -114,18 +114,18 @@ export function apply(ctx: Context): void {
   const offFacts = factsService?.subscribe(next => {
     const changed = next.contextTokens !== facts.contextTokens || next.contextWindow !== facts.contextWindow
     facts = next
-    if (changed) ctx.blueStatusModels.refresh('blue.status.context')
+    if (changed) ctx.blueStatusEntries.refresh('blue.status.context')
   })
   ctx.effect(() => () => offFacts?.())
 
-  const model = (): StatusModel => {
+  const model = (): BlueStatusEntry => {
     const max = normalizeWindow(facts.contextWindow)
     const text = facts.contextTokens <= 0
       ? ''
       : max === undefined
         ? `ctx ${formatTokens(facts.contextTokens)}`
         : `context: ${String(contextPercent(facts.contextTokens, max))}% (${formatTokens(facts.contextTokens)}/${formatTokens(max)})`
-    return { kind: 'status', id: 'blue.status.context', priority: 20, band: 'right', row: 2, overflow: 'hide', view: { kind: 'text', text }, visible: text !== '' }
+    return { id: 'blue.status.context', priority: 20, band: 'right', row: 2, overflow: 'hide', node: { kind: 'text', content: text }, visible: text !== '' }
   }
-  ctx.effect(() => ctx.blueStatusModels.register(model))
+  ctx.effect(() => ctx.blueStatusEntries.register(model))
 }

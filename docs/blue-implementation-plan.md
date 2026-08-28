@@ -25,7 +25,7 @@
 
 ### F1：最小 frontend runtime
 
-实现 readonly Text/Fields/Sections/List/Code/Diff view、CommandModel、PanelModel（select/form/info）、StatusModel、DockModel、NotificationModel，以及 provider host。
+实现 readonly Text/Fields/Sections/List/Code/Diff view、CommandModel、PanelModel（select/form/info）、canonical status/pane node contracts、NotificationModel，以及 provider host。
 
 统一 provider 生命周期：capture -> abort -> dispose -> activate -> restore。model 只包含 readonly 数据和结构化 action，不含 pi-tui、React、ANSI、terminal width、focus handle、Promise。激活失败回退 plain provider，不能影响 Agent loop。
 
@@ -59,7 +59,7 @@
 
 按 status、dock、command、tool presentation、theme、editor、transcript 顺序迁移。每项必须有新 provider/registry、官方 consumer、replacement fixture、unload/reload、width-scan、golden/e2e、bundle row 和 plain fallback。旧实现只在对应验收后删除。
 
-当前进度：status producer 全部发布 `StatusModel`；五个 pane 发布 `DockModel` 并从 `blueConversationFacts` 或 app action seam 取值；tool presentation 只转换 canonical dsh-tools view/result；editor host 与 interaction mutable state 都是 frontend-tree scoped。`blueConversation`/`blueConversationFacts` + official transcript consumer 是 bundle baseline。旧 event fold、direct status provider、intent presenter、pane event fold、child-event tracker 和 editor module singleton 已物理删除。Command model/action 已落地；model/effort、trace/detail 与 update 均发布 readonly `PanelModel` snapshot 和 structured action，由共享 `FrontendPanel` 消费，command-specific renderer/state class 与旧 thinking-segment chrome 已物理删除。C4 source deletion 完成，最终 build/pack/fixture/smoke/profile 与人工验收仍按 ledger 门禁执行。
+当前进度：status producer 全部发布 canonical `BlueStatusNode`，由 transcript 私有 `BlueStatusEntryService` 编译到 footer；五个官方 pane 发布 canonical `BlueUiNode` 到 bottom-only `BlueBottomPaneService`，并从 `blueConversationFacts` 或 app action seam 取值，public dock 独立走 core bounded bridge。Tool presentation 只转换 canonical dsh-tools view/result；editor host 与 interaction mutable state 都是 frontend-tree scoped。`blueConversation`/`blueConversationFacts` + official transcript consumer 是 bundle baseline。旧 event fold、generic status/dock model、intent presenter、pane event fold、child-event tracker 和 editor module singleton 已物理删除。Command model/action 已落地；model/effort、trace/detail 与 update 均发布 readonly `PanelModel` snapshot 和 structured action，由共享 `FrontendPanel` 消费，command-specific renderer/state class 与旧 thinking-segment chrome 已物理删除。C4 source deletion 完成，最终 build/pack/fixture/smoke/profile 与人工验收仍按 ledger 门禁执行。
 
 ### F6：skills 和生态验证
 

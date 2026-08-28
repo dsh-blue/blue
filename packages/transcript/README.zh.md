@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-Blue 的 projection-backed transcript、status、tool 与 dock model 终端渲染器。本包是 renderer adapter：Harness domain state 在进入本包前已完成 projection，且只有 `@dsh-blue/blue-core` 接触 pi-tui。
+Blue 的 projection-backed transcript 以及 canonical status、tool、bottom-pane node 终端渲染器。本包是 renderer adapter：Harness domain state 在进入本包前已完成 projection，且只有 `@dsh-blue/blue-core` 接触 pi-tui。
 
 ## Transcript
 
@@ -12,22 +12,22 @@ Blue 的 projection-backed transcript、status、tool 与 dock model 终端渲�
 
 当前 runtime 不折叠 Harness session event，也没有旧 tool-intent registry。Generic、terminal、diff、search、read 与 web tool 形态通过 canonical projection/presentation model 到达渲染层，同时保留共享的状态、参数、命令与展开 chrome。BTW pane 与连接的 editor 共用对齐的左右边框，不再插入 spacer 行。
 
-## Status 与 Dock
+## Status 与 Bottom Pane
 
 主插件拥有四个 renderer bridge：
 
-- `BlueStatusModelService` 在两行 footer 中渲染 readonly `StatusModel` contribution。
-- `BlueDockModelService` 按 placement、priority 与 id 排列有界 dock contribution。
+- 包内私有的 `BlueStatusEntryService` 把 canonical `BlueStatusNode` contribution 编译到两行 footer。
+- 包内私有的 `BlueBottomPaneService` 按 priority 与 id 排列有界的 Blue-owned bottom pane；它没有 left/right lane。
 - `BlueModelToolService` 把官方 tool presentation fact 转换为 readonly frontend view。
 - `TranscriptModelService` 渲染官方 semantic conversation model。
 
-Footer 子插件提供 model、cwd、git、title、context 与 session mode 信息。Activity、todo 与 agents pane 通过 `blueSessionFacts` 消费 `blueConversationFacts` projection；BTW pane 通过 `blueSessionActions` 获取可释放的旁路会话并渲染其官方 conversation projection。任何 pane 都不会接收 Agent 或 Session。
+Footer 子插件以 canonical status node 提供 model、cwd、git、title、context 与 session mode 信息。Activity、todo 与 agents pane 通过 `blueSessionFacts` 消费 `blueConversationFacts` projection；BTW pane 通过 `blueSessionActions` 获取可释放的旁路会话并渲染其官方 conversation projection。在 canonical vocabulary 能精确表达之前，activity、todo、agents、BTW 与 queue 的高级 chrome 保留在有 width 边界的 renderer adapter 后。任何 pane 都不会接收 Agent 或 Session。
 
 `./plugin-host-bridge` 是第三方 renderer-neutral dock/status contribution 的 owner adapter。只有其 Fiber 存活时才会宣告这些 capability；替换后的 bridge 会从 host snapshot 恢复仍由公开 API 持有的 contribution。所有 registration、subscription、timer 与 screen child 都绑定 Fiber，并在 unload 时移除。
 
 ## 其他子路径
 
-`./banner` 挂载欢迎横幅；`./banner-content` 导出横幅显示的 `BLUE_VERSION` 常量，与 `package.json` 保持同步。`./status-basic-model`、`./status-cwd`、`./status-title`、`./status-git` 与 `./status-context` 发布 footer model。`./pane-activity`、`./pane-todo`、`./pane-btw` 与 `./pane-agents` 发布 dock model。`./dock-model`、`./tool-model` 与 `./transcript-model` 提供组合所需的 renderer-neutral registry。
+`./banner` 挂载欢迎横幅；`./banner-content` 导出横幅显示的 `BLUE_VERSION` 常量，与 `package.json` 保持同步。`./status-basic-model`、`./status-cwd`、`./status-title`、`./status-git` 与 `./status-context` 发布 canonical footer node。`./pane-activity`、`./pane-todo`、`./pane-btw` 与 `./pane-agents` 发布 canonical bottom-pane node。`./tool-model` 与 `./transcript-model` 提供组合所需的 renderer-neutral registry；bottom-pane service 有意不作为 subpath 导出。
 
 所有渲染行都遵守 core 的 visible-width 契约，包括窄窗口与 CJK viewport。
 

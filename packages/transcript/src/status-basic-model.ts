@@ -8,14 +8,14 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@dsh-blue/blue-app'
-import type { StatusModel } from '@dsh-blue/blue-frontend'
+import type { BlueStatusEntry } from './status-model.ts'
 import type { ConversationFacts } from '@dsh-blue/blue-conversation'
 import type { SessionFactsService } from './session-facts.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-status-basic-model'
 /** Services required before the baseline model can register. */
-export const inject = ['blueStatusModels', 'blueSessionFacts']
+export const inject = ['blueStatusEntries', 'blueSessionFacts']
 
 /** Register the baseline model row. */
 export function apply(ctx: Context): void {
@@ -30,11 +30,11 @@ export function apply(ctx: Context): void {
       ?? (session === null ? '' : 'no model')
   }
   derive()
-  const model = (): StatusModel => ({ kind: 'status', id: 'blue.status.basic', priority: 0, view: { kind: 'text', text, tone: 'default' }, visible: text !== '' })
-  const refresh = (): void => { derive(); ctx.blueStatusModels.refresh('blue.status.basic') }
+  const model = (): BlueStatusEntry => ({ id: 'blue.status.basic', priority: 0, node: { kind: 'text', content: text, tone: 'default' }, visible: text !== '' })
+  const refresh = (): void => { derive(); ctx.blueStatusEntries.refresh('blue.status.basic') }
   const offFacts = factsService.subscribe(next => { facts = next; refresh() })
   const offSession = factsService.subscribeSession(next => { session = next; refresh() })
   ctx.effect(() => () => offFacts())
   ctx.effect(() => () => offSession())
-  ctx.effect(() => ctx.blueStatusModels.register(model))
+  ctx.effect(() => ctx.blueStatusEntries.register(model))
 }

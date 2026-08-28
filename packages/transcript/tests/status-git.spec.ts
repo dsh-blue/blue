@@ -292,7 +292,7 @@ describe('blue-status-git', () => {
     git.setGitCommandRunner(runner)
     git.setGitClock(() => T0)
     const harness = await bootStatusPlugin(git)
-    expect(harness.entry.render(10)).toBe('feature\x1b[0m...\x1b[0m')
+    expect(harness.entry.render(10)).toBe('feature/a-')
     await harness.dispose()
   })
 

@@ -72,7 +72,7 @@ Consume Blue through the public capability host and renderer-neutral contracts â
 
 The raw `blueScreen`, `blueTheme`, `blueComponents`, `blueKeymap`, transcript registries, and root loader are owner-only implementation services. Existing feature IDs cannot be replaced by registering the same ID.
 
-Every `open()`, `register()`, and `publish()` call returns a `BlueResult` and must be checked. `BLUE_CAPABILITY_ABSENT` means the owner bridge for that surface is not active, including after a previously opened API loses its bridge. Preserve a plain/read-only fallback when possible or report that the Blue profile must be upgraded/restarted; never reach into `blueDockModels`, `blueStatusModels`, `blueCommandModels`, `blueEditorHost`, or another owner service as a fallback.
+Every `open()`, `register()`, and `publish()` call returns a `BlueResult` and must be checked. `BLUE_CAPABILITY_ABSENT` means the owner bridge for that surface is not active, including after a previously opened API loses its bridge. Preserve a plain/read-only fallback when possible or report that the Blue profile must be upgraded/restarted; never reach into private status/bottom-pane registries, command/editor hosts, or another owner service as a fallback.
 
 At dev time, types come from the published contracts: `@dsh-blue/blue-api` is the stable renderer-independent surface (program against it first); `blue-core`'s contract exports cover the L1 services. Runtime code never needs a pi-tui import â€” see the width rule below.
 

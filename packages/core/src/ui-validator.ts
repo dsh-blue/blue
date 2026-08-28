@@ -65,10 +65,36 @@ function limit(message: string): never {
   throw new ValidationFault('BLUE_LIMIT_EXCEEDED', message)
 }
 
+function intrinsicPrototypeShape(prototype: object): string {
+  return JSON.stringify(Reflect.ownKeys(prototype).map(key => {
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, key)!
+    return [
+      typeof key === 'symbol' ? `@@${String(key)}` : key,
+      descriptor.configurable,
+      descriptor.enumerable,
+      'value' in descriptor
+        ? ['data', descriptor.writable, typeof descriptor.value]
+        : ['accessor', typeof descriptor.get, typeof descriptor.set],
+    ]
+  }))
+}
+
+function hasRealmConstructor(prototype: object, name: 'Object' | 'Array'): boolean {
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, 'constructor')
+  if (descriptor === undefined || !('value' in descriptor) || typeof descriptor.value !== 'function') return false
+  const constructor = descriptor.value
+  return constructor.name === name
+    && constructor.prototype === prototype
+    && Function.prototype.toString.call(constructor) === `function ${name}() { [native code] }`
+    && intrinsicPrototypeShape(prototype) === intrinsicPrototypeShape(name === 'Object' ? Object.prototype : Array.prototype)
+}
+
 function record(value: unknown, path: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) invalid(`${path} must be an object`)
   const prototype = Object.getPrototypeOf(value)
-  if (prototype !== Object.prototype && prototype !== null) invalid(`${path} must be a plain object`)
+  if (prototype !== null && !hasRealmConstructor(prototype, 'Object')) {
+    invalid(`${path} must be a plain object`)
+  }
   return value as Record<string, unknown>
 }
 
@@ -126,7 +152,10 @@ function enumeration<Value extends string | number>(value: unknown, values: read
 
 function collection(value: unknown, path: string): readonly unknown[] {
   if (!Array.isArray(value)) invalid(`${path} must be an array`)
-  if (Object.getPrototypeOf(value) !== Array.prototype) invalid(`${path} must be a plain array`)
+  const prototype = Object.getPrototypeOf(value)
+  if (prototype === null || !hasRealmConstructor(prototype, 'Array')) {
+    invalid(`${path} must be a plain array`)
+  }
   const length = Object.getOwnPropertyDescriptor(value, 'length')!.value as number
   if (length > BLUE_UI_MAX_COLLECTION) limit(`${path} exceeds ${String(BLUE_UI_MAX_COLLECTION)} entries`)
   const copy: unknown[] = []

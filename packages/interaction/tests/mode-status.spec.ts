@@ -11,8 +11,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import * as modeStatus from '../src/mode-status.ts'
-import type { StatusModel } from '@dsh-blue/blue-frontend'
-import { BlueStatusModelService } from '../../transcript/src/status-model.ts'
+import { BlueStatusEntryService, type BlueStatusEntry } from '../../transcript/src/status-model.ts'
 import { fakeBlueContext, type FakeScreen } from './fakes.ts'
 
 const contexts = new WeakMap<Agent, Context>()
@@ -33,14 +32,14 @@ async function mount(options: MountOptions = {}): Promise<{
   ctx: Context
   screen: FakeScreen
   agent: Agent
-  models: BlueStatusModelService
+  models: BlueStatusEntryService
   registered: () => boolean
   setPlan: (agent: Agent, state: PlanState | undefined) => void
   fiber: { dispose(): Promise<void> }
 }> {
   const { ctx, screen } = fakeBlueContext()
   await ctx.plugin(SessionStore)
-  const models = new BlueStatusModelService(ctx, screen)
+  const models = new BlueStatusEntryService(ctx, screen)
   const planStates = new Map<Agent, PlanState>()
   if (options.plan !== false) {
     ctx.provide('planMode', {
@@ -87,14 +86,14 @@ async function mount(options: MountOptions = {}): Promise<{
 }
 
 /** Observe the renderer-neutral mode contribution directly. */
-function modeModel(models: BlueStatusModelService): StatusModel | undefined {
+function modeModel(models: BlueStatusEntryService): BlueStatusEntry | undefined {
   return models.list().find(model => model.id === 'blue.status.mode')
 }
 
-function modeText(models: BlueStatusModelService): string {
+function modeText(models: BlueStatusEntryService): string {
   const model = modeModel(models)
-  if (model?.visible !== true || model.view.kind !== 'text') return ''
-  return model.view.text
+  if (model?.visible !== true || model.node.kind !== 'text') return ''
+  return model.node.content
 }
 
 /** A minimal agent shell over a fresh session. */
@@ -180,7 +179,7 @@ describe('blue-status-mode', () => {
 
   it('truncates the badge text to the given width', async () => {
     const { models } = await mount({ plan: { active: true } })
-    expect(modeModel(models)?.view).toEqual({ kind: 'text', text: 'plan', tone: 'accent' })
+    expect(modeModel(models)?.node).toEqual({ kind: 'text', content: 'plan', tone: 'accent' })
   })
 
   it('renders nothing while no session is attached', async () => {

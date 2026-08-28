@@ -59,8 +59,8 @@ flowchart TB
 | `blue-core` | 唯一 pi-tui/raw-terminal adapter，提供 screen/keymap/components/terminal facts |
 | `blue-theme-dark` | 默认 dark theme provider |
 | `blue-banner` | 启动欢迎横幅 |
-| `blue-transcript` | transcript/status/dock/tool model host 与 TUI renderer |
-| `blue-status-basic` | model 名 footer `StatusModel` producer |
+| `blue-transcript` | transcript model、canonical status/bottom-pane host、tool model 与 TUI renderer |
+| `blue-status-basic` | model 名 footer canonical status-node producer |
 | `blue-conversation` | official append-origin conversation + shared facts projections |
 | `blue-transcript-official` | whole projection snapshot/feed 的 semantic transcript consumer |
 

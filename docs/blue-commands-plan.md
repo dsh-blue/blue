@@ -1,6 +1,6 @@
 # Blue 内置命令实施清单：四家参照系合并、能力支撑矩阵与 S23-S29 分期
 
-> Cutover note (2026-08-26): 本文记录命令落地时的方案。旧 `blueSession`/`blueStatus`/`fold.ts` 接线已由 app reader/projection/action、`StatusModel` 与 `blueConversation` 取代。
+> Cutover note (2026-08-28): 本文记录命令落地时的方案。旧 `blueSession`/`blueStatus`/`fold.ts` 接线已由 app reader/projection/action、canonical status nodes 与 `blueConversation` 取代。
 
 > 姊妹文档：[blue-p1-design.md](./history/blue-p1-design.md)（§4.3 命令对照前身，本文档是其全量升级）、[blue-roadmap.md](./blue-roadmap.md)（P2"模式命令随上游能力缝落地逐个接入"条目）、[blue-seams.md](./blue-seams.md)（缝清单）、[blue-decisions.md](./blue-decisions.md)（ADR；本文档为规划文档，实施期的决策记入 ADR）
 > 参照系：kimi-code（MoonshotAI，本地源码 `apps/kimi-code/src/tui/commands/registry.ts` 逐条核实，40 内置）、pi（Earendil Works，官方文档 pi.dev/docs/latest/usage，23）、Claude Code（官方文档 code.claude.com/docs/en/commands，~80 内置 + [Skill]/[Workflow] 标记）、Codex（OpenAI，官方 developer-commands 文档，~30 会话内）

@@ -3,7 +3,7 @@
  * The official conversation plugin publishes a renderer-neutral transcript
  * model from the Harness projection; this plugin owns component
  * reconciliation, Ctrl-O expansion, settings, dock chrome, and the
- * StatusModel footer. It does not fold a Harness event log. Unloading removes
+ * canonical status footer. It does not fold a Harness event log. Unloading removes
  * mounted components and keymap actions.
  *
  * @module @dsh-blue/blue-transcript
@@ -18,8 +18,8 @@ import type {} from '@dsh-blue/blue-app'
 // Carries the optional host `settings` service Context merge.
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { UserMessageImages } from './components.ts'
-import { BlueStatusModelService, StatusModelFooterComponent } from './status-model.ts'
-import { BlueDockModelService } from './dock-model.ts'
+import { BlueStatusEntryService, StatusFooterComponent } from './status-model.ts'
+import { BlueBottomPaneService } from './dock-model.ts'
 import { BlueModelToolService } from './tool-model.ts'
 import { TranscriptModelService } from './transcript-model.ts'
 import { SessionFactsService } from './session-facts.ts'
@@ -49,9 +49,7 @@ export { SearchGroupComponent, SEARCH_GROUP_ROW_LIMIT, SEARCH_GROUP_EXPANDED_ROW
 export { READ_PREVIEW_LINE_LIMIT, SEARCH_PREVIEW_MATCH_LIMIT, SEARCH_PATH_LIMIT } from './official-model.ts'
 export { parseXmlEnvelope, summarizeToolText, type EnvelopePair } from './envelope.ts'
 export { ellipsize, parseToolArguments, summarizeToolCall, TOOL_ARG_PAIR_LIMIT, TOOL_ARG_VALUE_MAX_CHARS } from './present.ts'
-export { BlueStatusModelService, StatusModelFooterComponent, plainView } from './status-model.ts'
 export { SessionFactsService } from './session-facts.ts'
-export { BlueDockModelService, ModelDockComponent } from './dock-model.ts'
 export { createToolPresentationModel, toolCallView, toolResultView, toolResultChip, BlueModelToolService, ToolModelComponent, ToolModelService } from './tool-model.ts'
 export type { ToolPresentationFacts } from './tool-model.ts'
 export { appendTranscriptView, createTranscriptModel, TRANSCRIPT_MODEL_WINDOW, TranscriptModelService, TranscriptModelComponent } from './transcript-model.ts'
@@ -133,8 +131,12 @@ export function apply(ctx: Context): void {
 
   const sessionFacts = new SessionFactsService(ctx)
   ctx.effect(() => () => sessionFacts.dispose())
-  const statusModels = new BlueStatusModelService(ctx, screen)
-  const dockModels = new BlueDockModelService(ctx)
+  const statusEntries = new BlueStatusEntryService(ctx, screen)
+  const bottomPanes = new BlueBottomPaneService(ctx, {
+    components: ctx.blueComponents,
+    colors,
+    viewport: () => ({ columns: screen.columns, rows: screen.rows }),
+  })
   const toolModels = new BlueModelToolService(ctx, undefined, colors)
   const transcriptModels = new TranscriptModelService(ctx, undefined, {
     renderer: {
@@ -145,12 +147,17 @@ export function apply(ctx: Context): void {
       presentation,
     },
   })
-  ctx.effect(() => () => statusModels.dispose())
-  ctx.effect(() => () => dockModels.dispose())
+  ctx.effect(() => () => statusEntries.dispose())
+  ctx.effect(() => () => bottomPanes.dispose())
   ctx.effect(() => () => toolModels.dispose())
   ctx.effect(() => () => transcriptModels.dispose())
-  const footer = new StatusModelFooterComponent(statusModels, ctx.blueComponents, colors)
-  dockModels.attach(screen)
+  const footer = new StatusFooterComponent(
+    statusEntries,
+    ctx.blueComponents,
+    colors,
+    () => ({ columns: screen.columns, rows: screen.rows }),
+  )
+  bottomPanes.attach(screen)
   toolModels.attach(screen)
   transcriptModels.attach(screen)
   // The footer pins to the dock's lowest slot (S12): the two-row status

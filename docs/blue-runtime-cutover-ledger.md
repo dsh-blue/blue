@@ -27,7 +27,7 @@ PR #34 and #38 are out of scope; PR #36 is superseded. Work continues only in `/
 | native image paste | clipboard capability | attachment save/editor action | editor/notification models | source-complete; human pending |
 | update/changelog | npm/profile capability | cancellable update actions | panel/notification models | source-complete; human pending |
 | trace | official session query | scoped query/copy action | list/detail panels | source-complete; human pending |
-| btw | app side-session action | opaque projection session + owned handle | `DockModel` renderer | source-complete; human pending |
+| btw | app side-session action | opaque projection session + owned handle | canonical bottom-pane node + accepted renderer adapter | source-complete; human pending |
 | retract (#58) | request cancellation/durable replacement | app retract lifecycle | semantic transcript removal/notice | source-complete; human pending |
 | update cooldown (#59) | install eligibility/cache | startup notification action | `NotificationModel` | source-complete; human pending |
 | creative mode (#60) | capability-scoped plugin host | effect-bound registries | view/command/status/dock/notification bridges | source-complete; human pending |
@@ -40,17 +40,17 @@ PR #34 and #38 are out of scope; PR #36 is superseded. Work continues only in `/
 | Superseded surface | Replacement | Status |
 |---|---|---|
 | transcript `fold.ts` and direct session-event subscription | official `blueConversation` replay/live projection and semantic consumer | complete |
-| direct `BlueStatusEntry` compatibility | all status producers publish `StatusModel` | complete |
+| generic frontend status compatibility | all status producers publish canonical status nodes | complete |
 | legacy tool intent presenters | canonical tool presentation -> `ToolPresentationModel` | complete |
 | command-specific dialog implementations | generic renderer-neutral panel models, structured actions and shared `FrontendPanel` | complete; model/effort, trace/detail and update renderer classes deleted |
-| activity/todo/agents/queue/btw pane-owned folds | `blueConversationFacts`/app actions -> `DockModel` | complete |
+| activity/todo/agents/queue/btw pane-owned folds | `blueConversationFacts`/app actions -> canonical bottom-pane nodes | complete |
 | shared editor module singleton | frontend-tree `EditorHostService` and `InteractionStateService` | complete |
 | implicit bundle ordering | explicit inject dependencies and composition assertions | complete |
 | package-internal imports | public exports and narrow adapter/app contracts | complete |
 
 The deletion audit distinguishes renderer event folding from legitimate domain ownership. App helpers may inspect a private Agent/session log to perform rewind, retraction, title cadence, mode restoration or audit export; trace formatting may consume official query records. None of those values enter a frontend model as Agent, Session or raw renderer state.
 
-`blue-conversation` now owns both `blueConversation` and `blueConversationFacts`. Transcript rendering, status producers and activity/todo/agents panes consume projection values through app-owned reader/projection seams. BTW uses an owned opaque side-session handle; queue uses app actions. `BlueStatusEntry`, `blueIntents`, intent subpaths, child-event tracking, the shared editor singleton, `ModelPanel`/`EffortPanel`, `TracePanel`/`TraceDetailPanel`, `UpdatePanel`, and their retired thinking-segment renderer are physically absent.
+`blue-conversation` now owns both `blueConversation` and `blueConversationFacts`. Transcript rendering, status producers and activity/todo/agents panes consume projection values through app-owned reader/projection seams. BTW uses an owned opaque side-session handle; queue uses app actions. The generic frontend status/dock contracts, `blueIntents`, intent subpaths, child-event tracking, the shared editor singleton, `ModelPanel`/`EffortPanel`, `TracePanel`/`TraceDetailPanel`, `UpdatePanel`, and their retired thinking-segment renderer are physically absent.
 
 ## Package And Composition Record
 

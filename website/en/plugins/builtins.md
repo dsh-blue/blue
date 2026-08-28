@@ -59,8 +59,8 @@ These eight rows plus assembly form the minimum usable UI. The conversation prod
 | `blue-core` | only pi-tui/raw-terminal adapter; screen, keymap, components, and terminal facts |
 | `blue-theme-dark` | default dark theme provider |
 | `blue-banner` | startup welcome banner |
-| `blue-transcript` | transcript/status/dock/tool model hosts and TUI renderer |
-| `blue-status-basic` | model-name footer `StatusModel` producer |
+| `blue-transcript` | transcript model, canonical status/bottom-pane hosts, tool model, and TUI renderer |
+| `blue-status-basic` | model-name footer canonical status-node producer |
 | `blue-conversation` | official append-origin conversation and shared-facts projections |
 | `blue-transcript-official` | semantic consumer of whole projection snapshots/change feeds |
 

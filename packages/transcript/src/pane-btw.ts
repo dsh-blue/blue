@@ -40,7 +40,7 @@ import {
   type BlueMarkdown,
   type BlueSemanticColors,
 } from '@dsh-blue/blue-core'
-import type { DockModel } from '@dsh-blue/blue-frontend'
+import type { BlueBottomPaneNode } from './dock-model.ts'
 import { topRule } from '@dsh-blue/blue-core/chrome'
 // The named import also carries the `commands` Context merge.
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
@@ -51,7 +51,7 @@ import type { BlueSideSession } from '@dsh-blue/blue-app'
 export const name = 'blue-pane-btw'
 
 /** Services required before the pane and command can register. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'commands', 'blueSessionActions', 'blueDockModels']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'commands', 'blueSessionActions', 'blueBottomPanes']
 
 /** The pane never renders shorter than this panel height (kimi value). */
 const BTW_MIN_PANEL_LINES = 3
@@ -293,7 +293,7 @@ export function apply(ctx: Context): void {
   let unloaded = false
   const projections = ctx.get('sessionProjections') as ProjectionSource | undefined
   const refreshDock = (): void => {
-    ctx.blueDockModels.refresh('blue.dock.btw')
+    ctx.blueBottomPanes.refresh('blue.dock.btw')
   }
 
   /** Unsubscribe and dispose the live side agent, if any. */
@@ -330,7 +330,7 @@ export function apply(ctx: Context): void {
     state.scrollTop = 0
     state.maxScrollTop = 0
     ctx.emit('blue/editor-connected-above', true, true)
-    ctx.blueDockModels.refresh('blue.dock.btw', true)
+    ctx.blueBottomPanes.refresh('blue.dock.btw', true)
     // Single slot: a fresh question replaces the previous side agent.
     await clearSlot()
     let handle: BlueSideSession | undefined
@@ -399,7 +399,7 @@ export function apply(ctx: Context): void {
       },
     }
     handle.followup(question)
-    ctx.blueDockModels.refresh('blue.dock.btw', true)
+    ctx.blueBottomPanes.refresh('blue.dock.btw', true)
     return { kind: 'success', text: 'asked the side question' }
   }
 
@@ -412,11 +412,11 @@ export function apply(ctx: Context): void {
   }))
 
   const pane = new BtwPaneComponent(colors, components, state, () => screen.rows)
-  const model = (): DockModel => ({
-    kind: 'dock', id: 'blue.dock.btw', placement: 'bottom', priority: 100,
-    view: { kind: 'text', text: state.open ? 'BTW' : '' }, collapsed: !state.open,
+  const model = (): BlueBottomPaneNode => ({
+    id: 'blue.dock.btw', priority: 100,
+    node: { kind: 'text', content: state.open ? 'BTW' : '', tone: 'accent' }, collapsed: !state.open,
   })
-  ctx.effect(() => ctx.blueDockModels.register(model, (_model, width) => pane.render(width)))
+  ctx.effect(() => ctx.blueBottomPanes.register(model, (_node, width) => pane.render(width)))
   // The editor key chain routes close/scroll/submit here while the pane is
   // open.
   ctx.on('blue/btw-command', (command, text, amount) => {

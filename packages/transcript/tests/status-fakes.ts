@@ -17,7 +17,8 @@ import type {
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { foldConversationFacts, initialConversationFacts, type ConversationFacts } from '../../conversation/src/facts.ts'
 import { projectChildSessionFacts, type ChildSessionFacts } from '../src/session-facts.ts'
-import { BlueStatusModelService, plainView } from '../src/status-model.ts'
+import { compileBlueStatusNode } from '../../core/src/ui-compiler.ts'
+import { BlueStatusEntryService } from '../src/status-model.ts'
 import { fakeBlueComponents } from './helpers.ts'
 
 /** Identity colors so rendered assertions see structure, not escape codes. */
@@ -290,7 +291,7 @@ export interface StatusPluginHarness {
   ctx: Context
   screen: StatusFakeScreen
   entry: StatusEntryView
-  models: BlueStatusModelService
+  models: BlueStatusEntryService
   dispose(): Promise<void>
 }
 
@@ -315,7 +316,7 @@ export async function bootStatusPlugin(
   const ctx = new Context()
   const screen = new StatusFakeScreen()
   const colors = { ...COLORS, ...options.colors }
-  const statusModels = new BlueStatusModelService(ctx, screen)
+  const statusModels = new BlueStatusEntryService(ctx, screen)
   const components = fakeBlueComponents()
   const facts = new FakeFactsService(ctx, current, options.titleProjection ?? true)
   const serviceNames: Record<string, unknown> = {
@@ -340,16 +341,15 @@ export async function bootStatusPlugin(
     render: width => {
       const model = currentModel()
       if (model === undefined || width <= 0) return ''
-      const text = plainView(model.view)
-      if (model.overflow === 'hide' && components.visibleWidth(text) > width) return ''
-      const clipped = components.truncateToWidth(text, width)
-      if (model.view.kind !== 'text') return clipped
-      const paint = model.view.tone === 'muted' ? colors.muted
-        : model.view.tone === 'accent' ? colors.accent
-          : model.view.tone === 'success' ? colors.success
-            : model.view.tone === 'warning' ? colors.warning
-              : model.view.tone === 'danger' ? colors.error : colors.text
-      return paint(clipped)
+      const result = compileBlueStatusNode(model.node, {
+        components,
+        colors,
+        getViewport: () => ({ columns: width, rows: 1 }),
+        screenMode: 'main',
+      })
+      const rendered = result.ok ? result.value.component.renderStatus(width) : result.errorComponent.renderStatus(width)
+      if (model.overflow === 'hide' && rendered.overflowed) return ''
+      return rendered.rows[0] ?? ''
     },
   }
   return {

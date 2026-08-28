@@ -17,8 +17,8 @@ Renderer model    pi-tui component / React element / DOM / ANSI rows
 - `TextView`、`RichTextView`、`FieldsView`、`SectionsView`、`ListView`、`CodeView`、`DiffView`；
 - `CommandModel`：名称、描述、参数 schema、可用状态、执行 action；
 - `PanelModel`：select、form、info、loading、error、submit/cancel action；
-- `StatusModel`：纯文本/字段、优先级、band、可见条件；
-- `DockModel`：placement、优先级、建议行数、折叠状态和 view；
+- `BlueStatusNode`：公共 canonical 非交互 status tree；固定 footer 的 priority、band、row 与 overflow metadata 由 transcript 私有 entry 持有；
+- `BlueUiNode` / `BluePaneContribution`：公共 canonical pane tree 与 placement contract；Blue 内置 pane 仅有 package-private bottom composition；
 - `NotificationModel`：severity、plain message、duration、dedupe key；
 - `ProviderModel`：provider id、capabilities、可迁移的 renderer-neutral state。
 
@@ -29,4 +29,3 @@ TUI renderer 负责布局、输入、焦点、宽度、主题和 fallback。模�
 provider host 持续存活；替换流程为 `capture -> abort -> dispose -> activate -> restore`。provider 不得拒绝卸载；状态迁移 best-effort；激活失败回退 plain provider，只影响该 surface，不影响 Agent loop。
 
 Editor、theme、transcript 和主 panel provider 使用同一生命周期规则，但各自拥有窄 contract，不合并成万能 provider。
-

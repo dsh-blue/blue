@@ -77,7 +77,7 @@ session/event
   -> blueConversation + blueConversationFacts
   -> app blueSessionProjections values/seq boundary
   -> official transcript / SessionFactsService
-  -> TranscriptModel + StatusModel + DockModel
+  -> TranscriptModel + canonical BlueStatusNode / BlueUiNode producers
   -> transcript TUI components
 ```
 
@@ -102,7 +102,7 @@ manifest
   -> bluePluginHost.open()
   -> capability-scoped status/dock/command/notification contribution
   -> owner bridge
-  -> standard model registry / Harness command registry / notice consumer
+  -> canonical compiler or bounded core mount / Harness command registry / notice consumer
 ```
 
 第三方 contribution 与内置 consumer 使用同一 renderer-neutral view vocabulary，但不能访问 Loader、root renderer、Agent 或 Session。
@@ -126,8 +126,8 @@ Provider swap 必须遵循 `capture -> abort -> dispose -> activate -> restore`�
 `blue-transcript` 拥有：
 
 - semantic `TranscriptModelService` 与最多 200 项的 renderer reconciliation；
-- `BlueStatusModelService` 两行 footer；
-- `BlueDockModelService` 的 left/right/bottom lane；
+- package-private `BlueStatusEntryService` 两行 footer；
+- package-private、bottom-only `BlueBottomPaneService`；public dock 由 core bridge 独立挂载；
 - canonical tool presentation conversion；
 - frontend-tree-scoped `TranscriptPresentationPolicy`。
 
@@ -138,7 +138,7 @@ Provider swap 必须遵循 `capture -> abort -> dispose -> activate -> restore`�
 - command/question/approval workflows；
 - abort、unload 和 late-result rejection。
 
-旧 `fold.ts`、`BlueStatusEntry`、`blueIntents`、intent subpath、child event tracker 和 shared-editor singleton 已删除。
+旧 `fold.ts`、generic frontend status/dock model、`blueIntents`、intent subpath、child event tracker 和 shared-editor singleton 已删除。
 
 ## 6. 包职责
 

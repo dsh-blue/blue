@@ -31,7 +31,7 @@ The entry exports a stable `name`, `inject`, and `apply(ctx)`. It requests the p
 Plugin code returns renderer-neutral `BlueView` data and structured actions:
 
 - never import `pi-tui`, assemble ANSI rows, or calculate terminal width;
-- never reach into owner-only services such as `blueScreen`, `blueComponents`, or `blueDockModels`;
+- never reach into owner-only services such as `blueScreen`, `blueComponents`, or private status/bottom-pane registries;
 - never retain Agent/Session objects or put product state in a module singleton;
 - let Blue's core adapter own width, theme, layout, and fallback behavior.
 

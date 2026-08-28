@@ -20,8 +20,8 @@ Blue 的 seam 不是单一类型，而是五类显式边界：
 
 | Capability | 公共对象 | 当前 consumer bridge | 行为 |
 |---|---|---|---|
-| `status` | `BlueStatusContribution` | `blue-plugin-view-bridge` -> `BlueStatusModelService` | 贡献 footer model；重复 id、越权 namespace 和非法 payload 被拒绝 |
-| `dock` | `BlueDockContribution` | `blue-plugin-view-bridge` -> `BlueDockModelService` | 贡献有界 dock model；支持 priority、preferred/min rows 和 collapsed |
+| `status` | `BlueStatusEntryContribution` | `blue-plugin-view-bridge` -> `BlueStatusEntryService` | 贡献 canonical `BlueStatusNode`；重复 id、越权 namespace 和非法 payload 被拒绝 |
+| `dock` | `BlueDockContribution` | `blue-plugin-view-bridge` -> core bounded dock mount | 贡献有界 `BlueView`；支持 priority、preferred/min rows 和 collapsed |
 | `commands` | `BlueCommandContribution` | `blue-plugin-interaction-bridge` -> Harness commands | 注册结构化异步命令；卸载时撤销，late result 不回写 |
 | `notifications` | `BlueNotification` | `blue-plugin-interaction-bridge` -> editor notice | 发布 renderer-neutral 通知，不暴露编辑器对象 |
 
@@ -39,7 +39,7 @@ Blue 的 seam 不是单一类型，而是五类显式边界：
 | app | `blueSessionActions` | followup/steer/interrupt、session details、mode/model/preset/tool/skill、side session 等结构化 action | interaction commands 和 BTW pane |
 | app | `blueRetractions` / `blueRequests` | request/session epoch guard 与 retract lifecycle | input、conversation/transcript lifecycle |
 | conversation | `blueConversation`、`blueConversationFacts` + `blueConversationProjection` readiness | official `SessionProjectionRegistry` owns replay/live/checkpoint/watermark | official transcript model、status 和 dock facts |
-| transcript | `blueTranscriptModels`、`blueStatusModels`、`blueDockModels`、tool model service | readonly frontend models + effect-bound registration | semantic TUI components、footer、dock |
+| transcript | `blueTranscriptModels`、`blueStatusEntries`、`blueBottomPanes`、tool model service | transcript model + canonical node + effect-bound registration | semantic TUI components、footer、Blue-owned bottom panes |
 | interaction | `blueEditorHost`、`blueInteractionState` | frontend-tree-scoped editor slot/enhancements/transformers and mutable product state | input and interaction child Fibers |
 | frontend | theme/notification/provider hosts | renderer-neutral model registries and generation-scoped provider swap | renderer adapters |
 | bundle | `cordis.patch.yml` | 28 Blue-owned rows with explicit `inject` ordering where lifecycle order matters | dsh profile composition |

@@ -6,7 +6,7 @@ Implementation detail for this package. Repo-wide conventions live in the root [
 
 This package is the renderer adapter over `@dsh-blue/blue-frontend` models. It may depend on `blue-core`, but it must not expose pi-tui objects through frontend models and must not fold Harness event streams. App-owned `blueSessionReader`, `blueSessionProjections`, and `blueSessionActions` are the only current-session boundaries.
 
-`src/index.ts` creates `SessionFactsService`, `BlueStatusModelService`, `BlueDockModelService`, `BlueModelToolService`, and `TranscriptModelService` once per parent transcript Fiber. Each service and screen contribution has an effect-bound disposer. Theme reloads rebuild renderer objects; no mutable presentation state is stored in a module singleton.
+`src/index.ts` creates `SessionFactsService`, the package-private `BlueStatusEntryService` and `BlueBottomPaneService`, `BlueModelToolService`, and `TranscriptModelService` once per parent transcript Fiber. Each service and screen contribution has an effect-bound disposer. Theme reloads rebuild renderer objects; no mutable presentation state is stored in a module singleton.
 
 ## Official Conversation Consumer
 
@@ -26,9 +26,9 @@ Reads and searches group at this projection-consumer layer (one family per run �
 
 User, assistant, thinking, tool, error, and interruption models reuse the package components. The interruption tombstone is the text-presentation `■ interrupted` row in the theme error color, without an emoji marker. Image bytes remain renderer-owned and late-bound through the attachment store. Every assembled row must fit the width passed to `render(width)`; use `blueComponents` width helpers or `@dsh-blue/blue-core/chrome`, never local codepoint counting. Add every content renderer to `tests/width-scan.spec.ts`.
 
-## Status Models
+## Canonical Status Footer
 
-`BlueStatusModelService` owns the two-band footer registry. Models order by priority then id and are rendered through `StatusModelFooterComponent`; the footer attaches itself as the registry's invalidation target, so register/refresh/dispose clears its row cache before requesting a frame. Refresh is explicit and registrations are idempotently disposable. The shipped producers are:
+`BlueStatusEntryService` is the transcript-owned, package-private two-band footer registry. Producers publish canonical `BlueStatusNode` values plus fixed-footer layout metadata; `StatusFooterComponent` compiles them through core's status compiler. Entries order by priority then id. The footer is the registry's invalidation target, so register/refresh/dispose clears its row cache before requesting a frame. Source and compiler failures render a canonical danger node while preserving the entry's priority, band, row, and overflow policy. Refresh is explicit and registrations are idempotently disposable. The shipped producers are:
 
 - `status-basic-model`: current model from app/facts.
 - `status-cwd`: abbreviated current cwd.
@@ -36,17 +36,25 @@ User, assistant, thinking, tool, error, and interruption models reuse the packag
 - `status-title`: projected current title.
 - `status-context`: context occupancy from conversation facts.
 
-`plugin-host-bridge.ts` maps public API status views into this registry and owns the corresponding disposers. It does not restore the deleted `BlueStatusEntry` service.
+`plugin-host-bridge.ts` forwards public API status nodes into this registry and owns the corresponding disposers. The internal registry is not a public plugin surface.
 Its Fiber advertises the public `status` and `dock` capabilities before taking
 the aggregate snapshot. Unload withdraws that readiness and owner mounts while
 leaving consumer contributions in the API host; a replacement bridge restores
 them from the snapshot.
 
-## Dock Models
+## Canonical Bottom Panes
 
 Activity, todo, and agents consume `blueSessionFacts`. Activity derives its phase from projection facts and owns only its presentation timer. Todo renders the projected whole list and keeps only its local expanded/collapsed view state. Agents renders projected spawn-class facts plus bounded direct-child overlays; no child Session or event subscription enters the renderer.
 
-Bottom `DockModel` entries mount individually through core's shared dock allocator instead of rendering as one unbudgeted group. Their existing renderer-neutral `priority` controls both scarce-row allocation (larger first) and visual proximity to the fixed editor; public plugin dock contributions use the same seam. Left/right placement lanes retain stable group roots.
+`BlueBottomPaneService` is package-private and accepts only Blue-owned bottom panes; it has no placement field or left/right lane. Each canonical `BlueUiNode` mounts independently through core's shared dock allocator, and `priority` controls both scarce-row allocation (larger first) and visual proximity to the fixed editor. Source/compiler/adapter failures fall back to a canonical danger node without changing priority or bottom placement. Public plugin dock contributions do not enter this registry: `plugin-host-bridge.ts` mounts the public API surface directly through core's bounded bridge.
+
+Five accepted renderer adapters preserve behavior that the frozen W1 vocabulary cannot yet express. Every adapter is clamped through core's width truth and retains the registry's preferred-row cap:
+
+- activity: animated per-character theme gradient; delete when canonical rich text can express a time-varying semantic gradient.
+- todo: completed-row strikethrough and exact divider/title chrome; delete when canonical spans expose strike and the compiler reproduces that chrome.
+- agents: the detailed live-agent card; delete when a canonical agent-card node covers its status/detail layout.
+- BTW: markdown, connected-border splice, scrolling, and high-water behavior; delete when canonical surfaces expose those four behaviors together.
+- queue (owned by interaction): one-line semantic color split with exact truncation; delete when canonical inline layout reproduces its label/content paint and truncation.
 
 BTW calls `blueSessionActions.createSideSession()`, holds the returned owned handle for one pane lifetime, reads its official `blueConversation` projection through the opaque identity, and disposes the handle on close/unload. A new question replaces the visible turn before async creation begins; the fork snapshot `asOfSeq` (and a fresh snapshot for each continuation) separates inherited assistant history from replies created after that question. Its interactive dock model uses priority 100 so it receives scarce rows before passive agents/todo/queue panes. Its renderer has no trailing spacer: the gutter-wrapped pane side borders meet the connected editor's `├┤` row directly. Parent seeding and Agent status filtering remain in app.
 
@@ -54,8 +62,8 @@ BTW calls `blueSessionActions.createSideSession()`, holds the returned owned han
 
 `BlueModelToolService` converts official generic/terminal/diff/search/read/web presentation facts into readonly frontend views and never reads session events. Its temporary frontend-view adapter renders the complete validated leaf through core's canonical compiler; `ToolModelComponent` retains the existing 12-row collapsed and 200-row expanded budgets so hidden-line counts stay exact. Remove that compatibility path when tool models publish `BlueUiNode` directly. The semantic transcript renderer keeps `ToolCallComponent` as the status/header/key-argument/shell chrome and nests the official view as its bounded body; tools without a presenter retain the generic rich fallback instead of receiving a synthetic name-only view. There is no `blueIntents` registry and no intent subpath export.
 
-`plugin-host-bridge.ts` is the only route from public plugin dock/status models into owner registries. It unwraps the guarded host only for owner-only readiness and snapshot helpers; those helpers reject the guarded public service. The W2-C snapshot status cast is temporary until W3-C routes final status nodes through the core status compiler. Reordering replaces the individually budgeted public dock mounts atomically; unload runs every screen/status disposer.
+`plugin-host-bridge.ts` is the only route from public plugin dock/status contributions into renderer owners. It unwraps the guarded host only for owner-only readiness and snapshot helpers; those helpers reject the guarded public service. Status render results, including ordinary records and arrays from a dynamic VM realm, enter through core's sole status validator/compiler; dock contributions remain on the public API/core bridge. Reordering replaces the individually budgeted public dock mounts atomically; unload runs every screen/status disposer.
 
 ## Package Surface
 
-Subpath exports, `files`, and `tsdown.config.ts` entries move together. The deleted legacy status, intent, fold, child-event, phase, and read-group modules must not be reintroduced as compatibility shortcuts. New behavior enters as projection/action + frontend model + renderer adapter + bundle row/fixture evidence.
+Subpath exports, `files`, and `tsdown.config.ts` entries move together. `./dock-model` was removed because `BlueBottomPaneService` is an internal composition seam; its Cordis declaration merge travels through the package root for the shipped interaction queue only. The deleted generic `StatusModel`/`DockModel` contracts and legacy status, intent, fold, child-event, and phase modules must not be reintroduced as compatibility shortcuts. New behavior enters as projection/action + canonical node + renderer adapter + bundle row/fixture evidence.

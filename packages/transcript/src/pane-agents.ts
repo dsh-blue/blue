@@ -24,7 +24,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { ConversationFacts } from '@dsh-blue/blue-conversation'
-import type { DockModel } from '@dsh-blue/blue-frontend'
+import type { BlueBottomPaneNode } from './dock-model.ts'
 import type { SessionFactsService } from './session-facts.ts'
 import { AgentGroupComponent, type AgentLiveLookup } from './agent-group.ts'
 import { trackChildAgentModels } from './child-agent-model.ts'
@@ -35,7 +35,7 @@ import type { TranscriptToolItem } from './types.ts'
 export const name = 'blue-pane-agents'
 
 /** Services required before the pane can mount. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionFacts', 'blueDockModels']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionFacts', 'blueBottomPanes']
 
 /** One pane-local member shaped for the existing group-card renderer. */
 interface PaneMember {
@@ -104,7 +104,7 @@ export function apply(ctx: Context): void {
       return { item }
     })
     rebuild()
-    ctx.blueDockModels.refresh('blue.dock.agents')
+    ctx.blueBottomPanes.refresh('blue.dock.agents')
   }
   tracker = trackChildAgentModels(facts, () => {
     card?.invalidate()
@@ -120,18 +120,21 @@ export function apply(ctx: Context): void {
     lastTurn = -1
     members = []
     rebuild()
-    ctx.blueDockModels.refresh('blue.dock.agents')
+    ctx.blueBottomPanes.refresh('blue.dock.agents')
   })
   ctx.effect(() => () => offSession())
 
-  const renderPane = (width: number): string[] => card === undefined ? [] : card.render(width)
+  // A non-empty model and its card are rebuilt synchronously before the
+  // registry invokes this adapter.
+  const renderPane = (width: number): string[] => card!.render(width)
 
-  const model = (): DockModel => ({
-    kind: 'dock', id: 'blue.dock.agents', placement: 'bottom', priority: 50,
-    view: { kind: 'text', text: members.length === 0 ? '' : 'Agents' },
+  const model = (): BlueBottomPaneNode => ({
+    id: 'blue.dock.agents', priority: 50,
+    node: { kind: 'text', content: members.length === 0 ? '' : `Agents (${String(members.length)})`, tone: 'accent' },
+    collapsed: members.length === 0,
   })
   ctx.effect(() => {
-    const dispose = ctx.blueDockModels.register(model, (_model, width) => renderPane(width))
+    const dispose = ctx.blueBottomPanes.register(model, (_node, width) => renderPane(width))
     return () => {
       card?.dispose()
       tracker?.dispose()
