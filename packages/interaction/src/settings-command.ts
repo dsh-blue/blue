@@ -10,7 +10,7 @@
  * reasoning effort, the DeepSeek adapter's thinking switch, web search,
  * the permission preset and the agent preset for NEW sessions; a trailing
  * level-one row opens the prepared settings document in the external
- * editor (level one's `NoticeTail` wrapper renders that action's outcomes
+ * editor (the level-one notice controller renders that action's outcomes
  * while no level-two panel is mounted).
  *
  * Rows are preset cycles: Enter/Space steps the value (a current value
@@ -54,15 +54,17 @@ import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-settings'
 import { SettingsConflictError, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsDescriptor, SettingsProvider } from '@deepseek-ai/dsh-settings'
-import type { BlueFocusable, BlueSettingItem, BlueSettingsList, BlueTheme } from '@dsh-blue/blue-core'
-import { framePanel } from '@dsh-blue/blue-core/chrome'
+import type { BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
+import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
+import { CanonicalPanelAdapter, type CanonicalNodeSource } from './canonical-panel.ts'
 import { displayServices } from './display-services.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
 import { resolveExternalEditorCommand, runExternalEditor } from './external-editor.ts'
 import { currentBlueSettings } from './settings.ts'
-import { FormPanel } from './form-panel.ts'
+import { CanonicalFormController } from './form-panel.ts'
+import { ACTION_CANCEL, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_SUBMIT, ACTION_TOGGLE } from './keys.ts'
 import type { PermissionPresetsService } from './permission-panel.ts'
-import { SelectListPanel } from './select-list.ts'
+import { CanonicalSelectController } from './select-list.ts'
 
 /** The level-one action row opening the settings document in an editor. */
 const OPEN_FILE_ID = 'open-file'
@@ -290,7 +292,7 @@ function settingItem(
   raw: unknown,
   cycle: readonly (boolean | number | string)[] = row.values,
   applies?: SettingsDescriptor['applies'],
-): BlueSettingItem {
+): SettingsItem {
   const current = displayValue(row, raw, cycle)
   const presets = [...(row.unsetValue === undefined ? [] : [row.unsetValue]), ...cycle.map(String)]
   return {
@@ -307,7 +309,16 @@ interface SettingGroup {
   /** The namespace, also the level-one row's label. */
   readonly ns: string
   /** The level-two items, in row order. */
-  readonly items: readonly BlueSettingItem[]
+  readonly items: readonly SettingsItem[]
+}
+
+/** Canonical settings row with its preset cycle. */
+export interface SettingsItem {
+  readonly id: string
+  readonly label: string
+  readonly description: string
+  readonly currentValue: string
+  readonly values: readonly string[]
 }
 
 /** The built groups plus their id → display-string and raw-value maps. */
@@ -343,13 +354,13 @@ function buildGroups(settings: SettingsProvider, dynamics: RowDynamics): BuiltGr
   const groups: SettingGroup[] = []
   const values = new Map<string, string>()
   const raws = new Map<string, string>()
-  const push = (ns: string, item: BlueSettingItem): void => {
+  const push = (ns: string, item: SettingsItem): void => {
     let group = groups.find(entry => entry.ns === ns)
     if (group === undefined) {
-      group = { ns, items: [] as BlueSettingItem[] }
+      group = { ns, items: [] as SettingsItem[] }
       groups.push(group)
     }
-    ;(group.items as BlueSettingItem[]).push(item)
+    ;(group.items as SettingsItem[]).push(item)
     values.set(item.id, item.currentValue)
   }
   for (const row of ROWS) {
@@ -385,40 +396,17 @@ export interface SettingsPanelNotice {
   current?: { readonly text: string; readonly error: boolean } | undefined
 }
 
-/**
- * Render the shared feedback row: the outcome text painted and truncated,
- * or a blank height-holder while no outcome is pending.
- * @param notice - the shared feedback-row state.
- * @param colors - the live palette.
- * @param truncate - ANSI-safe width truncation.
- * @param width - the render width in columns.
- * @returns exactly one row.
- */
-function noticeRow(
-  notice: SettingsPanelNotice,
-  colors: BlueTheme['colors'],
-  truncate: (text: string, width: number) => string,
-  width: number,
-): string {
-  const current = notice.current
-  if (current === undefined) return ''
-  return truncate((current.error ? colors.error : colors.textMuted)(`  ${current.text}`), width)
-}
-
-/** Constructor options for {@link SettingsPanel}. */
+/** Constructor options for {@link CanonicalSettingsController}. */
 export interface SettingsPanelOptions {
-  /** Theme supplying the frame's rule/title/hint colors. */
   readonly theme: BlueTheme
-  /** The settings list this panel frames. */
-  readonly list: BlueSettingsList
-  /** The frame title (`settings › <namespace>` on level two). */
+  readonly components: BlueComponents
+  readonly keymap: BlueKeymap
+  readonly items: readonly SettingsItem[]
   readonly title: string
-  /** The muted key-hint footer cells. */
   readonly footer: readonly string[]
-  /** The shared feedback-row state (write outcomes; the editor's hint line is unmounted while a panel is open). */
   readonly notice: SettingsPanelNotice
-  /** ANSI-safe width truncation for the feedback row (the components service's truncateToWidth). */
-  readonly truncate: (text: string, width: number) => string
+  readonly onChange: (id: string, value: string) => void
+  readonly onCancel: () => void
 }
 
 /**
@@ -432,99 +420,148 @@ export interface SettingsPanelOptions {
  * wrap count varies per row, and an unpadded frame would grow and shrink
  * on every cursor move.
  */
-export class SettingsPanel implements BlueFocusable {
-  /** Whether the panel currently holds focus. Managed by the screen. */
-  focused = false
+export class CanonicalSettingsController implements BlueFocusable, CanonicalNodeSource {
+  /** Controlled value replacements applied after commits or refreshes. */
+  readonly updates: Array<readonly [string, string]> = []
+  private readonly adapter: CanonicalPanelAdapter
+  private readonly values = new Map<string, string>()
+  private cursor = 0
 
-  /** The tallest body rendered so far; the panel never shrinks below it. */
-  private maxBodyRows = 0
-
-  /**
-   * @param options - see {@link SettingsPanelOptions}.
-   */
-  constructor(private readonly options: SettingsPanelOptions) {}
-
-  /**
-   * Delegate one input sequence to the settings list.
-   * @param data - the input sequence as read from the terminal.
-   */
-  handleInput(data: string): void {
-    this.options.list.handleInput?.(data)
-  }
-
-  /** No cached render state of its own; the list keeps its own. */
-  invalidate(): void {
-    this.options.list.invalidate()
-  }
-
-  /**
-   * Render the framed dialog: the list's body rows, then the feedback row
-   * (always exactly one — blank when no outcome is pending), ratchet-padded
-   * to the running max height, between full-width rules with the title and
-   * the muted key-hint footer. `framePanel` owns the width discipline for
-   * the chrome and the degenerate-width cut; the list budgets its own rows
-   * at every normal width.
-   * @param width - current viewport width in columns.
-   * @returns one string per rendered row.
-   */
-  render(width: number): string[] {
-    const colors = this.options.theme.colors
-    const body = [
-      ...this.options.list.render(width),
-      noticeRow(this.options.notice, colors, this.options.truncate, width),
-    ]
-    this.maxBodyRows = Math.max(this.maxBodyRows, body.length)
-    while (body.length < this.maxBodyRows) body.push('')
-    return framePanel(body, width, {
-      title: this.options.title,
-      titlePaint: colors.primary,
-      footer: [...this.options.footer],
-      footerPaint: colors.textMuted,
-      rulePaint: colors.primary,
+  constructor(readonly options: SettingsPanelOptions) {
+    for (const item of options.items) this.values.set(item.id, item.currentValue)
+    this.adapter = new CanonicalPanelAdapter({
+      components: options.components,
+      theme: options.theme,
+      node: () => this.currentNode(),
+      onEvent: event => this.onEvent(event),
+      onUnhandledEscape: options.onCancel,
     })
+  }
+
+  get focused(): boolean { return this.adapter.focused }
+  set focused(value: boolean) { this.adapter.focused = value }
+
+  handleInput(data: string): void {
+    if (this.options.keymap.matches(data, ACTION_MOVE_UP)) { this.move(-1); return }
+    if (this.options.keymap.matches(data, ACTION_MOVE_DOWN)) { this.move(1); return }
+    if (this.options.keymap.matches(data, ACTION_CANCEL)) { this.options.onCancel(); return }
+    if (this.options.keymap.matches(data, ACTION_SUBMIT) || this.options.keymap.matches(data, ACTION_TOGGLE)) this.activate()
+  }
+
+  /** Replace one row's controlled display value. */
+  updateValue(id: string, value: string): void {
+    if (!this.values.has(id)) return
+    this.values.set(id, value)
+    this.updates.push([id, value])
+    this.adapter.invalidate()
+  }
+
+  /** Readonly item/value snapshot for interaction state consumers and tests. */
+  snapshotItems(): readonly SettingsItem[] {
+    return this.options.items.map(item => ({ ...item, currentValue: this.values.get(item.id)! }))
+  }
+
+  /** Apply a structured value choice without bypassing the UI-event mapper. */
+  changeValue(id: string, value: string): void {
+    if (!this.values.has(id)) return
+    this.onEvent({ kind: 'selection-change', controlId: 'settings-list', value: `${id}\u0000${value}` })
+  }
+
+  invalidate(): void { this.adapter.invalidate() }
+  render(width: number): string[] { return this.adapter.render(width) }
+
+  currentNode(): BlueUiNode {
+    const current = this.options.notice.current
+    return {
+      kind: 'surface', chrome: 'overlay', title: this.options.title,
+      child: {
+        kind: 'list', id: 'settings-list', selectedIds: this.options.items[this.cursor] === undefined ? [] : [this.options.items[this.cursor]!.id],
+        items: this.options.items.map(item => ({
+          id: item.id,
+          label: `${item.label}: ${this.values.get(item.id)!}`,
+          detail: item.description,
+        })),
+      },
+      footer: {
+        kind: 'stack', direction: 'column', children: [
+          { node: { kind: 'text', content: this.options.footer.join(' · '), tone: 'muted' } },
+          ...(current === undefined ? [] : [{ node: { kind: 'text', content: current.text, tone: current.error ? 'danger' : 'muted' } as const }]),
+        ],
+      },
+    }
+  }
+
+  private move(delta: 1 | -1): void {
+    if (this.options.items.length === 0) return
+    this.cursor = (this.cursor + this.options.items.length + delta) % this.options.items.length
+    this.adapter.invalidate()
+  }
+
+  private activate(): void {
+    const item = this.options.items[this.cursor]
+    if (item === undefined) return
+    const current = this.values.get(item.id)!
+    const index = Math.max(0, item.values.indexOf(current))
+    const value = item.values.length === 0 ? current : item.values[(index + 1) % item.values.length]!
+    this.onEvent({ kind: 'selection-change', controlId: 'settings-list', value: `${item.id}\u0000${value}` })
+  }
+
+  private onEvent(event: BlueUiEvent): void {
+    if (event.kind !== 'selection-change' || event.controlId !== 'settings-list' || typeof event.value !== 'string') return
+    const separator = event.value.indexOf('\u0000')
+    if (separator < 0) return
+    const id = event.value.slice(0, separator)
+    const value = event.value.slice(separator + 1)
+    this.values.set(id, value)
+    this.adapter.invalidate()
+    this.options.onChange(id, value)
   }
 }
 
-/** Constructor options for {@link NoticeTail}. */
+/** Constructor options for {@link SettingsNoticeController}. */
 export interface NoticeTailOptions {
-  /** The wrapped level-one list panel. */
-  readonly inner: BlueFocusable
-  /** Theme supplying the feedback row's colors (the live getter). */
+  readonly inner: CanonicalNodeSource
+  readonly components: BlueComponents
   readonly theme: BlueTheme
-  /** The feedback-row state shared with the level-two panel. */
   readonly notice: SettingsPanelNotice
-  /** ANSI-safe width truncation for the feedback row. */
-  readonly truncate: (text: string, width: number) => string
 }
 
 /**
- * The level-one `/settings` surface: the namespace SelectListPanel with the
+ * The level-one `/settings` surface: the namespace selector with the
  * shared feedback row tailed under its frame. Level two owns the write
  * feedback, but the open-file action lives on level one — its outcomes (no
  * editor configured, an unreadable document) land while no level-two panel
  * is mounted, so level one renders the same notice state (always exactly
  * one row: the blank holds the frame geometry).
  */
-export class NoticeTail implements BlueFocusable {
-  /** Whether the panel currently holds focus. Managed by the screen. */
-  focused = false
+export class SettingsNoticeController implements BlueFocusable {
+  private readonly adapter: CanonicalPanelAdapter
 
-  /**
-   * @param options - see {@link NoticeTailOptions}.
-   */
-  constructor(private readonly options: NoticeTailOptions) {}
+  constructor(private readonly options: NoticeTailOptions) {
+    this.adapter = new CanonicalPanelAdapter({
+      components: options.components,
+      theme: options.theme,
+      node: () => this.currentNode(),
+      onEvent: () => {},
+    })
+  }
+
+  get focused(): boolean { return this.adapter.focused }
+  set focused(value: boolean) { this.adapter.focused = value; this.options.inner.focused = value }
 
   /**
    * Delegate one input sequence to the wrapped list panel.
    * @param data - the input sequence as read from the terminal.
    */
   handleInput(data: string): void {
-    this.options.inner.handleInput?.(data)
+    this.options.inner.handleInput(data)
+    this.adapter.invalidate()
   }
 
   /** No cached render state of its own; the inner panel keeps its own. */
   invalidate(): void {
     this.options.inner.invalidate()
+    this.adapter.invalidate()
   }
 
   /**
@@ -532,11 +569,17 @@ export class NoticeTail implements BlueFocusable {
    * @param width - current viewport width in columns.
    * @returns one string per rendered row.
    */
-  render(width: number): string[] {
-    return [
-      ...this.options.inner.render(width),
-      noticeRow(this.options.notice, this.options.theme.colors, this.options.truncate, width),
-    ]
+  render(width: number): string[] { return this.adapter.render(width) }
+
+  currentNode(): BlueUiNode {
+    const current = this.options.notice.current
+    return {
+      kind: 'stack', direction: 'column',
+      children: [
+        { node: this.options.inner.currentNode() },
+        ...(current === undefined ? [] : [{ node: { kind: 'text', content: current.text, tone: current.error ? 'danger' : 'muted' } as const }]),
+      ],
+    }
   }
 }
 
@@ -571,13 +614,12 @@ export function registerSettingsCommand(ctx: Context): () => void {
       let restoreForm: (() => void) | undefined
       /** The level-one panel and its notice-tail wrapper; `mountGroups`
        *  assigns both before any reader. */
-      let groupsPanel: SelectListPanel
-      let groupsTail: NoticeTail
+      let groupsPanel: CanonicalSelectController
+      let groupsTail: SettingsNoticeController
       /** The level-two list and panel; assigned while a namespace is open. */
-      let list: BlueSettingsList | undefined
-      let listPanel: SettingsPanel | undefined
+      let listPanel: CanonicalSettingsController | undefined
       /** The open free-form form, if any. */
-      let formPanel: FormPanel | undefined
+      let formPanel: CanonicalFormController | undefined
       /** The namespace open on level two, if any. */
       let openNs: string | undefined
       /** The id → display-string map of what the mounted lists show. */
@@ -595,6 +637,8 @@ export function registerSettingsCommand(ctx: Context): () => void {
        */
       const notice = (text: string, error = false): void => {
         panelNotice.current = { text, error }
+        groupsTail?.invalidate()
+        listPanel?.invalidate()
         display.screen.requestRender()
       }
 
@@ -628,22 +672,20 @@ export function registerSettingsCommand(ctx: Context): () => void {
            only pass namespaces the current build carries */
         if (group === undefined) return
         openNs = ns
-        list = display.components.createSettingsList({
-          items: [...group.items],
+        listPanel = new CanonicalSettingsController({
+          theme: liveTheme,
+          components: display.components,
+          keymap: display.keymap,
+          title: `settings › ${ns}`,
+          footer: ['↑↓ select', '↵ change', 'esc back'],
+          items: group.items,
+          notice: panelNotice,
           onChange: (id, newValue) => {
             void activate(id, newValue)
           },
           onCancel: () => {
             backToGroups()
           },
-        })
-        listPanel = new SettingsPanel({
-          theme: liveTheme,
-          title: `settings › ${ns}`,
-          footer: ['↑↓ select', '↵ change', 'esc back'],
-          list,
-          notice: panelNotice,
-          truncate: (text, width) => display.components.truncateToWidth(text, width),
         })
         restoreList = mountEditorReplacement(ctx, listPanel)
       }
@@ -654,7 +696,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
        *   re-seats the cursor on the namespace the user had open).
        */
       const mountGroups = (seed?: string): void => {
-        groupsPanel = new SelectListPanel({
+        groupsPanel = new CanonicalSelectController({
           keymap: display.keymap,
           theme: liveTheme,
           components: display.components,
@@ -688,11 +730,11 @@ export function registerSettingsCommand(ctx: Context): () => void {
             close()
           },
         })
-        groupsTail = new NoticeTail({
+        groupsTail = new SettingsNoticeController({
           inner: groupsPanel,
+          components: display.components,
           theme: liveTheme,
           notice: panelNotice,
-          truncate: (text, width) => display.components.truncateToWidth(text, width),
         })
         restoreGroups = mountEditorReplacement(ctx, groupsTail)
       }
@@ -709,7 +751,6 @@ export function registerSettingsCommand(ctx: Context): () => void {
         popForm()
         restoreList?.()
         restoreList = undefined
-        list = undefined
         listPanel = undefined
         openNs = undefined
       }
@@ -785,7 +826,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
               const known = lastKnown.get(row.id)
               /* v8 ignore next -- lastKnown covers every mounted row; the
                  guard only fires when a mid-write rebuild already dropped it */
-              if (known !== undefined) list?.updateValue(row.id, known)
+              if (known !== undefined) listPanel?.updateValue(row.id, known)
               const message = error instanceof Error ? error.message : String(error)
               notice(`could not update ${row.label.toLowerCase()}: ${message}`, true)
             }
@@ -796,7 +837,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
           // against this lastKnown update.
           lastKnown.set(row.id, display)
           built.raws.set(row.id, unset ? '' : String(value))
-          if (pushToList) list?.updateValue(row.id, display)
+          if (pushToList) listPanel?.updateValue(row.id, display)
           notice(`${row.label.toLowerCase()} set to ${display}`)
           return
         }
@@ -820,7 +861,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
 
       /** Open the single-field form for an editable row, stacked above level two. */
       const openForm = (row: SettingRow): void => {
-        const form = new FormPanel({
+        const form = new CanonicalFormController({
           keymap: display.keymap,
           theme: liveTheme,
           components: display.components,
@@ -835,7 +876,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
           }],
           onSubmit: (values) => {
             popForm()
-            /* v8 ignore next -- FormPanel.submit reports every field id */
+            /* v8 ignore next -- canonical form submit reports every field id */
             const text = (values['value'] ?? '').trim()
             /* v8 ignore next -- every editable row declares an emptyDisplay */
             void commitRow(row, text === '', text, text === '' ? row.emptyDisplay ?? 'default' : text, true)
@@ -918,13 +959,13 @@ export function registerSettingsCommand(ctx: Context): () => void {
           return
         }
         let changed = false
-        if (list !== undefined && openNs !== undefined) {
+        if (listPanel !== undefined && openNs !== undefined) {
           const group = next.groups.find(entry => entry.ns === openNs)
           /* v8 ignore next -- the row-set compare above rebuilds (and returns)
              when the open namespace left the build, so its group is present */
           for (const item of group?.items ?? []) {
             if (lastKnown.get(item.id) !== item.currentValue) {
-              list.updateValue(item.id, item.currentValue)
+              listPanel.updateValue(item.id, item.currentValue)
               changed = true
             }
           }

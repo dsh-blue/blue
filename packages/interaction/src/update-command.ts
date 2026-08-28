@@ -18,14 +18,13 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { BLUE_VERSION } from '@dsh-blue/blue-api'
+import { BLUE_VERSION, type BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
-import type { PanelModel, View } from '@dsh-blue/blue-frontend'
 import { join } from 'node:path'
 import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
-import { FormPanel } from './form-panel.ts'
-import { FrontendPanel } from './frontend-panel.ts'
+import { CanonicalFormController } from './form-panel.ts'
+import { CanonicalDocumentController, type FrontendPanelDocument } from './frontend-panel.ts'
 import type { UpdateSettings } from './updater/check.ts'
 import { writeUpdateCheckState } from './updater/check.ts'
 import { updaterInternals } from './updater/io.ts'
@@ -73,7 +72,7 @@ export function updatePanelModel(
   state: UpdateProgressState,
   fromVersion: string,
   toVersion: string,
-): PanelModel {
+): FrontendPanelDocument {
   const settled = state.outcome !== undefined || state.blockedMessage !== undefined
   const stepItems = STEP_ROWS.flatMap(row => {
     const value = state.steps.get(row.step)
@@ -81,33 +80,28 @@ export function updatePanelModel(
     const mark = value === 'ok' ? '✓' : value === 'fail' ? '✗' : value === 'start' ? '…' : '·'
     return [{ id: row.step, label: `${mark} ${row.label}`, disabled: true }]
   })
-  const sections: Array<{ title: string, body: View }> = [{
-    title: `v${fromVersion} → v${toVersion}`,
-    body: { kind: 'list', items: stepItems },
-  }]
+  const nodes: BlueUiNode[] = [
+    { kind: 'divider', label: `v${fromVersion} → v${toVersion}` },
+    { kind: 'list', id: 'update-steps', selectedIds: [], items: stepItems },
+  ]
   if (state.outcome !== undefined) {
-    sections.push({
-      title: state.outcome.kind === 'success' ? 'Complete' : 'Failed',
-      body: { kind: 'sections', sections: [
-        { title: 'Message', body: { kind: 'text', text: state.outcome.message } },
-        { title: 'Log', body: { kind: 'text', text: `log: ${state.outcome.logPath}`, tone: 'muted' } },
-      ] },
-    })
+    nodes.push(
+      { kind: 'divider', label: state.outcome.kind === 'success' ? 'Complete' : 'Failed' },
+      { kind: 'text', content: state.outcome.message },
+      { kind: 'text', content: `log: ${state.outcome.logPath}`, tone: 'muted' },
+    )
   }
   if (state.blockedMessage !== undefined) {
-    sections.push({
-      title: 'Blocked',
-      body: { kind: 'sections', sections: [
-        { title: 'Reason', body: { kind: 'text', text: state.blockedMessage, tone: 'danger' } },
-        { title: 'Status', body: { kind: 'text', text: 'nothing was changed', tone: 'muted' } },
-      ] },
-    })
+    nodes.push(
+      { kind: 'divider', label: 'Blocked' },
+      { kind: 'text', content: state.blockedMessage, tone: 'danger' },
+      { kind: 'text', content: 'nothing was changed', tone: 'muted' },
+    )
   }
   return {
-    kind: 'panel',
     mode: !settled ? 'loading' : state.outcome?.kind === 'success' ? 'info' : 'error',
     title: 'Update Blue',
-    view: { kind: 'sections', sections },
+    view: { kind: 'stack', direction: 'column', children: nodes.map(node => ({ node })) },
     dismissible: settled,
   }
 }
@@ -145,7 +139,7 @@ function confirmUpdate(ctx: Context, display: Display, fromVersion: string, toVe
       restore()
       resolve(value)
     }
-    const panel = new FormPanel({
+    const panel = new CanonicalFormController({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,
@@ -191,7 +185,7 @@ async function runSwapPanel(
   const bootMarker = ctx.get('agentDefaultModel')?.currentSelection().model
   const state = createUpdateProgressState()
   let restore: () => void
-  const panel = new FrontendPanel({
+  const panel = new CanonicalDocumentController({
     ...display,
     model: () => updatePanelModel(state, input.fromVersion, input.toVersion),
     onAction: () => undefined,
@@ -211,6 +205,7 @@ async function runSwapPanel(
       ...(bootMarker !== undefined ? { bootMarker } : {}),
       onProgress: progress => {
         applyUpdateProgress(state, progress)
+        panel.invalidate()
         display.screen.requestRender()
       },
     })
@@ -224,6 +219,7 @@ async function runSwapPanel(
     }
   }
   state.outcome = outcome
+  panel.invalidate()
   display.screen.requestRender()
   return outcome
 }
@@ -448,7 +444,7 @@ function mountBlockedPanel(
   const state = createUpdateProgressState()
   state.blockedMessage = message
   let restore: () => void
-  const panel = new FrontendPanel({
+  const panel = new CanonicalDocumentController({
     ...display,
     model: () => updatePanelModel(state, fromVersion, target),
     onAction: () => undefined,

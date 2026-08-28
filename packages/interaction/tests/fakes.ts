@@ -178,7 +178,7 @@ function fakeColors(): BlueSemanticColors {
     error: text => `!${text}!`,
     warning: text => `?${text}?`,
     // S12 marks the full-width selected row so tests can assert the token
-    // reached the cursor (S10 left the token unused; BlueSelect is its
+    // reached the cursor (S10 left the token unused; the multi-select is its
     // first real consumer).
     selectedBg: text => `{${text}}`,
     roleUser: text => `@${text}@`,

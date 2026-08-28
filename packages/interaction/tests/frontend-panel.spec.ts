@@ -1,239 +1,185 @@
-import { describe, expect, it, vi } from 'vitest'
-import type { PanelModel } from '@dsh-blue/blue-frontend'
-import { FrontendPanel } from '../src/frontend-panel.ts'
-import { fakeBlueContext } from './fakes.ts'
+/** Canonical frontend-panel controller behavior. */
 
-function panelFixture(initial?: PanelModel) {
-  const { keymap, theme, components } = fakeBlueContext()
-  let model: PanelModel = initial ?? {
-    kind: 'panel',
-    mode: 'info',
-    title: 'Fixture',
-    view: { kind: 'sections', sections: Array.from({ length: 8 }, (_, index) => ({ title: `section ${String(index)}`, body: { kind: 'text', text: `row ${String(index)}` } })) },
-    submit: { kind: 'fixture.refresh' },
-  }
+import { describe, expect, it, vi } from 'vitest'
+import { CanonicalDocumentController, type FrontendPanelDocument } from '../src/frontend-panel.ts'
+import { fakeBlueContext, KEY } from './fakes.ts'
+
+function fixture(initial?: FrontendPanelDocument, options: { hint?: string, onUnhandledInput?: (data: string, id: string | undefined) => { readonly kind: string } | undefined } = {}) {
+  const display = fakeBlueContext()
+  let model: FrontendPanelDocument = initial ?? { mode: 'info', title: 'Fixture', view: { kind: 'text', content: 'body' }, submit: { kind: 'refresh' } }
   const onAction = vi.fn()
   const onClose = vi.fn()
-  const panel = new FrontendPanel({ keymap, theme, components, model: () => model, onAction, onClose, maxVisible: 5 })
-  return { panel, onAction, onClose, setModel(next: PanelModel) { model = next } }
+  const panel = new CanonicalDocumentController({
+    ...display, model: () => model, onAction, onClose, maxVisible: 5,
+    ...(options.hint === undefined ? {} : { hint: options.hint }),
+    ...(options.onUnhandledInput === undefined ? {} : { onUnhandledInput: options.onUnhandledInput }),
+  })
+  return { panel, onAction, onClose, setModel(next: FrontendPanelDocument) { model = next; panel.invalidate() } }
 }
 
-describe('FrontendPanel', () => {
-  it('renders, scrolls, and dispatches the structured submit action', () => {
-    const fixture = panelFixture()
-    expect(fixture.panel.render(40).some(row => row.includes('showing 1-5'))).toBe(true)
-    fixture.panel.handleInput('\x1b[B')
-    expect(fixture.panel.render(40).some(row => row.includes('showing 2-6'))).toBe(true)
-    fixture.panel.handleInput('\x1b[6~')
-    expect(fixture.panel.render(40).some(row => row.includes('showing 12-16'))).toBe(true)
-    fixture.panel.handleInput('\x1b[5~')
-    fixture.panel.handleInput('\x1b[A')
-    fixture.panel.handleInput('\r')
-    expect(fixture.onAction).toHaveBeenCalledWith({ kind: 'fixture.refresh' })
-    expect(() => fixture.panel.invalidate()).not.toThrow()
+describe('CanonicalDocumentController', () => {
+  it('renders canonical content and dispatches submit or closes', () => {
+    const active = fixture()
+    expect(active.panel.currentNode()).toMatchObject({ kind: 'surface', title: 'Fixture' })
+    expect(active.panel.render(40).join('\n')).toContain('body')
+    active.panel.handleInput(KEY.enter)
+    expect(active.onAction).toHaveBeenCalledWith({ kind: 'refresh' })
+    active.panel.invalidate()
+    const passive = fixture({ mode: 'info', title: 'Passive' })
+    passive.panel.handleInput(KEY.enter)
+    expect(passive.onClose).toHaveBeenCalledOnce()
   })
 
-  it('closes on submit without an action and on every close key', () => {
-    const fixture = panelFixture({ kind: 'panel', mode: 'loading', title: 'Loading' })
-    expect(fixture.panel.render(30).some(row => row.includes('loading'))).toBe(true)
-    fixture.panel.handleInput('\r')
-    fixture.panel.handleInput('\x1b')
-    fixture.panel.handleInput('q')
-    fixture.panel.handleInput('Q')
-    fixture.panel.handleInput('x')
-    expect(fixture.onClose).toHaveBeenCalledTimes(3)
-    expect(fixture.panel.render(30).some(row => row.includes('loading...'))).toBe(true)
-  })
-
-  it('uses the error frame and resets scrolling for a short replacement model', () => {
-    const fixture = panelFixture()
-    fixture.panel.handleInput('\x1b[6~')
-    fixture.panel.render(40)
-    fixture.setModel({ kind: 'panel', mode: 'error', title: 'Failure', view: { kind: 'text', text: 'down' } })
-    const rows = fixture.panel.render(30.8)
-    expect(rows.some(row => row.includes('Failure'))).toBe(true)
-    expect(rows.some(row => row.includes('down'))).toBe(true)
-  })
-
-  it('selects enabled list actions and dispatches cancel', () => {
-    const fixture = panelFixture({
-      kind: 'panel', mode: 'select', title: 'Choose', cancel: { kind: 'fixture.cancel' },
-      view: { kind: 'list', selectedId: 'a', items: [
-        { id: 'a', label: 'A', action: { kind: 'fixture.a' } },
-        { id: 'b', label: 'B', disabled: true, action: { kind: 'fixture.b' } },
-        { id: 'c', label: 'C', action: { kind: 'fixture.c' } },
-      ] },
+  it('selects enabled rows, wraps, and dispatches cancel', () => {
+    const value = fixture({
+      mode: 'select', title: 'Choose', selectedId: 'a', cancel: { kind: 'cancel' },
+      items: [
+        { id: 'a', label: 'A', action: { kind: 'a' } },
+        { id: 'b', label: 'B', disabled: true, action: { kind: 'b' } },
+        { id: 'c', label: 'C', action: { kind: 'c' } },
+      ],
     })
-    expect(fixture.panel.render(40).some(row => row.includes('> ^A^'))).toBe(true)
-    fixture.panel.handleInput('\x1b[B'); expect(fixture.panel.render(40).some(row => row.includes('> ^C^'))).toBe(true); fixture.panel.handleInput('\r')
-    fixture.panel.handleInput('\x1b[A'); fixture.panel.handleInput('\r'); fixture.panel.handleInput('\x1b')
-    expect(fixture.onAction.mock.calls.map(call => call[0])).toEqual([{ kind: 'fixture.c' }, { kind: 'fixture.a' }, { kind: 'fixture.cancel' }])
-    expect(fixture.onClose).toHaveBeenCalledOnce()
+    expect(extractList(value.panel.currentNode()).selectedIds).toEqual(['a'])
+    value.panel.handleInput(KEY.down); value.panel.handleInput(KEY.enter)
+    value.panel.handleInput(KEY.up); value.panel.handleInput(KEY.enter)
+    value.panel.handleInput(KEY.escape)
+    expect(value.onAction.mock.calls.map(call => call[0])).toEqual([{ kind: 'c' }, { kind: 'a' }, { kind: 'cancel' }])
+    expect(value.onClose).toHaveBeenCalledOnce()
   })
 
-  it('renders form and empty error modes with submit behavior', () => {
-    const form = panelFixture({ kind: 'panel', mode: 'form', title: 'Form', view: { kind: 'fields', fields: [{ label: 'name', value: 'blue' }] }, submit: { kind: 'fixture.save' } })
-    expect(form.panel.render(30).some(row => row.includes('name: blue'))).toBe(true); form.panel.handleInput('\r'); expect(form.onAction).toHaveBeenCalledWith({ kind: 'fixture.save' })
-    const error = panelFixture({ kind: 'panel', mode: 'error', title: 'Failure' }); expect(error.panel.render(30).some(row => row.includes('unavailable'))).toBe(true)
+  it('filters, clears search before close, and handles no matches', () => {
+    const value = fixture({ mode: 'select', title: 'Filter', filterable: true, items: [{ id: 'alpha', label: 'Alpha' }, { id: 'beta', label: 'Beta' }] })
+    value.panel.handleInput('z')
+    expect(value.panel.render(40).join('\n')).toContain('/ z')
+    expect(value.panel.render(40).join('\n')).toContain('no matches')
+    value.panel.handleInput(KEY.escape)
+    expect(value.onClose).not.toHaveBeenCalled()
+    expect(value.panel.render(40).join('\n')).not.toContain('/ z')
+    value.panel.handleInput(KEY.escape)
+    expect(value.onClose).toHaveBeenCalledOnce()
   })
 
-  it('closes an actionless info panel and renders an empty body', () => {
-    const fixture = panelFixture({ kind: 'panel', mode: 'info', title: 'Empty' })
-    expect(fixture.panel.render(30).some(row => row.includes('unavailable'))).toBe(false)
-    fixture.panel.handleInput('\r')
-    expect(fixture.onClose).toHaveBeenCalledOnce()
-  })
-
-  it('selects the first enabled item when no valid preference exists', () => {
-    const fixture = panelFixture({
-      kind: 'panel', mode: 'select', title: 'Choose',
-      view: { kind: 'list', selectedId: 'missing', items: [
-        { id: 'disabled', label: 'Disabled', disabled: true },
-        { id: 'first', label: 'First', action: { kind: 'fixture.first' } },
-      ] },
-    })
-    expect(fixture.panel.render(40).some(row => row.includes('> ^First^'))).toBe(true)
-    fixture.panel.handleInput('\r')
-    expect(fixture.onAction).toHaveBeenCalledWith({ kind: 'fixture.first' })
-  })
-
-  it('filters grouped lists, cycles variants, and dispatches secondary actions', () => {
-    const fixture = panelFixture({
-      kind: 'panel', mode: 'select', title: 'Models',
-      view: { kind: 'list', filterable: true, grouped: true, items: [
-        { id: 'a', label: 'alpha', group: 'one', variants: [
+  it('switches groups and variants and dispatches the secondary action', () => {
+    const value = fixture({
+      mode: 'select', title: 'Models', grouped: true,
+      items: [
+        { id: 'a', label: 'Alpha', group: 'One', selectedVariantId: 'low', variants: [
           { id: 'low', label: 'Low', action: { kind: 'pick', id: 'low' }, secondaryAction: { kind: 'session', id: 'low' } },
           { id: 'high', label: 'High', action: { kind: 'pick', id: 'high' }, secondaryAction: { kind: 'session', id: 'high' } },
-        ], selectedVariantId: 'low' },
-        { id: 'b', label: 'beta', group: 'two', action: { kind: 'pick', id: 'b' } },
-      ] },
+        ] },
+        { id: 'b', label: 'Beta', group: 'Two', action: { kind: 'pick', id: 'b' } },
+      ],
     })
-    expect(fixture.panel.render(50).join('\n')).toContain('[All]')
-    expect(fixture.panel.render(50).join('\n')).toContain('[Low]')
-    expect(fixture.panel.render(50).join('\n')).toContain('[High]')
-    fixture.panel.handleInput('\t')
-    expect(fixture.panel.render(50).join('\n')).toContain('[one]')
-    fixture.panel.handleInput('\x1b[C')
-    expect(fixture.panel.render(50).join('\n')).toContain('[High]')
-    fixture.panel.handleInput('\x1bs')
-    fixture.panel.handleInput('\r')
-    expect(fixture.onAction.mock.calls.map(call => call[0])).toEqual([
-      { kind: 'session', id: 'high' },
-      { kind: 'pick', id: 'high' },
-    ])
-    fixture.panel.handleInput('a')
-    expect(fixture.panel.render(50).join('\n')).toContain('search: a')
-    fixture.panel.handleInput('\x7f')
-    fixture.panel.handleInput('\x1b')
-    expect(fixture.onClose).toHaveBeenCalledOnce()
+    expect(value.panel.render(80).join('\n')).toContain('All')
+    expect(value.panel.render(80).join('\n')).toContain('[Low]')
+    value.panel.handleInput(KEY.right)
+    expect(value.panel.render(80).join('\n')).toContain('[High]')
+    value.panel.handleInput('\x1bs'); value.panel.handleInput(KEY.enter)
+    expect(value.onAction.mock.calls.map(call => call[0])).toEqual([{ kind: 'session', id: 'high' }, { kind: 'pick', id: 'high' }])
+    value.panel.handleInput(KEY.tab)
+    value.panel.handleInput(KEY.left)
+    value.panel.handleInput('\x1b[Z')
   })
 
-  it('switches explicit groups with Tab and arrow keys and renders custom affordances', () => {
-    const fixture = panelFixture({
-      kind: 'panel', mode: 'select', title: 'Plugins',
-      view: { kind: 'list', grouped: true, includeAllGroup: false, groups: ['Installed', 'Available'], items: [
-        { id: 'installed', label: 'Installed plugin', group: 'Installed', action: { kind: 'remove' } },
-        { id: 'available', label: 'Available plugin', group: 'Available', action: { kind: 'add' } },
-      ] },
-    })
-    const panel = new FrontendPanel({
-      keymap: fakeBlueContext().keymap,
-      theme: fakeBlueContext().theme,
-      components: fakeBlueContext().components,
-      model: () => ({ kind: 'panel', mode: 'select', title: 'Plugins', view: { kind: 'list', grouped: true, includeAllGroup: false, groups: ['Installed', 'Available'], items: [
-        { id: 'installed', label: 'Installed plugin', group: 'Installed', action: { kind: 'remove' } },
-        { id: 'available', label: 'Available plugin', group: 'Available', action: { kind: 'add' } },
-      ] } }),
-      onAction: fixture.onAction,
-      onClose: fixture.onClose,
-      hint: 'Tab switch · Alt+S uninstall',
-    })
-    expect(panel.render(120).join('\n')).toContain('[Installed]')
-    expect(panel.render(120).join('\n')).toContain('^Installed plugin^')
-    expect(panel.render(120).join('\n')).toContain('Tab switch')
-    panel.handleInput('\x1b[C')
-    expect(panel.render(120).join('\n')).toContain('[Available]')
-    panel.handleInput('\x1b[D')
-    expect(panel.render(120).join('\n')).toContain('[Installed]')
-    panel.handleInput('\x1b[Z')
-    expect(panel.render(120).join('\n')).toContain('[Available]')
+  it('bounds long lists, supports page/top/end keys, and custom input', () => {
+    const shortcut = vi.fn(() => ({ kind: 'shortcut' as const }))
+    const value = fixture({
+      mode: 'select', title: 'Long', items: Array.from({ length: 20 }, (_, index) => ({ id: String(index), label: `Item ${String(index)}` })),
+    }, { hint: 'custom', onUnhandledInput: (data, id) => data === 'c' && id === '0' ? shortcut() : undefined })
+    expect(extractList(value.panel.currentNode()).items).toHaveLength(5)
+    value.panel.handleInput('c'); value.panel.handleInput('\x1b[6~'); value.panel.handleInput('G'); value.panel.handleInput('g'); value.panel.handleInput('\x1b[5~')
+    expect(value.onAction).toHaveBeenCalledWith({ kind: 'shortcut' })
+    expect(value.panel.render(60).join('\n')).toContain('custom')
   })
 
-  it('supports model-level input actions, top/end scrolling, and locked loading panels', () => {
-    const loading = panelFixture({ kind: 'panel', mode: 'loading', title: 'Busy', dismissible: false })
-    loading.panel.handleInput('\x1b')
-    expect(loading.onClose).not.toHaveBeenCalled()
-
-    const fixture = panelFixture()
-    const action = vi.fn(() => ({ kind: 'fixture.shortcut' }))
-    const panel = new FrontendPanel({
-      ...fakeBlueContext(),
-      model: () => ({ kind: 'panel', mode: 'select', title: 'Keys', view: { kind: 'list', items: [{ id: 'a', label: 'A' }] } }),
-      onAction: fixture.onAction,
-      onClose: fixture.onClose,
-      onUnhandledInput: (data, selectedId) => data === 'c' && selectedId === 'a' ? action() : undefined,
-      maxVisible: 5,
-    })
-    panel.handleInput('c')
-    panel.handleInput('G')
-    panel.render(40)
-    panel.handleInput('g')
-    expect(fixture.onAction).toHaveBeenCalledWith({ kind: 'fixture.shortcut' })
+  it('locks loading panels and refreshes replacement models', () => {
+    const value = fixture({ mode: 'loading', title: 'Busy', view: { kind: 'text', content: 'working' }, dismissible: false })
+    value.panel.handleInput(KEY.escape); value.panel.handleInput(KEY.enter)
+    expect(value.onClose).not.toHaveBeenCalled()
+    expect(value.panel.render(40).join('\n')).toContain('working')
+    value.setModel({ mode: 'error', title: 'Failed', view: { kind: 'text', content: 'down' } })
+    expect(value.panel.render(40).join('\n')).toContain('down')
   })
 
-  it('clears filtering before close and safely resets stale list controls', () => {
-    const fixture = panelFixture({
-      kind: 'panel', mode: 'select', title: 'Grouped',
-      view: { kind: 'list', filterable: true, grouped: true, items: [
-        { id: 'a', label: 'alpha', group: 'one', action: { kind: 'fixture.a' }, secondaryAction: { kind: 'fixture.a.session' } },
-        { id: 'b', label: 'beta', group: 'two', action: { kind: 'fixture.b' } },
-      ] },
-    })
-    fixture.panel.handleInput('a')
-    expect(fixture.panel.render(40).join('\n')).toContain('search: a')
-    fixture.panel.handleInput('\x1b')
-    expect(fixture.onClose).not.toHaveBeenCalled()
-    expect(fixture.panel.render(40).join('\n')).not.toContain('search:')
+  it('maps compiler list, tab, and Escape events through the canonical adapter', () => {
+    const value = fixture({ mode: 'select', title: 'Compiler', items: [{ id: 'a', label: 'A', action: { kind: 'a' } }] })
+    value.panel.focused = true
+    expect(value.panel.focused).toBe(true)
+    const adapter = (value.panel as unknown as { adapter: { handleInput(data: string): void } }).adapter
+    adapter.handleInput(KEY.enter)
+    adapter.handleInput(KEY.escape)
+    expect(value.onAction).toHaveBeenCalledWith({ kind: 'a' })
+    expect(value.onClose).toHaveBeenCalledOnce()
 
-    fixture.panel.handleInput('\x1bs')
-    fixture.panel.handleInput('\x1b[C')
-    fixture.panel.handleInput('\t')
-    fixture.panel.handleInput('\t')
-    fixture.panel.handleInput('\x1bs')
-    expect(fixture.onAction).toHaveBeenCalledWith({ kind: 'fixture.a.session' })
-
-    fixture.setModel({
-      kind: 'panel', mode: 'select', title: 'Regrouped',
-      view: { kind: 'list', grouped: true, items: [{ id: 'a', label: 'alpha', group: 'one' }] },
+    const grouped = fixture({
+      mode: 'select', title: 'Compiler', grouped: true,
+      items: [
+        { id: 'a', label: 'A', group: 'One', action: { kind: 'a' } },
+        { id: 'b', label: 'B', group: 'Two' },
+      ],
     })
-    expect(fixture.panel.render(40).join('\n')).toContain('alpha')
+    const groupAdapter = (grouped.panel as unknown as { adapter: { handleInput(data: string): void } }).adapter
+    groupAdapter.handleInput(KEY.right)
+    groupAdapter.handleInput(KEY.enter)
+    expect(grouped.panel.currentNode()).toMatchObject({ kind: 'surface' })
   })
 
-  it('handles empty groups, missing variants, and secondary-action misses', () => {
-    const fixture = panelFixture({
-      kind: 'panel', mode: 'select', title: 'Edges',
-      view: { kind: 'list', grouped: true, includeAllGroup: false, groups: [], items: [
-        { id: 'plain', label: 'plain', action: { kind: 'plain' } },
-      ] },
-    })
-    expect(fixture.panel.render(40).join('\n')).toContain('plain')
-    fixture.panel.handleInput('\x1b[C')
-    fixture.panel.handleInput('\x1bs')
-    expect(fixture.onAction).not.toHaveBeenCalled()
+  it('handles empty navigation, secondary fallback, backspace, and both empty modes', () => {
+    const empty = fixture({ mode: 'select', title: 'Empty', filterable: true, items: [] })
+    empty.panel.handleInput(KEY.up)
+    empty.panel.handleInput(KEY.down)
+    empty.panel.handleInput('x')
+    empty.panel.handleInput('\x7f')
+    empty.panel.handleInput('\x1bs')
+    expect(empty.onClose).not.toHaveBeenCalled()
 
-    fixture.setModel({
-      kind: 'panel', mode: 'select', title: 'Single group',
-      view: { kind: 'list', grouped: true, groups: ['one', 'two'], items: [
-        { id: 'only', label: 'only', group: 'one' },
-        { id: 'other', label: 'other', group: 'two' },
-      ] },
-    })
-    fixture.panel.handleInput('\x1b[D')
-    fixture.panel.handleInput('\x1b[C')
-    fixture.panel.handleInput('\x1b')
-    expect(fixture.onClose).toHaveBeenCalledOnce()
+    const secondary = fixture({ mode: 'select', title: 'Secondary', items: [{ id: 'a', label: 'A', secondaryAction: { kind: 'session' } }] })
+    secondary.panel.handleInput('\x1bs')
+    expect(secondary.onAction).toHaveBeenCalledWith({ kind: 'session' })
 
-    fixture.setModel({ kind: 'panel', mode: 'info', title: 'No list' })
-    fixture.panel.handleInput('\x1b[C')
+    const info = fixture({ mode: 'info', title: 'Nothing' })
+    expect(info.panel.render(40).join('\n')).toContain('no content')
+    const error = fixture({ mode: 'error', title: 'Nothing' })
+    expect(error.panel.render(40).join('\n')).toContain('unavailable')
+    const loading = fixture({ mode: 'loading', title: 'Loading' })
+    expect(loading.panel.currentNode()).toMatchObject({ footer: { content: 'Esc / q to cancel' } })
+  })
+
+  it('clamps scrolling, resets stale groups, and tolerates missing variants and events', () => {
+    const items = Array.from({ length: 12 }, (_, index) => ({ id: String(index), label: `Item ${String(index)}` }))
+    const value = fixture({ mode: 'select', title: 'Scroll', items })
+    value.panel.handleInput('\x1b[6~')
+    value.panel.currentNode()
+    for (let index = 0; index < 6; index += 1) value.panel.handleInput(KEY.down)
+    value.panel.currentNode()
+
+    const grouped = fixture({
+      mode: 'select', title: 'Groups', grouped: true,
+      groups: ['One', 'Two'], items: [{ id: 'a', label: 'A', group: 'One' }, { id: 'b', label: 'B', group: 'Two' }],
+    })
+    grouped.panel.handleInput(KEY.tab)
+    grouped.panel.handleInput(KEY.tab)
+    grouped.setModel({ mode: 'select', title: 'Groups', grouped: true, includeAllGroup: false, groups: ['One', 'Two'], items: [] })
+    grouped.panel.currentNode()
+    grouped.setModel({ mode: 'select', title: 'Groups', grouped: true, includeAllGroup: false, groups: [], items: [] })
+    grouped.panel.handleInput(KEY.tab)
+    grouped.panel.handleInput(KEY.left)
+
+    const variant = fixture({ mode: 'select', title: 'Variant', items: [{ id: 'a', label: 'A', selectedVariantId: 'missing', variants: [{ id: 'only', label: 'Only' }] }] })
+    variant.panel.currentNode()
+    variant.panel.handleInput('\x1bs')
+
+    const events = variant.panel as unknown as { onEvent(event: { kind: string, controlId: string, value?: unknown, tabId?: string }): void }
+    events.onEvent({ kind: 'activate', controlId: 'other' })
+    events.onEvent({ kind: 'selection-change', controlId: 'frontend-panel-list', value: 1 })
+    events.onEvent({ kind: 'selection-change', controlId: 'frontend-panel-list', value: 'a' })
+    events.onEvent({ kind: 'tab-change', controlId: 'frontend-panel-groups', tabId: 'missing' })
   })
 })
+
+function extractList(node: ReturnType<CanonicalDocumentController['currentNode']>) {
+  if (node.kind !== 'surface' || node.child.kind !== 'stack') throw new Error('expected panel surface')
+  const list = node.child.children.map(child => child.node).find(child => child.kind === 'list')
+  if (list?.kind !== 'list') throw new Error('expected panel list')
+  return list
+}

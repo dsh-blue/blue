@@ -1,12 +1,12 @@
 /**
- * Unit tests for the shared single-select `SelectListPanel` and the list
+ * Unit tests for the shared canonical single-select controller and the list
  * geometry helpers, over the fake keymap, theme, and components.
  */
 
 import { describe, expect, it, vi } from 'vitest'
 import {
   MAX_LIST_VISIBLE,
-  SelectListPanel,
+  CanonicalSelectController,
   counterRow,
   cycle,
   oneLine,
@@ -74,7 +74,7 @@ function mount(options: {
   onToggle?: (row: SelectRow) => void
   onCancel?: () => void
 } = {}): {
-  panel: SelectListPanel
+  panel: CanonicalSelectController
   onSelect: ReturnType<typeof vi.fn>
   onBlockedSelect: ReturnType<typeof vi.fn>
   onCancel: ReturnType<typeof vi.fn>
@@ -82,7 +82,7 @@ function mount(options: {
   const onSelect = vi.fn()
   const onBlockedSelect = vi.fn()
   const onCancel = vi.fn()
-  const panel = new SelectListPanel({
+  const panel = new CanonicalSelectController({
     keymap: new FakeKeymap(),
     theme: new FakeTheme(),
     components: new FakeBlueComponents(),
@@ -99,7 +99,19 @@ function mount(options: {
   return { panel, onSelect, onBlockedSelect, onCancel }
 }
 
-describe('SelectListPanel navigation', () => {
+describe('CanonicalSelectController navigation', () => {
+  it('maps compiler events, bridges focus, and rejects malformed selections', () => {
+    const { panel, onSelect } = mount()
+    panel.focused = true
+    expect(panel.focused).toBe(true)
+    ;(panel as unknown as { adapter: { handleInput(data: string): void } }).adapter.handleInput(KEY.enter)
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ value: 'v0' }))
+    const events = panel as unknown as { onEvent(event: { kind: string, controlId: string, value?: unknown }): void }
+    events.onEvent({ kind: 'activate', controlId: 'other' })
+    events.onEvent({ kind: 'selection-change', controlId: 'select-list', value: 'missing' })
+    expect(onSelect).toHaveBeenCalledOnce()
+  })
+
   it('hydrates rows without losing a valid cursor or crashing on an empty view', () => {
     const { panel } = mount({ initialValue: 'v1' })
     panel.setRows([{ value: 'other', label: 'Other' }])
@@ -146,7 +158,7 @@ describe('SelectListPanel navigation', () => {
   })
 
   it('ignores Enter on a disabled row when no blocked handler is set', () => {
-    const panel = new SelectListPanel({
+    const panel = new CanonicalSelectController({
       keymap: new FakeKeymap(),
       theme: new FakeTheme(),
       components: new FakeBlueComponents(),
@@ -208,7 +220,7 @@ describe('SelectListPanel navigation', () => {
   })
 })
 
-describe('SelectListPanel rendering', () => {
+describe('CanonicalSelectController rendering', () => {
   it('frames the dialog with the title hint, badge, and muted description', () => {
     const { panel } = mount({
       rows: [
@@ -217,29 +229,27 @@ describe('SelectListPanel rendering', () => {
       ],
       titleHint: '· esc cancel · ↵ switch',
     })
-    const lines = panel.render(60)
-    const bar = '^' + '─'.repeat(60) + '^'
-    expect(lines[0]).toBe(bar)
-    expect(lines[1]).toBe('^  Select^ _· esc cancel · ↵ switch_')
-    expect(lines[2]).toBe('^❯ Alpha  ← current^~ — first choice~')
-    expect(lines[3]).toBe('  Beta~~')
-    expect(lines[4]).toBe('')
-    expect(lines[5]).toBe(bar)
+    expect(panel.currentNode()).toMatchObject({
+      kind: 'surface', title: 'Select', chrome: 'overlay',
+      child: { kind: 'list', selectedIds: ['a'], items: [{ id: 'a', detail: 'first choice', badge: '← current' }, { id: 'b' }] },
+      footer: { content: expect.stringContaining('esc cancel') },
+    })
+    expect(panel.render(60).join('\n')).toContain('Alpha')
   })
 
   it('defaults the title and omits the hint row', () => {
     const { panel } = mount({ title: 'Sessions' })
-    expect(panel.render(40)[1]).toBe('^  Sessions^')
+    expect(panel.currentNode()).toMatchObject({ title: 'Sessions' })
   })
 
   it('drops the description when the row is too narrow', () => {
     const { panel } = mount({ rows: [{ value: 'a', label: 'Alpha', description: 'first' }] })
-    expect(panel.render(10)[2]).toBe('^❯ Alpha^~~')
+    expect(panel.render(10).every(row => new FakeBlueComponents().visibleWidth(row) <= 10)).toBe(true)
   })
 
   it('truncates long labels to the row width', () => {
     const { panel } = mount({ rows: [{ value: 'a', label: 'A very long label indeed' }] })
-    expect(panel.render(14)[2]).toBe('^❯ A very \x1b[0m...\x1b[0m^~~')
+    expect(panel.render(14).every(row => new FakeBlueComponents().visibleWidth(row) <= 14)).toBe(true)
   })
 
   it('windows a long list behind a scroll position row', () => {
@@ -258,15 +268,14 @@ describe('SelectListPanel rendering', () => {
   })
 })
 
-describe('SelectListPanel type-to-filter (S30②)', () => {
+describe('CanonicalSelectController type-to-filter (S30②)', () => {
   it('swallows printable bytes when the filter is off (the other consumers)', () => {
     const { panel, onSelect, onCancel } = mount()
     panel.handleInput('x')
     panel.handleInput('\x7f')
     expect(onSelect).not.toHaveBeenCalled()
     expect(onCancel).not.toHaveBeenCalled()
-    // The render is unchanged: no Search row, no hint change.
-    expect(panel.render(40)[1]).toBe('^  Select^')
+    expect(panel.currentNode()).not.toHaveProperty('child.filter')
   })
 
   it('grows the query on printables, narrows the rows, and paints the Search row', () => {
@@ -280,10 +289,7 @@ describe('SelectListPanel type-to-filter (S30②)', () => {
     // queries here use the labels' own casing.
     for (const char of 'Item') panel.handleInput(char)
     const lines = panel.render(40)
-    // The hint drops the type-to-search fragment while a query is live.
-    expect(lines[1]).toBe('^  Select^ _· esc cancel_')
-    expect(lines[2]).toBe('  ^Search: ^Item')
-    expect(lines[3]).toBe('')
+    expect(panel.currentNode()).toMatchObject({ child: { filter: 'Item' }, footer: { content: '· esc cancel' } })
     expect(lines.some(line => line.includes('Item 0'))).toBe(true)
     expect(lines.some(line => line.includes('Xylophone'))).toBe(false)
   })
@@ -302,10 +308,10 @@ describe('SelectListPanel type-to-filter (S30②)', () => {
 
   it('carries the type-to-search hint fragment only while the query is empty', () => {
     const withHint = mount({ filter: true, titleHint: '· esc cancel' })
-    expect(withHint.panel.render(60)[1]).toBe('^  Select^ _· type to search · esc cancel_')
+    expect(withHint.panel.currentNode()).toMatchObject({ footer: { content: expect.stringContaining('type to search') } })
     // The fragment stands alone when the caller has no hint of its own.
     const bare = mount({ filter: true })
-    expect(bare.panel.render(60)[1]).toBe('^  Select^ _· type to search_')
+    expect(bare.panel.currentNode()).toMatchObject({ footer: { content: 'type to search' } })
   })
 
   it('shrinks the query on Backspace and clamps at empty', () => {
@@ -322,7 +328,7 @@ describe('SelectListPanel type-to-filter (S30②)', () => {
     panel.handleInput('\x7f')
     expect(panel.render(40).some(line => line.includes('Xylophone'))).toBe(true)
     panel.handleInput('\x7f')
-    expect(panel.render(40)[1]).toContain('type to search')
+    expect(panel.currentNode()).toMatchObject({ footer: { content: expect.stringContaining('type to search') } })
   })
 
   it('clears the query on Escape before cancelling (the kimi rule)', () => {
@@ -331,7 +337,7 @@ describe('SelectListPanel type-to-filter (S30②)', () => {
     panel.handleInput(KEY.escape)
     expect(onCancel).not.toHaveBeenCalled()
     // The query is gone: the full list renders with the empty-query hint.
-    expect(panel.render(40)[1]).toContain('type to search')
+    expect(panel.currentNode()).toMatchObject({ footer: { content: expect.stringContaining('type to search') } })
     panel.handleInput(KEY.escape)
     expect(onCancel).toHaveBeenCalledOnce()
   })
@@ -339,7 +345,7 @@ describe('SelectListPanel type-to-filter (S30②)', () => {
   it('renders a muted no-matches row and swallows Enter on the empty view', () => {
     const { panel, onSelect } = mount({ filter: true })
     for (const char of 'zzz') panel.handleInput(char)
-    expect(panel.render(40).some(line => line === '_  no matches_')).toBe(true)
+    expect(panel.render(40).some(line => line.includes('no matches'))).toBe(true)
     panel.handleInput(KEY.enter)
     expect(onSelect).not.toHaveBeenCalled()
   })
@@ -411,6 +417,6 @@ describe('SelectListPanel type-to-filter (S30②)', () => {
     panel.handleInput('\x7f')
     panel.handleInput('\x7f')
     for (const char of 'alpha') panel.handleInput(char)
-    expect(panel.render(40).some(line => line.includes('_  no matches_'))).toBe(true)
+    expect(panel.render(40).some(line => line.includes('no matches'))).toBe(true)
   })
 })

@@ -1,12 +1,13 @@
 /**
  * Renderer-neutral model and effort picker projections. Catalog metadata is
  * converted to generic list rows, variants, and structured actions; terminal
- * focus, filtering, grouping, width, and keys stay in FrontendPanel.
+ * focus, filtering, grouping, width, and keys stay in the document controller.
  *
  * @module @dsh-blue/blue-interaction/model-picker-model
  */
 
-import type { Action, ListItemVariant, PanelModel } from '@dsh-blue/blue-frontend'
+import type { Action } from '@dsh-blue/blue-frontend'
+import type { FrontendPanelDocument, FrontendPanelVariant } from './frontend-panel.ts'
 
 /** One selectable model catalog row. */
 export interface ModelPickerItem {
@@ -58,7 +59,7 @@ function effortLabel(id: string): string {
   return id.length === 0 ? id : id[0]!.toUpperCase() + id.slice(1)
 }
 
-function variants(item: ModelPickerItem, currentEffort: string | undefined): { rows: readonly ListItemVariant[], selected?: string } {
+function variants(item: ModelPickerItem, currentEffort: string | undefined): { rows: readonly FrontendPanelVariant[], selected?: string } {
   const efforts = item.efforts ?? []
   if (efforts.length === 0) return { rows: [] }
   const preferred = item.current === true && currentEffort !== undefined && efforts.includes(currentEffort)
@@ -81,7 +82,7 @@ function variants(item: ModelPickerItem, currentEffort: string | undefined): { r
 export function modelPickerPanelModel(
   items: readonly ModelPickerItem[],
   options: { readonly currentEffort?: string | undefined; readonly warning?: string | undefined; readonly title?: string | undefined } = {},
-): PanelModel {
+): FrontendPanelDocument {
   const rows = items.map(item => {
     const effort = variants(item, options.currentEffort)
     const details = [
@@ -100,17 +101,13 @@ export function modelPickerPanelModel(
   })
   const current = rows.find((_row, index) => items[index]?.current === true)
   return {
-    kind: 'panel',
     mode: 'select',
     title: options.title ?? 'Select a model',
-    ...(options.warning === undefined ? {} : { header: { kind: 'text', text: `?  ${options.warning}?`, tone: 'warning' } }),
-    view: {
-      kind: 'list',
-      items: rows,
-      filterable: true,
-      grouped: true,
-      ...(current === undefined ? {} : { selectedId: current.id }),
-    },
+    ...(options.warning === undefined ? {} : { header: { kind: 'text', content: `?  ${options.warning}?`, tone: 'warning' } as const }),
+    items: rows,
+    filterable: true,
+    grouped: true,
+    ...(current === undefined ? {} : { selectedId: current.id }),
   }
 }
 
@@ -118,12 +115,11 @@ export function modelPickerPanelModel(
 export function effortPickerPanelModel(
   efforts: readonly EffortPickerItem[],
   activeId: string | undefined,
-): PanelModel {
+): FrontendPanelDocument {
   return {
-    kind: 'panel',
     mode: 'select',
     title: 'Thinking effort',
-    view: { kind: 'list', selectedId: 'effort', items: [{
+    selectedId: 'effort', items: [{
       id: 'effort',
       label: 'Thinking effort',
       variants: efforts.map(effort => ({
@@ -132,7 +128,7 @@ export function effortPickerPanelModel(
         secondaryAction: effortAction(effort.id === 'default' ? undefined : effort.id, false),
       })),
       ...(activeId === undefined ? {} : { selectedVariantId: activeId }),
-    }] },
+    }],
   }
 }
 

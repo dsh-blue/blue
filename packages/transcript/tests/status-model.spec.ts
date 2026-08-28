@@ -1,6 +1,7 @@
 /** Renderer-neutral status registry and footer layout coverage. */
 
 import { Context } from '@deepseek-ai/cordis'
+import type { BlueComponent } from '@dsh-blue/blue-core'
 import type { StatusModel, View } from '@dsh-blue/blue-frontend'
 import { describe, expect, it, vi } from 'vitest'
 import { BlueStatusModelService, plainView, StatusModelFooterComponent } from '../src/status-model.ts'
@@ -15,6 +16,8 @@ describe('BlueStatusModelService', () => {
   it('registers dynamic models, refreshes, rejects duplicates, and disposes idempotently', () => {
     const screen = new StatusFakeScreen()
     const service = new BlueStatusModelService(new Context(), screen)
+    const invalidate = vi.fn()
+    service.attachFooter({ render: () => [], invalidate } satisfies BlueComponent)
     let current: StatusModel | null = model('dynamic', { kind: 'text', text: 'first' })
     const dispose = service.register(() => current)
     expect(service.list()[0]?.view).toEqual({ kind: 'text', text: 'first' })
@@ -23,6 +26,7 @@ describe('BlueStatusModelService', () => {
     service.refresh('dynamic')
     service.refresh('missing')
     expect(screen.renderRequests.length).toBe(2)
+    expect(invalidate).toHaveBeenCalledTimes(2)
     dispose()
     dispose()
     expect(service.list()).toEqual([])
@@ -30,11 +34,15 @@ describe('BlueStatusModelService', () => {
     absent()
     service.dispose()
     expect(service.list()).toEqual([])
+    expect(invalidate).toHaveBeenCalledTimes(4)
   })
 
   it('can attach a renderer after producers register', () => {
     const service = new BlueStatusModelService(new Context())
-    service.register(model('late', { kind: 'text', text: 'late' }))
+    service.register(model('late', { kind: 'text', text: 'late' }, { priority: 2 }))
+    service.register(model('same-z', { kind: 'text', text: 'z' }, { priority: 1 }))
+    service.register(model('same-a', { kind: 'text', text: 'a' }, { priority: 1 }))
+    expect(service.list().map(entry => entry.id)).toEqual(['same-a', 'same-z', 'late'])
     const screen = new StatusFakeScreen()
     service.attach(screen)
     expect(screen.renderRequests).toHaveLength(1)
@@ -75,5 +83,12 @@ describe('StatusModelFooterComponent', () => {
     expect(footer.render(0)).toEqual([])
     expect(footer.render(20)).toEqual(['!boom!              ', 'state: ok           '])
     expect(error).toHaveBeenCalledWith('boom')
+  })
+
+  it('right-aligns a band with no left cluster', () => {
+    const service = new BlueStatusModelService(new Context())
+    service.register(model('right-only', { kind: 'text', text: 'right' }, { band: 'right' }))
+    const footer = new StatusModelFooterComponent(service, fakeBlueComponents(), COLORS)
+    expect(footer.render(10)).toEqual(['     right'])
   })
 })

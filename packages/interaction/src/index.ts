@@ -38,12 +38,7 @@ import { SkillsCatalogService } from './skills-catalog.ts'
 import { InteractionStateService } from './runtime-state.ts'
 import { DEFAULT_SETTINGS } from './settings.ts'
 
-// BluePanel is the package's public overlay container; BlueSelect stays
-// package-internal as the multi-select-only list (single-select moved to
-// ctx.blueComponents.createSelectList) and is no longer exported.
-export { BluePanel } from './select.ts'
 export { CommandModelService } from './command-model.ts'
-export { FrontendPanel } from './frontend-panel.ts'
 export { EditorModelService } from './editor-model.ts'
 export { EditorHostService } from './editor-instance.ts'
 export { SkillsCatalogService } from './skills-catalog.ts'

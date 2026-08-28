@@ -27,9 +27,9 @@ import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-credentials'
 import { mountEditorReplacement } from './editor-instance.ts'
 import { loadModelsDevIndex, type ModelsDevMatch } from './models-dev.ts'
-import { FormPanel, type FormField } from './form-panel.ts'
-import { BlueSelect } from './select.ts'
-import { SelectListPanel } from './select-list.ts'
+import { CanonicalFormController, type FormField } from './form-panel.ts'
+import { CanonicalMultiSelectController } from './select.ts'
+import { CanonicalSelectController } from './select-list.ts'
 
 /** The wire protocols a custom endpoint may declare — the pi-ai `supportedProtocols` subset with a plain baseURL surface. */
 export const ENDPOINT_PROTOCOLS = [
@@ -136,7 +136,7 @@ interface Choice {
 
 /** Mount a single-choice list step and await its value. */
 function choose(ctx: Context, display: ProviderAddDisplay, title: string, items: readonly Choice[]): Promise<string | undefined> {
-  return step<string>(ctx, done => new SelectListPanel({
+  return step<string>(ctx, done => new CanonicalSelectController({
     keymap: display.keymap,
     theme: display.theme,
     components: display.components,
@@ -154,7 +154,7 @@ function fillForm(
   display: ProviderAddDisplay,
   options: { title: string, subtitle: string, fields: readonly FormField[] },
 ): Promise<Record<string, string> | undefined> {
-  return step<Record<string, string>>(ctx, done => new FormPanel({
+  return step<Record<string, string>>(ctx, done => new CanonicalFormController({
     keymap: display.keymap,
     theme: display.theme,
     components: display.components,
@@ -291,7 +291,7 @@ async function collectModels(
   if (found !== undefined) {
     {
       const catalog = found.models
-      const adopted = await step<string[]>(ctx, done => new BlueSelect({
+      const adopted = await step<string[]>(ctx, done => new CanonicalMultiSelectController({
         keymap: display.keymap,
         theme: display.theme,
         components: display.components,
@@ -485,7 +485,7 @@ export async function runProviderEdit(ctx: Context, display: ProviderAddDisplay,
     }],
     { id: 'key', label: 'API key', mask: true, hint: 'empty keeps the stored key' },
   ]
-  const outcome = await step<EditOutcome>(ctx, done => new FormPanel({
+  const outcome = await step<EditOutcome>(ctx, done => new CanonicalFormController({
     keymap: display.keymap,
     theme: display.theme,
     components: display.components,
@@ -639,7 +639,7 @@ export async function runProviderAdd(
     // resubmit; only Escape leaves (the dogfood ruling: an error must not
     // kick the user out of the form they are editing).
     let settle: ((values: Record<string, string> | undefined) => void) | undefined
-    const panel = new FormPanel({
+    const panel = new CanonicalFormController({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,

@@ -27,7 +27,7 @@ import { mountEditorReplacement } from './editor-instance.ts'
 import { InfoPanel, type InfoSection, type InfoSegment, type InfoStyle } from './info-panel.ts'
 import type { McpCatalog, McpServerView, McpStatus } from './mcp-servers.ts'
 import { MCP_PREFIX, collectMcpServers } from './mcp-servers.ts'
-import { SelectListPanel, type SelectRow } from './select-list.ts'
+import { CanonicalSelectController, type SelectRow } from './select-list.ts'
 import { buildToolDetailSections, firstSentence } from './tools-commands.ts'
 
 /** The website page the empty state and config hint point at. */
@@ -323,7 +323,7 @@ export function registerMcpCommands(ctx: Context): () => void {
     }
     const openServer = (server: McpServerView): void => {
       const byName = new Map(server.toolsVisible.map(schema => [schema.name, schema]))
-      const restoreServer = mountEditorReplacement(ctx, new SelectListPanel({
+      const restoreServer = mountEditorReplacement(ctx, new CanonicalSelectController({
         keymap: display.keymap,
         theme: display.theme,
         components: display.components,
@@ -351,7 +351,7 @@ export function registerMcpCommands(ctx: Context): () => void {
         },
       }))
     }
-    const restorePicker = mountEditorReplacement(ctx, new SelectListPanel({
+    const restorePicker = mountEditorReplacement(ctx, new CanonicalSelectController({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,

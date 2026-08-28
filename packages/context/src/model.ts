@@ -4,7 +4,8 @@
  * @module @dsh-blue/blue-context/model
  */
 
-import { freezeModel, type Action, type PanelModel, type ProviderModel, type View } from '@dsh-blue/blue-frontend'
+import type { BlueUiNode } from '@dsh-blue/blue-api'
+import { freezeModel, type ProviderModel } from '@dsh-blue/blue-frontend'
 import type { ContextAction, ContextFacts, ContextModel, ContextModelState, ContextSnapshot, ContextTimelineEvent, ContextTimelineFacts } from './types.ts'
 
 /** Format a token count with Blue's binary compact notation. */
@@ -21,14 +22,14 @@ export function contextPercent(used: number | undefined, window: number | undefi
   return Math.min(100, Math.max(1, Math.ceil(used / window * 100)))
 }
 
-function factsView(facts: ContextFacts): View {
+function factsNode(facts: ContextFacts): BlueUiNode {
   return {
     kind: 'fields',
-    fields: [
-      { label: 'input', value: formatContextTokens(facts.input) },
-      { label: 'cache read', value: formatContextTokens(facts.cacheRead) },
-      { label: 'cache write', value: formatContextTokens(facts.cacheWrite) },
-      { label: 'output', value: formatContextTokens(facts.output) },
+    rows: [
+      { label: 'input', value: [{ text: formatContextTokens(facts.input) }] },
+      { label: 'cache read', value: [{ text: formatContextTokens(facts.cacheRead) }] },
+      { label: 'cache write', value: [{ text: formatContextTokens(facts.cacheWrite) }] },
+      { label: 'output', value: [{ text: formatContextTokens(facts.output) }] },
     ],
   }
 }
@@ -40,7 +41,7 @@ function eventDetail(event: ContextTimelineEvent): string {
   return `${String(event.count ?? 0)} items compacted`
 }
 
-function timelineSections(timeline: ContextTimelineFacts): readonly { readonly title: string; readonly body: View }[] {
+function timelineSections(timeline: ContextTimelineFacts): readonly { readonly title: string; readonly body: BlueUiNode }[] {
   const current = timeline.current
   const latest = timeline.requests.at(-1)
   const events = timeline.events.slice(-8)
@@ -49,15 +50,15 @@ function timelineSections(timeline: ContextTimelineFacts): readonly { readonly t
       title: 'current surface',
       body: {
         kind: 'fields',
-        fields: [
-          { label: 'model', value: timeline.model === undefined ? 'not recorded' : `${timeline.model}${timeline.provider === undefined ? '' : ` (${timeline.provider})`}` },
-          { label: 'system', value: formatContextTokens(current.system) },
-          { label: 'tools', value: formatContextTokens(current.tools) },
-          { label: 'user', value: formatContextTokens(current.user) },
-          { label: 'inject', value: formatContextTokens(current.inject) },
-          { label: 'assistant', value: formatContextTokens(current.assistant) },
-          { label: 'tool results', value: formatContextTokens(current.tool) },
-          { label: 'surface total', value: formatContextTokens(current.total) },
+        rows: [
+          { label: 'model', value: [{ text: timeline.model === undefined ? 'not recorded' : `${timeline.model}${timeline.provider === undefined ? '' : ` (${timeline.provider})`}` }] },
+          { label: 'system', value: [{ text: formatContextTokens(current.system) }] },
+          { label: 'tools', value: [{ text: formatContextTokens(current.tools) }] },
+          { label: 'user', value: [{ text: formatContextTokens(current.user) }] },
+          { label: 'inject', value: [{ text: formatContextTokens(current.inject) }] },
+          { label: 'assistant', value: [{ text: formatContextTokens(current.assistant) }] },
+          { label: 'tool results', value: [{ text: formatContextTokens(current.tool) }] },
+          { label: 'surface total', value: [{ text: formatContextTokens(current.total) }] },
         ],
       },
     },
@@ -65,12 +66,12 @@ function timelineSections(timeline: ContextTimelineFacts): readonly { readonly t
       title: 'timeline',
       body: {
         kind: 'fields',
-        fields: [
-          { label: 'requests', value: String(timeline.requests.length) },
-          { label: 'latest', value: latest === undefined ? 'none' : `turn ${String(latest.turn ?? '?')} step ${String(latest.step ?? '?')} · ${formatContextTokens(latest.total)}` },
-          { label: 'events', value: String(timeline.events.length) },
-          { label: 'images', value: String(timeline.images) },
-          { label: 'omitted nodes', value: String(timeline.droppedNodes) },
+        rows: [
+          { label: 'requests', value: [{ text: String(timeline.requests.length) }] },
+          { label: 'latest', value: [{ text: latest === undefined ? 'none' : `turn ${String(latest.turn ?? '?')} step ${String(latest.step ?? '?')} · ${formatContextTokens(latest.total)}` }] },
+          { label: 'events', value: [{ text: String(timeline.events.length) }] },
+          { label: 'images', value: [{ text: String(timeline.images) }] },
+          { label: 'omitted nodes', value: [{ text: String(timeline.droppedNodes) }] },
         ],
       },
     },
@@ -78,7 +79,9 @@ function timelineSections(timeline: ContextTimelineFacts): readonly { readonly t
       title: 'recent context events',
       body: {
         kind: 'list' as const,
-        items: events.map(event => ({ id: String(event.seq), label: event.kind, detail: eventDetail(event) })),
+        id: 'context-list',
+        selectedIds: [],
+        items: events.map(event => ({ id: String(event.seq), label: event.kind, detail: eventDetail(event), disabled: true })),
       },
     }]),
   ]
@@ -89,14 +92,14 @@ export function buildContextModel(snapshot: ContextSnapshot, state: ContextModel
   const facts = snapshot.facts
   const percent = contextPercent(facts.used, facts.window)
   const sections = [
-    { title: 'usage', body: factsView(facts) },
+    { title: 'usage', body: factsNode(facts) },
     ...(percent === undefined ? [] : [{
       title: 'context pressure',
       body: {
         kind: 'fields' as const,
-        fields: [
-          { label: 'used', value: `${formatContextTokens(facts.used!)} / ${formatContextTokens(facts.window!)}` },
-          { label: 'percent', value: `${String(percent)}%` },
+        rows: [
+          { label: 'used', value: [{ text: `${formatContextTokens(facts.used!)} / ${formatContextTokens(facts.window!)}` }] },
+          { label: 'percent', value: [{ text: `${String(percent)}%` }] },
         ],
       },
     }]),
@@ -104,17 +107,16 @@ export function buildContextModel(snapshot: ContextSnapshot, state: ContextModel
       title: 'composition',
       body: {
         kind: 'fields' as const,
-        fields: [
-          { label: 'system', value: formatContextTokens(facts.breakdown.system) },
-          { label: 'tools', value: formatContextTokens(facts.breakdown.tools) },
-          { label: 'messages', value: formatContextTokens(facts.breakdown.messages) },
+        rows: [
+          { label: 'system', value: [{ text: formatContextTokens(facts.breakdown.system) }] },
+          { label: 'tools', value: [{ text: formatContextTokens(facts.breakdown.tools) }] },
+          { label: 'messages', value: [{ text: formatContextTokens(facts.breakdown.messages) }] },
         ],
       },
     }]),
     ...(facts.timeline === undefined ? [] : timelineSections(facts.timeline)),
   ]
-  const action: Action = { kind: 'context.refresh', sessionId: snapshot.sessionId }
-  const panelMode: PanelModel['mode'] = state === 'loading' ? 'loading' : state === 'error' || state === 'absent' ? 'error' : 'info'
+  const action: ContextAction = { kind: 'context.refresh', sessionId: snapshot.sessionId }
   const statusText = state === 'loading'
     ? 'loading context'
     : state === 'empty'
@@ -126,17 +128,20 @@ export function buildContextModel(snapshot: ContextSnapshot, state: ContextModel
           : percent === undefined
             ? facts.timeline === undefined ? 'context unavailable' : `context · ${String(facts.timeline.requests.length)} requests`
             : `context ${String(percent)}%`
-  const panel: PanelModel = {
-    kind: 'panel',
-    mode: panelMode,
+  const panel = {
     title: 'Context',
-    view: {
-      kind: 'sections',
-      sections: state === 'loading' || state === 'error' || state === 'absent'
-        ? [{ title: 'status', body: { kind: 'text', text: statusText } }]
-        : sections,
+    node: {
+      kind: 'stack' as const,
+      direction: 'column' as const,
+      gap: 1 as const,
+      children: (state === 'loading' || state === 'error' || state === 'absent'
+        ? [{ title: 'status', body: { kind: 'text' as const, content: statusText } }]
+        : sections).flatMap(section => [
+          { node: { kind: 'divider' as const, label: section.title } },
+          { node: section.body },
+        ]),
     },
-    ...(state === 'loading' || !canRefresh ? {} : { submit: action }),
+    ...(state === 'loading' || !canRefresh ? {} : { refresh: action }),
   }
   const status: ProviderModel = {
     providerId: 'dsh-context',

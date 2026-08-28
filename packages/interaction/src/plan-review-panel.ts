@@ -16,7 +16,7 @@
  * - **3. Revise** — the row carries the feedback input: typed text
  *   submits `{selected: [], custom}` (the decline-with-feedback the
  *   harness folds into "their feedback: …"), an empty submission
- *   declines plainly. The text rides on the row itself (the FormPanel
+ *   declines plainly. The text rides on the row itself (the canonical form
  *   discipline: a real editor owns the keys, the row derives from the
  *   tracked text), with `Type feedback · ↵ submit.` beneath while
  *   focused.
@@ -62,7 +62,7 @@ const RESERVED_ROWS = 14
 /** The smallest plan window a very short terminal still gets. */
 const MIN_PLAN_ROWS = 6
 
-/** The trailing cursor block on the revision row while it holds focus (FormPanel). */
+/** The trailing cursor block on the revision row while it holds focus. */
 const CURSOR_BLOCK = '\u001b[7m \u001b[0m'
 
 /** The revise row's hint beneath the list while it holds focus (kimi copy). */
@@ -150,7 +150,7 @@ export class PlanReviewPanel implements BlueFocusable {
     this.title = options.question.header ?? 'Plan review'
     this.labels = [options.choices.approve.label, REJECT_LABEL, REVISE_LABEL]
     // The revision row's input: a real editor owns the keys, the row
-    // derives from the tracked text (the FormPanel discipline).
+    // derives from the tracked text (the canonical form discipline).
     this.editor = options.components.createEditor()
     this.editor.onChange = text => {
       this.revision = text

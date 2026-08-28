@@ -28,7 +28,7 @@ User, assistant, thinking, tool, error, and interruption models reuse the packag
 
 ## Status Models
 
-`BlueStatusModelService` owns the two-band footer registry. Models order by priority then id and are rendered through `StatusModelFooterComponent`; refresh is explicit and registrations are idempotently disposable. The shipped producers are:
+`BlueStatusModelService` owns the two-band footer registry. Models order by priority then id and are rendered through `StatusModelFooterComponent`; the footer attaches itself as the registry's invalidation target, so register/refresh/dispose clears its row cache before requesting a frame. Refresh is explicit and registrations are idempotently disposable. The shipped producers are:
 
 - `status-basic-model`: current model from app/facts.
 - `status-cwd`: abbreviated current cwd.

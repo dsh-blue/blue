@@ -12,7 +12,6 @@ export interface DiffView { readonly kind: 'diff'; readonly before: string; read
 export type View = TextView | RichTextView | FieldsView | SectionsView | ListView | CodeView | DiffView
 export type Action = Readonly<{ readonly kind: string; readonly [key: string]: unknown }>
 export interface CommandModel { readonly kind: 'command'; readonly id: string; readonly label: string; readonly description?: string; readonly enabled: boolean; readonly action?: Action }
-export type PanelModel = Readonly<{ readonly kind: 'panel'; readonly mode: 'select' | 'form' | 'info' | 'loading' | 'error'; readonly title: string; readonly header?: View; readonly view?: View; readonly submit?: Action; readonly cancel?: Action; readonly dismissible?: boolean }>
 export interface StatusModel { readonly kind: 'status'; readonly id: string; readonly view: View; readonly priority?: number; readonly band?: 'left' | 'center' | 'right'; readonly row?: 1 | 2; readonly overflow?: 'truncate' | 'hide'; readonly visible: boolean }
 export interface DockModel { readonly kind: 'dock'; readonly id: string; readonly view: View; readonly placement: 'left' | 'right' | 'bottom'; readonly priority?: number; readonly preferredRows?: number; readonly collapsed?: boolean }
 export interface NotificationModel { readonly kind: 'notification'; readonly id: string; readonly severity: 'info' | 'success' | 'warning' | 'error'; readonly message: string; readonly durationMs?: number; readonly dedupeKey?: string }

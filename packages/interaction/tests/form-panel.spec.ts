@@ -1,14 +1,14 @@
 /** The multi-field form panel: field routing, validation, masking, errors. */
 
 import { describe, expect, it, vi } from 'vitest'
-import { FormPanel, maskRow, type FormField } from '../src/form-panel.ts'
+import { CanonicalFormController, maskRow, type FormField } from '../src/form-panel.ts'
 import { fakeBlueContext, KEY } from './fakes.ts'
 
 function form(fields: readonly FormField[], options: { subtitle?: string } = {}) {
   const { theme, keymap, components } = fakeBlueContext()
   const onSubmit = vi.fn()
   const onCancel = vi.fn()
-  const component = new FormPanel({
+  const component = new CanonicalFormController({
     keymap, theme, components,
     title: 'Form',
     ...options.subtitle === undefined ? {} : { subtitle: options.subtitle },
@@ -20,7 +20,7 @@ function form(fields: readonly FormField[], options: { subtitle?: string } = {})
 }
 
 /** The last-mounted panel component with input forwarding. */
-function input(component: FormPanel): { handleInput(data: string): void } {
+function input(component: CanonicalFormController): { handleInput(data: string): void } {
   return component as unknown as { handleInput(data: string): void }
 }
 
@@ -31,7 +31,7 @@ describe('maskRow', () => {
   })
 })
 
-describe('FormPanel', () => {
+describe('CanonicalFormController', () => {
   it('routes typing to the active field and submits from the last', () => {
     const { component, onSubmit } = form([
       { id: 'route', label: 'Route', required: true },
@@ -122,11 +122,10 @@ describe('FormPanel', () => {
     const { component } = form([{ id: 'key', label: 'Key', mask: true }])
     component.focusField('missing')
     const rows = component.render(60)
-    // The untouched masked field renders its `>` prompt with no bullets,
-    // inside the rounded box (corner rows present).
+    // The untouched canonical secret field renders without exposing text.
     expect(rows[0]).toContain('╭')
     expect(rows.at(-1)).toContain('╰')
-    expect(rows.some(row => row.includes('>') && !row.includes('•'))).toBe(true)
+    expect(rows.some(row => row.includes('Key:') && !row.includes('•'))).toBe(true)
   })
 
   it('pre-fills a field from its initial value', () => {
@@ -152,5 +151,15 @@ describe('FormPanel', () => {
     input(component).handleInput(KEY.escape)
     expect(onCancel).toHaveBeenCalledOnce()
     component.invalidate()
+  })
+
+  it('bridges focus, pins empty forms, and ignores unrelated compiler events', () => {
+    const { component, onSubmit } = form([])
+    component.focused = true
+    expect(component.focused).toBe(true)
+    component.handleInput(KEY.down)
+    ;(component as unknown as { onEvent(event: { kind: 'activate', controlId: string }): void })
+      .onEvent({ kind: 'activate', controlId: 'other' })
+    expect(onSubmit).not.toHaveBeenCalled()
   })
 })

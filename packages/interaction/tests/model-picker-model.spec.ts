@@ -29,11 +29,12 @@ describe('model picker models', () => {
     ], { title: 'Choose', warning: 'fresh cache' })
     expect(model).toMatchObject({
       title: 'Choose',
-      header: { text: '?  fresh cache?' },
-      view: { kind: 'list', selectedId: 'mock\u0000chat', filterable: true, grouped: true },
+      header: { content: '?  fresh cache?' },
+      selectedId: 'mock\u0000chat',
+      filterable: true,
+      grouped: true,
     })
-    if (model.view?.kind !== 'list') throw new Error('expected list')
-    expect(model.view.items[0]).toMatchObject({
+    expect(model.items?.[0]).toMatchObject({
       detail: '· ctx 64k · ← current',
       action: { kind: 'model.select', provider: 'mock', model: 'chat', persist: true },
       secondaryAction: { kind: 'model.select', persist: false },
@@ -43,13 +44,12 @@ describe('model picker models', () => {
   it('seeds model effort variants from live, default, then first metadata', () => {
     const live = modelPickerPanelModel([item({ current: true, efforts: ['low', 'high'], defaultEffort: 'high' })], { currentEffort: 'low' })
     const fallback = modelPickerPanelModel([item({ efforts: ['low', 'high'], defaultEffort: 'missing' })])
-    if (live.view?.kind !== 'list' || fallback.view?.kind !== 'list') throw new Error('expected lists')
-    expect(live.view.items[0]).toMatchObject({ selectedVariantId: 'low' })
-    expect(live.view.items[0]?.variants?.[1]).toMatchObject({
+    expect(live.items?.[0]).toMatchObject({ selectedVariantId: 'low' })
+    expect(live.items?.[0]?.variants?.[1]).toMatchObject({
       id: 'high', label: 'High', action: { effort: 'high', persist: true }, secondaryAction: { persist: false },
     })
-    expect(fallback.view.items[0]).toMatchObject({ selectedVariantId: 'low' })
-    expect(modelPickerPanelModel([])).toMatchObject({ title: 'Select a model', view: { items: [] } })
+    expect(fallback.items?.[0]).toMatchObject({ selectedVariantId: 'low' })
+    expect(modelPickerPanelModel([])).toMatchObject({ title: 'Select a model', items: [] })
     expect(effortLabel('')).toBe('')
   })
 
@@ -58,16 +58,14 @@ describe('model picker models', () => {
       { id: 'default', label: 'Default' },
       { id: 'high', label: 'High' },
     ], 'high')
-    if (model.view?.kind !== 'list') throw new Error('expected list')
-    expect(model.view.items[0]).toMatchObject({ selectedVariantId: 'high' })
-    expect(model.view.items[0]?.variants?.[0]).toMatchObject({ action: { kind: 'effort.select', persist: true } })
-    expect(model.view.items[0]?.variants?.[0]?.action).not.toHaveProperty('effort')
-    expect(model.view.items[0]?.variants?.[1]).toMatchObject({
+    expect(model.items?.[0]).toMatchObject({ selectedVariantId: 'high' })
+    expect(model.items?.[0]?.variants?.[0]).toMatchObject({ action: { kind: 'effort.select', persist: true } })
+    expect(model.items?.[0]?.variants?.[0]?.action).not.toHaveProperty('effort')
+    expect(model.items?.[0]?.variants?.[1]).toMatchObject({
       action: { kind: 'effort.select', effort: 'high', persist: true },
       secondaryAction: { kind: 'effort.select', effort: 'high', persist: false },
     })
     const unset = effortPickerPanelModel([{ id: 'default', label: 'Default' }], undefined)
-    if (unset.view?.kind !== 'list') throw new Error('expected list')
-    expect(unset.view.items[0]).not.toHaveProperty('selectedVariantId')
+    expect(unset.items?.[0]).not.toHaveProperty('selectedVariantId')
   })
 })
