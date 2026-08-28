@@ -1,6 +1,6 @@
 # Core concepts
 
-This page explains the four pillars of Blue's plugin model: the Cordis tree and Fiber lifecycle, capability scoping, the `BlueView` vocabulary, the `BlueResult` error model — plus the domain/adapter split. After reading it you will understand the "why" behind the contract tables on each capability page.
+This page explains the four pillars of Blue's plugin model: the Cordis tree and Fiber lifecycle, capability scoping, the canonical-node vocabulary, and the `BlueResult` error model — plus the domain/adapter split. After reading it you will understand the "why" behind the contract tables on each capability page.
 
 ## The Cordis tree and the Fiber lifecycle
 
@@ -40,9 +40,11 @@ interface BluePluginManifest {
 
 Scoping is a two-way contract: you only get what you declared, and the host only exposes what you declared. When an upgraded plugin wants a new capability, it adds one line to the manifest — a host that is too old fails explicitly at `open()` time instead of erroring at runtime.
 
-## The BlueView vocabulary
+## The canonical-node vocabulary
 
-All view-shaped contributions (status, dock, notification) share one renderer-neutral vocabulary:
+Panes, overlays, and providers use `BlueUiNode`; status uses its non-interactive
+`BlueStatusNode` subset; notifications retain the lightweight `BlueView`
+subset. All three share the renderer-neutral content leaves below:
 
 | kind | Shape | Fields |
 | --- | --- | --- |
@@ -51,6 +53,10 @@ All view-shaped contributions (status, dock, notification) share one renderer-ne
 | `code` | a code block | `code`, optional `language` |
 | `diff` | before/after comparison | `before` / `after` |
 | `sections` | titled sections | `sections: BlueSection[]` (`title`, `collapsed` optional; `body` recurses as BlueView) |
+
+The full `BlueUiNode` vocabulary also includes rich text, stacks, surfaces,
+scroll, tabs, lists, forms, actions, loaders, empty states, progress, spacers,
+and dividers. See the [public UI kit](/en/plugins/ui-kit) for builders.
 
 Styling has only two dimensions:
 
@@ -76,7 +82,7 @@ type BlueResult<Value = void> =
 | `BLUE_DUPLICATE_ID` | `register()`: the contribution id is already registered (judged across all plugins) |
 | `BLUE_INVALID_CONTRIBUTION` | `register()` / `publish()`: malformed contribution (id characters, missing function field, etc.) |
 | `BLUE_ACTION_REJECTED` | `register()`: the id squats on Blue's reserved namespace (the `blue.` / `blue:` / `blue-` / `@dsh-blue/` prefixes) |
-| `BLUE_LIMIT_EXCEEDED` | `register()`: dock's `preferredRows` / `minRows` outside 0–20 |
+| `BLUE_LIMIT_EXCEEDED` | `register()` / `open()`: a contribution exceeds node, pane, overlay, or size quotas |
 | `BLUE_CAPABILITY_ABSENT` | degradation signal from an optional Harness capability probe — handle as degradation, not a plugin failure |
 | `BLUE_ABORTED` / `BLUE_SESSION_UNAVAILABLE` | action aborted / session unavailable (used by session capabilities of later phases) |
 

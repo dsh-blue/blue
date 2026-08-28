@@ -10,7 +10,7 @@ Blue Cordis 插件的稳定、renderer-independent 公共契约。本包不含 r
 
 目标 capability 为 `commands`、`notifications`、`status`、`panes`、`overlays`、`editor.extensions`、`session.read`、`session.act`、`status.provider` 与 `editor.provider`。已删除的 `dock`、`panels`、`editor`、`tools` 返回带具体迁移说明的 `BLUE_LEGACY_CAPABILITY`。`tools` 没有替代项，因为公共 tool presentation 没有 registry 或 owner。
 
-`bluePluginHost.open(consumer, manifest)` 先校验 manifest，再返回只暴露所请求表面的 capability-scoped `BluePluginApi`。所有 registration 都绑定消费者的 Cordis effect：插件卸载即释放全部贡献。跨消费者重复的 contribution id 会被拒绝，Blue 的 owner 命名空间（`blue.`、`blue:`、`blue-`、`@dsh-blue/`）被保留。
+`bluePluginHost.open(ctx, manifest)` 直接接受插件真实的 Cordis `Context`，先校验 manifest，再返回只暴露所请求表面的 capability-scoped `BluePluginApi`。所有 registration 都绑定该 Cordis effect：插件卸载即释放全部贡献。跨消费者重复的 contribution id 会被拒绝，Blue 的 owner 命名空间（`blue.`、`blue:`、`blue-`、`@dsh-blue/`）被保留。
 
 ## UI 契约
 

@@ -46,7 +46,7 @@ api.notifications?.subscribe((notification) => {
 - **No dedup, no throttling**: the host neither merges same-id notifications nor rate-limits. Frequency control is the publisher's responsibility — throttle high-frequency events (progress ticks) yourself, or use the [status bar](/en/plugins/status) instead;
 - **Failures are structured**: an illegal id or a non-object `view` makes `publish` return `BLUE_INVALID_CONTRIBUTION`; rejections from the presentation adapter are also returned as failures, never thrown;
 - **A throwing subscriber hurts no one else**: a single listener's exception is isolated and blocks neither other subscribers nor the presentation;
-- **Transient presentation**: the current notice bar neither queues nor keeps history. For persistently visible state, use the [status bar](/en/plugins/status) or the [dock](/en/plugins/dock).
+- **Transient presentation**: the current notice bar neither queues nor keeps history. For persistently visible state, use the [status bar](/en/plugins/status) or a [pane](/en/plugins/dock).
 
 ## Common pitfalls
 

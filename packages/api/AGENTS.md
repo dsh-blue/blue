@@ -65,6 +65,9 @@ plain or read-only fallback and must not treat it as a thrown plugin failure.
 scoped API. Registries and notification subscriptions are bound to the
 consumer's Cordis effect: consumer unload disposes every returned registration,
 while service unload also clears all remaining host-owned state.
+The public consumer shape requires an effect callback that returns its disposer,
+matching a real Cordis `Context` without downstream casts; `open()` always
+installs exactly that cleanup.
 The host keeps one aggregate registry per capability, rejects duplicate ids
 across consumers, reserves Blue's owner namespace, and synchronously notifies
 the Blue-owned adapters. An adapter admission failure rolls the registration

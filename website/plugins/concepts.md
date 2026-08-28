@@ -1,6 +1,6 @@
 # 核心概念
 
-本篇解释 Blue 插件模型的四个支柱：Cordis 树与 Fiber 生命周期、capability 裁剪、`BlueView` 词汇表、`BlueResult` 错误模型，以及 domain/adapter 拆分。读完你会理解每个能力页里契约表背后的"为什么"。
+本篇解释 Blue 插件模型的四个支柱：Cordis 树与 Fiber 生命周期、capability 裁剪、canonical node 词汇表、`BlueResult` 错误模型，以及 domain/adapter 拆分。读完你会理解每个能力页里契约表背后的"为什么"。
 
 ## Cordis 树与 Fiber 生命周期
 
@@ -40,9 +40,11 @@ interface BluePluginManifest {
 
 裁剪是双向契约：你只拿到你声明的，宿主也只暴露你声明的。插件升级时要新能力，就在 manifest 里加一行——宿主版本不够会在 `open()` 阶段明确失败，而不是运行时才出错。
 
-## BlueView 词汇表
+## Canonical node 词汇表
 
-所有 view 类贡献（status、dock、notification）共用同一套 renderer-neutral 词汇：
+Pane、overlay 与 provider 使用 `BlueUiNode`；status 使用它的非交互
+`BlueStatusNode` 子集；notification 继续使用轻量 `BlueView` 子集。三者共享同一套
+renderer-neutral 内容 leaf：
 
 | kind | 形态 | 字段 |
 | --- | --- | --- |
@@ -51,6 +53,10 @@ interface BluePluginManifest {
 | `code` | 代码块 | `code`，可选 `language` |
 | `diff` | 前后对比 | `before` / `after` |
 | `sections` | 分节组合 | `sections: BlueSection[]`（`title`、`collapsed` 可选，`body` 递归为 BlueView） |
+
+完整 `BlueUiNode` 还包括 rich-text、stack、surface、scroll、tabs、list、form、
+actions、loader、empty、progress、spacer 与 divider。用公开 builder 构造这些节点
+见[公共 UI Kit](/plugins/ui-kit)。
 
 样式只有两个维度：
 
@@ -76,7 +82,7 @@ type BlueResult<Value = void> =
 | `BLUE_DUPLICATE_ID` | `register()`：贡献 id 已被注册（跨所有插件判定） |
 | `BLUE_INVALID_CONTRIBUTION` | `register()` / `publish()`：贡献格式不合法（id 字符、缺函数字段等） |
 | `BLUE_ACTION_REJECTED` | `register()`：id 占用 Blue 保留命名空间（`blue.` / `blue:` / `blue-` / `@dsh-blue/` 前缀） |
-| `BLUE_LIMIT_EXCEEDED` | `register()`：dock 的 `preferredRows` / `minRows` 超出 0–20 |
+| `BLUE_LIMIT_EXCEEDED` | `register()` / `open()`：贡献超过节点、pane、overlay 或尺寸配额 |
 | `BLUE_CAPABILITY_ABSENT` | 可选 Harness 能力探测的降级信号——按降级处理，不是插件失败 |
 | `BLUE_ABORTED` / `BLUE_SESSION_UNAVAILABLE` | 动作被中止 / 会话不可用（后续阶段的 session 能力使用） |
 

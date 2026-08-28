@@ -25,7 +25,7 @@ Fiber-bound registration is the core promise of the plugin model and deserves on
 
 1. remove your plugin row from the profile's `cordis.patch.yml`;
 2. restart the profile;
-3. your commands, status entries, and dock panes should all disappear, leaving no residue.
+3. your commands, status entries, panes, and overlays should all disappear, leaving no residue.
 
 If residue remains, some registration bypassed the API returned by `open()` (registering straight onto a Harness service, a module-level singleton, etc.) — troubleshoot against [Core concepts](/en/plugins/concepts#design-discipline).
 

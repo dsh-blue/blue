@@ -43,19 +43,19 @@ dsh process 进程（one Cordis tree 一棵 Cordis 树）
 └── your plugin row 你的插件行 — inserted via 经 cordis.patch.yml, inject bluePluginHost
 ```
 
-Integration is a single move: **declare a manifest → `open()` to receive a capability-scoped API → register contributions**. Contributions are data (`BlueView`) and structured actions, not UI components. Every registration binds to the caller's Fiber, so contributions roll back automatically when the plugin unloads.
+Integration is a single move: **declare a manifest → `open()` to receive a capability-scoped API → register contributions**. Contributions are renderer-neutral `BlueUiNode`/`BlueView` data and structured actions, not renderer components. Every registration binds to the caller's Fiber, so contributions roll back automatically when the plugin unloads.
 
 ## Capabilities open today
 
 | Capability | Contribution | Effect |
 | --- | --- | --- |
 | [`commands`](/en/plugins/commands) | slash command + async handler | appears in slash completion and `/help` |
-| [`status`](/en/plugins/status) | a render function returning `BlueView` | status bar entry in the bottom footer |
+| [`status`](/en/plugins/status) | a render function returning `BlueStatusNode` | status bar entry in the bottom footer |
 | [`status.provider`](/en/plugins/status#exclusive-status-provider) | a render function receiving a readonly status snapshot | candidate replacing the entire footer |
 | [`editor.extensions`](/en/plugins/editor-extensions) | passive shell, completion, actions, submit transforms | enhances Blue's owned editor without reading its state |
 | [`editor.provider`](/en/plugins/editor-providers) | a shell render function receiving a readonly editor snapshot | user-selected exclusive editor-shell candidate |
-| `panes` | placement, canonical node, and structured events | plugin surfaces in header/left/right/bottom lanes |
-| `overlays` | canonical overlay request and structured events | overlays managed by Blue focus and lifecycle |
+| [`panes`](/en/plugins/dock) | placement, canonical node, and structured events | plugin surfaces in header/left/right/bottom lanes |
+| [`overlays`](/en/plugins/dock#overlay-contract) | canonical overlay request and structured events | overlays managed by Blue focus and lifecycle |
 | [`notifications`](/en/plugins/notifications) | publish/subscribe `BlueNotification` | editor notice bar |
 
 The manifest schema also declares `session.read` and `session.act`, but requesting either in the current phase is rejected by `open()` (`BLUE_CAPABILITY_DENIED`). The old `dock`, `panels`, `editor`, and `tools` names have been removed from the public manifest; validation returns a concrete migration message.
@@ -65,15 +65,17 @@ The manifest schema also declares `session.read` and `session.act`, but requesti
 **Getting started**
 
 - [Quickstart](/en/plugins/quickstart) — run a plugin end to end in ten minutes: package skeleton, manifest, install, verification, unload;
-- [Core concepts](/en/plugins/concepts) — the Cordis tree and Fiber lifecycle, capability scoping, the `BlueView` vocabulary, `BlueResult` error codes, the domain/adapter split.
+- [Core concepts](/en/plugins/concepts) — the Cordis tree and Fiber lifecycle, capability scoping, canonical nodes, `BlueResult` error codes, and the domain/adapter split;
+- [Public UI kit](/en/plugins/ui-kit) and [example catalog](/en/plugins/examples) — pure builders, shared components, and six packed examples.
 
 **Contributing capabilities** — one page per capability: contract table, full example, behavior details, and common pitfalls.
 
-- [Commands](/en/plugins/commands) · [Status bar and exclusive provider](/en/plugins/status) · [Editor extensions](/en/plugins/editor-extensions) · [Editor providers](/en/plugins/editor-providers) · [Panes](/en/plugins/dock) · [Notifications](/en/plugins/notifications)
+- [Commands](/en/plugins/commands) · [Status bar and exclusive provider](/en/plugins/status) · [Editor extensions](/en/plugins/editor-extensions) · [Editor providers](/en/plugins/editor-providers) · [Panes and overlays](/en/plugins/dock) · [Notifications](/en/plugins/notifications)
 
 **Validation and publishing**
 
 - [Debugging & validation](/en/plugins/testing) — profile install, the iteration loop, the validate/fixture scripts, unload-semantics checks;
+- [Legacy UI API migration](/en/plugins/ui-migration) — move from dock/panel/renderer facades to canonical panes, overlays, and providers;
 - [Publishing](/en/plugins/publishing) — npm publishing and the user install path.
 
 **Reference**

@@ -1,3 +1,4 @@
+import { Context } from '@deepseek-ai/cordis'
 import type {
   BlueCapability,
   BlueEditorCompletionRequest,
@@ -10,12 +11,18 @@ import type {
   BlueOverlayRequest,
   BluePaneContribution,
   BluePluginApi,
+  BluePluginHost,
   BluePluginManifest,
   BlueStatusNode,
   BlueStatusProvider,
   BlueUiEvent,
   BlueUiNode,
 } from '@dsh-blue/blue-api'
+
+declare const pluginHost: BluePluginHost
+export const contextConsumer = pluginHost.open(new Context(), {
+  id: '@acme/context-consumer', api: '^1.0.0', capabilities: [],
+})
 
 function assertNever(value: never): never { throw new Error(String(value)) }
 

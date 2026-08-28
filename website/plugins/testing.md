@@ -25,7 +25,7 @@ Fiber 绑定注册是插件模型的核心承诺，每次大改后都值得验�
 
 1. 从 profile 的 `cordis.patch.yml` 删掉你的插件行；
 2. 重启 profile；
-3. 你的命令、状态条目、dock 面板应当全部消失，不留残骸。
+3. 你的命令、状态条目、pane 与 overlay 应当全部消失，不留残骸。
 
 如果留下了残骸，说明有注册绕过了 `open()` 返回的 API（直接注册到 Harness 服务、模块级 singleton 等）——对照[核心概念](/plugins/concepts#设计纪律)排查。
 

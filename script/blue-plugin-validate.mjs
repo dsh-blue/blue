@@ -53,6 +53,20 @@ function violate(group, code, message) {
   violations.push({ package: packageName, group, code, message, reproduce })
 }
 
+/** Read a literal exported plugin name from source or tsdown's export list. */
+function exportedLiteralName(source) {
+  const direct = /export\s+const\s+name\s*=\s*['"]([^'"]+)['"]/u.exec(source)?.[1]
+  if (direct !== undefined) return direct
+  const bundled = /(?:^|\n)const\s+name\s*=\s*['"]([^'"]+)['"]/u.exec(source)?.[1]
+  return bundled !== undefined && /export\s*\{[^}]*\bname\b[^}]*\}/u.test(source) ? bundled : undefined
+}
+
+/** Detect a public apply export in source or tsdown's export list. */
+function exportsApply(source) {
+  return /export\s+(?:(?:async\s+)?function\s+apply\b|const\s+apply\s*=)/u.test(source)
+    || (/(?:^|\n)(?:async\s+)?function\s+apply\b/u.test(source) && /export\s*\{[^}]*\bapply\b[^}]*\}/u.test(source))
+}
+
 if (!/blue|frontend|adapter/iu.test(packageName)) violate('package', 'PACKAGE_NAME_INVALID', 'package name does not identify a Blue frontend package or adapter')
 if (files.length === 0 && !existsSync(distributionManifestPath)) violate('package', 'PACKAGE_SOURCE_MISSING', 'src contains no executable source files and blue.plugin.json is missing')
 
@@ -74,9 +88,9 @@ if (existsSync(distributionManifestPath)) {
       const entryPath = resolve(root, entry)
       if (!existsSync(entryPath)) violate('package', 'PLUGIN_ENTRY_MISSING', `manifest entry is missing: ${entry}`)
       const entrySource = existsSync(entryPath) ? readFileSync(entryPath, 'utf8') : ''
-      if (!/export\s+const\s+name\s*=\s*['"][^'"]+['"]/u.test(entrySource)) violate('package', 'PLUGIN_NAME_UNSTABLE', 'manifest entry must export a literal name')
-      if (!/export\s+(?:(?:async\s+)?function\s+apply\b|const\s+apply\s*=)/u.test(entrySource)) violate('package', 'PLUGIN_APPLY_MISSING', 'manifest entry must export apply')
-      const entryName = /export\s+const\s+name\s*=\s*['"]([^'"]+)['"]/u.exec(entrySource)?.[1]
+      if (exportedLiteralName(entrySource) === undefined) violate('package', 'PLUGIN_NAME_UNSTABLE', 'manifest entry must export a literal name')
+      if (!exportsApply(entrySource)) violate('package', 'PLUGIN_APPLY_MISSING', 'manifest entry must export apply')
+      const entryName = exportedLiteralName(entrySource)
       if (entryName !== undefined && entryName !== packageName) violate('package', 'PLUGIN_NAME_PACKAGE_MISMATCH', `entry name ${entryName} does not match package name ${packageName}`)
       if (Array.isArray(manifest.files) && !manifest.files.some(pattern => filesEntryMatches(String(pattern), entry))) violate('package', 'PLUGIN_ENTRY_NOT_SHIPPED', `manifest entry is not covered by files: ${entry}`)
     }
@@ -88,8 +102,8 @@ const sourceEntries = files
   .map(file => ({ file, source: readFileSync(file, 'utf8') }))
 const pluginEntries = sourceEntries.filter(entry => /export\s+(?:const|function)\s+name\b/u.test(entry.source) || /export\s+(?:async\s+)?function\s+apply\b/u.test(entry.source))
 for (const entry of pluginEntries) {
-  if (!/export\s+const\s+name\s*=\s*['"][^'"]+['"]/u.test(entry.source)) violate('package', 'PLUGIN_NAME_UNSTABLE', `plugin entry does not export a literal const name: ${relative(root, entry.file)}`)
-  if (!/export\s+(?:(?:async\s+)?function\s+apply\b|const\s+apply\s*=)/u.test(entry.source)) violate('package', 'PLUGIN_APPLY_MISSING', `plugin entry does not export apply: ${relative(root, entry.file)}`)
+  if (exportedLiteralName(entry.source) === undefined) violate('package', 'PLUGIN_NAME_UNSTABLE', `plugin entry does not export a literal const name: ${relative(root, entry.file)}`)
+  if (!exportsApply(entry.source)) violate('package', 'PLUGIN_APPLY_MISSING', `plugin entry does not export apply: ${relative(root, entry.file)}`)
   const inject = /export\s+const\s+inject\s*=\s*([^\n]+)/u.exec(entry.source)?.[1]
   if (inject !== undefined && !/^\s*(?:\[|Object\.freeze\(\[)/u.test(inject)) violate('package', 'PLUGIN_INJECT_INVALID', `plugin inject must be a stable array: ${relative(root, entry.file)}`)
 }

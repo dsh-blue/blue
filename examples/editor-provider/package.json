@@ -1,0 +1,17 @@
+{
+  "name": "@dsh-blue-example/editor-provider",
+  "description": "Opt-in Blue editor shell provider candidate example",
+  "version": "0.1.0",
+  "publishConfig": { "access": "public" },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": { ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" }, "./cordis.patch.yml": "./cordis.patch.yml", "./blue.plugin.json": "./blue.plugin.json", "./package.json": "./package.json" },
+  "files": ["lib/**/*", "blue.plugin.json", "cordis.patch.yml"],
+  "license": "MIT",
+  "blue": { "manifest": "./blue.plugin.json" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "dependencies": { "@dsh-blue/blue-api": "workspace:*" },
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" },
+  "devDependencies": { "@deepseek-ai/cordis": "4.0.1" }
+}
