@@ -46,7 +46,7 @@ export function apply(ctx: Context): void {
 
 - **`render()` is called on every frame** — every footer redraw re-evaluates all status entries. Treat it as a pure function: keep it cheap, no I/O, no large allocations. Update data elsewhere (subscriptions, timers); `render()` only reads the latest value;
 - **Returning `null` hides, it does not remove**: the entry stays registered and may reappear on the next frame. Good for badges that are only visible in a certain state;
-- **Over-wide entries are truncated**: the footer's width budget is tight, and entries are handled with a `truncate` policy. Keep content short — the status bar is not a panel; long content goes to the [dock](/en/plugins/dock);
+- **Over-wide entries are truncated**: the footer's width budget is tight, and entries are handled with a `truncate` policy. Keep content short — the status bar is not a panel; long content goes in a [pane](/en/plugins/dock);
 - **Only the status subset is accepted**: `text`, `rich-text`, `fields`, `progress`, and recursive `stack` nodes are available; interactive nodes are rejected safely. The canonical compiler preserves tone/emphasis.
 
 ## Exclusive status provider

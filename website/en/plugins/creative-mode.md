@@ -28,7 +28,7 @@ blue-feature/
 
 The entry exports a stable `name`, `inject`, and `apply(ctx)`. It requests capabilities through `ctx.bluePluginHost.open(ctx, manifest)`. The public set is `commands`, `status`, `notifications`, `panes`, `overlays`, `editor.extensions`, `status.provider`, and `editor.provider`. `open()`, `register()`, and `publish()` return structured `BlueResult` values and must be checked. Registrations belong to the caller's Fiber and are removed on unload, update, or profile reload. Candidates registered through either exclusive-provider capability stay inert until their id is selected in settings.
 
-Plugin code returns renderer-neutral `BlueView` data and structured actions:
+Plugin code returns renderer-neutral `BlueUiNode`/`BlueView` data and structured actions:
 
 - never import `pi-tui`, assemble ANSI rows, or calculate terminal width;
 - never reach into owner-only services such as `blueScreen`, `blueComponents`, or private status/bottom-pane registries;
@@ -37,7 +37,7 @@ Plugin code returns renderer-neutral `BlueView` data and structured actions:
 
 ## Case study: blue-doudizhu
 
-This case study is based on session `session-aad9fdb6-09ff-45b9-9aa0-0c7822efbcd5`. The goal was a character-card 斗地主 game in a Blue Dock pane, eventually distributed as an npm package.
+This case study is based on session `session-aad9fdb6-09ff-45b9-9aa0-0c7822efbcd5`. The goal was a character-card 斗地主 game in a Blue bottom pane, eventually distributed as an npm package.
 
 ### 1. Prototype in the session
 

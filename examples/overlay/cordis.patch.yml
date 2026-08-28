@@ -1,0 +1,3 @@
+- insert:
+    - id: '@dsh-blue-example/overlay'
+      name: '@dsh-blue-example/overlay'

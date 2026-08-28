@@ -201,7 +201,7 @@ export interface BluePluginApi {
   readonly editorProviders?: BlueEditorProviderRegistry
   readonly session?: BlueSessionReader
 }
-export interface BluePluginHost { readonly version: string, open(consumer: { effect(callback: () => void | (() => void)): unknown }, manifest: BluePluginManifest): BlueResult<BluePluginApi> }
+export interface BluePluginHost { readonly version: string, open(consumer: { effect(callback: () => () => void): unknown }, manifest: BluePluginManifest): BlueResult<BluePluginApi> }
 
 /** @deprecated Internal transition type; remove with the W2-C pane bridge. */
 export interface BlueDockContribution extends BlueContributionMeta { readonly view: BlueView | (() => BlueView | null), readonly preferredRows?: number, readonly minRows?: number, readonly collapsible?: boolean }

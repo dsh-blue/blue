@@ -15,7 +15,7 @@ declare module '@deepseek-ai/cordis' { interface Context { bluePluginHost: BlueP
 type Capability = 'commands' | 'status' | 'dock' | 'notifications' | 'panes' | 'overlays' | 'editor.extensions' | 'status.provider' | 'editor.provider'
 type HostCapability = BlueCapability | 'dock'
 type EffectOwner = { effect(callback: () => () => void): unknown }
-type Consumer = { effect(callback: () => void | (() => void)): unknown }
+type Consumer = { effect(callback: () => () => void): unknown }
 type Prioritized = { readonly id: string, readonly priority?: number }
 
 export interface BluePluginHostPaneEntry extends Prioritized {

@@ -46,7 +46,7 @@ export function apply(ctx: Context): void {
 
 - **`render()` 每帧都会被调用**——footer 每次重绘都会重新求值所有状态条目。把它当成纯函数：保持廉价，不做 I/O、不分配大对象。数据在别处（订阅、定时器）更新，`render()` 只读最新值；
 - **返回 `null` 是隐藏，不是删除**：条目仍注册着，下一帧可能再出现。适合"只在某个状态下可见"的徽章；
-- **超宽被截断**：footer 的宽度预算紧张，条目按 `truncate` 策略处理。内容保持短小——状态栏不是面板，长内容去 [dock](/plugins/dock)；
+- **超宽被截断**：footer 的宽度预算紧张，条目按 `truncate` 策略处理。内容保持短小——状态栏不是面板，长内容放进 [pane](/plugins/dock)；
 - **只接受 status 子集**：`text`、`rich-text`、`fields`、`progress` 和递归 `stack` 可用；交互节点会被安全拒绝。Tone/emphasis 由 canonical compiler 保留。
 
 ## 独占 status provider

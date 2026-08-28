@@ -28,7 +28,7 @@ blue-feature/
 
 入口必须导出稳定的 `name`、`inject` 和 `apply(ctx)`。Blue 功能通过 `ctx.bluePluginHost.open(ctx, manifest)` 申请能力；当前公开能力是 `commands`、`status`、`notifications`、`panes`、`overlays`、`editor.extensions`、`status.provider` 和 `editor.provider`。`open()`、`register()`、`publish()` 都返回结构化 `BlueResult`，每次都要检查 `ok`。注册由调用方 Fiber 托管，插件卸载、更新或 profile 重载时会自动撤销。两个独占 provider capability 的候选注册保持 inert，只有 settings 选中的 id 才会激活。
 
-插件只能返回 renderer-neutral 的 `BlueView` 和结构化 action：
+插件只能返回 renderer-neutral 的 `BlueUiNode`/`BlueView` 和结构化 action：
 
 - 不得 import `pi-tui`、拼接 ANSI 行或自行计算终端宽度；
 - 不得访问 `blueScreen`、`blueComponents`、私有 status/bottom-pane registry 等 owner-only 服务；
@@ -37,7 +37,7 @@ blue-feature/
 
 ## 案例：blue-doudizhu
 
-本节依据会话 `session-aad9fdb6-09ff-45b9-9aa0-0c7822efbcd5` 整理。目标是在 Blue 的 Dock 面板实现斗地主，并最终形成可分发的 npm 包。
+本节依据会话 `session-aad9fdb6-09ff-45b9-9aa0-0c7822efbcd5` 整理。目标是在 Blue 的 bottom pane 实现斗地主，并最终形成可分发的 npm 包。
 
 ### 1. 在会话中原型化
 

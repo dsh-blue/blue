@@ -12,6 +12,13 @@ session-event folding, module singletons, implicit bundle dependencies, and
 missing Fiber cleanup. The replacement must expose a plain model fallback and
 an explicit capability check.
 
+`blue-plugin-validate.mjs` accepts both source-form ESM exports and equivalent
+tsdown output where `name`/`apply` are declared first and collected in a
+trailing `export { ... }` statement. This validates packed runtime shape
+without requiring one bundler's textual formatting. It does not relax the
+stable `name`, exported `apply`, public `lib` entry, manifest, or Fiber-owned
+lifecycle requirements.
+
 ## Fixture contract
 
 An independent-install fixture packs the target and its complete local
@@ -36,6 +43,21 @@ the packed closure at the exact requested line. Its JSON report includes
 command. A mismatch is `FIXTURE_HARNESS_LINE_MISMATCH`.
 The temporary project is removed before the report returns; `fixtureCleaned`
 must be `true`.
+
+W5-C's downstream ecosystem has a whole-suite gate in addition to the generic
+single-package fixture:
+
+```sh
+pnpm check:examples
+```
+
+It validates the user kit, six runnable plugins, and their composition bundle,
+then packs API/UI/core plus the full example closure into one independent npm
+project on both the current and previous Harness lines. Acceptance requires
+the exact seven-scenario declared list to equal the executed list, empty
+`skipped`/`failures`, exact installed Harness versions, and both `cleaned` and
+`fixtureCleaned` set to `true`. The user kit has no plugin manifest or
+capability; each runnable consumer retains its own admission and unload checks.
 
 ## Ecosystem audits
 

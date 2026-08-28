@@ -74,6 +74,9 @@ also rechecks the fence after synchronous owner notification so reentrant
 consumer cleanup cannot leave a contribution behind. A live notification
 subscription rolls its listener and handle back before propagating a rejected
 Cordis effect registration.
+The public consumer shape requires an effect callback that returns its disposer,
+matching a real Cordis `Context` without downstream casts; `open()` always
+installs exactly that cleanup.
 The host keeps one aggregate registry per capability, rejects duplicate ids
 across consumers, reserves Blue's owner namespace, and synchronously notifies
 the Blue-owned adapters. An adapter admission failure rolls the registration

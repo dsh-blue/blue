@@ -36,6 +36,11 @@ packages/
   lark/         @dsh-blue/blue-lark        — optional command/notification adapter
   app/          @dsh-blue/blue-app         — CLI startup + Agent driver
   bundle/blue/  @dsh-blue/blue             — installable bundle (cordis.patch.yml)
+examples/
+  blue-user-kit/                             — pure shared public-UI component kit
+  header/ right-inspector/ bottom-log/ overlay/
+  status-provider/ editor-provider/          — six opt-in publish-shaped plugins
+  blue-ecosystem/                            — opt-in six-row example composition bundle
 script/install-dev.sh  — one-shot local dev install into a dsh profile
 website/               — VitePress documentation site (@dsh-blue/website): zh source at the top
                          level, en mirror under website/en/; deployed to GitHub Pages (ADR D32)
@@ -65,6 +70,7 @@ Each package has the same shape: `src/` (source), `tests/` (vitest specs), `lib/
 | lark | `@dsh-blue/blue-lark` | optional ecosystem interaction adapter | official command · loopback settings client · notifications | [AGENTS.md](packages/lark/AGENTS.md) |
 | bundle/blue | `@dsh-blue/blue` | installable unit | `cordis.patch.yml` (29 Blue-owned rows: 2 host-support + 27 product rows) · thin-host roster/disables · `presets/` · drift guard | [AGENTS.md](packages/bundle/blue/AGENTS.md) |
 | cli | `@dsh-blue/blue-cli` | the `blue` launcher shell — dependency-free global bin, outside the plugin tree | exact global `dsh` probe · profile calibration (`blue`, link-lane skip) · argv translation (`-V` self-answer, `plugin` subcommand, `--profile` swallow) · `BLUE_LAUNCHER` rebrand env | [AGENTS.md](packages/cli/AGENTS.md) |
+| examples | `@dsh-blue-example/*` | validation-only downstream ecosystem | pure user kit · six opt-in public-API plugins · composition bundle · packed-install evidence | [AGENTS.md](examples/blue-user-kit/AGENTS.md) |
 
 The runtime direction is Harness domain → conversation/app projection/action boundaries → frontend models → transcript/interaction TUI adapters → core; only core crosses into pi-tui. Context/remote/OpenPencil/Lark exercise the same boundary as validation-only adapters. `@deepseek-ai/cordis` and dsh service packages are host-provided peers, mirrored as pinned dev dependencies for local builds and tests.
 

@@ -1,0 +1,24 @@
+{
+  "name": "@dsh-blue-example/blue-ecosystem",
+  "description": "Opt-in composition bundle for all Blue ecosystem examples",
+  "version": "0.1.0",
+  "publishConfig": { "access": "public" },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": { ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" }, "./cordis.patch.yml": "./cordis.patch.yml", "./package.json": "./package.json" },
+  "files": ["lib/**/*", "cordis.patch.yml"],
+  "license": "MIT",
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "dependencies": {
+    "@dsh-blue-example/user-kit": "workspace:*",
+    "@dsh-blue-example/header": "workspace:*",
+    "@dsh-blue-example/right-inspector": "workspace:*",
+    "@dsh-blue-example/bottom-log": "workspace:*",
+    "@dsh-blue-example/overlay": "workspace:*",
+    "@dsh-blue-example/status-provider": "workspace:*",
+    "@dsh-blue-example/editor-provider": "workspace:*"
+  },
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@dsh-blue/blue": "workspace:*" },
+  "devDependencies": { "@deepseek-ai/cordis": "4.0.1", "@dsh-blue/blue": "workspace:*" }
+}

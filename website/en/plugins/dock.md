@@ -1,80 +1,101 @@
-# Dock panes
+# Panes and overlays
 
-The `dock` capability registers a pane into the bottom area above the editor. The bottom area is Blue's "dashboard" slot — the built-in activity, queue, todo, btw, and agents panes all line up here, and your pane sits alongside them.
+`panes` adds UI to Blue's header, left, right, or bottom lane. `overlays` opens
+a surface whose lifetime and focus are owned by the host. Both consume
+canonical `BlueUiNode` values; plugins never handle renderer objects, terminal
+coordinates, or raw focus handles.
 
-## Contract
+## Pane contract
 
 ```ts
-api.dock?.register(contribution: BlueDockContribution): BlueResult<BlueRegistration>
+api.panes?.register(contribution: BluePaneContribution): BlueResult<BluePaneRegistration>
 ```
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `id` | `string` | a lowercase namespace id of 1–128 characters |
-| `view` | `BlueView \| (() => BlueView \| null)` | a static view, or a function returning the current view (returning `null` shows nothing for that frame) |
-| `priority` | `number?` | optional integer, default 50. **Dock panes sort by priority** (smaller first; ties break by registration order) |
-| `preferredRows` | `number?` | preferred row count, an integer in 0–20; absent or out-of-range values clamp to the 20-row ceiling |
-| `minRows` | `number?` | minimum row count, an integer in 0–20. **Reserved field**: not yet consumed by the current renderer |
-| `collapsible` | `boolean?` | whether the user may collapse the pane. **Reserved field**: not yet consumed by the current renderer |
-
-Out-of-range `preferredRows` / `minRows` (non-integer or outside 0–20) returns `BLUE_LIMIT_EXCEEDED` from `register()`.
-
-## Full example
-
-A pane showing todo counts (data comes from Harness service injection):
+| Field | Meaning |
+| --- | --- |
+| `id` | globally unique contribution id outside Blue's reserved namespace |
+| `placement` | `header \| left \| right \| bottom` |
+| `size` | `min`, `preferred`, and `max` lane hints; the host makes the final allocation |
+| `narrow` | degrade to `bottom`, an `overlay` entry, or `hidden` on narrow screens |
+| `render` | synchronously returns `BlueUiNode \| null`; keep it pure and cheap |
+| `onEvent` | optional structured event handler, with no raw keys or renderer objects |
 
 ```ts
 const opened = ctx.bluePluginHost.open(ctx, {
-  id: 'my-plugin.metrics',
+  id: 'acme.inspector',
   api: '^1.0.0',
-  capabilities: ['dock'],
+  capabilities: ['panes'],
 })
 if (!opened.ok) return
 
-opened.value.dock?.register({
-  id: 'metrics.pane',
-  priority: 40,
-  preferredRows: 3,
-  view: () => ({
-    kind: 'fields',
-    rows: [
-      { label: 'requests', value: [{ text: String(stats.requests) }] },
-      { label: 'errors', value: [{ text: String(stats.errors), tone: stats.errors > 0 ? 'danger' : 'muted' }] },
-      { label: 'uptime', value: [{ text: formatUptime(stats.startedAt), tone: 'muted' }] },
-    ],
-  }),
+opened.value.panes?.register({
+  id: 'acme.inspector.context',
+  title: 'Context',
+  placement: 'right',
+  size: { min: 20, preferred: 30, max: 40 },
+  narrow: 'bottom',
+  render: () => ui.fields([
+    { label: 'Mode', value: [{ text: 'normal', tone: 'success' }] },
+    { label: 'Tokens', value: [{ text: '12k / 28k', tone: 'muted' }] },
+  ]),
 })
 ```
 
-Compose multi-part content with `sections`; `body` recurses as any `BlueView`:
+Blue creates lane tabs when multiple side panes compete. A plugin controls only
+the active pane's interior and cannot split the outer lane again. The returned
+handle supports `refresh()` and `setHidden()`; both the registration and handle
+are consumer-Fiber bound, so retained calls are rejected after unload.
+
+## Overlay contract
 
 ```ts
-view: {
-  kind: 'sections',
-  sections: [
-    { title: 'summary', body: { kind: 'text', content: '...' } },
-    { title: 'last diff', collapsed: true, body: { kind: 'diff', before: oldCode, after: newCode } },
-  ],
-}
+api.overlays?.open(request: BlueOverlayRequest, options?: {
+  userGesture?: BlueUserGesture
+}): BlueResult<BluePublicOverlayHandle>
 ```
 
-## Behavior details
+A passive, non-capturing overlay can show transient details. A
+`capturing: true` overlay may contain controls and acquire focus, but it must be
+opened with the one-shot `userGesture` from the current Blue-owned dispatch:
 
-- **A pane-set change rebuilds the whole area**: when any dock contribution registers or unregisters, the bottom area rebuilds all plugin panes in the priority order of the current snapshot. The `view` function re-evaluates on the new frame — no manual refresh needed;
-- **Row counts are a budget, not a promise**: `preferredRows` clamps to the renderer's plugin-view row ceiling (20); when the terminal is too narrow, over-wide rows are truncated — width budgeting is the renderer's job, see [Core concepts](/en/plugins/concepts#the-blueview-vocabulary);
-- **The gutter is added by the renderer**: the separator bar on a pane's left edge is drawn uniformly by the renderer — do not draw your own borders in the view;
-- **Static view vs function view**: an unchanging nameplate uses a static `BlueView`; state-varying content uses a function — it re-evaluates every frame, so keep it cheap too.
+```ts
+api.commands?.register({
+  id: 'show-details',
+  label: 'Show details',
+  execute: async (_args, options) => {
+    if (options?.userGesture === undefined) {
+      return { ok: false, code: 'BLUE_ACTION_REJECTED', message: 'user gesture required' }
+    }
+    const result = api.overlays?.open({
+      id: 'acme.details',
+      title: 'Details',
+      capturing: true,
+      dismissible: true,
+      anchor: 'center',
+      width: '70%',
+      maxHeight: '70%',
+      render: () => ui.surface({
+        chrome: 'overlay',
+        child: ui.text('Opened by an explicit command'),
+      }),
+    }, { userGesture: options.userGesture })
+    return result?.ok ? { ok: true, value: undefined } : result ?? {
+      ok: false, code: 'BLUE_CAPABILITY_ABSENT', message: 'overlay host unavailable',
+    }
+  },
+})
+```
 
-## Common pitfalls
+Gestures cannot be cached, transferred, or reused across asynchronous user
+operations. Close, failure, timeout, and plugin unload all remove the overlay;
+the host restores the previous focus.
 
-| Symptom | Cause |
-| --- | --- |
-| `BLUE_LIMIT_EXCEEDED` | `preferredRows` / `minRows` is not an integer or outside 0–20 |
-| `BLUE_INVALID_CONTRIBUTION` | `view` is neither an object nor a function |
-| the pane never appears | the function view returned `null`; `register()` failed unchecked; the pane was pushed out of the visible area by later higher-priority panes |
-| pane order is not what you expected | check each pane's `priority` (default 50); ties break by registration order |
+## Responsive layout and width
 
-## Reference
+- `narrow` controls the outer lane; use `ui.child(node, { when })` for local node visibility;
+- never read terminal columns, hand-wrap text, or embed ANSI; core compiles nodes with the single width truth;
+- `size` is a constraint hint, not a fixed pixel or row/column promise; very narrow layouts may park or hide a contribution;
+- do no I/O in `render()`; update external state and call the registration's `refresh()`.
 
-- The built-in panes live in two packages: activity, todo, btw, and agents in `blue-transcript`, queue in `blue-interaction` ([Built-in plugins](/en/plugins/builtins));
-- How a dock contribution flows inside Blue: public contribution → view bridge → core's bounded dock mount, without entering the built-in pane registry; see the [Seam reference](/en/plugins/seams).
+See the runnable [header, right inspector, bottom log, and overlay examples](/en/plugins/examples).
+For migration from old `dock` contributions, use the [migration guide](/en/plugins/ui-migration).

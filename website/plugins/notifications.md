@@ -46,7 +46,7 @@ api.notifications?.subscribe((notification) => {
 - **不做去重或节流**：host 不合并同 id 通知，也不限频。频率控制是发布方的责任——高频事件（进度 tick）请自己节流，或者改用[状态栏](/plugins/status)；
 - **失败是结构化的**：id 非法或 `view` 不是对象时 `publish` 返回 `BLUE_INVALID_CONTRIBUTION`；呈现适配器的拒绝也会作为失败返回，不会抛异常；
 - **订阅方异常不影响他人**：单个 listener 抛错会被隔离，不阻塞其他订阅者和呈现；
-- **瞬时呈现**：当前的通知条不排队、不留历史。需要持久可见的状态请用[状态栏](/plugins/status)或 [dock](/plugins/dock)。
+- **瞬时呈现**：当前的通知条不排队、不留历史。需要持久可见的状态请用[状态栏](/plugins/status)或 [pane](/plugins/dock)。
 
 ## 常见错误
 

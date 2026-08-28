@@ -42,6 +42,7 @@ function packagesWithExports() {
     }
   }
   visit(join(root, 'packages'))
+  visit(join(root, 'examples'))
   return found
 }
 
