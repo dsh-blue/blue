@@ -152,6 +152,7 @@ function copySession(snapshot: BlueSessionSnapshot | null): BlueSessionSnapshot 
     ...(snapshot.model.effort === undefined ? {} : { effort: snapshot.model.effort }),
   })
   return Object.freeze({
+    revision: snapshot.revision,
     id: snapshot.id,
     cwd: snapshot.cwd,
     status: snapshot.status,

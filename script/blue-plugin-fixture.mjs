@@ -392,6 +392,227 @@ try {
     }
   })
 
+  if (manifest.name === '@dsh-blue/blue-app') {
+    const blueApi = await load('@dsh-blue/blue-api')
+    const sessionBridge = await load('@dsh-blue/blue-app/plugin-host-session-bridge')
+
+    function effectOwner() {
+      const cleanups = []
+      return {
+        effect(callback) {
+          const cleanup = callback()
+          if (typeof cleanup === 'function') cleanups.push(cleanup)
+        },
+        dispose() {
+          for (const cleanup of cleanups.splice(0).reverse()) cleanup()
+        },
+      }
+    }
+
+    function sessionContext(request) {
+      const ctx = new cordis.Context()
+      const host = new blueApi.BluePluginHostService(ctx)
+      let snapshot = { revision: 1, id: 'packed-a', cwd: '/packed/a', status: 'idle', mode: 'normal', model: { id: 'packed-model', provider: 'packed-provider' } }
+      let listener
+      const reader = {
+        current: () => snapshot,
+        subscribe(next) {
+          listener = next
+          next(snapshot)
+          let disposed = false
+          return {
+            get disposed() { return disposed },
+            dispose() { if (!disposed) { disposed = true; if (listener === next) listener = undefined } },
+          }
+        },
+      }
+      const requester = { request: (action, options) => request(action, options) }
+      ctx.reflect.provide('blueSessionReader', reader)
+      ctx.reflect.provide('blueSessionRequester', requester)
+      return {
+        ctx,
+        host,
+        reader,
+        requester,
+        publish(value) { snapshot = value; listener?.(value) },
+        lateListener: () => listener,
+      }
+    }
+
+    await scenario('app.session-read-facade-revision-freeze-unload', async () => {
+      const fixture = sessionContext(async () => ({ ok: true, value: undefined }))
+      let ownerFiber
+      const absentConsumer = effectOwner()
+      const absent = fixture.host.open(absentConsumer, { id: '@fixture/session-read-absent', api: '^1.0.0', capabilities: ['session.read'] })
+      ensure(!absent.ok && absent.code === 'BLUE_CAPABILITY_ABSENT', 'FIXTURE_SESSION_READ_ABSENT', 'session.read did not report an absent owner before bridge mount')
+      absentConsumer.dispose()
+      try {
+        ownerFiber = await fixture.ctx.plugin(sessionBridge)
+        const readConsumer = effectOwner()
+        const read = fixture.host.open(readConsumer, { id: '@fixture/session-read', api: '^1.0.0', capabilities: ['session.read'] })
+        ensure(read.ok && read.value.session !== undefined && read.value.sessionActions === undefined, 'FIXTURE_SESSION_READ_SCOPE', 'read-only manifest did not receive only api.session')
+        ensure(typeof read.value.session.current === 'function' && typeof read.value.session.subscribe === 'function' && !('request' in read.value.session), 'FIXTURE_SESSION_READ_KEYS', 'session.read exposed an action method')
+        const initial = read.value.session.current()
+        ensure(initial !== fixture.reader.current() && initial?.model !== fixture.reader.current().model, 'FIXTURE_SESSION_READ_COPY', 'host retained owner snapshot identity')
+        ensure(Object.isFrozen(initial) && Object.isFrozen(initial?.model), 'FIXTURE_SESSION_READ_FREEZE', 'session snapshot was not deeply frozen')
+        fixture.reader.current().model.id = 'mutated-owner-model'
+        ensure(initial?.model?.id === 'packed-model', 'FIXTURE_SESSION_READ_OWNER_MUTATION', 'owner mutation crossed the snapshot boundary')
+
+        const seen = []
+        const registration = read.value.session.subscribe(value => {
+          seen.push(value?.revision ?? -1)
+          if (value?.revision === 1) fixture.publish({ revision: 2, id: 'packed-a', cwd: '/packed/reentrant', status: 'running', mode: 'plan' })
+        })
+        ensure(seen.join() === '1,2' && read.value.session.current()?.cwd === '/packed/reentrant', 'FIXTURE_SESSION_READ_REENTRANT', 'subscribe-before-replay missed a reentrant revision')
+        fixture.publish({ revision: 2, id: 'packed-a', cwd: '/packed/duplicate', status: 'failed', mode: 'normal' })
+        fixture.publish({ revision: 1, id: 'packed-a', cwd: '/packed/regressed', status: 'failed', mode: 'normal' })
+        ensure(seen.join() === '1,2', 'FIXTURE_SESSION_READ_REVISION_FENCE', 'duplicate or regressing revision was admitted')
+        registration.dispose()
+        registration.dispose()
+        fixture.publish({ revision: 3, id: 'packed-a', cwd: '/packed/disposed', status: 'idle', mode: 'normal' })
+        ensure(seen.join() === '1,2', 'FIXTURE_SESSION_READ_DISPOSE', 'disposed read subscription received an update')
+
+        const combinedConsumer = effectOwner()
+        const combined = fixture.host.open(combinedConsumer, { id: '@fixture/session-combined', api: '^1.0.0', capabilities: ['session.read', 'session.act'] })
+        ensure(combined.ok && combined.value.session !== undefined && combined.value.sessionActions !== undefined && !('request' in combined.value.session) && !('current' in combined.value.sessionActions), 'FIXTURE_SESSION_COMBINED_SCOPE', 'combined manifest merged the two session method sets')
+
+        const retained = read.value.session
+        const late = fixture.lateListener()
+        await ownerFiber.dispose()
+        ownerFiber = undefined
+        late?.({ revision: 4, id: 'packed-late', cwd: '/late', status: 'failed', mode: 'yolo' })
+        ensure(retained.current() === null, 'FIXTURE_SESSION_READ_OWNER_UNLOAD', 'retained reader admitted an old-owner callback')
+        fixture.publish({ revision: 10, id: 'packed-b', cwd: '/packed/b', status: 'idle', mode: 'normal' })
+        ownerFiber = await fixture.ctx.plugin(sessionBridge)
+        ensure(retained.current()?.id === 'packed-b' && retained.current()?.revision === 10, 'FIXTURE_SESSION_READ_OWNER_RELOAD', 'retained reader did not follow the replacement owner generation')
+
+        combinedConsumer.dispose()
+        readConsumer.dispose()
+        ensure(retained.current() === null, 'FIXTURE_SESSION_READ_CONSUMER_UNLOAD', 'disposed consumer retained a readable snapshot')
+      } finally {
+        await ownerFiber?.dispose()
+        await fixture.ctx.fiber.dispose()
+      }
+    })
+
+    await scenario('app.session-act-fifo-abort-stale-late-unload', async () => {
+      let handler = async () => ({ ok: true, value: undefined })
+      const fixture = sessionContext((action, options) => handler(action, options?.signal ?? new AbortController().signal))
+      let ownerFiber
+      const absentConsumer = effectOwner()
+      const absent = fixture.host.open(absentConsumer, { id: '@fixture/session-act-absent', api: '^1.0.0', capabilities: ['session.act'] })
+      ensure(!absent.ok && absent.code === 'BLUE_CAPABILITY_ABSENT', 'FIXTURE_SESSION_ACT_ABSENT', 'session.act did not report an absent owner before bridge mount')
+      absentConsumer.dispose()
+      try {
+        ownerFiber = await fixture.ctx.plugin(sessionBridge)
+        const firstConsumer = effectOwner()
+        const secondConsumer = effectOwner()
+        const first = fixture.host.open(firstConsumer, { id: '@fixture/session-act-first', api: '^1.0.0', capabilities: ['session.act'] })
+        const second = fixture.host.open(secondConsumer, { id: '@fixture/session-act-second', api: '^1.0.0', capabilities: ['session.act'] })
+        ensure(first.ok && second.ok && first.value.session === undefined && second.value.session === undefined, 'FIXTURE_SESSION_ACT_SCOPE', 'act-only manifest received a reader')
+        ensure(typeof first.value.sessionActions.request === 'function' && !('current' in first.value.sessionActions) && !('subscribe' in first.value.sessionActions), 'FIXTURE_SESSION_ACT_KEYS', 'session.act exposed read methods')
+
+        const fifoGate = Promise.withResolvers()
+        const order = []
+        handler = async action => {
+          order.push(action.text)
+          if (action.text === 'first') await fifoGate.promise
+          return { ok: true, value: undefined }
+        }
+        const fifoFirst = first.value.sessionActions.request({ kind: 'followup', text: 'first' })
+        const fifoSecond = second.value.sessionActions.request({ kind: 'steer', text: 'second' })
+        await new Promise(resolveImmediate => setImmediate(resolveImmediate))
+        ensure(order.join() === 'first', 'FIXTURE_SESSION_ACT_FIFO_START', 'session actions did not share one owner FIFO')
+        fifoGate.resolve()
+        const fifoResults = await Promise.all([fifoFirst, fifoSecond])
+        ensure(fifoResults.every(result => result.ok) && order.join() === 'first,second', 'FIXTURE_SESSION_ACT_FIFO_RESULT', 'session action FIFO order drifted')
+
+        const preAbort = new AbortController()
+        preAbort.abort()
+        const preAborted = await first.value.sessionActions.request({ kind: 'interrupt' }, { signal: preAbort.signal })
+        ensure(!preAborted.ok && preAborted.code === 'BLUE_ABORTED', 'FIXTURE_SESSION_ACT_PRE_ABORT', 'pre-aborted action was admitted')
+
+        const activeGate = Promise.withResolvers()
+        let activeSignal
+        handler = async (_action, signal) => {
+          activeSignal = signal
+          await activeGate.promise
+          return { ok: true, value: undefined }
+        }
+        const activeController = new AbortController()
+        const active = first.value.sessionActions.request({ kind: 'interrupt' }, { signal: activeController.signal })
+        await new Promise(resolveImmediate => setImmediate(resolveImmediate))
+        activeController.abort()
+        activeGate.resolve()
+        const activeResult = await active
+        ensure(!activeResult.ok && activeResult.code === 'BLUE_ABORTED' && activeSignal?.aborted, 'FIXTURE_SESSION_ACT_ACTIVE_ABORT', 'active abort did not reach owner work')
+
+        const queueGate = Promise.withResolvers()
+        let queuedCalls = 0
+        handler = async action => {
+          queuedCalls += 1
+          if (action.text === 'block') await queueGate.promise
+          return { ok: true, value: undefined }
+        }
+        const blocker = first.value.sessionActions.request({ kind: 'followup', text: 'block' })
+        const queuedController = new AbortController()
+        const queued = second.value.sessionActions.request({ kind: 'followup', text: 'queued' }, { signal: queuedController.signal })
+        await new Promise(resolveImmediate => setImmediate(resolveImmediate))
+        queuedController.abort()
+        queueGate.resolve()
+        await blocker
+        const queuedResult = await queued
+        ensure(!queuedResult.ok && queuedResult.code === 'BLUE_ABORTED' && queuedCalls === 1, 'FIXTURE_SESSION_ACT_QUEUED_ABORT', 'queued abort reached owner work')
+
+        const staleGate = Promise.withResolvers()
+        const staleCalls = []
+        handler = async action => {
+          staleCalls.push(action.text)
+          if (action.text === 'stale-block') await staleGate.promise
+          return { ok: true, value: undefined }
+        }
+        const staleActive = first.value.sessionActions.request({ kind: 'followup', text: 'stale-block' })
+        const staleQueued = second.value.sessionActions.request({ kind: 'followup', text: 'stale-queued' })
+        await new Promise(resolveImmediate => setImmediate(resolveImmediate))
+        fixture.publish({ revision: 2, id: 'packed-b', cwd: '/packed/b', status: 'idle', mode: 'normal' })
+        staleGate.resolve()
+        const staleResults = await Promise.all([staleActive, staleQueued])
+        ensure(staleResults.every(result => !result.ok && result.code === 'BLUE_ACTION_REJECTED') && staleCalls.join() === 'stale-block', 'FIXTURE_SESSION_ACT_SESSION_STALE', 'session switch admitted queued or late action work')
+
+        const unloadGate = Promise.withResolvers()
+        let unloadSignal
+        handler = async (_action, signal) => {
+          unloadSignal = signal
+          await unloadGate.promise
+          return { ok: true, value: undefined }
+        }
+        const unloading = first.value.sessionActions.request({ kind: 'interrupt' })
+        await new Promise(resolveImmediate => setImmediate(resolveImmediate))
+        await ownerFiber.dispose()
+        ownerFiber = undefined
+        unloadGate.resolve()
+        const unloadResult = await unloading
+        ensure(!unloadResult.ok && unloadSignal?.aborted, 'FIXTURE_SESSION_ACT_OWNER_UNLOAD', 'owner unload did not abort and reject active work')
+        const gap = await first.value.sessionActions.request({ kind: 'interrupt' })
+        ensure(!gap.ok && gap.code === 'BLUE_CAPABILITY_ABSENT', 'FIXTURE_SESSION_ACT_OWNER_GAP', 'live retained action facade did not report owner absence')
+
+        fixture.publish({ revision: 10, id: 'packed-c', cwd: '/packed/c', status: 'idle', mode: 'normal' })
+        handler = async () => ({ ok: true, value: undefined })
+        ownerFiber = await fixture.ctx.plugin(sessionBridge)
+        ensure((await first.value.sessionActions.request({ kind: 'interrupt' })).ok, 'FIXTURE_SESSION_ACT_OWNER_RELOAD', 'replacement owner generation did not accept a fresh action')
+        firstConsumer.dispose()
+        const disposed = await first.value.sessionActions.request({ kind: 'interrupt' })
+        ensure(!disposed.ok && disposed.code === 'BLUE_ACTION_REJECTED', 'FIXTURE_SESSION_ACT_CONSUMER_UNLOAD', 'disposed consumer action facade remained active')
+        secondConsumer.dispose()
+      } finally {
+        await ownerFiber?.dispose()
+        await fixture.ctx.fiber.dispose()
+      }
+    })
+
+    report.observations.push('app session.read/session.act exercised through packed API and app owner-bridge exports')
+  }
+
   if (manifest.name === '@dsh-blue/blue-interaction') {
     const cordis = await load('@deepseek-ai/cordis')
     const blueApi = await load('@dsh-blue/blue-api')

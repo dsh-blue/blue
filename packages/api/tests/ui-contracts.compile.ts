@@ -13,6 +13,9 @@ import type {
   BluePluginApi,
   BluePluginHost,
   BluePluginManifest,
+  BlueSessionReader,
+  BlueSessionRequester,
+  BlueSessionSnapshot,
   BlueStatusNode,
   BlueStatusProvider,
   BlueUiEvent,
@@ -245,6 +248,26 @@ export const capabilities = [
 export const manifest = {
   id: '@acme/inspector', api: '^1.0.0', capabilities: ['panes', 'status'],
 } satisfies BluePluginManifest
+
+export const sessionSnapshot = {
+  revision: 1, id: 'session', cwd: '/workspace', status: 'idle', mode: 'normal',
+} satisfies BlueSessionSnapshot
+// @ts-expect-error public session snapshots require a monotonic revision
+export const unrevisionedSession: BlueSessionSnapshot = { id: 'session', cwd: '/workspace', status: 'idle', mode: 'normal' }
+
+declare const sessionReader: BlueSessionReader
+declare const sessionRequester: BlueSessionRequester
+sessionReader.current()
+sessionReader.subscribe(() => {})
+sessionRequester.request({ kind: 'interrupt' })
+// @ts-expect-error read-only session facades cannot act
+sessionReader.request({ kind: 'interrupt' })
+// @ts-expect-error action-only session facades cannot read
+sessionRequester.current()
+
+declare const sessionApi: BluePluginApi
+sessionApi.session?.current()
+sessionApi.sessionActions?.request({ kind: 'followup', text: 'hello' })
 
 declare const status: NonNullable<BluePluginApi['status']>
 status.register({ id: '@acme/status/branch', render: () => ({ kind: 'text', content: 'main' }) })

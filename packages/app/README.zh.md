@@ -6,9 +6,10 @@ Blue 交互式 `dsh --profile blue` 界面的命令行启动提供方与 Agent �
 
 `./startup` 入口（`blue-startup`）声明可选的 `[task]` 位置参数与 `--resume <id>`，并通过 `blueStartup` 发布解析结果。显示帮助或解析失败时不会启动应用 action。
 
-主入口（`blue-app`）创建或恢复 Harness Agent，但 Agent 与 Session 始终留在本包内部。Frontend 插件只接收三个 renderer-neutral 服务：
+主入口（`blue-app`）创建或恢复 Harness Agent，但 Agent 与 Session 始终留在本包内部。Frontend 插件只接收四个 renderer-neutral 服务：
 
-- `blueSessionReader` 发布不可变的当前会话快照，并接收 `@dsh-blue/blue-api` 定义的基础 follow-up、steer 与 interrupt action。
+- `blueSessionReader` 发布带单调递增 revision、缓存且深冻结的当前会话快照。
+- `blueSessionRequester` 只接收 `@dsh-blue/blue-api` 定义的基础 follow-up、steer 与 interrupt action。
 - `blueSessionProjections` 读取并订阅官方当前会话 projection 值，也可读取直接子会话 projection，但不暴露 Session handle。
 - `blueSessionActions` 承担更丰富的交互操作，包括模型与模式切换、命令执行、队列投影、rewind 候选、preset、skill、tool、会话详情以及可释放的旁路会话。Interrupt 请求也会停止当前 Agent 仍在运行的 continuable 后代。
 
@@ -17,6 +18,8 @@ Blue 交互式 `dsh --profile blue` 界面的命令行启动提供方与 Agent �
 模型选择按三层解析：会话内选择、最近一次持久化 request header、进程默认值。对外只暴露不可变 action 结果，不暴露 Harness 的可变选择引用。可选 preset composition 会在创建与恢复时从会话记录重建。
 
 本包还拥有安全的进行中 turn 撤回与 BTW 旁路会话。旁路 handle 只暴露 opaque projection identity、纯文本 follow-up、限定为 `running`/`idle` 的状态以及 disposal。
+
+`./plugin-host-session-bridge` 入口在自身 Fiber 生命周期内把 reader 与 requester 挂接到 `bluePluginHost`。公共插件分别获得 `session.read` 与 `session.act` facade；内部宽口径的 `blueSessionActions` 服务不会越过该边界。
 
 ## 模型体验
 

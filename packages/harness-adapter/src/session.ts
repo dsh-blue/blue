@@ -1,11 +1,11 @@
-import type { BlueSessionAction, BlueSessionSnapshot, BlueSessionReader, BlueRegistration, BlueResult } from '@dsh-blue/blue-api'
+import type { BlueSessionAction, BlueSessionSnapshot, BlueSessionReader, BlueSessionRequester, BlueRegistration, BlueResult } from '@dsh-blue/blue-api'
 import { absent, abortResult, AdapterCapabilityAbsentError, failure, staleResult, success, type AdapterResult, type EventEnvelope, type SnapshotEnvelope, type AbortOptions, type Unsubscribe } from './types.ts'
 
 export interface HarnessSessionSource { snapshot(signal: AbortSignal): Promise<SnapshotEnvelope<BlueSessionSnapshot>>; subscribe(afterWatermark: number, listener: (event: EventEnvelope<BlueSessionSnapshot>) => void): Unsubscribe; request(action: BlueSessionAction, signal: AbortSignal): Promise<void> }
 export interface SessionBridgeOptions { readonly source?: HarnessSessionSource }
 
-/** Session bridge removal condition: Harness exposes the same snapshot watermark and action façade. */
-export class SessionBridge implements BlueSessionReader {
+/** Session bridge removal condition: Harness exposes the same snapshot watermark and split read/action facades. */
+export class SessionBridge implements BlueSessionReader, BlueSessionRequester {
   private source: HarnessSessionSource | undefined
   private controller = new AbortController()
   private unsubscribe: Unsubscribe | undefined
@@ -13,8 +13,19 @@ export class SessionBridge implements BlueSessionReader {
   private currentSnapshot: BlueSessionSnapshot | null = null
   private watermark = -1
   private readonly listeners = new Set<(snapshot: BlueSessionSnapshot | null) => void>()
+  /** Strict read-only facet for a `session.read` owner attachment. */
+  readonly reader: BlueSessionReader
+  /** Strict action-only facet for a `session.act` owner attachment. */
+  readonly requester: BlueSessionRequester
 
-  constructor(options: SessionBridgeOptions = {}) { this.source = options.source }
+  constructor(options: SessionBridgeOptions = {}) {
+    this.source = options.source
+    this.reader = Object.freeze({
+      current: () => this.current(),
+      subscribe: (listener: (snapshot: BlueSessionSnapshot | null) => void) => this.subscribe(listener),
+    })
+    this.requester = Object.freeze({ request: (action: BlueSessionAction, requestOptions?: AbortOptions) => this.request(action, requestOptions) })
+  }
   get sessionEpoch(): number { return this.epoch }
   get attached(): boolean { return this.source !== undefined && this.currentSnapshot !== null }
   async attach(source = this.source): Promise<AdapterResult<BlueSessionSnapshot>> {

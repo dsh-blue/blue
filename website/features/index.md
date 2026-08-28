@@ -1,6 +1,6 @@
 # 功能总览
 
-Blue 是一棵 Cordis 插件树。Bundle 当前有 30 条 Blue 自有行：2 条宿主支撑行、8 条基线行、15 条增强行和 5 条装配行。
+Blue 是一棵 Cordis 插件树。Bundle 当前有 31 条 Blue 自有行：2 条宿主支撑行、8 条基线行、15 条增强行和 6 条装配行。
 
 ## 基线
 
@@ -23,7 +23,7 @@ Blue 是一棵 Cordis 插件树。Bundle 当前有 30 条 Blue 自有行：2 条
 
 ## 装配
 
-`blue-interaction`、`blue-plugin-interaction-bridge`、`blue-startup` 和 `blue-app` 收口输入、命令、通知、启动与 Agent driver。App 对 renderer 只提供 readonly session reader/projection values 和 structured actions。
+`blue-interaction`、provider/public bridge、`blue-startup`、`blue-app` 和 `blue-plugin-session-bridge` 收口输入、命令、通知、启动、Agent driver 与公开 session capability。App 对 renderer 和第三方 facade 只提供 readonly session reader/projection values 和窄化 structured actions。
 
 `blue-context`、`blue-remote`、`blue-openpencil`、`blue-lark` 是 validation-only packages，不是 bundle row。
 

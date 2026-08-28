@@ -1,19 +1,19 @@
 # Built-in plugins
 
-The installable Blue bundle contains 30 Blue-owned rows: two host-support rows and 28 product rows split into baseline, enhancement, and assembly segments. External plugins integrate through the renderer-neutral public API; internal rows connect through explicit `inject` dependencies and model/action seams.
+The installable Blue bundle contains 31 Blue-owned rows: two host-support rows and 29 product rows split into baseline, enhancement, and assembly segments. External plugins integrate through the renderer-neutral public API; internal rows connect through explicit `inject` dependencies and model/action seams.
 
-The patch actually carries a 31st insert row — the Harness package `session-title-all-prompts-llm` (the title-cadence swap: the base's `session-title-llm`, which titles once from the first prompt, is disabled in favor of re-titling on every user message, so a mis-derived title self-corrects on the next one). It is a Harness row, not a Blue-owned one, so the 30-row count above excludes it.
+The patch actually carries a 32nd insert row — the Harness package `session-title-all-prompts-llm` (the title-cadence swap: the base's `session-title-llm`, which titles once from the first prompt, is disabled in favor of re-titling on every user message, so a mis-derived title self-corrects on the next one). It is a Harness row, not a Blue-owned one, so the 31-row count above excludes it.
 
 <!-- BEGIN diagram:blue-composition -->
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml - 30 Blue-owned rows · 30 条 Blue 自有行"]
+    subgraph bundle["cordis.patch.yml - 31 Blue-owned rows · 31 条 Blue 自有行"]
         subgraph host["host support 宿主支撑 - 2 rows"]
             presets["blue-agent-presets"]
             creative["blue-creative-host"]
         end
-        subgraph product["product UI 产品 UI - 28 rows"]
+        subgraph product["product UI 产品 UI - 29 rows"]
             subgraph baseline["baseline 基线 - 8 rows"]
                 api["blue-api-host"]
                 core["blue-core · blue-theme-dark"]
@@ -28,10 +28,11 @@ flowchart TB
                 viewBridge["blue-plugin-view-bridge"]
                 statusOwner["blue-status-provider-owner"]
             end
-            subgraph assembly["assembly 装配 - 5 rows"]
+            subgraph assembly["assembly 装配 - 6 rows"]
                 interaction["blue-interaction · blue-plugin-interaction-bridge"]
                 editorOwner["blue-editor-provider-owner"]
                 startup["blue-startup · blue-app"]
+                sessionBridge["blue-plugin-session-bridge"]
             end
         end
     end
@@ -86,7 +87,7 @@ These eight rows plus assembly form the minimum usable UI. The conversation prod
 | `blue-plugin-view-bridge` | public additive status contributions into the footer owner registry |
 | `blue-status-provider-owner` | exclusive status-provider selection, session/settings handoff, and fallback lifecycle owner |
 
-## Assembly (5 rows)
+## Assembly (6 rows)
 
 | Plugin | Description |
 |---|---|
@@ -95,6 +96,7 @@ These eight rows plus assembly form the minimum usable UI. The conversation prod
 | `blue-plugin-interaction-bridge` | public command/notification/editor-extension contributions into Harness/editor consumers |
 | `blue-startup` | `[task]` and `--resume` startup values |
 | `blue-app` | Agent driver providing readonly session reader/projections and structured actions |
+| `blue-plugin-session-bridge` | attaches the app's strict reader/requester facets as public `session.read` / `session.act` |
 
 ## Validation-only packages
 

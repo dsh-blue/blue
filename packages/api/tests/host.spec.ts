@@ -6,10 +6,11 @@
  */
 
 import { Context, symbols } from '@deepseek-ai/cordis'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   BluePluginHostService,
   attachBluePluginHostCapabilities,
+  attachBluePluginHostSessionOwner,
   apply,
   closeBluePluginHostOverlay,
   createBlueUserGesture,
@@ -20,7 +21,7 @@ import {
   subscribeBluePluginNotifications,
   type BluePluginHostSnapshot,
 } from '../src/host.ts'
-import type { BlueEditorProvider, BluePluginApi, BluePluginManifest, BlueResult, BlueUserGesture, BlueView } from '../src/contracts.ts'
+import type { BlueEditorProvider, BluePluginApi, BluePluginManifest, BlueResult, BlueSessionAction, BlueSessionRequester, BlueSessionSnapshot, BlueUserGesture, BlueView } from '../src/contracts.ts'
 
 const view: BlueView = { kind: 'text', content: 'hello' }
 
@@ -51,6 +52,30 @@ function attach(host: BluePluginHostService, capabilities: BluePluginManifest['c
   return owner
 }
 
+function sessionValue(revision = 1, id = 'session-one'): BlueSessionSnapshot {
+  return { revision, id, cwd: '/workspace', status: 'idle', mode: 'normal', model: { id: 'model', provider: 'provider', effort: 'high' } }
+}
+
+function sessionSource(initial: BlueSessionSnapshot | null = sessionValue(), request: BlueSessionRequester['request'] = async () => ({ ok: true, value: undefined })) {
+  let current = initial
+  const listeners = new Set<(snapshot: BlueSessionSnapshot | null) => void>()
+  const reader = {
+    current: () => current,
+    subscribe(listener: (snapshot: BlueSessionSnapshot | null) => void) {
+      listeners.add(listener)
+      listener(current)
+      let disposed = false
+      return { get disposed() { return disposed }, dispose() { disposed = true; listeners.delete(listener) } }
+    },
+  }
+  return {
+    reader,
+    requester: { request },
+    publish(snapshot: BlueSessionSnapshot | null) { current = snapshot; for (const listener of listeners) listener(snapshot) },
+    listeners,
+  }
+}
+
 describe('BluePluginHostService', () => {
   it('rejects malformed and incompatible manifests at the API boundary', () => {
     const host = new BluePluginHostService(new Context())
@@ -65,7 +90,7 @@ describe('BluePluginHostService', () => {
       code: 'BLUE_API_INCOMPATIBLE',
       message: 'capability "dock" was removed; use "panes"',
     })
-    expect(host.open(c, manifest(['session.read']))).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_DENIED' })
+    expect(host.open(c, manifest(['session.read']))).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
   })
 
   it('exposes only declared capabilities and freezes the public projection', () => {
@@ -90,7 +115,7 @@ describe('BluePluginHostService', () => {
 
   it('enforces registry capability, contribution shape, and duplicate ids', () => {
     const host = new BluePluginHostService(new Context())
-    attach(host, ['commands'])
+    const owner = attach(host, ['commands'])
     const apiResult = host.open(consumer(), manifest(['commands']))
     expect(apiResult.ok).toBe(true)
     if (!apiResult.ok) return
@@ -101,7 +126,12 @@ describe('BluePluginHostService', () => {
     expect(commands.register(command('run'))).toMatchObject({ ok: false, code: 'BLUE_DUPLICATE_ID' })
     expect(commands.register({ ...command('minimum'), priority: 0 })).toMatchObject({ ok: true })
     expect(commands.register({ ...command('maximum'), priority: 100 })).toMatchObject({ ok: true })
+    expect(commands.register({ ...command('same-priority-first'), priority: 50 })).toMatchObject({ ok: true })
+    expect(commands.register({ ...command('same-priority-second'), priority: 50 })).toMatchObject({ ok: true })
+    expect(snapshotBluePluginHost(host).commands.map(entry => entry.id)).toEqual(['minimum', 'run', 'same-priority-first', 'same-priority-second', 'maximum'])
     expect(commands.register({ ...command('negative'), priority: -1 })).toMatchObject({ ok: false, code: 'BLUE_LIMIT_EXCEEDED' })
+    owner.dispose()
+    expect(commands.register(command('absent'))).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
 
     const denied = host.open(consumer(), manifest([]))
     expect(denied.ok).toBe(true)
@@ -426,7 +456,7 @@ describe('BluePluginHostService', () => {
     expect(snapshotBluePluginHost(host).status.map(entry => entry.id)).toEqual(['persistent', 'while-second-owner-lives'])
   })
 
-  it('projects every implemented public capability exactly and keeps sessions denied', () => {
+  it('projects every additive public capability exactly and keeps ownerless sessions absent', () => {
     const host = new BluePluginHostService(new Context())
     const capabilities = ['commands', 'status', 'notifications', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'] as const
     attach(host, capabilities)
@@ -435,8 +465,280 @@ describe('BluePluginHostService', () => {
     if (!opened.ok) return
     expect(Object.keys(opened.value).sort()).toEqual(['commands', 'editorExtensions', 'editorProviders', 'manifest', 'notifications', 'overlays', 'panes', 'status', 'statusProviders'])
     expect(opened.value.session).toBeUndefined()
-    expect(host.open(consumer(), manifest(['session.read']))).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_DENIED' })
-    expect(host.open(consumer(), manifest(['session.act']))).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_DENIED' })
+    expect(opened.value.sessionActions).toBeUndefined()
+    expect(host.open(consumer(), manifest(['session.read']))).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
+    expect(host.open(consumer(), manifest(['session.act']))).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
+  })
+
+  it('exposes isolated read and action session facades with frozen revisioned snapshots', () => {
+    const host = new BluePluginHostService(new Context())
+    const sourceValue = sessionValue()
+    const source = sessionSource(sourceValue)
+    const owner = consumer()
+    const ownerRegistration = attachBluePluginHostSessionOwner(host, owner, source.reader, source.requester)
+    const read = host.open(consumer(), manifest(['session.read']))
+    const act = host.open(consumer(), { ...manifest(['session.act']), id: '@acme/act' })
+    const both = host.open(consumer(), { ...manifest(['session.read', 'session.act']), id: '@acme/both' })
+    expect(read.ok && act.ok && both.ok).toBe(true)
+    if (!read.ok || !act.ok || !both.ok) return
+    expect(read.value.session).toBeDefined()
+    expect(read.value.sessionActions).toBeUndefined()
+    expect(act.value.session).toBeUndefined()
+    expect(act.value.sessionActions).toBeDefined()
+    expect('request' in read.value.session!).toBe(false)
+    expect('current' in act.value.sessionActions!).toBe(false)
+    expect(both.value.session).not.toBe(both.value.sessionActions)
+
+    const initial = read.value.session!.current()!
+    expect(initial).toEqual(sourceValue)
+    expect(initial).not.toBe(sourceValue)
+    expect(Object.isFrozen(initial)).toBe(true)
+    expect(Object.isFrozen(initial.model)).toBe(true)
+    sourceValue.cwd = '/mutated'
+    sourceValue.model!.id = 'mutated'
+    expect(read.value.session!.current()).toMatchObject({ cwd: '/workspace', model: { id: 'model' } })
+
+    const seen: Array<BlueSessionSnapshot | null> = []
+    const subscription = read.value.session!.subscribe(snapshot => { seen.push(snapshot) })
+    expect(seen.map(snapshot => snapshot?.revision ?? null)).toEqual([1])
+    source.publish({ revision: 2, id: 'session-one', cwd: '/next', status: 'running', mode: 'plan' })
+    source.publish({ revision: 3, id: 'session-one', cwd: '/next', status: 'running', mode: 'plan', model: { id: 'minimal' } })
+    source.publish({ revision: 1, id: 'session-one', cwd: '/stale', status: 'failed', mode: 'yolo' })
+    source.publish({ revision: -1, id: 'invalid', cwd: '/', status: 'idle', mode: 'normal' } as never)
+    expect(seen.map(snapshot => snapshot?.revision ?? null)).toEqual([1, 2, 3])
+    expect(seen[2]?.model).toEqual({ id: 'minimal' })
+    expect(Object.isFrozen(seen[1])).toBe(true)
+    expect(() => read.value.session!.subscribe(() => { throw new Error('initial replay failed') })).toThrow('initial replay failed')
+    source.publish(null)
+    source.publish(null)
+    expect(seen.at(-1)).toBeNull()
+    subscription.dispose()
+    subscription.dispose()
+    ownerRegistration.dispose()
+    ownerRegistration.dispose()
+  })
+
+  it('serializes session actions globally and validates action inputs', async () => {
+    const host = new BluePluginHostService(new Context())
+    const calls: BlueSessionAction[] = []
+    const releases: Array<(result: BlueResult) => void> = []
+    const source = sessionSource(sessionValue(), (action) => new Promise(resolve => { calls.push(action); releases.push(resolve) }))
+    attachBluePluginHostSessionOwner(host, consumer(), source.reader, source.requester)
+    const first = host.open(consumer(), manifest(['session.act']))
+    const second = host.open(consumer(), { ...manifest(['session.act']), id: '@acme/second' })
+    expect(first.ok && second.ok).toBe(true)
+    if (!first.ok || !second.ok) return
+
+    await expect(first.value.sessionActions!.request({ kind: 'unknown' } as never)).resolves.toMatchObject({ code: 'BLUE_INVALID_CONTRIBUTION' })
+    await expect(first.value.sessionActions!.request({ kind: 'followup' } as never)).resolves.toMatchObject({ code: 'BLUE_INVALID_CONTRIBUTION' })
+    await expect(first.value.sessionActions!.request({ kind: 'interrupt', text: 'no' } as never)).resolves.toMatchObject({ code: 'BLUE_INVALID_CONTRIBUTION' })
+    const accessor = Object.defineProperty({}, 'kind', { enumerable: true, get() { return 'interrupt' } })
+    await expect(first.value.sessionActions!.request(accessor as never)).resolves.toMatchObject({ code: 'BLUE_INVALID_CONTRIBUTION' })
+    const preAbort = new AbortController(); preAbort.abort()
+    await expect(first.value.sessionActions!.request({ kind: 'interrupt' }, { signal: preAbort.signal })).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
+
+    const one = first.value.sessionActions!.request({ kind: 'followup', text: 'one' })
+    const two = second.value.sessionActions!.request({ kind: 'steer', text: 'two' })
+    await vi.waitFor(() => { expect(calls.map(action => action.kind)).toEqual(['followup']) })
+    releases.shift()!({ ok: true, value: undefined })
+    await expect(one).resolves.toEqual({ ok: true, value: undefined })
+    await vi.waitFor(() => { expect(calls.map(action => action.kind)).toEqual(['followup', 'steer']) })
+    releases.shift()!({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'owner rejected' })
+    await expect(two).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'owner rejected' })
+
+    const blocker = first.value.sessionActions!.request({ kind: 'followup', text: 'blocker' })
+    await vi.waitFor(() => { expect(calls).toHaveLength(3) })
+    const queuedController = new AbortController()
+    const queued = second.value.sessionActions!.request({ kind: 'interrupt' }, { signal: queuedController.signal })
+    queuedController.abort()
+    await expect(queued).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
+    expect(calls).toHaveLength(3)
+    releases.shift()!({ ok: true, value: undefined })
+    await expect(blocker).resolves.toEqual({ ok: true, value: undefined })
+    await Promise.resolve()
+    expect(calls).toHaveLength(3)
+  })
+
+  it('forwards running aborts and contains requester failures', async () => {
+    const host = new BluePluginHostService(new Context())
+    let mode: 'abort' | 'settle-abort-race' | 'error' | 'string' = 'abort'
+    let ownerSignal: AbortSignal | undefined
+    let settleRace!: () => void
+    const request = vi.fn<BlueSessionRequester['request']>(async (_action, options = {}) => {
+      ownerSignal = options.signal
+      if (mode === 'settle-abort-race') return new Promise<BlueResult>(resolve => { settleRace = () => resolve({ ok: true, value: undefined }) })
+      if (mode === 'error') throw new Error('owner failed')
+      if (mode === 'string') throw 'string failure'
+      await new Promise<void>(() => {})
+      return { ok: true, value: undefined }
+    })
+    const source = sessionSource(sessionValue(), request)
+    attachBluePluginHostSessionOwner(host, consumer(), source.reader, source.requester)
+    const opened = host.open(consumer(), manifest(['session.act']))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    const controller = new AbortController()
+    const running = opened.value.sessionActions!.request({ kind: 'interrupt' }, { signal: controller.signal })
+    await vi.waitFor(() => { expect(request).toHaveBeenCalledOnce() })
+    controller.abort()
+    await expect(running).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
+    expect(ownerSignal?.aborted).toBe(true)
+    mode = 'settle-abort-race'
+    const raceController = new AbortController()
+    const raced = opened.value.sessionActions!.request({ kind: 'interrupt' }, { signal: raceController.signal })
+    await vi.waitFor(() => { expect(settleRace).toBeTypeOf('function') })
+    settleRace()
+    await Promise.resolve()
+    await Promise.resolve()
+    raceController.abort()
+    await expect(raced).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
+    mode = 'error'
+    await expect(opened.value.sessionActions!.request({ kind: 'interrupt' })).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'owner failed' })
+    mode = 'string'
+    await expect(opened.value.sessionActions!.request({ kind: 'interrupt' })).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'session action failed' })
+  })
+
+  it('fences stale and late session actions across switch, owner, consumer, and host unload', async () => {
+    async function pendingWorld() {
+      const ctx = new Context()
+      const host = new BluePluginHostService(ctx)
+      let release!: () => void
+      const source = sessionSource(sessionValue(), async () => new Promise<void>(resolve => { release = resolve }).then(() => ({ ok: true, value: undefined })))
+      const owner = consumer()
+      const ownerRegistration = attachBluePluginHostSessionOwner(host, owner, source.reader, source.requester)
+      const plugin = consumer()
+      const opened = host.open(plugin, manifest(['session.act']))
+      expect(opened.ok).toBe(true)
+      if (!opened.ok) throw new Error('session action did not open')
+      const result = opened.value.sessionActions!.request({ kind: 'followup', text: 'pending' })
+      await vi.waitFor(() => { expect(release).toBeTypeOf('function') })
+      return { ctx, host, source, owner, ownerRegistration, plugin, opened, result, release }
+    }
+
+    const switched = await pendingWorld()
+    const queuedAcrossSwitch = switched.opened.value.sessionActions!.request({ kind: 'steer', text: 'queued' })
+    switched.source.publish(sessionValue(2, 'session-two'))
+    await expect(switched.result).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'session action result is stale' })
+    await expect(queuedAcrossSwitch).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'session action result is stale' })
+    switched.release()
+
+    const reentrantHost = new BluePluginHostService(new Context())
+    let reentrantSource!: ReturnType<typeof sessionSource>
+    reentrantSource = sessionSource(sessionValue(), async () => {
+      reentrantSource.publish(sessionValue(2, 'session-two'))
+      return { ok: true, value: undefined }
+    })
+    attachBluePluginHostSessionOwner(reentrantHost, consumer(), reentrantSource.reader, reentrantSource.requester)
+    const reentrant = reentrantHost.open(consumer(), manifest(['session.act']))
+    expect(reentrant.ok).toBe(true)
+    if (reentrant.ok) {
+      await expect(reentrant.value.sessionActions!.request({ kind: 'interrupt' }))
+        .resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'session action result is stale' })
+    }
+
+    const ownerGone = await pendingWorld()
+    ownerGone.ownerRegistration.dispose()
+    await expect(ownerGone.result).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'session action result is stale' })
+    ownerGone.release()
+
+    const consumerGone = await pendingWorld()
+    consumerGone.plugin.dispose()
+    await expect(consumerGone.result).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'plugin consumer is disposed' })
+    consumerGone.release()
+    await expect(consumerGone.opened.value.sessionActions!.request({ kind: 'interrupt' })).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'plugin consumer is disposed' })
+
+    const hostGone = await pendingWorld()
+    await hostGone.ctx.fiber.dispose()
+    await expect(hostGone.result).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'plugin consumer is disposed' })
+    hostGone.release()
+    hostGone.ownerRegistration.dispose()
+  })
+
+  it('keeps retained session facades recoverable across an owner gap', async () => {
+    const host = new BluePluginHostService(new Context())
+    const firstSource = sessionSource(sessionValue())
+    const firstOwner = consumer()
+    const firstRegistration = attachBluePluginHostSessionOwner(host, firstOwner, firstSource.reader, firstSource.requester)
+    const plugin = consumer()
+    const opened = host.open(plugin, manifest(['session.read', 'session.act']))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    const seen: Array<string | null> = []
+    opened.value.session!.subscribe(snapshot => seen.push(snapshot === null ? null : `${snapshot.id}:${snapshot.revision}`))
+    const late = [...firstSource.listeners][0]!
+    firstRegistration.dispose()
+    late(sessionValue(2, 'late-session'))
+    expect(opened.value.session!.current()).toBeNull()
+    await expect(opened.value.sessionActions!.request({ kind: 'interrupt' })).resolves.toMatchObject({ code: 'BLUE_CAPABILITY_ABSENT' })
+
+    const secondSource = sessionSource(sessionValue(1, 'session-two'))
+    const replayingReader = {
+      current: secondSource.reader.current,
+      subscribe(listener: (snapshot: BlueSessionSnapshot | null) => void) {
+        listener(sessionValue(2, 'session-two'))
+        return secondSource.reader.subscribe(() => {})
+      },
+    }
+    attachBluePluginHostSessionOwner(host, consumer(), replayingReader, secondSource.requester)
+    expect(opened.value.session!.current()?.id).toBe('session-two')
+    expect(opened.value.session!.current()?.revision).toBe(2)
+    await expect(opened.value.sessionActions!.request({ kind: 'interrupt' })).resolves.toEqual({ ok: true, value: undefined })
+    expect(seen).toEqual(['session-one:1', null, 'session-two:2'])
+
+    plugin.dispose()
+    expect(opened.value.session!.current()).toBeNull()
+    const inert = opened.value.session!.subscribe(() => { throw new Error('inert subscription ran') })
+    expect(inert.disposed).toBe(true)
+  })
+
+  it('validates the unique session owner and its initial snapshot boundary', () => {
+    const host = new BluePluginHostService(new Context())
+    const valid = sessionSource()
+    expect(() => attachBluePluginHostCapabilities(host, consumer(), ['session.read'])).toThrow('requires attachBluePluginHostSessionOwner')
+    expect(() => attachBluePluginHostSessionOwner(host, consumer(), null as never, valid.requester)).toThrow('requires a reader')
+    expect(() => attachBluePluginHostSessionOwner(host, consumer(), valid.reader, null as never)).toThrow('requires a requester')
+
+    const invalidSnapshots = [
+      { ...sessionValue(), revision: -1 },
+      { ...sessionValue(), revision: 1.5 },
+      { ...sessionValue(), id: '' },
+      { ...sessionValue(), cwd: 1 },
+      { ...sessionValue(), status: 'unknown' },
+      { ...sessionValue(), mode: 'unknown' },
+      { ...sessionValue(), model: null },
+      { ...sessionValue(), model: { id: '' } },
+      { ...sessionValue(), model: { id: 'm', provider: 1 } },
+      { ...sessionValue(), model: { id: 'm', effort: 1 } },
+    ]
+    for (const snapshot of invalidSnapshots) {
+      const source = sessionSource(snapshot as never)
+      expect(() => attachBluePluginHostSessionOwner(host, consumer(), source.reader, source.requester)).toThrow()
+    }
+    const accessorSnapshot = Object.defineProperty({}, 'revision', { enumerable: true, get() { return 1 } })
+    const accessorSource = sessionSource(accessorSnapshot as never)
+    expect(() => attachBluePluginHostSessionOwner(host, consumer(), accessorSource.reader, accessorSource.requester)).toThrow('own data property')
+
+    const activeOwner = consumer()
+    const active = attachBluePluginHostSessionOwner(host, activeOwner, valid.reader, valid.requester)
+    expect(() => attachBluePluginHostSessionOwner(host, consumer(), valid.reader, valid.requester)).toThrow('already has an active session owner')
+    activeOwner.dispose()
+    expect(active.disposed).toBe(true)
+
+    const nullSource = sessionSource(null)
+    const nullOwner = attachBluePluginHostSessionOwner(host, consumer(), nullSource.reader, nullSource.requester)
+    const opened = host.open(consumer(), manifest(['session.read', 'session.act']))
+    expect(opened.ok).toBe(true)
+    if (opened.ok) {
+      expect(opened.value.session!.current()).toBeNull()
+      expect(opened.value.session!.subscribe(() => {}).disposed).toBe(false)
+      expect(opened.value.sessionActions!.request({ kind: 'interrupt' })).resolves.toMatchObject({ code: 'BLUE_SESSION_UNAVAILABLE' })
+    }
+    nullOwner.dispose()
+
+    const throwingEffect = { effect(): never { throw new Error('effect failed') } }
+    expect(() => attachBluePluginHostSessionOwner(host, throwingEffect, valid.reader, valid.requester)).toThrow('effect failed')
+    const throwingSubscribe = { current: () => sessionValue(), subscribe(): never { throw new Error('subscribe failed') } }
+    expect(() => attachBluePluginHostSessionOwner(host, consumer(), throwingSubscribe, valid.requester)).toThrow('subscribe failed')
   })
 
   it('admits panes with canonical state, limits, ordering, and lifecycle controls', async () => {

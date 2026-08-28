@@ -35,7 +35,7 @@ interface BluePluginManifest {
 `open()` behaves in three layers:
 
 1. **Static validation** (`validateBlueManifest`, without executing plugin code): id format, api range format, capability spelling and deduplication. Failures return `BLUE_API_INCOMPATIBLE` (or `BLUE_INVALID_CONTRIBUTION` when the manifest is not even an object);
-2. **Capability-open check**: in the current phase `commands`, `status`, `notifications`, `panes`, `overlays`, `editor.extensions`, `status.provider`, and `editor.provider` are open. Requesting either unimplemented `session.read` or `session.act` rejects the whole open (`BLUE_CAPABILITY_DENIED`) — a rejection, not a degradation;
+2. **Capability-owner check**: the public set also includes `session.read` and `session.act`. Both depend on the app's session owner bridge; `open()` returns `BLUE_CAPABILITY_ABSENT` while that owner is inactive;
 3. **Capability-scoped return**: only the declared capability fields have values on `BluePluginApi`; the rest are `undefined`. Hence access always takes the optional-chaining shape `api.commands?.register(...)`.
 
 Scoping is a two-way contract: you only get what you declared, and the host only exposes what you declared. When an upgraded plugin wants a new capability, it adds one line to the manifest — a host that is too old fails explicitly at `open()` time instead of erroring at runtime.
@@ -83,14 +83,14 @@ type BlueResult<Value = void> =
 | `BLUE_INVALID_CONTRIBUTION` | `register()` / `publish()`: malformed contribution (id characters, missing function field, etc.) |
 | `BLUE_ACTION_REJECTED` | `register()`: the id squats on Blue's reserved namespace (the `blue.` / `blue:` / `blue-` / `@dsh-blue/` prefixes) |
 | `BLUE_LIMIT_EXCEEDED` | `register()` / `open()`: a contribution exceeds node, pane, overlay, or size quotas |
-| `BLUE_CAPABILITY_ABSENT` | degradation signal from an optional Harness capability probe — handle as degradation, not a plugin failure |
-| `BLUE_ABORTED` / `BLUE_SESSION_UNAVAILABLE` | action aborted / session unavailable (used by session capabilities of later phases) |
+| `BLUE_CAPABILITY_ABSENT` | the capability's owner bridge is inactive; handle as a version/profile mismatch or optional degradation |
+| `BLUE_ABORTED` / `BLUE_SESSION_UNAVAILABLE` | session action aborted / no active session |
 
 Symmetrically, when your `execute()` returns `{ ok: false, code, message }`, the `message` is shown to the user as error text; a thrown exception is backstopped by the bridge layer into `plugin command failed: ...` — but that is a backstop, not a contract: return structured errors on your own.
 
 ## The domain/adapter split
 
-`session.read` is not open yet, so plugins currently **cannot** read session content through Blue. When you need Harness-side data, use Cordis service injection — your plugin shares the tree with the Harness domain plugins and can `inject` official Harness services. The recommended split is two packages per renderer:
+`session.read` exposes only a frozen, revisioned summary of the current session; `session.act` exposes only FIFO, abort/stale-fenced followup, steer, and interrupt actions. See [Session reads and actions](/en/plugins/session). Use official Cordis service injection when a feature needs fuller Harness-domain data or other write operations. The recommended split is two packages per renderer:
 
 ```text
 @scope/feature        Domain 包：headless/Web/TUI 共用，不 inject 任何 Blue 服务

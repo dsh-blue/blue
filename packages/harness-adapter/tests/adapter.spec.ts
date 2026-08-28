@@ -9,7 +9,7 @@ import { apply as invariantApply, name as invariantName } from '../src/invariant
 import { actionPlugin, apply as rootApply, modelPlugin, projectionPlugin, questionPlugin, sessionPlugin } from '../src/plugins.ts'
 import { AdapterCapabilityAbsentError } from '../src/types.ts'
 
-const snapshot = (id = 's1') => ({ id, cwd: '/tmp', status: 'idle' as const, mode: 'normal' as const })
+const snapshot = (id = 's1', revision = 1) => ({ revision, id, cwd: '/tmp', status: 'idle' as const, mode: 'normal' as const })
 
 describe('capability probing', () => {
   it('supports declared and method-based capabilities and explicit absent', () => {
@@ -21,6 +21,27 @@ describe('capability probing', () => {
 })
 
 describe('SessionBridge', () => {
+  it('publishes stable frozen read-only and action-only facets', async () => {
+    const source = { snapshot: async () => ({ watermark: 0, value: snapshot() }), subscribe: () => () => undefined, request: vi.fn(async () => undefined) }
+    const bridge = new SessionBridge({ source })
+    expect(Object.keys(bridge.reader).sort()).toEqual(['current', 'subscribe'])
+    expect(Object.keys(bridge.requester)).toEqual(['request'])
+    expect(Object.isFrozen(bridge.reader)).toBe(true)
+    expect(Object.isFrozen(bridge.requester)).toBe(true)
+    expect(bridge.reader).toBe(bridge.reader)
+    expect(bridge.requester).toBe(bridge.requester)
+    await bridge.attach()
+    expect(bridge.reader.current()).toEqual(snapshot())
+    const replayed: string[] = []
+    const registration = bridge.reader.subscribe(value => replayed.push(value?.id ?? 'none'))
+    expect(replayed).toEqual(['s1'])
+    await expect(bridge.requester.request({ kind: 'interrupt' })).resolves.toMatchObject({ ok: true })
+    expect(source.request).toHaveBeenCalledOnce()
+    registration.dispose()
+    bridge.dispose()
+    expect(bridge.reader.current()).toBeNull()
+    await expect(bridge.requester.request({ kind: 'interrupt' })).resolves.toMatchObject({ code: 'BLUE_SESSION_UNAVAILABLE' })
+  })
   it('attaches after a watermark, accepts only newer matching events, and detaches', async () => {
     let listener: ((event: { seq: number; sessionId: string; event: ReturnType<typeof snapshot> }) => void) | undefined
     const source = { snapshot: vi.fn(async () => ({ watermark: 4, value: snapshot() })), subscribe: vi.fn((_watermark: number, next: typeof listener) => { listener = next; return () => { listener = undefined } }), request: vi.fn(async () => undefined) }

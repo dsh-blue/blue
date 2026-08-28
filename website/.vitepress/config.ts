@@ -157,6 +157,7 @@ const sidebarZh = {
         { text: '编辑器 Provider', link: '/plugins/editor-providers' },
         { text: 'Pane 与 Overlay', link: '/plugins/dock' },
         { text: '通知', link: '/plugins/notifications' },
+        { text: '会话读取与动作', link: '/plugins/session' },
       ],
     },
     {
@@ -254,6 +255,7 @@ const sidebarEn = {
         { text: 'Editor providers', link: '/en/plugins/editor-providers' },
         { text: 'Panes and overlays', link: '/en/plugins/dock' },
         { text: 'Notifications', link: '/en/plugins/notifications' },
+        { text: 'Session reads and actions', link: '/en/plugins/session' },
       ],
     },
     {

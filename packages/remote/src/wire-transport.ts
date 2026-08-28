@@ -89,8 +89,8 @@ export function createDshRemoteWireClient(connection: DshRemoteConnectionClient)
   }
 }
 
-function snapshotFromRow(sessionId: string, row?: RemoteSessionList['items'][number]): BlueSessionSnapshot {
-  return { id: sessionId, cwd: row?.cwd ?? '', status: row?.running === true ? 'running' : 'idle', mode: 'normal' }
+function snapshotFromRow(sessionId: string, row?: RemoteSessionList['items'][number], revision = 0): BlueSessionSnapshot {
+  return { revision, id: sessionId, cwd: row?.cwd ?? '', status: row?.running === true ? 'running' : 'idle', mode: 'normal' }
 }
 
 function applyEvent(snapshot: BlueSessionSnapshot, event: NonNullable<MuxFrame['event']>): BlueSessionSnapshot {
@@ -99,7 +99,7 @@ function applyEvent(snapshot: BlueSessionSnapshot, event: NonNullable<MuxFrame['
     : event.type === 'turn/end'
       ? 'idle'
       : snapshot.status
-  return { ...snapshot, status }
+  return { ...snapshot, revision: snapshot.revision + 1, status }
 }
 
 function historyWatermark(history: RemoteSessionHistory): number {
@@ -176,10 +176,10 @@ export class DshRemoteTransport implements RemoteTransport {
       })
       watermark = Math.max(watermark, historyWatermark(history))
     }
-    let snapshot = snapshotFromRow(sessionId, row)
+    let snapshot = snapshotFromRow(sessionId, row, this.snapshots.get(sessionId)?.revision ?? 0)
     for (const envelope of this.recent.get(sessionId) ?? []) {
       if (envelope.seq <= watermark) continue
-      snapshot = { ...snapshot, status: envelope.event.status }
+      snapshot = { ...snapshot, revision: Math.max(snapshot.revision, envelope.event.revision), status: envelope.event.status }
       watermark = envelope.seq
     }
     this.snapshots.set(sessionId, snapshot)

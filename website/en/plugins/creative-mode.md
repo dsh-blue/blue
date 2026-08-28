@@ -26,7 +26,7 @@ blue-feature/
   cordis.patch.yml      # inserts the entry into a profile
 ```
 
-The entry exports a stable `name`, `inject`, and `apply(ctx)`. It requests capabilities through `ctx.bluePluginHost.open(ctx, manifest)`. The public set is `commands`, `status`, `notifications`, `panes`, `overlays`, `editor.extensions`, `status.provider`, and `editor.provider`. `open()`, `register()`, and `publish()` return structured `BlueResult` values and must be checked. Registrations belong to the caller's Fiber and are removed on unload, update, or profile reload. Candidates registered through either exclusive-provider capability stay inert until their id is selected in settings.
+The entry exports a stable `name`, `inject`, and `apply(ctx)`. It requests capabilities through `ctx.bluePluginHost.open(ctx, manifest)`. The public set also includes the strictly isolated `session.read` and `session.act` facades. `open()`, `register()`, and `publish()` return structured `BlueResult` values and must be checked. Registrations belong to the caller's Fiber and are removed on unload, update, or profile reload. Candidates registered through either exclusive-provider capability stay inert until their id is selected in settings.
 
 Plugin code returns renderer-neutral `BlueUiNode`/`BlueView` data and structured actions:
 

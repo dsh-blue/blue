@@ -197,6 +197,41 @@ describe('blue whole-tree e2e', () => {
     expect(tree.creativeIsolation.tools !== undefined).toBe(true)
   })
 
+  it('mounts isolated public session read and action facades after the app owner', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    let readApi: BluePluginApi | undefined
+    let actionApi: BluePluginApi | undefined
+    const fiber = tree.ctx.plugin({
+      name: 'e2e-public-session-plugin',
+      inject: ['bluePluginHost'],
+      apply(pluginCtx) {
+        const read = pluginCtx.bluePluginHost.open(pluginCtx, {
+          id: '@acme/e2e-session-read', api: '^1.0.0', capabilities: ['session.read'],
+        })
+        const action = pluginCtx.bluePluginHost.open(pluginCtx, {
+          id: '@acme/e2e-session-act', api: '^1.0.0', capabilities: ['session.act'],
+        })
+        if (!read.ok) throw new Error(read.message)
+        if (!action.ok) throw new Error(action.message)
+        readApi = read.value
+        actionApi = action.value
+      },
+    })
+    await fiber.await()
+
+    expect(readApi!.sessionActions).toBeUndefined()
+    expect(actionApi!.session).toBeUndefined()
+    const snapshot = readApi!.session!.current()!
+    expect(snapshot).toMatchObject({ id: String(agent.id), revision: expect.any(Number) })
+    expect(Object.isFrozen(snapshot)).toBe(true)
+    expect(Object.isFrozen(snapshot.model)).toBe(true)
+    await expect(actionApi!.sessionActions!.request({ kind: 'interrupt' }))
+      .resolves.toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+
+    await fiber.dispose()
+  })
+
   it('hot-mounts additive public pane, status, command, and notification contributions', async () => {
     const tree = await bootBlue([], { script: [] })
     const agent = await currentAgent(tree)

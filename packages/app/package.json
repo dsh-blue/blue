@@ -21,6 +21,10 @@
       "types": "./lib/types/invariant.d.ts",
       "default": "./lib/invariant.js"
     },
+    "./plugin-host-session-bridge": {
+      "types": "./lib/types/plugin-host-session-bridge.d.ts",
+      "default": "./lib/plugin-host-session-bridge.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

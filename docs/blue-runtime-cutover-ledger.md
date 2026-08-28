@@ -1,6 +1,6 @@
 # Frontend Runtime Cutover Ledger
 
-> Status: the C4/C6 evidence below records the earlier frontend-runtime cutover checkpoint. On the current W4-W6 integration branch, W6-1 capability cleanup and W6-2 canonical-node source migration are complete; W6-3 session read/act separation, W6-4 release closure, refreshed full-tree/profile gates, and explicit live human acceptance remain pending. No merge, version change, tag, publish, or production-profile mutation is authorized before acceptance.
+> Status: the C4/C6 evidence below records the earlier frontend-runtime cutover checkpoint. On the current W4-W6 integration branch, W6-1 capability cleanup, W6-2 canonical-node source migration, and the W6-3 session read/act source plus packed-fixture checkpoint are complete. The W6-3 packed app fixture passes 9/9 scenarios on both the current Harness `0.1.1-rc.2` line and previous `0.1.1-rc.1` line. W6-4 release closure, refreshed full-tree/profile gates, and explicit live human acceptance remain pending. No merge, version change, tag, publish, or production-profile mutation is authorized before acceptance.
 
 ## Frozen Inputs
 

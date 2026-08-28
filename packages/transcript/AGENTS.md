@@ -83,7 +83,9 @@ mutations remain inert.
 only `status.provider`, subscribes candidates and the app-owned readonly
 session reader, and follows both settings updates and the settings-source-ready
 handoff. Its unload detaches provider generations and restores the default
-without changing the persisted desired id.
+without changing the persisted desired id. Status-provider snapshots retain
+the app-owned session revision while cloning and freezing the session/model
+data, so provider generations observe the same public read fence.
 
 ## Canonical Bottom Panes
 

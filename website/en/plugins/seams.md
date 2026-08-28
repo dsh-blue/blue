@@ -16,23 +16,25 @@ External plugins request capabilities through `ctx.bluePluginHost.open(ctx, mani
 | `overlays` | `BlueOverlayRequest` | public overlay host into the core overlay mount |
 | `editor.extensions` | `BlueEditorExtensionContribution` | interaction bridge into editor extension binding |
 | `editor.provider` | `BlueEditorProvider` returning an exclusive renderer-neutral editor shell | editor-provider owner into the core editor-shell compiler |
+| `session.read` | `BlueSessionReader`: `current` / `subscribe` only | app session owner bridge into frozen revisioned snapshots |
+| `session.act` | `BlueSessionRequester`: `request` only | app session owner bridge into FIFO structured actions |
 
 `@dsh-blue/blue-api` owns manifest validation, capability restriction, duplicate ids, the owner namespace, and lifecycle. Registrations bind to the caller's Fiber and disappear on unload.
 
-In the current phase `open()` grants the eight capabilities in the table above. `session.read` and `session.act` remain closed, and requesting either returns `BLUE_CAPABILITY_DENIED`. Candidates for both exclusive-provider capabilities stay inert until their id is selected in settings. See [Status bar](/en/plugins/status#exclusive-status-provider) and [Editor providers](/en/plugins/editor-providers) for persisted selection and fallback behavior.
+When the `session.read` / `session.act` owner is absent, `open()` returns `BLUE_CAPABILITY_ABSENT`. Once active, the two returned fields remain strictly isolated; see [Session reads and actions](/en/plugins/session) for lifecycle and result codes. Candidates for both exclusive-provider capabilities stay inert until their id is selected in settings. See [Status bar](/en/plugins/status#exclusive-status-provider) and [Editor providers](/en/plugins/editor-providers) for persisted selection and fallback behavior.
 
 ## Internal Blue boundaries
 
 | Owner | Seam | Purpose |
 |---|---|---|
 | core | `blueScreen` / `blueKeymap` / `blueComponents` / `blueTerminalInfo` / theme | TUI kernel; only core touches pi-tui/raw terminal |
-| app | `blueSessionReader` | readonly current-session snapshot and request |
+| app | `blueSessionReader` / `blueSessionRequester` | readonly current-session snapshot / narrow actions; the public bridge does not expose broad app actions |
 | app | `blueSessionProjections` | consistent-cut projection values, seq, children, and subscriptions |
 | app | `blueSessionActions` | followup/steer/interrupt plus mode/model/preset/tool/skill/rewind/side-session actions |
 | conversation | `blueConversation` / `blueConversationFacts` | official replay/live transcript and status/pane facts |
 | transcript | transcript model, private status/bottom-pane registries, and tool model service | readonly models/canonical nodes into the TUI renderer |
 | interaction | `blueEditorHost` / `blueInteractionState` | frontend-tree-scoped editor slot, completion multiplexer, pre-clear submit barrier, public extension/provider binding, draft/settings/paste state |
-| bundle | `cordis.patch.yml` | 30 Blue-owned rows and explicit dependency ordering |
+| bundle | `cordis.patch.yml` | 31 Blue-owned rows and explicit dependency ordering |
 
 Session-switch events such as `blue/request-resume`, `-new`, `-fork`, and `-rewind` are commands addressed to the app owner, not broadcasts carrying Session objects into renderers.
 

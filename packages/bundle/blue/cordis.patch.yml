@@ -174,6 +174,7 @@
         blueSessionFacts: true
         blueSessionProjections: true
         blueSessionReader: true
+        blueSessionRequester: true
         blueSkillsCatalog: true
         blueStatusEntries: true
         blueToolModels: true
@@ -420,3 +421,9 @@
       config:
         task: !!js ctx.blueStartup.task
         resume: !!js ctx.blueStartup.resume
+
+    # Public session capability owner: mounts only after blue-app has
+    # synchronously provided its readonly reader and narrow requester.
+    - id: blue-plugin-session-bridge
+      name: '@dsh-blue/blue-app/plugin-host-session-bridge'
+      inject: [blueSessionReader, blueSessionRequester]

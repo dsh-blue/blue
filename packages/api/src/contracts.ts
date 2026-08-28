@@ -176,9 +176,10 @@ export interface BlueEditorExtensionRegistry { register(contribution: BlueEditor
 export interface BlueStatusProviderRegistry { register(provider: BlueStatusProvider): BlueResult<BlueRefreshRegistration>, list(): readonly BlueStatusProvider[] }
 export interface BlueEditorProviderRegistry { register(provider: BlueEditorProvider): BlueResult<BlueRefreshRegistration>, list(): readonly BlueEditorProvider[] }
 
-export interface BlueSessionSnapshot { readonly id: string, readonly cwd: string, readonly status: 'idle' | 'running' | 'waiting' | 'failed', readonly mode: 'normal' | 'plan' | 'yolo', readonly model?: { readonly id: string, readonly provider?: string, readonly effort?: string } }
+export interface BlueSessionSnapshot { readonly revision: number, readonly id: string, readonly cwd: string, readonly status: 'idle' | 'running' | 'waiting' | 'failed', readonly mode: 'normal' | 'plan' | 'yolo', readonly model?: { readonly id: string, readonly provider?: string, readonly effort?: string } }
 export type BlueSessionAction = { readonly kind: 'followup' | 'steer', readonly text: string } | { readonly kind: 'interrupt' }
-export interface BlueSessionReader { current(): BlueSessionSnapshot | null, subscribe(listener: (snapshot: BlueSessionSnapshot | null) => void): BlueRegistration, request(action: BlueSessionAction, options?: { readonly signal?: AbortSignal }): Promise<BlueResult> }
+export interface BlueSessionReader { current(): BlueSessionSnapshot | null, subscribe(listener: (snapshot: BlueSessionSnapshot | null) => void): BlueRegistration }
+export interface BlueSessionRequester { request(action: BlueSessionAction, options?: { readonly signal?: AbortSignal }): Promise<BlueResult> }
 export type BlueRequestState = 'started' | 'streaming' | 'completed' | 'failed' | 'aborted' | 'interrupted'
 export interface BlueRequestRef { readonly sessionEpoch: number, readonly requestEpoch: number, readonly scope: 'main' | 'btw' | 'subagent' }
 export interface BlueRequestLifecycle { readonly ref: BlueRequestRef, readonly state: BlueRequestState, readonly reason?: string }
@@ -198,5 +199,6 @@ export interface BluePluginApi {
   readonly statusProviders?: BlueStatusProviderRegistry
   readonly editorProviders?: BlueEditorProviderRegistry
   readonly session?: BlueSessionReader
+  readonly sessionActions?: BlueSessionRequester
 }
 export interface BluePluginHost { readonly version: string, open(consumer: { effect(callback: () => () => void): unknown }, manifest: BluePluginManifest): BlueResult<BluePluginApi> }

@@ -94,6 +94,18 @@ the capability-absent test/embedding contract. `open()` returns
 and existing registry/publish handles recheck before each write. Aggregate
 contributions survive a bridge unload so a replacement bridge restores them
 from its initial snapshot; consumer or host unload still deletes them.
+Session capabilities use the dedicated `attachBluePluginHostSessionOwner`
+helper rather than the generic capability owner path. App is the sole active
+owner generation. `session.read` contains only `current`/`subscribe`, while
+`session.act` contains only `request`; `open()` projects only the exact requested
+facade. Every snapshot has a required monotonic `revision`, is validated,
+cloned, and deeply frozen in the host, and stale or invalid publications are
+ignored. The host serializes actions through one FIFO shared by every consumer.
+Pre-abort, queued abort, running abort, owner/session generation changes,
+consumer unload, and host teardown all settle the public request even if the
+owner ignores its signal; late owner resolution or rejection is consumed and
+cannot block the queue. A retained live facade returns null/absent during an
+owner gap and recovers on owner reload, while a disposed consumer stays fenced.
 Owner state lives in a Host-realm `Symbol.for`-keyed WeakMap rather than on the
 service object or in one module-local singleton: source/build or link/store
 copies in the same lockstep profile share it (the D37 cross-store lesson),
@@ -118,8 +130,8 @@ semantic dismiss. Snapshot and notification owner helpers likewise reject the
 guarded public service. Refresh handles enforce 20 successful calls per rolling
 second and cancel pending coalesced ticks when their contribution is disposed.
 Owner gaps retain contributions but reject new writes with
-`BLUE_CAPABILITY_ABSENT`; `session.read/session.act` remain
-denied because no owner/API seam exists.
+`BLUE_CAPABILITY_ABSENT`. Session owner gaps expose a null read snapshot and
+reject actions with the same absent result until the app owner reloads.
 
 The removed public `dock` transition has no host validator exception, API
 facade, contribution type, registry, or snapshot field. Untyped legacy

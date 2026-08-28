@@ -161,12 +161,12 @@ Provider swap 必须遵循 `capture -> abort -> dispose -> activate -> restore`�
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml - 30 Blue-owned rows · 30 条 Blue 自有行"]
+    subgraph bundle["cordis.patch.yml - 31 Blue-owned rows · 31 条 Blue 自有行"]
         subgraph host["host support 宿主支撑 - 2 rows"]
             presets["blue-agent-presets"]
             creative["blue-creative-host"]
         end
-        subgraph product["product UI 产品 UI - 28 rows"]
+        subgraph product["product UI 产品 UI - 29 rows"]
             subgraph baseline["baseline 基线 - 8 rows"]
                 api["blue-api-host"]
                 core["blue-core · blue-theme-dark"]
@@ -181,10 +181,11 @@ flowchart TB
                 viewBridge["blue-plugin-view-bridge"]
                 statusOwner["blue-status-provider-owner"]
             end
-            subgraph assembly["assembly 装配 - 5 rows"]
+            subgraph assembly["assembly 装配 - 6 rows"]
                 interaction["blue-interaction · blue-plugin-interaction-bridge"]
                 editorOwner["blue-editor-provider-owner"]
                 startup["blue-startup · blue-app"]
+                sessionBridge["blue-plugin-session-bridge"]
             end
         end
     end
@@ -197,11 +198,11 @@ flowchart TB
 ```
 <!-- END diagram:blue-composition -->
 
-29 条 Blue 自有行由 2 条 host-support 和 27 条 product row 组成。产品段内：
+31 条 Blue 自有行由 2 条 host-support 和 29 条 product row 组成。产品段内：
 
 - baseline 8 行，包含 conversation projection 与 official transcript consumer；
 - enhancement 15 行，可逐项移除；
-- assembly 4 行，提供 interaction、public bridge、startup 与 app。
+- assembly 6 行，提供 interaction、provider/public bridge、startup、app 与 public session owner bridge。
 
 Dock 的稳定顺序由 model priority/id 加显式 row-level `inject` 共同约束，不依赖 Cordis sibling 碰巧按文件顺序完成。
 

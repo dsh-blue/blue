@@ -57,8 +57,10 @@ Integration is a single move: **declare a manifest → `open()` to receive a cap
 | [`panes`](/en/plugins/dock) | placement, canonical node, and structured events | plugin surfaces in header/left/right/bottom lanes |
 | [`overlays`](/en/plugins/dock#overlay-contract) | canonical overlay request and structured events | overlays managed by Blue focus and lifecycle |
 | [`notifications`](/en/plugins/notifications) | publish/subscribe `BlueNotification` | editor notice bar |
+| [`session.read`](/en/plugins/session) | revisioned, deeply frozen current-session snapshot | `current()` and effect-bound `subscribe()` |
+| [`session.act`](/en/plugins/session#structured-actions) | followup, steer, and interrupt | global FIFO with abort and stale/late fencing |
 
-The manifest schema also declares `session.read` and `session.act`, but requesting either in the current phase is rejected by `open()` (`BLUE_CAPABILITY_DENIED`). The old `dock`, `panels`, `editor`, and `tools` names have been removed from the public manifest; validation returns a concrete migration message.
+`session.read` and `session.act` are strictly isolated facades; `open()` returns `BLUE_CAPABILITY_ABSENT` when their owner row is missing. The old `dock`, `panels`, `editor`, and `tools` names have been removed from the public manifest; validation returns a concrete migration message.
 
 ## Documentation map
 
@@ -81,5 +83,5 @@ The manifest schema also declares `session.read` and `session.act`, but requesti
 **Reference**
 
 - [Seam reference](/en/plugins/seams) — the complete list of the stable plugin host and Blue's internal boundaries;
-- [Built-in plugins](/en/plugins/builtins) — the bundle's 30 Blue-owned rows, the most complete set of plugin examples;
+- [Built-in plugins](/en/plugins/builtins) — the bundle's 31 Blue-owned rows, the most complete set of plugin examples;
 - [Contributing to Blue](/en/plugins/contributing) — the local development flow for contributing code to Blue itself.

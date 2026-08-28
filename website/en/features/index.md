@@ -1,6 +1,6 @@
 # Features overview
 
-Blue is a Cordis plugin tree. The bundle currently has 30 Blue-owned rows: two host-support rows, eight baseline rows, 15 enhancement rows, and five assembly rows.
+Blue is a Cordis plugin tree. The bundle currently has 31 Blue-owned rows: two host-support rows, eight baseline rows, 15 enhancement rows, and six assembly rows.
 
 ## Baseline
 
@@ -23,7 +23,7 @@ Baseline plus assembly is the complete, self-sufficient Blue UI. Blue's own enha
 
 ## Assembly
 
-`blue-interaction`, `blue-plugin-interaction-bridge`, `blue-startup`, and `blue-app` close the tree with input, commands, notifications, startup, and the Agent driver. App exposes only readonly session readers/projection values and structured actions to renderers.
+`blue-interaction`, provider/public bridges, `blue-startup`, `blue-app`, and `blue-plugin-session-bridge` close the tree with input, commands, notifications, startup, the Agent driver, and public session capabilities. App exposes only readonly session readers/projection values and narrow structured actions to renderers and third-party facades.
 
 `blue-context`, `blue-remote`, `blue-openpencil`, and `blue-lark` are validation-only packages, not bundle rows.
 

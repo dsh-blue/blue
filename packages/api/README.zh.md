@@ -20,7 +20,9 @@ node、event payload 和 snapshot 是 readonly、JSON-shaped 数据；`render`�
 
 `BlueStatusNode` 递归只允许 text、rich text、fields、progress 和 stack，`BluePluginApi.status` 已由最终 additive registry 实现。host 同时接纳 pane、overlay、editor extension 和 status/editor provider 候选。每个 contribution 在滚动一秒内最多成功 refresh 20 次，同 tick 调用会合并 owner 通知。capturing overlay 必须携带 host 为 owner 创建的 `BlueUserGesture`；proof 只消费一次，owner 卸载时其未消费 proof 全部失效。
 
-`BlueEditorShellNode` 是 provider-only 独立树，包含 `editor-control` slot；普通 `BlueUiNode` 无法构造该 slot。provider registration 只校验 callback 形状，不调用 `render`、不检查其返回树，也不选择 winner；只有 Blue 持有的用户配置能激活 inert candidate。`session.read` 与 `session.act` 在真正的 owner/API seam 能提供 snapshot 与 action 保证前继续拒绝。
+`BlueEditorShellNode` 是 provider-only 独立树，包含 `editor-control` slot；普通 `BlueUiNode` 无法构造该 slot。provider registration 只校验 callback 形状，不调用 `render`、不检查其返回树，也不选择 winner；只有 Blue 持有的用户配置能激活 inert candidate。
+
+app 通过 `attachBluePluginHostSessionOwner` 挂载唯一 active session owner。`session.read` 只暴露 `current` 与 `subscribe`，`session.act` 只暴露 `request`；插件只能获得 manifest 精确声明的 facade。session snapshot 必须携带单调递增的 `revision`，host 会校验、克隆并深冻结数据，不信任 owner 对象。所有消费者的 action 由 host 统一 FIFO 串行；即使 owner 忽略 `AbortSignal`，caller abort、owner unload、session switch、consumer unload 与 host teardown 也会结算或 fence pending work，owner 的晚到结果会被隔离。active owner 缺位时，仍存活的 facade 返回 `null`/`BLUE_CAPABILITY_ABSENT`，app owner 重载后自动恢复；已卸载 consumer 永不恢复。
 
 Editor extension 可贡献静态辅助行、提示、诊断、结构化 action、completion 和异步 submit transform。`before` 与 `after` 保留 G1 的 `BlueUiNode` 源码类型，而 registration 只接纳递归的被动 `BlueEditorExtensionNode` 子集：text/rich-text/fields/code/diff/sections/progress/spacer/divider 加 stack/surface；交互控件会以 `BLUE_INVALID_CONTRIBUTION` 拒绝，extension action 通过独立的 `actions` + `onEvent` 路径处理。兼容 `complete` callback 只接收 `/`、`@` 和手动请求；插件通过 `completeV2` 与 `BlueEditorCompletionRequestV2` 显式选择接收 `#`，两者同时存在时优先 V2。registration 保持 inert：host 会克隆并冻结静态数据、保留 callback identity，但不会调用 callback。submit transform 只读 attachment metadata 且只能返回文本，因此附件继续由 Blue 持有。interaction owner 提供可中止、带 revision fence 的 callback context，并拒绝过期异步结果。
 

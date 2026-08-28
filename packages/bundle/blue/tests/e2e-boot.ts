@@ -48,6 +48,7 @@ import * as themeDarkPlugin from '@dsh-blue/blue-core/theme-dark'
 import * as apiHostPlugin from '../../../api/src/host.ts'
 import { BlueComponentsService, BlueKeymapService, BlueScreenService, BlueTerminalInfoService} from '../../../core/src/index.ts'
 import * as appPlugin from '../../../app/src/index.ts'
+import * as sessionBridgePlugin from '../../../app/src/plugin-host-session-bridge.ts'
 import * as startupPlugin from '../../../app/src/startup.ts'
 import { startBlueTerminal} from '../../../core/src/terminal.ts'
 import { mountPluginSurfaceBridge} from '../../../core/src/plugin-surface-bridge.ts'
@@ -198,6 +199,7 @@ export const CREATIVE_BLUE_INTERNAL_SERVICES = [
   'blueSessionFacts',
   'blueSessionProjections',
   'blueSessionReader',
+  'blueSessionRequester',
   'blueSkillsCatalog',
   'blueStartup',
   'blueStatusEntries',
@@ -257,6 +259,7 @@ interface BlueE2EHooks {
   startupApply: typeof startupPlugin.apply
   appApply: typeof appPlugin.apply
   appConfig: typeof appPlugin.Config
+  sessionBridgeApply: typeof sessionBridgePlugin.apply
   /** Session ids the sessionTitle stand-in's refresh recorded (D41 bridge). */
   sessionTitleRefreshes: string[]
 }
@@ -450,6 +453,7 @@ export async function bootBlue(argv: string[], options: {
     startupApply: startupPlugin.apply,
     appApply: appPlugin.apply,
     appConfig: appPlugin.Config,
+    sessionBridgeApply: sessionBridgePlugin.apply,
     sessionTitleRefreshes: [],
   }
   ;(globalThis as unknown as { __blueE2E: BlueE2EHooks }).__blueE2E = hooks
@@ -729,6 +733,13 @@ export const apply = (ctx, config) => globalThis.__blueE2E.appApply(ctx, config)
     '  config:',
     '    task: !!js ctx.blueStartup.task',
     '    resume: !!js ctx.blueStartup.resume',
+    '- id: blue-plugin-session-bridge',
+    `  name: ${fixture('blue-plugin-session-bridge.mjs', `
+export const name = 'blue-plugin-session-bridge'
+export const inject = ['bluePluginHost', 'blueSessionReader', 'blueSessionRequester']
+export const apply = ctx => globalThis.__blueE2E.sessionBridgeApply(ctx)
+`)}`,
+    '  inject: [blueSessionReader, blueSessionRequester]',
   ]
   // One real dsh-mcp-client entry per fixture server (S34 /mcp e2e): the
   // loader boots the entry, the bridge spawns the child and registers its

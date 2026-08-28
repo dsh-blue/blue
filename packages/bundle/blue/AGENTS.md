@@ -4,7 +4,7 @@ Implementation detail for this package (the user-facing surface is `README.md`/`
 
 ## Patch layout
 
-The installable unit contributes 30 Blue-owned rows: two host-support rows plus 28 product rows split into 8 baseline, 15 enhancement, and 5 assembly rows. The baseline contains the API host, core/theme, banner, transcript model hosts/footer, conversation projection, and official transcript consumer. Conversation is baseline because no legacy event-fold renderer remains. Official tool presentation uses canonical models and no intent rows are mounted. Core's surface bridge owns public panes/overlays, while the view and interaction bridges own additive status/commands/notifications; independent status/editor-provider owners are the exclusive composition routes. The bundle module itself mounts nothing.
+The installable unit contributes 31 Blue-owned rows: two host-support rows plus 29 product rows split into 8 baseline, 15 enhancement, and 6 assembly rows. The baseline contains the API host, core/theme, banner, transcript model hosts/footer, conversation projection, and official transcript consumer. Conversation is baseline because no legacy event-fold renderer remains. Official tool presentation uses canonical models and no intent rows are mounted. Core's surface bridge owns public panes/overlays, while the view and interaction bridges own additive status/commands/notifications; independent status/editor-provider owners are the exclusive composition routes. The app-owned session bridge mounts after `blue-app` provides its reader/requester and owns public `session.read`/`session.act` readiness. The bundle module itself mounts nothing.
 
 F3 `blue-context` remains a validation-only adapter for the cutover release. It supplies the official app-projection-to-frontend adapter when installed independently; the bundle's `/context` command and `blue-status-context` consume app-owned renderer-neutral session details/facts instead. The independent fixture covers projection replay, multi-key coalescing, session-epoch rejection, and unload without adding the package to the bundle dependency closure.
 
@@ -31,6 +31,8 @@ editor outer delegate, and preserves `blue.default` on owner unload or failed
 first activation; it never creates a second editor engine.
 
 The BTW row explicitly injects app-owned `blueSessionActions`. Although it appears before `blue-app`, Cordis holds the pane fiber until the app provides the action service; the app itself still publishes the service synchronously before its loader-settlement Agent creation. This ordering keeps Agent/session seeding out of transcript without adding an implicit race.
+
+The `blue-plugin-session-bridge` assembly row follows `blue-app` and explicitly injects `blueSessionReader` plus `blueSessionRequester`. Its package plugin additionally injects `bluePluginHost`, so public session capabilities cannot become ready before both the API host and app-owned facades exist. Creative child Fibers inherit only `bluePluginHost`; the app reader/requester and broad action service remain isolated.
 
 ## Session-title cadence swap (S30) + bridge (D41)
 

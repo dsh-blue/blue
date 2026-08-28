@@ -26,6 +26,7 @@ import type {
   BlueRegistration,
   BlueResult,
   BlueSessionReader,
+  BlueSessionRequester,
   BlueSessionSnapshot,
 } from '@dsh-blue/blue-api'
 // Empty type imports carry the loader Context merge for the settlement await,
@@ -340,6 +341,8 @@ export function apply(ctx: Context, config: Config): void {
   const requests = createBlueRequestController(ctx)
   const yoloByAgent = new WeakMap<object, boolean>()
   const sessionListeners = new Set<(snapshot: BlueSessionSnapshot | null) => void>()
+  let sessionRevision = 0
+  let currentSnapshot: BlueSessionSnapshot | null = null
   const projectionListeners = new Set<(key: string, value: unknown, seq: number) => void>()
   const childProjectionListeners = new Set<(child: BlueChildSessionProjectionSnapshot & { readonly key: string }) => void>()
   const modeState = (): BlueSessionModeState | undefined => {
@@ -352,11 +355,12 @@ export function apply(ctx: Context, config: Config): void {
     if (state.pending === true) return { mode: 'plan', pending: true }
     return { mode: state.active ? 'plan' : 'normal', pending: false }
   }
-  const snapshot = (): BlueSessionSnapshot | null => {
+  const snapshot = (revision: number): BlueSessionSnapshot | null => {
     const active = session.current
     if (active === null) return null
     const selection = session.modelRef?.current
-    return {
+    return Object.freeze({
+      revision,
       id: String(active.id),
       cwd: active.session.header.cwd ?? process.cwd(),
       status: active.status === 'running' ? 'running' : 'idle',
@@ -365,17 +369,18 @@ export function apply(ctx: Context, config: Config): void {
       mode: modeState()!.mode,
       /* v8 ignore next -- commitSwitch publishes a model ref with every active Agent. */
       ...(selection === undefined ? {} : {
-        model: {
+        model: Object.freeze({
           id: selection.model,
           provider: selection.provider,
           ...(selection.reasoningEffort === undefined ? {} : { effort: selection.reasoningEffort }),
-        },
+        }),
       }),
-    }
+    })
   }
   const publishSession = (): void => {
-    const value = snapshot()
-    for (const listener of sessionListeners) listener(value)
+    sessionRevision += 1
+    currentSnapshot = snapshot(sessionRevision)
+    for (const listener of sessionListeners) listener(currentSnapshot)
   }
   /** Live subagent descendants whose durable lineage starts at `root`. */
   const descendantsOf = (root: Agent): readonly Agent[] => {
@@ -436,10 +441,10 @@ export function apply(ctx: Context, config: Config): void {
     })
   }
   const sessionReader: BlueSessionReader = {
-    current: snapshot,
+    current: () => currentSnapshot,
     subscribe(listener): BlueRegistration {
       sessionListeners.add(listener)
-      listener(snapshot())
+      listener(currentSnapshot)
       let disposed = false
       return {
         get disposed() { return disposed },
@@ -450,19 +455,32 @@ export function apply(ctx: Context, config: Config): void {
         },
       }
     },
-    async request(action): Promise<BlueResult> {
+  }
+  const sessionRequester: BlueSessionRequester = {
+    async request(action, options): Promise<BlueResult> {
+      const actionAborted = (): boolean => options?.signal?.aborted === true
+      if (actionAborted()) {
+        return { ok: false, code: 'BLUE_ABORTED', message: 'session action was aborted' }
+      }
       const active = session.current
       if (active === null) return unavailable()
       if (action.kind === 'interrupt') {
+        if (actionAborted()) {
+          return { ok: false, code: 'BLUE_ABORTED', message: 'session action was aborted' }
+        }
         return interruptActive(active)
       }
       const message = createUserMessage({ content: [{ type: 'text', text: action.text }], source: { kind: 'user' } })
+      if (actionAborted()) {
+        return { ok: false, code: 'BLUE_ABORTED', message: 'session action was aborted' }
+      }
       if (action.kind === 'followup') active.followup(message)
       else active.steer(message)
       return success(undefined)
     },
   }
   ctx.provide('blueSessionReader', sessionReader)
+  ctx.provide('blueSessionRequester', sessionRequester)
 
   // Presenter-view resolution for the rendered session's tool cards. Tool
   // registrations are agent-scoped on the Harness side; the viewing scope is

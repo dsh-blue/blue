@@ -57,8 +57,10 @@ dsh process 进程（one Cordis tree 一棵 Cordis 树）
 | [`panes`](/plugins/dock) | 布局位置、canonical node 与结构化 event | header/left/right/bottom 插件面 |
 | [`overlays`](/plugins/dock#overlay-契约) | canonical overlay request 与结构化 event | 受 Blue focus/lifecycle 托管的浮层 |
 | [`notifications`](/plugins/notifications) | 发布/订阅 `BlueNotification` | 编辑器通知条 |
+| [`session.read`](/plugins/session) | revisioned、深度冻结的当前会话 snapshot | `current()` 与 effect-bound `subscribe()` |
+| [`session.act`](/plugins/session#结构化动作) | followup、steer、interrupt | 全局 FIFO、abort 与 stale/late fencing |
 
-manifest schema 还声明了 `session.read` 与 `session.act`，但当前阶段申请会被 `open()` 拒绝（`BLUE_CAPABILITY_DENIED`）。旧名 `dock`、`panels`、`editor` 与 `tools` 已从公开 manifest 删除；校验器会返回具体迁移提示。
+`session.read` 与 `session.act` 是两个严格隔离的 facade；owner row 缺失时 `open()` 返回 `BLUE_CAPABILITY_ABSENT`。旧名 `dock`、`panels`、`editor` 与 `tools` 已从公开 manifest 删除；校验器会返回具体迁移提示。
 
 ## 文档地图
 
@@ -81,5 +83,5 @@ manifest schema 还声明了 `session.read` 与 `session.act`，但当前阶段�
 **参考**
 
 - [Seam 参考](/plugins/seams) —— 稳定 plugin host 与 Blue 内部边界的完整清单；
-- [内置插件](/plugins/builtins) —— bundle 的 30 条 Blue 自有行，是最完整的插件范例集；
+- [内置插件](/plugins/builtins) —— bundle 的 31 条 Blue 自有行，是最完整的插件范例集；
 - [贡献本仓库](/plugins/contributing) —— 给 Blue 本体贡献代码的本地开发流程。

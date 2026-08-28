@@ -15,6 +15,7 @@ export {
 export {
   BluePluginHostService,
   attachBluePluginHostCapabilities,
+  attachBluePluginHostSessionOwner,
   closeBluePluginHostOverlay,
   createBlueUserGesture,
   runBlueUserGesture,
