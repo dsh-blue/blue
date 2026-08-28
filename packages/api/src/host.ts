@@ -63,6 +63,8 @@ function failure(code: BlueErrorCode, message: string): BlueResult<never> { retu
 function message(error: unknown, fallback: string): string { return error instanceof Error ? error.message : fallback }
 function object(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function absent(capability: Capability): BlueResult<never> { return failure('BLUE_CAPABILITY_ABSENT', `capability "${capability}" has no active Blue owner adapter`) }
+function consumerDisposed(): BlueResult<never> { return failure('BLUE_ACTION_REJECTED', 'plugin consumer is disposed') }
+function rejectDisposedAdmission(added: BlueResult<BlueRegistration>): BlueResult<never> { if (added.ok) added.value.dispose(); return consumerDisposed() }
 function invalid(error: unknown): BlueResult<never> { return failure('BLUE_INVALID_CONTRIBUTION', message(error, 'plugin input could not be inspected')) }
 
 function own(input: Record<string, unknown>, key: string): unknown {
@@ -225,6 +227,12 @@ class Registration implements BlueRegistration {
   dispose(): void { if (!this.done) { this.done = true; this.cleanup() } }
 }
 
+class ConsumerLifetime {
+  private done = false
+  get disposed(): boolean { return this.done }
+  dispose(): void { this.done = true }
+}
+
 class Aggregate<T extends Prioritized> {
   private readonly entries = new Map<string, { value: T, sequence: number }>()
   private readonly listeners = new Set<() => void>()
@@ -302,14 +310,17 @@ class RefreshRegistration implements BlueRefreshRegistration {
 class Scoped<T extends Prioritized> implements BlueRegistry<T> {
   private readonly entries = new Map<string, T>()
   private readonly handles = new Set<Registration>()
-  constructor(private readonly capability: Capability, private readonly aggregate: Aggregate<T>, private readonly ready: () => boolean, private readonly normalize: (input: unknown) => BlueResult<T>) {}
+  constructor(private readonly capability: Capability, private readonly aggregate: Aggregate<T>, private readonly ready: () => boolean, private readonly lifetime: ConsumerLifetime, private readonly normalize: (input: unknown) => BlueResult<T>) {}
   register(input: T): BlueResult<BlueRegistration> {
+    if (this.lifetime.disposed) return consumerDisposed()
     if (!this.ready()) return absent(this.capability)
     try {
       const result = this.normalize(input); if (!result.ok) return result
       const value = result.value
       if (this.entries.has(value.id)) return failure('BLUE_DUPLICATE_ID', `contribution "${value.id}" is already registered`)
-      const added = this.aggregate.add(value); if (!added.ok) return added
+      const added = this.aggregate.add(value)
+      if (this.lifetime.disposed) return rejectDisposedAdmission(added)
+      if (!added.ok) return added
       this.entries.set(value.id, value)
       let handle: Registration
       handle = new Registration(() => { this.entries.delete(value.id); this.handles.delete(handle); added.value.dispose() })
@@ -322,14 +333,17 @@ class Scoped<T extends Prioritized> implements BlueRegistry<T> {
 class ScopedRefresh<T extends Prioritized> {
   private readonly entries = new Map<string, T>()
   private readonly handles = new Set<RefreshRegistration>()
-  constructor(private readonly capability: Capability, private readonly aggregate: Aggregate<T>, private readonly ready: () => boolean, private readonly now: () => number, private readonly normalize: (input: unknown) => BlueResult<T>) {}
+  constructor(private readonly capability: Capability, private readonly aggregate: Aggregate<T>, private readonly ready: () => boolean, private readonly lifetime: ConsumerLifetime, private readonly now: () => number, private readonly normalize: (input: unknown) => BlueResult<T>) {}
   register(input: T): BlueResult<BlueRefreshRegistration> {
+    if (this.lifetime.disposed) return consumerDisposed()
     if (!this.ready()) return absent(this.capability)
     try {
       const result = this.normalize(input); if (!result.ok) return result
       const value = result.value
       if (this.entries.has(value.id)) return failure('BLUE_DUPLICATE_ID', `contribution "${value.id}" is already registered`)
-      const added = this.aggregate.add(value); if (!added.ok) return added
+      const added = this.aggregate.add(value)
+      if (this.lifetime.disposed) return rejectDisposedAdmission(added)
+      if (!added.ok) return added
       this.entries.set(value.id, value)
       let handle: RefreshRegistration
       handle = new RefreshRegistration(this.capability, this.ready, this.now, () => this.aggregate.touch(), () => { this.entries.delete(value.id); this.handles.delete(handle); added.value.dispose() })
@@ -341,7 +355,7 @@ class ScopedRefresh<T extends Prioritized> {
 }
 
 interface HostState {
-  readonly registries: Set<{ dispose(): void }>; readonly notifications: Set<Notifications>; readonly notificationObservers: Set<(notification: BlueNotification) => void>
+  readonly lifetimes: Set<ConsumerLifetime>; readonly registries: Set<{ dispose(): void }>; readonly notifications: Set<Notifications>; readonly notificationObservers: Set<(notification: BlueNotification) => void>
   readonly commands: Aggregate<BlueCommandContribution>; readonly status: Aggregate<BlueStatusEntryContribution>; readonly dock: Aggregate<BlueDockContribution>
   readonly panes: Aggregate<BluePluginHostPaneEntry>; readonly overlays: Ordered<BluePluginHostOverlayEntry>; readonly extensions: Aggregate<BlueEditorExtensionContribution>
   readonly statusProviders: Aggregate<BlueStatusProvider>; readonly editorProviders: Aggregate<BlueEditorProvider>; readonly owners: Map<Capability, number>
@@ -363,8 +377,9 @@ class PaneHandle extends RefreshRegistration implements BluePaneRegistration {
 }
 class Panes implements BluePaneRegistry {
   private readonly entries = new Map<string, BluePaneContribution>(); private readonly handles = new Set<PaneHandle>()
-  constructor(private readonly state: HostState, private readonly consumer: object) {}
+  constructor(private readonly state: HostState, private readonly consumer: object, private readonly lifetime: ConsumerLifetime) {}
   register(input: BluePaneContribution): BlueResult<BluePaneRegistration> {
+    if (this.lifetime.disposed) return consumerDisposed()
     if (!ready(this.state, 'panes')) return absent('panes')
     if ((this.state.paneCounts.get(this.consumer) ?? 0) >= 8) return failure('BLUE_LIMIT_EXCEEDED', 'a consumer may register at most 8 panes')
     try {
@@ -373,7 +388,9 @@ class Panes implements BluePaneRegistry {
       if (this.entries.has(value.id)) return failure('BLUE_DUPLICATE_ID', `contribution "${value.id}" is already registered`)
       let revision = 0
       let entry: BluePluginHostPaneEntry = Object.freeze({ id: value.id, ...(value.priority === undefined ? {} : { priority: value.priority }), contribution: value, hidden: false, revision })
-      const added = this.state.panes.add(entry); if (!added.ok) return added
+      const added = this.state.panes.add(entry)
+      if (this.lifetime.disposed) return rejectDisposedAdmission(added)
+      if (!added.ok) return added
       this.entries.set(value.id, value)
       this.state.paneCounts.set(this.consumer, (this.state.paneCounts.get(this.consumer) ?? 0) + 1)
       const isReady = () => ready(this.state, 'panes')
@@ -405,8 +422,9 @@ class OverlayHandle implements BluePublicOverlayHandle {
 }
 class Overlays implements BlueOverlayRegistry {
   private readonly handles = new Set<OverlayHandle>()
-  constructor(private readonly state: HostState, private readonly consumer: object) {}
+  constructor(private readonly state: HostState, private readonly consumer: object, private readonly lifetime: ConsumerLifetime) {}
   open(input: BlueOverlayRequest, options?: BlueOverlayOpenOptions): BlueResult<BluePublicOverlayHandle> {
+    if (this.lifetime.disposed) return consumerDisposed()
     if (!ready(this.state, 'overlays')) return absent('overlays')
     try {
       const result = overlay(input); if (!result.ok) return result
@@ -426,6 +444,10 @@ class Overlays implements BlueOverlayRegistry {
       const closer = { entry, close }
       if (!this.state.overlayClosers.has(request.id)) this.state.overlayClosers.set(request.id, closer)
       const added = this.state.overlays.add(entry)
+      if (this.lifetime.disposed) {
+        this.state.overlayClosers.delete(request.id)
+        return rejectDisposedAdmission(added)
+      }
       if (!added.ok) {
         if (this.state.overlayClosers.get(request.id) === closer) this.state.overlayClosers.delete(request.id)
         return added
@@ -451,8 +473,9 @@ class Overlays implements BlueOverlayRegistry {
 }
 class Notifications {
   private readonly listeners = new Set<(notification: BlueNotification) => void>(); private readonly handles = new Set<Registration>()
-  constructor(private readonly state: HostState, private readonly effect: Consumer['effect']) {}
+  constructor(private readonly state: HostState, private readonly lifetime: ConsumerLifetime, private readonly effect: Consumer['effect']) {}
   publish(input: BlueNotification): BlueResult {
+    if (this.lifetime.disposed) return consumerDisposed()
     if (!ready(this.state, 'notifications')) return absent('notifications')
     try {
       const safe = fields(input, ['id', 'view', 'tone'])
@@ -466,8 +489,17 @@ class Notifications {
     } catch (error) { return failure('BLUE_INVALID_CONTRIBUTION', message(error, 'notification was rejected')) }
   }
   subscribe(listener: (notification: BlueNotification) => void): BlueRegistration {
+    if (this.lifetime.disposed) {
+      const handle = new Registration(() => {})
+      handle.dispose()
+      return handle
+    }
     this.listeners.add(listener); let handle: Registration
-    handle = new Registration(() => { this.listeners.delete(listener); this.handles.delete(handle) }); this.handles.add(handle); this.effect(() => () => handle.dispose()); return handle
+    handle = new Registration(() => { this.listeners.delete(listener); this.handles.delete(handle) })
+    this.handles.add(handle)
+    try { this.effect(() => () => handle.dispose()) }
+    catch (error) { handle.dispose(); throw error }
+    return handle
   }
   emit(value: BlueNotification): void { for (const listener of this.listeners) try { listener(value) } catch { /* plugin observer failures are contained */ } }
   dispose(): void { for (const handle of this.handles) handle.dispose(); this.listeners.clear() }
@@ -649,10 +681,11 @@ function disposeHost(host: BluePluginHostService): void {
   const state = HOST_STATES.get(host)
   /* v8 ignore next -- Cordis invokes an effect cleanup at most once. */
   if (state === undefined) return
+  for (const lifetime of state.lifetimes) lifetime.dispose()
   for (const registry of state.registries) registry.dispose()
   for (const notifications of state.notifications) notifications.dispose()
   for (const aggregate of [state.commands, state.status, state.dock, state.panes, state.overlays, state.extensions, state.statusProviders, state.editorProviders]) aggregate.clear()
-  state.notificationObservers.clear(); state.owners.clear(); state.gestureOwners.clear(); state.gestures.clear(); state.ownerGestures.clear(); state.overlayOwners.clear(); state.overlayClosers.clear(); state.paneCounts.clear(); state.capturingConsumers.clear(); HOST_STATES.delete(host)
+  state.lifetimes.clear(); state.notificationObservers.clear(); state.owners.clear(); state.gestureOwners.clear(); state.gestures.clear(); state.ownerGestures.clear(); state.overlayOwners.clear(); state.overlayClosers.clear(); state.paneCounts.clear(); state.capturingConsumers.clear(); HOST_STATES.delete(host)
 }
 
 /** Cordis service implementing the stable Blue plugin host. */
@@ -663,7 +696,7 @@ export class BluePluginHostService extends Service implements BluePluginHost {
     const revision = { value: 0 }
     const changed = () => { revision.value += 1 }
     HOST_STATES.set(this, {
-      registries: new Set(), notifications: new Set(), notificationObservers: new Set(), commands: new Aggregate(false, changed), status: new Aggregate(true, changed), dock: new Aggregate(false, changed), panes: new Aggregate(true, changed), overlays: new Ordered(changed), extensions: new Aggregate(true, changed), statusProviders: new Aggregate(true, changed), editorProviders: new Aggregate(true, changed), owners: new Map(), gestureOwners: new Map(), gestures: new Map(), ownerGestures: new Map(), overlayOwners: new Map(), overlayClosers: new Map(), paneCounts: new Map(), capturingConsumers: new Set(), revision, now: options.now ?? Date.now, nextOverlayOrder: 0,
+      lifetimes: new Set(), registries: new Set(), notifications: new Set(), notificationObservers: new Set(), commands: new Aggregate(false, changed), status: new Aggregate(true, changed), dock: new Aggregate(false, changed), panes: new Aggregate(true, changed), overlays: new Ordered(changed), extensions: new Aggregate(true, changed), statusProviders: new Aggregate(true, changed), editorProviders: new Aggregate(true, changed), owners: new Map(), gestureOwners: new Map(), gestures: new Map(), ownerGestures: new Map(), overlayOwners: new Map(), overlayClosers: new Map(), paneCounts: new Map(), capturingConsumers: new Set(), revision, now: options.now ?? Date.now, nextOverlayOrder: 0,
     })
     ctx.effect(() => () => disposeHost(this))
   }
@@ -695,15 +728,17 @@ export class BluePluginHostService extends Service implements BluePluginHost {
       const missing = capabilities.find(capability => !ready(state, capability as Capability))
       if (missing !== undefined) return absent(missing as Capability)
 
+      const lifetime = new ConsumerLifetime()
+      state.lifetimes.add(lifetime)
       const isReady = (capability: Capability) => () => ready(state, capability)
-      const commands = new Scoped('commands', state.commands, isReady('commands'), command)
-      const statuses = new ScopedRefresh('status', state.status, isReady('status'), state.now, status)
-      const docks = new Scoped('dock', state.dock, isReady('dock'), dock)
-      const panes = new Panes(state, consumer); const overlays = new Overlays(state, consumer)
-      const extensions = new ScopedRefresh('editor.extensions', state.extensions, isReady('editor.extensions'), state.now, extension)
-      const statusProviders = new ScopedRefresh('status.provider', state.statusProviders, isReady('status.provider'), state.now, statusProvider)
-      const editorProviders = new ScopedRefresh('editor.provider', state.editorProviders, isReady('editor.provider'), state.now, editorProvider)
-      const notifications = new Notifications(state, callback => consumer.effect(callback))
+      const commands = new Scoped('commands', state.commands, isReady('commands'), lifetime, command)
+      const statuses = new ScopedRefresh('status', state.status, isReady('status'), lifetime, state.now, status)
+      const docks = new Scoped('dock', state.dock, isReady('dock'), lifetime, dock)
+      const panes = new Panes(state, consumer, lifetime); const overlays = new Overlays(state, consumer, lifetime)
+      const extensions = new ScopedRefresh('editor.extensions', state.extensions, isReady('editor.extensions'), lifetime, state.now, extension)
+      const statusProviders = new ScopedRefresh('status.provider', state.statusProviders, isReady('status.provider'), lifetime, state.now, statusProvider)
+      const editorProviders = new ScopedRefresh('editor.provider', state.editorProviders, isReady('editor.provider'), lifetime, state.now, editorProvider)
+      const notifications = new Notifications(state, lifetime, callback => consumer.effect(callback))
       const registries = [commands, statuses, docks, panes, overlays, extensions, statusProviders, editorProviders]
       for (const registry of registries) state.registries.add(registry)
       state.notifications.add(notifications)
@@ -713,7 +748,7 @@ export class BluePluginHostService extends Service implements BluePluginHost {
         manifest: frozenManifest,
         ...(capabilities.includes('commands') ? { commands } : {}), ...(capabilities.includes('status') ? { status: statuses } : {}), ...(capabilities.includes('dock') ? { dock: docks } : {}), ...(capabilities.includes('notifications') ? { notifications } : {}), ...(capabilities.includes('panes') ? { panes } : {}), ...(capabilities.includes('overlays') ? { overlays } : {}), ...(capabilities.includes('editor.extensions') ? { editorExtensions: extensions } : {}), ...(capabilities.includes('status.provider') ? { statusProviders } : {}), ...(capabilities.includes('editor.provider') ? { editorProviders } : {}),
       }
-      const cleanup = () => { for (const registry of registries) { registry.dispose(); state.registries.delete(registry) }; notifications.dispose(); state.notifications.delete(notifications) }
+      const cleanup = () => { lifetime.dispose(); state.lifetimes.delete(lifetime); for (const registry of registries) { registry.dispose(); state.registries.delete(registry) }; notifications.dispose(); state.notifications.delete(notifications) }
       try { consumer.effect(() => cleanup) } catch (error) { cleanup(); throw error }
       return success(Object.freeze(api))
     } catch (error) { return invalid(error) }
