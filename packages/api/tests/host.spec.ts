@@ -573,6 +573,36 @@ describe('BluePluginHostService', () => {
     expect(second.value.editorExtensions!.register({ id: 'bad-extension', diagnostics: {} as never })).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
   })
 
+  it('fences status entries and provider candidates independently', async () => {
+    const host = new BluePluginHostService(new Context())
+    attach(host, ['status', 'status.provider', 'commands'])
+    const opened = host.open(consumer(), manifest(['status', 'status.provider', 'commands']))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    const initial = snapshotBluePluginHost(host)
+    const commandRegistration = opened.value.commands!.register(command('command'))
+    expect(commandRegistration.ok).toBe(true)
+    expect(snapshotBluePluginHost(host)).toMatchObject({ statusRevision: initial.statusRevision, statusProvidersRevision: initial.statusProvidersRevision })
+    const status = opened.value.status!.register({ id: 'entry', render: () => ({ kind: 'text', content: 'entry' }) })
+    expect(status.ok).toBe(true)
+    expect(snapshotBluePluginHost(host)).toMatchObject({ statusRevision: (initial.statusRevision ?? 0) + 1, statusProvidersRevision: initial.statusProvidersRevision })
+    const provider = opened.value.statusProviders!.register({ id: 'provider', render: () => ({ kind: 'text', content: 'provider' }) })
+    expect(provider.ok).toBe(true)
+    expect(snapshotBluePluginHost(host)).toMatchObject({ statusRevision: (initial.statusRevision ?? 0) + 1, statusProvidersRevision: (initial.statusProvidersRevision ?? 0) + 1 })
+    if (!status.ok || !provider.ok || !commandRegistration.ok) return
+    expect(status.value.refresh()).toMatchObject({ ok: true })
+    expect(provider.value.refresh()).toMatchObject({ ok: true })
+    await Promise.resolve()
+    const refreshed = snapshotBluePluginHost(host)
+    expect(refreshed).toMatchObject({ statusRevision: (initial.statusRevision ?? 0) + 2, statusProvidersRevision: (initial.statusProvidersRevision ?? 0) + 2 })
+    commandRegistration.value.dispose()
+    expect(snapshotBluePluginHost(host)).toMatchObject({ statusRevision: refreshed.statusRevision, statusProvidersRevision: refreshed.statusProvidersRevision })
+    status.value.dispose()
+    expect(snapshotBluePluginHost(host)).toMatchObject({ statusRevision: (refreshed.statusRevision ?? 0) + 1, statusProvidersRevision: refreshed.statusProvidersRevision })
+    provider.value.dispose()
+    expect(snapshotBluePluginHost(host)).toMatchObject({ statusRevision: (refreshed.statusRevision ?? 0) + 1, statusProvidersRevision: (refreshed.statusProvidersRevision ?? 0) + 1 })
+  })
+
   it('coalesces refreshes, enforces rolling quota, and cancels pending ticks', async () => {
     let now = 10
     const host = new BluePluginHostService(new Context(), { now: () => now })

@@ -4,7 +4,7 @@ Implementation detail for this package (the user-facing surface is `README.md`/`
 
 ## Patch layout
 
-The installable unit contributes 28 Blue-owned rows: two host-support rows plus 26 product rows split into 8 baseline, 14 enhancement, and 4 assembly rows. The baseline contains the API host, core/theme, banner, transcript model hosts/footer, conversation projection, and official transcript consumer. Conversation is baseline because no legacy event-fold renderer remains. Official tool presentation uses canonical models and no intent rows are mounted. The view and interaction bridges are the only route from public dock/status/command/notification contributions into concrete owner registries. The bundle module itself mounts nothing.
+The installable unit contributes 29 Blue-owned rows: two host-support rows plus 27 product rows split into 8 baseline, 15 enhancement, and 4 assembly rows. The baseline contains the API host, core/theme, banner, transcript model hosts/footer, conversation projection, and official transcript consumer. Conversation is baseline because no legacy event-fold renderer remains. Official tool presentation uses canonical models and no intent rows are mounted. The view and interaction bridges are the only route from public dock/additive-status/command/notification contributions into concrete owner registries; the independent status-provider owner is the only exclusive status composition route. The bundle module itself mounts nothing.
 
 F3 `blue-context` remains a validation-only adapter for the cutover release. It supplies the official app-projection-to-frontend adapter when installed independently; the bundle's `/context` command and `blue-status-context` consume app-owned renderer-neutral session details/facts instead. The independent fixture covers projection replay, multi-key coalescing, session-epoch rejection, and unload without adding the package to the bundle dependency closure.
 
@@ -12,7 +12,16 @@ F5 carries baseline `blue-conversation` and `blue-transcript-official` rows. The
 
 F6 keeps `blue-openpencil` and `blue-lark` as validation-only ecosystem adapters. They are intentionally absent from the installable bundle dependency closure and are exercised through independent packed fixtures. OpenPencil observes only official dsh-tools results, drops signed result metadata, and publishes bounded tool/notification models. Lark registers an official command and uses the optional public loopback settings route without retaining credentials. Missing external capabilities produce no contribution and do not pending the tree; their package `AGENTS.md` files record the compatibility seams and deletion conditions.
 
-F5 adds no parallel composition rows for registries: `blue-transcript` owns the package-private `blueStatusEntries` and bottom-only `blueBottomPanes` composition seams plus `blueToolModels` and `blueTranscriptModels`; `blue-interaction` owns `blueCommandModels`, `blueEditorModels`, and the frontend-tree-scoped interaction state service. The basic/cwd/git/title/context/mode rows publish canonical status nodes through `blueStatusEntries`; activity/todo/agents/BTW and the interaction-owned queue publish canonical fallback nodes through `blueBottomPanes`. Public plugin dock/status contributions still enter only through the API host and renderer owner bridge. Bundle e2e fixture wrappers must mirror source inject lists exactly; no contribution may duplicate content in the default composition.
+F5 keeps the registries in their owning parent plugins: `blue-transcript` owns the package-private `blueStatusEntries` and bottom-only `blueBottomPanes` composition seams plus `blueStatusComposition`, `blueToolModels`, and `blueTranscriptModels`; `blue-interaction` owns `blueCommandModels`, `blueEditorModels`, and the frontend-tree-scoped interaction state service. The basic/cwd/git/title/context/mode rows publish canonical status nodes through `blueStatusEntries`; activity/todo/agents/BTW and the interaction-owned queue publish canonical fallback nodes through `blueBottomPanes`. Public plugin dock/additive-status contributions still enter only through the API host and renderer owner bridge.
+
+W5-A adds one independent composition row, `blue-status-provider-owner`, after
+the additive bridge. It advertises only `status.provider`, consumes the
+tree-scoped composition service and app-owned readonly session reader, and
+follows the persisted `blue.statusProvider` selection. Provider candidates
+remain inert on installation; `blue.default` is the built-in fallback, and a
+bad or absent desired id is never written back. Bundle e2e fixture wrappers
+must mirror source inject lists exactly; no contribution may duplicate content
+in the default composition.
 
 The BTW row explicitly injects app-owned `blueSessionActions`. Although it appears before `blue-app`, Cordis holds the pane fiber until the app provides the action service; the app itself still publishes the service synchronously before its loader-settlement Agent creation. This ordering keeps Agent/session seeding out of transcript without adding an implicit race.
 

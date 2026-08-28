@@ -84,6 +84,8 @@ export interface BlueCompiledUi {
 export interface BlueStatusRenderResult {
   readonly rows: string[]
   readonly overflowed: boolean
+  /** Renderer failure contained behind the status boundary, when present. */
+  readonly runtimeFailure?: string
 }
 
 /** Passive status component with explicit overflow metadata for footer policy. */
@@ -125,6 +127,10 @@ export interface BlueStatusCompileFailure {
 export type BlueStatusCompileResult = { readonly ok: true, readonly value: BlueCompiledStatus } | BlueStatusCompileFailure
 
 type CompilerMode = 'ui' | 'status'
+
+interface RuntimeCompilerOptions extends BlueUiCompilerOptions {
+  readonly reportRuntimeFailure: (message: string) => void
+}
 
 interface ControlBase {
   readonly key: string
@@ -216,31 +222,41 @@ class ErrorComponent implements BlueComponent {
   invalidate(): void {}
 }
 
-function staticComponent(render: (width: number) => string[], options: BlueUiCompilerOptions): BlueComponent {
+function renderFailure(error: unknown, fallback = 'unknown render failure'): string {
+  return error instanceof Error ? error.message : fallback
+}
+
+function staticComponent(render: (width: number) => string[], options: RuntimeCompilerOptions): BlueComponent {
   return {
     render: width => {
       try {
         return render(width)
       } catch (error) {
-        return errorRows(error instanceof Error ? error.message : 'unknown render failure', width, options.colors)
+        const message = renderFailure(error)
+        options.reportRuntimeFailure(message)
+        return errorRows(message, width, options.colors)
       }
     },
     invalidate: () => {},
   }
 }
 
-function markdownLeafComponent(node: Extract<BlueUiNode, { readonly kind: 'text' }>, path: string, options: BlueUiCompilerOptions): BlueComponent {
+function markdownLeafComponent(node: Extract<BlueUiNode, { readonly kind: 'text' }>, path: string, options: RuntimeCompilerOptions): BlueComponent {
   const markdown = options.components.createMarkdown({ text: node.content })
   return {
     render: width => {
       try { return windowLeafRows(markdown.render(Math.max(1, width)), path, options) }
-      catch (error) { return errorRows(error instanceof Error ? error.message : 'unknown render failure', width, options.colors) }
+      catch (error) {
+        const message = renderFailure(error)
+        options.reportRuntimeFailure(message)
+        return errorRows(message, width, options.colors)
+      }
     },
     invalidate: () => markdown.invalidate(),
   }
 }
 
-function editorFieldComponent(field: TextField, key: string, state: FocusState, options: BlueUiCompilerOptions): BlueComponent {
+function editorFieldComponent(field: TextField, key: string, state: FocusState, options: RuntimeCompilerOptions): BlueComponent {
   const editor = state.textEditor(field, key)
   return {
     render: width => {
@@ -270,7 +286,9 @@ function editorFieldComponent(field: TextField, key: string, state: FocusState, 
         }
         return rows
       } catch (error) {
-        return errorRows(error instanceof Error ? error.message : 'unknown editor failure', width, options.colors)
+        const message = renderFailure(error, 'unknown editor failure')
+        options.reportRuntimeFailure(message)
+        return errorRows(message, width, options.colors)
       }
     },
     invalidate: () => editor.invalidate(),
@@ -310,7 +328,7 @@ function joinSpans(node: { readonly spans: readonly { readonly text: string, rea
   }).join('')
 }
 
-function pad(component: Component, amount: number, options: BlueUiCompilerOptions): Component {
+function pad(component: Component, amount: number, options: RuntimeCompilerOptions): Component {
   if (amount === 0) return component
   const padded = new HStack()
   const spacer = (): BlueComponent => staticComponent(() => [''], options)
@@ -320,7 +338,7 @@ function pad(component: Component, amount: number, options: BlueUiCompilerOption
   return padded
 }
 
-function surfaceComponent(node: Extract<BlueUiNode, { readonly kind: 'surface' }>, child: Component, footer: Component | undefined, options: BlueUiCompilerOptions): BlueComponent {
+function surfaceComponent(node: Extract<BlueUiNode, { readonly kind: 'surface' }>, child: Component, footer: Component | undefined, options: RuntimeCompilerOptions): BlueComponent {
   const component = new VStack()
   component.addChild(staticComponent(width => renderSurfaceHead(node, width, options.colors), options))
   component.addChild(child)
@@ -379,7 +397,7 @@ function controlsForNode(node: BlueUiNode, options: BlueUiCompilerOptions, path 
   return controls
 }
 
-function compileNode(node: BlueUiNode, state: FocusState, options: BlueUiCompilerOptions, path = '$', mode: CompilerMode = 'ui'): Component {
+function compileNode(node: BlueUiNode, state: FocusState, options: RuntimeCompilerOptions, path = '$', mode: CompilerMode = 'ui'): Component {
   switch (node.kind) {
     case 'text': if (options.markdownLeafPath === path) return markdownLeafComponent(node, path, options)
       return staticComponent(width => windowLeafRows(renderCanonicalView(
@@ -508,10 +526,15 @@ class CompiledSurface implements BlueFocusable {
   private readonly state: FocusState
   private readonly root: Component
   private viewport: BlueUiViewport
+  private runtimeFailure: string | undefined
 
   constructor(node: BlueUiNode, private readonly options: BlueUiCompilerOptions, mode: CompilerMode) {
     this.viewport = safeViewport(options.getViewport)
-    const runtimeOptions: BlueUiCompilerOptions = { ...options, getViewport: () => this.viewport }
+    const runtimeOptions: RuntimeCompilerOptions = {
+      ...options,
+      getViewport: () => this.viewport,
+      reportRuntimeFailure: message => { this.runtimeFailure ??= message },
+    }
     const textBuffers = new Map<string, { canonical: string, value: string }>()
     const selectDrafts = new Map<string, { canonical: string | null, value: string | null }>()
     const toggleDrafts = new Map<string, { canonical: boolean, value: boolean }>()
@@ -601,9 +624,12 @@ class CompiledSurface implements BlueFocusable {
 
   private renderFrame(width: number, maxRows: number | undefined): BlueStatusRenderResult {
     const safeWidth = Math.max(1, Number.isFinite(width) ? Math.floor(width) : 1)
+    this.runtimeFailure = undefined
     try {
       this.state.layoutPass = false
-      this.viewport = safeViewport(this.options.getViewport)
+      this.viewport = maxRows === undefined
+        ? safeViewport(this.options.getViewport)
+        : { columns: safeWidth, rows: maxRows }
       reconcile(this.state)
       const rows = this.root.render(safeWidth)
       const rowLimit = maxRows ?? (this.options.screenMode === 'alternate' ? this.viewport.rows : undefined)
@@ -615,16 +641,17 @@ class CompiledSurface implements BlueFocusable {
         return sliceByColumn(row, 0, safeWidth, true)
       })
       let inserted = false
-      return { rows: rendered.map(row => {
+      const result = { rows: rendered.map(row => {
         if (!this.focused || inserted || !row.includes(FOCUS_SENTINEL)) return row.replaceAll(FOCUS_SENTINEL, ' ')
         inserted = true
         if (row.includes(CURSOR_MARKER)) return row.replaceAll(FOCUS_SENTINEL, ' ')
         return row.replace(FOCUS_SENTINEL, `${CURSOR_MARKER} `).replaceAll(FOCUS_SENTINEL, ' ')
       }), overflowed }
+      return this.runtimeFailure === undefined ? result : { ...result, runtimeFailure: this.runtimeFailure }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'unknown render failure'
+      const message = renderFailure(error)
       const rows = errorRows(message, safeWidth, this.options.colors)
-      return { rows: maxRows === undefined ? rows : rows.slice(0, maxRows), overflowed: maxRows !== undefined && rows.length > maxRows }
+      return { rows: maxRows === undefined ? rows : rows.slice(0, maxRows), overflowed: maxRows !== undefined && rows.length > maxRows, runtimeFailure: message }
     }
   }
 

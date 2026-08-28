@@ -206,7 +206,7 @@
     # --- Baseline segment -----------------------------------------------------
     # The plain baseline is this eight-row segment plus the four assembly rows
     # at the bottom. It is the complete, self-sufficient Blue UI: the whole
-    # fourteen-row enhancement segment between them can be dropped and the
+    # fifteen-row enhancement segment between them can be dropped and the
     # bundle still boots and renders the projection-backed conversation.
 
     # Blue core: the tree's only pi-tui adapter. Starts the terminal and
@@ -378,6 +378,13 @@
     # editor. It is the only dynamic-contribution path into those registries.
     - id: blue-plugin-view-bridge
       name: '@dsh-blue/blue-transcript/plugin-host-bridge'
+
+    # Exclusive status-provider owner: candidates stay inert in blue-api;
+    # this tree-scoped row follows the persisted blue.statusProvider choice,
+    # dry-renders at the live footer width, and retains the default on failure.
+    - id: blue-status-provider-owner
+      name: '@dsh-blue/blue-transcript/status-provider-owner'
+      inject: [blueStatusComposition, blueSessionReader]
 
     # --- Assembly segment -------------------------------------------------------
     # The plain baseline's closing rows: the input editor with its built-in

@@ -25,7 +25,7 @@ import { ReadGroupComponent } from '../src/read-group.ts'
 import { SearchGroupComponent } from '../src/search-group.ts'
 import { ThinkingComponent } from '../src/thinking.ts'
 import { createTranscriptModel, TranscriptModelComponent } from '../src/transcript-model.ts'
-import { BlueStatusEntryService, StatusFooterComponent } from '../src/status-model.ts'
+import { BlueStatusCompositionService, BlueStatusEntryService, StatusFooterComponent } from '../src/status-model.ts'
 import { bannerLayout, composeBannerLines, shortenHome } from '../src/banner.ts'
 import type { TranscriptToolItem } from '../src/types.ts'
 import { fakeBlueComponents } from './helpers.ts'
@@ -226,6 +226,37 @@ describe('transcript width-scan', () => {
       status.register({ id: 'scan-left', priority: 10, visible: true, node: { kind: 'text', content: text } })
       for (const width of SCAN_WIDTHS) {
         expectLinesFit(`FooterShell/${name}`, footer.render(width), width)
+      }
+    }
+  })
+
+  it('BlueStatusCompositionService keeps selected-provider and LKG rows within every width', () => {
+    for (const { name, text } of ADVERSARIAL) {
+      for (const width of SCAN_WIDTHS) {
+        let paintFails = false
+        const base = fakeBlueComponents()
+        const components = { ...base, wrapText: (value: string, target: number) => {
+          if (paintFails) throw new Error('width-scan paint failure')
+          return base.wrapText(value, target)
+        } }
+        const ctx = new Context()
+        const entries = new BlueStatusEntryService(ctx)
+        entries.register({ id: 'default', visible: true, node: { kind: 'text', content: 'default' } })
+        const footer = new StatusFooterComponent(entries, components, colors)
+        const composition = new BlueStatusCompositionService(ctx, entries, footer, {
+          components,
+          colors,
+          viewport: () => ({ columns: width, rows: 24 }),
+          requestRender: () => undefined,
+        })
+        const content = components.truncateToWidth(text, 2, '') || '.'
+        composition.updateCandidates([{ id: 'scan.custom', render: () => ({ kind: 'rich-text', spans: [{ text: content }] }) }], 1)
+        composition.select('scan.custom')
+        expectLinesFit(`StatusComposition/${name}`, composition.render(width), width)
+        if (composition.snapshot.activeId !== 'scan.custom') throw new Error(`status provider did not activate for ${name} at width ${String(width)}`)
+        paintFails = true
+        expectLinesFit(`StatusCompositionLKG/${name}`, composition.render(width), width)
+        composition.dispose()
       }
     }
   })

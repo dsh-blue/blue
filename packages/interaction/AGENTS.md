@@ -71,6 +71,15 @@ Approval allowances and prompt serialization are local to one approval plugin ap
 
 `settings.ts` is the sole owner of the `blue` settings namespace. `currentBlueSettings()` reads the tree-scoped thunk; update check, `/settings`, paste image, and transcript settings must not register duplicate sections. Persisted theme changes go through `theme-switch.ts`; `currentThemeKey` and `lastAppliedTheme` live in the interaction state service, preserving same-tree reload behavior without cross-tree leakage.
 
+The same schema owns the persisted `statusProvider` id. Its default sentinel is
+`blue.default`; arbitrary non-empty ids remain stored so a temporarily absent
+provider can become active after installation or owner reload. When the
+consolidated settings source becomes readable, this owner emits
+`'blue/settings-source-ready'` with the resolved value. The transcript
+status-provider owner listens to that event because its sibling Fiber may
+activate before settings; the event is an initialization handoff, not another
+settings registry or a write-back path.
+
 Transcript tunables remain in this settings schema because interaction owns the settings UI, while transcript parses and applies them through its own tree-scoped presentation policy.
 
 ## Optional Subpaths

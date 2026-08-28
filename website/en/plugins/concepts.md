@@ -4,7 +4,7 @@ This page explains the four pillars of Blue's plugin model: the Cordis tree and 
 
 ## The Cordis tree and the Fiber lifecycle
 
-There is exactly one Cordis plugin tree inside the dsh process. The Harness domain plugins (agents, sessions, tools, approval), Blue's 28 rows, and your plugin are all sibling rows on this tree:
+There is exactly one Cordis plugin tree inside the dsh process. The Harness domain plugins (agents, sessions, tools, approval), Blue's 29 rows, and your plugin are all sibling rows on this tree:
 
 ```text
 dsh process 进程（one Cordis tree 一棵 Cordis 树）
@@ -35,7 +35,7 @@ interface BluePluginManifest {
 `open()` behaves in three layers:
 
 1. **Static validation** (`validateBlueManifest`, without executing plugin code): id format, api range format, capability spelling and deduplication. Failures return `BLUE_API_INCOMPATIBLE` (or `BLUE_INVALID_CONTRIBUTION` when the manifest is not even an object);
-2. **Capability-open check**: in the current phase only `commands`, `status`, `dock`, and `notifications` are open. Requesting any of `tools` / `editor` / `panels` / `session.read` / `session.act` rejects the whole open (`BLUE_CAPABILITY_DENIED`) — a rejection, not a degradation;
+2. **Capability-open check**: in the current phase `commands`, `status`, `status.provider`, `dock`, and `notifications` are open. Requesting any of `tools` / `editor` / `panels` / `session.read` / `session.act` rejects the whole open (`BLUE_CAPABILITY_DENIED`) — a rejection, not a degradation;
 3. **Capability-scoped return**: only the declared capability fields have values on `BluePluginApi`; the rest are `undefined`. Hence access always takes the optional-chaining shape `api.commands?.register(...)`.
 
 Scoping is a two-way contract: you only get what you declared, and the host only exposes what you declared. When an upgraded plugin wants a new capability, it adds one line to the manifest — a host that is too old fails explicitly at `open()` time instead of erroring at runtime.
@@ -107,5 +107,5 @@ These bottom lines are enforced jointly by the validate script and code review:
 
 ## Next steps
 
-- Contract tables and full examples of the four capabilities: [Commands](/en/plugins/commands) · [Status bar](/en/plugins/status) · [Dock panes](/en/plugins/dock) · [Notifications](/en/plugins/notifications);
+- Contract tables and full examples of the five capabilities: [Commands](/en/plugins/commands) · [Status bar and exclusive provider](/en/plugins/status) · [Dock panes](/en/plugins/dock) · [Notifications](/en/plugins/notifications);
 - The complete list of Blue's internal projection/action boundaries lives in the [Seam reference](/en/plugins/seams).

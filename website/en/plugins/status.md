@@ -49,6 +49,38 @@ export function apply(ctx: Context): void {
 - **Over-wide entries are truncated**: the footer's width budget is tight, and entries are handled with a `truncate` policy. Keep content short — the status bar is not a panel; long content goes to the [dock](/en/plugins/dock);
 - **Only the status subset is accepted**: `text`, `rich-text`, `fields`, `progress`, and recursive `stack` nodes are available; interactive nodes are rejected safely. The canonical compiler preserves tone/emphasis.
 
+## Exclusive status provider
+
+`status.provider` registers a candidate that replaces the whole footer rather than appending one entry:
+
+```ts
+const opened = ctx.bluePluginHost.open(ctx, {
+  id: 'my-plugin.compact-status',
+  api: '^1.0.0',
+  capabilities: ['status.provider'],
+})
+if (!opened.ok) return
+
+opened.value.statusProviders?.register({
+  id: 'my-plugin.compact',
+  render: snapshot => ({
+    kind: 'text',
+    content: `${snapshot.busy ? 'Working' : 'Ready'} · ${snapshot.session?.model?.id ?? 'No model'}`,
+  }),
+})
+```
+
+A candidate stays inert after registration; Blue calls `render()` only when `blue.statusProvider` selects it. The snapshot is a frozen readonly copy containing only the public current session, validated visible additive entries, and the `busy` flag. Blue compiles and dry-renders at the footer's actual width first, so an invalid, empty, over-three-row, or failing candidate cannot replace a working same-session provider.
+
+Selection lives in `settings.yaml`; `blue.default` restores the built-in additive footer:
+
+```yaml
+blue:
+  statusProvider: my-plugin.compact
+```
+
+A missing or failing desired id remains persisted; the renderer never silently rewrites it. First-activation failure and session switches use `blue.default`. Three failures for one provider in a rolling 60-second window open a timer-free breaker. Switching away and reselecting, or registering a new generation under the same id, permits another attempt.
+
 ## Common pitfalls
 
 | Symptom | Cause |

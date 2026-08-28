@@ -18,7 +18,7 @@ import type {} from '@dsh-blue/blue-app'
 // Carries the optional host `settings` service Context merge.
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { UserMessageImages } from './components.ts'
-import { BlueStatusEntryService, StatusFooterComponent } from './status-model.ts'
+import { BlueStatusCompositionService, BlueStatusEntryService, StatusFooterComponent } from './status-model.ts'
 import { BlueBottomPaneService } from './dock-model.ts'
 import { BlueModelToolService } from './tool-model.ts'
 import { TranscriptModelService } from './transcript-model.ts'
@@ -157,13 +157,20 @@ export function apply(ctx: Context): void {
     colors,
     () => ({ columns: screen.columns, rows: screen.rows }),
   )
+  const statusComposition = new BlueStatusCompositionService(ctx, statusEntries, footer, {
+    components: ctx.blueComponents,
+    colors,
+    viewport: () => ({ columns: screen.columns, rows: screen.rows }),
+    requestRender: () => screen.requestRender(),
+  })
+  ctx.effect(() => () => statusComposition.dispose())
   bottomPanes.attach(screen)
   toolModels.attach(screen)
   transcriptModels.attach(screen)
   // The footer pins to the dock's lowest slot (S12): the two-row status
   // stays on the terminal's last rows beneath the editor, the kimi layout
   // dialog panels pull up over.
-  ctx.effect(() => screen.addBottomChild(new GutterComponent(footer), 'bottom'))
+  ctx.effect(() => screen.addBottomChild(new GutterComponent(statusComposition), 'bottom'))
 
   ctx.effect(() => ctx.blueKeymap.register([{
     id: ACTION_TOGGLE_COLLAPSE,

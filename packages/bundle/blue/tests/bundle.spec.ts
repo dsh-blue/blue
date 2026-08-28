@@ -83,6 +83,7 @@ describe('blue bundle', () => {
       'blue-pane-btw',
       'blue-pane-agents',
       'blue-plugin-view-bridge',
+      'blue-status-provider-owner',
       'blue-interaction',
       'blue-plugin-interaction-bridge',
       'blue-startup',
@@ -99,6 +100,7 @@ describe('blue bundle', () => {
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/official-model'")
     expect(patch).not.toMatch(/- id: blue-(?:context|conversation|transcript-official|openpencil|lark)\n\s+name:[^\n]+\n\s+disabled: true/gu)
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/plugin-host-bridge'")
+    expect(patch).toContain("name: '@dsh-blue/blue-transcript/status-provider-owner'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/plugin-host-bridge'")
     expect(patch).toContain("name: '@deepseek-ai/dsh-agent-presets'")
   })

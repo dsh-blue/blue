@@ -22,4 +22,6 @@ Nodes, event payloads, and snapshots are readonly JSON-shaped data. `render`, `o
 
 `BlueEditorShellNode` is a separate provider-only tree containing the `editor-control` slot; ordinary `BlueUiNode` cannot construct that slot. Provider registration validates callback shape without invoking `render`, inspecting its returned tree, or selecting a winner. Only Blue-owned user configuration activates one of the inert candidates. `session.read` and `session.act` remain denied until a real owner/API seam supplies their snapshot and action guarantees.
 
+Blue-owned adapters receive capability-local `statusRevision` and `statusProvidersRevision` snapshot fences. Additive status refreshes and provider-candidate refreshes advance independently, so an unrelated command, pane, or provider installation does not cause the selected status provider to render.
+
 The host keeps a deprecated built-in `dock` bridge solely for repository compatibility while its owners migrate to `panes`; published manifests already fail public validation for `dock`.

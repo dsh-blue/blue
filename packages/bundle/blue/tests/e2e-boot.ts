@@ -67,6 +67,7 @@ import * as paneActivityPlugin from '../../../transcript/src/pane-activity.ts'
 import * as paneBtwPlugin from '../../../transcript/src/pane-btw.ts'
 import * as paneTodoPlugin from '../../../transcript/src/pane-todo.ts'
 import * as viewBridgePlugin from '../../../transcript/src/plugin-host-bridge.ts'
+import * as statusProviderOwnerPlugin from '../../../transcript/src/status-provider-owner.ts'
 import * as statusBasicPlugin from '../../../transcript/src/status-basic-model.ts'
 import * as statusContextPlugin from '../../../transcript/src/status-context.ts'
 import * as statusCwdPlugin from '../../../transcript/src/status-cwd.ts'
@@ -198,6 +199,7 @@ export const CREATIVE_BLUE_INTERNAL_SERVICES = [
   'blueSkillsCatalog',
   'blueStartup',
   'blueStatusEntries',
+  'blueStatusComposition',
   'blueTerminalInfo',
   'blueTheme',
   'blueThemeModels',
@@ -242,6 +244,7 @@ interface BlueE2EHooks {
   paneTodoApply: typeof paneTodoPlugin.apply
   paneBtwApply: typeof paneBtwPlugin.apply
   viewBridgeApply: typeof viewBridgePlugin.apply
+  statusProviderOwnerApply: typeof statusProviderOwnerPlugin.apply
   interactionApply: typeof interactionPlugin.apply
   interactionBridgeApply: typeof interactionBridgePlugin.apply
   editorPlusApply: typeof editorPlusPlugin.apply
@@ -426,6 +429,7 @@ export async function bootBlue(argv: string[], options: {
     paneTodoApply: paneTodoPlugin.apply,
     paneBtwApply: paneBtwPlugin.apply,
     viewBridgeApply: options.viewBridge === false ? () => {} : viewBridgePlugin.apply,
+    statusProviderOwnerApply: statusProviderOwnerPlugin.apply,
     interactionApply: interactionPlugin.apply,
     interactionBridgeApply: interactionBridgePlugin.apply,
     editorPlusApply: editorPlusPlugin.apply,
@@ -667,6 +671,13 @@ export const name = 'blue-plugin-view-bridge'
 export const inject = ['bluePluginHost', 'blueScreen', 'blueStatusEntries', 'blueTheme', 'blueComponents']
 export const apply = ctx => globalThis.__blueE2E.viewBridgeApply(ctx)
 `)}`,
+    '- id: blue-status-provider-owner',
+    `  name: ${fixture('blue-status-provider-owner.mjs', `
+export const name = 'blue-status-provider-owner'
+export const inject = ['bluePluginHost', 'blueStatusComposition', 'blueSessionReader']
+export const apply = ctx => globalThis.__blueE2E.statusProviderOwnerApply(ctx)
+`)}`,
+    '  inject: [blueStatusComposition, blueSessionReader]',
     // The assembly segment closes the plain baseline: the interaction row
     // mounts the input editor below every pane row above.
     '- id: blue-interaction',

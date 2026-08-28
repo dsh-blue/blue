@@ -49,6 +49,10 @@
       "types": "./lib/types/status-context.d.ts",
       "default": "./lib/status-context.js"
     },
+    "./status-provider-owner": {
+      "types": "./lib/types/status-provider-owner.d.ts",
+      "default": "./lib/status-provider-owner.js"
+    },
     "./pane-activity": {
       "types": "./lib/types/pane-activity.d.ts",
       "default": "./lib/pane-activity.js"

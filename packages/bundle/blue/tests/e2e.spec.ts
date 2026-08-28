@@ -235,6 +235,83 @@ describe('blue whole-tree e2e', () => {
     await expect(executeCommand(tree, agent, '/creative')).resolves.toBeUndefined()
   })
 
+  it('replays a persisted status provider across both Loader orders and keeps unrelated installation inert', async () => {
+    const dir = mkdtempTracked('dsh-blue-e2e-status-provider-')
+    const settingsPath = join(dir, 'settings.yaml')
+    const credentialsPath = join(dir, '.credentials.yaml')
+    writeFileSync(settingsPath, 'blue:\n  statusProvider: e2e.custom\n')
+    writeFileSync(credentialsPath, 'version: 1\nrefs: {}\n', { mode: 0o600 })
+    const tree = await bootBlue([], { script: [], realSettings: { settingsPath, credentialsPath } })
+    const agent = await currentAgent(tree)
+    let renders = 0
+    let inertRenders = 0
+    let frozen = false
+    let additive = 'one'
+    let additiveHandle: { refresh(): { readonly ok: boolean } } | undefined
+    const fiber = tree.ctx.plugin({
+      name: 'e2e-status-provider-candidates',
+      inject: ['bluePluginHost'],
+      apply(pluginCtx) {
+        const opened = pluginCtx.bluePluginHost.open(pluginCtx, {
+          id: '@acme/e2e-status-provider',
+          api: '^1.0.0',
+          capabilities: ['status', 'status.provider'],
+        })
+        if (!opened.ok) throw new Error(opened.message)
+        const additiveResult = opened.value.status!.register({ id: 'dynamic', render: () => ({ kind: 'text', content: additive }) })
+        if (additiveResult.ok) additiveHandle = additiveResult.value
+        const selected = opened.value.statusProviders!.register({
+          id: 'e2e.custom',
+          render(snapshot) {
+            renders += 1
+            frozen = Object.isFrozen(snapshot) && Object.isFrozen(snapshot.entries) && Object.isFrozen(snapshot.session)
+            const dynamic = snapshot.entries.find(entry => entry.id === 'plugin.status.dynamic')
+            const content = dynamic?.node.kind === 'text' ? dynamic.node.content : 'missing'
+            return { kind: 'text', content: `selected status ${snapshot.session?.id ?? 'none'} ${content}` }
+          },
+        })
+        const inert = opened.value.statusProviders!.register({ id: 'e2e.other', render: () => {
+          inertRenders += 1
+          return { kind: 'text', content: 'wrong provider' }
+        } })
+        if (!additiveResult.ok || !selected.ok || !inert.ok) throw new Error('status provider registration failed')
+      },
+    })
+    await fiber.await()
+    await waitForRender()
+    expect(stripSgr(await fullFrame(tree.terminal))).toContain(`selected status ${agent.id} one`)
+    expect(frozen).toBe(true)
+    expect(renders).toBe(1)
+    expect(inertRenders).toBe(0)
+    expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('wrong provider')
+    expect(renders).toBe(1)
+    additive = 'two'
+    expect(additiveHandle?.refresh()).toMatchObject({ ok: true })
+    await waitForRender()
+    expect(stripSgr(await fullFrame(tree.terminal))).toContain(`selected status ${agent.id} two`)
+    expect(renders).toBe(2)
+    expect(inertRenders).toBe(0)
+
+    await executeCommand(tree, agent, '/theme light')
+    await vi.waitFor(() => { expect(tree.ctx.get('blueTheme')?.colors).toBe(themeLightPlugin.LIGHT_COLORS) })
+    expect(stripSgr(await fullFrame(tree.terminal))).toContain(`selected status ${agent.id} two`)
+    expect(renders).toBe(3)
+    expect(inertRenders).toBe(0)
+
+    const ownerEntry = [...tree.ctx.loader.entries()].find(entry => entry.options.id === 'blue-status-provider-owner')
+    expect(ownerEntry).toBeDefined()
+    await tree.ctx.loader.update(ownerEntry!.id, { disabled: true })
+    await tree.ctx.loader.await()
+    expect(stripSgr(await fullFrame(tree.terminal))).not.toContain(`selected status ${agent.id} two`)
+    await tree.ctx.loader.update(ownerEntry!.id, { disabled: false })
+    await tree.ctx.loader.await()
+    await waitForRender()
+    expect(stripSgr(await fullFrame(tree.terminal))).toContain(`selected status ${agent.id} two`)
+    expect(renders).toBe(4)
+    expect(inertRenders).toBe(0)
+    await fiber.dispose()
+  })
+
   it('drives creative contributions through the real cordis tools, sandbox, and runner lifecycle', async () => {
     const defineV1 = {
       plugin: { kind: 'new', idPrefix: 'dyn' },

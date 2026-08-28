@@ -34,6 +34,10 @@ export interface BluePluginHostOverlayEntry {
 export interface BluePluginHostSnapshot {
   /** Monotonic owner snapshot fence across every aggregate mutation. */
   readonly revision?: number
+  /** Monotonic fence for additive status mutations only. */
+  readonly statusRevision?: number
+  /** Monotonic fence for status-provider candidate mutations only. */
+  readonly statusProvidersRevision?: number
   readonly commands: readonly BlueCommandContribution[]
   readonly status: readonly BlueStatusEntryContribution[] & readonly BlueStatusContribution[]
   readonly dock: readonly BlueDockContribution[]
@@ -199,7 +203,9 @@ class Aggregate<T extends Prioritized> {
   private readonly entries = new Map<string, { value: T, sequence: number }>()
   private readonly listeners = new Set<() => void>()
   private nextSequence = 0
+  private revisionValue = 0
   constructor(private readonly sortById: boolean, private readonly changed: () => void) {}
+  get revision(): number { return this.revisionValue }
   add(value: T): BlueResult<BlueRegistration> {
     if (this.entries.has(value.id)) return failure('BLUE_DUPLICATE_ID', `contribution "${value.id}" is already registered`)
     this.entries.set(value.id, { value, sequence: this.nextSequence++ })
@@ -213,9 +219,9 @@ class Aggregate<T extends Prioritized> {
       .map(entry => entry.value))
   }
   subscribe(listener: () => void): BlueRegistration { this.listeners.add(listener); return new Registration(() => { this.listeners.delete(listener) }) }
-  touch(): void { this.changed(); for (const listener of this.listeners) try { listener() } catch { /* owner refresh errors are contained */ } }
+  touch(): void { this.revisionValue += 1; this.changed(); for (const listener of this.listeners) try { listener() } catch { /* owner refresh errors are contained */ } }
   clear(): void { this.entries.clear(); this.touch(); this.listeners.clear() }
-  private emit(): void { this.changed(); for (const listener of this.listeners) listener() }
+  private emit(): void { this.revisionValue += 1; this.changed(); for (const listener of this.listeners) listener() }
 }
 class Ordered<T extends { readonly id: string }> {
   private readonly entries = new Map<string, T>()
@@ -594,7 +600,7 @@ export function snapshotBluePluginHost(host: BluePluginHostService): BluePluginH
   const state = ownerStateOf(host)
   // W2-C owner compatibility only: the aggregate remains the final narrowed
   // status type. W3-C removes this cast when transcript uses the status compiler.
-  return Object.freeze({ revision: state.revision.value, commands: state.commands.list(), status: state.status.list() as readonly BlueStatusEntryContribution[] & readonly BlueStatusContribution[], dock: state.dock.list(), panes: state.panes.list(), overlays: state.overlays.list(), editorExtensions: state.extensions.list(), statusProviders: state.statusProviders.list(), editorProviders: state.editorProviders.list() })
+  return Object.freeze({ revision: state.revision.value, statusRevision: state.status.revision, statusProvidersRevision: state.statusProviders.revision, commands: state.commands.list(), status: state.status.list() as readonly BlueStatusEntryContribution[] & readonly BlueStatusContribution[], dock: state.dock.list(), panes: state.panes.list(), overlays: state.overlays.list(), editorExtensions: state.extensions.list(), statusProviders: state.statusProviders.list(), editorProviders: state.editorProviders.list() })
 }
 
 /** Observe aggregate changes from a Blue-owned adapter. */

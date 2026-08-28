@@ -1,6 +1,6 @@
 # Features overview
 
-Blue is a Cordis plugin tree. The bundle currently has 28 Blue-owned rows: two host-support rows, eight baseline rows, 14 enhancement rows, and four assembly rows.
+Blue is a Cordis plugin tree. The bundle currently has 29 Blue-owned rows: two host-support rows, eight baseline rows, 15 enhancement rows, and four assembly rows.
 
 ## Baseline
 
@@ -12,8 +12,9 @@ Blue is a Cordis plugin tree. The bundle currently has 28 Blue-owned rows: two h
 - status: cwd, git, mode, title, and context canonical `BlueStatusNode` producers
 - bottom panes: activity, queue, todo, btw, and agents canonical `BlueUiNode` producers mounted through private bottom-only composition
 - public view bridge: routes third-party status nodes into the footer and dock `BlueView` contributions directly into core's bounded mount
+- status provider owner: selects one exclusive footer provider through `blue.statusProvider`; unselected candidates remain inert
 
-These 14 rows can be removed independently. Diff/terminal/search/read/web tool rendering comes from canonical `ToolPresentationModel` conversion; there are no intent rows.
+These 15 rows can be removed independently. Diff/terminal/search/read/web tool rendering comes from canonical `ToolPresentationModel` conversion; there are no intent rows.
 
 ## plain-first
 

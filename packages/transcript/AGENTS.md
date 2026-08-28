@@ -6,7 +6,13 @@ Implementation detail for this package. Repo-wide conventions live in the root [
 
 This package is the renderer adapter over `@dsh-blue/blue-frontend` models. It may depend on `blue-core`, but it must not expose pi-tui objects through frontend models and must not fold Harness event streams. App-owned `blueSessionReader`, `blueSessionProjections`, and `blueSessionActions` are the only current-session boundaries.
 
-`src/index.ts` creates `SessionFactsService`, the package-private `BlueStatusEntryService` and `BlueBottomPaneService`, `BlueModelToolService`, and `TranscriptModelService` once per parent transcript Fiber. Each service and screen contribution has an effect-bound disposer. Theme reloads rebuild renderer objects; no mutable presentation state is stored in a module singleton.
+`src/index.ts` creates `SessionFactsService`, the package-private
+`BlueStatusEntryService`, tree-scoped `BlueStatusCompositionService`,
+`BlueBottomPaneService`, `BlueModelToolService`, and
+`TranscriptModelService` once per parent transcript Fiber. Each service and
+screen contribution has an effect-bound disposer. Theme reloads rebuild
+renderer objects; no mutable presentation state is stored in a module
+singleton.
 
 ## Official Conversation Consumer
 
@@ -36,11 +42,48 @@ User, assistant, thinking, tool, error, and interruption models reuse the packag
 - `status-title`: projected current title.
 - `status-context`: context occupancy from conversation facts.
 
+`BlueStatusCompositionService` is the frontend-tree owner of the rendered
+footer. `blue.default` selects the fixed additive footer above. A selected
+public `BlueStatusProvider` instead receives a freshly owned, recursively
+frozen `BlueStatusSnapshot`: a cloned public session snapshot, visible
+additive entries re-admitted through the status validator, and `busy=true`
+only while the session status is `running`. Invalid additive nodes become a
+bounded danger entry and hidden entries stay absent.
+
+Candidates remain inert in `blue-api`. Selection follows the persisted
+`blue.statusProvider` string and is never derived from priority, install order,
+or candidate presence. The composition waits for the gutter child width,
+invokes only the selected callback, compiles it through core, and dry-renders
+at that exact width; zero rows, more than three rows, validation failure, and
+contained runtime failure reject the candidate before an atomic activation.
+Within one session an unsuccessful A -> B replacement retains A. The first
+activation failure and every session-id change use the default while retrying,
+so no provider generation crosses a session boundary. Desired ids, including
+missing or invalid ones, are never written back. Reentrant selection,
+candidate refresh, owner reload, and unload are fenced by the tree generation.
+
+The selected/desired candidate generation may keep the prior active
+generation as its last-known-good surface across two refresh/runtime failures.
+In an A -> bad B replacement, retained A is B's LKG surface, so failures while
+rendering it remain charged to desired B rather than `active.id`. Three
+failures in a rolling 60-second window open B's timer-free breaker and restore
+the default; a successful dry-render resets the selected generation's failure
+history. The service keeps no expiry timer and contains footer, provider
+invalidation, and repaint exceptions.
+
 `plugin-host-bridge.ts` forwards public API status nodes into this registry and owns the corresponding disposers. The internal registry is not a public plugin surface.
 Its Fiber advertises the public `status` and `dock` capabilities before taking
 the aggregate snapshot. Unload withdraws that readiness and owner mounts while
 leaving consumer contributions in the API host; a replacement bridge restores
-them from the snapshot.
+them from the snapshot. It follows the host's status-local revision so a
+public status refresh invalidates an existing entry, while unrelated aggregate
+mutations remain inert.
+
+`./status-provider-owner` is the separate composition plugin that advertises
+only `status.provider`, subscribes candidates and the app-owned readonly
+session reader, and follows both settings updates and the settings-source-ready
+handoff. Its unload detaches provider generations and restores the default
+without changing the persisted desired id.
 
 ## Canonical Bottom Panes
 
@@ -62,8 +105,17 @@ BTW calls `blueSessionActions.createSideSession()`, holds the returned owned han
 
 `BlueModelToolService` converts official generic/terminal/diff/search/read/web presentation facts into readonly frontend views and never reads session events. Its temporary frontend-view adapter renders the complete validated leaf through core's canonical compiler; `ToolModelComponent` retains the existing 12-row collapsed and 200-row expanded budgets so hidden-line counts stay exact. Remove that compatibility path when tool models publish `BlueUiNode` directly. The semantic transcript renderer keeps `ToolCallComponent` as the status/header/key-argument/shell chrome and nests the official view as its bounded body; tools without a presenter retain the generic rich fallback instead of receiving a synthetic name-only view. There is no `blueIntents` registry and no intent subpath export.
 
-`plugin-host-bridge.ts` is the only route from public plugin dock/status contributions into renderer owners. It unwraps the guarded host only for owner-only readiness and snapshot helpers; those helpers reject the guarded public service. Status render results, including ordinary records and arrays from a dynamic VM realm, enter through core's sole status validator/compiler; dock contributions remain on the public API/core bridge. Reordering replaces the individually budgeted public dock mounts atomically; unload runs every screen/status disposer.
+`plugin-host-bridge.ts` is the only route from public plugin dock/additive-status contributions into renderer owners; `status-provider-owner.ts` is the only route for exclusive status-provider candidates. Both unwrap the guarded host only for owner-only readiness and snapshot helpers; those helpers reject the guarded public service. Status render results, including ordinary records and arrays from a dynamic VM realm, enter through core's sole status validator/compiler; dock contributions remain on the public API/core bridge. Reordering replaces the individually budgeted public dock mounts atomically; unload runs every screen/status disposer.
 
 ## Package Surface
 
-Subpath exports, `files`, and `tsdown.config.ts` entries move together. `./dock-model` was removed because `BlueBottomPaneService` is an internal composition seam; its Cordis declaration merge travels through the package root for the shipped interaction queue only. The deleted generic `StatusModel`/`DockModel` contracts and legacy status, intent, fold, child-event, and phase modules must not be reintroduced as compatibility shortcuts. New behavior enters as projection/action + canonical node + renderer adapter + bundle row/fixture evidence.
+Subpath exports, `files`, and `tsdown.config.ts` entries move together.
+`./status-provider-owner` is an independent composition entry because its
+capability lifetime and settings/session subscriptions must not be coupled to
+the additive bridge. `./dock-model` was removed because
+`BlueBottomPaneService` is an internal composition seam; its Cordis declaration
+merge travels through the package root for the shipped interaction queue only.
+The deleted generic `StatusModel`/`DockModel` contracts and legacy status,
+intent, fold, child-event, and phase modules must not be reintroduced as
+compatibility shortcuts. New behavior enters as projection/action + canonical
+node + renderer adapter + bundle row/fixture evidence.
