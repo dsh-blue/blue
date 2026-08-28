@@ -64,13 +64,16 @@ Transcript tunables remain in this settings schema because interaction owns the 
 - `attachments`: bounded filesystem `AttachmentStore`.
 - `paste-image`: platform clipboard ingestion and reversible submit transformation.
 - `command-model`: renderer-neutral command registry.
-- `plugin-host-bridge`: public command/notification contributions. It unwraps the guarded host only for the Blue-owned readiness attach; snapshots and notification observation stay on guarded seams.
+- `plugin-host-bridge`: public command/notification contributions. It unwraps the guarded host only for Blue-owned readiness, snapshot, gesture, and notification owner helpers; those helpers reject the guarded public service.
 
 The plugin-host bridge advertises `commands` and `notifications` only for its
 active Fiber. Unload removes concrete command/notice adapters and withdraws
 readiness without deleting API-host aggregate contributions; a replacement
 Fiber replays the command snapshot. Public writes during the gap return
-`BLUE_CAPABILITY_ABSENT`.
+`BLUE_CAPABILITY_ABSENT`. Each public command execution receives an owner-minted
+`userGesture` whose authority lasts through legal asynchronous handler work;
+the invocation abort signal and final settlement both revoke it, so a plugin
+cannot retain the proof for a later capturing overlay.
 
 `paste-image` state belongs to `InteractionStateService`; readers/clocks remain explicit test seams. Late clipboard results must check unload before saving, inserting markers, or notifying.
 

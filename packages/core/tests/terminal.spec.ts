@@ -735,6 +735,87 @@ describe('alternate-screen runtime', () => {
     terminal.dispose()
   })
 
+  it('reports measured lane viewports without recursive surface rendering', async () => {
+    const terminal = new AltScreenTerminal(120, 12)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    runtime.addChild(textComponent('transcript'))
+    runtime.addBottomChild(textComponent('editor'))
+    runtime.addBottomChild(textComponent('status'), 'bottom')
+    const samples = new Map<string, { readonly columns: number, readonly rows: number }[]>()
+    const measured = (id: string, rows: number): BlueComponent => ({
+      render: () => {
+        const viewport = runtime.surfaceViewport(id)
+        const seen = samples.get(id) ?? []
+        seen.push(viewport)
+        samples.set(id, seen)
+        return Array.from({ length: rows }, () => id)
+      },
+      invalidate: () => {},
+    })
+    runtime.surfaces.register({ id: 'header', placement: 'header', component: measured('header', 1) })
+    runtime.surfaces.register({ id: 'right', placement: 'right', component: measured('right', 1) })
+    runtime.surfaces.register({ id: 'bottom', placement: 'bottom', component: measured('bottom', 2) })
+
+    runtime.requestRender(true)
+    await waitForRender()
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(samples.get('header')?.at(-1)).toEqual({ columns: 120, rows: 1 })
+    expect(samples.get('right')?.at(-1)).toEqual({ columns: 32, rows: 7 })
+    expect(samples.get('bottom')?.at(-1)).toEqual({ columns: 120, rows: 2 })
+
+    runtime.surfaces.register({ id: 'right-peer', placement: 'right', component: textComponent('peer') })
+    expect(runtime.surfaceViewport('right')).toEqual({ columns: 32, rows: 6 })
+    expect(runtime.surfaceViewport('missing').columns).toBe(120)
+
+    const layout = runtime.surfaces.layout(terminal.columns, terminal.rows)
+    const { width: _width, ...rightWithoutWidth } = layout.right!
+    const layoutSpy = vi.spyOn(runtime.surfaces, 'layout').mockReturnValue({ ...layout, right: rightWithoutWidth })
+    expect(runtime.surfaceViewport('right').columns).toBe(120)
+    layoutSpy.mockRestore()
+
+    await runtime.stop()
+    terminal.dispose()
+  })
+
+  it('reports the full terminal viewport for main-screen surfaces', async () => {
+    const terminal = new FakeTerminal(90, 18)
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    runtime.surfaces.register({ id: 'main-pane', placement: 'right', component: textComponent('pane') })
+
+    expect(runtime.surfaceViewport('main-pane')).toEqual({ columns: 90, rows: 18 })
+
+    await runtime.stop()
+  })
+
+  it('keeps restored editor focus when a stale pane release follows passive activation', async () => {
+    const terminal = new AltScreenTerminal(120, 8)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    runtime.addChild(textComponent('transcript'))
+    const editor = focusableComponent('editor')
+    runtime.addBottomChild(editor)
+    runtime.addBottomChild(textComponent('status'), 'bottom')
+    runtime.setFocus(editor)
+    const interactive = focusableComponent('interactive')
+    runtime.surfaces.register({ id: 'interactive', placement: 'right', component: interactive, focusTarget: interactive })
+    runtime.surfaces.register({ id: 'passive', placement: 'right', component: textComponent('passive'), focusTarget: null })
+    runtime.setFocus(interactive)
+
+    runtime.releaseSurfaceFocus('interactive')
+    expect((runtime.tui as unknown as { getFocusedComponent(): BlueComponent | null }).getFocusedComponent()).toBe(editor)
+    expect(editor.focused).toBe(true)
+
+    runtime.setFocus(interactive)
+    expect(runtime.surfaces.activate('right', 'passive')).toBe(true)
+    expect(editor.focused).toBe(true)
+    runtime.releaseSurfaceFocus('interactive')
+    expect((runtime.tui as unknown as { getFocusedComponent(): BlueComponent | null }).getFocusedComponent()).toBe(editor)
+    expect(editor.focused).toBe(true)
+
+    await runtime.stop()
+    terminal.dispose()
+  })
+
   it('releases real focus for hidden narrow surfaces but retains it across bottom fallback', async () => {
     const terminal = new AltScreenTerminal(120, 8)
     const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
@@ -1390,6 +1471,70 @@ describe('suspend', () => {
 })
 
 describe('overlay focus discipline', () => {
+  it('keeps trusted default overlay width responsive while enforcing its hard maximum', async () => {
+    const terminal = new FakeTerminal(40, 24)
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    const widths: number[] = []
+    const overlay = { render: (width: number) => { widths.push(width); return ['overlay'] }, invalidate: () => {} }
+    const handle = runtime.showOverlay(overlay, { width: '70%', minWidth: 150, maxWidth: 100 })
+
+    widths.length = 0
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(widths.at(-1)).toBe(40)
+    expect((runtime.tui as unknown as { overlayStack: { options?: { minWidth?: number } }[] }).overlayStack[0]!.options?.minWidth).toBe(40)
+    terminal.resize(200, 24)
+    widths.length = 0
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(widths.at(-1)).toBe(100)
+    expect((runtime.tui as unknown as { overlayStack: { options?: { minWidth?: number } }[] }).overlayStack[0]!.options?.minWidth).toBe(100)
+    handle.hide()
+
+    const numericWidths: number[] = []
+    const numeric = runtime.showOverlay({ render: width => { numericWidths.push(width); return ['numeric'] }, invalidate: () => {} }, { width: 60, maxWidth: 100 })
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(numericWidths.at(-1)).toBe(60)
+    numeric.hide()
+
+    const defaultWidths: number[] = []
+    const defaulted = runtime.showOverlay({ render: width => { defaultWidths.push(width); return ['default'] }, invalidate: () => {} }, { maxWidth: 100 })
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(defaultWidths.at(-1)).toBe(80)
+    defaulted.hide()
+
+    const percentages: number[] = []
+    const explicit = runtime.showOverlay({ render: width => { percentages.push(width); return ['explicit'] }, invalidate: () => {} }, { width: '50%' })
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(percentages.at(-1)).toBe(100)
+    terminal.resize(80, 24)
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(percentages.at(-1)).toBe(40)
+    explicit.hide()
+    await runtime.stop()
+  })
+
+  it('reports capturing overlays across visible, hidden, and passive states', async () => {
+    const runtime = await startBlueTerminal(new FakeTerminal(), noProbe)
+    expect(runtime.hasCapturingOverlay()).toBe(false)
+
+    const capturing = runtime.showOverlay(textComponent('capturing'))
+    expect(runtime.hasCapturingOverlay()).toBe(true)
+    capturing.setHidden(true)
+    expect(runtime.hasCapturingOverlay()).toBe(false)
+    capturing.hide()
+
+    const passive = runtime.showOverlay(textComponent('passive'), { nonCapturing: true })
+    expect(runtime.hasCapturingOverlay()).toBe(false)
+    passive.hide()
+
+    await runtime.stop()
+  })
+
   it('focuses a shown overlay and restores the previous focus on hide', async () => {
     const terminal = new FakeTerminal()
     const runtime = await startBlueTerminal(terminal, noProbe)

@@ -6,7 +6,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
-import { BluePluginHostService } from '../../api/src/host.ts'
+import { BluePluginHostService, attachBluePluginHostCapabilities } from '../../api/src/host.ts'
 import type { BluePluginManifest } from '../../api/src/manifest.ts'
 import type { BlueSemanticColors } from '@dsh-blue/blue-core'
 import type { CommandDefinition, CommandInvocation } from '@deepseek-ai/dsh-commands'
@@ -51,6 +51,9 @@ describe('plugin host interaction bridge', () => {
     } as unknown as Context
     apply(ctx)
 
+    const overlayOwner = consumer()
+    attachBluePluginHostCapabilities(host, overlayOwner, ['overlays'])
+
     const owner = consumer()
     const manifest: BluePluginManifest = { id: '@acme/interaction', api: '^1.0.0', capabilities: ['commands', 'notifications'] }
     const opened = host.open(owner, manifest)
@@ -58,12 +61,12 @@ describe('plugin host interaction bridge', () => {
     if (!opened.ok) return
     expect(opened.value.commands!.register({ id: 'trace', label: 'replace trace', execute: async () => ({ ok: true, value: undefined }) })).toMatchObject({ ok: false, code: 'BLUE_DUPLICATE_ID' })
 
-    let received: { args: readonly string[], rawInput?: string } | undefined
+    let received: { args: readonly string[], rawInput?: string, userGesture?: object } | undefined
     const registered = opened.value.commands!.register({
       id: 'spark',
       label: 'Run spark',
       execute: async (args, options) => {
-        received = { args, ...(options?.rawInput === undefined ? {} : { rawInput: options.rawInput }) }
+        received = { args, ...(options?.rawInput === undefined ? {} : { rawInput: options.rawInput }), ...(options?.userGesture === undefined ? {} : { userGesture: options.userGesture }) }
         return args[0] === 'fail'
           ? { ok: false, code: 'BLUE_ACTION_REJECTED', message: '' }
           : { ok: true, value: undefined }
@@ -72,7 +75,10 @@ describe('plugin host interaction bridge', () => {
     expect(registered.ok).toBe(true)
     const invocation = { rawInput: '  one   two ', signal: new AbortController().signal } as CommandInvocation
     await expect(definitions.get('spark')!.handler(invocation)).resolves.toEqual({ kind: 'success' })
-    expect(received).toEqual({ args: ['one', 'two'], rawInput: '  one   two ' })
+    expect(received).toMatchObject({ args: ['one', 'two'], rawInput: '  one   two ', userGesture: {} })
+    const overlays = host.open(consumer(), { id: '@acme/overlay-check', api: '^1.0.0', capabilities: ['overlays'] })
+    expect(overlays.ok).toBe(true)
+    if (overlays.ok) expect(overlays.value.overlays!.open({ id: 'late-command', capturing: true, render: () => ({ kind: 'text', content: 'late' }) }, { userGesture: received?.userGesture as never })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
     await expect(definitions.get('spark')!.handler({ ...invocation, rawInput: 'fail' })).resolves.toEqual({ kind: 'error', text: 'BLUE_ACTION_REJECTED' })
     await expect(definitions.get('spark')!.handler({ ...invocation, rawInput: '' })).resolves.toEqual({ kind: 'success' })
 
@@ -99,6 +105,7 @@ describe('plugin host interaction bridge', () => {
     expect(opened.value.notifications!.publish({ id: 'restored', view: { kind: 'text', content: 'restored' } })).toEqual({ ok: true, value: undefined })
     for (const cleanup of effects.splice(0)) cleanup()
     owner.dispose()
+    overlayOwner.dispose()
     expect(definitions.has('trace')).toBe(true)
   })
 })

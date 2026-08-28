@@ -21,13 +21,19 @@ type Prioritized = { readonly id: string, readonly priority?: number }
 export interface BluePluginHostPaneEntry extends Prioritized {
   readonly contribution: BluePaneContribution
   readonly hidden: boolean
+  /** Owner-only render generation; public refresh bumps it after coalescing. */
+  readonly revision?: number
 }
 export interface BluePluginHostOverlayEntry {
   readonly id: string
   readonly request: BlueOverlayRequest & { readonly capturing: boolean, readonly dismissible: boolean }
   readonly order: number
+  /** Owner-only render generation; public refresh bumps it after coalescing. */
+  readonly revision?: number
 }
 export interface BluePluginHostSnapshot {
+  /** Monotonic owner snapshot fence across every aggregate mutation. */
+  readonly revision?: number
   readonly commands: readonly BlueCommandContribution[]
   readonly status: readonly BlueStatusEntryContribution[] & readonly BlueStatusContribution[]
   readonly dock: readonly BlueDockContribution[]
@@ -193,7 +199,7 @@ class Aggregate<T extends Prioritized> {
   private readonly entries = new Map<string, { value: T, sequence: number }>()
   private readonly listeners = new Set<() => void>()
   private nextSequence = 0
-  constructor(private readonly sortById = true) {}
+  constructor(private readonly sortById: boolean, private readonly changed: () => void) {}
   add(value: T): BlueResult<BlueRegistration> {
     if (this.entries.has(value.id)) return failure('BLUE_DUPLICATE_ID', `contribution "${value.id}" is already registered`)
     this.entries.set(value.id, { value, sequence: this.nextSequence++ })
@@ -207,13 +213,14 @@ class Aggregate<T extends Prioritized> {
       .map(entry => entry.value))
   }
   subscribe(listener: () => void): BlueRegistration { this.listeners.add(listener); return new Registration(() => { this.listeners.delete(listener) }) }
-  touch(): void { for (const listener of this.listeners) try { listener() } catch { /* owner refresh errors are contained */ } }
+  touch(): void { this.changed(); for (const listener of this.listeners) try { listener() } catch { /* owner refresh errors are contained */ } }
   clear(): void { this.entries.clear(); this.touch(); this.listeners.clear() }
-  private emit(): void { for (const listener of this.listeners) listener() }
+  private emit(): void { this.changed(); for (const listener of this.listeners) listener() }
 }
 class Ordered<T extends { readonly id: string }> {
   private readonly entries = new Map<string, T>()
   private readonly listeners = new Set<() => void>()
+  constructor(private readonly changed: () => void) {}
   get size(): number { return this.entries.size }
   add(value: T): BlueResult<BlueRegistration> {
     if (this.entries.has(value.id)) return failure('BLUE_DUPLICATE_ID', `contribution "${value.id}" is already registered`)
@@ -222,10 +229,11 @@ class Ordered<T extends { readonly id: string }> {
     return success(new Registration(() => { this.entries.delete(value.id); this.touch() }))
   }
   list(): readonly T[] { return Object.freeze([...this.entries.values()]) }
+  replace(id: string, value: T): void { this.entries.set(id, value); this.touch() }
   subscribe(listener: () => void): BlueRegistration { this.listeners.add(listener); return new Registration(() => { this.listeners.delete(listener) }) }
-  touch(): void { for (const listener of this.listeners) try { listener() } catch { /* owner refresh errors are contained */ } }
+  touch(): void { this.changed(); for (const listener of this.listeners) try { listener() } catch { /* owner refresh errors are contained */ } }
   clear(): void { this.entries.clear(); this.touch(); this.listeners.clear() }
-  private emit(): void { for (const listener of this.listeners) listener() }
+  private emit(): void { this.changed(); for (const listener of this.listeners) listener() }
 }
 
 class RefreshGate {
@@ -306,7 +314,9 @@ interface HostState {
   readonly panes: Aggregate<BluePluginHostPaneEntry>; readonly overlays: Ordered<BluePluginHostOverlayEntry>; readonly extensions: Aggregate<BlueEditorExtensionContribution>
   readonly statusProviders: Aggregate<BlueStatusProvider>; readonly editorProviders: Aggregate<BlueEditorProvider>; readonly owners: Map<Capability, number>
   readonly gestureOwners: Map<EffectOwner, number>; readonly gestures: Map<object, EffectOwner>; readonly ownerGestures: Map<EffectOwner, Set<object>>; readonly now: () => number
+  readonly overlayOwners: Map<EffectOwner, number>; readonly overlayClosers: Map<string, { entry: BluePluginHostOverlayEntry, close: () => void }>
   readonly paneCounts: Map<object, number>; readonly capturingConsumers: Set<object>
+  readonly revision: { value: number }
   nextOverlayOrder: number
 }
 
@@ -329,16 +339,24 @@ class Panes implements BluePaneRegistry {
       const result = pane(input); if (!result.ok) return result
       const value = result.value
       if (this.entries.has(value.id)) return failure('BLUE_DUPLICATE_ID', `contribution "${value.id}" is already registered`)
-      let entry: BluePluginHostPaneEntry = Object.freeze({ id: value.id, ...(value.priority === undefined ? {} : { priority: value.priority }), contribution: value, hidden: false })
+      let revision = 0
+      let entry: BluePluginHostPaneEntry = Object.freeze({ id: value.id, ...(value.priority === undefined ? {} : { priority: value.priority }), contribution: value, hidden: false, revision })
       const added = this.state.panes.add(entry); if (!added.ok) return added
       this.entries.set(value.id, value)
       this.state.paneCounts.set(this.consumer, (this.state.paneCounts.get(this.consumer) ?? 0) + 1)
       const isReady = () => ready(this.state, 'panes')
       let handle: PaneHandle
-      handle = new PaneHandle(isReady, this.state.now, () => this.state.panes.touch(), () => {
+      handle = new PaneHandle(isReady, this.state.now, () => {
+        entry = Object.freeze({ ...entry, revision: ++revision })
+        this.state.panes.replace(value.id, entry)
+      }, () => {
         this.entries.delete(value.id); this.handles.delete(handle); added.value.dispose()
-        const remaining = this.state.paneCounts.get(this.consumer)! - 1
-        if (remaining === 0) this.state.paneCounts.delete(this.consumer); else this.state.paneCounts.set(this.consumer, remaining)
+        const count = this.state.paneCounts.get(this.consumer)
+        /* v8 ignore else -- host disposal drains every registry before clearing pane counts. */
+        if (count !== undefined) {
+          if (count <= 1) this.state.paneCounts.delete(this.consumer)
+          else this.state.paneCounts.set(this.consumer, count - 1)
+        }
       }, hidden => { if (entry.hidden !== hidden) { entry = Object.freeze({ ...entry, hidden }); this.state.panes.replace(value.id, entry) } }, isReady)
       this.handles.add(handle); return success(handle)
     } catch (error) { return invalid(error) }
@@ -364,12 +382,36 @@ class Overlays implements BlueOverlayRegistry {
       if (request.capturing && !consumeGesture(this.state, options?.userGesture)) return failure('BLUE_ACTION_REJECTED', 'capturing overlays require a valid one-shot user gesture')
       if (this.state.overlays.size >= 4) return failure('BLUE_LIMIT_EXCEEDED', 'the global overlay stack is limited to 4 entries')
       if (request.capturing && this.state.capturingConsumers.has(this.consumer)) return failure('BLUE_LIMIT_EXCEEDED', 'a consumer may open only one capturing overlay')
-      const entry = Object.freeze({ id: request.id, request, order: this.state.nextOverlayOrder++ })
-      const added = this.state.overlays.add(entry); if (!added.ok) return added
+      let handle: OverlayHandle | undefined
+      let closeRequested = false
+      const close = () => {
+        if (handle === undefined) closeRequested = true
+        else handle.close()
+      }
+      let revision = 0
+      let entry: BluePluginHostOverlayEntry = Object.freeze({ id: request.id, request, order: this.state.nextOverlayOrder++, revision })
+      const closer = { entry, close }
+      if (!this.state.overlayClosers.has(request.id)) this.state.overlayClosers.set(request.id, closer)
+      const added = this.state.overlays.add(entry)
+      if (!added.ok) {
+        if (this.state.overlayClosers.get(request.id) === closer) this.state.overlayClosers.delete(request.id)
+        return added
+      }
       if (request.capturing) this.state.capturingConsumers.add(this.consumer)
-      let handle: OverlayHandle
-      handle = new OverlayHandle(() => ready(this.state, 'overlays'), this.state.now, () => this.state.overlays.touch(), () => { this.handles.delete(handle); if (request.capturing) this.state.capturingConsumers.delete(this.consumer); added.value.dispose() })
-      this.handles.add(handle); return success(handle)
+      handle = new OverlayHandle(() => ready(this.state, 'overlays'), this.state.now, () => {
+        entry = Object.freeze({ ...entry, revision: ++revision })
+        closer.entry = entry
+        this.state.overlays.replace(request.id, entry)
+      }, () => {
+        this.handles.delete(handle!)
+        this.state.overlayClosers.delete(request.id)
+        if (request.capturing) this.state.capturingConsumers.delete(this.consumer)
+        added.value.dispose()
+      })
+      const activeHandle = handle
+      this.handles.add(activeHandle)
+      if (closeRequested) activeHandle.close()
+      return success(activeHandle)
     } catch (error) { return invalid(error) }
   }
   dispose(): void { for (const handle of this.handles) handle.dispose() }
@@ -434,21 +476,42 @@ function consumeGesture(state: HostState, gesture: BlueUserGesture | undefined):
   return true
 }
 
+function revokeGesture(state: HostState, gesture: BlueUserGesture): void {
+  const owner = state.gestures.get(gesture)
+  if (owner === undefined) return
+  state.gestures.delete(gesture)
+  const tokens = state.ownerGestures.get(owner)
+  tokens?.delete(gesture)
+  if (tokens?.size === 0) state.ownerGestures.delete(owner)
+}
+
 /** Attach capabilities implemented by one Blue-owned adapter Fiber. */
 export function attachBluePluginHostCapabilities(host: BluePluginHostService, owner: EffectOwner, capabilities: readonly HostCapability[]): BlueRegistration {
   const state = ownerStateOf(host)
   const owned = [...new Set(capabilities)]
   for (const capability of owned) if (!IMPLEMENTED_CAPABILITIES.has(capability as Capability)) throw new Error(`Blue owner adapter cannot attach unsupported capability "${capability}"`)
   for (const capability of owned as Capability[]) state.owners.set(capability, (state.owners.get(capability) ?? 0) + 1)
-  if (owned.includes('overlays')) state.gestureOwners.set(owner, (state.gestureOwners.get(owner) ?? 0) + 1)
+  const dispatchOwner = owned.some(capability => capability === 'commands' || capability === 'panes' || capability === 'overlays')
+  const overlayOwner = owned.includes('overlays')
+  if (dispatchOwner) state.gestureOwners.set(owner, (state.gestureOwners.get(owner) ?? 0) + 1)
+  if (overlayOwner) state.overlayOwners.set(owner, (state.overlayOwners.get(owner) ?? 0) + 1)
   const registration = new Registration(() => {
     for (const capability of owned as Capability[]) {
-      const remaining = (state.owners.get(capability) ?? 1) - 1
-      if (remaining === 0) state.owners.delete(capability); else state.owners.set(capability, remaining)
+      const count = state.owners.get(capability)
+      if (count === undefined) continue
+      if (count <= 1) state.owners.delete(capability); else state.owners.set(capability, count - 1)
     }
-    if (owned.includes('overlays')) {
-      const remaining = state.gestureOwners.get(owner)! - 1
-      if (remaining === 0) { state.gestureOwners.delete(owner); invalidateGestures(state, owner) } else state.gestureOwners.set(owner, remaining)
+    if (dispatchOwner) {
+      const count = state.gestureOwners.get(owner)
+      if (count !== undefined) {
+        if (count <= 1) { state.gestureOwners.delete(owner); invalidateGestures(state, owner) } else state.gestureOwners.set(owner, count - 1)
+      }
+    }
+    if (overlayOwner) {
+      const count = state.overlayOwners.get(owner)
+      if (count !== undefined) {
+        if (count <= 1) state.overlayOwners.delete(owner); else state.overlayOwners.set(owner, count - 1)
+      }
     }
   })
   try { owner.effect(() => () => registration.dispose()) } catch (error) { registration.dispose(); throw error }
@@ -459,7 +522,7 @@ export function attachBluePluginHostCapabilities(host: BluePluginHostService, ow
 export function createBlueUserGesture(host: BluePluginHostService, owner: EffectOwner): BlueResult<BlueUserGesture> {
   try {
     const state = ownerStateOf(host)
-    if ((state.gestureOwners.get(owner) ?? 0) === 0) return failure('BLUE_ACTION_REJECTED', 'only an active overlay owner may mint user gestures')
+    if ((state.gestureOwners.get(owner) ?? 0) === 0) return failure('BLUE_ACTION_REJECTED', 'only an active user-dispatch owner may mint user gestures')
     const token = Object.freeze({}) as BlueUserGesture
     state.gestures.set(token, owner)
     let tokens = state.ownerGestures.get(owner)
@@ -469,27 +532,63 @@ export function createBlueUserGesture(host: BluePluginHostService, owner: Effect
   } catch (error) { return failure('BLUE_ACTION_REJECTED', message(error, 'user gesture could not be minted')) }
 }
 
+/**
+ * Run one semantic user dispatch with a gesture proof that is revoked when
+ * the complete async handler settles. Consumers may not retain the token
+ * beyond this owner-controlled scope.
+ */
+export async function runBlueUserGesture<T>(host: BluePluginHostService, owner: EffectOwner, callback: (gesture: BlueUserGesture) => T | Promise<T>, signal?: AbortSignal): Promise<T> {
+  const state = ownerStateOf(host)
+  const minted = createBlueUserGesture(host, owner)
+  if (!minted.ok) throw new Error(minted.message)
+  const revoke = () => revokeGesture(state, minted.value)
+  signal?.addEventListener('abort', revoke, { once: true })
+  if (signal?.aborted === true) {
+    revoke()
+    signal.removeEventListener('abort', revoke)
+    throw new Error('Blue user dispatch was aborted')
+  }
+  try {
+    return await callback(minted.value)
+  } finally {
+    signal?.removeEventListener('abort', revoke)
+    revoke()
+  }
+}
+
+/** Close one current overlay entry from its active Blue-owned renderer Fiber. */
+export function closeBluePluginHostOverlay(host: BluePluginHostService, owner: EffectOwner, entry: BluePluginHostOverlayEntry): BlueResult {
+  try {
+    const state = ownerStateOf(host)
+    if ((state.overlayOwners.get(owner) ?? 0) === 0) return failure('BLUE_ACTION_REJECTED', 'only an active overlays owner may close overlay entries')
+    const closer = state.overlayClosers.get(entry.id)
+    if (closer === undefined || closer.entry !== entry) return failure('BLUE_ACTION_REJECTED', 'overlay entry is no longer active')
+    closer.close()
+    return success(undefined)
+  } catch (error) { return failure('BLUE_ACTION_REJECTED', message(error, 'overlay entry could not be closed')) }
+}
+
 /** Snapshot all additive contributions for Blue-owned adapters. */
 export function snapshotBluePluginHost(host: BluePluginHostService): BluePluginHostSnapshot {
-  const state = stateOf(host)
+  const state = ownerStateOf(host)
   // W2-C owner compatibility only: the aggregate remains the final narrowed
   // status type. W3-C removes this cast when transcript uses the status compiler.
-  return Object.freeze({ commands: state.commands.list(), status: state.status.list() as readonly BlueStatusEntryContribution[] & readonly BlueStatusContribution[], dock: state.dock.list(), panes: state.panes.list(), overlays: state.overlays.list(), editorExtensions: state.extensions.list(), statusProviders: state.statusProviders.list(), editorProviders: state.editorProviders.list() })
+  return Object.freeze({ revision: state.revision.value, commands: state.commands.list(), status: state.status.list() as readonly BlueStatusEntryContribution[] & readonly BlueStatusContribution[], dock: state.dock.list(), panes: state.panes.list(), overlays: state.overlays.list(), editorExtensions: state.extensions.list(), statusProviders: state.statusProviders.list(), editorProviders: state.editorProviders.list() })
 }
 
 /** Observe aggregate changes from a Blue-owned adapter. */
 export function subscribeBluePluginHost(host: BluePluginHostService, listener: (snapshot: BluePluginHostSnapshot) => void): BlueRegistration {
-  const state = stateOf(host)
+  const state = ownerStateOf(host)
   const notify = () => listener(snapshotBluePluginHost(host))
-  notify()
   const aggregates = [state.commands, state.status, state.dock, state.panes, state.overlays, state.extensions, state.statusProviders, state.editorProviders]
   const handles = aggregates.map(aggregate => aggregate.subscribe(notify))
+  try { notify() } catch (error) { for (const handle of handles) handle.dispose(); throw error }
   return new Registration(() => { for (const handle of handles) handle.dispose() })
 }
 
 /** Observe plugin notices from Blue's owner interaction adapter. */
 export function subscribeBluePluginNotifications(host: BluePluginHostService, listener: (notification: BlueNotification) => void): BlueRegistration {
-  const state = stateOf(host); state.notificationObservers.add(listener)
+  const state = ownerStateOf(host); state.notificationObservers.add(listener)
   return new Registration(() => { state.notificationObservers.delete(listener) })
 }
 
@@ -500,7 +599,7 @@ function disposeHost(host: BluePluginHostService): void {
   for (const registry of state.registries) registry.dispose()
   for (const notifications of state.notifications) notifications.dispose()
   for (const aggregate of [state.commands, state.status, state.dock, state.panes, state.overlays, state.extensions, state.statusProviders, state.editorProviders]) aggregate.clear()
-  state.notificationObservers.clear(); state.owners.clear(); state.gestureOwners.clear(); state.gestures.clear(); state.ownerGestures.clear(); state.paneCounts.clear(); state.capturingConsumers.clear(); HOST_STATES.delete(host)
+  state.notificationObservers.clear(); state.owners.clear(); state.gestureOwners.clear(); state.gestures.clear(); state.ownerGestures.clear(); state.overlayOwners.clear(); state.overlayClosers.clear(); state.paneCounts.clear(); state.capturingConsumers.clear(); HOST_STATES.delete(host)
 }
 
 /** Cordis service implementing the stable Blue plugin host. */
@@ -508,8 +607,10 @@ export class BluePluginHostService extends Service implements BluePluginHost {
   readonly version = '1.0.0'
   constructor(ctx: Context, options: BluePluginHostOptions = {}) {
     super(ctx, 'bluePluginHost')
+    const revision = { value: 0 }
+    const changed = () => { revision.value += 1 }
     HOST_STATES.set(this, {
-      registries: new Set(), notifications: new Set(), notificationObservers: new Set(), commands: new Aggregate(false), status: new Aggregate(), dock: new Aggregate(false), panes: new Aggregate(), overlays: new Ordered(), extensions: new Aggregate(), statusProviders: new Aggregate(), editorProviders: new Aggregate(), owners: new Map(), gestureOwners: new Map(), gestures: new Map(), ownerGestures: new Map(), paneCounts: new Map(), capturingConsumers: new Set(), now: options.now ?? Date.now, nextOverlayOrder: 0,
+      registries: new Set(), notifications: new Set(), notificationObservers: new Set(), commands: new Aggregate(false, changed), status: new Aggregate(true, changed), dock: new Aggregate(false, changed), panes: new Aggregate(true, changed), overlays: new Ordered(changed), extensions: new Aggregate(true, changed), statusProviders: new Aggregate(true, changed), editorProviders: new Aggregate(true, changed), owners: new Map(), gestureOwners: new Map(), gestures: new Map(), ownerGestures: new Map(), overlayOwners: new Map(), overlayClosers: new Map(), paneCounts: new Map(), capturingConsumers: new Set(), revision, now: options.now ?? Date.now, nextOverlayOrder: 0,
     })
     ctx.effect(() => () => disposeHost(this))
   }

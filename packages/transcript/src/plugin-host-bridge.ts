@@ -99,7 +99,7 @@ export function apply(ctx: Context): void {
     syncStatus(snapshot.status)
     syncDock(snapshot.dock)
   }
-  const subscription = subscribeBluePluginHost(ctx.bluePluginHost, sync)
+  const subscription = subscribeBluePluginHost(host, sync)
   ctx.effect(() => () => {
     subscription.dispose()
     for (const dispose of dock.values()) dispose()

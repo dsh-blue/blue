@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import { BluePluginHostService } from '../../api/src/host.ts'
 import { apply } from '../src/index.ts'
 import { apply as themeDarkApply } from '../src/theme-dark.ts'
 import { mkdtempTracked, registerTempDirCleanup } from './temp-dir.ts'
@@ -67,6 +68,7 @@ export const apply = ctx => globalThis.__blueThemeDarkApply(ctx)
   })
 
   const ctx = new Context()
+  new BluePluginHostService(ctx)
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(join(dir, 'cordis.yml')).href } })

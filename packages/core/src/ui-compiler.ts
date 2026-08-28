@@ -44,6 +44,8 @@ export interface BlueUiCompilerOptions {
   readonly getViewport: () => BlueUiViewport
   readonly screenMode: 'main' | 'alternate'
   readonly emit: (event: BlueUiEvent) => void
+  /** Called only when Escape did not first cancel compiler-local state. */
+  readonly onUnhandledEscape?: () => void
 }
 
 /** Successful canonical compilation result. */
@@ -451,6 +453,12 @@ class CompiledSurface implements BlueFocusable {
   handleInput(data: string): void {
     this.viewport = safeViewport(this.options.getViewport)
     const controls = reconcile(this.state)
+    if (data === '\x1b') {
+      const consumed = this.state.pendingConfirmation !== undefined
+      this.state.pendingConfirmation = undefined
+      if (!consumed) this.options.onUnhandledEscape?.()
+      return
+    }
     if (controls.length === 0) return
     const active = controls[this.state.lastIndex]!
     const moveTo = (index: number): void => {
@@ -461,10 +469,6 @@ class CompiledSurface implements BlueFocusable {
     if (data === '\t' || data === '\x1b[Z') {
       const delta = data === '\t' ? 1 : -1
       moveTo((this.state.lastIndex + controls.length + delta) % controls.length)
-      return
-    }
-    if (data === '\x1b') {
-      this.state.pendingConfirmation = undefined
       return
     }
     const direction = data === '\x1b[A' || data === '\x1b[D' ? -1 : data === '\x1b[B' || data === '\x1b[C' ? 1 : 0

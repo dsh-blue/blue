@@ -18,6 +18,7 @@ import { BlueKeymapService } from './keymap.ts'
 import { BlueScreenService } from './screen.ts'
 import { BlueTerminalInfoService } from './terminal-info.ts'
 import { startBlueTerminal } from './terminal.ts'
+import { mountPluginSurfaceBridge } from './plugin-surface-bridge.ts'
 import { NotificationModelService, ThemeModelService } from '@dsh-blue/blue-frontend'
 
 export { BlueComponentsService, type BlueComponentsDeps } from './components.ts'
@@ -143,6 +144,13 @@ export async function apply(ctx: Context): Promise<void> {
     inject: ['blueTheme'],
     apply(subCtx: Context) {
       subCtx.plugin(BlueComponentsService, { theme: subCtx.blueTheme, tui: runtime.tui })
+    },
+  })
+  ctx.plugin({
+    name: 'blue-plugin-surface-bridge',
+    inject: ['bluePluginHost', 'blueComponents', 'blueTheme', 'blueKeymap'],
+    apply(subCtx: Context) {
+      mountPluginSurfaceBridge(subCtx as Parameters<typeof mountPluginSurfaceBridge>[0], runtime)
     },
   })
   ctx.effect(() => () => runtime.stop())

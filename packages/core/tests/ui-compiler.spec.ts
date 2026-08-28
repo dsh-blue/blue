@@ -377,7 +377,8 @@ describe('compileBlueUiNode', () => {
   })
 
   it('requires two activation gestures for confirmed actions and clears pending state locally', () => {
-    const { options, events } = fixture()
+    const escapes: string[] = []
+    const { options, events } = fixture({ onUnhandledEscape: () => escapes.push('escape') })
     const result = compiled(ui.actions({ id: 'actions', items: [
       { id: 'delete', label: 'Delete', intent: 'primary', confirm: 'Really delete?' },
       { id: 'keep', label: 'Keep' },
@@ -391,6 +392,9 @@ describe('compileBlueUiNode', () => {
     expect(events).toEqual([])
     expect(focus.render(80).join('')).toContain('Really delete?')
     focus.handleInput?.('\x1b')
+    expect(escapes).toEqual([])
+    focus.handleInput?.('\x1b')
+    expect(escapes).toEqual(['escape'])
     expect(focus.render(80).join('')).not.toContain('Really delete?')
     focus.handleInput?.('\r')
     focus.handleInput?.('\t')

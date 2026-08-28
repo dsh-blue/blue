@@ -7,7 +7,7 @@
  */
 
 import { symbols, type Context } from '@deepseek-ai/cordis'
-import { attachBluePluginHostCapabilities, subscribeBluePluginHost, subscribeBluePluginNotifications, type BlueCommandContribution, type BluePluginHostSnapshot, type BlueResult } from '@dsh-blue/blue-api'
+import { attachBluePluginHostCapabilities, runBlueUserGesture, subscribeBluePluginHost, subscribeBluePluginNotifications, type BlueCommandContribution, type BluePluginHostSnapshot, type BlueResult } from '@dsh-blue/blue-api'
 import { paintPluginTone, summarizePluginView } from '@dsh-blue/blue-core'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import { getSharedEditor } from './editor-instance.ts'
@@ -48,10 +48,11 @@ export function apply(ctx: Context): void {
         description: entry.label,
         handler: async (invocation) => {
           try {
-            return commandResult(await entry.execute(commandArgs(invocation.rawInput), {
+            return commandResult(await runBlueUserGesture(host, ctx, userGesture => entry.execute(commandArgs(invocation.rawInput), {
               signal: invocation.signal,
               rawInput: invocation.rawInput,
-            }))
+              userGesture,
+            }), invocation.signal))
           } catch (error) {
             return { kind: 'error', text: `plugin command failed: ${error instanceof Error ? error.message : String(error)}` }
           }
@@ -61,10 +62,10 @@ export function apply(ctx: Context): void {
     }
   }
 
-  const subscription = subscribeBluePluginHost(ctx.bluePluginHost, (snapshot: BluePluginHostSnapshot) => {
+  const subscription = subscribeBluePluginHost(host, (snapshot: BluePluginHostSnapshot) => {
     syncCommands(snapshot.commands)
   })
-  const notices = subscribeBluePluginNotifications(ctx.bluePluginHost, (notification) => {
+  const notices = subscribeBluePluginNotifications(host, (notification) => {
     const text = summarizePluginView(notification.view)
     const painted = paintPluginTone(ctx.blueTheme.colors, notification.tone)(text)
     getSharedEditor(ctx)?.notice?.(painted)

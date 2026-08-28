@@ -35,6 +35,8 @@ import { buildTitleOsc0, copySelectionText } from './terminal-escape.ts'
 import { probeTerminalBackground, backgroundFromRgb, type BlueProbeProcess } from './terminal-info.ts'
 import type { BlueComponent, BlueDockOptions, BlueOverlayHandle, BlueOverlayOptions, BlueRgbColor } from './types.ts'
 
+interface BlueRuntimeOverlayOptions extends BlueOverlayOptions { readonly maxWidth?: number }
+
 const KEY_UP = '\x1b[A'
 const KEY_DOWN = '\x1b[B'
 const KEY_PAGE_UP = '\x1b[5~'
@@ -135,6 +137,7 @@ class DockLayoutContainer extends Container {
   constructor(
     private readonly overflow: OverflowSink,
     private readonly viewportRows: (fixedRows: number) => number,
+    private readonly onRendered?: (rows: number) => void,
   ) {
     super()
   }
@@ -197,6 +200,7 @@ class DockLayoutContainer extends Container {
       if (allocated === 0) return []
       return allocated === entry.rows.length ? entry.rows : entry.rows.slice(-allocated)
     })
+    this.onRendered?.(rows.length)
     return clampFrame(rows, width, this.overflow)
   }
 }
@@ -229,6 +233,8 @@ export function normalizeWheelInput(data: string): string | undefined {
  * this; pi-tui types stay inside this module.
  */
 export interface BlueTerminalRuntime {
+  /** Renderer mode used by the canonical public UI compiler. */
+  readonly mode: BlueScreenMode
   /** Current terminal width in columns. */
   readonly columns: number
   /** Current terminal height in rows. */
@@ -241,6 +247,12 @@ export interface BlueTerminalRuntime {
   readonly tui: TUI
   /** Core-internal surface seam for the later pane-owner bridge. */
   readonly surfaces: SurfaceManager
+  /** Current best-effort viewport budget for one managed surface. */
+  surfaceViewport(id: string): { readonly columns: number, readonly rows: number }
+  /** Release one pane's focus back to the component active before it. */
+  releaseSurfaceFocus(id: string): void
+  /** Whether any visible modal overlay currently owns the input plane. */
+  hasCapturingOverlay(): boolean
   /**
    * Mount a root component on the live renderer, above every bottom-pinned
    * component.
@@ -279,7 +291,7 @@ export interface BlueTerminalRuntime {
    * @param options - positioning and sizing options.
    * @returns the overlay's control handle.
    */
-  showOverlay(component: BlueComponent, options?: BlueOverlayOptions): BlueOverlayHandle
+  showOverlay(component: BlueComponent, options?: BlueRuntimeOverlayOptions): BlueOverlayHandle
   /**
    * Schedule a re-render of the live renderer.
    * @param force - reset differential render state before drawing.
@@ -469,6 +481,9 @@ export async function startBlueTerminal(
   const contentContainer = alternate ? new FrameClampedContainer(overflow) : undefined
   let surfaceHeaderRows: () => number
   let surfaceBottomRows: () => number
+  let lastSurfaceHeaderRows = 0
+  let lastSurfaceBottomRows = 0
+  let lastDockRows = 0
   const dockContainer = alternate ? new DockLayoutContainer(overflow, fixedRows => {
     const fixedBudget = Math.min(Math.max(0, terminal.rows - 1), fixedRows)
     let surfaceBudget = Math.max(0, terminal.rows - 1 - fixedBudget)
@@ -476,7 +491,7 @@ export async function startBlueTerminal(
     surfaceBudget -= headerRows
     const bottomRows = Math.min(surfaceBudget, surfaceBottomRows())
     return terminal.rows - headerRows - bottomRows
-  }) : undefined
+  }, rows => { lastDockRows = rows }) : undefined
   const scrollView = contentContainer === undefined ? undefined : new ScrollView(contentContainer, {
     follow: 'end',
     primary: true,
@@ -484,6 +499,10 @@ export async function startBlueTerminal(
     scrollbar: 'auto',
   })
   let rebuildSurfaceLayout: () => void
+  let surfacePreFocus: Component | null = null
+  const mountedSurfaceBase = (): Component | null => surfacePreFocus !== null && (contentChildren.has(surfacePreFocus) || bottomChildren.has(surfacePreFocus))
+    ? surfacePreFocus
+    : null
   const surfaces = new SurfaceManager({
     onChange: () => rebuildSurfaceLayout(),
     onSurfaceFocusTransition: (previous, next) => {
@@ -491,10 +510,12 @@ export async function startBlueTerminal(
         getFocusedComponent(): Component | null
         overlayStack: { preFocus: Component | null }[]
       }
+      const target = next as Component | null ?? mountedSurfaceBase()
       for (const overlay of internal.overlayStack) {
-        if (overlay.preFocus === previous) overlay.preFocus = next as Component | null
+        if (overlay.preFocus === previous) overlay.preFocus = target
       }
-      if (internal.getFocusedComponent() === previous) stable.setFocus(next as Component | null)
+      if (internal.getFocusedComponent() === previous) stable.setFocus(target)
+      if (next === null) surfacePreFocus = null
     },
   })
   const linearLaneComponent = (placement: SurfacePlacement): Component => ({
@@ -521,16 +542,22 @@ export async function startBlueTerminal(
     right: linearLaneComponent('right'),
     bottom: linearLaneComponent('bottom'),
   }
-  surfaceHeaderRows = () => renderSurfaceLane(
-    surfaces.layout(terminal.columns, terminal.rows).header,
-    terminal.columns,
-    SURFACE_HEADER_MAX_ROWS,
-  ).length
-  surfaceBottomRows = () => renderSurfaceLane(
-    surfaces.layout(terminal.columns, terminal.rows).bottom,
-    terminal.columns,
-    Math.floor(terminal.rows / 3),
-  ).length
+  surfaceHeaderRows = () => {
+    lastSurfaceHeaderRows = renderSurfaceLane(
+      surfaces.layout(terminal.columns, terminal.rows).header,
+      terminal.columns,
+      SURFACE_HEADER_MAX_ROWS,
+    ).length
+    return lastSurfaceHeaderRows
+  }
+  surfaceBottomRows = () => {
+    lastSurfaceBottomRows = renderSurfaceLane(
+      surfaces.layout(terminal.columns, terminal.rows).bottom,
+      terminal.columns,
+      Math.floor(terminal.rows / 3),
+    ).length
+    return lastSurfaceBottomRows
+  }
 
   function rebuildAlternateLayout(): void {
     const semantic = surfaces.linearLayout(terminal.columns, terminal.rows)
@@ -667,6 +694,7 @@ export async function startBlueTerminal(
   let stopped = false
   let suspended = false
   const runtime: BlueTerminalRuntime = {
+    mode: screenMode,
     get columns() {
       return current.terminal.columns
     },
@@ -679,6 +707,34 @@ export async function startBlueTerminal(
     },
     tui: stable,
     surfaces,
+    surfaceViewport(id) {
+      const layout = screenMode === 'main'
+        ? surfaces.linearLayout(terminal.columns, terminal.rows)
+        : surfaces.layout(terminal.columns, terminal.rows)
+      const lane = ([layout.header, layout.left, layout.right, layout.bottom] as const)
+        .find(candidate => candidate?.entries.some(entry => entry.id === id))
+      const columns = lane?.placement === 'left' || lane?.placement === 'right' ? lane.width ?? terminal.columns : terminal.columns
+      if (screenMode === 'main') return { columns: Math.max(1, terminal.columns), rows: Math.max(1, terminal.rows) }
+      const tabs = (lane?.entries.length ?? 0) > 1 ? 1 : 0
+      const dockRows = lastDockRows
+      const rows = lane?.placement === 'header'
+        ? Math.max(1, (lastSurfaceHeaderRows || SURFACE_HEADER_MAX_ROWS) - tabs)
+        : lane?.placement === 'bottom'
+          ? Math.max(1, (lastSurfaceBottomRows || Math.floor(terminal.rows / 3)) - tabs)
+          : Math.max(1, terminal.rows - dockRows - lastSurfaceHeaderRows - lastSurfaceBottomRows - tabs)
+      return { columns: Math.max(1, Math.min(terminal.columns, columns)), rows: Math.min(terminal.rows, rows) }
+    },
+    releaseSurfaceFocus(id) {
+      if (surfaces.focusedId !== id) return
+      surfaces.setFocused(undefined)
+      const target = mountedSurfaceBase()
+      stable.setFocus(target)
+      surfacePreFocus = null
+    },
+    hasCapturingOverlay() {
+      const stack = (current as unknown as { overlayStack: { readonly options?: { readonly nonCapturing?: boolean }, readonly hidden?: boolean }[] }).overlayStack
+      return stack.some(entry => entry.hidden !== true && entry.options?.nonCapturing !== true)
+    },
     addChild(component) {
       contentChildren.add(component)
       if (contentContainer !== undefined) {
@@ -727,7 +783,10 @@ export async function startBlueTerminal(
       } else rebuildMainLayout()
     },
     setFocus(component) {
+      const previous = (current as unknown as { getFocusedComponent(): Component | null }).getFocusedComponent()
+      const previousSurfaceId = surfaces.focusedId
       surfaces.setFocusedComponent(component)
+      if (previousSurfaceId === undefined && surfaces.focusedId !== undefined && previous !== component) surfacePreFocus = previous
       stable.setFocus(component)
     },
     /* v8 ignore start -- exercised through the real PTY interaction path */
@@ -782,7 +841,29 @@ export async function startBlueTerminal(
     },
     /* v8 ignore stop */
     showOverlay(component, options) {
-      return stable.showOverlay(component, options)
+      if (options?.maxWidth === undefined) return stable.showOverlay(component, options)
+      const maximum = Math.max(1, Math.floor(options.maxWidth))
+      const source = options.width
+      const sourceMinWidth = options.minWidth
+      const adapted = {
+        ...options,
+      }
+      Object.defineProperties(adapted, {
+        width: {
+          enumerable: true,
+          get: () => {
+            const requested = typeof source === 'string'
+              ? Math.floor(terminal.columns * Number.parseFloat(source) / 100)
+              : source ?? Math.min(80, terminal.columns)
+            return Math.max(1, Math.min(maximum, requested))
+          },
+        },
+        minWidth: {
+          enumerable: true,
+          get: () => Math.max(1, Math.min(terminal.columns, maximum, Math.floor(sourceMinWidth ?? 1))),
+        },
+      })
+      return stable.showOverlay(component, adapted)
     },
     requestRender(force) {
       stable.requestRender(force)

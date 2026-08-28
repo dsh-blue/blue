@@ -11,13 +11,16 @@ import {
   BluePluginHostService,
   attachBluePluginHostCapabilities,
   apply,
+  closeBluePluginHostOverlay,
   createBlueUserGesture,
+  runBlueUserGesture,
   name,
   snapshotBluePluginHost,
   subscribeBluePluginHost,
   subscribeBluePluginNotifications,
+  type BluePluginHostSnapshot,
 } from '../src/host.ts'
-import type { BlueEditorProvider, BluePluginApi, BluePluginManifest, BlueUserGesture, BlueView } from '../src/contracts.ts'
+import type { BlueEditorProvider, BluePluginApi, BluePluginManifest, BlueResult, BlueUserGesture, BlueView } from '../src/contracts.ts'
 
 const view: BlueView = { kind: 'text', content: 'hello' }
 
@@ -168,6 +171,33 @@ describe('BluePluginHostService', () => {
     expect(observed.disposed).toBe(true)
   })
 
+  it('subscribes before initial replay and preserves reentrant snapshot revisions', () => {
+    const host = new BluePluginHostService(new Context())
+    attach(host, ['status'])
+    const opened = host.open(consumer(), manifest(['status']))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    const snapshots: { revision: number, ids: readonly string[] }[] = []
+    let admitted = false
+    const subscription = subscribeBluePluginHost(host, snapshot => {
+      snapshots.push({ revision: snapshot.revision ?? 0, ids: snapshot.status.map(entry => entry.id) })
+      if (!admitted) {
+        admitted = true
+        expect(opened.value.status!.register({ id: 'during-replay', render: () => view })).toMatchObject({ ok: true })
+      }
+    })
+
+    expect(snapshots).toEqual([
+      { revision: 0, ids: [] },
+      { revision: 1, ids: ['during-replay'] },
+    ])
+    subscription.dispose()
+
+    const replayError = new Error('initial replay failed')
+    expect(() => subscribeBluePluginHost(host, () => { throw replayError })).toThrow(replayError)
+    expect(opened.value.status!.register({ id: 'after-failed-replay', render: () => view })).toMatchObject({ ok: true })
+  })
+
   it('rejects owner ids, malformed capability payloads, and adapter admission failures', () => {
     const host = new BluePluginHostService(new Context())
     attach(host, ['commands', 'status', 'dock'])
@@ -236,7 +266,8 @@ describe('BluePluginHostService', () => {
     expect(api.dock!.list()).toEqual([])
     expect(api.notifications!.publish({ id: 'after-dispose', view })).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
     expect(received).toEqual([])
-    expect(() => snapshotBluePluginHost(host)).toThrow('not active')
+    expect(() => snapshotBluePluginHost(host)).toThrow('requires the active host service itself')
+    expect(host.open(consumer(), manifest([]))).toEqual({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message: 'Blue plugin host is not active' })
     bridge.dispose()
   })
 
@@ -301,11 +332,14 @@ describe('BluePluginHostService', () => {
     expect(second.value.panes!.register({ id: 'pane-a', priority: 20, placement: 'right', render: () => null })).toMatchObject({ ok: true })
     expect(second.value.panes!.register({ id: 'pane-b', placement: 'right', render: () => null })).toMatchObject({ ok: false, code: 'BLUE_DUPLICATE_ID' })
     expect(snapshotBluePluginHost(host).panes.map(entry => entry.id)).toEqual(['pane-a', 'pane-b'])
+    expect(snapshotBluePluginHost(host).panes.find(entry => entry.id === 'pane-b')?.revision).toBe(0)
     expect(registered.value.setHidden(true)).toEqual({ ok: true, value: undefined })
     expect(snapshotBluePluginHost(host).panes.find(entry => entry.id === 'pane-b')).toMatchObject({ hidden: true })
     expect(registered.value.setHidden(true)).toEqual({ ok: true, value: undefined })
     expect(registered.value.refresh()).toEqual({ ok: true, value: undefined })
     await Promise.resolve()
+    expect(snapshotBluePluginHost(host).panes.find(entry => entry.id === 'pane-b')?.revision).toBe(1)
+    expect(snapshotBluePluginHost(host).panes.find(entry => entry.id === 'pane-a')?.revision).toBe(0)
 
     expect(first.value.panes!.register({ id: 'bad-placement', placement: 'middle' as never, render: () => null })).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
     expect(first.value.panes!.register({ id: 'bad-priority', priority: 101, placement: 'left', render: () => null })).toMatchObject({ ok: false, code: 'BLUE_LIMIT_EXCEEDED' })
@@ -380,6 +414,139 @@ describe('BluePluginHostService', () => {
     expect(snapshotBluePluginHost(host).overlays.map(entry => entry.id)).not.toContain('plain')
     expect(createBlueUserGesture(host, overlayOwner)).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
     firstConsumer.dispose()
+  })
+
+  it('isolates coalesced overlay refresh revisions', async () => {
+    const host = new BluePluginHostService(new Context())
+    attach(host, ['overlays'])
+    const opened = host.open(consumer(), manifest(['overlays']))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    const first = opened.value.overlays!.open({ id: 'first', render: () => view })
+    const second = opened.value.overlays!.open({ id: 'second', render: () => view })
+    expect(first.ok && second.ok).toBe(true)
+    if (!first.ok || !second.ok) return
+    expect(snapshotBluePluginHost(host).overlays.map(entry => [entry.id, entry.revision])).toEqual([
+      ['first', 0],
+      ['second', 0],
+    ])
+
+    expect(first.value.refresh()).toEqual({ ok: true, value: undefined })
+    expect(first.value.refresh()).toEqual({ ok: true, value: undefined })
+    await Promise.resolve()
+    expect(snapshotBluePluginHost(host).overlays.map(entry => [entry.id, entry.revision])).toEqual([
+      ['first', 1],
+      ['second', 0],
+    ])
+  })
+
+  it('scopes user gestures across async dispatch, abort, and host teardown', async () => {
+    const root = new Context()
+    const host = new BluePluginHostService(root)
+    const commandOwner = attach(host, ['commands'])
+    const overlayOwner = attach(host, ['overlays'])
+    const opened = host.open(consumer(), manifest(['overlays']))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+
+    await expect(runBlueUserGesture(host, consumer(), () => undefined)).rejects.toThrow('only an active user-dispatch owner may mint user gestures')
+
+    let retained: BlueUserGesture | undefined
+    await runBlueUserGesture(host, commandOwner, async gesture => {
+      retained = gesture
+      await Promise.resolve()
+      expect(opened.value.overlays!.open({ id: 'async', capturing: true, render: () => view }, { userGesture: gesture })).toMatchObject({ ok: true })
+    })
+    expect(opened.value.overlays!.open({ id: 'late', capturing: true, render: () => view }, { userGesture: retained })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+
+    const abort = new AbortController()
+    let abortedGesture: BlueUserGesture | undefined
+    let release!: () => void
+    const pending = runBlueUserGesture(host, commandOwner, async gesture => {
+      abortedGesture = gesture
+      await new Promise<void>(resolve => { release = resolve })
+      return 'settled'
+    }, abort.signal)
+    await Promise.resolve()
+    abort.abort()
+    expect(opened.value.overlays!.open({ id: 'aborted', capturing: true, render: () => view }, { userGesture: abortedGesture })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+    release()
+    await expect(pending).resolves.toBe('settled')
+
+    const preAborted = new AbortController()
+    preAborted.abort()
+    let preAbortedCalled = false
+    await expect(runBlueUserGesture(host, commandOwner, () => {
+      preAbortedCalled = true
+    }, preAborted.signal)).rejects.toThrow('Blue user dispatch was aborted')
+    expect(preAbortedCalled).toBe(false)
+
+    const unloadOwner = attach(host, ['commands'])
+    let finish!: () => void
+    const duringOwnerUnload = runBlueUserGesture(host, unloadOwner, async gesture => {
+      retained = gesture
+      return new Promise<void>(resolve => { finish = resolve })
+    })
+    await Promise.resolve()
+    unloadOwner.dispose()
+    expect(opened.value.overlays!.open({ id: 'owner-unloaded', capturing: true, render: () => view }, { userGesture: retained })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+    finish()
+    await expect(duringOwnerUnload).resolves.toBeUndefined()
+
+    const rejectingOwner = attach(host, ['commands'])
+    let reject!: (error: Error) => void
+    const original = new Error('original rejection')
+    const duringOwnerReject = runBlueUserGesture(host, rejectingOwner, async () => new Promise<void>((_resolve, reject_) => { reject = reject_ }))
+    await Promise.resolve()
+    rejectingOwner.dispose()
+    reject(original)
+    await expect(duringOwnerReject).rejects.toBe(original)
+
+    const hostTeardownOwner = attach(host, ['commands'])
+    let finishHost!: () => void
+    const duringDispose = runBlueUserGesture(host, hostTeardownOwner, async () => new Promise<void>(resolve => { finishHost = resolve }))
+    await Promise.resolve()
+    await root.fiber.dispose()
+    finishHost()
+    await expect(duringDispose).resolves.toBeUndefined()
+    overlayOwner.dispose()
+  })
+
+  it('honors only active owner close requests during and after overlay admission', () => {
+    const root = new Context()
+    const host = new BluePluginHostService(root)
+    const owner = attach(host, ['overlays'])
+    const opened = host.open(consumer(), manifest(['overlays']))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    const closeResults: BlueResult[] = []
+    const subscription = subscribeBluePluginHost(host, snapshot => {
+      const entry = snapshot.overlays.at(-1)
+      if (entry !== undefined) closeResults.push(closeBluePluginHostOverlay(host, owner, entry))
+    })
+    const result = opened.value.overlays!.open({ id: 'close-during-open', render: () => view })
+    expect(result).toMatchObject({ ok: true, value: { closed: true } })
+    expect(closeResults).toEqual([{ ok: true, value: undefined }])
+    expect(snapshotBluePluginHost(host).overlays).toEqual([])
+    subscription.dispose()
+
+    const afterAdmission = opened.value.overlays!.open({ id: 'close-after-open', render: () => view })
+    expect(afterAdmission).toMatchObject({ ok: true, value: { closed: false } })
+    const entry = snapshotBluePluginHost(host).overlays[0]!
+    expect('close' in entry).toBe(false)
+    expect(closeBluePluginHostOverlay(host, consumer(), entry)).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+    expect(closeBluePluginHostOverlay(root.bluePluginHost, owner, entry)).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+    expect(closeBluePluginHostOverlay(host, owner, entry)).toEqual({ ok: true, value: undefined })
+    expect(afterAdmission).toMatchObject({ ok: true, value: { closed: true } })
+    expect(snapshotBluePluginHost(host).overlays).toEqual([])
+    expect(closeBluePluginHostOverlay(host, owner, entry)).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+
+    const duringOwnerGap = opened.value.overlays!.open({ id: 'owner-gap', render: () => view })
+    expect(duringOwnerGap).toMatchObject({ ok: true })
+    const ownerGapEntry = snapshotBluePluginHost(host).overlays[0]!
+    owner.dispose()
+    expect(closeBluePluginHostOverlay(host, owner, ownerGapEntry)).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+    if (duringOwnerGap.ok) duringOwnerGap.value.close()
   })
 
   it('keeps editor and provider candidates inert and globally unique', () => {
@@ -511,12 +678,39 @@ describe('BluePluginHostService', () => {
     const host = new BluePluginHostService(ctx)
     const owner = consumer()
     expect(() => attachBluePluginHostCapabilities(ctx.bluePluginHost, owner, ['overlays'])).toThrow('requires the active host service itself')
+    expect(() => snapshotBluePluginHost(ctx.bluePluginHost)).toThrow('requires the active host service itself')
+    expect(() => subscribeBluePluginHost(ctx.bluePluginHost, () => {})).toThrow('requires the active host service itself')
+    expect(() => subscribeBluePluginNotifications(ctx.bluePluginHost, () => {})).toThrow('requires the active host service itself')
     expect(createBlueUserGesture(ctx.bluePluginHost, owner)).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
     attachBluePluginHostCapabilities(host, owner, ['overlays'])
     expect(createBlueUserGesture(host, owner)).toMatchObject({ ok: true })
     expect(createBlueUserGesture(host, owner)).toMatchObject({ ok: true })
     await ctx.fiber.dispose()
     expect(createBlueUserGesture(host, owner)).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+  })
+
+  it('keeps owner snapshot revisions optional for source-compatible mocks', () => {
+    const legacy: BluePluginHostSnapshot = {
+      commands: [],
+      status: [],
+      dock: [],
+      panes: [{
+        id: 'legacy-pane',
+        contribution: { id: 'legacy-pane', placement: 'bottom', render: () => null },
+        hidden: false,
+      }],
+      overlays: [{
+        id: 'legacy-overlay',
+        request: { id: 'legacy-overlay', capturing: false, dismissible: true, render: () => ({ kind: 'text', content: 'legacy' }) },
+        order: 0,
+      }],
+      editorExtensions: [],
+      statusProviders: [],
+      editorProviders: [],
+    }
+    expect(legacy.revision).toBeUndefined()
+    expect(legacy.panes[0]?.revision).toBeUndefined()
+    expect(legacy.overlays[0]?.revision).toBeUndefined()
   })
 
   it('contains invalid nested numbers and clock failures', () => {

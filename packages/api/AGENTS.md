@@ -22,6 +22,17 @@ the process-local boundary. Change events are latest-wins per control;
 activate/submit/dismiss are FIFO per surface. The host owns revision fencing,
 abort, timeout, and coalesced refresh.
 
+Owner snapshots carry one monotonic aggregate revision, and pane/overlay
+entries carry independent render revisions. A refresh tick increments only its
+entry revision after coalescing. These owner fields are optional in the
+TypeScript shape for source-compatible mocks, while every real host snapshot
+supplies them. Snapshot subscriptions attach before their initial replay so a
+reentrant admission cannot be missed; a throwing replay
+removes every just-attached listener. `runBlueUserGesture` is the owner-only
+async dispatch scope: commands, panes, and overlays may mint one-shot proofs;
+abort or owner unload revokes immediately, and normal settlement revokes after
+the complete handler promise settles.
+
 `BlueResult` includes `BLUE_CAPABILITY_ABSENT` for adapters and features that
 probe an optional Harness capability. Consumers should render that result as a
 plain or read-only fallback and must not treat it as a thrown plugin failure.
@@ -60,10 +71,14 @@ The host implements `status`, `panes`, `overlays`, `editor.extensions`, and
 both provider registries without rendering plugin callbacks. Pane state keeps
 owner-only hidden metadata. Overlay snapshots preserve global stack order and
 normalize `capturing=false` / `dismissible=true`; capturing admission consumes
-an owner-minted `BlueUserGesture` by object identity. Refresh handles enforce
-20 successful calls per rolling second and cancel pending coalesced ticks when
-their contribution is disposed. Owner gaps retain contributions but reject
-new writes with `BLUE_CAPABILITY_ABSENT`; `session.read/session.act` remain
+an owner-minted `BlueUserGesture` by object identity. Overlay entries contain
+no callable close authority: `closeBluePluginHostOverlay` requires the original
+host, an active overlays owner, and the current entry identity to complete a
+semantic dismiss. Snapshot and notification owner helpers likewise reject the
+guarded public service. Refresh handles enforce 20 successful calls per rolling
+second and cancel pending coalesced ticks when their contribution is disposed.
+Owner gaps retain contributions but reject new writes with
+`BLUE_CAPABILITY_ABSENT`; `session.read/session.act` remain
 denied because no owner/API seam exists.
 
 W2-C compatibility exception: `host.ts` uses the non-root-exported
