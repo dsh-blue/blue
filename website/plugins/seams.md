@@ -8,15 +8,18 @@ Blue 的当前架构用显式 Cordis service、projection/action、renderer-neut
 
 | Capability | Contribution | Blue consumer |
 |---|---|---|
+| `commands` | `BlueCommandContribution` + async `BlueResult` | interaction bridge -> Harness command registry |
 | `status` | `BlueStatusEntryContribution`，返回 renderer-neutral `BlueStatusNode` | view bridge -> private footer entry registry -> core status compiler |
 | `status.provider` | `BlueStatusProvider`，返回独占的 renderer-neutral `BlueStatusNode` | status-provider owner -> core status compiler |
-| `dock` | `BlueDockContribution` | view bridge -> core bounded dock mount |
-| `commands` | `BlueCommandContribution` + async `BlueResult` | interaction bridge -> Harness command registry |
 | `notifications` | `BlueNotification` | interaction bridge -> editor notice |
+| `panes` | `BluePaneContribution` | view bridge -> private pane registry -> core bounded pane mount |
+| `overlays` | `BlueOverlayRequest` | public overlay host -> core overlay mount |
+| `editor.extensions` | `BlueEditorExtensionContribution` | interaction bridge -> editor extension binding |
+| `editor.provider` | `BlueEditorProvider`，返回独占的 renderer-neutral editor shell | editor-provider owner -> core editor shell compiler |
 
 Manifest 校验、capability 限权、重复 id、owner namespace 和生命周期都由 `@dsh-blue/blue-api` 处理。注册绑定调用方 Fiber，卸载自动清理。
 
-当前阶段 `open()` 开放上表五个 capability。manifest schema 还声明了另外五个（`tools`、`editor`、`panels`、`session.read`、`session.act`），但申请其中任何一个都会被拒绝，返回 `BLUE_CAPABILITY_DENIED`——它们预留给后续阶段，签名未定。`status.provider` 的持久化选择和失败回退见[状态栏](/plugins/status#独占-status-provider)。
+当前阶段 `open()` 开放上表八个 capability；`session.read` 与 `session.act` 仍未开放，申请会返回 `BLUE_CAPABILITY_DENIED`。两个独占 provider 的候选注册都保持 inert，只有 settings 选中的 id 才会激活；持久化选择和失败回退分别见[状态栏](/plugins/status#独占-status-provider)与[编辑器 Provider](/plugins/editor-providers)。
 
 ## Blue 内部边界
 
@@ -26,10 +29,10 @@ Manifest 校验、capability 限权、重复 id、owner namespace 和生命周�
 | app | `blueSessionReader` | 当前 session 的 readonly snapshot 与 request |
 | app | `blueSessionProjections` | consistent-cut projection values、seq、children、subscription |
 | app | `blueSessionActions` | followup/steer/interrupt、mode/model/preset/tool/skill/rewind/side-session action |
-| conversation | `blueConversation` / `blueConversationFacts` | official replay/live transcript 与 status/dock facts |
+| conversation | `blueConversation` / `blueConversationFacts` | official replay/live transcript 与 status/pane facts |
 | transcript | transcript model、private status/bottom-pane registries、tool model service | readonly model/canonical node 到 TUI renderer |
-| interaction | `blueEditorHost` / `blueInteractionState` | frontend-tree-scoped editor slot、completion multiplexer、pre-clear submit barrier、public extension binding、draft/settings/paste state |
-| bundle | `cordis.patch.yml` | 29 条 Blue 自有行和显式依赖顺序 |
+| interaction | `blueEditorHost` / `blueInteractionState` | frontend-tree-scoped editor slot、completion multiplexer、pre-clear submit barrier、public extension/provider binding、draft/settings/paste state |
+| bundle | `cordis.patch.yml` | 30 条 Blue 自有行和显式依赖顺序 |
 
 Session switch 的 `blue/request-resume`、`-new`、`-fork`、`-rewind` 是发给 app owner 的 command events，不是向 renderer 广播 Session 对象。
 

@@ -26,7 +26,7 @@ blue-feature/
   cordis.patch.yml      # 把 entry 插入 profile
 ```
 
-入口必须导出稳定的 `name`、`inject` 和 `apply(ctx)`。Blue 功能通过 `ctx.bluePluginHost.open(ctx, manifest)` 申请能力；当前公开能力是 `commands`、`status`、`status.provider`、`dock` 和 `notifications`。`open()`、`register()`、`publish()` 都返回结构化 `BlueResult`，每次都要检查 `ok`。注册由调用方 Fiber 托管，插件卸载、更新或 profile 重载时会自动撤销。
+入口必须导出稳定的 `name`、`inject` 和 `apply(ctx)`。Blue 功能通过 `ctx.bluePluginHost.open(ctx, manifest)` 申请能力；当前公开能力是 `commands`、`status`、`notifications`、`panes`、`overlays`、`editor.extensions`、`status.provider` 和 `editor.provider`。`open()`、`register()`、`publish()` 都返回结构化 `BlueResult`，每次都要检查 `ok`。注册由调用方 Fiber 托管，插件卸载、更新或 profile 重载时会自动撤销。两个独占 provider capability 的候选注册保持 inert，只有 settings 选中的 id 才会激活。
 
 插件只能返回 renderer-neutral 的 `BlueView` 和结构化 action：
 
@@ -53,14 +53,15 @@ return {
     const opened = ctx.bluePluginHost.open(ctx, {
       id: 'com.example.blue-doudizhu',
       api: '^1.0.0',
-      capabilities: ['commands', 'dock', 'notifications'],
+      capabilities: ['commands', 'panes', 'notifications'],
     })
     if (!opened.ok) throw new Error(opened.code + ': ' + opened.message)
     opened.value.commands.register({ id: 'poker', label: '斗地主牌局', execute })
-    opened.value.dock.register({
+    opened.value.panes.register({
       id: 'doudizhu-board',
       priority: 30,
-      view: () => renderBoard(state),
+      placement: 'bottom',
+      render: () => renderBoard(state),
     })
   },
 }
@@ -85,8 +86,8 @@ Bot 复用宿主当前模型：插件通过 `ctx.get('agentDefaultModel')` 读�
 `blue-doudizhu` 已符合以下核心形状：
 
 - `name`、`inject: ['bluePluginHost']`、`apply(ctx)` 均为稳定导出；
-- manifest 申请 `commands`、`dock`、`notifications`，没有请求未开放的 session 能力；
-- `/poker` 命令、Dock 面板和通知均通过 `open()` 返回的 capability API 注册；
+- manifest 申请 `commands`、`panes`、`notifications`，没有请求未开放的 session 能力；
+- `/poker` 命令、底部面板和通知均通过 `open()` 返回的 capability API 注册；
 - `cordis.patch.yml` 只插入 `blue-doudizhu` 这一行，卸载由 Fiber 自动清理；
 - npm 包声明 `@deepseek-ai/cordis` 和 `@dsh-blue/blue` 为 peer dependency，并通过 `dsh.bundle.patch` 被 profile 装载。
 

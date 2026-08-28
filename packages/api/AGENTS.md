@@ -44,7 +44,8 @@ abort, timeout, ordering, and stale-result rejection.
 
 Owner snapshots carry one monotonic aggregate revision plus capability-local
 `statusRevision`, `statusProvidersRevision`, and `editorExtensionsRevision`
-fences; pane/overlay entries carry independent render revisions. Register,
+and `editorProvidersRevision` fences; pane/overlay entries carry independent
+render revisions. Register,
 coalesced refresh, dispose, and admission rollback advance only the affected
 capability fence, so unrelated host mutations do not rebuild the active
 footer/provider/editor extensions. These owner fields are optional in the
@@ -52,9 +53,9 @@ TypeScript shape for source-compatible mocks, while every real host snapshot
 supplies them. Snapshot subscriptions attach before their initial replay so a
 reentrant admission cannot be missed; a throwing replay removes every
 just-attached listener. `runBlueUserGesture` is the owner-only async dispatch
-scope: commands, panes, overlays, and editor extensions may mint one-shot
-proofs; abort or owner unload revokes immediately, and normal settlement
-revokes after the complete handler promise settles.
+scope: commands, panes, overlays, editor extensions, and editor providers may
+mint one-shot proofs; abort or owner unload revokes immediately, and normal
+settlement revokes after the complete handler promise settles.
 
 `BlueResult` includes `BLUE_CAPABILITY_ABSENT` for adapters and features that
 probe an optional Harness capability. Consumers should render that result as a

@@ -26,7 +26,9 @@ Form 将校验错误紧跟在失败字段下方，文本字段同时保留 Blue 
 
 可读 export 在 flush 并读取 durable artifact 后使用官方 `blueConversation` projection；full export 则有意输出解码后的审计 event stream。`/copy` 使用官方 conversation 值与 OSC 52/native clipboard 管线。
 
-`blue` settings namespace 还会持久化 `statusProvider`。`blue.default` 选择随包提供的 additive footer；其他非空 id 选择对应的已注册 status-provider candidate。若 id 缺失或 provider 失败，原配置仍会保留，Blue 同时渲染安全 fallback，因此之后安装或修复 provider 时仍能激活原选择。
+`blue` settings namespace 会持久化两个独占 provider 选择：`statusProvider` 选择 footer，`editorProvider` 选择 editor shell；`blue.default` 使各自保持随包提供的默认实现。其他非空 id 即使对应 candidate 暂时缺失或失败也仍会保留，因此之后安装、修复或重载 provider 时可以继续满足原选择，无需回写 settings。
+
+`./editor-provider-owner` 消费独占 editor shell 选择。Candidate 在被选中前保持 inert；选中后，Blue 会围绕同一个 editing engine，在实时宽度下校验并 dry-render，再原子替换内部 shell。Provider 切换会保留 draft、cursor、history、IME、attachment、focus、completion 与 submit transaction。非法或失败 candidate 会保留同会话可交互 shell，或回落 `blue.default`；重复失败会打开有界的 60 秒三次 breaker，且不保留 timer。
 
 ## 可选子路径
 
@@ -37,6 +39,7 @@ Form 将校验错误紧跟在失败字段下方，文本字段同时保留 Blue 
 - `./paste-image`：原生 clipboard 图片/文件读取。
 - `./command-model`：renderer-neutral command model 与执行 action。
 - `./plugin-host-bridge`：公开 command/notification/editor-extension adapter。
+- `./editor-provider-owner`：独占 editor shell 选择与事件 owner。
 
 所有 registration、异步工作、screen child、alias 与 host contribution 都随所属 Fiber 释放。
 

@@ -13,6 +13,11 @@ import type {
   BlueEditorCompletionItem,
   BlueEditorCompletionRequestV2,
   BlueEditorExtensionContribution,
+  BlueEditorExtensionSnapshot,
+  BlueEditorProvider,
+  BlueEditorShellNode,
+  BlueEditorSnapshot,
+  BlueSessionSnapshot,
   BlueEditorSubmitRequest,
   BlueResult,
   BlueUiEvent,
@@ -26,11 +31,12 @@ import {
   type BlueAutocompleteSuggestions,
   type BlueComponent,
   type BlueEditor,
+  type BlueEditorShellComponent,
   type BlueEditorSubmitAttempt,
   type BlueFocusable,
 } from '@dsh-blue/blue-core'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { EditorExtensionBinding, SubmitTransformation } from './editor-instance.ts'
+import type { EditorExtensionBinding, EditorProviderBinding, SubmitTransformation } from './editor-instance.ts'
 
 const MAX_COMPLETIONS = 200
 const MAX_COMPLETION_TEXT = 2_000
@@ -39,6 +45,8 @@ const MAX_NOTICE_TEXT = 2_000
 const COMPLETION_TIMEOUT_MS = 5_000
 const SUBMIT_TIMEOUT_MS = 30_000
 const ACTION_TIMEOUT_MS = 30_000
+const PROVIDER_FAILURE_LIMIT = 3
+const PROVIDER_FAILURE_WINDOW_MS = 60_000
 const IMAGE_MARKER = /\[image #\d+\]/gu
 const TOKEN_DELIMITERS = new Set([' ', '\t', '"', "'", '='])
 
@@ -61,6 +69,26 @@ interface CompletionApplication {
   readonly insertText?: string
 }
 
+interface ExtensionActionBinding {
+  readonly entry: BlueEditorExtensionContribution
+  readonly actionId: string
+}
+
+interface EditorShell {
+  readonly component: BlueComponent
+  readonly focusTarget: BlueFocusable
+  readonly checked?: BlueEditorShellComponent
+  readonly extensionBinding?: EditorExtensionBinding
+  readonly extensionActions: ReadonlyMap<string, ExtensionActionBinding>
+  readonly provider?: {
+    readonly binding: EditorProviderBinding
+    readonly entry: BlueEditorProvider
+    readonly generation: number
+  }
+}
+
+type EditorShellCandidate = { readonly shell: EditorShell } | { readonly failure: string }
+
 type CallbackOutcome<Value> =
   | { readonly kind: 'value', readonly value: Value }
   | { readonly kind: 'aborted' }
@@ -73,6 +101,14 @@ export interface EditorExtensionRuntimeOptions {
   readonly editor: BlueEditor
   readonly notice: (text: string) => void
   readonly shouldTransformSubmit: (text: string) => boolean
+}
+
+/** Readonly selection and failure state exposed for owner diagnostics/tests. */
+export interface EditorProviderRuntimeSnapshot {
+  readonly desiredId: string
+  readonly activeId: string
+  readonly breakerOpen: boolean
+  readonly runtimeFailure?: string
 }
 
 function success<Value>(value: Value): BlueResult<Value> { return { ok: true, value } }
@@ -238,12 +274,33 @@ export class EditorExtensionRuntime implements BlueFocusable {
   private columns = 80
   private operationRevision = 0
   private binding: EditorExtensionBinding | undefined
+  private providerBinding: EditorProviderBinding | undefined
   private component: BlueComponent
   private focusTarget: BlueFocusable
-  private readonly eventActions = new Map<string, { entry: BlueEditorExtensionContribution, actionId: string }>()
+  private shell: EditorShell
+  private defaultShell: EditorShell
   private readonly pending = new Set<AbortController>()
   private readonly eventTails = new Map<string, Promise<void>>()
   private actionGeneration = 0
+  private providerGeneration = 0
+  private providerOperationRevision = 0
+  private providerLifecycle = new AbortController()
+  private readonly providerPending = new Set<AbortController>()
+  private readonly providerEventTails = new Map<string, Promise<void>>()
+  private providerChange: AbortController | undefined
+  private measuredWidth: number | undefined
+  private session: BlueSessionSnapshot | null
+  private activeProvider: BlueEditorProvider | undefined
+  private desiredProvider = 'blue.default'
+  private providerAttemptNeeded = false
+  private providerEpoch = 0
+  private breakerProvider: BlueEditorProvider | undefined
+  private failureProvider: BlueEditorProvider | undefined
+  private readonly providerFailureTimes: number[] = []
+  private providerRuntimeFailure: string | undefined
+  private providerFallback: EditorShell | undefined
+  private attachmentSignature = ''
+  private initialized = false
   private completionLifecycle = new AbortController()
   private prepared: PreparedSubmit | undefined
   private readonly unsubscribe: () => void
@@ -251,6 +308,9 @@ export class EditorExtensionRuntime implements BlueFocusable {
   constructor(private readonly options: EditorExtensionRuntimeOptions) {
     this.component = options.editor
     this.focusTarget = options.editor
+    this.shell = this.plainShell()
+    this.defaultShell = this.shell
+    this.session = options.ctx.blueSessionReader.current()
     this.unsubscribe = options.ctx.blueEditorHost.subscribeEditorState(() => this.sync())
     this.sync()
   }
@@ -261,9 +321,54 @@ export class EditorExtensionRuntime implements BlueFocusable {
     this.focusTarget.focused = value
   }
 
+  get providerStatus(): EditorProviderRuntimeSnapshot {
+    return Object.freeze({
+      desiredId: this.desiredProvider,
+      activeId: this.activeProvider?.id ?? 'blue.default',
+      breakerOpen: this.breakerProvider?.id === this.desiredProvider,
+      ...(this.providerRuntimeFailure === undefined ? {} : { runtimeFailure: this.providerRuntimeFailure }),
+    })
+  }
+
   render(width: number): string[] {
-    this.columns = Math.max(1, Number.isFinite(width) ? Math.floor(width) : 1)
-    return this.component.render(this.columns)
+    const columns = Math.max(1, Number.isFinite(width) ? Math.floor(width) : 1)
+    if (this.measuredWidth !== columns) {
+      this.measuredWidth = columns
+      this.providerAttemptNeeded = this.desiredProvider !== 'blue.default'
+    }
+    if (this.desiredProvider !== 'blue.default') {
+      const signature = this.currentAttachmentSignature()
+      if (signature !== this.attachmentSignature) {
+        this.attachmentSignature = signature
+        this.providerEpoch += 1
+        this.providerAttemptNeeded = true
+      }
+    }
+    this.columns = columns
+    this.attemptDesiredProvider()
+    const renderedShell = this.shell
+    const checked = renderedShell.checked
+    if (renderedShell.provider === undefined || checked === undefined) return renderedShell.component.render(columns)
+    const rendered = checked.renderChecked(columns)
+    if (rendered.runtimeFailure === undefined) {
+      this.clearProviderFailures(renderedShell.provider)
+      return rendered.rows
+    }
+    this.providerRuntimeFailure = rendered.runtimeFailure
+    this.recordProviderFailure(renderedShell.provider.entry, rendered.runtimeFailure)
+    const fallback = this.breakerProvider === renderedShell.provider.entry
+      ? this.defaultShell
+      : this.providerFallback ?? this.defaultShell
+    this.abortProviderPending()
+    this.providerFallback = undefined
+    this.activeProvider = fallback.provider?.entry
+    this.activateShell(fallback)
+    if (fallback.provider === undefined || fallback.checked === undefined) return fallback.component.render(columns)
+    const fallbackRendered = fallback.checked.renderChecked(columns)
+    if (fallbackRendered.runtimeFailure === undefined) return fallbackRendered.rows
+    this.activeProvider = undefined
+    this.activateShell(this.defaultShell)
+    return this.defaultShell.component.render(columns)
   }
 
   handleInput(data: string): void { this.focusTarget.handleInput?.(data) }
@@ -302,22 +407,75 @@ export class EditorExtensionRuntime implements BlueFocusable {
   dispose(): void {
     this.unsubscribe()
     this.abortPending()
+    this.abortProviderPending()
+    this.providerEpoch += 1
     this.options.editor.setSubmitBarrier(undefined)
     this.prepared = undefined
     this.focusTarget.focused = false
   }
 
-  /** Abort session-scoped async work without removing registered extensions. */
-  invalidateSession(): void { this.abortPending() }
+  /** Abort route-scoped extension work without resetting the selected shell. */
+  invalidateRoute(): void { this.abortPending() }
+
+  /** Compatibility invalidation used by direct runtime consumers and tests. */
+  invalidateSession(): void {
+    this.abortPending()
+    this.abortProviderPending()
+  }
+
+  /** Refresh provider session facts and fence all work from a retired session. */
+  updateSession(session: BlueSessionSnapshot | null): void {
+    const switched = this.session?.id !== session?.id
+    const changed = switched || this.session?.mode !== session?.mode || this.session?.status !== session?.status
+    this.session = session
+    if (!changed) return
+    if (switched) this.abortPending()
+    this.abortProviderPending()
+    this.providerEpoch += 1
+    if (switched) {
+      this.providerFallback = undefined
+      this.activeProvider = undefined
+      this.activateShell(this.defaultShell)
+    }
+    this.providerAttemptNeeded = this.desiredProvider !== 'blue.default'
+    this.attemptDesiredProvider()
+  }
+
+  /** Rebuild only when public attachment metadata changed with the draft. */
+  refreshProviderSnapshot(): void {
+    if (this.desiredProvider === 'blue.default') return
+    const signature = this.currentAttachmentSignature()
+    if (signature === this.attachmentSignature) return
+    this.attachmentSignature = signature
+    this.providerEpoch += 1
+    this.providerAttemptNeeded = true
+    this.attemptDesiredProvider()
+  }
 
   private sync(): void {
-    this.abortPending()
-    this.binding = this.options.ctx.blueEditorHost.extensions
-    this.compileShell()
-    this.installCompletionProvider()
-    const transforms = this.binding?.entries.some(entry => entry.transformSubmit !== undefined) === true
-    const handler = transforms ? (attempt: BlueEditorSubmitAttempt): void => { this.beginSubmit(attempt) } : undefined
-    this.options.editor.setSubmitBarrier(handler)
+    const nextExtensions = this.options.ctx.blueEditorHost.extensions
+    const nextProviders = this.options.ctx.blueEditorHost.providers
+    const extensionChanged = !this.initialized || nextExtensions !== this.binding
+    const providerChanged = !this.initialized || nextProviders !== this.providerBinding
+    if (extensionChanged) {
+      this.abortPending()
+      this.abortProviderPending()
+      this.binding = nextExtensions
+      this.defaultShell = this.compileDefaultShell()
+      if (this.shell.provider === undefined) this.activateShell(this.defaultShell)
+      else {
+        this.providerEpoch += 1
+        this.providerAttemptNeeded = this.desiredProvider !== 'blue.default'
+      }
+      const transforms = this.binding?.entries.some(entry => entry.transformSubmit !== undefined) === true
+      const handler = transforms ? (attempt: BlueEditorSubmitAttempt): void => { this.beginSubmit(attempt) } : undefined
+      this.options.editor.setSubmitBarrier(handler)
+    }
+    if (!providerChanged) this.installCompletionProvider()
+    else this.syncProviderBinding(nextProviders)
+    if (!this.initialized) this.installCompletionProvider()
+    this.initialized = true
+    this.attemptDesiredProvider()
     this.options.ctx.blueScreen.requestRender()
   }
 
@@ -331,10 +489,40 @@ export class EditorExtensionRuntime implements BlueFocusable {
     this.prepared = undefined
   }
 
-  private compileShell(): void {
+  private abortProviderPending(): void {
+    this.providerGeneration += 1
+    this.providerLifecycle.abort()
+    this.providerLifecycle = new AbortController()
+    this.providerChange?.abort()
+    this.providerChange = undefined
+    for (const controller of this.providerPending) controller.abort()
+    this.providerPending.clear()
+    this.providerEventTails.clear()
+  }
+
+  private plainShell(): EditorShell {
+    return {
+      component: this.options.editor,
+      focusTarget: this.options.editor,
+      extensionActions: new Map(),
+    }
+  }
+
+  private activateShell(shell: EditorShell): void {
+    if (this.shell !== shell) this.focusTarget.focused = false
+    this.shell = shell
+    this.component = shell.component
+    this.focusTarget = shell.focusTarget
+    shell.checked?.focusEditor()
+    this.focusTarget.focused = this.ownFocused
+    try { this.component.invalidate() } catch { /* renderer invalidation is contained */ }
+    try { this.options.ctx.blueScreen.requestRender() } catch { /* repaint is best effort */ }
+  }
+
+  private extensionEnvelope(base: BlueEditorShellNode): { readonly node: BlueEditorShellNode, readonly actions: ReadonlyMap<string, ExtensionActionBinding> } {
     const binding = this.binding
-    this.eventActions.clear()
-    const children: Array<{ node: BlueUiNode | { readonly kind: 'editor-control' } }> = []
+    const actions = new Map<string, ExtensionActionBinding>()
+    const children: Array<{ node: BlueEditorShellNode }> = []
     if (binding !== undefined) {
       for (const entry of binding.entries) {
         if (entry.before === undefined) continue
@@ -343,7 +531,7 @@ export class EditorExtensionRuntime implements BlueFocusable {
         else this.options.notice(admitted.ok ? 'editor extension before must be passive' : admitted.message.slice(0, MAX_NOTICE_TEXT))
       }
     }
-    children.push({ node: { kind: 'editor-control' } })
+    children.push({ node: base })
     if (binding !== undefined) {
       for (const [entryIndex, entry] of binding.entries.entries()) {
         const rows: BlueUiNode[] = []
@@ -367,13 +555,13 @@ export class EditorExtensionRuntime implements BlueFocusable {
         if (Array.isArray(entry.actions) && entry.actions.length > 0) {
           const admitted = validateBlueUiNode({ kind: 'actions', id: `extension-actions-${String(entryIndex)}`, items: entry.actions })
           if (admitted.ok) {
-            const actions = admitted.value as Extract<BlueUiNode, { readonly kind: 'actions' }>
-            const items = actions.items.map((action, actionIndex) => {
+            const actionNode = admitted.value as Extract<BlueUiNode, { readonly kind: 'actions' }>
+            const items = actionNode.items.map((action, actionIndex) => {
               const id = `extension-${String(entryIndex)}-${String(actionIndex)}`
-              this.eventActions.set(id, { entry, actionId: action.id })
+              actions.set(id, { entry, actionId: action.id })
               return { ...action, id }
             })
-            rows.push({ ...actions, items })
+            rows.push({ ...actionNode, items })
           } else this.options.notice(admitted.message.slice(0, MAX_NOTICE_TEXT))
         }
         for (const row of rows) children.push({ node: row })
@@ -384,33 +572,55 @@ export class EditorExtensionRuntime implements BlueFocusable {
         }
       }
     }
-    const node = children.length === 1
-      ? { kind: 'editor-control' as const }
+    const node: BlueEditorShellNode = children.length === 1
+      ? base
       : { kind: 'stack' as const, direction: 'column' as const, children }
-    if (node.kind === 'editor-control') {
-      this.component = this.options.editor
-      this.focusTarget = this.options.editor
-      this.focusTarget.focused = this.ownFocused
-      return
-    }
+    return { node, actions }
+  }
+
+  private compileShellNode(
+    node: BlueEditorShellNode,
+    extensionActions: ReadonlyMap<string, ExtensionActionBinding>,
+    extensionBinding: EditorExtensionBinding | undefined,
+    provider?: EditorShell['provider'],
+  ): EditorShellCandidate {
+    let shell!: EditorShell
     const result = compileBlueEditorShellNode(node, {
       editor: this.options.editor,
       components: this.options.ctx.blueComponents,
       colors: this.options.ctx.blueTheme.colors,
       getViewport: () => ({ columns: this.columns, rows: Number.MAX_SAFE_INTEGER }),
       screenMode: 'main',
-      emit: event => this.dispatchEvent(event),
+      emit: event => { this.dispatchShellEvent(shell, event) },
     })
-    this.component = result.ok ? result.value.component : this.options.editor
-    this.focusTarget = result.ok ? result.value.focusTarget : this.options.editor
-    if (!result.ok) this.options.notice(result.message.slice(0, MAX_NOTICE_TEXT))
-    this.focusTarget.focused = this.ownFocused
+    if (!result.ok) return { failure: result.message.slice(0, MAX_NOTICE_TEXT) }
+    shell = {
+      component: result.value.component,
+      focusTarget: result.value.focusTarget,
+      checked: result.value.component,
+      extensionActions,
+      ...(extensionBinding === undefined ? {} : { extensionBinding }),
+      ...(provider === undefined ? {} : { provider }),
+    }
+    return { shell }
   }
 
-  private dispatchEvent(event: BlueUiEvent): void {
-    if (event.kind !== 'activate') return
-    const target = this.eventActions.get(event.controlId)
-    const binding = this.binding
+  private compileDefaultShell(): EditorShell {
+    const envelope = this.extensionEnvelope({ kind: 'editor-control' })
+    if (envelope.node.kind === 'editor-control') return this.plainShell()
+    const compiled = this.compileShellNode(envelope.node, envelope.actions, this.binding)
+    if ('shell' in compiled) return compiled.shell
+    this.options.notice(compiled.failure)
+    return this.plainShell()
+  }
+
+  private dispatchShellEvent(shell: EditorShell, event: BlueUiEvent): void {
+    const target = event.kind === 'activate' ? shell.extensionActions.get(event.controlId) : undefined
+    const binding = shell.extensionBinding
+    if (target === undefined) {
+      if (shell.provider !== undefined) this.dispatchProviderEvent(shell.provider, event)
+      return
+    }
     if (target === undefined || binding === undefined || target.entry.onEvent === undefined) return
     const revision = ++this.operationRevision
     const generation = this.actionGeneration
@@ -426,7 +636,7 @@ export class EditorExtensionRuntime implements BlueFocusable {
           controller.signal,
           ACTION_TIMEOUT_MS,
         )
-        if (this.binding !== binding || controller.signal.aborted || outcome.kind === 'aborted') return
+        if (shell !== this.shell || controller.signal.aborted || outcome.kind === 'aborted') return
         if (outcome.kind === 'timeout') { controller.abort(); this.options.notice('editor extension action timed out'); return }
         if (outcome.kind === 'rejected') { this.options.notice(boundedMessage(outcome.error, 'editor extension action failed')); return }
         const result = eventResult(outcome.value)
@@ -440,6 +650,245 @@ export class EditorExtensionRuntime implements BlueFocusable {
     void next.then(clearTail, error => {
       clearTail()
       try { this.options.notice(boundedMessage(error, 'editor extension action failed')) } catch { /* owner notice failures are contained */ }
+    })
+  }
+
+  /** @internal Dispatch a semantic event against the currently committed shell. */
+  dispatchEvent(event: BlueUiEvent): void { this.dispatchShellEvent(this.shell, event) }
+
+  private syncProviderBinding(next: EditorProviderBinding | undefined): void {
+    const previous = this.providerBinding
+    if (previous === next) return
+    const previousDesired = this.desiredProvider
+    const previousCandidate = previous?.entries.find(entry => entry.id === previousDesired)
+    this.providerBinding = next
+    this.abortProviderPending()
+    this.providerEpoch += 1
+    if (next === undefined) {
+      this.desiredProvider = 'blue.default'
+      this.activeProvider = undefined
+      this.providerFallback = undefined
+      this.providerAttemptNeeded = false
+      this.providerRuntimeFailure = undefined
+      this.activateShell(this.defaultShell)
+      return
+    }
+    this.desiredProvider = next.desiredId.trim() === '' ? 'blue.default' : next.desiredId
+    const candidate = next.entries.find(entry => entry.id === this.desiredProvider)
+    const desiredChanged = this.desiredProvider !== previousDesired
+    const generationChanged = candidate !== undefined && candidate !== previousCandidate
+    if (desiredChanged || generationChanged) {
+      this.breakerProvider = undefined
+      this.failureProvider = undefined
+      this.providerFailureTimes.length = 0
+      this.providerRuntimeFailure = undefined
+    }
+    if (this.activeProvider !== undefined && !next.entries.includes(this.activeProvider)) {
+      this.activeProvider = undefined
+      this.providerFallback = undefined
+      this.activateShell(this.defaultShell)
+    }
+    if (this.desiredProvider === 'blue.default') {
+      this.activeProvider = undefined
+      this.providerFallback = undefined
+      this.providerAttemptNeeded = false
+      this.activateShell(this.defaultShell)
+      return
+    }
+    this.providerAttemptNeeded = candidate === undefined || this.breakerProvider !== candidate
+  }
+
+  private extensionSnapshots(): readonly BlueEditorExtensionSnapshot[] {
+    const snapshots = (this.binding?.entries ?? []).map(entry => {
+      let before: BlueUiNode | undefined
+      let after: BlueUiNode | undefined
+      if (entry.before !== undefined) {
+        const admitted = validateBlueUiNode(entry.before)
+        if (admitted.ok && isPassive(admitted.value)) before = admitted.value
+      }
+      if (entry.after !== undefined) {
+        const admitted = validateBlueUiNode(entry.after)
+        if (admitted.ok && isPassive(admitted.value)) after = admitted.value
+      }
+      return Object.freeze({
+        id: entry.id,
+        ...(before === undefined ? {} : { before }),
+        ...(after === undefined ? {} : { after }),
+        ...(entry.hint === undefined ? {} : { hint: entry.hint }),
+        ...(entry.diagnostics === undefined ? {} : {
+          diagnostics: Object.freeze(entry.diagnostics.map(diagnostic => Object.freeze({
+            id: diagnostic.id,
+            message: diagnostic.message,
+            ...(diagnostic.tone === undefined ? {} : { tone: diagnostic.tone }),
+          }))),
+        }),
+        ...(entry.actions === undefined ? {} : {
+          actions: Object.freeze(entry.actions.map(action => Object.freeze({
+            id: action.id,
+            label: action.label,
+            ...(action.intent === undefined ? {} : { intent: action.intent }),
+            ...(action.disabled === undefined ? {} : { disabled: action.disabled }),
+            ...(action.busy === undefined ? {} : { busy: action.busy }),
+            ...(action.confirm === undefined ? {} : { confirm: action.confirm }),
+          }))),
+        }),
+      })
+    })
+    return Object.freeze(snapshots)
+  }
+
+  private attachmentSnapshots(): readonly BlueEditorAttachment[] {
+    const source = this.options.editor.getText()
+    const attachments = [...this.options.ctx.blueInteractionState.pasteImage.pastedImages.entries()].flatMap(([marker, ref]) => {
+      if (!source.includes(marker)) return []
+      return [Object.freeze({
+        id: String(ref.attachmentId),
+        label: ref.name ?? marker,
+        mediaType: ref.mediaType,
+        size: ref.bytes,
+      })]
+    })
+    return Object.freeze(attachments)
+  }
+
+  private currentAttachmentSignature(): string {
+    const source = this.options.editor.getText()
+    return [...this.options.ctx.blueInteractionState.pasteImage.pastedImages.entries()]
+      .filter(([marker]) => source.includes(marker))
+      .map(([marker, ref]) => `${marker}\u0000${String(ref.attachmentId)}\u0000${ref.name ?? ''}\u0000${ref.mediaType ?? ''}\u0000${String(ref.bytes ?? '')}`)
+      .join('\u0001')
+  }
+
+  private providerSnapshot(): BlueEditorSnapshot {
+    this.attachmentSignature = this.currentAttachmentSignature()
+    return Object.freeze({
+      mode: this.session?.mode ?? 'normal',
+      busy: this.session?.status === 'running',
+      attachments: this.attachmentSnapshots(),
+      extensions: this.extensionSnapshots(),
+    })
+  }
+
+  private candidateShell(provider: BlueEditorProvider, binding: EditorProviderBinding, width: number, generation: number): EditorShellCandidate {
+    let node: BlueEditorShellNode
+    try { node = provider.render(this.providerSnapshot()) }
+    catch (error) { return { failure: boundedMessage(error, 'editor provider render failed') } }
+    const providerBinding = { binding, entry: provider, generation }
+    const standalone = this.compileShellNode(node, new Map(), undefined, providerBinding)
+    if ('failure' in standalone) return standalone
+    const standaloneDry = standalone.shell.checked!.renderChecked(width, { dryRun: true })
+    if (standaloneDry.runtimeFailure !== undefined) return { failure: standaloneDry.runtimeFailure }
+
+    const envelope = this.extensionEnvelope(node)
+    if (envelope.node === node) return standalone
+    const combined = this.compileShellNode(envelope.node, envelope.actions, this.binding, providerBinding)
+    if ('failure' in combined) {
+      this.options.notice(`editor extensions could not wrap provider: ${combined.failure}`.slice(0, MAX_NOTICE_TEXT))
+      return standalone
+    }
+    const combinedDry = combined.shell.checked!.renderChecked(width, { dryRun: true })
+    if (combinedDry.runtimeFailure !== undefined) {
+      this.options.notice(`editor extensions failed around provider: ${combinedDry.runtimeFailure}`.slice(0, MAX_NOTICE_TEXT))
+      return standalone
+    }
+    return combined
+  }
+
+  private attemptDesiredProvider(): void {
+    const binding = this.providerBinding
+    const width = this.measuredWidth
+    if (!this.providerAttemptNeeded || binding === undefined || width === undefined || this.desiredProvider === 'blue.default') return
+    const provider = binding.entries.find(entry => entry.id === this.desiredProvider)
+    this.providerAttemptNeeded = false
+    if (provider === undefined) {
+      this.providerRuntimeFailure = `editor provider "${this.desiredProvider}" is unavailable`
+      return
+    }
+    if (this.breakerProvider === provider) return
+    const fence = ++this.providerEpoch
+    const candidate = this.candidateShell(provider, binding, width, fence)
+    if (fence !== this.providerEpoch || binding !== this.providerBinding || this.desiredProvider !== provider.id) return
+    if ('failure' in candidate) {
+      this.providerRuntimeFailure = candidate.failure
+      this.recordProviderFailure(provider, candidate.failure)
+      return
+    }
+    this.abortProviderPending()
+    this.providerFallback = this.shell.provider === undefined ? this.defaultShell : this.shell
+    this.activeProvider = provider
+    this.providerRuntimeFailure = undefined
+    this.activateShell(candidate.shell)
+  }
+
+  private clearProviderFailures(provider: NonNullable<EditorShell['provider']>): void {
+    if (provider.generation !== this.providerEpoch || this.failureProvider !== provider.entry) return
+    this.failureProvider = undefined
+    this.providerFailureTimes.length = 0
+    this.providerRuntimeFailure = undefined
+  }
+
+  private recordProviderFailure(provider: BlueEditorProvider, message: string): void {
+    const now = Date.now()
+    if (this.failureProvider !== provider) {
+      this.failureProvider = provider
+      this.providerFailureTimes.length = 0
+    }
+    while (this.providerFailureTimes.length > 0 && this.providerFailureTimes[0]! <= now - PROVIDER_FAILURE_WINDOW_MS) this.providerFailureTimes.shift()
+    this.providerFailureTimes.push(now)
+    this.providerRuntimeFailure = message
+    if (this.providerFailureTimes.length < PROVIDER_FAILURE_LIMIT) return
+    this.breakerProvider = provider
+    this.activeProvider = undefined
+    this.providerFallback = undefined
+    this.activateShell(this.defaultShell)
+  }
+
+  private dispatchProviderEvent(provider: NonNullable<EditorShell['provider']>, event: BlueUiEvent): void {
+    if (provider.entry.onEvent === undefined || this.shell.provider !== provider) return
+    const revision = ++this.providerOperationRevision
+    const generation = this.providerGeneration
+    const run = async (controller: AbortController): Promise<void> => {
+      this.providerPending.add(controller)
+      try {
+        const outcome = await settleCallback(
+          () => provider.binding.dispatch(provider.entry, event, controller.signal, revision),
+          controller.signal,
+          ACTION_TIMEOUT_MS,
+        )
+        if (controller.signal.aborted || generation !== this.providerGeneration || this.shell.provider !== provider || outcome.kind === 'aborted') return
+        if (outcome.kind === 'timeout') { controller.abort(); this.options.notice('editor provider action timed out'); return }
+        if (outcome.kind === 'rejected') { this.options.notice(boundedMessage(outcome.error, 'editor provider action failed')); return }
+        const result = eventResult(outcome.value)
+        if (!result.ok) this.options.notice(result.message.slice(0, MAX_NOTICE_TEXT))
+      } finally {
+        this.providerPending.delete(controller)
+        if (this.providerChange === controller) this.providerChange = undefined
+      }
+    }
+    const latestWins = event.kind === 'selection-change' || event.kind === 'value-change' || event.kind === 'tab-change'
+    if (latestWins) {
+      this.providerChange?.abort()
+      const controller = new AbortController()
+      this.providerChange = controller
+      void run(controller).catch(error => {
+        if (!controller.signal.aborted) {
+          try { this.options.notice(boundedMessage(error, 'editor provider action failed')) } catch { /* notice failures are contained */ }
+        }
+      })
+      return
+    }
+    const previous = this.providerEventTails.get(provider.entry.id) ?? Promise.resolve()
+    const next = previous.catch(() => {}).then(async () => {
+      if (generation !== this.providerGeneration || this.shell.provider !== provider) return
+      await run(new AbortController())
+    })
+    this.providerEventTails.set(provider.entry.id, next)
+    const clearTail = (): void => {
+      if (this.providerEventTails.get(provider.entry.id) === next) this.providerEventTails.delete(provider.entry.id)
+    }
+    void next.then(clearTail, error => {
+      clearTail()
+      try { this.options.notice(boundedMessage(error, 'editor provider action failed')) } catch { /* notice failures are contained */ }
     })
   }
 

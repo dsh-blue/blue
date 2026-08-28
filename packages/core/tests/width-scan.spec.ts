@@ -11,7 +11,8 @@ import type { SelectItem, SelectListTheme } from '@earendil-works/pi-tui'
 import { clampRowsToWidth, framePanel } from '../src/chrome.ts'
 import { renderFrontendView } from '../src/frontend-renderer.ts'
 import { GutterComponent } from '../src/gutter.ts'
-import { compileBlueStatusNode } from '../src/ui-compiler.ts'
+import { compileBlueEditorShellNode, compileBlueStatusNode } from '../src/ui-compiler.ts'
+import type { BlueEditor } from '../src/types.ts'
 import { WrappingSelectList } from '../src/wrapping-select-list.ts'
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '../src/width.ts'
 import { ADVERSARIAL, SCAN_WIDTHS, expectLinesFit } from './width-scan.ts'
@@ -29,6 +30,31 @@ const selectTheme: SelectListTheme = {
 const MIGRATION_WIDTHS = Array.from({ length: 119 }, (_, index) => index + 2)
 const identity = (text: string): string => text
 const statusColors = new Proxy({ logoGradient: [identity] }, { get: (target, key) => key === 'logoGradient' ? target.logoGradient : identity })
+
+function scanEditor(text: string): BlueEditor {
+  return {
+    focused: false,
+    disableSubmit: false,
+    setSubmitBarrier: () => {},
+    submit: () => {},
+    isShowingAutocomplete: () => false,
+    getText: () => text,
+    setText: () => {},
+    addToHistory: () => {},
+    getHistory: () => [],
+    setBorderColor: () => {},
+    setPromptSymbol: () => {},
+    setBorderLabel: () => {},
+    setConnectedAbove: () => {},
+    setGhostHint: () => {},
+    setAutocompleteProvider: () => {},
+    getExpandedText: () => text,
+    renderContent: width => wrapTextWithAnsi(text, Math.max(1, width)),
+    insertText: () => {},
+    render: width => wrapTextWithAnsi(text, Math.max(1, width)),
+    invalidate: () => {},
+  }
+}
 
 describe('core width-scan', () => {
   for (const { name, text } of ADVERSARIAL) {
@@ -115,6 +141,32 @@ describe('core width-scan', () => {
         const rendered = result.value.component.renderStatus(width)
         expect(rendered.rows.length).toBeLessThanOrEqual(3)
         expectLinesFit(`status/${name}`, rendered.rows, width)
+      }
+    })
+
+    it(`canonical editor shell checked render survives ${name}`, () => {
+      const editor = scanEditor(text)
+      const result = compileBlueEditorShellNode({
+        kind: 'stack',
+        direction: 'column',
+        children: [
+          { node: { kind: 'rich-text', spans: [{ text, tone: 'accent', emphasis: 'strong' }] } },
+          { node: { kind: 'editor-control' } },
+        ],
+      }, {
+        editor,
+        components: { visibleWidth, wrapText: wrapTextWithAnsi, truncateToWidth } as never,
+        colors: statusColors as never,
+        getViewport: () => ({ columns: 80, rows: 20 }),
+        screenMode: 'main',
+        emit: () => {},
+      })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      for (const width of SCAN_WIDTHS) {
+        const rendered = result.value.component.renderChecked(width, { dryRun: true })
+        expect(rendered.runtimeFailure).toBeUndefined()
+        expectLinesFit(`editor-shell/${name}`, rendered.rows, width)
       }
     })
   }

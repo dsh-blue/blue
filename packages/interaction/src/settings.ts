@@ -55,6 +55,8 @@ export interface BlueSettings {
   readonly theme: 'dark' | 'light' | 'ocean' | 'paper' | 'auto'
   /** User-selected status provider id; `blue.default` keeps the built-in footer. */
   readonly statusProvider: string
+  /** User-selected editor provider id; `blue.default` keeps the built-in shell. */
+  readonly editorProvider: string
   /** Whether thinking blocks start collapsed. */
   readonly collapseThinking: boolean
   /** Whether tool output starts collapsed (ctrl+o toggles in the session). */
@@ -81,6 +83,7 @@ export const Config: z<BlueSettings> = z.object({
   updateChannel: z.string().default('rc'),
   theme: z.union([z.const('dark'), z.const('light'), z.const('ocean'), z.const('paper'), z.const('auto')]).default('dark'),
   statusProvider: z.string().default('blue.default'),
+  editorProvider: z.string().default('blue.default'),
   collapseThinking: z.boolean().default(true),
   collapseToolCalls: z.boolean().default(true),
   windowTurns: z.number().step(1).min(1).default(15),
@@ -98,6 +101,7 @@ export const DEFAULT_SETTINGS: BlueSettings = {
   updateChannel: 'rc',
   theme: 'dark',
   statusProvider: 'blue.default',
+  editorProvider: 'blue.default',
   collapseThinking: true,
   collapseToolCalls: true,
   windowTurns: 15,

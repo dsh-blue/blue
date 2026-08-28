@@ -12,6 +12,7 @@ import type {
   BlueEditorCompletionItem,
   BlueEditorCompletionRequestV2,
   BlueEditorExtensionContribution,
+  BlueEditorProvider,
   BlueEditorSubmitRequest,
   BlueEditorSubmitValue,
   BlueResult,
@@ -69,6 +70,19 @@ export interface EditorExtensionBinding {
   ): Promise<BlueResult>
 }
 
+/** Owner-only selection and invocation boundary over inert editor providers. */
+export interface EditorProviderBinding {
+  readonly revision: number
+  readonly desiredId: string
+  readonly entries: readonly BlueEditorProvider[]
+  dispatch(
+    provider: BlueEditorProvider,
+    event: BlueUiEvent,
+    signal: AbortSignal,
+    revision: number,
+  ): Promise<BlueResult>
+}
+
 /** Presence id of the optional editor-plus enhancement. */
 export const ENHANCEMENT_EDITOR_PLUS = 'blue-editor-plus'
 
@@ -79,6 +93,7 @@ export class EditorHostService extends Service {
   private readonly enhancements = new Set<string>()
   private readonly submitTransformers: SubmitTransformer[] = []
   private extensionBinding: EditorExtensionBinding | undefined
+  private providerBinding: EditorProviderBinding | undefined
   private readonly editorStateListeners = new Set<() => void>()
   private readonly autocompleteSources = new Map<string, BlueAutocompleteProvider>()
 
@@ -113,6 +128,7 @@ export class EditorHostService extends Service {
 
   /** Current owner binding; callbacks remain private to this frontend tree. */
   get extensions(): EditorExtensionBinding | undefined { return this.extensionBinding }
+  get providers(): EditorProviderBinding | undefined { return this.providerBinding }
 
   /** Replace the renderer owner's extension snapshot and invalidate consumers. */
   setExtensions(value: EditorExtensionBinding | undefined): void {
@@ -124,6 +140,18 @@ export class EditorHostService extends Service {
   /** Clear only the binding installed by one retiring owner generation. */
   clearExtensions(value: EditorExtensionBinding): void {
     if (this.extensionBinding === value) this.setExtensions(undefined)
+  }
+
+  /** Replace the renderer owner's provider selection and candidate snapshot. */
+  setProviders(value: EditorProviderBinding | undefined): void {
+    if (this.providerBinding === value) return
+    this.providerBinding = value
+    this.emitEditorState()
+  }
+
+  /** Clear only the provider binding installed by one retiring owner generation. */
+  clearProviders(value: EditorProviderBinding): void {
+    if (this.providerBinding === value) this.setProviders(undefined)
   }
 
   /** Observe editor, extension, and autocomplete-source changes. */
@@ -197,6 +225,7 @@ export class EditorHostService extends Service {
     this.enhancements.clear()
     this.submitTransformers.splice(0)
     this.extensionBinding = undefined
+    this.providerBinding = undefined
     this.autocompleteSources.clear()
     this.editorStateListeners.clear()
   }
@@ -218,4 +247,6 @@ export const applySubmitTransformers = (ctx: Context, text: string): ContentBloc
 export const applyReversibleSubmitTransformers = (ctx: Context, text: string): SubmitTransformation => ctx.blueEditorHost.applyReversibleSubmitTransformers(text)
 export const setEditorExtensions = (ctx: Context, value: EditorExtensionBinding | undefined): void => { ctx.blueEditorHost.setExtensions(value) }
 export const clearEditorExtensions = (ctx: Context, value: EditorExtensionBinding): void => { ctx.blueEditorHost.clearExtensions(value) }
+export const setEditorProviders = (ctx: Context, value: EditorProviderBinding | undefined): void => { ctx.blueEditorHost.setProviders(value) }
+export const clearEditorProviders = (ctx: Context, value: EditorProviderBinding): void => { ctx.blueEditorHost.clearProviders(value) }
 export const registerEditorAutocompleteSource = (ctx: Context, id: string, provider: BlueAutocompleteProvider): (() => void) => ctx.blueEditorHost.registerAutocompleteSource(id, provider)

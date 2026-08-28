@@ -652,7 +652,7 @@ editor.provider
 
 ### 9.3 资源限制
 
-rc.1 固定：单 view 20,000 字符、递归深度 8、总节点数 256、单 collection 200 项、每插件 8 个 pane、每插件 1 个 capturing overlay、全局 overlay 栈深度 4、每 contribution 每秒 20 次 refresh（同一 render tick 合并）。provider 在 60 秒内连续 3 次 render/runtime failure 后触发 circuit breaker，回退默认；一次成功 dry-render 重置计数。side lane 在 transcript 可保留至少 40 列时进入，在可保留至少 44 列时才从窄屏状态恢复，形成 4 列 hysteresis。
+rc.1 固定：单 view 20,000 字符、递归深度 8、总节点数 256、单 collection 200 项、每插件 8 个 pane、每插件 1 个 capturing overlay、全局 overlay 栈深度 4、每 contribution 每秒 20 次 refresh（同一 render tick 合并）。provider 在 60 秒内连续 3 次 render/runtime failure 后触发 circuit breaker，回退默认；status provider 的成功 dry-render 重置计数，editor provider 则只有最新 generation 真正提交成功 live frame 后重置，旧 LKG frame 不得清除新 candidate 的失败。side lane 在 transcript 可保留至少 40 列时进入，在可保留至少 44 列时才从窄屏状态恢复，形成 4 列 hysteresis。
 
 插件不能：
 

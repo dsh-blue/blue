@@ -14,7 +14,7 @@ Three keywords:
 
 - **Bundle** — a set of plugins shipped with their own mount code, declaring its plugin rows through the package's `cordis.patch.yml`; `dsh-base` is the first layer of every profile.
 - **Profile** — a named assembly: the bundles it layers, its own patch overrides, and its independently installed plugins. See [Profiles & directories](/en/dsh/profiles).
-- **Blue** — is a bundle: it inserts 29 Blue-owned rows over `dsh-base` and takes over the terminal interface (see the [features overview](/en/features/)).
+- **Blue** — is a bundle: it inserts 30 Blue-owned rows over `dsh-base` and takes over the terminal interface (see the [features overview](/en/features/)).
 
 ## CLI cheat sheet
 

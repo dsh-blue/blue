@@ -26,7 +26,9 @@ Forms keep inline validation below the failing field, while text fields retain t
 
 Readable export uses the official `blueConversation` projection after flushing and reading the durable artifact. Full export deliberately emits the decoded audit event stream. `/copy` uses the official conversation value and the OSC 52/native clipboard pipeline.
 
-The `blue` settings namespace also persists `statusProvider`. `blue.default` selects the shipped additive footer; another non-empty id selects that registered status-provider candidate. A missing or failing id stays configured while Blue renders a safe fallback, so installing or repairing the provider can activate the original choice later.
+The `blue` settings namespace persists both exclusive provider choices. `statusProvider` selects the footer and `editorProvider` selects the editor shell; `blue.default` keeps the shipped implementation for each surface. Another non-empty id remains configured even while its candidate is absent or failing, so installing, repairing, or reloading that provider can satisfy the original choice without a settings rewrite.
+
+`./editor-provider-owner` consumes the exclusive editor-shell selection. A candidate stays inert until selected, then Blue validates and dry-renders it at the live width around the same editing engine before atomically replacing the inner shell. Provider swaps preserve draft, cursor, history, IME, attachments, focus, completion, and submit transactions. Invalid or failing candidates retain the same-session interactive shell or fall back to `blue.default`; repeated failures open a bounded three-in-60-second breaker without retaining timers.
 
 ## Optional Subpaths
 
@@ -37,6 +39,7 @@ The `blue` settings namespace also persists `statusProvider`. `blue.default` sel
 - `./paste-image`: native clipboard image/file ingestion.
 - `./command-model`: renderer-neutral command models and execution actions.
 - `./plugin-host-bridge`: public command/notification/editor-extension adapter.
+- `./editor-provider-owner`: exclusive editor-shell selection and event owner.
 
 All registrations, async work, screen children, aliases, and host contributions are disposed with their owning Fiber.
 

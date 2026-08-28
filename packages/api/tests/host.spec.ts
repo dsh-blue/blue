@@ -714,6 +714,56 @@ describe('BluePluginHostService', () => {
     expect(snapshotBluePluginHost(host)).toMatchObject({ statusRevision: (refreshed.statusRevision ?? 0) + 1, statusProvidersRevision: (refreshed.statusProvidersRevision ?? 0) + 1 })
   })
 
+  it('fences editor providers independently and grants their event owner gestures', async () => {
+    const host = new BluePluginHostService(new Context())
+    const providerOwner = attach(host, ['editor.provider'])
+    const overlayOwner = attach(host, ['overlays'])
+    attach(host, ['commands', 'status.provider', 'editor.extensions'])
+    const opened = host.open(consumer(), manifest(['editor.provider', 'overlays', 'commands', 'status.provider', 'editor.extensions']))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    const initial = snapshotBluePluginHost(host)
+    const commandRegistration = opened.value.commands!.register(command('unrelated-command'))
+    const statusProviderRegistration = opened.value.statusProviders!.register({ id: 'unrelated-status-provider', render: () => ({ kind: 'text', content: 'status' }) })
+    const extensionRegistration = opened.value.editorExtensions!.register({ id: 'unrelated-extension' })
+    expect(commandRegistration.ok && statusProviderRegistration.ok && extensionRegistration.ok).toBe(true)
+    expect(snapshotBluePluginHost(host).editorProvidersRevision).toBe(initial.editorProvidersRevision)
+
+    const render = () => ({ kind: 'editor-control' as const })
+    const onEvent = () => ({ ok: true as const, value: undefined })
+    const provider = opened.value.editorProviders!.register({ id: 'provider', render, onEvent })
+    expect(provider.ok).toBe(true)
+    const admitted = opened.value.editorProviders!.list()[0]!
+    expect(admitted).toMatchObject({ id: 'provider', render, onEvent })
+    expect(Object.isFrozen(admitted)).toBe(true)
+    expect(snapshotBluePluginHost(host).editorProvidersRevision).toBe((initial.editorProvidersRevision ?? 0) + 1)
+    if (!provider.ok) return
+    expect(provider.value.refresh()).toMatchObject({ ok: true })
+    await Promise.resolve()
+    const refreshed = snapshotBluePluginHost(host)
+    expect(refreshed.editorProvidersRevision).toBe((initial.editorProvidersRevision ?? 0) + 2)
+
+    let gesture: BlueUserGesture | undefined
+    await runBlueUserGesture(host, providerOwner, value => {
+      gesture = value
+      expect(opened.value.overlays!.open({ id: 'provider-action', capturing: true, render: () => view }, { userGesture: value })).toMatchObject({ ok: true })
+    })
+    expect(opened.value.overlays!.open({ id: 'provider-action-reuse', capturing: true, render: () => view }, { userGesture: gesture })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+
+    provider.value.dispose()
+    const afterDispose = snapshotBluePluginHost(host).editorProvidersRevision
+    expect(afterDispose).toBe((refreshed.editorProvidersRevision ?? 0) + 1)
+    const accessor = Object.defineProperty({ id: 'accessor-provider' }, 'render', { enumerable: true, get: () => render })
+    expect(opened.value.editorProviders!.register(accessor as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message: 'render must be an own data property' })
+    expect(snapshotBluePluginHost(host).editorProvidersRevision).toBe(afterDispose)
+    const pending = createBlueUserGesture(host, providerOwner)
+    expect(pending).toMatchObject({ ok: true })
+    providerOwner.dispose()
+    expect(createBlueUserGesture(host, providerOwner)).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+    if (pending.ok) expect(opened.value.overlays!.open({ id: 'provider-action-after-unload', capturing: true, render: () => view }, { userGesture: pending.value })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+    overlayOwner.dispose()
+  })
+
   it('coalesces refreshes, enforces rolling quota, and cancels pending ticks', async () => {
     let now = 10
     const host = new BluePluginHostService(new Context(), { now: () => now })
@@ -851,6 +901,7 @@ describe('BluePluginHostService', () => {
     }
     expect(legacy.revision).toBeUndefined()
     expect(legacy.editorExtensionsRevision).toBeUndefined()
+    expect(legacy.editorProvidersRevision).toBeUndefined()
     expect(legacy.panes[0]?.revision).toBeUndefined()
     expect(legacy.overlays[0]?.revision).toBeUndefined()
   })

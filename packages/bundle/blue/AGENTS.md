@@ -4,7 +4,7 @@ Implementation detail for this package (the user-facing surface is `README.md`/`
 
 ## Patch layout
 
-The installable unit contributes 29 Blue-owned rows: two host-support rows plus 27 product rows split into 8 baseline, 15 enhancement, and 4 assembly rows. The baseline contains the API host, core/theme, banner, transcript model hosts/footer, conversation projection, and official transcript consumer. Conversation is baseline because no legacy event-fold renderer remains. Official tool presentation uses canonical models and no intent rows are mounted. The view and interaction bridges are the only route from public dock/additive-status/command/notification contributions into concrete owner registries; the independent status-provider owner is the only exclusive status composition route. The bundle module itself mounts nothing.
+The installable unit contributes 30 Blue-owned rows: two host-support rows plus 28 product rows split into 8 baseline, 15 enhancement, and 5 assembly rows. The baseline contains the API host, core/theme, banner, transcript model hosts/footer, conversation projection, and official transcript consumer. Conversation is baseline because no legacy event-fold renderer remains. Official tool presentation uses canonical models and no intent rows are mounted. The view and interaction bridges are the only route from public dock/additive-status/command/notification contributions into concrete owner registries; independent status/editor-provider owners are the exclusive composition routes. The bundle module itself mounts nothing.
 
 F3 `blue-context` remains a validation-only adapter for the cutover release. It supplies the official app-projection-to-frontend adapter when installed independently; the bundle's `/context` command and `blue-status-context` consume app-owned renderer-neutral session details/facts instead. The independent fixture covers projection replay, multi-key coalescing, session-epoch rejection, and unload without adding the package to the bundle dependency closure.
 
@@ -22,6 +22,13 @@ remain inert on installation; `blue.default` is the built-in fallback, and a
 bad or absent desired id is never written back. Bundle e2e fixture wrappers
 must mirror source inject lists exactly; no contribution may duplicate content
 in the default composition.
+
+W5-B adds `blue-editor-provider-owner` immediately after the parent
+interaction row. Its row-level `blueEditorHost` injection prevents capability
+readiness before the stable frontend-tree editor composition exists. The owner
+follows `blue.editorProvider`, publishes inert candidates into the existing
+editor outer delegate, and preserves `blue.default` on owner unload or failed
+first activation; it never creates a second editor engine.
 
 The BTW row explicitly injects app-owned `blueSessionActions`. Although it appears before `blue-app`, Cordis holds the pane fiber until the app provides the action service; the app itself still publishes the service synchronously before its loader-settlement Agent creation. This ordering keeps Agent/session seeding out of transcript without adding an implicit race.
 

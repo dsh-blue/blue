@@ -1,19 +1,19 @@
 # 内置插件
 
-Blue 的 installable bundle 含 29 条 Blue 自有行：2 条宿主支撑行，以及按基线、增强、装配三段组织的 27 条产品行。外部插件通过 renderer-neutral public API 接入；内部 row 之间用显式 `inject` 和 model/action seam 连接。
+Blue 的 installable bundle 含 30 条 Blue 自有行：2 条宿主支撑行，以及按基线、增强、装配三段组织的 28 条产品行。外部插件通过 renderer-neutral public API 接入；内部 row 之间用显式 `inject` 和 model/action seam 连接。
 
-patch 里实际还有第 30 条 insert 行——Harness 的 `session-title-all-prompts-llm`（标题节奏 swap：禁用 base 的 `session-title-llm` 首条消息定标题，换成每条用户消息重拟标题、歪标题下条自纠）。它是 Harness 包而非 Blue 自有行，所以上面的 29 行口径不含它。
+patch 里实际还有第 31 条 insert 行——Harness 的 `session-title-all-prompts-llm`（标题节奏 swap：禁用 base 的 `session-title-llm` 首条消息定标题，换成每条用户消息重拟标题、歪标题下条自纠）。它是 Harness 包而非 Blue 自有行，所以上面的 30 行口径不含它。
 
 <!-- BEGIN diagram:blue-composition -->
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml - 29 Blue-owned rows · 29 条 Blue 自有行"]
+    subgraph bundle["cordis.patch.yml - 30 Blue-owned rows · 30 条 Blue 自有行"]
         subgraph host["host support 宿主支撑 - 2 rows"]
             presets["blue-agent-presets"]
             creative["blue-creative-host"]
         end
-        subgraph product["product UI 产品 UI - 27 rows"]
+        subgraph product["product UI 产品 UI - 28 rows"]
             subgraph baseline["baseline 基线 - 8 rows"]
                 api["blue-api-host"]
                 core["blue-core · blue-theme-dark"]
@@ -28,8 +28,9 @@ flowchart TB
                 viewBridge["blue-plugin-view-bridge"]
                 statusOwner["blue-status-provider-owner"]
             end
-            subgraph assembly["assembly 装配 - 4 rows"]
+            subgraph assembly["assembly 装配 - 5 rows"]
                 interaction["blue-interaction · blue-plugin-interaction-bridge"]
+                editorOwner["blue-editor-provider-owner"]
                 startup["blue-startup · blue-app"]
             end
         end
@@ -56,7 +57,7 @@ flowchart TB
 
 | 插件 | 说明 |
 |---|---|
-| `blue-api-host` | manifest 校验与 capability-scoped command/status/dock/notification registries |
+| `blue-api-host` | manifest 校验与八个公开 capability 的 scoped registries |
 | `blue-core` | 唯一 pi-tui/raw-terminal adapter，提供 screen/keymap/components/terminal facts |
 | `blue-theme-dark` | 默认 dark theme provider |
 | `blue-banner` | 启动欢迎横幅 |
@@ -82,15 +83,16 @@ flowchart TB
 | `blue-pane-todo` | projection-backed todo model（Ctrl-T 折叠切换，全完成自动收起） |
 | `blue-pane-btw` | `/btw` 侧问面板：fork 当前会话问旁路问题（opaque owned side-session action + official projection） |
 | `blue-pane-agents` | projected subagent group model（dock 末行，kimi swarm-pane 语义） |
-| `blue-plugin-view-bridge` | public status/dock contributions -> owner model registries |
+| `blue-plugin-view-bridge` | public status/pane contributions -> owner model registries |
 | `blue-status-provider-owner` | exclusive status-provider selection、session/settings handoff 与 fallback lifecycle owner |
 
-## 装配（4 行）
+## 装配（5 行）
 
 | 插件 | 说明 |
 |---|---|
 | `blue-interaction` | editor、commands、panels、question/approval providers |
-| `blue-plugin-interaction-bridge` | public command/notification contributions -> Harness/editor consumer |
+| `blue-editor-provider-owner` | 按 `blue.editorProvider` 选择独占 editor shell，保留 editor engine 并管理 fallback/rollback |
+| `blue-plugin-interaction-bridge` | public command/notification/editor-extension contributions -> Harness/editor consumer |
 | `blue-startup` | `[task]` 与 `--resume` 启动值 |
 | `blue-app` | Agent driver；提供 readonly session reader/projections 和 structured actions |
 

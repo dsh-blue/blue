@@ -40,6 +40,8 @@ export interface BluePluginHostSnapshot {
   readonly statusProvidersRevision?: number
   /** Monotonic fence for editor-extension mutations only. */
   readonly editorExtensionsRevision?: number
+  /** Monotonic fence for editor-provider candidate mutations only. */
+  readonly editorProvidersRevision?: number
   readonly commands: readonly BlueCommandContribution[]
   readonly status: readonly BlueStatusEntryContribution[] & readonly BlueStatusContribution[]
   readonly dock: readonly BlueDockContribution[]
@@ -522,7 +524,7 @@ export function attachBluePluginHostCapabilities(host: BluePluginHostService, ow
   const owned = [...new Set(capabilities)]
   for (const capability of owned) if (!IMPLEMENTED_CAPABILITIES.has(capability as Capability)) throw new Error(`Blue owner adapter cannot attach unsupported capability "${capability}"`)
   for (const capability of owned as Capability[]) state.owners.set(capability, (state.owners.get(capability) ?? 0) + 1)
-  const dispatchOwner = owned.some(capability => capability === 'commands' || capability === 'panes' || capability === 'overlays' || capability === 'editor.extensions')
+  const dispatchOwner = owned.some(capability => capability === 'commands' || capability === 'panes' || capability === 'overlays' || capability === 'editor.extensions' || capability === 'editor.provider')
   const overlayOwner = owned.includes('overlays')
   if (dispatchOwner) state.gestureOwners.set(owner, (state.gestureOwners.get(owner) ?? 0) + 1)
   if (overlayOwner) state.overlayOwners.set(owner, (state.overlayOwners.get(owner) ?? 0) + 1)
@@ -624,7 +626,7 @@ export function snapshotBluePluginHost(host: BluePluginHostService): BluePluginH
   const state = ownerStateOf(host)
   // W2-C owner compatibility only: the aggregate remains the final narrowed
   // status type. W3-C removes this cast when transcript uses the status compiler.
-  return Object.freeze({ revision: state.revision.value, statusRevision: state.status.revision, statusProvidersRevision: state.statusProviders.revision, editorExtensionsRevision: state.extensions.revision, commands: state.commands.list(), status: state.status.list() as readonly BlueStatusEntryContribution[] & readonly BlueStatusContribution[], dock: state.dock.list(), panes: state.panes.list(), overlays: state.overlays.list(), editorExtensions: state.extensions.list(), statusProviders: state.statusProviders.list(), editorProviders: state.editorProviders.list() })
+  return Object.freeze({ revision: state.revision.value, statusRevision: state.status.revision, statusProvidersRevision: state.statusProviders.revision, editorExtensionsRevision: state.extensions.revision, editorProvidersRevision: state.editorProviders.revision, commands: state.commands.list(), status: state.status.list() as readonly BlueStatusEntryContribution[] & readonly BlueStatusContribution[], dock: state.dock.list(), panes: state.panes.list(), overlays: state.overlays.list(), editorExtensions: state.extensions.list(), statusProviders: state.statusProviders.list(), editorProviders: state.editorProviders.list() })
 }
 
 /** Observe aggregate changes from a Blue-owned adapter. */
