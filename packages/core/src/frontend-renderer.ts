@@ -15,6 +15,8 @@ import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from './width.ts'
 /** Optional renderer hints; colors enable semantic frontend paint. */
 export interface FrontendRenderOptions {
   readonly colors?: BlueSemanticColors
+  /** Internal legacy-model row budget; public surfaces keep the compiler default. */
+  readonly maxRows?: number
 }
 
 const identity = (value: string): string => value
@@ -53,6 +55,19 @@ const identityColors = {
   logoGradient: [identity],
 } satisfies BlueSemanticColors
 const compilerComponents = { visibleWidth, wrapText: wrapTextWithAnsi, truncateToWidth } as BlueComponents
+
+function compatibilityColors(colors: BlueSemanticColors | undefined): BlueSemanticColors {
+  if (colors === undefined) return identityColors
+  return {
+    ...identityColors,
+    diffAdded: colors.diffAdded,
+    diffRemoved: colors.diffRemoved,
+    diffAddedStrong: colors.diffAddedStrong,
+    diffRemovedStrong: colors.diffRemovedStrong,
+    diffGutter: colors.diffGutter,
+    diffMeta: colors.diffMeta,
+  }
+}
 
 /** A BlueComponent consumer for a readonly provider model. */
 export class FrontendModelComponent {
@@ -103,9 +118,10 @@ export function renderFrontendView(view: View, width: number, opts?: FrontendRen
   const safeWidth = Math.max(1, Number.isFinite(width) ? Math.floor(width) : 1)
   const result = compileBlueUiNode(toBlueUiNode(view), {
     components: compilerComponents,
-    colors: opts?.colors ?? identityColors,
+    colors: compatibilityColors(opts?.colors),
     getViewport: () => ({ columns: safeWidth, rows: Number.MAX_SAFE_INTEGER }),
     screenMode: 'main',
+    ...(opts?.maxRows === undefined ? {} : { maxLeafRows: opts.maxRows }),
     /* v8 ignore next -- legacy frontend views are passive */
     emit: () => {},
   })

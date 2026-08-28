@@ -9,7 +9,7 @@
 import type { BlueErrorCode, BlueFormField, BlueTone, BlueUiEvent, BlueUiNode, BlueViewportCondition, BlueView } from '@dsh-blue/blue-api'
 import { CURSOR_MARKER, HStack, ScrollView, VStack, type Component } from '@earendil-works/pi-tui'
 import { getLayoutNode, LAYOUT_NODE, type LayoutNode, type LayoutViewport } from '@earendil-works/pi-tui/dist/layout-node.js'
-import { paintPluginTone, renderPluginView } from './plugin-view.ts'
+import { paintPluginTone, renderCanonicalView } from './plugin-view.ts'
 import type { BlueComponent, BlueComponents, BlueFocusable, BlueSemanticColors } from './types.ts'
 import {
   renderActions,
@@ -43,6 +43,8 @@ export interface BlueUiCompilerOptions {
   readonly colors: BlueSemanticColors
   readonly getViewport: () => BlueUiViewport
   readonly screenMode: 'main' | 'alternate'
+  /** Internal compatibility budget; public plugin surfaces retain the 20-row default. */
+  readonly maxLeafRows?: number
   readonly emit: (event: BlueUiEvent) => void
   /** Called only when Escape did not first cancel compiler-local state. */
   readonly onUnhandledEscape?: () => void
@@ -263,7 +265,13 @@ function compileNode(node: BlueUiNode, state: FocusState, options: BlueUiCompile
     case 'fields':
     case 'code':
     case 'diff':
-    case 'sections': return staticComponent(width => renderPluginView(node as BlueView, width, options.components, options.colors, 20), options)
+    case 'sections': return staticComponent(width => renderCanonicalView(
+      node as BlueView,
+      width,
+      options.components,
+      options.colors,
+      options.maxLeafRows ?? 20,
+    ), options)
     case 'rich-text': return staticComponent(width => options.components.wrapText(joinSpans(node, options.colors), Math.max(1, width)), options)
     case 'stack': {
       const stackOptions = {

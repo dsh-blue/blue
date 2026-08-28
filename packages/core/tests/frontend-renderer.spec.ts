@@ -45,6 +45,12 @@ describe('frontend renderer adapter', () => {
     component.invalidate()
   })
 
+  it('lets bounded official adapters raise the canonical leaf-row budget', () => {
+    const code = Array.from({ length: 24 }, (_, index) => `row ${String(index)}`).join('\n')
+    expect(renderFrontendView({ kind: 'code', code }, 20)).toHaveLength(20)
+    expect(renderFrontendView({ kind: 'code', code }, 20, { maxRows: 24 })).toHaveLength(24)
+  })
+
   it('renders aligned diff rows, colored only when colors are supplied', () => {
     const view = { kind: 'diff' as const, before: 'a\nb', after: 'a\nc' }
     expect(renderFrontendView(view, 20)).toEqual(['  a', '- b', '+ c'])
