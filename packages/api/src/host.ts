@@ -746,14 +746,14 @@ export function attachBluePluginHostSessionOwner(host: BluePluginHostService, ow
   return registration
 }
 
-function attachBluePluginSurfaceBuffers(host: BluePluginHostService, owner: EffectOwner): BlueRegistration {
+function attachBluePluginRegistrationBuffers(host: BluePluginHostService, owner: EffectOwner): BlueRegistration {
   const state = ownerStateOf(host)
-  const capabilities = ['panes', 'overlays'] as const
+  const capabilities = ['commands', 'status', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'] as const
   for (const capability of capabilities) state.owners.set(capability, (state.owners.get(capability) ?? 0) + 1)
   const registration = new Registration(() => {
     for (const capability of capabilities) {
       const count = state.owners.get(capability)
-      /* v8 ignore start -- the buffer lease owns both entries until this cleanup runs. */
+      /* v8 ignore start -- the buffer lease owns all entries until this cleanup runs. */
       if (count === undefined) continue
       /* v8 ignore stop */
       if (count <= 1) state.owners.delete(capability); else state.owners.set(capability, count - 1)
@@ -919,7 +919,7 @@ export class BluePluginHostService extends Service implements BluePluginHost {
 export const name = 'blue-api-host'
 export function apply(ctx: Context): void {
   const host = new BluePluginHostService(ctx)
-  // Panes and overlays are durable host buffers: renderer owners may mount
-  // later or reload, then replay the contributions admitted in that gap.
-  attachBluePluginSurfaceBuffers(host, ctx)
+  // Registration capabilities are durable host buffers: consumer owners may
+  // mount later or reload, then replay contributions admitted in that gap.
+  attachBluePluginRegistrationBuffers(host, ctx)
 }

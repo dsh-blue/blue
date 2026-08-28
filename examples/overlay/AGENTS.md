@@ -6,5 +6,11 @@ owner-minted `BlueUserGesture`. The gesture is one-shot, and the host-scoped
 API facade rejects retained callbacks after consumer unload. There are no
 timers or background tasks.
 
+Command and overlay registrations are durable host buffers, so this sibling
+row may register before the interaction/core owners and is replayed after an
+owner gap or reload. Buffering grants no dispatch or gesture authority: a
+capturing overlay still requires a gesture minted by the active frontend-tree
+owner. Consumer unload removes both registrations.
+
 Keep the package opt-in and outside the product bundle. Its manifest, entry
 name, package name, and one-row Cordis patch id/name remain identical.

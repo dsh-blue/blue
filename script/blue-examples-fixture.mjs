@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Pack and install the complete Blue ecosystem example suite, then exercise
- * seven public-export scenarios in one independent npm project.
+ * eight public-export scenarios in one independent npm project.
  *
  * @module script/blue-examples-fixture
  */
@@ -444,6 +444,75 @@ try {
     ensure(snapshot(active.host).editorProviders.length === 0, 'EXAMPLES_EDITOR_UNLOAD', 'editor candidate survived unload')
     active.owner.dispose()
   })
+
+  await scenario('composition.owner-late-durable-replay', async () => {
+    const ctx = new cordis.Context()
+    api.apply(ctx)
+    const host = ctx.bluePluginHost[cordis.symbols.original] ?? ctx.bluePluginHost
+    const consumer = new Scope(ctx.bluePluginHost)
+
+    overlay.apply(consumer)
+    status.apply(consumer)
+    editor.apply(consumer)
+    const additive = consumer.bluePluginHost.open(consumer, {
+      id: '@fixture/durable-contributions',
+      api: '^1.0.0',
+      capabilities: ['status', 'editor.extensions'],
+    })
+    ensure(additive.ok, 'EXAMPLES_DURABLE_OPEN', additive.message ?? 'durable additive contributions could not open before their owners')
+    if (!additive.ok) return
+    ensure(additive.value.status?.register({ id: 'durable-status', render: () => ({ kind: 'text', content: 'durable status' }) }).ok === true, 'EXAMPLES_DURABLE_STATUS', 'status did not register before its owner')
+    ensure(additive.value.editorExtensions?.register({ id: 'durable-extension', hint: 'durable hint' }).ok === true, 'EXAMPLES_DURABLE_EXTENSION', 'editor extension did not register before its owner')
+
+    const buffered = snapshot(host)
+    ensure(buffered.commands.some(entry => entry.id === 'example-overlay'), 'EXAMPLES_DURABLE_COMMAND', 'command did not buffer before its owner')
+    ensure(buffered.status.some(entry => entry.id === 'durable-status'), 'EXAMPLES_DURABLE_STATUS', 'status did not buffer before its owner')
+    ensure(buffered.editorExtensions.some(entry => entry.id === 'durable-extension'), 'EXAMPLES_DURABLE_EXTENSION', 'editor extension did not buffer before its owner')
+    ensure(buffered.statusProviders.some(entry => entry.id === 'example.status.compact'), 'EXAMPLES_DURABLE_STATUS_PROVIDER', 'status provider did not buffer before its owner')
+    ensure(buffered.editorProviders.some(entry => entry.id === 'example.editor.focused'), 'EXAMPLES_DURABLE_EDITOR_PROVIDER', 'editor provider did not buffer before its owner')
+
+    const owner = new Scope(host)
+    ensure(!api.createBlueUserGesture(host, owner).ok, 'EXAMPLES_DURABLE_OWNER_EARLY', 'owner minted a gesture before its bridge attached')
+    const ownerLease = api.attachBluePluginHostCapabilities(host, owner, ['commands', 'status', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'])
+    let replay
+    const replaySubscription = api.subscribeBluePluginHost(host, next => { replay = next })
+    ensure(replay?.commands.some(entry => entry.id === 'example-overlay'), 'EXAMPLES_DURABLE_COMMAND_REPLAY', 'late command owner did not receive the buffered command')
+    ensure(replay?.status.some(entry => entry.id === 'durable-status'), 'EXAMPLES_DURABLE_STATUS_REPLAY', 'late status owner did not receive the buffered status')
+    ensure(replay?.editorExtensions.some(entry => entry.id === 'durable-extension'), 'EXAMPLES_DURABLE_EXTENSION_REPLAY', 'late editor-extension owner did not receive the buffered extension')
+    ensure(replay?.statusProviders.some(entry => entry.id === 'example.status.compact'), 'EXAMPLES_DURABLE_STATUS_PROVIDER_REPLAY', 'late status-provider owner did not receive the buffered candidate')
+    ensure(replay?.editorProviders.some(entry => entry.id === 'example.editor.focused'), 'EXAMPLES_DURABLE_EDITOR_PROVIDER_REPLAY', 'late editor-provider owner did not receive the buffered candidate')
+
+    const command = replay.commands.find(entry => entry.id === 'example-overlay')
+    ensure(command !== undefined, 'EXAMPLES_DURABLE_COMMAND_REPLAY', 'replayed overlay command is missing')
+    await api.runBlueUserGesture(host, owner, async userGesture => {
+      const opened = await command.execute([], { userGesture })
+      ensure(opened.ok, 'EXAMPLES_DURABLE_OVERLAY', opened.message ?? 'replayed command did not open its overlay')
+    })
+    ensure(snapshot(host).overlays.some(entry => entry.id === 'example.overlay.details'), 'EXAMPLES_DURABLE_OVERLAY_REPLAY', 'overlay did not reach its late owner')
+
+    replaySubscription.dispose()
+    ownerLease.dispose()
+    ensure(snapshot(host).commands.some(entry => entry.id === 'example-overlay'), 'EXAMPLES_DURABLE_OWNER_GAP', 'buffered contributions disappeared with their owner')
+    owner.dispose()
+
+    const replacement = new Scope(host)
+    const replacementLease = api.attachBluePluginHostCapabilities(host, replacement, ['commands', 'status', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'])
+    let replacementReplay
+    const replacementSubscription = api.subscribeBluePluginHost(host, next => { replacementReplay = next })
+    ensure(replacementReplay?.commands.some(entry => entry.id === 'example-overlay'), 'EXAMPLES_DURABLE_RELOAD_COMMAND', 'replacement owner did not replay the buffered command')
+    ensure(replacementReplay?.status.some(entry => entry.id === 'durable-status'), 'EXAMPLES_DURABLE_RELOAD_STATUS', 'replacement owner did not replay the buffered status')
+    ensure(replacementReplay?.editorExtensions.some(entry => entry.id === 'durable-extension'), 'EXAMPLES_DURABLE_RELOAD_EXTENSION', 'replacement owner did not replay the buffered editor extension')
+    ensure(replacementReplay?.statusProviders.some(entry => entry.id === 'example.status.compact'), 'EXAMPLES_DURABLE_RELOAD_STATUS_PROVIDER', 'replacement owner did not replay the buffered status provider')
+    ensure(replacementReplay?.editorProviders.some(entry => entry.id === 'example.editor.focused'), 'EXAMPLES_DURABLE_RELOAD_EDITOR_PROVIDER', 'replacement owner did not replay the buffered editor provider')
+    replacementSubscription.dispose()
+    replacementLease.dispose()
+    replacement.dispose()
+
+    consumer.dispose()
+    const unloaded = snapshot(host)
+    ensure(unloaded.commands.length === 0 && unloaded.status.length === 0 && unloaded.overlays.length === 0 && unloaded.editorExtensions.length === 0 && unloaded.statusProviders.length === 0 && unloaded.editorProviders.length === 0, 'EXAMPLES_DURABLE_UNLOAD', 'buffered contributions survived consumer unload')
+    await ctx.fiber.dispose()
+  })
 } catch (error) {
   recordFailure('fixture.setup', error, 'EXAMPLES_FIXTURE_SETUP_FAILED')
 } finally {
@@ -458,7 +527,7 @@ try {
     recordFailure('fixture.cleanup', error, 'EXAMPLES_FIXTURE_CLEANUP_FAILED')
   }
   const valid = report.failures.length === 0 && report.skipped.length === 0
-    && report.declared.length === 7 && report.executed.length === 7
+    && report.declared.length === 8 && report.executed.length === 8
     && report.cleaned && report.fixtureCleaned
   console.log(JSON.stringify({ ...report, valid }, null, 2))
   process.exitCode = valid ? 0 : 1

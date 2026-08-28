@@ -13,6 +13,7 @@ const scenarios = [
   'overlay.gesture-and-late-containment',
   'status-provider.inert-candidate',
   'editor-provider.one-control-candidate',
+  'composition.owner-late-durable-replay',
 ]
 const pluginCapabilities = {
   '@dsh-blue-example/header': ['panes'],

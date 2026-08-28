@@ -9,6 +9,14 @@ Keep this package outside Blue's release set and default bundle. It proves
 one-command packed/profile activation but is not an eighth G6 example
 scenario.
 
+All six rows are Loader siblings of Blue's own composition. The API host
+durably buffers their command, pane, overlay, and provider registrations, so
+row order is not an activation barrier: frontend owners replay contributions
+registered before they become ready. Real-composition regression coverage must
+boot these rows with the profile, exercise status/editor provider selections,
+and retain the registrations across owner reload. Consumer row unload still
+removes every contribution.
+
 The whole-suite fixture packs the complete Blue host runtime dependency
 closure and resolves this package's exact `@dsh-blue/blue` peer from a resolver
 rooted at the installed composition. It recursively pins and scans every

@@ -21,14 +21,21 @@ follows the persisted `blue.statusProvider` selection. Provider candidates
 remain inert on installation; `blue.default` is the built-in fallback, and a
 bad or absent desired id is never written back. Bundle e2e fixture wrappers
 must mirror source inject lists exactly; no contribution may duplicate content
-in the default composition.
+in the default composition. The API host durably buffers provider candidates,
+so boot-time sibling rows may register before this owner becomes ready; its
+initial snapshot must replay them. Whole-tree regression coverage mounts the
+ecosystem candidate rows during Loader boot, not only after `bootBlue()`.
 
 W5-B adds `blue-editor-provider-owner` immediately after the parent
-interaction row. Its row-level `blueEditorHost` injection prevents capability
-readiness before the stable frontend-tree editor composition exists. The owner
+interaction row. Its row-level `blueEditorHost` injection delays the active
+renderer binding until the stable frontend-tree editor composition exists;
+candidate registration may already be ready through the host buffer. The owner
 follows `blue.editorProvider`, publishes inert candidates into the existing
 editor outer delegate, and preserves `blue.default` on owner unload or failed
-first activation; it never creates a second editor engine.
+first activation; it never creates a second editor engine. Candidate
+registration is host-buffered across that boot gap and owner reload; provider
+selection, live shell/LKG state, breaker, gestures, and fallback remain owned
+by this frontend tree.
 
 The BTW row explicitly injects app-owned `blueSessionActions`. Although it appears before `blue-app`, Cordis holds the pane fiber until the app provides the action service; the app itself still publishes the service synchronously before its loader-settlement Agent creation. This ordering keeps Agent/session seeding out of transcript without adding an implicit race.
 
@@ -70,7 +77,7 @@ this discovery contract because a malformed file is ignored even when shipped.
 
 The bundle tarball contains runtime JS, declarations, `cordis.patch.yml`, and the complete `presets/` roster. Its frontend-runtime Blue dependencies, including the public `blue-api` and pure `blue-ui` construction layer, are `workspace:*` in the repository and exact versions after packing, so an npm install cannot select an internal `*-test.*` prerelease. The candidate release workflow installs this tarball in a scratch dsh profile before promoting any tag.
 
-The whole-tree e2e keeps `/help` scroll assertions aligned with the expanded command roster and mounts the published host runner plus tool-cordis package for creative-mode coverage. Its explicit `@deepseek-ai/dsh` dev dependency supplies the pinned host preset tree and dynamic preset package closure without leaking that graph into the dependency-free `blue-cli` tarball. Scripted model calls exercise `cordis_define`/`cordis_run`, VM isolation, pane/status/command/notice rendering, stop, restart, update, rollback, process restart, and missing-bridge diagnostics through the real chain. The safe-retraction case emits a creative-style `commands/change` during streamed thinking and requires the same-session reader refresh to preserve the editor receipt, erase the whole turn, and leave no interruption tombstone. Cases that mount real file-backed settings without exercising first-run onboarding, including the persisted status/editor-provider replay cases, seed their temporary credentials file explicitly, so the fixture never inherits success from a developer-machine API key. VT goldens pin the composed tool-card chrome (including bounded official presenter bodies) and horizontal model/effort variants, so renderer changes update both behavior assertions and the affected snapshots.
+The whole-tree e2e keeps `/help` scroll assertions aligned with the expanded command roster and mounts the published host runner plus tool-cordis package for creative-mode coverage. Its explicit `@deepseek-ai/dsh` dev dependency supplies the pinned host preset tree and dynamic preset package closure without leaking that graph into the dependency-free `blue-cli` tarball. Scripted model calls exercise `cordis_define`/`cordis_run`, VM isolation, pane/status/command/notice rendering, stop, restart, update, rollback, process restart, and durable buffering across a missing view owner through the real chain. The safe-retraction case emits a creative-style `commands/change` during streamed thinking and requires the same-session reader refresh to preserve the editor receipt, erase the whole turn, and leave no interruption tombstone. Cases that mount real file-backed settings without exercising first-run onboarding, including the persisted status/editor-provider replay cases, seed their temporary credentials file explicitly, so the fixture never inherits success from a developer-machine API key. VT goldens pin the composed tool-card chrome (including bounded official presenter bodies) and horizontal model/effort variants, so renderer changes update both behavior assertions and the affected snapshots.
 
 The independent W4 dialogs slice asserts Help, Info, Approval, Questionnaire,
 PlanReview, and form behavior through the canonical core compiler rather than

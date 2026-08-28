@@ -82,18 +82,19 @@ across consumers, reserves Blue's owner namespace, and synchronously notifies
 the Blue-owned adapters. An adapter admission failure rolls the registration
 back before `register()` returns, so an existing slash-command name cannot be
 shadowed temporarily.
-Capability availability is owned by active adapter Fibers rather than the
-hard-coded public capability list. View and interaction bridges attach their
-exact capability sets through `attachBluePluginHostCapabilities`; reference
-counts allow overlapping owner generations. The `blue-api-host` plugin Fiber
-itself holds the durable panes/overlays buffering lease as soon as it provides
-`bluePluginHost`, independent of renderer import order. Direct standalone
-`new BluePluginHostService()` construction does not attach that lease and keeps
-the capability-absent test/embedding contract. `open()` returns
-`BLUE_CAPABILITY_ABSENT` unless every requested capability has an active owner,
-and existing registry/publish handles recheck before each write. Aggregate
-contributions survive a bridge unload so a replacement bridge restores them
-from its initial snapshot; consumer or host unload still deletes them.
+The `blue-api-host` plugin Fiber holds host-scoped durable registration leases
+for `commands`, `status`, `panes`, `overlays`, `editor.extensions`,
+`status.provider`, and `editor.provider` as soon as it provides
+`bluePluginHost`. These registries admit inert contributions independently of
+frontend sibling-row boot order; active adapters replay the aggregate snapshot
+after an owner gap or reload. Registration does not grant renderer, dispatch,
+gesture, provider-selection, LKG, breaker, or fallback authority: those remain
+with the active frontend-tree owner Fiber. Consumer unload removes its
+registrations and permanently fences retained facades; host unload clears the
+buffers. Direct standalone `new BluePluginHostService()` construction does not
+attach the durable leases and retains the capability-absent embedding contract.
+`notifications` and both session capabilities still require their active
+owners; they are not durable registration buffers.
 Session capabilities use the dedicated `attachBluePluginHostSessionOwner`
 helper rather than the generic capability owner path. App is the sole active
 owner generation. `session.read` contains only `current`/`subscribe`, while
@@ -129,9 +130,11 @@ host, an active overlays owner, and the current entry identity to complete a
 semantic dismiss. Snapshot and notification owner helpers likewise reject the
 guarded public service. Refresh handles enforce 20 successful calls per rolling
 second and cancel pending coalesced ticks when their contribution is disposed.
-Owner gaps retain contributions but reject new writes with
-`BLUE_CAPABILITY_ABSENT`. Session owner gaps expose a null read snapshot and
-reject actions with the same absent result until the app owner reloads.
+Owner gaps retain and continue admitting contributions to the seven durable
+registration buffers; replacement owners replay them from their initial
+snapshot. Notifications remain unavailable without the interaction owner, and
+session owner gaps expose a null read snapshot and reject actions with
+`BLUE_CAPABILITY_ABSENT` until the app owner reloads.
 
 The removed public `dock` transition has no host validator exception, API
 facade, contribution type, registry, or snapshot field. Untyped legacy

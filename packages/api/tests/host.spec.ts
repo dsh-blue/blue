@@ -1440,17 +1440,42 @@ describe('BluePluginHostService', () => {
     await ctx.fiber.dispose()
   })
 
-  it('buffers passive surfaces without granting renderer authority', async () => {
+  it('buffers registrations without granting renderer or dispatch authority', async () => {
     const ctx = new Context()
     apply(ctx)
     const host = (ctx.bluePluginHost as unknown as Record<symbol, BluePluginHostService | undefined>)[symbols.original] ?? ctx.bluePluginHost
-    const opened = ctx.bluePluginHost.open(ctx, { id: '@acme/buffered', api: '^1.0.0', capabilities: ['panes', 'overlays'] })
+    const opened = ctx.bluePluginHost.open(ctx, {
+      id: '@acme/buffered',
+      api: '^1.0.0',
+      capabilities: ['commands', 'status', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'],
+    })
     expect(opened.ok).toBe(true)
     if (!opened.ok) return
 
+    expect(opened.value.commands!.register(command('buffered-command'))).toMatchObject({ ok: true })
+    expect(opened.value.status!.register({ id: 'buffered-status', render: () => view })).toMatchObject({ ok: true })
     expect(opened.value.panes!.register({ id: 'buffered-pane', placement: 'bottom', render: () => null })).toMatchObject({ ok: true })
+    expect(opened.value.editorExtensions!.register({ id: 'buffered-extension' })).toMatchObject({ ok: true })
+    expect(opened.value.statusProviders!.register({ id: 'buffered-status-provider', render: () => ({ kind: 'text', content: 'status' }) })).toMatchObject({ ok: true })
+    expect(opened.value.editorProviders!.register({ id: 'buffered-editor-provider', render: () => ({ kind: 'editor-control' }) })).toMatchObject({ ok: true })
     const passive = opened.value.overlays!.open({ id: 'buffered-passive', render: () => view })
     expect(passive).toMatchObject({ ok: true })
+    expect(snapshotBluePluginHost(host)).toMatchObject({
+      commands: [{ id: 'buffered-command' }],
+      status: [{ id: 'buffered-status' }],
+      panes: [{ id: 'buffered-pane' }],
+      editorExtensions: [{ id: 'buffered-extension' }],
+      statusProviders: [{ id: 'buffered-status-provider' }],
+      editorProviders: [{ id: 'buffered-editor-provider' }],
+    })
+    expect(ctx.bluePluginHost.open(ctx, { id: '@acme/unbuffered-notifications', api: '^1.0.0', capabilities: ['notifications'] })).toMatchObject({
+      ok: false,
+      code: 'BLUE_CAPABILITY_ABSENT',
+    })
+    expect(ctx.bluePluginHost.open(ctx, { id: '@acme/unbuffered-session', api: '^1.0.0', capabilities: ['session.read', 'session.act'] })).toMatchObject({
+      ok: false,
+      code: 'BLUE_CAPABILITY_ABSENT',
+    })
     expect(createBlueUserGesture(host, ctx)).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
     expect(opened.value.overlays!.open({ id: 'buffered-capturing', capturing: true, render: () => view }, { userGesture: {} as BlueUserGesture })).toMatchObject({
       ok: false,
@@ -1462,7 +1487,7 @@ describe('BluePluginHostService', () => {
       expect(closeBluePluginHostOverlay(host, ctx, entry)).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
       passive.value.close()
     }
-    const overlappingOwner = attach(host, ['panes', 'overlays'])
+    const overlappingOwner = attach(host, ['commands', 'status', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'])
     await ctx.fiber.dispose()
     overlappingOwner.dispose()
   })

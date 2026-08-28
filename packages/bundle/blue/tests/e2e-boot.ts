@@ -76,6 +76,12 @@ import * as statusContextPlugin from '../../../transcript/src/status-context.ts'
 import * as statusCwdPlugin from '../../../transcript/src/status-cwd.ts'
 import * as statusGitPlugin from '../../../transcript/src/status-git.ts'
 import * as statusTitlePlugin from '../../../transcript/src/status-title.ts'
+import * as exampleHeaderPlugin from '../../../../examples/header/src/index.ts'
+import * as exampleRightInspectorPlugin from '../../../../examples/right-inspector/src/index.ts'
+import * as exampleBottomLogPlugin from '../../../../examples/bottom-log/src/index.ts'
+import * as exampleOverlayPlugin from '../../../../examples/overlay/src/index.ts'
+import * as exampleStatusProviderPlugin from '../../../../examples/status-provider/src/index.ts'
+import * as exampleEditorProviderPlugin from '../../../../examples/editor-provider/src/index.ts'
 import { CallId} from '@deepseek-ai/dsh-llm'
 import { MockAdapter} from './mock-adapter.ts'
 // The wizard's models.dev lookup stays offline in the e2e (the fixture
@@ -260,6 +266,12 @@ interface BlueE2EHooks {
   appApply: typeof appPlugin.apply
   appConfig: typeof appPlugin.Config
   sessionBridgeApply: typeof sessionBridgePlugin.apply
+  exampleHeaderApply: typeof exampleHeaderPlugin.apply
+  exampleRightInspectorApply: typeof exampleRightInspectorPlugin.apply
+  exampleBottomLogApply: typeof exampleBottomLogPlugin.apply
+  exampleOverlayApply: typeof exampleOverlayPlugin.apply
+  exampleStatusProviderApply: typeof exampleStatusProviderPlugin.apply
+  exampleEditorProviderApply: typeof exampleEditorProviderPlugin.apply
   /** Session ids the sessionTitle stand-in's refresh recorded (D41 bridge). */
   sessionTitleRefreshes: string[]
 }
@@ -288,6 +300,8 @@ export async function bootBlue(argv: string[], options: {
   reasoning?: LlmModelReasoningInfo
   /** Mount the real file-backed settings and credentials providers. */
   realSettings?: { settingsPath: string, credentialsPath: string }
+  /** Mount all six ecosystem examples as Loader sibling rows during boot. */
+  ecosystemExamples?: boolean
   /** Provide a structural credentials seam without local environment layers. */
   credentials?: object
   /** Mount the real (dormant) llm-pi-ai adapter plugin. */
@@ -454,6 +468,12 @@ export async function bootBlue(argv: string[], options: {
     appApply: appPlugin.apply,
     appConfig: appPlugin.Config,
     sessionBridgeApply: sessionBridgePlugin.apply,
+    exampleHeaderApply: exampleHeaderPlugin.apply,
+    exampleRightInspectorApply: exampleRightInspectorPlugin.apply,
+    exampleBottomLogApply: exampleBottomLogPlugin.apply,
+    exampleOverlayApply: exampleOverlayPlugin.apply,
+    exampleStatusProviderApply: exampleStatusProviderPlugin.apply,
+    exampleEditorProviderApply: exampleEditorProviderPlugin.apply,
     sessionTitleRefreshes: [],
   }
   ;(globalThis as unknown as { __blueE2E: BlueE2EHooks }).__blueE2E = hooks
@@ -792,6 +812,46 @@ export const inject = ['blueStatusEntries']
 export const apply = (ctx) => {
   ctx.effect(() => ctx.blueStatusEntries.register({ id: 'e2e-extra', priority: 30, node: { kind: 'text', content: ${text} }, visible: true }))
 }
+`)}`,
+    )
+  }
+  if (options.ecosystemExamples === true) {
+    rows.push(
+      "- id: '@dsh-blue-example/header'",
+      `  name: ${fixture('example-header.mjs', `
+export const name = '@dsh-blue-example/header'
+export const inject = ['bluePluginHost']
+export const apply = ctx => globalThis.__blueE2E.exampleHeaderApply(ctx)
+`)}`,
+      "- id: '@dsh-blue-example/right-inspector'",
+      `  name: ${fixture('example-right-inspector.mjs', `
+export const name = '@dsh-blue-example/right-inspector'
+export const inject = ['bluePluginHost']
+export const apply = ctx => globalThis.__blueE2E.exampleRightInspectorApply(ctx)
+`)}`,
+      "- id: '@dsh-blue-example/bottom-log'",
+      `  name: ${fixture('example-bottom-log.mjs', `
+export const name = '@dsh-blue-example/bottom-log'
+export const inject = ['bluePluginHost']
+export const apply = ctx => globalThis.__blueE2E.exampleBottomLogApply(ctx)
+`)}`,
+      "- id: '@dsh-blue-example/overlay'",
+      `  name: ${fixture('example-overlay.mjs', `
+export const name = '@dsh-blue-example/overlay'
+export const inject = ['bluePluginHost']
+export const apply = ctx => globalThis.__blueE2E.exampleOverlayApply(ctx)
+`)}`,
+      "- id: '@dsh-blue-example/status-provider'",
+      `  name: ${fixture('example-status-provider.mjs', `
+export const name = '@dsh-blue-example/status-provider'
+export const inject = ['bluePluginHost']
+export const apply = ctx => globalThis.__blueE2E.exampleStatusProviderApply(ctx)
+`)}`,
+      "- id: '@dsh-blue-example/editor-provider'",
+      `  name: ${fixture('example-editor-provider.mjs', `
+export const name = '@dsh-blue-example/editor-provider'
+export const inject = ['bluePluginHost']
+export const apply = ctx => globalThis.__blueE2E.exampleEditorProviderApply(ctx)
 `)}`,
     )
   }

@@ -12,6 +12,8 @@ Blue Cordis 插件的稳定、renderer-independent 公共契约。本包不含 r
 
 `bluePluginHost.open(ctx, manifest)` 直接接受插件真实的 Cordis `Context`，先校验 manifest，再返回只暴露所请求表面的 capability-scoped `BluePluginApi`。所有 registration 都绑定该 Cordis effect，effect callback 返回对应 cleanup：插件卸载即释放全部贡献，并永久封锁被保留的 API 引用；host service teardown 也会在清空状态前应用相同 fence。之后的写操作返回 `BLUE_ACTION_REJECTED`，保留的 list 维持冻结空数组，notification subscribe 返回已 disposed 的空 handle。跨消费者重复的 contribution id 会被拒绝，Blue 的 owner 命名空间（`blue.`、`blue:`、`blue-`、`@dsh-blue/`）被保留。
 
+host 会持久缓冲 `commands`、`status`、`panes`、`overlays`、`editor.extensions`、`status.provider` 与 `editor.provider` 的 inert registration。因此插件可以在对应 frontend-tree owner 尚在启动或重载时注册，active owner 会重放 aggregate snapshot。consumer 卸载仍会删除它的 registration。缓冲不赋予 render、dispatch、gesture、provider selection、last-known-good、breaker 或 fallback 权限；这些仍归 active frontend-tree owner。Notifications 与 `session.read`/`session.act` 不是 registration buffer，没有 active owner 时仍返回 `BLUE_CAPABILITY_ABSENT`。
+
 ## UI 契约
 
 `BlueUiNode` 保留 `BlueView` 作为经过清洗的 text/fields/code/diff/sections 内容叶，并增加 rich text、stack、surface、scroll、tabs、list、form、actions、loader、empty、progress、spacer 和 divider。响应式显示只存在于 `BlueUiChild.when`，并相对于获配的 surface viewport 计算。

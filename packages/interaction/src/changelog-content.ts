@@ -36,6 +36,7 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
       'Explicit provider ownership — status and editor providers remain inert until selected, swap around preserved frontend state, and retain the active or plain fallback when activation, rendering, or unload fails.',
       'Isolated session capabilities — session.read exposes only frozen revisioned snapshots and subscriptions, while session.act serializes structured writes with abort, stale-session, late-result, and owner-lifecycle fencing.',
       'Actionable legacy migration — the old dock, panels, editor, and tools capabilities are removed from the public runtime and now return targeted replacement guidance instead of silently activating compatibility paths.',
+      'Boot-order-safe plugin registration — commands, status, panes, overlays, editor extensions, and provider candidates are durably buffered by the host, then replayed when their frontend owner boots or reloads; consumer unload still removes every registration.',
     ],
     knownIssues: [],
   },

@@ -12,12 +12,14 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync} from 'node:fs'
 import { homedir} from 'node:os'
 import { basename, join} from 'node:path'
 import { afterEach, describe, expect, it, vi} from 'vitest'
+import { symbols} from '@deepseek-ai/cordis'
 import type { Agent} from '@deepseek-ai/dsh-agent'
 import { createServer} from 'node:http'
 import type { StreamChunk} from '@deepseek-ai/dsh-llm'
 import { createUserMessage} from '@deepseek-ai/dsh-llm'
 import type { ApprovalOutcome, ApprovalRequest} from '@deepseek-ai/dsh-user-approval'
 import type { BluePluginApi } from '../../../api/src/contracts.ts'
+import { snapshotBluePluginHost, type BluePluginHostService} from '../../../api/src/host.ts'
 // The theme modules come from the package subpaths — not relative core
 // source paths — because the /theme swap keys registry runtimes by apply
 // callback identity: only the module instance interaction's theme-switch
@@ -25,6 +27,7 @@ import type { BluePluginApi } from '../../../api/src/contracts.ts'
 // baseline provider fiber it replaces.
 import * as themeDarkPlugin from '@dsh-blue/blue-core/theme-dark'
 import * as themeLightPlugin from '@dsh-blue/blue-core/theme-light'
+import * as themeOceanPlugin from '@dsh-blue/blue-core/theme-ocean'
 import { FakeTerminal, waitForRender} from '../../../core/tests/fake-terminal.ts'
 import { userInvocableSkills} from '../../../interaction/src/skills-catalog.ts'
 import * as editorPlusPlugin from '../../../interaction/src/editor-plus.ts'
@@ -270,6 +273,92 @@ describe('blue whole-tree e2e', () => {
     await expect(executeCommand(tree, agent, '/creative')).resolves.toBeUndefined()
   })
 
+  it('replays ecosystem examples registered during Loader boot into late provider owners', async () => {
+    const dir = mkdtempTracked('dsh-blue-e2e-ecosystem-boot-')
+    const settingsPath = join(dir, 'settings.yaml')
+    const credentialsPath = join(dir, '.credentials.yaml')
+    writeFileSync(settingsPath, [
+      'blue:',
+      '  theme: ocean',
+      '  statusProvider: example.status.compact',
+      '  editorProvider: example.editor.focused',
+      '',
+    ].join('\n'))
+    writeFileSync(credentialsPath, 'version: 1\nrefs:\n  DEEPSEEK_API_KEY: existing-test-key\n', { mode: 0o600 })
+
+    const tree = await bootBlue([], {
+      script: [],
+      realSettings: { settingsPath, credentialsPath },
+      ecosystemExamples: true,
+    })
+    const agent = await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.ctx.get('blueTheme')?.colors).toBe(themeOceanPlugin.OCEAN_COLORS) })
+
+    const host = (tree.ctx.bluePluginHost as unknown as Record<symbol, BluePluginHostService | undefined>)[symbols.original]
+      ?? tree.ctx.bluePluginHost
+    const snapshot = snapshotBluePluginHost(host)
+    expect(snapshot.panes.map(entry => entry.id)).toEqual(expect.arrayContaining([
+      'example.header.summary',
+      'example.inspector.context',
+      'example.log.recent',
+    ]))
+    expect(snapshot.statusProviders.map(entry => entry.id)).toContain('example.status.compact')
+    expect(snapshot.editorProviders.map(entry => entry.id)).toContain('example.editor.focused')
+    await vi.waitFor(() => {
+      expect(tree.ctx.blueStatusComposition.snapshot.activeId).toBe('example.status.compact')
+    })
+
+    await waitForRender()
+    const selected = stripSgr(await fullFrame(tree.terminal))
+    expect(selected).toContain('Ready')
+    expect(selected).toContain('Message')
+    expect(selected).toContain('0 attachments')
+    expect(selected).toContain('0 extensions')
+
+    tree.terminal.sendInput('boot-order draft')
+    await waitForRender()
+    expect(stripSgr(await fullFrame(tree.terminal))).toContain('boot-order draft')
+
+    await expect(executeCommand(tree, agent, '/example-overlay')).resolves.toEqual({ kind: 'success' })
+    await waitForRender()
+    const overlay = stripSgr(await fullFrame(tree.terminal))
+    expect(overlay).toContain('Example details')
+    expect(overlay).toContain('This modal was opened by an explicit Blue user gesture.')
+
+    tree.terminal.sendInput('\x1b')
+    await waitForRender()
+    expect(stripSgr(await fullFrame(tree.terminal))).toContain('boot-order draft')
+
+    const statusOwnerEntry = [...tree.ctx.loader.entries()].find(entry => entry.options.id === 'blue-status-provider-owner')
+    const editorOwnerEntry = [...tree.ctx.loader.entries()].find(entry => entry.options.id === 'blue-editor-provider-owner')
+    expect(statusOwnerEntry).toBeDefined()
+    expect(editorOwnerEntry).toBeDefined()
+    await tree.ctx.loader.update(statusOwnerEntry!.id, { disabled: true })
+    await tree.ctx.loader.update(editorOwnerEntry!.id, { disabled: true })
+    await tree.ctx.loader.await()
+    await waitForRender()
+
+    const duringOwnerGap = snapshotBluePluginHost(host)
+    expect(duringOwnerGap.statusProviders.map(entry => entry.id)).toContain('example.status.compact')
+    expect(duringOwnerGap.editorProviders.map(entry => entry.id)).toContain('example.editor.focused')
+    expect(stripSgr(await fullFrame(tree.terminal))).toContain('boot-order draft')
+
+    await tree.ctx.loader.update(statusOwnerEntry!.id, { disabled: false })
+    await tree.ctx.loader.update(editorOwnerEntry!.id, { disabled: false })
+    await tree.ctx.loader.await()
+    await vi.waitFor(() => {
+      expect(tree.ctx.blueStatusComposition.snapshot.activeId).toBe('example.status.compact')
+    })
+    await waitForRender()
+    const restored = stripSgr(await fullFrame(tree.terminal))
+    expect(restored).toContain('Ready')
+    expect(restored).toContain('Message')
+    expect(restored).toContain('0 attachments')
+    expect(restored).toContain('0 extensions')
+    expect(restored).toContain('boot-order draft')
+    await backToDark(tree, agent)
+  })
+
   it('replays a persisted status provider across both Loader orders and keeps unrelated installation inert', async () => {
     const dir = mkdtempTracked('dsh-blue-e2e-status-provider-')
     const settingsPath = join(dir, 'settings.yaml')
@@ -509,7 +598,7 @@ describe('blue whole-tree e2e', () => {
     expect(restartedFrame).not.toContain('creative status v1')
   })
 
-  it('reports a missing owner bridge as capability absence through the real runner', async () => {
+  it('buffers creative registrations while the additive view bridge is absent', async () => {
     const tree = await bootBlue([], {
       viewBridge: false,
       presetFixtures: [{ id: 'creative', dynamicCordis: true }],
@@ -517,7 +606,7 @@ describe('blue whole-tree e2e', () => {
         toolCallResponse('define-missing', 'cordis_define', {
           plugin: { kind: 'new', idPrefix: 'miss' },
           name: 'Missing bridge probe',
-          purpose: 'Prove that registrations cannot succeed without an owner bridge.',
+          purpose: 'Prove that registrations remain buffered while the additive view owner is absent.',
           code: { host: creativeHostCode('missing') },
         }),
         toolCallResponse('run-missing', 'cordis_run', { pluginId: 'miss-1', packageId: 'pkg-1', mode: 'run' }),
@@ -528,9 +617,20 @@ describe('blue whole-tree e2e', () => {
     typeLine(tree.terminal, 'probe the missing bridge')
     await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(3) })
     await agent.whenIdle()
-    expect(JSON.stringify(agent.session.events)).toContain('BLUE_CAPABILITY_ABSENT')
-    expect(JSON.stringify(agent.session.events)).toContain('has no active Blue owner adapter')
-    expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('creative pane missing')
+    expect(JSON.stringify(agent.session.events)).not.toContain('BLUE_CAPABILITY_ABSENT')
+
+    const host = (tree.ctx.bluePluginHost as unknown as Record<symbol, BluePluginHostService | undefined>)[symbols.original]
+      ?? tree.ctx.bluePluginHost
+    const snapshot = snapshotBluePluginHost(host)
+    expect(snapshot.status.map(entry => entry.id)).toContain('creative-status')
+    expect(snapshot.commands.map(entry => entry.id)).toContain('creative')
+    expect(snapshot.panes.map(entry => entry.id)).toContain('creative-pane')
+
+    const frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).toContain('creative pane missing')
+    expect(frame).not.toContain('creative status missing')
+    await expect(executeCommand(tree, agent, '/creative')).resolves.toEqual({ kind: 'success' })
+    expect(stripSgr(await fullFrame(tree.terminal))).toContain('creative notice missing')
   })
 
   it('runs a startup task through the real loop and renders the reply', async () => {

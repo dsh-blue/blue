@@ -123,7 +123,7 @@ Provider 可以在 shell 中放置 canonical action、list、tabs 或 form contr
 | 现象 | 原因 |
 | --- | --- |
 | 注册成功但界面没变化 | 候选保持 inert；`blue.editorProvider` 尚未选择它 |
-| `open()` 返回 `BLUE_CAPABILITY_ABSENT` | 当前 profile 缺少或尚未激活 editor-provider owner；升级/修复 Blue 组合后再试 |
+| `open()` 返回 `BLUE_CAPABILITY_ABSENT` | 当前 profile 缺少 durable editor-provider registration 支持；升级/修复 Blue 组合后再试 |
 | 选择后回落默认 shell | shell 不满足单一可见 control、编译/dry-render 失败，或 breaker 已打开 |
 | 想直接读取或改写 draft | 公共 provider 不拥有 editing engine；把文本处理放到 `editor.extensions` 的 submit transform |
 | 试图监听 raw key | 公共边界只交付结构化 `BlueUiEvent`；raw terminal input 只属于 core |

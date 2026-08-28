@@ -123,7 +123,7 @@ Every path preserves the settings value. A provider failure cannot clear the dra
 | Symptom | Cause |
 | --- | --- |
 | registration succeeds but the UI does not change | candidates are inert; `blue.editorProvider` does not select this id |
-| `open()` returns `BLUE_CAPABILITY_ABSENT` | this profile lacks an active editor-provider owner; upgrade or repair the Blue composition |
+| `open()` returns `BLUE_CAPABILITY_ABSENT` | this profile lacks durable editor-provider registration support; upgrade or repair the Blue composition |
 | selection falls back to the default shell | the shell violates the single-visible-control invariant, compile/dry-render failed, or the breaker is open |
 | the provider needs to read or rewrite the draft | public providers do not own the editing engine; use an `editor.extensions` submit transform for text processing |
 | the provider tries to listen for raw keys | the public boundary delivers only structured `BlueUiEvent`; raw terminal input belongs exclusively to core |
