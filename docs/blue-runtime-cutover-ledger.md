@@ -1,6 +1,6 @@
 # Frontend Runtime Cutover Ledger
 
-> Status: the C4/C6 evidence below records the earlier frontend-runtime cutover checkpoint. On the current W4-W6 integration branch, W6-1 capability cleanup, W6-2 canonical-node source migration, and the W6-3 session read/act source plus packed-fixture checkpoint are complete. The W6-3 packed app fixture passes 9/9 scenarios on both the current Harness `0.1.1-rc.2` line and previous `0.1.1-rc.1` line. W6-4 release closure, refreshed full-tree/profile gates, and explicit live human acceptance remain pending. No merge, version change, tag, publish, or production-profile mutation is authorized before acceptance.
+> Status: the C4/C6 evidence below records the earlier frontend-runtime cutover checkpoint. On the current W4-W6 integration branch, W6-1 capability cleanup, W6-2 canonical-node source migration, and the W6-3 session read/act source plus packed-fixture checkpoint are complete. The W6-3 packed app fixture passes 9/9 scenarios on both the current Harness `0.1.1-rc.2` line and previous `0.1.1-rc.1` line. W6-4 has closed the eleven-package Blue release line at `0.1.1-rc.1` while leaving the Harness line unchanged. Refreshed full-tree/profile gates and explicit live human acceptance remain pending. No merge, tag, publish, production-profile mutation, or acceptance-profile deletion is authorized before acceptance.
 
 ## Frozen Inputs
 
@@ -55,9 +55,9 @@ The deletion audit distinguishes renderer event folding from legitimate domain o
 
 ## Package And Composition Record
 
-- Release line stays `0.1.0-rc.8` until the acceptance gate authorizes the later release step.
+- The current W4-W6 branch's eleven release packages and website are closed at `0.1.1-rc.1`; the independent Harness line remains `0.1.1-rc.2`.
 - Validation-only packages remain outside the release/bundle closure; `packages/context/package.json` remains `0.1.0-rc.2`.
-- The bundle contains 29 Blue-owned rows: 2 host-support, 8 baseline, 15 enhancement and 4 assembly rows.
+- The bundle contains 31 Blue-owned rows: 2 host-support, 8 baseline, 15 enhancement and 6 assembly rows.
 - Conversation projection and official transcript consumption are baseline rows. Context, remote, OpenPencil and Lark are validation-only, not bundle rows.
 - No operation may mutate the production `blue` profile.
 

@@ -1,6 +1,6 @@
 /**
  * The global version-control guard: Blue has ONE release version (the
- * first release line, `0.1.0-rc.10` — the number the website's tagline and
+ * first release line, `0.1.1-rc.1` — the number the website's tagline and
  * quickstart promise) and ONE harness dependency line (the `dsh-*` pins,
  * which stay on their own prerelease line while Blue's number moves).
  *
@@ -29,7 +29,11 @@ import { BLUE_VERSION } from '../src/banner-content.ts'
 import { BLUE_VERSION as API_BLUE_VERSION } from '@dsh-blue/blue-api'
 
 /** The published first-release version (the website's advertised number). */
-const RELEASE_VERSION = '0.1.0-rc.10'
+const RELEASE_VERSION = '0.1.1-rc.1'
+/** The compatibility window used by validation-only packages. */
+const BLUE_PEER_RANGE = '>=0.1.1-rc.1 <0.1.2'
+/** Validation-only package versions remain outside the product lockstep. */
+const VALIDATION_VERSION = '0.1.0-rc.2'
 /** The harness prerelease line the dsh pins ride. */
 const HARNESS_LINE = '0.1.1-rc.2'
 
@@ -60,6 +64,13 @@ const MANIFESTS: readonly string[] = [
 ]
 /** Publishable manifests that carry harness dependencies. */
 const HARNESS_MANIFESTS = MANIFESTS.filter(rel => !rel.endsWith('/website/package.json'))
+/** Independently packed packages outside the product release set. */
+const VALIDATION_MANIFESTS: readonly string[] = [
+  '../../context/package.json',
+  '../../remote/package.json',
+  '../../openpencil/package.json',
+  '../../lark/package.json',
+]
 
 /** Read one manifest relative to this spec. */
 function manifest(rel: string): Manifest {
@@ -107,6 +118,16 @@ describe('the Blue release line', () => {
           expect(spec, `${pkg.name} ${table} ${name}`).toBe('workspace:*')
         }
       }
+    }
+  })
+
+  it('validation-only packages retain their version and accept this preview line', () => {
+    for (const rel of VALIDATION_MANIFESTS) {
+      const pkg = manifest(rel)
+      expect(pkg.version, `${pkg.name} validation version`).toBe(VALIDATION_VERSION)
+      const bluePeers = Object.entries(pkg.peerDependencies ?? {}).filter(([name]) => name.startsWith('@dsh-blue/'))
+      expect(bluePeers.length, `${pkg.name} Blue peers exist`).toBeGreaterThan(0)
+      for (const [name, spec] of bluePeers) expect(spec, `${pkg.name} peerDependencies ${name}`).toBe(BLUE_PEER_RANGE)
     }
   })
 })

@@ -4,10 +4,10 @@ import { withMermaid } from 'vitepress-plugin-mermaid'
 const base = process.env.DOCS_BASE ?? '/'
 
 /**
- * 站点版本（ADR D32）：当前预览线，与十包发布线一致。
+ * 站点版本（ADR D32）：当前预览线，与十一包发布线一致。
  * 升级时只改这一处（首页 hero 文案与 footer 同步引用语义，见各 index.md）。
  */
-const SITE_VERSION = '0.1.0-rc.8'
+const SITE_VERSION = '0.1.1-rc.1'
 
 /**
  * 站点正式域名（dsh-blue.dev，经 Cloudflare DNS 指向 GitHub Pages）。

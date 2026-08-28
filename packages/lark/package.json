@@ -16,7 +16,7 @@
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-commands": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-host-webserver": "^0.1.1-rc.2",
-    "@dsh-blue/blue-frontend": "^0.1.0-rc.2"
+    "@dsh-blue/blue-frontend": ">=0.1.1-rc.1 <0.1.2"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-host-webserver": { "optional": true }

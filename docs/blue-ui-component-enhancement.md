@@ -905,7 +905,7 @@ W6 不并行，按以下顺序执行：
 1. **完成（W6-1）：**删除旧 `dock/panels/editor/tools` capability transition、兼容类型、死 bridge 和当前态旧文档；保留四个旧名的可操作迁移诊断。
 2. **完成（W6-2）：**将 frontend/transcript/tool/context/openpencil 消费者全部迁到 canonical `BlueUiNode`，删除 core 的临时 `frontend-renderer` 和 source-plane 兼容入口。
 3. **完成（W6-3 源码与 packed checkpoint）：**将 session seam 拆为只读 `session.read` 与写入 `session.act`：app 是唯一真实 owner，read-only/act-only facade 隔离，snapshot revision/freeze、FIFO、abort、owner unload、session stale/late fencing 均有安装态 fixture 证据；当前 Harness `0.1.1-rc.2` 与上一线 `0.1.1-rc.1` 均通过 9/9 场景。
-4. **待完成（W6-4）：**收口 bundle rows、packed fixtures、双语文档；将 11 包 release set、`BLUE_VERSION`、网站中英文、CLI pin 与 version specs 统一到 `0.1.1-rc.1`。
+4. **完成（W6-4 源码收口）：**bundle rows、packed fixtures 和双语文档已收口；11 包 release set、`BLUE_VERSION`、网站中英文、CLI pin、version specs 与 release notes 已统一到 `0.1.1-rc.1`，Harness 线独立保持 `0.1.1-rc.2`。
 5. **待完成：**运行完整 release gates，并在统一 worktree profile dogfood 默认单列、120 列多插件、80/40 列降级、provider swap、theme swap、session switch。
 6. **待完成人工门禁：**邀请用户 live-test；等待明确“验收通过”，此前不合并、不删除 profile、不发布。验收后再合并 master、重建主 checkout，并由 release workflow 生成和复用同一候选 artifact。
 

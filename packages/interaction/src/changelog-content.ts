@@ -28,6 +28,18 @@ export interface ChangelogEntry {
 /** All shipped releases, newest first. */
 export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
+    version: '0.1.1-rc.1',
+    summary: 'Blue now exposes a renderer-neutral UI kit and capability-scoped plugin runtime.',
+    highlights: [
+      'Public renderer-neutral UI kit — the new @dsh-blue/blue-ui package provides frozen node builders and component factories shared by Blue-owned and third-party plugins without exposing pi-tui or terminal objects.',
+      'Canonical plugin surfaces — panes, overlays, status entries, commands, notifications, and editor extensions cross one validated BlueUiNode boundary with bounded trees, semantic events, unload cleanup, and narrow-width containment.',
+      'Explicit provider ownership — status and editor providers remain inert until selected, swap around preserved frontend state, and retain the active or plain fallback when activation, rendering, or unload fails.',
+      'Isolated session capabilities — session.read exposes only frozen revisioned snapshots and subscriptions, while session.act serializes structured writes with abort, stale-session, late-result, and owner-lifecycle fencing.',
+      'Actionable legacy migration — the old dock, panels, editor, and tools capabilities are removed from the public runtime and now return targeted replacement guidance instead of silently activating compatibility paths.',
+    ],
+    knownIssues: [],
+  },
+  {
     version: '0.1.0-rc.10',
     summary: 'Registry installs now keep the complete Blue release set on one exact version.',
     highlights: [

@@ -175,7 +175,10 @@ follow-up rejection and safe-retraction boundaries.
 
 `changelog-content.ts` mirrors `docs/release-notes/` exactly; historical
 entries remain unchanged, while current-release behavior changes update both
-sources in the same commit.
+sources in the same commit. `0.1.1-rc.1` is the first entry for the public
+renderer-neutral UI kit, canonical plugin surfaces, selected provider owners,
+and split `session.read`/`session.act` capabilities; keep it newest-first and
+do not rewrite the byte content of the `0.1.0-*` history.
 
 Specs that create filesystem fixtures use the shared `mkdtempTracked` helper
 and call `registerTempDirCleanup()` at module scope. This is required for
