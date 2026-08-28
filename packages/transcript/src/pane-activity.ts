@@ -25,15 +25,13 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import {
-  type BlueComponents,
-  type BlueSemanticColors,
-} from '@dsh-blue/blue-core'
+import type { BlueUiNode } from '@dsh-blue/blue-api'
+import type { BlueComponents, BlueSemanticColors } from '@dsh-blue/blue-core'
 // Empty type import carries the app-owned opaque binding event merge.
 import type {} from '@dsh-blue/blue-app'
 import type { ConversationFacts } from '@dsh-blue/blue-conversation'
-import type { DockModel } from '@dsh-blue/blue-frontend'
 import type { SessionFactsService } from './session-facts.ts'
+import type { BlueBottomPaneNode } from './dock-model.ts'
 import { formatTokens } from './status-context.ts'
 import { buildTipRotation } from './status-tips.ts'
 import { STATUS_TIPS } from './tips-content.ts'
@@ -48,7 +46,7 @@ import {
 export const name = 'blue-pane-activity'
 
 /** Services required before the pane can mount. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionFacts', 'blueDockModels']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionFacts', 'blueBottomPanes']
 
 /** The joiner between the frame and the teaching tip (kimi format). */
 const TIP_LEAD = ' · Tip: '
@@ -125,80 +123,62 @@ function flowCounter(flow: TurnFlow): string {
   return parts.join(' ')
 }
 
-/**
- * The activity pane: one row while a spinner state is live, the kimi
- * `Spacer(1)` blank placeholder row otherwise, and none while a dialog
- * occupies the editor slot.
- */
+/** Build the one-row canonical activity node for the current state. */
+function activityNode(state: ActivityState): BlueUiNode {
+  if (state.mode === 'idle') return { kind: 'spacer' }
+  if (state.mode === 'hidden' || state.mode === 'thinking') return { kind: 'text', content: '' }
+  const moon = state.mode === 'waiting' || state.mode === 'tool'
+  const frame = moon
+    ? MOON_SPINNER_FRAMES[state.frame % MOON_SPINNER_FRAMES.length]!
+    : BRAILLE_SPINNER_FRAMES[state.frame % BRAILLE_SPINNER_FRAMES.length]!
+  return {
+    kind: 'rich-text',
+    spans: [
+      { text: frame, tone: 'accent', emphasis: 'strong' },
+      ...(!moon ? [{ text: WORKING_LABEL } as const] : []),
+      ...(state.flow === '' ? [] : [{ text: ` ${state.flow}`, tone: 'muted' as const }]),
+      { text: `${TIP_LEAD}${state.tip}`, tone: 'muted' },
+    ],
+  }
+}
+
+/** Accepted one-row activity presentation retained behind a narrow adapter. */
 class ActivityPaneComponent {
-  /**
-   * @param colors - the semantic color table (primary frame, muted tip).
-   * @param components - the factory providing the width helpers.
-   * @param state - the shared render state.
-   */
   constructor(
     private readonly colors: BlueSemanticColors,
     private readonly components: BlueComponents,
     private readonly state: ActivityState,
   ) {}
 
-  /**
-   * Paint the deep-sea ripple: the frame rides the banner's brand gradient,
-   * stepping one hue per tick so the wave breathes through the brand blues;
-   * a theme without a gradient falls back to `primary` (the composing
-   * spinner's color).
-   * @param frame - the raw wave glyphs.
-   * @returns the colored frame.
-   */
   private paintWave(frame: string): string {
     const gradient = this.colors.logoGradient
     if (gradient.length === 0) return this.colors.primary(frame)
     return gradient[this.state.frame % gradient.length]!(frame)
   }
 
-  /**
-   * @param width - current viewport width in columns.
-   * @returns the pane's row, or none for the empty modes.
-   */
   render(width: number): string[] {
-    switch (this.state.mode) {
-      case 'hidden':
-        // Below an open dialog panel only the footer stays.
-        return []
-      case 'thinking':
-        // The spinner belongs to the transcript's thinking block.
-        return []
-      case 'idle':
-        // kimi's Spacer(1): the placeholder row is always present when the
-        // spinner is not, so the dock never jumps at the activity edges.
-        return ['']
-      case 'waiting':
-      case 'tool': {
-        const frame = this.paintWave(MOON_SPINNER_FRAMES[this.state.frame % MOON_SPINNER_FRAMES.length]!)
-        // Priority under width pressure: the frame, then the flow counter,
-        // then the tip (the counter is the liveness signal — round 5).
-        const flow = this.state.flow === '' ? '' : this.colors.muted(` ${this.state.flow}`)
-        const full = frame + flow + this.colors.muted(`${TIP_LEAD}${this.state.tip}`)
-        if (this.components.visibleWidth(full) <= width) return [full]
-        const withFlow = frame + flow
-        if (this.components.visibleWidth(withFlow) <= width) return [withFlow]
-        return this.components.visibleWidth(frame) <= width ? [frame] : []
-      }
-      case 'composing': {
-        const frame = BRAILLE_SPINNER_FRAMES[this.state.frame % BRAILLE_SPINNER_FRAMES.length]!
-        // kimi parity: the primary frame with the plain label; the flow
-        // counter rides inside the base so it survives over the tip.
-        const base = `${this.colors.primary(frame)}${WORKING_LABEL}`
-        const flow = this.state.flow === '' ? '' : this.colors.muted(` ${this.state.flow}`)
-        const withFlow = base + flow
-        const row = withFlow + this.colors.muted(`${TIP_LEAD}${this.state.tip}`)
-        if (this.components.visibleWidth(row) <= width) return [row]
-        if (this.components.visibleWidth(withFlow) <= width) return [withFlow]
-        return this.components.visibleWidth(base) <= width ? [base] : []
-      }
+    // The registry evaluates `collapsed` immediately before invoking this
+    // adapter, so hidden/thinking modes cannot enter the renderer.
+    const mode = this.state.mode as Exclude<ActivityPaneMode, 'hidden' | 'thinking'>
+    if (mode === 'idle') return ['']
+    if (mode === 'composing') {
+      const frame = BRAILLE_SPINNER_FRAMES[this.state.frame % BRAILLE_SPINNER_FRAMES.length]!
+      const base = `${this.colors.primary(frame)}${WORKING_LABEL}`
+      const flow = this.state.flow === '' ? '' : this.colors.muted(` ${this.state.flow}`)
+      const withFlow = base + flow
+      const row = withFlow + this.colors.muted(`${TIP_LEAD}${this.state.tip}`)
+      if (this.components.visibleWidth(row) <= width) return [row]
+      if (this.components.visibleWidth(withFlow) <= width) return [withFlow]
+      return this.components.visibleWidth(base) <= width ? [base] : []
     }
+    const frame = this.paintWave(MOON_SPINNER_FRAMES[this.state.frame % MOON_SPINNER_FRAMES.length]!)
+    const flow = this.state.flow === '' ? '' : this.colors.muted(` ${this.state.flow}`)
+    const full = frame + flow + this.colors.muted(`${TIP_LEAD}${this.state.tip}`)
+    if (this.components.visibleWidth(full) <= width) return [full]
+    const withFlow = frame + flow
+    if (this.components.visibleWidth(withFlow) <= width) return [withFlow]
+    return this.components.visibleWidth(frame) <= width ? [frame] : []
   }
-
 }
 
 /**
@@ -284,7 +264,7 @@ export function apply(ctx: Context): void {
     state.mode = mode
     state.flow = nextFlow
     if (changed) {
-      ctx.blueDockModels.refresh('blue.dock.activity')
+      ctx.blueBottomPanes.refresh('blue.dock.activity')
     }
   }
 
@@ -304,12 +284,13 @@ export function apply(ctx: Context): void {
     sync()
   })
 
-  const pane = new ActivityPaneComponent(colors, components, state)
-  const model = (): DockModel => ({
-    kind: 'dock', id: 'blue.dock.activity', placement: 'bottom', priority: 10,
-    view: { kind: 'text', text: state.mode === 'idle' ? 'idle' : state.mode },
+  const model = (): BlueBottomPaneNode => ({
+    id: 'blue.dock.activity', priority: 10, preferredRows: 1,
+    node: activityNode(state),
+    collapsed: state.mode === 'hidden' || state.mode === 'thinking',
   })
-  ctx.effect(() => ctx.blueDockModels.register(model, (_model, width) => pane.render(width)))
+  const pane = new ActivityPaneComponent(colors, components, state)
+  ctx.effect(() => ctx.blueBottomPanes.register(model, (_node, width) => pane.render(width)))
   // Effect-bound so unloading this fiber stops the animation.
   ctx.effect(() => () => stopTimer())
 }

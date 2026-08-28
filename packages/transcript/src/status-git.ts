@@ -21,14 +21,14 @@
 
 import { spawnSync } from 'node:child_process'
 import type { Context } from '@deepseek-ai/cordis'
-import type { StatusModel } from '@dsh-blue/blue-frontend'
+import type { BlueStatusEntry } from './status-model.ts'
 import type { SessionFactsService } from './session-facts.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-status-git'
 
 /** Services required before the git entry can register. */
-export const inject = ['blueStatusModels', 'blueSessionFacts']
+export const inject = ['blueStatusEntries', 'blueSessionFacts']
 
 /** Branch probe cadence in milliseconds. */
 export const BRANCH_TTL_MS = 5_000
@@ -253,16 +253,16 @@ export function apply(ctx: Context): void {
     if (next === cwd) return
     cwd = next
     cache = createGitBadgeCache(cwd)
-    ctx.blueStatusModels.refresh('blue.status.git')
+    ctx.blueStatusEntries.refresh('blue.status.git')
   })
   ctx.effect(() => () => offSession())
 
-  const model = (): StatusModel => {
+  const model = (): BlueStatusEntry => {
     const status = cache.getStatus()
     const text = status === null ? '' : formatGitBadge(status)
     // Keep the empty entry mounted: any later footer redraw must be able to
     // drive the TTL probe and reveal a repository that appeared in this cwd.
-    return { kind: 'status', id: 'blue.status.git', priority: 10, view: { kind: 'text', text, tone: 'muted' }, visible: true }
+    return { id: 'blue.status.git', priority: 10, node: { kind: 'text', content: text, tone: 'muted' }, visible: true }
   }
-  ctx.effect(() => ctx.blueStatusModels.register(model))
+  ctx.effect(() => ctx.blueStatusEntries.register(model))
 }

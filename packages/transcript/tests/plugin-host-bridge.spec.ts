@@ -10,7 +10,7 @@ import { BluePluginHostService } from '../../api/src/host.ts'
 import type { BluePluginManifest } from '../../api/src/manifest.ts'
 import type { BlueComponent, BlueScreen, BlueSemanticColors } from '@dsh-blue/blue-core'
 import { apply } from '../src/plugin-host-bridge.ts'
-import { BlueStatusModelService } from '../src/status-model.ts'
+import { BlueStatusEntryService } from '../src/status-model.ts'
 import { fakeBlueComponents } from './helpers.ts'
 
 const colors = new Proxy({}, { get: () => (text: string) => text }) as BlueSemanticColors
@@ -38,12 +38,12 @@ describe('plugin host view bridge', () => {
       },
       requestRender(): void { redraws += 1 },
     } as BlueScreen
-    const statusModels = new BlueStatusModelService(new Context(), screen)
+    const statusModels = new BlueStatusEntryService(new Context(), screen)
     const effects: (() => void)[] = []
     const ctx = {
       bluePluginHost: host,
       blueScreen: screen,
-      blueStatusModels: statusModels,
+      blueStatusEntries: statusModels,
       blueTheme: { colors },
       blueComponents: fakeBlueComponents(),
       effect(callback: () => void | (() => void)): void {
@@ -73,14 +73,14 @@ describe('plugin host view bridge', () => {
     expect(later.ok && first.ok && zeroRows.ok && hugeRows.ok && status.ok && emptyStatus.ok && codeStatus.ok && plainStatus.ok && codePlainStatus.ok && diffStatus.ok && fieldsStatus.ok && sectionsStatus.ok).toBe(true)
     expect(mounted).toHaveLength(4)
     expect(mounted.map(component => component.render(80)[0])).toEqual([' first', ' later', undefined, ' huge'])
-    expect(statusModels.list().find(model => model.id === 'plugin.status.health')?.view).toEqual({ kind: 'text', text: 'healthy', tone: 'success' })
+    expect(statusModels.list().find(model => model.id === 'plugin.status.health')?.node).toEqual({ kind: 'text', content: 'healthy', tone: 'success' })
     expect(statusModels.list().find(model => model.id === 'plugin.status.quiet')?.visible).toBe(false)
-    expect(statusModels.list().find(model => model.id === 'plugin.status.code')?.view).toEqual({ kind: 'code', code: 'const x = 1', language: 'ts' })
-    expect(statusModels.list().find(model => model.id === 'plugin.status.plain')?.view).toEqual({ kind: 'text', text: 'plain' })
-    expect(statusModels.list().find(model => model.id === 'plugin.status.code-plain')?.view).toEqual({ kind: 'code', code: 'plain' })
-    expect(statusModels.list().find(model => model.id === 'plugin.status.diff')?.view).toEqual({ kind: 'diff', before: 'old', after: 'new' })
-    expect(statusModels.list().find(model => model.id === 'plugin.status.fields')?.view).toEqual({ kind: 'fields', fields: [{ label: 'state', value: 'ok' }] })
-    expect(statusModels.list().find(model => model.id === 'plugin.status.sections')?.view).toEqual({ kind: 'sections', sections: [{ title: '', body: { kind: 'text', text: 'body' } }, { title: 'collapsed', body: { kind: 'code', code: 'x' }, collapsed: true }] })
+    expect(statusModels.list().find(model => model.id === 'plugin.status.code')?.node).toEqual({ kind: 'code', code: 'const x = 1', language: 'ts' })
+    expect(statusModels.list().find(model => model.id === 'plugin.status.plain')?.node).toEqual({ kind: 'text', content: 'plain' })
+    expect(statusModels.list().find(model => model.id === 'plugin.status.code-plain')?.node).toEqual({ kind: 'code', code: 'plain' })
+    expect(statusModels.list().find(model => model.id === 'plugin.status.diff')?.node).toEqual({ kind: 'diff', before: 'old', after: 'new' })
+    expect(statusModels.list().find(model => model.id === 'plugin.status.fields')?.node).toEqual({ kind: 'fields', rows: [{ label: 'state', value: [{ text: 'ok', tone: 'success' }] }] })
+    expect(statusModels.list().find(model => model.id === 'plugin.status.sections')?.node).toEqual({ kind: 'sections', sections: [{ body: { kind: 'text', content: 'body' } }, { title: 'collapsed', body: { kind: 'code', code: 'x' }, collapsed: true }] })
     expect(redraws).toBeGreaterThan(0)
 
     if (first.ok) first.value.dispose()

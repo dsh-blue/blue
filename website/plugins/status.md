@@ -1,18 +1,18 @@
 # 状态栏
 
-`status` 能力向底部 footer 注册一个状态条目。条目是 renderer-neutral 的：你的 `render()` 返回 `BlueView`，渲染器负责排版、配色与截断。
+`status` 能力向底部 footer 注册一个状态条目。条目是 renderer-neutral 的：你的 `render()` 返回 canonical `BlueStatusNode`，core status compiler 负责校验、排版、配色与截断。
 
 ## 契约
 
 ```ts
-api.status?.register(contribution: BlueStatusContribution): BlueResult<BlueRegistration>
+api.status?.register(contribution: BlueStatusEntryContribution): BlueResult<BlueRefreshRegistration>
 ```
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | `string` | 1–128 字符的小写命名空间 id（`^[a-z0-9][a-z0-9._/-]*$`，允许点号） |
-| `render` | `() => BlueView \| null` | 返回当前帧要显示的视图；返回 `null` 即本帧隐藏该条目 |
-| `priority` | `number?` | 可选整数元数据，默认 50。**当前 footer 按注册顺序排布**，priority 只影响同一快照批内的相对顺序——不要依赖它做布局 |
+| `render` | `() => BlueStatusNode \| null` | 返回当前帧要显示的 canonical 非交互 status tree；返回 `null` 即本帧隐藏该条目 |
+| `priority` | `number?` | 可选整数元数据，默认 50。Footer 按 priority、稳定 id 排序；row/alignment 仍是 Blue 内部策略 |
 
 ## 完整示例
 
@@ -47,7 +47,7 @@ export function apply(ctx: Context): void {
 - **`render()` 每帧都会被调用**——footer 每次重绘都会重新求值所有状态条目。把它当成纯函数：保持廉价，不做 I/O、不分配大对象。数据在别处（订阅、定时器）更新，`render()` 只读最新值；
 - **返回 `null` 是隐藏，不是删除**：条目仍注册着，下一帧可能再出现。适合"只在某个状态下可见"的徽章；
 - **超宽被截断**：footer 的宽度预算紧张，条目按 `truncate` 策略处理。内容保持短小——状态栏不是面板，长内容去 [dock](/plugins/dock)；
-- **`fields` 视图会被压平**：状态条目的 `fields` 行的 value 片段会拼接为纯文本（tone/emphasis 在 status 位丢失），需要结构感就自己在 `text` 里留白。
+- **只接受 status 子集**：`text`、`rich-text`、`fields`、`progress` 和递归 `stack` 可用；交互节点会被安全拒绝。Tone/emphasis 由 canonical compiler 保留。
 
 ## 常见错误
 
@@ -60,4 +60,4 @@ export function apply(ctx: Context): void {
 ## 参考
 
 - 内置状态条目分处两个包：model、cwd、git、title、context 在 `blue-transcript`，mode 在 `blue-interaction`（[内置插件](/plugins/builtins)）；
-- 状态条目在 Blue 内部的流转：public contribution → view bridge → footer `StatusModel`，见 [Seam 参考](/plugins/seams)。
+- 状态条目在 Blue 内部的流转：public contribution → view bridge → private footer entry registry → core status compiler，见 [Seam 参考](/plugins/seams)。

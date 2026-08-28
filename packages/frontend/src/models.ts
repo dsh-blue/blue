@@ -12,8 +12,6 @@ export interface DiffView { readonly kind: 'diff'; readonly before: string; read
 export type View = TextView | RichTextView | FieldsView | SectionsView | ListView | CodeView | DiffView
 export type Action = Readonly<{ readonly kind: string; readonly [key: string]: unknown }>
 export interface CommandModel { readonly kind: 'command'; readonly id: string; readonly label: string; readonly description?: string; readonly enabled: boolean; readonly action?: Action }
-export interface StatusModel { readonly kind: 'status'; readonly id: string; readonly view: View; readonly priority?: number; readonly band?: 'left' | 'center' | 'right'; readonly row?: 1 | 2; readonly overflow?: 'truncate' | 'hide'; readonly visible: boolean }
-export interface DockModel { readonly kind: 'dock'; readonly id: string; readonly view: View; readonly placement: 'left' | 'right' | 'bottom'; readonly priority?: number; readonly preferredRows?: number; readonly collapsed?: boolean }
 export interface NotificationModel { readonly kind: 'notification'; readonly id: string; readonly severity: 'info' | 'success' | 'warning' | 'error'; readonly message: string; readonly durationMs?: number; readonly dedupeKey?: string }
 export interface ProviderModel { readonly providerId: string; readonly capabilities: readonly string[]; readonly views: readonly View[] }
 export interface ToolPresentationModel { readonly kind: 'tool'; readonly id: string; readonly name: string; readonly call?: View; readonly result?: View; readonly expanded?: boolean; readonly action?: Action }

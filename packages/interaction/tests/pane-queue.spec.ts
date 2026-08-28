@@ -97,14 +97,14 @@ describe('blue-pane-queue plugin', () => {
     // Truncation goes through the display-width-aware pi-tui helper (the
     // S33 acceptance crash fix — a char-counted cut left CJK rows two cells
     // over); its ellipsis is reset-wrapped even for plain rows.
-    expect(unwrapped(screen.children[0], 20)).toEqual(['~queued ~^↑^~ turn: a \x1b[0m...\x1b[0m~'])
+    expect(unwrapped(screen.children[0], 20)).toEqual(['~queued ~^↑^~ tur\x1b[0m...\x1b[0m'])
   })
 
   it('renders a plain muted row when truncation cuts the glyph', async () => {
     const { screen } = await mount({ inbox: fakeInbox([message('a rather long queued message')]) })
     // A 7-column row truncates before the `↑` (column 8): the split is
     // skipped and the whole row renders muted.
-    expect(unwrapped(screen.children[0], 7)).toEqual(['~queu\x1b[0m...\x1b[0m~'])
+    expect(unwrapped(screen.children[0], 7)).toEqual(['~que\x1b[0m...\x1b[0m'])
   })
 
   it('renders a blank text portion for messages without text blocks', async () => {

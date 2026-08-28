@@ -1313,7 +1313,7 @@ describe('blue whole-tree e2e', () => {
     expect(frame).toContain(`${FOOTER_TEXT_SGR}mock`)
   })
 
-  it('renders a footer entry registered by a downstream plugin through StatusModel', async () => {
+  it('renders a canonical footer node registered by a downstream plugin', async () => {
     const tree = await bootBlue([], { script: [], footerExtra: 'e2e-extra-entry' })
     await currentAgent(tree)
     // Widen first: at the default 80 columns the real checkout's git badge

@@ -25,7 +25,7 @@ import { ReadGroupComponent } from '../src/read-group.ts'
 import { SearchGroupComponent } from '../src/search-group.ts'
 import { ThinkingComponent } from '../src/thinking.ts'
 import { createTranscriptModel, TranscriptModelComponent } from '../src/transcript-model.ts'
-import { BlueStatusModelService, StatusModelFooterComponent } from '../src/status-model.ts'
+import { BlueStatusEntryService, StatusFooterComponent } from '../src/status-model.ts'
 import { bannerLayout, composeBannerLines, shortenHome } from '../src/banner.ts'
 import type { TranscriptToolItem } from '../src/types.ts'
 import { fakeBlueComponents } from './helpers.ts'
@@ -217,13 +217,13 @@ describe('transcript width-scan', () => {
     })
   }
 
-  it('StatusModelFooterComponent survives truncating long models at every width', () => {
+  it('StatusFooterComponent survives truncating long models at every width', () => {
     for (const { name, text } of ADVERSARIAL) {
       const components = fakeBlueComponents()
-      const status = new BlueStatusModelService(new Context())
-      const footer = new StatusModelFooterComponent(status, components, colors)
-      status.register({ kind: 'status', id: 'scan-title', priority: 90, visible: true, view: { kind: 'text', text } })
-      status.register({ kind: 'status', id: 'scan-left', priority: 10, visible: true, view: { kind: 'text', text } })
+      const status = new BlueStatusEntryService(new Context())
+      const footer = new StatusFooterComponent(status, components, colors)
+      status.register({ id: 'scan-title', priority: 90, visible: true, band: 'right', node: { kind: 'text', content: text } })
+      status.register({ id: 'scan-left', priority: 10, visible: true, node: { kind: 'text', content: text } })
       for (const width of SCAN_WIDTHS) {
         expectLinesFit(`FooterShell/${name}`, footer.render(width), width)
       }

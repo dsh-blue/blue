@@ -143,8 +143,8 @@ Harness domain
 | 旧结构 | 替代物 | 删除门槛 |
 |---|---|---|
 | `transcript/src/fold.ts` 直接折叠 session events | `blue-conversation` projection + official transcript model | replay/live/resume/tool/thinking/image/interruption/retract 全覆盖且无 consumer |
-| pane 自己读取/聚合 activity/todo/agents/queue/btw events | feature projection -> `DockModel` | dock focus、mouse、scroll、tail-follow、resize 和 unload fixture 通过 |
-| `BlueStatusEntry` 兼容注册 | `StatusModel` registry | 所有 status producer 转 model，footer parity 通过 |
+| pane 自己读取/聚合 activity/todo/agents/queue/btw events | feature projection -> canonical bottom-pane node | dock focus、mouse、scroll、tail-follow、resize 和 unload fixture 通过 |
+| generic frontend status compatibility | canonical status-node registry | 所有 status producer 转 canonical node，footer parity 通过 |
 | `blueIntents` 业务 presenter/fold shortcut | official canonical tool view/result -> `ToolPresentationModel` | Read/Write/Shell/error/long-output 全覆盖 |
 | command-specific dialog 作为业务状态容器 | `PanelModel`/`FormPanelModel` + structured action | submit/cancel/loading/error/absent/stale 全覆盖 |
 | module singleton shared editor | frontend-tree editor host + `EditorModel` actions | paste/history/completion/slot/focus/resize/selection fixture 通过 |

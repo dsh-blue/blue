@@ -27,8 +27,8 @@ Form 使用双行字段：第一行显示标签和说明，第二行使用无边
 ## 可选子路径
 
 - `./editor-plus`：shell mode 与 completion。
-- `./pane-queue`：随 inbox 变化即时刷新的排队消息 dock model。
-- `./mode-status`：renderer-neutral footer status model。
+- `./pane-queue`：随 inbox 变化即时刷新的 canonical 排队消息 bottom pane。
+- `./mode-status`：从当前 mode snapshot 派生的 canonical footer status node。
 - `./attachments`：有界 filesystem image store。
 - `./paste-image`：原生 clipboard 图片/文件读取。
 - `./command-model`：renderer-neutral command model 与执行 action。

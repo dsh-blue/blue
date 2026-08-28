@@ -8,8 +8,8 @@ Blue 的当前架构用显式 Cordis service、projection/action、renderer-neut
 
 | Capability | Contribution | Blue consumer |
 |---|---|---|
-| `status` | `BlueStatusContribution`，返回 renderer-neutral `BlueView` | view bridge -> footer `StatusModel` |
-| `dock` | `BlueDockContribution` | view bridge -> `DockModel` lane |
+| `status` | `BlueStatusEntryContribution`，返回 renderer-neutral `BlueStatusNode` | view bridge -> private footer entry registry -> core status compiler |
+| `dock` | `BlueDockContribution` | view bridge -> core bounded dock mount |
 | `commands` | `BlueCommandContribution` + async `BlueResult` | interaction bridge -> Harness command registry |
 | `notifications` | `BlueNotification` | interaction bridge -> editor notice |
 
@@ -26,7 +26,7 @@ Manifest 校验、capability 限权、重复 id、owner namespace 和生命周�
 | app | `blueSessionProjections` | consistent-cut projection values、seq、children、subscription |
 | app | `blueSessionActions` | followup/steer/interrupt、mode/model/preset/tool/skill/rewind/side-session action |
 | conversation | `blueConversation` / `blueConversationFacts` | official replay/live transcript 与 status/dock facts |
-| transcript | transcript/status/dock/tool model services | readonly model 到 TUI renderer |
+| transcript | transcript model、private status/bottom-pane registries、tool model service | readonly model/canonical node 到 TUI renderer |
 | interaction | `blueEditorHost` / `blueInteractionState` | frontend-tree-scoped editor slot、draft、settings/probe/paste state |
 | bundle | `cordis.patch.yml` | 28 条 Blue 自有行和显式依赖顺序 |
 

@@ -11,8 +11,8 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    blueStatusModels: import('./status-model.ts').BlueStatusModelService
-    blueDockModels: import('./dock-model.ts').BlueDockModelService
+    blueStatusEntries: import('./status-model.ts').BlueStatusEntryService
+    blueBottomPanes: import('./dock-model.ts').BlueBottomPaneService
   }
 }
 

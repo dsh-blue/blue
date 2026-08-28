@@ -179,8 +179,8 @@ consumer、headless fixture、bundle/composition。未完成六层不得切默�
 
 ### C2-05 Transcript、status、dock、tool
 
-- [x] status 全部发布 StatusModel，footer renderer 只消费 registry snapshot。
-- [x] activity/todo/agents/queue/btw 每个 pane 都有 DockModel producer 和 explicit placement。
+- [x] status 全部发布 canonical `BlueStatusNode`，footer renderer 只消费私有 registry snapshot。
+- [x] activity/todo/agents/queue/btw 每个 pane 都有 canonical `BlueUiNode` producer，并只进入私有 bottom composition。
 - [x] canonical tool call/result 转成 ToolPresentationModel，Read/Write/Shell/error/long
   output/fold/expand 保持 golden/e2e parity。
 - [x] conversation projection 只处理 append-origin facts；transcript official consumer
@@ -263,7 +263,7 @@ fixture report，提交独立 commit，并停止等待审查。
 - [x] 删除 command-specific dialog render/state（`ModelPanel`/`EffortPanel`、
   `TracePanel`/`TraceDetailPanel`、`UpdatePanel` 和旧 thinking-segment chrome），
   保留 generic `PanelModel`/`FrontendPanel` renderer 与可复用 shared controls。
-- [x] 删除 pane-owned event folds；所有 pane 从 DockModel/projection/action 获取状态。
+- [x] 删除 pane-owned event folds；所有 pane 从 canonical bottom-pane node/projection/action 获取状态。
 - [x] 删除 shared-editor module singleton，改为 frontend-tree scoped editor host。
 - [x] 删除 package-internal imports、隐式 row order 和无删除条件的兼容 bridge。
 - [x] `rg`/validator 静态审计确认 Agent/Session 没有穿越 app/domain -> model -> renderer 边界。

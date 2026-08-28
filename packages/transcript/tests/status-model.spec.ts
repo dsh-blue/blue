@@ -1,94 +1,123 @@
-/** Renderer-neutral status registry and footer layout coverage. */
-
+/** Canonical status registry, compiler, layout, and containment coverage. */
 import { Context } from '@deepseek-ai/cordis'
 import type { BlueComponent } from '@dsh-blue/blue-core'
-import type { StatusModel, View } from '@dsh-blue/blue-frontend'
 import { describe, expect, it, vi } from 'vitest'
-import { BlueStatusModelService, plainView, StatusModelFooterComponent } from '../src/status-model.ts'
-import { COLORS, StatusFakeScreen } from './status-fakes.ts'
+import { BlueStatusEntryService, StatusFooterComponent, type BlueStatusEntry } from '../src/status-model.ts'
 import { fakeBlueComponents } from './helpers.ts'
+import { COLORS, StatusFakeScreen } from './status-fakes.ts'
 
-function model(id: string, view: View, options: Partial<StatusModel> = {}): StatusModel {
-  return { kind: 'status', id, view, visible: true, ...options }
+function entry(id: string, content: string, options: Partial<BlueStatusEntry> = {}): BlueStatusEntry {
+  return { id, node: { kind: 'text', content }, visible: true, ...options }
 }
 
-describe('BlueStatusModelService', () => {
-  it('registers dynamic models, refreshes, rejects duplicates, and disposes idempotently', () => {
+describe('BlueStatusEntryService', () => {
+  it('registers live nodes, orders them, refreshes, and disposes idempotently', () => {
     const screen = new StatusFakeScreen()
-    const service = new BlueStatusModelService(new Context(), screen)
+    const service = new BlueStatusEntryService(new Context(), screen)
     const invalidate = vi.fn()
     service.attachFooter({ render: () => [], invalidate } satisfies BlueComponent)
-    let current: StatusModel | null = model('dynamic', { kind: 'text', text: 'first' })
+    let current: BlueStatusEntry | null = entry('dynamic', 'first', { priority: 2 })
     const dispose = service.register(() => current)
-    expect(service.list()[0]?.view).toEqual({ kind: 'text', text: 'first' })
-    expect(() => service.register(model('dynamic', { kind: 'text', text: 'duplicate' }))).toThrow(/already registered/)
-    current = model('dynamic', { kind: 'text', text: 'second' })
+    service.register(entry('same-z', 'z', { priority: 1 }))
+    service.register(entry('same-a', 'a', { priority: 1 }))
+    expect(service.list().map(model => model.id)).toEqual(['same-a', 'same-z', 'dynamic'])
+    expect(() => service.register(entry('dynamic', 'duplicate'))).toThrow(/already registered/)
+    current = entry('dynamic', 'second')
     service.refresh('dynamic')
     service.refresh('missing')
-    expect(screen.renderRequests.length).toBe(2)
-    expect(invalidate).toHaveBeenCalledTimes(2)
+    expect(invalidate).toHaveBeenCalledTimes(4)
+    current = null
+    expect(service.list().map(model => model.id)).toEqual(['same-a', 'same-z'])
     dispose()
     dispose()
-    expect(service.list()).toEqual([])
     const absent = service.register(() => null)
     absent()
     service.dispose()
     expect(service.list()).toEqual([])
-    expect(invalidate).toHaveBeenCalledTimes(4)
   })
 
-  it('can attach a renderer after producers register', () => {
-    const service = new BlueStatusModelService(new Context())
-    service.register(model('late', { kind: 'text', text: 'late' }, { priority: 2 }))
-    service.register(model('same-z', { kind: 'text', text: 'z' }, { priority: 1 }))
-    service.register(model('same-a', { kind: 'text', text: 'a' }, { priority: 1 }))
-    expect(service.list().map(entry => entry.id)).toEqual(['same-a', 'same-z', 'late'])
+  it('attaches late and contains a throwing source in place', () => {
+    const service = new BlueStatusEntryService(new Context())
+    let broken = false
+    service.register(() => {
+      if (broken) throw new Error('failed')
+      return entry('source', 'ok', { priority: 4, band: 'right', row: 2, overflow: 'hide' })
+    })
+    broken = true
+    expect(service.list()[0]).toMatchObject({
+      id: 'source',
+      priority: 4,
+      band: 'right',
+      row: 2,
+      overflow: 'hide',
+      visible: true,
+    })
+    expect(service.list()[0]!.node).toMatchObject({ kind: 'text', tone: 'danger' })
     const screen = new StatusFakeScreen()
     service.attach(screen)
     expect(screen.renderRequests).toHaveLength(1)
   })
+
 })
 
-describe('StatusModelFooterComponent', () => {
-  it('lays out two bands, priorities, right alignment, tones, and overflow', () => {
+describe('StatusFooterComponent', () => {
+  it('lays out two bands, priorities, right alignment, tones, cache, and overflow', () => {
     const components = fakeBlueComponents()
-    const service = new BlueStatusModelService(new Context())
-    service.register(model('left', { kind: 'text', text: 'left', tone: 'accent' }, { priority: 0 }))
-    service.register(model('hidden', { kind: 'text', text: 'hidden' }, { visible: false }))
-    service.register(model('right', { kind: 'text', text: 'right', tone: 'success' }, { band: 'right', row: 1, priority: 1 }))
-    service.register(model('second', { kind: 'text', text: 'second', tone: 'warning' }, { row: 2 }))
-    service.register(model('too-wide', { kind: 'text', text: '0123456789' }, { row: 2, overflow: 'hide', priority: 2 }))
-    const footer = new StatusModelFooterComponent(service, components, COLORS)
+    const service = new BlueStatusEntryService(new Context())
+    service.register(entry('left', 'left', { priority: 0, node: { kind: 'text', content: 'left', tone: 'accent' } }))
+    service.register(entry('hidden', 'hidden', { visible: false }))
+    service.register(entry('right', 'right', { band: 'right', node: { kind: 'text', content: 'right', tone: 'success' } }))
+    service.register(entry('second', 'second', { row: 2, node: { kind: 'text', content: 'second', tone: 'warning' } }))
+    service.register(entry('wide', '0123456789', { row: 2, priority: 2, overflow: 'hide' }))
+    const footer = new StatusFooterComponent(service, components, COLORS)
     expect(footer.render(14)).toEqual(['left     right', 'second        '])
     expect(footer.render(14)).toBe(footer.render(14))
     footer.invalidate()
     expect(footer.render(4)).toEqual(['left', 's\x1b[0m...\x1b[0m'])
   })
 
-  it('flattens every renderer-neutral view kind', () => {
-    expect(plainView({ kind: 'rich-text', spans: [{ text: 'a' }, { text: 'b' }] })).toBe('ab')
-    expect(plainView({ kind: 'fields', fields: [{ label: 'state', value: 'ok' }] })).toBe('state: ok')
-    expect(plainView({ kind: 'sections', sections: [{ title: 'one', body: { kind: 'text', text: 'body' } }] })).toBe('one: body')
-    expect(plainView({ kind: 'list', items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B', disabled: true }] })).toBe('A')
-    expect(plainView({ kind: 'code', code: 'const x = 1' })).toBe('const x = 1')
-    expect(plainView({ kind: 'diff', before: 'old', after: 'new' })).toBe('new')
+  it('compiles status stacks, right-only rows, and invalid trees safely', () => {
+    const service = new BlueStatusEntryService(new Context())
+    service.register({
+      id: 'stack',
+      visible: true,
+      band: 'right',
+      node: { kind: 'stack', direction: 'row', gap: 1, children: [
+        { node: { kind: 'text', content: 'one' } },
+        { node: { kind: 'text', content: 'two', tone: 'muted' } },
+      ] },
+    })
+    const footer = new StatusFooterComponent(service, fakeBlueComponents(), COLORS)
+    const row = footer.render(12)[0]!
+    expect(row).toContain('one')
+    expect(row).toContain('two')
+    expect(fakeBlueComponents().visibleWidth(row)).toBe(12)
+
+    const invalid = new BlueStatusEntryService(new Context())
+    invalid.register(entry('bad', '', { node: { kind: 'actions' } as never }))
+    const error = new StatusFooterComponent(invalid, fakeBlueComponents(), COLORS)
+    expect(error.render(12)[0]).toContain('Blue UI')
+    expect(error.render(0)).toEqual([])
   })
 
-  it('handles zero width, danger tone, and non-text footer views', () => {
-    const error = vi.fn((text: string) => `!${text}!`)
-    const service = new BlueStatusModelService(new Context())
-    service.register(model('danger', { kind: 'text', text: 'boom', tone: 'danger' }))
-    service.register(model('fields', { kind: 'fields', fields: [{ label: 'state', value: 'ok' }] }, { row: 2 }))
-    const footer = new StatusModelFooterComponent(service, fakeBlueComponents(), { ...COLORS, error })
-    expect(footer.render(0)).toEqual([])
-    expect(footer.render(20)).toEqual(['!boom!              ', 'state: ok           '])
-    expect(error).toHaveBeenCalledWith('boom')
-  })
-
-  it('right-aligns a band with no left cluster', () => {
-    const service = new BlueStatusModelService(new Context())
-    service.register(model('right-only', { kind: 'text', text: 'right' }, { band: 'right' }))
-    const footer = new StatusModelFooterComponent(service, fakeBlueComponents(), COLORS)
-    expect(footer.render(10)).toEqual(['     right'])
+  it('drops empty compiled rows and hides multi-row overflow', () => {
+    const service = new BlueStatusEntryService(new Context())
+    service.register(entry('empty', ''))
+    service.register({
+      id: 'empty-stack',
+      visible: true,
+      node: { kind: 'stack', direction: 'column', children: [] },
+    })
+    service.register({
+      id: 'overflow',
+      visible: true,
+      overflow: 'hide',
+      node: { kind: 'stack', direction: 'column', children: [
+        { node: { kind: 'text', content: 'first' } },
+        { node: { kind: 'text', content: 'second' } },
+      ] },
+    })
+    const footer = new StatusFooterComponent(service, fakeBlueComponents(), COLORS)
+    expect(footer.render(20)).toEqual([])
   })
 })

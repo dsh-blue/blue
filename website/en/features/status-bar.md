@@ -1,6 +1,6 @@
 # Status bar
 
-The footer is a **`StatusModel`-driven** two-row surface. Built-in producers publish readonly models to `BlueStatusModelService`; third-party plugins contribute renderer-neutral `BlueView` values through the stable `bluePluginHost` status capability, and the view bridge maps them into the same model path.
+The footer is a two-row canonical status surface. Built-in producers publish readonly `BlueStatusNode` values, rendered by the package-private `BlueStatusEntryService` and core status compiler. Third-party plugins contribute the same renderer-neutral nodes through the stable `bluePluginHost` status capability.
 
 ## Layout and gray tiers
 
@@ -34,7 +34,7 @@ A running agent's status is **not** in the footer — that's the activity pane's
 
 ## Contributing
 
-A third-party plugin opens the status capability, then registers a `BlueStatusContribution`:
+A third-party plugin opens the status capability, then registers a `BlueStatusEntryContribution`:
 
 ```ts
 const opened = ctx.bluePluginHost.open(ctx, {
@@ -52,4 +52,4 @@ const registered = opened.value.status!.register({
 if (!registered.ok) throw new Error(registered.message)
 ```
 
-The host binds the registration to the caller's Fiber, so the entry disappears on unload. Public status contributions currently enter the default footer lane; row/alignment are internal `StatusModel` layout policy, not a third-party renderer contract.
+The host binds the registration to the caller's Fiber, so the entry disappears on unload. Public status contributions currently enter the default footer lane; row/alignment are internal fixed-footer layout policy, not a third-party renderer contract.

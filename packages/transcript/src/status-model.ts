@@ -1,98 +1,115 @@
 /**
- * Renderer-neutral status registry and footer consumer.
+ * Canonical status-node registry and fixed-footer consumer.
  *
  * @module @dsh-blue/blue-transcript/status-model
  */
 import { Service, type Context } from '@deepseek-ai/cordis'
-import type { BlueComponent, BlueComponents, BlueSemanticColors, BlueScreen } from '@dsh-blue/blue-core'
-import type { StatusModel, Tone, View } from '@dsh-blue/blue-frontend'
+import type { BlueStatusNode } from '@dsh-blue/blue-api'
+import { compileBlueStatusNode, type BlueComponent, type BlueComponents, type BlueScreen, type BlueSemanticColors } from '@dsh-blue/blue-core'
 
 declare module '@deepseek-ai/cordis' {
-  interface Context { blueStatusModels: BlueStatusModelService }
+  interface Context { blueStatusEntries: BlueStatusEntryService }
 }
 
-type Source = StatusModel | (() => StatusModel | null)
+/** Canonical status node plus fixed-footer layout metadata. */
+export interface BlueStatusEntry {
+  readonly id: string
+  readonly node: BlueStatusNode
+  readonly priority?: number
+  readonly band?: 'left' | 'center' | 'right'
+  readonly row?: 1 | 2
+  readonly overflow?: 'truncate' | 'hide'
+  readonly visible: boolean
+}
 
-/**
- * Flatten a renderer-neutral view for the compact footer surface.
- * @param view - view to flatten.
- * @returns style-free footer text.
- */
-function plainView(view: View): string {
-  switch (view.kind) {
-    case 'text': return view.text
-    case 'rich-text': return view.spans.map(span => span.text).join('')
-    case 'fields': return view.fields.map(field => `${field.label}: ${field.value}`).join('  ')
-    case 'sections': return view.sections.map(section => `${section.title}: ${plainView(section.body)}`).join('  ')
-    case 'list': return view.items.filter(item => !item.disabled).map(item => item.label).join(', ')
-    case 'code': return view.code
-    case 'diff': return view.after
+/** Live source for one canonical status entry. */
+export type BlueStatusEntrySource = BlueStatusEntry | (() => BlueStatusEntry | null)
+
+interface StatusEntryRecord {
+  readonly source: BlueStatusEntrySource
+  readonly fallback: BlueStatusEntry
+}
+
+function sourceValue(source: BlueStatusEntrySource): BlueStatusEntry | null {
+  return typeof source === 'function' ? source() : source
+}
+
+function failedEntry(entry: BlueStatusEntry): BlueStatusEntry {
+  return {
+    ...entry,
+    visible: true,
+    node: { kind: 'text', content: `Status ${entry.id} failed`, tone: 'danger' },
   }
-  /* c8 ignore next -- View is an exhaustive discriminated union. */
-  return ''
 }
 
-function toneColor(tone: Tone | undefined, colors: BlueSemanticColors): (text: string) => string {
-  switch (tone) {
-    case 'muted': return colors.muted
-    case 'accent': return colors.accent
-    case 'success': return colors.success
-    case 'warning': return colors.warning
-    case 'danger': return colors.error
-    default: return colors.text
-  }
-}
-
-/** Renderer-neutral status registry with a TUI consumer bridge. */
-export class BlueStatusModelService extends Service {
-  private readonly models = new Map<string, Source>()
+/** Canonical status-node registry with explicit footer invalidation. */
+export class BlueStatusEntryService extends Service {
+  private readonly entries = new Map<string, StatusEntryRecord>()
   private footer: BlueComponent | undefined
+
   constructor(ctx: Context, private screen?: BlueScreen) {
-    super(ctx, 'blueStatusModels')
+    super(ctx, 'blueStatusEntries')
   }
-  /** Attach the compiled footer as the cache invalidation target. */
-  attachFooter(footer: BlueComponent): void {
-    this.footer = footer
-  }
+
+  attachFooter(footer: BlueComponent): void { this.footer = footer }
+
   private redraw(): void {
     this.footer?.invalidate()
     this.screen?.requestRender()
   }
+
   attach(screen: BlueScreen): void {
     this.screen = screen
     this.redraw()
   }
-  register(source: Source): () => void {
-    const initial = typeof source === 'function' ? source() : source
+
+  register(source: BlueStatusEntrySource): () => void {
+    const initial = sourceValue(source)
     if (initial === null) return () => undefined
-    if (this.models.has(initial.id)) throw new Error(`status model "${initial.id}" is already registered`)
-    this.models.set(initial.id, source)
+    if (this.entries.has(initial.id)) throw new Error(`status node "${initial.id}" is already registered`)
+    this.entries.set(initial.id, { source, fallback: initial })
     this.redraw()
     let disposed = false
-    return () => { if (disposed) return; disposed = true; this.models.delete(initial.id); this.redraw() }
+    return () => {
+      if (disposed) return
+      disposed = true
+      this.entries.delete(initial.id)
+      this.redraw()
+    }
   }
-  refresh(id: string): void { if (this.models.has(id)) this.redraw() }
-  list(): readonly StatusModel[] {
-    return [...this.models.values()]
-      .map(source => typeof source === 'function' ? source() : source)
-      .filter((model): model is StatusModel => model !== null)
+
+  refresh(id: string): void { if (this.entries.has(id)) this.redraw() }
+
+  list(): readonly BlueStatusEntry[] {
+    return [...this.entries.entries()]
+      .flatMap(([, record]) => {
+        try {
+          const value = sourceValue(record.source)
+          return value === null ? [] : [value]
+        } catch {
+          return [failedEntry(record.fallback)]
+        }
+      })
       .sort((left, right) => (left.priority ?? 0) - (right.priority ?? 0) || left.id.localeCompare(right.id))
   }
-  dispose(): void { this.models.clear(); this.redraw(); this.footer = undefined; this.screen = undefined }
+
+  dispose(): void {
+    this.entries.clear()
+    this.redraw()
+    this.footer = undefined
+    this.screen = undefined
+  }
 }
 
-/**
- * Renderer-owned footer for the renderer-neutral status registry.
- *
- * The component reads the current model snapshot on every frame.
- */
-export class StatusModelFooterComponent implements BlueComponent {
+/** Renderer-owned fixed footer over canonical status nodes. */
+export class StatusFooterComponent implements BlueComponent {
   private cache: { key: string, lines: string[] } | null = null
 
   constructor(
-    private readonly models: BlueStatusModelService,
+    private readonly models: BlueStatusEntryService,
     private readonly components: BlueComponents,
     private readonly colors: BlueSemanticColors,
+    private readonly viewport: () => { readonly columns: number, readonly rows: number } = () => ({ columns: 1, rows: 1 }),
   ) {
     models.attachFooter(this)
   }
@@ -101,7 +118,7 @@ export class StatusModelFooterComponent implements BlueComponent {
 
   render(width: number): string[] {
     const visible = this.models.list().filter(model => model.visible)
-    const bands: { left: StatusModel[], right: StatusModel[] }[] = [{ left: [], right: [] }, { left: [], right: [] }]
+    const bands: { left: BlueStatusEntry[], right: BlueStatusEntry[] }[] = [{ left: [], right: [] }, { left: [], right: [] }]
     for (const model of visible) {
       const band = Math.min(2, Math.max(1, model.row ?? 1)) - 1
       bands[band]![model.band === 'right' ? 'right' : 'left'].push(model)
@@ -129,30 +146,37 @@ export class StatusModelFooterComponent implements BlueComponent {
     return lines
   }
 
-  private renderCluster(models: readonly StatusModel[], width: number): string {
+  private renderCluster(entries: readonly BlueStatusEntry[], width: number): string {
     if (width <= 0) return ''
     const parts: string[] = []
     let used = 0
-    for (const model of models) {
+    for (const entry of entries) {
       const remaining = width - used - (parts.length > 0 ? 2 : 0)
       if (remaining <= 0) break
-      const text = plainView(model.view)
-      if (text === '' || (model.overflow === 'hide' && this.components.visibleWidth(text) > remaining)) continue
-      const part = this.paint(model.view.kind === 'text' ? model.view.tone : undefined, this.components.truncateToWidth(text, remaining))
-      /* c8 ignore next -- renderer width helpers never return an empty paint for non-empty input. */
+      const result = compileBlueStatusNode(entry.node, {
+        components: this.components,
+        colors: this.colors,
+        getViewport: this.viewport,
+        screenMode: 'main',
+        maxRows: 1,
+      })
+      const component = result.ok ? result.value.component : result.errorComponent
+      // Footer text is a single-line slot, not a wrapped document. Compile at
+      // its natural bound so core still owns validation, sanitization, paint,
+      // and width truth, then apply the slot's truncate/hide policy below.
+      const renderWidth = result.ok && result.value.node.kind === 'text'
+        ? Math.max(remaining, result.value.node.content.length * 2 + 1)
+        : remaining
+      const rendered = component.renderStatus(renderWidth)
+      const fullPart = (rendered.rows[0] ?? '').replace(/ +$/, '')
+      const fullWidth = this.components.visibleWidth(fullPart)
+      if (entry.overflow === 'hide' && (rendered.overflowed || fullWidth > remaining)) continue
+      const part = this.components.truncateToWidth(fullPart, remaining).replace(/ +$/, '')
       if (part === '') continue
       const partWidth = this.components.visibleWidth(part)
-      /* c8 ignore next -- the core truncation seam guarantees this invariant. */
-      if (partWidth > remaining) continue
       parts.push(part)
       used += (parts.length > 1 ? 2 : 0) + partWidth
     }
     return parts.join('  ')
   }
-
-  private paint(tone: Tone | undefined, text: string): string {
-    return toneColor(tone, this.colors)(text)
-  }
 }
-
-export { plainView }

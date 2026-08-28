@@ -26,35 +26,30 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import {
-  type BlueComponents,
-  type BlueSemanticColors,
-} from '@dsh-blue/blue-core'
+import type { BlueInlineSpan, BlueUiNode } from '@dsh-blue/blue-api'
+import type { BlueComponents, BlueSemanticColors } from '@dsh-blue/blue-core'
 import type { TodoItem } from '@deepseek-ai/dsh-session'
 import type { ConversationFacts } from '@dsh-blue/blue-conversation'
-import type { DockModel } from '@dsh-blue/blue-frontend'
+import type { BlueBottomPaneNode } from './dock-model.ts'
 import type { SessionFactsService } from './session-facts.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-pane-todo'
 
 /** Services required before the pane can mount. */
-export const inject = ['blueScreen', 'blueTheme', 'blueKeymap', 'blueComponents', 'blueSessionFacts', 'blueDockModels']
+export const inject = ['blueScreen', 'blueTheme', 'blueKeymap', 'blueComponents', 'blueSessionFacts', 'blueBottomPanes']
 
 /** The global action toggling the todo panel's expansion (Ctrl-T). */
 export const ACTION_TOGGLE_TODO = 'blue.todo.toggle'
 
-/** Below this viewport width the pane renders nothing rather than overflow. */
-const TODO_MIN_WIDTH = 4
-
 /** The folded view's row cap: longer lists fold to the kimi selection. */
 const MAX_VISIBLE = 5
 
-/** Bold SGR, wrapped around the title and the in-progress marker (the ITALIC precedent). */
+/** Below this viewport width the pane renders nothing rather than overflow. */
+const TODO_MIN_WIDTH = 4
+
 const BOLD_OPEN = '\x1b[1m'
 const BOLD_CLOSE = '\x1b[22m'
-
-/** Strikethrough SGR, wrapped around completed content (the kimi done treatment). */
 const STRIKE_OPEN = '\x1b[9m'
 const STRIKE_CLOSE = '\x1b[29m'
 
@@ -168,35 +163,25 @@ export function formatHiddenCounts(counts: Record<TodoItem['status'], number>): 
     .join(' · ')
 }
 
-/**
- * One content row: two-column indent, the status marker, the styled content
- * (pre-truncated so the composed row fits the viewport without clipping
- * through the painted SGR).
- * @param todo - the entry to render.
- * @param colors - the semantic color table.
- * @param components - the component factory providing width truncation.
- * @param width - current viewport width in columns.
- * @returns the composed row, at most `width` visible columns.
- */
-function renderRow(
-  todo: TodoItem,
-  colors: BlueSemanticColors,
-  components: BlueComponents,
-  width: number,
-): string {
-  // Two indent columns, the marker, one gap: the content budget.
-  const content = components.truncateToWidth(todo.content, Math.max(0, width - 4))
+/** Build semantic spans for one todo row. */
+function todoSpans(todo: TodoItem): readonly BlueInlineSpan[] {
   switch (todo.status) {
     case 'completed':
-      // `✓` success marker, content muted with strikethrough (the kimi
-      // done treatment).
-      return `  ${colors.success('✓')} ${colors.muted(`${STRIKE_OPEN}${content}${STRIKE_CLOSE}`)}`
+      return [{ text: '  ✓ ', tone: 'success' }, { text: todo.content, tone: 'muted' }]
     case 'in_progress':
-      // `●` bold primary marker, content plain.
-      return `  ${colors.primary(`${BOLD_OPEN}●${BOLD_CLOSE}`)} ${content}`
+      return [{ text: '  ● ', tone: 'accent', emphasis: 'strong' }, { text: todo.content }]
     case 'pending':
-      // `○` dim marker, content plain.
-      return `  ${colors.textMuted('○')} ${content}`
+      return [{ text: '  ○ ', tone: 'muted' }, { text: todo.content }]
+  }
+}
+
+/** Accepted status row retained until canonical spans can express strike. */
+function renderRow(todo: TodoItem, colors: BlueSemanticColors, components: BlueComponents, width: number): string {
+  const content = components.truncateToWidth(todo.content, Math.max(0, width - 4))
+  switch (todo.status) {
+    case 'completed': return `  ${colors.success('✓')} ${colors.muted(`${STRIKE_OPEN}${content}${STRIKE_CLOSE}`)}`
+    case 'in_progress': return `  ${colors.primary(`${BOLD_OPEN}●${BOLD_CLOSE}`)} ${content}`
+    case 'pending': return `  ${colors.textMuted('○')} ${content}`
   }
 }
 
@@ -221,55 +206,55 @@ function signature(state: TodoState): string {
   return `${state.dialog ? 'dialog' : 'visible'}\n${state.expanded ? 'expanded' : 'folded'}\n${list}`
 }
 
-/**
- * The todo pane: zero rows without a list, the folded selection with its
- * footer by default, the full list with its footer when expanded.
- */
+/** Build the canonical todo tree; the core compiler owns paint and width. */
+function todoNode(state: TodoState): BlueUiNode {
+  const children: { readonly node: BlueUiNode }[] = [
+    { node: { kind: 'divider' } },
+    { node: { kind: 'rich-text', spans: [{ text: '  Todo', tone: 'accent', emphasis: 'strong' }] } },
+  ]
+  if (state.expanded) {
+    for (const todo of state.todos) children.push({ node: { kind: 'rich-text', spans: todoSpans(todo) } })
+    if (state.todos.length > MAX_VISIBLE) {
+      children.push({ node: { kind: 'text', content: `  all ${state.todos.length} items · ctrl+t to collapse`, tone: 'muted' } })
+    }
+  } else {
+    const { rows, hidden, hiddenCounts } = selectVisibleTodos(state.todos)
+    for (const todo of rows) children.push({ node: { kind: 'rich-text', spans: todoSpans(todo) } })
+    if (hidden > 0) {
+      children.push({ node: { kind: 'text', content: `  … +${hidden} more (${formatHiddenCounts(hiddenCounts)}) · ctrl+t to expand`, tone: 'muted' } })
+    }
+  }
+  return { kind: 'stack', direction: 'column', gap: 0, children }
+}
+
+/** Accepted todo chrome retained behind the pane-specific renderer adapter. */
 class TodoPaneComponent {
-  /**
-   * @param colors - the semantic color table.
-   * @param components - the component factory providing width truncation.
-   * @param state - the shared todo/expansion state.
-   */
   constructor(
     private readonly colors: BlueSemanticColors,
     private readonly components: BlueComponents,
     private readonly state: TodoState,
   ) {}
 
-  /**
-   * @param width - current viewport width in columns.
-   * @returns the frame — rule, title, rows, and the fold footer — truncated
-   *   to the viewport; none when there is no list.
-   */
   render(width: number): string[] {
-    if (this.state.dialog) return []
-    const todos = this.state.todos
-    if (todos.length === 0) return []
-    if (width < TODO_MIN_WIDTH) return []
+    if (this.state.dialog || this.state.todos.length === 0 || width < TODO_MIN_WIDTH) return []
     const lines = [
       this.colors.border('─'.repeat(width)),
       this.colors.primary(`${BOLD_OPEN}  Todo${BOLD_CLOSE}`),
     ]
     if (this.state.expanded) {
-      for (const todo of todos) lines.push(renderRow(todo, this.colors, this.components, width))
-      if (todos.length > MAX_VISIBLE) {
-        const footer = `  all ${todos.length} items · ctrl+t to collapse`
-        lines.push(this.colors.muted(this.components.truncateToWidth(footer, width)))
+      for (const todo of this.state.todos) lines.push(renderRow(todo, this.colors, this.components, width))
+      if (this.state.todos.length > MAX_VISIBLE) {
+        lines.push(this.colors.muted(this.components.truncateToWidth(`  all ${this.state.todos.length} items · ctrl+t to collapse`, width)))
       }
     } else {
-      const { rows, hidden, hiddenCounts } = selectVisibleTodos(todos)
+      const { rows, hidden, hiddenCounts } = selectVisibleTodos(this.state.todos)
       for (const todo of rows) lines.push(renderRow(todo, this.colors, this.components, width))
       if (hidden > 0) {
-        // hidden > 0 guarantees a non-empty distribution (every hidden
-        // entry counts toward some status), so the suffix is unconditional.
-        const footer = `  … +${hidden} more (${formatHiddenCounts(hiddenCounts)}) · ctrl+t to expand`
-        lines.push(this.colors.muted(this.components.truncateToWidth(footer, width)))
+        lines.push(this.colors.muted(this.components.truncateToWidth(`  … +${hidden} more (${formatHiddenCounts(hiddenCounts)}) · ctrl+t to expand`, width)))
       }
     }
     return lines.map(line => this.components.truncateToWidth(line, width))
   }
-
 }
 
 /**
@@ -305,7 +290,7 @@ export function apply(ctx: Context): void {
     const next = signature(state)
     if (next === rendered) return
     rendered = next
-    ctx.blueDockModels.refresh('blue.dock.todo')
+    ctx.blueBottomPanes.refresh('blue.dock.todo')
   }
 
   const facts = ctx.get('blueSessionFacts') as SessionFactsService | undefined
@@ -323,7 +308,7 @@ export function apply(ctx: Context): void {
     if (state.dialog === occupied) return
     state.dialog = occupied
     rendered = signature(state)
-    ctx.blueDockModels.refresh('blue.dock.todo')
+    ctx.blueBottomPanes.refresh('blue.dock.todo')
   })
 
   // Effect-bound so unloading this fiber unregisters the action.
@@ -334,14 +319,15 @@ export function apply(ctx: Context): void {
     handler: () => {
       state.expanded = !state.expanded
       rendered = signature(state)
-      ctx.blueDockModels.refresh('blue.dock.todo', true)
+      ctx.blueBottomPanes.refresh('blue.dock.todo', true)
     },
   }]))
 
-  const pane = new TodoPaneComponent(colors, components, state)
-  const model = (): DockModel => ({
-    kind: 'dock', id: 'blue.dock.todo', placement: 'bottom', priority: 30,
-    view: { kind: 'text', text: state.todos.length === 0 ? '' : 'Todo' },
+  const model = (): BlueBottomPaneNode => ({
+    id: 'blue.dock.todo', priority: 30,
+    node: todoNode(state),
+    collapsed: state.dialog || state.todos.length === 0,
   })
-  ctx.effect(() => ctx.blueDockModels.register(model, (_model, width) => pane.render(width)))
+  const pane = new TodoPaneComponent(colors, components, state)
+  ctx.effect(() => ctx.blueBottomPanes.register(model, (_node, width) => pane.render(width)))
 }

@@ -175,7 +175,7 @@ export const CREATIVE_BLUE_INTERNAL_SERVICES = [
   'blueComponents',
   'blueContextFeature',
   'blueConversationProjection',
-  'blueDockModels',
+  'blueBottomPanes',
   'blueEditorHost',
   'blueEditorModels',
   'blueHarnessActionAdapter',
@@ -197,7 +197,7 @@ export const CREATIVE_BLUE_INTERNAL_SERVICES = [
   'blueSessionReader',
   'blueSkillsCatalog',
   'blueStartup',
-  'blueStatusModels',
+  'blueStatusEntries',
   'blueTerminalInfo',
   'blueTheme',
   'blueThemeModels',
@@ -499,11 +499,11 @@ export const name = 'blue-transcript'
 export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'blueSessionReader', 'blueSessionProjections']
 export const apply = ctx => globalThis.__blueE2E.transcriptApply(ctx)
 `)}`,
-    // The baseline status row publishes a renderer-neutral StatusModel.
+    // The baseline status row publishes a canonical status node.
     '- id: blue-status-basic',
     `  name: ${fixture('blue-status-basic.mjs', `
 export const name = 'blue-status-basic'
-export const inject = ['blueStatusModels', 'blueSessionFacts']
+export const inject = ['blueStatusEntries', 'blueSessionFacts']
 export const apply = ctx => globalThis.__blueE2E.statusBasicApply(ctx)
 `)}`,
     // The enhancement segment mirrors cordis.patch.yml's row order: the
@@ -543,13 +543,13 @@ export const apply = (ctx, config) => globalThis.__blueE2E.pasteImageApply(ctx, 
     '- id: blue-status-cwd',
     `  name: ${fixture('blue-status-cwd.mjs', `
 export const name = 'blue-status-cwd'
-export const inject = ['blueStatusModels', 'blueSessionFacts']
+export const inject = ['blueStatusEntries', 'blueSessionFacts']
 export const apply = ctx => globalThis.__blueE2E.statusCwdApply(ctx)
 `)}`,
     '- id: blue-status-git',
     `  name: ${fixture('blue-status-git.mjs', `
 export const name = 'blue-status-git'
-export const inject = ['blueStatusModels', 'blueSessionFacts']
+export const inject = ['blueStatusEntries', 'blueSessionFacts']
 export const apply = ctx => globalThis.__blueE2E.statusGitApply(ctx)
 `)}`,
     // The harness session-title service stand-in (the thin e2e tree boots no
@@ -592,13 +592,13 @@ export const apply = ctx => {
     '- id: blue-status-title',
     `  name: ${fixture('blue-status-title.mjs', `
 export const name = 'blue-status-title'
-export const inject = ['blueStatusModels', 'blueSessionFacts']
+export const inject = ['blueStatusEntries', 'blueSessionFacts']
 export const apply = ctx => globalThis.__blueE2E.statusTitleApply(ctx)
 `)}`,
     '- id: blue-status-context',
     `  name: ${fixture('blue-status-context.mjs', `
 export const name = 'blue-status-context'
-export const inject = ['blueStatusModels', 'blueSessionFacts']
+export const inject = ['blueStatusEntries', 'blueSessionFacts']
 export const apply = ctx => globalThis.__blueE2E.statusContextApply(ctx)
 `)}`,
     ...(options.frontendContext === true ? [
@@ -627,7 +627,7 @@ export const apply = ctx => globalThis.__blueE2E.officialTranscriptApply(ctx)
     '- id: blue-status-mode',
     `  name: ${fixture('blue-status-mode.mjs', `
 export const name = 'blue-status-mode'
-export const inject = ['blueStatusModels', 'blueSessionReader', 'blueSessionActions']
+export const inject = ['blueStatusEntries', 'blueSessionReader', 'blueSessionActions']
 export const apply = ctx => globalThis.__blueE2E.modeStatusApply(ctx)
 `)}`,
     // The enhancement-segment pane rows mirror cordis.patch.yml; each fixture
@@ -636,35 +636,35 @@ export const apply = ctx => globalThis.__blueE2E.modeStatusApply(ctx)
     '- id: blue-pane-activity',
     `  name: ${fixture('blue-pane-activity.mjs', `
 export const name = 'blue-pane-activity'
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionFacts', 'blueDockModels']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionFacts', 'blueBottomPanes']
 export const apply = ctx => globalThis.__blueE2E.paneActivityApply(ctx)
 `)}`,
     '  inject: [blueComponents, blueSessionFacts]',
     '- id: blue-pane-queue',
     `  name: ${fixture('blue-pane-queue.mjs', `
 export const name = 'blue-pane-queue'
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueDockModels', 'blueSessionReader', 'blueSessionActions']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueBottomPanes', 'blueSessionReader', 'blueSessionActions']
 export const apply = ctx => globalThis.__blueE2E.paneQueueApply(ctx)
 `)}`,
     '  inject: [blueComponents, blueSessionReader, blueSessionActions]',
     '- id: blue-pane-todo',
     `  name: ${fixture('blue-pane-todo.mjs', `
 export const name = 'blue-pane-todo'
-export const inject = ['blueScreen', 'blueTheme', 'blueKeymap', 'blueComponents', 'blueSessionFacts', 'blueDockModels']
+export const inject = ['blueScreen', 'blueTheme', 'blueKeymap', 'blueComponents', 'blueSessionFacts', 'blueBottomPanes']
 export const apply = ctx => globalThis.__blueE2E.paneTodoApply(ctx)
 `)}`,
     '  inject: [blueComponents, blueSessionFacts]',
     '- id: blue-pane-btw',
     `  name: ${fixture('blue-pane-btw.mjs', `
 export const name = 'blue-pane-btw'
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'commands', 'blueSessionActions', 'blueDockModels']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'commands', 'blueSessionActions', 'blueBottomPanes']
 export const apply = ctx => globalThis.__blueE2E.paneBtwApply(ctx)
 `)}`,
     '  inject: [blueComponents, blueSessionActions]',
     '- id: blue-plugin-view-bridge',
     `  name: ${fixture('blue-plugin-view-bridge.mjs', `
 export const name = 'blue-plugin-view-bridge'
-export const inject = ['bluePluginHost', 'blueScreen', 'blueStatusModels', 'blueTheme', 'blueComponents']
+export const inject = ['bluePluginHost', 'blueScreen', 'blueStatusEntries', 'blueTheme', 'blueComponents']
 export const apply = ctx => globalThis.__blueE2E.viewBridgeApply(ctx)
 `)}`,
     // The assembly segment closes the plain baseline: the interaction row
@@ -748,9 +748,9 @@ export const apply = (ctx, config) => globalThis.__blueE2E.appApply(ctx, config)
       '- id: blue-e2e-extra',
       `  name: ${fixture('blue-e2e-extra.mjs', `
 export const name = 'blue-e2e-extra'
-export const inject = ['blueStatusModels']
+export const inject = ['blueStatusEntries']
 export const apply = (ctx) => {
-  ctx.effect(() => ctx.blueStatusModels.register({ kind: 'status', id: 'e2e-extra', priority: 30, view: { kind: 'text', text: ${text} }, visible: true }))
+  ctx.effect(() => ctx.blueStatusEntries.register({ id: 'e2e-extra', priority: 30, node: { kind: 'text', content: ${text} }, visible: true }))
 }
 `)}`,
     )

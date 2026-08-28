@@ -58,8 +58,8 @@ Transcript tunables remain in this settings schema because interaction owns the 
 ## Optional Subpaths
 
 - `editor-plus`: shell/completion enhancement.
-- `pane-queue`: queue projection refreshed by the app-owned queue-change notification; its bottom `DockModel` mounts independently through transcript's shared dock allocator and leaves no empty lane root on unload.
-- `mode-status`: `StatusModel` producer over app mode snapshots.
+- `pane-queue`: the sole cross-package consumer of transcript's package-private `blueBottomPanes` seam. It publishes a canonical fallback node from the app-owned queue snapshot and retains a narrow renderer adapter for the accepted one-line color split/exact truncation; remove the adapter when canonical inline layout reproduces both. The pane mounts independently through the shared bottom allocator and leaves no empty root on unload.
+- `mode-status`: canonical `BlueStatusNode` producer over app mode snapshots through transcript's package-private `blueStatusEntries` seam. It is kept in interaction because the mode snapshot/action ownership is app/interaction, not transcript rendering.
 - `attachments`: bounded filesystem `AttachmentStore`.
 - `paste-image`: platform clipboard ingestion and reversible submit transformation.
 - `command-model`: renderer-neutral command registry.

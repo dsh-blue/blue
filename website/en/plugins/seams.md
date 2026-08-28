@@ -8,8 +8,8 @@ External plugins request capabilities through `ctx.bluePluginHost.open(ctx, mani
 
 | Capability | Contribution | Blue consumer |
 |---|---|---|
-| `status` | `BlueStatusContribution` returning a renderer-neutral `BlueView` | view bridge into footer `StatusModel` |
-| `dock` | `BlueDockContribution` | view bridge into a `DockModel` lane |
+| `status` | `BlueStatusEntryContribution` returning a renderer-neutral `BlueStatusNode` | view bridge into the private footer entry registry and core status compiler |
+| `dock` | `BlueDockContribution` | view bridge into core's bounded dock mount |
 | `commands` | `BlueCommandContribution` plus async `BlueResult` | interaction bridge into the Harness command registry |
 | `notifications` | `BlueNotification` | interaction bridge into the editor notice consumer |
 
@@ -26,7 +26,7 @@ In the current phase `open()` grants only the four capabilities in the table abo
 | app | `blueSessionProjections` | consistent-cut projection values, seq, children, and subscriptions |
 | app | `blueSessionActions` | followup/steer/interrupt plus mode/model/preset/tool/skill/rewind/side-session actions |
 | conversation | `blueConversation` / `blueConversationFacts` | official replay/live transcript and status/dock facts |
-| transcript | transcript/status/dock/tool model services | readonly models into the TUI renderer |
+| transcript | transcript model, private status/bottom-pane registries, and tool model service | readonly models/canonical nodes into the TUI renderer |
 | interaction | `blueEditorHost` / `blueInteractionState` | frontend-tree-scoped editor slot, draft, settings/probe/paste state |
 | bundle | `cordis.patch.yml` | 28 Blue-owned rows and explicit dependency ordering |
 

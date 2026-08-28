@@ -9,9 +9,9 @@ Blue 是一棵 Cordis 插件树。Bundle 当前有 28 条 Blue 自有行：2 条
 ## 增强
 
 - editor/attachment：`blue-editor-plus`、`blue-attachments`、`blue-paste-image`
-- status：cwd、git、mode、title、context 五个 `StatusModel` producer
-- dock：activity、queue、todo、btw、agents 五个 `DockModel` producer
-- public view bridge：把第三方 status/dock `BlueView` 接入 owner registry
+- status：cwd、git、mode、title、context 五个 canonical `BlueStatusNode` producer
+- bottom panes：activity、queue、todo、btw、agents 五个 canonical `BlueUiNode` producer，经私有 bottom-only composition 挂载
+- public view bridge：把第三方 status node 接入 footer，把 dock `BlueView` 直接交给 core bounded mount
 
 这些 14 行可逐项移除。Tool diff/terminal/search/read/web 呈现来自 canonical `ToolPresentationModel`，不存在独立 intent row。
 

@@ -157,7 +157,7 @@
         blueCommandModels: true
         blueContextFeature: true
         blueConversationProjection: true
-        blueDockModels: true
+        blueBottomPanes: true
         blueEditorHost: true
         blueEditorModels: true
         blueHarnessActionAdapter: true
@@ -175,7 +175,7 @@
         blueSessionProjections: true
         blueSessionReader: true
         blueSkillsCatalog: true
-        blueStatusModels: true
+        blueStatusEntries: true
         blueToolModels: true
         blueTranscriptModels: true
         commands: true
@@ -236,14 +236,14 @@
       name: '@dsh-blue/blue-transcript/banner'
 
     # Transcript renderer adapter: mounts the semantic model registries and
-    # the two-row StatusModel footer bottom-pinned above the input editor.
+    # the two-row canonical status footer bottom-pinned above the input editor.
     - id: blue-transcript
       name: '@dsh-blue/blue-transcript'
 
 
     # Baseline footer entry: the model name alone at priority 0, in the
     # full-strength text tier (the S15 kimi identity: the brightest thing in
-    # footer), registered as a renderer-neutral StatusModel and consumed by
+    # footer), registered as a canonical status node and consumed by
     # the transcript footer bridge.
     - id: blue-status-basic
       name: '@dsh-blue/blue-transcript/status-basic-model'
@@ -271,7 +271,7 @@
     # (activity → queue → todo → btw), and the interaction row's input
     # plugin is created only inside interaction's apply, subscribing after
     # every row fiber, so the editor mounts last.
-    # (Pinning on blueStatusModels instead would make the interaction fiber a
+    # (Pinning on blueStatusEntries instead would make the interaction fiber a
     # transitive blueTheme dependent and /theme would dispose its own
     # handler's fiber mid-swap.)
 

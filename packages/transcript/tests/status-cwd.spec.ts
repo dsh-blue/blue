@@ -82,7 +82,7 @@ describe('blue-status-cwd', () => {
 
   it('truncates to the offered width budget', async () => {
     const harness = await bootStatusPlugin(cwd, fakeAgent([], { cwd: '/abcdefghij/kl' }))
-    expect(harness.entry.render(10)).toBe('/abcdef\x1b[0m...\x1b[0m')
+    expect(harness.entry.render(10)).toBe('/abcdefghi')
     await harness.dispose()
   })
 

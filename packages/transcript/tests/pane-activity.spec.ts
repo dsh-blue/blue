@@ -88,7 +88,7 @@ describe('blue-pane-activity', () => {
   it('mounts one bottom pane that renders the kimi placeholder row while idle', async () => {
     const { screen, dispose } = await boot()
     expect(activity.name).toBe('blue-pane-activity')
-    expect(activity.inject).toEqual(['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionFacts', 'blueDockModels'])
+    expect(activity.inject).toEqual(['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionFacts', 'blueBottomPanes'])
     expect(screen.bottomChildren).toHaveLength(1)
     // kimi's Spacer(1): the placeholder row is always present when the
     // spinner is not, so the dock never jumps at the activity edges.

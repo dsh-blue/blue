@@ -10,7 +10,7 @@
 | [blue-seams.md](./blue-seams.md) | 当前 seam：稳定 plugin host、app session boundary、model registries 与 bundle mapping |
 | [blue-frontend-architecture.md](./blue-frontend-architecture.md) | renderer-neutral frontend runtime 的目标原则 |
 | [blue-session-runtime.md](./blue-session-runtime.md) | projection、action、session reader 与 adapter 职责 |
-| [blue-interaction-model.md](./blue-interaction-model.md) | command、panel、status、dock、editor 与 provider model |
+| [blue-interaction-model.md](./blue-interaction-model.md) | command、panel、canonical status/pane、editor 与 provider contract |
 | [blue-surface-migration-matrix.md](./blue-surface-migration-matrix.md) | surface replacement 与物理删除状态 |
 | [blue-runtime-cutover-ledger.md](./blue-runtime-cutover-ledger.md) | frozen refs、parity、删除门禁和最终证据 |
 | [blue-frontend-runtime-cutover-spec.md](./blue-frontend-runtime-cutover-spec.md) | cutover 冻结规格和发布边界 |

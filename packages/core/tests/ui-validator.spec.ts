@@ -1,4 +1,5 @@
 /** Canonical UI validator quotas, narrowing, and hostile-input containment. */
+import { runInNewContext } from 'node:vm'
 import { describe, expect, it } from 'vitest'
 import { ui } from '../../ui/src/index.ts'
 import {
@@ -71,6 +72,30 @@ describe('validateBlueUiNode', () => {
     expect(Object.isFrozen(result.children)).toBe(true)
     expect((result.children[9]!.node as { items: readonly { detailSpans?: readonly { text: string }[] }[] }).items[0]!.detailSpans).toEqual([{ text: 'current', tone: 'accent', emphasis: 'strong' }])
     expect(Object.isFrozen((result.children[9]!.node as { items: readonly { detailSpans?: readonly unknown[] }[] }).items[0]!.detailSpans)).toBe(true)
+  })
+
+  it('admits ordinary records and dense arrays from another VM realm', () => {
+    const foreign = runInNewContext(`({
+      kind: 'stack',
+      direction: 'column',
+      children: [
+        { node: { kind: 'text', content: 'foreign' } },
+        { node: { kind: 'fields', rows: [{ label: 'state', value: [{ text: 'ok' }] }] } },
+      ],
+    })`) as unknown
+    const result = validateBlueUiNode(foreign)
+    expect(result).toMatchObject({ ok: true })
+    if (!result.ok) return
+    expect(result.value).toEqual({
+      kind: 'stack',
+      direction: 'column',
+      children: [
+        { node: { kind: 'text', content: 'foreign' } },
+        { node: { kind: 'fields', rows: [{ label: 'state', value: [{ text: 'ok' }] }] } },
+      ],
+    })
+    expect(Object.getPrototypeOf(result.value)).toBe(Object.prototype)
+    expect(Object.isFrozen(result.value)).toBe(true)
   })
 
   it('strips ESC and C1 CSI/OSC/DCS/SOS/PM/APC sequences while preserving LF and Tab', () => {
@@ -175,6 +200,38 @@ describe('validateBlueUiNode', () => {
     expect(result.ok).toBe(true)
     expect(reads).toBe(0)
     expect(Object.isFrozen(caller)).toBe(false)
+
+    class TextNode {
+      readonly kind = 'text'
+      readonly content = 'class instance'
+    }
+    expect(validateBlueUiNode(new TextNode())).toMatchObject({
+      ok: false,
+      code: 'BLUE_INVALID_CONTRIBUTION',
+      message: expect.stringContaining('plain object'),
+    })
+    const NamedObject = class Object {
+      readonly kind = 'text'
+      readonly content = 'named class instance'
+    }
+    expect(validateBlueUiNode(new NamedObject())).toMatchObject({
+      ok: false,
+      code: 'BLUE_INVALID_CONTRIBUTION',
+      message: expect.stringContaining('plain object'),
+    })
+    const spoofedPrototype = Object.create(null) as object
+    Object.defineProperty(spoofedPrototype, 'constructor', { value: function Object() {} })
+    const spoofed = Object.assign(Object.create(spoofedPrototype) as object, { kind: 'text', content: 'spoofed prototype' })
+    expect(validateBlueUiNode(spoofed)).toMatchObject({
+      ok: false,
+      code: 'BLUE_INVALID_CONTRIBUTION',
+      message: expect.stringContaining('plain object'),
+    })
+    expect(validateBlueUiNode(Object.create({ kind: 'text', content: 'prototype data' }))).toMatchObject({
+      ok: false,
+      code: 'BLUE_INVALID_CONTRIBUTION',
+      message: expect.stringContaining('plain object'),
+    })
   })
 
   it('copies only dense plain arrays without invoking index or method accessors', () => {
@@ -217,6 +274,7 @@ describe('validateBlueUiNode', () => {
     expect(methodReads).toBe(0)
 
     class ArraySubclass extends Array<unknown> {}
+    Object.defineProperty(ArraySubclass.prototype, 'constructor', { value: function Array() {} })
     expect(validateBlueUiNode({ kind: 'stack', direction: 'column', children: new ArraySubclass() })).toMatchObject({
       ok: false,
       code: 'BLUE_INVALID_CONTRIBUTION',

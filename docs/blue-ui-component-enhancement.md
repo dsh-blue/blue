@@ -57,7 +57,7 @@ VStack
 
 ### 2.2 `left/right` 只是未完成的 seam
 
-内部 `DockModel` 声明了 `placement: 'left' | 'right' | 'bottom'`，`BlueDockModelService` 也保留了左右分组；但当前所有官方 pane 都使用 `bottom`。左右分组即使有内容，也只是经 `screen.addChild()` 顺序加入 content container，不会形成横向列。
+W4a-C 已删除内部 placement model 和伪 left/right 分组。当前 `BlueBottomPaneService` 是 package-private、bottom-only composition；每个官方 pane 经 core 的共享 dock allocator 独立挂载。
 
 公共 `BlueDockContribution` 更没有 `placement` 字段。插件 dock bridge 统一调用 `mountDockChild()`，因此第三方贡献只能进入底部。
 
@@ -691,7 +691,7 @@ Approval、Questionnaire、PlanReview、Help、Info、Settings 使用同一 over
 
 ### 10.4 Frontend model 收敛
 
-内部 `@dsh-blue/blue-frontend` 的 `View/PanelModel/DockModel` 与公共 `BlueUiNode/PaneContribution` 不能长期保留两套同义模型：
+内部 `@dsh-blue/blue-frontend` 的 `View/PanelModel` 与公共 `BlueUiNode/PaneContribution` 不能长期保留两套同义模型；status/dock 的同义 generic model 已在 W4a-C 删除：
 
 - 公共安全类型放 `blue-api/blue-ui`；
 - 官方 runtime model 可增加领域事实，但 UI 组合引用公共 node；
@@ -859,7 +859,7 @@ W4a 三个 worktree 按 A → B → C 严格串行，并保持包所有权：
 
 - **W4a-A Core：**WrappingSelectList、frontend renderer、公共 chrome 私有化；不修改 interaction。
 - **W4a-B Interaction：**SelectListPanel、BlueSelect、FormPanel、settings；它独占 interaction 的 `fakes.ts` 和 `width-scan.spec.ts`。
-- **W4a-C Transcript：**DockModel/StatusModel 和官方 bottom panes；保持默认位置，不把官方 pane 迁入 side。
+- **W4a-C Transcript：**canonical status nodes、package-private bottom panes 和官方 renderer adapters；保持默认底部位置，不把官方 pane 迁入 side。
 
 W4b 在 W4a-B 合入后由一个 Agent 迁移 Approval、Questionnaire、PlanReview、Help、Info 和 loading。这样避免两个 Agent 同时改 interaction 共享 editor/fake/width fixture。
 

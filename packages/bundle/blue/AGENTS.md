@@ -12,7 +12,7 @@ F5 carries baseline `blue-conversation` and `blue-transcript-official` rows. The
 
 F6 keeps `blue-openpencil` and `blue-lark` as validation-only ecosystem adapters. They are intentionally absent from the installable bundle dependency closure and are exercised through independent packed fixtures. OpenPencil observes only official dsh-tools results, drops signed result metadata, and publishes bounded tool/notification models. Lark registers an official command and uses the optional public loopback settings route without retaining credentials. Missing external capabilities produce no contribution and do not pending the tree; their package `AGENTS.md` files record the compatibility seams and deletion conditions.
 
-F5 adds no parallel composition rows for registries: `blue-transcript` owns `blueStatusModels`, `blueDockModels`, `blueToolModels`, and `blueTranscriptModels`; `blue-interaction` owns `blueCommandModels`, `blueEditorModels`, and the frontend-tree-scoped interaction state service. The basic/cwd/git/title/context/mode status rows inject `blueStatusModels`, while activity/todo/agents consume `blueSessionFacts`. Bundle e2e fixture wrappers must mirror source inject lists exactly; no model may duplicate content in the default composition.
+F5 adds no parallel composition rows for registries: `blue-transcript` owns the package-private `blueStatusEntries` and bottom-only `blueBottomPanes` composition seams plus `blueToolModels` and `blueTranscriptModels`; `blue-interaction` owns `blueCommandModels`, `blueEditorModels`, and the frontend-tree-scoped interaction state service. The basic/cwd/git/title/context/mode rows publish canonical status nodes through `blueStatusEntries`; activity/todo/agents/BTW and the interaction-owned queue publish canonical fallback nodes through `blueBottomPanes`. Public plugin dock/status contributions still enter only through the API host and renderer owner bridge. Bundle e2e fixture wrappers must mirror source inject lists exactly; no contribution may duplicate content in the default composition.
 
 The BTW row explicitly injects app-owned `blueSessionActions`. Although it appears before `blue-app`, Cordis holds the pane fiber until the app provides the action service; the app itself still publishes the service synchronously before its loader-settlement Agent creation. This ordering keeps Agent/session seeding out of transcript without adding an implicit race.
 
@@ -24,7 +24,7 @@ The all-prompts row alone is inert from a session's second message on (D41): `ds
 
 ## Dock order discipline
 
-Sibling rows mount concurrently. Activity/todo/agents explicitly inject `blueComponents` plus `blueSessionFacts`; queue injects components plus app reader/actions and refreshes from the narrow app-owned queue-change notification; BTW injects components plus app actions. Their row-level dependencies and `DockModel` priority/id ordering pin activity → queue → todo → btw → agents, with the interaction editor last. Queue never claims Up/Down from editor history.
+Sibling rows mount concurrently. Activity/todo/agents explicitly inject `blueComponents` plus `blueSessionFacts`; queue injects components plus app reader/actions and refreshes from the narrow app-owned queue-change notification; BTW injects components plus app actions. Their row-level dependencies and internal bottom-pane priority/id ordering pin activity → queue → todo → BTW → agents, with the interaction editor last. There is no internal left/right lane. Queue never claims Up/Down from editor history.
 
 ## Thin-host migration (S28, D37)
 

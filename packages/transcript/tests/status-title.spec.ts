@@ -107,7 +107,7 @@ describe('blue-status-title', () => {
     const harness = await bootStatusPlugin(statusTitle, titledAgent(['fix the login timeout bug']), {
       services: { sessionTitle: titleService() },
     })
-    expect(harness.entry.render(10)).toBe('fix the\x1b[0m...\x1b[0m')
+    expect(harness.entry.render(10)).toBe('fix the')
     await harness.dispose()
   })
 

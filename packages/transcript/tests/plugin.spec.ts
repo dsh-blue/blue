@@ -23,7 +23,7 @@ import type {
   BlueScreen,
 } from '@dsh-blue/blue-core'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { StatusModel } from '@dsh-blue/blue-frontend'
+import type { BlueStatusEntry } from '../src/status-model.ts'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
@@ -199,10 +199,10 @@ interface Harness {
 
 /** The downstream fixture's apply: registers one custom footer entry. */
 function fixtureApply(ctx: Context): void {
-  ctx.effect(() => ctx.blueStatusModels.register({
-    kind: 'status', id: 'blue.status.fixture', priority: 30,
-    view: { kind: 'text', text: 'fixture-entry', tone: 'muted' }, visible: true,
-  } satisfies StatusModel))
+  ctx.effect(() => ctx.blueStatusEntries.register({
+    id: 'blue.status.fixture', priority: 30,
+    node: { kind: 'text', content: 'fixture-entry', tone: 'muted' }, visible: true,
+  } satisfies BlueStatusEntry))
 }
 
 /**
@@ -227,7 +227,7 @@ export const apply = ctx => globalThis.__blueTranscriptApply(ctx)
 `)
   writeFileSync(join(dir, 'blue-status-basic.mjs'), `
 export const name = 'blue-status-basic-model'
-export const inject = ['blueStatusModels', 'blueSessionFacts']
+export const inject = ['blueStatusEntries', 'blueSessionFacts']
 export const apply = ctx => globalThis.__blueStatusBasicApply(ctx)
 `)
   writeFileSync(join(dir, 'blue-transcript-official.mjs'), `
@@ -237,7 +237,7 @@ export const apply = ctx => globalThis.__blueTranscriptOfficialApply(ctx)
 `)
   writeFileSync(join(dir, 'blue-status-fixture.mjs'), `
 export const name = 'blue-status-fixture'
-export const inject = ['blueStatusModels']
+export const inject = ['blueStatusEntries']
 export const apply = ctx => globalThis.__blueStatusFixtureApply(ctx)
 `)
   const rows = [
@@ -366,6 +366,17 @@ function stripGutter(lines: string[]): string[] {
 }
 
 describe('blue-transcript plugin through the real Loader', () => {
+  it('compiles internal canonical bottom nodes against the live viewport', async () => {
+    const { ctx, screen } = await bootTranscript()
+    const dispose = ctx.blueBottomPanes.register({
+      id: 'viewport-probe',
+      node: { kind: 'text', content: 'canonical' },
+    })
+    const pane = screen.bottomChildren.at(-1)!
+    expect(pane.render(20)).toEqual([' canonical'])
+    dispose()
+  })
+
   it('applies model settings and exposes the live expansion range', async () => {
     const { ctx } = await bootTranscript(null, { settings: { blue: { collapseToolCalls: false } } })
     expect(ctx.blueTranscriptModels.presentationPolicy().expandTurns).toBe(3)

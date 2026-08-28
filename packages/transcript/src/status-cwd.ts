@@ -10,14 +10,14 @@
 
 import { homedir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
-import type { StatusModel } from '@dsh-blue/blue-frontend'
+import type { BlueStatusEntry } from './status-model.ts'
 import type { SessionFactsService } from './session-facts.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-status-cwd'
 
 /** Services required before the cwd entry can register. */
-export const inject = ['blueStatusModels', 'blueSessionFacts']
+export const inject = ['blueStatusEntries', 'blueSessionFacts']
 
 /** How many trailing path segments a deep cwd keeps. */
 const MAX_CWD_SEGMENTS = 3
@@ -57,10 +57,10 @@ export function apply(ctx: Context): void {
     const next = shortenCwd(session?.cwd ?? process.cwd(), homedir())
     if (next === text) return
     text = next
-    ctx.blueStatusModels.refresh('blue.status.cwd')
+    ctx.blueStatusEntries.refresh('blue.status.cwd')
   })
   ctx.effect(() => () => offSession?.())
 
-  const model = (): StatusModel => ({ kind: 'status', id: 'blue.status.cwd', priority: 5, view: { kind: 'text', text, tone: 'muted' }, visible: text !== '' })
-  ctx.effect(() => ctx.blueStatusModels.register(model))
+  const model = (): BlueStatusEntry => ({ id: 'blue.status.cwd', priority: 5, node: { kind: 'text', content: text, tone: 'muted' }, visible: text !== '' })
+  ctx.effect(() => ctx.blueStatusEntries.register(model))
 }

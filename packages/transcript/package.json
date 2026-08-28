@@ -1,6 +1,6 @@
 {
   "name": "@dsh-blue/blue-transcript",
-  "description": "Blue terminal UI renderer for projection-backed transcript, status, and dock models",
+  "description": "Blue terminal UI renderer for projection-backed transcript and canonical UI nodes",
   "version": "0.1.0-rc.10",
   "publishConfig": {
     "access": "public"
@@ -20,10 +20,6 @@
     "./status-basic-model": {
       "types": "./lib/types/status-basic-model.d.ts",
       "default": "./lib/status-basic-model.js"
-    },
-    "./dock-model": {
-      "types": "./lib/types/dock-model.d.ts",
-      "default": "./lib/dock-model.js"
     },
     "./tool-model": {
       "types": "./lib/types/tool-model.d.ts",

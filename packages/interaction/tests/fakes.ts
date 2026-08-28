@@ -45,7 +45,7 @@ import { EditorHostService, setEditorSlotSwap } from '../src/editor-instance.ts'
 import {
   INTERACTION_KEY_ACTIONS,
 } from '../src/keys.ts'
-import { BlueDockModelService } from '../../transcript/src/dock-model.ts'
+import { BlueBottomPaneService } from '../../transcript/src/dock-model.ts'
 import { rewindCandidates } from '../../app/src/rewind.ts'
 import { foldYolo } from '../../app/src/mode.ts'
 import { sessionDetails as buildSessionDetails } from '../../app/src/session-details.ts'
@@ -1228,7 +1228,11 @@ export function fakeBlueContext(options: { readonly display?: boolean; readonly 
   })
   new SkillsCatalogService(ctx)
   new InteractionStateService(ctx, DEFAULT_SETTINGS)
-  if (options.dock !== false) new BlueDockModelService(ctx, screen)
+  if (options.dock !== false) new BlueBottomPaneService(ctx, {
+    components,
+    colors: theme.colors,
+    viewport: () => ({ columns: screen.columns, rows: screen.rows }),
+  }, screen)
   new EditorHostService(ctx)
   // The D30 editor-slot swap stands in for `blue-input`'s real machinery:
   // dialog specs assert the mounted panel through the overlay registry.

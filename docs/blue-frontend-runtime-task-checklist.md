@@ -53,7 +53,7 @@
 
 ### F3-04 Interaction model 与 TUI consumer
 
-- `[x]` `ContextModel` 只包含 readonly `PanelModel`/`StatusModel` 和结构化 action。
+- `[x]` `ContextModel` 只包含 readonly `PanelModel`/canonical status node 和结构化 action。
 - `[x]` 在 core/renderer adapter 中增加官方 consumer，将 model 渲染为 panel/status。
 - `[x]` renderer 不直接读取 `ContextEvent` 或 Harness Agent/Session 对象。
 - `[x]` loading、absent、error、empty、breakdown-present 五种状态都有呈现。

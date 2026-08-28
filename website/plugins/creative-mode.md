@@ -31,7 +31,7 @@ blue-feature/
 插件只能返回 renderer-neutral 的 `BlueView` 和结构化 action：
 
 - 不得 import `pi-tui`、拼接 ANSI 行或自行计算终端宽度；
-- 不得访问 `blueScreen`、`blueComponents`、`blueDockModels` 等 owner-only 服务；
+- 不得访问 `blueScreen`、`blueComponents`、私有 status/bottom-pane registry 等 owner-only 服务；
 - 不得保存 Agent/Session 实例或把业务状态放进 module singleton；
 - 视图的宽度、主题、布局和降级由 Blue 核心适配器负责。
 
