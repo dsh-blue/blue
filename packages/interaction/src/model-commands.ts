@@ -26,14 +26,14 @@ import type { BlueSessionActions, BlueSessionModelSelection } from '@dsh-blue/bl
 import type { Action } from '@dsh-blue/blue-frontend'
 import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
-import { FrontendPanel } from './frontend-panel.ts'
+import { CanonicalDocumentController } from './frontend-panel.ts'
 import {
   effortPickerPanelModel,
   modelPickerPanelModel,
   type ModelPickerItem,
 } from './model-picker-model.ts'
 import { isProviderFlowError, runProviderAdd, runProviderEdit } from './provider-add.ts'
-import { SelectListPanel, type SelectRow } from './select-list.ts'
+import { CanonicalSelectController, type SelectRow } from './select-list.ts'
 import { CURRENT_MARK } from './symbols.ts'
 
 /** Render one failure reason for an error result. */
@@ -436,7 +436,7 @@ export function registerModelCommands(ctx: Context): () => void {
       restore()
       applySwitch(provider, nextModel, effort, persist)
     }
-    const panel = new FrontendPanel({
+    const panel = new CanonicalDocumentController({
       ...display,
       model: () => model,
       onAction: execute,
@@ -546,7 +546,7 @@ export function registerModelCommands(ctx: Context): () => void {
         })()
       }
       const model = effortPickerPanelModel(segments, activeId)
-      const panel = new FrontendPanel({
+      const panel = new CanonicalDocumentController({
         ...display,
         model: () => model,
         onAction: (action) => {
@@ -667,7 +667,7 @@ export function registerModelCommands(ctx: Context): () => void {
       ...(provider.id === currentProvider ? { badge: CURRENT_MARK } : {}),
     }))
     rows.push({ value: ADD_PROVIDER, label: '+ Add provider' })
-    const panel = new SelectListPanel({
+    const panel = new CanonicalSelectController({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,

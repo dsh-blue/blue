@@ -2,7 +2,7 @@
 
 Implementation detail for this package. Repo-wide conventions live in the root [AGENTS.md](../../AGENTS.md).
 
-`OfficialContextSource` is the narrow adapter over app-owned `blueSessionProjections.currentMany()` and `subscribe()`. It reads `contextTimeline`, `contextPressure`, `contextBreakdown`, and `tokenUsage` from one consistent current-session cut, then maps them into the renderer-neutral context feature. No Agent, Session, renderer object, or Promise enters the model.
+`OfficialContextSource` is the narrow adapter over app-owned `blueSessionProjections.currentMany()` and `subscribe()`. It reads `contextTimeline`, `contextPressure`, `contextBreakdown`, and `tokenUsage` from one consistent current-session cut, then maps them into the renderer-neutral context feature. `ContextModel.panel` now carries `{ title, node, refresh? }`, where `node` is the canonical public `BlueUiNode`; it no longer depends on frontend's removed `PanelModel`. No Agent, Session, renderer object, or Promise enters the model.
 
 The package imports only blue-app's public projection/reader types. Keep the `@dsh-blue/blue-app` peer/dev dependency and the `../app` TypeScript project reference together; without the reference, a clean `tsc -b --force` can resolve only stale emitted declarations.
 

@@ -46,25 +46,39 @@ function toneColor(tone: Tone | undefined, colors: BlueSemanticColors): (text: s
 /** Renderer-neutral status registry with a TUI consumer bridge. */
 export class BlueStatusModelService extends Service {
   private readonly models = new Map<string, Source>()
+  private footer: BlueComponent | undefined
   constructor(ctx: Context, private screen?: BlueScreen) {
     super(ctx, 'blueStatusModels')
   }
+  /** Attach the compiled footer as the cache invalidation target. */
+  attachFooter(footer: BlueComponent): void {
+    this.footer = footer
+  }
+  private redraw(): void {
+    this.footer?.invalidate()
+    this.screen?.requestRender()
+  }
   attach(screen: BlueScreen): void {
     this.screen = screen
-    screen.requestRender()
+    this.redraw()
   }
   register(source: Source): () => void {
     const initial = typeof source === 'function' ? source() : source
     if (initial === null) return () => undefined
     if (this.models.has(initial.id)) throw new Error(`status model "${initial.id}" is already registered`)
     this.models.set(initial.id, source)
-    this.screen?.requestRender()
+    this.redraw()
     let disposed = false
-    return () => { if (disposed) return; disposed = true; this.models.delete(initial.id); this.screen?.requestRender() }
+    return () => { if (disposed) return; disposed = true; this.models.delete(initial.id); this.redraw() }
   }
-  refresh(id: string): void { if (this.models.has(id)) this.screen?.requestRender() }
-  list(): readonly StatusModel[] { return [...this.models.values()].map(source => typeof source === 'function' ? source() : source).filter((model): model is StatusModel => model !== null) }
-  dispose(): void { this.models.clear(); this.screen?.requestRender(); this.screen = undefined }
+  refresh(id: string): void { if (this.models.has(id)) this.redraw() }
+  list(): readonly StatusModel[] {
+    return [...this.models.values()]
+      .map(source => typeof source === 'function' ? source() : source)
+      .filter((model): model is StatusModel => model !== null)
+      .sort((left, right) => (left.priority ?? 0) - (right.priority ?? 0) || left.id.localeCompare(right.id))
+  }
+  dispose(): void { this.models.clear(); this.redraw(); this.footer = undefined; this.screen = undefined }
 }
 
 /**
@@ -79,7 +93,9 @@ export class StatusModelFooterComponent implements BlueComponent {
     private readonly models: BlueStatusModelService,
     private readonly components: BlueComponents,
     private readonly colors: BlueSemanticColors,
-  ) {}
+  ) {
+    models.attachFooter(this)
+  }
 
   invalidate(): void { this.cache = null }
 

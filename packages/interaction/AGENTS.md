@@ -28,20 +28,19 @@ Module-level replacements are allowed only for explicit test/system seams: fetch
 
 `commands-plugin.ts` registers the base command families and owns the tree-scoped alias registrations through `InteractionStateService.aliases`. Session navigation emits the app-owned switch request events; model/mode/preset/tool/skill/session-info operations call `blueSessionActions`. Read operations use readonly reader/projection values.
 
-The command-model service projects canonical commands into `CommandModel` values and executes only structured `command.execute` actions. Active executions receive owned abort controllers and resolve to no result after service disposal. Model/effort, trace, and update dialogs publish `PanelModel` snapshots and structured actions into the shared `FrontendPanel`; no command-specific focusable renderer or renderer-owned business state remains. List-item variants render as one horizontal bracketed selector row, with Left/Right moving the theme-highlighted variant; `/effort` uses this path and only displays levels supplied by provider metadata.
+The command-model service projects canonical commands into `CommandModel` values and executes only structured `command.execute` actions. Active executions receive owned abort controllers and resolve to no result after service disposal. Model/effort, trace, update, plugin, and session documents now build `BlueUiNode` trees through `CanonicalDocumentController`; the frontend `PanelModel` facade has been removed. Async command state invalidates the mounted controller only after generation/session fences accept the result, and loading snapshots do not reset grouped-tab selection. List-item variants render as one horizontal bracketed selector row, with Left/Right moving the selected variant; `/effort` uses this path and only displays levels supplied by provider metadata.
 
 `session-export.ts` has two deliberate paths. Readable export/copy use the official `blueConversation` projection after flushing and reading the durable artifact; full export decodes the raw append-only artifact for audit fidelity. No display command may introduce a new event fold.
 
 ## Dialogs And Async Work
 
-Dialogs mount through `EditorHostService.mountReplacement()` and the shared list/form/info/settings/question/approval/model/plan-review components. They own focus and use core width helpers. Async panels capture a generation/session identity, abort on unload where possible, and reject stale completion before mutating UI or session actions.
+Dialogs mount through `EditorHostService.mountReplacement()`. The migrated list, multi-select, form, settings, and document controllers own only business state, key interpretation, and canonical event mapping; `CanonicalPanelAdapter` is the sole interaction-side bridge into core's canonical compiler. They do not assemble terminal rows, borders, ANSI, or local width math. Async panels capture a generation/session identity, abort on unload where possible, and reject stale completion before mutating UI or session actions.
 
-`FormPanel` renders two ANSI-width-bounded rows per field: a label/hint
-description row followed by an unframed arrow prompt row. The active field
-owns the primary marker, accent label, and cursor; validation text is attached
-below the failing field and editing clears it. Enter advances or submits from
-the last field, Tab/Down moves forward, and Shift-Tab/Up moves backward.
-`Questionnaire` uses the same compact input row
+`CanonicalFormController` emits a public `form` inside an overlay `surface`.
+Core owns field rows, secret masking, the active marker, cursor, validation,
+and width containment. Enter advances or submits from the last field,
+Tab/Down moves forward, and Shift-Tab/Up moves backward.
+`Questionnaire` currently uses the same compact input row
 for optionless and `Other` answers, shows a bounded progress summary instead
 of a full tab strip, and keeps one draft per question while navigating. Escape
 backs out of an `Other` editor before cancelling the request. Both components
@@ -96,3 +95,11 @@ whose mutations delegate to the profile owner (`dsh plugin`) and report that a
 restart is required. GitHub specs must be pinned to a commit before this
 command will invoke the installer; `BLUE_MARKETPLACE_GITHUB_PROXY` may rewrite
 GitHub sources for networks that cannot reach github.com directly.
+
+The W4a-B migration intentionally keeps source filenames such as
+`select-list.ts` and `form-panel.ts` for stable internal imports, but the old
+panel classes and root exports are gone. `CanonicalSelectController`,
+`CanonicalMultiSelectController`, `CanonicalFormController`,
+`CanonicalDocumentController`, `CanonicalSettingsController`,
+`SettingsNoticeController`, and `CanonicalOverlayContainer` are package-private
+composition controllers, not a second public UI kit.

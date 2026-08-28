@@ -216,7 +216,7 @@ export class Questionnaire implements BlueFocusable {
       const selected = options.filter(option => state.toggled.has(option.label)).map(option => option.label)
       if (selected.length === 0) {
         // Nothing toggled: the focused option is the confirmation, matching
-        // the retired BlueSelect fallback.
+        // the retired multi-select fallback.
         const focused = options[state.cursor]
         /* v8 ignore next -- the cursor is clamped to the option rows here */
         if (focused === undefined) return
@@ -406,7 +406,7 @@ export class Questionnaire implements BlueFocusable {
       : ['↑↓ select', '↵ choose', 'tab next', 'esc cancel']
   }
 
-  /** Render free text with the same compact field treatment as FormPanel. */
+  /** Render free text with the same compact canonical form treatment. */
   private renderEditorRow(editor: BlueEditor, width: number): string {
     const colors = this.options.theme.colors
     const components = this.options.components

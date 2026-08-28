@@ -59,7 +59,7 @@ import { registerExportCommands } from './session-export.ts'
 import { registerInitCommand } from './session-init.ts'
 import { registerSettingsCommand } from './settings-command.ts'
 import { registerSkillsCommand } from './skills-command.ts'
-import { MAX_LIST_VISIBLE, SelectListPanel, type SelectRow } from './select-list.ts'
+import { CanonicalSelectController, MAX_LIST_VISIBLE, type SelectRow } from './select-list.ts'
 import { createSessionTree } from './session-tree.ts'
 import { CURRENT_MARK } from './symbols.ts'
 import { registerThemeCommand } from './theme-switch.ts'
@@ -196,7 +196,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     }))
     // Hydrate the first page before mounting so labels do not visibly change
     // from session ids to titles. Later pages are prefetched near page ends.
-    let list!: SelectListPanel
+    let list!: CanonicalSelectController
     const loadPage = (page: number, query: NonNullable<ReturnType<typeof ctx.get<'sessionQuery'>>>): Promise<void> => {
       if (loadingPages.has(page) || loadedPages.has(page) || page * MAX_LIST_VISIBLE >= sessionTitleLimit) return Promise.resolve()
       loadingPages.add(page)
@@ -211,7 +211,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         display.screen.requestRender()
       }).catch(() => undefined).finally(() => loadingPages.delete(page))
     }
-    list = new SelectListPanel({
+    list = new CanonicalSelectController({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,
@@ -272,7 +272,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     const display = displayServices(ctx)
     if (display === undefined) return { kind: 'error', text: 'rewind is unavailable: the Blue screen is not mounted' }
     const first = candidates[0]!
-    const list = new SelectListPanel({
+    const list = new CanonicalSelectController({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,

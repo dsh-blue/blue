@@ -11,14 +11,13 @@ import { promisify } from 'node:util'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import type { PanelModel } from '@dsh-blue/blue-frontend'
 import { compareVersions } from './updater/version.ts'
 import { profileRoot, readProfileFacts } from './updater/profile.ts'
 import { updaterInternals } from './updater/io.ts'
 import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
-import { FrontendPanel } from './frontend-panel.ts'
-import { FormPanel } from './form-panel.ts'
+import { CanonicalDocumentController, type FrontendPanelDocument } from './frontend-panel.ts'
+import { CanonicalFormController } from './form-panel.ts'
 
 const run = promisify(execFile)
 const REGISTRY_URL = 'https://raw.githubusercontent.com/dsh-blue/marketplace/master/registry.json'
@@ -188,7 +187,7 @@ function readPackageVersion(root: string, packageName: string): string | undefin
   /* c8 ignore stop */
 }
 
-function pluginPanelModel(rows: { readonly installed: readonly InstalledPluginRow[], readonly available: readonly PluginRow[] }, state: { readonly busy?: string, readonly message?: string }): PanelModel {
+function pluginPanelModel(rows: { readonly installed: readonly InstalledPluginRow[], readonly available: readonly PluginRow[] }, state: { readonly busy?: string, readonly message?: string }): FrontendPanelDocument {
   const installed = rows.installed.map(row => {
     const upgrade = row.latest !== undefined && row.installed !== undefined && compareVersions(row.latest, row.installed) > 0
     const detail = upgrade ? `v${row.installed} → v${row.latest} · update available` : `v${row.installed} · up to date`
@@ -211,11 +210,11 @@ function pluginPanelModel(rows: { readonly installed: readonly InstalledPluginRo
   const busy = state.busy
   return busy === undefined
     ? {
-        kind: 'panel', mode: 'select', title: 'Plugins',
-        header: { kind: 'text', text: state.message ?? `${installed.length} installed · ${available.length} available` },
-        view: { kind: 'list', items: [...installed, ...available], grouped: true, includeAllGroup: false, groups: ['Installed', 'Available'], filterable: true },
+        mode: 'select', title: 'Plugins',
+        header: { kind: 'text', content: state.message ?? `${installed.length} installed · ${available.length} available` },
+        items: [...installed, ...available], grouped: true, includeAllGroup: false, groups: ['Installed', 'Available'], filterable: true,
       }
-    : { kind: 'panel', mode: 'loading', title: 'Plugins', view: { kind: 'text', text: busy }, dismissible: false }
+    : { mode: 'loading', title: 'Plugins', view: { kind: 'text', content: busy }, dismissible: false }
 }
 
 /** Register `/plugin` and its read/install operations. */
@@ -241,12 +240,14 @@ export function registerPluginCommand(ctx: Context): () => void {
           }
           const state: { busy?: string, message?: string } = {}
           let restore: (() => void) | undefined
+          let panel: CanonicalDocumentController
           const close = (): void => { restore?.(); restore = undefined }
           /* c8 ignore start -- mutation callbacks are exercised through the mounted panel. */
           const executeMutation = async (kind: 'plugin.install' | 'plugin.uninstall' | 'plugin.upgrade', row: PluginRow): Promise<void> => {
             /* c8 ignore next -- the panel disables input while a mutation is pending. */
             if (state.busy !== undefined) return
             state.busy = kind === 'plugin.install' ? `Installing ${row.label}...` : kind === 'plugin.upgrade' ? `Upgrading ${row.label}...` : `Uninstalling ${row.label}...`
+            panel.invalidate()
             display.screen.requestRender()
             try {
               const output = await runProfileCommand(kind === 'plugin.uninstall' ? 'remove' : 'add', kind === 'plugin.uninstall' ? row.packageName : profileSpec(row))
@@ -256,11 +257,12 @@ export function registerPluginCommand(ctx: Context): () => void {
               state.message = `plugin operation failed: ${error instanceof Error ? error.message : String(error)}`
             } finally {
               delete state.busy
+              panel.invalidate()
               display.screen.requestRender()
             }
           }
           const confirmUpgrade = (row: PluginRow): void => {
-            const form = new FormPanel({
+            const form = new CanonicalFormController({
               keymap: display.keymap,
               theme: display.theme,
               components: display.components,
@@ -276,7 +278,7 @@ export function registerPluginCommand(ctx: Context): () => void {
             const formRestore = mountEditorReplacement(ctx, form)
           }
           /* c8 ignore stop */
-          const panel = new FrontendPanel({
+          panel = new CanonicalDocumentController({
             keymap: display.keymap,
             theme: display.theme,
             components: display.components,
@@ -284,7 +286,7 @@ export function registerPluginCommand(ctx: Context): () => void {
             hint: 'Tab/←→ pages · Alt+S uninstall',
             onAction: actionValue => {
               const action = actionValue as { kind?: string, row?: PluginRow }
-              /* c8 ignore next -- FrontendPanel only emits actions for selected rows. */
+              /* c8 ignore next -- the document controller emits actions only for selected rows. */
               if (action.row === undefined) return
               if (action.kind === 'plugin.upgrade') confirmUpgrade(action.row)
               /* c8 ignore next -- action kinds are restricted by the panel model. */
