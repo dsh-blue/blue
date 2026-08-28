@@ -17,6 +17,7 @@
 | [blue-frontend-runtime-migration-checklist.md](./blue-frontend-runtime-migration-checklist.md) | C0-C7 执行/验收清单 |
 | [blue-implementation-plan.md](./blue-implementation-plan.md) | F0-F6 阶段实施与兼容策略 |
 | [blue-compatibility-and-rollout.md](./blue-compatibility-and-rollout.md) | Harness 兼容窗口、fallback 与 rollout |
+| [blue-upstream-0.1.2-interface-alignment.md](./blue-upstream-0.1.2-interface-alignment.md) | 上游 0.1.2-alpha.1 接口对齐预研：逐接口 adopt/keep/verify 判定与跟发核对单 |
 | [blue-plugin-validation.md](./blue-plugin-validation.md) | architecture validator 和独立 fixture 门禁 |
 | [blue-fixture-audit.md](./blue-fixture-audit.md) | context/remote/openpencil/lark 验证记录 |
 | [blue-plugin-ecosystem.md](./blue-plugin-ecosystem.md) | 外部插件分类、安装与 provider lifecycle |
