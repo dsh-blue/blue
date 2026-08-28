@@ -13,14 +13,14 @@ const OPTS: FrontendRenderOptions = { colors: COLORS as unknown as FrontendRende
 describe('frontend renderer adapter', () => {
   it('renders every renderer-neutral view shape and clamps adversarial content', () => {
     const views = [
-      { kind: 'text' as const, text: '重构 runtime' },
-      { kind: 'rich-text' as const, spans: [{ text: 'alpha' }, { text: ' beta', strong: true }] },
+      { kind: 'text' as const, text: '重构 runtime', tone: 'accent' as const },
+      { kind: 'rich-text' as const, spans: [{ text: 'alpha', tone: 'muted' as const }, { text: ' beta', strong: true }] },
       { kind: 'fields' as const, fields: [{ label: 'cwd', value: '/very/long/path' }] },
       { kind: 'sections' as const, sections: [
         { title: 'open', body: { kind: 'text' as const, text: 'body' } },
         { title: 'closed', collapsed: true, body: { kind: 'text' as const, text: 'hidden' } },
       ] },
-      { kind: 'list' as const, selectedId: 'b', items: [{ id: 'a', label: 'first' }, { id: 'b', label: 'second', detail: 'detail' }] },
+      { kind: 'list' as const, selectedId: 'b', items: [{ id: 'a', label: 'first', group: 'group', disabled: true }, { id: 'b', label: 'second', detail: 'detail' }] },
       { kind: 'code' as const, code: 'one\ntwo', language: 'ts' },
       { kind: 'diff' as const, before: 'old', after: 'new', language: 'ts' },
     ]
@@ -34,8 +34,10 @@ describe('frontend renderer adapter', () => {
   it('normalizes degenerate widths and renders provider models', () => {
     expect(renderFrontendView({ kind: 'text', text: 'hello' }, 0)).toEqual(['h', 'e', 'l', 'l', 'o'])
     expect(renderFrontendView({ kind: 'text', text: 'hello' }, 2.8)).toEqual(['he', 'll', 'o'])
+    expect(renderFrontendView({ kind: 'text', text: 'safe\x1b[31mred' }, Number.NaN)).toEqual(['s', 'a', 'f', 'e', 'r', 'e', 'd'])
     const rows = renderFrontendModel({ providerId: 'fixture', capabilities: [], views: [{ kind: 'text', text: 'a' }, { kind: 'list', items: [{ id: 'a', label: 'b' }] }] }, 20)
-    expect(rows).toEqual(['a', '  b'])
+    // The compatibility model now adopts the canonical list pattern.
+    expect(rows).toEqual(['a', '   b'])
     const component = new FrontendModelComponent({ providerId: 'component', capabilities: [], views: [{ kind: 'text', text: 'old' }] })
     expect(component.render(20)).toEqual(['old'])
     component.setModel({ providerId: 'component', capabilities: [], views: [{ kind: 'text', text: 'new' }] })
@@ -47,8 +49,8 @@ describe('frontend renderer adapter', () => {
     const view = { kind: 'diff' as const, before: 'a\nb', after: 'a\nc' }
     expect(renderFrontendView(view, 20)).toEqual(['  a', '- b', '+ c'])
     expect(renderFrontendView(view, 20, OPTS)).toEqual(['  a', '<R>- b</R>', '<A>+ c</A>'])
-    // The same frozen view object renders identically across frames (the
-    // alignment memo) and wraps over-wide diff rows like any other content.
+    // The same canonical conversion renders identically across frames and
+    // wraps over-wide diff rows like any other content.
     const wide = { kind: 'diff' as const, before: `${'x'.repeat(30)}\nq`, after: `${'y'.repeat(30)}\nq` }
     const once = renderFrontendView(wide, 12, OPTS)
     const twice = renderFrontendView(wide, 12, OPTS)
@@ -65,5 +67,14 @@ describe('frontend renderer adapter', () => {
     expect(rows).toContain('<A>+ new</A>')
     expect(rows.some(row => row.includes('unchanged lines'))).toBe(true)
     expect(rows.length).toBeLessThan(lines.length)
+  })
+
+  it('contains canonical admission failures in a width-safe error component', () => {
+    const rows = renderFrontendView({
+      kind: 'list',
+      items: [{ id: 'duplicate', label: 'one' }, { id: 'duplicate', label: 'two' }],
+    }, 12)
+    expect(rows.join('')).toContain('Blue UI reje')
+    expect(rows.every(row => visibleWidth(row) <= 12)).toBe(true)
   })
 })

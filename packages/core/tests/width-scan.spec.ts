@@ -24,6 +24,9 @@ const selectTheme: SelectListTheme = {
   noMatch: text => text,
 }
 
+/** W4a migration sweep: every integer width in the supported fixture range. */
+const MIGRATION_WIDTHS = Array.from({ length: 119 }, (_, index) => index + 2)
+
 describe('core width-scan', () => {
   for (const { name, text } of ADVERSARIAL) {
     it(`GutterComponent over an honest child survives ${name}`, () => {
@@ -60,22 +63,29 @@ describe('core width-scan', () => {
         minPrimaryColumnWidth: 12,
         maxPrimaryColumnWidth: 32,
       })
-      for (const width of SCAN_WIDTHS) {
+      for (const width of MIGRATION_WIDTHS) {
         expectLinesFit(`WrappingSelectList/${name}`, list.render(width), width)
       }
     })
 
-    it(`renderFrontendView diff panel survives ${name}`, () => {
-      // A write-style panel: the hostile line replaced by a sibling, with a
-      // long shared context run on both sides exercising the elision path.
+    it(`canonical frontend view mapping survives ${name}`, () => {
       const shared = Array.from({ length: 14 }, (_, index) => `ctx ${String(index)}`).join('\n')
       const views = [
+        { kind: 'text' as const, text },
+        { kind: 'rich-text' as const, spans: [{ text, strong: true }] },
+        { kind: 'fields' as const, fields: [{ label: text, value: text }] },
+        { kind: 'sections' as const, sections: [{ title: text, body: { kind: 'text' as const, text } }] },
+        { kind: 'list' as const, selectedId: 'selected', items: [
+          { id: 'selected', label: text, detail: text },
+          { id: 'disabled', label: text, disabled: true },
+        ] },
+        { kind: 'code' as const, code: `${text}\n${text}`, language: 'fixture' },
         { kind: 'diff' as const, before: `${shared}\n${text}`, after: `${shared}\n+ ${text}\nextra` },
         { kind: 'diff' as const, before: '', after: `${text}\n${text}` },
       ]
       for (const view of views) {
-        for (const width of SCAN_WIDTHS) {
-          expectLinesFit(`diff/${name}`, renderFrontendView(view, width), width)
+        for (const width of MIGRATION_WIDTHS) {
+          expectLinesFit(`frontend/${view.kind}/${name}`, renderFrontendView(view, width), width)
         }
       }
     })
