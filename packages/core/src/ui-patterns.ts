@@ -8,7 +8,7 @@
 
 import type { BlueFormField, BlueTone, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueSemanticColors } from './types.ts'
-import { sliceByColumn, visibleWidth, wrapTextWithAnsi } from './width.ts'
+import { sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from './width.ts'
 
 type SurfaceNode = Extract<BlueUiNode, { readonly kind: 'surface' }>
 type TabsNode = Extract<BlueUiNode, { readonly kind: 'tabs' }>
@@ -26,6 +26,34 @@ export interface PatternFocus {
 }
 
 const PARTIAL_BLOCKS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'] as const
+const DEFAULT_PRIMARY_COLUMN_WIDTH = 32
+const PRIMARY_COLUMN_GAP = 2
+const MIN_DESCRIPTION_WIDTH = 10
+const DESCRIPTION_MAX_LINES = 2
+const ELLIPSIS = '…'
+const ELLIPSIS_WIDTH = visibleWidth(ELLIPSIS)
+
+// Plain autocomplete content sits inside theme paint. Remove the reset that
+// pi-tui's truncator appends so it cannot cancel that enclosing paint.
+// oxlint-disable-next-line no-control-regex -- ESC (\x1b) matches ANSI SGR resets
+const TRAILING_ANSI_RESET = /(?:\x1b\[0m)+$/
+
+/** Renderer paint and layout supplied by the thin pi-tui select adapter. */
+export interface AutocompleteListPatternOptions {
+  readonly selectedText: (text: string) => string
+  readonly description: (text: string) => string
+  readonly scrollInfo: (text: string) => string
+  readonly noMatch: (text: string) => string
+  readonly minPrimaryColumnWidth?: number
+  readonly maxPrimaryColumnWidth?: number
+  readonly truncatePrimary?: (context: {
+    readonly id: string
+    readonly text: string
+    readonly maxWidth: number
+    readonly columnWidth: number
+    readonly isSelected: boolean
+  }) => string
+}
 
 function safeWidth(width: number): number {
   return Math.max(1, Number.isFinite(width) ? Math.floor(width) : 1)
@@ -40,6 +68,89 @@ function pad(value: string, width: number): string {
   const available = safeWidth(width)
   const fitted = fit(value, available)
   return `${fitted}${' '.repeat(Math.max(0, available - visibleWidth(fitted)))}`
+}
+
+function truncatePlainToWidth(text: string, maxWidth: number): string {
+  return truncateToWidth(text, maxWidth, '').replace(TRAILING_ANSI_RESET, '')
+}
+
+function wrapDescription(text: string, width: number): string[] {
+  const wrapped = wrapTextWithAnsi(text, width)
+  if (wrapped.length <= DESCRIPTION_MAX_LINES) return wrapped
+  const kept = wrapped.slice(0, DESCRIPTION_MAX_LINES - 1)
+  const rest = wrapped.slice(DESCRIPTION_MAX_LINES - 1).join(' ')
+  const clipped = truncatePlainToWidth(rest, width - ELLIPSIS_WIDTH).trimEnd()
+  return [...kept, `${clipped}${ELLIPSIS}`]
+}
+
+/** Render the editor's canonical list node with its compact description rows. */
+export function renderAutocompleteList(
+  node: ListNode,
+  width: number,
+  maxVisible: number,
+  options: AutocompleteListPatternOptions,
+): string[] {
+  const available = safeWidth(width)
+  if (node.items.length === 0) return [options.noMatch(fit('  No matching commands', available))]
+
+  const selectedId = node.selectedIds[0]
+  const selectedIndex = Math.max(0, node.items.findIndex(item => item.id === selectedId))
+  const visibleCount = Math.max(1, Math.floor(maxVisible))
+  const startIndex = Math.max(0, Math.min(selectedIndex - Math.floor(visibleCount / 2), node.items.length - visibleCount))
+  const endIndex = Math.min(startIndex + visibleCount, node.items.length)
+  const rawMin = options.minPrimaryColumnWidth ?? options.maxPrimaryColumnWidth ?? DEFAULT_PRIMARY_COLUMN_WIDTH
+  const rawMax = options.maxPrimaryColumnWidth ?? options.minPrimaryColumnWidth ?? DEFAULT_PRIMARY_COLUMN_WIDTH
+  const min = Math.max(1, Math.min(rawMin, rawMax))
+  const max = Math.max(1, Math.max(rawMin, rawMax))
+  const widest = node.items.reduce((current, item) => Math.max(current, visibleWidth(item.label) + PRIMARY_COLUMN_GAP), 0)
+  const primaryColumnWidth = Math.max(min, Math.min(widest, max))
+  const rows: string[] = []
+
+  for (let index = startIndex; index < endIndex; index += 1) {
+    const item = node.items[index]!
+    const selected = item.id === selectedId
+    const prefix = selected ? '→ ' : '  '
+    const prefixWidth = visibleWidth(prefix)
+    const detail = item.detail?.replaceAll(/[\r\n]+/g, ' ').trim()
+    const primary = (maxWidth: number, columnWidth: number): string => {
+      const transformed = options.truncatePrimary?.({
+        id: item.id,
+        text: item.label,
+        maxWidth,
+        columnWidth,
+        isSelected: selected,
+      }) ?? item.label
+      return truncatePlainToWidth(transformed, maxWidth)
+    }
+
+    if (detail !== undefined && detail.length > 0 && available > 40) {
+      const effectiveColumnWidth = Math.max(1, Math.min(primaryColumnWidth, available - prefixWidth - 4))
+      const value = primary(Math.max(1, effectiveColumnWidth - PRIMARY_COLUMN_GAP), effectiveColumnWidth)
+      const spacing = ' '.repeat(Math.max(1, effectiveColumnWidth - visibleWidth(value)))
+      const detailStart = prefixWidth + visibleWidth(value) + spacing.length
+      const remaining = available - detailStart - 2
+      if (remaining > MIN_DESCRIPTION_WIDTH) {
+        const detailRows = wrapDescription(detail, remaining)
+        const indent = ' '.repeat(detailStart)
+        rows.push(...detailRows.map((line, lineIndex) => selected
+          ? options.selectedText(lineIndex === 0 ? `${prefix}${value}${spacing}${line}` : `${indent}${line}`)
+          : lineIndex === 0 ? `${prefix}${value}${options.description(`${spacing}${line}`)}` : options.description(`${indent}${line}`)))
+        continue
+      }
+    }
+
+    const maxWidth = Math.max(1, available - prefixWidth - 2)
+    const value = primary(maxWidth, maxWidth)
+    rows.push(selected ? options.selectedText(`${prefix}${value}`) : `${prefix}${value}`)
+  }
+
+  if (startIndex > 0 || endIndex < node.items.length) {
+    const indicator = `  (${String(selectedIndex + 1)}/${String(node.items.length)})`
+    rows.push(options.scrollInfo(truncatePlainToWidth(indicator, Math.max(1, available - 2))))
+  }
+  // Only the fixed two-column pointer can out-wide a viewport mid-resize.
+  // Normal rows remain untouched so theme paint composes outside this seam.
+  return available < 3 ? rows.map(row => sliceByColumn(row, 0, available, true)) : rows
 }
 
 function interactivePrefix(focus: PatternFocus): string {

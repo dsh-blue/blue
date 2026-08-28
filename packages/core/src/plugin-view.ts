@@ -110,6 +110,18 @@ function renderView(
   }
 }
 
+/** Core-internal renderer for an already validated canonical view. */
+export function renderCanonicalView(
+  view: BlueView,
+  width: number,
+  components: BlueComponents,
+  colors: BlueSemanticColors,
+  maxRows: number,
+): string[] {
+  const rows = renderView(view, Math.max(1, width), components, colors, 0).slice(0, Math.max(0, maxRows))
+  return clampRowsToWidth(rows, Math.max(1, width), (text, target) => components.truncateToWidth(text, target))
+}
+
 /** Render and width-bound one public view, throwing only to its owner adapter. */
 export function renderPluginView(
   view: BlueView,
@@ -118,8 +130,7 @@ export function renderPluginView(
   colors: BlueSemanticColors,
   maxRows = PLUGIN_VIEW_MAX_ROWS,
 ): string[] {
-  const rows = renderView(view, Math.max(1, width), components, colors, 0).slice(0, Math.max(0, Math.min(maxRows, PLUGIN_VIEW_MAX_ROWS)))
-  return clampRowsToWidth(rows, Math.max(1, width), (text, target) => components.truncateToWidth(text, target))
+  return renderCanonicalView(view, width, components, colors, Math.min(maxRows, PLUGIN_VIEW_MAX_ROWS))
 }
 
 /** Produce a safe one-line notification/status summary from any public view. */

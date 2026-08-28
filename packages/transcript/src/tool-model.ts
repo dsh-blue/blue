@@ -190,7 +190,13 @@ class ToolModelComponent implements BlueComponent {
     const expanded = this.expandedOverride ?? model.expanded ?? false
     const view = expanded ? model.result ?? model.call : model.call
     if (view === undefined) return []
-    const rows = [...renderFrontendView(view, width, this.colors === undefined ? undefined : { colors: this.colors })]
+    const renderOptions = {
+      // The tool component applies its own 12/200-row budget and needs the
+      // complete validated row count to report the exact hidden remainder.
+      maxRows: Number.MAX_SAFE_INTEGER,
+      ...(this.colors === undefined ? {} : { colors: this.colors }),
+    }
+    const rows = [...renderFrontendView(view, width, renderOptions)]
     const limit = expanded ? EXPANDED_ROW_LIMIT : COLLAPSED_ROW_LIMIT
     if (rows.length <= limit) return rows
     const remaining = rows.length - limit + 1
