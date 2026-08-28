@@ -14,6 +14,14 @@ const scenarios = [
   'status-provider.inert-candidate',
   'editor-provider.one-control-candidate',
 ]
+const pluginCapabilities = {
+  '@dsh-blue-example/header': ['panes'],
+  '@dsh-blue-example/right-inspector': ['panes'],
+  '@dsh-blue-example/bottom-log': ['panes'],
+  '@dsh-blue-example/overlay': ['commands', 'overlays'],
+  '@dsh-blue-example/status-provider': ['status.provider'],
+  '@dsh-blue-example/editor-provider': ['editor.provider'],
+}
 
 function fixtureReport(line) {
   const output = execFileSync(
@@ -29,6 +37,8 @@ function fixtureReport(line) {
   if (!report.fixtureCleaned || !report.cleaned) throw new Error(`fixture cleanup was incomplete on Harness ${line}`)
   const packages = Object.entries(report.harnessPackages)
   if (packages.length === 0 || packages.some(([, version]) => version !== line)) throw new Error(`fixture resolved a mismatched Harness package on ${line}`)
+  if (report.hostPeer?.name !== '@dsh-blue/blue' || report.hostPeer.declared !== report.hostPeer.installed || !report.hostPeer.packed) throw new Error(`fixture did not prove the packed Blue host peer on Harness ${line}`)
+  if (JSON.stringify(report.pluginCapabilities) !== JSON.stringify(pluginCapabilities)) throw new Error(`fixture capability evidence differs on Harness ${line}`)
   if (!report.valid) throw new Error(`fixture reported invalid on Harness ${line}`)
   process.stdout.write(output)
 }
