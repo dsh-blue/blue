@@ -1,332 +1,234 @@
-/**
- * Tests for the `Questionnaire` overlay component: the tab row, the three
- * question shapes (single-select, multi-select, free text), the `Other`
- * custom-answer editor, tab navigation, list truncation, and the
- * complete/cancel callbacks.
- */
+/** Canonical questionnaire state, keys, drafts, events, and rendering. */
 
 import { describe, expect, it, vi } from 'vitest'
 import type { AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions'
 import { Questionnaire } from '../src/questionnaire.ts'
 import { FakeBlueComponents, FakeTheme, KEY } from './fakes.ts'
 
-function make(questions: AskUserQuestionItem[]): {
-  questionnaire: Questionnaire
-  components: FakeBlueComponents
-  completed: ReturnType<typeof vi.fn>
-  cancelled: ReturnType<typeof vi.fn>
-} {
-  const components = new FakeBlueComponents()
-  const completed = vi.fn()
-  const cancelled = vi.fn()
-  const questionnaire = new Questionnaire({
-    theme: new FakeTheme(),
-    components,
-    questions,
-    onComplete: completed,
-    onCancel: cancelled,
-  })
-  return { questionnaire, components, completed, cancelled }
-}
-
-function choice(question: Partial<AskUserQuestionItem> = {}): AskUserQuestionItem {
+function choice(overrides: Partial<AskUserQuestionItem> = {}): AskUserQuestionItem {
   return {
-    id: 'q1',
-    question: 'Pick one',
+    id: 'q1', header: 'Setup', question: 'Choose one', detail: 'Pick carefully',
     options: [{ label: 'Alpha', description: 'the first' }, { label: 'Beta' }],
-    ...question,
+    ...overrides,
   }
 }
 
-function type(questionnaire: Questionnaire, text: string): void {
-  for (const char of text) questionnaire.handleInput(char)
+function make(questions: readonly AskUserQuestionItem[]) {
+  const completed = vi.fn()
+  const cancelled = vi.fn()
+  const questionnaire = new Questionnaire({
+    theme: new FakeTheme(), components: new FakeBlueComponents(), questions,
+    onComplete: completed, onCancel: cancelled,
+  })
+  return { questionnaire, completed, cancelled }
+}
+
+function type(panel: Questionnaire, text: string): void {
+  for (const character of text) panel.handleInput(character)
+}
+
+function list(panel: Questionnaire) {
+  const node = panel.currentNode()
+  if (node.kind !== 'surface' || node.child.kind !== 'stack') throw new Error('expected questionnaire surface')
+  const result = node.child.children.map(child => child.node).find(child => child.kind === 'list')
+  if (result?.kind !== 'list') throw new Error('expected questionnaire list')
+  return result
 }
 
 describe('Questionnaire', () => {
-  it('renders the framed dialog: progress, question, detail, options, and the Other row', () => {
-    const { questionnaire } = make([choice({ header: 'Setup', detail: 'extra context' })])
-    const rows = questionnaire.render(60)
-    const bar = '^' + '─'.repeat(60) + '^'
-    expect(rows[0]).toBe(bar)
-    expect(rows[1]).toBe('^  Question 1 of 1^')
-    expect(rows[2]).toBe('  1/1 · ^● Setup^')
-    expect(rows[3]).toBe('')
-    expect(rows[4]).toBe('^  Pick one^')
-    expect(rows[5]).toBe('~extra context~')
-    expect(rows[6]).toContain('^  → Alpha^~ — the first~')
-    expect(rows[7]).toBe('    Beta')
-    expect(rows[8]).toBe('    Other')
-    expect(rows[9]).toBe('')
-    expect(rows[10]).toContain('↑↓ select · ↵ choose · tab next · esc')
-    expect(rows[11]).toBe(bar)
-  })
-
-  it('answers a single-select question with the highlighted option and completes', () => {
-    const { questionnaire, completed } = make([choice()])
-    questionnaire.handleInput(KEY.down)
-    questionnaire.handleInput(KEY.enter)
-    expect(completed).toHaveBeenCalledWith([{ id: 'q1', selected: ['Beta'] }])
-  })
-
-  it('wraps the cursor with Up and Down', () => {
+  it('rejects an empty question set and a missing retained state', () => {
+    expect(() => make([])).toThrow('questionnaire requires at least one question')
     const { questionnaire } = make([choice()])
-    // Rows: Alpha, Beta, Other — Up from the top lands on Other.
-    questionnaire.handleInput(KEY.up)
-    expect(questionnaire.render(60)[7]).toContain('^  → Other^')
-    questionnaire.handleInput(KEY.down)
-    expect(questionnaire.render(60)[5]).toContain('^  → Alpha^~ — the first~')
+    ;(questionnaire as unknown as { states: unknown[] }).states.length = 0
+    expect(() => questionnaire.currentNode()).toThrow('questionnaire state is unavailable')
+
+    const partial = make([choice(), choice({ id: 'q2' })]).questionnaire
+    ;(partial as unknown as { states: unknown[] }).states.pop()
+    expect(partial.currentNode()).toMatchObject({ title: 'Question 1 of 2' })
   })
 
-  it('answers a multi-select question with the toggled labels', () => {
-    const { questionnaire, completed } = make([choice({
-      multiSelect: true,
-      options: [{ label: 'A' }, { label: 'B' }, { label: 'C' }],
-    })])
-    questionnaire.handleInput(KEY.space)
-    questionnaire.handleInput(KEY.down)
-    questionnaire.handleInput(KEY.down)
-    questionnaire.handleInput(KEY.space)
-    const rows = questionnaire.render(60)
-    expect(rows[5]).toBe('    [x] A')
-    expect(rows[7]).toContain('^  → [x] C^')
-    questionnaire.handleInput(KEY.enter)
-    expect(completed).toHaveBeenCalledWith([{ id: 'q1', selected: ['A', 'C'] }])
-  })
-
-  it('confirms the focused option in a multi-select when nothing was toggled', () => {
-    const { questionnaire, completed } = make([choice({
-      multiSelect: true,
-      options: [{ label: 'A' }, { label: 'B' }],
-    })])
-    questionnaire.handleInput(KEY.down)
-    questionnaire.handleInput(KEY.enter)
-    expect(completed).toHaveBeenCalledWith([{ id: 'q1', selected: ['B'] }])
-  })
-
-  it('ignores Space on a single-select list and on the Other row', () => {
-    const { questionnaire, completed } = make([choice({ multiSelect: true })])
-    // Cursor on Other: Space is a no-op there.
-    questionnaire.handleInput(KEY.up)
-    questionnaire.handleInput(KEY.space)
-    questionnaire.handleInput(KEY.enter)
-    // Enter on Other opened the editor instead of answering.
-    expect(completed).not.toHaveBeenCalled()
-    questionnaire.handleInput(KEY.escape)
-    // Single-select: Space never toggles.
-    const second = make([choice()])
-    second.questionnaire.handleInput(KEY.space)
-    expect(second.questionnaire.render(60)[5]).toContain('^  → Alpha^~ — the first~')
-    second.questionnaire.handleInput(KEY.escape)
-  })
-
-  it('answers a single-select Other with custom text', () => {
-    const { questionnaire, completed } = make([choice()])
-    questionnaire.handleInput(KEY.up)
-    questionnaire.handleInput(KEY.enter)
-    expect(questionnaire.render(60).some(row => row.includes('esc back'))).toBe(true)
-    type(questionnaire, 'mine')
-    questionnaire.handleInput(KEY.enter)
-    expect(completed).toHaveBeenCalledWith([{ id: 'q1', selected: [], custom: 'mine' }])
-  })
-
-  it('keeps custom text alongside toggled labels in a multi-select', () => {
-    const { questionnaire, completed } = make([choice({
-      multiSelect: true,
-      options: [{ label: 'A' }, { label: 'B' }],
-    })])
-    questionnaire.handleInput(KEY.space)
-    questionnaire.handleInput(KEY.up) // wraps to Other
-    questionnaire.handleInput(KEY.enter) // open the editor
-    type(questionnaire, 'note')
-    questionnaire.handleInput(KEY.enter) // save the custom text, back to the list
-    expect(completed).not.toHaveBeenCalled()
-    // The cursor stayed on the Other row, which now shows the custom text.
-    expect(questionnaire.render(60)[7]).toContain('^  → Other: note^')
-    questionnaire.handleInput(KEY.up) // B
-    questionnaire.handleInput(KEY.up) // A
-    questionnaire.handleInput(KEY.enter)
-    expect(completed).toHaveBeenCalledWith([{ id: 'q1', selected: ['A'], custom: 'note' }])
-  })
-
-  it('exits the Other editor without a custom answer on empty text', () => {
-    const { questionnaire, completed } = make([choice()])
-    questionnaire.handleInput(KEY.up)
-    questionnaire.handleInput(KEY.enter)
-    questionnaire.handleInput(KEY.enter)
-    expect(completed).not.toHaveBeenCalled()
-    // Back in list mode: the Other row is rendered again.
-    expect(questionnaire.render(60)[7]).toContain('^  → Other^')
-    questionnaire.handleInput(KEY.escape)
-  })
-
-  it('answers an optionless question with custom text straight from the editor', () => {
-    const { questionnaire, components, completed } = make([{ id: 'q2', question: 'Why?' }])
-    // The editor opens with the question, above the frame's key row.
-    expect(components.editors).toHaveLength(1)
-    expect(questionnaire.render(60)[5]).toContain('Answer')
-    type(questionnaire, 'because')
-    expect(questionnaire.render(60)[5]).toContain('because')
-    questionnaire.handleInput(KEY.enter)
-    expect(completed).toHaveBeenCalledWith([{ id: 'q2', selected: [], custom: 'because' }])
-  })
-
-  it('answers an optionless question without custom text on an empty submission', () => {
-    const { questionnaire, completed } = make([{ id: 'q2', question: 'Why?' }])
-    questionnaire.handleInput(KEY.enter)
-    expect(completed).toHaveBeenCalledWith([{ id: 'q2', selected: [] }])
-  })
-
-  it('advances to the next unanswered question and completes after the last', () => {
-    const { questionnaire, completed } = make([choice(), { id: 'q2', question: 'Name?' }])
-    questionnaire.handleInput(KEY.enter)
-    expect(completed).not.toHaveBeenCalled()
-    // The tab row marks q1 answered and highlights Q2; its editor is open.
-    expect(questionnaire.render(60)[2]).toContain('2/2 · ✓ Q1  ^● Q2^')
-    type(questionnaire, 'neo')
-    questionnaire.handleInput(KEY.enter)
-    expect(completed).toHaveBeenCalledWith([
-      { id: 'q1', selected: ['Alpha'] },
-      { id: 'q2', selected: [], custom: 'neo' },
+  it('projects progress, question, detail, choices, Other, and hints canonically', () => {
+    const { questionnaire } = make([choice()])
+    expect(questionnaire.currentNode()).toMatchObject({ kind: 'surface', chrome: 'overlay', title: 'Question 1 of 1' })
+    expect(list(questionnaire).items).toMatchObject([
+      { id: '1', label: 'Alpha', detail: 'the first', badge: '1' },
+      { id: '2', label: 'Beta', badge: '2' },
+      { id: '__other__', label: 'Other', badge: '3' },
     ])
+    const rows = questionnaire.render(60).join('\n')
+    expect(rows).toContain('Setup')
+    expect(rows).toContain('Choose one')
+    expect(rows).toContain('Pick carefully')
+    expect(rows).toContain('1-9 choose')
   })
 
-  it('switches tabs with Tab and Shift-Tab, wrapping around', () => {
-    const { questionnaire } = make([choice(), choice({ id: 'q2', question: 'Second' })])
-    questionnaire.handleInput(KEY.tab)
-    expect(questionnaire.render(60)[2]).toContain('2/2 · ~○ Q1~  ^● Q2^')
-    questionnaire.handleInput(KEY.tab)
-    expect(questionnaire.render(60)[2]).toContain('1/2 · ^● Q1^  ~○ Q2~')
-    questionnaire.handleInput(KEY.shiftTab)
-    expect(questionnaire.render(60)[2]).toContain('2/2 · ~○ Q1~  ^● Q2^')
-    questionnaire.handleInput(KEY.escape)
+  it('wraps the cursor, confirms single choices, and supports numeric direct selection', () => {
+    const first = make([choice()])
+    first.questionnaire.handleInput(KEY.up)
+    expect(list(first.questionnaire).selectedIds).toEqual(['__other__'])
+    first.questionnaire.handleInput(KEY.down)
+    expect(list(first.questionnaire).selectedIds).toEqual(['1'])
+    first.questionnaire.handleInput('2')
+    expect(first.completed).toHaveBeenCalledWith([{ id: 'q1', selected: ['Beta'] }])
   })
 
-  it('leaves the editor and switches tabs on Tab while editing', () => {
-    const { questionnaire } = make([{ id: 'q1', question: 'Why?' }, choice({ id: 'q2' })])
-    type(questionnaire, 'draft')
-    questionnaire.handleInput(KEY.tab)
-    // The draft is retained while the optioned question shows its list.
-    expect(questionnaire.render(60)[2]).toContain('2/2 · ~○ Q1~  ^● Q2^')
-    questionnaire.handleInput(KEY.shiftTab)
-    // Back on the optionless question: a fresh editor opens.
-    expect(questionnaire.render(60)[5]).toContain('Answer')
-    expect(questionnaire.render(60)[5]).toContain('draft')
-    // Shift-Tab while editing wraps to the optioned question too.
-    questionnaire.handleInput(KEY.shiftTab)
-    expect(questionnaire.render(60)[2]).toContain('2/2 · ~○ Q1~  ^● Q2^')
-    questionnaire.handleInput(KEY.escape)
+  it('toggles and untoggles multi-select choices and falls back to focus', () => {
+    const value = make([choice({ multiSelect: true })])
+    value.questionnaire.handleInput(KEY.space)
+    expect(list(value.questionnaire).items[0]?.label).toBe('[x] Alpha')
+    value.questionnaire.handleInput(KEY.space)
+    expect(list(value.questionnaire).items[0]?.label).toBe('[ ] Alpha')
+    value.questionnaire.handleInput(KEY.down)
+    value.questionnaire.handleInput(KEY.enter)
+    expect(value.completed).toHaveBeenCalledWith([{ id: 'q1', selected: ['Beta'] }])
   })
 
-  it('untoggles an option with a second Space', () => {
-    const { questionnaire, completed } = make([choice({
-      multiSelect: true,
-      options: [{ label: 'A' }, { label: 'B' }],
-    })])
-    questionnaire.handleInput(KEY.space)
-    expect(questionnaire.render(60)[5]).toContain('^  → [x] A^')
-    questionnaire.handleInput(KEY.space)
-    expect(questionnaire.render(60)[5]).toContain('^  → [ ] A^')
-    questionnaire.handleInput(KEY.escape)
-    expect(completed).not.toHaveBeenCalled()
+  it('retains toggles and custom text for a multi-select Other answer', () => {
+    const value = make([choice({ multiSelect: true })])
+    value.questionnaire.handleInput(KEY.space)
+    value.questionnaire.handleInput(KEY.up)
+    value.questionnaire.handleInput(KEY.enter)
+    type(value.questionnaire, 'note')
+    value.questionnaire.handleInput(KEY.enter)
+    expect(list(value.questionnaire).items.at(-1)?.label).toBe('Other: note')
+    value.questionnaire.handleInput(KEY.up)
+    value.questionnaire.handleInput(KEY.enter)
+    expect(value.completed).toHaveBeenCalledWith([{ id: 'q1', selected: ['Alpha'], custom: 'note' }])
   })
 
-  it('advances between optioned questions without opening an editor', () => {
-    const { questionnaire, completed } = make([choice(), choice({ id: 'q2', question: 'Second' })])
-    questionnaire.handleInput(KEY.enter)
-    expect(completed).not.toHaveBeenCalled()
-    expect(questionnaire.render(60)[2]).toContain('2/2 · ✓ Q1  ^● Q2^')
-    questionnaire.handleInput(KEY.enter)
-    expect(completed).toHaveBeenCalledWith([
-      { id: 'q1', selected: ['Alpha'] },
+  it('answers single-select Other and returns from empty Other editing', () => {
+    const custom = make([choice()])
+    custom.questionnaire.handleInput(KEY.up)
+    custom.questionnaire.handleInput(KEY.enter)
+    custom.questionnaire.focused = true
+    custom.questionnaire.handleInput('\x1b[200~我X的答案\x1b[201~')
+    for (let step = 0; step < 3; step += 1) custom.questionnaire.handleInput(KEY.left)
+    custom.questionnaire.handleInput('\x7f')
+    expect(custom.questionnaire.render(60).join('\n')).toContain('我|的答案')
+    custom.questionnaire.handleInput(KEY.enter)
+    expect(custom.completed).toHaveBeenCalledWith([{ id: 'q1', selected: [], custom: '我的答案' }])
+
+    const empty = make([choice()])
+    empty.questionnaire.handleInput(KEY.up)
+    empty.questionnaire.handleInput(KEY.enter)
+    empty.questionnaire.handleInput(KEY.enter)
+    expect(empty.completed).not.toHaveBeenCalled()
+    expect(list(empty.questionnaire).selectedIds).toEqual(['__other__'])
+  })
+
+  it('answers optionless questions, including an empty answer, and cancels on Escape', () => {
+    const value = make([{ id: 'free', question: 'Why?' }])
+    expect(value.questionnaire.render(60).join('\n')).toContain('Answer:')
+    type(value.questionnaire, 'because')
+    value.questionnaire.handleInput('\x7f')
+    value.questionnaire.handleInput(KEY.enter)
+    expect(value.completed).toHaveBeenCalledWith([{ id: 'free', selected: [], custom: 'becaus' }])
+
+    const blank = make([{ id: 'blank', question: 'Anything?' }])
+    blank.questionnaire.handleInput(KEY.enter)
+    expect(blank.completed).toHaveBeenCalledWith([{ id: 'blank', selected: [] }])
+    const cancelled = make([{ id: 'cancel', question: 'Stop?' }])
+    cancelled.questionnaire.handleInput(KEY.escape)
+    expect(cancelled.cancelled).toHaveBeenCalledOnce()
+  })
+
+  it('moves between questions, retains drafts, and completes in question order', () => {
+    const value = make([{ id: 'free', question: 'Free' }, choice({ id: 'q2' })])
+    type(value.questionnaire, 'draft')
+    value.questionnaire.handleInput(KEY.tab)
+    expect(value.questionnaire.currentNode()).toMatchObject({ title: 'Question 2 of 2' })
+    value.questionnaire.handleInput(KEY.shiftTab)
+    expect(value.questionnaire.render(60).join('\n')).toContain('draft')
+    value.questionnaire.handleInput(KEY.enter)
+    expect(value.questionnaire.render(60).join('\n')).toContain('✓ Q1')
+    value.questionnaire.handleInput(KEY.enter)
+    expect(value.completed).toHaveBeenCalledWith([
+      { id: 'free', selected: [], custom: 'draft' },
       { id: 'q2', selected: ['Alpha'] },
     ])
   })
 
-  it('ignores unrelated keys in list mode', () => {
-    const { questionnaire, completed, cancelled } = make([choice()])
-    questionnaire.handleInput('x')
-    expect(completed).not.toHaveBeenCalled()
-    expect(cancelled).not.toHaveBeenCalled()
-    questionnaire.handleInput(KEY.escape)
-    expect(cancelled).toHaveBeenCalledOnce()
+  it('moves backward with Shift-Tab while editing', () => {
+    const value = make([choice({ id: 'q1' }), { id: 'free', question: 'Free' }])
+    value.questionnaire.handleInput(KEY.shiftTab)
+    expect(value.questionnaire.currentNode()).toMatchObject({ title: 'Question 2 of 2' })
+    value.questionnaire.handleInput(KEY.shiftTab)
+    expect(value.questionnaire.currentNode()).toMatchObject({ title: 'Question 1 of 2' })
   })
 
-  it('budgets the option description into the width the label leaves (#14)', () => {
-    const { questionnaire } = make([choice({
-      options: [{ label: 'Alpha', description: 'x'.repeat(60) }, { label: 'Beta' }],
-    })])
-    const rows = questionnaire.render(60)
-    // The label `  → Alpha` is 9 columns, so the description gets 51:
-    // ` — ` plus 48 columns of text, pi-tui's reset-wrapped `...` ellipsis
-    // included — the whole row stays at 60 instead of overflowing the width
-    // guard.
-    expect(rows[5]).toContain('^  → Alpha^~ — ')
-    questionnaire.handleInput(KEY.escape)
+  it('wraps Tab navigation, exits Other with Escape, and cancels list mode', () => {
+    const value = make([choice(), choice({ id: 'q2' })])
+    value.questionnaire.handleInput(KEY.shiftTab)
+    expect(value.questionnaire.currentNode()).toMatchObject({ title: 'Question 2 of 2' })
+    value.questionnaire.handleInput(KEY.tab)
+    expect(value.questionnaire.currentNode()).toMatchObject({ title: 'Question 1 of 2' })
+    value.questionnaire.handleInput(KEY.up)
+    value.questionnaire.handleInput(KEY.enter)
+    value.questionnaire.handleInput(KEY.escape)
+    expect(list(value.questionnaire).selectedIds).toEqual(['__other__'])
+    value.questionnaire.handleInput(KEY.escape)
+    expect(value.cancelled).toHaveBeenCalledOnce()
   })
 
-  it('flattens and truncates a multi-line description to one row', () => {
-    const { questionnaire } = make([choice({
-      options: [{ label: 'Alpha', description: 'line one\nline two' }],
-    })])
-    expect(questionnaire.render(60)[5]).toContain('^  → Alpha^~ — line one line two~')
-    questionnaire.handleInput(KEY.escape)
+  it('bounds long option windows and flattens details', () => {
+    const options = Array.from({ length: 10 }, (_, index) => ({ label: `opt-${String(index)}`, description: index === 0 ? 'line one\nline two' : undefined }))
+    const value = make([choice({ options })])
+    expect(list(value.questionnaire).items).toHaveLength(6)
+    expect(list(value.questionnaire).items[0]).toMatchObject({ detail: 'line one line two' })
+    for (let index = 0; index < 8; index += 1) value.questionnaire.handleInput(KEY.down)
+    expect(list(value.questionnaire).items.some(item => item.label === 'opt-8')).toBe(true)
   })
 
-  it('hides the description when the label leaves it fewer than five columns', () => {
-    const { questionnaire } = make([choice({
-      options: [
-        // Prefix plus 51 label columns = 55, leaving 5: the last budgeted
-        // description width (the ` — ` separator plus the ellipsis).
-        { label: 'A'.repeat(51), description: 'edge' },
-        // 52 columns leave 4 — under the five-column floor: no description.
-        { label: 'B'.repeat(52), description: 'gone' },
-      ],
-    })])
-    const rows = questionnaire.render(60)
-    expect(rows[5]).toContain(`^  → ${'A'.repeat(51)}^`)
-    expect(rows[6]).toContain(`${'B'.repeat(52)}`)
-    questionnaire.handleInput(KEY.escape)
+  it('ignores irrelevant list keys and Space for single-select or Other', () => {
+    const value = make([choice()])
+    value.questionnaire.handleInput('x')
+    value.questionnaire.handleInput(KEY.space)
+    value.questionnaire.handleInput(KEY.up)
+    value.questionnaire.handleInput(KEY.space)
+    value.questionnaire.handleInput('9')
+    expect(value.completed).not.toHaveBeenCalled()
+    expect(value.cancelled).not.toHaveBeenCalled()
   })
 
-  it('truncates long option lists behind a muted ellipsis row', () => {
-    const options = Array.from({ length: 10 }, (_, index) => ({ label: `opt-${index}` }))
-    const { questionnaire } = make([choice({ options })])
-    const rows = questionnaire.render(60)
-    // Frame + tabs + question + 6 entries (the S12 kimi value) + the
-    // ellipsis row + the key row.
-    expect(rows).toHaveLength(15)
-    expect(rows[11]).toBe('~…~')
-    expect(rows[13]).toContain('↑↓ select · ↵ choose · tab next · esc')
-    questionnaire.handleInput(KEY.escape)
+  it('ignores Space and confirmation when the retained cursor has no option', () => {
+    const multi = make([choice({ multiSelect: true })])
+    multi.questionnaire.handleInput(KEY.up)
+    multi.questionnaire.handleInput(KEY.space)
+    expect(list(multi.questionnaire).selectedIds).toEqual(['__other__'])
+
+    const malformed = make([choice()])
+    const state = (malformed.questionnaire as unknown as { states: Array<{ cursor: number }> }).states[0]!
+    state.cursor = 4
+    malformed.questionnaire.handleInput(KEY.enter)
+    expect(malformed.completed).not.toHaveBeenCalled()
   })
 
-  it('dismisses through the cancel callback on Escape, in list and editing mode', () => {
-    const first = make([choice()])
-    first.questionnaire.handleInput(KEY.escape)
-    expect(first.cancelled).toHaveBeenCalledOnce()
-    const second = make([{ id: 'q2', question: 'Why?' }])
-    second.questionnaire.handleInput(KEY.escape)
-    expect(second.cancelled).toHaveBeenCalledOnce()
-  })
+  it('bridges focus, compiler events, invalidation, and malformed events safely', () => {
+    const value = make([choice()])
+    value.questionnaire.focused = true
+    expect(value.questionnaire.focused).toBe(true)
+    value.questionnaire.invalidate()
+    const adapter = (value.questionnaire as unknown as { adapter: { handleInput(data: string): void } }).adapter
+    adapter.handleInput(KEY.enter)
+    expect(value.completed).toHaveBeenCalledWith([{ id: 'q1', selected: ['Alpha'] }])
 
-  it('invalidates through the editor when one is open', () => {
-    const { questionnaire } = make([{ id: 'q2', question: 'Why?' }])
-    questionnaire.invalidate()
-    questionnaire.handleInput(KEY.escape)
-    const list = make([choice()])
-    list.questionnaire.invalidate()
-    list.questionnaire.handleInput(KEY.escape)
-  })
+    const free = make([{ id: 'free', question: 'Free' }])
+    const events = free.questionnaire as unknown as { onEvent(event: { kind: string, controlId: string, value?: unknown }): void }
+    events.onEvent({ kind: 'value-change', controlId: 'other', value: 'ignored' })
+    events.onEvent({ kind: 'selection-change', controlId: 'other', value: '1' })
+    events.onEvent({ kind: 'value-change', controlId: 'answer', value: 3 })
+    type(free.questionnaire, 'ok')
+    expect(free.questionnaire.render(60).join('\n')).toContain('ok')
 
-  it('propagates focus to the compact editor and returns from Other input', () => {
-    const { questionnaire } = make([choice()])
-    questionnaire.focused = true
-    expect(questionnaire.focused).toBe(true)
-    questionnaire.handleInput(KEY.up)
-    questionnaire.handleInput(KEY.enter)
-    questionnaire.focused = false
-    expect(questionnaire.focused).toBe(false)
-    questionnaire.handleInput(KEY.escape)
-    expect(questionnaire.render(60).some(row => row.includes('Other'))).toBe(true)
+    const selected = make([choice()])
+    const selectedEvents = selected.questionnaire as unknown as { onEvent(event: { kind: string, controlId: string, value?: unknown }): void }
+    selectedEvents.onEvent({ kind: 'selection-change', controlId: 'questionnaire-options', value: '__other__' })
+    expect(selected.questionnaire.render(60).join('\n')).toContain('Answer:')
+
+    const ignored = make([choice()])
+    const ignoredEvents = ignored.questionnaire as unknown as { onEvent(event: { kind: string, controlId: string, value?: unknown }): void }
+    ignoredEvents.onEvent({ kind: 'selection-change', controlId: 'questionnaire-options', value: '0' })
+    ignoredEvents.onEvent({ kind: 'selection-change', controlId: 'questionnaire-options', value: '9' })
+    expect(ignored.completed).not.toHaveBeenCalled()
   })
 })

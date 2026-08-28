@@ -19,12 +19,12 @@
 
 
 
-────────────────────────────────────────────────────────────────────────────────
-  Question 1 of 2
-  1/2 · ● Name  ○ Runtime
+╭ Question 1 of 2 ─────────────────────────────────────────────────────────────╮
+● Name  ○ Runtime
 
-  What should we call this project?
-  > Answer
-  ↵ save · tab next · esc cancel
-────────────────────────────────────────────────────────────────────────────────
+What should we call this project?
+
+ → Answer:
+Enter save · Tab next · Esc cancel
+╰──────────────────────────────────────────────────────────────────────────────╯
  mock  «cwd»

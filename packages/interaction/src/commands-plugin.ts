@@ -312,7 +312,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     const sections: HelpSection[] = [
       {
         heading: 'Commands',
-        labelPaint: display.colors.primary,
+        labelTone: 'accent',
         rows: (() => {
           const models = ctx.get('blueCommandModels')?.list()
           if (models !== undefined) return models.map(model => ({ label: model.label, description: model.description ?? '' }))
@@ -332,7 +332,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       },
       {
         heading: 'Keys',
-        labelPaint: display.colors.warning,
+        labelTone: 'warning',
         rows: display.keymap.list().map(action => ({
           label: [action.keys].flat().join('/'),
           description: action.description ?? action.id,

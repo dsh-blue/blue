@@ -42,33 +42,53 @@ function mount(options: {
     keymap: new FakeKeymap(),
     title: 'status',
     sections: options.sections ?? sections(),
-    maxVisible: options.maxVisible,
+    ...(options.maxVisible === undefined ? {} : { maxVisible: options.maxVisible }),
     onClose,
   })
   return { panel, onClose }
 }
 
 describe('InfoPanel', () => {
-  it('renders the framed title, aligned two-column rows, and the closing rule', () => {
+  it('renders a canonical overlay with semantic field spans', () => {
     const { panel } = mount()
+    panel.focused = true
+    expect(panel.focused).toBe(true)
     const rows = panel.render(80)
-    const bar = '^' + '─'.repeat(80) + '^'
-    expect(rows[0]).toBe(bar)
-    expect(rows[1]).toBe('^  status^ _· Esc / Enter / q to cancel · ↑↓ scroll_')
-    expect(rows[3]).toBe('  #Session#')
-    // Labels padEnd to the section's widest label; values join their
-    // styled segments in place.
-    expect(rows[4]).toBe('    ~id          ~  spec-session')
-    expect(rows[5]).toBe('    ~longer label~  value ~dim tail~! red tail!? amber? green')
-    expect(rows[8]).toBe('    ~row-2       ~  value 2')
-    expect(rows.at(-1)).toBe(bar)
+    expect(panel.currentNode()).toMatchObject({ kind: 'surface', chrome: 'overlay', title: 'status' })
+    expect(rows.join('\n')).toContain('Session')
+    expect(rows.join('\n')).toContain('spec-session')
+    expect(rows.join('\n')).toContain('dim tail')
+    expect(rows.join('\n')).toContain('red tail')
+    expect(rows.join('\n')).toContain('green')
   })
 
-  it('ellipsizes over-wide rows', () => {
+  it('normalizes empty and unlabeled rows while merging adjacent semantic spans', () => {
+    const { panel } = mount({
+      sections: [
+        {
+          heading: '',
+          rows: [
+            { label: '', segments: [] },
+            { label: '', segments: [{ text: '', style: 'primary' }, { text: 'primary', style: 'primary' }, { text: ' accent', style: 'accent' }] },
+            { label: 'joined', segments: [{ text: 'one' }, { text: ' two' }] },
+          ],
+        },
+        { heading: 'Second', rows: [] },
+      ],
+    })
+    const node = panel.currentNode()
+    if (node.kind !== 'surface' || node.child.kind !== 'rich-text') throw new Error('expected canonical info surface')
+    expect(node.child.spans.some(span => span.text === '\n')).toBe(true)
+    expect(node.child.spans.some(span => span.text.includes('primary') && span.tone === 'accent')).toBe(true)
+    expect(node.child.spans.some(span => span.text.includes('one two'))).toBe(true)
+    expect(node.child.spans.some(span => span.text === '\n\nSecond')).toBe(true)
+  })
+
+  it('contains over-wide rows through the canonical width contract', () => {
     const { panel } = mount({
       sections: [{ heading: 'S', rows: [{ label: 'x', segments: [{ text: 'a'.repeat(60) }] }] }],
     })
-    expect(panel.render(30).some(row => row.includes('...'))).toBe(true)
+    expect(panel.render(30).every(row => new FakeBlueComponents().visibleWidth(row) <= 30)).toBe(true)
   })
 
   it('scrolls a long body with a showing tail and resets when it fits', () => {
@@ -81,18 +101,18 @@ describe('InfoPanel', () => {
     panel.handleInput('\x1b[5~')
     expect(panel.render(60).some(row => row.includes('showing 1-5 of'))).toBe(true)
     panel.handleInput('\x1b[6~')
-    expect(panel.render(60).some(row => row.includes('showing 10-14 of'))).toBe(true)
-    // Down past the end clamps; up walks back.
+    expect(panel.render(60).some(row => row.includes('showing 6-10 of'))).toBe(true)
+    // Down advances visual rows; up walks back.
     panel.handleInput(KEY.down)
     panel.handleInput(KEY.down)
-    expect(panel.render(60).some(row => row.includes('showing 10-14 of'))).toBe(true)
+    expect(panel.render(60).some(row => row.includes('showing 8-12 of'))).toBe(true)
     panel.handleInput(KEY.up)
     panel.handleInput(KEY.up)
     panel.handleInput(KEY.up)
     panel.handleInput(KEY.up)
     panel.handleInput(KEY.up)
     panel.handleInput(KEY.up)
-    expect(panel.render(60).some(row => row.includes('showing 4-8 of'))).toBe(true)
+    expect(panel.render(60).some(row => row.includes('showing 2-6 of'))).toBe(true)
     // A body that fits resets the scroll.
     const small = mount({ sections: sections(0) })
     small.panel.handleInput(KEY.down)
@@ -118,5 +138,29 @@ describe('InfoPanel', () => {
   it('invalidate is a no-op', () => {
     const { panel } = mount()
     expect(panel.invalidate()).toBeUndefined()
+  })
+
+  it('bounds wrapped narrow content without introducing field colons', () => {
+    const { panel } = mount({ maxVisible: 5, sections: sections(10) })
+    const rows = panel.render(2)
+    expect(rows.length).toBeLessThanOrEqual(9)
+    expect(rows.some(row => row.includes(':'))).toBe(false)
+  })
+
+  it('pages through one wrapped CJK/emoji row and clamps after a wide resize', () => {
+    const { panel } = mount({
+      maxVisible: 5,
+      sections: [{ heading: 'H', rows: [{ label: 'X', segments: [{ text: '界🙂界🙂尾' }] }] }],
+    })
+    const first = panel.render(2).join('\n')
+    expect(JSON.stringify(panel.currentNode())).toMatch(/showing 1-5 of \d+/u)
+    expect(first).not.toContain('尾')
+
+    panel.handleInput('\x1b[6~')
+    expect(panel.render(2).join('')).toContain('尾')
+
+    const wide = panel.render(80).join('\n')
+    expect(wide).toContain('尾')
+    expect(wide).not.toContain('showing')
   })
 })

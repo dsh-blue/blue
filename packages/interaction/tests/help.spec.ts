@@ -15,7 +15,7 @@ function sections(count = 3): HelpSection[] {
   return [
     {
       heading: 'Commands',
-      labelPaint: (text: string): string => `^${text}^`,
+      labelTone: 'accent',
       rows: Array.from({ length: count }, (_, index) => ({
         label: `/cmd-${index}`,
         description: `does thing ${index}`,
@@ -35,25 +35,25 @@ function mount(options: {
     components: new FakeBlueComponents(),
     keymap: options.keymap ?? new FakeKeymap(),
     sections: options.sections ?? sections(),
-    maxVisible: options.maxVisible,
+    ...(options.maxVisible === undefined ? {} : { maxVisible: options.maxVisible }),
     onClose,
   })
   return { overlay, onClose }
 }
 
 describe('HelpOverlay', () => {
-  it('renders the framed title, aligned two-column rows, and the closing rule', () => {
+  it('renders one canonical overlay with semantic sections and a close footer', () => {
     const { overlay } = mount()
+    overlay.focused = true
+    expect(overlay.focused).toBe(true)
     const rows = overlay.render(60)
-    const bar = '^' + '─'.repeat(60) + '^'
-    expect(rows[0]).toBe(bar)
-    expect(rows[1]).toBe('^  help^ _· Esc / Enter / q to cancel · ↑↓ scroll_')
-    expect(rows[3]).toBe('  #Commands#')
-    // Labels padEnd to the section's widest label inside the label paint.
-    expect(rows[4]).toBe('    ^/cmd-0  ^  ~does thing 0~')
-    expect(rows[5]).toBe('    ^/cmd-1  ^  ~does thing 1~')
-    expect(rows[6]).toBe('    ^/cmd-2  ^  ~does thing 2~')
-    expect(rows.at(-1)).toBe(bar)
+    expect(overlay.currentNode()).toMatchObject({ kind: 'surface', chrome: 'overlay', title: 'help' })
+    expect(rows.join('\n')).toContain('help')
+    expect(rows.join('\n')).toContain('Commands')
+    expect(rows.join('\n')).toContain('/cmd-0')
+    expect(rows.join('\n')).toContain('does thing 2')
+    expect(rows.join('\n')).toContain('Esc / Enter / q to cancel')
+    overlay.invalidate()
   })
 
   it('closes on the keymap cancel and submit keys and on q/Q', () => {
@@ -72,19 +72,19 @@ describe('HelpOverlay', () => {
   })
 
   it('scrolls with arrows and pages, clamping at both ends', () => {
-    // Eight content rows (blank + heading + six commands) against the
-    // five-row floored window: the maximum scrollTop is 3.
+    // Seven rendered rows (heading + six commands) against the five-row
+    // floored window: the maximum scrollTop is 2.
     const { overlay } = mount({ maxVisible: 2, sections: sections(6) })
     overlay.handleInput(KEY.up)
     overlay.handleInput('\x1b[5~')
     const top = overlay.render(60)
-    expect(top.some(row => row.includes(' showing 1-5 of 8'))).toBe(true)
+    expect(top.some(row => row.includes(' showing 1-5 of 7'))).toBe(true)
     for (let i = 0; i < 20; i += 1) overlay.handleInput(KEY.down)
     const bottom = overlay.render(60)
-    expect(bottom.some(row => row.includes(' showing 4-8 of 8'))).toBe(true)
+    expect(bottom.some(row => row.includes(' showing 3-7 of 7'))).toBe(true)
     // PageDown past the end clamps to the last window.
     overlay.handleInput('\x1b[6~')
-    expect(overlay.render(60).some(row => row.includes(' showing 4-8 of 8'))).toBe(true)
+    expect(overlay.render(60).some(row => row.includes(' showing 3-7 of 7'))).toBe(true)
   })
 
   it('renders sections without a label paint and with empty rows', () => {
@@ -96,25 +96,47 @@ describe('HelpOverlay', () => {
       ],
     })
     const rows = overlay.render(60)
-    expect(rows.some(row => row.includes('#Plain#'))).toBe(true)
-    // The label pads to the eight-column width inside the default paint,
-    // then the two-column gap separates it from the description.
-    expect(rows.some(row => row.includes('x         ~plain~'))).toBe(true)
+    expect(rows.some(row => row.includes('Plain'))).toBe(true)
+    expect(rows.some(row => row.includes('x') && row.includes('plain'))).toBe(true)
   })
 
   it('renders without the showing tail when the sections fit the window', () => {
     const { overlay } = mount({ maxVisible: 20 })
     const rows = overlay.render(60)
     expect(rows.some(row => row.includes('showing'))).toBe(false)
-    expect(rows).toHaveLength(8)
+    expect(rows.length).toBeGreaterThan(5)
   })
 
   it('resets the scroll position when the window fits the content again', () => {
     const { overlay } = mount({ maxVisible: 2, sections: sections(6) })
     for (let i = 0; i < 5; i += 1) overlay.handleInput(KEY.down)
     const scrolled = overlay.render(60)
-    expect(scrolled.some(row => row.includes(' showing 4-8 of 8'))).toBe(true)
+    expect(scrolled.some(row => row.includes(' showing 3-7 of 7'))).toBe(true)
     const wide = mount({ maxVisible: 20 })
     expect(wide.overlay.render(60).some(row => row.includes('showing'))).toBe(false)
+  })
+
+  it('bounds wrapped narrow content by the configured visible-row budget', () => {
+    const { overlay } = mount({ maxVisible: 5, sections: sections(6) })
+    const rows = overlay.render(2)
+    expect(rows.length).toBeLessThanOrEqual(9)
+    expect(rows.some(row => row.includes(':'))).toBe(false)
+  })
+
+  it('pages through one wrapped CJK/emoji row and clamps after a wide resize', () => {
+    const { overlay } = mount({
+      maxVisible: 5,
+      sections: [{ heading: 'H', rows: [{ label: 'X', description: '界🙂界🙂尾' }] }],
+    })
+    const first = overlay.render(2).join('\n')
+    expect(JSON.stringify(overlay.currentNode())).toMatch(/showing 1-5 of \d+/u)
+    expect(first).not.toContain('尾')
+
+    overlay.handleInput('\x1b[6~')
+    expect(overlay.render(2).join('')).toContain('尾')
+
+    const wide = overlay.render(80).join('\n')
+    expect(wide).toContain('尾')
+    expect(wide).not.toContain('showing')
   })
 })

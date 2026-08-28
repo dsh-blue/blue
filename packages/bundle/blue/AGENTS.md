@@ -54,6 +54,14 @@ The bundle tarball contains runtime JS, declarations, `cordis.patch.yml`, and th
 
 The whole-tree e2e keeps `/help` scroll assertions aligned with the expanded command roster and mounts the published host runner plus tool-cordis package for creative-mode coverage. Its explicit `@deepseek-ai/dsh` dev dependency supplies the pinned host preset tree and dynamic preset package closure without leaking that graph into the dependency-free `blue-cli` tarball. Scripted model calls exercise `cordis_define`/`cordis_run`, VM isolation, dock/status/command/notice rendering, stop, restart, update, rollback, process restart, and missing-bridge diagnostics through the real chain. The safe-retraction case emits a creative-style `commands/change` during streamed thinking and requires the same-session reader refresh to preserve the editor receipt, erase the whole turn, and leave no interruption tombstone. Cases that mount real file-backed settings without exercising first-run onboarding seed their temporary credentials file explicitly, so the fixture never inherits success from a developer-machine API key. VT goldens pin the composed tool-card chrome (including bounded official presenter bodies) and horizontal model/effort variants, so renderer changes update both behavior assertions and the affected snapshots.
 
+The independent W4 dialogs slice asserts Help, Info, Approval, Questionnaire,
+PlanReview, and form behavior through the canonical core compiler rather than
+interaction-owned terminal rows. Bundle e2e checks Plan decisions by stripped
+semantic text because core paint may place SGR boundaries inside a label/badge;
+the questionnaire VT golden owns the corresponding canonical overlay and
+editor-backed focused-input shape. These are composition acceptance assertions,
+not transcript renderer ownership.
+
 VT snapshot fixtures use the shared tracked-temp helper for their fixed cwd as
 well as per-case settings and attachment roots, so a worker cannot leave one
 directory behind for every snapshot run.

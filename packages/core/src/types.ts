@@ -579,6 +579,13 @@ export interface BlueEditor extends BlueFocusable {
    */
   getExpandedText(): string
   /**
+   * Render only the editor's content rows for a compiler-owned form field.
+   * @param width - assigned content width.
+   * @param masked - replace every stored code unit with a bullet before render.
+   * @returns editor rows without its standalone outer frame.
+   */
+  renderContent(width: number, masked?: boolean): string[]
+  /**
    * Insert text at the cursor as one atomic undo step, without submitting.
    * Used for programmatic insertion of clipboard image placeholder markers.
    * @param text - the text to insert.

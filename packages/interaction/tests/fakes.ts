@@ -238,6 +238,7 @@ export class FakeBlueEditor implements BlueEditor {
   /** The last autocomplete provider attached, if any. */
   autocompleteProvider: BlueAutocompleteProvider | undefined
   private text = ''
+  private cursor = 0
 
   getText(): string {
     return this.text
@@ -248,8 +249,14 @@ export class FakeBlueEditor implements BlueEditor {
     return this.text
   }
 
+  renderContent(width: number, masked = false): string[] {
+    const text = masked ? '•'.repeat(this.text.length) : this.text
+    return [truncateToWidth(`${text.slice(0, this.cursor)}${this.focused ? '|' : ''}${text.slice(this.cursor)}`, Math.max(0, width))]
+  }
+
   setText(text: string): void {
     this.text = text
+    this.cursor = text.length
     this.onChange?.(text)
   }
 
@@ -269,10 +276,11 @@ export class FakeBlueEditor implements BlueEditor {
     return true
   }
 
-  /** The fake has no cursor model: insertion appends and fires onChange. */
+  /** Insert at the current fake cursor and fire onChange once. */
   insertText(text: string): void {
     this.inserted.push(text)
-    this.text += text
+    this.text = `${this.text.slice(0, this.cursor)}${text}${this.text.slice(this.cursor)}`
+    this.cursor += text.length
     this.onChange?.(this.text)
   }
 
@@ -307,16 +315,31 @@ export class FakeBlueEditor implements BlueEditor {
   handleInput(data: string): void {
     if (this.onKey?.(data) === true) return
     if (data === KEY.enter) {
-      if (!this.disableSubmit) this.onSubmit?.(this.text)
+      if (!this.disableSubmit) {
+        const submitted = this.text
+        this.text = ''
+        this.cursor = 0
+        this.onChange?.('')
+        this.onSubmit?.(submitted)
+      }
       return
     }
-    // Backspace deletes (the pi-tui Editor contract); anything else appends.
+    if (data === KEY.left) { this.cursor = Math.max(0, this.cursor - 1); return }
+    if (data === KEY.right) { this.cursor = Math.min(this.text.length, this.cursor + 1); return }
     if (data === '\x7f') {
-      this.text = this.text.slice(0, -1)
+      if (this.cursor === 0) return
+      const before = Array.from(this.text.slice(0, this.cursor))
+      before.pop()
+      const prefix = before.join('')
+      this.text = `${prefix}${this.text.slice(this.cursor)}`
+      this.cursor = prefix.length
       this.onChange?.(this.text)
       return
     }
-    this.text += data
+    const paste = /^\x1b\[200~([\s\S]*)\x1b\[201~$/u.exec(data)
+    const inserted = paste?.[1] ?? data
+    this.text = `${this.text.slice(0, this.cursor)}${inserted}${this.text.slice(this.cursor)}`
+    this.cursor += inserted.length
     this.onChange?.(this.text)
   }
 
@@ -373,9 +396,10 @@ export class FakeBlueSelectList implements BlueSelectList {
   invalidate(): void {}
 }
 
-/** Fake markdown component: settable text, rendered line-split. */
-class FakeBlueMarkdown implements BlueMarkdown {
+/** Fake markdown component: settable text, width-wrapped, and invalidatable. */
+export class FakeBlueMarkdown implements BlueMarkdown {
   private text: string
+  invalidations = 0
 
   constructor(options?: BlueMarkdownOptions) {
     this.text = options?.text ?? ''
@@ -385,11 +409,11 @@ class FakeBlueMarkdown implements BlueMarkdown {
     this.text = text
   }
 
-  render(): string[] {
-    return this.text.split('\n')
+  render(width: number): string[] {
+    return this.text.split('\n').flatMap(line => wrapTextWithAnsi(line, width))
   }
 
-  invalidate(): void {}
+  invalidate(): void { this.invalidations += 1 }
 }
 
 /**
@@ -509,6 +533,8 @@ export class FakeBlueComponents implements BlueComponents {
   readonly editors: FakeBlueEditor[] = []
   /** The options each editor was created with, in creation order. */
   readonly editorOptions: Array<BlueEditorOptions | undefined> = []
+  /** Every Markdown component created through this factory. */
+  readonly markdowns: FakeBlueMarkdown[] = []
   /** Every select list created through this factory, in creation order. */
   readonly selectLists: FakeBlueSelectList[] = []
   /**
@@ -535,7 +561,9 @@ export class FakeBlueComponents implements BlueComponents {
   }
 
   createMarkdown(options?: BlueMarkdownOptions): BlueMarkdown {
-    return new FakeBlueMarkdown(options)
+    const markdown = new FakeBlueMarkdown(options)
+    this.markdowns.push(markdown)
+    return markdown
   }
 
   createSelectList(options: BlueSelectListOptions): FakeBlueSelectList {

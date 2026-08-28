@@ -37,15 +37,33 @@ The command-model service projects canonical commands into `CommandModel` values
 Dialogs mount through `EditorHostService.mountReplacement()`. The migrated list, multi-select, form, settings, and document controllers own only business state, key interpretation, and canonical event mapping; `CanonicalPanelAdapter` is the sole interaction-side bridge into core's canonical compiler. They do not assemble terminal rows, borders, ANSI, or local width math. Async panels capture a generation/session identity, abort on unload where possible, and reject stale completion before mutating UI or session actions.
 
 `CanonicalFormController` emits a public `form` inside an overlay `surface`.
-Core owns field rows, secret masking, the active marker, cursor, validation,
-and width containment. Enter advances or submits from the last field,
-Tab/Down moves forward, and Shift-Tab/Up moves backward.
-`Questionnaire` currently uses the same compact input row
-for optionless and `Other` answers, shows a bounded progress summary instead
-of a full tab strip, and keeps one draft per question while navigating. Escape
-backs out of an `Other` editor before cancelling the request. Both components
-retain renderer-neutral answer protocols and use only `BlueComponents`,
-`BlueTheme`, and core width helpers; they do not expose pi-tui objects.
+`CanonicalPanelAdapter` alone caches core-created editor engines by canonical
+field path/control id across compiler rebuilds. Core owns field rows, secret
+masking, cursor/IME/bracketed-paste behavior, validation, and width containment;
+controllers and canonical nodes retain only renderer-neutral values and events.
+Enter reaches the active editor and its submit callback advances or submits;
+Tab/Shift-Tab and Escape remain composite-owned roving/cancel keys.
+Approval, Questionnaire, PlanReview, Help, Info, and loading documents now
+project canonical `surface`, `list`, `form`, `loader`, and content nodes through
+the same adapter. Their controllers retain only answer/draft/window state and
+historical key mapping. Core owns borders, pointers, form cursors, wrapping,
+semantic paint, sanitation, and width containment. Help/Info retain bounded
+Up/Down/PageUp/PageDown windows; their full rich-text leaf uses an exact private
+path plus the compiler's post-wrap offset/row metadata, so narrow wrapping is
+pageable rather than truncated and resize clamps against actual rendered rows.
+Questionnaire keeps one draft per question, accepts 1-9 direct selection, and
+Escape backs out of `Other` before cancelling the request.
+
+Plan review preserves the full plan text, core Markdown presentation, live
+post-wrap viewport window, two-axis scroll/decision keys, and revise answer
+encoding. `CanonicalPanelAdapter` identifies the Plan body by one exact private
+leaf path and forwards the live offset/row metadata; no public host or plugin
+path can select this renderer substitution. Delete the private Markdown path
+when the canonical vocabulary gains a validated Markdown/content node, delete
+the row-window seam when canonical content boxes support controlled scrolling,
+and delete the private editor resolver when canonical form controls carry full
+editor semantics. Never restore package-local Markdown/editor rendering,
+chrome, or width math.
 
 Approval allowances and prompt serialization are local to one approval plugin apply. Reject feedback uses `steerCurrentAgent()` with the opaque request owner, so a session switch cannot steer a replacement Agent. Question panels follow the same abort/late-result discipline.
 

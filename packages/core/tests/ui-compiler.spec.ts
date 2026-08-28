@@ -9,16 +9,82 @@ import {
   type BlueStatusCompilerOptions,
   type BlueUiCompilerOptions,
 } from '../src/ui-compiler.ts'
-import type { BlueComponents, BlueSemanticColors } from '../src/types.ts'
+import type { BlueComponent, BlueComponents, BlueEditor, BlueSemanticColors } from '../src/types.ts'
 import { sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '../src/width.ts'
 import { ADVERSARIAL, expectLinesFit, SCAN_WIDTHS } from './width-scan.ts'
 
 const identity = (value: string): string => value
 const colors = new Proxy({ logoGradient: [identity] }, { get: (target, key) => key === 'logoGradient' ? target.logoGradient : identity }) as BlueSemanticColors
+
+function createTestEditor(): BlueEditor {
+  let value = ''
+  let cursor = 0
+  const editor = {
+    focused: false,
+    onSubmit: undefined,
+    onChange: undefined,
+    onKey: undefined,
+    disableSubmit: false,
+    getText: () => value,
+    getExpandedText: () => value,
+    setText: (text: string) => { value = text; cursor = text.length },
+    renderContent: (width: number, masked = false) => {
+      const shown = masked ? '•'.repeat(value.length) : value
+      const row = `${shown.slice(0, cursor)}${editor.focused ? CURSOR_MARKER : ''}${shown.slice(cursor)}`
+      return [truncateToWidth(row, width)]
+    },
+    handleInput: (data: string) => {
+      if (editor.onKey?.(data) === true) return
+      if (data === '\r') { if (!editor.disableSubmit) editor.onSubmit?.(value); return }
+      if (data === '\x1b[D') { cursor = Math.max(0, cursor - 1); return }
+      if (data === '\x1b[C') { cursor = Math.min(value.length, cursor + 1); return }
+      if (data === '\x7f' || data === '\b') {
+        if (cursor > 0) {
+          const before = Array.from(value.slice(0, cursor))
+          before.pop()
+          const prefix = before.join('')
+          value = `${prefix}${value.slice(cursor)}`
+          cursor = prefix.length
+          editor.onChange?.(value)
+        }
+        return
+      }
+      const paste = /^\x1b\[200~([\s\S]*)\x1b\[201~$/u.exec(data)
+      const inserted = paste?.[1] ?? (/^[^\x00-\x1f\x7f-\x9f]+$/u.test(data) ? data : '')
+      if (inserted.length === 0) return
+      value = `${value.slice(0, cursor)}${inserted}${value.slice(cursor)}`
+      cursor += inserted.length
+      editor.onChange?.(value)
+    },
+    addToHistory: () => {},
+    getHistory: () => [],
+    setBorderColor: () => {},
+    setPromptSymbol: () => {},
+    setBorderLabel: () => {},
+    setConnectedAbove: () => {},
+    setGhostHint: () => {},
+    setAutocompleteProvider: () => {},
+    isShowingAutocomplete: () => false,
+    insertText: (text: string) => { value = `${value.slice(0, cursor)}${text}${value.slice(cursor)}`; cursor += text.length; editor.onChange?.(value) },
+    render: (width: number) => editor.renderContent(width),
+    invalidate: () => {},
+  } as BlueEditor
+  return editor
+}
+
 const components = {
   visibleWidth,
   wrapText: wrapTextWithAnsi,
   truncateToWidth,
+  createEditor: createTestEditor,
+  createMarkdown: (options?: { text?: string }) => {
+    let value = options?.text ?? ''
+    return {
+      setText: (text: string) => { value = text },
+      render: (width: number) => wrapTextWithAnsi(value, width),
+      invalidate: () => {},
+    }
+  },
 } as BlueComponents
 
 function fixture(overrides: Partial<BlueUiCompilerOptions> = {}): { options: BlueUiCompilerOptions, events: unknown[], viewport: { columns: number, rows: number } } {
@@ -81,6 +147,10 @@ describe('compileBlueUiNode', () => {
 
   it('compiles every non-BlueView node kind into width-safe rows', () => {
     const tree = ui.stack.column([
+      ui.fields([{ label: 'field', value: [{ text: 'value' }] }]),
+      ui.code('const x = 1'),
+      ui.diff('before', 'after'),
+      ui.sections([{ title: 'section', body: ui.text('body') }]),
       ui.richText([{ text: 'rich' }]),
       ui.surface({ title: 'surface', child: ui.text('child'), footer: ui.text('footer') }),
       ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B', disabled: true }] }),
@@ -100,6 +170,105 @@ describe('compileBlueUiNode', () => {
     }
     expect(result.focusTarget).not.toBeNull()
     result.component.invalidate()
+  })
+
+  it('applies the private compatibility row budget to wrapped rich text', () => {
+    const { options } = fixture({ screenMode: 'main', maxLeafRows: 3 })
+    const result = compiled(ui.richText([{ text: 'abcdefghij' }]), options)
+    const rows = result.component.render(2)
+    expect(rows).toHaveLength(3)
+    expect(rows.every(row => visibleWidth(row) <= 2)).toBe(true)
+  })
+
+  it('windows only the targeted text leaf after wrapping and reports live clamps', () => {
+    let offset = 1
+    const observe = vi.fn()
+    const { options } = fixture({
+      screenMode: 'main',
+      maxLeafRows: 2,
+      leafRowWindowPath: '$.0',
+      leafRowOffset: () => offset,
+      onLeafRowOffset: observe,
+    })
+    const result = compiled(ui.stack.column([ui.text('abcdefgh'), ui.text('ok')]), options)
+    expect(result.component.render(2)).toEqual(['cd', 'ef', 'ok'])
+    expect(observe).toHaveBeenLastCalledWith(1, 4, 2)
+
+    offset = 99
+    expect(result.component.render(2)).toEqual(['ef', 'gh', 'ok'])
+    expect(observe).toHaveBeenLastCalledWith(2, 4, 2)
+
+    expect(result.component.render(4)).toEqual(['abcd', 'efgh', 'ok'])
+    expect(observe).toHaveBeenLastCalledWith(0, 2, 2)
+
+    const defaultOffset = compiled(ui.text('abcdefgh'), fixture({
+      maxLeafRows: 2,
+      leafRowWindowPath: '$',
+    }).options)
+    expect(defaultOffset.component.render(2)).toEqual(['ab', 'cd'])
+  })
+
+  it('windows rich text and contains compatibility getter and observer failures', () => {
+    const getterFailure = compiled(ui.richText([{ text: 'abcdefgh' }]), fixture({
+      maxLeafRows: 2,
+      leafRowWindowPath: '$',
+      leafRowOffset: () => { throw new Error('offset failed') },
+      onLeafRowOffset: () => { throw new Error('observer failed') },
+    }).options)
+    expect(getterFailure.component.render(2)).toEqual(['ab', 'cd'])
+
+    const nonFinite = compiled(ui.richText([{ text: 'abcdefgh' }]), fixture({
+      maxLeafRows: 2,
+      leafRowWindowPath: '$',
+      leafRowOffset: () => Number.NaN,
+    }).options)
+    expect(nonFinite.component.render(2)).toEqual(['ab', 'cd'])
+  })
+
+  it('windows renderer-owned Markdown rows at the selected text leaf', () => {
+    const invalidate = vi.fn()
+    const markdownComponents = {
+      ...components,
+      createMarkdown: () => ({
+        setText: () => {},
+        render: () => ['heading', 'list', 'fence', 'tail'],
+        invalidate,
+      }),
+    } as BlueComponents
+    const result = compiled(ui.text('# heading\n- list\n```ts\nfence\n```'), fixture({
+      components: markdownComponents,
+      maxLeafRows: 2,
+      leafRowWindowPath: '$',
+      markdownLeafPath: '$',
+      leafRowOffset: () => 1,
+    }).options)
+    expect(result.component.render(20)).toEqual(['list', 'fence'])
+    result.component.invalidate()
+    expect(invalidate).toHaveBeenCalledOnce()
+  })
+
+  it('contains renderer-owned Markdown failures at the selected text leaf', () => {
+    const markdownComponents = {
+      ...components,
+      createMarkdown: () => ({
+        setText: () => {},
+        render: () => { throw new Error('markdown failed') },
+        invalidate: () => {},
+      }),
+    } as BlueComponents
+    const error = compiled(ui.text('# heading'), fixture({ components: markdownComponents, markdownLeafPath: '$' }).options)
+    expect(error.component.render(20).join('')).toContain('markdown failed')
+
+    const unknownComponents = {
+      ...components,
+      createMarkdown: () => ({
+        setText: () => {},
+        render: () => { throw 'markdown failed' },
+        invalidate: () => {},
+      }),
+    } as BlueComponents
+    const unknown = compiled(ui.text('# heading'), fixture({ components: unknownComponents, markdownLeafPath: '$' }).options)
+    expect(unknown.component.render(20).join('')).toContain('unknown')
   })
 
   it('renders all surface chrome content, rich emphasis, and explicit stack sizing', () => {
@@ -298,6 +467,21 @@ describe('compileBlueUiNode', () => {
     expect(replay.match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
   })
 
+  it('preserves one focused editor marker in layout and subsequent direct replay', () => {
+    const { options } = fixture()
+    const focus = compiled(ui.form({ id: 'form', fields: [{ kind: 'input', id: 'name', label: 'Name', value: 'alpha' }] }), options).focusTarget!
+    focus.focused = true
+    for (const width of [40, 2]) {
+      const frame = layout(focus as Component, width, 3).lines.join('')
+      expect(frame).not.toContain('\uf8ff')
+      expect(frame.match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
+
+      const replay = focus.render(width).join('')
+      expect(replay).not.toContain('\uf8ff')
+      expect(replay.match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
+    }
+  })
+
   it('cannot be tricked into extra markers by canonical user text', () => {
     const { options } = fixture()
     const focus = compiled(ui.stack.column([
@@ -338,6 +522,8 @@ describe('compileBlueUiNode', () => {
     const result = compiled(node, options)
     const focus = result.focusTarget!
     focus.focused = true
+    expect(focus.render(80).join('').match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
+    expect(focus.render(80).join('')).toContain('→ Name:')
     focus.handleInput?.('B')
     focus.handleInput?.(' ')
     focus.handleInput?.('界🙂')
@@ -396,6 +582,31 @@ describe('compileBlueUiNode', () => {
     const enterText = compiled(ui.form({ id: 'enter-form', fields: [{ kind: 'input', id: 'enter', label: 'Enter', value: 'value' }] }), fixture({ emit: event => enterEvents.push(event) }).options)
     enterText.focusTarget!.handleInput?.('\r')
     expect(enterEvents).toEqual([{ kind: 'value-change', controlId: 'enter', value: 'value' }])
+  })
+
+  it('contains editor-backed field render failures', () => {
+    const multilineEditor = createTestEditor()
+    multilineEditor.renderContent = () => ['first', 'second']
+    const multiline = compiled(ui.form({ id: 'form', fields: [{ kind: 'textarea', id: 'notes', label: 'Notes', value: '' }] }), fixture({
+      resolveTextEditor: () => multilineEditor,
+    }).options)
+    expect(multiline.component.render(20)).toEqual(['   Notes: first', '          second'])
+    const multilineRoot = multiline.component as unknown as { root: { entries: { component: BlueComponent }[] } }
+    expect(multilineRoot.root.entries[0]!.component.render(Number.NaN)).toEqual([' ', ' '])
+
+    const failingEditor = createTestEditor()
+    failingEditor.renderContent = () => { throw new Error('editor failed') }
+    const failed = compiled(ui.form({ id: 'form', fields: [{ kind: 'input', id: 'name', label: 'Name', value: '' }] }), fixture({
+      resolveTextEditor: () => failingEditor,
+    }).options)
+    expect(failed.component.render(20).join('')).toContain('editor failed')
+
+    const unknownEditor = createTestEditor()
+    unknownEditor.renderContent = () => { throw 'editor failed' }
+    const unknown = compiled(ui.form({ id: 'form', fields: [{ kind: 'input', id: 'name', label: 'Name', value: '' }] }), fixture({
+      resolveTextEditor: () => unknownEditor,
+    }).options)
+    expect(unknown.component.render(20).join('')).toContain('unknown')
   })
 
   it('requires two activation gestures for confirmed actions and clears pending state locally', () => {

@@ -10,6 +10,7 @@ import type { BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
 import {
   compileBlueUiNode,
   type BlueComponents,
+  type BlueEditor,
   type BlueFocusable,
   type BlueTheme,
   type BlueUiCompileResult,
@@ -30,7 +31,12 @@ export interface CanonicalPanelAdapterOptions {
   readonly node: () => BlueUiNode
   readonly onEvent: (event: BlueUiEvent) => void
   readonly onUnhandledEscape?: () => void
-  readonly maxLeafRows?: number
+  readonly maxLeafRows?: number | (() => number)
+  readonly leafRowWindowPath?: string
+  readonly markdownLeafPath?: string
+  readonly leafRowOffset?: () => number
+  readonly onLeafRowOffset?: (offset: number, totalRows: number, limit: number) => void
+  readonly onTextSubmit?: (controlId: string, value: string) => void
   readonly focusIndex?: () => number
 }
 
@@ -41,6 +47,7 @@ export class CanonicalPanelAdapter implements BlueFocusable {
   private compiledRevision = -1
   private result: BlueUiCompileResult | undefined
   private columns = 80
+  private readonly editors = new Map<string, BlueEditor>()
 
   constructor(private readonly options: CanonicalPanelAdapterOptions) {}
 
@@ -72,17 +79,43 @@ export class CanonicalPanelAdapter implements BlueFocusable {
   /** Render only through the compiler-owned component or safe error surface. */
   render(width: number): string[] {
     this.columns = Math.max(1, Number.isFinite(width) ? Math.floor(width) : 1)
-    return this.component().render(this.columns)
+    const revision = this.revision
+    const rows = this.component().render(this.columns)
+    return this.revision === revision ? rows : this.component().render(this.columns)
   }
 
   private compile(): BlueUiCompileResult {
     if (this.result !== undefined && this.compiledRevision === this.revision) return this.result
-    const result = compileBlueUiNode(this.options.node(), {
+    let node: BlueUiNode
+    try {
+      node = this.options.node()
+    } catch (error) {
+      node = {
+        kind: 'text',
+        content: `dialog unavailable: ${error instanceof Error ? error.message : 'unknown node builder failure'}`,
+        tone: 'danger',
+      }
+    }
+    const result = compileBlueUiNode(node, {
       components: this.options.components,
       colors: this.options.theme.colors,
       getViewport: () => ({ columns: this.columns, rows: Number.MAX_SAFE_INTEGER }),
       screenMode: 'main',
-      maxLeafRows: this.options.maxLeafRows ?? 256,
+      maxLeafRows: typeof this.options.maxLeafRows === 'function' ? this.options.maxLeafRows() : this.options.maxLeafRows ?? 256,
+      ...(this.options.leafRowWindowPath === undefined ? {} : { leafRowWindowPath: this.options.leafRowWindowPath }),
+      ...(this.options.markdownLeafPath === undefined ? {} : { markdownLeafPath: this.options.markdownLeafPath }),
+      ...(this.options.leafRowOffset === undefined ? {} : { leafRowOffset: this.options.leafRowOffset }),
+      ...(this.options.onLeafRowOffset === undefined ? {} : { onLeafRowOffset: this.options.onLeafRowOffset }),
+      resolveTextEditor: (controlId, path) => {
+        const key = `${path}:${controlId}`
+        let editor = this.editors.get(key)
+        if (editor === undefined) {
+          editor = this.options.components.createEditor()
+          this.editors.set(key, editor)
+        }
+        return editor
+      },
+      ...(this.options.onTextSubmit === undefined ? {} : { onTextSubmit: this.options.onTextSubmit }),
       emit: this.options.onEvent,
       ...(this.options.onUnhandledEscape === undefined ? {} : { onUnhandledEscape: this.options.onUnhandledEscape }),
     })
