@@ -158,19 +158,21 @@ webserver/apiproxy/client-*（浏览器半）、storage+json/domain（infra）�
 
 ### A. host 能力域
 
-| # | 功能 | Blue | dsh-TUI | tianshu | Martty | oh-my-dsh | dsh-tui-pro |
-|---|---|---|---|---|---|---|---|
-| 1 | jobs 后台任务 | ❌→blue-jobs | ❌（wire 帧定义了"v1 never reads"） | ✅ /tasks 面板 | ❌ | ❌ | ✅ /jobs |
-| 2 | workflow 查看 | ❌→blue-workflow-runs | ❌ generic 卡 | ✅ /workflow+终态缓存跨会话 | ❌（plan/todo 视图替代） | ⚠️ 仅 Default/Plan 切换 | ❌ |
-| 3 | goal 可视化 | ⚠️→本体 A11 | ✅ 四态徽标+轮次+todo 树（事件驱动） | ✅ /goal 创建/暂停/阻塞/完成全管理 | ❌ | ⚠️ /todo | ✅ goal-bar 单行常驻 |
-| 4 | compaction 呈现 | ⚠️ 仅 /compact 命令 | ✅ checkpoint 折叠摘要+20k 一次性警告 | ✅ /compact+glance 占用条 | ⚠️ 仅 context% | ✅ /compact+/context 构成明细 | ✅ 实时"compacting…"状态行+critical 提示 |
-| 5 | 长输出取回 | ⚠️ ctrl+o、spill 文件无入口 | ⚠️ 内存展开、无 spill | ✅ 折叠计数+Ctrl+O+/scroll 分页搜索 | ⚠️ Ctrl+O 全展开 | ✅ Agent Hub+/trajectory 全文账本 | ✅ Ctrl+O 全文 |
-| 6 | 跨会话内容搜索 | ❌→blue-session-search | ❌ | ❌ | ❌ | ⚠️ picker 五字段过滤 | ⚠️ picker 可搜 |
-| 7 | 成本统计 | ❌→blue-cost-meter | ⚠️ 仅 token（明言 harness 无费用计量） | ✅✅ /cost+内置 $/MTok 价目表+未知模型诚实降级 | ❌ | ❌ | ❌ |
-| 8 | TPS 遥测 | ❌→本体遥测行 | ✅ gauge+sparkline+语义色 | ❌ | ✅ tok/s | ✅ TTFT+tok/s+Cache%（可逐项显隐重排） | ✅ tok/s 常驻 |
-| 9 | checkpoint 可视化 | ⚠️ /rewind 安全分支 | ⚠️ /trace 时间线 | ✅ 两阶段回滚+**文件回退**（自建快照层） | ❌ | ❌ | ✅ 双击 Esc checkpoint 选择器 |
-| 10 | 消息反馈 👍👎 | ❌ | ❌（注册表 /feedback 文本） | ❌ | ❌ | ❌ | ❌ |
-| 11 | web 搜索呈现 | ⚠️ generic 卡 | ❌ generic | ❌ | ❌ | ❌ | ❌ |
+> "host 提供"列 = dsh-base（rc.2 线）宿主侧已具备的服务与原语——竞品在同一宿主上要么消费它、要么绕开自建；Blue 的承接位也以此为界。
+
+| # | 功能 | host 提供 | Blue | dsh-TUI | tianshu | Martty | oh-my-dsh | dsh-tui-pro |
+|---|---|---|---|---|---|---|---|---|
+| 1 | jobs 后台任务 | `jobs-local` 注册表 + `tool-jobs` 工具；wire 定义了 `session/jobs` 帧 | ❌→blue-jobs | ❌（wire 帧定义了"v1 never reads"） | ✅ /tasks 面板 | ❌ | ❌ | ✅ /jobs |
+| 2 | workflow 查看 | `workflow-worker-thread` 引擎 + `tool-workflow` 工具 + 运行事件（Web 侧另有 ui-workflow-run 槽） | ❌→blue-workflow-runs | ❌ generic 卡 | ✅ /workflow+终态缓存 | ❌（plan/todo 视图替代） | ⚠️ 仅 Default/Plan 切换 | ❌ |
+| 3 | goal 可视化 | `goal`/`goal-round-driver`/`tool-goal` + `goal/change` 事件 + ctx.goals | ⚠️→本体 A11 | ✅ 四态徽标+轮次+todo 树（事件驱动） | ✅ /goal 创建/暂停/阻塞/完成全管理 | ❌ | ⚠️ /todo | ✅ goal-bar 单行常驻 |
+| 4 | compaction 呈现 | `compaction-basic`（compactNow 服务）+ `command-compact` + `tool-result-pruner` + checkpoint 事件（`source.plugin='compact'`） | ⚠️ 仅 /compact 命令 | ✅ checkpoint 折叠摘要+20k 一次性警告 | ✅ /compact+glance 占用条 | ⚠️ 仅 context% | ✅ /compact+/context 构成明细 | ✅ 实时"compacting…"状态行+critical 提示 |
+| 5 | 长输出取回 | `spill-local`/`spill-policy`（落盘+有界预览+取回定位器）+ `tool-result-pruner` 裁剪 | ⚠️ ctrl+o、spill 文件无入口 | ⚠️ 内存展开、无 spill | ✅ 折叠计数+Ctrl+O+/scroll 分页搜索 | ⚠️ Ctrl+O 全展开 | ✅ Agent Hub+/trajectory 全文账本 | ✅ Ctrl+O 全文 |
+| 6 | 跨会话内容搜索 | `session-query-sqlite`（SQLite FTS5 全文索引，ctx.sessionQuery） | ❌→blue-session-search | ❌ | ❌ | ❌ | ⚠️ picker 五字段过滤 | ⚠️ picker 可搜 |
+| 7 | 成本统计 | `token-meter` 计量投影；**无金额换算**（价目表须消费侧自建） | ❌→blue-cost-meter | ⚠️ 仅 token（明言 harness 无费用计量） | ✅✅ /cost+内置 $/MTok 价目表+未知模型诚实降级 | ❌ | ❌ | ❌ |
+| 8 | TPS 遥测 | session-stats 投影（llmMs/decode 计数/cacheRead）——原始计时在，速率由前端推导，无现成 TPS 字段 | ❌→本体遥测行 | ✅ gauge+sparkline+语义色 | ❌ | ✅ tok/s | ✅ TTFT+tok/s+Cache%（可逐项显隐重排） | ✅ tok/s 常驻 |
+| 9 | checkpoint 可视化 | `session-checkpoint-policy` + jsonl 持久化；**无文件快照原语**（rc.2 核实零命中） | ⚠️ /rewind 安全分支 | ⚠️ /trace 时间线 | ✅ 两阶段回滚+**文件回退**（自建快照层） | ❌ | ❌ | ✅ 双击 Esc checkpoint 选择器 |
+| 10 | 消息反馈 👍👎 | `message-feedback` 行为 **web-app bundle 专属**，base/TUI profile 默认不挂 | ❌ | ❌（注册表 /feedback 文本） | ❌ | ❌ | ❌ | ❌ |
+| 11 | web 搜索呈现 | `web` + `web-search-deepseek`（provider）+ `tool-web`（模型面工具，结构化结果进工具输出） | ⚠️ generic 卡 | ❌ generic | ❌ | ❌ | ❌ | ❌ |
 
 ### B. 交互/运维域
 
