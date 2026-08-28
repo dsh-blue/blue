@@ -15,6 +15,9 @@ not a renderer callback or node kind. `BlueStatusNode` is recursively narrowed
 to text/rich-text/fields/progress/stack. `editor-control` exists only in the
 provider shell union. Provider admission checks callback shape only; the
 selected owner validates a rendered tree and its single editor-control slot.
+`BlueListItem.detail` remains the plain compatibility field;
+`detailSpans` carries renderer-neutral tone/emphasis when a row needs semantic
+inline detail without exposing ANSI.
 
 Node/event/snapshot data is JSON-shaped. Render callbacks, event handlers,
 `AbortSignal`, opaque one-shot `BlueUserGesture`, and registration handles are

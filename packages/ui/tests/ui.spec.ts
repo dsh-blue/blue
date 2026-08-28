@@ -60,7 +60,7 @@ describe('ui builders', () => {
     const action = ui.actions({ id: 'actions', items: [{ id: 'save', label: 'Save', intent: 'primary', busy: true }] })
     const nodes = [
       ui.tabs({ id: 'tabs', activeId: 'one', items: [{ id: 'one', label: 'One', count: 2 }, { id: 'two', label: 'Two', disabled: true }] }),
-      ui.list({ id: 'list', mode: 'multiple', selectedIds: ['one'], items: [{ id: 'one', label: 'One', detail: 'detail', badge: 'new', group: 'g' }], filter: 'o', empty: ui.text('none') }),
+      ui.list({ id: 'list', mode: 'multiple', selectedIds: ['one'], items: [{ id: 'one', label: 'One', detail: 'detail', detailSpans: [{ text: '[High]', tone: 'accent', emphasis: 'strong' }], badge: 'new', group: 'g' }], filter: 'o', empty: ui.text('none') }),
       ui.form({ id: 'form', fields: [
         { kind: 'input', id: 'name', label: 'Name', value: 'Blue', placeholder: 'name' },
         { kind: 'textarea', id: 'notes', label: 'Notes', value: '', error: 'required' },

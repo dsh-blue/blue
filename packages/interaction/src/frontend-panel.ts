@@ -6,7 +6,7 @@
  * @module @dsh-blue/blue-interaction/frontend-panel
  */
 
-import type { BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
+import type { BlueInlineSpan, BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
 import type { Action } from '@dsh-blue/blue-frontend'
 import { CanonicalPanelAdapter } from './canonical-panel.ts'
@@ -145,7 +145,7 @@ export class CanonicalDocumentController implements BlueFocusable {
         ...(this.query === '' ? {} : { filter: this.query }),
         items: items.slice(this.scrollTop, this.scrollTop + maxVisible).map(item => ({
           id: item.id, label: item.label,
-          ...(this.itemDetail(item) === undefined ? {} : { detail: this.itemDetail(item)! }),
+          ...(item.variants === undefined ? (item.detail === undefined ? {} : { detail: item.detail }) : { detailSpans: this.itemDetailSpans(item, item.variants) }),
           ...(item.group === undefined ? {} : { group: item.group }),
           ...(item.disabled === true ? { disabled: true } : {}),
         })),
@@ -239,10 +239,18 @@ export class CanonicalDocumentController implements BlueFocusable {
     this.reseedSelection(model)
   }
 
-  private itemDetail(item: FrontendPanelItem): string | undefined {
-    this.selectedVariant(item)
-    const variants = item.variants?.map(entry => `[${entry.label}]`).join(' ')
-    return [item.detail, variants].filter((value): value is string => value !== undefined && value !== '').join(' ') || undefined
+  private itemDetailSpans(item: FrontendPanelItem, variants: readonly FrontendPanelVariant[]): readonly BlueInlineSpan[] {
+    const selected = this.selectedVariant(item)
+    const spans: BlueInlineSpan[] = item.detail ? [{ text: item.detail }] : []
+    for (const variant of variants) {
+      const active = variant.id === selected?.id
+      spans.push({
+        text: `${spans.length === 0 ? '' : ' '}[${variant.label}]`,
+        tone: active ? 'accent' : 'muted',
+        ...(active ? { emphasis: 'strong' as const } : {}),
+      })
+    }
+    return spans
   }
 
   private selectedAction(model: FrontendPanelDocument, secondary: boolean): Action | undefined {

@@ -178,10 +178,12 @@ function field(value: unknown, path: string, state: ValidationState): BlueField 
 function listItem(value: unknown, path: string, state: ValidationState): BlueListItem {
   return enter(value, path, state, object => {
     const disabledValue = own(object, 'disabled', path)
+    const detailSpansValue = own(object, 'detailSpans', path)
     return {
       id: text(required(object, 'id', path), `${path}.id`, state),
       label: text(required(object, 'label', path), `${path}.label`, state),
       ...optional(optionalText(object, 'detail', path, state), 'detail'),
+      ...optional(detailSpansValue === undefined ? undefined : spans(detailSpansValue, `${path}.detailSpans`, state), 'detailSpans'),
       ...optional(optionalText(object, 'badge', path, state), 'badge'),
       ...optional(optionalText(object, 'group', path, state), 'group'),
       ...optional(disabledValue === undefined ? undefined : boolean(disabledValue, `${path}.disabled`), 'disabled'),

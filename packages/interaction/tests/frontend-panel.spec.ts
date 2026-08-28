@@ -63,7 +63,7 @@ describe('CanonicalDocumentController', () => {
     const value = fixture({
       mode: 'select', title: 'Models', grouped: true,
       items: [
-        { id: 'a', label: 'Alpha', group: 'One', selectedVariantId: 'low', variants: [
+        { id: 'a', label: 'Alpha', detail: 'ctx 64k', group: 'One', selectedVariantId: 'low', variants: [
           { id: 'low', label: 'Low', action: { kind: 'pick', id: 'low' }, secondaryAction: { kind: 'session', id: 'low' } },
           { id: 'high', label: 'High', action: { kind: 'pick', id: 'high' }, secondaryAction: { kind: 'session', id: 'high' } },
         ] },
@@ -72,8 +72,18 @@ describe('CanonicalDocumentController', () => {
     })
     expect(value.panel.render(80).join('\n')).toContain('All')
     expect(value.panel.render(80).join('\n')).toContain('[Low]')
+    expect(extractList(value.panel.currentNode()).items[0]!.detailSpans).toEqual([
+      { text: 'ctx 64k' },
+      { text: ' [Low]', tone: 'accent', emphasis: 'strong' },
+      { text: ' [High]', tone: 'muted' },
+    ])
     value.panel.handleInput(KEY.right)
     expect(value.panel.render(80).join('\n')).toContain('[High]')
+    expect(extractList(value.panel.currentNode()).items[0]!.detailSpans).toEqual([
+      { text: 'ctx 64k' },
+      { text: ' [Low]', tone: 'muted' },
+      { text: ' [High]', tone: 'accent', emphasis: 'strong' },
+    ])
     value.panel.handleInput('\x1bs'); value.panel.handleInput(KEY.enter)
     expect(value.onAction.mock.calls.map(call => call[0])).toEqual([{ kind: 'session', id: 'high' }, { kind: 'pick', id: 'high' }])
     value.panel.handleInput(KEY.tab)
@@ -168,6 +178,8 @@ describe('CanonicalDocumentController', () => {
     const variant = fixture({ mode: 'select', title: 'Variant', items: [{ id: 'a', label: 'A', selectedVariantId: 'missing', variants: [{ id: 'only', label: 'Only' }] }] })
     variant.panel.currentNode()
     variant.panel.handleInput('\x1bs')
+    const emptyVariants = fixture({ mode: 'select', title: 'No variants', items: [{ id: 'a', label: 'A', variants: [] }] })
+    expect(extractList(emptyVariants.panel.currentNode()).items[0]!.detailSpans).toEqual([])
 
     const events = variant.panel as unknown as { onEvent(event: { kind: string, controlId: string, value?: unknown, tabId?: string }): void }
     events.onEvent({ kind: 'activate', controlId: 'other' })

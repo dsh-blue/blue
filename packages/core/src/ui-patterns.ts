@@ -6,7 +6,7 @@
  * @module @dsh-blue/blue-core/ui-patterns
  */
 
-import type { BlueFormField, BlueTone, BlueUiNode } from '@dsh-blue/blue-api'
+import type { BlueFormField, BlueInlineSpan, BlueTone, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueSemanticColors } from './types.ts'
 import { sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from './width.ts'
 
@@ -168,6 +168,16 @@ function paintTone(tone: BlueTone | undefined, value: string, colors: BlueSemant
   }
 }
 
+function paintSpan(span: BlueInlineSpan, colors: BlueSemanticColors): string {
+  const painted = paintTone(span.tone, span.text, colors)
+  return span.emphasis === 'strong' ? `\x1b[1m${painted}\x1b[22m` : painted
+}
+
+function paintListDetail(item: ListNode['items'][number], colors: BlueSemanticColors): string {
+  if (item.detailSpans !== undefined) return item.detailSpans.length === 0 ? '' : ` ${colors.text('—')} ${item.detailSpans.map(span => paintSpan(span, colors)).join('')}`
+  return item.detail === undefined ? '' : colors.text(` — ${item.detail}`)
+}
+
 function compactTokens(tokens: readonly { readonly value: string, readonly focused: boolean, readonly active: boolean }[], width: number): string {
   const available = safeWidth(width)
   const complete = tokens.map(token => token.value).join(' ')
@@ -202,10 +212,7 @@ export function renderSurfaceHead(node: SurfaceNode, width: number, colors: Blue
   }
   if (node.subtitle !== undefined) rows.push(fit(colors.muted(node.subtitle), available))
   if (node.badges !== undefined && node.badges.length > 0) {
-    rows.push(fit(node.badges.map(span => {
-      const painted = paintTone(span.tone, span.text, colors)
-      return span.emphasis === 'strong' ? `\x1b[1m${painted}\x1b[22m` : painted
-    }).join(' '), available))
+    rows.push(fit(node.badges.map(span => paintSpan(span, colors)).join(' '), available))
   }
   return rows
 }
@@ -246,18 +253,21 @@ export function renderList(node: ListNode, width: number, height: number, focus:
     const enabledFocus = focused && item.disabled !== true
     const marker = enabledFocus ? focus.marker : ' '
     const pointerGlyph = enabledFocus ? '→' : selected ? '●' : node.mode === 'multiple' ? '○' : ' '
-    const detail = available > 40 && item.detail !== undefined ? ` — ${item.detail}` : ''
+    const detail = available > 40 ? paintListDetail(item, colors) : ''
     const badge = item.badge === undefined ? '' : ` [${item.badge}]`
     if (item.disabled === true) {
       rows.push({ value: fit(colors.muted(`${marker}${pointerGlyph} ${item.label}${detail}${badge}`), available), itemId: item.id })
       continue
     }
     if (enabledFocus) {
-      rows.push({ value: colors.selectedBg(pad(colors.primary(`${marker}${pointerGlyph} ${item.label}${detail}${badge}`), available)), itemId: item.id })
+      const focusedRow = item.detailSpans === undefined
+        ? colors.primary(`${marker}${pointerGlyph} ${item.label}${item.detail === undefined || available <= 40 ? '' : ` — ${item.detail}`}${badge}`)
+        : `${colors.primary(`${marker}${pointerGlyph} ${item.label}`)}${detail}${colors.text(badge)}`
+      rows.push({ value: colors.selectedBg(pad(focusedRow, available)), itemId: item.id })
       continue
     }
     const pointer = selected ? colors.primary(pointerGlyph) : colors.textMuted(pointerGlyph)
-    rows.push({ value: fit(`${marker}${pointer} ${colors.text(item.label)}${colors.text(detail)}${colors.text(badge)}`, available), itemId: item.id })
+    rows.push({ value: fit(`${marker}${pointer} ${colors.text(item.label)}${detail}${colors.text(badge)}`, available), itemId: item.id })
   }
   const limit = Math.max(1, Number.isFinite(height) ? Math.floor(height) : 1)
   if (rows.length <= limit) return rows.map(row => row.value)

@@ -38,6 +38,13 @@ export function visitNode(node: BlueUiNode): string {
   }
 }
 
+export const semanticList: BlueUiNode = {
+  kind: 'list', id: 'models', selectedIds: ['model'], items: [{
+    id: 'model', label: 'Model', detail: 'plain fallback',
+    detailSpans: [{ text: '[High]', tone: 'accent', emphasis: 'strong' }],
+  }],
+}
+
 export function visitEvent(event: BlueUiEvent): string {
   switch (event.kind) {
     case 'activate': return event.controlId

@@ -79,7 +79,7 @@ describe('core width-scan', () => {
         { kind: 'fields' as const, fields: [{ label: text, value: text }] },
         { kind: 'sections' as const, sections: [{ title: text, body: { kind: 'text' as const, text } }] },
         { kind: 'list' as const, selectedId: 'selected', items: [
-          { id: 'selected', label: text, detail: text },
+          { id: 'selected', label: text, detail: text, detailSpans: [{ text, tone: 'accent', emphasis: 'strong' }] },
           { id: 'disabled', label: text, disabled: true },
         ] },
         { kind: 'code' as const, code: `${text}\n${text}`, language: 'fixture' },

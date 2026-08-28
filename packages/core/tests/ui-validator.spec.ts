@@ -44,7 +44,7 @@ describe('validateBlueUiNode', () => {
       ui.surface({ title: 'title', subtitle: 'subtitle', badges: [{ text: 'badge' }], chrome: 'surface', padding: 1, child: ui.text('child'), footer: ui.text('footer') }),
       ui.scroll(ui.text('scroll'), { follow: 'start', scrollbar: true }),
       ui.tabs({ id: 'tabs', activeId: 'one', items: [{ id: 'one', label: 'One', count: 2 }, { id: 'two', label: 'Two', disabled: true }] }),
-      ui.list({ id: 'list', mode: 'multiple', selectedIds: ['one'], filter: 'o', items: [{ id: 'one', label: 'One', detail: 'detail', badge: 'badge', group: 'g' }], empty: ui.empty({ title: 'none' }) }),
+      ui.list({ id: 'list', mode: 'multiple', selectedIds: ['one'], filter: 'o', items: [{ id: 'one', label: 'One', detail: 'detail', detailSpans: [{ text: '\x1b[31mcurrent', tone: 'accent', emphasis: 'strong' }], badge: 'badge', group: 'g' }], empty: ui.empty({ title: 'none' }) }),
       ui.form({ id: 'form', fields: [
         { kind: 'input', id: 'input', label: 'Input', value: 'v', placeholder: 'p', error: 'e' },
         { kind: 'textarea', id: 'area', label: 'Area', value: 'v' },
@@ -62,12 +62,15 @@ describe('validateBlueUiNode', () => {
     const handwritten = { ...all, ignored: 'metadata' }
     const result = accepted(handwritten) as typeof all & { ignored?: string }
     const expected = structuredClone(all)
+    ;((expected.children[9]!.node as { items: { detailSpans?: { text: string }[] }[] }).items[0]!.detailSpans![0]!).text = 'current'
     ;(expected.children[14]!.node as { value: number }).value = 10
     expect(result).toEqual(expected)
     expect(result.ignored).toBeUndefined()
     expect((result.children[14]!.node as { value: number }).value).toBe(10)
     expect(Object.isFrozen(result)).toBe(true)
     expect(Object.isFrozen(result.children)).toBe(true)
+    expect((result.children[9]!.node as { items: readonly { detailSpans?: readonly { text: string }[] }[] }).items[0]!.detailSpans).toEqual([{ text: 'current', tone: 'accent', emphasis: 'strong' }])
+    expect(Object.isFrozen((result.children[9]!.node as { items: readonly { detailSpans?: readonly unknown[] }[] }).items[0]!.detailSpans)).toBe(true)
   })
 
   it('strips ESC and C1 CSI/OSC/DCS/SOS/PM/APC sequences while preserving LF and Tab', () => {
@@ -101,6 +104,7 @@ describe('validateBlueUiNode', () => {
     [{ kind: 'spacer', size: 3 }, 'invalid'],
     [{ kind: 'tabs', id: 'x', activeId: 'missing', items: [] }, 'activeId'],
     [{ kind: 'list', id: 'x', selectedIds: ['missing'], items: [] }, 'selectedIds'],
+    [{ kind: 'list', id: 'x', selectedIds: [], items: [{ id: 'a', label: 'A', detailSpans: [{ text: 'x', tone: 'neon' }] }] }, 'invalid'],
     [{ kind: 'form', id: 'x', fields: [{ kind: 'toggle', id: 'a', label: 'A', value: true }, { kind: 'toggle', id: 'a', label: 'B', value: false }] }, 'duplicate'],
     [{ kind: 'stack', direction: 'row', children: [{ node: { kind: 'text', content: 'x' }, minSize: 2, maxSize: 1 }] }, 'inverted'],
   ])('returns a stable invalid-contribution result for %j', (value, message) => {

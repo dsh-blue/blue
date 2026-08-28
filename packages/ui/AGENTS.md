@@ -9,7 +9,9 @@ Builders must remain side-effect free and preserve the handwritten wire shape.
 They recursively clone caller-owned wire data before freezing the result and
 reject cycles. Stacks normalize plain nodes to `{ node }`; flex sizing and
 viewport conditions still require explicit `ui.child(node, options)` wrappers.
-Do not add hidden layout metadata or renderer callbacks to nodes.
+List `detailSpans`, like all inline semantic content, pass through unchanged
+and are cloned/frozen with their list item. Do not add hidden layout metadata
+or renderer callbacks to nodes.
 
 `defineBlueComponent` is a package-level composition factory. It validates
 component id/API metadata and the render function, then freezes render output.

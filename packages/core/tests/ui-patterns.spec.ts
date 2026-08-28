@@ -108,6 +108,8 @@ describe('private UI pattern painters', () => {
     expect(renderList(node, 20, 2, { key: 'missing', focused: true, marker: '|' }, colors)[0]).toContain('/ term')
     expect(renderList(node, 20, Number.NaN, { key: 'e', focused: true, marker: '|' }, colors)).toHaveLength(1)
     expect(renderList(ui.list({ id: 'single', selectedIds: [], items: [{ id: 'x', label: 'X' }] }), 20, 3, idle, colors)).toEqual(['   X'])
+    expect(renderList(node, 80, 2, { key: 'a', focused: true, marker: '|' }, colors).join('\n')).toContain('detail-a')
+    expect(renderList(node, 40, 2, { key: 'a', focused: true, marker: '|' }, colors).join('\n')).not.toContain('detail-a')
 
     const nestedPaint = new Proxy(colors, { get: (target, key, receiver) => {
       if (key === 'primary') return (value: string) => `<primary>${value}</primary>`
@@ -118,6 +120,42 @@ describe('private UI pattern painters', () => {
     expect(disabledSelected).toContain('<muted>')
     expect(disabledSelected).not.toContain('<primary>')
     expect(disabledSelected).not.toContain('|')
+  })
+
+  it('paints structured list detail spans without losing semantics on focused rows', () => {
+    const accent = vi.fn((value: string) => `<accent>${value}</accent>`)
+    const muted = vi.fn((value: string) => `<muted>${value}</muted>`)
+    const selectedBg = vi.fn(identity)
+    const tracked = new Proxy(colors, { get: (target, key, receiver) => {
+      if (key === 'accent') return accent
+      if (key === 'muted') return muted
+      if (key === 'selectedBg') return selectedBg
+      return Reflect.get(target, key, receiver)
+    } })
+    const node = ui.list({
+      id: 'variants', selectedIds: ['model'], items: [{
+        id: 'model', label: 'Model', detail: 'legacy detail',
+        detailSpans: [
+          { text: 'ctx 64k' },
+          { text: ' [Low]', tone: 'muted' },
+          { text: ' [High]', tone: 'accent', emphasis: 'strong' },
+        ],
+      }],
+    })
+
+    const idleRow = renderList(node, 80, 2, idle, tracked)[0]!
+    expect(idleRow).toContain('ctx 64k')
+    expect(idleRow).not.toContain('legacy detail')
+    expect(idleRow).toContain('<muted> [Low]</muted>')
+    expect(idleRow).toContain('\x1b[1m<accent> [High]</accent>\x1b[22m')
+    expect(accent).toHaveBeenCalledTimes(1)
+
+    const focusedRow = renderList(node, 80, 2, { key: 'model', focused: true, marker: '|' }, tracked)[0]!
+    expect(focusedRow).toContain('<muted> [Low]</muted>')
+    expect(focusedRow).toContain('\x1b[1m<accent> [High]</accent>\x1b[22m')
+    expect(selectedBg).toHaveBeenCalledOnce()
+    expect(renderList(node, 40, 2, idle, tracked)[0]).not.toContain('High')
+    expect(renderList(ui.list({ id: 'empty-detail', selectedIds: [], items: [{ id: 'x', label: 'X', detailSpans: [] }] }), 80, 2, idle, tracked)[0]).toBe('   X')
   })
 
   it('renders every form field state with validation on its own row', () => {

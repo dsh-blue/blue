@@ -583,7 +583,7 @@ describe('compileBlueUiNode', () => {
       const tree = ui.stack.column([
         ui.surface({ chrome: 'overlay', title: content, subtitle: content, badges: [{ text: content, tone: 'warning' }], child: ui.text(content), footer: ui.divider({ label: content }) }),
         ui.tabs({ id: `tabs-${suffix}`, activeId: 'a', items: [{ id: 'a', label: content, count: 123 }, { id: 'b', label: content }] }),
-        ui.list({ id: `list-${suffix}`, mode: 'multiple', selectedIds: ['a'], filter: content, items: [{ id: 'a', label: content, detail: content, badge: content, group: content }, { id: 'b', label: content }] }),
+        ui.list({ id: `list-${suffix}`, mode: 'multiple', selectedIds: ['a'], filter: content, items: [{ id: 'a', label: content, detail: content, detailSpans: [{ text: content, tone: 'accent', emphasis: 'strong' }], badge: content, group: content }, { id: 'b', label: content }] }),
         ui.form({ id: `form-${suffix}`, fields: [{ kind: 'input', id: `field-${suffix}`, label: content, value: content, error: content }] }),
         ui.actions({ id: `actions-${suffix}`, items: [{ id: `action-${suffix}`, label: content, intent: 'danger', confirm: content }] }),
         ui.loader({ message: content, elapsedMs: 12 }),

@@ -58,7 +58,7 @@ export interface BlueSurfaceNode { readonly kind: 'surface', readonly title?: st
 export interface BlueScrollNode { readonly kind: 'scroll', readonly child: BlueUiNode, readonly follow?: 'none' | 'start' | 'end', readonly scrollbar?: boolean }
 export interface BlueTabItem { readonly id: string, readonly label: string, readonly disabled?: boolean, readonly count?: number }
 export interface BlueTabsNode { readonly kind: 'tabs', readonly id: string, readonly activeId: string, readonly items: readonly BlueTabItem[] }
-export interface BlueListItem { readonly id: string, readonly label: string, readonly detail?: string, readonly badge?: string, readonly group?: string, readonly disabled?: boolean }
+export interface BlueListItem { readonly id: string, readonly label: string, readonly detail?: string, readonly detailSpans?: readonly BlueInlineSpan[], readonly badge?: string, readonly group?: string, readonly disabled?: boolean }
 export interface BlueListNode { readonly kind: 'list', readonly id: string, readonly mode?: 'single' | 'multiple', readonly selectedIds: readonly string[], readonly items: readonly BlueListItem[], readonly filter?: string, readonly empty?: BlueUiNode }
 export type BlueFormField =
   | { readonly kind: 'input' | 'textarea' | 'secret', readonly id: string, readonly label: string, readonly value: string, readonly placeholder?: string, readonly error?: string, readonly disabled?: boolean }
