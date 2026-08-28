@@ -20,7 +20,7 @@ singleton.
 
 Reads and searches group at this projection-consumer layer (one family per run — a read run and a search run never merge; a tool of the other family between them splits both): a run of transcript-channel tool entries that present as reads (presenter vocabulary — a pending `kind: 'read'` call view or a settled read result card — never a name check) folds into one `transcript-read-group` entry with per-call facts (argument window, actual range, totals, state, and preview lines bounded by `READ_PREVIEW_LINE_LIMIT`). Thinking entries are transparent to a run; user/assistant/error/interrupted content, non-read tools, and turn changes break it; invisible todo/agents channels neither join nor break. A single read still groups — the transcript never prints read file content; `ReadGroupComponent` renders the by-file tree (files in first-read order, a multi-window file nests its windows, a single-window file inlines) with the tools-category Ctrl-O expansion. `src/read-group.ts` is the sanctioned re-entry of the retired legacy read-group module's behavior under the new architecture (projection + frontend model + renderer adapter + bundle fixtures), not a compatibility shortcut. Consecutive grep/glob calls (presenter vocabulary: a pending `kind: 'search'` call or a settled search card, its `shape` separating content matches from path lists) fold into a `transcript-search-group` — pattern rows carry file/match/path counts (capped searches say `kept of total`), never match text; Ctrl-O nests file rows with bounded match previews (`SEARCH_PREVIEW_MATCH_LIMIT`) and the capped path page (`SEARCH_PATH_LIMIT`). The registry-facing search result view compacts to counts for the same reason the read view does. Read-kind calls without a file (the jobs reader declares `kind: 'read'` too) still join read runs; their row falls back to the salient argument label so the member stays visible, and the jobs reader's incremental `[status: ...]` trailer summarizes to `+N lines · status X`. `src/envelope.ts` recognizes the three raw shapes a presenter-less result can carry — the file tools' XML envelopes, the jobs reader's incremental `[status: ...]` trailer, and whole-text JSON objects/arrays (the ask-user reader's answers payload) — and collapses each to a one-line summary in presenter-less fallbacks; everything else passes through untouched and expanded cards keep the raw text as the debug view.
 
-`src/session-facts.ts` reads `blueConversationFacts` for status and dock producers. It tracks the current reader epoch, current-session projection, title, and direct child projections. Session changes clear child state before notifying consumers; stale or late projection callbacks cannot repopulate a retired epoch.
+`src/session-facts.ts` reads `blueConversationFacts` for status and bottom-pane producers. It tracks the current reader epoch, current-session projection, title, and direct child projections. Session changes clear child state before notifying consumers; stale or late projection callbacks cannot repopulate a retired epoch.
 
 ## Presentation Policy
 
@@ -72,8 +72,8 @@ history. The service keeps no expiry timer and contains footer, provider
 invalidation, and repaint exceptions.
 
 `plugin-host-bridge.ts` forwards public API status nodes into this registry and owns the corresponding disposers. The internal registry is not a public plugin surface.
-Its Fiber advertises the public `status` and `dock` capabilities before taking
-the aggregate snapshot. Unload withdraws that readiness and owner mounts while
+Its Fiber advertises the public `status` capability before taking the aggregate
+snapshot. Unload withdraws that readiness and owner mounts while
 leaving consumer contributions in the API host; a replacement bridge restores
 them from the snapshot. It follows the host's status-local revision so a
 public status refresh invalidates an existing entry, while unrelated aggregate
@@ -89,7 +89,7 @@ without changing the persisted desired id.
 
 Activity, todo, and agents consume `blueSessionFacts`. Activity derives its phase from projection facts and owns only its presentation timer. Todo renders the projected whole list and keeps only its local expanded/collapsed view state. Agents renders projected spawn-class facts plus bounded direct-child overlays; no child Session or event subscription enters the renderer.
 
-`BlueBottomPaneService` is package-private and accepts only Blue-owned bottom panes; it has no placement field or left/right lane. Each canonical `BlueUiNode` mounts independently through core's shared dock allocator, and `priority` controls both scarce-row allocation (larger first) and visual proximity to the fixed editor. Source/compiler/adapter failures fall back to a canonical danger node without changing priority or bottom placement. Public plugin dock contributions do not enter this registry: `plugin-host-bridge.ts` mounts the public API surface directly through core's bounded bridge.
+`BlueBottomPaneService` is package-private and accepts only Blue-owned bottom panes; it has no placement field or left/right lane. Each canonical `BlueUiNode` mounts independently through core's shared dock allocator, and `priority` controls both scarce-row allocation (larger first) and visual proximity to the fixed editor. Source/compiler/adapter failures fall back to a canonical danger node without changing priority or bottom placement. Public plugin panes do not enter this registry: core's canonical surface bridge owns their placement, compilation, events, and lifecycle.
 
 Five accepted renderer adapters preserve behavior that the frozen W1 vocabulary cannot yet express. Every adapter is clamped through core's width truth and retains the registry's preferred-row cap:
 
@@ -105,15 +105,16 @@ BTW calls `blueSessionActions.createSideSession()`, holds the returned owned han
 
 `BlueModelToolService` converts official generic/terminal/diff/search/read/web presentation facts into readonly frontend views and never reads session events. Its temporary frontend-view adapter renders the complete validated leaf through core's canonical compiler; `ToolModelComponent` retains the existing 12-row collapsed and 200-row expanded budgets so hidden-line counts stay exact. Remove that compatibility path when tool models publish `BlueUiNode` directly. The semantic transcript renderer keeps `ToolCallComponent` as the status/header/key-argument/shell chrome and nests the official view as its bounded body; tools without a presenter retain the generic rich fallback instead of receiving a synthetic name-only view. There is no `blueIntents` registry and no intent subpath export.
 
-`plugin-host-bridge.ts` is the only route from public plugin dock/additive-status contributions into renderer owners; `status-provider-owner.ts` is the only route for exclusive status-provider candidates. Both unwrap the guarded host only for owner-only readiness and snapshot helpers; those helpers reject the guarded public service. Status render results, including ordinary records and arrays from a dynamic VM realm, enter through core's sole status validator/compiler; dock contributions remain on the public API/core bridge. Reordering replaces the individually budgeted public dock mounts atomically; unload runs every screen/status disposer.
+`plugin-host-bridge.ts` is the only route from public additive-status contributions into the transcript owner; `status-provider-owner.ts` is the only route for exclusive status-provider candidates. Both unwrap the guarded host only for owner-only readiness and snapshot helpers; those helpers reject the guarded public service. Status render results, including ordinary records and arrays from a dynamic VM realm, enter through core's sole status validator/compiler. Public panes and overlays use core's canonical surface bridge instead of a transcript compatibility path.
 
 ## Package Surface
 
 Subpath exports, `files`, and `tsdown.config.ts` entries move together.
 `./status-provider-owner` is an independent composition entry because its
 capability lifetime and settings/session subscriptions must not be coupled to
-the additive bridge. `./dock-model` was removed because
-`BlueBottomPaneService` is an internal composition seam; its Cordis declaration
+the additive bridge. The former public `./dock-model` subpath remains removed;
+the same-named source module holds only the package-private
+`BlueBottomPaneService` composition seam, and its Cordis declaration
 merge travels through the package root for the shipped interaction queue only.
 The deleted generic `StatusModel`/`DockModel` contracts and legacy status,
 intent, fold, child-event, and phase modules must not be reintroduced as

@@ -83,7 +83,7 @@ These eight rows plus assembly form the minimum usable UI. The conversation prod
 | `blue-pane-todo` | projection-backed todo model (Ctrl-T collapse toggle, auto-close when all done) |
 | `blue-pane-btw` | `/btw` side-question pane: fork the live session for a by-the-way question (opaque owned side-session action plus official projection) |
 | `blue-pane-agents` | projected subagent-group model (last dock row, the kimi swarm-pane semantics) |
-| `blue-plugin-view-bridge` | public status/pane contributions into owner model registries |
+| `blue-plugin-view-bridge` | public additive status contributions into the footer owner registry |
 | `blue-status-provider-owner` | exclusive status-provider selection, session/settings handoff, and fallback lifecycle owner |
 
 ## Assembly (5 rows)

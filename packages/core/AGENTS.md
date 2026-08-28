@@ -108,11 +108,12 @@ The compiler composite owns the L2 interaction drafts. Canonical `input`, `texta
 
 The pi-tui-backed component factory and width pure functions:
 
-- `src/plugin-view.ts` is the public `BlueView` compiler used only by the
-  owner bridges. It strips caller ANSI/OSC/control bytes, applies semantic
-  tones from the live owner palette, caps text/depth/rows, delegates all width
-  math to `blueComponents`, and contains a dynamic render failure as one
-  bounded error row. Plugins never receive a `BlueComponent` from this seam.
+- `src/plugin-view.ts` is the internal `BlueView` leaf painter shared by the
+  canonical UI compiler and notification summaries. It strips caller
+  ANSI/OSC/control bytes, applies semantic tones from the live owner palette,
+  caps text/depth, and delegates all width math to `blueComponents`. Canonical
+  surface owners provide admission, row budgets, and render-failure containment;
+  the retired public-dock component wrapper is not a second renderer path.
 
 - `createImage(options)` wraps pi-tui's Image with a styled-text fallback for terminals without an image protocol; the pure `imageDimensions(data)` probe covers PNG/JPEG/GIF/WebP.
 - `BlueEditor.insertText(text)` — atomic insertion at the cursor; the seam the clipboard-image markers use.

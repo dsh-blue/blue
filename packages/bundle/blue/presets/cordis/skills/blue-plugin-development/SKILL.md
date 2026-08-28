@@ -64,7 +64,7 @@ A minimal footer entry, complete. The owner bridge orders it by `priority`, appl
 
 Consume Blue through the public capability host and renderer-neutral contracts — never by importing Blue internals:
 
-- `dock` — renderer-neutral `BlueView` contributions mounted by the TUI adapter.
+- `panes` — renderer-neutral `BlueUiNode` contributions placed in header, left, right, or bottom lanes.
 - `status` — renderer-neutral footer contributions.
 - `commands` — additive slash commands with structured `BlueResult` outcomes.
 - `notifications` — renderer-neutral messages and subscriptions.
@@ -78,7 +78,7 @@ At dev time, types come from the published contracts: `@dsh-blue/blue-api` is th
 
 ## The row-width hard contract
 
-Every renderer-owned view must fit its target surface. Plugin code returns renderer-neutral `BlueView` data; the TUI adapter performs width measurement and fallback. Do not import pi-tui or assemble ANSI rows in a plugin. Two forbidden shortcuts:
+Every renderer-owned view must fit its target surface. Plugin code returns renderer-neutral `BlueUiNode` data; the TUI adapter performs width measurement and fallback. Do not import pi-tui or assemble ANSI rows in a plugin. Two forbidden shortcuts:
 
 - **A direct pi-tui dependency** — Blue pins its pi-tui version; a second copy in the tree breaks width truth (and the version-uniqueness rule).
 - **Hand-rolled character counts** — codepoint counters are exact only for ASCII; CJK and emoji mis-budget and trip the render-exit clamp (a clamped row is a bug — it lands in `blue-overflow.log`).

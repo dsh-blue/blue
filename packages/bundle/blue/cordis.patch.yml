@@ -250,7 +250,7 @@
 
     # Frontend-runtime conversation is baseline, not an optional enhancement:
     # the domain producer owns the official append-origin transcript and shared
-    # status/dock facts; the renderer consumer reads only whole projections.
+    # status/bottom-pane facts; the renderer consumer reads only whole projections.
     - id: blue-conversation
       name: '@dsh-blue/blue-conversation'
 
@@ -373,9 +373,9 @@
       name: '@dsh-blue/blue-transcript/pane-agents'
       inject: [blueComponents, blueSessionFacts]
 
-    # Public additive view adapter: compiles renderer-neutral BlueViews into
-    # bounded dock/status components after every owner pane and before the
-    # editor. It is the only dynamic-contribution path into those registries.
+    # Public additive status adapter: projects renderer-neutral status nodes
+    # into the transcript-owned footer registry. Public panes and overlays are
+    # compiled by core's canonical surface bridge.
     - id: blue-plugin-view-bridge
       name: '@dsh-blue/blue-transcript/plugin-host-bridge'
 

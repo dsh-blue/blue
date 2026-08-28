@@ -30,7 +30,7 @@ PR #34 and #38 are out of scope; PR #36 is superseded. Work continues only in `/
 | btw | app side-session action | opaque projection session + owned handle | canonical bottom-pane node + accepted renderer adapter | source-complete; human pending |
 | retract (#58) | request cancellation/durable replacement | app retract lifecycle | semantic transcript removal/notice | source-complete; human pending |
 | update cooldown (#59) | install eligibility/cache | startup notification action | `NotificationModel` | source-complete; human pending |
-| creative mode (#60) | capability-scoped plugin host | effect-bound registries | view/command/status/dock/notification bridges | source-complete; human pending |
+| creative mode (#60) | capability-scoped plugin host | effect-bound registries | canonical pane/status/command/notification bridges | source-complete; human pending |
 | settings (#61) | official settings | revisioned get/set/unset | settings/form panels | source-complete; human pending |
 | rewind/tree (#62) | session store/query | rewind action/tree query | select/info panels | source-complete; human pending |
 | onboarding (#63) | credentials/settings | secret write action | secret-aware form flow | source-complete; human pending |

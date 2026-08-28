@@ -191,8 +191,6 @@ export interface BluePluginApi {
   readonly manifest: BluePluginManifest
   readonly commands?: BlueRegistry<BlueCommandContribution>
   readonly status?: BlueStatusEntryRegistry
-  /** @deprecated Internal bridge until W2-C migrates dock consumers to panes. */
-  readonly dock?: BlueRegistry<BlueDockContribution>
   readonly notifications?: { publish(notification: BlueNotification): BlueResult, subscribe(listener: (notification: BlueNotification) => void): BlueRegistration }
   readonly panes?: BluePaneRegistry
   readonly overlays?: BlueOverlayRegistry
@@ -202,8 +200,3 @@ export interface BluePluginApi {
   readonly session?: BlueSessionReader
 }
 export interface BluePluginHost { readonly version: string, open(consumer: { effect(callback: () => () => void): unknown }, manifest: BluePluginManifest): BlueResult<BluePluginApi> }
-
-/** @deprecated Internal transition type; remove with the W2-C pane bridge. */
-export interface BlueDockContribution extends BlueContributionMeta { readonly view: BlueView | (() => BlueView | null), readonly preferredRows?: number, readonly minRows?: number, readonly collapsible?: boolean }
-/** @deprecated Internal transition type; remove with the W2-C status bridge. */
-export interface BlueStatusContribution extends BlueContributionMeta { readonly render: () => BlueView | null }

@@ -1,19 +1,19 @@
 /** Cordis-owned, renderer-independent host for stable Blue plugin contributions. */
 import { Service, symbols, type Context } from '@deepseek-ai/cordis'
 import type {
-  BlueCommandContribution, BlueDockContribution, BlueEditorExtensionContribution,
+  BlueCommandContribution, BlueEditorExtensionContribution,
   BlueEditorProvider, BlueErrorCode, BlueNotification, BlueOverlayOpenOptions,
   BlueOverlayRequest, BlueOverlayRegistry, BluePaneContribution, BluePaneRegistration,
   BluePaneRegistry, BluePluginApi, BluePluginHost, BluePublicOverlayHandle,
   BlueRefreshRegistration, BlueRegistration, BlueRegistry, BlueResult,
-  BlueStatusContribution, BlueStatusEntryContribution, BlueStatusProvider, BlueUserGesture,
+  BlueStatusEntryContribution, BlueStatusProvider, BlueUserGesture,
 } from './contracts.ts'
-import { validateBlueHostManifest, type BlueCapability, type BlueHostManifest, type BluePluginManifest } from './manifest.ts'
+import { validateBlueManifest, type BlueCapability, type BluePluginManifest } from './manifest.ts'
 
 declare module '@deepseek-ai/cordis' { interface Context { bluePluginHost: BluePluginHostService } }
 
-type Capability = 'commands' | 'status' | 'dock' | 'notifications' | 'panes' | 'overlays' | 'editor.extensions' | 'status.provider' | 'editor.provider'
-type HostCapability = BlueCapability | 'dock'
+type Capability = 'commands' | 'status' | 'notifications' | 'panes' | 'overlays' | 'editor.extensions' | 'status.provider' | 'editor.provider'
+type HostCapability = BlueCapability
 type EffectOwner = { effect(callback: () => () => void): unknown }
 type Consumer = { effect(callback: () => () => void): unknown }
 type Prioritized = { readonly id: string, readonly priority?: number }
@@ -43,8 +43,7 @@ export interface BluePluginHostSnapshot {
   /** Monotonic fence for editor-provider candidate mutations only. */
   readonly editorProvidersRevision?: number
   readonly commands: readonly BlueCommandContribution[]
-  readonly status: readonly BlueStatusEntryContribution[] & readonly BlueStatusContribution[]
-  readonly dock: readonly BlueDockContribution[]
+  readonly status: readonly BlueStatusEntryContribution[]
   readonly panes: readonly BluePluginHostPaneEntry[]
   readonly overlays: readonly BluePluginHostOverlayEntry[]
   readonly editorExtensions: readonly BlueEditorExtensionContribution[]
@@ -56,7 +55,7 @@ export interface BluePluginHostOptions { readonly now?: () => number }
 const API_MAJOR = /^\^?1(?:\.|$)/
 const ID_PATTERN = /^[a-z0-9][a-z0-9._/-]{0,127}$/u
 const OWNER_ID_PATTERN = /^(?:blue[.:-]|@dsh-blue\/)/u
-const IMPLEMENTED_CAPABILITIES = new Set<Capability>(['commands', 'status', 'dock', 'notifications', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'])
+const IMPLEMENTED_CAPABILITIES = new Set<Capability>(['commands', 'status', 'notifications', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'])
 
 function success<T>(value: T): BlueResult<T> { return { ok: true, value } }
 function failure(code: BlueErrorCode, message: string): BlueResult<never> { return { ok: false, code, message } }
@@ -149,15 +148,6 @@ function status(input: unknown): BlueResult<BlueStatusEntryContribution> {
   const value = fields(input, ['id', 'priority', 'render']); const m = meta(value, true); if (!m.ok) return m
   const render = value.render
   return typeof render === 'function' ? success(Object.freeze({ ...m.value, render }) as BlueStatusEntryContribution) : failure('BLUE_INVALID_CONTRIBUTION', 'status contributions need a render function')
-}
-function dock(input: unknown): BlueResult<BlueDockContribution> {
-  const value = fields(input, ['id', 'priority', 'view', 'preferredRows', 'minRows', 'collapsible']); const m = meta(value); if (!m.ok) return m
-  if (!object(value.view) && typeof value.view !== 'function') return failure('BLUE_INVALID_CONTRIBUTION', 'dock contributions need a view or view function')
-  for (const [label, rows] of [['preferredRows', value.preferredRows], ['minRows', value.minRows]] as const) {
-    if (rows !== undefined && (typeof rows !== 'number' || !Number.isInteger(rows) || rows < 0 || rows > 20)) return failure('BLUE_LIMIT_EXCEEDED', `${label} must be an integer from 0 through 20`)
-  }
-  if (value.collapsible !== undefined && typeof value.collapsible !== 'boolean') return failure('BLUE_INVALID_CONTRIBUTION', 'dock collapsible must be a boolean')
-  return success(Object.freeze({ ...m.value, view: typeof value.view === 'function' ? value.view : cloneData(value.view), ...(value.preferredRows === undefined ? {} : { preferredRows: value.preferredRows }), ...(value.minRows === undefined ? {} : { minRows: value.minRows }), ...(value.collapsible === undefined ? {} : { collapsible: value.collapsible }) }) as BlueDockContribution)
 }
 function pane(input: unknown): BlueResult<BluePaneContribution> {
   const value = fields(input, ['id', 'priority', 'title', 'placement', 'size', 'narrow', 'render', 'onEvent']); const m = meta(value, true); if (!m.ok) return m
@@ -356,7 +346,7 @@ class ScopedRefresh<T extends Prioritized> {
 
 interface HostState {
   readonly lifetimes: Set<ConsumerLifetime>; readonly registries: Set<{ dispose(): void }>; readonly notifications: Set<Notifications>; readonly notificationObservers: Set<(notification: BlueNotification) => void>
-  readonly commands: Aggregate<BlueCommandContribution>; readonly status: Aggregate<BlueStatusEntryContribution>; readonly dock: Aggregate<BlueDockContribution>
+  readonly commands: Aggregate<BlueCommandContribution>; readonly status: Aggregate<BlueStatusEntryContribution>
   readonly panes: Aggregate<BluePluginHostPaneEntry>; readonly overlays: Ordered<BluePluginHostOverlayEntry>; readonly extensions: Aggregate<BlueEditorExtensionContribution>
   readonly statusProviders: Aggregate<BlueStatusProvider>; readonly editorProviders: Aggregate<BlueEditorProvider>; readonly owners: Map<Capability, number>
   readonly gestureOwners: Map<EffectOwner, number>; readonly gestures: Map<object, EffectOwner>; readonly ownerGestures: Map<EffectOwner, Set<object>>; readonly now: () => number
@@ -656,16 +646,14 @@ export function closeBluePluginHostOverlay(host: BluePluginHostService, owner: E
 /** Snapshot all additive contributions for Blue-owned adapters. */
 export function snapshotBluePluginHost(host: BluePluginHostService): BluePluginHostSnapshot {
   const state = ownerStateOf(host)
-  // W2-C owner compatibility only: the aggregate remains the final narrowed
-  // status type. W3-C removes this cast when transcript uses the status compiler.
-  return Object.freeze({ revision: state.revision.value, statusRevision: state.status.revision, statusProvidersRevision: state.statusProviders.revision, editorExtensionsRevision: state.extensions.revision, editorProvidersRevision: state.editorProviders.revision, commands: state.commands.list(), status: state.status.list() as readonly BlueStatusEntryContribution[] & readonly BlueStatusContribution[], dock: state.dock.list(), panes: state.panes.list(), overlays: state.overlays.list(), editorExtensions: state.extensions.list(), statusProviders: state.statusProviders.list(), editorProviders: state.editorProviders.list() })
+  return Object.freeze({ revision: state.revision.value, statusRevision: state.status.revision, statusProvidersRevision: state.statusProviders.revision, editorExtensionsRevision: state.extensions.revision, editorProvidersRevision: state.editorProviders.revision, commands: state.commands.list(), status: state.status.list(), panes: state.panes.list(), overlays: state.overlays.list(), editorExtensions: state.extensions.list(), statusProviders: state.statusProviders.list(), editorProviders: state.editorProviders.list() })
 }
 
 /** Observe aggregate changes from a Blue-owned adapter. */
 export function subscribeBluePluginHost(host: BluePluginHostService, listener: (snapshot: BluePluginHostSnapshot) => void): BlueRegistration {
   const state = ownerStateOf(host)
   const notify = () => listener(snapshotBluePluginHost(host))
-  const aggregates = [state.commands, state.status, state.dock, state.panes, state.overlays, state.extensions, state.statusProviders, state.editorProviders]
+  const aggregates = [state.commands, state.status, state.panes, state.overlays, state.extensions, state.statusProviders, state.editorProviders]
   const handles = aggregates.map(aggregate => aggregate.subscribe(notify))
   try { notify() } catch (error) { for (const handle of handles) handle.dispose(); throw error }
   return new Registration(() => { for (const handle of handles) handle.dispose() })
@@ -684,7 +672,7 @@ function disposeHost(host: BluePluginHostService): void {
   for (const lifetime of state.lifetimes) lifetime.dispose()
   for (const registry of state.registries) registry.dispose()
   for (const notifications of state.notifications) notifications.dispose()
-  for (const aggregate of [state.commands, state.status, state.dock, state.panes, state.overlays, state.extensions, state.statusProviders, state.editorProviders]) aggregate.clear()
+  for (const aggregate of [state.commands, state.status, state.panes, state.overlays, state.extensions, state.statusProviders, state.editorProviders]) aggregate.clear()
   state.lifetimes.clear(); state.notificationObservers.clear(); state.owners.clear(); state.gestureOwners.clear(); state.gestures.clear(); state.ownerGestures.clear(); state.overlayOwners.clear(); state.overlayClosers.clear(); state.paneCounts.clear(); state.capturingConsumers.clear(); HOST_STATES.delete(host)
 }
 
@@ -696,7 +684,7 @@ export class BluePluginHostService extends Service implements BluePluginHost {
     const revision = { value: 0 }
     const changed = () => { revision.value += 1 }
     HOST_STATES.set(this, {
-      lifetimes: new Set(), registries: new Set(), notifications: new Set(), notificationObservers: new Set(), commands: new Aggregate(false, changed), status: new Aggregate(true, changed), dock: new Aggregate(false, changed), panes: new Aggregate(true, changed), overlays: new Ordered(changed), extensions: new Aggregate(true, changed), statusProviders: new Aggregate(true, changed), editorProviders: new Aggregate(true, changed), owners: new Map(), gestureOwners: new Map(), gestures: new Map(), ownerGestures: new Map(), overlayOwners: new Map(), overlayClosers: new Map(), paneCounts: new Map(), capturingConsumers: new Set(), revision, now: options.now ?? Date.now, nextOverlayOrder: 0,
+      lifetimes: new Set(), registries: new Set(), notifications: new Set(), notificationObservers: new Set(), commands: new Aggregate(false, changed), status: new Aggregate(true, changed), panes: new Aggregate(true, changed), overlays: new Ordered(changed), extensions: new Aggregate(true, changed), statusProviders: new Aggregate(true, changed), editorProviders: new Aggregate(true, changed), owners: new Map(), gestureOwners: new Map(), gestures: new Map(), ownerGestures: new Map(), overlayOwners: new Map(), overlayClosers: new Map(), paneCounts: new Map(), capturingConsumers: new Set(), revision, now: options.now ?? Date.now, nextOverlayOrder: 0,
     })
     ctx.effect(() => () => disposeHost(this))
   }
@@ -717,12 +705,11 @@ export class BluePluginHostService extends Service implements BluePluginHost {
         ...(rawManifest.harness === undefined ? {} : { harness: rawManifest.harness }),
         ...(rawManifest.node === undefined ? {} : { node: rawManifest.node }),
         ...(rawManifest.integrity === undefined ? {} : { integrity: rawManifest.integrity }),
-      }) as BlueHostManifest
-      const valid = validateBlueHostManifest(hostManifest)
+      }) as BluePluginManifest
+      const valid = validateBlueManifest(hostManifest)
       if (!valid.ok) return failure(valid.code === 'BLUE_INVALID_MANIFEST' ? 'BLUE_INVALID_CONTRIBUTION' : 'BLUE_API_INCOMPATIBLE', valid.message)
       if (!API_MAJOR.test(hostManifest.api)) return failure('BLUE_API_INCOMPATIBLE', `unsupported Blue API range "${hostManifest.api}"`)
       const capabilities = [...hostManifest.capabilities]
-      const publicCapabilities = capabilities.filter((capability): capability is BlueCapability => capability !== 'dock')
       const unavailable = capabilities.find(capability => !IMPLEMENTED_CAPABILITIES.has(capability as Capability))
       if (unavailable !== undefined) return failure('BLUE_CAPABILITY_DENIED', `capability "${unavailable}" has no implemented Blue owner/API seam`)
       const missing = capabilities.find(capability => !ready(state, capability as Capability))
@@ -733,20 +720,19 @@ export class BluePluginHostService extends Service implements BluePluginHost {
       const isReady = (capability: Capability) => () => ready(state, capability)
       const commands = new Scoped('commands', state.commands, isReady('commands'), lifetime, command)
       const statuses = new ScopedRefresh('status', state.status, isReady('status'), lifetime, state.now, status)
-      const docks = new Scoped('dock', state.dock, isReady('dock'), lifetime, dock)
       const panes = new Panes(state, consumer, lifetime); const overlays = new Overlays(state, consumer, lifetime)
       const extensions = new ScopedRefresh('editor.extensions', state.extensions, isReady('editor.extensions'), lifetime, state.now, extension)
       const statusProviders = new ScopedRefresh('status.provider', state.statusProviders, isReady('status.provider'), lifetime, state.now, statusProvider)
       const editorProviders = new ScopedRefresh('editor.provider', state.editorProviders, isReady('editor.provider'), lifetime, state.now, editorProvider)
       const notifications = new Notifications(state, lifetime, callback => consumer.effect(callback))
-      const registries = [commands, statuses, docks, panes, overlays, extensions, statusProviders, editorProviders]
+      const registries = [commands, statuses, panes, overlays, extensions, statusProviders, editorProviders]
       for (const registry of registries) state.registries.add(registry)
       state.notifications.add(notifications)
 
-      const frozenManifest = Object.freeze({ id: hostManifest.id, api: hostManifest.api, capabilities: Object.freeze(publicCapabilities), ...(hostManifest.schemaVersion === undefined ? {} : { schemaVersion: hostManifest.schemaVersion }), ...(hostManifest.entry === undefined ? {} : { entry: hostManifest.entry }), ...(hostManifest.blue === undefined ? {} : { blue: hostManifest.blue }), ...(hostManifest.harness === undefined ? {} : { harness: hostManifest.harness }), ...(hostManifest.node === undefined ? {} : { node: hostManifest.node }), ...(hostManifest.integrity === undefined ? {} : { integrity: hostManifest.integrity }) }) as BluePluginManifest
+      const frozenManifest = Object.freeze({ id: hostManifest.id, api: hostManifest.api, capabilities: Object.freeze(capabilities), ...(hostManifest.schemaVersion === undefined ? {} : { schemaVersion: hostManifest.schemaVersion }), ...(hostManifest.entry === undefined ? {} : { entry: hostManifest.entry }), ...(hostManifest.blue === undefined ? {} : { blue: hostManifest.blue }), ...(hostManifest.harness === undefined ? {} : { harness: hostManifest.harness }), ...(hostManifest.node === undefined ? {} : { node: hostManifest.node }), ...(hostManifest.integrity === undefined ? {} : { integrity: hostManifest.integrity }) }) as BluePluginManifest
       const api: BluePluginApi = {
         manifest: frozenManifest,
-        ...(capabilities.includes('commands') ? { commands } : {}), ...(capabilities.includes('status') ? { status: statuses } : {}), ...(capabilities.includes('dock') ? { dock: docks } : {}), ...(capabilities.includes('notifications') ? { notifications } : {}), ...(capabilities.includes('panes') ? { panes } : {}), ...(capabilities.includes('overlays') ? { overlays } : {}), ...(capabilities.includes('editor.extensions') ? { editorExtensions: extensions } : {}), ...(capabilities.includes('status.provider') ? { statusProviders } : {}), ...(capabilities.includes('editor.provider') ? { editorProviders } : {}),
+        ...(capabilities.includes('commands') ? { commands } : {}), ...(capabilities.includes('status') ? { status: statuses } : {}), ...(capabilities.includes('notifications') ? { notifications } : {}), ...(capabilities.includes('panes') ? { panes } : {}), ...(capabilities.includes('overlays') ? { overlays } : {}), ...(capabilities.includes('editor.extensions') ? { editorExtensions: extensions } : {}), ...(capabilities.includes('status.provider') ? { statusProviders } : {}), ...(capabilities.includes('editor.provider') ? { editorProviders } : {}),
       }
       const cleanup = () => { lifetime.dispose(); state.lifetimes.delete(lifetime); for (const registry of registries) { registry.dispose(); state.registries.delete(registry) }; notifications.dispose(); state.notifications.delete(notifications) }
       try { consumer.effect(() => cleanup) } catch (error) { cleanup(); throw error }

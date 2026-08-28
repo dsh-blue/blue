@@ -121,14 +121,12 @@ Owner gaps retain contributions but reject new writes with
 `BLUE_CAPABILITY_ABSENT`; `session.read/session.act` remain
 denied because no owner/API seam exists.
 
-W2-C compatibility exception: `host.ts` uses the non-root-exported
-`validateBlueHostManifest` to admit the existing built-in `dock` bridge, and
-`contracts.ts` retains deprecated dock/status adapter shapes for owner
-compatibility. `BluePluginApi.status` uses its final narrowed registry with no
-cast; the deprecated status shape is snapshot compatibility only. Remove the
-host transition validator, `BluePluginApi.dock`, `BlueDockContribution`, host
-dock registry/snapshot, and `BlueHostManifest` when dock owners migrate. No new
-plugin may depend on this transition.
+The removed public `dock` transition has no host validator exception, API
+facade, contribution type, registry, or snapshot field. Untyped legacy
+manifests still pass through the public validator so `dock/panels/editor/tools`
+receive their actionable migration diagnostics rather than an unknown-field
+failure. `BluePluginApi.status` and its owner snapshot use only the final
+recursively narrowed status contract.
 
 ## Distribution contract
 

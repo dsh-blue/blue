@@ -12,7 +12,6 @@ import { fakeBlueComponents } from './helpers.ts'
 
 interface HostSnapshot {
   readonly status: readonly StatusContribution[]
-  readonly dock: readonly []
   readonly statusRevision?: number
   readonly revision?: number
 }
@@ -86,7 +85,7 @@ describe('plugin host bridge revision compatibility', () => {
     provide(ctx, 'blueComponents', fakeBlueComponents() as BlueComponents)
     const fiber = await ctx.plugin(bridgePlugin)
 
-    emit({ status: [contribution], dock: [], statusRevision: 7, revision: 70 })
+    emit({ status: [contribution], statusRevision: 7, revision: 70 })
     expect(registry.list()).toEqual([{
       id: 'plugin.status.health',
       priority: 50,
@@ -97,35 +96,35 @@ describe('plugin host bridge revision compatibility', () => {
     }])
     refreshes = 0
 
-    emit({ status: [contribution], dock: [], statusRevision: 7, revision: 71 })
+    emit({ status: [contribution], statusRevision: 7, revision: 71 })
     expect(refreshes).toBe(0)
-    emit({ status: [contribution], dock: [], statusRevision: 8, revision: 71 })
+    emit({ status: [contribution], statusRevision: 8, revision: 71 })
     expect(refreshes).toBe(1)
 
-    emit({ status: [contribution], dock: [], revision: 72 })
+    emit({ status: [contribution], revision: 72 })
     expect(refreshes).toBe(2)
-    emit({ status: [contribution], dock: [], revision: 72 })
+    emit({ status: [contribution], revision: 72 })
     expect(refreshes).toBe(2)
 
-    emit({ status: [contribution], dock: [] })
+    emit({ status: [contribution] })
     expect(refreshes).toBe(3)
-    emit({ status: [contribution], dock: [] })
+    emit({ status: [contribution] })
     expect(refreshes).toBe(3)
 
-    emit({ status: [], dock: [] })
+    emit({ status: [] })
     expect(registry.list()).toEqual([])
     expect(refreshes).toBe(4)
-    emit({ status: [contribution], dock: [] })
+    emit({ status: [contribution] })
     expect(registry.list()).toHaveLength(1)
     expect(refreshes).toBe(6)
 
-    expect(host.attach).toHaveBeenCalledWith(expect.anything(), expect.anything(), ['dock', 'status'])
+    expect(host.attach).toHaveBeenCalledWith(expect.anything(), expect.anything(), ['status'])
     await fiber.dispose()
     expect(host.disposed).toBe(1)
     expect(host.listeners).toHaveLength(0)
     expect(registry.list()).toEqual([])
 
-    emit({ status: [contribution], dock: [], statusRevision: 9, revision: 90 })
+    emit({ status: [contribution], statusRevision: 9, revision: 90 })
     expect(refreshes).toBe(7)
   })
 })

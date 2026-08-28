@@ -22,11 +22,12 @@ Blue 的 seam 不是单一类型，而是五类显式边界：
 |---|---|---|---|
 | `status` | `BlueStatusEntryContribution` | `blue-plugin-view-bridge` -> `BlueStatusEntryService` | 贡献 canonical `BlueStatusNode`；重复 id、越权 namespace 和非法 payload 被拒绝 |
 | `status.provider` | inert `BlueStatusProvider` candidate | `blue-status-provider-owner` -> `BlueStatusCompositionService` | 仅持久化用户选择可激活；实际宽度 dry-render 后原子替换，失败保留同会话 last-known-good 或回落 `blue.default` |
-| `dock` | `BlueDockContribution` | `blue-plugin-view-bridge` -> core bounded dock mount | 贡献有界 `BlueView`；支持 priority、preferred/min rows 和 collapsed |
+| `panes` | `BluePaneContribution` | core plugin surface bridge | 贡献 canonical `BlueUiNode`；host 持有 placement/size/narrow/hidden/revision，core 托管 layout、focus、event 与 fallback |
+| `overlays` | `BlueOverlayRequest` | core plugin surface bridge | 贡献 canonical overlay；capturing surface 必须消费当前 Blue user gesture，close/refresh 与 owner generation 绑定 |
 | `commands` | `BlueCommandContribution` | `blue-plugin-interaction-bridge` -> Harness commands | 注册结构化异步命令；卸载时撤销，late result 不回写 |
 | `notifications` | `BlueNotification` | `blue-plugin-interaction-bridge` -> editor notice | 发布 renderer-neutral 通知，不暴露编辑器对象 |
 
-`session.read`、`session.act`、`tools`、`editor` 和 `panels` 仍是 manifest vocabulary，不属于 phase-one 已开放能力；请求它们会得到明确的 capability-denied/absent 结果。
+`session.read` 与 `session.act` 已进入 manifest vocabulary，但在 W6 session owner bridge 完成前仍由 `open()` 明确拒绝。旧 `dock`、`panels`、`editor` 和 `tools` 不再是公开 capability；validator 与未类型化的 host input 都返回具体迁移建议。
 
 ## 3. 产品内部 seam
 
@@ -35,8 +36,8 @@ Blue 的 seam 不是单一类型，而是五类显式边界：
 | Owner | Seam | Contract / provider | Consumer |
 |---|---|---|---|
 | core | `blueScreen`、`blueKeymap`、`blueComponents`、`blueTerminalInfo`、`blueTheme` | `packages/core/src/types.ts` 与主题 provider | transcript、interaction 的 TUI adapter；只有 core 接触 pi-tui/raw terminal |
-| app | `blueSessionReader` | readonly `BlueSessionSnapshot`、订阅和文本 request；切换后发布新 snapshot | transcript、interaction、context adapter |
-| app | `blueSessionProjections` | `current/currentMany/children/subscribe`，只返回 immutable projection values + seq | conversation/status/dock/context consumers |
+| app | `blueSessionReader` | readonly `BlueSessionSnapshot`、订阅和当前内部 request 兼容入口；W6 将写入拆到 requester | transcript、interaction、context adapter |
+| app | `blueSessionProjections` | `current/currentMany/children/subscribe`，只返回 immutable projection values + seq | conversation/status/bottom-pane/context consumers |
 | app | `blueSessionActions` | followup/steer/interrupt、session details、mode/model/preset/tool/skill、side session 等结构化 action | interaction commands 和 BTW pane |
 | app | `blueRetractions` / `blueRequests` | request/session epoch guard 与 retract lifecycle | input、conversation/transcript lifecycle |
 | conversation | `blueConversation`、`blueConversationFacts` + `blueConversationProjection` readiness | official `SessionProjectionRegistry` owns replay/live/checkpoint/watermark | official transcript model、status 和 dock facts |
@@ -62,11 +63,11 @@ Session switch requests remain events such as `blue/request-resume`, `blue/reque
 
 ## 5. Bundle mapping
 
-The patch owns 29 Blue rows: two host-support rows plus 27 product rows.
+The patch owns 30 Blue rows: two host-support rows plus 28 product rows.
 
 - Baseline, 8 rows: API host, core/theme, banner, transcript model hosts/footer, conversation projection, official transcript consumer.
-- Enhancement, 15 rows: editor/attachment helpers, five status producers, five dock panes, the public view bridge, and the exclusive status-provider owner.
-- Assembly, 4 rows: interaction, public interaction bridge, startup and app.
+- Enhancement, 15 rows: editor/attachment helpers, five status producers, five bottom panes, the public additive-status bridge, and the exclusive status-provider owner.
+- Assembly, 5 rows: interaction, editor-provider owner, public interaction bridge, startup and app.
 - Validation-only, not bundle rows: `blue-context`, `blue-remote`, `blue-openpencil`, `blue-lark`.
 
 `blue-conversation` and `blue-transcript-official` are baseline rows because no legacy event-fold renderer remains. Tool diff/terminal/search/read/web cards are canonical `ToolPresentationModel` conversions inside the model path; there is no `blueIntents` registry or intent subpath.

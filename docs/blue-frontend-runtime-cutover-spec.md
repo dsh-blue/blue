@@ -53,7 +53,7 @@ PR #34、#38 不在范围内；PR #36 的架构方案由本文取代。
 | `@dsh-blue/blue-conversation` | `packages/conversation` | append-origin Harness conversation projection | transcript 正式 domain producer |
 | `@dsh-blue/blue-core` | `packages/core` | 唯一 pi-tui/raw terminal renderer adapter | TUI kernel |
 | `@dsh-blue/blue-app` | `packages/app` | CLI startup、Agent driver、session binding | 可启动产品组合 |
-| `@dsh-blue/blue-transcript` | `packages/transcript` | official transcript consumer、status/dock/tool models | 主内容呈现 |
+| `@dsh-blue/blue-transcript` | `packages/transcript` | official transcript consumer、status/bottom-pane/tool models | 主内容呈现 |
 | `@dsh-blue/blue-interaction` | `packages/interaction` | command/panel/editor/action consumers | 用户交互入口 |
 | `@dsh-blue/blue` | `packages/bundle/blue` | Cordis composition、preset、host disables | 用户安装的 bundle |
 | `@dsh-blue/blue-cli` | `packages/cli` | 独立 launcher、嵌套 Harness、profile calibration | 单命令分发入口 |

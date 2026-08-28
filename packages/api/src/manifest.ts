@@ -36,11 +36,6 @@ export interface BluePluginManifest {
   readonly integrity?: string
 }
 
-/** @internal Runtime input for the built-in dock bridge; never export from the package root. */
-export type BlueHostManifest = Omit<BluePluginManifest, 'capabilities'> & {
-  readonly capabilities: readonly (BlueCapability | BlueLegacyCapability)[]
-}
-
 /** Public definition consumed by the Cordis adapter in a later phase. */
 export interface BluePluginDefinition {
   readonly manifest: BluePluginManifest
@@ -80,7 +75,7 @@ const LEGACY_CAPABILITIES: Readonly<Record<BlueLegacyCapability, string>> = {
   tools: 'no replacement; tool presentation remains Blue-owned',
 }
 
-function validateManifest(manifest: BlueHostManifest, allowLegacyDock: boolean): BlueManifestResult {
+function validateManifest(manifest: BluePluginManifest): BlueManifestResult {
   if (manifest === null || typeof manifest !== 'object') {
     return { ok: false, code: 'BLUE_INVALID_MANIFEST', message: 'manifest must be an object' }
   }
@@ -109,11 +104,6 @@ function validateManifest(manifest: BlueHostManifest, allowLegacyDock: boolean):
   }
   const capabilities = new Set<string>()
   for (const capability of manifest.capabilities) {
-    if (capability === 'dock' && allowLegacyDock) {
-      if (capabilities.has(capability)) return { ok: false, code: 'BLUE_DUPLICATE_CAPABILITY', message: `capability "${capability}" is repeated` }
-      capabilities.add(capability)
-      continue
-    }
     if (typeof capability === 'string' && capability in LEGACY_CAPABILITIES) {
       const migration = LEGACY_CAPABILITIES[capability as BlueLegacyCapability]
       return { ok: false, code: 'BLUE_LEGACY_CAPABILITY', message: `capability "${capability}" was removed; ${migration}` }
@@ -131,10 +121,5 @@ function validateManifest(manifest: BlueHostManifest, allowLegacyDock: boolean):
 
 /** Validate a public manifest without executing plugin code. */
 export function validateBlueManifest(manifest: BluePluginManifest): BlueManifestResult {
-  return validateManifest(manifest, false)
-}
-
-/** @internal W1 compatibility for the existing built-in dock owner; remove in W2-C. */
-export function validateBlueHostManifest(manifest: BlueHostManifest): BlueManifestResult {
-  return validateManifest(manifest, true)
+  return validateManifest(manifest)
 }

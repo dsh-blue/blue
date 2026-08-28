@@ -37,7 +37,7 @@ function consumer() {
   }
 }
 
-function manifest(capabilities: BluePluginManifest['capabilities'] = ['commands', 'status', 'dock', 'notifications']): BluePluginManifest {
+function manifest(capabilities: BluePluginManifest['capabilities'] = ['commands', 'status', 'notifications']): BluePluginManifest {
   return { id: '@acme/plugin', api: '^1.0.0', capabilities }
 }
 
@@ -45,7 +45,7 @@ function command(id: string) {
   return { id, label: id, execute: async () => ({ ok: true as const, value: undefined }) }
 }
 
-function attach(host: BluePluginHostService, capabilities: BluePluginManifest['capabilities'] = ['commands', 'status', 'dock', 'notifications']) {
+function attach(host: BluePluginHostService, capabilities: BluePluginManifest['capabilities'] = ['commands', 'status', 'notifications']) {
   const owner = consumer()
   attachBluePluginHostCapabilities(host, owner, capabilities)
   return owner
@@ -60,7 +60,11 @@ describe('BluePluginHostService', () => {
     expect(host.open(c, null as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
     expect(host.open(c, { id: '@acme/plugin', api: '^2.0.0', capabilities: [] })).toMatchObject({ ok: false, code: 'BLUE_API_INCOMPATIBLE' })
     expect(host.open(null as never, manifest([]))).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
-    expect(host.open(c, manifest(['dock', 'dock']))).toMatchObject({ ok: false, code: 'BLUE_API_INCOMPATIBLE' })
+    expect(host.open(c, { ...manifest([]), capabilities: ['dock'] } as never)).toEqual({
+      ok: false,
+      code: 'BLUE_API_INCOMPATIBLE',
+      message: 'capability "dock" was removed; use "panes"',
+    })
     expect(host.open(c, manifest(['session.read']))).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_DENIED' })
   })
 
@@ -75,7 +79,7 @@ describe('BluePluginHostService', () => {
     expect(Object.isFrozen(api)).toBe(true)
     expect(Object.isFrozen(api.manifest)).toBe(true)
     expect(api.commands).toBeUndefined()
-    expect(api.dock).toBeUndefined()
+    expect(api.panes).toBeUndefined()
     expect(api.notifications).toBeUndefined()
     const status = api.status!
     const registered = status.register({ id: 'status', render: () => view })
@@ -110,32 +114,28 @@ describe('BluePluginHostService', () => {
 
   it('disposes registrations when the consumer effect unloads', () => {
     const host = new BluePluginHostService(new Context())
-    attach(host, ['commands', 'status', 'dock'])
+    attach(host, ['commands', 'status'])
     const c = consumer()
-    const apiResult = host.open(c, manifest(['commands', 'status', 'dock']))
+    const apiResult = host.open(c, manifest(['commands', 'status']))
     expect(apiResult.ok).toBe(true)
     if (!apiResult.ok) return
     const api = apiResult.value
     const commandRegistration = api.commands!.register(command('run'))
     const statusRegistration = api.status!.register({ id: 'status', render: () => view })
-    const dockRegistration = api.dock!.register({ id: 'dock', view })
     expect(api.commands!.list()).toHaveLength(1)
     expect(api.status!.list()).toHaveLength(1)
-    expect(api.dock!.list()).toHaveLength(1)
     c.dispose()
     expect(api.commands!.list()).toEqual([])
     expect(api.status!.list()).toEqual([])
-    expect(api.dock!.list()).toEqual([])
     expect(commandRegistration.ok && commandRegistration.value.disposed).toBe(true)
     expect(statusRegistration.ok && statusRegistration.value.disposed).toBe(true)
-    expect(dockRegistration.ok && dockRegistration.value.disposed).toBe(true)
   })
 
   it('fences every retained capability facade after consumer unload without consuming gestures', () => {
     const host = new BluePluginHostService(new Context())
-    const owner = attach(host, ['commands', 'status', 'dock', 'notifications', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'])
+    const owner = attach(host, ['commands', 'status', 'notifications', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'])
     const c = consumer()
-    const opened = host.open(c, manifest(['commands', 'status', 'dock', 'notifications', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider']))
+    const opened = host.open(c, manifest(['commands', 'status', 'notifications', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider']))
     const live = host.open(consumer(), { ...manifest(['notifications', 'overlays']), id: '@acme/live' })
     expect(opened.ok && live.ok).toBe(true)
     if (!opened.ok || !live.ok) return
@@ -143,7 +143,6 @@ describe('BluePluginHostService', () => {
     const registrations = [
       opened.value.commands!.register(command('before-unload')),
       opened.value.status!.register({ id: 'before-unload', render: () => null }),
-      opened.value.dock!.register({ id: 'before-unload', view }),
       opened.value.panes!.register({ id: 'before-unload', placement: 'right', render: () => null }),
       opened.value.overlays!.open({ id: 'before-unload', render: () => view }),
       opened.value.editorExtensions!.register({ id: 'before-unload' }),
@@ -164,7 +163,6 @@ describe('BluePluginHostService', () => {
     const rejected = [
       opened.value.commands!.register(command('after-unload')),
       opened.value.status!.register({ id: 'after-unload', render: () => null }),
-      opened.value.dock!.register({ id: 'after-unload', view }),
       opened.value.panes!.register({ id: 'after-unload', placement: 'bottom', render: () => null }),
       opened.value.overlays!.open({ id: 'after-unload', capturing: true, render: () => view }, { userGesture: gesture.value }),
       opened.value.editorExtensions!.register({ id: 'after-unload' }),
@@ -174,10 +172,10 @@ describe('BluePluginHostService', () => {
     ]
     for (const result of rejected) expect(result).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'plugin consumer is disposed' })
 
-    const lists = [opened.value.commands!.list(), opened.value.status!.list(), opened.value.dock!.list(), opened.value.panes!.list(), opened.value.editorExtensions!.list(), opened.value.statusProviders!.list(), opened.value.editorProviders!.list()]
+    const lists = [opened.value.commands!.list(), opened.value.status!.list(), opened.value.panes!.list(), opened.value.editorExtensions!.list(), opened.value.statusProviders!.list(), opened.value.editorProviders!.list()]
     for (const list of lists) { expect(list).toEqual([]); expect(Object.isFrozen(list)).toBe(true) }
     const snapshot = snapshotBluePluginHost(host)
-    expect([snapshot.commands, snapshot.status, snapshot.dock, snapshot.panes, snapshot.overlays, snapshot.editorExtensions, snapshot.statusProviders, snapshot.editorProviders].every(entries => entries.length === 0)).toBe(true)
+    expect([snapshot.commands, snapshot.status, snapshot.panes, snapshot.overlays, snapshot.editorExtensions, snapshot.statusProviders, snapshot.editorProviders].every(entries => entries.length === 0)).toBe(true)
 
     let deadNotifications = 0
     const afterSubscription = opened.value.notifications!.subscribe(() => { deadNotifications += 1 })
@@ -329,8 +327,8 @@ describe('BluePluginHostService', () => {
 
   it('rejects owner ids, malformed capability payloads, and adapter admission failures', () => {
     const host = new BluePluginHostService(new Context())
-    attach(host, ['commands', 'status', 'dock'])
-    const opened = host.open(consumer(), manifest(['commands', 'status', 'dock']))
+    attach(host, ['commands', 'status'])
+    const opened = host.open(consumer(), manifest(['commands', 'status']))
     expect(opened.ok).toBe(true)
     if (!opened.ok) return
     expect(opened.value.status!.register({ id: 'Blue Bad' } as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
@@ -340,9 +338,6 @@ describe('BluePluginHostService', () => {
     expect(opened.value.status!.register({ id: 'status' } as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
     expect(opened.value.commands!.register({ id: 'Bad', label: '', execute: async () => ({ ok: true, value: undefined }) })).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
     expect(opened.value.commands!.register({ id: 'run', label: ' ' } as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
-    expect(opened.value.dock!.register({ id: 'dock', view: null } as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
-    expect(opened.value.dock!.register({ id: 'dock', view, preferredRows: 21 })).toMatchObject({ ok: false, code: 'BLUE_LIMIT_EXCEEDED' })
-    expect(opened.value.dock!.register({ id: 'dock', view, minRows: -1 })).toMatchObject({ ok: false, code: 'BLUE_LIMIT_EXCEEDED' })
 
     const rejecting = subscribeBluePluginHost(host, (snapshot) => {
       if (snapshot.commands.some(entry => entry.id === 'taken')) throw new Error('command "taken" is already registered')
@@ -386,13 +381,11 @@ describe('BluePluginHostService', () => {
     const api = apiResult.value
     api.commands!.register(command('run'))
     api.status!.register({ id: 'status', render: () => view })
-    api.dock!.register({ id: 'dock', view })
     const received: BlueView[] = []
     api.notifications!.subscribe(notification => received.push(notification.view))
     await ctx.fiber.dispose()
     expect(api.commands!.list()).toEqual([])
     expect(api.status!.list()).toEqual([])
-    expect(api.dock!.list()).toEqual([])
     expect(api.commands!.register(command('after-dispose'))).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
     expect(api.notifications!.publish({ id: 'after-dispose', view })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
     expect(api.notifications!.subscribe(() => received.push(view)).disposed).toBe(true)
@@ -404,33 +397,33 @@ describe('BluePluginHostService', () => {
 
   it('tracks owner adapter readiness across unload and reload without dropping contributions', () => {
     const host = new BluePluginHostService(new Context())
-    expect(host.open(consumer(), manifest(['dock']))).toEqual({
+    expect(host.open(consumer(), manifest(['status']))).toEqual({
       ok: false,
       code: 'BLUE_CAPABILITY_ABSENT',
-      message: 'capability "dock" has no active Blue owner adapter',
+      message: 'capability "status" has no active Blue owner adapter',
     })
-    expect(() => attachBluePluginHostCapabilities(host, consumer(), ['dock', 'tools'])).toThrow('unsupported capability "tools"')
-    expect(host.open(consumer(), manifest(['dock']))).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
+    expect(() => attachBluePluginHostCapabilities(host, consumer(), ['tools'] as never)).toThrow('unsupported capability "tools"')
+    expect(host.open(consumer(), manifest(['status']))).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
 
-    const firstOwner = attach(host, ['dock', 'notifications'])
-    const secondOwner = attach(host, ['dock'])
-    const opened = host.open(consumer(), manifest(['dock', 'notifications']))
+    const firstOwner = attach(host, ['status', 'notifications'])
+    const secondOwner = attach(host, ['status'])
+    const opened = host.open(consumer(), manifest(['status', 'notifications']))
     expect(opened.ok).toBe(true)
     if (!opened.ok) return
-    expect(opened.value.manifest.capabilities).toEqual(['notifications'])
-    expect(opened.value.dock).toBeDefined()
-    expect(opened.value.dock!.register({ id: 'persistent', view })).toMatchObject({ ok: true })
+    expect(opened.value.manifest.capabilities).toEqual(['status', 'notifications'])
+    expect(opened.value.status).toBeDefined()
+    expect(opened.value.status!.register({ id: 'persistent', render: () => view })).toMatchObject({ ok: true })
 
     firstOwner.dispose()
-    expect(opened.value.dock!.register({ id: 'while-second-owner-lives', view })).toMatchObject({ ok: true })
+    expect(opened.value.status!.register({ id: 'while-second-owner-lives', render: () => view })).toMatchObject({ ok: true })
     expect(opened.value.notifications!.publish({ id: 'notice', view })).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
     secondOwner.dispose()
-    expect(opened.value.dock!.register({ id: 'while-absent', view })).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
-    expect(snapshotBluePluginHost(host).dock.map(entry => entry.id)).toEqual(['persistent', 'while-second-owner-lives'])
+    expect(opened.value.status!.register({ id: 'while-absent', render: () => view })).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
+    expect(snapshotBluePluginHost(host).status.map(entry => entry.id)).toEqual(['persistent', 'while-second-owner-lives'])
 
-    attach(host, ['dock'])
-    expect(host.open(consumer(), manifest(['dock']))).toMatchObject({ ok: true })
-    expect(snapshotBluePluginHost(host).dock.map(entry => entry.id)).toEqual(['persistent', 'while-second-owner-lives'])
+    attach(host, ['status'])
+    expect(host.open(consumer(), manifest(['status']))).toMatchObject({ ok: true })
+    expect(snapshotBluePluginHost(host).status.map(entry => entry.id)).toEqual(['persistent', 'while-second-owner-lives'])
   })
 
   it('projects every implemented public capability exactly and keeps sessions denied', () => {
@@ -954,14 +947,11 @@ describe('BluePluginHostService', () => {
 
   it('covers canonical optional fields and the remaining admission failures', async () => {
     const host = new BluePluginHostService(new Context())
-    const owner = attach(host, ['dock', 'status', 'panes', 'overlays', 'notifications', 'editor.extensions', 'status.provider', 'editor.provider'])
+    const owner = attach(host, ['status', 'panes', 'overlays', 'notifications', 'editor.extensions', 'status.provider', 'editor.provider'])
     const scopedConsumer = consumer()
-    const opened = host.open(scopedConsumer, manifest(['dock', 'status', 'panes', 'overlays', 'notifications', 'editor.extensions', 'status.provider', 'editor.provider']))
+    const opened = host.open(scopedConsumer, manifest(['status', 'panes', 'overlays', 'notifications', 'editor.extensions', 'status.provider', 'editor.provider']))
     expect(opened.ok).toBe(true)
     if (!opened.ok) return
-    expect(opened.value.dock!.register({ id: 'dock-function', view: () => view, preferredRows: 3, minRows: 1, collapsible: true })).toMatchObject({ ok: true })
-    expect(opened.value.dock!.register(null as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
-    expect(opened.value.dock!.register({ id: 'dock-bad-collapse', view, collapsible: 1 as never })).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
     expect(opened.value.panes!.register({ id: 'auto-pane', placement: 'header', size: { preferred: 'auto' }, render: () => null })).toMatchObject({ ok: true })
     expect(opened.value.panes!.register({ id: 'bounded-pane', placement: 'bottom', size: { min: 1, max: 2 }, render: () => null })).toMatchObject({ ok: true })
     expect(opened.value.panes!.register({ id: 'negative-pane', placement: 'header', size: { min: -1 }, render: () => null })).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
@@ -1015,7 +1005,6 @@ describe('BluePluginHostService', () => {
     const legacy: BluePluginHostSnapshot = {
       commands: [],
       status: [],
-      dock: [],
       panes: [{
         id: 'legacy-pane',
         contribution: { id: 'legacy-pane', placement: 'bottom', render: () => null },
@@ -1089,7 +1078,7 @@ describe('BluePluginHostService', () => {
 
     expect(opened.value.status!.register({ id: 'same', render: () => null })).toMatchObject({ ok: true })
     expect(opened.value.status!.register({ id: 'same', render: () => null })).toMatchObject({ ok: false, code: 'BLUE_DUPLICATE_ID' })
-    expect(opened.value.dock?.register(null as never)).toBeUndefined()
+    expect(opened.value.commands?.register(command('absent'))).toBeUndefined()
     expect(opened.value.panes!.register({ id: 'pane-title', title: 1 as never, placement: 'left', render: () => null })).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
     expect(opened.value.panes!.register({ id: 'pane-render', placement: 'left', render: 1 as never })).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
     expect(opened.value.panes!.register({ id: 'pane-size-object', placement: 'left', size: 1 as never, render: () => null })).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })

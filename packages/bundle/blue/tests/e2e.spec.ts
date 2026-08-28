@@ -163,18 +163,18 @@ return {
     const opened = host.open(ctx, {
       id: '@acme/creative-e2e',
       api: '^1.0.0',
-      capabilities: ['dock', 'status', 'commands', 'notifications'],
+      capabilities: ['panes', 'status', 'commands', 'notifications'],
     })
     if (!opened.ok) throw new Error(opened.code + ': ' + opened.message)
     const api = opened.value
-    const dock = api.dock.register({ id: 'creative-dock', view: { kind: 'text', content: 'creative dock ${version}' } })
+    const pane = api.panes.register({ id: 'creative-pane', placement: 'bottom', size: { preferred: 1 }, render: () => ({ kind: 'text', content: 'creative pane ${version}' }) })
     const status = api.status.register({ id: 'creative-status', render: () => ({ kind: 'text', content: 'creative status ${version}' }) })
     const command = api.commands.register({
       id: 'creative',
       label: 'Run creative ${version}',
       execute: async () => api.notifications.publish({ id: 'creative-notice', tone: 'success', view: { kind: 'text', content: 'creative notice ${version}' } }),
     })
-    for (const [label, result] of [['dock', dock], ['status', status], ['command', command]]) {
+    for (const [label, result] of [['pane', pane], ['status', status], ['command', command]]) {
       if (!result.ok) throw new Error(label + ': ' + result.code + ': ' + result.message)
     }
   },
@@ -197,7 +197,7 @@ describe('blue whole-tree e2e', () => {
     expect(tree.creativeIsolation.tools !== undefined).toBe(true)
   })
 
-  it('hot-mounts additive public dock, status, command, and notification contributions', async () => {
+  it('hot-mounts additive public pane, status, command, and notification contributions', async () => {
     const tree = await bootBlue([], { script: [] })
     const agent = await currentAgent(tree)
     let api: BluePluginApi | undefined
@@ -208,20 +208,20 @@ describe('blue whole-tree e2e', () => {
         const opened = pluginCtx.bluePluginHost.open(pluginCtx, {
           id: '@acme/e2e-public-plugin',
           api: '^1.0.0',
-          capabilities: ['dock', 'status', 'commands', 'notifications'],
+          capabilities: ['panes', 'status', 'commands', 'notifications'],
         })
         if (!opened.ok) throw new Error(opened.message)
         api = opened.value
-        const dock = api.dock!.register({ id: 'creative-dock', view: { kind: 'text', content: 'creative dock live' } })
+        const pane = api.panes!.register({ id: 'creative-pane', placement: 'bottom', size: { preferred: 1 }, render: () => ({ kind: 'text', content: 'creative pane live' }) })
         const status = api.status!.register({ id: 'creative-status', render: () => ({ kind: 'text', content: 'creative status' }) })
         const command = api.commands!.register({ id: 'creative', label: 'Run the creative command', execute: async () => ({ ok: true, value: undefined }) })
-        if (!dock.ok || !status.ok || !command.ok) throw new Error('public contribution registration failed')
+        if (!pane.ok || !status.ok || !command.ok) throw new Error('public contribution registration failed')
       },
     })
     await fiber.await()
     await waitForRender()
     const mounted = stripSgr(await fullFrame(tree.terminal))
-    expect(mounted).toContain('creative dock live')
+    expect(mounted).toContain('creative pane live')
     expect(mounted).toContain('creative status')
     await expect(executeCommand(tree, agent, '/creative')).resolves.toEqual({ kind: 'success' })
     expect(api!.notifications!.publish({ id: 'creative-notice', tone: 'success', view: { kind: 'text', content: 'creative notice' } })).toEqual({ ok: true, value: undefined })
@@ -230,7 +230,7 @@ describe('blue whole-tree e2e', () => {
     await fiber.dispose()
     await waitForRender()
     const unloaded = stripSgr(await fullFrame(tree.terminal))
-    expect(unloaded).not.toContain('creative dock live')
+    expect(unloaded).not.toContain('creative pane live')
     expect(unloaded).not.toContain('creative status')
     await expect(executeCommand(tree, agent, '/creative')).resolves.toBeUndefined()
   })
@@ -442,35 +442,35 @@ describe('blue whole-tree e2e', () => {
 
     await runTurn('define and run v1', 3)
     let frame = stripSgr(await fullFrame(tree.terminal))
-    expect(frame).toContain('creative dock v1')
+    expect(frame).toContain('creative pane v1')
     expect(frame).toContain('creative status v1')
     await expect(executeCommand(tree, agent, '/creative')).resolves.toEqual({ kind: 'success' })
     expect(stripSgr(await fullFrame(tree.terminal))).toContain('creative notice v1')
 
     await runTurn('update to v2', 3)
     frame = stripSgr(await fullFrame(tree.terminal))
-    expect(frame).toContain('creative dock v2')
+    expect(frame).toContain('creative pane v2')
     expect(frame).toContain('creative status v2')
-    expect(frame).not.toContain('creative dock v1')
+    expect(frame).not.toContain('creative pane v1')
 
     await runTurn('stop the plugin', 2)
     frame = stripSgr(await fullFrame(tree.terminal))
-    expect(frame).not.toContain('creative dock v2')
+    expect(frame).not.toContain('creative pane v2')
     expect(frame).not.toContain('creative status v2')
     await expect(executeCommand(tree, agent, '/creative')).resolves.toBeUndefined()
 
     await runTurn('restart v2', 2)
-    expect(stripSgr(await fullFrame(tree.terminal))).toContain('creative dock v2')
+    expect(stripSgr(await fullFrame(tree.terminal))).toContain('creative pane v2')
 
     await runTurn('roll back to v1', 2)
     frame = stripSgr(await fullFrame(tree.terminal))
-    expect(frame).toContain('creative dock v1')
-    expect(frame).not.toContain('creative dock v2')
+    expect(frame).toContain('creative pane v1')
+    expect(frame).not.toContain('creative pane v2')
 
     const restarted = await bootBlue([], { presetFixtures: [{ id: 'creative', dynamicCordis: true }], script: [] })
     await currentAgent(restarted)
     const restartedFrame = stripSgr(await fullFrame(restarted.terminal))
-    expect(restartedFrame).not.toContain('creative dock v1')
+    expect(restartedFrame).not.toContain('creative pane v1')
     expect(restartedFrame).not.toContain('creative status v1')
   })
 
@@ -495,7 +495,7 @@ describe('blue whole-tree e2e', () => {
     await agent.whenIdle()
     expect(JSON.stringify(agent.session.events)).toContain('BLUE_CAPABILITY_ABSENT')
     expect(JSON.stringify(agent.session.events)).toContain('has no active Blue owner adapter')
-    expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('creative dock missing')
+    expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('creative pane missing')
   })
 
   it('runs a startup task through the real loop and renders the reply', async () => {

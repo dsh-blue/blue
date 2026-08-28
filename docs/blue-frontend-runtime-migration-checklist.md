@@ -104,7 +104,7 @@ npm。最终正式版本在真人验收后才统一改为 `0.1.0-rc.9`；Harness
 
 - [x] 稳定导出 `BlueResult`、capability/error taxonomy、readonly `BlueView`、manifest
   validation、registration handle。
-- [x] `BluePluginHost` 只允许声明能力范围内的 command/status/dock/notification。
+- [x] `BluePluginHost` 只允许声明能力范围内的 commands/status/panes/overlays/notifications/provider surface；旧 `dock/panels/editor/tools` 返回可操作迁移诊断。
 - [x] owner namespace、duplicate id、invalid contribution、API major mismatch 都返回
   structured result。
 - [x] consumer Fiber unload 自动清理所有 registration/subscription。
@@ -220,7 +220,7 @@ consumer、headless fixture、bundle/composition。未完成六层不得切默�
 ### C3-60 Creative mode/plugin host
 
 - [x] 使用稳定 capability-scoped `bluePluginHost`；manifest/API major/owner namespace 校验。
-- [x] 动态插件只能贡献 BlueView、command、status、dock、notification。
+- [x] 动态插件只能贡献 canonical pane/overlay/status、command、notification 或 inert provider candidate。
 - [x] Cordis card 使用官方 tool presentation model；删除 legacy intent bridge 的新增依赖。
 - [x] hostile plugin、missing capability、duplicate owner、unload、late event、packed install
   fixture 完成。

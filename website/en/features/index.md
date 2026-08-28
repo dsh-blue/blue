@@ -11,7 +11,7 @@ Blue is a Cordis plugin tree. The bundle currently has 30 Blue-owned rows: two h
 - editor/attachments: `blue-editor-plus`, `blue-attachments`, `blue-paste-image`
 - status: cwd, git, mode, title, and context canonical `BlueStatusNode` producers
 - bottom panes: activity, queue, todo, btw, and agents canonical `BlueUiNode` producers mounted through private bottom-only composition
-- public view bridge: routes third-party status nodes into the footer and dock `BlueView` contributions directly into core's bounded mount
+- public bridges: the transcript bridge routes third-party status nodes into the footer; core's surface bridge compiles and owns canonical panes and overlays
 - status provider owner: selects one exclusive footer provider through `blue.statusProvider`; unselected candidates remain inert
 - editor provider owner: selects one exclusive editor shell through `blue.editorProvider`; unselected candidates remain inert
 

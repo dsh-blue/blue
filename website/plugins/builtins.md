@@ -83,7 +83,7 @@ flowchart TB
 | `blue-pane-todo` | projection-backed todo model（Ctrl-T 折叠切换，全完成自动收起） |
 | `blue-pane-btw` | `/btw` 侧问面板：fork 当前会话问旁路问题（opaque owned side-session action + official projection） |
 | `blue-pane-agents` | projected subagent group model（dock 末行，kimi swarm-pane 语义） |
-| `blue-plugin-view-bridge` | public status/pane contributions -> owner model registries |
+| `blue-plugin-view-bridge` | public additive status contributions -> footer owner registry |
 | `blue-status-provider-owner` | exclusive status-provider selection、session/settings handoff 与 fallback lifecycle owner |
 
 ## 装配（5 行）

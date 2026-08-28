@@ -59,7 +59,7 @@ VStack
 
 W4a-C 已删除内部 placement model 和伪 left/right 分组。当前 `BlueBottomPaneService` 是 package-private、bottom-only composition；每个官方 pane 经 core 的共享 dock allocator 独立挂载。
 
-公共 `BlueDockContribution` 更没有 `placement` 字段。插件 dock bridge 统一调用 `mountDockChild()`，因此第三方贡献只能进入底部。
+旧公共 dock contribution 类型和 transcript dock bridge 已在 W6 删除。第三方插件通过 `BluePaneContribution` 明确声明 placement/size/narrow，并由 core canonical surface bridge 托管。
 
 结论：当前 Blue 没有需要兼容的真实侧栏行为。`left/right` 可以在新 surface manager 中重新定义，且 Blue 官方不需要默认使用它们。
 
@@ -77,7 +77,7 @@ W4a-C 已删除内部 placement model 和伪 left/right 分组。当前 `BlueBot
 
 ### 2.4 当前 capability 名称与真实能力不一致
 
-当前 manifest 列出 `dock`、`editor`、`panels` 等名称，但 owner bridge 实际只开放 commands、notifications、status 和 dock。普通动态插件拿不到 `blueScreen`、`blueComponents`、`blueEditorHost` 等 owner 服务。
+当前 manifest 只列有真实契约的 commands、notifications、status、panes、overlays、editor extensions、session 与 provider 能力；旧 `dock/editor/panels/tools` 仅保留为带迁移建议的拒绝诊断。普通动态插件拿不到 `blueScreen`、`blueComponents`、`blueEditorHost` 等 owner 服务。
 
 隔离本身是正确的，问题在于公共形状尚未清理：
 
@@ -902,12 +902,12 @@ G4 后按 Status → Editor extensions → Editor provider → Ecosystem 顺序�
 
 W6 不并行，按以下顺序执行：
 
-1. 删除旧 `dock/panels/editor/tools` capability、兼容类型、死 bridge 和旧文档；确认没有未实现的公开 capability。
-2. 将 11 包 release set、`BLUE_VERSION`、网站中英文、CLI pin、version specs 和新 UI 包统一到 `0.1.1-rc.1`；发布顺序固定为 api → ui → frontend → harness-adapter → conversation → core → app → transcript → interaction → blue → cli。
-3. 运行 test、coverage、typecheck、lint、build、check:lib、check:pack、smoke:happy、smoke:pty。
-4. 在 worktree profile dogfood 默认单列、120 列多插件、80/40 列降级、provider swap、theme swap、session switch。
-5. 邀请用户 live-test；等待明确“验收通过”，此前不合并、不删除 profile、不发布。
-6. 合并 master，主 checkout rebuild；release workflow 生成一次候选 Actions artifact，后续 registry smoke 和 dist-tag promotion 按 source run id 复用同一 artifact。本地 pre-merge tarball 只作为验收证据，不宣称是最终发布物。
+1. 删除旧 `dock/panels/editor/tools` capability transition、兼容类型、死 bridge 和当前态旧文档；保留四个旧名的可操作迁移诊断。
+2. 将 frontend/transcript/tool/context/openpencil 消费者全部迁到 canonical `BlueUiNode`，删除 core 的临时 `frontend-renderer` 和 source-plane 兼容入口。
+3. 将 session seam 拆为只读 `session.read` 与写入 `session.act`：app 是唯一真实 owner，read-only/act-only facade 隔离，并覆盖 snapshot revision/freeze、FIFO、abort、owner unload、session stale/late fencing。
+4. 收口 bundle rows、packed fixtures、双语文档；将 11 包 release set、`BLUE_VERSION`、网站中英文、CLI pin 与 version specs 统一到 `0.1.1-rc.1`。
+5. 运行完整 release gates，并在统一 worktree profile dogfood 默认单列、120 列多插件、80/40 列降级、provider swap、theme swap、session switch。
+6. 邀请用户 live-test；等待明确“验收通过”，此前不合并、不删除 profile、不发布。验收后再合并 master、重建主 checkout，并由 release workflow 生成和复用同一候选 artifact。
 
 **G6 验收：**所有自动门禁、dogfood 日志、真人验收和 registry install smoke 完整；七类示例场景有结果；发布 tarball 不含 workspace protocol、缺失 subpath 或未声明依赖。
 
@@ -977,6 +977,6 @@ commit id
 - Blue 当前根布局：`packages/core/src/terminal.ts`
 - Blue 当前公共视图编译器：`packages/core/src/plugin-view.ts`
 - Blue 当前公共契约与 host：`packages/api/src/contracts.ts`、`host.ts`、`manifest.ts`
-- Blue 当前 dock/status bridge：`packages/transcript/src/dock-model.ts`、`plugin-host-bridge.ts`、`status-model.ts`
+- Blue 当前 internal bottom-pane/status owner：`packages/transcript/src/dock-model.ts`、`plugin-host-bridge.ts`、`status-model.ts`；公共 pane/overlay bridge 位于 core
 - Blue 架构与 seam：`docs/blue-frontend-architecture.md`、`docs/blue-seams.md`
 - 视觉历史与竞品调研：`docs/history/blue-p2-visual-design.md`、`docs/history/blue-survey-pi-tui.md`

@@ -24,6 +24,4 @@ node、event payload 和 snapshot 是 readonly、JSON-shaped 数据；`render`�
 
 Editor extension 可贡献静态辅助行、提示、诊断、结构化 action、completion 和异步 submit transform。`before` 与 `after` 保留 G1 的 `BlueUiNode` 源码类型，而 registration 只接纳递归的被动 `BlueEditorExtensionNode` 子集：text/rich-text/fields/code/diff/sections/progress/spacer/divider 加 stack/surface；交互控件会以 `BLUE_INVALID_CONTRIBUTION` 拒绝，extension action 通过独立的 `actions` + `onEvent` 路径处理。兼容 `complete` callback 只接收 `/`、`@` 和手动请求；插件通过 `completeV2` 与 `BlueEditorCompletionRequestV2` 显式选择接收 `#`，两者同时存在时优先 V2。registration 保持 inert：host 会克隆并冻结静态数据、保留 callback identity，但不会调用 callback。submit transform 只读 attachment metadata 且只能返回文本，因此附件继续由 Blue 持有。interaction owner 提供可中止、带 revision fence 的 callback context，并拒绝过期异步结果。
 
-Blue 自有 adapter 会收到 capability-local 的 `statusRevision`、`statusProvidersRevision` 与 `editorExtensionsRevision` snapshot fence。各 capability 独立递增，因此无关 mutation 不会重建当前 status provider 或 editor extension。
-
-host 暂留 deprecated 内建 `dock` bridge 作为仓库兼容层，供 owner 迁移到 `panes`；发布 manifest 已无法通过 `dock` 的公共校验。
+Blue 自有 adapter 会收到 capability-local 的 `statusRevision`、`statusProvidersRevision` 与 `editorExtensionsRevision` snapshot fence。各 capability 独立递增，因此无关 mutation 不会重建当前 status provider 或 editor extension。已删除的 `dock` surface 不再保留 host registry 或 snapshot 兼容路径；未类型化的旧 manifest 会收到与 `validateBlueManifest` 相同的可操作迁移拒绝。

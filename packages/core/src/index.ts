@@ -27,12 +27,9 @@ export { GutterComponent } from './gutter.ts'
 export { BlueKeymapError, BlueKeymapService } from './keymap.ts'
 export { BlueScreenService } from './screen.ts'
 export {
-  BluePluginViewComponent,
   PLUGIN_VIEW_MAX_CHARS,
   PLUGIN_VIEW_MAX_DEPTH,
-  PLUGIN_VIEW_MAX_ROWS,
   paintPluginTone,
-  renderPluginView,
   sanitizePluginText,
   summarizePluginView,
 } from './plugin-view.ts'

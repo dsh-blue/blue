@@ -1,35 +1,26 @@
 /**
- * Blue-owned adapter from public additive plugin models to the transcript's
- * dock and status registries. Dynamic code never receives either renderer
- * service; this fiber alone compiles `BlueView` and owns all mount disposers.
+ * Blue-owned adapter from public additive status models to the transcript's
+ * status registry. Dynamic code never receives the renderer service; this
+ * Fiber alone owns the status entry disposers.
  *
  * @module @dsh-blue/blue-transcript/plugin-host-bridge
  */
 
 import { symbols, type Context } from '@deepseek-ai/cordis'
-import { attachBluePluginHostCapabilities, subscribeBluePluginHost, type BlueDockContribution, type BluePluginHostSnapshot, type BlueStatusEntryContribution } from '@dsh-blue/blue-api'
-import { BluePluginViewComponent, GutterComponent, mountDockChild, PLUGIN_VIEW_MAX_ROWS } from '@dsh-blue/blue-core'
+import { attachBluePluginHostCapabilities, subscribeBluePluginHost, type BluePluginHostSnapshot, type BlueStatusEntryContribution } from '@dsh-blue/blue-api'
 import type { BlueStatusEntry } from './status-model.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-plugin-view-bridge'
 
 /** Owner services required before public views can reach the tree. */
-export const inject = ['bluePluginHost', 'blueScreen', 'blueStatusEntries', 'blueTheme', 'blueComponents']
+export const inject = ['bluePluginHost', 'blueStatusEntries']
 
-function rowBudget(contribution: BlueDockContribution): number {
-  const requested = contribution.preferredRows
-  if (requested === undefined || !Number.isFinite(requested)) return PLUGIN_VIEW_MAX_ROWS
-  return Math.max(0, Math.min(PLUGIN_VIEW_MAX_ROWS, Math.floor(requested)))
-}
-
-/** Mount additive dock and status contributions behind owner adapters. */
+/** Mount additive status contributions behind the owner adapter. */
 export function apply(ctx: Context): void {
   const host = (ctx.bluePluginHost as unknown as Record<symbol, typeof ctx.bluePluginHost | undefined>)[symbols.original] ?? ctx.bluePluginHost
-  attachBluePluginHostCapabilities(host, ctx, ['dock', 'status'])
-  const dock = new Map<string, () => void>()
+  attachBluePluginHostCapabilities(host, ctx, ['status'])
   const status = new Map<string, { dispose: () => void, contribution: BlueStatusEntryContribution }>()
-  let dockOrder = ''
   let statusRevision = -1
 
   const syncStatus = (entries: readonly BlueStatusEntryContribution[], revision: number): void => {
@@ -69,36 +60,13 @@ export function apply(ctx: Context): void {
     statusRevision = revision
   }
 
-  const syncDock = (entries: readonly BlueDockContribution[]): void => {
-    const nextOrder = entries.map(entry => entry.id).join('\x00')
-    if (nextOrder === dockOrder) return
-    for (const dispose of dock.values()) dispose()
-    dock.clear()
-    for (const entry of entries) {
-      const component = new GutterComponent(new BluePluginViewComponent(
-        entry.view,
-        ctx.blueComponents,
-        ctx.blueTheme.colors,
-        rowBudget(entry),
-      ))
-      dock.set(entry.id, mountDockChild(ctx.blueScreen, component, {
-        priority: entry.priority ?? 50,
-      }))
-    }
-    dockOrder = nextOrder
-    ctx.blueScreen.requestRender()
-  }
-
   const sync = (snapshot: BluePluginHostSnapshot): void => {
     syncStatus(snapshot.status, snapshot.statusRevision ?? snapshot.revision ?? 0)
-    syncDock(snapshot.dock)
   }
   const subscription = subscribeBluePluginHost(host, sync)
   ctx.effect(() => () => {
     subscription.dispose()
-    for (const dispose of dock.values()) dispose()
     for (const record of status.values()) record.dispose()
-    dock.clear()
     status.clear()
   })
 }

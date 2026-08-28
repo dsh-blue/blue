@@ -100,9 +100,9 @@ Renderer 不持有 Agent/Session。切换、followup、steer、interrupt、mode/
 ```text
 manifest
   -> bluePluginHost.open()
-  -> capability-scoped status/dock/command/notification contribution
+  -> capability-scoped pane/overlay/status/command/notification contribution
   -> owner bridge
-  -> canonical compiler or bounded core mount / Harness command registry / notice consumer
+  -> canonical core compiler / Harness command registry / notice consumer
 ```
 
 第三方 contribution 与内置 consumer 使用同一 renderer-neutral view vocabulary，但不能访问 Loader、root renderer、Agent 或 Session。
@@ -127,7 +127,7 @@ Provider swap 必须遵循 `capture -> abort -> dispose -> activate -> restore`�
 
 - semantic `TranscriptModelService` 与最多 200 项的 renderer reconciliation；
 - package-private `BlueStatusEntryService` 两行 footer；
-- package-private、bottom-only `BlueBottomPaneService`；public dock 由 core bridge 独立挂载；
+- package-private、bottom-only `BlueBottomPaneService`；public panes/overlays 由 core surface bridge 独立挂载；
 - canonical tool presentation conversion；
 - frontend-tree-scoped `TranscriptPresentationPolicy`。
 
@@ -145,12 +145,12 @@ Provider swap 必须遵循 `capture -> abort -> dispose -> activate -> restore`�
 | Package | Role |
 |---|---|
 | `@dsh-blue/blue-api` | 稳定 manifest、`BlueResult`、readonly public views 与 capability-scoped plugin host |
-| `@dsh-blue/blue-frontend` | readonly command/panel/status/dock/editor/transcript/tool/theme models 与 provider host |
+| `@dsh-blue/blue-frontend` | readonly command/editor/transcript/tool/theme models 与 provider host |
 | `@dsh-blue/blue-harness-adapter` | session/projection/action/model/question 的窄兼容 adapter |
 | `@dsh-blue/blue-conversation` | append-origin conversation 与 shared facts official projections |
 | `@dsh-blue/blue-app` | CLI startup、Agent driver、session reader/projection/action boundary |
 | `@dsh-blue/blue-core` | 唯一 TUI kernel 与 terminal adapter |
-| `@dsh-blue/blue-transcript` | transcript/status/dock/tool model consumer 与 TUI renderer |
+| `@dsh-blue/blue-transcript` | transcript/status/bottom-pane/tool model consumer 与 TUI renderer |
 | `@dsh-blue/blue-interaction` | editor、commands、panels、question/approval 与 tree-scoped interaction state |
 | `@dsh-blue/blue` | installable composition、thin-host preset 和 row-order assertions |
 | `@dsh-blue/blue-cli` | standalone launcher 与 profile calibration |

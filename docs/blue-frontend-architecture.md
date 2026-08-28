@@ -17,7 +17,7 @@ Harness 继续拥有 Agent、Session、工具、持久化、权限、模型路�
 | 类型 | 拥有 | 依赖 | 例子 |
 |---|---|---|---|
 | Domain | service、tool、projection、action、业务 command | Harness | context、remote、OpenPencil domain |
-| Interaction | command/panel/status/dock/provider model | Harness domain + `blue-frontend` | `/context`、model selector |
+| Interaction | command/panel/status/pane/overlay/provider model | Harness domain + `blue-frontend` | `/context`、model selector |
 | Renderer | layout、focus、input、视觉呈现 | frontend model + renderer kernel | Blue TUI |
 | Composition | bundle、preset、启停、重排 | Cordis Loader | `cordis.patch.yml` |
 

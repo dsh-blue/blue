@@ -11,7 +11,7 @@ Blue 是一棵 Cordis 插件树。Bundle 当前有 30 条 Blue 自有行：2 条
 - editor/attachment：`blue-editor-plus`、`blue-attachments`、`blue-paste-image`
 - status：cwd、git、mode、title、context 五个 canonical `BlueStatusNode` producer
 - bottom panes：activity、queue、todo、btw、agents 五个 canonical `BlueUiNode` producer，经私有 bottom-only composition 挂载
-- public view bridge：把第三方 status node 接入 footer，把 dock `BlueView` 直接交给 core bounded mount
+- public bridges：transcript bridge 把第三方 status node 接入 footer；core surface bridge 编译并托管 canonical pane/overlay
 - status provider owner：按 `blue.statusProvider` 选择一个独占 footer provider，candidate 在未选中时保持 inert
 - editor provider owner：按 `blue.editorProvider` 选择一个独占 editor shell，candidate 在未选中时保持 inert
 

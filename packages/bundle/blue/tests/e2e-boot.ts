@@ -50,6 +50,7 @@ import { BlueComponentsService, BlueKeymapService, BlueScreenService, BlueTermin
 import * as appPlugin from '../../../app/src/index.ts'
 import * as startupPlugin from '../../../app/src/startup.ts'
 import { startBlueTerminal} from '../../../core/src/terminal.ts'
+import { mountPluginSurfaceBridge} from '../../../core/src/plugin-surface-bridge.ts'
 import { FakeTerminal} from '../../../core/tests/fake-terminal.ts'
 import * as interactionPlugin from '../../../interaction/src/index.ts'
 import * as contextPlugin from '../../../context/src/index.ts'
@@ -412,6 +413,13 @@ export async function bootBlue(argv: string[], options: {
           subCtx.plugin(BlueComponentsService, { theme: subCtx.blueTheme, tui: runtime.tui })
         },
       })
+      ctx.plugin({
+        name: 'blue-plugin-surface-bridge',
+        inject: ['bluePluginHost', 'blueComponents', 'blueTheme', 'blueKeymap'],
+        apply(subCtx: Context) {
+          mountPluginSurfaceBridge(subCtx as Parameters<typeof mountPluginSurfaceBridge>[0], runtime)
+        },
+      })
       ctx.effect(() => () => runtime.stop())
     },
     themeDarkApply: themeDarkPlugin.apply,
@@ -671,7 +679,7 @@ export const apply = ctx => globalThis.__blueE2E.paneBtwApply(ctx)
     '- id: blue-plugin-view-bridge',
     `  name: ${fixture('blue-plugin-view-bridge.mjs', `
 export const name = 'blue-plugin-view-bridge'
-export const inject = ['bluePluginHost', 'blueScreen', 'blueStatusEntries', 'blueTheme', 'blueComponents']
+export const inject = ['bluePluginHost', 'blueStatusEntries']
 export const apply = ctx => globalThis.__blueE2E.viewBridgeApply(ctx)
 `)}`,
     '- id: blue-status-provider-owner',

@@ -26,7 +26,7 @@ Footer subplugins provide model, cwd, git, title, context, and session-mode fact
 
 `./status-provider-owner` advertises `status.provider` and follows the persisted `blue.statusProvider` id. Candidates remain inert until selected. The selected callback receives only a frozen public session snapshot, sanitized visible additive entries, and a busy flag; Blue compiles and dry-renders it at the footer's actual width before activation. Invalid, empty, over-three-row, or failing output cannot replace a working same-session provider. A first-activation failure or session switch uses `blue.default`, and three failures in a rolling 60 seconds open a timer-free breaker. Blue never rewrites a missing or failing desired id.
 
-`./plugin-host-bridge` is the owner adapter for third-party renderer-neutral dock and status contributions. It advertises those capabilities only while its Fiber is active; a replacement bridge restores retained public contributions from the host snapshot. Every registration, subscription, timer, and screen child is Fiber-bound and removed on unload.
+`./plugin-host-bridge` is the owner adapter for third-party renderer-neutral additive status contributions. It advertises `status` only while its Fiber is active; a replacement bridge restores retained public contributions from the host snapshot. Public panes and overlays are owned by core's canonical surface bridge. Every registration and subscription is Fiber-bound and removed on unload.
 
 ## Other Subpaths
 

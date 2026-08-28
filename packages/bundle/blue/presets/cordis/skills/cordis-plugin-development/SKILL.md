@@ -68,7 +68,7 @@ In a Blue session the host service store also carries the capability-scoped `blu
 
 ## Mount additive Blue UI from the host half
 
-The host half can prototype additive Blue UI through the capability-scoped `bluePluginHost` facade. The user sees contributions appear in the running session with no reinstall and no restart. Register renderer-neutral `dock`, `status`, `commands`, or `notifications` contributions:
+The host half can prototype additive Blue UI through the capability-scoped `bluePluginHost` facade. The user sees contributions appear in the running session with no reinstall and no restart. Register renderer-neutral `panes`, `status`, `commands`, or `notifications` contributions:
 
 ```js
 return {
@@ -78,22 +78,24 @@ return {
     const opened = ctx.bluePluginHost.open(ctx, {
       id: 'com.example.my-probe',
       api: '^1.0.0',
-      capabilities: ['dock', 'notifications'],
+      capabilities: ['panes', 'notifications'],
     })
     if (!opened.ok) throw new Error(opened.code + ': ' + opened.message)
-    const registered = opened.value.dock.register({
-      id: 'my-probe-dock',
-      view: { kind: 'text', content: 'my probe pane', tone: 'muted' },
+    const registered = opened.value.panes.register({
+      id: 'my-probe-pane',
+      placement: 'bottom',
+      size: { preferred: 1 },
+      render: () => ({ kind: 'text', content: 'my probe pane', tone: 'muted' }),
     })
     if (!registered.ok) throw new Error(registered.code + ': ' + registered.message)
   },
 }
 ```
 
-- `dock`, `status`, `commands`, and `notifications` are the phase-one additive capabilities. Duplicate contribution IDs, Blue owner namespaces, and existing slash-command names are rejected.
-- `BlueView` is renderer-neutral. The TUI adapter owns width, theme, layout, and error fallback; dynamic code must not import pi-tui or assemble ANSI rows.
+- `panes`, `overlays`, `status`, `commands`, and `notifications` are additive capabilities. Duplicate contribution IDs, Blue owner namespaces, and existing slash-command names are rejected.
+- `BlueUiNode` is renderer-neutral. The TUI adapter owns width, theme, layout, and error fallback; dynamic code must not import pi-tui or assemble ANSI rows.
 - The host facade binds registrations to the dynamic plugin Fiber. Retain no raw Blue service or Agent/Session object in package state.
-- Activity pane internals, transcript fold rules, existing command handlers, editor internals, themes, and root composition are owner-only. Add a new dock/status/command or notification instead.
+- Activity pane internals, transcript fold rules, existing command handlers, editor internals, themes, and root composition are owner-only. Add a new pane/status/command or notification instead.
 - Check every `open()`, `register()`, and `publish()` result. These APIs report ordinary failures as `BlueResult`; they do not throw. Throwing only after checking is appropriate when the Package must fail activation instead of pretending that a contribution is live. A command may return the `BlueResult` from `publish()` directly.
 - `BLUE_CAPABILITY_ABSENT` means the requested owner bridge is not active. At `open()` it means at least one requested capability cannot currently render or execute; from `register()` or `publish()` it means a bridge unloaded after the API was opened. Do not retry through internal registries. Report the missing capability, keep a plain/read-only fallback when the feature has one, or stop and ask the user to upgrade/restart the Blue profile.
 - `BLUE_CAPABILITY_DENIED` means the capability is outside the phase-one public set, not that an internal service should be probed. Duplicate and invalid contribution failures are likewise structured diagnostics; surface their `code` and `message`.

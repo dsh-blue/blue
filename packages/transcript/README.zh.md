@@ -26,7 +26,7 @@ Footer 子插件以 canonical status node 提供 model、cwd、git、title、con
 
 `./status-provider-owner` 宣告 `status.provider`，并跟随持久化的 `blue.statusProvider` id。Candidate 在被选择前保持 inert。选中 callback 只会收到冻结的公共 session snapshot、已清洗的可见 additive entry 与 busy 标志；Blue 会先在 footer 实际宽度下完成编译和 dry-render，再激活它。非法、零行、超过三行或失败的输出不能替换同一会话中正常工作的 provider；首次激活失败或 session 切换使用 `blue.default`，滚动 60 秒内三次失败会打开无定时器 breaker。Blue 不会改写缺失或失败的 desired id。
 
-`./plugin-host-bridge` 是第三方 renderer-neutral dock/status contribution 的 owner adapter。只有其 Fiber 存活时才会宣告这些 capability；替换后的 bridge 会从 host snapshot 恢复仍由公开 API 持有的 contribution。所有 registration、subscription、timer 与 screen child 都绑定 Fiber，并在 unload 时移除。
+`./plugin-host-bridge` 是第三方 renderer-neutral additive status contribution 的 owner adapter。只有其 Fiber 存活时才会宣告 `status`；替换后的 bridge 会从 host snapshot 恢复仍由公开 API 持有的 contribution。公共 pane 与 overlay 由 core 的 canonical surface bridge 持有。所有 registration 与 subscription 都绑定 Fiber，并在 unload 时移除。
 
 ## 其他子路径
 
