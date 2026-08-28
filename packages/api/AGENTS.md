@@ -49,7 +49,11 @@ shadowed temporarily.
 Capability availability is owned by active adapter Fibers rather than the
 hard-coded public capability list. View and interaction bridges attach their
 exact capability sets through `attachBluePluginHostCapabilities`; reference
-counts allow overlapping owner generations. `open()` returns
+counts allow overlapping owner generations. The `blue-api-host` plugin Fiber
+itself holds the durable panes/overlays buffering lease as soon as it provides
+`bluePluginHost`, independent of renderer import order. Direct standalone
+`new BluePluginHostService()` construction does not attach that lease and keeps
+the capability-absent test/embedding contract. `open()` returns
 `BLUE_CAPABILITY_ABSENT` unless every requested capability has an active owner,
 and existing registry/publish handles recheck before each write. Aggregate
 contributions survive a bridge unload so a replacement bridge restores them

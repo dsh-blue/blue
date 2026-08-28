@@ -43,6 +43,14 @@ timeout, and stale-generation fences. F6/Shift-F6 traverses visible managed
 panes and restores the pre-surface focus at either boundary; any capturing
 overlay, including built-in overlays, blocks traversal.
 
+The API host Fiber owns the durable panes/overlays readiness and buffering
+lease, so host-only external rows may register regardless of core import order,
+while theme/components are pending, or during a nested bridge reload gap. The
+nested bridge replays buffered contributions after mount and keeps its own
+runtime-scoped attachment for renderer ownership; core unload removes the
+rendered surfaces but intentionally leaves host-buffered registrations ready
+for a replacement renderer.
+
 Public overlay titles are canonical UI, not terminal metadata: the bridge wraps
 the plugin node (including bounded null/error fallbacks) in a `surface` with
 `chrome: 'overlay'` before the sole compiler boundary. Overlay width and

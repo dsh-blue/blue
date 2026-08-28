@@ -379,6 +379,7 @@ class Overlays implements BlueOverlayRegistry {
     try {
       const result = overlay(input); if (!result.ok) return result
       const request = result.value
+      if (request.capturing && this.state.overlayOwners.size === 0) return failure('BLUE_ACTION_REJECTED', 'capturing overlays require an active renderer owner')
       if (request.capturing && !consumeGesture(this.state, options?.userGesture)) return failure('BLUE_ACTION_REJECTED', 'capturing overlays require a valid one-shot user gesture')
       if (this.state.overlays.size >= 4) return failure('BLUE_LIMIT_EXCEEDED', 'the global overlay stack is limited to 4 entries')
       if (request.capturing && this.state.capturingConsumers.has(this.consumer)) return failure('BLUE_LIMIT_EXCEEDED', 'a consumer may open only one capturing overlay')
@@ -515,6 +516,26 @@ export function attachBluePluginHostCapabilities(host: BluePluginHostService, ow
     }
   })
   try { owner.effect(() => () => registration.dispose()) } catch (error) { registration.dispose(); throw error }
+  return registration
+}
+
+function attachBluePluginSurfaceBuffers(host: BluePluginHostService, owner: EffectOwner): BlueRegistration {
+  const state = ownerStateOf(host)
+  const capabilities = ['panes', 'overlays'] as const
+  for (const capability of capabilities) state.owners.set(capability, (state.owners.get(capability) ?? 0) + 1)
+  const registration = new Registration(() => {
+    for (const capability of capabilities) {
+      const count = state.owners.get(capability)
+      /* v8 ignore start -- the buffer lease owns both entries until this cleanup runs. */
+      if (count === undefined) continue
+      /* v8 ignore stop */
+      if (count <= 1) state.owners.delete(capability); else state.owners.set(capability, count - 1)
+    }
+  })
+  try { owner.effect(() => () => registration.dispose()) }
+  /* v8 ignore start -- Cordis accepts effects while a plugin apply hook is running. */
+  catch (error) { registration.dispose(); throw error }
+  /* v8 ignore stop */
   return registration
 }
 
@@ -668,4 +689,9 @@ export class BluePluginHostService extends Service implements BluePluginHost {
 }
 
 export const name = 'blue-api-host'
-export function apply(ctx: Context): void { new BluePluginHostService(ctx) }
+export function apply(ctx: Context): void {
+  const host = new BluePluginHostService(ctx)
+  // Panes and overlays are durable host buffers: renderer owners may mount
+  // later or reload, then replay the contributions admitted in that gap.
+  attachBluePluginSurfaceBuffers(host, ctx)
+}

@@ -5,7 +5,7 @@
  * @module @dsh-blue/blue-api/tests/host
  */
 
-import { Context } from '@deepseek-ai/cordis'
+import { Context, symbols } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import {
   BluePluginHostService,
@@ -822,5 +822,29 @@ describe('BluePluginHostService', () => {
     expect('snapshot' in ctx.bluePluginHost).toBe(false)
     expect('subscribe' in ctx.bluePluginHost).toBe(false)
     expect('dispose' in ctx.bluePluginHost).toBe(false)
+  })
+
+  it('buffers passive surfaces without granting renderer authority', () => {
+    const ctx = new Context()
+    apply(ctx)
+    const host = (ctx.bluePluginHost as unknown as Record<symbol, BluePluginHostService | undefined>)[symbols.original] ?? ctx.bluePluginHost
+    const opened = ctx.bluePluginHost.open(ctx, { id: '@acme/buffered', api: '^1.0.0', capabilities: ['panes', 'overlays'] })
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+
+    expect(opened.value.panes!.register({ id: 'buffered-pane', placement: 'bottom', render: () => null })).toMatchObject({ ok: true })
+    const passive = opened.value.overlays!.open({ id: 'buffered-passive', render: () => view })
+    expect(passive).toMatchObject({ ok: true })
+    expect(createBlueUserGesture(host, ctx)).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+    expect(opened.value.overlays!.open({ id: 'buffered-capturing', capturing: true, render: () => view }, { userGesture: {} as BlueUserGesture })).toMatchObject({
+      ok: false,
+      code: 'BLUE_ACTION_REJECTED',
+      message: 'capturing overlays require an active renderer owner',
+    })
+    if (passive.ok) {
+      const entry = snapshotBluePluginHost(host).overlays.find(candidate => candidate.id === 'buffered-passive')!
+      expect(closeBluePluginHostOverlay(host, ctx, entry)).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+      passive.value.close()
+    }
   })
 })

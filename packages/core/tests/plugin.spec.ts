@@ -14,7 +14,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import { BluePluginHostService } from '../../api/src/host.ts'
+import type { BluePluginApi } from '../../api/src/contracts.ts'
+import { apply as apiApply } from '../../api/src/host.ts'
 import { apply } from '../src/index.ts'
 import { apply as themeDarkApply } from '../src/theme-dark.ts'
 import { mkdtempTracked, registerTempDirCleanup } from './temp-dir.ts'
@@ -23,6 +24,17 @@ import { mkdtempTracked, registerTempDirCleanup } from './temp-dir.ts'
 registerTempDirCleanup()
 
 const disposers: (() => Promise<void>)[] = []
+
+interface StartupPaneProbe {
+  coreApplyStarted: boolean
+  appliedBeforeCore: boolean
+  appliedBeforeScreen: boolean
+  openOk: boolean
+  registerOk: boolean
+  renders: number
+  gapRenders: number
+  api?: BluePluginApi
+}
 
 afterEach(async () => {
   for (const dispose of disposers.splice(0)) await dispose()
@@ -35,11 +47,16 @@ afterEach(async () => {
  * resolver, which cannot reach tsconfig paths).
  * @returns the root context and the terminal output observed so far.
  */
-async function bootBlueCore(): Promise<{ ctx: Context; output: () => string }> {
+async function bootBlueCore(): Promise<{ ctx: Context; output: () => string; pane: StartupPaneProbe }> {
   const dir = mkdtempTracked('dsh-blue-core-')
   // The fixtures re-export the real plugins' namespace shape (name + apply)
   // so the Loader exercises the same unwrap path as a packaged install.
+  writeFileSync(join(dir, 'blue-api-host.mjs'), `
+export const name = 'blue-api-host'
+export const apply = ctx => globalThis.__blueApiApply(ctx)
+`)
   writeFileSync(join(dir, 'blue-core.mjs'), `
+await globalThis.__delayBlueCoreImport()
 export const name = 'blue-core'
 export const apply = ctx => globalThis.__blueCoreApply(ctx)
 `)
@@ -47,7 +64,16 @@ export const apply = ctx => globalThis.__blueCoreApply(ctx)
 export const name = 'blue-theme-dark'
 export const apply = ctx => globalThis.__blueThemeDarkApply(ctx)
 `)
+  writeFileSync(join(dir, 'external-pane.mjs'), `
+export const name = 'external-pane'
+export const inject = ['bluePluginHost']
+export const apply = ctx => globalThis.__externalPaneApply(ctx)
+`)
   writeFileSync(join(dir, 'cordis.yml'), [
+    '- id: blue-api-host',
+    `  name: ${pathToFileURL(join(dir, 'blue-api-host.mjs')).href}`,
+    '- id: external-pane',
+    `  name: ${pathToFileURL(join(dir, 'external-pane.mjs')).href}`,
     '- id: blue-core',
     `  name: ${pathToFileURL(join(dir, 'blue-core.mjs')).href}`,
     '- id: blue-theme-dark',
@@ -56,10 +82,36 @@ export const apply = ctx => globalThis.__blueThemeDarkApply(ctx)
   ].join('\n'))
   const globals = globalThis as unknown as {
     __blueCoreApply: typeof apply
+    __blueApiApply: typeof apiApply
+    __delayBlueCoreImport: () => Promise<void>
     __blueThemeDarkApply: typeof themeDarkApply
+    __externalPaneApply: (ctx: Context) => void
   }
-  globals.__blueCoreApply = apply
+  const pane: StartupPaneProbe = { coreApplyStarted: false, appliedBeforeCore: false, appliedBeforeScreen: false, openOk: false, registerOk: false, renders: 0, gapRenders: 0 }
+  globals.__blueApiApply = apiApply
+  globals.__delayBlueCoreImport = () => new Promise<void>(resolve => setTimeout(resolve, 50))
+  globals.__blueCoreApply = (ctx) => {
+    pane.coreApplyStarted = true
+    return apply(ctx)
+  }
   globals.__blueThemeDarkApply = themeDarkApply
+  globals.__externalPaneApply = (ctx) => {
+    pane.appliedBeforeCore = !pane.coreApplyStarted
+    pane.appliedBeforeScreen = ctx.get('blueScreen') === undefined
+    const opened = ctx.bluePluginHost.open(ctx, { id: '@acme/startup-pane', api: '^1.0.0', capabilities: ['panes'] })
+    pane.openOk = opened.ok
+    if (!opened.ok) return
+    pane.api = opened.value
+    const registered = opened.value.panes!.register({
+      id: 'startup-pane',
+      placement: 'bottom',
+      render: () => {
+        pane.renders += 1
+        return { kind: 'text', content: 'startup-pane' }
+      },
+    })
+    pane.registerOk = registered.ok
+  }
 
   const chunks: string[] = []
   vi.spyOn(process.stdout, 'write').mockImplementation((chunk: unknown) => {
@@ -68,13 +120,12 @@ export const apply = ctx => globalThis.__blueThemeDarkApply(ctx)
   })
 
   const ctx = new Context()
-  new BluePluginHostService(ctx)
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(join(dir, 'cordis.yml')).href } })
   await ctx.loader.await()
   disposers.push(async () => { await ctx.fiber.dispose() })
-  return { ctx, output: () => chunks.join('') }
+  return { ctx, output: () => chunks.join(''), pane }
 }
 
 describe('blue-core plugin through the real Loader', () => {
@@ -90,6 +141,48 @@ describe('blue-core plugin through the real Loader', () => {
     expect(output()).toContain('\x1b[?2004h')
     expect(output()).toContain('\x1b[?1049h')
     expect(output()).toContain('\x1b[?1002h')
+  })
+
+  it('buffers host-only panes before core import and replays them across renderer gaps', async () => {
+    const { ctx, output, pane } = await bootBlueCore()
+    expect(pane.appliedBeforeCore).toBe(true)
+    expect(pane.appliedBeforeScreen).toBe(true)
+    expect(pane.openOk).toBe(true)
+    expect(pane.registerOk).toBe(true)
+
+    ctx.blueScreen.requestRender(true)
+    await new Promise<void>(resolve => setTimeout(resolve, 50))
+    expect(pane.renders).toBeGreaterThan(0)
+    expect(output()).toContain('startup-pane')
+
+    const coreEntry = [...ctx.loader.entries()].find(entry => entry.options.id === 'blue-core')
+    expect(coreEntry).toBeDefined()
+    await ctx.loader.update(coreEntry!.id, { disabled: true })
+    await ctx.loader.await()
+    expect(pane.api!.panes!.register({
+      id: 'during-renderer-gap',
+      placement: 'bottom',
+      render: () => {
+        pane.gapRenders += 1
+        return { kind: 'text', content: 'renderer-gap-pane' }
+      },
+    })).toMatchObject({ ok: true })
+
+    await ctx.loader.update(coreEntry!.id, { disabled: false })
+    await ctx.loader.await()
+    ctx.blueScreen.requestRender(true)
+    await new Promise<void>(resolve => setTimeout(resolve, 50))
+    expect(pane.gapRenders).toBeGreaterThan(0)
+    expect(output()).toContain('renderer-gap-pane')
+
+    const apiEntry = [...ctx.loader.entries()].find(entry => entry.options.id === 'blue-api-host')
+    expect(apiEntry).toBeDefined()
+    await ctx.loader.update(apiEntry!.id, { disabled: true })
+    await ctx.loader.await()
+    expect(pane.api!.panes!.register({ id: 'after-host-unload', placement: 'bottom', render: () => null })).toMatchObject({
+      ok: false,
+      code: 'BLUE_CAPABILITY_ABSENT',
+    })
   })
 
   it('broadcasts blue/terminal-theme-changed when the terminal reports a scheme', async () => {
