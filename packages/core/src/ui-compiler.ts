@@ -6,7 +6,7 @@
  * @module @dsh-blue/blue-core/ui-compiler
  */
 
-import type { BlueErrorCode, BlueTone, BlueUiEvent, BlueUiNode, BlueViewportCondition, BlueView } from '@dsh-blue/blue-api'
+import type { BlueErrorCode, BlueFormField, BlueTone, BlueUiEvent, BlueUiNode, BlueViewportCondition, BlueView } from '@dsh-blue/blue-api'
 import { CURSOR_MARKER, HStack, ScrollView, VStack, type Component } from '@earendil-works/pi-tui'
 import { getLayoutNode, LAYOUT_NODE, type LayoutNode, type LayoutViewport } from '@earendil-works/pi-tui/dist/layout-node.js'
 import { paintPluginTone, renderPluginView } from './plugin-view.ts'
@@ -14,6 +14,7 @@ import type { BlueComponent, BlueComponents, BlueFocusable, BlueSemanticColors }
 import {
   renderActions,
   renderDivider,
+  renderEmpty,
   renderFormField,
   renderList,
   renderLoader,
@@ -63,19 +64,38 @@ export interface BlueUiCompileFailure {
 /** Result returned by the no-bypass UI compiler. */
 export type BlueUiCompileResult = { readonly ok: true, readonly value: BlueCompiledUi } | BlueUiCompileFailure
 
-interface ControlDescriptor {
+interface ControlBase {
   readonly key: string
   readonly preferred: boolean
-  readonly event: BlueUiEvent
+  readonly group: string
+  readonly navigation: 'horizontal' | 'vertical' | 'none'
 }
+
+type TextField = Extract<BlueFormField, { readonly kind: 'input' | 'textarea' | 'secret' }>
+type SelectField = Extract<BlueFormField, { readonly kind: 'select' }>
+type ToggleField = Extract<BlueFormField, { readonly kind: 'toggle' }>
+type FormNode = Extract<BlueUiNode, { readonly kind: 'form' }>
+
+type ControlDescriptor =
+  | (ControlBase & { readonly kind: 'event', readonly event: BlueUiEvent, readonly confirm?: string })
+  | (ControlBase & { readonly kind: 'text', readonly field: TextField })
+  | (ControlBase & { readonly kind: 'select', readonly field: SelectField })
+  | (ControlBase & { readonly kind: 'toggle', readonly field: ToggleField })
+  | (ControlBase & { readonly kind: 'submit', readonly form: FormNode, readonly formPath: string })
 
 interface FocusState {
   activeKey: string | undefined
   lastIndex: number
   focused: boolean
   layoutPass: boolean
+  pendingConfirmation: string | undefined
   controls(): readonly ControlDescriptor[]
   emit(event: BlueUiEvent): void
+  field(field: BlueFormField, key: string): BlueFormField
+  fieldValue(field: BlueFormField, key: string): string | boolean | null
+  setTextValue(key: string, canonical: string, value: string): void
+  setSelectValue(key: string, canonical: string | null, value: string | null): void
+  setToggleValue(key: string, canonical: boolean, value: boolean): void
   setLayoutViewport(viewport: BlueUiViewport): void
 }
 
@@ -155,6 +175,7 @@ function patternFocus(state: FocusState, prefix: string): PatternFocus {
     key: state.activeKey?.startsWith(prefix) === true ? state.activeKey.slice(prefix.length) : '',
     focused: state.focused,
     marker: state.layoutPass ? `${CURSOR_MARKER} ` : FOCUS_SENTINEL,
+    ...(state.pendingConfirmation?.startsWith(prefix) === true ? { pendingKey: state.pendingConfirmation.slice(prefix.length) } : {}),
   }
 }
 
@@ -199,30 +220,32 @@ function controlsForNode(node: BlueUiNode, options: BlueUiCompilerOptions, path 
         break
       case 'scroll': visit(current.child, `${currentPath}.scroll`); break
       case 'tabs':
-        for (const item of current.items) if (item.disabled !== true) controls.push({ key: `${currentPath}:${item.id}`, preferred: item.id === current.activeId, event: { kind: 'tab-change', controlId: current.id, tabId: item.id } })
+        for (const item of current.items) if (item.disabled !== true) controls.push({ kind: 'event', key: `${currentPath}:${item.id}`, preferred: item.id === current.activeId, group: currentPath, navigation: 'horizontal', event: { kind: 'tab-change', controlId: current.id, tabId: item.id } })
         break
       case 'list':
         for (const item of current.items) if (item.disabled !== true) {
           const value = current.mode === 'multiple'
             ? current.selectedIds.includes(item.id) ? current.selectedIds.filter(id => id !== item.id) : [...current.selectedIds, item.id]
             : item.id
-          controls.push({ key: `${currentPath}:${item.id}`, preferred: current.selectedIds.includes(item.id), event: { kind: 'selection-change', controlId: current.id, value } })
+          controls.push({ kind: 'event', key: `${currentPath}:${item.id}`, preferred: current.selectedIds.includes(item.id), group: currentPath, navigation: 'vertical', event: { kind: 'selection-change', controlId: current.id, value } })
         }
         if (current.items.length === 0 && current.empty !== undefined) visit(current.empty, `${currentPath}.empty`)
         break
       case 'form':
         for (const field of current.fields) if (field.disabled !== true) {
-          const value = field.kind === 'toggle' ? !field.value : field.value
-          controls.push({ key: `${currentPath}:field:${field.id}`, preferred: false, event: { kind: 'value-change', controlId: field.id, value } })
+          const base: ControlBase = { key: `${currentPath}:field:${field.id}`, preferred: false, group: currentPath, navigation: 'vertical' }
+          if (field.kind === 'toggle') controls.push({ ...base, kind: 'toggle', field })
+          else if (field.kind === 'select') controls.push({ ...base, kind: 'select', field })
+          else controls.push({ ...base, kind: 'text', field })
         }
-        if (current.submitActionId !== undefined) controls.push({ key: `${currentPath}:submit`, preferred: false, event: { kind: 'submit', controlId: current.id, values: Object.fromEntries(current.fields.map(field => [field.id, field.value])) } })
-        if (current.cancelActionId !== undefined) controls.push({ key: `${currentPath}:cancel`, preferred: false, event: { kind: 'activate', controlId: current.cancelActionId } })
+        if (current.submitActionId !== undefined) controls.push({ kind: 'submit', key: `${currentPath}:submit`, preferred: false, group: currentPath, navigation: 'vertical', form: current, formPath: currentPath })
+        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', key: `${currentPath}:cancel`, preferred: false, group: currentPath, navigation: 'vertical', event: { kind: 'activate', controlId: current.cancelActionId } })
         break
       case 'actions':
-        for (const item of current.items) if (item.disabled !== true && item.busy !== true) controls.push({ key: `${currentPath}:${item.id}`, preferred: item.intent === 'primary', event: { kind: 'activate', controlId: item.id } })
+        for (const item of current.items) if (item.disabled !== true && item.busy !== true) controls.push({ kind: 'event', key: `${currentPath}:${item.id}`, preferred: item.intent === 'primary', group: currentPath, navigation: 'horizontal', event: { kind: 'activate', controlId: item.id }, ...(item.confirm === undefined ? {} : { confirm: item.confirm }) })
         break
       case 'loader':
-        if (current.cancelActionId !== undefined) controls.push({ key: `${currentPath}:cancel`, preferred: false, event: { kind: 'activate', controlId: current.cancelActionId } })
+        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', key: `${currentPath}:cancel`, preferred: false, group: currentPath, navigation: 'none', event: { kind: 'activate', controlId: current.cancelActionId } })
         break
       case 'empty': if (current.actions !== undefined) visit(current.actions, `${currentPath}.actions`); break
       default: break
@@ -284,12 +307,13 @@ function compileNode(node: BlueUiNode, state: FocusState, options: BlueUiCompile
     }
     case 'list': {
       if (node.items.length === 0) return node.empty === undefined ? staticComponent(() => [], options) : compileNode(node.empty, state, options, `${path}.empty`)
-      return staticComponent(width => renderList(node, width, safeViewport(options.getViewport).rows, patternFocus(state, `${path}:`), options.colors), options)
+      return staticComponent(width => renderList(node, width, options.screenMode === 'main' ? Number.MAX_SAFE_INTEGER : safeViewport(options.getViewport).rows, patternFocus(state, `${path}:`), options.colors), options)
     }
     case 'form': {
       const stack = new VStack()
       for (const field of node.fields) {
-        stack.addChild(staticComponent(width => renderFormField(field, width, patternFocus(state, `${path}:field:`), options.colors), options))
+        const key = `${path}:field:${field.id}`
+        stack.addChild(staticComponent(width => renderFormField(state.field(field, key), width, patternFocus(state, `${path}:field:`), options.colors), options))
       }
       if (node.submitActionId !== undefined) stack.addChild(staticComponent(width => renderActions({ kind: 'actions', id: node.id, items: [{ id: 'submit', label: node.submitActionId!, intent: 'primary' }] }, width, patternFocus(state, `${path}:`), options.colors, true), options))
       if (node.cancelActionId !== undefined) stack.addChild(staticComponent(width => renderActions({ kind: 'actions', id: node.id, items: [{ id: 'cancel', label: node.cancelActionId! }] }, width, patternFocus(state, `${path}:`), options.colors, true), options))
@@ -306,8 +330,7 @@ function compileNode(node: BlueUiNode, state: FocusState, options: BlueUiCompile
     }
     case 'empty': {
       const stack = new VStack()
-      stack.addChild(staticComponent(width => options.components.wrapText(options.colors.textStrong(node.title), width), options))
-      if (node.description !== undefined) stack.addChild(staticComponent(width => options.components.wrapText(options.colors.muted(node.description!), width), options))
+      stack.addChild(staticComponent(width => renderEmpty(node, width, options.colors), options))
       if (node.actions !== undefined) stack.addChild(compileNode(node.actions, state, options, `${path}.actions`))
       return stack
     }
@@ -321,6 +344,7 @@ function reconcile(state: FocusState): readonly ControlDescriptor[] {
   const controls = state.controls()
   if (controls.length === 0) {
     state.activeKey = undefined
+    state.pendingConfirmation = undefined
     state.lastIndex = 0
     return controls
   }
@@ -331,6 +355,7 @@ function reconcile(state: FocusState): readonly ControlDescriptor[] {
   }
   const preferred = controls.findIndex(control => control.preferred)
   state.lastIndex = preferred >= 0 ? preferred : Math.min(state.lastIndex, controls.length - 1)
+  state.pendingConfirmation = undefined
   state.activeKey = controls[state.lastIndex]!.key
   return controls
 }
@@ -343,22 +368,52 @@ class CompiledSurface implements BlueFocusable {
   constructor(node: BlueUiNode, private readonly options: BlueUiCompilerOptions) {
     this.viewport = safeViewport(options.getViewport)
     const runtimeOptions: BlueUiCompilerOptions = { ...options, getViewport: () => this.viewport }
+    const textBuffers = new Map<string, { canonical: string, value: string }>()
+    const selectDrafts = new Map<string, { canonical: string | null, value: string | null }>()
+    const toggleDrafts = new Map<string, { canonical: boolean, value: boolean }>()
+    const fieldValue = (field: BlueFormField, key: string): string | boolean | null => {
+      if (field.kind === 'toggle') {
+        const current = toggleDrafts.get(key)
+        if (current !== undefined && current.canonical === field.value) return current.value
+        toggleDrafts.set(key, { canonical: field.value, value: field.value })
+        return field.value
+      }
+      if (field.kind === 'select') {
+        const current = selectDrafts.get(key)
+        if (current !== undefined && current.canonical === field.value) return current.value
+        selectDrafts.set(key, { canonical: field.value, value: field.value })
+        return field.value
+      }
+      const current = textBuffers.get(key)
+      if (current !== undefined && current.canonical === field.value) return current.value
+      textBuffers.set(key, { canonical: field.value, value: field.value })
+      return field.value
+    }
     this.state = {
       activeKey: undefined,
       lastIndex: 0,
       focused: false,
       layoutPass: false,
+      pendingConfirmation: undefined,
       controls: () => controlsForNode(node, runtimeOptions),
       emit: event => {
         try { options.emit(event) } catch { /* event failures are host-owned */ }
       },
+      field: (field, key) => ({ ...field, value: fieldValue(field, key) } as BlueFormField),
+      fieldValue,
+      setTextValue: (key, canonical, value) => { textBuffers.set(key, { canonical, value }) },
+      setSelectValue: (key, canonical, value) => { selectDrafts.set(key, { canonical, value }) },
+      setToggleValue: (key, canonical, value) => { toggleDrafts.set(key, { canonical, value }) },
       setLayoutViewport: viewport => { this.viewport = viewport },
     }
     this.root = compileNode(node, this.state, runtimeOptions)
   }
 
   get focused(): boolean { return this.state.focused }
-  set focused(value: boolean) { this.state.focused = value }
+  set focused(value: boolean) {
+    this.state.focused = value
+    if (!value) this.state.pendingConfirmation = undefined
+  }
 
   [LAYOUT_NODE](): LayoutNode {
     this.viewport = safeViewport(this.options.getViewport)
@@ -397,17 +452,82 @@ class CompiledSurface implements BlueFocusable {
     this.viewport = safeViewport(this.options.getViewport)
     const controls = reconcile(this.state)
     if (controls.length === 0) return
-    if (data === '\t' || data === '\x1b[C' || data === '\x1b[B') {
-      this.state.lastIndex = (this.state.lastIndex + 1) % controls.length
-      this.state.activeKey = controls[this.state.lastIndex]!.key
+    const active = controls[this.state.lastIndex]!
+    const moveTo = (index: number): void => {
+      this.state.pendingConfirmation = undefined
+      this.state.lastIndex = index
+      this.state.activeKey = controls[index]!.key
+    }
+    if (data === '\t' || data === '\x1b[Z') {
+      const delta = data === '\t' ? 1 : -1
+      moveTo((this.state.lastIndex + controls.length + delta) % controls.length)
       return
     }
-    if (data === '\x1b[Z' || data === '\x1b[D' || data === '\x1b[A') {
-      this.state.lastIndex = (this.state.lastIndex + controls.length - 1) % controls.length
-      this.state.activeKey = controls[this.state.lastIndex]!.key
+    if (data === '\x1b') {
+      this.state.pendingConfirmation = undefined
       return
     }
-    if (data === '\r' || data === '\n' || data === ' ') this.state.emit(controls[this.state.lastIndex]!.event)
+    const direction = data === '\x1b[A' || data === '\x1b[D' ? -1 : data === '\x1b[B' || data === '\x1b[C' ? 1 : 0
+    if (active.kind === 'select' && direction !== 0) {
+      const enabled = active.field.options.filter(option => option.disabled !== true)
+      if (enabled.length === 0) return
+      const current = this.state.fieldValue(active.field, active.key)
+      const currentIndex = enabled.findIndex(option => option.id === current)
+      const nextIndex = currentIndex < 0
+        ? direction > 0 ? 0 : enabled.length - 1
+        : (currentIndex + enabled.length + direction) % enabled.length
+      this.state.setSelectValue(active.key, active.field.value, enabled[nextIndex]!.id)
+      return
+    }
+    if (direction !== 0) {
+      const matchingDirection = active.navigation === 'horizontal'
+        ? data === '\x1b[D' || data === '\x1b[C'
+        : active.navigation === 'vertical' && (data === '\x1b[A' || data === '\x1b[B')
+      if (!matchingDirection) return
+      const siblings = controls.map((control, index) => ({ control, index })).filter(entry => entry.control.group === active.group)
+      const siblingIndex = siblings.findIndex(entry => entry.index === this.state.lastIndex)
+      moveTo(siblings[(siblingIndex + siblings.length + direction) % siblings.length]!.index)
+      return
+    }
+    if (active.kind === 'text') {
+      const current = String(this.state.fieldValue(active.field, active.key))
+      if (data === '\x7f' || data === '\b') {
+        const value = Array.from(current).slice(0, -1).join('')
+        this.state.setTextValue(active.key, active.field.value, value)
+        this.state.emit({ kind: 'value-change', controlId: active.field.id, value })
+        return
+      }
+      if (/^[^\x00-\x1f\x7f-\x9f]+$/u.test(data)) {
+        const value = `${current}${data}`
+        this.state.setTextValue(active.key, active.field.value, value)
+        this.state.emit({ kind: 'value-change', controlId: active.field.id, value })
+        return
+      }
+      if (data === '\r' || data === '\n') this.state.emit({ kind: 'value-change', controlId: active.field.id, value: current })
+      return
+    }
+    if (data !== '\r' && data !== '\n' && data !== ' ') return
+    if (active.kind === 'toggle') {
+      const value = !this.state.fieldValue(active.field, active.key)
+      this.state.setToggleValue(active.key, active.field.value, value)
+      this.state.emit({ kind: 'value-change', controlId: active.field.id, value })
+      return
+    }
+    if (active.kind === 'select') {
+      this.state.emit({ kind: 'value-change', controlId: active.field.id, value: this.state.fieldValue(active.field, active.key) })
+      return
+    }
+    if (active.kind === 'submit') {
+      const values = Object.fromEntries(active.form.fields.map(field => [field.id, this.state.fieldValue(field, `${active.formPath}:field:${field.id}`)]))
+      this.state.emit({ kind: 'submit', controlId: active.form.id, values })
+      return
+    }
+    if (active.confirm !== undefined && this.state.pendingConfirmation !== active.key) {
+      this.state.pendingConfirmation = active.key
+      return
+    }
+    this.state.pendingConfirmation = undefined
+    this.state.emit(active.event)
   }
 
   invalidate(): void { this.root.invalidate?.() }

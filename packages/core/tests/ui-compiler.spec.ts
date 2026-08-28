@@ -296,6 +296,142 @@ describe('compileBlueUiNode', () => {
     expect(list.node).toMatchObject({ selectedIds: ['a'] })
   })
 
+  it('keeps form edit buffers local while emitting text, toggle, select, and submit proposals', () => {
+    const { options, events } = fixture()
+    const node = ui.form({
+      id: 'profile',
+      fields: [
+        { kind: 'input', id: 'name', label: 'Name', value: 'A' },
+        { kind: 'textarea', id: 'notes', label: 'Notes', value: '' },
+        { kind: 'secret', id: 'secret', label: 'Secret', value: 'x' },
+        { kind: 'toggle', id: 'enabled', label: 'Enabled', value: false },
+        { kind: 'select', id: 'choice', label: 'Choice', value: null, options: [
+          { id: 'disabled', label: 'Disabled', disabled: true },
+          { id: 'a', label: 'Alpha' },
+          { id: 'b', label: 'Beta' },
+        ] },
+      ],
+      submitActionId: 'Save',
+    })
+    const result = compiled(node, options)
+    const focus = result.focusTarget!
+    focus.focused = true
+    focus.handleInput?.('B')
+    focus.handleInput?.(' ')
+    focus.handleInput?.('界🙂')
+    focus.handleInput?.('\x1b[31mred')
+    expect(focus.render(80).join('\n')).toContain('Name: AB ')
+    focus.handleInput?.('\x7f')
+    expect(focus.render(80).join('\n')).toContain('Name: AB 界')
+    expect(result.node).toMatchObject({ kind: 'form' })
+    if (result.node.kind !== 'form') throw new Error('expected form')
+    expect(result.node.fields[0]).toMatchObject({ value: 'A' })
+
+    focus.handleInput?.('\t')
+    focus.handleInput?.('note')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('z')
+    expect(focus.render(80).join('\n')).toContain('Secret: ••')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[B')
+    expect(focus.render(80).join('\n')).toContain('Choice: Alpha')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\r')
+
+    expect(events).toEqual([
+      { kind: 'value-change', controlId: 'name', value: 'AB' },
+      { kind: 'value-change', controlId: 'name', value: 'AB ' },
+      { kind: 'value-change', controlId: 'name', value: 'AB 界🙂' },
+      { kind: 'value-change', controlId: 'name', value: 'AB 界' },
+      { kind: 'value-change', controlId: 'notes', value: 'note' },
+      { kind: 'value-change', controlId: 'secret', value: 'xz' },
+      { kind: 'value-change', controlId: 'enabled', value: true },
+      { kind: 'value-change', controlId: 'choice', value: 'b' },
+      { kind: 'submit', controlId: 'profile', values: { name: 'AB 界', notes: 'note', secret: 'xz', enabled: true, choice: 'b' } },
+    ])
+
+    const refreshed = compiled(ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value: 'Server' }] }), fixture().options)
+    expect(refreshed.component.render(40).join('')).toContain('Server')
+    expect(refreshed.component.render(40).join('')).not.toContain('AB')
+
+    const selectDraft = compiled(ui.form({ id: 'select-form', fields: [{ kind: 'select', id: 'select', label: 'Select', value: null, options: [{ id: 'a', label: 'Alpha' }, { id: 'b', label: 'Beta' }] }] }), fixture().options)
+    selectDraft.focusTarget!.handleInput?.('\x1b[A')
+    expect(selectDraft.component.render(40).join('')).toContain('Beta')
+    const selectRefresh = compiled(ui.form({ id: 'select-form', fields: [{ kind: 'select', id: 'select', label: 'Select', value: 'b', options: [{ id: 'a', label: 'Alpha' }, { id: 'b', label: 'Beta' }] }] }), fixture().options)
+    expect(selectRefresh.component.render(40).join('')).toContain('Beta')
+
+    const noOptionsEvents: unknown[] = []
+    const noOptions = compiled(ui.form({ id: 'empty-select', fields: [{ kind: 'select', id: 'empty', label: 'Empty', value: null, options: [{ id: 'disabled', label: 'Disabled', disabled: true }] }] }), fixture({ emit: event => noOptionsEvents.push(event) }).options)
+    noOptions.focusTarget!.handleInput?.('\x1b[B')
+    noOptions.focusTarget!.handleInput?.('\r')
+    expect(noOptionsEvents).toEqual([{ kind: 'value-change', controlId: 'empty', value: null }])
+
+    const enterEvents: unknown[] = []
+    const enterText = compiled(ui.form({ id: 'enter-form', fields: [{ kind: 'input', id: 'enter', label: 'Enter', value: 'value' }] }), fixture({ emit: event => enterEvents.push(event) }).options)
+    enterText.focusTarget!.handleInput?.('\r')
+    expect(enterEvents).toEqual([{ kind: 'value-change', controlId: 'enter', value: 'value' }])
+  })
+
+  it('requires two activation gestures for confirmed actions and clears pending state locally', () => {
+    const { options, events } = fixture()
+    const result = compiled(ui.actions({ id: 'actions', items: [
+      { id: 'delete', label: 'Delete', intent: 'primary', confirm: 'Really delete?' },
+      { id: 'keep', label: 'Keep' },
+      { id: 'disabled', label: 'Disabled', disabled: true, confirm: 'Never' },
+      { id: 'busy', label: 'Busy', busy: true, confirm: 'Never' },
+    ] }), options)
+    const focus = result.focusTarget!
+    focus.focused = true
+    expect(focus.render(80).join('')).not.toContain('Really delete?')
+    focus.handleInput?.('\r')
+    expect(events).toEqual([])
+    expect(focus.render(80).join('')).toContain('Really delete?')
+    focus.handleInput?.('\x1b')
+    expect(focus.render(80).join('')).not.toContain('Really delete?')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    expect(focus.render(80).join('')).not.toContain('Really delete?')
+    focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.(' ')
+    focus.focused = false
+    focus.focused = true
+    expect(focus.render(80).join('')).not.toContain('Really delete?')
+    focus.handleInput?.(' ')
+    expect(events).toEqual([])
+    focus.handleInput?.(' ')
+    expect(events).toEqual([{ kind: 'activate', controlId: 'delete' }])
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\r')
+    expect(events.at(-1)).toEqual({ kind: 'activate', controlId: 'keep' })
+  })
+
+  it('routes direction keys within the active pattern while Tab crosses controls', () => {
+    const { options, events } = fixture()
+    const tree = ui.stack.column([
+      ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'A' }, { id: 'disabled', label: 'Disabled', disabled: true }, { id: 'b', label: 'B' }] }),
+      ui.list({ id: 'list', selectedIds: [], items: [{ id: 'one', label: 'One' }, { id: 'two', label: 'Two' }] }),
+      ui.actions({ id: 'actions', items: [{ id: 'left', label: 'Left' }, { id: 'right', label: 'Right' }] }),
+    ])
+    const focus = compiled(tree, options).focusTarget!
+    focus.handleInput?.('\x1b[C')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[C')
+    focus.handleInput?.('\r')
+    expect(events).toEqual([
+      { kind: 'tab-change', controlId: 'tabs', tabId: 'b' },
+      { kind: 'selection-change', controlId: 'list', value: 'two' },
+      { kind: 'activate', controlId: 'right' },
+    ])
+  })
+
   it('dispatches list-add, form toggle/submit/cancel, loader and empty actions', () => {
     const { options, events } = fixture()
     const tree = ui.stack.column([
@@ -313,7 +449,7 @@ describe('compileBlueUiNode', () => {
       { kind: 'selection-change', controlId: 'list', value: ['item'] },
       { kind: 'value-change', controlId: 'toggle', value: true },
       { kind: 'value-change', controlId: 'select', value: null },
-      { kind: 'submit', controlId: 'form', values: { toggle: false, select: null } },
+      { kind: 'submit', controlId: 'form', values: { toggle: true, select: null } },
       { kind: 'activate', controlId: 'cancel' },
       { kind: 'activate', controlId: 'loader-cancel' },
       { kind: 'activate', controlId: 'empty-go' },
@@ -377,6 +513,10 @@ describe('compileBlueUiNode', () => {
     list.focusTarget!.focused = true
     expect(list.component.render(40).join('')).toContain(`${CURSOR_MARKER} → Selected`)
     expect(selectedBg).toHaveBeenCalledOnce()
+    selectedBg.mockClear()
+    list.focusTarget!.handleInput?.('\x1b[A')
+    expect(list.component.render(40).join('')).toContain(`${CURSOR_MARKER} → Plain`)
+    expect(selectedBg).toHaveBeenCalledOnce()
   })
 
   it('windows a focused list against the live viewport and keeps validation on the next row', () => {
@@ -388,6 +528,20 @@ describe('compileBlueUiNode', () => {
     expect(rows).toHaveLength(3)
     expect(rows.join('\n')).toContain('row-6')
     expect(rows.join('\n')).not.toContain('row-0')
+    viewport.rows = 20
+    const nested = compiled(ui.stack.column([
+      ui.child(ui.text('header'), { basis: 1, shrink: 0 }),
+      ui.child(ui.list({ id: 'nested-list', selectedIds: ['six'], items: Array.from({ length: 8 }, (_, index) => ({ id: index === 6 ? 'six' : String(index), label: `nested-${String(index)}` })) }), { basis: 0, grow: 1, minSize: 1 }),
+    ]), options)
+    nested.focusTarget!.focused = true
+    const frameRows = layout(nested.component as Component, 20, 4).lines
+    expect(frameRows).toHaveLength(4)
+    expect(frameRows[0]).toBe('header')
+    expect(frameRows.join('\n')).toContain('nested-6')
+    expect(frameRows.join('\n')).not.toContain('nested-0')
+
+    const main = compiled(ui.list({ id: 'main-list', selectedIds: [], items: Array.from({ length: 8 }, (_, index) => ({ id: String(index), label: `main-${String(index)}` })) }), fixture({ screenMode: 'main', getViewport: () => ({ columns: 20, rows: 3 }) }).options)
+    expect(main.component.render(20)).toHaveLength(8)
 
     const form = compiled(ui.form({ id: 'form', fields: [{ kind: 'input', id: 'name', label: 'Name', value: '', placeholder: 'Ada', error: 'Required' }] }), fixture().options)
     expect(form.component.render(40)).toEqual(['   Name: Ada', '   ! Required'])
@@ -412,8 +566,30 @@ describe('compileBlueUiNode', () => {
       ])
       const { options, viewport } = fixture()
       viewport.rows = 200
-      const component = compiled(tree, options).component
-      for (const width of SCAN_WIDTHS) expectLinesFit(`${name} patterns`, component.render(width), width)
+      const alternate = compiled(tree, options)
+      alternate.focusTarget!.focused = true
+      const main = compiled(tree, fixture({ screenMode: 'main', getViewport: () => ({ columns: 120, rows: 20 }) }).options)
+      main.focusTarget!.focused = true
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`${name} alternate patterns`, alternate.component.render(width), width)
+        expectLinesFit(`${name} layout patterns`, layout(alternate.component as Component, width, 20).lines, width)
+        expectLinesFit(`${name} main patterns`, main.component.render(width), width)
+      }
+    }
+  })
+
+  it('renders loader frames without owning timers', () => {
+    const timeout = vi.spyOn(globalThis, 'setTimeout')
+    const interval = vi.spyOn(globalThis, 'setInterval')
+    try {
+      const loader = compiled(ui.loader({ message: 'Loading', variant: 'braille', elapsedMs: 10 }), fixture().options)
+      expect(loader.component.render(20)).toEqual(['⠋ Loading 10ms'])
+      loader.component.invalidate()
+      expect(timeout).not.toHaveBeenCalled()
+      expect(interval).not.toHaveBeenCalled()
+    } finally {
+      timeout.mockRestore()
+      interval.mockRestore()
     }
   })
 

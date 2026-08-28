@@ -4,6 +4,7 @@ import { ui } from '../../ui/src/index.ts'
 import {
   renderActions,
   renderDivider,
+  renderEmpty,
   renderFormField,
   renderList,
   renderLoader,
@@ -58,15 +59,23 @@ describe('private UI pattern painters', () => {
     const forty = renderTabs(node, 40, { key: 'c', focused: true, marker: '|' }, colors)[0]!
     expect(forty).not.toContain('12')
     expect(forty).toContain('|Gamma')
+    expect(renderTabs(node, 40, { key: 'b', focused: true, marker: '|' }, colors)[0]).not.toContain('|Beta')
     const narrow = renderTabs(node, 9, { key: 'c', focused: true, marker: '|' }, colors)[0]!
     expect(visibleWidth(narrow)).toBeLessThanOrEqual(9)
     expect(narrow).toContain('|Gamma')
     expect(renderTabs(node, 5, idle, colors)[0]).toHaveLength(5)
+    const primary = vi.fn(identity)
+    const text = vi.fn(identity)
+    const palette = new Proxy(colors, { get: (target, key, receiver) => key === 'primary' ? primary : key === 'text' ? text : Reflect.get(target, key, receiver) })
+    renderTabs(node, 40, { key: 'c', focused: true, marker: '|' }, palette)
+    expect(primary).toHaveBeenCalledWith('‹ Alpha ›')
+    expect(text).toHaveBeenCalledWith('Gamma')
   })
 
   it('renders list selection, focus, groups, filtering, detail degradation, and windows', () => {
     const selectedBg = vi.fn(identity)
-    const tracked = new Proxy(colors, { get: (target, key, receiver) => key === 'selectedBg' ? selectedBg : Reflect.get(target, key, receiver) })
+    const primary = vi.fn(identity)
+    const tracked = new Proxy(colors, { get: (target, key, receiver) => key === 'selectedBg' ? selectedBg : key === 'primary' ? primary : Reflect.get(target, key, receiver) })
     const node = ui.list({
       id: 'list', mode: 'multiple', selectedIds: ['a', 'd'], filter: 'term',
       items: [
@@ -89,6 +98,13 @@ describe('private UI pattern painters', () => {
     expect(focusedRows.join('\n')).toContain('|→ Delta')
     expect(focusedRows.join('\n')).not.toContain('detail-a')
     expect(selectedBg).toHaveBeenCalledOnce()
+    selectedBg.mockClear()
+    primary.mockClear()
+    const unselectedFocus = renderList(node, 80, 20, { key: 'c', focused: true, marker: '|' }, tracked)
+    expect(unselectedFocus.join('\n')).toContain('|→ Gamma')
+    expect(selectedBg).toHaveBeenCalledOnce()
+    expect(primary).toHaveBeenCalledWith(expect.stringContaining('|→ Gamma'))
+    expect(visibleWidth(selectedBg.mock.calls[0]![0])).toBe(80)
     expect(renderList(node, 20, 2, { key: 'missing', focused: true, marker: '|' }, colors)[0]).toContain('/ term')
     expect(renderList(node, 20, Number.NaN, { key: 'e', focused: true, marker: '|' }, colors)).toHaveLength(1)
     expect(renderList(ui.list({ id: 'single', selectedIds: [], items: [{ id: 'x', label: 'X' }] }), 20, 3, idle, colors)).toEqual(['   X'])
@@ -98,9 +114,10 @@ describe('private UI pattern painters', () => {
       if (key === 'muted') return (value: string) => `<muted>${value}</muted>`
       return Reflect.get(target, key, receiver)
     } })
-    const disabledSelected = renderList(ui.list({ id: 'disabled', selectedIds: ['x'], items: [{ id: 'x', label: 'X', disabled: true }] }), 80, 3, idle, nestedPaint)[0]!
+    const disabledSelected = renderList(ui.list({ id: 'disabled', selectedIds: ['x'], items: [{ id: 'x', label: 'X', disabled: true }] }), 80, 3, { key: 'x', focused: true, marker: '|' }, nestedPaint)[0]!
     expect(disabledSelected).toContain('<muted>')
     expect(disabledSelected).not.toContain('<primary>')
+    expect(disabledSelected).not.toContain('|')
   })
 
   it('renders every form field state with validation on its own row', () => {
@@ -125,6 +142,9 @@ describe('private UI pattern painters', () => {
     const disabled = renderFormField({ kind: 'input', id: 'disabled', label: 'Disabled', value: 'value', disabled: true }, 80, idle, mutedOnly)[0]!
     expect(disabled).toContain('<muted>')
     expect(disabled).not.toContain('<foreground>')
+    expect(renderFormField({ kind: 'input', id: 'disabled', label: 'Disabled', value: '', disabled: true }, 80, { key: 'disabled', focused: true, marker: '|' }, colors)[0]).not.toContain('|')
+    const focusPalette = new Proxy(colors, { get: (target, key, receiver) => key === 'primary' ? (value: string) => `<primary>${value}</primary>` : Reflect.get(target, key, receiver) })
+    expect(renderFormField({ kind: 'input', id: 'focused', label: 'Focused', value: 'value' }, 80, { key: 'focused', focused: true, marker: '|' }, focusPalette)[0]).toContain('<primary>|→ Focused: value</primary>')
   })
 
   it('renders action intents, busy/confirm states, deterministic loaders, and empty groups', () => {
@@ -135,16 +155,25 @@ describe('private UI pattern painters', () => {
       { id: 'busy', label: 'Wait', busy: true },
       { id: 'disabled', label: 'No', disabled: true },
     ] })
-    const vertical = renderActions(node, 40, { key: 'danger', focused: true, marker: '|' }, colors, true)
+    const vertical = renderActions(node, 40, { key: 'secondary', focused: true, marker: '|', pendingKey: 'secondary' }, colors, true)
     expect(vertical).toHaveLength(5)
     expect(vertical.join('\n')).toContain('[ Run ]')
-    expect(vertical.join('\n')).toContain('Later ? sure')
-    expect(vertical.join('\n')).toContain('|! Delete')
+    expect(vertical.join('\n')).toContain('|Later ? sure')
+    expect(vertical.join('\n')).toContain('! Delete')
+    expect(renderActions(node, 40, { key: 'danger', focused: true, marker: '|' }, colors, true).join('\n')).toContain('|! Delete')
     expect(vertical.join('\n')).toContain('… Wait')
+    expect(renderActions(node, 80, { key: 'busy', focused: true, marker: '|', pendingKey: 'busy' }, colors, true).join('')).not.toContain('|')
+    expect(renderActions(node, 80, { key: 'disabled', focused: true, marker: '|', pendingKey: 'disabled' }, colors, true).join('')).not.toContain('|')
+    const actionPalette = new Proxy(colors, { get: (target, key, receiver) => key === 'primary' ? (value: string) => `<primary>${value}</primary>` : Reflect.get(target, key, receiver) })
+    expect(renderActions(node, 80, { key: 'secondary', focused: true, marker: '|' }, actionPalette, true).join('\n')).toContain('|<primary>Later</primary>')
     expect(visibleWidth(renderActions(node, 10, { key: 'danger', focused: true, marker: '|' }, colors, false)[0]!)).toBeLessThanOrEqual(10)
     expect(renderActions(ui.actions({ id: 'empty', items: [] }), 10, idle, colors, false)).toEqual([])
     expect(renderLoader(ui.loader({ message: 'Load' }), 20, colors)).toEqual(['⠋ Load'])
     expect(renderLoader(ui.loader({ message: 'Tide', variant: 'tide', elapsedMs: 25 }), 20, colors)).toEqual(['≈ Tide 25ms'])
+    expect(renderEmpty(ui.empty({ title: 'Nothing', description: 'Try again' }), 20, colors)).toEqual(['Nothing', 'Try again'])
+    const narrowEmpty = renderEmpty(ui.empty({ title: 'Nothing' }), 3, colors)
+    expect(narrowEmpty.join('')).toBe('Nothing')
+    expect(narrowEmpty.every(row => visibleWidth(row) <= 3)).toBe(true)
   })
 
   it('uses eighth-block progress and semantic dividers at degenerate widths', () => {

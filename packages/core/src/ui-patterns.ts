@@ -8,19 +8,21 @@
 
 import type { BlueFormField, BlueTone, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueSemanticColors } from './types.ts'
-import { sliceByColumn, visibleWidth } from './width.ts'
+import { sliceByColumn, visibleWidth, wrapTextWithAnsi } from './width.ts'
 
 type SurfaceNode = Extract<BlueUiNode, { readonly kind: 'surface' }>
 type TabsNode = Extract<BlueUiNode, { readonly kind: 'tabs' }>
 type ListNode = Extract<BlueUiNode, { readonly kind: 'list' }>
 type ActionsNode = Extract<BlueUiNode, { readonly kind: 'actions' }>
 type LoaderNode = Extract<BlueUiNode, { readonly kind: 'loader' }>
+type EmptyNode = Extract<BlueUiNode, { readonly kind: 'empty' }>
 type ProgressNode = Extract<BlueUiNode, { readonly kind: 'progress' }>
 
 export interface PatternFocus {
   readonly key: string
   readonly focused: boolean
   readonly marker: string
+  readonly pendingKey?: string
 }
 
 const PARTIAL_BLOCKS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'] as const
@@ -110,7 +112,7 @@ export function renderTabs(node: TabsNode, width: number, focus: PatternFocus, c
   const showCounts = safeWidth(width) > 40
   const tokens = node.items.map(item => {
     const active = item.id === node.activeId
-    const focused = focus.focused && focus.key === item.id
+    const focused = focus.focused && focus.key === item.id && item.disabled !== true
     const label = `${active ? `‹ ${item.label} ›` : item.label}${showCounts && item.count !== undefined ? ` ${String(item.count)}` : ''}`
     const content = item.disabled === true ? colors.muted(label) : active ? colors.primary(label) : colors.text(label)
     return { value: `${focused ? focus.marker : ' '}${content}`, focused, active }
@@ -130,14 +132,21 @@ export function renderList(node: ListNode, width: number, height: number, focus:
     }
     const selected = node.selectedIds.includes(item.id)
     const focused = focus.focused && focus.key === item.id
-    const marker = focused ? focus.marker : ' '
-    const pointerGlyph = focused ? '→' : selected ? '●' : node.mode === 'multiple' ? '○' : ' '
-    const pointer = item.disabled === true ? pointerGlyph : focused ? colors.accent(pointerGlyph) : selected ? colors.primary(pointerGlyph) : colors.textMuted(pointerGlyph)
+    const enabledFocus = focused && item.disabled !== true
+    const marker = enabledFocus ? focus.marker : ' '
+    const pointerGlyph = enabledFocus ? '→' : selected ? '●' : node.mode === 'multiple' ? '○' : ' '
     const detail = available > 40 && item.detail !== undefined ? ` — ${item.detail}` : ''
     const badge = item.badge === undefined ? '' : ` [${item.badge}]`
-    const text = `${marker}${pointer} ${item.label}${detail}${badge}`
-    const painted = item.disabled === true ? colors.muted(text) : selected ? colors.textStrong(text) : colors.text(text)
-    rows.push({ value: focused && selected ? colors.selectedBg(pad(painted, available)) : fit(painted, available), itemId: item.id })
+    if (item.disabled === true) {
+      rows.push({ value: fit(colors.muted(`${marker}${pointerGlyph} ${item.label}${detail}${badge}`), available), itemId: item.id })
+      continue
+    }
+    if (enabledFocus) {
+      rows.push({ value: colors.selectedBg(pad(colors.primary(`${marker}${pointerGlyph} ${item.label}${detail}${badge}`), available)), itemId: item.id })
+      continue
+    }
+    const pointer = selected ? colors.primary(pointerGlyph) : colors.textMuted(pointerGlyph)
+    rows.push({ value: fit(`${marker}${pointer} ${colors.text(item.label)}${colors.text(detail)}${colors.text(badge)}`, available), itemId: item.id })
   }
   const limit = Math.max(1, Number.isFinite(height) ? Math.floor(height) : 1)
   if (rows.length <= limit) return rows.map(row => row.value)
@@ -148,7 +157,7 @@ export function renderList(node: ListNode, width: number, height: number, focus:
 
 export function renderFormField(field: BlueFormField, width: number, focus: PatternFocus, colors: BlueSemanticColors): string[] {
   const available = safeWidth(width)
-  const focused = focus.focused && focus.key === field.id
+  const focused = focus.focused && focus.key === field.id && field.disabled !== true
   let value: string
   let placeholder = false
   if (field.kind === 'toggle') value = field.value ? '[on]' : '[off]'
@@ -159,18 +168,20 @@ export function renderFormField(field: BlueFormField, width: number, focus: Patt
   const prefix = interactivePrefix({ key: field.id, focused, marker: focus.marker })
   const row = field.disabled === true
     ? colors.muted(`${prefix}${field.label}: ${value}`)
-    : `${prefix}${colors.textStrong(`${field.label}:`)} ${placeholder ? colors.textMuted(value) : colors.text(value)}`
+    : focused ? colors.primary(`${prefix}${field.label}: ${value}`)
+      : `${prefix}${colors.textStrong(`${field.label}:`)} ${placeholder ? colors.textMuted(value) : colors.text(value)}`
   const rows = [fit(row, available)]
   if (field.error !== undefined) rows.push(fit(colors.error(`   ! ${field.error}`), available))
   return rows
 }
 
 function actionToken(item: ActionsNode['items'][number], focus: PatternFocus, colors: BlueSemanticColors): { readonly value: string, readonly focused: boolean, readonly active: boolean } {
-  const focused = focus.focused && focus.key === item.id
   const busy = item.busy === true
-  const label = `${busy ? '… ' : ''}${item.label}${item.confirm === undefined ? '' : ` ? ${item.confirm}`}`
+  const focused = focus.focused && focus.key === item.id && item.disabled !== true && !busy
+  const pending = focused && focus.pendingKey === item.id && item.confirm !== undefined
+  const label = `${busy ? '… ' : ''}${item.label}${pending ? ` ? ${item.confirm}` : ''}`
   const framed = item.intent === 'primary' ? `[ ${label} ]` : item.intent === 'danger' ? `! ${label}` : label
-  const content = item.disabled === true || busy ? colors.muted(framed) : item.intent === 'danger' ? colors.error(framed) : item.intent === 'primary' ? colors.primary(framed) : colors.text(framed)
+  const content = item.disabled === true || busy ? colors.muted(framed) : item.intent === 'danger' ? colors.error(framed) : focused || item.intent === 'primary' ? colors.primary(framed) : colors.text(framed)
   return { value: `${focused ? focus.marker : ' '}${content}`, focused, active: item.intent === 'primary' }
 }
 
@@ -184,6 +195,13 @@ export function renderLoader(node: LoaderNode, width: number, colors: BlueSemant
   const indicator = node.variant === 'tide' ? '≈' : '⠋'
   const elapsed = node.elapsedMs === undefined ? '' : ` ${String(node.elapsedMs)}ms`
   return [fit(`${colors.primary(indicator)} ${colors.text(node.message)}${colors.textMuted(elapsed)}`, width)]
+}
+
+export function renderEmpty(node: EmptyNode, width: number, colors: BlueSemanticColors): string[] {
+  const available = safeWidth(width)
+  const rows = wrapTextWithAnsi(colors.textStrong(node.title), available)
+  if (node.description !== undefined) rows.push(...wrapTextWithAnsi(colors.muted(node.description), available))
+  return rows
 }
 
 export function renderProgress(node: ProgressNode, width: number, colors: BlueSemanticColors): string[] {
