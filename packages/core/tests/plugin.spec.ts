@@ -181,7 +181,7 @@ describe('blue-core plugin through the real Loader', () => {
     await ctx.loader.await()
     expect(pane.api!.panes!.register({ id: 'after-host-unload', placement: 'bottom', render: () => null })).toMatchObject({
       ok: false,
-      code: 'BLUE_CAPABILITY_ABSENT',
+      code: 'BLUE_ACTION_REJECTED',
     })
   })
 

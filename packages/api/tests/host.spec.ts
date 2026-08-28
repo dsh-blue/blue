@@ -131,6 +131,111 @@ describe('BluePluginHostService', () => {
     expect(dockRegistration.ok && dockRegistration.value.disposed).toBe(true)
   })
 
+  it('fences every retained capability facade after consumer unload without consuming gestures', () => {
+    const host = new BluePluginHostService(new Context())
+    const owner = attach(host, ['commands', 'status', 'dock', 'notifications', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'])
+    const c = consumer()
+    const opened = host.open(c, manifest(['commands', 'status', 'dock', 'notifications', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider']))
+    const live = host.open(consumer(), { ...manifest(['notifications', 'overlays']), id: '@acme/live' })
+    expect(opened.ok && live.ok).toBe(true)
+    if (!opened.ok || !live.ok) return
+
+    const registrations = [
+      opened.value.commands!.register(command('before-unload')),
+      opened.value.status!.register({ id: 'before-unload', render: () => null }),
+      opened.value.dock!.register({ id: 'before-unload', view }),
+      opened.value.panes!.register({ id: 'before-unload', placement: 'right', render: () => null }),
+      opened.value.overlays!.open({ id: 'before-unload', render: () => view }),
+      opened.value.editorExtensions!.register({ id: 'before-unload' }),
+      opened.value.statusProviders!.register({ id: 'before-unload', render: () => ({ kind: 'text', content: 'status' }) }),
+      opened.value.editorProviders!.register({ id: 'before-unload', render: () => ({ kind: 'editor-control' }) }),
+    ]
+    const beforeSubscription = opened.value.notifications!.subscribe(() => {})
+    const gesture = createBlueUserGesture(host, owner)
+    expect(registrations.every(result => result.ok)).toBe(true)
+    expect(gesture.ok).toBe(true)
+    if (!gesture.ok) return
+
+    c.dispose()
+    c.dispose()
+    expect(registrations.every(result => result.ok && result.value.disposed)).toBe(true)
+    expect(beforeSubscription.disposed).toBe(true)
+
+    const rejected = [
+      opened.value.commands!.register(command('after-unload')),
+      opened.value.status!.register({ id: 'after-unload', render: () => null }),
+      opened.value.dock!.register({ id: 'after-unload', view }),
+      opened.value.panes!.register({ id: 'after-unload', placement: 'bottom', render: () => null }),
+      opened.value.overlays!.open({ id: 'after-unload', capturing: true, render: () => view }, { userGesture: gesture.value }),
+      opened.value.editorExtensions!.register({ id: 'after-unload' }),
+      opened.value.statusProviders!.register({ id: 'after-unload', render: () => ({ kind: 'text', content: 'status' }) }),
+      opened.value.editorProviders!.register({ id: 'after-unload', render: () => ({ kind: 'editor-control' }) }),
+      opened.value.notifications!.publish({ id: 'after-unload', view }),
+    ]
+    for (const result of rejected) expect(result).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'plugin consumer is disposed' })
+
+    const lists = [opened.value.commands!.list(), opened.value.status!.list(), opened.value.dock!.list(), opened.value.panes!.list(), opened.value.editorExtensions!.list(), opened.value.statusProviders!.list(), opened.value.editorProviders!.list()]
+    for (const list of lists) { expect(list).toEqual([]); expect(Object.isFrozen(list)).toBe(true) }
+    const snapshot = snapshotBluePluginHost(host)
+    expect([snapshot.commands, snapshot.status, snapshot.dock, snapshot.panes, snapshot.overlays, snapshot.editorExtensions, snapshot.statusProviders, snapshot.editorProviders].every(entries => entries.length === 0)).toBe(true)
+
+    let deadNotifications = 0
+    const afterSubscription = opened.value.notifications!.subscribe(() => { deadNotifications += 1 })
+    expect(afterSubscription.disposed).toBe(true)
+    expect(live.value.notifications!.publish({ id: 'live', view })).toEqual({ ok: true, value: undefined })
+    expect(deadNotifications).toBe(0)
+
+    const liveOverlay = live.value.overlays!.open({ id: 'live-after-dead', capturing: true, render: () => view }, { userGesture: gesture.value })
+    expect(liveOverlay).toMatchObject({ ok: true })
+    if (liveOverlay.ok) { liveOverlay.value.dispose(); liveOverlay.value.dispose() }
+    owner.dispose()
+  })
+
+  it('rolls back registrations when owner admission synchronously unloads the consumer', () => {
+    const scenarios: readonly {
+      capability: 'commands' | 'status' | 'panes' | 'overlays'
+      entries(snapshot: BluePluginHostSnapshot): readonly unknown[]
+      mutate(api: BluePluginApi): BlueResult<unknown>
+      list(api: BluePluginApi): readonly unknown[] | undefined
+    }[] = [
+      { capability: 'commands', entries: snapshot => snapshot.commands, mutate: api => api.commands!.register(command('reentrant')), list: api => api.commands!.list() },
+      { capability: 'status', entries: snapshot => snapshot.status, mutate: api => api.status!.register({ id: 'reentrant', render: () => null }), list: api => api.status!.list() },
+      { capability: 'panes', entries: snapshot => snapshot.panes, mutate: api => api.panes!.register({ id: 'reentrant', placement: 'left', render: () => null }), list: api => api.panes!.list() },
+      { capability: 'overlays', entries: snapshot => snapshot.overlays, mutate: api => api.overlays!.open({ id: 'reentrant', render: () => view }), list: () => undefined },
+    ]
+    for (const scenario of scenarios) {
+      const host = new BluePluginHostService(new Context())
+      const owner = attach(host, [scenario.capability])
+      const c = consumer()
+      const opened = host.open(c, manifest([scenario.capability]))
+      expect(opened.ok).toBe(true)
+      if (!opened.ok) continue
+      const observed = subscribeBluePluginHost(host, snapshot => { if (scenario.entries(snapshot).length > 0) c.dispose() })
+      expect(scenario.mutate(opened.value)).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+      expect(scenario.entries(snapshotBluePluginHost(host))).toEqual([])
+      const list = scenario.list(opened.value)
+      if (list !== undefined) { expect(list).toEqual([]); expect(Object.isFrozen(list)).toBe(true) }
+      observed.dispose()
+      owner.dispose()
+    }
+  })
+
+  it('prioritizes consumer unload when a synchronous admission observer also rejects', () => {
+    const host = new BluePluginHostService(new Context())
+    const owner = attach(host, ['commands'])
+    const c = consumer()
+    const opened = host.open(c, manifest(['commands']))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    const observed = subscribeBluePluginHost(host, snapshot => {
+      if (snapshot.commands.length > 0) { c.dispose(); throw new Error('owner rejected after unload') }
+    })
+    expect(opened.value.commands!.register(command('combined-rejection'))).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+    expect(snapshotBluePluginHost(host).commands).toEqual([])
+    observed.dispose()
+    owner.dispose()
+  })
+
   it('fans notifications to all consumers and removes listeners on dispose', () => {
     const host = new BluePluginHostService(new Context())
     attach(host, ['notifications'])
@@ -150,7 +255,31 @@ describe('BluePluginHostService', () => {
     first.dispose()
     second.dispose()
     expect(subscription.disposed).toBe(true)
-    expect(secondApi.value.notifications!.publish({ id: '', view })).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
+    expect(secondApi.value.notifications!.publish({ id: '', view })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+  })
+
+  it('rolls back a notification listener when its effect registration throws', () => {
+    const host = new BluePluginHostService(new Context())
+    attach(host, ['notifications'])
+    const cleanups: (() => void)[] = []
+    let effects = 0
+    const rejectingConsumer = {
+      effect(callback: () => void | (() => void)): void {
+        effects += 1
+        if (effects > 1) throw new Error('effect registration rejected')
+        const cleanup = callback()
+        if (typeof cleanup === 'function') cleanups.push(cleanup)
+      },
+    }
+    const opened = host.open(rejectingConsumer, manifest(['notifications']))
+    const publisher = host.open(consumer(), { ...manifest(['notifications']), id: '@acme/publisher' })
+    expect(opened.ok && publisher.ok).toBe(true)
+    if (!opened.ok || !publisher.ok) return
+    let received = 0
+    expect(() => opened.value.notifications!.subscribe(() => { received += 1 })).toThrow('effect registration rejected')
+    expect(publisher.value.notifications!.publish({ id: 'notice', view })).toEqual({ ok: true, value: undefined })
+    expect(received).toBe(0)
+    for (const cleanup of cleanups) cleanup()
   })
 
   it('aggregates contributions globally, sorts them, and rejects cross-plugin duplicates', () => {
@@ -264,7 +393,9 @@ describe('BluePluginHostService', () => {
     expect(api.commands!.list()).toEqual([])
     expect(api.status!.list()).toEqual([])
     expect(api.dock!.list()).toEqual([])
-    expect(api.notifications!.publish({ id: 'after-dispose', view })).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
+    expect(api.commands!.register(command('after-dispose'))).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+    expect(api.notifications!.publish({ id: 'after-dispose', view })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+    expect(api.notifications!.subscribe(() => received.push(view)).disposed).toBe(true)
     expect(received).toEqual([])
     expect(() => snapshotBluePluginHost(host)).toThrow('requires the active host service itself')
     expect(host.open(consumer(), manifest([]))).toEqual({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message: 'Blue plugin host is not active' })
