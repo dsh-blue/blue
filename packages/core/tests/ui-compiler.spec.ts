@@ -3,7 +3,12 @@ import { CURSOR_MARKER, HStack, ScrollView, type Component } from '@earendil-wor
 import { renderLayoutFrame, type LayoutBox, type LayoutFrame } from '@earendil-works/pi-tui/dist/layout.js'
 import { describe, expect, it, vi } from 'vitest'
 import { ui } from '../../ui/src/index.ts'
-import { compileBlueUiNode, type BlueUiCompilerOptions } from '../src/ui-compiler.ts'
+import {
+  compileBlueStatusNode,
+  compileBlueUiNode,
+  type BlueStatusCompilerOptions,
+  type BlueUiCompilerOptions,
+} from '../src/ui-compiler.ts'
 import type { BlueComponents, BlueSemanticColors } from '../src/types.ts'
 import { sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '../src/width.ts'
 import { ADVERSARIAL, expectLinesFit, SCAN_WIDTHS } from './width-scan.ts'
@@ -35,6 +40,23 @@ function fixture(overrides: Partial<BlueUiCompilerOptions> = {}): { options: Blu
 
 function compiled(value: unknown, options: BlueUiCompilerOptions) {
   const result = compileBlueUiNode(value, options)
+  expect(result.ok).toBe(true)
+  if (!result.ok) throw new Error(result.message)
+  return result.value
+}
+
+function statusOptions(overrides: Partial<BlueStatusCompilerOptions> = {}): BlueStatusCompilerOptions {
+  return {
+    components,
+    colors,
+    getViewport: () => ({ columns: 80, rows: 20 }),
+    screenMode: 'alternate',
+    ...overrides,
+  }
+}
+
+function compiledStatus(value: unknown, options: BlueStatusCompilerOptions = statusOptions()) {
+  const result = compileBlueStatusNode(value, options)
   expect(result.ok).toBe(true)
   if (!result.ok) throw new Error(result.message)
   return result.value
@@ -670,5 +692,80 @@ describe('compileBlueUiNode', () => {
       return Reflect.get(target, key, receiver)
     } })
     expect(compileBlueUiNode(ui.text('x'), options)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message: 'Blue UI compilation failed safely' })
+  })
+})
+
+describe('compileBlueStatusNode', () => {
+  it('uses the narrowed validator and exposes no focus, input, or event surface', () => {
+    const invalid = compileBlueStatusNode(ui.actions({ id: 'bad', items: [] }), statusOptions({ maxRows: 2 }))
+    expect(invalid).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
+    if (invalid.ok) throw new Error('expected failure')
+    expect(invalid.errorComponent.renderStatus(8).rows.length).toBeLessThanOrEqual(2)
+    expect(invalid.errorComponent.render(8).length).toBeLessThanOrEqual(2)
+
+    const status = compiledStatus(ui.text('ready'))
+    expect(status.node).toEqual({ kind: 'text', content: 'ready' })
+    expect(status.component.render(20)).toEqual(['ready'])
+    expect('focused' in status.component).toBe(false)
+    expect('handleInput' in status.component).toBe(false)
+    status.component.invalidate()
+  })
+
+  it('keeps compact row stacks spatial in main mode', () => {
+    const status = compiledStatus(ui.stack.row([
+      ui.child(ui.text('left'), { basis: 4, grow: 0, shrink: 0 }),
+      ui.child(ui.text('right'), { basis: 5, grow: 0, shrink: 0 }),
+    ], { gap: 1 }), statusOptions({ screenMode: 'main' }))
+    const rows = status.component.render(20)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toContain('left')
+    expect(rows[0]).toContain('right')
+  })
+
+  it('bounds status height and reports row and column overflow', () => {
+    const status = compiledStatus(ui.stack.column([
+      ui.text('first'),
+      ui.text('second'),
+      ui.text('third'),
+    ]), statusOptions({ maxRows: 2 }))
+    expect(status.component.renderStatus(20)).toEqual({ rows: ['first', 'second'], overflowed: true })
+    expect(status.component.render(20)).toEqual(['first', 'second'])
+
+    const narrow = compiledStatus(ui.richText([{ text: 'abcdefghij' }]), statusOptions({ maxRows: 1 }))
+    const rendered = narrow.component.renderStatus(4)
+    expect(rendered.rows).toHaveLength(1)
+    expect(rendered.overflowed).toBe(true)
+    expectLinesFit('status overflow', rendered.rows, 4)
+
+    const clamped = compiledStatus(ui.stack.column([ui.text('one'), ui.text('two')]), statusOptions({ maxRows: 99 as never }))
+    expect(clamped.component.renderStatus(20)).toEqual({ rows: ['one'], overflowed: true })
+  })
+
+  it('contains validation, setup, and render failures in the status budget', () => {
+    const invalid = compileBlueStatusNode({ kind: 'unknown' }, statusOptions({ maxRows: 1 }))
+    if (invalid.ok) throw new Error('expected failure')
+    const rejected = invalid.errorComponent.renderStatus(3)
+    expect(rejected.rows.length).toBeLessThanOrEqual(1)
+    expectLinesFit('status validation failure', rejected.rows, 3)
+    invalid.errorComponent.invalidate()
+
+    const throwingComponents = { ...components, wrapText: () => { throw new Error('status exploded') } } as BlueComponents
+    const rendered = compiledStatus(ui.richText([{ text: 'safe' }]), statusOptions({ components: throwingComponents, maxRows: 2 })).component.renderStatus(12)
+    expect(rendered.rows.join('')).toContain('status')
+    expect(rendered.rows.length).toBeLessThanOrEqual(2)
+
+    const broken = compiledStatus(ui.text('safe'), statusOptions({ maxRows: 2 })).component as unknown as {
+      surface: { root: { render(width: number): string[] } }
+      renderStatus(width: number): { rows: string[], overflowed: boolean }
+    }
+    broken.surface.root.render = () => { throw new Error('status root exploded') }
+    expect(broken.renderStatus(12).rows.join('')).toContain('status')
+
+    const base = statusOptions()
+    const options = new Proxy(base, { get: (target, key, receiver) => {
+      if (key === 'getViewport') throw new Error('setup')
+      return Reflect.get(target, key, receiver)
+    } })
+    expect(compileBlueStatusNode(ui.text('x'), options)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message: 'Blue status compilation failed safely' })
   })
 })
