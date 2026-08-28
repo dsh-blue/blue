@@ -57,20 +57,25 @@ Fixture 与实现按 capability 同步增加；“fixture 阶段”是关闭跨�
 
 ### 实施
 
-1. 将 #77 rebase/merge 本规范，按最新 head 重跑矩阵。
-2. 保留 canonical UI、builders/compiler、panes/overlays、status/status provider 和 editor extension runtime。
-3. 将 API/host version 改为 `1.0.0-beta.1`，删除“当前已经 Stable 1.0”的 README/website 表述。
+截至审计 head `c9e1600`，#77 已完成可保留的 implementation baseline：canonical UI/compiler、panes/overlays、status/status provider、editor extension/provider、split session facade/app owner、consumer lifetime fencing、legacy dock/frontend renderer 删除、六个 runnable examples 与 user kit，以及 checkpoint 化的 current/previous Harness packed 证据。当前 CI 机械复跑 examples，W6-4 在 final head 手工补跑选定 package fixtures；status/editor provider 与 editor extensions 仍须 final-head 重跑。这些都是后续收敛的 seed，不是 Stable v1 结论。
+
+1. 将 #77 rebase/merge 本规范，按最新 head 重跑矩阵并更新 PR body 的 scope、数字和剩余门禁。
+2. 保留上述成熟 runtime；权限和命名收敛不得退回旧 renderer、dock 或未隔离 session facade。
+3. 将 API/host version 改为 `1.0.0-beta.1`，删除“当前已经 Stable 1.0”的 README/website/release-note 表述。
 4. 从 plugin-facing root 移除 owner attach、aggregate snapshot/observe、gesture mint 和强制 close。
 5. 由 bundle composition 创建 canonical owner authority/lease并传给官方 owners；public sibling 即使访问 Cordis `symbols.original` 也不能获得 authority。
-6. 从 Beta public vocabulary 移除 `session.act` 和 Stable `editor.provider`；`session.read` 在真实 owner 前只作为目标文档项，不伪装可协商。
-7. `editor.extensions` 保留实现但标记 Experimental；记录 runtime passive subset 比静态 `BlueUiNode` 更窄的待修项。
+6. 从 Beta public vocabulary 移除 generic `session.act`，并隐藏或 authority-gate当前可直接 inject 的 raw session/projection reader与 requester；保留 negotiated readonly `session.read` seed但明确其 resource/epoch 尚待 v1 收敛。
+7. 修正 editor extension static/runtime node 集合，并把 provider限定为 host-owned editor engine 外层 shell。R1 的 flat manifest尚不能表达 optional，因此两者先退出 public Beta manifest、仅保留 bundle-internal/reference runtime；R2/R3 negotiated optional plane落地后再以 Experimental 公开，不能只改稳定性标签。
+8. 将 `notifications` 拆为 public publish 与 authority-protected owner observe；普通 consumer 不得订阅全局通知。
 
 ### 退出门
 
 - hostile sibling fixture 无法 self-attach、读取 aggregate、observe 全局通知、mint gesture 或关闭别人的 overlay。
-- #77 已有 unit、compile、packed、width evidence 全绿；editor fixture 再穿过真实 input/completion/submit UI。
-- 专用 worktree profile 完成 default、120/80/40 列、provider/theme/session swap 和 editor extension dogfood。
+- #77 已有 unit、compile、packed、width 和 `smoke:happy` evidence 继续全绿；权限修改后的 final head重跑相关双 Harness 线 fixture。
+- `smoke:pty` 与专用 worktree profile 完成 default、120/80/40 列、pane/overlay、status/editor provider、theme/session swap 和 editor input/completion/submit dogfood。
 - 用户明确 live-test 验收后才合并；合并不等于 API v1 发布。
+
+仓内 examples 只算 Beta/reference packed-distribution 基线：它们仍使用 flat `capabilities[]`、内部文件 `entry`，没有 `form`、required/optional/resources，也不是独立生态消费者，不能提前关闭 R2/R6 或 Stable capability 门禁。
 
 ## 4. R2：JSON Schema 与 manifest toolchain
 
@@ -137,7 +142,7 @@ Experimental editor types从明确的 experimental subpath/namespace 进入，�
 ### 现有 surface 收敛
 
 - `notifications` 拆成 public publish 与 owner-only observe。
-- 所有内置 dock consumer 迁到 bottom pane，物理删除 dock compatibility。
+- #77 已将所有内置 dock consumer 迁到 bottom pane并物理删除 dock runtime/type/aggregate/bridge；本阶段只保留旧 manifest 的可操作迁移诊断和 `rg`/schema drift gate，禁止 compatibility 回流。
 - 删除 `BluePluginDefinition.apply(api: unknown)`、inline legacy manifest 和 public owner aggregate。
 
 ### 退出门
@@ -162,10 +167,10 @@ Experimental editor types从明确的 experimental subpath/namespace 进入，�
 
 ### R4-B：Readonly session/projection
 
-1. 从 `BlueSessionReader` 移除 `request()`，建立纯 readonly `session.read` facet。
-2. snapshot 按 identity/cwd/status/mode/model resource 投影并带 `sessionEpoch/revision`。
+1. 保留 #77 已拆出的 `session.read` readonly facade：public consumer 只有 `current/subscribe`。followup/steer/interrupt dispatcher MAY 继续作为 app owner内部实现，但当前通用 `BlueSessionRequester` Cordis service必须删除或改为 composition authority-gated，普通 sibling不能 inject；它 MUST NOT 重新进入 reader、公开 service或 public capability vocabulary。
+2. snapshot 按 identity/cwd/status/mode/model grant 投影并带显式 `sessionEpoch/revision`；订阅 replay、stale 判断和 action reference都以 epoch为界。
 3. 在 app/harness-adapter 建 `projections.read` allowlist gateway；返回一致 cut、`asOfSeq`、有界 immutable value。
-4. session switch、same-id new epoch、key unload、late callback 和 duplicate/older sequence 都有确定结果。
+4. session switch、same-id new epoch、resource denial、key unload、late callback 和 duplicate/older sequence 都有确定结果。
 
 ### R4-C：Conversation extension points
 
@@ -201,13 +206,15 @@ Rewind、Message Edit 和无 domain mutation 的 Bookmark/Tag reference fixture 
 
 Composer History 的 v1 fixture 只验证显式 history command/overlay 与 draft read/write，不承诺原 Web 版的 ArrowUp edge recall 或 Ctrl+R。精确按键体验依赖尚未泛化的 contextual editor-key seam，列入 Deferred 独立设计；不得把 raw key handler 塞进上述五个 capability，也不得因此阻断 `1.0.0`。
 
-`editor.provider` 不在本阶段实现。它必须另开设计提案，并在第二个真实 provider、完整 capture/restore 和真人 dogfood 后才可考虑进入 1.x。
+#77 已实现的 `editor.provider` owner、persisted user selection、actual-width dry render、同 editor/focus shell swap、LKG/breaker/default fallback 和 stale/unload fencing作为本阶段基础保留，不重新实现。本阶段把它迁入明确的 Experimental schema/catalog/subpath，并冻结为 host-owned editor engine 外层的 shell provider：candidate 必须恰好贡献一个 `editor-control`，不得获得 draft/cursor/history/undo/IME、raw key 或 editing-engine ownership。
+
+它发布为 Experimental 前必须进入 optional schema/catalog/subpath，冻结 activate/dispose 或“纯无状态 shell无需 hook”的 public lifecycle语义，完成 final-head current/previous Harness reference packed fixture，并在统一 profile 通过 draft/history/mode/attachments/focus/IME、failure rollback、session swap 和 unload/reload 的真人验收。固有 snapshot 不再隐式提供 mode；需要 mode 的插件另申请 `session.read` grant。它不进入 Stable catalog、不计作三种 form 的 Stable 外部证据；独立生态 provider和其余 Stable 门禁留给未来另开的 1.x 晋升提案。
 
 ## 8. R6：Conformance 与生态 fixture
 
 ### Synthetic conformance kit
 
-扩展 `script/blue-plugin-fixture.mjs` 或拆出 versioned kit，使每个测试包从 `npm pack` tarball 在 throwaway npm project 安装，只 import public exports。报告必须保持：
+#77 已提供可复用的 `script/blue-plugin-fixture.mjs`、`script/blue-examples-fixture.mjs`、throwaway packed install、peer closure 和 current/previous Harness lanes。R6 在该基础上扩展或拆出 versioned kit，使每个测试包从 `npm pack` tarball 安装，只 import public exports。报告必须保持：
 
 ```text
 declared == executed
@@ -217,6 +224,8 @@ fixtureCleaned == true
 ```
 
 统一的是场景词表和 capability -> required scenarios 映射，不要求无关 fixture 假跑不适用场景。词表包含 manifest negotiation、resource denial、projection replay/resume、action abort/stale、provider swap/fallback、unload/reload、late callback、20/40/80/120 width、bundle composition、当前/上一 Harness exact line；每个 fixture 的全部 declared/applicable 场景必须执行，`skipped` 仍为空。
+
+#77 的六个 executable examples 继续作为 Beta/reference distribution corpus，但它们仍是 flat `capabilities[]`，没有 `form`、required/optional/resources negotiation，也不是独立生态 package。R6 必须将其迁到目标 schema，并另用真实外部 package 关闭三种 form 与独立消费者门禁；仓内 `blue-user-kit` 组件库和 `blue-ecosystem` composition bundle都不构成第四种 form。
 
 ### 三形态候选与证据等级
 
@@ -304,7 +313,7 @@ Skills 在 API 和 fixture 稳定后更新，避免教会开发者一套过期�
 9. 将 API/host version 从 `1.0.0-beta.1` 改为 `1.0.0`，发布 schema stable URL、packages 和 migration notes；
 10. 从 registry 新建干净 profile 做 install smoke，记录 exact artifacts/Harness line。
 
-任何 skipped fixture、未实现 owner、只有 Web route 的业务 API、缺失上一 Harness line、缺失人工验收都阻止 `1.0.0`。Blue 产品 release 仍可保持 `0.x`，不需要为了协议 v1 人为提升产品 major。
+任何 skipped fixture、任一已声明 Stable capability 缺少真实 owner、只有 Web route 的业务 API、缺失上一 Harness line、缺失人工验收都阻止 `1.0.0`。Blue 产品 release 仍可保持 `0.x`，不需要为了协议 v1 人为提升产品 major。
 
 ## 11. 工作方式
 

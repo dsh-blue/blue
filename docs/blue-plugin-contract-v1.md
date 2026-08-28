@@ -48,13 +48,15 @@ Domain、Interaction、Renderer、Composition 是代码职责；`integrated`、`
 
 `form` MUST 写入 manifest 并参与 validator 与 packed fixture，但它本身不授予任何 capability。一个 npm 包只有一个 manifest/form；一个 monorepo MAY 通过多个发布包提供多种 form。若 sibling Web entry 含 domain/runtime 逻辑，pure-ui 判定只看 Blue entry 可达依赖仍不够，fixture 还必须证明该 entry 加载时不启动或依赖这些逻辑。
 
+只有可执行并调用 Blue plugin protocol 的 Cordis entry 才声明 `form`。不调用 host 的 renderer-neutral 组件库，以及只安装/排序其他 entry 的 composition bundle，都不是第四种插件形态，也不声明 `pure-ui` 或任何其他 `form`；前者按普通库发布，后者只遵守 Loader composition 契约。
+
 每个 Cordis entry 继续导出稳定 `name`、可选 `inject` 和 `apply(ctx)`。业务 service 依赖只在 `inject` 和 package peer/dependency 中声明，MUST NOT 在 Blue manifest 中复制第二份服务依赖表。
 
 ## 3. 身份、分发与 manifest
 
 ### 3.1 单一身份链
 
-每个 Blue v1 分发包 MUST 在 `package.json` 中声明：
+每个可执行 Blue v1 plugin entry 的分发包 MUST 在 `package.json` 中声明：
 
 ```json
 {
@@ -86,7 +88,7 @@ JSON Schema Draft 2020-12 是 manifest shape 的唯一机器真相；Schema 加�
   "entry": "./blue",
   "api": "^1.0.0",
   "compatibility": {
-    "blue": ">=0.1.0-rc.10 <1",
+    "blue": ">=0.1.1-rc.1 <0.2.0",
     "harness": ">=0.1.1-rc.2 <0.2.0",
     "node": "^22.19.0 || >=24.0.0"
   },
@@ -208,7 +210,7 @@ Blue MUST NOT 定义 `rewind.apply`、`message.edit` 等业务 action。相同�
 
 ### 6.1 Editor Experimental
 
-PR #77 证明 editor extension runtime 可以拥有 revision fencing、completion abort、submit transform 和 unload cleanup，但一个 `editor.extensions` 同时授予被动绘制、读取、写 draft 和改写提交的权力过宽。v1 将其拆为：
+PR #77 证明 editor extension runtime 可以拥有 revision fencing、completion abort、submit transform 和 unload cleanup。当前 `editor.extensions` 把被动绘制/action、completion 和提交改写合在一个 grant 中，但它并不提供 draft read/write。v1 将现有权力拆开，并只通过另行授权的新 capability 提供 draft read/write：
 
 | Capability | 权力 |
 | --- | --- |
@@ -220,11 +222,22 @@ PR #77 证明 editor extension runtime 可以拥有 revision fencing、completio
 
 以上在 v1 schema 中标为 Experimental，只能 optional。Composer History 是 draft read/write 压力 fixture；`@`/`#` completion 与 submit transformer 分别有独立 fixture，不能由一个“大而全”样例替代。公开 TypeScript 类型和 runtime admission MUST 接受同一 node 集合；PR #77 中 `before/after: BlueUiNode` 比 runtime passive subset 更宽的状态不能带入稳定声明。
 
-### 6.2 Deferred
+### 6.2 Editor Provider Experimental
+
+`editor.provider` 在 v1 中 MAY 作为 Experimental optional capability 存在，但只表示 **host-owned editing engine 外层的 renderer-neutral shell provider**，不是编辑器引擎或 renderer 替换权：
+
+- candidate 安装后保持 inert；只有持久化的用户选择可以激活，priority 和安装顺序不得接管 editor；
+- shell 必须恰好包含一个可见 `editor-control`，由 Blue 注入同一个 editor engine；
+- provider 不读取或拥有 draft、cursor、history、undo、IME、paste、attachment storage、completion pipeline 或 submit transaction；固有 snapshot 只含 editor tree 自己拥有的 bounded busy、attachment metadata 和 extension presentation facts；若要 session mode，插件 MUST 另行申请 `session.read` 的 `mode` resource，不能由 provider snapshot 隐式获得；
+- owner 必须在实际宽度 validation/dry render 后原子替换 shell，并实现 generation fencing、abort、same-session LKG、breaker、session/unload default fallback 和 focus restore；
+- provider Fiber 只拥有自身 callback、cache 和异步任务；candidate 卸载不能留下 input、focus、timer 或 renderer object。
+
+PR #77 已提供 persisted selection、actual-width dry render、atomic shell swap、fallback/fencing 的 reference seed和仓内 packed candidate，因此它不再属于“尚无 owner”的 Deferred 项；但当前 public provider仍只有 `render/onEvent`，没有冻结 activate/dispose 或“纯无状态 shell无需 hook”的生命周期语义，不能声称完整事务已经定型。它只有在 Experimental schema/catalog/subpath 隔离、public lifecycle语义、reference packed lifecycle/双 Harness 线、最终 profile dogfood和人工验收完成后才 MAY 作为 Experimental 发布；在独立生态 provider 等 Stable 门禁完成前，它 MUST NOT 标记 Stable，也不计入 Stable v1 capability 的外部消费者门禁。
+
+### 6.3 Deferred
 
 以下名字不进入 v1 public manifest：
 
-- `editor.provider`：等待 capture -> abort -> dispose -> activate -> restore、第二个真实 provider 和完整 draft/history/mode/attachments/focus/IME fixture。
 - `editor.keys` / contextual key interception：等待按 editor state、cursor edge 和 IME transaction 泛化；不得为 Composer History 单独开放 raw key handler。
 - tool presentation：现阶段由 Blue 官方 renderer 和 Harness tool presenter seam 处理。
 - conversation presentation policy：等待多个独立 renderer consumer。
@@ -262,7 +275,9 @@ capture -> abort -> dispose -> activate -> restore
 
 candidate 在选择前 inert。激活失败保留旧 provider 或回退 default；运行失败触发 generation-scoped breaker。安装顺序、priority 或 provider 自己的请求永远不能改变用户选择。
 
-公共 `bluePluginHost` 只能暴露版本、协商和已授予 API。owner attach、aggregate snapshot、notification observe、gesture mint 和强制 close 等 control-plane 操作 MUST 需要 bundle composition 创建的不可伪造 authority/lease；它们不得从 plugin-facing root 获得。Cordis `symbols.original` 不能成为权限升级路径。
+对 `editor.provider`，上述 capture/restore 由 host 在内部保存并恢复同一个 editor engine、draft/history 和 focus；dispose/activate 只作用于 provider shell 自身资源。插件既不会收到 editor engine lifecycle handle，也不能借 provider swap替换或销毁 engine。
+
+公共 `bluePluginHost` 只能暴露版本、协商和已授予 API。owner attach、aggregate snapshot、notification observe、gesture mint 和强制 close 等 control-plane 操作 MUST 需要 bundle composition 创建的不可伪造 authority/lease；它们不得从 plugin-facing root 获得。承载完整 session/projection/action 真相的 raw owner source也不得作为普通 sibling 可 inject 的 Cordis service；第三方只能取得按 negotiated grant裁剪的 facade。Cordis `symbols.original` 或直接 service inject都不能成为权限升级路径。
 
 ## 9. 错误、限制与 fallback
 
