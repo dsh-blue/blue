@@ -10,7 +10,7 @@ A plugin declares `{ id, api, capabilities }`, which `validateBlueManifest` chec
 
 The target capability vocabulary is `commands`, `notifications`, `status`, `panes`, `overlays`, `editor.extensions`, `session.read`, `session.act`, `status.provider`, and `editor.provider`. Removed `dock`, `panels`, `editor`, and `tools` declarations return `BLUE_LEGACY_CAPABILITY` with a concrete migration. `tools` has no replacement because public tool presentation has no registry or owner.
 
-`bluePluginHost.open(ctx, manifest)` accepts the plugin's real Cordis `Context`, validates the manifest, then returns a capability-scoped `BluePluginApi` exposing only the requested surfaces. Every registration is bound to that Cordis effect: unloading the plugin disposes each contribution. Duplicate contribution ids are rejected across consumers, and ids in Blue's owner namespace (`blue.`, `blue:`, `blue-`, `@dsh-blue/`) are reserved.
+`bluePluginHost.open(ctx, manifest)` accepts the plugin's real Cordis `Context`, validates the manifest, then returns a capability-scoped `BluePluginApi` exposing only the requested surfaces. Every registration is bound to that Cordis effect, whose callback returns its cleanup: unloading the plugin disposes each contribution and permanently fences retained API references. Host service teardown applies the same fence before clearing state. Later mutations return `BLUE_ACTION_REJECTED`; retained lists stay empty and notification subscriptions return an already-disposed handle. Duplicate contribution ids are rejected across consumers, and ids in Blue's owner namespace (`blue.`, `blue:`, `blue-`, `@dsh-blue/`) are reserved.
 
 ## UI contract
 

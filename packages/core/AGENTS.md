@@ -49,7 +49,11 @@ while theme/components are pending, or during a nested bridge reload gap. The
 nested bridge replays buffered contributions after mount and keeps its own
 runtime-scoped attachment for renderer ownership; core unload removes the
 rendered surfaces but intentionally leaves host-buffered registrations ready
-for a replacement renderer.
+for a replacement renderer. When the API host unloads, it fences dependent
+consumer facades before draining registries, independent of Cordis disposal
+order; writes through a retained facade therefore return `BLUE_ACTION_REJECTED`,
+not the `BLUE_CAPABILITY_ABSENT` reserved for a live consumer crossing a
+renderer-owner gap.
 
 Public overlay titles are canonical UI, not terminal metadata: the bridge wraps
 the plugin node (including bounded null/error fallbacks) in a `surface` with

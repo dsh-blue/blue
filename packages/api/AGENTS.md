@@ -64,7 +64,16 @@ plain or read-only fallback and must not treat it as a thrown plugin failure.
 `BluePluginHostService` validates each manifest before opening a capability-
 scoped API. Registries and notification subscriptions are bound to the
 consumer's Cordis effect: consumer unload disposes every returned registration,
-while service unload also clears all remaining host-owned state.
+while service unload fences every open consumer before clearing all remaining
+host-owned state. Consumer or service unload permanently fences a retained
+facade before capability-owner checks:
+later writes return `BLUE_ACTION_REJECTED`, notification subscriptions return
+an already-disposed inert registration, lists remain frozen and empty, and a
+capturing-overlay attempt cannot consume a retained user gesture. Admission
+also rechecks the fence after synchronous owner notification so reentrant
+consumer cleanup cannot leave a contribution behind. A live notification
+subscription rolls its listener and handle back before propagating a rejected
+Cordis effect registration.
 The public consumer shape requires an effect callback that returns its disposer,
 matching a real Cordis `Context` without downstream casts; `open()` always
 installs exactly that cleanup.
