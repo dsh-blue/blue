@@ -4,8 +4,10 @@ import { renderLayoutFrame, type LayoutBox, type LayoutFrame } from '@earendil-w
 import { describe, expect, it, vi } from 'vitest'
 import { ui } from '../../ui/src/index.ts'
 import {
+  compileBlueEditorShellNode,
   compileBlueStatusNode,
   compileBlueUiNode,
+  type BlueEditorShellCompilerOptions,
   type BlueStatusCompilerOptions,
   type BlueUiCompilerOptions,
 } from '../src/ui-compiler.ts'
@@ -25,6 +27,8 @@ function createTestEditor(): BlueEditor {
     onChange: undefined,
     onKey: undefined,
     disableSubmit: false,
+    setSubmitBarrier: () => {},
+    submit: () => { if (!editor.disableSubmit) editor.onSubmit?.(value) },
     getText: () => value,
     getExpandedText: () => value,
     setText: (text: string) => { value = text; cursor = text.length },
@@ -126,6 +130,14 @@ function compiledStatus(value: unknown, options: BlueStatusCompilerOptions = sta
   expect(result.ok).toBe(true)
   if (!result.ok) throw new Error(result.message)
   return result.value
+}
+
+function compiledEditorShell(value: unknown, editor: BlueEditor, overrides: Partial<BlueEditorShellCompilerOptions> = {}) {
+  const base = fixture(overrides)
+  const result = compileBlueEditorShellNode(value, { ...base.options, editor, ...overrides })
+  expect(result.ok).toBe(true)
+  if (!result.ok) throw new Error(result.message)
+  return { ...base, result: result.value }
 }
 
 function layout(component: Component, columns: number, rows: number): LayoutFrame {
@@ -903,6 +915,88 @@ describe('compileBlueUiNode', () => {
       return Reflect.get(target, key, receiver)
     } })
     expect(compileBlueUiNode(ui.text('x'), options)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message: 'Blue UI compilation failed safely' })
+  })
+})
+
+describe('compileBlueEditorShellNode', () => {
+  it('reuses the injected editor through focus, input, layout, and direct rendering', () => {
+    const editor = createTestEditor()
+    editor.setText('draft')
+    const shell = {
+      kind: 'stack',
+      direction: 'column',
+      children: [
+        { node: ui.text('before') },
+        { node: { kind: 'editor-control' } },
+        { node: ui.actions({ id: 'actions', items: [{ id: 'apply', label: 'Apply' }] }) },
+      ],
+    }
+    const { events, result } = compiledEditorShell(shell, editor)
+    expect(Object.isFrozen(result.node)).toBe(true)
+    expect(result.focusTarget).toBe(result.component)
+    result.focusTarget.focused = true
+
+    for (const width of [40, 2, 1]) {
+      const direct = result.component.render(width)
+      expectLinesFit('editor shell direct', direct.map(row => row.replaceAll(CURSOR_MARKER, '')), width)
+      const frame = layout(result.component as Component, width, 8).lines
+      expectLinesFit('editor shell layout', frame.map(row => row.replaceAll(CURSOR_MARKER, '')), width)
+    }
+    expect(editor.focused).toBe(true)
+    result.focusTarget.handleInput?.('!')
+    expect(editor.getText()).toBe('draft!')
+
+    result.focusTarget.handleInput?.('\t')
+    result.component.render(40)
+    expect(editor.focused).toBe(false)
+    result.focusTarget.handleInput?.('\r')
+    expect(events).toEqual([{ kind: 'activate', controlId: 'apply' }])
+
+    result.focusTarget.handleInput?.('\x1b[Z')
+    result.component.render(40)
+    expect(editor.focused).toBe(true)
+    result.focusTarget.focused = false
+    expect(editor.focused).toBe(false)
+    result.component.invalidate()
+  })
+
+  it('compiles a root slot and contains validation, setup, and editor render failures', () => {
+    const editor = createTestEditor()
+    editor.setText('same object')
+    const root = compiledEditorShell({ kind: 'editor-control' }, editor).result
+    root.focusTarget.focused = true
+    expect(root.component.render(20).join('')).toContain('same object')
+
+    const invalid = compileBlueEditorShellNode(ui.text('missing'), { ...fixture().options, editor })
+    expect(invalid).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
+    if (invalid.ok) throw new Error('expected failure')
+    for (const width of [1, 2, 10]) expectLinesFit('editor shell rejection', invalid.errorComponent.render(width), width)
+
+    expect(compileBlueEditorShellNode({ kind: 'editor-control' }, {
+      ...fixture().options,
+      editor: undefined as never,
+    })).toMatchObject({
+      ok: false,
+      code: 'BLUE_INVALID_CONTRIBUTION',
+      message: 'Blue editor shell compilation failed safely',
+    })
+
+    const broken = createTestEditor()
+    broken.render = () => { throw new Error('editor exploded') }
+    const contained = compiledEditorShell({ kind: 'editor-control' }, broken).result.component.render(20)
+    expect(contained.join('')).toContain('editor exploded')
+    expectLinesFit('editor shell runtime failure', contained, 20)
+
+    const base = { ...fixture().options, editor }
+    const options = new Proxy(base, { get: (target, key, receiver) => {
+      if (key === 'getViewport') throw new Error('setup')
+      return Reflect.get(target, key, receiver)
+    } })
+    expect(compileBlueEditorShellNode({ kind: 'editor-control' }, options)).toMatchObject({
+      ok: false,
+      code: 'BLUE_INVALID_CONTRIBUTION',
+      message: 'Blue editor shell compilation failed safely',
+    })
   })
 })
 

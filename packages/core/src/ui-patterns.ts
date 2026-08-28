@@ -11,6 +11,7 @@ import type { BlueSemanticColors } from './types.ts'
 import { sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from './width.ts'
 
 type SurfaceNode = Extract<BlueUiNode, { readonly kind: 'surface' }>
+type SurfaceChromeNode = Pick<SurfaceNode, 'badges' | 'chrome' | 'subtitle' | 'title'>
 type TabsNode = Extract<BlueUiNode, { readonly kind: 'tabs' }>
 type ListNode = Extract<BlueUiNode, { readonly kind: 'list' }>
 type ActionsNode = Extract<BlueUiNode, { readonly kind: 'actions' }>
@@ -196,7 +197,7 @@ function compactTokens(tokens: readonly { readonly value: string, readonly focus
   return fit(`${kept.join(' ')}${hidden === 0 ? '' : ` +${String(hidden)}`}`, available)
 }
 
-export function renderSurfaceHead(node: SurfaceNode, width: number, colors: BlueSemanticColors): string[] {
+export function renderSurfaceHead(node: SurfaceChromeNode, width: number, colors: BlueSemanticColors): string[] {
   const available = safeWidth(width)
   const chrome = node.chrome ?? 'none'
   const title = node.title ?? ''
@@ -217,7 +218,7 @@ export function renderSurfaceHead(node: SurfaceNode, width: number, colors: Blue
   return rows
 }
 
-export function renderSurfaceTail(node: SurfaceNode, width: number, colors: BlueSemanticColors): string[] {
+export function renderSurfaceTail(node: SurfaceChromeNode, width: number, colors: BlueSemanticColors): string[] {
   const chrome = node.chrome ?? 'none'
   if (chrome === 'none' || chrome === 'lane') return []
   const available = safeWidth(width)

@@ -558,19 +558,130 @@ describe('BluePluginHostService', () => {
     if (!first.ok || !second.ok) return
     let invoked = 0
     const before = { kind: 'text' as const, content: 'before' }
-    const extension = first.value.editorExtensions!.register({ id: 'extension', before, diagnostics: [{ id: 'd', message: 'message' }], complete: () => { invoked += 1; return { ok: true, value: [] } }, transformSubmit: request => { invoked += 1; return { ok: true, value: request } } })
+    const diagnostics = [{ id: 'd', message: 'message' }]
+    const actions = [{ id: 'act', label: 'Act' }]
+    const onEvent = () => { invoked += 1; return { ok: true as const, value: undefined } }
+    const complete = () => { invoked += 1; return { ok: true as const, value: [] } }
+    const completeV2 = () => { invoked += 1; return { ok: true as const, value: [] } }
+    const transformSubmit = (request: { readonly text: string }) => { invoked += 1; return { ok: true as const, value: { text: request.text } } }
+    const extension = first.value.editorExtensions!.register({ id: 'extension', before, diagnostics, actions, onEvent, complete, completeV2, transformSubmit })
     const statusCandidate = first.value.statusProviders!.register({ id: 'status-provider', render: () => { invoked += 1; return { kind: 'text', content: 'status' } } })
     const editor: BlueEditorProvider = { id: 'editor-provider', render: () => { invoked += 1; return { kind: 'editor-control' } }, onEvent: () => { invoked += 1; return { ok: true, value: undefined } } }
     const editorCandidate = first.value.editorProviders!.register(editor)
     expect(extension.ok && statusCandidate.ok && editorCandidate.ok).toBe(true)
     expect(invoked).toBe(0)
     before.content = 'changed'
-    expect(first.value.editorExtensions!.list()[0]!.before).toEqual({ kind: 'text', content: 'before' })
+    diagnostics[0]!.message = 'changed'
+    actions[0]!.label = 'Changed'
+    const storedExtension = first.value.editorExtensions!.list()[0]!
+    expect(storedExtension.before).toEqual({ kind: 'text', content: 'before' })
+    expect(storedExtension.diagnostics).toEqual([{ id: 'd', message: 'message' }])
+    expect(storedExtension.actions).toEqual([{ id: 'act', label: 'Act' }])
+    expect(Object.isFrozen(storedExtension)).toBe(true)
+    expect(Object.isFrozen(storedExtension.before)).toBe(true)
+    expect(Object.isFrozen(storedExtension.diagnostics)).toBe(true)
+    expect(Object.isFrozen(storedExtension.diagnostics![0])).toBe(true)
+    expect(Object.isFrozen(storedExtension.actions)).toBe(true)
+    expect(Object.isFrozen(storedExtension.actions![0])).toBe(true)
+    expect(storedExtension.onEvent).toBe(onEvent)
+    expect(storedExtension.complete).toBe(complete)
+    expect(storedExtension.completeV2).toBe(completeV2)
+    expect(storedExtension.transformSubmit).toBe(transformSubmit)
     expect(snapshotBluePluginHost(host)).toMatchObject({ editorExtensions: [{ id: 'extension' }], statusProviders: [{ id: 'status-provider' }], editorProviders: [{ id: 'editor-provider' }] })
     expect(second.value.editorProviders!.register(editor)).toMatchObject({ ok: false, code: 'BLUE_DUPLICATE_ID' })
     expect(second.value.statusProviders!.register({ id: 'blue.status', render: () => ({ kind: 'text', content: '' }) })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
     expect(second.value.editorProviders!.register({ id: 'bad', render: 1 } as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
     expect(second.value.editorExtensions!.register({ id: 'bad-extension', diagnostics: {} as never })).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
+    expect(second.value.editorExtensions!.register({ id: 'bad-event', onEvent: 1 as never })).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
+    expect(second.value.editorExtensions!.register({ id: 'bad-complete-v2', completeV2: 1 as never })).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
+  })
+
+  it('admits only recursively passive editor extension nodes', () => {
+    const host = new BluePluginHostService(new Context())
+    attach(host, ['editor.extensions'])
+    const opened = host.open(consumer(), manifest(['editor.extensions']))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    const registry = opened.value.editorExtensions!
+    const leaves: readonly BlueView[] = [
+      { kind: 'text', content: 'text' },
+      { kind: 'fields', rows: [] },
+      { kind: 'code', code: 'code' },
+      { kind: 'diff', before: 'before', after: 'after' },
+      { kind: 'sections', sections: [{ body: { kind: 'text', content: 'body' } }] },
+    ]
+    for (const [index, node] of leaves.entries()) expect(registry.register({ id: `passive-view-${index}`, before: node })).toMatchObject({ ok: true })
+    for (const [index, node] of ([
+      { kind: 'rich-text', spans: [] },
+      { kind: 'progress', value: 1, max: 1 },
+      { kind: 'spacer' },
+      { kind: 'divider' },
+    ] as const).entries()) expect(registry.register({ id: `passive-node-${index}`, before: node })).toMatchObject({ ok: true })
+    expect(registry.register({ id: 'passive-stack', before: { kind: 'stack', direction: 'column', children: [{ node: { kind: 'text', content: 'child' } }] } })).toMatchObject({ ok: true })
+    expect(registry.register({ id: 'passive-surface', before: { kind: 'surface', child: { kind: 'text', content: 'child' }, footer: { kind: 'divider' } } })).toMatchObject({ ok: true })
+    expect(registry.register({ id: 'interactive-root', before: { kind: 'actions', id: 'action', items: [] } })).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message: 'editor extension before must be a passive UI node' })
+    expect(registry.register({ id: 'interactive-nested', after: { kind: 'stack', direction: 'column', children: [{ node: { kind: 'list', id: 'list', selectedIds: [], items: [] } }] } })).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message: 'editor extension after must be a passive UI node' })
+    for (const [index, node] of ([
+      { kind: 'stack' },
+      { kind: 'stack', children: [null] },
+      { kind: 'stack', children: [{}] },
+      { kind: 'surface' },
+      { kind: 'surface', child: { kind: 'text', content: '' }, footer: { kind: 'form' } },
+      { kind: 'sections' },
+      { kind: 'sections', sections: [null] },
+      { kind: 'sections', sections: [{}] },
+    ] as const).entries()) expect(registry.register({ id: `malformed-passive-${index}`, before: node as never })).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
+  })
+
+  it('fences editor extensions independently and grants their dispatch owner gestures', async () => {
+    const host = new BluePluginHostService(new Context())
+    const owner = attach(host, ['editor.extensions'])
+    const overlayOwner = attach(host, ['overlays'])
+    attach(host, ['commands', 'status', 'status.provider', 'editor.provider'])
+    const opened = host.open(consumer(), manifest(['editor.extensions', 'overlays', 'commands', 'status', 'status.provider', 'editor.provider']))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    const initial = snapshotBluePluginHost(host)
+    let consumedGesture: BlueUserGesture | undefined
+    await runBlueUserGesture(host, owner, gesture => {
+      consumedGesture = gesture
+      expect(opened.value.overlays!.open({ id: 'extension-action', capturing: true, render: () => view }, { userGesture: gesture })).toMatchObject({ ok: true })
+    })
+    expect(opened.value.overlays!.open({ id: 'extension-action-reuse', capturing: true, render: () => view }, { userGesture: consumedGesture })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+
+    const commandRegistration = opened.value.commands!.register(command('unrelated-command'))
+    const statusRegistration = opened.value.status!.register({ id: 'unrelated-status', render: () => ({ kind: 'text', content: 'status' }) })
+    const statusProviderRegistration = opened.value.statusProviders!.register({ id: 'unrelated-status-provider', render: () => ({ kind: 'text', content: 'provider' }) })
+    const editorProviderRegistration = opened.value.editorProviders!.register({ id: 'unrelated-editor-provider', render: () => ({ kind: 'editor-control' }) })
+    expect(commandRegistration.ok && statusRegistration.ok && statusProviderRegistration.ok && editorProviderRegistration.ok).toBe(true)
+    expect(snapshotBluePluginHost(host).editorExtensionsRevision).toBe(initial.editorExtensionsRevision)
+
+    const rejecting = subscribeBluePluginHost(host, snapshot => {
+      if (snapshot.editorExtensions.some(entry => entry.id === 'rejected-extension')) throw new Error('reject extension')
+    })
+    expect(opened.value.editorExtensions!.register({ id: 'rejected-extension' })).toMatchObject({ ok: false, code: 'BLUE_DUPLICATE_ID' })
+    rejecting.dispose()
+    const afterRollback = snapshotBluePluginHost(host)
+    expect(afterRollback.editorExtensions).toEqual([])
+    expect(afterRollback.editorExtensionsRevision).toBe((initial.editorExtensionsRevision ?? 0) + 2)
+
+    const extension = opened.value.editorExtensions!.register({ id: 'extension' })
+    expect(extension.ok).toBe(true)
+    expect(snapshotBluePluginHost(host).editorExtensionsRevision).toBe((afterRollback.editorExtensionsRevision ?? 0) + 1)
+    if (!extension.ok) return
+    expect(extension.value.refresh()).toMatchObject({ ok: true })
+    await Promise.resolve()
+    const refreshed = snapshotBluePluginHost(host)
+    expect(refreshed.editorExtensionsRevision).toBe((afterRollback.editorExtensionsRevision ?? 0) + 2)
+    extension.value.dispose()
+    expect(snapshotBluePluginHost(host).editorExtensionsRevision).toBe((refreshed.editorExtensionsRevision ?? 0) + 1)
+
+    const pendingGesture = createBlueUserGesture(host, owner)
+    expect(pendingGesture).toMatchObject({ ok: true })
+    owner.dispose()
+    expect(createBlueUserGesture(host, owner)).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+    if (pendingGesture.ok) expect(opened.value.overlays!.open({ id: 'extension-action-after-unload', capturing: true, render: () => view }, { userGesture: pendingGesture.value })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+    overlayOwner.dispose()
   })
 
   it('fences status entries and provider candidates independently', async () => {
@@ -682,7 +793,7 @@ describe('BluePluginHostService', () => {
     expect(opened.value.overlays!.open(new Proxy({}, { getOwnPropertyDescriptor: () => { throw new Error('overlay proxy') } }) as never)).toEqual({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message: 'overlay proxy' })
     expect(opened.value.notifications!.publish({ id: 'toned', tone: 'warning', view })).toEqual({ ok: true, value: undefined })
     expect(opened.value.notifications!.publish({ id: 'bad-tone', tone: 'loud' as never, view })).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
-    expect(opened.value.editorExtensions!.register({ id: 'full-extension', after: view, hint: 'hint', actions: [{ id: 'act', label: 'Act' }] })).toMatchObject({ ok: true })
+    expect(opened.value.editorExtensions!.register({ id: 'full-extension', after: view, hint: 'hint', actions: [{ id: 'act', label: 'Act' }], onEvent: () => ({ ok: true, value: undefined }) })).toMatchObject({ ok: true })
     expect(opened.value.editorExtensions!.register({ id: 'minimal-extension' })).toMatchObject({ ok: true })
     expect(opened.value.editorExtensions!.register({ id: 'extension-priority', priority: -1 })).toMatchObject({ ok: false, code: 'BLUE_LIMIT_EXCEEDED' })
     expect(opened.value.editorExtensions!.register(null as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
@@ -739,6 +850,7 @@ describe('BluePluginHostService', () => {
       editorProviders: [],
     }
     expect(legacy.revision).toBeUndefined()
+    expect(legacy.editorExtensionsRevision).toBeUndefined()
     expect(legacy.panes[0]?.revision).toBeUndefined()
     expect(legacy.overlays[0]?.revision).toBeUndefined()
   })
@@ -844,7 +956,7 @@ describe('BluePluginHostService', () => {
     listener.dispose()
   })
 
-  it('mounts as a Cordis plugin entry', () => {
+  it('mounts as a Cordis plugin entry', async () => {
     expect(name).toBe('blue-api-host')
     const ctx = new Context()
     apply(ctx)
@@ -852,9 +964,10 @@ describe('BluePluginHostService', () => {
     expect('snapshot' in ctx.bluePluginHost).toBe(false)
     expect('subscribe' in ctx.bluePluginHost).toBe(false)
     expect('dispose' in ctx.bluePluginHost).toBe(false)
+    await ctx.fiber.dispose()
   })
 
-  it('buffers passive surfaces without granting renderer authority', () => {
+  it('buffers passive surfaces without granting renderer authority', async () => {
     const ctx = new Context()
     apply(ctx)
     const host = (ctx.bluePluginHost as unknown as Record<symbol, BluePluginHostService | undefined>)[symbols.original] ?? ctx.bluePluginHost
@@ -876,5 +989,8 @@ describe('BluePluginHostService', () => {
       expect(closeBluePluginHostOverlay(host, ctx, entry)).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
       passive.value.close()
     }
+    const overlappingOwner = attach(host, ['panes', 'overlays'])
+    await ctx.fiber.dispose()
+    overlappingOwner.dispose()
   })
 })

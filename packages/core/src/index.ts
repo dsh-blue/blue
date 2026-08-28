@@ -48,10 +48,14 @@ export { FrontendModelComponent, renderFrontendModel, renderFrontendView, type F
 export { alignDiffLines, diffChangeCounts, paintDiffRows, DIFF_ALIGN_MAX_ROWS, CTX_EDGE_ROWS, type DiffOp, type DiffPaintColors } from './diff-align.ts'
 export { visibleWidth } from './width.ts'
 export {
+  compileBlueEditorShellNode,
   compileBlueStatusNode,
   compileBlueUiNode,
+  type BlueCompiledEditorShell,
   type BlueCompiledStatus,
   type BlueCompiledUi,
+  type BlueEditorShellCompileResult,
+  type BlueEditorShellCompilerOptions,
   type BlueStatusCompileFailure,
   type BlueStatusCompileResult,
   type BlueStatusCompilerOptions,
@@ -89,6 +93,7 @@ export type {
   BlueDockOptions,
   BlueEditor,
   BlueEditorOptions,
+  BlueEditorSubmitAttempt,
   BlueFocusable,
   BlueImage,
   BlueImageOptions,

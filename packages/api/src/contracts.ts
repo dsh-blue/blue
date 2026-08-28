@@ -129,18 +129,36 @@ export interface BlueStatusSnapshot { readonly session: BlueSessionSnapshot | nu
 export interface BlueStatusProvider { readonly id: string, readonly render: (snapshot: BlueStatusSnapshot) => BlueStatusNode }
 
 export interface BlueEditorCompletionItem { readonly id: string, readonly label: string, readonly insertText: string, readonly detail?: string }
+/** Compatibility completion request. This callback never receives a hash trigger. */
 export interface BlueEditorCompletionRequest { readonly query: string, readonly trigger: '/' | '@' | 'manual' }
+/** Opt-in completion request for extensions that handle hash-prefixed tokens. */
+export interface BlueEditorCompletionRequestV2 { readonly query: string, readonly trigger: '/' | '@' | '#' | 'manual' }
 export interface BlueEditorDiagnostic { readonly id: string, readonly message: string, readonly tone?: BlueTone }
 export interface BlueEditorAttachment { readonly id: string, readonly label: string, readonly mediaType?: string, readonly size?: number }
 export interface BlueEditorSubmitRequest { readonly text: string, readonly attachments: readonly BlueEditorAttachment[] }
 export interface BlueEditorSubmitValue { readonly text: string }
+/** Recursive passive subset accepted around the host-owned editor control. */
+export type BlueEditorExtensionNode =
+  | BlueView | BlueRichTextNode | BlueProgressNode | BlueSpacerNode | BlueDividerNode
+  | BlueEditorExtensionStackNode | BlueEditorExtensionSurfaceNode
+export interface BlueEditorExtensionChild extends Omit<BlueUiChild, 'node'> { readonly node: BlueEditorExtensionNode }
+export interface BlueEditorExtensionStackNode extends Omit<BlueStackNode, 'children'> { readonly children: readonly BlueEditorExtensionChild[] }
+export interface BlueEditorExtensionSurfaceNode extends Omit<BlueSurfaceNode, 'child' | 'footer'> { readonly child: BlueEditorExtensionNode, readonly footer?: BlueEditorExtensionNode }
 export interface BlueEditorExtensionContribution extends BlueContributionMeta {
+  /** Static compatibility type; registration admits only the passive BlueEditorExtensionNode subset. */
   readonly before?: BlueUiNode
+  /** Static compatibility type; registration admits only the passive BlueEditorExtensionNode subset. */
   readonly after?: BlueUiNode
   readonly hint?: string
   readonly diagnostics?: readonly BlueEditorDiagnostic[]
   readonly actions?: readonly BlueActionItem[]
+  /** Event context uses the extension id as surfaceId and expires with its owner generation. */
+  readonly onEvent?: BlueUiEventHandler
+  /** Legacy completion callback for slash, at-sign, and manual requests. */
   readonly complete?: (request: BlueEditorCompletionRequest, context: BlueUiEventContext) => BlueResult<readonly BlueEditorCompletionItem[]> | Promise<BlueResult<readonly BlueEditorCompletionItem[]>>
+  /** Opt-in completion callback including hash requests; owners prefer it when both callbacks exist. */
+  readonly completeV2?: (request: BlueEditorCompletionRequestV2, context: BlueUiEventContext) => BlueResult<readonly BlueEditorCompletionItem[]> | Promise<BlueResult<readonly BlueEditorCompletionItem[]>>
+  /** Submit context is revision-fenced and expires with its owner generation. */
   readonly transformSubmit?: (request: BlueEditorSubmitRequest, context: BlueUiEventContext) => BlueResult<BlueEditorSubmitValue> | Promise<BlueResult<BlueEditorSubmitValue>>
 }
 export interface BlueEditorExtensionSnapshot { readonly id: string, readonly before?: BlueUiNode, readonly after?: BlueUiNode, readonly hint?: string, readonly diagnostics?: readonly BlueEditorDiagnostic[], readonly actions?: readonly BlueActionItem[] }

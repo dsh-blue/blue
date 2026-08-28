@@ -294,8 +294,45 @@ describe('narrow validators', () => {
     expect(validateBlueEditorShellNode(ui.text('none'))).toMatchObject({ ok: false, message: expect.stringContaining('received 0') })
     expect(validateBlueEditorShellNode({ kind: 'surface', child: { kind: 'stack', direction: 'column', children: [{ node: ui.text('before') }, { node: { kind: 'editor-control' } }] }, footer: ui.text('after') }).ok).toBe(true)
     expect(validateBlueEditorShellNode({ kind: 'surface', child: { kind: 'editor-control' } }).ok).toBe(true)
+    expect(validateBlueEditorShellNode({ kind: 'surface', child: ui.text('head'), footer: { kind: 'editor-control' } }).ok).toBe(true)
     expect(validateBlueEditorShellNode({ kind: 'stack', direction: 'column', children: [{ node: { kind: 'editor-control' } }, { node: { kind: 'editor-control' } }] })).toMatchObject({ ok: false, message: expect.stringContaining('received 2') })
     expect(validateBlueEditorShellNode({ kind: 'scroll', child: { kind: 'editor-control' } })).toMatchObject({ ok: false, message: expect.stringContaining('shell slot') })
     expect(validateBlueEditorShellNode({ kind: 'scroll', child: { kind: 'stack', direction: 'column', children: [{ node: { kind: 'editor-control' } }] } })).toMatchObject({ ok: false, message: expect.stringContaining('shell slot') })
+  })
+
+  it('rejects shell layouts that can deterministically hide the editor control', () => {
+    const shell = (child: Record<string, unknown>) => ({
+      kind: 'stack',
+      direction: 'column',
+      children: [{ node: { kind: 'editor-control' }, ...child }],
+    })
+    expect(validateBlueEditorShellNode(shell({ when: { minWidth: 40 } }))).toMatchObject({ ok: false, message: expect.stringContaining('.when') })
+    expect(validateBlueEditorShellNode(shell({ maxSize: 0 }))).toMatchObject({ ok: false, message: expect.stringContaining('.maxSize') })
+    expect(validateBlueEditorShellNode(shell({ basis: 0, grow: 0 }))).toMatchObject({ ok: false, message: expect.stringContaining('zero size') })
+    expect(validateBlueEditorShellNode(shell({ basis: 0, grow: 0, minSize: 1 })).ok).toBe(true)
+    expect(validateBlueEditorShellNode({
+      kind: 'stack',
+      direction: 'column',
+      children: [{
+        when: { minHeight: 2 },
+        node: { kind: 'stack', direction: 'column', children: [{ node: { kind: 'editor-control' } }] },
+      }],
+    })).toMatchObject({ ok: false, message: expect.stringContaining('.when') })
+    expect(validateBlueEditorShellNode({
+      kind: 'stack',
+      direction: 'column',
+      children: [{
+        maxSize: 0,
+        node: { kind: 'surface', child: ui.text('head'), footer: { kind: 'editor-control' } },
+      }],
+    })).toMatchObject({ ok: false, message: expect.stringContaining('.maxSize') })
+    expect(validateBlueEditorShellNode({
+      kind: 'surface',
+      child: {
+        kind: 'stack',
+        direction: 'column',
+        children: [{ node: ui.text('row') }, { node: { kind: 'editor-control' }, when: { maxHeight: 3 } }],
+      },
+    })).toMatchObject({ ok: false, message: expect.stringContaining('.when') })
   })
 })

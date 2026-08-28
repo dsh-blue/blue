@@ -372,6 +372,208 @@ try {
     }
   })
 
+  if (manifest.name === '@dsh-blue/blue-interaction') {
+    const cordis = await load('@deepseek-ai/cordis')
+    const blueApi = await load('@dsh-blue/blue-api')
+    const interaction = await load('@dsh-blue/blue-interaction')
+    const interactionBridge = await load('@dsh-blue/blue-interaction/plugin-host-bridge')
+
+    function effectOwner() {
+      const cleanups = []
+      return {
+        effect(callback) {
+          const cleanup = callback()
+          if (typeof cleanup === 'function') cleanups.push(cleanup)
+        },
+        dispose() {
+          for (const cleanup of cleanups.splice(0).reverse()) cleanup()
+        },
+      }
+    }
+
+    function interactionContext() {
+      const ctx = new cordis.Context()
+      const host = new blueApi.BluePluginHostService(ctx)
+      const editorHost = new interaction.EditorHostService(ctx)
+      ctx.reflect.provide('commands', { register: () => () => {} })
+      const identity = value => value
+      ctx.reflect.provide('blueTheme', { colors: new Proxy({}, { get: () => identity }) })
+      return { ctx, host, editorHost }
+    }
+
+    const extensionManifest = Object.freeze({
+      id: '@fixture/editor-extensions',
+      api: '^1.0.0',
+      capabilities: Object.freeze(['editor.extensions']),
+    })
+
+    await scenario('interaction.editor-extensions-owner-replay-inert', async () => {
+      const { ctx, host, editorHost } = interactionContext()
+      const consumer = effectOwner()
+      let bridgeFiber
+      try {
+        const absent = host.open(consumer, extensionManifest)
+        ensure(!absent.ok && absent.code === 'BLUE_CAPABILITY_ABSENT', 'FIXTURE_EDITOR_EXTENSION_ABSENT', 'editor.extensions opened without an active interaction owner')
+
+        bridgeFiber = await ctx.plugin(interactionBridge)
+        const opened = host.open(consumer, extensionManifest)
+        ensure(opened.ok, 'FIXTURE_EDITOR_EXTENSION_OPEN', opened.ok ? '' : opened.message)
+        let completeCalls = 0
+        let transformCalls = 0
+        let eventCalls = 0
+        const registration = opened.value.editorExtensions.register({
+          id: 'packed.extension',
+          priority: 40,
+          before: { kind: 'text', content: 'packed before' },
+          actions: [{ id: 'packed-action', label: 'Packed action' }],
+          complete: () => { completeCalls += 1; return { ok: true, value: [] } },
+          transformSubmit: request => { transformCalls += 1; return { ok: true, value: { text: request.text } } },
+          onEvent: () => { eventCalls += 1; return { ok: true, value: undefined } },
+        })
+        ensure(registration.ok, 'FIXTURE_EDITOR_EXTENSION_REGISTER', registration.ok ? '' : registration.message)
+        ensure(completeCalls === 0 && transformCalls === 0 && eventCalls === 0, 'FIXTURE_EDITOR_EXTENSION_INERT', 'registration invoked an editor extension callback')
+        const firstBinding = editorHost.extensions
+        ensure(firstBinding?.entries[0]?.id === 'packed.extension', 'FIXTURE_EDITOR_EXTENSION_BINDING', 'interaction owner did not project the registered extension')
+
+        await bridgeFiber.dispose()
+        bridgeFiber = undefined
+        ensure(editorHost.extensions === undefined, 'FIXTURE_EDITOR_EXTENSION_OWNER_UNLOAD', 'editor extension binding survived interaction owner unload')
+        ensure(!registration.value.refresh().ok, 'FIXTURE_EDITOR_EXTENSION_LATE_REFRESH', 'extension refresh survived owner unload')
+
+        bridgeFiber = await ctx.plugin(interactionBridge)
+        const replayed = editorHost.extensions
+        ensure(replayed !== undefined && replayed !== firstBinding && replayed.entries[0]?.id === 'packed.extension', 'FIXTURE_EDITOR_EXTENSION_REPLAY', 'owner reload did not replay the packed extension')
+        ensure(completeCalls === 0 && transformCalls === 0 && eventCalls === 0, 'FIXTURE_EDITOR_EXTENSION_REPLAY_INERT', 'bridge replay invoked an extension callback')
+
+        registration.value.dispose()
+        const replacement = opened.value.editorExtensions.register({
+          id: 'packed.extension',
+          hint: 'replacement',
+          complete: () => { completeCalls += 1; return { ok: true, value: [] } },
+        })
+        ensure(replacement.ok && editorHost.extensions?.entries[0]?.hint === 'replacement', 'FIXTURE_EDITOR_EXTENSION_SAME_ID_RELOAD', 'same-id extension replacement failed after owner replay')
+        ensure(completeCalls === 0, 'FIXTURE_EDITOR_EXTENSION_REPLACEMENT_INERT', 'same-id replacement invoked its callback')
+        replacement.value.dispose()
+      } finally {
+        await bridgeFiber?.dispose()
+        consumer.dispose()
+        await ctx.fiber.dispose()
+      }
+    })
+
+    await scenario('interaction.editor-extensions-context-abort-unload-late', async () => {
+      const { ctx, host, editorHost } = interactionContext()
+      const consumer = effectOwner()
+      let bridgeFiber
+      try {
+        bridgeFiber = await ctx.plugin(interactionBridge)
+        const opened = host.open(consumer, extensionManifest)
+        ensure(opened.ok, 'FIXTURE_EDITOR_CALLBACK_OPEN', opened.ok ? '' : opened.message)
+        const contexts = new Map()
+        const requests = new Map()
+        const registration = opened.value.editorExtensions.register({
+          id: 'packed.callbacks',
+          completeV2(request, context) {
+            requests.set('complete', request)
+            contexts.set('complete', context)
+            return { ok: true, value: [{ id: 'packed-item', label: 'Packed item', insertText: 'packed-value' }] }
+          },
+          transformSubmit(request, context) {
+            requests.set('transform', request)
+            contexts.set('transform', context)
+            return { ok: true, value: { text: `packed:${request.text}` } }
+          },
+          onEvent(event, context) {
+            requests.set('event', event)
+            contexts.set('event', context)
+            return { ok: true, value: undefined }
+          },
+        })
+        ensure(registration.ok, 'FIXTURE_EDITOR_CALLBACK_REGISTER', registration.ok ? '' : registration.message)
+        ensure(contexts.size === 0 && requests.size === 0, 'FIXTURE_EDITOR_CALLBACK_INERT', 'callback registration performed work')
+        const binding = editorHost.extensions
+        const entry = binding?.entries.find(candidate => candidate.id === 'packed.callbacks')
+        ensure(binding !== undefined && entry !== undefined, 'FIXTURE_EDITOR_CALLBACK_BINDING', 'callback extension was not projected')
+
+        const completeController = new AbortController()
+        const transformController = new AbortController()
+        const eventController = new AbortController()
+        const completionRequest = Object.freeze({ trigger: '#', query: 'packed' })
+        const submitRequest = Object.freeze({ text: 'draft', attachments: Object.freeze([]) })
+        const eventRequest = Object.freeze({ kind: 'activate', controlId: 'packed-action' })
+        const completed = await binding.complete(entry, completionRequest, completeController.signal, 11)
+        const transformed = await binding.transform(entry, submitRequest, transformController.signal, 12)
+        const dispatched = await binding.dispatch(entry, eventRequest, eventController.signal, 13)
+        ensure(completed.ok && completed.value[0]?.insertText === 'packed-value', 'FIXTURE_EDITOR_COMPLETE_RESULT', 'completion callback result drifted')
+        ensure(transformed.ok && transformed.value.text === 'packed:draft', 'FIXTURE_EDITOR_TRANSFORM_RESULT', 'submit transform result drifted')
+        ensure(dispatched.ok, 'FIXTURE_EDITOR_EVENT_RESULT', 'editor action result drifted')
+        for (const [kind, controller, revision] of [['complete', completeController, 11], ['transform', transformController, 12], ['event', eventController, 13]]) {
+          const contextValue = contexts.get(kind)
+          ensure(contextValue?.surfaceId === 'packed.callbacks' && contextValue.signal === controller.signal && contextValue.revision === revision && Object.isFrozen(contextValue), 'FIXTURE_EDITOR_CALLBACK_CONTEXT', `${kind} callback context drifted`)
+        }
+        ensure(contexts.get('event')?.userGesture !== undefined, 'FIXTURE_EDITOR_EVENT_GESTURE', 'editor action lacked a scoped user gesture')
+        ensure(requests.get('complete') === completionRequest, 'FIXTURE_EDITOR_COMPLETE_REQUEST', 'completion request drifted')
+        ensure(requests.get('transform') === submitRequest, 'FIXTURE_EDITOR_TRANSFORM_REQUEST', 'submit request drifted')
+        ensure(requests.get('event') === eventRequest, 'FIXTURE_EDITOR_EVENT_REQUEST', 'editor action request drifted')
+
+        const lateComplete = Promise.withResolvers()
+        const lateTransform = Promise.withResolvers()
+        const lateEvent = Promise.withResolvers()
+        const lateContexts = new Map()
+        const lateRegistration = opened.value.editorExtensions.register({
+          id: 'packed.late',
+          complete(_request, context) {
+            lateContexts.set('complete', context)
+            return lateComplete.promise
+          },
+          transformSubmit(_request, context) {
+            lateContexts.set('transform', context)
+            return lateTransform.promise
+          },
+          onEvent(_event, context) {
+            lateContexts.set('event', context)
+            return lateEvent.promise
+          },
+        })
+        ensure(lateRegistration.ok, 'FIXTURE_EDITOR_LATE_REGISTER', lateRegistration.ok ? '' : lateRegistration.message)
+        const lateBinding = editorHost.extensions
+        const lateEntry = lateBinding?.entries.find(candidate => candidate.id === 'packed.late')
+        ensure(lateBinding !== undefined && lateEntry !== undefined, 'FIXTURE_EDITOR_LATE_BINDING', 'late extension was not projected')
+        const lateControllers = {
+          complete: new AbortController(),
+          transform: new AbortController(),
+          event: new AbortController(),
+        }
+        const pending = [
+          lateBinding.complete(lateEntry, { trigger: 'manual', query: 'late' }, lateControllers.complete.signal, 14),
+          lateBinding.transform(lateEntry, { text: 'late', attachments: [] }, lateControllers.transform.signal, 15),
+          lateBinding.dispatch(lateEntry, { kind: 'activate', controlId: 'late' }, lateControllers.event.signal, 16),
+        ]
+        await Promise.resolve()
+        ensure([...lateContexts].every(([kind, contextValue]) => contextValue.signal === lateControllers[kind].signal && contextValue.signal.aborted === false), 'FIXTURE_EDITOR_ABORT_CONTEXT', 'late callback did not receive the caller signal')
+        ensure(lateContexts.size === 3, 'FIXTURE_EDITOR_LATE_CALLBACKS', 'not every late callback started')
+        const revisionBeforeUnload = blueApi.snapshotBluePluginHost(host).editorExtensionsRevision
+        for (const controller of Object.values(lateControllers)) controller.abort()
+        await bridgeFiber.dispose()
+        bridgeFiber = undefined
+        ensure([...lateContexts.values()].every(contextValue => contextValue.signal.aborted) && editorHost.extensions === undefined, 'FIXTURE_EDITOR_ABORT_UNLOAD', 'abort or owner unload did not retire the active callback binding')
+        lateComplete.resolve({ ok: true, value: [{ id: 'late', label: 'Late', insertText: 'late' }] })
+        lateTransform.resolve({ ok: true, value: { text: 'late transformed' } })
+        lateEvent.resolve({ ok: true, value: undefined })
+        await Promise.all(pending)
+        ensure(editorHost.extensions === undefined && blueApi.snapshotBluePluginHost(host).editorExtensionsRevision === revisionBeforeUnload, 'FIXTURE_EDITOR_LATE_REJECTION', 'late completion republished into the unloaded interaction owner')
+        ensure(!lateRegistration.value.refresh().ok, 'FIXTURE_EDITOR_LATE_HANDLE', 'late extension handle remained active without an owner')
+        lateRegistration.value.dispose()
+        registration.value.dispose()
+      } finally {
+        await bridgeFiber?.dispose()
+        consumer.dispose()
+        await ctx.fiber.dispose()
+      }
+    })
+    report.observations.push('interaction editor.extensions exercised through packed public host, editor-host, and bridge exports')
+  }
+
   if (manifest.name === '@dsh-blue/blue-conversation' || manifest.name === '@dsh-blue/blue-transcript') {
     await scenario('conversation.registry-replay-live-checkpoint-restore-unload', async () => {
       const cordis = await load('@deepseek-ai/cordis')

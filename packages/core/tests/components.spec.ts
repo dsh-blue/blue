@@ -30,6 +30,7 @@ import { compileBlueUiNode } from '../src/ui-compiler.ts'
 import type {
   BlueAutocompleteItem,
   BlueAutocompleteProvider,
+  BlueEditorSubmitAttempt,
   BlueSemanticColors,
   BlueTheme,
 } from '../src/types.ts'
@@ -651,6 +652,134 @@ describe('createEditor', () => {
     // An empty insertion is a no-op.
     editor.insertText('')
     expect(editor.getText()).toBe('xy!')
+    stop()
+  })
+
+  it('holds the real editor state before clear and commits exactly once', () => {
+    const { tui, stop } = bootTui()
+    const editor = createService(tui).createEditor()
+    const changes: string[] = []
+    const submits: string[] = []
+    let attempt: BlueEditorSubmitAttempt | undefined
+    editor.onChange = text => changes.push(text)
+    editor.onSubmit = text => submits.push(text)
+    editor.setSubmitBarrier(value => { attempt = value })
+
+    const pasted = Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join('\n')
+    editor.handleInput(`\x1b[200~${pasted}\x1b[201~`)
+    expect(editor.getText()).toBe('[paste #1 +12 lines]')
+    editor.handleInput('\r')
+
+    expect(attempt).toMatchObject({ text: pasted, revision: 1 })
+    expect(attempt?.signal.aborted).toBe(false)
+    expect(editor.getText()).toBe('[paste #1 +12 lines]')
+    expect(editor.getExpandedText()).toBe(pasted)
+    expect(submits).toEqual([])
+    expect(changes.at(-1)).not.toBe('')
+
+    expect(attempt?.commit()).toBe(true)
+    expect(attempt?.commit()).toBe(false)
+    attempt?.cancel()
+    expect(editor.getText()).toBe('')
+    expect(changes.at(-1)).toBe('')
+    expect(submits).toEqual([pasted])
+    stop()
+  })
+
+  it('aborts stale attempts on mutation, supersession, and barrier replacement', () => {
+    const { tui, stop } = bootTui()
+    const editor = createService(tui).createEditor()
+    const attempts: BlueEditorSubmitAttempt[] = []
+    const submits: string[] = []
+    editor.onSubmit = text => submits.push(text)
+    editor.setSubmitBarrier(attempt => attempts.push(attempt))
+    editor.setText('one')
+    editor.submit()
+    expect(attempts[0]?.signal.aborted).toBe(false)
+
+    editor.handleInput('!')
+    expect(attempts[0]?.signal.aborted).toBe(true)
+    expect(attempts[0]?.commit()).toBe(false)
+    editor.submit()
+    editor.submit()
+    expect(attempts[1]?.signal.aborted).toBe(true)
+    expect(attempts[2]?.revision).toBe(3)
+
+    editor.setSubmitBarrier(attempt => attempt.cancel())
+    expect(attempts[2]?.signal.aborted).toBe(true)
+    editor.submit()
+    expect(editor.getText()).toBe('one!')
+    expect(submits).toEqual([])
+
+    let thrown: BlueEditorSubmitAttempt | undefined
+    editor.setSubmitBarrier(attempt => { thrown = attempt; throw new Error('barrier failed') })
+    editor.submit()
+    expect(thrown?.signal.aborted).toBe(true)
+    expect(editor.getText()).toBe('one!')
+
+    editor.disableSubmit = true
+    editor.submit()
+    expect(submits).toEqual([])
+    editor.disableSubmit = false
+    editor.setSubmitBarrier(undefined)
+    editor.submit()
+    expect(submits).toEqual(['one!'])
+    expect(editor.getText()).toBe('')
+    stop()
+  })
+
+  it('leaves a non-directory mention token closed after inert input', () => {
+    const { tui, stop } = bootTui()
+    const editor = createService(tui).createEditor()
+    const suggestions = vi.fn(() => Promise.resolve(null))
+    editor.setAutocompleteProvider({
+      triggerCharacters: [],
+      getSuggestions: suggestions,
+      applyCompletion: lines => ({ lines, cursorLine: 0, cursorCol: 0 }),
+    })
+    editor.setText('@name')
+    editor.handleInput('\x1b[C')
+    expect(suggestions).not.toHaveBeenCalled()
+    stop()
+  })
+
+  it('lets a submit started by a synchronous abort listener win the revision race', () => {
+    const { tui, stop } = bootTui()
+    const editor = createService(tui).createEditor()
+    const attempts: BlueEditorSubmitAttempt[] = []
+    const submits: string[] = []
+    editor.onSubmit = text => submits.push(text)
+    editor.setSubmitBarrier(attempt => {
+      attempts.push(attempt)
+      if (attempt.revision === 1) {
+        attempt.signal.addEventListener('abort', () => editor.submit(), { once: true })
+      }
+    })
+    editor.setText('nested')
+    editor.submit()
+    editor.submit()
+
+    expect(attempts.map(attempt => attempt.revision)).toEqual([1, 3])
+    expect(attempts[0]?.signal.aborted).toBe(true)
+    expect(attempts[1]?.signal.aborted).toBe(false)
+    expect(attempts[1]?.commit()).toBe(true)
+    expect(submits).toEqual(['nested'])
+    stop()
+  })
+
+  it('uses direct submit when synchronous cancellation removes the barrier', () => {
+    const { tui, stop } = bootTui()
+    const editor = createService(tui).createEditor()
+    const submits: string[] = []
+    editor.onSubmit = text => submits.push(text)
+    editor.setSubmitBarrier(attempt => {
+      attempt.signal.addEventListener('abort', () => editor.setSubmitBarrier(undefined), { once: true })
+    })
+    editor.setText('released')
+    editor.submit()
+    editor.submit()
+    expect(submits).toEqual(['released'])
+    expect(editor.getText()).toBe('')
     stop()
   })
 })

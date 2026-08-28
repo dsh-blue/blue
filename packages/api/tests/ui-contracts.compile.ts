@@ -1,7 +1,12 @@
 import type {
   BlueCapability,
+  BlueEditorCompletionRequest,
+  BlueEditorCompletionRequestV2,
+  BlueEditorExtensionContribution,
+  BlueEditorExtensionNode,
   BlueEditorProvider,
   BlueEditorShellNode,
+  BlueEditorSubmitValue,
   BlueOverlayRequest,
   BluePaneContribution,
   BluePluginApi,
@@ -138,6 +143,92 @@ export const editorProvider = {
     { node: { kind: 'editor-control' } },
   ] }),
 } satisfies BlueEditorProvider
+
+export const editorExtensionContent = {
+  kind: 'surface', title: 'Context', child: {
+    kind: 'stack', direction: 'column', children: [
+      { node: { kind: 'text', content: 'Repository context' } },
+      { node: {
+        kind: 'surface', chrome: 'lane', child: {
+          kind: 'stack', direction: 'row', children: [
+            { node: { kind: 'fields', rows: [{ label: 'Branch', value: [{ text: 'main' }] }] } },
+            { node: { kind: 'progress', label: 'Context', value: 42, max: 100 } },
+          ],
+        }, footer: { kind: 'divider', label: 'Ready' },
+      }, when: { minWidth: 40 } },
+    ],
+  }, footer: { kind: 'rich-text', spans: [{ text: 'Passive', tone: 'muted' }] },
+} satisfies BlueEditorExtensionNode
+
+export const editorExtension = {
+  id: '@acme/editor-extension',
+  before: editorExtensionContent,
+  after: { kind: 'code', code: 'pnpm test', language: 'sh' },
+  complete: (request, context) => context.signal.aborted
+    ? { ok: false, code: 'BLUE_ABORTED', message: 'aborted' }
+    : { ok: true, value: [{ id: 'legacy', label: request.query, insertText: request.query }] },
+  completeV2: (request, context) => context.signal.aborted
+    ? { ok: false, code: 'BLUE_ABORTED', message: 'aborted' }
+    : { ok: true, value: [{ id: 'skill', label: request.trigger === '#' ? 'Skill' : request.query, insertText: '#skill' }] },
+  onEvent: (_event, context) => context.signal.aborted
+    ? { ok: false, code: 'BLUE_ABORTED', message: 'aborted' }
+    : { ok: true, value: undefined },
+  transformSubmit: request => ({ ok: true, value: { text: request.text } }),
+} satisfies BlueEditorExtensionContribution
+
+export function visitLegacyCompletionTrigger(request: BlueEditorCompletionRequest): string {
+  switch (request.trigger) {
+    case '/': return 'slash'
+    case '@': return 'at'
+    case 'manual': return 'manual'
+    default: return assertNever(request.trigger)
+  }
+}
+
+export function visitCompletionTriggerV2(request: BlueEditorCompletionRequestV2): string {
+  switch (request.trigger) {
+    case '/': return 'slash'
+    case '@': return 'at'
+    case '#': return 'hash'
+    case 'manual': return 'manual'
+    default: return assertNever(request.trigger)
+  }
+}
+
+/** G1 compatibility: old contributions remain source-valid; host admission rejects this node. */
+export const legacyInteractiveEditorExtension = {
+  id: '@acme/legacy-editor-extension',
+  before: { kind: 'actions', id: 'legacy-action', items: [] },
+} satisfies BlueEditorExtensionContribution
+
+export const invalidEditorSubmitValue: BlueEditorSubmitValue = {
+  text: 'preserve attachments outside plugin output',
+  // @ts-expect-error attachments are readonly input metadata, not transformer output
+  attachments: [],
+}
+
+// @ts-expect-error actions use the separate extension actions/onEvent path
+export const invalidEditorExtensionActions: BlueEditorExtensionNode = { kind: 'actions', id: 'bad', items: [] }
+// @ts-expect-error list is an interactive control
+export const invalidEditorExtensionList: BlueEditorExtensionNode = { kind: 'list', id: 'bad', selectedIds: [], items: [] }
+// @ts-expect-error form is an interactive control
+export const invalidEditorExtensionForm: BlueEditorExtensionNode = { kind: 'form', id: 'bad', fields: [] }
+// @ts-expect-error tabs are an interactive control
+export const invalidEditorExtensionTabs: BlueEditorExtensionNode = { kind: 'tabs', id: 'bad', activeId: 'one', items: [] }
+// @ts-expect-error scroll is outside the passive editor-extension subset
+export const invalidEditorExtensionScroll: BlueEditorExtensionNode = { kind: 'scroll', child: { kind: 'text', content: 'bad' } }
+// @ts-expect-error loader is outside the passive editor-extension subset
+export const invalidEditorExtensionLoader: BlueEditorExtensionNode = { kind: 'loader', message: 'bad' }
+// @ts-expect-error empty is outside the passive editor-extension subset
+export const invalidEditorExtensionEmpty: BlueEditorExtensionNode = { kind: 'empty', title: 'bad' }
+// @ts-expect-error editor-control is reserved for the provider shell
+export const invalidEditorExtensionControl: BlueEditorExtensionNode = { kind: 'editor-control' }
+export const invalidNestedEditorExtension: BlueEditorExtensionNode = {
+  kind: 'stack', direction: 'column', children: [
+    // @ts-expect-error interactive nodes remain excluded recursively
+    { node: { kind: 'actions', id: 'nested-bad', items: [] } },
+  ],
+}
 
 export const capabilities = [
   'commands', 'notifications', 'status', 'panes', 'overlays',

@@ -483,6 +483,34 @@ function freeze<Value>(value: Value): Value {
   return Object.freeze(value)
 }
 
+function containsEditorControl(node: BlueEditorShellNode): boolean {
+  if (node.kind === 'editor-control') return true
+  if (node.kind === 'stack') return node.children.some(child => containsEditorControl(child.node))
+  if (node.kind === 'surface') return containsEditorControl(node.child) || (node.footer !== undefined && containsEditorControl(node.footer))
+  return false
+}
+
+function assertEditorControlVisible(node: BlueEditorShellNode, path = '$'): void {
+  if (node.kind === 'stack') {
+    for (const [index, child] of node.children.entries()) {
+      const childPath = `${path}.children[${String(index)}]`
+      if (containsEditorControl(child.node)) {
+        if (child.when !== undefined) invalid(`${childPath}.when cannot hide editor-control`)
+        if (child.maxSize === 0) invalid(`${childPath}.maxSize cannot hide editor-control`)
+        if (child.basis === 0 && (child.grow ?? 0) === 0 && (child.minSize ?? 0) === 0) {
+          invalid(`${childPath} cannot allocate zero size to editor-control`)
+        }
+      }
+      assertEditorControlVisible(child.node, `${childPath}.node`)
+    }
+    return
+  }
+  if (node.kind === 'surface') {
+    assertEditorControlVisible(node.child, `${path}.child`)
+    if (node.footer !== undefined) assertEditorControlVisible(node.footer, `${path}.footer`)
+  }
+}
+
 function validate<Value>(value: unknown, mode: ValidationMode): BlueResult<Value> {
   const state: ValidationState = { active: new WeakSet(), nodes: 0, text: 0, scrollDepth: 0, editorControls: 0, controlIds: new Set() }
   try {
@@ -491,7 +519,10 @@ function validate<Value>(value: unknown, mode: ValidationMode): BlueResult<Value
       : mode === 'status'
         ? node(value, '$', state, 0, 'status')
         : node(value, '$', state, 0, 'editor', false, true)
-    if (mode === 'editor' && state.editorControls !== 1) invalid(`editor shell must contain exactly one editor-control; received ${String(state.editorControls)}`)
+    if (mode === 'editor') {
+      if (state.editorControls !== 1) invalid(`editor shell must contain exactly one editor-control; received ${String(state.editorControls)}`)
+      assertEditorControlVisible(result as BlueEditorShellNode)
+    }
     return { ok: true, value: freeze(result) as Value }
   } catch (error) {
     if (error instanceof ValidationFault) return { ok: false, code: error.code, message: error.message }

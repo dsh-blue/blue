@@ -6,8 +6,19 @@ import { EditorModelService } from '../src/editor-model.ts'
 
 function editorFixture(ctx: Context) {
   let value = 'draft'; const submitted: string[] = []; let aborted = 0
-  const editor = { disableSubmit: false, getText: () => value, getExpandedText: () => `expanded:${value}`, setText: (next: string) => { value = next } } as unknown as BlueEditor
-  setSharedEditor(ctx, { editor, submitPrompt: text => { submitted.push(text) }, abortPrompt: () => { aborted += 1 } })
+  const submitPrompt = (text: string): void => { submitted.push(text) }
+  const editor = {
+    disableSubmit: false,
+    getText: () => value,
+    getExpandedText: () => `expanded:${value}`,
+    setText: (next: string) => { value = next },
+    submit: () => {
+      const expanded = `expanded:${value}`
+      value = ''
+      submitPrompt(expanded)
+    },
+  } as unknown as BlueEditor
+  setSharedEditor(ctx, { editor, submitPrompt, abortPrompt: () => { aborted += 1 } })
   return { editor, submitted, aborted: () => aborted }
 }
 
@@ -26,12 +37,12 @@ describe('EditorModelService', () => {
     expect(service.execute({ kind: 'editor.submit' })).toBe(true)
     expect(service.execute({ kind: 'editor.submit', value: 'explicit' })).toBe(true)
     expect(service.execute({ kind: 'editor.submit', value: 1 })).toBe(false)
-    expect(fixture.submitted).toEqual(['expanded:set', 'explicit'])
+    expect(fixture.submitted).toEqual(['expanded:set', 'expanded:explicit'])
     expect(service.execute({ kind: 'editor.abort' })).toBe(true)
     expect(fixture.aborted()).toBe(1)
     expect(service.execute({ kind: 'other' })).toBe(false)
     expect(seen).toContain('set')
-    expect(fixture.editor.getText()).toBe('set')
+    expect(fixture.editor.getText()).toBe('')
     off()
     service.dispose()
     clearSharedEditor(ctx)

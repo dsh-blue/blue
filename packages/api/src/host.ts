@@ -38,6 +38,8 @@ export interface BluePluginHostSnapshot {
   readonly statusRevision?: number
   /** Monotonic fence for status-provider candidate mutations only. */
   readonly statusProvidersRevision?: number
+  /** Monotonic fence for editor-extension mutations only. */
+  readonly editorExtensionsRevision?: number
   readonly commands: readonly BlueCommandContribution[]
   readonly status: readonly BlueStatusEntryContribution[] & readonly BlueStatusContribution[]
   readonly dock: readonly BlueDockContribution[]
@@ -103,6 +105,25 @@ function cloneData(input: unknown, seen = new Set<object>()): unknown {
   }
   seen.delete(input)
   return Object.freeze(copy)
+}
+
+function passiveEditorNode(input: unknown): boolean {
+  if (!object(input)) return false
+  const kind = own(input, 'kind')
+  if (kind === 'stack') {
+    const children = own(input, 'children')
+    return Array.isArray(children) && children.every(child => object(child) && passiveEditorNode(own(child, 'node')))
+  }
+  if (kind === 'surface') {
+    const child = own(input, 'child')
+    const footer = own(input, 'footer')
+    return passiveEditorNode(child) && (footer === undefined || passiveEditorNode(footer))
+  }
+  if (kind === 'sections') {
+    const sections = own(input, 'sections')
+    return Array.isArray(sections) && sections.every(section => object(section) && passiveEditorNode(own(section, 'body')))
+  }
+  return ['text', 'rich-text', 'fields', 'code', 'diff', 'progress', 'spacer', 'divider'].includes(kind as string)
 }
 
 function meta(input: Record<string, unknown>, bounded = false): BlueResult<{ id: string, priority?: number }> {
@@ -173,12 +194,15 @@ function overlay(input: unknown): BlueResult<BlueOverlayRequest & { readonly cap
 }
 
 function extension(input: unknown): BlueResult<BlueEditorExtensionContribution> {
-  const value = fields(input, ['id', 'priority', 'before', 'after', 'hint', 'diagnostics', 'actions', 'complete', 'transformSubmit']); const m = meta(value, true); if (!m.ok) return m
-  for (const field of ['before', 'after'] as const) if (value[field] !== undefined && !object(value[field])) return failure('BLUE_INVALID_CONTRIBUTION', `editor extension ${field} must be a UI node`)
+  const value = fields(input, ['id', 'priority', 'before', 'after', 'hint', 'diagnostics', 'actions', 'onEvent', 'complete', 'completeV2', 'transformSubmit']); const m = meta(value, true); if (!m.ok) return m
+  const before = value.before === undefined ? undefined : cloneData(value.before)
+  const after = value.after === undefined ? undefined : cloneData(value.after)
+  if (before !== undefined && !passiveEditorNode(before)) return failure('BLUE_INVALID_CONTRIBUTION', 'editor extension before must be a passive UI node')
+  if (after !== undefined && !passiveEditorNode(after)) return failure('BLUE_INVALID_CONTRIBUTION', 'editor extension after must be a passive UI node')
   if (value.hint !== undefined && typeof value.hint !== 'string') return failure('BLUE_INVALID_CONTRIBUTION', 'editor extension hint must be a string')
   for (const field of ['diagnostics', 'actions'] as const) if (value[field] !== undefined && !Array.isArray(value[field])) return failure('BLUE_INVALID_CONTRIBUTION', `editor extension ${field} must be an array`)
-  for (const field of ['complete', 'transformSubmit'] as const) if (value[field] !== undefined && typeof value[field] !== 'function') return failure('BLUE_INVALID_CONTRIBUTION', `editor extension ${field} must be a function`)
-  return success(Object.freeze({ ...m.value, ...(value.before === undefined ? {} : { before: cloneData(value.before) }), ...(value.after === undefined ? {} : { after: cloneData(value.after) }), ...(value.hint === undefined ? {} : { hint: value.hint }), ...(value.diagnostics === undefined ? {} : { diagnostics: cloneData(value.diagnostics) }), ...(value.actions === undefined ? {} : { actions: cloneData(value.actions) }), ...(value.complete === undefined ? {} : { complete: value.complete }), ...(value.transformSubmit === undefined ? {} : { transformSubmit: value.transformSubmit }) }) as BlueEditorExtensionContribution)
+  for (const field of ['onEvent', 'complete', 'completeV2', 'transformSubmit'] as const) if (value[field] !== undefined && typeof value[field] !== 'function') return failure('BLUE_INVALID_CONTRIBUTION', `editor extension ${field} must be a function`)
+  return success(Object.freeze({ ...m.value, ...(before === undefined ? {} : { before }), ...(after === undefined ? {} : { after }), ...(value.hint === undefined ? {} : { hint: value.hint }), ...(value.diagnostics === undefined ? {} : { diagnostics: cloneData(value.diagnostics) }), ...(value.actions === undefined ? {} : { actions: cloneData(value.actions) }), ...(value.onEvent === undefined ? {} : { onEvent: value.onEvent }), ...(value.complete === undefined ? {} : { complete: value.complete }), ...(value.completeV2 === undefined ? {} : { completeV2: value.completeV2 }), ...(value.transformSubmit === undefined ? {} : { transformSubmit: value.transformSubmit }) }) as BlueEditorExtensionContribution)
 }
 function statusProvider(input: unknown): BlueResult<BlueStatusProvider> {
   const value = fields(input, ['id', 'render']); const m = meta(value); if (!m.ok) return m
@@ -498,7 +522,7 @@ export function attachBluePluginHostCapabilities(host: BluePluginHostService, ow
   const owned = [...new Set(capabilities)]
   for (const capability of owned) if (!IMPLEMENTED_CAPABILITIES.has(capability as Capability)) throw new Error(`Blue owner adapter cannot attach unsupported capability "${capability}"`)
   for (const capability of owned as Capability[]) state.owners.set(capability, (state.owners.get(capability) ?? 0) + 1)
-  const dispatchOwner = owned.some(capability => capability === 'commands' || capability === 'panes' || capability === 'overlays')
+  const dispatchOwner = owned.some(capability => capability === 'commands' || capability === 'panes' || capability === 'overlays' || capability === 'editor.extensions')
   const overlayOwner = owned.includes('overlays')
   if (dispatchOwner) state.gestureOwners.set(owner, (state.gestureOwners.get(owner) ?? 0) + 1)
   if (overlayOwner) state.overlayOwners.set(owner, (state.overlayOwners.get(owner) ?? 0) + 1)
@@ -600,7 +624,7 @@ export function snapshotBluePluginHost(host: BluePluginHostService): BluePluginH
   const state = ownerStateOf(host)
   // W2-C owner compatibility only: the aggregate remains the final narrowed
   // status type. W3-C removes this cast when transcript uses the status compiler.
-  return Object.freeze({ revision: state.revision.value, statusRevision: state.status.revision, statusProvidersRevision: state.statusProviders.revision, commands: state.commands.list(), status: state.status.list() as readonly BlueStatusEntryContribution[] & readonly BlueStatusContribution[], dock: state.dock.list(), panes: state.panes.list(), overlays: state.overlays.list(), editorExtensions: state.extensions.list(), statusProviders: state.statusProviders.list(), editorProviders: state.editorProviders.list() })
+  return Object.freeze({ revision: state.revision.value, statusRevision: state.status.revision, statusProvidersRevision: state.statusProviders.revision, editorExtensionsRevision: state.extensions.revision, commands: state.commands.list(), status: state.status.list() as readonly BlueStatusEntryContribution[] & readonly BlueStatusContribution[], dock: state.dock.list(), panes: state.panes.list(), overlays: state.overlays.list(), editorExtensions: state.extensions.list(), statusProviders: state.statusProviders.list(), editorProviders: state.editorProviders.list() })
 }
 
 /** Observe aggregate changes from a Blue-owned adapter. */

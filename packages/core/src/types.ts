@@ -487,6 +487,15 @@ export interface BlueAutocompleteProvider {
 export interface BlueEditor extends BlueFocusable {
   /** Called when the user submits; receives the full text. */
   onSubmit?: ((text: string) => void) | undefined
+  /**
+   * Install a pre-clear submission barrier. The adapter invokes it after any
+   * autocomplete acceptance but before the editing engine clears its buffer,
+   * paste table, undo state, or history cursor. The owner must explicitly
+   * commit or cancel the attempt. Replacing or removing the barrier invalidates
+   * any outstanding attempt.
+   * @param barrier - the new barrier, or undefined to restore direct submit.
+   */
+  setSubmitBarrier(barrier: ((attempt: BlueEditorSubmitAttempt) => void) | undefined): void
   /** Called on every text change. */
   onChange?: ((text: string) => void) | undefined
   /**
@@ -497,6 +506,11 @@ export interface BlueEditor extends BlueFocusable {
   onKey?: ((data: string) => boolean) | undefined
   /** When true, submission keys insert text instead of submitting. */
   disableSubmit: boolean
+  /**
+   * Programmatically request submission through the same pre-clear barrier as
+   * an Enter key. This is a no-op while submission is disabled.
+   */
+  submit(): void
   /**
    * Report whether the autocomplete dropdown is currently visible.
    * @returns the dropdown visibility.
@@ -591,6 +605,23 @@ export interface BlueEditor extends BlueFocusable {
    * @param text - the text to insert.
    */
   insertText(text: string): void
+}
+
+/** One revision-fenced editor submission captured before L0 clears state. */
+export interface BlueEditorSubmitAttempt {
+  /** Paste-expanded and trimmed text matching the native submission value. */
+  readonly text: string
+  /** Aborted when the attempt is cancelled or becomes stale. */
+  readonly signal: AbortSignal
+  /** Monotonic revision scoped to this editor object. */
+  readonly revision: number
+  /**
+   * Commit through the native editor clear-and-submit path. Returns false when
+   * the attempt was cancelled, superseded, or the buffer changed.
+   */
+  commit(): boolean
+  /** Cancel this attempt without clearing editor state; safe to call twice. */
+  cancel(): void
 }
 
 /** Options for {@link BlueComponents.createMarkdown}. */
