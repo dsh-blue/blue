@@ -60,7 +60,7 @@ describe('OpenPencilAdapter', () => {
     const source = { get: () => ({ presentCall: () => { throw new Error('bad call') }, presentResult: () => { throw new Error('bad result') } }) }
     const empty = { ...result(true), content: [] } as unknown as Readonly<ToolExecutionResult>
     fixture.adapter.observe(source, execution('bad'), empty)
-    expect(fixture.models.get('bad')).toMatchObject({ call: { kind: 'text', text: 'openpencil_render' }, result: { kind: 'text', tone: 'danger' } })
+    expect(fixture.models.get('bad')).toMatchObject({ call: { kind: 'text', content: 'openpencil_render' }, result: { kind: 'text', tone: 'danger' } })
     expect(fixture.notifications.get('openpencil.error.bad')?.message).toBe('openpencil_render failed')
     fixture.adapter.dispose()
     expect(fixture.models.size).toBe(0)

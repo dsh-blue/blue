@@ -377,6 +377,19 @@ describe('blue-transcript plugin through the real Loader', () => {
     dispose()
   })
 
+  it('compiles canonical tool nodes against the live viewport', async () => {
+    const { ctx, screen } = await bootTranscript()
+    const dispose = ctx.blueToolModels.register({
+      kind: 'tool',
+      id: 'viewport-probe',
+      name: 'viewport-probe',
+      call: { kind: 'text', content: 'canonical tool' },
+    })
+    const tool = screen.children.at(-1)!
+    expect(tool.render(20)).toEqual(['canonical tool'])
+    dispose()
+  })
+
   it('applies model settings and exposes the live expansion range', async () => {
     const { ctx } = await bootTranscript(null, { settings: { blue: { collapseToolCalls: false } } })
     expect(ctx.blueTranscriptModels.presentationPolicy().expandTurns).toBe(3)

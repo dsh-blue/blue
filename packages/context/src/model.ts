@@ -150,7 +150,7 @@ export function buildContextModel(snapshot: ContextSnapshot, state: ContextModel
       ...(facts.breakdown === undefined ? [] : ['context.breakdown']),
       ...(facts.timeline === undefined ? [] : ['context.timeline']),
     ],
-    views: [{ kind: 'text', text: statusText }],
+    nodes: [{ kind: 'text', content: statusText }],
   }
   return freezeModel({ state, ...(error === undefined ? {} : { error }), panel, status })
 }

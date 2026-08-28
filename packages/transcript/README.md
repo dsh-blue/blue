@@ -19,7 +19,7 @@ The main plugin owns five renderer bridges:
 - The package-private `BlueStatusEntryService` collects canonical `BlueStatusNode` contributions for the built-in two-band footer.
 - `BlueStatusCompositionService` renders either that `blue.default` footer or one user-selected status-provider candidate.
 - The package-private `BlueBottomPaneService` orders bounded Blue-owned bottom panes by priority and id; it has no left/right lanes.
-- `BlueModelToolService` converts official tool presentation facts into readonly frontend views.
+- `BlueModelToolService` converts official tool presentation facts into canonical `BlueUiNode` call/result values and compiles them directly through core.
 - `TranscriptModelService` renders the official semantic conversation model.
 
 Footer subplugins provide model, cwd, git, title, context, and session-mode facts as canonical status nodes. Activity, todo, and agents panes consume the `blueConversationFacts` projection through `blueSessionFacts`; the BTW pane obtains a disposable side session through `blueSessionActions` and renders its official conversation projection. Advanced activity, todo, agents, BTW, and queue chrome remains behind width-bounded renderer adapters until the canonical vocabulary can express it exactly. No pane receives an Agent or Session.
@@ -30,7 +30,7 @@ Footer subplugins provide model, cwd, git, title, context, and session-mode fact
 
 ## Other Subpaths
 
-`./banner` mounts the welcome banner; `./banner-content` exports the displayed `BLUE_VERSION` constant, kept in lockstep with `package.json`. `./status-basic-model`, `./status-cwd`, `./status-title`, `./status-git`, and `./status-context` publish canonical footer nodes; `./status-provider-owner` owns exclusive provider selection. `./pane-activity`, `./pane-todo`, `./pane-btw`, and `./pane-agents` publish canonical bottom-pane nodes. `./tool-model` and `./transcript-model` expose renderer-neutral registries for composition; the bottom-pane service is intentionally not exported as a subpath.
+`./banner` mounts the welcome banner; `./banner-content` exports the displayed `BLUE_VERSION` constant, kept in lockstep with `package.json`. `./status-basic-model`, `./status-cwd`, `./status-title`, `./status-git`, and `./status-context` publish canonical footer nodes; `./status-provider-owner` owns exclusive provider selection. `./pane-activity`, `./pane-todo`, `./pane-btw`, and `./pane-agents` publish canonical bottom-pane nodes. `./tool-model` exports `toolCallNode`/`toolResultNode` and the canonical tool registry; `./transcript-model` exposes the renderer-neutral transcript registry. The bottom-pane service is intentionally not exported as a subpath.
 
 All rendered rows obey the core visible-width contract, including narrow and CJK viewports.
 

@@ -9,7 +9,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SelectItem, SelectListTheme } from '@earendil-works/pi-tui'
 import { clampRowsToWidth, framePanel } from '../src/chrome.ts'
-import { renderFrontendView } from '../src/frontend-renderer.ts'
 import { GutterComponent } from '../src/gutter.ts'
 import { compileBlueEditorShellNode, compileBlueStatusNode } from '../src/ui-compiler.ts'
 import type { BlueEditor } from '../src/types.ts'
@@ -94,28 +93,6 @@ describe('core width-scan', () => {
       })
       for (const width of MIGRATION_WIDTHS) {
         expectLinesFit(`WrappingSelectList/${name}`, list.render(width), width)
-      }
-    })
-
-    it(`canonical frontend view mapping survives ${name}`, () => {
-      const shared = Array.from({ length: 14 }, (_, index) => `ctx ${String(index)}`).join('\n')
-      const views = [
-        { kind: 'text' as const, text },
-        { kind: 'rich-text' as const, spans: [{ text, strong: true }] },
-        { kind: 'fields' as const, fields: [{ label: text, value: text }] },
-        { kind: 'sections' as const, sections: [{ title: text, body: { kind: 'text' as const, text } }] },
-        { kind: 'list' as const, selectedId: 'selected', items: [
-          { id: 'selected', label: text, detail: text, detailSpans: [{ text, tone: 'accent', emphasis: 'strong' }] },
-          { id: 'disabled', label: text, disabled: true },
-        ] },
-        { kind: 'code' as const, code: `${text}\n${text}`, language: 'fixture' },
-        { kind: 'diff' as const, before: `${shared}\n${text}`, after: `${shared}\n+ ${text}\nextra` },
-        { kind: 'diff' as const, before: '', after: `${text}\n${text}` },
-      ]
-      for (const view of views) {
-        for (const width of MIGRATION_WIDTHS) {
-          expectLinesFit(`frontend/${view.kind}/${name}`, renderFrontendView(view, width), width)
-        }
       }
     })
 

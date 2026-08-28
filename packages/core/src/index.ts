@@ -41,7 +41,6 @@ export {
   type BlueProbeProcess,
 } from './terminal-info.ts'
 export { createTerminalRelease } from './terminal.ts'
-export { FrontendModelComponent, renderFrontendModel, renderFrontendView, type FrontendRenderOptions } from './frontend-renderer.ts'
 export { alignDiffLines, diffChangeCounts, paintDiffRows, DIFF_ALIGN_MAX_ROWS, CTX_EDGE_ROWS, type DiffOp, type DiffPaintColors } from './diff-align.ts'
 export { visibleWidth } from './width.ts'
 export {

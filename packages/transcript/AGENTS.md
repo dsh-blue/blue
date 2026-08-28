@@ -103,7 +103,7 @@ BTW calls `blueSessionActions.createSideSession()`, holds the returned owned han
 
 ## Tool And Plugin Models
 
-`BlueModelToolService` converts official generic/terminal/diff/search/read/web presentation facts into readonly frontend views and never reads session events. Its temporary frontend-view adapter renders the complete validated leaf through core's canonical compiler; `ToolModelComponent` retains the existing 12-row collapsed and 200-row expanded budgets so hidden-line counts stay exact. Remove that compatibility path when tool models publish `BlueUiNode` directly. The semantic transcript renderer keeps `ToolCallComponent` as the status/header/key-argument/shell chrome and nests the official view as its bounded body; tools without a presenter retain the generic rich fallback instead of receiving a synthetic name-only view. There is no `blueIntents` registry and no intent subpath export.
+`BlueModelToolService` converts official generic/terminal/diff/search/read/web presentation facts into canonical `BlueUiNode` values and never reads session events. `ToolPresentationModel.call` and `.result` carry those nodes, while the exported `toolCallNode` and `toolResultNode` helpers replace the deleted legacy view helpers. `ToolModelComponent` compiles the selected node directly through core's canonical compiler and retains the existing 12-row collapsed and 200-row expanded budgets so hidden-line counts stay exact; its plain fallback is also a canonical node compiled through the same path. The semantic transcript renderer keeps `ToolCallComponent` as the status/header/key-argument/shell chrome and nests the official node as its bounded body; tools without a presenter retain the generic rich fallback instead of receiving a synthetic name-only node. There is no frontend-view adapter, `blueIntents` registry, or intent subpath export.
 
 `plugin-host-bridge.ts` is the only route from public additive-status contributions into the transcript owner; `status-provider-owner.ts` is the only route for exclusive status-provider candidates. Both unwrap the guarded host only for owner-only readiness and snapshot helpers; those helpers reject the guarded public service. Status render results, including ordinary records and arrays from a dynamic VM realm, enter through core's sole status validator/compiler. Public panes and overlays use core's canonical surface bridge instead of a transcript compatibility path.
 
@@ -116,7 +116,8 @@ the additive bridge. The former public `./dock-model` subpath remains removed;
 the same-named source module holds only the package-private
 `BlueBottomPaneService` composition seam, and its Cordis declaration
 merge travels through the package root for the shipped interaction queue only.
-The deleted generic `StatusModel`/`DockModel` contracts and legacy status,
-intent, fold, child-event, and phase modules must not be reintroduced as
+The deleted generic `StatusModel`/`DockModel` contracts, seven-kind frontend
+`View`, frontend-renderer bridge, and legacy status, intent, fold, child-event,
+and phase modules must not be reintroduced as
 compatibility shortcuts. New behavior enters as projection/action + canonical
 node + renderer adapter + bundle row/fixture evidence.

@@ -56,7 +56,7 @@ Session switch requests remain events such as `blue/request-resume`, `blue/reque
 | `agents` / `sessions` / persistence | app creates, resumes, forks, flushes and disposes Agents while keeping those objects private |
 | `commands` | interaction registers built-ins and the public command bridge |
 | `userQuestions` / `approval/request` | interaction owns effect-bound question and approval providers |
-| `tools` | transcript asks for canonical call/result presentation, then converts it to `ToolPresentationModel` |
+| `tools` | transcript receives official call/result presentation as domain input, then converts it to canonical `ToolPresentationModel.call/result` nodes |
 | `permissionPresets` / `planMode` / `agentPresets` | app actions expose renderer-neutral current state and mutations |
 | `attachments` | optional filesystem store and image-paste flow |
 | `settings` / credentials / session query | settings, onboarding, trace and session-tree actions behind bounded adapters |
@@ -70,7 +70,7 @@ The patch owns 30 Blue rows: two host-support rows plus 28 product rows.
 - Assembly, 5 rows: interaction, editor-provider owner, public interaction bridge, startup and app.
 - Validation-only, not bundle rows: `blue-context`, `blue-remote`, `blue-openpencil`, `blue-lark`.
 
-`blue-conversation` and `blue-transcript-official` are baseline rows because no legacy event-fold renderer remains. Tool diff/terminal/search/read/web cards are canonical `ToolPresentationModel` conversions inside the model path; there is no `blueIntents` registry or intent subpath.
+`blue-conversation` and `blue-transcript-official` are baseline rows because no legacy event-fold renderer remains. Tool diff/terminal/search/read/web cards use canonical `ToolPresentationModel.call/result` nodes and direct core compilation; there is no legacy frontend `View` adapter, `blueIntents` registry, or intent subpath.
 
 ## 6. Lifecycle rules
 

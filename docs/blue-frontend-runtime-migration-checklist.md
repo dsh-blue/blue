@@ -129,12 +129,13 @@ npm。最终正式版本在真人验收后才统一改为 `0.1.0-rc.9`；Harness
   全部有 headless tests。
 - [x] 每个 adapter 源文件写上精确删除条件。
 
-### C1-04 `blue-core` frontend renderer bridge
+### C1-04 `blue-core` frontend renderer bridge (W6-2 后已删除)
 
-- [x] `renderFrontendView`/`renderFrontendModel` 只消费 model，不读 Harness events。
+- [x] 过渡期 `renderFrontendView`/`renderFrontendModel` 只消费 model，不读 Harness events。
 - [x] 所有输出经 core width seam；非法宽度由 frame clamp 兜底并记录 overflow。
 - [x] core 是唯一 pi-tui/raw terminal 依赖；新增 model package 不得引入 pi-tui。
 - [x] plain provider、empty/absent/error/loading panel 都有 renderer fixture。
+- [x] frontend/transcript/tool/context/OpenPencil 全部发布 canonical `BlueUiNode` 后，物理删除 `frontend-renderer`、root exports 与 source-plane compatibility fixture；plain fallback 改走 canonical compiler。
 
 门禁：frontend/headless unit + architecture boundary + provider lifecycle + width scan；
 `pnpm test:coverage` 必须保持每个 executable source file 100%。完成后提交 C1，停止。
@@ -181,7 +182,7 @@ consumer、headless fixture、bundle/composition。未完成六层不得切默�
 
 - [x] status 全部发布 canonical `BlueStatusNode`，footer renderer 只消费私有 registry snapshot。
 - [x] activity/todo/agents/queue/btw 每个 pane 都有 canonical `BlueUiNode` producer，并只进入私有 bottom composition。
-- [x] canonical tool call/result 转成 ToolPresentationModel，Read/Write/Shell/error/long
+- [x] official tool call/result 转成 canonical `ToolPresentationModel.call/result` nodes，Read/Write/Shell/error/long
   output/fold/expand 保持 golden/e2e parity。
 - [x] conversation projection 只处理 append-origin facts；transcript official consumer
   不再读取 SessionEvent[]。
@@ -260,6 +261,7 @@ fixture report，提交独立 commit，并停止等待审查。
 - [x] `transcript/fold.ts` 不再有任何运行时 consumer；删除 direct session-event subscription。
 - [x] 删除 legacy `BlueStatusEntry` compatibility provider。
 - [x] 删除 legacy tool intent presenters，保留 canonical/plain fallback 所需最小转换。
+- [x] 删除七种 legacy frontend `View`、core `frontend-renderer` 与旧 tool helper alias；provider/tool/transcript/context/OpenPencil 使用 canonical `BlueUiNode`，plain fallback 直接编译 canonical node。
 - [x] 删除 command-specific dialog render/state（`ModelPanel`/`EffortPanel`、
   `TracePanel`/`TraceDetailPanel`、`UpdatePanel` 和旧 thinking-segment chrome），
   保留 generic `PanelModel`/`FrontendPanel` renderer 与可复用 shared controls。

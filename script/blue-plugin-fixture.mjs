@@ -40,6 +40,7 @@ const fallbackPackage = existsSync(manifestPath) ? JSON.parse(readFileSync(manif
 const target = relative(repositoryRoot, packageDir)
 const reproduce = `node script/blue-plugin-fixture.mjs ${target === '' ? '.' : target.startsWith(`..${sep}`) ? packageDir : target} --install${harnessLine === undefined ? '' : ` --harness-line ${harnessLine}`}`
 const fixtureRoot = await mkdtemp(join(tmpdir(), 'blue-plugin-fixture-'))
+let compilerContext
 const report = {
   package: fallbackPackage,
   fixtureRoot,
@@ -234,15 +235,34 @@ try {
   const frontend = await load('@dsh-blue/blue-frontend')
   const adapter = await load('@dsh-blue/blue-harness-adapter')
   const core = await load('@dsh-blue/blue-core')
+  const cordis = await load('@deepseek-ai/cordis')
+  const themeDark = await load('@dsh-blue/blue-core/theme-dark')
   const context = await load('@dsh-blue/blue-context')
   const conversation = await load('@dsh-blue/blue-conversation')
   const remote = await load('@dsh-blue/blue-remote')
   const officialTranscript = await load('@dsh-blue/blue-transcript/official-model')
   const transcriptModel = await load('@dsh-blue/blue-transcript/transcript-model')
+  compilerContext = new cordis.Context()
+  const compilerComponents = new core.BlueComponentsService(compilerContext, {
+    theme: { colors: themeDark.DARK_COLORS },
+    tui: {},
+  })
+  function renderNode(node, width) {
+    const safeWidth = Math.max(1, Number.isFinite(width) ? Math.floor(width) : 1)
+    const compiled = core.compileBlueUiNode(node, {
+      components: compilerComponents,
+      colors: themeDark.DARK_COLORS,
+      getViewport: () => ({ columns: safeWidth, rows: Number.MAX_SAFE_INTEGER }),
+      screenMode: 'main',
+      emit: () => {},
+    })
+    ensure(compiled.ok, 'FIXTURE_CANONICAL_COMPILE', compiled.ok ? '' : compiled.message)
+    return compiled.value.component.render(safeWidth)
+  }
 
   await scenario('provider.swap-and-plain-fallback', async () => {
     const host = new frontend.FrontendHost()
-    await host.activateInitial({ id: 'fixture-provider', activate: ctx => ctx.publish({ providerId: 'fixture-provider', capabilities: [], views: [{ kind: 'text', text: 'ready' }] }) })
+    await host.activateInitial({ id: 'fixture-provider', activate: ctx => ctx.publish({ providerId: 'fixture-provider', capabilities: [], nodes: [{ kind: 'text', content: 'ready' }] }) })
     await host.swap({ id: 'fixture-failing-provider', activate: () => { throw new Error('fixture failure') } })
     ensure(host.snapshot.providerId === 'plain', 'FIXTURE_PROVIDER_FALLBACK', 'provider failure did not fall back to plain')
     await host.unload()
@@ -251,7 +271,7 @@ try {
   await scenario('provider.unload-and-late-event', async () => {
     const host = new frontend.FrontendHost()
     let latePublish
-    await host.activateInitial({ id: 'fixture-late-provider', activate: ctx => { latePublish = () => ctx.publish({ providerId: 'fixture-late-provider', capabilities: [], views: [{ kind: 'text', text: 'late' }] }); ctx.publish({ providerId: 'fixture-late-provider', capabilities: [], views: [] }) } })
+    await host.activateInitial({ id: 'fixture-late-provider', activate: ctx => { latePublish = () => ctx.publish({ providerId: 'fixture-late-provider', capabilities: [], nodes: [{ kind: 'text', content: 'late' }] }); ctx.publish({ providerId: 'fixture-late-provider', capabilities: [], nodes: [] }) } })
     await host.unload()
     latePublish?.()
     ensure(host.snapshot.providerId === 'plain', 'FIXTURE_PROVIDER_LATE_EVENT', 'late publish survived unload')
@@ -363,10 +383,10 @@ try {
 
   await scenario('renderer.width-scan-20-40-80-120', async () => {
     const model = context.buildContextModel({ sessionId: 's1', watermark: 3, facts: { input: 123456, output: 7890, cacheRead: 42, cacheWrite: 8, used: 120, window: 1000, breakdown: { system: 1, tools: 2, messages: 3 } } })
-    const views = [...model.panel.view ? [model.panel.view] : [], ...model.status.views]
+    const nodes = [model.panel.node, ...model.status.nodes]
     for (const width of [20, 40, 80, 120]) {
-      for (const view of views) {
-        const rows = core.renderFrontendView(view, width)
+      for (const node of nodes) {
+        const rows = renderNode(node, width)
         ensure(!rows.some(row => core.visibleWidth(row) > width), 'FIXTURE_WIDTH_OVERFLOW', `frontend renderer exceeded width ${width}`)
       }
     }
@@ -953,10 +973,16 @@ try {
         { kind: 'transcript-assistant', id: 'assistant-1', seq: 2, turn: 0, step: 0, text: adversarial, streaming: false },
         { kind: 'transcript-error', id: 'error-1', seq: 3, turn: 0, message: adversarial },
       ], false)
-      const component = new transcriptModel.TranscriptModelComponent(() => semantic)
+      const component = new transcriptModel.TranscriptModelComponent(() => semantic, {
+        components: compilerComponents,
+        colors: themeDark.DARK_COLORS,
+        images: () => ({}),
+        requestRender: () => {},
+        semantic: false,
+      })
       for (const width of [20, 40, 80, 120]) {
         const semanticRows = component.render(width)
-        const plainRows = core.renderFrontendView({ kind: 'text', text: adversarial }, width)
+        const plainRows = renderNode({ kind: 'text', content: adversarial }, width)
         ensure(![...semanticRows, ...plainRows].some(row => core.visibleWidth(row) > width), 'FIXTURE_CONVERSATION_WIDTH', `conversation renderer exceeded width ${width}`)
       }
       component.dispose()
@@ -1126,7 +1152,14 @@ try {
       })
       const execution = { callId: 'packed-openpencil', rootCallId: 'packed-openpencil', name: 'openpencil_render', arguments: { path: 'fixture.op' }, signal: new AbortController().signal }
       adapterInstance.observe({ get: () => presentation }, execution, { isError: false, value: { ok: true }, content: [{ type: 'text', text: 'rendered' }], meta: { embeddedGrant: 'must-not-leak' } })
-      ensure(models.get('packed-openpencil')?.result?.kind === 'sections' && !JSON.stringify(models.get('packed-openpencil')).includes('must-not-leak'), 'FIXTURE_OPENPENCIL_PRESENTATION', 'OpenPencil diff fallback or meta elision failed')
+      const model = models.get('packed-openpencil')
+      ensure(model?.result?.kind === 'sections' && !JSON.stringify(model).includes('must-not-leak'), 'FIXTURE_OPENPENCIL_PRESENTATION', 'OpenPencil diff fallback or meta elision failed')
+      for (const width of [20, 40, 80, 120]) {
+        for (const node of [model.call, model.result]) {
+          const rows = renderNode(node, width)
+          ensure(!rows.some(row => core.visibleWidth(row) > width), 'FIXTURE_OPENPENCIL_WIDTH', `OpenPencil node exceeded width ${width}`)
+        }
+      }
       adapterInstance.dispose()
       ensure(models.size === 0 && notes.size === 0, 'FIXTURE_OPENPENCIL_MODEL_UNLOAD', 'OpenPencil presentation survived unload')
     })
@@ -1196,6 +1229,12 @@ try {
   report.observations.push(`installed ${packages.size} local tarballs`, 'all imports resolved through installed package exports')
 } catch (error) {
   failure('fixture.setup', error, 'FIXTURE_SETUP_FAILED')
+}
+
+try {
+  await compilerContext?.fiber.dispose()
+} catch (error) {
+  failure('fixture.compiler-cleanup', error, 'FIXTURE_COMPILER_CLEANUP_FAILED')
 }
 
 await finish()

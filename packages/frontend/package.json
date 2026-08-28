@@ -13,6 +13,6 @@
   "files": ["lib/**/*"],
   "license": "MIT",
   "repository": { "type": "git", "url": "git+https://github.com/dsh-blue/blue.git", "directory": "packages/frontend" },
-  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" },
-  "devDependencies": { "@deepseek-ai/cordis": "4.0.1" }
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@dsh-blue/blue-api": "workspace:*" },
+  "devDependencies": { "@deepseek-ai/cordis": "4.0.1", "@dsh-blue/blue-api": "workspace:*" }
 }

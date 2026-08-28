@@ -50,9 +50,9 @@ export { READ_PREVIEW_LINE_LIMIT, SEARCH_PREVIEW_MATCH_LIMIT, SEARCH_PATH_LIMIT 
 export { parseXmlEnvelope, summarizeToolText, type EnvelopePair } from './envelope.ts'
 export { ellipsize, parseToolArguments, summarizeToolCall, TOOL_ARG_PAIR_LIMIT, TOOL_ARG_VALUE_MAX_CHARS } from './present.ts'
 export { SessionFactsService } from './session-facts.ts'
-export { createToolPresentationModel, toolCallView, toolResultView, toolResultChip, BlueModelToolService, ToolModelComponent, ToolModelService } from './tool-model.ts'
+export { createToolPresentationModel, toolCallNode, toolResultNode, toolResultChip, BlueModelToolService, ToolModelComponent, ToolModelService } from './tool-model.ts'
 export type { ToolPresentationFacts } from './tool-model.ts'
-export { appendTranscriptView, createTranscriptModel, TRANSCRIPT_MODEL_WINDOW, TranscriptModelService, TranscriptModelComponent } from './transcript-model.ts'
+export { appendTranscriptNode, createTranscriptModel, TRANSCRIPT_MODEL_WINDOW, TranscriptModelService, TranscriptModelComponent } from './transcript-model.ts'
 export {
   BRAILLE_SPINNER_FRAMES,
   BRAILLE_SPINNER_INTERVAL_MS,
@@ -137,7 +137,11 @@ export function apply(ctx: Context): void {
     colors,
     viewport: () => ({ columns: screen.columns, rows: screen.rows }),
   })
-  const toolModels = new BlueModelToolService(ctx, undefined, colors)
+  const toolModels = new BlueModelToolService(ctx, undefined, {
+    components: ctx.blueComponents,
+    colors,
+    viewportRows: () => screen.rows,
+  })
   const transcriptModels = new TranscriptModelService(ctx, undefined, {
     renderer: {
       colors,

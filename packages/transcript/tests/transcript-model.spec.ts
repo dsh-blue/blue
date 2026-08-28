@@ -2,14 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { BlueComponent, BlueScreen, BlueSemanticColors } from '@dsh-blue/blue-core'
 import type { TranscriptEntryModel, TranscriptModel } from '@dsh-blue/blue-frontend'
-import { appendTranscriptView, createTranscriptModel, TRANSCRIPT_MODEL_WINDOW, TranscriptModelComponent, TranscriptModelService, type TranscriptModelRenderer } from '../src/transcript-model.ts'
+import { appendTranscriptNode, createTranscriptModel, TRANSCRIPT_MODEL_WINDOW, TranscriptModelComponent, TranscriptModelService, type TranscriptModelRenderer } from '../src/transcript-model.ts'
 import { DEFAULT_TRANSCRIPT_PRESENTATION, TranscriptPresentationPolicy } from '../src/presentation-policy.ts'
 import { setThinkingTimers } from '../src/thinking.ts'
 import { fakeBlueComponents } from './helpers.ts'
 import { COLORS } from './status-fakes.ts'
 
 function fixture() { const children: BlueComponent[] = []; const screen = { addChild: (component: BlueComponent) => { children.push(component); return () => { const index = children.indexOf(component); if (index >= 0) children.splice(index, 1) } }, contentChanged: () => false, requestRender: () => {} } as unknown as BlueScreen; return { screen, children } }
-const model = (id: string, entries = [{ kind: 'text' as const, text: 'entry' }]): TranscriptModel => ({ kind: 'transcript', id, entries })
+const model = (id: string, entries = [{ kind: 'text' as const, content: 'entry' }]): TranscriptModel => ({ kind: 'transcript', id, entries })
 
 const semanticEntries = (): TranscriptEntryModel[] => [
   {
@@ -31,7 +31,7 @@ const semanticEntries = (): TranscriptEntryModel[] => [
   { kind: 'transcript-tool', id: 'tool-pending', seq: 6, turn: 1, step: 0, callId: 'call-3', name: 'custom', arguments: '{bad', startedAt: 150 },
   {
     kind: 'transcript-tool', id: 'tool-presented', seq: 7, turn: 1, step: 0, callId: 'call-4', name: 'read', arguments: '{}', startedAt: 160,
-    presentation: { kind: 'tool', id: 'presentation', name: 'read', call: { kind: 'text', text: 'call view' }, result: { kind: 'text', text: 'result view' } },
+    presentation: { kind: 'tool', id: 'presentation', name: 'read', call: { kind: 'text', content: 'call view' }, result: { kind: 'text', content: 'result view' } },
   },
   { kind: 'transcript-error', id: 'error-code', seq: 8, turn: 1, message: 'down', code: 'HTTP_404' },
   { kind: 'transcript-error', id: 'error', seq: 9, turn: 1, message: 'unknown' },
@@ -41,30 +41,34 @@ const semanticEntries = (): TranscriptEntryModel[] => [
 function renderer(
   requestRender = () => {},
   presentation?: TranscriptPresentationPolicy,
+  semantic = true,
 ): TranscriptModelRenderer {
   return {
     colors: COLORS as BlueSemanticColors,
     components: fakeBlueComponents(),
     images: () => ({}),
     requestRender,
+    semantic,
     ...(presentation === undefined ? {} : { presentation }),
   }
 }
+
+const plainRenderer = (): TranscriptModelRenderer => renderer(() => {}, undefined, false)
 
 afterEach(() => {
   setThinkingTimers(undefined)
 })
 
 describe('TranscriptModelService', () => {
-  it('mounts dynamic entries and refreshes plain rows', () => { const ctx = new Context(); const f = fixture(); const service = new TranscriptModelService(ctx, f.screen); let current = model('one'); const dispose = service.register(() => current); const component = f.children[0] as TranscriptModelComponent; expect(component.render(20)).toEqual(['entry']); current = model('one', [{ kind: 'fields', fields: [{ label: 'a', value: 'b' }] }]); service.refresh('one'); expect((f.children[0] as TranscriptModelComponent).render(20)).toEqual(['a: b']); expect(service.list()).toHaveLength(1); service.refresh('missing'); dispose(); dispose(); expect(component.render(20)).toEqual([]); service.refresh('one') })
-  it('handles absent, duplicate, late attach and unload', () => { const ctx = new Context(); const service = new TranscriptModelService(ctx); const absent = service.register(() => null); expect(absent).toBeTypeOf('function'); absent(); const late = service.register(model('late')); expect(service.list()).toHaveLength(1); const f = fixture(); service.attach(f.screen); expect(f.children).toHaveLength(1); expect(() => service.register(model('late'))).toThrow(/already registered/); late(); service.register(model('active')); expect(f.children).toHaveLength(1); service.dispose(); expect(f.children).toHaveLength(0) })
-  it('renders null and nested view shapes safely', () => { expect(new TranscriptModelComponent(() => null).render(10)).toEqual([]); const c = new TranscriptModelComponent(() => model('nested', [{ kind: 'sections', sections: [{ title: 's', body: { kind: 'code', code: 'abcdef' } }] }])); expect(c.render(3)).toEqual(['s', 'abc', 'def']); c.invalidate() })
-  it('renders a statically registered model and disposes its mounted child', () => { const f = fixture(); const service = new TranscriptModelService(new Context(), f.screen); service.register(model('static')); expect((f.children[0] as TranscriptModelComponent).render(20)).toEqual(['entry']); service.dispose(); expect(f.children).toHaveLength(0) })
-  it('bounds the rendered entry window and cleans up on reattach', () => { const entries = Array.from({ length: TRANSCRIPT_MODEL_WINDOW + 3 }, (_, index) => ({ kind: 'text' as const, text: String(index) })); const component = new TranscriptModelComponent(() => model('bounded', entries)); const rows = component.render(20); expect(rows).toHaveLength(TRANSCRIPT_MODEL_WINDOW); expect(rows[0]).toBe('3'); const first = fixture(); const second = fixture(); const service = new TranscriptModelService(new Context(), first.screen); service.register(model('reattach')); service.attach(second.screen); expect(first.children).toHaveLength(0); expect(second.children).toHaveLength(1); service.dispose() })
-  it('builds immutable replay/live fixtures without folding session events', () => { const replay = createTranscriptModel('session', [{ kind: 'text', text: 'user' }, { kind: 'code', code: 'assistant' }]); expect(replay.streaming).toBeUndefined(); expect(Object.isFrozen(replay.entries)).toBe(true); const live = appendTranscriptView(replay, { kind: 'text', text: 'stream' }, true); expect(live.streaming).toBe(true); expect(live.entries).toHaveLength(3); const settled = appendTranscriptView(live, { kind: 'text', text: 'done' }, false); expect(settled.streaming).toBe(false); expect(replay.entries).toHaveLength(2) })
+  it('mounts dynamic entries and refreshes canonical rows', () => { const ctx = new Context(); const f = fixture(); const service = new TranscriptModelService(ctx, f.screen, { renderer: plainRenderer() }); let current = model('one'); const dispose = service.register(() => current); const component = f.children[0] as TranscriptModelComponent; expect(component.render(20)).toEqual(['entry']); current = model('one', [{ kind: 'fields', rows: [{ label: 'a', value: [{ text: 'b' }] }] }]); service.refresh('one'); expect((f.children[0] as TranscriptModelComponent).render(20)).toEqual(['a: b']); expect(service.list()).toHaveLength(1); service.refresh('missing'); dispose(); dispose(); expect(component.render(20)).toEqual([]); service.refresh('one') })
+  it('handles absent, duplicate, late attach and unload', () => { const ctx = new Context(); const service = new TranscriptModelService(ctx, undefined, { renderer: plainRenderer() }); const absent = service.register(() => null); expect(absent).toBeTypeOf('function'); absent(); const late = service.register(model('late')); expect(service.list()).toHaveLength(1); const f = fixture(); service.attach(f.screen); expect(f.children).toHaveLength(1); expect(() => service.register(model('late'))).toThrow(/already registered/); late(); service.register(model('active')); expect(f.children).toHaveLength(1); service.dispose(); expect(f.children).toHaveLength(0) })
+  it('renders null and nested canonical nodes safely', () => { expect(new TranscriptModelComponent(() => null, plainRenderer()).render(10)).toEqual([]); const c = new TranscriptModelComponent(() => model('nested', [{ kind: 'sections', sections: [{ title: 's', body: { kind: 'code', code: 'abcdef' } }] }]), plainRenderer()); expect(c.render(3)).toEqual(['\x1b[1ms\x1b[22m', 'abc', 'def']); c.invalidate() })
+  it('renders a statically registered model and disposes its mounted child', () => { const f = fixture(); const service = new TranscriptModelService(new Context(), f.screen, { renderer: plainRenderer() }); service.register(model('static')); expect((f.children[0] as TranscriptModelComponent).render(20)).toEqual(['entry']); service.dispose(); expect(f.children).toHaveLength(0) })
+  it('bounds the rendered entry window and cleans up on reattach', () => { const entries = Array.from({ length: TRANSCRIPT_MODEL_WINDOW + 3 }, (_, index) => ({ kind: 'text' as const, content: String(index) })); const component = new TranscriptModelComponent(() => model('bounded', entries), plainRenderer()); const rows = component.render(20); expect(rows).toHaveLength(TRANSCRIPT_MODEL_WINDOW); expect(rows[0]).toBe('3'); const first = fixture(); const second = fixture(); const service = new TranscriptModelService(new Context(), first.screen, { renderer: plainRenderer() }); service.register(model('reattach')); service.attach(second.screen); expect(first.children).toHaveLength(0); expect(second.children).toHaveLength(1); service.dispose() })
+  it('builds immutable replay/live fixtures without folding session events', () => { const replay = createTranscriptModel('session', [{ kind: 'text', content: 'user' }, { kind: 'code', code: 'assistant' }]); expect(replay.streaming).toBeUndefined(); expect(Object.isFrozen(replay.entries)).toBe(true); const live = appendTranscriptNode(replay, { kind: 'text', content: 'stream' }, true); expect(live.streaming).toBe(true); expect(live.entries).toHaveLength(3); const settled = appendTranscriptNode(live, { kind: 'text', content: 'done' }, false); expect(settled.streaming).toBe(false); expect(replay.entries).toHaveLength(2) })
 
   it('renders every semantic entry through the plain capability fallback', () => {
-    const component = new TranscriptModelComponent(() => model('plain', semanticEntries()))
+    const component = new TranscriptModelComponent(() => model('plain', semanticEntries()), plainRenderer())
     component.setExpanded(true)
     const rows = component.render(80)
     expect(rows).toEqual(expect.arrayContaining([
@@ -93,7 +97,7 @@ describe('TranscriptModelService', () => {
       },
       { kind: 'transcript-tool', id: 'argish', seq: 2, turn: 1, step: 0, callId: 'c2', name: 'write', arguments: '{"file_path":"a.ts"}', startedAt: 3 },
     ]
-    const rows = new TranscriptModelComponent(() => model('plain', entries)).render(80)
+    const rows = new TranscriptModelComponent(() => model('plain', entries), plainRenderer()).render(80)
     expect(rows).toContain('src/a.ts · lines 1-1 of 9')
     expect(rows).toContain('write')
     expect(rows).toContain('  file_path: a.ts')
@@ -120,17 +124,17 @@ describe('TranscriptModelService', () => {
     expect(expandedText).toContain('first line')
     expect(expandedText).toContain('1  first line')
 
-    const plain = new TranscriptModelComponent(() => model('reads', [groupEntry])).render(80).join('\n')
+    const plain = new TranscriptModelComponent(() => model('reads', [groupEntry]), plainRenderer()).render(80).join('\n')
     expect(plain).toContain('Read 3 calls: src/a.ts, gone.ts')
     const plainSingle = new TranscriptModelComponent(() => model('reads', [{
       kind: 'transcript-read-group', id: 'read-group:solo', seq: 1, turn: 1, step: 0,
       reads: [{ callId: 'solo', seq: 1, turn: 1, step: 0, path: 'solo.ts', state: 'ok' }],
-    }])).render(80).join('\n')
+    }]), plainRenderer()).render(80).join('\n')
     expect(plainSingle).toContain('Read 1 call: solo.ts')
     const plainPathless = new TranscriptModelComponent(() => model('reads', [{
       kind: 'transcript-read-group', id: 'read-group:none', seq: 1, turn: 1, step: 0,
       reads: [{ callId: 'none', seq: 1, turn: 1, step: 0, state: 'ok' }],
-    }])).render(80).join('\n')
+    }]), plainRenderer()).render(80).join('\n')
     expect(plainPathless).toContain('Read 1 call')
     expect(plainPathless).not.toContain(':')
   })
@@ -154,12 +158,12 @@ describe('TranscriptModelService', () => {
     expect(expandedText).toContain('1: const hit')
     expect(expandedText).toContain('… 1 more paths')
 
-    const plain = new TranscriptModelComponent(() => model('searches', [searchEntry])).render(80).join('\n')
+    const plain = new TranscriptModelComponent(() => model('searches', [searchEntry]), plainRenderer()).render(80).join('\n')
     expect(plain).toContain('Searched 2 times: const, *.ts')
     const plainBare = new TranscriptModelComponent(() => model('searches', [{
       kind: 'transcript-search-group', id: 'search-group:bare', seq: 1, turn: 1, step: 0,
       searches: [{ callId: 'bare', seq: 1, turn: 1, step: 0, state: 'ok' }],
-    }])).render(80).join('\n')
+    }]), plainRenderer()).render(80).join('\n')
     expect(plainBare).toContain('Searched 1 time: search')
   })
 
@@ -185,7 +189,7 @@ describe('TranscriptModelService', () => {
     component.invalidate()
     const entries = semanticEntries()
     entries[1] = { kind: 'transcript-assistant', id: 'assistant', seq: 2, turn: 1, step: 0, text: 'changed answer', streaming: false }
-    current = model('semantic', [entries[1]!, entries[2]!, { kind: 'text', text: 'plain tail' }])
+    current = model('semantic', [entries[1]!, entries[2]!, { kind: 'text', content: 'plain tail' }])
     const changed = component.render(80)
     expect(changed.some(row => row.includes('changed answer'))).toBe(true)
     expect(changed.some(row => row.includes('plain tail'))).toBe(true)
@@ -200,7 +204,7 @@ describe('TranscriptModelService', () => {
     const component = new TranscriptModelComponent(() => current, renderer())
     const first = component.render(80)
     expect(component.render(80)).toBe(first)
-    current = appendTranscriptView(current, { kind: 'text', text: 'fresh stream data' }, true)
+    current = appendTranscriptNode(current, { kind: 'text', content: 'fresh stream data' }, true)
     const next = component.render(80)
     expect(next).not.toBe(first)
     expect(next.at(-1)).toContain('fresh stream data')
@@ -282,7 +286,7 @@ describe('TranscriptModelService', () => {
     expect(presence).toEqual([true, false])
     service.dispose()
 
-    const active = new TranscriptModelService(new Context(), f.screen, { onPresenceChanged: present => presence.push(present) })
+    const active = new TranscriptModelService(new Context(), f.screen, { renderer: plainRenderer(), onPresenceChanged: present => presence.push(present) })
     active.register(model('active'))
     active.dispose()
     expect(presence.slice(-2)).toEqual([true, false])

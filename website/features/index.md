@@ -15,7 +15,7 @@ Blue 是一棵 Cordis 插件树。Bundle 当前有 30 条 Blue 自有行：2 条
 - status provider owner：按 `blue.statusProvider` 选择一个独占 footer provider，candidate 在未选中时保持 inert
 - editor provider owner：按 `blue.editorProvider` 选择一个独占 editor shell，candidate 在未选中时保持 inert
 
-这些 15 行可逐项移除。Tool diff/terminal/search/read/web 呈现来自 canonical `ToolPresentationModel`，不存在独立 intent row。
+这些 15 行可逐项移除。Tool diff/terminal/search/read/web 呈现来自 canonical `ToolPresentationModel.call/result` nodes，并直接经过 core compiler；不存在独立 intent row 或 frontend `View` adapter。
 
 ## plain-first
 

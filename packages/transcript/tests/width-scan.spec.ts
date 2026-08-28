@@ -173,7 +173,7 @@ describe('transcript width-scan', () => {
         },
         {
           kind: 'transcript-tool', id: 'presented', seq: 5, turn: 1, step: 0, callId: 'presented', name: 'custom',
-          arguments: '{}', startedAt: 1, presentation: { kind: 'tool', id: 'presented', name: 'custom', result: { kind: 'text', text } },
+          arguments: '{}', startedAt: 1, presentation: { kind: 'tool', id: 'presented', name: 'custom', result: { kind: 'text', content: text } },
         },
         { kind: 'transcript-error', id: 'error', seq: 6, turn: 1, message: text },
         { kind: 'transcript-interrupted', id: 'interrupted', seq: 7, turn: 1 },

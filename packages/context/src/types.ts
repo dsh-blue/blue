@@ -6,7 +6,7 @@
  */
 
 import type { BlueUiNode } from '@dsh-blue/blue-api'
-import type { ProviderModel, View } from '@dsh-blue/blue-frontend'
+import type { ProviderModel } from '@dsh-blue/blue-frontend'
 
 export interface UsageSample { readonly turn: number; readonly step: number; readonly inputTokens: number; readonly outputTokens: number; readonly cacheReadTokens?: number; readonly cacheWriteTokens?: number }
 export interface ContextTimelineCurrent { readonly system: number; readonly tools: number; readonly user: number; readonly inject: number; readonly assistant: number; readonly tool: number; readonly total: number }
@@ -32,4 +32,3 @@ export interface ContextAction { readonly kind: 'context.open' | 'context.refres
 export type ContextModelState = 'loading' | 'ready' | 'empty' | 'absent' | 'error'
 export interface ContextPanel { readonly title: string, readonly node: BlueUiNode, readonly refresh?: ContextAction }
 export type ContextModel = Readonly<{ readonly state: ContextModelState; readonly error?: string; readonly panel: ContextPanel; readonly status: ProviderModel }>
-export type ContextView = View

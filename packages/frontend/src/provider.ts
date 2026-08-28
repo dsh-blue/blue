@@ -13,5 +13,5 @@ export interface FrontendProvider<State = unknown> {
 export const plainProvider: FrontendProvider<undefined> = {
   id: 'plain',
   capabilities: [],
-  activate(context) { context.publish({ providerId: 'plain', capabilities: [], views: [] }) },
+  activate(context) { context.publish({ providerId: 'plain', capabilities: [], nodes: [] }) },
 }

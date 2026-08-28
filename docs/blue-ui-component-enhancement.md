@@ -700,7 +700,7 @@ Approval、Questionnaire、PlanReview、Help、Info、Settings 使用同一 over
 
 ### 10.4 Frontend model 收敛
 
-内部 `@dsh-blue/blue-frontend` 的 `View/PanelModel` 与公共 `BlueUiNode/PaneContribution` 不能长期保留两套同义模型；status/dock 的同义 generic model 已在 W4a-C 删除：
+内部 `@dsh-blue/blue-frontend` 的 `View/PanelModel` 与公共 `BlueUiNode/PaneContribution` 不能长期保留两套同义模型。W4a-B/C 已删除 panel/status/dock 同义层，W6-2 又物理删除七种 legacy `View` 与 core `frontend-renderer`；provider、tool、transcript 与 context 现均引用 canonical node：
 
 - 公共安全类型放 `blue-api/blue-ui`；
 - 官方 runtime model 可增加领域事实，但 UI 组合引用公共 node；
@@ -902,12 +902,12 @@ G4 后按 Status → Editor extensions → Editor provider → Ecosystem 顺序�
 
 W6 不并行，按以下顺序执行：
 
-1. 删除旧 `dock/panels/editor/tools` capability transition、兼容类型、死 bridge 和当前态旧文档；保留四个旧名的可操作迁移诊断。
-2. 将 frontend/transcript/tool/context/openpencil 消费者全部迁到 canonical `BlueUiNode`，删除 core 的临时 `frontend-renderer` 和 source-plane 兼容入口。
-3. 将 session seam 拆为只读 `session.read` 与写入 `session.act`：app 是唯一真实 owner，read-only/act-only facade 隔离，并覆盖 snapshot revision/freeze、FIFO、abort、owner unload、session stale/late fencing。
-4. 收口 bundle rows、packed fixtures、双语文档；将 11 包 release set、`BLUE_VERSION`、网站中英文、CLI pin 与 version specs 统一到 `0.1.1-rc.1`。
-5. 运行完整 release gates，并在统一 worktree profile dogfood 默认单列、120 列多插件、80/40 列降级、provider swap、theme swap、session switch。
-6. 邀请用户 live-test；等待明确“验收通过”，此前不合并、不删除 profile、不发布。验收后再合并 master、重建主 checkout，并由 release workflow 生成和复用同一候选 artifact。
+1. **完成（W6-1）：**删除旧 `dock/panels/editor/tools` capability transition、兼容类型、死 bridge 和当前态旧文档；保留四个旧名的可操作迁移诊断。
+2. **完成（W6-2）：**将 frontend/transcript/tool/context/openpencil 消费者全部迁到 canonical `BlueUiNode`，删除 core 的临时 `frontend-renderer` 和 source-plane 兼容入口。
+3. **待完成（W6-3）：**将 session seam 拆为只读 `session.read` 与写入 `session.act`：app 是唯一真实 owner，read-only/act-only facade 隔离，并覆盖 snapshot revision/freeze、FIFO、abort、owner unload、session stale/late fencing。
+4. **待完成（W6-4）：**收口 bundle rows、packed fixtures、双语文档；将 11 包 release set、`BLUE_VERSION`、网站中英文、CLI pin 与 version specs 统一到 `0.1.1-rc.1`。
+5. **待完成：**运行完整 release gates，并在统一 worktree profile dogfood 默认单列、120 列多插件、80/40 列降级、provider swap、theme swap、session switch。
+6. **待完成人工门禁：**邀请用户 live-test；等待明确“验收通过”，此前不合并、不删除 profile、不发布。验收后再合并 master、重建主 checkout，并由 release workflow 生成和复用同一候选 artifact。
 
 **G6 验收：**所有自动门禁、dogfood 日志、真人验收和 registry install smoke 完整；七类示例场景有结果；发布 tarball 不含 workspace protocol、缺失 subpath 或未声明依赖。
 

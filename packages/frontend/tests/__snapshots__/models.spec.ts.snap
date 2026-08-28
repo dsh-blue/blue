@@ -1,43 +1,48 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`renderer-neutral model fixture > snapshots every view shape without renderer objects 1`] = `
+exports[`renderer-neutral model fixture > snapshots canonical nodes without renderer objects 1`] = `
 {
-  "views": [
+  "nodes": [
     {
+      "content": "hello",
       "kind": "text",
-      "text": "hello",
     },
     {
       "kind": "rich-text",
       "spans": [
         {
-          "strong": true,
+          "emphasis": "strong",
           "text": "strong",
         },
       ],
     },
     {
-      "fields": [
+      "kind": "fields",
+      "rows": [
         {
           "label": "mode",
-          "value": "normal",
+          "value": [
+            {
+              "text": "normal",
+            },
+          ],
         },
       ],
-      "kind": "fields",
     },
     {
       "kind": "sections",
       "sections": [
         {
           "body": {
+            "content": "body",
             "kind": "text",
-            "text": "body",
           },
           "title": "details",
         },
       ],
     },
     {
+      "id": "fixture",
       "items": [
         {
           "id": "one",
@@ -45,7 +50,9 @@ exports[`renderer-neutral model fixture > snapshots every view shape without ren
         },
       ],
       "kind": "list",
-      "selectedId": "one",
+      "selectedIds": [
+        "one",
+      ],
     },
     {
       "code": "const x = 1",
@@ -56,7 +63,6 @@ exports[`renderer-neutral model fixture > snapshots every view shape without ren
       "after": "b",
       "before": "a",
       "kind": "diff",
-      "language": "txt",
     },
   ],
 }

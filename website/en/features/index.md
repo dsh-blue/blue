@@ -15,7 +15,7 @@ Blue is a Cordis plugin tree. The bundle currently has 30 Blue-owned rows: two h
 - status provider owner: selects one exclusive footer provider through `blue.statusProvider`; unselected candidates remain inert
 - editor provider owner: selects one exclusive editor shell through `blue.editorProvider`; unselected candidates remain inert
 
-These 15 rows can be removed independently. Diff/terminal/search/read/web tool rendering comes from canonical `ToolPresentationModel` conversion; there are no intent rows.
+These 15 rows can be removed independently. Diff/terminal/search/read/web tool rendering uses canonical `ToolPresentationModel.call/result` nodes compiled directly by core; there are no intent rows or frontend `View` adapters.
 
 ## plain-first
 

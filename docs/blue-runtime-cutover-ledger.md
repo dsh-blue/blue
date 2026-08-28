@@ -1,6 +1,6 @@
 # Frontend Runtime Cutover Ledger
 
-> Status: C4 legacy deletion and all current-tree machine/profile gates are complete. Explicit live human acceptance is pending. No merge, version change, tag, publish, or production-profile mutation is authorized before acceptance.
+> Status: the C4/C6 evidence below records the earlier frontend-runtime cutover checkpoint. On the current W4-W6 integration branch, W6-1 capability cleanup and W6-2 canonical-node source migration are complete; W6-3 session read/act separation, W6-4 release closure, refreshed full-tree/profile gates, and explicit live human acceptance remain pending. No merge, version change, tag, publish, or production-profile mutation is authorized before acceptance.
 
 ## Frozen Inputs
 
@@ -16,7 +16,7 @@
 | PR #62 | `dac99a4cb24278bef10e3672b59530d5eb3d9d6c` | rewind and session tree |
 | PR #63 | `f2d8ab2514ace94c3a07a30d9d2d247ac2af1a33` | provider onboarding |
 
-PR #34 and #38 are out of scope; PR #36 is superseded. Work continues only in `/home/x/dev/blue-runtime-cutover` on `p2/frontend-runtime-cutover`.
+PR #34 and #38 are out of scope; PR #36 is superseded. The earlier checkpoint was developed in `/home/x/dev/blue-runtime-cutover` on `p2/frontend-runtime-cutover`; the current W4-W6 integration continues in `/home/x/dev/deepseek-harness-plugin/blue/blue-ui-w4-w6` on `p2/ui-api-w4-w6` for PR #77.
 
 ## Behavior Migration
 
@@ -41,7 +41,8 @@ PR #34 and #38 are out of scope; PR #36 is superseded. Work continues only in `/
 |---|---|---|
 | transcript `fold.ts` and direct session-event subscription | official `blueConversation` replay/live projection and semantic consumer | complete |
 | generic frontend status compatibility | all status producers publish canonical status nodes | complete |
-| legacy tool intent presenters | canonical tool presentation -> `ToolPresentationModel` | complete |
+| legacy tool intent presenters | official tool presentation -> canonical `ToolPresentationModel.call/result` nodes | complete |
+| seven-kind frontend `View`, core `frontend-renderer`, and old tool helper aliases | canonical `BlueUiNode`, direct compiler, `toolCallNode`/`toolResultNode` | complete |
 | command-specific dialog implementations | generic renderer-neutral panel models, structured actions and shared `FrontendPanel` | complete; model/effort, trace/detail and update renderer classes deleted |
 | activity/todo/agents/queue/btw pane-owned folds | `blueConversationFacts`/app actions -> canonical bottom-pane nodes | complete |
 | shared editor module singleton | frontend-tree `EditorHostService` and `InteractionStateService` | complete |
@@ -50,7 +51,7 @@ PR #34 and #38 are out of scope; PR #36 is superseded. Work continues only in `/
 
 The deletion audit distinguishes renderer event folding from legitimate domain ownership. App helpers may inspect a private Agent/session log to perform rewind, retraction, title cadence, mode restoration or audit export; trace formatting may consume official query records. None of those values enter a frontend model as Agent, Session or raw renderer state.
 
-`blue-conversation` now owns both `blueConversation` and `blueConversationFacts`. Transcript rendering, status producers and activity/todo/agents panes consume projection values through app-owned reader/projection seams. BTW uses an owned opaque side-session handle; queue uses app actions. The generic frontend status/dock contracts, `blueIntents`, intent subpaths, child-event tracking, the shared editor singleton, `ModelPanel`/`EffortPanel`, `TracePanel`/`TraceDetailPanel`, `UpdatePanel`, and their retired thinking-segment renderer are physically absent.
+`blue-conversation` now owns both `blueConversation` and `blueConversationFacts`. Transcript rendering, status producers and activity/todo/agents panes consume projection values through app-owned reader/projection seams. BTW uses an owned opaque side-session handle; queue uses app actions. The generic frontend status/dock contracts, seven-kind frontend `View`, core `frontend-renderer`, `blueIntents`, intent subpaths, child-event tracking, the shared editor singleton, `ModelPanel`/`EffortPanel`, `TracePanel`/`TraceDetailPanel`, `UpdatePanel`, and their retired thinking-segment renderer are physically absent. Provider/tool/transcript/context UI data uses canonical `BlueUiNode`; OpenPencil's Harness tool views remain domain input only.
 
 ## Package And Composition Record
 
@@ -60,7 +61,7 @@ The deletion audit distinguishes renderer event folding from legitimate domain o
 - Conversation projection and official transcript consumption are baseline rows. Context, remote, OpenPencil and Lark are validation-only, not bundle rows.
 - No operation may mutate the production `blue` profile.
 
-## Final Evidence
+## Earlier C6 Evidence
 
 Current-tree machine evidence (2026-08-26):
 
@@ -111,6 +112,7 @@ Process/profile evidence:
   one bracketed-paste enable and one disable, no width error, and a clean
   session-save exit; no `blue-overflow.log` exists in the profile.
 
-Machine C6 is complete. The remaining gate is the user's live test of
-`dsh --profile blue-runtime-cutover` and exact acceptance response
+This evidence completed the earlier C6 checkpoint; it does not substitute for
+the current W4-W6 branch's pending release gates or unified acceptance profile.
+The final gate remains the user's live test and exact acceptance response
 `验收通过`; automated evidence cannot substitute for it.

@@ -7,8 +7,10 @@
 import { Service, type Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ToolCallView, ToolResult, ToolResultView } from '@deepseek-ai/dsh-tools'
-import { diffChangeCounts, renderFrontendView, type BlueComponent, type BlueScreen, type BlueSemanticColors } from '@dsh-blue/blue-core'
-import { freezeModel, type ToolPresentationModel, type View } from '@dsh-blue/blue-frontend'
+import type { BlueUiNode } from '@dsh-blue/blue-api'
+import { diffChangeCounts, type BlueComponent, type BlueScreen } from '@dsh-blue/blue-core'
+import { freezeModel, type ToolPresentationModel } from '@dsh-blue/blue-frontend'
+import { renderCanonicalNode, type CanonicalNodeRenderer } from './canonical-node-renderer.ts'
 import { summarizeToolText } from './envelope.ts'
 import { summarizeToolCall } from './present.ts'
 
@@ -35,26 +37,26 @@ export function createToolPresentationModel(facts: ToolPresentationFacts): ToolP
     kind: 'tool',
     id: facts.id,
     name: facts.name,
-    call: facts.call === undefined ? { kind: 'text', text: facts.name } : toolCallView(facts.call),
-    ...(facts.result === undefined && facts.outcome === undefined ? {} : { result: toolResultView(facts.result, facts.outcome, facts.name) }),
+    call: facts.call === undefined ? { kind: 'text', content: facts.name } : toolCallNode(facts.call),
+    ...(facts.result === undefined && facts.outcome === undefined ? {} : { result: toolResultNode(facts.result, facts.outcome, facts.name) }),
     ...(facts.expanded === undefined ? {} : { expanded: facts.expanded }),
     action: { kind: 'tool.toggle', id: facts.id },
   }
   return freezeModel(model)
 }
 
-/** Map one official pending-call view to the shared frontend vocabulary. */
-export function toolCallView(view: ToolCallView): View {
+/** Map one official pending-call view to the canonical frontend vocabulary. */
+export function toolCallNode(view: ToolCallView): BlueUiNode {
   switch (view.card) {
     case 'generic': {
       const content = contentText(view.content)
       const input = view.rawInput === undefined ? undefined : readableValue(view.rawInput)
-      return { kind: 'sections', sections: [{ title: view.title, body: { kind: 'text', text: content ?? input ?? '' } }] }
+      return { kind: 'sections', sections: [{ title: view.title, body: { kind: 'text', content: content ?? input ?? '' } }] }
     }
     case 'terminal': {
-      const sections: { title: string; body: View }[] = []
-      if (view.description !== undefined || view.cwd !== undefined) sections.push({ title: view.description ?? 'cwd', body: { kind: 'text', text: view.cwd ?? '' } })
-      sections.push({ title: 'Command', body: { kind: 'code', code: view.title, language: 'shell' } })
+      const sections: { title: string; body: Extract<BlueUiNode, { readonly kind: 'text' | 'code' }> }[] = []
+      if (view.description !== undefined || view.cwd !== undefined) sections.push({ title: view.description ?? 'cwd', body: { kind: 'text', content: view.cwd ?? '' } })
+      sections.push({ title: 'Command', body: { kind: 'code', code: view.title } })
       return { kind: 'sections', sections }
     }
     case 'diff':
@@ -63,18 +65,18 @@ export function toolCallView(view: ToolCallView): View {
 }
 
 /** Map one official settled-result view, or its canonical raw fallback. */
-export function toolResultView(view: ToolResultView | undefined, outcome: ToolResult | undefined, name: string): View {
+export function toolResultNode(view: ToolResultView | undefined, outcome: ToolResult | undefined, name: string): BlueUiNode {
   const fallback = summarizeToolText(contentText(outcome?.content) ?? '(no output)')
-  if (outcome?.isError === true) return { kind: 'text', text: fallback, tone: 'danger' }
-  if (view === undefined) return { kind: 'text', text: fallback }
+  if (outcome?.isError === true) return { kind: 'text', content: fallback, tone: 'danger' }
+  if (view === undefined) return { kind: 'text', content: fallback }
   switch (view.card) {
     case 'generic':
-      return { kind: 'sections', sections: [{ title: view.title ?? name, body: { kind: 'text', text: contentText(view.content) ?? fallback } }] }
+      return { kind: 'sections', sections: [{ title: view.title ?? name, body: { kind: 'text', content: contentText(view.content) ?? fallback } }] }
     case 'terminal': {
       const status = view.exitCode === undefined ? view.signal === undefined ? 'complete' : `signal ${view.signal}` : `exit ${String(view.exitCode)}`
       return { kind: 'sections', sections: [
-        { title: view.title ?? name, body: { kind: 'code', code: view.output ?? fallback, language: 'console' } },
-        { title: 'Status', body: { kind: 'text', text: status } },
+        { title: view.title ?? name, body: { kind: 'code', code: view.output ?? fallback } },
+        { title: 'Status', body: { kind: 'text', content: status } },
       ] }
     }
     case 'diff':
@@ -84,13 +86,13 @@ export function toolResultView(view: ToolResultView | undefined, outcome: ToolRe
       // transcript's grouped card renders from the group model instead.
       if (view.shape === 'paths') {
         const count = view.total
-        return { kind: 'fields', fields: [{ label: 'paths', value: count === view.paths.length ? String(count) : `${String(view.paths.length)} of ${String(count)}` }] }
+        return { kind: 'fields', rows: [{ label: 'paths', value: [{ text: count === view.paths.length ? String(count) : `${String(view.paths.length)} of ${String(count)}` }] }] }
       }
       const kept = view.files.reduce((sum, file) => sum + file.matches.length, 0)
       const matches = view.truncated && view.total !== kept ? `${String(kept)} of ${String(view.total)}` : String(kept)
-      return { kind: 'fields', fields: [
-        { label: 'files', value: String(view.files.length) },
-        { label: 'matches', value: matches },
+      return { kind: 'fields', rows: [
+        { label: 'files', value: [{ text: String(view.files.length) }] },
+        { label: 'matches', value: [{ text: matches }] },
       ] }
     }
     case 'read': {
@@ -102,18 +104,18 @@ export function toolResultView(view: ToolResultView | undefined, outcome: ToolRe
         ? `from line ${String(view.offset)}`
         : `${String(first)}-${String(last)}`
       const open = view.totalLines > (last ?? view.offset - 1) ? ` of ${String(view.totalLines)}` : ''
-      return { kind: 'fields', fields: [
-        { label: 'path', value: view.path },
-        { label: 'lines', value: `${window}${String(open)}` },
+      return { kind: 'fields', rows: [
+        { label: 'path', value: [{ text: view.path }] },
+        { label: 'lines', value: [{ text: `${window}${String(open)}` }] },
       ] }
     }
     case 'web':
-      if (view.kind === 'fetch') return { kind: 'fields', fields: [
-        { label: 'url', value: view.url },
-        { label: 'status', value: String(view.statusCode) },
-        { label: 'truncated', value: view.truncated ? 'yes' : 'no' },
+      if (view.kind === 'fetch') return { kind: 'fields', rows: [
+        { label: 'url', value: [{ text: view.url }] },
+        { label: 'status', value: [{ text: String(view.statusCode) }] },
+        { label: 'truncated', value: [{ text: view.truncated ? 'yes' : 'no' }] },
       ] }
-      return { kind: 'list', items: view.sources.map((source, index) => ({ id: `source-${String(index)}`, label: source.title ?? source.url, detail: source.snippet ?? source.url })) }
+      return { kind: 'list', id: 'tool-web-sources', selectedIds: [], items: view.sources.map((source, index) => ({ id: `source-${String(index)}`, label: source.title ?? source.url, detail: source.snippet ?? source.url })) }
   }
 }
 
@@ -127,9 +129,9 @@ function diffSectionTitle(diff: { readonly path: string; readonly oldText: strin
   return `${diff.path} · +${String(added)} −${String(removed)}`
 }
 
-function diffSections(title: string, diffs: readonly { readonly path: string; readonly oldText: string | null; readonly newText: string }[]): View {
+function diffSections(title: string, diffs: readonly { readonly path: string; readonly oldText: string | null; readonly newText: string }[]): BlueUiNode {
   return { kind: 'sections', sections: diffs.length === 0
-    ? [{ title, body: { kind: 'text', text: '(no changes)' } }]
+    ? [{ title, body: { kind: 'text', content: '(no changes)' } }]
     : diffs.map(diff => ({ title: diffSectionTitle(diff), body: { kind: 'diff', before: diff.oldText ?? '', after: diff.newText } })) }
 }
 
@@ -144,15 +146,20 @@ export function toolResultChip(presentation: ToolPresentationModel | undefined):
   if (presentation === undefined) return undefined
   let added = 0
   let removed = 0
-  const walk = (view: View | undefined): void => {
-    if (view === undefined) return
-    if (view.kind === 'diff') {
-      const counts = diffChangeCounts(view.before, view.after)
+  const walk = (node: BlueUiNode | undefined): void => {
+    if (node === undefined) return
+    if (node.kind === 'diff') {
+      const counts = diffChangeCounts(node.before, node.after)
       added += counts.added
       removed += counts.removed
       return
     }
-    if (view.kind === 'sections') for (const section of view.sections) walk(section.body)
+    if (node.kind === 'sections') for (const section of node.sections) walk(section.body)
+    else if (node.kind === 'stack') for (const child of node.children) walk(child.node)
+    else if (node.kind === 'surface') { walk(node.child); walk(node.footer) }
+    else if (node.kind === 'scroll') walk(node.child)
+    else if (node.kind === 'list') walk(node.empty)
+    else if (node.kind === 'empty') walk(node.actions)
   }
   walk(presentation.result)
   if (added === 0 && removed === 0) return undefined
@@ -182,7 +189,7 @@ class ToolModelComponent implements BlueComponent {
   private expandedOverride: boolean | undefined
   constructor(
     private readonly source: () => ToolPresentationModel | null,
-    private readonly colors?: BlueSemanticColors,
+    private readonly renderer: CanonicalNodeRenderer,
   ) {}
   render(width: number): string[] {
     const model = this.source()
@@ -190,20 +197,16 @@ class ToolModelComponent implements BlueComponent {
     const expanded = this.expandedOverride ?? model.expanded ?? false
     const view = expanded ? model.result ?? model.call : model.call
     if (view === undefined) return []
-    const renderOptions = {
-      // The tool component applies its own 12/200-row budget and needs the
-      // complete validated row count to report the exact hidden remainder.
-      maxRows: Number.MAX_SAFE_INTEGER,
-      ...(this.colors === undefined ? {} : { colors: this.colors }),
-    }
-    const rows = [...renderFrontendView(view, width, renderOptions)]
+    // The tool component applies its own 12/200-row budget and needs the
+    // complete validated row count to report the exact hidden remainder.
+    const rows = renderCanonicalNode(view, width, this.renderer, Number.MAX_SAFE_INTEGER)
     const limit = expanded ? EXPANDED_ROW_LIMIT : COLLAPSED_ROW_LIMIT
     if (rows.length <= limit) return rows
     const remaining = rows.length - limit + 1
     const hint = expanded
       ? `... (${String(remaining)} more lines)`
       : `... (${String(remaining)} more lines, ctrl+o to expand)`
-    const hintRow = renderFrontendView({ kind: 'text', text: hint }, width)[0]!
+    const hintRow = renderCanonicalNode({ kind: 'text', content: hint }, width, this.renderer)[0]!
     return [...rows.slice(0, limit - 1), hintRow]
   }
   setExpanded(expanded: boolean): void { this.expandedOverride = expanded }
@@ -215,7 +218,7 @@ export class BlueModelToolService extends Service {
   private readonly models = new Map<string, Source>()
   private readonly mounted = new Map<string, () => void>()
   private screen: BlueScreen | undefined
-  constructor(ctx: Context, screen?: BlueScreen, private readonly colors?: BlueSemanticColors) { super(ctx, 'blueToolModels'); this.screen = screen }
+  constructor(ctx: Context, screen?: BlueScreen, private readonly renderer?: CanonicalNodeRenderer) { super(ctx, 'blueToolModels'); this.screen = screen }
   attach(screen: BlueScreen): void { for (const dispose of this.mounted.values()) dispose(); this.mounted.clear(); this.screen = screen; for (const id of this.models.keys()) this.mount(id) }
   register(source: Source): () => void {
     const initial = typeof source === 'function' ? source() : source
@@ -229,11 +232,11 @@ export class BlueModelToolService extends Service {
   list(): readonly ToolPresentationModel[] { return [...this.models.values()].map(source => typeof source === 'function' ? source() : source).filter((model): model is ToolPresentationModel => model !== null) }
   dispose(): void { for (const dispose of this.mounted.values()) dispose(); this.mounted.clear(); this.models.clear(); this.screen = undefined }
   private mount(id: string): void {
-    const screen = this.screen; const source = this.models.get(id)
-    if (screen === undefined || source === undefined) return
+    const screen = this.screen; const source = this.models.get(id); const renderer = this.renderer
+    if (screen === undefined || source === undefined || renderer === undefined) return
     this.mounted.get(id)?.(); this.mounted.delete(id)
     /* c8 ignore next -- the closure's deleted-source branch is exercised by unload fixtures. */
-    const component = new ToolModelComponent(() => { const current = this.models.get(id); return current === undefined ? null : typeof current === 'function' ? current() : current }, this.colors)
+    const component = new ToolModelComponent(() => { const current = this.models.get(id); return current === undefined ? null : typeof current === 'function' ? current() : current }, renderer)
     this.mounted.set(id, screen.addChild(component)); screen.requestRender()
   }
 }

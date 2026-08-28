@@ -1,6 +1,6 @@
 # Blue Frontend Runtime 实施计划
 
-> 分支：p2/frontend-runtime-cutover。F0-F6 的当前完成/删除状态以 `blue-runtime-cutover-ledger.md` 为准；本文保留阶段目标并同步已落地边界。
+> 当前集成分支：p2/ui-api-w4-w6（PR #77）。`p2/frontend-runtime-cutover` 是 F0-F6 的早期 checkpoint；当前完成/删除状态以 `blue-runtime-cutover-ledger.md` 为准，本文保留阶段目标并同步已落地边界。
 
 ## 目标与边界
 
@@ -59,13 +59,13 @@
 
 按 status、dock、command、tool presentation、theme、editor、transcript 顺序迁移。每项必须有新 provider/registry、官方 consumer、replacement fixture、unload/reload、width-scan、golden/e2e、bundle row 和 plain fallback。旧实现只在对应验收后删除。
 
-当前进度：status producer 全部发布 canonical `BlueStatusNode`，由 transcript 私有 `BlueStatusEntryService` 编译到 footer；五个官方 pane 发布 canonical `BlueUiNode` 到 bottom-only `BlueBottomPaneService`，并从 `blueConversationFacts` 或 app action seam 取值，public panes/overlays 独立走 core canonical surface bridge。Tool presentation 只转换 canonical dsh-tools view/result；editor host 与 interaction mutable state 都是 frontend-tree scoped。`blueConversation`/`blueConversationFacts` + official transcript consumer 是 bundle baseline。旧 event fold、generic status/dock model、public dock transition、intent presenter、pane event fold、child-event tracker 和 editor module singleton 已物理删除。Command model/action 已落地；model/effort、trace/detail 与 update 均发布 readonly canonical document 和 structured action，由共享 canonical adapter 消费，command-specific renderer/state class 与旧 thinking-segment chrome 已物理删除。最终 build/pack/fixture/smoke/profile 与人工验收仍按 release gate 执行。
+当前进度：status producer 全部发布 canonical `BlueStatusNode`，由 transcript 私有 `BlueStatusEntryService` 编译到 footer；五个官方 pane 发布 canonical `BlueUiNode` 到 bottom-only `BlueBottomPaneService`，并从 `blueConversationFacts` 或 app action seam 取值，public panes/overlays 独立走 core canonical surface bridge。Tool presentation 的 `call`/`result`、transcript generic entry、context panel/status 与 `ProviderModel.nodes` 都使用 canonical `BlueUiNode`；OpenPencil 的 Harness Tool view 只停留在领域输入侧。七种 legacy frontend `View`、core `frontend-renderer` 及其 source-plane compatibility entry 已物理删除，transcript 与 plain fallback 均直接走 canonical compiler。Editor host 与 interaction mutable state 都是 frontend-tree scoped。`blueConversation`/`blueConversationFacts` + official transcript consumer 是 bundle baseline。旧 event fold、generic status/dock model、public dock transition、intent presenter、pane event fold、child-event tracker 和 editor module singleton 已物理删除。Command model/action 已落地；model/effort、trace/detail 与 update 均发布 readonly canonical document 和 structured action，由共享 canonical adapter 消费，command-specific renderer/state class 与旧 thinking-segment chrome 已物理删除。W6-3 session read/act 拆分、W6-4 release closure、最终 build/pack/fixture/smoke/profile 与人工验收仍按 release gate 执行。
 
 ### F6：skills 和生态验证
 
 实现 plugin-development、plugin-migration、plugin-fixture、plugin-validation；完成 dsh-openpencil capability/fallback 和 dsh-lark action/notification 审计；验证独立安装包 fixture。
 
-当前进度：四份 skill 和 validator/fixture runner 已落地。Conversation/transcript packed fixtures覆盖 official replay/live/checkpoint/restore/unload、stale/wrong-session/late rejection 和 width scan。Context/remote/OpenPencil/Lark 均为 validation-only package；OpenPencil/Lark 不是默认 bundle row。最终 current-tree gate 与 `blue-runtime-cutover` profile 的人工验收仍以 ledger 为准，不能沿用 2026-08-24 参考 runtime 的接受记录。
+当前进度：四份 skill 和 validator/fixture runner 已落地。Conversation/transcript packed fixtures覆盖 official replay/live/checkpoint/restore/unload、stale/wrong-session/late rejection 和 width scan。Context/remote/OpenPencil/Lark 均为 validation-only package；OpenPencil/Lark 不是默认 bundle row。最终 current-tree gate 与 W6-4 创建的统一验收 profile 仍以 ledger 为准；该 profile 尚未建立，且不能沿用 `blue-runtime-cutover` 或 2026-08-24 参考 runtime 的接受记录。
 
 ## Master 同步和合并
 

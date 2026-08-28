@@ -19,7 +19,7 @@ Blue 的 projection-backed transcript 以及 canonical status、tool、bottom-pa
 - 包内私有的 `BlueStatusEntryService` 为内建两行 footer 收集 canonical `BlueStatusNode` contribution。
 - `BlueStatusCompositionService` 在该 `blue.default` footer 与一个用户选中的 status-provider candidate 之间选择渲染。
 - 包内私有的 `BlueBottomPaneService` 按 priority 与 id 排列有界的 Blue-owned bottom pane；它没有 left/right lane。
-- `BlueModelToolService` 把官方 tool presentation fact 转换为 readonly frontend view。
+- `BlueModelToolService` 把官方 tool presentation fact 转换为 canonical `BlueUiNode` call/result，并直接通过 core 编译。
 - `TranscriptModelService` 渲染官方 semantic conversation model。
 
 Footer 子插件以 canonical status node 提供 model、cwd、git、title、context 与 session mode 信息。Activity、todo 与 agents pane 通过 `blueSessionFacts` 消费 `blueConversationFacts` projection；BTW pane 通过 `blueSessionActions` 获取可释放的旁路会话并渲染其官方 conversation projection。在 canonical vocabulary 能精确表达之前，activity、todo、agents、BTW 与 queue 的高级 chrome 保留在有 width 边界的 renderer adapter 后。任何 pane 都不会接收 Agent 或 Session。
@@ -30,7 +30,7 @@ Footer 子插件以 canonical status node 提供 model、cwd、git、title、con
 
 ## 其他子路径
 
-`./banner` 挂载欢迎横幅；`./banner-content` 导出横幅显示的 `BLUE_VERSION` 常量，与 `package.json` 保持同步。`./status-basic-model`、`./status-cwd`、`./status-title`、`./status-git` 与 `./status-context` 发布 canonical footer node；`./status-provider-owner` 拥有独占 provider 选择。`./pane-activity`、`./pane-todo`、`./pane-btw` 与 `./pane-agents` 发布 canonical bottom-pane node。`./tool-model` 与 `./transcript-model` 提供组合所需的 renderer-neutral registry；bottom-pane service 有意不作为 subpath 导出。
+`./banner` 挂载欢迎横幅；`./banner-content` 导出横幅显示的 `BLUE_VERSION` 常量，与 `package.json` 保持同步。`./status-basic-model`、`./status-cwd`、`./status-title`、`./status-git` 与 `./status-context` 发布 canonical footer node；`./status-provider-owner` 拥有独占 provider 选择。`./pane-activity`、`./pane-todo`、`./pane-btw` 与 `./pane-agents` 发布 canonical bottom-pane node。`./tool-model` 导出 `toolCallNode`/`toolResultNode` 和 canonical tool registry；`./transcript-model` 提供 renderer-neutral transcript registry。Bottom-pane service 有意不作为 subpath 导出。
 
 所有渲染行都遵守 core 的 visible-width 契约，包括窄窗口与 CJK viewport。
 

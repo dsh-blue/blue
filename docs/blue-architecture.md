@@ -128,7 +128,7 @@ Provider swap 必须遵循 `capture -> abort -> dispose -> activate -> restore`�
 - semantic `TranscriptModelService` 与最多 200 项的 renderer reconciliation；
 - package-private `BlueStatusEntryService` 两行 footer；
 - package-private、bottom-only `BlueBottomPaneService`；public panes/overlays 由 core surface bridge 独立挂载；
-- canonical tool presentation conversion；
+- official tool presentation -> canonical `ToolPresentationModel.call/result` node conversion；
 - frontend-tree-scoped `TranscriptPresentationPolicy`。
 
 `blue-interaction` 拥有：
@@ -138,7 +138,7 @@ Provider swap 必须遵循 `capture -> abort -> dispose -> activate -> restore`�
 - command/question/approval workflows；
 - abort、unload 和 late-result rejection。
 
-旧 `fold.ts`、generic frontend status/dock model、`blueIntents`、intent subpath、child event tracker 和 shared-editor singleton 已删除。
+旧 `fold.ts`、七种 frontend `View`、core `frontend-renderer`、generic frontend status/dock model、`blueIntents`、intent subpath、child event tracker 和 shared-editor singleton 已删除。Provider、tool、generic transcript 与 context UI data 均使用 canonical `BlueUiNode`；公共 `BlueView` 仅是 canonical content-leaf subset。
 
 ## 6. 包职责
 
