@@ -22,12 +22,13 @@ import { SurfaceManager, type SurfaceLaneEntry, type SurfaceLayout } from '../sr
 import type { BlueComponent, BlueComponents, BlueFocusable, BlueKeyAction, BlueSemanticColors } from '../src/types.ts'
 import type { BlueTerminalRuntime } from '../src/terminal.ts'
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '../src/width.ts'
+import { createFakeEditor } from './fake-editor.ts'
 
 const identity = (value: string): string => value
 const colors = new Proxy({ logoGradient: [identity] }, {
   get: (target, key) => key === 'logoGradient' ? target.logoGradient : identity,
 }) as unknown as BlueSemanticColors
-const components = { visibleWidth, wrapText: wrapTextWithAnsi, truncateToWidth } as BlueComponents
+const components = { visibleWidth, wrapText: wrapTextWithAnsi, truncateToWidth, createEditor: createFakeEditor } as BlueComponents
 const placements = ['header', 'left', 'right', 'bottom'] as const
 
 class Scope {

@@ -82,6 +82,31 @@ describe('CanonicalMultiSelectController', () => {
 })
 
 describe('CanonicalOverlayContainer', () => {
+  it('recompiles at most once when live leaf-window metadata changes', () => {
+    const node = vi.fn(() => ({ kind: 'text' as const, content: 'abcdefgh' }))
+    let metadata = ''
+    let panel!: CanonicalOverlayContainer
+    panel = new CanonicalOverlayContainer({
+      components: new FakeBlueComponents(), theme: new FakeTheme(), node,
+      onEvent: () => {},
+      maxLeafRows: 2,
+      leafRowWindowPath: '$',
+      leafRowOffset: () => 1,
+      onLeafRowOffset: (offset, totalRows, limit) => {
+        const next = `${String(offset)}/${String(totalRows)}/${String(limit)}`
+        if (next !== metadata) { metadata = next; panel.invalidate() }
+      },
+    })
+    expect(panel.render(2)).toEqual(['cd', 'ef'])
+    expect(node).toHaveBeenCalledTimes(2)
+    expect(panel.render(2)).toEqual(['cd', 'ef'])
+    expect(node).toHaveBeenCalledTimes(2)
+    expect(panel.render(4)).toEqual(['abcd', 'efgh'])
+    expect(node).toHaveBeenCalledTimes(3)
+    expect(panel.render(4)).toEqual(['abcd', 'efgh'])
+    expect(node).toHaveBeenCalledTimes(3)
+  })
+
   it('compiles a canonical node and forwards focus, input, and passive Escape', () => {
     const onEvent = vi.fn()
     const onEscape = vi.fn()
@@ -111,5 +136,19 @@ describe('CanonicalOverlayContainer', () => {
     invalid.handleInput('x')
     expect(invalid.render(Number.NaN)).toEqual(['!', '!', '!'])
     invalid.invalidate()
+
+    const throwing = new CanonicalOverlayContainer({
+      components: new FakeBlueComponents(), theme: new FakeTheme(),
+      node: () => { throw new Error('builder exploded') },
+      onEvent,
+    })
+    expect(throwing.render(40).join('\n')).toContain('dialog unavailable: builder exploded')
+
+    const unknownThrowing = new CanonicalOverlayContainer({
+      components: new FakeBlueComponents(), theme: new FakeTheme(),
+      node: () => { throw 'builder exploded' },
+      onEvent,
+    })
+    expect(unknownThrowing.render(80).join('\n')).toContain('dialog unavailable: unknown node builder failure')
   })
 })

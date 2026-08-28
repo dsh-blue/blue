@@ -16,15 +16,15 @@
 
 
 
-────────────────────────────────────────────────────────────────────────────────
-  Question 2 of 2
-  2/2 · ○ Name  ● Runtime
 
-  Which runtime?
-  → Node
-    Deno
-    Other
+╭ Question 2 of 2 ─────────────────────────────────────────────────────────────╮
+○ Name  ● Runtime
 
-  ↑↓ select · ↵ choose · tab next · esc cancel
-────────────────────────────────────────────────────────────────────────────────
+Which runtime?
+
+ → Node [1]
+   Deno [2]
+   Other [3]
+↑↓ select · 1-9 choose · Enter choose · Tab next · Esc cancel
+╰──────────────────────────────────────────────────────────────────────────────╯
  mock  «cwd»

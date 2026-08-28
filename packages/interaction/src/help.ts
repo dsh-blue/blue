@@ -1,164 +1,122 @@
 /**
- * `HelpOverlay`: the framed `/help` dialog (the S12 kimi HelpPanel port):
- * a primary-ruled frame with a ` help ` title and a muted key hint, the
- * sections as two-column rows (labels padEnd-aligned, descriptions muted),
- * and a scroll window — `showing 1-N of M` — when the content overflows
- * its budget. Escape/Enter/`q` close, arrows and PageUp/PageDown scroll.
+ * Canonical `/help` overlay controller. The controller owns only close-key
+ * interpretation and immutable help content; core owns chrome, wrapping,
+ * semantic paint, post-wrap row accounting, and width containment.
  *
  * @module @dsh-blue/blue-interaction/help
  */
 
+import type { BlueInlineSpan, BlueTone, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
-import { framePanel } from '@dsh-blue/blue-core/chrome'
+import { CanonicalPanelAdapter } from './canonical-panel.ts'
 import { ACTION_CANCEL, ACTION_SUBMIT } from './keys.ts'
 
-/** Decoded input sequences the overlay handles directly (no keymap actions). */
 const KEY_UP = '\x1b[A'
 const KEY_DOWN = '\x1b[B'
 const KEY_PAGE_UP = '\x1b[5~'
 const KEY_PAGE_DOWN = '\x1b[6~'
-
-/** Rows scrolled at once by PageUp/PageDown (kimi value). */
-const PAGE_SCROLL = 10
-
-/**
- * Content rows visible without scrolling. The pull-up panel budget (85% of
- * the viewport minus the two-row footer) fits a sixteen-row window on the
- * smallest 24-row terminal the suite renders.
- */
 const DEFAULT_MAX_VISIBLE = 16
+const HELP_LEAF_PATH = '$.child'
+const PASSIVE_EVENT_SINK = Function.prototype as () => void
 
-/** One aligned row of a section. */
+/** One help entry. */
 export interface HelpRow {
   readonly label: string
   readonly description: string
 }
 
-/** One headed group of aligned rows. */
+/** One headed group of help entries. */
 export interface HelpSection {
   readonly heading: string
   readonly rows: readonly HelpRow[]
-  /** Styling for the row labels (keys take warning, commands primary). */
-  readonly labelPaint?: (text: string) => string
+  /** Semantic label tone; renderer paint callbacks never cross this boundary. */
+  readonly labelTone?: BlueTone
 }
 
 /** Construction options for {@link HelpOverlay}. */
 export interface HelpOverlayOptions {
-  /** Theme supplying the frame, heading, and row colors. */
   readonly theme: BlueTheme
-  /** Component factory supplying the width helpers. */
   readonly components: BlueComponents
-  /** Keymap resolving the close keys (cancel/submit). */
   readonly keymap: BlueKeymap
-  /** The sections to list, in display order. */
   readonly sections: readonly HelpSection[]
-  /** Called when a close key is pressed. */
   readonly onClose: () => void
-  /** Content rows visible without scrolling; defaults to 10. */
+  /** Maximum post-wrap content rows visible in the editor slot. */
   readonly maxVisible?: number
 }
 
-/**
- * The scrollable `/help` overlay. Rows wrap at the section's widest label
- * (at least eight columns) with two-column alignment; when the sections
- * exceed {@link maxVisible} rows the window scrolls and a `showing` line
- * replaces the tail.
- */
+/** Canonical read-only help overlay. */
 export class HelpOverlay implements BlueFocusable {
-  /** Whether the overlay currently holds focus. Managed by the screen. */
-  focused = false
-
+  private readonly adapter: CanonicalPanelAdapter
   private scrollTop = 0
+  private contentRows: number
+  private contentLimit: number
 
-  /**
-   * @param options - see {@link HelpOverlayOptions}.
-   */
-  constructor(private readonly options: HelpOverlayOptions) {}
-
-  /**
-   * Dispatch one input sequence against the overlay.
-   * @param data - the input sequence as read from the terminal.
-   */
-  handleInput(data: string): void {
-    const { keymap } = this.options
-    if (
-      keymap.matches(data, ACTION_CANCEL)
-      || keymap.matches(data, ACTION_SUBMIT)
-      || data === 'q'
-      || data === 'Q'
-    ) {
-      this.options.onClose()
-      return
-    }
-    if (data === KEY_UP) {
-      this.scrollTop = Math.max(0, this.scrollTop - 1)
-      return
-    }
-    if (data === KEY_DOWN) {
-      this.scrollTop += 1 // render clamps
-      return
-    }
-    if (data === KEY_PAGE_UP) {
-      this.scrollTop = Math.max(0, this.scrollTop - PAGE_SCROLL)
-      return
-    }
-    if (data === KEY_PAGE_DOWN) {
-      this.scrollTop += PAGE_SCROLL
-    }
-  }
-
-  /** No cached render state. */
-  invalidate(): void {}
-
-  /**
-   * Render the framed dialog: the title line, the scrolled window of
-   * section rows (or a `showing 1-N of M` tail when the content overflows),
-   * and the closing rule.
-   * @param width - current viewport width in columns.
-   * @returns one string per rendered row.
-   */
-  render(width: number): string[] {
-    const { theme, components } = this.options
-    const colors = theme.colors
-    const content = this.contentLines(width)
-    const maxVisible = Math.max(5, this.options.maxVisible ?? DEFAULT_MAX_VISIBLE)
-    const body: string[] = []
-    if (content.length > maxVisible) {
-      this.scrollTop = Math.max(0, Math.min(this.scrollTop, content.length - maxVisible))
-      const slice = content.slice(this.scrollTop, this.scrollTop + maxVisible)
-      body.push(...slice)
-      body.push(colors.textMuted(components.truncateToWidth(
-        ` showing ${String(this.scrollTop + 1)}-${String(this.scrollTop + slice.length)} of ${String(content.length)}`,
-        width,
-      )))
-    } else {
-      this.scrollTop = 0
-      body.push(...content)
-    }
-    return framePanel(body, width, {
-      title: 'help',
-      titlePaint: colors.primary,
-      titleHint: '· Esc / Enter / q to cancel · ↑↓ scroll',
-      hintPaint: colors.textMuted,
-      rulePaint: colors.primary,
+  constructor(private readonly options: HelpOverlayOptions) {
+    this.contentRows = options.sections.reduce((total, section) => total + section.rows.length + 2, 0)
+    this.contentLimit = Math.max(5, options.maxVisible ?? DEFAULT_MAX_VISIBLE)
+    this.adapter = new CanonicalPanelAdapter({
+      components: options.components,
+      theme: options.theme,
+      node: () => this.currentNode(),
+      onEvent: PASSIVE_EVENT_SINK,
+      onUnhandledEscape: options.onClose,
+      maxLeafRows: this.contentLimit,
+      leafRowWindowPath: HELP_LEAF_PATH,
+      leafRowOffset: () => this.scrollTop,
+      onLeafRowOffset: (offset, totalRows, limit) => {
+        const changed = offset !== this.scrollTop || totalRows !== this.contentRows || limit !== this.contentLimit
+        this.scrollTop = offset
+        this.contentRows = totalRows
+        this.contentLimit = limit
+        if (changed) this.adapter.invalidate()
+      },
     })
   }
 
-  /** The section rows between the title and the scroll window. */
-  private contentLines(width: number): string[] {
-    const { theme, components, sections } = this.options
-    const colors = theme.colors
-    const lines: string[] = []
-    for (const section of sections) {
-      const labelWidth = Math.max(8, ...section.rows.map(row => row.label.length))
-      const paint = section.labelPaint ?? ((text: string): string => text)
-      lines.push('')
-      lines.push(`  ${components.truncateToWidth(colors.textStrong(section.heading), Math.max(1, width - 4))}`)
+  get focused(): boolean { return this.adapter.focused }
+  set focused(value: boolean) { this.adapter.focused = value }
+
+  /** Interpret only product close keys; canonical controls own rendering input. */
+  handleInput(data: string): void {
+    const { keymap } = this.options
+    if (keymap.matches(data, ACTION_CANCEL) || keymap.matches(data, ACTION_SUBMIT) || data === 'q' || data === 'Q') {
+      this.options.onClose()
+      return
+    }
+    if (data === KEY_UP) { this.scrollTop = Math.max(0, this.scrollTop - 1); this.adapter.invalidate(); return }
+    if (data === KEY_DOWN) { this.scrollTop += 1; this.adapter.invalidate(); return }
+    if (data === KEY_PAGE_UP) { this.scrollTop = Math.max(0, this.scrollTop - this.contentLimit); this.adapter.invalidate(); return }
+    if (data === KEY_PAGE_DOWN) { this.scrollTop += this.contentLimit; this.adapter.invalidate(); return }
+    this.adapter.handleInput(data)
+  }
+
+  invalidate(): void { this.adapter.invalidate() }
+  render(width: number): string[] { return this.adapter.render(width) }
+
+  /** Current renderer-neutral help tree. */
+  currentNode(): BlueUiNode {
+    const spans: BlueInlineSpan[] = []
+    for (const [sectionIndex, section] of this.options.sections.entries()) {
+      spans.push({ text: `${sectionIndex === 0 ? '' : '\n\n'}${section.heading}`, tone: 'accent', emphasis: 'strong' })
       for (const row of section.rows) {
-        const styled = `${paint(row.label.padEnd(labelWidth))}  ${colors.muted(row.description)}`
-        lines.push(`    ${components.truncateToWidth(styled, Math.max(1, width - 4))}`)
+        spans.push(
+          { text: `\n${row.label}`, tone: section.labelTone ?? 'default', emphasis: 'strong' },
+          { text: `  ${row.description}`, tone: 'muted' },
+        )
       }
     }
-    return lines
+    const showing = this.contentRows > this.contentLimit
+      ? `showing ${String(this.scrollTop + 1)}-${String(this.scrollTop + Math.min(this.contentLimit, this.contentRows - this.scrollTop))} of ${String(this.contentRows)} · `
+      : ''
+    return {
+      kind: 'surface',
+      chrome: 'overlay',
+      title: 'help',
+      child: {
+        kind: 'rich-text',
+        spans,
+      },
+      footer: { kind: 'divider', label: `${showing}Esc / Enter / q to cancel` },
+    }
   }
 }

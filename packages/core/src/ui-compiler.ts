@@ -10,7 +10,7 @@ import type { BlueErrorCode, BlueFormField, BlueStatusNode, BlueTone, BlueUiEven
 import { CURSOR_MARKER, HStack, ScrollView, VStack, type Component } from '@earendil-works/pi-tui'
 import { getLayoutNode, LAYOUT_NODE, type LayoutNode, type LayoutViewport } from '@earendil-works/pi-tui/dist/layout-node.js'
 import { paintPluginTone, renderCanonicalView } from './plugin-view.ts'
-import type { BlueComponent, BlueComponents, BlueFocusable, BlueSemanticColors } from './types.ts'
+import type { BlueComponent, BlueComponents, BlueEditor, BlueFocusable, BlueSemanticColors } from './types.ts'
 import {
   renderActions,
   renderDivider,
@@ -46,6 +46,18 @@ export interface BlueUiCompilerOptions {
   readonly screenMode: 'main' | 'alternate'
   /** Internal compatibility budget; public plugin surfaces retain the 20-row default. */
   readonly maxLeafRows?: number
+  /** Internal compatibility leaf path; public plugin surfaces never set it. */
+  readonly leafRowWindowPath?: string
+  /** Internal Markdown leaf path; public plugin surfaces never set it. */
+  readonly markdownLeafPath?: string
+  /** Live offset for the selected compatibility leaf. */
+  readonly leafRowOffset?: () => number
+  /** Receives the selected leaf's clamped offset and post-wrap row metadata. */
+  readonly onLeafRowOffset?: (offset: number, totalRows: number, limit: number) => void
+  /** Internal stable editor pool used only by official form adapters. */
+  readonly resolveTextEditor?: (controlId: string, path: string) => BlueEditor
+  /** Internal official-form submit bridge. */
+  readonly onTextSubmit?: (controlId: string, value: string) => void
   readonly emit: (event: BlueUiEvent) => void
   /** Called only when Escape did not first cancel compiler-local state. */
   readonly onUnhandledEscape?: () => void
@@ -144,6 +156,7 @@ interface FocusState {
   field(field: BlueFormField, key: string): BlueFormField
   fieldValue(field: BlueFormField, key: string): string | boolean | null
   setTextValue(key: string, canonical: string, value: string): void
+  textEditor(field: TextField, key: string): BlueEditor
   setSelectValue(key: string, canonical: string | null, value: string | null): void
   setToggleValue(key: string, canonical: boolean, value: boolean): void
   setLayoutViewport(viewport: BlueUiViewport): void
@@ -214,6 +227,67 @@ function staticComponent(render: (width: number) => string[], options: BlueUiCom
     },
     invalidate: () => {},
   }
+}
+
+function markdownLeafComponent(node: Extract<BlueUiNode, { readonly kind: 'text' }>, path: string, options: BlueUiCompilerOptions): BlueComponent {
+  const markdown = options.components.createMarkdown({ text: node.content })
+  return {
+    render: width => {
+      try { return windowLeafRows(markdown.render(Math.max(1, width)), path, options) }
+      catch (error) { return errorRows(error instanceof Error ? error.message : 'unknown render failure', width, options.colors) }
+    },
+    invalidate: () => markdown.invalidate(),
+  }
+}
+
+function editorFieldComponent(field: TextField, key: string, state: FocusState, options: BlueUiCompilerOptions): BlueComponent {
+  const editor = state.textEditor(field, key)
+  return {
+    render: width => {
+      try {
+        const available = Math.max(1, Number.isFinite(width) ? Math.floor(width) : 1)
+        const focused = state.focused && state.activeKey === key && field.disabled !== true
+        editor.focused = focused
+        const prefix = focused ? `${FOCUS_SENTINEL}→ ` : '   '
+        const labelText = `${prefix}${field.label}: `
+        const label = field.disabled === true ? options.colors.muted(labelText) : focused ? options.colors.primary(labelText) : options.colors.textStrong(labelText)
+        const labelWidth = visibleWidth(label)
+        const contentWidth = Math.max(1, available - labelWidth)
+        const emptyPlaceholder = editor.getExpandedText().length === 0 && field.placeholder !== undefined
+        const body = emptyPlaceholder && !editor.focused
+          ? [options.colors.textMuted(field.placeholder!)]
+          : editor.renderContent(contentWidth, field.kind === 'secret')
+        const indent = ' '.repeat(Math.min(available, labelWidth))
+        let rows = body.map((row, index) => sliceByColumn(`${index === 0 ? label : indent}${row}`, 0, available, true))
+        if (field.error !== undefined) rows.push(sliceByColumn(options.colors.error(`   ! ${field.error}`), 0, available, true))
+        if (state.layoutPass && focused) {
+          let inserted = rows.some(row => row.includes(CURSOR_MARKER))
+          rows = rows.map(row => {
+            if (inserted || !row.includes(FOCUS_SENTINEL)) return row.replaceAll(FOCUS_SENTINEL, ' ')
+            inserted = true
+            return row.replace(FOCUS_SENTINEL, `${CURSOR_MARKER} `).replaceAll(FOCUS_SENTINEL, ' ')
+          })
+        }
+        return rows
+      } catch (error) {
+        return errorRows(error instanceof Error ? error.message : 'unknown editor failure', width, options.colors)
+      }
+    },
+    invalidate: () => editor.invalidate(),
+  }
+}
+
+function windowLeafRows(rows: string[], path: string, options: BlueUiCompilerOptions): string[] {
+  const limit = Math.max(0, Math.floor(options.maxLeafRows ?? 20))
+  if (options.leafRowWindowPath !== path) return rows.slice(0, limit)
+  let requested = 0
+  try {
+    const value = options.leafRowOffset?.() ?? 0
+    if (Number.isFinite(value)) requested = Math.max(0, Math.floor(value))
+  } catch { /* compatibility state failures fall back to the first page */ }
+  const offset = Math.min(requested, Math.max(0, rows.length - limit))
+  try { options.onLeafRowOffset?.(offset, rows.length, limit) } catch { /* compatibility observers cannot escape render */ }
+  return rows.slice(offset, offset + limit)
 }
 
 function safePaint(colors: BlueSemanticColors, tone: BlueTone | undefined, value: string): string {
@@ -307,18 +381,29 @@ function controlsForNode(node: BlueUiNode, options: BlueUiCompilerOptions, path 
 
 function compileNode(node: BlueUiNode, state: FocusState, options: BlueUiCompilerOptions, path = '$', mode: CompilerMode = 'ui'): Component {
   switch (node.kind) {
-    case 'text':
+    case 'text': if (options.markdownLeafPath === path) return markdownLeafComponent(node, path, options)
+      return staticComponent(width => windowLeafRows(renderCanonicalView(
+        node,
+        width,
+        options.components,
+        options.colors,
+        Number.MAX_SAFE_INTEGER,
+      ), path, options), options)
     case 'fields':
     case 'code':
     case 'diff':
-    case 'sections': return staticComponent(width => renderCanonicalView(
+    case 'sections': return staticComponent(width => windowLeafRows(renderCanonicalView(
       node as BlueView,
       width,
       options.components,
       options.colors,
-      options.maxLeafRows ?? 20,
+      Number.MAX_SAFE_INTEGER,
+    ), path, options), options)
+    case 'rich-text': return staticComponent(width => windowLeafRows(
+      options.components.wrapText(joinSpans(node, options.colors), Math.max(1, width)),
+      path,
+      options,
     ), options)
-    case 'rich-text': return staticComponent(width => options.components.wrapText(joinSpans(node, options.colors), Math.max(1, width)), options)
     case 'stack': {
       const stackOptions = {
         ...(node.gap === undefined ? {} : { gap: node.gap }),
@@ -370,7 +455,9 @@ function compileNode(node: BlueUiNode, state: FocusState, options: BlueUiCompile
       const stack = new VStack()
       for (const field of node.fields) {
         const key = `${path}:field:${field.id}`
-        stack.addChild(staticComponent(width => renderFormField(state.field(field, key), width, patternFocus(state, `${path}:field:`), options.colors), options))
+        stack.addChild(field.kind === 'input' || field.kind === 'textarea' || field.kind === 'secret'
+          ? editorFieldComponent(field, key, state, options)
+          : staticComponent(width => renderFormField(state.field(field, key), width, patternFocus(state, `${path}:field:`), options.colors), options))
       }
       if (node.submitActionId !== undefined) stack.addChild(staticComponent(width => renderActions({ kind: 'actions', id: node.id, items: [{ id: 'submit', label: node.submitActionId!, intent: 'primary' }] }, width, patternFocus(state, `${path}:`), options.colors, true), options))
       if (node.cancelActionId !== undefined) stack.addChild(staticComponent(width => renderActions({ kind: 'actions', id: node.id, items: [{ id: 'cancel', label: node.cancelActionId! }] }, width, patternFocus(state, `${path}:`), options.colors, true), options))
@@ -428,6 +515,7 @@ class CompiledSurface implements BlueFocusable {
     const textBuffers = new Map<string, { canonical: string, value: string }>()
     const selectDrafts = new Map<string, { canonical: string | null, value: string | null }>()
     const toggleDrafts = new Map<string, { canonical: boolean, value: boolean }>()
+    const textEditors = new Map<string, BlueEditor>()
     const fieldValue = (field: BlueFormField, key: string): string | boolean | null => {
       if (field.kind === 'toggle') {
         const current = toggleDrafts.get(key)
@@ -446,7 +534,32 @@ class CompiledSurface implements BlueFocusable {
       textBuffers.set(key, { canonical: field.value, value: field.value })
       return field.value
     }
-    this.state = {
+    let runtimeState!: FocusState
+    const textEditor = (field: TextField, key: string): BlueEditor => {
+      let editor = options.resolveTextEditor?.(field.id, key) ?? textEditors.get(key)
+      if (editor === undefined) {
+        editor = options.components.createEditor()
+        textEditors.set(key, editor)
+      }
+      const controlled = String(runtimeState.fieldValue(field, key))
+      if (editor.getExpandedText() !== controlled) {
+        editor.onChange = undefined
+        editor.setText(controlled)
+      }
+      editor.disableSubmit = field.kind === 'textarea'
+      editor.onChange = () => {
+        const value = editor!.getExpandedText()
+        runtimeState.setTextValue(key, field.value, value)
+        runtimeState.emit({ kind: 'value-change', controlId: field.id, value })
+      }
+      editor.onSubmit = value => {
+        runtimeState.setTextValue(key, field.value, value)
+        runtimeState.emit({ kind: 'value-change', controlId: field.id, value })
+        try { options.onTextSubmit?.(field.id, value) } catch { /* official submit observers cannot escape input */ }
+      }
+      return editor
+    }
+    runtimeState = {
       activeKey: undefined,
       lastIndex: 0,
       focused: false,
@@ -459,10 +572,12 @@ class CompiledSurface implements BlueFocusable {
       field: (field, key) => ({ ...field, value: fieldValue(field, key) } as BlueFormField),
       fieldValue,
       setTextValue: (key, canonical, value) => { textBuffers.set(key, { canonical, value }) },
+      textEditor,
       setSelectValue: (key, canonical, value) => { selectDrafts.set(key, { canonical, value }) },
       setToggleValue: (key, canonical, value) => { toggleDrafts.set(key, { canonical, value }) },
       setLayoutViewport: viewport => { this.viewport = viewport },
     }
+    this.state = runtimeState
     this.root = compileNode(node, this.state, runtimeOptions, '$', mode)
   }
 
@@ -503,6 +618,7 @@ class CompiledSurface implements BlueFocusable {
       return { rows: rendered.map(row => {
         if (!this.focused || inserted || !row.includes(FOCUS_SENTINEL)) return row.replaceAll(FOCUS_SENTINEL, ' ')
         inserted = true
+        if (row.includes(CURSOR_MARKER)) return row.replaceAll(FOCUS_SENTINEL, ' ')
         return row.replace(FOCUS_SENTINEL, `${CURSOR_MARKER} `).replaceAll(FOCUS_SENTINEL, ' ')
       }), overflowed }
     } catch (error) {
@@ -538,6 +654,10 @@ class CompiledSurface implements BlueFocusable {
       moveTo((this.state.lastIndex + controls.length + delta) % controls.length)
       return
     }
+    if (active.kind === 'text') {
+      this.state.textEditor(active.field, active.key).handleInput?.(data)
+      return
+    }
     const direction = data === '\x1b[A' || data === '\x1b[D' ? -1 : data === '\x1b[B' || data === '\x1b[C' ? 1 : 0
     if (active.kind === 'select' && direction !== 0) {
       const enabled = active.field.options.filter(option => option.disabled !== true)
@@ -558,23 +678,6 @@ class CompiledSurface implements BlueFocusable {
       const siblings = controls.map((control, index) => ({ control, index })).filter(entry => entry.control.group === active.group)
       const siblingIndex = siblings.findIndex(entry => entry.index === this.state.lastIndex)
       moveTo(siblings[(siblingIndex + siblings.length + direction) % siblings.length]!.index)
-      return
-    }
-    if (active.kind === 'text') {
-      const current = String(this.state.fieldValue(active.field, active.key))
-      if (data === '\x7f' || data === '\b') {
-        const value = Array.from(current).slice(0, -1).join('')
-        this.state.setTextValue(active.key, active.field.value, value)
-        this.state.emit({ kind: 'value-change', controlId: active.field.id, value })
-        return
-      }
-      if (/^[^\x00-\x1f\x7f-\x9f]+$/u.test(data)) {
-        const value = `${current}${data}`
-        this.state.setTextValue(active.key, active.field.value, value)
-        this.state.emit({ kind: 'value-change', controlId: active.field.id, value })
-        return
-      }
-      if (data === '\r' || data === '\n') this.state.emit({ kind: 'value-change', controlId: active.field.id, value: current })
       return
     }
     if (data !== '\r' && data !== '\n' && data !== ' ') return

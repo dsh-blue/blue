@@ -573,8 +573,12 @@ describe('registerSessionCommands', () => {
     const { ctx, screen, agent } = await mount()
     expect(await run(ctx, agent, '/changelog')).toEqual({ kind: 'success' })
     const overlay = screen.overlays.at(-1)!
-    const rows = plain((overlay.component as InfoPanel).render(100))
-    expect(rows.some(row => row.includes('changelog'))).toBe(true)
+    const panel = overlay.component as InfoPanel
+    const node = panel.currentNode()
+    if (node.kind !== 'surface' || node.child.kind !== 'rich-text') throw new Error('expected changelog rich-text surface')
+    expect(node.child.spans.length).toBeLessThanOrEqual(200)
+    const rows = plain(panel.render(100))
+    expect(rows.join('\n')).toContain('changelog')
     expect(rows.some(row => row.includes('Creative mode'))).toBe(true)
     overlay.component.handleInput?.('\x1b')
     expect(overlay.hidden).toBe(true)

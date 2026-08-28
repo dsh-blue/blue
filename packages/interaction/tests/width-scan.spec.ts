@@ -98,7 +98,7 @@ describe('interaction width-scan', () => {
       const sections: HelpSection[] = [
         {
           heading: 'Commands',
-          labelPaint: (t: string): string => `^${t}^`,
+          labelTone: 'accent',
           rows: [
             { label: text, description: text },
             { label: '/short', description: 'fits anywhere' },

@@ -2024,10 +2024,10 @@ describe('blue whole-tree e2e', () => {
     // once the throttled render settles. (The first press is awaited on
     // its own: /quit slid past the 16-row window when S34 added /mcp, and
     // back-to-back presses coalesce under the throttle — only awaited
-    // steps are guaranteed a repaint. Three more reach the scroll floor after
-    // the rewind command adds another row.)
+    // steps are guaranteed a repaint. PageDown advances by the live rendered
+    // window; three more reach the scroll floor after the rewind command.)
     tree.terminal.sendInput('\x1b[6~')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('showing 11-26') })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('showing 17-32') })
     expect(tree.terminal.output).toContain('Exit Blue')
     tree.terminal.sendInput('\x1b[6~')
     tree.terminal.sendInput('\x1b[6~')
@@ -2048,11 +2048,10 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Commands') })
     const frame = await fullFrame(tree.terminal)
     const rows = frame.split('\r\n')
-    // The editor's neutral-gray frame is gone from the screen: the D30
-    // dialog mount replaces the editor in its dock slot, so its rounded
-    // box no longer peeks between the panel and the footer (its top rule
-    // used to render as a lone gray rule under the panel).
-    expect(frame).not.toContain('38;2;90;90;90')
+    // The D30 dialog mount replaces the editor in its dock slot. The help
+    // surface's focused closing rule therefore sits directly above footer;
+    // canonical dividers may legitimately use the neutral-gray token.
+    expect(rows.at(-2)).toContain('38;2;232;168;56m╰')
     // The bottom row is the footer's first band (model · cwd · git); the
     // editor's frame is nowhere between it and the panel above.
     expect(rows.at(-1)).toContain(`${FOOTER_TEXT_SGR}mock`)
@@ -2974,7 +2973,6 @@ describe('blue whole-tree e2e', () => {
     // The command list outgrew the first window once S25 added the
     // session-info family; one PageDown brings the tail commands in.
     tree.terminal.sendInput('\x1b[6~')
-    tree.terminal.sendInput('\x1b[6~')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('/yolo (/yes)') })
     // The Keys section sits below the commands window; scroll to the very
     // end so the tail rows (shift+tab among them) enter the window.
@@ -3825,12 +3823,12 @@ describe('blue whole-tree e2e', () => {
     // /plan <message> enters plan mode and steers the draft request.
     await expect(executeCommand(tree, agent, '/plan draft it')).resolves.toMatchObject({ kind: 'success' })
     await vi.waitFor(async () => {
-      const frame = await fullFrame(tree.terminal)
+      const frame = stripSgr(await fullFrame(tree.terminal))
       expect(frame).toContain('Plan review')
       expect(frame).toContain('Fix the build')
-      expect(frame).toContain('1. Approve')
-      expect(frame).toContain('2. Reject')
-      expect(frame).toContain('3. Revise')
+      expect(frame).toContain('Approve [1]')
+      expect(frame).toContain('Reject [2]')
+      expect(frame).toContain('Revise [3]')
       expect(frame).not.toContain('plan-task-0')
     })
     // The cursor seeds on the approving row.

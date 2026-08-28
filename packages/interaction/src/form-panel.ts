@@ -53,6 +53,10 @@ export class CanonicalFormController implements BlueFocusable {
       theme: options.theme,
       node: () => this.currentNode(),
       onEvent: event => this.onEvent(event),
+      onTextSubmit: () => {
+        if (this.active === this.options.fields.length - 1) this.submit()
+        else this.move(1)
+      },
       onUnhandledEscape: options.onCancel,
       focusIndex: () => this.active,
     })
@@ -77,8 +81,7 @@ export class CanonicalFormController implements BlueFocusable {
     if (keymap.matches(data, ACTION_MOVE_DOWN) || data === '\t') { this.move(1); return }
     if (keymap.matches(data, ACTION_MOVE_UP) || data === '\x1b[Z') { this.move(-1); return }
     if (keymap.matches(data, ACTION_SUBMIT)) {
-      if (this.active === this.options.fields.length - 1) this.submit()
-      else this.move(1)
+      this.adapter.handleInput(data)
       return
     }
     if (keymap.matches(data, ACTION_CANCEL)) { this.options.onCancel(); return }

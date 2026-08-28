@@ -64,20 +64,21 @@ describe('blue-approval answerer', () => {
     const { ctx, screen, agent } = await mount()
     const pending = decide(ctx, request(agent, { reason: 'writes files' }))
     const rendered = screen.overlays[0]?.component.render(60) ?? []
-    const bar = '%' + '─'.repeat(60) + '%'
-    // The S12 pull-up panel: amber rules, indented ▶ title, reason,
-    // numbered choices indented under the title.
-    expect(rendered[0]).toBe(bar)
-    expect(rendered[1]).toBe('%  ▶ Approve bash?%')
-    expect(rendered[2]).toBe('~writes files~')
-    expect(rendered[3]).toBe('')
-    expect(rendered[4]).toBe('*  ▶ 1. Allow once*')
-    expect(rendered[5]).toBe('#    2. Allow bash for this session#')
-    expect(rendered[6]).toBe('#    3. Reject#')
-    expect(rendered[7]).toBe('#    4. Reject with feedback#')
-    expect(rendered[8]).toBe('')
-    expect(rendered[9]).toBe('_  ↑/↓ select · 1-4 choose · ↵ confirm_')
-    expect(rendered[10]).toBe(bar)
+    expect(rendered.join('\n')).toContain('Approve bash?')
+    expect(rendered.join('\n')).toContain('writes files')
+    expect(rendered.join('\n')).toContain('Allow once')
+    expect(rendered.join('\n')).toContain('Allow bash for this session')
+    expect(rendered.join('\n')).toContain('Reject with feedback')
+    expect(rendered.join('\n')).toContain('1-4 choose')
+    const prompt = screen.overlays[0]!.component as unknown as {
+      focused: boolean
+      onEvent(event: { kind: string, controlId: string, value?: unknown }): void
+    }
+    prompt.focused = true
+    expect(prompt.focused).toBe(true)
+    prompt.onEvent({ kind: 'activate', controlId: 'other' })
+    prompt.onEvent({ kind: 'value-change', controlId: 'other', value: 'ignored' })
+    prompt.onEvent({ kind: 'value-change', controlId: 'approval-reason', value: 3 })
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toBe('allowed-once')
     expect(pending.fallback).not.toHaveBeenCalled()
@@ -90,10 +91,9 @@ describe('blue-approval answerer', () => {
     const { ctx, screen, agent } = await mount()
     const pending = decide(ctx, request(agent))
     const rendered = screen.overlays[0]?.component.render(60) ?? []
-    expect(rendered[0]).toBe('%' + '─'.repeat(60) + '%')
-    expect(rendered[1]).toBe('%  ▶ Approve bash?%')
-    expect(rendered[2]).toBe('')
-    expect(rendered[3]).toContain('Allow once')
+    expect(rendered.join('\n')).toContain('Approve bash?')
+    expect(rendered.join('\n')).not.toContain('writes files')
+    expect(rendered.join('\n')).toContain('Allow once')
     overlay(screen).handleInput(KEY.escape)
     await pending
   })
@@ -101,16 +101,15 @@ describe('blue-approval answerer', () => {
   it('moves the highlight with Up/Down, wrapping at both ends', async () => {
     const { ctx, screen, agent } = await mount()
     const pending = decide(ctx, request(agent))
-    // No reason row: the four choices are rows 3-6 under the title.
     overlay(screen).handleInput(KEY.up)
-    expect(screen.overlays[0]?.component.render(60)[6]).toBe('*  ▶ 4. Reject with feedback*')
+    expect(screen.overlays[0]?.component.render(60).join('\n')).toContain('→ Reject with feedback [4]')
     overlay(screen).handleInput(KEY.down)
-    expect(screen.overlays[0]?.component.render(60)[3]).toBe('*  ▶ 1. Allow once*')
+    expect(screen.overlays[0]?.component.render(60).join('\n')).toContain('→ Allow once [1]')
     overlay(screen).handleInput(KEY.down)
     overlay(screen).handleInput(KEY.down)
-    expect(screen.overlays[0]?.component.render(60)[5]).toBe('*  ▶ 3. Reject*')
+    expect(screen.overlays[0]?.component.render(60).join('\n')).toContain('→ Reject [3]')
     overlay(screen).handleInput(KEY.up)
-    expect(screen.overlays[0]?.component.render(60)[4]).toBe('*  ▶ 2. Allow bash for this session*')
+    expect(screen.overlays[0]?.component.render(60).join('\n')).toContain('→ Allow bash for this session [2]')
     overlay(screen).handleInput(KEY.escape)
     await pending
   })
@@ -188,20 +187,20 @@ describe('blue-approval answerer', () => {
   })
 
   it('steers the agent with the reason on "Reject with feedback"', async () => {
-    const { ctx, screen, components, agent, steer } = await mount()
+    const { ctx, screen, agent, steer } = await mount()
     const pending = decide(ctx, request(agent))
     overlay(screen).handleInput('4')
+    ;(screen.overlays[0]!.component as { focused?: boolean }).focused = true
     const rendered = screen.overlays[0]?.component.render(60) ?? []
-    // Feedback mode: the framed dialog keeps the title bar and swaps the
-    // menu for the reason label and the inline editor.
-    expect(rendered[0]).toBe('%' + '─'.repeat(60) + '%')
-    expect(rendered[1]).toBe('%  ▶ Approve bash?%')
-    expect(rendered[2]).toBe('')
-    expect(rendered[3]).toBe('~reason:~')
-    const editor = components.editors.at(-1)
-    expect(editor).toBeDefined()
-    for (const char of 'too risky') overlay(screen).handleInput(char)
-    expect(editor?.getText()).toBe('too risky')
+    expect(rendered.join('\n')).toContain('Approve bash?')
+    expect(rendered.join('\n')).toContain('Reason:')
+    overlay(screen).handleInput('\x1b[200~too Xrisky\x1b[201~')
+    for (let step = 0; step < 5; step += 1) overlay(screen).handleInput(KEY.left)
+    overlay(screen).handleInput('\x7f')
+    const edited = screen.overlays[0]?.component.render(60).join('\n') ?? ''
+    expect(edited).toContain('too |risky')
+    expect(edited).not.toContain('too Xrisky')
+    expect(edited).toContain('|')
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toBe('rejected')
     expect(steer).toHaveBeenCalledOnce()
@@ -214,7 +213,7 @@ describe('blue-approval answerer', () => {
     expect(message.content).toEqual([{ type: 'text', text: 'User rejected bash: too risky' }])
     expect(message.source).toEqual({ kind: 'user' })
     // A late duplicate submission neither steers nor settles again.
-    editor?.onSubmit?.('again')
+    overlay(screen).handleInput(KEY.enter)
     expect(steer).toHaveBeenCalledOnce()
     screen.overlays[0]?.component.invalidate()
   })

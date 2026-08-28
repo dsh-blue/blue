@@ -15,13 +15,18 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import {
+  CURSOR_MARKER,
   TuiMainScreen,
   setCapabilities,
   truncateToWidth as piTruncateToWidth,
   visibleWidth as piVisibleWidth,
   wrapTextWithAnsi,
+  type Component,
 } from '@earendil-works/pi-tui'
+import { renderLayoutFrame } from '@earendil-works/pi-tui/dist/layout.js'
+import { ui } from '../../ui/src/index.ts'
 import { BlueComponentsService } from '../src/components.ts'
+import { compileBlueUiNode } from '../src/ui-compiler.ts'
 import type {
   BlueAutocompleteItem,
   BlueAutocompleteProvider,
@@ -142,6 +147,31 @@ describe('BlueComponentsService registration', () => {
 })
 
 describe('createEditor', () => {
+  it('keeps one real editor caret through layout and direct replay', () => {
+    const { tui, stop } = bootTui()
+    const theme = sgrTheme()
+    const components = new BlueComponentsService(new Context(), { theme, tui })
+    const result = compileBlueUiNode(ui.form({ id: 'form', fields: [{ kind: 'input', id: 'name', label: 'Name', value: 'alpha' }] }), {
+      components,
+      colors: theme.colors,
+      getViewport: () => ({ columns: 40, rows: 3 }),
+      screenMode: 'alternate',
+      emit: () => {},
+    })
+    if (!result.ok) throw new Error(result.message)
+    result.value.focusTarget!.focused = true
+    for (const width of [40, 2]) {
+      const frame = renderLayoutFrame(result.value.component as Component, width, 3, () => {}).lines.join('')
+      expect(frame).not.toContain('\uf8ff')
+      expect(frame.match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
+
+      const replay = result.value.component.render(width).join('')
+      expect(replay).not.toContain('\uf8ff')
+      expect(replay.match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
+    }
+    stop()
+  })
+
   it('delegates text, history, submit, and change to a real Editor', () => {
     const { tui, stop } = bootTui()
     const components = createService(tui)
@@ -558,6 +588,42 @@ describe('createEditor', () => {
     editor.handleInput('\x1b[200~short\x1b[201~')
     expect(editor.getText()).toBe('short')
     expect(editor.getExpandedText()).toBe('short')
+    stop()
+  })
+
+  it('masks editor content without leaking text or poisoning later unmasked renders', () => {
+    const { tui, stop } = bootTui()
+    const editor = createSgrService(tui).createEditor()
+    editor.setText('a界🙂z')
+    editor.focused = true
+    editor.handleInput('\x1b[D')
+
+    const masked = editor.renderContent(40, true).join('\n')
+    expect(masked).not.toContain('a')
+    expect(masked).not.toContain('界')
+    expect(masked).not.toContain('🙂')
+    expect(masked).not.toContain('z')
+    expect(masked.match(/•/gu)).toHaveLength(5)
+    expect(masked.indexOf('\x1b[7m \x1b[0m')).toBeLessThan(masked.lastIndexOf('•'))
+
+    const plain = editor.renderContent(40).join('\n')
+    expect(plain).toContain('a界🙂')
+    expect(plain).toContain('z')
+    expect(plain).not.toContain('•')
+    stop()
+  })
+
+  it('restores secret text after a masked render throws', () => {
+    const { tui, stop } = bootTui()
+    const editor = createService(tui).createEditor()
+    editor.setText('never-leak')
+    const wrapped = (editor as unknown as { editor: { render(width: number): string[] } }).editor
+    const render = wrapped.render
+    wrapped.render = () => { throw new Error('render failed') }
+    expect(() => editor.renderContent(40, true)).toThrow('render failed')
+    wrapped.render = render
+    expect(editor.getExpandedText()).toBe('never-leak')
+    expect(editor.renderContent(40).join('\n')).toContain('never-leak')
     stop()
   })
 

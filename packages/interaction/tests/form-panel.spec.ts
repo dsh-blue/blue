@@ -107,6 +107,19 @@ describe('CanonicalFormController', () => {
     expect(rows.some(row => row.includes('hunter2'))).toBe(false)
   })
 
+  it('keeps pasted control text and mid-buffer edits out of secret rendering', () => {
+    const { component, onSubmit } = form([{ id: 'key', label: 'API key', mask: true }])
+    input(component).handleInput('\x1b[200~hunterX\x1b[31m2\x1b[201~')
+    for (let step = 0; step < 7; step += 1) input(component).handleInput(KEY.left)
+    input(component).handleInput('\x7f')
+    const rows = component.render(60).join('\n')
+    expect(rows).not.toContain('hunter')
+    expect(rows).not.toContain('[31m')
+    expect(rows).toContain('•')
+    input(component).handleInput(KEY.enter)
+    expect(onSubmit).toHaveBeenCalledOnce()
+  })
+
   it('renders the subtitle and swaps in setError without closing', () => {
     const { component } = form([{ id: 'a', label: 'A' }], { subtitle: 'the original subtitle' })
     expect(component.render(60).some(row => row.includes('the original subtitle'))).toBe(true)

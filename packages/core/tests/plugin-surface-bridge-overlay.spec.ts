@@ -22,6 +22,7 @@ import { mountPluginSurfaceBridge } from '../src/plugin-surface-bridge.ts'
 import { startBlueTerminal, type BlueTerminalRuntime } from '../src/terminal.ts'
 import type { BlueComponents, BlueFocusable, BlueKeyAction, BlueSemanticColors } from '../src/types.ts'
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '../src/width.ts'
+import { createFakeEditor } from './fake-editor.ts'
 import { FakeTerminal } from './fake-terminal.ts'
 
 interface EffectOwner {
@@ -81,6 +82,7 @@ const components = {
   visibleWidth,
   wrapText: wrapTextWithAnsi,
   truncateToWidth,
+  createEditor: createFakeEditor,
 } as BlueComponents
 
 async function flush(turns = 6): Promise<void> {

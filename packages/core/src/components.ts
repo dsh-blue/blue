@@ -323,6 +323,21 @@ class EditorAdapter implements BlueEditor {
     return this.editor.getExpandedText()
   }
 
+  renderContent(width: number, masked = false): string[] {
+    const state = (this.editor as unknown as { state: { lines: string[] } }).state
+    const original = state.lines
+    if (masked) {
+      state.lines = original.map(line => '•'.repeat(line.length))
+      this.editor.invalidate()
+    }
+    try {
+      return this.editor.render(Math.max(1, width)).slice(1, -1)
+    } finally {
+      state.lines = original
+      if (masked) this.editor.invalidate()
+    }
+  }
+
   insertText(text: string): void {
     this.editor.insertTextAtCursor(text)
   }
