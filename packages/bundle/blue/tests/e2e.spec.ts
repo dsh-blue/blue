@@ -240,7 +240,7 @@ describe('blue whole-tree e2e', () => {
     const settingsPath = join(dir, 'settings.yaml')
     const credentialsPath = join(dir, '.credentials.yaml')
     writeFileSync(settingsPath, 'blue:\n  statusProvider: e2e.custom\n')
-    writeFileSync(credentialsPath, 'version: 1\nrefs: {}\n', { mode: 0o600 })
+    writeFileSync(credentialsPath, 'version: 1\nrefs:\n  DEEPSEEK_API_KEY: existing-test-key\n', { mode: 0o600 })
     const tree = await bootBlue([], { script: [], realSettings: { settingsPath, credentialsPath } })
     const agent = await currentAgent(tree)
     let renders = 0
@@ -317,7 +317,7 @@ describe('blue whole-tree e2e', () => {
     const settingsPath = join(dir, 'settings.yaml')
     const credentialsPath = join(dir, '.credentials.yaml')
     writeFileSync(settingsPath, 'blue:\n  editorProvider: e2e.editor\n')
-    writeFileSync(credentialsPath, 'version: 1\nrefs: {}\n', { mode: 0o600 })
+    writeFileSync(credentialsPath, 'version: 1\nrefs:\n  DEEPSEEK_API_KEY: existing-test-key\n', { mode: 0o600 })
     const tree = await bootBlue([], { script: [], realSettings: { settingsPath, credentialsPath } })
     let renders = 0
     let inertRenders = 0
@@ -362,7 +362,9 @@ describe('blue whole-tree e2e', () => {
     })
     await fiber.await()
     await waitForRender()
-    expect(stripSgr(await fullFrame(tree.terminal))).toContain('selected editor normal')
+    const selectedFrame = stripSgr(await fullFrame(tree.terminal))
+    expect(selectedFrame).not.toContain('Connect to DeepSeek')
+    expect(selectedFrame).toContain('selected editor normal')
     expect(frozen).toBe(true)
     expect(renders).toBeGreaterThan(0)
     expect(inertRenders).toBe(0)
