@@ -49,6 +49,38 @@ export function apply(ctx: Context): void {
 - **超宽被截断**：footer 的宽度预算紧张，条目按 `truncate` 策略处理。内容保持短小——状态栏不是面板，长内容去 [dock](/plugins/dock)；
 - **只接受 status 子集**：`text`、`rich-text`、`fields`、`progress` 和递归 `stack` 可用；交互节点会被安全拒绝。Tone/emphasis 由 canonical compiler 保留。
 
+## 独占 status provider
+
+`status.provider` 注册的是替换整个 footer 的候选，而不是追加条目：
+
+```ts
+const opened = ctx.bluePluginHost.open(ctx, {
+  id: 'my-plugin.compact-status',
+  api: '^1.0.0',
+  capabilities: ['status.provider'],
+})
+if (!opened.ok) return
+
+opened.value.statusProviders?.register({
+  id: 'my-plugin.compact',
+  render: snapshot => ({
+    kind: 'text',
+    content: `${snapshot.busy ? 'Working' : 'Ready'} · ${snapshot.session?.model?.id ?? 'No model'}`,
+  }),
+})
+```
+
+Candidate 注册后保持 inert，只有 `blue.statusProvider` 选中它时才调用 `render()`。Snapshot 是冻结的 readonly 副本，只含当前公开 session、经过校验的可见 additive entries 与 `busy` 标志。Blue 在 footer 的实际宽度下先编译并 dry-render，非法、零行、超过三行或运行失败的候选不会替换正常工作的同会话 provider。
+
+选择写在 `settings.yaml`；`blue.default` 恢复内置 additive footer：
+
+```yaml
+blue:
+  statusProvider: my-plugin.compact
+```
+
+缺失或失败的 desired id 会原样保留，renderer 不会偷偷改写设置。首次激活失败或 session 切换时使用 `blue.default`；同一 provider 在滚动 60 秒内失败三次会打开无定时器 breaker。切走后重新选择，或同 id 注册新 generation，才会重试。
+
 ## 常见错误
 
 | 现象 | 原因 |

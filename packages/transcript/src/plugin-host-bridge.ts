@@ -30,8 +30,10 @@ export function apply(ctx: Context): void {
   const dock = new Map<string, () => void>()
   const status = new Map<string, { dispose: () => void, contribution: BlueStatusEntryContribution }>()
   let dockOrder = ''
+  let statusRevision = -1
 
-  const syncStatus = (entries: readonly BlueStatusEntryContribution[]): void => {
+  const syncStatus = (entries: readonly BlueStatusEntryContribution[], revision: number): void => {
+    const refreshExisting = revision !== statusRevision
     const live = new Set(entries.map(entry => entry.id))
     for (const [id, record] of status) {
       if (live.has(id)) continue
@@ -39,7 +41,10 @@ export function apply(ctx: Context): void {
       status.delete(id)
     }
     for (const entry of entries) {
-      if (status.has(entry.id)) continue
+      if (status.has(entry.id)) {
+        if (refreshExisting) ctx.blueStatusEntries.refresh(`plugin.status.${entry.id}`)
+        continue
+      }
       const source = (): BlueStatusEntry | null => {
         const node = entry.render()
         return node === null ? {
@@ -61,6 +66,7 @@ export function apply(ctx: Context): void {
       status.set(entry.id, { contribution: entry, dispose: ctx.blueStatusEntries.register(source) })
       ctx.blueStatusEntries.refresh(`plugin.status.${entry.id}`)
     }
+    statusRevision = revision
   }
 
   const syncDock = (entries: readonly BlueDockContribution[]): void => {
@@ -84,7 +90,7 @@ export function apply(ctx: Context): void {
   }
 
   const sync = (snapshot: BluePluginHostSnapshot): void => {
-    syncStatus(snapshot.status)
+    syncStatus(snapshot.status, snapshot.statusRevision ?? snapshot.revision ?? 0)
     syncDock(snapshot.dock)
   }
   const subscription = subscribeBluePluginHost(host, sync)

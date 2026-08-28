@@ -24,6 +24,8 @@ Form 将校验错误紧跟在失败字段下方，文本字段同时保留 Blue 
 
 可读 export 在 flush 并读取 durable artifact 后使用官方 `blueConversation` projection；full export 则有意输出解码后的审计 event stream。`/copy` 使用官方 conversation 值与 OSC 52/native clipboard 管线。
 
+`blue` settings namespace 还会持久化 `statusProvider`。`blue.default` 选择随包提供的 additive footer；其他非空 id 选择对应的已注册 status-provider candidate。若 id 缺失或 provider 失败，原配置仍会保留，Blue 同时渲染安全 fallback，因此之后安装或修复 provider 时仍能激活原选择。
+
 ## 可选子路径
 
 - `./editor-plus`：shell mode 与 completion。

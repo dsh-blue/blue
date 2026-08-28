@@ -25,12 +25,14 @@ the process-local boundary. Change events are latest-wins per control;
 activate/submit/dismiss are FIFO per surface. The host owns revision fencing,
 abort, timeout, and coalesced refresh.
 
-Owner snapshots carry one monotonic aggregate revision, and pane/overlay
-entries carry independent render revisions. A refresh tick increments only its
-entry revision after coalescing. These owner fields are optional in the
-TypeScript shape for source-compatible mocks, while every real host snapshot
-supplies them. Snapshot subscriptions attach before their initial replay so a
-reentrant admission cannot be missed; a throwing replay
+Owner snapshots carry one monotonic aggregate revision plus capability-local
+`statusRevision` and `statusProvidersRevision` fences; pane/overlay entries
+carry independent render revisions. Register, coalesced refresh, dispose, and
+admission rollback advance only the affected status fence, so unrelated host
+mutations do not rebuild the active footer/provider. These owner fields are
+optional in the TypeScript shape for source-compatible mocks, while every real
+host snapshot supplies them. Snapshot subscriptions attach before their
+initial replay so a reentrant admission cannot be missed; a throwing replay
 removes every just-attached listener. `runBlueUserGesture` is the owner-only
 async dispatch scope: commands, panes, and overlays may mint one-shot proofs;
 abort or owner unload revokes immediately, and normal settlement revokes after

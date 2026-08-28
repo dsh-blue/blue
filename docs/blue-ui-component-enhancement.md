@@ -560,8 +560,17 @@ export interface BlueStatusProvider {
 - 同时只能激活一个 provider；由用户配置选择，不看 priority。
 - provider 可决定 status viewport 内部布局，但高度仍由 Blue 限制为 1–3 行。
 - provider 只读 Blue 提供的 snapshot，不能读取 Agent/Session。
-- candidate 先 dry-render 并通过限制，再原子替换；失败回滚 Blue default。
+- candidate 先按实际 footer child 宽度 dry-render 并通过 1–3 行限制，再原子替换；首次激活或 session 切换失败使用 Blue default，同一 session 的 A → 坏 B 切换保留 A。
 - 普通 additive entries 通过 snapshot 的标准字段进入 provider，不能绕过清洗。
+
+W5-A 当前实现以 `blue.statusProvider` 保存期望 id，`blue.default` 为内建
+sentinel。缺失或失败 id 不回写；host 的 additive status/provider candidate
+各有独立 revision，其他 capability 变化不会重建 status。选中 provider 只收到
+冻结的公共 session snapshot、清洗后的可见 additive entries 与 busy 标志；零行、
+超三行、校验或运行时失败都不能提交。失败预算归 selected/desired candidate
+generation：A -> bad B 时保留的 A 只是 B 选择流程的 LKG surface，其运行失败仍计入
+B，而不是 `active.id`。同一 desired generation 在滚动 60 秒内第三次失败后打开无定时器
+breaker 并回落 default，成功 dry-render 会清空该 generation 的失败历史。
 
 ### 8.4 Editor 扩展与替换
 
@@ -876,7 +885,7 @@ W4b 在 W4a-B 合入后由一个 Agent 迁移 Approval、Questionnaire、PlanRev
 
 G4 后按 Status → Editor extensions → Editor provider → Ecosystem 顺序执行：
 
-- **W5-A Status：**实现 additive status snapshot、provider candidate、用户选择、dry-render、原子替换和失败回滚。
+- **W5-A Status（实现已落地，待工作树门禁与真人验收）：**已实现 additive status snapshot、inert provider candidate、持久化用户选择、实际宽度 dry-render、原子替换、同会话 last-known-good、跨会话 default fallback 与 3/60s 无定时器 breaker。
 - **W5-B Editor：**先交付并验收 extensions，再在下一 task 实现 shell provider；保存 draft/history/mode/attachments，恰好一个 editor-control，失败回退默认。两个 task 不并行。
 - **W5-C Ecosystem：**在示例目录提供 header、right inspector、bottom log、overlay、custom status、custom editor shell；另建一个用户 kit，由至少两个示例插件共同依赖。同步中英插件开发文档和迁移指南。
 

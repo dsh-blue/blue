@@ -38,6 +38,13 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@dsh-blue/blue-app'
 import { applyTheme } from './theme-switch.ts'
 
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /** The consolidated Blue settings source became readable in this tree. */
+    'blue/settings-source-ready'(value: unknown): void
+  }
+}
+
 /** The user-tunable Blue settings (the `blue` settings namespace). */
 export interface BlueSettings {
   /** Whether the boot update check runs at all; `false` is the offline switch. */
@@ -46,6 +53,8 @@ export interface BlueSettings {
   readonly updateChannel: string
   /** The default theme, applied at startup; `/theme` overrides per session. */
   readonly theme: 'dark' | 'light' | 'ocean' | 'paper' | 'auto'
+  /** User-selected status provider id; `blue.default` keeps the built-in footer. */
+  readonly statusProvider: string
   /** Whether thinking blocks start collapsed. */
   readonly collapseThinking: boolean
   /** Whether tool output starts collapsed (ctrl+o toggles in the session). */
@@ -71,6 +80,7 @@ export const Config: z<BlueSettings> = z.object({
   updateCheck: z.boolean().default(true),
   updateChannel: z.string().default('rc'),
   theme: z.union([z.const('dark'), z.const('light'), z.const('ocean'), z.const('paper'), z.const('auto')]).default('dark'),
+  statusProvider: z.string().default('blue.default'),
   collapseThinking: z.boolean().default(true),
   collapseToolCalls: z.boolean().default(true),
   windowTurns: z.number().step(1).min(1).default(15),
@@ -87,6 +97,7 @@ export const DEFAULT_SETTINGS: BlueSettings = {
   updateCheck: true,
   updateChannel: 'rc',
   theme: 'dark',
+  statusProvider: 'blue.default',
   collapseThinking: true,
   collapseToolCalls: true,
   windowTurns: 15,
@@ -173,6 +184,7 @@ export function apply(ctx: Context): void {
   installSettingsSection(ctx, settingsNamespace('blue'), Config, DEFAULT_SETTINGS, {
     setSource: next => {
       ctx.blueInteractionState.settingsSource = next
+      ctx.emit('blue/settings-source-ready', next())
     },
     onChange: prime,
   })

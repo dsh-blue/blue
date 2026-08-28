@@ -1,31 +1,32 @@
 # Built-in plugins
 
-The installable Blue bundle contains 28 Blue-owned rows: two host-support rows and 26 product rows split into baseline, enhancement, and assembly segments. External plugins integrate through the renderer-neutral public API; internal rows connect through explicit `inject` dependencies and model/action seams.
+The installable Blue bundle contains 29 Blue-owned rows: two host-support rows and 27 product rows split into baseline, enhancement, and assembly segments. External plugins integrate through the renderer-neutral public API; internal rows connect through explicit `inject` dependencies and model/action seams.
 
-The patch actually carries a 29th insert row — the Harness package `session-title-all-prompts-llm` (the title-cadence swap: the base's `session-title-llm`, which titles once from the first prompt, is disabled in favor of re-titling on every user message, so a mis-derived title self-corrects on the next one). It is a Harness row, not a Blue-owned one, so the 28-row count above excludes it.
+The patch actually carries a 30th insert row — the Harness package `session-title-all-prompts-llm` (the title-cadence swap: the base's `session-title-llm`, which titles once from the first prompt, is disabled in favor of re-titling on every user message, so a mis-derived title self-corrects on the next one). It is a Harness row, not a Blue-owned one, so the 29-row count above excludes it.
 
 <!-- BEGIN diagram:blue-composition -->
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml - 28 Blue-owned rows · 28 条 Blue 自有行"]
+    subgraph bundle["cordis.patch.yml - 29 Blue-owned rows · 29 条 Blue 自有行"]
         subgraph host["host support 宿主支撑 - 2 rows"]
             presets["blue-agent-presets"]
             creative["blue-creative-host"]
         end
-        subgraph product["product UI 产品 UI - 26 rows"]
+        subgraph product["product UI 产品 UI - 27 rows"]
             subgraph baseline["baseline 基线 - 8 rows"]
                 api["blue-api-host"]
                 core["blue-core · blue-theme-dark"]
                 chrome["blue-banner · blue-transcript · blue-status-basic"]
                 conversation["blue-conversation · blue-transcript-official"]
             end
-            subgraph enhancement["enhancement 增强 - 14 droppable rows"]
+            subgraph enhancement["enhancement 增强 - 15 droppable rows"]
                 editorPlus["blue-editor-plus"]
                 att["blue-attachments · blue-paste-image"]
                 statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
                 panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
                 viewBridge["blue-plugin-view-bridge"]
+                statusOwner["blue-status-provider-owner"]
             end
             subgraph assembly["assembly 装配 - 4 rows"]
                 interaction["blue-interaction · blue-plugin-interaction-bridge"]
@@ -38,7 +39,7 @@ flowchart TB
     bundle -.-> dshbase
 
     classDef optional stroke-dasharray: 4 4;
-    class editorPlus,att,statusEnh,panes,viewBridge,validation optional;
+    class editorPlus,att,statusEnh,panes,viewBridge,statusOwner,validation optional;
 ```
 <!-- END diagram:blue-composition -->
 
@@ -64,7 +65,7 @@ These eight rows plus assembly form the minimum usable UI. The conversation prod
 | `blue-conversation` | official append-origin conversation and shared-facts projections |
 | `blue-transcript-official` | semantic consumer of whole projection snapshots/change feeds |
 
-## Enhancements (14 rows)
+## Enhancements (15 rows)
 
 | Plugin | Description |
 |---|---|
@@ -82,6 +83,7 @@ These eight rows plus assembly form the minimum usable UI. The conversation prod
 | `blue-pane-btw` | `/btw` side-question pane: fork the live session for a by-the-way question (opaque owned side-session action plus official projection) |
 | `blue-pane-agents` | projected subagent-group model (last dock row, the kimi swarm-pane semantics) |
 | `blue-plugin-view-bridge` | public status/dock contributions into owner model registries |
+| `blue-status-provider-owner` | exclusive status-provider selection, session/settings handoff, and fallback lifecycle owner |
 
 ## Assembly (4 rows)
 
@@ -96,4 +98,4 @@ These eight rows plus assembly form the minimum usable UI. The conversation prod
 
 `blue-context` and `blue-remote` prove adapter architecture through independent fixtures; `blue-openpencil` and `blue-lark` are exercised by their own vitest suites plus the dev-profile link. None of the four are bundle rows or enter the release dependency closure.
 
-A profile patch can customize composition. Removing a projection-backed baseline row removes a core product capability; the 14 enhancement rows are the layer designed for independent removal.
+A profile patch can customize composition. Removing a projection-backed baseline row removes a core product capability; the 15 enhancement rows are the layer designed for independent removal.

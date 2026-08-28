@@ -14,20 +14,23 @@ Blue 的 projection-backed transcript 以及 canonical status、tool、bottom-pa
 
 ## Status 与 Bottom Pane
 
-主插件拥有四个 renderer bridge：
+主插件拥有五个 renderer bridge：
 
-- 包内私有的 `BlueStatusEntryService` 把 canonical `BlueStatusNode` contribution 编译到两行 footer。
+- 包内私有的 `BlueStatusEntryService` 为内建两行 footer 收集 canonical `BlueStatusNode` contribution。
+- `BlueStatusCompositionService` 在该 `blue.default` footer 与一个用户选中的 status-provider candidate 之间选择渲染。
 - 包内私有的 `BlueBottomPaneService` 按 priority 与 id 排列有界的 Blue-owned bottom pane；它没有 left/right lane。
 - `BlueModelToolService` 把官方 tool presentation fact 转换为 readonly frontend view。
 - `TranscriptModelService` 渲染官方 semantic conversation model。
 
 Footer 子插件以 canonical status node 提供 model、cwd、git、title、context 与 session mode 信息。Activity、todo 与 agents pane 通过 `blueSessionFacts` 消费 `blueConversationFacts` projection；BTW pane 通过 `blueSessionActions` 获取可释放的旁路会话并渲染其官方 conversation projection。在 canonical vocabulary 能精确表达之前，activity、todo、agents、BTW 与 queue 的高级 chrome 保留在有 width 边界的 renderer adapter 后。任何 pane 都不会接收 Agent 或 Session。
 
+`./status-provider-owner` 宣告 `status.provider`，并跟随持久化的 `blue.statusProvider` id。Candidate 在被选择前保持 inert。选中 callback 只会收到冻结的公共 session snapshot、已清洗的可见 additive entry 与 busy 标志；Blue 会先在 footer 实际宽度下完成编译和 dry-render，再激活它。非法、零行、超过三行或失败的输出不能替换同一会话中正常工作的 provider；首次激活失败或 session 切换使用 `blue.default`，滚动 60 秒内三次失败会打开无定时器 breaker。Blue 不会改写缺失或失败的 desired id。
+
 `./plugin-host-bridge` 是第三方 renderer-neutral dock/status contribution 的 owner adapter。只有其 Fiber 存活时才会宣告这些 capability；替换后的 bridge 会从 host snapshot 恢复仍由公开 API 持有的 contribution。所有 registration、subscription、timer 与 screen child 都绑定 Fiber，并在 unload 时移除。
 
 ## 其他子路径
 
-`./banner` 挂载欢迎横幅；`./banner-content` 导出横幅显示的 `BLUE_VERSION` 常量，与 `package.json` 保持同步。`./status-basic-model`、`./status-cwd`、`./status-title`、`./status-git` 与 `./status-context` 发布 canonical footer node。`./pane-activity`、`./pane-todo`、`./pane-btw` 与 `./pane-agents` 发布 canonical bottom-pane node。`./tool-model` 与 `./transcript-model` 提供组合所需的 renderer-neutral registry；bottom-pane service 有意不作为 subpath 导出。
+`./banner` 挂载欢迎横幅；`./banner-content` 导出横幅显示的 `BLUE_VERSION` 常量，与 `package.json` 保持同步。`./status-basic-model`、`./status-cwd`、`./status-title`、`./status-git` 与 `./status-context` 发布 canonical footer node；`./status-provider-owner` 拥有独占 provider 选择。`./pane-activity`、`./pane-todo`、`./pane-btw` 与 `./pane-agents` 发布 canonical bottom-pane node。`./tool-model` 与 `./transcript-model` 提供组合所需的 renderer-neutral registry；bottom-pane service 有意不作为 subpath 导出。
 
 所有渲染行都遵守 core 的 visible-width 契约，包括窄窗口与 CJK viewport。
 

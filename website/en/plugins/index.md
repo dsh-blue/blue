@@ -51,6 +51,7 @@ Integration is a single move: **declare a manifest → `open()` to receive a cap
 | --- | --- | --- |
 | [`commands`](/en/plugins/commands) | slash command + async handler | appears in slash completion and `/help` |
 | [`status`](/en/plugins/status) | a render function returning `BlueView` | status bar entry in the bottom footer |
+| [`status.provider`](/en/plugins/status#exclusive-status-provider) | a render function receiving a readonly status snapshot | candidate replacing the entire footer |
 | [`dock`](/en/plugins/dock) | static or functional `BlueView` | bottom pane above the editor |
 | [`notifications`](/en/plugins/notifications) | publish/subscribe `BlueNotification` | editor notice bar |
 
@@ -65,7 +66,7 @@ The manifest schema also declares five more capabilities — `tools`, `editor`, 
 
 **Contributing capabilities** — one page per capability: contract table, full example, behavior details, and common pitfalls.
 
-- [Commands](/en/plugins/commands) · [Status bar](/en/plugins/status) · [Dock panes](/en/plugins/dock) · [Notifications](/en/plugins/notifications)
+- [Commands](/en/plugins/commands) · [Status bar and exclusive provider](/en/plugins/status) · [Dock panes](/en/plugins/dock) · [Notifications](/en/plugins/notifications)
 
 **Validation and publishing**
 
@@ -75,5 +76,5 @@ The manifest schema also declares five more capabilities — `tools`, `editor`, 
 **Reference**
 
 - [Seam reference](/en/plugins/seams) — the complete list of the stable plugin host and Blue's internal boundaries;
-- [Built-in plugins](/en/plugins/builtins) — the bundle's 28 Blue-owned rows, the most complete set of plugin examples;
+- [Built-in plugins](/en/plugins/builtins) — the bundle's 29 Blue-owned rows, the most complete set of plugin examples;
 - [Contributing to Blue](/en/plugins/contributing) — the local development flow for contributing code to Blue itself.

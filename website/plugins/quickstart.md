@@ -119,5 +119,5 @@ dsh --profile blue-dev
 ## 下一步
 
 - [核心概念](/plugins/concepts) —— 理解 capability 裁剪、`BlueView` 词汇表和 domain/adapter 拆分；
-- [命令](/plugins/commands)、[状态栏](/plugins/status)、[Dock 面板](/plugins/dock)、[通知](/plugins/notifications) —— 四个能力的完整契约；
-- [内置插件](/plugins/builtins) —— Blue 自己的 28 行就是最完整的范例集。
+- [命令](/plugins/commands)、[状态栏与独占 provider](/plugins/status)、[Dock 面板](/plugins/dock)、[通知](/plugins/notifications) —— 五个能力的完整契约；
+- [内置插件](/plugins/builtins) —— Blue 自己的 29 行就是最完整的范例集。

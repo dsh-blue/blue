@@ -51,6 +51,7 @@ dsh process 进程（one Cordis tree 一棵 Cordis 树）
 | --- | --- | --- |
 | [`commands`](/plugins/commands) | slash 命令 + 异步 handler | 出现在斜杠补全与 `/help` |
 | [`status`](/plugins/status) | 返回 `BlueView` 的 render 函数 | 底部 footer 状态条目 |
+| [`status.provider`](/plugins/status#独占-status-provider) | 接收 readonly status snapshot 的 render 函数 | 替换整个 footer 的候选 provider |
 | [`dock`](/plugins/dock) | 静态或函数式 `BlueView` | 编辑器上方的底部面板 |
 | [`notifications`](/plugins/notifications) | 发布/订阅 `BlueNotification` | 编辑器通知条 |
 
@@ -65,7 +66,7 @@ manifest schema 还声明了 `tools`、`editor`、`panels`、`session.read`、`s
 
 **贡献能力** —— 每个能力一页：契约表、完整示例、行为细节与常见错误。
 
-- [命令](/plugins/commands) · [状态栏](/plugins/status) · [Dock 面板](/plugins/dock) · [通知](/plugins/notifications)
+- [命令](/plugins/commands) · [状态栏与独占 provider](/plugins/status) · [Dock 面板](/plugins/dock) · [通知](/plugins/notifications)
 
 **验证与发布**
 
@@ -75,5 +76,5 @@ manifest schema 还声明了 `tools`、`editor`、`panels`、`session.read`、`s
 **参考**
 
 - [Seam 参考](/plugins/seams) —— 稳定 plugin host 与 Blue 内部边界的完整清单；
-- [内置插件](/plugins/builtins) —— bundle 的 28 条 Blue 自有行，是最完整的插件范例集；
+- [内置插件](/plugins/builtins) —— bundle 的 29 条 Blue 自有行，是最完整的插件范例集；
 - [贡献本仓库](/plugins/contributing) —— 给 Blue 本体贡献代码的本地开发流程。

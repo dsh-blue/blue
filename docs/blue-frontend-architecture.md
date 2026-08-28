@@ -31,11 +31,20 @@ Harness 继续拥有 Agent、Session、工具、持久化、权限、模型路�
 - **frontend tree**：当前选中 session、draft、focus、panel stack 和 active provider。
 - **provider Fiber**：provider 自己的订阅、timer、缓存和异步任务。
 
+当前 status provider 实现把持久化的期望 id 留在 `blue` settings，把候选
+registry 留在 host，把 active/last-known-good/breaker 状态留在 frontend tree；
+候选 callback 仅在被选择后由 composition owner 调用。Provider Fiber 卸载只
+撤销候选与自身资源，不改写用户的期望 id。
+
 产品级可变状态不得放在模块 singleton。renderer 对象不得进入 host/session scope；frontend binding 不能成为 session 事实来源。
 
 ## TUI Kernel 边界
 
 `blue-core` 仍是唯一接触 pi-tui 和 raw terminal 的包，拥有 terminal lifecycle、frame scheduling、width truth、layout、focus、key routing、overlay/editor slot、theme 编译和 render error boundary。
+
+Status 编译边界除安全错误行外，还向 composition owner 报告当前帧已收容的
+runtime failure；这只用于 dry-render、原子切换和 breaker，不把 renderer
+异常或对象写入公共 snapshot。
 
 Kernel 不知道 Agent、SessionEvent、工具语义或命令业务。插件贡献 readonly model 和 action，而不是 pi-tui component。现有 `blueScreen`、`blueKeymap`、`blueComponents` 可作为内部 TUI kernel seam；公共 frontend API 不透传这些类型。
 

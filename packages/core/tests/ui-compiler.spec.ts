@@ -952,6 +952,20 @@ describe('compileBlueStatusNode', () => {
     expect(clamped.component.renderStatus(20)).toEqual({ rows: ['one'], overflowed: true })
   })
 
+  it('evaluates status breakpoints against the allocated surface dimensions', () => {
+    const status = compiledStatus({
+      kind: 'stack',
+      direction: 'column',
+      children: [
+        { node: { kind: 'text', content: 'wide' }, when: { minWidth: 20 } },
+        { node: { kind: 'text', content: 'tall' }, when: { minHeight: 4 } },
+        { node: { kind: 'text', content: 'compact' }, when: { maxWidth: 19, maxHeight: 3 } },
+      ],
+    }, statusOptions({ viewport: { columns: 80, rows: 24 }, maxRows: 3 }))
+    expect(status.component.renderStatus(18)).toEqual({ rows: ['compact'], overflowed: false })
+    expect(status.component.renderStatus(20)).toEqual({ rows: ['wide'], overflowed: false })
+  })
+
   it('contains validation, setup, and render failures in the status budget', () => {
     const invalid = compileBlueStatusNode({ kind: 'unknown' }, statusOptions({ maxRows: 1 }))
     if (invalid.ok) throw new Error('expected failure')
@@ -964,13 +978,16 @@ describe('compileBlueStatusNode', () => {
     const rendered = compiledStatus(ui.richText([{ text: 'safe' }]), statusOptions({ components: throwingComponents, maxRows: 2 })).component.renderStatus(12)
     expect(rendered.rows.join('')).toContain('status')
     expect(rendered.rows.length).toBeLessThanOrEqual(2)
+    expect(rendered.runtimeFailure).toBe('status exploded')
 
     const broken = compiledStatus(ui.text('safe'), statusOptions({ maxRows: 2 })).component as unknown as {
       surface: { root: { render(width: number): string[] } }
-      renderStatus(width: number): { rows: string[], overflowed: boolean }
+      renderStatus(width: number): { rows: string[], overflowed: boolean, runtimeFailure?: string }
     }
     broken.surface.root.render = () => { throw new Error('status root exploded') }
-    expect(broken.renderStatus(12).rows.join('')).toContain('status')
+    const failed = broken.renderStatus(12)
+    expect(failed.rows.join('')).toContain('status')
+    expect(failed.runtimeFailure).toBe('status root exploded')
 
     const base = statusOptions()
     const options = new Proxy(base, { get: (target, key, receiver) => {

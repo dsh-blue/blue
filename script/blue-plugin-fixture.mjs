@@ -464,6 +464,154 @@ try {
     })
   }
 
+  if (manifest.name === '@dsh-blue/blue-transcript') {
+    const cordis = await load('@deepseek-ai/cordis')
+    const blueApi = await load('@dsh-blue/blue-api')
+    const transcript = await load('@dsh-blue/blue-transcript')
+    const statusProviderOwner = await load('@dsh-blue/blue-transcript/status-provider-owner')
+    const themeDark = await load('@dsh-blue/blue-core/theme-dark')
+
+    async function statusProviderFixture(selectedId = 'packed.custom') {
+      const ctx = new cordis.Context()
+      const bottom = []
+      const screen = {
+        columns: 80,
+        rows: 24,
+        requestRender() {},
+        addBottomChild(component) {
+          bottom.push(component)
+          return () => {
+            const index = bottom.indexOf(component)
+            if (index >= 0) bottom.splice(index, 1)
+          }
+        },
+      }
+      const session = Object.freeze({ id: 'packed-session', cwd: '/packed', status: 'idle', mode: 'normal' })
+      const sessionListeners = new Set()
+      const sessionReader = {
+        current: () => session,
+        subscribe(listener) {
+          sessionListeners.add(listener)
+          listener(session)
+          return { dispose: () => sessionListeners.delete(listener) }
+        },
+        request: async () => ({ ok: true, value: undefined }),
+      }
+      const projections = {
+        current: () => undefined,
+        subscribe: () => () => {},
+        children: () => [],
+        subscribeChildren: () => () => {},
+      }
+      ctx.reflect.provide('blueScreen', screen)
+      ctx.reflect.provide('blueTheme', { colors: themeDark.DARK_COLORS })
+      new core.BlueComponentsService(ctx, { theme: { colors: themeDark.DARK_COLORS }, tui: {} })
+      ctx.reflect.provide('blueKeymap', { register: () => () => {} })
+      ctx.reflect.provide('blueSessionReader', sessionReader)
+      ctx.reflect.provide('blueSessionProjections', projections)
+      let settingsValue = { statusProvider: selectedId }
+      ctx.reflect.provide('settings', { get: namespace => namespace === 'blue' ? settingsValue : undefined })
+      await ctx.plugin(blueApi)
+      await ctx.plugin(transcript)
+      const ownerFiber = await ctx.plugin(statusProviderOwner)
+      ensure(bottom.length === 1, 'FIXTURE_STATUS_MOUNT', 'transcript did not mount one status composition')
+
+      const cleanups = []
+      const consumer = { effect(callback) { const cleanup = callback(); if (typeof cleanup === 'function') cleanups.push(cleanup) } }
+      const opened = ctx.bluePluginHost.open(consumer, {
+        id: '@fixture/status-provider',
+        api: '^1.0.0',
+        capabilities: ['status.provider'],
+      })
+      ensure(opened.ok, 'FIXTURE_STATUS_OPEN', opened.ok ? '' : opened.message)
+      return {
+        ctx,
+        bottom,
+        opened: opened.value,
+        ownerFiber,
+        setSelection(id) {
+          const previous = settingsValue
+          settingsValue = { statusProvider: id }
+          ctx.emit('settings/updated', 'blue', settingsValue, previous, 'fixture')
+        },
+        async dispose() {
+          for (const cleanup of cleanups.splice(0)) cleanup()
+          await ctx.fiber.dispose()
+        },
+      }
+    }
+
+    await scenario('transcript.status-provider-selection-refresh-inert', async () => {
+      const fixture = await statusProviderFixture()
+      let selectedRenders = 0
+      let unselectedRenders = 0
+      let content = 'packed one'
+      let frozen = false
+      const selected = fixture.opened.statusProviders.register({
+        id: 'packed.custom',
+        render(snapshot) {
+          selectedRenders += 1
+          frozen = Object.isFrozen(snapshot) && Object.isFrozen(snapshot.session) && Object.isFrozen(snapshot.entries)
+          return { kind: 'text', content }
+        },
+      })
+      const unselected = fixture.opened.statusProviders.register({
+        id: 'packed.other',
+        render() {
+          unselectedRenders += 1
+          return { kind: 'text', content: 'wrong provider' }
+        },
+      })
+      ensure(selected.ok && unselected.ok, 'FIXTURE_STATUS_REGISTER', 'status provider registration failed')
+      ensure(selectedRenders === 0 && unselectedRenders === 0, 'FIXTURE_STATUS_INERT', 'provider registration invoked a callback')
+      const first = fixture.bottom[0].render(40)
+      ensure(first.join('\n').includes('packed one') && selectedRenders === 1 && unselectedRenders === 0 && frozen, 'FIXTURE_STATUS_SELECTION', 'selected provider or frozen snapshot contract drifted')
+      ensure(!first.some(row => core.visibleWidth(row) > 40), 'FIXTURE_STATUS_WIDTH', 'selected provider exceeded its gutter width')
+      content = 'packed two'
+      ensure(selected.value.refresh().ok, 'FIXTURE_STATUS_REFRESH', 'selected provider refresh was rejected')
+      await Promise.resolve()
+      const refreshed = fixture.bottom[0].render(40)
+      ensure(refreshed.join('\n').includes('packed two') && selectedRenders === 2 && unselectedRenders === 0, 'FIXTURE_STATUS_REFRESH_RENDER', 'provider refresh did not atomically rebuild the selected status')
+      await fixture.dispose()
+    })
+
+    await scenario('transcript.status-provider-fallback-unload-reload', async () => {
+      const fixture = await statusProviderFixture('packed.bad')
+      let badRenders = 0
+      let goodRenders = 0
+      const bad = fixture.opened.statusProviders.register({
+        id: 'packed.bad',
+        render() {
+          badRenders += 1
+          throw new Error('packed bad provider')
+        },
+      })
+      const good = fixture.opened.statusProviders.register({
+        id: 'packed.good',
+        render() {
+          goodRenders += 1
+          return { kind: 'text', content: 'packed good' }
+        },
+      })
+      ensure(bad.ok && good.ok, 'FIXTURE_STATUS_FALLBACK_REGISTER', 'fallback providers did not register')
+      const fallbackRows = fixture.bottom[0].render(40)
+      ensure(!fallbackRows.join('\n').includes('packed bad') && badRenders === 1 && goodRenders === 0 && !fallbackRows.some(row => core.visibleWidth(row) > 40), 'FIXTURE_STATUS_FALLBACK', 'failed selected provider did not use the default safely')
+      fixture.setSelection('packed.good')
+      ensure(fixture.bottom[0].render(40).join('\n').includes('packed good') && goodRenders === 1, 'FIXTURE_STATUS_SWITCH', 'settings selection did not activate the good provider')
+      good.value.dispose()
+      ensure(!fixture.bottom[0].render(40).join('\n').includes('packed good'), 'FIXTURE_STATUS_PROVIDER_UNLOAD', 'provider unload did not restore the default')
+      const replacement = fixture.opened.statusProviders.register({ id: 'packed.good', render: () => { goodRenders += 1; return { kind: 'text', content: 'packed replacement' } } })
+      ensure(replacement.ok && fixture.bottom[0].render(40).join('\n').includes('packed replacement'), 'FIXTURE_STATUS_PROVIDER_RELOAD', 'same-id provider generation did not reactivate')
+      await fixture.ownerFiber.dispose()
+      const beforeLateRefresh = goodRenders
+      ensure(!replacement.value.refresh().ok && goodRenders === beforeLateRefresh, 'FIXTURE_STATUS_OWNER_UNLOAD', 'owner unload accepted a late provider refresh')
+      const replacementOwner = await fixture.ctx.plugin(statusProviderOwner)
+      ensure(fixture.bottom[0].render(40).join('\n').includes('packed replacement') && goodRenders === beforeLateRefresh + 1, 'FIXTURE_STATUS_OWNER_RELOAD', 'owner reload did not replay the persisted selection')
+      await replacementOwner.dispose()
+      await fixture.dispose()
+    })
+  }
+
   if (manifest.name === '@dsh-blue/blue-openpencil') {
     const openpencil = await load('@dsh-blue/blue-openpencil')
     await scenario('openpencil.presentation-fallback-and-meta-elision', async () => {

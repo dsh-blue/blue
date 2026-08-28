@@ -22,4 +22,6 @@ node、event payload 和 snapshot 是 readonly、JSON-shaped 数据；`render`�
 
 `BlueEditorShellNode` 是 provider-only 独立树，包含 `editor-control` slot；普通 `BlueUiNode` 无法构造该 slot。provider registration 只校验 callback 形状，不调用 `render`、不检查其返回树，也不选择 winner；只有 Blue 持有的用户配置能激活 inert candidate。`session.read` 与 `session.act` 在真正的 owner/API seam 能提供 snapshot 与 action 保证前继续拒绝。
 
+Blue 自有 adapter 会收到 capability-local 的 `statusRevision` 与 `statusProvidersRevision` snapshot fence。Additive status refresh 与 provider candidate refresh 各自独立递增，因此无关 command、pane 或 provider 的安装不会触发当前 status provider 重渲染。
+
 host 暂留 deprecated 内建 `dock` bridge 作为仓库兼容层，供 owner 迁移到 `panes`；发布 manifest 已无法通过 `dock` 的公共校验。

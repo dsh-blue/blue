@@ -26,7 +26,7 @@ blue-feature/
   cordis.patch.yml      # 把 entry 插入 profile
 ```
 
-入口必须导出稳定的 `name`、`inject` 和 `apply(ctx)`。Blue 功能通过 `ctx.bluePluginHost.open(ctx, manifest)` 申请能力；当前公开能力是 `commands`、`status`、`dock` 和 `notifications`。`open()`、`register()`、`publish()` 都返回结构化 `BlueResult`，每次都要检查 `ok`。注册由调用方 Fiber 托管，插件卸载、更新或 profile 重载时会自动撤销。
+入口必须导出稳定的 `name`、`inject` 和 `apply(ctx)`。Blue 功能通过 `ctx.bluePluginHost.open(ctx, manifest)` 申请能力；当前公开能力是 `commands`、`status`、`status.provider`、`dock` 和 `notifications`。`open()`、`register()`、`publish()` 都返回结构化 `BlueResult`，每次都要检查 `ok`。注册由调用方 Fiber 托管，插件卸载、更新或 profile 重载时会自动撤销。
 
 插件只能返回 renderer-neutral 的 `BlueView` 和结构化 action：
 

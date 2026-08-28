@@ -27,7 +27,7 @@ function consumer() {
 }
 
 describe('plugin host view bridge', () => {
-  it('mounts, orders, hot-replaces, and unloads bounded dock/status contributions', () => {
+  it('mounts, orders, hot-replaces, refreshes, and unloads bounded dock/status contributions', async () => {
     const host = new BluePluginHostService(new Context())
     const mounted: BlueComponent[] = []
     let redraws = 0
@@ -62,7 +62,8 @@ describe('plugin host view bridge', () => {
     const first = opened.value.dock!.register({ id: 'first', priority: 1, view: () => ({ kind: 'text', content: 'first' }) })
     const zeroRows = opened.value.dock!.register({ id: 'zero', preferredRows: 0, view: { kind: 'text', content: 'zero' } })
     const hugeRows = opened.value.dock!.register({ id: 'huge', preferredRows: 20, view: { kind: 'text', content: 'huge' } })
-    const status = opened.value.status!.register({ id: 'health', render: () => ({ kind: 'text', content: 'healthy', tone: 'success' }) })
+    let health = 'healthy'
+    const status = opened.value.status!.register({ id: 'health', render: () => ({ kind: 'text', content: health, tone: 'success' }) })
     const emptyStatus = opened.value.status!.register({ id: 'quiet', render: () => null })
     const codeStatus = opened.value.status!.register({ id: 'code', render: () => ({ kind: 'code', code: 'const x = 1', language: 'ts' }) })
     const plainStatus = opened.value.status!.register({ id: 'plain', render: () => ({ kind: 'text', content: 'plain' }) })
@@ -82,6 +83,13 @@ describe('plugin host view bridge', () => {
     expect(statusModels.list().find(model => model.id === 'plugin.status.fields')?.node).toEqual({ kind: 'fields', rows: [{ label: 'state', value: [{ text: 'ok', tone: 'success' }] }] })
     expect(statusModels.list().find(model => model.id === 'plugin.status.sections')?.node).toEqual({ kind: 'sections', sections: [{ body: { kind: 'text', content: 'body' } }, { title: 'collapsed', body: { kind: 'code', code: 'x' }, collapsed: true }] })
     expect(redraws).toBeGreaterThan(0)
+    if (!status.ok) return
+    const beforeRefresh = redraws
+    health = 'refreshed'
+    expect(status.value.refresh()).toMatchObject({ ok: true })
+    await Promise.resolve()
+    expect(redraws).toBeGreaterThan(beforeRefresh)
+    expect(statusModels.list().find(model => model.id === 'plugin.status.health')?.node).toEqual({ kind: 'text', content: 'refreshed', tone: 'success' })
 
     if (first.ok) first.value.dispose()
     expect(mounted).toHaveLength(3)

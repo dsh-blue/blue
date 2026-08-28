@@ -24,6 +24,8 @@ Forms keep inline validation below the failing field, while text fields retain t
 
 Readable export uses the official `blueConversation` projection after flushing and reading the durable artifact. Full export deliberately emits the decoded audit event stream. `/copy` uses the official conversation value and the OSC 52/native clipboard pipeline.
 
+The `blue` settings namespace also persists `statusProvider`. `blue.default` selects the shipped additive footer; another non-empty id selects that registered status-provider candidate. A missing or failing id stays configured while Blue renders a safe fallback, so installing or repairing the provider can activate the original choice later.
+
 ## Optional Subpaths
 
 - `./editor-plus`: shell mode and completion.
