@@ -11,8 +11,9 @@ import type { SelectItem, SelectListTheme } from '@earendil-works/pi-tui'
 import { clampRowsToWidth, framePanel } from '../src/chrome.ts'
 import { renderFrontendView } from '../src/frontend-renderer.ts'
 import { GutterComponent } from '../src/gutter.ts'
+import { compileBlueStatusNode } from '../src/ui-compiler.ts'
 import { WrappingSelectList } from '../src/wrapping-select-list.ts'
-import { truncateToWidth, wrapTextWithAnsi } from '../src/width.ts'
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '../src/width.ts'
 import { ADVERSARIAL, SCAN_WIDTHS, expectLinesFit } from './width-scan.ts'
 
 /** Identity paints: the scan measures true columns, not bracket markers. */
@@ -26,6 +27,8 @@ const selectTheme: SelectListTheme = {
 
 /** W4a migration sweep: every integer width in the supported fixture range. */
 const MIGRATION_WIDTHS = Array.from({ length: 119 }, (_, index) => index + 2)
+const identity = (text: string): string => text
+const statusColors = new Proxy({ logoGradient: [identity] }, { get: (target, key) => key === 'logoGradient' ? target.logoGradient : identity })
 
 describe('core width-scan', () => {
   for (const { name, text } of ADVERSARIAL) {
@@ -87,6 +90,31 @@ describe('core width-scan', () => {
         for (const width of MIGRATION_WIDTHS) {
           expectLinesFit(`frontend/${view.kind}/${name}`, renderFrontendView(view, width), width)
         }
+      }
+    })
+
+    it(`canonical status compiler survives ${name}`, () => {
+      const result = compileBlueStatusNode({
+        kind: 'stack',
+        direction: 'row',
+        gap: 1,
+        children: [
+          { node: { kind: 'rich-text', spans: [{ text, tone: 'accent', emphasis: 'strong' }] }, grow: 1, shrink: 1 },
+          { node: { kind: 'progress', label: text, value: 1, max: 3 }, basis: 12, shrink: 1 },
+        ],
+      }, {
+        components: { visibleWidth, wrapText: wrapTextWithAnsi, truncateToWidth } as never,
+        colors: statusColors as never,
+        getViewport: () => ({ columns: 80, rows: 3 }),
+        screenMode: 'main',
+        maxRows: 3,
+      })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      for (const width of SCAN_WIDTHS) {
+        const rendered = result.value.component.renderStatus(width)
+        expect(rendered.rows.length).toBeLessThanOrEqual(3)
+        expectLinesFit(`status/${name}`, rendered.rows, width)
       }
     })
   }

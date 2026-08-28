@@ -6,7 +6,7 @@
  * @module @dsh-blue/blue-core/ui-compiler
  */
 
-import type { BlueErrorCode, BlueFormField, BlueTone, BlueUiEvent, BlueUiNode, BlueViewportCondition, BlueView } from '@dsh-blue/blue-api'
+import type { BlueErrorCode, BlueFormField, BlueStatusNode, BlueTone, BlueUiEvent, BlueUiNode, BlueViewportCondition, BlueView } from '@dsh-blue/blue-api'
 import { CURSOR_MARKER, HStack, ScrollView, VStack, type Component } from '@earendil-works/pi-tui'
 import { getLayoutNode, LAYOUT_NODE, type LayoutNode, type LayoutViewport } from '@earendil-works/pi-tui/dist/layout-node.js'
 import { paintPluginTone, renderCanonicalView } from './plugin-view.ts'
@@ -25,11 +25,12 @@ import {
   type PatternFocus,
 } from './ui-patterns.ts'
 import { sliceByColumn, visibleWidth } from './width.ts'
-import { validateBlueUiNode } from './ui-validator.ts'
+import { validateBlueStatusNode, validateBlueUiNode } from './ui-validator.ts'
 
 const FOCUS_SENTINEL = '\uf8ff'
 const ERROR_MAX_ROWS = 3
 const LAYOUT_VALUE_MAX = 1_000_000
+const PASSIVE_EVENT_SINK = Function.prototype as (event: BlueUiEvent) => void
 
 /** Pane-relative dimensions used by responsive child conditions. */
 export interface BlueUiViewport {
@@ -50,11 +51,43 @@ export interface BlueUiCompilerOptions {
   readonly onUnhandledEscape?: () => void
 }
 
+/** Passive dependencies and bounded height for one compact status tree. */
+export interface BlueStatusCompilerOptions {
+  readonly components: BlueComponents
+  readonly colors: BlueSemanticColors
+  readonly getViewport: () => BlueUiViewport
+  readonly screenMode: 'main' | 'alternate'
+  /** Status output is always bounded to one through three rows; defaults to one. */
+  readonly maxRows?: 1 | 2 | 3
+}
+
 /** Successful canonical compilation result. */
 export interface BlueCompiledUi {
   readonly node: BlueUiNode
   readonly component: BlueComponent
   readonly focusTarget: BlueFocusable | null
+}
+
+/** One bounded status render and whether the assigned viewport hid content. */
+export interface BlueStatusRenderResult {
+  readonly rows: string[]
+  readonly overflowed: boolean
+}
+
+/** Passive status component with explicit overflow metadata for footer policy. */
+export interface BlueStatusComponent extends BlueComponent {
+  /**
+   * Render within the compiler's one-to-three-row budget.
+   * @param width - assigned status width in terminal columns.
+   * @returns bounded rows plus whether row or column content overflowed.
+   */
+  renderStatus(width: number): BlueStatusRenderResult
+}
+
+/** Successful canonical status compilation result. */
+export interface BlueCompiledStatus {
+  readonly node: BlueStatusNode
+  readonly component: BlueStatusComponent
 }
 
 /** Compile failure with a safe renderer-owned error surface. */
@@ -67,6 +100,19 @@ export interface BlueUiCompileFailure {
 
 /** Result returned by the no-bypass UI compiler. */
 export type BlueUiCompileResult = { readonly ok: true, readonly value: BlueCompiledUi } | BlueUiCompileFailure
+
+/** Status compile failure with a passive, height-bounded error component. */
+export interface BlueStatusCompileFailure {
+  readonly ok: false
+  readonly code: BlueErrorCode
+  readonly message: string
+  readonly errorComponent: BlueStatusComponent
+}
+
+/** Result returned by the no-bypass status compiler. */
+export type BlueStatusCompileResult = { readonly ok: true, readonly value: BlueCompiledStatus } | BlueStatusCompileFailure
+
+type CompilerMode = 'ui' | 'status'
 
 interface ControlBase {
   readonly key: string
@@ -259,7 +305,7 @@ function controlsForNode(node: BlueUiNode, options: BlueUiCompilerOptions, path 
   return controls
 }
 
-function compileNode(node: BlueUiNode, state: FocusState, options: BlueUiCompilerOptions, path = '$'): Component {
+function compileNode(node: BlueUiNode, state: FocusState, options: BlueUiCompilerOptions, path = '$', mode: CompilerMode = 'ui'): Component {
   switch (node.kind) {
     case 'text':
     case 'fields':
@@ -278,12 +324,13 @@ function compileNode(node: BlueUiNode, state: FocusState, options: BlueUiCompile
         ...(node.gap === undefined ? {} : { gap: node.gap }),
         ...(node.align === undefined ? {} : { align: node.align }),
       }
-      const stack = options.screenMode === 'main' || node.direction === 'column'
+      const spatial = mode === 'status' || options.screenMode === 'alternate'
+      const stack = !spatial || node.direction === 'column'
         ? new VStack([], stackOptions)
         : new HStack([], stackOptions)
       for (const [index, child] of node.children.entries()) {
-        const compiled = compileNode(child.node, state, options, `${path}.${String(index)}`)
-        const layout = options.screenMode === 'main'
+        const compiled = compileNode(child.node, state, options, `${path}.${String(index)}`, mode)
+        const layout = !spatial
           ? { visible: () => conditionMatches(child.when, safeViewport(options.getViewport)) }
           : {
               ...(child.basis === undefined || child.basis === 'auto' ? (child.basis === 'auto' ? { basis: 'auto' as const } : {}) : { basis: Math.min(child.basis, LAYOUT_VALUE_MAX) }),
@@ -306,9 +353,9 @@ function compileNode(node: BlueUiNode, state: FocusState, options: BlueUiCompile
       }
       return stack
     }
-    case 'surface': return surfaceComponent(node, compileNode(node.child, state, options, `${path}.child`), node.footer === undefined ? undefined : compileNode(node.footer, state, options, `${path}.footer`), options)
+    case 'surface': return surfaceComponent(node, compileNode(node.child, state, options, `${path}.child`, mode), node.footer === undefined ? undefined : compileNode(node.footer, state, options, `${path}.footer`, mode), options)
     case 'scroll': {
-      const child = compileNode(node.child, state, options, `${path}.scroll`)
+      const child = compileNode(node.child, state, options, `${path}.scroll`, mode)
       if (options.screenMode === 'main') return child
       return new ScrollView(child, { follow: node.follow === 'end' ? 'end' : 'none', primary: false, overscroll: 'contain', scrollbar: node.scrollbar === true ? 'auto' : 'hidden' })
     }
@@ -316,7 +363,7 @@ function compileNode(node: BlueUiNode, state: FocusState, options: BlueUiCompile
       return staticComponent(width => renderTabs(node, width, patternFocus(state, `${path}:`), options.colors), options)
     }
     case 'list': {
-      if (node.items.length === 0) return node.empty === undefined ? staticComponent(() => [], options) : compileNode(node.empty, state, options, `${path}.empty`)
+      if (node.items.length === 0) return node.empty === undefined ? staticComponent(() => [], options) : compileNode(node.empty, state, options, `${path}.empty`, mode)
       return staticComponent(width => renderList(node, width, options.screenMode === 'main' ? Number.MAX_SAFE_INTEGER : safeViewport(options.getViewport).rows, patternFocus(state, `${path}:`), options.colors), options)
     }
     case 'form': {
@@ -341,7 +388,7 @@ function compileNode(node: BlueUiNode, state: FocusState, options: BlueUiCompile
     case 'empty': {
       const stack = new VStack()
       stack.addChild(staticComponent(width => renderEmpty(node, width, options.colors), options))
-      if (node.actions !== undefined) stack.addChild(compileNode(node.actions, state, options, `${path}.actions`))
+      if (node.actions !== undefined) stack.addChild(compileNode(node.actions, state, options, `${path}.actions`, mode))
       return stack
     }
     case 'progress': return staticComponent(width => renderProgress(node, width, options.colors), options)
@@ -375,7 +422,7 @@ class CompiledSurface implements BlueFocusable {
   private readonly root: Component
   private viewport: BlueUiViewport
 
-  constructor(node: BlueUiNode, private readonly options: BlueUiCompilerOptions) {
+  constructor(node: BlueUiNode, private readonly options: BlueUiCompilerOptions, mode: CompilerMode) {
     this.viewport = safeViewport(options.getViewport)
     const runtimeOptions: BlueUiCompilerOptions = { ...options, getViewport: () => this.viewport }
     const textBuffers = new Map<string, { canonical: string, value: string }>()
@@ -416,7 +463,7 @@ class CompiledSurface implements BlueFocusable {
       setToggleValue: (key, canonical, value) => { toggleDrafts.set(key, { canonical, value }) },
       setLayoutViewport: viewport => { this.viewport = viewport },
     }
-    this.root = compileNode(node, this.state, runtimeOptions)
+    this.root = compileNode(node, this.state, runtimeOptions, '$', mode)
   }
 
   get focused(): boolean { return this.state.focused }
@@ -437,26 +484,38 @@ class CompiledSurface implements BlueFocusable {
     }
   }
 
-  render(width: number): string[] {
+  private renderFrame(width: number, maxRows: number | undefined): BlueStatusRenderResult {
     const safeWidth = Math.max(1, Number.isFinite(width) ? Math.floor(width) : 1)
     try {
       this.state.layoutPass = false
       this.viewport = safeViewport(this.options.getViewport)
       reconcile(this.state)
       const rows = this.root.render(safeWidth)
-      const rendered = (this.options.screenMode === 'alternate' ? rows.slice(0, this.viewport.rows) : rows)
-        .map(row => visibleWidth(row) <= safeWidth ? row : sliceByColumn(row, 0, safeWidth, true))
+      const rowLimit = maxRows ?? (this.options.screenMode === 'alternate' ? this.viewport.rows : undefined)
+      const limited = rowLimit === undefined ? rows : rows.slice(0, rowLimit)
+      let overflowed = rowLimit !== undefined && rows.length > rowLimit
+      const rendered = limited.map(row => {
+        if (visibleWidth(row) <= safeWidth) return row
+        overflowed = true
+        return sliceByColumn(row, 0, safeWidth, true)
+      })
       let inserted = false
-      return rendered.map(row => {
+      return { rows: rendered.map(row => {
         if (!this.focused || inserted || !row.includes(FOCUS_SENTINEL)) return row.replaceAll(FOCUS_SENTINEL, ' ')
         inserted = true
         return row.replace(FOCUS_SENTINEL, `${CURSOR_MARKER} `).replaceAll(FOCUS_SENTINEL, ' ')
-      })
+      }), overflowed }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'unknown render failure'
-      return errorRows(message, safeWidth, this.options.colors)
+      const rows = errorRows(message, safeWidth, this.options.colors)
+      return { rows: maxRows === undefined ? rows : rows.slice(0, maxRows), overflowed: maxRows !== undefined && rows.length > maxRows }
     }
   }
+
+  render(width: number): string[] { return this.renderFrame(width, undefined).rows }
+
+  /** Render a passive status surface with a fixed row budget and overflow signal. */
+  renderStatus(width: number, maxRows: number): BlueStatusRenderResult { return this.renderFrame(width, maxRows) }
 
   handleInput(data: string): void {
     this.viewport = safeViewport(this.options.getViewport)
@@ -545,6 +604,36 @@ class CompiledSurface implements BlueFocusable {
   invalidate(): void { this.root.invalidate?.() }
 }
 
+/** Passive facade that deliberately does not expose focus or input methods. */
+class CompiledStatusComponent implements BlueStatusComponent {
+  constructor(private readonly surface: CompiledSurface, private readonly maxRows: number) {}
+  render(width: number): string[] { return this.renderStatus(width).rows }
+  renderStatus(width: number): BlueStatusRenderResult { return this.surface.renderStatus(width, this.maxRows) }
+  invalidate(): void { this.surface.invalidate() }
+}
+
+/** Passive bounded facade for status validation and setup failures. */
+class StatusErrorComponent implements BlueStatusComponent {
+  private readonly error: ErrorComponent
+  constructor(message: string, colors: BlueSemanticColors, private readonly maxRows: number) {
+    this.error = new ErrorComponent(message, colors)
+  }
+  render(width: number): string[] { return this.renderStatus(width).rows }
+  renderStatus(width: number): BlueStatusRenderResult {
+    const rows = this.error.render(width)
+    return { rows: rows.slice(0, this.maxRows), overflowed: rows.length > this.maxRows }
+  }
+  invalidate(): void { this.error.invalidate() }
+}
+
+function admittedSurface(node: BlueUiNode, options: BlueUiCompilerOptions, mode: CompilerMode): CompiledSurface {
+  return new CompiledSurface(node, options, mode)
+}
+
+function statusRowLimit(value: BlueStatusCompilerOptions['maxRows']): number {
+  return value === 2 || value === 3 ? value : 1
+}
+
 /** Validate first, then compile one canonical UI tree without a bypass path. */
 export function compileBlueUiNode(value: unknown, options: BlueUiCompilerOptions): BlueUiCompileResult {
   const admitted = validateBlueUiNode(value)
@@ -552,11 +641,34 @@ export function compileBlueUiNode(value: unknown, options: BlueUiCompilerOptions
     return { ok: false, code: admitted.code, message: admitted.message, errorComponent: new ErrorComponent(admitted.message, options.colors) }
   }
   try {
-    const surface = new CompiledSurface(admitted.value, options)
+    const surface = admittedSurface(admitted.value, options, 'ui')
     const focusTarget = controlsForNode(admitted.value, options, '$', true).length === 0 ? null : surface
     return { ok: true, value: { node: admitted.value, component: surface, focusTarget } }
   } catch {
     const message = 'Blue UI compilation failed safely'
     return { ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message, errorComponent: new ErrorComponent(message, options.colors) }
+  }
+}
+
+/** Validate the non-interactive status subset, then compile it through the canonical painter. */
+export function compileBlueStatusNode(value: unknown, options: BlueStatusCompilerOptions): BlueStatusCompileResult {
+  const maxRows = statusRowLimit(options.maxRows)
+  const admitted = validateBlueStatusNode(value)
+  if (!admitted.ok) {
+    return { ok: false, code: admitted.code, message: admitted.message, errorComponent: new StatusErrorComponent(admitted.message, options.colors, maxRows) }
+  }
+  try {
+    const runtimeOptions: BlueUiCompilerOptions = {
+      components: options.components,
+      colors: options.colors,
+      getViewport: options.getViewport,
+      screenMode: options.screenMode,
+      emit: PASSIVE_EVENT_SINK,
+    }
+    const surface = admittedSurface(admitted.value, runtimeOptions, 'status')
+    return { ok: true, value: { node: admitted.value, component: new CompiledStatusComponent(surface, maxRows) } }
+  } catch {
+    const message = 'Blue status compilation failed safely'
+    return { ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message, errorComponent: new StatusErrorComponent(message, options.colors, maxRows) }
   }
 }
