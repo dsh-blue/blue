@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Exact Blue version to release (for example 0.1.0-rc.10)'
+        description: 'Exact Blue version to release (for example 0.1.1-rc.1)'
         required: true
         type: string
       promote_only:
@@ -178,10 +178,12 @@ jobs:
         shell: bash
         run: |
           for package in \
-            blue-api blue-frontend blue-harness-adapter blue-conversation \
+            blue-api blue-ui blue-frontend blue-harness-adapter blue-conversation \
             blue-core blue-app blue-transcript blue-interaction blue blue-cli
           do
-            npm dist-tag add "@dsh-blue/${package}@0.1.0-rc.8" rc9-test
+            if npm view "@dsh-blue/${package}@0.1.0-rc.8" version >/dev/null 2>&1; then
+              npm dist-tag add "@dsh-blue/${package}@0.1.0-rc.8" rc9-test
+            fi
           done
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

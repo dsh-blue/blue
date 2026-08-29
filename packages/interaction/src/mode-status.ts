@@ -12,15 +12,14 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@dsh-blue/blue-app'
-import type { StatusModel } from '@dsh-blue/blue-frontend'
-// Empty import carries the transcript-owned `blueStatusModels` Context merge.
+// Empty import carries the transcript-owned `blueStatusEntries` Context merge.
 import type {} from '@dsh-blue/blue-transcript'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-status-mode'
 
 /** Services required before the mode badge can register. */
-export const inject = ['blueStatusModels', 'blueSessionReader', 'blueSessionActions']
+export const inject = ['blueStatusEntries', 'blueSessionReader', 'blueSessionActions']
 
 /**
  * Register the mode badge. Yolo outranks the one transient where both
@@ -41,13 +40,13 @@ export function apply(ctx: Context): void {
   const refresh = (): void => {
     const before = text
     derive()
-    if (text !== before) ctx.blueStatusModels.refresh('blue.status.mode')
+    if (text !== before) ctx.blueStatusEntries.refresh('blue.status.mode')
   }
 
   derive()
   const registration = ctx.blueSessionReader.subscribe(() => refresh())
   ctx.effect(() => () => registration.dispose())
 
-  const model = (): StatusModel => ({ kind: 'status', id: 'blue.status.mode', priority: 2, view: { kind: 'text', text, tone: text === 'yolo' ? 'warning' : 'accent' }, visible: text !== '' })
-  ctx.effect(() => ctx.blueStatusModels.register(model))
+  const model = () => ({ id: 'blue.status.mode', priority: 2, node: { kind: 'text' as const, content: text, tone: text === 'yolo' ? 'warning' as const : 'accent' as const }, visible: text !== '' })
+  ctx.effect(() => ctx.blueStatusEntries.register(model))
 }

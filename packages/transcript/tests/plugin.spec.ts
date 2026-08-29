@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import { BlueLocaleService } from '../../frontend/src/locale.ts'
 import type {
   BlueComponent,
   BlueKeyAction,
@@ -23,7 +24,7 @@ import type {
   BlueScreen,
 } from '@dsh-blue/blue-core'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { StatusModel } from '@dsh-blue/blue-frontend'
+import type { BlueStatusEntry } from '../src/status-model.ts'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
@@ -138,6 +139,10 @@ class FakeKeymap implements BlueKeymap {
       if (done) return
       done = true
       this.unregistered.push(actions)
+      for (const action of actions) {
+        const index = this.actions.indexOf(action)
+        if (index !== -1) this.actions.splice(index, 1)
+      }
     }
   }
 
@@ -199,10 +204,10 @@ interface Harness {
 
 /** The downstream fixture's apply: registers one custom footer entry. */
 function fixtureApply(ctx: Context): void {
-  ctx.effect(() => ctx.blueStatusModels.register({
-    kind: 'status', id: 'blue.status.fixture', priority: 30,
-    view: { kind: 'text', text: 'fixture-entry', tone: 'muted' }, visible: true,
-  } satisfies StatusModel))
+  ctx.effect(() => ctx.blueStatusEntries.register({
+    id: 'blue.status.fixture', priority: 30,
+    node: { kind: 'text', content: 'fixture-entry', tone: 'muted' }, visible: true,
+  } satisfies BlueStatusEntry))
 }
 
 /**
@@ -227,7 +232,7 @@ export const apply = ctx => globalThis.__blueTranscriptApply(ctx)
 `)
   writeFileSync(join(dir, 'blue-status-basic.mjs'), `
 export const name = 'blue-status-basic-model'
-export const inject = ['blueStatusModels', 'blueSessionFacts']
+export const inject = ['blueStatusEntries', 'blueSessionFacts']
 export const apply = ctx => globalThis.__blueStatusBasicApply(ctx)
 `)
   writeFileSync(join(dir, 'blue-transcript-official.mjs'), `
@@ -237,7 +242,7 @@ export const apply = ctx => globalThis.__blueTranscriptOfficialApply(ctx)
 `)
   writeFileSync(join(dir, 'blue-status-fixture.mjs'), `
 export const name = 'blue-status-fixture'
-export const inject = ['blueStatusModels']
+export const inject = ['blueStatusEntries']
 export const apply = ctx => globalThis.__blueStatusFixtureApply(ctx)
 `)
   const rows = [
@@ -366,6 +371,30 @@ function stripGutter(lines: string[]): string[] {
 }
 
 describe('blue-transcript plugin through the real Loader', () => {
+  it('compiles internal canonical bottom nodes against the live viewport', async () => {
+    const { ctx, screen } = await bootTranscript()
+    const dispose = ctx.blueBottomPanes.register({
+      id: 'viewport-probe',
+      node: { kind: 'text', content: 'canonical' },
+    })
+    const pane = screen.bottomChildren.at(-1)!
+    expect(pane.render(20)).toEqual([' canonical'])
+    dispose()
+  })
+
+  it('compiles canonical tool nodes against the live viewport', async () => {
+    const { ctx, screen } = await bootTranscript()
+    const dispose = ctx.blueToolModels.register({
+      kind: 'tool',
+      id: 'viewport-probe',
+      name: 'viewport-probe',
+      call: { kind: 'text', content: 'canonical tool' },
+    })
+    const tool = screen.children.at(-1)!
+    expect(tool.render(20)).toEqual(['canonical tool'])
+    dispose()
+  })
+
   it('applies model settings and exposes the live expansion range', async () => {
     const { ctx } = await bootTranscript(null, { settings: { blue: { collapseToolCalls: false } } })
     expect(ctx.blueTranscriptModels.presentationPolicy().expandTurns).toBe(3)
@@ -720,6 +749,28 @@ describe('blue-transcript plugin through the real Loader', () => {
     await ctx.fiber.dispose()
     disposers.length = 0
     expect(keymap.unregistered.flat().map(a => a.id)).toContain(ACTION_TOGGLE_COLLAPSE)
+  })
+
+  it('reprojects the ctrl+o help copy across locale activation and unload', async () => {
+    const { ctx, keymap } = await bootTranscript()
+    const localeFiber = await ctx.plugin({
+      name: 'transcript-plugin-locale',
+      apply(localeCtx: Context) {
+        const locale = new BlueLocaleService(localeCtx, { systemLocale: 'en' })
+        localeCtx.effect(() => () => locale.dispose())
+      },
+    })
+    await Promise.resolve()
+    expect(keymap.actions).toHaveLength(1)
+    expect(keymap.actions[0]?.description).toBe('Toggle detail expansion (tool output, long messages)')
+    ctx.blueLocale.setPreference('zh')
+    expect(keymap.actions).toHaveLength(1)
+    expect(keymap.actions[0]?.description).toBe('切换详细内容展开状态（工具输出、长消息）')
+
+    await localeFiber.dispose()
+    await Promise.resolve()
+    expect(keymap.actions).toHaveLength(1)
+    expect(keymap.actions[0]?.description).toBe('Toggle detail expansion (tool output, long messages)')
   })
 
   it.skip('toggles tool output between the preview and the full text', async () => {

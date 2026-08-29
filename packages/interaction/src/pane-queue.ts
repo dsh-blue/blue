@@ -9,10 +9,9 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { DockModel } from '@dsh-blue/blue-frontend'
-// Carries the transcript-owned dock service declaration without a runtime
-// dependency; the bundle provides it before this row.
-import type {} from '@dsh-blue/blue-transcript/dock-model'
+// Carries the transcript-owned bottom-pane service declaration without a
+// runtime dependency; the bundle provides it before this row.
+import type {} from '@dsh-blue/blue-transcript'
 // Empty type import carries the app-owned renderer-neutral session services.
 import type {} from '@dsh-blue/blue-app'
 
@@ -23,7 +22,7 @@ export const inject = [
   'blueScreen',
   'blueTheme',
   'blueComponents',
-  'blueDockModels',
+  'blueBottomPanes',
   'blueSessionReader',
   'blueSessionActions',
 ]
@@ -43,7 +42,6 @@ export function apply(ctx: Context): void {
 
   const renderPane = (width: number): string[] => {
     const pending = ctx.blueSessionActions.queued()
-    if (pending.length === 0) return []
     const rows: string[] = []
     for (const message of pending) {
       // The `↑` glyph is the activity accent, the row text stays muted:
@@ -65,15 +63,19 @@ export function apply(ctx: Context): void {
   }
 
   const refresh = (): void => {
-    ctx.blueDockModels.refresh('blue.dock.queue')
+    ctx.blueBottomPanes.refresh('blue.dock.queue')
   }
   const sessionRegistration = ctx.blueSessionReader.subscribe(refresh)
   ctx.effect(() => () => sessionRegistration.dispose())
 
   ctx.effect(() => ctx.on('blue/queue-changed', refresh))
-  const model = (): DockModel => ({
-    kind: 'dock', id: 'blue.dock.queue', placement: 'bottom', priority: 20,
-    view: { kind: 'text', text: ctx.blueSessionActions.queued().length === 0 ? '' : 'Queued messages' },
-  })
-  ctx.effect(() => ctx.blueDockModels.register(model, (_model, width) => renderPane(width)))
+  const model = () => {
+    const pending = ctx.blueSessionActions.queued()
+    return {
+      id: 'blue.dock.queue', priority: 20,
+      node: { kind: 'text' as const, content: pending.length === 0 ? '' : 'Queued messages' },
+      collapsed: pending.length === 0,
+    }
+  }
+  ctx.effect(() => ctx.blueBottomPanes.register(model, (_node, width) => renderPane(width)))
 }

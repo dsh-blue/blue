@@ -12,7 +12,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import * as commandsPlugin from '../src/commands-plugin.ts'
 import type { InfoPanel } from '../src/info-panel.ts'
-import type { FrontendPanel } from '../src/frontend-panel.ts'
+import type { CanonicalDocumentController } from '../src/frontend-panel.ts'
 import {
   buildCompositionSection,
   buildContextSection,
@@ -56,7 +56,7 @@ describe('buildVersionSections', () => {
       label: 'blue',
       segments: [{ text: `v${displayVersion}` }],
     })
-    expect(BLUE_VERSION).toBe('0.1.0-rc.10')
+    expect(BLUE_VERSION).toBe('0.1.1-rc.2')
   })
 })
 
@@ -409,7 +409,7 @@ describe('registerSessionCommands', () => {
   })
 
   it('mounts /context over the folded buckets with a window absent', async () => {
-    const { ctx, screen, agent } = await mount({ seed: 'usage' })
+    const { ctx, screen, agent } = await mount({ seed: 'usage', modelRef: { current: { provider: 'mock-provider', model: 'mock-model' } } })
     // A projection host whose pressure lacks a window: the composition
     // wiring takes the no-window branch (grid and shares dropped).
     ctx.provide('sessionProjections', {
@@ -447,18 +447,25 @@ describe('registerSessionCommands', () => {
     const execute = vi.fn(async () => ({ ok: true }))
     const unsubscribe = vi.fn()
     const feature = {
-      model: { panel: { kind: 'panel', mode: 'info', title: 'Context', view: { kind: 'text', text: 'official context projection' }, submit: { kind: 'context.refresh', sessionId: 'status-spec' } } },
+      model: { state: 'ready', panel: { title: 'Context', node: { kind: 'text', content: 'official context projection' }, refresh: { kind: 'context.refresh', sessionId: 'status-spec' } } },
       subscribe: (listener: () => void) => { listener(); return unsubscribe },
       execute,
     }
     ;(ctx as unknown as { provide(name: string, value: unknown): void }).provide('blueContextFeature', feature)
     expect(await run(ctx, agent, '/context')).toEqual({ kind: 'success' })
-    const projected = screen.overlays.at(-1)!.component as FrontendPanel
+    const projected = screen.overlays.at(-1)!.component as CanonicalDocumentController
     expect(plain(projected.render(80)).some(row => row.includes('official context projection'))).toBe(true)
     projected.handleInput('\r')
     await Promise.resolve()
     expect(execute).toHaveBeenCalledWith({ kind: 'context.refresh', sessionId: 'status-spec' })
+    feature.model = { state: 'loading', panel: { title: 'Context', node: { kind: 'text', content: 'loading projection' } } } as never
+    projected.invalidate()
+    expect(projected.currentNode()).toMatchObject({ footer: { content: 'Esc / q to cancel' } })
+    feature.model = { state: 'error', panel: { title: 'Context', node: { kind: 'text', content: 'failed projection' } } } as never
+    projected.invalidate()
+    expect(projected.currentNode()).toMatchObject({ footer: { tone: 'danger' } })
     feature.model = undefined as never
+    projected.invalidate()
     expect(plain(projected.render(80)).some(row => row.includes('context unavailable'))).toBe(true)
     projected.handleInput('\x1b')
     expect(unsubscribe).toHaveBeenCalledOnce()
@@ -566,9 +573,13 @@ describe('registerSessionCommands', () => {
     const { ctx, screen, agent } = await mount()
     expect(await run(ctx, agent, '/changelog')).toEqual({ kind: 'success' })
     const overlay = screen.overlays.at(-1)!
-    const rows = plain((overlay.component as InfoPanel).render(100))
-    expect(rows.some(row => row.includes('changelog'))).toBe(true)
-    expect(rows.some(row => row.includes('Creative mode'))).toBe(true)
+    const panel = overlay.component as InfoPanel
+    const node = panel.currentNode()
+    if (node.kind !== 'surface' || node.child.kind !== 'rich-text') throw new Error('expected changelog rich-text surface')
+    expect(node.child.spans.length).toBeLessThanOrEqual(200)
+    const rows = plain(panel.render(100))
+    expect(rows.join('\n')).toContain('changelog')
+    expect(rows.some(row => row.includes('Beta renderer-neutral UI runtime'))).toBe(true)
     overlay.component.handleInput?.('\x1b')
     expect(overlay.hidden).toBe(true)
   })

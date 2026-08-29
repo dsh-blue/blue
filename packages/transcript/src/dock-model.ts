@@ -1,152 +1,212 @@
 /**
- * Renderer-neutral dock registry and the Blue screen consumer bridge.
+ * Transcript-owned canonical bottom-pane registry.
+ *
+ * This is an internal composition service, not a plugin pane API. Public
+ * panes continue through `BluePaneContribution` and core's surface bridge.
  *
  * @module @dsh-blue/blue-transcript/dock-model
  */
 import { Service, type Context } from '@deepseek-ai/cordis'
-import { GutterComponent, mountDockChild, renderFrontendView, type BlueComponent, type BlueScreen } from '@dsh-blue/blue-core'
-import type { DockModel } from '@dsh-blue/blue-frontend'
+import type { BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
+import { compileBlueUiNode, GutterComponent, mountDockChild, type BlueComponent, type BlueComponents, type BlueScreen, type BlueSemanticColors } from '@dsh-blue/blue-core'
 
 declare module '@deepseek-ai/cordis' {
-  interface Context { blueDockModels: BlueDockModelService }
+  interface Context { blueBottomPanes: BlueBottomPaneService }
 }
 
-type Source = DockModel | (() => DockModel | null)
-type Renderer = (model: DockModel, width: number) => string[]
+/** Internal canonical payload for one Blue-owned bottom pane. */
+export interface BlueBottomPaneNode {
+  readonly id: string
+  readonly node: BlueUiNode
+  readonly priority?: number
+  readonly preferredRows?: number
+  readonly collapsed?: boolean
+}
 
-/** Width-bounded TUI consumer for one dock model source. */
-class ModelDockComponent implements BlueComponent {
+export type BlueBottomPaneSource = BlueBottomPaneNode | (() => BlueBottomPaneNode | null)
+
+interface BottomPaneCompilerOptions {
+  readonly components: BlueComponents
+  readonly colors: BlueSemanticColors
+  readonly viewport: () => { readonly columns: number, readonly rows: number }
+}
+
+/** Internal exception for accepted semantics absent from the W1 vocabulary. */
+export type BlueBottomPaneAdapter = (node: BlueBottomPaneNode, width: number) => string[]
+
+interface PaneRecord {
+  readonly id: string
+  readonly source: () => BlueBottomPaneNode | null
+  readonly component: BlueComponent
+  readonly fallback: BlueBottomPaneNode
+  readonly deactivate: () => void
+}
+
+const PASSIVE_EVENT_SINK = Function.prototype as (event: BlueUiEvent) => void
+
+function sourceValue(source: BlueBottomPaneSource): BlueBottomPaneNode | null {
+  return typeof source === 'function' ? source() : source
+}
+
+function failedNode(model: Pick<BlueBottomPaneNode, 'id' | 'priority' | 'preferredRows'>): BlueBottomPaneNode {
+  return { ...model, node: { kind: 'text', content: `Bottom pane ${model.id} failed`, tone: 'danger' } }
+}
+
+/** Width-bounded canonical compiler consumer for one bottom pane. */
+class BottomPaneComponent implements BlueComponent {
+  private compiled: { readonly node: BlueUiNode, readonly component: BlueComponent } | undefined
+
   constructor(
-    private readonly source: () => DockModel | null,
-    private readonly renderer?: Renderer,
+    private readonly source: () => BlueBottomPaneNode | null,
+    private readonly options: BottomPaneCompilerOptions,
+    private readonly fallback: BlueBottomPaneNode,
+    private readonly adapter?: BlueBottomPaneAdapter,
   ) {}
+
   render(width: number): string[] {
-    const model = this.source()
+    let model: BlueBottomPaneNode | null
+    try {
+      model = this.source()
+    } catch {
+      model = failedNode(this.fallback)
+    }
     if (model === null || model.collapsed) return []
-    if (this.renderer !== undefined) return this.renderer(model, width)
-    const rows = [...renderFrontendView(model.view, width)]
-    return model.preferredRows === undefined ? rows : rows.slice(0, Math.max(0, model.preferredRows))
+    if (this.adapter !== undefined) {
+      try {
+        const rows = this.adapter(model, width)
+          .map(row => this.options.components.truncateToWidth(row, width))
+        return this.limitRows(rows, model.preferredRows)
+      } catch {
+        model = failedNode(model)
+      }
+    }
+    let compiled = this.compiled
+    if (compiled?.node !== model.node) {
+      const result = compileBlueUiNode(model.node, {
+        components: this.options.components,
+        colors: this.options.colors,
+        getViewport: this.options.viewport,
+        screenMode: 'main',
+        emit: PASSIVE_EVENT_SINK,
+      })
+      compiled = { node: model.node, component: result.ok ? result.value.component : result.errorComponent }
+      this.compiled = compiled
+    }
+    return this.limitRows(compiled.component.render(width), model.preferredRows)
   }
-  invalidate(): void {}
-}
 
-/** Stable renderer root for one placement lane. */
-class ModelDockGroupComponent implements BlueComponent {
-  constructor(private readonly children: () => readonly BlueComponent[]) {}
-  render(width: number): string[] {
-    return this.children().flatMap(component => component.render(width))
-  }
   invalidate(): void {
-    for (const component of this.children()) component.invalidate()
+    this.compiled?.component.invalidate()
+    this.compiled = undefined
+  }
+
+  private limitRows(rows: string[], preferredRows: number | undefined): string[] {
+    return preferredRows === undefined ? rows : rows.slice(0, Math.max(0, preferredRows))
   }
 }
 
-/** Renderer-neutral dock registry with the official screen consumer bridge. */
-export class BlueDockModelService extends Service {
-  private readonly models = new Map<string, Source>()
-  private readonly components = new Map<string, BlueComponent>()
-  private readonly groups = {
-    left: new ModelDockGroupComponent(() => this.orderedComponents('left')),
-    right: new ModelDockGroupComponent(() => this.orderedComponents('right')),
-  }
-  private readonly sideMounted = new Map<'left' | 'right', () => void>()
-  private readonly bottomMounted = new Map<string, () => void>()
-  private bottomSignature = ''
+/** Internal registry for Blue-owned bottom panes only. */
+export class BlueBottomPaneService extends Service {
+  private readonly records = new Map<string, PaneRecord>()
+  private readonly mounted = new Map<string, () => void>()
+  private signature = ''
   private screen: BlueScreen | undefined
-  constructor(ctx: Context, screen?: BlueScreen) {
-    super(ctx, 'blueDockModels')
+
+  constructor(ctx: Context, private readonly compiler: BottomPaneCompilerOptions, screen?: BlueScreen) {
+    super(ctx, 'blueBottomPanes')
     if (screen !== undefined) this.attach(screen)
   }
-  attach(screen: BlueScreen): void { this.unmountAll(); this.screen = screen; this.mountGroups(screen) }
-  register(source: Source, renderer?: Renderer): () => void {
-    const initial = typeof source === 'function' ? source() : source
+
+  attach(screen: BlueScreen): void {
+    this.unmountAll()
+    this.screen = screen
+    this.syncMounts()
+    screen.requestRender()
+  }
+
+  register(source: BlueBottomPaneSource, adapter?: BlueBottomPaneAdapter): () => void {
+    const initial = sourceValue(source)
     if (initial === null) return () => undefined
-    if (this.models.has(initial.id)) throw new Error(`dock model "${initial.id}" is already registered`)
-    this.models.set(initial.id, source)
-    const component = new ModelDockComponent(
-      () => { const current = this.models.get(initial.id); return current === undefined ? null : typeof current === 'function' ? current() : current },
-      renderer,
-    )
-    this.components.set(initial.id, renderer === undefined ? component : new GutterComponent(component))
+    if (this.records.has(initial.id)) throw new Error(`bottom pane "${initial.id}" is already registered`)
+    let active = true
+    const resolve = (): BlueBottomPaneNode | null => active ? sourceValue(source) : null
+    const component = new BottomPaneComponent(resolve, this.compiler, initial, adapter)
+    const record: PaneRecord = {
+      id: initial.id,
+      source: resolve,
+      component: new GutterComponent(component),
+      fallback: initial,
+      deactivate: () => { active = false },
+    }
+    this.records.set(initial.id, record)
     this.syncMounts()
     this.screen?.requestRender()
     let disposed = false
     return () => {
       if (disposed) return
       disposed = true
-      this.models.delete(initial.id)
-      this.components.delete(initial.id)
+      record.deactivate()
+      this.records.delete(initial.id)
       this.syncMounts()
       this.screen?.requestRender()
     }
   }
+
   refresh(id: string, force?: boolean): void {
-    if (!this.models.has(id)) return
+    const record = this.records.get(id)
+    if (record === undefined) return
     this.syncMounts()
-    this.components.get(id)?.invalidate()
+    record.component.invalidate()
     this.screen?.requestRender(force)
   }
-  list(): readonly DockModel[] { return [...this.models.values()].map(source => typeof source === 'function' ? source() : source).filter((model): model is DockModel => model !== null) }
-  dispose(): void { this.unmountAll(); this.models.clear(); this.components.clear(); this.screen = undefined }
-  private unmountAll(): void {
-    for (const dispose of this.sideMounted.values()) dispose()
-    for (const dispose of this.bottomMounted.values()) dispose()
-    this.sideMounted.clear()
-    this.bottomMounted.clear()
-    this.bottomSignature = ''
-  }
-  private mountGroups(screen: BlueScreen): void {
-    this.syncMounts()
-    screen.requestRender()
-  }
-  private syncMounts(): void {
-    this.syncBottomComponents()
-    this.syncSideGroups()
-  }
-  private syncBottomComponents(): void {
-    const screen = this.screen
-    if (screen === undefined) return
-    const rows = this.orderedRows('bottom')
-    const signature = JSON.stringify(rows.map(row => [row.id, row.model.priority ?? 0]))
-    if (signature === this.bottomSignature) return
-    for (const dispose of this.bottomMounted.values()) dispose()
-    this.bottomMounted.clear()
-    for (const row of rows) {
-      this.bottomMounted.set(row.id, mountDockChild(screen, row.component, {
-        priority: row.model.priority ?? 0,
-      }))
-    }
-    this.bottomSignature = signature
-  }
-  private syncSideGroups(): void {
-    const screen = this.screen
-    if (screen === undefined) return
-    for (const placement of ['left', 'right'] as const) {
-      const present = this.orderedComponents(placement).length > 0
-      const dispose = this.sideMounted.get(placement)
-      if (present && dispose === undefined) this.sideMounted.set(placement, screen.addChild(this.groups[placement]))
-      if (!present && dispose !== undefined) {
-        dispose()
-        this.sideMounted.delete(placement)
+
+  list(): readonly BlueBottomPaneNode[] {
+    return [...this.records.values()].flatMap(record => {
+      try {
+        const value = record.source()
+        return value === null ? [] : [value]
+      } catch {
+        return [failedNode(record.fallback)]
       }
+    })
+  }
+
+  dispose(): void {
+    for (const record of this.records.values()) record.deactivate()
+    this.unmountAll()
+    this.records.clear()
+    this.screen = undefined
+  }
+
+  private unmountAll(): void {
+    for (const dispose of this.mounted.values()) dispose()
+    this.mounted.clear()
+    this.signature = ''
+  }
+
+  private syncMounts(): void {
+    const screen = this.screen
+    if (screen === undefined) return
+    const rows = this.orderedRows()
+    const signature = JSON.stringify(rows.map(row => [row.id, row.model.priority ?? 0]))
+    if (signature === this.signature) return
+    for (const dispose of this.mounted.values()) dispose()
+    this.mounted.clear()
+    for (const row of rows) {
+      this.mounted.set(row.id, mountDockChild(screen, row.component, { priority: row.model.priority ?? 0 }))
     }
+    this.signature = signature
   }
-  private orderedRows(placement: DockModel['placement']): readonly {
-    readonly id: string
-    readonly model: DockModel
-    readonly component: BlueComponent
-  }[] {
-    return [...this.models.entries()].map(([id, source]) => ({ id, model: typeof source === 'function' ? source() : source }))
-      .filter((row): row is { id: string; model: DockModel } => row.model !== null)
-      .filter(row => row.model.placement === placement)
-      .sort((left, right) => (left.model.priority ?? 0) - (right.model.priority ?? 0)
-        || left.id.localeCompare(right.id))
-      .map(row => ({ ...row, component: this.components.get(row.id) }))
-      .filter((row): row is { id: string; model: DockModel; component: BlueComponent } => row.component !== undefined)
-  }
-  private orderedComponents(placement: DockModel['placement']): readonly BlueComponent[] {
-    return this.orderedRows(placement).map(row => row.component)
+
+  private orderedRows(): readonly (PaneRecord & { readonly model: BlueBottomPaneNode })[] {
+    return [...this.records.values()].map(record => {
+      try {
+        return { ...record, model: record.source() }
+      } catch {
+        return { ...record, model: failedNode(record.fallback) }
+      }
+    })
+      .filter((row): row is PaneRecord & { model: BlueBottomPaneNode } => row.model !== null)
+      .sort((left, right) => (left.model.priority ?? 0) - (right.model.priority ?? 0) || left.id.localeCompare(right.id))
   }
 }
-
-export { ModelDockComponent, ModelDockGroupComponent }

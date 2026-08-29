@@ -5,7 +5,7 @@
 ## 收录标准
 
 - **可安装**：插件能通过 `blue plugin add <spec>` 从公开源安装（GitHub 源即可；npm 不是门槛，发布后补一条安装源即可）。包名必须包含 `blue`、`frontend` 或 `adapter` 之一，与主仓校验规则一致；
-- **基于公开能力**：只使用 phase one 开放的四种能力 `commands` / `status` / `dock` / `notifications`，且声明与实际相符（能力契约见[核心概念](/plugins/concepts)）；
+- **基于公开能力**：只使用当前 Beta host 接受的能力，且声明与实际相符。Beta 能力为 `commands` / `status` / `notifications.publish` / `panes` / `overlays` / `session.read`；`editor.extensions` / `status.provider` / `editor.provider` 只能明确标为 Experimental/reference（能力契约见[核心概念](/plugins/concepts)）；
 - **双语基本信息**：`title` 与 `tagline` 必须中英齐全；tagline 用一句动作句概括插件做什么（中文 ≤60 字符、英文 ≤100 字符、英文以句号结尾、不用 emoji）；
 - **信息如实**：`version`、`license` 与源仓库一致。
 
@@ -42,8 +42,8 @@
   "version": "0.1.0",
   "title": { "zh": "斗地主", "en": "Doudizhu" },
   "tagline": {
-    "zh": "在 Dock 面板里打斗地主：字符牌局、本地 Bot 对手与积分排行榜。",
-    "en": "Play Doudizhu in a dock pane: a character-drawn card table, local bots, and a score leaderboard."
+    "zh": "在底部面板里打斗地主：字符牌局、本地 Bot 对手与积分排行榜。",
+    "en": "Play Doudizhu in a bottom pane: a character-drawn card table, local bots, and a score leaderboard."
   },
   "author": "dsh-blue",
   "repo": "https://github.com/dsh-blue/blue-doudizhu",
@@ -51,7 +51,7 @@
     { "kind": "github", "spec": "github:dsh-blue/blue-doudizhu" },
     { "kind": "git", "spec": "git+https://github.com/dsh-blue/blue-doudizhu.git" }
   ],
-  "capabilities": ["commands", "dock"],
+  "capabilities": ["commands", "panes"],
   "categories": ["games"],
   "license": "MIT",
   "verified": true,

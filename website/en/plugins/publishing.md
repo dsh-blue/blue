@@ -12,7 +12,7 @@ Confirm before publishing:
 
 - `exports` points at the build output, and the `files` whitelist covers every export target (the validate script's `package` group checks this);
 - `@dsh-blue/blue-api` is in `dependencies`, `@deepseek-ai/cordis` in `peerDependencies` — the latter is provided by the host dsh installation, and bundling it into `dependencies` produces a second service instance;
-- the manifest's `api` range targets the host's API line (currently `^1.0.0`). When the host's major version upgrades, `open()` fails explicitly with `BLUE_API_INCOMPATIBLE` — after the user upgrades Blue, the plugin is "refused at mount" rather than "drifting in behavior".
+- the manifest's `api` range targets the currently executable Beta contract (`^1.0.0-beta.1`). This is a preview compatibility declaration, not a promise about future Stable `1.x`; re-run packed fixtures for every host/API change, while `open()` returns `BLUE_API_INCOMPATIBLE` for an incompatible range.
 
 ## User install path
 
@@ -32,7 +32,7 @@ A package without a `dsh.bundle` declaration installs as a plain dependency only
 ## Versioning policy recommendations
 
 - **Follow Blue's preview cadence**: while Blue is on the rc line, publish your plugin with the `@rc` dist-tag too, upgrading in sync with the host;
-- **Write the `api` range wide, verify strictly**: `^1.0.0` in the manifest accepts every minor of 1.x; when each new Harness/Blue line comes out, verify with the fixture's [`--harness-line`](/en/plugins/testing#fixture-the-packed-install-contract) before declaring compatibility;
+- **A Beta range does not pre-claim Stable compatibility**: use `^1.0.0-beta.1` for the current Beta host, but do not infer support for every future Stable `1.x`. Re-run the fixture's [`--harness-line`](/en/plugins/testing#fixture-the-packed-install-contract) for each new Harness/Blue/API line before updating the compatibility claim;
 - **A capability change is a minor**: adding a capability to the manifest is a compatibility-surface change that alters the `open()` result — treat it as a semver minor and state the minimum required Blue version in the changelog.
 
 ## Plugin marketplace

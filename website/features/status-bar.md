@@ -1,6 +1,6 @@
 # 状态栏
 
-状态栏（footer）是终端最底两行的 **`StatusModel` 驱动**表面。内置 producer 向 `BlueStatusModelService` 发布 readonly model；第三方插件经稳定 `bluePluginHost` status capability 贡献 renderer-neutral `BlueView`，由 view bridge 转成同一种 model。
+状态栏（footer）是终端最底两行的 canonical status 表面。内置 producer 发布 readonly `BlueStatusNode`，由 package-private `BlueStatusEntryService` 和 core status compiler 渲染；第三方插件经当前 Beta `bluePluginHost` `status` capability 贡献同一种 renderer-neutral node。
 
 ## 布局与灰阶
 
@@ -34,12 +34,12 @@
 
 ## 下游贡献
 
-第三方插件先打开 status capability，再注册 `BlueStatusContribution`：
+第三方插件先打开 status capability，再注册 `BlueStatusEntryContribution`：
 
 ```ts
 const opened = ctx.bluePluginHost.open(ctx, {
   id: 'my-plugin.build',
-  api: '^1.0.0',
+  api: '^1.0.0-beta.1',
   capabilities: ['status'],
 })
 if (!opened.ok) throw new Error(opened.message)
@@ -52,4 +52,4 @@ const registered = opened.value.status!.register({
 if (!registered.ok) throw new Error(registered.message)
 ```
 
-Host 将 registration 绑定到调用方 Fiber；卸载时条目随之注销。Public status contribution 当前进入默认 footer lane；row/alignment 是 Blue 内部 `StatusModel` 布局策略，不是第三方 renderer contract。
+Host 将 registration 绑定到调用方 Fiber；卸载时条目随之注销。Public status contribution 当前进入默认 footer lane；row/alignment 是 Blue 内部固定 footer 布局策略，不是第三方 renderer contract。

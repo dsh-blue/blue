@@ -9,10 +9,11 @@
 import { describe, expect, it } from 'vitest'
 import type { SelectItem, SelectListTheme } from '@earendil-works/pi-tui'
 import { clampRowsToWidth, framePanel } from '../src/chrome.ts'
-import { renderFrontendView } from '../src/frontend-renderer.ts'
 import { GutterComponent } from '../src/gutter.ts'
+import { compileBlueEditorShellNode, compileBlueStatusNode } from '../src/ui-compiler.ts'
+import type { BlueEditor } from '../src/types.ts'
 import { WrappingSelectList } from '../src/wrapping-select-list.ts'
-import { truncateToWidth, wrapTextWithAnsi } from '../src/width.ts'
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '../src/width.ts'
 import { ADVERSARIAL, SCAN_WIDTHS, expectLinesFit } from './width-scan.ts'
 
 /** Identity paints: the scan measures true columns, not bracket markers. */
@@ -22,6 +23,37 @@ const selectTheme: SelectListTheme = {
   description: text => text,
   scrollInfo: text => text,
   noMatch: text => text,
+}
+
+/** W4a migration sweep: every integer width in the supported fixture range. */
+const MIGRATION_WIDTHS = Array.from({ length: 119 }, (_, index) => index + 2)
+const identity = (text: string): string => text
+const statusColors = new Proxy({ logoGradient: [identity] }, { get: (target, key) => key === 'logoGradient' ? target.logoGradient : identity })
+
+function scanEditor(text: string): BlueEditor {
+  return {
+    focused: false,
+    disableSubmit: false,
+    setSubmitBarrier: () => {},
+    submit: () => {},
+    isShowingAutocomplete: () => false,
+    refreshAutocomplete: () => {},
+    getText: () => text,
+    setText: () => {},
+    addToHistory: () => {},
+    getHistory: () => [],
+    setBorderColor: () => {},
+    setPromptSymbol: () => {},
+    setBorderLabel: () => {},
+    setConnectedAbove: () => {},
+    setGhostHint: () => {},
+    setAutocompleteProvider: () => {},
+    getExpandedText: () => text,
+    renderContent: width => wrapTextWithAnsi(text, Math.max(1, width)),
+    insertText: () => {},
+    render: width => wrapTextWithAnsi(text, Math.max(1, width)),
+    invalidate: () => {},
+  }
 }
 
 describe('core width-scan', () => {
@@ -60,23 +92,59 @@ describe('core width-scan', () => {
         minPrimaryColumnWidth: 12,
         maxPrimaryColumnWidth: 32,
       })
-      for (const width of SCAN_WIDTHS) {
+      for (const width of MIGRATION_WIDTHS) {
         expectLinesFit(`WrappingSelectList/${name}`, list.render(width), width)
       }
     })
 
-    it(`renderFrontendView diff panel survives ${name}`, () => {
-      // A write-style panel: the hostile line replaced by a sibling, with a
-      // long shared context run on both sides exercising the elision path.
-      const shared = Array.from({ length: 14 }, (_, index) => `ctx ${String(index)}`).join('\n')
-      const views = [
-        { kind: 'diff' as const, before: `${shared}\n${text}`, after: `${shared}\n+ ${text}\nextra` },
-        { kind: 'diff' as const, before: '', after: `${text}\n${text}` },
-      ]
-      for (const view of views) {
-        for (const width of SCAN_WIDTHS) {
-          expectLinesFit(`diff/${name}`, renderFrontendView(view, width), width)
-        }
+    it(`canonical status compiler survives ${name}`, () => {
+      const result = compileBlueStatusNode({
+        kind: 'stack',
+        direction: 'row',
+        gap: 1,
+        children: [
+          { node: { kind: 'rich-text', spans: [{ text, tone: 'accent', emphasis: 'strong' }] }, grow: 1, shrink: 1 },
+          { node: { kind: 'progress', label: text, value: 1, max: 3 }, basis: 12, shrink: 1 },
+        ],
+      }, {
+        components: { visibleWidth, wrapText: wrapTextWithAnsi, truncateToWidth } as never,
+        colors: statusColors as never,
+        getViewport: () => ({ columns: 80, rows: 3 }),
+        screenMode: 'main',
+        maxRows: 3,
+      })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      for (const width of SCAN_WIDTHS) {
+        const rendered = result.value.component.renderStatus(width)
+        expect(rendered.rows.length).toBeLessThanOrEqual(3)
+        expectLinesFit(`status/${name}`, rendered.rows, width)
+      }
+    })
+
+    it(`canonical editor shell checked render survives ${name}`, () => {
+      const editor = scanEditor(text)
+      const result = compileBlueEditorShellNode({
+        kind: 'stack',
+        direction: 'column',
+        children: [
+          { node: { kind: 'rich-text', spans: [{ text, tone: 'accent', emphasis: 'strong' }] } },
+          { node: { kind: 'editor-control' } },
+        ],
+      }, {
+        editor,
+        components: { visibleWidth, wrapText: wrapTextWithAnsi, truncateToWidth } as never,
+        colors: statusColors as never,
+        getViewport: () => ({ columns: 80, rows: 20 }),
+        screenMode: 'main',
+        emit: () => {},
+      })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      for (const width of SCAN_WIDTHS) {
+        const rendered = result.value.component.renderChecked(width, { dryRun: true })
+        expect(rendered.runtimeFailure).toBeUndefined()
+        expectLinesFit(`editor-shell/${name}`, rendered.rows, width)
       }
     })
   }

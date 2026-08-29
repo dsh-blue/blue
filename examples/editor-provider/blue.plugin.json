@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "@dsh-blue-example/editor-provider",
+  "entry": "./lib/index.js",
+  "api": "^1.0.0-beta.1",
+  "capabilities": ["editor.provider"],
+  "node": "^22.19.0 || >=24.0.0"
+}

@@ -11,7 +11,7 @@ import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { ENDPOINT_PROTOCOLS, deriveKeyRef, runProviderAdd, runProviderEdit } from '../src/provider-add.ts'
-import { SelectListPanel, type SelectRow } from '../src/select-list.ts'
+import { CanonicalSelectController, type SelectRow } from '../src/select-list.ts'
 import { CURRENT_MARK } from '../src/symbols.ts'
 import { setModelsDevLoader, type ModelsDevIndex } from '../src/models-dev.ts'
 import { buildIndex } from '../src/models-dev.ts'
@@ -29,7 +29,7 @@ describe('deriveKeyRef', () => {
   })
 })
 
-describe('The /provider picker rows (SelectListPanel)', () => {
+describe('The /provider picker rows (canonical select controller)', () => {
   const rows: SelectRow[] = [
     { value: 'mock', label: 'Mock', badge: CURRENT_MARK },
     { value: 'z-ai', label: 'Z.ai' },
@@ -40,7 +40,7 @@ describe('The /provider picker rows (SelectListPanel)', () => {
     const { theme, keymap, components } = fakeBlueContext()
     const onSelect = vi.fn()
     const onCancel = vi.fn()
-    const component = new SelectListPanel({
+    const component = new CanonicalSelectController({
       keymap, theme, components, rows,
       title: 'Providers',
       titleHint: '· esc cancel · ↵ switch / add',
@@ -63,10 +63,11 @@ describe('The /provider picker rows (SelectListPanel)', () => {
 
   it('highlights the CTA in primary when the cursor reaches it', () => {
     const { component } = panel()
+    component.focused = true
     component.handleInput(KEY.down)
     component.handleInput(KEY.down)
     const cta = component.render(70).find(row => row.includes('+ Add provider')) ?? ''
-    expect(cta).toContain('^❯ + Add provider^')
+    expect(cta).toContain('→ + Add provider')
   })
 
   it('windows a long provider list behind a scroll position row', () => {
@@ -74,7 +75,7 @@ describe('The /provider picker rows (SelectListPanel)', () => {
     const many: SelectRow[] = Array.from({ length: 12 }, (_, index) =>
       ({ value: `p${index}`, label: `P${index}` }))
     many.push({ value: '__add__', label: '+ Add provider' })
-    const component = new SelectListPanel({
+    const component = new CanonicalSelectController({
       keymap, theme, components, rows: many,
       onSelect: () => {}, onCancel: () => {},
     })
@@ -243,7 +244,7 @@ describe('runProviderAdd', () => {
     // The display-name helper's empty branch rides through catalogRows in
     // model-commands; here the pane row itself exercises the same rule.
     const { theme, keymap, components } = fakeBlueContext()
-    const component = new SelectListPanel({
+    const component = new CanonicalSelectController({
       keymap, theme, components,
       rows: [{ value: 'x', label: '' }],
       onSelect: () => {}, onCancel: () => {},
@@ -938,7 +939,7 @@ describe('runProviderAdd', () => {
     form.handleInput(KEY.enter)
     await vi.waitFor(() => {
       const rows = (current(bench.screen).render?.(200) ?? []).join('\n')
-      expect(rows).toContain('!  could not list models from the endpoint: could not reach')
+      expect(rows).toContain('could not list models from the endpoint: could not reach')
       expect(rows).toContain('unable to verify the first certificate')
     })
     current(bench.screen).handleInput(KEY.escape)

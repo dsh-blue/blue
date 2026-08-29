@@ -12,11 +12,11 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { buildSessionEventRecords } from '@deepseek-ai/dsh-session-query'
 import type { SessionEventRecord } from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-session-query'
-import type { Action, PanelModel } from '@dsh-blue/blue-frontend'
+import type { Action } from '@dsh-blue/blue-frontend'
 import { copyTextToClipboard } from './clipboard-write.ts'
 import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
-import { FrontendPanel } from './frontend-panel.ts'
+import { CanonicalDocumentController, type FrontendPanelDocument } from './frontend-panel.ts'
 import { formatTraceAll, formatTraceItem, type TraceItem } from './trace-format.ts'
 import { aggregateTraceItems } from './trace-aggregate.ts'
 
@@ -30,33 +30,28 @@ function traceTime(time: number): string {
 }
 
 /** Build the renderer-neutral trace timeline model. */
-export function tracePanelModel(sessionId: string, items: readonly TraceItem[]): PanelModel {
+export function tracePanelModel(sessionId: string, items: readonly TraceItem[]): FrontendPanelDocument {
   if (items.length === 0) {
-    return { kind: 'panel', mode: 'info', title: `Trace · ${sessionId}`, view: { kind: 'text', text: 'no trace events yet', tone: 'muted' } }
+    return { mode: 'info', title: `Trace · ${sessionId}`, view: { kind: 'text', content: 'no trace events yet', tone: 'muted' } }
   }
   return {
-    kind: 'panel',
     mode: 'select',
     title: `Trace · ${sessionId}`,
-    view: {
-      kind: 'list',
-      selectedId: String(items[0]!.seq),
-      items: items.map(item => ({
+    selectedId: String(items[0]!.seq),
+    items: items.map(item => ({
         id: String(item.seq),
         label: `${traceTime(item.time)} ${item.surface === 'current' ? '●' : '·'} #${String(item.seq)}${item.lastSeq === item.seq ? '' : `-${String(item.lastSeq)}`} ${item.title}`,
         detail: item.summary.replaceAll(/\s+/g, ' ').trim(),
         action: { kind: 'trace.detail', seq: item.seq },
         secondaryAction: { kind: 'trace.copy', seq: item.seq },
-      })),
-    },
+    })),
     cancel: { kind: 'trace.close' },
   }
 }
 
 /** Build the renderer-neutral raw detail model for one trace item. */
-export function traceDetailPanelModel(item: TraceItem, text: string): PanelModel {
+export function traceDetailPanelModel(item: TraceItem, text: string): FrontendPanelDocument {
   return {
-    kind: 'panel',
     mode: 'info',
     title: `Trace detail ${item.lastSeq === item.seq ? `#${String(item.seq)}` : `#${String(item.seq)}-${String(item.lastSeq)}`}`,
     view: { kind: 'sections', sections: [
@@ -150,7 +145,7 @@ export function registerTraceCommand(ctx: Context): () => void {
           return event === undefined ? [] : [event]
         })
         let restoreDetail: () => void
-        const detail = new FrontendPanel({
+        const detail = new CanonicalDocumentController({
           ...display,
           model: () => traceDetailPanelModel(item, JSON.stringify(rawEvents, null, 2)),
           onAction: () => undefined,
@@ -160,7 +155,7 @@ export function registerTraceCommand(ctx: Context): () => void {
         restoreDetail = mountEditorReplacement(ctx, detail)
       }
     }
-    const panel = new FrontendPanel({
+    const panel = new CanonicalDocumentController({
       ...display,
       model: () => model,
       onAction: execute,

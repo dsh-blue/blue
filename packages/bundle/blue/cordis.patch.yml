@@ -157,7 +157,7 @@
         blueCommandModels: true
         blueContextFeature: true
         blueConversationProjection: true
-        blueDockModels: true
+        blueBottomPanes: true
         blueEditorHost: true
         blueEditorModels: true
         blueHarnessActionAdapter: true
@@ -166,6 +166,7 @@
         blueHarnessQuestionAdapter: true
         blueHarnessSessionAdapter: true
         blueInteractionState: true
+        blueLocale: true
         blueProjectionRegistry: true
         blueRequests: true
         blueRetractions: true
@@ -174,8 +175,9 @@
         blueSessionFacts: true
         blueSessionProjections: true
         blueSessionReader: true
+        bluePluginControl: true
         blueSkillsCatalog: true
-        blueStatusModels: true
+        blueStatusEntries: true
         blueToolModels: true
         blueTranscriptModels: true
         commands: true
@@ -204,205 +206,244 @@
         timeoutMs: 60000
 
     # --- Baseline segment -----------------------------------------------------
-    # The plain baseline is this eight-row segment plus the four assembly rows
+    # The plain baseline is this nine-row segment plus the four assembly rows
     # at the bottom. It is the complete, self-sufficient Blue UI: the whole
-    # fourteen-row enhancement segment between them can be dropped and the
+    # fifteen-row enhancement segment between them can be dropped and the
     # bundle still boots and renders the projection-backed conversation.
 
-    # Blue core: the tree's only pi-tui adapter. Starts the terminal and
-    # registers the blueScreen/blueKeymap/blueTerminalInfo/blueComponents
-    # services.
-    # Stable API host: validates and scopes third-party contributions before
-    # any renderer-facing Blue package is activated.
-    - id: blue-api-host
-      name: '@dsh-blue/blue-api'
-
-    - id: blue-core
-      name: '@dsh-blue/blue-core'
-
-    # Blue theme (plain baseline segment): the built-in dark palette,
-    # providing the blueTheme service as its own fiber.
-    - id: blue-theme-dark
-      name: '@dsh-blue/blue-core/theme-dark'
-
-    # Welcome banner: the kimi-style single-column box rendered once at boot
-    # as the first scroll-area child (logo-headed welcome lines, then the
-    # Directory/Model/Version rows; model · provider from agentDefaultModel,
-    # cwd).
-    # Sits before blue-transcript on purpose: both fibers resolve in the same
-    # blueComponents activation round, so the earlier row keeps the banner
-    # first in the scroll area across initial mounts and /theme reloads.
-    - id: blue-banner
-      name: '@dsh-blue/blue-transcript/banner'
-
-    # Transcript renderer adapter: mounts the semantic model registries and
-    # the two-row StatusModel footer bottom-pinned above the input editor.
-    - id: blue-transcript
-      name: '@dsh-blue/blue-transcript'
-
-
-    # Baseline footer entry: the model name alone at priority 0, in the
-    # full-strength text tier (the S15 kimi identity: the brightest thing in
-    # footer), registered as a renderer-neutral StatusModel and consumed by
-    # the transcript footer bridge.
-    - id: blue-status-basic
-      name: '@dsh-blue/blue-transcript/status-basic-model'
-
-    # Frontend-runtime conversation is baseline, not an optional enhancement:
-    # the domain producer owns the official append-origin transcript and shared
-    # status/dock facts; the renderer consumer reads only whole projections.
-    - id: blue-conversation
-      name: '@dsh-blue/blue-conversation'
-
-    - id: blue-transcript-official
-      name: '@dsh-blue/blue-transcript/official-model'
-
-    # --- Enhancement segment --------------------------------------------------
-    # Optional layers over the plain baseline; the whole segment can be
-    # dropped without breaking it. Bottom panes mount through
-    # blueScreen.addBottomChild, so the dock's render order is the plugin
-    # mount order — and the loader mounts sibling rows CONCURRENTLY, so raw
-    # row order alone does not pin the dock. What orders it is the
-    # blueComponents activation round: the transcript, activity, todo, and
-    # btw plugins inject blueComponents, so their fibers activate when it
-    # appears, in row order; the queue pane carries a row-level
-    # `inject: [blueComponents, blueSessionReader, blueSessionActions]` pin to
-    # join the same round after the app-owned session boundary is available
-    # (activity → queue → todo → btw), and the interaction row's input
-    # plugin is created only inside interaction's apply, subscribing after
-    # every row fiber, so the editor mounts last.
-    # (Pinning on blueStatusModels instead would make the interaction fiber a
-    # transitive blueTheme dependent and /theme would dispose its own
-    # handler's fiber mid-swap.)
-
-    # Editor plus: the '!' bash mode with shell echo, and slash-command /
-    # '@'-file autocomplete, layered over the shared input editor through the
-    # 'blue/input-editor-changed' event (so row order against blue-input does
-    # not matter).
-    - id: blue-editor-plus
-      name: '@dsh-blue/blue-interaction/editor-plus'
-
-    # Attachment store: the harness 'attachments' service (a filesystem
-    # image store under $DSH_BLUE_ATTACHMENT_DIR / $DSH_HOME / ~/.dsh).
-    # Mounts no screen child; row order is only pinned against paste-image,
-    # which injects the service and therefore activates after this row.
-    - id: blue-attachments
-      name: '@dsh-blue/blue-interaction/attachments'
-
-    # Image paste: the contextual Ctrl-V action that admits a clipboard
-    # image through the attachment store, inserts its '[image #N]' marker
-    # into the shared editor, and splits the markers into image content
-    # blocks on submit. Injects 'attachments' (above), so it always mounts
-    # after the store. Auto selects the session-native backend first; profile
-    # overlays may set wayland/x11 to forbid cross-protocol fallback.
-    - id: blue-paste-image
-      name: '@dsh-blue/blue-interaction/paste-image'
+    # Blue's official runtime shares a private Cordis realm for management
+    # authority and raw app backing services. The public `bluePluginHost`
+    # intentionally keeps the default label so ordinary plugin siblings can
+    # request their manifest-scoped facade without resolving owner authority.
+    - id: blue-runtime-private
+      name: cordis:group
+      group: true
+      isolate:
+        bluePluginControl: true
+        blueSessionActions: true
+        blueSessionProjections: true
+        blueSessionReader: true
       config:
-        backend: auto
+        # Blue core: the tree's only pi-tui adapter. Starts the terminal and
+        # registers the blueScreen/blueKeymap/blueTerminalInfo/blueComponents
+        # services.
+        # Beta API host: validates and scopes third-party contributions before
+        # any renderer-facing Blue package is activated.
+        - id: blue-api-host
+          name: '@dsh-blue/blue-api'
 
-    # Working-directory footer entry: the abbreviated session cwd (priority
-    # 5, muted tier) — '~' under home, else the last three segments.
-    - id: blue-status-cwd
-      name: '@dsh-blue/blue-transcript/status-cwd'
+        # Renderer-neutral locale service plus the official Harness
+        # locale.preference settings adapter. Package catalogs remain owned by
+        # the interaction/transcript rows that render their copy.
+        - id: blue-locale
+          name: '@dsh-blue/blue-harness-adapter/locale'
 
-    # Git footer entry: the full badge 'branch [+a -d ↑u↓v]' (priority 10,
-    # muted tier) from a TTL-cached probe (branch 5s, status 15s, diff counts
-    # only while dirty); renders nothing outside a git repository.
-    - id: blue-status-git
-      name: '@dsh-blue/blue-transcript/status-git'
+        - id: blue-core
+          name: '@dsh-blue/blue-core'
 
-    # Session-title footer entry: the folded session title (the upstream
-    # session-title service, all-prompts cadence above) right-aligned on the
-    # footer's first band (priority 30, muted tier — the slot the rotating
-    # tips occupied before retiring to the activity pane); renders nothing
-    # while the session is untitled.
-    - id: blue-status-title
-      name: '@dsh-blue/blue-transcript/status-title'
+        # Blue theme (plain baseline segment): the built-in dark palette,
+        # providing the blueTheme service as its own fiber.
+        - id: blue-theme-dark
+          name: '@dsh-blue/blue-core/theme-dark'
 
-    # Session-mode footer badge (S24a): 'plan' (accent, a queued entry
-    # shows the pending ellipsis) or 'yolo' (warning) while either is in
-    # force; normal renders nothing. Display-only fiber reading the app-owned
-    # mode snapshot; no Harness Agent or controller crosses into the renderer.
-    - id: blue-status-mode
-      name: '@dsh-blue/blue-interaction/mode-status'
+        # Welcome banner: the kimi-style single-column box rendered once at boot
+        # as the first scroll-area child (logo-headed welcome lines, then the
+        # Directory/Model/Version rows; model · provider from agentDefaultModel,
+        # cwd).
+        # Sits before blue-transcript on purpose: both fibers resolve in the same
+        # blueComponents activation round, so the earlier row keeps the banner
+        # first in the scroll area across initial mounts and /theme reloads.
+        - id: blue-banner
+          name: '@dsh-blue/blue-transcript/banner'
 
-    # Context footer entry: the latest model step's context occupancy —
-    # 'context: N% (used/window)' when the adapter advertises a window, else
-    # the bare 'ctx N' (priority 20, text tier, right-aligned on the
-    # footer's second band).
-    - id: blue-status-context
-      name: '@dsh-blue/blue-transcript/status-context'
+        # Transcript renderer adapter: mounts the semantic model registries and
+        # the two-row canonical status footer bottom-pinned above the input editor.
+        - id: blue-transcript
+          name: '@dsh-blue/blue-transcript'
 
-    # Activity pane: the kimi mode machine over projected conversation facts
-    # — moon + teaching tip while waiting or running tools, braille
-    # working… while composing, empty while thinking (the transcript's
-    # thinking block owns the spinner), hidden while a dialog occupies the
-    # editor slot, and a one-row idle placeholder once anything has run. It
-    # injects blueComponents itself, joining the activation round that pins
-    # its dock position.
-    - id: blue-pane-activity
-      name: '@dsh-blue/blue-transcript/pane-activity'
-      inject: [blueComponents, blueSessionFacts]
 
-    # Queue pane: the attached agent's queued inbox messages, one row each,
-    # refreshed after inbox mutations without taking editor-history keys.
-    # Same blueComponents dock-order pin as the activity pane.
-    - id: blue-pane-queue
-      name: '@dsh-blue/blue-interaction/pane-queue'
-      inject: [blueComponents, blueSessionReader, blueSessionActions]
+        # Baseline footer entry: the model name alone at priority 0, in the
+        # full-strength text tier (the S15 kimi identity: the brightest thing in
+        # footer), registered as a canonical status node and consumed by
+        # the transcript footer bridge.
+        - id: blue-status-basic
+          name: '@dsh-blue/blue-transcript/status-basic-model'
 
-    # Todo pane: the session's todo list (whole-list todo/write snapshots),
-    # with the global Ctrl-T collapse toggle.
-    - id: blue-pane-todo
-      name: '@dsh-blue/blue-transcript/pane-todo'
-      inject: [blueComponents, blueSessionFacts]
+        # Frontend-runtime conversation is baseline, not an optional enhancement:
+        # the domain producer owns the official append-origin transcript and shared
+        # status/bottom-pane facts; the renderer consumer reads only whole projections.
+        - id: blue-conversation
+          name: '@dsh-blue/blue-conversation'
 
-    # Side-question pane and its /btw command: asks the app-owned action seam
-    # for a throwaway side session and renders its official projection.
-    - id: blue-pane-btw
-      name: '@dsh-blue/blue-transcript/pane-btw'
-      inject: [blueComponents, blueSessionActions]
+        - id: blue-transcript-official
+          name: '@dsh-blue/blue-transcript/official-model'
 
-    # Subagent pane (S33): the running subagent group pinned directly above
-    # the editor (the last dock row before it), rendering the group card
-    # over spawn-class calls projected into the agents channel — the kimi
-    # swarm-pane semantics. Injects blueComponents so its fiber joins the
-    # same activation round as the other panes, keeping the dock order
-    # (activity → queue → todo → btw → agents → editor) in row order.
-    - id: blue-pane-agents
-      name: '@dsh-blue/blue-transcript/pane-agents'
-      inject: [blueComponents, blueSessionFacts]
+        # --- Enhancement segment --------------------------------------------------
+        # Optional layers over the plain baseline; the whole segment can be
+        # dropped without breaking it. Bottom panes mount through
+        # blueScreen.addBottomChild, so the dock's render order is the plugin
+        # mount order — and the loader mounts sibling rows CONCURRENTLY, so raw
+        # row order alone does not pin the dock. What orders it is the
+        # blueComponents activation round: the transcript, activity, todo, and
+        # btw plugins inject blueComponents, so their fibers activate when it
+        # appears, in row order; the queue pane carries a row-level
+        # `inject: [blueComponents, blueSessionReader, blueSessionActions]` pin to
+        # join the same round after the app-owned session boundary is available
+        # (activity → queue → todo → btw), and the interaction row's input
+        # plugin is created only inside interaction's apply, subscribing after
+        # every row fiber, so the editor mounts last.
+        # (Pinning on blueStatusEntries instead would make the interaction fiber a
+        # transitive blueTheme dependent and /theme would dispose its own
+        # handler's fiber mid-swap.)
 
-    # Public additive view adapter: compiles renderer-neutral BlueViews into
-    # bounded dock/status components after every owner pane and before the
-    # editor. It is the only dynamic-contribution path into those registries.
-    - id: blue-plugin-view-bridge
-      name: '@dsh-blue/blue-transcript/plugin-host-bridge'
+        # Editor plus: the '!' bash mode with shell echo, and slash-command /
+        # '@'-file autocomplete, layered over the shared input editor through the
+        # 'blue/input-editor-changed' event (so row order against blue-input does
+        # not matter).
+        - id: blue-editor-plus
+          name: '@dsh-blue/blue-interaction/editor-plus'
 
-    # --- Assembly segment -------------------------------------------------------
-    # The plain baseline's closing rows: the input editor with its built-in
-    # commands and overlays, the startup provider, and the app driver.
+        # Attachment store: the harness 'attachments' service (a filesystem
+        # image store under $DSH_BLUE_ATTACHMENT_DIR / $DSH_HOME / ~/.dsh).
+        # Mounts no screen child; row order is only pinned against paste-image,
+        # which injects the service and therefore activates after this row.
+        - id: blue-attachments
+          name: '@dsh-blue/blue-interaction/attachments'
 
-    # Interaction: the input editor, built-in commands (/quit, /resume, /new,
-    # /fork, /sessions, /help), the user-question provider, and the approval
-    # answerer.
-    - id: blue-interaction
-      name: '@dsh-blue/blue-interaction'
+        # Image paste: the contextual Ctrl-V action that admits a clipboard
+        # image through the attachment store, inserts its '[image #N]' marker
+        # into the shared editor, and splits the markers into image content
+        # blocks on submit. Injects 'attachments' (above), so it always mounts
+        # after the store. Auto selects the session-native backend first; profile
+        # overlays may set wayland/x11 to forbid cross-protocol fallback.
+        - id: blue-paste-image
+          name: '@dsh-blue/blue-interaction/paste-image'
+          config:
+            backend: auto
 
-    # Public additive interaction adapter: projects capability-scoped plugin
-    # commands into the harness registry and notifications into the mounted
-    # editor's transient notice channel. Duplicate owner command names fail.
-    - id: blue-plugin-interaction-bridge
-      name: '@dsh-blue/blue-interaction/plugin-host-bridge'
+        # Working-directory footer entry: the abbreviated session cwd (priority
+        # 5, muted tier) — '~' under home, else the last three segments.
+        - id: blue-status-cwd
+          name: '@dsh-blue/blue-transcript/status-cwd'
 
-    - id: blue-startup
-      name: '@dsh-blue/blue-app/startup'
+        # Git footer entry: the full badge 'branch [+a -d ↑u↓v]' (priority 10,
+        # muted tier) from a TTL-cached probe (branch 5s, status 15s, diff counts
+        # only while dirty); renders nothing outside a git repository.
+        - id: blue-status-git
+          name: '@dsh-blue/blue-transcript/status-git'
 
-    # Reads its launch values from the ordinary blueStartup provider; the
-    # plugin's own inject waits for the core Agent services and blueScreen.
-    - id: blue-app
-      name: '@dsh-blue/blue-app'
-      inject: [blueStartup, agentPresets]
-      config:
-        task: !!js ctx.blueStartup.task
-        resume: !!js ctx.blueStartup.resume
+        # Session-title footer entry: the folded session title (the upstream
+        # session-title service, all-prompts cadence above) right-aligned on the
+        # footer's first band (priority 30, muted tier — the slot the rotating
+        # tips occupied before retiring to the activity pane); renders nothing
+        # while the session is untitled.
+        - id: blue-status-title
+          name: '@dsh-blue/blue-transcript/status-title'
+
+        # Session-mode footer badge (S24a): 'plan' (accent, a queued entry
+        # shows the pending ellipsis) or 'yolo' (warning) while either is in
+        # force; normal renders nothing. Display-only fiber reading the app-owned
+        # mode snapshot; no Harness Agent or controller crosses into the renderer.
+        - id: blue-status-mode
+          name: '@dsh-blue/blue-interaction/mode-status'
+
+        # Context footer entry: the latest model step's context occupancy —
+        # 'context: N% (used/window)' when the adapter advertises a window, else
+        # the bare 'ctx N' (priority 20, text tier, right-aligned on the
+        # footer's second band).
+        - id: blue-status-context
+          name: '@dsh-blue/blue-transcript/status-context'
+
+        # Activity pane: the kimi mode machine over projected conversation facts
+        # — moon + teaching tip while waiting or running tools, braille
+        # working… while composing, empty while thinking (the transcript's
+        # thinking block owns the spinner), hidden while a dialog occupies the
+        # editor slot, and a one-row idle placeholder once anything has run. It
+        # injects blueComponents itself, joining the activation round that pins
+        # its dock position.
+        - id: blue-pane-activity
+          name: '@dsh-blue/blue-transcript/pane-activity'
+          inject: [blueComponents, blueSessionFacts]
+
+        # Queue pane: the attached agent's queued inbox messages, one row each,
+        # refreshed after inbox mutations without taking editor-history keys.
+        # Same blueComponents dock-order pin as the activity pane.
+        - id: blue-pane-queue
+          name: '@dsh-blue/blue-interaction/pane-queue'
+          inject: [blueComponents, blueSessionReader, blueSessionActions]
+
+        # Todo pane: the session's todo list (whole-list todo/write snapshots),
+        # with the global Ctrl-T collapse toggle.
+        - id: blue-pane-todo
+          name: '@dsh-blue/blue-transcript/pane-todo'
+          inject: [blueComponents, blueSessionFacts]
+
+        # Side-question pane and its /btw command: asks the app-owned action seam
+        # for a throwaway side session and renders its official projection.
+        - id: blue-pane-btw
+          name: '@dsh-blue/blue-transcript/pane-btw'
+          inject: [blueComponents, blueSessionActions]
+
+        # Subagent pane (S33): the running subagent group pinned directly above
+        # the editor (the last dock row before it), rendering the group card
+        # over spawn-class calls projected into the agents channel — the kimi
+        # swarm-pane semantics. Injects blueComponents so its fiber joins the
+        # same activation round as the other panes, keeping the dock order
+        # (activity → queue → todo → btw → agents → editor) in row order.
+        - id: blue-pane-agents
+          name: '@dsh-blue/blue-transcript/pane-agents'
+          inject: [blueComponents, blueSessionFacts]
+
+        # Public additive status adapter: projects renderer-neutral status nodes
+        # into the transcript-owned footer registry. Public panes and overlays are
+        # compiled by core's canonical surface bridge.
+        - id: blue-plugin-view-bridge
+          name: '@dsh-blue/blue-transcript/plugin-host-bridge'
+
+        # Exclusive status-provider owner: candidates stay inert in blue-api;
+        # this tree-scoped row follows the persisted blue.statusProvider choice,
+        # dry-renders at the live footer width, and retains the default on failure.
+        - id: blue-status-provider-owner
+          name: '@dsh-blue/blue-transcript/status-provider-owner'
+          inject: [blueStatusComposition, blueSessionReader]
+
+        # --- Assembly segment -------------------------------------------------------
+        # The plain baseline's closing rows: the input editor with its built-in
+        # commands and overlays, the startup provider, and the app driver.
+
+        # Interaction: the input editor, built-in commands (/quit, /resume, /new,
+        # /fork, /sessions, /help), the user-question provider, and the approval
+        # answerer.
+        - id: blue-interaction
+          name: '@dsh-blue/blue-interaction'
+
+        # Exclusive editor-provider owner: candidates remain inert until the
+        # persisted blue.editorProvider id selects one. The owner waits for the
+        # interaction tree's stable editor host and falls back to blue.default.
+        - id: blue-editor-provider-owner
+          name: '@dsh-blue/blue-interaction/editor-provider-owner'
+          inject: [blueEditorHost]
+
+        # Public additive interaction adapter: projects capability-scoped plugin
+        # commands into the harness registry and notifications into the mounted
+        # editor's transient notice channel. Duplicate owner command names fail.
+        - id: blue-plugin-interaction-bridge
+          name: '@dsh-blue/blue-interaction/plugin-host-bridge'
+
+        - id: blue-startup
+          name: '@dsh-blue/blue-app/startup'
+
+        # Reads its launch values from the ordinary blueStartup provider; the
+        # plugin's own inject waits for the core Agent services and blueScreen.
+        - id: blue-app
+          name: '@dsh-blue/blue-app'
+          inject: [blueStartup, agentPresets]
+          config:
+            task: !!js ctx.blueStartup.task
+            resume: !!js ctx.blueStartup.resume
+
+        # Public session capability owner: mounts only after blue-app has
+        # synchronously provided its readonly reader.
+        - id: blue-plugin-session-bridge
+          name: '@dsh-blue/blue-app/plugin-host-session-bridge'
+          inject: [bluePluginControl, blueSessionReader]

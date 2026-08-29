@@ -51,6 +51,9 @@ jobs:
       # exports ↔ built lib/ output ↔ the files tarball whitelist. Runs
       # before the test minute so the cheap check fails first.
       - run: pnpm check:lib
+      # W5-C ecosystem contract: static package boundaries plus one-project
+      # packed installs on the current and previous Harness lines.
+      - run: pnpm check:examples
       - run: pnpm test:coverage
       # The real-process width smoke (D45): boots the built plugin tree
       # through the real dsh CLI at COLUMNS=40 against a mock LLM streaming

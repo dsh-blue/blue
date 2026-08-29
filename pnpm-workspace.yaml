@@ -1,6 +1,7 @@
 packages:
   - 'packages/*'
   - 'packages/bundle/*'
+  - 'examples/*'
   - 'website'
 
 # vitepress-plugin-mermaid 把 mermaid 的传递依赖列入 vite optimizeDeps.include，

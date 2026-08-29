@@ -5,14 +5,14 @@ import { defineConfig } from 'vitest/config'
 // node_modules (pnpm workspace links + the npm registry).
 export default defineConfig({
   test: {
-    include: ['packages/*/tests/**/*.spec.ts', 'packages/bundle/*/tests/**/*.spec.ts'],
+    include: ['packages/*/tests/**/*.spec.ts', 'packages/bundle/*/tests/**/*.spec.ts', 'examples/*/tests/**/*.spec.ts'],
     // Forked workers avoid Node 24's worker-thread CJS lexer crashes.
     pool: 'forks',
     coverage: {
       provider: 'v8',
-      include: ['packages/*/src/**/*.ts', 'packages/bundle/*/src/**/*.ts'],
+      include: ['packages/*/src/**/*.ts', 'packages/bundle/*/src/**/*.ts', 'examples/*/src/**/*.ts'],
       // Types-only files carry no executable code.
-      exclude: ['packages/*/src/types.ts', 'packages/bundle/*/src/types.ts'],
+      exclude: ['packages/*/src/types.ts', 'packages/bundle/*/src/types.ts', 'examples/*/src/types.ts'],
       thresholds: {
         perFile: true,
         statements: 100,

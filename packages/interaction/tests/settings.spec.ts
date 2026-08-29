@@ -103,8 +103,11 @@ async function mount(doc: Record<string, unknown> = {}): Promise<{
   ctx: Context
   settings: SettingsProvider
   attach: () => void
+  ready: unknown[]
 }> {
   const ctx = createContext()
+  const ready: unknown[] = []
+  ctx.on('blue/settings-source-ready', value => ready.push(value))
   await ctx.plugin(MemorySettings, doc)
   // The real app updates `blueSession.current` before broadcasting the
   // switch event; the fake mirrors that contract by staying mutable.
@@ -116,6 +119,7 @@ async function mount(doc: Record<string, unknown> = {}): Promise<{
   return {
     ctx,
     settings: ctx.get('settings')!,
+    ready,
     attach: () => {
       const agent = { id: 'settings-spec' } as unknown as Agent
       session.current = agent
@@ -138,6 +142,8 @@ describe('blue-settings schema and registration', () => {
       updateCheck: true,
       updateChannel: 'rc',
       theme: 'dark',
+      statusProvider: 'blue.default',
+      editorProvider: 'blue.default',
       collapseThinking: true,
       collapseToolCalls: true,
       windowTurns: 15,
@@ -152,7 +158,12 @@ describe('blue-settings schema and registration', () => {
   })
 
   it('registers the blue namespace exactly once and reflects user overrides', async () => {
-    const { ctx, settings } = await mount({ blue: { updateCheck: false, updateChannel: 'beta' } })
+    const { ctx, settings, ready } = await mount({ blue: {
+      updateCheck: false,
+      updateChannel: 'beta',
+      statusProvider: 'missing.status',
+      editorProvider: 'missing.editor',
+    } })
     const blue = settings.describe().filter(descriptor => String(descriptor.ns) === 'blue')
     expect(blue).toHaveLength(1)
     // The namespace is taken: a second registration fails loud upstream.
@@ -162,6 +173,8 @@ describe('blue-settings schema and registration', () => {
       updateCheck: false,
       updateChannel: 'beta',
       theme: 'dark',
+      statusProvider: 'missing.status',
+      editorProvider: 'missing.editor',
       collapseThinking: true,
       collapseToolCalls: true,
       windowTurns: 15,
@@ -172,6 +185,19 @@ describe('blue-settings schema and registration', () => {
       editorCommand: '',
       pasteImageBackend: 'auto',
     })
+    expect(ready.at(-1)).toMatchObject({
+      statusProvider: 'missing.status',
+      editorProvider: 'missing.editor',
+    })
+
+    // Provider availability belongs to the runtime owners, not the settings
+    // schema. Unknown non-empty ids remain intact across ordinary commits so
+    // installing or reloading their provider can satisfy the stored choice.
+    const updated: string[] = []
+    ctx.on('settings/updated', ns => updated.push(String(ns)))
+    await settings.update(settingsNamespace('blue'), { editorProvider: 'still.missing' })
+    expect(settingsPlugin.currentBlueSettings(ctx).editorProvider).toBe('still.missing')
+    expect(updated).toContain('blue')
   })
 })
 

@@ -12,6 +12,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 // green in tests while tripping the real width guard. Fakes now delegate to
 // the same implementations the renderer runs.
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '../../core/src/width.ts'
+import { topRule } from '../../core/src/chrome.ts'
 import type {
   BlueAutocompleteItem,
   BlueAutocompleteProvider,
@@ -20,6 +21,7 @@ import type {
   BlueComponents,
   BlueEditor,
   BlueEditorOptions,
+  BlueEditorSubmitAttempt,
   BlueFocusable,
   BlueFuzzyMatch,
   BlueKeyAction,
@@ -45,7 +47,7 @@ import { EditorHostService, setEditorSlotSwap } from '../src/editor-instance.ts'
 import {
   INTERACTION_KEY_ACTIONS,
 } from '../src/keys.ts'
-import { BlueDockModelService } from '../../transcript/src/dock-model.ts'
+import { BlueBottomPaneService } from '../../transcript/src/dock-model.ts'
 import { rewindCandidates } from '../../app/src/rewind.ts'
 import { foldYolo } from '../../app/src/mode.ts'
 import { sessionDetails as buildSessionDetails } from '../../app/src/session-details.ts'
@@ -178,7 +180,7 @@ function fakeColors(): BlueSemanticColors {
     error: text => `!${text}!`,
     warning: text => `?${text}?`,
     // S12 marks the full-width selected row so tests can assert the token
-    // reached the cursor (S10 left the token unused; BlueSelect is its
+    // reached the cursor (S10 left the token unused; the multi-select is its
     // first real consumer).
     selectedBg: text => `{${text}}`,
     roleUser: text => `@${text}@`,
@@ -237,7 +239,13 @@ export class FakeBlueEditor implements BlueEditor {
   ghostHint: string | undefined
   /** The last autocomplete provider attached, if any. */
   autocompleteProvider: BlueAutocompleteProvider | undefined
+  /** Number of explicit autocomplete refresh requests. */
+  autocompleteRefreshes = 0
   private text = ''
+  private cursor = 0
+  private submitRevision = 0
+  private pendingSubmit: AbortController | undefined
+  private submitBarrier: ((attempt: BlueEditorSubmitAttempt) => void) | undefined
 
   getText(): string {
     return this.text
@@ -248,8 +256,15 @@ export class FakeBlueEditor implements BlueEditor {
     return this.text
   }
 
+  renderContent(width: number, masked = false): string[] {
+    const text = masked ? '•'.repeat(this.text.length) : this.text
+    return [truncateToWidth(`${text.slice(0, this.cursor)}${this.focused ? '|' : ''}${text.slice(this.cursor)}`, Math.max(0, width))]
+  }
+
   setText(text: string): void {
+    this.abortPendingSubmit()
     this.text = text
+    this.cursor = text.length
     this.onChange?.(text)
   }
 
@@ -269,10 +284,12 @@ export class FakeBlueEditor implements BlueEditor {
     return true
   }
 
-  /** The fake has no cursor model: insertion appends and fires onChange. */
+  /** Insert at the current fake cursor and fire onChange once. */
   insertText(text: string): void {
+    this.abortPendingSubmit()
     this.inserted.push(text)
-    this.text += text
+    this.text = `${this.text.slice(0, this.cursor)}${text}${this.text.slice(this.cursor)}`
+    this.cursor += text.length
     this.onChange?.(this.text)
   }
 
@@ -304,19 +321,77 @@ export class FakeBlueEditor implements BlueEditor {
     return this.showingAutocomplete
   }
 
+  refreshAutocomplete(): void {
+    this.autocompleteRefreshes += 1
+  }
+
+  setSubmitBarrier(barrier: ((attempt: BlueEditorSubmitAttempt) => void) | undefined): void {
+    this.abortPendingSubmit()
+    this.submitBarrier = barrier
+  }
+
+  submit(): void {
+    if (this.disableSubmit) return
+    this.abortPendingSubmit()
+    const submitted = this.text
+    const handler = this.submitBarrier
+    if (handler === undefined) {
+      this.commitSubmit(submitted)
+      return
+    }
+    const controller = new AbortController()
+    this.pendingSubmit = controller
+    const revision = ++this.submitRevision
+    let settled = false
+    const active = (): boolean => !settled
+      && !controller.signal.aborted
+      && this.pendingSubmit === controller
+      && this.submitRevision === revision
+      && this.text === submitted
+    handler(Object.freeze({
+      text: submitted,
+      signal: controller.signal,
+      revision,
+      commit: () => {
+        if (!active()) return false
+        settled = true
+        this.pendingSubmit = undefined
+        this.commitSubmit(submitted)
+        return true
+      },
+      cancel: () => {
+        if (!active()) return
+        settled = true
+        this.pendingSubmit = undefined
+        controller.abort()
+      },
+    }))
+  }
+
   handleInput(data: string): void {
     if (this.onKey?.(data) === true) return
     if (data === KEY.enter) {
-      if (!this.disableSubmit) this.onSubmit?.(this.text)
+      this.submit()
       return
     }
-    // Backspace deletes (the pi-tui Editor contract); anything else appends.
+    if (data === KEY.left) { this.cursor = Math.max(0, this.cursor - 1); return }
+    if (data === KEY.right) { this.cursor = Math.min(this.text.length, this.cursor + 1); return }
     if (data === '\x7f') {
-      this.text = this.text.slice(0, -1)
+      if (this.cursor === 0) return
+      this.abortPendingSubmit()
+      const before = Array.from(this.text.slice(0, this.cursor))
+      before.pop()
+      const prefix = before.join('')
+      this.text = `${prefix}${this.text.slice(this.cursor)}`
+      this.cursor = prefix.length
       this.onChange?.(this.text)
       return
     }
-    this.text += data
+    const paste = /^\x1b\[200~([\s\S]*)\x1b\[201~$/u.exec(data)
+    const inserted = paste?.[1] ?? data
+    this.abortPendingSubmit()
+    this.text = `${this.text.slice(0, this.cursor)}${inserted}${this.text.slice(this.cursor)}`
+    this.cursor += inserted.length
     this.onChange?.(this.text)
   }
 
@@ -325,6 +400,20 @@ export class FakeBlueEditor implements BlueEditor {
   }
 
   invalidate(): void {}
+
+  private abortPendingSubmit(): void {
+    const pending = this.pendingSubmit
+    if (pending === undefined) return
+    this.pendingSubmit = undefined
+    pending.abort()
+  }
+
+  private commitSubmit(submitted: string): void {
+    this.text = ''
+    this.cursor = 0
+    this.onChange?.('')
+    this.onSubmit?.(submitted)
+  }
 }
 
 /**
@@ -373,9 +462,10 @@ export class FakeBlueSelectList implements BlueSelectList {
   invalidate(): void {}
 }
 
-/** Fake markdown component: settable text, rendered line-split. */
-class FakeBlueMarkdown implements BlueMarkdown {
+/** Fake markdown component: settable text, width-wrapped, and invalidatable. */
+export class FakeBlueMarkdown implements BlueMarkdown {
   private text: string
+  invalidations = 0
 
   constructor(options?: BlueMarkdownOptions) {
     this.text = options?.text ?? ''
@@ -385,11 +475,11 @@ class FakeBlueMarkdown implements BlueMarkdown {
     this.text = text
   }
 
-  render(): string[] {
-    return this.text.split('\n')
+  render(width: number): string[] {
+    return this.text.split('\n').flatMap(line => wrapTextWithAnsi(line, width))
   }
 
-  invalidate(): void {}
+  invalidate(): void { this.invalidations += 1 }
 }
 
 /**
@@ -509,6 +599,8 @@ export class FakeBlueComponents implements BlueComponents {
   readonly editors: FakeBlueEditor[] = []
   /** The options each editor was created with, in creation order. */
   readonly editorOptions: Array<BlueEditorOptions | undefined> = []
+  /** Every Markdown component created through this factory. */
+  readonly markdowns: FakeBlueMarkdown[] = []
   /** Every select list created through this factory, in creation order. */
   readonly selectLists: FakeBlueSelectList[] = []
   /**
@@ -535,7 +627,9 @@ export class FakeBlueComponents implements BlueComponents {
   }
 
   createMarkdown(options?: BlueMarkdownOptions): BlueMarkdown {
-    return new FakeBlueMarkdown(options)
+    const markdown = new FakeBlueMarkdown(options)
+    this.markdowns.push(markdown)
+    return markdown
   }
 
   createSelectList(options: BlueSelectListOptions): FakeBlueSelectList {
@@ -592,6 +686,10 @@ export class FakeBlueComponents implements BlueComponents {
 
   truncateToWidth(text: string, width: number, ellipsis?: string): string {
     return truncateToWidth(text, width, ellipsis)
+  }
+
+  topRule(width: number, options?: Parameters<BlueComponents['topRule']>[1]): string {
+    return topRule(width, options)
   }
 
   /**
@@ -1228,7 +1326,11 @@ export function fakeBlueContext(options: { readonly display?: boolean; readonly 
   })
   new SkillsCatalogService(ctx)
   new InteractionStateService(ctx, DEFAULT_SETTINGS)
-  if (options.dock !== false) new BlueDockModelService(ctx, screen)
+  if (options.dock !== false) new BlueBottomPaneService(ctx, {
+    components,
+    colors: theme.colors,
+    viewport: () => ({ columns: screen.columns, rows: screen.rows }),
+  }, screen)
   new EditorHostService(ctx)
   // The D30 editor-slot swap stands in for `blue-input`'s real machinery:
   // dialog specs assert the mounted panel through the overlay registry.

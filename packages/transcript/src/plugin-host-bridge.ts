@@ -1,46 +1,29 @@
 /**
- * Blue-owned adapter from public additive plugin models to the transcript's
- * dock and status registries. Dynamic code never receives either renderer
- * service; this fiber alone compiles `BlueView` and owns all mount disposers.
+ * Blue-owned adapter from public additive status models to the transcript's
+ * status registry. Dynamic code never receives the renderer service; this
+ * Fiber alone owns the status entry disposers.
  *
  * @module @dsh-blue/blue-transcript/plugin-host-bridge
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { attachBluePluginHostCapabilities, subscribeBluePluginHost, type BlueDockContribution, type BluePluginHostSnapshot, type BlueStatusContribution, type BlueView } from '@dsh-blue/blue-api'
-import { BluePluginViewComponent, GutterComponent, mountDockChild, PLUGIN_VIEW_MAX_ROWS } from '@dsh-blue/blue-core'
-import type { StatusModel, View } from '@dsh-blue/blue-frontend'
+import type { BluePluginHostSnapshot, BlueStatusEntryContribution } from '@dsh-blue/blue-api'
+import type { BlueStatusEntry } from './status-model.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-plugin-view-bridge'
 
 /** Owner services required before public views can reach the tree. */
-export const inject = ['bluePluginHost', 'blueScreen', 'blueStatusModels', 'blueTheme', 'blueComponents']
+export const inject = ['bluePluginControl', 'blueStatusEntries']
 
-function rowBudget(contribution: BlueDockContribution): number {
-  const requested = contribution.preferredRows
-  if (requested === undefined || !Number.isFinite(requested)) return PLUGIN_VIEW_MAX_ROWS
-  return Math.max(0, Math.min(PLUGIN_VIEW_MAX_ROWS, Math.floor(requested)))
-}
-
-function statusView(view: BlueView): View {
-  switch (view.kind) {
-    case 'text': return { kind: 'text', text: view.content, ...(view.tone === undefined ? {} : { tone: view.tone }) }
-    case 'code': return { kind: 'code', code: view.code, ...(view.language === undefined ? {} : { language: view.language }) }
-    case 'diff': return { kind: 'diff', before: view.before, after: view.after }
-    case 'fields': return { kind: 'fields', fields: view.rows.map(row => ({ label: row.label, value: row.value.map(span => span.text).join('') })) }
-    case 'sections': return { kind: 'sections', sections: view.sections.map(section => ({ title: section.title ?? '', body: statusView(section.body), ...(section.collapsed === undefined ? {} : { collapsed: section.collapsed }) })) }
-  }
-}
-
-/** Mount additive dock and status contributions behind owner adapters. */
+/** Mount additive status contributions behind the owner adapter. */
 export function apply(ctx: Context): void {
-  attachBluePluginHostCapabilities(ctx.bluePluginHost, ctx, ['dock', 'status'])
-  const dock = new Map<string, () => void>()
-  const status = new Map<string, { dispose: () => void, contribution: BlueStatusContribution }>()
-  let dockOrder = ''
+  ctx.bluePluginControl.attachCapabilities(ctx, ['status'])
+  const status = new Map<string, { dispose: () => void, contribution: BlueStatusEntryContribution }>()
+  let statusRevision = -1
 
-  const syncStatus = (entries: readonly BlueStatusContribution[]): void => {
+  const syncStatus = (entries: readonly BlueStatusEntryContribution[], revision: number): void => {
+    const refreshExisting = revision !== statusRevision
     const live = new Set(entries.map(entry => entry.id))
     for (const [id, record] of status) {
       if (live.has(id)) continue
@@ -48,62 +31,41 @@ export function apply(ctx: Context): void {
       status.delete(id)
     }
     for (const entry of entries) {
-      if (status.has(entry.id)) continue
-      const source = (): StatusModel | null => {
-        const view = entry.render()
-        return view === null ? {
-          kind: 'status',
+      if (status.has(entry.id)) {
+        if (refreshExisting) ctx.blueStatusEntries.refresh(`plugin.status.${entry.id}`)
+        continue
+      }
+      const source = (): BlueStatusEntry | null => {
+        const node = entry.render()
+        return node === null ? {
           id: `plugin.status.${entry.id}`,
           priority: entry.priority ?? 50,
           row: 2,
-          view: { kind: 'text', text: '' },
+          node: { kind: 'text', content: '' },
           visible: false,
           overflow: 'truncate',
         } : {
-          kind: 'status',
           id: `plugin.status.${entry.id}`,
           priority: entry.priority ?? 50,
           row: 2,
-          view: statusView(view),
+          node,
           visible: true,
           overflow: 'truncate',
         }
       }
-      status.set(entry.id, { contribution: entry, dispose: ctx.blueStatusModels.register(source) })
-      ctx.blueStatusModels.refresh(`plugin.status.${entry.id}`)
+      status.set(entry.id, { contribution: entry, dispose: ctx.blueStatusEntries.register(source) })
+      ctx.blueStatusEntries.refresh(`plugin.status.${entry.id}`)
     }
-  }
-
-  const syncDock = (entries: readonly BlueDockContribution[]): void => {
-    const nextOrder = entries.map(entry => entry.id).join('\x00')
-    if (nextOrder === dockOrder) return
-    for (const dispose of dock.values()) dispose()
-    dock.clear()
-    for (const entry of entries) {
-      const component = new GutterComponent(new BluePluginViewComponent(
-        entry.view,
-        ctx.blueComponents,
-        ctx.blueTheme.colors,
-        rowBudget(entry),
-      ))
-      dock.set(entry.id, mountDockChild(ctx.blueScreen, component, {
-        priority: entry.priority ?? 50,
-      }))
-    }
-    dockOrder = nextOrder
-    ctx.blueScreen.requestRender()
+    statusRevision = revision
   }
 
   const sync = (snapshot: BluePluginHostSnapshot): void => {
-    syncStatus(snapshot.status)
-    syncDock(snapshot.dock)
+    syncStatus(snapshot.status, snapshot.statusRevision ?? snapshot.revision ?? 0)
   }
-  const subscription = subscribeBluePluginHost(ctx.bluePluginHost, sync)
+  const subscription = ctx.bluePluginControl.subscribe(sync)
   ctx.effect(() => () => {
     subscription.dispose()
-    for (const dispose of dock.values()) dispose()
     for (const record of status.values()) record.dispose()
-    dock.clear()
     status.clear()
   })
 }

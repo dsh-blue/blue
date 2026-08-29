@@ -6,18 +6,29 @@
 
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { BlueComponent, BlueFocusable } from '@dsh-blue/blue-core'
+import type { BlueAutocompleteProvider, BlueComponent, BlueFocusable } from '@dsh-blue/blue-core'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import {
   applyReversibleSubmitTransformers,
+  clearSharedEditor,
+  clearEditorExtensions,
+  clearEditorProviders,
   EditorHostService,
   ENHANCEMENT_EDITOR_PLUS,
   applySubmitTransformers,
+  getSharedEditor,
   hasEditorEnhancement,
   markEditorEnhancement,
   mountEditorReplacement,
+  registerEditorAutocompleteSource,
   registerSubmitTransformer,
+  setEditorExtensions,
+  setEditorProviders,
+  setSharedEditor,
   setEditorSlotSwap,
+  type EditorExtensionBinding,
+  type EditorProviderBinding,
+  type SharedEditor,
 } from '../src/editor-instance.ts'
 
 function editorContext(): Context {
@@ -25,6 +36,158 @@ function editorContext(): Context {
   new EditorHostService(ctx)
   return ctx
 }
+
+function extensionBinding(revision: number): EditorExtensionBinding {
+  return {
+    revision,
+    entries: [],
+    complete: async () => ({ ok: true, value: [] }),
+    transform: async (_entry, request) => ({ ok: true, value: { text: request.text } }),
+    dispatch: async () => ({ ok: true, value: undefined }),
+  }
+}
+
+function providerBinding(revision: number): EditorProviderBinding {
+  return {
+    revision,
+    desiredId: 'blue.default',
+    entries: [],
+    dispatch: async () => ({ ok: true, value: undefined }),
+  }
+}
+
+function autocompleteProvider(): BlueAutocompleteProvider {
+  return {
+    getSuggestions: async () => null,
+    applyCompletion: (lines, cursorLine, cursorCol) => ({ lines, cursorLine, cursorCol }),
+  }
+}
+
+describe('editor extension host state', () => {
+  it('publishes the shared editor and clears all owned state on disposal', () => {
+    const ctx = editorContext()
+    const shared: SharedEditor = {
+      editor: {} as SharedEditor['editor'],
+      submitPrompt: () => {},
+    }
+    let notifications = 0
+    ctx.blueEditorHost.subscribeEditorState(() => { notifications += 1 })
+    setSharedEditor(ctx, shared)
+    expect(getSharedEditor(ctx)).toBe(shared)
+    clearSharedEditor(ctx)
+    expect(getSharedEditor(ctx)).toBeUndefined()
+
+    setSharedEditor(ctx, shared)
+    let mounted = false
+    setEditorSlotSwap(ctx, {
+      mount: () => {
+        mounted = true
+        return () => {}
+      },
+    })
+    const unmark = markEditorEnhancement(ctx, 'dispose-me')
+    const unregisterTransformer = registerSubmitTransformer(ctx, () => [{ type: 'text', text: 'transformed' }])
+    setEditorExtensions(ctx, extensionBinding(1))
+    const unregisterAutocomplete = registerEditorAutocompleteSource(ctx, 'dispose-me', autocompleteProvider())
+    const notificationsBeforeDispose = notifications
+
+    ctx.blueEditorHost.dispose()
+    expect(getSharedEditor(ctx)).toBeUndefined()
+    expect(ctx.blueEditorHost.extensions).toBeUndefined()
+    expect(ctx.blueEditorHost.listAutocompleteSources()).toEqual([])
+    expect(hasEditorEnhancement(ctx, 'dispose-me')).toBe(false)
+    expect(applySubmitTransformers(ctx, 'plain')).toEqual([{ type: 'text', text: 'plain' }])
+    mountEditorReplacement(ctx, {} as BlueFocusable)
+    expect(mounted).toBe(false)
+
+    setSharedEditor(ctx, shared)
+    expect(notifications).toBe(notificationsBeforeDispose)
+    unregisterTransformer()
+    unregisterAutocomplete()
+    unmark()
+  })
+
+  it('notifies only for binding changes and fences stale owner cleanup', () => {
+    const ctx = editorContext()
+    const first = extensionBinding(1)
+    const second = extensionBinding(2)
+    let notifications = 0
+    const unsubscribe = ctx.blueEditorHost.subscribeEditorState(() => { notifications += 1 })
+
+    setEditorExtensions(ctx, first)
+    setEditorExtensions(ctx, first)
+    expect(notifications).toBe(1)
+
+    setEditorExtensions(ctx, second)
+    clearEditorExtensions(ctx, first)
+    expect(ctx.blueEditorHost.extensions).toBe(second)
+    expect(notifications).toBe(2)
+
+    clearEditorExtensions(ctx, second)
+    expect(ctx.blueEditorHost.extensions).toBeUndefined()
+    expect(notifications).toBe(3)
+
+    unsubscribe()
+    setEditorExtensions(ctx, first)
+    expect(notifications).toBe(3)
+  })
+
+  it('notifies only for provider changes and fences stale owner cleanup', () => {
+    const ctx = editorContext()
+    const first = providerBinding(1)
+    const second = providerBinding(2)
+    let notifications = 0
+    const unsubscribe = ctx.blueEditorHost.subscribeEditorState(() => { notifications += 1 })
+
+    setEditorProviders(ctx, first)
+    setEditorProviders(ctx, first)
+    expect(notifications).toBe(1)
+
+    setEditorProviders(ctx, second)
+    clearEditorProviders(ctx, first)
+    expect(ctx.blueEditorHost.providers).toBe(second)
+    expect(notifications).toBe(2)
+
+    clearEditorProviders(ctx, second)
+    expect(ctx.blueEditorHost.providers).toBeUndefined()
+    expect(notifications).toBe(3)
+
+    unsubscribe()
+  })
+
+  it('keeps autocomplete sources ordered, unique, frozen, and lifecycle-notified', () => {
+    const ctx = editorContext()
+    const first = autocompleteProvider()
+    const second = autocompleteProvider()
+    let notifications = 0
+    const unsubscribe = ctx.blueEditorHost.subscribeEditorState(() => { notifications += 1 })
+
+    const unregisterFirst = registerEditorAutocompleteSource(ctx, 'first', first)
+    const firstSnapshot = ctx.blueEditorHost.listAutocompleteSources()
+    expect(firstSnapshot).toEqual([first])
+    expect(Object.isFrozen(firstSnapshot)).toBe(true)
+    expect(notifications).toBe(1)
+
+    const unregisterSecond = registerEditorAutocompleteSource(ctx, 'second', second)
+    expect(ctx.blueEditorHost.listAutocompleteSources()).toEqual([first, second])
+    expect(firstSnapshot).toEqual([first])
+    expect(notifications).toBe(2)
+    expect(() => registerEditorAutocompleteSource(ctx, 'second', first)).toThrow(
+      'editor autocomplete source "second" is already registered',
+    )
+    expect(notifications).toBe(2)
+
+    unregisterFirst()
+    unregisterFirst()
+    expect(ctx.blueEditorHost.listAutocompleteSources()).toEqual([second])
+    expect(notifications).toBe(3)
+
+    unregisterSecond()
+    expect(ctx.blueEditorHost.listAutocompleteSources()).toEqual([])
+    expect(notifications).toBe(4)
+    unsubscribe()
+  })
+})
 
 describe('submit transformers', () => {
   it('composes idempotent rollback functions in reverse registration order', () => {

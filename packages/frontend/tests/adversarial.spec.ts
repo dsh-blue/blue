@@ -5,8 +5,8 @@ describe('provider swap races', () => {
   it('serializes concurrent swaps so the last requested provider remains active', async () => {
     const host = new FrontendHost()
     let releaseA!: () => void
-    const a = host.swap({ id: 'a', activate: async context => { await new Promise<void>(resolve => { releaseA = resolve }); context.publish({ providerId: 'a', capabilities: [], views: [] }) } })
-    const b = host.swap({ id: 'b', activate: context => { context.publish({ providerId: 'b', capabilities: [], views: [] }) } })
+    const a = host.swap({ id: 'a', activate: async context => { await new Promise<void>(resolve => { releaseA = resolve }); context.publish({ providerId: 'a', capabilities: [], nodes: [] }) } })
+    const b = host.swap({ id: 'b', activate: context => { context.publish({ providerId: 'b', capabilities: [], nodes: [] }) } })
     await Promise.resolve()
     releaseA()
     await Promise.all([a, b])
@@ -20,10 +20,10 @@ describe('provider swap races', () => {
     await host.activateInitial({
       id: 'initial',
       capture: async () => new Promise(resolve => releases.push(() => resolve({}))),
-      activate: context => context.publish({ providerId: 'initial', capabilities: [], views: [] }),
+      activate: context => context.publish({ providerId: 'initial', capabilities: [], nodes: [] }),
     })
-    const first = host.swap({ id: 'first', capture: async () => new Promise(resolve => releases.push(() => resolve({}))), activate: context => context.publish({ providerId: 'first', capabilities: [], views: [] }) })
-    const second = host.swap({ id: 'second', activate: context => context.publish({ providerId: 'second', capabilities: [], views: [] }) })
+    const first = host.swap({ id: 'first', capture: async () => new Promise(resolve => releases.push(() => resolve({}))), activate: context => context.publish({ providerId: 'first', capabilities: [], nodes: [] }) })
+    const second = host.swap({ id: 'second', activate: context => context.publish({ providerId: 'second', capabilities: [], nodes: [] }) })
     await Promise.resolve()
     expect(releases).toHaveLength(1)
     releases.shift()?.()

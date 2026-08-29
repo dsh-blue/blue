@@ -21,6 +21,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 // Tests now measure and truncate through the same implementations the
 // renderer runs.
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '../../core/src/width.ts'
+import { topRule } from '../../core/src/chrome.ts'
 
 /**
  * Build a fake `BlueComponents` for transcript tests. `createMarkdown`
@@ -60,6 +61,7 @@ export function fakeBlueComponents(): BlueComponents {
     visibleWidth,
     wrapText: wrapTextWithAnsi,
     truncateToWidth,
+    topRule,
   }
 }
 

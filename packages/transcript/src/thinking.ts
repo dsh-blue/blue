@@ -18,7 +18,6 @@
  */
 
 import type { BlueComponent, BlueComponents, BlueSemanticColors } from '@dsh-blue/blue-core'
-import { clampRowsToWidth } from '@dsh-blue/blue-core/chrome'
 import { BRAILLE_SPINNER_FRAMES, BRAILLE_SPINNER_INTERVAL_MS } from './spinners.ts'
 import type { TranscriptThinkingItem } from './types.ts'
 
@@ -163,7 +162,7 @@ export class ThinkingComponent implements BlueComponent {
     }
     // The marker and indent can out-wide a degenerate viewport (a resize
     // drag crossing two columns); assembled rows pass the width backstop.
-    lines = clampRowsToWidth(lines, width, text => this.components.truncateToWidth(text, width))
+    lines = lines.map(text => this.components.truncateToWidth(text, width))
     this.cache = { key, lines }
     return lines
   }

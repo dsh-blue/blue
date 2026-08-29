@@ -34,6 +34,7 @@ const LONG_DETAIL = Array.from({ length: 15 }, (_, index) => `line ${index + 1}`
 
 function mount(question: AskUserQuestionItem, viewportRows = 24): {
   panel: PlanReviewPanel
+  components: FakeBlueComponents
   onComplete: ReturnType<typeof vi.fn>
   onCancel: ReturnType<typeof vi.fn>
 } {
@@ -41,16 +42,17 @@ function mount(question: AskUserQuestionItem, viewportRows = 24): {
   const onCancel = vi.fn()
   const choices = planReviewChoices(question)
   if (choices === undefined) throw new Error('test ask has no choice pair')
+  const components = new FakeBlueComponents()
   const panel = new PlanReviewPanel({
     theme: new FakeTheme(),
-    components: new FakeBlueComponents(),
+    components,
     question,
     choices,
     viewportRows: () => viewportRows,
     onComplete,
     onCancel,
   })
-  return { panel, onComplete, onCancel }
+  return { panel, components, onComplete, onCancel }
 }
 
 describe('planReviewChoices', () => {
@@ -58,6 +60,10 @@ describe('planReviewChoices', () => {
     const { approve, decline } = planReviewChoices(ask())!
     expect(approve.label).toBe('Ship it')
     expect(decline.label).toBe('Keep planning')
+
+    const reversed = planReviewChoices(ask({ options: [decline, approve] }))!
+    expect(reversed.approve.label).toBe('Ship it')
+    expect(reversed.decline.label).toBe('Keep planning')
   })
 
   it('rejects asks without the intent or with a malformed pair', () => {
@@ -85,17 +91,12 @@ describe('PlanReviewPanel rendering', () => {
     expect(frame).toContain('Plan review')
     // No question row: the frame title names the panel (round-5 ruling).
     expect(frame).not.toContain('Approve this plan and leave plan mode?')
-    // The plan box: a plain top rule (no title — the frame title already
-    // says Plan review), the markdown body at the box's own inset, the
-    // closing rule (the btw pane's box idiom).
-    expect(frame).toContain('│ # Fix the build')
-    expect(frame).toContain('╰')
-    // The numbered decision list: the approve option's own label, then
-    // Blue's Reject and Revise wording; the seeded cursor on Approve.
-    expect(frame).toContain('^▶ ^^1. Ship it^')
-    expect(frame).toContain('2. Reject')
-    expect(frame).toContain('3. Revise')
-    expect(frame).toContain('←→/1-3 choose · ↑↓ scroll · esc dismiss')
+    expect(panel.currentNode()).toMatchObject({ kind: 'surface', chrome: 'overlay' })
+    expect(frame).toContain('# Fix the build')
+    expect(frame).toContain('Ship it [1]')
+    expect(frame).toContain('Reject [2]')
+    expect(frame).toContain('Revise [3]')
+    expect(frame).toContain('1-3 choose')
   })
 
   it('windows a long plan behind a showing tail inside the box and scrolls it', () => {
@@ -103,25 +104,57 @@ describe('PlanReviewPanel rendering', () => {
     // hint, footer, and one visible upstream row reserve the other 14).
     const { panel } = mount(ask({ detail: LONG_DETAIL }))
     const first = panel.render(60).join('\n')
-    expect(first).toContain('showing 1-10 of 15')
+    expect(first).toContain('showing 1-10/15')
     expect(first).toContain('↑↓ scroll')
     expect(first).toContain('line 1')
     expect(first).not.toContain('line 14')
     // ↓/↑ step one line — the mouse wheel arrives as those arrows, so the
     // wheel scrolls the plan (the round-4 ruling).
     panel.handleInput(KEY.down)
-    expect(panel.render(60).join('\n')).toContain('showing 2-11 of 15')
+    expect(panel.render(60).join('\n')).toContain('showing 2-11/15')
     panel.handleInput(KEY.up)
-    expect(panel.render(60).join('\n')).toContain('showing 1-10 of 15')
+    expect(panel.render(60).join('\n')).toContain('showing 1-10/15')
     // PageDown/Up jump by the window size; one page clamps to the last
     // full window.
     panel.handleInput('\x1b[6~')
     const paged = panel.render(60).join('\n')
-    expect(paged).toContain('showing 6-15 of 15')
+    expect(paged).toContain('showing 6-15/15')
     expect(paged).not.toContain('line 5')
     panel.handleInput('\x1b[5~')
     panel.handleInput('\x1b[5~')
-    expect(panel.render(60).join('\n')).toContain('showing 1-10 of 15')
+    expect(panel.render(60).join('\n')).toContain('showing 1-10/15')
+  })
+
+  it('windows one long Markdown line after renderer wrapping and clamps on resize', () => {
+    const detail = `# Heading ${'wrapped '.repeat(35)}THE_END`
+    const { panel, components } = mount(ask({ detail }))
+    const first = panel.render(20).join('\n')
+    expect(first).toMatch(/showing 1-10\/\d+/u)
+    expect(first).toContain('# Heading')
+    expect(first).toContain('1-3 choose')
+
+    panel.handleInput(KEY.down)
+    const scrolled = panel.render(20).join('\n')
+    expect(scrolled).toMatch(/showing 2-11\/\d+/u)
+    expect(scrolled).toContain('1-3 choose')
+
+    for (let page = 0; page < 10; page += 1) panel.handleInput('\x1b[6~')
+    expect(panel.render(20).join('\n')).toContain('THE_END')
+
+    const wide = panel.render(120).join('\n')
+    expect(wide).not.toContain('showing')
+    expect(wide).toContain('THE_END')
+    panel.invalidate()
+    expect(components.markdowns.some(markdown => markdown.invalidations > 0)).toBe(true)
+  })
+
+  it('keeps Markdown heading, list, and fence source on the core-owned leaf', () => {
+    const { panel } = mount(ask({ detail: '# Heading\n\n- item\n\n```ts\nconst value = 1\n```' }), 40)
+    const frame = panel.render(60).join('\n')
+    expect(frame).toContain('# Heading')
+    expect(frame).toContain('- item')
+    expect(frame).toContain('```ts')
+    expect(frame).toContain('const value = 1')
   })
 
   it('keeps streaming transcript growth inside the main-screen differential viewport', async () => {
@@ -179,7 +212,7 @@ describe('PlanReviewPanel rendering', () => {
     expect(frame).toContain('line 15')
     const tiny = mount(ask({ detail: LONG_DETAIL }), 12)
     const small = tiny.panel.render(60).join('\n')
-    expect(small).toContain('showing 1-6 of 15')
+    expect(small).toContain('showing 1-6/15')
     expect(small).not.toContain('line 7')
   })
 
@@ -189,14 +222,15 @@ describe('PlanReviewPanel rendering', () => {
     panel.handleInput(KEY.right)
     for (const char of 'redo') panel.handleInput(char)
     const frame = panel.render(60).join('\n')
-    expect(frame).toContain('3. Revise  redo')
-    expect(frame).toContain('[7m [0m')
-    expect(frame).toContain('~  Type feedback · ↵ submit.~')
-    // Leaving the row drops the hint and the block but keeps the text.
+    expect(frame).toContain('Revise:')
+    expect(frame).toContain('redo')
+    expect(frame).toContain('Type feedback · Enter submit')
+    // Leaving the row drops the form but keeps the draft.
     panel.handleInput(KEY.left)
     const moved = panel.render(60).join('\n')
     expect(moved).not.toContain('Type feedback')
-    expect(moved).toContain('3. Revise  redo')
+    panel.handleInput(KEY.right)
+    expect(panel.render(60).join('\n')).toContain('redo')
   })
 
   it('defaults the title when the header is absent', () => {
@@ -217,7 +251,7 @@ describe('PlanReviewPanel rendering', () => {
     } as AskUserQuestionItem)
     const rows = panel.render(60).join('\n')
     expect(rows).toContain('Plan review')
-    expect(rows).toContain('1. Ship it')
+    expect(rows).toContain('Ship it [1]')
   })
 })
 
@@ -247,11 +281,14 @@ describe('PlanReviewPanel decisions', () => {
   it('digit 3 focuses the revision input, typed text submits as feedback', () => {
     const { panel, onComplete } = mount(ask())
     panel.handleInput('3')
-    for (const char of 'redo step 2') panel.handleInput(char)
+    panel.focused = true
+    expect(panel.focused).toBe(true)
+    panel.handleInput('\x1b[200~重做 step 2\x1b[201~')
+    expect(panel.render(60).join('\n')).toContain('重做 step 2|')
     // Backspace edits the inline input.
     panel.handleInput('\x7f')
     panel.handleInput(KEY.enter)
-    expect(onComplete).toHaveBeenCalledWith({ id: 'plan-review', selected: [], custom: 'redo step ' })
+    expect(onComplete).toHaveBeenCalledWith({ id: 'plan-review', selected: [], custom: '重做 step ' })
   })
 
   it('an empty revision submission declines plainly', () => {
@@ -296,6 +333,10 @@ describe('PlanReviewPanel decisions', () => {
   it('forwards invalidation to the markdown and the editor', () => {
     const { panel } = mount(ask())
     panel.handleInput('x')
+    const events = panel as unknown as { onEvent(event: { kind: string, controlId: string, value?: unknown }): void }
+    events.onEvent({ kind: 'activate', controlId: 'revision' })
+    events.onEvent({ kind: 'value-change', controlId: 'other', value: 'ignored' })
+    events.onEvent({ kind: 'value-change', controlId: 'revision', value: 3 })
     panel.invalidate()
     expect(panel.render(60).length).toBeGreaterThan(0)
   })

@@ -15,6 +15,7 @@ export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 /** Publish order is dependency order; the launcher is always last. */
 export const RELEASE_PACKAGE_DIRS = [
   'packages/api',
+  'packages/ui',
   'packages/frontend',
   'packages/harness-adapter',
   'packages/conversation',
@@ -34,11 +35,23 @@ export const VALIDATION_PACKAGE_DIRS = [
   'packages/lark',
 ]
 
+/** Publish-shaped ecosystem examples built and validated outside the release set. */
+export const ECOSYSTEM_PACKAGE_DIRS = [
+  'examples/blue-user-kit',
+  'examples/header',
+  'examples/right-inspector',
+  'examples/bottom-log',
+  'examples/overlay',
+  'examples/status-provider',
+  'examples/editor-provider',
+  'examples/blue-ecosystem',
+]
+
 /** Backward-compatible name used by release/check-pack callers. */
 export const PACKAGE_DIRS = RELEASE_PACKAGE_DIRS
 
 /** All packages with buildable runtime entries, including validation plugins. */
-export const BUILD_PACKAGE_DIRS = [...RELEASE_PACKAGE_DIRS, ...VALIDATION_PACKAGE_DIRS]
+export const BUILD_PACKAGE_DIRS = [...RELEASE_PACKAGE_DIRS, ...VALIDATION_PACKAGE_DIRS, ...ECOSYSTEM_PACKAGE_DIRS]
 
 /** Read one package manifest. */
 export function readManifest(relativeDir) {

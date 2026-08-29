@@ -1,291 +1,154 @@
 /**
- * `FormPanel` — the multi-field dialog form (the kimi
- * `CustomRegistryImportDialogComponent` port over Blue's input primitive):
- * labeled two-row inputs, Tab/↑/↓ moving between fields, Enter
- * advancing (submitting from the last field), and an in-panel error line
- * below the failing field without closing the panel. The embedded editors
- * own the text but never render — every field draws a description row and a
- * plain prompt row (the S23 dogfood ruling: the masked API-key row's look,
- * minus the masking), with no nested editor frame. Form keys are intercepted
- * ahead of the editors, so Enter never
- * inserts a newline and arrows never move the caret across lines.
+ * Canonical multi-field form controller for editor-slot overlays.
+ * Core owns field rendering, masking, focus, and text editing.
  *
  * @module @dsh-blue/blue-interaction/form-panel
  */
 
-import type { BlueComponents, BlueEditor, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
-import { clampRowsToWidth } from '@dsh-blue/blue-core/chrome'
-import {
-  ACTION_CANCEL,
-  ACTION_MOVE_DOWN,
-  ACTION_MOVE_UP,
-  ACTION_SUBMIT,
-} from './keys.ts'
+import type { BlueJson, BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
+import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
+import { interpolateLocaleMessage, type BlueTranslate } from '@dsh-blue/blue-frontend'
+import { CanonicalPanelAdapter } from './canonical-panel.ts'
+import { ACTION_CANCEL, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_SUBMIT } from './keys.ts'
 
-/** One input field of a {@link FormPanel}. */
+/** One canonical input field and its interaction validation. */
 export interface FormField {
-  /** The field's key in the submitted values record. */
   readonly id: string
-  /** The rendered label row. */
   readonly label: string
-  /** Render bullets instead of the editor rows (API keys). */
   readonly mask?: boolean
-  /** Reject submission when the trimmed value is empty. */
   readonly required?: boolean
-  /** Pre-fill the editor. */
   readonly initial?: string
-  /**
-   * Field-level validation: the error line's text when the value is
-   * unacceptable, or `undefined` to accept.
-   */
   readonly validate?: (value: string) => string | undefined
-  /** Extra hint under the label (e.g. the protocol list). */
   readonly hint?: string
 }
 
-/** Construction options for {@link FormPanel}. */
+/** Construction options for {@link CanonicalFormController}. */
 export interface FormPanelOptions {
-  /** Keybinding registry used to resolve the form keys. */
   readonly keymap: BlueKeymap
-  /** Theme supplying the label, error, and rule colors. */
   readonly theme: BlueTheme
-  /** Component factory supplying the embedded editors. */
   readonly components: BlueComponents
-  /** Dialog title. */
   readonly title: string
-  /** Muted line under the title; the error line replaces it when set. */
   readonly subtitle?: string
-  /** The fields, in order; must not be empty. */
   readonly fields: readonly FormField[]
-  /**
-   * Called with every field's current value when the last field's Enter (or
-   * an earlier field's Enter on a single-field form) passes validation.
-   * @param values - the field id → trimmed text record.
-   */
   readonly onSubmit: (values: Record<string, string>) => void
-  /** Called when the cancel key is pressed. */
   readonly onCancel: () => void
-  /** Footer wording after the Esc key; defaults to `cancel`. */
   readonly cancelLabel?: string
-  /**
-   * Called when Ctrl+D is pressed (the delete affordance — the provider
-   * edit form). Absent fields never see the key.
-   */
   readonly onDelete?: () => void
+  /** Dynamic translator for package-owned form chrome. */
+  readonly t?: BlueTranslate
 }
 
-/** The trailing cursor block on the active field's prompt row. */
-const CURSOR_BLOCK = '\u001b[7m \u001b[0m'
+/** Render bullets for compatibility with callers that inspect masked text. */
+export function maskRow(text: string): string { return text.length === 0 ? '' : '•'.repeat(text.length) }
 
-/**
- * Render one input row as bullets, one per character — the masked-field
- * display derived from the tracked text.
- * @param text - the field's current text.
- * @returns the bullet row.
- */
-export function maskRow(text: string): string {
-  return text.length === 0 ? '' : '•'.repeat(text.length)
-}
-
-/**
- * The multi-field form panel. Tab/Shift-Tab/Down move forward, Up moves
- * back, Enter advances (submitting from the last field), Escape cancels;
- * everything else edits the focused field.
- */
-export class FormPanel implements BlueFocusable {
-  /** Whether the panel currently holds focus. Managed by the screen. */
-  focused = false
-
+/** Canonical form controller preserving advance, validation, and delete keys. */
+export class CanonicalFormController implements BlueFocusable {
+  private readonly adapter: CanonicalPanelAdapter
   private active = 0
-  private readonly editors: BlueEditor[]
-  private readonly values: Record<string, string> = {}
+  private readonly values: Record<string, string>
   private error: string | undefined
   private errorField = -1
 
-  /**
-   * @param options - see {@link FormPanelOptions}.
-   */
   constructor(private readonly options: FormPanelOptions) {
-    this.editors = options.fields.map(field => {
-      const editor = options.components.createEditor()
-      // onChange first: the fake (and the wrapped editor) fire it
-      // synchronously from setText, so the prefill lands in `values`.
-      editor.onChange = text => {
-        this.values[field.id] = text
-        // Any edit clears the error line (kimi's subtitle-swap behavior).
-        this.error = undefined
-        this.errorField = -1
-      }
-      if (field.initial !== undefined && field.initial.length > 0) editor.setText(field.initial)
-      return editor
+    this.values = Object.fromEntries(options.fields.map(field => [field.id, field.initial ?? '']))
+    this.adapter = new CanonicalPanelAdapter({
+      components: options.components,
+      theme: options.theme,
+      node: () => this.currentNode(),
+      onEvent: event => this.onEvent(event),
+      onTextSubmit: () => {
+        if (this.active === this.options.fields.length - 1) this.submit()
+        else this.move(1)
+      },
+      onUnhandledEscape: options.onCancel,
+      focusIndex: () => this.active,
     })
   }
 
-  /**
-   * Show an error line in the panel without closing it — the flow-level
-   * failures (a rejected settings write, a shadowed credential) land here.
-   * @param text - the error line; `undefined` restores the subtitle.
-   */
+  get focused(): boolean { return this.adapter.focused }
+  set focused(value: boolean) { this.adapter.focused = value }
+
   setError(text: string | undefined): void {
     this.error = text
     this.errorField = text === undefined ? -1 : this.active
+    this.adapter.invalidate()
   }
 
-  /**
-   * Focus one field (the validation failure's jump target).
-   * @param id - the field id.
-   */
   focusField(id: string): void {
     const index = this.options.fields.findIndex(field => field.id === id)
-    if (index >= 0) this.active = index
+    if (index >= 0) { this.active = index; this.adapter.invalidate() }
   }
 
-  /**
-   * Dispatch one input sequence: form keys are intercepted ahead of the
-   * focused editor, everything else edits it.
-   * @param data - the input sequence as read from the terminal.
-   */
   handleInput(data: string): void {
     const { keymap } = this.options
-    if (keymap.matches(data, ACTION_MOVE_DOWN) || data === '\t') {
-      this.active = (this.active + 1) % this.editors.length
-      return
-    }
-    if (keymap.matches(data, ACTION_MOVE_UP) || data === '\x1b[Z') {
-      this.active = (this.active - 1 + this.editors.length) % this.editors.length
-      return
-    }
+    if (keymap.matches(data, ACTION_MOVE_DOWN) || data === '\t') { this.move(1); return }
+    if (keymap.matches(data, ACTION_MOVE_UP) || data === '\x1b[Z') { this.move(-1); return }
     if (keymap.matches(data, ACTION_SUBMIT)) {
-      if (this.active === this.editors.length - 1) this.submit()
-      else this.active += 1
+      this.adapter.handleInput(data)
       return
     }
-    if (keymap.matches(data, ACTION_CANCEL)) {
-      this.options.onCancel()
+    if (keymap.matches(data, ACTION_CANCEL)) { this.options.onCancel(); return }
+    if (data === '\x04' && this.options.onDelete !== undefined) { this.options.onDelete(); return }
+    this.adapter.handleInput(data)
+  }
+
+  invalidate(): void { this.adapter.invalidate() }
+  render(width: number): string[] { return this.adapter.render(width) }
+
+  /** Current canonical form overlay. */
+  currentNode(): BlueUiNode {
+    const t: BlueTranslate = this.options.t ?? interpolateLocaleMessage
+    const cancel = t(this.options.cancelLabel ?? 'cancel')
+    const deleteHint = this.options.onDelete === undefined ? '' : t(' · Ctrl+D delete')
+    return {
+      kind: 'surface', chrome: 'overlay', title: t(this.options.title),
+      ...(this.error === undefined && this.options.subtitle !== undefined ? { subtitle: t(this.options.subtitle) } : {}),
+      child: {
+        kind: 'form', id: 'form-panel',
+        fields: this.options.fields.map((field, index) => ({
+          kind: field.mask === true ? 'secret' : 'input', id: field.id,
+          label: field.hint === undefined ? t(field.label) : `${t(field.label)} · ${t(field.hint)}`,
+          value: this.values[field.id]!,
+          ...(this.error !== undefined && this.errorField === index ? { error: this.error } : {}),
+        })),
+      },
+      footer: { kind: 'text', content: `${t('Tab / ↑↓ fields · Enter submit · Esc {cancel}', { cancel })}${deleteHint}`, tone: 'muted' },
+    }
+  }
+
+  private move(delta: 1 | -1): void {
+    const count = this.options.fields.length
+    if (count === 0) return
+    this.active = (this.active + count + delta) % count
+    this.adapter.handleInput(delta === 1 ? '\t' : '\x1b[Z')
+  }
+
+  private onEvent(event: BlueUiEvent): void {
+    if (event.kind === 'value-change' && typeof event.value === 'string') {
+      this.values[event.controlId] = event.value
+      if (this.error !== undefined) { this.error = undefined; this.errorField = -1; this.adapter.invalidate() }
       return
     }
-    if (data === '\x04' && this.options.onDelete !== undefined) {
-      this.options.onDelete()
-      return
-    }
-    this.editors[this.active]?.handleInput?.(data)
+    if (event.kind === 'submit' && event.controlId === 'form-panel') this.options.onSubmit(event.values as Record<string, string>)
   }
 
-  /** Drop the editors' cached render state. */
-  invalidate(): void {
-    for (const editor of this.editors) editor.invalidate()
-  }
-
-  /**
-   * Render the two-row form geometry: a label/hint row followed by a plain
-   * arrow prompt row for every field, validation text beneath the failing
-   * field, and a short key footer inside the box.
-   * @param width - current viewport width in columns.
-   * @returns one string per rendered row.
-   */
-  render(width: number): string[] {
-    const { fields, theme, components } = this.options
-    const colors = theme.colors
-    const boldOpen = '\x1b[1m'
-    const boldClose = '\x1b[22m'
-    const inner = Math.max(20, width)
-    const body: string[] = [
-      '',
-      `${boldOpen}${colors.textStrong(`  ${this.options.title}`)}${boldClose}`,
-      '',
-    ]
-    if (this.error === undefined) body.push(colors.muted(`  ${this.subtitleOrBlank()}`))
-    const contentWidth = Math.max(1, inner - 2)
-    const labelWidth = Math.min(24, Math.max(8, ...fields.map(field => components.visibleWidth(field.label))))
-    fields.forEach((field, index) => {
-      const active = index === this.active
-      /* v8 ignore next -- fields and editors stay index-aligned */
-      if (this.editors[index] === undefined) return
-      const value = (this.values[field.id] ?? '').replace(/[\r\n]+/g, ' ')
-      const shown = field.mask === true ? maskRow(value) : value
-      const valueWidth = Math.max(1, contentWidth - 4)
-      const cursorWidth = active && this.focused ? 1 : 0
-      const valueText = components.truncateToWidth(shown, Math.max(1, valueWidth - cursorWidth))
-      const cursor = active && this.focused ? CURSOR_BLOCK : ''
-      const label = components.truncateToWidth(field.label, labelWidth)
-      const paddedLabel = label + ' '.repeat(Math.max(0, labelWidth - components.visibleWidth(label)))
-      const paintedLabel = active
-        ? `${boldOpen}${colors.accent(paddedLabel)}${boldClose}`
-        : colors.muted(paddedLabel)
-      let description = `  ${paintedLabel}`
-      if (field.hint !== undefined) {
-        const hintWidth = contentWidth - components.visibleWidth(description) - 3
-        if (hintWidth > 4) description += colors.textMuted(components.truncateToWidth(` · ${field.hint}`, hintWidth))
-      }
-      body.push(components.truncateToWidth(description, contentWidth))
-      const marker = active ? colors.primary('>') : colors.textMuted(' ')
-      const valuePaint = active ? colors.text(valueText) : colors.muted(valueText)
-      body.push(components.truncateToWidth(`  ${marker} ${valuePaint}${cursor}`, contentWidth))
-      if (this.error !== undefined && this.errorField === index) {
-        body.push(colors.error(`  ${this.error}`))
-      }
-    })
-    const last = fields.length - 1
-    const deletePart = this.options.onDelete !== undefined
-      ? `  ·  ${colors.textStrong('Ctrl+D')} delete`
-      : ''
-    const cancelLabel = this.options.cancelLabel ?? 'cancel'
-    const footer = this.editors.length === 1
-      ? `${colors.textStrong('Enter')} to submit  ·  ${colors.textStrong('Esc')} to ${cancelLabel}${deletePart}`
-      : this.active === last
-        ? `${colors.textStrong('Tab')} / ↑↓ fields  ·  ${colors.textStrong('Enter')} to submit  ·  ${colors.textStrong('Esc')} to ${cancelLabel}${deletePart}`
-        : `${colors.textStrong('Tab')} / ↑↓ fields  ·  ${colors.textStrong('Enter')} for next field  ·  ${colors.textStrong('Esc')} to ${cancelLabel}${deletePart}`
-    body.push('')
-    body.push(components.truncateToWidth(`  ${footer}`, contentWidth))
-    body.push('')
-    // Explicit borders: every content row is wrapped in `│  …  │` with the
-    // content clipped to the inner width — SGR-led rows keep their left
-    // border (the space-guessing withSideBorders overlay loses it).
-    // │ + content(rows carry their own 2-space indent) + │ = inner.
-    const bar = colors.border('│')
-    const wrap = (row: string): string => {
-      const cut = components.truncateToWidth(row, contentWidth)
-      const pad = ' '.repeat(Math.max(0, contentWidth - components.visibleWidth(cut)))
-      return `${bar}${cut}${pad}${bar}`
-    }
-    // `inner` floors at the form's 20-column minimum; only a degenerate
-    // viewport under that floor (a resize drag crossing it) gets its rows
-    // cut to the offered width — wider viewports emit the frame untouched.
-    const frame = [
-      colors.border(`╭${'─'.repeat(inner - 2)}╮`),
-      ...body.map(wrap),
-      colors.border(`╰${'─'.repeat(inner - 2)}╯`),
-    ]
-    if (width >= 20) return frame
-    return clampRowsToWidth(frame, width, (t, target) => components.truncateToWidth(t, target))
-  }
-  /** The subtitle, or a blank line when the form carries none. */
-  private subtitleOrBlank(): string {
-    return this.options.subtitle ?? ' '
-  }
-
-  /** Validate every field, then submit or surface the first failure. */
   private submit(): void {
-    for (const field of this.options.fields) {
-      const value = (this.values[field.id] ?? '').trim()
-      if (field.required === true && value.length === 0) {
-        this.error = `${field.label} cannot be empty`
-        this.errorField = this.options.fields.indexOf(field)
-        this.focusField(field.id)
-        return
-      }
-      const verdict = field.validate?.(value)
+    const t: BlueTranslate = this.options.t ?? interpolateLocaleMessage
+    for (const [index, field] of this.options.fields.entries()) {
+      const value = this.values[field.id]!.trim()
+      const verdict = field.required === true && value.length === 0
+        ? t('{label} cannot be empty', { label: t(field.label) })
+        : field.validate?.(value)
       if (verdict !== undefined) {
+        this.active = index
         this.error = verdict
-        this.errorField = this.options.fields.indexOf(field)
-        this.focusField(field.id)
+        this.errorField = index
+        this.adapter.invalidate()
         return
       }
     }
     const values: Record<string, string> = {}
-    for (const field of this.options.fields) {
-      values[field.id] = (this.values[field.id] ?? '').trim()
-    }
-    this.options.onSubmit(values)
+    for (const field of this.options.fields) values[field.id] = this.values[field.id]!.trim()
+    this.onEvent({ kind: 'submit', controlId: 'form-panel', values: values as BlueJson })
   }
 }

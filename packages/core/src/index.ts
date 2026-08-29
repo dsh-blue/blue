@@ -18,6 +18,7 @@ import { BlueKeymapService } from './keymap.ts'
 import { BlueScreenService } from './screen.ts'
 import { BlueTerminalInfoService } from './terminal-info.ts'
 import { startBlueTerminal } from './terminal.ts'
+import { mountPluginSurfaceBridge } from './plugin-surface-bridge.ts'
 import { NotificationModelService, ThemeModelService } from '@dsh-blue/blue-frontend'
 
 export { BlueComponentsService, type BlueComponentsDeps } from './components.ts'
@@ -26,12 +27,9 @@ export { GutterComponent } from './gutter.ts'
 export { BlueKeymapError, BlueKeymapService } from './keymap.ts'
 export { BlueScreenService } from './screen.ts'
 export {
-  BluePluginViewComponent,
   PLUGIN_VIEW_MAX_CHARS,
   PLUGIN_VIEW_MAX_DEPTH,
-  PLUGIN_VIEW_MAX_ROWS,
   paintPluginTone,
-  renderPluginView,
   sanitizePluginText,
   summarizePluginView,
 } from './plugin-view.ts'
@@ -43,9 +41,39 @@ export {
   type BlueProbeProcess,
 } from './terminal-info.ts'
 export { createTerminalRelease } from './terminal.ts'
-export { FrontendModelComponent, renderFrontendModel, renderFrontendView, type FrontendRenderOptions } from './frontend-renderer.ts'
 export { alignDiffLines, diffChangeCounts, paintDiffRows, DIFF_ALIGN_MAX_ROWS, CTX_EDGE_ROWS, type DiffOp, type DiffPaintColors } from './diff-align.ts'
 export { visibleWidth } from './width.ts'
+export {
+  compileBlueEditorShellNode,
+  compileBlueStatusNode,
+  compileBlueUiNode,
+  type BlueCompiledEditorShell,
+  type BlueEditorShellComponent,
+  type BlueCompiledStatus,
+  type BlueEditorShellRenderOptions,
+  type BlueEditorShellRenderResult,
+  type BlueCompiledUi,
+  type BlueEditorShellCompileResult,
+  type BlueEditorShellCompilerOptions,
+  type BlueStatusCompileFailure,
+  type BlueStatusCompileResult,
+  type BlueStatusCompilerOptions,
+  type BlueStatusComponent,
+  type BlueStatusRenderResult,
+  type BlueUiCompileFailure,
+  type BlueUiCompileResult,
+  type BlueUiCompilerOptions,
+  type BlueUiViewport,
+} from './ui-compiler.ts'
+export {
+  BLUE_UI_MAX_COLLECTION,
+  BLUE_UI_MAX_DEPTH,
+  BLUE_UI_MAX_NODES,
+  BLUE_UI_MAX_TEXT,
+  validateBlueEditorShellNode,
+  validateBlueStatusNode,
+  validateBlueUiNode,
+} from './ui-validator.ts'
 export {
   TITLE_MAX_CHARS,
   buildClipboardOsc52,
@@ -64,6 +92,7 @@ export type {
   BlueDockOptions,
   BlueEditor,
   BlueEditorOptions,
+  BlueEditorSubmitAttempt,
   BlueFocusable,
   BlueImage,
   BlueImageOptions,
@@ -87,6 +116,7 @@ export type {
   BlueSettingsListOptions,
   BlueTerminalInfo,
   BlueTheme,
+  BlueTopRuleOptions,
 } from './types.ts'
 
 /** Stable Cordis plugin name. */
@@ -126,6 +156,13 @@ export async function apply(ctx: Context): Promise<void> {
     inject: ['blueTheme'],
     apply(subCtx: Context) {
       subCtx.plugin(BlueComponentsService, { theme: subCtx.blueTheme, tui: runtime.tui })
+    },
+  })
+  ctx.plugin({
+    name: 'blue-plugin-surface-bridge',
+    inject: ['bluePluginControl', 'blueComponents', 'blueTheme', 'blueKeymap'],
+    apply(subCtx: Context) {
+      mountPluginSurfaceBridge(subCtx as Parameters<typeof mountPluginSurfaceBridge>[0], runtime)
     },
   })
   ctx.effect(() => () => runtime.stop())

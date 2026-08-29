@@ -6,7 +6,7 @@
 
 ```text
 Domain data       TodoItem / ToolRun / ModelInfo / ContextUsage
-Interaction model Command / Panel / Status / Dock / Notification
+Interaction model Command / BlueUiNode / BlueStatusNode / Notification
 Renderer model    pi-tui component / React element / DOM / ANSI rows
 ```
 
@@ -14,13 +14,14 @@ Renderer model    pi-tui component / React element / DOM / ANSI rows
 
 ## 首批模型
 
-- `TextView`、`RichTextView`、`FieldsView`、`SectionsView`、`ListView`、`CodeView`、`DiffView`；
 - `CommandModel`：名称、描述、参数 schema、可用状态、执行 action；
-- `PanelModel`：select、form、info、loading、error、submit/cancel action；
-- `StatusModel`：纯文本/字段、优先级、band、可见条件；
-- `DockModel`：placement、优先级、建议行数、折叠状态和 view；
+- `BlueUiNode` / `BluePaneContribution`：唯一 canonical document 词汇表，承载 text/rich-text/fields/sections/list/code/diff、布局、表单与结构化 action；公开 pane 复用同一 tree 与 placement contract，Blue 内置 pane 仅有 package-private bottom composition；
+- `BlueStatusNode`：公共 canonical 非交互 status tree；固定 footer 的 priority、band、row 与 overflow metadata 由 transcript 私有 entry 持有；
 - `NotificationModel`：severity、plain message、duration、dedupe key；
-- `ProviderModel`：provider id、capabilities、可迁移的 renderer-neutral state。
+- `ProviderModel`：provider id、capabilities 与 canonical `nodes`；provider host 只迁移 renderer-neutral state，不持有另一套 view schema；
+- `ToolPresentationModel`：可选 `call`/`result` 都是 canonical `BlueUiNode`；`TranscriptModel` 的 generic entry 也直接使用该 node。
+
+旧 frontend `TextView`/`RichTextView`/`FieldsView`/`SectionsView`/`ListView`/`CodeView`/`DiffView` union、`PanelModel` 同义层和 core `frontend-renderer` 已物理删除。公共 `BlueView` 仍是 `BlueUiNode` 的安全内容叶子子集，不是该旧 frontend union。
 
 TUI renderer 负责布局、输入、焦点、宽度、主题和 fallback。模型提交 action 后由 domain/action runtime 执行，结果再通过 projection 或 notification 回流。
 
@@ -29,4 +30,3 @@ TUI renderer 负责布局、输入、焦点、宽度、主题和 fallback。模�
 provider host 持续存活；替换流程为 `capture -> abort -> dispose -> activate -> restore`。provider 不得拒绝卸载；状态迁移 best-effort；激活失败回退 plain provider，只影响该 surface，不影响 Agent loop。
 
 Editor、theme、transcript 和主 panel provider 使用同一生命周期规则，但各自拥有窄 contract，不合并成万能 provider。
-

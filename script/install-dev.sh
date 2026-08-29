@@ -43,6 +43,7 @@ echo "==> Link-installing Blue packages into profile '$PROFILE'"
 "$DSH_BIN" plugin --profile "$PROFILE" add \
   "link:$REPO_ROOT/packages/bundle/blue" \
   "link:$REPO_ROOT/packages/api" \
+  "link:$REPO_ROOT/packages/ui" \
   "link:$REPO_ROOT/packages/frontend" \
   "link:$REPO_ROOT/packages/harness-adapter" \
   "link:$REPO_ROOT/packages/conversation" \

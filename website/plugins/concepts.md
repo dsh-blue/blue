@@ -1,10 +1,10 @@
 # 核心概念
 
-本篇解释 Blue 插件模型的四个支柱：Cordis 树与 Fiber 生命周期、capability 裁剪、`BlueView` 词汇表、`BlueResult` 错误模型，以及 domain/adapter 拆分。读完你会理解每个能力页里契约表背后的"为什么"。
+本篇解释 Blue 插件模型的四个支柱：Cordis 树与 Fiber 生命周期、capability 裁剪、canonical node 词汇表、`BlueResult` 错误模型，以及 domain/adapter 拆分。读完你会理解每个能力页里契约表背后的"为什么"。
 
 ## Cordis 树与 Fiber 生命周期
 
-dsh 进程里只有一棵 Cordis 插件树。Harness domain 插件（agents、sessions、tools、approval）、Blue 的 28 行、你的插件，都是这棵树上的兄弟行：
+dsh 进程里只有一棵 Cordis 插件树。Harness domain 插件（agents、sessions、tools、approval）、Blue 的 33 条自有行（含 private runtime group）、你的插件，都是这棵树上的组合行：
 
 ```text
 dsh process 进程（one Cordis tree 一棵 Cordis 树）
@@ -27,7 +27,7 @@ manifest 是插件的静态兼容性声明：
 ```ts
 interface BluePluginManifest {
   id: string                    // ^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$
-  api: string                   // semver 范围；宿主当前是 1.x 线，写 '^1.0.0'
+  api: string                   // semver 范围；当前可执行契约写 '^1.0.0-beta.1'
   capabilities: BlueCapability[] // 不可重复
 }
 ```
@@ -35,14 +35,18 @@ interface BluePluginManifest {
 `open()` 的行为分三层：
 
 1. **静态校验**（`validateBlueManifest`，不执行插件代码）：id 格式、api 范围格式、capability 拼写与去重。失败返回 `BLUE_API_INCOMPATIBLE`（或 manifest 根本不是对象时的 `BLUE_INVALID_CONTRIBUTION`）；
-2. **能力开放检查**：当前阶段只开放 `commands`、`status`、`dock`、`notifications`。申请 `tools` / `editor` / `panels` / `session.read` / `session.act` 中任何一个都会被整体拒绝（`BLUE_CAPABILITY_DENIED`）——不是降级，是拒绝；
+2. **能力生命期检查**：host 持久缓冲 `commands`、`status`、`panes`、`overlays` 以及 Experimental/reference 的 `editor.extensions`、`status.provider`、`editor.provider` inert registration，因此 sibling row 可在 frontend owner 启动或重载时注册。`notifications.publish` 与 `session.read` 依赖 active owner；owner 未激活时 `open()` 返回 `BLUE_CAPABILITY_ABSENT`；
 3. **按能力裁剪返回**：`BluePluginApi` 上只有声明过的 capability 字段有值，其余是 `undefined`。所以访问时总是 `api.commands?.register(...)` 这样的可选链形态。
 
 裁剪是双向契约：你只拿到你声明的，宿主也只暴露你声明的。插件升级时要新能力，就在 manifest 里加一行——宿主版本不够会在 `open()` 阶段明确失败，而不是运行时才出错。
 
-## BlueView 词汇表
+缓冲只保存 inert contribution，不代表插件获得了 renderer 或调度权。active frontend-tree owner 仍负责 provider selection、render、gesture、LKG/breaker 和 fallback。owner gap/reload 后会重放 host snapshot；consumer Fiber 卸载会立即删除它的 registration。
 
-所有 view 类贡献（status、dock、notification）共用同一套 renderer-neutral 词汇：
+## Canonical node 词汇表
+
+Pane、overlay 与 provider 使用 `BlueUiNode`；status 使用它的非交互
+`BlueStatusNode` 子集；notification 继续使用轻量 `BlueView` 子集。三者共享同一套
+renderer-neutral 内容 leaf：
 
 | kind | 形态 | 字段 |
 | --- | --- | --- |
@@ -51,6 +55,10 @@ interface BluePluginManifest {
 | `code` | 代码块 | `code`，可选 `language` |
 | `diff` | 前后对比 | `before` / `after` |
 | `sections` | 分节组合 | `sections: BlueSection[]`（`title`、`collapsed` 可选，`body` 递归为 BlueView） |
+
+完整 `BlueUiNode` 还包括 rich-text、stack、surface、scroll、tabs、list、form、
+actions、loader、empty、progress、spacer 与 divider。用公开 builder 构造这些节点
+见[公共 UI Kit](/plugins/ui-kit)。
 
 样式只有两个维度：
 
@@ -76,15 +84,14 @@ type BlueResult<Value = void> =
 | `BLUE_DUPLICATE_ID` | `register()`：贡献 id 已被注册（跨所有插件判定） |
 | `BLUE_INVALID_CONTRIBUTION` | `register()` / `publish()`：贡献格式不合法（id 字符、缺函数字段等） |
 | `BLUE_ACTION_REJECTED` | `register()`：id 占用 Blue 保留命名空间（`blue.` / `blue:` / `blue-` / `@dsh-blue/` 前缀） |
-| `BLUE_LIMIT_EXCEEDED` | `register()`：dock 的 `preferredRows` / `minRows` 超出 0–20 |
-| `BLUE_CAPABILITY_ABSENT` | 可选 Harness 能力探测的降级信号——按降级处理，不是插件失败 |
-| `BLUE_ABORTED` / `BLUE_SESSION_UNAVAILABLE` | 动作被中止 / 会话不可用（后续阶段的 session 能力使用） |
+| `BLUE_LIMIT_EXCEEDED` | `register()` / `open()`：贡献超过节点、pane、overlay 或尺寸配额 |
+| `BLUE_CAPABILITY_ABSENT` | notification/session read 的 active owner 缺位，或当前 host/profile 未提供该 capability；按版本/profile 不匹配或可选降级处理 |
 
 对称地，你的 `execute()` 返回 `{ ok: false, code, message }` 时，`message` 会作为错误文本显示给用户；抛出的异常会被桥接层兜底为 `plugin command failed: ...`，但那是兜底，不是契约——主动返回结构化错误。
 
 ## Domain 与 adapter 的拆分
 
-`session.read` 尚未开放，所以插件目前**不能**通过 Blue 读会话内容。需要 Harness 侧数据时，走 Cordis 服务注入——你的插件与 Harness domain 插件同处一棵树，可以 `inject` Harness 的官方服务。推荐按 renderer 拆成两个包：
+`session.read` 只提供冻结、revisioned 的当前会话摘要。Generic `session.act` 已移除；写操作必须使用拥有该语义的公开 Harness service、command 或 feature action。详见[会话只读数据](/plugins/session)。需要完整 Harness domain 数据时也应走官方 Cordis 服务，而不是读取 Blue owner-only backing service。推荐按 renderer 拆成两个包：
 
 ```text
 @scope/feature        Domain 包：headless/Web/TUI 共用，不 inject 任何 Blue 服务
@@ -107,5 +114,5 @@ Blue 自己的 validation-only 包（`blue-context`、`blue-remote`、`blue-open
 
 ## 下一步
 
-- 四个能力的契约表与完整示例：[命令](/plugins/commands) · [状态栏](/plugins/status) · [Dock 面板](/plugins/dock) · [通知](/plugins/notifications)；
+- 当前 Beta 能力的契约表与完整示例：[命令](/plugins/commands) · [状态栏](/plugins/status) · [Pane](/plugins/dock) · [通知](/plugins/notifications) · [会话只读数据](/plugins/session)；编辑器扩展、编辑器 Provider 与独占 status provider 仅为 Experimental/reference surface；
 - Blue 内部 projection/action 边界的完整清单见 [Seam 参考](/plugins/seams)。

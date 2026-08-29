@@ -15,7 +15,7 @@ export const inject = ['bluePluginHost']
 export function apply(ctx: Context): void {
   const opened = ctx.bluePluginHost.open(ctx, {
     id: 'my-plugin.clock',
-    api: '^1.0.0',
+    api: '^1.0.0-beta.1',
     capabilities: ['status'],
   })
   if (!opened.ok) return // 结构性失败：放弃挂载，不向宿主抛异常
@@ -29,7 +29,7 @@ export function apply(ctx: Context): void {
 把它插进 profile 的 `cordis.patch.yml`，状态栏就多了一行时钟。从零跑通这个插件见[快速开始](/plugins/quickstart)。
 
 ::: warning 预览阶段提醒
-缝的签名计划在 Phase 3 冻结；当前接入的插件随版本升级可能需要适配。本站会随每次发布同步更新。
+当前可执行协议是 `1.0.0-beta.1`，不是 Stable v1。本站本节是 Beta 参考；正式 v1 开发手册、schema/catalog 与 capability Stable 晋升将在后续 roadmap PR 中交付。
 :::
 
 ## 对接模型一图
@@ -43,37 +43,44 @@ dsh process 进程（one Cordis tree 一棵 Cordis 树）
 └── your plugin row 你的插件行 — inserted via 经 cordis.patch.yml, inject bluePluginHost
 ```
 
-对接动作只有一个：**声明 manifest → `open()` 拿到按能力裁剪的 API → 注册贡献**。贡献是数据（`BlueView`）和结构化 action，不是 UI 组件。每次注册都绑定调用方 Fiber，插件卸载时贡献自动回滚。
+对接动作只有一个：**声明 manifest → `open()` 拿到按能力裁剪的 API → 注册贡献**。贡献是 renderer-neutral 的 `BlueUiNode`/`BlueView` 和结构化 action，不是 renderer 组件。每次注册都绑定调用方 Fiber，插件卸载时贡献自动回滚。
 
 ## 当前开放的能力
 
 | 能力 | 贡献内容 | 效果 |
 | --- | --- | --- |
 | [`commands`](/plugins/commands) | slash 命令 + 异步 handler | 出现在斜杠补全与 `/help` |
-| [`status`](/plugins/status) | 返回 `BlueView` 的 render 函数 | 底部 footer 状态条目 |
-| [`dock`](/plugins/dock) | 静态或函数式 `BlueView` | 编辑器上方的底部面板 |
-| [`notifications`](/plugins/notifications) | 发布/订阅 `BlueNotification` | 编辑器通知条 |
+| [`status`](/plugins/status) | 返回 `BlueStatusNode` 的 render 函数 | 底部 footer 状态条目 |
+| [`status.provider`](/plugins/status#独占-status-provider) (Experimental) | 接收 readonly status snapshot 的 render 函数 | reference runtime：替换整个 footer 的候选 provider |
+| [`editor.extensions`](/plugins/editor-extensions) (Experimental) | passive shell、补全、action、submit transform | reference runtime：增强 Blue 自有编辑器而不读取其状态 |
+| [`editor.provider`](/plugins/editor-providers) (Experimental) | 接收 readonly editor snapshot 的 shell render 函数 | reference runtime：用户选择的独占 editor shell 候选 |
+| [`panes`](/plugins/dock) | 布局位置、canonical node 与结构化 event | header/left/right/bottom 插件面 |
+| [`overlays`](/plugins/dock#overlay-契约) | canonical overlay request 与结构化 event | 受 Blue focus/lifecycle 托管的浮层 |
+| [`notifications.publish`](/plugins/notifications) | 只发布 `BlueNotification` | 编辑器通知条；没有全局 observe |
+| [`session.read`](/plugins/session) | revisioned、深度冻结的当前会话 snapshot | `current()` 与 effect-bound `subscribe()` |
 
-manifest schema 还声明了 `tools`、`editor`、`panels`、`session.read`、`session.act` 五个能力，但当前阶段申请其中任何一个都会被 `open()` 拒绝（`BLUE_CAPABILITY_DENIED`）——它们预留给后续阶段，签名未定。
+generic `session.act` 已移除；写操作使用所属 Harness service 或 feature-owned action。`session.read` owner 缺失时返回 unavailable/null，不会回退到 raw app service。旧名 `dock`、`panels`、`editor` 与 `tools` 已从公开 manifest 删除；校验器会返回具体迁移提示。
 
 ## 文档地图
 
 **开始**
 
 - [快速开始](/plugins/quickstart) —— 十分钟从零跑通一个插件：包骨架、manifest、安装、验证、卸载；
-- [核心概念](/plugins/concepts) —— Cordis 树与 Fiber 生命周期、capability 裁剪、`BlueView` 词汇表、`BlueResult` 错误码、domain/adapter 拆分。
+- [核心概念](/plugins/concepts) —— Cordis 树与 Fiber 生命周期、capability 裁剪、canonical node 词汇表、`BlueResult` 错误码、domain/adapter 拆分；
+- [公共 UI Kit](/plugins/ui-kit)与[示例目录](/plugins/examples) —— 纯 builder、共享组件和六个打包示例。
 
 **贡献能力** —— 每个能力一页：契约表、完整示例、行为细节与常见错误。
 
-- [命令](/plugins/commands) · [状态栏](/plugins/status) · [Dock 面板](/plugins/dock) · [通知](/plugins/notifications)
+- [命令](/plugins/commands) · [状态栏与独占 provider](/plugins/status) · [编辑器扩展](/plugins/editor-extensions) · [编辑器 Provider](/plugins/editor-providers) · [Pane 与 Overlay](/plugins/dock) · [通知](/plugins/notifications)
 
 **验证与发布**
 
 - [调试与验证](/plugins/testing) —— profile 安装、迭代回路、validate/fixture 脚本、卸载语义检查；
+- [旧 UI API 迁移](/plugins/ui-migration) —— 从 dock/panel/renderer facade 迁到 canonical pane、overlay 和 provider；
 - [发布插件](/plugins/publishing) —— npm 发布与用户安装路径。
 
 **参考**
 
-- [Seam 参考](/plugins/seams) —— 稳定 plugin host 与 Blue 内部边界的完整清单；
-- [内置插件](/plugins/builtins) —— bundle 的 28 条 Blue 自有行，是最完整的插件范例集；
+- [Seam 参考](/plugins/seams) —— Beta plugin host 与 Blue 内部边界的完整清单；
+- [内置插件](/plugins/builtins) —— bundle 的 33 条 Blue 自有行，是最完整的插件范例集；
 - [贡献本仓库](/plugins/contributing) —— 给 Blue 本体贡献代码的本地开发流程。

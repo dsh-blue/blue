@@ -8,6 +8,7 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import type { Action, CommandModel } from '@dsh-blue/blue-frontend'
 import type { BlueSessionCommand, BlueSessionCommandExecution } from '@dsh-blue/blue-app'
 import type {} from '@dsh-blue/blue-app'
+import { interactionTranslator, observeInteractionLocale } from './locale.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context { blueCommandModels: CommandModelService }
@@ -19,6 +20,7 @@ export class CommandModelService extends Service {
   private readonly offChange: () => void
   private readonly context: Context
   private readonly active = new Set<AbortController>()
+  private readonly offLocale: () => void
   private disposed = false
   constructor(ctx: Context) {
     super(ctx, 'blueCommandModels')
@@ -28,10 +30,15 @@ export class CommandModelService extends Service {
     })
     this.offChange = () => registration?.dispose()
     ctx.effect(() => this.offChange)
+    this.offLocale = observeInteractionLocale(ctx, () => {
+      for (const listener of this.listeners) listener()
+    })
+    ctx.effect(() => this.offLocale)
   }
   list(): readonly CommandModel[] {
     if (this.disposed) return []
-    return this.context.get('blueSessionActions')?.commands().map(toModel) ?? []
+    const t = interactionTranslator(this.context)
+    return this.context.get('blueSessionActions')?.commands().map(command => toModel(command, t)) ?? []
   }
   async execute(action: Action | undefined, signal: AbortSignal = new AbortController().signal): Promise<BlueSessionCommandExecution | undefined> {
     if (this.disposed || action?.kind !== 'command.execute') return undefined
@@ -55,15 +62,15 @@ export class CommandModelService extends Service {
     }
   }
   subscribe(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
-  dispose(): void { if (this.disposed) return; this.disposed = true; for (const controller of this.active) controller.abort(); this.active.clear(); this.listeners.clear(); this.offChange() }
+  dispose(): void { if (this.disposed) return; this.disposed = true; for (const controller of this.active) controller.abort(); this.active.clear(); this.listeners.clear(); this.offChange(); this.offLocale() }
 }
 
-function toModel(command: BlueSessionCommand): CommandModel {
+function toModel(command: BlueSessionCommand, t: (key: string) => string): CommandModel {
   return Object.freeze({
     kind: 'command',
     id: `command.${command.name}`,
     label: `/${command.name}`,
-    ...(command.description === undefined ? {} : { description: command.description }),
+    ...(command.description === undefined ? {} : { description: t(command.description) }),
     enabled: true,
     action: { kind: 'command.execute', name: command.name },
   })

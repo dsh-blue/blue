@@ -13,6 +13,9 @@ client-response carrier and reject duplicate or malformed acceptance bodies.
 Writer lease acquisition/release is deduplicated per connection generation;
 expired or late grants are released, and background cleanup failures can be
 reported through the adapter diagnostic callback.
+Remote mutations use the package-owned `RemoteSessionAction` vocabulary through
+`CurrentSessionBinding.execute()`; the readonly session bridge does not expose a
+generic Blue plugin action facade.
 
 Run `pnpm fixture:remote-upstream -- --upstream <checkout>` from the repository
 root to exercise a real authenticated dsh-remote daemon over a Unix socket. To

@@ -487,6 +487,15 @@ export interface BlueAutocompleteProvider {
 export interface BlueEditor extends BlueFocusable {
   /** Called when the user submits; receives the full text. */
   onSubmit?: ((text: string) => void) | undefined
+  /**
+   * Install a pre-clear submission barrier. The adapter invokes it after any
+   * autocomplete acceptance but before the editing engine clears its buffer,
+   * paste table, undo state, or history cursor. The owner must explicitly
+   * commit or cancel the attempt. Replacing or removing the barrier invalidates
+   * any outstanding attempt.
+   * @param barrier - the new barrier, or undefined to restore direct submit.
+   */
+  setSubmitBarrier(barrier: ((attempt: BlueEditorSubmitAttempt) => void) | undefined): void
   /** Called on every text change. */
   onChange?: ((text: string) => void) | undefined
   /**
@@ -498,10 +507,17 @@ export interface BlueEditor extends BlueFocusable {
   /** When true, submission keys insert text instead of submitting. */
   disableSubmit: boolean
   /**
+   * Programmatically request submission through the same pre-clear barrier as
+   * an Enter key. This is a no-op while submission is disabled.
+   */
+  submit(): void
+  /**
    * Report whether the autocomplete dropdown is currently visible.
    * @returns the dropdown visibility.
    */
   isShowingAutocomplete(): boolean
+  /** Re-query the active autocomplete provider without changing the buffer. */
+  refreshAutocomplete(): void
   /**
    * Read the current text.
    * @returns the editor content.
@@ -579,11 +595,35 @@ export interface BlueEditor extends BlueFocusable {
    */
   getExpandedText(): string
   /**
+   * Render only the editor's content rows for a compiler-owned form field.
+   * @param width - assigned content width.
+   * @param masked - replace every stored code unit with a bullet before render.
+   * @returns editor rows without its standalone outer frame.
+   */
+  renderContent(width: number, masked?: boolean): string[]
+  /**
    * Insert text at the cursor as one atomic undo step, without submitting.
    * Used for programmatic insertion of clipboard image placeholder markers.
    * @param text - the text to insert.
    */
   insertText(text: string): void
+}
+
+/** One revision-fenced editor submission captured before L0 clears state. */
+export interface BlueEditorSubmitAttempt {
+  /** Paste-expanded and trimmed text matching the native submission value. */
+  readonly text: string
+  /** Aborted when the attempt is cancelled or becomes stale. */
+  readonly signal: AbortSignal
+  /** Monotonic revision scoped to this editor object. */
+  readonly revision: number
+  /**
+   * Commit through the native editor clear-and-submit path. Returns false when
+   * the attempt was cancelled, superseded, or the buffer changed.
+   */
+  commit(): boolean
+  /** Cancel this attempt without clearing editor state; safe to call twice. */
+  cancel(): void
 }
 
 /** Options for {@link BlueComponents.createMarkdown}. */
@@ -714,6 +754,20 @@ export interface BlueFuzzyMatch {
   score: number
 }
 
+/** Renderer-owned options for the bounded top rule used by connected panes. */
+export interface BlueTopRuleOptions {
+  /** Optional title placed immediately after the opening corner. */
+  readonly title?: string
+  /** Optional title paint applied before clipping. */
+  readonly titlePaint?: BlueColorFn
+  /** Optional hint joined to the title with a rule segment. */
+  readonly hint?: string
+  /** Optional hint paint applied before clipping. */
+  readonly hintPaint?: BlueColorFn
+  /** Optional paint for the border corners, rule, and title/hint joiner. */
+  readonly paint?: BlueColorFn
+}
+
 /**
  * `ctx.blueComponents` — the component factory. Blue-typed options in,
  * Blue-typed components out; the semantic color table is mapped to the
@@ -798,6 +852,13 @@ export interface BlueComponents {
    * @returns the truncated text.
    */
   truncateToWidth(text: string, width: number, ellipsis?: string): string
+  /**
+   * Render a full-width top rule for a connected renderer-owned pane.
+   * @param width - the target visible width.
+   * @param options - optional title, hint, and paint functions.
+   * @returns the ANSI-safe rule row.
+   */
+  topRule(width: number, options?: BlueTopRuleOptions): string
   /**
    * Probe a case-insensitive fuzzy subsequence match (the S14 completion
    * primitive). Lower scores rank better; boundaries and consecutive runs

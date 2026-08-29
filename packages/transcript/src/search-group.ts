@@ -10,7 +10,6 @@
  */
 
 import type { BlueComponent, BlueComponents, BlueSemanticColors } from '@dsh-blue/blue-core'
-import { clampRowsToWidth } from '@dsh-blue/blue-core/chrome'
 import type { SearchCallModel, TranscriptSearchGroupModel } from '@dsh-blue/blue-frontend'
 
 /** Tree rows kept in the collapsed card before the expand hint. */
@@ -60,8 +59,7 @@ export class SearchGroupComponent implements BlueComponent {
   private renderTree(width: number): string[] {
     const deps: RenderDeps = { colors: this.colors, components: this.components }
     const cut = (row: string): string => this.components.truncateToWidth(row, width)
-    const clamp = (rows: string[]): string[] =>
-      clampRowsToWidth(rows, width, (text, target) => this.components.truncateToWidth(text, target))
+    const clamp = (rows: string[]): string[] => rows.map(cut)
     const tree = this.renderPatternRows(deps, cut)
     const limit = this.expanded ? SEARCH_GROUP_EXPANDED_ROW_LIMIT : SEARCH_GROUP_ROW_LIMIT
     if (tree.length <= limit) return clamp(['', this.renderHeader(width), ...tree])

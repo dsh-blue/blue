@@ -18,7 +18,7 @@ import { fakeBlueComponents } from './helpers.ts'
 import { asAgent, COLORS, FakeFactsService, type FakeAgent } from './status-fakes.ts'
 import { conversationProjectionDefinition, foldConversationProjection, initialConversationState, type ConversationProjectionState } from '../../conversation/src/projection.ts'
 import type { ConversationProjection } from '../../conversation/src/types.ts'
-import { BlueDockModelService } from '../src/dock-model.ts'
+import { BlueBottomPaneService } from '../src/dock-model.ts'
 
 /** Records bottom mounts and render requests; the other mounts throw. */
 export class PaneFakeScreen implements BlueScreen {
@@ -213,13 +213,18 @@ export async function bootPanePlugin(
   const keymap = new PaneFakeKeymap()
   const commands = new PaneFakeCommands()
   const facts = new FakeFactsService(ctx, current)
-  const dockModels = new BlueDockModelService(ctx, screen)
+  const components = fakeBlueComponents()
+  const bottomPanes = new BlueBottomPaneService(ctx, {
+    components,
+    colors: COLORS,
+    viewport: () => ({ columns: screen.columns, rows: screen.rows }),
+  }, screen)
   const projections = new FakeProjectionService()
   ctx.on('session/event', (session, event) => projections.emit(session, event))
   const serviceNames: Record<string, unknown> = {
     blueScreen: screen,
     blueTheme: { colors: COLORS },
-    blueComponents: fakeBlueComponents(),
+    blueComponents: components,
     blueKeymap: keymap,
     blueSession: { current: current === null ? null : asAgent(current) },
     blueSessionFacts: facts,
@@ -238,7 +243,7 @@ export async function bootPanePlugin(
     commands,
     dispose: async () => {
       await fiber.dispose()
-      dockModels.dispose()
+      bottomPanes.dispose()
     },
   }
 }

@@ -9,6 +9,7 @@
 
 import {
   Container,
+  HStack,
   ProcessTerminal,
   ScrollView,
   TuiAltScreen,
@@ -19,11 +20,22 @@ import {
   type TUI,
   type TuiInputListener,
 } from '@earendil-works/pi-tui'
+import { LAYOUT_NODE, type LayoutNode } from '@earendil-works/pi-tui/dist/layout-node.js'
 import { clampFrame, createFileOverflowSink, defaultOverflowDirectory, type OverflowSink } from './frame-clamp.ts'
 import { createOutputRecovery, type AmbientOutput } from './output-recovery.ts'
+import {
+  SURFACE_HEADER_MAX_ROWS,
+  SurfaceManager,
+  renderSurfaceLane,
+  renderSurfaceTabs,
+  type SurfaceLayout,
+  type SurfacePlacement,
+} from './surface-manager.ts'
 import { buildTitleOsc0, copySelectionText } from './terminal-escape.ts'
 import { probeTerminalBackground, backgroundFromRgb, type BlueProbeProcess } from './terminal-info.ts'
 import type { BlueComponent, BlueDockOptions, BlueOverlayHandle, BlueOverlayOptions, BlueRgbColor } from './types.ts'
+
+interface BlueRuntimeOverlayOptions extends BlueOverlayOptions { readonly maxWidth?: number }
 
 const KEY_UP = '\x1b[A'
 const KEY_DOWN = '\x1b[B'
@@ -63,6 +75,48 @@ class FrameClampedContainer extends Container {
   }
 }
 
+/** Layout-aware lane chrome that preserves a compiled pane's nested layout. */
+class SurfaceLaneContainer implements Component {
+  private readonly tabs: Component = {
+    render: width => {
+      const lane = this.getLayout()[this.placement]
+      return lane === undefined || lane.entries.length < 2 ? [] : [renderSurfaceTabs(lane, width)]
+    },
+    invalidate: () => this.manager.invalidate(),
+  }
+
+  constructor(
+    private readonly manager: SurfaceManager,
+    private readonly placement: SurfacePlacement,
+    private readonly getLayout: () => SurfaceLayout,
+    private readonly maxRows: () => number,
+  ) {}
+
+  render(width: number): string[] {
+    return renderSurfaceLane(this.getLayout()[this.placement], width, this.maxRows())
+  }
+
+  invalidate(): void {
+    this.manager.invalidate()
+  }
+
+  [LAYOUT_NODE](): LayoutNode {
+    const lane = this.getLayout()[this.placement]
+    const stack = new VStack()
+    if (lane === undefined) return stack[LAYOUT_NODE]()
+    const tabRows = lane.entries.length > 1 ? 1 : 0
+    if (tabRows > 0) stack.addChild(this.tabs, { basis: 1, grow: 0, shrink: 0, minSize: 1, maxSize: 1 })
+    stack.addChild(lane.active.component as Component, {
+      basis: 'auto',
+      grow: 1,
+      shrink: 1,
+      minSize: 0,
+      maxSize: Math.max(0, this.maxRows() - tabRows),
+    })
+    return stack[LAYOUT_NODE]()
+  }
+}
+
 interface DockLayoutEntry {
   readonly component: Component
   readonly rows: string[]
@@ -82,7 +136,8 @@ class DockLayoutContainer extends Container {
 
   constructor(
     private readonly overflow: OverflowSink,
-    private readonly viewportRows: () => number,
+    private readonly viewportRows: (fixedRows: number) => number,
+    private readonly onRendered?: (rows: number) => void,
   ) {
     super()
   }
@@ -120,10 +175,12 @@ class DockLayoutContainer extends Container {
       }
     })
     // Keep one transcript row whenever the viewport can hold both bands.
-    let remaining = Math.max(0, this.viewportRows() - 1)
+    const fixedRows = entries.reduce((total, entry) => total + (entry.fixed ? entry.rows.length : 0), 0)
+    let remaining = Math.max(0, this.viewportRows(fixedRows) - 1)
     const allocations = new Map<Component, number>()
     const ranked = [...entries].sort((left, right) => {
       return Number(right.fixed) - Number(left.fixed)
+        || Number(right.bottom) - Number(left.bottom)
         || right.priority - left.priority
         || left.order - right.order
     })
@@ -143,6 +200,7 @@ class DockLayoutContainer extends Container {
       if (allocated === 0) return []
       return allocated === entry.rows.length ? entry.rows : entry.rows.slice(-allocated)
     })
+    this.onRendered?.(rows.length)
     return clampFrame(rows, width, this.overflow)
   }
 }
@@ -175,6 +233,8 @@ export function normalizeWheelInput(data: string): string | undefined {
  * this; pi-tui types stay inside this module.
  */
 export interface BlueTerminalRuntime {
+  /** Renderer mode used by the canonical public UI compiler. */
+  readonly mode: BlueScreenMode
   /** Current terminal width in columns. */
   readonly columns: number
   /** Current terminal height in rows. */
@@ -185,6 +245,14 @@ export interface BlueTerminalRuntime {
   readonly kittyKeyboard: boolean
   /** The stable TUI reference behind the runtime; core-internal (pi-tui type). */
   readonly tui: TUI
+  /** Core-internal surface seam for the later pane-owner bridge. */
+  readonly surfaces: SurfaceManager
+  /** Current best-effort viewport budget for one managed surface. */
+  surfaceViewport(id: string): { readonly columns: number, readonly rows: number }
+  /** Release one pane's focus back to the component active before it. */
+  releaseSurfaceFocus(id: string): void
+  /** Whether any visible modal overlay currently owns the input plane. */
+  hasCapturingOverlay(): boolean
   /**
    * Mount a root component on the live renderer, above every bottom-pinned
    * component.
@@ -223,7 +291,7 @@ export interface BlueTerminalRuntime {
    * @param options - positioning and sizing options.
    * @returns the overlay's control handle.
    */
-  showOverlay(component: BlueComponent, options?: BlueOverlayOptions): BlueOverlayHandle
+  showOverlay(component: BlueComponent, options?: BlueRuntimeOverlayOptions): BlueOverlayHandle
   /**
    * Schedule a re-render of the live renderer.
    * @param force - reset differential render state before drawing.
@@ -409,20 +477,153 @@ export async function startBlueTerminal(
   // there so the two-row status stays on the terminal's last rows beneath
   // the editor, the kimi layout (its dialogs pull up from the editor's
   // slot while the statusline remains visible below).
+  const contentChildren = new Set<BlueComponent>()
   const contentContainer = alternate ? new FrameClampedContainer(overflow) : undefined
-  const dockContainer = alternate ? new DockLayoutContainer(overflow, () => terminal.rows) : undefined
-  if (current instanceof TuiAltScreen && contentContainer !== undefined && dockContainer !== undefined) {
-    const scrollView = new ScrollView(contentContainer, {
-      follow: 'end',
-      primary: true,
-      overscroll: 'chain',
-      scrollbar: 'auto',
-    })
-    const root = new VStack()
-    root.addChild(scrollView, { basis: 0, grow: 1, shrink: 1, minSize: 1 })
-    root.addChild(dockContainer, { basis: 'auto', grow: 0, shrink: 1, minSize: 1 })
-    current.setLayoutRoot(root)
+  let surfaceHeaderRows: () => number
+  let surfaceBottomRows: () => number
+  let lastSurfaceHeaderRows = 0
+  let lastSurfaceBottomRows = 0
+  let lastDockRows = 0
+  const dockContainer = alternate ? new DockLayoutContainer(overflow, fixedRows => {
+    const fixedBudget = Math.min(Math.max(0, terminal.rows - 1), fixedRows)
+    let surfaceBudget = Math.max(0, terminal.rows - 1 - fixedBudget)
+    const headerRows = Math.min(surfaceBudget, surfaceHeaderRows())
+    surfaceBudget -= headerRows
+    const bottomRows = Math.min(surfaceBudget, surfaceBottomRows())
+    return terminal.rows - headerRows - bottomRows
+  }, rows => { lastDockRows = rows }) : undefined
+  const scrollView = contentContainer === undefined ? undefined : new ScrollView(contentContainer, {
+    follow: 'end',
+    primary: true,
+    overscroll: 'chain',
+    scrollbar: 'auto',
+  })
+  let rebuildSurfaceLayout: () => void
+  let surfacePreFocus: Component | null = null
+  const mountedSurfaceBase = (): Component | null => surfacePreFocus !== null && (contentChildren.has(surfacePreFocus) || bottomChildren.has(surfacePreFocus))
+    ? surfacePreFocus
+    : null
+  const surfaces = new SurfaceManager({
+    onChange: () => rebuildSurfaceLayout(),
+    onSurfaceFocusTransition: (previous, next) => {
+      const internal = current as unknown as {
+        getFocusedComponent(): Component | null
+        overlayStack: { preFocus: Component | null }[]
+      }
+      const target = next as Component | null ?? mountedSurfaceBase()
+      for (const overlay of internal.overlayStack) {
+        if (overlay.preFocus === previous) overlay.preFocus = target
+      }
+      if (internal.getFocusedComponent() === previous) stable.setFocus(target)
+      if (next === null) surfacePreFocus = null
+    },
+  })
+  const linearLaneComponent = (placement: SurfacePlacement): Component => ({
+    render: width => {
+      const layout = surfaces.linearLayout(terminal.columns, terminal.rows)
+      const maxRows = placement === 'header'
+        ? SURFACE_HEADER_MAX_ROWS
+        : placement === 'bottom'
+          ? Math.floor(terminal.rows / 3)
+          : Number.MAX_SAFE_INTEGER
+      return renderSurfaceLane(layout[placement], width, maxRows)
+    },
+    invalidate: () => surfaces.invalidate(),
+  })
+  const alternateLanes: Record<SurfacePlacement, Component> = {
+    header: new SurfaceLaneContainer(surfaces, 'header', () => surfaces.layout(terminal.columns, terminal.rows), () => SURFACE_HEADER_MAX_ROWS),
+    left: new SurfaceLaneContainer(surfaces, 'left', () => surfaces.layout(terminal.columns, terminal.rows), () => Number.MAX_SAFE_INTEGER),
+    right: new SurfaceLaneContainer(surfaces, 'right', () => surfaces.layout(terminal.columns, terminal.rows), () => Number.MAX_SAFE_INTEGER),
+    bottom: new SurfaceLaneContainer(surfaces, 'bottom', () => surfaces.layout(terminal.columns, terminal.rows), () => Math.floor(terminal.rows / 3)),
   }
+  const linearLanes: Record<SurfacePlacement, Component> = {
+    header: linearLaneComponent('header'),
+    left: linearLaneComponent('left'),
+    right: linearLaneComponent('right'),
+    bottom: linearLaneComponent('bottom'),
+  }
+  surfaceHeaderRows = () => {
+    lastSurfaceHeaderRows = renderSurfaceLane(
+      surfaces.layout(terminal.columns, terminal.rows).header,
+      terminal.columns,
+      SURFACE_HEADER_MAX_ROWS,
+    ).length
+    return lastSurfaceHeaderRows
+  }
+  surfaceBottomRows = () => {
+    lastSurfaceBottomRows = renderSurfaceLane(
+      surfaces.layout(terminal.columns, terminal.rows).bottom,
+      terminal.columns,
+      Math.floor(terminal.rows / 3),
+    ).length
+    return lastSurfaceBottomRows
+  }
+
+  function rebuildAlternateLayout(): void {
+    const semantic = surfaces.linearLayout(terminal.columns, terminal.rows)
+    const sideEntries = [...(semantic.left?.entries ?? []), ...(semantic.right?.entries ?? [])]
+    const needsBottom = semantic.bottom !== undefined || sideEntries.some(entry => (entry.narrow ?? 'bottom') === 'bottom')
+
+    const root = new VStack()
+    if (semantic.header !== undefined) {
+      root.addChild(alternateLanes.header, { basis: 'auto', grow: 0, shrink: 1, maxSize: SURFACE_HEADER_MAX_ROWS })
+    }
+    if (semantic.left === undefined && semantic.right === undefined) {
+      root.addChild(scrollView!, { basis: 0, grow: 1, shrink: 1, minSize: 1 })
+    } else {
+      const body = new HStack([], { gap: 1 })
+      if (semantic.left !== undefined) {
+        const width = semantic.left.width!
+        body.addChild(alternateLanes.left, {
+          basis: width,
+          grow: 0,
+          shrink: 0,
+          minSize: width,
+          maxSize: width,
+          visible: viewport => surfaces.layout(viewport.width, viewport.height).left !== undefined,
+        })
+      }
+      body.addChild(scrollView!, { basis: 0, grow: 1, shrink: 1, minSize: 1 })
+      if (semantic.right !== undefined) {
+        const width = semantic.right.width!
+        body.addChild(alternateLanes.right, {
+          basis: width,
+          grow: 0,
+          shrink: 0,
+          minSize: width,
+          maxSize: width,
+          visible: viewport => surfaces.layout(viewport.width, viewport.height).right !== undefined,
+        })
+      }
+      root.addChild(body, { basis: 0, grow: 1, shrink: 1, minSize: 1 })
+    }
+    if (needsBottom) {
+      root.addChild(alternateLanes.bottom, {
+        basis: 'auto',
+        grow: 0,
+        shrink: 100,
+        minSize: 0,
+      })
+    }
+    root.addChild(dockContainer!, { basis: 'auto', grow: 0, shrink: 0, minSize: 1 })
+    ;(current as TuiAltScreen).setLayoutRoot(root)
+  }
+
+  function rebuildMainLayout(): void {
+    const semantic = surfaces.linearLayout(terminal.columns, terminal.rows)
+    current.children.splice(0, current.children.length,
+      ...(semantic.header === undefined ? [] : [linearLanes.header]),
+      ...contentChildren,
+      ...(semantic.left === undefined ? [] : [linearLanes.left]),
+      ...(semantic.right === undefined ? [] : [linearLanes.right]),
+      ...(semantic.bottom === undefined ? [] : [linearLanes.bottom]),
+      ...orderedDock(),
+    )
+    current.requestRender()
+  }
+
+  rebuildSurfaceLayout = alternate ? rebuildAlternateLayout : rebuildMainLayout
+  rebuildSurfaceLayout()
   let contentScrollOffset = 0
   let contentScrollManual = false
   // The dock must also sit on the terminal's last rows even when the mounted
@@ -493,6 +694,7 @@ export async function startBlueTerminal(
   let stopped = false
   let suspended = false
   const runtime: BlueTerminalRuntime = {
+    mode: screenMode,
     get columns() {
       return current.terminal.columns
     },
@@ -504,18 +706,42 @@ export async function startBlueTerminal(
       return terminal.kittyProtocolActive
     },
     tui: stable,
+    surfaces,
+    surfaceViewport(id) {
+      const layout = screenMode === 'main'
+        ? surfaces.linearLayout(terminal.columns, terminal.rows)
+        : surfaces.layout(terminal.columns, terminal.rows)
+      const lane = ([layout.header, layout.left, layout.right, layout.bottom] as const)
+        .find(candidate => candidate?.entries.some(entry => entry.id === id))
+      const columns = lane?.placement === 'left' || lane?.placement === 'right' ? lane.width ?? terminal.columns : terminal.columns
+      if (screenMode === 'main') return { columns: Math.max(1, terminal.columns), rows: Math.max(1, terminal.rows) }
+      const tabs = (lane?.entries.length ?? 0) > 1 ? 1 : 0
+      const dockRows = lastDockRows
+      const rows = lane?.placement === 'header'
+        ? Math.max(1, (lastSurfaceHeaderRows || SURFACE_HEADER_MAX_ROWS) - tabs)
+        : lane?.placement === 'bottom'
+          ? Math.max(1, (lastSurfaceBottomRows || Math.floor(terminal.rows / 3)) - tabs)
+          : Math.max(1, terminal.rows - dockRows - lastSurfaceHeaderRows - lastSurfaceBottomRows - tabs)
+      return { columns: Math.max(1, Math.min(terminal.columns, columns)), rows: Math.min(terminal.rows, rows) }
+    },
+    releaseSurfaceFocus(id) {
+      if (surfaces.focusedId !== id) return
+      surfaces.setFocused(undefined)
+      const target = mountedSurfaceBase()
+      stable.setFocus(target)
+      surfacePreFocus = null
+    },
+    hasCapturingOverlay() {
+      const stack = (current as unknown as { overlayStack: { readonly options?: { readonly nonCapturing?: boolean }, readonly hidden?: boolean }[] }).overlayStack
+      return stack.some(entry => entry.hidden !== true && entry.options?.nonCapturing !== true)
+    },
     addChild(component) {
+      contentChildren.add(component)
       if (contentContainer !== undefined) {
         contentContainer.addChild(component)
         return
       }
-      if (bottomChildren.size === 0) {
-        stable.addChild(component)
-        return
-      }
-      const index = stable.children.findIndex(child => bottomChildren.has(child as BlueComponent))
-      /* v8 ignore next -- pinned components are always mounted on the renderer, so findIndex cannot miss */
-      stable.children.splice(index === -1 ? stable.children.length : index, 0, component)
+      rebuildMainLayout()
     },
     addBottomChild(component, position) {
       bottomChildren.add(component)
@@ -527,21 +753,15 @@ export async function startBlueTerminal(
         if (dockContainer !== undefined) {
           dockContainer.addDockChild(component, { priority: Number.MAX_SAFE_INTEGER }, true, true)
         } else {
-          stable.removeChild(component)
-          stable.addChild(component)
+          rebuildMainLayout()
         }
       } else {
         bottomPinned.delete(component)
         // Regular dock children insert before the first pinned member (or
         // append when none is pinned), preserving mount order among
         // themselves while the pinned tail stays last.
-        const children = dockContainer?.children ?? stable.children
         if (dockContainer !== undefined) dockContainer.addDockChild(component, {}, true)
-        else {
-          const index = children.findIndex(child => bottomPinned.has(child as BlueComponent))
-          /* v8 ignore next -- pinned components are always mounted on the renderer, so findIndex cannot miss */
-          children.splice(index === -1 ? children.length : index, 0, component)
-        }
+        else rebuildMainLayout()
       }
     },
     addDockChild(component, options) {
@@ -551,19 +771,22 @@ export async function startBlueTerminal(
         dockContainer.addDockChild(component, options)
         return
       }
-      const index = stable.children.findIndex(child => bottomPinned.has(child as BlueComponent))
-      /* v8 ignore next -- pinned components are always mounted on the renderer, so findIndex cannot miss */
-      stable.children.splice(index === -1 ? stable.children.length : index, 0, component)
+      rebuildMainLayout()
     },
     removeChild(component) {
+      contentChildren.delete(component)
       bottomChildren.delete(component)
       bottomPinned.delete(component)
       if (contentContainer !== undefined && dockContainer !== undefined) {
         contentContainer.removeChild(component)
         dockContainer.removeChild(component)
-      } else stable.removeChild(component)
+      } else rebuildMainLayout()
     },
     setFocus(component) {
+      const previous = (current as unknown as { getFocusedComponent(): Component | null }).getFocusedComponent()
+      const previousSurfaceId = surfaces.focusedId
+      surfaces.setFocusedComponent(component)
+      if (previousSurfaceId === undefined && surfaces.focusedId !== undefined && previous !== component) surfacePreFocus = previous
       stable.setFocus(component)
     },
     /* v8 ignore start -- exercised through the real PTY interaction path */
@@ -618,7 +841,29 @@ export async function startBlueTerminal(
     },
     /* v8 ignore stop */
     showOverlay(component, options) {
-      return stable.showOverlay(component, options)
+      if (options?.maxWidth === undefined) return stable.showOverlay(component, options)
+      const maximum = Math.max(1, Math.floor(options.maxWidth))
+      const source = options.width
+      const sourceMinWidth = options.minWidth
+      const adapted = {
+        ...options,
+      }
+      Object.defineProperties(adapted, {
+        width: {
+          enumerable: true,
+          get: () => {
+            const requested = typeof source === 'string'
+              ? Math.floor(terminal.columns * Number.parseFloat(source) / 100)
+              : source ?? Math.min(80, terminal.columns)
+            return Math.max(1, Math.min(maximum, requested))
+          },
+        },
+        minWidth: {
+          enumerable: true,
+          get: () => Math.max(1, Math.min(terminal.columns, maximum, Math.floor(sourceMinWidth ?? 1))),
+        },
+      })
+      return stable.showOverlay(component, adapted)
     },
     requestRender(force) {
       stable.requestRender(force)

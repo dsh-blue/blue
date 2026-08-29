@@ -402,6 +402,36 @@ describe('blue app driver', () => {
     await test.ctx.fiber.dispose()
   })
 
+  it('caches deeply frozen snapshots and advances their revision on every publication', async () => {
+    const test = bench({})
+    await vi.waitFor(() => { expect(test.current()).not.toBeNull() })
+    const first = test.ctx.blueSessionReader.current()!
+    expect(test.ctx.blueSessionReader.current()).toBe(first)
+    expect(Object.isFrozen(first)).toBe(true)
+    expect(Object.isFrozen(first.model)).toBe(true)
+
+    const replayed: Array<BlueSessionSnapshot | null> = []
+    const registration = test.ctx.blueSessionReader.subscribe(snapshot => { replayed.push(snapshot) })
+    expect(replayed).toEqual([first])
+
+    expect(test.ctx.blueSessionActions.setYolo(true)).toMatchObject({ ok: true })
+    const mode = test.ctx.blueSessionReader.current()!
+    expect(mode).not.toBe(first)
+    expect(mode.revision).toBe(first.revision + 1)
+    expect(mode.mode).toBe('yolo')
+
+    expect(test.ctx.blueSessionActions.selectModel({ provider: 'next', model: 'model', reasoningEffort: 'high' })).toMatchObject({ ok: true })
+    const model = test.ctx.blueSessionReader.current()!
+    expect(model.revision).toBe(mode.revision + 1)
+    expect(model.model).toEqual({ provider: 'next', id: 'model', effort: 'high' })
+    expect(Object.isFrozen(model.model)).toBe(true)
+    expect(test.ctx.blueSessionReader.current()).toBe(model)
+    expect(replayed).toEqual([first, mode, model])
+
+    registration.dispose()
+    await test.ctx.fiber.dispose()
+  })
+
   it('returns structured unavailable results and owns reader registrations without a live session', async () => {
     const test = bench({}, { createError: new Error('startup failed') })
     await vi.waitFor(() => { expect(test.exits).toEqual([1]) })
@@ -414,10 +444,6 @@ describe('blue app driver', () => {
     registration.dispose()
     expect(registration.disposed).toBe(true)
 
-    await expect(test.ctx.blueSessionReader.request({ kind: 'followup', text: 'later' })).resolves.toMatchObject({
-      ok: false,
-      code: 'BLUE_SESSION_UNAVAILABLE',
-    })
     expect(test.ctx.blueSessionProjections.current('status')).toBeUndefined()
     expect(test.ctx.blueSessionProjections.currentMany(['status'])).toBeUndefined()
     expect(test.ctx.blueSessionProjections.children('status')).toEqual([])
@@ -512,21 +538,13 @@ describe('blue app driver', () => {
       status: 'idle',
     })
 
-    const readerFollowup = await test.ctx.blueSessionReader.request({ kind: 'followup', text: 'reader followup' })
-    const readerSteer = await test.ctx.blueSessionReader.request({ kind: 'steer', text: 'reader steer' })
-    expect(readerFollowup.ok).toBe(true)
-    expect(readerSteer.ok).toBe(true)
-    expect(test.recorded.followups.at(-1)?.[1]).toMatchObject({ content: [{ text: 'reader followup' }] })
-    expect(test.recorded.steers.at(-1)?.[1]).toMatchObject({ content: [{ text: 'reader steer' }] })
-    await expect(test.ctx.blueSessionReader.request({ kind: 'interrupt' })).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED' })
-
     expect(test.ctx.blueSessionActions.followup([{ type: 'text', text: 'action followup' }]).ok).toBe(true)
     expect(test.ctx.blueSessionActions.steer([{ type: 'text', text: 'action steer' }]).ok).toBe(true)
     expect(test.ctx.blueSessionActions.interrupt()).toMatchObject({ code: 'BLUE_ACTION_REJECTED' })
     ;(agent as unknown as { status: string }).status = 'running'
-    await expect(test.ctx.blueSessionReader.request({ kind: 'interrupt' })).resolves.toEqual({ ok: true, value: undefined })
+    test.ctx.emit('agent/status', { agent, status: 'running' })
     expect(test.ctx.blueSessionActions.interrupt()).toEqual({ ok: true, value: undefined })
-    expect(test.recorded.cancels).toHaveLength(2)
+    expect(test.recorded.cancels).toHaveLength(1)
     expect(test.ctx.blueSessionReader.current()).toMatchObject({ status: 'running' })
     ;(agent as unknown as { status: string }).status = 'idle'
 

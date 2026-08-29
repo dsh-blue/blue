@@ -1,73 +1,165 @@
-import { describe, expect, it } from 'vitest'
+/** Canonical dock registry, compiler, adapter, and lifecycle coverage. */
 import { Context } from '@deepseek-ai/cordis'
 import type { BlueComponent, BlueDockOptions, BlueScreen } from '@dsh-blue/blue-core'
-import type { DockModel } from '@dsh-blue/blue-frontend'
-import { BlueDockModelService, ModelDockComponent } from '../src/dock-model.ts'
+import { describe, expect, it } from 'vitest'
+import { BlueBottomPaneService, type BlueBottomPaneNode } from '../src/dock-model.ts'
+import { fakeBlueComponents } from './helpers.ts'
+import { COLORS } from './status-fakes.ts'
 
 function screenFixture() {
-  const children: BlueComponent[] = []; const bottom: BlueComponent[] = []; const dockOptions: BlueDockOptions[] = []; const renders: number[] = []
-  const mountBottom = (component: BlueComponent, options: BlueDockOptions = {}) => { bottom.push(component); dockOptions.push(options); return () => { const index = bottom.indexOf(component); if (index !== -1) { bottom.splice(index, 1); dockOptions.splice(index, 1) } } }
-  const screen = { addChild: (component: BlueComponent) => { children.push(component); return () => { const index = children.indexOf(component); if (index !== -1) children.splice(index, 1) } }, addBottomChild: (component: BlueComponent) => mountBottom(component), addDockChild: mountBottom, requestRender: () => { renders.push(1) } } as unknown as BlueScreen
+  const children: BlueComponent[] = []
+  const bottom: BlueComponent[] = []
+  const dockOptions: BlueDockOptions[] = []
+  const renders: (boolean | undefined)[] = []
+  const mountBottom = (component: BlueComponent, options: BlueDockOptions = {}) => {
+    bottom.push(component)
+    dockOptions.push(options)
+    return () => {
+      const index = bottom.indexOf(component)
+      if (index !== -1) {
+        bottom.splice(index, 1)
+        dockOptions.splice(index, 1)
+      }
+    }
+  }
+  const screen = {
+    columns: 80,
+    rows: 24,
+    addChild: (component: BlueComponent) => {
+      children.push(component)
+      return () => {
+        const index = children.indexOf(component)
+        if (index !== -1) children.splice(index, 1)
+      }
+    },
+    addBottomChild: (component: BlueComponent) => mountBottom(component),
+    addDockChild: mountBottom,
+    requestRender: (force?: boolean) => { renders.push(force) },
+  } as unknown as BlueScreen
   return { screen, children, bottom, dockOptions, renders }
 }
 
-const dock = (id: string, placement: DockModel['placement'] = 'bottom', view: DockModel['view'] = { kind: 'text', text: 'dock' }, collapsed = false): DockModel => ({ kind: 'dock', id, placement, view, collapsed })
+function compiler(screen: BlueScreen) {
+  return {
+    components: fakeBlueComponents(),
+    colors: COLORS,
+    viewport: () => ({ columns: screen.columns, rows: screen.rows }),
+  }
+}
 
-describe('BlueDockModelService', () => {
-  it('mounts both screen placements and renders dynamic plain fallback', () => {
-    const ctx = new Context(); const fixture = screenFixture(); const service = new BlueDockModelService(ctx); service.attach(fixture.screen); let value = dock('bottom'); const dispose = service.register(() => value); const top = service.register(dock('top', 'left', { kind: 'rich-text', spans: [{ text: 'top' }] })); expect(fixture.bottom).toHaveLength(1); expect(fixture.children).toHaveLength(1); const bottomComponent = fixture.bottom[0]!; expect(bottomComponent.render(20)).toEqual(['dock']); expect(fixture.children[0]!.render(20)).toEqual(['top']); value = dock('bottom', 'bottom', { kind: 'fields', fields: [{ label: 'a', value: 'b' }] }); service.refresh('bottom'); service.refresh('missing'); expect(fixture.bottom).toHaveLength(1); expect(service.list()).toHaveLength(2); top(); dispose(); dispose(); expect(bottomComponent.render(20)).toEqual([]); expect(fixture.bottom).toHaveLength(0); expect(fixture.children).toHaveLength(0); service.dispose(); expect(fixture.bottom).toHaveLength(0); expect(fixture.children).toHaveLength(0)
-  })
+function dock(id: string, options: Partial<BlueBottomPaneNode> = {}): BlueBottomPaneNode {
+  return { id, node: { kind: 'text', content: id }, ...options }
+}
 
-  it('handles absent, collapsed, duplicate, late attach, and unload', () => {
-    const ctx = new Context(); const service = new BlueDockModelService(ctx); const absent = service.register(() => null); absent(); const late = service.register(dock('late')); expect(service.list()).toHaveLength(1); const fixture = screenFixture(); service.attach(fixture.screen); expect(fixture.bottom).toHaveLength(1); expect(() => service.register(dock('late'))).toThrow(/already registered/); const collapsed = service.register(dock('collapsed', 'bottom', { kind: 'text', text: 'hidden' }, true)); expect(fixture.bottom).toHaveLength(2); service.refresh('collapsed'); collapsed(); late(); service.register(dock('active')); expect(fixture.bottom).toHaveLength(1); service.dispose(); expect(fixture.bottom).toHaveLength(0)
-  })
-
-  it('renders hidden models as no rows and invalidates without state', () => {
-    const component = new ModelDockComponent(() => null); expect(component.render(10)).toEqual([]); component.invalidate(); const hidden = new ModelDockComponent(() => dock('hidden', 'bottom', { kind: 'code', code: 'x' }, true)); expect(hidden.render(10)).toEqual([]); const wide = new ModelDockComponent(() => dock('wide', 'bottom', { kind: 'diff', before: 'a', after: 'abcdef' })); expect(wide.render(3)).toEqual(['- a', '+', 'abc', 'def']); hidden.invalidate(); wide.invalidate()
-  })
-
-  it('orders placements and priorities, caps rows, and cleans up on reattach', () => {
-    const first = screenFixture(); const second = screenFixture(); const service = new BlueDockModelService(new Context(), first.screen)
-    service.register(dock('z-default', 'bottom', { kind: 'text', text: 'z-default' })); service.register(dock('a-default', 'bottom', { kind: 'text', text: 'a-default' })); service.register({ ...dock('z-bottom'), priority: 9 }); service.register({ ...dock('a-bottom'), priority: 1 }); service.register({ ...dock('right', 'right'), priority: 2 }); service.register({ ...dock('left', 'left'), priority: 3 }); service.register({ ...dock('tie-z', 'bottom', { kind: 'text', text: 'tie-z' }), priority: 5 }); service.register({ ...dock('tie-a', 'bottom', { kind: 'text', text: 'tie-a' }), priority: 5 })
-    expect(first.children.map(component => component.render(20)[0])).toEqual(['dock', 'dock'])
-    first.children[0]!.invalidate()
-    expect(first.bottom.map(component => component.render(20)[0])).toEqual(['a-default', 'z-default', 'dock', 'tie-a', 'tie-z', 'dock'])
-    expect(first.dockOptions).toEqual([
-      { priority: 0 },
-      { priority: 0 },
-      { priority: 1 },
-      { priority: 5 },
-      { priority: 5 },
-      { priority: 9 },
-    ])
-    const capped = new ModelDockComponent(() => ({ ...dock('capped', 'bottom', { kind: 'code', code: 'one\ntwo\nthree' }), preferredRows: 2 }))
-    expect(capped.render(20)).toEqual(['one', 'two'])
-    service.attach(second.screen); expect(first.children).toHaveLength(0); expect(first.bottom).toHaveLength(0); expect(second.children).toHaveLength(2); expect(second.bottom).toHaveLength(6)
+describe('BlueBottomPaneService', () => {
+  it('compiles dynamic canonical nodes and disposes idempotently', () => {
+    const fixture = screenFixture()
+    const service = new BlueBottomPaneService(new Context(), compiler(fixture.screen))
+    service.attach(fixture.screen)
+    let value = dock('bottom')
+    const dispose = service.register(() => value)
+    const retained = fixture.bottom[0]!
+    const rich = service.register(dock('rich', { node: { kind: 'rich-text', spans: [{ text: 'left', tone: 'accent' }] } }))
+    expect(fixture.bottom[0]!.render(20)).toEqual([' bottom'])
+    expect(fixture.bottom[1]!.render(20)).toEqual([' left'])
+    value = dock('bottom', { node: { kind: 'fields', rows: [{ label: 'state', value: [{ text: 'ok' }] }] } })
+    service.refresh('bottom', true)
+    service.refresh('missing')
+    expect(fixture.bottom[0]!.render(20)).toEqual([' state: ok'])
+    expect(fixture.renders.at(-1)).toBe(true)
+    expect(service.list()).toHaveLength(2)
+    rich()
+    dispose()
+    dispose()
+    expect(fixture.bottom).toEqual([])
+    expect(retained.render(20)).toEqual([])
     service.dispose()
   })
 
-  it('makes a retained model component inert after its registration is disposed', () => {
-    const service = new BlueDockModelService(new Context())
-    const dispose = service.register(dock('retained'))
-    const component = (service as unknown as { components: Map<string, BlueComponent> }).components.get('retained')
-    expect(component?.render(20)).toEqual(['dock'])
-    dispose()
-    expect(component?.render(20)).toEqual([])
-  })
-
-  it('keeps stable mounts while sources collapse and invalidates the component', () => {
-    const service = new BlueDockModelService(new Context())
-    const absent = service.register(() => null)
-    absent()
-    const fixture = screenFixture()
-    service.attach(fixture.screen)
+  it('orders bottom nodes, caps rows, handles collapse, and reattaches cleanly', () => {
+    const first = screenFixture()
+    const second = screenFixture()
+    const service = new BlueBottomPaneService(new Context(), compiler(first.screen), first.screen)
+    service.register(dock('z'))
+    service.register(dock('a'))
+    service.register(dock('high', { priority: 9 }))
+    service.register(dock('low', { priority: 1 }))
+    service.register(dock('tie-z', { priority: 5 }))
+    service.register(dock('tie-a', { priority: 5 }))
+    expect(first.bottom.map(component => component.render(20)[0])).toEqual([' a', ' z', ' low', ' tie-a', ' tie-z', ' high'])
+    expect(first.dockOptions).toEqual([{ priority: 0 }, { priority: 0 }, { priority: 1 }, { priority: 5 }, { priority: 5 }, { priority: 9 }])
+    const capped = service.register(dock('capped', {
+      node: { kind: 'code', code: 'one\ntwo\nthree' },
+      preferredRows: 2,
+    }))
+    expect(first.bottom.find(component => component.render(20)[0] === ' one')?.render(20)).toEqual([' one', ' two'])
     let collapsed = false
-    service.register(() => dock('changing', 'bottom', { kind: 'text', text: 'live' }, collapsed))
-    expect(fixture.bottom[0]!.render(20)).toEqual(['live'])
+    service.register(() => dock('changing', { collapsed, node: { kind: 'text', content: 'live' } }))
+    const changing = first.bottom.find(component => component.render(20)[0] === ' live')!
     collapsed = true
     service.refresh('changing')
-    fixture.bottom[0]!.invalidate()
-    expect(fixture.bottom[0]!.render(20)).toEqual([])
+    expect(changing.render(20)).toEqual([])
+    capped()
+    service.attach(second.screen)
+    expect(first.bottom).toEqual([])
+    expect(second.bottom).toHaveLength(7)
     service.dispose()
+    expect(second.bottom).toEqual([])
+  })
+
+  it('contains invalid nodes, source and adapter throws, and clamps adapter rows', () => {
+    const fixture = screenFixture()
+    const service = new BlueBottomPaneService(new Context(), compiler(fixture.screen), fixture.screen)
+    service.register(dock('invalid', { node: { kind: 'unknown' } as never }))
+    expect(fixture.bottom[0]!.render(12).join('')).toContain('Blue UI')
+
+    let sourceThrows = false
+    service.register(() => {
+      if (sourceThrows) throw new Error('source failed')
+      return dock('stable', { priority: 7 })
+    })
+    sourceThrows = true
+    service.refresh('stable')
+    expect(service.list().find(entry => entry.id === 'stable')).toMatchObject({ priority: 7 })
+    expect(fixture.bottom.find(component => component.render(20).join('').includes('stable'))?.render(20).join('')).toContain('failed')
+
+    service.register(dock('adapter', { preferredRows: 1 }), (_node, width) => [
+      'x'.repeat(width + 5),
+      'second row',
+    ])
+    const clamped = fixture.bottom.find(component => component.render(8)[0]?.startsWith(' x'))!.render(8)
+    expect(clamped).toHaveLength(1)
+    expect(compiler(fixture.screen).components.visibleWidth(clamped[0]!)).toBeLessThanOrEqual(8)
+    service.register(dock('adapter-fail'), () => { throw new Error('adapter failed') })
+    expect(fixture.bottom.find(component => component.render(30).join('').includes('adapter-fail'))?.render(30).join('')).toContain('failed')
+  })
+
+  it('handles absent sources and rejects duplicates', () => {
+    const fixture = screenFixture()
+    const service = new BlueBottomPaneService(new Context(), compiler(fixture.screen), fixture.screen)
+    const absent = service.register(() => null)
+    absent()
+    service.register(dock('queue'), (_value, width) => ['queued'.repeat(width)])
+    expect(compiler(fixture.screen).components.visibleWidth(fixture.bottom[0]!.render(8)[0]!)).toBeLessThanOrEqual(8)
+    expect(() => service.register(dock('queue'))).toThrow(/already registered/)
+  })
+
+  it('unmounts a dynamic null source and deactivates retained components on service disposal', () => {
+    const fixture = screenFixture()
+    const service = new BlueBottomPaneService(new Context(), compiler(fixture.screen), fixture.screen)
+    let current: BlueBottomPaneNode | null = dock('dynamic')
+    service.register(() => current)
+    const retained = fixture.bottom[0]!
+    current = null
+    service.refresh('dynamic')
+    expect(service.list()).toEqual([])
+    expect(fixture.bottom).toEqual([])
+    expect(retained.render(20)).toEqual([])
+
+    current = dock('dynamic')
+    service.refresh('dynamic')
+    const remounted = fixture.bottom[0]!
+    service.dispose()
+    expect(remounted.render(20)).toEqual([])
   })
 })

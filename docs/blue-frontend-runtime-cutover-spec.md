@@ -53,7 +53,7 @@ PR #34、#38 不在范围内；PR #36 的架构方案由本文取代。
 | `@dsh-blue/blue-conversation` | `packages/conversation` | append-origin Harness conversation projection | transcript 正式 domain producer |
 | `@dsh-blue/blue-core` | `packages/core` | 唯一 pi-tui/raw terminal renderer adapter | TUI kernel |
 | `@dsh-blue/blue-app` | `packages/app` | CLI startup、Agent driver、session binding | 可启动产品组合 |
-| `@dsh-blue/blue-transcript` | `packages/transcript` | official transcript consumer、status/dock/tool models | 主内容呈现 |
+| `@dsh-blue/blue-transcript` | `packages/transcript` | official transcript consumer、status/bottom-pane/tool models | 主内容呈现 |
 | `@dsh-blue/blue-interaction` | `packages/interaction` | command/panel/editor/action consumers | 用户交互入口 |
 | `@dsh-blue/blue` | `packages/bundle/blue` | Cordis composition、preset、host disables | 用户安装的 bundle |
 | `@dsh-blue/blue-cli` | `packages/cli` | 独立 launcher、嵌套 Harness、profile calibration | 单命令分发入口 |
@@ -143,9 +143,10 @@ Harness domain
 | 旧结构 | 替代物 | 删除门槛 |
 |---|---|---|
 | `transcript/src/fold.ts` 直接折叠 session events | `blue-conversation` projection + official transcript model | replay/live/resume/tool/thinking/image/interruption/retract 全覆盖且无 consumer |
-| pane 自己读取/聚合 activity/todo/agents/queue/btw events | feature projection -> `DockModel` | dock focus、mouse、scroll、tail-follow、resize 和 unload fixture 通过 |
-| `BlueStatusEntry` 兼容注册 | `StatusModel` registry | 所有 status producer 转 model，footer parity 通过 |
-| `blueIntents` 业务 presenter/fold shortcut | official canonical tool view/result -> `ToolPresentationModel` | Read/Write/Shell/error/long-output 全覆盖 |
+| pane 自己读取/聚合 activity/todo/agents/queue/btw events | feature projection -> canonical bottom-pane node | dock focus、mouse、scroll、tail-follow、resize 和 unload fixture 通过 |
+| generic frontend status compatibility | canonical status-node registry | 所有 status producer 转 canonical node，footer parity 通过 |
+| `blueIntents` 业务 presenter/fold shortcut | official tool view/result -> canonical `ToolPresentationModel.call/result` nodes | Read/Write/Shell/error/long-output 全覆盖 |
+| 七种 frontend `View` + core `frontend-renderer` | canonical `BlueUiNode` + direct core compiler | provider/tool/transcript/context/OpenPencil 与 plain fallback 全部切换，旧 export/fixture 无 consumer |
 | command-specific dialog 作为业务状态容器 | `PanelModel`/`FormPanelModel` + structured action | submit/cancel/loading/error/absent/stale 全覆盖 |
 | module singleton shared editor | frontend-tree editor host + `EditorModel` actions | paste/history/completion/slot/focus/resize/selection fixture 通过 |
 | interaction 直接持有 Agent/Session | app binding + adapter capability | static boundary scan 和 unload/late-result 通过 |

@@ -243,7 +243,7 @@ describe('official conversation model mapping', () => {
       }),
     ]), toolSource())
     expect(failed.entries[0]).toMatchObject({
-      presentation: { result: { kind: 'text', text: 'failure', tone: 'danger' } },
+      presentation: { result: { kind: 'text', content: 'failure', tone: 'danger' } },
     })
 
     const resultOnly = conversationTranscriptModel(projection([
@@ -256,7 +256,7 @@ describe('official conversation model mapping', () => {
       } as never),
     } as ToolPresentationSource)
     expect(resultOnly.entries[0]).toMatchObject({
-      presentation: { call: { kind: 'text', text: 'read' }, result: { kind: 'sections' } },
+      presentation: { call: { kind: 'text', content: 'read' }, result: { kind: 'sections' } },
     })
   })
 

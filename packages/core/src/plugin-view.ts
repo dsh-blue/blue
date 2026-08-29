@@ -10,13 +10,10 @@
 import type { BlueInlineSpan, BlueTone, BlueView } from '@dsh-blue/blue-api'
 import { alignDiffLines, paintDiffRows } from './diff-align.ts'
 import { clampRowsToWidth } from './chrome.ts'
-import type { BlueComponent, BlueComponents, BlueSemanticColors } from './types.ts'
+import type { BlueComponents, BlueSemanticColors } from './types.ts'
 
 /** Maximum source characters accepted from one dynamic view render. */
 export const PLUGIN_VIEW_MAX_CHARS = 20_000
-
-/** Maximum rows one dynamic dock contribution may occupy. */
-export const PLUGIN_VIEW_MAX_ROWS = 20
 
 /** Maximum recursive `sections` nesting accepted from a dynamic view. */
 export const PLUGIN_VIEW_MAX_DEPTH = 8
@@ -110,15 +107,15 @@ function renderView(
   }
 }
 
-/** Render and width-bound one public view, throwing only to its owner adapter. */
-export function renderPluginView(
+/** Core-internal renderer for an already validated canonical view. */
+export function renderCanonicalView(
   view: BlueView,
   width: number,
   components: BlueComponents,
   colors: BlueSemanticColors,
-  maxRows = PLUGIN_VIEW_MAX_ROWS,
+  maxRows: number,
 ): string[] {
-  const rows = renderView(view, Math.max(1, width), components, colors, 0).slice(0, Math.max(0, Math.min(maxRows, PLUGIN_VIEW_MAX_ROWS)))
+  const rows = renderView(view, Math.max(1, width), components, colors, 0).slice(0, Math.max(0, maxRows))
   return clampRowsToWidth(rows, Math.max(1, width), (text, target) => components.truncateToWidth(text, target))
 }
 
@@ -133,27 +130,4 @@ export function summarizePluginView(view: BlueView): string {
     case 'sections': return view.sections.map(section => section.title === undefined ? summarizePluginView(section.body) : checkedText(section.title, 'section title')).join(' · ')
     default: throw new TypeError(`unknown BlueView kind "${String((view as { kind?: unknown }).kind)}"`)
   }
-}
-
-/** Passive dock component that contains every plugin render failure. */
-export class BluePluginViewComponent implements BlueComponent {
-  constructor(
-    private readonly source: BlueView | (() => BlueView | null),
-    private readonly components: BlueComponents,
-    private readonly colors: BlueSemanticColors,
-    private readonly maxRows = PLUGIN_VIEW_MAX_ROWS,
-  ) {}
-
-  render(width: number): string[] {
-    try {
-      const view = typeof this.source === 'function' ? this.source() : this.source
-      if (view === null) return []
-      return renderPluginView(view, width, this.components, this.colors, this.maxRows)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'unknown render failure'
-      return renderPluginView({ kind: 'text', content: `plugin view rejected: ${message}`, tone: 'danger' }, width, this.components, this.colors, 1)
-    }
-  }
-
-  invalidate(): void {}
 }

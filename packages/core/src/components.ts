@@ -38,6 +38,7 @@ import {
   injectGhostHint,
   injectPromptSymbol,
   padColumns,
+  topRule as renderTopRule,
   withSideBorders,
 } from './chrome.ts'
 import { WrappingSelectList } from './wrapping-select-list.ts'
@@ -47,6 +48,7 @@ import type {
   BlueComponents,
   BlueEditor,
   BlueEditorOptions,
+  BlueEditorSubmitAttempt,
   BlueFuzzyMatch,
   BlueImage,
   BlueImageOptions,
@@ -59,6 +61,7 @@ import type {
   BlueSettingsList,
   BlueSettingsListOptions,
   BlueTheme,
+  BlueTopRuleOptions,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -195,6 +198,27 @@ class EditorAdapter implements BlueEditor {
    */
   onKey: ((data: string) => boolean) | undefined
 
+  /** Host-owned submission barrier installed above the L0 clear path. */
+  private submitAttemptHandler: ((attempt: BlueEditorSubmitAttempt) => void) | undefined
+
+  /** Latest outstanding submission, if its owner has not settled it. */
+  private activeSubmit: { readonly revision: number, cancel(): void } | undefined
+
+  /** Monotonic submission revision; a newer attempt invalidates the previous. */
+  private submitRevision = 0
+
+  /** Changes whenever the host replaces the barrier callback. */
+  private submitBarrierRevision = 0
+
+  /** Changes whenever the expanded editor buffer changes. */
+  private mutationRevision = 0
+
+  /** Last raw and paste-expanded values observed through the adapter boundary. */
+  private observedBuffer: { readonly raw: string, readonly expanded: string }
+
+  /** Original pi-tui submit implementation, captured before the shadow. */
+  private readonly nativeSubmit: () => void
+
   /** The prompt symbol overlaid on the first content row; none while unset. */
   private promptSymbol: string | undefined
 
@@ -210,7 +234,12 @@ class EditorAdapter implements BlueEditor {
   constructor(
     private readonly editor: Editor,
     private readonly chrome: EditorChromePaints,
-  ) {}
+  ) {
+    this.observedBuffer = { raw: editor.getText(), expanded: editor.getExpandedText() }
+    const bridge = editor as unknown as { submitValue(): void }
+    this.nativeSubmit = bridge.submitValue.bind(editor)
+    bridge.submitValue = () => { this.requestSubmit() }
+  }
 
   get focused(): boolean {
     return this.editor.focused
@@ -227,6 +256,12 @@ class EditorAdapter implements BlueEditor {
   set onSubmit(callback: ((text: string) => void) | undefined) {
     if (callback === undefined) delete this.editor.onSubmit
     else this.editor.onSubmit = callback
+  }
+
+  setSubmitBarrier(callback: ((attempt: BlueEditorSubmitAttempt) => void) | undefined): void {
+    this.submitBarrierRevision += 1
+    this.submitAttemptHandler = callback
+    this.activeSubmit?.cancel()
   }
 
   get onChange(): ((text: string) => void) | undefined {
@@ -252,6 +287,12 @@ class EditorAdapter implements BlueEditor {
 
   setText(text: string): void {
     this.editor.setText(text)
+    this.observeMutation()
+  }
+
+  submit(): void {
+    if (this.disableSubmit) return
+    this.requestSubmit()
   }
 
   addToHistory(text: string): void {
@@ -323,12 +364,33 @@ class EditorAdapter implements BlueEditor {
     return this.editor.getExpandedText()
   }
 
+  renderContent(width: number, masked = false): string[] {
+    const state = (this.editor as unknown as { state: { lines: string[] } }).state
+    const original = state.lines
+    if (masked) {
+      state.lines = original.map(line => '•'.repeat(line.length))
+      this.editor.invalidate()
+    }
+    try {
+      return this.editor.render(Math.max(1, width)).slice(1, -1)
+    } finally {
+      state.lines = original
+      if (masked) this.editor.invalidate()
+    }
+  }
+
   insertText(text: string): void {
     this.editor.insertTextAtCursor(text)
+    this.observeMutation()
   }
 
   isShowingAutocomplete(): boolean {
     return this.editor.isShowingAutocomplete()
+  }
+
+  refreshAutocomplete(): void {
+    const editor = this.editor as unknown as { updateAutocomplete(): void }
+    editor.updateAutocomplete()
   }
 
   render(width: number): string[] {
@@ -375,7 +437,78 @@ class EditorAdapter implements BlueEditor {
     // The onKey hook intercepts before delegation; true consumes the input.
     if (this.onKey?.(data) === true) return
     this.editor.handleInput(data)
+    this.observeMutation()
     this.reopenAutocompleteAfterInput()
+  }
+
+  /** Invalidate an outstanding attempt when the expanded buffer changed. */
+  private observeMutation(): void {
+    const current = { raw: this.editor.getText(), expanded: this.editor.getExpandedText() }
+    if (current.raw === this.observedBuffer.raw && current.expanded === this.observedBuffer.expanded) return
+    this.observedBuffer = current
+    this.mutationRevision += 1
+    this.activeSubmit?.cancel()
+  }
+
+  /** Capture one pre-clear submission and hand it to the current barrier. */
+  private requestSubmit(): void {
+    // Autocomplete can mutate the buffer inside the same L0 input dispatch
+    // immediately before it falls through to submitValue.
+    this.observeMutation()
+    if (this.submitAttemptHandler === undefined) {
+      this.nativeSubmit()
+      this.observedBuffer = { raw: this.editor.getText(), expanded: this.editor.getExpandedText() }
+      return
+    }
+
+    const revision = ++this.submitRevision
+    this.activeSubmit?.cancel()
+    // Abort listeners run synchronously and may submit again. That nested,
+    // newer request owns the slot; this outer request must not overwrite it.
+    if (this.submitRevision !== revision) return
+    const handler = this.submitAttemptHandler
+    if (handler === undefined) {
+      this.nativeSubmit()
+      this.observedBuffer = { raw: this.editor.getText(), expanded: this.editor.getExpandedText() }
+      return
+    }
+    const barrierRevision = this.submitBarrierRevision
+    const mutationRevision = this.mutationRevision
+    const raw = this.editor.getText()
+    const text = this.editor.getExpandedText().trim()
+    const controller = new AbortController()
+    let settled = false
+    const cancel = (): void => {
+      if (settled) return
+      settled = true
+      this.activeSubmit = undefined
+      controller.abort()
+    }
+    const attempt: BlueEditorSubmitAttempt = Object.freeze({
+      text,
+      signal: controller.signal,
+      revision,
+      commit: (): boolean => {
+        if (settled
+          || this.activeSubmit?.revision !== revision
+          || barrierRevision !== this.submitBarrierRevision
+          || mutationRevision !== this.mutationRevision
+          || this.editor.getText() !== raw
+          || this.editor.getExpandedText().trim() !== text) return false
+        settled = true
+        this.activeSubmit = undefined
+        this.nativeSubmit()
+        this.observedBuffer = { raw: this.editor.getText(), expanded: this.editor.getExpandedText() }
+        return true
+      },
+      cancel,
+    })
+    this.activeSubmit = { revision, cancel }
+    try {
+      handler(attempt)
+    } catch {
+      cancel()
+    }
   }
 
   /**
@@ -688,6 +821,16 @@ export class BlueComponentsService extends Service implements BlueComponents {
    */
   truncateToWidth(text: string, width: number, ellipsis?: string): string {
     return truncateToWidth(text, width, ellipsis)
+  }
+
+  /**
+   * Render the bounded top rule used by connected renderer-owned panes.
+   * @param width - the target visible width.
+   * @param options - optional title, hint, and paint functions.
+   * @returns the ANSI-safe rule row.
+   */
+  topRule(width: number, options?: BlueTopRuleOptions): string {
+    return renderTopRule(width, options)
   }
 
   /**

@@ -17,7 +17,8 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import type { Action, PanelModel } from '@dsh-blue/blue-frontend'
+import type { BlueUiNode } from '@dsh-blue/blue-api'
+import type { Action } from '@dsh-blue/blue-frontend'
 import { BLUE_VERSION } from '@dsh-blue/blue-transcript/banner-content'
 // Empty type imports carry the `commands` merge the registration uses and
 // the app-owned session boundary every handler reads.
@@ -25,7 +26,7 @@ import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@dsh-blue/blue-app'
 import type { InfoRow, InfoSection, InfoSegment, InfoStyle } from './info-panel.ts'
 import { InfoPanel } from './info-panel.ts'
-import { FrontendPanel } from './frontend-panel.ts'
+import { CanonicalDocumentController } from './frontend-panel.ts'
 import { CHANGELOG_ENTRIES, type ChangelogEntry } from './changelog-content.ts'
 import { displayServices } from './display-services.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
@@ -59,7 +60,7 @@ export interface StatusModelFacts {
 }
 
 interface ContextFeatureFace {
-  readonly model: { readonly panel: PanelModel } | undefined
+  readonly model: { readonly state: string, readonly panel: { readonly title: string, readonly node: BlueUiNode, readonly refresh?: Action } } | undefined
   subscribe(listener: () => void): () => void
   execute(action: Action): Promise<unknown>
 }
@@ -456,11 +457,20 @@ export function registerSessionCommands(ctx: Context, displayVersion = BLUE_VERS
       const close = (): void => {
         for (const cleanup of cleanups.splice(0)) cleanup()
       }
-      const panel = new FrontendPanel({
+      const panel = new CanonicalDocumentController({
         keymap: display.keymap,
         theme: display.theme,
         components: display.components,
-        model: () => projected.model?.panel ?? { kind: 'panel', mode: 'error', title: 'Context', view: { kind: 'text', text: 'context unavailable' } },
+        model: () => {
+          const model = projected.model
+          if (model === undefined) return { mode: 'error', title: 'Context', view: { kind: 'text', content: 'context unavailable' } }
+          return {
+            mode: model.state === 'loading' ? 'loading' : model.state === 'error' || model.state === 'absent' ? 'error' : 'info',
+            title: model.panel.title,
+            view: model.panel.node,
+            ...(model.panel.refresh === undefined ? {} : { submit: model.panel.refresh }),
+          }
+        },
         onAction: async action => { await projected.execute(action) },
         onClose: close,
       })

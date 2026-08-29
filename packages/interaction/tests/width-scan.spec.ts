@@ -11,13 +11,18 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { FormPanel, type FormField } from '../src/form-panel.ts'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
+import * as approvalPlugin from '../src/approval-plugin.ts'
+import { CanonicalFormController, type FormField } from '../src/form-panel.ts'
 import { HelpOverlay, type HelpSection } from '../src/help.ts'
 import { InfoPanel, type InfoSection } from '../src/info-panel.ts'
-import { FrontendPanel } from '../src/frontend-panel.ts'
+import { CanonicalDocumentController } from '../src/frontend-panel.ts'
 import { PlanReviewPanel, planReviewChoices } from '../src/plan-review-panel.ts'
 import { Questionnaire } from '../src/questionnaire.ts'
-import { NoticeTail, SettingsPanel } from '../src/settings-command.ts'
+import { CanonicalSelectController } from '../src/select-list.ts'
+import { CanonicalMultiSelectController } from '../src/select.ts'
+import { CanonicalSettingsController, SettingsNoticeController } from '../src/settings-command.ts'
 import { UpdateNoticeComponent } from '../src/update-notice.ts'
 import { fakeBlueContext, FakeBlueComponents, FakeKeymap } from './fakes.ts'
 import { ADVERSARIAL, SCAN_WIDTHS, expectLinesFit } from '../../core/tests/width-scan.ts'
@@ -75,13 +80,13 @@ describe('interaction width-scan', () => {
       )
       for (const width of SCAN_WIDTHS) expectLinesFit(`UpdateNotice/${name}`, notice.render(width), width)
     })
-    it(`FormPanel survives ${name}`, () => {
+    it(`canonical form survives ${name}`, () => {
       const { keymap, components } = fakeBlueContext()
       const fields: FormField[] = [
         { id: 'f1', label: text, required: true },
         { id: 'f2', label: 'Short' },
       ]
-      const panel = new FormPanel({
+      const panel = new CanonicalFormController({
         keymap, theme: IDENTITY_THEME as never, components,
         title: text,
         subtitle: text,
@@ -90,7 +95,46 @@ describe('interaction width-scan', () => {
         onCancel: vi.fn(),
       })
       for (const width of SCAN_WIDTHS) {
-        expectLinesFit(`FormPanel/${name}`, panel.render(width), width)
+        expectLinesFit(`canonical-form/${name}`, panel.render(width), width)
+      }
+    })
+
+    it(`canonical single-select survives ${name}`, () => {
+      const panel = new CanonicalSelectController({
+        keymap: new FakeKeymap(),
+        theme: IDENTITY_THEME as never,
+        components: new FakeBlueComponents(),
+        rows: [
+          { value: 'hostile', label: text, description: text, badge: text },
+          { value: 'short', label: 'Short' },
+        ],
+        title: text,
+        titleHint: text,
+        footer: text,
+        filter: true,
+        onSelect: vi.fn(),
+        onCancel: vi.fn(),
+      })
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`canonical-single-select/${name}`, panel.render(width), width)
+      }
+    })
+
+    it(`canonical multi-select survives ${name}`, () => {
+      const panel = new CanonicalMultiSelectController({
+        keymap: new FakeKeymap(),
+        theme: IDENTITY_THEME as never,
+        components: new FakeBlueComponents(),
+        items: [
+          { value: 'hostile', label: text, description: text },
+          { value: 'short', label: 'Short' },
+        ],
+        title: text,
+        onConfirm: vi.fn(),
+        onCancel: vi.fn(),
+      })
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`canonical-multi-select/${name}`, panel.render(width), width)
       }
     })
 
@@ -98,7 +142,7 @@ describe('interaction width-scan', () => {
       const sections: HelpSection[] = [
         {
           heading: 'Commands',
-          labelPaint: (t: string): string => `^${t}^`,
+          labelTone: 'accent',
           rows: [
             { label: text, description: text },
             { label: '/short', description: 'fits anywhere' },
@@ -140,8 +184,8 @@ describe('interaction width-scan', () => {
       }
     })
 
-    it(`FrontendPanel survives ${name}`, () => {
-      const panel = new FrontendPanel({
+    it(`canonical document survives ${name}`, () => {
+      const panel = new CanonicalDocumentController({
         theme: IDENTITY_THEME as never,
         components: new FakeBlueComponents(),
         keymap: new FakeKeymap(),
@@ -157,8 +201,55 @@ describe('interaction width-scan', () => {
         onClose: vi.fn(),
       })
       for (const width of SCAN_WIDTHS) {
-        expectLinesFit(`FrontendPanel/${name}`, panel.render(width), width)
+        expectLinesFit(`canonical-document/${name}`, panel.render(width), width)
       }
+    })
+
+    it(`canonical loading document survives ${name}`, () => {
+      const panel = new CanonicalDocumentController({
+        theme: IDENTITY_THEME as never,
+        components: new FakeBlueComponents(),
+        keymap: new FakeKeymap(),
+        model: () => ({
+          mode: 'loading',
+          title: text,
+          view: { kind: 'text', content: text },
+          dismissible: false,
+        }),
+        onAction: vi.fn(),
+        onClose: vi.fn(),
+      })
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`canonical-loading-document/${name}`, panel.render(width), width)
+      }
+    })
+
+    it(`approval plugin prompt survives ${name}`, async () => {
+      const { ctx, screen } = fakeBlueContext()
+      const agent = {
+        id: `approval-width-${name}`,
+        status: 'idle',
+        inbox: { nextTurn: [], nextStep: [], remove: () => false },
+        followup: vi.fn(),
+        steer: vi.fn(),
+        cancel: vi.fn(),
+      } as unknown as Agent
+      ctx.provide('testSession', { current: agent, modelRef: undefined })
+      await ctx.plugin(approvalPlugin)
+      const request: ApprovalRequest = { agent, toolName: text, reason: text }
+      const pending = ctx.waterfall(
+        'approval/request',
+        request,
+        () => Promise.resolve<ApprovalOutcome>('unavailable'),
+      )
+      const component = screen.overlays.at(-1)?.component
+      if (component === undefined) throw new Error('approval prompt did not mount')
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`approval-plugin/${name}`, component.render(width), width)
+      }
+      component.handleInput?.('\x1b')
+      await pending
+      await ctx.fiber.dispose()
     })
 
     it(`PlanReviewPanel survives ${name}`, () => {
@@ -192,46 +283,48 @@ describe('interaction width-scan', () => {
       }
       questionnaire.handleInput('\x1b')
     })
-    it(`SettingsPanel survives ${name}`, () => {
+    it(`canonical settings survives ${name}`, () => {
       const components = new FakeBlueComponents()
-      const list = components.createSettingsList({
+      const items = [
+        { id: 'a', label: text, description: text, currentValue: text, values: [text, 'other'] },
+        { id: 'b', label: 'Short', currentValue: '1', values: ['1', '2'] },
+      ]
+      const panel = new CanonicalSettingsController({
+        theme: IDENTITY_THEME as never,
+        components,
+        keymap: new FakeKeymap(),
+        title: `settings › ${text}`,
+        footer: ['↑↓ select', text, 'esc back'],
         items: [
-          { id: 'a', label: text, description: text, currentValue: text, values: [text, 'other'] },
-          { id: 'b', label: 'Short', currentValue: '1', values: ['1', '2'] },
+          ...items,
         ],
+        notice: { current: { text, error: true } },
         onChange: vi.fn(),
         onCancel: vi.fn(),
       })
-      const panel = new SettingsPanel({
-        theme: IDENTITY_THEME as never,
-        title: `settings › ${text}`,
-        footer: ['↑↓ select', text, 'esc back'],
-        list,
-        notice: { current: { text, error: true } },
-        truncate: (value, width) => components.truncateToWidth(value, width),
-      })
       for (const width of SCAN_WIDTHS) {
-        expectLinesFit(`SettingsPanel/${name}`, panel.render(width), width)
+        expectLinesFit(`canonical-settings/${name}`, panel.render(width), width)
       }
       panel.handleInput('\x1b')
     })
 
-    it(`NoticeTail survives ${name}`, () => {
+    it(`settings notice survives ${name}`, () => {
       const components = new FakeBlueComponents()
-      const tail = new NoticeTail({
-        // The inner panel budgets its own rows (the SelectListPanel
+      const tail = new SettingsNoticeController({
+        // The inner panel budgets its own rows (the canonical selector
         // contract); the tail's own addition is the truncated notice row.
         inner: {
           focused: false,
-          render: (width: number) => [components.truncateToWidth(text, Math.max(0, width))],
+          currentNode: () => ({ kind: 'text', content: text }),
+          handleInput: () => {},
           invalidate: () => {},
         },
+        components,
         theme: IDENTITY_THEME as never,
         notice: { current: { text, error: false } },
-        truncate: (value, width) => components.truncateToWidth(value, width),
       })
       for (const width of SCAN_WIDTHS) {
-        expectLinesFit(`NoticeTail/${name}`, tail.render(width), width)
+        expectLinesFit(`settings-notice/${name}`, tail.render(width), width)
       }
       tail.handleInput('\x1b')
       tail.invalidate()

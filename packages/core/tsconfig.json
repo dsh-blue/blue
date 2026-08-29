@@ -13,6 +13,9 @@
       "path": "../api"
     },
     {
+      "path": "../ui"
+    },
+    {
       "path": "../frontend"
     }
   ]

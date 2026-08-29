@@ -295,7 +295,7 @@ declare module '@deepseek-ai/cordis' {
     blueRetractions: BlueRetractionService
     /** App-owned side-session actions; no Harness Agent or Session crosses this seam. */
     blueSessionActions: BlueSessionActions
-    /** Stable renderer-neutral snapshot and text-action surface for the active session. */
+    /** Stable renderer-neutral snapshot surface for the active session. */
     blueSessionReader: BlueSessionReader
     /** Official projection values for the active session, with no Session handle. */
     blueSessionProjections: BlueSessionProjectionReader

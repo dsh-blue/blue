@@ -5,15 +5,24 @@
  * (S31), and the `installFailLoud` release factory.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Terminal as HeadlessTerminal } from '@xterm/headless'
 import { CURSOR_MARKER, type TUI } from '@earendil-works/pi-tui'
-import type { BlueComponent, BlueFocusable, BlueRgbColor } from '../src/types.ts'
+import type { LayoutBox, LayoutFrame } from '@earendil-works/pi-tui/dist/layout.js'
+import { LAYOUT_NODE, type LayoutNode } from '@earendil-works/pi-tui/dist/layout-node.js'
+import { ui } from '../../ui/src/index.ts'
+import { compileBlueUiNode } from '../src/ui-compiler.ts'
+import type { BlueComponent, BlueComponents, BlueFocusable, BlueRgbColor, BlueSemanticColors } from '../src/types.ts'
 import { createStableTuiReference, createTerminalRelease, normalizeWheelInput, startBlueTerminal } from '../src/terminal.ts'
 import type { FrameOverflowEntry } from '../src/frame-clamp.ts'
 import type { AmbientOutputStream } from '../src/output-recovery.ts'
-import { visibleWidth } from '../src/width.ts'
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '../src/width.ts'
 import { FakeTerminal, waitForRender } from './fake-terminal.ts'
+
+vi.mock('../src/terminal-info.ts', async importOriginal => {
+  const actual = await importOriginal<typeof import('../src/terminal-info.ts')>()
+  return { ...actual, probeTerminalBackground: vi.fn(() => Promise.resolve(undefined)) }
+})
 
 /** A background probe that never answers, for tests indifferent to it. */
 function noProbe(): Promise<BlueRgbColor | undefined> {
@@ -43,6 +52,10 @@ function focusableComponent(text: string): BlueFocusable {
     render: () => [text],
     invalidate: () => {},
   }
+}
+
+function layoutScrolls(box: LayoutBox): NonNullable<LayoutBox['scrollView']>[] {
+  return [...(box.scrollView === undefined ? [] : [box.scrollView]), ...box.children.flatMap(layoutScrolls)]
 }
 
 class AltScreenTerminal extends FakeTerminal {
@@ -95,6 +108,13 @@ class TerminalOutputStream implements AmbientOutputStream {
 }
 
 describe('startBlueTerminal', () => {
+  it('uses the default background probe when none is injected', async () => {
+    const terminal = new FakeTerminal()
+    const runtime = await startBlueTerminal(terminal, undefined)
+    expect(runtime.background).toBeUndefined()
+    await runtime.stop()
+  })
+
   it('starts the renderer on the given terminal', async () => {
     const terminal = new FakeTerminal()
     const runtime = await startBlueTerminal(terminal, noProbe)
@@ -371,6 +391,35 @@ describe('startBlueTerminal', () => {
     await createTerminalRelease()()
     expect(secondTerminal.stopCount).toBe(1)
   })
+
+  it('linearizes managed surfaces in MainScreen order and restores the exact frame on unload', async () => {
+    const terminal = new FakeTerminal(80, 12)
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    runtime.addChild(textComponent('transcript'))
+    runtime.addBottomChild(textComponent('editor'))
+    runtime.addBottomChild(textComponent('status'), 'bottom')
+    const baseline = runtime.tui.render(80)
+
+    const header = runtime.surfaces.register({ id: 'header', placement: 'header', component: textComponent('header') })
+    const left = runtime.surfaces.register({ id: 'left', placement: 'left', component: textComponent('left') })
+    const right = runtime.surfaces.register({ id: 'right', placement: 'right', component: textComponent('right') })
+    const bottom = runtime.surfaces.register({ id: 'bottom', placement: 'bottom', component: textComponent('bottom') })
+    expect(runtime.tui.render(80).filter(row => row.length > 0)).toEqual(['header', 'transcript', 'left', 'right', 'bottom', 'editor', 'status'])
+    runtime.tui.children[0]!.invalidate()
+
+    const dock = textComponent('dock')
+    runtime.addDockChild(dock, { priority: 1 })
+    expect(runtime.tui.render(80)).toContain('dock')
+    runtime.removeChild(dock)
+    expect(runtime.tui.render(80)).not.toContain('dock')
+
+    header.dispose()
+    left.dispose()
+    right.dispose()
+    bottom.dispose()
+    expect(runtime.tui.render(80)).toEqual(baseline)
+    await runtime.stop()
+  })
 })
 
 describe('alternate-screen runtime', () => {
@@ -427,6 +476,582 @@ describe('alternate-screen runtime', () => {
       'editor-1',
       'footer-0',
     ])
+    await runtime.stop()
+    terminal.dispose()
+  })
+
+  it('renders optional lanes at 120 columns, falls back at 80/40, and keeps the fixed tail', async () => {
+    const terminal = new AltScreenTerminal(120, 12)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    runtime.addChild(textComponent('transcript'))
+    runtime.addBottomChild(textComponent('editor'))
+    runtime.addBottomChild(textComponent('status'), 'bottom')
+    runtime.surfaces.register({ id: 'header', title: 'Header', placement: 'header', component: textComponent('header') })
+    runtime.surfaces.register({ id: 'bottom', title: 'Bottom', placement: 'bottom', component: textComponent('bottom') })
+    runtime.surfaces.register({ id: 'left', title: 'Left', placement: 'left', priority: 100, component: textComponent('left') })
+    runtime.surfaces.register({ id: 'right', title: 'Right', placement: 'right', priority: 10, component: textComponent('right') })
+    runtime.requestRender(true)
+    await waitForRender()
+
+    const wide = await terminal.screen()
+    const body = wide.find(row => row.includes('transcript'))!
+    expect(body.indexOf('left')).toBeLessThan(body.indexOf('transcript'))
+    expect(body.indexOf('transcript')).toBeLessThan(body.indexOf('right'))
+    expect(wide[0]).toContain('header')
+    expect(wide.slice(-2)).toEqual(['editor', 'status'])
+
+    terminal.resize(80, 12)
+    await waitForRender()
+    const medium = await terminal.screen()
+    const mediumBody = medium.find(row => row.includes('transcript'))!
+    expect(mediumBody).toContain('left')
+    expect(mediumBody).not.toContain('right')
+    expect(medium.some(row => row.trim() === 'right')).toBe(true)
+    expect(medium.slice(-2)).toEqual(['editor', 'status'])
+
+    terminal.resize(40, 12)
+    await waitForRender()
+    const narrow = await terminal.screen()
+    expect(narrow.find(row => row.includes('transcript'))?.trim()).toBe('transcript')
+    expect(narrow.some(row => row.includes('[Left]') && row.includes('Right') && row.includes('Bottom'))).toBe(true)
+    expect(narrow.slice(-2)).toEqual(['editor', 'status'])
+    expect(narrow.every(row => visibleWidth(row) <= 40)).toBe(true)
+
+    await runtime.stop()
+    terminal.dispose()
+  })
+
+  it('keeps the no-contribution frame exactly equivalent before and after a surface lifecycle', async () => {
+    const terminal = new AltScreenTerminal(80, 8)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    runtime.addChild(textComponent('transcript'))
+    runtime.addBottomChild(textComponent('editor'))
+    runtime.addBottomChild(textComponent('status'), 'bottom')
+    runtime.requestRender(true)
+    await waitForRender()
+    const baseline = await terminal.screen()
+
+    const registration = runtime.surfaces.register({ id: 'temporary', placement: 'right', component: textComponent('temporary') })
+    runtime.requestRender(true)
+    await waitForRender()
+    expect((await terminal.screen()).join('\n')).toContain('temporary')
+    registration.dispose()
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(await terminal.screen()).toEqual(baseline)
+
+    await runtime.stop()
+    terminal.dispose()
+  })
+
+  it('moves a side-only lane through bottom fallback and the 44-column reopen boundary', async () => {
+    const terminal = new AltScreenTerminal(120, 8)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    runtime.addChild(textComponent('transcript'))
+    runtime.addBottomChild(textComponent('editor'))
+    runtime.addBottomChild(textComponent('status'), 'bottom')
+    runtime.surfaces.register({ id: 'right', placement: 'right', component: textComponent('right') })
+    runtime.requestRender(true)
+    await waitForRender()
+    expect((await terminal.screen()).find(row => row.includes('transcript'))).toContain('right')
+
+    terminal.resize(40, 8)
+    await waitForRender()
+    let screen = await terminal.screen()
+    expect(screen.find(row => row.includes('transcript'))?.trim()).toBe('transcript')
+    expect(screen.some(row => row.trim() === 'right')).toBe(true)
+
+    terminal.resize(76, 8)
+    await waitForRender()
+    screen = await terminal.screen()
+    expect(screen.find(row => row.includes('transcript'))).not.toContain('right')
+    expect(screen.some(row => row.trim() === 'right')).toBe(true)
+
+    terminal.resize(77, 8)
+    await waitForRender()
+    screen = await terminal.screen()
+    expect(screen.find(row => row.includes('transcript'))).toContain('right')
+    expect(screen.slice(-2)).toEqual(['editor', 'status'])
+
+    await runtime.stop()
+    terminal.dispose()
+  })
+
+  it('promotes a focused collapsed side without adding a lane at narrow width', async () => {
+    const terminal = new AltScreenTerminal(73, 8)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    runtime.addChild(textComponent('transcript'))
+    runtime.addBottomChild(textComponent('editor'))
+    runtime.addBottomChild(textComponent('status'), 'bottom')
+    const received: string[] = []
+    const pane = (body: string): BlueFocusable => ({
+      focused: false,
+      render: () => [body],
+      handleInput: data => received.push(`${body}:${data}`),
+      invalidate: () => {},
+    })
+    const left = pane('body-left')
+    const right = pane('body-right')
+    runtime.surfaces.register({ id: 'left', placement: 'left', priority: 100, component: left })
+    runtime.surfaces.register({ id: 'right', placement: 'right', priority: 0, component: right })
+    runtime.requestRender(true)
+    await waitForRender()
+    let transcriptRow = (await terminal.screen()).find(row => row.includes('transcript'))!
+    expect(transcriptRow).toContain('body-left')
+    expect(transcriptRow).not.toContain('body-right')
+
+    runtime.setFocus(right)
+    await waitForRender()
+    transcriptRow = (await terminal.screen()).find(row => row.includes('transcript'))!
+    expect(transcriptRow).not.toContain('body-left')
+    expect(transcriptRow).toContain('body-right')
+    terminal.sendInput('x')
+    expect(received).toEqual(['body-right:x'])
+
+    await runtime.stop()
+    terminal.dispose()
+  })
+
+  it('can register a collapsed side at 40 columns and recover its HStack at 120', async () => {
+    const terminal = new AltScreenTerminal(40, 8)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    runtime.addChild(textComponent('transcript'))
+    runtime.addBottomChild(textComponent('editor'))
+    runtime.addBottomChild(textComponent('status'), 'bottom')
+    runtime.surfaces.register({ id: 'left', placement: 'left', component: textComponent('left') })
+    runtime.requestRender(true)
+    await waitForRender()
+    expect((await terminal.screen()).some(row => row.trim() === 'left')).toBe(true)
+
+    terminal.resize(120, 8)
+    await waitForRender()
+    const body = (await terminal.screen()).find(row => row.includes('transcript'))!
+    expect(body.indexOf('left')).toBeLessThan(body.indexOf('transcript'))
+
+    await runtime.stop()
+    terminal.dispose()
+  })
+
+  it('preserves a compiled pane scroll as contained while transcript remains the only primary owner', async () => {
+    const terminal = new AltScreenTerminal(80, 8)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    runtime.addChild({
+      render: () => Array.from({ length: 20 }, (_, index) => `transcript-${String(index)}`),
+      invalidate: () => {},
+    })
+    runtime.addBottomChild(textComponent('editor'))
+    runtime.addBottomChild(textComponent('status'), 'bottom')
+    const identity = (value: string): string => value
+    const colors = new Proxy({ logoGradient: [identity] }, {
+      get: (target, key) => key === 'logoGradient' ? target.logoGradient : identity,
+    }) as BlueSemanticColors
+    const components = { visibleWidth, wrapText: wrapTextWithAnsi, truncateToWidth } as BlueComponents
+    const pane = compileBlueUiNode(ui.scroll(ui.stack.column(
+      Array.from({ length: 20 }, (_, index) => ui.text(`pane-${String(index)}`)),
+    )), {
+      components,
+      colors,
+      getViewport: () => ({ columns: runtime.columns, rows: runtime.rows }),
+      screenMode: 'alternate',
+      emit: () => {},
+    })
+    expect(pane.ok).toBe(true)
+    if (!pane.ok) throw new Error(pane.message)
+    const sideRegistration = runtime.surfaces.register({ id: 'pane', placement: 'right', component: pane.value.component })
+    runtime.requestRender(true)
+    await waitForRender()
+
+    const frame = (runtime.tui as unknown as { currentLayout: LayoutFrame }).currentLayout
+    const scrolls = layoutScrolls(frame.root)
+    expect(scrolls).toHaveLength(2)
+    const primary = scrolls.find(scroll => scroll.primary)!
+    const contained = scrolls.find(scroll => !scroll.primary)!
+    expect(contained).toMatchObject({ overscroll: 'contain', viewportHeight: 6, scrollTop: 0 })
+    expect(primary.viewportHeight).toBe(6)
+    const primaryBefore = primary.scrollTop
+
+    expect(runtime.scrollContent('up', 2)).toBe(true)
+    await waitForRender()
+    expect(primary.scrollTop).toBeLessThan(primaryBefore)
+    expect(contained.scrollTop).toBe(0)
+
+    sideRegistration.dispose()
+    const bottomRegistration = runtime.surfaces.register({ id: 'pane-bottom', placement: 'bottom', component: pane.value.component })
+    runtime.requestRender(true)
+    await waitForRender()
+    let nextFrame = (runtime.tui as unknown as { currentLayout: LayoutFrame }).currentLayout
+    let nextScrolls = layoutScrolls(nextFrame.root)
+    expect(nextScrolls).toHaveLength(2)
+    expect(nextScrolls.find(scroll => !scroll.primary)?.viewportHeight).toBe(2)
+
+    bottomRegistration.dispose()
+    runtime.surfaces.register({ id: 'pane-header', placement: 'header', component: pane.value.component })
+    runtime.requestRender(true)
+    await waitForRender()
+    nextFrame = (runtime.tui as unknown as { currentLayout: LayoutFrame }).currentLayout
+    nextScrolls = layoutScrolls(nextFrame.root)
+    expect(nextScrolls).toHaveLength(2)
+    expect(nextScrolls.find(scroll => !scroll.primary)?.viewportHeight).toBe(4)
+
+    await runtime.stop()
+    terminal.dispose()
+  })
+
+  it('forwards lane and tab invalidation through the surface manager', async () => {
+    const terminal = new AltScreenTerminal(80, 8)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    const transcript = textComponent('transcript')
+    runtime.addChild(transcript)
+    runtime.addBottomChild(textComponent('editor'))
+    runtime.addBottomChild(textComponent('status'), 'bottom')
+    let invalidations = 0
+    const tracked = (label: string): BlueComponent => ({
+      render: () => [label],
+      invalidate: () => { invalidations += 1 },
+    })
+    const first = runtime.surfaces.register({ id: 'first', placement: 'header', component: tracked('first') })
+    const second = runtime.surfaces.register({ id: 'second', placement: 'header', component: tracked('second') })
+    runtime.requestRender(true)
+    await waitForRender()
+
+    const layoutRoot = (runtime.tui as unknown as { layoutRoot: BlueComponent & { [LAYOUT_NODE](): LayoutNode } }).layoutRoot
+    const rootNode = layoutRoot[LAYOUT_NODE]()
+    expect(rootNode.type).toBe('vstack')
+    if (rootNode.type !== 'vstack') throw new Error('expected vstack')
+    const lane = rootNode.entries[0]!.component as BlueComponent & { [LAYOUT_NODE](): LayoutNode }
+    const laneNode = lane[LAYOUT_NODE]()
+    expect(laneNode.type).toBe('vstack')
+    if (laneNode.type !== 'vstack') throw new Error('expected lane vstack')
+    const tabs = laneNode.entries[0]!.component
+    lane.invalidate()
+    tabs.invalidate()
+    expect(invalidations).toBe(4)
+    runtime.removeChild(transcript)
+
+    first.dispose()
+    second.dispose()
+    expect(tabs.render(80)).toEqual([])
+    await runtime.stop()
+    terminal.dispose()
+  })
+
+  it('reports measured lane viewports without recursive surface rendering', async () => {
+    const terminal = new AltScreenTerminal(120, 12)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    runtime.addChild(textComponent('transcript'))
+    runtime.addBottomChild(textComponent('editor'))
+    runtime.addBottomChild(textComponent('status'), 'bottom')
+    const samples = new Map<string, { readonly columns: number, readonly rows: number }[]>()
+    const measured = (id: string, rows: number): BlueComponent => ({
+      render: () => {
+        const viewport = runtime.surfaceViewport(id)
+        const seen = samples.get(id) ?? []
+        seen.push(viewport)
+        samples.set(id, seen)
+        return Array.from({ length: rows }, () => id)
+      },
+      invalidate: () => {},
+    })
+    runtime.surfaces.register({ id: 'header', placement: 'header', component: measured('header', 1) })
+    runtime.surfaces.register({ id: 'right', placement: 'right', component: measured('right', 1) })
+    runtime.surfaces.register({ id: 'bottom', placement: 'bottom', component: measured('bottom', 2) })
+
+    runtime.requestRender(true)
+    await waitForRender()
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(samples.get('header')?.at(-1)).toEqual({ columns: 120, rows: 1 })
+    expect(samples.get('right')?.at(-1)).toEqual({ columns: 32, rows: 7 })
+    expect(samples.get('bottom')?.at(-1)).toEqual({ columns: 120, rows: 2 })
+
+    runtime.surfaces.register({ id: 'right-peer', placement: 'right', component: textComponent('peer') })
+    expect(runtime.surfaceViewport('right')).toEqual({ columns: 32, rows: 6 })
+    expect(runtime.surfaceViewport('missing').columns).toBe(120)
+
+    const layout = runtime.surfaces.layout(terminal.columns, terminal.rows)
+    const { width: _width, ...rightWithoutWidth } = layout.right!
+    const layoutSpy = vi.spyOn(runtime.surfaces, 'layout').mockReturnValue({ ...layout, right: rightWithoutWidth })
+    expect(runtime.surfaceViewport('right').columns).toBe(120)
+    layoutSpy.mockRestore()
+
+    await runtime.stop()
+    terminal.dispose()
+  })
+
+  it('reports the full terminal viewport for main-screen surfaces', async () => {
+    const terminal = new FakeTerminal(90, 18)
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    runtime.surfaces.register({ id: 'main-pane', placement: 'right', component: textComponent('pane') })
+
+    expect(runtime.surfaceViewport('main-pane')).toEqual({ columns: 90, rows: 18 })
+
+    await runtime.stop()
+  })
+
+  it('keeps restored editor focus when a stale pane release follows passive activation', async () => {
+    const terminal = new AltScreenTerminal(120, 8)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    runtime.addChild(textComponent('transcript'))
+    const editor = focusableComponent('editor')
+    runtime.addBottomChild(editor)
+    runtime.addBottomChild(textComponent('status'), 'bottom')
+    runtime.setFocus(editor)
+    const interactive = focusableComponent('interactive')
+    runtime.surfaces.register({ id: 'interactive', placement: 'right', component: interactive, focusTarget: interactive })
+    runtime.surfaces.register({ id: 'passive', placement: 'right', component: textComponent('passive'), focusTarget: null })
+    runtime.setFocus(interactive)
+
+    runtime.releaseSurfaceFocus('interactive')
+    expect((runtime.tui as unknown as { getFocusedComponent(): BlueComponent | null }).getFocusedComponent()).toBe(editor)
+    expect(editor.focused).toBe(true)
+
+    runtime.setFocus(interactive)
+    expect(runtime.surfaces.activate('right', 'passive')).toBe(true)
+    expect(editor.focused).toBe(true)
+    runtime.releaseSurfaceFocus('interactive')
+    expect((runtime.tui as unknown as { getFocusedComponent(): BlueComponent | null }).getFocusedComponent()).toBe(editor)
+    expect(editor.focused).toBe(true)
+
+    await runtime.stop()
+    terminal.dispose()
+  })
+
+  it('releases real focus for hidden narrow surfaces but retains it across bottom fallback', async () => {
+    const terminal = new AltScreenTerminal(120, 8)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    runtime.addChild(textComponent('transcript'))
+    runtime.addBottomChild(textComponent('editor'))
+    runtime.addBottomChild(textComponent('status'), 'bottom')
+    const received: string[] = []
+    const pane = (label: string): BlueFocusable => ({
+      focused: false,
+      render(width) {
+        const row = `${label} ${this.focused ? CURSOR_MARKER : ''}tail`
+        return [visibleWidth(row) <= width ? row : row.slice(0, width)]
+      },
+      handleInput: data => received.push(`${label}:${data}`),
+      invalidate: () => {},
+    })
+
+    const hiddenPane = pane('hidden')
+    const hiddenRegistration = runtime.surfaces.register({ id: 'hidden', placement: 'right', narrow: 'hidden', component: hiddenPane })
+    runtime.setFocus(hiddenPane)
+    terminal.sendInput('a')
+    expect(received).toEqual(['hidden:a'])
+    terminal.resize(40, 8)
+    await waitForRender()
+    expect(hiddenPane.focused).toBe(false)
+    terminal.sendInput('b')
+    expect(received).toEqual(['hidden:a'])
+
+    hiddenRegistration.dispose()
+    terminal.resize(120, 8)
+    const fallbackPane = pane('fallback')
+    const fallbackRegistration = runtime.surfaces.register({ id: 'fallback', placement: 'right', narrow: 'bottom', component: fallbackPane })
+    runtime.setFocus(fallbackPane)
+    runtime.requestRender(true)
+    await waitForRender()
+    expect((await terminal.screen()).join('\n')).toContain('tail')
+    terminal.resize(40, 8)
+    await waitForRender()
+    expect(fallbackPane.focused).toBe(true)
+    terminal.sendInput('c')
+    expect(received).toEqual(['hidden:a', 'fallback:c'])
+    const replacement = pane('replacement')
+    fallbackRegistration.replace(replacement)
+    expect(fallbackPane.focused).toBe(false)
+    expect(replacement.focused).toBe(true)
+    terminal.sendInput('d')
+    expect(received).toEqual(['hidden:a', 'fallback:c', 'replacement:d'])
+
+    await runtime.stop()
+    terminal.dispose()
+  })
+
+  it('retargets lane activation, active unload, and overlay pre-focus', async () => {
+    const terminal = new AltScreenTerminal(120, 8)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    runtime.addChild(textComponent('transcript'))
+    runtime.addBottomChild(textComponent('editor'))
+    runtime.addBottomChild(textComponent('status'), 'bottom')
+    const received: string[] = []
+    const pane = (label: string): BlueFocusable => ({
+      focused: false,
+      render: () => [label],
+      handleInput: data => received.push(`${label}:${data}`),
+      invalidate: () => {},
+    })
+    const a = pane('a')
+    const b = pane('b')
+    runtime.surfaces.register({ id: 'a', placement: 'right', narrow: 'hidden', component: a })
+    const bRegistration = runtime.surfaces.register({ id: 'b', placement: 'right', component: b })
+    runtime.setFocus(a)
+    expect(runtime.surfaces.activate('right', 'b')).toBe(true)
+    expect(a.focused).toBe(false)
+    expect(b.focused).toBe(true)
+    terminal.sendInput('x')
+    expect(received).toEqual(['b:x'])
+
+    expect(runtime.surfaces.activate('right', 'a')).toBe(true)
+    const transferOverlay = pane('transfer-overlay')
+    const transferHandle = runtime.showOverlay(transferOverlay)
+    const nestedOverlay = pane('nested-overlay')
+    const nestedHandle = runtime.showOverlay(nestedOverlay)
+    expect(runtime.surfaces.activate('right', 'b')).toBe(true)
+    nestedHandle.hide()
+    transferHandle.hide()
+    expect(b.focused).toBe(true)
+
+    bRegistration.dispose()
+    expect(b.focused).toBe(false)
+    expect(a.focused).toBe(true)
+    terminal.sendInput('y')
+    expect(received).toEqual(['b:x', 'a:y'])
+
+    const overlay = pane('overlay')
+    const handle = runtime.showOverlay(overlay)
+    expect(overlay.focused).toBe(true)
+    terminal.resize(40, 8)
+    await waitForRender()
+    handle.hide()
+    expect(a.focused).toBe(false)
+    terminal.sendInput('z')
+    expect(received).toEqual(['b:x', 'a:y'])
+
+    await runtime.stop()
+    terminal.dispose()
+  })
+
+  it('retargets rendered input focus when persisted active surface state is stale', async () => {
+    const terminal = new AltScreenTerminal(120, 8)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    runtime.addChild(textComponent('transcript'))
+    runtime.addBottomChild(textComponent('editor'))
+    runtime.addBottomChild(textComponent('status'), 'bottom')
+    runtime.surfaces.replaceUserState({ active: { right: 'missing' } })
+    const received: string[] = []
+    const pane = (body: string): BlueFocusable => ({
+      focused: false,
+      render: () => [body],
+      handleInput: data => received.push(`${body}:${data}`),
+      invalidate: () => {},
+    })
+    const a = pane('body-a')
+    const b = pane('body-b')
+    runtime.surfaces.register({ id: 'a', placement: 'right', component: a })
+    runtime.surfaces.register({ id: 'b', placement: 'right', component: b })
+    runtime.setFocus(a)
+    runtime.requestRender(true)
+    await waitForRender()
+    expect((await terminal.screen()).join('\n')).toContain('body-a')
+
+    expect(runtime.surfaces.activate('right', 'b')).toBe(true)
+    await waitForRender()
+    const screen = (await terminal.screen()).join('\n')
+    expect(screen).toContain('body-b')
+    expect(screen).not.toContain('body-a')
+    expect(a.focused).toBe(false)
+    expect(b.focused).toBe(true)
+    terminal.sendInput('x')
+    expect(received).toEqual(['body-b:x'])
+
+    await runtime.stop()
+    terminal.dispose()
+  })
+
+  it('preserves active side focus through bottom fallback and reverse resize', async () => {
+    const terminal = new AltScreenTerminal(120, 8)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    runtime.addChild(textComponent('transcript'))
+    runtime.addBottomChild(textComponent('editor'))
+    runtime.addBottomChild(textComponent('status'), 'bottom')
+    const received: string[] = []
+    const pane = (body: string): BlueFocusable => ({
+      focused: false,
+      render: () => [body],
+      handleInput: data => received.push(`${body}:${data}`),
+      invalidate: () => {},
+    })
+    const a = pane('body-a')
+    const b = pane('body-b')
+    runtime.surfaces.register({ id: 'a', placement: 'right', component: a })
+    runtime.surfaces.register({ id: 'b', placement: 'right', component: b })
+    expect(runtime.surfaces.activate('right', 'b')).toBe(true)
+    runtime.setFocus(b)
+    runtime.requestRender(true)
+    await waitForRender()
+    expect((await terminal.screen()).join('\n')).toContain('body-b')
+
+    terminal.resize(40, 8)
+    await waitForRender()
+    let screen = (await terminal.screen()).join('\n')
+    expect(screen).toContain('body-b')
+    expect(screen).not.toContain('body-a')
+    terminal.sendInput('x')
+    expect(received).toEqual(['body-b:x'])
+
+    expect(runtime.surfaces.activate('bottom', 'a')).toBe(true)
+    await waitForRender()
+    screen = (await terminal.screen()).join('\n')
+    expect(screen).toContain('body-a')
+    expect(screen).not.toContain('body-b')
+    expect(a.focused).toBe(true)
+    terminal.resize(120, 8)
+    await waitForRender()
+    expect((await terminal.screen()).join('\n')).toContain('body-a')
+    terminal.sendInput('y')
+    expect(received).toEqual(['body-b:x', 'body-a:y'])
+
+    await runtime.stop()
+    terminal.dispose()
+  })
+
+  it('shrinks header and managed bottom before clipping the fixed editor/status tail', async () => {
+    const terminal = new AltScreenTerminal(80, 8)
+    const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
+    const rows = (label: string, count: number): BlueComponent => ({
+      render: () => Array.from({ length: count }, (_, index) => `${label}-${String(index)}`),
+      invalidate: () => {},
+    })
+    runtime.addChild(textComponent('transcript'))
+    runtime.addBottomChild(rows('editor', 3))
+    runtime.addBottomChild(rows('status', 2), 'bottom')
+    runtime.surfaces.register({ id: 'header', placement: 'header', component: rows('header', 4) })
+    runtime.surfaces.register({ id: 'bottom', placement: 'bottom', component: rows('bottom', 2) })
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(await terminal.screen()).toEqual([
+      'header-0',
+      'header-1',
+      'transcript',
+      'editor-0',
+      'editor-1',
+      'editor-2',
+      'status-0',
+      'status-1',
+    ])
+
+    terminal.resize(80, 6)
+    await waitForRender()
+    expect(await terminal.screen()).toEqual(['transcript', 'editor-0', 'editor-1', 'editor-2', 'status-0', 'status-1'])
+
+    terminal.resize(80, 12)
+    await waitForRender()
+    expect(await terminal.screen()).toEqual([
+      'header-0',
+      'header-1',
+      'header-2',
+      'header-3',
+      'transcript',
+      'bottom-0',
+      'bottom-1',
+      'editor-0',
+      'editor-1',
+      'editor-2',
+      'status-0',
+      'status-1',
+    ])
+
     await runtime.stop()
     terminal.dispose()
   })
@@ -846,6 +1471,70 @@ describe('suspend', () => {
 })
 
 describe('overlay focus discipline', () => {
+  it('keeps trusted default overlay width responsive while enforcing its hard maximum', async () => {
+    const terminal = new FakeTerminal(40, 24)
+    const runtime = await startBlueTerminal(terminal, noProbe)
+    const widths: number[] = []
+    const overlay = { render: (width: number) => { widths.push(width); return ['overlay'] }, invalidate: () => {} }
+    const handle = runtime.showOverlay(overlay, { width: '70%', minWidth: 150, maxWidth: 100 })
+
+    widths.length = 0
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(widths.at(-1)).toBe(40)
+    expect((runtime.tui as unknown as { overlayStack: { options?: { minWidth?: number } }[] }).overlayStack[0]!.options?.minWidth).toBe(40)
+    terminal.resize(200, 24)
+    widths.length = 0
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(widths.at(-1)).toBe(100)
+    expect((runtime.tui as unknown as { overlayStack: { options?: { minWidth?: number } }[] }).overlayStack[0]!.options?.minWidth).toBe(100)
+    handle.hide()
+
+    const numericWidths: number[] = []
+    const numeric = runtime.showOverlay({ render: width => { numericWidths.push(width); return ['numeric'] }, invalidate: () => {} }, { width: 60, maxWidth: 100 })
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(numericWidths.at(-1)).toBe(60)
+    numeric.hide()
+
+    const defaultWidths: number[] = []
+    const defaulted = runtime.showOverlay({ render: width => { defaultWidths.push(width); return ['default'] }, invalidate: () => {} }, { maxWidth: 100 })
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(defaultWidths.at(-1)).toBe(80)
+    defaulted.hide()
+
+    const percentages: number[] = []
+    const explicit = runtime.showOverlay({ render: width => { percentages.push(width); return ['explicit'] }, invalidate: () => {} }, { width: '50%' })
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(percentages.at(-1)).toBe(100)
+    terminal.resize(80, 24)
+    runtime.requestRender(true)
+    await waitForRender()
+    expect(percentages.at(-1)).toBe(40)
+    explicit.hide()
+    await runtime.stop()
+  })
+
+  it('reports capturing overlays across visible, hidden, and passive states', async () => {
+    const runtime = await startBlueTerminal(new FakeTerminal(), noProbe)
+    expect(runtime.hasCapturingOverlay()).toBe(false)
+
+    const capturing = runtime.showOverlay(textComponent('capturing'))
+    expect(runtime.hasCapturingOverlay()).toBe(true)
+    capturing.setHidden(true)
+    expect(runtime.hasCapturingOverlay()).toBe(false)
+    capturing.hide()
+
+    const passive = runtime.showOverlay(textComponent('passive'), { nonCapturing: true })
+    expect(runtime.hasCapturingOverlay()).toBe(false)
+    passive.hide()
+
+    await runtime.stop()
+  })
+
   it('focuses a shown overlay and restores the previous focus on hide', async () => {
     const terminal = new FakeTerminal()
     const runtime = await startBlueTerminal(terminal, noProbe)

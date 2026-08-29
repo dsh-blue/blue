@@ -44,6 +44,136 @@ importers:
       vitest:
         specifier: ^4.1.8
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(@vitest/coverage-v8@4.1.10)(vite@8.2.1(@types/node@22.20.1)(yaml@2.9.0))
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
+
+  examples/blue-ecosystem:
+    dependencies:
+      '@dsh-blue-example/bottom-log':
+        specifier: workspace:*
+        version: link:../bottom-log
+      '@dsh-blue-example/editor-provider':
+        specifier: workspace:*
+        version: link:../editor-provider
+      '@dsh-blue-example/header':
+        specifier: workspace:*
+        version: link:../header
+      '@dsh-blue-example/overlay':
+        specifier: workspace:*
+        version: link:../overlay
+      '@dsh-blue-example/right-inspector':
+        specifier: workspace:*
+        version: link:../right-inspector
+      '@dsh-blue-example/status-provider':
+        specifier: workspace:*
+        version: link:../status-provider
+      '@dsh-blue-example/user-kit':
+        specifier: workspace:*
+        version: link:../blue-user-kit
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@dsh-blue/blue':
+        specifier: workspace:*
+        version: link:../../packages/bundle/blue
+
+  examples/blue-user-kit:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@dsh-blue/blue-api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@dsh-blue/blue-core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@dsh-blue/blue-ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+
+  examples/bottom-log:
+    dependencies:
+      '@dsh-blue/blue-api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@dsh-blue/blue-ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+
+  examples/editor-provider:
+    dependencies:
+      '@dsh-blue/blue-api':
+        specifier: workspace:*
+        version: link:../../packages/api
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+
+  examples/header:
+    dependencies:
+      '@dsh-blue-example/user-kit':
+        specifier: workspace:*
+        version: link:../blue-user-kit
+      '@dsh-blue/blue-api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@dsh-blue/blue-ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+
+  examples/overlay:
+    dependencies:
+      '@dsh-blue/blue-api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@dsh-blue/blue-ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+
+  examples/right-inspector:
+    dependencies:
+      '@dsh-blue-example/user-kit':
+        specifier: workspace:*
+        version: link:../blue-user-kit
+      '@dsh-blue/blue-api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@dsh-blue/blue-ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+
+  examples/status-provider:
+    dependencies:
+      '@dsh-blue/blue-api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@dsh-blue/blue-ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
 
   packages/api:
     devDependencies:
@@ -150,6 +280,9 @@ importers:
       '@dsh-blue/blue-transcript':
         specifier: workspace:*
         version: link:../../transcript
+      '@dsh-blue/blue-ui':
+        specifier: workspace:*
+        version: link:../../ui
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.1
@@ -299,6 +432,9 @@ importers:
       '@dsh-blue/blue-api':
         specifier: workspace:*
         version: link:../api
+      '@dsh-blue/blue-ui':
+        specifier: workspace:*
+        version: link:../ui
       '@earendil-works/pi-tui':
         specifier: ^0.84.2
         version: 0.84.2
@@ -327,12 +463,25 @@ importers:
       '@deepseek-ai/cordis':
         specifier: 4.0.1
         version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@dsh-blue/blue-api':
+        specifier: workspace:*
+        version: link:../api
 
   packages/harness-adapter:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: 3.18.1
+        version: 3.18.1
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.1
         version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@deepseek-ai/dsh-client-locale':
+        specifier: 0.1.1-rc.2
+        version: 0.1.1-rc.2(6d7a5704cdd97ee8475f4c2c1b34030a)
+      '@deepseek-ai/dsh-settings':
+        specifier: 0.1.1-rc.2
+        version: 0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-brand@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/schemastery@3.18.1)
       '@dsh-blue/blue-api':
         specifier: workspace:*
         version: link:../api
@@ -524,6 +673,12 @@ importers:
       '@dsh-blue/blue-core':
         specifier: workspace:*
         version: link:../core
+
+  packages/ui:
+    dependencies:
+      '@dsh-blue/blue-api':
+        specifier: workspace:*
+        version: link:../api
 
   website:
     devDependencies:

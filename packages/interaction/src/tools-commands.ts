@@ -25,7 +25,7 @@ import type {} from '@dsh-blue/blue-app'
 import { displayServices } from './display-services.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
 import { InfoPanel, type InfoSection } from './info-panel.ts'
-import { SelectListPanel, type SelectRow } from './select-list.ts'
+import { CanonicalSelectController, type SelectRow } from './select-list.ts'
 
 /** The public prefix of MCP-served tool names (`mcp__<server>__<raw>`). */
 const MCP_PREFIX = 'mcp__'
@@ -244,7 +244,7 @@ export function registerToolsCommands(ctx: Context): () => void {
         },
       }))
     }
-    const restorePicker = mountEditorReplacement(ctx, new SelectListPanel({
+    const restorePicker = mountEditorReplacement(ctx, new CanonicalSelectController({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,

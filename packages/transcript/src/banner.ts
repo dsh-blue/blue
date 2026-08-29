@@ -35,6 +35,13 @@ import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@dsh-blue/blue-app'
 import { LOGO_ART, LOGO_GRADIENT, LOGO_ROWS } from './banner-art.ts'
 import { BLUE_VERSION } from './banner-content.ts'
+import type { BlueTranslate } from '@dsh-blue/blue-frontend'
+import {
+  BANNER_LOCALE,
+  mountTranscriptLocale,
+  observeTranscriptLocale,
+  transcriptTranslator,
+} from './locale.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-banner'
@@ -130,6 +137,8 @@ export interface BannerDeps {
   readonly truncate: (text: string, width: number) => string
   /** ANSI-aware visible-width measurement. */
   readonly visibleWidth: (text: string) => number
+  /** Dynamic translator for banner-owned copy. */
+  readonly t?: BlueTranslate
 }
 
 /** The right-hand status lines, one per banner row. */
@@ -158,6 +167,7 @@ export function composeBannerLines(
   const layout = bannerLayout(width)
   if (layout === null) return []
   const { valueWidth } = layout
+  const t = deps.t ?? ((key: string): string => key)
   const paint: Record<BannerStyle, (text: string) => string> = {
     logo: deps.colors.primary,
     strong: deps.colors.primary,
@@ -182,12 +192,12 @@ export function composeBannerLines(
   // The right-hand status column; the welcome and help lines lead, then the
   // three info rows. A blank spacer row separates the two groups.
   const status: StatusLine[] = [
-    { text: 'Welcome to Blue!', style: 'strong' },
-    { text: 'Send /help for help information.', style: 'muted' },
+    { text: t('Welcome to Blue!'), style: 'strong' },
+    { text: t('Send /help for help information.'), style: 'muted' },
     { text: '', style: 'text' },
-    { text: `${DIRECTORY_LABEL}${content.cwd}`, style: 'text' },
-    { text: `${MODEL_LABEL}${content.model} · ${content.provider}`, style: 'highlight' },
-    { text: `${VERSION_LABEL}${content.version}`, style: 'text' },
+    { text: `${t(DIRECTORY_LABEL)}${content.cwd}`, style: 'text' },
+    { text: `${t(MODEL_LABEL)}${content.model} · ${content.provider}`, style: 'highlight' },
+    { text: `${t(VERSION_LABEL)}${content.version}`, style: 'text' },
   ]
 
   // Center the status column against the logo's rows; a negative offset
@@ -236,6 +246,7 @@ class BannerComponent implements BlueComponent {
   constructor(
     private readonly colors: BlueSemanticColors,
     private readonly components: BlueComponents,
+    private readonly t: BlueTranslate,
     content: BannerContent,
   ) {
     this.content = content
@@ -255,6 +266,7 @@ class BannerComponent implements BlueComponent {
       colors: this.colors,
       truncate: (text, target) => this.components.truncateToWidth(text, target),
       visibleWidth: text => this.components.visibleWidth(text),
+      t: this.t,
     }, this.content, width)
   }
 
@@ -275,9 +287,11 @@ class BannerComponent implements BlueComponent {
  * @param config - optional profile-local display identity.
  */
 export function apply(ctx: Context, config: Config = {}): void {
+  mountTranscriptLocale(ctx, 'transcript.banner', BANNER_LOCALE)
+  const t = transcriptTranslator(ctx, 'transcript.banner')
   const displayVersion = config.displayVersion ?? BLUE_VERSION
   const boot = ctx.agentDefaultModel.currentSelection()
-  const banner = new BannerComponent(ctx.blueTheme.colors, ctx.blueComponents, {
+  const banner = new BannerComponent(ctx.blueTheme.colors, ctx.blueComponents, t, {
     version: displayVersion,
     model: boot.model,
     provider: boot.provider,
@@ -298,6 +312,11 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.effect(() => () => registration.dispose())
   // Effect-bound so unloading this fiber unmounts the banner.
   ctx.effect(() => ctx.blueScreen.addChild(new GutterComponent(banner)))
+  const offLocale = observeTranscriptLocale(ctx, () => {
+    banner.invalidate()
+    ctx.blueScreen.requestRender(true)
+  })
+  ctx.effect(() => offLocale)
   // addChild schedules no render on its own.
   ctx.blueScreen.requestRender()
 }

@@ -18,12 +18,14 @@ import type {} from '@deepseek-ai/dsh-settings'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
 import { displayServices } from './display-services.ts'
 import { deriveKeyRef } from './provider-add.ts'
-import { FormPanel } from './form-panel.ts'
+import { CanonicalFormController } from './form-panel.ts'
 
 const DEEPSEEK_KEY = 'DEEPSEEK_API_KEY'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-provider-onboarding'
+/** App-owned readonly session boundary required before the one-shot check. */
+export const inject = ['blueSessionReader']
 
 interface Credentials {
   describe(ref: object): Promise<{ configured: boolean }>
@@ -82,7 +84,7 @@ function mountOnboarding(
   if (display === undefined) return undefined
   /* v8 ignore next -- the form cannot settle before its mount returns */
   let restore: () => void = () => {}
-  const panel = new FormPanel({
+  const panel = new CanonicalFormController({
     keymap: display.keymap,
     theme: display.theme,
     components: display.components,

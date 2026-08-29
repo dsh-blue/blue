@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-interaction",
   "description": "Blue terminal UI interaction layer: input editor, slash commands, approval and user-question overlays over dsh-blue-core",
-  "version": "0.1.0-rc.10",
+  "version": "0.1.1-rc.2",
   "publishConfig": {
     "access": "public"
   },
@@ -44,6 +44,10 @@
     "./plugin-host-bridge": {
       "types": "./lib/types/plugin-host-bridge.d.ts",
       "default": "./lib/plugin-host-bridge.js"
+    },
+    "./editor-provider-owner": {
+      "types": "./lib/types/editor-provider-owner.d.ts",
+      "default": "./lib/editor-provider-owner.js"
     },
     "./package.json": "./package.json"
   },

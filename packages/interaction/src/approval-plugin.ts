@@ -22,10 +22,13 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { BlueComponents, BlueEditor, BlueFocusable, BlueScreen, BlueTheme } from '@dsh-blue/blue-core'
-import { framePanel } from '@dsh-blue/blue-core/chrome'
+import type { BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
+import type { BlueComponents, BlueFocusable, BlueScreen, BlueTheme } from '@dsh-blue/blue-core'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
+import type { BlueTranslate } from '@dsh-blue/blue-frontend'
+import { CanonicalPanelAdapter } from './canonical-panel.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
+import { interactionTranslator, observeInteractionLocale } from './locale.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-approval'
@@ -56,6 +59,8 @@ interface ApprovalPromptOptions {
   readonly allowForSession: () => void
   /** Steer the agent with the rejection reason (choice 4). */
   readonly steer: (reason: string) => void
+  /** Dynamic translator for approval-owned chrome. */
+  readonly t: BlueTranslate
 }
 
 /**
@@ -64,22 +69,36 @@ interface ApprovalPromptOptions {
  * swaps to an inline reason editor for "Reject with feedback".
  */
 class ApprovalPrompt implements BlueFocusable {
-  /** Whether the prompt currently holds focus. Managed by the screen. */
-  focused = false
-
+  private readonly adapter: CanonicalPanelAdapter
   private cursor = 0
-  /** Set once the feedback editor replaced the menu. */
-  private editor: BlueEditor | undefined
+  private feedback = false
+  private reasonDraft = ''
 
   /**
    * @param options - see {@link ApprovalPromptOptions}.
    */
-  constructor(private readonly options: ApprovalPromptOptions) {}
+  constructor(private readonly options: ApprovalPromptOptions) {
+    this.adapter = new CanonicalPanelAdapter({
+      components: options.components,
+      theme: options.theme,
+      node: () => this.currentNode(),
+      onEvent: event => this.onEvent(event),
+      onTextSubmit: (_controlId, value) => this.submitFeedback(value),
+    })
+  }
+
+  get focused(): boolean { return this.adapter.focused }
+  set focused(value: boolean) { this.adapter.focused = value }
 
   /** The four choice labels in display order. */
   private labels(): string[] {
     const tool = this.options.toolName
-    return ['Allow once', `Allow ${tool} for this session`, 'Reject', 'Reject with feedback']
+    return [
+      this.options.t('Allow once'),
+      this.options.t('Allow {tool} for this session', { tool }),
+      this.options.t('Reject'),
+      this.options.t('Reject with feedback'),
+    ]
   }
 
   /**
@@ -87,21 +106,20 @@ class ApprovalPrompt implements BlueFocusable {
    * @param data - the input sequence as read from the terminal.
    */
   handleInput(data: string): void {
-    const editor = this.editor
-    if (editor !== undefined) {
-      // Feedback mode: Escape rejects without steering; the editor owns
-      // every other key (Enter submits through its onSubmit).
+    if (this.feedback) {
       if (data === KEY_ESCAPE) this.options.settle('rejected')
-      else editor.handleInput?.(data)
+      else this.adapter.handleInput(data)
       return
     }
     if (data === KEY_UP) {
       this.cursor = this.cursor === 0 ? this.labels().length - 1 : this.cursor - 1
+      this.adapter.invalidate()
       this.options.screen.requestRender()
       return
     }
     if (data === KEY_DOWN) {
       this.cursor = this.cursor === this.labels().length - 1 ? 0 : this.cursor + 1
+      this.adapter.invalidate()
       this.options.screen.requestRender()
       return
     }
@@ -136,22 +154,18 @@ class ApprovalPrompt implements BlueFocusable {
 
   /** Swap the menu for the inline reason editor. */
   private enterFeedback(): void {
-    const editor = this.options.components.createEditor()
-    // The editor clears its buffer before invoking onSubmit; the callback
-    // argument already carries the paste-expanded, trimmed text.
-    editor.onSubmit = (text) => {
-      // An empty reason is a plain Reject: no steering.
-      if (text.length > 0) this.options.steer(text)
-      this.options.settle('rejected')
-    }
-    this.editor = editor
+    this.feedback = true
+    this.adapter.invalidate()
     this.options.screen.requestRender()
   }
 
-  /** Drop the feedback editor's cached render state. */
-  invalidate(): void {
-    this.editor?.invalidate()
+  private submitFeedback(value: string): void {
+    this.reasonDraft = value
+    if (value.length > 0) this.options.steer(value)
+    this.options.settle('rejected')
   }
+
+  invalidate(): void { this.adapter.invalidate() }
 
   /**
    * Render the framed dialog: the amber rules, the `▶`-prefixed title, the
@@ -160,45 +174,36 @@ class ApprovalPrompt implements BlueFocusable {
    * @param width - current viewport width in columns.
    * @returns one string per rendered row.
    */
-  render(width: number): string[] {
-    const { theme, components, toolName, reason } = this.options
-    const colors = theme.colors
-    const rows: string[] = []
-    if (reason !== undefined) {
-      rows.push(colors.muted(components.truncateToWidth(reason, width)))
+  render(width: number): string[] { return this.adapter.render(width) }
+
+  /** Current renderer-neutral approval tree. */
+  currentNode(): BlueUiNode {
+    const child: BlueUiNode = this.feedback
+      ? { kind: 'form', id: 'approval-feedback', fields: [{ kind: 'input', id: 'approval-reason', label: this.options.t('Reason'), value: this.reasonDraft }] }
+      : {
+          kind: 'list', id: 'approval-choices', selectedIds: [String(this.cursor)],
+          items: this.labels().map((label, index) => ({ id: String(index), label, badge: String(index + 1) })),
+        }
+    return {
+      kind: 'surface', chrome: 'overlay', title: this.options.t('Approve {tool}?', { tool: this.options.toolName }),
+      ...(this.options.reason === undefined ? {} : { subtitle: this.options.reason }),
+      child,
+      footer: {
+        kind: 'text',
+        content: this.options.t(this.feedback
+          ? 'Type feedback · Enter submit · Esc reject'
+          : '↑↓ select · 1-4 choose · Enter confirm · Esc reject'),
+        tone: 'muted',
+      },
     }
-    rows.push('')
-    const editor = this.editor
-    if (editor !== undefined) {
-      rows.push(colors.muted('reason:'))
-      rows.push(...editor.render(width))
-      rows.push('')
-      return framePanel(rows, width, {
-        title: `▶ Approve ${toolName}?`,
-        titlePaint: colors.borderFocus,
-        rulePaint: colors.borderFocus,
-        footer: ['type feedback', '↵ submit', 'esc cancel'],
-        footerPaint: colors.textMuted,
-      })
+  }
+
+  private onEvent(event: BlueUiEvent): void {
+    if (event.kind === 'value-change' && event.controlId === 'approval-reason' && typeof event.value === 'string') {
+      this.reasonDraft = event.value
+      this.adapter.invalidate()
+      return
     }
-    const labels = this.labels()
-    for (const [at, label] of labels.entries()) {
-      const num = `${at + 1}. ${label}`
-      // The kimi approval rows sit indented two columns under the title.
-      const row = components.truncateToWidth(
-        at === this.cursor ? `  ▶ ${num}` : `    ${num}`,
-        width,
-      )
-      rows.push(at === this.cursor ? colors.accent(row) : colors.textStrong(row))
-    }
-    rows.push('')
-    return framePanel(rows, width, {
-      title: `▶ Approve ${toolName}?`,
-      titlePaint: colors.borderFocus,
-      rulePaint: colors.borderFocus,
-      footer: ['↑/↓ select', '1-4 choose', '↵ confirm'],
-      footerPaint: colors.textMuted,
-    })
   }
 }
 
@@ -302,12 +307,12 @@ export function apply(ctx: Context): void {
     const next = snapshot?.id
     if (next === observedSessionId) return
     observedSessionId = next
-    for (const cancel of [...cancelPrompts]) cancel()
+    for (const cancel of cancelPrompts) cancel()
   })
   ctx.effect(() => () => {
     disposed = true
     sessionRegistration.dispose()
-    for (const cancel of [...cancelPrompts]) cancel()
+    for (const cancel of cancelPrompts) cancel()
     queuedPrompts.splice(0)
     sessionAllowances.clear()
   })
@@ -329,10 +334,12 @@ function prompt(
 ): Promise<ApprovalOutcome> {
   return new Promise<ApprovalOutcome>((resolve) => {
     let settled = false
+    let offLocale: () => void
     const settle = (outcome: ApprovalOutcome): void => {
       if (settled) return
       settled = true
       req.signal?.removeEventListener('abort', onAbort)
+      offLocale()
       restore()
       resolve(outcome)
     }
@@ -349,10 +356,15 @@ function prompt(
         if (settled) return
         steer(reason)
       },
+      t: interactionTranslator(ctx),
     })
     // The kimi dialog mount (D30): the prompt replaces the editor in its
     // dock slot, so below it only the footer remains.
     const restore = mountEditorReplacement(ctx, component)
+    offLocale = observeInteractionLocale(ctx, () => {
+      component.invalidate()
+      ctx.blueScreen.requestRender()
+    })
     const onAbort = (): void => {
       settle('cancelled')
     }

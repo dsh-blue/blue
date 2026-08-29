@@ -32,6 +32,8 @@ import { LOGO_COLS, LOGO_GRADIENT } from '../src/banner-art.ts'
 import { visibleWidth, truncateToWidth } from '../../core/src/width.ts'
 import { fakeBlueComponents } from './helpers.ts'
 import { COLORS } from './status-fakes.ts'
+import { BANNER_LOCALE } from '../src/locale.ts'
+import { BlueLocaleService } from '../../frontend/src/locale.ts'
 
 /** Wrap a whale row in its brand-blue gradient ANSI, as the banner paints it. */
 function wrapLogo(row: string, index: number): string {
@@ -142,6 +144,16 @@ describe('composeBannerLines', () => {
     expect(lines.join('\n')).toContain('Welcome to Blue!')
     expect(lines.join('\n')).toContain('Send /help for help information.')
     expect(lines.join('\n')).toContain('Directory: ~/dev')
+  })
+
+  it('localizes banner chrome without translating runtime facts', () => {
+    const messages = BANNER_LOCALE.zh
+    const lines = composeBannerLines({ ...DEPS, t: key => messages[key] ?? key }, CONTENT, 100)
+    const text = lines.join('\n')
+    expect(text).toContain('欢迎使用 Blue！')
+    expect(text).toContain('目录：     ~/dev')
+    expect(text).toContain('模型：     m · p')
+    expect(text).toContain('版本：     9.9.9-test')
   })
 
   it('composes the same frameless block on narrow terminals', () => {
@@ -256,8 +268,15 @@ function bannerSessionReader(initial: BlueSessionSnapshot | null = null): {
 }
 
 /** Boot the banner plugin on a fresh root context with faked services. */
-async function bootBanner(config: banner.Config = {}): Promise<{ screen: BannerFakeScreen; dispose(): Promise<void> }> {
+async function bootBanner(config: banner.Config = {}, localeId?: 'en' | 'zh'): Promise<{
+  screen: BannerFakeScreen
+  locale: BlueLocaleService | undefined
+  dispose(): Promise<void>
+}> {
   const ctx = new Context()
+  const locale = localeId === undefined
+    ? undefined
+    : new BlueLocaleService(ctx, { systemLocale: localeId })
   const screen = new BannerFakeScreen()
   ctx.reflect.provide('blueScreen', screen)
   ctx.reflect.provide('blueTheme', { colors: COLORS })
@@ -265,7 +284,7 @@ async function bootBanner(config: banner.Config = {}): Promise<{ screen: BannerF
   ctx.reflect.provide('blueSessionReader', bannerSessionReader().service)
   ctx.reflect.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'p', model: 'm' }) })
   const fiber = await ctx.plugin(banner, config)
-  return { screen, dispose: () => fiber.dispose() }
+  return { screen, locale, dispose: () => fiber.dispose() }
 }
 
 describe('blue-banner plugin', () => {
@@ -302,7 +321,18 @@ describe('blue-banner plugin', () => {
     const { screen } = await bootBanner({ displayVersion })
     const joined = screen.children[0]?.render(100).join('\n') ?? ''
     expect(joined).toContain(`Version:   ${displayVersion}`)
-    expect(BLUE_VERSION).toBe('0.1.0-rc.10')
+    expect(BLUE_VERSION).toBe('0.1.1-rc.2')
+  })
+
+  it('switches the mounted banner language without replacing its component', async () => {
+    const { screen, locale } = await bootBanner({}, 'en')
+    const mounted = screen.children[0]
+    expect(mounted?.render(100).join('\n')).toContain('Welcome to Blue!')
+    const baseline = screen.renderRequests.length
+    locale!.setPreference('zh')
+    expect(screen.children[0]).toBe(mounted)
+    expect(mounted?.render(100).join('\n')).toContain('欢迎使用 Blue！')
+    expect(screen.renderRequests.length).toBeGreaterThan(baseline)
   })
 
   it('re-derives the model line on session and model changes', async () => {

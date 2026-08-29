@@ -4,10 +4,10 @@ import { withMermaid } from 'vitepress-plugin-mermaid'
 const base = process.env.DOCS_BASE ?? '/'
 
 /**
- * 站点版本（ADR D32）：当前预览线，与十包发布线一致。
+ * 站点版本（ADR D32）：当前预览线，与十一包发布线一致。
  * 升级时只改这一处（首页 hero 文案与 footer 同步引用语义，见各 index.md）。
  */
-const SITE_VERSION = '0.1.0-rc.8'
+const SITE_VERSION = '0.1.1-rc.1'
 
 /**
  * 站点正式域名（dsh-blue.dev，经 Cloudflare DNS 指向 GitHub Pages）。
@@ -143,6 +143,8 @@ const sidebarZh = {
         { text: '概览', link: '/plugins/' },
         { text: '快速开始', link: '/plugins/quickstart' },
         { text: '核心概念', link: '/plugins/concepts' },
+        { text: '公共 UI Kit', link: '/plugins/ui-kit' },
+        { text: '示例目录', link: '/plugins/examples' },
         { text: '创造模式实战', link: '/plugins/creative-mode' },
       ],
     },
@@ -151,14 +153,18 @@ const sidebarZh = {
       items: [
         { text: '命令', link: '/plugins/commands' },
         { text: '状态栏', link: '/plugins/status' },
-        { text: 'Dock 面板', link: '/plugins/dock' },
+        { text: '编辑器扩展', link: '/plugins/editor-extensions' },
+        { text: '编辑器 Provider', link: '/plugins/editor-providers' },
+        { text: 'Pane 与 Overlay', link: '/plugins/dock' },
         { text: '通知', link: '/plugins/notifications' },
+        { text: '会话读取与动作', link: '/plugins/session' },
       ],
     },
     {
       text: '验证与发布',
       items: [
         { text: '调试与验证', link: '/plugins/testing' },
+        { text: '旧 UI API 迁移', link: '/plugins/ui-migration' },
         { text: '发布插件', link: '/plugins/publishing' },
       ],
     },
@@ -235,6 +241,8 @@ const sidebarEn = {
         { text: 'Overview', link: '/en/plugins/' },
         { text: 'Quickstart', link: '/en/plugins/quickstart' },
         { text: 'Core concepts', link: '/en/plugins/concepts' },
+        { text: 'Public UI kit', link: '/en/plugins/ui-kit' },
+        { text: 'Example catalog', link: '/en/plugins/examples' },
         { text: 'Creative mode walkthrough', link: '/en/plugins/creative-mode' },
       ],
     },
@@ -243,14 +251,18 @@ const sidebarEn = {
       items: [
         { text: 'Commands', link: '/en/plugins/commands' },
         { text: 'Status bar', link: '/en/plugins/status' },
-        { text: 'Dock panes', link: '/en/plugins/dock' },
+        { text: 'Editor extensions', link: '/en/plugins/editor-extensions' },
+        { text: 'Editor providers', link: '/en/plugins/editor-providers' },
+        { text: 'Panes and overlays', link: '/en/plugins/dock' },
         { text: 'Notifications', link: '/en/plugins/notifications' },
+        { text: 'Session reads and actions', link: '/en/plugins/session' },
       ],
     },
     {
       text: 'Verify & publish',
       items: [
         { text: 'Debugging & validation', link: '/en/plugins/testing' },
+        { text: 'Legacy UI API migration', link: '/en/plugins/ui-migration' },
         { text: 'Publishing', link: '/en/plugins/publishing' },
       ],
     },

@@ -7,6 +7,11 @@ description: Use when packaging an accepted Blue feature as a distributable plug
 
 Blue is a renderer over the harness's Cordis plugin architecture — and Blue itself is just an npm package (`@dsh-blue/blue`) carrying Cordis plugins plus a `cordis.patch.yml`, installed into a dsh profile with `dsh plugin add`. A profile composes MULTIPLE bundles in order, so a third-party Blue feature is a package of the same shape layered after Blue. Verified end to end: a plain hand-written ESM package with no build step mounts and renders. Dynamic prototypes use the capability-scoped `bluePluginHost`; they do not reach into Blue's root services or composition.
 
+The executable plugin contract is currently Beta `1.0.0-beta.1`. Do not call it
+Stable v1, widen examples to `^1.0.0`, or infer future capabilities from the
+design roadmap. Package only the facets the installed Beta host actually
+grants.
+
 ## The package shape
 
 ```
@@ -45,7 +50,7 @@ export const inject = ['bluePluginHost']
 export function apply(ctx) {
   const opened = ctx.bluePluginHost.open(ctx, {
     id: 'com.example.my-blue-feature',
-    api: '^1.0.0',
+    api: '^1.0.0-beta.1',
     capabilities: ['status'],
   })
   if (!opened.ok) throw new Error(opened.code + ': ' + opened.message)
@@ -64,21 +69,27 @@ A minimal footer entry, complete. The owner bridge orders it by `priority`, appl
 
 Consume Blue through the public capability host and renderer-neutral contracts — never by importing Blue internals:
 
-- `dock` — renderer-neutral `BlueView` contributions mounted by the TUI adapter.
+- `panes` — renderer-neutral `BlueUiNode` contributions placed in header, left, right, or bottom lanes.
+- `overlays` — managed overlays opened from a live owner-issued user gesture.
 - `status` — renderer-neutral footer contributions.
 - `commands` — additive slash commands with structured `BlueResult` outcomes.
-- `notifications` — renderer-neutral messages and subscriptions.
-- `session.read` — reserved for a later phase; do not request it until the host advertises it.
+- `notifications.publish` — publish-only renderer-neutral transient messages; ordinary plugins cannot observe the global notice stream.
+- `session.read` — `api.session` with frozen revisioned `current()` / `subscribe()` only.
 
-The raw `blueScreen`, `blueTheme`, `blueComponents`, `blueKeymap`, transcript registries, and root loader are owner-only implementation services. Existing feature IDs cannot be replaced by registering the same ID.
+There is no generic public `session.act`. Use the documented Harness Service,
+projection, command, or feature-owned action that owns the domain write. The raw
+`bluePluginControl`, session/projection/action backing services, `blueScreen`,
+`blueTheme`, `blueComponents`, `blueKeymap`, transcript registries, and root
+loader are owner-only implementation services. Existing feature IDs cannot be
+replaced by registering the same ID.
 
-Every `open()`, `register()`, and `publish()` call returns a `BlueResult` and must be checked. `BLUE_CAPABILITY_ABSENT` means the owner bridge for that surface is not active, including after a previously opened API loses its bridge. Preserve a plain/read-only fallback when possible or report that the Blue profile must be upgraded/restarted; never reach into `blueDockModels`, `blueStatusModels`, `blueCommandModels`, `blueEditorHost`, or another owner service as a fallback.
+Every `open()`, `register()`, and `publish()` call returns a `BlueResult` and must be checked. Commands, status, panes, overlays, editor extensions, and provider candidates are durable inert registration buffers; an owner boot gap or reload does not reject those registrations. Only the latest definitions restore. Notifications, overlays, gestures, actions, and old callback results are never queued or replayed. `BLUE_CAPABILITY_ABSENT` means this host/profile does not provide a requested buffer, or that the active publish/session owner is missing. Preserve a plain/read-only fallback when possible or report that the Blue profile must be upgraded/restarted; never reach into private control, status/bottom-pane registries, command/editor hosts, raw session services, or another owner service as a fallback. `editor.extensions`, `status.provider`, and `editor.provider` remain Experimental/reference facets rather than Stable v1 promises.
 
-At dev time, types come from the published contracts: `@dsh-blue/blue-api` is the stable renderer-independent surface (program against it first); `blue-core`'s contract exports cover the L1 services. Runtime code never needs a pi-tui import — see the width rule below.
+At dev time, types come from the published contracts: `@dsh-blue/blue-api` is the Beta renderer-independent surface (program against it first). Runtime plugin code never needs `blue-core` or a pi-tui import — see the width rule below.
 
 ## The row-width hard contract
 
-Every renderer-owned view must fit its target surface. Plugin code returns renderer-neutral `BlueView` data; the TUI adapter performs width measurement and fallback. Do not import pi-tui or assemble ANSI rows in a plugin. Two forbidden shortcuts:
+Every renderer-owned view must fit its target surface. Plugin code returns renderer-neutral `BlueUiNode` data; the TUI adapter performs width measurement and fallback. Do not import pi-tui or assemble ANSI rows in a plugin. Two forbidden shortcuts:
 
 - **A direct pi-tui dependency** — Blue pins its pi-tui version; a second copy in the tree breaks width truth (and the version-uniqueness rule).
 - **Hand-rolled character counts** — codepoint counters are exact only for ASCII; CJK and emoji mis-budget and trip the render-exit clamp (a clamped row is a bug — it lands in `blue-overflow.log`).

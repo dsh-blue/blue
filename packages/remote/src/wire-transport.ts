@@ -5,7 +5,7 @@
  *
  * @module @dsh-blue/blue-remote/wire-transport
  */
-import type { BlueSessionAction, BlueSessionSnapshot } from '@dsh-blue/blue-api'
+import type { BlueSessionSnapshot } from '@dsh-blue/blue-api'
 import { AdapterCapabilityAbsentError } from '@dsh-blue/blue-harness-adapter'
 import type { EventEnvelope, SnapshotEnvelope } from '@dsh-blue/blue-harness-adapter'
 import type {
@@ -20,7 +20,7 @@ import type {
   RemoteWireContract,
   RemoteWireHealth,
 } from './wire-types.ts'
-import type { RemoteCapabilities, RemoteTransport, WriteLease } from './types.ts'
+import type { RemoteCapabilities, RemoteSessionAction, RemoteTransport, WriteLease } from './types.ts'
 
 type Attachment = { readonly release: () => Promise<void> }
 type PendingAttachment = { readonly epoch: number; waiters: number; promise: Promise<void> }
@@ -89,8 +89,8 @@ export function createDshRemoteWireClient(connection: DshRemoteConnectionClient)
   }
 }
 
-function snapshotFromRow(sessionId: string, row?: RemoteSessionList['items'][number]): BlueSessionSnapshot {
-  return { id: sessionId, cwd: row?.cwd ?? '', status: row?.running === true ? 'running' : 'idle', mode: 'normal' }
+function snapshotFromRow(sessionId: string, row?: RemoteSessionList['items'][number], revision = 0): BlueSessionSnapshot {
+  return { revision, id: sessionId, cwd: row?.cwd ?? '', status: row?.running === true ? 'running' : 'idle', mode: 'normal' }
 }
 
 function applyEvent(snapshot: BlueSessionSnapshot, event: NonNullable<MuxFrame['event']>): BlueSessionSnapshot {
@@ -99,7 +99,7 @@ function applyEvent(snapshot: BlueSessionSnapshot, event: NonNullable<MuxFrame['
     : event.type === 'turn/end'
       ? 'idle'
       : snapshot.status
-  return { ...snapshot, status }
+  return { ...snapshot, revision: snapshot.revision + 1, status }
 }
 
 function historyWatermark(history: RemoteSessionHistory): number {
@@ -176,10 +176,10 @@ export class DshRemoteTransport implements RemoteTransport {
       })
       watermark = Math.max(watermark, historyWatermark(history))
     }
-    let snapshot = snapshotFromRow(sessionId, row)
+    let snapshot = snapshotFromRow(sessionId, row, this.snapshots.get(sessionId)?.revision ?? 0)
     for (const envelope of this.recent.get(sessionId) ?? []) {
       if (envelope.seq <= watermark) continue
-      snapshot = { ...snapshot, status: envelope.event.status }
+      snapshot = { ...snapshot, revision: Math.max(snapshot.revision, envelope.event.revision), status: envelope.event.status }
       watermark = envelope.seq
     }
     this.snapshots.set(sessionId, snapshot)
@@ -200,7 +200,7 @@ export class DshRemoteTransport implements RemoteTransport {
     return () => this.listeners.delete(forward)
   }
 
-  async request(sessionId: string, action: BlueSessionAction, signal: AbortSignal): Promise<void> {
+  async request(sessionId: string, action: RemoteSessionAction, signal: AbortSignal): Promise<void> {
     if (this.client.agents !== undefined) await this.ensureWriteAttachment(sessionId, signal)
     if (action.kind === 'interrupt') {
       if (this.negotiatedProtocol !== '2') throw new AdapterCapabilityAbsentError('action', 'remote session interrupt is unavailable in protocol v1')

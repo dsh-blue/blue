@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { BlueSessionCommand } from '@dsh-blue/blue-app'
+import { BlueLocaleService } from '../../frontend/src/locale.ts'
 import { CommandModelService } from '../src/command-model.ts'
+import { INTERACTION_LOCALE } from '../src/locale.ts'
 
 function fixture(options: {
   commands?: readonly BlueSessionCommand[]
@@ -55,6 +57,29 @@ describe('CommandModelService', () => {
     off()
     off()
     service.dispose()
+  })
+
+  it('reprojects descriptions on locale revisions without changing action identity', async () => {
+    const test = fixture({ commands: [{ name: 'quit', description: 'Exit Blue' }] })
+    const locale = new BlueLocaleService(test.ctx, { systemLocale: 'zh' })
+    locale.register('interaction', INTERACTION_LOCALE)
+    const service = new CommandModelService(test.ctx)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const before = service.list()[0]!
+    expect(before.description).toBe('退出 Blue')
+    let revisions = 0
+    service.subscribe(() => { revisions += 1 })
+    locale.setPreference('en')
+    expect(service.list()[0]).toMatchObject({
+      id: before.id,
+      action: before.action,
+      description: 'Exit Blue',
+    })
+    expect(revisions).toBe(1)
+    service.dispose()
+    locale.setPreference('zh')
+    expect(revisions).toBe(1)
+    locale.dispose()
   })
 
   it('projects the acceptance command family as structured actions', async () => {

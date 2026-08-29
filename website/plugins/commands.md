@@ -30,8 +30,8 @@ api.commands?.register(contribution: BlueCommandContribution): BlueResult<BlueRe
 ```ts
 const opened = ctx.bluePluginHost.open(ctx, {
   id: 'my-plugin.clipboard',
-  api: '^1.0.0',
-  capabilities: ['commands', 'notifications'],
+  api: '^1.0.0-beta.1',
+  capabilities: ['commands', 'notifications.publish'],
 })
 if (!opened.ok) return
 const api = opened.value
@@ -61,7 +61,7 @@ api.commands?.register({
 
 - **重复 id 被拒**：`register()` 返回 `BLUE_DUPLICATE_ID`。与内置命令或其他插件的命令撞名同样在注册时失败——`register` 的返回值要检查，失败时按降级处理；
 - **返回值即用户反馈**：`{ ok: false, code, message }` 的 `message` 会作为错误文本显示在编辑器通知条；`execute` 抛出的异常会被桥接层兜底为 `plugin command failed: ...` 显示——兜底不是契约，主动返回结构化错误；
-- **成功是静默的**：`{ ok: true }` 不产生任何输出。要给用户反馈就用 [`notifications`](/plugins/notifications) 发一条；
+- **成功是静默的**：`{ ok: true }` 不产生任何输出。要给用户反馈就申请 [`notifications.publish`](/plugins/notifications) 发一条；
 - **卸载即消失**：注册绑定调用方 Fiber，插件卸载后命令从注册表移除，补全和 `/help` 同步消失。
 
 ## 常见错误

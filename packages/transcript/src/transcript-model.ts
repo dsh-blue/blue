@@ -9,9 +9,9 @@
 
 import { Service, type Context } from '@deepseek-ai/cordis'
 import { AttachmentId, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { BlueUiNode } from '@dsh-blue/blue-api'
 import {
   GutterComponent,
-  renderFrontendView,
   type BlueComponent,
   type BlueComponents,
   type BlueScreen,
@@ -23,7 +23,7 @@ import {
   type TranscriptImageModel,
   type TranscriptModel,
   type TranscriptToolModel,
-  type View,
+  type BlueTranslate,
 } from '@dsh-blue/blue-frontend'
 import {
   AssistantMessageComponent,
@@ -39,6 +39,7 @@ import { ReadGroupComponent, groupReadsByFile } from './read-group.ts'
 import { SearchGroupComponent } from './search-group.ts'
 import { parseToolArguments, summarizeToolCall } from './present.ts'
 import { summarizeToolText } from './envelope.ts'
+import { renderCanonicalNode, type CanonicalNodeRenderer } from './canonical-node-renderer.ts'
 import type { TranscriptToolItem } from './types.ts'
 import {
   DEFAULT_TRANSCRIPT_PRESENTATION,
@@ -55,12 +56,16 @@ type Source = TranscriptModel | (() => TranscriptModel | null)
 export const TRANSCRIPT_MODEL_WINDOW = 200
 
 /** Renderer-only dependencies for semantic transcript entries. */
-export interface TranscriptModelRenderer {
+export interface TranscriptModelRenderer extends CanonicalNodeRenderer {
   readonly colors: BlueSemanticColors
   readonly components: BlueComponents
   readonly images: () => UserMessageImages
   readonly requestRender: () => void
   readonly presentation?: TranscriptPresentationPolicy
+  /** Dynamic translator for transcript-owned renderer chrome. */
+  readonly t?: BlueTranslate
+  /** Disable semantic component chrome while retaining canonical width-safe rendering. */
+  readonly semantic?: boolean
 }
 
 /** Optional service hooks used by the legacy/plain fallback owner. */
@@ -72,22 +77,22 @@ export interface TranscriptModelServiceHooks {
 /** Build an immutable transcript model from already-projected entries. */
 export function createTranscriptModel(
   id: string,
-  entries: readonly (View | TranscriptEntryModel)[],
+  entries: readonly (BlueUiNode | TranscriptEntryModel)[],
   streaming?: boolean,
 ): TranscriptModel {
   return freezeModel({ kind: 'transcript', id, entries: [...entries], ...(streaming === undefined ? {} : { streaming }) })
 }
 
-/** Append one projected entry without reading or folding Harness events. */
-export function appendTranscriptView(
+/** Append one projected canonical node or semantic entry without folding events. */
+export function appendTranscriptNode(
   model: TranscriptModel,
-  entry: View | TranscriptEntryModel,
+  entry: BlueUiNode | TranscriptEntryModel,
   streaming = model.streaming,
 ): TranscriptModel {
   return createTranscriptModel(model.id, [...model.entries, entry], streaming)
 }
 
-function isSemantic(entry: View | TranscriptEntryModel): entry is TranscriptEntryModel {
+function isSemantic(entry: BlueUiNode | TranscriptEntryModel): entry is TranscriptEntryModel {
   return entry.kind.startsWith('transcript-')
 }
 
@@ -147,7 +152,7 @@ export class TranscriptModelComponent implements BlueComponent {
 
   constructor(
     private readonly source: () => TranscriptModel | null,
-    private readonly renderer?: TranscriptModelRenderer,
+    private readonly renderer: TranscriptModelRenderer,
   ) {}
 
   render(width: number): string[] {
@@ -172,7 +177,7 @@ export class TranscriptModelComponent implements BlueComponent {
     this.prune(live)
     const rows = entries.flatMap(entry => isSemantic(entry)
       ? this.renderSemantic(entry, width, expandableTurns.has(entry.turn))
-      : renderFrontendView(entry, width, this.renderer === undefined ? undefined : { colors: this.renderer.colors }))
+      : renderCanonicalNode(entry, width, this.renderer))
     this.renderedRows = { model, width, expanded: this.expanded, policy, rows }
     return rows
   }
@@ -197,7 +202,7 @@ export class TranscriptModelComponent implements BlueComponent {
   }
 
   private renderSemantic(entry: TranscriptEntryModel, width: number, expandable: boolean): string[] {
-    if (this.renderer === undefined) return [...renderFrontendView({ kind: 'text', text: this.plainText(entry) }, width)]
+    if (this.renderer.semantic === false) return renderCanonicalNode({ kind: 'text', content: this.plainText(entry) }, width, this.renderer)
     const currentSignature = signature(entry)
     let cached = this.cached.get(entry.id)
     if (cached?.signature !== currentSignature) {
@@ -229,7 +234,7 @@ export class TranscriptModelComponent implements BlueComponent {
   }
 
   private createComponent(entry: TranscriptEntryModel): BlueComponent {
-    const renderer = this.renderer!
+    const renderer = this.renderer
     switch (entry.kind) {
       case 'transcript-user': {
         const images = renderer.images()
@@ -242,6 +247,7 @@ export class TranscriptModelComponent implements BlueComponent {
             images.onReady?.()
           },
           presentation: () => this.presentation(),
+          ...(renderer.t === undefined ? {} : { t: renderer.t }),
         })
         return component
       }
@@ -260,7 +266,7 @@ export class TranscriptModelComponent implements BlueComponent {
       }
       case 'transcript-tool': {
         const presentation = entry.presentation
-        const body = presentation === undefined ? undefined : new ToolModelComponent(() => presentation, renderer.colors)
+        const body = presentation === undefined ? undefined : new ToolModelComponent(() => presentation, renderer)
         return new ToolCallComponent(asToolItem(entry), renderer.colors, renderer.components, body, toolResultChip(presentation))
       }
       case 'transcript-read-group':
@@ -273,7 +279,7 @@ export class TranscriptModelComponent implements BlueComponent {
           ...(entry.code === undefined ? {} : { code: entry.code }),
         }, renderer.colors, renderer.components)
       case 'transcript-interrupted':
-        return new InterruptedMarkerComponent(renderer.colors, renderer.components)
+        return new InterruptedMarkerComponent(renderer.colors, renderer.components, renderer.t)
     }
   }
 
@@ -378,6 +384,12 @@ export class TranscriptModelService extends Service {
     this.screen?.requestRender(true)
   }
 
+  /** Invalidate renderer-owned copy after a locale provider revision. */
+  refreshLocale(): void {
+    for (const { component } of this.mounted.values()) component.invalidate()
+    this.screen?.requestRender(true)
+  }
+
   /** Expose the current immutable policy for diagnostics and tests. */
   presentationPolicy(): TranscriptPresentationSnapshot {
     return this.hooks.renderer?.presentation?.snapshot() ?? DEFAULT_TRANSCRIPT_PRESENTATION
@@ -404,12 +416,13 @@ export class TranscriptModelService extends Service {
   private mount(id: string): void {
     const screen = this.screen
     const source = this.models.get(id)
-    if (screen === undefined || source === undefined) return
+    const renderer = this.hooks.renderer
+    if (screen === undefined || source === undefined || renderer === undefined) return
     this.unmount(id)
     const component = new TranscriptModelComponent(() => {
       const current = this.models.get(id)
       return current === undefined ? null : typeof current === 'function' ? current() : current
-    }, this.hooks.renderer)
+    }, renderer)
     component.setExpanded(this.expanded)
     this.mounted.set(id, { component, unmount: screen.addChild(component) })
     screen.requestRender()

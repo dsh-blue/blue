@@ -1,0 +1,17 @@
+{
+  "name": "@dsh-blue-example/user-kit",
+  "description": "Shared renderer-neutral components for the Blue ecosystem examples",
+  "version": "0.1.0",
+  "publishConfig": { "access": "public" },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
+    "./package.json": "./package.json"
+  },
+  "files": ["lib/**/*"],
+  "license": "MIT",
+  "peerDependencies": { "@dsh-blue/blue-ui": "workspace:*" },
+  "devDependencies": { "@deepseek-ai/cordis": "4.0.1", "@dsh-blue/blue-api": "workspace:*", "@dsh-blue/blue-core": "workspace:*", "@dsh-blue/blue-ui": "workspace:*" }
+}

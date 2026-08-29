@@ -1,123 +1,129 @@
 # Quickstart
 
-This page runs a downstream plugin end to end from scratch: in ten minutes you will have a clock plugin hanging on Blue's status bar, and you will have verified its unload semantics. Concept explanations are kept minimal — design rationale and full contracts live in [Core concepts](/en/plugins/concepts).
+This guide builds a header-pane plugin from scratch. It uses only the public
+`@dsh-blue/blue-api` and `@dsh-blue/blue-ui` packages, with no core, pi-tui, or
+repository-internal imports.
 
-## Prerequisites
-
-| Dependency | Version |
-| --- | --- |
-| Node | `^22.19.0 \|\| >=24.0.0` |
-| dsh CLI | `npm i -g @deepseek-ai/dsh` |
-| A profile with Blue installed | `dsh plugin --profile blue-dev add @dsh-blue/blue@rc` (see the [Quickstart guide](/en/guide/)) |
-
-Develop your own plugin against a dedicated profile (such as `blue-dev`) — do not touch the `blue` profile you use day to day.
-
-## 1. Package skeleton
+## Package skeleton
 
 ```text
-blue-clock/
+blue-workspace-header/
+├── blue.plugin.json
+├── cordis.patch.yml
 ├── package.json
 ├── tsconfig.json
-└── src/
-    └── index.ts        # 插件入口
+└── src/index.ts
 ```
 
-The key `package.json` fields:
+Declare the Blue packages as dependencies and host-provided Cordis as a peer:
 
 ```json
 {
-  "name": "my-scope/blue-clock",
+  "name": "@acme/blue-workspace-header",
   "version": "0.1.0",
   "type": "module",
   "exports": { ".": "./lib/index.js" },
-  "dependencies": { "@dsh-blue/blue-api": "^0.1.0-rc.10" },
+  "files": ["lib/**/*", "blue.plugin.json", "cordis.patch.yml"],
+  "blue": { "manifest": "./blue.plugin.json" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "dependencies": {
+    "@dsh-blue/blue-api": "^0.1.0",
+    "@dsh-blue/blue-ui": "^0.1.0"
+  },
   "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" }
 }
 ```
 
-- The package name should contain `blue`, `frontend`, or `adapter` so Blue's validate script recognizes it as a Blue frontend package (see [Debugging & validation](/en/plugins/testing));
-- `@dsh-blue/blue-api` is the only Blue package you depend on — it is pure contracts (manifest validation + types), with no renderer or terminal code;
-- Cordis is provided by the host dsh installation and declared as a peer. **Do not** bundle dsh/cordis into your own `dependencies`, or a second service instance appears in the tree;
-- The entry is exactly that of a plain Cordis plugin: export `name` (a stable string), optional `inject` (activation waits until the declared services are in place), and `apply(ctx)`. The npm package name and the Cordis plugin name are two independent namespaces and need not match.
+Do not depend on core, pi-tui, or the dsh runtime. Plugins are ESM-only; any
+build tool is acceptable as long as `exports` points to the emitted
+`lib/index.js`.
 
-Any TS toolchain works for the build (tsc, tsdown, tsup…), as long as `exports` points at the build output. Plugins are ESM-only.
+## Manifest and composition row
 
-## 2. Plugin entry
+`blue.plugin.json` requests the minimum capability:
 
-`src/index.ts`:
+```json
+{
+  "id": "@acme/blue-workspace-header",
+  "api": "^1.0.0-beta.1",
+  "entry": "./lib/index.js",
+  "capabilities": ["panes"]
+}
+```
+
+`cordis.patch.yml` makes the installed package an opt-in Cordis row:
+
+```yaml
+- id: '@acme/blue-workspace-header'
+  name: '@acme/blue-workspace-header'
+```
+
+Keeping the package name, manifest id, exported `name`, and loader-row id
+identical makes profile diagnostics much simpler.
+
+## Plugin entry
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
-// 空类型导入：拉入 Context.bluePluginHost 的声明合并
+// Pull in the public Context.bluePluginHost declaration merge.
 import type {} from '@dsh-blue/blue-api'
+import { ui } from '@dsh-blue/blue-ui'
 
-export const name = 'my-plugin.clock'
+export const name = '@acme/blue-workspace-header'
 export const inject = ['bluePluginHost']
 
 export function apply(ctx: Context): void {
   const opened = ctx.bluePluginHost.open(ctx, {
-    id: 'my-plugin.clock',        // 小写命名空间 id，可带 @scope/ 前缀
-    api: '^1.0.0',                // 对宿主 BLUE_API_VERSION（1.x 线）的 semver 范围
-    capabilities: ['status', 'commands'],
+    id: name,
+    api: '^1.0.0-beta.1',
+    capabilities: ['panes'],
   })
-  if (!opened.ok) {
-    // 结构性失败（版本不兼容 / 能力未开放）：放弃挂载，不要把异常抛进宿主
-    return
-  }
-  const api = opened.value // BluePluginApi：只暴露声明过的 capability
+  if (!opened.ok) return
 
-  api.status?.register({
-    id: 'clock.status',
-    render: () => ({ kind: 'text', content: new Date().toLocaleTimeString(), tone: 'muted' }),
+  const registered = opened.value.panes?.register({
+    id: 'acme.workspace.summary',
+    title: 'Workspace',
+    placement: 'header',
+    size: { min: 1, preferred: 3, max: 4 },
+    narrow: 'hidden',
+    render: () => ui.surface({
+      chrome: 'lane',
+      padding: 1,
+      child: ui.stack.row([
+        ui.richText([
+          { text: 'Branch ', tone: 'muted' },
+          { text: 'main', tone: 'accent', emphasis: 'strong' },
+        ]),
+        ui.child(ui.text('ready', { tone: 'success' }), {
+          grow: 1,
+          when: { minWidth: 32 },
+        }),
+      ], { gap: 1, align: 'center' }),
+    }),
   })
-
-  api.commands?.register({
-    id: 'now',                    // 即 /now
-    label: 'Print the current time',
-    execute: async () => {
-      console.log(new Date().toISOString())
-      return { ok: true, value: undefined }
-    },
-  })
+  if (registered !== undefined && !registered.ok) ctx.logger.warn(registered.message)
 }
 ```
 
-Three key points:
+The `ui` builders only construct and deeply freeze renderer-neutral nodes.
+Blue's compiler owns terminal width, themes, focus, scrolling, and chrome. The
+registration is bound to the current Cordis Fiber; unloading the plugin also
+invalidates the pane and any retained API facade.
 
-- `open(ctx, manifest)` first validates the manifest statically (without executing plugin code), then returns a **capability-scoped** `BluePluginApi` — capabilities you did not declare are `undefined` on the returned object;
-- Every failure is a structured `BlueResult` (`{ ok: false, code, message }`); plugin errors never cross the public boundary as exceptions — and your code should not throw upward either;
-- Every registration returns a `BlueRegistration` bound to the caller's Fiber: **contributions roll back automatically when the plugin unloads** — no cleanup logic of your own.
+## Install and verify
 
-## 3. Install into a profile
-
-Insert a row into the profile's `cordis.patch.yml` (rows can be added, removed, and reordered — zero-code customization):
-
-```yaml
-- id: my-plugin-clock
-  name: 'my-scope/blue-clock'
-```
-
-During development, install it as a link:
+Use a dedicated development profile rather than your everyday `blue` profile:
 
 ```sh
-dsh plugin --profile blue-dev add link:/path/to/blue-clock
-dsh --profile blue-dev
+dsh plugin --profile blue-header-dev add link:/path/to/blue-workspace-header
+dsh --profile blue-header-dev
 ```
 
-After startup you should see: an extra clock entry in the bottom footer; typing `/now` offers slash completion, and pressing enter prints the time to the terminal.
+After confirming the header appears, remove the plugin row or run
+`plugin remove`, then restart. The header must disappear completely. Before
+publishing, also run the static validator, packed-install fixture, and narrow
+width scans described in [Debugging and validation](/en/plugins/testing).
 
-## 4. Verify unload semantics
-
-Remove your plugin row from the patch (or `dsh plugin --profile blue-dev remove my-scope/blue-clock`) and restart the profile: the clock entry and `/now` should all disappear, leaving no residue. This is the expected behavior of Fiber-bound registration — if residue remains, your plugin registered something by bypassing `open()`; troubleshoot against [Core concepts](/en/plugins/concepts#design-discipline).
-
-## 5. Iteration loop
-
-Edit code → rebuild your package → restart the profile. The link points at the package directory, so rebuilt output takes effect directly with no reinstall; only a dependency-graph change (adding a dependency) needs another `add`.
-
-Once validated, run the Blue repository's static checks and packed-install fixture as pre-publish verification, and then you can [publish](/en/plugins/publishing) — see [Debugging & validation](/en/plugins/testing) for details.
-
-## Next steps
-
-- [Core concepts](/en/plugins/concepts) — understand capability scoping, the `BlueView` vocabulary, and the domain/adapter split;
-- [Commands](/en/plugins/commands), [Status bar](/en/plugins/status), [Dock panes](/en/plugins/dock), [Notifications](/en/plugins/notifications) — the full contracts of the four capabilities;
-- [Built-in plugins](/en/plugins/builtins) — Blue's own 28 rows are the most complete set of examples.
+Continue with [Panes and overlays](/en/plugins/dock), the
+[public UI kit](/en/plugins/ui-kit), the [example catalog](/en/plugins/examples),
+and the [legacy UI API migration guide](/en/plugins/ui-migration).

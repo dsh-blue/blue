@@ -12,7 +12,7 @@
  * `command/done` and the `permission/preset`/`sandbox/mode`/
  * `approval/policy` knob events logged for free. The `custom` preset is
  * a display-only derived state (upstream rejects it on write), and the
- * `danger-full-access` row demands a typed-y FormPanel gate (the D33
+ * `danger-full-access` row demands a typed-y canonical form gate (the D33
  * ruling; kimi's picker has none) because it unbundles both the sandbox
  * and the approval policy.
  *
@@ -27,8 +27,8 @@ import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-commands'
 import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
-import { FormPanel, type FormField } from './form-panel.ts'
-import { SelectListPanel, type SelectRow } from './select-list.ts'
+import { CanonicalFormController, type FormField } from './form-panel.ts'
+import { CanonicalSelectController, type SelectRow } from './select-list.ts'
 import { CURRENT_MARK } from './symbols.ts'
 
 /** The sandbox + approval bundle one preset resolves to. */
@@ -125,7 +125,7 @@ export function openPermissionPanel(ctx: Context): void {
         ? undefined
         : 'type y to confirm, or Esc to pick another preset',
     }]
-    const form = new FormPanel({
+    const form = new CanonicalFormController({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,
@@ -146,7 +146,7 @@ export function openPermissionPanel(ctx: Context): void {
     const restoreForm = mountEditorReplacement(ctx, form)
   }
 
-  const panel = new SelectListPanel({
+  const panel = new CanonicalSelectController({
     keymap: display.keymap,
     theme: display.theme,
     components: display.components,

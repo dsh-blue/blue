@@ -15,7 +15,7 @@
 
 用户验收原型后，再加载 `blue-plugin-development` skill，把它转换为可分发的包。持久化前必须明确选择：保留本地包、上传 GitHub、发布 npm，或有意保持临时原型。临时原型不会自动写入仓库，也不会在重启后保留。
 
-## Blue 插件的稳定边界
+## Blue 插件的 Beta 边界
 
 持久化插件是普通 ESM 包，最小结构如下：
 
@@ -26,18 +26,18 @@ blue-feature/
   cordis.patch.yml      # 把 entry 插入 profile
 ```
 
-入口必须导出稳定的 `name`、`inject` 和 `apply(ctx)`。Blue 功能通过 `ctx.bluePluginHost.open(ctx, manifest)` 申请能力；当前公开能力是 `commands`、`status`、`dock` 和 `notifications`。`open()`、`register()`、`publish()` 都返回结构化 `BlueResult`，每次都要检查 `ok`。注册由调用方 Fiber 托管，插件卸载、更新或 profile 重载时会自动撤销。
+入口必须导出固定的 `name`、`inject` 和 `apply(ctx)`。Blue 功能通过 `ctx.bluePluginHost.open(ctx, manifest)` 申请当前 `1.0.0-beta.1` capability：`commands`、`status`、`panes`、`overlays`、`notifications.publish` 与只读的 `session.read`。Generic `session.act` 已移除，写操作继续使用所属 Harness service、command 或 feature action。`open()`、`register()`、`publish()` 都返回结构化 `BlueResult`，每次都要检查 `ok`。注册由调用方 Fiber 托管，插件卸载、更新或 profile 重载时会自动撤销。Editor/status provider 和 editor extension 仅保留为 Experimental/reference surface；候选注册保持 inert，只有 settings 选中的 id 才会激活。
 
-插件只能返回 renderer-neutral 的 `BlueView` 和结构化 action：
+插件只能返回 renderer-neutral 的 `BlueUiNode`/`BlueView` 和结构化 action：
 
 - 不得 import `pi-tui`、拼接 ANSI 行或自行计算终端宽度；
-- 不得访问 `blueScreen`、`blueComponents`、`blueDockModels` 等 owner-only 服务；
+- 不得访问 `blueScreen`、`blueComponents`、私有 status/bottom-pane registry 等 owner-only 服务；
 - 不得保存 Agent/Session 实例或把业务状态放进 module singleton；
 - 视图的宽度、主题、布局和降级由 Blue 核心适配器负责。
 
 ## 案例：blue-doudizhu
 
-本节依据会话 `session-aad9fdb6-09ff-45b9-9aa0-0c7822efbcd5` 整理。目标是在 Blue 的 Dock 面板实现斗地主，并最终形成可分发的 npm 包。
+本节依据会话 `session-aad9fdb6-09ff-45b9-9aa0-0c7822efbcd5` 整理。目标是在 Blue 的 bottom pane 实现斗地主，并最终形成可分发的 npm 包。
 
 ### 1. 在会话中原型化
 
@@ -52,15 +52,16 @@ return {
   apply(ctx) {
     const opened = ctx.bluePluginHost.open(ctx, {
       id: 'com.example.blue-doudizhu',
-      api: '^1.0.0',
-      capabilities: ['commands', 'dock', 'notifications'],
+      api: '^1.0.0-beta.1',
+      capabilities: ['commands', 'panes', 'notifications.publish'],
     })
     if (!opened.ok) throw new Error(opened.code + ': ' + opened.message)
     opened.value.commands.register({ id: 'poker', label: '斗地主牌局', execute })
-    opened.value.dock.register({
+    opened.value.panes.register({
       id: 'doudizhu-board',
       priority: 30,
-      view: () => renderBoard(state),
+      placement: 'bottom',
+      render: () => renderBoard(state),
     })
   },
 }
@@ -84,9 +85,9 @@ Bot 复用宿主当前模型：插件通过 `ctx.get('agentDefaultModel')` 读�
 
 `blue-doudizhu` 已符合以下核心形状：
 
-- `name`、`inject: ['bluePluginHost']`、`apply(ctx)` 均为稳定导出；
-- manifest 申请 `commands`、`dock`、`notifications`，没有请求未开放的 session 能力；
-- `/poker` 命令、Dock 面板和通知均通过 `open()` 返回的 capability API 注册；
+- `name`、`inject: ['bluePluginHost']`、`apply(ctx)` 均为固定导出；
+- manifest 只申请实际使用的 `commands`、`panes`、`notifications.publish`，没有多申请 session 能力；
+- `/poker` 命令、底部面板和通知均通过 `open()` 返回的 capability API 注册；
 - `cordis.patch.yml` 只插入 `blue-doudizhu` 这一行，卸载由 Fiber 自动清理；
 - npm 包声明 `@deepseek-ai/cordis` 和 `@dsh-blue/blue` 为 peer dependency，并通过 `dsh.bundle.patch` 被 profile 装载。
 

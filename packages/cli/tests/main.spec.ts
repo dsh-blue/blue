@@ -24,8 +24,8 @@ afterEach(() => {
 })
 
 /** The shell's own manifest version — the pin every fixture calibrates to. */
-const PIN = '0.1.0-rc.10'
-const AHEAD = '0.1.0-rc.1099'
+const PIN = '0.1.1-rc.2'
+const AHEAD = '0.1.1-rc.199'
 
 /** One captured write or exit. */
 const captures: { out: string[], err: string[], exits: number[] } = { out: [], err: [], exits: [] }

@@ -8,7 +8,7 @@
 
 English | [中文](README.zh.md)
 
-Blue is an interactive terminal UI (TUI) for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`): a `pi-tui` renderer mounted as an out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) plugin bundle on top of the `dsh-base` bundle. This repository contains fourteen workspace packages — ten in the `0.1.0-rc.10` release set and four validation-only adapters — built and tested against the published Harness `0.1.1-rc.2` line.
+Blue is an interactive terminal UI (TUI) for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`): a `pi-tui` renderer mounted as an out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) plugin bundle on top of the `dsh-base` bundle. This repository contains fifteen workspace packages — eleven in the `0.1.1-rc.2` release set and four validation-only adapters — built and tested against the published Harness `0.1.1-rc.2` line.
 
 <p align="center">
   <a href="https://dsh-blue.dev/blue-demo.mp4"><img src="docs/assets/demo.gif" width="720" alt="Blue demo — streaming transcript, tool cards, and dock panes"></a>
@@ -29,7 +29,9 @@ The full story: [docs/blue-architecture.md](docs/blue-architecture.md) · decisi
 ## Usage
 
 > [!NOTE]
-> `0.1.0-rc.10` is the current release candidate; npm's `rc` and `latest` tags point to this release.
+> This checkout stages the upcoming `0.1.1-rc.2` candidate. It remains
+> unpublished until live acceptance and merge; npm's `rc` and `latest` tags
+> continue to point to the previous public release.
 
 Prerequisites: Node `^22.19 || >=24` and pnpm 11. The recommended launcher includes its tested dsh runtime.
 
@@ -42,7 +44,7 @@ dsh --profile blue
 Or use the recommended one-command `blue` launcher; it carries the tested Harness tree as common and platform archives, so npm never resolves that graph during installation:
 
 ```sh
-npm i -g @dsh-blue/blue-cli@0.1.0-rc.10
+npm i -g @dsh-blue/blue-cli@rc
 blue
 ```
 
@@ -60,7 +62,7 @@ flowchart TB
         HAR["agents · sessions · tools · approval<br/>commands · events"]
     end
 
-    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 28 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
+    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 33 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
         direction TB
         subgraph DOM["Domain 侧 — 唯一持有 Agent/Session 对象"]
             direction LR
@@ -69,7 +71,7 @@ flowchart TB
         end
         subgraph UI["UI 侧 — 只见 readonly 数据与 action"]
             direction TB
-            FE["blue-api · blue-frontend<br/>BlueView 契约 · readonly models · provider host"]
+            FE["blue-api · blue-ui · blue-frontend<br/>UI wire/builders · readonly models · provider host"]
             ADP["blue-transcript · blue-interaction<br/>transcript · 命令 · 面板 · 状态栏 · dock"]
             KRN["blue-core — TUI kernel<br/>全树唯一 import pi-tui"]
             FE --> ADP
@@ -92,7 +94,7 @@ flowchart TB
 ```
 <!-- END diagram:blue-layers -->
 
-The runtime flow is `Harness domain -> projection/action boundary -> renderer-neutral models -> TUI feature plugins -> core`. Events state facts, projections hold current state, and actions are write requests with structured results; Blue never keeps a second agent truth, and Agent/Session objects never cross into renderers. The row-by-row bundle composition (28 Blue-owned rows over `dsh-base`) is documented in [the bundle guide](https://dsh-blue.dev/en/plugins/builtins/), and the feature tour is on [the website](https://dsh-blue.dev/en/features/).
+The runtime flow is `Harness domain -> projection/action boundary -> renderer-neutral models -> TUI feature plugins -> core`. Events state facts, projections hold current state, and actions are write requests with structured results; Blue never keeps a second agent truth, and Agent/Session objects never cross into renderers. The row-by-row bundle composition (29 Blue-owned rows over `dsh-base`) is documented in [the bundle guide](https://dsh-blue.dev/en/plugins/builtins/), and the feature tour is on [the website](https://dsh-blue.dev/en/features/).
 
 ## Documentation
 

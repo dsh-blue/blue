@@ -1,19 +1,21 @@
 # 功能总览
 
-Blue 是一棵 Cordis 插件树。Bundle 当前有 28 条 Blue 自有行：2 条宿主支撑行、8 条基线行、14 条增强行和 4 条装配行。
+Blue 是一棵 Cordis 插件树。Bundle 当前有 33 条 Blue 自有行：2 条宿主支撑行、1 条 private runtime composition group、9 条基线行、15 条增强行和 6 条装配行。
 
 ## 基线
 
-`blue-api-host`、`blue-core`、`blue-theme-dark`、`blue-banner`、`blue-transcript`、`blue-status-basic`、`blue-conversation`、`blue-transcript-official` 组成 projection-backed renderer 基线。Conversation 由 Harness official projection 驱动，不再由 TUI 折叠 session events。
+`blue-api-host`、`blue-locale`、`blue-core`、`blue-theme-dark`、`blue-banner`、`blue-transcript`、`blue-status-basic`、`blue-conversation`、`blue-transcript-official` 组成 projection-backed renderer 基线。`blue-locale` 按系统语言提供英文/简体中文并支持 `/settings` 热切换；Conversation 由 Harness official projection 驱动，不再由 TUI 折叠 session events。
 
 ## 增强
 
 - editor/attachment：`blue-editor-plus`、`blue-attachments`、`blue-paste-image`
-- status：cwd、git、mode、title、context 五个 `StatusModel` producer
-- dock：activity、queue、todo、btw、agents 五个 `DockModel` producer
-- public view bridge：把第三方 status/dock `BlueView` 接入 owner registry
+- status：cwd、git、mode、title、context 五个 canonical `BlueStatusNode` producer
+- bottom panes：activity、queue、todo、btw、agents 五个 canonical `BlueUiNode` producer，经私有 bottom-only composition 挂载
+- public bridges：transcript bridge 把第三方 status node 接入 footer；core surface bridge 编译并托管 canonical pane/overlay
+- status provider owner：按 `blue.statusProvider` 选择一个独占 footer provider，candidate 在未选中时保持 inert
+- editor provider owner：按 `blue.editorProvider` 选择一个独占 editor shell，candidate 在未选中时保持 inert
 
-这些 14 行可逐项移除。Tool diff/terminal/search/read/web 呈现来自 canonical `ToolPresentationModel`，不存在独立 intent row。
+这些 15 行可逐项移除。Tool diff/terminal/search/read/web 呈现来自 canonical `ToolPresentationModel.call/result` nodes，并直接经过 core compiler；不存在独立 intent row 或 frontend `View` adapter。
 
 ## plain-first
 
@@ -21,7 +23,7 @@ Blue 是一棵 Cordis 插件树。Bundle 当前有 28 条 Blue 自有行：2 条
 
 ## 装配
 
-`blue-interaction`、`blue-plugin-interaction-bridge`、`blue-startup` 和 `blue-app` 收口输入、命令、通知、启动与 Agent driver。App 对 renderer 只提供 readonly session reader/projection values 和 structured actions。
+`blue-interaction`、provider/public bridge、`blue-startup`、`blue-app` 和 `blue-plugin-session-bridge` 收口输入、命令、通知、启动、Agent driver 与公开 session capability。App 对 renderer 和第三方 facade 只提供 readonly session reader/projection values 和窄化 structured actions。
 
 `blue-context`、`blue-remote`、`blue-openpencil`、`blue-lark` 是 validation-only packages，不是 bundle row。
 

@@ -8,7 +8,7 @@
 
 [English](README.md) | 中文
 
-Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的交互式终端界面（TUI）：一个 `pi-tui` 渲染器，以树外 [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) 插件 bundle 的形式挂载在 `dsh-base` bundle 之上。本仓库包含十四个 workspace 包——十个属于 `0.1.0-rc.10` 发布集，四个为 validation-only adapter——针对已发布的 Harness `0.1.1-rc.2` 线构建与测试。
+Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的交互式终端界面（TUI）：一个 `pi-tui` 渲染器，以树外 [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) 插件 bundle 的形式挂载在 `dsh-base` bundle 之上。本仓库包含十五个 workspace 包——十一个属于 `0.1.1-rc.2` 发布集，四个为 validation-only adapter——针对已发布的 Harness `0.1.1-rc.2` 线构建与测试。
 
 <p align="center">
   <a href="https://dsh-blue.dev/blue-demo.mp4"><img src="docs/assets/demo.gif" width="720" alt="Blue 演示——流式回复、工具卡片与底部 dock 面板"></a>
@@ -29,7 +29,8 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 ## 用法
 
 > [!NOTE]
-> `0.1.0-rc.10` 是当前正式候选版本；npm 的 `rc` 与 `latest` 标签均指向此版本。
+> 当前源码正在准备即将发布的 `0.1.1-rc.2` 候选版本。真人验收和合并完成前
+> 不会发布；npm 的 `rc` 与 `latest` 标签仍指向上一公开版本。
 
 前置条件：Node `^22.19 || >=24` 与 pnpm 11。推荐的启动器已经内含经过测试的 dsh 运行时。
 
@@ -42,7 +43,7 @@ dsh --profile blue
 或者使用推荐的一条命令安装 `blue` 启动器；它把经过测试的 Harness 树封装成公共层和平台层归档，npm 安装时不会解析该依赖图：
 
 ```sh
-npm i -g @dsh-blue/blue-cli@0.1.0-rc.10
+npm i -g @dsh-blue/blue-cli@rc
 blue
 ```
 
@@ -60,7 +61,7 @@ flowchart TB
         HAR["agents · sessions · tools · approval<br/>commands · events"]
     end
 
-    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 28 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
+    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 33 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
         direction TB
         subgraph DOM["Domain 侧 — 唯一持有 Agent/Session 对象"]
             direction LR
@@ -69,7 +70,7 @@ flowchart TB
         end
         subgraph UI["UI 侧 — 只见 readonly 数据与 action"]
             direction TB
-            FE["blue-api · blue-frontend<br/>BlueView 契约 · readonly models · provider host"]
+            FE["blue-api · blue-ui · blue-frontend<br/>UI wire/builders · readonly models · provider host"]
             ADP["blue-transcript · blue-interaction<br/>transcript · 命令 · 面板 · 状态栏 · dock"]
             KRN["blue-core — TUI kernel<br/>全树唯一 import pi-tui"]
             FE --> ADP
@@ -92,7 +93,7 @@ flowchart TB
 ```
 <!-- END diagram:blue-layers -->
 
-运行时流向为 `Harness domain -> projection/action 边界 -> renderer-neutral model -> TUI 功能插件 -> core`。事件表达已发生的事实，projection 表达当前状态，action 是带结构化结果的写请求；Blue 不维护第二套 Agent 真相，Agent/Session 对象也从不越界进入 renderer。bundle 的逐行组合（`dsh-base` 之上的 28 行 Blue 自有插件）见 [bundle 指南](https://dsh-blue.dev/plugins/builtins/)，功能巡览见[网站功能页](https://dsh-blue.dev/features/)。
+运行时流向为 `Harness domain -> projection/action 边界 -> renderer-neutral model -> TUI 功能插件 -> core`。事件表达已发生的事实，projection 表达当前状态，action 是带结构化结果的写请求；Blue 不维护第二套 Agent 真相，Agent/Session 对象也从不越界进入 renderer。bundle 的逐行组合（`dsh-base` 之上的 29 行 Blue 自有插件）见 [bundle 指南](https://dsh-blue.dev/plugins/builtins/)，功能巡览见[网站功能页](https://dsh-blue.dev/features/)。
 
 ## 文档
 

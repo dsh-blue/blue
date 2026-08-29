@@ -171,6 +171,12 @@
 
 ### D25. chrome 辅助层：core 纯模块 + 子路径导出，不经 blueComponents 服务
 
+> **W4 取代（2026-08-29）：**本节保留 S11-S17 的历史裁决背景，但公共
+> `@dsh-blue/blue-core/chrome` 子路径已在 W4 删除。`src/chrome.ts` 现为
+> core-private；跨包的通用宽度操作只经 `BlueComponents`，BTW 所需顶边框
+> 收窄为 `BlueComponents.topRule`。现行契约见
+> `packages/core/AGENTS.md` 的 Shared chrome layer。
+
 - **背景**：圆角编辑框（`withSideBorders`）、边框内标题（`topRule`）、对话框框架（`framePanel`）、提示符/幽灵提示注入等全部是纯 `string[]` 绘制，kimi 侧为应用层函数（`custom-editor.ts` 等）；需要宽度函数但不需要 pi-tui 组件机制。
 - **决策**：core 新增 `src/chrome.ts`，子路径导出 `@dsh-blue/blue-core/chrome`，接收色函数参数的主题无关纯函数集；`EditorAdapter.render()`（components.ts）做编辑框后处理（kimi `CustomEditor.render` 的镜像位，无需子类化 pi-tui）；`BlueEditor` 契约增 `setPromptSymbol`/`setBorderLabel`/`setConnectedAbove`/`setGhostHint`。
 - **理由**：走 blueComponents 服务会让绘制函数背上服务生命周期；放 interaction/transcript 会重复实现或走私 pi-tui 依赖（违反 D4/L0 唯一适配纪律）；子路径导出与主题插件族先例一致。明确拒绝移植 kimi 的 `GutterContainer`（pi-tui Container 子类，类型越界），以纯 `padColumns` 等价（S13 实测决定启用与否）。
@@ -477,6 +483,7 @@
 - **背景**：三处渲染债。①Read 把 `ReadResultView.lines` 全文拼 code view 打印，`offset`/`totalLines` 元数据闲置，连续读文件刷屏。②DiffView 只做「整段 `- ` 前缀 before + 整段 `+ ` 前缀 after」：无行对齐、无颜色、上下文行两侧重复（工具卡路径与插件 BlueView 路径双份各自为政）；主题 6 个 diff token（diffAdded/diffRemoved/diffGutter/diffMeta 等）自 D54 起闲置。③若干 fallback 把 model-facing 的 XML 信封（`<path>…</path><type>file</type><content>…</content>`）与裸参数 JSON 直接打进卡片。
 - **决策①（Read 按文件树，用户两项裁决）**：连续 read 在投影消费层（official-model）折叠成一条 `transcript-read-group`——判定走 presenter 词汇（pending call `kind:'read'` 或 settled result `card:'read'`，不按工具名特判）；thinking 对 run 透明，内容/其他工具/换 turn 断链，todo/agents 隐形渠道不断链；单条 read 也成组（一律不打印内容）。**树粒度=按文件合并**：文件为父节点（首读序），≥2 窗口的文件嵌套窗口子行，单窗口文件内联一行，错误挂文件行（混合态 `◐`）。**折叠态永不显示内容**；Ctrl-O（工具类目）展开每窗口附 ≤5 行预览（带文件行号，`READ_PREVIEW_LINE_LIMIT` 有界防长会话内存放大）。registry 侧 read result 视图同步紧凑化为窗口 facts（其他消费者不再拿全文 view）。退役 read-group 模块的行为以此路径回归（projection + frontend model + renderer adapter + bundle fixtures，非兼容捷径）；plugin.spec 三条旧架构 it.skip 活化石删除，e2e 同名 it.skip 复活为投影层版本。
 - **决策②（Diff 面板）**：`core/src/diff-align.ts` 零依赖对齐（公共前后缀 trim 天然消化 structuredPatch 的上下文重复 → 中段 LCS DP → 任一侧超 `DIFF_ALIGN_MAX_ROWS`(1200) 退化整块 del+add）；`paintDiffRows` ctx 行只渲染一次、del/add 用 diffRemoved/diffAdded 着色、长 ctx 段中段省略 `⋯ N unchanged lines`（diffMeta）。`renderFrontendView` 加可选 `opts.colors`（工具卡 body、plain transcript 视图、interaction frontend-panel 三处传色；dock/provider 路径 v1 无色）；对齐结果按冻结 view 对象 WeakMap 记忆（模型按投影变更重建、渲染按帧高频）。插件 BlueView diff 分支委托同一 painter，双份渲染消除。diff section 标题带计数 `path · +A −D`，新建文件 `· new file, +N lines`。**不做 `@@` hunk 行号**：上游 FileDiff 转 `structuredPatch` 结果时丢弃了 hunk 起始行号，blue 侧无法恢复——记为未来上游 presentation 扩展点。
+- **W6-2 追记（2026-08-29）**：七种 frontend `View` 与 `renderFrontendView` converter 已删除；工具卡、plain transcript、interaction canonical document 和公共插件 `BlueView` diff leaf 现在都直接经 `compileBlueUiNode` 到同一 painter，对齐缓存键随之成为冻结 canonical diff leaf。
 - **决策③（信封摘要）**：`envelope.ts` 保守解析（顶层连续 `<tag>value</tag>` 对、闭合标签行锚定、≥2 对才算信封；不匹配一律原文透传——普通输出与错误信息绝不丢内容）；命中时折叠为一行摘要（read 窗口 `path · lines a-b of T` / write 确认 / image 事实），展开保留原文作调试出口。内联 tool-call 参数改 `key: value` 行（≤6 对）替代裸 JSON dump。
 - **附带**：banner spec 的 cwd 断言改为从 `bannerLayout` 经同一 truncate 原语推导（旧算术把 62 列当纯值预算，label 11 列同预算内 + gutter 吃 2 列，深路径 worktree 必红）。
 - **落地（2026-08-26，worktree p2/d58-tool-cards 待人工验收）**：envelope/diff-align/read-group 三新模块 + frontend 契约 additive（TranscriptReadGroupModel/ReadCallModel，随下次 lockstep rc.9）+ 全套矩阵测试 + width-scan 三处扩展 + VT golden 四新帧（diff-card(-expanded)、read-group(-expanded)）+ e2e 两新用例 + AGENTS×3 同步（本 PR）。

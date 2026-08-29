@@ -34,7 +34,7 @@ import {
   updatePanelModel,
   updatePanelSummary,
 } from '../src/update-command.ts'
-import { FrontendPanel } from '../src/frontend-panel.ts'
+import { CanonicalDocumentController } from '../src/frontend-panel.ts'
 import * as settingsPlugin from '../src/settings.ts'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
 import { InteractionStateService } from '../src/runtime-state.ts'
@@ -60,7 +60,7 @@ const RC3_NAMES = ['@dsh-blue/blue-api', ...RC2_NAMES]
 
 /** Version roles used by the update scenarios across release bumps. */
 const CURRENT_VERSION = BLUE_VERSION
-const TARGET_VERSION = '0.1.1-rc.1'
+const TARGET_VERSION = '0.1.2-rc.1'
 
 /** A spawn success. */
 function ok(): SpawnOutcome {
@@ -843,7 +843,7 @@ describe('update panel model', () => {
   function mount(state = createUpdateProgressState()) {
     const display = fakeBlueContext()
     const closed = vi.fn()
-    const panel = new FrontendPanel({
+    const panel = new CanonicalDocumentController({
       ...display,
       model: () => updatePanelModel(state, '0.1.0-rc.6', '0.1.0-rc.7'),
       onAction: vi.fn(),
@@ -870,6 +870,7 @@ describe('update panel model', () => {
       kind: 'success', fromVersion: '0.1.0-rc.6', toVersion: '0.1.0-rc.7',
       message: 'updated — restart dsh to apply', logPath: '/tmp/update.log',
     }
+    panel.invalidate()
     rows = plain(panel.render(80))
     expect(rows).toContain('restart dsh to apply')
     expect(rows).toContain('log: /tmp/update.log')

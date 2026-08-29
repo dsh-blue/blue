@@ -40,6 +40,7 @@ const fallbackPackage = existsSync(manifestPath) ? JSON.parse(readFileSync(manif
 const target = relative(repositoryRoot, packageDir)
 const reproduce = `node script/blue-plugin-fixture.mjs ${target === '' ? '.' : target.startsWith(`..${sep}`) ? packageDir : target} --install${harnessLine === undefined ? '' : ` --harness-line ${harnessLine}`}`
 const fixtureRoot = await mkdtemp(join(tmpdir(), 'blue-plugin-fixture-'))
+let compilerContext
 const report = {
   package: fallbackPackage,
   fixtureRoot,
@@ -131,6 +132,7 @@ try {
   function localClosure() {
     const forced = [
       '@dsh-blue/blue-api',
+      '@dsh-blue/blue-ui',
       '@dsh-blue/blue-frontend',
       '@dsh-blue/blue-harness-adapter',
       '@dsh-blue/blue-context',
@@ -233,15 +235,34 @@ try {
   const frontend = await load('@dsh-blue/blue-frontend')
   const adapter = await load('@dsh-blue/blue-harness-adapter')
   const core = await load('@dsh-blue/blue-core')
+  const cordis = await load('@deepseek-ai/cordis')
+  const themeDark = await load('@dsh-blue/blue-core/theme-dark')
   const context = await load('@dsh-blue/blue-context')
   const conversation = await load('@dsh-blue/blue-conversation')
   const remote = await load('@dsh-blue/blue-remote')
   const officialTranscript = await load('@dsh-blue/blue-transcript/official-model')
   const transcriptModel = await load('@dsh-blue/blue-transcript/transcript-model')
+  compilerContext = new cordis.Context()
+  const compilerComponents = new core.BlueComponentsService(compilerContext, {
+    theme: { colors: themeDark.DARK_COLORS },
+    tui: {},
+  })
+  function renderNode(node, width) {
+    const safeWidth = Math.max(1, Number.isFinite(width) ? Math.floor(width) : 1)
+    const compiled = core.compileBlueUiNode(node, {
+      components: compilerComponents,
+      colors: themeDark.DARK_COLORS,
+      getViewport: () => ({ columns: safeWidth, rows: Number.MAX_SAFE_INTEGER }),
+      screenMode: 'main',
+      emit: () => {},
+    })
+    ensure(compiled.ok, 'FIXTURE_CANONICAL_COMPILE', compiled.ok ? '' : compiled.message)
+    return compiled.value.component.render(safeWidth)
+  }
 
   await scenario('provider.swap-and-plain-fallback', async () => {
     const host = new frontend.FrontendHost()
-    await host.activateInitial({ id: 'fixture-provider', activate: ctx => ctx.publish({ providerId: 'fixture-provider', capabilities: [], views: [{ kind: 'text', text: 'ready' }] }) })
+    await host.activateInitial({ id: 'fixture-provider', activate: ctx => ctx.publish({ providerId: 'fixture-provider', capabilities: [], nodes: [{ kind: 'text', content: 'ready' }] }) })
     await host.swap({ id: 'fixture-failing-provider', activate: () => { throw new Error('fixture failure') } })
     ensure(host.snapshot.providerId === 'plain', 'FIXTURE_PROVIDER_FALLBACK', 'provider failure did not fall back to plain')
     await host.unload()
@@ -250,7 +271,7 @@ try {
   await scenario('provider.unload-and-late-event', async () => {
     const host = new frontend.FrontendHost()
     let latePublish
-    await host.activateInitial({ id: 'fixture-late-provider', activate: ctx => { latePublish = () => ctx.publish({ providerId: 'fixture-late-provider', capabilities: [], views: [{ kind: 'text', text: 'late' }] }); ctx.publish({ providerId: 'fixture-late-provider', capabilities: [], views: [] }) } })
+    await host.activateInitial({ id: 'fixture-late-provider', activate: ctx => { latePublish = () => ctx.publish({ providerId: 'fixture-late-provider', capabilities: [], nodes: [{ kind: 'text', content: 'late' }] }); ctx.publish({ providerId: 'fixture-late-provider', capabilities: [], nodes: [] }) } })
     await host.unload()
     latePublish?.()
     ensure(host.snapshot.providerId === 'plain', 'FIXTURE_PROVIDER_LATE_EVENT', 'late publish survived unload')
@@ -362,14 +383,658 @@ try {
 
   await scenario('renderer.width-scan-20-40-80-120', async () => {
     const model = context.buildContextModel({ sessionId: 's1', watermark: 3, facts: { input: 123456, output: 7890, cacheRead: 42, cacheWrite: 8, used: 120, window: 1000, breakdown: { system: 1, tools: 2, messages: 3 } } })
-    const views = [...model.panel.view ? [model.panel.view] : [], ...model.status.views]
+    const nodes = [model.panel.node, ...model.status.nodes]
     for (const width of [20, 40, 80, 120]) {
-      for (const view of views) {
-        const rows = core.renderFrontendView(view, width)
+      for (const node of nodes) {
+        const rows = renderNode(node, width)
         ensure(!rows.some(row => core.visibleWidth(row) > width), 'FIXTURE_WIDTH_OVERFLOW', `frontend renderer exceeded width ${width}`)
       }
     }
   })
+
+  if (manifest.name === '@dsh-blue/blue-harness-adapter') {
+    const localeAdapter = await load('@dsh-blue/blue-harness-adapter/locale')
+    const settingsModule = await load('@deepseek-ai/dsh-settings')
+    const SettingsProvider = settingsModule.default
+    const localeNamespace = settingsModule.settingsNamespace('locale')
+
+    class MemorySettings extends SettingsProvider {
+      writable = true
+      constructor(ctx, document) {
+        super(ctx)
+        this.document = document
+      }
+      async load() { return this.document }
+      async persist(ns, section) { this.document[String(ns)] = section }
+    }
+
+    await scenario('locale.preference-live-reload-unload', async () => {
+      const ctx = new cordis.Context()
+      const localeFiber = await ctx.plugin(localeAdapter)
+      const retained = ctx.blueLocale
+      const settingsFiber = await ctx.plugin(MemorySettings, { locale: { preference: 'zh' } })
+      await new Promise(resolveDelay => setTimeout(resolveDelay, 20))
+      ensure(retained.preference === 'zh' && retained.locale === 'zh', 'FIXTURE_LOCALE_INITIAL', 'persisted locale preference was not applied')
+      await ctx.settings.update(localeNamespace, { preference: 'en' })
+      await new Promise(resolveDelay => setTimeout(resolveDelay, 20))
+      ensure(retained.preference === 'en' && retained.locale === 'en', 'FIXTURE_LOCALE_UPDATE', 'live locale preference did not update')
+      await settingsFiber.dispose()
+      await new Promise(resolveDelay => setTimeout(resolveDelay, 20))
+      ensure(retained.preference === undefined, 'FIXTURE_LOCALE_SETTINGS_UNLOAD', 'settings unload retained an explicit locale preference')
+      const reloaded = await ctx.plugin(MemorySettings, { locale: { preference: 'zh' } })
+      await new Promise(resolveDelay => setTimeout(resolveDelay, 20))
+      ensure(retained.preference === 'zh', 'FIXTURE_LOCALE_SETTINGS_RELOAD', 'settings reload did not restore the locale preference')
+      await reloaded.dispose()
+      await localeFiber.dispose()
+      ensure(ctx.get('blueLocale') === undefined && !retained.setPreference('en'), 'FIXTURE_LOCALE_UNLOAD', 'locale service survived owner unload')
+      await ctx.fiber.dispose()
+    })
+  }
+
+  if (manifest.name === '@dsh-blue/blue-app') {
+    const blueApi = await load('@dsh-blue/blue-api')
+    const sessionBridge = await load('@dsh-blue/blue-app/plugin-host-session-bridge')
+
+    function effectOwner() {
+      const cleanups = []
+      return {
+        effect(callback) {
+          const cleanup = callback()
+          if (typeof cleanup === 'function') cleanups.push(cleanup)
+        },
+        dispose() {
+          for (const cleanup of cleanups.splice(0).reverse()) cleanup()
+        },
+      }
+    }
+
+    function sessionContext() {
+      const ctx = new cordis.Context()
+      const host = new blueApi.BluePluginHostService(ctx)
+      let snapshot = { revision: 1, id: 'packed-a', cwd: '/packed/a', status: 'idle', mode: 'normal', model: { id: 'packed-model', provider: 'packed-provider' } }
+      let listener
+      const reader = {
+        current: () => snapshot,
+        subscribe(next) {
+          listener = next
+          next(snapshot)
+          let disposed = false
+          return {
+            get disposed() { return disposed },
+            dispose() { if (!disposed) { disposed = true; if (listener === next) listener = undefined } },
+          }
+        },
+      }
+      ctx.reflect.provide('blueSessionReader', reader)
+      return {
+        ctx,
+        host,
+        reader,
+        publish(value) { snapshot = value; listener?.(value) },
+        lateListener: () => listener,
+      }
+    }
+
+    await scenario('app.session-read-facade-revision-freeze-unload', async () => {
+      const fixture = sessionContext()
+      let ownerFiber
+      const absentConsumer = effectOwner()
+      const absent = fixture.host.open(absentConsumer, { id: '@fixture/session-read-absent', api: '^1.0.0-beta.1', capabilities: ['session.read'] })
+      ensure(!absent.ok && absent.code === 'BLUE_CAPABILITY_ABSENT', 'FIXTURE_SESSION_READ_ABSENT', 'session.read did not report an absent owner before bridge mount')
+      absentConsumer.dispose()
+      try {
+        ownerFiber = await fixture.ctx.plugin(sessionBridge)
+        const readConsumer = effectOwner()
+        const read = fixture.host.open(readConsumer, { id: '@fixture/session-read', api: '^1.0.0-beta.1', capabilities: ['session.read'] })
+        ensure(read.ok && read.value.session !== undefined && !Object.hasOwn(read.value, 'sessionActions'), 'FIXTURE_SESSION_READ_SCOPE', 'read-only manifest did not receive only api.session')
+        ensure(typeof read.value.session.current === 'function' && typeof read.value.session.subscribe === 'function' && !('request' in read.value.session), 'FIXTURE_SESSION_READ_KEYS', 'session.read exposed an action method')
+        const initial = read.value.session.current()
+        ensure(initial !== fixture.reader.current() && initial?.model !== fixture.reader.current().model, 'FIXTURE_SESSION_READ_COPY', 'host retained owner snapshot identity')
+        ensure(Object.isFrozen(initial) && Object.isFrozen(initial?.model), 'FIXTURE_SESSION_READ_FREEZE', 'session snapshot was not deeply frozen')
+        fixture.reader.current().model.id = 'mutated-owner-model'
+        ensure(initial?.model?.id === 'packed-model', 'FIXTURE_SESSION_READ_OWNER_MUTATION', 'owner mutation crossed the snapshot boundary')
+
+        const seen = []
+        const registration = read.value.session.subscribe(value => {
+          seen.push(value?.revision ?? -1)
+          if (value?.revision === 1) fixture.publish({ revision: 2, id: 'packed-a', cwd: '/packed/reentrant', status: 'running', mode: 'plan' })
+        })
+        ensure(seen.join() === '1,2' && read.value.session.current()?.cwd === '/packed/reentrant', 'FIXTURE_SESSION_READ_REENTRANT', 'subscribe-before-replay missed a reentrant revision')
+        fixture.publish({ revision: 2, id: 'packed-a', cwd: '/packed/duplicate', status: 'failed', mode: 'normal' })
+        fixture.publish({ revision: 1, id: 'packed-a', cwd: '/packed/regressed', status: 'failed', mode: 'normal' })
+        ensure(seen.join() === '1,2', 'FIXTURE_SESSION_READ_REVISION_FENCE', 'duplicate or regressing revision was admitted')
+        registration.dispose()
+        registration.dispose()
+        fixture.publish({ revision: 3, id: 'packed-a', cwd: '/packed/disposed', status: 'idle', mode: 'normal' })
+        ensure(seen.join() === '1,2', 'FIXTURE_SESSION_READ_DISPOSE', 'disposed read subscription received an update')
+
+        const removedConsumer = effectOwner()
+        const removed = fixture.host.open(removedConsumer, { id: '@fixture/session-act-removed', api: '^1.0.0-beta.1', capabilities: ['session.act'] })
+        ensure(!removed.ok && removed.code === 'BLUE_API_INCOMPATIBLE', 'FIXTURE_SESSION_ACT_REMOVED', 'removed session.act capability remained admissible')
+
+        const retained = read.value.session
+        const late = fixture.lateListener()
+        await ownerFiber.dispose()
+        ownerFiber = undefined
+        late?.({ revision: 4, id: 'packed-late', cwd: '/late', status: 'failed', mode: 'yolo' })
+        ensure(retained.current() === null, 'FIXTURE_SESSION_READ_OWNER_UNLOAD', 'retained reader admitted an old-owner callback')
+        fixture.publish({ revision: 10, id: 'packed-b', cwd: '/packed/b', status: 'idle', mode: 'normal' })
+        ownerFiber = await fixture.ctx.plugin(sessionBridge)
+        ensure(retained.current()?.id === 'packed-b' && retained.current()?.revision === 10, 'FIXTURE_SESSION_READ_OWNER_RELOAD', 'retained reader did not follow the replacement owner generation')
+
+        removedConsumer.dispose()
+        readConsumer.dispose()
+        ensure(retained.current() === null, 'FIXTURE_SESSION_READ_CONSUMER_UNLOAD', 'disposed consumer retained a readable snapshot')
+      } finally {
+        await ownerFiber?.dispose()
+        await fixture.ctx.fiber.dispose()
+      }
+    })
+
+    report.observations.push('app readonly session.read exercised through packed API and app owner-bridge exports; generic session.act rejected')
+  }
+
+  if (manifest.name === '@dsh-blue/blue-interaction') {
+    const cordis = await load('@deepseek-ai/cordis')
+    const blueApi = await load('@dsh-blue/blue-api')
+    const interaction = await load('@dsh-blue/blue-interaction')
+    const interactionBridge = await load('@dsh-blue/blue-interaction/plugin-host-bridge')
+    const editorProviderOwner = await load('@dsh-blue/blue-interaction/editor-provider-owner')
+
+    function effectOwner() {
+      const cleanups = []
+      return {
+        effect(callback) {
+          const cleanup = callback()
+          if (typeof cleanup === 'function') cleanups.push(cleanup)
+        },
+        dispose() {
+          for (const cleanup of cleanups.splice(0).reverse()) cleanup()
+        },
+      }
+    }
+
+    function interactionContext() {
+      const ctx = new cordis.Context()
+      const host = new blueApi.BluePluginHostService(ctx)
+      const control = ctx.get('bluePluginControl')
+      const editorHost = new interaction.EditorHostService(ctx)
+      ctx.reflect.provide('commands', { register: () => () => {} })
+      const identity = value => value
+      ctx.reflect.provide('blueTheme', { colors: new Proxy({}, { get: () => identity }) })
+      return { ctx, host, control, editorHost }
+    }
+
+    class PackedEditor {
+      constructor(components) {
+        this.components = components
+        this.focused = false
+        this.disableSubmit = false
+        this.text = ''
+        this.cursor = 0
+        this.history = []
+        this.barrier = undefined
+      }
+      setSubmitBarrier(barrier) { this.barrier = barrier }
+      submit() {
+        if (this.disableSubmit) return
+        if (this.barrier === undefined) { this.onSubmit?.(this.text); return }
+        const controller = new AbortController()
+        let settled = false
+        this.barrier(Object.freeze({
+          text: this.text.trim(),
+          signal: controller.signal,
+          revision: 1,
+          commit: () => {
+            if (settled) return false
+            settled = true
+            this.onSubmit?.(this.text)
+            return true
+          },
+          cancel: () => { if (!settled) { settled = true; controller.abort() } },
+        }))
+      }
+      isShowingAutocomplete() { return false }
+      getText() { return this.text }
+      setText(text) { this.text = text; this.cursor = text.length }
+      addToHistory(text) { this.history.unshift(text) }
+      getHistory() { return [...this.history] }
+      removeLatestHistory(text) {
+        if (this.history[0] !== text) return false
+        this.history.shift()
+        return true
+      }
+      setBorderColor() {}
+      setPromptSymbol() {}
+      setBorderLabel() {}
+      setConnectedAbove() {}
+      setGhostHint() {}
+      setAutocompleteProvider(provider) { this.autocompleteProvider = provider }
+      getExpandedText() { return this.text }
+      renderContent(width) { return [this.components.truncateToWidth(this.text, Math.max(1, width), '')] }
+      insertText(text) {
+        this.text = `${this.text.slice(0, this.cursor)}${text}${this.text.slice(this.cursor)}`
+        this.cursor += text.length
+        this.onChange?.(this.text)
+      }
+      handleInput(data) {
+        if (this.onKey?.(data) === true) return
+        if (data === '\x1b[D') { this.cursor = Math.max(0, this.cursor - 1); return }
+        if (data === '\x1b[C') { this.cursor = Math.min(this.text.length, this.cursor + 1); return }
+        if (data === '\r' || data === '\n') { this.submit(); return }
+        if (!/^[^\x00-\x1f\x7f-\x9f]+$/u.test(data)) return
+        this.insertText(data)
+      }
+      render(width) { return this.renderContent(width) }
+      invalidate() {}
+    }
+
+    async function editorProviderFixture() {
+      const ctx = new cordis.Context()
+      const host = new blueApi.BluePluginHostService(ctx)
+      const control = ctx.get('bluePluginControl')
+      const identity = value => value
+      const colors = new Proxy({ logoGradient: [identity] }, {
+        get(target, key) { return key === 'logoGradient' ? target.logoGradient : identity },
+      })
+      const bottom = []
+      const screen = {
+        columns: 80,
+        rows: 24,
+        focus: null,
+        requestRender() {},
+        addBottomChild(component) {
+          bottom.push(component)
+          return () => {
+            const index = bottom.indexOf(component)
+            if (index >= 0) bottom.splice(index, 1)
+          }
+        },
+        setFocus(component) {
+          if (this.focus === component) return
+          if (this.focus !== null) this.focus.focused = false
+          this.focus = component
+          if (component !== null) component.focused = true
+        },
+        scrollContent: () => false,
+        followContent() {},
+        setContentScrollHandler() { return () => {} },
+        setTitle() {},
+        async suspend(run) { return run() },
+      }
+      ctx.reflect.provide('blueScreen', screen)
+      ctx.reflect.provide('blueTheme', { colors })
+      class PackedComponents extends core.BlueComponentsService {
+        createEditor() {
+          const editor = new PackedEditor(this)
+          this.editors ??= []
+          this.editors.push(editor)
+          return editor
+        }
+      }
+      new PackedComponents(ctx, { theme: { colors }, tui: {} })
+      new core.BlueKeymapService(ctx)
+      ctx.reflect.provide('commands', { register: () => () => {} })
+      const session = Object.freeze({ id: 'packed-session', cwd: '/packed', status: 'idle', mode: 'normal' })
+      const sessionListeners = new Set()
+      ctx.reflect.provide('blueSessionReader', {
+        current: () => session,
+        subscribe(listener) {
+          sessionListeners.add(listener)
+          return { dispose: () => sessionListeners.delete(listener) }
+        },
+        request: async () => ({ ok: true, value: undefined }),
+      })
+      ctx.reflect.provide('blueSessionActions', {
+        commands: () => [],
+        followup: () => ({ ok: true, value: { messageId: 'packed-message' } }),
+        steer: () => ({ ok: true, value: undefined }),
+        interrupt: () => ({ ok: true, value: undefined }),
+        executeCommand: async () => undefined,
+        skillSnapshot: async () => ({ ok: true, value: { complete: true, skills: [] } }),
+        subscribeSkillChanges: () => ({ disposed: false, dispose() { this.disposed = true } }),
+      })
+      ctx.reflect.provide('blueRequests', { begin() {} })
+      ctx.reflect.provide('blueRetractions', { tryRetract: () => false })
+      const loaderGate = Promise.withResolvers()
+      ctx.reflect.provide('loader', { await: () => loaderGate.promise })
+      const interactionFiber = await ctx.plugin(interaction)
+      ctx.blueInteractionState.settingsSource = () => ({ updateCheck: false, updateChannel: 'next' })
+      loaderGate.resolve()
+      await new Promise(resolveImmediate => setImmediate(resolveImmediate))
+      const ownerFiber = await ctx.plugin(editorProviderOwner)
+      const editor = ctx.blueEditorHost.current?.editor
+      ensure(editor !== undefined && screen.focus !== null, 'FIXTURE_EDITOR_PROVIDER_MOUNT', 'packed blue-input did not publish its editor runtime')
+      const outer = screen.focus
+      const consumer = effectOwner()
+      const opened = host.open(consumer, {
+        id: '@fixture/editor-provider',
+        api: '^1.0.0-beta.1',
+        capabilities: ['editor.provider'],
+      })
+      ensure(opened.ok, 'FIXTURE_EDITOR_PROVIDER_OPEN', opened.ok ? '' : opened.message)
+      return {
+        ctx,
+        host,
+        control,
+        screen,
+        editor,
+        outer,
+        opened: opened.value,
+        ownerFiber,
+        render(width = 60) { return outer.render(width) },
+        select(id) { ctx.emit('blue/settings-source-ready', { editorProvider: id }) },
+        async dispose() {
+          consumer.dispose()
+          await interactionFiber.dispose()
+          await ctx.fiber.dispose()
+        },
+      }
+    }
+
+    const extensionManifest = Object.freeze({
+      id: '@fixture/editor-extensions',
+      api: '^1.0.0-beta.1',
+      capabilities: Object.freeze(['editor.extensions']),
+    })
+
+    await scenario('interaction.editor-extensions-owner-replay-inert', async () => {
+      const { ctx, host, editorHost } = interactionContext()
+      const consumer = effectOwner()
+      let bridgeFiber
+      try {
+        const absent = host.open(consumer, extensionManifest)
+        ensure(!absent.ok && absent.code === 'BLUE_CAPABILITY_ABSENT', 'FIXTURE_EDITOR_EXTENSION_ABSENT', 'editor.extensions opened without an active interaction owner')
+
+        bridgeFiber = await ctx.plugin(interactionBridge)
+        const opened = host.open(consumer, extensionManifest)
+        ensure(opened.ok, 'FIXTURE_EDITOR_EXTENSION_OPEN', opened.ok ? '' : opened.message)
+        let completeCalls = 0
+        let transformCalls = 0
+        let eventCalls = 0
+        const registration = opened.value.editorExtensions.register({
+          id: 'packed.extension',
+          priority: 40,
+          before: { kind: 'text', content: 'packed before' },
+          actions: [{ id: 'packed-action', label: 'Packed action' }],
+          complete: () => { completeCalls += 1; return { ok: true, value: [] } },
+          transformSubmit: request => { transformCalls += 1; return { ok: true, value: { text: request.text } } },
+          onEvent: () => { eventCalls += 1; return { ok: true, value: undefined } },
+        })
+        ensure(registration.ok, 'FIXTURE_EDITOR_EXTENSION_REGISTER', registration.ok ? '' : registration.message)
+        ensure(completeCalls === 0 && transformCalls === 0 && eventCalls === 0, 'FIXTURE_EDITOR_EXTENSION_INERT', 'registration invoked an editor extension callback')
+        const firstBinding = editorHost.extensions
+        ensure(firstBinding?.entries[0]?.id === 'packed.extension', 'FIXTURE_EDITOR_EXTENSION_BINDING', 'interaction owner did not project the registered extension')
+
+        await bridgeFiber.dispose()
+        bridgeFiber = undefined
+        ensure(editorHost.extensions === undefined, 'FIXTURE_EDITOR_EXTENSION_OWNER_UNLOAD', 'editor extension binding survived interaction owner unload')
+        ensure(!registration.value.refresh().ok, 'FIXTURE_EDITOR_EXTENSION_LATE_REFRESH', 'extension refresh survived owner unload')
+
+        bridgeFiber = await ctx.plugin(interactionBridge)
+        const replayed = editorHost.extensions
+        ensure(replayed !== undefined && replayed !== firstBinding && replayed.entries[0]?.id === 'packed.extension', 'FIXTURE_EDITOR_EXTENSION_REPLAY', 'owner reload did not replay the packed extension')
+        ensure(completeCalls === 0 && transformCalls === 0 && eventCalls === 0, 'FIXTURE_EDITOR_EXTENSION_REPLAY_INERT', 'bridge replay invoked an extension callback')
+
+        registration.value.dispose()
+        const replacement = opened.value.editorExtensions.register({
+          id: 'packed.extension',
+          hint: 'replacement',
+          complete: () => { completeCalls += 1; return { ok: true, value: [] } },
+        })
+        ensure(replacement.ok && editorHost.extensions?.entries[0]?.hint === 'replacement', 'FIXTURE_EDITOR_EXTENSION_SAME_ID_RELOAD', 'same-id extension replacement failed after owner replay')
+        ensure(completeCalls === 0, 'FIXTURE_EDITOR_EXTENSION_REPLACEMENT_INERT', 'same-id replacement invoked its callback')
+        replacement.value.dispose()
+      } finally {
+        await bridgeFiber?.dispose()
+        consumer.dispose()
+        await ctx.fiber.dispose()
+      }
+    })
+
+    await scenario('interaction.editor-extensions-context-abort-unload-late', async () => {
+      const { ctx, host, control, editorHost } = interactionContext()
+      const consumer = effectOwner()
+      let bridgeFiber
+      try {
+        bridgeFiber = await ctx.plugin(interactionBridge)
+        const opened = host.open(consumer, extensionManifest)
+        ensure(opened.ok, 'FIXTURE_EDITOR_CALLBACK_OPEN', opened.ok ? '' : opened.message)
+        const contexts = new Map()
+        const requests = new Map()
+        const registration = opened.value.editorExtensions.register({
+          id: 'packed.callbacks',
+          completeV2(request, context) {
+            requests.set('complete', request)
+            contexts.set('complete', context)
+            return { ok: true, value: [{ id: 'packed-item', label: 'Packed item', insertText: 'packed-value' }] }
+          },
+          transformSubmit(request, context) {
+            requests.set('transform', request)
+            contexts.set('transform', context)
+            return { ok: true, value: { text: `packed:${request.text}` } }
+          },
+          onEvent(event, context) {
+            requests.set('event', event)
+            contexts.set('event', context)
+            return { ok: true, value: undefined }
+          },
+        })
+        ensure(registration.ok, 'FIXTURE_EDITOR_CALLBACK_REGISTER', registration.ok ? '' : registration.message)
+        ensure(contexts.size === 0 && requests.size === 0, 'FIXTURE_EDITOR_CALLBACK_INERT', 'callback registration performed work')
+        const binding = editorHost.extensions
+        const entry = binding?.entries.find(candidate => candidate.id === 'packed.callbacks')
+        ensure(binding !== undefined && entry !== undefined, 'FIXTURE_EDITOR_CALLBACK_BINDING', 'callback extension was not projected')
+
+        const completeController = new AbortController()
+        const transformController = new AbortController()
+        const eventController = new AbortController()
+        const completionRequest = Object.freeze({ trigger: '#', query: 'packed' })
+        const submitRequest = Object.freeze({ text: 'draft', attachments: Object.freeze([]) })
+        const eventRequest = Object.freeze({ kind: 'activate', controlId: 'packed-action' })
+        const completed = await binding.complete(entry, completionRequest, completeController.signal, 11)
+        const transformed = await binding.transform(entry, submitRequest, transformController.signal, 12)
+        const dispatched = await binding.dispatch(entry, eventRequest, eventController.signal, 13)
+        ensure(completed.ok && completed.value[0]?.insertText === 'packed-value', 'FIXTURE_EDITOR_COMPLETE_RESULT', 'completion callback result drifted')
+        ensure(transformed.ok && transformed.value.text === 'packed:draft', 'FIXTURE_EDITOR_TRANSFORM_RESULT', 'submit transform result drifted')
+        ensure(dispatched.ok, 'FIXTURE_EDITOR_EVENT_RESULT', 'editor action result drifted')
+        for (const [kind, controller, revision] of [['complete', completeController, 11], ['transform', transformController, 12], ['event', eventController, 13]]) {
+          const contextValue = contexts.get(kind)
+          ensure(contextValue?.surfaceId === 'packed.callbacks' && contextValue.signal === controller.signal && contextValue.revision === revision && Object.isFrozen(contextValue), 'FIXTURE_EDITOR_CALLBACK_CONTEXT', `${kind} callback context drifted`)
+        }
+        ensure(contexts.get('event')?.userGesture !== undefined, 'FIXTURE_EDITOR_EVENT_GESTURE', 'editor action lacked a scoped user gesture')
+        ensure(requests.get('complete') === completionRequest, 'FIXTURE_EDITOR_COMPLETE_REQUEST', 'completion request drifted')
+        ensure(requests.get('transform') === submitRequest, 'FIXTURE_EDITOR_TRANSFORM_REQUEST', 'submit request drifted')
+        ensure(requests.get('event') === eventRequest, 'FIXTURE_EDITOR_EVENT_REQUEST', 'editor action request drifted')
+
+        const lateComplete = Promise.withResolvers()
+        const lateTransform = Promise.withResolvers()
+        const lateEvent = Promise.withResolvers()
+        const lateContexts = new Map()
+        const lateRegistration = opened.value.editorExtensions.register({
+          id: 'packed.late',
+          complete(_request, context) {
+            lateContexts.set('complete', context)
+            return lateComplete.promise
+          },
+          transformSubmit(_request, context) {
+            lateContexts.set('transform', context)
+            return lateTransform.promise
+          },
+          onEvent(_event, context) {
+            lateContexts.set('event', context)
+            return lateEvent.promise
+          },
+        })
+        ensure(lateRegistration.ok, 'FIXTURE_EDITOR_LATE_REGISTER', lateRegistration.ok ? '' : lateRegistration.message)
+        const lateBinding = editorHost.extensions
+        const lateEntry = lateBinding?.entries.find(candidate => candidate.id === 'packed.late')
+        ensure(lateBinding !== undefined && lateEntry !== undefined, 'FIXTURE_EDITOR_LATE_BINDING', 'late extension was not projected')
+        const lateControllers = {
+          complete: new AbortController(),
+          transform: new AbortController(),
+          event: new AbortController(),
+        }
+        const pending = [
+          lateBinding.complete(lateEntry, { trigger: 'manual', query: 'late' }, lateControllers.complete.signal, 14),
+          lateBinding.transform(lateEntry, { text: 'late', attachments: [] }, lateControllers.transform.signal, 15),
+          lateBinding.dispatch(lateEntry, { kind: 'activate', controlId: 'late' }, lateControllers.event.signal, 16),
+        ]
+        await Promise.resolve()
+        ensure([...lateContexts].every(([kind, contextValue]) => contextValue.signal === lateControllers[kind].signal && contextValue.signal.aborted === false), 'FIXTURE_EDITOR_ABORT_CONTEXT', 'late callback did not receive the caller signal')
+        ensure(lateContexts.size === 3, 'FIXTURE_EDITOR_LATE_CALLBACKS', 'not every late callback started')
+        const revisionBeforeUnload = control.snapshot().editorExtensionsRevision
+        for (const controller of Object.values(lateControllers)) controller.abort()
+        await bridgeFiber.dispose()
+        bridgeFiber = undefined
+        ensure([...lateContexts.values()].every(contextValue => contextValue.signal.aborted) && editorHost.extensions === undefined, 'FIXTURE_EDITOR_ABORT_UNLOAD', 'abort or owner unload did not retire the active callback binding')
+        lateComplete.resolve({ ok: true, value: [{ id: 'late', label: 'Late', insertText: 'late' }] })
+        lateTransform.resolve({ ok: true, value: { text: 'late transformed' } })
+        lateEvent.resolve({ ok: true, value: undefined })
+        await Promise.all(pending)
+        ensure(editorHost.extensions === undefined && control.snapshot().editorExtensionsRevision === revisionBeforeUnload, 'FIXTURE_EDITOR_LATE_REJECTION', 'late completion republished into the unloaded interaction owner')
+        ensure(!lateRegistration.value.refresh().ok, 'FIXTURE_EDITOR_LATE_HANDLE', 'late extension handle remained active without an owner')
+        lateRegistration.value.dispose()
+        registration.value.dispose()
+      } finally {
+        await bridgeFiber?.dispose()
+        consumer.dispose()
+        await ctx.fiber.dispose()
+      }
+    })
+
+    await scenario('interaction.editor-provider-selection-identity-fallback-inert', async () => {
+      const fixture = await editorProviderFixture()
+      const shell = label => ({
+        kind: 'stack',
+        direction: 'column',
+        children: [
+          { node: { kind: 'text', content: label } },
+          { node: { kind: 'editor-control' } },
+        ],
+      })
+      let firstRenders = 0
+      let secondRenders = 0
+      let badRenders = 0
+      let frozenSnapshot = false
+      const first = fixture.opened.editorProviders.register({
+        id: 'packed.first',
+        render(snapshot) {
+          firstRenders += 1
+          frozenSnapshot = Object.isFrozen(snapshot)
+            && Object.isFrozen(snapshot.attachments)
+            && Object.isFrozen(snapshot.extensions)
+            && !Object.hasOwn(snapshot, 'draft')
+          return shell('packed first')
+        },
+      })
+      const second = fixture.opened.editorProviders.register({
+        id: 'packed.second',
+        render() { secondRenders += 1; return shell('packed second') },
+      })
+      const bad = fixture.opened.editorProviders.register({
+        id: 'packed.bad',
+        render() {
+          badRenders += 1
+          return {
+            kind: 'stack',
+            direction: 'column',
+            children: [
+              { node: { kind: 'editor-control' } },
+              { node: { kind: 'editor-control' } },
+            ],
+          }
+        },
+      })
+      try {
+        ensure(first.ok && second.ok && bad.ok, 'FIXTURE_EDITOR_PROVIDER_REGISTER', 'packed editor providers did not register')
+        fixture.editor.handleInput('ab')
+        fixture.editor.addToHistory('older')
+        fixture.outer.handleInput('\x1b[D')
+        fixture.render()
+        ensure(firstRenders === 0 && secondRenders === 0 && badRenders === 0, 'FIXTURE_EDITOR_PROVIDER_INERT', 'installing editor provider candidates invoked one without user selection')
+
+        fixture.select('packed.first')
+        const firstRows = fixture.render().join('\n')
+        ensure(firstRows.includes('packed first') && firstRenders === 1 && secondRenders === 0 && frozenSnapshot, 'FIXTURE_EDITOR_PROVIDER_PERSISTED_SELECTION', 'persisted selection did not activate only the chosen frozen candidate')
+        fixture.select('packed.second')
+        const secondRows = fixture.render().join('\n')
+        ensure(secondRows.includes('packed second') && secondRenders === 1, 'FIXTURE_EDITOR_PROVIDER_SWITCH', 'settings selection did not atomically switch editor shells')
+        ensure(fixture.ctx.blueEditorHost.current?.editor === fixture.editor && fixture.screen.focus === fixture.outer && fixture.outer.focused && fixture.editor.focused, 'FIXTURE_EDITOR_PROVIDER_IDENTITY_FOCUS', 'editor provider switch replaced the editor engine or stable focus delegate')
+        ensure(fixture.editor.getText() === 'ab' && fixture.editor.getHistory().join() === 'older', 'FIXTURE_EDITOR_PROVIDER_DRAFT_HISTORY', 'editor provider switch lost draft or history state')
+        fixture.outer.handleInput('X')
+        ensure(fixture.editor.getText() === 'aXb', 'FIXTURE_EDITOR_PROVIDER_CURSOR', 'editor provider switch did not preserve the cursor position')
+
+        fixture.select('packed.bad')
+        const fallbackRows = fixture.render().join('\n')
+        ensure(badRenders === 1 && fallbackRows.includes('packed second'), 'FIXTURE_EDITOR_PROVIDER_BAD_FALLBACK', 'bad candidate dismantled the last-known-good editor shell')
+        bad.value.dispose()
+        second.value.dispose()
+        ensure(!fixture.render().join('\n').includes('packed second') && fixture.ctx.blueEditorHost.current?.editor === fixture.editor, 'FIXTURE_EDITOR_PROVIDER_UNLOAD_DEFAULT', 'active provider unload did not restore the default around the same editor')
+      } finally {
+        if (first.ok) first.value.dispose()
+        if (second.ok) second.value.dispose()
+        if (bad.ok) bad.value.dispose()
+        await fixture.dispose()
+      }
+    })
+
+    await scenario('interaction.editor-provider-owner-unload-event-abort-late', async () => {
+      const fixture = await editorProviderFixture()
+      const late = Promise.withResolvers()
+      let eventContext
+      let eventCalls = 0
+      const provider = fixture.opened.editorProviders.register({
+        id: 'packed.events',
+        render: () => ({
+          kind: 'stack',
+          direction: 'column',
+          children: [
+            { node: { kind: 'actions', id: 'packed-actions', items: [{ id: 'go', label: 'Go' }] } },
+            { node: { kind: 'text', content: 'packed event provider' } },
+            { node: { kind: 'editor-control' } },
+          ],
+        }),
+        onEvent(_event, context) {
+          eventCalls += 1
+          eventContext = context
+          return late.promise
+        },
+      })
+      let replayOwner
+      try {
+        ensure(provider.ok, 'FIXTURE_EDITOR_PROVIDER_EVENT_REGISTER', provider.ok ? '' : provider.message)
+        fixture.render()
+        fixture.select('packed.events')
+        ensure(fixture.render().join('\n').includes('packed event provider'), 'FIXTURE_EDITOR_PROVIDER_EVENT_SELECTION', 'event provider did not activate')
+        fixture.outer.handleInput('\t')
+        fixture.outer.handleInput('\r')
+        for (let turn = 0; turn < 8 && eventContext === undefined; turn += 1) await Promise.resolve()
+        ensure(eventCalls === 1 && eventContext?.userGesture !== undefined && eventContext.signal.aborted === false, 'FIXTURE_EDITOR_PROVIDER_EVENT_CONTEXT', 'provider event did not receive one live owner-scoped context')
+
+        const revisionBeforeUnload = fixture.control.snapshot().editorProvidersRevision
+        await fixture.ownerFiber.dispose()
+        ensure(eventContext.signal.aborted && fixture.ctx.blueEditorHost.providers === undefined, 'FIXTURE_EDITOR_PROVIDER_EVENT_ABORT', 'owner unload did not abort the active provider event')
+        ensure(!provider.value.refresh().ok, 'FIXTURE_EDITOR_PROVIDER_OWNER_GAP', 'provider refresh survived its owner gap')
+        ensure(!fixture.render().join('\n').includes('packed event provider'), 'FIXTURE_EDITOR_PROVIDER_OWNER_FALLBACK', 'owner unload did not restore the default editor shell')
+        late.resolve({ ok: true, value: undefined })
+        await new Promise(resolveImmediate => setImmediate(resolveImmediate))
+        ensure(!fixture.render().join('\n').includes('packed event provider') && fixture.control.snapshot().editorProvidersRevision === revisionBeforeUnload, 'FIXTURE_EDITOR_PROVIDER_LATE_REJECTION', 'late provider event republished after owner unload')
+
+        replayOwner = await fixture.ctx.plugin(editorProviderOwner)
+        fixture.select('packed.events')
+        ensure(fixture.render().join('\n').includes('packed event provider'), 'FIXTURE_EDITOR_PROVIDER_OWNER_REPLAY', 'owner reload did not replay the retained candidate and persisted selection')
+        provider.value.dispose()
+        ensure(!fixture.render().join('\n').includes('packed event provider'), 'FIXTURE_EDITOR_PROVIDER_CONSUMER_UNLOAD', 'provider consumer unload left its shell mounted')
+      } finally {
+        late.resolve({ ok: true, value: undefined })
+        if (provider.ok) provider.value.dispose()
+        await replayOwner?.dispose()
+        await fixture.dispose()
+      }
+    })
+    report.observations.push('interaction editor.extensions and editor.provider exercised through packed public host, editor runtime, owner, and bridge exports')
+  }
 
   if (manifest.name === '@dsh-blue/blue-conversation' || manifest.name === '@dsh-blue/blue-transcript') {
     await scenario('conversation.registry-replay-live-checkpoint-restore-unload', async () => {
@@ -453,13 +1118,178 @@ try {
         { kind: 'transcript-assistant', id: 'assistant-1', seq: 2, turn: 0, step: 0, text: adversarial, streaming: false },
         { kind: 'transcript-error', id: 'error-1', seq: 3, turn: 0, message: adversarial },
       ], false)
-      const component = new transcriptModel.TranscriptModelComponent(() => semantic)
+      const component = new transcriptModel.TranscriptModelComponent(() => semantic, {
+        components: compilerComponents,
+        colors: themeDark.DARK_COLORS,
+        images: () => ({}),
+        requestRender: () => {},
+        semantic: false,
+      })
       for (const width of [20, 40, 80, 120]) {
         const semanticRows = component.render(width)
-        const plainRows = core.renderFrontendView({ kind: 'text', text: adversarial }, width)
+        const plainRows = renderNode({ kind: 'text', content: adversarial }, width)
         ensure(![...semanticRows, ...plainRows].some(row => core.visibleWidth(row) > width), 'FIXTURE_CONVERSATION_WIDTH', `conversation renderer exceeded width ${width}`)
       }
       component.dispose()
+    })
+  }
+
+  if (manifest.name === '@dsh-blue/blue-transcript') {
+    const cordis = await load('@deepseek-ai/cordis')
+    const blueApi = await load('@dsh-blue/blue-api')
+    const transcript = await load('@dsh-blue/blue-transcript')
+    const statusProviderOwner = await load('@dsh-blue/blue-transcript/status-provider-owner')
+    const themeDark = await load('@dsh-blue/blue-core/theme-dark')
+
+    async function statusProviderFixture(selectedId = 'packed.custom') {
+      const ctx = new cordis.Context()
+      const bottom = []
+      const screen = {
+        columns: 80,
+        rows: 24,
+        requestRender() {},
+        addBottomChild(component) {
+          bottom.push(component)
+          return () => {
+            const index = bottom.indexOf(component)
+            if (index >= 0) bottom.splice(index, 1)
+          }
+        },
+      }
+      const session = Object.freeze({ id: 'packed-session', cwd: '/packed', status: 'idle', mode: 'normal' })
+      const sessionListeners = new Set()
+      const sessionReader = {
+        current: () => session,
+        subscribe(listener) {
+          sessionListeners.add(listener)
+          listener(session)
+          return { dispose: () => sessionListeners.delete(listener) }
+        },
+        request: async () => ({ ok: true, value: undefined }),
+      }
+      const projections = {
+        current: () => undefined,
+        subscribe: () => () => {},
+        children: () => [],
+        subscribeChildren: () => () => {},
+      }
+      ctx.reflect.provide('blueScreen', screen)
+      ctx.reflect.provide('blueTheme', { colors: themeDark.DARK_COLORS })
+      new core.BlueComponentsService(ctx, { theme: { colors: themeDark.DARK_COLORS }, tui: {} })
+      ctx.reflect.provide('blueKeymap', { register: () => () => {} })
+      ctx.reflect.provide('blueSessionReader', sessionReader)
+      ctx.reflect.provide('blueSessionProjections', projections)
+      let settingsValue = { statusProvider: selectedId }
+      ctx.reflect.provide('settings', { get: namespace => namespace === 'blue' ? settingsValue : undefined })
+      await ctx.plugin(blueApi)
+      await ctx.plugin(transcript)
+      const ownerFiber = await ctx.plugin(statusProviderOwner)
+      ensure(bottom.length === 1, 'FIXTURE_STATUS_MOUNT', 'transcript did not mount one status composition')
+
+      const cleanups = []
+      const consumer = { effect(callback) { const cleanup = callback(); if (typeof cleanup === 'function') cleanups.push(cleanup) } }
+      const opened = ctx.bluePluginHost.open(consumer, {
+        id: '@fixture/status-provider',
+        api: '^1.0.0-beta.1',
+        capabilities: ['status.provider'],
+      })
+      ensure(opened.ok, 'FIXTURE_STATUS_OPEN', opened.ok ? '' : opened.message)
+      const disposeConsumer = () => {
+        for (const cleanup of cleanups.splice(0)) cleanup()
+      }
+      return {
+        ctx,
+        bottom,
+        opened: opened.value,
+        ownerFiber,
+        disposeConsumer,
+        setSelection(id) {
+          const previous = settingsValue
+          settingsValue = { statusProvider: id }
+          ctx.emit('settings/updated', 'blue', settingsValue, previous, 'fixture')
+        },
+        async dispose() {
+          disposeConsumer()
+          await ctx.fiber.dispose()
+        },
+      }
+    }
+
+    await scenario('transcript.status-provider-selection-refresh-inert', async () => {
+      const fixture = await statusProviderFixture()
+      let selectedRenders = 0
+      let unselectedRenders = 0
+      let content = 'packed one'
+      let frozen = false
+      const selected = fixture.opened.statusProviders.register({
+        id: 'packed.custom',
+        render(snapshot) {
+          selectedRenders += 1
+          frozen = Object.isFrozen(snapshot) && Object.isFrozen(snapshot.session) && Object.isFrozen(snapshot.entries)
+          return { kind: 'text', content }
+        },
+      })
+      const unselected = fixture.opened.statusProviders.register({
+        id: 'packed.other',
+        render() {
+          unselectedRenders += 1
+          return { kind: 'text', content: 'wrong provider' }
+        },
+      })
+      ensure(selected.ok && unselected.ok, 'FIXTURE_STATUS_REGISTER', 'status provider registration failed')
+      ensure(selectedRenders === 0 && unselectedRenders === 0, 'FIXTURE_STATUS_INERT', 'provider registration invoked a callback')
+      const first = fixture.bottom[0].render(40)
+      ensure(first.join('\n').includes('packed one') && selectedRenders === 1 && unselectedRenders === 0 && frozen, 'FIXTURE_STATUS_SELECTION', 'selected provider or frozen snapshot contract drifted')
+      ensure(!first.some(row => core.visibleWidth(row) > 40), 'FIXTURE_STATUS_WIDTH', 'selected provider exceeded its gutter width')
+      content = 'packed two'
+      ensure(selected.value.refresh().ok, 'FIXTURE_STATUS_REFRESH', 'selected provider refresh was rejected')
+      await Promise.resolve()
+      const refreshed = fixture.bottom[0].render(40)
+      ensure(refreshed.join('\n').includes('packed two') && selectedRenders === 2 && unselectedRenders === 0, 'FIXTURE_STATUS_REFRESH_RENDER', 'provider refresh did not atomically rebuild the selected status')
+      await fixture.dispose()
+    })
+
+    await scenario('transcript.status-provider-fallback-unload-reload', async () => {
+      const fixture = await statusProviderFixture('packed.bad')
+      let badRenders = 0
+      let goodRenders = 0
+      const bad = fixture.opened.statusProviders.register({
+        id: 'packed.bad',
+        render() {
+          badRenders += 1
+          throw new Error('packed bad provider')
+        },
+      })
+      const good = fixture.opened.statusProviders.register({
+        id: 'packed.good',
+        render() {
+          goodRenders += 1
+          return { kind: 'text', content: 'packed good' }
+        },
+      })
+      ensure(bad.ok && good.ok, 'FIXTURE_STATUS_FALLBACK_REGISTER', 'fallback providers did not register')
+      const fallbackRows = fixture.bottom[0].render(40)
+      ensure(!fallbackRows.join('\n').includes('packed bad') && badRenders === 1 && goodRenders === 0 && !fallbackRows.some(row => core.visibleWidth(row) > 40), 'FIXTURE_STATUS_FALLBACK', 'failed selected provider did not use the default safely')
+      fixture.setSelection('packed.good')
+      ensure(fixture.bottom[0].render(40).join('\n').includes('packed good') && goodRenders === 1, 'FIXTURE_STATUS_SWITCH', 'settings selection did not activate the good provider')
+      good.value.dispose()
+      ensure(!fixture.bottom[0].render(40).join('\n').includes('packed good'), 'FIXTURE_STATUS_PROVIDER_UNLOAD', 'provider unload did not restore the default')
+      let replacementContent = 'packed replacement'
+      const replacement = fixture.opened.statusProviders.register({ id: 'packed.good', render: () => { goodRenders += 1; return { kind: 'text', content: replacementContent } } })
+      ensure(replacement.ok && fixture.bottom[0].render(40).join('\n').includes('packed replacement'), 'FIXTURE_STATUS_PROVIDER_RELOAD', 'same-id provider generation did not reactivate')
+      await fixture.ownerFiber.dispose()
+      const beforeBufferedRefresh = goodRenders
+      replacementContent = 'packed buffered refresh'
+      ensure(replacement.value.refresh().ok, 'FIXTURE_STATUS_OWNER_GAP_REFRESH', 'durable host buffer rejected a provider refresh during the owner gap')
+      await Promise.resolve()
+      ensure(goodRenders === beforeBufferedRefresh && !fixture.bottom[0].render(40).join('\n').includes(replacementContent), 'FIXTURE_STATUS_OWNER_GAP_INERT', 'owner gap retained provider render or selection authority')
+      const replacementOwner = await fixture.ctx.plugin(statusProviderOwner)
+      ensure(fixture.bottom[0].render(40).join('\n').includes(replacementContent) && goodRenders === beforeBufferedRefresh + 1, 'FIXTURE_STATUS_OWNER_RELOAD', 'owner reload did not replay the buffered provider refresh and persisted selection')
+      fixture.disposeConsumer()
+      const beforeLateRefresh = goodRenders
+      ensure(!replacement.value.refresh().ok && goodRenders === beforeLateRefresh && !fixture.bottom[0].render(40).join('\n').includes(replacementContent), 'FIXTURE_STATUS_CONSUMER_UNLOAD', 'consumer unload left its provider generation or refresh handle active')
+      await replacementOwner.dispose()
+      await fixture.dispose()
     })
   }
 
@@ -478,7 +1308,14 @@ try {
       })
       const execution = { callId: 'packed-openpencil', rootCallId: 'packed-openpencil', name: 'openpencil_render', arguments: { path: 'fixture.op' }, signal: new AbortController().signal }
       adapterInstance.observe({ get: () => presentation }, execution, { isError: false, value: { ok: true }, content: [{ type: 'text', text: 'rendered' }], meta: { embeddedGrant: 'must-not-leak' } })
-      ensure(models.get('packed-openpencil')?.result?.kind === 'sections' && !JSON.stringify(models.get('packed-openpencil')).includes('must-not-leak'), 'FIXTURE_OPENPENCIL_PRESENTATION', 'OpenPencil diff fallback or meta elision failed')
+      const model = models.get('packed-openpencil')
+      ensure(model?.result?.kind === 'sections' && !JSON.stringify(model).includes('must-not-leak'), 'FIXTURE_OPENPENCIL_PRESENTATION', 'OpenPencil diff fallback or meta elision failed')
+      for (const width of [20, 40, 80, 120]) {
+        for (const node of [model.call, model.result]) {
+          const rows = renderNode(node, width)
+          ensure(!rows.some(row => core.visibleWidth(row) > width), 'FIXTURE_OPENPENCIL_WIDTH', `OpenPencil node exceeded width ${width}`)
+        }
+      }
       adapterInstance.dispose()
       ensure(models.size === 0 && notes.size === 0, 'FIXTURE_OPENPENCIL_MODEL_UNLOAD', 'OpenPencil presentation survived unload')
     })
@@ -548,6 +1385,12 @@ try {
   report.observations.push(`installed ${packages.size} local tarballs`, 'all imports resolved through installed package exports')
 } catch (error) {
   failure('fixture.setup', error, 'FIXTURE_SETUP_FAILED')
+}
+
+try {
+  await compilerContext?.fiber.dispose()
+} catch (error) {
+  failure('fixture.compiler-cleanup', error, 'FIXTURE_COMPILER_CLEANUP_FAILED')
 }
 
 await finish()

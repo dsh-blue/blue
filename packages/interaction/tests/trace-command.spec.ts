@@ -30,14 +30,14 @@ describe('registerTraceCommand', () => {
   })
 
   it('builds empty, aggregated, and raw-detail panel models', () => {
-    expect(tracePanelModel('session', [])).toMatchObject({ mode: 'info', view: { text: 'no trace events yet' } })
+    expect(tracePanelModel('session', [])).toMatchObject({ mode: 'info', view: { content: 'no trace events yet' } })
     const item: TraceItem = {
       seq: 3, lastSeq: 5, eventSeqs: [3, 4, 5], time: Number.NaN,
       type: 'assistant/chunk', surface: 'shadowed', title: 'Thinking', summary: 'first\nsecond',
     }
     expect(tracePanelModel('session', [item])).toMatchObject({
       mode: 'select',
-      view: { items: [{ id: '3', label: expect.stringContaining('??:??:?? · #3-5'), detail: 'first second' }] },
+      items: [{ id: '3', label: expect.stringContaining('??:??:?? · #3-5'), detail: 'first second' }],
     })
     expect(traceDetailPanelModel(item, '[{"type":"assistant/chunk"}]')).toMatchObject({
       mode: 'info', title: 'Trace detail #3-5', view: { kind: 'sections' },

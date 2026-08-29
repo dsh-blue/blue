@@ -14,25 +14,34 @@ Draft text, prompt/bash mode, history, command aliases, settings/theme identity,
 
 The optional `./editor-plus` plugin adds `!` shell mode, slash completion, `@` file mentions, and `#` skill completion. File mentions use `fd`/`fdfind` when available and a bounded filesystem fallback otherwise. The executable probe is cached per frontend tree.
 
+Public `editor.extensions` contributions can add passive rows, hints, diagnostics, actions, completion items, and asynchronous submit transforms. Blue keeps registrations inert until the active interaction owner invokes them, composes completion with the built-in slash/`@`/`#` sources, and rebuilds extension chrome around the same editor engine. Submit transforms run before the editor clears; the draft and image attachments remain recoverable when a transform aborts, times out, fails, unloads, or the submitted follow-up is safely retracted. Session changes and extension refreshes reject late results.
+
 ## Commands And Panels
 
 Built-in command families cover project init (`/init`), session navigation and rewind, help, themes, models and reasoning effort, providers, permissions and presets, modes, status/context/version/changelog, export/copy, tools, skills, MCP, trace, settings, and profile updates. The effort panel presents the provider's available levels in one horizontal bracketed row and moves the highlight with Left/Right. Commands read immutable snapshots and invoke `blueSessionActions`; they do not fold session events or mutate Harness objects.
 
-Dialogs replace the editor slot and render through shared list, form, info, settings, question, approval, model, and plan-review panels. Question and approval work is Fiber-bound, abort-aware, and rejects late completion after unload or session changes. Third-party renderer-neutral commands and notifications enter through `./plugin-host-bridge`, which advertises those capabilities only while its owner Fiber is active and restores retained commands after replacement.
+Dialogs replace the editor slot and compile the same renderer-neutral Blue UI nodes used by plugin surfaces. Help/info windows, lists, forms, settings, questions, approvals, models, loading states, and plan review therefore share core-owned chrome, focus, semantic paint, and narrow-width containment. Question and approval work is Fiber-bound, abort-aware, and rejects late completion after unload or session changes. Third-party renderer-neutral commands, notifications, and editor extensions enter through `./plugin-host-bridge`, which advertises those capabilities only while its owner Fiber is active and restores retained contributions after replacement.
 
-Forms use two-row fields: a label/comment row followed by an unframed arrow prompt row, with inline validation below the failing field. Enter advances fields or submits the last field; Tab/Down moves forward and Shift-Tab/Up moves backward. Question panels show bounded progress, use the same input row for free-text and `Other` answers, and preserve drafts while moving between questions.
+Blue-owned interaction chrome is available in English and Simplified Chinese. `/settings` lists Language first and cycles Follow system, 中文, and English through Harness's `locale.preference`; switching refreshes open settings, help, approval, questionnaire, command models, and slash completion in place without replacing controllers/editors, losing selection, or discarding an open form draft. User/model/tool content, paths, ids, command names, provider/model names, and upstream error details are not translated.
+
+Forms keep inline validation below the failing field, while text fields retain the Blue editor's cursor, IME, and bracketed-paste behavior. Enter advances fields or submits the last field; Tab/Down moves forward and Shift-Tab/Up moves backward. Question panels show bounded progress, use the same canonical input for free-text and `Other` answers, preserve drafts while moving between questions, and accept 1-9 direct selection.
 
 Readable export uses the official `blueConversation` projection after flushing and reading the durable artifact. Full export deliberately emits the decoded audit event stream. `/copy` uses the official conversation value and the OSC 52/native clipboard pipeline.
+
+The `blue` settings namespace persists both exclusive provider choices. `statusProvider` selects the footer and `editorProvider` selects the editor shell; `blue.default` keeps the shipped implementation for each surface. Another non-empty id remains configured even while its candidate is absent or failing, so installing, repairing, or reloading that provider can satisfy the original choice without a settings rewrite.
+
+`./editor-provider-owner` consumes the exclusive editor-shell selection. A candidate stays inert until selected, then Blue validates and dry-renders it at the live width around the same editing engine before atomically replacing the inner shell. Provider swaps preserve draft, cursor, history, IME, attachments, focus, completion, and submit transactions. Invalid or failing candidates retain the same-session interactive shell or fall back to `blue.default`; repeated failures open a bounded three-in-60-second breaker without retaining timers.
 
 ## Optional Subpaths
 
 - `./editor-plus`: shell mode and completion.
-- `./pane-queue`: queued-message dock model with immediate inbox-change refresh.
-- `./mode-status`: renderer-neutral footer status model.
+- `./pane-queue`: canonical queued-message bottom pane with immediate inbox-change refresh.
+- `./mode-status`: canonical footer status node derived from the current mode snapshot.
 - `./attachments`: bounded filesystem image store.
 - `./paste-image`: native clipboard image/file ingestion.
 - `./command-model`: renderer-neutral command models and execution actions.
-- `./plugin-host-bridge`: public command/notification adapter.
+- `./plugin-host-bridge`: public command/notification/editor-extension adapter.
+- `./editor-provider-owner`: exclusive editor-shell selection and event owner.
 
 All registrations, async work, screen children, aliases, and host contributions are disposed with their owning Fiber.
 

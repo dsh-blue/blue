@@ -37,13 +37,9 @@ import { EditorHostService } from './editor-instance.ts'
 import { SkillsCatalogService } from './skills-catalog.ts'
 import { InteractionStateService } from './runtime-state.ts'
 import { DEFAULT_SETTINGS } from './settings.ts'
+import { mountInteractionLocale } from './locale.ts'
 
-// BluePanel is the package's public overlay container; BlueSelect stays
-// package-internal as the multi-select-only list (single-select moved to
-// ctx.blueComponents.createSelectList) and is no longer exported.
-export { BluePanel } from './select.ts'
 export { CommandModelService } from './command-model.ts'
-export { FrontendPanel } from './frontend-panel.ts'
 export { EditorModelService } from './editor-model.ts'
 export { EditorHostService } from './editor-instance.ts'
 export { SkillsCatalogService } from './skills-catalog.ts'
@@ -72,6 +68,7 @@ export const Config: z<Config> = z.object({
  * @param config - interaction presentation configuration.
  */
 export function apply(ctx: Context, config: Config = {}): void {
+  mountInteractionLocale(ctx)
   const runtimeState = new InteractionStateService(ctx, DEFAULT_SETTINGS)
   ctx.effect(() => () => runtimeState.dispose())
   const editorHost = new EditorHostService(ctx)

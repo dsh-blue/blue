@@ -14,7 +14,7 @@ dsh 是一个**插件化的 agent 宿主**（harness）：模型适配、工具�
 
 - **Bundle（捆）** —— 一组自带挂载代码的插件集合，通过包内 `cordis.patch.yml` 声明自己的插件行；`dsh-base` 是一切 profile 的第一层。
 - **Profile（装配）** —— 具名的组装方案：列出叠放的 bundle、自己的 patch 覆盖、以及独立安装的插件。详见 [Profile 与目录](/dsh/profiles)。
-- **Blue** —— 就是一个 bundle：在 `dsh-base` 之上插入 28 条 Blue 自有行，把终端交互界面接管过来（见[功能总览](/features/)）。
+- **Blue** —— 就是一个 bundle：在 `dsh-base` 之上插入 33 条 Blue 自有行（含隔离管理权限与 raw app service 的 private runtime group），把终端交互界面接管过来（见[功能总览](/features/)）。
 
 ## CLI 速查
 

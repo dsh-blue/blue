@@ -11,7 +11,7 @@
 import { homedir } from 'node:os'
 import { describe, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { BlueSemanticColors } from '@dsh-blue/blue-core'
+import type { BlueComponent, BlueScreen, BlueSemanticColors } from '@dsh-blue/blue-core'
 import {
   AssistantMessageComponent,
   ErrorMessageComponent,
@@ -25,15 +25,49 @@ import { ReadGroupComponent } from '../src/read-group.ts'
 import { SearchGroupComponent } from '../src/search-group.ts'
 import { ThinkingComponent } from '../src/thinking.ts'
 import { createTranscriptModel, TranscriptModelComponent } from '../src/transcript-model.ts'
-import { BlueStatusModelService, StatusModelFooterComponent } from '../src/status-model.ts'
+import { BlueStatusCompositionService, BlueStatusEntryService, StatusFooterComponent } from '../src/status-model.ts'
 import { bannerLayout, composeBannerLines, shortenHome } from '../src/banner.ts'
+import { BlueBottomPaneService } from '../src/dock-model.ts'
 import type { TranscriptToolItem } from '../src/types.ts'
 import { fakeBlueComponents } from './helpers.ts'
 import { COLORS } from './status-fakes.ts'
 import { ADVERSARIAL, SCAN_WIDTHS, expectLinesFit } from '../../core/tests/width-scan.ts'
+import {
+  interpolateLocaleMessage,
+  type BlueLocaleCatalog,
+  type BlueLocaleId,
+  type BlueTranslate,
+} from '../../frontend/src/locale.ts'
+import { BANNER_LOCALE, TRANSCRIPT_LOCALE } from '../src/locale.ts'
 
 /** Identity colors satisfy BlueSemanticColors where consumed. */
 const colors = COLORS as BlueSemanticColors
+
+/** Bind a catalog directly so width scans cover both shipped languages. */
+function translator(catalog: BlueLocaleCatalog, locale: BlueLocaleId): BlueTranslate {
+  return (key, values) => interpolateLocaleMessage(catalog[locale][key] ?? catalog.en[key] ?? key, values)
+}
+
+/** Minimal screen recording the actual bottom-dock component mounted by the service. */
+function bottomPaneScreen(): { readonly screen: BlueScreen, readonly bottom: BlueComponent[] } {
+  const bottom: BlueComponent[] = []
+  const mount = (component: BlueComponent): (() => void) => {
+    bottom.push(component)
+    return () => {
+      const index = bottom.indexOf(component)
+      if (index !== -1) bottom.splice(index, 1)
+    }
+  }
+  const screen = {
+    columns: 80,
+    rows: 24,
+    addChild: mount,
+    addBottomChild: mount,
+    addDockChild: mount,
+    requestRender: () => undefined,
+  } as unknown as BlueScreen
+  return { screen, bottom }
+}
 
 /** A bash tool item carrying the fixture text as its command. */
 function bashItem(text: string): TranscriptToolItem {
@@ -62,7 +96,58 @@ function subagentItem(text: string): TranscriptToolItem {
 }
 
 describe('transcript width-scan', () => {
+  for (const locale of ['en', 'zh'] as const) {
+    it(`localized transcript chrome survives every width in ${locale}`, () => {
+      const components = fakeBlueComponents()
+      const transcriptT = translator(TRANSCRIPT_LOCALE, locale)
+      const longUser = new UserMessageComponent({
+        kind: 'user', seq: 1, turn: 1,
+        text: Array.from({ length: 12 }, (_, index) => `line ${String(index)} 界🙂`).join('\n'),
+        images: [{ attachmentId: 'image', mediaType: 'image/png', bytes: 1, width: 1, height: 1 }],
+      }, colors, components, {
+        loadImage: () => new Promise(() => {}),
+        t: transcriptT,
+      })
+      const interrupted = new InterruptedMarkerComponent(colors, components, transcriptT)
+      const bannerDeps = {
+        colors,
+        truncate: (text: string, width: number) => components.truncateToWidth(text, width),
+        visibleWidth: (text: string) => components.visibleWidth(text),
+        t: translator(BANNER_LOCALE, locale),
+      }
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`UserMessage/${locale}`, longUser.render(width), width)
+        expectLinesFit(`Interrupted/${locale}`, interrupted.render(width), width)
+        if (bannerLayout(width) !== null) {
+          expectLinesFit(`Banner/${locale}`, composeBannerLines(bannerDeps, {
+            version: '0.1.1-rc.2', model: 'deepseek-chat', provider: 'deepseek', cwd: '~/界🙂',
+          }, width), width)
+        }
+      }
+    })
+  }
+
   for (const { name, text } of ADVERSARIAL) {
+    it(`BlueBottomPaneService accepted adapter survives ${name}`, () => {
+      const { screen, bottom } = bottomPaneScreen()
+      const components = fakeBlueComponents()
+      const service = new BlueBottomPaneService(new Context(), {
+        components,
+        colors,
+        viewport: () => ({ columns: screen.columns, rows: screen.rows }),
+      }, screen)
+      service.register(
+        { id: `adapter-${name}`, node: { kind: 'text', content: text } },
+        (_node, width) => [`${text}${'x'.repeat(width + 1)}`],
+      )
+      const component = bottom[0]
+      if (component === undefined) throw new Error('bottom pane adapter did not mount')
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`BottomPaneAdapter/${name}`, component.render(width), width)
+      }
+      service.dispose()
+    })
+
     it(`UserMessageComponent survives ${name}`, () => {
       const components = fakeBlueComponents()
       const item = { kind: 'user', seq: 1, turn: 1, text, images: [] }
@@ -173,7 +258,7 @@ describe('transcript width-scan', () => {
         },
         {
           kind: 'transcript-tool', id: 'presented', seq: 5, turn: 1, step: 0, callId: 'presented', name: 'custom',
-          arguments: '{}', startedAt: 1, presentation: { kind: 'tool', id: 'presented', name: 'custom', result: { kind: 'text', text } },
+          arguments: '{}', startedAt: 1, presentation: { kind: 'tool', id: 'presented', name: 'custom', result: { kind: 'text', content: text } },
         },
         { kind: 'transcript-error', id: 'error', seq: 6, turn: 1, message: text },
         { kind: 'transcript-interrupted', id: 'interrupted', seq: 7, turn: 1 },
@@ -217,15 +302,46 @@ describe('transcript width-scan', () => {
     })
   }
 
-  it('StatusModelFooterComponent survives truncating long models at every width', () => {
+  it('StatusFooterComponent survives truncating long models at every width', () => {
     for (const { name, text } of ADVERSARIAL) {
       const components = fakeBlueComponents()
-      const status = new BlueStatusModelService(new Context())
-      const footer = new StatusModelFooterComponent(status, components, colors)
-      status.register({ kind: 'status', id: 'scan-title', priority: 90, visible: true, view: { kind: 'text', text } })
-      status.register({ kind: 'status', id: 'scan-left', priority: 10, visible: true, view: { kind: 'text', text } })
+      const status = new BlueStatusEntryService(new Context())
+      const footer = new StatusFooterComponent(status, components, colors)
+      status.register({ id: 'scan-title', priority: 90, visible: true, band: 'right', node: { kind: 'text', content: text } })
+      status.register({ id: 'scan-left', priority: 10, visible: true, node: { kind: 'text', content: text } })
       for (const width of SCAN_WIDTHS) {
         expectLinesFit(`FooterShell/${name}`, footer.render(width), width)
+      }
+    }
+  })
+
+  it('BlueStatusCompositionService keeps selected-provider and LKG rows within every width', () => {
+    for (const { name, text } of ADVERSARIAL) {
+      for (const width of SCAN_WIDTHS) {
+        let paintFails = false
+        const base = fakeBlueComponents()
+        const components = { ...base, wrapText: (value: string, target: number) => {
+          if (paintFails) throw new Error('width-scan paint failure')
+          return base.wrapText(value, target)
+        } }
+        const ctx = new Context()
+        const entries = new BlueStatusEntryService(ctx)
+        entries.register({ id: 'default', visible: true, node: { kind: 'text', content: 'default' } })
+        const footer = new StatusFooterComponent(entries, components, colors)
+        const composition = new BlueStatusCompositionService(ctx, entries, footer, {
+          components,
+          colors,
+          viewport: () => ({ columns: width, rows: 24 }),
+          requestRender: () => undefined,
+        })
+        const content = components.truncateToWidth(text, 2, '') || '.'
+        composition.updateCandidates([{ id: 'scan.custom', render: () => ({ kind: 'rich-text', spans: [{ text: content }] }) }], 1)
+        composition.select('scan.custom')
+        expectLinesFit(`StatusComposition/${name}`, composition.render(width), width)
+        if (composition.snapshot.activeId !== 'scan.custom') throw new Error(`status provider did not activate for ${name} at width ${String(width)}`)
+        paintFails = true
+        expectLinesFit(`StatusCompositionLKG/${name}`, composition.render(width), width)
+        composition.dispose()
       }
     }
   })

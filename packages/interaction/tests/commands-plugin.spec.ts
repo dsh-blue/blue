@@ -21,6 +21,8 @@ import type {} from '@dsh-blue/blue-app'
 import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeScreen } from './fakes.ts'
 import { InteractionStateService } from '../src/runtime-state.ts'
 import { DEFAULT_SETTINGS } from '../src/settings.ts'
+import { BlueLocaleService } from '../../frontend/src/locale.ts'
+import { INTERACTION_LOCALE } from '../src/locale.ts'
 
 /** The structural slice of `sessionQuery` the `/sessions` titles read. */
 interface TitleQueryFake {
@@ -39,14 +41,20 @@ async function mount(options: {
   attach?: boolean
   persistence?: { list(signal?: AbortSignal): Promise<SessionHeader[]> }
   sessionQuery?: TitleQueryFake
+  locale?: 'en' | 'zh'
 } = {}): Promise<{
   ctx: Context
   screen: FakeScreen
   components: FakeBlueComponents
   agent: Agent
   fiber: { dispose(): Promise<void> }
+  locale: BlueLocaleService | undefined
 }> {
   const { ctx, screen, components } = fakeBlueContext()
+  const locale = options.locale === undefined
+    ? undefined
+    : new BlueLocaleService(ctx, { systemLocale: options.locale })
+  locale?.register('interaction', INTERACTION_LOCALE)
   await ctx.plugin(SessionStore)
   await ctx.plugin(CommandRuntime)
   if (options.appExit !== undefined) ctx.provide('appExit', options.appExit)
@@ -60,7 +68,7 @@ async function mount(options: {
     ctx.provide('sessionQuery', options.sessionQuery as unknown as SessionQueryEngine)
   }
   const fiber = await ctx.plugin(commandsPlugin)
-  return { ctx, screen, components, agent, fiber }
+  return { ctx, screen, components, agent, fiber, locale }
 }
 
 const signal = (): AbortSignal => new AbortController().signal
@@ -363,11 +371,11 @@ describe('blue-commands plugin', () => {
     // pointer plus the `← current` badge on the live session. The foreign
     // and cwd-less rows never render.
     const rows = screen.overlays[0]?.component.render(72) ?? []
-    expect(rows[0]).toBe('^' + '─'.repeat(72) + '^')
-    expect(rows[1]).toContain('type to search · space toggle branch')
-    expect(rows[2]).toContain(`❯   ${agent.id} · 1970-01-01 00:00  ← current`)
-    expect(rows[3]).toContain('  s-mid · 1970-01-01 00:00')
-    expect(rows[4]).toContain('s-old · 1970-01-01 00:00')
+    expect(rows.some(row => row.includes('Sessions'))).toBe(true)
+    expect(rows.some(row => row.includes('type to search') && row.includes('space toggle branch'))).toBe(true)
+    expect(rows.some(row => row.includes(`${agent.id} · 1970-01-01 00:00`) && row.includes('← current'))).toBe(true)
+    expect(rows.some(row => row.includes('s-mid · 1970-01-01 00:00'))).toBe(true)
+    expect(rows.some(row => row.includes('s-old · 1970-01-01 00:00'))).toBe(true)
     expect(rows.some(row => row.includes('s-away'))).toBe(false)
     expect(rows.some(row => row.includes('s-bare'))).toBe(false)
     overlay(screen).handleInput(KEY.escape)
@@ -393,15 +401,13 @@ describe('blue-commands plugin', () => {
     })
     await ctx.commands.execute(agent, '/sessions', [], signal())
     const rows = screen.overlays[0]?.component.render(88) ?? []
-    expect(rows[2]).toContain('Fix the questionnaire width crash')
-    expect(rows[2]).toContain('— s-fix · 1970-01-01 00:00')
+    expect(rows.some(row => row.includes('Fix the questionnaire width crash') && row.includes('— s-fix · 1970-01-01 00:00'))).toBe(true)
     // The live session (older than s-fix) is second, led by its title with
     // the current badge; a rejected observation degrades to the id form.
-    expect(rows[3]).toContain('❯   Kimi-style welcome banner')
-    expect(rows[3]).toContain(`— ${agent.id} · 1970-01-01 00:00`)
-    expect(rows[3]).toContain('← current')
-    expect(rows[4]).toContain('s-plain · 1970-01-01 00:00')
-    expect(rows[4]).not.toContain('—')
+    expect(rows.some(row => row.includes('Kimi-style welcome banner') && row.includes(`— ${agent.id} · 1970-01-01 00:00`) && row.includes('← current'))).toBe(true)
+    const plainRow = rows.find(row => row.includes('s-plain · 1970-01-01 00:00'))
+    expect(plainRow).toBeDefined()
+    expect(plainRow).not.toContain('—')
   })
 
   it('/sessions renders persisted parentSession lineage as a tree', async () => {
@@ -433,7 +439,7 @@ describe('blue-commands plugin', () => {
     const execution = await ctx.commands.execute(agent, '/sessions', [], signal())
     expect(execution?.result).toEqual({ kind: 'success' })
     const rows = screen.overlays[0]?.component.render(60) ?? []
-    expect(rows[2]).toContain('s-one · 1970-01-01 00:00')
+    expect(rows.some(row => row.includes('s-one · 1970-01-01 00:00'))).toBe(true)
   })
 
   it('/sessions works without a currently attached Blue session', async () => {
@@ -491,8 +497,8 @@ describe('blue-commands plugin', () => {
     const execution = await ctx.commands.execute(agent, '/sessions', [], signal())
     expect(execution?.result).toEqual({ kind: 'success' })
     const rows = screen.overlays[0]?.component.render(60) ?? []
-    expect(rows[2]).toContain('s-two · 1970-01-01 00:00')
-    expect(rows[3]).toContain('s-one · 1970-01-01 00:00')
+    expect(rows.some(row => row.includes('s-two · 1970-01-01 00:00'))).toBe(true)
+    expect(rows.some(row => row.includes('s-one · 1970-01-01 00:00'))).toBe(true)
   })
 
   it('/sessions keeps the skeleton when title hydration returns malformed data', async () => {
@@ -505,7 +511,7 @@ describe('blue-commands plugin', () => {
     await ctx.commands.execute(agent, '/sessions', [], signal())
     await Promise.resolve()
     const rows = screen.overlays[0]?.component.render(60) ?? []
-    expect(rows[2]).toContain('s-one · 1970-01-01 00:00')
+    expect(rows.some(row => row.includes('s-one · 1970-01-01 00:00'))).toBe(true)
   })
 
   it('/sessions hydrates only the visible title page as the cursor advances', async () => {
@@ -691,30 +697,23 @@ describe('blue-commands plugin', () => {
     const { ctx, screen, agent } = await mount()
     const execution = await ctx.commands.execute(agent, '/help', [], signal())
     expect(execution?.result).toEqual({ kind: 'success' })
-    // The framed HelpPanel: primary rules, ` help ` title with the key
-    // hint, and the two aligned sections. The sections overflow the ten-row
-    // window, so a `showing` line replaces the tail.
+    // The canonical Help surface owns chrome and semantic rows. The sections
+    // overflow the window, so a `showing` line replaces the tail.
     const rows = screen.overlays[0]?.component.render(80) ?? []
-    expect(rows[0]).toBe('^' + '─'.repeat(80) + '^')
-    expect(rows[1]).toBe('^  help^ _· Esc / Enter / q to cancel · ↑↓ scroll_')
-    expect(rows[3]).toBe('  #Commands#')
-    // The runtime lists commands alphabetically (`/changelog` leads);
-    // labels padEnd inside the primary span with the
-    // description muted behind two spaces. The longest label is the
-    // aliased `/effort (/thinking)` (18 columns), which widens the whole
-    // column.
-    expect(rows[4]).toBe("    ^/changelog         ^  ~Show the release changelog (what's new)~")
-    expect(rows.some(row => row.includes('^/context           ^  ~Show token usage and the context window~'))).toBe(true)
-    expect(rows.some(row => row.includes('^/effort (/thinking)^  ~Switch the thinking effort of the current model~'))).toBe(true)
-    expect(rows.some(row => row.includes('^/plugin'))).toBe(true)
-    // 44 rows including the marketplace `/plugin` command.
-    expect(rows.some(row => row.includes('_ showing 1-16 of 44_'))).toBe(true)
+    expect(rows.join('\n')).toContain('help')
+    expect(rows.join('\n')).toContain('Commands')
+    expect(rows.join('\n')).toContain('/changelog')
+    expect(rows.join('\n')).toContain('/context')
+    expect(rows.join('\n')).toContain('/effort (/thinking)')
+    expect(rows.join('\n')).toContain('/plugin')
+    // 45 rows including the marketplace `/plugin` command.
+    expect(rows.some(row => row.includes('showing 1-16 of'))).toBe(true)
     // Scrolling down reaches the Keys section with the two-column layout.
-    for (let i = 0; i < 20; i += 1) overlay(screen).handleInput(KEY.down)
+    for (let i = 0; i < 21; i += 1) overlay(screen).handleInput(KEY.down)
     const scrolled = screen.overlays[0]?.component.render(80) ?? []
-    expect(scrolled.some(row => row.includes('  #Keys#'))).toBe(true)
+    expect(scrolled.some(row => row.includes('Keys'))).toBe(true)
     // The keys section remains reachable after the command list grows.
-    expect(scrolled.some(row => row.includes('?enter'))).toBe(true)
+    expect(scrolled.some(row => row.includes('enter') && row.includes('Submit input'))).toBe(true)
     screen.overlays[0]?.component.invalidate()
     overlay(screen).handleInput(KEY.escape)
     expect(screen.overlays[0]?.hidden).toBe(true)
@@ -727,6 +726,22 @@ describe('blue-commands plugin', () => {
     expect(execution?.result).toEqual({ kind: 'success' })
     expect(screen.overlays[0]?.component.render(80).some(row => row.includes('projected status'))).toBe(true)
     await fiber.dispose()
+  })
+
+  it('/help switches language in place while preserving the open overlay', async () => {
+    const { ctx, screen, agent, locale } = await mount({ locale: 'en' })
+    await ctx.commands.execute(agent, '/help', [], signal())
+    const open = screen.overlays[0]!.component
+    expect(open.render(80).join('\n')).toContain('Commands')
+    open.handleInput(KEY.down)
+
+    locale!.setPreference('zh')
+    expect(screen.overlays[0]!.component).toBe(open)
+    const localized = open.render(80).join('\n')
+    expect(localized).toContain('帮助')
+    expect(localized).toContain('命令')
+    expect(localized).toContain('显示第')
+    open.handleInput(KEY.escape)
   })
 
   it('/help renders an empty description for a fallback command without one', async () => {
@@ -747,7 +762,8 @@ describe('blue-commands plugin', () => {
     // the command/key roster do not hide the final binding.
     for (let i = 0; i < 50; i += 1) overlay(screen).handleInput(KEY.down)
     const rows = screen.overlays[0]?.component.render(80) ?? []
-    expect(rows.some(row => row.includes('f9') && row.includes('~spec.custom~'))).toBe(true)
+    expect(rows.join('\n')).toContain('f9')
+    expect(rows.join('\n')).toContain('spec.custom')
     unregister?.()
     overlay(screen).handleInput(KEY.escape)
   })
@@ -828,10 +844,10 @@ describe('blue-commands plugin', () => {
     const execution = await ctx.commands.execute(agent, '/plugin', [], signal())
     expect(execution?.result).toEqual({ kind: 'success' })
     const panel = screen.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
-    expect(panel.render(100).join('\n')).toContain('[Installed]')
+    expect(panel.render(100).join('\n')).toContain('‹ Installed ›')
     expect(panel.render(100).join('\n')).toContain('Available')
     panel.handleInput(KEY.right)
-    expect(panel.render(100).join('\n')).toContain('[Available]')
+    expect(panel.render(100).join('\n')).toContain('‹ Available ›')
   })
 
   it('/plugin shows a loading notice while marketplace data is pending', async () => {

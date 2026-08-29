@@ -28,6 +28,36 @@ export interface ChangelogEntry {
 /** All shipped releases, newest first. */
 export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
+    version: '0.1.1-rc.2',
+    summary: 'Blue\'s renderer-neutral plugin runtime now ships as a hardened 1.0.0-beta.1 foundation with live Chinese/English switching.',
+    highlights: [
+      'Beta renderer-neutral UI runtime — API/host 1.0.0-beta.1 exposes canonical commands, status, panes, overlays, publish-only notifications and readonly session snapshots without exposing pi-tui or terminal objects.',
+      'Hardened public authority boundary — generic session.act, global notification observation and callable owner helpers are removed; ordinary plugins receive only manifest-scoped facades.',
+      'Private composition control plane — owner authority and raw app session/projection/action services live in an isolated bundle realm, while hostile sibling plugins retain access only to bluePluginHost.',
+      'Experimental provider/editor runtime retained — status/editor providers and editor extensions keep their state-preserving swap, fallback, unload and late-result evidence without being advertised as Stable v1 capabilities.',
+      'Tree-scoped locale service — English and Simplified Chinese catalogs, interpolation, immutable revision snapshots and Fiber-owned subscriptions stay renderer-neutral and isolated between frontend trees.',
+      'Harness-compatible language preference — locale.preference follows LC_ALL, LC_MESSAGES, LANG and then Intl by default, persists explicit Chinese or English choices, and falls back to English for unsupported locales.',
+      'State-preserving live language switching — settings, help, approvals, questionnaires, slash completion, shell chrome, banner and transcript chrome refresh in place without replacing controller, cursor, form or editor draft identity.',
+      'Packed ecosystem closure — the public UI kit, hostile-sibling checks, package validators, independent current/previous Harness fixtures, width scans and isolated profile smoke cover plugin registration, private authority, provider lifecycle and locale reload/unload behavior.',
+    ],
+    knownIssues: [
+      'Localization remains intentionally incremental — feature-owned command result bodies such as /context and /effort, plus changelog release-note content, remain English until their owning packages gain bilingual sources.',
+    ],
+  },
+  {
+    version: '0.1.1-rc.1',
+    summary: 'Blue now exposes a renderer-neutral UI kit and capability-scoped plugin runtime.',
+    highlights: [
+      'Public renderer-neutral UI kit — the new @dsh-blue/blue-ui package provides frozen node builders and component factories shared by Blue-owned and third-party plugins without exposing pi-tui or terminal objects.',
+      'Canonical plugin surfaces — panes, overlays, status entries, commands, notifications, and editor extensions cross one validated BlueUiNode boundary with bounded trees, semantic events, unload cleanup, and narrow-width containment.',
+      'Explicit provider ownership — status and editor providers remain inert until selected, swap around preserved frontend state, and retain the active or plain fallback when activation, rendering, or unload fails.',
+      'Isolated session capabilities — session.read exposes only frozen revisioned snapshots and subscriptions, while session.act serializes structured writes with abort, stale-session, late-result, and owner-lifecycle fencing.',
+      'Actionable legacy migration — the old dock, panels, editor, and tools capabilities are removed from the public runtime and now return targeted replacement guidance instead of silently activating compatibility paths.',
+      'Boot-order-safe plugin registration — commands, status, panes, overlays, editor extensions, and provider candidates are durably buffered by the host, then replayed when their frontend owner boots or reloads; consumer unload still removes every registration.',
+    ],
+    knownIssues: [],
+  },
+  {
     version: '0.1.0-rc.10',
     summary: 'Registry installs now keep the complete Blue release set on one exact version.',
     highlights: [

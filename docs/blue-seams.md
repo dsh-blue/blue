@@ -14,18 +14,25 @@ Blue 的 seam 不是单一类型，而是五类显式边界：
 
 产品级可变状态只存在于 host、session、frontend tree 或 provider Fiber 的明确 owner 中。当前代码没有共享编辑器 module singleton，也没有向 renderer 暴露 Agent 或 Session 的 session binding。
 
-## 2. 稳定公共插件 API
+## 2. 当前 Beta 公共插件 API
 
-第三方插件通过 `ctx.bluePluginHost.open(ctx, manifest)` 申请能力。契约归 `@dsh-blue/blue-api` 所有，入口只接受 renderer-neutral `BlueView` 和结构化 action/result。
+第三方插件通过 `ctx.bluePluginHost.open(ctx, manifest)` 申请能力。当前 host/API version 为 `1.0.0-beta.1`，manifest 使用 `^1.0.0-beta.1`。Beta 能力是 `commands`、`status`、`panes`、`overlays`、`notifications.publish` 与 `session.read`；editor/provider facet 只保留为 Experimental/reference runtime。契约归 `@dsh-blue/blue-api` 所有，入口只接受 renderer-neutral view 和 capability-specific action/result。
 
 | Capability | 公共对象 | 当前 consumer bridge | 行为 |
 |---|---|---|---|
-| `status` | `BlueStatusContribution` | `blue-plugin-view-bridge` -> `BlueStatusModelService` | 贡献 footer model；重复 id、越权 namespace 和非法 payload 被拒绝 |
-| `dock` | `BlueDockContribution` | `blue-plugin-view-bridge` -> `BlueDockModelService` | 贡献有界 dock model；支持 priority、preferred/min rows 和 collapsed |
+| `status` | `BlueStatusEntryContribution` | `blue-plugin-view-bridge` -> `BlueStatusEntryService` | 贡献 canonical `BlueStatusNode`；重复 id、越权 namespace 和非法 payload 被拒绝 |
+| `status.provider` (Experimental) | inert `BlueStatusProvider` candidate | `blue-status-provider-owner` -> `BlueStatusCompositionService` | 仅持久化用户选择可激活；实际宽度 dry-render 后原子替换，失败保留同会话 last-known-good 或回落 `blue.default` |
+| `panes` | `BluePaneContribution` | core plugin surface bridge | 贡献 canonical `BlueUiNode`；host 持有 placement/size/narrow/hidden/revision，core 托管 layout、focus、event 与 fallback |
+| `overlays` | `BlueOverlayRequest` | core plugin surface bridge | 贡献 canonical overlay；capturing surface 必须消费当前 Blue user gesture，close/refresh 与 owner generation 绑定 |
 | `commands` | `BlueCommandContribution` | `blue-plugin-interaction-bridge` -> Harness commands | 注册结构化异步命令；卸载时撤销，late result 不回写 |
-| `notifications` | `BlueNotification` | `blue-plugin-interaction-bridge` -> editor notice | 发布 renderer-neutral 通知，不暴露编辑器对象 |
+| `notifications.publish` | publish-only `BlueNotification` facade | `blue-plugin-interaction-bridge` -> editor notice | 发布 renderer-neutral 通知；普通插件不能订阅全局通知流 |
+| `session.read` | `BlueSessionReader` | app session owner bridge | `current/subscribe` only；snapshot revision 单调、深度冻结，owner/consumer unload fenced |
+| `editor.extensions` (Experimental) | inert extension contribution | interaction plugin-host bridge | callback 由 frontend-tree owner 执行并受 abort/stale/unload fence |
+| `editor.provider` (Experimental) | inert editor-shell candidate | editor-provider owner | 用户选择后原子切换；保留 editor engine 与 plain fallback |
 
-`session.read`、`session.act`、`tools`、`editor` 和 `panels` 仍是 manifest vocabulary，不属于 phase-one 已开放能力；请求它们会得到明确的 capability-denied/absent 结果。
+`session.read` 是唯一公开 session facade。generic `session.act` 已从 manifest、types 与 host facade 删除；领域写入继续使用其所属 Harness service 或专用 feature action，不建立通用替代。owner bridge 未激活时 read 返回 unavailable/null，不会退回私有 app/Harness service。旧 `dock`、`panels`、`editor` 和 `tools` 不再是公开 capability；validator 与未类型化的 host input 都返回具体迁移建议。
+
+owner attach、aggregate snapshot/observe、notification observe、gesture mint 与 semantic close 通过 composition-private `bluePluginControl` 执行。默认 bundle 把该 control 与 raw session/projection/action backing services 放在 `blue-runtime-private` 隔离 realm 中；普通 sibling 只能 inject public `bluePluginHost`。
 
 ## 3. 产品内部 seam
 
@@ -34,15 +41,15 @@ Blue 的 seam 不是单一类型，而是五类显式边界：
 | Owner | Seam | Contract / provider | Consumer |
 |---|---|---|---|
 | core | `blueScreen`、`blueKeymap`、`blueComponents`、`blueTerminalInfo`、`blueTheme` | `packages/core/src/types.ts` 与主题 provider | transcript、interaction 的 TUI adapter；只有 core 接触 pi-tui/raw terminal |
-| app | `blueSessionReader` | readonly `BlueSessionSnapshot`、订阅和文本 request；切换后发布新 snapshot | transcript、interaction、context adapter |
-| app | `blueSessionProjections` | `current/currentMany/children/subscribe`，只返回 immutable projection values + seq | conversation/status/dock/context consumers |
+| app | `blueSessionReader` | readonly revisioned `BlueSessionSnapshot`；公开 bridge 只装配 reader facet | transcript、interaction、context adapter、public plugin host |
+| app | `blueSessionProjections` | `current/currentMany/children/subscribe`，只返回 immutable projection values + seq | conversation/status/bottom-pane/context consumers |
 | app | `blueSessionActions` | followup/steer/interrupt、session details、mode/model/preset/tool/skill、side session 等结构化 action | interaction commands 和 BTW pane |
 | app | `blueRetractions` / `blueRequests` | request/session epoch guard 与 retract lifecycle | input、conversation/transcript lifecycle |
 | conversation | `blueConversation`、`blueConversationFacts` + `blueConversationProjection` readiness | official `SessionProjectionRegistry` owns replay/live/checkpoint/watermark | official transcript model、status 和 dock facts |
-| transcript | `blueTranscriptModels`、`blueStatusModels`、`blueDockModels`、tool model service | readonly frontend models + effect-bound registration | semantic TUI components、footer、dock |
-| interaction | `blueEditorHost`、`blueInteractionState` | frontend-tree-scoped editor slot/enhancements/transformers and mutable product state | input and interaction child Fibers |
-| frontend | theme/notification/provider hosts | renderer-neutral model registries and generation-scoped provider swap | renderer adapters |
-| bundle | `cordis.patch.yml` | 28 Blue-owned rows with explicit `inject` ordering where lifecycle order matters | dsh profile composition |
+| transcript | `blueTranscriptModels`、`blueStatusEntries`、`blueStatusComposition`、`blueBottomPanes`、tool model service | transcript model + canonical node + effect-bound registration + selected-provider composition | semantic TUI components、default/provider footer、Blue-owned bottom panes |
+| interaction | `blueEditorHost`、`blueInteractionState` | frontend-tree-scoped editor slot、completion multiplexer、pre-clear submit barrier、public extension binding and mutable product state | input、plugin-host bridge and interaction child Fibers |
+| frontend | theme/notification/locale/provider hosts | renderer-neutral model registries and generation-scoped provider swap | renderer adapters |
+| bundle | `cordis.patch.yml` | 33 Blue-owned rows；`blue-runtime-private` 隔离 control 与 raw app backing services | dsh profile composition |
 
 Session switch requests remain events such as `blue/request-resume`, `blue/request-new`, `blue/request-fork`, and `blue/request-rewind`. They are commands addressed to the app owner, not a raw session-fact broadcast. The deleted `blue/session-changed` and `blue/session-binding-changed` events must not be restored.
 
@@ -54,21 +61,22 @@ Session switch requests remain events such as `blue/request-resume`, `blue/reque
 | `agents` / `sessions` / persistence | app creates, resumes, forks, flushes and disposes Agents while keeping those objects private |
 | `commands` | interaction registers built-ins and the public command bridge |
 | `userQuestions` / `approval/request` | interaction owns effect-bound question and approval providers |
-| `tools` | transcript asks for canonical call/result presentation, then converts it to `ToolPresentationModel` |
+| `tools` | transcript receives official call/result presentation as domain input, then converts it to canonical `ToolPresentationModel.call/result` nodes |
 | `permissionPresets` / `planMode` / `agentPresets` | app actions expose renderer-neutral current state and mutations |
 | `attachments` | optional filesystem store and image-paste flow |
 | `settings` / credentials / session query | settings, onboarding, trace and session-tree actions behind bounded adapters |
 
 ## 5. Bundle mapping
 
-The patch owns 28 Blue rows: two host-support rows plus 26 product rows.
+The patch owns 33 Blue rows: two host-support rows, one private-runtime composition group, plus 30 product rows.
 
-- Baseline, 8 rows: API host, core/theme, banner, transcript model hosts/footer, conversation projection, official transcript consumer.
-- Enhancement, 14 rows: editor/attachment helpers, five status producers, five dock panes, and the public view bridge.
-- Assembly, 4 rows: interaction, public interaction bridge, startup and app.
+- Baseline, 9 rows: API host, locale runtime/settings adapter, core/theme, banner, transcript model hosts/footer, conversation projection, official transcript consumer.
+- Enhancement, 15 rows: editor/attachment helpers, five status producers, five bottom panes, the public additive-status bridge, and the exclusive status-provider owner.
+- Assembly, 6 rows: interaction, editor-provider owner, public interaction bridge, startup, app and the app-owned public session bridge.
+- Private composition, 1 row: `blue-runtime-private` contains the complete product segment and isolates control/session/projection/action services from ordinary siblings.
 - Validation-only, not bundle rows: `blue-context`, `blue-remote`, `blue-openpencil`, `blue-lark`.
 
-`blue-conversation` and `blue-transcript-official` are baseline rows because no legacy event-fold renderer remains. Tool diff/terminal/search/read/web cards are canonical `ToolPresentationModel` conversions inside the model path; there is no `blueIntents` registry or intent subpath.
+`blue-conversation` and `blue-transcript-official` are baseline rows because no legacy event-fold renderer remains. Tool diff/terminal/search/read/web cards use canonical `ToolPresentationModel.call/result` nodes and direct core compilation; there is no legacy frontend `View` adapter, `blueIntents` registry, or intent subpath.
 
 ## 6. Lifecycle rules
 

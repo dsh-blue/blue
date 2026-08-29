@@ -36,7 +36,7 @@ afterEach(() => {
 })
 
 /** A synthetic future release that remains ahead across preview bumps. */
-const OFFER_VERSION = '0.1.1-rc.1'
+const OFFER_VERSION = '0.1.2-rc.1'
 
 /** A packument whose `rc` tag offers a release over the running version. */
 const OFFER_JSON = JSON.stringify({

@@ -1,26 +1,31 @@
 flowchart TB
-    subgraph bundle["cordis.patch.yml - 28 Blue-owned rows · 28 条 Blue 自有行"]
+    subgraph bundle["cordis.patch.yml - 33 Blue-owned rows · 33 条 Blue 自有行"]
         subgraph host["host support 宿主支撑 - 2 rows"]
             presets["blue-agent-presets"]
             creative["blue-creative-host"]
         end
-        subgraph product["product UI 产品 UI - 26 rows"]
-            subgraph baseline["baseline 基线 - 8 rows"]
-                api["blue-api-host"]
-                core["blue-core · blue-theme-dark"]
-                chrome["blue-banner · blue-transcript · blue-status-basic"]
-                conversation["blue-conversation · blue-transcript-official"]
-            end
-            subgraph enhancement["enhancement 增强 - 14 droppable rows"]
-                editorPlus["blue-editor-plus"]
-                att["blue-attachments · blue-paste-image"]
-                statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
-                panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
-                viewBridge["blue-plugin-view-bridge"]
-            end
-            subgraph assembly["assembly 装配 - 4 rows"]
-                interaction["blue-interaction · blue-plugin-interaction-bridge"]
-                startup["blue-startup · blue-app"]
+        subgraph privateRuntime["private runtime composition 私有运行时组合 - 1 group"]
+            subgraph product["product UI 产品 UI - 30 rows"]
+                subgraph baseline["baseline 基线 - 9 rows"]
+                    api["blue-api-host · blue-locale"]
+                    core["blue-core · blue-theme-dark"]
+                    chrome["blue-banner · blue-transcript · blue-status-basic"]
+                    conversation["blue-conversation · blue-transcript-official"]
+                end
+                subgraph enhancement["enhancement 增强 - 15 droppable rows"]
+                    editorPlus["blue-editor-plus"]
+                    att["blue-attachments · blue-paste-image"]
+                    statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
+                    panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
+                    viewBridge["blue-plugin-view-bridge"]
+                    statusOwner["blue-status-provider-owner"]
+                end
+                subgraph assembly["assembly 装配 - 6 rows"]
+                    interaction["blue-interaction · blue-plugin-interaction-bridge"]
+                    editorOwner["blue-editor-provider-owner"]
+                    startup["blue-startup · blue-app"]
+                    sessionBridge["blue-plugin-session-bridge"]
+                end
             end
         end
     end
@@ -29,4 +34,4 @@ flowchart TB
     bundle -.-> dshbase
 
     classDef optional stroke-dasharray: 4 4;
-    class editorPlus,att,statusEnh,panes,viewBridge,validation optional;
+    class editorPlus,att,statusEnh,panes,viewBridge,statusOwner,validation optional;

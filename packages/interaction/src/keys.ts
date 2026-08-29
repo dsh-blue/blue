@@ -1,6 +1,6 @@
 /**
  * The shared Blue interaction key actions. One batch registered once by the
- * `blue-interaction-keys` plugin: the multi-select overlay (`BlueSelect`)
+ * `blue-interaction-keys` plugin: the canonical multi-select controller
  * resolves its keys through `ctx.blueKeymap` against these action ids, so
  * key claims never conflict and hint text reflects the registered bindings.
  * The editor-context actions (interrupt, steer) carry no handler: they are

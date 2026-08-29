@@ -8,10 +8,11 @@ if (expected === undefined) throw new Error('usage: verify-installed-blue.mjs <v
 const home = process.env.DSH_HOME
 if (home === undefined || home === '') throw new Error('DSH_HOME is required')
 
-// The profile receives the bundle and its eight runtime library dependencies;
+// The profile receives the bundle and its nine runtime library dependencies;
 // blue-cli itself is installed globally and is checked by the release workflow.
 const PROFILE_PACKAGES = [
   'blue-api',
+  'blue-ui',
   'blue-frontend',
   'blue-harness-adapter',
   'blue-conversation',

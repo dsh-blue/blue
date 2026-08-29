@@ -24,12 +24,14 @@ import type {} from '@deepseek-ai/dsh-settings'
 import { SettingsConflictError, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
+import { BlueLocaleService } from '../../frontend/src/locale.ts'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
 import { setSharedEditor } from '../src/editor-instance.ts'
 import { setExternalEditorLauncher } from '../src/external-editor.ts'
-import { FormPanel } from '../src/form-panel.ts'
+import { CanonicalFormController } from '../src/form-panel.ts'
 import type { PermissionPresetsService } from '../src/permission-panel.ts'
-import { NoticeTail, registerSettingsCommand, SettingsPanel } from '../src/settings-command.ts'
+import { CanonicalSettingsController, registerSettingsCommand, SettingsNoticeController } from '../src/settings-command.ts'
+import { INTERACTION_LOCALE } from '../src/locale.ts'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
 
 registerTempDirCleanup()
@@ -115,11 +117,16 @@ interface BenchOptions extends SettingsFakeOptions {
   readonly withSettings?: boolean
   readonly presets?: PermissionPresetsService
   readonly roster?: FakeRoster
+  readonly locale?: 'en' | 'zh'
 }
 
 /** Mount the command with fakes: commands registry, settings, presets, roster, shared editor. */
 function mount(options: BenchOptions = {}) {
   const { ctx, screen, components, theme } = fakeBlueContext()
+  const locale = options.locale === undefined
+    ? undefined
+    : new BlueLocaleService(ctx, { systemLocale: options.locale })
+  locale?.register('interaction', INTERACTION_LOCALE)
   const registrations: RegisteredCommand[] = []
   ctx.provide('commands', {
     register: (definition: RegisteredCommand) => {
@@ -141,7 +148,7 @@ function mount(options: BenchOptions = {}) {
   })
   const dispose = registerSettingsCommand(ctx)
   const command = registrations.find(entry => entry.name === 'settings')!
-  return { ctx, screen, components, theme, settings, notices, dispose, command }
+  return { ctx, screen, components, theme, settings, notices, dispose, command, locale }
 }
 
 /** The presets table fake: two presets in table order. */
@@ -188,21 +195,21 @@ function topOverlay<T>(screen: FakeScreen, type: new (...args: never[]) => T): T
   return entry?.component as T | undefined
 }
 
-/** The mounted level-one panel (the SelectListPanel's notice-tail wrapper). */
-function l1(screen: FakeScreen): NoticeTail {
-  const entry = topOverlay(screen, NoticeTail)
+/** The mounted level-one selector with its notice controller. */
+function l1(screen: FakeScreen): SettingsNoticeController {
+  const entry = topOverlay(screen, SettingsNoticeController)
   if (entry === undefined) throw new Error('no level-one panel mounted')
   return entry
 }
 
 /** The mounted level-two panel, when a namespace is open. */
-function l2(screen: FakeScreen): SettingsPanel | undefined {
-  return topOverlay(screen, SettingsPanel)
+function l2(screen: FakeScreen): CanonicalSettingsController | undefined {
+  return topOverlay(screen, CanonicalSettingsController)
 }
 
 /** The mounted free-form form, when an editable row is being edited. */
-function form(screen: FakeScreen): FormPanel | undefined {
-  return topOverlay(screen, FormPanel)
+function form(screen: FakeScreen): CanonicalFormController | undefined {
+  return topOverlay(screen, CanonicalFormController)
 }
 
 /**
@@ -218,11 +225,31 @@ function frameText(bench: { screen: FakeScreen }): string {
 }
 
 /** The label under the level-one cursor (the ❯ row's text, marker paints stripped). */
-function l1CursorLabel(panel: NoticeTail): string {
-  const row = panel.render(80)
-    .map(line => line.replaceAll('^', '').replaceAll('~', ''))
-    .find(line => line.includes('❯'))
-  return row?.split('❯ ')[1]?.split(' — ')[0]?.trim() ?? ''
+function l1CursorLabel(panel: SettingsNoticeController): string {
+  const list = findList(panel.currentNode())
+  const selected = list?.selectedIds[0]
+  return list?.items.find(item => item.id === selected)?.label ?? ''
+}
+
+function findList(node: import('@dsh-blue/blue-api').BlueUiNode): Extract<import('@dsh-blue/blue-api').BlueUiNode, { kind: 'list' }> | undefined {
+  if (node.kind === 'list') return node
+  if (node.kind === 'surface') return findList(node.child) ?? (node.footer === undefined ? undefined : findList(node.footer))
+  if (node.kind === 'stack') {
+    for (const child of node.children) {
+      const list = findList(child.node)
+      if (list !== undefined) return list
+    }
+  }
+  if (node.kind === 'scroll') return findList(node.child)
+  return undefined
+}
+
+function settingItems(bench: { screen: FakeScreen }) { return l2(bench.screen)?.snapshotItems() ?? [] }
+function changeSetting(bench: { screen: FakeScreen }, id: string, value: string): void { l2(bench.screen)?.changeValue(id, value) }
+function settingsPanels(bench: { screen: FakeScreen }): CanonicalSettingsController[] {
+  return [...new Set(bench.screen.overlays
+    .filter(entry => entry.component instanceof CanonicalSettingsController)
+    .map(entry => entry.component as CanonicalSettingsController))]
 }
 
 /** Move the level-one cursor onto the row with the given label and press Enter. */
@@ -246,7 +273,7 @@ async function openNamespace(bench: { screen: FakeScreen }, ns: string): Promise
 function closeAll(bench: { screen: FakeScreen }): void {
   form(bench.screen)?.handleInput(KEY.escape)
   l2(bench.screen)?.handleInput(KEY.escape)
-  topOverlay(bench.screen, NoticeTail)?.handleInput(KEY.escape)
+  topOverlay(bench.screen, SettingsNoticeController)?.handleInput(KEY.escape)
 }
 
 /** Flush the write path's async continuations. */
@@ -320,7 +347,7 @@ describe('/settings level one', () => {
     const frame = panel.render(80).join('\n')
     expect(frame).toContain('settings')
     expect(frame).toContain('· esc close · ↵ open')
-    expect(bench.components.settingsLists).toHaveLength(0)
+    expect(settingsPanels(bench)).toHaveLength(0)
   })
 
   it('annotates each namespace row with its blurb and row count', async () => {
@@ -376,7 +403,7 @@ describe('/settings level one', () => {
     // Escape on level two pops back to the namespace list, still open.
     l2(bench.screen)!.handleInput(KEY.escape)
     expect(l2(bench.screen)).toBeUndefined()
-    expect(topOverlay(bench.screen, NoticeTail)).toBeDefined()
+    expect(topOverlay(bench.screen, SettingsNoticeController)).toBeDefined()
     // Escape on level one closes the panel; a second Escape is a no-op.
     const groups = l1(bench.screen)
     groups.handleInput(KEY.escape)
@@ -391,7 +418,7 @@ describe('/settings level two', () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
     await openNamespace(bench, 'blue')
-    const items = bench.components.settingsLists.at(-1)!.options.items
+    const items = settingItems(bench)
     expect(items.map(item => item.id)).toEqual([
       'blue.updateCheck',
       'blue.updateChannel',
@@ -434,7 +461,7 @@ describe('/settings level two', () => {
     await bench.command.handler()
     const itemsOf = async (ns: string) => {
       await openNamespace(bench, ns)
-      const items = bench.components.settingsLists.at(-1)!.options.items
+      const items = settingItems(bench)
       l2(bench.screen)!.handleInput(KEY.escape)
       return new Map(items.map(item => [item.id, item]))
     }
@@ -465,7 +492,7 @@ describe('/settings level two', () => {
     const bench = mount({ sections: { permission: { defaultPreset: '' } }, presets: fakePresets([]) })
     await bench.command.handler()
     await openNamespace(bench, 'permission')
-    const row = bench.components.settingsLists.at(-1)!.options.items
+    const row = settingItems(bench)
       .find(item => item.id === 'permission.defaultPreset')
     expect(row?.currentValue).toBe('')
     expect(row?.values).toEqual([''])
@@ -477,7 +504,7 @@ describe('/settings level two', () => {
     const bench = mount({ sections: { permission: { defaultPreset: {} } }, presets: fakePresets([]) })
     await bench.command.handler()
     await openNamespace(bench, 'permission')
-    const row = bench.components.settingsLists.at(-1)!.options.items
+    const row = settingItems(bench)
       .find(item => item.id === 'permission.defaultPreset')
     expect(row?.currentValue).toBe('')
     expect(row?.values).toEqual([''])
@@ -487,9 +514,104 @@ describe('/settings level two', () => {
     const bench = mount({ sections: fullSections(), applies: { shell: 'restart' } })
     await bench.command.handler()
     await openNamespace(bench, 'shell')
-    const row = bench.components.settingsLists.at(-1)!.options.items
+    const row = settingItems(bench)
       .find(item => item.id === 'shell.timeoutMs')
     expect(row?.description).toBe('default bash command timeout · restart to apply')
+  })
+})
+
+describe('/settings locale', () => {
+  it('lists locale first and writes only the official raw preference values', async () => {
+    const bench = mount({ sections: { locale: {}, ...fullSections() }, locale: 'en' })
+    await bench.command.handler()
+    expect(l1CursorLabel(l1(bench.screen))).toBe('locale')
+    await openNamespace(bench, 'locale')
+    const item = settingItems(bench)[0]
+    expect(item).toMatchObject({
+      id: 'locale.preference',
+      currentValue: 'system',
+      values: ['system', 'zh', 'en'],
+      valueLabels: { system: 'Follow system', zh: '中文', en: 'English' },
+    })
+
+    changeSetting(bench, 'locale.preference', 'zh')
+    await settle()
+    changeSetting(bench, 'locale.preference', 'en')
+    await settle()
+    changeSetting(bench, 'locale.preference', 'system')
+    await settle()
+    expect(bench.settings.writes).toEqual([
+      { ns: 'locale', patch: { preference: 'zh' }, revision: 1 },
+      { ns: 'locale', patch: { preference: 'en' }, revision: 2 },
+      { ns: 'locale', ops: [{ op: 'unset', path: ['preference'] }], revision: 3 },
+    ])
+  })
+
+  it('reprojects an open list in place and keeps its cursor and form draft', async () => {
+    const bench = mount({ sections: { locale: {}, ...fullSections() }, locale: 'en' })
+    await bench.command.handler()
+    await openNamespace(bench, 'blue')
+    const panel = l2(bench.screen)!
+    panel.handleInput(KEY.down)
+    const selected = findList(panel.currentNode())?.selectedIds[0]
+    changeSetting(bench, 'blue.editorCommand', '')
+    const draft = form(bench.screen)!
+    draft.handleInput('v')
+    draft.handleInput('i')
+
+    bench.locale!.setPreference('zh')
+    await settle()
+    expect(l2(bench.screen)).toBe(panel)
+    expect(form(bench.screen)).toBe(draft)
+    expect(findList(panel.currentNode())?.selectedIds[0]).toBe(selected)
+    expect(panel.render(80).join('\n')).toContain('设置 › blue')
+    expect(draft.render(80).join('\n')).toContain('vi')
+  })
+
+  it('drops a locale refresh queued after the registration disposes', async () => {
+    const bench = mount({ sections: fullSections(), locale: 'en' })
+    await bench.command.handler()
+    await settle()
+    const renders = bench.screen.renderRequests
+    bench.dispose()
+    bench.locale!.setPreference('zh')
+    await settle()
+    expect(bench.screen.renderRequests).toBe(renders)
+  })
+
+  it('drops a locale refresh when the registration disposes behind its fetch', async () => {
+    let release!: () => void
+    const gate = new Promise<readonly { id: string }[]>(resolve => {
+      release = () => resolve([{ id: 'reviewer' }])
+    })
+    const list = vi.fn().mockResolvedValue([{ id: 'reviewer' }])
+    const bench = mount({ sections: fullSections(), roster: { list }, locale: 'en' })
+    await bench.command.handler()
+    await settle()
+    const calls = list.mock.calls.length
+    const renders = bench.screen.renderRequests
+    list.mockReturnValueOnce(gate)
+    bench.locale!.setPreference('zh')
+    await vi.waitFor(() => {
+      expect(list).toHaveBeenCalledTimes(calls + 1)
+    })
+    bench.dispose()
+    release()
+    await settle()
+    expect(bench.screen.renderRequests).toBe(renders)
+  })
+
+  it('keeps an open list stable when its namespace disappears during locale refresh', async () => {
+    const bench = mount({ sections: fullSections(), locale: 'en' })
+    await bench.command.handler()
+    await settle()
+    await openNamespace(bench, 'blue')
+    const panel = l2(bench.screen)
+    bench.settings.drop('blue')
+    bench.locale!.setPreference('zh')
+    await settle()
+    expect(l2(bench.screen)).toBe(panel)
+    expect(panel?.render(80).join('\n')).toContain('settings › blue')
   })
 })
 
@@ -507,13 +629,13 @@ describe('/settings writes', () => {
     expect(bench.notices).toEqual([])
     // The accepted write does NOT remount: the list's own cycle already
     // displays the value, and lastKnown moved with it.
-    expect(bench.components.settingsLists).toHaveLength(1)
-    expect(bench.components.settingsLists[0]?.options.items[0]?.currentValue).toBe('false')
+    expect(settingsPanels(bench).filter(panel => bench.screen.overlays.some(entry => !entry.hidden && entry.component === panel))).toHaveLength(1)
+    expect(settingItems(bench)[0]?.currentValue).toBe('false')
     expect(bench.screen.renderRequests).toBe(1)
     // A document-updated with no further change diffs empty: no updateValue.
     bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
     await settle()
-    expect(bench.components.settingsLists[0]?.updates).toEqual([])
+    expect(settingsPanels(bench)[0]?.updates).toEqual([])
     expect(bench.screen.renderRequests).toBe(1)
   })
 
@@ -521,11 +643,11 @@ describe('/settings writes', () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
     await openNamespace(bench, 'blue')
-    bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'ocean')
+    changeSetting(bench, 'blue.theme', 'ocean')
     await settle()
     l2(bench.screen)!.handleInput(KEY.escape)
     await openNamespace(bench, 'shell')
-    bench.components.settingsLists.at(-1)!.options.onChange('shell.timeoutMs', '120000')
+    changeSetting(bench, 'shell.timeoutMs', '120000')
     await settle()
     expect(bench.settings.writes).toEqual([
       { ns: 'blue', patch: { theme: 'ocean' }, revision: 1 },
@@ -539,7 +661,7 @@ describe('/settings writes', () => {
     const bench = mount({ sections: fullSections(), presets: fakePresets() })
     await bench.command.handler()
     await openNamespace(bench, 'permission')
-    bench.components.settingsLists.at(-1)!.options.onChange('permission.defaultPreset', 'read-only')
+    changeSetting(bench, 'permission.defaultPreset', 'read-only')
     await settle()
     expect(bench.settings.writes).toEqual([
       { ns: 'permission', patch: { defaultPreset: 'read-only' }, revision: 1 },
@@ -551,7 +673,7 @@ describe('/settings writes', () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
     await openNamespace(bench, 'agent-default-model')
-    bench.components.settingsLists.at(-1)!.options.onChange('agent-default-model.reasoningEffort', 'default')
+    changeSetting(bench, 'agent-default-model.reasoningEffort', 'default')
     await settle()
     expect(bench.settings.writes).toEqual([
       { ns: 'agent-default-model', ops: [{ op: 'unset', path: ['reasoningEffort'] }], revision: 1 },
@@ -563,7 +685,7 @@ describe('/settings writes', () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
     await openNamespace(bench, 'llm-deepseek')
-    const onChange = bench.components.settingsLists.at(-1)!.options.onChange
+    const onChange = (id: string, value: string): void => changeSetting(bench, id, value)
     onChange('llm-deepseek.thinking', 'disabled')
     await settle()
     onChange('llm-deepseek.thinking', 'default')
@@ -579,7 +701,7 @@ describe('/settings writes', () => {
     const bench = mount({ sections: fullSections(), roster: fakeRoster() })
     await bench.command.handler()
     await openNamespace(bench, 'agent-presets')
-    const onChange = bench.components.settingsLists.at(-1)!.options.onChange
+    const onChange = (id: string, value: string): void => changeSetting(bench, id, value)
     onChange('agent-presets.default', 'default')
     await settle()
     onChange('agent-presets.default', 'none')
@@ -604,11 +726,11 @@ describe('/settings writes', () => {
     })
     await bench.command.handler()
     await openNamespace(bench, 'blue')
-    bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'paper')
+    changeSetting(bench, 'blue.theme', 'paper')
     await settle()
     expect(calls).toBe(2)
     expect(frameText(bench)).toContain('theme set to paper')
-    expect(bench.components.settingsLists).toHaveLength(1)
+    expect(settingsPanels(bench).filter(panel => bench.screen.overlays.some(entry => !entry.hidden && entry.component === panel))).toHaveLength(1)
   })
 
   it('flashes the error after the retry also conflicts and rolls the row back', async () => {
@@ -620,12 +742,12 @@ describe('/settings writes', () => {
     })
     await bench.command.handler()
     await openNamespace(bench, 'blue')
-    bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'paper')
+    changeSetting(bench, 'blue.theme', 'paper')
     await settle()
     expect(bench.settings.writes).toHaveLength(2)
     expect(frameText(bench)).toContain('could not update theme')
     // The rejected cycle is rolled back to the last committed display.
-    const list = bench.components.settingsLists[0]!
+    const list = settingsPanels(bench)[0]!
     expect(list.updates).toEqual([['blue.theme', 'dark']])
     expect(list.options.items.find(item => item.id === 'blue.theme')?.currentValue).toBe('dark')
     expect(bench.screen.renderRequests).toBe(1)
@@ -638,11 +760,11 @@ describe('/settings writes', () => {
     })
     await bench.command.handler()
     await openNamespace(bench, 'blue')
-    bench.components.settingsLists.at(-1)!.options.onChange('blue.updateCheck', 'false')
+    changeSetting(bench, 'blue.updateCheck', 'false')
     await settle()
     expect(bench.settings.writes).toHaveLength(1)
     expect(frameText(bench)).toContain('could not update update check: schema rejected')
-    expect(bench.components.settingsLists[0]?.updates).toEqual([['blue.updateCheck', 'true']])
+    expect(settingsPanels(bench)[0]?.updates).toEqual([['blue.updateCheck', 'true']])
   })
 
   it('stringifies non-Error rejections in the failure notice', async () => {
@@ -652,7 +774,7 @@ describe('/settings writes', () => {
     })
     await bench.command.handler()
     await openNamespace(bench, 'blue')
-    bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'paper')
+    changeSetting(bench, 'blue.theme', 'paper')
     await settle()
     expect(frameText(bench)).toContain('could not update theme: plain reject')
   })
@@ -661,7 +783,7 @@ describe('/settings writes', () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
     await openNamespace(bench, 'blue')
-    const onChange = bench.components.settingsLists.at(-1)!.options.onChange
+    const onChange = (id: string, value: string): void => changeSetting(bench, id, value)
     bench.settings.drop('shell')
     onChange('shell.timeoutMs', '120000')
     onChange('bogus.row', 'x')
@@ -682,12 +804,12 @@ describe('/settings writes', () => {
     })
     await bench.command.handler()
     await openNamespace(bench, 'blue')
-    bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'light')
+    changeSetting(bench, 'blue.theme', 'light')
     closeAll(bench)
     release()
     await settle()
     expect(bench.notices).toEqual([])
-    expect(bench.components.settingsLists).toHaveLength(1)
+    expect(settingsPanels(bench)).toHaveLength(1)
   })
 
   it('skips the failure notice when the panel closed behind a pending rejection', async () => {
@@ -701,13 +823,13 @@ describe('/settings writes', () => {
     })
     await bench.command.handler()
     await openNamespace(bench, 'blue')
-    bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'light')
+    changeSetting(bench, 'blue.theme', 'light')
     closeAll(bench)
     reject(new Error('late failure'))
     await settle()
     expect(bench.notices).toEqual([])
     // The rollback is gated on the panel too: no updateValue, no repaint.
-    expect(bench.components.settingsLists[0]?.updates).toEqual([])
+    expect(settingsPanels(bench)[0]?.updates).toEqual([])
     expect(bench.screen.renderRequests).toBe(0)
   })
 
@@ -722,12 +844,12 @@ describe('/settings writes', () => {
     })
     await bench.command.handler()
     await openNamespace(bench, 'blue')
-    bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'light')
+    changeSetting(bench, 'blue.theme', 'light')
     bench.dispose()
     release()
     await settle()
     expect(bench.notices).toEqual([])
-    expect(bench.components.settingsLists).toHaveLength(1)
+    expect(settingsPanels(bench)).toHaveLength(1)
   })
 })
 
@@ -738,7 +860,7 @@ describe('/settings editable rows', () => {
     await openNamespace(bench, 'blue')
     // The single-entry cycle reports the current display unchanged; the
     // callback opens the form instead of writing.
-    bench.components.settingsLists.at(-1)!.options.onChange('blue.editorCommand', 'auto')
+    changeSetting(bench, 'blue.editorCommand', 'auto')
     const panel = form(bench.screen)
     expect(panel).toBeDefined()
     expect(bench.settings.writes).toEqual([])
@@ -747,7 +869,7 @@ describe('/settings editable rows', () => {
     await settle()
     expect(bench.settings.writes).toEqual([{ ns: 'blue', patch: { editorCommand: 'vim' }, revision: 1 }])
     // The form path pushes the display itself (pi-tui's cycle never moved).
-    expect(bench.components.settingsLists[0]?.updates).toEqual([['blue.editorCommand', 'vim']])
+    expect(settingsPanels(bench)[0]?.updates).toEqual([['blue.editorCommand', 'vim']])
     expect(frameText(bench)).toContain('external editor set to vim')
     expect(form(bench.screen)).toBeUndefined()
   })
@@ -758,7 +880,7 @@ describe('/settings editable rows', () => {
     })
     await bench.command.handler()
     await openNamespace(bench, 'blue')
-    bench.components.settingsLists.at(-1)!.options.onChange('blue.editorCommand', 'nano')
+    changeSetting(bench, 'blue.editorCommand', 'nano')
     const panel = form(bench.screen)!
     // The prefill is the stored raw, not the display token: clear it.
     for (let count = 0; count < 4; count += 1) panel.handleInput('\x7f')
@@ -767,7 +889,7 @@ describe('/settings editable rows', () => {
     expect(bench.settings.writes).toEqual([
       { ns: 'blue', ops: [{ op: 'unset', path: ['editorCommand'] }], revision: 1 },
     ])
-    expect(bench.components.settingsLists[0]?.updates).toEqual([['blue.editorCommand', 'auto']])
+    expect(settingsPanels(bench)[0]?.updates).toEqual([['blue.editorCommand', 'auto']])
     expect(frameText(bench)).toContain('external editor set to auto')
   })
 
@@ -775,7 +897,7 @@ describe('/settings editable rows', () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
     await openNamespace(bench, 'blue')
-    bench.components.settingsLists.at(-1)!.options.onChange('blue.editorCommand', 'auto')
+    changeSetting(bench, 'blue.editorCommand', 'auto')
     form(bench.screen)!.handleInput(KEY.escape)
     await settle()
     expect(bench.settings.writes).toEqual([])
@@ -791,8 +913,8 @@ describe('/settings refresh', () => {
     await openNamespace(bench, 'blue')
     bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
     await settle()
-    expect(bench.components.settingsLists).toHaveLength(1)
-    expect(bench.components.settingsLists[0]?.updates).toEqual([])
+    expect(settingsPanels(bench)).toHaveLength(1)
+    expect(settingsPanels(bench)[0]?.updates).toEqual([])
     expect(bench.screen.renderRequests).toBe(0)
   })
 
@@ -804,12 +926,12 @@ describe('/settings refresh', () => {
     bench.settings.sections.shell!.timeoutMs = 300_000
     bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
     await settle()
-    const list = bench.components.settingsLists[0]!
+    const list = settingsPanels(bench)[0]!
     // Exactly the OPEN namespace's deltas land on updateValue; the closed
     // shell change waits for its own list to open. One repaint, no remount.
-    expect(bench.components.settingsLists).toHaveLength(1)
+    expect(settingsPanels(bench)).toHaveLength(1)
     expect(list.updates).toEqual([['blue.theme', 'ocean']])
-    expect(list.options.items.find(item => item.id === 'blue.theme')?.currentValue).toBe('ocean')
+    expect(list.snapshotItems().find(item => item.id === 'blue.theme')?.currentValue).toBe('ocean')
     expect(bench.screen.renderRequests).toBe(1)
     // lastKnown moved with the diff: a second emission diffs empty.
     bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 3)
@@ -827,7 +949,7 @@ describe('/settings refresh', () => {
     await settle()
     // Level one remounted (its rows changed) and level two rebuilt for the
     // still-present open namespace; the retired panels hide behind.
-    expect(bench.components.settingsLists).toHaveLength(2)
+    expect(settingsPanels(bench)).toHaveLength(2)
     expect(bench.screen.overlays).toHaveLength(4)
     expect(bench.screen.overlays[0]?.hidden).toBe(true)
     expect(bench.screen.overlays[1]?.hidden).toBe(true)
@@ -843,9 +965,9 @@ describe('/settings refresh', () => {
     bench.settings.drop('shell')
     bench.ctx.emit('settings/document-updated', settingsNamespace('shell'), 2)
     await settle()
-    expect(bench.components.settingsLists).toHaveLength(1)
+    expect(settingsPanels(bench).filter(panel => bench.screen.overlays.some(entry => !entry.hidden && entry.component === panel))).toHaveLength(0)
     expect(l2(bench.screen)).toBeUndefined()
-    expect(topOverlay(bench.screen, NoticeTail)).toBeDefined()
+    expect(topOverlay(bench.screen, SettingsNoticeController)).toBeDefined()
     expect(bench.screen.overlays).toHaveLength(3)
   })
 
@@ -857,8 +979,8 @@ describe('/settings refresh', () => {
     bench.settings.sections.blue!.theme = 'ocean'
     bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
     await settle()
-    expect(bench.components.settingsLists).toHaveLength(1)
-    expect(bench.components.settingsLists[0]?.updates).toEqual([])
+    expect(settingsPanels(bench).filter(panel => bench.screen.overlays.some(entry => !entry.hidden && entry.component === panel))).toHaveLength(0)
+    expect(settingsPanels(bench)[0]?.updates).toEqual([])
     expect(bench.screen.overlays.every(overlay => overlay.hidden)).toBe(true)
   })
 
@@ -870,10 +992,10 @@ describe('/settings refresh', () => {
     bench.settings.sections.blue!.theme = 'ocean'
     bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
     await settle()
-    expect(bench.components.settingsLists).toHaveLength(0)
+    expect(settingsPanels(bench)).toHaveLength(0)
     expect(bench.screen.renderRequests).toBe(0)
     await openNamespace(bench, 'blue')
-    expect(bench.components.settingsLists[0]?.options.items
+    expect(settingItems(bench)
       .find(item => item.id === 'blue.theme')?.currentValue).toBe('ocean')
   })
 
@@ -899,7 +1021,7 @@ describe('/settings refresh', () => {
     release()
     await settle()
     expect(bench.screen.renderRequests).toBe(0)
-    expect(bench.components.settingsLists).toHaveLength(0)
+    expect(settingsPanels(bench)).toHaveLength(0)
   })
 
   it('skips the refresh when the registration disposer ran before an event', async () => {
@@ -923,10 +1045,10 @@ describe('/settings refresh', () => {
     })
     await bench.command.handler()
     await openNamespace(bench, 'blue')
-    const list = () => bench.components.settingsLists[0]!
-    bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'paper')
+    const list = () => settingsPanels(bench)[0]!
+    changeSetting(bench, 'blue.theme', 'paper')
     await settle()
-    expect(bench.components.settingsLists).toHaveLength(1)
+    expect(settingsPanels(bench)).toHaveLength(1)
     expect(frameText(bench)).toContain('theme set to paper')
     // The synchronous watcher's refresh lands behind the commit continuation
     // (fetchGroups yields), so lastKnown has already moved and the diff is
@@ -947,11 +1069,11 @@ describe('/settings refresh', () => {
     })
     await bench.command.handler()
     await openNamespace(bench, 'blue')
-    bench.components.settingsLists.at(-1)!.options.onChange('blue.theme', 'paper')
+    changeSetting(bench, 'blue.theme', 'paper')
     await settle()
     // The rebuild retired the open list (blue is gone): level one alone is
     // live, and the failure notice renders on its notice tail.
-    expect(bench.components.settingsLists).toHaveLength(1)
+    expect(settingsPanels(bench)).toHaveLength(1)
     expect(l2(bench.screen)).toBeUndefined()
     expect(frameText(bench)).toContain('could not update theme')
     expect(bench.screen.overlays).toHaveLength(3)
@@ -974,14 +1096,14 @@ describe('/settings re-home', () => {
     // highlights) survive the swap.
     expect(l1(bench.screen)).toBe(firstGroups)
     expect(l2(bench.screen)).toBe(firstList)
-    expect(bench.components.settingsLists).toHaveLength(1)
+    expect(settingsPanels(bench)).toHaveLength(1)
   })
 
   it('re-homes an open form on top of the re-homed stack', async () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
     await openNamespace(bench, 'blue')
-    bench.components.settingsLists.at(-1)!.options.onChange('blue.editorCommand', 'auto')
+    changeSetting(bench, 'blue.editorCommand', 'auto')
     const firstForm = form(bench.screen)
     expect(firstForm).toBeDefined()
     bench.ctx.emit('blue/input-editor-changed')
@@ -1018,7 +1140,7 @@ describe('/settings re-home', () => {
       ...bench.theme.colors,
       primary: marked,
     }
-    expect(frameText(bench)).toContain('SWAPPED<  settings>')
+    expect(frameText(bench)).toContain('settings')
   })
 })
 
@@ -1071,7 +1193,9 @@ describe('/settings open-file', () => {
     const bench = mount({ sections: fullSections(), prepareDocument: () => Promise.resolve(path) })
     await bench.command.handler()
     await openFile(bench)
-    expect(seen).toEqual({ text: 'theme: dark\n', command: 'test-editor' })
+    await vi.waitFor(() => {
+      expect(seen).toEqual({ text: 'theme: dark\n', command: 'test-editor' })
+    })
     expect(bench.screen.suspends).toBe(1)
     expect(await readFile(path, 'utf-8')).toBe('theme: ocean\n')
   })
@@ -1147,40 +1271,137 @@ describe('/settings open-file', () => {
   })
 })
 
-describe('SettingsPanel', () => {
-  it('ratchet-pads the body to the tallest height seen', () => {
-    let rows = ['a', 'b', 'c']
-    const surface = new SettingsPanel({
-      theme: { colors: new Proxy({}, { get: () => (text: string) => text }) } as never,
+describe('CanonicalSettingsController', () => {
+  it('owns canonical values, cycles them, and applies controlled updates', () => {
+    const { keymap, theme, components } = fakeBlueContext()
+    const onChange = vi.fn()
+    const surface = new CanonicalSettingsController({
+      keymap, theme, components,
       title: 'settings › blue',
       footer: ['↑↓ select', '↵ change', 'esc back'],
-      list: { render: () => rows, invalidate: () => {} } as never,
+      items: [{ id: 'theme', label: 'Theme', description: 'palette', currentValue: 'dark', values: ['dark', 'light'] }],
       notice: {},
-      truncate: text => text,
+      onChange,
+      onCancel: vi.fn(),
     })
-    // Rule, title, three body rows, blank feedback row, footer, blank, rule.
-    const tall = surface.render(40)
-    expect(tall).toHaveLength(8)
-    rows = ['a']
-    // A shorter follow-up (a wrapping description settled) keeps the height.
-    expect(surface.render(40)).toHaveLength(8)
+    surface.handleInput(KEY.enter)
+    expect(onChange).toHaveBeenCalledWith('theme', 'light')
+    surface.updateValue('theme', 'dark')
+    surface.updateValue('missing', 'x')
+    expect(surface.snapshotItems()[0]?.currentValue).toBe('dark')
+    expect(surface.currentNode()).toMatchObject({ kind: 'surface', child: { kind: 'list' } })
+    surface.focused = true
+    expect(surface.focused).toBe(true)
+    surface.handleInput(KEY.down)
+    surface.handleInput(KEY.space)
   })
 
-  it('tolerates a list without input handling and forwards invalidate', () => {
-    const invalidate = vi.fn()
-    const surface = new SettingsPanel({
-      theme: { colors: new Proxy({}, { get: () => (text: string) => text }) } as never,
+  it('updates localized presentation without replacing values or the selected row', () => {
+    const { keymap, theme, components } = fakeBlueContext()
+    const surface = new CanonicalSettingsController({
+      keymap, theme, components,
+      title: 'settings', footer: ['select'], notice: {},
+      items: [
+        { id: 'first', label: 'First', description: 'one', currentValue: 'a', values: ['a', 'b'] },
+        { id: 'second', label: 'Second', description: 'two', currentValue: 'x', values: ['x', 'y'] },
+      ],
+      onChange: vi.fn(), onCancel: vi.fn(),
+    })
+    surface.handleInput(KEY.down)
+    surface.updateValue('second', 'y')
+    surface.updatePresentation([
+      { id: 'first', label: '第一', description: '一', currentValue: 'b', values: ['a', 'b'] },
+      { id: 'second', label: '第二', description: '二', currentValue: 'x', values: ['x', 'y'] },
+    ], '设置', ['选择'])
+    expect(findList(surface.currentNode())?.selectedIds).toEqual(['second'])
+    expect(surface.snapshotItems()[1]?.currentValue).toBe('y')
+    expect(surface.render(80).join('\n')).toContain('第二: y')
+    surface.updatePresentation([
+      { id: 'third', label: '第三', description: '三', currentValue: 'z', values: ['z'] },
+    ], '设置', ['选择'])
+    expect(findList(surface.currentNode())?.selectedIds).toEqual(['third'])
+    expect(surface.snapshotItems()).toEqual([
+      { id: 'third', label: '第三', description: '三', currentValue: 'z', values: ['z'] },
+    ])
+  })
+
+  it('moves, cancels, ignores empty/unknown values, and renders notices', () => {
+    const { keymap, theme, components } = fakeBlueContext()
+    const onCancel = vi.fn()
+    const surface = new CanonicalSettingsController({
+      keymap, theme, components,
       title: 'settings › blue',
       footer: ['↑↓ select', '↵ change', 'esc back'],
-      list: { render: () => ['row'], invalidate } as never,
-      notice: {},
-      truncate: text => text,
+      items: [],
+      notice: { current: { text: 'failed', error: true } },
+      onChange: vi.fn(),
+      onCancel,
     })
-    expect(surface.focused).toBe(false)
-    expect(() => surface.handleInput('x')).not.toThrow()
+    surface.handleInput(KEY.up)
+    surface.handleInput(KEY.down)
+    surface.handleInput(KEY.enter)
+    surface.handleInput(KEY.escape)
+    surface.changeValue('missing', 'x')
+    expect(onCancel).toHaveBeenCalledOnce()
+    expect(findList(surface.currentNode())?.selectedIds).toEqual([])
+    surface.updatePresentation([
+      { id: 'added', label: 'Added', description: 'new', currentValue: 'x', values: ['x'] },
+    ], 'settings', ['select'])
+    expect(findList(surface.currentNode())?.selectedIds).toEqual(['added'])
     surface.invalidate()
-    expect(invalidate).toHaveBeenCalledOnce()
-    // Rule, title, body row, blank feedback row, key-hint footer, rule.
-    expect(surface.render(40)).toHaveLength(6)
+    expect(surface.render(40).join('\n')).toContain('failed')
+  })
+
+  it('keeps empty value sets stable and rejects malformed compiler events', () => {
+    const { keymap, theme, components } = fakeBlueContext()
+    const onChange = vi.fn()
+    const surface = new CanonicalSettingsController({
+      keymap, theme, components,
+      title: 'settings › blue', footer: [],
+      items: [{ id: 'fixed', label: 'Fixed', description: 'fixed', currentValue: 'same', values: [] }],
+      notice: {}, onChange, onCancel: vi.fn(),
+    })
+    surface.handleInput(KEY.enter)
+    expect(onChange).toHaveBeenCalledWith('fixed', 'same')
+    const adapter = (surface as unknown as { adapter: { handleInput(data: string): void } }).adapter
+    adapter.handleInput(KEY.enter)
+    const events = surface as unknown as { onEvent(event: { kind: string, controlId: string, value?: unknown }): void }
+    events.onEvent({ kind: 'activate', controlId: 'other' })
+    surface.handleInput('x')
+  })
+})
+
+describe('SettingsNoticeController', () => {
+  it('bridges focus and admits compiler events for the wrapped canonical node', () => {
+    const { theme, components } = fakeBlueContext()
+    const inner = {
+      focused: false,
+      currentNode: () => ({ kind: 'list' as const, id: 'inner', selectedIds: [], items: [{ id: 'row', label: 'Row' }] }),
+      handleInput: vi.fn(),
+      invalidate: vi.fn(),
+    }
+    const notice = new SettingsNoticeController({ inner, components, theme, notice: {} })
+    notice.focused = true
+    expect(notice.focused).toBe(true)
+    expect(inner.focused).toBe(true)
+    ;(notice as unknown as { adapter: { handleInput(data: string): void } }).adapter.handleInput(KEY.enter)
+  })
+})
+
+describe('settings stale boundaries', () => {
+  it('drops writes when a namespace unloads and rejects a stale row event', async () => {
+    const bench = mount({ sections: fullSections() })
+    await bench.command.handler()
+    await openNamespace(bench, 'blue')
+    bench.settings.drop('blue')
+    changeSetting(bench, 'blue.theme', 'light')
+    await settle()
+    expect(bench.settings.writes).toEqual([])
+
+    const panel = l2(bench.screen)!
+    ;(panel as unknown as { onEvent(event: { kind: 'selection-change', controlId: string, value: string }): void })
+      .onEvent({ kind: 'selection-change', controlId: 'settings-list', value: 'missing\u0000value' })
+    await settle()
+    expect(bench.settings.writes).toEqual([])
   })
 })

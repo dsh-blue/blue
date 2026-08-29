@@ -5,7 +5,7 @@ flowchart TB
         HAR["agents · sessions · tools · approval<br/>commands · events"]
     end
 
-    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 28 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
+    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 33 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
         direction TB
         subgraph DOM["Domain 侧 — 唯一持有 Agent/Session 对象"]
             direction LR
@@ -14,7 +14,7 @@ flowchart TB
         end
         subgraph UI["UI 侧 — 只见 readonly 数据与 action"]
             direction TB
-            FE["blue-api · blue-frontend<br/>BlueView 契约 · readonly models · provider host"]
+            FE["blue-api · blue-ui · blue-frontend<br/>UI wire/builders · readonly models · provider host"]
             ADP["blue-transcript · blue-interaction<br/>transcript · 命令 · 面板 · 状态栏 · dock"]
             KRN["blue-core — TUI kernel<br/>全树唯一 import pi-tui"]
             FE --> ADP

@@ -11,7 +11,7 @@ export class FrontendHost {
   private readonly pendingSwaps: Array<{ readonly next: FrontendProvider; readonly restore: boolean; readonly resolve: () => void; readonly reject: (reason?: unknown) => void }> = []
   private disposed = false
   private readonly listeners = new Set<ModelListener>()
-  private model: ProviderModel = freezeModel({ providerId: 'plain', capabilities: [], views: [] })
+  private model: ProviderModel = freezeModel({ providerId: 'plain', capabilities: [], nodes: [] })
 
   get currentProvider(): FrontendProvider { return this.provider }
   get snapshot(): ProviderModel { return this.model }
@@ -48,5 +48,5 @@ export class FrontendHost {
     try { const context = this.context(); await next.activate(context, state); if (restore && next.restore && state !== undefined) await next.restore(state, context) }
     catch { await next.dispose?.(); this.provider = plainProvider; this.generation++; this.controller = new AbortController(); await plainProvider.activate(this.context()) }
   }
-  async unload(): Promise<void> { if (this.disposed) return; this.controller.abort(); await this.provider.dispose?.(); this.disposed = true; this.provider = plainProvider; this.model = freezeModel({ providerId: 'plain', capabilities: [], views: [] }); this.listeners.clear() }
+  async unload(): Promise<void> { if (this.disposed) return; this.controller.abort(); await this.provider.dispose?.(); this.disposed = true; this.provider = plainProvider; this.model = freezeModel({ providerId: 'plain', capabilities: [], nodes: [] }); this.listeners.clear() }
 }

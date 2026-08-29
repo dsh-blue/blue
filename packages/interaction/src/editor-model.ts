@@ -35,7 +35,8 @@ export class EditorModelService extends Service {
       if (shared.editor.disableSubmit) return false
       const value = action.value
       if (value !== undefined && typeof value !== 'string') return false
-      shared.submitPrompt(value ?? shared.editor.getExpandedText())
+      if (value !== undefined) shared.editor.setText(value)
+      shared.editor.submit()
       this.emit()
       return true
     }

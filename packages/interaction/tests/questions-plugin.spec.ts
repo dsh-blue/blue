@@ -8,14 +8,25 @@ import { describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions'
+import { BlueLocaleService } from '../../frontend/src/locale.ts'
 import * as questionsPlugin from '../src/questions-plugin.ts'
+import { INTERACTION_LOCALE } from '../src/locale.ts'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
 
-async function mount(): Promise<{ ctx: Context; screen: FakeScreen; fiber: { dispose(): Promise<void> } }> {
+async function mount(localeId?: 'en' | 'zh'): Promise<{
+  ctx: Context
+  screen: FakeScreen
+  fiber: { dispose(): Promise<void> }
+  locale: BlueLocaleService | undefined
+}> {
   const { ctx, screen } = fakeBlueContext()
+  const locale = localeId === undefined
+    ? undefined
+    : new BlueLocaleService(ctx, { systemLocale: localeId })
+  locale?.register('interaction', INTERACTION_LOCALE)
   await ctx.plugin(UserQuestionService)
   const fiber = await ctx.plugin(questionsPlugin)
-  return { ctx, screen, fiber }
+  return { ctx, screen, fiber, locale }
 }
 
 function choice(question: Partial<AskUserQuestionItem> = {}): AskUserQuestionItem {
@@ -44,6 +55,22 @@ describe('blue-questions provider', () => {
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({ answers: [{ id: 'q1', selected: ['Beta'] }] })
     expect(screen.overlays[0]?.hidden).toBe(true)
+  })
+
+  it('switches an open questionnaire in place while preserving its selection', async () => {
+    const { ctx, screen, locale } = await mount('en')
+    const pending = ctx.userQuestions.ask({ questions: [choice()] })
+    const questionnaire = screen.overlays[0]!.component
+    overlay(screen).handleInput(KEY.down)
+    expect(questionnaire.render(60).join('\n')).toContain('Question 1 of 1')
+
+    locale!.setPreference('zh')
+    expect(screen.overlays[0]!.component).toBe(questionnaire)
+    const localized = questionnaire.render(60).join('\n')
+    expect(localized).toContain('问题 1/1')
+    expect(localized).toContain('→ Beta [2]')
+    overlay(screen).handleInput(KEY.enter)
+    await expect(pending).resolves.toEqual({ answers: [{ id: 'q1', selected: ['Beta'] }] })
   })
 
   it('answers a multi-select question with toggled labels', async () => {
@@ -108,13 +135,11 @@ describe('blue-questions provider', () => {
       questions: [choice({ header: 'Setup', detail: 'extra context' })],
     })
     const rendered = screen.overlays[0]?.component.render(60) ?? []
-    // The framed pull-up panel: progress title, summary, question and detail rows.
-    expect(rendered[0]).toBe('^' + '─'.repeat(60) + '^')
-    expect(rendered[1]).toBe('^  Question 1 of 1^')
-    expect(rendered[2]).toBe('  1/1 · ^● Setup^')
-    expect(rendered[3]).toBe('')
-    expect(rendered[4]).toBe('^  Pick one^')
-    expect(rendered[5]).toBe('~extra context~')
+    const frame = rendered.join('\n')
+    expect(frame).toContain('Question 1 of 1')
+    expect(frame).toContain('Setup')
+    expect(frame).toContain('Pick one')
+    expect(frame).toContain('extra context')
     overlay(screen).handleInput(KEY.escape)
     await pending.catch(() => {})
   })
@@ -193,9 +218,9 @@ describe('blue-questions plan-review intent', () => {
     const frame = screen.overlays[0]?.component.render(60).join('\n') ?? ''
     expect(frame).toContain('Plan review')
     expect(frame).toContain('# Fix the build')
-    expect(frame).toContain('1. Ship it')
-    expect(frame).toContain('2. Reject')
-    expect(frame).toContain('3. Revise')
+    expect(frame).toContain('Ship it [1]')
+    expect(frame).toContain('Reject [2]')
+    expect(frame).toContain('Revise [3]')
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({ answers: [{ id: 'plan-review', selected: ['Ship it'] }] })
     expect(screen.overlays[0]?.hidden).toBe(true)

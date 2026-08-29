@@ -4,7 +4,7 @@ Implementation detail for this package (the user-facing surface is `README.md`/`
 
 ## Scope and L0 boundary
 
-Core is the tree's ONLY package allowed to import `@earendil-works/pi-tui` (plus raw terminal state). It owns terminal lifecycle (`src/terminal.ts`) and exposes pi-tui-independent contracts in `src/types.ts` so pi-tui breaking changes cannot propagate past it. Real runtime dependencies: `@earendil-works/pi-tui`, `@deepseek-ai/schemastery` (theme-custom config validation), and `cli-highlight` (code-fence syntax coloring behind the markdown `highlightCode` hook).
+Core is the tree's ONLY package allowed to import `@earendil-works/pi-tui` (plus raw terminal state). It owns terminal lifecycle (`src/terminal.ts`) and exposes pi-tui-independent contracts in `src/types.ts` so pi-tui breaking changes cannot propagate past it. Public node construction comes from the renderer-neutral `@dsh-blue/blue-ui`; core remains the sole validator/compiler into pi-tui. Other real runtime dependencies are `@earendil-works/pi-tui`, `@deepseek-ai/schemastery` (theme-custom config validation), and `cli-highlight` (code-fence syntax coloring behind the markdown `highlightCode` hook).
 
 ## L1 services and the global key dispatcher
 
@@ -26,6 +26,52 @@ Core is the tree's ONLY package allowed to import `@earendil-works/pi-tui` (plus
 
 Both alternate-screen layout bands preserve the D48 render-exit width backstop before pi-tui lays out the frame. The transcript's `FrameClampedContainer` reuses a checked frame for the same width, child identities, and child row-array identities, so stable long transcript rows do not repeat ANSI-aware width scans on dock-only redraws. The height-aware dock container renders every child once, reserves fixed editor/dialog/footer rows, then allocates the remainder to passive panes by descending priority while retaining one transcript row whenever possible. `scrollContent()` delegates to the primary `ScrollView`; its ordinary differential render keeps the dock fixed without resetting render state or emitting a full-screen clear. `contentChanged()` preserves follow-end until the user scrolls away, and `followContent()` returns to the tail. Raw wheel reports remain available to the renderer's native viewport route; the focused editor consumes its wheel reports before the AltScreen listener, while focused replacement panels receive normalized Up/Down input. `setContentScrollHandler()` retains the editor-context wheel/PageUp/PageDown/End path without stealing Up/Down from editor history or converting the main viewport's raw mouse event.
 
+`src/surface-manager.ts` is the core-private W3-A seam for already compiled pane components; it is deliberately absent from the package root and from `BlueScreen`. It owns deterministic header/left/right/bottom arbitration, frozen profile-state input/output, Blue lane tabs/overflow, the 20..48 side-width hard boundary, and the 40-column collapse/44-column reopen hysteresis. Lane strength is user pin/order, then transient focus/recent activation, then plugin priority/id. Provider hidden state remains separate from user hidden state; disposing an active fallback selects a stable successor. `terminal.ts` uses the semantic linear layout to keep potential side and bottom nodes mounted across resize: AltScreen builds optional header, a real `HStack(left, primary transcript ScrollView, right)`, optional managed bottom, then the fixed dock; MainScreen renders header/content/left/right/bottom/editor/status linearly. Layout-aware lane wrappers expose the active compiler component's `LAYOUT_NODE`, so legal pane scroll stays non-primary/contained at its allocated lane height. The fixed dock never shrinks at the outer root: header and managed bottom surrender height first, preserving one transcript row plus the editor/status tail. User tab activation, focused refresh replacement, and active unload retarget renderer focus only when it still points at the previous lane target; overlay `preFocus` is retargeted under the same condition. Hidden side overflow or a missing target releases that matching focus to `null`; bottom fallback remains in-frame and retains it. No-contribution roots retain the old two-band AltScreen tree and flat MainScreen frame exactly.
+
+`src/plugin-surface-bridge.ts` is the core-private W3-C owner bridge. Its child
+Fiber injects the composition-private `bluePluginControl` plus components,
+theme, and keymap. The control is closure-bound to the host and exposes only
+owner-authorized snapshot, gesture, and overlay-close operations inside the
+bundle's isolated runtime realm; no public plugin receives it or renderer
+objects. Pane and overlay render callbacks pass
+only through `compileBlueUiNode`. Pane `null` removes its managed surface,
+refresh replaces the existing registration, and render/validation failures
+become bounded danger nodes. Non-capturing overlays reject every potentially
+interactive tree. Overlay dismiss, fault, or timeout closes the owner entry and
+aborts queued work; pane failures remain contained without destroying the
+event owner. Change events are latest-wins per control, discrete events are
+FIFO, and every successful generation coalesces one refresh behind abort,
+timeout, and stale-generation fences. F6/Shift-F6 traverses visible managed
+panes and restores the pre-surface focus at either boundary; any capturing
+overlay, including built-in overlays, blocks traversal.
+
+The API host Fiber owns the durable panes/overlays readiness and buffering
+lease, so host-only external rows may register regardless of core import order,
+while theme/components are pending, or during a nested bridge reload gap. The
+nested bridge replays buffered contributions after mount and keeps its own
+runtime-scoped attachment for renderer ownership; core unload removes the
+rendered surfaces but intentionally leaves host-buffered registrations ready
+for a replacement renderer. When the API host unloads, it fences dependent
+consumer facades before draining registries, independent of Cordis disposal
+order; writes through a retained facade therefore return `BLUE_ACTION_REJECTED`,
+not the `BLUE_CAPABILITY_ABSENT` reserved for a live consumer crossing a
+renderer-owner gap.
+
+Public overlay titles are canonical UI, not terminal metadata: the bridge wraps
+the plugin node (including bounded null/error fallbacks) in a `surface` with
+`chrome: 'overlay'` before the sole compiler boundary. The canonical compiler
+owns one closed frame: it budgets borders and explicit inner padding once and
+preserves both corners at usable widths. During the 1/2-column resize transient,
+body content takes priority over frame furniture without overflow. Plugin content must not return a
+second overlay frame. Overlay width and
+explicit minimum width remain live across terminal resize; the bridge forwards
+the admitted constraint unchanged and `terminal.ts` clamps both against the
+current columns and the trusted hard maximum when pi-tui reads them. Because
+pi-tui's overlay compositor is width-only, the private bridge wrapper switches
+to the canonical layout pass when content reaches the live height budget; this
+keeps both frame edges and nested scroll allocation inside `maxHeight` instead
+of letting the compositor slice the bottom edge.
+
 `output-recovery.ts` protects that alternate screen from Host code that writes
 directly to process stdout/stderr (the dynamic Cordis Host console is the
 canonical consumer). The original write still lands, then a forced frame on
@@ -46,20 +92,47 @@ The recoverable suspend composes pi-tui 0.84.2's own lifecycle primitives — `T
 
 ## Component factory (`blueComponents`, `src/components.ts`)
 
+### Public UI admission/compiler boundary
+
+`src/ui-validator.ts` is the only admission path for public `BlueUiNode`, recursively narrowed `BlueStatusNode`, and `BlueEditorShellNode` trees. Preserve the 20,000-text-unit, depth-8, 256-node, and 200-entry quotas; copy known fields and recursively freeze only the canonical copy; strip ESC and C1 terminal strings plus the private focus sentinel and pi-tui cursor marker. Ordinary records and dense arrays from another VM realm are admitted only when their prototype has the matching native realm constructor, constructor-to-prototype backreference, and intrinsic own-descriptor shape; local prototype identity is not required. Class instances, named-constructor spoofs, exotic/custom prototypes, sparse/subclass arrays, accessors, and proxy failures remain rejected, and known fields are read only through own data descriptors. Status recursion must remain non-interactive. An editor control is legal only at the editor root or through editor stack/surface slots; ordinary descendants (especially `scroll`) must parse as `BlueUiNode` and cannot reopen the editor slot. Its complete stack ancestry must guarantee visibility: reject any `when`, `maxSize: 0`, or explicit `basis: 0`/`grow: 0`/zero-minimum allocation on a child containing the slot. Nested scroll remains rejected.
+
+`src/ui-compiler.ts` is the sole canonical node -> pi-tui compiler. `compileBlueUiNode` must call the ordinary validator itself; `compileBlueStatusNode` must independently call the recursively narrowed status validator; `compileBlueEditorShellNode` must independently validate the shell and inject the exact host-owned `BlueEditor` at its sole `editor-control`. All three use the same admitted-node compiler and painter graph. Recompiling a shell must never manufacture or replace that editor object: cursor, IME, paste, undo, history, and the pre-clear submission transaction belong to the stable renderer engine. The status result is a passive facade with no focus/input/event surface: row stacks retain compact spatial `HStack` semantics in both screen modes, output is runtime-bounded to 1..3 rows, and `renderStatus` reports overflow plus the first contained leaf/root `runtimeFailure` for the current render. The failure accumulator resets on every frame; ordinary safe error rows remain unchanged, while the status composition owner can reject a dry render or trip its runtime breaker. Private official-compatibility options may impose a post-wrap leaf-row budget, select one exact leaf for a live row offset/metadata callback, or replace one exact text leaf with core's Markdown renderer; public plugin/host compilation never sets them. The composite render exit still enforces the column clamp. Its returned composite is the only `BlueFocusable`: it owns roving state, live viewport reconciliation, event containment, and exactly-one cursor-marker insertion. It must expose the real root `LAYOUT_NODE`; an opaque wrapper leaves nested ScrollView state at zero. Direct render/stop replay uses a sentinel replaced after composition. AltScreen layout bypasses wrapper render, so its explicit layout-pass adapter emits an equal-width marker from the reconciled active leaf; editor fields retain the real editor caret and replace the sentinel locally, falling back to one marker when narrow clipping removes that caret. Real `renderLayoutFrame` HStack/editor and replay tests must cover both paths. AltScreen scroll is non-primary/contained and clips to its stack-allocated height. Ordinary MainScreen UI unwraps scroll, linearizes row stacks, and preserves all document rows. Do not clamp stack sizing to the compile-time viewport; the fixed safety ceiling exists solely to bound hostile safe integers during later live resize. Delete the private Markdown selector when the canonical schema gains a validated Markdown/content node, and delete the leaf window/metadata seam when canonical content boxes expose controlled post-wrap scrolling.
+
+Editor-shell composites additionally expose `renderChecked(width, { dryRun })`
+for the interaction-owned provider transaction. It reports the first contained
+runtime failure without parsing painted error rows. Dry runs restore composite,
+roving, viewport, and injected-editor focus state. `focusEditor()` selects the
+one editor-control inside the shell but never takes screen focus; the outer
+interaction owner remains responsible for restoring the screen's stable focus
+delegate after an atomic provider swap. A shell whose only interactive control
+is that editor delegates Tab and Shift-Tab to the stable editing engine, so
+provider chrome cannot suppress completion acceptance or an explicit completion
+request. Shells with additional controls retain composite-owned Tab roving.
+
+`src/ui-patterns.ts` is the private L2 presentation adapter used by the compiler and the editor-internal autocomplete adapter. It may paint canonical surface/tabs/list/form/actions/loader/empty/progress/divider rows with semantic palette tokens and must delegate visible-column measurement and slicing to `src/width.ts`; it is not a public subpath or an alternate admission/compiler seam. Active tabs, controlled list selection, and roving focus remain separate states. Every enabled focused list row receives the unique marker, `primary`, and a full-width `selectedBg`; semantic `detailSpans` retain their own tone/emphasis inside that focused background, while an unfocused controlled selection keeps only its persistent selection glyph/semantic foreground. Badges precede truncatable detail so state such as `← current` survives a closed overlay's inner-width budget. Disabled selected rows use one muted layer and can never focus. At narrow widths list detail disappears before tabs/actions collapse, and the render-exit width clamp remains the final backstop. Loader frames are deterministic and own no timer.
+
+The former `src/frontend-renderer.ts` conversion bridge and its `renderFrontendView`, `renderFrontendModel`, and `FrontendModelComponent` exports are physically deleted. Frontend, transcript, context, and tool producers now publish canonical `BlueUiNode` values; renderer adapters call `compileBlueUiNode` at the core boundary. Do not restore a frontend-specific converter or painter. Public `BlueView` remains the safe content-leaf subset of the canonical schema; its diff alignment, semantic paint, sanitation, and width containment still have one core owner through the canonical compiler.
+
+The compiler composite owns the L2 interaction drafts. Canonical `input`, `textarea`, and `secret` fields may resolve a stable core-created `BlueEditor` from the official compatibility adapter, preserving cursor, IME, bracketed-paste, and submit behavior across controlled recompiles. `renderContent(width, masked?)` exposes only the editor's unframed rows to the core form painter; secret rendering temporarily substitutes bullets and restores plaintext in `finally`, so neither the renderer nor error output leaks the value. Controlled synchronization calls `setText` only when the expanded value differs, and `value-change` remains the renderer-neutral outward event. Select arrows update a local enabled-option candidate, toggles retain their proposed boolean, Tab/Shift-Tab roves across controls, and Escape remains composite-owned. None of these drafts or editor objects enter the validated frozen node. Delete the private editor resolver once the canonical editor-control/form contract natively carries full editor semantics.
+
 `BlueEditor.removeLatestHistory(text)` is the narrow retraction helper over pi-tui's private history array: it removes index 0 only on an exact match. The method stays optional on the L1 contract so structural fakes and out-of-tree adapters remain compatible; core's sole real adapter implements it.
+
+`BlueEditor.setSubmitBarrier` shadows pi-tui 0.84.2's private `submitValue` at the adapter instance, after autocomplete handling but before its clear path. The frozen attempt captures raw and paste-expanded buffer identity plus the trimmed native submission value. `commit()` is the only path back into the captured native submit; `cancel()` preserves all editor state. Both settle once. Mutation, a newer attempt, or any barrier replacement aborts the signal and makes later commit return false. `submit()` uses the same path and respects `disableSubmit`. Delete this shadow when the renderer exposes an official pre-clear async submit hook with equivalent stale fencing.
 
 The pi-tui-backed component factory and width pure functions:
 
-- `src/plugin-view.ts` is the public `BlueView` compiler used only by the
-  owner bridges. It strips caller ANSI/OSC/control bytes, applies semantic
-  tones from the live owner palette, caps text/depth/rows, delegates all width
-  math to `blueComponents`, and contains a dynamic render failure as one
-  bounded error row. Plugins never receive a `BlueComponent` from this seam.
+- `src/plugin-view.ts` is the internal `BlueView` leaf painter shared by the
+  canonical UI compiler and notification summaries. It strips caller
+  ANSI/OSC/control bytes, applies semantic tones from the live owner palette,
+  caps text/depth, and delegates all width math to `blueComponents`. Canonical
+  surface owners provide admission, row budgets, and render-failure containment;
+  the retired public-dock component wrapper is not a second renderer path.
 
 - `createImage(options)` wraps pi-tui's Image with a styled-text fallback for terminals without an image protocol; the pure `imageDimensions(data)` probe covers PNG/JPEG/GIF/WebP.
 - `BlueEditor.insertText(text)` — atomic insertion at the cursor; the seam the clipboard-image markers use.
 - `createFileMentionProvider(basePath, fdPath)` (D31) returns the renderer's combined autocomplete provider (constructed with no commands; structurally identical to `BlueAutocompleteProvider`, so it passes through unwrapped) as the `@`-mention source: fd-backed scoped queries, substring scoring, top-20, quoted values, `applyCompletion` stateless of fd. On the same seam, `EditorAdapter.handleInput` carries the kimi `reopenAutocompleteAfterInput` hook: after any input, text ending in `/` inside an `@` mention re-opens the dropdown (directory drill-down), gated on `isShowingAutocomplete` and calling 0.84.2's private `tryTriggerAutocomplete` through the `getHistory`-style structural cast.
 - `createEditor` wires completion through an own-property shadow of the Editor's private `createAutocompleteList`: a `/`-prefixed dropdown gets the wrapping list with the `{12, 32}` slash layout; every other completion keeps the stock `SelectList`.
+- `BlueEditor.refreshAutocomplete()` re-queries the active provider without replacing the editor or mutating its buffer. Locale consumers call it only while the dropdown is open so localized slash descriptions refresh in place.
 - The `BlueComponents` contract re-exports pi-tui's pure fuzzy helpers: `fuzzyMatch(query, text) → {matches, score}` (lower is better) and the token-splitting `fuzzyFilter`.
 
 ## Themes and markdown rendering
@@ -77,13 +150,19 @@ The `blueTheme` contract lives in `src/types.ts`; implementations ship as four s
 
 ## Shared chrome layer (D25)
 
-The pure `src/chrome.ts` — re-exported as the `./chrome` subpath, theme-agnostic functions over `string[]` rows:
+The pure, core-private `src/chrome.ts` contains theme-agnostic functions over `string[]` rows. It has no package subpath: core components use it internally, generic renderer-adapter row clamps call `BlueComponents.truncateToWidth`, and the connected-pane top rule travels through the narrow `BlueComponents.topRule` method. This keeps ANSI and terminal-width algorithms behind the sole L0 adapter:
+
+`tests/business-rendering-drift.spec.ts` recursively scans every non-core
+package source tree. Imports of core-private renderer helpers, local display-
+width implementations, and unreviewed pointer/border/padding assembly fail the
+G4 gate; its small counted baseline names the remaining audited presentation
+adapters so any addition requires an explicit ownership review.
 
 - `EditorAdapter.render` post-processes the editor into a rounded box (`withSideBorders`/`injectPromptSymbol`, the kimi port: rules stripped and repainted through the live `borderColor` property so host `setBorderColor` recolors the whole frame, `│` bars overlaid only on literal outer spaces, labels never entering scroll indicators). `BlueEditor` exposes `setPromptSymbol('>' | '!' | undefined)` / `setBorderLabel(text)` / `setConnectedAbove(bool)` / `setGhostHint(…)`. When connected above, the adapter renders at the dock's `width - 2` inner budget and restores the shared left gutter, aligning both side borders with the pane above. The editor theme's default border is the neutral `border` token; slash/bash contexts carry the color.
-- `framePanel(body, width, opts)` frames a body in kimi's full-width flat `─` rules — title + optional muted title hint + optional key-row footer, all paints defaulting to identity, ANSI-safe truncated. The five overlay dialogs (approval/questionnaire//help//sessions/BlueSelect) render through it. Below `FRAME_DEGENERATE_WIDTH` (8) the framer also cuts its body rows (D48): callers pre-budget rows for normal widths, but a degenerate viewport can sit under the rows' fixed furniture — wider frames emit the body untouched.
-- `clampRowsToWidth(rows, width, truncate)` (D48) is the component-level width backstop: every hand-assembled frame passes through it after assembly (fits return untouched). `src/frame-clamp.ts` holds the render-exit backstop itself (`clampFrame` + the deduplicating `blue-overflow.log` sink wired into terminal.ts's render wrapper), and `src/width.ts` is the tree's single re-export seam for pi-tui's width utilities (runtime consumers reach them through the components service or this module — no other package names pi-tui).
+- `framePanel(body, width, opts)` is a transitional editor-frame helper only. Canonical interaction surfaces compile through `ui-compiler.ts`; below `FRAME_DEGENERATE_WIDTH` (8), remaining legacy callers still cut fixed furniture to the viewport.
+- `clampRowsToWidth(rows, width, truncate)` (D48) is core's component-level width backstop (fits return untouched). Cross-package renderer adapters map assembled rows through `BlueComponents.truncateToWidth`. `src/frame-clamp.ts` holds the render-exit backstop itself (`clampFrame` + the deduplicating `blue-overflow.log` sink wired into terminal.ts's render wrapper), and `src/width.ts` is the tree's single re-export seam for pi-tui's width utilities (runtime consumers reach them through the components service — no other package names pi-tui).
 - `hintRow(parts, paint)` joins key-hint parts with ` · `.
-- `topRule(width, {title, titlePaint, hint, hintPaint, paint})` renders the kimi in-border title row `╭ BTW ─ Esc close ────╮` — the `─ ` joiner appears only when both a title and a hint are present; the composite clips ANSI-safe (pi-tui's empty-ellipsis truncation appends a closing `\x1b[0m`, a protective reset) and the dash fill takes the remainder.
+- `topRule(width, {title, titlePaint, hint, hintPaint, paint})` renders the kimi in-border title row `╭ BTW ─ Esc close ────╮` behind `BlueComponents.topRule` — the `─ ` joiner appears only when both a title and a hint are present; the composite clips ANSI-safe (pi-tui's empty-ellipsis truncation appends a closing `\x1b[0m`, a protective reset) and the dash fill takes the remainder.
 - `padColumns(lines, n)` is the pure gutter equivalent of kimi's `GutterContainer`.
 - `injectGhostHint` splices the dimmed hint after the inverse-video cursor, consuming trailing padding so the row width holds, ellipsizing on overflow, and leaving mid-text cursors untouched (`setGhostHint`'s first consumer).
 - `highlightLeadingSlashToken` re-paints the leading `/command` token through visible-index math so ANSI pass-through survives (bold `primary` at the call site).
@@ -96,7 +175,7 @@ The pure `src/chrome.ts` — re-exported as the `./chrome` subpath, theme-agnost
 
 ## WrappingSelectList
 
-`src/wrapping-select-list.ts` is the kimi `WrappingSelectList` port — the repo's only pi-tui subclass. It replaces just `render` so descriptions wrap onto at most two word-boundary lines with an ellipsis past the second, reading pi-tui's private row state through a single cast pinned by a 0.84.2 spec.
+`src/wrapping-select-list.ts` is the repo's only pi-tui subclass and now a thin editor-internal state adapter. It reads filtering, selection, height, theme, and layout through one cast pinned by the 0.84.2 spec, converts the filtered entries into a canonical `BlueListNode`, and delegates all row presentation to `renderAutocompleteList` in the private `ui-patterns.ts` path. Pi-tui retains filtering and key handling; the pattern retains the established two-line description, ellipsis, primary-column hook, scroll indicator, and 2..120 width contract.
 
 ## Cross-package events
 
@@ -109,7 +188,7 @@ Three events live on the core Events merge:
 Theme providers also publish a semantic companion through the optional `blueThemeModels` frontend registry. ANSI color functions remain core-only; the companion contains the source palette hexes and is removed with the theme provider Fiber.
 
 `blueNotifications` is the frontend runtime's immutable notification registry; core only hosts its lifecycle, while feature adapters push structured messages and consume snapshots.
-`frontend-renderer.ts` is the narrow TUI consumer for `@dsh-blue/blue-frontend` readonly views. `renderFrontendView`/`renderFrontendModel` and `FrontendModelComponent` are the only renderer-facing bridge for the new frontend model; width clamping delegates to pi-tui through `width.ts`. It does not read Harness events or session objects. `renderFrontendView` accepts optional colors: the diff view renders through `diff-align.ts` (prefix/suffix trim + LCS middle, a size guard degrading oversized inputs to whole blocks) with the diff palette tokens, context rendered once, and long unchanged runs elided; the plugin `BlueView` path delegates to the same painter. Alignments are memoized per frozen diff view object.
+Canonical frontend nodes enter core only through `ui-validator.ts` and `ui-compiler.ts`; no `@dsh-blue/blue-frontend` model-specific renderer exists. Width clamping delegates to pi-tui through `width.ts`. Canonical diff leaves render through `diff-align.ts` (prefix/suffix trim + LCS middle, a size guard degrading oversized inputs to whole blocks) with the diff palette tokens, context rendered once, and long unchanged runs elided. Alignments are memoized per frozen diff leaf object.
 
 ## Verification note
 

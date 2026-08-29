@@ -26,7 +26,7 @@ import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@dsh-blue/blue-app'
 import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
-import { SelectListPanel, oneLine, type SelectRow } from './select-list.ts'
+import { CanonicalSelectController, oneLine, type SelectRow } from './select-list.ts'
 import { CURRENT_MARK } from './symbols.ts'
 
 /** One renderer-neutral preset row exposed by the app boundary. */
@@ -122,7 +122,7 @@ export function registerPresetCommands(ctx: Context): () => void {
     /* v8 ignore next -- the placeholder only runs if the panel settles
        before its mount returns, which the building order forbids */
     let restoreList: () => void = () => {}
-    const panel = new SelectListPanel({
+    const panel = new CanonicalSelectController({
       keymap: display.keymap,
       theme: display.theme,
       components: display.components,

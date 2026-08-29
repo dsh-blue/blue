@@ -5,10 +5,13 @@ Blue 的配置分两层：**界面内的斜杠命令**（日常切换，推荐�
 | 想配什么 | 界面内 | 落盘位置 |
 | --- | --- | --- |
 | API key | `/provider add`、Providers 面板编辑 | `~/.dsh/.credentials.yaml` |
+| 界面语言 | `/settings` 的首个 `locale` 分组 | `settings.yaml` 的 `locale.preference`（省略即跟随系统） |
 | 默认模型 / 思考力度 | `/model`、`/effort`、`Alt+M` | `settings.yaml` 的 `agent-default-model:` 段 |
 | 新增 provider / 自定义网关 | `/provider add` | `settings.yaml` 的 `llm-pi-ai:` 段 + 凭据文件 |
 | DeepSeek 官方端点微调 | —（文件专属） | `settings.yaml` 的 `llm-deepseek:` 段 |
 | 主题 | `/theme`（会话级）；`/settings` 或文件写持久默认 | `settings.yaml` 的 `blue:` 段（[主题](/guide/theme)） |
+| 状态栏 provider | —（文件专属） | `settings.yaml` 的 `blue.statusProvider`（[状态栏](/plugins/status#独占-status-provider)） |
+| 编辑器 provider | —（文件专属） | `settings.yaml` 的 `blue.editorProvider`（[编辑器 Provider](/plugins/editor-providers)） |
 | 更新检查 / 折叠默认等 Blue 偏好 | `/settings` | `settings.yaml` 的 `blue:` 段 |
 | 插件行 / 装配 | — | profile 的 `cordis.patch.yml`（[Profile 与目录](/dsh/profiles)） |
 
@@ -90,6 +93,17 @@ Providers 面板里**选中一个已配置的路由即进入编辑**：可改显
 
 启动时文档已存在但格式非法 → 启动失败（fail loud）；运行中的非法编辑 → 保留上一份好快照并告警。手工编辑 settings.yaml 的注释会尽量保留（写入按叶子级 diff 落笔）。
 
+### locale：界面语言
+
+Blue 支持英文与简体中文。没有显式设置时按 `LC_ALL`、`LC_MESSAGES`、`LANG`、`Intl` 的顺序跟随操作系统；所有 `zh-*` 变体使用简体中文，不支持的语言回退英文。可在 `/settings` 的首个 `locale` 分组中选择“跟随系统”“中文”或“English”，切换立即生效，并保留已打开面板的选择与表单草稿。
+
+手工配置只需写显式偏好；删除 `preference` 即恢复跟随系统：
+
+```yaml
+locale:
+  preference: zh  # zh | en；省略即跟随系统
+```
+
 ### settings.yaml 三个核心段
 
 ```yaml
@@ -139,7 +153,7 @@ llm-pi-ai:
 
 ### blue: Blue 自己的设置段
 
-`/settings` 面板写到这段（全部可省略，默认值如下）：
+`/settings` 面板会写入下列字段，但 `statusProvider` 与 `editorProvider` 仅能直接在文件中编辑。所有字段都可省略，默认值如下：
 
 ```yaml
 blue:
@@ -155,9 +169,11 @@ blue:
   userFoldChars: 1000      # 长用户消息折叠阈值（字符数）
   editorCommand: ''        # 外部编辑器命令（空 = 按 $VISUAL/$EDITOR 自动探测）
   pasteImageBackend: auto  # Linux 剪贴板后端：auto | wayland | x11
+  statusProvider: blue.default # 独占状态栏 provider id；默认使用内置 additive footer
+  editorProvider: blue.default # 独占编辑器 provider id；默认使用内置 editor shell
 ```
 
-面板分两级：第一级按命名空间分组（`blue`、`shell`、`agent-loop`、`web-search-deepseek:` 等宿主段在内），Enter 进入第二级逐行调整，`Enter`/`Space` 步进预设值、每次改动即落盘；`blue.theme` 实时生效并成为启动默认（`/theme` 仍是会话级切换，见[主题](/guide/theme)），折叠默认与 transcript 数值项的改动同样立即作用于当前会话（Ctrl-O 的全局展开状态优先）。第一级末行可在 `$EDITOR` 里打开整份 settings.yaml。
+面板分两级：第一级从 `locale` 开始，并按命名空间分组（`blue`、`shell`、`agent-loop`、`web-search-deepseek:` 等宿主段在内），Enter 进入第二级逐行调整，`Enter`/`Space` 步进预设值、每次改动即落盘；语言切换与 `blue.theme` 都实时生效（`/theme` 仍是会话级切换，见[主题](/guide/theme)），折叠默认与 transcript 数值项的改动同样立即作用于当前会话（Ctrl-O 的全局展开状态优先）。`statusProvider` 与 `editorProvider` 都不是面板行，需在文件中填写第三方 provider id。目标 id 暂时不存在或激活失败时，Blue 会保留原值并使用 fallback，不会写回设置。第一级末行可在 `$EDITOR` 里打开整份 settings.yaml。
 
 ### 改完怎么验证
 
