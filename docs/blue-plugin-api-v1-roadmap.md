@@ -50,6 +50,8 @@ Fixture 与 capability 同步建设，不在实现结束后补测试。作者联
 
 ## 2. R0：PR #79 设计基线
 
+> 状态：**完成**。PR #79 以 merge commit `7f3d13ab80932dc6bb778c359328c582d3767eae` 合入；没有 runtime、npm 或 Website API availability 发布。
+
 ### 产物
 
 - API v1 设计规范：机器契约与 Stable 边界。
@@ -73,7 +75,9 @@ R0 只把 Draft/Active 文档和必要的根 `AGENTS.md` 指针合入 `master`�
 
 ## 3. R1：PR #77 Beta foundation
 
-截至 `9a6a255`，#77 的 W1-W6 运行候选 `cf8b3bd` 已完成自动证据和用户验收。R1 在该基础上只关闭已知越权和错误 Stable 承诺：
+> 状态：**完成**。最终验收 head `c2f9f26ad026d76a47d1f6679a04013937d0e977` 以 merge commit `f185834293fe6c16eac29aff489224bc0af8c9fd` 合入，merge tree 与验收 head 相同。
+
+截至初始审计对象 `9a6a255`，#77 的 W1-W6 运行候选 `cf8b3bd` 已完成自动证据和用户验收。R1 在该基础上只关闭已知越权和错误 Stable 承诺：
 
 1. API/host version 改为 `1.0.0-beta.1`，同步 README、website、examples、release note 和 skills。
 2. 移除 public generic `session.act`；内部 dispatcher 不成为普通 sibling service。
@@ -83,7 +87,7 @@ R0 只把 Draft/Active 文档和必要的根 `AGENTS.md` 指针合入 `master`�
 6. editor/status provider 与 editor extension 保留 reference runtime，但退出 Stable root。
 7. 保留 canonical compiler、managed panes/overlays、status、provider/editor runtime、lifetime fencing 和 packed suite。
 
-R1 只冻结可观察权限结果，不强制特定 authority representation。hardening 后的新 exact head 必须重跑双 Harness fixture、smoke、worktree profile 和受影响的真人回归；合并不等于 v1 发布。
+R1 只冻结可观察权限结果，不强制特定 authority representation。hardening 后的 exact head 已重跑双 Harness fixture、四条 smoke、`blue-pr77-beta` worktree profile 和真人回归；完整记录见[合并手册 4.4](./blue-pr77-convergence-matrix.md#44-真人验收合并与清理)。R1 合并不等于 v1 发布，P1-P9 尚未启动。
 
 ## 4. R2：最小 Beta 机器契约与 capability
 
