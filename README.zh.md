@@ -29,7 +29,8 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 ## 用法
 
 > [!NOTE]
-> `0.1.1-rc.1` 是当前正式候选版本；npm 的 `rc` 与 `latest` 标签均指向此版本。
+> 当前源码正在准备即将发布的 `0.1.1-rc.1` 候选版本。真人验收和合并完成前
+> 不会发布；npm 的 `rc` 与 `latest` 标签仍指向上一公开版本。
 
 前置条件：Node `^22.19 || >=24` 与 pnpm 11。推荐的启动器已经内含经过测试的 dsh 运行时。
 
@@ -42,7 +43,7 @@ dsh --profile blue
 或者使用推荐的一条命令安装 `blue` 启动器；它把经过测试的 Harness 树封装成公共层和平台层归档，npm 安装时不会解析该依赖图：
 
 ```sh
-npm i -g @dsh-blue/blue-cli@0.1.1-rc.1
+npm i -g @dsh-blue/blue-cli@rc
 blue
 ```
 

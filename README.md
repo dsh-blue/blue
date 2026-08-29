@@ -29,7 +29,9 @@ The full story: [docs/blue-architecture.md](docs/blue-architecture.md) · decisi
 ## Usage
 
 > [!NOTE]
-> `0.1.1-rc.1` is the current release candidate; npm's `rc` and `latest` tags point to this release.
+> This checkout stages the upcoming `0.1.1-rc.1` candidate. It remains
+> unpublished until live acceptance and merge; npm's `rc` and `latest` tags
+> continue to point to the previous public release.
 
 Prerequisites: Node `^22.19 || >=24` and pnpm 11. The recommended launcher includes its tested dsh runtime.
 
@@ -42,7 +44,7 @@ dsh --profile blue
 Or use the recommended one-command `blue` launcher; it carries the tested Harness tree as common and platform archives, so npm never resolves that graph during installation:
 
 ```sh
-npm i -g @dsh-blue/blue-cli@0.1.1-rc.1
+npm i -g @dsh-blue/blue-cli@rc
 blue
 ```
 

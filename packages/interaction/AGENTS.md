@@ -209,5 +209,7 @@ The W4a-B migration intentionally keeps source filenames such as
 panel classes and root exports are gone. `CanonicalSelectController`,
 `CanonicalMultiSelectController`, `CanonicalFormController`,
 `CanonicalDocumentController`, `CanonicalSettingsController`,
-`SettingsNoticeController`, and `CanonicalOverlayContainer` are package-private
-composition controllers, not a second public UI kit.
+and `SettingsNoticeController` are package-private composition controllers, not
+a second public UI kit. `CanonicalPanelAdapter` is the one package-private
+compiler bridge shared by those controllers; do not add compatibility wrapper
+classes around it.

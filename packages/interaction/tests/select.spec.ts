@@ -1,7 +1,8 @@
 /** Canonical multi-select and panel adapter behavior. */
 
 import { describe, expect, it, vi } from 'vitest'
-import { CanonicalMultiSelectController, CanonicalOverlayContainer, type BlueSelectItem } from '../src/select.ts'
+import { CanonicalPanelAdapter } from '../src/canonical-panel.ts'
+import { CanonicalMultiSelectController, type BlueSelectItem } from '../src/select.ts'
 import { FakeBlueComponents, FakeKeymap, FakeTheme, KEY } from './fakes.ts'
 
 function items(count: number): BlueSelectItem[] {
@@ -81,12 +82,12 @@ describe('CanonicalMultiSelectController', () => {
   })
 })
 
-describe('CanonicalOverlayContainer', () => {
+describe('CanonicalPanelAdapter', () => {
   it('recompiles at most once when live leaf-window metadata changes', () => {
     const node = vi.fn(() => ({ kind: 'text' as const, content: 'abcdefgh' }))
     let metadata = ''
-    let panel!: CanonicalOverlayContainer
-    panel = new CanonicalOverlayContainer({
+    let panel!: CanonicalPanelAdapter
+    panel = new CanonicalPanelAdapter({
       components: new FakeBlueComponents(), theme: new FakeTheme(), node,
       onEvent: () => {},
       maxLeafRows: 2,
@@ -110,7 +111,7 @@ describe('CanonicalOverlayContainer', () => {
   it('compiles a canonical node and forwards focus, input, and passive Escape', () => {
     const onEvent = vi.fn()
     const onEscape = vi.fn()
-    const panel = new CanonicalOverlayContainer({
+    const panel = new CanonicalPanelAdapter({
       components: new FakeBlueComponents(), theme: new FakeTheme(),
       node: () => ({ kind: 'actions', id: 'actions', items: [{ id: 'run', label: 'Run', intent: 'primary' }] }),
       onEvent, onUnhandledEscape: onEscape,
@@ -122,12 +123,12 @@ describe('CanonicalOverlayContainer', () => {
     panel.invalidate()
     expect(panel.render(40).join('\n')).toContain('Run')
 
-    const passive = new CanonicalOverlayContainer({ components: new FakeBlueComponents(), theme: new FakeTheme(), node: () => ({ kind: 'text', content: 'passive' }), onEvent, onUnhandledEscape: onEscape })
+    const passive = new CanonicalPanelAdapter({ components: new FakeBlueComponents(), theme: new FakeTheme(), node: () => ({ kind: 'text', content: 'passive' }), onEvent, onUnhandledEscape: onEscape })
     passive.handleInput(KEY.escape)
     expect(onEscape).toHaveBeenCalledOnce()
     passive.handleInput('x')
 
-    const invalid = new CanonicalOverlayContainer({
+    const invalid = new CanonicalPanelAdapter({
       components: new FakeBlueComponents(), theme: new FakeTheme(),
       node: () => ({ kind: 'invalid' }) as never,
       onEvent,
@@ -137,14 +138,14 @@ describe('CanonicalOverlayContainer', () => {
     expect(invalid.render(Number.NaN)).toEqual(['!', '!', '!'])
     invalid.invalidate()
 
-    const throwing = new CanonicalOverlayContainer({
+    const throwing = new CanonicalPanelAdapter({
       components: new FakeBlueComponents(), theme: new FakeTheme(),
       node: () => { throw new Error('builder exploded') },
       onEvent,
     })
     expect(throwing.render(40).join('\n')).toContain('dialog unavailable: builder exploded')
 
-    const unknownThrowing = new CanonicalOverlayContainer({
+    const unknownThrowing = new CanonicalPanelAdapter({
       components: new FakeBlueComponents(), theme: new FakeTheme(),
       node: () => { throw 'builder exploded' },
       onEvent,

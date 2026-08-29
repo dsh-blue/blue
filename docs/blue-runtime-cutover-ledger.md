@@ -65,12 +65,12 @@ The deletion audit distinguishes renderer event folding from legitimate domain o
 
 Final candidate tree:
 
-- The final candidate tree passes 185 test files / 2959 tests with 31 skipped,
-  per-file 100% coverage (16700 statements, 11186 branches, 3478 functions,
-  13350 lines), build, typecheck, lint, diagrams, website, 86 built/shipped lib
-  claims, 11 publint-clean tarballs, 8/8 example scenarios on both Harness
-  lines, all package/example/validation-only validators, and the required
-  current/previous-line packed fixtures.
+- The final candidate tree passes 185 test files / 2965 tests with
+  31 skipped, per-file 100% coverage (16773 statements, 11206 branches, 3495
+  functions, 13403 lines), build, typecheck, lint, diagrams, website, 86
+  built/shipped lib claims, 11 publint-clean tarballs, 8/8 example scenarios on
+  both Harness lines, all package/example/validation-only validators, and the
+  required current/previous-line packed fixtures.
 - `smoke:happy`, `smoke:pty`, `smoke:pty:mouse`, and `smoke:pty:output` pass
   serially on that tree. Parallel smoke execution is unsupported because each
   smoke owns the checkout's dependency self-heal/build step; only the clean

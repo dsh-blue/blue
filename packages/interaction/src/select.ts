@@ -7,7 +7,7 @@
 
 import type { BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
-import { CanonicalPanelAdapter, type CanonicalPanelAdapterOptions } from './canonical-panel.ts'
+import { CanonicalPanelAdapter } from './canonical-panel.ts'
 import { ACTION_CANCEL, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_SUBMIT, ACTION_TOGGLE } from './keys.ts'
 import { MAX_LIST_VISIBLE, counterRow, cycle, oneLine, windowedRange } from './select-list.ts'
 
@@ -103,9 +103,4 @@ export class CanonicalMultiSelectController implements BlueFocusable {
     const key = (action: string): string => this.options.keymap.getKeys(action)[0] ?? action
     return `${key(ACTION_MOVE_UP)}/${key(ACTION_MOVE_DOWN)} move · ${key(ACTION_TOGGLE)} toggle · ${key(ACTION_SUBMIT)} confirm · ${key(ACTION_CANCEL)} cancel`
   }
-}
-
-/** Canonical composition adapter retained for editor-slot callers. */
-export class CanonicalOverlayContainer extends CanonicalPanelAdapter {
-  constructor(options: CanonicalPanelAdapterOptions) { super(options) }
 }
