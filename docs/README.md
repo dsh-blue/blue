@@ -19,6 +19,7 @@
 | [blue-compatibility-and-rollout.md](./blue-compatibility-and-rollout.md) | Harness 兼容窗口、fallback 与 rollout |
 | [blue-plugin-validation.md](./blue-plugin-validation.md) | architecture validator 和独立 fixture 门禁 |
 | [blue-fixture-audit.md](./blue-fixture-audit.md) | context/remote/openpencil/lark 验证记录 |
+| [blue-i18n-coverage-rfc.md](./blue-i18n-coverage-rfc.md) | PR #77 后续本地化覆盖审计、分阶段补齐方案与 Experimental 插件 locale 提案 |
 | [blue-plugin-ecosystem.md](./blue-plugin-ecosystem.md) | 外部插件分类、安装与 provider lifecycle |
 | [blue-skills-plan.md](./blue-skills-plan.md) | plugin development/migration/fixture/validation skills |
 
