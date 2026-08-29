@@ -7,6 +7,7 @@
 
 import type { BlueJson, BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
+import { interpolateLocaleMessage, type BlueTranslate } from '@dsh-blue/blue-frontend'
 import { CanonicalPanelAdapter } from './canonical-panel.ts'
 import { ACTION_CANCEL, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_SUBMIT } from './keys.ts'
 
@@ -33,6 +34,8 @@ export interface FormPanelOptions {
   readonly onCancel: () => void
   readonly cancelLabel?: string
   readonly onDelete?: () => void
+  /** Dynamic translator for package-owned form chrome. */
+  readonly t?: BlueTranslate
 }
 
 /** Render bullets for compatibility with callers that inspect masked text. */
@@ -94,21 +97,22 @@ export class CanonicalFormController implements BlueFocusable {
 
   /** Current canonical form overlay. */
   currentNode(): BlueUiNode {
-    const cancel = this.options.cancelLabel ?? 'cancel'
-    const deleteHint = this.options.onDelete === undefined ? '' : ' · Ctrl+D delete'
+    const t: BlueTranslate = this.options.t ?? interpolateLocaleMessage
+    const cancel = t(this.options.cancelLabel ?? 'cancel')
+    const deleteHint = this.options.onDelete === undefined ? '' : t(' · Ctrl+D delete')
     return {
-      kind: 'surface', chrome: 'overlay', title: this.options.title,
-      ...(this.error === undefined && this.options.subtitle !== undefined ? { subtitle: this.options.subtitle } : {}),
+      kind: 'surface', chrome: 'overlay', title: t(this.options.title),
+      ...(this.error === undefined && this.options.subtitle !== undefined ? { subtitle: t(this.options.subtitle) } : {}),
       child: {
         kind: 'form', id: 'form-panel',
         fields: this.options.fields.map((field, index) => ({
           kind: field.mask === true ? 'secret' : 'input', id: field.id,
-          label: field.hint === undefined ? field.label : `${field.label} · ${field.hint}`,
+          label: field.hint === undefined ? t(field.label) : `${t(field.label)} · ${t(field.hint)}`,
           value: this.values[field.id]!,
           ...(this.error !== undefined && this.errorField === index ? { error: this.error } : {}),
         })),
       },
-      footer: { kind: 'text', content: `Tab / ↑↓ fields · Enter submit · Esc ${cancel}${deleteHint}`, tone: 'muted' },
+      footer: { kind: 'text', content: `${t('Tab / ↑↓ fields · Enter submit · Esc {cancel}', { cancel })}${deleteHint}`, tone: 'muted' },
     }
   }
 
@@ -129,9 +133,12 @@ export class CanonicalFormController implements BlueFocusable {
   }
 
   private submit(): void {
+    const t: BlueTranslate = this.options.t ?? interpolateLocaleMessage
     for (const [index, field] of this.options.fields.entries()) {
       const value = this.values[field.id]!.trim()
-      const verdict = field.required === true && value.length === 0 ? `${field.label} cannot be empty` : field.validate?.(value)
+      const verdict = field.required === true && value.length === 0
+        ? t('{label} cannot be empty', { label: t(field.label) })
+        : field.validate?.(value)
       if (verdict !== undefined) {
         this.active = index
         this.error = verdict

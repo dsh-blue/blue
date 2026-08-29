@@ -24,12 +24,14 @@ import type {} from '@deepseek-ai/dsh-settings'
 import { SettingsConflictError, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
+import { BlueLocaleService } from '../../frontend/src/locale.ts'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
 import { setSharedEditor } from '../src/editor-instance.ts'
 import { setExternalEditorLauncher } from '../src/external-editor.ts'
 import { CanonicalFormController } from '../src/form-panel.ts'
 import type { PermissionPresetsService } from '../src/permission-panel.ts'
 import { CanonicalSettingsController, registerSettingsCommand, SettingsNoticeController } from '../src/settings-command.ts'
+import { INTERACTION_LOCALE } from '../src/locale.ts'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
 
 registerTempDirCleanup()
@@ -115,11 +117,16 @@ interface BenchOptions extends SettingsFakeOptions {
   readonly withSettings?: boolean
   readonly presets?: PermissionPresetsService
   readonly roster?: FakeRoster
+  readonly locale?: 'en' | 'zh'
 }
 
 /** Mount the command with fakes: commands registry, settings, presets, roster, shared editor. */
 function mount(options: BenchOptions = {}) {
   const { ctx, screen, components, theme } = fakeBlueContext()
+  const locale = options.locale === undefined
+    ? undefined
+    : new BlueLocaleService(ctx, { systemLocale: options.locale })
+  locale?.register('interaction', INTERACTION_LOCALE)
   const registrations: RegisteredCommand[] = []
   ctx.provide('commands', {
     register: (definition: RegisteredCommand) => {
@@ -141,7 +148,7 @@ function mount(options: BenchOptions = {}) {
   })
   const dispose = registerSettingsCommand(ctx)
   const command = registrations.find(entry => entry.name === 'settings')!
-  return { ctx, screen, components, theme, settings, notices, dispose, command }
+  return { ctx, screen, components, theme, settings, notices, dispose, command, locale }
 }
 
 /** The presets table fake: two presets in table order. */
@@ -510,6 +517,101 @@ describe('/settings level two', () => {
     const row = settingItems(bench)
       .find(item => item.id === 'shell.timeoutMs')
     expect(row?.description).toBe('default bash command timeout · restart to apply')
+  })
+})
+
+describe('/settings locale', () => {
+  it('lists locale first and writes only the official raw preference values', async () => {
+    const bench = mount({ sections: { locale: {}, ...fullSections() }, locale: 'en' })
+    await bench.command.handler()
+    expect(l1CursorLabel(l1(bench.screen))).toBe('locale')
+    await openNamespace(bench, 'locale')
+    const item = settingItems(bench)[0]
+    expect(item).toMatchObject({
+      id: 'locale.preference',
+      currentValue: 'system',
+      values: ['system', 'zh', 'en'],
+      valueLabels: { system: 'Follow system', zh: '中文', en: 'English' },
+    })
+
+    changeSetting(bench, 'locale.preference', 'zh')
+    await settle()
+    changeSetting(bench, 'locale.preference', 'en')
+    await settle()
+    changeSetting(bench, 'locale.preference', 'system')
+    await settle()
+    expect(bench.settings.writes).toEqual([
+      { ns: 'locale', patch: { preference: 'zh' }, revision: 1 },
+      { ns: 'locale', patch: { preference: 'en' }, revision: 2 },
+      { ns: 'locale', ops: [{ op: 'unset', path: ['preference'] }], revision: 3 },
+    ])
+  })
+
+  it('reprojects an open list in place and keeps its cursor and form draft', async () => {
+    const bench = mount({ sections: { locale: {}, ...fullSections() }, locale: 'en' })
+    await bench.command.handler()
+    await openNamespace(bench, 'blue')
+    const panel = l2(bench.screen)!
+    panel.handleInput(KEY.down)
+    const selected = findList(panel.currentNode())?.selectedIds[0]
+    changeSetting(bench, 'blue.editorCommand', '')
+    const draft = form(bench.screen)!
+    draft.handleInput('v')
+    draft.handleInput('i')
+
+    bench.locale!.setPreference('zh')
+    await settle()
+    expect(l2(bench.screen)).toBe(panel)
+    expect(form(bench.screen)).toBe(draft)
+    expect(findList(panel.currentNode())?.selectedIds[0]).toBe(selected)
+    expect(panel.render(80).join('\n')).toContain('设置 › blue')
+    expect(draft.render(80).join('\n')).toContain('vi')
+  })
+
+  it('drops a locale refresh queued after the registration disposes', async () => {
+    const bench = mount({ sections: fullSections(), locale: 'en' })
+    await bench.command.handler()
+    await settle()
+    const renders = bench.screen.renderRequests
+    bench.dispose()
+    bench.locale!.setPreference('zh')
+    await settle()
+    expect(bench.screen.renderRequests).toBe(renders)
+  })
+
+  it('drops a locale refresh when the registration disposes behind its fetch', async () => {
+    let release!: () => void
+    const gate = new Promise<readonly { id: string }[]>(resolve => {
+      release = () => resolve([{ id: 'reviewer' }])
+    })
+    const list = vi.fn().mockResolvedValue([{ id: 'reviewer' }])
+    const bench = mount({ sections: fullSections(), roster: { list }, locale: 'en' })
+    await bench.command.handler()
+    await settle()
+    const calls = list.mock.calls.length
+    const renders = bench.screen.renderRequests
+    list.mockReturnValueOnce(gate)
+    bench.locale!.setPreference('zh')
+    await vi.waitFor(() => {
+      expect(list).toHaveBeenCalledTimes(calls + 1)
+    })
+    bench.dispose()
+    release()
+    await settle()
+    expect(bench.screen.renderRequests).toBe(renders)
+  })
+
+  it('keeps an open list stable when its namespace disappears during locale refresh', async () => {
+    const bench = mount({ sections: fullSections(), locale: 'en' })
+    await bench.command.handler()
+    await settle()
+    await openNamespace(bench, 'blue')
+    const panel = l2(bench.screen)
+    bench.settings.drop('blue')
+    bench.locale!.setPreference('zh')
+    await settle()
+    expect(l2(bench.screen)).toBe(panel)
+    expect(panel?.render(80).join('\n')).toContain('settings › blue')
   })
 })
 
@@ -1192,6 +1294,35 @@ describe('CanonicalSettingsController', () => {
     surface.handleInput(KEY.space)
   })
 
+  it('updates localized presentation without replacing values or the selected row', () => {
+    const { keymap, theme, components } = fakeBlueContext()
+    const surface = new CanonicalSettingsController({
+      keymap, theme, components,
+      title: 'settings', footer: ['select'], notice: {},
+      items: [
+        { id: 'first', label: 'First', description: 'one', currentValue: 'a', values: ['a', 'b'] },
+        { id: 'second', label: 'Second', description: 'two', currentValue: 'x', values: ['x', 'y'] },
+      ],
+      onChange: vi.fn(), onCancel: vi.fn(),
+    })
+    surface.handleInput(KEY.down)
+    surface.updateValue('second', 'y')
+    surface.updatePresentation([
+      { id: 'first', label: '第一', description: '一', currentValue: 'b', values: ['a', 'b'] },
+      { id: 'second', label: '第二', description: '二', currentValue: 'x', values: ['x', 'y'] },
+    ], '设置', ['选择'])
+    expect(findList(surface.currentNode())?.selectedIds).toEqual(['second'])
+    expect(surface.snapshotItems()[1]?.currentValue).toBe('y')
+    expect(surface.render(80).join('\n')).toContain('第二: y')
+    surface.updatePresentation([
+      { id: 'third', label: '第三', description: '三', currentValue: 'z', values: ['z'] },
+    ], '设置', ['选择'])
+    expect(findList(surface.currentNode())?.selectedIds).toEqual(['third'])
+    expect(surface.snapshotItems()).toEqual([
+      { id: 'third', label: '第三', description: '三', currentValue: 'z', values: ['z'] },
+    ])
+  })
+
   it('moves, cancels, ignores empty/unknown values, and renders notices', () => {
     const { keymap, theme, components } = fakeBlueContext()
     const onCancel = vi.fn()
@@ -1210,6 +1341,11 @@ describe('CanonicalSettingsController', () => {
     surface.handleInput(KEY.escape)
     surface.changeValue('missing', 'x')
     expect(onCancel).toHaveBeenCalledOnce()
+    expect(findList(surface.currentNode())?.selectedIds).toEqual([])
+    surface.updatePresentation([
+      { id: 'added', label: 'Added', description: 'new', currentValue: 'x', values: ['x'] },
+    ], 'settings', ['select'])
+    expect(findList(surface.currentNode())?.selectedIds).toEqual(['added'])
     surface.invalidate()
     expect(surface.render(40).join('\n')).toContain('failed')
   })

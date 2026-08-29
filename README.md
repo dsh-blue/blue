@@ -8,7 +8,7 @@
 
 English | [中文](README.zh.md)
 
-Blue is an interactive terminal UI (TUI) for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`): a `pi-tui` renderer mounted as an out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) plugin bundle on top of the `dsh-base` bundle. This repository contains fifteen workspace packages — eleven in the `0.1.1-rc.1` release set and four validation-only adapters — built and tested against the published Harness `0.1.1-rc.2` line.
+Blue is an interactive terminal UI (TUI) for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`): a `pi-tui` renderer mounted as an out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) plugin bundle on top of the `dsh-base` bundle. This repository contains fifteen workspace packages — eleven in the `0.1.1-rc.2` release set and four validation-only adapters — built and tested against the published Harness `0.1.1-rc.2` line.
 
 <p align="center">
   <a href="https://dsh-blue.dev/blue-demo.mp4"><img src="docs/assets/demo.gif" width="720" alt="Blue demo — streaming transcript, tool cards, and dock panes"></a>
@@ -29,7 +29,7 @@ The full story: [docs/blue-architecture.md](docs/blue-architecture.md) · decisi
 ## Usage
 
 > [!NOTE]
-> This checkout stages the upcoming `0.1.1-rc.1` candidate. It remains
+> This checkout stages the upcoming `0.1.1-rc.2` candidate. It remains
 > unpublished until live acceptance and merge; npm's `rc` and `latest` tags
 > continue to point to the previous public release.
 
@@ -62,7 +62,7 @@ flowchart TB
         HAR["agents · sessions · tools · approval<br/>commands · events"]
     end
 
-    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 29 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
+    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 32 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
         direction TB
         subgraph DOM["Domain 侧 — 唯一持有 Agent/Session 对象"]
             direction LR

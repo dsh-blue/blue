@@ -37,6 +37,7 @@ import { EditorHostService } from './editor-instance.ts'
 import { SkillsCatalogService } from './skills-catalog.ts'
 import { InteractionStateService } from './runtime-state.ts'
 import { DEFAULT_SETTINGS } from './settings.ts'
+import { mountInteractionLocale } from './locale.ts'
 
 export { CommandModelService } from './command-model.ts'
 export { EditorModelService } from './editor-model.ts'
@@ -67,6 +68,7 @@ export const Config: z<Config> = z.object({
  * @param config - interaction presentation configuration.
  */
 export function apply(ctx: Context, config: Config = {}): void {
+  mountInteractionLocale(ctx)
   const runtimeState = new InteractionStateService(ctx, DEFAULT_SETTINGS)
   ctx.effect(() => () => runtimeState.dispose())
   const editorHost = new EditorHostService(ctx)

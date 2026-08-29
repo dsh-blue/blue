@@ -8,6 +8,7 @@
 
 import type { BlueInlineSpan, BlueTone, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
+import { interpolateLocaleMessage, type BlueTranslate } from '@dsh-blue/blue-frontend'
 import { CanonicalPanelAdapter } from './canonical-panel.ts'
 import { ACTION_CANCEL, ACTION_SUBMIT } from './keys.ts'
 
@@ -38,7 +39,9 @@ export interface HelpOverlayOptions {
   readonly theme: BlueTheme
   readonly components: BlueComponents
   readonly keymap: BlueKeymap
-  readonly sections: readonly HelpSection[]
+  readonly sections: readonly HelpSection[] | (() => readonly HelpSection[])
+  /** Dynamic translator for package-owned help copy. */
+  readonly t?: BlueTranslate
   readonly onClose: () => void
   /** Maximum post-wrap content rows visible in the editor slot. */
   readonly maxVisible?: number
@@ -52,7 +55,7 @@ export class HelpOverlay implements BlueFocusable {
   private contentLimit: number
 
   constructor(private readonly options: HelpOverlayOptions) {
-    this.contentRows = options.sections.reduce((total, section) => total + section.rows.length + 2, 0)
+    this.contentRows = this.sections().reduce((total, section) => total + section.rows.length + 2, 0)
     this.contentLimit = Math.max(5, options.maxVisible ?? DEFAULT_MAX_VISIBLE)
     this.adapter = new CanonicalPanelAdapter({
       components: options.components,
@@ -95,28 +98,37 @@ export class HelpOverlay implements BlueFocusable {
 
   /** Current renderer-neutral help tree. */
   currentNode(): BlueUiNode {
+    const t: BlueTranslate = this.options.t ?? interpolateLocaleMessage
     const spans: BlueInlineSpan[] = []
-    for (const [sectionIndex, section] of this.options.sections.entries()) {
-      spans.push({ text: `${sectionIndex === 0 ? '' : '\n\n'}${section.heading}`, tone: 'accent', emphasis: 'strong' })
+    for (const [sectionIndex, section] of this.sections().entries()) {
+      spans.push({ text: `${sectionIndex === 0 ? '' : '\n\n'}${t(section.heading)}`, tone: 'accent', emphasis: 'strong' })
       for (const row of section.rows) {
         spans.push(
           { text: `\n${row.label}`, tone: section.labelTone ?? 'default', emphasis: 'strong' },
-          { text: `  ${row.description}`, tone: 'muted' },
+          { text: `  ${t(row.description)}`, tone: 'muted' },
         )
       }
     }
     const showing = this.contentRows > this.contentLimit
-      ? `showing ${String(this.scrollTop + 1)}-${String(this.scrollTop + Math.min(this.contentLimit, this.contentRows - this.scrollTop))} of ${String(this.contentRows)} · `
+      ? t('showing {start}-{end} of {total} · ', {
+          start: this.scrollTop + 1,
+          end: this.scrollTop + Math.min(this.contentLimit, this.contentRows - this.scrollTop),
+          total: this.contentRows,
+        })
       : ''
     return {
       kind: 'surface',
       chrome: 'overlay',
-      title: 'help',
+      title: t('help'),
       child: {
         kind: 'rich-text',
         spans,
       },
-      footer: { kind: 'divider', label: `${showing}Esc / Enter / q to cancel` },
+      footer: { kind: 'divider', label: `${showing}${t('Esc / Enter / q to cancel')}` },
     }
+  }
+
+  private sections(): readonly HelpSection[] {
+    return typeof this.options.sections === 'function' ? this.options.sections() : this.options.sections
   }
 }

@@ -1,21 +1,21 @@
 # Built-in plugins
 
-The installable Blue bundle contains 31 Blue-owned rows: two host-support rows and 29 product rows split into baseline, enhancement, and assembly segments. External plugins integrate through the renderer-neutral public API; internal rows connect through explicit `inject` dependencies and model/action seams.
+The installable Blue bundle contains 32 Blue-owned rows: two host-support rows and 30 product rows split into baseline, enhancement, and assembly segments. External plugins integrate through the renderer-neutral public API; internal rows connect through explicit `inject` dependencies and model/action seams.
 
-The patch actually carries a 32nd insert row — the Harness package `session-title-all-prompts-llm` (the title-cadence swap: the base's `session-title-llm`, which titles once from the first prompt, is disabled in favor of re-titling on every user message, so a mis-derived title self-corrects on the next one). It is a Harness row, not a Blue-owned one, so the 31-row count above excludes it.
+The patch actually carries a 33rd insert row — the Harness package `session-title-all-prompts-llm` (the title-cadence swap: the base's `session-title-llm`, which titles once from the first prompt, is disabled in favor of re-titling on every user message, so a mis-derived title self-corrects on the next one). It is a Harness row, not a Blue-owned one, so the 32-row count above excludes it.
 
 <!-- BEGIN diagram:blue-composition -->
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml - 31 Blue-owned rows · 31 条 Blue 自有行"]
+    subgraph bundle["cordis.patch.yml - 32 Blue-owned rows · 32 条 Blue 自有行"]
         subgraph host["host support 宿主支撑 - 2 rows"]
             presets["blue-agent-presets"]
             creative["blue-creative-host"]
         end
-        subgraph product["product UI 产品 UI - 29 rows"]
-            subgraph baseline["baseline 基线 - 8 rows"]
-                api["blue-api-host"]
+        subgraph product["product UI 产品 UI - 30 rows"]
+            subgraph baseline["baseline 基线 - 9 rows"]
+                api["blue-api-host · blue-locale"]
                 core["blue-core · blue-theme-dark"]
                 chrome["blue-banner · blue-transcript · blue-status-basic"]
                 conversation["blue-conversation · blue-transcript-official"]
@@ -52,13 +52,14 @@ flowchart TB
 | `blue-agent-presets` | Blue-owned preset root composing the standard/code/minimal agent planes |
 | `blue-creative-host` | isolated dynamic Cordis host whose only UI route is the public plugin host |
 
-## Baseline (8 rows)
+## Baseline (9 rows)
 
-These eight rows plus assembly form the minimum usable UI. The conversation producer and consumer are baseline because no legacy event fold remains.
+These nine rows plus assembly form the minimum usable UI. The locale runtime/settings adapter provides deterministic system/English fallback; the conversation producer and consumer are baseline because no legacy event fold remains.
 
 | Plugin | Description |
 |---|---|
 | `blue-api-host` | manifest validation and scoped registries for all eight public capabilities |
+| `blue-locale` | frontend-tree locale runtime bound to official `locale.preference` and system-language fallback |
 | `blue-core` | only pi-tui/raw-terminal adapter; screen, keymap, components, and terminal facts |
 | `blue-theme-dark` | default dark theme provider |
 | `blue-banner` | startup welcome banner |

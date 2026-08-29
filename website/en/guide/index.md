@@ -1,7 +1,7 @@
 # Quickstart
 
 ::: info Preview stage
-This checkout stages the upcoming `v0.1.1-rc.1` candidate. It remains unpublished until live acceptance and merge; npm's **`rc`** and **`latest`** tags continue to point to the previous public release. This page is the user install path; the contributor development install (checkout, link install, iteration loop) lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
+This checkout stages the upcoming `v0.1.1-rc.2` candidate. It remains unpublished until live acceptance and merge; npm's **`rc`** and **`latest`** tags continue to point to the previous public release. This page is the user install path; the contributor development install (checkout, link install, iteration loop) lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
 :::
 
 ## Prerequisites

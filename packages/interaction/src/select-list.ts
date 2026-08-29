@@ -8,6 +8,7 @@
 
 import type { BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
+import type { BlueTranslate } from '@dsh-blue/blue-frontend'
 import { CanonicalPanelAdapter, type CanonicalNodeSource } from './canonical-panel.ts'
 import { ACTION_CANCEL, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_SUBMIT, ACTION_TOGGLE } from './keys.ts'
 
@@ -32,6 +33,8 @@ export interface SelectListPanelOptions {
   readonly footer?: string
   readonly initialValue?: string
   readonly filter?: boolean
+  /** Dynamic translator for package-owned chrome and row copy. */
+  readonly t?: BlueTranslate
   readonly onCursorChanged?: (cursor: number, rows: readonly SelectRow[]) => void
   readonly onSelect: (row: SelectRow) => void
   readonly onBlockedSelect?: (row: SelectRow) => void
@@ -137,22 +140,24 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
   render(width: number): string[] { return this.adapter.render(width) }
 
   currentNode(): BlueUiNode {
+    const t = this.options.t ?? ((value: string) => value)
     const view = this.filtered()
     const selected = view[this.cursor]
     const range = windowedRange(this.cursor, view.length, MAX_LIST_VISIBLE)
     const visible = view.slice(range.start, range.end)
+    const titleHint = this.options.titleHint === undefined ? undefined : t(this.options.titleHint)
     const hint = this.filter && this.query === ''
-      ? [this.options.titleHint, 'type to search'].filter(Boolean).join(' · ')
-      : this.options.titleHint
+      ? [titleHint, t('type to search')].filter(Boolean).join(' · ')
+      : titleHint
     const footer = [
-      this.options.footer,
+      this.options.footer === undefined ? undefined : t(this.options.footer),
       hint,
       counterRow(this.cursor, view.length, MAX_LIST_VISIBLE),
     ].filter((value): value is string => value !== undefined && value !== '')
     return {
       kind: 'surface',
       chrome: 'overlay',
-      title: this.options.title ?? 'Select',
+      title: this.options.title === undefined ? t('Select') : t(this.options.title),
       child: {
         kind: 'list',
         id: 'select-list',
@@ -160,12 +165,12 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
         ...(this.query === '' ? {} : { filter: this.query }),
         items: visible.map(row => ({
           id: row.value,
-          label: row.label,
-          ...(row.description === undefined ? {} : { detail: oneLine(row.description) }),
+          label: t(row.label),
+          ...(row.description === undefined ? {} : { detail: oneLine(t(row.description)) }),
           ...(row.badge === undefined ? {} : { badge: row.badge }),
           ...(row.disabled === true ? { disabled: true } : {}),
         })),
-        ...(view.length === 0 ? { empty: { kind: 'empty', title: 'no matches' } as const } : {}),
+        ...(view.length === 0 ? { empty: { kind: 'empty', title: t('no matches') } as const } : {}),
       },
       ...(footer.length === 0 ? {} : { footer: { kind: 'text', content: footer.join(' · '), tone: 'muted' } as const }),
     }
@@ -178,7 +183,8 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
   private filtered(): readonly SelectRow[] {
     const rows = this.sourceRows()
     if (!this.filter || this.query === '') return rows
-    return rows.filter(row => this.options.components.fuzzyMatch(this.query, row.filterText ?? row.label).matches)
+    const t = this.options.t ?? ((value: string) => value)
+    return rows.filter(row => this.options.components.fuzzyMatch(this.query, row.filterText ?? t(row.label)).matches)
   }
 
   private reseedCursor(): void {

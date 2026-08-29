@@ -19,6 +19,7 @@ import type {
   BlueMarkdown,
   BlueSemanticColors,
 } from '@dsh-blue/blue-core'
+import { interpolateLocaleMessage, type BlueTranslate } from '@dsh-blue/blue-frontend'
 import { extractKeyArgument, isPlanDecline, KEY_ARG_MAX_CHARS } from './present.ts'
 import { summarizeToolText } from './envelope.ts'
 import {
@@ -94,6 +95,8 @@ export interface UserMessageImages {
   onReady?(): void
   /** Tree-scoped policy getter; omitted consumers use shipped defaults. */
   presentation?: () => TranscriptPresentationSnapshot
+  /** Dynamic translator for transcript-owned chrome. */
+  t?: BlueTranslate
 }
 
 /** Cache keyed on the inputs a component's rendered lines depend on. */
@@ -132,6 +135,7 @@ export class UserMessageComponent implements BlueComponent {
   private readonly loadImage: UserImageLoader | undefined
   private readonly onReady: (() => void) | undefined
   private readonly presentation: () => TranscriptPresentationSnapshot
+  private readonly t: BlueTranslate
   /** Per-image outcome: the image component, null for a failed load. */
   private readonly resolved = new Map<number, BlueImage | null>()
   private imagesRequested = false
@@ -157,6 +161,7 @@ export class UserMessageComponent implements BlueComponent {
     this.loadImage = images.loadImage
     this.onReady = images.onReady
     this.presentation = images.presentation ?? (() => DEFAULT_TRANSCRIPT_PRESENTATION)
+    this.t = images.t ?? interpolateLocaleMessage
   }
 
   /** Drop the cached lines; the next render rebuilds from the item. */
@@ -225,7 +230,10 @@ export class UserMessageComponent implements BlueComponent {
     if (folded && wrapped.length > shown.length) {
       // The S20 expand hint, width-disciplined to the content indent.
       const remaining = wrapped.length - shown.length
-      const hint = `... (${remaining} more lines, ${wrapped.length} total, ctrl+o to expand)`
+      const hint = this.t('... ({remaining} more lines, {total} total, ctrl+o to expand)', {
+        remaining,
+        total: wrapped.length,
+      })
       lines.push(indent + this.colors.textMuted(this.components.truncateToWidth(hint, contentWidth)))
     }
     const load = this.loadImage
@@ -234,7 +242,7 @@ export class UserMessageComponent implements BlueComponent {
       for (let index = 0; index < this.item.images.length; index += 1) {
         const image = this.resolved.get(index)
         if (image) lines.push(...image.render(contentWidth).map(line => indent + line))
-        else lines.push(`${indent}${this.colors.muted('[image]')}`)
+        else lines.push(`${indent}${this.colors.muted(this.t('[image]'))}`)
       }
     }
     // The bullet can out wide a degenerate viewport (a resize drag crossing
@@ -556,6 +564,7 @@ export class InterruptedMarkerComponent implements BlueComponent {
   constructor(
     private readonly colors: BlueSemanticColors,
     private readonly components: BlueComponents,
+    private readonly t: BlueTranslate = interpolateLocaleMessage,
   ) {}
 
   /** No cached render state. */
@@ -567,7 +576,7 @@ export class InterruptedMarkerComponent implements BlueComponent {
    * @returns one string.
    */
   render(width: number): string[] {
-    return [this.components.truncateToWidth(this.colors.error('■ interrupted'), width)]
+    return [this.components.truncateToWidth(this.colors.error(this.t('■ interrupted')), width)]
   }
 }
 

@@ -21,6 +21,8 @@ import type {} from '@dsh-blue/blue-app'
 import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeScreen } from './fakes.ts'
 import { InteractionStateService } from '../src/runtime-state.ts'
 import { DEFAULT_SETTINGS } from '../src/settings.ts'
+import { BlueLocaleService } from '../../frontend/src/locale.ts'
+import { INTERACTION_LOCALE } from '../src/locale.ts'
 
 /** The structural slice of `sessionQuery` the `/sessions` titles read. */
 interface TitleQueryFake {
@@ -39,14 +41,20 @@ async function mount(options: {
   attach?: boolean
   persistence?: { list(signal?: AbortSignal): Promise<SessionHeader[]> }
   sessionQuery?: TitleQueryFake
+  locale?: 'en' | 'zh'
 } = {}): Promise<{
   ctx: Context
   screen: FakeScreen
   components: FakeBlueComponents
   agent: Agent
   fiber: { dispose(): Promise<void> }
+  locale: BlueLocaleService | undefined
 }> {
   const { ctx, screen, components } = fakeBlueContext()
+  const locale = options.locale === undefined
+    ? undefined
+    : new BlueLocaleService(ctx, { systemLocale: options.locale })
+  locale?.register('interaction', INTERACTION_LOCALE)
   await ctx.plugin(SessionStore)
   await ctx.plugin(CommandRuntime)
   if (options.appExit !== undefined) ctx.provide('appExit', options.appExit)
@@ -60,7 +68,7 @@ async function mount(options: {
     ctx.provide('sessionQuery', options.sessionQuery as unknown as SessionQueryEngine)
   }
   const fiber = await ctx.plugin(commandsPlugin)
-  return { ctx, screen, components, agent, fiber }
+  return { ctx, screen, components, agent, fiber, locale }
 }
 
 const signal = (): AbortSignal => new AbortController().signal
@@ -718,6 +726,22 @@ describe('blue-commands plugin', () => {
     expect(execution?.result).toEqual({ kind: 'success' })
     expect(screen.overlays[0]?.component.render(80).some(row => row.includes('projected status'))).toBe(true)
     await fiber.dispose()
+  })
+
+  it('/help switches language in place while preserving the open overlay', async () => {
+    const { ctx, screen, agent, locale } = await mount({ locale: 'en' })
+    await ctx.commands.execute(agent, '/help', [], signal())
+    const open = screen.overlays[0]!.component
+    expect(open.render(80).join('\n')).toContain('Commands')
+    open.handleInput(KEY.down)
+
+    locale!.setPreference('zh')
+    expect(screen.overlays[0]!.component).toBe(open)
+    const localized = open.render(80).join('\n')
+    expect(localized).toContain('帮助')
+    expect(localized).toContain('命令')
+    expect(localized).toContain('显示第')
+    open.handleInput(KEY.escape)
   })
 
   it('/help renders an empty description for a fallback command without one', async () => {

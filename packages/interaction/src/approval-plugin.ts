@@ -25,8 +25,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueFocusable, BlueScreen, BlueTheme } from '@dsh-blue/blue-core'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
+import type { BlueTranslate } from '@dsh-blue/blue-frontend'
 import { CanonicalPanelAdapter } from './canonical-panel.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
+import { interactionTranslator, observeInteractionLocale } from './locale.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-approval'
@@ -57,6 +59,8 @@ interface ApprovalPromptOptions {
   readonly allowForSession: () => void
   /** Steer the agent with the rejection reason (choice 4). */
   readonly steer: (reason: string) => void
+  /** Dynamic translator for approval-owned chrome. */
+  readonly t: BlueTranslate
 }
 
 /**
@@ -89,7 +93,12 @@ class ApprovalPrompt implements BlueFocusable {
   /** The four choice labels in display order. */
   private labels(): string[] {
     const tool = this.options.toolName
-    return ['Allow once', `Allow ${tool} for this session`, 'Reject', 'Reject with feedback']
+    return [
+      this.options.t('Allow once'),
+      this.options.t('Allow {tool} for this session', { tool }),
+      this.options.t('Reject'),
+      this.options.t('Reject with feedback'),
+    ]
   }
 
   /**
@@ -170,16 +179,22 @@ class ApprovalPrompt implements BlueFocusable {
   /** Current renderer-neutral approval tree. */
   currentNode(): BlueUiNode {
     const child: BlueUiNode = this.feedback
-      ? { kind: 'form', id: 'approval-feedback', fields: [{ kind: 'input', id: 'approval-reason', label: 'Reason', value: this.reasonDraft }] }
+      ? { kind: 'form', id: 'approval-feedback', fields: [{ kind: 'input', id: 'approval-reason', label: this.options.t('Reason'), value: this.reasonDraft }] }
       : {
           kind: 'list', id: 'approval-choices', selectedIds: [String(this.cursor)],
           items: this.labels().map((label, index) => ({ id: String(index), label, badge: String(index + 1) })),
         }
     return {
-      kind: 'surface', chrome: 'overlay', title: `Approve ${this.options.toolName}?`,
+      kind: 'surface', chrome: 'overlay', title: this.options.t('Approve {tool}?', { tool: this.options.toolName }),
       ...(this.options.reason === undefined ? {} : { subtitle: this.options.reason }),
       child,
-      footer: { kind: 'text', content: this.feedback ? 'Type feedback · Enter submit · Esc reject' : '↑↓ select · 1-4 choose · Enter confirm · Esc reject', tone: 'muted' },
+      footer: {
+        kind: 'text',
+        content: this.options.t(this.feedback
+          ? 'Type feedback · Enter submit · Esc reject'
+          : '↑↓ select · 1-4 choose · Enter confirm · Esc reject'),
+        tone: 'muted',
+      },
     }
   }
 
@@ -319,10 +334,12 @@ function prompt(
 ): Promise<ApprovalOutcome> {
   return new Promise<ApprovalOutcome>((resolve) => {
     let settled = false
+    let offLocale: () => void
     const settle = (outcome: ApprovalOutcome): void => {
       if (settled) return
       settled = true
       req.signal?.removeEventListener('abort', onAbort)
+      offLocale()
       restore()
       resolve(outcome)
     }
@@ -339,10 +356,15 @@ function prompt(
         if (settled) return
         steer(reason)
       },
+      t: interactionTranslator(ctx),
     })
     // The kimi dialog mount (D30): the prompt replaces the editor in its
     // dock slot, so below it only the footer remains.
     const restore = mountEditorReplacement(ctx, component)
+    offLocale = observeInteractionLocale(ctx, () => {
+      component.invalidate()
+      ctx.blueScreen.requestRender()
+    })
     const onAbort = (): void => {
       settle('cancelled')
     }

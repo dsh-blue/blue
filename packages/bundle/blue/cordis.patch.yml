@@ -166,6 +166,7 @@
         blueHarnessQuestionAdapter: true
         blueHarnessSessionAdapter: true
         blueInteractionState: true
+        blueLocale: true
         blueProjectionRegistry: true
         blueRequests: true
         blueRetractions: true
@@ -205,7 +206,7 @@
         timeoutMs: 60000
 
     # --- Baseline segment -----------------------------------------------------
-    # The plain baseline is this eight-row segment plus the four assembly rows
+    # The plain baseline is this nine-row segment plus the four assembly rows
     # at the bottom. It is the complete, self-sufficient Blue UI: the whole
     # fifteen-row enhancement segment between them can be dropped and the
     # bundle still boots and renders the projection-backed conversation.
@@ -217,6 +218,12 @@
     # any renderer-facing Blue package is activated.
     - id: blue-api-host
       name: '@dsh-blue/blue-api'
+
+    # Renderer-neutral locale service plus the official Harness
+    # locale.preference settings adapter. Package catalogs remain owned by
+    # the interaction/transcript rows that render their copy.
+    - id: blue-locale
+      name: '@dsh-blue/blue-harness-adapter/locale'
 
     - id: blue-core
       name: '@dsh-blue/blue-core'

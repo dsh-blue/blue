@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import { BlueLocaleService } from '../../frontend/src/locale.ts'
 import type {
   BlueComponent,
   BlueKeyAction,
@@ -138,6 +139,10 @@ class FakeKeymap implements BlueKeymap {
       if (done) return
       done = true
       this.unregistered.push(actions)
+      for (const action of actions) {
+        const index = this.actions.indexOf(action)
+        if (index !== -1) this.actions.splice(index, 1)
+      }
     }
   }
 
@@ -744,6 +749,28 @@ describe('blue-transcript plugin through the real Loader', () => {
     await ctx.fiber.dispose()
     disposers.length = 0
     expect(keymap.unregistered.flat().map(a => a.id)).toContain(ACTION_TOGGLE_COLLAPSE)
+  })
+
+  it('reprojects the ctrl+o help copy across locale activation and unload', async () => {
+    const { ctx, keymap } = await bootTranscript()
+    const localeFiber = await ctx.plugin({
+      name: 'transcript-plugin-locale',
+      apply(localeCtx: Context) {
+        const locale = new BlueLocaleService(localeCtx, { systemLocale: 'en' })
+        localeCtx.effect(() => () => locale.dispose())
+      },
+    })
+    await Promise.resolve()
+    expect(keymap.actions).toHaveLength(1)
+    expect(keymap.actions[0]?.description).toBe('Toggle detail expansion (tool output, long messages)')
+    ctx.blueLocale.setPreference('zh')
+    expect(keymap.actions).toHaveLength(1)
+    expect(keymap.actions[0]?.description).toBe('切换详细内容展开状态（工具输出、长消息）')
+
+    await localeFiber.dispose()
+    await Promise.resolve()
+    expect(keymap.actions).toHaveLength(1)
+    expect(keymap.actions[0]?.description).toBe('Toggle detail expansion (tool output, long messages)')
   })
 
   it.skip('toggles tool output between the preview and the full text', async () => {

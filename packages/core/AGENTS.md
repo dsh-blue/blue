@@ -130,6 +130,7 @@ The pi-tui-backed component factory and width pure functions:
 - `BlueEditor.insertText(text)` — atomic insertion at the cursor; the seam the clipboard-image markers use.
 - `createFileMentionProvider(basePath, fdPath)` (D31) returns the renderer's combined autocomplete provider (constructed with no commands; structurally identical to `BlueAutocompleteProvider`, so it passes through unwrapped) as the `@`-mention source: fd-backed scoped queries, substring scoring, top-20, quoted values, `applyCompletion` stateless of fd. On the same seam, `EditorAdapter.handleInput` carries the kimi `reopenAutocompleteAfterInput` hook: after any input, text ending in `/` inside an `@` mention re-opens the dropdown (directory drill-down), gated on `isShowingAutocomplete` and calling 0.84.2's private `tryTriggerAutocomplete` through the `getHistory`-style structural cast.
 - `createEditor` wires completion through an own-property shadow of the Editor's private `createAutocompleteList`: a `/`-prefixed dropdown gets the wrapping list with the `{12, 32}` slash layout; every other completion keeps the stock `SelectList`.
+- `BlueEditor.refreshAutocomplete()` re-queries the active provider without replacing the editor or mutating its buffer. Locale consumers call it only while the dropdown is open so localized slash descriptions refresh in place.
 - The `BlueComponents` contract re-exports pi-tui's pure fuzzy helpers: `fuzzyMatch(query, text) → {matches, score}` (lower is better) and the token-splitting `fuzzyFilter`.
 
 ## Themes and markdown rendering

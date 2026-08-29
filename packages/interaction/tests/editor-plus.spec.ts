@@ -15,11 +15,13 @@ import type { SkillSummary } from '@deepseek-ai/dsh-skill'
 import type { BlueAutocompleteProvider, BlueComponent } from '@dsh-blue/blue-core'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
+import { BlueLocaleService } from '../../frontend/src/locale.ts'
 import * as inputPlugin from '../src/input-plugin.ts'
 import * as editorPlus from '../src/editor-plus.ts'
 import * as fileMention from '../src/file-mention.ts'
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
 import { __setCatalogForTest } from '../src/skills-catalog.ts'
+import { INTERACTION_LOCALE } from '../src/locale.ts'
 import { fakeBlueContext, FakeBlueEditor, KEY, type FakeBlueComponents, type FakeScreen } from './fakes.ts'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
 
@@ -34,7 +36,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-async function mount(options: { withAgent?: boolean, plusFirst?: boolean } = {}): Promise<{
+async function mount(options: { withAgent?: boolean, plusFirst?: boolean, locale?: 'en' | 'zh' } = {}): Promise<{
   ctx: Context
   screen: FakeScreen
   components: FakeBlueComponents
@@ -44,8 +46,13 @@ async function mount(options: { withAgent?: boolean, plusFirst?: boolean } = {})
   followup: ReturnType<typeof vi.fn>
   inputFiber: { dispose(): Promise<void> }
   plusFiber: { dispose(): Promise<void> }
+  locale: BlueLocaleService | undefined
 }> {
   const { ctx, screen, components } = fakeBlueContext()
+  const locale = options.locale === undefined
+    ? undefined
+    : new BlueLocaleService(ctx, { systemLocale: options.locale })
+  locale?.register('interaction', INTERACTION_LOCALE)
   await ctx.plugin(SessionStore)
   await ctx.plugin(CommandRuntime)
   const session = ctx.sessions.create(SessionId('editor-plus-spec'))
@@ -67,6 +74,7 @@ async function mount(options: { withAgent?: boolean, plusFirst?: boolean } = {})
     followup,
     inputFiber,
     plusFiber: plusFiber ?? await ctx.plugin(editorPlus),
+    locale,
   }
 }
 
@@ -411,6 +419,18 @@ describe('blue-editor-plus attach lifecycle', () => {
     expect(editor.autocompleteProvider).toBeDefined()
     type(editor, '!')
     expect(editor.borderColor('x')).toBe('$x$')
+  })
+
+  it('refreshes only an open completion dropdown when the locale changes', async () => {
+    const { editor, locale } = await mount({ locale: 'en' })
+    expect(editor.autocompleteRefreshes).toBe(0)
+    locale!.setPreference('zh')
+    expect(editor.autocompleteRefreshes).toBe(0)
+
+    editor.showingAutocomplete = true
+    locale!.setPreference('en')
+    expect(editor.autocompleteRefreshes).toBe(1)
+    expect(editor.getText()).toBe('')
   })
 
   it('restores the previous editor handlers when the fiber disposes', async () => {

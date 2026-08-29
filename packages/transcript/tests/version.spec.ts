@@ -1,6 +1,6 @@
 /**
  * The global version-control guard: Blue has ONE release version (the
- * first release line, `0.1.1-rc.1` — the number the website's tagline and
+ * current release line, `0.1.1-rc.2` — the number the website's tagline and
  * quickstart promise) and ONE harness dependency line (the `dsh-*` pins,
  * which stay on their own prerelease line while Blue's number moves).
  *
@@ -28,8 +28,8 @@ import { describe, expect, it } from 'vitest'
 import { BLUE_VERSION } from '../src/banner-content.ts'
 import { BLUE_VERSION as API_BLUE_VERSION } from '@dsh-blue/blue-api'
 
-/** The published first-release version (the website's advertised number). */
-const RELEASE_VERSION = '0.1.1-rc.1'
+/** The published release version (the website's advertised number). */
+const RELEASE_VERSION = '0.1.1-rc.2'
 /** The compatibility window used by validation-only packages. */
 const BLUE_PEER_RANGE = '>=0.1.1-rc.1 <0.1.2'
 /** Validation-only package versions remain outside the product lockstep. */

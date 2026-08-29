@@ -459,6 +459,31 @@ describe('createEditor', () => {
     stop()
   })
 
+  it('refreshes an open autocomplete list without changing the editor buffer', async () => {
+    const { tui, stop } = bootTui()
+    const components = createService(tui)
+    const editor = components.createEditor()
+    const suggestions = vi.fn(() => Promise.resolve({
+      items: [{ value: 'quit', label: '/quit', description: 'Exit Blue' }],
+      prefix: '/q',
+    }))
+    editor.setAutocompleteProvider({
+      triggerCharacters: ['/'],
+      getSuggestions: suggestions,
+      applyCompletion: lines => ({ lines, cursorLine: 0, cursorCol: lines[0]?.length ?? 0 }),
+    })
+    editor.handleInput('/')
+    await waitForRender()
+    expect(editor.isShowingAutocomplete()).toBe(true)
+    expect(suggestions).toHaveBeenCalledOnce()
+    const before = editor.getText()
+    editor.refreshAutocomplete()
+    await waitForRender()
+    expect(suggestions).toHaveBeenCalledTimes(2)
+    expect(editor.getText()).toBe(before)
+    stop()
+  })
+
   it('swaps the wrapping dropdown in for slash prefixes and the stock list otherwise', async () => {
     const { tui, stop } = bootTui()
     const components = createService(tui)

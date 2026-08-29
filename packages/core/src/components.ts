@@ -388,6 +388,11 @@ class EditorAdapter implements BlueEditor {
     return this.editor.isShowingAutocomplete()
   }
 
+  refreshAutocomplete(): void {
+    const editor = this.editor as unknown as { updateAutocomplete(): void }
+    editor.updateAutocomplete()
+  }
+
   render(width: number): string[] {
     const renderWidth = this.connectedAbove ? Math.max(1, width - 2) : width
     const lines = this.editor.render(renderWidth)

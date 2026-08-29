@@ -7,5 +7,6 @@ Renderer-neutral 的 frontend runtime：readonly 交互模型、registry 与 pro
 - `FrontendHost` 持有当前 provider，宿主本身在换装期间持续存活。每次换装串行执行 capture → abort → dispose → activate → restore；激活失败回退到内置 `plainProvider`，不影响 Agent loop，迟到的发布按 generation 丢弃。
 - `blueThemeModels`（`ThemeModelService`）是语义主题 registry：不可变 token 表，提供激活与订阅。Renderer adapter 注册模型并随其 Fiber 释放。
 - `blueNotifications`（`NotificationModelService`）是带 dedupe key 的 renderer-neutral 通知 registry；以 toast、status 还是 log 呈现由 renderer 决定。
+- `blueLocale`（`BlueLocaleService`）是单棵 frontend tree 的英文/简体中文 locale registry。包自有 catalog、偏好 snapshot、插值与订阅都保持 renderer-neutral 并随 Fiber 释放；runtime/catalog 缺位时回退英文源 key。
 
 本包是 domain 包：不含任何 TUI、终端或 renderer 代码。

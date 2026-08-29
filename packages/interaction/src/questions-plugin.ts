@@ -22,6 +22,7 @@ import type { AskUserQuestionAnswer, AskUserQuestionRequest } from '@deepseek-ai
 import { mountEditorReplacement } from './editor-instance.ts'
 import { PlanReviewPanel, planReviewChoices } from './plan-review-panel.ts'
 import { Questionnaire } from './questionnaire.ts'
+import { interactionTranslator, observeInteractionLocale } from './locale.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-questions'
@@ -52,10 +53,12 @@ function askAll(ctx: Context, request: AskUserQuestionRequest): Promise<AskUserQ
   // below can observe an abort.
   return new Promise<AskUserQuestionAnswer>((resolve, reject) => {
     let settled = false
+    let offLocale: () => void
     const settle = (complete: () => void): void => {
       if (settled) return
       settled = true
       request.signal?.removeEventListener('abort', onAbort)
+      offLocale()
       restore()
       complete()
     }
@@ -104,10 +107,15 @@ function askAll(ctx: Context, request: AskUserQuestionRequest): Promise<AskUserQ
           })
         },
         onCancel,
+        t: interactionTranslator(ctx),
       })
     // The kimi dialog mount (D30): the panel replaces the editor in its
     // dock slot, so below it only the footer remains.
     const restore = mountEditorReplacement(ctx, panel)
+    offLocale = observeInteractionLocale(ctx, () => {
+      panel.invalidate()
+      ctx.blueScreen.requestRender()
+    })
     request.signal?.addEventListener('abort', onAbort, { once: true })
   })
 }

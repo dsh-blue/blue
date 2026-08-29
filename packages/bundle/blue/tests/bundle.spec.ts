@@ -62,6 +62,7 @@ describe('blue bundle', () => {
       'blue-agent-presets',
       'blue-creative-host',
       'blue-api-host',
+      'blue-locale',
       'blue-core',
       'blue-theme-dark',
       'blue-banner',
@@ -97,6 +98,7 @@ describe('blue bundle', () => {
     expect(patch).not.toContain("name: '@dsh-blue/blue-transcript/intent-cordis'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/attachments'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/paste-image'")
+    expect(patch).toContain("name: '@dsh-blue/blue-harness-adapter/locale'")
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/banner'")
     expect(patch).toContain("name: '@dsh-blue/blue-conversation'")
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/official-model'")

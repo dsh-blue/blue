@@ -239,6 +239,8 @@ export class FakeBlueEditor implements BlueEditor {
   ghostHint: string | undefined
   /** The last autocomplete provider attached, if any. */
   autocompleteProvider: BlueAutocompleteProvider | undefined
+  /** Number of explicit autocomplete refresh requests. */
+  autocompleteRefreshes = 0
   private text = ''
   private cursor = 0
   private submitRevision = 0
@@ -317,6 +319,10 @@ export class FakeBlueEditor implements BlueEditor {
 
   isShowingAutocomplete(): boolean {
     return this.showingAutocomplete
+  }
+
+  refreshAutocomplete(): void {
+    this.autocompleteRefreshes += 1
   }
 
   setSubmitBarrier(barrier: ((attempt: BlueEditorSubmitAttempt) => void) | undefined): void {

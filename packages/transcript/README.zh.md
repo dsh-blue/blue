@@ -12,6 +12,8 @@ Blue 的 projection-backed transcript 以及 canonical status、tool、bottom-pa
 
 当前 runtime 不折叠 Harness session event，也没有旧 tool-intent registry。Generic、terminal、diff、search、read 与 web tool 形态通过 canonical projection/presentation model 到达渲染层，同时保留共享的状态、参数、命令与展开 chrome。BTW pane 与连接的 editor 共用对齐的左右边框，不再插入 spacer 行。
 
+Blue 自有 banner、activity、长消息展开、图片、中断与展开键位 chrome 跟随当前英文或简体中文 locale。语言 revision 会原地失效 renderer cache 并重投影 keymap 文案；conversation 与 tool payload 保持原文。
+
 ## Status 与 Bottom Pane
 
 主插件拥有五个 renderer bridge：

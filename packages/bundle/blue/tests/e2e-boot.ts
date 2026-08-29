@@ -46,6 +46,7 @@ import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 // baseline provider fiber it replaces.
 import * as themeDarkPlugin from '@dsh-blue/blue-core/theme-dark'
 import * as apiHostPlugin from '../../../api/src/host.ts'
+import * as localePlugin from '../../../harness-adapter/src/locale.ts'
 import { BlueComponentsService, BlueKeymapService, BlueScreenService, BlueTerminalInfoService} from '../../../core/src/index.ts'
 import * as appPlugin from '../../../app/src/index.ts'
 import * as sessionBridgePlugin from '../../../app/src/plugin-host-session-bridge.ts'
@@ -195,6 +196,7 @@ export const CREATIVE_BLUE_INTERNAL_SERVICES = [
   'blueHarnessSessionAdapter',
   'blueInteractionState',
   'blueKeymap',
+  'blueLocale',
   'blueNotifications',
   'blueProjectionRegistry',
   'blueRequests',
@@ -234,6 +236,7 @@ export interface PresetFixture {
 /** Test-scope hooks the Loader fixtures delegate to. */
 interface BlueE2EHooks {
   apiHostApply: typeof apiHostPlugin.apply
+  localeApply: typeof localePlugin.apply
   presetsApply: (ctx: Context) => void
   creativeIsolationApply: (ctx: Context) => void
   coreApply: (ctx: Context) => Promise<void>
@@ -402,6 +405,7 @@ export async function bootBlue(argv: string[], options: {
   let presetRoot = ''
   const hooks: BlueE2EHooks = {
     apiHostApply: apiHostPlugin.apply,
+    localeApply: localePlugin.apply,
     presetsApply: (ctx) => { ctx.plugin(AgentPresetsService, { default: (options.presetFixtures ?? [{ id: 'e2e' }])[0]!.id, roots: [{ path: presetRoot, trust: 'system' }], includeUserRoot: false }) },
     creativeIsolationApply: (ctx) => {
       for (const service of CREATIVE_BLUE_INTERNAL_SERVICES) creativeIsolation[service] = ctx.get(service)
@@ -507,6 +511,12 @@ export const apply = ctx => globalThis.__blueE2E.creativeIsolationApply(ctx)
     `  name: ${fixture('blue-api-host.mjs', `
 export const name = 'blue-api-host'
 export const apply = ctx => globalThis.__blueE2E.apiHostApply(ctx)
+`)}`,
+    '- id: blue-locale',
+    `  name: ${fixture('blue-locale.mjs', `
+export const name = 'blue-locale'
+export const inject = []
+export const apply = ctx => globalThis.__blueE2E.localeApply(ctx)
 `)}`,
     '- id: blue-core',
     `  name: ${fixture('blue-core.mjs', `

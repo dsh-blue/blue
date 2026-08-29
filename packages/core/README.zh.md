@@ -16,6 +16,8 @@ Blue 终端 UI 核心：整棵树中唯一 import `@earendil-works/pi-tui` 的�
 
   `BlueEditor.setSubmitBarrier(callback)` 会在原生 editor 清除 buffer、paste table、undo 状态与 history cursor 之前暂停提交。每个冻结的 attempt 都带展开后的文本、abort signal、单调 revision 以及幂等 `commit`/`cancel`；buffer mutation、新 attempt 或 barrier 换装会中止旧 attempt。`submit()` 让程序化提交经过同一屏障。
 
+`BlueEditor.refreshAutocomplete()` 会重新查询当前补全 provider，但不改变 editor identity 或 buffer state，因此已打开的 slash 下拉框可原地刷新本地化描述。
+
 ## 共享 chrome 辅助层
 
 框架表面算法保留在 core 私有的 `src/chrome.ts`，不再提供公共 `./chrome` 子路径。Core 在内部使用这些主题无关 helper 处理 editor 边框、提示符、gutter、补全提示和 ANSI 安全截断。Renderer adapter 的通用宽度操作只调用 `BlueComponents.visibleWidth`、`wrapText` 与 `truncateToWidth`；连接 pane 的顶边框仅通过窄化的 `BlueComponents.topRule(width, options)` 操作暴露。终端宽度和 ANSI 组合因此始终留在 core 内部，不形成第二套渲染 API。

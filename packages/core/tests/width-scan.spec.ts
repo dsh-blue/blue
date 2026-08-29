@@ -37,6 +37,7 @@ function scanEditor(text: string): BlueEditor {
     setSubmitBarrier: () => {},
     submit: () => {},
     isShowingAutocomplete: () => false,
+    refreshAutocomplete: () => {},
     getText: () => text,
     setText: () => {},
     addToHistory: () => {},

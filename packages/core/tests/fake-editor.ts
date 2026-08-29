@@ -40,6 +40,7 @@ export function createFakeEditor(): BlueEditor {
     setGhostHint: () => {},
     setAutocompleteProvider: () => {},
     isShowingAutocomplete: () => false,
+    refreshAutocomplete: () => {},
     insertText: (text: string) => { value += text; editor.onChange?.(value) },
   } as BlueEditor
   return editor

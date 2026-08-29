@@ -22,6 +22,8 @@ Draft text、prompt/bash mode、history、command alias、settings/theme identit
 
 Dialog 替换 editor slot，并编译与插件 surface 相同的 renderer-neutral Blue UI node。Help/info window、list、form、settings、question、approval、model、loading state 与 plan review 因此共用 core 所有的 chrome、focus、语义颜色和窄宽收容。Question 与 approval 工作绑定 Fiber、支持 abort，并拒绝 unload 或会话切换后的迟到结果。第三方 renderer-neutral command、notification 与 editor extension 通过 `./plugin-host-bridge` 进入；它只在 owner Fiber 存活时宣告这些 capability，并会在替换后恢复仍由 host 持有的 contribution。
 
+Blue 自有 interaction chrome 支持英文与简体中文。`/settings` 首行显示“语言”，通过 Harness 的 `locale.preference` 在“跟随系统”“中文”“English”之间循环；切换时会原地刷新已打开的 settings、help、approval、questionnaire、command model 与 slash completion，不替换 controller/editor、不丢选择，也不丢弃已打开 form 的草稿。用户/model/tool 内容、路径、id、命令名、provider/model 名与上游错误详情不翻译。
+
 Form 将校验错误紧跟在失败字段下方，文本字段同时保留 Blue editor 的光标、IME 与 bracketed-paste 行为。Enter 在字段间前进或提交最后一个字段；Tab/Down 前进，Shift-Tab/Up 后退。Question panel 显示有界的答题进度，free-text 与 `Other` 共用同一种 canonical input，在切换问题时保留草稿，并支持 1-9 数字直选。
 
 可读 export 在 flush 并读取 durable artifact 后使用官方 `blueConversation` projection；full export 则有意输出解码后的审计 event stream。`/copy` 使用官方 conversation 值与 OSC 52/native clipboard 管线。

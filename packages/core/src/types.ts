@@ -516,6 +516,8 @@ export interface BlueEditor extends BlueFocusable {
    * @returns the dropdown visibility.
    */
   isShowingAutocomplete(): boolean
+  /** Re-query the active autocomplete provider without changing the buffer. */
+  refreshAutocomplete(): void
   /**
    * Read the current text.
    * @returns the editor content.

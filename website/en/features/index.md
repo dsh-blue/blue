@@ -1,10 +1,10 @@
 # Features overview
 
-Blue is a Cordis plugin tree. The bundle currently has 31 Blue-owned rows: two host-support rows, eight baseline rows, 15 enhancement rows, and six assembly rows.
+Blue is a Cordis plugin tree. The bundle currently has 32 Blue-owned rows: two host-support rows, nine baseline rows, 15 enhancement rows, and six assembly rows.
 
 ## Baseline
 
-`blue-api-host`, `blue-core`, `blue-theme-dark`, `blue-banner`, `blue-transcript`, `blue-status-basic`, `blue-conversation`, and `blue-transcript-official` form the projection-backed renderer baseline. Harness official projections drive the conversation; the TUI no longer folds session events.
+`blue-api-host`, `blue-locale`, `blue-core`, `blue-theme-dark`, `blue-banner`, `blue-transcript`, `blue-status-basic`, `blue-conversation`, and `blue-transcript-official` form the projection-backed renderer baseline. `blue-locale` follows the system language for English/Simplified Chinese and supports live switching through `/settings`; Harness official projections drive the conversation, and the TUI no longer folds session events.
 
 ## Enhancements
 

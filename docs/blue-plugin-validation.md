@@ -48,6 +48,11 @@ evidence by itself. The JSON report includes `harnessLine`, the actual
 The temporary project is removed before the report returns; `fixtureCleaned`
 must be `true`.
 
+The `blue-harness-adapter` target adds an eighth installed-package scenario,
+`locale.preference-live-reload-unload`. It verifies persisted preference boot,
+live updates, settings-provider unload/reload, and final locale-service unload
+on both supported Harness lines.
+
 W5-C's downstream ecosystem has a whole-suite gate in addition to the generic
 single-package fixture:
 

@@ -5,6 +5,7 @@ Blue's configuration lives on two layers: **in-app slash commands** (the everyda
 | What you want | In-app | Where it lands |
 | --- | --- | --- |
 | API key | `/provider add`, the Providers panel's edit form | `~/.dsh/.credentials.yaml` |
+| Display language | the first `locale` group in `/settings` | `locale.preference` in `settings.yaml` (omit to follow the system) |
 | Default model / thinking effort | `/model`, `/effort`, `Alt+M` | the `agent-default-model:` section of `settings.yaml` |
 | New provider / custom gateway | `/provider add` | the `llm-pi-ai:` section of `settings.yaml` + the credentials file |
 | DeepSeek official endpoint tuning | — (files only) | the `llm-deepseek:` section of `settings.yaml` |
@@ -92,6 +93,17 @@ Beyond the in-app commands, all of dsh's configuration sits in a handful of file
 
 A document that exists but fails to parse fails boot (loud); an invalid edit while running keeps the last good snapshot and warns. Hand edits to settings.yaml keep their comments (writes diff at the leaf level).
 
+### locale: display language
+
+Blue supports English and Simplified Chinese. With no explicit preference it follows `LC_ALL`, `LC_MESSAGES`, `LANG`, then `Intl`; every `zh-*` variant uses Simplified Chinese and unsupported locales fall back to English. The first `/settings` group cycles Follow system, 中文, and English, applying immediately while preserving the open panel's selection and form draft.
+
+For a manual override, write the preference below; remove it to follow the system again:
+
+```yaml
+locale:
+  preference: zh  # zh | en; omit to follow the system
+```
+
 ### The three core settings.yaml sections
 
 ```yaml
@@ -161,7 +173,7 @@ blue:
   editorProvider: blue.default # exclusive editor-provider id; built-in editor shell by default
 ```
 
-The panel is two-level: level one groups rows by namespace (host sections like `shell:`, `agent-loop:`, and `web-search-deepseek:` included), Enter steps into level two's per-key rows, and `Enter`/`Space` there steps the preset value with every change landing on disk; `blue.theme` applies live and becomes the startup default (`/theme` stays the session-level switch — see [Theming](/en/guide/theme)), and folding-default and transcript-number changes apply to the running session just as immediately (an active Ctrl-O expansion still dominates). `statusProvider` and `editorProvider` are not panel rows; enter third-party provider ids in the file. If a desired id is absent or fails activation, Blue preserves that value and uses its fallback instead of rewriting settings. Level one's last row opens the whole settings.yaml in `$EDITOR`.
+The panel is two-level: level one starts with `locale` and groups rows by namespace (host sections like `shell:`, `agent-loop:`, and `web-search-deepseek:` included), Enter steps into level two's per-key rows, and `Enter`/`Space` there steps the preset value with every change landing on disk; language and `blue.theme` changes both apply live (`/theme` stays the session-level switch — see [Theming](/en/guide/theme)), and folding-default and transcript-number changes apply to the running session just as immediately (an active Ctrl-O expansion still dominates). `statusProvider` and `editorProvider` are not panel rows; enter third-party provider ids in the file. If a desired id is absent or fails activation, Blue preserves that value and uses its fallback instead of rewriting settings. Level one's last row opens the whole settings.yaml in `$EDITOR`.
 
 ### Verifying your edits
 

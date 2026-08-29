@@ -56,7 +56,7 @@ describe('buildVersionSections', () => {
       label: 'blue',
       segments: [{ text: `v${displayVersion}` }],
     })
-    expect(BLUE_VERSION).toBe('0.1.1-rc.1')
+    expect(BLUE_VERSION).toBe('0.1.1-rc.2')
   })
 })
 
@@ -579,7 +579,7 @@ describe('registerSessionCommands', () => {
     expect(node.child.spans.length).toBeLessThanOrEqual(200)
     const rows = plain(panel.render(100))
     expect(rows.join('\n')).toContain('changelog')
-    expect(rows.some(row => row.includes('Public renderer-neutral UI kit'))).toBe(true)
+    expect(rows.some(row => row.includes('Public renderer-neutral UI runtime'))).toBe(true)
     overlay.component.handleInput?.('\x1b')
     expect(overlay.hidden).toBe(true)
   })

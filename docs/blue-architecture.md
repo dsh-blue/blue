@@ -24,7 +24,7 @@ flowchart TB
         HAR["agents · sessions · tools · approval<br/>commands · events"]
     end
 
-    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 29 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
+    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 32 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
         direction TB
         subgraph DOM["Domain 侧 — 唯一持有 Agent/Session 对象"]
             direction LR
@@ -95,6 +95,18 @@ input / command / panel
 
 Renderer 不持有 Agent/Session。切换、followup、steer、interrupt、mode/model/preset/tool/skill、rewind 和 side-session 操作都经过 app action boundary。会话切换以 reader epoch 和 projection seq 驱逐旧 callback。
 
+### Locale 与展示重投影
+
+```text
+process locale + locale.preference
+  -> blue-harness-adapter locale adapter
+  -> frontend-tree BlueLocaleService snapshot/revision/catalog
+  -> interaction/transcript package translators
+  -> in-place panel, completion and transcript presentation refresh
+```
+
+`locale.preference` 的 wire value 保持 `undefined | 'zh' | 'en'`，本地化 label 只属于展示层。切换语言时，settings controller、cursor、form draft、editor draft 和 completion owner identity 保持不变；consumer 只根据新的 locale revision 重投影展示。Locale service 和 catalog 都是 frontend-tree/Fiber scoped，卸载或 reload 后旧订阅不能继续刷新 UI。
+
 ### 外部插件
 
 ```text
@@ -114,7 +126,7 @@ manifest
 | host | plugin contribution registries、models/credentials/MCP registries |
 | agent | tool/persona/preset composition，始终留在 Harness/app owner |
 | session | official projection cells、durable actions 和 watermark |
-| frontend tree | editor host、draft、alias/settings cache、paste state、transcript presentation policy |
+| frontend tree | editor host、draft、alias/settings cache、locale service、paste state、transcript presentation policy |
 | provider Fiber | subscription、timer、abort controller、renderer component cache |
 
 Provider swap 必须遵循 `capture -> abort -> dispose -> activate -> restore`。每个 async callback 都检查 generation/session epoch；卸载后不得重新挂载 UI 或写入替换 session。
@@ -145,8 +157,8 @@ Provider swap 必须遵循 `capture -> abort -> dispose -> activate -> restore`�
 | Package | Role |
 |---|---|
 | `@dsh-blue/blue-api` | 稳定 manifest、`BlueResult`、readonly public views 与 capability-scoped plugin host |
-| `@dsh-blue/blue-frontend` | readonly command/editor/transcript/tool/theme models 与 provider host |
-| `@dsh-blue/blue-harness-adapter` | session/projection/action/model/question 的窄兼容 adapter |
+| `@dsh-blue/blue-frontend` | readonly command/editor/transcript/tool/theme/locale models 与 provider host |
+| `@dsh-blue/blue-harness-adapter` | session/projection/action/model/question/locale 的窄兼容 adapter |
 | `@dsh-blue/blue-conversation` | append-origin conversation 与 shared facts official projections |
 | `@dsh-blue/blue-app` | CLI startup、Agent driver、session reader/projection/action boundary |
 | `@dsh-blue/blue-core` | 唯一 TUI kernel 与 terminal adapter |
@@ -161,14 +173,14 @@ Provider swap 必须遵循 `capture -> abort -> dispose -> activate -> restore`�
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml - 31 Blue-owned rows · 31 条 Blue 自有行"]
+    subgraph bundle["cordis.patch.yml - 32 Blue-owned rows · 32 条 Blue 自有行"]
         subgraph host["host support 宿主支撑 - 2 rows"]
             presets["blue-agent-presets"]
             creative["blue-creative-host"]
         end
-        subgraph product["product UI 产品 UI - 29 rows"]
-            subgraph baseline["baseline 基线 - 8 rows"]
-                api["blue-api-host"]
+        subgraph product["product UI 产品 UI - 30 rows"]
+            subgraph baseline["baseline 基线 - 9 rows"]
+                api["blue-api-host · blue-locale"]
                 core["blue-core · blue-theme-dark"]
                 chrome["blue-banner · blue-transcript · blue-status-basic"]
                 conversation["blue-conversation · blue-transcript-official"]
@@ -198,9 +210,9 @@ flowchart TB
 ```
 <!-- END diagram:blue-composition -->
 
-31 条 Blue 自有行由 2 条 host-support 和 29 条 product row 组成。产品段内：
+32 条 Blue 自有行由 2 条 host-support 和 30 条 product row 组成。产品段内：
 
-- baseline 8 行，包含 conversation projection 与 official transcript consumer；
+- baseline 9 行，包含 locale runtime/settings adapter、conversation projection 与 official transcript consumer；
 - enhancement 15 行，可逐项移除；
 - assembly 6 行，提供 interaction、provider/public bridge、startup、app 与 public session owner bridge。
 

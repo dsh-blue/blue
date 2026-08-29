@@ -392,6 +392,45 @@ try {
     }
   })
 
+  if (manifest.name === '@dsh-blue/blue-harness-adapter') {
+    const localeAdapter = await load('@dsh-blue/blue-harness-adapter/locale')
+    const settingsModule = await load('@deepseek-ai/dsh-settings')
+    const SettingsProvider = settingsModule.default
+    const localeNamespace = settingsModule.settingsNamespace('locale')
+
+    class MemorySettings extends SettingsProvider {
+      writable = true
+      constructor(ctx, document) {
+        super(ctx)
+        this.document = document
+      }
+      async load() { return this.document }
+      async persist(ns, section) { this.document[String(ns)] = section }
+    }
+
+    await scenario('locale.preference-live-reload-unload', async () => {
+      const ctx = new cordis.Context()
+      const localeFiber = await ctx.plugin(localeAdapter)
+      const retained = ctx.blueLocale
+      const settingsFiber = await ctx.plugin(MemorySettings, { locale: { preference: 'zh' } })
+      await new Promise(resolveDelay => setTimeout(resolveDelay, 20))
+      ensure(retained.preference === 'zh' && retained.locale === 'zh', 'FIXTURE_LOCALE_INITIAL', 'persisted locale preference was not applied')
+      await ctx.settings.update(localeNamespace, { preference: 'en' })
+      await new Promise(resolveDelay => setTimeout(resolveDelay, 20))
+      ensure(retained.preference === 'en' && retained.locale === 'en', 'FIXTURE_LOCALE_UPDATE', 'live locale preference did not update')
+      await settingsFiber.dispose()
+      await new Promise(resolveDelay => setTimeout(resolveDelay, 20))
+      ensure(retained.preference === undefined, 'FIXTURE_LOCALE_SETTINGS_UNLOAD', 'settings unload retained an explicit locale preference')
+      const reloaded = await ctx.plugin(MemorySettings, { locale: { preference: 'zh' } })
+      await new Promise(resolveDelay => setTimeout(resolveDelay, 20))
+      ensure(retained.preference === 'zh', 'FIXTURE_LOCALE_SETTINGS_RELOAD', 'settings reload did not restore the locale preference')
+      await reloaded.dispose()
+      await localeFiber.dispose()
+      ensure(ctx.get('blueLocale') === undefined && !retained.setPreference('en'), 'FIXTURE_LOCALE_UNLOAD', 'locale service survived owner unload')
+      await ctx.fiber.dispose()
+    })
+  }
+
   if (manifest.name === '@dsh-blue/blue-app') {
     const blueApi = await load('@dsh-blue/blue-api')
     const sessionBridge = await load('@dsh-blue/blue-app/plugin-host-session-bridge')

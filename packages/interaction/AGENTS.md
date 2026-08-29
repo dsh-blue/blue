@@ -139,6 +139,8 @@ neither channel is another settings registry or a write-back path.
 
 Transcript tunables remain in this settings schema because interaction owns the settings UI, while transcript parses and applies them through its own tree-scoped presentation policy.
 
+The `/settings` inventory starts with the Harness-owned `locale` namespace. `locale.preference` cycles raw `undefined` (follow system), `zh`, and `en`; display labels and Blue-owned settings chrome are translated through the tree's `blueLocale` service. `CanonicalSettingsController.updatePresentation()` reprojects level-one rows and the live canonical settings node in place, preserving controller/panel identity, cursor, an open form, and its editor draft. Command descriptions, slash completion copy, help, question/approval chrome, and shell notices use the same dynamic translator. Locale observers attach to the current provider synchronously, then follow Cordis provider unload/reload without retaining a dead service. Command models notify subscribers after a locale revision without changing command/action identity. User, model, and tool text; paths; ids; command names; provider/model names; and upstream error details remain untranslated.
+
 ## Optional Subpaths
 
 - `editor-plus`: shell/completion enhancement.

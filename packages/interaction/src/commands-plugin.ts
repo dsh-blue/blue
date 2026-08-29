@@ -67,6 +67,7 @@ import { registerToolsCommands } from './tools-commands.ts'
 import { registerUpdateCommand } from './update-command.ts'
 import { registerTraceCommand } from './trace-command.ts'
 import { registerPluginCommand } from './plugin-command.ts'
+import { interactionTranslator, observeInteractionLocale } from './locale.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-commands'
@@ -118,6 +119,7 @@ export function currentSessionTitleLimit(): number {
  * @param config - command presentation configuration.
  */
 export function apply(ctx: Context, config: Config = {}): void {
+  const t = interactionTranslator(ctx)
   const aliasRegistry = ctx.blueInteractionState.aliases
   /**
    * Set when this fiber unloads: the `/sessions` listing can still be in
@@ -309,14 +311,14 @@ export function apply(ctx: Context, config: Config = {}): void {
     if (display === undefined) {
       return { kind: 'error', text: 'help is unavailable: the Blue screen is not mounted' }
     }
-    const sections: HelpSection[] = [
+    const sections = (): HelpSection[] => [
       {
         heading: 'Commands',
         labelTone: 'accent',
         rows: (() => {
           const models = ctx.get('blueCommandModels')?.list()
           if (models !== undefined) return models.map(model => ({ label: model.label, description: model.description ?? '' }))
-          return ctx.blueSessionActions.commands().map(command => ({ name: command.name, description: command.description ?? '' }))
+          return ctx.blueSessionActions.commands().map(command => ({ name: command.name, description: t(command.description ?? '') }))
         })().map(command => {
           // The kimi help-panel label: aliases join the canonical label in
           // slashed parentheses (`/quit (/q, /exit)`), visible on every
@@ -335,22 +337,30 @@ export function apply(ctx: Context, config: Config = {}): void {
         labelTone: 'warning',
         rows: display.keymap.list().map(action => ({
           label: [action.keys].flat().join('/'),
-          description: action.description ?? action.id,
+          description: t(action.description ?? action.id),
         })),
       },
     ]
+    let restore: () => void
+    let offLocale: () => void
     const overlay = new HelpOverlay({
       theme: display.theme,
       components: display.components,
       keymap: display.keymap,
       sections,
+      t,
       onClose: () => {
+        offLocale()
         restore()
       },
     })
     // The kimi dialog mount (D30): the panel replaces the editor in its
     // dock slot, so below it only the footer remains.
-    const restore = mountEditorReplacement(ctx, overlay)
+    restore = mountEditorReplacement(ctx, overlay)
+    offLocale = observeInteractionLocale(ctx, () => {
+      overlay.invalidate()
+      display.screen.requestRender()
+    })
     return { kind: 'success' }
   }
 

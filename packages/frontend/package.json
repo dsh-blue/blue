@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-frontend",
   "description": "Renderer-neutral frontend models and provider host for Blue",
-  "version": "0.1.1-rc.1",
+  "version": "0.1.1-rc.2",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",

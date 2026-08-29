@@ -27,6 +27,7 @@ import {
 import { visibleWidth } from '../../core/src/width.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { BlueComponent } from '@dsh-blue/blue-core'
+import { BlueLocaleService } from '../../frontend/src/locale.ts'
 
 /** Fake timers recording interval creation/clearing; ticks run manually. */
 class FakeTimers implements activity.ActivityTimers {
@@ -116,6 +117,25 @@ describe('blue-pane-activity', () => {
     // Unloading stops the animation.
     await dispose()
     expect(timers.cleared).toBe(1)
+  })
+
+  it('switches the mounted activity row in place when locale changes', async () => {
+    const harness = await boot(runningAgent(fakeAgent([])))
+    const pane = harness.screen.bottomChildren[0]
+    const localeFiber = await harness.ctx.plugin({
+      name: 'activity-locale',
+      apply(ctx: Context) {
+        const locale = new BlueLocaleService(ctx, { systemLocale: 'en' })
+        ctx.effect(() => () => locale.dispose())
+      },
+    })
+    await Promise.resolve()
+    expect(harness.screen.paneLines()[0]).toContain(' · Tip: ')
+    harness.ctx.blueLocale.setPreference('zh')
+    expect(harness.screen.bottomChildren[0]).toBe(pane)
+    expect(harness.screen.paneLines()[0]).toContain(' · 提示：')
+    await localeFiber.dispose()
+    await harness.dispose()
   })
 
   it('paints the wave through the brand gradient, cycling one hue per tick', async () => {

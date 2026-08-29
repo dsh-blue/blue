@@ -56,6 +56,7 @@ import { SettingsConflictError, settingsNamespace } from '@deepseek-ai/dsh-setti
 import type { SettingsDescriptor, SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
+import type { BlueTranslate } from '@dsh-blue/blue-frontend'
 import { CanonicalPanelAdapter, type CanonicalNodeSource } from './canonical-panel.ts'
 import { displayServices } from './display-services.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
@@ -65,6 +66,7 @@ import { CanonicalFormController } from './form-panel.ts'
 import { ACTION_CANCEL, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_SUBMIT, ACTION_TOGGLE } from './keys.ts'
 import type { PermissionPresetsService } from './permission-panel.ts'
 import { CanonicalSelectController } from './select-list.ts'
+import { interactionTranslator, observeInteractionLocale } from './locale.ts'
 
 /** The level-one action row opening the settings document in an editor. */
 const OPEN_FILE_ID = 'open-file'
@@ -101,10 +103,18 @@ interface SettingRow {
   readonly editable?: boolean
   /** What an editable row displays while unset (the raw value is blank). */
   readonly emptyDisplay?: string
+  /** Optional raw value token to package-owned display-label mapping. */
+  readonly valueLabels?: Readonly<Record<string, string>>
 }
 
 /** The static rows, in panel order; the dynamic rows join per namespace. */
 const ROWS: readonly SettingRow[] = [
+  {
+    id: 'locale.preference', ns: 'locale', key: 'preference', label: 'Language',
+    description: 'Blue display language; system follows the operating system', kind: 'string',
+    values: ['zh', 'en'], unsetValue: 'system',
+    valueLabels: { system: 'Follow system', zh: '中文', en: 'English' },
+  },
   {
     id: 'blue.updateCheck', ns: 'blue', key: 'updateCheck', label: 'Update check',
     description: 'boot update check on/off', kind: 'boolean', values: [true, false],
@@ -285,22 +295,27 @@ function displayValue(
  * @param cycle - the row's value cycle (dynamic rows fill theirs here).
  * @param applies - the descriptor's effect timing; `'restart'` surfaces as
  *   a description suffix.
+ * @param t - active interaction translator.
  * @returns the settings-list item.
  */
 function settingItem(
   row: SettingRow,
   raw: unknown,
   cycle: readonly (boolean | number | string)[] = row.values,
-  applies?: SettingsDescriptor['applies'],
+  applies: SettingsDescriptor['applies'] | undefined,
+  t: BlueTranslate,
 ): SettingsItem {
   const current = displayValue(row, raw, cycle)
   const presets = [...(row.unsetValue === undefined ? [] : [row.unsetValue]), ...cycle.map(String)]
   return {
     id: row.id,
-    label: row.label,
-    description: applies === 'restart' ? `${row.description} · restart to apply` : row.description,
+    label: t(row.label),
+    description: applies === 'restart' ? `${t(row.description)} · ${t('restart to apply')}` : t(row.description),
     currentValue: current,
     values: row.editable === true ? [current] : presets.includes(current) ? presets : [current, ...presets],
+    ...(row.valueLabels === undefined
+      ? {}
+      : { valueLabels: Object.fromEntries(Object.entries(row.valueLabels).map(([value, label]) => [value, t(label)])) }),
   }
 }
 
@@ -319,6 +334,8 @@ export interface SettingsItem {
   readonly description: string
   readonly currentValue: string
   readonly values: readonly string[]
+  /** Raw value token to localized display label. */
+  readonly valueLabels?: Readonly<Record<string, string>>
 }
 
 /** The built groups plus their id → display-string and raw-value maps. */
@@ -347,9 +364,10 @@ interface RowDynamics {
  * exist.
  * @param settings - the host settings service.
  * @param dynamics - the dynamic rows' value sources.
+ * @param t - active interaction translator.
  * @returns the groups, plus the id → display and id → raw maps.
  */
-function buildGroups(settings: SettingsProvider, dynamics: RowDynamics): BuiltGroups {
+function buildGroups(settings: SettingsProvider, dynamics: RowDynamics, t: BlueTranslate): BuiltGroups {
   const described = new Map(settings.describe().map(descriptor => [String(descriptor.ns), descriptor]))
   const groups: SettingGroup[] = []
   const values = new Map<string, string>()
@@ -367,18 +385,18 @@ function buildGroups(settings: SettingsProvider, dynamics: RowDynamics): BuiltGr
     const descriptor = described.get(row.ns)
     if (descriptor === undefined) continue
     const raw = (descriptor.value as Record<string, unknown>)[row.key]
-    push(row.ns, settingItem(row, raw, row.values, descriptor.applies))
+    push(row.ns, settingItem(row, raw, row.values, descriptor.applies, t))
     if (row.editable === true) raws.set(row.id, typeof raw === 'string' ? raw : '')
   }
   const permission = described.get('permission')
   if (permission !== undefined && dynamics.presets !== undefined) {
     const raw = (permission.value as Record<string, unknown>).defaultPreset
-    push('permission', settingItem(PERMISSION_ROW, raw, [...dynamics.presets.names], permission.applies))
+    push('permission', settingItem(PERMISSION_ROW, raw, [...dynamics.presets.names], permission.applies, t))
   }
   const agentPresets = described.get('agent-presets')
   if (agentPresets !== undefined && dynamics.agentPresetIds !== undefined) {
     const raw = (agentPresets.value as Record<string, unknown>).default
-    push('agent-presets', settingItem(AGENT_PRESET_ROW, raw, [...dynamics.agentPresetIds], agentPresets.applies))
+    push('agent-presets', settingItem(AGENT_PRESET_ROW, raw, [...dynamics.agentPresetIds], agentPresets.applies, t))
   }
   return { groups, values, raws }
 }
@@ -425,9 +443,15 @@ export class CanonicalSettingsController implements BlueFocusable, CanonicalNode
   readonly updates: Array<readonly [string, string]> = []
   private readonly adapter: CanonicalPanelAdapter
   private readonly values = new Map<string, string>()
+  private items: readonly SettingsItem[]
+  private title: string
+  private footer: readonly string[]
   private cursor = 0
 
   constructor(readonly options: SettingsPanelOptions) {
+    this.items = options.items
+    this.title = options.title
+    this.footer = options.footer
     for (const item of options.items) this.values.set(item.id, item.currentValue)
     this.adapter = new CanonicalPanelAdapter({
       components: options.components,
@@ -456,9 +480,23 @@ export class CanonicalSettingsController implements BlueFocusable, CanonicalNode
     this.adapter.invalidate()
   }
 
+  /** Replace localized copy in place while retaining raw values and cursor id. */
+  updatePresentation(items: readonly SettingsItem[], title: string, footer: readonly string[]): void {
+    const selectedId = this.items[this.cursor]?.id
+    const ids = new Set(items.map(item => item.id))
+    for (const id of this.values.keys()) if (!ids.has(id)) this.values.delete(id)
+    for (const item of items) if (!this.values.has(item.id)) this.values.set(item.id, item.currentValue)
+    this.items = items
+    this.title = title
+    this.footer = footer
+    const selected = selectedId === undefined ? -1 : items.findIndex(item => item.id === selectedId)
+    this.cursor = selected >= 0 ? selected : Math.min(this.cursor, Math.max(0, items.length - 1))
+    this.adapter.invalidate()
+  }
+
   /** Readonly item/value snapshot for interaction state consumers and tests. */
   snapshotItems(): readonly SettingsItem[] {
-    return this.options.items.map(item => ({ ...item, currentValue: this.values.get(item.id)! }))
+    return this.items.map(item => ({ ...item, currentValue: this.values.get(item.id)! }))
   }
 
   /** Apply a structured value choice without bypassing the UI-event mapper. */
@@ -473,18 +511,18 @@ export class CanonicalSettingsController implements BlueFocusable, CanonicalNode
   currentNode(): BlueUiNode {
     const current = this.options.notice.current
     return {
-      kind: 'surface', chrome: 'overlay', title: this.options.title,
+      kind: 'surface', chrome: 'overlay', title: this.title,
       child: {
-        kind: 'list', id: 'settings-list', selectedIds: this.options.items[this.cursor] === undefined ? [] : [this.options.items[this.cursor]!.id],
-        items: this.options.items.map(item => ({
+        kind: 'list', id: 'settings-list', selectedIds: this.items[this.cursor] === undefined ? [] : [this.items[this.cursor]!.id],
+        items: this.items.map(item => ({
           id: item.id,
-          label: `${item.label}: ${this.values.get(item.id)!}`,
+          label: `${item.label}: ${item.valueLabels?.[this.values.get(item.id)!] ?? this.values.get(item.id)!}`,
           detail: item.description,
         })),
       },
       footer: {
         kind: 'stack', direction: 'column', children: [
-          { node: { kind: 'text', content: this.options.footer.join(' · '), tone: 'muted' } },
+          { node: { kind: 'text', content: this.footer.join(' · '), tone: 'muted' } },
           ...(current === undefined ? [] : [{ node: { kind: 'text', content: current.text, tone: current.error ? 'danger' : 'muted' } as const }]),
         ],
       },
@@ -492,13 +530,13 @@ export class CanonicalSettingsController implements BlueFocusable, CanonicalNode
   }
 
   private move(delta: 1 | -1): void {
-    if (this.options.items.length === 0) return
-    this.cursor = (this.cursor + this.options.items.length + delta) % this.options.items.length
+    if (this.items.length === 0) return
+    this.cursor = (this.cursor + this.items.length + delta) % this.items.length
     this.adapter.invalidate()
   }
 
   private activate(): void {
-    const item = this.options.items[this.cursor]
+    const item = this.items[this.cursor]
     if (item === undefined) return
     const current = this.values.get(item.id)!
     const index = Math.max(0, item.values.indexOf(current))
@@ -596,13 +634,14 @@ export function registerSettingsCommand(ctx: Context): () => void {
     name: 'settings',
     description: 'Edit user settings by namespace (update, theme, folding, transcript, shell, agent, search, permission)',
     handler: async (): Promise<CommandResult> => {
+      const t = interactionTranslator(ctx)
       const settings = ctx.get('settings')
       if (settings === undefined) {
-        return { kind: 'error', text: 'settings service unavailable on this host' }
+        return { kind: 'error', text: t('settings service unavailable on this host') }
       }
       const display = displayServices(ctx)
       if (display === undefined) {
-        return { kind: 'error', text: 'settings panel is unavailable: the Blue screen is not mounted' }
+        return { kind: 'error', text: t('settings panel is unavailable: the Blue screen is not mounted') }
       }
 
       let closed = false
@@ -620,6 +659,8 @@ export function registerSettingsCommand(ctx: Context): () => void {
       let listPanel: CanonicalSettingsController | undefined
       /** The open free-form form, if any. */
       let formPanel: CanonicalFormController | undefined
+      let offLocale: () => void
+      let chain: Promise<void> = Promise.resolve()
       /** The namespace open on level two, if any. */
       let openNs: string | undefined
       /** The id → display-string map of what the mounted lists show. */
@@ -662,8 +703,27 @@ export function registerSettingsCommand(ctx: Context): () => void {
         // without the roster.
         const listed = await ctx.blueSessionActions.presets()
         const agentPresetIds = listed.ok ? listed.value.map(row => row.id) : undefined
-        return buildGroups(settings, { presets, agentPresetIds })
+        return buildGroups(settings, { presets, agentPresetIds }, t)
       }
+
+      /** Current localized level-one rows; raw namespace ids stay stable. */
+      const groupRows = () => [
+        ...built.groups.map(group => ({
+          value: group.ns,
+          label: group.ns,
+          description: NS_BLURBS[group.ns] === undefined
+            ? t('{count} settings', { count: group.items.length })
+            : t('{description} · {count} settings', {
+                description: t(NS_BLURBS[group.ns]!),
+                count: group.items.length,
+              }),
+        })),
+        {
+          value: OPEN_FILE_ID,
+          label: t('Open settings.yaml in $EDITOR'),
+          description: t('edit the raw document; changes hot-reload'),
+        },
+      ]
 
       /** Mount level two for one namespace on top of the level-one panel. */
       const openList = (ns: string): void => {
@@ -676,8 +736,8 @@ export function registerSettingsCommand(ctx: Context): () => void {
           theme: liveTheme,
           components: display.components,
           keymap: display.keymap,
-          title: `settings › ${ns}`,
-          footer: ['↑↓ select', '↵ change', 'esc back'],
+          title: t('settings › {namespace}', { namespace: ns }),
+          footer: [t('↑↓ select'), t('↵ change'), t('esc back')],
           items: group.items,
           notice: panelNotice,
           onChange: (id, newValue) => {
@@ -700,24 +760,10 @@ export function registerSettingsCommand(ctx: Context): () => void {
           keymap: display.keymap,
           theme: liveTheme,
           components: display.components,
-          rows: [
-            ...built.groups.map(group => ({
-              value: group.ns,
-              label: group.ns,
-              /* v8 ignore next -- every row namespace has a blurb; the
-                 fallback guards a row added without one */
-              description: NS_BLURBS[group.ns] === undefined
-                ? `${group.items.length} settings`
-                : `${NS_BLURBS[group.ns]} · ${group.items.length} settings`,
-            })),
-            {
-              value: OPEN_FILE_ID,
-              label: 'Open settings.yaml in $EDITOR',
-              description: 'edit the raw document; changes hot-reload',
-            },
-          ],
+          rows: groupRows(),
           title: 'settings',
           titleHint: '· esc close · ↵ open',
+          t,
           ...(seed === undefined ? {} : { initialValue: seed }),
           onSelect: (row) => {
             if (row.value === OPEN_FILE_ID) {
@@ -782,6 +828,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
       const close = (): void => {
         if (closed) return
         closed = true
+        offLocale()
         offDocument()
         offEditorChanged()
         restoreForm?.()
@@ -828,7 +875,10 @@ export function registerSettingsCommand(ctx: Context): () => void {
                  guard only fires when a mid-write rebuild already dropped it */
               if (known !== undefined) listPanel?.updateValue(row.id, known)
               const message = error instanceof Error ? error.message : String(error)
-              notice(`could not update ${row.label.toLowerCase()}: ${message}`, true)
+              notice(t('could not update {label}: {message}', {
+                label: t(row.label).toLocaleLowerCase('en'),
+                message,
+              }), true)
             }
             return
           }
@@ -838,7 +888,10 @@ export function registerSettingsCommand(ctx: Context): () => void {
           lastKnown.set(row.id, display)
           built.raws.set(row.id, unset ? '' : String(value))
           if (pushToList) listPanel?.updateValue(row.id, display)
-          notice(`${row.label.toLowerCase()} set to ${display}`)
+          notice(t('{label} set to {value}', {
+            label: t(row.label).toLocaleLowerCase('en'),
+            value: row.valueLabels?.[display] === undefined ? display : t(row.valueLabels[display]!),
+          }))
           return
         }
       }
@@ -884,6 +937,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
           onCancel: () => {
             popForm()
           },
+          t,
         })
         formPanel = form
         restoreForm = mountEditorReplacement(ctx, form)
@@ -899,12 +953,12 @@ export function registerSettingsCommand(ctx: Context): () => void {
         const path = await settings.prepareDocument().catch(() => undefined)
         if (inactive()) return
         if (path === undefined) {
-          notice('settings file unavailable')
+          notice(t('settings file unavailable'))
           return
         }
         const command = resolveExternalEditorCommand(process.env, currentBlueSettings(ctx).editorCommand)
         if (command === undefined) {
-          notice('no editor configured ($VISUAL/$EDITOR)')
+          notice(t('no editor configured ($VISUAL/$EDITOR)'))
           return
         }
         let text: string
@@ -912,7 +966,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
           text = await readFile(path, 'utf-8')
         } catch (error) {
           /* v8 ignore next 1 -- node fs rejections are always Error instances */
-          notice(`could not read settings file: ${error instanceof Error ? error.message : String(error)}`)
+          notice(t('could not read settings file: {message}', { message: error instanceof Error ? error.message : String(error) }))
           return
         }
         const edited = await display.screen.suspend(() => runExternalEditor(text, command))
@@ -922,7 +976,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
           await writeFile(path, edited, 'utf-8')
         } catch (error) {
           /* v8 ignore next 1 -- node fs rejections are always Error instances */
-          notice(`could not write settings file: ${error instanceof Error ? error.message : String(error)}`)
+          notice(t('could not write settings file: {message}', { message: error instanceof Error ? error.message : String(error) }))
         }
       }
 
@@ -974,11 +1028,34 @@ export function registerSettingsCommand(ctx: Context): () => void {
         if (changed) display.screen.requestRender()
       }
 
+      /** Reproject localized copy without replacing any mounted controller. */
+      const refreshLocale = async (): Promise<void> => {
+        if (inactive()) return
+        const next = await fetchGroups()
+        if (inactive()) return
+        built = next
+        lastKnown = next.values
+        panelNotice.current = undefined
+        groupsPanel.setRows(groupRows())
+        if (listPanel !== undefined && openNs !== undefined) {
+          const group = next.groups.find(entry => entry.ns === openNs)
+          if (group !== undefined) {
+            listPanel.updatePresentation(
+              group.items,
+              t('settings › {namespace}', { namespace: openNs }),
+              [t('↑↓ select'), t('↵ change'), t('esc back')],
+            )
+          }
+        }
+        formPanel?.invalidate()
+        groupsTail.invalidate()
+        display.screen.requestRender()
+      }
+
       // Live while the panel is open: the host file watcher announces
       // external edits (and our own commits) here. Refreshes serialize
       // behind the in-flight one, so rapid emissions never interleave a
       // rebuild with a diff.
-      let chain: Promise<void> = Promise.resolve()
       const offDocument = ctx.on('settings/document-updated', () => {
         chain = chain.then(refresh)
       })
@@ -987,6 +1064,9 @@ export function registerSettingsCommand(ctx: Context): () => void {
       if (inactive()) return { kind: 'success' }
       lastKnown = built.values
       mountGroups()
+      offLocale = observeInteractionLocale(ctx, () => {
+        chain = chain.then(refreshLocale)
+      })
       return { kind: 'success' }
     },
   })

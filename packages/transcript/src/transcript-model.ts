@@ -23,6 +23,7 @@ import {
   type TranscriptImageModel,
   type TranscriptModel,
   type TranscriptToolModel,
+  type BlueTranslate,
 } from '@dsh-blue/blue-frontend'
 import {
   AssistantMessageComponent,
@@ -61,6 +62,8 @@ export interface TranscriptModelRenderer extends CanonicalNodeRenderer {
   readonly images: () => UserMessageImages
   readonly requestRender: () => void
   readonly presentation?: TranscriptPresentationPolicy
+  /** Dynamic translator for transcript-owned renderer chrome. */
+  readonly t?: BlueTranslate
   /** Disable semantic component chrome while retaining canonical width-safe rendering. */
   readonly semantic?: boolean
 }
@@ -244,6 +247,7 @@ export class TranscriptModelComponent implements BlueComponent {
             images.onReady?.()
           },
           presentation: () => this.presentation(),
+          ...(renderer.t === undefined ? {} : { t: renderer.t }),
         })
         return component
       }
@@ -275,7 +279,7 @@ export class TranscriptModelComponent implements BlueComponent {
           ...(entry.code === undefined ? {} : { code: entry.code }),
         }, renderer.colors, renderer.components)
       case 'transcript-interrupted':
-        return new InterruptedMarkerComponent(renderer.colors, renderer.components)
+        return new InterruptedMarkerComponent(renderer.colors, renderer.components, renderer.t)
     }
   }
 
@@ -376,6 +380,12 @@ export class TranscriptModelService extends Service {
 
   /** Re-read presentation policy and invalidate mounted semantic components. */
   refreshPresentationPolicy(): void {
+    for (const { component } of this.mounted.values()) component.invalidate()
+    this.screen?.requestRender(true)
+  }
+
+  /** Invalidate renderer-owned copy after a locale provider revision. */
+  refreshLocale(): void {
     for (const { component } of this.mounted.values()) component.invalidate()
     this.screen?.requestRender(true)
   }

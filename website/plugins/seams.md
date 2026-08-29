@@ -34,7 +34,7 @@ Manifest 校验、capability 限权、重复 id、owner namespace 和生命周�
 | conversation | `blueConversation` / `blueConversationFacts` | official replay/live transcript 与 status/pane facts |
 | transcript | transcript model、private status/bottom-pane registries、tool model service | readonly model/canonical node 到 TUI renderer |
 | interaction | `blueEditorHost` / `blueInteractionState` | frontend-tree-scoped editor slot、completion multiplexer、pre-clear submit barrier、public extension/provider binding、draft/settings/paste state |
-| bundle | `cordis.patch.yml` | 31 条 Blue 自有行和显式依赖顺序 |
+| bundle | `cordis.patch.yml` | 32 条 Blue 自有行和显式依赖顺序 |
 
 Session switch 的 `blue/request-resume`、`-new`、`-fork`、`-rewind` 是发给 app owner 的 command events，不是向 renderer 广播 Session 对象。
 

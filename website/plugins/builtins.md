@@ -1,21 +1,21 @@
 # 内置插件
 
-Blue 的 installable bundle 含 31 条 Blue 自有行：2 条宿主支撑行，以及按基线、增强、装配三段组织的 29 条产品行。外部插件通过 renderer-neutral public API 接入；内部 row 之间用显式 `inject` 和 model/action seam 连接。
+Blue 的 installable bundle 含 32 条 Blue 自有行：2 条宿主支撑行，以及按基线、增强、装配三段组织的 30 条产品行。外部插件通过 renderer-neutral public API 接入；内部 row 之间用显式 `inject` 和 model/action seam 连接。
 
-patch 里实际还有第 32 条 insert 行——Harness 的 `session-title-all-prompts-llm`（标题节奏 swap：禁用 base 的 `session-title-llm` 首条消息定标题，换成每条用户消息重拟标题、歪标题下条自纠）。它是 Harness 包而非 Blue 自有行，所以上面的 31 行口径不含它。
+patch 里实际还有第 33 条 insert 行——Harness 的 `session-title-all-prompts-llm`（标题节奏 swap：禁用 base 的 `session-title-llm` 首条消息定标题，换成每条用户消息重拟标题、歪标题下条自纠）。它是 Harness 包而非 Blue 自有行，所以上面的 32 行口径不含它。
 
 <!-- BEGIN diagram:blue-composition -->
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml - 31 Blue-owned rows · 31 条 Blue 自有行"]
+    subgraph bundle["cordis.patch.yml - 32 Blue-owned rows · 32 条 Blue 自有行"]
         subgraph host["host support 宿主支撑 - 2 rows"]
             presets["blue-agent-presets"]
             creative["blue-creative-host"]
         end
-        subgraph product["product UI 产品 UI - 29 rows"]
-            subgraph baseline["baseline 基线 - 8 rows"]
-                api["blue-api-host"]
+        subgraph product["product UI 产品 UI - 30 rows"]
+            subgraph baseline["baseline 基线 - 9 rows"]
+                api["blue-api-host · blue-locale"]
                 core["blue-core · blue-theme-dark"]
                 chrome["blue-banner · blue-transcript · blue-status-basic"]
                 conversation["blue-conversation · blue-transcript-official"]
@@ -52,13 +52,14 @@ flowchart TB
 | `blue-agent-presets` | Blue 自有 preset root，组成 standard/code/minimal agent plane |
 | `blue-creative-host` | 隔离的 dynamic Cordis host；只经 public plugin host 向 UI 贡献 |
 
-## 基线（8 行）
+## 基线（9 行）
 
-这 8 行加装配段构成最小可用 UI。Conversation producer/consumer 已是基线，因为旧 event fold 不再存在。
+这 9 行加装配段构成最小可用 UI。Locale runtime/settings adapter 提供确定性的系统/英文 fallback；Conversation producer/consumer 已是基线，因为旧 event fold 不再存在。
 
 | 插件 | 说明 |
 |---|---|
 | `blue-api-host` | manifest 校验与八个公开 capability 的 scoped registries |
+| `blue-locale` | frontend-tree locale runtime；绑定官方 `locale.preference` 并跟随系统语言 |
 | `blue-core` | 唯一 pi-tui/raw-terminal adapter，提供 screen/keymap/components/terminal facts |
 | `blue-theme-dark` | 默认 dark theme provider |
 | `blue-banner` | 启动欢迎横幅 |

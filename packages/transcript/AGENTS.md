@@ -6,6 +6,8 @@ Implementation detail for this package. Repo-wide conventions live in the root [
 
 This package is the renderer adapter over `@dsh-blue/blue-frontend` models. It may depend on `blue-core`, but it must not expose pi-tui objects through frontend models and must not fold Harness event streams. App-owned `blueSessionReader`, `blueSessionProjections`, and `blueSessionActions` are the only current-session boundaries.
 
+Transcript-owned locale catalogs are registered per contributing Fiber. Banner, activity, long-message fold, image/interruption chrome, and the transcript expansion key description read dynamic translators; user/assistant/tool content, paths, ids, and upstream errors are never translated. A locale revision invalidates mounted transcript renderer caches and reprojects the keymap description while preserving component/model identity; provider gaps fall back to English source keys. Catalog registrations and subscriptions unload with their frontend-tree Fibers.
+
 `src/index.ts` creates `SessionFactsService`, the package-private
 `BlueStatusEntryService`, tree-scoped `BlueStatusCompositionService`,
 `BlueBottomPaneService`, `BlueModelToolService`, and

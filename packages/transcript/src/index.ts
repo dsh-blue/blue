@@ -27,6 +27,12 @@ import {
   DEFAULT_EXPAND_TURNS,
   TranscriptPresentationPolicy,
 } from './presentation-policy.ts'
+import {
+  mountTranscriptLocale,
+  observeTranscriptLocale,
+  TRANSCRIPT_LOCALE,
+  transcriptTranslator,
+} from './locale.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -103,6 +109,8 @@ interface CollapseToggle { expanded: boolean }
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
+  mountTranscriptLocale(ctx, 'transcript', TRANSCRIPT_LOCALE)
+  const t = transcriptTranslator(ctx, 'transcript')
   const screen = ctx.blueScreen
   const colors = ctx.blueTheme.colors
   const toggle: CollapseToggle = { expanded: false }
@@ -149,6 +157,7 @@ export function apply(ctx: Context): void {
       images: imageDependencies,
       requestRender: () => screen.requestRender(),
       presentation,
+      t,
     },
   })
   ctx.effect(() => () => statusEntries.dispose())
@@ -176,16 +185,22 @@ export function apply(ctx: Context): void {
   // dialog panels pull up over.
   ctx.effect(() => screen.addBottomChild(new GutterComponent(statusComposition), 'bottom'))
 
-  ctx.effect(() => ctx.blueKeymap.register([{
-    id: ACTION_TOGGLE_COLLAPSE,
-    keys: 'ctrl+o',
-    description: 'Toggle detail expansion (tool output, long messages)',
-    handler: () => {
-      toggle.expanded = !toggle.expanded
-      transcriptModels.setExpanded(toggle.expanded)
-      screen.requestRender(true)
-    },
-  }]))
+  let offKeymap: () => void = () => {}
+  const registerKeymap = (): void => {
+    offKeymap()
+    offKeymap = ctx.blueKeymap.register([{
+      id: ACTION_TOGGLE_COLLAPSE,
+      keys: 'ctrl+o',
+      description: t('Toggle detail expansion (tool output, long messages)'),
+      handler: () => {
+        toggle.expanded = !toggle.expanded
+        transcriptModels.setExpanded(toggle.expanded)
+        screen.requestRender(true)
+      },
+    }])
+  }
+  registerKeymap()
+  ctx.effect(() => () => offKeymap())
 
   // Blue settings ride the host settings document: the resolved `blue`
   // namespace (schema owned by interaction) carries the fold defaults
@@ -201,5 +216,11 @@ export function apply(ctx: Context): void {
   ctx.on('settings/updated', (ns, next) => {
     if (ns === BLUE_NS) applyFoldSettings(next)
   })
+
+  const offLocale = observeTranscriptLocale(ctx, () => {
+    transcriptModels.refreshLocale()
+    registerKeymap()
+  })
+  ctx.effect(() => offLocale)
 
 }

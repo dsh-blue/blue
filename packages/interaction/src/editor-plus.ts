@@ -42,6 +42,7 @@ import type {
   BlueComponents,
   BlueSemanticColors,
 } from '@dsh-blue/blue-core'
+import type { BlueTranslate } from '@dsh-blue/blue-frontend'
 import {
   ENHANCEMENT_EDITOR_PLUS,
   getSharedEditor,
@@ -54,6 +55,7 @@ import { ACTION_BACKSPACE, ACTION_CANCEL } from './keys.ts'
 import { extractSkillPrefix, refresh, userInvocableSkills } from './skills-catalog.ts'
 import { sanitizeShellOutput } from './shell-sanitize.ts'
 import { filterSlashCommands, slashCommandLabel } from './slash-filter.ts'
+import { interactionTranslator, observeInteractionLocale } from './locale.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-editor-plus'
@@ -129,8 +131,8 @@ function withLine(lines: string[], index: number, line: string): string[] {
 function slashItemDescription(command: {
   readonly description?: string | undefined
   readonly inputHint?: string | undefined
-}): string {
-  const description = command.description ?? ''
+}, t: BlueTranslate): string {
+  const description = t(command.description ?? '')
   return command.inputHint === undefined ? description : `${command.inputHint} — ${description}`
 }
 
@@ -160,6 +162,7 @@ function createAutocompleteProvider(
   mode: () => 'prompt' | 'bash',
   notice: (text: string) => void,
 ): BlueAutocompleteProvider {
+  const t = interactionTranslator(ctx)
   const cwd = process.cwd()
   // Captured before any unload: the fd probe settles asynchronously and a
   // theme-swap reload may dispose this fiber first — the service object
@@ -203,7 +206,7 @@ function createAutocompleteProvider(
         // trace — the empty-session-cwd corner read as "@ is dead". Flash
         // the hint line instead; a superseded (aborted) round stays quiet.
         if (suggestions === null && !options.signal.aborted) {
-          notice('no matching files under the session cwd')
+          notice(t('no matching files under the session cwd'))
         }
         return suggestions
       }
@@ -260,7 +263,7 @@ function createAutocompleteProvider(
       ).map((match): BlueAutocompleteItem => ({
         value: `/${match.command.name}`,
         label: slashCommandLabel(match),
-        description: slashItemDescription(match.command),
+        description: slashItemDescription(match.command, t),
       }))
       // The value carries the slash so pi-tui's best-match preselection
       // (exact `value === prefix`, then `startsWith`) keys on the same text
@@ -333,6 +336,7 @@ class ShellEchoComponent implements BlueComponent {
     private readonly stderr: string,
     private readonly truncated: boolean,
     private readonly code: number,
+    private readonly t: BlueTranslate,
   ) {}
 
   /** No cached render state. */
@@ -363,10 +367,10 @@ class ShellEchoComponent implements BlueComponent {
     if (body.length > 0) {
       lines.push(...body)
     } else {
-      lines.push(this.colors.textMuted('(no output)'))
+      lines.push(this.colors.textMuted(this.t('(no output)')))
     }
-    if (this.truncated) lines.push(this.colors.muted('… output truncated'))
-    if (this.code !== 0) lines.push(this.colors.error(`exit code ${this.code}`))
+    if (this.truncated) lines.push(this.colors.muted(this.t('… output truncated')))
+    if (this.code !== 0) lines.push(this.colors.error(this.t('exit code {code}', { code: this.code })))
     return lines
   }
 }
@@ -408,6 +412,7 @@ function runShell(ctx: Context, command: string, isUnloaded: () => boolean): voi
       stderr.text,
       stdout.truncated || stderr.truncated,
       result.code,
+      interactionTranslator(ctx),
     )
     // Effect-bound so unloading this fiber also removes its echoes. The
     // mount lands after the input-driven frame — the shell settles
@@ -618,6 +623,12 @@ export function apply(ctx: Context): void {
   ctx.effect(() => () => {
     detach?.()
   })
+  const offLocale = observeInteractionLocale(ctx, () => {
+    const editor = getSharedEditor(ctx)?.editor
+    if (editor?.isShowingAutocomplete() === true) editor.refreshAutocomplete()
+    ctx.blueScreen.requestRender()
+  })
+  ctx.effect(() => offLocale)
   ctx.on('blue/input-editor-changed', reattach)
   reattach()
 }

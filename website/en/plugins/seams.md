@@ -34,7 +34,7 @@ When the `session.read` / `session.act` owner is absent, `open()` returns `BLUE_
 | conversation | `blueConversation` / `blueConversationFacts` | official replay/live transcript and status/pane facts |
 | transcript | transcript model, private status/bottom-pane registries, and tool model service | readonly models/canonical nodes into the TUI renderer |
 | interaction | `blueEditorHost` / `blueInteractionState` | frontend-tree-scoped editor slot, completion multiplexer, pre-clear submit barrier, public extension/provider binding, draft/settings/paste state |
-| bundle | `cordis.patch.yml` | 31 Blue-owned rows and explicit dependency ordering |
+| bundle | `cordis.patch.yml` | 32 Blue-owned rows and explicit dependency ordering |
 
 Session-switch events such as `blue/request-resume`, `-new`, `-fork`, and `-rewind` are commands addressed to the app owner, not broadcasts carrying Session objects into renderers.
 

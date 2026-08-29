@@ -69,6 +69,7 @@ function createTestEditor(): BlueEditor {
     setGhostHint: () => {},
     setAutocompleteProvider: () => {},
     isShowingAutocomplete: () => false,
+    refreshAutocomplete: () => {},
     insertText: (text: string) => { value = `${value.slice(0, cursor)}${text}${value.slice(cursor)}`; cursor += text.length; editor.onChange?.(value) },
     render: (width: number) => editor.renderContent(width),
     invalidate: () => {},

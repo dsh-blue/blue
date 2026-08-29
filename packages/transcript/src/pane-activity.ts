@@ -35,6 +35,13 @@ import type { BlueBottomPaneNode } from './dock-model.ts'
 import { formatTokens } from './status-context.ts'
 import { buildTipRotation } from './status-tips.ts'
 import { STATUS_TIPS } from './tips-content.ts'
+import type { BlueTranslate } from '@dsh-blue/blue-frontend'
+import {
+  ACTIVITY_LOCALE,
+  mountTranscriptLocale,
+  observeTranscriptLocale,
+  transcriptTranslator,
+} from './locale.ts'
 import {
   BRAILLE_SPINNER_FRAMES,
   BRAILLE_SPINNER_INTERVAL_MS,
@@ -124,7 +131,7 @@ function flowCounter(flow: TurnFlow): string {
 }
 
 /** Build the one-row canonical activity node for the current state. */
-function activityNode(state: ActivityState): BlueUiNode {
+function activityNode(state: ActivityState, t: BlueTranslate): BlueUiNode {
   if (state.mode === 'idle') return { kind: 'spacer' }
   if (state.mode === 'hidden' || state.mode === 'thinking') return { kind: 'text', content: '' }
   const moon = state.mode === 'waiting' || state.mode === 'tool'
@@ -135,9 +142,9 @@ function activityNode(state: ActivityState): BlueUiNode {
     kind: 'rich-text',
     spans: [
       { text: frame, tone: 'accent', emphasis: 'strong' },
-      ...(!moon ? [{ text: WORKING_LABEL } as const] : []),
+      ...(!moon ? [{ text: t(WORKING_LABEL) } as const] : []),
       ...(state.flow === '' ? [] : [{ text: ` ${state.flow}`, tone: 'muted' as const }]),
-      { text: `${TIP_LEAD}${state.tip}`, tone: 'muted' },
+      { text: `${t(TIP_LEAD)}${t(state.tip)}`, tone: 'muted' },
     ],
   }
 }
@@ -148,6 +155,7 @@ class ActivityPaneComponent {
     private readonly colors: BlueSemanticColors,
     private readonly components: BlueComponents,
     private readonly state: ActivityState,
+    private readonly t: BlueTranslate,
   ) {}
 
   private paintWave(frame: string): string {
@@ -163,17 +171,17 @@ class ActivityPaneComponent {
     if (mode === 'idle') return ['']
     if (mode === 'composing') {
       const frame = BRAILLE_SPINNER_FRAMES[this.state.frame % BRAILLE_SPINNER_FRAMES.length]!
-      const base = `${this.colors.primary(frame)}${WORKING_LABEL}`
+      const base = `${this.colors.primary(frame)}${this.t(WORKING_LABEL)}`
       const flow = this.state.flow === '' ? '' : this.colors.muted(` ${this.state.flow}`)
       const withFlow = base + flow
-      const row = withFlow + this.colors.muted(`${TIP_LEAD}${this.state.tip}`)
+      const row = withFlow + this.colors.muted(`${this.t(TIP_LEAD)}${this.t(this.state.tip)}`)
       if (this.components.visibleWidth(row) <= width) return [row]
       if (this.components.visibleWidth(withFlow) <= width) return [withFlow]
       return this.components.visibleWidth(base) <= width ? [base] : []
     }
     const frame = this.paintWave(MOON_SPINNER_FRAMES[this.state.frame % MOON_SPINNER_FRAMES.length]!)
     const flow = this.state.flow === '' ? '' : this.colors.muted(` ${this.state.flow}`)
-    const full = frame + flow + this.colors.muted(`${TIP_LEAD}${this.state.tip}`)
+    const full = frame + flow + this.colors.muted(`${this.t(TIP_LEAD)}${this.t(this.state.tip)}`)
     if (this.components.visibleWidth(full) <= width) return [full]
     const withFlow = frame + flow
     if (this.components.visibleWidth(withFlow) <= width) return [withFlow]
@@ -193,6 +201,8 @@ class ActivityPaneComponent {
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
+  mountTranscriptLocale(ctx, 'transcript.activity', ACTIVITY_LOCALE)
+  const t = transcriptTranslator(ctx, 'transcript.activity')
   const colors = ctx.blueTheme.colors
   const screen = ctx.blueScreen
   const components = ctx.blueComponents
@@ -286,11 +296,15 @@ export function apply(ctx: Context): void {
 
   const model = (): BlueBottomPaneNode => ({
     id: 'blue.dock.activity', priority: 10, preferredRows: 1,
-    node: activityNode(state),
+    node: activityNode(state, t),
     collapsed: state.mode === 'hidden' || state.mode === 'thinking',
   })
-  const pane = new ActivityPaneComponent(colors, components, state)
+  const pane = new ActivityPaneComponent(colors, components, state, t)
   ctx.effect(() => ctx.blueBottomPanes.register(model, (_node, width) => pane.render(width)))
+  const offLocale = observeTranscriptLocale(ctx, () => {
+    ctx.blueBottomPanes.refresh('blue.dock.activity', true)
+  })
+  ctx.effect(() => offLocale)
   // Effect-bound so unloading this fiber stops the animation.
   ctx.effect(() => () => stopTimer())
 }

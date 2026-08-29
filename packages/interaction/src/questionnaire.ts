@@ -8,6 +8,7 @@
 
 import type { BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueFocusable, BlueTheme } from '@dsh-blue/blue-core'
+import { interpolateLocaleMessage, type BlueTranslate } from '@dsh-blue/blue-frontend'
 import type { AskUserQuestionAnswerItem, AskUserQuestionItem, AskUserQuestionOption } from '@deepseek-ai/dsh-user-questions'
 import { CanonicalPanelAdapter } from './canonical-panel.ts'
 import { oneLine, windowedRange } from './select-list.ts'
@@ -29,6 +30,8 @@ export interface QuestionnaireOptions {
   readonly questions: readonly AskUserQuestionItem[]
   readonly onComplete: (answers: AskUserQuestionAnswerItem[]) => void
   readonly onCancel: () => void
+  /** Dynamic translator for questionnaire-owned chrome. */
+  readonly t?: BlueTranslate
 }
 
 interface QuestionState {
@@ -184,6 +187,7 @@ export class Questionnaire implements BlueFocusable {
 
   /** Current renderer-neutral question tree. */
   currentNode(): BlueUiNode {
+    const t: BlueTranslate = this.options.t ?? interpolateLocaleMessage
     const question = this.current()
     const state = this.state()
     const progress = this.options.questions.map((entry, index) => ({
@@ -200,7 +204,7 @@ export class Questionnaire implements BlueFocusable {
       body.push({
         kind: 'form',
         id: 'questionnaire-answer',
-        fields: [{ kind: 'input', id: 'answer', label: 'Answer', value: state.draft }],
+        fields: [{ kind: 'input', id: 'answer', label: t('Answer'), value: state.draft }],
       })
     } else {
       const ids = [...state.options.map((_, index) => String(index + 1)), OTHER_ID]
@@ -213,7 +217,11 @@ export class Questionnaire implements BlueFocusable {
         items: ids.slice(range.start, range.end).map((id, offset) => {
           const index = range.start + offset
           const option = state.options[index]
-          if (option === undefined) return { id, label: state.custom === undefined ? 'Other' : `Other: ${state.custom}`, badge: String(state.options.length + 1) }
+          if (option === undefined) return {
+            id,
+            label: state.custom === undefined ? t('Other') : t('Other: {value}', { value: state.custom }),
+            badge: String(state.options.length + 1),
+          }
           return {
             id,
             label: `${question.multiSelect === true ? state.toggled.has(option.label) ? '[x] ' : '[ ] ' : ''}${option.label}`,
@@ -226,17 +234,19 @@ export class Questionnaire implements BlueFocusable {
     return {
       kind: 'surface',
       chrome: 'overlay',
-      title: `Question ${String(this.tab + 1)} of ${String(this.options.questions.length)}`,
+      title: t('Question {current} of {total}', { current: this.tab + 1, total: this.options.questions.length }),
       child: { kind: 'stack', direction: 'column', gap: 1, children: body.map(node => ({ node })) },
       footer: { kind: 'text', content: this.footer(), tone: 'muted' },
     }
   }
 
   private footer(): string {
-    if (this.editing) return this.isOptionless(this.current()) ? 'Enter save · Tab next · Esc cancel' : 'Enter save · Tab next · Esc back'
-    return this.current().multiSelect === true
+    const source = this.editing
+      ? this.isOptionless(this.current()) ? 'Enter save · Tab next · Esc cancel' : 'Enter save · Tab next · Esc back'
+      : this.current().multiSelect === true
       ? '↑↓ select · 1-9 choose · Space toggle · Enter choose · Tab next · Esc cancel'
       : '↑↓ select · 1-9 choose · Enter choose · Tab next · Esc cancel'
+    return this.options.t?.(source) ?? source
   }
 
   private onEvent(event: BlueUiEvent): void {

@@ -32,9 +32,21 @@ import type { TranscriptToolItem } from '../src/types.ts'
 import { fakeBlueComponents } from './helpers.ts'
 import { COLORS } from './status-fakes.ts'
 import { ADVERSARIAL, SCAN_WIDTHS, expectLinesFit } from '../../core/tests/width-scan.ts'
+import {
+  interpolateLocaleMessage,
+  type BlueLocaleCatalog,
+  type BlueLocaleId,
+  type BlueTranslate,
+} from '../../frontend/src/locale.ts'
+import { BANNER_LOCALE, TRANSCRIPT_LOCALE } from '../src/locale.ts'
 
 /** Identity colors satisfy BlueSemanticColors where consumed. */
 const colors = COLORS as BlueSemanticColors
+
+/** Bind a catalog directly so width scans cover both shipped languages. */
+function translator(catalog: BlueLocaleCatalog, locale: BlueLocaleId): BlueTranslate {
+  return (key, values) => interpolateLocaleMessage(catalog[locale][key] ?? catalog.en[key] ?? key, values)
+}
 
 /** Minimal screen recording the actual bottom-dock component mounted by the service. */
 function bottomPaneScreen(): { readonly screen: BlueScreen, readonly bottom: BlueComponent[] } {
@@ -84,6 +96,37 @@ function subagentItem(text: string): TranscriptToolItem {
 }
 
 describe('transcript width-scan', () => {
+  for (const locale of ['en', 'zh'] as const) {
+    it(`localized transcript chrome survives every width in ${locale}`, () => {
+      const components = fakeBlueComponents()
+      const transcriptT = translator(TRANSCRIPT_LOCALE, locale)
+      const longUser = new UserMessageComponent({
+        kind: 'user', seq: 1, turn: 1,
+        text: Array.from({ length: 12 }, (_, index) => `line ${String(index)} 界🙂`).join('\n'),
+        images: [{ attachmentId: 'image', mediaType: 'image/png', bytes: 1, width: 1, height: 1 }],
+      }, colors, components, {
+        loadImage: () => new Promise(() => {}),
+        t: transcriptT,
+      })
+      const interrupted = new InterruptedMarkerComponent(colors, components, transcriptT)
+      const bannerDeps = {
+        colors,
+        truncate: (text: string, width: number) => components.truncateToWidth(text, width),
+        visibleWidth: (text: string) => components.visibleWidth(text),
+        t: translator(BANNER_LOCALE, locale),
+      }
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`UserMessage/${locale}`, longUser.render(width), width)
+        expectLinesFit(`Interrupted/${locale}`, interrupted.render(width), width)
+        if (bannerLayout(width) !== null) {
+          expectLinesFit(`Banner/${locale}`, composeBannerLines(bannerDeps, {
+            version: '0.1.1-rc.2', model: 'deepseek-chat', provider: 'deepseek', cwd: '~/界🙂',
+          }, width), width)
+        }
+      }
+    })
+  }
+
   for (const { name, text } of ADVERSARIAL) {
     it(`BlueBottomPaneService accepted adapter survives ${name}`, () => {
       const { screen, bottom } = bottomPaneScreen()

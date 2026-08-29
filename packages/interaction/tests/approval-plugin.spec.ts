@@ -13,7 +13,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import { BlueLocaleService } from '../../frontend/src/locale.ts'
 import * as approvalPlugin from '../src/approval-plugin.ts'
+import { INTERACTION_LOCALE } from '../src/locale.ts'
 import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeScreen } from './fakes.ts'
 
 const contexts = new WeakMap<Agent, Context>()
@@ -22,14 +24,19 @@ function setYolo(agent: Agent, enabled: boolean): void {
   contexts.get(agent)?.blueSessionActions.setYolo(enabled)
 }
 
-async function mount(options: { attach?: boolean } = {}): Promise<{
+async function mount(options: { attach?: boolean, locale?: 'en' | 'zh' } = {}): Promise<{
   ctx: Context
   screen: FakeScreen
   components: FakeBlueComponents
   agent: Agent
   steer: ReturnType<typeof vi.fn>
+  locale: BlueLocaleService | undefined
 }> {
   const { ctx, screen, components } = fakeBlueContext()
+  const locale = options.locale === undefined
+    ? undefined
+    : new BlueLocaleService(ctx, { systemLocale: options.locale })
+  locale?.register('interaction', INTERACTION_LOCALE)
   await ctx.plugin(SessionStore)
   const session = ctx.sessions.create(SessionId('approval-spec'))
   const steer = vi.fn()
@@ -37,7 +44,7 @@ async function mount(options: { attach?: boolean } = {}): Promise<{
   contexts.set(agent, ctx)
   ctx.provide('testSession', { current: options.attach === false ? null : agent, modelRef: undefined })
   await ctx.plugin(approvalPlugin)
-  return { ctx, screen, components, agent, steer }
+  return { ctx, screen, components, agent, steer, locale }
 }
 
 function request(agent: Agent, extra: Partial<ApprovalRequest> = {}): ApprovalRequest {
@@ -94,6 +101,22 @@ describe('blue-approval answerer', () => {
     expect(rendered.join('\n')).toContain('Approve bash?')
     expect(rendered.join('\n')).not.toContain('writes files')
     expect(rendered.join('\n')).toContain('Allow once')
+    overlay(screen).handleInput(KEY.escape)
+    await pending
+  })
+
+  it('switches an open approval prompt in place without moving its choice', async () => {
+    const { ctx, screen, agent, locale } = await mount({ locale: 'en' })
+    const pending = decide(ctx, request(agent))
+    const prompt = screen.overlays[0]!.component
+    overlay(screen).handleInput(KEY.down)
+    expect(prompt.render(60).join('\n')).toContain('Allow bash for this session')
+
+    locale!.setPreference('zh')
+    expect(screen.overlays[0]!.component).toBe(prompt)
+    const localized = prompt.render(60).join('\n')
+    expect(localized).toContain('是否批准 bash？')
+    expect(localized).toContain('→ 本会话允许 bash [2]')
     overlay(screen).handleInput(KEY.escape)
     await pending
   })

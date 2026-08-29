@@ -1,6 +1,6 @@
 # Frontend Runtime Cutover Ledger
 
-> Status: the C4/C6 evidence below records the earlier frontend-runtime cutover checkpoint. On the current W4-W6 integration branch, W6-1 capability cleanup, W6-2 canonical-node source migration, W6-3 session read/act packed closure, W6-4 release closure, W4/G4 hardening, W5/G5 provider evidence, and W6-5 final-candidate automatic/profile evidence are complete. The user live-tested the `cf8b3bd` candidate and explicitly replied `验收通过` on 2026-08-29. Registry install smoke remains pending because no candidate has been published; after merge, the release tag publishes the candidate before registry verification gates dist-tag promotion. At the user's request, merge, tag, publish, production-profile mutation, and acceptance-profile deletion remain deferred.
+> Status: PR #77 is the integration carrier for the design in PR #72 and the locale behavior originally developed in PR #78. The W4-W6 evidence below records the pre-i18n PR #77 candidate accepted on 2026-08-29; that acceptance does not cover the new locale-integrated tree. The current `p2/ui-i18n-integration` worktree reimplements PR #78 against PR #77's canonical UI architecture. Its full automatic gate is complete; dedicated-profile dogfood and fresh live acceptance remain. At the user's request, merge, tag, publish, production-profile mutation, PR closure, and acceptance-profile deletion remain deferred.
 
 ## Frozen Inputs
 
@@ -15,8 +15,18 @@
 | PR #61 | `e9ef7ca49fa922e5778f78aa1660143d5138fb20` | settings |
 | PR #62 | `dac99a4cb24278bef10e3672b59530d5eb3d9d6c` | rewind and session tree |
 | PR #63 | `f2d8ab2514ace94c3a07a30d9d2d247ac2af1a33` | provider onboarding |
+| PR #72 | `f60e21d726be40b3ecd6dfa545048e88c1efba20` | public UI API design, subsumed by PR #77 |
+| PR #77 | `9a6a25549e54735de3e5f2a7604146269648d956` | accepted W1-W6 implementation and integration base |
+| PR #78 | `d2f3d1c138692e365cf4439ae7a02cd8c74ff51f` | locale behavior reference against the pre-#77 topology |
 
-PR #34 and #38 are out of scope; PR #36 is superseded. The earlier checkpoint was developed in `/home/x/dev/blue-runtime-cutover` on `p2/frontend-runtime-cutover`; the current W4-W6 integration continues in `/home/x/dev/deepseek-harness-plugin/blue/blue-ui-w4-w6` on `p2/ui-api-w4-w6` for PR #77.
+PR #34 and #38 are out of scope; PR #36 is superseded. The earlier checkpoint was developed in `/home/x/dev/blue-runtime-cutover` on `p2/frontend-runtime-cutover`; W4-W6 continued in `/home/x/dev/deepseek-harness-plugin/blue/blue-ui-w4-w6` on `p2/ui-api-w4-w6`. The current candidate is developed in `/home/x/dev/deepseek-harness-plugin/blue/blue-ui-i18n-integration` on `p2/ui-i18n-integration`, then pushed to PR #77's `p2/ui-api-refactor` branch after all automatic gates pass.
+
+## PR Integration Disposition
+
+- PR #77 remains the single merge carrier. It already contains PR #72's design and implementation, so PR #72 contributes no separate commit to replay.
+- PR #78's aggregate commit is not cherry-picked. Its locale service, Harness setting, first-wave translations and live-switch behavior are reimplemented on PR #77's renderer-neutral models, canonical panels and package ownership boundaries.
+- The disposable `BlueSettingsList.updateItems()` seam described by PR #78 is not restored. `CanonicalSettingsController.updatePresentation()` reprojects labels in place while preserving controller, cursor and form state.
+- PR #72 and PR #78 remain open until the locale-integrated PR #77 candidate passes live acceptance and is merged. Only then may they be closed as superseded.
 
 ## Behavior Migration
 
@@ -34,6 +44,8 @@ PR #34 and #38 are out of scope; PR #36 is superseded. The earlier checkpoint wa
 | settings (#61) | official settings | revisioned get/set/unset | settings/form panels | source-complete; human accepted |
 | rewind/tree (#62) | session store/query | rewind action/tree query | select/info panels | source-complete; human accepted |
 | onboarding (#63) | credentials/settings | secret write action | secret-aware form flow | source-complete; human accepted |
+| public UI API (#72/#77) | manifest + safe UI vocabulary | effect-bound registries and provider ownership | canonical compiler, managed surfaces and panels | source-complete; pre-i18n candidate accepted |
+| locale (#78) | process locale + official `locale.preference` | tree-scoped revisioned locale snapshot | interaction/transcript reproject in place | source/automatic gates complete; fresh acceptance pending |
 
 ## Legacy Deletion Gate
 
@@ -55,13 +67,57 @@ The deletion audit distinguishes renderer event folding from legitimate domain o
 
 ## Package And Composition Record
 
-- The current W4-W6 branch's eleven release packages and website are closed at `0.1.1-rc.1`; the independent Harness line remains `0.1.1-rc.2`.
+- The locale-integrated branch's eleven release packages and website are closed at `0.1.1-rc.2`; the independent Harness line remains `0.1.1-rc.2`.
 - Validation-only packages remain outside the release/bundle closure; `packages/context/package.json` remains `0.1.0-rc.2`.
-- The bundle contains 31 Blue-owned rows: 2 host-support, 8 baseline, 15 enhancement and 6 assembly rows.
-- Conversation projection and official transcript consumption are baseline rows. Context, remote, OpenPencil and Lark are validation-only, not bundle rows.
+- The bundle contains 32 Blue-owned rows: 2 host-support, 9 baseline, 15 enhancement and 6 assembly rows.
+- Locale runtime/settings adaptation, conversation projection and official transcript consumption are baseline rows. Context, remote, OpenPencil and Lark are validation-only, not bundle rows.
 - No operation may mutate the production `blue` profile.
 
-## Current W4-W6 Candidate Evidence
+## Current UI + i18n Integration Evidence
+
+Automatic candidate evidence:
+
+- `pnpm run test`: 189 files, 2999 passed, 31 skipped.
+- `pnpm run test:coverage`: per-file 100% of 17046 statements, 11328
+  branches, 3577 functions and 13621 lines.
+- `pnpm run typecheck`, `pnpm run build`, `pnpm run diagrams:check` and
+  `pnpm run website:build` exit 0. `pnpm run lint` exits 0 with seven warnings
+  and no errors.
+- `pnpm run check:lib` verifies 87 built/shipped claims. `pnpm run check:pack`
+  verifies 11 publint-clean rc.2 tarballs, 179 library files / 1548012 bytes,
+  and an external UI kit packed install/runtime/type check.
+- `pnpm run check:examples` validates all eight example packages and executes
+  the eight-scenario ecosystem fixture on Harness `0.1.1-rc.2` and
+  `0.1.1-rc.1`, with exact packed host peer resolution.
+- All 15 package validators return `valid: true` with zero package,
+  architecture or lifecycle violations.
+- `pnpm run smoke:happy`, `pnpm run smoke:pty`,
+  `pnpm run smoke:pty:mouse` and `pnpm run smoke:pty:output` pass serially
+  with exit 0.
+
+Packed fixture matrix, each from an independent tarball install using only
+public package exports:
+
+| Target | Harness `0.1.1-rc.2` | Harness `0.1.1-rc.1` |
+|---|---:|---:|
+| harness-adapter, including locale live reload/unload | 8/8 | 8/8 |
+| conversation | 11/11 | 11/11 |
+| core | 7/7 | 7/7 |
+| transcript | 13/13 | 13/13 |
+| interaction | 11/11 | 11/11 |
+| app | 9/9 | 9/9 |
+| context | 7/7 | 7/7 |
+| remote | 7/7 | 7/7 |
+| OpenPencil | 9/9 | 9/9 |
+| Lark | 9/9 | 9/9 |
+
+Every report has exact requested `harnessPackages`, matching
+`declared`/`executed`, empty `skipped`/`failures`, `independentInstall: true`
+and `fixtureCleaned: true`. The isolated `blue-ui-i18n-integration` profile
+and its automated PTY dogfood are the remaining machine gate before asking
+for fresh live acceptance.
+
+## Pre-integration W4-W6 Candidate Evidence
 
 Final candidate tree:
 
