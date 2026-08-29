@@ -1,6 +1,6 @@
 # Frontend Runtime Cutover Ledger
 
-> Status: the C4/C6 evidence below records the earlier frontend-runtime cutover checkpoint. On the current W4-W6 integration branch, W6-1 capability cleanup, W6-2 canonical-node source migration, and the W6-3 session read/act source plus packed-fixture checkpoint are complete. The W6-3 packed app fixture passes 9/9 scenarios on both the current Harness `0.1.1-rc.2` line and previous `0.1.1-rc.1` line. W6-4 has closed the eleven-package Blue release line at `0.1.1-rc.1` while leaving the Harness line unchanged. Refreshed full-tree/profile gates and explicit live human acceptance remain pending. No merge, tag, publish, production-profile mutation, or acceptance-profile deletion is authorized before acceptance.
+> Status: the C4/C6 evidence below records the earlier frontend-runtime cutover checkpoint. On the current W4-W6 integration branch, W6-1 capability cleanup, W6-2 canonical-node source migration, W6-3 session read/act packed closure, W6-4 release closure, W4/G4 hardening, W5/G5 provider evidence, and W6-5 final-candidate automatic/profile evidence are complete. Explicit live human acceptance remains pending. Registry install smoke is also pending because no accepted candidate has been published; after acceptance and merge, the release tag publishes the candidate before registry verification gates dist-tag promotion. No merge, tag, publish, production-profile mutation, or acceptance-profile deletion is authorized before acceptance.
 
 ## Frozen Inputs
 
@@ -61,6 +61,52 @@ The deletion audit distinguishes renderer event folding from legitimate domain o
 - Conversation projection and official transcript consumption are baseline rows. Context, remote, OpenPencil and Lark are validation-only, not bundle rows.
 - No operation may mutate the production `blue` profile.
 
+## Current W4-W6 Candidate Evidence
+
+Final candidate tree:
+
+- The final candidate tree passes 185 test files / 2959 tests with 31 skipped,
+  per-file 100% coverage (16700 statements, 11186 branches, 3478 functions,
+  13350 lines), build, typecheck, lint, diagrams, website, 86 built/shipped lib
+  claims, 11 publint-clean tarballs, 8/8 example scenarios on both Harness
+  lines, all package/example/validation-only validators, and the required
+  current/previous-line packed fixtures.
+- `smoke:happy`, `smoke:pty`, `smoke:pty:mouse`, and `smoke:pty:output` pass
+  serially on that tree. Parallel smoke execution is unsupported because each
+  smoke owns the checkout's dependency self-heal/build step; only the clean
+  serial results are release evidence.
+
+W4/G4 and W5/G5 direct evidence:
+
+- The shared `ADVERSARIAL x SCAN_WIDTHS` sweep (120 through 2 columns) covers
+  canonical single/multi select, form, settings, document select/loading,
+  Questionnaire, PlanReview, Help, Info, and the prompt mounted by an actual
+  approval plugin request. Transcript drives an accepted adapter through the
+  real `BlueBottomPaneService` mount, clamp, and gutter path. The focused pair
+  currently passes 210/210.
+- The editor-provider swap test observes the provider's
+  `BlueEditorSnapshot` and directly retains draft, history, cursor, plan mode,
+  attachment snapshot, outer/editor focus, completion identity, and renderer
+  exact renderer IME marker bytes passing through candidate replacement.
+  Existing suites retain the fallback/breaker, provider unload, stale result,
+  and input fencing evidence. Real pi-tui IME composition remains part of live
+  acceptance rather than being inferred from the fake editor.
+
+Dedicated-profile evidence:
+
+- `blue-ui-api-w4-w6` is the isolated acceptance profile; production `blue`
+  was not modified. Automated PTY dogfood covers the default single-column
+  frame, 120/80/40-column plugin layout and narrow fallback, status/editor
+  provider swap, theme swap, session switch, overlay, draft input, `/new`,
+  `/quit`, bracketed-paste restoration, clean exit, and absence of
+  overflow/crash logs.
+- Live human testing on that profile and the exact `验收通过` response remain
+  mandatory. The profile must remain installed until accepted merge cleanup.
+- Registry install smoke is deliberately not reported as complete. No accepted
+  candidate is published yet; after human acceptance, merge and the release
+  tag, the workflow publishes the candidate artifact, installs that exact
+  registry version, and gates rc/latest dist-tag promotion.
+
 ## Earlier C6 Evidence
 
 Current-tree machine evidence (2026-08-26):
@@ -113,6 +159,6 @@ Process/profile evidence:
   session-save exit; no `blue-overflow.log` exists in the profile.
 
 This evidence completed the earlier C6 checkpoint; it does not substitute for
-the current W4-W6 branch's pending release gates or unified acceptance profile.
-The final gate remains the user's live test and exact acceptance response
-`验收通过`; automated evidence cannot substitute for it.
+the current candidate evidence above. The final-head gate refresh, user's live
+test, and exact acceptance response `验收通过` remain mandatory; automated
+evidence cannot substitute for them.

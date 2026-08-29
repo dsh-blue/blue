@@ -1,9 +1,10 @@
 # Blue UI API 与组件系统重构方案
 
-> 状态：目标架构与实施蓝图，W0 可行性探针已验收，产品实现尚未开始。本文以
-> `master@1d0f01e` 和
-> `@earendil-works/pi-tui@0.84.2` 为事实基线。现状描述以代码为准，目标契约以本文为准；
-> 实施完成后，公开 API 文档与各包 `AGENTS.md` 接替本文成为运行时真相。
+> 状态：W1-W6 的源码、打包闭包、最终候选树自动门禁和专用 profile 自动验收
+> 已落到 PR #77。W4/G4 width matrix、chrome 私有化/drift guard 与 W5/G5
+> provider-state 证据均已收口。真人 live-test、明确
+> `验收通过`、合并和候选发布均未发生。现状描述以代码和各包 `AGENTS.md` 为准，
+> 本文保留目标契约、执行顺序和当前验收账目。
 >
 > 发布目标：完成本文定义的 UI API、公开 UI Kit、内置组件迁移、插件边界和真实终端验收，
 > 是 Blue `0.1.1-rc.1` 的版本标志。该版本不是一次主题换肤，而是 UI 架构切换。
@@ -881,13 +882,23 @@ W4b 在 W4a-B 合入后由一个 Agent 迁移 Approval、Questionnaire、PlanRev
 - 删除已替代组件和兼容 facade；coverage 不靠 ignore 掩盖新路径。
 - 默认单列 profile 真人对比验收，视觉变化有截图/PTY 记录。
 
+当前 width matrix 已在共享 `ADVERSARIAL x SCAN_WIDTHS`（120、80、60、
+40、20、10、5、3、2 列）上直接覆盖 canonical 单选、多选、form、settings、
+document select/loading、Questionnaire、PlanReview、Help、Info，以及从真实
+approval plugin request 挂载出的 prompt。Transcript 的 accepted bottom-pane
+adapter 也从 `BlueBottomPaneService` 实际挂载，经过 adapter clamp 和 gutter 后
+进入同一矩阵；两份 width-scan focused run 为 210/210。AST drift guard 另以
+恶意正例钉住别名 width import、本地 length 数学、转义 border、缩进 pointer
+和 Array padding 绕过，并对现存业务展示例外使用精确源码基线。真人视觉验收
+仍属于 W6 人工门禁，不能由 width scan 替代。
+
 ### 12.8 W5：生态与 provider
 
 G4 后按 Status → Editor extensions → Editor provider → Ecosystem 顺序执行：
 
-- **W5-A Status（实现已落地，待工作树门禁与真人验收）：**已实现 additive status snapshot、inert provider candidate、持久化用户选择、实际宽度 dry-render、原子替换、同会话 last-known-good、跨会话 default fallback 与 3/60s 无定时器 breaker。
-- **W5-B Editor：**先交付并验收 extensions，再在下一 task 实现 shell provider；保存 draft/history/mode/attachments，恰好一个 editor-control，失败回退默认。两个 task 不并行。
-- **W5-C Ecosystem：**在示例目录提供 header、right inspector、bottom log、overlay、custom status、custom editor shell；另建一个用户 kit，由至少两个示例插件共同依赖。同步中英插件开发文档和迁移指南。
+- **W5-A Status（已落地）：**已实现 additive status snapshot、inert provider candidate、持久化用户选择、实际宽度 dry-render、原子替换、同会话 last-known-good、跨会话 default fallback 与 3/60s 无定时器 breaker。
+- **W5-B Editor（已落地）：**extensions 与 selectable shell provider 均已实现；同一个 Blue-owned editor engine 跨 provider swap 保留 draft、history、cursor、mode、attachments、focus、completion 和 renderer IME marker pass-through，且只接受恰好一个 `editor-control`，失败回退默认。
+- **W5-C Ecosystem（已落地）：**示例目录提供 header、right inspector、bottom log、overlay、custom status、custom editor shell 和共享 user kit；packed fixture 在当前/上一 Harness 线上独立安装验证。
 
 **G5 验收：**
 
@@ -898,6 +909,13 @@ G4 后按 Status → Editor extensions → Editor provider → Ecosystem 顺序�
 - 用户 kit 不需要 capability，消费插件仍按 pane/overlay 权限被 host 拒绝或接纳。
 - API quickstart 不导入 repo internal、core 或 pi-tui。
 
+G5 的 provider-state 直接证据读取 provider 收到的 `BlueEditorSnapshot`，并在
+同一次 swap 前后断言 draft/history/cursor、plan mode、attachment snapshot、
+outer/editor focus、completion identity 和精确 renderer IME marker 字节的
+pass-through。后者不冒充真实 pi-tui 输入法 composition；该路径仍由最终真人
+验收覆盖。已有 provider fallback/breaker、unload fencing 和 packed ecosystem
+证据共同组成 G5 自动门禁。
+
 ### 12.9 W6：顺序发布波
 
 W6 不并行，按以下顺序执行：
@@ -906,10 +924,14 @@ W6 不并行，按以下顺序执行：
 2. **完成（W6-2）：**将 frontend/transcript/tool/context/openpencil 消费者全部迁到 canonical `BlueUiNode`，删除 core 的临时 `frontend-renderer` 和 source-plane 兼容入口。
 3. **完成（W6-3 源码与 packed checkpoint）：**将 session seam 拆为只读 `session.read` 与写入 `session.act`：app 是唯一真实 owner，read-only/act-only facade 隔离，snapshot revision/freeze、FIFO、abort、owner unload、session stale/late fencing 均有安装态 fixture 证据；当前 Harness `0.1.1-rc.2` 与上一线 `0.1.1-rc.1` 均通过 9/9 场景。
 4. **完成（W6-4 源码收口）：**bundle rows、packed fixtures 和双语文档已收口；11 包 release set、`BLUE_VERSION`、网站中英文、CLI pin、version specs 与 release notes 已统一到 `0.1.1-rc.1`，Harness 线独立保持 `0.1.1-rc.2`。
-5. **待完成：**运行完整 release gates，并在统一 worktree profile dogfood 默认单列、120 列多插件、80/40 列降级、provider swap、theme swap、session switch。
+5. **完成（W6-5 最终候选树自动证据）：**已建立专用 `blue-ui-api-w4-w6` profile；完整 test/coverage/build/typecheck/lint/pack/examples/validator/fixture/website gate 与 `smoke:happy`、`smoke:pty`、`smoke:pty:mouse`、`smoke:pty:output` 均在最终候选树刷新通过。隔离 profile 的 PTY dogfood 覆盖默认单列、120/80/40 列多插件与窄屏降级、status/editor provider swap、theme swap、session switch、overlay、draft 输入、`/new`、`/quit`、bracketed-paste 恢复和 clean exit，且无 overflow/crash log。
 6. **待完成人工门禁：**邀请用户 live-test；等待明确“验收通过”，此前不合并、不删除 profile、不发布。验收后再合并 master、重建主 checkout，并由 release workflow 生成和复用同一候选 artifact。
 
-**G6 验收：**所有自动门禁、dogfood 日志、真人验收和 registry install smoke 完整；七类示例场景有结果；发布 tarball 不含 workspace protocol、缺失 subpath 或未声明依赖。
+**G6 验收：**合并前要求最终 head 的所有自动门禁、dogfood 日志和真人验收
+完整，七类示例场景有结果，候选 tarball 不含 workspace protocol、缺失 subpath
+或未声明依赖。Registry install smoke 当前不能声明完成：候选尚未发布；它明确
+位于真人验收和合并后的候选发布阶段：release tag 先把同一 artifact 发布到
+candidate channel，registry install 随后卡住 rc/latest dist-tag promotion。
 
 ### 12.10 Agent task 交付模板
 
