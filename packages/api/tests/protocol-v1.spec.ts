@@ -51,10 +51,10 @@ describe('@dsh-blue/blue-api protocol v1', () => {
       | 'session.read'
       | 'session.projections.read'
     >()
-    expect(BLUE_PLUGIN_PROTOCOL_VERSION).toBe('1.0.0-beta.2')
+    expect(BLUE_PLUGIN_PROTOCOL_VERSION).toBe('1.0.0-beta.1')
     expect(BLUE_PLUGIN_MANIFEST_SCHEMA_VERSION).toBe(1)
     expect(BLUE_PLUGIN_MANIFEST_SCHEMA_URL).toBe(BLUE_PLUGIN_MANIFEST_V1_SCHEMA.$id)
-    expect(BLUE_PRODUCT_PROTOCOL_VERSIONS).toEqual({ '0.1.1-rc.3': '1.0.0-beta.2' })
+    expect(BLUE_PRODUCT_PROTOCOL_VERSIONS).toEqual({ '0.1.1-rc.2': '1.0.0-beta.1' })
     expect(BLUE_PLUGIN_CAPABILITIES_V1).toEqual([
       'commands',
       'status',

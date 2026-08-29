@@ -12,7 +12,7 @@ The versioned distribution candidate is published separately from
 `@dsh-blue/blue-api/protocol/v1`. It exports the generated seven-name target
 catalog, readonly manifest types, the deeply frozen Draft 2020-12 schema,
 `validateBluePluginManifestV1`, and the Blue product/protocol mapping for
-`1.0.0-beta.2`. Packages discover it only through
+`1.0.0-beta.1`. Packages discover it only through
 `package.json.blue.manifest = "./blue.plugin.json"`; the manifest uses a public
 package export subpath, required/optional capability groups, exact resources,
 and full Blue/Harness/Node compatibility ranges. The same schema and corpus are

@@ -2,9 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://dsh-blue.dev/schema/blue.plugin.v1.schema.json",
   "title": "Blue Plugin Manifest v1",
-  "x-blue-protocol-version": "1.0.0-beta.2",
+  "x-blue-protocol-version": "1.0.0-beta.1",
   "x-blue-product-versions": {
-    "0.1.1-rc.3": "1.0.0-beta.2"
+    "0.1.1-rc.2": "1.0.0-beta.1"
   },
   "type": "object",
   "additionalProperties": false,

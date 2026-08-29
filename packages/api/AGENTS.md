@@ -148,7 +148,7 @@ recursively narrowed status contract.
 
 The root and `./invariant` retain the executable `1.0.0-beta.1` inline-host
 contract until P2 changes host admission. The independent `./protocol/v1`
-subpath owns the `1.0.0-beta.2` distribution contract: seven generated
+subpath owns the `1.0.0-beta.1` distribution contract: seven generated
 capability names, generated readonly manifest types, the semantic validator,
 the deeply frozen Draft 2020-12 schema, and the exact Blue product/protocol
 mapping. The hand-edited schema is the single shape source;

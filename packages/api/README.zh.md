@@ -10,7 +10,7 @@ Blue Cordis 插件的 Beta、renderer-independent 公共契约。本包不含 re
 
 版本化分发候选通过 `@dsh-blue/blue-api/protocol/v1` 独立发布。该子路径导出
 生成的七项 v1 目标名称、readonly manifest 类型、深冻结的 Draft 2020-12 schema、
-`validateBluePluginManifestV1`，以及 `1.0.0-beta.2` 对应的 Blue
+`validateBluePluginManifestV1`，以及 `1.0.0-beta.1` 对应的 Blue
 产品/协议映射。包只能用 `package.json.blue.manifest =
 "./blue.plugin.json"` 发现该入口；manifest 使用公开 package export subpath、
 required/optional capability 分组、精确 resource 和完整 Blue/Harness/Node
