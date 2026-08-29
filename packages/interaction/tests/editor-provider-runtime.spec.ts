@@ -107,7 +107,10 @@ describe('editor provider composition', () => {
     value.runtime.dispose()
   })
 
-  it('preserves one editor, cursor, history, focus, completion, and extension chrome across swaps', async () => {
+  it('preserves editor state, snapshots, and the IME marker across swaps', async () => {
+    const imeMarker = '\x1b_pi:c\x07'
+    const firstSnapshots: BlueEditorSnapshot[] = []
+    const secondSnapshots: BlueEditorSnapshot[] = []
     const extensionEvent = vi.fn(async () => success())
     const extension = {
       id: 'extension',
@@ -116,28 +119,59 @@ describe('editor provider composition', () => {
       actions: [{ id: 'extension-action', label: 'Extension' }],
       onEvent: extensionEvent,
     }
-    const first = { id: 'first', render: () => shell('provider one') } satisfies BlueEditorProvider
-    const second = { id: 'second', render: () => shell('provider two') } satisfies BlueEditorProvider
+    const first = {
+      id: 'first',
+      render: (snapshot: BlueEditorSnapshot) => { firstSnapshots.push(snapshot); return shell('provider one') },
+    } satisfies BlueEditorProvider
+    const second = {
+      id: 'second',
+      render: (snapshot: BlueEditorSnapshot) => { secondSnapshots.push(snapshot); return shell('provider two') },
+    } satisfies BlueEditorProvider
     const value = fixture({ desiredId: 'first', providers: [first, second], extensions: [extension] })
     const outer = value.runtime
     const completion = value.editor.autocompleteProvider
-    value.editor.setText('ab')
+    vi.spyOn(value.editor, 'render').mockImplementation(width => (
+      value.editor.renderContent(width).map(row => row.replace('|', imeMarker))
+    ))
+    value.runtime.updateSession({ id: 'session', cwd: '/work', status: 'running', mode: 'plan' })
+    value.ctx.blueInteractionState.pasteImage.pastedImages.set('[image #1]', {
+      attachmentId: 'attachment' as never,
+      mediaType: 'image/png',
+      bytes: 7,
+      width: 1,
+      height: 1,
+      name: 'shot.png',
+    })
+    value.editor.setText('[image #1]ab')
     value.editor.addToHistory('older')
     value.runtime.focused = true
     value.runtime.handleInput(KEY.left)
-    expect(value.runtime.render(60).join('\n')).toContain('provider one')
+    const firstRows = value.runtime.render(60).join('\n')
+    expect(firstRows).toContain('provider one')
+    expect(firstRows).toContain(imeMarker)
+    expect(firstSnapshots.at(-1)).toMatchObject({
+      mode: 'plan',
+      attachments: [{ id: 'attachment', label: 'shot.png', mediaType: 'image/png', size: 7 }],
+    })
 
     setEditorProviders(value.ctx, providerBinding('second', [first, second], 2))
     const rows = value.runtime.render(60).join('\n')
     expect(rows).toContain('before')
     expect(rows).toContain('provider two')
     expect(rows).toContain('hint')
+    expect(rows).toContain(imeMarker)
+    expect(secondSnapshots.at(-1)).toMatchObject({
+      mode: 'plan',
+      attachments: [{ id: 'attachment', label: 'shot.png', mediaType: 'image/png', size: 7 }],
+    })
     expect(value.runtime).toBe(outer)
     expect(value.editor.autocompleteProvider).toBe(completion)
     expect(value.editor.getHistory()).toEqual(['older'])
     expect(value.runtime.focused).toBe(true)
+    expect(value.editor.focused).toBe(true)
+    expect(value.editor.getText()).toBe('[image #1]ab')
     value.runtime.handleInput('X')
-    expect(value.editor.getText()).toBe('aXb')
+    expect(value.editor.getText()).toBe('[image #1]aXb')
 
     value.runtime.handleInput(KEY.tab)
     value.runtime.handleInput(KEY.enter)

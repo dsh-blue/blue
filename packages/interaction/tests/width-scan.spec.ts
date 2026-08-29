@@ -11,12 +11,17 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
+import * as approvalPlugin from '../src/approval-plugin.ts'
 import { CanonicalFormController, type FormField } from '../src/form-panel.ts'
 import { HelpOverlay, type HelpSection } from '../src/help.ts'
 import { InfoPanel, type InfoSection } from '../src/info-panel.ts'
 import { CanonicalDocumentController } from '../src/frontend-panel.ts'
 import { PlanReviewPanel, planReviewChoices } from '../src/plan-review-panel.ts'
 import { Questionnaire } from '../src/questionnaire.ts'
+import { CanonicalSelectController } from '../src/select-list.ts'
+import { CanonicalMultiSelectController } from '../src/select.ts'
 import { CanonicalSettingsController, SettingsNoticeController } from '../src/settings-command.ts'
 import { UpdateNoticeComponent } from '../src/update-notice.ts'
 import { fakeBlueContext, FakeBlueComponents, FakeKeymap } from './fakes.ts'
@@ -94,6 +99,45 @@ describe('interaction width-scan', () => {
       }
     })
 
+    it(`canonical single-select survives ${name}`, () => {
+      const panel = new CanonicalSelectController({
+        keymap: new FakeKeymap(),
+        theme: IDENTITY_THEME as never,
+        components: new FakeBlueComponents(),
+        rows: [
+          { value: 'hostile', label: text, description: text, badge: text },
+          { value: 'short', label: 'Short' },
+        ],
+        title: text,
+        titleHint: text,
+        footer: text,
+        filter: true,
+        onSelect: vi.fn(),
+        onCancel: vi.fn(),
+      })
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`canonical-single-select/${name}`, panel.render(width), width)
+      }
+    })
+
+    it(`canonical multi-select survives ${name}`, () => {
+      const panel = new CanonicalMultiSelectController({
+        keymap: new FakeKeymap(),
+        theme: IDENTITY_THEME as never,
+        components: new FakeBlueComponents(),
+        items: [
+          { value: 'hostile', label: text, description: text },
+          { value: 'short', label: 'Short' },
+        ],
+        title: text,
+        onConfirm: vi.fn(),
+        onCancel: vi.fn(),
+      })
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`canonical-multi-select/${name}`, panel.render(width), width)
+      }
+    })
+
     it(`HelpOverlay survives ${name}`, () => {
       const sections: HelpSection[] = [
         {
@@ -159,6 +203,53 @@ describe('interaction width-scan', () => {
       for (const width of SCAN_WIDTHS) {
         expectLinesFit(`canonical-document/${name}`, panel.render(width), width)
       }
+    })
+
+    it(`canonical loading document survives ${name}`, () => {
+      const panel = new CanonicalDocumentController({
+        theme: IDENTITY_THEME as never,
+        components: new FakeBlueComponents(),
+        keymap: new FakeKeymap(),
+        model: () => ({
+          mode: 'loading',
+          title: text,
+          view: { kind: 'text', content: text },
+          dismissible: false,
+        }),
+        onAction: vi.fn(),
+        onClose: vi.fn(),
+      })
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`canonical-loading-document/${name}`, panel.render(width), width)
+      }
+    })
+
+    it(`approval plugin prompt survives ${name}`, async () => {
+      const { ctx, screen } = fakeBlueContext()
+      const agent = {
+        id: `approval-width-${name}`,
+        status: 'idle',
+        inbox: { nextTurn: [], nextStep: [], remove: () => false },
+        followup: vi.fn(),
+        steer: vi.fn(),
+        cancel: vi.fn(),
+      } as unknown as Agent
+      ctx.provide('testSession', { current: agent, modelRef: undefined })
+      await ctx.plugin(approvalPlugin)
+      const request: ApprovalRequest = { agent, toolName: text, reason: text }
+      const pending = ctx.waterfall(
+        'approval/request',
+        request,
+        () => Promise.resolve<ApprovalOutcome>('unavailable'),
+      )
+      const component = screen.overlays.at(-1)?.component
+      if (component === undefined) throw new Error('approval prompt did not mount')
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`approval-plugin/${name}`, component.render(width), width)
+      }
+      component.handleInput?.('\x1b')
+      await pending
+      await ctx.fiber.dispose()
     })
 
     it(`PlanReviewPanel survives ${name}`, () => {

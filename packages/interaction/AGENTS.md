@@ -170,6 +170,15 @@ Keep `README.md` and `README.zh.md` synchronized. Any new subpath updates packag
 `editor-extension-runtime.spec.ts` is the contract suite for inert shell
 refresh, source-aware completion application, timeout/abort/stale behavior,
 per-id action FIFO, async submit barriers, and attachment preservation.
+`width-scan.spec.ts` owns the shared `ADVERSARIAL x SCAN_WIDTHS` gate for the
+canonical single-select, multi-select, form, settings, document select/loading,
+and migrated dialog paths. Approval coverage must enter through the actual
+plugin request and mounted prompt, not a separately constructed private class.
+`editor-provider-runtime.spec.ts` directly proves that provider swaps retain
+one editor's draft, history, cursor, mode, attachment snapshot, focus, and
+exact renderer IME marker byte pass-through, plus fallback/breaker behavior
+and unload fencing. Real pi-tui IME composition remains a live acceptance
+scenario; the fake-editor unit assertion does not substitute for it.
 `input-plugin.spec.ts` additionally proves attachment rollback at the real
 follow-up rejection and safe-retraction boundaries.
 

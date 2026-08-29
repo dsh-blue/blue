@@ -11,7 +11,7 @@
 import { homedir } from 'node:os'
 import { describe, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { BlueSemanticColors } from '@dsh-blue/blue-core'
+import type { BlueComponent, BlueScreen, BlueSemanticColors } from '@dsh-blue/blue-core'
 import {
   AssistantMessageComponent,
   ErrorMessageComponent,
@@ -27,6 +27,7 @@ import { ThinkingComponent } from '../src/thinking.ts'
 import { createTranscriptModel, TranscriptModelComponent } from '../src/transcript-model.ts'
 import { BlueStatusCompositionService, BlueStatusEntryService, StatusFooterComponent } from '../src/status-model.ts'
 import { bannerLayout, composeBannerLines, shortenHome } from '../src/banner.ts'
+import { BlueBottomPaneService } from '../src/dock-model.ts'
 import type { TranscriptToolItem } from '../src/types.ts'
 import { fakeBlueComponents } from './helpers.ts'
 import { COLORS } from './status-fakes.ts'
@@ -34,6 +35,27 @@ import { ADVERSARIAL, SCAN_WIDTHS, expectLinesFit } from '../../core/tests/width
 
 /** Identity colors satisfy BlueSemanticColors where consumed. */
 const colors = COLORS as BlueSemanticColors
+
+/** Minimal screen recording the actual bottom-dock component mounted by the service. */
+function bottomPaneScreen(): { readonly screen: BlueScreen, readonly bottom: BlueComponent[] } {
+  const bottom: BlueComponent[] = []
+  const mount = (component: BlueComponent): (() => void) => {
+    bottom.push(component)
+    return () => {
+      const index = bottom.indexOf(component)
+      if (index !== -1) bottom.splice(index, 1)
+    }
+  }
+  const screen = {
+    columns: 80,
+    rows: 24,
+    addChild: mount,
+    addBottomChild: mount,
+    addDockChild: mount,
+    requestRender: () => undefined,
+  } as unknown as BlueScreen
+  return { screen, bottom }
+}
 
 /** A bash tool item carrying the fixture text as its command. */
 function bashItem(text: string): TranscriptToolItem {
@@ -63,6 +85,26 @@ function subagentItem(text: string): TranscriptToolItem {
 
 describe('transcript width-scan', () => {
   for (const { name, text } of ADVERSARIAL) {
+    it(`BlueBottomPaneService accepted adapter survives ${name}`, () => {
+      const { screen, bottom } = bottomPaneScreen()
+      const components = fakeBlueComponents()
+      const service = new BlueBottomPaneService(new Context(), {
+        components,
+        colors,
+        viewport: () => ({ columns: screen.columns, rows: screen.rows }),
+      }, screen)
+      service.register(
+        { id: `adapter-${name}`, node: { kind: 'text', content: text } },
+        (_node, width) => [`${text}${'x'.repeat(width + 1)}`],
+      )
+      const component = bottom[0]
+      if (component === undefined) throw new Error('bottom pane adapter did not mount')
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`BottomPaneAdapter/${name}`, component.render(width), width)
+      }
+      service.dispose()
+    })
+
     it(`UserMessageComponent survives ${name}`, () => {
       const components = fakeBlueComponents()
       const item = { kind: 'user', seq: 1, turn: 1, text, images: [] }
