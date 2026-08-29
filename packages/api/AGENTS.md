@@ -146,10 +146,45 @@ recursively narrowed status contract.
 
 ## Distribution contract
 
-The package publishes only `lib/*.js` and `lib/types/**/*.d.ts`. Runtime entries are derived from `exports` by `script/package-contract.mjs`; add a public entry by adding its manifest export and matching `src/<entry>.ts`, then run `pnpm check:pack`.
+The root and `./invariant` retain the executable `1.0.0-beta.1` inline-host
+contract until P2 changes host admission. The independent `./protocol/v1`
+subpath owns the `1.0.0-beta.2` distribution contract: seven generated
+capability names, generated readonly manifest types, the semantic validator,
+the deeply frozen Draft 2020-12 schema, and the exact Blue product/protocol
+mapping. The hand-edited schema is the single shape source;
+`script/generate-blue-plugin-contract.mjs --check` prevents generated TypeScript
+drift. Formal semver parsing comes from `semver`, while Ajv owns schema
+evaluation and custom package-name/export-subpath formats.
 
-Distribution manifests may add `schemaVersion: 1`, `entry`, `blue`, `harness`,
-`node`, and `integrity` to the inline `id`/`api`/`capabilities` contract. The
-repository validator compares `blue.plugin.json`, package exports, and the
-entry's literal `name`; legacy inline manifests remain accepted for built-in
-rows.
+The canonical schema and its positive/negative corpus ship as JSON subpaths
+under `./schema/`. The corpus covers identity, public export entry, API and
+compatibility ranges, required/optional groups, capability-specific resources,
+unknown fields, and same/cross-group duplicates. Successful runtime parses are
+detached and deeply frozen. The repository validator consumes this same parser
+before checking `package.json.blue.manifest`, package identity, selected export,
+`files`, packed file list, and direct peer closure. It follows Node's active ESM
+conditions, requires every relative runtime/declaration closure file to remain
+inside the package and ship in the tarball, disables external pack lifecycle
+scripts, and recursively verifies every installed Harness package on an exact
+line. Cordis entry `name`, loader
+row id, and npm package name remain separate namespaces; the selected entry
+must export a literal name and `apply`, but its name need not equal the package.
+The P1 validator and fixture accept an external package directory but remain
+repository commands. `apply` is accepted only when statically callable, with
+lifecycle evidence reachable from that function; opaque loader aliases and
+unreachable markers fail closed. External packed-entry imports run in an
+isolated probe so plugin stdout/stderr, early exit, or a hang cannot corrupt the
+parent JSON report or skip fixture cleanup. A published no-clone author runner is still pending as an
+R2 exit gate and must not be claimed by this package yet.
+
+The generator also owns the copies under `website/public/schema/`, so the
+canonical `$schema` URL and companion corpus resolve from `dsh-blue.dev`.
+Those website files are generated artifacts and must not be hand-edited.
+
+Runtime entries are derived from `exports` by `script/package-contract.mjs`;
+add a public JavaScript entry by adding its manifest export and matching
+`src/<entry>.ts`, then run `pnpm check:pack`. JSON schema/corpus exports point
+at `schema/*.json`, which is explicitly included in the tarball whitelist.
+Legacy inline manifests and the six PR #77 flat example manifests remain an
+explicit transition lane until P2/P3; any manifest carrying `$schema` is always
+validated as v1 and cannot fall back to that lane.

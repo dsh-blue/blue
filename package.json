@@ -9,7 +9,7 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "scripts": {
-    "build": "node script/clean-lib.mjs && tsc -b tsconfig.json --force && node script/prune-types.mjs && tsdown",
+    "build": "node script/generate-blue-plugin-contract.mjs --check && node script/clean-lib.mjs && tsc -b tsconfig.json --force && node script/prune-types.mjs && tsdown",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc -b tsconfig.json",
@@ -26,6 +26,8 @@
     "smoke:pty:output": "node script/smoke-pty-output-recovery.mjs",
     "blue:plugin-validate": "node script/blue-plugin-validate.mjs",
     "blue:plugin-fixture": "node script/blue-plugin-fixture.mjs",
+    "generate:plugin-contract": "node script/generate-blue-plugin-contract.mjs",
+    "check:plugin-contract": "node script/generate-blue-plugin-contract.mjs --check",
     "fixture:context-upstream": "node script/context-upstream-fixture.mjs",
     "fixture:remote-upstream": "node script/remote-upstream-fixture.mjs",
     "website:dev": "node script/marketplace-fetch.mjs --allow-missing && pnpm --filter @dsh-blue/website run dev",
@@ -42,6 +44,7 @@
     "node-pty": "1.2.0-beta.15",
     "oxlint": "1.76.0",
     "publint": "0.3.24",
+    "semver": "7.8.5",
     "tar": "7.5.22",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",

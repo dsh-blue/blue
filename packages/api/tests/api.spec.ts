@@ -59,9 +59,16 @@ describe('@dsh-blue/blue-api', () => {
       exports: Record<string, unknown>
       files: string[]
     }
-    expect(Object.keys(manifest.exports)).toEqual(['.', './invariant', './package.json'])
+    expect(Object.keys(manifest.exports)).toEqual([
+      '.',
+      './invariant',
+      './protocol/v1',
+      './schema/blue.plugin.v1.schema.json',
+      './schema/blue.plugin.v1.corpus.json',
+      './package.json',
+    ])
     expect(Object.keys(manifest.exports).some(key => key.includes('/src'))).toBe(false)
-    expect(manifest.files).toEqual(['lib/**/*'])
+    expect(manifest.files).toEqual(['lib/**/*', 'schema/*.json'])
     for (const ownerHelper of [
       'attachBluePluginHostCapabilities',
       'attachBluePluginHostSessionReader',

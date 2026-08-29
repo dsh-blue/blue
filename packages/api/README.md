@@ -8,6 +8,21 @@ Beta, renderer-independent public contracts for Blue Cordis plugins. The package
 
 A plugin declares `{ id, api, capabilities }`, which `validateBlueManifest` checks without executing plugin code. The current executable contract is `1.0.0-beta.1`, so manifests use `^1.0.0-beta.1`; it does not track the `0.1.x` product release and does not claim protocol v1 Stable.
 
+The versioned distribution candidate is published separately from
+`@dsh-blue/blue-api/protocol/v1`. It exports the generated seven-name target
+catalog, readonly manifest types, the deeply frozen Draft 2020-12 schema,
+`validateBluePluginManifestV1`, and the Blue product/protocol mapping for
+`1.0.0-beta.2`. Packages discover it only through
+`package.json.blue.manifest = "./blue.plugin.json"`; the manifest uses a public
+package export subpath, required/optional capability groups, exact resources,
+and full Blue/Harness/Node compatibility ranges. The same schema and corpus are
+available from the two `./schema/blue.plugin.v1.*.json` exports. Until P2 moves
+host admission onto this shape, a successful distribution parse does not mean
+the current beta.1 host granted those capabilities.
+The canonical editor-facing schema resolves at
+`https://dsh-blue.dev/schema/blue.plugin.v1.schema.json`; the shared corpus is
+published beside it as `blue.plugin.v1.corpus.json`.
+
 The public Beta vocabulary is `commands`, `notifications.publish`, `status`, `panes`, `overlays`, and `session.read`. `editor.extensions`, `status.provider`, and `editor.provider` remain Experimental/reference facets and are not part of the Stable v1 target. Generic `session.act` and global notification observation are removed. Removed `dock`, `panels`, `editor`, and `tools` declarations return `BLUE_LEGACY_CAPABILITY` with a concrete migration; `tools` has no replacement because public tool presentation has no registry or owner.
 
 `bluePluginHost.open(ctx, manifest)` accepts the plugin's real Cordis `Context`, validates the manifest, then returns a capability-scoped `BluePluginApi` exposing only the requested surfaces. Every registration is bound to that Cordis effect, whose callback returns its cleanup: unloading the plugin disposes each contribution and permanently fences retained API references. Host service teardown applies the same fence before clearing state. Later mutations return `BLUE_ACTION_REJECTED`, and retained lists stay empty. Duplicate contribution ids are rejected across consumers, and ids in Blue's owner namespace (`blue.`, `blue:`, `blue-`, `@dsh-blue/`) are reserved.

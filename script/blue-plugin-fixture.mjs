@@ -1,16 +1,20 @@
 #!/usr/bin/env node
 /**
- * Pack a Blue package and its workspace closure, install those tarballs into
- * a throwaway project, and execute renderer-neutral runtime contracts only
- * through the installed packages' public exports.
+ * Pack a Blue or external frontend package and its local Blue closure, install
+ * those tarballs into a throwaway project, and execute renderer-neutral
+ * runtime contracts only through the installed packages' public exports.
+ *
+ * @module script/blue-plugin-fixture
  */
-import { execFileSync } from 'node:child_process'
-import { createRequire } from 'node:module'
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve, sep } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { createPackageImporter } from './import-from-directory.mjs'
+import { packWithoutScripts } from './pack-without-scripts.mjs'
+import { collectLocalPackageClosure, summarizeHarnessPackageInstances } from './plugin-fixture-contract.mjs'
+import { harnessLine as pinnedHarnessLine } from './smoke-lib.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
 const argumentsList = process.argv.slice(2)
@@ -35,25 +39,27 @@ for (let index = 0; index < argumentsList.length; index += 1) {
 }
 const packageDir = resolve(packageArgument)
 const install = argumentsList.includes('--install')
+const requestedHarnessLine = harnessLine ?? pinnedHarnessLine
 const manifestPath = join(packageDir, 'package.json')
-const fallbackPackage = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, 'utf8')).name : packageDir
 const target = relative(repositoryRoot, packageDir)
 const reproduce = `node script/blue-plugin-fixture.mjs ${target === '' ? '.' : target.startsWith(`..${sep}`) ? packageDir : target} --install${harnessLine === undefined ? '' : ` --harness-line ${harnessLine}`}`
 const fixtureRoot = await mkdtemp(join(tmpdir(), 'blue-plugin-fixture-'))
 let compilerContext
 const report = {
-  package: fallbackPackage,
+  package: packageDir,
   fixtureRoot,
   installed: false,
   independentInstall: false,
   fixtureCleaned: false,
-  harnessLine: harnessLine ?? null,
+  harnessLine: requestedHarnessLine ?? null,
   harnessPackages: {},
+  harnessPackageInstances: [],
   declared: [],
   executed: [],
   skipped: [],
   failures: [],
   observations: [],
+  externalPackage: false,
   reproduce,
 }
 
@@ -121,12 +127,25 @@ function discoverWorkspacePackages() {
 
 try {
   ensure(argumentError === undefined, 'FIXTURE_ARGUMENT_INVALID', argumentError ?? '')
-  ensure(harnessLine === undefined || /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(harnessLine), 'FIXTURE_HARNESS_LINE_INVALID', `invalid Harness line: ${String(harnessLine)}`)
+  ensure(requestedHarnessLine !== undefined && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(requestedHarnessLine), 'FIXTURE_HARNESS_LINE_INVALID', `invalid Harness line: ${String(requestedHarnessLine)}`)
   ensure(existsSync(manifestPath), 'FIXTURE_MANIFEST_MISSING', `package.json not found: ${packageDir}`)
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  ensure(lstatSync(manifestPath).isFile(), 'FIXTURE_MANIFEST_NOT_FILE', `package.json is not a regular file: ${packageDir}`)
+  let manifest
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  } catch {
+    throw new FixtureFailure('FIXTURE_MANIFEST_INVALID_JSON', `package.json is not valid JSON: ${packageDir}`)
+  }
+  ensure(manifest !== null && typeof manifest === 'object' && !Array.isArray(manifest), 'FIXTURE_MANIFEST_INVALID', `package.json must contain an object: ${packageDir}`)
+  ensure(typeof manifest.name === 'string' && manifest.name !== '', 'FIXTURE_PACKAGE_NAME_INVALID', `package.json has no package name: ${packageDir}`)
   report.package = manifest.name
   const workspacePackages = discoverWorkspacePackages()
-  ensure(workspacePackages.has(manifest.name), 'FIXTURE_PACKAGE_OUTSIDE_WORKSPACE', `${manifest.name} is not a workspace package`)
+  const workspaceTarget = workspacePackages.get(manifest.name)
+  const externalPackage = workspaceTarget === undefined || resolve(workspaceTarget) !== packageDir
+  ensure(workspaceTarget === undefined || !externalPackage, 'FIXTURE_PACKAGE_NAME_COLLISION', `${manifest.name} conflicts with a different Blue workspace package`)
+  report.externalPackage = externalPackage
+  const localPackageDirectories = new Map(workspacePackages)
+  localPackageDirectories.set(manifest.name, packageDir)
 
   /** Resolve the complete local package closure without querying the registry. */
   function localClosure() {
@@ -141,68 +160,76 @@ try {
       '@dsh-blue/blue-core',
       '@dsh-blue/blue-transcript',
     ].filter(name => workspacePackages.has(name))
-    const names = new Set([manifest.name, ...forced])
-    const queue = [...names]
-    while (queue.length > 0) {
-      const name = queue.shift()
-      const directory = workspacePackages.get(name)
-      if (directory === undefined) continue
-      const value = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'))
-      for (const dependencyName of Object.keys({ ...value.dependencies, ...value.peerDependencies, ...value.devDependencies })) {
-        if (!workspacePackages.has(dependencyName) || names.has(dependencyName)) continue
-        names.add(dependencyName)
-        queue.push(dependencyName)
-      }
-    }
-    return [...names]
+    return collectLocalPackageClosure(
+      [manifest.name, ...forced],
+      name => localPackageDirectories.has(name),
+      name => {
+        const directory = localPackageDirectories.get(name)
+        ensure(directory !== undefined, 'FIXTURE_LOCAL_PACKAGE_MISSING', `local package directory disappeared: ${name}`)
+        return JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'))
+      },
+    )
   }
 
   const tarballRoot = join(fixtureRoot, 'tarballs')
   mkdirSync(tarballRoot, { recursive: true })
-  function pack(directory) {
-    const before = new Set(readdirSync(tarballRoot))
-    execFileSync('pnpm', ['pack', '--pack-destination', tarballRoot], { cwd: directory, stdio: 'ignore' })
-    const created = readdirSync(tarballRoot).find(name => name.endsWith('.tgz') && !before.has(name))
-    ensure(created !== undefined, 'FIXTURE_PACK_FAILED', `no tarball produced for ${directory}`)
-    return join(tarballRoot, created)
+  function pack(directory, untrusted) {
+    try {
+      return packWithoutScripts(directory, tarballRoot, untrusted ? 'npm' : 'pnpm')
+    } catch (error) {
+      throw new FixtureFailure(
+        'FIXTURE_PACK_FAILED',
+        error instanceof Error ? error.message : `failed to pack ${directory}`,
+      )
+    }
   }
 
   const packages = new Map()
   const localPackageNames = localClosure()
-  for (const name of localPackageNames) packages.set(name, pack(workspacePackages.get(name)))
+  for (const name of localPackageNames) {
+    const directory = localPackageDirectories.get(name)
+    packages.set(name, pack(directory, externalPackage && directory === packageDir))
+  }
   const dependencies = Object.fromEntries([...packages].map(([name, tarball]) => [name, `file:${tarball}`]))
   const harnessPackageNames = new Set()
   for (const name of localPackageNames) {
-    const directory = workspacePackages.get(name)
+    const directory = localPackageDirectories.get(name)
     if (directory === undefined) continue
     const value = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'))
     for (const [dependencyName, range] of Object.entries(value.peerDependencies ?? {})) {
-      if (!workspacePackages.has(dependencyName)) dependencies[dependencyName] ??= range
+      if (!localPackageDirectories.has(dependencyName)) dependencies[dependencyName] ??= range
       if (dependencyName.startsWith('@deepseek-ai/dsh-')) harnessPackageNames.add(dependencyName)
     }
-    for (const dependencyName of Object.keys(value.dependencies ?? {})) {
+    for (const dependencyName of Object.keys({
+      ...value.dependencies,
+      ...value.optionalDependencies,
+    })) {
       if (dependencyName.startsWith('@deepseek-ai/dsh-')) harnessPackageNames.add(dependencyName)
     }
   }
-  if (harnessLine !== undefined) {
-    // The exact-line lane uses npm's legacy peer resolver so Blue's current
-    // peer ranges do not override the requested older line. Walk the public
-    // Harness peer metadata so every runtime peer omitted by legacy
-    // resolution is still installed at that exact line.
-    const peerQueue = [...harnessPackageNames]
-    while (peerQueue.length > 0) {
-      const name = peerQueue.shift()
-      const output = execFileSync('npm', ['view', `${name}@${harnessLine}`, 'peerDependencies', '--json'], { encoding: 'utf8' }).trim()
-      const peers = output === '' ? {} : JSON.parse(output)
-      for (const peerName of Object.keys(peers)) {
-        if (!peerName.startsWith('@deepseek-ai/dsh-') || harnessPackageNames.has(peerName)) continue
-        harnessPackageNames.add(peerName)
-        peerQueue.push(peerName)
-      }
+  const harnessQueue = [...harnessPackageNames]
+  while (harnessQueue.length > 0) {
+    const name = harnessQueue.shift()
+    const output = execFileSync('npm', ['view', `${name}@${requestedHarnessLine}`, '--json'], { encoding: 'utf8' }).trim()
+    const metadata = output === '' ? {} : JSON.parse(output)
+    for (const dependencyName of Object.keys({
+      ...metadata.dependencies,
+      ...metadata.optionalDependencies,
+      ...metadata.peerDependencies,
+    })) {
+      if (!dependencyName.startsWith('@deepseek-ai/dsh-') || harnessPackageNames.has(dependencyName)) continue
+      harnessPackageNames.add(dependencyName)
+      harnessQueue.push(dependencyName)
     }
-    for (const name of harnessPackageNames) dependencies[name] = harnessLine
   }
-  writeFileSync(join(fixtureRoot, 'package.json'), JSON.stringify({ private: true, type: 'module', dependencies }, null, 2))
+  for (const name of harnessPackageNames) dependencies[name] = requestedHarnessLine
+  const overrides = Object.fromEntries([...harnessPackageNames].map(name => [name, requestedHarnessLine]))
+  writeFileSync(join(fixtureRoot, 'package.json'), JSON.stringify({
+    private: true,
+    type: 'module',
+    dependencies,
+    overrides,
+  }, null, 2))
   if (!install) {
     throw new FixtureFailure('FIXTURE_INSTALL_REQUIRED', 'independent scenarios require --install')
   }
@@ -211,25 +238,92 @@ try {
   report.installed = true
   report.independentInstall = existsSync(join(fixtureRoot, 'node_modules'))
   ensure(report.independentInstall, 'FIXTURE_INSTALL_MISSING', 'npm install produced no node_modules directory')
-  for (const name of harnessPackageNames) {
-    const installedManifest = join(fixtureRoot, 'node_modules', name, 'package.json')
-    if (!existsSync(installedManifest)) {
-      ensure(harnessLine === undefined, 'FIXTURE_HARNESS_PACKAGE_MISSING', `${name} was not installed for Harness ${String(harnessLine)}`)
-      continue
+  function installedHarnessInstances() {
+    const instances = []
+    const visited = new Set()
+    const visitPackage = (directory) => {
+      if (visited.has(directory)) return
+      visited.add(directory)
+      const packageFile = join(directory, 'package.json')
+      if (!existsSync(packageFile)) return
+      const value = JSON.parse(readFileSync(packageFile, 'utf8'))
+      if (typeof value.name === 'string' && value.name.startsWith('@deepseek-ai/dsh-')) {
+        instances.push({
+          name: value.name,
+          version: value.version,
+          path: relative(fixtureRoot, directory).split(sep).join('/'),
+        })
+      }
+      visitNodeModules(join(directory, 'node_modules'))
     }
-    const installedVersion = JSON.parse(readFileSync(installedManifest, 'utf8')).version
-    report.harnessPackages[name] = installedVersion
-    ensure(harnessLine === undefined || installedVersion === harnessLine, 'FIXTURE_HARNESS_LINE_MISMATCH', `${name} resolved to ${String(installedVersion)}, expected ${harnessLine}`)
+    const visitNodeModules = (directory) => {
+      if (!existsSync(directory)) return
+      for (const entry of readdirSync(directory)) {
+        if (entry.startsWith('.')) continue
+        const child = join(directory, entry)
+        const info = lstatSync(child)
+        if (!info.isDirectory() || info.isSymbolicLink()) continue
+        if (entry.startsWith('@')) {
+          for (const scopedEntry of readdirSync(child)) visitPackage(join(child, scopedEntry))
+        } else {
+          visitPackage(child)
+        }
+      }
+    }
+    visitNodeModules(join(fixtureRoot, 'node_modules'))
+    return instances.sort((left, right) => left.path.localeCompare(right.path))
   }
 
-  const fixtureRequire = createRequire(join(fixtureRoot, 'fixture.mjs'))
+  const installedHarness = installedHarnessInstances()
+  report.harnessPackageInstances.push(...installedHarness)
+  Object.assign(report.harnessPackages, summarizeHarnessPackageInstances(installedHarness))
+  const mismatches = installedHarness.filter(instance => instance.version !== requestedHarnessLine)
+  ensure(
+    mismatches.length === 0,
+    'FIXTURE_HARNESS_LINE_MISMATCH',
+    `${mismatches.map(instance => `${instance.name} resolved to ${String(instance.version)} at ${instance.path}`).join('; ')}, expected ${requestedHarnessLine}`,
+  )
+  for (const name of harnessPackageNames) {
+    ensure(Object.hasOwn(report.harnessPackages, name), 'FIXTURE_HARNESS_PACKAGE_MISSING', `${name} was not installed for Harness ${String(requestedHarnessLine)}`)
+  }
+
+  const importPackage = await createPackageImporter(fixtureRoot)
   const imported = new Map()
   async function load(name) {
     if (imported.has(name)) return imported.get(name)
-    const entry = fixtureRequire.resolve(name)
-    const module = await import(pathToFileURL(entry).href)
+    const module = await importPackage(name)
     imported.set(name, module)
     return module
+  }
+
+  if (externalPackage) {
+    await scenario('plugin.public-entry-packed-load', async () => {
+      const installedRoot = join(fixtureRoot, 'node_modules', ...manifest.name.split('/'))
+      const installedPackage = JSON.parse(readFileSync(join(installedRoot, 'package.json'), 'utf8'))
+      ensure(installedPackage.blue?.manifest === './blue.plugin.json', 'FIXTURE_PLUGIN_DISCOVERY', 'packed package lost package.json.blue.manifest')
+      const distribution = JSON.parse(readFileSync(join(installedRoot, 'blue.plugin.json'), 'utf8'))
+      const protocolV1 = await load('@dsh-blue/blue-api/protocol/v1')
+      const parsed = protocolV1.validateBluePluginManifestV1(distribution)
+      ensure(parsed.ok, 'FIXTURE_PLUGIN_MANIFEST', parsed.ok ? '' : parsed.issues.map(issue => issue.message).join('; '))
+      ensure(parsed.value.id === manifest.name, 'FIXTURE_PLUGIN_ID', `packed manifest id ${String(parsed.value.id)} differs from ${String(manifest.name)}`)
+      const entrySpecifier = parsed.value.entry === '.' ? manifest.name : `${manifest.name}${parsed.value.entry.slice(1)}`
+      // Keep untrusted package initialization out of this process. A plugin
+      // may log, terminate, or hang while its public entry is being imported;
+      // the parent must still emit one clean JSON report and remove the fixture.
+      const probePath = join(fixtureRoot, '.blue-plugin-entry-probe.mjs')
+      const probeSentinel = '__BLUE_PLUGIN_ENTRY_PROBE__'
+      writeFileSync(probePath, `const module = await import(${JSON.stringify(entrySpecifier)})\nprocess.stdout.write(${JSON.stringify(probeSentinel)} + JSON.stringify({ name: typeof module.name, apply: typeof module.apply }) + '\\n')\n`)
+      const probe = spawnSync(process.execPath, [probePath], {
+        cwd: fixtureRoot,
+        encoding: 'utf8',
+        timeout: 5_000,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      ensure(probe.error === undefined && probe.signal === null && probe.status === 0 && probe.stdout.includes(probeSentinel), 'FIXTURE_PLUGIN_ENTRY_PROBE_FAILED', `${entrySpecifier} probe did not complete: ${probe.error?.message ?? probe.signal ?? `exit ${String(probe.status)}`}`)
+      const expectedProbeOutput = `${probeSentinel}{"name":"string","apply":"function"}\n`
+      ensure(probe.stderr === '' && probe.stdout === expectedProbeOutput, 'FIXTURE_PLUGIN_STDIO', `${entrySpecifier} emitted unexpected probe output`)
+      report.observations.push({ scenario: 'plugin.public-entry-packed-load', entry: entrySpecifier })
+    })
   }
 
   const frontend = await load('@dsh-blue/blue-frontend')

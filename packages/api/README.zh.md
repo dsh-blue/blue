@@ -8,6 +8,19 @@ Blue Cordis 插件的 Beta、renderer-independent 公共契约。本包不含 re
 
 插件声明 `{ id, api, capabilities }`，由 `validateBlueManifest` 在不执行插件代码的情况下校验。当前可执行契约是 `1.0.0-beta.1`，manifest 应写 `^1.0.0-beta.1`；它不跟随产品的 `0.1.x` 版本，也不表示 protocol v1 已 Stable。
 
+版本化分发候选通过 `@dsh-blue/blue-api/protocol/v1` 独立发布。该子路径导出
+生成的七项 v1 目标名称、readonly manifest 类型、深冻结的 Draft 2020-12 schema、
+`validateBluePluginManifestV1`，以及 `1.0.0-beta.2` 对应的 Blue
+产品/协议映射。包只能用 `package.json.blue.manifest =
+"./blue.plugin.json"` 发现该入口；manifest 使用公开 package export subpath、
+required/optional capability 分组、精确 resource 和完整 Blue/Harness/Node
+兼容范围。同一 schema 与 corpus 也由两个
+`./schema/blue.plugin.v1.*.json` 子路径导出。在 P2 把 host admission 迁移到这套
+形状之前，分发 manifest 校验通过不表示当前 beta.1 host 已授予对应 capability。
+编辑器使用的 canonical schema 位于
+`https://dsh-blue.dev/schema/blue.plugin.v1.schema.json`；共享 corpus 以
+`blue.plugin.v1.corpus.json` 同目录发布。
+
 公开 Beta capability 为 `commands`、`notifications.publish`、`status`、`panes`、`overlays` 与 `session.read`。`editor.extensions`、`status.provider`、`editor.provider` 仅保留为 Experimental/reference surface，不属于 Stable v1 目标。generic `session.act` 与全局 notification observe 已移除。旧 `dock`、`panels`、`editor`、`tools` 返回带具体迁移说明的 `BLUE_LEGACY_CAPABILITY`；`tools` 没有替代项，因为公共 tool presentation 没有 registry 或 owner。
 
 `bluePluginHost.open(ctx, manifest)` 直接接受插件真实的 Cordis `Context`，先校验 manifest，再返回只暴露所请求表面的 capability-scoped `BluePluginApi`。所有 registration 都绑定该 Cordis effect，effect callback 返回对应 cleanup：插件卸载即释放全部贡献，并永久封锁被保留的 API 引用；host service teardown 也会在清空状态前应用相同 fence。之后的写操作返回 `BLUE_ACTION_REJECTED`，保留的 list 维持冻结空数组。跨消费者重复的 contribution id 会被拒绝，Blue 的 owner 命名空间（`blue.`、`blue:`、`blue-`、`@dsh-blue/`）被保留。
