@@ -25,7 +25,7 @@ export const inject = ['bluePluginHost']
 export function apply(ctx: Context): void {
   const opened = ctx.bluePluginHost.open(ctx, {
     id: 'my-plugin.branch',
-    api: '^1.0.0',
+    api: '^1.0.0-beta.1',
     capabilities: ['status'],
   })
   if (!opened.ok) return
@@ -51,12 +51,14 @@ export function apply(ctx: Context): void {
 
 ## 独占 status provider
 
+> `status.provider` 是 Experimental/reference surface，不属于 Stable v1 root。下面记录当前可执行实现，供 provider 共创与回归验证使用。
+
 `status.provider` 注册的是替换整个 footer 的候选，而不是追加条目：
 
 ```ts
 const opened = ctx.bluePluginHost.open(ctx, {
   id: 'my-plugin.compact-status',
-  api: '^1.0.0',
+  api: '^1.0.0-beta.1',
   capabilities: ['status.provider'],
 })
 if (!opened.ok) return

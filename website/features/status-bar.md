@@ -1,6 +1,6 @@
 # 状态栏
 
-状态栏（footer）是终端最底两行的 canonical status 表面。内置 producer 发布 readonly `BlueStatusNode`，由 package-private `BlueStatusEntryService` 和 core status compiler 渲染；第三方插件经稳定 `bluePluginHost` status capability 贡献同一种 renderer-neutral node。
+状态栏（footer）是终端最底两行的 canonical status 表面。内置 producer 发布 readonly `BlueStatusNode`，由 package-private `BlueStatusEntryService` 和 core status compiler 渲染；第三方插件经当前 Beta `bluePluginHost` `status` capability 贡献同一种 renderer-neutral node。
 
 ## 布局与灰阶
 
@@ -39,7 +39,7 @@
 ```ts
 const opened = ctx.bluePluginHost.open(ctx, {
   id: 'my-plugin.build',
-  api: '^1.0.0',
+  api: '^1.0.0-beta.1',
   capabilities: ['status'],
 })
 if (!opened.ok) throw new Error(opened.message)

@@ -1,6 +1,6 @@
 # Status bar
 
-The footer is a two-row canonical status surface. Built-in producers publish readonly `BlueStatusNode` values, rendered by the package-private `BlueStatusEntryService` and core status compiler. Third-party plugins contribute the same renderer-neutral nodes through the stable `bluePluginHost` status capability.
+The footer is a two-row canonical status surface. Built-in producers publish readonly `BlueStatusNode` values, rendered by the package-private `BlueStatusEntryService` and core status compiler. Third-party plugins contribute the same renderer-neutral nodes through the current Beta `bluePluginHost` `status` capability.
 
 ## Layout and gray tiers
 
@@ -39,7 +39,7 @@ A third-party plugin opens the status capability, then registers a `BlueStatusEn
 ```ts
 const opened = ctx.bluePluginHost.open(ctx, {
   id: 'my-plugin.build',
-  api: '^1.0.0',
+  api: '^1.0.0-beta.1',
   capabilities: ['status'],
 })
 if (!opened.ok) throw new Error(opened.message)

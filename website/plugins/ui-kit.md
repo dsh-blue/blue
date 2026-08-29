@@ -42,7 +42,7 @@ export const summaryMetric = defineBlueComponent<{
   detail: string
 }>({
   id: '@acme/summary-metric',
-  api: '^1.0.0',
+  api: '^1.0.0-beta.1',
   render: props => ui.surface({
     chrome: 'lane',
     child: ui.stack.row([

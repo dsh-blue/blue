@@ -1,6 +1,6 @@
 # 功能总览
 
-Blue 是一棵 Cordis 插件树。Bundle 当前有 32 条 Blue 自有行：2 条宿主支撑行、9 条基线行、15 条增强行和 6 条装配行。
+Blue 是一棵 Cordis 插件树。Bundle 当前有 33 条 Blue 自有行：2 条宿主支撑行、1 条 private runtime composition group、9 条基线行、15 条增强行和 6 条装配行。
 
 ## 基线
 

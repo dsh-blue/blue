@@ -4,23 +4,24 @@
  * @module @dsh-blue/blue-interaction/tests/editor-provider-owner
  */
 
-import { Context, symbols } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BlueEditorProvider } from '../../api/src/contracts.ts'
 import { EditorHostService } from '../src/editor-instance.ts'
 
 const host = vi.hoisted(() => ({
   attach: vi.fn(),
-  gesture: vi.fn(async (_service: unknown, _owner: unknown, callback: (gesture: object) => unknown) => callback(Object.freeze({}))),
+  gesture: vi.fn(async (_owner: unknown, callback: (gesture: object) => unknown) => callback(Object.freeze({}))),
   initial: { editorProviders: [] as readonly BlueEditorProvider[], editorProvidersRevision: 1 } as Record<string, unknown>,
   listeners: new Set<(snapshot: Record<string, unknown>) => void>(),
   disposed: 0,
 }))
 
-vi.mock('@dsh-blue/blue-api', () => ({
-  attachBluePluginHostCapabilities: host.attach,
-  runBlueUserGesture: host.gesture,
-  subscribeBluePluginHost(_service: unknown, listener: (snapshot: Record<string, unknown>) => void) {
+function control() {
+  return {
+    attachCapabilities: host.attach,
+    runUserGesture: host.gesture,
+    subscribe(listener: (snapshot: Record<string, unknown>) => void) {
     host.listeners.add(listener)
     listener(host.initial)
     let disposed = false
@@ -32,8 +33,9 @@ vi.mock('@dsh-blue/blue-api', () => ({
         host.listeners.delete(listener)
       },
     }
-  },
-}))
+    },
+  }
+}
 
 import * as ownerPlugin from '../src/editor-provider-owner.ts'
 
@@ -55,15 +57,14 @@ function provide(ctx: Context, name: string, value: unknown): void {
   ctx.reflect.provide(name, value)
 }
 
-async function mount(options: { readonly settings?: unknown, readonly wrappedHost?: boolean } = {}) {
+async function mount(options: { readonly settings?: unknown } = {}) {
   const ctx = new Context()
   roots.push(ctx)
   const editorHost = new EditorHostService(ctx)
-  const originalHost = { id: 'original-host' }
-  provide(ctx, 'bluePluginHost', options.wrappedHost === true ? { [symbols.original]: originalHost } : originalHost)
+  provide(ctx, 'bluePluginControl', control())
   if (options.settings !== undefined) provide(ctx, 'settings', { get: (namespace: string) => namespace === 'blue' ? options.settings : undefined })
   const fiber = await ctx.plugin(ownerPlugin)
-  return { ctx, editorHost, originalHost, fiber }
+  return { ctx, editorHost, fiber }
 }
 
 function emitHost(snapshot: Record<string, unknown>): void {
@@ -74,11 +75,11 @@ describe('editor provider owner', () => {
   it('declares a standalone owner and replays settings and current provider revision', async () => {
     const provider: BlueEditorProvider = { id: 'acme.shell', render: () => ({ kind: 'editor-control' }) }
     host.initial = { editorProviders: [provider], editorProvidersRevision: 7 }
-    const mounted = await mount({ settings: { editorProvider: 'acme.shell' }, wrappedHost: true })
+    const mounted = await mount({ settings: { editorProvider: 'acme.shell' } })
 
     expect(ownerPlugin.name).toBe('blue-editor-provider-owner')
-    expect(ownerPlugin.inject).toEqual(['bluePluginHost', 'blueEditorHost'])
-    expect(host.attach).toHaveBeenCalledWith(mounted.originalHost, expect.anything(), ['editor.provider'])
+    expect(ownerPlugin.inject).toEqual(['bluePluginControl', 'blueEditorHost'])
+    expect(host.attach).toHaveBeenCalledWith(expect.anything(), ['editor.provider'])
     expect(mounted.editorHost.providers).toMatchObject({ desiredId: 'acme.shell', revision: 7, entries: [provider] })
   })
 

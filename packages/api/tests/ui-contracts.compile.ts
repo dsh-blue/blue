@@ -14,7 +14,6 @@ import type {
   BluePluginHost,
   BluePluginManifest,
   BlueSessionReader,
-  BlueSessionRequester,
   BlueSessionSnapshot,
   BlueStatusNode,
   BlueStatusProvider,
@@ -24,7 +23,7 @@ import type {
 
 declare const pluginHost: BluePluginHost
 export const contextConsumer = pluginHost.open(new Context(), {
-  id: '@acme/context-consumer', api: '^1.0.0', capabilities: [],
+  id: '@acme/context-consumer', api: '^1.0.0-beta.1', capabilities: [],
 })
 
 function assertNever(value: never): never { throw new Error(String(value)) }
@@ -241,12 +240,16 @@ export const invalidNestedEditorExtension: BlueEditorExtensionNode = {
 }
 
 export const capabilities = [
-  'commands', 'notifications', 'status', 'panes', 'overlays',
-  'editor.extensions', 'session.read', 'session.act', 'status.provider', 'editor.provider',
+  'commands', 'notifications.publish', 'status', 'panes', 'overlays',
+  'editor.extensions', 'session.read', 'status.provider', 'editor.provider',
 ] as const satisfies readonly BlueCapability[]
+// @ts-expect-error generic public session actions were removed from the Beta vocabulary
+export const removedSessionAct: BlueCapability = 'session.act'
+// @ts-expect-error notification observation is owner-only; the public grant is publish-only
+export const removedNotificationsObserve: BlueCapability = 'notifications'
 
 export const manifest = {
-  id: '@acme/inspector', api: '^1.0.0', capabilities: ['panes', 'status'],
+  id: '@acme/inspector', api: '^1.0.0-beta.1', capabilities: ['panes', 'status'],
 } satisfies BluePluginManifest
 
 export const sessionSnapshot = {
@@ -256,18 +259,16 @@ export const sessionSnapshot = {
 export const unrevisionedSession: BlueSessionSnapshot = { id: 'session', cwd: '/workspace', status: 'idle', mode: 'normal' }
 
 declare const sessionReader: BlueSessionReader
-declare const sessionRequester: BlueSessionRequester
 sessionReader.current()
 sessionReader.subscribe(() => {})
-sessionRequester.request({ kind: 'interrupt' })
 // @ts-expect-error read-only session facades cannot act
 sessionReader.request({ kind: 'interrupt' })
-// @ts-expect-error action-only session facades cannot read
-sessionRequester.current()
 
 declare const sessionApi: BluePluginApi
 sessionApi.session?.current()
-sessionApi.sessionActions?.request({ kind: 'followup', text: 'hello' })
+sessionApi.notifications?.publish({ id: 'notice', view: { kind: 'text', content: 'hello' } })
+// @ts-expect-error ordinary plugins cannot observe the global notification stream
+sessionApi.notifications?.subscribe(() => {})
 
 declare const status: NonNullable<BluePluginApi['status']>
 status.register({ id: '@acme/status/branch', render: () => ({ kind: 'text', content: 'main' }) })
@@ -285,4 +286,4 @@ export const invalidDockCapability: BlueCapability = 'dock'
 // @ts-expect-error tools has no public registry or owner
 export const invalidToolsCapability: BlueCapability = 'tools'
 // @ts-expect-error removed values do not leak through BluePluginManifest
-export const invalidDockManifest: BluePluginManifest = { id: '@acme/old', api: '^1.0.0', capabilities: ['dock'] }
+export const invalidDockManifest: BluePluginManifest = { id: '@acme/old', api: '^1.0.0-beta.1', capabilities: ['dock'] }

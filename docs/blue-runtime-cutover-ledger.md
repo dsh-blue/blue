@@ -1,6 +1,6 @@
 # Frontend Runtime Cutover Ledger
 
-> Status: PR #77 is the integration carrier for the design in PR #72 and the locale behavior originally developed in PR #78. The W4-W6 evidence below records the pre-i18n PR #77 candidate accepted on 2026-08-29; that acceptance does not cover the new locale-integrated tree. The current `p2/ui-i18n-integration` worktree reimplements PR #78 against PR #77's canonical UI architecture. Its full automatic gate and dedicated-profile dogfood are complete; fresh live acceptance remains. At the user's request, merge, tag, publish, production-profile mutation, PR closure, and acceptance-profile deletion remain deferred.
+> Status: PR #77 is the integration carrier for PR #72's design and PR #78's locale behavior. PR #79 merged the Plugin API v1 design/control baseline at `7f3d13a` and was merged into PR #77 at `124d220`. The current `blue-pr77-beta` worktree hardens that tree as a `1.0.0-beta.1` runtime foundation. Earlier W4-W6 and locale acceptance evidence remains historical baseline evidence only; it does not cover the new Beta authority boundary or its eventual exact head. Full automatic gates, dedicated-profile dogfood, fresh review and fresh live acceptance are required before merge. No protocol `1.0.0`, Stable API, publish, production-profile mutation, superseded-PR closure or acceptance-profile deletion is authorized by this state.
 
 ## Frozen Inputs
 
@@ -19,12 +19,15 @@
 | PR #77 | `9a6a25549e54735de3e5f2a7604146269648d956` | accepted W1-W6 implementation and integration base |
 | PR #77 locale candidate | `ee6e6380a8d2d995344d600073a69843bab8f33e` | current UI + i18n acceptance candidate |
 | PR #78 | `d2f3d1c138692e365cf4439ae7a02cd8c74ff51f` | locale behavior reference against the pre-#77 topology |
+| PR #79 | `7f3d13ab80932dc6bb778c359328c582d3767eae` | merged Draft v1 contract, Host lifecycle, PR #77 merge control and P1-P9 roadmap |
+| PR #77 Beta base | `124d2204af9e4547aef276ac9301fc11ea45654f` | PR #79 merge commit present on `p2/ui-api-refactor`; Beta hardening exact head still pending |
 
-PR #34 and #38 are out of scope; PR #36 is superseded. The earlier checkpoint was developed in `/home/x/dev/blue-runtime-cutover` on `p2/frontend-runtime-cutover`; W4-W6 continued in `/home/x/dev/deepseek-harness-plugin/blue/blue-ui-w4-w6` on `p2/ui-api-w4-w6`. The current candidate is developed in `/home/x/dev/deepseek-harness-plugin/blue/blue-ui-i18n-integration` on `p2/ui-i18n-integration`, then pushed to PR #77's `p2/ui-api-refactor` branch after all automatic gates pass.
+PR #34 and #38 are out of scope; PR #36 is superseded. The earlier checkpoint was developed in `/home/x/dev/blue-runtime-cutover` on `p2/frontend-runtime-cutover`; W4-W6 continued in `/home/x/dev/deepseek-harness-plugin/blue/blue-ui-w4-w6` on `p2/ui-api-w4-w6`; locale integration was accepted from `/home/x/dev/deepseek-harness-plugin/blue/blue-ui-i18n-integration`. Beta hardening now lives only in `/home/x/dev/deepseek-harness-plugin/dsh/blue-pr77-beta` on PR #77's `p2/ui-api-refactor` branch.
 
 ## PR Integration Disposition
 
 - PR #77 remains the single merge carrier. It already contains PR #72's design and implementation, so PR #72 contributes no separate commit to replay.
+- PR #79 is already merged and its `7f3d13a` design/control baseline is an ancestor of the PR #77 Beta worktree. PR #77 implements only the merge handbook's minimum Beta safety gate; P1-P9 remain independent follow-up deliveries.
 - PR #78's aggregate commit is not cherry-picked. Its locale service, Harness setting, first-wave translations and live-switch behavior are reimplemented on PR #77's renderer-neutral models, canonical panels and package ownership boundaries.
 - The disposable `BlueSettingsList.updateItems()` seam described by PR #78 is not restored. `CanonicalSettingsController.updatePresentation()` reprojects labels in place while preserving controller, cursor and form state.
 - PR #72 and PR #78 remain open until the locale-integrated PR #77 candidate passes live acceptance and is merged. Only then may they be closed as superseded.
@@ -45,8 +48,8 @@ PR #34 and #38 are out of scope; PR #36 is superseded. The earlier checkpoint wa
 | settings (#61) | official settings | revisioned get/set/unset | settings/form panels | source-complete; human accepted |
 | rewind/tree (#62) | session store/query | rewind action/tree query | select/info panels | source-complete; human accepted |
 | onboarding (#63) | credentials/settings | secret write action | secret-aware form flow | source-complete; human accepted |
-| public UI API (#72/#77) | manifest + safe UI vocabulary | effect-bound registries and provider ownership | canonical compiler, managed surfaces and panels | source-complete; pre-i18n candidate accepted |
-| locale (#78) | process locale + official `locale.preference` | tree-scoped revisioned locale snapshot | interaction/transcript reproject in place | source/automatic gates complete; fresh acceptance pending |
+| public UI API (#72/#77/#79) | Beta manifest + safe UI vocabulary | manifest-scoped facade; private control/raw app services | canonical compiler, managed surfaces and panels | Beta hardening source in progress; exact-head gates and fresh acceptance pending |
+| locale (#78) | process locale + official `locale.preference` | tree-scoped revisioned locale snapshot | interaction/transcript reproject in place | accepted baseline retained; Beta exact-head regression pending |
 
 ## Legacy Deletion Gate
 
@@ -70,11 +73,34 @@ The deletion audit distinguishes renderer event folding from legitimate domain o
 
 - The locale-integrated branch's eleven release packages and website are closed at `0.1.1-rc.2`; the independent Harness line remains `0.1.1-rc.2`.
 - Validation-only packages remain outside the release/bundle closure; `packages/context/package.json` remains `0.1.0-rc.2`.
-- The bundle contains 32 Blue-owned rows: 2 host-support, 9 baseline, 15 enhancement and 6 assembly rows.
+- The bundle contains 33 Blue-owned rows: 2 host-support, 1 private-runtime composition group, 9 baseline, 15 enhancement and 6 assembly rows. The group wraps all 30 product rows and isolates `bluePluginControl`, `blueSessionReader`, `blueSessionProjections` and `blueSessionActions`; public `bluePluginHost` remains available across the boundary.
 - Locale runtime/settings adaptation, conversation projection and official transcript consumption are baseline rows. Context, remote, OpenPencil and Lark are validation-only, not bundle rows.
 - No operation may mutate the production `blue` profile.
 
-## Current UI + i18n Integration Evidence
+## PR #79 Beta Hardening Record
+
+The current PR #77 worktree applies the merge handbook's minimum safety gate:
+
+- API/host version is `1.0.0-beta.1`; examples, package docs, Website copy,
+  release notes and Creative Mode skills use the same executable range without
+  claiming protocol v1 Stable.
+- Generic public `session.act`, its requester types and app owner bridge are
+  removed. Public session access is readonly `session.read`; domain writes
+  remain with their owning Harness service or feature action.
+- Notification consumers receive publish-only `notifications.publish`.
+  Aggregate and global-notification observation are owner-only operations.
+- The package root exports no callable owner helper. A closure-bound
+  `bluePluginControl` owns attach/snapshot/observe/gesture/close operations and
+  is composition-isolated with raw app reader/projection/action services.
+- Status/editor providers and editor extensions retain their runtime and
+  reference fixtures as Experimental surfaces; they are not part of the
+  Stable v1 root.
+- Whole-tree hostile-sibling and readonly-session evidence is part of the
+  candidate suite. Final exact-head validation, dual-Harness packed fixtures,
+  smoke, dedicated `blue-pr77-beta` profile evidence, review and human
+  acceptance remain mandatory and are not inferred from the records below.
+
+## Pre-Hardening UI + i18n Integration Evidence
 
 Automatic candidate evidence:
 
@@ -137,8 +163,10 @@ Dedicated locale-profile evidence:
 - The settings document ends at its original persisted value,
   `locale: { preference: zh }`.
 
-The remaining gate is fresh human live acceptance of this exact profile and
-candidate; the earlier acceptance of `cf8b3bd` cannot satisfy it.
+At this checkpoint the remaining gate was fresh human live acceptance of that
+exact profile and candidate; the earlier acceptance of `cf8b3bd` could not
+satisfy it. Regardless of its later disposition, this checkpoint predates and
+cannot satisfy the PR #79 Beta-hardening acceptance gate.
 
 ## Pre-integration W4-W6 Candidate Evidence
 
@@ -239,7 +267,7 @@ Process/profile evidence:
   one bracketed-paste enable and one disable, no width error, and a clean
   session-save exit; no `blue-overflow.log` exists in the profile.
 
-This evidence completed the earlier C6 checkpoint; it did not substitute for
-the current candidate evidence above. The final-head gate refresh, user's live
-test, and exact acceptance response `验收通过` are now all recorded; the
-automated evidence alone would not have satisfied that gate.
+This evidence completed the earlier C6 checkpoint and was later accompanied by
+that checkpoint's own live acceptance. It does not substitute for the current
+PR #79 Beta-hardening exact head, dedicated profile, review or user response;
+automated evidence alone cannot satisfy those gates.

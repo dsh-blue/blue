@@ -15,7 +15,7 @@ export const inject = ['bluePluginHost']
 export function apply(ctx: Context): void {
   const opened = ctx.bluePluginHost.open(ctx, {
     id: 'my-plugin.clock',
-    api: '^1.0.0',
+    api: '^1.0.0-beta.1',
     capabilities: ['status'],
   })
   if (!opened.ok) return // 结构性失败：放弃挂载，不向宿主抛异常
@@ -29,7 +29,7 @@ export function apply(ctx: Context): void {
 把它插进 profile 的 `cordis.patch.yml`，状态栏就多了一行时钟。从零跑通这个插件见[快速开始](/plugins/quickstart)。
 
 ::: warning 预览阶段提醒
-缝的签名计划在 Phase 3 冻结；当前接入的插件随版本升级可能需要适配。本站会随每次发布同步更新。
+当前可执行协议是 `1.0.0-beta.1`，不是 Stable v1。本站本节是 Beta 参考；正式 v1 开发手册、schema/catalog 与 capability Stable 晋升将在后续 roadmap PR 中交付。
 :::
 
 ## 对接模型一图
@@ -51,16 +51,15 @@ dsh process 进程（one Cordis tree 一棵 Cordis 树）
 | --- | --- | --- |
 | [`commands`](/plugins/commands) | slash 命令 + 异步 handler | 出现在斜杠补全与 `/help` |
 | [`status`](/plugins/status) | 返回 `BlueStatusNode` 的 render 函数 | 底部 footer 状态条目 |
-| [`status.provider`](/plugins/status#独占-status-provider) | 接收 readonly status snapshot 的 render 函数 | 替换整个 footer 的候选 provider |
-| [`editor.extensions`](/plugins/editor-extensions) | passive shell、补全、action、submit transform | 增强 Blue 自有编辑器而不读取其状态 |
-| [`editor.provider`](/plugins/editor-providers) | 接收 readonly editor snapshot 的 shell render 函数 | 用户选择的独占 editor shell 候选 |
+| [`status.provider`](/plugins/status#独占-status-provider) (Experimental) | 接收 readonly status snapshot 的 render 函数 | reference runtime：替换整个 footer 的候选 provider |
+| [`editor.extensions`](/plugins/editor-extensions) (Experimental) | passive shell、补全、action、submit transform | reference runtime：增强 Blue 自有编辑器而不读取其状态 |
+| [`editor.provider`](/plugins/editor-providers) (Experimental) | 接收 readonly editor snapshot 的 shell render 函数 | reference runtime：用户选择的独占 editor shell 候选 |
 | [`panes`](/plugins/dock) | 布局位置、canonical node 与结构化 event | header/left/right/bottom 插件面 |
 | [`overlays`](/plugins/dock#overlay-契约) | canonical overlay request 与结构化 event | 受 Blue focus/lifecycle 托管的浮层 |
-| [`notifications`](/plugins/notifications) | 发布/订阅 `BlueNotification` | 编辑器通知条 |
+| [`notifications.publish`](/plugins/notifications) | 只发布 `BlueNotification` | 编辑器通知条；没有全局 observe |
 | [`session.read`](/plugins/session) | revisioned、深度冻结的当前会话 snapshot | `current()` 与 effect-bound `subscribe()` |
-| [`session.act`](/plugins/session#结构化动作) | followup、steer、interrupt | 全局 FIFO、abort 与 stale/late fencing |
 
-`session.read` 与 `session.act` 是两个严格隔离的 facade；owner row 缺失时 `open()` 返回 `BLUE_CAPABILITY_ABSENT`。旧名 `dock`、`panels`、`editor` 与 `tools` 已从公开 manifest 删除；校验器会返回具体迁移提示。
+generic `session.act` 已移除；写操作使用所属 Harness service 或 feature-owned action。`session.read` owner 缺失时返回 unavailable/null，不会回退到 raw app service。旧名 `dock`、`panels`、`editor` 与 `tools` 已从公开 manifest 删除；校验器会返回具体迁移提示。
 
 ## 文档地图
 
@@ -82,6 +81,6 @@ dsh process 进程（one Cordis tree 一棵 Cordis 树）
 
 **参考**
 
-- [Seam 参考](/plugins/seams) —— 稳定 plugin host 与 Blue 内部边界的完整清单；
-- [内置插件](/plugins/builtins) —— bundle 的 32 条 Blue 自有行，是最完整的插件范例集；
+- [Seam 参考](/plugins/seams) —— Beta plugin host 与 Blue 内部边界的完整清单；
+- [内置插件](/plugins/builtins) —— bundle 的 33 条 Blue 自有行，是最完整的插件范例集；
 - [贡献本仓库](/plugins/contributing) —— 给 Blue 本体贡献代码的本地开发流程。

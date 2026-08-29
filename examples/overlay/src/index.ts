@@ -28,7 +28,7 @@ export const overlayRequest: BlueOverlayRequest = {
 
 /** Register a command whose owner-minted gesture authorizes the modal. */
 export function apply(ctx: Context): void {
-  const opened = ctx.bluePluginHost.open(ctx, { id: name, api: '^1.0.0', capabilities: ['commands', 'overlays'] })
+  const opened = ctx.bluePluginHost.open(ctx, { id: name, api: '^1.0.0-beta.1', capabilities: ['commands', 'overlays'] })
   if (!opened.ok) return
   const api = opened.value
   api.commands!.register({

@@ -14,7 +14,7 @@
 | 文档 | 内容 |
 |---|---|
 | [blue-architecture.md](./blue-architecture.md) | 当前架构：domain/projection/action/frontend model/TUI adapter 与 composition |
-| [blue-seams.md](./blue-seams.md) | 当前 seam：稳定 plugin host、app session boundary、model registries 与 bundle mapping |
+| [blue-seams.md](./blue-seams.md) | 当前 seam：Beta plugin host、app session boundary、model registries 与 bundle mapping |
 | [blue-session-runtime.md](./blue-session-runtime.md) | projection、action、session reader 与 adapter 职责 |
 | [blue-interaction-model.md](./blue-interaction-model.md) | command、panel、canonical status/pane、editor 与 provider contract |
 | [blue-surface-migration-matrix.md](./blue-surface-migration-matrix.md) | surface replacement 与物理删除状态 |

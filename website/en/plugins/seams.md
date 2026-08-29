@@ -2,39 +2,45 @@
 
 Blue's current seams are explicit Cordis services, projection/action boundaries, renderer-neutral model registries, and patch rows. The old mutable `blueSession` binding, `blue/session-changed`, `blueStatus`, `blueIntents`, and shared-editor module singleton have been removed.
 
-## Stable third-party entry
+## Third-party Beta entry
 
-External plugins request capabilities through `ctx.bluePluginHost.open(ctx, manifest)`:
+External plugins request capabilities from the current `1.0.0-beta.1` host through `ctx.bluePluginHost.open(ctx, manifest)`:
 
 | Capability | Contribution | Blue consumer |
 |---|---|---|
 | `commands` | `BlueCommandContribution` plus async `BlueResult` | interaction bridge into the Harness command registry |
-| `status` | `BlueStatusEntryContribution` returning a renderer-neutral `BlueStatusNode` | view bridge into the private footer entry registry and core status compiler |
-| `status.provider` | `BlueStatusProvider` returning an exclusive renderer-neutral `BlueStatusNode` | status-provider owner into the core status compiler |
-| `notifications` | `BlueNotification` | interaction bridge into the editor notice consumer |
-| `panes` | `BluePaneContribution` | view bridge into the private pane registry and core bounded pane mount |
-| `overlays` | `BlueOverlayRequest` | public overlay host into the core overlay mount |
-| `editor.extensions` | `BlueEditorExtensionContribution` | interaction bridge into editor extension binding |
-| `editor.provider` | `BlueEditorProvider` returning an exclusive renderer-neutral editor shell | editor-provider owner into the core editor-shell compiler |
+| `status` | `BlueStatusEntryContribution` returning a renderer-neutral `BlueStatusNode` | view bridge into the private footer registry and core status compiler |
+| `notifications.publish` | publish-only `BlueNotification` | interaction bridge into the editor notice sink |
+| `panes` | `BluePaneContribution` | core surface bridge into the bounded pane mount |
+| `overlays` | `BlueOverlayRequest` | core surface bridge into the overlay mount |
 | `session.read` | `BlueSessionReader`: `current` / `subscribe` only | app session owner bridge into frozen revisioned snapshots |
-| `session.act` | `BlueSessionRequester`: `request` only | app session owner bridge into FIFO structured actions |
+| `status.provider` (Experimental) | inert `BlueStatusProvider` candidate | status-provider owner into the core status compiler |
+| `editor.extensions` (Experimental) | inert `BlueEditorExtensionContribution` | interaction owner into editor extension binding |
+| `editor.provider` (Experimental) | inert `BlueEditorProvider` candidate | editor-provider owner into the core editor-shell compiler |
 
-`@dsh-blue/blue-api` owns manifest validation, capability restriction, duplicate ids, the owner namespace, and lifecycle. Registrations bind to the caller's Fiber and disappear on unload.
+`@dsh-blue/blue-api` owns manifest validation, capability scoping, duplicate ids, the owner namespace, and lifecycle. Registrations bind to the caller's Fiber and disappear on unload. `commands`, `status`, `panes`, `overlays`, and the three Experimental/reference facets use inert registration buffers; after an owner gap only the latest definitions are restored. Actions, overlays, gestures, notifications, and old callback results are never replayed.
 
-When the `session.read` / `session.act` owner is absent, `open()` returns `BLUE_CAPABILITY_ABSENT`. Once active, the two returned fields remain strictly isolated; see [Session reads and actions](/en/plugins/session) for lifecycle and result codes. Candidates for both exclusive-provider capabilities stay inert until their id is selected in settings. See [Status bar](/en/plugins/status#exclusive-status-provider) and [Editor providers](/en/plugins/editor-providers) for persisted selection and fallback behavior.
+`notifications.publish` and `session.read` require an active owner, so `open()` returns `BLUE_CAPABILITY_ABSENT` while that owner is missing. Notifications expose publish only, never global observation. `session.read` is the sole public session facade; generic `session.act` has been removed, and domain writes continue through their owning Harness service, command, or feature action. See [Read-only session data](/en/plugins/session).
+
+The provider/editor facets remain Experimental/reference runtime and are not part of the Stable v1 root. Their candidates stay inert until selected in settings. See [Status](/en/plugins/status#exclusive-status-provider) and [Editor providers](/en/plugins/editor-providers) for persisted selection and fallback behavior.
 
 ## Internal Blue boundaries
+
+These are product-composition seams, not a route for third-party code to bypass `bluePluginHost`:
 
 | Owner | Seam | Purpose |
 |---|---|---|
 | core | `blueScreen` / `blueKeymap` / `blueComponents` / `blueTerminalInfo` / theme | TUI kernel; only core touches pi-tui/raw terminal |
-| app | `blueSessionReader` / `blueSessionRequester` | readonly current-session snapshot / narrow actions; the public bridge does not expose broad app actions |
+| app | `blueSessionReader` | readonly current-session snapshot; the public bridge attaches only a bounded reader |
 | app | `blueSessionProjections` | consistent-cut projection values, seq, children, and subscriptions |
-| app | `blueSessionActions` | followup/steer/interrupt plus mode/model/preset/tool/skill/rewind/side-session actions |
+| app | `blueSessionActions` | domain actions for followup/steer/interrupt, mode/model/preset/tool/skill, rewind, and side sessions |
 | conversation | `blueConversation` / `blueConversationFacts` | official replay/live transcript and status/pane facts |
 | transcript | transcript model, private status/bottom-pane registries, and tool model service | readonly models/canonical nodes into the TUI renderer |
-| interaction | `blueEditorHost` / `blueInteractionState` | frontend-tree-scoped editor slot, completion multiplexer, pre-clear submit barrier, public extension/provider binding, draft/settings/paste state |
-| bundle | `cordis.patch.yml` | 32 Blue-owned rows and explicit dependency ordering |
+| interaction | `blueEditorHost` / `blueInteractionState` | frontend-tree-scoped editor, completion, submit barrier, draft/settings/paste state |
+| API composition | `bluePluginControl` | owner attach, aggregate/notification observation, gestures, and semantic close; private-realm only |
+| bundle | `cordis.patch.yml` | 33 Blue-owned rows: 2 host-support, 1 private group, and 30 product rows |
+
+The default bundle's `blue-runtime-private` group wraps the complete product segment and isolates `bluePluginControl`, `blueSessionReader`, `blueSessionProjections`, and `blueSessionActions` from ordinary siblings. Public `bluePluginHost` still crosses the isolation boundary to provide manifest-scoped facades. Ordinary plugins cannot obtain management authority through service injection or Cordis proxy unwrapping.
 
 Session-switch events such as `blue/request-resume`, `-new`, `-fork`, and `-rewind` are commands addressed to the app owner, not broadcasts carrying Session objects into renderers.
 

@@ -160,7 +160,7 @@ export async function apply(ctx: Context): Promise<void> {
   })
   ctx.plugin({
     name: 'blue-plugin-surface-bridge',
-    inject: ['bluePluginHost', 'blueComponents', 'blueTheme', 'blueKeymap'],
+    inject: ['bluePluginControl', 'blueComponents', 'blueTheme', 'blueKeymap'],
     apply(subCtx: Context) {
       mountPluginSurfaceBridge(subCtx as Parameters<typeof mountPluginSurfaceBridge>[0], runtime)
     },

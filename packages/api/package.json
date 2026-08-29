@@ -1,6 +1,6 @@
 {
   "name": "@dsh-blue/blue-api",
-  "description": "Stable, renderer-independent public contracts for Blue Cordis plugins",
+  "description": "Beta, renderer-independent public contracts for Blue Cordis plugins",
   "version": "0.1.1-rc.2",
   "publishConfig": {
     "access": "public"

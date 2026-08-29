@@ -1,5 +1,7 @@
 # Editor extensions
 
+> Status: **Experimental / reference**. `editor.extensions` retains its mature runtime and fixtures for collaborative validation, but it is not part of the Stable v1 root. Its name and contract may change until real-consumer evidence is complete.
+
 `editor.extensions` adds renderer-neutral hints, diagnostics, completions, actions, and submit transforms around Blue's owned editing engine. Extensions cannot read the draft, history, cursor, or IME state and cannot replace the engine. Replacing the whole shell belongs to the exclusive `editor.provider` capability and is outside this surface.
 
 ## Registration
@@ -14,7 +16,7 @@ export const inject = ['bluePluginHost']
 export function apply(ctx: Context): void {
   const opened = ctx.bluePluginHost.open(ctx, {
     id: 'acme.editor-helper',
-    api: '^1.0.0',
+    api: '^1.0.0-beta.1',
     capabilities: ['editor.extensions'],
   })
   if (!opened.ok || opened.value.editorExtensions === undefined) return
@@ -58,7 +60,7 @@ Blue validates, copies, and freezes each contribution before compiling the shell
 
 ## Completion
 
-The API 1.0 compatibility callback `complete` receives `/`, `@`, and `manual` triggers only. Use `completeV2` to opt into the same triggers plus `#`; when both callbacks exist, Blue invokes only `completeV2`. Blue merges public results with the built-in slash, file, and skill sources, accepts only the latest request, and applies each item with its own prefix. Item ids must be unique within one result; label, insertText, detail, and item count are bounded. Invalid, timed-out, aborted, or stale results never reach the dropdown.
+The current Beta compatibility callback `complete` receives `/`, `@`, and `manual` triggers only. Use `completeV2` to opt into the same triggers plus `#`; when both callbacks exist, Blue invokes only `completeV2`. Blue merges public results with the built-in slash, file, and skill sources, accepts only the latest request, and applies each item with its own prefix. Item ids must be unique within one result; label, insertText, detail, and item count are bounded. Invalid, timed-out, aborted, or stale results never reach the dropdown.
 
 ## Submit transforms and attachments
 

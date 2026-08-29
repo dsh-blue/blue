@@ -1,5 +1,7 @@
 # 编辑器 Provider
 
+> 状态：**Experimental / reference**。`editor.provider` 不属于 Stable v1 root；当前实现保留 provider swap、fallback 与 lifecycle 证据，但在真实外部消费者共创前不作稳定兼容承诺。
+
 `editor.provider` 注册一个可替换整个 editor shell 的候选。Provider 可以重排模式信息、辅助内容和结构化 action，但编辑引擎仍由 Blue 所有：draft、cursor、history、undo、IME、paste、attachment 与 submit 路径不会交给插件。
 
 ## 快速开始
@@ -45,7 +47,7 @@ const provider: BlueEditorProvider = {
 export function apply(ctx: Context): void {
   const opened = ctx.bluePluginHost.open(ctx, {
     id: 'acme.focused-editor',
-    api: '^1.0.0',
+    api: '^1.0.0-beta.1',
     capabilities: ['editor.provider'],
   })
   if (!opened.ok || opened.value.editorProviders === undefined) return

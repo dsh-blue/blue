@@ -183,25 +183,25 @@ describe('RemoteSessionAdapter', () => {
     const fixture = transportFixture()
     const adapter = new RemoteSessionAdapter(fixture.transport)
     await adapter.connect('s1')
-    const session = new SessionBridge({ source: adapter })
-    await session.attach(adapter)
+    const binding = new CurrentSessionBinding(new SessionBridge(), new ActionCoordinator())
+    await binding.switchTo(adapter)
 
     vi.mocked(fixture.transport.request).mockRejectedValueOnce(new Error('remote failed'))
-    await expect(session.request({ kind: 'followup', text: 'failure' })).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'remote failed' })
+    await expect(binding.execute({ kind: 'followup', text: 'failure' })).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'remote failed' })
     vi.mocked(fixture.transport.request).mockRejectedValueOnce(Object.assign(new Error('remote request timed out'), { code: 'REQUEST_TIMEOUT' }))
-    await expect(session.request({ kind: 'followup', text: 'timeout' })).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'remote request timed out' })
+    await expect(binding.execute({ kind: 'followup', text: 'timeout' })).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'remote request timed out' })
     vi.mocked(fixture.transport.request).mockImplementationOnce(async (_sessionId, _action, signal) => new Promise<void>((_resolve, reject) => {
       signal.addEventListener('abort', () => reject(new Error('remote request was cancelled')), { once: true })
     }))
     const controller = new AbortController()
-    const cancelling = session.request({ kind: 'followup', text: 'cancel' }, { signal: controller.signal })
+    const cancelling = binding.execute({ kind: 'followup', text: 'cancel' }, { signal: controller.signal })
     controller.abort()
     await expect(cancelling).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
 
     vi.mocked(fixture.transport.ask!).mockRejectedValueOnce(new Error('duplicate remote response'))
     const questions = new QuestionBridge(adapter.questionSource())
     await expect(questions.ask({ rpcId: 'duplicate' })).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'duplicate remote response' })
-    session.dispose()
+    binding.dispose()
     adapter.dispose()
   })
 })
@@ -219,7 +219,7 @@ describe('ProjectionRegistry', () => {
 
 describe('CurrentSessionBinding and plugins', () => {
   it('switches with abort-before-detach and rejects stale attach', async () => {
-    const source = { snapshot: vi.fn(async () => ({ watermark: 0, value: snap() })), subscribe: () => () => undefined, request: vi.fn(async () => undefined) }; const session = new SessionBridge({ source }); const actions = new ActionCoordinator(); const binding = new CurrentSessionBinding(session, actions); const seen: string[] = []; binding.subscribe(value => seen.push(value?.id ?? 'none')); await expect(binding.switchTo(source, 'custom')).resolves.toMatchObject({ ok: true }); expect(binding.sessionId).toBe('custom'); expect(binding.snapshot?.id).toBe('s1'); const defaultBinding = new CurrentSessionBinding(new SessionBridge({ source }), new ActionCoordinator()); await expect(defaultBinding.switchTo(source)).resolves.toMatchObject({ ok: true }); expect(defaultBinding.sessionId).toBe('s1'); defaultBinding.dispose(); binding.detach(); expect(seen).toEqual(['none', 's1', 'none']); binding.dispose(); const absent = new CurrentSessionBinding(new SessionBridge(), new ActionCoordinator()); await expect(absent.switchTo(undefined)).resolves.toMatchObject({ code: 'BLUE_CAPABILITY_ABSENT' }); absent.dispose()
+    const source = { snapshot: vi.fn(async () => ({ watermark: 0, value: snap() })), subscribe: () => () => undefined, request: vi.fn(async () => undefined) }; const session = new SessionBridge({ source }); const actions = new ActionCoordinator(); const binding = new CurrentSessionBinding(session, actions); const seen: string[] = []; binding.subscribe(value => seen.push(value?.id ?? 'none')); await expect(binding.execute({ kind: 'interrupt' })).resolves.toMatchObject({ code: 'BLUE_SESSION_UNAVAILABLE' }); await expect(binding.switchTo(source, 'custom')).resolves.toMatchObject({ ok: true }); expect(binding.sessionId).toBe('custom'); expect(binding.snapshot?.id).toBe('s1'); await expect(binding.execute({ kind: 'interrupt' })).resolves.toMatchObject({ ok: true }); expect(source.request).toHaveBeenCalledWith({ kind: 'interrupt' }, expect.any(AbortSignal)); const defaultBinding = new CurrentSessionBinding(new SessionBridge({ source }), new ActionCoordinator()); await expect(defaultBinding.switchTo(source)).resolves.toMatchObject({ ok: true }); expect(defaultBinding.sessionId).toBe('s1'); defaultBinding.dispose(); binding.detach(); expect(seen).toEqual(['none', 's1', 'none']); binding.dispose(); const absent = new CurrentSessionBinding(new SessionBridge(), new ActionCoordinator()); await expect(absent.switchTo(undefined)).resolves.toMatchObject({ code: 'BLUE_CAPABILITY_ABSENT' }); absent.dispose()
     let release!: () => void; const slowSource = { snapshot: async () => new Promise<{ watermark: number; value: ReturnType<typeof snap> }>(resolve => { release = () => resolve({ watermark: 0, value: snap('slow') }) }), subscribe: () => () => undefined, request: async () => undefined }; const stale = new CurrentSessionBinding(new SessionBridge({ source: slowSource }), new ActionCoordinator()); const pending = stale.switchTo(slowSource); stale.detach(); release(); await expect(pending).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED' });
     const cleanups: (() => void)[] = []; const provided = new Map<string, unknown>(); const ctx = { provide: (key: string, value: unknown) => provided.set(key, value), effect: (fn: () => () => void) => { const cleanup = fn(); cleanups.push(cleanup); return cleanup }, plugin: (plugin: { apply(ctx: never): void }) => plugin.apply(ctx as never) } as never; projectionRegistryPlugin().apply(ctx); sessionRuntimePlugin().apply(ctx); apply(ctx); expect(provided.has('blueProjectionRegistry')).toBe(true); expect(provided.has('blueSessionBinding')).toBe(true); for (const cleanup of cleanups) cleanup(); const registered = new CurrentSessionBinding(new SessionBridge(), new ActionCoordinator()); const unsubscribe = registered.subscribe(() => undefined); unsubscribe(); expect(invariantName).toBe('blue-remote-invariant'); invariantApply(ctx)
   })

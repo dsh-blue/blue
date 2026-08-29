@@ -6,6 +6,9 @@ owner-minted `BlueUserGesture`. The gesture is one-shot, and the host-scoped
 API facade rejects retained callbacks after consumer unload. There are no
 timers or background tasks.
 
+The source request and packaged manifest target the executable Blue API
+`^1.0.0-beta.1`; this example is Beta evidence, not a Stable v1 claim.
+
 The request contributes body content only. Its title is request metadata, and
 core owns the single closed overlay frame, border width, and inner padding;
 the example must not return a second `chrome: 'overlay'` surface or assemble

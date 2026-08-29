@@ -5,7 +5,7 @@
  *
  * @module @dsh-blue/blue-remote/wire-transport
  */
-import type { BlueSessionAction, BlueSessionSnapshot } from '@dsh-blue/blue-api'
+import type { BlueSessionSnapshot } from '@dsh-blue/blue-api'
 import { AdapterCapabilityAbsentError } from '@dsh-blue/blue-harness-adapter'
 import type { EventEnvelope, SnapshotEnvelope } from '@dsh-blue/blue-harness-adapter'
 import type {
@@ -20,7 +20,7 @@ import type {
   RemoteWireContract,
   RemoteWireHealth,
 } from './wire-types.ts'
-import type { RemoteCapabilities, RemoteTransport, WriteLease } from './types.ts'
+import type { RemoteCapabilities, RemoteSessionAction, RemoteTransport, WriteLease } from './types.ts'
 
 type Attachment = { readonly release: () => Promise<void> }
 type PendingAttachment = { readonly epoch: number; waiters: number; promise: Promise<void> }
@@ -200,7 +200,7 @@ export class DshRemoteTransport implements RemoteTransport {
     return () => this.listeners.delete(forward)
   }
 
-  async request(sessionId: string, action: BlueSessionAction, signal: AbortSignal): Promise<void> {
+  async request(sessionId: string, action: RemoteSessionAction, signal: AbortSignal): Promise<void> {
     if (this.client.agents !== undefined) await this.ensureWriteAttachment(sessionId, signal)
     if (action.kind === 'interrupt') {
       if (this.negotiatedProtocol !== '2') throw new AdapterCapabilityAbsentError('action', 'remote session interrupt is unavailable in protocol v1')

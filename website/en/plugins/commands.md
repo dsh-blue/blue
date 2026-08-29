@@ -30,8 +30,8 @@ An abortable command that appends text to a file:
 ```ts
 const opened = ctx.bluePluginHost.open(ctx, {
   id: 'my-plugin.clipboard',
-  api: '^1.0.0',
-  capabilities: ['commands', 'notifications'],
+  api: '^1.0.0-beta.1',
+  capabilities: ['commands', 'notifications.publish'],
 })
 if (!opened.ok) return
 const api = opened.value
@@ -61,7 +61,7 @@ api.commands?.register({
 
 - **Duplicate ids are rejected**: `register()` returns `BLUE_DUPLICATE_ID`. Colliding with a built-in command or another plugin's command fails at registration time too — always check `register`'s return value and degrade on failure;
 - **The return value is the user feedback**: the `message` of `{ ok: false, code, message }` is shown as error text in the editor notice bar; an exception thrown by `execute` is backstopped by the bridge layer into `plugin command failed: ...` — a backstop is not a contract, so return structured errors on your own;
-- **Success is silent**: `{ ok: true }` produces no output. To give the user feedback, publish one through [`notifications`](/en/plugins/notifications);
+- **Success is silent**: `{ ok: true }` produces no output. To give the user feedback, request [`notifications.publish`](/en/plugins/notifications) and publish one;
 - **Unload means disappearance**: registrations bind to the caller's Fiber; once the plugin unloads, the command is removed from the registry and vanishes from completion and `/help` alike.
 
 ## Common pitfalls

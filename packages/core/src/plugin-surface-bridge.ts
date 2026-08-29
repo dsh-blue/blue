@@ -1,13 +1,9 @@
 /** Blue-owned runtime bridge from public pane/overlay models to core surfaces. */
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import {
-  attachBluePluginHostCapabilities,
-  closeBluePluginHostOverlay,
-  runBlueUserGesture,
-  subscribeBluePluginHost,
+  type BluePluginControl,
   type BluePluginHostOverlayEntry,
   type BluePluginHostPaneEntry,
-  type BluePluginHostService,
   type BluePluginHostSnapshot,
   type BlueResult,
   type BlueUiEvent,
@@ -30,7 +26,7 @@ function ownerRevision(value: number | undefined): number {
 }
 
 type OwnerContext = Context & {
-  readonly bluePluginHost: BluePluginHostService
+  readonly bluePluginControl: BluePluginControl
   readonly blueComponents: BlueComponents
   readonly blueTheme: { readonly colors: BlueSemanticColors }
   readonly blueKeymap: BlueKeymap
@@ -55,7 +51,7 @@ class SurfaceEventOwner {
   private readonly active = new Set<AbortController>()
 
   constructor(
-    private readonly host: BluePluginHostService,
+    private readonly control: BluePluginControl,
     private readonly owner: Context,
     private readonly surfaceId: string,
     private readonly handler: BlueUiEventHandler | undefined,
@@ -112,7 +108,7 @@ class SurfaceEventOwner {
     let timeout: ReturnType<typeof setTimeout> | undefined
     let timedOut = false
     try {
-      const result = await runBlueUserGesture(this.host, this.owner, async userGesture => {
+      const result = await this.control.runUserGesture(this.owner, async userGesture => {
         if (this.handler === undefined) return { ok: true, value: undefined } as const
         const handled = Promise.resolve().then(() => this.handler!(task.event, {
           surfaceId: this.surfaceId,
@@ -271,8 +267,8 @@ function focusTarget(entry: SurfaceLaneEntry): BlueFocusable | null {
 
 /** Mount the core-private owner bridge after theme/components become available. */
 export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTerminalRuntime): void {
-  const host = (ctx.bluePluginHost as unknown as Record<symbol, BluePluginHostService | undefined>)[symbols.original] ?? ctx.bluePluginHost
-  attachBluePluginHostCapabilities(host, ctx, ['panes', 'overlays'])
+  const control = ctx.bluePluginControl
+  control.attachCapabilities(ctx, ['panes', 'overlays'])
   const panes = new Map<string, PaneRecord>()
   const overlays = new Map<string, OverlayRecord>()
   let disposed = false
@@ -340,7 +336,7 @@ export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTermina
 
   const addPane = (entry: BluePluginHostPaneEntry): void => {
     let record!: PaneRecord
-    const events = new SurfaceEventOwner(host, ctx, entry.id, entry.contribution.onEvent, () => schedulePane(record, false), undefined)
+    const events = new SurfaceEventOwner(control, ctx, entry.id, entry.contribution.onEvent, () => schedulePane(record, false), undefined)
     record = { entry, events, registration: undefined }
     panes.set(entry.id, record)
     schedulePane(record, true)
@@ -348,8 +344,8 @@ export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTermina
 
   const addOverlay = (entry: BluePluginHostOverlayEntry): void => {
     let record!: OverlayRecord
-    const events = new SurfaceEventOwner(host, ctx, entry.id, entry.request.onEvent, () => scheduleOverlay(record, false), () => {
-      closeBluePluginHostOverlay(host, ctx, record.entry)
+    const events = new SurfaceEventOwner(control, ctx, entry.id, entry.request.onEvent, () => scheduleOverlay(record, false), () => {
+      control.closeOverlay(ctx, record.entry)
     })
     const compiled = compile(entry.request.render, 'overlay', {
       components: ctx.blueComponents,
@@ -503,7 +499,7 @@ export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTermina
     { id: 'blue.surface.next', keys: 'f6', description: 'Focus the next Blue surface', handler: () => navigate(1) },
     { id: 'blue.surface.previous', keys: 'shift+f6', description: 'Focus the previous Blue surface', handler: () => navigate(-1) },
   ]))
-  const subscription = subscribeBluePluginHost(host, schedule)
+  const subscription = control.subscribe(schedule)
   ctx.effect(() => () => {
     disposed = true
     subscription.dispose()

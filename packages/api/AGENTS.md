@@ -1,11 +1,11 @@
 # `@dsh-blue/blue-api`
 
-The leaf package for Blue's stable, renderer-independent plugin contracts. It
+The leaf package for Blue's Beta, renderer-independent plugin contracts. It
 must not import core, transcript, interaction, app, pi-tui, or a concrete dsh
 service. Runtime code is limited to manifest validation and the renderer-free
 plugin host; Cordis owns plugin activation and Fiber lifetime.
 
-Stable contracts contain readonly Blue-owned data only. Agent, SessionEvent,
+Beta contracts contain readonly Blue-owned data only. Agent, SessionEvent,
 BlueComponent, BlueScreen, ANSI formatters, raw key sequences, and mutable
 session references remain implementation or experimental surfaces.
 
@@ -93,32 +93,30 @@ with the active frontend-tree owner Fiber. Consumer unload removes its
 registrations and permanently fences retained facades; host unload clears the
 buffers. Direct standalone `new BluePluginHostService()` construction does not
 attach the durable leases and retains the capability-absent embedding contract.
-`notifications` and both session capabilities still require their active
-owners; they are not durable registration buffers.
-Session capabilities use the dedicated `attachBluePluginHostSessionOwner`
-helper rather than the generic capability owner path. App is the sole active
-owner generation. `session.read` contains only `current`/`subscribe`, while
-`session.act` contains only `request`; `open()` projects only the exact requested
-facade. Every snapshot has a required monotonic `revision`, is validated,
-cloned, and deeply frozen in the host, and stale or invalid publications are
-ignored. The host serializes actions through one FIFO shared by every consumer.
-Pre-abort, queued abort, running abort, owner/session generation changes,
-consumer unload, and host teardown all settle the public request even if the
-owner ignores its signal; late owner resolution or rejection is consumed and
-cannot block the queue. A retained live facade returns null/absent during an
-owner gap and recovers on owner reload, while a disposed consumer stays fenced.
-Owner state lives in a Host-realm `Symbol.for`-keyed WeakMap rather than on the
-service object or in one module-local singleton: source/build or link/store
-copies in the same lockstep profile share it (the D37 cross-store lesson),
-while a dynamic VM has a separate global and sees only `version/open` on the
-guarded service.
+`notifications.publish` and `session.read` still require their active owners;
+they are not durable registration buffers. Notification consumers receive a
+publish-only facade; observation is available only through the composition-
+private control. Session ownership uses that same closure-bound control. App is
+the sole active reader generation, and `session.read` contains only
+`current`/`subscribe`. Every snapshot has a required monotonic `revision`, is
+validated, cloned, and deeply frozen in the host, and stale or invalid
+publications are ignored. A retained live reader returns null during an owner
+gap and recovers on owner reload, while a disposed consumer stays fenced.
+Generic `session.act` and its requester types are absent from the public API;
+domain writes continue through their owning Harness or Blue-internal action
+service. Host state lives in a Host-realm `Symbol.for`-keyed WeakMap rather than
+on the service object or in one module-local singleton: source/build or
+link/store copies in the same lockstep profile share it (the D37 cross-store
+lesson), while a dynamic VM sees only `version/open` on the guarded service.
 
-The public capability vocabulary is `commands`, `notifications`, `status`,
-`panes`, `overlays`, `editor.extensions`, `session.read`, `session.act`,
-`status.provider`, and `editor.provider`. The two provider registries contain
-inert candidates; user configuration, never priority or installation, selects
-one. Public validation rejects `dock/panels/editor/tools` with an actionable
-`BLUE_LEGACY_CAPABILITY` result.
+The public Beta vocabulary is `commands`, `notifications.publish`, `status`,
+`panes`, `overlays`, and `session.read`. The retained
+`editor.extensions`, `status.provider`, and `editor.provider` facets are
+Experimental/reference runtime and are not part of the Stable v1 target. The
+two provider registries contain inert candidates; user configuration, never
+priority or installation, selects one. Public validation rejects
+`dock/panels/editor/tools` with an actionable `BLUE_LEGACY_CAPABILITY` result
+and rejects removed `notifications`/`session.act` names as incompatible.
 
 The host implements `status`, `panes`, `overlays`, `editor.extensions`, and
 both provider registries without rendering plugin callbacks. Pane state keeps
@@ -132,9 +130,12 @@ guarded public service. Refresh handles enforce 20 successful calls per rolling
 second and cancel pending coalesced ticks when their contribution is disposed.
 Owner gaps retain and continue admitting contributions to the seven durable
 registration buffers; replacement owners replay them from their initial
-snapshot. Notifications remain unavailable without the interaction owner, and
-session owner gaps expose a null read snapshot and reject actions with
-`BLUE_CAPABILITY_ABSENT` until the app owner reloads.
+snapshot. Notification publication remains unavailable without the interaction
+owner, and session owner gaps expose a null read snapshot until the app owner
+reloads. Aggregate snapshots, notification observation, gesture minting,
+semantic close, and owner attachment are reachable only through
+`bluePluginControl`, which the default bundle isolates with raw app services in
+its private runtime realm. The package root exports no callable owner helper.
 
 The removed public `dock` transition has no host validator exception, API
 facade, contribution type, registry, or snapshot field. Untyped legacy

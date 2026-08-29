@@ -20,3 +20,8 @@ or create a runtime registry. Core owns schema admission, quotas, and compile.
 
 Keep runtime source fully covered. Type fixtures must prove component prop
 inference, the explicit child boundary, and rejection of custom node kinds.
+
+Current examples record API metadata as `^1.0.0-beta.1`. The pure builders do
+not promote that Beta host contract to Stable v1. Component metadata accepts
+semver prerelease identifiers so the executable Beta range is not rejected;
+formal shared semver validation remains a later machine-contract delivery.

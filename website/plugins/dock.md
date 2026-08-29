@@ -22,7 +22,7 @@ api.panes?.register(contribution: BluePaneContribution): BlueResult<BluePaneRegi
 ```ts
 const opened = ctx.bluePluginHost.open(ctx, {
   id: 'acme.inspector',
-  api: '^1.0.0',
+  api: '^1.0.0-beta.1',
   capabilities: ['panes'],
 })
 if (!opened.ok) return

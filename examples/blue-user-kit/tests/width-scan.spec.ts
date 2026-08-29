@@ -7,8 +7,6 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import {
   BluePluginHostService,
-  attachBluePluginHostCapabilities,
-  snapshotBluePluginHost,
   type BlueEditorSnapshot,
   type BlueStatusSnapshot,
   type BlueUiNode,
@@ -52,15 +50,17 @@ function uiRows(name: string, node: BlueUiNode): void {
 
 describe('example width contracts', () => {
   it('scans every pane and the overlay through the canonical compiler', () => {
-    const host = new BluePluginHostService(new Context())
+    const hostContext = new Context()
+    const host = new BluePluginHostService(hostContext)
+    const control = hostContext.get('bluePluginControl')!
     const owner = new Scope(host)
     const consumer = new Scope(host)
-    attachBluePluginHostCapabilities(host, owner, ['panes'])
+    control.attachCapabilities(owner, ['panes'])
     const ctx = consumer as unknown as Context
     applyHeader(ctx)
     applyInspector(ctx)
     applyBottomLog(ctx)
-    for (const entry of snapshotBluePluginHost(host).panes) {
+    for (const entry of control.snapshot().panes) {
       const node = entry.contribution.render()
       expect(node).not.toBeNull()
       uiRows(entry.id, node!)

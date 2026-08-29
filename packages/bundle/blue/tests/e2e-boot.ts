@@ -173,11 +173,14 @@ export async function resetBlueModuleState(): Promise<void> {
 /** One booted Blue tree plus its observations. */
 export interface BlueTree {
   ctx: Context
+  sessionReader: Context['blueSessionReader']
+  sessionActions: Context['blueSessionActions']
   terminal: FakeTerminal
   adapter: MockAdapter
   exits: number[]
   sessionChanges: Agent[]
   creativeIsolation: Record<string, unknown>
+  hostileIsolation: Record<string, unknown>
 }
 
 /** Blue-owned services withheld from the dynamic creative realm. */
@@ -207,7 +210,7 @@ export const CREATIVE_BLUE_INTERNAL_SERVICES = [
   'blueSessionFacts',
   'blueSessionProjections',
   'blueSessionReader',
-  'blueSessionRequester',
+  'bluePluginControl',
   'blueSkillsCatalog',
   'blueStartup',
   'blueStatusEntries',
@@ -239,6 +242,8 @@ interface BlueE2EHooks {
   localeApply: typeof localePlugin.apply
   presetsApply: (ctx: Context) => void
   creativeIsolationApply: (ctx: Context) => void
+  hostileIsolationApply: (ctx: Context) => void
+  privateRuntimeApply: (ctx: Context) => void
   coreApply: (ctx: Context) => Promise<void>
   themeDarkApply: typeof themeDarkPlugin.apply
   bannerApply: typeof bannerPlugin.apply
@@ -402,6 +407,9 @@ export async function bootBlue(argv: string[], options: {
   }
   const terminal = options.terminal ?? new FakeTerminal()
   const creativeIsolation: BlueTree['creativeIsolation'] = {}
+  const hostileIsolation: BlueTree['hostileIsolation'] = {}
+  let sessionReader: Context['blueSessionReader'] | undefined
+  let sessionActions: Context['blueSessionActions'] | undefined
   let presetRoot = ''
   const hooks: BlueE2EHooks = {
     apiHostApply: apiHostPlugin.apply,
@@ -412,6 +420,16 @@ export async function bootBlue(argv: string[], options: {
       creativeIsolation.commands = ctx.get('commands')
       creativeIsolation.bluePluginHost = ctx.get('bluePluginHost')
       creativeIsolation.tools = ctx.get('tools')
+    },
+    hostileIsolationApply: (ctx) => {
+      hostileIsolation.bluePluginHost = ctx.get('bluePluginHost')
+      for (const service of ['bluePluginControl', 'blueSessionReader', 'blueSessionProjections', 'blueSessionActions']) {
+        hostileIsolation[service] = ctx.get(service)
+      }
+    },
+    privateRuntimeApply: (ctx) => {
+      sessionReader = ctx.blueSessionReader
+      sessionActions = ctx.blueSessionActions
     },
     coreApply: async (ctx) => {
       // startBlueTerminal went async with the OSC 11 probe; the e2e skips the
@@ -436,7 +454,7 @@ export async function bootBlue(argv: string[], options: {
       })
       ctx.plugin({
         name: 'blue-plugin-surface-bridge',
-        inject: ['bluePluginHost', 'blueComponents', 'blueTheme', 'blueKeymap'],
+        inject: ['bluePluginControl', 'blueComponents', 'blueTheme', 'blueKeymap'],
         apply(subCtx: Context) {
           mountPluginSurfaceBridge(subCtx as Parameters<typeof mountPluginSurfaceBridge>[0], runtime)
         },
@@ -713,13 +731,13 @@ export const apply = ctx => globalThis.__blueE2E.paneBtwApply(ctx)
     '- id: blue-plugin-view-bridge',
     `  name: ${fixture('blue-plugin-view-bridge.mjs', `
 export const name = 'blue-plugin-view-bridge'
-export const inject = ['bluePluginHost', 'blueStatusEntries']
+export const inject = ['bluePluginControl', 'blueStatusEntries']
 export const apply = ctx => globalThis.__blueE2E.viewBridgeApply(ctx)
 `)}`,
     '- id: blue-status-provider-owner',
     `  name: ${fixture('blue-status-provider-owner.mjs', `
 export const name = 'blue-status-provider-owner'
-export const inject = ['bluePluginHost', 'blueStatusComposition', 'blueSessionReader']
+export const inject = ['bluePluginControl', 'blueStatusComposition', 'blueSessionReader']
 export const apply = ctx => globalThis.__blueE2E.statusProviderOwnerApply(ctx)
 `)}`,
     '  inject: [blueStatusComposition, blueSessionReader]',
@@ -734,14 +752,14 @@ export const apply = ctx => globalThis.__blueE2E.interactionApply(ctx)
     '- id: blue-editor-provider-owner',
     `  name: ${fixture('blue-editor-provider-owner.mjs', `
 export const name = 'blue-editor-provider-owner'
-export const inject = ['bluePluginHost', 'blueEditorHost']
+export const inject = ['bluePluginControl', 'blueEditorHost']
 export const apply = ctx => globalThis.__blueE2E.editorProviderOwnerApply(ctx)
 `)}`,
     '  inject: [blueEditorHost]',
     '- id: blue-plugin-interaction-bridge',
     `  name: ${fixture('blue-plugin-interaction-bridge.mjs', `
 export const name = 'blue-plugin-interaction-bridge'
-export const inject = ['bluePluginHost', 'commands', 'blueTheme', 'blueEditorHost']
+export const inject = ['bluePluginControl', 'commands', 'blueTheme', 'blueEditorHost']
 export const apply = ctx => globalThis.__blueE2E.interactionBridgeApply(ctx)
 `)}`,
     '- id: blue-startup',
@@ -766,11 +784,39 @@ export const apply = (ctx, config) => globalThis.__blueE2E.appApply(ctx, config)
     '- id: blue-plugin-session-bridge',
     `  name: ${fixture('blue-plugin-session-bridge.mjs', `
 export const name = 'blue-plugin-session-bridge'
-export const inject = ['bluePluginHost', 'blueSessionReader', 'blueSessionRequester']
+export const inject = ['bluePluginControl', 'blueSessionReader']
 export const apply = ctx => globalThis.__blueE2E.sessionBridgeApply(ctx)
 `)}`,
-    '  inject: [blueSessionReader, blueSessionRequester]',
+    '  inject: [bluePluginControl, blueSessionReader]',
   ]
+  const privateStart = rows.indexOf('- id: blue-api-host')
+  const privateRows = rows.splice(privateStart)
+  privateRows.push(
+    '- id: e2e-private-runtime-observer',
+    `  name: ${fixture('e2e-private-runtime-observer.mjs', `
+export const name = 'e2e-private-runtime-observer'
+export const inject = ['blueSessionReader', 'blueSessionActions']
+export const apply = ctx => globalThis.__blueE2E.privateRuntimeApply(ctx)
+`)}`,
+  )
+  rows.push(
+    '- id: blue-runtime-private',
+    '  name: cordis:group',
+    '  group: true',
+    '  isolate:',
+    '    bluePluginControl: true',
+    '    blueSessionActions: true',
+    '    blueSessionProjections: true',
+    '    blueSessionReader: true',
+    '  config:',
+    ...privateRows.map(row => `    ${row}`),
+    '- id: e2e-hostile-sibling',
+    `  name: ${fixture('e2e-hostile-sibling.mjs', `
+export const name = 'e2e-hostile-sibling'
+export const inject = ['bluePluginHost']
+export const apply = ctx => globalThis.__blueE2E.hostileIsolationApply(ctx)
+`)}`,
+  )
   // One real dsh-mcp-client entry per fixture server (S34 /mcp e2e): the
   // loader boots the entry, the bridge spawns the child and registers its
   // tools, and /mcp reads the joined truth. The flow-style config is valid
@@ -1000,9 +1046,10 @@ export const apply = (ctx) => {
 
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(join(dir, 'cordis.yml')).href } })
   await ctx.loader.await()
+  if (sessionReader === undefined || sessionActions === undefined) throw new Error('Blue private runtime observer did not activate')
   const sessionChanges: Agent[] = []
   let lastSessionId: string | undefined
-  const sessionRegistration = ctx.blueSessionReader.subscribe(snapshot => {
+  const sessionRegistration = sessionReader.subscribe(snapshot => {
     if (snapshot === null || snapshot.id === lastSessionId) return
     const agent = ctx.agents.get(snapshot.id as never)
     if (agent !== undefined) {
@@ -1012,14 +1059,14 @@ export const apply = (ctx) => {
   })
   ctx.effect(() => () => sessionRegistration.dispose())
   disposers.push(async () => { await ctx.fiber.dispose() })
-  return { ctx, terminal, adapter, exits, sessionChanges, creativeIsolation }
+  return { ctx, sessionReader, sessionActions, terminal, adapter, exits, sessionChanges, creativeIsolation, hostileIsolation }
 }
 
 /** Wait until the app driver has published its first Agent. */
 export async function currentAgent(tree: BlueTree): Promise<Agent> {
   let current: Agent | undefined
   await vi.waitFor(() => {
-    const session = tree.ctx.blueSessionReader.current()
+    const session = tree.sessionReader.current()
     expect(session).not.toBeNull()
     current = session === null ? undefined : tree.ctx.agents.get(session.id as never)
     expect(current).toBeDefined()

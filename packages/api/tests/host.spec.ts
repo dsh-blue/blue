@@ -6,11 +6,11 @@
  */
 
 import { Context, symbols } from '@deepseek-ai/cordis'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   BluePluginHostService,
   attachBluePluginHostCapabilities,
-  attachBluePluginHostSessionOwner,
+  attachBluePluginHostSessionReader,
   apply,
   closeBluePluginHostOverlay,
   createBlueUserGesture,
@@ -21,7 +21,7 @@ import {
   subscribeBluePluginNotifications,
   type BluePluginHostSnapshot,
 } from '../src/host.ts'
-import type { BlueEditorProvider, BluePluginApi, BluePluginManifest, BlueResult, BlueSessionAction, BlueSessionRequester, BlueSessionSnapshot, BlueUserGesture, BlueView } from '../src/contracts.ts'
+import type { BlueEditorProvider, BluePluginApi, BluePluginManifest, BlueSessionSnapshot, BlueUserGesture, BlueView } from '../src/contracts.ts'
 
 const view: BlueView = { kind: 'text', content: 'hello' }
 
@@ -38,15 +38,15 @@ function consumer() {
   }
 }
 
-function manifest(capabilities: BluePluginManifest['capabilities'] = ['commands', 'status', 'notifications']): BluePluginManifest {
-  return { id: '@acme/plugin', api: '^1.0.0', capabilities }
+function manifest(capabilities: BluePluginManifest['capabilities'] = ['commands', 'status', 'notifications.publish']): BluePluginManifest {
+  return { id: '@acme/plugin', api: '^1.0.0-beta.1', capabilities }
 }
 
 function command(id: string) {
   return { id, label: id, execute: async () => ({ ok: true as const, value: undefined }) }
 }
 
-function attach(host: BluePluginHostService, capabilities: BluePluginManifest['capabilities'] = ['commands', 'status', 'notifications']) {
+function attach(host: BluePluginHostService, capabilities: BluePluginManifest['capabilities'] = ['commands', 'status', 'notifications.publish']) {
   const owner = consumer()
   attachBluePluginHostCapabilities(host, owner, capabilities)
   return owner
@@ -56,7 +56,7 @@ function sessionValue(revision = 1, id = 'session-one'): BlueSessionSnapshot {
   return { revision, id, cwd: '/workspace', status: 'idle', mode: 'normal', model: { id: 'model', provider: 'provider', effort: 'high' } }
 }
 
-function sessionSource(initial: BlueSessionSnapshot | null = sessionValue(), request: BlueSessionRequester['request'] = async () => ({ ok: true, value: undefined })) {
+function sessionSource(initial: BlueSessionSnapshot | null = sessionValue()) {
   let current = initial
   const listeners = new Set<(snapshot: BlueSessionSnapshot | null) => void>()
   const reader = {
@@ -70,7 +70,6 @@ function sessionSource(initial: BlueSessionSnapshot | null = sessionValue(), req
   }
   return {
     reader,
-    requester: { request },
     publish(snapshot: BlueSessionSnapshot | null) { current = snapshot; for (const listener of listeners) listener(snapshot) },
     listeners,
   }
@@ -80,7 +79,7 @@ describe('BluePluginHostService', () => {
   it('rejects malformed and incompatible manifests at the API boundary', () => {
     const host = new BluePluginHostService(new Context())
     const c = consumer()
-    expect(host.open(c, { id: 'bad id', api: '^1.0.0', capabilities: [] })).toMatchObject({ ok: false, code: 'BLUE_API_INCOMPATIBLE' })
+    expect(host.open(c, { id: 'bad id', api: '^1.0.0-beta.1', capabilities: [] })).toMatchObject({ ok: false, code: 'BLUE_API_INCOMPATIBLE' })
     expect(host.open(c, { id: '@acme/plugin', api: 'not a range', capabilities: [] })).toMatchObject({ ok: false, code: 'BLUE_API_INCOMPATIBLE' })
     expect(host.open(c, null as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
     expect(host.open(c, { id: '@acme/plugin', api: '^2.0.0', capabilities: [] })).toMatchObject({ ok: false, code: 'BLUE_API_INCOMPATIBLE' })
@@ -100,7 +99,7 @@ describe('BluePluginHostService', () => {
     expect(apiResult.ok).toBe(true)
     if (!apiResult.ok) return
     const api = apiResult.value
-    expect(api.manifest).toEqual({ id: '@acme/plugin', api: '^1.0.0', capabilities: ['status'] })
+    expect(api.manifest).toEqual({ id: '@acme/plugin', api: '^1.0.0-beta.1', capabilities: ['status'] })
     expect(Object.isFrozen(api)).toBe(true)
     expect(Object.isFrozen(api.manifest)).toBe(true)
     expect(api.commands).toBeUndefined()
@@ -163,10 +162,10 @@ describe('BluePluginHostService', () => {
 
   it('fences every retained capability facade after consumer unload without consuming gestures', () => {
     const host = new BluePluginHostService(new Context())
-    const owner = attach(host, ['commands', 'status', 'notifications', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'])
+    const owner = attach(host, ['commands', 'status', 'notifications.publish', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'])
     const c = consumer()
-    const opened = host.open(c, manifest(['commands', 'status', 'notifications', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider']))
-    const live = host.open(consumer(), { ...manifest(['notifications', 'overlays']), id: '@acme/live' })
+    const opened = host.open(c, manifest(['commands', 'status', 'notifications.publish', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider']))
+    const live = host.open(consumer(), { ...manifest(['notifications.publish', 'overlays']), id: '@acme/live' })
     expect(opened.ok && live.ok).toBe(true)
     if (!opened.ok || !live.ok) return
 
@@ -179,7 +178,6 @@ describe('BluePluginHostService', () => {
       opened.value.statusProviders!.register({ id: 'before-unload', render: () => ({ kind: 'text', content: 'status' }) }),
       opened.value.editorProviders!.register({ id: 'before-unload', render: () => ({ kind: 'editor-control' }) }),
     ]
-    const beforeSubscription = opened.value.notifications!.subscribe(() => {})
     const gesture = createBlueUserGesture(host, owner)
     expect(registrations.every(result => result.ok)).toBe(true)
     expect(gesture.ok).toBe(true)
@@ -188,7 +186,6 @@ describe('BluePluginHostService', () => {
     c.dispose()
     c.dispose()
     expect(registrations.every(result => result.ok && result.value.disposed)).toBe(true)
-    expect(beforeSubscription.disposed).toBe(true)
 
     const rejected = [
       opened.value.commands!.register(command('after-unload')),
@@ -207,11 +204,7 @@ describe('BluePluginHostService', () => {
     const snapshot = snapshotBluePluginHost(host)
     expect([snapshot.commands, snapshot.status, snapshot.panes, snapshot.overlays, snapshot.editorExtensions, snapshot.statusProviders, snapshot.editorProviders].every(entries => entries.length === 0)).toBe(true)
 
-    let deadNotifications = 0
-    const afterSubscription = opened.value.notifications!.subscribe(() => { deadNotifications += 1 })
-    expect(afterSubscription.disposed).toBe(true)
     expect(live.value.notifications!.publish({ id: 'live', view })).toEqual({ ok: true, value: undefined })
-    expect(deadNotifications).toBe(0)
 
     const liveOverlay = live.value.overlays!.open({ id: 'live-after-dead', capturing: true, render: () => view }, { userGesture: gesture.value })
     expect(liveOverlay).toMatchObject({ ok: true })
@@ -264,50 +257,22 @@ describe('BluePluginHostService', () => {
     owner.dispose()
   })
 
-  it('fans notifications to all consumers and removes listeners on dispose', () => {
+  it('keeps notification observation owner-only and exposes publish alone', () => {
     const host = new BluePluginHostService(new Context())
-    attach(host, ['notifications'])
-    const first = consumer()
-    const second = consumer()
-    const firstApi = host.open(first, manifest(['notifications']))
-    const secondApi = host.open(second, { ...manifest(['notifications']), id: '@acme/other' })
-    expect(firstApi.ok && secondApi.ok).toBe(true)
-    if (!firstApi.ok || !secondApi.ok) return
+    attach(host, ['notifications.publish'])
+    const opened = host.open(consumer(), manifest(['notifications.publish']))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
     const seen: BlueView[] = []
-    const subscription = secondApi.value.notifications!.subscribe(notification => seen.push(notification.view))
-    secondApi.value.notifications!.subscribe(() => { throw new Error('contained observer') })
-    expect(firstApi.value.notifications!.publish({ id: 'notice', view })).toEqual({ ok: true, value: undefined })
+    const subscription = subscribeBluePluginNotifications(host, notification => seen.push(notification.view))
+    expect(Object.keys(opened.value.notifications!)).toEqual(['publish'])
+    expect(typeof opened.value.notifications!.publish).toBe('function')
+    expect('subscribe' in opened.value.notifications!).toBe(false)
+    expect(opened.value.notifications!.publish({ id: 'notice', view })).toEqual({ ok: true, value: undefined })
     expect(seen).toEqual([view])
     expect(Object.isFrozen(seen[0])).toBe(true)
-    expect(subscription.disposed).toBe(false)
-    first.dispose()
-    second.dispose()
+    subscription.dispose()
     expect(subscription.disposed).toBe(true)
-    expect(secondApi.value.notifications!.publish({ id: '', view })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
-  })
-
-  it('rolls back a notification listener when its effect registration throws', () => {
-    const host = new BluePluginHostService(new Context())
-    attach(host, ['notifications'])
-    const cleanups: (() => void)[] = []
-    let effects = 0
-    const rejectingConsumer = {
-      effect(callback: () => void | (() => void)): void {
-        effects += 1
-        if (effects > 1) throw new Error('effect registration rejected')
-        const cleanup = callback()
-        if (typeof cleanup === 'function') cleanups.push(cleanup)
-      },
-    }
-    const opened = host.open(rejectingConsumer, manifest(['notifications']))
-    const publisher = host.open(consumer(), { ...manifest(['notifications']), id: '@acme/publisher' })
-    expect(opened.ok && publisher.ok).toBe(true)
-    if (!opened.ok || !publisher.ok) return
-    let received = 0
-    expect(() => opened.value.notifications!.subscribe(() => { received += 1 })).toThrow('effect registration rejected')
-    expect(publisher.value.notifications!.publish({ id: 'notice', view })).toEqual({ ok: true, value: undefined })
-    expect(received).toBe(0)
-    for (const cleanup of cleanups) cleanup()
   })
 
   it('aggregates contributions globally, sorts them, and rejects cross-plugin duplicates', () => {
@@ -385,8 +350,8 @@ describe('BluePluginHostService', () => {
 
   it('validates owner notifications and contains notification adapter failures', () => {
     const host = new BluePluginHostService(new Context())
-    attach(host, ['notifications'])
-    const opened = host.open(consumer(), manifest(['notifications']))
+    attach(host, ['notifications.publish'])
+    const opened = host.open(consumer(), manifest(['notifications.publish']))
     expect(opened.ok).toBe(true)
     if (!opened.ok) return
     expect(opened.value.notifications!.publish({ id: 'Bad Notice', view })).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
@@ -404,6 +369,8 @@ describe('BluePluginHostService', () => {
     const ctx = new Context()
     const host = new BluePluginHostService(ctx)
     const bridge = attach(host)
+    const sessionOwner = consumer()
+    const sessionRegistration = attachBluePluginHostSessionReader(host, sessionOwner, sessionSource().reader)
     const c = consumer()
     const apiResult = host.open(c, manifest())
     expect(apiResult.ok).toBe(true)
@@ -411,18 +378,16 @@ describe('BluePluginHostService', () => {
     const api = apiResult.value
     api.commands!.register(command('run'))
     api.status!.register({ id: 'status', render: () => view })
-    const received: BlueView[] = []
-    api.notifications!.subscribe(notification => received.push(notification.view))
     await ctx.fiber.dispose()
     expect(api.commands!.list()).toEqual([])
     expect(api.status!.list()).toEqual([])
     expect(api.commands!.register(command('after-dispose'))).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
     expect(api.notifications!.publish({ id: 'after-dispose', view })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
-    expect(api.notifications!.subscribe(() => received.push(view)).disposed).toBe(true)
-    expect(received).toEqual([])
     expect(() => snapshotBluePluginHost(host)).toThrow('requires the active host service itself')
     expect(host.open(consumer(), manifest([]))).toEqual({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message: 'Blue plugin host is not active' })
     bridge.dispose()
+    sessionOwner.dispose()
+    expect(sessionRegistration.disposed).toBe(true)
   })
 
   it('tracks owner adapter readiness across unload and reload without dropping contributions', () => {
@@ -435,12 +400,12 @@ describe('BluePluginHostService', () => {
     expect(() => attachBluePluginHostCapabilities(host, consumer(), ['tools'] as never)).toThrow('unsupported capability "tools"')
     expect(host.open(consumer(), manifest(['status']))).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
 
-    const firstOwner = attach(host, ['status', 'notifications'])
+    const firstOwner = attach(host, ['status', 'notifications.publish'])
     const secondOwner = attach(host, ['status'])
-    const opened = host.open(consumer(), manifest(['status', 'notifications']))
+    const opened = host.open(consumer(), manifest(['status', 'notifications.publish']))
     expect(opened.ok).toBe(true)
     if (!opened.ok) return
-    expect(opened.value.manifest.capabilities).toEqual(['status', 'notifications'])
+    expect(opened.value.manifest.capabilities).toEqual(['status', 'notifications.publish'])
     expect(opened.value.status).toBeDefined()
     expect(opened.value.status!.register({ id: 'persistent', render: () => view })).toMatchObject({ ok: true })
 
@@ -458,36 +423,28 @@ describe('BluePluginHostService', () => {
 
   it('projects every additive public capability exactly and keeps ownerless sessions absent', () => {
     const host = new BluePluginHostService(new Context())
-    const capabilities = ['commands', 'status', 'notifications', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'] as const
+    const capabilities = ['commands', 'status', 'notifications.publish', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'] as const
     attach(host, capabilities)
     const opened = host.open(consumer(), manifest(capabilities))
     expect(opened.ok).toBe(true)
     if (!opened.ok) return
     expect(Object.keys(opened.value).sort()).toEqual(['commands', 'editorExtensions', 'editorProviders', 'manifest', 'notifications', 'overlays', 'panes', 'status', 'statusProviders'])
     expect(opened.value.session).toBeUndefined()
-    expect(opened.value.sessionActions).toBeUndefined()
     expect(host.open(consumer(), manifest(['session.read']))).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
-    expect(host.open(consumer(), manifest(['session.act']))).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
+    expect(host.open(consumer(), { ...manifest([]), capabilities: ['session.act'] as never })).toMatchObject({ ok: false, code: 'BLUE_API_INCOMPATIBLE' })
   })
 
-  it('exposes isolated read and action session facades with frozen revisioned snapshots', () => {
+  it('exposes only the readonly session facade with frozen revisioned snapshots', () => {
     const host = new BluePluginHostService(new Context())
     const sourceValue = sessionValue()
     const source = sessionSource(sourceValue)
     const owner = consumer()
-    const ownerRegistration = attachBluePluginHostSessionOwner(host, owner, source.reader, source.requester)
+    const ownerRegistration = attachBluePluginHostSessionReader(host, owner, source.reader)
     const read = host.open(consumer(), manifest(['session.read']))
-    const act = host.open(consumer(), { ...manifest(['session.act']), id: '@acme/act' })
-    const both = host.open(consumer(), { ...manifest(['session.read', 'session.act']), id: '@acme/both' })
-    expect(read.ok && act.ok && both.ok).toBe(true)
-    if (!read.ok || !act.ok || !both.ok) return
+    expect(read.ok).toBe(true)
+    if (!read.ok) return
     expect(read.value.session).toBeDefined()
-    expect(read.value.sessionActions).toBeUndefined()
-    expect(act.value.session).toBeUndefined()
-    expect(act.value.sessionActions).toBeDefined()
     expect('request' in read.value.session!).toBe(false)
-    expect('current' in act.value.sessionActions!).toBe(false)
-    expect(both.value.session).not.toBe(both.value.sessionActions)
 
     const initial = read.value.session!.current()!
     expect(initial).toEqual(sourceValue)
@@ -518,149 +475,13 @@ describe('BluePluginHostService', () => {
     ownerRegistration.dispose()
   })
 
-  it('serializes session actions globally and validates action inputs', async () => {
-    const host = new BluePluginHostService(new Context())
-    const calls: BlueSessionAction[] = []
-    const releases: Array<(result: BlueResult) => void> = []
-    const source = sessionSource(sessionValue(), (action) => new Promise(resolve => { calls.push(action); releases.push(resolve) }))
-    attachBluePluginHostSessionOwner(host, consumer(), source.reader, source.requester)
-    const first = host.open(consumer(), manifest(['session.act']))
-    const second = host.open(consumer(), { ...manifest(['session.act']), id: '@acme/second' })
-    expect(first.ok && second.ok).toBe(true)
-    if (!first.ok || !second.ok) return
-
-    await expect(first.value.sessionActions!.request({ kind: 'unknown' } as never)).resolves.toMatchObject({ code: 'BLUE_INVALID_CONTRIBUTION' })
-    await expect(first.value.sessionActions!.request({ kind: 'followup' } as never)).resolves.toMatchObject({ code: 'BLUE_INVALID_CONTRIBUTION' })
-    await expect(first.value.sessionActions!.request({ kind: 'interrupt', text: 'no' } as never)).resolves.toMatchObject({ code: 'BLUE_INVALID_CONTRIBUTION' })
-    const accessor = Object.defineProperty({}, 'kind', { enumerable: true, get() { return 'interrupt' } })
-    await expect(first.value.sessionActions!.request(accessor as never)).resolves.toMatchObject({ code: 'BLUE_INVALID_CONTRIBUTION' })
-    const preAbort = new AbortController(); preAbort.abort()
-    await expect(first.value.sessionActions!.request({ kind: 'interrupt' }, { signal: preAbort.signal })).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
-
-    const one = first.value.sessionActions!.request({ kind: 'followup', text: 'one' })
-    const two = second.value.sessionActions!.request({ kind: 'steer', text: 'two' })
-    await vi.waitFor(() => { expect(calls.map(action => action.kind)).toEqual(['followup']) })
-    releases.shift()!({ ok: true, value: undefined })
-    await expect(one).resolves.toEqual({ ok: true, value: undefined })
-    await vi.waitFor(() => { expect(calls.map(action => action.kind)).toEqual(['followup', 'steer']) })
-    releases.shift()!({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'owner rejected' })
-    await expect(two).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'owner rejected' })
-
-    const blocker = first.value.sessionActions!.request({ kind: 'followup', text: 'blocker' })
-    await vi.waitFor(() => { expect(calls).toHaveLength(3) })
-    const queuedController = new AbortController()
-    const queued = second.value.sessionActions!.request({ kind: 'interrupt' }, { signal: queuedController.signal })
-    queuedController.abort()
-    await expect(queued).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
-    expect(calls).toHaveLength(3)
-    releases.shift()!({ ok: true, value: undefined })
-    await expect(blocker).resolves.toEqual({ ok: true, value: undefined })
-    await Promise.resolve()
-    expect(calls).toHaveLength(3)
-  })
-
-  it('forwards running aborts and contains requester failures', async () => {
-    const host = new BluePluginHostService(new Context())
-    let mode: 'abort' | 'settle-abort-race' | 'error' | 'string' = 'abort'
-    let ownerSignal: AbortSignal | undefined
-    let settleRace!: () => void
-    const request = vi.fn<BlueSessionRequester['request']>(async (_action, options = {}) => {
-      ownerSignal = options.signal
-      if (mode === 'settle-abort-race') return new Promise<BlueResult>(resolve => { settleRace = () => resolve({ ok: true, value: undefined }) })
-      if (mode === 'error') throw new Error('owner failed')
-      if (mode === 'string') throw 'string failure'
-      await new Promise<void>(() => {})
-      return { ok: true, value: undefined }
-    })
-    const source = sessionSource(sessionValue(), request)
-    attachBluePluginHostSessionOwner(host, consumer(), source.reader, source.requester)
-    const opened = host.open(consumer(), manifest(['session.act']))
-    expect(opened.ok).toBe(true)
-    if (!opened.ok) return
-    const controller = new AbortController()
-    const running = opened.value.sessionActions!.request({ kind: 'interrupt' }, { signal: controller.signal })
-    await vi.waitFor(() => { expect(request).toHaveBeenCalledOnce() })
-    controller.abort()
-    await expect(running).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
-    expect(ownerSignal?.aborted).toBe(true)
-    mode = 'settle-abort-race'
-    const raceController = new AbortController()
-    const raced = opened.value.sessionActions!.request({ kind: 'interrupt' }, { signal: raceController.signal })
-    await vi.waitFor(() => { expect(settleRace).toBeTypeOf('function') })
-    settleRace()
-    await Promise.resolve()
-    await Promise.resolve()
-    raceController.abort()
-    await expect(raced).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
-    mode = 'error'
-    await expect(opened.value.sessionActions!.request({ kind: 'interrupt' })).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'owner failed' })
-    mode = 'string'
-    await expect(opened.value.sessionActions!.request({ kind: 'interrupt' })).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'session action failed' })
-  })
-
-  it('fences stale and late session actions across switch, owner, consumer, and host unload', async () => {
-    async function pendingWorld() {
-      const ctx = new Context()
-      const host = new BluePluginHostService(ctx)
-      let release!: () => void
-      const source = sessionSource(sessionValue(), async () => new Promise<void>(resolve => { release = resolve }).then(() => ({ ok: true, value: undefined })))
-      const owner = consumer()
-      const ownerRegistration = attachBluePluginHostSessionOwner(host, owner, source.reader, source.requester)
-      const plugin = consumer()
-      const opened = host.open(plugin, manifest(['session.act']))
-      expect(opened.ok).toBe(true)
-      if (!opened.ok) throw new Error('session action did not open')
-      const result = opened.value.sessionActions!.request({ kind: 'followup', text: 'pending' })
-      await vi.waitFor(() => { expect(release).toBeTypeOf('function') })
-      return { ctx, host, source, owner, ownerRegistration, plugin, opened, result, release }
-    }
-
-    const switched = await pendingWorld()
-    const queuedAcrossSwitch = switched.opened.value.sessionActions!.request({ kind: 'steer', text: 'queued' })
-    switched.source.publish(sessionValue(2, 'session-two'))
-    await expect(switched.result).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'session action result is stale' })
-    await expect(queuedAcrossSwitch).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'session action result is stale' })
-    switched.release()
-
-    const reentrantHost = new BluePluginHostService(new Context())
-    let reentrantSource!: ReturnType<typeof sessionSource>
-    reentrantSource = sessionSource(sessionValue(), async () => {
-      reentrantSource.publish(sessionValue(2, 'session-two'))
-      return { ok: true, value: undefined }
-    })
-    attachBluePluginHostSessionOwner(reentrantHost, consumer(), reentrantSource.reader, reentrantSource.requester)
-    const reentrant = reentrantHost.open(consumer(), manifest(['session.act']))
-    expect(reentrant.ok).toBe(true)
-    if (reentrant.ok) {
-      await expect(reentrant.value.sessionActions!.request({ kind: 'interrupt' }))
-        .resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'session action result is stale' })
-    }
-
-    const ownerGone = await pendingWorld()
-    ownerGone.ownerRegistration.dispose()
-    await expect(ownerGone.result).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'session action result is stale' })
-    ownerGone.release()
-
-    const consumerGone = await pendingWorld()
-    consumerGone.plugin.dispose()
-    await expect(consumerGone.result).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'plugin consumer is disposed' })
-    consumerGone.release()
-    await expect(consumerGone.opened.value.sessionActions!.request({ kind: 'interrupt' })).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'plugin consumer is disposed' })
-
-    const hostGone = await pendingWorld()
-    await hostGone.ctx.fiber.dispose()
-    await expect(hostGone.result).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'plugin consumer is disposed' })
-    hostGone.release()
-    hostGone.ownerRegistration.dispose()
-  })
-
-  it('keeps retained session facades recoverable across an owner gap', async () => {
+  it('keeps retained readonly session facades recoverable across an owner gap', () => {
     const host = new BluePluginHostService(new Context())
     const firstSource = sessionSource(sessionValue())
     const firstOwner = consumer()
-    const firstRegistration = attachBluePluginHostSessionOwner(host, firstOwner, firstSource.reader, firstSource.requester)
+    const firstRegistration = attachBluePluginHostSessionReader(host, firstOwner, firstSource.reader)
     const plugin = consumer()
-    const opened = host.open(plugin, manifest(['session.read', 'session.act']))
+    const opened = host.open(plugin, manifest(['session.read']))
     expect(opened.ok).toBe(true)
     if (!opened.ok) return
     const seen: Array<string | null> = []
@@ -669,7 +490,6 @@ describe('BluePluginHostService', () => {
     firstRegistration.dispose()
     late(sessionValue(2, 'late-session'))
     expect(opened.value.session!.current()).toBeNull()
-    await expect(opened.value.sessionActions!.request({ kind: 'interrupt' })).resolves.toMatchObject({ code: 'BLUE_CAPABILITY_ABSENT' })
 
     const secondSource = sessionSource(sessionValue(1, 'session-two'))
     const replayingReader = {
@@ -679,10 +499,9 @@ describe('BluePluginHostService', () => {
         return secondSource.reader.subscribe(() => {})
       },
     }
-    attachBluePluginHostSessionOwner(host, consumer(), replayingReader, secondSource.requester)
+    attachBluePluginHostSessionReader(host, consumer(), replayingReader)
     expect(opened.value.session!.current()?.id).toBe('session-two')
     expect(opened.value.session!.current()?.revision).toBe(2)
-    await expect(opened.value.sessionActions!.request({ kind: 'interrupt' })).resolves.toEqual({ ok: true, value: undefined })
     expect(seen).toEqual(['session-one:1', null, 'session-two:2'])
 
     plugin.dispose()
@@ -694,9 +513,8 @@ describe('BluePluginHostService', () => {
   it('validates the unique session owner and its initial snapshot boundary', () => {
     const host = new BluePluginHostService(new Context())
     const valid = sessionSource()
-    expect(() => attachBluePluginHostCapabilities(host, consumer(), ['session.read'])).toThrow('requires attachBluePluginHostSessionOwner')
-    expect(() => attachBluePluginHostSessionOwner(host, consumer(), null as never, valid.requester)).toThrow('requires a reader')
-    expect(() => attachBluePluginHostSessionOwner(host, consumer(), valid.reader, null as never)).toThrow('requires a requester')
+    expect(() => attachBluePluginHostCapabilities(host, consumer(), ['session.read'])).toThrow('requires attachBluePluginHostSessionReader')
+    expect(() => attachBluePluginHostSessionReader(host, consumer(), null as never)).toThrow('requires a reader')
 
     const invalidSnapshots = [
       { ...sessionValue(), revision: -1 },
@@ -712,33 +530,32 @@ describe('BluePluginHostService', () => {
     ]
     for (const snapshot of invalidSnapshots) {
       const source = sessionSource(snapshot as never)
-      expect(() => attachBluePluginHostSessionOwner(host, consumer(), source.reader, source.requester)).toThrow()
+      expect(() => attachBluePluginHostSessionReader(host, consumer(), source.reader)).toThrow()
     }
     const accessorSnapshot = Object.defineProperty({}, 'revision', { enumerable: true, get() { return 1 } })
     const accessorSource = sessionSource(accessorSnapshot as never)
-    expect(() => attachBluePluginHostSessionOwner(host, consumer(), accessorSource.reader, accessorSource.requester)).toThrow('own data property')
+    expect(() => attachBluePluginHostSessionReader(host, consumer(), accessorSource.reader)).toThrow('own data property')
 
     const activeOwner = consumer()
-    const active = attachBluePluginHostSessionOwner(host, activeOwner, valid.reader, valid.requester)
-    expect(() => attachBluePluginHostSessionOwner(host, consumer(), valid.reader, valid.requester)).toThrow('already has an active session owner')
+    const active = attachBluePluginHostSessionReader(host, activeOwner, valid.reader)
+    expect(() => attachBluePluginHostSessionReader(host, consumer(), valid.reader)).toThrow('already has an active session owner')
     activeOwner.dispose()
     expect(active.disposed).toBe(true)
 
     const nullSource = sessionSource(null)
-    const nullOwner = attachBluePluginHostSessionOwner(host, consumer(), nullSource.reader, nullSource.requester)
-    const opened = host.open(consumer(), manifest(['session.read', 'session.act']))
+    const nullOwner = attachBluePluginHostSessionReader(host, consumer(), nullSource.reader)
+    const opened = host.open(consumer(), manifest(['session.read']))
     expect(opened.ok).toBe(true)
     if (opened.ok) {
       expect(opened.value.session!.current()).toBeNull()
       expect(opened.value.session!.subscribe(() => {}).disposed).toBe(false)
-      expect(opened.value.sessionActions!.request({ kind: 'interrupt' })).resolves.toMatchObject({ code: 'BLUE_SESSION_UNAVAILABLE' })
     }
     nullOwner.dispose()
 
     const throwingEffect = { effect(): never { throw new Error('effect failed') } }
-    expect(() => attachBluePluginHostSessionOwner(host, throwingEffect, valid.reader, valid.requester)).toThrow('effect failed')
+    expect(() => attachBluePluginHostSessionReader(host, throwingEffect, valid.reader)).toThrow('effect failed')
     const throwingSubscribe = { current: () => sessionValue(), subscribe(): never { throw new Error('subscribe failed') } }
-    expect(() => attachBluePluginHostSessionOwner(host, consumer(), throwingSubscribe, valid.requester)).toThrow('subscribe failed')
+    expect(() => attachBluePluginHostSessionReader(host, consumer(), throwingSubscribe)).toThrow('subscribe failed')
   })
 
   it('admits panes with canonical state, limits, ordering, and lifecycle controls', async () => {
@@ -1222,8 +1039,8 @@ describe('BluePluginHostService', () => {
 
   it('rejects accessors and hostile proxies without touching unknown getters', () => {
     const host = new BluePluginHostService(new Context())
-    attach(host, ['commands', 'panes', 'notifications'])
-    const opened = host.open(consumer(), manifest(['commands', 'panes', 'notifications']))
+    attach(host, ['commands', 'panes', 'notifications.publish'])
+    const opened = host.open(consumer(), manifest(['commands', 'panes', 'notifications.publish']))
     expect(opened.ok).toBe(true)
     if (!opened.ok) return
     const accessor = { label: 'run', execute: async () => ({ ok: true as const, value: undefined }) }
@@ -1240,8 +1057,8 @@ describe('BluePluginHostService', () => {
     Object.defineProperty(valid, 'unknown', { get: () => { unknownRead = true; return 'bad' } })
     expect(opened.value.commands!.register(valid)).toMatchObject({ ok: true })
     expect(unknownRead).toBe(false)
-    const badManifest = { id: '@acme/getter', api: '^1.0.0', capabilities: [] as string[] }
-    Object.defineProperty(badManifest, 'api', { enumerable: true, get: () => '^1.0.0' })
+    const badManifest = { id: '@acme/getter', api: '^1.0.0-beta.1', capabilities: [] as string[] }
+    Object.defineProperty(badManifest, 'api', { enumerable: true, get: () => '^1.0.0-beta.1' })
     expect(host.open(consumer(), badManifest as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message: 'api must be an own data property' })
     expect(opened.value.notifications!.publish({ id: 'notice', view: Object.defineProperty({}, 'kind', { enumerable: true, get: () => 'text' }) as never })).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message: 'kind must be an own data property' })
     expect(host.open({ effect: () => { throw new Error('effect rejected') } }, manifest([]))).toEqual({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message: 'effect rejected' })
@@ -1249,9 +1066,9 @@ describe('BluePluginHostService', () => {
 
   it('covers canonical optional fields and the remaining admission failures', async () => {
     const host = new BluePluginHostService(new Context())
-    const owner = attach(host, ['status', 'panes', 'overlays', 'notifications', 'editor.extensions', 'status.provider', 'editor.provider'])
+    const owner = attach(host, ['status', 'panes', 'overlays', 'notifications.publish', 'editor.extensions', 'status.provider', 'editor.provider'])
     const scopedConsumer = consumer()
-    const opened = host.open(scopedConsumer, manifest(['status', 'panes', 'overlays', 'notifications', 'editor.extensions', 'status.provider', 'editor.provider']))
+    const opened = host.open(scopedConsumer, manifest(['status', 'panes', 'overlays', 'notifications.publish', 'editor.extensions', 'status.provider', 'editor.provider']))
     expect(opened.ok).toBe(true)
     if (!opened.ok) return
     expect(opened.value.panes!.register({ id: 'auto-pane', placement: 'header', size: { preferred: 'auto' }, render: () => null })).toMatchObject({ ok: true })
@@ -1282,9 +1099,9 @@ describe('BluePluginHostService', () => {
     owner.dispose()
     scopedConsumer.dispose()
 
-    expect(host.open(consumer(), { id: '@acme/full', api: '^1.0.0', capabilities: [], schemaVersion: 1, entry: './index.js', blue: '^1', harness: '^1', node: '>=22', integrity: 'sha256-YQ==' })).toMatchObject({ ok: true, value: { manifest: { schemaVersion: 1, entry: './index.js', blue: '^1', harness: '^1', node: '>=22', integrity: 'sha256-YQ==' } } })
-    expect(host.open(consumer(), { id: '@acme/missing', api: '^1.0.0' } as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
-    expect(host.open(consumer(), { id: '@acme/null-caps', api: '^1.0.0', capabilities: null } as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
+    expect(host.open(consumer(), { id: '@acme/full', api: '^1.0.0-beta.1', capabilities: [], schemaVersion: 1, entry: './index.js', blue: '^1', harness: '^1', node: '>=22', integrity: 'sha256-YQ==' })).toMatchObject({ ok: true, value: { manifest: { schemaVersion: 1, entry: './index.js', blue: '^1', harness: '^1', node: '>=22', integrity: 'sha256-YQ==' } } })
+    expect(host.open(consumer(), { id: '@acme/missing', api: '^1.0.0-beta.1' } as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
+    expect(host.open(consumer(), { id: '@acme/null-caps', api: '^1.0.0-beta.1', capabilities: null } as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
   })
 
   it('keeps owner seams off guarded hosts and reports minting after host disposal', async () => {
@@ -1330,8 +1147,8 @@ describe('BluePluginHostService', () => {
 
   it('contains invalid nested numbers and clock failures', () => {
     const host = new BluePluginHostService(new Context(), { now: () => { throw new Error('clock failed') } })
-    attach(host, ['status', 'notifications'])
-    const opened = host.open(consumer(), manifest(['status', 'notifications']))
+    attach(host, ['status', 'notifications.publish'])
+    const opened = host.open(consumer(), manifest(['status', 'notifications.publish']))
     expect(opened.ok).toBe(true)
     if (!opened.ok) return
     const registered = opened.value.status!.register({ id: 'clock', render: () => null })
@@ -1350,7 +1167,7 @@ describe('BluePluginHostService', () => {
     const protoPayload = { kind: 'text', content: 'safe' }
     Object.defineProperty(protoPayload, '__proto__', { enumerable: true, value: Object.defineProperty({}, 'inherited', { get: () => { inheritedRead = true; return 'bad' } }) })
     let canonical: BlueView | undefined
-    opened.value.notifications!.subscribe(notification => { if (notification.id === 'proto') canonical = notification.view })
+    subscribeBluePluginNotifications(host, notification => { if (notification.id === 'proto') canonical = notification.view })
     expect(opened.value.notifications!.publish({ id: 'proto', view: protoPayload })).toEqual({ ok: true, value: undefined })
     expect(Object.getPrototypeOf(canonical)).toBe(Object.prototype)
     expect(inheritedRead).toBe(false)
@@ -1446,7 +1263,7 @@ describe('BluePluginHostService', () => {
     const host = (ctx.bluePluginHost as unknown as Record<symbol, BluePluginHostService | undefined>)[symbols.original] ?? ctx.bluePluginHost
     const opened = ctx.bluePluginHost.open(ctx, {
       id: '@acme/buffered',
-      api: '^1.0.0',
+      api: '^1.0.0-beta.1',
       capabilities: ['commands', 'status', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'],
     })
     expect(opened.ok).toBe(true)
@@ -1468,11 +1285,11 @@ describe('BluePluginHostService', () => {
       statusProviders: [{ id: 'buffered-status-provider' }],
       editorProviders: [{ id: 'buffered-editor-provider' }],
     })
-    expect(ctx.bluePluginHost.open(ctx, { id: '@acme/unbuffered-notifications', api: '^1.0.0', capabilities: ['notifications'] })).toMatchObject({
+    expect(ctx.bluePluginHost.open(ctx, { id: '@acme/unbuffered-notifications', api: '^1.0.0-beta.1', capabilities: ['notifications.publish'] })).toMatchObject({
       ok: false,
       code: 'BLUE_CAPABILITY_ABSENT',
     })
-    expect(ctx.bluePluginHost.open(ctx, { id: '@acme/unbuffered-session', api: '^1.0.0', capabilities: ['session.read', 'session.act'] })).toMatchObject({
+    expect(ctx.bluePluginHost.open(ctx, { id: '@acme/unbuffered-session', api: '^1.0.0-beta.1', capabilities: ['session.read'] })).toMatchObject({
       ok: false,
       code: 'BLUE_CAPABILITY_ABSENT',
     })

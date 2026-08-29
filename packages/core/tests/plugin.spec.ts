@@ -98,7 +98,7 @@ export const apply = ctx => globalThis.__externalPaneApply(ctx)
   globals.__externalPaneApply = (ctx) => {
     pane.appliedBeforeCore = !pane.coreApplyStarted
     pane.appliedBeforeScreen = ctx.get('blueScreen') === undefined
-    const opened = ctx.bluePluginHost.open(ctx, { id: '@acme/startup-pane', api: '^1.0.0', capabilities: ['panes'] })
+    const opened = ctx.bluePluginHost.open(ctx, { id: '@acme/startup-pane', api: '^1.0.0-beta.1', capabilities: ['panes'] })
     pane.openOk = opened.ok
     if (!opened.ok) return
     pane.api = opened.value

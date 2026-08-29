@@ -6,20 +6,19 @@
  * @module @dsh-blue/blue-transcript/plugin-host-bridge
  */
 
-import { symbols, type Context } from '@deepseek-ai/cordis'
-import { attachBluePluginHostCapabilities, subscribeBluePluginHost, type BluePluginHostSnapshot, type BlueStatusEntryContribution } from '@dsh-blue/blue-api'
+import type { Context } from '@deepseek-ai/cordis'
+import type { BluePluginHostSnapshot, BlueStatusEntryContribution } from '@dsh-blue/blue-api'
 import type { BlueStatusEntry } from './status-model.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-plugin-view-bridge'
 
 /** Owner services required before public views can reach the tree. */
-export const inject = ['bluePluginHost', 'blueStatusEntries']
+export const inject = ['bluePluginControl', 'blueStatusEntries']
 
 /** Mount additive status contributions behind the owner adapter. */
 export function apply(ctx: Context): void {
-  const host = (ctx.bluePluginHost as unknown as Record<symbol, typeof ctx.bluePluginHost | undefined>)[symbols.original] ?? ctx.bluePluginHost
-  attachBluePluginHostCapabilities(host, ctx, ['status'])
+  ctx.bluePluginControl.attachCapabilities(ctx, ['status'])
   const status = new Map<string, { dispose: () => void, contribution: BlueStatusEntryContribution }>()
   let statusRevision = -1
 
@@ -63,7 +62,7 @@ export function apply(ctx: Context): void {
   const sync = (snapshot: BluePluginHostSnapshot): void => {
     syncStatus(snapshot.status, snapshot.statusRevision ?? snapshot.revision ?? 0)
   }
-  const subscription = subscribeBluePluginHost(host, sync)
+  const subscription = ctx.bluePluginControl.subscribe(sync)
   ctx.effect(() => () => {
     subscription.dispose()
     for (const record of status.values()) record.dispose()

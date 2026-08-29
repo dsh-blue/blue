@@ -15,7 +15,7 @@ export const inject = ['bluePluginHost']
 export function apply(ctx: Context): void {
   const opened = ctx.bluePluginHost.open(ctx, {
     id: 'my-plugin.clock',
-    api: '^1.0.0',
+    api: '^1.0.0-beta.1',
     capabilities: ['status'],
   })
   if (!opened.ok) return // 结构性失败：放弃挂载，不向宿主抛异常
@@ -29,7 +29,7 @@ export function apply(ctx: Context): void {
 Insert it into the profile's `cordis.patch.yml` and the status bar gains a clock entry. To run this plugin end to end from scratch, see the [quickstart](/en/plugins/quickstart).
 
 ::: warning Preview-stage caveat
-Seam signatures are planned to freeze in Phase 3; plugins integrating today may need adaptation across upgrades. This site is kept in sync with every release.
+The executable protocol is `1.0.0-beta.1`, not Stable v1. This section is a Beta reference; the formal v1 manual, schema/catalog, and per-capability Stable promotions are later roadmap deliveries.
 :::
 
 ## The integration model at a glance
@@ -51,16 +51,15 @@ Integration is a single move: **declare a manifest → `open()` to receive a cap
 | --- | --- | --- |
 | [`commands`](/en/plugins/commands) | slash command + async handler | appears in slash completion and `/help` |
 | [`status`](/en/plugins/status) | a render function returning `BlueStatusNode` | status bar entry in the bottom footer |
-| [`status.provider`](/en/plugins/status#exclusive-status-provider) | a render function receiving a readonly status snapshot | candidate replacing the entire footer |
-| [`editor.extensions`](/en/plugins/editor-extensions) | passive shell, completion, actions, submit transforms | enhances Blue's owned editor without reading its state |
-| [`editor.provider`](/en/plugins/editor-providers) | a shell render function receiving a readonly editor snapshot | user-selected exclusive editor-shell candidate |
+| [`status.provider`](/en/plugins/status#exclusive-status-provider) (Experimental) | a render function receiving a readonly status snapshot | reference runtime: candidate replacing the entire footer |
+| [`editor.extensions`](/en/plugins/editor-extensions) (Experimental) | passive shell, completion, actions, submit transforms | reference runtime: enhances Blue's owned editor without reading its state |
+| [`editor.provider`](/en/plugins/editor-providers) (Experimental) | a shell render function receiving a readonly editor snapshot | reference runtime: user-selected exclusive editor-shell candidate |
 | [`panes`](/en/plugins/dock) | placement, canonical node, and structured events | plugin surfaces in header/left/right/bottom lanes |
 | [`overlays`](/en/plugins/dock#overlay-contract) | canonical overlay request and structured events | overlays managed by Blue focus and lifecycle |
-| [`notifications`](/en/plugins/notifications) | publish/subscribe `BlueNotification` | editor notice bar |
+| [`notifications.publish`](/en/plugins/notifications) | publish-only `BlueNotification` | editor notice bar; no global observation |
 | [`session.read`](/en/plugins/session) | revisioned, deeply frozen current-session snapshot | `current()` and effect-bound `subscribe()` |
-| [`session.act`](/en/plugins/session#structured-actions) | followup, steer, and interrupt | global FIFO with abort and stale/late fencing |
 
-`session.read` and `session.act` are strictly isolated facades; `open()` returns `BLUE_CAPABILITY_ABSENT` when their owner row is missing. The old `dock`, `panels`, `editor`, and `tools` names have been removed from the public manifest; validation returns a concrete migration message.
+Generic `session.act` has been removed; writes use the owning Harness service or a feature-owned action. A missing `session.read` owner returns unavailable/null and never falls back to raw app services. The old `dock`, `panels`, `editor`, and `tools` names have been removed from the public manifest; validation returns a concrete migration message.
 
 ## Documentation map
 
@@ -82,6 +81,6 @@ Integration is a single move: **declare a manifest → `open()` to receive a cap
 
 **Reference**
 
-- [Seam reference](/en/plugins/seams) — the complete list of the stable plugin host and Blue's internal boundaries;
-- [Built-in plugins](/en/plugins/builtins) — the bundle's 32 Blue-owned rows, the most complete set of plugin examples;
+- [Seam reference](/en/plugins/seams) — the complete list of the Beta plugin host and Blue's internal boundaries;
+- [Built-in plugins](/en/plugins/builtins) — the bundle's 33 Blue-owned rows, the most complete set of plugin examples;
 - [Contributing to Blue](/en/plugins/contributing) — the local development flow for contributing code to Blue itself.

@@ -11,7 +11,6 @@ import type {
   BlueRequestLifecycle,
   BlueResult,
   BlueSessionReader,
-  BlueSessionRequester,
 } from '@dsh-blue/blue-api'
 /** Renderer-neutral model route selected for the current session. */
 export interface BlueSessionModelSelection {
@@ -298,8 +297,6 @@ declare module '@deepseek-ai/cordis' {
     blueSessionActions: BlueSessionActions
     /** Stable renderer-neutral snapshot surface for the active session. */
     blueSessionReader: BlueSessionReader
-    /** Narrow public-session action dispatcher; broad app actions stay private. */
-    blueSessionRequester: BlueSessionRequester
     /** Official projection values for the active session, with no Session handle. */
     blueSessionProjections: BlueSessionProjectionReader
     /** Presenter-view resolution for the session being rendered (scope bound by blue-app). */

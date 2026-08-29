@@ -6,7 +6,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { BluePluginHostService } from '../../api/src/host.ts'
+import { BluePluginHostService, createBluePluginControl } from '../../api/src/host.ts'
 import type {
   BluePaneRegistration,
   BluePluginApi,
@@ -134,7 +134,7 @@ function mount(host: BluePluginHostService, runtime: BlueTerminalRuntime): { rea
   const scope = new Scope()
   const keymap = new KeymapHarness()
   Object.assign(scope, {
-    bluePluginHost: host,
+    bluePluginControl: createBluePluginControl(host),
     blueComponents: components,
     blueTheme: { colors },
     blueKeymap: keymap,
@@ -148,7 +148,7 @@ function openPanes(host: BluePluginHostService): { readonly scope: Scope, readon
   const scope = new Scope()
   const manifest: BluePluginManifest = {
     id: `@tests/pane-${String(manifestSequence++)}`,
-    api: '^1.0.0',
+    api: '^1.0.0-beta.1',
     capabilities: ['panes'],
   }
   const opened = host.open(scope, manifest)

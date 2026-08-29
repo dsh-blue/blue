@@ -144,11 +144,11 @@ describe('deepFreeze', () => {
 describe('defineBlueComponent', () => {
   it('returns frozen metadata and deeply freezes each render result', () => {
     const component = defineBlueComponent<{ readonly label: string }>({
-      id: '@acme/metric-board', api: '^1.0.0',
+      id: '@acme/metric-board', api: '^1.0.0-beta.1',
       render: props => ui.surface({ child: ui.text(props.label) }),
     })
     expect(component.id).toBe('@acme/metric-board')
-    expect(component.api).toBe('^1.0.0')
+    expect(component.api).toBe('^1.0.0-beta.1')
     expect(Object.isFrozen(component)).toBe(true)
     const result = component.render({ label: 'Context' })
     expect(result).toEqual({ kind: 'surface', child: { kind: 'text', content: 'Context' } })
@@ -158,7 +158,7 @@ describe('defineBlueComponent', () => {
   it('validates only definition metadata and leaves schema admission to core', () => {
     const output = { kind: 'future-node', payload: { acceptedByBuilder: true } }
     const component = defineBlueComponent({
-      id: '@acme/future-node', api: '^1.0.0',
+      id: '@acme/future-node', api: '^1.0.0-beta.1',
       render: () => output as never,
     })
     const result = component.render(undefined)
@@ -172,16 +172,16 @@ describe('defineBlueComponent', () => {
   it('rejects cyclic component output', () => {
     const output = { kind: 'text', content: 'cycle' } as { kind: 'text', content: string, self?: unknown }
     output.self = output
-    const component = defineBlueComponent({ id: '@acme/cycle', api: '^1.0.0', render: () => output as never })
+    const component = defineBlueComponent({ id: '@acme/cycle', api: '^1.0.0-beta.1', render: () => output as never })
     expect(() => component.render(undefined)).toThrow('wire data must not contain cycles')
     expect(Object.isFrozen(output)).toBe(false)
   })
 
   it('rejects invalid definitions, ids, API ranges, and render functions', () => {
     expect(() => defineBlueComponent(null as never)).toThrow('definition must be an object')
-    expect(() => defineBlueComponent({ id: 'Bad ID', api: '^1.0.0', render: () => ui.text('x') })).toThrow('component id')
+    expect(() => defineBlueComponent({ id: 'Bad ID', api: '^1.0.0-beta.1', render: () => ui.text('x') })).toThrow('component id')
     expect(() => defineBlueComponent({ id: '@acme/kit', api: 'latest', render: () => ui.text('x') })).toThrow('component api')
     expect(() => defineBlueComponent({ id: '@acme/kit', api: '^2.0.0', render: () => ui.text('x') })).toThrow('Unsupported Blue component API')
-    expect(() => defineBlueComponent({ id: '@acme/kit', api: '^1.0.0', render: null as never })).toThrow('render must be a function')
+    expect(() => defineBlueComponent({ id: '@acme/kit', api: '^1.0.0-beta.1', render: null as never })).toThrow('render must be a function')
   })
 })

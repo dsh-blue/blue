@@ -444,10 +444,6 @@ describe('blue app driver', () => {
     registration.dispose()
     expect(registration.disposed).toBe(true)
 
-    await expect(test.ctx.blueSessionRequester.request({ kind: 'followup', text: 'later' })).resolves.toMatchObject({
-      ok: false,
-      code: 'BLUE_SESSION_UNAVAILABLE',
-    })
     expect(test.ctx.blueSessionProjections.current('status')).toBeUndefined()
     expect(test.ctx.blueSessionProjections.currentMany(['status'])).toBeUndefined()
     expect(test.ctx.blueSessionProjections.children('status')).toEqual([])
@@ -489,37 +485,6 @@ describe('blue app driver', () => {
     skillRegistration.dispose()
     skillRegistration.dispose()
     expect(skillRegistration.disposed).toBe(true)
-    await test.ctx.fiber.dispose()
-  })
-
-  it('rejects aborted public session actions before every app dispatch', async () => {
-    const test = bench({})
-    await vi.waitFor(() => { expect(test.current()).not.toBeNull() })
-    const preAborted = new AbortController()
-    preAborted.abort()
-    for (const action of [
-      { kind: 'followup' as const, text: 'later' },
-      { kind: 'steer' as const, text: 'later' },
-      { kind: 'interrupt' as const },
-    ]) {
-      await expect(test.ctx.blueSessionRequester.request(action, { signal: preAborted.signal }))
-        .resolves.toMatchObject({ code: 'BLUE_ABORTED' })
-    }
-
-    const abortBeforeDispatch = (): AbortSignal => {
-      let reads = 0
-      return { get aborted() { reads += 1; return reads > 1 } } as AbortSignal
-    }
-    ;(test.current() as unknown as { status: string }).status = 'running'
-    await expect(test.ctx.blueSessionRequester.request({ kind: 'followup', text: 'later' }, { signal: abortBeforeDispatch() }))
-      .resolves.toMatchObject({ code: 'BLUE_ABORTED' })
-    await expect(test.ctx.blueSessionRequester.request({ kind: 'steer', text: 'later' }, { signal: abortBeforeDispatch() }))
-      .resolves.toMatchObject({ code: 'BLUE_ABORTED' })
-    await expect(test.ctx.blueSessionRequester.request({ kind: 'interrupt' }, { signal: abortBeforeDispatch() }))
-      .resolves.toMatchObject({ code: 'BLUE_ABORTED' })
-    expect(test.recorded.followups).toEqual([])
-    expect(test.recorded.steers).toEqual([])
-    expect(test.recorded.cancels).toEqual([])
     await test.ctx.fiber.dispose()
   })
 
@@ -573,22 +538,13 @@ describe('blue app driver', () => {
       status: 'idle',
     })
 
-    const requestedFollowup = await test.ctx.blueSessionRequester.request({ kind: 'followup', text: 'reader followup' })
-    const requestedSteer = await test.ctx.blueSessionRequester.request({ kind: 'steer', text: 'reader steer' })
-    expect(requestedFollowup.ok).toBe(true)
-    expect(requestedSteer.ok).toBe(true)
-    expect(test.recorded.followups.at(-1)?.[1]).toMatchObject({ content: [{ text: 'reader followup' }] })
-    expect(test.recorded.steers.at(-1)?.[1]).toMatchObject({ content: [{ text: 'reader steer' }] })
-    await expect(test.ctx.blueSessionRequester.request({ kind: 'interrupt' })).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED' })
-
     expect(test.ctx.blueSessionActions.followup([{ type: 'text', text: 'action followup' }]).ok).toBe(true)
     expect(test.ctx.blueSessionActions.steer([{ type: 'text', text: 'action steer' }]).ok).toBe(true)
     expect(test.ctx.blueSessionActions.interrupt()).toMatchObject({ code: 'BLUE_ACTION_REJECTED' })
     ;(agent as unknown as { status: string }).status = 'running'
     test.ctx.emit('agent/status', { agent, status: 'running' })
-    await expect(test.ctx.blueSessionRequester.request({ kind: 'interrupt' })).resolves.toEqual({ ok: true, value: undefined })
     expect(test.ctx.blueSessionActions.interrupt()).toEqual({ ok: true, value: undefined })
-    expect(test.recorded.cancels).toHaveLength(2)
+    expect(test.recorded.cancels).toHaveLength(1)
     expect(test.ctx.blueSessionReader.current()).toMatchObject({ status: 'running' })
     ;(agent as unknown as { status: string }).status = 'idle'
 

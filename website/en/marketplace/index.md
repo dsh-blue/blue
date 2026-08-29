@@ -1,6 +1,6 @@
 # Plugin marketplace
 
-The place to discover and install Blue ecosystem plugins: third-party plugins built on the stable [seams](/en/plugins/seams) and public APIs, listed here and installed into your Blue with one line.
+The place to discover and install Blue ecosystem plugins: third-party plugins built on the current Beta [seams](/en/plugins/seams) and public APIs, listed here and installed into your Blue with one line.
 
 ::: info Before installing a plugin
 Every plugin in the marketplace runs on top of Blue — [install Blue](/en/guide/) first. The install command is always `blue plugin add <spec>` (equivalent to `dsh plugin --profile blue add <spec>`), where `<spec>` is the source shown on the card or detail page; see the [dsh plugin docs](/en/dsh/plugins) for the mechanism.

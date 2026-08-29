@@ -29,9 +29,11 @@ Both alternate-screen layout bands preserve the D48 render-exit width backstop b
 `src/surface-manager.ts` is the core-private W3-A seam for already compiled pane components; it is deliberately absent from the package root and from `BlueScreen`. It owns deterministic header/left/right/bottom arbitration, frozen profile-state input/output, Blue lane tabs/overflow, the 20..48 side-width hard boundary, and the 40-column collapse/44-column reopen hysteresis. Lane strength is user pin/order, then transient focus/recent activation, then plugin priority/id. Provider hidden state remains separate from user hidden state; disposing an active fallback selects a stable successor. `terminal.ts` uses the semantic linear layout to keep potential side and bottom nodes mounted across resize: AltScreen builds optional header, a real `HStack(left, primary transcript ScrollView, right)`, optional managed bottom, then the fixed dock; MainScreen renders header/content/left/right/bottom/editor/status linearly. Layout-aware lane wrappers expose the active compiler component's `LAYOUT_NODE`, so legal pane scroll stays non-primary/contained at its allocated lane height. The fixed dock never shrinks at the outer root: header and managed bottom surrender height first, preserving one transcript row plus the editor/status tail. User tab activation, focused refresh replacement, and active unload retarget renderer focus only when it still points at the previous lane target; overlay `preFocus` is retargeted under the same condition. Hidden side overflow or a missing target releases that matching focus to `null`; bottom fallback remains in-frame and retains it. No-contribution roots retain the old two-band AltScreen tree and flat MainScreen frame exactly.
 
 `src/plugin-surface-bridge.ts` is the core-private W3-C owner bridge. Its child
-Fiber injects the guarded plugin host plus components, theme, and keymap, then
-unwraps the host only for owner-authorized snapshot, gesture, and overlay-close
-helpers; no public plugin receives renderer objects. Pane and overlay render callbacks pass
+Fiber injects the composition-private `bluePluginControl` plus components,
+theme, and keymap. The control is closure-bound to the host and exposes only
+owner-authorized snapshot, gesture, and overlay-close operations inside the
+bundle's isolated runtime realm; no public plugin receives it or renderer
+objects. Pane and overlay render callbacks pass
 only through `compileBlueUiNode`. Pane `null` removes its managed surface,
 refresh replaces the existing registration, and render/validation failures
 become bounded danger nodes. Non-capturing overlays reject every potentially

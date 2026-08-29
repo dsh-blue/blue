@@ -20,7 +20,7 @@ width, and lifecycle ownership to Blue.
 // Old: capabilities: ['dock']; api.dock.register({ view, preferredRows })
 const opened = ctx.bluePluginHost.open(ctx, {
   id: 'acme.activity',
-  api: '^1.0.0',
+  api: '^1.0.0-beta.1',
   capabilities: ['panes'],
 })
 if (!opened.ok) return

@@ -13,7 +13,7 @@ export const inject = ['bluePluginHost']
 
 /** Register a right lane that degrades into the bottom lane when narrow. */
 export function apply(ctx: Context): void {
-  const opened = ctx.bluePluginHost.open(ctx, { id: name, api: '^1.0.0', capabilities: ['panes'] })
+  const opened = ctx.bluePluginHost.open(ctx, { id: name, api: '^1.0.0-beta.1', capabilities: ['panes'] })
   if (!opened.ok) return
   opened.value.panes!.register({
     id: 'example.inspector.context',

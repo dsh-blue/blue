@@ -10,10 +10,8 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import {
   BluePluginHostService,
-  attachBluePluginHostCapabilities,
-  runBlueUserGesture,
-  snapshotBluePluginHost,
   type BlueCapability,
+  type BluePluginControl,
 } from '../../../packages/api/src/index.ts'
 import { apply as applyBundle } from '../../blue-ecosystem/src/index.ts'
 import { apply as applyBottomLog } from '../../bottom-log/src/index.ts'
@@ -47,14 +45,17 @@ const allCapabilities: readonly BlueCapability[] = [
 
 function world(capabilities: readonly BlueCapability[] = allCapabilities): {
   readonly host: BluePluginHostService
+  readonly control: BluePluginControl
   readonly owner: Scope
   readonly consumer: Scope
 } {
-  const host = new BluePluginHostService(new Context())
+  const ctx = new Context()
+  const host = new BluePluginHostService(ctx)
+  const control = ctx.get('bluePluginControl')!
   const owner = new Scope(host)
   const consumer = new Scope(host)
-  attachBluePluginHostCapabilities(host, owner, capabilities)
-  return { host, owner, consumer }
+  control.attachCapabilities(owner, capabilities)
+  return { host, control, owner, consumer }
 }
 
 function applyAll(scope: Scope): void {
@@ -82,18 +83,18 @@ describe('shared user kit', () => {
 
 describe('plugin capabilities and lifecycle', () => {
   it('leaves no contribution when the owning host capability is absent', () => {
-    const { host, consumer } = world([])
+    const { control, consumer } = world([])
     applyAll(consumer)
-    expect(snapshotBluePluginHost(host)).toMatchObject({
+    expect(control.snapshot()).toMatchObject({
       commands: [], panes: [], overlays: [], statusProviders: [], editorProviders: [],
     })
     consumer.dispose()
   })
 
   it('registers six opt-in examples and removes every contribution on Fiber unload', () => {
-    const { host, consumer } = world()
+    const { control, consumer } = world()
     applyAll(consumer)
-    const snapshot = snapshotBluePluginHost(host)
+    const snapshot = control.snapshot()
     expect(snapshot.panes.map(entry => [entry.id, entry.contribution.placement])).toEqual([
       ['example.header.summary', 'header'],
       ['example.inspector.context', 'right'],
@@ -105,40 +106,40 @@ describe('plugin capabilities and lifecycle', () => {
     for (const pane of snapshot.panes) expect(pane.contribution.render()).not.toBeNull()
 
     consumer.dispose()
-    expect(snapshotBluePluginHost(host)).toMatchObject({
+    expect(control.snapshot()).toMatchObject({
       commands: [], panes: [], overlays: [], statusProviders: [], editorProviders: [],
     })
   })
 
   it('opens the capturing overlay only inside an owner-minted gesture and rejects late use', async () => {
-    const { host, owner, consumer } = world()
+    const { control, owner, consumer } = world()
     applyOverlay(consumer as unknown as Context)
-    const command = snapshotBluePluginHost(host).commands[0]!
+    const command = control.snapshot().commands[0]!
     await expect(command.execute([], {})).resolves.toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
-    expect(snapshotBluePluginHost(host).overlays).toEqual([])
+    expect(control.snapshot().overlays).toEqual([])
 
     let retained: Parameters<typeof command.execute>[1] extends { userGesture?: infer Gesture } ? Gesture : never
-    await runBlueUserGesture(host, owner, async userGesture => {
+    await control.runUserGesture(owner, async userGesture => {
       retained = userGesture
       await expect(command.execute([], { userGesture })).resolves.toMatchObject({ ok: true })
     })
-    expect(snapshotBluePluginHost(host).overlays.map(entry => entry.id)).toEqual(['example.overlay.details'])
-    expect(snapshotBluePluginHost(host).overlays[0]!.request.render()).toMatchObject({ kind: 'stack' })
+    expect(control.snapshot().overlays.map(entry => entry.id)).toEqual(['example.overlay.details'])
+    expect(control.snapshot().overlays[0]!.request.render()).toMatchObject({ kind: 'stack' })
     await expect(command.execute([], { userGesture: retained })).resolves.toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
 
     consumer.dispose()
-    expect(snapshotBluePluginHost(host).overlays).toEqual([])
-    await runBlueUserGesture(host, owner, async userGesture => {
+    expect(control.snapshot().overlays).toEqual([])
+    await control.runUserGesture(owner, async userGesture => {
       await expect(command.execute([], { userGesture })).resolves.toMatchObject({ ok: false })
     })
   })
 
   it('keeps provider candidates inert and exposes valid trees without writing selection state', () => {
-    const { host, consumer } = world()
+    const { control, consumer } = world()
     applyStatusProvider(consumer as unknown as Context)
     applyEditorProvider(consumer as unknown as Context)
-    expect(snapshotBluePluginHost(host).statusProviders).toEqual([statusProvider])
-    expect(snapshotBluePluginHost(host).editorProviders).toEqual([editorProvider])
+    expect(control.snapshot().statusProviders).toEqual([statusProvider])
+    expect(control.snapshot().editorProviders).toEqual([editorProvider])
 
     expect(statusProvider.render({ session: null, entries: [], busy: false })).toMatchObject({ kind: 'stack' })
     expect(statusProvider.render({

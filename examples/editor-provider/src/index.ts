@@ -32,7 +32,7 @@ export const editorProvider: BlueEditorProvider = {
 
 /** Add an inert shell candidate without mutating Blue settings. */
 export function apply(ctx: Context): void {
-  const opened = ctx.bluePluginHost.open(ctx, { id: name, api: '^1.0.0', capabilities: ['editor.provider'] })
+  const opened = ctx.bluePluginHost.open(ctx, { id: name, api: '^1.0.0-beta.1', capabilities: ['editor.provider'] })
   if (!opened.ok) return
   opened.value.editorProviders!.register(editorProvider)
 }

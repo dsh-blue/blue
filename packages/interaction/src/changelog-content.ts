@@ -29,14 +29,16 @@ export interface ChangelogEntry {
 export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
     version: '0.1.1-rc.2',
-    summary: 'Blue\'s public UI runtime now ships with renderer-neutral locale support and live Chinese/English switching.',
+    summary: 'Blue\'s renderer-neutral plugin runtime now ships as a hardened 1.0.0-beta.1 foundation with live Chinese/English switching.',
     highlights: [
-      'Public renderer-neutral UI runtime — canonical UI nodes, managed panes, overlays, status entries, commands, notifications and editor extensions let Blue-owned and third-party plugins share one validated surface without exposing pi-tui or terminal objects.',
-      'Explicit provider and session ownership — status/editor providers swap around preserved frontend state, registrations survive owner boot gaps, and split session read/action capabilities fence aborts, stale sessions and late results.',
+      'Beta renderer-neutral UI runtime — API/host 1.0.0-beta.1 exposes canonical commands, status, panes, overlays, publish-only notifications and readonly session snapshots without exposing pi-tui or terminal objects.',
+      'Hardened public authority boundary — generic session.act, global notification observation and callable owner helpers are removed; ordinary plugins receive only manifest-scoped facades.',
+      'Private composition control plane — owner authority and raw app session/projection/action services live in an isolated bundle realm, while hostile sibling plugins retain access only to bluePluginHost.',
+      'Experimental provider/editor runtime retained — status/editor providers and editor extensions keep their state-preserving swap, fallback, unload and late-result evidence without being advertised as Stable v1 capabilities.',
       'Tree-scoped locale service — English and Simplified Chinese catalogs, interpolation, immutable revision snapshots and Fiber-owned subscriptions stay renderer-neutral and isolated between frontend trees.',
       'Harness-compatible language preference — locale.preference follows LC_ALL, LC_MESSAGES, LANG and then Intl by default, persists explicit Chinese or English choices, and falls back to English for unsupported locales.',
       'State-preserving live language switching — settings, help, approvals, questionnaires, slash completion, shell chrome, banner and transcript chrome refresh in place without replacing controller, cursor, form or editor draft identity.',
-      'Packed ecosystem closure — the public UI kit, package validators, independent current/previous Harness fixtures, width scans and isolated profile smoke cover plugin registration, provider lifecycle and locale reload/unload behavior.',
+      'Packed ecosystem closure — the public UI kit, hostile-sibling checks, package validators, independent current/previous Harness fixtures, width scans and isolated profile smoke cover plugin registration, private authority, provider lifecycle and locale reload/unload behavior.',
     ],
     knownIssues: [
       'Localization remains intentionally incremental — feature-owned command result bodies such as /context and /effort, plus changelog release-note content, remain English until their owning packages gain bilingual sources.',

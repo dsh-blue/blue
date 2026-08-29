@@ -12,7 +12,7 @@ This is the current F5/cutover control document. `source-complete` means the old
 | editor / interaction | input-owner set/submit/abort and submit transformations | `EditorModelService` plus tree-scoped `EditorHostService` | plain editor remains the concrete TUI consumer; no module singleton | interaction baseline; editor-plus/paste-image enhancements | source-complete; shared editor singleton deleted |
 | transcript / conversation + transcript | official `SessionProjectionRegistry` -> `blueConversation` | whole projection snapshot/feed -> semantic `TranscriptModelService`; newest 200 entries | readiness capability orders resumed replay; stale session/seq callbacks rejected | conversation + official-model are baseline rows | source-complete; legacy fold/direct subscription deleted |
 | context validation adapter | app `blueSessionProjections.currentMany/subscribe` | renderer-neutral context feature model/action | epoch rejection, multi-key coalescing, capability absence | validation-only; not a bundle row | complete as independent adapter |
-| public plugin contributions | stable manifest and `BlueView` | plugin host -> view/interaction owner bridges | capability denial and duplicate-id errors are structured; all registrations Fiber owned | API host baseline; two bridge rows | complete |
+| public plugin contributions | Beta manifest and `BlueView` | plugin host -> view/interaction owner bridges | capability denial and duplicate-id errors are structured; all registrations Fiber owned | API host baseline; two bridge rows | complete |
 
 ## Deletion Record
 

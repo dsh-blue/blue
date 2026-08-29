@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "@dsh-blue-example/right-inspector",
   "entry": "./lib/index.js",
-  "api": "^1.0.0",
+  "api": "^1.0.0-beta.1",
   "capabilities": ["panes"],
   "node": "^22.19.0 || >=24.0.0"
 }

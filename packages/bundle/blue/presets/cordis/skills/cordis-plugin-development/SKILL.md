@@ -66,9 +66,15 @@ Provider names, methods, and inputs must come from the current list result. The 
 
 In a Blue session the host service store also carries the capability-scoped `bluePluginHost`. Declare it as an injection and use that public facade for Blue contributions; do not probe or use raw renderer, theme, transcript, status, bottom-pane, tool, editor, command, session, loader, or shared HMR owner services from dynamic code. Never fall back to an owner registry when a public capability is absent: owner services are deliberately isolated from the creative realm, and a profile that exposes one is misconfigured rather than granting a compatibility route. The inspect catalog is an incomplete view of general host services, but Blue's owner boundary is explicit: absence of `bluePluginHost` means this runtime does not support a Blue UI prototype.
 
+The current executable Blue contract is Beta `1.0.0-beta.1`. Dynamic code must
+not request the removed generic `session.act`, observe global notifications, or
+probe `bluePluginControl`/raw session, projection, and action services. Use
+`session.read` only for its readonly snapshot, and use the documented domain
+Service or feature action for writes.
+
 ## Mount additive Blue UI from the host half
 
-The host half can prototype additive Blue UI through the capability-scoped `bluePluginHost` facade. The user sees contributions appear in the running session with no reinstall and no restart. Register renderer-neutral `panes`, `status`, `commands`, or `notifications` contributions:
+The host half can prototype additive Blue UI through the capability-scoped `bluePluginHost` facade. The user sees contributions appear in the running session with no reinstall and no restart. Register renderer-neutral `panes`, `status`, `commands`, or `notifications.publish` contributions:
 
 ```js
 return {
@@ -77,8 +83,8 @@ return {
   apply(ctx) {
     const opened = ctx.bluePluginHost.open(ctx, {
       id: 'com.example.my-probe',
-      api: '^1.0.0',
-      capabilities: ['panes', 'notifications'],
+      api: '^1.0.0-beta.1',
+      capabilities: ['panes', 'notifications.publish'],
     })
     if (!opened.ok) throw new Error(opened.code + ': ' + opened.message)
     const registered = opened.value.panes.register({
@@ -92,12 +98,12 @@ return {
 }
 ```
 
-- `panes`, `overlays`, `status`, `commands`, and `notifications` are additive capabilities. Duplicate contribution IDs, Blue owner namespaces, and existing slash-command names are rejected.
+- `panes`, `overlays`, `status`, `commands`, and `notifications.publish` are additive Beta capabilities. Notification access is publish-only. Duplicate contribution IDs, Blue owner namespaces, and existing slash-command names are rejected.
 - `BlueUiNode` is renderer-neutral. The TUI adapter owns width, theme, layout, and error fallback; dynamic code must not import pi-tui or assemble ANSI rows.
 - The host facade binds registrations to the dynamic plugin Fiber. Retain no raw Blue service or Agent/Session object in package state.
 - Activity pane internals, transcript fold rules, existing command handlers, editor internals, themes, and root composition are owner-only. Add a new pane/status/command or notification instead.
 - Check every `open()`, `register()`, and `publish()` result. These APIs report ordinary failures as `BlueResult`; they do not throw. Throwing only after checking is appropriate when the Package must fail activation instead of pretending that a contribution is live. A command may return the `BlueResult` from `publish()` directly.
-- Commands, status, panes, overlays, editor extensions, and provider candidates are durable inert registration buffers; a frontend-owner boot gap or reload does not reject them. `BLUE_CAPABILITY_ABSENT` means the host/profile does not provide a requested buffer, or that the active notifications/session owner is missing. Do not retry through internal registries. Report the missing capability, keep a plain/read-only fallback when the feature has one, or stop and ask the user to upgrade/restart the Blue profile.
+- Commands, status, panes, overlays, editor extensions, and provider candidates are durable inert registration buffers; a frontend-owner boot gap or reload does not reject them. Only the latest definitions restore; notifications, overlays, gestures, actions, and old callback results never replay. `BLUE_CAPABILITY_ABSENT` means the host/profile does not provide a requested buffer, or that the active publish/session owner is missing. Do not retry through internal registries. Report the missing capability, keep a plain/read-only fallback when the feature has one, or stop and ask the user to upgrade/restart the Blue profile.
 - `BLUE_CAPABILITY_DENIED` means the capability is outside the phase-one public set, not that an internal service should be probed. Duplicate and invalid contribution failures are likewise structured diagnostics; surface their `code` and `message`.
 
 ## Execution environment
@@ -228,7 +234,7 @@ If the reference is unavailable, explain that the Plugin was removed, belongs to
 | `service "x" is not declared` | Whether code uses `ctx.x` without declaring `inject: ['x']` on the Plugin object; switch to `ctx.get('x')` with an absence check or declare a true hard dependency |
 | `dynamic tool registration must use a tool returned by harness.defineTool(...)` | The Tool object was hand-assembled; build it with the `harness` Builtin's `defineTool` (query its exact signature with `Builtin.listBuiltins` first) and register that return value |
 | `cannot get property "timer" without inject` | Query the timer Service and declare `inject: ['timer']` |
-| `BLUE_CAPABILITY_ABSENT` | The host/profile lacks a requested registration buffer, or the notifications/session owner is absent; do not use private status/bottom-pane registries, command registries, or any other owner service as a fallback |
+| `BLUE_CAPABILITY_ABSENT` | The host/profile lacks a requested registration buffer, or the publish/session owner is absent; do not use private control, raw app services, status/bottom-pane registries, command registries, or any other owner service as a fallback |
 | `code.inject is not a declared property` | Move `inject` onto the Plugin object returned inside `code.host`; the `code` envelope accepts only `host` and `client` |
 | `plugin.idPrefix must contain 3-6 lowercase English letters` | Use a semantic prefix matching `^[a-z]{3,6}$`; the Host appends the numeric suffix |
 | `ctx is not defined` | Move the statement into the returned Plugin's `apply(ctx)`; `code.host` top level has no `ctx` variable |

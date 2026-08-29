@@ -21,55 +21,31 @@ describe('capability probing', () => {
 })
 
 describe('SessionBridge', () => {
-  it('publishes stable frozen read-only and action-only facets', async () => {
+  it('publishes a stable frozen read-only facet', async () => {
     const source = { snapshot: async () => ({ watermark: 0, value: snapshot() }), subscribe: () => () => undefined, request: vi.fn(async () => undefined) }
     const bridge = new SessionBridge({ source })
     expect(Object.keys(bridge.reader).sort()).toEqual(['current', 'subscribe'])
-    expect(Object.keys(bridge.requester)).toEqual(['request'])
     expect(Object.isFrozen(bridge.reader)).toBe(true)
-    expect(Object.isFrozen(bridge.requester)).toBe(true)
     expect(bridge.reader).toBe(bridge.reader)
-    expect(bridge.requester).toBe(bridge.requester)
     await bridge.attach()
     expect(bridge.reader.current()).toEqual(snapshot())
     const replayed: string[] = []
     const registration = bridge.reader.subscribe(value => replayed.push(value?.id ?? 'none'))
     expect(replayed).toEqual(['s1'])
-    await expect(bridge.requester.request({ kind: 'interrupt' })).resolves.toMatchObject({ ok: true })
-    expect(source.request).toHaveBeenCalledOnce()
     registration.dispose()
     bridge.dispose()
     expect(bridge.reader.current()).toBeNull()
-    await expect(bridge.requester.request({ kind: 'interrupt' })).resolves.toMatchObject({ code: 'BLUE_SESSION_UNAVAILABLE' })
   })
   it('attaches after a watermark, accepts only newer matching events, and detaches', async () => {
     let listener: ((event: { seq: number; sessionId: string; event: ReturnType<typeof snapshot> }) => void) | undefined
     const source = { snapshot: vi.fn(async () => ({ watermark: 4, value: snapshot() })), subscribe: vi.fn((_watermark: number, next: typeof listener) => { listener = next; return () => { listener = undefined } }), request: vi.fn(async () => undefined) }
     const bridge = new SessionBridge({ source }); const seen: string[] = []; const registration = bridge.subscribe(value => seen.push(value?.id ?? 'none')); await expect(bridge.attach()).resolves.toMatchObject({ ok: true }); expect(bridge.sessionEpoch).toBe(1); expect(bridge.attached).toBe(true); listener?.({ seq: 4, sessionId: 's1', event: { ...snapshot(), cwd: 'old' } }); listener?.({ seq: 5, sessionId: 'other', event: snapshot('other') }); listener?.({ seq: 6, sessionId: 's1', event: { ...snapshot(), cwd: '/work' } }); expect(bridge.current()?.cwd).toBe('/work'); expect(seen).toEqual(['none', 's1', 's1']); expect(registration.disposed).toBe(false); registration.dispose(); registration.dispose(); expect(registration.disposed).toBe(true); bridge.detach(); expect(bridge.current()).toBeNull(); expect(source.subscribe).toHaveBeenCalledWith(4, expect.any(Function))
   })
-  it('returns absent without a source, maps request errors and rejects stale results', async () => {
-    const absentBridge = new SessionBridge(); await expect(absentBridge.attach()).resolves.toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' }); await expect(absentBridge.request({ kind: 'interrupt' })).resolves.toMatchObject({ code: 'BLUE_SESSION_UNAVAILABLE' })
-    let release!: () => void; let calls = 0; const source = { snapshot: async () => ({ watermark: 0, value: snapshot() }), subscribe: () => () => undefined, request: vi.fn(async () => { calls++; if (calls === 1) return; await new Promise<void>(resolve => { release = resolve }) }) }; const bridge = new SessionBridge({ source }); await bridge.attach(); await expect(bridge.request({ kind: 'interrupt' })).resolves.toMatchObject({ ok: true }); const pending = bridge.request({ kind: 'interrupt' }); bridge.detach(); release(); await expect(pending).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED' }); source.request.mockRejectedValueOnce(new Error('failed')); await bridge.attach(); await expect(bridge.request({ kind: 'interrupt' })).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED' }); source.request.mockRejectedValueOnce('string failure'); await expect(bridge.request({ kind: 'interrupt' })).resolves.toMatchObject({ code: 'BLUE_ACTION_REJECTED', message: 'string failure' }); const preAbort = new AbortController(); preAbort.abort(); await expect(bridge.request({ kind: 'interrupt' }, { signal: preAbort.signal })).resolves.toMatchObject({ code: 'BLUE_ABORTED' }); expect(bridge.sessionEpoch).toBe(3)
-  })
-  it('maps an aborted request and cleans registrations on dispose', async () => {
-    const source = { snapshot: async () => ({ watermark: 0, value: snapshot() }), subscribe: () => () => undefined, request: vi.fn((_action: unknown, signal: AbortSignal) => new Promise<void>((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }))) }; const bridge = new SessionBridge({ source }); await bridge.attach(); const controller = new AbortController(); const pending = bridge.request({ kind: 'interrupt' }, { signal: controller.signal }); controller.abort(); await expect(pending).resolves.toMatchObject({ code: 'BLUE_ABORTED' }); bridge.dispose(); expect(bridge.attached).toBe(false)
-  })
-  it('preserves structured capability absence across the async request boundary', async () => {
-    const source = {
-      snapshot: async () => ({ watermark: 0, value: snapshot() }),
-      subscribe: () => () => undefined,
-      request: async () => { throw new AdapterCapabilityAbsentError('action') },
-    }
-    const bridge = new SessionBridge({ source })
-    await bridge.attach()
-    await expect(bridge.request({ kind: 'interrupt' })).resolves.toEqual({
-      ok: false,
-      code: 'BLUE_CAPABILITY_ABSENT',
-      message: 'Harness capability "action" is unavailable',
-    })
+  it('returns absent without a source and keeps structured absence errors typed', async () => {
+    const absentBridge = new SessionBridge()
+    await expect(absentBridge.attach()).resolves.toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
     const custom = new AdapterCapabilityAbsentError('action', 'session interrupt is unavailable')
     expect(custom).toMatchObject({ name: 'AdapterCapabilityAbsentError', code: 'BLUE_CAPABILITY_ABSENT', capability: 'action', message: 'session interrupt is unavailable' })
-    bridge.dispose()
   })
   it('rejects an attach whose snapshot is aborted', async () => { let bridge!: SessionBridge; const source = { snapshot: async (signal: AbortSignal) => { queueMicrotask(() => bridge.detach()); await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true })); return { watermark: 0, value: snapshot() } }, subscribe: () => () => undefined, request: async () => undefined }; bridge = new SessionBridge({ source }); await expect(bridge.attach()).resolves.toMatchObject({ code: 'BLUE_ABORTED' }) })
 })

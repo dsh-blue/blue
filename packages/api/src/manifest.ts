@@ -1,21 +1,26 @@
 /**
- * Stable manifest and capability contracts for Blue Cordis plugins.
+ * Beta manifest and capability contracts for Blue Cordis plugins.
  *
  * @module @dsh-blue/blue-api/manifest
  */
 
-/** Capabilities a plugin may request from the Blue host. */
-export type BlueCapability =
+/** Public Beta capabilities aligned with the intended minimal v1 catalog. */
+export type BlueBetaCapability =
   | 'commands'
   | 'status'
-  | 'notifications'
+  | 'notifications.publish'
   | 'panes'
   | 'overlays'
-  | 'editor.extensions'
   | 'session.read'
-  | 'session.act'
+
+/** Reference-runtime capabilities that are not part of the Stable v1 target. */
+export type BlueExperimentalCapability =
+  | 'editor.extensions'
   | 'status.provider'
   | 'editor.provider'
+
+/** Capabilities currently accepted by the Beta host. */
+export type BlueCapability = BlueBetaCapability | BlueExperimentalCapability
 
 type BlueLegacyCapability = 'dock' | 'panels' | 'editor' | 'tools'
 
@@ -42,7 +47,7 @@ export interface BluePluginDefinition {
   readonly apply: (api: unknown) => void | Promise<void>
 }
 
-/** Stable manifest validation failures. */
+/** Structured manifest validation failures for the Beta protocol. */
 export type BlueManifestErrorCode =
   | 'BLUE_INVALID_MANIFEST'
   | 'BLUE_UNSUPPORTED_MANIFEST_VERSION'
@@ -62,9 +67,10 @@ export type BlueManifestResult =
 
 const ID_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/
 const RANGE_PATTERN = /^[~^=<>*0-9xX|.\-+\s]+$/
+const PRERELEASE_PATTERN = /-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*/gu
 const CAPABILITIES = new Set<BlueCapability>([
-  'commands', 'status', 'notifications', 'panes', 'overlays',
-  'editor.extensions', 'session.read', 'session.act',
+  'commands', 'status', 'notifications.publish', 'panes', 'overlays',
+  'editor.extensions', 'session.read',
   'status.provider', 'editor.provider',
 ])
 
@@ -85,11 +91,11 @@ function validateManifest(manifest: BluePluginManifest): BlueManifestResult {
   if (manifest.schemaVersion !== undefined && manifest.schemaVersion !== 1) {
     return { ok: false, code: 'BLUE_UNSUPPORTED_MANIFEST_VERSION', message: 'manifest schemaVersion must be 1' }
   }
-  if (typeof manifest.api !== 'string' || manifest.api.trim().length === 0 || !RANGE_PATTERN.test(manifest.api)) {
+  if (typeof manifest.api !== 'string' || manifest.api.trim().length === 0 || !RANGE_PATTERN.test(manifest.api.replace(PRERELEASE_PATTERN, '-0'))) {
     return { ok: false, code: 'BLUE_INVALID_API_RANGE', message: 'plugin api must be a semver-compatible range' }
   }
   for (const [field, value] of [['blue', manifest.blue], ['harness', manifest.harness], ['node', manifest.node]] as const) {
-    if (value !== undefined && (typeof value !== 'string' || value.trim().length === 0 || !RANGE_PATTERN.test(value))) {
+    if (value !== undefined && (typeof value !== 'string' || value.trim().length === 0 || !RANGE_PATTERN.test(value.replace(PRERELEASE_PATTERN, '-0')))) {
       return { ok: false, code: 'BLUE_INVALID_COMPATIBILITY_RANGE', message: `${field} must be a semver-compatible range` }
     }
   }

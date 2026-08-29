@@ -24,6 +24,8 @@ const DEEPSEEK_KEY = 'DEEPSEEK_API_KEY'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-provider-onboarding'
+/** App-owned readonly session boundary required before the one-shot check. */
+export const inject = ['blueSessionReader']
 
 interface Credentials {
   describe(ref: object): Promise<{ configured: boolean }>

@@ -1,6 +1,6 @@
 # Features overview
 
-Blue is a Cordis plugin tree. The bundle currently has 32 Blue-owned rows: two host-support rows, nine baseline rows, 15 enhancement rows, and six assembly rows.
+Blue is a Cordis plugin tree. The bundle currently has 33 Blue-owned rows: two host-support rows, one private-runtime composition group, nine baseline rows, 15 enhancement rows, and six assembly rows.
 
 ## Baseline
 

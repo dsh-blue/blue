@@ -6,10 +6,10 @@
  * @module @dsh-blue/blue-transcript/status-provider-owner
  */
 
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import type { Context } from '@deepseek-ai/cordis'
 // Carries the optional settings service and settings/updated event merges.
 import type {} from '@deepseek-ai/dsh-settings'
-import { attachBluePluginHostCapabilities, subscribeBluePluginHost } from '@dsh-blue/blue-api'
+import type {} from '@dsh-blue/blue-api'
 // Carries the app-owned blueSessionReader Context merge.
 import type {} from '@dsh-blue/blue-app'
 import { BLUE_DEFAULT_STATUS_PROVIDER } from './status-model.ts'
@@ -24,7 +24,7 @@ declare module '@deepseek-ai/cordis' {
 /** Stable Cordis plugin name. */
 export const name = 'blue-status-provider-owner'
 /** The host registry, composition target, and readonly session source. */
-export const inject = ['bluePluginHost', 'blueStatusComposition', 'blueSessionReader']
+export const inject = ['bluePluginControl', 'blueStatusComposition', 'blueSessionReader']
 
 function desiredStatusProvider(value: unknown): string {
   if (typeof value !== 'object' || value === null) return BLUE_DEFAULT_STATUS_PROVIDER
@@ -40,12 +40,11 @@ function currentSelection(ctx: Context): string {
 
 /** Attach the status-provider capability and drive one tree-scoped owner. */
 export function apply(ctx: Context): void {
-  const host = (ctx.bluePluginHost as unknown as Record<symbol, typeof ctx.bluePluginHost | undefined>)[symbols.original] ?? ctx.bluePluginHost
-  attachBluePluginHostCapabilities(host, ctx, ['status.provider'])
+  ctx.bluePluginControl.attachCapabilities(ctx, ['status.provider'])
   const composition = ctx.blueStatusComposition
   composition.select(currentSelection(ctx))
   const sessionSubscription = ctx.blueSessionReader.subscribe(snapshot => composition.updateSession(snapshot))
-  const hostSubscription = subscribeBluePluginHost(host, snapshot => {
+  const hostSubscription = ctx.bluePluginControl.subscribe(snapshot => {
     composition.updateCandidates(snapshot.statusProviders, snapshot.statusProvidersRevision ?? snapshot.revision ?? 0)
   })
   ctx.on('settings/updated', (namespace, next) => {

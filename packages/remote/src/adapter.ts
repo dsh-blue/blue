@@ -6,9 +6,9 @@
  * @module @dsh-blue/blue-remote/adapter
  */
 
-import type { BlueSessionAction, BlueSessionSnapshot } from '@dsh-blue/blue-api'
+import type { BlueSessionSnapshot } from '@dsh-blue/blue-api'
 import { abortResult, failure, success, type EventEnvelope, type HarnessSessionSource, type Unsubscribe } from '@dsh-blue/blue-harness-adapter'
-import type { RemoteCapability, RemoteCapabilities, RemoteResult, RemoteTransport, WriteLease } from './types.ts'
+import type { RemoteCapability, RemoteCapabilities, RemoteResult, RemoteSessionAction, RemoteTransport, WriteLease } from './types.ts'
 
 const noSource = <T>(capability: RemoteCapability): RemoteResult<T> => ({ ok: false, code: 'BLUE_CAPABILITY_ABSENT', capability })
 
@@ -110,7 +110,7 @@ export class RemoteSessionAdapter implements HarnessSessionSource {
     }
   }
 
-  async request(action: BlueSessionAction, signal: AbortSignal): Promise<void> {
+  async request(action: RemoteSessionAction, signal: AbortSignal): Promise<void> {
     if (this.currentSession === undefined || !this.capabilities.includes('action')) throw new Error('remote action unavailable')
     return this.transport.request(this.currentSession, action, signal)
   }

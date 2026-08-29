@@ -161,7 +161,7 @@ describe('editor extension completion multiplexer', () => {
     runtime.dispose()
   })
 
-  it('keeps the API 1.0 callback exhaustive by never dispatching hash requests', async () => {
+  it('keeps the Beta compatibility callback exhaustive by never dispatching hash requests', async () => {
     const complete = vi.fn(async request => success([{
       id: 'legacy',
       label: `Legacy ${request.trigger}`,

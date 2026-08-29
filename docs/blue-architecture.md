@@ -24,7 +24,7 @@ flowchart TB
         HAR["agents · sessions · tools · approval<br/>commands · events"]
     end
 
-    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 32 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
+    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 33 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
         direction TB
         subgraph DOM["Domain 侧 — 唯一持有 Agent/Session 对象"]
             direction LR
@@ -87,7 +87,7 @@ session/event
 
 ```text
 input / command / panel
-  -> blueSessionActions or public Blue action
+  -> blueSessionActions or capability-specific public action
   -> app-owned Agent operation
   -> Harness durable event/projection
   -> model refresh
@@ -112,12 +112,12 @@ process locale + locale.preference
 ```text
 manifest
   -> bluePluginHost.open()
-  -> capability-scoped pane/overlay/status/command/notification contribution
+  -> capability-scoped pane/overlay/status/command/notification.publish contribution
   -> owner bridge
   -> canonical core compiler / Harness command registry / notice consumer
 ```
 
-第三方 contribution 与内置 consumer 使用同一 renderer-neutral view vocabulary，但不能访问 Loader、root renderer、Agent 或 Session。
+第三方 contribution 与内置 consumer 使用同一 renderer-neutral view vocabulary，但不能访问 Loader、root renderer、Agent、Session、`bluePluginControl` 或 raw app backing services。当前公共 API 是 `1.0.0-beta.1`；generic `session.act` 与全局 notification observation 不在该边界中。
 
 ## 4. Scope 与生命周期
 
@@ -156,7 +156,7 @@ Provider swap 必须遵循 `capture -> abort -> dispose -> activate -> restore`�
 
 | Package | Role |
 |---|---|
-| `@dsh-blue/blue-api` | 稳定 manifest、`BlueResult`、readonly public views 与 capability-scoped plugin host |
+| `@dsh-blue/blue-api` | Beta manifest、`BlueResult`、readonly public views 与 capability-scoped plugin host |
 | `@dsh-blue/blue-frontend` | readonly command/editor/transcript/tool/theme/locale models 与 provider host |
 | `@dsh-blue/blue-harness-adapter` | session/projection/action/model/question/locale 的窄兼容 adapter |
 | `@dsh-blue/blue-conversation` | append-origin conversation 与 shared facts official projections |
@@ -173,31 +173,33 @@ Provider swap 必须遵循 `capture -> abort -> dispose -> activate -> restore`�
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml - 32 Blue-owned rows · 32 条 Blue 自有行"]
+    subgraph bundle["cordis.patch.yml - 33 Blue-owned rows · 33 条 Blue 自有行"]
         subgraph host["host support 宿主支撑 - 2 rows"]
             presets["blue-agent-presets"]
             creative["blue-creative-host"]
         end
-        subgraph product["product UI 产品 UI - 30 rows"]
-            subgraph baseline["baseline 基线 - 9 rows"]
-                api["blue-api-host · blue-locale"]
-                core["blue-core · blue-theme-dark"]
-                chrome["blue-banner · blue-transcript · blue-status-basic"]
-                conversation["blue-conversation · blue-transcript-official"]
-            end
-            subgraph enhancement["enhancement 增强 - 15 droppable rows"]
-                editorPlus["blue-editor-plus"]
-                att["blue-attachments · blue-paste-image"]
-                statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
-                panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
-                viewBridge["blue-plugin-view-bridge"]
-                statusOwner["blue-status-provider-owner"]
-            end
-            subgraph assembly["assembly 装配 - 6 rows"]
-                interaction["blue-interaction · blue-plugin-interaction-bridge"]
-                editorOwner["blue-editor-provider-owner"]
-                startup["blue-startup · blue-app"]
-                sessionBridge["blue-plugin-session-bridge"]
+        subgraph privateRuntime["private runtime composition 私有运行时组合 - 1 group"]
+            subgraph product["product UI 产品 UI - 30 rows"]
+                subgraph baseline["baseline 基线 - 9 rows"]
+                    api["blue-api-host · blue-locale"]
+                    core["blue-core · blue-theme-dark"]
+                    chrome["blue-banner · blue-transcript · blue-status-basic"]
+                    conversation["blue-conversation · blue-transcript-official"]
+                end
+                subgraph enhancement["enhancement 增强 - 15 droppable rows"]
+                    editorPlus["blue-editor-plus"]
+                    att["blue-attachments · blue-paste-image"]
+                    statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
+                    panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
+                    viewBridge["blue-plugin-view-bridge"]
+                    statusOwner["blue-status-provider-owner"]
+                end
+                subgraph assembly["assembly 装配 - 6 rows"]
+                    interaction["blue-interaction · blue-plugin-interaction-bridge"]
+                    editorOwner["blue-editor-provider-owner"]
+                    startup["blue-startup · blue-app"]
+                    sessionBridge["blue-plugin-session-bridge"]
+                end
             end
         end
     end
@@ -210,11 +212,13 @@ flowchart TB
 ```
 <!-- END diagram:blue-composition -->
 
-32 条 Blue 自有行由 2 条 host-support 和 30 条 product row 组成。产品段内：
+33 条 Blue 自有行由 2 条 host-support、1 条 private-runtime composition group 和 30 条 product row 组成。产品段内：
 
 - baseline 9 行，包含 locale runtime/settings adapter、conversation projection 与 official transcript consumer；
 - enhancement 15 行，可逐项移除；
 - assembly 6 行，提供 interaction、provider/public bridge、startup、app 与 public session owner bridge。
+
+`blue-runtime-private` 包住完整 product segment，隔离 `bluePluginControl`、`blueSessionReader`、`blueSessionProjections` 与 `blueSessionActions`；public `bluePluginHost` 仍可被普通 sibling 使用。
 
 Dock 的稳定顺序由 model priority/id 加显式 row-level `inject` 共同约束，不依赖 Cordis sibling 碰巧按文件顺序完成。
 

@@ -9,7 +9,6 @@ import { stripTerminalSequences, type Component } from '@earendil-works/pi-tui'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   BluePluginHostService,
-  runBlueUserGesture,
   type BluePluginApi,
   type BluePublicOverlayHandle,
   type BlueResult,
@@ -17,6 +16,7 @@ import {
   type BlueUiNode,
   type BlueUserGesture,
 } from '../../api/src/index.ts'
+import { createBluePluginControl, runBlueUserGesture } from '../../api/src/host.ts'
 import { ui } from '../../ui/src/index.ts'
 import { mountPluginSurfaceBridge } from '../src/plugin-surface-bridge.ts'
 import { startBlueTerminal, type BlueTerminalRuntime } from '../src/terminal.ts'
@@ -104,7 +104,7 @@ async function fixture(columns = 80, rows = 24): Promise<Fixture> {
   const runtime = await startBlueTerminal(terminal, () => Promise.resolve(undefined))
   const keyActions: BlueKeyAction[] = []
   const owner = effectOwner({
-    bluePluginHost: host,
+    bluePluginControl: createBluePluginControl(host),
     blueComponents: components,
     blueTheme: { colors },
     blueKeymap: {
@@ -120,7 +120,7 @@ async function fixture(columns = 80, rows = 24): Promise<Fixture> {
 
   const openApi = (id: string) => {
     const consumer = effectOwner()
-    const opened = host.open(consumer, { id, api: '^1.0.0', capabilities: ['overlays'] })
+    const opened = host.open(consumer, { id, api: '^1.0.0-beta.1', capabilities: ['overlays'] })
     if (!opened.ok) throw new Error(opened.message)
     return { api: opened.value, consumer }
   }

@@ -1193,7 +1193,9 @@ describe('/settings open-file', () => {
     const bench = mount({ sections: fullSections(), prepareDocument: () => Promise.resolve(path) })
     await bench.command.handler()
     await openFile(bench)
-    expect(seen).toEqual({ text: 'theme: dark\n', command: 'test-editor' })
+    await vi.waitFor(() => {
+      expect(seen).toEqual({ text: 'theme: dark\n', command: 'test-editor' })
+    })
     expect(bench.screen.suspends).toBe(1)
     expect(await readFile(path, 'utf-8')).toBe('theme: ocean\n')
   })

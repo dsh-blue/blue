@@ -89,6 +89,11 @@ without changing the persisted desired id. Status-provider snapshots retain
 the app-owned session revision while cloning and freezing the session/model
 data, so provider generations observe the same public read fence.
 
+`status.provider` is retained as an Experimental/reference runtime in the Beta
+host. It is not part of the Stable v1 capability root; the owner and fixtures
+remain because their swap, fallback, and lifecycle evidence inform a later
+consumer-driven proposal.
+
 ## Canonical Bottom Panes
 
 Activity, todo, and agents consume `blueSessionFacts`. Activity derives its phase from projection facts and owns only its presentation timer. Todo renders the projected whole list and keeps only its local expanded/collapsed view state. Agents renders projected spawn-class facts plus bounded direct-child overlays; no child Session or event subscription enters the renderer.
@@ -114,7 +119,7 @@ BTW calls `blueSessionActions.createSideSession()`, holds the returned owned han
 
 `BlueModelToolService` converts official generic/terminal/diff/search/read/web presentation facts into canonical `BlueUiNode` values and never reads session events. `ToolPresentationModel.call` and `.result` carry those nodes, while the exported `toolCallNode` and `toolResultNode` helpers replace the deleted legacy view helpers. `ToolModelComponent` compiles the selected node directly through core's canonical compiler and retains the existing 12-row collapsed and 200-row expanded budgets so hidden-line counts stay exact; its plain fallback is also a canonical node compiled through the same path. The semantic transcript renderer keeps `ToolCallComponent` as the status/header/key-argument/shell chrome and nests the official node as its bounded body; tools without a presenter retain the generic rich fallback instead of receiving a synthetic name-only node. There is no frontend-view adapter, `blueIntents` registry, or intent subpath export.
 
-`plugin-host-bridge.ts` is the only route from public additive-status contributions into the transcript owner; `status-provider-owner.ts` is the only route for exclusive status-provider candidates. Both unwrap the guarded host only for owner-only readiness and snapshot helpers; those helpers reject the guarded public service. Status render results, including ordinary records and arrays from a dynamic VM realm, enter through core's sole status validator/compiler. Public panes and overlays use core's canonical surface bridge instead of a transcript compatibility path.
+`plugin-host-bridge.ts` is the only route from public additive-status contributions into the transcript owner; `status-provider-owner.ts` is the only route for Experimental exclusive status-provider candidates. Both inject the composition-private `bluePluginControl`; they do not unwrap the guarded public host. Status render results, including ordinary records and arrays from a dynamic VM realm, enter through core's sole status validator/compiler. Public panes and overlays use core's canonical surface bridge instead of a transcript compatibility path.
 
 ## Package Surface
 

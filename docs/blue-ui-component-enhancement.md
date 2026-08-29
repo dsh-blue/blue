@@ -3,12 +3,13 @@
 > 状态：W1-W6 的源码、打包闭包、最终候选树自动门禁和专用 profile 自动验收
 > 已落到 PR #77。W4/G4 width matrix、chrome 私有化/drift guard 与 W5/G5
 > provider-state 证据均已收口。用户于 2026-08-29 对运行候选 `cf8b3bd`
-> 完成统一真人 live-test 并明确回复 `验收通过`。按用户要求暂不合并；候选发布、
-> production profile 变更和验收 profile 清理均未发生。现状描述以代码和各包
-> `AGENTS.md` 为准，本文保留目标契约、执行顺序和当前验收账目。
+> 完成统一真人 live-test；该证据只覆盖 PR #79 之前的 W1-W6 baseline，不能替代
+> `1.0.0-beta.1` hardening exact head 的新验收。候选发布、production profile
+> 变更和验收 profile 清理均未发生。现状描述以代码和各包 `AGENTS.md` 为准，
+> 本文保留目标契约、执行顺序和当前验收账目。
 >
-> 发布目标：完成本文定义的 UI API、公开 UI Kit、内置组件迁移、插件边界和真实终端验收，
-> 是 Blue `0.1.1-rc.1` 的版本标志。该版本不是一次主题换肤，而是 UI 架构切换。
+> 原发布目标是以 Blue `0.1.1-rc.1` 完成 UI 架构切换；当前 PR #77 产品线已
+> 推进到 `0.1.1-rc.2`，插件协议只形成 `1.0.0-beta.1` foundation。
 
 ## 1. 目标与边界
 
@@ -206,7 +207,7 @@ status
 
 ```text
 @dsh-blue/blue-api
-  stable host/capability/result contracts · BlueUiNode wire types
+  Beta host/capability/result contracts · BlueUiNode wire types
              ↑
 @dsh-blue/blue-ui
   re-exported types · pure builders · official patterns · component definition
@@ -269,7 +270,7 @@ import { defineBlueComponent, ui } from '@dsh-blue/blue-ui'
 
 export const metricBoard = defineBlueComponent<MetricBoardProps>({
   id: '@acme/metric-board',
-  api: '^1.0.0',
+  api: '^1.0.0-beta.1',
   render: props => ui.stack.column([
     ui.progress({ label: props.label, value: props.value, max: props.max }),
     ui.fields(props.metrics),
@@ -291,7 +292,11 @@ const node = metricBoard.render({ label: 'Context', value: 42, max: 100, metrics
 
 rc.1 不提供全局 runtime component registry，理由是它会引入跨插件加载顺序、版本冲突、卸载悬挂和自定义 renderer 风险。共享通过包依赖完成，行为可重复、可锁版本、可独立测试。
 
-`api` 是独立的公共协议版本，不是 Blue 产品版本；rc.1 保持 `BLUE_API_VERSION = 1.0.0` 和 manifest `schemaVersion = 1`。官方包使用精确 lockstep 产品版本。第三方 kit 将 `@dsh-blue/blue-ui` 声明为 peer；如需限定本次 preview 窗口，使用 `>=0.1.1-rc.1 <0.1.2`，不能把 `^0.1.1-rc.1` 描述成 rc line。
+`api` 是独立的公共协议版本，不是 Blue 产品版本；当前可执行协议是
+`BLUE_API_VERSION = 1.0.0-beta.1`，不表示 Stable v1 已发布。官方包使用精确
+lockstep 产品版本。第三方 kit 将 `@dsh-blue/blue-ui` 声明为 peer；如需限定
+本次 preview 窗口，使用 `>=0.1.1-rc.1 <0.1.2`，不能把
+`^0.1.1-rc.1` 描述成 rc line。
 
 ### 5.5 primitives 与 patterns
 
@@ -955,13 +960,13 @@ commit id
 
 ### 12.11 最终产出目标
 
-- 新发布包 `@dsh-blue/blue-ui@0.1.1-rc.1`，官方与用户 kit 共用 builders/patterns。
-- `blue-api` 中稳定、无环、实际有 owner 的 nodes/events/panes/overlays/status/editor 契约。
+- 新发布包 `@dsh-blue/blue-ui@0.1.1-rc.2`，官方与用户 kit 共用 builders/patterns。
+- `blue-api` 中 renderer-neutral、无环、实际有 owner 的 Beta nodes/events/panes/overlays/status 契约，以及明确标为 Experimental/reference 的 editor/provider 契约。
 - core 中唯一 node compiler、surface manager 和复合 focus engine。
 - 默认单列保持简洁，插件可用 header/left/right/bottom/overlay，冲突与窄屏行为确定。
 - Blue 内置列表、表单、tabs、对话框和 provider 全部迁移，无双轨 UI model。
 - 可独立安装的示例插件、共享用户 kit、中英开发文档和旧 API 迁移指南。
-- 一组经过完整 gate、真实终端验收和 registry smoke 的 rc.1 发布 tarball。
+- 一组经过完整 gate、真实终端验收的 rc.2 候选 tarball；registry smoke 仍属于 artifact 发布后的独立门禁。
 
 ## 13. 测试与验收矩阵
 
@@ -990,8 +995,8 @@ commit id
 8. editing engine 和 renderer 替换属于更高信任层级，不能伪装成普通 UI 插件。
 9. `BlueView` 保留为安全内容叶子；`BlueUiNode` 承担布局和交互。
 10. `dock/panels/editor/tools` 半成品或无 owner capability 在 rc.1 清理，不固化错误兼容层。
-11. Blue 内置组件全部迁移并通过真实终端验收，才允许宣称 API 稳定。
-12. 上述全部完成是 `0.1.1-rc.1` 的发布标志。
+11. Blue 内置组件全部迁移并通过真实终端验收，只关闭 PR #77 的 Beta foundation 门；不能据此宣称 API Stable。
+12. 上述 W1-W6 完成只形成 PR #77 的 Beta runtime foundation；Stable capability 与 protocol `1.0.0` 仍按 PR #79 的 P1-P9 路线独立交付。
 
 ## 15. 参考来源
 

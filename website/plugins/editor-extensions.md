@@ -1,5 +1,7 @@
 # 编辑器扩展
 
+> 状态：**Experimental / reference**。`editor.extensions` 保留成熟 runtime 和 fixture 供共创验证，但不属于 Stable v1 root；在后续真实消费者证据完成前，名称和 contract 可以变化。
+
 `editor.extensions` 在 Blue 自有编辑引擎周围增加 renderer-neutral 的提示、诊断、补全、action 与提交转换。扩展不能读取 draft、history、cursor 或 IME，也不能替换编辑引擎；需要重排整个 shell 的场景属于独占 `editor.provider`，不在本能力内。
 
 ## 注册
@@ -14,7 +16,7 @@ export const inject = ['bluePluginHost']
 export function apply(ctx: Context): void {
   const opened = ctx.bluePluginHost.open(ctx, {
     id: 'acme.editor-helper',
-    api: '^1.0.0',
+    api: '^1.0.0-beta.1',
     capabilities: ['editor.extensions'],
   })
   if (!opened.ok || opened.value.editorExtensions === undefined) return
@@ -58,7 +60,7 @@ Blue 逐贡献校验、复制和冻结这些节点，再围绕同一个自有 ed
 
 ## 补全
 
-API 1.0 兼容 callback `complete` 只接收 `/`、`@` 和 `manual` trigger。需要同时接收这些 trigger 与 `#` 时显式使用 `completeV2`；两者同时存在时 Blue 只调用 `completeV2`。Blue 会把公共结果与内建 slash/file/skill source 合并，按最新请求接纳，并使用每项自己的 prefix 应用文本。item id 在单次结果内必须唯一；label、insertText、detail 与总 item 数都有上限。无效、超时、aborted 或 stale 结果不会进入下拉框。
+当前 Beta 的兼容 callback `complete` 只接收 `/`、`@` 和 `manual` trigger。需要同时接收这些 trigger 与 `#` 时显式使用 `completeV2`；两者同时存在时 Blue 只调用 `completeV2`。Blue 会把公共结果与内建 slash/file/skill source 合并，按最新请求接纳，并使用每项自己的 prefix 应用文本。item id 在单次结果内必须唯一；label、insertText、detail 与总 item 数都有上限。无效、超时、aborted 或 stale 结果不会进入下拉框。
 
 ## 提交转换与附件
 

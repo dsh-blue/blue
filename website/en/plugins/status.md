@@ -25,7 +25,7 @@ export const inject = ['bluePluginHost']
 export function apply(ctx: Context): void {
   const opened = ctx.bluePluginHost.open(ctx, {
     id: 'my-plugin.branch',
-    api: '^1.0.0',
+    api: '^1.0.0-beta.1',
     capabilities: ['status'],
   })
   if (!opened.ok) return
@@ -51,12 +51,14 @@ export function apply(ctx: Context): void {
 
 ## Exclusive status provider
 
+> `status.provider` is an Experimental/reference surface and is not part of the Stable v1 root. The contract below records the executable implementation for provider collaboration and regression evidence.
+
 `status.provider` registers a candidate that replaces the whole footer rather than appending one entry:
 
 ```ts
 const opened = ctx.bluePluginHost.open(ctx, {
   id: 'my-plugin.compact-status',
-  api: '^1.0.0',
+  api: '^1.0.0-beta.1',
   capabilities: ['status.provider'],
 })
 if (!opened.ok) return

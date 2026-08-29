@@ -19,6 +19,7 @@ import type { StreamChunk} from '@deepseek-ai/dsh-llm'
 import { createUserMessage} from '@deepseek-ai/dsh-llm'
 import type { ApprovalOutcome, ApprovalRequest} from '@deepseek-ai/dsh-user-approval'
 import type { BluePluginApi } from '../../../api/src/contracts.ts'
+import * as publicBlueApi from '../../../api/src/index.ts'
 import { snapshotBluePluginHost, type BluePluginHostService} from '../../../api/src/host.ts'
 // The theme modules come from the package subpaths — not relative core
 // source paths — because the /theme swap keys registry runtimes by apply
@@ -165,8 +166,8 @@ return {
     if (host === undefined) throw new Error('bluePluginHost is absent')
     const opened = host.open(ctx, {
       id: '@acme/creative-e2e',
-      api: '^1.0.0',
-      capabilities: ['panes', 'status', 'commands', 'notifications'],
+      api: '^1.0.0-beta.1',
+      capabilities: ['panes', 'status', 'commands', 'notifications.publish'],
     })
     if (!opened.ok) throw new Error(opened.code + ': ' + opened.message)
     const api = opened.value
@@ -198,40 +199,51 @@ describe('blue whole-tree e2e', () => {
     expect(tree.creativeIsolation.commands === undefined).toBe(true)
     expect(tree.creativeIsolation.bluePluginHost !== undefined).toBe(true)
     expect(tree.creativeIsolation.tools !== undefined).toBe(true)
+    expect(tree.hostileIsolation.bluePluginHost).toBeDefined()
+    expect(tree.hostileIsolation.bluePluginControl).toBeUndefined()
+    expect(tree.hostileIsolation.blueSessionReader).toBeUndefined()
+    expect(tree.hostileIsolation.blueSessionProjections).toBeUndefined()
+    expect(tree.hostileIsolation.blueSessionActions).toBeUndefined()
+    for (const helper of [
+      'attachBluePluginHostCapabilities',
+      'attachBluePluginHostSessionReader',
+      'snapshotBluePluginHost',
+      'subscribeBluePluginHost',
+      'subscribeBluePluginNotifications',
+      'createBlueUserGesture',
+      'runBlueUserGesture',
+      'closeBluePluginHostOverlay',
+      'createBluePluginControl',
+    ]) expect(publicBlueApi).not.toHaveProperty(helper)
   })
 
-  it('mounts isolated public session read and action facades after the app owner', async () => {
+  it('mounts only the readonly public session facade and rejects generic actions', async () => {
     const tree = await bootBlue([], { script: [] })
     const agent = await currentAgent(tree)
     let readApi: BluePluginApi | undefined
-    let actionApi: BluePluginApi | undefined
+    let removedAction: ReturnType<typeof tree.ctx.bluePluginHost.open> | undefined
     const fiber = tree.ctx.plugin({
       name: 'e2e-public-session-plugin',
       inject: ['bluePluginHost'],
       apply(pluginCtx) {
         const read = pluginCtx.bluePluginHost.open(pluginCtx, {
-          id: '@acme/e2e-session-read', api: '^1.0.0', capabilities: ['session.read'],
+          id: '@acme/e2e-session-read', api: '^1.0.0-beta.1', capabilities: ['session.read'],
         })
-        const action = pluginCtx.bluePluginHost.open(pluginCtx, {
-          id: '@acme/e2e-session-act', api: '^1.0.0', capabilities: ['session.act'],
-        })
+        removedAction = pluginCtx.bluePluginHost.open(pluginCtx, {
+          id: '@acme/e2e-session-act', api: '^1.0.0-beta.1', capabilities: ['session.act'],
+        } as never)
         if (!read.ok) throw new Error(read.message)
-        if (!action.ok) throw new Error(action.message)
         readApi = read.value
-        actionApi = action.value
       },
     })
     await fiber.await()
 
-    expect(readApi!.sessionActions).toBeUndefined()
-    expect(actionApi!.session).toBeUndefined()
+    expect(readApi).not.toHaveProperty('sessionActions')
+    expect(removedAction).toMatchObject({ ok: false, code: 'BLUE_API_INCOMPATIBLE' })
     const snapshot = readApi!.session!.current()!
     expect(snapshot).toMatchObject({ id: String(agent.id), revision: expect.any(Number) })
     expect(Object.isFrozen(snapshot)).toBe(true)
     expect(Object.isFrozen(snapshot.model)).toBe(true)
-    await expect(actionApi!.sessionActions!.request({ kind: 'interrupt' }))
-      .resolves.toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
-
     await fiber.dispose()
   })
 
@@ -245,8 +257,8 @@ describe('blue whole-tree e2e', () => {
       apply(pluginCtx) {
         const opened = pluginCtx.bluePluginHost.open(pluginCtx, {
           id: '@acme/e2e-public-plugin',
-          api: '^1.0.0',
-          capabilities: ['panes', 'status', 'commands', 'notifications'],
+          api: '^1.0.0-beta.1',
+          capabilities: ['panes', 'status', 'commands', 'notifications.publish'],
         })
         if (!opened.ok) throw new Error(opened.message)
         api = opened.value
@@ -263,6 +275,7 @@ describe('blue whole-tree e2e', () => {
     expect(mounted).toContain('creative status')
     await expect(executeCommand(tree, agent, '/creative')).resolves.toEqual({ kind: 'success' })
     expect(api!.notifications!.publish({ id: 'creative-notice', tone: 'success', view: { kind: 'text', content: 'creative notice' } })).toEqual({ ok: true, value: undefined })
+    expect(api!.notifications).not.toHaveProperty('subscribe')
     expect(stripSgr(await fullFrame(tree.terminal))).toContain('creative notice')
 
     await fiber.dispose()
@@ -385,7 +398,7 @@ describe('blue whole-tree e2e', () => {
       apply(pluginCtx) {
         const opened = pluginCtx.bluePluginHost.open(pluginCtx, {
           id: '@acme/e2e-status-provider',
-          api: '^1.0.0',
+          api: '^1.0.0-beta.1',
           capabilities: ['status', 'status.provider'],
         })
         if (!opened.ok) throw new Error(opened.message)
@@ -460,7 +473,7 @@ describe('blue whole-tree e2e', () => {
       apply(pluginCtx) {
         const opened = pluginCtx.bluePluginHost.open(pluginCtx, {
           id: '@acme/e2e-editor-provider',
-          api: '^1.0.0',
+          api: '^1.0.0-beta.1',
           capabilities: ['editor.provider'],
         })
         if (!opened.ok) throw new Error(opened.message)
@@ -2943,13 +2956,15 @@ describe('blue whole-tree e2e', () => {
   })
 
   it('stores the first-run DeepSeek key through the onboarding panel', async () => {
+    const describeCredential = vi.fn(async () => ({ configured: false, writable: true }))
     const set = vi.fn(async () => {})
     const tree = await bootBlue([], {
       script: [],
-      credentials: { describe: async () => ({ configured: false, writable: true }), set },
+      credentials: { describe: describeCredential, set },
     })
     await currentAgent(tree)
     tree.terminal.resize(160, 30)
+    await vi.waitFor(() => { expect(describeCredential).toHaveBeenCalled() })
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Connect to DeepSeek') })
     tree.terminal.sendInput('sk-onboarding')
     expect(tree.terminal.output).not.toContain('sk-onboarding')
@@ -3044,7 +3059,7 @@ describe('blue whole-tree e2e', () => {
       .resolves.toEqual({ kind: 'success', text: 'starting a new session' })
     await vi.waitFor(() => { expect(tree.sessionChanges).toHaveLength(2) })
     // The fresh agent reads the default tier: mock.
-    expect(tree.ctx.blueSessionActions.modelSelection()).toMatchObject({ provider: 'mock', model: 'mock' })
+    expect(tree.sessionActions.modelSelection()).toMatchObject({ provider: 'mock', model: 'mock' })
     const fresh = tree.sessionChanges[1]!
     typeLine(tree.terminal, 'go')
     await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })

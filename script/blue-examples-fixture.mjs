@@ -318,15 +318,23 @@ try {
     effect(callback) { this.cleanups.push(callback()) }
     dispose() { for (const cleanup of this.cleanups.splice(0).reverse()) cleanup() }
   }
+  const controls = new WeakMap()
   function world(capabilities) {
-    const host = new api.BluePluginHostService(new cordis.Context())
+    const ctx = new cordis.Context()
+    const host = new api.BluePluginHostService(ctx)
+    const control = ctx.get('bluePluginControl')
     const owner = new Scope(host)
     const openRequests = []
     const consumer = new Scope(host, openRequests)
-    api.attachBluePluginHostCapabilities(host, owner, capabilities)
-    return { host, owner, consumer, openRequests }
+    control.attachCapabilities(owner, capabilities)
+    controls.set(host, control)
+    return { host, control, owner, consumer, openRequests }
   }
-  function snapshot(host) { return api.snapshotBluePluginHost(host) }
+  function snapshot(host) {
+    const control = controls.get(host)
+    ensure(control !== undefined, 'EXAMPLES_CONTROL_MISSING', 'test composition did not retain its private control')
+    return control.snapshot()
+  }
   function expectOpenRequest(active, name) {
     const manifest = packedPluginManifests.get(name)
     const request = active.openRequests[0]
@@ -368,19 +376,20 @@ try {
 
   await scenario('overlay.gesture-and-late-containment', async () => {
     const denied = world(['commands'])
-    const retainedGesture = api.createBlueUserGesture(denied.host, denied.owner)
-    ensure(retainedGesture.ok, 'EXAMPLES_OVERLAY_GESTURE_SETUP', 'could not mint the capability-absent probe gesture')
-    overlay.apply(denied.consumer)
-    expectOpenRequest(denied, overlay.name)
-    ensure(snapshot(denied.host).commands.length === 0 && snapshot(denied.host).overlays.length === 0, 'EXAMPLES_OVERLAY_CAPABILITY_REJECTION', 'overlay registered partial state without its complete capability set')
-    const overlayLease = api.attachBluePluginHostCapabilities(denied.host, denied.owner, ['overlays'])
-    const probe = new Scope(denied.host)
-    const probeOpened = denied.host.open(probe, { id: 'fixture.gesture-probe', api: '^1.0.0', capabilities: ['overlays'] })
-    ensure(probeOpened.ok, 'EXAMPLES_OVERLAY_GESTURE_PROBE', probeOpened.message ?? 'gesture probe could not open the overlay capability')
-    const preserved = probeOpened.value.overlays.open({ id: 'fixture.gesture-probe', capturing: true, render: () => ({ kind: 'text', content: 'probe' }) }, { userGesture: retainedGesture.value })
-    ensure(preserved.ok, 'EXAMPLES_OVERLAY_GESTURE_CONSUMED', preserved.message ?? 'capability rejection consumed the retained gesture')
-    preserved.value.close()
-    probe.dispose(); overlayLease.dispose(); denied.consumer.dispose(); denied.owner.dispose()
+    await denied.control.runUserGesture(denied.owner, async retainedGesture => {
+      overlay.apply(denied.consumer)
+      expectOpenRequest(denied, overlay.name)
+      ensure(snapshot(denied.host).commands.length === 0 && snapshot(denied.host).overlays.length === 0, 'EXAMPLES_OVERLAY_CAPABILITY_REJECTION', 'overlay registered partial state without its complete capability set')
+      const overlayLease = denied.control.attachCapabilities(denied.owner, ['overlays'])
+      const probe = new Scope(denied.host)
+      const probeOpened = denied.host.open(probe, { id: 'fixture.gesture-probe', api: '^1.0.0-beta.1', capabilities: ['overlays'] })
+      ensure(probeOpened.ok, 'EXAMPLES_OVERLAY_GESTURE_PROBE', probeOpened.message ?? 'gesture probe could not open the overlay capability')
+      const preserved = probeOpened.value.overlays.open({ id: 'fixture.gesture-probe', capturing: true, render: () => ({ kind: 'text', content: 'probe' }) }, { userGesture: retainedGesture })
+      ensure(preserved.ok, 'EXAMPLES_OVERLAY_GESTURE_CONSUMED', preserved.message ?? 'capability rejection consumed the retained gesture')
+      preserved.value.close()
+      probe.dispose(); overlayLease.dispose()
+    })
+    denied.consumer.dispose(); denied.owner.dispose()
 
     const active = world(['commands', 'overlays'])
     overlay.apply(active.consumer)
@@ -389,7 +398,7 @@ try {
     ensure(command !== undefined, 'EXAMPLES_OVERLAY_COMMAND', 'overlay command was not registered')
     const withoutGesture = await command.execute([], {})
     ensure(!withoutGesture.ok && withoutGesture.code === 'BLUE_ACTION_REJECTED' && snapshot(active.host).overlays.length === 0, 'EXAMPLES_OVERLAY_GESTURE', 'overlay opened without a gesture')
-    await api.runBlueUserGesture(active.host, active.owner, async userGesture => {
+    await active.control.runUserGesture(active.owner, async userGesture => {
       const opened = await command.execute([], { userGesture })
       ensure(opened.ok, 'EXAMPLES_OVERLAY_OPEN', opened.message ?? 'overlay did not open')
     })
@@ -398,7 +407,7 @@ try {
     scanUi('overlay', entry.request.render())
     active.consumer.dispose()
     ensure(snapshot(active.host).commands.length === 0 && snapshot(active.host).overlays.length === 0, 'EXAMPLES_OVERLAY_UNLOAD', 'overlay state survived unload')
-    await api.runBlueUserGesture(active.host, active.owner, async userGesture => {
+    await active.control.runUserGesture(active.owner, async userGesture => {
       const late = await command.execute([], { userGesture })
       ensure(!late.ok, 'EXAMPLES_OVERLAY_LATE', 'retained command reopened an overlay after unload')
     })
@@ -448,7 +457,9 @@ try {
   await scenario('composition.owner-late-durable-replay', async () => {
     const ctx = new cordis.Context()
     api.apply(ctx)
-    const host = ctx.bluePluginHost[cordis.symbols.original] ?? ctx.bluePluginHost
+    const host = ctx.bluePluginHost
+    const control = ctx.get('bluePluginControl')
+    controls.set(host, control)
     const consumer = new Scope(ctx.bluePluginHost)
 
     overlay.apply(consumer)
@@ -456,7 +467,7 @@ try {
     editor.apply(consumer)
     const additive = consumer.bluePluginHost.open(consumer, {
       id: '@fixture/durable-contributions',
-      api: '^1.0.0',
+      api: '^1.0.0-beta.1',
       capabilities: ['status', 'editor.extensions'],
     })
     ensure(additive.ok, 'EXAMPLES_DURABLE_OPEN', additive.message ?? 'durable additive contributions could not open before their owners')
@@ -472,10 +483,12 @@ try {
     ensure(buffered.editorProviders.some(entry => entry.id === 'example.editor.focused'), 'EXAMPLES_DURABLE_EDITOR_PROVIDER', 'editor provider did not buffer before its owner')
 
     const owner = new Scope(host)
-    ensure(!api.createBlueUserGesture(host, owner).ok, 'EXAMPLES_DURABLE_OWNER_EARLY', 'owner minted a gesture before its bridge attached')
-    const ownerLease = api.attachBluePluginHostCapabilities(host, owner, ['commands', 'status', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'])
+    let earlyGestureRejected = false
+    try { await control.runUserGesture(owner, () => undefined) } catch { earlyGestureRejected = true }
+    ensure(earlyGestureRejected, 'EXAMPLES_DURABLE_OWNER_EARLY', 'owner minted a gesture before its bridge attached')
+    const ownerLease = control.attachCapabilities(owner, ['commands', 'status', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'])
     let replay
-    const replaySubscription = api.subscribeBluePluginHost(host, next => { replay = next })
+    const replaySubscription = control.subscribe(next => { replay = next })
     ensure(replay?.commands.some(entry => entry.id === 'example-overlay'), 'EXAMPLES_DURABLE_COMMAND_REPLAY', 'late command owner did not receive the buffered command')
     ensure(replay?.status.some(entry => entry.id === 'durable-status'), 'EXAMPLES_DURABLE_STATUS_REPLAY', 'late status owner did not receive the buffered status')
     ensure(replay?.editorExtensions.some(entry => entry.id === 'durable-extension'), 'EXAMPLES_DURABLE_EXTENSION_REPLAY', 'late editor-extension owner did not receive the buffered extension')
@@ -484,7 +497,7 @@ try {
 
     const command = replay.commands.find(entry => entry.id === 'example-overlay')
     ensure(command !== undefined, 'EXAMPLES_DURABLE_COMMAND_REPLAY', 'replayed overlay command is missing')
-    await api.runBlueUserGesture(host, owner, async userGesture => {
+    await control.runUserGesture(owner, async userGesture => {
       const opened = await command.execute([], { userGesture })
       ensure(opened.ok, 'EXAMPLES_DURABLE_OVERLAY', opened.message ?? 'replayed command did not open its overlay')
     })
@@ -496,9 +509,9 @@ try {
     owner.dispose()
 
     const replacement = new Scope(host)
-    const replacementLease = api.attachBluePluginHostCapabilities(host, replacement, ['commands', 'status', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'])
+    const replacementLease = control.attachCapabilities(replacement, ['commands', 'status', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'])
     let replacementReplay
-    const replacementSubscription = api.subscribeBluePluginHost(host, next => { replacementReplay = next })
+    const replacementSubscription = control.subscribe(next => { replacementReplay = next })
     ensure(replacementReplay?.commands.some(entry => entry.id === 'example-overlay'), 'EXAMPLES_DURABLE_RELOAD_COMMAND', 'replacement owner did not replay the buffered command')
     ensure(replacementReplay?.status.some(entry => entry.id === 'durable-status'), 'EXAMPLES_DURABLE_RELOAD_STATUS', 'replacement owner did not replay the buffered status')
     ensure(replacementReplay?.editorExtensions.some(entry => entry.id === 'durable-extension'), 'EXAMPLES_DURABLE_RELOAD_EXTENSION', 'replacement owner did not replay the buffered editor extension')

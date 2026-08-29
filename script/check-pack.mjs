@@ -113,7 +113,7 @@ function verifyExternalUiKit(apiTarball, uiTarball) {
 import { defineBlueComponent, ui } from '@dsh-blue/blue-ui'
 export const metric = defineBlueComponent({
   id: '@blue-pack-fixture/metric',
-  api: '^1.0.0',
+  api: '^1.0.0-beta.1',
   render: ({ label, value }) => ui.stack.row([
     ui.text(label),
     ui.progress({ value, max: 100 }),

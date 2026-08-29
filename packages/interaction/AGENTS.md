@@ -6,7 +6,7 @@ Implementation detail for this package. Repo-wide conventions live in the root [
 
 Interaction code consumes app-owned `blueSessionReader`, `blueSessionProjections`, and `blueSessionActions`. Do not import or expose a Harness Agent/Session, add a direct `session/event` fold, or place renderer objects in frontend models. Renderer access stays behind `blueScreen`, `blueTheme`, `blueComponents`, `blueKeymap`, and the internal editor host.
 
-`apply()` creates `InteractionStateService`, `EditorHostService`, `SkillsCatalogService`, `CommandModelService`, and `EditorModelService` in the parent interaction Fiber. Child plugin registrations are effect-bound. Source inject lists must be mirrored exactly by bundle e2e wrappers so rows cannot activate before these services exist.
+`apply()` creates `InteractionStateService`, `EditorHostService`, `SkillsCatalogService`, `CommandModelService`, and `EditorModelService` in the parent interaction Fiber. Child plugin registrations are effect-bound and must declare their own service injects; a parent entry's inject does not authorize an isolated service read in a child Fiber. Source inject lists must be mirrored exactly by bundle e2e wrappers so rows cannot activate before these services exist.
 
 ## Frontend-Tree State
 
@@ -34,12 +34,16 @@ one source cannot change another source's replacement range. Extension
 completion has a 5-second bound. Action and submit callbacks have 30-second
 bounds. Timeout, unload, extension refresh, buffer change, and session switch
 abort pending work and reject late results without mutating the editor.
-The API 1.0 `complete` callback remains limited to `/`, `@`, and manual
+The current Beta compatibility `complete` callback remains limited to `/`, `@`, and manual
 requests; the additive `completeV2` callback opts into `#` and takes precedence
 when both exist. Callback revisions are local to one editor runtime generation,
 and only `onEvent` receives an owner-minted user gesture.
 Changing whether the BTW pane is connected likewise fences a pending main
 submit transform before Enter can cross routes; a busy-only refresh does not.
+
+`editor.extensions` is retained as an Experimental/reference capability in the
+Beta host. Its mature lifecycle runtime remains covered, but it is not part of
+the Stable v1 capability root.
 
 The same stable outer delegate composes the selected `editor.provider` shell.
 `./editor-provider-owner` advertises the capability only after
@@ -67,6 +71,10 @@ latest candidate generation resets its failure history; dry-render success and
 a retained LKG frame do not. Provider change events are latest-wins, discrete
 events are FIFO, and every callback is bounded, abortable, gesture-scoped, and
 rejected after refresh/session/unload.
+
+`editor.provider` is likewise Experimental/reference. Existing selection,
+fallback, and state-preservation behavior remains product evidence, not a
+Stable v1 compatibility promise.
 
 Async public submit transforms run behind core's pre-clear submission barrier,
 in priority order. The editor stays intact until every transform succeeds.
@@ -149,10 +157,10 @@ The `/settings` inventory starts with the Harness-owned `locale` namespace. `loc
 - `attachments`: bounded filesystem `AttachmentStore`.
 - `paste-image`: platform clipboard ingestion and reversible submit transformation.
 - `command-model`: renderer-neutral command registry.
-- `plugin-host-bridge`: public command/notification/editor-extension contributions. It unwraps the guarded host only for Blue-owned readiness, snapshot, gesture, and notification owner helpers; those helpers reject the guarded public service.
+- `plugin-host-bridge`: public command, publish-only notification, and Experimental editor-extension contributions. It injects the composition-private control for readiness, snapshot, gesture, and notification observation; it never unwraps the guarded public host.
 - `editor-provider-owner`: persisted exclusive editor-shell selection and owner-scoped event dispatch over the stable input runtime.
 
-The plugin-host bridge advertises `commands`, `notifications`, and
+The plugin-host bridge advertises `commands`, `notifications.publish`, and
 `editor.extensions` only for its active Fiber. Unload removes concrete
 command/notice/extension adapters and withdraws readiness without deleting
 API-host aggregate contributions; a replacement Fiber replays the retained
@@ -189,10 +197,10 @@ follow-up rejection and safe-retraction boundaries.
 
 `changelog-content.ts` mirrors `docs/release-notes/` exactly; historical
 entries remain unchanged, while current-release behavior changes update both
-sources in the same commit. `0.1.1-rc.1` is the first entry for the public
-renderer-neutral UI kit, canonical plugin surfaces, selected provider owners,
-and split `session.read`/`session.act` capabilities; keep it newest-first and
-do not rewrite the byte content of the `0.1.0-*` history.
+sources in the same commit. `0.1.1-rc.2` records the current Beta hardening:
+publish-only notifications, readonly `session.read`, private management/raw
+services, and Experimental provider/editor facets. Keep it newest-first and do
+not rewrite the byte content of older release history.
 
 Specs that create filesystem fixtures use the shared `mkdtempTracked` helper
 and call `registerTempDirCleanup()` at module scope. This is required for

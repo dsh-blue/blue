@@ -15,7 +15,7 @@ The `cordis-plugin-development` skill governs the prototype phase. It requires `
 
 After the user accepts the prototype, load `blue-plugin-development` and choose the durable outcome: a local package, a GitHub repository, an npm release, or an intentionally ephemeral prototype. The skill does not create files, commits, tags, or releases before that choice.
 
-## The stable Blue boundary
+## The Blue Beta boundary
 
 A durable plugin is an ordinary ESM package:
 
@@ -26,7 +26,7 @@ blue-feature/
   cordis.patch.yml      # inserts the entry into a profile
 ```
 
-The entry exports a stable `name`, `inject`, and `apply(ctx)`. It requests capabilities through `ctx.bluePluginHost.open(ctx, manifest)`. The public set also includes the strictly isolated `session.read` and `session.act` facades. `open()`, `register()`, and `publish()` return structured `BlueResult` values and must be checked. Registrations belong to the caller's Fiber and are removed on unload, update, or profile reload. Candidates registered through either exclusive-provider capability stay inert until their id is selected in settings.
+The entry exports fixed `name`, `inject`, and `apply(ctx)` values. It requests the current `1.0.0-beta.1` capabilities through `ctx.bluePluginHost.open(ctx, manifest)`: `commands`, `status`, `panes`, `overlays`, `notifications.publish`, and read-only `session.read`. Generic `session.act` has been removed; writes continue through their owning Harness service, command, or feature action. `open()`, `register()`, and `publish()` return structured `BlueResult` values and must be checked. Registrations belong to the caller's Fiber and are removed on unload, update, or profile reload. Editor/status providers and editor extensions remain Experimental/reference surfaces; their candidates stay inert until selected in settings.
 
 Plugin code returns renderer-neutral `BlueUiNode`/`BlueView` data and structured actions:
 
@@ -52,8 +52,8 @@ return {
   apply(ctx) {
     const opened = ctx.bluePluginHost.open(ctx, {
       id: 'com.example.blue-doudizhu',
-      api: '^1.0.0',
-      capabilities: ['commands', 'panes', 'notifications'],
+      api: '^1.0.0-beta.1',
+      capabilities: ['commands', 'panes', 'notifications.publish'],
     })
     if (!opened.ok) throw new Error(opened.code + ': ' + opened.message)
     opened.value.commands.register({ id: 'poker', label: '斗地主牌局', execute })
@@ -80,8 +80,8 @@ Each change used `cordis_define` followed by `cordis_run update`, preserving dia
 
 The package has the expected shape:
 
-- stable `name`, `inject: ['bluePluginHost']`, and `apply(ctx)` exports;
-- a manifest requesting only `commands`, `panes`, and `notifications`;
+- fixed `name`, `inject: ['bluePluginHost']`, and `apply(ctx)` exports;
+- a manifest requesting only `commands`, `panes`, and `notifications.publish`;
 - command, bottom-pane, and notification registrations obtained from the `open()` result;
 - a patch containing only the `blue-doudizhu` insertion, with Fiber-owned cleanup;
 - `@deepseek-ai/cordis` and `@dsh-blue/blue` as peer dependencies, and a `dsh.bundle.patch` entry for profile loading.

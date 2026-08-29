@@ -6,12 +6,8 @@
  * @module @dsh-blue/blue-interaction/plugin-host-bridge
  */
 
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import {
-  attachBluePluginHostCapabilities,
-  runBlueUserGesture,
-  subscribeBluePluginHost,
-  subscribeBluePluginNotifications,
   type BlueCommandContribution,
   type BlueEditorCompletionItem,
   type BlueEditorExtensionContribution,
@@ -32,7 +28,7 @@ import {
 export const name = 'blue-plugin-interaction-bridge'
 
 /** Owner services required before commands and notices can be projected. */
-export const inject = ['bluePluginHost', 'commands', 'blueTheme', 'blueEditorHost']
+export const inject = ['bluePluginControl', 'commands', 'blueTheme', 'blueEditorHost']
 
 function callbackMessage(error: unknown): string {
   try {
@@ -56,8 +52,8 @@ function commandArgs(rawInput: string): readonly string[] {
 
 /** Register public commands and route public notifications without exposing owner services. */
 export function apply(ctx: Context): void {
-  const host = (ctx.bluePluginHost as unknown as Record<symbol, typeof ctx.bluePluginHost | undefined>)[symbols.original] ?? ctx.bluePluginHost
-  attachBluePluginHostCapabilities(host, ctx, ['commands', 'notifications', 'editor.extensions'])
+  const control = ctx.bluePluginControl
+  control.attachCapabilities(ctx, ['commands', 'notifications.publish', 'editor.extensions'])
   const commands = new Map<string, () => void>()
   let extensionsRevision = -1
 
@@ -102,7 +98,7 @@ export function apply(ctx: Context): void {
     ): Promise<BlueResult> {
       if (entry.onEvent === undefined) return { ok: true, value: undefined }
       try {
-        return await runBlueUserGesture(host, ctx, userGesture => entry.onEvent!(event, Object.freeze({
+        return await control.runUserGesture(ctx, userGesture => entry.onEvent!(event, Object.freeze({
           surfaceId: entry.id,
           signal,
           revision: operationRevision,
@@ -127,7 +123,7 @@ export function apply(ctx: Context): void {
         description: entry.label,
         handler: async (invocation) => {
           try {
-            return commandResult(await runBlueUserGesture(host, ctx, userGesture => entry.execute(commandArgs(invocation.rawInput), {
+            return commandResult(await control.runUserGesture(ctx, userGesture => entry.execute(commandArgs(invocation.rawInput), {
               signal: invocation.signal,
               rawInput: invocation.rawInput,
               userGesture,
@@ -141,7 +137,7 @@ export function apply(ctx: Context): void {
     }
   }
 
-  const subscription = subscribeBluePluginHost(host, (snapshot: BluePluginHostSnapshot) => {
+  const subscription = control.subscribe((snapshot: BluePluginHostSnapshot) => {
     syncCommands(snapshot.commands)
     const revision = snapshot.editorExtensionsRevision!
     if (revision !== extensionsRevision) {
@@ -151,7 +147,7 @@ export function apply(ctx: Context): void {
       setEditorExtensions(ctx, next)
     }
   })
-  const notices = subscribeBluePluginNotifications(host, (notification) => {
+  const notices = control.observeNotifications((notification) => {
     const text = summarizePluginView(notification.view)
     const painted = paintPluginTone(ctx.blueTheme.colors, notification.tone)(text)
     getSharedEditor(ctx)?.notice?.(painted)

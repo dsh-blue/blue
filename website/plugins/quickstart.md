@@ -43,7 +43,7 @@ blue-workspace-header/
 ```json
 {
   "id": "@acme/blue-workspace-header",
-  "api": "^1.0.0",
+  "api": "^1.0.0-beta.1",
   "entry": "./lib/index.js",
   "capabilities": ["panes"]
 }
@@ -73,7 +73,7 @@ export const inject = ['bluePluginHost']
 export function apply(ctx: Context): void {
   const opened = ctx.bluePluginHost.open(ctx, {
     id: name,
-    api: '^1.0.0',
+    api: '^1.0.0-beta.1',
     capabilities: ['panes'],
   })
   if (!opened.ok) return

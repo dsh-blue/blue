@@ -5,7 +5,7 @@ Listing your plugin in the [plugin marketplace](/en/marketplace/) is a single pu
 ## Listing criteria
 
 - **Installable**: the plugin installs from a public source via `blue plugin add <spec>` (a GitHub source is enough; npm is not a requirement — an npm source can be added after publishing). The package name must contain `blue`, `frontend`, or `adapter`, matching the main repository's validation rule;
-- **Public capabilities only**: the plugin uses only the eight capabilities currently open — `commands` / `status` / `notifications` / `panes` / `overlays` / `editor.extensions` / `status.provider` / `editor.provider` — and the declaration matches reality (see the capability contracts in [Core concepts](/en/plugins/concepts));
+- **Public capabilities only**: the plugin uses only capabilities accepted by the current Beta host, and its declaration matches reality. Beta capabilities are `commands` / `status` / `notifications.publish` / `panes` / `overlays` / `session.read`; `editor.extensions` / `status.provider` / `editor.provider` must be described explicitly as Experimental/reference (see the capability contracts in [Core concepts](/en/plugins/concepts));
 - **Bilingual basics**: `title` and `tagline` must be provided in both Chinese and English; the tagline is one action sentence describing what the plugin does (Chinese ≤60 characters, English ≤100 characters, English ends with a period, no emoji);
 - **Accurate metadata**: `version` and `license` match the source repository.
 

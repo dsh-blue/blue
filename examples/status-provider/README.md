@@ -1,7 +1,8 @@
 # Status provider example
 
-An opt-in candidate that can replace the complete Blue footer. Installation
-does not activate it or modify settings.
+An opt-in Experimental/reference candidate for Blue API `1.0.0-beta.1` that
+can replace the complete Blue footer. Installation does not activate it or
+modify settings.
 
 ```sh
 dsh plugin --profile blue-dev add @dsh-blue-example/status-provider

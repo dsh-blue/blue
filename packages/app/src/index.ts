@@ -26,7 +26,6 @@ import type {
   BlueRegistration,
   BlueResult,
   BlueSessionReader,
-  BlueSessionRequester,
   BlueSessionSnapshot,
 } from '@dsh-blue/blue-api'
 // Empty type imports carry the loader Context merge for the settlement await,
@@ -456,31 +455,7 @@ export function apply(ctx: Context, config: Config): void {
       }
     },
   }
-  const sessionRequester: BlueSessionRequester = {
-    async request(action, options): Promise<BlueResult> {
-      const actionAborted = (): boolean => options?.signal?.aborted === true
-      if (actionAborted()) {
-        return { ok: false, code: 'BLUE_ABORTED', message: 'session action was aborted' }
-      }
-      const active = session.current
-      if (active === null) return unavailable()
-      if (action.kind === 'interrupt') {
-        if (actionAborted()) {
-          return { ok: false, code: 'BLUE_ABORTED', message: 'session action was aborted' }
-        }
-        return interruptActive(active)
-      }
-      const message = createUserMessage({ content: [{ type: 'text', text: action.text }], source: { kind: 'user' } })
-      if (actionAborted()) {
-        return { ok: false, code: 'BLUE_ABORTED', message: 'session action was aborted' }
-      }
-      if (action.kind === 'followup') active.followup(message)
-      else active.steer(message)
-      return success(undefined)
-    },
-  }
   ctx.provide('blueSessionReader', sessionReader)
-  ctx.provide('blueSessionRequester', sessionRequester)
 
   // Presenter-view resolution for the rendered session's tool cards. Tool
   // registrations are agent-scoped on the Harness side; the viewing scope is

@@ -177,9 +177,7 @@ export interface BlueStatusProviderRegistry { register(provider: BlueStatusProvi
 export interface BlueEditorProviderRegistry { register(provider: BlueEditorProvider): BlueResult<BlueRefreshRegistration>, list(): readonly BlueEditorProvider[] }
 
 export interface BlueSessionSnapshot { readonly revision: number, readonly id: string, readonly cwd: string, readonly status: 'idle' | 'running' | 'waiting' | 'failed', readonly mode: 'normal' | 'plan' | 'yolo', readonly model?: { readonly id: string, readonly provider?: string, readonly effort?: string } }
-export type BlueSessionAction = { readonly kind: 'followup' | 'steer', readonly text: string } | { readonly kind: 'interrupt' }
 export interface BlueSessionReader { current(): BlueSessionSnapshot | null, subscribe(listener: (snapshot: BlueSessionSnapshot | null) => void): BlueRegistration }
-export interface BlueSessionRequester { request(action: BlueSessionAction, options?: { readonly signal?: AbortSignal }): Promise<BlueResult> }
 export type BlueRequestState = 'started' | 'streaming' | 'completed' | 'failed' | 'aborted' | 'interrupted'
 export interface BlueRequestRef { readonly sessionEpoch: number, readonly requestEpoch: number, readonly scope: 'main' | 'btw' | 'subagent' }
 export interface BlueRequestLifecycle { readonly ref: BlueRequestRef, readonly state: BlueRequestState, readonly reason?: string }
@@ -187,18 +185,17 @@ export interface BlueRequestLifecycle { readonly ref: BlueRequestRef, readonly s
 export interface BlueNotification { readonly id: string, readonly view: BlueView, readonly tone?: BlueTone }
 export interface BlueRegistry<T> { register(contribution: T): BlueResult<BlueRegistration>, list(): readonly T[] }
 
-/** W1 declares new registries; W2-C owns their host implementation. */
+/** Capability-scoped API returned by the Beta plugin host. */
 export interface BluePluginApi {
   readonly manifest: BluePluginManifest
   readonly commands?: BlueRegistry<BlueCommandContribution>
   readonly status?: BlueStatusEntryRegistry
-  readonly notifications?: { publish(notification: BlueNotification): BlueResult, subscribe(listener: (notification: BlueNotification) => void): BlueRegistration }
+  readonly notifications?: { publish(notification: BlueNotification): BlueResult }
   readonly panes?: BluePaneRegistry
   readonly overlays?: BlueOverlayRegistry
   readonly editorExtensions?: BlueEditorExtensionRegistry
   readonly statusProviders?: BlueStatusProviderRegistry
   readonly editorProviders?: BlueEditorProviderRegistry
   readonly session?: BlueSessionReader
-  readonly sessionActions?: BlueSessionRequester
 }
 export interface BluePluginHost { readonly version: string, open(consumer: { effect(callback: () => () => void): unknown }, manifest: BluePluginManifest): BlueResult<BluePluginApi> }

@@ -27,9 +27,10 @@ const host = vi.hoisted(() => ({
   disposed: 0,
 }))
 
-vi.mock('@dsh-blue/blue-api', () => ({
-  attachBluePluginHostCapabilities: host.attach,
-  subscribeBluePluginHost(_service: unknown, listener: (snapshot: HostSnapshot) => void) {
+function control() {
+  return {
+    attachCapabilities: host.attach,
+    subscribe(listener: (snapshot: HostSnapshot) => void) {
     host.listeners.add(listener)
     let disposed = false
     return {
@@ -40,8 +41,9 @@ vi.mock('@dsh-blue/blue-api', () => ({
         host.listeners.delete(listener)
       },
     }
-  },
-}))
+    },
+  }
+}
 
 import * as bridgePlugin from '../src/plugin-host-bridge.ts'
 
@@ -79,7 +81,7 @@ describe('plugin host bridge revision compatibility', () => {
     let refreshes = 0
     registry.subscribe(() => { refreshes += 1 })
 
-    provide(ctx, 'bluePluginHost', { id: 'compat-host' })
+    provide(ctx, 'bluePluginControl', control())
     provide(ctx, 'blueScreen', screen)
     provide(ctx, 'blueTheme', { colors })
     provide(ctx, 'blueComponents', fakeBlueComponents() as BlueComponents)
@@ -118,7 +120,7 @@ describe('plugin host bridge revision compatibility', () => {
     expect(registry.list()).toHaveLength(1)
     expect(refreshes).toBe(6)
 
-    expect(host.attach).toHaveBeenCalledWith(expect.anything(), expect.anything(), ['status'])
+    expect(host.attach).toHaveBeenCalledWith(expect.anything(), ['status'])
     await fiber.dispose()
     expect(host.disposed).toBe(1)
     expect(host.listeners).toHaveLength(0)

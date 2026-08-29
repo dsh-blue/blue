@@ -1,4 +1,4 @@
-/** Cordis-owned, renderer-independent host for stable Blue plugin contributions. */
+/** Cordis-owned, renderer-independent host for Beta Blue plugin contributions. */
 import { Service, symbols, type Context } from '@deepseek-ai/cordis'
 import type {
   BlueCommandContribution, BlueEditorExtensionContribution,
@@ -6,14 +6,20 @@ import type {
   BlueOverlayRequest, BlueOverlayRegistry, BluePaneContribution, BluePaneRegistration,
   BluePaneRegistry, BluePluginApi, BluePluginHost, BluePublicOverlayHandle,
   BlueRefreshRegistration, BlueRegistration, BlueRegistry, BlueResult,
-  BlueSessionAction, BlueSessionReader, BlueSessionRequester, BlueSessionSnapshot,
+  BlueSessionReader, BlueSessionSnapshot,
   BlueStatusEntryContribution, BlueStatusProvider, BlueUserGesture,
 } from './contracts.ts'
 import { validateBlueManifest, type BlueCapability, type BluePluginManifest } from './manifest.ts'
 
-declare module '@deepseek-ai/cordis' { interface Context { bluePluginHost: BluePluginHostService } }
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    bluePluginHost: BluePluginHostService
+    /** Composition-private authority; the bundle isolates it from siblings. */
+    bluePluginControl: BluePluginControl
+  }
+}
 
-type Capability = 'commands' | 'status' | 'notifications' | 'panes' | 'overlays' | 'editor.extensions' | 'session.read' | 'session.act' | 'status.provider' | 'editor.provider'
+type Capability = 'commands' | 'status' | 'notifications.publish' | 'panes' | 'overlays' | 'editor.extensions' | 'session.read' | 'status.provider' | 'editor.provider'
 type HostCapability = BlueCapability
 type EffectOwner = { effect(callback: () => () => void): unknown }
 type Consumer = { effect(callback: () => () => void): unknown }
@@ -53,10 +59,21 @@ export interface BluePluginHostSnapshot {
 }
 export interface BluePluginHostOptions { readonly now?: () => number }
 
+/** Composition-private authority installed beside the public host service. */
+export interface BluePluginControl {
+  attachCapabilities(owner: EffectOwner, capabilities: readonly HostCapability[]): BlueRegistration
+  attachSessionReader(owner: EffectOwner, reader: BlueSessionReader): BlueRegistration
+  snapshot(): BluePluginHostSnapshot
+  subscribe(listener: (snapshot: BluePluginHostSnapshot) => void): BlueRegistration
+  observeNotifications(listener: (notification: BlueNotification) => void): BlueRegistration
+  runUserGesture<T>(owner: EffectOwner, callback: (gesture: BlueUserGesture) => T | Promise<T>, signal?: AbortSignal): Promise<T>
+  closeOverlay(owner: EffectOwner, entry: BluePluginHostOverlayEntry): BlueResult
+}
+
 const API_MAJOR = /^\^?1(?:\.|$)/
 const ID_PATTERN = /^[a-z0-9][a-z0-9._/-]{0,127}$/u
 const OWNER_ID_PATTERN = /^(?:blue[.:-]|@dsh-blue\/)/u
-const IMPLEMENTED_CAPABILITIES = new Set<Capability>(['commands', 'status', 'notifications', 'panes', 'overlays', 'editor.extensions', 'session.read', 'session.act', 'status.provider', 'editor.provider'])
+const IMPLEMENTED_CAPABILITIES = new Set<Capability>(['commands', 'status', 'notifications.publish', 'panes', 'overlays', 'editor.extensions', 'session.read', 'status.provider', 'editor.provider'])
 
 function success<T>(value: T): BlueResult<T> { return { ok: true, value } }
 function failure(code: BlueErrorCode, message: string): BlueResult<never> { return { ok: false, code, message } }
@@ -64,9 +81,6 @@ function message(error: unknown, fallback: string): string { return error instan
 function object(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function absent(capability: Capability): BlueResult<never> { return failure('BLUE_CAPABILITY_ABSENT', `capability "${capability}" has no active Blue owner adapter`) }
 function consumerDisposed(): BlueResult<never> { return failure('BLUE_ACTION_REJECTED', 'plugin consumer is disposed') }
-function aborted(): BlueResult<never> { return failure('BLUE_ABORTED', 'session action was aborted') }
-function sessionUnavailable(): BlueResult<never> { return failure('BLUE_SESSION_UNAVAILABLE', 'no Blue session is active') }
-function staleSession(): BlueResult<never> { return failure('BLUE_ACTION_REJECTED', 'session action result is stale') }
 function rejectDisposedAdmission(added: BlueResult<BlueRegistration>): BlueResult<never> { if (added.ok) added.value.dispose(); return consumerDisposed() }
 function invalid(error: unknown): BlueResult<never> { return failure('BLUE_INVALID_CONTRIBUTION', message(error, 'plugin input could not be inspected')) }
 
@@ -130,16 +144,6 @@ function sessionSnapshot(input: unknown): BlueSessionSnapshot | null {
     model = Object.freeze({ id: modelValue.id, ...(modelValue.provider === undefined ? {} : { provider: modelValue.provider }), ...(modelValue.effort === undefined ? {} : { effort: modelValue.effort }) }) as BlueSessionSnapshot['model']
   }
   return Object.freeze({ revision: value.revision, id: value.id, cwd: value.cwd, status: value.status, mode: value.mode, ...(model === undefined ? {} : { model }) }) as BlueSessionSnapshot
-}
-
-function sessionAction(input: unknown): BlueResult<BlueSessionAction> {
-  try {
-    const value = fields(input, ['kind', 'text'])
-    if (!['followup', 'steer', 'interrupt'].includes(value.kind as string)) return failure('BLUE_INVALID_CONTRIBUTION', 'session action kind is invalid')
-    if (value.kind !== 'interrupt' && typeof value.text !== 'string') return failure('BLUE_INVALID_CONTRIBUTION', 'session text actions require text')
-    if (value.kind === 'interrupt' && value.text !== undefined) return failure('BLUE_INVALID_CONTRIBUTION', 'session interrupt does not accept text')
-    return success(Object.freeze(value.kind === 'interrupt' ? { kind: 'interrupt' } : { kind: value.kind, text: value.text }) as BlueSessionAction)
-  } catch (error) { return invalid(error) }
 }
 
 function passiveEditorNode(input: unknown): boolean {
@@ -377,7 +381,7 @@ class ScopedRefresh<T extends Prioritized> {
 }
 
 interface HostState {
-  readonly lifetimes: Set<ConsumerLifetime>; readonly registries: Set<{ dispose(): void }>; readonly notifications: Set<Notifications>; readonly notificationObservers: Set<(notification: BlueNotification) => void>
+  readonly lifetimes: Set<ConsumerLifetime>; readonly registries: Set<{ dispose(): void }>; readonly notificationObservers: Set<(notification: BlueNotification) => void>
   readonly commands: Aggregate<BlueCommandContribution>; readonly status: Aggregate<BlueStatusEntryContribution>
   readonly panes: Aggregate<BluePluginHostPaneEntry>; readonly overlays: Ordered<BluePluginHostOverlayEntry>; readonly extensions: Aggregate<BlueEditorExtensionContribution>
   readonly statusProviders: Aggregate<BlueStatusProvider>; readonly editorProviders: Aggregate<BlueEditorProvider>; readonly owners: Map<Capability, number>
@@ -388,17 +392,12 @@ interface HostState {
   readonly sessionListeners: Set<(snapshot: BlueSessionSnapshot | null) => void>
   sessionOwner: SessionOwner | undefined
   sessionSnapshot: BlueSessionSnapshot | null
-  nextSessionGeneration: number
   nextOverlayOrder: number
 }
 
 interface SessionOwner {
-  readonly generation: number
-  readonly requester: BlueSessionRequester
-  readonly controllers: Set<AbortController>
   subscription: BlueRegistration | undefined
   lastRevision: number
-  tail: Promise<void>
 }
 
 function emitSession(state: HostState): void {
@@ -412,9 +411,7 @@ function publishSession(state: HostState, owner: SessionOwner, input: unknown): 
   if (snapshot !== null && snapshot.revision <= owner.lastRevision) return
   if (snapshot !== null) owner.lastRevision = snapshot.revision
   if (snapshot === null && state.sessionSnapshot === null) return
-  const previousSessionId = state.sessionSnapshot?.id
   state.sessionSnapshot = snapshot
-  if (previousSessionId !== undefined && previousSessionId !== snapshot?.id) for (const controller of owner.controllers) controller.abort()
   emitSession(state)
 }
 
@@ -433,60 +430,6 @@ class SessionReadFacade implements BlueSessionReader {
     return handle
   }
   dispose(): void { for (const handle of this.handles) handle.dispose() }
-}
-
-class SessionActionFacade implements BlueSessionRequester {
-  private readonly controllers = new Set<AbortController>()
-  constructor(private readonly state: HostState, private readonly lifetime: ConsumerLifetime) {}
-  async request(input: BlueSessionAction, options: { readonly signal?: AbortSignal } = {}): Promise<BlueResult> {
-    if (this.lifetime.disposed) return consumerDisposed()
-    const action = sessionAction(input)
-    if (!action.ok) return action
-    const owner = this.state.sessionOwner
-    if (owner === undefined) return absent('session.act')
-    const snapshot = this.state.sessionSnapshot
-    if (snapshot === null) return sessionUnavailable()
-    if (options.signal?.aborted === true) return aborted()
-    const sessionId = snapshot.id
-    const controller = new AbortController()
-    const forwardAbort = (): void => controller.abort()
-    options.signal?.addEventListener('abort', forwardAbort, { once: true })
-    this.controllers.add(controller)
-    owner.controllers.add(controller)
-    const completion = Promise.withResolvers<BlueResult>()
-    let completed = false
-    let running = false
-    const finish = (result: BlueResult): void => { completed = true; completion.resolve(result) }
-    const fence = (): BlueResult => {
-      if (this.lifetime.disposed) return consumerDisposed()
-      if (this.state.sessionOwner?.generation !== owner.generation || this.state.sessionSnapshot?.id !== sessionId) return staleSession()
-      return aborted()
-    }
-    const stop = (): void => { if (!running) finish(fence()) }
-    controller.signal.addEventListener('abort', stop, { once: true })
-    const execute = async (): Promise<void> => {
-      if (completed) return
-      running = true
-      const stopped = Promise.withResolvers<void>()
-      const onAbort = (): void => stopped.resolve()
-      controller.signal.addEventListener('abort', onAbort, { once: true })
-      const settled = Promise.resolve()
-        .then(() => owner.requester.request(action.value, { signal: controller.signal }))
-        .then(result => ({ result } as const), error => ({ error } as const))
-      const outcome = await Promise.race([settled, stopped.promise])
-      controller.signal.removeEventListener('abort', onAbort)
-      if (outcome === undefined) { finish(fence()); return }
-      finish('result' in outcome ? outcome.result : failure('BLUE_ACTION_REJECTED', message(outcome.error, 'session action failed')))
-    }
-    owner.tail = owner.tail.then(execute)
-    return completion.promise.finally(() => {
-      options.signal?.removeEventListener('abort', forwardAbort)
-      controller.signal.removeEventListener('abort', stop)
-      this.controllers.delete(controller)
-      owner.controllers.delete(controller)
-    })
-  }
-  dispose(): void { for (const controller of this.controllers) controller.abort(); this.controllers.clear() }
 }
 
 class PaneHandle extends RefreshRegistration implements BluePaneRegistration {
@@ -595,37 +538,21 @@ class Overlays implements BlueOverlayRegistry {
   dispose(): void { for (const handle of this.handles) handle.dispose() }
 }
 class Notifications {
-  private readonly listeners = new Set<(notification: BlueNotification) => void>(); private readonly handles = new Set<Registration>()
-  constructor(private readonly state: HostState, private readonly lifetime: ConsumerLifetime, private readonly effect: Consumer['effect']) {}
+  constructor(private readonly state: HostState, private readonly lifetime: ConsumerLifetime) {}
   publish(input: BlueNotification): BlueResult {
     if (this.lifetime.disposed) return consumerDisposed()
-    if (!ready(this.state, 'notifications')) return absent('notifications')
+    if (!ready(this.state, 'notifications.publish')) return absent('notifications.publish')
     try {
       const safe = fields(input, ['id', 'view', 'tone'])
       if (typeof safe.id !== 'string' || !ID_PATTERN.test(safe.id)) return failure('BLUE_INVALID_CONTRIBUTION', 'notification id must be 1-128 lowercase namespace characters')
       if (!object(safe.view)) return failure('BLUE_INVALID_CONTRIBUTION', 'notification view must be an object')
       if (safe.tone !== undefined && !['default', 'muted', 'accent', 'success', 'warning', 'danger'].includes(safe.tone as string)) return failure('BLUE_INVALID_CONTRIBUTION', 'notification tone is invalid')
       const value = Object.freeze({ id: safe.id, view: cloneData(safe.view), ...(safe.tone === undefined ? {} : { tone: safe.tone }) }) as BlueNotification
-      for (const target of this.state.notifications) target.emit(value)
       for (const observer of this.state.notificationObservers) observer(value)
       return success(undefined)
     } catch (error) { return failure('BLUE_INVALID_CONTRIBUTION', message(error, 'notification was rejected')) }
   }
-  subscribe(listener: (notification: BlueNotification) => void): BlueRegistration {
-    if (this.lifetime.disposed) {
-      const handle = new Registration(() => {})
-      handle.dispose()
-      return handle
-    }
-    this.listeners.add(listener); let handle: Registration
-    handle = new Registration(() => { this.listeners.delete(listener); this.handles.delete(handle) })
-    this.handles.add(handle)
-    try { this.effect(() => () => handle.dispose()) }
-    catch (error) { handle.dispose(); throw error }
-    return handle
-  }
-  emit(value: BlueNotification): void { for (const listener of this.listeners) try { listener(value) } catch { /* plugin observer failures are contained */ } }
-  dispose(): void { for (const handle of this.handles) handle.dispose(); this.listeners.clear() }
+  dispose(): void {}
 }
 
 const HOST_STATE_KEY = Symbol.for('@dsh-blue/blue-api/plugin-host-states/v1')
@@ -677,7 +604,7 @@ function revokeGesture(state: HostState, gesture: BlueUserGesture): void {
 export function attachBluePluginHostCapabilities(host: BluePluginHostService, owner: EffectOwner, capabilities: readonly HostCapability[]): BlueRegistration {
   const state = ownerStateOf(host)
   const owned = [...new Set(capabilities)]
-  for (const capability of owned) if (capability === 'session.read' || capability === 'session.act') throw new Error(`Blue session capability "${capability}" requires attachBluePluginHostSessionOwner`)
+  for (const capability of owned) if (capability === 'session.read') throw new Error(`Blue session capability "${capability}" requires attachBluePluginHostSessionReader`)
   for (const capability of owned) if (!IMPLEMENTED_CAPABILITIES.has(capability as Capability)) throw new Error(`Blue owner adapter cannot attach unsupported capability "${capability}"`)
   for (const capability of owned as Capability[]) state.owners.set(capability, (state.owners.get(capability) ?? 0) + 1)
   const dispatchOwner = owned.some(capability => capability === 'commands' || capability === 'panes' || capability === 'overlays' || capability === 'editor.extensions' || capability === 'editor.provider')
@@ -707,30 +634,25 @@ export function attachBluePluginHostCapabilities(host: BluePluginHostService, ow
   return registration
 }
 
-/** Attach app-owned session projection and action capabilities as one generation. */
-export function attachBluePluginHostSessionOwner(host: BluePluginHostService, owner: EffectOwner, reader: BlueSessionReader, requester: BlueSessionRequester): BlueRegistration {
+/** Attach the app-owned readonly session projection for one owner lifetime. */
+export function attachBluePluginHostSessionReader(host: BluePluginHostService, owner: EffectOwner, reader: BlueSessionReader): BlueRegistration {
   const state = ownerStateOf(host)
   if (state.sessionOwner !== undefined) throw new Error('Blue plugin host already has an active session owner')
   if (!object(reader) || typeof reader.current !== 'function' || typeof reader.subscribe !== 'function') throw new Error('Blue session owner requires a reader')
-  if (!object(requester) || typeof requester.request !== 'function') throw new Error('Blue session owner requires a requester')
   const initial = sessionSnapshot(reader.current())
   const sessionOwner: SessionOwner = {
-    generation: state.nextSessionGeneration++, requester, controllers: new Set(), subscription: undefined,
-    lastRevision: initial?.revision ?? -1, tail: Promise.resolve(),
+    subscription: undefined,
+    lastRevision: initial?.revision ?? -1,
   }
   state.sessionOwner = sessionOwner
   state.sessionSnapshot = initial
   state.owners.set('session.read', 1)
-  state.owners.set('session.act', 1)
   const registration = new Registration(() => {
     if (state.sessionOwner !== sessionOwner) return
     state.sessionOwner = undefined
     state.owners.delete('session.read')
-    state.owners.delete('session.act')
     sessionOwner.subscription?.dispose()
     sessionOwner.subscription = undefined
-    for (const controller of sessionOwner.controllers) controller.abort()
-    sessionOwner.controllers.clear()
     if (state.sessionSnapshot !== null) { state.sessionSnapshot = null; emitSession(state) }
   })
   try {
@@ -845,22 +767,37 @@ function disposeHost(host: BluePluginHostService): void {
   for (const lifetime of state.lifetimes) lifetime.dispose()
   for (const registry of state.registries) registry.dispose()
   state.sessionOwner?.subscription?.dispose()
-  for (const controller of state.sessionOwner?.controllers ?? []) controller.abort()
-  for (const notifications of state.notifications) notifications.dispose()
   for (const aggregate of [state.commands, state.status, state.panes, state.overlays, state.extensions, state.statusProviders, state.editorProviders]) aggregate.clear()
   state.lifetimes.clear(); state.notificationObservers.clear(); state.owners.clear(); state.gestureOwners.clear(); state.gestures.clear(); state.ownerGestures.clear(); state.overlayOwners.clear(); state.overlayClosers.clear(); state.paneCounts.clear(); state.capturingConsumers.clear(); state.sessionListeners.clear(); state.sessionOwner = undefined; state.sessionSnapshot = null; HOST_STATES.delete(host)
 }
 
-/** Cordis service implementing the stable Blue plugin host. */
+/** Create closure-bound owner authority for one host instance. */
+export function createBluePluginControl(host: BluePluginHostService): BluePluginControl {
+  const control: BluePluginControl = {
+    attachCapabilities: (owner: EffectOwner, capabilities: readonly HostCapability[]) => attachBluePluginHostCapabilities(host, owner, capabilities),
+    attachSessionReader: (owner: EffectOwner, reader: BlueSessionReader) => attachBluePluginHostSessionReader(host, owner, reader),
+    snapshot: () => snapshotBluePluginHost(host),
+    subscribe: (listener: (snapshot: BluePluginHostSnapshot) => void) => subscribeBluePluginHost(host, listener),
+    observeNotifications: (listener: (notification: BlueNotification) => void) => subscribeBluePluginNotifications(host, listener),
+    runUserGesture<T>(owner: EffectOwner, callback: (gesture: BlueUserGesture) => T | Promise<T>, signal?: AbortSignal): Promise<T> {
+      return runBlueUserGesture(host, owner, callback, signal)
+    },
+    closeOverlay: (owner: EffectOwner, entry: BluePluginHostOverlayEntry) => closeBluePluginHostOverlay(host, owner, entry),
+  }
+  return Object.freeze(control)
+}
+
+/** Cordis service implementing the Beta Blue plugin host. */
 export class BluePluginHostService extends Service implements BluePluginHost {
-  readonly version = '1.0.0'
+  readonly version = '1.0.0-beta.1'
   constructor(ctx: Context, options: BluePluginHostOptions = {}) {
     super(ctx, 'bluePluginHost')
     const revision = { value: 0 }
     const changed = () => { revision.value += 1 }
     HOST_STATES.set(this, {
-      lifetimes: new Set(), registries: new Set(), notifications: new Set(), notificationObservers: new Set(), commands: new Aggregate(false, changed), status: new Aggregate(true, changed), panes: new Aggregate(true, changed), overlays: new Ordered(changed), extensions: new Aggregate(true, changed), statusProviders: new Aggregate(true, changed), editorProviders: new Aggregate(true, changed), owners: new Map(), gestureOwners: new Map(), gestures: new Map(), ownerGestures: new Map(), overlayOwners: new Map(), overlayClosers: new Map(), paneCounts: new Map(), capturingConsumers: new Set(), revision, now: options.now ?? Date.now, sessionListeners: new Set(), sessionOwner: undefined, sessionSnapshot: null, nextSessionGeneration: 0, nextOverlayOrder: 0,
+      lifetimes: new Set(), registries: new Set(), notificationObservers: new Set(), commands: new Aggregate(false, changed), status: new Aggregate(true, changed), panes: new Aggregate(true, changed), overlays: new Ordered(changed), extensions: new Aggregate(true, changed), statusProviders: new Aggregate(true, changed), editorProviders: new Aggregate(true, changed), owners: new Map(), gestureOwners: new Map(), gestures: new Map(), ownerGestures: new Map(), overlayOwners: new Map(), overlayClosers: new Map(), paneCounts: new Map(), capturingConsumers: new Set(), revision, now: options.now ?? Date.now, sessionListeners: new Set(), sessionOwner: undefined, sessionSnapshot: null, nextOverlayOrder: 0,
     })
+    ctx.provide('bluePluginControl', createBluePluginControl(this))
     ctx.effect(() => () => disposeHost(this))
   }
 
@@ -897,19 +834,18 @@ export class BluePluginHostService extends Service implements BluePluginHost {
       const extensions = new ScopedRefresh('editor.extensions', state.extensions, isReady('editor.extensions'), lifetime, state.now, extension)
       const statusProviders = new ScopedRefresh('status.provider', state.statusProviders, isReady('status.provider'), lifetime, state.now, statusProvider)
       const editorProviders = new ScopedRefresh('editor.provider', state.editorProviders, isReady('editor.provider'), lifetime, state.now, editorProvider)
-      const notifications = new Notifications(state, lifetime, callback => consumer.effect(callback))
+      const notificationPublisher = new Notifications(state, lifetime)
+      const notifications = Object.freeze({ publish: (notification: BlueNotification) => notificationPublisher.publish(notification) })
       const session = new SessionReadFacade(state, lifetime, callback => consumer.effect(callback))
-      const sessionActions = new SessionActionFacade(state, lifetime)
-      const registries = [commands, statuses, panes, overlays, extensions, statusProviders, editorProviders, session, sessionActions]
+      const registries = [commands, statuses, panes, overlays, extensions, statusProviders, editorProviders, session, notificationPublisher]
       for (const registry of registries) state.registries.add(registry)
-      state.notifications.add(notifications)
 
       const frozenManifest = Object.freeze({ id: hostManifest.id, api: hostManifest.api, capabilities: Object.freeze(capabilities), ...(hostManifest.schemaVersion === undefined ? {} : { schemaVersion: hostManifest.schemaVersion }), ...(hostManifest.entry === undefined ? {} : { entry: hostManifest.entry }), ...(hostManifest.blue === undefined ? {} : { blue: hostManifest.blue }), ...(hostManifest.harness === undefined ? {} : { harness: hostManifest.harness }), ...(hostManifest.node === undefined ? {} : { node: hostManifest.node }), ...(hostManifest.integrity === undefined ? {} : { integrity: hostManifest.integrity }) }) as BluePluginManifest
       const api: BluePluginApi = {
         manifest: frozenManifest,
-        ...(capabilities.includes('commands') ? { commands } : {}), ...(capabilities.includes('status') ? { status: statuses } : {}), ...(capabilities.includes('notifications') ? { notifications } : {}), ...(capabilities.includes('panes') ? { panes } : {}), ...(capabilities.includes('overlays') ? { overlays } : {}), ...(capabilities.includes('editor.extensions') ? { editorExtensions: extensions } : {}), ...(capabilities.includes('session.read') ? { session } : {}), ...(capabilities.includes('session.act') ? { sessionActions } : {}), ...(capabilities.includes('status.provider') ? { statusProviders } : {}), ...(capabilities.includes('editor.provider') ? { editorProviders } : {}),
+        ...(capabilities.includes('commands') ? { commands } : {}), ...(capabilities.includes('status') ? { status: statuses } : {}), ...(capabilities.includes('notifications.publish') ? { notifications } : {}), ...(capabilities.includes('panes') ? { panes } : {}), ...(capabilities.includes('overlays') ? { overlays } : {}), ...(capabilities.includes('editor.extensions') ? { editorExtensions: extensions } : {}), ...(capabilities.includes('session.read') ? { session } : {}), ...(capabilities.includes('status.provider') ? { statusProviders } : {}), ...(capabilities.includes('editor.provider') ? { editorProviders } : {}),
       }
-      const cleanup = () => { lifetime.dispose(); state.lifetimes.delete(lifetime); for (const registry of registries) { registry.dispose(); state.registries.delete(registry) }; notifications.dispose(); state.notifications.delete(notifications) }
+      const cleanup = () => { lifetime.dispose(); state.lifetimes.delete(lifetime); for (const registry of registries) { registry.dispose(); state.registries.delete(registry) } }
       try { consumer.effect(() => cleanup) } catch (error) { cleanup(); throw error }
       return success(Object.freeze(api))
     } catch (error) { return invalid(error) }

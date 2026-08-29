@@ -1,13 +1,12 @@
-# Session reads and actions
+# Read-only session data
 
-Blue splits its public session seam into two independent capabilities. Request `session.read` when a plugin only observes the current session. Add `session.act` only when it must submit a followup, steer, or interrupt action.
+The current Beta exposes only `session.read`. A plugin may read and subscribe to a bounded current-session summary, but it cannot write through the Blue plugin host. Generic `session.act` has been removed from manifests, types, and the public facade. Domain writes continue through their owning Harness Cordis service, Harness command, or feature-owned action.
 
 | Capability | Field returned by `open()` | Exposed methods |
 |---|---|---|
 | `session.read` | `api.session` | `current()`, `subscribe()` |
-| `session.act` | `api.sessionActions` | `request()` |
 
-The facades never merge their method sets. A plugin requesting only `session.read` has no `sessionActions`; a plugin requesting only `session.act` has no `session`. The app is the sole real owner. Public objects expose neither Harness Agent/Session objects, the event log, nor the app's broader action service.
+The public object exposes no Harness Agent/Session object, event log, raw projection reader, or broad app action service. Requesting the removed `session.act` fails manifest/open validation; there is no compatibility fallback.
 
 ## Read-only snapshots
 
@@ -28,9 +27,11 @@ interface BlueSessionSnapshot {
 }
 ```
 
-The host copies and deeply freezes each snapshot, including nested `model` data. `revision` increases monotonically when the app owner publishes a new state. The host ignores duplicate or regressing revisions in one owner generation and drops callbacks arriving after an old owner unloads.
+The host copies and deeply freezes each snapshot, including nested `model` data. `revision` increases monotonically when the app owner publishes new state. The host ignores duplicate or regressing revisions in one owner generation and drops callbacks arriving after an old owner unloads.
 
-`subscribe(listener)` registers before synchronously replaying the current value, so a reentrant publication during subscription cannot be missed. Its `BlueRegistration` is idempotently disposable, and consumer Fiber unload also removes the subscription. During an owner gap, a retained live reader observes `null`; after activation it receives snapshots only from the new owner generation.
+`subscribe(listener)` registers before synchronously replaying the current value, so a reentrant publication during subscription cannot be missed. Its `BlueRegistration` is idempotently disposable, and consumer Fiber unload also removes the subscription.
+
+If the owner bridge is inactive when `open()` runs, `open()` returns `BLUE_CAPABILITY_ABSENT`. A reader that was already opened observes `null` during an owner reload, then receives the current snapshot from the new generation; it never reuses an old session value. A retained facade stays permanently fenced after its consumer unloads.
 
 ```ts
 export const inject = ['bluePluginHost']
@@ -38,7 +39,7 @@ export const inject = ['bluePluginHost']
 export function apply(ctx) {
   const opened = ctx.bluePluginHost.open(ctx, {
     id: 'com.example.session-badge',
-    api: '^1.0.0',
+    api: '^1.0.0-beta.1',
     capabilities: ['session.read'],
   })
   if (!opened.ok) throw new Error(`${opened.code}: ${opened.message}`)
@@ -51,36 +52,12 @@ export function apply(ctx) {
 }
 ```
 
-## Structured actions
+## Writes belong to the domain owner
 
-`sessionActions.request()` accepts these actions:
+Blue provides no generic session write gateway. When a feature needs followup, steer, interrupt, or another domain mutation:
 
-```ts
-{ kind: 'followup', text: 'continue with tests' }
-{ kind: 'steer', text: 'focus on the parser' }
-{ kind: 'interrupt' }
-```
+- prefer the public Harness Cordis service, command, or feature action that owns the semantic operation;
+- perform the write in the domain package and project a renderer-neutral result to the Blue adapter;
+- when no public domain boundary exists, stop and propose one to the capability owner instead of reading package internals or copying Session state.
 
-The app owner serializes actions through one global FIFO, including requests from different plugin consumers. Each request captures its admission-time session id and owner generation. A queued request crossing a session switch, or a running result settling after switch/unload, returns `BLUE_ACTION_REJECTED`; late success cannot enter the current session.
-
-Callers may pass an `AbortSignal`. Pre-abort, queued abort, and active abort all return `BLUE_ABORTED`, and active owner work receives the aborted signal. No active session returns `BLUE_SESSION_UNAVAILABLE`; an owner gap for a live consumer returns `BLUE_CAPABILITY_ABSENT`; a disposed consumer returns `BLUE_ACTION_REJECTED`.
-
-```ts
-export function apply(ctx) {
-  const opened = ctx.bluePluginHost.open(ctx, {
-    id: 'com.example.session-action',
-    api: '^1.0.0',
-    capabilities: ['session.act'],
-  })
-  if (!opened.ok) throw new Error(`${opened.code}: ${opened.message}`)
-
-  const controller = new AbortController()
-  void opened.value.sessionActions
-    .request({ kind: 'interrupt' }, { signal: controller.signal })
-    .then(result => {
-      if (!result.ok) console.error(result.code, result.message)
-    })
-}
-```
-
-If the session owner bridge is inactive when `open()` runs, either capability returns `BLUE_CAPABILITY_ABSENT`. This normally indicates a mismatched Blue profile or a missing owner row. A plugin must not fall back to owner-only `blueSessionReader`, `blueSessionActions`, or raw Harness Session objects.
+A plugin must not directly inject owner-only `blueSessionReader`, `blueSessionProjections`, `blueSessionActions`, or `bluePluginControl`, and must not unwrap `bluePluginHost` to obtain them. The default bundle isolates those services in its private runtime realm; public `session.read` is the only executable session facade in the current Beta.

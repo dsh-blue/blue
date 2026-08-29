@@ -6,7 +6,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
-import { BluePluginHostService } from '../../api/src/host.ts'
+import { BluePluginHostService, createBluePluginControl } from '../../api/src/host.ts'
 import type { BluePluginManifest } from '../../api/src/manifest.ts'
 import type { BlueScreen } from '@dsh-blue/blue-core'
 import { apply } from '../src/plugin-host-bridge.ts'
@@ -33,7 +33,7 @@ describe('plugin host view bridge', () => {
     const statusModels = new BlueStatusEntryService(new Context(), screen)
     const effects: (() => void)[] = []
     const ctx = {
-      bluePluginHost: host,
+      bluePluginControl: createBluePluginControl(host),
       blueStatusEntries: statusModels,
       effect(callback: () => void | (() => void)): void {
         const cleanup = callback()
@@ -43,7 +43,7 @@ describe('plugin host view bridge', () => {
     apply(ctx)
 
     const owner = consumer()
-    const manifest: BluePluginManifest = { id: '@acme/view', api: '^1.0.0', capabilities: ['status'] }
+    const manifest: BluePluginManifest = { id: '@acme/view', api: '^1.0.0-beta.1', capabilities: ['status'] }
     const opened = host.open(owner, manifest)
     expect(opened.ok).toBe(true)
     if (!opened.ok) return

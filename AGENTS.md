@@ -22,7 +22,7 @@ Consult these while developing instead of guessing API shapes:
 
 ```
 packages/
-  api/          @dsh-blue/blue-api         — stable renderer-independent contracts
+  api/          @dsh-blue/blue-api         — Beta renderer-independent contracts
   ui/           @dsh-blue/blue-ui          — pure public wire-node builders and component factories
   frontend/     @dsh-blue/blue-frontend    — renderer-neutral models/provider host
   harness-adapter/ @dsh-blue/blue-harness-adapter — capability-scoped host adapters
@@ -55,7 +55,7 @@ Each package has the same shape: `src/` (source), `tests/` (vitest specs), `lib/
 
 | Package | Import name | Role | Owns (key surfaces) | Detail |
 |---|---|---|---|---|
-| api | `@dsh-blue/blue-api` | stable renderer-independent public contracts and manifest validation | `BlueView` · readonly session/request lifecycle · `BlueResult` · capabilities | [AGENTS.md](packages/api/AGENTS.md) |
+| api | `@dsh-blue/blue-api` | Beta renderer-independent public contracts and manifest validation | `BlueView` · readonly session lifecycle · `BlueResult` · capabilities | [AGENTS.md](packages/api/AGENTS.md) |
 | ui | `@dsh-blue/blue-ui` | pure public UI construction layer | wire-node builders · deep freeze · component factories | [AGENTS.md](packages/ui/AGENTS.md) |
 | frontend | `@dsh-blue/blue-frontend` | renderer-neutral runtime models and provider host | readonly models · notifications/themes/locale · provider swap/fallback | [AGENTS.md](packages/frontend/AGENTS.md) |
 | harness-adapter | `@dsh-blue/blue-harness-adapter` | narrow official Harness compatibility adapters | capability probes · projection/action/session/question/locale bridges | [AGENTS.md](packages/harness-adapter/AGENTS.md) |
@@ -68,7 +68,7 @@ Each package has the same shape: `src/` (source), `tests/` (vitest specs), `lib/
 | app | `@dsh-blue/blue-app` | CLI startup + Agent/domain boundary | startup (`[task]`, `--resume`) · readonly session reader/projections · structured actions · switch queue · preset mount | [AGENTS.md](packages/app/AGENTS.md) |
 | openpencil | `@dsh-blue/blue-openpencil` | optional ecosystem interaction adapter | official tool-result presentation · signed-meta elision · bounded lifecycle | [AGENTS.md](packages/openpencil/AGENTS.md) |
 | lark | `@dsh-blue/blue-lark` | optional ecosystem interaction adapter | official command · loopback settings client · notifications | [AGENTS.md](packages/lark/AGENTS.md) |
-| bundle/blue | `@dsh-blue/blue` | installable unit | `cordis.patch.yml` (32 Blue-owned rows: 2 host-support + 30 product rows) · thin-host roster/disables · `presets/` · drift guard | [AGENTS.md](packages/bundle/blue/AGENTS.md) |
+| bundle/blue | `@dsh-blue/blue` | installable unit | `cordis.patch.yml` (33 Blue-owned rows: 3 support/composition + 30 product rows) · private runtime realm · thin-host roster/disables · `presets/` · drift guard | [AGENTS.md](packages/bundle/blue/AGENTS.md) |
 | cli | `@dsh-blue/blue-cli` | the `blue` launcher shell — dependency-free global bin, outside the plugin tree | exact global `dsh` probe · profile calibration (`blue`, link-lane skip) · argv translation (`-V` self-answer, `plugin` subcommand, `--profile` swallow) · `BLUE_LAUNCHER` rebrand env | [AGENTS.md](packages/cli/AGENTS.md) |
 | examples | `@dsh-blue-example/*` | validation-only downstream ecosystem | pure user kit · six opt-in public-API plugins · composition bundle · packed-install evidence | [AGENTS.md](examples/blue-user-kit/AGENTS.md) |
 

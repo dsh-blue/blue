@@ -6,7 +6,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { BluePluginHostService, attachBluePluginHostCapabilities } from '../../api/src/host.ts'
+import { BluePluginHostService, attachBluePluginHostCapabilities, createBluePluginControl } from '../../api/src/host.ts'
 import type { BlueEditorExtensionContribution } from '../../api/src/contracts.ts'
 import type { BluePluginManifest } from '../../api/src/manifest.ts'
 import type { BlueSemanticColors } from '@dsh-blue/blue-core'
@@ -35,7 +35,7 @@ describe('plugin host interaction bridge', () => {
     const definitions = new Map<string, CommandDefinition>([['trace', { name: 'trace', description: 'owner', handler: () => ({ kind: 'success' }) }]])
     const effects: (() => void)[] = []
     const ctx = {
-      bluePluginHost: host,
+      bluePluginControl: createBluePluginControl(host),
       blueEditorHost: editorHost,
       blueTheme: { colors },
       commands: {
@@ -56,7 +56,7 @@ describe('plugin host interaction bridge', () => {
     attachBluePluginHostCapabilities(host, overlayOwner, ['overlays'])
 
     const owner = consumer()
-    const manifest: BluePluginManifest = { id: '@acme/interaction', api: '^1.0.0', capabilities: ['commands', 'notifications'] }
+    const manifest: BluePluginManifest = { id: '@acme/interaction', api: '^1.0.0-beta.1', capabilities: ['commands', 'notifications.publish'] }
     const opened = host.open(owner, manifest)
     expect(opened.ok).toBe(true)
     if (!opened.ok) return
@@ -77,7 +77,7 @@ describe('plugin host interaction bridge', () => {
     const invocation = { rawInput: '  one   two ', signal: new AbortController().signal } as CommandInvocation
     await expect(definitions.get('spark')!.handler(invocation)).resolves.toEqual({ kind: 'success' })
     expect(received).toMatchObject({ args: ['one', 'two'], rawInput: '  one   two ', userGesture: {} })
-    const overlays = host.open(consumer(), { id: '@acme/overlay-check', api: '^1.0.0', capabilities: ['overlays'] })
+    const overlays = host.open(consumer(), { id: '@acme/overlay-check', api: '^1.0.0-beta.1', capabilities: ['overlays'] })
     expect(overlays.ok).toBe(true)
     if (overlays.ok) expect(overlays.value.overlays!.open({ id: 'late-command', capturing: true, render: () => ({ kind: 'text', content: 'late' }) }, { userGesture: received?.userGesture as never })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
     await expect(definitions.get('spark')!.handler({ ...invocation, rawInput: 'fail' })).resolves.toEqual({ kind: 'error', text: 'BLUE_ACTION_REJECTED' })
@@ -118,7 +118,7 @@ describe('plugin host interaction bridge', () => {
     const editorHost = new EditorHostService(root)
     const effects: (() => void)[] = []
     const ctx = {
-      bluePluginHost: host,
+      bluePluginControl: createBluePluginControl(host),
       blueEditorHost: editorHost,
       blueTheme: { colors },
       commands: { register: () => () => {} },
@@ -134,7 +134,7 @@ describe('plugin host interaction bridge', () => {
     const owner = consumer()
     const opened = host.open(owner, {
       id: '@acme/editor-extension',
-      api: '^1.0.0',
+      api: '^1.0.0-beta.1',
       capabilities: ['editor.extensions', 'overlays'],
     })
     expect(opened.ok).toBe(true)

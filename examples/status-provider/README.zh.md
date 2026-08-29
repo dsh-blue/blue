@@ -1,7 +1,7 @@
 # Status Provider 示例
 
-这是一个可替换完整 Blue footer 的 opt-in 候选。安装不会激活它，也不会修改
-settings。
+这是一个面向 Blue API `1.0.0-beta.1`、可替换完整 Blue footer 的
+Experimental/reference opt-in 候选。安装不会激活它，也不会修改 settings。
 
 ```sh
 dsh plugin --profile blue-dev add @dsh-blue-example/status-provider

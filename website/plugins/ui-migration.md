@@ -19,7 +19,7 @@ renderer object 包一层，而是让 Blue 拥有 layout、focus、width 与生�
 // 旧：capabilities: ['dock']; api.dock.register({ view, preferredRows })
 const opened = ctx.bluePluginHost.open(ctx, {
   id: 'acme.activity',
-  api: '^1.0.0',
+  api: '^1.0.0-beta.1',
   capabilities: ['panes'],
 })
 if (!opened.ok) return

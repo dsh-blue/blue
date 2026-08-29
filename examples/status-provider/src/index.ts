@@ -27,7 +27,7 @@ export const statusProvider: BlueStatusProvider = {
 
 /** Add an inert candidate without reading or writing provider selection. */
 export function apply(ctx: Context): void {
-  const opened = ctx.bluePluginHost.open(ctx, { id: name, api: '^1.0.0', capabilities: ['status.provider'] })
+  const opened = ctx.bluePluginHost.open(ctx, { id: name, api: '^1.0.0-beta.1', capabilities: ['status.provider'] })
   if (!opened.ok) return
   opened.value.statusProviders!.register(statusProvider)
 }

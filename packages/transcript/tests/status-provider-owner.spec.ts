@@ -4,7 +4,7 @@
  * @module @dsh-blue/blue-transcript/tests/status-provider-owner
  */
 
-import { Context, symbols } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BlueSessionSnapshot, BlueStatusProvider } from '../../api/src/contracts.ts'
 
@@ -15,9 +15,10 @@ const host = vi.hoisted(() => ({
   disposed: 0,
 }))
 
-vi.mock('@dsh-blue/blue-api', () => ({
-  attachBluePluginHostCapabilities: host.attach,
-  subscribeBluePluginHost(_service: unknown, listener: (snapshot: Record<string, unknown>) => void) {
+function control() {
+  return {
+    attachCapabilities: host.attach,
+    subscribe(listener: (snapshot: Record<string, unknown>) => void) {
     host.listeners.add(listener)
     listener(host.initial)
     let disposed = false
@@ -29,8 +30,9 @@ vi.mock('@dsh-blue/blue-api', () => ({
         host.listeners.delete(listener)
       },
     }
-  },
-}))
+    },
+  }
+}
 
 import * as ownerPlugin from '../src/status-provider-owner.ts'
 
@@ -106,15 +108,13 @@ function provide(ctx: Context, name: string, value: unknown): void {
 
 async function mount(options: {
   readonly settings?: unknown
-  readonly wrappedHost?: boolean
   readonly current?: BlueSessionSnapshot | null
 } = {}): Promise<{ readonly ctx: Context, readonly composition: CompositionProbe, readonly reader: ReaderProbe, readonly fiber: Awaited<ReturnType<Context['plugin']>> }> {
   const ctx = new Context()
   roots.push(ctx)
   const composition = compositionProbe()
   const reader = readerProbe(options.current)
-  const originalHost = { id: 'original-host' }
-  provide(ctx, 'bluePluginHost', options.wrappedHost === true ? { [symbols.original]: originalHost } : originalHost)
+  provide(ctx, 'bluePluginControl', control())
   provide(ctx, 'blueStatusComposition', composition)
   provide(ctx, 'blueSessionReader', reader)
   if (options.settings !== undefined) provide(ctx, 'settings', { get: (namespace: string) => namespace === 'blue' ? options.settings : undefined })
@@ -129,7 +129,7 @@ function emitHost(snapshot: Record<string, unknown>): void {
 describe('status provider owner', () => {
   it('declares the independent composition plugin surface', () => {
     expect(ownerPlugin.name).toBe('blue-status-provider-owner')
-    expect(ownerPlugin.inject).toEqual(['bluePluginHost', 'blueStatusComposition', 'blueSessionReader'])
+    expect(ownerPlugin.inject).toEqual(['bluePluginControl', 'blueStatusComposition', 'blueSessionReader'])
   })
 
   it('replays settings-before-owner selection and follows host and session snapshots', async () => {
@@ -143,7 +143,7 @@ describe('status provider owner', () => {
     expect(composition.sessions).toEqual([current])
     reader.publish(session('session-b'))
     expect(composition.sessions.at(-1)?.id).toBe('session-b')
-    expect(host.attach).toHaveBeenCalledWith(expect.anything(), expect.anything(), ['status.provider'])
+    expect(host.attach).toHaveBeenCalledWith(expect.anything(), ['status.provider'])
   })
 
   it('replays owner-before-settings handoff and ignores unrelated settings commits', async () => {
@@ -197,11 +197,10 @@ describe('status provider owner', () => {
     ])
   })
 
-  it('unwraps an owner service and replays selection across theme and owner reloads', async () => {
+  it('replays selection across theme and owner reloads through private control', async () => {
     const settings = { statusProvider: 'acme.persisted', theme: 'dark' }
-    const first = await mount({ settings, wrappedHost: true })
-    const original = (first.ctx.get('bluePluginHost') as Record<symbol, unknown>)[symbols.original]
-    expect(host.attach.mock.calls[0]?.[0]).toBe(original)
+    const first = await mount({ settings })
+    expect(host.attach.mock.calls[0]?.[0]).toBeDefined()
 
     first.ctx.emit('settings/updated', 'blue' as never, { ...settings, theme: 'paper' }, settings, 'theme')
     expect(first.composition.selections).toEqual(['acme.persisted', 'acme.persisted'])

@@ -6,13 +6,10 @@
  * @module @dsh-blue/blue-interaction/editor-provider-owner
  */
 
-import { symbols, type Context } from '@deepseek-ai/cordis'
+import type { Context } from '@deepseek-ai/cordis'
 // Carries the optional settings service and settings/updated event merges.
 import type {} from '@deepseek-ai/dsh-settings'
 import {
-  attachBluePluginHostCapabilities,
-  runBlueUserGesture,
-  subscribeBluePluginHost,
   type BlueEditorProvider,
   type BlueResult,
   type BlueUiEvent,
@@ -35,7 +32,7 @@ export const BLUE_DEFAULT_EDITOR_PROVIDER = 'blue.default'
 /** Stable Cordis plugin name. */
 export const name = 'blue-editor-provider-owner'
 /** The host registry and tree-scoped editor composition target. */
-export const inject = ['bluePluginHost', 'blueEditorHost']
+export const inject = ['bluePluginControl', 'blueEditorHost']
 
 function callbackMessage(error: unknown): string {
   try {
@@ -61,8 +58,8 @@ function currentSelection(ctx: Context): string {
 
 /** Attach editor.provider and publish inert candidates to the live editor tree. */
 export function apply(ctx: Context): void {
-  const host = (ctx.bluePluginHost as unknown as Record<symbol, typeof ctx.bluePluginHost | undefined>)[symbols.original] ?? ctx.bluePluginHost
-  attachBluePluginHostCapabilities(host, ctx, ['editor.provider'])
+  const control = ctx.bluePluginControl
+  control.attachCapabilities(ctx, ['editor.provider'])
   let desiredId = currentSelection(ctx)
   let revision = -1
   let entries: readonly BlueEditorProvider[] = Object.freeze([])
@@ -80,7 +77,7 @@ export function apply(ctx: Context): void {
     async dispatch(provider: BlueEditorProvider, event: BlueUiEvent, signal: AbortSignal, operationRevision: number): Promise<BlueResult> {
       if (provider.onEvent === undefined) return { ok: true, value: undefined }
       try {
-        return await runBlueUserGesture(host, ctx, userGesture => provider.onEvent!(event, Object.freeze({
+        return await control.runUserGesture(ctx, userGesture => provider.onEvent!(event, Object.freeze({
           surfaceId: provider.id,
           signal,
           revision: operationRevision,
@@ -97,7 +94,7 @@ export function apply(ctx: Context): void {
     setEditorProviders(ctx, next)
   }
 
-  const hostSubscription = subscribeBluePluginHost(host, snapshot => {
+  const hostSubscription = control.subscribe(snapshot => {
     const nextRevision = snapshot.editorProvidersRevision ?? snapshot.revision ?? 0
     if (nextRevision === revision) return
     revision = nextRevision

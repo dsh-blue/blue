@@ -4,7 +4,7 @@ This page explains the four pillars of Blue's plugin model: the Cordis tree and 
 
 ## The Cordis tree and the Fiber lifecycle
 
-There is exactly one Cordis plugin tree inside the dsh process. The Harness domain plugins (agents, sessions, tools, approval), Blue's 29 rows, and your plugin are all sibling rows on this tree:
+There is exactly one Cordis plugin tree inside the dsh process. The Harness domain plugins (agents, sessions, tools, approval), Blue's 33 owned rows (including its private runtime group), and your plugin are all composition rows on this tree:
 
 ```text
 dsh process 进程（one Cordis tree 一棵 Cordis 树）
@@ -27,7 +27,7 @@ The manifest is a plugin's static compatibility declaration:
 ```ts
 interface BluePluginManifest {
   id: string                    // ^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$
-  api: string                   // semver 范围；宿主当前是 1.x 线，写 '^1.0.0'
+  api: string                   // semver range; use '^1.0.0-beta.1' for the executable contract
   capabilities: BlueCapability[] // 不可重复
 }
 ```
@@ -35,7 +35,7 @@ interface BluePluginManifest {
 `open()` behaves in three layers:
 
 1. **Static validation** (`validateBlueManifest`, without executing plugin code): id format, api range format, capability spelling and deduplication. Failures return `BLUE_API_INCOMPATIBLE` (or `BLUE_INVALID_CONTRIBUTION` when the manifest is not even an object);
-2. **Capability-lifetime check**: the host durably buffers inert registrations for `commands`, `status`, `panes`, `overlays`, `editor.extensions`, `status.provider`, and `editor.provider`, so sibling rows may register while a frontend owner is booting or reloading. `notifications`, `session.read`, and `session.act` still require an active owner; `open()` returns `BLUE_CAPABILITY_ABSENT` while that owner is inactive;
+2. **Capability-lifetime check**: the host durably buffers inert registrations for `commands`, `status`, `panes`, `overlays`, plus the Experimental/reference `editor.extensions`, `status.provider`, and `editor.provider`, so sibling rows may register while a frontend owner is booting or reloading. `notifications.publish` and `session.read` require an active owner; `open()` returns `BLUE_CAPABILITY_ABSENT` while that owner is inactive;
 3. **Capability-scoped return**: only the declared capability fields have values on `BluePluginApi`; the rest are `undefined`. Hence access always takes the optional-chaining shape `api.commands?.register(...)`.
 
 Scoping is a two-way contract: you only get what you declared, and the host only exposes what you declared. When an upgraded plugin wants a new capability, it adds one line to the manifest — a host that is too old fails explicitly at `open()` time instead of erroring at runtime.
@@ -85,14 +85,13 @@ type BlueResult<Value = void> =
 | `BLUE_INVALID_CONTRIBUTION` | `register()` / `publish()`: malformed contribution (id characters, missing function field, etc.) |
 | `BLUE_ACTION_REJECTED` | `register()`: the id squats on Blue's reserved namespace (the `blue.` / `blue:` / `blue-` / `@dsh-blue/` prefixes) |
 | `BLUE_LIMIT_EXCEEDED` | `register()` / `open()`: a contribution exceeds node, pane, overlay, or size quotas |
-| `BLUE_CAPABILITY_ABSENT` | an active notifications/session owner is absent, or this host/profile does not provide the capability; handle as a version/profile mismatch or optional degradation |
-| `BLUE_ABORTED` / `BLUE_SESSION_UNAVAILABLE` | session action aborted / no active session |
+| `BLUE_CAPABILITY_ABSENT` | an active notification/session-read owner is absent, or this host/profile does not provide the capability; handle as a version/profile mismatch or optional degradation |
 
 Symmetrically, when your `execute()` returns `{ ok: false, code, message }`, the `message` is shown to the user as error text; a thrown exception is backstopped by the bridge layer into `plugin command failed: ...` — but that is a backstop, not a contract: return structured errors on your own.
 
 ## The domain/adapter split
 
-`session.read` exposes only a frozen, revisioned summary of the current session; `session.act` exposes only FIFO, abort/stale-fenced followup, steer, and interrupt actions. See [Session reads and actions](/en/plugins/session). Use official Cordis service injection when a feature needs fuller Harness-domain data or other write operations. The recommended split is two packages per renderer:
+`session.read` exposes only a frozen, revisioned current-session summary. Generic `session.act` has been removed; writes must use the public Harness service, command, or feature action that owns their semantics. See [Read-only session data](/en/plugins/session). Use official Cordis services for fuller Harness-domain data rather than reading Blue owner-only backing services. The recommended split is two packages per renderer:
 
 ```text
 @scope/feature        Domain 包：headless/Web/TUI 共用，不 inject 任何 Blue 服务
@@ -115,5 +114,5 @@ These bottom lines are enforced jointly by the validate script and code review:
 
 ## Next steps
 
-- Contract tables and full examples of the public capabilities: [Commands](/en/plugins/commands) · [Status bar and exclusive provider](/en/plugins/status) · [Editor extensions](/en/plugins/editor-extensions) · [Editor providers](/en/plugins/editor-providers) · [Panes](/en/plugins/dock) · [Notifications](/en/plugins/notifications);
+- Contract tables and complete examples for the current Beta capabilities: [Commands](/en/plugins/commands) · [Status](/en/plugins/status) · [Panes](/en/plugins/dock) · [Notifications](/en/plugins/notifications) · [Read-only session data](/en/plugins/session). Editor extensions, editor providers, and the exclusive status provider remain Experimental/reference surfaces;
 - The complete list of Blue's internal projection/action boundaries lives in the [Seam reference](/en/plugins/seams).

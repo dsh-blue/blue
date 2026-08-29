@@ -12,7 +12,7 @@ import { defineBlueComponent, ui } from '@dsh-blue/blue-ui'
 
 export const metric = defineBlueComponent<{ label: string, value: number }>({
   id: '@acme/metric',
-  api: '^1.0.0',
+  api: '^1.0.0-beta.1',
   render: props => ui.surface({
     title: props.label,
     child: ui.stack.column([
