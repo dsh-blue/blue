@@ -110,6 +110,14 @@ describe('blue bundle', () => {
     expect(patch).toContain("name: '@deepseek-ai/dsh-agent-presets'")
   })
 
+  it('keeps opt-in ecosystem examples out of the default product composition', () => {
+    const manifest = JSON.parse(readFileSync(join(patchDir, '..', 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>
+    }
+    expect(Object.keys(manifest.dependencies ?? {}).filter(name => name.startsWith('@dsh-blue-example/'))).toEqual([])
+    expect(patch).not.toContain('@dsh-blue-example/')
+  })
+
   it('inserts the Blue-owned agent-presets roster ahead of the Blue rows', () => {
     expect(patch).toContain('- id: blue-agent-presets')
     expect(patch).toContain("name: '@deepseek-ai/dsh-agent-presets'")
