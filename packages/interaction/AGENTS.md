@@ -174,6 +174,9 @@ per-id action FIFO, async submit barriers, and attachment preservation.
 canonical single-select, multi-select, form, settings, document select/loading,
 and migrated dialog paths. Approval coverage must enter through the actual
 plugin request and mounted prompt, not a separately constructed private class.
+Plan-review scroll tails use the compact `showing <start>-<end>/<total>` form so
+the complete range survives a closed overlay's inner-width budget; its footer
+keeps the compact `←→ 1-3 choose · ↑↓ scroll · Esc` command vocabulary.
 `editor-provider-runtime.spec.ts` directly proves that provider swaps retain
 one editor's draft, history, cursor, mode, attachment snapshot, focus, and
 exact renderer IME marker byte pass-through, plus fallback/breaker behavior

@@ -123,6 +123,7 @@ describe('plugin capabilities and lifecycle', () => {
       await expect(command.execute([], { userGesture })).resolves.toMatchObject({ ok: true })
     })
     expect(snapshotBluePluginHost(host).overlays.map(entry => entry.id)).toEqual(['example.overlay.details'])
+    expect(snapshotBluePluginHost(host).overlays[0]!.request.render()).toMatchObject({ kind: 'stack' })
     await expect(command.execute([], { userGesture: retained })).resolves.toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
 
     consumer.dispose()

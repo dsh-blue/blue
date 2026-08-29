@@ -207,9 +207,15 @@ export function renderSurfaceHead(node: SurfaceChromeNode, width: number, colors
   } else {
     const pair = chrome === 'lane' ? ['─', '─'] : chrome === 'surface' ? ['┌', '┐'] : ['╭', '╮']
     const paint = chrome === 'overlay' ? colors.borderFocus : chrome === 'lane' ? colors.muted : colors.border
-    const heading = title.length === 0 ? pair[0]! : `${pair[0]} ${title} `
-    const fill = '─'.repeat(Math.max(0, available - visibleWidth(heading) - 1))
-    rows.push(fit(paint(`${heading}${fill}${available > 1 ? pair[1] : ''}`), available))
+    if (available === 1) rows.push(paint(pair[0]!))
+    else if (title.length === 0 || available < 6) rows.push(paint(`${pair[0]}${'─'.repeat(available - 2)}${pair[1]}`))
+    else {
+      const titleBudget = available - 5
+      const fittedTitle = sliceByColumn(title, 0, titleBudget, true)
+      const heading = `${pair[0]} ${fittedTitle} `
+      const fill = '─'.repeat(Math.max(1, available - visibleWidth(heading) - 1))
+      rows.push(paint(`${heading}${fill}${pair[1]}`))
+    }
   }
   if (node.subtitle !== undefined) rows.push(fit(colors.muted(node.subtitle), available))
   if (node.badges !== undefined && node.badges.length > 0) {
@@ -257,18 +263,18 @@ export function renderList(node: ListNode, width: number, height: number, focus:
     const detail = available > 40 ? paintListDetail(item, colors) : ''
     const badge = item.badge === undefined ? '' : ` [${item.badge}]`
     if (item.disabled === true) {
-      rows.push({ value: fit(colors.muted(`${marker}${pointerGlyph} ${item.label}${detail}${badge}`), available), itemId: item.id })
+      rows.push({ value: fit(colors.muted(`${marker}${pointerGlyph} ${item.label}${badge}${detail}`), available), itemId: item.id })
       continue
     }
     if (enabledFocus) {
       const focusedRow = item.detailSpans === undefined
-        ? colors.primary(`${marker}${pointerGlyph} ${item.label}${item.detail === undefined || available <= 40 ? '' : ` — ${item.detail}`}${badge}`)
-        : `${colors.primary(`${marker}${pointerGlyph} ${item.label}`)}${detail}${colors.text(badge)}`
+        ? colors.primary(`${marker}${pointerGlyph} ${item.label}${badge}${item.detail === undefined || available <= 40 ? '' : ` — ${item.detail}`}`)
+        : `${colors.primary(`${marker}${pointerGlyph} ${item.label}`)}${colors.text(badge)}${detail}`
       rows.push({ value: colors.selectedBg(pad(focusedRow, available)), itemId: item.id })
       continue
     }
     const pointer = selected ? colors.primary(pointerGlyph) : colors.textMuted(pointerGlyph)
-    rows.push({ value: fit(`${marker}${pointer} ${colors.text(item.label)}${detail}${colors.text(badge)}`, available), itemId: item.id })
+    rows.push({ value: fit(`${marker}${pointer} ${colors.text(item.label)}${colors.text(badge)}${detail}`, available), itemId: item.id })
   }
   const limit = Math.max(1, Number.isFinite(height) ? Math.floor(height) : 1)
   if (rows.length <= limit) return rows.map(row => row.value)

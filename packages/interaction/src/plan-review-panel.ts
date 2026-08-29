@@ -123,7 +123,7 @@ export class PlanReviewPanel implements BlueFocusable {
   /** Current renderer-neutral plan-review tree. */
   currentNode(): BlueUiNode {
     const planTail = this.planRows > this.planLimit
-      ? [{ node: { kind: 'text', content: `showing ${String(this.scrollTop + 1)}-${String(this.scrollTop + Math.min(this.planLimit, this.planRows - this.scrollTop))} of ${String(this.planRows)}`, tone: 'muted' } as const }]
+      ? [{ node: { kind: 'text', content: `showing ${String(this.scrollTop + 1)}-${String(this.scrollTop + Math.min(this.planLimit, this.planRows - this.scrollTop))}/${String(this.planRows)}`, tone: 'muted' } as const }]
       : []
     const children: BlueUiNode[] = [
       {
@@ -151,7 +151,7 @@ export class PlanReviewPanel implements BlueFocusable {
       chrome: 'overlay',
       title: this.options.question.header ?? 'Plan review',
       child: { kind: 'stack', direction: 'column', gap: 1, children: children.map(node => ({ node })) },
-      footer: { kind: 'text', content: this.cursor === 2 ? 'Type feedback · Enter submit · Esc dismiss' : '←→ / 1-3 choose · ↑↓ scroll · Esc dismiss', tone: 'muted' },
+      footer: { kind: 'text', content: this.cursor === 2 ? 'Type feedback · Enter submit · Esc' : '←→ 1-3 choose · ↑↓ scroll · Esc', tone: 'muted' },
     }
   }
 

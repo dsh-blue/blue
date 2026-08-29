@@ -20,11 +20,11 @@
 
 
 ╭ Question 1 of 2 ─────────────────────────────────────────────────────────────╮
-● Name  ○ Runtime
-
-What should we call this project?
-
- → Answer:
-Enter save · Tab next · Esc cancel
+│● Name  ○ Runtime                                                             │
+│                                                                              │
+│What should we call this project?                                             │
+│                                                                              │
+│ → Answer:                                                                    │
+│Enter save · Tab next · Esc cancel                                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  mock  «cwd»

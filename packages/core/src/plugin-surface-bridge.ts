@@ -14,6 +14,7 @@ import {
   type BlueUiEventHandler,
   type BlueUiNode,
 } from '@dsh-blue/blue-api'
+import { renderLayoutFrame } from '@earendil-works/pi-tui/dist/layout.js'
 import type { BlueTerminalRuntime } from './terminal.ts'
 import type { SurfaceLaneEntry, SurfaceRegistration } from './surface-manager.ts'
 import { compileBlueUiNode, type BlueCompiledUi, type BlueUiViewport } from './ui-compiler.ts'
@@ -189,6 +190,7 @@ function compile(
     kind: 'surface',
     chrome: 'overlay',
     title: options.title,
+    padding: 1,
     child: value,
   }, {
     components: options.components,
@@ -212,7 +214,11 @@ function compile(
 class OverlayComponent implements BlueFocusable {
   private targetValue: BlueCompiledUi
   private focusedValue = false
-  constructor(compiled: BlueCompiledUi) { this.targetValue = compiled }
+  constructor(
+    compiled: BlueCompiledUi,
+    private readonly viewport: () => BlueUiViewport,
+    private readonly requestRender: () => void,
+  ) { this.targetValue = compiled }
   get focused(): boolean { return this.focusedValue }
   set focused(value: boolean) {
     this.focusedValue = value
@@ -223,7 +229,12 @@ class OverlayComponent implements BlueFocusable {
     this.targetValue = compiled
     if (compiled.focusTarget !== null) compiled.focusTarget.focused = this.focusedValue
   }
-  render(width: number): string[] { return this.targetValue.component.render(width) }
+  render(width: number): string[] {
+    const rows = this.targetValue.component.render(width)
+    const height = this.viewport().rows
+    if (rows.length < height) return rows
+    return renderLayoutFrame(this.targetValue.component, width, height, this.requestRender).lines
+  }
   invalidate(): void { this.targetValue.component.invalidate() }
   handleInput(data: string): void { this.targetValue.component.handleInput?.(data) }
 }
@@ -350,7 +361,7 @@ export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTermina
       interactive: entry.request.capturing,
       ...(entry.request.title === undefined ? {} : { title: entry.request.title }),
     })!
-    const component = new OverlayComponent(compiled)
+    const component = new OverlayComponent(compiled, () => overlayViewport(entry), runtime.requestRender)
     const handle = runtime.showOverlay(component, {
       width: entry.request.width ?? OVERLAY_DEFAULT_WIDTH,
       ...(entry.request.minWidth === undefined ? {} : { minWidth: entry.request.minWidth }),

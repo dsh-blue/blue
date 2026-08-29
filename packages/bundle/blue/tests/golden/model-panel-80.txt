@@ -22,9 +22,9 @@
 
 
 ╭ Select a model ──────────────────────────────────────────────────────────────╮
-mock
- → mock/Mock — ← current [Low] [High]
-   mock/Mock Pro — [Low] [High]
-Enter choose · Esc / q close
+│mock                                                                          │
+│ → mock/Mock — ← current [Low] [High]                                         │
+│   mock/Mock Pro — [Low] [High]                                               │
+│Enter choose · Esc / q close                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  mock  «cwd»

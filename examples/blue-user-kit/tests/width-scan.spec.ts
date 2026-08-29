@@ -18,6 +18,7 @@ import { DARK_COLORS } from '../../../packages/core/src/theme-dark.ts'
 import { compileBlueEditorShellNode, compileBlueStatusNode, compileBlueUiNode } from '../../../packages/core/src/ui-compiler.ts'
 import { createFakeEditor } from '../../../packages/core/tests/fake-editor.ts'
 import { ADVERSARIAL, expectLinesFit, SCAN_WIDTHS } from '../../../packages/core/tests/width-scan.ts'
+import { ui } from '../../../packages/ui/src/index.ts'
 import { apply as applyBottomLog } from '../../bottom-log/src/index.ts'
 import { editorProvider } from '../../editor-provider/src/index.ts'
 import { apply as applyHeader } from '../../header/src/index.ts'
@@ -64,7 +65,12 @@ describe('example width contracts', () => {
       expect(node).not.toBeNull()
       uiRows(entry.id, node!)
     }
-    uiRows('example.overlay.details', overlayRequest.render())
+    uiRows('example.overlay.details', ui.surface({
+      chrome: 'overlay',
+      title: overlayRequest.title,
+      padding: 1,
+      child: overlayRequest.render(),
+    }))
     consumer.dispose()
     owner.dispose()
   })

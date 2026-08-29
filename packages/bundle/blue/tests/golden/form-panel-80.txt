@@ -20,11 +20,11 @@
 
 
 ╭ Custom endpoint ─────────────────────────────────────────────────────────────╮
-the profile is written to the llm-pi-ai settings namespace
- → Provider Name · lowercase kebab-case, e.g. my-gateway:
-   Base URL · include /v1, e.g. https://gw.example.com/v1:
-   API key:
-Tab / ↑↓ fields · Enter submit · Esc cancel
+│the profile is written to the llm-pi-ai settings namespace                    │
+│ → Provider Name · lowercase kebab-case, e.g. my-gateway:                     │
+│   Base URL · include /v1, e.g. https://gw.example.com/v1:                    │
+│   API key:                                                                   │
+│Tab / ↑↓ fields · Enter submit · Esc cancel                                   │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  mock  «cwd»
                                                                          ctx 10

@@ -18,13 +18,13 @@
 
 
 ╭ Question 2 of 2 ─────────────────────────────────────────────────────────────╮
-○ Name  ● Runtime
-
-Which runtime?
-
- → Node [1]
-   Deno [2]
-   Other [3]
-↑↓ select · 1-9 choose · Enter choose · Tab next · Esc cancel
+│○ Name  ● Runtime                                                             │
+│                                                                              │
+│Which runtime?                                                                │
+│                                                                              │
+│ → Node [1]                                                                   │
+│   Deno [2]                                                                   │
+│   Other [3]                                                                  │
+│↑↓ select · 1-9 choose · Enter choose · Tab next · Esc cancel                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  mock  «cwd»

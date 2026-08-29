@@ -1,5 +1,5 @@
 /** Canonical compiler layout, focus, event, width, and failure containment. */
-import { CURSOR_MARKER, HStack, ScrollView, type Component } from '@earendil-works/pi-tui'
+import { CURSOR_MARKER, HStack, ScrollView, stripTerminalSequences, type Component } from '@earendil-works/pi-tui'
 import { renderLayoutFrame, type LayoutBox, type LayoutFrame } from '@earendil-works/pi-tui/dist/layout.js'
 import { describe, expect, it, vi } from 'vitest'
 import { ui } from '../../ui/src/index.ts'
@@ -296,6 +296,53 @@ describe('compileBlueUiNode', () => {
     expect(rows.join('\n')).toContain('Body')
     expect(rows.join('\n')).toContain('Footer')
     expect(rows.join('\n')).not.toContain('hidden')
+  })
+
+  it('renders overlay chrome as one closed core-owned frame at wide and degenerate widths', () => {
+    const overlay = compiled(ui.surface({
+      chrome: 'overlay',
+      title: 'Details',
+      padding: 1,
+      child: ui.text('body'),
+    }), fixture().options)
+    expect(overlay.component.render(20)).toEqual([
+      '╭ Details ─────────╮',
+      '│ body             │',
+      '╰──────────────────╯',
+    ])
+    expect(overlay.component.render(8)).toEqual([
+      '╭ Det ─╮',
+      '│ body │',
+      '╰──────╯',
+    ])
+    expect(() => overlay.component.invalidate()).not.toThrow()
+
+    const degenerate = compiled(ui.surface({ chrome: 'overlay', title: 'Details', padding: 2, child: ui.text('x') }), fixture().options)
+    expect(degenerate.component.render(2)).toEqual(['x'])
+    expect(degenerate.component.render(1)).toEqual(['x'])
+    expect(degenerate.component.render(Number.NaN)).toEqual(['x'])
+  })
+
+  it('preserves nested layout and scroll semantics inside closed overlay chrome', () => {
+    const content = ui.stack.column(Array.from({ length: 10 }, (_, index) => ui.text(`line-${String(index)}`)))
+    const overlay = compiled(ui.surface({
+      chrome: 'overlay',
+      title: 'Scrollable',
+      padding: 1,
+      child: ui.scroll(content, { scrollbar: true }),
+    }), fixture({ getViewport: () => ({ columns: 20, rows: 5 }) }).options)
+    const frame = layout(overlay.component as Component, 20, 5)
+
+    expect(frame.lines[0]).toMatch(/^╭ Scrollable ─+╮$/u)
+    expect(frame.lines.at(-1)).toBe('╰──────────────────╯')
+    expect(frame.lines.map(stripTerminalSequences).slice(1, -1).every(row => /^│.*│$/u.test(row))).toBe(true)
+    expect(scrollViews(frame.root)).toHaveLength(1)
+    expect(frame.lines).toHaveLength(5)
+    for (const width of [1, 2]) {
+      const narrow = layout(overlay.component as Component, width, 5).lines
+      expectLinesFit('closed overlay layout', narrow, width)
+      expect(narrow.join('')).toContain('l')
+    }
   })
 
   it('lays out alternate scroll with real start/end state and unwraps it in main mode', () => {
@@ -958,6 +1005,39 @@ describe('compileBlueEditorShellNode', () => {
     result.focusTarget.focused = false
     expect(editor.focused).toBe(false)
     result.component.invalidate()
+  })
+
+  it('delegates Tab completion in an editor-only shell while multi-control shells keep roving', () => {
+    const editorOnly = createTestEditor()
+    const editorOnlyInput = vi.spyOn(editorOnly, 'handleInput')
+    const root = compiledEditorShell({ kind: 'editor-control' }, editorOnly).result
+    root.focusTarget.focused = true
+    root.component.render(40)
+
+    root.focusTarget.handleInput?.('\t')
+    root.focusTarget.handleInput?.('\x1b[Z')
+
+    expect(editorOnlyInput).toHaveBeenNthCalledWith(1, '\t')
+    expect(editorOnlyInput).toHaveBeenNthCalledWith(2, '\x1b[Z')
+    expect(editorOnly.focused).toBe(true)
+
+    const rovingEditor = createTestEditor()
+    const rovingInput = vi.spyOn(rovingEditor, 'handleInput')
+    const shell = compiledEditorShell({
+      kind: 'stack',
+      direction: 'column',
+      children: [
+        { node: { kind: 'editor-control' } },
+        { node: ui.actions({ id: 'actions', items: [{ id: 'apply', label: 'Apply' }] }) },
+      ],
+    }, rovingEditor).result
+    shell.focusTarget.focused = true
+
+    shell.focusTarget.handleInput?.('\t')
+
+    expect(rovingInput).not.toHaveBeenCalled()
+    shell.component.render(40)
+    expect(rovingEditor.focused).toBe(false)
   })
 
   it('reports checked failures, preserves dry-run focus, and restores the editor roving target', () => {

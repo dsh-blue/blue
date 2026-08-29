@@ -383,7 +383,62 @@ function pad(component: Component, amount: number, options: RuntimeCompilerOptio
   return padded
 }
 
+function overlaySurfaceComponent(node: Extract<CompilableNode, { readonly kind: 'surface' }>, child: Component, footer: Component | undefined, options: RuntimeCompilerOptions): BlueComponent & { [LAYOUT_NODE](): LayoutNode } {
+  const body = new VStack()
+  body.addChild(staticComponent(width => renderSurfaceHead(node, width, options.colors).slice(1), options))
+  body.addChild(child)
+  if (footer !== undefined) body.addChild(footer)
+
+  let layoutRows = 1
+  const captureLayoutRows = (viewport: LayoutViewport): boolean => {
+    layoutRows = Math.min(LAYOUT_VALUE_MAX, Math.max(1, Math.floor(viewport.height)))
+    return viewport.width >= 3
+  }
+  const frameVisible = (viewport: LayoutViewport): boolean => viewport.width >= 3
+  const paddingVisible = (index: number) => (viewport: LayoutViewport): boolean => viewport.width >= 5 + index * 2
+  const borderRows = (): string[] => Array.from({ length: layoutRows }, () => options.colors.borderFocus('│'))
+  const middle = new HStack()
+  middle.addChild(staticComponent(borderRows, options), { basis: 1, grow: 0, shrink: 1, visible: captureLayoutRows })
+  for (let index = 0; index < (node.padding ?? 0); index += 1) {
+    middle.addChild(staticComponent(() => [''], options), { basis: 1, grow: 0, shrink: 100, visible: paddingVisible(index) })
+  }
+  middle.addChild(body, { basis: 1, grow: 1, shrink: 1, minSize: 0 })
+  for (let index = 0; index < (node.padding ?? 0); index += 1) {
+    middle.addChild(staticComponent(() => [''], options), { basis: 1, grow: 0, shrink: 100, visible: paddingVisible(index) })
+  }
+  middle.addChild(staticComponent(borderRows, options), { basis: 1, grow: 0, shrink: 1, visible: captureLayoutRows })
+
+  const layout = new VStack()
+  layout.addChild(staticComponent(width => renderSurfaceHead(node, width, options.colors).slice(0, 1), options), { basis: 1, grow: 0, shrink: 0, visible: frameVisible })
+  layout.addChild(middle, { basis: 0, grow: 1, shrink: 1, minSize: 0 })
+  layout.addChild(staticComponent(width => renderSurfaceTail(node, width, options.colors), options), { basis: 1, grow: 0, shrink: 0, visible: frameVisible })
+
+  return {
+    [LAYOUT_NODE](): LayoutNode { return layout[LAYOUT_NODE]() },
+    render(width: number): string[] {
+      const available = Math.max(1, Math.floor(width))
+      if (available < 3) return body.render(available).map(row => options.components.truncateToWidth(row, available, ''))
+      const requestedPadding = node.padding ?? 0
+      const horizontalPadding = Math.min(requestedPadding, Math.max(0, Math.floor((available - 3) / 2)))
+      const contentWidth = Math.max(1, available - 2 - horizontalPadding * 2)
+      const head = renderSurfaceHead(node, available, options.colors)
+      const bodyRows = body.render(contentWidth)
+      const tail = renderSurfaceTail(node, available, options.colors)
+      const border = options.colors.borderFocus('│')
+      const framed = bodyRows.map(row => {
+        const clipped = options.components.truncateToWidth(row, contentWidth, '')
+        const fill = ' '.repeat(Math.max(0, contentWidth - options.components.visibleWidth(clipped)))
+        const inset = ' '.repeat(horizontalPadding)
+        return `${border}${inset}${clipped}${fill}${inset}${border}`
+      })
+      return [...head.slice(0, 1), ...framed, ...tail]
+    },
+    invalidate(): void { layout.invalidate() },
+  }
+}
+
 function surfaceComponent(node: Extract<CompilableNode, { readonly kind: 'surface' }>, child: Component, footer: Component | undefined, options: RuntimeCompilerOptions): BlueComponent {
+  if (node.chrome === 'overlay') return overlaySurfaceComponent(node, child, footer, options)
   const component = new VStack()
   component.addChild(staticComponent(width => renderSurfaceHead(node, width, options.colors), options))
   component.addChild(child)
@@ -790,6 +845,13 @@ class CompiledSurface implements BlueEditorShellComponent {
       this.state.activeKey = controls[index]!.key
     }
     if (data === '\t' || data === '\x1b[Z') {
+      // An editor-only provider shell has nowhere to rove. Preserve the
+      // editing engine's Tab contract so it can accept or explicitly open
+      // autocomplete without the canonical wrapper consuming the key.
+      if (controls.length === 1 && active.kind === 'editor') {
+        this.editor?.handleInput?.(data)
+        return
+      }
       const delta = data === '\t' ? 1 : -1
       moveTo((this.state.lastIndex + controls.length + delta) % controls.length)
       return

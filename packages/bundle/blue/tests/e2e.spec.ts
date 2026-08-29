@@ -315,6 +315,13 @@ describe('blue whole-tree e2e', () => {
     expect(selected).toContain('0 attachments')
     expect(selected).toContain('0 extensions')
 
+    tree.terminal.sendInput('/hel')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Show available commands') })
+    tree.terminal.sendInput('\t')
+    await vi.waitFor(() => { expect(tree.ctx.blueEditorHost.current?.editor.getText()).toBe('/help ') })
+    for (let index = 0; index < 6; index += 1) tree.terminal.sendInput('\x7f')
+    expect(tree.ctx.blueEditorHost.current?.editor.getText()).toBe('')
+
     tree.terminal.sendInput('boot-order draft')
     await waitForRender()
     expect(stripSgr(await fullFrame(tree.terminal))).toContain('boot-order draft')
@@ -323,7 +330,7 @@ describe('blue whole-tree e2e', () => {
     await waitForRender()
     const overlay = stripSgr(await fullFrame(tree.terminal))
     expect(overlay).toContain('Example details')
-    expect(overlay).toContain('This modal was opened by an explicit Blue user gesture.')
+    expect(overlay).toContain('Opened by an explicit Blue user gesture.')
 
     tree.terminal.sendInput('\x1b')
     await waitForRender()

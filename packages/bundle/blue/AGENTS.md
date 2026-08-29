@@ -35,7 +35,9 @@ editor outer delegate, and preserves `blue.default` on owner unload or failed
 first activation; it never creates a second editor engine. Candidate
 registration is host-buffered across that boot gap and owner reload; provider
 selection, live shell/LKG state, breaker, gestures, and fallback remain owned
-by this frontend tree.
+by this frontend tree. The whole-tree ecosystem boot case drives slash
+completion through the selected example shell and asserts that Tab updates the
+same host-owned editor, guarding provider chrome from consuming editor keys.
 
 The BTW row explicitly injects app-owned `blueSessionActions`. Although it appears before `blue-app`, Cordis holds the pane fiber until the app provides the action service; the app itself still publishes the service synchronously before its loader-settlement Agent creation. This ordering keeps Agent/session seeding out of transcript without adding an implicit race.
 

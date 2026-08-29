@@ -104,38 +104,38 @@ describe('PlanReviewPanel rendering', () => {
     // hint, footer, and one visible upstream row reserve the other 14).
     const { panel } = mount(ask({ detail: LONG_DETAIL }))
     const first = panel.render(60).join('\n')
-    expect(first).toContain('showing 1-10 of 15')
+    expect(first).toContain('showing 1-10/15')
     expect(first).toContain('↑↓ scroll')
     expect(first).toContain('line 1')
     expect(first).not.toContain('line 14')
     // ↓/↑ step one line — the mouse wheel arrives as those arrows, so the
     // wheel scrolls the plan (the round-4 ruling).
     panel.handleInput(KEY.down)
-    expect(panel.render(60).join('\n')).toContain('showing 2-11 of 15')
+    expect(panel.render(60).join('\n')).toContain('showing 2-11/15')
     panel.handleInput(KEY.up)
-    expect(panel.render(60).join('\n')).toContain('showing 1-10 of 15')
+    expect(panel.render(60).join('\n')).toContain('showing 1-10/15')
     // PageDown/Up jump by the window size; one page clamps to the last
     // full window.
     panel.handleInput('\x1b[6~')
     const paged = panel.render(60).join('\n')
-    expect(paged).toContain('showing 6-15 of 15')
+    expect(paged).toContain('showing 6-15/15')
     expect(paged).not.toContain('line 5')
     panel.handleInput('\x1b[5~')
     panel.handleInput('\x1b[5~')
-    expect(panel.render(60).join('\n')).toContain('showing 1-10 of 15')
+    expect(panel.render(60).join('\n')).toContain('showing 1-10/15')
   })
 
   it('windows one long Markdown line after renderer wrapping and clamps on resize', () => {
     const detail = `# Heading ${'wrapped '.repeat(35)}THE_END`
     const { panel, components } = mount(ask({ detail }))
     const first = panel.render(20).join('\n')
-    expect(first).toMatch(/showing 1-10 of \d+/u)
+    expect(first).toMatch(/showing 1-10\/\d+/u)
     expect(first).toContain('# Heading')
     expect(first).toContain('1-3 choose')
 
     panel.handleInput(KEY.down)
     const scrolled = panel.render(20).join('\n')
-    expect(scrolled).toMatch(/showing 2-11 of \d+/u)
+    expect(scrolled).toMatch(/showing 2-11\/\d+/u)
     expect(scrolled).toContain('1-3 choose')
 
     for (let page = 0; page < 10; page += 1) panel.handleInput('\x1b[6~')
@@ -212,7 +212,7 @@ describe('PlanReviewPanel rendering', () => {
     expect(frame).toContain('line 15')
     const tiny = mount(ask({ detail: LONG_DETAIL }), 12)
     const small = tiny.panel.render(60).join('\n')
-    expect(small).toContain('showing 1-6 of 15')
+    expect(small).toContain('showing 1-6/15')
     expect(small).not.toContain('line 7')
   })
 

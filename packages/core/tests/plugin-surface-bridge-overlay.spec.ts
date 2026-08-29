@@ -5,7 +5,7 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
-import type { Component } from '@earendil-works/pi-tui'
+import { stripTerminalSequences, type Component } from '@earendil-works/pi-tui'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   BluePluginHostService,
@@ -295,7 +295,12 @@ describe('plugin surface bridge overlays', () => {
       const titled = f.api.overlays!.open({ id: 'titled', title: 'Plugin details', render: () => ui.text('body') })
       expect(titled.ok).toBe(true)
       await flush()
-      expect(f.stack()[0]!.component.render(40).join('\n')).toContain('╭ Plugin details')
+      const wideRows = f.stack()[0]!.component.render(40)
+      expect(wideRows[0]).toMatch(/^╭ Plugin details ─+╮$/u)
+      expect(wideRows[1]).toMatch(/^│ body +│$/u)
+      expect(wideRows[2]).toMatch(/^╰─+╯$/u)
+      expect(wideRows.join('\n').match(/╭/gu)).toHaveLength(1)
+      expect(f.stack()[0]!.component.render(8)).toEqual(['╭ Plu ─╮', '│ body │', '╰──────╯'])
       expect(titled.ok && titled.value.refresh()).toMatchObject({ ok: true })
       await flush()
       expect(f.stack()[0]!.component.render(40).join('\n')).toContain('╭ Plugin details')
@@ -317,6 +322,61 @@ describe('plugin surface bridge overlays', () => {
       const failedRows = f.stack()[0]!.component.render(80).join('\n')
       expect(failedRows).toContain('╭ Failed result')
       expect(failedRows).toContain('title render failed')
+    } finally {
+      await f.dispose()
+    }
+  })
+
+  it('keeps a closed frame when long plugin content reaches the overlay height budget', async () => {
+    const f = await fixture(40, 10)
+    try {
+      const opened = f.api.overlays!.open({
+        id: 'bounded-frame',
+        title: 'Bounded',
+        maxHeight: 5,
+        render: () => ui.scroll(ui.stack.column(Array.from({ length: 10 }, (_, index) => ui.text(`line-${String(index)}`))), { scrollbar: true }),
+      })
+      expect(opened.ok).toBe(true)
+      await flush()
+
+      const rows = f.stack()[0]!.component.render(20)
+      expect(rows).toHaveLength(5)
+      expect(rows[0]).toMatch(/^╭ Bounded ─+╮$/u)
+      expect(rows.at(-1)).toBe('╰──────────────────╯')
+      expect(rows.slice(1, -1).map(stripTerminalSequences).every(row => /^│.*│$/u.test(row))).toBe(true)
+    } finally {
+      await f.dispose()
+    }
+  })
+
+  it('keeps a titled frame and focus stable through refresh, then restores focus on consumer unload', async () => {
+    const f = await fixture()
+    try {
+      const base: BlueFocusable = { focused: false, render: () => ['base'], invalidate: () => {} }
+      f.runtime.addChild(base)
+      f.runtime.setFocus(base)
+      const opened = await f.openCapturing({
+        id: 'framed-lifecycle',
+        title: 'Lifecycle',
+        capturing: true,
+        render: () => actionNode(),
+      })
+      expect(opened.ok).toBe(true)
+      await flush()
+      const component = f.stack()[0]!.component
+      expect((f.runtime.tui as unknown as TuiInternals).getFocusedComponent()).toBe(component)
+      expect((component as BlueFocusable).focused).toBe(true)
+      expect(component.render(20)[0]).toMatch(/^╭ Lifecycle ─+╮$/u)
+
+      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
+      await flush()
+      expect(f.stack()[0]!.component).toBe(component)
+      expect((component as BlueFocusable).focused).toBe(true)
+
+      f.consumer.dispose()
+      await flush()
+      expect(f.stack()).toHaveLength(0)
+      expect(base.focused).toBe(true)
     } finally {
       await f.dispose()
     }

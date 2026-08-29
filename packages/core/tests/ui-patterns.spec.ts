@@ -45,6 +45,9 @@ describe('private UI pattern painters', () => {
     expect(renderSurfaceTail(surface, 1, colors)).toEqual(['└'])
     expect(renderSurfaceHead(overlay, 20, colors)[0]).toContain('╭ Overlay')
     expect(renderSurfaceTail(overlay, 20, colors)[0]).toContain('╰')
+    expect(renderSurfaceHead(overlay, 8, colors)).toEqual(['╭ Ove ─╮'])
+    expect(renderSurfaceHead(overlay, 2, colors)).toEqual(['╭╮'])
+    expect(renderSurfaceHead(overlay, 1, colors)).toEqual(['╭'])
   })
 
   it('keeps tab active state separate from focus and collapses counts first', () => {
@@ -91,6 +94,8 @@ describe('private UI pattern painters', () => {
     expect(idleRows.join('\n')).toContain('detail-a')
     expect(idleRows.join('\n')).toContain('[hot]')
     expect(idleRows.join('\n')).toContain('● Alpha')
+    const alpha = idleRows.find(row => row.includes('Alpha'))!
+    expect(alpha.indexOf('[hot]')).toBeLessThan(alpha.indexOf('detail-a'))
     expect(selectedBg).not.toHaveBeenCalled()
 
     const focusedRows = renderList(node, 40, 3, { key: 'd', focused: true, marker: '|' }, tracked)

@@ -57,10 +57,18 @@ renderer-owner gap.
 
 Public overlay titles are canonical UI, not terminal metadata: the bridge wraps
 the plugin node (including bounded null/error fallbacks) in a `surface` with
-`chrome: 'overlay'` before the sole compiler boundary. Overlay width and
+`chrome: 'overlay'` before the sole compiler boundary. The canonical compiler
+owns one closed frame: it budgets borders and explicit inner padding once and
+preserves both corners at usable widths. During the 1/2-column resize transient,
+body content takes priority over frame furniture without overflow. Plugin content must not return a
+second overlay frame. Overlay width and
 explicit minimum width remain live across terminal resize; the bridge forwards
 the admitted constraint unchanged and `terminal.ts` clamps both against the
-current columns and the trusted hard maximum when pi-tui reads them.
+current columns and the trusted hard maximum when pi-tui reads them. Because
+pi-tui's overlay compositor is width-only, the private bridge wrapper switches
+to the canonical layout pass when content reaches the live height budget; this
+keeps both frame edges and nested scroll allocation inside `maxHeight` instead
+of letting the compositor slice the bottom edge.
 
 `output-recovery.ts` protects that alternate screen from Host code that writes
 directly to process stdout/stderr (the dynamic Cordis Host console is the
@@ -94,9 +102,12 @@ runtime failure without parsing painted error rows. Dry runs restore composite,
 roving, viewport, and injected-editor focus state. `focusEditor()` selects the
 one editor-control inside the shell but never takes screen focus; the outer
 interaction owner remains responsible for restoring the screen's stable focus
-delegate after an atomic provider swap.
+delegate after an atomic provider swap. A shell whose only interactive control
+is that editor delegates Tab and Shift-Tab to the stable editing engine, so
+provider chrome cannot suppress completion acceptance or an explicit completion
+request. Shells with additional controls retain composite-owned Tab roving.
 
-`src/ui-patterns.ts` is the private L2 presentation adapter used by the compiler and the editor-internal autocomplete adapter. It may paint canonical surface/tabs/list/form/actions/loader/empty/progress/divider rows with semantic palette tokens and must delegate visible-column measurement and slicing to `src/width.ts`; it is not a public subpath or an alternate admission/compiler seam. Active tabs, controlled list selection, and roving focus remain separate states. Every enabled focused list row receives the unique marker, `primary`, and a full-width `selectedBg`; semantic `detailSpans` retain their own tone/emphasis inside that focused background, while an unfocused controlled selection keeps only its persistent selection glyph/semantic foreground. Disabled selected rows use one muted layer and can never focus. At narrow widths list detail disappears before tabs/actions collapse, and the render-exit width clamp remains the final backstop. Loader frames are deterministic and own no timer.
+`src/ui-patterns.ts` is the private L2 presentation adapter used by the compiler and the editor-internal autocomplete adapter. It may paint canonical surface/tabs/list/form/actions/loader/empty/progress/divider rows with semantic palette tokens and must delegate visible-column measurement and slicing to `src/width.ts`; it is not a public subpath or an alternate admission/compiler seam. Active tabs, controlled list selection, and roving focus remain separate states. Every enabled focused list row receives the unique marker, `primary`, and a full-width `selectedBg`; semantic `detailSpans` retain their own tone/emphasis inside that focused background, while an unfocused controlled selection keeps only its persistent selection glyph/semantic foreground. Badges precede truncatable detail so state such as `← current` survives a closed overlay's inner-width budget. Disabled selected rows use one muted layer and can never focus. At narrow widths list detail disappears before tabs/actions collapse, and the render-exit width clamp remains the final backstop. Loader frames are deterministic and own no timer.
 
 The former `src/frontend-renderer.ts` conversion bridge and its `renderFrontendView`, `renderFrontendModel`, and `FrontendModelComponent` exports are physically deleted. Frontend, transcript, context, and tool producers now publish canonical `BlueUiNode` values; renderer adapters call `compileBlueUiNode` at the core boundary. Do not restore a frontend-specific converter or painter. Public `BlueView` remains the safe content-leaf subset of the canonical schema; its diff alignment, semantic paint, sanitation, and width containment still have one core owner through the canonical compiler.
 

@@ -20,14 +20,10 @@ export const overlayRequest: BlueOverlayRequest = {
   anchor: 'center',
   width: '70%',
   maxHeight: '70%',
-  render: () => ui.surface({
-    chrome: 'overlay',
-    padding: 1,
-    child: ui.stack.column([
-      ui.text('This modal was opened by an explicit Blue user gesture.'),
-      ui.text('Escape returns focus to the previous surface.', { tone: 'muted' }),
-    ], { gap: 1 }),
-  }),
+  render: () => ui.stack.column([
+    ui.text('Opened by an explicit Blue user gesture.'),
+    ui.text('Escape returns focus to the previous surface.', { tone: 'muted' }),
+  ], { gap: 1 }),
 }
 
 /** Register a command whose owner-minted gesture authorizes the modal. */
