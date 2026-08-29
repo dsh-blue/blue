@@ -1,10 +1,11 @@
 # PR #79 设计基线与 PR #77 Beta 合并手册
 
-> 状态：**Active merge and delivery control**
-> 设计 PR：[#79](https://github.com/dsh-blue/blue/pull/79)
+> 状态：**Active delivery control；R0/R1 已完成**
+> 设计 PR：[#79](https://github.com/dsh-blue/blue/pull/79)，merge commit `7f3d13a`
 > 审计基线：`master@1d0f01e`
-> PR #77 审计对象：`p2/ui-api-refactor@9a6a255`
-> 已验收运行候选：`cf8b3bd`；`9a6a255` 只记录该验收事实
+> PR #77 初始审计对象：`p2/ui-api-refactor@9a6a255`
+> PR #77 最终验收 head：`c2f9f26`；final merge commit：`f185834`
+> R1 验收记录：[自动证据与 dogfood](https://github.com/dsh-blue/blue/pull/77#issuecomment-5462288057)、[真人验收与 admin 授权](https://github.com/dsh-blue/blue/pull/77#issuecomment-5462304233)
 > 长期 API 语义：[Blue 插件 API v1 设计规范](./blue-plugin-contract-v1.md)
 > PR #77 之后的阶段出口：[Blue 插件 API v1 发布路线](./blue-plugin-api-v1-roadmap.md)
 
@@ -53,9 +54,9 @@ Website 开发手册、两类 skill 和创造模式持久包属于 PR #77 后的
 
 PR #77 已形成可保留的 implementation baseline：canonical UI/compiler、managed panes/overlays、additive status、status/editor provider runtime、editor extension runtime、split session facade、consumer lifetime fencing、legacy dock/view renderer 删除，以及独立 packed example suite。
 
-`cf8b3bd` 已完成 current/previous Harness fixtures、四条 smoke、两个专用 profile 自动 dogfood和用户 live acceptance；`9a6a255` 只把该事实写回文档。这证明 W1-W6 候选可用，但不自动证明当前 public API 适合标 Stable。
+早期候选 `cf8b3bd` 已完成 W1-W6 自动证据和 live acceptance；`9a6a255` 只把该事实写回文档。Beta hardening 后的最终 head `c2f9f26` 又完成全量 gate、current/previous Harness packed fixtures、四条 smoke、专用 profile dogfood 和新的真人验收。这些证据只证明 R1 Beta foundation 可合并，不证明 public API 适合标 Stable。
 
-合并前仍有五项安全或承诺问题：
+Beta hardening 必须关闭以下五项安全或承诺问题，`c2f9f26` 已全部关闭：
 
 1. API/host 宣称 `1.0.0`，但 schema、资源协商和生态证据尚未完成；
 2. generic `session.act` 越过领域 action ownership；
@@ -130,6 +131,8 @@ Beta hardening 形成新的 exact runtime head 后必须：
 5. 只有合并完成后才删除 `blue-<tag>` profile 和 worktree。
 6. 不在该合并动作中发布 `1.0.0`、npm Stable tag 或正式插件开发手册。
 
+完成记录（2026-08-29）：最终验收 head 为 `c2f9f26ad026d76a47d1f6679a04013937d0e977`，API/host 为 `1.0.0-beta.1`。current/previous Harness line、全量仓库 gate、15 个 package validator、packed fixtures 和四条 smoke 全绿；`blue-pr77-beta` profile 完成 40 列 `/version` 与 120 列 `/help`、`/settings` 检查，修正后的运行均 exit 0、bracketed-paste 开关各一次，且无 width、fatal、overflow 或 crash。一次早期自动化因 dialog focus 提交了 `uit`，以 exit 130 终止并从通过证据排除，修正后重跑通过。用户随后对该 exact head 明确验收并授权 admin override。PR #77 以 Beta foundation merge commit `f185834293fe6c16eac29aff489224bc0af8c9fd` 合入；merge tree 与验收 head 完全相同。主 checkout 已快进并重新执行 `pnpm run build`、`pnpm run check:lib`（87 claims）通过。此记录不表示 npm 发布、protocol `1.0.0` 或 Stable capability 发布。
+
 ## 5. Review PR #77 时如何理解内部术语
 
 - **control-plane authority**：Blue 官方 owner 用来接管 capability、读取完整注册表、创建 gesture 或执行关闭等管理动作的内部权限。普通插件只能获得自己获准的数据和注册接口。
@@ -174,4 +177,4 @@ Beta hardening 形成新的 exact runtime head 后必须：
 
 ## 8. 归档条件
 
-PR #77 合并后，本手册继续作为 P1-P9 的执行入口，并更新 PR #77 final merge commit。协议 `1.0.0` 和对应 artifacts 实际发布后，才把本手册移入 `docs/history/`；归档必须记录协议 tag、Blue product version、Harness lines、schema/API URL、最终 profile 和人工验收。
+PR #77 已合并，其 final merge commit 记录在 4.4；本手册继续作为 P1-P9 的执行入口。协议 `1.0.0` 和对应 artifacts 实际发布后，才把本手册移入 `docs/history/`；归档必须记录协议 tag、Blue product version、Harness lines、schema/API URL、最终 profile 和人工验收。
