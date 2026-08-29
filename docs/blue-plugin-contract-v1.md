@@ -125,6 +125,8 @@ if (!parsed.ok) return
 const opened = ctx.bluePluginHost.open(ctx, parsed.value)
 ```
 
+上述“导入同一 JSON”规则适用于持久化、可安装的 Blue plugin entry。创造模式中的动态 `code.host` 是 process-local、重启即消失的 authoring prototype，不是第四种 `form`，也不能宣称通过 v1 conformance。它 MAY 使用由同一 schema 与 capability catalog 生成、经同一 capability-request validator 接纳的 authoring-only transient request；creative host 为它分配临时身份，该请求不能声明 package `entry`、`form` 或 installer receipt。这不豁免 capability admission、owner isolation 或 Stable/Experimental 规则。用户确认持久化后，工具链 MUST 选择真实 `form` 和 package identity，生成 `blue.plugin.json`，让 entry 解析该文件并重新执行 package、validator 与 packed fixture 门禁，不能把原型请求复制成第二份 manifest 真相。
+
 ## 4. Capability 协商
 
 目标公共形状：
@@ -327,8 +329,10 @@ Manifest/schema 错误有独立、稳定的 validation code。validator、instal
 7. 从 `npm pack` tarball 在独立临时项目安装、只走 public exports 的 fixture；
 8. 当前和上一受支持 Harness exact line 的一致结果；
 9. package exports/files/tsdown、bundle composition、真实 profile 和人工验收证据；
-10. 中英文开发者文档、迁移说明和已更新的开发/迁移/fixture/validation skills。
+10. 中英文开发者文档、迁移说明、已更新的开发/迁移/fixture/validation skills，以及能用同一机器契约产出并验证 v1 插件的 Blue 创造模式。
 
 Fixture 报告的 `declared` 与 `executed` 必须完全相等，`skipped` 和 `failures` 必须为空。自动门禁不能替代需要真人判断的 profile 验收。
+
+创造模式是 schema、catalog、public API、scaffold、validator 与 conformance kit 的官方端到端消费者。它的发布证据 MUST 穿过“transient prototype -> 用户确认 -> 持久化 package -> shared validator -> current/previous Harness packed install”；persona、skills 或模板不得维护独立的 capability/version 名单，也不得通过 raw owner service 让旧接口继续存活。
 
 本文是长期协议真相；实现进度不写在这里。PR #77 的差异和 owner 状态由收敛矩阵维护，交付顺序由 v1 roadmap 维护。

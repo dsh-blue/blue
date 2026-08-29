@@ -2,7 +2,7 @@
 
 > 状态：**Active roadmap**
 > 起点：目标契约通过评审，PR #77 以 `1.0.0-beta.1` foundation 合并
-> 终点：`BLUE_API_VERSION 1.0.0`、机器契约、真实 owner、生态 fixture、skills 和中英文文档共同发布
+> 终点：`BLUE_API_VERSION 1.0.0`、机器契约、真实 owner、生态 fixture、skills、可开发 v1 插件的创造模式和中英文文档共同发布
 > 目标契约：[blue-plugin-contract-v1.md](./blue-plugin-contract-v1.md)
 > #77 控制矩阵：[blue-pr77-convergence-matrix.md](./blue-pr77-convergence-matrix.md)
 
@@ -18,6 +18,7 @@
 - public data plane 与 bundle-owned control plane 的权限隔离；
 - synthetic conformance kit 和三种插件形态的真实生态 fixture；
 - 更新后的 plugin-development、plugin-migration、plugin-fixture、plugin-validation skills；
+- 能从会话原型生成、校验并 packed-install v1 插件的 Blue 创造模式；
 - 中英文 manifest、capability、quickstart、migration、testing 和 API reference；
 - 当前/上一 Harness line、packed install、真实 profile 和人工验收证据。
 
@@ -31,7 +32,7 @@
   -> negotiated public host / owner authority
   -> Stable capability owners
   -> synthetic + ecosystem fixtures
-  -> skills
+  -> skills + 创造模式 authoring pipeline
   -> bilingual developer docs
   -> API 1.0.0 release
 ```
@@ -57,7 +58,7 @@ Fixture 与实现按 capability 同步增加；“fixture 阶段”是关闭跨�
 
 ### 实施
 
-截至审计 head `c9e1600`，#77 已完成可保留的 implementation baseline：canonical UI/compiler、panes/overlays、status/status provider、editor extension/provider、split session facade/app owner、consumer lifetime fencing、legacy dock/frontend renderer 删除、六个 runnable examples 与 user kit，以及 checkpoint 化的 current/previous Harness packed 证据。当前 CI 机械复跑 examples，W6-4 在 final head 手工补跑选定 package fixtures；status/editor provider 与 editor extensions 仍须 final-head 重跑。这些都是后续收敛的 seed，不是 Stable v1 结论。
+截至审计 head `c89c714`，#77 已完成可保留的 implementation baseline：canonical UI/compiler、panes/overlays、status/status provider、editor extension/provider、split session facade/app owner、consumer lifetime fencing、legacy dock/frontend renderer 删除，以及由 user kit、六个 runnable plugins 和 composition 组成的八包 example suite。最终候选的 current/previous Harness package fixtures、四条 smoke 和专用 profile自动 dogfood均已刷新；`c89c714` 在直接父提交 `3f0e42b` 上只增加“examples 不进入默认 composition”的 guard。它们是后续收敛的 seed，不是 Stable v1 结论；真人 live acceptance仍 pending。
 
 1. 将 #77 rebase/merge 本规范，按最新 head 重跑矩阵并更新 PR body 的 scope、数字和剩余门禁。
 2. 保留上述成熟 runtime；权限和命名收敛不得退回旧 renderer、dock 或未隔离 session facade。
@@ -75,7 +76,7 @@ Fixture 与实现按 capability 同步增加；“fixture 阶段”是关闭跨�
 - `smoke:pty` 与专用 worktree profile 完成 default、120/80/40 列、pane/overlay、status/editor provider、theme/session swap 和 editor input/completion/submit dogfood。
 - 用户明确 live-test 验收后才合并；合并不等于 API v1 发布。
 
-仓内 examples 只算 Beta/reference packed-distribution 基线：它们仍使用 flat `capabilities[]`、内部文件 `entry`，没有 `form`、required/optional/resources，也不是独立生态消费者，不能提前关闭 R2/R6 或 Stable capability 门禁。
+仓内八包 suite 只算 Beta/reference packed-distribution 基线：六个 runnable plugins 仍使用 flat `capabilities[]`、内部文件 `entry`，没有 `form`、required/optional/resources；user kit 和 composition 也不是第四种 form或独立生态消费者，不能提前关闭 R2/R6 或 Stable capability 门禁。
 
 ## 4. R2：JSON Schema 与 manifest toolchain
 
@@ -225,7 +226,7 @@ fixtureCleaned == true
 
 统一的是场景词表和 capability -> required scenarios 映射，不要求无关 fixture 假跑不适用场景。词表包含 manifest negotiation、resource denial、projection replay/resume、action abort/stale、provider swap/fallback、unload/reload、late callback、20/40/80/120 width、bundle composition、当前/上一 Harness exact line；每个 fixture 的全部 declared/applicable 场景必须执行，`skipped` 仍为空。
 
-#77 的六个 executable examples 继续作为 Beta/reference distribution corpus，但它们仍是 flat `capabilities[]`，没有 `form`、required/optional/resources negotiation，也不是独立生态 package。R6 必须将其迁到目标 schema，并另用真实外部 package 关闭三种 form 与独立消费者门禁；仓内 `blue-user-kit` 组件库和 `blue-ecosystem` composition bundle都不构成第四种 form。
+#77 的六个 executable plugin examples 继续作为 Beta/reference distribution corpus；连同 `blue-user-kit` 和 `blue-ecosystem` composition 是八包 suite。六个 entry 仍是 flat `capabilities[]`，没有 `form`、required/optional/resources negotiation，也不是独立生态 package。R6 必须将其迁到目标 schema，并另用真实外部 package 关闭三种 form 与独立消费者门禁；组件库和 composition bundle都不构成第四种 form。
 
 ### 三形态候选与证据等级
 
@@ -271,7 +272,7 @@ dsh-market 不作为 v1 阻断 fixture。在审计基线 [`d5902420b175`](https:
 
 合作前置是 dsh-market 抽出 typed/versioned renderer-neutral Cordis service/controller，至少覆盖 catalog/search、installed/check、install/update/uninstall/toggle、operation progress/cancel/rollback；同时固定 error taxonomy、policy/authorization 和 lifecycle。Service mutation 接受 AbortSignal、profile scope 和 dsh-market 自己的 authorization context，并由 dsh-market Fiber 持有恢复与 restart 策略；Blue adapter 在调用前消费 Blue user gesture，不能把 Blue token 泄漏进 domain service。Blue 只用 `commands` / `panes` / `overlays` / `notifications.publish` 呈现，成为第一个非 Web consumer。现有 beta Update API 可做受限 update-status pilot，但不能被描述为完整 market 集成。Agent Teams、Browser 等同样作为后续 capability discovery，不阻塞 1.0。
 
-## 9. R7：Skills 与开发者文档
+## 9. R7：Skills、创造模式与开发者文档
 
 Skills 在 API 和 fixture 稳定后更新，避免教会开发者一套过期接口。
 
@@ -284,6 +285,35 @@ Skills 在 API 和 fixture 稳定后更新，避免教会开发者一套过期�
 
 每个 skill 至少有 integrated、adapter、pure-ui 和 zero-API 四类 eval；输出引用生成的 capability catalog，不内嵌名字副本。
 
+### 创造模式 authoring pipeline
+
+现有 `cordis` preset、creative isolate 和真实 `cordis_define/run/update/stop/rollback` e2e作为动态原型底座保留。它们当前仍教授 flat manifest、`^1.0.0`、`session.act`、notification observe与旧 identity，而且测试只验证 skill discovery和动态 runner生命周期，没有执行 bundled skills、生成持久包或运行 packed fixture。R7 必须把创造模式升级为 v1 插件开发入口和 official consumer，而不是增加第四种 plugin form。
+
+目标流程为：
+
+```text
+需求与 zero-API 判断
+  -> inspect + 加载 bundled cordis-plugin-development
+  -> host-minted transient capability request + 动态原型
+  -> 当前会话 UI 验收
+  -> 用户选择 ephemeral / local / GitHub / npm
+  -> 加载 bundled blue-plugin-development
+  -> 生成 v1 package
+  -> shared validator
+  -> current/previous Harness packed fixture
+```
+
+具体交付要求：
+
+1. preset persona、bundled `cordis-plugin-development` / `blue-plugin-development`、仓内四项 plugin skills和中英文文档直接消费发布的 schema、generated capability catalog、TypeScript API与模板；不得复制 capability/version名单。
+2. 动态 `code.host` 使用由同一机器契约生成并经 host校验的 authoring-only transient capability request；creative host分配临时 identity，请求不能伪造 package `entry`、`form` 或 installer receipt。它只能消费获准的 Stable facet和 optional Experimental facet，不能通过 raw Agent/Session、owner registry、`session.act` 或 notification observe延续旧 API。transient prototype不是可发布 entry，也不算一种 form。
+3. 持久化前先判断 zero-API；确需 Blue entry时必须选择 `integrated | adapter | pure-ui`。三种 scaffold分别落实 headless domain/UI scope分离、上游公开 service inject与 adapter删除条件、无 domain dependency，并生成 required/optional/resources、grants检查和逐能力 fallback。
+4. 用户确认前不得写 package、仓库或发布物。确认后生成 `package.json.blue.manifest` pointer、`blue.plugin.json`、public exports/files、Cordis entry和 composition；entry解析同一 JSON，不能保留原型 inline manifest作为第二真相。
+5. 发布一个可在 workspace外直接调用的 versioned scaffold/validator/conformance kit；不能要求插件作者 clone Blue，也不能让 fixture因包不在当前 pnpm workspace而拒绝。生成后自动进入修复循环，直至 validator和双 Harness线 packed fixture均通过且无 skip。
+6. integrated、adapter、pure-ui、zero-API各有 skill eval；negative eval覆盖 HTTP-only业务 closure、raw Agent/Session、被拒绝 capability、Experimental放 required、无 fallback和多余授权。
+
+创造模式门禁必须检查 schema -> generated TS -> runtime validator -> installer -> capability catalog -> templates -> skills/docs 的生成漂移，以及 API/schema/skill/template version stamp一致。preset、skills和模板中回流 flat `capabilities: []`、generic `session.act`、普通 `notifications.subscribe`、旧 identity/entry示例时 CI直接失败。bundle/authoring-kit tarball必须实际携带并可解析其承诺的 schema、catalog、templates和工具。
+
 开发者文档最后生成并保持中文源、英文镜像：
 
 - concepts：三种 form 与四种架构职责；
@@ -294,7 +324,7 @@ Skills 在 API 和 fixture 稳定后更新，避免教会开发者一套过期�
 - testing：validator、packed fixture、previous Harness、width/profile/human gate；
 - API reference：TS declaration、schema URL、error taxonomy 和版本政策。
 
-所有教程样例本身进入 packed fixture。网站 build、链接、中文/英文结构 parity 和 catalog drift 是 CI gate。
+所有教程样例本身进入 packed fixture。网站 build、链接、中文/英文结构 parity、catalog drift 和 creative-mode 教程/模板 drift 是 CI gate。
 
 完成后归档 `blue-api-design.md`、PR #77 的 UI blueprint 和已结束的 frontend-runtime cutover 套件；保留 `blue-frontend-architecture.md` 作为原则、package AGENTS 作为当前实现。归档移动单独提交，统一修复根 AGENTS、`CODEX-IMPLEMENTATION-GUIDE.md` 和 docs links。
 
@@ -306,14 +336,15 @@ Skills 在 API 和 fixture 稳定后更新，避免教会开发者一套过期�
 2. Stable capability catalog 每项 owner/consumer/fallback/fixture complete；
 3. API declaration report 确认 root 无 Experimental/Deferred/control-plane 泄漏；
 4. 三种 form 各至少一个 Stable 生态 fixture、Stable catalog 的逐项证据和 Modlens zero-API negative fixture 在 current/previous Harness line green；候选表中 Experimental/Deferred/blocked 项不计作未完成 blocker；
-5. skills eval 与中英开发者文档 green；
-6. 全仓 test、coverage、typecheck、lint、build、check:lib、check:pack、diagrams、website build 和 smoke green；
-7. 独立 `blue-<tag>` profile 覆盖 install、unload/reload、provider/theme/session swap、120/80/40 列和首批 POC；
-8. 用户 live-test 并明确验收；
-9. 将 API/host version 从 `1.0.0-beta.1` 改为 `1.0.0`，发布 schema stable URL、packages 和 migration notes；
-10. 从 registry 新建干净 profile 做 install smoke，记录 exact artifacts/Harness line。
+5. 四类 skills eval、创造模式生成门禁与中英开发者文档 green；
+6. 创造模式 full e2e 使用实际 bundled `cordis` preset和 bundled skills完成 inspect -> transient prototype -> UI可见 -> 用户确认 -> 生成包 -> shared validator -> `npm pack` -> current/previous Harness独立安装 -> boot/render -> unload/reload；确认前无持久化写入，报告满足 `declared == executed`、`skipped == []`、cleanup成功；
+7. 全仓 test、coverage、typecheck、lint、build、check:lib、check:pack、diagrams、website build 和 smoke green；
+8. 独立 `blue-<tag>` profile 覆盖 install、unload/reload、provider/theme/session swap、120/80/40 列、首批 POC和至少一次真人创造模式原型到本地包流程；
+9. 用户 live-test 并明确验收；
+10. 将 API/host version 从 `1.0.0-beta.1` 改为 `1.0.0`，发布 schema stable URL、packages 和 migration notes；
+11. 从 registry 新建干净 profile 做 install smoke，记录 exact artifacts/Harness line。
 
-任何 skipped fixture、任一已声明 Stable capability 缺少真实 owner、只有 Web route 的业务 API、缺失上一 Harness line、缺失人工验收都阻止 `1.0.0`。Blue 产品 release 仍可保持 `0.x`，不需要为了协议 v1 人为提升产品 major。
+任何 skipped fixture、任一已声明 Stable capability缺少真实 owner、只有 Web route的业务 API、创造模式仍生成旧协议或不能完成持久包双线验证、缺失上一 Harness line、缺失人工验收都阻止 `1.0.0`。Blue 产品 release仍可保持 `0.x`，不需要为了协议 v1人为提升产品 major。
 
 ## 11. 工作方式
 
