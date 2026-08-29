@@ -76,10 +76,10 @@ Every package entry is a Cordis plugin: it exports `name`, optionally `inject`, 
 
 ## Frontend Runtime 重构契约
 
-新架构开发主线为 p2/frontend-runtime，目标架构和阶段计划分别见 docs/blue-frontend-architecture.md 与 docs/blue-implementation-plan.md。以下契约适用于该分支及其后续合并：
+当前实现事实与包边界见 `docs/blue-architecture.md`、`docs/blue-seams.md` 和各包 `AGENTS.md`；插件 v1 的规范性目标见 `docs/blue-plugin-contract-v1.md`；PR #79 发布边界、PR #77 合并 runbook 与后续独立 PR 队列见 `docs/blue-pr77-convergence-matrix.md`，阶段出口见 `docs/blue-plugin-api-v1-roadmap.md`。PR #79 是 docs-only 设计基线，不发布 runtime、npm package、Website v1 可用性或作者 skill。以下纪律适用于当前主线及后续变更：
 
 - **依赖方向**：Harness domain -> Blue frontend runtime -> renderer adapter；Domain 插件不得依赖 Blue，只有 core 接触 pi-tui/raw terminal。
-- **插件分类**：Domain、Interaction、Renderer、Composition 分开；官方包可暂时同仓，但契约、scope 和 Fiber ownership 不混合。
+- **架构职责**：Domain、Interaction、Renderer、Composition 分开；官方包可暂时同仓，但契约、scope 和 Fiber ownership 不混合。它们不等于 manifest 的 `integrated | adapter | pure-ui` 三种 form。
 - **兼容 adapter**：必须是独立、窄化、按能力拆分的 Cordis 插件；只转换官方 API、集中 capability probing 和版本差异；不得暴露 Agent/Session、复制业务状态或 import package-internal；每个 adapter 必须记录删除条件。
 - **状态边界**：事件表示已发生事实，projection 表示当前状态，action 表示带结果的写请求；UI 不直接折叠 Harness session events，也不保存第二套 Agent 真相。
 - **作用域**：host、agent、session、frontend tree 和 provider Fiber 的状态不能越界；产品级可变状态禁止 module singleton；renderer object 不得进入 domain/session service。
@@ -87,7 +87,7 @@ Every package entry is a Cordis plugin: it exports `name`, optionally `inject`, 
 - **热插拔**：host 持续存活，provider 按 capture -> abort -> dispose -> activate -> restore 替换；激活失败回退 plain provider，不得影响 Agent loop。
 - **新功能接入**：Harness 新能力以 adapter + feature plugin + bundle row + fixture additive 接入；不得把旧架构 UI 直接搬回主线。
 - **验证门禁**：新 surface 必须有官方 consumer、headless fixture、unload/swap、replay/late-result、width-scan、bundle composition 和真实 profile dogfood。
-- **主线同步**：p2/frontend-runtime 定期同步 master；master 的必要 bugfix/Harness bump 直接吸收，旧 Blue UI 功能按新架构重做。
+- **真相分层**：当前代码描述现状，v1 contract 描述目标，matrix/roadmap 描述尚未完成的收敛工作；未通过门禁的 surface 不得写成已发布 Stable。
 
 现有实现文档描述的是当前代码；当新 runtime 尚未迁移某个 surface 时，不得把目标契约写成已落地服务。
 
