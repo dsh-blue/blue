@@ -171,6 +171,12 @@
 
 ### D25. chrome 辅助层：core 纯模块 + 子路径导出，不经 blueComponents 服务
 
+> **W4 取代（2026-08-29）：**本节保留 S11-S17 的历史裁决背景，但公共
+> `@dsh-blue/blue-core/chrome` 子路径已在 W4 删除。`src/chrome.ts` 现为
+> core-private；跨包的通用宽度操作只经 `BlueComponents`，BTW 所需顶边框
+> 收窄为 `BlueComponents.topRule`。现行契约见
+> `packages/core/AGENTS.md` 的 Shared chrome layer。
+
 - **背景**：圆角编辑框（`withSideBorders`）、边框内标题（`topRule`）、对话框框架（`framePanel`）、提示符/幽灵提示注入等全部是纯 `string[]` 绘制，kimi 侧为应用层函数（`custom-editor.ts` 等）；需要宽度函数但不需要 pi-tui 组件机制。
 - **决策**：core 新增 `src/chrome.ts`，子路径导出 `@dsh-blue/blue-core/chrome`，接收色函数参数的主题无关纯函数集；`EditorAdapter.render()`（components.ts）做编辑框后处理（kimi `CustomEditor.render` 的镜像位，无需子类化 pi-tui）；`BlueEditor` 契约增 `setPromptSymbol`/`setBorderLabel`/`setConnectedAbove`/`setGhostHint`。
 - **理由**：走 blueComponents 服务会让绘制函数背上服务生命周期；放 interaction/transcript 会重复实现或走私 pi-tui 依赖（违反 D4/L0 唯一适配纪律）；子路径导出与主题插件族先例一致。明确拒绝移植 kimi 的 `GutterContainer`（pi-tui Container 子类，类型越界），以纯 `padColumns` 等价（S13 实测决定启用与否）。

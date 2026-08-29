@@ -116,6 +116,7 @@ export type {
   BlueSettingsListOptions,
   BlueTerminalInfo,
   BlueTheme,
+  BlueTopRuleOptions,
 } from './types.ts'
 
 /** Stable Cordis plugin name. */

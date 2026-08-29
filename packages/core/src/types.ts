@@ -752,6 +752,20 @@ export interface BlueFuzzyMatch {
   score: number
 }
 
+/** Renderer-owned options for the bounded top rule used by connected panes. */
+export interface BlueTopRuleOptions {
+  /** Optional title placed immediately after the opening corner. */
+  readonly title?: string
+  /** Optional title paint applied before clipping. */
+  readonly titlePaint?: BlueColorFn
+  /** Optional hint joined to the title with a rule segment. */
+  readonly hint?: string
+  /** Optional hint paint applied before clipping. */
+  readonly hintPaint?: BlueColorFn
+  /** Optional paint for the border corners, rule, and title/hint joiner. */
+  readonly paint?: BlueColorFn
+}
+
 /**
  * `ctx.blueComponents` — the component factory. Blue-typed options in,
  * Blue-typed components out; the semantic color table is mapped to the
@@ -836,6 +850,13 @@ export interface BlueComponents {
    * @returns the truncated text.
    */
   truncateToWidth(text: string, width: number, ellipsis?: string): string
+  /**
+   * Render a full-width top rule for a connected renderer-owned pane.
+   * @param width - the target visible width.
+   * @param options - optional title, hint, and paint functions.
+   * @returns the ANSI-safe rule row.
+   */
+  topRule(width: number, options?: BlueTopRuleOptions): string
   /**
    * Probe a case-insensitive fuzzy subsequence match (the S14 completion
    * primitive). Lower scores rank better; boundaries and consecutive runs

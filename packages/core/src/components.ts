@@ -38,6 +38,7 @@ import {
   injectGhostHint,
   injectPromptSymbol,
   padColumns,
+  topRule as renderTopRule,
   withSideBorders,
 } from './chrome.ts'
 import { WrappingSelectList } from './wrapping-select-list.ts'
@@ -60,6 +61,7 @@ import type {
   BlueSettingsList,
   BlueSettingsListOptions,
   BlueTheme,
+  BlueTopRuleOptions,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -814,6 +816,16 @@ export class BlueComponentsService extends Service implements BlueComponents {
    */
   truncateToWidth(text: string, width: number, ellipsis?: string): string {
     return truncateToWidth(text, width, ellipsis)
+  }
+
+  /**
+   * Render the bounded top rule used by connected renderer-owned panes.
+   * @param width - the target visible width.
+   * @param options - optional title, hint, and paint functions.
+   * @returns the ANSI-safe rule row.
+   */
+  topRule(width: number, options?: BlueTopRuleOptions): string {
+    return renderTopRule(width, options)
   }
 
   /**

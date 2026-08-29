@@ -136,13 +136,19 @@ The `blueTheme` contract lives in `src/types.ts`; implementations ship as four s
 
 ## Shared chrome layer (D25)
 
-The pure `src/chrome.ts` — re-exported as the transitional `./chrome` subpath, theme-agnostic functions over `string[]` rows. Interaction and transcript still consume it directly; delete the subpath only after those W4 migrations express the remaining frames as canonical UI and move all three subpath manifest arms together:
+The pure, core-private `src/chrome.ts` contains theme-agnostic functions over `string[]` rows. It has no package subpath: core components use it internally, generic renderer-adapter row clamps call `BlueComponents.truncateToWidth`, and the connected-pane top rule travels through the narrow `BlueComponents.topRule` method. This keeps ANSI and terminal-width algorithms behind the sole L0 adapter:
+
+`tests/business-rendering-drift.spec.ts` recursively scans every non-core
+package source tree. Imports of core-private renderer helpers, local display-
+width implementations, and unreviewed pointer/border/padding assembly fail the
+G4 gate; its small counted baseline names the remaining audited presentation
+adapters so any addition requires an explicit ownership review.
 
 - `EditorAdapter.render` post-processes the editor into a rounded box (`withSideBorders`/`injectPromptSymbol`, the kimi port: rules stripped and repainted through the live `borderColor` property so host `setBorderColor` recolors the whole frame, `│` bars overlaid only on literal outer spaces, labels never entering scroll indicators). `BlueEditor` exposes `setPromptSymbol('>' | '!' | undefined)` / `setBorderLabel(text)` / `setConnectedAbove(bool)` / `setGhostHint(…)`. When connected above, the adapter renders at the dock's `width - 2` inner budget and restores the shared left gutter, aligning both side borders with the pane above. The editor theme's default border is the neutral `border` token; slash/bash contexts carry the color.
 - `framePanel(body, width, opts)` is a transitional editor-frame helper only. Canonical interaction surfaces compile through `ui-compiler.ts`; below `FRAME_DEGENERATE_WIDTH` (8), remaining legacy callers still cut fixed furniture to the viewport.
-- `clampRowsToWidth(rows, width, truncate)` (D48) is the component-level width backstop: every hand-assembled frame passes through it after assembly (fits return untouched). `src/frame-clamp.ts` holds the render-exit backstop itself (`clampFrame` + the deduplicating `blue-overflow.log` sink wired into terminal.ts's render wrapper), and `src/width.ts` is the tree's single re-export seam for pi-tui's width utilities (runtime consumers reach them through the components service or this module — no other package names pi-tui).
+- `clampRowsToWidth(rows, width, truncate)` (D48) is core's component-level width backstop (fits return untouched). Cross-package renderer adapters map assembled rows through `BlueComponents.truncateToWidth`. `src/frame-clamp.ts` holds the render-exit backstop itself (`clampFrame` + the deduplicating `blue-overflow.log` sink wired into terminal.ts's render wrapper), and `src/width.ts` is the tree's single re-export seam for pi-tui's width utilities (runtime consumers reach them through the components service — no other package names pi-tui).
 - `hintRow(parts, paint)` joins key-hint parts with ` · `.
-- `topRule(width, {title, titlePaint, hint, hintPaint, paint})` renders the kimi in-border title row `╭ BTW ─ Esc close ────╮` — the `─ ` joiner appears only when both a title and a hint are present; the composite clips ANSI-safe (pi-tui's empty-ellipsis truncation appends a closing `\x1b[0m`, a protective reset) and the dash fill takes the remainder.
+- `topRule(width, {title, titlePaint, hint, hintPaint, paint})` renders the kimi in-border title row `╭ BTW ─ Esc close ────╮` behind `BlueComponents.topRule` — the `─ ` joiner appears only when both a title and a hint are present; the composite clips ANSI-safe (pi-tui's empty-ellipsis truncation appends a closing `\x1b[0m`, a protective reset) and the dash fill takes the remainder.
 - `padColumns(lines, n)` is the pure gutter equivalent of kimi's `GutterContainer`.
 - `injectGhostHint` splices the dimmed hint after the inverse-video cursor, consuming trailing padding so the row width holds, ellipsizing on overflow, and leaving mid-text cursors untouched (`setGhostHint`'s first consumer).
 - `highlightLeadingSlashToken` re-paints the leading `/command` token through visible-index math so ANSI pass-through survives (bold `primary` at the call site).

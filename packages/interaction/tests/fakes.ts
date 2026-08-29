@@ -12,6 +12,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 // green in tests while tripping the real width guard. Fakes now delegate to
 // the same implementations the renderer runs.
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '../../core/src/width.ts'
+import { topRule } from '../../core/src/chrome.ts'
 import type {
   BlueAutocompleteItem,
   BlueAutocompleteProvider,
@@ -679,6 +680,10 @@ export class FakeBlueComponents implements BlueComponents {
 
   truncateToWidth(text: string, width: number, ellipsis?: string): string {
     return truncateToWidth(text, width, ellipsis)
+  }
+
+  topRule(width: number, options?: Parameters<BlueComponents['topRule']>[1]): string {
+    return topRule(width, options)
   }
 
   /**

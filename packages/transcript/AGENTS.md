@@ -30,7 +30,7 @@ Reads and searches group at this projection-consumer layer (one family per run �
 
 ## Components And Width
 
-User, assistant, thinking, tool, error, and interruption models reuse the package components. The interruption tombstone is the text-presentation `■ interrupted` row in the theme error color, without an emoji marker. Image bytes remain renderer-owned and late-bound through the attachment store. Every assembled row must fit the width passed to `render(width)`; use `blueComponents` width helpers or `@dsh-blue/blue-core/chrome`, never local codepoint counting. Add every content renderer to `tests/width-scan.spec.ts`.
+User, assistant, thinking, tool, error, and interruption models reuse the package components. The interruption tombstone is the text-presentation `■ interrupted` row in the theme error color, without an emoji marker. Image bytes remain renderer-owned and late-bound through the attachment store. Every assembled row must fit the width passed to `render(width)`; use `blueComponents` width helpers, never local codepoint counting or core-private chrome imports. The BTW top rule travels through the narrow `BlueComponents.topRule` renderer operation. Add every content renderer to `tests/width-scan.spec.ts`.
 
 ## Canonical Status Footer
 
@@ -100,6 +100,11 @@ Five accepted renderer adapters preserve behavior that the frozen W1 vocabulary 
 - agents: the detailed live-agent card; delete when a canonical agent-card node covers its status/detail layout.
 - BTW: markdown, connected-border splice, scrolling, and high-water behavior; delete when canonical surfaces expose those four behaviors together.
 - queue (owned by interaction): one-line semantic color split with exact truncation; delete when canonical inline layout reproduces its label/content paint and truncation.
+
+`tests/width-scan.spec.ts` drives an accepted adapter through the actual
+`BlueBottomPaneService` mount, adapter clamp, and gutter path for every shared
+`ADVERSARIAL x SCAN_WIDTHS` case. Adapter-specific unit tests do not replace
+this registry-level width gate.
 
 BTW calls `blueSessionActions.createSideSession()`, holds the returned owned handle for one pane lifetime, reads its official `blueConversation` projection through the opaque identity, and disposes the handle on close/unload. A new question replaces the visible turn before async creation begins; the fork snapshot `asOfSeq` (and a fresh snapshot for each continuation) separates inherited assistant history from replies created after that question. Its interactive dock model uses priority 100 so it receives scarce rows before passive agents/todo/queue panes. Its renderer has no trailing spacer: the gutter-wrapped pane side borders meet the connected editor's `├┤` row directly. Parent seeding and Agent status filtering remain in app.
 

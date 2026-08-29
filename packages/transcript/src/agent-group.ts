@@ -28,7 +28,6 @@
  */
 
 import type { BlueComponent, BlueComponents, BlueSemanticColors } from '@dsh-blue/blue-core'
-import { clampRowsToWidth } from '@dsh-blue/blue-core/chrome'
 import { ellipsize } from './present.ts'
 import type { TranscriptToolItem } from './types.ts'
 
@@ -416,7 +415,7 @@ export class AgentGroupComponent implements BlueComponent {
       const second = this.secondLine(snapshot, isLast, width)
       if (second !== undefined) lines.push(second)
     })
-    const clamped = clampRowsToWidth(lines, width, text => this.components.truncateToWidth(text, width))
+    const clamped = lines.map(text => this.components.truncateToWidth(text, width))
     this.cache = { key, lines: clamped }
     this.ensureTick(anyNonTerminal)
     return clamped

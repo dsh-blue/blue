@@ -1043,6 +1043,7 @@ describe('width helpers', () => {
     expect(components.wrapText(styled, 5)).toEqual(wrapTextWithAnsi(styled, 5))
     expect(components.truncateToWidth(styled, 8)).toBe(piTruncateToWidth(styled, 8))
     expect(components.truncateToWidth(styled, 8, '…')).toBe(piTruncateToWidth(styled, 8, '…'))
+    expect(components.topRule(12, { title: ' t ', hint: ' h ' })).toBe('╭ t ─  h ──╮')
     stop()
   })
 })

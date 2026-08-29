@@ -41,10 +41,6 @@
       "types": "./lib/types/theme-paper.d.ts",
       "default": "./lib/theme-paper.js"
     },
-    "./chrome": {
-      "types": "./lib/types/chrome.d.ts",
-      "default": "./lib/chrome.js"
-    },
     "./package.json": "./package.json"
   },
   "files": [

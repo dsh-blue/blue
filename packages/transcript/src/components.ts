@@ -19,7 +19,6 @@ import type {
   BlueMarkdown,
   BlueSemanticColors,
 } from '@dsh-blue/blue-core'
-import { clampRowsToWidth } from '@dsh-blue/blue-core/chrome'
 import { extractKeyArgument, isPlanDecline, KEY_ARG_MAX_CHARS } from './present.ts'
 import { summarizeToolText } from './envelope.ts'
 import {
@@ -240,7 +239,7 @@ export class UserMessageComponent implements BlueComponent {
     }
     // The bullet can out wide a degenerate viewport (a resize drag crossing
     // three columns); every assembled row passes the width backstop.
-    lines = clampRowsToWidth(lines, width, text => this.components.truncateToWidth(text, width))
+    lines = lines.map(text => this.components.truncateToWidth(text, width))
     this.cache = { key, lines }
     return lines
   }
@@ -303,7 +302,7 @@ export class AssistantMessageComponent implements BlueComponent {
       lines.push(...content.map((line, index) =>
         (index === 0 ? this.colors.text(STATUS_BULLET) : MESSAGE_INDENT) + line))
     }
-    const clamped = clampRowsToWidth(lines, width, text => this.components.truncateToWidth(text, width))
+    const clamped = lines.map(text => this.components.truncateToWidth(text, width))
     this.cache = { key, lines: clamped }
     return clamped
   }

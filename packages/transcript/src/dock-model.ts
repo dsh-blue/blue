@@ -9,7 +9,6 @@
 import { Service, type Context } from '@deepseek-ai/cordis'
 import type { BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
 import { compileBlueUiNode, GutterComponent, mountDockChild, type BlueComponent, type BlueComponents, type BlueScreen, type BlueSemanticColors } from '@dsh-blue/blue-core'
-import { clampRowsToWidth } from '@dsh-blue/blue-core/chrome'
 
 declare module '@deepseek-ai/cordis' {
   interface Context { blueBottomPanes: BlueBottomPaneService }
@@ -74,11 +73,8 @@ class BottomPaneComponent implements BlueComponent {
     if (model === null || model.collapsed) return []
     if (this.adapter !== undefined) {
       try {
-        const rows = clampRowsToWidth(
-          this.adapter(model, width),
-          width,
-          (text, target) => this.options.components.truncateToWidth(text, target),
-        )
+        const rows = this.adapter(model, width)
+          .map(row => this.options.components.truncateToWidth(row, width))
         return this.limitRows(rows, model.preferredRows)
       } catch {
         model = failedNode(model)

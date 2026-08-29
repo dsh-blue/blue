@@ -41,7 +41,6 @@ import {
   type BlueSemanticColors,
 } from '@dsh-blue/blue-core'
 import type { BlueBottomPaneNode } from './dock-model.ts'
-import { topRule } from '@dsh-blue/blue-core/chrome'
 // The named import also carries the `commands` Context merge.
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import type { ConversationProjection } from '@dsh-blue/blue-conversation'
@@ -174,7 +173,7 @@ class BtwPaneComponent {
     const safeWidth = Math.max(4, width)
     const contentWidth = Math.max(1, safeWidth - 4)
     const body = this.fitBodyLines(this.renderBody(contentWidth))
-    const lines = [topRule(safeWidth, {
+    const lines = [this.components.topRule(safeWidth, {
       title: this.colors.primary(`${BOLD_OPEN} BTW ${BOLD_CLOSE}`),
       hint: this.colors.textMuted(body.truncated ? 'Esc close · PgUp/PgDn or wheel ' : 'Esc close '),
       paint: this.colors.border,
