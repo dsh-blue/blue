@@ -1,6 +1,6 @@
 # Frontend Runtime Cutover Ledger
 
-> Status: PR #77 is the integration carrier for the design in PR #72 and the locale behavior originally developed in PR #78. The W4-W6 evidence below records the pre-i18n PR #77 candidate accepted on 2026-08-29; that acceptance does not cover the new locale-integrated tree. The current `p2/ui-i18n-integration` worktree reimplements PR #78 against PR #77's canonical UI architecture. Its full automatic gate is complete; dedicated-profile dogfood and fresh live acceptance remain. At the user's request, merge, tag, publish, production-profile mutation, PR closure, and acceptance-profile deletion remain deferred.
+> Status: PR #77 is the integration carrier for the design in PR #72 and the locale behavior originally developed in PR #78. The W4-W6 evidence below records the pre-i18n PR #77 candidate accepted on 2026-08-29; that acceptance does not cover the new locale-integrated tree. The current `p2/ui-i18n-integration` worktree reimplements PR #78 against PR #77's canonical UI architecture. Its full automatic gate and dedicated-profile dogfood are complete; fresh live acceptance remains. At the user's request, merge, tag, publish, production-profile mutation, PR closure, and acceptance-profile deletion remain deferred.
 
 ## Frozen Inputs
 
@@ -17,6 +17,7 @@
 | PR #63 | `f2d8ab2514ace94c3a07a30d9d2d247ac2af1a33` | provider onboarding |
 | PR #72 | `f60e21d726be40b3ecd6dfa545048e88c1efba20` | public UI API design, subsumed by PR #77 |
 | PR #77 | `9a6a25549e54735de3e5f2a7604146269648d956` | accepted W1-W6 implementation and integration base |
+| PR #77 locale candidate | `ee6e6380a8d2d995344d600073a69843bab8f33e` | current UI + i18n acceptance candidate |
 | PR #78 | `d2f3d1c138692e365cf4439ae7a02cd8c74ff51f` | locale behavior reference against the pre-#77 topology |
 
 PR #34 and #38 are out of scope; PR #36 is superseded. The earlier checkpoint was developed in `/home/x/dev/blue-runtime-cutover` on `p2/frontend-runtime-cutover`; W4-W6 continued in `/home/x/dev/deepseek-harness-plugin/blue/blue-ui-w4-w6` on `p2/ui-api-w4-w6`. The current candidate is developed in `/home/x/dev/deepseek-harness-plugin/blue/blue-ui-i18n-integration` on `p2/ui-i18n-integration`, then pushed to PR #77's `p2/ui-api-refactor` branch after all automatic gates pass.
@@ -113,9 +114,31 @@ public package exports:
 
 Every report has exact requested `harnessPackages`, matching
 `declared`/`executed`, empty `skipped`/`failures`, `independentInstall: true`
-and `fixtureCleaned: true`. The isolated `blue-ui-i18n-integration` profile
-and its automated PTY dogfood are the remaining machine gate before asking
-for fresh live acceptance.
+and `fixtureCleaned: true`.
+
+Dedicated locale-profile evidence:
+
+- `PROFILE=blue-ui-i18n-integration script/install-dev.sh` rebuilt the candidate
+  and link-installed the complete release closure into the isolated profile;
+  production profile `blue` was not modified.
+- A real pseudo-TTY boot against candidate `ee6e638` opened `/settings`, kept the
+  locale row selected while cycling `zh -> en -> system`, and resolved the
+  `system` state to English under `C.UTF-8`.
+- With the English `/hel` draft and completion menu still open, a real
+  settings-file watcher update restored `locale.preference: zh`. The mounted
+  editor retained `/hel`, the same completion changed to Chinese, Tab still
+  completed `/help`, and the resulting help panel and already-mounted banner
+  rendered their Chinese chrome.
+- `/quit` exited 0. The 52,684-byte raw transcript at
+  `/tmp/blue-ui-i18n-integration-ee6e638.typescript` contains one
+  bracketed-paste enable and one disable, no terminal-width error, no uncaught exception
+  and no crash marker. The existing `blue-overflow.log` was not modified by the
+  run, and no new crash log was produced.
+- The settings document ends at its original persisted value,
+  `locale: { preference: zh }`.
+
+The remaining gate is fresh human live acceptance of this exact profile and
+candidate; the earlier acceptance of `cf8b3bd` cannot satisfy it.
 
 ## Pre-integration W4-W6 Candidate Evidence
 
