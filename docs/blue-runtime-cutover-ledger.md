@@ -1,6 +1,6 @@
 # Frontend Runtime Cutover Ledger
 
-> Status: the C4/C6 evidence below records the earlier frontend-runtime cutover checkpoint. On the current W4-W6 integration branch, W6-1 capability cleanup, W6-2 canonical-node source migration, W6-3 session read/act packed closure, W6-4 release closure, W4/G4 hardening, W5/G5 provider evidence, and W6-5 final-candidate automatic/profile evidence are complete. Explicit live human acceptance remains pending. Registry install smoke is also pending because no accepted candidate has been published; after acceptance and merge, the release tag publishes the candidate before registry verification gates dist-tag promotion. No merge, tag, publish, production-profile mutation, or acceptance-profile deletion is authorized before acceptance.
+> Status: the C4/C6 evidence below records the earlier frontend-runtime cutover checkpoint. On the current W4-W6 integration branch, W6-1 capability cleanup, W6-2 canonical-node source migration, W6-3 session read/act packed closure, W6-4 release closure, W4/G4 hardening, W5/G5 provider evidence, and W6-5 final-candidate automatic/profile evidence are complete. The user live-tested the `cf8b3bd` candidate and explicitly replied `验收通过` on 2026-08-29. Registry install smoke remains pending because no candidate has been published; after merge, the release tag publishes the candidate before registry verification gates dist-tag promotion. At the user's request, merge, tag, publish, production-profile mutation, and acceptance-profile deletion remain deferred.
 
 ## Frozen Inputs
 
@@ -22,18 +22,18 @@ PR #34 and #38 are out of scope; PR #36 is superseded. The earlier checkpoint wa
 
 | Surface | Domain / official input | Projection / action | Frontend model / renderer | Status |
 |---|---|---|---|---|
-| CLI and release pipeline | package manifests/profile | immutable package contract | standalone CLI/workflows | machine evidence to rerun; human pending |
-| ocean/paper themes | semantic palette config | Fiber-owned theme registration | `ThemeModel` + core compiler | source-complete; human pending |
-| native image paste | clipboard capability | attachment save/editor action | editor/notification models | source-complete; human pending |
-| update/changelog | npm/profile capability | cancellable update actions | panel/notification models | source-complete; human pending |
-| trace | official session query | scoped query/copy action | list/detail panels | source-complete; human pending |
-| btw | app side-session action | opaque projection session + owned handle | canonical bottom-pane node + accepted renderer adapter | source-complete; human pending |
-| retract (#58) | request cancellation/durable replacement | app retract lifecycle | semantic transcript removal/notice | source-complete; human pending |
-| update cooldown (#59) | install eligibility/cache | startup notification action | `NotificationModel` | source-complete; human pending |
-| creative mode (#60) | capability-scoped plugin host | effect-bound registries | canonical pane/status/command/notification bridges | source-complete; human pending |
-| settings (#61) | official settings | revisioned get/set/unset | settings/form panels | source-complete; human pending |
-| rewind/tree (#62) | session store/query | rewind action/tree query | select/info panels | source-complete; human pending |
-| onboarding (#63) | credentials/settings | secret write action | secret-aware form flow | source-complete; human pending |
+| CLI and release pipeline | package manifests/profile | immutable package contract | standalone CLI/workflows | candidate gates complete; human accepted; registry post-merge |
+| ocean/paper themes | semantic palette config | Fiber-owned theme registration | `ThemeModel` + core compiler | source-complete; human accepted |
+| native image paste | clipboard capability | attachment save/editor action | editor/notification models | source-complete; human accepted |
+| update/changelog | npm/profile capability | cancellable update actions | panel/notification models | source-complete; human accepted |
+| trace | official session query | scoped query/copy action | list/detail panels | source-complete; human accepted |
+| btw | app side-session action | opaque projection session + owned handle | canonical bottom-pane node + accepted renderer adapter | source-complete; human accepted |
+| retract (#58) | request cancellation/durable replacement | app retract lifecycle | semantic transcript removal/notice | source-complete; human accepted |
+| update cooldown (#59) | install eligibility/cache | startup notification action | `NotificationModel` | source-complete; human accepted |
+| creative mode (#60) | capability-scoped plugin host | effect-bound registries | canonical pane/status/command/notification bridges | source-complete; human accepted |
+| settings (#61) | official settings | revisioned get/set/unset | settings/form panels | source-complete; human accepted |
+| rewind/tree (#62) | session store/query | rewind action/tree query | select/info panels | source-complete; human accepted |
+| onboarding (#63) | credentials/settings | secret write action | secret-aware form flow | source-complete; human accepted |
 
 ## Legacy Deletion Gate
 
@@ -89,8 +89,8 @@ W4/G4 and W5/G5 direct evidence:
   attachment snapshot, outer/editor focus, completion identity, and renderer
   exact renderer IME marker bytes passing through candidate replacement.
   Existing suites retain the fallback/breaker, provider unload, stale result,
-  and input fencing evidence. Real pi-tui IME composition remains part of live
-  acceptance rather than being inferred from the fake editor.
+  and input fencing evidence. Real pi-tui IME composition is not inferred from
+  the fake editor; the final live acceptance gate that owns this path passed.
 
 Dedicated-profile evidence:
 
@@ -100,11 +100,13 @@ Dedicated-profile evidence:
   provider swap, theme swap, session switch, overlay, draft input, `/new`,
   `/quit`, bracketed-paste restoration, clean exit, and absence of
   overflow/crash logs.
-- Live human testing on that profile and the exact `验收通过` response remain
-  mandatory. The profile must remain installed until accepted merge cleanup.
+- The user live-tested both `blue-ui-api-w4-w6` (ecosystem showcase) and
+  `blue-ui-api-default` (default distribution), then explicitly replied
+  `验收通过` on 2026-08-29. At the user's request, both profiles remain installed
+  until the later merge cleanup.
 - Registry install smoke is deliberately not reported as complete. No accepted
-  candidate is published yet; after human acceptance, merge and the release
-  tag, the workflow publishes the candidate artifact, installs that exact
+  candidate is published yet; after merge and the release tag, the workflow
+  publishes the candidate artifact, installs that exact
   registry version, and gates rc/latest dist-tag promotion.
 
 ## Earlier C6 Evidence
@@ -158,7 +160,7 @@ Process/profile evidence:
   one bracketed-paste enable and one disable, no width error, and a clean
   session-save exit; no `blue-overflow.log` exists in the profile.
 
-This evidence completed the earlier C6 checkpoint; it does not substitute for
+This evidence completed the earlier C6 checkpoint; it did not substitute for
 the current candidate evidence above. The final-head gate refresh, user's live
-test, and exact acceptance response `验收通过` remain mandatory; automated
-evidence cannot substitute for them.
+test, and exact acceptance response `验收通过` are now all recorded; the
+automated evidence alone would not have satisfied that gate.

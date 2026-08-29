@@ -2,9 +2,10 @@
 
 > 状态：W1-W6 的源码、打包闭包、最终候选树自动门禁和专用 profile 自动验收
 > 已落到 PR #77。W4/G4 width matrix、chrome 私有化/drift guard 与 W5/G5
-> provider-state 证据均已收口。真人 live-test、明确
-> `验收通过`、合并和候选发布均未发生。现状描述以代码和各包 `AGENTS.md` 为准，
-> 本文保留目标契约、执行顺序和当前验收账目。
+> provider-state 证据均已收口。用户于 2026-08-29 对运行候选 `cf8b3bd`
+> 完成统一真人 live-test 并明确回复 `验收通过`。按用户要求暂不合并；候选发布、
+> production profile 变更和验收 profile 清理均未发生。现状描述以代码和各包
+> `AGENTS.md` 为准，本文保留目标契约、执行顺序和当前验收账目。
 >
 > 发布目标：完成本文定义的 UI API、公开 UI Kit、内置组件迁移、插件边界和真实终端验收，
 > 是 Blue `0.1.1-rc.1` 的版本标志。该版本不是一次主题换肤，而是 UI 架构切换。
@@ -889,8 +890,8 @@ approval plugin request 挂载出的 prompt。Transcript 的 accepted bottom-pan
 adapter 也从 `BlueBottomPaneService` 实际挂载，经过 adapter clamp 和 gutter 后
 进入同一矩阵；两份 width-scan focused run 为 210/210。AST drift guard 另以
 恶意正例钉住别名 width import、本地 length 数学、转义 border、缩进 pointer
-和 Array padding 绕过，并对现存业务展示例外使用精确源码基线。真人视觉验收
-仍属于 W6 人工门禁，不能由 width scan 替代。
+和 Array padding 绕过，并对现存业务展示例外使用精确源码基线。Width scan
+没有替代真人视觉验收；W6 统一人工门禁已于 2026-08-29 通过。
 
 ### 12.8 W5：生态与 provider
 
@@ -912,9 +913,9 @@ G4 后按 Status → Editor extensions → Editor provider → Ecosystem 顺序�
 G5 的 provider-state 直接证据读取 provider 收到的 `BlueEditorSnapshot`，并在
 同一次 swap 前后断言 draft/history/cursor、plan mode、attachment snapshot、
 outer/editor focus、completion identity 和精确 renderer IME marker 字节的
-pass-through。后者不冒充真实 pi-tui 输入法 composition；该路径仍由最终真人
-验收覆盖。已有 provider fallback/breaker、unload fencing 和 packed ecosystem
-证据共同组成 G5 自动门禁。
+pass-through。后者不冒充真实 pi-tui 输入法 composition；该路径仍不计入自动
+证据，最终统一真人验收已通过。已有 provider fallback/breaker、unload fencing
+和 packed ecosystem 证据共同组成 G5 自动门禁。
 
 ### 12.9 W6：顺序发布波
 
@@ -925,12 +926,12 @@ W6 不并行，按以下顺序执行：
 3. **完成（W6-3 源码与 packed checkpoint）：**将 session seam 拆为只读 `session.read` 与写入 `session.act`：app 是唯一真实 owner，read-only/act-only facade 隔离，snapshot revision/freeze、FIFO、abort、owner unload、session stale/late fencing 均有安装态 fixture 证据；当前 Harness `0.1.1-rc.2` 与上一线 `0.1.1-rc.1` 均通过 9/9 场景。
 4. **完成（W6-4 源码收口）：**bundle rows、packed fixtures 和双语文档已收口；11 包 release set、`BLUE_VERSION`、网站中英文、CLI pin、version specs 与 release notes 已统一到 `0.1.1-rc.1`，Harness 线独立保持 `0.1.1-rc.2`。
 5. **完成（W6-5 最终候选树自动证据）：**已建立专用 `blue-ui-api-w4-w6` profile；完整 test/coverage/build/typecheck/lint/pack/examples/validator/fixture/website gate 与 `smoke:happy`、`smoke:pty`、`smoke:pty:mouse`、`smoke:pty:output` 均在最终候选树刷新通过。隔离 profile 的 PTY dogfood 覆盖默认单列、120/80/40 列多插件与窄屏降级、status/editor provider swap、theme swap、session switch、overlay、draft 输入、`/new`、`/quit`、bracketed-paste 恢复和 clean exit，且无 overflow/crash log。
-6. **待完成人工门禁：**邀请用户 live-test；等待明确“验收通过”，此前不合并、不删除 profile、不发布。验收后再合并 master、重建主 checkout，并由 release workflow 生成和复用同一候选 artifact。
+6. **完成人工门禁：**用户于 2026-08-29 对展示 profile `blue-ui-api-w4-w6` 和默认分发 profile `blue-ui-api-default` 完成统一 live-test，并明确回复“验收通过”。按用户要求暂不合并；两个 profile 继续保留，不发布。后续合并 master 后重建主 checkout，并由 release workflow 生成和复用同一候选 artifact。
 
 **G6 验收：**合并前要求最终 head 的所有自动门禁、dogfood 日志和真人验收
 完整，七类示例场景有结果，候选 tarball 不含 workspace protocol、缺失 subpath
 或未声明依赖。Registry install smoke 当前不能声明完成：候选尚未发布；它明确
-位于真人验收和合并后的候选发布阶段：release tag 先把同一 artifact 发布到
+位于合并后的候选发布阶段：release tag 先把同一 artifact 发布到
 candidate channel，registry install 随后卡住 rc/latest dist-tag promotion。
 
 ### 12.10 Agent task 交付模板
