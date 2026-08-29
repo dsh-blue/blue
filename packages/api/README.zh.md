@@ -15,8 +15,12 @@ Blue Cordis 插件的 Beta、renderer-independent 公共契约。本包不含 re
 "./blue.plugin.json"` 发现该入口；manifest 使用公开 package export subpath、
 required/optional capability 分组、精确 resource 和完整 Blue/Harness/Node
 兼容范围。同一 schema 与 corpus 也由两个
-`./schema/blue.plugin.v1.*.json` 子路径导出。在 P2 把 host admission 迁移到这套
-形状之前，分发 manifest 校验通过不表示当前 beta.1 host 已授予对应 capability。
+`./schema/blue.plugin.v1.*.json` 子路径导出。当前 beta host 已直接按这套形状执行
+admission：required capability 原子处理，optional capability 可以 unavailable 或只获得
+resource 子集。`BluePluginOpen.grants` 报告精确 version、resources、limits、quotas、
+availability 与 owner generation；`unavailableOptional` 记录稳定的
+unsupported/version/resource/policy/owner-gap 原因。当前 composition 在 P4 owner
+安装前保持 `session.projections.read` 不可用。
 编辑器使用的 canonical schema 位于
 `https://dsh-blue.dev/schema/blue.plugin.v1.schema.json`；共享 corpus 以
 `blue.plugin.v1.corpus.json` 同目录发布。
@@ -24,6 +28,11 @@ required/optional capability 分组、精确 resource 和完整 Blue/Harness/Nod
 公开 Beta capability 为 `commands`、`notifications.publish`、`status`、`panes`、`overlays` 与 `session.read`。`editor.extensions`、`status.provider`、`editor.provider` 仅保留为 Experimental/reference surface，不属于 Stable v1 目标。generic `session.act` 与全局 notification observe 已移除。旧 `dock`、`panels`、`editor`、`tools` 返回带具体迁移说明的 `BLUE_LEGACY_CAPABILITY`；`tools` 没有替代项，因为公共 tool presentation 没有 registry 或 owner。
 
 `bluePluginHost.open(ctx, manifest)` 直接接受插件真实的 Cordis `Context`，先校验 manifest，再返回只暴露所请求表面的 capability-scoped `BluePluginApi`。所有 registration 都绑定该 Cordis effect，effect callback 返回对应 cleanup：插件卸载即释放全部贡献，并永久封锁被保留的 API 引用；host service teardown 也会在清空状态前应用相同 fence。之后的写操作返回 `BLUE_ACTION_REJECTED`，保留的 list 维持冻结空数组。跨消费者重复的 contribution id 会被拒绝，Blue 的 owner 命名空间（`blue.`、`blue:`、`blue-`、`@dsh-blue/`）被保留。
+
+Canonical manifest 还会返回 `BluePluginOpen`：`api` 是只含 facet 的视图，`grants`
+与 `unavailableOptional` 是不可变 admission 记录。command 名称由插件定义并受
+resource fence 约束；pane registration 只能使用获准 placement。过渡期间旧 inline
+manifest 保持原返回面。
 
 host 会持久缓冲 `commands`、`status`、`panes`、`overlays` 以及三个 Experimental editor/provider facet 的 inert registration。因此插件可以在对应 frontend-tree owner 尚在启动或重载时注册，active owner 只恢复最新 definition。consumer 卸载仍会删除它的 registration。缓冲不赋予 render、dispatch、gesture、provider selection、last-known-good、breaker 或 fallback 权限。`notifications.publish` 与 `session.read` 不是 registration buffer，owner 缺位时返回 absent/unavailable；notice、overlay、gesture、action 与旧 callback result 都不会 replay。
 

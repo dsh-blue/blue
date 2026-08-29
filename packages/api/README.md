@@ -16,9 +16,13 @@ catalog, readonly manifest types, the deeply frozen Draft 2020-12 schema,
 `package.json.blue.manifest = "./blue.plugin.json"`; the manifest uses a public
 package export subpath, required/optional capability groups, exact resources,
 and full Blue/Harness/Node compatibility ranges. The same schema and corpus are
-available from the two `./schema/blue.plugin.v1.*.json` exports. Until P2 moves
-host admission onto this shape, a successful distribution parse does not mean
-the current beta.1 host granted those capabilities.
+available from the two `./schema/blue.plugin.v1.*.json` exports. The beta host
+now admits this shape directly: required capabilities are atomic, while
+optional capabilities may be unavailable or receive a resource subset.
+`BluePluginOpen.grants` reports exact version, resources, limits, quotas,
+availability, and owner generation; `unavailableOptional` records stable
+unsupported/version/resource/policy/owner-gap reasons. The current composition
+keeps `session.projections.read` unavailable until its P4 owner is installed.
 The canonical editor-facing schema resolves at
 `https://dsh-blue.dev/schema/blue.plugin.v1.schema.json`; the shared corpus is
 published beside it as `blue.plugin.v1.corpus.json`.
@@ -26,6 +30,12 @@ published beside it as `blue.plugin.v1.corpus.json`.
 The public Beta vocabulary is `commands`, `notifications.publish`, `status`, `panes`, `overlays`, and `session.read`. `editor.extensions`, `status.provider`, and `editor.provider` remain Experimental/reference facets and are not part of the Stable v1 target. Generic `session.act` and global notification observation are removed. Removed `dock`, `panels`, `editor`, and `tools` declarations return `BLUE_LEGACY_CAPABILITY` with a concrete migration; `tools` has no replacement because public tool presentation has no registry or owner.
 
 `bluePluginHost.open(ctx, manifest)` accepts the plugin's real Cordis `Context`, validates the manifest, then returns a capability-scoped `BluePluginApi` exposing only the requested surfaces. Every registration is bound to that Cordis effect, whose callback returns its cleanup: unloading the plugin disposes each contribution and permanently fences retained API references. Host service teardown applies the same fence before clearing state. Later mutations return `BLUE_ACTION_REJECTED`, and retained lists stay empty. Duplicate contribution ids are rejected across consumers, and ids in Blue's owner namespace (`blue.`, `blue:`, `blue-`, `@dsh-blue/`) are reserved.
+
+Canonical manifests additionally return `BluePluginOpen`: `api` is the
+facet-only view, while `grants` and `unavailableOptional` are immutable
+admission records. Command names are plugin-defined and resource-fenced;
+pane registrations are fenced to their granted placements. Legacy inline
+manifests keep their original return shape during the transition.
 
 The host durably buffers inert registrations for `commands`, `status`, `panes`, `overlays`, and the three Experimental editor/provider facets. A plugin may therefore register while the corresponding frontend-tree owner is booting or reloading; the active owner restores only the latest definitions. Consumer unload still removes its registrations. Buffering does not grant render, dispatch, gesture, provider selection, last-known-good, breaker, or fallback authority. `notifications.publish` and `session.read` are not registration buffers and report an absent/unavailable result while their owner is missing; notices, overlays, gestures, actions, and old callback results are never replayed.
 

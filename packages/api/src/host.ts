@@ -1,15 +1,26 @@
 /** Cordis-owned, renderer-independent host for Beta Blue plugin contributions. */
 import { Service, symbols, type Context } from '@deepseek-ai/cordis'
+import { intersects } from 'semver'
 import type {
   BlueCommandContribution, BlueEditorExtensionContribution,
   BlueEditorProvider, BlueErrorCode, BlueNotification, BlueOverlayOpenOptions,
   BlueOverlayRequest, BlueOverlayRegistry, BluePaneContribution, BluePaneRegistration,
-  BluePaneRegistry, BluePluginApi, BluePluginHost, BluePublicOverlayHandle,
+  BluePaneRegistry, BluePluginApi, BluePluginHost, BluePluginOpen, BluePublicOverlayHandle,
   BlueRefreshRegistration, BlueRegistration, BlueRegistry, BlueResult,
   BlueSessionReader, BlueSessionSnapshot,
   BlueStatusEntryContribution, BlueStatusProvider, BlueUserGesture,
+  BlueCapabilityGrant,
+  BlueCapabilityUnavailable,
+  BluePluginManifestInput,
 } from './contracts.ts'
 import { validateBlueManifest, type BlueCapability, type BluePluginManifest } from './manifest.ts'
+import {
+  negotiateBlueCapabilities,
+} from './capabilities-v1.ts'
+import {
+  validateBluePluginManifestV1,
+  type BluePluginManifestV1,
+} from './protocol-v1.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -20,6 +31,8 @@ declare module '@deepseek-ai/cordis' {
 }
 
 type Capability = 'commands' | 'status' | 'notifications.publish' | 'panes' | 'overlays' | 'editor.extensions' | 'session.read' | 'status.provider' | 'editor.provider'
+type V1Capability = 'commands' | 'status' | 'notifications.publish' | 'panes' | 'overlays' | 'session.read' | 'session.projections.read'
+type ActiveCapability = Capability | 'session.projections.read'
 type HostCapability = BlueCapability
 type EffectOwner = { effect(callback: () => () => void): unknown }
 type Consumer = { effect(callback: () => () => void): unknown }
@@ -63,6 +76,8 @@ export interface BluePluginHostOptions { readonly now?: () => number }
 export interface BluePluginControl {
   attachCapabilities(owner: EffectOwner, capabilities: readonly HostCapability[]): BlueRegistration
   attachSessionReader(owner: EffectOwner, reader: BlueSessionReader): BlueRegistration
+  /** Internal owner-generation fence; unavailable to plugin-facing roots. */
+  generation(capability: V1Capability): number
   snapshot(): BluePluginHostSnapshot
   subscribe(listener: (snapshot: BluePluginHostSnapshot) => void): BlueRegistration
   observeNotifications(listener: (notification: BlueNotification) => void): BlueRegistration
@@ -70,7 +85,6 @@ export interface BluePluginControl {
   closeOverlay(owner: EffectOwner, entry: BluePluginHostOverlayEntry): BlueResult
 }
 
-const API_MAJOR = /^\^?1(?:\.|$)/
 const ID_PATTERN = /^[a-z0-9][a-z0-9._/-]{0,127}$/u
 const OWNER_ID_PATTERN = /^(?:blue[.:-]|@dsh-blue\/)/u
 const IMPLEMENTED_CAPABILITIES = new Set<Capability>(['commands', 'status', 'notifications.publish', 'panes', 'overlays', 'editor.extensions', 'session.read', 'status.provider', 'editor.provider'])
@@ -83,6 +97,16 @@ function absent(capability: Capability): BlueResult<never> { return failure('BLU
 function consumerDisposed(): BlueResult<never> { return failure('BLUE_ACTION_REJECTED', 'plugin consumer is disposed') }
 function rejectDisposedAdmission(added: BlueResult<BlueRegistration>): BlueResult<never> { if (added.ok) added.value.dispose(); return consumerDisposed() }
 function invalid(error: unknown): BlueResult<never> { return failure('BLUE_INVALID_CONTRIBUTION', message(error, 'plugin input could not be inspected')) }
+
+function openProjection(
+  manifest: BluePluginManifestInput,
+  facets: Omit<BluePluginApi, 'manifest'>,
+  grants: readonly BlueCapabilityGrant[] = [],
+  unavailableOptional: readonly BlueCapabilityUnavailable[] = [],
+): BluePluginOpen {
+  const api = Object.freeze({ manifest, ...facets }) as BluePluginApi
+  return Object.freeze({ manifest, ...facets, api, grants: Object.freeze([...grants]), unavailableOptional: Object.freeze([...unavailableOptional]) })
+}
 
 function own(input: Record<string, unknown>, key: string): unknown {
   const descriptor = Object.getOwnPropertyDescriptor(input, key)
@@ -336,13 +360,14 @@ class RefreshRegistration implements BlueRefreshRegistration {
 class Scoped<T extends Prioritized> implements BlueRegistry<T> {
   private readonly entries = new Map<string, T>()
   private readonly handles = new Set<Registration>()
-  constructor(private readonly capability: Capability, private readonly aggregate: Aggregate<T>, private readonly ready: () => boolean, private readonly lifetime: ConsumerLifetime, private readonly normalize: (input: unknown) => BlueResult<T>) {}
+  constructor(private readonly capability: Capability, private readonly aggregate: Aggregate<T>, private readonly ready: () => boolean, private readonly lifetime: ConsumerLifetime, private readonly normalize: (input: unknown) => BlueResult<T>, private readonly allowedIds?: ReadonlySet<string>) {}
   register(input: T): BlueResult<BlueRegistration> {
     if (this.lifetime.disposed) return consumerDisposed()
     if (!this.ready()) return absent(this.capability)
     try {
       const result = this.normalize(input); if (!result.ok) return result
       const value = result.value
+      if (this.allowedIds !== undefined && !this.allowedIds.has(value.id)) return failure('BLUE_RESOURCE_DENIED', `contribution "${value.id}" is outside the granted ${this.capability} resources`)
       if (this.entries.has(value.id)) return failure('BLUE_DUPLICATE_ID', `contribution "${value.id}" is already registered`)
       const added = this.aggregate.add(value)
       if (this.lifetime.disposed) return rejectDisposedAdmission(added)
@@ -385,6 +410,12 @@ interface HostState {
   readonly commands: Aggregate<BlueCommandContribution>; readonly status: Aggregate<BlueStatusEntryContribution>
   readonly panes: Aggregate<BluePluginHostPaneEntry>; readonly overlays: Ordered<BluePluginHostOverlayEntry>; readonly extensions: Aggregate<BlueEditorExtensionContribution>
   readonly statusProviders: Aggregate<BlueStatusProvider>; readonly editorProviders: Aggregate<BlueEditorProvider>; readonly owners: Map<Capability, number>
+  /** Active owner fibers, kept separate from durable registration leases. */
+  readonly activeOwners: Map<ActiveCapability, Map<EffectOwner, number>>
+  /** Monotonic owner generation; every attach/detach advances the fence. */
+  readonly ownerGenerations: Map<V1Capability, number>
+  /** Consumers admitted through canonical or legacy open(). */
+  readonly consumerIds: Map<string, ConsumerLifetime>
   readonly gestureOwners: Map<EffectOwner, number>; readonly gestures: Map<object, EffectOwner>; readonly ownerGestures: Map<EffectOwner, Set<object>>; readonly now: () => number
   readonly overlayOwners: Map<EffectOwner, number>; readonly overlayClosers: Map<string, { entry: BluePluginHostOverlayEntry, close: () => void }>
   readonly paneCounts: Map<object, number>; readonly capturingConsumers: Set<object>
@@ -443,7 +474,7 @@ class PaneHandle extends RefreshRegistration implements BluePaneRegistration {
 }
 class Panes implements BluePaneRegistry {
   private readonly entries = new Map<string, BluePaneContribution>(); private readonly handles = new Set<PaneHandle>()
-  constructor(private readonly state: HostState, private readonly consumer: object, private readonly lifetime: ConsumerLifetime) {}
+  constructor(private readonly state: HostState, private readonly consumer: object, private readonly lifetime: ConsumerLifetime, private readonly allowedPlacements?: ReadonlySet<string>) {}
   register(input: BluePaneContribution): BlueResult<BluePaneRegistration> {
     if (this.lifetime.disposed) return consumerDisposed()
     if (!ready(this.state, 'panes')) return absent('panes')
@@ -451,6 +482,7 @@ class Panes implements BluePaneRegistry {
     try {
       const result = pane(input); if (!result.ok) return result
       const value = result.value
+      if (this.allowedPlacements !== undefined && !this.allowedPlacements.has(value.placement)) return failure('BLUE_RESOURCE_DENIED', `pane placement "${value.placement}" is outside the granted panes resources`)
       if (this.entries.has(value.id)) return failure('BLUE_DUPLICATE_ID', `contribution "${value.id}" is already registered`)
       let revision = 0
       let entry: BluePluginHostPaneEntry = Object.freeze({ id: value.id, ...(value.priority === undefined ? {} : { priority: value.priority }), contribution: value, hidden: false, revision })
@@ -488,10 +520,10 @@ class OverlayHandle implements BluePublicOverlayHandle {
 }
 class Overlays implements BlueOverlayRegistry {
   private readonly handles = new Set<OverlayHandle>()
-  constructor(private readonly state: HostState, private readonly consumer: object, private readonly lifetime: ConsumerLifetime) {}
+  constructor(private readonly state: HostState, private readonly consumer: object, private readonly lifetime: ConsumerLifetime, private readonly available?: () => boolean) {}
   open(input: BlueOverlayRequest, options?: BlueOverlayOpenOptions): BlueResult<BluePublicOverlayHandle> {
     if (this.lifetime.disposed) return consumerDisposed()
-    if (!ready(this.state, 'overlays')) return absent('overlays')
+    if (!(this.available?.() ?? ready(this.state, 'overlays'))) return absent('overlays')
     try {
       const result = overlay(input); if (!result.ok) return result
       const request = result.value
@@ -519,7 +551,7 @@ class Overlays implements BlueOverlayRegistry {
         return added
       }
       if (request.capturing) this.state.capturingConsumers.add(this.consumer)
-      handle = new OverlayHandle(() => ready(this.state, 'overlays'), this.state.now, () => {
+      handle = new OverlayHandle(() => this.available?.() ?? ready(this.state, 'overlays'), this.state.now, () => {
         entry = Object.freeze({ ...entry, revision: ++revision })
         closer.entry = entry
         this.state.overlays.replace(request.id, entry)
@@ -574,6 +606,70 @@ function ownerStateOf(host: BluePluginHostService): HostState {
   return state
 }
 function ready(state: HostState, capability: Capability): boolean { return (state.owners.get(capability) ?? 0) > 0 }
+function activeReady(state: HostState, capability: V1Capability): boolean {
+  return (state.activeOwners.get(capability)?.size ?? 0) > 0
+}
+function bumpOwnerGeneration(state: HostState, capability: V1Capability): number {
+  const generation = (state.ownerGenerations.get(capability) ?? 0) + 1
+  state.ownerGenerations.set(capability, generation)
+  return generation
+}
+
+function canonicalCapability(value: string): value is V1Capability {
+  return ['commands', 'status', 'notifications.publish', 'panes', 'overlays', 'session.read', 'session.projections.read'].includes(value)
+}
+
+function grantFor(grants: readonly BlueCapabilityGrant[], name: V1Capability): BlueCapabilityGrant | undefined {
+  return grants.find(grant => grant.name === name)
+}
+
+/** Open a canonical v1 manifest after negotiation has produced exact grants. */
+function openCanonical(state: HostState, consumer: Consumer, manifest: BluePluginManifestV1): BlueResult<BluePluginOpen> {
+  const admission = negotiateBlueCapabilities(manifest, {
+    apiVersion: '1.0.0-beta.1',
+    supported: capability => ready(state, capability as Capability),
+    ownerReady: capability => activeReady(state, capability),
+    /* v8 ignore next -- a supported capability always initializes its fence. */
+    generation: capability => state.ownerGenerations.get(capability) ?? 0,
+  })
+  if (!admission.ok) return failure(admission.code, admission.message)
+  if (state.consumerIds.has(manifest.id)) return failure('BLUE_DUPLICATE_ID', `plugin identity "${manifest.id}" is already open`)
+  const capabilities = admission.grants.map(grant => grant.name).filter(canonicalCapability) as V1Capability[]
+  const lifetime = new ConsumerLifetime()
+  state.lifetimes.add(lifetime)
+  state.consumerIds.set(manifest.id, lifetime)
+  const isReady = (capability: Capability) => () => ready(state, capability)
+  const commandResources = grantFor(admission.grants, 'commands')?.resources
+  const allowedCommands = commandResources !== undefined && 'names' in commandResources ? new Set(commandResources.names) : undefined
+  const paneResources = grantFor(admission.grants, 'panes')?.resources
+  const allowedPlacements = paneResources !== undefined && 'placements' in paneResources ? new Set(paneResources.placements) : undefined
+  const commands = new Scoped('commands', state.commands, isReady('commands'), lifetime, command, allowedCommands)
+  const statuses = new ScopedRefresh('status', state.status, isReady('status'), lifetime, state.now, status)
+  const panes = new Panes(state, consumer, lifetime, allowedPlacements)
+  const overlays = new Overlays(state, consumer, lifetime, () => activeReady(state, 'overlays'))
+  const notificationPublisher = new Notifications(state, lifetime)
+  const notifications = Object.freeze({ publish: (notification: BlueNotification) => notificationPublisher.publish(notification) })
+  const session = new SessionReadFacade(state, lifetime, callback => consumer.effect(callback))
+  const registries = [commands, statuses, panes, overlays, session, notificationPublisher]
+  for (const registry of registries) state.registries.add(registry)
+  const facets: Omit<BluePluginApi, 'manifest'> = {
+    ...(capabilities.includes('commands') ? { commands } : {}),
+    ...(capabilities.includes('status') ? { status: statuses } : {}),
+    ...(capabilities.includes('notifications.publish') ? { notifications } : {}),
+    ...(capabilities.includes('panes') ? { panes } : {}),
+    ...(capabilities.includes('overlays') ? { overlays } : {}),
+    ...(capabilities.includes('session.read') ? { session } : {}),
+  }
+  const cleanup = () => {
+    lifetime.dispose()
+    state.lifetimes.delete(lifetime)
+    /* v8 ignore next -- identity is reserved for this live lifetime. */
+    if (state.consumerIds.get(manifest.id) === lifetime) state.consumerIds.delete(manifest.id)
+    for (const registry of registries) { registry.dispose(); state.registries.delete(registry) }
+  }
+  try { consumer.effect(() => cleanup) } catch (error) { cleanup(); throw error }
+  return success(openProjection(manifest, facets, admission.grants, admission.unavailableOptional))
+}
 function invalidateGestures(state: HostState, owner: EffectOwner): void {
   const tokens = state.ownerGestures.get(owner)
   if (tokens === undefined) return
@@ -606,7 +702,13 @@ export function attachBluePluginHostCapabilities(host: BluePluginHostService, ow
   const owned = [...new Set(capabilities)]
   for (const capability of owned) if (capability === 'session.read') throw new Error(`Blue session capability "${capability}" requires attachBluePluginHostSessionReader`)
   for (const capability of owned) if (!IMPLEMENTED_CAPABILITIES.has(capability as Capability)) throw new Error(`Blue owner adapter cannot attach unsupported capability "${capability}"`)
-  for (const capability of owned as Capability[]) state.owners.set(capability, (state.owners.get(capability) ?? 0) + 1)
+  for (const capability of owned as Capability[]) {
+    state.owners.set(capability, (state.owners.get(capability) ?? 0) + 1)
+    let owners = state.activeOwners.get(capability)
+    if (owners === undefined) { owners = new Map(); state.activeOwners.set(capability, owners) }
+    owners.set(owner, (owners.get(owner) ?? 0) + 1)
+    if ((['commands', 'status', 'notifications.publish', 'panes', 'overlays'] as readonly string[]).includes(capability)) bumpOwnerGeneration(state, capability as V1Capability)
+  }
   const dispatchOwner = owned.some(capability => capability === 'commands' || capability === 'panes' || capability === 'overlays' || capability === 'editor.extensions' || capability === 'editor.provider')
   const overlayOwner = owned.includes('overlays')
   if (dispatchOwner) state.gestureOwners.set(owner, (state.gestureOwners.get(owner) ?? 0) + 1)
@@ -616,6 +718,13 @@ export function attachBluePluginHostCapabilities(host: BluePluginHostService, ow
       const count = state.owners.get(capability)
       if (count === undefined) continue
       if (count <= 1) state.owners.delete(capability); else state.owners.set(capability, count - 1)
+      const owners = state.activeOwners.get(capability)
+      const ownerCount = owners?.get(owner)
+      if (ownerCount !== undefined) {
+        if (ownerCount <= 1) owners!.delete(owner); else owners!.set(owner, ownerCount - 1)
+        if (owners!.size === 0) state.activeOwners.delete(capability)
+      }
+      if ((['commands', 'status', 'notifications.publish', 'panes', 'overlays'] as readonly string[]).includes(capability)) bumpOwnerGeneration(state, capability as V1Capability)
     }
     if (dispatchOwner) {
       const count = state.gestureOwners.get(owner)
@@ -647,10 +756,18 @@ export function attachBluePluginHostSessionReader(host: BluePluginHostService, o
   state.sessionOwner = sessionOwner
   state.sessionSnapshot = initial
   state.owners.set('session.read', 1)
+  let activeOwners = state.activeOwners.get('session.read')
+  if (activeOwners === undefined) { activeOwners = new Map(); state.activeOwners.set('session.read', activeOwners) }
+  activeOwners.set(owner, (activeOwners.get(owner) ?? 0) + 1)
+  bumpOwnerGeneration(state, 'session.read')
   const registration = new Registration(() => {
     if (state.sessionOwner !== sessionOwner) return
     state.sessionOwner = undefined
     state.owners.delete('session.read')
+    const owners = state.activeOwners.get('session.read')
+    owners?.delete(owner)
+    if (owners?.size === 0) state.activeOwners.delete('session.read')
+    bumpOwnerGeneration(state, 'session.read')
     sessionOwner.subscription?.dispose()
     sessionOwner.subscription = undefined
     if (state.sessionSnapshot !== null) { state.sessionSnapshot = null; emitSession(state) }
@@ -671,7 +788,10 @@ export function attachBluePluginHostSessionReader(host: BluePluginHostService, o
 function attachBluePluginRegistrationBuffers(host: BluePluginHostService, owner: EffectOwner): BlueRegistration {
   const state = ownerStateOf(host)
   const capabilities = ['commands', 'status', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'] as const
-  for (const capability of capabilities) state.owners.set(capability, (state.owners.get(capability) ?? 0) + 1)
+  for (const capability of capabilities) {
+    state.owners.set(capability, (state.owners.get(capability) ?? 0) + 1)
+    if ((['commands', 'status', 'panes', 'overlays'] as readonly string[]).includes(capability) && !state.ownerGenerations.has(capability as V1Capability)) state.ownerGenerations.set(capability as V1Capability, 0)
+  }
   const registration = new Registration(() => {
     for (const capability of capabilities) {
       const count = state.owners.get(capability)
@@ -768,7 +888,7 @@ function disposeHost(host: BluePluginHostService): void {
   for (const registry of state.registries) registry.dispose()
   state.sessionOwner?.subscription?.dispose()
   for (const aggregate of [state.commands, state.status, state.panes, state.overlays, state.extensions, state.statusProviders, state.editorProviders]) aggregate.clear()
-  state.lifetimes.clear(); state.notificationObservers.clear(); state.owners.clear(); state.gestureOwners.clear(); state.gestures.clear(); state.ownerGestures.clear(); state.overlayOwners.clear(); state.overlayClosers.clear(); state.paneCounts.clear(); state.capturingConsumers.clear(); state.sessionListeners.clear(); state.sessionOwner = undefined; state.sessionSnapshot = null; HOST_STATES.delete(host)
+  state.lifetimes.clear(); state.notificationObservers.clear(); state.owners.clear(); state.activeOwners.clear(); state.ownerGenerations.clear(); state.consumerIds.clear(); state.gestureOwners.clear(); state.gestures.clear(); state.ownerGestures.clear(); state.overlayOwners.clear(); state.overlayClosers.clear(); state.paneCounts.clear(); state.capturingConsumers.clear(); state.sessionListeners.clear(); state.sessionOwner = undefined; state.sessionSnapshot = null; HOST_STATES.delete(host)
 }
 
 /** Create closure-bound owner authority for one host instance. */
@@ -776,6 +896,7 @@ export function createBluePluginControl(host: BluePluginHostService): BluePlugin
   const control: BluePluginControl = {
     attachCapabilities: (owner: EffectOwner, capabilities: readonly HostCapability[]) => attachBluePluginHostCapabilities(host, owner, capabilities),
     attachSessionReader: (owner: EffectOwner, reader: BlueSessionReader) => attachBluePluginHostSessionReader(host, owner, reader),
+    generation: (capability: V1Capability) => ownerStateOf(host).ownerGenerations.get(capability) ?? 0,
     snapshot: () => snapshotBluePluginHost(host),
     subscribe: (listener: (snapshot: BluePluginHostSnapshot) => void) => subscribeBluePluginHost(host, listener),
     observeNotifications: (listener: (notification: BlueNotification) => void) => subscribeBluePluginNotifications(host, listener),
@@ -795,17 +916,26 @@ export class BluePluginHostService extends Service implements BluePluginHost {
     const revision = { value: 0 }
     const changed = () => { revision.value += 1 }
     HOST_STATES.set(this, {
-      lifetimes: new Set(), registries: new Set(), notificationObservers: new Set(), commands: new Aggregate(false, changed), status: new Aggregate(true, changed), panes: new Aggregate(true, changed), overlays: new Ordered(changed), extensions: new Aggregate(true, changed), statusProviders: new Aggregate(true, changed), editorProviders: new Aggregate(true, changed), owners: new Map(), gestureOwners: new Map(), gestures: new Map(), ownerGestures: new Map(), overlayOwners: new Map(), overlayClosers: new Map(), paneCounts: new Map(), capturingConsumers: new Set(), revision, now: options.now ?? Date.now, sessionListeners: new Set(), sessionOwner: undefined, sessionSnapshot: null, nextOverlayOrder: 0,
+      lifetimes: new Set(), registries: new Set(), notificationObservers: new Set(), commands: new Aggregate(false, changed), status: new Aggregate(true, changed), panes: new Aggregate(true, changed), overlays: new Ordered(changed), extensions: new Aggregate(true, changed), statusProviders: new Aggregate(true, changed), editorProviders: new Aggregate(true, changed), owners: new Map(), activeOwners: new Map(), ownerGenerations: new Map(), consumerIds: new Map(), gestureOwners: new Map(), gestures: new Map(), ownerGestures: new Map(), overlayOwners: new Map(), overlayClosers: new Map(), paneCounts: new Map(), capturingConsumers: new Set(), revision, now: options.now ?? Date.now, sessionListeners: new Set(), sessionOwner: undefined, sessionSnapshot: null, nextOverlayOrder: 0,
     })
     ctx.provide('bluePluginControl', createBluePluginControl(this))
     ctx.effect(() => () => disposeHost(this))
   }
 
-  open(consumer: Consumer, manifest: BluePluginManifest): BlueResult<BluePluginApi> {
+  open(consumer: Consumer, manifest: BluePluginManifest): BlueResult<BluePluginApi>
+  open(consumer: Consumer, manifest: BluePluginManifestV1): BlueResult<BluePluginOpen>
+  open(consumer: Consumer, manifest: BluePluginManifestInput): BlueResult<BluePluginApi | BluePluginOpen> {
     try {
       const state = stateOf(this)
       if (!object(consumer) || typeof consumer.effect !== 'function') return failure('BLUE_INVALID_CONTRIBUTION', 'consumer must expose a Cordis effect function')
       if (!object(manifest)) return failure('BLUE_INVALID_CONTRIBUTION', 'manifest must be an object')
+      // A manifest carrying the canonical schema marker is never interpreted
+      // as the legacy flat capability list, even when v1 admission fails.
+      if (own(manifest, '$schema') !== undefined) {
+        const parsed = validateBluePluginManifestV1(manifest)
+        if (!parsed.ok) return failure('BLUE_API_INCOMPATIBLE', parsed.issues.map(issue => `${issue.path}: ${issue.message}`).join('; '))
+        return openCanonical(state, consumer, parsed.value)
+      }
       const rawManifest = fields(manifest, ['id', 'api', 'capabilities', 'schemaVersion', 'entry', 'blue', 'harness', 'node', 'integrity'])
       const hostManifest = Object.freeze({
         id: rawManifest.id,
@@ -820,7 +950,11 @@ export class BluePluginHostService extends Service implements BluePluginHost {
       }) as BluePluginManifest
       const valid = validateBlueManifest(hostManifest)
       if (!valid.ok) return failure(valid.code === 'BLUE_INVALID_MANIFEST' ? 'BLUE_INVALID_CONTRIBUTION' : 'BLUE_API_INCOMPATIBLE', valid.message)
-      if (!API_MAJOR.test(hostManifest.api)) return failure('BLUE_API_INCOMPATIBLE', `unsupported Blue API range "${hostManifest.api}"`)
+      try {
+        if (!intersects(hostManifest.api, this.version, { includePrerelease: true })) return failure('BLUE_API_INCOMPATIBLE', `unsupported Blue API range "${hostManifest.api}"`)
+      } catch {
+        return failure('BLUE_API_INCOMPATIBLE', `unsupported Blue API range "${hostManifest.api}"`)
+      }
       const capabilities = [...hostManifest.capabilities]
       const missing = capabilities.find(capability => !ready(state, capability as Capability))
       if (missing !== undefined) return absent(missing as Capability)
@@ -841,13 +975,14 @@ export class BluePluginHostService extends Service implements BluePluginHost {
       for (const registry of registries) state.registries.add(registry)
 
       const frozenManifest = Object.freeze({ id: hostManifest.id, api: hostManifest.api, capabilities: Object.freeze(capabilities), ...(hostManifest.schemaVersion === undefined ? {} : { schemaVersion: hostManifest.schemaVersion }), ...(hostManifest.entry === undefined ? {} : { entry: hostManifest.entry }), ...(hostManifest.blue === undefined ? {} : { blue: hostManifest.blue }), ...(hostManifest.harness === undefined ? {} : { harness: hostManifest.harness }), ...(hostManifest.node === undefined ? {} : { node: hostManifest.node }), ...(hostManifest.integrity === undefined ? {} : { integrity: hostManifest.integrity }) }) as BluePluginManifest
-      const api: BluePluginApi = {
-        manifest: frozenManifest,
+      const facets: Omit<BluePluginApi, 'manifest'> = {
         ...(capabilities.includes('commands') ? { commands } : {}), ...(capabilities.includes('status') ? { status: statuses } : {}), ...(capabilities.includes('notifications.publish') ? { notifications } : {}), ...(capabilities.includes('panes') ? { panes } : {}), ...(capabilities.includes('overlays') ? { overlays } : {}), ...(capabilities.includes('editor.extensions') ? { editorExtensions: extensions } : {}), ...(capabilities.includes('session.read') ? { session } : {}), ...(capabilities.includes('status.provider') ? { statusProviders } : {}), ...(capabilities.includes('editor.provider') ? { editorProviders } : {}),
       }
       const cleanup = () => { lifetime.dispose(); state.lifetimes.delete(lifetime); for (const registry of registries) { registry.dispose(); state.registries.delete(registry) } }
       try { consumer.effect(() => cleanup) } catch (error) { cleanup(); throw error }
-      return success(Object.freeze(api))
+      // Legacy inline manifests retain their original surface shape. The
+      // additional v1 negotiation fields are only present on canonical opens.
+      return success(Object.freeze({ manifest: frozenManifest, ...facets }) as BluePluginOpen)
     } catch (error) { return invalid(error) }
   }
 }

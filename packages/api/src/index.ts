@@ -26,6 +26,17 @@ export {
   type BluePluginHostOverlayEntry,
   type BluePluginHostPaneEntry,
 } from './host.ts'
+export {
+  BLUE_CAPABILITY_CATALOG_V1,
+  getBlueCapabilityDefinition,
+  negotiateBlueCapabilities,
+  type BlueCapabilityAdmission,
+  type BlueCapabilityAdmissionFailure,
+  type BlueCapabilityAdmissionSuccess,
+  type BlueCapabilityDefinition,
+  type BlueCapabilityNegotiationOptions,
+  type BlueCapabilityResourceKind,
+} from './capabilities-v1.ts'
 export type * from './contracts.ts'
 
 /** Blue's public API Beta version. */

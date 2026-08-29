@@ -28,6 +28,26 @@ export {
   type BluePluginManifestV1,
   type BluePluginManifestSchemaV1,
 }
+export {
+  BLUE_CAPABILITY_CATALOG_V1,
+  getBlueCapabilityDefinition,
+  negotiateBlueCapabilities,
+  type BlueCapabilityAdmission,
+  type BlueCapabilityAdmissionFailure,
+  type BlueCapabilityAdmissionSuccess,
+  type BlueCapabilityDefinition,
+  type BlueCapabilityNegotiationOptions,
+  type BlueCapabilityResourceKind,
+} from './capabilities-v1.ts'
+export type {
+  BlueCapabilityGrant,
+  BlueCapabilityGrantResources,
+  BlueCapabilityLimits,
+  BlueCapabilityQuotas,
+  BlueCapabilityUnavailable,
+  BlueCapabilityUnavailableReason,
+  BluePluginOpen,
+} from './contracts.ts'
 
 /** The only manifest schema version accepted by this protocol subpath. */
 export const BLUE_PLUGIN_MANIFEST_SCHEMA_VERSION = 1

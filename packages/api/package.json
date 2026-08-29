@@ -21,6 +21,10 @@
       "types": "./lib/types/protocol-v1.d.ts",
       "default": "./lib/protocol-v1.js"
     },
+    "./capabilities/v1": {
+      "types": "./lib/types/capabilities-v1.d.ts",
+      "default": "./lib/capabilities-v1.js"
+    },
     "./schema/blue.plugin.v1.schema.json": "./schema/blue.plugin.v1.schema.json",
     "./schema/blue.plugin.v1.corpus.json": "./schema/blue.plugin.v1.corpus.json",
     "./package.json": "./package.json"

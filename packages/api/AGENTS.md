@@ -147,8 +147,9 @@ recursively narrowed status contract.
 ## Distribution contract
 
 The root and `./invariant` retain the executable `1.0.0-beta.1` inline-host
-contract until P2 changes host admission. The independent `./protocol/v1`
-subpath owns the `1.0.0-beta.1` distribution contract: seven generated
+contract for the transition lane. Canonical manifests carrying the schema
+marker are admitted by the same host through the independent `./protocol/v1`
+contract. That subpath owns the `1.0.0-beta.1` distribution contract: seven generated
 capability names, generated readonly manifest types, the semantic validator,
 the deeply frozen Draft 2020-12 schema, and the exact Blue product/protocol
 mapping. The hand-edited schema is the single shape source;
@@ -186,5 +187,10 @@ add a public JavaScript entry by adding its manifest export and matching
 `src/<entry>.ts`, then run `pnpm check:pack`. JSON schema/corpus exports point
 at `schema/*.json`, which is explicitly included in the tarball whitelist.
 Legacy inline manifests and the six PR #77 flat example manifests remain an
-explicit transition lane until P2/P3; any manifest carrying `$schema` is always
-validated as v1 and cannot fall back to that lane.
+explicit transition lane while P3/P4 owners converge; any manifest carrying
+`$schema` is always validated and admitted as v1 and cannot fall back to that
+lane. Canonical admission returns exact grants with immutable resources,
+limits, quotas, availability, and owner generation. Required requests fail
+atomically; optional requests may produce partial grants plus structured
+unavailable records. The current catalog deliberately marks
+`session.projections.read` unsupported until P4.

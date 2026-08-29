@@ -93,6 +93,13 @@ R1 只冻结可观察权限结果，不强制特定 authority representation。h
 
 R2 按合并手册拆为 P1-P4，不得放进一个大 PR：P1 建机器真相，P2 建协商与权限，P3/P4 才把 UI 和 session capability 接到该契约。
 
+当前进度（候选 worktree，尚待人工 profile 验收后合并）：P1 已完成机器契约、共享
+corpus、packed validator 与双 Harness line fixture；P2 正在收敛 canonical host
+admission。P2 已开放 required/optional、精确 resource grant、结构化 denial、受保护
+owner generation 与 durable registration restore；`session.projections.read` 仍明确
+保持 unavailable，等待 P4。P3/P4 尚未进入主线，不能把三个生态插件的 Blue entries
+当作 capability Stable 证据。
+
 ### Schema 与 package
 
 - `package.json.blue.manifest` 是唯一 discovery pointer。

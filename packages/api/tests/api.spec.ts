@@ -63,6 +63,7 @@ describe('@dsh-blue/blue-api', () => {
       '.',
       './invariant',
       './protocol/v1',
+      './capabilities/v1',
       './schema/blue.plugin.v1.schema.json',
       './schema/blue.plugin.v1.corpus.json',
       './package.json',

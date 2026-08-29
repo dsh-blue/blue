@@ -1,10 +1,21 @@
 /** Renderer-independent contracts shared by official and third-party effects. */
 import type { BluePluginManifest } from './manifest.ts'
+import type {
+  BluePluginCapabilityNameV1,
+  BluePluginCapabilityRequestV1,
+  BluePluginManifestV1,
+} from './manifest-v1.generated.ts'
+
+/** The two manifest lanes accepted during the Beta-to-v1 transition. */
+export type BluePluginManifestInput = BluePluginManifest | BluePluginManifestV1
 
 export type BlueErrorCode =
   | 'BLUE_API_INCOMPATIBLE' | 'BLUE_CAPABILITY_DENIED' | 'BLUE_CAPABILITY_ABSENT'
   | 'BLUE_DUPLICATE_ID' | 'BLUE_INVALID_CONTRIBUTION' | 'BLUE_LIMIT_EXCEEDED'
   | 'BLUE_ABORTED' | 'BLUE_SESSION_UNAVAILABLE' | 'BLUE_ACTION_REJECTED'
+  | 'BLUE_CAPABILITY_UNSUPPORTED' | 'BLUE_CAPABILITY_VERSION_UNSUPPORTED'
+  | 'BLUE_RESOURCE_DENIED' | 'BLUE_POLICY_DENIED' | 'BLUE_OWNER_UNAVAILABLE'
+  | 'BLUE_STALE' | 'BLUE_TIMEOUT' | 'BLUE_INTERNAL_FAILURE'
 
 export type BlueResult<Value = void> =
   | { readonly ok: true, readonly value: Value }
@@ -187,7 +198,7 @@ export interface BlueRegistry<T> { register(contribution: T): BlueResult<BlueReg
 
 /** Capability-scoped API returned by the Beta plugin host. */
 export interface BluePluginApi {
-  readonly manifest: BluePluginManifest
+  readonly manifest: BluePluginManifestInput
   readonly commands?: BlueRegistry<BlueCommandContribution>
   readonly status?: BlueStatusEntryRegistry
   readonly notifications?: { publish(notification: BlueNotification): BlueResult }
@@ -198,4 +209,60 @@ export interface BluePluginApi {
   readonly editorProviders?: BlueEditorProviderRegistry
   readonly session?: BlueSessionReader
 }
-export interface BluePluginHost { readonly version: string, open(consumer: { effect(callback: () => () => void): unknown }, manifest: BluePluginManifest): BlueResult<BluePluginApi> }
+
+/** Resources granted to one canonical v1 capability. */
+export type BlueCapabilityGrantResources =
+  | { readonly names: readonly string[] }
+  | { readonly placements: readonly BluePanePlacement[] }
+  | { readonly fields: readonly ('identity' | 'cwd' | 'status' | 'mode' | 'model')[] }
+  | { readonly keys: readonly string[] }
+
+/** Host-owned limits and quotas attached to a capability grant. */
+export type BlueCapabilityLimits = Readonly<Record<string, number>>
+export type BlueCapabilityQuotas = Readonly<Record<string, number>>
+
+/** Exact capability authorization returned by canonical v1 admission. */
+export interface BlueCapabilityGrant {
+  readonly name: BluePluginCapabilityNameV1
+  readonly version: string
+  /** Monotonic owner generation captured when this grant was admitted. */
+  readonly generation: number
+  readonly resources?: BlueCapabilityGrantResources
+  readonly limits: BlueCapabilityLimits
+  readonly quotas: BlueCapabilityQuotas
+  readonly availability: 'ready' | 'unavailable'
+}
+
+/** Stable reason classes for an optional capability that was not granted. */
+export type BlueCapabilityUnavailableReason =
+  | 'unsupported'
+  | 'version'
+  | 'resource'
+  | 'policy'
+  | 'owner-gap'
+
+/** Structured optional-capability denial returned by canonical admission. */
+export interface BlueCapabilityUnavailable {
+  readonly name: BluePluginCapabilityNameV1
+  readonly reason: BlueCapabilityUnavailableReason
+  readonly message: string
+}
+
+/** Canonical v1 open result. Facets are mirrored at the top level for Beta callers. */
+export interface BluePluginOpen extends BluePluginApi {
+  /** Facet-only API view; no grant-management or owner authority is exposed. */
+  readonly api: BluePluginApi
+  readonly grants: readonly BlueCapabilityGrant[]
+  readonly unavailableOptional: readonly BlueCapabilityUnavailable[]
+}
+
+/** Capability request accepted by the v1 catalog. */
+export type BlueCapabilityRequest = BluePluginCapabilityRequestV1
+
+export interface BluePluginHost {
+  readonly version: string
+  /** Legacy inline manifests retain the Beta facade shape. */
+  open(consumer: { effect(callback: () => () => void): unknown }, manifest: BluePluginManifest): BlueResult<BluePluginApi>
+  /** Canonical v1 manifests expose exact grants and optional denials. */
+  open(consumer: { effect(callback: () => () => void): unknown }, manifest: BluePluginManifestV1): BlueResult<BluePluginOpen>
+}
