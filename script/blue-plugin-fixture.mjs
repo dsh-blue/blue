@@ -1270,18 +1270,22 @@ try {
         capabilities: ['status.provider'],
       })
       ensure(opened.ok, 'FIXTURE_STATUS_OPEN', opened.ok ? '' : opened.message)
+      const disposeConsumer = () => {
+        for (const cleanup of cleanups.splice(0)) cleanup()
+      }
       return {
         ctx,
         bottom,
         opened: opened.value,
         ownerFiber,
+        disposeConsumer,
         setSelection(id) {
           const previous = settingsValue
           settingsValue = { statusProvider: id }
           ctx.emit('settings/updated', 'blue', settingsValue, previous, 'fixture')
         },
         async dispose() {
-          for (const cleanup of cleanups.splice(0)) cleanup()
+          disposeConsumer()
           await ctx.fiber.dispose()
         },
       }
@@ -1346,13 +1350,20 @@ try {
       ensure(fixture.bottom[0].render(40).join('\n').includes('packed good') && goodRenders === 1, 'FIXTURE_STATUS_SWITCH', 'settings selection did not activate the good provider')
       good.value.dispose()
       ensure(!fixture.bottom[0].render(40).join('\n').includes('packed good'), 'FIXTURE_STATUS_PROVIDER_UNLOAD', 'provider unload did not restore the default')
-      const replacement = fixture.opened.statusProviders.register({ id: 'packed.good', render: () => { goodRenders += 1; return { kind: 'text', content: 'packed replacement' } } })
+      let replacementContent = 'packed replacement'
+      const replacement = fixture.opened.statusProviders.register({ id: 'packed.good', render: () => { goodRenders += 1; return { kind: 'text', content: replacementContent } } })
       ensure(replacement.ok && fixture.bottom[0].render(40).join('\n').includes('packed replacement'), 'FIXTURE_STATUS_PROVIDER_RELOAD', 'same-id provider generation did not reactivate')
       await fixture.ownerFiber.dispose()
-      const beforeLateRefresh = goodRenders
-      ensure(!replacement.value.refresh().ok && goodRenders === beforeLateRefresh, 'FIXTURE_STATUS_OWNER_UNLOAD', 'owner unload accepted a late provider refresh')
+      const beforeBufferedRefresh = goodRenders
+      replacementContent = 'packed buffered refresh'
+      ensure(replacement.value.refresh().ok, 'FIXTURE_STATUS_OWNER_GAP_REFRESH', 'durable host buffer rejected a provider refresh during the owner gap')
+      await Promise.resolve()
+      ensure(goodRenders === beforeBufferedRefresh && !fixture.bottom[0].render(40).join('\n').includes(replacementContent), 'FIXTURE_STATUS_OWNER_GAP_INERT', 'owner gap retained provider render or selection authority')
       const replacementOwner = await fixture.ctx.plugin(statusProviderOwner)
-      ensure(fixture.bottom[0].render(40).join('\n').includes('packed replacement') && goodRenders === beforeLateRefresh + 1, 'FIXTURE_STATUS_OWNER_RELOAD', 'owner reload did not replay the persisted selection')
+      ensure(fixture.bottom[0].render(40).join('\n').includes(replacementContent) && goodRenders === beforeBufferedRefresh + 1, 'FIXTURE_STATUS_OWNER_RELOAD', 'owner reload did not replay the buffered provider refresh and persisted selection')
+      fixture.disposeConsumer()
+      const beforeLateRefresh = goodRenders
+      ensure(!replacement.value.refresh().ok && goodRenders === beforeLateRefresh && !fixture.bottom[0].render(40).join('\n').includes(replacementContent), 'FIXTURE_STATUS_CONSUMER_UNLOAD', 'consumer unload left its provider generation or refresh handle active')
       await replacementOwner.dispose()
       await fixture.dispose()
     })
