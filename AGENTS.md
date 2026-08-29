@@ -76,7 +76,7 @@ Every package entry is a Cordis plugin: it exports `name`, optionally `inject`, 
 
 ## Frontend Runtime 重构契约
 
-当前实现事实与包边界见 `docs/blue-architecture.md`、`docs/blue-seams.md` 和各包 `AGENTS.md`；插件 v1 的规范性目标见 `docs/blue-plugin-contract-v1.md`；PR #77 合并控制与后续 v1 发布执行分别见 `docs/blue-pr77-convergence-matrix.md` 和 `docs/blue-plugin-api-v1-roadmap.md`。以下纪律适用于当前主线及后续变更：
+当前实现事实与包边界见 `docs/blue-architecture.md`、`docs/blue-seams.md` 和各包 `AGENTS.md`；插件 v1 的规范性目标见 `docs/blue-plugin-contract-v1.md`；PR #79 发布边界、PR #77 合并 runbook 与后续独立 PR 队列见 `docs/blue-pr77-convergence-matrix.md`，阶段出口见 `docs/blue-plugin-api-v1-roadmap.md`。PR #79 是 docs-only 设计基线，不发布 runtime、npm package、Website v1 可用性或作者 skill。以下纪律适用于当前主线及后续变更：
 
 - **依赖方向**：Harness domain -> Blue frontend runtime -> renderer adapter；Domain 插件不得依赖 Blue，只有 core 接触 pi-tui/raw terminal。
 - **架构职责**：Domain、Interaction、Renderer、Composition 分开；官方包可暂时同仓，但契约、scope 和 Fiber ownership 不混合。它们不等于 manifest 的 `integrated | adapter | pure-ui` 三种 form。

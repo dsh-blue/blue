@@ -1,355 +1,222 @@
-# Blue 插件协议 v1 发布路线
+# Blue 插件 API v1 发布路线
 
 > 状态：**Active roadmap**
-> 起点：目标契约通过评审，PR #77 以 `1.0.0-beta.1` foundation 合并
-> 终点：`BLUE_API_VERSION 1.0.0`、机器契约、真实 owner、生态 fixture、skills、可开发 v1 插件的创造模式和中英文文档共同发布
-> 目标契约：[blue-plugin-contract-v1.md](./blue-plugin-contract-v1.md)
-> #77 控制矩阵：[blue-pr77-convergence-matrix.md](./blue-pr77-convergence-matrix.md)
+> 起点：PR #77 按最小 Beta 安全门合并
+> 终点：插件协议 `1.0.0`、对应 Blue `0.x`、创造模式、开发手册和生态验证共同发布
+> API 语义：[设计规范](./blue-plugin-contract-v1.md)
+> 合并与独立 PR 顺序：[PR #79 / PR #77 合并手册](./blue-pr77-convergence-matrix.md)
 
-本文只定义阶段、依赖、产物和退出门。Capability 语义只在目标契约定义；#77 当前状态只在收敛矩阵维护。
+本文只定义阶段、并行工作流、交付物和退出门。每个实际 PR 的范围、顺序和 acceptance record 以合并手册为准。项目名单不表达规模、地位、流量或合作优先级；每个生态项目使用同一套技术与沟通标准。
 
-## 1. 发布完成定义
+## 1. 完成定义
 
-协议 v1 不是把 `BLUE_API_VERSION` 常量改成 `1.0.0`。以下产物必须同时完成：
+协议 v1 不是只修改 `BLUE_API_VERSION`。发布必须同时具备：
 
-- 可公开引用的 JSON Schema Draft 2020-12；
-- 从 schema 生成的 TypeScript manifest type 和共用 runtime validator；
-- Stable capability 的 public API、resource grant、真实 owner、fallback 和默认 composition；
-- public data plane 与 bundle-owned control plane 的权限隔离；
-- synthetic conformance kit 和三种插件形态的真实生态 fixture；
-- 更新后的 plugin-development、plugin-migration、plugin-fixture、plugin-validation skills；
-- 能从会话原型生成、校验并 packed-install v1 插件的 Blue 创造模式；
-- 中英文 manifest、capability、quickstart、migration、testing 和 API reference；
-- 当前/上一 Harness line、packed install、真实 profile 和人工验收证据。
+- JSON Schema Draft 2020-12、generated TypeScript、共享 runtime/semantic validator；
+- 七项 Stable capability 的 public API、resource grant、真实 owner 与 fallback；
+- plugin-facing data plane 与内部 management authority 的权限隔离；
+- product version -> protocol version 的机器映射；
+- 独立 `npm pack` conformance kit 和真实 Harness 插件 fixture；
+- 可生成并验证本地持久包的创造模式；
+- 维护者 outreach skill 与作者 `blue-plugin-development` skill；
+- website 中按任务递进的中英文开发手册；
+- 当前/上一 Harness line、真实 profile 和人工验收证据。
 
-依赖主链：
+主线顺序：
 
 ```text
-规范冻结
-  -> #77 Beta 安全合并
-  -> JSON Schema
-  -> generated TypeScript manifest + capability catalog
-  -> negotiated public host / owner authority
-  -> Stable capability owners
-  -> synthetic + ecosystem fixtures
-  -> skills + 创造模式 authoring pipeline
-  -> bilingual developer docs
-  -> API 1.0.0 release
+PR #79 设计基线
+  -> PR77 Beta 安全合并
+  -> 最小七能力 Beta schema/API
+  -> 生态验证 + 创造模式 + skills + 开发手册（并行）
+  -> 按真实使用证据晋升 Stable
+  -> dsh-market Beta 合作
+  -> protocol 1.0.0 + Blue 0.x + 创造模式发布
 ```
 
-Fixture 与实现按 capability 同步增加；“fixture 阶段”是关闭跨包、跨版本和生态总门禁，不是等代码写完才补测试。
+Fixture 与 capability 同步建设，不在实现结束后补测试。作者联系与技术 conformance 是两条独立记录。
 
-## 2. R0：规范 PR
+执行批次与路线阶段的对应关系固定为：
+
+| 路线阶段 | 合并手册批次 | 含义 |
+| --- | --- | --- |
+| R0 | PR #79 | 只合并 Draft 设计与控制文档 |
+| R1 | PR #77 | 只合并 Beta runtime foundation |
+| R2 | P1-P4 | 机器契约、Host 协商、UI 与 session capability Beta |
+| R3 | P5-P6 | 作者工具/文档、创造模式与生态验证 |
+| R4 | P7 | 按 capability 独立晋升 Stable |
+| R5 | P8 | dsh-market Beta 合作 |
+| R6 | P9 | 协议 `1.0.0` 与对应 artifacts 发布 |
+
+## 2. R0：PR #79 设计基线
 
 ### 产物
 
-- `docs/blue-plugin-contract-v1.md`：长期 Proposed target contract。
-- `docs/blue-pr77-convergence-matrix.md`：临时 merge-control ledger。
-- `docs/blue-plugin-api-v1-roadmap.md`：本路线。
-- `docs/README.md` 与根 `AGENTS.md` 的 Target/Current/Active/Historical 权威指针。
+- API v1 设计规范：机器契约与 Stable 边界。
+- Host 生命周期规范：内部权限、generation 和重载行为。
+- PR #79 / PR #77 合并手册：发布边界、Beta merge control 和后续独立 PR 队列。
+- 本路线图：阶段与退出门。
+- `docs/README.md` 与根 `AGENTS.md` 的权威指针。
+
+### 发布边界
+
+R0 只把 Draft/Active 文档和必要的根 `AGENTS.md` 指针合入 `master`。它不修改 runtime、package/API version、website、创造模式、skill、schema、validator、example 或 bundle，也不发布 npm、Pages 上的可用性承诺或任何外部邀请。完整边界和 PR #79 自身检查见[合并手册“PR #79 的发布边界”](./blue-pr77-convergence-matrix.md)。
 
 ### 退出门
 
-- 三份文档不混写实现进度、长期语义和发布步骤。
-- capability catalog、三种 form、manifest identity、required/optional/resource、Beta/v1 边界已经决策完整。
-- PR #72 的 UI 蓝图和 PR #76 的 capability-gap 调研只作为输入，不与目标契约并列为规范真相。
+- Stable 只包含 `commands`、`status`、`panes`、`overlays`、`notifications.publish`、`session.read`、`session.projections.read`。
+- manifest 没有 `form`；架构职责和迁移模式不成为运行时分类。
+- 公开术语与 Harness 对齐，内部 control-plane 术语不进入 quickstart。
+- PR77 只承担最小 Beta 安全门，不被迫实现全部 v1。
+- 生态项目不按规模、下载量、地位或响应概率分层。
+- PR #79 diff 不包含 `website/`、packages、presets、skills 或 runtime artifacts。
 
 ## 3. R1：PR #77 Beta foundation
 
-### 实施
+截至 `9a6a255`，#77 的 W1-W6 运行候选 `cf8b3bd` 已完成自动证据和用户验收。R1 在该基础上只关闭已知越权和错误 Stable 承诺：
 
-截至审计 head `c89c714`，#77 已完成可保留的 implementation baseline：canonical UI/compiler、panes/overlays、status/status provider、editor extension/provider、split session facade/app owner、consumer lifetime fencing、legacy dock/frontend renderer 删除，以及由 user kit、六个 runnable plugins 和 composition 组成的八包 example suite。最终候选的 current/previous Harness package fixtures、四条 smoke 和专用 profile自动 dogfood均已刷新；`c89c714` 在直接父提交 `3f0e42b` 上只增加“examples 不进入默认 composition”的 guard。它们是后续收敛的 seed，不是 Stable v1 结论；真人 live acceptance仍 pending。
+1. API/host version 改为 `1.0.0-beta.1`，同步 README、website、examples、release note 和 skills。
+2. 移除 public generic `session.act`；内部 dispatcher 不成为普通 sibling service。
+3. notification consumer 只保留 publish；observe 属官方 owner。
+4. owner attach/aggregate/gesture/close helper 退出 plugin-facing root。
+5. raw session/projection backing service不可由普通 sibling直接取得。
+6. editor/status provider 与 editor extension 保留 reference runtime，但退出 Stable root。
+7. 保留 canonical compiler、managed panes/overlays、status、provider/editor runtime、lifetime fencing 和 packed suite。
 
-1. 将 #77 rebase/merge 本规范，按最新 head 重跑矩阵并更新 PR body 的 scope、数字和剩余门禁。
-2. 保留上述成熟 runtime；权限和命名收敛不得退回旧 renderer、dock 或未隔离 session facade。
-3. 将 API/host version 改为 `1.0.0-beta.1`，删除“当前已经 Stable 1.0”的 README/website/release-note 表述。
-4. 从 plugin-facing root 移除 owner attach、aggregate snapshot/observe、gesture mint 和强制 close。
-5. 由 bundle composition 创建 canonical owner authority/lease并传给官方 owners；public sibling 即使访问 Cordis `symbols.original` 也不能获得 authority。
-6. 从 Beta public vocabulary 移除 generic `session.act`，并隐藏或 authority-gate当前可直接 inject 的 raw session/projection reader与 requester；保留 negotiated readonly `session.read` seed但明确其 resource/epoch 尚待 v1 收敛。
-7. 修正 editor extension static/runtime node 集合，并把 provider限定为 host-owned editor engine 外层 shell。R1 的 flat manifest尚不能表达 optional，因此两者先退出 public Beta manifest、仅保留 bundle-internal/reference runtime；R2/R3 negotiated optional plane落地后再以 Experimental 公开，不能只改稳定性标签。
-8. 将 `notifications` 拆为 public publish 与 authority-protected owner observe；普通 consumer 不得订阅全局通知。
+R1 只冻结可观察权限结果，不强制特定 authority representation。hardening 后的新 exact head 必须重跑双 Harness fixture、smoke、worktree profile 和受影响的真人回归；合并不等于 v1 发布。
 
-### 退出门
+## 4. R2：最小 Beta 机器契约与 capability
 
-- hostile sibling fixture 无法 self-attach、读取 aggregate、observe 全局通知、mint gesture 或关闭别人的 overlay。
-- #77 已有 unit、compile、packed、width 和 `smoke:happy` evidence 继续全绿；权限修改后的 final head重跑相关双 Harness 线 fixture。
-- `smoke:pty` 与专用 worktree profile 完成 default、120/80/40 列、pane/overlay、status/editor provider、theme/session swap 和 editor input/completion/submit dogfood。
-- 用户明确 live-test 验收后才合并；合并不等于 API v1 发布。
+R2 按合并手册拆为 P1-P4，不得放进一个大 PR：P1 建机器真相，P2 建协商与权限，P3/P4 才把 UI 和 session capability 接到该契约。
 
-仓内八包 suite 只算 Beta/reference packed-distribution 基线：六个 runnable plugins 仍使用 flat `capabilities[]`、内部文件 `entry`，没有 `form`、required/optional/resources；user kit 和 composition 也不是第四种 form或独立生态消费者，不能提前关闭 R2/R6 或 Stable capability 门禁。
+### Schema 与 package
 
-## 4. R2：JSON Schema 与 manifest toolchain
+- `package.json.blue.manifest` 是唯一 discovery pointer。
+- `blue.plugin.json` 包含 identity、public exports entry、API/product compatibility、required/optional capability 与判别式 resources，不含 `form`。
+- schema 使用 Draft 2020-12 和 `additionalProperties: false`。
+- generated manifest type 不手改；semver 使用正式实现，不用正则近似。
+- runtime parser、CLI validator、installer 和 website examples 共用同一 corpus。
+- validator 检查 id=package name、entry=exports subpath、`files`、tarball 和 peer closure。
 
-### 单一 shape 真相与语义层
+### Catalog 与 host
 
-新增 `packages/api/schema/blue.plugin.schema.json`，使用 JSON Schema Draft 2020-12。Schema 是 manifest shape 的唯一机器真相；Schema 加版本化 semantic validator 构成完整机器契约。通过 package export `@dsh-blue/blue-api/schema/blue.plugin.schema.json` 和稳定网站 URL 同时发布。
+- generated capability-name union只含七项 Stable；Beta/Experimental 不进入 Stable root。
+- catalog记录 version、resource schema、owner、scope、limits、registration restore 和 unavailable fallback。
+- required 原子准入；optional 可缺失或获得 resource 子集；host 返回 exact grants。
+- API declaration report阻止 owner-only、Deferred 或 raw backing types 泄漏。
+- 发布 immutable schema/API subpath 和 product/protocol mapping。
 
-Schema 必须表达：
+### Capability Beta
 
-- required identity/entry/API/product compatibility/form；
-- `integrated | adapter | pure-ui`；
-- capability `required`/`optional` discriminated request；
-- capability version 和每项专用 `resources`；
-- Stable/Experimental 结构约束；跨数组 name uniqueness 由共享 semantic validator 补充；
-- strict additional properties 和可操作的 validation location。
-
-工具链固定为：
-
-- `json-schema-to-typescript` 只生成 `BluePluginManifest` 数据类型，生成文件不手改；runtime capability callback/API 类型继续由 TypeScript 手写并由 catalog 做 exhaustive check；
-- Ajv 2020 供 API runtime parser、CLI validator 和 installer 共用 schema；
-- `semver` 负责 range parse/intersection，替换字符正则和 API-major 近似；
-- `check:plugin-schema` 重新生成到临时目录并 diff，校验 schema、generated TS、package export/files 和 published copy 无漂移。
-
-`BLUE_CAPABILITY_CATALOG` 用 generated capability-name union 做 exhaustive key，记录 version、stability、resource schema id、owner、scope、fallback 和 limits。网站 capability 表从 catalog 生成或由 drift test 比对，不再手写名字列表。
-
-### Validator 收敛
-
-`script/blue-plugin-validate.mjs` 必须：
-
-1. 从 `package.json.blue.manifest` 找文件，而不是碰巧寻找 root JSON；
-2. 运行同一 schema/semantic validator；
-3. 校验 id=package name、entry=exports subpath、`files` 和 packed tarball；
-4. 根据 `form` 执行依赖/import/headless 规则；
-5. 保留稳定 JSON report code/reproduce，不执行未信任 entry 完成静态阶段。
+- `commands`、`status`、`panes`、`overlays`、`notifications.publish` 原则上逐项 PR 接入 grant、limits、fallback 和 owner lifecycle。
+- `session.read` 与 `session.projections.read` 分开 PR 收敛 fields/key grant、session epoch、seq、一致 cut 和 size bound。
+- provider、editor、conversation、theme/settings 和 market operation 不因 PR #77 已有 runtime 自动进入 v1 root。
 
 ### 退出门
 
-- positive/negative corpus 覆盖所有字段、form、capability、resource、semver 和 identity 分支。
-- runtime parser、validator、installer 对同一 corpus 结论一致。
-- 仓库至少有三个真实 `blue.plugin.json` 样例，分别覆盖三种 form。
+- positive/negative corpus覆盖 identity、entry、semver、required/optional、resource、unknown field和重复 capability。
+- schema、generated TS、runtime、validator、installer、templates和website无漂移。
+- workspace 外包可直接运行 validator 和 packed fixture，不要求 clone Blue。
+- 每个已开放 Beta capability 有真实 owner、plain fallback 和适用的 unload/reload/width/abort/replay/stale fixture；未完成的 capability 保持 unavailable，不能伪装 grant。
 
-## 5. R3：TypeScript public API 与协商 host
+## 5. R3：并行真实反馈
 
-### Public API plane
+P1/P2 完成且至少一个 P3/P4 capability 形成可运行 Public Beta 后，按 capability 同时开启四条工作流；不能先冻结宽 API 再等待末期验证。作者手册和 skill 只能描述当时机器 catalog 实际开放的能力。
 
-`@dsh-blue/blue-api` root 只导出 Stable plugin-facing surface：
+### 5.1 生态验证与协作
 
-- `parseBluePluginManifest`、generated manifest types；
-- `BlueResult` 和稳定 error taxonomy；
-- readonly JSON/data/action primitives；
-- `BluePluginHost.open()`、`BluePluginOpen`、grant/unavailable types；
-- Stable `BlueCapabilityApiMap` 和按 grant 裁剪的 `BluePluginApi`。
+首批六个项目采用同一标准：固定 upstream commit、记录公开边界、只使用 v1 候选七项中当时已开放的 Beta capability、独立 packed fixture、相同邀请 Issue 模板和相同作者 skill 链接。
 
-Experimental editor types从明确的 experimental subpath/namespace 进入，不混入 Stable API report。Owner types MAY 公开用于官方包编译，但 authority value 只能由 bundle composition 创建，且不能从 public host 或 Cordis original 解出。
+| 项目 | 当前公开边界 | Blue v1 验证切片 | 技术前置条件 |
+| --- | --- | --- | --- |
+| [dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) | headless tools、持久团队状态、scheduler、command、Web 私有 routes/internals | `commands`、`status`、`panes`、`overlays` | 先由上游拥有 renderer-neutral Service Definition 或 session projection；不得读 `.agent-teams`、private route 或 package internal |
+| [dsh-context](https://github.com/bowenliang123/dsh-context) | `contextTimeline` / `contextHeaders` session projections 与公开 types | `session.projections.read`、`commands`、`status`、`panes`、`overlays` | 保持 Host projection 为唯一真相，Blue entry 不复制 Web dashboard state |
+| [dsh-cost-meter](https://github.com/Han-1413141/dsh-cost-meter) | `costUsage` session projection 与公开 `costMeter` Service | `session.projections.read`、`status`、`panes`、`notifications.publish` | 直接 inject Service；不发明 `cost.*` Blue capability |
+| [dsh-mcp-panel](https://github.com/PerryLink/dsh-mcp-panel) | 公开 `mcpPanel` Service、Typert invocations 与 `/mcp` | `commands`、`status`、`panes`、`overlays` | v1 先做只读状态/诊断切片，写操作继续由插件 Service 与 Harness approval 所有 |
+| [dsh-notifier](https://github.com/wingsky-1/dsh-plugin-hub/tree/main/packages/dsh-notifier) | Host 事件判断、免打扰和历史；browser half 走 SSE/HTTP | `notifications.publish`、`panes`、`overlays` | 抽取窄的 renderer-neutral Service/subscription；Blue 不消费 private Web routes |
+| [dsh-peak-indicator](https://github.com/future007s/dsh-peak-indicator) | `peakCost` session projection 与独立 browser half | `session.projections.read`、`status`、`panes` | 复用 projection；timer/registration 绑定 Fiber，不把 Web visual effects带进 TUI |
 
-### Negotiation
+每个项目的 fixture MAY 位于固定 fork或 conformance workspace，但必须记录 upstream commit、patch、同步/删除条件和代码 ownership。Blue 默认只发邀请 Issue，不向上游提交未经邀请的代码 PR。作者认可与互荐是生态目标，但不作为确定性 v1 release gate。
 
-- required capability/resource 采用原子 admission；optional 逐项降级并返回原因。
-- grant 返回 exact capability version、实际 resource 和 host limits。
-- capability owner generation 在每次 register/write/action 时复查。
-- error code补齐 resource denied、timeout、stale、unavailable、internal isolation。
-- API declaration report 进入 CI，破坏 Stable surface 必须显式评审。
+### 5.2 创造模式
 
-### 现有 surface 收敛
-
-- `notifications` 拆成 public publish 与 owner-only observe。
-- #77 已将所有内置 dock consumer 迁到 bottom pane并物理删除 dock runtime/type/aggregate/bridge；本阶段只保留旧 manifest 的可操作迁移诊断和 `rg`/schema drift gate，禁止 compatibility 回流。
-- 删除 `BluePluginDefinition.apply(api: unknown)`、inline legacy manifest 和 public owner aggregate。
-
-### 退出门
-
-- required/optional/partial-resource、owner absence/reload、cross-plugin isolation 全部有 host fixture。
-- API root 不含 Deferred/owner power；exports/files/tsdown/check:lib 与 packed tarball一致。
-- Beta manifest 有明确迁移错误，不能静默解释成不同权限。
-
-## 6. R4：Stable capability owners
-
-每个 capability 独立 PR/worktree，顺序由依赖决定。
-
-### R4-A：现有 UI authority
-
-收敛 `commands`、`status`、`panes`、`overlays`、`notifications.publish`、`status.provider`：
-
-- 把现有 registry/bridge 接到 negotiated grant；
-- status provider snapshot 去掉隐式 session 信息；
-- limits 从硬编码实现提升为可观察 grant；
-- 每项 owner subscription 按 capability 窄化。
-- 以冻结的 dsh-status-bar minimal provider slice 验证 `status.provider` whole-provider ownership 与 fallback；只有 in-repo reference fixture、没有外部 packed port 时不得标 Stable。
-
-### R4-B：Readonly session/projection
-
-1. 保留 #77 已拆出的 `session.read` readonly facade：public consumer 只有 `current/subscribe`。followup/steer/interrupt dispatcher MAY 继续作为 app owner内部实现，但当前通用 `BlueSessionRequester` Cordis service必须删除或改为 composition authority-gated，普通 sibling不能 inject；它 MUST NOT 重新进入 reader、公开 service或 public capability vocabulary。
-2. snapshot 按 identity/cwd/status/mode/model grant 投影并带显式 `sessionEpoch/revision`；订阅 replay、stale 判断和 action reference都以 epoch为界。
-3. 在 app/harness-adapter 建 `projections.read` allowlist gateway；返回一致 cut、`asOfSeq`、有界 immutable value。
-4. session switch、same-id new epoch、resource denial、key unload、late callback 和 duplicate/older sequence 都有确定结果。
-
-### R4-C：Conversation extension points
-
-- `conversation.read` 提供 cursor/page-size 有界 normalized entries；不暴露 raw event log。
-- `conversation.navigate` 只改变当前 frontend viewport，不修改 session。
-- `conversation.itemActions` 注册 label/applicability/handler；Blue 在 dispatch 前复查 item ref epoch/revision并提供 gesture/signal，插件调用自己的 domain service。
-
-Rewind、Message Edit 和无 domain mutation 的 Bookmark/Tag reference fixture 必须共用该扩展点，禁止为某一个插件新增业务字段。Peak Indicator 走 additive status，不计作 item-action 泛化证据。
-
-### R4-D：Theme 与 settings
-
-- `theme.provider` 注册 semantic token candidate；用户选择、token validation、fallback、unload/swap 与 status provider 同等级。
-- `settings.sections` 只管理 Blue 设置 UI composition；schema/value/commit/conflict/persistence 由插件直接 inject `dsh-settings`。
-- Catppuccin 不能复制 JSON 到 Blue 包，也不能输出 ANSI；它只注册 theme candidate 和可选 settings section。
-
-### 每项退出门
-
-- 至少两个独立消费者（一个 Blue official/reference、一个独立生态包）、absence fallback、Fiber unload 和 package/bundle composition 齐全。
-- read capability 有 replay/resume/stale；action 有 gesture/abort/stale/double-submit；renderer contribution 有 width/failure isolation；provider 有 swap/LKG/breaker/fallback。
-- packed fixture current/previous Harness line 均执行，无 skipped。
-
-## 7. R5：Editor Experimental
-
-在保留 #77 editor runtime 的基础上，按最小权力拆分：
-
-1. `editor.decorations`：先迁 passive before/after、hint、diagnostic、action。
-2. `editor.completions`：独立 trigger/query、mux、timeout、abort、stale 和 result cap。
-3. `editor.draft.read`：revisioned readonly draft snapshot。
-4. `editor.draft.write`：expected revision 的结构化 insert/replace；与 history/IME transaction一致。
-5. `editor.submit.transform`：固定排序、逐项 timeout、abort、rollback，提交清空前完成 barrier。
-
-全部只能 optional，owner/fixture 缺失不阻止插件加载。Composer History 验证 draft read/write 和 session/editor reload；`@/#` completion 与 submit transformer 各自使用独立 fixture。
-
-Composer History 的 v1 fixture 只验证显式 history command/overlay 与 draft read/write，不承诺原 Web 版的 ArrowUp edge recall 或 Ctrl+R。精确按键体验依赖尚未泛化的 contextual editor-key seam，列入 Deferred 独立设计；不得把 raw key handler 塞进上述五个 capability，也不得因此阻断 `1.0.0`。
-
-#77 已实现的 `editor.provider` owner、persisted user selection、actual-width dry render、同 editor/focus shell swap、LKG/breaker/default fallback 和 stale/unload fencing作为本阶段基础保留，不重新实现。本阶段把它迁入明确的 Experimental schema/catalog/subpath，并冻结为 host-owned editor engine 外层的 shell provider：candidate 必须恰好贡献一个 `editor-control`，不得获得 draft/cursor/history/undo/IME、raw key 或 editing-engine ownership。
-
-它发布为 Experimental 前必须进入 optional schema/catalog/subpath，冻结 activate/dispose 或“纯无状态 shell无需 hook”的 public lifecycle语义，完成 final-head current/previous Harness reference packed fixture，并在统一 profile 通过 draft/history/mode/attachments/focus/IME、failure rollback、session swap 和 unload/reload 的真人验收。固有 snapshot 不再隐式提供 mode；需要 mode 的插件另申请 `session.read` grant。它不进入 Stable catalog、不计作三种 form 的 Stable 外部证据；独立生态 provider和其余 Stable 门禁留给未来另开的 1.x 晋升提案。
-
-## 8. R6：Conformance 与生态 fixture
-
-### Synthetic conformance kit
-
-#77 已提供可复用的 `script/blue-plugin-fixture.mjs`、`script/blue-examples-fixture.mjs`、throwaway packed install、peer closure 和 current/previous Harness lanes。R6 在该基础上扩展或拆出 versioned kit，使每个测试包从 `npm pack` tarball 安装，只 import public exports。报告必须保持：
-
-```text
-declared == executed
-skipped == []
-failures == []
-fixtureCleaned == true
-```
-
-统一的是场景词表和 capability -> required scenarios 映射，不要求无关 fixture 假跑不适用场景。词表包含 manifest negotiation、resource denial、projection replay/resume、action abort/stale、provider swap/fallback、unload/reload、late callback、20/40/80/120 width、bundle composition、当前/上一 Harness exact line；每个 fixture 的全部 declared/applicable 场景必须执行，`skipped` 仍为空。
-
-#77 的六个 executable plugin examples 继续作为 Beta/reference distribution corpus；连同 `blue-user-kit` 和 `blue-ecosystem` composition 是八包 suite。六个 entry 仍是 flat `capabilities[]`，没有 `form`、required/optional/resources negotiation，也不是独立生态 package。R6 必须将其迁到目标 schema，并另用真实外部 package 关闭三种 form 与独立消费者门禁；组件库和 composition bundle都不构成第四种 form。
-
-### 三形态候选与证据等级
-
-下表中的 `form` 指目标发布的 Blue entry，不是某个生态项目的固有属性。审计冻结于 2026-08-28/29；commit 是 fixture 可复现基线，不是要求永远跟随的版本。Fixture MAY 暂存于 Blue conformance 仓或固定 commit fork，但必须记录 upstream commit、补丁、同步/删除条件、发布/代码 ownership 和作者合作状态。同一功能若由上游同包发布就是 `integrated`，由独立 `*-blue` 包只消费其 service 则是 `adapter`；fixture manifest 必须按实际 ownership 选择，不能按本表名称猜测。
-
-| Form | 候选与冻结证据 | 目标 Blue 边界 | 当前可行性 | v1 角色 |
-| --- | --- | --- | --- | --- |
-| pure-ui | [Catppuccin](https://github.com/NoNameLeGo/dsh-catppuccin-theme) `a44df0045d81` | 四套 theme JSON -> `theme.provider`；可选 `settings.sections`，持久化走 `dsh-settings` | 高；现有 TUI 会写 `~/.dsh-tui/themes`，新 Blue entry 必须直接注册 semantic tokens，且不得启动 sibling Web/update route | **首批 POC / Stable blocker** |
-| pure-ui | [Conversation Navigator](https://github.com/gjj-star/dsh-conversation-navigator) `9682972130d8` | `conversation.read`、`conversation.navigate`、`session.read`、`panes`，可选 `commands` / `settings.sections` | 高；当前 browser entry 与空 host shell 已分离，重点是分页、session switch、stale jump、width | 第二波 Stable evidence |
-| pure-ui | [Composer History](https://github.com/PerryLink/dsh-composer-history) `16feb04aaaaf` | Experimental `editor.draft.read/write`、`conversation.read`、`overlays`、`settings.sections` | 中；v1 只迁显式 history/draft 子集，ArrowUp/Ctrl+R 等 contextual key seam Deferred | Experimental，**不阻断 1.0** |
-| adapter | [Cost Meter](https://github.com/Han-1413141/dsh-cost-meter) `56455e17848d` | 独立 Blue adapter 直接 inject 公开 `costMeter` service，并申请 `projections.read` resource `{ keys: ['costUsage'] }`；只向 `status` / `panes` / `commands` / `notifications.publish` / `settings.sections` 投影 | 高；已有公开 service 和 projection，不产生 `cost.*` Blue capability，也不复制费用真相 | **首批 POC / Stable blocker** |
-| adapter | [Turn Rewind](https://github.com/Anionex/dsh-turn-rewind) `d3734cb183a5` | 独立 Blue adapter inject `rewind` service 后消费 `conversation.itemActions`、`overlays` | 阻塞；当前只有 `/rewind` command 和 raw Agent/Session 执行。作者需先抽 `list/preview/execute` renderer-neutral service；若 Blue face 改由上游同包拥有，form 应改为 integrated | 前置条件项；可由 Message Edit + Bookmark/Tag reference 补其 v1 证据 |
-| integrated | [dsh-context](https://github.com/bowenliang123/dsh-context) `6d17588a5672` | 同包 headless projection 与独立 Blue entry；消费 `projections.read` / `status` / `panes` / `overlays` / `commands` / `settings.sections` | 高；先做 headline、composition、recent events，不复制完整 Web dashboard | **首批 POC / Stable blocker** |
-| integrated | [OpenPencil](https://github.com/ZSeven-W/dsh-openpencil) `906ff9c2fcda` | domain/tool 继续 headless；Blue v1 只验证 canonical text/diff fallback、signed-meta elision 和 `notifications.publish` | 当前 `@dsh-blue/blue-openpencil` 是独立 adapter；本行只在上游作者拥有同包 Blue entry 后成立。Rich workbench 依赖 Deferred tool-presentation，不能搬 Web canvas 或 capability bearer | v1 negative/fallback；rich UI 不阻断 1.0 |
-| integrated | [Lark](https://github.com/sugarforever/dsh-lark) `ee639df50fc7` | 上游同包 Blue entry 消费 `commands` / `notifications.publish` / `settings.sections`；domain runtime 独立 | 当前 `@dsh-blue/blue-lark` 是 loopback HTTP compatibility adapter，不是 integrated。上游公开 service/内置 Blue face 后删除 adapter | 未来 integrated，非首批 blocker |
-
-表外另保留两条不同性质的证据：
-
-- [Blue Remote](https://github.com/GeekCmore/dsh-remote) `423c736869aa` 是 transport/protocol infrastructure fixture，验证 negotiate、seq resume、lease、question/approval、reconnect 和 unload。它当前不消费 Stable UI capability，因此不冒充三种 Blue plugin form；待 Deferred session/frontend provider 契约再重新分类。该项目也不能与市场中同名 remote 包混淆。
-- [Modlens](https://github.com/liustack/modlens) `147356e6dde0` 是 zero-Blue-API negative fixture：它继续只通过 Harness tool/provider 工作，Blue 无 manifest、无专用 capability 也能呈现通用结果。该用例防止“为了市场覆盖给每个 domain 发明 capability”。
-
-Conversation item-action 的外部压力基线另冻结为 [Message Edit](https://github.com/Moeblack/dsh-message-edit) `b78a167064ca`，但它与 Rewind 一样要先抽 renderer-neutral service。Bookmark/Tag 是明确标记的 in-repo reference fixture，不伪装成外部生态消费者；创建时记录自身 commit。
-
-[dsh-status-bar](https://github.com/Starlight-bananice/dsh-status-bar) `128a7f3d1256` 是 `status.provider` 的独立生态候选。首个 fixture 严格限定为 minimal pure-ui provider slice，只消费 `session.read` 的 status/cwd/mode/model 和 sanitized additive entries；完整 17 段与费用历史版是后续 integrated 目标，需要 allowlisted `projections.read`，并先把 JSONL/HTTP ledger 抽成 renderer-neutral Cordis service。只有该外部 slice 通过 packed/provider-swap/width 门禁后，才满足 Stable 的外部消费者条件。
-
-[Peak Indicator](https://github.com/future007s/dsh-peak-indicator) `887bbe7040f1` 是 additive `status` 候选，只验证峰谷时段徽标与 timer/unload；它不替代 `status.provider`，也不计作 conversation item-action consumer。
-
-候选池是 discovery/fixture portfolio，不是等权 release blocker。`1.0.0` 的硬门是三种 form 各至少一个 Stable packed fixture、每个 Stable capability 的 owner/consumer/fallback/lifecycle 证据，以及所有声明场景零 skip；Experimental、Deferred 或明确阻塞的候选不因尚未迁移而阻止发布。反过来，首批三个 POC 也不能替代它们没有覆盖的 Stable conversation/provider 证据，或另行声明的 editor Experimental 证据。
-
-### 首批 POC
-
-按实现风险优先完成：
-
-1. Catppuccin：最快证明 pure UI/theme provider；
-2. Cost Meter：证明公开 service/projection 的窄 adapter；
-3. dsh-context：证明 integrated projection 到 TUI。
-
-选择依据来自 dsh-market 2026-08-28 registry snapshot：Catppuccin 为 20 stars / 5,806 downloads，Cost Meter 为 195 / 17,152，dsh-context 为 1,037 / 32,099。三者兼顾可见用户量和低到中等迁移风险，且不会用同一 capability 的三个变体冒充架构覆盖。
-
-三者 packed fixture 通过后再联系作者。每个合作包携带 frozen upstream commit、可安装 tarball、可运行 profile patch、迁移 diff、短终端录屏、machine-readable fixture JSON、fallback 表和建议代码 ownership，而不是只发送合作设想。它们共同作为联系 dsh-market 的 Blue 能力 demo。下载量是快照中的相对优先级信号，不是协议或长期流量承诺。
-
-dsh-market 不作为 v1 阻断 fixture。在审计基线 [`d5902420b175`](https://github.com/dsh-market/dsh-market/commit/d5902420b175) 中，catalog/安装/profile 更新仍主要封在 HTTP routes；Update API v1 仍为 beta，范围只覆盖 check/start/observe/rollback/restart，不足以支撑完整 TUI 市场。Blue 不能调用私有 route、复制 pnpm/profile/restart 逻辑或定义 `market.install` capability。
-
-合作前置是 dsh-market 抽出 typed/versioned renderer-neutral Cordis service/controller，至少覆盖 catalog/search、installed/check、install/update/uninstall/toggle、operation progress/cancel/rollback；同时固定 error taxonomy、policy/authorization 和 lifecycle。Service mutation 接受 AbortSignal、profile scope 和 dsh-market 自己的 authorization context，并由 dsh-market Fiber 持有恢复与 restart 策略；Blue adapter 在调用前消费 Blue user gesture，不能把 Blue token 泄漏进 domain service。Blue 只用 `commands` / `panes` / `overlays` / `notifications.publish` 呈现，成为第一个非 Web consumer。现有 beta Update API 可做受限 update-status pilot，但不能被描述为完整 market 集成。Agent Teams、Browser 等同样作为后续 capability discovery，不阻塞 1.0。
-
-## 9. R7：Skills、创造模式与开发者文档
-
-Skills 在 API 和 fixture 稳定后更新，避免教会开发者一套过期接口。
-
-| Skill | 必须更新的行为 |
-| --- | --- |
-| `plugin-development` | 选择三种 form、生成 package pointer/manifest、区分 direct inject 与 Blue capability、required/optional/resource/fallback |
-| `plugin-migration` | 输出 Domain/Projection/Action/UI/Composition、form、scope、adapter 删除条件；识别 HTTP closure 和不需要 Blue API 的插件 |
-| `plugin-fixture` | 生成 packed current/previous-line 场景；按 capability 自动选择 replay/abort/stale/swap/width/unload；禁止 skipped 充当证据 |
-| `plugin-validation` | schema、public/control plane、package export/files/tsdown、Fiber、bundle/profile/human acceptance 一体门禁 |
-
-每个 skill 至少有 integrated、adapter、pure-ui 和 zero-API 四类 eval；输出引用生成的 capability catalog，不内嵌名字副本。
-
-### 创造模式 authoring pipeline
-
-现有 `cordis` preset、creative isolate 和真实 `cordis_define/run/update/stop/rollback` e2e作为动态原型底座保留。它们当前仍教授 flat manifest、`^1.0.0`、`session.act`、notification observe与旧 identity，而且测试只验证 skill discovery和动态 runner生命周期，没有执行 bundled skills、生成持久包或运行 packed fixture。R7 必须把创造模式升级为 v1 插件开发入口和 official consumer，而不是增加第四种 plugin form。
-
-目标流程为：
+保留现有 inspect、define、run、update、stop、rollback 和隔离 runtime；新增持久包闭环：
 
 ```text
 需求与 zero-API 判断
-  -> inspect + 加载 bundled cordis-plugin-development
-  -> host-minted transient capability request + 动态原型
-  -> 当前会话 UI 验收
-  -> 用户选择 ephemeral / local / GitHub / npm
-  -> 加载 bundled blue-plugin-development
-  -> 生成 v1 package
+  -> inspect + 临时 capability request
+  -> 会话内原型
+  -> 用户验收
+  -> 明确选择 ephemeral / local / GitHub / npm
+  -> 生成 package + blue.plugin.json
   -> shared validator
-  -> current/previous Harness packed fixture
+  -> npm pack
+  -> current/previous Harness 独立安装 fixture
 ```
 
-具体交付要求：
+确认前不得生成持久 package、repository、commit、tag 或 release。v1 的确定性硬门止于本地持久包和双线 fixture；GitHub/npm 真实发布、凭据与 2FA 只在用户明确确认后执行。
 
-1. preset persona、bundled `cordis-plugin-development` / `blue-plugin-development`、仓内四项 plugin skills和中英文文档直接消费发布的 schema、generated capability catalog、TypeScript API与模板；不得复制 capability/version名单。
-2. 动态 `code.host` 使用由同一机器契约生成并经 host校验的 authoring-only transient capability request；creative host分配临时 identity，请求不能伪造 package `entry`、`form` 或 installer receipt。它只能消费获准的 Stable facet和 optional Experimental facet，不能通过 raw Agent/Session、owner registry、`session.act` 或 notification observe延续旧 API。transient prototype不是可发布 entry，也不算一种 form。
-3. 持久化前先判断 zero-API；确需 Blue entry时必须选择 `integrated | adapter | pure-ui`。三种 scaffold分别落实 headless domain/UI scope分离、上游公开 service inject与 adapter删除条件、无 domain dependency，并生成 required/optional/resources、grants检查和逐能力 fallback。
-4. 用户确认前不得写 package、仓库或发布物。确认后生成 `package.json.blue.manifest` pointer、`blue.plugin.json`、public exports/files、Cordis entry和 composition；entry解析同一 JSON，不能保留原型 inline manifest作为第二真相。
-5. 发布一个可在 workspace外直接调用的 versioned scaffold/validator/conformance kit；不能要求插件作者 clone Blue，也不能让 fixture因包不在当前 pnpm workspace而拒绝。生成后自动进入修复循环，直至 validator和双 Harness线 packed fixture均通过且无 skip。
-6. integrated、adapter、pure-ui、zero-API各有 skill eval；negative eval覆盖 HTTP-only业务 closure、raw Agent/Session、被拒绝 capability、Experimental放 required、无 fallback和多余授权。
+### 5.3 两类 skills
 
-创造模式门禁必须检查 schema -> generated TS -> runtime validator -> installer -> capability catalog -> templates -> skills/docs 的生成漂移，以及 API/schema/skill/template version stamp一致。preset、skills和模板中回流 flat `capabilities: []`、generic `session.act`、普通 `notifications.subscribe`、旧 identity/entry示例时 CI直接失败。bundle/authoring-kit tarball必须实际携带并可解析其承诺的 schema、catalog、templates和工具。
+- `blue-ecosystem-outreach` 仅供 Blue 维护者：审计公开边界、生成内部可行性骨架和机器证据、输出邀请 Issue 草案；实际发 Issue 前再次确认；默认不生成上游代码 PR。
+- `blue-plugin-development` 是作者唯一入口：支持新插件和现有 Harness 插件增加同包 Blue frontend entry，生成 manifest/entry/fallback/fixture，遇到缺失 Stable capability时停止并输出提案。
 
-开发者文档最后生成并保持中文源、英文镜像：
+作者 skill 只维护一份，位于 Blue 仓库创造模式 preset；标准模式不加载。邀请 Issue 直接链接 GitHub 中这份 skill。两类 skill都读取发布的 schema/catalog，不复制 capability 名单。
 
-- concepts：三种 form 与四种架构职责；
-- manifest：schema、identity、entry、compatibility、capability negotiation；
-- capabilities：生成的 Stable/Experimental 表、resource/fallback；
-- quickstart：三个最小样例，实际包含 `blue.plugin.json` 并从 tarball 安装；
-- migration：从 flat Beta manifest、dock、notifications、session/editor 旧面迁移；
-- testing：validator、packed fixture、previous Harness、width/profile/human gate；
-- API reference：TS declaration、schema URL、error taxonomy 和版本政策。
+### 5.4 Website 开发手册
 
-所有教程样例本身进入 packed fixture。网站 build、链接、中文/英文结构 parity、catalog drift 和 creative-mode 教程/模板 drift 是 CI gate。
+中文源、英文镜像按任务递进：开始开发、选择接入路径、架构术语、包与 manifest、UI capability、session 数据、生命周期、Web 迁移、创造模式、验证发布、案例、API reference。教程样例自身进入 packed fixture；website build、链接、双语结构和 schema/catalog drift进入 CI。
 
-完成后归档 `blue-api-design.md`、PR #77 的 UI blueprint 和已结束的 frontend-runtime cutover 套件；保留 `blue-frontend-architecture.md` 作为原则、package AGENTS 作为当前实现。归档移动单独提交，统一修复根 AGENTS、`CODEX-IMPLEMENTATION-GUIDE.md` 和 docs links。
+## 6. R4：Stable 晋升
 
-## 10. R8：`1.0.0` 发布门禁
+七项 capability逐项晋升，不以“代码已经存在”代替证据。每项必须具备：
+
+- 真实 owner 与官方/reference consumer；
+- 至少一个真实 Harness 插件 consumer；
+- capability absence/plain fallback；
+- renderer contribution 的 width/failure isolation，read 的 replay/resume/stale，action 的 gesture/abort/stale，按适用场景齐全；
+- 当前/上一 Harness line的独立 packed fixture，`declared == executed`、`skipped == []`、`failures == []`；
+- package/bundle composition、unload/reload、late callback和真实 profile验收；
+- 作者手册、skill、API declaration和机器 catalog一致。
+
+provider、conversation、theme/settings、editor 等不因已有 #77 runtime 自动晋升；它们继续作为内部/reference 或 Experimental 候选，在后续 1.x 以真实消费者共创。
+
+## 7. R5：dsh-market Beta 合作
+
+联系时机：公开 Beta、作者 skill和至少两个可运行生态验证项目就绪后。
+
+v1 合作范围：
+
+- Blue frontend entry metadata；
+- Blue-compatible badge/filter；
+- `blue` profile 安装路径；
+- 与 dsh-market metadata/specification system 对齐；
+- 双方文档互荐与 TUI 定位说明。
+
+dsh-market 当前 Web HTTP routes 和 beta Update API 不被包装成完整市场 Service。Blue 不调用 private route、不复制 pnpm/profile/restart逻辑，也不定义 `market.install` capability。完整 catalog/search/install/update/uninstall/rollback TUI 等 dsh-market 提供 typed、versioned、renderer-neutral Cordis Service 后另行设计。
+
+## 8. R6：`1.0.0` 发布门
 
 按以下顺序关闭：
 
-1. schema、generated TS、runtime/validator/installer corpus green；
-2. Stable capability catalog 每项 owner/consumer/fallback/fixture complete；
-3. API declaration report 确认 root 无 Experimental/Deferred/control-plane 泄漏；
-4. 三种 form 各至少一个 Stable 生态 fixture、Stable catalog 的逐项证据和 Modlens zero-API negative fixture 在 current/previous Harness line green；候选表中 Experimental/Deferred/blocked 项不计作未完成 blocker；
-5. 四类 skills eval、创造模式生成门禁与中英开发者文档 green；
-6. 创造模式 full e2e 使用实际 bundled `cordis` preset和 bundled skills完成 inspect -> transient prototype -> UI可见 -> 用户确认 -> 生成包 -> shared validator -> `npm pack` -> current/previous Harness独立安装 -> boot/render -> unload/reload；确认前无持久化写入，报告满足 `declared == executed`、`skipped == []`、cleanup成功；
-7. 全仓 test、coverage、typecheck、lint、build、check:lib、check:pack、diagrams、website build 和 smoke green；
-8. 独立 `blue-<tag>` profile 覆盖 install、unload/reload、provider/theme/session swap、120/80/40 列、首批 POC和至少一次真人创造模式原型到本地包流程；
-9. 用户 live-test 并明确验收；
-10. 将 API/host version 从 `1.0.0-beta.1` 改为 `1.0.0`，发布 schema stable URL、packages 和 migration notes；
-11. 从 registry 新建干净 profile 做 install smoke，记录 exact artifacts/Harness line。
+1. schema、generated TS、runtime validator、installer、catalog和version mapping green；
+2. 七项 Stable capability逐项证据完整，Stable root无 Experimental/owner power；
+3. 六项目矩阵的适用技术切片都有明确状态，发布证据覆盖七项能力；外部作者响应不作为硬门；
+4. 创造模式完成 prototype -> accept -> local package -> validator -> `npm pack` -> 双 Harness独立安装；
+5. 两类 skill eval和中英文开发手册 green；
+6. full repository gates、website、packed install和真实 profile smoke green；
+7. worktree profile覆盖 install、unload/reload、session swap、120/80/40和生态验证切片；
+8. 用户 live-test并明确验收；
+9. API/host从 `1.0.0-beta.*` 晋升 `1.0.0`，发布 immutable schema/API、mapping和migration notes；
+10. 从 registry新建干净 profile做最终 install smoke并记录 exact artifacts。
 
-任何 skipped fixture、任一已声明 Stable capability缺少真实 owner、只有 Web route的业务 API、创造模式仍生成旧协议或不能完成持久包双线验证、缺失上一 Harness line、缺失人工验收都阻止 `1.0.0`。Blue 产品 release仍可保持 `0.x`，不需要为了协议 v1人为提升产品 major。
+任何 Stable capability缺真实 owner/consumer/fallback、任何适用 fixture skip、private Web route被当公开 API、创造模式不能生成并验证本地持久包、上一 Harness line或人工验收缺失，都阻止 `1.0.0`。Blue 产品版本仍可保持 `0.x`。
 
-## 11. 工作方式
+## 9. 工作方式
 
-- 每个阶段使用独立 worktree 和小 PR；不把所有收敛重新塞回 #77。
-- 每个 capability PR 同时改 code、tests、package AGENTS、bundle row、fixture 和当前实现文档。
-- 目标契约变更必须先通过协议评审；实现进度只更新矩阵/roadmap。
-- 用户可见行为按仓库规则安装到 worktree 专属 profile，真人验收前不合并、不删除 profile。
-- 路线完成后本文归档到 `docs/history/`，由 release notes 和生成 API reference 接替。
+- 每个阶段使用独立 worktree和小 PR；不把 v1 roadmap全部塞回 #77。具体拆分使用合并手册的 P1-P9 队列。
+- capability PR同步修改 code、tests、package AGENTS、bundle composition、fixture和当前实现文档。
+- API 设计变化先评审设计规范；实现进度只更新矩阵/roadmap。
+- Website 正式开发手册、作者 skill 和创造模式持久化只能在对应 Beta schema/catalog/validator 可运行后进入 P5，不能回填 PR #79。
+- 用户可见行为必须走 worktree profile和真人验收，验收前不合并、不删除 profile。
+- 技术 conformance、作者联系状态和市场合作状态使用不同字段，不互相冒充完成。

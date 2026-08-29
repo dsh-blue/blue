@@ -1,139 +1,177 @@
-# PR #77 插件协议收敛矩阵
+# PR #79 设计基线与 PR #77 Beta 合并手册
 
-> 状态：**Active merge control**
-> 基线：`master@1d0f01e`
-> 审计对象：PR [#77](https://github.com/dsh-blue/blue/pull/77) `p2/ui-api-refactor@c89c714`
-> merge-base：`1d0f01e`，PR 分支领先 54 commits
-> 目标规范：[Blue 插件协议 v1 目标态契约](./blue-plugin-contract-v1.md)
+> 状态：**Active merge and delivery control**
+> 设计 PR：[#79](https://github.com/dsh-blue/blue/pull/79)
+> 审计基线：`master@1d0f01e`
+> PR #77 审计对象：`p2/ui-api-refactor@9a6a255`
+> 已验收运行候选：`cf8b3bd`；`9a6a255` 只记录该验收事实
+> 长期 API 语义：[Blue 插件 API v1 设计规范](./blue-plugin-contract-v1.md)
+> PR #77 之后的阶段出口：[Blue 插件 API v1 发布路线](./blue-plugin-api-v1-roadmap.md)
 
-2026-08-29 审计时，#77 的 CI 与 website check 为 green，但 GitHub 状态仍是 `BLOCKED / REVIEW_REQUIRED`；自动检查不替代本矩阵要求的 profile live acceptance。
+本文是从 PR #79、PR #77 到插件协议 `1.0.0` 的执行入口。它负责说明每个 PR 可以发布什么、合并顺序、退出门和证据；API 长期语义只在设计规范定义，阶段产物只在路线图展开。
 
-本文只回答“PR #77 的现有实现如何进入 master，并继续收敛到插件协议 v1”。它不是长期 API 真相。#77 合并并完成 v1 收敛后，本文移入 `docs/history/`。
+PR #77 已吸收 PR #72 的设计输入；PR #72 不再作为独立合并前置项。本手册不得被解释为要求 PR #77 一次实现整个 v1 roadmap。
 
-## 1. 总体判断
+## 1. PR #79 的发布边界
 
-PR #77 已形成六条可保留的实现基座：
+PR #79 是 **docs-only design and control PR**。合并后进入 `master` 的是可公开评审的设计基线，不是可供插件作者依赖的运行时发布。
 
-1. canonical `BlueUiNode`、builders、admission validator 和唯一 pi-tui compiler，legacy frontend renderer 已删除；
-2. managed panes/overlays 与 focus、gesture、abort、buffer/replay；
-3. additive status 和用户选择的 `status.provider`；
-4. revision-fenced editor extension owner、completion/submit/action runtime；
-5. 用户选择的 `editor.provider` shell swap、LKG/breaker/default fallback；
-6. app-owned `session.read/session.act` 分离 facade、legacy dock 删除，以及仓内 public ecosystem packed suite。
+### 1.1 PR #79 合入什么
 
-它尚未形成可直接冻结的 `1.0.0` 插件协议。当前三层状态并不一致：
+- `blue-plugin-contract-v1.md`：Draft 机器/API 目标和七项 Stable 边界；
+- `blue-plugin-host-lifecycle.md`：Draft 内部权限、generation、owner gap 和 restore 规则；
+- 本手册：PR #77 的 Beta 合并步骤与后续独立 PR 队列；
+- `blue-plugin-api-v1-roadmap.md`：Beta 到 Stable 的阶段依赖和发布门；
+- `docs/README.md` 与根 `AGENTS.md`：把当前实现、目标规范和执行文档指向各自权威来源。
 
-| 层 | 数量 | 当前事实 |
-| --- | ---: | --- |
-| manifest vocabulary | 10 | 包含 `session.read/session.act`、`editor.extensions/editor.provider` |
-| public host implemented set | 10 | 十项均有 facade/registry；legacy `dock` runtime 已物理删除 |
-| 默认 bundle advertised owner | 10 | host buffer、core/transcript/interaction/app owner rows 使十项均可协商 |
+这些文档在 GitHub 上公开，但都必须保持 Draft/Active 标记。公开可读不等于公开 API 已发布。
 
-三个数字一致只说明 #77 已把接口接通，不说明接口适合冻结。`session.act` 仍越过目标 v1 的 domain authority 边界；`notifications` 允许普通 consumer 订阅全局通知；editor surfaces 尚未隔离为 Experimental；owner helper 仍可经 `symbols.original` 解包取得；manifest、validator、website 与 public root 继续存在身份、权限和稳定性矛盾。
+### 1.2 PR #79 不发布什么
 
-因此采用两级门禁：
+PR #79 MUST NOT：
 
-- **BETA-MERGE**：阻止 #77 以已知不安全或误称 Stable 的状态进入 master。
-- **V1-RELEASE**：允许 Beta 基础先合并，但在 `BLUE_API_VERSION 1.0.0` 发布前必须完成。
+- 修改 Blue runtime、package manifest、API/host version、schema、generated types、validator、installer、examples 或 bundle composition；
+- 发布 npm package、dist-tag、GitHub Release、协议 tag 或 product/protocol mapping；
+- 把 website 开发手册改写成可运行的 v1 quickstart，或触发“v1 已可用”的 Pages 文案；
+- 修改创造模式 runtime、preset persona 或可执行作者 skill；
+- 宣称七项 capability 已 Stable、PR #77 已满足本手册，或沿用旧 exact head 的真人验收作为 hardening 后验收；
+- 联系生态作者、发布邀请 Issue、提交上游代码 PR 或联系 dsh-market。
 
-裁决含义：
+Website 开发手册、两类 skill 和创造模式持久包属于 PR #77 后的独立交付。它们只能读取已经发布且可执行的 Beta schema/catalog，不能在 PR #79 中预演一份与运行时不一致的契约。
 
-- `KEEP`：实现方向和公共语义可保留；仍需按目标契约补证据。
-- `CHANGE`：保留纵向实现，但修改权限、shape、稳定性或 owner 边界。
-- `REMOVE`：不得进入目标 v1 public surface；兼容代码按依赖顺序删除。
-- `ADD`：PR #77 没有该目标能力或机器契约，需要后续实现。
+### 1.3 PR #79 自身的合并门
 
-## 2. 收敛矩阵
+- `git diff master...<PR79-head>` 只包含 `docs/` 和必要的根 `AGENTS.md` 权威指针；
+- 设计规范、Host 生命周期、本手册和路线图互相引用，且不重复声明冲突的 API 语义；
+- Stable catalog 只出现七项既定能力，manifest 无 runtime `form`；
+- PR #77 的 Beta 门与 v1 Stable 门明确分开；
+- PR #79 合并说明写明：**no runtime release, no npm release, no website/API availability claim**。
 
-| Surface | #77 当前状态 | 裁决 | v1 目标 | Owner | Gate / 必需证据 |
-| --- | --- | --- | --- | --- | --- |
-| `BlueUiNode` wire | `packages/api/src/contracts.ts` 中闭合 union；纯 clone/freeze；callback 与 signal 仍为 process-local | KEEP | renderer-neutral canonical tree；文档明确“数据可检查”不等于整个 contribution 可跨进程序列化 | api owns wire | V1：hostile realm/getter/cycle/depth/node/collection corpus；外部 tarball consumer |
-| `@dsh-blue/blue-ui` builders | 纯 builder、caller-safe，官方 panel/dialog/status 已消费 | KEEP | 只做 ergonomics，不另立 wire truth；输出必须通过同一 validator | ui package | V1：builder/wire/API declaration diff；至少两个外部插件共用 |
-| core validator/compiler | core 是唯一 admission/compiler 和 pi-tui boundary；已有 exhaustive/width tests；`082c801` 已删除 legacy frontend renderer | KEEP | 非 core 包不接触 pi-tui、ANSI、terminal width/focus；compiler failure 隔离 contribution | core | V1：2..120 width/hostile node；public kit packed import；禁止恢复第二 renderer path |
-| `panes` | host registry、每插件配额、buffer/replay、surface bridge、semantic events、responsive layout已实现；仓内 packed examples 覆盖 header/right/bottom、20/40/80/120、absent/admission/unload | KEEP | Stable managed surface；明确 renderer owner 暂未 attach 时的 retained queue/replay | core surface owner | V1：在真实 surface manager 补 narrow、owner reload、focus restore、late event；独立生态 packed consumer |
-| `overlays` | one-shot gesture、capturing 配额、FIFO/latest-wins、abort/close/focus restore 已实现；仓内 packed example 覆盖 atomic capability rejection、gesture、unload/late use | KEEP | Stable managed overlay；普通插件不能主动开 capturing overlay | core overlay owner | V1：真实 renderer 的 focus/timeout/double submit/owner swap、hostile sibling；独立生态 packed consumer |
-| additive `status` | narrow recursive status node、独立 revision、transcript owner/compiler 已实现 | KEEP | Stable additive status；非交互、不能夺取 footer composition | transcript status owner | V1：external status packed fixture、width、render throw、unload/reload |
-| `status.provider` | inert candidates、settings selection、actual-width dry render、same-session LKG、cross-session default、3/60s breaker、fallback 已实现；最终候选的 transcript packed fixture 在双 Harness 线各 13/13，覆盖 selection、refresh、inert、fallback、owner unload/reload 与 late handle | CHANGE | 保留 provider 事务；专用 snapshot 不隐式带 session id/cwd/model；需要时显式申请 `session.read` resource；加入 session epoch/revision | transcript composition + settings | V1：snapshot/resource 收窄、theme/session switch、stale generation、failure attribution与 dsh-status-bar 外部 slice；真实 profile swap 的自动证据已完成，真人验收仍 pending |
-| `commands` | interaction bridge 映射到 Harness commands，具备 AbortSignal、owner-minted gesture、duplicate rollback、unload | KEEP | 只承诺 Blue-local UI command；能直接注册 Harness command 的 domain 插件继续走 host service | interaction owner | V1：packed command、late settlement/unload、gesture chain；文档避免双 command discovery |
-| `notifications` | 一个 capability 同时返回 publish/subscribe；任一普通 consumer 可收到其他插件 publish 的全局通知，owner bridge 另有 observer | CHANGE | public 只保留 `notifications.publish`；observe 属 owner control plane；定义 dedupe/replace/duration/priority 和动态 rate limit | notification model + interaction renderer | **BETA-MERGE blocker**：无条件移除普通 consumer subscribe并将 owner observe收回受 authority 保护的 control plane，不能靠降为 Experimental 保留越权观察。V1：publisher 隔离、sink absent、rate/dedupe、unload/late publish |
-| `editor.extensions` | 已有真实 owner：passive node/action、`/ @ #` completion、submit transform、revision/abort/unload；最终候选的 interaction packed fixture 在双 Harness 线各 11/11，含 extension owner replay/inert 与 callback abort/unload/late rejection；当前不提供 draft read/write | KEEP + CHANGE | Beta 保留纵向实现；v1 将现有 decorations/completions/submit.transform 拆权，并另增 draft.read/write，均为 Experimental/optional | interaction editor owner | BETA-MERGE：不得称 Stable；`before/after` 静态 `BlueUiNode` 与 runtime passive subset 收窄一致。V1：逐项最小授权；真实 editor input/completion apply/submit；draft/history/IME 不丢 |
-| `editor.provider` | 已有真实 owner、persisted user selection、actual-width dry render、同一 editor/focus 上的原子 shell swap、LKG/breaker/default fallback、abort/stale/unload；最终候选的 interaction 11/11 双线 fixture 覆盖 selection/identity/fallback/inert、owner unload/replay、event abort/late；public type仍只有 `render/onEvent`，未冻结 activate/dispose 或无状态 shell lifecycle语义 | KEEP + CHANGE | 作为 Experimental optional 的 host-owned editor shell provider；恰好一个 `editor-control`，不授予 draft/cursor/history/IME/raw-key 或 engine ownership；mode 另走 `session.read` grant | interaction owner + core compiler | BETA-MERGE：flat manifest阶段退出 public Stable surface、保留 internal/reference runtime。Experimental 发布：optional schema/subpath、public lifecycle与真人统一 profile验收。未来 Stable：独立生态 provider等完整门禁 |
-| flat `capabilities[]` | required/optional、capability version、resource grant、form 均不可表达；`open()` all-or-nothing | CHANGE | 对象式 required/optional request；每项 `{name, version, resources?}`；返回 negotiated grants | api/schema + host | V1：positive/negative schema corpus；required fail、optional degrade、resource subset/denial、duplicate cross-group |
-| manifest identity | 已有 `package.json.blue.manifest` pointer、root JSON、quickstart 和八包 example suite（user kit、六个 runnable plugins、composition）；但 validator 仍硬找 root JSON，`entry` 写内部 `./lib/index.js`，源码在 `open()` 旁再手写 manifest，并要求 entry `name`=package | CHANGE | `package.json.blue.manifest` 唯一发现入口；id=package name；entry=exports subpath；Cordis name/row id 独立 | schema + installer | V1：packed package、exports/files、runtime import 同一 JSON、identity negative corpus |
-| `integrity` author field | manifest 接受作者提供的 tarball digest | REMOVE | integrity/source commit 放 installer receipt/lock，不能由被验证包自证 | installer | V1：安装 receipt 和 source pin fixture；schema 拒绝 author integrity |
-| semver admission | manifest 用字符正则；host 只用 `/^\^?1/` 近似 API major | CHANGE | 真实 semver range parse/intersection；API、product、Harness、Node、capability version 分离 | schema/runtime admission | V1：prerelease、union、upper bound、invalid range corpus |
-| `session.read` | `f375c13` 已拆出纯 readonly `current/subscribe` facade、真实 app owner、monotonic revision、clone/freeze、replay/owner-gap fencing；但完整 `blueSessionReader` 仍是任意 sibling可 inject 的 Cordis service，可绕过 fields grant | CHANGE | 保留 readonly seed，按 identity/cwd/status/mode/model resource 裁剪，并加入明确 `sessionEpoch`；raw source只对 authority owner可见 | app + narrow harness adapter | **BETA-MERGE blocker**：隐藏/authority-gate raw reader并加 hostile direct-inject fixture。V1：same-id new epoch、session switch、headless absence、bounded snapshot、resource denial、no Agent/Session/write leakage |
-| `session.act` | `f375c13` 已实现独立 requester、followup/steer/interrupt、host-wide FIFO、abort、session/owner/consumer/unload stale fencing和双 Harness 线 packed fixture；完整 `blueSessionRequester` 仍可被任意 sibling inject，same-id 仍只按 id 判断且无 gesture/resource policy | REMOVE | v1 无通用 session write；app内部 dispatcher不作为 plugin-facing service，业务写按真实 action 或 `conversation.itemActions` 扩展点设计 | domain plugin owns action | **BETA-MERGE blocker**：移出公开 vocabulary并隐藏/authority-gate raw requester，hostile sibling direct inject必须失败。V1：negative schema/API fixture |
-| owner helper root exports | api root 仍导出 attach/snapshot/subscribe/mint/close；guarded proxy 直接调用现已拒绝，但官方 bridge 继续用 Cordis `symbols.original` 解包，普通 sibling 可复制该路径 | CHANGE | public host 只有 version/open/data facets；control plane 要求 bundle composition 创建的 authority/lease，普通 sibling 无法获得 | bundle + api host | **BETA-MERGE blocker**：hostile sibling 证明 unwrap/self-attach/snapshot/mint/close 均失败；官方 owner reload 保持正常 |
-| aggregate owner snapshot | 一个 snapshot 同时含全部 capability contribution 与 revisions | CHANGE | owner subscription 按 capability/lease 窄化；owner 不能观察无关插件数据 | capability owners | BETA-MERGE：至少隔离公共 root。V1：per-owner subscription 和 cross-capability negative fixture |
-| `BluePluginDefinition.apply(api: unknown)` | public type 无 loader/runtime consumer | REMOVE | v1 使用真实 Cordis entry + parsed manifest + negotiated typed API；不保留占位符 | api/loader | BETA-MERGE 或首个 schema PR 删除；compile negative fixture |
-| error taxonomy | stale/timeout/unavailable/resource denial 不可区分，多处压入 `BLUE_ACTION_REJECTED/ABORTED` | CHANGE | 采用目标契约的 negotiation/admission/execution 错误分类；无异常跨边界 | api | V1：每个 code 有可复现 fixture，message 不承担机器语义 |
-| legacy `dock` | `bbbe6b1` 已物理删除 type、registry、host aggregate、transcript bridge和 bundle consumer；validator 只保留 actionable migration diagnostic | REMOVE (CLOSED) | 保持 runtime 无 dock；旧 manifest 只返回明确迁移诊断 | transcript/core panes | Beta 代码门已关闭。V1：schema negative corpus 与 `rg` drift guard 防止兼容路径回流 |
-| legacy `panels/editor/tools` | migration validator 仍识别这些旧名字；无 v1 owner/API | REMOVE | 不进入新 schema、catalog 或 API root；validator 只返回明确迁移诊断 | schema/validator | V1：negative corpus；网站不再把旧名字描述为 future capability |
-| `projections.read` | `blueSessionProjections` app reader可按任意字符串返回 `unknown`，且仍是任意 sibling可 inject 的 Cordis service，没有 public resource gate | ADD | raw source只对 authority owner可见；manifest 精确 key allowlist；一致 cut、size bound、epoch/asOfSeq、key unload 语义 | app/harness adapter | **BETA-MERGE blocker**：隐藏/authority-gate raw projection reader并加 hostile direct-inject fixture。V1：dsh-context + Cost Meter，replay/resume、duplicate/older seq、key unload、late callback |
-| conversation APIs | conversation projection存在，但无 public bounded reader、navigate 或 item action registry | ADD | `conversation.read/navigate/itemActions`；item action 只调度，业务执行留在插件 service | conversation + transcript/interaction | V1：Navigator、Rewind、Message Edit、Bookmark/Tag reference；pagination/stale/gesture/unload |
-| `theme.provider` | frontend theme model存在；公开插件没有 provider negotiation/selection contract | ADD | semantic token candidate、用户选择、validation、fallback；无 ANSI/CSS | frontend/core composition | V1：Catppuccin，token completeness、swap failure、unload、narrow/width |
-| `settings.sections` | Blue 有内部 settings panel 和 dsh-settings owner；无第三方 section contract | ADD | 只贡献 settings UI；plugin config/schema/persistence 直接 inject `dsh-settings` | interaction settings UI | V1：Catppuccin + Lark，read-only backend、conflict、unload；证明无 Blue storage |
-| JSON Schema / TS manifest | 没有独立 schema；script 只检查字段存在且不复用 runtime validator | ADD | Draft 2020-12 schema 为源，生成 TS type；Ajv/validator/installer/runtime 共用；drift gate | api/schema | V1：schema corpus、generated diff、published URL/subpath、真实 tarball |
-| public API plane | owner helpers、Stable/Experimental、plugin-facing types混在 root | CHANGE | root 只导出 Stable；Experimental 走明确 subpath/标记；owner authority 不可由普通插件取得 | api package | BETA-MERGE：稳定性声明收窄。V1：API declaration report、exports/files/tsdown triangle |
-| docs/skills/创造模式 | website/README 与两组 skills 把 flat manifest、`session.act`、notification subscribe、旧 identity 和 editor surfaces描述成 Stable 1.0。创造模式已有 isolate、真实 `cordis_define/run/update/stop/rollback` 与 durable-buffer e2e，但只检查 skill discovery，不执行 bundled skills，也不生成、validate 或 packed-install 持久包；仓内 fixture还拒绝 workspace 外包 | CHANGE | contract 是目标真相；能力表、模板与 transient request从 schema/catalog 生成；创造模式成为可生成三种 form、识别 zero-API并验证持久包的 official consumer；中英同步 | bundle preset + authoring toolkit + docs | **BETA-MERGE blocker**：按 Stable/Experimental/Rejected 重写，不把“已实现”当“已冻结”。V1：四类 skill eval、外部可调用 validator/fixture、完整 prototype -> confirm -> package -> 双线 packed e2e |
-| `BLUE_API_VERSION` | root与host仍声明 `1.0.0`；examples、README、website 和 rc.1 release note均按 `^1.0.0`/Stable 推广 | CHANGE | #77 只作为 `1.0.0-beta.1` 合并；全部 V1 gate 通过后一次性升 `1.0.0` | api/release | **BETA-MERGE blocker**：不产生错误稳定承诺；V1 release report |
+满足这些条件后可以合并 PR #79。合并动作不需要插件 runtime dogfood，因为它不改变用户可见行为；文档检查和 review 仍必须通过。
 
-## 3. 相关 PR 处置
+## 2. PR #77 当前判断
 
-- PR [#72](https://github.com/dsh-blue/blue/pull/72) 与 #77 修改同一 UI 蓝图和索引，但保留了更旧的 API version、overlay/event 和实施裁决。它不能再单独合并；按 #77 当前 merge gate，在 #77 真人验收并合并后关闭为 superseded。
-- PR [#76](https://github.com/dsh-blue/blue/pull/76) 文件上可独立处理，但 capability 调研仍基于旧四能力和 `dock`。若合并，MUST 标成带日期的需求快照或先按 #77 更新；它不是规范来源。
-- `docs/blue-ui-component-enhancement.md` 已更新为 W1-W6 最终候选账目，并明确真人验收、合并和候选发布未发生；该陈旧事实项已关闭。待本矩阵接管进度且真人验收完成后，再单独归档。
-- #77 的 PR body 已更新 W1-W6 scope、自动门禁与仍缺的真人验收，但 `Final candidate head: 3f0e42b` / 2959 tests 落后最新 `c89c714` / 2960 tests 一次只增加 bundle composition guard 的提交；合并前应刷新这两个值。旧 G3 acceptance 仍不能覆盖 W4-W6。
+PR #77 已形成可保留的 implementation baseline：canonical UI/compiler、managed panes/overlays、additive status、status/editor provider runtime、editor extension runtime、split session facade、consumer lifetime fencing、legacy dock/view renderer 删除，以及独立 packed example suite。
 
-## 4. #77 Beta 合并前顺序
+`cf8b3bd` 已完成 current/previous Harness fixtures、四条 smoke、两个专用 profile 自动 dogfood和用户 live acceptance；`9a6a255` 只把该事实写回文档。这证明 W1-W6 候选可用，但不自动证明当前 public API 适合标 Stable。
 
-以下工作保持在 #77 分支，完成后它才适合作为 Beta UI foundation 合并：
+合并前仍有五项安全或承诺问题：
 
-1. **OPEN - 冻结新基线**：合入本契约文档，把 PR 描述更新到 `c89c714` 或当时最新 head，列出 Stable/Experimental/Rejected 实际状态和 W4-W6 scope；当前三份规范文档尚不在 #77 ancestry。
-2. **OPEN - 降级版本承诺**：`BLUE_API_VERSION` 与 host version 改为 `1.0.0-beta.1`；`^1.0.0` 示例、package README、website 和 rc.1 release note不得声称当前已经 Stable 1.0。
-3. **OPEN - 隔离 control plane**：从 plugin-facing root 移除 owner helper；引入 composition authority/lease，禁止 `symbols.original` 成为 sibling 权限升级；aggregate/notification subscription 按 owner capability 窄化。
-4. **OPEN - 收窄公开 vocabulary**：移除 generic `session.act`，隐藏或 authority-gate可直接 inject 的 raw session/projection reader与 requester；保留 negotiated readonly `session.read` seed但不把无 resource/epoch 的形状称为 v1 Stable。当前 flat manifest不能表达 optional，因此 `editor.extensions` 和 `editor.provider` 先退出 public Beta manifest、仅保留 bundle-internal/reference runtime；R2/R3 negotiated optional plane落地后再以 Experimental 公开，不能只改标签继续暴露。
-5. **OPEN - 拆分 notifications**：public consumer 只保留 publish；普通 sibling 不能订阅其他插件通知，owner observe 进入受 authority 保护的 control plane。
-6. **DONE foundation - 保持成熟实现**：canonical UI、panes/overlays、status/status provider、editor extension/provider、split session facade、consumer lifetime fencing、dock/view 删除和 packed examples不回退。后续权限收敛必须保住现有 unit/width/lifecycle 证据。
-7. **OPEN - 修正文档事实**：package README/AGENTS 与 website区分“已实现 Beta”与“已冻结 Stable”；目标能力链接到 contract/roadmap。
-8. **PARTIAL - 完整 worktree 验收**：`3f0e42b` 已完成全 package fixture、四条 smoke 与统一专用 profile自动证据；`c89c714` 只新增“examples 不进默认 composition”的 bundle spec，最新 CI/website 已绿。用户仍须在保留的 `blue-ui-api-w4-w6` profile 完成 live-test并明确验收，之前不合并 #77。
+1. API/host 宣称 `1.0.0`，但 schema、资源协商和生态证据尚未完成；
+2. generic `session.act` 越过领域 action ownership；
+3. 普通消费方可以订阅其他插件的全局通知；
+4. owner helper 和 raw session/projection backing service 存在 sibling 绕过授权的路径；
+5. editor/provider surface 被写成 Stable，而目标 v1 只冻结七项最小能力。
 
-### 当前自动证据
+因此必须区分：
 
-`c89c714` 的 GitHub CI 与 website check 为 green：185 files / 2960 tests passed / 31 个既有条件性 unit skips、per-file 100% coverage、check:lib 86、双 Harness 线 examples 8/8 和 `smoke:happy`。直接父提交 `3f0e42b` 的最终候选报告另记录 check:pack 11 tarballs、全部 package fixture双线和三条手工 PTY smoke；`c89c714` 只新增一个默认 composition negative spec，不改变 runtime或 tarball。
+- **BETA-MERGE**：PR #77 阻止已知越权和错误 Stable 承诺进入 `master`；
+- **PUBLIC-BETA**：版本化 schema/catalog/validator、product/protocol mapping 和至少一项外部可安装 capability 已实际发布；它不表示完整作者手册、skill 或 Stable 证据已经完成；
+- **V1-RELEASE**：真实插件证据和所有发布门关闭后才发布协议 `1.0.0`。
 
-Packed evidence 包括 examples 在 Harness `0.1.1-rc.2` / `0.1.1-rc.1` 各 8/8；core 7/7、conversation 11/11、transcript 13/13、interaction 11/11、app 9/9、context/remote 7/7、OpenPencil/Lark 9/9，均在两条 Harness 线无 fixture skip/failure且 cleanup 完成。Status/editor provider 与 editor extensions 已进入最终候选 package fixtures，不再只是 checkpoint 证据。仓内 suite 证明 public tarball/host peer closure 和部分 lifecycle/width，但没有 `form`、required/optional/resource negotiation，也不是独立生态包，不能关闭 v1 三形态或外部消费者门禁。
+## 3. Surface 裁决
 
-四条 smoke 和统一 W4-W6 profile 的自动 dogfood 已完成：120/80/40、provider/theme/session swap、panes/narrow fallback、overlay、draft、`/new`、`/quit`、terminal mode恢复与无 overflow/crash。它们不替代人工验收；旧 `blue-ui-g3` 验收早于 W4-W6，也不能作为当前 head 的 merge acceptance。
+| Surface | #77 当前事实 | 裁决 | Beta 合并要求 | v1 后续 |
+| --- | --- | --- | --- | --- |
+| canonical UI/compiler | `BlueUiNode`、builder、validator 和唯一 pi-tui compiler 已运行 | KEEP | 不恢复 legacy renderer；失败隔离 contribution | hostile node、2..120 width、public packed kit |
+| `commands` | 真实 interaction bridge、abort、gesture、duplicate rollback、unload | KEEP | 标 Beta，保住生命周期证据 | negotiation、resource/limits、真实插件 consumer |
+| `status` | additive node、revision、真实 owner/compiler | KEEP | 标 Beta；不能接管整个 footer | width/render failure/unload、真实插件 consumer |
+| `panes` | managed placement、responsive layout、buffer/reload | KEEP | 使用 `panes`；保留最新注册，事件与 gesture 不排队 | narrow/focus/owner reload、真实插件 consumer |
+| `overlays` | gesture、capturing quota、abort/close/focus restore | KEEP | overlay/gesture 不跨 owner 重载 replay | timeout/double-submit/hostile sibling |
+| `notifications` | publish 与 subscribe 混在一个 consumer capability | CHANGE | public 只保留 `notifications.publish`；observe 仅供官方 owner | rate/dedupe/sink absence/unload |
+| `session.read` | readonly current/subscribe seed，但 raw reader 可被 sibling inject | CHANGE | 保留 Beta seed；隐藏或保护 raw backing service，不宣称资源/epoch 已 Stable | fields grant、sessionEpoch、same-id new epoch |
+| projection reader | 可按任意 key 读 `unknown`，raw service 可被 sibling inject | CHANGE | backing service 只供官方 owner；当前 public 形状不标 Stable | `session.projections.read` 精确 key grant、一致 cut、size bound |
+| `session.act` | followup/steer/interrupt requester 与 fencing 已实现 | REMOVE public | 从 manifest、public root、README 和 website 移除；内部 dispatcher 可保留 | 领域写入继续走真实 action，不建立 generic replacement |
+| status/editor provider | provider swap、LKG、breaker、fallback 已有完整 runtime | DEFER public | 只保留 bundle-internal/reference runtime，或明确 Experimental；不得占 Stable root | 真实消费者共创后另走 1.x 提案 |
+| editor extensions | completion/submit/action、abort/stale/unload 已实现 | DEFER public | 只保留 bundle-internal/reference runtime，或明确 Experimental | 按最小授权拆分后另走 1.x 提案 |
+| owner/control operations | root helper、aggregate/observe、gesture/close 存在绕过风险 | CHANGE | 普通 sibling 无支持路径可 self-attach、读取 aggregate、observe、mint 或 close | 具体 authority/generation 机制在内部规范与后续 PR 冻结 |
+| manifest/docs/skills | flat capability list、inline manifest 和 Stable 1.0 表述 | CHANGE | 标 `1.0.0-beta.1`，删除错误稳定承诺和旧 capability 示例 | 单一 schema/catalog、required/optional/resources、持久包管线 |
 
-这一步不要求把整个 v1 roadmap 塞回 #77。manifest/schema 和新 ecosystem capability 在 master 上用后续小 PR 收敛，避免 #77 继续膨胀。
+## 4. PR #77 合并 runbook
 
-## 5. v1 收敛依赖顺序
+### 4.1 同步设计基线
 
-```text
-Beta merge
-  -> JSON Schema + identity + semver + generated manifest type
-  -> negotiated grants + public/control plane + error taxonomy
-  -> existing UI surface cleanup (notifications split, status snapshot; dock 已完成)
-  -> session.read resource/epoch + projection/conversation owners
-  -> theme/settings owners
-  -> editor Experimental split + provider namespace
-  -> synthetic + ecosystem packed fixtures
-  -> skills + 创造模式 authoring pipeline + bilingual docs
-  -> 1.0.0 release gate
-```
+1. 合并 PR #79，记录其 merge commit。
+2. 将 PR #77 更新到包含该 merge commit 的最新 `master`；rebase 或 merge 均可，但 PR body 必须记录新的 base 和 exact head。
+3. 用本手册重新核对 PR #77 的 public exports、manifest、README、website、examples、release note 和 skills，不得只修改版本常量。
+4. 保留 `cf8b3bd` 的 W1-W6 证据作为基线，不把它登记成新 head 的最终验收。
 
-每一行关闭时必须把“当前实现、测试证据、owner、bundle row、fixture report”填回矩阵，不能只把状态改成 Done。
+### 4.2 实施最小 Beta 安全门
 
-## 6. 归档条件
+PR #77 分支在合并前只完成以下工作：
 
-满足以下条件后，本矩阵移动到 `docs/history/blue-pr77-convergence-matrix.md`：
+1. 将 API/host version 改为 `1.0.0-beta.1`，同步 PR #77 自己涉及的 README、website、examples、release note 和 skills 的稳定性表述。
+2. 从 public vocabulary 和 manifest 移除 generic `session.act`；内部 app dispatcher 不作为普通 Cordis service 暴露。
+3. 将 notification consumer API 收窄为 publish-only；普通 sibling 不能观察其他插件通知。
+4. 从 plugin-facing root 移除 owner attach、aggregate snapshot/observe、gesture mint 和 semantic close helper。
+5. 隐藏或保护 raw session/projection reader/requester；普通 sibling 只能取得协商后的裁剪 facade。
+6. 将 editor extension/provider 和 status provider 退出 Stable root，保留其成熟 runtime 与 reference tests。
+7. 保持 canonical compiler、panes/overlays、additive status、provider/editor runtime、lifetime fencing 和 packed examples 不回退。
 
-- #77 已按 Beta 规则合并；
-- 所有 BETA-MERGE 行关闭；
-- 所有 Stable v1 capability 通过 conformance；
-- `BLUE_API_VERSION` 已发布为 `1.0.0`；
-- 长期行为可完全由目标契约、生成 schema/API reference 和 package AGENTS 解释。
+这里冻结的是可观察权限边界，不要求 PR #77 先实现名为 authority lease 的特定数据结构。内部实现可以使用 capability-scoped token、私有 closure 或 bundle-owned owner handle，只要满足 [Host 生命周期规范](./blue-plugin-host-lifecycle.md) 的行为和 hostile-sibling 证据。
 
-归档时记录最终 merge commit、协议发布 tag、fixture exact Harness lines、profile dogfood 和人工验收结论。
+### 4.3 形成新 exact head 的自动证据
+
+Beta hardening 形成新的 exact runtime head 后必须：
+
+- hostile sibling 无法 self-attach、读取 aggregate、observe 全局通知、mint gesture、关闭别人的 overlay或直接取得 raw session/projection truth；
+- owner 短暂 reload 后 `commands`/`status`/`panes` 只恢复最新注册，overlay/gesture/action/notification/旧 callback 不 replay；
+- unit、compile、coverage、typecheck、lint、build、check:lib、check:pack、examples、diagrams 和 website build 全绿；
+- current/previous Harness packed fixture 的 declared scenarios 全执行且无 skip/failure；
+- `smoke:happy`、必要的 PTY smoke 和 worktree profile 覆盖 120/80/40、pane/overlay、provider/editor reference runtime、theme/session swap、input/completion/submit；
+- PR body 或 acceptance record 写明 exact commit、Blue API Beta version、两条 Harness line、profile、执行命令、fallback、unload/reload 和失败项。
+
+### 4.4 真人验收、合并与清理
+
+1. 用 PR #77 worktree 对应的 `blue-<tag>` profile 提示用户 live-test；不能指向共享生产 `blue` profile。
+2. 等待用户对 **新的 exact head** 明确回复“验收通过”；自动测试不能替代这一步。
+3. 验收后才合并 PR #77；合并说明必须写明这是 Beta foundation，不是 protocol v1 release。
+4. 在主 checkout 重建合并后的 `lib/`，记录 merge commit 和 dogfood 结果。
+5. 只有合并完成后才删除 `blue-<tag>` profile 和 worktree。
+6. 不在该合并动作中发布 `1.0.0`、npm Stable tag 或正式插件开发手册。
+
+## 5. Review PR #77 时如何理解内部术语
+
+- **control-plane authority**：Blue 官方 owner 用来接管 capability、读取完整注册表、创建 gesture 或执行关闭等管理动作的内部权限。普通插件只能获得自己获准的数据和注册接口。
+- **owner generation**：某个官方 owner 每次成功挂载的实例代号。owner 重载会产生新 generation，旧 handle 和旧异步结果必须失效。
+- **owner gap**：capability 已由当前 composition 安装并允许使用，但负责消费它的 UI owner 尚未启动、正在重载或暂时失败。
+- **registration restore**：gap 期间只保留普通插件“当前最新的定义”，新 owner 恢复后重新挂载这些定义。
+- **replay**：把 gap 中发生的动作、通知、overlay、gesture 或旧回调补执行。此行为被禁止。
+
+验收时只判断外部结果：`commands`、`status`、`panes` 的最新定义可以恢复；操作、通知、overlay、gesture 和旧结果绝不补执行。实现是否真的有一个叫 `authority lease` 的类型不是合并条件。
+
+## 6. PR #77 之后的独立 PR 队列
+
+后续工作必须在 `master` 上从 PR #77 的 merge commit 起步。每个编号表示交付批次，不预占实际 GitHub PR 号；同一批次内仍应按 capability 或工具边界拆小 PR。
+
+| 批次 | 依赖 | 独立 PR 范围 | 退出门 | 此时仍不能宣称 |
+| --- | --- | --- | --- | --- |
+| P1 机器契约 | PR #77 merged | JSON Schema 2020-12、generated manifest type、semantic validator、immutable schema export、product/protocol mapping | positive/negative corpus；schema/runtime/CLI 同结论；packed files/exports 可见 | public Beta 可开发、任何 capability Stable |
+| P2 Host 协商与权限 | P1 | required/optional/resource admission、exact grants、error taxonomy、受保护 control plane、generation/owner-gap 行为 | hostile sibling、partial grant、owner reload、declaration report 全绿 | 七项 capability 已有真实生态证据 |
+| P3 UI capability Beta | P2 | 原则上分别收敛 `commands`、`status`、`panes`、`overlays`、`notifications.publish`；每个 PR 同步 owner、fallback、limits、fixture 和 reference | 每项独立 packed fixture、unload/reload、width/abort/stale 按适用场景全绿 | capability Stable；provider/editor 自动进入 v1 |
+| P4 Session data Beta | P2 | `session.read` 与 `session.projections.read` 分开实施 fields/key grant、epoch/seq、一致 cut 和 size bound | same-id new epoch、replay/resume、key unload、stale/late result 全绿 | generic `session.act` 或 raw Session 可用 |
+| P5 作者工具与文档 | P1/P2 完成，至少一个 P3/P4 capability 可运行 | 作者 `blue-plugin-development` skill、创造模式 prototype-to-local-package、任务式中英文 Website 开发手册、公开 validator/conformance 命令 | skill eval、教程 packed fixture、双语/链接/catalog drift、真实 profile 全绿 | protocol Stable；自动获准 GitHub/npm 发布 |
+| P6 生态验证 | 对应 P3/P4 capability 可运行 | 六个首批项目各用独立 worktree/PR 或固定 conformance patch；维护者 outreach skill 可在本批次加入 | 固定 upstream commit、公开 Service/projection 边界、packed current/previous Harness、相同邀请标准 | 作者认可等于 conformance；已获得提交上游代码 PR 的授权 |
+| P7 Stable 晋升 | P3-P6 对应证据完成 | 每项 capability 单独从 Beta 晋升 Stable；API root/declaration/docs/catalog 同步 | 真实 owner、官方/reference consumer、真实 Harness plugin、fallback、无 skip/failure、真人验收 | 其他 capability 同时 Stable |
+| P8 dsh-market Beta 合作 | public Beta + 作者 skill + 至少两个 runnable integrations | metadata/spec 对齐、Blue-compatible 标识、profile 安装路径、双方文档互荐 | 合作范围有双方确认；不调用 private Web route | Blue 接管 market install/update，或合作本身关闭 v1 技术门 |
+| P9 v1 发布 | 七项 P7 完成，P5/P6 总门关闭 | protocol `1.0.0`、对应 Blue `0.x`、创造模式、schema/API/mapping/migration notes 和干净安装验证 | 路线图 R6 全部门禁、最终 live acceptance、registry clean-profile smoke | 合并 commit 本身等于已发布 artifact |
+
+并行规则：P3 的各 UI capability、P4 的两个 session capability、P5 的文档/skill/创造模式和 P6 的生态项目可以在依赖满足后并行；同一 PR 不得同时发明机器契约、扩 Stable catalog、迁移多个生态项目并发布 release。
+
+## 7. 每个后续 PR 的共同模板
+
+每个独立 PR 必须在 PR body 或对应 acceptance record 中写明：
+
+- **Scope**：本 PR 唯一负责的 capability、工具或文档交付；
+- **Authority**：消费方能做什么、官方 owner 才能做什么；
+- **Fallback**：capability absent、owner gap、单 contribution 失败时的结果；
+- **Lifecycle**：consumer unload、owner reload、session epoch、abort 和 late result；
+- **Artifacts**：schema/API/package/website/skill 中实际发生变化的部分；
+- **Evidence**：exact commit、tarball digest、Blue product/protocol/Harness versions、declared/executed/skipped/failures、profile 和人工验收；
+- **Release claim**：只允许声称本 PR 真实关闭的 Beta/Stable/Release 状态。
+
+状态必须依次记录为 `implemented -> automated green -> live accepted -> merged -> artifact published`。不得用前一个状态代替后一个状态，也不得把生态作者是否回复混入技术 conformance。
+
+## 8. 归档条件
+
+PR #77 合并后，本手册继续作为 P1-P9 的执行入口，并更新 PR #77 final merge commit。协议 `1.0.0` 和对应 artifacts 实际发布后，才把本手册移入 `docs/history/`；归档必须记录协议 tag、Blue product version、Harness lines、schema/API URL、最终 profile 和人工验收。

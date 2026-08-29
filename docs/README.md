@@ -1,12 +1,13 @@
 # Blue 文档索引
 
-当前实现事实以代码、[blue-architecture.md](./blue-architecture.md)、[blue-seams.md](./blue-seams.md) 和包级 `AGENTS.md` 为准；插件 v1 目标以 [blue-plugin-contract-v1.md](./blue-plugin-contract-v1.md) 为准；PR #77 的收敛状态和 v1 发布顺序分别以 convergence matrix 与 roadmap 为准。`history/` 和阶段设计文档只保留设计理由，不具有规范性。仓库约定见根 [AGENTS.md](../AGENTS.md)。
+当前实现事实以代码、[blue-architecture.md](./blue-architecture.md)、[blue-seams.md](./blue-seams.md) 和包级 `AGENTS.md` 为准；插件 v1 的机器/API 目标以 [blue-plugin-contract-v1.md](./blue-plugin-contract-v1.md) 为准，内部 owner 权限与重载行为以 [blue-plugin-host-lifecycle.md](./blue-plugin-host-lifecycle.md) 为准。[PR #79 / PR #77 合并手册](./blue-pr77-convergence-matrix.md)是从 docs-only 设计基线、PR #77 Beta 合并到后续独立 PR 的执行入口；[roadmap](./blue-plugin-api-v1-roadmap.md)定义阶段出口。PR #79 不发布 runtime、npm package、Website v1 可用性或作者 skill。插件作者的正式入口将在 Public Beta 后由 website「开发手册」承担，不需要先读仓内设计规范。`history/` 和阶段设计文档只保留设计理由，不具有规范性。仓库约定见根 [AGENTS.md](../AGENTS.md)。
 
-## 规范与目标态
+## v1 设计规范
 
 | 文档 | 内容 |
 |---|---|
-| [blue-plugin-contract-v1.md](./blue-plugin-contract-v1.md) | Draft Target：Blue 插件 v1 的规范性契约；不代表全部接口已落地 |
+| [blue-plugin-contract-v1.md](./blue-plugin-contract-v1.md) | Draft Design Source：manifest、七项 Stable capability、版本与发布门；不代表全部接口已落地 |
+| [blue-plugin-host-lifecycle.md](./blue-plugin-host-lifecycle.md) | Draft Internal：control-plane authority、owner generation、registration restore 与 hostile-sibling 边界 |
 
 ## 当前实现
 
@@ -24,8 +25,8 @@
 
 | 文档 | 内容 |
 |---|---|
-| [blue-pr77-convergence-matrix.md](./blue-pr77-convergence-matrix.md) | Active Control：PR #77 相对 v1 目标的处理结论、证据与合并门禁 |
-| [blue-plugin-api-v1-roadmap.md](./blue-plugin-api-v1-roadmap.md) | Active Plan：PR #77 合并后到 v1 API 发布的产物顺序与退出条件 |
+| [blue-pr77-convergence-matrix.md](./blue-pr77-convergence-matrix.md) | Active Handbook：PR #79 发布边界、PR #77 合并 runbook、P1-P9 独立 PR 队列与证据模板 |
+| [blue-plugin-api-v1-roadmap.md](./blue-plugin-api-v1-roadmap.md) | Active Plan：R0-R6 阶段依赖、并行工作流与最终发布门 |
 | [blue-compatibility-and-rollout.md](./blue-compatibility-and-rollout.md) | Harness 兼容窗口、fallback 与 rollout |
 
 ## 阶段设计、研究与历史决策
