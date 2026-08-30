@@ -89,9 +89,13 @@ source.
 Install the verified local package in a dedicated profile:
 
 ```sh
-dsh plugin --profile blue-my-plugin add link:/path/to/my-plugin
+dsh plugin --profile blue-my-plugin add file:/path/to/my-plugin
 dsh --profile blue-my-plugin
 ```
+
+Local directories use a `file:` snapshot so pnpm materializes the plugin's own
+dependency closure. Reinstall after every source change and then restart. A
+dependency-blind `link:` is not valid independent-plugin acceptance evidence.
 
 Exercise its core path at 120/80/40 columns, then remove it and restart. Every
 command, status item, pane, and overlay must disappear. Residue usually means a

@@ -5,8 +5,8 @@
       "id": "accepted-new-local-plugin",
       "request": "The in-session status prototype is accepted. Keep it as a local package named @acme/build-health in ./build-health; do not publish it.",
       "must": [
-        "run blue-plugin catalog --json before choosing capabilities",
-        "run blue-plugin create only after the local outcome is explicit",
+        "run the profile-installed blue-plugin catalog through its trusted shell facts before choosing capabilities",
+        "run the profile-installed blue-plugin create only after the local outcome is explicit",
         "run validate and current/previous Harness conformance",
         "stop before repository, npm publication, or production-profile mutation"
       ]

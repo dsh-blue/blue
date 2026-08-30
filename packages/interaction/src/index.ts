@@ -13,7 +13,9 @@
  * terminal mirror (`blue-terminal-title`, the OSC 0 window title over the
  * upstream session-title fold), the consolidated `blue` settings namespace
  * (`blue-settings`), and the
- * boot-time update check (`blue-update-check`). All
+ * boot-time update check (`blue-update-check`). The author-command environment
+ * child publishes the installed plugin kit through trusted Harness shell facts.
+ * All
  * registrations are effect-bound, so unloading the fiber reverts every
  * contribution.
  *
@@ -23,6 +25,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import * as approvalPlugin from './approval-plugin.ts'
+import * as authorCommandEnvironment from './author-command-environment.ts'
 import * as commandsPlugin from './commands-plugin.ts'
 import { CommandModelService } from './command-model.ts'
 import * as inputPlugin from './input-plugin.ts'
@@ -75,6 +78,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.effect(() => () => editorHost.dispose())
   const skillsCatalog = new SkillsCatalogService(ctx)
   ctx.effect(() => () => skillsCatalog.dispose())
+  ctx.plugin(authorCommandEnvironment)
   ctx.plugin(keysPlugin)
   ctx.plugin(CommandModelService)
   ctx.plugin(EditorModelService)

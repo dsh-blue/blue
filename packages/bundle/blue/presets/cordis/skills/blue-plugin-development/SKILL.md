@@ -12,13 +12,19 @@ commits, tags, releases, or profile installs.
 
 The published `blue-plugin` command is the machine authority. A checked-out
 Blue repository is neither required nor a source of copied capability names.
+The Blue profile exposes its installed command through the trusted
+`DSH_BLUE_PLUGIN_NODE` and `DSH_BLUE_PLUGIN_BIN` shell facts. If either fact is
+absent, stop and report that the active profile does not provide the P5 author
+command; do not fall back to an ambient or downloaded executable. In a POSIX
+shell invoke the command as shown below. In PowerShell use
+`& $env:DSH_BLUE_PLUGIN_NODE $env:DSH_BLUE_PLUGIN_BIN <arguments>`.
 
 ## 1. Read the installed contract
 
 Run this first in the intended authoring environment:
 
 ```sh
-blue-plugin catalog --json
+"$DSH_BLUE_PLUGIN_NODE" "$DSH_BLUE_PLUGIN_BIN" catalog --json
 ```
 
 Use only capability names, versions, resources, limits, and quotas present in
@@ -63,7 +69,7 @@ mutation. Never publish merely because conformance passes.
 Create an empty destination with the published generator:
 
 ```sh
-blue-plugin create ./my-blue-plugin --name @acme/my-blue-plugin
+"$DSH_BLUE_PLUGIN_NODE" "$DSH_BLUE_PLUGIN_BIN" create ./my-blue-plugin --name @acme/my-blue-plugin
 ```
 
 The generated no-build ESM status plugin is a valid baseline. Adapt its
@@ -113,9 +119,9 @@ and old callback results are never queued or replayed.
 Run the published checks from any directory:
 
 ```sh
-blue-plugin validate ./my-blue-plugin
-blue-plugin conformance ./my-blue-plugin
-blue-plugin conformance ./my-blue-plugin --harness-line <previousHarnessLine-from-catalog>
+"$DSH_BLUE_PLUGIN_NODE" "$DSH_BLUE_PLUGIN_BIN" validate ./my-blue-plugin
+"$DSH_BLUE_PLUGIN_NODE" "$DSH_BLUE_PLUGIN_BIN" conformance ./my-blue-plugin
+"$DSH_BLUE_PLUGIN_NODE" "$DSH_BLUE_PLUGIN_BIN" conformance ./my-blue-plugin --harness-line <previousHarnessLine-from-catalog>
 ```
 
 Both conformance reports must have:
@@ -136,13 +142,13 @@ input, but they are compatibility checks, not a security sandbox.
 Use a dedicated profile and delegate installation to its owner:
 
 ```sh
-dsh plugin --profile blue-my-plugin add link:/absolute/path/to/my-blue-plugin
+dsh plugin --profile blue-my-plugin add file:/absolute/path/to/my-blue-plugin
 dsh --profile blue-my-plugin
 ```
 
 Exercise supported widths, the primary workflow, unavailable fallback, unload,
-restart, and any session replay/swap behavior. Rebuild the package between
-looks; reinstall only when its dependency graph changes. Never use the
+restart, and any session replay/swap behavior. Rebuild and reinstall the local
+file snapshot between looks. Never use the
 production `blue` profile for acceptance and never hot-replace the running
 Cordis tree through `/plugin`.
 

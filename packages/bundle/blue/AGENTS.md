@@ -77,8 +77,13 @@ supports both new packages and same-package Blue entries for existing Harness
 plugins, and stops with a capability proposal when the catalog has no lawful
 surface. Its four realistic eval cases cover local persistence, existing-package
 extension, missing capability, and ambiguous distribution authority. The bundle
-depends on `blue-plugin-kit`, so creative-mode shell tools can invoke the
-published `blue-plugin` bin without a Blue checkout.
+depends on `blue-plugin-kit`; interaction's effect-bound author-environment child
+publishes the installed Node and bin paths through official `shellEnv` facts, so
+creative-mode shell tools invoke the published command without ambient PATH, a
+global install, a guessed profile root, or a Blue checkout.
+Independent local plugins are installed as profile-owned `file:` snapshots,
+not source links; reinstalling rematerializes their declared dependency closure
+before the required Blue restart.
 
 `bundle.spec.ts` pins the disable list to the web-app's (drift guard) and asserts every id addresses a real base row. The runtime dependencies `@deepseek-ai/dsh-agent-presets` and `@deepseek-ai/dsh-cordis-host-runner` ride the bundle's `dependencies` so `dsh plugin add` installs them.
 

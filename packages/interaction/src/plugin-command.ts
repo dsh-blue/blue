@@ -191,11 +191,12 @@ function installSource(spec: string): InstallSource | InvalidInstallSource {
   const local = localPath(spec)
   if (local !== undefined) {
     if (!existsSync(local)) return { ok: false, message: `local plugin does not exist: ${local}` }
+    const directory = statSync(local).isDirectory() ? local : undefined
     return {
       ok: true,
       kind: 'local',
-      spec,
-      ...(statSync(local).isDirectory() ? { directory: local } : {}),
+      spec: `file:${local}`,
+      ...(directory === undefined ? {} : { directory }),
     }
   }
   if (isGitHubSpec(spec)) {

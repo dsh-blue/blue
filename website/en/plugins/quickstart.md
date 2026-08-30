@@ -156,9 +156,15 @@ attributes. `opened.value.grants` records exact grants, while
 Use a dedicated development profile rather than your everyday `blue` profile:
 
 ```sh
-dsh plugin --profile blue-header-dev add link:/path/to/blue-workspace-header
+dsh plugin --profile blue-header-dev add file:/path/to/blue-workspace-header
 dsh --profile blue-header-dev
 ```
+
+`file:` installs the package and its dependency closure into the profile;
+re-run the installation after source changes, then restart. Do not use `link:`
+for an independent plugin: pnpm does not install dependencies for a linked
+directory, while Node resolves imports from the source directory's real path,
+outside the profile's module ancestry.
 
 Close the static and dual-Harness packed gates before installation:
 

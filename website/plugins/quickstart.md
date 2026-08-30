@@ -143,9 +143,13 @@ export function apply(ctx: Context): void {
 使用独立开发 profile，避免修改日常使用的 `blue` profile：
 
 ```sh
-dsh plugin --profile blue-header-dev add link:/path/to/blue-workspace-header
+dsh plugin --profile blue-header-dev add file:/path/to/blue-workspace-header
 dsh --profile blue-header-dev
 ```
+
+`file:` 会把包及其依赖闭包安装进 profile；修改源码后需要重新执行安装再重启。
+不要对独立插件使用 `link:`：pnpm 不会为链接目录安装依赖，Node 又从源码真实路径解析
+import，源码目录外的 profile 依赖不会成为它的模块解析父级。
 
 安装前先关闭静态与双 Harness packed gate：
 

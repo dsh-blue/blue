@@ -221,8 +221,19 @@ and profile-owner uninstall; there is no Available/marketplace page. Direct
 install accepts existing local paths/tarballs, exact npm versions, or GitHub
 sources pinned to a full 40-character commit. Local directories must pass the
 published `@dsh-blue/blue-plugin-kit` validator before `dsh plugin` is invoked;
+they are normalized to pnpm `file:` installs so the profile materializes their
+declared dependency closure instead of retaining a dependency-blind source
+symlink. Source changes therefore require another install before restart.
 all mutations report that restart is required and never replace the live
 Cordis tree. `BLUE_GITHUB_PROXY` may rewrite only already-pinned GitHub sources.
+
+The parent interaction Fiber also mounts `blue-plugin-author-environment` as a
+child that waits for the official Harness `shellEnv` registry. It contributes
+only `DSH_BLUE_PLUGIN_NODE` and `DSH_BLUE_PLUGIN_BIN`, resolved to the current
+Node executable and the bundle-installed plugin-kit entry. The creative author
+skill invokes those absolute paths instead of trusting ambient PATH, a global
+install, or a guessed profile root. Shell-env owns per-execution collection and
+the child Fiber owns registration cleanup.
 
 The W4a-B migration intentionally keeps source filenames such as
 `select-list.ts` and `form-panel.ts` for stable internal imports, but the old

@@ -92,9 +92,9 @@ describe('plugin source admission', () => {
     const root = mkdtempTracked('blue-plugin-source-')
     const tarball = join(root, 'plugin.tgz')
     writeFileSync(tarball, 'tarball')
-    expect(pluginCommandInternals.installSource(root)).toEqual({ ok: true, kind: 'local', spec: root, directory: resolve(root) })
+    expect(pluginCommandInternals.installSource(root)).toEqual({ ok: true, kind: 'local', spec: `file:${resolve(root)}`, directory: resolve(root) })
     expect(pluginCommandInternals.installSource(`file:${tarball}`)).toEqual({ ok: true, kind: 'local', spec: `file:${tarball}` })
-    expect(pluginCommandInternals.installSource(`link:${root}`)).toEqual({ ok: true, kind: 'local', spec: `link:${root}`, directory: resolve(root) })
+    expect(pluginCommandInternals.installSource(`link:${root}`)).toEqual({ ok: true, kind: 'local', spec: `file:${resolve(root)}`, directory: resolve(root) })
     expect(pluginCommandInternals.installSource('./definitely-missing')).toMatchObject({ ok: false, message: expect.stringContaining('does not exist') })
     expect(pluginCommandInternals.installSource('@scope/plugin@1.2.3')).toEqual({ ok: true, kind: 'npm', spec: '@scope/plugin@1.2.3' })
     expect(pluginCommandInternals.installSource('plain-plugin@1.2.3-rc.1')).toEqual({ ok: true, kind: 'npm', spec: 'plain-plugin@1.2.3-rc.1' })
@@ -251,7 +251,10 @@ describe('registerPluginCommand', () => {
     expect(createPluginPackage({ directory: local, packageName: '@scope/local' }).ok).toBe(true)
     await expect(world.execute('install')).resolves.toEqual({ kind: 'error', text: 'usage: /plugin install <local-path|tarball|exact-npm-version|pinned-github-commit>' })
     await expect(world.execute('install @scope/plugin@latest')).resolves.toMatchObject({ kind: 'error', text: expect.stringContaining('exact package@version') })
-    await expect(world.execute(`install ${local}`)).resolves.toMatchObject({ kind: 'success', text: expect.stringContaining('installed; restart Blue to apply') })
+    await expect(world.execute(`install ${local}`)).resolves.toMatchObject({
+      kind: 'success',
+      text: expect.stringContaining(`plugin|--profile|acceptance|add|file:${local}`),
+    })
     await expect(world.execute('install @scope/plugin@1.2.3')).resolves.toEqual({
       kind: 'success',
       text: 'plugin|--profile|acceptance|add|@scope/plugin@1.2.3\ninstalled; restart Blue to apply, then run /plugin verify <package>',

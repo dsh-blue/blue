@@ -76,9 +76,11 @@ describe('Blue preset roster', () => {
     const source = readFileSync(new URL('SKILL.md', skillRoot), 'utf8')
     const evals = JSON.parse(readFileSync(new URL('evals.json', skillRoot), 'utf8')) as AuthorSkillEvals
 
-    for (const command of ['catalog --json', 'blue-plugin create', 'blue-plugin validate', 'blue-plugin conformance']) {
+    for (const command of ['catalog --json', ' create', ' validate', ' conformance']) {
       expect(source).toContain(command)
     }
+    expect(source).toContain('DSH_BLUE_PLUGIN_NODE')
+    expect(source).toContain('DSH_BLUE_PLUGIN_BIN')
     expect(source).not.toContain('commands, status, panes, overlays, notifications.publish')
     expect(evals.skill).toBe('blue-plugin-development')
     expect(evals.cases?.map(value => value.id)).toEqual([

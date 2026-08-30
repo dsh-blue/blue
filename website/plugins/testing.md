@@ -82,9 +82,12 @@ capability-absent fallback、输出/超时隔离与临时目录清理。默认�
 在专用 profile 安装已验证的本地包：
 
 ```sh
-dsh plugin --profile blue-my-plugin add link:/path/to/my-plugin
+dsh plugin --profile blue-my-plugin add file:/path/to/my-plugin
 dsh --profile blue-my-plugin
 ```
+
+本地目录按 `file:` 快照安装，以便 pnpm 物化插件自己的依赖闭包；每次源码变更后重新
+安装再重启。不要用不解析依赖的 `link:` 作为独立插件验收证据。
 
 覆盖插件的核心路径和 120/80/40 列，再移除插件并重启。命令、状态、pane 与 overlay
 必须全部消失；若仍有残留，通常是注册绕过了 `open()` 返回的 Fiber-owned API，或把
