@@ -2,7 +2,7 @@
 
 ## 为什么不直接 `npm install @dsh-blue/blue`？
 
-Blue 是装进 dsh profile 的插件包，不是独立应用——裸装只把包放进 node_modules，没有宿主与 profile 装配，跑不起来。正确路径：装 `blue` 壳包，或用 `dsh plugin --profile blue add`，见[快速上手](/guide/)。当前发布线是 `v0.1.1-rc.2`；普通用户可使用 `rc` 通道，插件适配与 CI 应锁定精确版本。`0.1.0-rc.1` 因打包缺失文件不可用，装到请升级。贡献者的本地开发安装见开发手册的[贡献本仓库](/plugins/contributing)页。
+Blue 是装进 dsh profile 的插件包，不是独立应用——裸装只把包放进 node_modules，没有宿主与 profile 装配，跑不起来。正确路径：装 `blue` 壳包，或用 `dsh plugin --profile blue add`，见[快速上手](/guide/)。当前发布线是 `v0.1.1-rc.3`；普通用户可使用 `rc` 通道，插件适配与 CI 应锁定精确版本。`0.1.0-rc.1` 因打包缺失文件不可用，装到请升级。贡献者的本地开发安装见开发手册的[贡献本仓库](/plugins/contributing)页。
 
 ## `@rc` 装到的不是最新预览版？
 

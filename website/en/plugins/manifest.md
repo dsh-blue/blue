@@ -1,6 +1,6 @@
 # Plugin package specification
 
-A canonical `0.1.1-rc.2` plugin package ships `blue.plugin.json` at its root.
+A canonical `0.1.1-rc.3` plugin package ships `blue.plugin.json` at its root.
 Package discovery reads only the `package.json.blue.manifest` pointer:
 
 ```json
@@ -43,18 +43,37 @@ Canonical `open()` admits required requests atomically and returns exact grants 
 
 ## Current validation path
 
-`0.1.1-rc.2` ships the shared parser, repository validator, and packed-install fixture, but the latter two still run from a Blue checkout. P5 will provide the no-clone author commands. The current installer neither runs the fixture automatically nor provides a `--force` quarantine security boundary.
+The published `@dsh-blue/blue-plugin-kit` provides the machine catalog,
+canonical generator, shared validator, and packed-install conformance command
+without a Blue checkout. Read the catalog first, generate or edit the package,
+then close both Harness lines:
 
 ```sh
-node script/blue-plugin-validate.mjs /path/to/my-plugin
-node script/blue-plugin-fixture.mjs /path/to/my-plugin --install
-node script/blue-plugin-fixture.mjs /path/to/my-plugin --install --harness-line 0.1.1-rc.1
+blue-plugin catalog --json
+blue-plugin create ./my-plugin --name @acme/my-plugin
+blue-plugin validate ./my-plugin
+blue-plugin conformance ./my-plugin
+blue-plugin conformance ./my-plugin --harness-line 0.1.1-rc.1
 ```
 
-See [Debugging and validation](/en/plugins/testing) for report details and acceptance conditions. These checks are not a security sandbox; users must still trust third-party npm/GitHub code.
+See [Debugging and validation](/en/plugins/testing) for report details and
+acceptance conditions. Conformance imports the plugin under test;
+script-disabled pack is not a security sandbox, so users must still trust
+third-party npm/GitHub code.
 
 ## Installation and creative mode
 
-The launcher's read-only marketplace commands are `blue plugin list|search|info`. Installation mutations use `blue plugin add <spec>` and execute through the dsh profile owner. The running TUI also offers `/plugin install`; restart after installation.
+The running `/plugin` command scans only installed packages in the current
+profile that declare `package.json.blue.manifest`. It exposes local
+`list/search/info/verify` with compatible/incompatible/invalid state. Install
+accepts only an existing local path/tarball, an exact npm `package@version`, or
+a GitHub source pinned to a full 40-character commit. Install/remove delegates
+to the dsh profile owner and activates only after restart; it never replaces
+the live tree.
 
-Creative mode currently supports inspect/define/run/update/stop/rollback for ephemeral in-session prototypes. The deterministic "accepted prototype -> local persistent package -> validator -> dual-Harness fixture" loop belongs to P5 and is not shipped by this RC.
+Creative mode retains inspect/define/run/update/stop/rollback for ephemeral
+prototypes. After acceptance, the formal `blue-plugin-development` skill first
+requires an explicit ephemeral/local/GitHub/npm outcome. The local path closes
+the deterministic `catalog -> create -> validate -> dual conformance` loop.
+Prototype acceptance never authorizes a repository, commit, tag, or npm
+release. The marketplace remains paused and is not part of these local paths.

@@ -72,12 +72,19 @@ The three creative authoring skills resolve from the preset-local `baseUrl`.
 Every `SKILL.md` frontmatter must parse through the pinned filesystem skill
 provider and declare the same name as its directory; `presets.spec.ts` guards
 this discovery contract because a malformed file is ignored even when shipped.
+P5's single `blue-plugin-development` skill reads the installed machine catalog,
+supports both new packages and same-package Blue entries for existing Harness
+plugins, and stops with a capability proposal when the catalog has no lawful
+surface. Its four realistic eval cases cover local persistence, existing-package
+extension, missing capability, and ambiguous distribution authority. The bundle
+depends on `blue-plugin-kit`, so creative-mode shell tools can invoke the
+published `blue-plugin` bin without a Blue checkout.
 
 `bundle.spec.ts` pins the disable list to the web-app's (drift guard) and asserts every id addresses a real base row. The runtime dependencies `@deepseek-ai/dsh-agent-presets` and `@deepseek-ai/dsh-cordis-host-runner` ride the bundle's `dependencies` so `dsh plugin add` installs them.
 
 ## Distribution contract
 
-The bundle tarball contains runtime JS, declarations, `cordis.patch.yml`, and the complete `presets/` roster. Its frontend-runtime Blue dependencies, including the public `blue-api` and pure `blue-ui` construction layer, are `workspace:*` in the repository and exact versions after packing, so an npm install cannot select an internal `*-test.*` prerelease. The candidate release workflow installs this tarball in a scratch dsh profile before promoting any tag.
+The bundle tarball contains runtime JS, declarations, `cordis.patch.yml`, and the complete `presets/` roster. Its frontend-runtime Blue dependencies, including the public `blue-api`, pure `blue-ui` construction layer, and author `blue-plugin-kit`, are `workspace:*` in the repository and exact versions after packing, so an npm install cannot select an internal `*-test.*` prerelease. The candidate release workflow installs this tarball in a scratch dsh profile before promoting any tag.
 
 `plugin-validator.spec.ts` is also the process-level negative corpus for the
 repository-owned plugin validator and packed-fixture runner. It exercises real

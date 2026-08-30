@@ -161,6 +161,14 @@ Beta hardening 形成新的 exact runtime head 后必须：
 
 并行规则：P3 的各 UI capability、P4 的两个 session capability、P5 的文档/skill/创造模式和 P6 的生态项目可以在依赖满足后并行；同一 PR 不得同时发明机器契约、扩 Stable catalog、迁移多个生态项目并发布 release。
 
+P5 当前记录（2026-08-31）：`p5/authoring-toolchain` 已达到 `implemented ->
+automated green`。交付包含发布的 `blue-plugin catalog/create/validate/conformance`、正式
+作者 skill 与四类 eval、创造模式 local-package 闭环、双 Harness 教程 fixture、
+本地-only `/plugin`、任务式双语手册及 CI drift gate。完整仓库测试和逐文件 100%
+coverage、12 tarball pack、Website paused build 与四条真实进程 smoke 全绿。专用
+`blue-p5-authoring` profile 和真人验收仍是进入 `live accepted` 的必要门；在明确验收前
+不得合并、推送、发布或删除 profile。本批次没有启动 P6，Marketplace 继续 paused。
+
 ## 7. 每个后续 PR 的共同模板
 
 每个独立 PR 必须在 PR body 或对应 acceptance record 中写明：

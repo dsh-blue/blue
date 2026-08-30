@@ -213,12 +213,16 @@ and call `registerTempDirCleanup()` at module scope. This is required for
 eager `afterAll` cleanup when Vitest reuses a worker; the helper's process-exit
 hook is only the recovery path for an interrupted worker.
 
-`blue-commands` also owns `/plugin`. Read-only marketplace operations query the
-official registry; the bare command opens the grouped Installed/Available panel,
-whose mutations delegate to the profile owner (`dsh plugin`) and report that a
-restart is required. GitHub specs must be pinned to a commit before this
-command will invoke the installer; `BLUE_MARKETPLACE_GITHUB_PROXY` may rewrite
-GitHub sources for networks that cannot reach github.com directly.
+`blue-commands` also owns `/plugin`. P5 removes the old registry from the
+runtime: inventory is derived only from current-profile dependencies whose
+installed package exposes `package.json.blue.manifest`. The bare command opens
+an installed-only panel with compatibility state, real static verification,
+and profile-owner uninstall; there is no Available/marketplace page. Direct
+install accepts existing local paths/tarballs, exact npm versions, or GitHub
+sources pinned to a full 40-character commit. Local directories must pass the
+published `@dsh-blue/blue-plugin-kit` validator before `dsh plugin` is invoked;
+all mutations report that restart is required and never replace the live
+Cordis tree. `BLUE_GITHUB_PROXY` may rewrite only already-pinned GitHub sources.
 
 The W4a-B migration intentionally keeps source filenames such as
 `select-list.ts` and `form-panel.ts` for stable internal imports, but the old

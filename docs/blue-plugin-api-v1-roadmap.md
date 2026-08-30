@@ -187,6 +187,34 @@ P1/P2 完成且至少一个 P3/P4 capability 形成可运行 Public Beta 后，�
 
 中文源、英文镜像按任务递进：开始开发、选择接入路径、架构术语、包与 manifest、UI capability、session 数据、生命周期、Web 迁移、创造模式、验证发布、案例、API reference。教程样例自身进入 packed fixture；website build、链接、双语结构和 schema/catalog drift进入 CI。
 
+### 5.5 P5 实施状态
+
+> 状态（2026-08-31）：**implemented -> automated green；等待
+> `blue-p5-authoring` live acceptance，尚未 merged/published。**
+
+P5 候选将作者入口收敛到发布包 `@dsh-blue/blue-plugin-kit`：`blue-plugin
+catalog --json` 输出产品/API/Harness 版本和完整 capability 定义，`create` 生成不需要
+构建的 canonical 本地包，`validate` 与 `conformance` 分别执行共享静态边界检查和
+正常 peer resolution 的独立 packed install。仓库旧脚本只是同一 runtime 的薄入口，
+不再维护第二份 schema、catalog 或 validator。
+
+创造模式中的正式 `blue-plugin-development` skill 支持新包和现有 Harness 插件的同包
+Blue entry；catalog 无法表达需求时停止写文件并输出 capability 提案。prototype
+acceptance 只允许进入明确选择的 ephemeral/local/GitHub/npm 路径；repository、commit、
+tag 和 publication 各自需要后续授权。bundle 将 author kit 纳入安装闭包，四类 eval
+覆盖本地持久化、现有包扩展、缺失能力和含糊的“做成长期版本”。
+
+自动证据包括：发布 tarball 中的 installed-bin catalog/create/validate；教程在 Harness
+`0.1.1-rc.2`/`0.1.1-rc.1` 上 `declared == executed`、无 skip/failure 且 cleanup；
+21 组中英文页面、链接和 catalog drift；193 个测试文件、逐文件 100% coverage、
+typecheck/lint/build/lib/pack/examples/diagram/Website gate，以及 happy/PTY/mouse/output
+四条 smoke。`/plugin` 已改为当前 profile 的本地 inventory/verify 和精确来源 mutation，
+修改仍委托 dsh profile owner 并要求重启，不热替换 live tree。
+
+P6 没有在本批次启动：未创建 `blue-ecosystem-outreach`，未迁移或联系生态项目。
+Marketplace 构建仍强制 `--paused`，registry 数据、详情路由、卡片和提交入口继续关闭；
+P5 全绿不等于 protocol Stable、生态 conformance、市场解锁或 GitHub/npm 发布授权。
+
 ## 6. R4：Stable 晋升
 
 七项 capability逐项晋升，不以“代码已经存在”代替证据。每项必须具备：

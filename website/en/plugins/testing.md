@@ -1,75 +1,105 @@
-# Debugging & validation
+# Debugging and validation
 
-This page covers a plugin's local iteration loop and the two mechanical pre-publish verifications: the static boundary check (validate) and the packed-install fixture.
+This page covers the local iteration loop and the two mechanical pre-publish
+gates: static boundary validation (`validate`) and independent packed install
+(`conformance`). Both commands ship in `@dsh-blue/blue-plugin-kit`; no Blue
+repository checkout is required.
 
-::: warning Tooling boundary in `0.1.1-rc.2`
-Both commands below can validate a plugin directory outside the workspace, but the runners still live in the Blue repository, so they require a Blue clone/checkout. P5 will provide installable no-clone author commands. This page does not present the current scripts as a published CLI.
-:::
+## Install the tool and read the machine contract
+
+```sh
+npm install --global @dsh-blue/blue-plugin-kit@0.1.1-rc.3
+blue-plugin catalog --json
+```
+
+The catalog is authoritative for capability names, versions, resources,
+quotas, Blue/API versions, and the current/previous Harness lines. Read it
+before generating a package:
+
+```sh
+blue-plugin create ./my-blue-plugin --name @acme/my-blue-plugin
+```
 
 ## Iteration loop
 
 ```text
-改代码 → 重新构建你的包 → 重启 profile
+edit -> rebuild your package -> restart a scratch profile
 ```
 
-A link install points at the package directory, so rebuilt output takes effect directly with no reinstall; only a dependency-graph change (adding a dependency) needs another `dsh plugin --profile <name> add`.
+A link install points at the package directory, so rebuilt output takes effect
+without reinstalling. Run `dsh plugin --profile <name> add` again only after a
+dependency-graph change. Profile mutation remains owned by dsh; Blue never
+hot-replaces a persistent plugin inside the running Cordis tree.
 
-Headless smoke check (pseudo-TTY via `script(1)`, no manual keystrokes needed):
+Headless smoke check through a pseudo-TTY:
 
 ```sh
 (sleep 10; printf '/now\r'; sleep 2; printf '/quit\r'; sleep 3) \
-  | timeout 90 script -qec "dsh --profile blue-dev" /tmp/my-plugin-smoke.typescript
+  | timeout 90 script -qec "dsh --profile blue-my-plugin" /tmp/my-plugin-smoke.typescript
 ```
 
-You can grep your command's output in the recording file `/tmp/my-plugin-smoke.typescript` and assert the plugin actually ran.
-
-## Unload-semantics check
-
-Fiber-bound registration is the core promise of the plugin model and deserves one verification after every major change:
-
-1. remove your plugin row from the profile's `cordis.patch.yml`;
-2. restart the profile;
-3. your commands, status entries, panes, and overlays should all disappear, leaving no residue.
-
-If residue remains, some registration bypassed the API returned by `open()` (registering straight onto a Harness service, a module-level singleton, etc.) — troubleshoot against [Core concepts](/en/plugins/concepts#design-discipline).
+The recording should contain the plugin's observable result, a clean process
+exit, bracketed-paste shutdown, and no terminal-width overflow.
 
 ## validate: static boundary checks
 
-The Blue repository ships a static validation script (run it from a clone of the Blue repo):
-
 ```sh
-node script/blue-plugin-validate.mjs /path/to/my-plugin
+blue-plugin validate /path/to/my-plugin
 ```
 
-It prints a JSON report in three groups:
+The JSON report groups checks as follows:
 
 | Group | Checks |
 | --- | --- |
-| `package` | canonical manifest schema/semantics, `id === package.json.name`, public entry export, the `files` plus real `npm pack` closure, a literal entry `name` and callable `apply`, and direct peer/dependency closure |
-| `architecture` | renderer/raw-terminal dependencies must not appear outside core; renderer-neutral packages must not depend on renderer-specific APIs; no cross-boundary imports of Agent/Session packages; the frontend does not fold Harness session events |
-| `lifecycle` | the plugin entry has observable Fiber-lifecycle or registration-ownership markers (`ctx.effect` / `.dispose` / `.register` / `.subscribe`) |
+| `package` | canonical manifest, package identity/entry/exports, the `files` plus script-disabled `npm pack` closure, and direct peer/dependency closure |
+| `architecture` | renderer/raw-terminal dependencies stay behind their boundary; no Agent/Session package-internal imports; frontend code does not fold Harness session events |
+| `lifecycle` | the entry has observable Fiber-lifecycle or registration-ownership markers |
 
-## fixture: the packed-install contract
+A green `validate` result proves static package boundaries only. It neither
+executes the plugin nor acts as a security review.
 
-validate is static; the fixture actually packs and loads your plugin in a **throwaway npm project**, verifying the independent-install scenario:
+## conformance: independent packed-install contract
 
 ```sh
-node script/blue-plugin-fixture.mjs /path/to/my-plugin --install
-# Pin the previous Harness line for compatibility evidence:
-node script/blue-plugin-fixture.mjs /path/to/my-plugin --install --harness-line 0.1.1-rc.1
+blue-plugin conformance /path/to/my-plugin
+blue-plugin conformance /path/to/my-plugin --harness-line 0.1.1-rc.1
 ```
 
-- `--install` is the switch for the independent scenario — without it the fixture only does shallow checks;
-- the `--harness-line` version override applies only inside the throwaway project and never pollutes your checkout; the report's `harnessPackages` field lists the actually resolved version of every Harness package, and all of them should equal the line you specified.
-- a passing report requires `declared` to equal `executed`, empty `skipped`/`failures`, and cleanup of the throwaway project.
+`conformance` script-disables and packs the plugin, installs it with normal
+peer resolution in a throwaway npm project, and loads only public exports. It
+then verifies Host admission, widths 20/40/80/120, Fiber unload,
+capability-absent fallback, output/timeout fencing, and cleanup. The default is
+the catalog's current Harness line; the second command closes the previous-line
+gate.
 
-The problems the fixture finds are almost always of the kind "fine inside the monorepo, broken on an independent install": undeclared peers, build output missing from `files`, versions depending on the workspace protocol.
+A passing report requires:
 
-## Pre-publish checklist
+- `declared` exactly equals `executed`;
+- `skipped` and `failures` are empty;
+- `peerResolution` is `normal`;
+- every `harnessPackages` entry equals the requested exact version;
+- cleanup succeeds.
 
-1. all three `validate` groups green;
-2. `fixture --install` passes, and (if you want compatibility with multiple Harness lines) run it once per line;
-3. the unload-semantics check passes;
-4. core paths clicked through by hand in a real profile (dogfood).
+This command imports and executes the package under test. Script-disabled pack
+blocks lifecycle scripts but is not a security sandbox; run it only on trusted
+source.
 
-Then you are ready to [publish](/en/plugins/publishing).
+## Unload and real-profile checks
+
+Install the verified local package in a dedicated profile:
+
+```sh
+dsh plugin --profile blue-my-plugin add link:/path/to/my-plugin
+dsh --profile blue-my-plugin
+```
+
+Exercise its core path at 120/80/40 columns, then remove it and restart. Every
+command, status item, pane, and overlay must disappear. Residue usually means a
+registration bypassed the Fiber-owned API returned by `open()`, or mutable
+state escaped into a module singleton.
+
+Before release, close `catalog --json`, `validate`, current/previous Harness
+`conformance`, unload, headless smoke, and live-terminal acceptance. The user
+must still choose the distribution destination; green validation never
+authorizes creating a GitHub repository or publishing to npm. The marketplace
+remains paused; see [Publishing](/en/plugins/publishing).

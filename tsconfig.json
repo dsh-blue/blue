@@ -16,6 +16,7 @@
     { "path": "packages/lark" },
     { "path": "packages/bundle/blue" },
     { "path": "packages/cli" },
+    { "path": "packages/plugin-kit" },
     { "path": "examples/blue-user-kit" },
     { "path": "examples/header" },
     { "path": "examples/right-inspector" },

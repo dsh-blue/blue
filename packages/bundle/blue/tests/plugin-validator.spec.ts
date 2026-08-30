@@ -416,7 +416,10 @@ describe('blue plugin validator script', () => {
     expect(report).toMatchObject({
       package: '@fixture/external-stdio',
       fixtureCleaned: true,
-      failures: [expect.objectContaining({ scenario: 'plugin.public-entry-packed-load', code: 'FIXTURE_PLUGIN_STDIO' })],
+      failures: expect.arrayContaining([
+        expect.objectContaining({ scenario: 'plugin.public-entry-packed-load', code: 'FIXTURE_PLUGIN_STDIO' }),
+        expect.objectContaining({ scenario: 'plugin.host-admission-width-unload-and-fallback', code: 'FIXTURE_PLUGIN_CONTRACT_PROBE_FAILED' }),
+      ]),
     })
   }, 180_000)
 

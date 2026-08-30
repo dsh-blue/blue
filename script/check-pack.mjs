@@ -1,5 +1,5 @@
 /**
- * Build the eleven publishable tarballs once and verify their consumer-facing
+ * Build the twelve publishable tarballs once and verify their consumer-facing
  * contract. The resulting .artifacts/pack/index.json is also the release
  * workflow's immutable publish input.
  *
@@ -147,6 +147,7 @@ if (node.kind !== 'stack' || node.direction !== 'row' || node.children?.length !
     progress?.kind !== 'progress' || progress.value !== 42 || progress.max !== 100) {
   throw new Error('external UI kit runtime contract failed')
 }
+
 for (const value of [node, node.children, node.children[0], node.children[1], text, progress]) {
   if (!Object.isFrozen(value)) throw new Error('external UI kit result was not deeply frozen')
 }
@@ -167,6 +168,42 @@ void node
     console.log('external UI kit: packed install, runtime, and types passed')
   } catch (error) {
     fail(`external UI kit fixture failed: ${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true })
+  }
+}
+
+function verifyPluginKit(apiTarball, uiTarball, kitTarball) {
+  if (apiTarball === undefined || uiTarball === undefined || kitTarball === undefined) {
+    fail('plugin author kit fixture requires packed API, UI, and plugin-kit tarballs')
+    return
+  }
+  const fixtureRoot = mkdtempSync(join(tmpdir(), 'blue-plugin-kit-pack-'))
+  try {
+    writeFileSync(join(fixtureRoot, 'package.json'), `${JSON.stringify({
+      private: true,
+      type: 'module',
+      dependencies: {
+        '@dsh-blue/blue-api': `file:${apiTarball}`,
+        '@dsh-blue/blue-ui': `file:${uiTarball}`,
+        '@dsh-blue/blue-plugin-kit': `file:${kitTarball}`,
+      },
+    }, null, 2)}\n`)
+    execFileSync('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: fixtureRoot, stdio: 'ignore' })
+    const bin = join(fixtureRoot, 'node_modules', '.bin', process.platform === 'win32' ? 'blue-plugin.cmd' : 'blue-plugin')
+    const catalog = JSON.parse(execFileSync(bin, ['catalog', '--json'], { cwd: fixtureRoot, encoding: 'utf8' }))
+    if (catalog.productVersion !== readManifest('packages/plugin-kit').version || catalog.capabilities?.length !== 7) {
+      throw new Error('installed bin returned a stale machine catalog')
+    }
+    const pluginRoot = join(fixtureRoot, 'tutorial')
+    execFileSync(bin, ['create', pluginRoot, '--name', '@blue-pack-fixture/tutorial'], { cwd: fixtureRoot, stdio: 'ignore' })
+    const validation = JSON.parse(execFileSync(bin, ['validate', pluginRoot], { cwd: fixtureRoot, encoding: 'utf8' }))
+    if (validation.valid !== true || validation.package !== '@blue-pack-fixture/tutorial') {
+      throw new Error('installed bin did not create and validate its package')
+    }
+    console.log('plugin author kit: packed install, catalog, create, and validate passed')
+  } catch (error) {
+    fail(`plugin author kit fixture failed: ${error instanceof Error ? error.message : String(error)}`)
   } finally {
     rmSync(fixtureRoot, { recursive: true, force: true })
   }
@@ -217,11 +254,16 @@ for (const relativeDir of PACKAGE_DIRS) {
 }
 
 verifyExternalUiKit(tarballs.get('@dsh-blue/blue-api'), tarballs.get('@dsh-blue/blue-ui'))
+verifyPluginKit(
+  tarballs.get('@dsh-blue/blue-api'),
+  tarballs.get('@dsh-blue/blue-ui'),
+  tarballs.get('@dsh-blue/blue-plugin-kit'),
+)
 
 if (libraryFiles > 210) fail(`library lib output has ${libraryFiles} files; budget is 210`)
-// P4 session-data baseline (including the versioned schema and scoped read
-// runtimes), with about 3% release headroom.
-if (libraryBytes > 1_650_000) fail(`library lib output has ${libraryBytes} bytes; budget is 1650000`)
+// P5 baseline includes the versioned protocol/session runtimes and the packed
+// author kit, with about 3% release headroom.
+if (libraryBytes > 1_700_000) fail(`library lib output has ${libraryBytes} bytes; budget is 1700000`)
 
 if (problems.length > 0) {
   console.error(`pack contract failed with ${problems.length} problem(s)`)

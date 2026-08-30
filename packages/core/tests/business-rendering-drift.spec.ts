@@ -70,8 +70,6 @@ const approvedPresentation = new Set([
   "padding:packages/transcript/src/status-model.ts:: leftText + ' '.repeat(Math.max(0, width - leftWidth - rightWidth)) + rightText",
   "padding:packages/transcript/src/status-model.ts:? ' '.repeat(Math.max(0, width - rightWidth)) + rightText",
   "padding:packages/transcript/src/status-model.ts:? leftText + ' '.repeat(Math.max(0, width - leftWidth))",
-  'pointer:packages/interaction/src/plugin-command.ts:const detail = upgrade ? `v${row.installed} → v${row.latest} · update available` : `v${row.installed} · up to date`',
-  "pointer:packages/interaction/src/plugin-command.ts:subtitle: `${row.label}: v${row.installed ?? '?'} → v${row.latest ?? '?'}`,",
   "pointer:packages/interaction/src/update-command.ts:subtitle: [`v${fromVersion} → v${toVersion}`, detail].join(' · ').replace(/ · $/, ''),",
   "pointer:packages/interaction/src/update-command.ts:{ kind: 'divider', label: `v${fromVersion} → v${toVersion}` },",
   'pointer:packages/interaction/src/updater/swap.ts:message: `updated ${input.fromVersion} → ${input.toVersion} · smoke passed · restart dsh to apply — this session keeps running ${input.fromVersion}`,',

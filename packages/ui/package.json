@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-ui",
   "description": "Pure renderer-neutral builders for Blue's public UI wire format",
-  "version": "0.1.1-rc.2",
+  "version": "0.1.1-rc.3",
   "publishConfig": {
     "access": "public"
   },

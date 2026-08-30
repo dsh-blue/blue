@@ -296,6 +296,9 @@ importers:
       '@dsh-blue/blue-interaction':
         specifier: workspace:*
         version: link:../../interaction
+      '@dsh-blue/blue-plugin-kit':
+        specifier: workspace:*
+        version: link:../../plugin-kit
       '@dsh-blue/blue-transcript':
         specifier: workspace:*
         version: link:../../transcript
@@ -519,6 +522,12 @@ importers:
       '@dsh-blue/blue-frontend':
         specifier: workspace:*
         version: link:../frontend
+      '@dsh-blue/blue-plugin-kit':
+        specifier: workspace:*
+        version: link:../plugin-kit
+      semver:
+        specifier: 7.8.5
+        version: 7.8.5
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.1
@@ -595,6 +604,9 @@ importers:
       '@dsh-blue/blue-transcript':
         specifier: workspace:*
         version: link:../transcript
+      '@types/semver':
+        specifier: 7.8.0
+        version: 7.8.0
 
   packages/lark:
     devDependencies:
@@ -625,6 +637,31 @@ importers:
       '@dsh-blue/blue-transcript':
         specifier: workspace:*
         version: link:../transcript
+
+  packages/plugin-kit:
+    dependencies:
+      '@dsh-blue/blue-api':
+        specifier: workspace:*
+        version: link:../api
+      '@dsh-blue/blue-ui':
+        specifier: workspace:*
+        version: link:../ui
+      semver:
+        specifier: 7.8.5
+        version: 7.8.5
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      validate-npm-package-name:
+        specifier: 7.0.2
+        version: 7.0.2
+    devDependencies:
+      '@types/semver':
+        specifier: 7.8.0
+        version: 7.8.0
+      '@types/validate-npm-package-name':
+        specifier: 4.0.2
+        version: 4.0.2
 
   packages/remote:
     devDependencies:

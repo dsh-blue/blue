@@ -1,6 +1,6 @@
 # 插件包规范
 
-`0.1.1-rc.2` 的 canonical 插件包在包根目录提供 `blue.plugin.json`；package
+`0.1.1-rc.3` 的 canonical 插件包在包根目录提供 `blue.plugin.json`；package
 discovery 只读取 `package.json.blue.manifest` 指针：
 
 ```json
@@ -43,18 +43,29 @@ Canonical `open()` 对 required 请求原子准入，对 optional 请求返回 e
 
 ## 当前验证路径
 
-`0.1.1-rc.2` 已提供共享 parser、repository validator 和 packed-install fixture，但它们仍从 Blue checkout 运行；P5 才会交付免克隆的作者命令。当前安装器不会自动运行 fixture，也没有 `--force` quarantine 安全边界。
+发布的 `@dsh-blue/blue-plugin-kit` 直接提供 machine catalog、canonical 生成器、共享
+validator 与 packed-install conformance，不需要 Blue checkout。先读取 catalog，再生成或
+修改包，最后关闭当前/上一 Harness 线：
 
 ```sh
-node script/blue-plugin-validate.mjs /path/to/my-plugin
-node script/blue-plugin-fixture.mjs /path/to/my-plugin --install
-node script/blue-plugin-fixture.mjs /path/to/my-plugin --install --harness-line 0.1.1-rc.1
+blue-plugin catalog --json
+blue-plugin create ./my-plugin --name @acme/my-plugin
+blue-plugin validate ./my-plugin
+blue-plugin conformance ./my-plugin
+blue-plugin conformance ./my-plugin --harness-line 0.1.1-rc.1
 ```
 
-详细报告与验收条件见[调试与验证](/plugins/testing)。这些检查不是安全沙箱；第三方 npm/GitHub 代码仍需要用户信任。
+详细报告与验收条件见[调试与验证](/plugins/testing)。conformance 会导入待测插件；
+script-disabled pack 不是安全沙箱，第三方 npm/GitHub 代码仍需要用户信任。
 
 ## 安装与创造模式
 
-Launcher 的只读市场命令是 `blue plugin list|search|info`；安装 mutation 使用 `blue plugin add <spec>` 并由 dsh profile owner 执行。运行中的 TUI 另提供 `/plugin install`，安装后需要重启。
+运行中的 `/plugin` 只扫描当前 profile 中声明 `package.json.blue.manifest` 的已安装包，
+显示 compatible/incompatible/invalid 状态，并提供本地 `list/search/info/verify`。安装只接受
+已存在的本地路径/tarball、精确 npm `package@version` 或钉到 40 位 commit 的 GitHub
+source；remove/install 都委托给 dsh profile owner，重启后才激活，绝不替换 live tree。
 
-当前创造模式可以在会话内 inspect/define/run/update/stop/rollback 临时原型。“验收原型 -> 生成本地持久包 -> validator -> 双 Harness line fixture”的确定性闭环属于 P5，不是本 RC 的已交付功能。
+创造模式保留 inspect/define/run/update/stop/rollback 临时原型。用户验收后，正式
+`blue-plugin-development` skill 要求先明确 ephemeral/local/GitHub/npm 目的地；local
+路径可执行 `catalog -> create -> validate -> dual conformance` 确定性闭环。原型验收
+不自动授权 repository、commit、tag 或 npm 发布。插件市场仍暂停，不参与这些本地路径。

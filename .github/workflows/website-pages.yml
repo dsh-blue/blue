@@ -22,7 +22,7 @@ on:
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
-  # 保留每日重建节奏；rc.2 迁移期 fetcher 以 --paused 清理市场生成物。
+  # 保留每日重建节奏；市场暂停期 fetcher 以 --paused 清理生成物。
   # 注册表完成 canonical 迁移后，恢复主动取数并继续用该 schedule 同步。
   schedule:
     - cron: '17 3 * * *'

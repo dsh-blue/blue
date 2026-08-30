@@ -1,7 +1,7 @@
 # Quickstart
 
 ::: info Current release line
-`v0.1.1-rc.2` is the current Public Beta. Ordinary installs may follow the **`rc`** channel; plugin adapters, CI, and reproducible environments should pin exact version `0.1.1-rc.2`. This page is the user install path; the contributor development install (checkout, link install, iteration loop) lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
+`v0.1.1-rc.3` is the current Public Beta. Ordinary installs may follow the **`rc`** channel; plugin adapters, CI, and reproducible environments should pin exact version `0.1.1-rc.3`. This page is the user install path; the contributor development install (checkout, link install, iteration loop) lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
 :::
 
 ## Prerequisites

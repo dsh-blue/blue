@@ -3555,7 +3555,7 @@ describe('blue whole-tree e2e', () => {
     const frame = stripSgr(await fullFrame(tree.terminal))
     expect(frame).toContain(`v${BLUE_VERSION}`)
     expect(frame).toContain('harness')
-    expect(frame).toContain('0.1.1-rc.2')
+    expect(frame).toContain('0.1.1-rc.3')
     // The panel is version-only: no model section even with a live session.
     expect(frame).not.toContain('mock (mock)')
     // Escape restores the editor: the panel leaves the next full frame

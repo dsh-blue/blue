@@ -11,7 +11,7 @@ A Blue plugin is an ordinary npm package with `blue.plugin.json`. Official Blue 
 Confirm before publishing:
 
 - `exports` points at the build output, and the `files` whitelist covers every export target (the validate script's `package` group checks this);
-- `@dsh-blue/blue-api@0.1.1-rc.2` is in `dependencies` (add `@dsh-blue/blue-ui@0.1.1-rc.2` when using its builders), while `@deepseek-ai/cordis` is in `peerDependencies`. Cordis is host-provided; bundling it as a dependency produces a second service instance;
+- `@dsh-blue/blue-api@0.1.1-rc.3` is in `dependencies` (add `@dsh-blue/blue-ui@0.1.1-rc.3` when using its builders), while `@deepseek-ai/cordis` is in `peerDependencies`. Cordis is host-provided; bundling it as a dependency produces a second service instance;
 - the canonical manifest targets `^1.0.0-beta.1` in `api`, while `compatibility.blue` and `compatibility.harness` cover only product lines proven by packed fixtures. This is a preview declaration, not a promise about future Stable `1.x`.
 
 ## User install path
@@ -27,10 +27,11 @@ A package declaring `package.json.dsh.bundle.patch` is composed from its bundled
   name: 'my-scope/blue-clock'
 ```
 
-The running TUI retains `/plugin install`, but do not install entries from the
-old registry while the rc.2 marketplace migration is in progress. Use
-`blue plugin add` above only with an explicitly rc.2-compatible package spec;
-restart Blue after installation to activate the new row.
+The running TUI exposes local `/plugin install`, accepting only an existing
+local path/tarball, an exact npm `package@version`, or a GitHub source pinned to
+a full commit. You may also use `blue plugin add` above with an explicitly
+rc.3-compatible package spec. Both paths delegate dependency mutation to the
+profile owner; restart Blue after installation to activate the new row.
 
 ## Versioning policy recommendations
 
@@ -40,9 +41,11 @@ restart Blue after installation to activate the new row.
 
 ## Plugin marketplace
 
-The marketplace registry and its existing verified entry still use pre-rc.2
-legacy `dock`/`notifications` metadata and have not completed the canonical
-P1–P4 migration. Website builds therefore remove fetched data and detail routes
-and pause submissions. The old `verified` flag is not rc.2 compatibility or
-conformance evidence. Cards, submissions, and one-line installation promises
-return only after the registry validator and at least one plugin migrate.
+The marketplace registry and its existing verified entry still use legacy
+`dock`/`notifications` metadata and have not completed canonical-contract
+migration. Website builds therefore remain in paused mode, removing registry
+data and detail routes and disabling submissions. The old `verified` flag is
+not rc.3 compatibility or conformance evidence. P5 local authoring does not
+unlock the marketplace; cards, submissions, and one-line installation promises
+return only after the separate P6 ecosystem and later registry/cooperation
+gates close.

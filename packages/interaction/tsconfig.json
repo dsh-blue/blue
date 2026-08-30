@@ -13,6 +13,9 @@
       "path": "../api"
     },
     {
+      "path": "../plugin-kit"
+    },
+    {
       "path": "../frontend"
     },
     {

@@ -89,6 +89,16 @@ describe('CanonicalDocumentController', () => {
     value.panel.handleInput(KEY.tab)
     value.panel.handleInput(KEY.left)
     value.panel.handleInput('\x1b[Z')
+
+    const groupsOnly = fixture({
+      mode: 'select', title: 'Groups', grouped: true,
+      items: [
+        { id: 'one', label: 'One', group: 'One' },
+        { id: 'two', label: 'Two', group: 'Two' },
+      ],
+    })
+    groupsOnly.panel.handleInput(KEY.right)
+    expect(groupsOnly.panel.render(80).join('\n')).toContain('Two')
   })
 
   it('bounds long lists, supports page/top/end keys, and custom input', () => {

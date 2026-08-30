@@ -15,6 +15,11 @@ interface SkillFrontmatter {
   readonly description?: unknown
 }
 
+interface AuthorSkillEvals {
+  readonly skill?: unknown
+  readonly cases?: readonly { readonly id?: unknown }[]
+}
+
 const require = createRequire(import.meta.url)
 const skillFilesystemRoot = dirname(require.resolve('@deepseek-ai/dsh-skill-filesystem/package.json'))
 const { parse } = createRequire(join(skillFilesystemRoot, 'package.json'))('yaml') as {
@@ -64,5 +69,34 @@ describe('Blue preset roster', () => {
       expect(typeof frontmatter.description).toBe('string')
       expect((frontmatter.description as string).trim().length).toBeGreaterThan(0)
     }
+  })
+
+  it('ships the machine-driven author skill and its four authority evals', () => {
+    const skillRoot = new URL('../presets/cordis/skills/blue-plugin-development/', import.meta.url)
+    const source = readFileSync(new URL('SKILL.md', skillRoot), 'utf8')
+    const evals = JSON.parse(readFileSync(new URL('evals.json', skillRoot), 'utf8')) as AuthorSkillEvals
+
+    for (const command of ['catalog --json', 'blue-plugin create', 'blue-plugin validate', 'blue-plugin conformance']) {
+      expect(source).toContain(command)
+    }
+    expect(source).not.toContain('commands, status, panes, overlays, notifications.publish')
+    expect(evals.skill).toBe('blue-plugin-development')
+    expect(evals.cases?.map(value => value.id)).toEqual([
+      'accepted-new-local-plugin',
+      'existing-harness-plugin-entry',
+      'missing-capability',
+      'accepted-does-not-authorize-publish',
+    ])
+  })
+
+  it('carries the published author bin in the installable bundle closure', () => {
+    const bundle = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      readonly dependencies?: Readonly<Record<string, string>>
+    }
+    const pluginKit = JSON.parse(readFileSync(require.resolve('@dsh-blue/blue-plugin-kit/package.json'), 'utf8')) as {
+      readonly bin?: Readonly<Record<string, string>>
+    }
+    expect(bundle.dependencies?.['@dsh-blue/blue-plugin-kit']).toBe('workspace:*')
+    expect(pluginKit.bin).toEqual({ 'blue-plugin': 'lib/bin.js' })
   })
 })

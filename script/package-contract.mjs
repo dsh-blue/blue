@@ -16,6 +16,7 @@ export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const RELEASE_PACKAGE_DIRS = [
   'packages/api',
   'packages/ui',
+  'packages/plugin-kit',
   'packages/frontend',
   'packages/harness-adapter',
   'packages/conversation',

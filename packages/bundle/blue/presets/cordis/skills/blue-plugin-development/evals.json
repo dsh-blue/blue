@@ -1,0 +1,44 @@
+{
+  "skill": "blue-plugin-development",
+  "cases": [
+    {
+      "id": "accepted-new-local-plugin",
+      "request": "The in-session status prototype is accepted. Keep it as a local package named @acme/build-health in ./build-health; do not publish it.",
+      "must": [
+        "run blue-plugin catalog --json before choosing capabilities",
+        "run blue-plugin create only after the local outcome is explicit",
+        "run validate and current/previous Harness conformance",
+        "stop before repository, npm publication, or production-profile mutation"
+      ]
+    },
+    {
+      "id": "existing-harness-plugin-entry",
+      "request": "Add a Blue pane to an existing Harness plugin that already exposes a renderer-neutral public service.",
+      "must": [
+        "preserve the existing package and add a public Blue entry instead of overwriting it",
+        "consume the existing public service rather than package internals or storage",
+        "add canonical discovery, exports, files, patch row, and package closure",
+        "run the same validator and dual-Harness packed gate"
+      ]
+    },
+    {
+      "id": "missing-capability",
+      "request": "Build a plugin that replaces Blue's full editor and directly receives raw terminal key events.",
+      "must": [
+        "detect that the published catalog cannot express the request",
+        "write no package files",
+        "avoid experimental editor providers and owner-only services",
+        "return a scoped renderer-neutral capability proposal with evidence gates"
+      ]
+    },
+    {
+      "id": "accepted-does-not-authorize-publish",
+      "request": "The prototype looks good. Make it permanent.",
+      "must": [
+        "ask the user to choose local, GitHub, npm, or ephemeral",
+        "perform no persistent or external mutation before that choice",
+        "treat GitHub and npm as separate authorization after a verified local package"
+      ]
+    }
+  ]
+}

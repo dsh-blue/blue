@@ -3,6 +3,17 @@
 本篇从零创建一个 header pane 插件。插件只使用公开的
 `@dsh-blue/blue-api` 与 `@dsh-blue/blue-ui`，不导入 core、pi-tui 或仓库内部文件。
 
+先安装作者工具并读取当前机器 catalog，再生成 canonical 本地包：
+
+```sh
+npm install --global @dsh-blue/blue-plugin-kit@0.1.1-rc.3
+blue-plugin catalog --json
+blue-plugin create ./blue-workspace-header --name @acme/blue-workspace-header
+```
+
+生成器给出无需构建的 status 基线。下面把该基线改成 header pane；能力名、版本、
+resource 与 quota 以刚才的 catalog 为准，不从本页猜测未来能力。
+
 ## 包骨架
 
 ```text
@@ -26,8 +37,8 @@ blue-workspace-header/
   "blue": { "manifest": "./blue.plugin.json" },
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
   "dependencies": {
-    "@dsh-blue/blue-api": "0.1.1-rc.2",
-    "@dsh-blue/blue-ui": "0.1.1-rc.2"
+    "@dsh-blue/blue-api": "0.1.1-rc.3",
+    "@dsh-blue/blue-ui": "0.1.1-rc.3"
   },
   "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" }
 }
@@ -48,7 +59,7 @@ blue-workspace-header/
   "entry": ".",
   "api": "^1.0.0-beta.1",
   "compatibility": {
-    "blue": ">=0.1.1-rc.2 <0.1.2",
+    "blue": ">=0.1.1-rc.3 <0.1.2",
     "harness": ">=0.1.1-rc.1 <0.1.2",
     "node": "^22.19.0 || >=24.0.0"
   },
@@ -74,8 +85,8 @@ blue-workspace-header/
 ```
 
 manifest `id` 必须等于 npm package name；`entry` 是 `package.json.exports` 的公开 subpath，不是 `lib/` 文件路径。Cordis 入口 `name` 和 loader row `id` 是独立命名空间；教程为便于排错选择同名，但协议不强制它们与包名相等。
-compatibility 范围同时覆盖 rc.2 Blue 与本仓 packed fixture 验证的当前/上一 Harness
-line；若插件实际使用了更窄的 Host 能力，应把范围收紧到真实测试矩阵。
+compatibility 范围覆盖 rc.3 Blue 与本仓 packed fixture 验证的当前/上一 Harness line；
+若插件实际使用了更窄的 Host 能力，应把范围收紧到真实测试矩阵。
 
 ## 插件入口
 
@@ -136,7 +147,15 @@ dsh plugin --profile blue-header-dev add link:/path/to/blue-workspace-header
 dsh --profile blue-header-dev
 ```
 
-确认 header 出现后，删除插件行或执行 `plugin remove` 并重启；header 必须完全
+安装前先关闭静态与双 Harness packed gate：
+
+```sh
+blue-plugin validate ./blue-workspace-header
+blue-plugin conformance ./blue-workspace-header
+blue-plugin conformance ./blue-workspace-header --harness-line 0.1.1-rc.1
+```
+
+确认 header 出现后，删除插件行或执行 `/plugin remove` 并重启；header 必须完全
 消失。发布前还应执行静态 validator、packed-install fixture 与窄宽度扫描，见
 [调试与验证](/plugins/testing)。
 

@@ -44,6 +44,7 @@ echo "==> Link-installing Blue packages into profile '$PROFILE'"
   "link:$REPO_ROOT/packages/bundle/blue" \
   "link:$REPO_ROOT/packages/api" \
   "link:$REPO_ROOT/packages/ui" \
+  "link:$REPO_ROOT/packages/plugin-kit" \
   "link:$REPO_ROOT/packages/frontend" \
   "link:$REPO_ROOT/packages/harness-adapter" \
   "link:$REPO_ROOT/packages/conversation" \

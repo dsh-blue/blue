@@ -1,118 +1,151 @@
 ---
 name: blue-plugin-development
-description: Use when packaging an accepted Blue feature as a distributable plugin package — the terminal UI on the DeepSeek Harness. A real Blue feature is a distributable plugin package (an npm package of Cordis plugins plus a cordis.patch.yml, installed with `dsh plugin --profile blue add`), NOT an edit to Blue's own source tree. Covers the package shape, the L1 service surface, the row-width and effect-bound contracts, and the install-restart iteration loop. For fast in-session prototyping before packaging, use the cordis-plugin-development skill (dynamic plugins hot-mount without a restart); come here once the user accepts the prototype. Not for editing compositions — use editing-cordis-compositions for those.
+description: Create or persist a Blue frontend plugin after an in-session prototype is accepted, or add a Blue frontend entry to an existing Harness plugin package. Uses the published blue-plugin catalog, generator, validator, and packed conformance command without requiring a Blue checkout. Stops with a capability proposal when the machine catalog cannot express the requested feature. Not for ephemeral prototyping, Blue core changes, agent presets, marketplace submission, or publishing without explicit user authorization.
 ---
 
-# Develop Blue plugins
+# Develop a Blue plugin
 
-Blue is a renderer over the harness's Cordis plugin architecture — and Blue itself is just an npm package (`@dsh-blue/blue`) carrying Cordis plugins plus a `cordis.patch.yml`, installed into a dsh profile with `dsh plugin add`. A profile composes MULTIPLE bundles in order, so a third-party Blue feature is a package of the same shape layered after Blue. Verified end to end: a plain hand-written ESM package with no build step mounts and renders. Dynamic prototypes use the capability-scoped `bluePluginHost`; they do not reach into Blue's root services or composition.
+Use this skill only after the user asks for a durable Blue plugin or accepts an
+ephemeral prototype and chooses a persistent outcome. Before acceptance, use
+`cordis-plugin-development`; do not create package files, repositories,
+commits, tags, releases, or profile installs.
 
-The executable plugin contract is currently Beta `1.0.0-beta.1`. Do not call it
-Stable v1, widen examples to `^1.0.0`, or infer future capabilities from the
-design roadmap. Package only the facets the installed Beta host actually
-grants.
+The published `blue-plugin` command is the machine authority. A checked-out
+Blue repository is neither required nor a source of copied capability names.
 
-## The package shape
+## 1. Read the installed contract
 
-```
-my-blue-feature/
-  package.json       # type: module, main: index.js, dsh.bundle.patch: ./cordis.patch.yml
-  cordis.patch.yml   # inserts your plugin rows
-  index.js           # plain ESM Cordis plugins — no build step required for simple features
-```
+Run this first in the intended authoring environment:
 
-```json
-{
-  "name": "my-blue-feature",
-  "version": "0.1.0",
-  "type": "module",
-  "main": "index.js",
-  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
-}
+```sh
+blue-plugin catalog --json
 ```
 
-```yaml
-- insert:
-    - id: my-blue-feature
-      name: 'my-blue-feature'
+Use only capability names, versions, resources, limits, and quotas present in
+that output. Do not infer a capability from Website prose, examples, an old
+flat manifest, internal services, or an experimental provider implementation.
+
+Map every requested behavior to the returned catalog before writing files.
+Classify capabilities as required only when the plugin is meaningless without
+them; otherwise declare them optional and implement a plain/read-only absence
+fallback. Never use `bluePluginControl`, raw session/projection/action
+services, `blueScreen`, `blueComponents`, pi-tui, ANSI, terminal width, focus
+handles, private registries, or package-internal imports.
+
+If the request cannot be expressed by the catalog, stop without generating or
+editing a package. Return a proposal containing:
+
+- the user workflow and why current capabilities cannot express it;
+- the smallest renderer-neutral capability or resource addition;
+- readonly data and structured actions, with owner and scope;
+- lifecycle, unavailable fallback, quota, abort/stale/unload, and width risks;
+- one official consumer, one external consumer, and conformance evidence that
+  would be required before Beta or Stable admission.
+
+Do not approximate the missing capability with an owner-only service.
+
+## 2. Confirm the persistent outcome
+
+The user must choose exactly one current outcome: local package, GitHub
+repository, npm package, or intentionally ephemeral. An accepted prototype
+does not authorize GitHub/npm work. Local persistence does not authorize a
+commit, repository, profile mutation, or publication.
+
+For GitHub or npm, first complete and validate a local package. Then request or
+confirm repository ownership, package name, visibility, authentication, 2FA,
+organization policy, tag, and exact version before the corresponding external
+mutation. Never publish merely because conformance passes.
+
+## 3. Choose the package path
+
+### New package
+
+Create an empty destination with the published generator:
+
+```sh
+blue-plugin create ./my-blue-plugin --name @acme/my-blue-plugin
 ```
 
-Row package names resolve from the profile's `node_modules`, which is where `dsh plugin add` installs the package.
+The generated no-build ESM status plugin is a valid baseline. Adapt its
+canonical `blue.plugin.json`, public entry, and `cordis.patch.yml` to the
+catalog decisions. Keep `package.json.blue.manifest` as the only discovery
+pointer and keep `manifest.id` equal to the npm package name.
 
-## The plugin shape
+### Existing Harness plugin
 
-Every entry is a Cordis plugin: a stable `name`, an `inject` list of hard dependencies, and `apply(ctx)`. **Every registration must be effect-bound** so unloading reverts it:
+Do not run `create` over an existing package. Preserve its domain entry,
+exports, files, dependencies, scripts, and ownership. Add:
 
-```js
-export const name = 'my-blue-feature'
-export const inject = ['bluePluginHost']
+- one public renderer-neutral Blue entry subpath;
+- one canonical `blue.plugin.json` and `package.json.blue.manifest` pointer;
+- the manifest and entry to `files`;
+- one additive loader row in the package's existing patch, or a package-owned
+  patch when it does not yet ship one;
+- exact public Blue dependencies and host-provided Cordis peers required by
+  that entry.
 
-export function apply(ctx) {
-  const opened = ctx.bluePluginHost.open(ctx, {
-    id: 'com.example.my-blue-feature',
-    api: '^1.0.0-beta.1',
-    capabilities: ['status'],
-  })
-  if (!opened.ok) throw new Error(opened.code + ': ' + opened.message)
-  const registered = opened.value.status.register({
-    id: 'my-feature-badge',
-    priority: 40,
-    render: () => ({ kind: 'text', content: 'my badge', tone: 'muted' }),
-  })
-  if (!registered.ok) throw new Error(registered.code + ': ' + registered.message)
-}
+The Blue entry injects the plugin's public renderer-neutral Harness Service or
+projection. It must not read databases, files, Web routes, Agent/Session
+objects, credentials, renderer state, or package internals to recreate domain
+truth. If the Harness plugin has no suitable public seam, stop and propose that
+seam before adding the Blue entry.
+
+## 4. Implement the accepted feature
+
+Every Cordis entry exports stable `name`, optional `inject`, and `apply(ctx)`.
+Open the parsed canonical manifest through `ctx.bluePluginHost.open(ctx,
+manifest)` and check every `BlueResult`. Register only through the granted
+facade. Registrations are Fiber-bound and all subscriptions, timers, and
+external listeners must unwind with that Fiber.
+
+Return renderer-neutral nodes from `@dsh-blue/blue-ui`. Render functions are
+synchronous, cheap, and free of I/O. Blue owns layout, theme, width, focus,
+input routing, and terminal safety. Plugin-owned handlers validate event
+revision/context, honor abort, reject stale results, and call only the domain
+Service that owns the write.
+
+Preserve a capability-absent fallback. Definition-style registrations may be
+restored after an owner gap, but notifications, overlays, gestures, actions,
+and old callback results are never queued or replayed.
+
+## 5. Close the local package gate
+
+Run the published checks from any directory:
+
+```sh
+blue-plugin validate ./my-blue-plugin
+blue-plugin conformance ./my-blue-plugin
+blue-plugin conformance ./my-blue-plugin --harness-line <previousHarnessLine-from-catalog>
 ```
 
-A minimal footer entry, complete. The owner bridge orders it by `priority`, applies the active theme, budgets its width, and removes it with the plugin Fiber.
+Both conformance reports must have:
 
-## The L1 service surface
+- `valid: true`;
+- `peerResolution: "normal"` and the requested exact Harness line;
+- `declared` equal to `executed`;
+- empty `skipped` and `failures`;
+- `fixtureCleaned: true`;
+- public packed entry load, real Host admission, 20/40/80/120 width render,
+  Fiber unload cleanup, and capability-absent fallback evidence.
 
-Consume Blue through the public capability host and renderer-neutral contracts — never by importing Blue internals:
+The validator and fixture disable lifecycle scripts while packing untrusted
+input, but they are compatibility checks, not a security sandbox.
 
-- `panes` — renderer-neutral `BlueUiNode` contributions placed in header, left, right, or bottom lanes.
-- `overlays` — managed overlays opened from a live owner-issued user gesture.
-- `status` — renderer-neutral footer contributions.
-- `commands` — additive slash commands with structured `BlueResult` outcomes.
-- `notifications.publish` — publish-only renderer-neutral transient messages; ordinary plugins cannot observe the global notice stream.
-- `session.read` — `api.session` with frozen revisioned `current()` / `subscribe()` only.
+## 6. Dogfood without replacing the live tree
 
-There is no generic public `session.act`. Use the documented Harness Service,
-projection, command, or feature-owned action that owns the domain write. The raw
-`bluePluginControl`, session/projection/action backing services, `blueScreen`,
-`blueTheme`, `blueComponents`, `blueKeymap`, transcript registries, and root
-loader are owner-only implementation services. Existing feature IDs cannot be
-replaced by registering the same ID.
+Use a dedicated profile and delegate installation to its owner:
 
-Every `open()`, `register()`, and `publish()` call returns a `BlueResult` and must be checked. Commands, status, panes, overlays, editor extensions, and provider candidates are durable inert registration buffers; an owner boot gap or reload does not reject those registrations. Only the latest definitions restore. Notifications, overlays, gestures, actions, and old callback results are never queued or replayed. `BLUE_CAPABILITY_ABSENT` means this host/profile does not provide a requested buffer, or that the active publish/session owner is missing. Preserve a plain/read-only fallback when possible or report that the Blue profile must be upgraded/restarted; never reach into private control, status/bottom-pane registries, command/editor hosts, raw session services, or another owner service as a fallback. `editor.extensions`, `status.provider`, and `editor.provider` remain Experimental/reference facets rather than Stable v1 promises.
+```sh
+dsh plugin --profile blue-my-plugin add link:/absolute/path/to/my-blue-plugin
+dsh --profile blue-my-plugin
+```
 
-At dev time, types come from the published contracts: `@dsh-blue/blue-api` is the Beta renderer-independent surface (program against it first). Runtime plugin code never needs `blue-core` or a pi-tui import — see the width rule below.
+Exercise supported widths, the primary workflow, unavailable fallback, unload,
+restart, and any session replay/swap behavior. Rebuild the package between
+looks; reinstall only when its dependency graph changes. Never use the
+production `blue` profile for acceptance and never hot-replace the running
+Cordis tree through `/plugin`.
 
-## The row-width hard contract
-
-Every renderer-owned view must fit its target surface. Plugin code returns renderer-neutral `BlueUiNode` data; the TUI adapter performs width measurement and fallback. Do not import pi-tui or assemble ANSI rows in a plugin. Two forbidden shortcuts:
-
-- **A direct pi-tui dependency** — Blue pins its pi-tui version; a second copy in the tree breaks width truth (and the version-uniqueness rule).
-- **Hand-rolled character counts** — codepoint counters are exact only for ASCII; CJK and emoji mis-budget and trip the render-exit clamp (a clamped row is a bug — it lands in `blue-overflow.log`).
-
-Fixed furniture (bullets, indents) plus wrapped text must be measured assembled. When the viewport is narrower than your furniture, cut content, not the frame.
-
-## The iteration loop
-
-0. **Fastest iteration is upstream of the package**: while the feature's shape is still moving, prototype it as an additive dynamic plugin hot-mounted in the session (cordis-plugin-development skill) — the user sees every change immediately, with no reinstall and no restart. Reach for the package form when the user has accepted the prototype.
-1. **Confirm the user's durable outcome before creating anything**: keep a local plugin package, upload its repository to GitHub, or publish it to npm. If this choice was not made before loading the skill, ask now. Do not create package files, repositories, commits, tags, or releases before explicit consent.
-2. Develop the chosen package against a **scratch profile**, never the production `blue` one: `dsh plugin --profile blue-dev add /path/to/my-blue-feature` records a `link:` spec, so edits to your package are live on the next restart — no reinstall needed while the dependency graph is unchanged.
-3. Restart `dsh --profile blue-dev` and look at the result. Repeat.
-4. For a release check, `npm pack` and install the tarball into a throwaway profile (or a throwaway `DSH_HOME`) — that exercises the exact artifact users will get.
-5. Stop after a verified local package when that was the chosen outcome. For GitHub or npm, perform only the agreed distribution operation and report authentication, repository creation, npm login/2FA, organization-policy, or token steps the user must complete themselves. Remove a local install with `dsh plugin --profile blue remove my-blue-feature`.
-
-The `blue` launcher calibrates only the `@dsh-blue/blue` bundle version and leaves additional bundles alone; a plain `blue` boot does not disturb an installed third-party feature.
-
-## What a plugin package is NOT for
-
-- **Changing Blue's own packages** (api/core/transcript/interaction/app/bundle) — that is dsh-blue repository work with its own gates (per-file full coverage, the subpath export triangle, the worktree + dogfood flow). Clone the repo and follow its AGENTS.md; this skill's loop does not apply.
-- **Session capabilities** (a tool, a prompt section) — that is an agent preset; see the editing-cordis-compositions skill.
-- **Quick behavior experiments and in-session UI prototypes** — a dynamic plugin via the cordis_* tools (cordis-plugin-development skill) hot-mounts without a restart through `bluePluginHost`. Prototype there; package here once the user accepts.
-
-## Style
-
-TypeScript or plain ESM JavaScript, no semicolons, single quotes, 2-space indent. Effect-bound everything. Render through the theme palette. Keep the plugin fiber's work synchronous at apply time; subscribe for later data.
+Wait for explicit human acceptance before distribution. The deterministic P5
+gate ends at an accepted local package plus current/previous Harness packed
+conformance. GitHub and npm are separate, explicitly authorized outcomes.

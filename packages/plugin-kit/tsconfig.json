@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "../../node_modules/.cache/blue-tsb/plugin-kit.tsbuildinfo"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../api" },
+    { "path": "../ui" }
+  ]
+}

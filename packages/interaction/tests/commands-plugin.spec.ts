@@ -5,6 +5,8 @@
  * disposal.
  */
 
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -23,6 +25,9 @@ import { InteractionStateService } from '../src/runtime-state.ts'
 import { DEFAULT_SETTINGS } from '../src/settings.ts'
 import { BlueLocaleService } from '../../frontend/src/locale.ts'
 import { INTERACTION_LOCALE } from '../src/locale.ts'
+import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
+
+registerTempDirCleanup()
 
 /** The structural slice of `sessionQuery` the `/sessions` titles read. */
 interface TitleQueryFake {
@@ -828,55 +833,39 @@ describe('blue-commands plugin', () => {
     expect(ctx.blueInteractionState.aliases.canonicalOf('exit')).toBeUndefined()
   })
 
-  it('/plugin lists the official marketplace and is disposable', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ plugins: [{ id: 'blue-doudizhu', version: '0.1.0' }] }), { status: 200 })))
+  it('/plugin reads only the local profile and is disposable', async () => {
+    const root = mkdtempTracked('blue-commands-plugin-profile-')
+    const profile = join(root, 'profiles', 'blue')
+    mkdirSync(profile, { recursive: true })
+    writeFileSync(join(profile, 'package.json'), JSON.stringify({ private: true, dependencies: { '@dsh-blue/blue': '0.1.1-rc.2' } }))
+    vi.stubEnv('DSH_HOME', root)
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
     const { ctx, agent, fiber } = await mount({ appExit: () => {} })
-    expect((await ctx.commands.execute(agent, '/plugin list', [], signal()))?.result).toMatchObject({ kind: 'success', text: 'blue-doudizhu@0.1.0' })
+    expect((await ctx.commands.execute(agent, '/plugin list', [], signal()))?.result).toMatchObject({
+      kind: 'success',
+      text: 'no Blue plugins installed; marketplace is paused',
+    })
+    expect(fetch).not.toHaveBeenCalled()
     await fiber.dispose()
     vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
   })
 
-  it('/plugin opens the installed and available management panel', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ plugins: [
-      { id: 'blue-doudizhu', package: '@dsh-blue/blue-doudizhu', version: '1.0.0', title: { en: 'Doudizhu' } },
-    ] }), { status: 200 })))
-    const { ctx, screen, agent } = await mount({ appExit: () => {} })
-    const execution = await ctx.commands.execute(agent, '/plugin', [], signal())
-    expect(execution?.result).toEqual({ kind: 'success' })
-    const panel = screen.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
-    expect(panel.render(100).join('\n')).toContain('‹ Installed ›')
-    expect(panel.render(100).join('\n')).toContain('Available')
-    panel.handleInput(KEY.right)
-    expect(panel.render(100).join('\n')).toContain('‹ Available ›')
-  })
-
-  it('/plugin shows a loading notice while marketplace data is pending', async () => {
-    const gate = Promise.withResolvers<Response>()
-    vi.stubGlobal('fetch', vi.fn(() => gate.promise))
-    const notice = vi.fn()
-    const { ctx, components, agent } = await mount({ appExit: () => {} })
-    setSharedEditor(ctx, { editor: components.createEditor(), submitPrompt: () => {}, notice })
-    try {
-      const pending = ctx.commands.execute(agent, '/plugin', [], signal())
-      await vi.waitFor(() => { expect(notice).toHaveBeenCalledWith('loading plugins...') })
-      gate.resolve(new Response(JSON.stringify({ plugins: [] }), { status: 200 }))
-      await expect(pending).resolves.toMatchObject({ result: { kind: 'success' } })
-      expect(notice.mock.calls.map(call => call[0])).toEqual(['loading plugins...', ''])
-    } finally {
-      clearSharedEditor(ctx)
-    }
-  })
-
-  it('does not expose Blue runtime dependencies as marketplace plugins', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ plugins: [
-      { id: 'market-plugin', package: '@scope/market-plugin', version: '1.0.0', title: { en: 'Market plugin' } },
-    ] }), { status: 200 })))
+  it('/plugin opens the installed-only panel while the marketplace stays paused', async () => {
+    const root = mkdtempTracked('blue-commands-plugin-panel-')
+    const profile = join(root, 'profiles', 'blue')
+    mkdirSync(profile, { recursive: true })
+    writeFileSync(join(profile, 'package.json'), JSON.stringify({ private: true, dependencies: {} }))
+    vi.stubEnv('DSH_HOME', root)
     const { ctx, screen, agent } = await mount({ appExit: () => {} })
     const execution = await ctx.commands.execute(agent, '/plugin', [], signal())
     expect(execution?.result).toEqual({ kind: 'success' })
     const panel = screen.overlays.at(-1)?.component as { render(width: number): string[] }
     const output = panel.render(100).join('\n')
-    expect(output).toContain('0 installed · 1 available')
-    expect(output).not.toContain('@dsh-blue/blue')
+    expect(output).toContain('Installed Plugins')
+    expect(output).toContain('0 installed · marketplace paused')
+    expect(output).not.toContain('‹ Available ›')
+    vi.unstubAllEnvs()
   })
 })

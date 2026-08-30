@@ -4,6 +4,19 @@ This guide builds a header-pane plugin from scratch. It uses only the public
 `@dsh-blue/blue-api` and `@dsh-blue/blue-ui` packages, with no core, pi-tui, or
 repository-internal imports.
 
+Install the author tool, read the current machine catalog, then generate the
+canonical local package:
+
+```sh
+npm install --global @dsh-blue/blue-plugin-kit@0.1.1-rc.3
+blue-plugin catalog --json
+blue-plugin create ./blue-workspace-header --name @acme/blue-workspace-header
+```
+
+The generator emits a no-build status baseline. The rest of this page adapts it
+into a header pane. Take capability names, versions, resources, and quotas from
+the catalog rather than inferring future surfaces from this prose.
+
 ## Package skeleton
 
 ```text
@@ -27,8 +40,8 @@ Declare the Blue packages as dependencies and host-provided Cordis as a peer:
   "blue": { "manifest": "./blue.plugin.json" },
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
   "dependencies": {
-    "@dsh-blue/blue-api": "0.1.1-rc.2",
-    "@dsh-blue/blue-ui": "0.1.1-rc.2"
+    "@dsh-blue/blue-api": "0.1.1-rc.3",
+    "@dsh-blue/blue-ui": "0.1.1-rc.3"
   },
   "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" }
 }
@@ -50,7 +63,7 @@ build tool is acceptable as long as `exports` points to the emitted
   "entry": ".",
   "api": "^1.0.0-beta.1",
   "compatibility": {
-    "blue": ">=0.1.1-rc.2 <0.1.2",
+    "blue": ">=0.1.1-rc.3 <0.1.2",
     "harness": ">=0.1.1-rc.1 <0.1.2",
     "node": "^22.19.0 || >=24.0.0"
   },
@@ -80,7 +93,7 @@ The manifest `id` must equal the npm package name. `entry` is a public
 and loader-row `id` are separate namespaces; this tutorial keeps them aligned
 for easier diagnostics, but the protocol does not require either to equal the
 package name.
-The compatibility ranges cover rc.2 Blue plus the current and previous Harness
+The compatibility ranges cover rc.3 Blue plus the current and previous Harness
 lines exercised by this repository's packed fixture. Narrow them when a plugin
 uses a Host feature that has a smaller verified matrix.
 
@@ -147,8 +160,16 @@ dsh plugin --profile blue-header-dev add link:/path/to/blue-workspace-header
 dsh --profile blue-header-dev
 ```
 
+Close the static and dual-Harness packed gates before installation:
+
+```sh
+blue-plugin validate ./blue-workspace-header
+blue-plugin conformance ./blue-workspace-header
+blue-plugin conformance ./blue-workspace-header --harness-line 0.1.1-rc.1
+```
+
 After confirming the header appears, remove the plugin row or run
-`plugin remove`, then restart. The header must disappear completely. Before
+`/plugin remove`, then restart. The header must disappear completely. Before
 publishing, also run the static validator, packed-install fixture, and narrow
 width scans described in [Debugging and validation](/en/plugins/testing).
 

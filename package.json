@@ -28,6 +28,8 @@
     "blue:plugin-fixture": "node script/blue-plugin-fixture.mjs",
     "generate:plugin-contract": "node script/generate-blue-plugin-contract.mjs",
     "check:plugin-contract": "node script/generate-blue-plugin-contract.mjs --check",
+    "check:plugin-authoring-docs": "node script/check-plugin-authoring-docs.mjs",
+    "fixture:plugin-tutorial": "node script/blue-plugin-tutorial-fixture.mjs",
     "fixture:context-upstream": "node script/context-upstream-fixture.mjs",
     "fixture:remote-upstream": "node script/remote-upstream-fixture.mjs",
     "website:dev": "node script/marketplace-fetch.mjs --paused && pnpm --filter @dsh-blue/website run dev",

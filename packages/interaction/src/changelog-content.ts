@@ -28,6 +28,22 @@ export interface ChangelogEntry {
 /** All shipped releases, newest first. */
 export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
+    version: '0.1.1-rc.3',
+    summary: 'Blue now ships the P5 authoring toolchain for creating, validating, and dogfooding canonical plugins without a Blue repository checkout.',
+    highlights: [
+      'Published plugin author kit — the new @dsh-blue/blue-plugin-kit package provides blue-plugin catalog, create, validate, and conformance commands from one schema/catalog/validator source.',
+      'Independent packed conformance — generated or existing plugins install with normal peer resolution in a throwaway npm project, load through public exports, and prove Host admission, widths 20/40/80/120, unload, capability fallback, exact Harness resolution, process fencing, and cleanup.',
+      'Local-first /plugin — the TUI inventories only installed canonical packages, reports compatible/incompatible/invalid manifests, runs the published validator, and delegates pinned local/npm/GitHub install or remove operations to the profile owner with an explicit restart boundary.',
+      'Formal creative persistence workflow — the shipped blue-plugin-development skill reads the machine catalog, supports new packages and same-package Blue entries for existing Harness plugins, stops on missing capabilities, and separates local acceptance from GitHub/npm authorization.',
+      'Task-oriented bilingual author guide — quickstart, package, creative, testing, and publishing documentation now follows catalog -> create -> validate -> dual-Harness conformance -> scratch-profile acceptance, guarded by bilingual/link/catalog drift checks and a generated tutorial fixture.',
+      'Release-set separation preserved — Blue advances to 0.1.1-rc.3 while the independently controlled Harness dependency line remains 0.1.1-rc.2; the release-version tool and consistency tests prevent one version line from rewriting the other.',
+    ],
+    knownIssues: [
+      'The plugin marketplace remains paused — Website builds still remove registry data and detail routes, and submissions/cards stay disabled until the separate P6 ecosystem and later marketplace migration gates close.',
+      'Capabilities remain Public Beta — P5 completes author tooling and local persistence evidence, but it does not promote protocol 1.0.0-beta.1 capabilities to Stable or authorize automatic GitHub/npm publication.',
+    ],
+  },
+  {
     version: '0.1.1-rc.2',
     summary: 'Blue\'s renderer-neutral plugin runtime now ships the accepted P1–P4 1.0.0-beta.1 Public Beta foundation with live Chinese/English switching.',
     highlights: [
