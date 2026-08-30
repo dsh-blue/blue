@@ -648,6 +648,12 @@ try {
       }
     }
 
+    function ownerSnapshot(lease) {
+      const result = lease.snapshot()
+      ensure(result.ok, 'FIXTURE_OWNER_STALE', result.message ?? 'fixture owner lease is stale')
+      return result.value
+    }
+
     function interactionContext() {
       const ctx = new cordis.Context()
       const host = new blueApi.BluePluginHostService(ctx)
@@ -727,6 +733,8 @@ try {
       const ctx = new cordis.Context()
       const host = new blueApi.BluePluginHostService(ctx)
       const control = ctx.get('bluePluginControl')
+      const auditOwner = effectOwner()
+      const auditLease = control.attachCapabilities(auditOwner, ['panes'])
       const identity = value => value
       const colors = new Proxy({ logoGradient: [identity] }, {
         get(target, key) { return key === 'logoGradient' ? target.logoGradient : identity },
@@ -810,7 +818,7 @@ try {
       return {
         ctx,
         host,
-        control,
+        auditLease,
         screen,
         editor,
         outer,
@@ -820,6 +828,7 @@ try {
         select(id) { ctx.emit('blue/settings-source-ready', { editorProvider: id }) },
         async dispose() {
           consumer.dispose()
+          auditOwner.dispose()
           await interactionFiber.dispose()
           await ctx.fiber.dispose()
         },
@@ -889,6 +898,8 @@ try {
     await scenario('interaction.editor-extensions-context-abort-unload-late', async () => {
       const { ctx, host, control, editorHost } = interactionContext()
       const consumer = effectOwner()
+      const auditOwner = effectOwner()
+      const auditLease = control.attachCapabilities(auditOwner, ['panes'])
       let bridgeFiber
       try {
         bridgeFiber = await ctx.plugin(interactionBridge)
@@ -977,7 +988,7 @@ try {
         await Promise.resolve()
         ensure([...lateContexts].every(([kind, contextValue]) => contextValue.signal === lateControllers[kind].signal && contextValue.signal.aborted === false), 'FIXTURE_EDITOR_ABORT_CONTEXT', 'late callback did not receive the caller signal')
         ensure(lateContexts.size === 3, 'FIXTURE_EDITOR_LATE_CALLBACKS', 'not every late callback started')
-        const revisionBeforeUnload = control.snapshot().editorExtensionsRevision
+        const revisionBeforeUnload = ownerSnapshot(auditLease).editorExtensionsRevision
         for (const controller of Object.values(lateControllers)) controller.abort()
         await bridgeFiber.dispose()
         bridgeFiber = undefined
@@ -986,13 +997,14 @@ try {
         lateTransform.resolve({ ok: true, value: { text: 'late transformed' } })
         lateEvent.resolve({ ok: true, value: undefined })
         await Promise.all(pending)
-        ensure(editorHost.extensions === undefined && control.snapshot().editorExtensionsRevision === revisionBeforeUnload, 'FIXTURE_EDITOR_LATE_REJECTION', 'late completion republished into the unloaded interaction owner')
+        ensure(editorHost.extensions === undefined && ownerSnapshot(auditLease).editorExtensionsRevision === revisionBeforeUnload, 'FIXTURE_EDITOR_LATE_REJECTION', 'late completion republished into the unloaded interaction owner')
         ensure(!lateRegistration.value.refresh().ok, 'FIXTURE_EDITOR_LATE_HANDLE', 'late extension handle remained active without an owner')
         lateRegistration.value.dispose()
         registration.value.dispose()
       } finally {
         await bridgeFiber?.dispose()
         consumer.dispose()
+        auditOwner.dispose()
         await ctx.fiber.dispose()
       }
     })
@@ -1106,14 +1118,14 @@ try {
         for (let turn = 0; turn < 8 && eventContext === undefined; turn += 1) await Promise.resolve()
         ensure(eventCalls === 1 && eventContext?.userGesture !== undefined && eventContext.signal.aborted === false, 'FIXTURE_EDITOR_PROVIDER_EVENT_CONTEXT', 'provider event did not receive one live owner-scoped context')
 
-        const revisionBeforeUnload = fixture.control.snapshot().editorProvidersRevision
+        const revisionBeforeUnload = ownerSnapshot(fixture.auditLease).editorProvidersRevision
         await fixture.ownerFiber.dispose()
         ensure(eventContext.signal.aborted && fixture.ctx.blueEditorHost.providers === undefined, 'FIXTURE_EDITOR_PROVIDER_EVENT_ABORT', 'owner unload did not abort the active provider event')
         ensure(!provider.value.refresh().ok, 'FIXTURE_EDITOR_PROVIDER_OWNER_GAP', 'provider refresh survived its owner gap')
         ensure(!fixture.render().join('\n').includes('packed event provider'), 'FIXTURE_EDITOR_PROVIDER_OWNER_FALLBACK', 'owner unload did not restore the default editor shell')
         late.resolve({ ok: true, value: undefined })
         await new Promise(resolveImmediate => setImmediate(resolveImmediate))
-        ensure(!fixture.render().join('\n').includes('packed event provider') && fixture.control.snapshot().editorProvidersRevision === revisionBeforeUnload, 'FIXTURE_EDITOR_PROVIDER_LATE_REJECTION', 'late provider event republished after owner unload')
+        ensure(!fixture.render().join('\n').includes('packed event provider') && ownerSnapshot(fixture.auditLease).editorProvidersRevision === revisionBeforeUnload, 'FIXTURE_EDITOR_PROVIDER_LATE_REJECTION', 'late provider event republished after owner unload')
 
         replayOwner = await fixture.ctx.plugin(editorProviderOwner)
         fixture.select('packed.events')

@@ -31,8 +31,8 @@ api.notifications?.publish({
 ## 行为细节
 
 - **没有公共 observe**：只有 Blue 官方 owner 能消费内部通知流；普通插件不能订阅、转发或枚举其他插件通知；
-- **不做去重或节流**：host 不合并同 id 通知，也不限频。频率控制是发布方的责任——高频事件（进度 tick）请自己节流，或者改用[状态栏](/plugins/status)；
-- **失败是结构化的**：id 非法或 `view` 不是对象时 `publish` 返回 `BLUE_INVALID_CONTRIBUTION`；呈现适配器的拒绝也会作为失败返回，不会抛异常；
+- **不去重，有硬配额**：host 不合并同 id 通知；grant 会公开深度 64、4096 个容器、8192 个属性和 32 KiB primitive/key bytes 的有界克隆上限，通过预检后，序列化后的 `view` 仍须小于等于 32 KiB。同一 Cordis consumer 跨 canonical/legacy facade 共用滚动一秒 20 条的发布配额。高频进度仍应使用[状态栏](/plugins/status)；
+- **失败是结构化的**：id 非法或 `view` 不是对象时返回 `BLUE_INVALID_CONTRIBUTION`，超出大小/速率配额返回 `BLUE_LIMIT_EXCEEDED`。owner observer 的异常按 observer 收容，不会让已接受的 publish 失败或阻断其它 observer；
 - **瞬时呈现**：当前的通知条不排队、不留历史，owner gap 中也不会缓存或补发。需要持久可见的状态请用[状态栏](/plugins/status)或 [pane](/plugins/dock)。
 
 ## 常见错误
@@ -40,7 +40,8 @@ api.notifications?.publish({
 | 现象 | 原因 |
 | --- | --- |
 | `BLUE_INVALID_CONTRIBUTION` | id 含大写/非法字符，或 `view` 缺失 |
-| 通知刷屏 | 高频路径上没有节流——在发布方侧做 debounce |
+| `BLUE_LIMIT_EXCEEDED` | `view` 超过结构预检/最终 32 KiB 上限，或同一 consumer 在滚动一秒内已成功发布 20 条 |
+| 通知刷屏 | 即使在硬上限内也不应把 progress tick 当通知；改用 status/pane |
 | `api.notifications` 是 `undefined` | `open()` 的 capabilities 没声明 `notifications.publish` |
 | 找不到 `subscribe` | 这是预期行为；全局 notification observation 是 owner-only control-plane 操作 |
 

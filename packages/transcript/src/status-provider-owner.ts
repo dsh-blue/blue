@@ -40,12 +40,14 @@ function currentSelection(ctx: Context): string {
 
 /** Attach the status-provider capability and drive one tree-scoped owner. */
 export function apply(ctx: Context): void {
-  ctx.bluePluginControl.attachCapabilities(ctx, ['status.provider'])
+  const lease = ctx.bluePluginControl.attachCapabilities(ctx, ['status.provider'])
   const composition = ctx.blueStatusComposition
+  const generation = Object.freeze({})
+  composition.attachProviderOwner(generation)
   composition.select(currentSelection(ctx))
   const sessionSubscription = ctx.blueSessionReader.subscribe(snapshot => composition.updateSession(snapshot))
-  const hostSubscription = ctx.bluePluginControl.subscribe(snapshot => {
-    composition.updateCandidates(snapshot.statusProviders, snapshot.statusProvidersRevision ?? snapshot.revision ?? 0)
+  const hostSubscription = lease.subscribe(snapshot => {
+    composition.updateCandidates(snapshot.statusProviders, snapshot.statusProvidersRevision ?? snapshot.revision ?? 0, generation)
   })
   ctx.on('settings/updated', (namespace, next) => {
     if (String(namespace) === 'blue') composition.select(desiredStatusProvider(next))
@@ -54,6 +56,6 @@ export function apply(ctx: Context): void {
   ctx.effect(() => () => {
     hostSubscription.dispose()
     sessionSubscription.dispose()
-    composition.detachProviders()
+    composition.detachProviders(generation)
   })
 }

@@ -83,11 +83,13 @@ the Blue-owned adapters. An adapter admission failure rolls the registration
 back before `register()` returns, so an existing slash-command name cannot be
 shadowed temporarily.
 The `blue-api-host` plugin Fiber holds host-scoped durable registration leases
-for `commands`, `status`, `panes`, `overlays`, `editor.extensions`,
-`status.provider`, and `editor.provider` as soon as it provides
-`bluePluginHost`. These registries admit inert contributions independently of
-frontend sibling-row boot order; active adapters replay the aggregate snapshot
-after an owner gap or reload. Registration does not grant renderer, dispatch,
+for `commands`, `status`, `panes`, `editor.extensions`, `status.provider`, and
+`editor.provider`, plus the canonical `overlays` capability definition, as soon
+as it provides `bluePluginHost`. The registries admit inert contributions
+independently of frontend sibling-row boot order; active adapters replay the
+aggregate snapshot after an owner gap or reload. Overlay opens remain transient
+and require the live renderer owner even through the legacy facade.
+Registration does not grant renderer, dispatch,
 gesture, provider-selection, LKG, breaker, or fallback authority: those remain
 with the active frontend-tree owner Fiber. Consumer unload removes its
 registrations and permanently fences retained facades; host unload clears the
@@ -128,14 +130,19 @@ host, an active overlays owner, and the current entry identity to complete a
 semantic dismiss. Snapshot and notification owner helpers likewise reject the
 guarded public service. Refresh handles enforce 20 successful calls per rolling
 second and cancel pending coalesced ticks when their contribution is disposed.
-Owner gaps retain and continue admitting contributions to the seven durable
+Owner gaps retain and continue admitting definitions to the six durable
 registration buffers; replacement owners replay them from their initial
-snapshot. Notification publication remains unavailable without the interaction
-owner, and session owner gaps expose a null read snapshot until the app owner
-reloads. Aggregate snapshots, notification observation, gesture minting,
+snapshot. Overlay opens and notification publication remain unavailable without
+their respective renderer and interaction owners; session-owner gaps expose a
+null read snapshot until the app owner reloads. Aggregate snapshots,
+notification observation, gesture minting,
 semantic close, and owner attachment are reachable only through
 `bluePluginControl`, which the default bundle isolates with raw app services in
 its private runtime realm. The package root exports no callable owner helper.
+An overlays lease enters a non-admitting retirement state before its bounded
+closer snapshot drains. It remains current long enough for the old renderer to
+observe the final empty snapshot, but synchronous callbacks cannot reopen a
+transient into that old generation and no drain loop is required.
 
 The removed public `dock` transition has no host validator exception, API
 facade, contribution type, registry, or snapshot field. Untyped legacy
@@ -194,3 +201,28 @@ limits, quotas, availability, and owner generation. Required requests fail
 atomically; optional requests may produce partial grants plus structured
 unavailable records. The current catalog deliberately marks
 `session.projections.read` unsupported until P4.
+
+P3 host enforcement mirrors the catalog at the public boundary: one consumer
+may retain at most 64 command and 64 additive-status definitions; notification
+views are limited to 32 KiB and publication to 20 notices per rolling second.
+Before cloning a notification, the same grant enforces depth 64, 4,096
+container nodes, 8,192 properties, and 32 KiB of primitive/key bytes; an exact
+post-clone JSON UTF-8 byte check remains authoritative for escaping and syntax
+overhead. The bounded walk reads own descriptors only and rejects before deep
+recursion or complete hostile-payload allocation.
+Command and status counters are keyed by Cordis consumer object, shared across
+all canonical and legacy facades opened by that consumer, and released by
+individual registration disposal or consumer unload.
+Pane, capturing-overlay, and notification quota slots are reserved before
+synchronous owner fan-out, so a reentrant owner callback observes the outer
+admission in its consumer budget. Aggregate rejection, synchronous consumer
+unload, and contribution disposal release exactly the reserved slot; an
+accepted notification remains charged even when an observer throws.
+Canonical `supported` state is persistent composition knowledge, distinct from
+live `ownerReady`: durable command/status/pane/overlay buffers declare support
+at host boot, while notification and session-read support begins only after
+their owner has attached once and survives later owner gaps. Command callbacks
+are wrapped with the consumer lifetime. Successful and rejected settlements
+both recheck abort first and consumer unload second, so a late callback cannot
+escape through a retained aggregate entry; an active callback rejection remains
+the plugin's original rejection.

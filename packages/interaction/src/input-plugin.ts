@@ -20,8 +20,9 @@
  * otherwise (the S15 dogfood verdict retired the persistent
  * key-affordance row: kimi teaches affordances through the footer's
  * rotating tips instead, and the tips pool already covers every fragment
- * the row carried). The editor-context key chain (Escape clear/interrupt, Ctrl-C
- * clear/interrupt/double-press exit, Ctrl-S steer, Ctrl-G external
+ * the row carried). The editor-context key chain (Escape
+ * clear/retract/interrupt, Ctrl-C interrupt/clear/double-press exit, Ctrl-S
+ * steer, Ctrl-G external
  * editor) resolves through
  * `ctx.blueKeymap` in the editor's `onKey` hook, which runs before the
  * pi-tui Editor sees the sequence. The mounted editor and the submit router
@@ -436,17 +437,36 @@ export function apply(ctx: Context): void {
     }
   }
 
-  /** Clear the current draft, or interrupt the active main request. */
-  function clearOrInterrupt(): boolean {
-    if (editor.getText().length > 0) {
-      editor.setText('')
-      currentText = ''
-      draft.clearDraft()
-      refreshHint()
-      ctx.emit('blue/editor-model-changed')
-      screen.requestRender()
-      return true
-    }
+  /** Clear the current draft without changing request state. */
+  function clearDraft(): boolean {
+    if (editor.getText().length === 0) return false
+    editor.setText('')
+    currentText = ''
+    draft.clearDraft()
+    refreshHint()
+    ctx.emit('blue/editor-model-changed')
+    screen.requestRender()
+    return true
+  }
+
+  /** Request an ordinary interrupt; this path must never retract a message. */
+  function interrupt(): boolean {
+    retractionCandidate = undefined
+    const interrupted = ctx.blueSessionActions.interrupt()
+    if (!interrupted.ok) return false
+    setNotice('interrupt requested')
+    return true
+  }
+
+  /** Interrupt current work first, then clear a draft only when idle. */
+  function interruptOrClear(): boolean {
+    if (interrupt()) return true
+    return clearDraft()
+  }
+
+  /** Escape clears a draft, then attempts safe retraction before interruption. */
+  function escapeClearOrRetract(): boolean {
+    if (clearDraft()) return true
     if (ctx.blueSessionReader.current()?.status === 'running') {
       const candidate = retractionCandidate
       if (candidate !== undefined
@@ -463,11 +483,7 @@ export function apply(ctx: Context): void {
         return true
       }
     }
-    retractionCandidate = undefined
-    const interrupted = ctx.blueSessionActions.interrupt()
-    if (!interrupted.ok) return false
-    setNotice('interrupt requested')
-    return true
+    return interrupt()
   }
 
   /**
@@ -490,12 +506,13 @@ export function apply(ctx: Context): void {
         ctx.emit('blue/btw-command', 'close')
         return true
       }
-      return clearOrInterrupt()
+      return escapeClearOrRetract()
     }
-    // Ctrl-C: the same clear/interrupt chain, then the double-press exit —
-    // the first idle press only arms the window and flashes the hint.
+    // Ctrl-C never enters Escape's retraction path. It first requests an
+    // ordinary interrupt even when a next-message draft is present, then uses
+    // the idle clear/double-press-exit chain when there is no work to stop.
     if (keymap.matches(data, ACTION_INTERRUPT)) {
-      if (clearOrInterrupt()) return true
+      if (interruptOrClear()) return true
       const now = Date.now()
       if (now - lastInterruptAt < INTERRUPT_DOUBLE_PRESS_MS) {
         lastInterruptAt = 0
@@ -623,7 +640,7 @@ export function apply(ctx: Context): void {
     let removeEditor = screen.addBottomChild(extensionRuntime)
     let removeHint = screen.addBottomChild(hintLine)
     screen.setFocus(extensionRuntime)
-    setSharedEditor(ctx, { editor, submitPrompt, abortPrompt: () => { clearOrInterrupt() }, notice: setNotice })
+    setSharedEditor(ctx, { editor, submitPrompt, abortPrompt: () => { interruptOrClear() }, notice: setNotice })
     ctx.emit('blue/input-editor-changed')
 
     // The editor-slot swap (kimi `mountEditorReplacement`, D30): a dialog

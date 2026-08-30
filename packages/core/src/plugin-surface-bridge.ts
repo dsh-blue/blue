@@ -1,7 +1,6 @@
 /** Blue-owned runtime bridge from public pane/overlay models to core surfaces. */
 import type { Context } from '@deepseek-ai/cordis'
 import {
-  type BluePluginControl,
   type BluePluginHostOverlayEntry,
   type BluePluginHostPaneEntry,
   type BluePluginHostSnapshot,
@@ -11,6 +10,7 @@ import {
   type BlueUiNode,
 } from '@dsh-blue/blue-api'
 import { renderLayoutFrame } from '@earendil-works/pi-tui/dist/layout.js'
+import { ownDataErrorMessage } from './error-message.ts'
 import type { BlueTerminalRuntime } from './terminal.ts'
 import type { SurfaceLaneEntry, SurfaceRegistration } from './surface-manager.ts'
 import { compileBlueUiNode, type BlueCompiledUi, type BlueUiViewport } from './ui-compiler.ts'
@@ -26,7 +26,6 @@ function ownerRevision(value: number | undefined): number {
 }
 
 type OwnerContext = Context & {
-  readonly bluePluginControl: BluePluginControl
   readonly blueComponents: BlueComponents
   readonly blueTheme: { readonly colors: BlueSemanticColors }
   readonly blueKeymap: BlueKeymap
@@ -51,13 +50,17 @@ class SurfaceEventOwner {
   private readonly active = new Set<AbortController>()
 
   constructor(
-    private readonly control: BluePluginControl,
-    private readonly owner: Context,
+    private readonly lease: ReturnType<Context['bluePluginControl']['attachCapabilities']>,
     private readonly surfaceId: string,
+    private readonly capability: 'panes' | 'overlays',
     private readonly handler: BlueUiEventHandler | undefined,
     private readonly refresh: () => void,
     private readonly close: (() => void) | undefined,
   ) {}
+
+  private generationCurrent(): boolean {
+    return this.lease.current(this.capability)
+  }
 
   replaceExternally(): void {
     for (const controller of this.active) controller.abort()
@@ -68,7 +71,7 @@ class SurfaceEventOwner {
   }
 
   emit(event: BlueUiEvent): void {
-    if (!this.live) return
+    if (!this.live || !this.generationCurrent()) return
     const revision = ++this.revision
     const task: DispatchTask = { event, revision, renderGeneration: this.renderGeneration, controller: new AbortController() }
     if (event.kind === 'value-change' || event.kind === 'selection-change' || event.kind === 'tab-change') {
@@ -103,12 +106,12 @@ class SurfaceEventOwner {
 
   private async execute(task: DispatchTask): Promise<void> {
     /* v8 ignore next -- every abort path removes queued tasks before execution. */
-    if (!this.live || task.controller.signal.aborted) return
+    if (!this.live || task.controller.signal.aborted || !this.generationCurrent()) return
     this.active.add(task.controller)
     let timeout: ReturnType<typeof setTimeout> | undefined
     let timedOut = false
     try {
-      const result = await this.control.runUserGesture(this.owner, async userGesture => {
+      const result = await this.lease.runUserGesture(this.capability, async userGesture => {
         if (this.handler === undefined) return { ok: true, value: undefined } as const
         const handled = Promise.resolve().then(() => this.handler!(task.event, {
           surfaceId: this.surfaceId,
@@ -134,7 +137,7 @@ class SurfaceEventOwner {
         return Promise.race([handled, timeoutResult, aborted])
       }, task.controller.signal)
       if (timedOut) { this.closeSurface(); return }
-      if (!this.live || task.controller.signal.aborted || task.renderGeneration !== this.renderGeneration || !succeeded(result)) return
+      if (!this.live || task.controller.signal.aborted || task.renderGeneration !== this.renderGeneration || !this.generationCurrent() || !succeeded(result)) return
       if (task.event.kind === 'dismiss') this.closeSurface()
       else this.refresh()
     } catch {
@@ -147,7 +150,7 @@ class SurfaceEventOwner {
   }
 
   private closeSurface(): void {
-    if (this.close === undefined) return
+    if (this.close === undefined || !this.generationCurrent()) return
     this.dispose()
     this.close()
   }
@@ -156,9 +159,7 @@ class SurfaceEventOwner {
 function safeFailureNode(kind: 'pane' | 'overlay', error: unknown): BlueUiNode {
   const reason = typeof error === 'string' && error.trim().length > 0
     ? error
-    : error instanceof Error && error.message.trim().length > 0
-      ? error.message
-      : 'render failed'
+    : ownDataErrorMessage(error) ?? 'render failed'
   return { kind: 'text', tone: 'danger', content: `Plugin ${kind} failed: ${reason}` }
 }
 
@@ -268,7 +269,7 @@ function focusTarget(entry: SurfaceLaneEntry): BlueFocusable | null {
 /** Mount the core-private owner bridge after theme/components become available. */
 export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTerminalRuntime): void {
   const control = ctx.bluePluginControl
-  control.attachCapabilities(ctx, ['panes', 'overlays'])
+  const lease = control.attachCapabilities(ctx, ['panes', 'overlays'])
   const panes = new Map<string, PaneRecord>()
   const overlays = new Map<string, OverlayRecord>()
   let disposed = false
@@ -336,7 +337,7 @@ export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTermina
 
   const addPane = (entry: BluePluginHostPaneEntry): void => {
     let record!: PaneRecord
-    const events = new SurfaceEventOwner(control, ctx, entry.id, entry.contribution.onEvent, () => schedulePane(record, false), undefined)
+    const events = new SurfaceEventOwner(lease, entry.id, 'panes', entry.contribution.onEvent, () => schedulePane(record, false), undefined)
     record = { entry, events, registration: undefined }
     panes.set(entry.id, record)
     schedulePane(record, true)
@@ -344,8 +345,8 @@ export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTermina
 
   const addOverlay = (entry: BluePluginHostOverlayEntry): void => {
     let record!: OverlayRecord
-    const events = new SurfaceEventOwner(control, ctx, entry.id, entry.request.onEvent, () => scheduleOverlay(record, false), () => {
-      control.closeOverlay(ctx, record.entry)
+    const events = new SurfaceEventOwner(lease, entry.id, 'overlays', entry.request.onEvent, () => scheduleOverlay(record, false), () => {
+      lease.closeOverlay(record.entry)
     })
     const compiled = compile(entry.request.render, 'overlay', {
       components: ctx.blueComponents,
@@ -499,11 +500,23 @@ export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTermina
     { id: 'blue.surface.next', keys: 'f6', description: 'Focus the next Blue surface', handler: () => navigate(1) },
     { id: 'blue.surface.previous', keys: 'shift+f6', description: 'Focus the previous Blue surface', handler: () => navigate(-1) },
   ]))
-  const subscription = control.subscribe(schedule)
+  const subscription = lease.subscribe(schedule)
   ctx.effect(() => () => {
     disposed = true
     subscription.dispose()
-    for (const record of [...overlays.values()].reverse()) { record.events.dispose(); record.handle.hide() }
+    const closing = new Map<string, BluePluginHostOverlayEntry>()
+    for (const record of overlays.values()) closing.set(record.entry.id, record.entry)
+    for (const entry of pending?.overlays ?? []) closing.set(entry.id, entry)
+    for (const entry of [...closing.values()].reverse()) {
+      // Overlay opens are actions, not durable registrations. Closing the
+      // host entry here prevents a replacement renderer from replaying a
+      // stale overlay after this owner Fiber enters a gap.
+      lease.closeOverlay(entry)
+    }
+    for (const record of [...overlays.values()].reverse()) {
+      record.events.dispose()
+      record.handle.hide()
+    }
     for (const record of panes.values()) { record.events.dispose(); record.registration?.dispose() }
     overlays.clear(); panes.clear(); pending = undefined
   })

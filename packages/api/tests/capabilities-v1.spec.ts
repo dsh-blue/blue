@@ -15,6 +15,7 @@ import {
   BLUE_PLUGIN_MANIFEST_SCHEMA_URL,
   type BluePluginManifestV1,
 } from '../src/protocol-v1.ts'
+import type { BlueResult } from '../src/contracts.ts'
 import {
   BluePluginHostService,
   apply,
@@ -57,6 +58,7 @@ function consumer() {
 const commands = (names: readonly string[]) => ({ name: 'commands' as const, version: '^1.0.0', resources: { names } })
 const panes = (placements: readonly ('header' | 'left' | 'right' | 'bottom')[]) => ({ name: 'panes' as const, version: '^1.0.0', resources: { placements } })
 const status = { name: 'status' as const, version: '^1.0.0' }
+const overlays = { name: 'overlays' as const, version: '^1.0.0' }
 const projections = (keys: readonly string[]) => ({ name: 'session.projections.read' as const, version: '^1.0.0', resources: { keys } })
 const notifications = { name: 'notifications.publish' as const, version: '^1.0.0' }
 
@@ -79,6 +81,67 @@ describe('canonical v1 capability admission', () => {
       expect(Object.isFrozen(result.grants[0]?.resources)).toBe(true)
     }
     expect(Object.isFrozen(getBlueCapabilityDefinition('commands'))).toBe(true)
+  })
+
+  it('keeps grant quotas and runtime enforcement on the exact catalog values', async () => {
+    const definitions = new Map(BLUE_CAPABILITY_CATALOG_V1.map(definition => [definition.name, definition]))
+    expect(definitions.get('commands')?.quotas).toEqual({})
+    expect(definitions.get('status')?.quotas).toEqual({ refreshPerSecond: 20 })
+    expect(definitions.get('panes')?.quotas).toEqual({ maxPerConsumer: 8, refreshPerSecond: 20 })
+    expect(definitions.get('overlays')?.quotas).toEqual({ maxCapturingPerConsumer: 1, refreshPerSecond: 20 })
+    expect(definitions.get('notifications.publish')?.limits).toEqual({
+      maxViewBytes: 32_768,
+      maxDepth: 64,
+      maxNodes: 4_096,
+      maxProperties: 8_192,
+      maxPrimitiveBytes: 32_768,
+    })
+
+    let now = 0
+    const host = new BluePluginHostService(new Context(), { now: () => now })
+    const owner = consumer()
+    const lease = attachBluePluginHostCapabilities(host, owner, ['status', 'panes', 'overlays'])
+    const plugin = consumer()
+    const opened = host.open(plugin, manifest([status, panes(['bottom']), overlays], [], '@acme/catalog-runtime'))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    for (const grant of opened.value.grants) {
+      expect(grant.limits).toEqual(definitions.get(grant.name)?.limits)
+      expect(grant.quotas).toEqual(definitions.get(grant.name)?.quotas)
+    }
+
+    const statusHandle = opened.value.status!.register({ id: 'catalog-status', render: () => ({ kind: 'text', content: 'status' }) })
+    const paneHandle = opened.value.panes!.register({ id: 'catalog-pane-0', placement: 'bottom', render: () => null })
+    const overlayHandle = opened.value.overlays!.open({ id: 'catalog-overlay-0', render: () => ({ kind: 'text', content: 'overlay' }) })
+    expect(statusHandle.ok && paneHandle.ok && overlayHandle.ok).toBe(true)
+    if (!statusHandle.ok || !paneHandle.ok || !overlayHandle.ok) return
+    for (const [handle, capability] of [[statusHandle.value, 'status'], [paneHandle.value, 'panes'], [overlayHandle.value, 'overlays']] as const) {
+      const limit = definitions.get(capability)!.quotas.refreshPerSecond!
+      for (let index = 0; index < limit; index += 1) expect(handle.refresh()).toMatchObject({ ok: true })
+      expect(handle.refresh()).toMatchObject({ ok: false, code: 'BLUE_LIMIT_EXCEEDED' })
+    }
+    now = 1_000
+    expect(statusHandle.value.refresh()).toMatchObject({ ok: true })
+    expect(paneHandle.value.refresh()).toMatchObject({ ok: true })
+    expect(overlayHandle.value.refresh()).toMatchObject({ ok: true })
+
+    const paneLimit = definitions.get('panes')!.quotas.maxPerConsumer!
+    for (let index = 1; index < paneLimit; index += 1) {
+      expect(opened.value.panes!.register({ id: `catalog-pane-${String(index)}`, placement: 'bottom', render: () => null })).toMatchObject({ ok: true })
+    }
+    expect(opened.value.panes!.register({ id: 'catalog-pane-overflow', placement: 'bottom', render: () => null })).toMatchObject({ ok: false, code: 'BLUE_LIMIT_EXCEEDED' })
+
+    const capturing = await lease.runUserGesture('overlays', gesture => opened.value.overlays!.open({ id: 'catalog-capturing', capturing: true, render: () => ({ kind: 'text', content: 'capturing' }) }, { userGesture: gesture }))
+    expect(capturing).toMatchObject({ ok: true })
+    const capturingOverflow = await lease.runUserGesture('overlays', gesture => opened.value.overlays!.open({ id: 'catalog-capturing-overflow', capturing: true, render: () => ({ kind: 'text', content: 'overflow' }) }, { userGesture: gesture }))
+    expect(capturingOverflow).toMatchObject({ ok: false, code: 'BLUE_LIMIT_EXCEEDED' })
+    const stackLimit = definitions.get('overlays')!.limits.maxStack!
+    for (let index = 2; index < stackLimit; index += 1) {
+      expect(opened.value.overlays!.open({ id: `catalog-overlay-${String(index)}`, render: () => ({ kind: 'text', content: 'overlay' }) })).toMatchObject({ ok: true })
+    }
+    expect(opened.value.overlays!.open({ id: 'catalog-overlay-overflow', render: () => ({ kind: 'text', content: 'overflow' }) })).toMatchObject({ ok: false, code: 'BLUE_LIMIT_EXCEEDED' })
+    plugin.dispose()
+    owner.dispose()
   })
 
   it('fails required resources atomically and reports optional partial grants', () => {
@@ -224,33 +287,94 @@ describe('canonical host projection', () => {
     expect(retry.ok).toBe(true)
   })
 
+  it('rejects aborted and late command results at the consumer lifetime fence', async () => {
+    const host = new BluePluginHostService(new Context())
+    const owner = consumer()
+    attachBluePluginHostCapabilities(host, owner, ['commands'])
+    const plugin = consumer()
+    const opened = host.open(plugin, manifest([commands(['run'])], [], '@acme/command-fence'))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    const pending = new Map<string, {
+      resolve: (value: BlueResult) => void
+      reject: (error: unknown) => void
+    }>()
+    const registered = opened.value.commands!.register({
+      id: 'run',
+      label: 'Run',
+      execute: args => new Promise((resolve, reject) => { pending.set(args[0]!, { resolve, reject }) }),
+    })
+    expect(registered.ok).toBe(true)
+    const execute = opened.value.commands!.list()[0]!.execute
+    const alreadyAborted = new AbortController()
+    alreadyAborted.abort()
+    await expect(execute([], { signal: alreadyAborted.signal })).resolves.toMatchObject({ ok: false, code: 'BLUE_ABORTED' })
+
+    const activeValue: BlueResult = { ok: true, value: undefined }
+    const activeFulfilled = execute(['active-fulfilled'])
+    pending.get('active-fulfilled')!.resolve(activeValue)
+    await expect(activeFulfilled).resolves.toBe(activeValue)
+
+    const activeError = new Error('active rejection')
+    const activeRejected = execute(['active-reject'])
+    pending.get('active-reject')!.reject(activeError)
+    await expect(activeRejected).rejects.toBe(activeError)
+
+    const abortFulfilledController = new AbortController()
+    const abortFulfilled = execute(['abort-fulfilled'], { signal: abortFulfilledController.signal })
+    abortFulfilledController.abort()
+    pending.get('abort-fulfilled')!.resolve({ ok: true, value: undefined })
+    await expect(abortFulfilled).resolves.toMatchObject({ ok: false, code: 'BLUE_ABORTED' })
+
+    const abortRejectedController = new AbortController()
+    const abortRejected = execute(['abort-rejected'], { signal: abortRejectedController.signal })
+    abortRejectedController.abort()
+    pending.get('abort-rejected')!.reject(new Error('aborted rejection'))
+    await expect(abortRejected).resolves.toMatchObject({ ok: false, code: 'BLUE_ABORTED' })
+
+    const staleFulfilled = execute(['stale-fulfilled'])
+    const staleRejected = execute(['stale-rejected'])
+    const abortedAndStaleController = new AbortController()
+    const abortedAndStale = execute(['aborted-and-stale'], { signal: abortedAndStaleController.signal })
+    abortedAndStaleController.abort()
+    plugin.dispose()
+    pending.get('stale-fulfilled')!.resolve({ ok: true, value: undefined })
+    pending.get('stale-rejected')!.reject(new Error('stale rejection'))
+    pending.get('aborted-and-stale')!.reject(new Error('aborted stale rejection'))
+    await expect(staleFulfilled).resolves.toMatchObject({ ok: false, code: 'BLUE_STALE' })
+    await expect(staleRejected).resolves.toMatchObject({ ok: false, code: 'BLUE_STALE' })
+    await expect(abortedAndStale).resolves.toMatchObject({ ok: false, code: 'BLUE_ABORTED' })
+    await expect(execute(['after-dispose'])).resolves.toMatchObject({ ok: false, code: 'BLUE_STALE' })
+  })
+
   it('exercises the private control facade and legacy semver guard', async () => {
     const host = new BluePluginHostService(new Context())
     const owner = consumer()
-    attachBluePluginHostCapabilities(host, owner, ['commands', 'overlays'])
-    const control = createBluePluginControl(host)
+    const ownerLease = attachBluePluginHostCapabilities(host, owner, ['commands', 'overlays', 'notifications.publish'])
     const helperHost = new BluePluginHostService(new Context())
     const helperControl = createBluePluginControl(helperHost)
     const controlOwner = consumer()
     const controlCapabilities = helperControl.attachCapabilities(controlOwner, ['commands'])
     const controlCapabilitiesSecond = helperControl.attachCapabilities(controlOwner, ['commands'])
+    expect(controlCapabilities.current('commands')).toBe(false)
+    expect(controlCapabilitiesSecond.current('commands')).toBe(true)
     controlCapabilities.dispose()
+    expect(controlCapabilitiesSecond.current('commands')).toBe(true)
     controlCapabilitiesSecond.dispose()
     const controlSession = helperControl.attachSessionReader(controlOwner, {
       current: () => null,
       subscribe: () => ({ disposed: false, dispose: () => {} }),
     })
     controlSession.dispose()
-    expect(helperControl.generation('status')).toBe(0)
-    expect(control.generation('commands')).toBe(1)
-    expect(control.snapshot()).toEqual(snapshotBluePluginHost(host))
-    const snapshotRegistration = control.subscribe(() => {})
-    const notificationRegistration = control.observeNotifications(() => {})
+    expect(ownerLease.current('commands')).toBe(true)
+    expect(ownerLease.snapshot()).toEqual({ ok: true, value: snapshotBluePluginHost(host) })
+    const snapshotRegistration = ownerLease.subscribe(() => {})
+    const notificationRegistration = ownerLease.observeNotifications(() => {})
     expect(snapshotRegistration.disposed).toBe(false)
     expect(notificationRegistration.disposed).toBe(false)
     snapshotRegistration.dispose()
     notificationRegistration.dispose()
-    const gestureResult = await control.runUserGesture(owner, async gesture => gesture)
+    const gestureResult = await ownerLease.runUserGesture('commands', async gesture => gesture)
     expect(gestureResult).toBeDefined()
     const opened = host.open(consumer(), manifest([{ name: 'overlays', version: '^1.0.0' }], [], '@acme/control-overlay'))
     expect(opened.ok).toBe(true)
@@ -258,9 +382,10 @@ describe('canonical host projection', () => {
       const overlay = opened.value.overlays!.open({ id: 'control-overlay', render: () => null })
       expect(overlay.ok).toBe(true)
       if (overlay.ok) {
-        const entry = control.snapshot().overlays.find(candidate => candidate.id === 'control-overlay')
+        const snapshot = ownerLease.snapshot()
+        const entry = snapshot.ok ? snapshot.value.overlays.find(candidate => candidate.id === 'control-overlay') : undefined
         expect(entry).toBeDefined()
-        if (entry !== undefined) expect(control.closeOverlay(owner, entry)).toMatchObject({ ok: true })
+        if (entry !== undefined) expect(ownerLease.closeOverlay(entry)).toMatchObject({ ok: true })
       }
     }
     Object.defineProperty(host, 'version', { value: 'not-semver' })
@@ -284,6 +409,42 @@ describe('canonical host projection', () => {
     const duplicate = host.open(consumer(), manifest([], [], '@acme/gap'))
     expect(duplicate).toMatchObject({ ok: false, code: 'BLUE_DUPLICATE_ID' })
     ctx.fiber.dispose()
+  })
+
+  it('distinguishes never-installed capabilities from owner gaps after detach', () => {
+    const host = new BluePluginHostService(new Context())
+    const before = host.open(consumer(), manifest([], [notifications, {
+      name: 'session.read',
+      version: '^1.0.0',
+      resources: { fields: ['identity'] },
+    }], '@acme/before-owner'))
+    expect(before).toMatchObject({ ok: true, value: { grants: [], unavailableOptional: [
+      { name: 'notifications.publish', reason: 'unsupported' },
+      { name: 'session.read', reason: 'unsupported' },
+    ] } })
+
+    const owner = consumer()
+    attachBluePluginHostCapabilities(host, owner, ['notifications.publish'])
+    attachBluePluginHostSessionReader(host, owner, {
+      current: () => null,
+      subscribe: () => ({ disposed: false, dispose: () => {} }),
+    })
+    owner.dispose()
+    const gap = host.open(consumer(), manifest([], [notifications, {
+      name: 'session.read',
+      version: '^1.0.0',
+      resources: { fields: ['identity'] },
+    }], '@acme/after-owner'))
+    expect(gap).toMatchObject({ ok: true, value: {
+      grants: [
+        { name: 'notifications.publish', availability: 'unavailable' },
+        { name: 'session.read', availability: 'unavailable' },
+      ],
+      unavailableOptional: [
+        { name: 'notifications.publish', reason: 'owner-gap' },
+        { name: 'session.read', reason: 'owner-gap' },
+      ],
+    } })
   })
 
   it('fails required canonical capabilities when no composition owner exists', () => {

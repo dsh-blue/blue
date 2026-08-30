@@ -832,18 +832,40 @@ describe('blue-input plugin', () => {
       expect(cancel).not.toHaveBeenCalled()
     })
 
-    it('clears the buffer on Ctrl-C when text is present', async () => {
+    it('interrupts before clearing and preserves a next-message draft on Ctrl-C', async () => {
       const { editor, cancel } = await mount({ running: true })
       type(editor, 'draft')
       editor.handleInput(KEY.ctrlC)
-      expect(editor.getText()).toBe('')
-      expect(cancel).not.toHaveBeenCalled()
+      expect(editor.getText()).toBe('draft')
+      expect(cancel).toHaveBeenCalledWith({ kind: 'user' })
     })
 
     it('interrupts a running agent on Ctrl-C with an empty buffer', async () => {
       const { editor, cancel } = await mount({ running: true })
       expect(editor.onKey?.(KEY.ctrlC)).toBe(true)
       expect(cancel).toHaveBeenCalledWith({ kind: 'user' })
+    })
+
+    it('never retracts the submitted message on Ctrl-C', async () => {
+      const retract = vi.fn(() => true)
+      const { editor, followup, cancel } = await mount({ running: true, retract })
+      type(editor, 'interrupt without retracting')
+      editor.handleInput(KEY.enter)
+      expect(followup).toHaveBeenCalledOnce()
+
+      expect(editor.onKey?.(KEY.ctrlC)).toBe(true)
+      expect(retract).not.toHaveBeenCalled()
+      expect(cancel).toHaveBeenCalledWith({ kind: 'user' })
+      expect(editor.getText()).toBe('')
+      expect(editor.history).toEqual(['interrupt without retracting'])
+    })
+
+    it('still clears an idle draft when there is no work to interrupt', async () => {
+      const { editor, cancel } = await mount()
+      type(editor, 'idle draft')
+      editor.handleInput(KEY.ctrlC)
+      expect(editor.getText()).toBe('')
+      expect(cancel).not.toHaveBeenCalled()
     })
 
     it('flashes the exit hint on the first idle Ctrl-C', async () => {

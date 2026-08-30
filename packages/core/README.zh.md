@@ -32,6 +32,8 @@ Blue 终端 UI 核心：整棵树中唯一 import `@earendil-works/pi-tui` 的�
 
 Canonical `chrome: 'overlay'` surface 由 core 统一绘制单一闭合边框。左右边框与显式内距只扣减一次，窄标题仍保留右上角；终端缩放经过 1/2 列时，边框会让位给宽度安全的 body 内容；overlay 内容只贡献 body，不再重复绘制 frame。
 
+私有 plugin-surface bridge 持有 live `panes`/`overlays` generation。Pane definition 会在 renderer reload 后从 API host replay，overlay open 则保持 transient：owner 替换或卸载会先关闭 host entry 与本地 handle，replacement renderer 无法观察到旧 overlay。Value/selection/tab event 采用 latest-wins，activate/submit/dismiss 采用 FIFO；timeout、abort、refresh、semantic close 与迟到 settlement 都由捕获的 owner generation 约束。插件 render 失败（包括 hostile thrown value）会变成有界 danger-node fallback，不会逃出 renderer。
+
 `compileBlueEditorShellNode(value, { editor, ...compilerOptions })` 独立校验 editor-shell 子集，并围绕调用方提供的同一个宿主持有 `BlueEditor` 对象编译唯一 `editor-control`。因此 shell 刷新不会丢失 renderer 的光标、IME、粘贴、undo 或 history 状态；返回的 composite 仍是唯一 focus target，在该 editor 与同级 canonical 控件之间路由输入。新增的 `renderChecked(width, { dryRun })` 会结构化报告已收容的 `runtimeFailure`；dry run 在测量 provider candidate 后恢复 editor 与 composite focus 状态。`focusEditor()` 只选择内部 editor-control，不会获取 screen focus。
 
 `compileBlueStatusNode` 使用收窄后的 status validator，并返回被动的 1-3 行 component。每次 `renderStatus` 都报告 overflow；若 leaf 或 root 在正常的安全错误渲染背后失败，还会报告该帧首个 `runtimeFailure`。Renderer owner 因此能拒绝失败的 dry render 或执行 fallback，而异常不会逃出 compiler boundary。
@@ -57,5 +59,5 @@ AltScreen 中，公共 scroll 编译为非 primary、overscroll contained 的 `S
 ## 已知限制与暂缓事项
 
 - **崩溃日志目录沿用 pi 默认值**——渲染器把行宽溢出崩溃日志写到 `~/.pi/agent`（或 `PI_CODING_AGENT_DIR`），因为 pi-tui 硬编码了该默认值，而 Blue 尚无可传入的 dsh 侧路径。
-- **公共 UI 的 Host 接线仍暂缓**——本包现已持有准入和编译边界，但 registry/host 接线及应用迁移仍归 W2-C/W3。
+- **公共 UI capability 仍是 Beta**——pane/overlay Host bridge 已接线并带 generation fence，但协议稳定性仍需 P3 packed fixture、生态 consumer、profile 验收以及后续 P7 晋升证据。
 - **键位冲突检测范围**——冲突检测只覆盖经 `ctx.blueKeymap` 注册的动作；pi-tui 组件（Editor、SelectList）从 pi-tui 的全局键位表解析各自绑定，本包不动该表。

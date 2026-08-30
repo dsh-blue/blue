@@ -30,6 +30,8 @@ All five contracts are mounted as Cordis `Service` subclasses (`blueTheme` by a 
 
 Canonical `chrome: 'overlay'` surfaces render as one closed core-owned frame. Border columns and explicit inner padding are deducted once, narrow titles retain the closing corner, and one- or two-column resize transients yield frame furniture to width-safe body content; overlay content contributes the body rather than another frame.
 
+The private plugin-surface bridge owns the live `panes`/`overlays` generation. Pane definitions replay from the API host after a renderer reload, while overlay opens remain transient: owner replacement or unload closes the host entry and local handle before a replacement renderer can observe it. Event work is latest-wins for value/selection/tab changes and FIFO for activate/submit/dismiss; timeout, abort, refresh, semantic close, and late settlement are all fenced by the captured owner generation. Plugin render failures, including hostile thrown values, become bounded danger-node fallbacks instead of escaping the renderer.
+
 `compileBlueEditorShellNode(value, { editor, ...compilerOptions })` independently validates the editor-shell subset and compiles its one `editor-control` around the exact host-owned `BlueEditor` object supplied by the caller. Shell refresh therefore preserves the renderer's cursor, IME, paste, undo, and history state. The returned composite remains the sole focus target and routes input to that same editor or to sibling canonical controls. Its additive `renderChecked(width, { dryRun })` reports a contained `runtimeFailure`; dry runs restore editor and composite focus state after measuring a provider candidate. `focusEditor()` selects the internal editor-control without taking screen focus.
 
 `compileBlueStatusNode` uses the narrowed status validator and returns a passive 1-3-row component. Each `renderStatus` result reports overflow and, when a leaf or root failed behind the normal safe error rendering, the first `runtimeFailure` from that frame. Renderer owners can therefore reject a failed dry render or fall back without letting an exception escape the compiler boundary.
@@ -55,5 +57,5 @@ None; the package adds nothing to any model request prefix.
 ## Known Limitations and Deferred Work
 
 - **Crash-log directory is pi's default** — the renderer writes its width-overflow crash log to `~/.pi/agent` (or `PI_CODING_AGENT_DIR`) because pi-tui hardcodes that default and Blue has no dsh-owned path to thread through yet.
-- **Public UI host integration is deferred** — this package now owns admission and compilation, but W2-C/W3 still own registry/host wiring and application migration onto the compiler.
+- **Public UI capabilities remain Beta** — the pane/overlay host bridge is wired and generation-fenced, but protocol stability still depends on the P3 packed fixture, ecosystem consumers, profile acceptance, and later P7 promotion evidence.
 - **Keymap conflict scope** — conflict detection covers actions registered through `ctx.blueKeymap`; pi-tui components (Editor, SelectList) resolve their own bindings from pi-tui's global keybindings table, which this package leaves untouched.

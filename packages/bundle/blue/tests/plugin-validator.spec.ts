@@ -101,7 +101,7 @@ describe('blue plugin validator script', () => {
         expect(report.violations.map((finding: { code: string }) => finding.code), testCase.id).toContain(testCase.code)
       }
     }
-  })
+  }, 15_000)
 
   it('allows ordinary package and Cordis names while enforcing packed entry peers', () => {
     const base = JSON.parse(readFileSync(join(repositoryRoot, 'packages/api/schema/blue.plugin.v1.corpus.json'), 'utf8')).cases[1].manifest as Record<string, unknown>

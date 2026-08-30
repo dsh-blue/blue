@@ -20,7 +20,6 @@ export {
   apply as applyHost,
   name,
   name as hostName,
-  type BluePluginControl,
   type BluePluginHostSnapshot,
   type BluePluginHostOptions,
   type BluePluginHostOverlayEntry,

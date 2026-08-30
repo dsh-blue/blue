@@ -59,7 +59,7 @@ function currentSelection(ctx: Context): string {
 /** Attach editor.provider and publish inert candidates to the live editor tree. */
 export function apply(ctx: Context): void {
   const control = ctx.bluePluginControl
-  control.attachCapabilities(ctx, ['editor.provider'])
+  const lease = control.attachCapabilities(ctx, ['editor.provider'])
   let desiredId = currentSelection(ctx)
   let revision = -1
   let entries: readonly BlueEditorProvider[] = Object.freeze([])
@@ -69,21 +69,28 @@ export function apply(ctx: Context): void {
     code: 'BLUE_ACTION_REJECTED',
     message: callbackMessage(error),
   })
+  const stale = (): BlueResult<never> => ({
+    ok: false,
+    code: 'BLUE_STALE',
+    message: 'editor provider owner is stale',
+  })
 
   const createBinding = (): EditorProviderBinding => Object.freeze({
     revision,
     desiredId,
     entries,
     async dispatch(provider: BlueEditorProvider, event: BlueUiEvent, signal: AbortSignal, operationRevision: number): Promise<BlueResult> {
+      if (!lease.current('editor.provider')) return stale()
       if (provider.onEvent === undefined) return { ok: true, value: undefined }
       try {
-        return await control.runUserGesture(ctx, userGesture => provider.onEvent!(event, Object.freeze({
+        const result = await lease.runUserGesture('editor.provider', userGesture => provider.onEvent!(event, Object.freeze({
           surfaceId: provider.id,
           signal,
           revision: operationRevision,
           userGesture,
         })), signal)
-      } catch (error) { return failure(error) }
+        return lease.current('editor.provider') ? result : stale()
+      } catch (error) { return lease.current('editor.provider') ? failure(error) : stale() }
     },
   })
 
@@ -94,7 +101,7 @@ export function apply(ctx: Context): void {
     setEditorProviders(ctx, next)
   }
 
-  const hostSubscription = control.subscribe(snapshot => {
+  const hostSubscription = lease.subscribe(snapshot => {
     const nextRevision = snapshot.editorProvidersRevision ?? snapshot.revision ?? 0
     if (nextRevision === revision) return
     revision = nextRevision

@@ -37,7 +37,19 @@ admission records. Command names are plugin-defined and resource-fenced;
 pane registrations are fenced to their granted placements. Legacy inline
 manifests keep their original return shape during the transition.
 
-The host durably buffers inert registrations for `commands`, `status`, `panes`, `overlays`, and the three Experimental editor/provider facets. A plugin may therefore register while the corresponding frontend-tree owner is booting or reloading; the active owner restores only the latest definitions. Consumer unload still removes its registrations. Buffering does not grant render, dispatch, gesture, provider selection, last-known-good, breaker, or fallback authority. `notifications.publish` and `session.read` are not registration buffers and report an absent/unavailable result while their owner is missing; notices, overlays, gestures, actions, and old callback results are never replayed.
+The executable P3 candidate enforces the catalog budgets: up to 64 command and
+64 additive-status contributions per consumer, notification views up to 32
+KiB, and up to 20 notifications per rolling second. Notification grants also
+publish bounded-clone ceilings of depth 64, 4,096 containers, 8,192 properties,
+and 32 KiB of primitive/key bytes before the final exact JSON UTF-8 check.
+Panes are limited to eight
+per consumer, the global overlay stack to four, and capturing overlays to one
+per consumer. Status, pane, and overlay refresh handles each admit 20
+successful calls per rolling second and coalesce accepted calls within one
+microtask. Async command settlements, including callback rejection, are
+discarded after abort, plugin unload, or command-owner replacement.
+
+The host durably buffers inert registrations for `commands`, `status`, `panes`, and the three Experimental editor/provider facets; it also installs the canonical `overlays` definition without buffering overlay opens. A plugin may therefore register definitions while the corresponding frontend-tree owner is booting or reloading; the active owner restores only the latest definitions. Consumer unload still removes its registrations. Buffering does not grant render, dispatch, gesture, provider selection, last-known-good, breaker, or fallback authority. Overlay opens, `notifications.publish`, and `session.read` require their live owner and report an absent/unavailable result while it is missing; notices, overlays, gestures, actions, and old callback results are never replayed.
 
 Owner attachment, aggregate observation, notification observation, gesture minting, semantic overlay close, and raw session/projection/action services are not public plugin APIs. The default bundle keeps those operations behind a closure-bound `bluePluginControl` in an isolated private runtime realm; ordinary siblings receive only the guarded `bluePluginHost` facade.
 
