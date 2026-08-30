@@ -219,9 +219,9 @@ for (const relativeDir of PACKAGE_DIRS) {
 verifyExternalUiKit(tarballs.get('@dsh-blue/blue-api'), tarballs.get('@dsh-blue/blue-ui'))
 
 if (libraryFiles > 210) fail(`library lib output has ${libraryFiles} files; budget is 210`)
-// P1 machine-contract baseline (including the versioned schema runtime), with
-// about 3% release headroom.
-if (libraryBytes > 1_600_000) fail(`library lib output has ${libraryBytes} bytes; budget is 1600000`)
+// P4 session-data baseline (including the versioned schema and scoped read
+// runtimes), with about 3% release headroom.
+if (libraryBytes > 1_650_000) fail(`library lib output has ${libraryBytes} bytes; budget is 1650000`)
 
 if (problems.length > 0) {
   console.error(`pack contract failed with ${problems.length} problem(s)`)

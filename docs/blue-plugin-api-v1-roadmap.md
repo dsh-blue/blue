@@ -93,19 +93,17 @@ R1 只冻结可观察权限结果，不强制特定 authority representation。h
 
 R2 按合并手册拆为 P1-P4，不得放进一个大 PR：P1 建机器真相，P2 建协商与权限，P3/P4 才把 UI 和 session capability 接到该契约。
 
-当前进度（本地状态，不代表远端或发布 artifact）：P1 以 `a13e6e8`、`f2222c2`
-完成机器契约、共享 corpus、packed validator 与双 Harness line fixture；P2 以
-`522d2ca`、`96e8999` 完成 canonical host admission、required/optional、精确
+当前进度：P1-P3 已通过自动门禁与真人验收并合入主线，包含机器契约、共享 corpus、packed validator、双
+Harness line fixture，以及 canonical host admission、required/optional、精确
 resource grant、结构化 denial、受保护 owner generation 与 durable registration
-restore。两阶段均已由用户真人验收并合入本地 `master`，但尚未 push，也没有发布
-npm、Website 或协议 artifact。`session.projections.read` 仍保持 unavailable，等待 P4。
-P3 是独立候选 worktree，P4 尚未进入本地 `master`；两者都不能被当作 capability
-Stable 证据。
-
-P3 候选 worktree 已把五项 UI capability 接到 canonical grant：resource/数量/刷新/
-notification 大小与速率限制、owner-gap restore、command/事件 stale fence、overlay
-不重放和 status failure isolation 已进入自动测试；整树门禁、独立 packed fixture 与
-真人 profile 验收完成前仍只记为 implemented candidate。
+restore；五项 UI capability 已落实 resource/数量/刷新/notification 大小与速率限制、
+owner-gap restore、command/事件 stale fence、overlay 不重放与 status failure isolation。
+P4 候选 worktree 完成了 field-scoped
+`session.read` 与 exact-key `session.projections.read`：required epoch/revision、
+consistent cut、JSON/size bound、owner gap/reload、key unload 和 stale/late callback
+门禁均已有自动测试。其 P3 前基线曾通过完整仓库 gate、双 Harness packed fixture 与
+pseudo-TTY smoke；重放到最终 P3 主线后仍须重新执行全部门禁、重装独立 profile 并
+完成人工验收。P4 或三个生态插件在验收合并前都不能作为 capability Stable 证据。
 
 ### Schema 与 package
 
@@ -127,7 +125,7 @@ notification 大小与速率限制、owner-gap restore、command/事件 stale fe
 ### Capability Beta
 
 - `commands`、`status`、`panes`、`overlays`、`notifications.publish` 原则上逐项 PR 接入 grant、limits、fallback 和 owner lifecycle。
-- `session.read` 与 `session.projections.read` 分开 PR 收敛 fields/key grant、session epoch、seq、一致 cut 和 size bound。
+- P4 候选已把 `session.read` 与 `session.projections.read` 分开收敛为 fields/key grant、session epoch、seq、一致 cut 和 size bound；在 profile 验收与合并前仍只按 Public Beta 候选记录。
 - provider、editor、conversation、theme/settings 和 market operation 不因 PR #77 已有 runtime 自动进入 v1 root。
 
 ### 退出门

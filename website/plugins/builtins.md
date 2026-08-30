@@ -103,7 +103,7 @@ flowchart TB
 | `blue-plugin-interaction-bridge` | public command/publish-only notification 与 Experimental editor-extension contribution -> Harness/editor consumer |
 | `blue-startup` | `[task]` 与 `--resume` 启动值 |
 | `blue-app` | Agent driver；提供 readonly session reader/projections 和 structured actions |
-| `blue-plugin-session-bridge` | 通过 private control 只把 app 的严格 reader facet 装配为 public readonly `session.read` |
+| `blue-plugin-session-bridge` | 通过 private control 把 app read sources 装配为 exact-field `session.read` 与 exact-key `session.projections.read` |
 
 ## Validation-only 包
 

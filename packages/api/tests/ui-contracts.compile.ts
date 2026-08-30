@@ -1,4 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
+// @ts-expect-error projection owner sources are composition-private.
+import type { BlueSessionProjectionOwner } from '@dsh-blue/blue-api'
 import type {
   BlueCapability,
   BlueEditorCompletionRequest,
@@ -20,6 +22,8 @@ import type {
   BlueUiEvent,
   BlueUiNode,
 } from '@dsh-blue/blue-api'
+
+export type PrivateProjectionOwnerMustStayUnexported = BlueSessionProjectionOwner
 
 declare const pluginHost: BluePluginHost
 export const contextConsumer = pluginHost.open(new Context(), {
@@ -253,9 +257,9 @@ export const manifest = {
 } satisfies BluePluginManifest
 
 export const sessionSnapshot = {
-  revision: 1, id: 'session', cwd: '/workspace', status: 'idle', mode: 'normal',
+  revision: 1, sessionEpoch: 1, id: 'session', cwd: '/workspace', status: 'idle', mode: 'normal',
 } satisfies BlueSessionSnapshot
-// @ts-expect-error public session snapshots require a monotonic revision
+// @ts-expect-error public session snapshots require revision and epoch fences
 export const unrevisionedSession: BlueSessionSnapshot = { id: 'session', cwd: '/workspace', status: 'idle', mode: 'normal' }
 
 declare const sessionReader: BlueSessionReader

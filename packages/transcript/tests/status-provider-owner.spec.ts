@@ -115,7 +115,7 @@ function readerProbe(initial: BlueSessionSnapshot | null = null): ReaderProbe {
 }
 
 function session(id: string): BlueSessionSnapshot {
-  return { revision: 1, id, cwd: '/work', status: 'idle', mode: 'normal' }
+  return { revision: 1, sessionEpoch: 1, id, cwd: '/work', status: 'idle', mode: 'normal' }
 }
 
 function provide(ctx: Context, name: string, value: unknown): void {

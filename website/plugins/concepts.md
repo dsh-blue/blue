@@ -35,7 +35,7 @@ interface BluePluginManifest {
 `open()` 的行为分三层：
 
 1. **静态校验**（`validateBlueManifest`，不执行插件代码）：id 格式、api 范围格式、capability 拼写与去重。失败返回 `BLUE_API_INCOMPATIBLE`（或 manifest 根本不是对象时的 `BLUE_INVALID_CONTRIBUTION`）；
-2. **能力生命期检查**：host 持久缓冲 `commands`、`status`、`panes` 以及 Experimental/reference 的 `editor.extensions`、`status.provider`、`editor.provider` inert registration；`overlays` 的 capability definition 持久存在，但每次 open 都是 transient action，要求 live renderer owner。`notifications.publish` 与 `session.read` 同样依赖 active owner。Canonical grant 会区分持久 `supported` 与实时 `availability`，操作在 owner gap 返回 `BLUE_CAPABILITY_ABSENT`；
+2. **能力生命期检查**：host 持久缓冲 `commands`、`status`、`panes` 以及 Experimental/reference 的 `editor.extensions`、`status.provider`、`editor.provider` inert registration；`overlays` 的 capability definition 持久存在，但每次 open 都是 transient action，要求 live renderer owner。`notifications.publish`、`session.read` 与 `session.projections.read` 同样依赖 active owner。Canonical grant 会区分持久 `supported` 与实时 `availability`，操作在 owner gap 返回 `BLUE_CAPABILITY_ABSENT`；
 3. **按能力裁剪返回**：`BluePluginApi` 上只有声明过的 capability 字段有值，其余是 `undefined`。所以访问时总是 `api.commands?.register(...)` 这样的可选链形态。
 
 裁剪是双向契约：你只拿到你声明的，宿主也只暴露你声明的。插件升级时要新能力，就在 manifest 里加一行——宿主版本不够会在 `open()` 阶段明确失败，而不是运行时才出错。
@@ -85,13 +85,13 @@ type BlueResult<Value = void> =
 | `BLUE_INVALID_CONTRIBUTION` | `register()` / `publish()`：贡献格式不合法（id 字符、缺函数字段等） |
 | `BLUE_ACTION_REJECTED` | `register()`：id 占用 Blue 保留命名空间（`blue.` / `blue:` / `blue-` / `@dsh-blue/` 前缀） |
 | `BLUE_LIMIT_EXCEEDED` | `register()` / `open()` / `publish()` / `refresh()`：超过 contribution、pane/overlay、大小或滚动速率配额 |
-| `BLUE_CAPABILITY_ABSENT` | notification/session read 的 active owner 缺位，或当前 host/profile 未提供该 capability；按版本/profile 不匹配或可选降级处理 |
+| `BLUE_CAPABILITY_ABSENT` | notification/session/projection read 的 active owner 或 backing key 缺位，或当前 host/profile 未提供该 capability；按版本/profile 不匹配或可选降级处理 |
 
 对称地，你的 `execute()` 返回 `{ ok: false, code, message }` 时，`message` 会作为错误文本显示给用户；抛出的异常会被桥接层兜底为 `plugin command failed: ...`，但那是兜底，不是契约——主动返回结构化错误。
 
 ## Domain 与 adapter 的拆分
 
-`session.read` 只提供冻结、revisioned 的当前会话摘要。Generic `session.act` 已移除；写操作必须使用拥有该语义的公开 Harness service、command 或 feature action。详见[会话只读数据](/plugins/session)。需要完整 Harness domain 数据时也应走官方 Cordis 服务，而不是读取 Blue owner-only backing service。推荐按 renderer 拆成两个包：
+`session.read` 提供 exact-field、epoch/revision-fenced 的当前会话摘要；`session.projections.read` 提供 exact-key、epoch/seq-fenced 的 JSON projection cut。Generic `session.act` 已移除；写操作必须使用拥有该语义的公开 Harness service、command 或 feature action。详见[会话只读数据](/plugins/session)。需要完整 Harness domain 数据时也应走官方 Cordis 服务，而不是读取 Blue owner-only backing service。推荐按 renderer 拆成两个包：
 
 ```text
 @scope/feature        Domain 包：headless/Web/TUI 共用，不 inject 任何 Blue 服务

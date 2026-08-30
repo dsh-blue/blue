@@ -784,10 +784,10 @@ export const apply = (ctx, config) => globalThis.__blueE2E.appApply(ctx, config)
     '- id: blue-plugin-session-bridge',
     `  name: ${fixture('blue-plugin-session-bridge.mjs', `
 export const name = 'blue-plugin-session-bridge'
-export const inject = ['bluePluginControl', 'blueSessionReader']
+export const inject = ['bluePluginControl', 'blueSessionReader', 'blueSessionProjections']
 export const apply = ctx => globalThis.__blueE2E.sessionBridgeApply(ctx)
 `)}`,
-    '  inject: [bluePluginControl, blueSessionReader]',
+    '  inject: [bluePluginControl, blueSessionReader, blueSessionProjections]',
   ]
   const privateStart = rows.indexOf('- id: blue-api-host')
   const privateRows = rows.splice(privateStart)

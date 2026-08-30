@@ -26,7 +26,7 @@ blue-feature/
   cordis.patch.yml      # 把 entry 插入 profile
 ```
 
-入口必须导出固定的 `name`、`inject` 和 `apply(ctx)`。Blue 功能通过 `ctx.bluePluginHost.open(ctx, manifest)` 申请当前 `1.0.0-beta.1` capability：`commands`、`status`、`panes`、`overlays`、`notifications.publish` 与只读的 `session.read`。Generic `session.act` 已移除，写操作继续使用所属 Harness service、command 或 feature action。`open()`、`register()`、`publish()` 都返回结构化 `BlueResult`，每次都要检查 `ok`。注册由调用方 Fiber 托管，插件卸载、更新或 profile 重载时会自动撤销。Editor/status provider 和 editor extension 仅保留为 Experimental/reference surface；候选注册保持 inert，只有 settings 选中的 id 才会激活。
+入口必须导出固定的 `name`、`inject` 和 `apply(ctx)`。Blue 功能通过 `ctx.bluePluginHost.open(ctx, manifest)` 申请当前 `1.0.0-beta.1` capability：`commands`、`status`、`panes`、`overlays`、`notifications.publish`，以及只读的 `session.read` 与 `session.projections.read`。后两项在 canonical manifest 中分别声明 exact field/key resource。Generic `session.act` 已移除，写操作继续使用所属 Harness service、command 或 feature action。`open()`、`register()`、`publish()` 与 canonical read 都返回结构化 `BlueResult`，每次都要检查 `ok`。注册由调用方 Fiber 托管，插件卸载、更新或 profile 重载时会自动撤销。Editor/status provider 和 editor extension 仅保留为 Experimental/reference surface；候选注册保持 inert，只有 settings 选中的 id 才会激活。
 
 插件只能返回 renderer-neutral 的 `BlueUiNode`/`BlueView` 和结构化 action：
 

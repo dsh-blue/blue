@@ -528,6 +528,7 @@ try {
 
   if (manifest.name === '@dsh-blue/blue-app') {
     const blueApi = await load('@dsh-blue/blue-api')
+    const protocolV1 = await load('@dsh-blue/blue-api/protocol/v1')
     const sessionBridge = await load('@dsh-blue/blue-app/plugin-host-session-bridge')
 
     function effectOwner() {
@@ -546,87 +547,138 @@ try {
     function sessionContext() {
       const ctx = new cordis.Context()
       const host = new blueApi.BluePluginHostService(ctx)
-      let snapshot = { revision: 1, id: 'packed-a', cwd: '/packed/a', status: 'idle', mode: 'normal', model: { id: 'packed-model', provider: 'packed-provider' } }
-      let listener
+      let snapshot = { revision: 1, sessionEpoch: 1, id: 'packed-a', cwd: '/packed/a', status: 'idle', mode: 'normal', model: { id: 'packed-model', provider: 'packed-provider' } }
+      let projection = { sessionEpoch: 1, asOfSeq: 1, values: { costUsage: { totalUsd: 1 } } }
+      let sessionListener
+      let projectionListener
       const reader = {
         current: () => snapshot,
         subscribe(next) {
-          listener = next
+          sessionListener = next
           next(snapshot)
           let disposed = false
           return {
             get disposed() { return disposed },
-            dispose() { if (!disposed) { disposed = true; if (listener === next) listener = undefined } },
+            dispose() { if (!disposed) { disposed = true; if (sessionListener === next) sessionListener = undefined } },
           }
         },
       }
+      const projections = {
+        currentMany(keys) {
+          const values = {}
+          for (const key of keys) {
+            if (Object.hasOwn(projection.values, key)) Object.defineProperty(values, key, { enumerable: true, value: projection.values[key] })
+          }
+          return { sessionEpoch: projection.sessionEpoch, asOfSeq: projection.asOfSeq, values }
+        },
+        subscribe(next) {
+          projectionListener = next
+          return () => { if (projectionListener === next) projectionListener = undefined }
+        },
+      }
       ctx.reflect.provide('blueSessionReader', reader)
+      ctx.reflect.provide('blueSessionProjections', projections)
       return {
         ctx,
         host,
         reader,
-        publish(value) { snapshot = value; listener?.(value) },
-        lateListener: () => listener,
+        publishSession(value) { snapshot = value; sessionListener?.(value) },
+        publishProjection(value) {
+          projection = value
+          projectionListener?.('costUsage', value.values.costUsage, value.asOfSeq, value.sessionEpoch)
+        },
+        lateSessionListener: () => sessionListener,
+        lateProjectionListener: () => projectionListener,
       }
     }
 
-    await scenario('app.session-read-facade-revision-freeze-unload', async () => {
+    await scenario('app.session-data-v1-scope-epoch-replay-unload', async () => {
       const fixture = sessionContext()
       let ownerFiber
-      const absentConsumer = effectOwner()
-      const absent = fixture.host.open(absentConsumer, { id: '@fixture/session-read-absent', api: '^1.0.0-beta.1', capabilities: ['session.read'] })
-      ensure(!absent.ok && absent.code === 'BLUE_CAPABILITY_ABSENT', 'FIXTURE_SESSION_READ_ABSENT', 'session.read did not report an absent owner before bridge mount')
-      absentConsumer.dispose()
       try {
         ownerFiber = await fixture.ctx.plugin(sessionBridge)
         const readConsumer = effectOwner()
-        const read = fixture.host.open(readConsumer, { id: '@fixture/session-read', api: '^1.0.0-beta.1', capabilities: ['session.read'] })
-        ensure(read.ok && read.value.session !== undefined && !Object.hasOwn(read.value, 'sessionActions'), 'FIXTURE_SESSION_READ_SCOPE', 'read-only manifest did not receive only api.session')
-        ensure(typeof read.value.session.current === 'function' && typeof read.value.session.subscribe === 'function' && !('request' in read.value.session), 'FIXTURE_SESSION_READ_KEYS', 'session.read exposed an action method')
-        const initial = read.value.session.current()
-        ensure(initial !== fixture.reader.current() && initial?.model !== fixture.reader.current().model, 'FIXTURE_SESSION_READ_COPY', 'host retained owner snapshot identity')
-        ensure(Object.isFrozen(initial) && Object.isFrozen(initial?.model), 'FIXTURE_SESSION_READ_FREEZE', 'session snapshot was not deeply frozen')
+        const read = fixture.host.open(readConsumer, {
+          $schema: protocolV1.BLUE_PLUGIN_MANIFEST_SCHEMA_URL,
+          schemaVersion: 1,
+          id: '@fixture/session-data-v1',
+          entry: '.',
+          api: '^1.0.0-beta.1',
+          compatibility: { blue: '^0.1.1-rc.2', harness: '^0.1.1-rc.2', node: '>=22' },
+          capabilities: {
+            required: [
+              { name: 'session.read', version: '^1.0.0', resources: { fields: ['identity', 'cwd', 'model'] } },
+              { name: 'session.projections.read', version: '^1.0.0', resources: { keys: ['costUsage'] } },
+            ],
+            optional: [],
+          },
+        })
+        ensure(read.ok && read.value.session !== undefined && read.value.projections !== undefined && !Object.hasOwn(read.value, 'sessionActions'), 'FIXTURE_SESSION_DATA_SCOPE', 'canonical manifest did not receive only granted session-data facets')
+        const initialResult = read.value.session.current()
+        ensure(initialResult.ok && initialResult.value !== null, 'FIXTURE_SESSION_READ_CURRENT', 'canonical session.read did not return its current result')
+        const initial = initialResult.value
+        ensure(Object.keys(initial).join() === 'revision,sessionEpoch,id,cwd,model' && !Object.hasOwn(initial, 'status'), 'FIXTURE_SESSION_READ_FIELDS', 'session.read leaked an ungranted field')
+        ensure(initial !== fixture.reader.current() && initial.model !== fixture.reader.current().model, 'FIXTURE_SESSION_READ_COPY', 'host retained owner snapshot identity')
+        ensure(Object.isFrozen(initial) && Object.isFrozen(initial.model), 'FIXTURE_SESSION_READ_FREEZE', 'session snapshot was not deeply frozen')
         fixture.reader.current().model.id = 'mutated-owner-model'
         ensure(initial?.model?.id === 'packed-model', 'FIXTURE_SESSION_READ_OWNER_MUTATION', 'owner mutation crossed the snapshot boundary')
 
         const seen = []
-        const registration = read.value.session.subscribe(value => {
-          seen.push(value?.revision ?? -1)
-          if (value?.revision === 1) fixture.publish({ revision: 2, id: 'packed-a', cwd: '/packed/reentrant', status: 'running', mode: 'plan' })
+        const registrationResult = read.value.session.subscribe(result => {
+          seen.push(result.ok ? result.value?.revision ?? -1 : result.code)
+          if (result.ok && result.value?.revision === 1) fixture.publishSession({ revision: 2, sessionEpoch: 1, id: 'packed-a', cwd: '/packed/reentrant', status: 'running', mode: 'plan' })
         })
-        ensure(seen.join() === '1,2' && read.value.session.current()?.cwd === '/packed/reentrant', 'FIXTURE_SESSION_READ_REENTRANT', 'subscribe-before-replay missed a reentrant revision')
-        fixture.publish({ revision: 2, id: 'packed-a', cwd: '/packed/duplicate', status: 'failed', mode: 'normal' })
-        fixture.publish({ revision: 1, id: 'packed-a', cwd: '/packed/regressed', status: 'failed', mode: 'normal' })
+        ensure(registrationResult.ok, 'FIXTURE_SESSION_READ_SUBSCRIBE', 'canonical session subscription was rejected')
+        ensure(seen.join() === '1,2' && read.value.session.current().value?.cwd === '/packed/reentrant', 'FIXTURE_SESSION_READ_REENTRANT', 'subscribe-before-replay missed a reentrant revision')
+        fixture.publishSession({ revision: 2, sessionEpoch: 1, id: 'packed-a', cwd: '/packed/duplicate', status: 'failed', mode: 'normal' })
+        fixture.publishSession({ revision: 1, sessionEpoch: 1, id: 'packed-a', cwd: '/packed/regressed', status: 'failed', mode: 'normal' })
         ensure(seen.join() === '1,2', 'FIXTURE_SESSION_READ_REVISION_FENCE', 'duplicate or regressing revision was admitted')
-        registration.dispose()
-        registration.dispose()
-        fixture.publish({ revision: 3, id: 'packed-a', cwd: '/packed/disposed', status: 'idle', mode: 'normal' })
+        registrationResult.value.dispose()
+        registrationResult.value.dispose()
+        fixture.publishSession({ revision: 3, sessionEpoch: 1, id: 'packed-a', cwd: '/packed/disposed', status: 'idle', mode: 'normal' })
         ensure(seen.join() === '1,2', 'FIXTURE_SESSION_READ_DISPOSE', 'disposed read subscription received an update')
+
+        const projectionResult = read.value.projections.currentMany(['costUsage'])
+        ensure(projectionResult.ok && projectionResult.value?.values.costUsage.totalUsd === 1, 'FIXTURE_PROJECTION_CURRENT', 'canonical projection cut was unavailable')
+        const projected = projectionResult.value.values.costUsage
+        ensure(Object.isFrozen(projectionResult.value) && Object.isFrozen(projectionResult.value.values) && Object.isFrozen(projected), 'FIXTURE_PROJECTION_FREEZE', 'projection cut was not deeply frozen')
+        fixture.publishProjection({ sessionEpoch: 1, asOfSeq: 2, values: { costUsage: { totalUsd: 2 } } })
+        ensure(read.value.projections.current('costUsage').value?.value.totalUsd === 2, 'FIXTURE_PROJECTION_UPDATE', 'projection update did not cross the packed owner bridge')
+        ensure(read.value.projections.current('secret').code === 'BLUE_RESOURCE_DENIED', 'FIXTURE_PROJECTION_SCOPE', 'projection key grant did not reject an ungranted key')
 
         const removedConsumer = effectOwner()
         const removed = fixture.host.open(removedConsumer, { id: '@fixture/session-act-removed', api: '^1.0.0-beta.1', capabilities: ['session.act'] })
         ensure(!removed.ok && removed.code === 'BLUE_API_INCOMPATIBLE', 'FIXTURE_SESSION_ACT_REMOVED', 'removed session.act capability remained admissible')
 
-        const retained = read.value.session
-        const late = fixture.lateListener()
+        const retainedSession = read.value.session
+        const retainedProjections = read.value.projections
+        const lateSession = fixture.lateSessionListener()
+        const lateProjection = fixture.lateProjectionListener()
         await ownerFiber.dispose()
         ownerFiber = undefined
-        late?.({ revision: 4, id: 'packed-late', cwd: '/late', status: 'failed', mode: 'yolo' })
-        ensure(retained.current() === null, 'FIXTURE_SESSION_READ_OWNER_UNLOAD', 'retained reader admitted an old-owner callback')
-        fixture.publish({ revision: 10, id: 'packed-b', cwd: '/packed/b', status: 'idle', mode: 'normal' })
+        lateSession?.({ revision: 4, sessionEpoch: 1, id: 'packed-late', cwd: '/late', status: 'failed', mode: 'yolo' })
+        lateProjection?.('costUsage', { totalUsd: 999 }, 99, 1)
+        ensure(retainedSession.current().code === 'BLUE_CAPABILITY_ABSENT', 'FIXTURE_SESSION_READ_OWNER_UNLOAD', 'retained reader admitted an old-owner callback')
+        ensure(retainedProjections.current('costUsage').code === 'BLUE_CAPABILITY_ABSENT', 'FIXTURE_PROJECTION_OWNER_UNLOAD', 'retained projection admitted an old-owner callback')
+        fixture.publishSession({ revision: 1, sessionEpoch: 2, id: 'packed-a', cwd: '/packed/new-epoch', status: 'idle', mode: 'normal' })
+        fixture.publishProjection({ sessionEpoch: 2, asOfSeq: 0, values: { costUsage: { totalUsd: 3 } } })
         ownerFiber = await fixture.ctx.plugin(sessionBridge)
-        ensure(retained.current()?.id === 'packed-b' && retained.current()?.revision === 10, 'FIXTURE_SESSION_READ_OWNER_RELOAD', 'retained reader did not follow the replacement owner generation')
+        const reloadedSession = retainedSession.current()
+        const reloadedProjection = retainedProjections.current('costUsage')
+        ensure(reloadedSession.ok && reloadedSession.value?.sessionEpoch === 2 && reloadedSession.value.revision === 1, 'FIXTURE_SESSION_READ_OWNER_RELOAD', 'retained reader did not accept a same-id new epoch')
+        ensure(reloadedProjection.ok && reloadedProjection.value?.sessionEpoch === 2 && reloadedProjection.value.asOfSeq === 0, 'FIXTURE_PROJECTION_OWNER_RELOAD', 'retained projection did not replay the replacement owner cut')
 
         removedConsumer.dispose()
         readConsumer.dispose()
-        ensure(retained.current() === null, 'FIXTURE_SESSION_READ_CONSUMER_UNLOAD', 'disposed consumer retained a readable snapshot')
+        ensure(retainedSession.current().code === 'BLUE_ACTION_REJECTED', 'FIXTURE_SESSION_READ_CONSUMER_UNLOAD', 'disposed consumer retained a readable snapshot')
+        ensure(retainedProjections.current('costUsage').code === 'BLUE_ACTION_REJECTED', 'FIXTURE_PROJECTION_CONSUMER_UNLOAD', 'disposed consumer retained a readable projection')
       } finally {
         await ownerFiber?.dispose()
         await fixture.ctx.fiber.dispose()
       }
     })
 
-    report.observations.push('app readonly session.read exercised through packed API and app owner-bridge exports; generic session.act rejected')
+    report.observations.push('canonical session.read and session.projections.read exercised through packed API/app exports with exact scope, epoch replay, freeze, and unload fencing; generic session.act rejected')
   }
 
   if (manifest.name === '@dsh-blue/blue-interaction') {

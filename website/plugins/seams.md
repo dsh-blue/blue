@@ -13,14 +13,15 @@ Blue 的当前架构用显式 Cordis service、projection/action、renderer-neut
 | `notifications.publish` | publish-only `BlueNotification` | interaction bridge -> editor notice |
 | `panes` | `BluePaneContribution` | core surface bridge -> bounded pane mount |
 | `overlays` | `BlueOverlayRequest` | core surface bridge -> overlay mount |
-| `session.read` | `BlueSessionReader`：`current` / `subscribe` only | app session owner bridge -> frozen revisioned snapshot |
+| `session.read` | `BluePluginSessionReader`：result-bearing `current` / `subscribe` | app session owner bridge -> exact-field frozen epoch/revision snapshot |
+| `session.projections.read` | `BlueSessionProjectionReader`：`current` / `currentMany` / `subscribe` | app projection owner bridge -> exact-key JSON cut with epoch/seq fences |
 | `status.provider` (Experimental) | inert `BlueStatusProvider` candidate | status-provider owner -> core status compiler |
 | `editor.extensions` (Experimental) | inert `BlueEditorExtensionContribution` | interaction owner -> editor extension binding |
 | `editor.provider` (Experimental) | inert `BlueEditorProvider` candidate | editor-provider owner -> core editor-shell compiler |
 
 `@dsh-blue/blue-api` 负责 manifest 校验、capability 裁剪、重复 id、owner namespace 和生命周期。注册绑定调用方 Fiber，卸载自动清理。`commands`、`status`、`panes` 与三个 Experimental/reference facet 使用 inert registration buffer；`overlays` 只有持久 capability definition，每次 open 仍要求 live renderer owner。owner gap 后只恢复最新定义，不 replay action、overlay、gesture、notification 或旧 callback result。
 
-私有 `bluePluginControl.attachCapabilities()` 返回 generation-bound owner lease；重叠 capability 会撤销旧 lease 的全部 authority，snapshot/notification observe、gesture 与 semantic close 都由该 lease 收窄。`notifications.publish` 与 `session.read` 依赖 active owner，缺位操作返回 `BLUE_CAPABILITY_ABSENT`。通知 API 只有 publish，没有全局 observe，并执行 32 KiB/20 条每滚动秒的 Host 配额。`session.read` 是唯一公开 session facade；generic `session.act` 已移除，领域写入继续使用所属 Harness service、command 或 feature action。详见[会话只读数据](/plugins/session)。
+私有 `bluePluginControl.attachCapabilities()` 返回 generation-bound owner lease；重叠 capability 会撤销旧 lease 的全部 authority，snapshot/notification observe、gesture 与 semantic close 都由该 lease 收窄。`notifications.publish`、`session.read` 与 `session.projections.read` 依赖 active owner，缺位操作返回 `BLUE_CAPABILITY_ABSENT`；`null` 只表示 owner 在线但当前无 session。通知 API 只有 publish，没有全局 observe，并执行 32 KiB/20 条每滚动秒的 Host 配额。两个 session facade 都只读；generic `session.act` 已移除，领域写入继续使用所属 Harness service、command 或 feature action。详见[会话只读数据](/plugins/session)。
 
 Provider/editor facet 只保留为 Experimental/reference runtime，不属于 Stable v1 root。它们的 candidate 注册保持 inert，只有 settings 选中的 id 才会激活；持久化选择和 fallback 分别见[状态栏](/plugins/status#独占-status-provider)与[编辑器 Provider](/plugins/editor-providers)。
 
@@ -31,8 +32,8 @@ Provider/editor facet 只保留为 Experimental/reference runtime，不属于 St
 | Owner | Seam | 用途 |
 |---|---|---|
 | core | `blueScreen` / `blueKeymap` / `blueComponents` / `blueTerminalInfo` / theme | TUI kernel；只有 core 接触 pi-tui/raw terminal |
-| app | `blueSessionReader` | 当前 session 的 readonly snapshot；public bridge 只装配裁剪 reader |
-| app | `blueSessionProjections` | consistent-cut projection values、seq、children、subscription |
+| app | `blueSessionReader` | 当前 session 的 readonly snapshot；public host 再做 exact-field scope |
+| app | `blueSessionProjections` | current-session epoch + consistent-cut seq、children、subscription；public host 再做 exact-key/JSON/size scope |
 | app | `blueSessionActions` | followup/steer/interrupt、mode/model/preset/tool/skill/rewind/side-session 等领域 action |
 | conversation | `blueConversation` / `blueConversationFacts` | official replay/live transcript 与 status/pane facts |
 | transcript | transcript model、private status/bottom-pane registries、tool model service | readonly model/canonical node 到 TUI renderer |

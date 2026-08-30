@@ -163,6 +163,7 @@ function copySession(snapshot: BlueSessionSnapshot | null): BlueSessionSnapshot 
   })
   return Object.freeze({
     revision: snapshot.revision,
+    sessionEpoch: snapshot.sessionEpoch,
     id: snapshot.id,
     cwd: snapshot.cwd,
     status: snapshot.status,

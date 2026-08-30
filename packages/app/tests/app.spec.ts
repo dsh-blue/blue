@@ -760,8 +760,9 @@ describe('blue app driver', () => {
       },
     })
     await vi.waitFor(() => { expect(test.current()).not.toBeNull() })
-    expect(test.ctx.blueSessionProjections.current('todo')).toEqual({ asOfSeq: 3, value: 'parent' })
+    expect(test.ctx.blueSessionProjections.current('todo')).toEqual({ sessionEpoch: 1, asOfSeq: 3, value: 'parent' })
     expect(test.ctx.blueSessionProjections.currentMany(['todo', 'activity'])).toEqual({
+      sessionEpoch: 1,
       asOfSeq: 3,
       values: { todo: 'parent', activity: 'busy' },
     })
@@ -774,7 +775,7 @@ describe('blue app driver', () => {
     changed?.(test.current()!.session, 'todo', 'next', 5)
     changed?.({}, 'todo', 'ignored', 6)
     changed?.(child, 'todo', 'child-next', 7)
-    expect(parentChanges).toEqual([['todo', 'next', 5]])
+    expect(parentChanges).toEqual([['todo', 'next', 5, 1]])
     expect(childChanges).toEqual([{ id: 'child-1', key: 'todo', value: 'child-next', asOfSeq: 7 }])
     offParent()
     offChild()

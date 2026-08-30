@@ -370,6 +370,7 @@ export const BLUE_PLUGIN_MANIFEST_V1_SCHEMA_SOURCE: BluePluginManifestSchemaV1 =
           "uniqueItems": true,
           "items": {
             "type": "string",
+            "maxLength": 128,
             "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
           }
         }

@@ -18,9 +18,10 @@ import { createServer} from 'node:http'
 import type { StreamChunk} from '@deepseek-ai/dsh-llm'
 import { createUserMessage} from '@deepseek-ai/dsh-llm'
 import type { ApprovalOutcome, ApprovalRequest} from '@deepseek-ai/dsh-user-approval'
-import type { BluePluginApi } from '../../../api/src/contracts.ts'
+import type { BluePluginApi, BluePluginOpen } from '../../../api/src/contracts.ts'
 import * as publicBlueApi from '../../../api/src/index.ts'
 import { snapshotBluePluginHost, type BluePluginHostService} from '../../../api/src/host.ts'
+import { BLUE_PLUGIN_MANIFEST_SCHEMA_URL, type BluePluginManifestV1 } from '../../../api/src/protocol-v1.ts'
 // The theme modules come from the package subpaths — not relative core
 // source paths — because the /theme swap keys registry runtimes by apply
 // callback identity: only the module instance interaction's theme-switch
@@ -253,6 +254,68 @@ describe('blue whole-tree e2e', () => {
     expect(Object.isFrozen(snapshot)).toBe(true)
     expect(Object.isFrozen(snapshot.model)).toBe(true)
     await fiber.dispose()
+  })
+
+  it('composes canonical scoped session and projection reads through the app bridge', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    const manifest = {
+      $schema: BLUE_PLUGIN_MANIFEST_SCHEMA_URL,
+      schemaVersion: 1,
+      id: '@acme/e2e-session-data-v1',
+      entry: '.',
+      api: '^1.0.0-beta.1',
+      compatibility: { blue: '^0.1.1-rc.2', harness: '^0.1.1-rc.2', node: '>=22' },
+      capabilities: {
+        required: [
+          { name: 'session.read', version: '^1.0.0', resources: { fields: ['identity', 'status'] } },
+          { name: 'session.projections.read', version: '^1.0.0', resources: { keys: ['blueConversation'] } },
+        ],
+        optional: [],
+      },
+    } satisfies BluePluginManifestV1
+    let pluginApi: BluePluginOpen | undefined
+    const fiber = tree.ctx.plugin({
+      name: 'e2e-public-session-data-v1',
+      inject: ['bluePluginHost'],
+      apply(pluginCtx) {
+        const opened = pluginCtx.bluePluginHost.open(pluginCtx, manifest)
+        if (!opened.ok) throw new Error(opened.message)
+        pluginApi = opened.value
+      },
+    })
+    await fiber.await()
+
+    expect(pluginApi!.grants).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'session.read', availability: 'ready' }),
+      expect.objectContaining({ name: 'session.projections.read', availability: 'ready' }),
+    ]))
+    const session = pluginApi!.session!.current()
+    expect(session).toMatchObject({
+      ok: true,
+      value: { revision: expect.any(Number), sessionEpoch: expect.any(Number), id: String(agent.id), status: 'idle' },
+    })
+    if (session.ok && session.value !== null) {
+      expect(Object.keys(session.value)).toEqual(['revision', 'sessionEpoch', 'id', 'status'])
+      expect(Object.isFrozen(session.value)).toBe(true)
+    }
+    const projection = pluginApi!.projections!.currentMany(['blueConversation'])
+    expect(projection).toMatchObject({
+      ok: true,
+      value: {
+        sessionEpoch: expect.any(Number),
+        asOfSeq: expect.any(Number),
+        values: { blueConversation: { entries: [], streaming: false } },
+      },
+    })
+    if (projection.ok && projection.value !== null) {
+      expect(Object.isFrozen(projection.value)).toBe(true)
+      expect(Object.isFrozen(projection.value.values.blueConversation)).toBe(true)
+    }
+
+    await fiber.dispose()
+    expect(pluginApi!.session!.current()).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
+    expect(pluginApi!.projections!.current('blueConversation')).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
   })
 
   it('hot-mounts additive public pane, status, command, and notification contributions', async () => {

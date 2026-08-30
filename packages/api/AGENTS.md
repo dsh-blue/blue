@@ -95,15 +95,59 @@ with the active frontend-tree owner Fiber. Consumer unload removes its
 registrations and permanently fences retained facades; host unload clears the
 buffers. Direct standalone `new BluePluginHostService()` construction does not
 attach the durable leases and retains the capability-absent embedding contract.
-`notifications.publish` and `session.read` still require their active owners;
-they are not durable registration buffers. Notification consumers receive a
-publish-only facade; observation is available only through the composition-
-private control. Session ownership uses that same closure-bound control. App is
-the sole active reader generation, and `session.read` contains only
-`current`/`subscribe`. Every snapshot has a required monotonic `revision`, is
-validated, cloned, and deeply frozen in the host, and stale or invalid
-publications are ignored. A retained live reader returns null during an owner
-gap and recovers on owner reload, while a disposed consumer stays fenced.
+`notifications.publish`, `session.read`, and `session.projections.read` require
+their active owners; they are not durable registration buffers. Notification
+consumers receive a publish-only facade; observation is available only through
+the composition-private control. Session ownership uses that same closure-
+bound control. App is the sole active reader/projection generation. Canonical
+`session.read` contains result-bearing `current`/`subscribe`; every publication
+has required `revision` and `sessionEpoch` fences, is validated, cloned, and
+deeply frozen, and is scoped to the exact granted fields. `null` means the
+owner is online without a current session. An owner gap returns
+`BLUE_CAPABILITY_ABSENT`; unload permanently returns `BLUE_ACTION_REJECTED`.
+Every owner string is limited to 16,384 UTF-8 bytes and the complete canonical
+snapshot to 65,536 encoded bytes before it can enter host state.
+The host retains the epoch/revision/id high-water and a canonical snapshot
+fingerprint across owner gaps. A session id cannot change inside one epoch;
+lower positions and conflicting data at an equal position are rejected, while
+an exactly equal owner reload may restore visibility. Same-id/new-epoch
+snapshots may restart at a lower revision. Publishing `null` clears the visible
+session and replays projection subscriptions so their old session values do not
+survive the transition.
+
+Canonical `session.projections.read` contains result-bearing `current`,
+consistent-cut `currentMany`, and key-set `subscribe`, all scoped to the exact
+granted keys. A cut carries `sessionEpoch` and `asOfSeq`; each value is bounded
+to 262,144 encoded bytes and the complete metadata-plus-values cut to 1,048,576
+bytes. Values must be finite, acyclic JSON and are detached and deeply frozen.
+Projection resource keys use canonical ASCII syntax and stop at 128 characters.
+The pre-clone structural budget is shared by the complete requested cut: depth
+64, 16,384 JSON values, 16,384 inspected own properties, 262,144 encoded bytes
+per primitive, and 1,024 UTF-8 bytes per nested object key. Descriptor reads
+start only after the own-key count fits; exact post-clone value/cut checks remain
+authoritative for JSON syntax and escaping overhead.
+Requested key-array length is rejected before entry traversal when it exceeds
+the exact grant. The global epoch/sequence high-water and canonical per-key
+fingerprints survive owner gaps; JSON object key order is not identity, while
+conflicting values at one position return `BLUE_STALE`. Fingerprints retained
+at one position stop at 256 distinct keys or 4,194,304 UTF-8 bytes and are
+cleared when the epoch/sequence fence advances. Every valid source event
+advances that global fence before interested subscriptions replay. When the
+active session owner has published `null`, projection reads return `null`
+without consulting the projection source.
+Unhandled owner throws map to a fixed internal-failure message through a
+non-reflective branded-error path; only host-owned session-data errors retain
+their controlled detail. Key unload and missing backing data produce structured
+absence without stale reuse. Owner reload first replays the current cut, and
+owner identity plus epoch/sequence fences reject old or late callbacks. Reader
+and projection source registrations require an own data `dispose` function;
+synchronous owner cleanup prevents source subscription, and every fanout walks
+a stable listener snapshot. A source subscription returned after reentrant
+owner cleanup is disposed. The owner-only
+`attachSessionProjections` seam is
+separate from generic capability attachment and never enters the guarded host.
+Its source type is composition-private and is not exported from the package
+root; app wiring relies on `bluePluginControl` contextual typing.
 Generic `session.act` and its requester types are absent from the public API;
 domain writes continue through their owning Harness or Blue-internal action
 service. Host state lives in a Host-realm `Symbol.for`-keyed WeakMap rather than
@@ -112,7 +156,7 @@ link/store copies in the same lockstep profile share it (the D37 cross-store
 lesson), while a dynamic VM sees only `version/open` on the guarded service.
 
 The public Beta vocabulary is `commands`, `notifications.publish`, `status`,
-`panes`, `overlays`, and `session.read`. The retained
+`panes`, `overlays`, `session.read`, and `session.projections.read`. The retained
 `editor.extensions`, `status.provider`, and `editor.provider` facets are
 Experimental/reference runtime and are not part of the Stable v1 target. The
 two provider registries contain inert candidates; user configuration, never
@@ -133,9 +177,9 @@ second and cancel pending coalesced ticks when their contribution is disposed.
 Owner gaps retain and continue admitting definitions to the six durable
 registration buffers; replacement owners replay them from their initial
 snapshot. Overlay opens and notification publication remain unavailable without
-their respective renderer and interaction owners; session-owner gaps expose a
-null read snapshot until the app owner reloads. Aggregate snapshots,
-notification observation, gesture minting,
+their respective renderer and interaction owners; canonical session/projection
+owner gaps return structured capability absence until the app owner reloads.
+Aggregate snapshots, notification observation, gesture minting,
 semantic close, and owner attachment are reachable only through
 `bluePluginControl`, which the default bundle isolates with raw app services in
 its private runtime realm. The package root exports no callable owner helper.
@@ -194,13 +238,14 @@ add a public JavaScript entry by adding its manifest export and matching
 `src/<entry>.ts`, then run `pnpm check:pack`. JSON schema/corpus exports point
 at `schema/*.json`, which is explicitly included in the tarball whitelist.
 Legacy inline manifests and the six PR #77 flat example manifests remain an
-explicit transition lane while P3/P4 owners converge; any manifest carrying
+explicit transition lane while P3 UI owners converge; any manifest carrying
 `$schema` is always validated and admitted as v1 and cannot fall back to that
 lane. Canonical admission returns exact grants with immutable resources,
 limits, quotas, availability, and owner generation. Required requests fail
 atomically; optional requests may produce partial grants plus structured
-unavailable records. The current catalog deliberately marks
-`session.projections.read` unsupported until P4.
+unavailable records. The catalog supports `session.projections.read`; its app
+bridge owns readiness, so admission during a bridge gap is unavailable rather
+than unsupported.
 
 P3 host enforcement mirrors the catalog at the public boundary: one consumer
 may retain at most 64 command and 64 additive-status definitions; notification

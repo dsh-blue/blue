@@ -89,8 +89,8 @@ export function createDshRemoteWireClient(connection: DshRemoteConnectionClient)
   }
 }
 
-function snapshotFromRow(sessionId: string, row?: RemoteSessionList['items'][number], revision = 0): BlueSessionSnapshot {
-  return { revision, id: sessionId, cwd: row?.cwd ?? '', status: row?.running === true ? 'running' : 'idle', mode: 'normal' }
+function snapshotFromRow(sessionId: string, row?: RemoteSessionList['items'][number], revision = 0, sessionEpoch = 0): BlueSessionSnapshot {
+  return { revision, sessionEpoch, id: sessionId, cwd: row?.cwd ?? '', status: row?.running === true ? 'running' : 'idle', mode: 'normal' }
 }
 
 function applyEvent(snapshot: BlueSessionSnapshot, event: NonNullable<MuxFrame['event']>): BlueSessionSnapshot {
@@ -176,7 +176,7 @@ export class DshRemoteTransport implements RemoteTransport {
       })
       watermark = Math.max(watermark, historyWatermark(history))
     }
-    let snapshot = snapshotFromRow(sessionId, row, this.snapshots.get(sessionId)?.revision ?? 0)
+    let snapshot = snapshotFromRow(sessionId, row, this.snapshots.get(sessionId)?.revision ?? 0, this.attachmentEpochs.get(sessionId) ?? 0)
     for (const envelope of this.recent.get(sessionId) ?? []) {
       if (envelope.seq <= watermark) continue
       snapshot = { ...snapshot, revision: Math.max(snapshot.revision, envelope.event.revision), status: envelope.event.status }
@@ -421,7 +421,7 @@ export class DshRemoteTransport implements RemoteTransport {
     if (this.detachedSessions.has(sessionId)) return
     const events = this.recent.get(sessionId) ?? []
     if ((events.at(-1)?.seq ?? -1) >= frame.event.seq) return
-    const previous = this.snapshots.get(sessionId) ?? snapshotFromRow(sessionId)
+    const previous = this.snapshots.get(sessionId) ?? snapshotFromRow(sessionId, undefined, 0, this.attachmentEpochs.get(sessionId) ?? 0)
     const snapshot = applyEvent(previous, frame.event)
     this.snapshots.set(sessionId, snapshot)
     const envelope: EventEnvelope<BlueSessionSnapshot> = { sessionId, seq: frame.event.seq, event: snapshot }

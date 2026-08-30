@@ -19,7 +19,7 @@ describe('DshRemoteTransport', () => {
   it('negotiates health, snapshots, maps events, and tears down streams', async () => {
     const f = fixture(); const transport = new DshRemoteTransport(f.client); const signal = new AbortController().signal
     await expect(transport.negotiate(signal)).resolves.toEqual({ protocol: '1', capabilities: ['session', 'action', 'projection', 'question', 'approval'] })
-    await expect(transport.snapshot('s1', signal)).resolves.toMatchObject({ watermark: 3, value: { id: 's1', cwd: '/work', status: 'running' } })
+    await expect(transport.snapshot('s1', signal)).resolves.toMatchObject({ watermark: 3, value: { sessionEpoch: 0, id: 's1', cwd: '/work', status: 'running' } })
     const seen: number[] = []; const off = transport.subscribe('s1', 3, event => seen.push(event.seq)); const second = transport.subscribe('s1', 3, () => undefined); f.touch(); f.emit({ type: 'session/event', sessionId: 'other', event: { type: 'turn/start', seq: 4 } }); f.emit({ type: 'session/subscribed', sessionId: 's1' }); f.emit({ type: 'session/event', sessionId: 's1', event: { type: 'turn/start', seq: 3 } }); f.emit({ type: 'session/event', sessionId: 's1', event: { type: 'other', seq: 4 } }); f.emit({ type: 'session/event', sessionId: 's1', event: { type: 'turn/end', seq: 5 } }); expect(seen).toEqual([4, 5])
     vi.mocked(f.client.call).mockResolvedValue({ items: [{ sessionId: 's1', cwd: '/fresh', running: true, projections: { asOfSeq: 10 } }] })
     await expect(transport.snapshot('s1', signal)).resolves.toMatchObject({ watermark: 10, value: { revision: 3, cwd: '/fresh', status: 'running' } })
@@ -27,7 +27,7 @@ describe('DshRemoteTransport', () => {
     await expect(transport.snapshot('s1', signal)).resolves.toMatchObject({ watermark: 11, value: { revision: 4, status: 'idle' } })
     off(); second(); transport.detach('s1')
     f.emit({ type: 'session/event', sessionId: 's1', event: { type: 'turn/end', seq: 12 } })
-    await expect(transport.snapshot('s1', signal)).resolves.toMatchObject({ watermark: 10, value: { revision: 0, status: 'running' } })
+    await expect(transport.snapshot('s1', signal)).resolves.toMatchObject({ watermark: 10, value: { revision: 0, sessionEpoch: 1, status: 'running' } })
     transport.dispose(); expect(f.client.stop).toHaveBeenCalledTimes(2)
   })
   it('handles protocol errors, aborts, writes, and question answers', async () => {

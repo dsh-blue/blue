@@ -187,8 +187,58 @@ export interface BlueEditorExtensionRegistry { register(contribution: BlueEditor
 export interface BlueStatusProviderRegistry { register(provider: BlueStatusProvider): BlueResult<BlueRefreshRegistration>, list(): readonly BlueStatusProvider[] }
 export interface BlueEditorProviderRegistry { register(provider: BlueEditorProvider): BlueResult<BlueRefreshRegistration>, list(): readonly BlueEditorProvider[] }
 
-export interface BlueSessionSnapshot { readonly revision: number, readonly id: string, readonly cwd: string, readonly status: 'idle' | 'running' | 'waiting' | 'failed', readonly mode: 'normal' | 'plan' | 'yolo', readonly model?: { readonly id: string, readonly provider?: string, readonly effort?: string } }
+/** Full app-owned snapshot accepted only by the composition-private owner seam. */
+export interface BlueSessionSnapshot { readonly revision: number, readonly sessionEpoch: number, readonly id: string, readonly cwd: string, readonly status: 'idle' | 'running' | 'waiting' | 'failed', readonly mode: 'normal' | 'plan' | 'yolo', readonly model?: { readonly id: string, readonly provider?: string, readonly effort?: string } }
 export interface BlueSessionReader { current(): BlueSessionSnapshot | null, subscribe(listener: (snapshot: BlueSessionSnapshot | null) => void): BlueRegistration }
+
+/** Resource names accepted by the canonical `session.read` capability. */
+export type BlueSessionReadField = 'identity' | 'cwd' | 'status' | 'mode' | 'model'
+
+/**
+ * Field-scoped public session snapshot. Revision and epoch are mandatory
+ * fencing metadata; every user field is present only when its resource was
+ * granted (and, for model, when the owner has a selected model).
+ */
+export interface BluePluginSessionSnapshot {
+  readonly revision: number
+  readonly sessionEpoch: number
+  readonly id?: string
+  readonly cwd?: string
+  readonly status?: BlueSessionSnapshot['status']
+  readonly mode?: BlueSessionSnapshot['mode']
+  readonly model?: BlueSessionSnapshot['model']
+}
+
+/** Canonical field-scoped session reader. */
+export interface BluePluginSessionReader {
+  current(): BlueResult<BluePluginSessionSnapshot | null>
+  subscribe(listener: (result: BlueResult<BluePluginSessionSnapshot | null>) => void): BlueResult<BlueRegistration>
+}
+
+/** One projection value from a consistent current-session cut. */
+export interface BlueSessionProjectionSnapshot {
+  readonly sessionEpoch: number
+  readonly asOfSeq: number
+  readonly key: string
+  readonly value: BlueJson
+}
+
+/** Several granted projection values read from one consistent cut. */
+export interface BlueSessionProjectionCut {
+  readonly sessionEpoch: number
+  readonly asOfSeq: number
+  readonly values: Readonly<Record<string, BlueJson>>
+}
+
+/** Canonical key-scoped projection reader. */
+export interface BlueSessionProjectionReader {
+  current(key: string): BlueResult<BlueSessionProjectionSnapshot | null>
+  currentMany(keys: readonly string[]): BlueResult<BlueSessionProjectionCut | null>
+  subscribe(
+    keys: readonly string[],
+    listener: (result: BlueResult<BlueSessionProjectionCut | null>) => void,
+  ): BlueResult<BlueRegistration>
+}
 export type BlueRequestState = 'started' | 'streaming' | 'completed' | 'failed' | 'aborted' | 'interrupted'
 export interface BlueRequestRef { readonly sessionEpoch: number, readonly requestEpoch: number, readonly scope: 'main' | 'btw' | 'subagent' }
 export interface BlueRequestLifecycle { readonly ref: BlueRequestRef, readonly state: BlueRequestState, readonly reason?: string }
@@ -208,6 +258,12 @@ export interface BluePluginApi {
   readonly statusProviders?: BlueStatusProviderRegistry
   readonly editorProviders?: BlueEditorProviderRegistry
   readonly session?: BlueSessionReader
+}
+
+/** Canonical v1 facet view after exact resource negotiation. */
+export interface BluePluginApiV1 extends Omit<BluePluginApi, 'session'> {
+  readonly session?: BluePluginSessionReader
+  readonly projections?: BlueSessionProjectionReader
 }
 
 /** Resources granted to one canonical v1 capability. */
@@ -249,9 +305,9 @@ export interface BlueCapabilityUnavailable {
 }
 
 /** Canonical v1 open result. Facets are mirrored at the top level for Beta callers. */
-export interface BluePluginOpen extends BluePluginApi {
+export interface BluePluginOpen extends BluePluginApiV1 {
   /** Facet-only API view; no grant-management or owner authority is exposed. */
-  readonly api: BluePluginApi
+  readonly api: BluePluginApiV1
   readonly grants: readonly BlueCapabilityGrant[]
   readonly unavailableOptional: readonly BlueCapabilityUnavailable[]
 }

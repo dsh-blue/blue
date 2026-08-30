@@ -66,7 +66,7 @@ function attach(host: BluePluginHostService, capabilities: BluePluginManifest['c
 }
 
 function sessionValue(revision = 1, id = 'session-one'): BlueSessionSnapshot {
-  return { revision, id, cwd: '/workspace', status: 'idle', mode: 'normal', model: { id: 'model', provider: 'provider', effort: 'high' } }
+  return { revision, sessionEpoch: 1, id, cwd: '/workspace', status: 'idle', mode: 'normal', model: { id: 'model', provider: 'provider', effort: 'high' } }
 }
 
 function sessionSource(initial: BlueSessionSnapshot | null = sessionValue()) {
@@ -980,10 +980,10 @@ describe('BluePluginHostService', () => {
     const seen: Array<BlueSessionSnapshot | null> = []
     const subscription = read.value.session!.subscribe(snapshot => { seen.push(snapshot) })
     expect(seen.map(snapshot => snapshot?.revision ?? null)).toEqual([1])
-    source.publish({ revision: 2, id: 'session-one', cwd: '/next', status: 'running', mode: 'plan' })
-    source.publish({ revision: 3, id: 'session-one', cwd: '/next', status: 'running', mode: 'plan', model: { id: 'minimal' } })
-    source.publish({ revision: 1, id: 'session-one', cwd: '/stale', status: 'failed', mode: 'yolo' })
-    source.publish({ revision: -1, id: 'invalid', cwd: '/', status: 'idle', mode: 'normal' } as never)
+    source.publish({ revision: 2, sessionEpoch: 1, id: 'session-one', cwd: '/next', status: 'running', mode: 'plan' })
+    source.publish({ revision: 3, sessionEpoch: 1, id: 'session-one', cwd: '/next', status: 'running', mode: 'plan', model: { id: 'minimal' } })
+    source.publish({ revision: 1, sessionEpoch: 1, id: 'session-one', cwd: '/stale', status: 'failed', mode: 'yolo' })
+    source.publish({ revision: -1, sessionEpoch: 1, id: 'invalid', cwd: '/', status: 'idle', mode: 'normal' } as never)
     expect(seen.map(snapshot => snapshot?.revision ?? null)).toEqual([1, 2, 3])
     expect(seen[2]?.model).toEqual({ id: 'minimal' })
     expect(Object.isFrozen(seen[1])).toBe(true)
@@ -1013,11 +1013,11 @@ describe('BluePluginHostService', () => {
     late(sessionValue(2, 'late-session'))
     expect(opened.value.session!.current()).toBeNull()
 
-    const secondSource = sessionSource(sessionValue(1, 'session-two'))
+    const secondSource = sessionSource({ ...sessionValue(1, 'session-two'), sessionEpoch: 2 })
     const replayingReader = {
       current: secondSource.reader.current,
       subscribe(listener: (snapshot: BlueSessionSnapshot | null) => void) {
-        listener(sessionValue(2, 'session-two'))
+        listener({ ...sessionValue(2, 'session-two'), sessionEpoch: 2 })
         return secondSource.reader.subscribe(() => {})
       },
     }
@@ -1030,6 +1030,26 @@ describe('BluePluginHostService', () => {
     expect(opened.value.session!.current()).toBeNull()
     const inert = opened.value.session!.subscribe(() => { throw new Error('inert subscription ran') })
     expect(inert.disposed).toBe(true)
+  })
+
+  it('does not replay a legacy session subscription disposed by its consumer effect', () => {
+    const host = new BluePluginHostService(new Context())
+    attachBluePluginHostSessionReader(host, consumer(), sessionSource().reader)
+    let effects = 0
+    const immediateConsumer = {
+      effect(callback: () => void | (() => void)): void {
+        effects += 1
+        const cleanup = callback()
+        if (effects > 1 && typeof cleanup === 'function') cleanup()
+      },
+    }
+    const opened = host.open(immediateConsumer, manifest(['session.read']))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    const seen: Array<BlueSessionSnapshot | null> = []
+    const subscription = opened.value.session!.subscribe(snapshot => { seen.push(snapshot) })
+    expect(subscription.disposed).toBe(true)
+    expect(seen).toEqual([])
   })
 
   it('validates the unique session owner and its initial snapshot boundary', () => {
@@ -1943,7 +1963,7 @@ describe('BluePluginHostService', () => {
     })
     expect(snapshotBluePluginHost(host).overlays).toEqual([])
     const overlappingOwner = attach(host, ['commands', 'status', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'])
-    await ctx.fiber.dispose()
     overlappingOwner.dispose()
+    await ctx.fiber.dispose()
   })
 })
