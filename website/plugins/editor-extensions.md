@@ -2,6 +2,9 @@
 
 > 状态：**Experimental / reference**。`editor.extensions` 保留成熟 runtime 和 fixture 供共创验证，但不属于 Stable v1 root；在后续真实消费者证据完成前，名称和 contract 可以变化。
 
+本页代码使用旧 inline transition manifest。P1 canonical schema 不接受该 facet；
+新插件不要把它与七项 Public Beta capability 混在 canonical manifest 中。
+
 `editor.extensions` 在 Blue 自有编辑引擎周围增加 renderer-neutral 的提示、诊断、补全、action 与提交转换。扩展不能读取 draft、history、cursor 或 IME，也不能替换编辑引擎；需要重排整个 shell 的场景属于独占 `editor.provider`，不在本能力内。
 
 ## 注册

@@ -4,6 +4,13 @@ The new public boundary is canonical nodes plus capability-scoped registries.
 Migration does not wrap an old renderer object; it transfers layout, focus,
 width, and lifecycle ownership to Blue.
 
+::: warning Canonical versus transition lanes
+The P1–P4 canonical schema accepts only the seven Public Beta capabilities.
+Panes, overlays, and additive status in the table below are canonical migration
+targets. Provider/editor rows remain Experimental/reference transition facets
+and cannot appear in a canonical manifest.
+:::
+
 | Old use | New use | Migration action |
 | --- | --- | --- |
 | `dock` / `BlueDockContribution` | `panes` / `BluePaneContribution` | set `placement: 'bottom'`, rename `view` to `render`, express budget through `size` |
@@ -18,14 +25,11 @@ width, and lifecycle ownership to Blue.
 
 ```ts
 // Old: capabilities: ['dock']; api.dock.register({ view, preferredRows })
-const opened = ctx.bluePluginHost.open(ctx, {
-  id: 'acme.activity',
-  api: '^1.0.0-beta.1',
-  capabilities: ['panes'],
-})
+// New: manifest canonically requests panes with the bottom placement.
+const opened = ctx.bluePluginHost.open(ctx, manifest)
 if (!opened.ok) return
 
-opened.value.panes?.register({
+opened.value.api.panes?.register({
   id: 'acme.activity.log',
   title: 'Activity',
   placement: 'bottom',
@@ -50,7 +54,7 @@ fits, Blue follows `narrow` or parks the pane; plugins do not inspect
 - keep `render()` synchronous, pure, and free of I/O; do asynchronous work in a domain service and request redraw through registration `refresh()`;
 - honor event-context `signal` and `revision`, ignoring late results after abort.
 
-## Provider migration
+## Experimental provider migration
 
 Installing a provider only adds a candidate. It must not write
 `blue.statusProvider` or `blue.editorProvider`; selection, atomic swap, failure
@@ -58,7 +62,7 @@ rollback, and breakers belong to the owner. An editor provider may rearrange
 shell metadata but must contain exactly one visible `editor-control`; Blue
 always retains the draft, history, focus, and IME engine.
 
-After migration, run the static validator, independent packed fixture, Fiber
+After a canonical migration, run the static validator, independent packed fixture, Fiber
 unload, late-result, and width scans. Use the [example catalog](/en/plugins/examples)
 for runnable references and the [public UI kit](/en/plugins/ui-kit) for node
 construction.

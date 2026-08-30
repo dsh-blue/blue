@@ -4,6 +4,13 @@
 六行组合在一起的验证 bundle。它们是可打包发布的参考实现，但不进入 Blue 默认
 bundle 或当前 release set。
 
+::: warning 示例的契约层级
+这六个运行插件来自 PR #77，`blue.plugin.json` 仍走旧 flat transition lane；两个
+provider 也只属于 Experimental/reference。它们证明 public UI、打包、生命周期和宽度
+行为，但**不是** P1 canonical manifest 模板。新插件的 manifest 只从
+[快速开始](/plugins/quickstart)复制。
+:::
+
 | 包 | Capability | 证明的契约 |
 | --- | --- | --- |
 | `@dsh-blue-example/user-kit` | 无 | 纯组件 library；被两个插件共同依赖，安装不贡献 UI |
@@ -42,14 +49,14 @@ Status/editor provider 安装后仍保持 inert。只有用户在 `settings.yaml
 pnpm check:examples
 ```
 
-门禁先对八个 package 运行静态 validator，再分别对当前与上一条 Harness 线：
+门禁先对八个 package 运行兼容 validator，再分别对当前与上一条 Harness 线：
 
 - `pnpm pack` API、UI、core、kit、六个插件与 composition；
 - 安装进一个无 workspace link 的临时 npm 项目；
 - 只从安装后的 public exports 导入；
-- 校验 manifest、单行 patch、六行 composition、无 `src/` 与本地协议泄漏；
-- 执行七个场景和 20/40/80/120 列宽度扫描；
-- 要求 `declared === executed === 7`、零 skipped/failure 且临时目录已清理。
+- 校验 transition manifest、单行 patch、六行 composition、无 `src/` 与本地协议泄漏；
+- 执行八个场景和 20/40/80/120 列宽度扫描；
+- 要求 `declared === executed === 8`、零 skipped/failure 且临时目录已清理。
 
 开发自己的插件时从[快速开始](/plugins/quickstart)复制最小骨架，再按
 [公共 UI Kit](/plugins/ui-kit)抽取共享组件。

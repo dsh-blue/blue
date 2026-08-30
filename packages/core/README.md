@@ -57,5 +57,5 @@ None; the package adds nothing to any model request prefix.
 ## Known Limitations and Deferred Work
 
 - **Crash-log directory is pi's default** — the renderer writes its width-overflow crash log to `~/.pi/agent` (or `PI_CODING_AGENT_DIR`) because pi-tui hardcodes that default and Blue has no dsh-owned path to thread through yet.
-- **Public UI capabilities remain Beta** — the pane/overlay host bridge is wired and generation-fenced, but protocol stability still depends on the P3 packed fixture, ecosystem consumers, profile acceptance, and later P7 promotion evidence.
+- **Public UI capabilities remain Beta** — the P3 packed fixture, generation fences, and real-profile acceptance are complete; protocol stability still depends on ecosystem consumers and later P7 promotion evidence.
 - **Keymap conflict scope** — conflict detection covers actions registered through `ctx.blueKeymap`; pi-tui components (Editor, SelectList) resolve their own bindings from pi-tui's global keybindings table, which this package leaves untouched.

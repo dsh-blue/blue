@@ -25,18 +25,29 @@ The arguments of `execute(args, options)`:
 
 ## Full example
 
-An abortable command that appends text to a file:
+An abortable command that appends text to a file. The `manifest` below is the
+canonical `blue.plugin.json` result from `validateBluePluginManifestV1()`. Its
+capability request includes at least:
+
+```json
+{
+  "capabilities": {
+    "required": [
+      { "name": "commands", "version": "^1.0.0", "resources": { "names": ["clip"] } }
+    ],
+    "optional": [
+      { "name": "notifications.publish", "version": "^1.0.0" }
+    ]
+  }
+}
+```
 
 ```ts
-const opened = ctx.bluePluginHost.open(ctx, {
-  id: 'my-plugin.clipboard',
-  api: '^1.0.0-beta.1',
-  capabilities: ['commands', 'notifications.publish'],
-})
+const opened = ctx.bluePluginHost.open(ctx, manifest)
 if (!opened.ok) return
-const api = opened.value
+const api = opened.value.api
 
-api.commands?.register({
+const registered = api.commands?.register({
   id: 'clip',
   label: 'Append text to ~/clip.log',
   execute: async (args, { signal } = {}) => {
@@ -47,22 +58,26 @@ api.commands?.register({
       return { ok: false, code: 'BLUE_ABORTED', message: 'aborted' }
     }
     await appendFile(`${homedir()}/clip.log`, `${args.join(' ')}\n`)
-    api.notifications?.publish({
+    const published = api.notifications?.publish({
       id: 'clip.saved',
       view: { kind: 'text', content: `saved ${args.length} word(s)` },
       tone: 'success',
     })
+    if (published !== undefined && !published.ok) return published
     return { ok: true, value: undefined }
   },
 })
+if (registered !== undefined && !registered.ok) ctx.logger.warn(registered.message)
 ```
 
 ## Behavior details
 
+- **Names are exact resources**: the canonical manifest declares 1–64 command names. Registering an ungranted name returns `BLUE_RESOURCE_DENIED`, and one consumer may retain at most 64 command contributions;
 - **Duplicate ids are rejected**: `register()` returns `BLUE_DUPLICATE_ID`. Colliding with a built-in command or another plugin's command fails at registration time too — always check `register`'s return value and degrade on failure;
 - **The return value is the user feedback**: the `message` of `{ ok: false, code, message }` is shown as error text in the editor notice bar; an exception thrown by `execute` is backstopped by the bridge layer into `plugin command failed: ...` — a backstop is not a contract, so return structured errors on your own;
 - **Success is silent**: `{ ok: true }` produces no output. To give the user feedback, request [`notifications.publish`](/en/plugins/notifications) and publish one;
 - **Unload means disappearance**: registrations bind to the caller's Fiber; once the plugin unloads, the command is removed from the registry and vanishes from completion and `/help` alike.
+- **Old callbacks cannot commit**: owner replacement, consumer unload, or signal abort rejects late results from the old command generation. The Host never replays command actions after an owner gap.
 
 ## Common pitfalls
 

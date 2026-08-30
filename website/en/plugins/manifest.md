@@ -1,25 +1,60 @@
-# Plugin Package Specification
+# Plugin package specification
 
-Published Blue plugins must include `blue.plugin.json` at the package root and declare it from `package.json`:
+A canonical `0.1.1-rc.2` plugin package ships `blue.plugin.json` at its root.
+Package discovery reads only the `package.json.blue.manifest` pointer:
 
 ```json
-{ "blue": { "manifest": "./blue.plugin.json" } }
+{
+  "name": "@acme/blue-clock",
+  "exports": {
+    ".": { "types": "./lib/index.d.ts", "default": "./lib/index.js" },
+    "./blue.plugin.json": "./blue.plugin.json"
+  },
+  "files": ["lib/**/*", "blue.plugin.json", "cordis.patch.yml"],
+  "blue": { "manifest": "./blue.plugin.json" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}
 ```
 
-The manifest requires `schemaVersion`, `id`, `entry`, `api`, and `capabilities`, and should declare `blue`, `harness`, and `node` compatibility ranges. The `id` must match the npm package name, the entry point's exported `name`, and the loader name in `cordis.patch.yml`.
+## Canonical manifest
 
-The installer checks the manifest, exports/files, static boundaries, packed fixture, lifecycle, and width behavior before activation. Failed validation is rejected by default; `--force` only places the package in quarantine and never auto-loads it. Validation is not a security sandbox: third-party npm/GitHub code still requires trust.
+Use the complete copyable manifest in the [quickstart](/en/plugins/quickstart), or the machine examples in the public [corpus](/schema/blue.plugin.v1.corpus.json). Every top-level field is required:
 
-## Install and Search
+| Field | Contract |
+| --- | --- |
+| `$schema` | exactly `https://dsh-blue.dev/schema/blue.plugin.v1.schema.json` |
+| `schemaVersion` | currently exactly `1` |
+| `id` | must equal `package.json.name` |
+| `entry` | a public package `exports` subpath such as `.` or `./blue`, never a `lib/` file path |
+| `api` | Host API semver range; currently `^1.0.0-beta.1` |
+| `compatibility` | required `blue`, `harness`, and `node` semver ranges |
+| `capabilities` | discriminated requests split into `required` and `optional`, each with a version and applicable exact resources |
+
+The npm package name, exported Cordis entry `name`, and `cordis.patch.yml` loader-row `id` are three independent namespaces. Only `manifest.id === package.json.name` is a distribution contract. Keeping the others aligned may simplify diagnostics, but validation does not require them to match.
+
+## Machine contract
+
+- the [Draft 2020-12 schema](/schema/blue.plugin.v1.schema.json) is the shape authority and sets `additionalProperties: false`;
+- the [positive/negative corpus](/schema/blue.plugin.v1.corpus.json) locks schema, runtime-parser, and validator conclusions together;
+- `@dsh-blue/blue-api/protocol/v1` exports the generated readonly type, schema, parser, and product/protocol map;
+- `@dsh-blue/blue-api/capabilities/v1` exports the catalog and negotiator for the seven Public Beta capabilities.
+
+Canonical `open()` admits required requests atomically and returns exact grants plus `unavailableOptional` for optional requests. A manifest carrying `$schema` never falls back to the old flat compatibility lane.
+
+## Current validation path
+
+`0.1.1-rc.2` ships the shared parser, repository validator, and packed-install fixture, but the latter two still run from a Blue checkout. P5 will provide the no-clone author commands. The current installer neither runs the fixture automatically nor provides a `--force` quarantine security boundary.
 
 ```sh
-blue plugin search doudizhu
-blue plugin info @dsh-blue/blue-doudizhu
-blue plugin install @dsh-blue/blue-doudizhu
+node script/blue-plugin-validate.mjs /path/to/my-plugin
+node script/blue-plugin-fixture.mjs /path/to/my-plugin --install
+node script/blue-plugin-fixture.mjs /path/to/my-plugin --install --harness-line 0.1.1-rc.1
 ```
 
-The running Blue process supports `/plugin search`, `/plugin info`, and `/plugin install`; restart Blue after installation to activate it. GitHub sources must be pinned to a commit, for example `github:dsh-blue/blue-doudizhu@<sha>`.
+See [Debugging and validation](/en/plugins/testing) for report details and acceptance conditions. These checks are not a security sandbox; users must still trust third-party npm/GitHub code.
 
-## Creative Mode
+## Installation and creative mode
 
-Use `cordis-plugin-development` to validate a prototype, then `blue-plugin-development` to produce the persistent package, and finally run `blue-plugin-validate` and the packed fixture. See the [Creative mode walkthrough](/en/plugins/creative-mode).
+The launcher's read-only marketplace commands are `blue plugin list|search|info`. Installation mutations use `blue plugin add <spec>` and execute through the dsh profile owner. The running TUI also offers `/plugin install`; restart after installation.
+
+Creative mode currently supports inspect/define/run/update/stop/rollback for ephemeral in-session prototypes. The deterministic "accepted prototype -> local persistent package -> validator -> dual-Harness fixture" loop belongs to P5 and is not shipped by this RC.

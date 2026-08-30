@@ -34,17 +34,15 @@
 
 ## 下游贡献
 
-第三方插件先打开 status capability，再注册 `BlueStatusEntryContribution`：
+第三方插件先用已校验的 canonical `manifest` 打开 `status` capability（required
+请求包含 `{ "name": "status", "version": "^1.0.0" }`），再注册
+`BlueStatusEntryContribution`：
 
 ```ts
-const opened = ctx.bluePluginHost.open(ctx, {
-  id: 'my-plugin.build',
-  api: '^1.0.0-beta.1',
-  capabilities: ['status'],
-})
+const opened = ctx.bluePluginHost.open(ctx, manifest)
 if (!opened.ok) throw new Error(opened.message)
 
-const registered = opened.value.status!.register({
+const registered = opened.value.api.status!.register({
   id: 'build.status',
   priority: 15,
   render: () => ({ kind: 'text', content: myLine, tone: 'muted' }),

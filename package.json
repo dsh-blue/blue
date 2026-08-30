@@ -30,8 +30,8 @@
     "check:plugin-contract": "node script/generate-blue-plugin-contract.mjs --check",
     "fixture:context-upstream": "node script/context-upstream-fixture.mjs",
     "fixture:remote-upstream": "node script/remote-upstream-fixture.mjs",
-    "website:dev": "node script/marketplace-fetch.mjs --allow-missing && pnpm --filter @dsh-blue/website run dev",
-    "website:build": "node script/marketplace-fetch.mjs && pnpm --filter @dsh-blue/website run build",
+    "website:dev": "node script/marketplace-fetch.mjs --paused && pnpm --filter @dsh-blue/website run dev",
+    "website:build": "node script/marketplace-fetch.mjs --paused && pnpm --filter @dsh-blue/website run build",
     "website:preview": "pnpm --filter @dsh-blue/website run preview",
     "marketplace:fetch": "node script/marketplace-fetch.mjs"
   },

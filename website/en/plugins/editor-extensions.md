@@ -2,6 +2,10 @@
 
 > Status: **Experimental / reference**. `editor.extensions` retains its mature runtime and fixtures for collaborative validation, but it is not part of the Stable v1 root. Its name and contract may change until real-consumer evidence is complete.
 
+The code on this page uses the legacy inline transition manifest. The P1
+canonical schema rejects this facet; do not mix it into a new plugin's
+canonical request alongside the seven Public Beta capabilities.
+
 `editor.extensions` adds renderer-neutral hints, diagnostics, completions, actions, and submit transforms around Blue's owned editing engine. Extensions cannot read the draft, history, cursor, or IME state and cannot replace the engine. Replacing the whole shell belongs to the exclusive `editor.provider` capability and is outside this surface.
 
 ## Registration

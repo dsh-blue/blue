@@ -1,13 +1,29 @@
 # Plugin marketplace
 
-The place to discover and install Blue ecosystem plugins: third-party plugins built on the current Beta [seams](/en/plugins/seams) and public APIs, listed here and installed into your Blue with one line.
-
-::: info Before installing a plugin
-Every plugin in the marketplace runs on top of Blue — [install Blue](/en/guide/) first. The install command is always `blue plugin add <spec>` (equivalent to `dsh plugin --profile blue add <spec>`), where `<spec>` is the source shown on the card or detail page; see the [dsh plugin docs](/en/dsh/plugins) for the mechanism.
+::: warning Marketplace migration for rc.2
+The marketplace registry and its first example plugin still use the transition
+contract from before P1–P4. No current entry has completed the canonical
+`0.1.1-rc.2` migration. To prevent an old plugin from being installed into an
+rc.2 profile, this page temporarily hides install cards and does not treat the
+existing `verified` flag as rc.2 compatibility evidence.
 :::
 
-<MarketplaceGrid />
+`0.1.1-rc.2` publishes the machine contract and Host admission for seven Public
+Beta capabilities: `commands`, `status`, `panes`, `overlays`,
+`notifications.publish`, `session.read`, and `session.projections.read`. The
+marketplace will reopen after two migrations are complete:
 
-## List your plugin
+1. the registry validator adopts the P1 canonical schema, required/optional requests, and exact resources;
+2. at least one plugin passes the rc.2 manifest, packed fixture, real profile, and human acceptance gates.
 
-Built something others would enjoy? Submit it to the [dsh-blue/marketplace](https://github.com/dsh-blue/marketplace) repository — **any plugin installable from GitHub qualifies; npm is not a requirement** (an npm source can be added after publishing). The full process, field reference, and writing guidelines are in the [submission guide](/en/marketplace/submit).
+For now, start plugins from the canonical `blue.plugin.json` in the
+[quickstart](/en/plugins/quickstart), then run the checkout-based checks in
+[Debugging and validation](/en/plugins/testing). P5's no-clone author tooling
+and final marketplace loop are not part of this RC.
+
+## Submission status
+
+New submissions are temporarily paused. This page will restore cards and the
+[submission workflow](/en/marketplace/submit) after the registry migration.
+Users with an older marketplace plugin should keep it on its original Blue
+version and not depend on it from an rc.2 profile until that plugin migrates.

@@ -29,9 +29,9 @@ The full story: [docs/blue-architecture.md](docs/blue-architecture.md) · decisi
 ## Usage
 
 > [!NOTE]
-> This checkout stages the upcoming `0.1.1-rc.2` candidate. It remains
-> unpublished until live acceptance and merge; npm's `rc` and `latest` tags
-> continue to point to the previous public release.
+> `0.1.1-rc.2` is the current Public Beta release line. The commands below use
+> the `rc` channel; plugin adapters and reproducible environments should pin
+> the exact `0.1.1-rc.2` version.
 
 Prerequisites: Node `^22.19 || >=24` and pnpm 11. The recommended launcher includes its tested dsh runtime.
 
@@ -94,7 +94,7 @@ flowchart TB
 ```
 <!-- END diagram:blue-layers -->
 
-The runtime flow is `Harness domain -> projection/action boundary -> renderer-neutral models -> TUI feature plugins -> core`. Events state facts, projections hold current state, and actions are write requests with structured results; Blue never keeps a second agent truth, and Agent/Session objects never cross into renderers. The row-by-row bundle composition (29 Blue-owned rows over `dsh-base`) is documented in [the bundle guide](https://dsh-blue.dev/en/plugins/builtins/), and the feature tour is on [the website](https://dsh-blue.dev/en/features/).
+The runtime flow is `Harness domain -> projection/action boundary -> renderer-neutral models -> TUI feature plugins -> core`. Events state facts, projections hold current state, and actions are write requests with structured results; Blue never keeps a second agent truth, and Agent/Session objects never cross into renderers. The row-by-row bundle composition (33 Blue-owned rows over `dsh-base`) is documented in [the bundle guide](https://dsh-blue.dev/en/plugins/builtins/), and the feature tour is on [the website](https://dsh-blue.dev/en/features/).
 
 ## Documentation
 

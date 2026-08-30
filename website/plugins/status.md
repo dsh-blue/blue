@@ -16,42 +16,46 @@ api.status?.register(contribution: BlueStatusEntryContribution): BlueResult<Blue
 
 ## 完整示例
 
-一个显示 git 分支的状态条目（数据来自 Harness 服务注入，不是 Blue API）：
+一个显示 git 分支的状态条目（数据来自 Harness 服务注入，不是 Blue API）。这里的
+`manifest` 是已校验的 canonical manifest，required 中包含
+`{ "name": "status", "version": "^1.0.0" }`：
 
 ```ts
 export const name = 'my-plugin.branch'
 export const inject = ['bluePluginHost']
 
 export function apply(ctx: Context): void {
-  const opened = ctx.bluePluginHost.open(ctx, {
-    id: 'my-plugin.branch',
-    api: '^1.0.0-beta.1',
-    capabilities: ['status'],
-  })
+  const opened = ctx.bluePluginHost.open(ctx, manifest)
   if (!opened.ok) return
 
   let branch: string | null = null
   // ... 从 Harness 服务订阅分支变化，更新 branch ...
 
-  opened.value.status?.register({
+  const registered = opened.value.api.status?.register({
     id: 'branch.status',
     render: () => branch === null
       ? null // 没有仓库时整条隐藏
       : { kind: 'text', content: ` ${branch}`, tone: 'accent' },
   })
+  if (registered !== undefined && !registered.ok) ctx.logger.warn(registered.message)
 }
 ```
 
 ## 行为细节
 
+- **有界注册与刷新**：同一 consumer 最多注册 64 个 status entry；每个 registration 的 `refresh()` 在滚动一秒内最多成功 20 次，超出返回 `BLUE_LIMIT_EXCEEDED`；
 - **`render()` 每帧都会被调用**——footer 每次重绘都会重新求值所有状态条目。把它当成纯函数：保持廉价，不做 I/O、不分配大对象。数据在别处（订阅、定时器）更新，`render()` 只读最新值；
 - **返回 `null` 是隐藏，不是删除**：条目仍注册着，下一帧可能再出现。适合"只在某个状态下可见"的徽章；
 - **超宽被截断**：footer 的宽度预算紧张，条目按 `truncate` 策略处理。内容保持短小——状态栏不是面板，长内容放进 [pane](/plugins/dock)；
 - **只接受 status 子集**：`text`、`rich-text`、`fields`、`progress` 和递归 `stack` 可用；交互节点会被安全拒绝。Tone/emphasis 由 canonical compiler 保留。
+- **失败与 owner gap 被收容**：单个 `render()` 失败不会破坏 footer；已有 inert definition 在 owner 重载后恢复，但旧 callback result 不会重放。
 
 ## 独占 status provider
 
 > `status.provider` 是 Experimental/reference surface，不属于 Stable v1 root。下面记录当前可执行实现，供 provider 共创与回归验证使用。
+
+该 facet 只能使用明确标注的旧 inline transition manifest；P1 canonical schema
+不会接受 `status.provider`，因此不要把下面的 open 形状复制进新插件 manifest。
 
 `status.provider` 注册的是替换整个 footer 的候选，而不是追加条目：
 

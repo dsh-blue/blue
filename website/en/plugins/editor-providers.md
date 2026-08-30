@@ -2,6 +2,10 @@
 
 > Status: **Experimental / reference**. `editor.provider` is not part of the Stable v1 root. The current implementation retains provider-swap, fallback, and lifecycle evidence, but makes no stable compatibility promise before collaboration with real external consumers.
 
+The code on this page uses the legacy inline transition manifest. The P1
+canonical schema rejects this facet; do not place it in a new plugin's
+canonical manifest.
+
 `editor.provider` registers a candidate that can replace the whole editor shell. A provider may rearrange mode information, auxiliary content, and structured actions, but Blue still owns the editing engine: draft, cursor, history, undo, IME, paste, attachments, and submission never move into plugin code.
 
 ## Quickstart

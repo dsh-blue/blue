@@ -21,11 +21,12 @@ api.notifications?.publish(notification: BlueNotification): BlueResult
 Publish a notification after a command succeeds (paired with the [commands](/en/plugins/commands) capability):
 
 ```ts
-api.notifications?.publish({
+const published = api.notifications?.publish({
   id: 'clip.saved',
   view: { kind: 'text', content: `saved ${args.length} word(s)` },
   tone: 'success',
 })
+if (published !== undefined && !published.ok) return published
 ```
 
 ## Behavior details

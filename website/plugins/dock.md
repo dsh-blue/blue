@@ -19,15 +19,16 @@ api.panes?.register(contribution: BluePaneContribution): BlueResult<BluePaneRegi
 | `render` | 同步返回 `BlueUiNode \| null`；保持纯净且廉价 |
 | `onEvent` | 可选结构化事件 handler，不接收 raw key 或 renderer object |
 
-```ts
-const opened = ctx.bluePluginHost.open(ctx, {
-  id: 'acme.inspector',
-  api: '^1.0.0-beta.1',
-  capabilities: ['panes'],
-})
-if (!opened.ok) return
+下面的 `manifest` 是已校验的 canonical manifest；它为 `panes` 申请 `right`
+placement，并按实际使用申请 `commands` 与 `overlays`。完整顶层结构见
+[快速开始](/plugins/quickstart)。
 
-opened.value.panes?.register({
+```ts
+const opened = ctx.bluePluginHost.open(ctx, manifest)
+if (!opened.ok) return
+const api = opened.value.api
+
+const registered = api.panes?.register({
   id: 'acme.inspector.context',
   title: 'Context',
   placement: 'right',
@@ -38,11 +39,14 @@ opened.value.panes?.register({
     { label: 'Tokens', value: [{ text: '12k / 28k', tone: 'muted' }] },
   ]),
 })
+if (registered !== undefined && !registered.ok) ctx.logger.warn(registered.message)
 ```
 
 多个 side pane 由 Blue 生成 lane tabs。插件只控制 active pane 内部，不能再次
 切分外层 lane。注册返回的 handle 可 `refresh()` 和 `setHidden()`；注册与 handle
-都绑定 consumer Fiber，卸载后调用会返回结构化拒绝。
+都绑定 consumer Fiber，卸载后调用会返回结构化拒绝。Canonical grant 只允许
+manifest 声明的 placement；同一 consumer 最多 8 个 pane，每个 registration 的
+`refresh()` 在滚动一秒内最多成功 20 次。
 
 ## Overlay 契约
 
@@ -56,7 +60,7 @@ api.overlays?.open(request: BlueOverlayRequest, options?: {
 交互控件并获得焦点，但必须由当前 Blue 用户操作携带的一次性 `userGesture` 打开：
 
 ```ts
-api.commands?.register({
+const command = api.commands?.register({
   id: 'show-details',
   label: 'Show details',
   execute: async (_args, options) => {
@@ -81,10 +85,13 @@ api.commands?.register({
     }
   },
 })
+if (command !== undefined && !command.ok) ctx.logger.warn(command.message)
 ```
 
 Gesture 不能缓存、转交或跨异步用户操作重用。关闭、异常、超时与插件卸载都会
-清理 overlay，并由宿主恢复先前焦点。
+清理 overlay，并由宿主恢复先前焦点。全局 overlay stack 最多 4 个，同一 consumer
+最多 1 个 capturing overlay；每个 handle 的 `refresh()` 同样限制为滚动一秒 20 次。
+Overlay 是瞬时 action，owner gap/reload 不会缓存或重放。
 
 ## 响应式与宽度
 

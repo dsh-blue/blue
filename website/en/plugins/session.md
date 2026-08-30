@@ -63,14 +63,15 @@ Within one session epoch, the session id cannot change and the host accepts only
 
 ```ts
 const opened = ctx.bluePluginHost.open(ctx, manifest)
-if (!opened.ok || opened.value.session === undefined) return
+if (!opened.ok || opened.value.api.session === undefined) return
+const session = opened.value.api.session
 
-const initial = opened.value.session.current()
+const initial = session.current()
 if (initial.ok && initial.value !== null) {
   console.log(initial.value.sessionEpoch, initial.value.id, initial.value.status)
 }
 
-const subscribed = opened.value.session.subscribe(result => {
+const subscribed = session.subscribe(result => {
   if (!result.ok) return
   if (result.value !== null) console.log(result.value.revision, result.value.status)
 })
@@ -94,7 +95,7 @@ Resource keys use the canonical ASCII syntax and are limited to 128 characters. 
 A missing or unloaded key returns `BLUE_CAPABILITY_ABSENT` without reusing an old value. An old epoch or lower `asOfSeq` returns `BLUE_STALE`. The high-water survives owner gaps; values at an equal position are compared as canonical JSON independently of object key order, and conflicting values return `BLUE_STALE`. At one epoch/sequence position the host retains at most 256 key fingerprints and 4,194,304 UTF-8 bytes, then clears that bounded set when the position advances. Requested key count is bounded by the exact grant before traversal. `subscribe(keys, listener)` replays one consistent cut after registration and reads a new cut only when one of those keys changes. Exact duplicates, stale, malformed, or late owner notifications never reach the listener. When the current session becomes `null`, existing projection subscriptions immediately replay `null`; subsequent projection reads also return `null` without consulting the backing source, so no old-session value survives.
 
 ```ts
-const projections = opened.value.projections
+const projections = opened.value.api.projections
 if (projections !== undefined) {
   const cut = projections.currentMany(['costUsage', 'contextTimeline'])
   if (cut.ok && cut.value !== null) {

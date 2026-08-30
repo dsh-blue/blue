@@ -2,6 +2,9 @@
 
 > 状态：**Experimental / reference**。`editor.provider` 不属于 Stable v1 root；当前实现保留 provider swap、fallback 与 lifecycle 证据，但在真实外部消费者共创前不作稳定兼容承诺。
 
+本页代码使用旧 inline transition manifest。P1 canonical schema 不接受该 facet；
+新插件不要把它写进 canonical manifest。
+
 `editor.provider` 注册一个可替换整个 editor shell 的候选。Provider 可以重排模式信息、辅助内容和结构化 action，但编辑引擎仍由 Blue 所有：draft、cursor、history、undo、IME、paste、attachment 与 submit 路径不会交给插件。
 
 ## 快速开始

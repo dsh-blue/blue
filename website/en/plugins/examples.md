@@ -5,6 +5,14 @@ runnable opt-in plugins, and a validation bundle composing all six rows. They
 are publish-shaped reference implementations, but are outside Blue's default
 bundle and current release set.
 
+::: warning Contract level of these examples
+The six runnable plugins originated in PR #77 and their `blue.plugin.json`
+files still use the old flat transition lane. The two providers are also
+Experimental/reference only. They prove public UI, packaging, lifecycle, and
+width behavior, but are **not** P1 canonical manifest templates. Copy a new
+plugin manifest only from the [quickstart](/en/plugins/quickstart).
+:::
+
 | Package | Capability | Contract demonstrated |
 | --- | --- | --- |
 | `@dsh-blue-example/user-kit` | none | pure component library shared by two plugins; installation contributes no UI |
@@ -45,15 +53,15 @@ the built-in implementation. Plugins must never write those settings.
 pnpm check:examples
 ```
 
-The gate statically validates all eight packages, then on both the current and
+The gate runs the compatibility validator on all eight packages, then on both the current and
 previous Harness line it:
 
 - packs API, UI, core, kit, six plugins, and composition with `pnpm pack`;
 - installs every tarball into one temporary npm project without workspace links;
 - imports only installed public exports;
-- checks manifests, one-row patches, six-row composition, and absence of `src/` or local protocol leaks;
-- runs seven scenarios plus width scans at 20/40/80/120 columns;
-- requires `declared === executed === 7`, no skips or failures, and complete fixture cleanup.
+- checks transition manifests, one-row patches, six-row composition, and absence of `src/` or local protocol leaks;
+- runs eight scenarios plus width scans at 20/40/80/120 columns;
+- requires `declared === executed === 8`, no skips or failures, and complete fixture cleanup.
 
 Start your own plugin from the [quickstart](/en/plugins/quickstart), then use the
 [public UI kit](/en/plugins/ui-kit) to extract shared components.

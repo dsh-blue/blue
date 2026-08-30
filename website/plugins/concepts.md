@@ -22,23 +22,34 @@ dsh process 进程（one Cordis tree 一棵 Cordis 树）
 
 ## Capability 裁剪
 
-manifest 是插件的静态兼容性声明：
+Canonical manifest 是插件的静态兼容性与最小权限声明：
 
 ```ts
-interface BluePluginManifest {
-  id: string                    // ^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$
-  api: string                   // semver 范围；当前可执行契约写 '^1.0.0-beta.1'
-  capabilities: BlueCapability[] // 不可重复
+interface BluePluginManifestV1 {
+  $schema: 'https://dsh-blue.dev/schema/blue.plugin.v1.schema.json'
+  schemaVersion: 1
+  id: string
+  entry: string
+  api: string
+  compatibility: { blue: string; harness: string; node: string }
+  capabilities: {
+    required: BluePluginCapabilityRequestV1[]
+    optional: BluePluginCapabilityRequestV1[]
+  }
 }
 ```
 
 `open()` 的行为分三层：
 
-1. **静态校验**（`validateBlueManifest`，不执行插件代码）：id 格式、api 范围格式、capability 拼写与去重。失败返回 `BLUE_API_INCOMPATIBLE`（或 manifest 根本不是对象时的 `BLUE_INVALID_CONTRIBUTION`）；
-2. **能力生命期检查**：host 持久缓冲 `commands`、`status`、`panes` 以及 Experimental/reference 的 `editor.extensions`、`status.provider`、`editor.provider` inert registration；`overlays` 的 capability definition 持久存在，但每次 open 都是 transient action，要求 live renderer owner。`notifications.publish`、`session.read` 与 `session.projections.read` 同样依赖 active owner。Canonical grant 会区分持久 `supported` 与实时 `availability`，操作在 owner gap 返回 `BLUE_CAPABILITY_ABSENT`；
-3. **按能力裁剪返回**：`BluePluginApi` 上只有声明过的 capability 字段有值，其余是 `undefined`。所以访问时总是 `api.commands?.register(...)` 这样的可选链形态。
+1. **P1 机器校验**：`validateBluePluginManifestV1` 按 Draft 2020-12 schema 和语义规则校验 identity、public export entry、API/product compatibility、required/optional 分组、resource 与重复能力，成功值会被分离并深冻结；
+2. **P2 原子协商**：required 能力任一不可用则整体拒绝；optional 能力可部分获准，host 返回包含 version、exact resources、limits、quotas、availability 和 owner generation 的 grants，以及结构化 `unavailableOptional`；
+3. **按 grant 裁剪返回**：`BluePluginOpen.api` 只在获准能力上提供 facade。访问时使用 `opened.value.api.commands?.register(...)`，并检查每个返回的 `BlueResult`。
 
-裁剪是双向契约：你只拿到你声明的，宿主也只暴露你声明的。插件升级时要新能力，就在 manifest 里加一行——宿主版本不够会在 `open()` 阶段明确失败，而不是运行时才出错。
+裁剪是双向契约：你只拿到你声明的，宿主也只暴露你声明的。插件升级时要新能力，就向 required 或 optional 加一个精确 request；宿主版本、policy 或 owner 不满足时会在 `open()` 阶段明确失败/降级，而不是运行时才出错。
+
+::: info 过渡期 lane
+旧 flat `{ id, api, capabilities: string[] }` 仍仅为 PR #77 兼容示例保留。它没有 canonical resource/grant/denial 语义，新插件不应使用。任何带 `$schema` 的 manifest 都必须通过 canonical parser，不会回退。
+:::
 
 缓冲只保存 inert contribution，不代表插件获得了 renderer 或调度权。active frontend-tree owner 仍负责 provider selection、render、gesture、LKG/breaker 和 fallback。每次 owner attach 都获得私有 generation-bound lease；任何 capability 重叠会原子撤销旧 lease 的全部能力，迟到 callback/gesture/overlay close 都按 generation 拒绝。owner gap/reload 后只重放 definition snapshot，不重放 overlay、notification 或 action；consumer Fiber 卸载会立即删除它的 registration。
 
@@ -80,12 +91,19 @@ type BlueResult<Value = void> =
 | code | 在何处出现 |
 | --- | --- |
 | `BLUE_API_INCOMPATIBLE` | `open()`：manifest 字段非法或 `api` 范围与宿主版本不兼容 |
-| `BLUE_CAPABILITY_DENIED` | `open()`：申请了当前阶段未开放的能力 |
+| `BLUE_CAPABILITY_DENIED` | 旧 inline `open()`：申请了 transition host 未开放的 facet |
+| `BLUE_CAPABILITY_UNSUPPORTED` | canonical `open()`：required capability 不在当前 composition |
+| `BLUE_CAPABILITY_VERSION_UNSUPPORTED` | canonical `open()`：required capability version range 不相交 |
+| `BLUE_POLICY_DENIED` | canonical `open()`：required capability 被 Host policy 拒绝 |
+| `BLUE_RESOURCE_DENIED` | canonical `open()` / facade：resource kind、数量或 exact grant 不满足 |
 | `BLUE_DUPLICATE_ID` | `register()`：贡献 id 已被注册（跨所有插件判定） |
 | `BLUE_INVALID_CONTRIBUTION` | `register()` / `publish()`：贡献格式不合法（id 字符、缺函数字段等） |
 | `BLUE_ACTION_REJECTED` | `register()`：id 占用 Blue 保留命名空间（`blue.` / `blue:` / `blue-` / `@dsh-blue/` 前缀） |
 | `BLUE_LIMIT_EXCEEDED` | `register()` / `open()` / `publish()` / `refresh()`：超过 contribution、pane/overlay、大小或滚动速率配额 |
 | `BLUE_CAPABILITY_ABSENT` | notification/session/projection read 的 active owner 或 backing key 缺位，或当前 host/profile 未提供该 capability；按版本/profile 不匹配或可选降级处理 |
+| `BLUE_STALE` | owner/session generation 已前进，旧 action、event、snapshot 或 callback 结果被拒绝 |
+| `BLUE_ABORTED` | command/event work 已由 signal、unload、refresh 或 session change 中止 |
+| `BLUE_INTERNAL_FAILURE` | owner read/adapter 失败且已被边界收容；记录诊断并降级，不要重试风暴 |
 
 对称地，你的 `execute()` 返回 `{ ok: false, code, message }` 时，`message` 会作为错误文本显示给用户；抛出的异常会被桥接层兜底为 `plugin command failed: ...`，但那是兜底，不是契约——主动返回结构化错误。
 

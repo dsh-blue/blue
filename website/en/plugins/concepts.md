@@ -22,23 +22,34 @@ Every plugin runs on its own **Fiber**. Each registration returned by `open(ctx,
 
 ## Capability scoping
 
-The manifest is a plugin's static compatibility declaration:
+The canonical manifest is a plugin's static compatibility and least-authority declaration:
 
 ```ts
-interface BluePluginManifest {
-  id: string                    // ^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$
-  api: string                   // semver range; use '^1.0.0-beta.1' for the executable contract
-  capabilities: BlueCapability[] // 不可重复
+interface BluePluginManifestV1 {
+  $schema: 'https://dsh-blue.dev/schema/blue.plugin.v1.schema.json'
+  schemaVersion: 1
+  id: string
+  entry: string
+  api: string
+  compatibility: { blue: string; harness: string; node: string }
+  capabilities: {
+    required: BluePluginCapabilityRequestV1[]
+    optional: BluePluginCapabilityRequestV1[]
+  }
 }
 ```
 
 `open()` behaves in three layers:
 
-1. **Static validation** (`validateBlueManifest`, without executing plugin code): id format, api range format, capability spelling and deduplication. Failures return `BLUE_API_INCOMPATIBLE` (or `BLUE_INVALID_CONTRIBUTION` when the manifest is not even an object);
-2. **Capability-lifetime check**: the host durably buffers inert registrations for `commands`, `status`, `panes`, plus the Experimental/reference `editor.extensions`, `status.provider`, and `editor.provider`. The `overlays` definition is durable, but each open is a transient action that requires the live renderer owner. `notifications.publish`, `session.read`, and `session.projections.read` likewise require active owners. Canonical grants distinguish durable `supported` state from live `availability`; operations return `BLUE_CAPABILITY_ABSENT` during an owner gap;
-3. **Capability-scoped return**: only the declared capability fields have values on `BluePluginApi`; the rest are `undefined`. Hence access always takes the optional-chaining shape `api.commands?.register(...)`.
+1. **P1 machine validation**: `validateBluePluginManifestV1` applies the Draft 2020-12 schema and semantic rules to identity, public export entry, API/product compatibility, required/optional groups, resources, and duplicate capabilities. A successful value is detached and deeply frozen;
+2. **P2 atomic negotiation**: one unavailable required capability rejects the whole admission. Optional capabilities may be partially admitted; the host returns grants carrying versions, exact resources, limits, quotas, availability, and owner generation, plus structured `unavailableOptional` records;
+3. **Grant-scoped return**: `BluePluginOpen.api` exposes facades only for granted capabilities. Use `opened.value.api.commands?.register(...)` and check every returned `BlueResult`.
 
-Scoping is a two-way contract: you only get what you declared, and the host only exposes what you declared. When an upgraded plugin wants a new capability, it adds one line to the manifest — a host that is too old fails explicitly at `open()` time instead of erroring at runtime.
+Scoping is a two-way contract: you only get what you declared, and the host only exposes what you declared. When an upgraded plugin wants a new capability, add one exact request to `required` or `optional`. A host version, policy, or owner mismatch then fails or degrades explicitly at `open()` time instead of surfacing later at runtime.
+
+::: info Transition lane
+The old flat `{ id, api, capabilities: string[] }` shape remains only for PR #77 compatibility examples. It has no canonical resource/grant/denial semantics and must not be used for new plugins. Any manifest carrying `$schema` must pass the canonical parser and never falls back.
+:::
 
 Buffering stores only inert contributions; it grants no renderer or dispatch authority. The active frontend-tree owner still owns provider selection, rendering, gestures, LKG/breaker state, and fallback. Each owner attach receives a private generation-bound lease; overlap on any capability atomically revokes every capability of the displaced lease, so late callbacks, gestures, and overlay closes are rejected by generation. Reload replays only definition snapshots, never overlays, notifications, or actions. Unloading the consumer Fiber immediately removes its registrations.
 
@@ -80,12 +91,19 @@ type BlueResult<Value = void> =
 | code | Where it appears |
 | --- | --- |
 | `BLUE_API_INCOMPATIBLE` | `open()`: an illegal manifest field, or the `api` range is incompatible with the host version |
-| `BLUE_CAPABILITY_DENIED` | `open()`: a capability not open in the current phase was requested |
+| `BLUE_CAPABILITY_DENIED` | legacy inline `open()`: a facet absent from the transition host was requested |
+| `BLUE_CAPABILITY_UNSUPPORTED` | canonical `open()`: a required capability is absent from this composition |
+| `BLUE_CAPABILITY_VERSION_UNSUPPORTED` | canonical `open()`: a required capability version range does not intersect |
+| `BLUE_POLICY_DENIED` | canonical `open()`: Host policy rejects a required capability |
+| `BLUE_RESOURCE_DENIED` | canonical `open()` / facade: resource kind, count, or exact grant is not satisfied |
 | `BLUE_DUPLICATE_ID` | `register()`: the contribution id is already registered (judged across all plugins) |
 | `BLUE_INVALID_CONTRIBUTION` | `register()` / `publish()`: malformed contribution (id characters, missing function field, etc.) |
 | `BLUE_ACTION_REJECTED` | `register()`: the id squats on Blue's reserved namespace (the `blue.` / `blue:` / `blue-` / `@dsh-blue/` prefixes) |
 | `BLUE_LIMIT_EXCEEDED` | `register()` / `open()` / `publish()` / `refresh()`: contribution, pane/overlay, size, or rolling-rate quota exceeded |
 | `BLUE_CAPABILITY_ABSENT` | an active notification/session/projection-read owner or backing key is absent, or this host/profile does not provide the capability; handle as a version/profile mismatch or optional degradation |
+| `BLUE_STALE` | the owner/session generation advanced, rejecting an old action, event, snapshot, or callback result |
+| `BLUE_ABORTED` | command/event work was cancelled by its signal, unload, refresh, or session change |
+| `BLUE_INTERNAL_FAILURE` | an owner read/adapter failed behind containment; record diagnostics and degrade instead of retrying in a loop |
 
 Symmetrically, when your `execute()` returns `{ ok: false, code, message }`, the `message` is shown to the user as error text; a thrown exception is backstopped by the bridge layer into `plugin command failed: ...` — but that is a backstop, not a contract: return structured errors on your own.
 

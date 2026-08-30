@@ -59,5 +59,5 @@ AltScreen 中，公共 scroll 编译为非 primary、overscroll contained 的 `S
 ## 已知限制与暂缓事项
 
 - **崩溃日志目录沿用 pi 默认值**——渲染器把行宽溢出崩溃日志写到 `~/.pi/agent`（或 `PI_CODING_AGENT_DIR`），因为 pi-tui 硬编码了该默认值，而 Blue 尚无可传入的 dsh 侧路径。
-- **公共 UI capability 仍是 Beta**——pane/overlay Host bridge 已接线并带 generation fence，但协议稳定性仍需 P3 packed fixture、生态 consumer、profile 验收以及后续 P7 晋升证据。
+- **公共 UI capability 仍是 Beta**——P3 packed fixture、generation fence 与真实 profile 验收已完成；协议稳定性仍需生态 consumer 和后续 P7 晋升证据。
 - **键位冲突检测范围**——冲突检测只覆盖经 `ctx.blueKeymap` 注册的动作；pi-tui 组件（Editor、SelectList）从 pi-tui 的全局键位表解析各自绑定，本包不动该表。

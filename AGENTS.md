@@ -115,6 +115,12 @@ pnpm run website:build   # VitePress build; DOCS_BASE=/blue/ matches the Pages b
 pnpm run website:preview # serves the built site (pass the same DOCS_BASE as the build)
 ```
 
+- During the rc.2 marketplace migration, `website:dev` and `website:build` run
+  `script/marketplace-fetch.mjs --paused`: generated registry data and plugin
+  detail routes are removed before VitePress starts; `website-pages.yml` uses
+  the same mode. `pnpm marketplace:fetch` remains the explicit maintainer-only
+  path for migration work.
+
 - Build is two-stage: `tsc -b` owns type emission (`lib/types/*.d.ts` + intermediate JS), `tsdown` owns runtime bundling into the published `lib/` layout (`lib/index.js`, `lib/invariant.js`, `lib/startup.js`). Package deps and peer deps stay external.
 - **Subpath exports travel in threes.** Adding, renaming, or removing a package subpath moves three independent manifests together: the package's `package.json` `exports`, its `files` tarball whitelist, and the root `tsdown.config.ts` entry enumeration. Nothing ties them together — tsc emits types for subpaths tsdown never bundles, the specs run source-plane (`../src/*.ts` relative imports) so no test walks `lib/`, and a dev profile links the source checkout so the `files` list stays invisible until the first publish. `pnpm check:lib` (a CI gate right after `pnpm build`) verifies the triangle mechanically; each arm shipped once as the S30 incident (`./status-title` missing from the tsdown list boot-crashed every real install, and missing from `files` would have shipped a tarball without it). A plugin mounted through the package index (no subpath of its own) needs none of the three.
 - **Iteration loop for local runs:** edit `src` → `pnpm run build` → re-run `dsh --profile blue-dev`. Profile lanes (D51 aftermath): `blue` is production, npm installs only — never link into it (a later npm upgrade half-overwrites the links and boots a Frankenstein tree); `blue-dev` links this checkout; `blue-<tag>` is a worktree's acceptance profile, deleted with the branch. The runtime entry of every package is `lib/`, so a rebuild is required; source edits alone have no effect on a running install.

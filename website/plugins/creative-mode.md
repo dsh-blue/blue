@@ -2,6 +2,12 @@
 
 创造模式（agent preset `cordis`）适合把一个想法先做成当前会话可见的动态原型，再在验收后决定是否持久化。它不是修改 Blue 源码的快捷入口：动态插件只存在于当前 dsh 进程，重启后会消失；需要长期维护的功能必须最终落成普通 npm 插件包。
 
+::: warning 本页不是 P5 已交付声明
+下面的斗地主案例记录的是早期 transition lane。`0.1.1-rc.2` 已完成 P1–P4，但
+P5 的正式 `blue-plugin-development` skill、免克隆作者命令与持久包生成闭环尚未
+交付；该案例不能作为 canonical rc.2 conformance 证据。
+:::
+
 ## 先确定生命周期
 
 创造模式推荐遵循下面的顺序：
@@ -13,7 +19,10 @@
 
 原型阶段使用 `cordis-plugin-development` skill。它要求先通过 `cordis_inspect_list` 和 `cordis_inspect_query` 读取真实的 Provider、Service、Event 和 Tool 形状，再写 `code.host`；`cordis_define` 只保存一个不可变 Package，`cordis_run` 才会激活它。需要改版时追加新 Package 并用 `update` 切换，失败时用 `inspect_self` 查看诊断，不能覆盖旧版本。
 
-用户验收原型后，再加载 `blue-plugin-development` skill，把它转换为可分发的包。持久化前必须明确选择：保留本地包、上传 GitHub、发布 npm，或有意保持临时原型。临时原型不会自动写入仓库，也不会在重启后保留。
+用户验收原型后，本 RC 需要按[快速开始](/plugins/quickstart)手工创建 canonical 包，
+再从 Blue checkout 运行 validator 与 packed fixture。持久化前仍须明确选择：保留
+本地包、上传 GitHub、发布 npm，或有意保持临时原型。P5 会把这段流程收口为正式
+`blue-plugin-development` skill；当前原型不会自动写入仓库，也不会在重启后保留。
 
 ## Blue 插件的 Beta 边界
 
@@ -21,12 +30,20 @@
 
 ```text
 blue-feature/
-  package.json          # type: module、main、dsh.bundle.patch
+  package.json          # type: module、exports、blue.manifest、dsh.bundle.patch
+  blue.plugin.json      # P1 canonical manifest
   index.js              # Cordis plugin entry
   cordis.patch.yml      # 把 entry 插入 profile
 ```
 
-入口必须导出固定的 `name`、`inject` 和 `apply(ctx)`。Blue 功能通过 `ctx.bluePluginHost.open(ctx, manifest)` 申请当前 `1.0.0-beta.1` capability：`commands`、`status`、`panes`、`overlays`、`notifications.publish`，以及只读的 `session.read` 与 `session.projections.read`。后两项在 canonical manifest 中分别声明 exact field/key resource。Generic `session.act` 已移除，写操作继续使用所属 Harness service、command 或 feature action。`open()`、`register()`、`publish()` 与 canonical read 都返回结构化 `BlueResult`，每次都要检查 `ok`。注册由调用方 Fiber 托管，插件卸载、更新或 profile 重载时会自动撤销。Editor/status provider 和 editor extension 仅保留为 Experimental/reference surface；候选注册保持 inert，只有 settings 选中的 id 才会激活。
+入口必须导出固定的 `name`、`inject` 和 `apply(ctx)`，解析 package root 的 canonical
+manifest，再把它传给 `ctx.bluePluginHost.open(ctx, manifest)`。当前 `1.0.0-beta.1`
+开放 `commands`、`status`、`panes`、`overlays`、`notifications.publish`，以及只读
+`session.read` 与 `session.projections.read`；后两项必须声明 exact field/key resource。
+Generic `session.act` 已移除。`open()` 返回 `api`、exact `grants` 和
+`unavailableOptional`，后续 `register()`、`publish()` 与 read 的每个 `BlueResult` 都要
+检查。Editor/status provider 和 editor extension 只存在于旧 inline
+Experimental/reference lane，不能写进 canonical manifest。
 
 插件只能返回 renderer-neutral 的 `BlueUiNode`/`BlueView` 和结构化 action：
 
@@ -43,7 +60,8 @@ blue-feature/
 
 最初需求包括字符牌面、清晰的回合提示、单人 Bot、多人与服务端连接，以及通过命令出牌。会话先选择 `cordis` 创造模式并加载 `cordis-plugin-development`，通过 inspect 查询了动态插件和本地 LLM 服务，然后用 `cordis_define` 创建 `blue-doudizhu`，用 `cordis_run` 热挂载到当前会话。
 
-原型只依赖公开 Blue facade：
+原型当时只依赖公开 Blue facade，但使用的是旧 inline transition manifest。下段仅
+用于解释历史会话，不是新插件模板；canonical 写法见[快速开始](/plugins/quickstart)：
 
 ```js
 return {
@@ -79,19 +97,17 @@ Bot 复用宿主当前模型：插件通过 `ctx.get('agentDefaultModel')` 读�
 4. 可切换的记牌器；
 5. `/poker pause` 收起面板但不结束比赛，`/poker resume` 恢复。
 
-每次修改都用 `cordis_define` 追加不可变版本，再用 `cordis_run update` 激活；这保留了失败版本的诊断和回滚路径。只有用户明确提出“上传到 dsh-blue 组织并发布 npm”后，才加载 `blue-plugin-development`，创建 `package.json`、`index.js`、`cordis.patch.yml`，并推送到 GitHub。
+每次修改都用 `cordis_define` 追加不可变版本，再用 `cordis_run update` 激活；这保留了失败版本的诊断和回滚路径。历史会话只在用户明确提出“上传到 dsh-blue 组织并发布 npm”后，才加载当时的早期 `blue-plugin-development`，创建旧版 package 并推送到 GitHub；这不是 P5 canonical 生成器。
 
-### 3. 打包前的规范核对
+### 3. 当前 rc.2 迁移缺口
 
-`blue-doudizhu` 已符合以下核心形状：
+市场中的 `blue-doudizhu@0.1.0` 仍声明旧 API 范围、flat capability，并调用已移除的
+`dock` facade；源码还包含 `charWidth`/`displayWidth` 手工宽度实现。因此它目前不能
+通过 P1 canonical validator，也不是 rc.2 可安装示例。恢复市场收录前至少需要：
 
-- `name`、`inject: ['bluePluginHost']`、`apply(ctx)` 均为固定导出；
-- manifest 只申请实际使用的 `commands`、`panes`、`notifications.publish`，没有多申请 session 能力；
-- `/poker` 命令、底部面板和通知均通过 `open()` 返回的 capability API 注册；
-- `cordis.patch.yml` 只插入 `blue-doudizhu` 这一行，卸载由 Fiber 自动清理；
-- npm 包声明 `@deepseek-ai/cordis` 和 `@dsh-blue/blue` 为 peer dependency，并通过 `dsh.bundle.patch` 被 profile 装载。
-
-仍有一项必须在发布前修正的兼容性问题：当前 `index.js` 自带 `charWidth`/`displayWidth`。这属于 Blue 明确禁止的手工宽度实现，CJK 和 emoji 可能与真实终端宽度不一致。应改为返回 renderer-neutral 内容，让 Blue 适配器测量和换行；修正后再做窄终端、CJK、emoji 的实际 profile 验证。
+- 增加 package discovery pointer 与完整 canonical `blue.plugin.json`；
+- 把 `dock` 迁到 exact-placement `panes`，从 `opened.value.api` 取获准 facade；
+- 删除手工宽度计算，交给 Blue UI/compiler，并完成 packed、窄宽度、真实 profile 与人工验收。
 
 ## 从原型到 npm
 
@@ -102,8 +118,13 @@ dsh plugin --profile blue-dev add /path/to/blue-doudizhu
 dsh --profile blue-dev
 ```
 
-发布前至少运行静态边界检查、打包安装 fixture、卸载检查和真实终端 dogfood。对第三方包可使用 `npm pack` 后在 throwaway profile 安装，确保 tarball 中包含入口和 `cordis.patch.yml`。只有这些检查和人工验收都通过，才发布 npm，并在 README 中同时写明 Blue 前置安装、profile 安装和重启步骤。
+发布前至少从 Blue checkout 运行静态边界检查、打包安装 fixture、卸载检查和真实
+终端 dogfood。对第三方包使用 `npm pack` 后在 throwaway profile 安装，确保 tarball
+包含入口、canonical manifest 与 `cordis.patch.yml`。免克隆命令属于 P5；在它发布
+前，这些步骤仍是显式的 checkout-based 门禁。
 
 ## 本案例是否真正使用了创造模式 skill？
 
-是。会话记录显示实际调用了 `blue-plugin-development`（打包阶段）以及 `cordis-plugin-development`（动态原型、热挂载和多次更新），而不是只在文档中声称使用。文档中的流程、能力边界和版本切换规则均来自这些 skill 的约束，并与最终仓库形态逐项核对。
+历史会话确实调用过同名的早期 `blue-plugin-development` 和
+`cordis-plugin-development`，但那份记录早于 P1 canonical contract。它只证明动态
+原型流程曾被实际使用，不代表 P5 的正式作者 skill、生成器或 conformance 闭环已交付。

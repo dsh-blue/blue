@@ -2,7 +2,7 @@
 
 ## Why not a plain `npm install @dsh-blue/blue`?
 
-Blue is a plugin bundle installed into a dsh profile, not a standalone app — a bare install only drops the package into node_modules, with no host and no profile assembly, so there is nothing to run. The supported paths are the `blue` shell or `dsh plugin --profile blue add`; see [Quickstart](/en/guide/). This checkout stages the unpublished `v0.1.1-rc.2` candidate; until live acceptance and merge, npm's `rc` and `latest` tags continue to point to the previous public release. `0.1.0-rc.1` shipped broken tarballs (missing files) — if it is installed, upgrade. The contributor development install lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
+Blue is a plugin bundle installed into a dsh profile, not a standalone app — a bare install only drops the package into node_modules, with no host and no profile assembly, so there is nothing to run. The supported paths are the `blue` shell or `dsh plugin --profile blue add`; see [Quickstart](/en/guide/). The current release line is `v0.1.1-rc.2`; ordinary users may follow the `rc` channel, while plugin adapters and CI should pin the exact version. `0.1.0-rc.1` shipped broken tarballs (missing files) — if it is installed, upgrade. The contributor development install lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
 
 ## `@rc` does not resolve the newest preview?
 

@@ -579,7 +579,7 @@ describe('registerSessionCommands', () => {
     expect(node.child.spans.length).toBeLessThanOrEqual(200)
     const rows = plain(panel.render(100))
     expect(rows.join('\n')).toContain('changelog')
-    expect(rows.some(row => row.includes('Beta renderer-neutral UI runtime'))).toBe(true)
+    expect(rows.some(row => row.includes('P1 machine-readable plugin contract'))).toBe(true)
     overlay.component.handleInput?.('\x1b')
     expect(overlay.hidden).toBe(true)
   })

@@ -63,14 +63,15 @@ interface BluePluginSessionSnapshot {
 
 ```ts
 const opened = ctx.bluePluginHost.open(ctx, manifest)
-if (!opened.ok || opened.value.session === undefined) return
+if (!opened.ok || opened.value.api.session === undefined) return
+const session = opened.value.api.session
 
-const initial = opened.value.session.current()
+const initial = session.current()
 if (initial.ok && initial.value !== null) {
   console.log(initial.value.sessionEpoch, initial.value.id, initial.value.status)
 }
 
-const subscribed = opened.value.session.subscribe(result => {
+const subscribed = session.subscribe(result => {
   if (!result.ok) return
   if (result.value !== null) console.log(result.value.revision, result.value.status)
 })
@@ -94,7 +95,7 @@ resource key 必须使用 canonical ASCII syntax，最长 128 字符。每个 va
 缺失或已卸载的 key 返回 `BLUE_CAPABILITY_ABSENT`，不会复用旧值。旧 epoch 或较小 `asOfSeq` 返回 `BLUE_STALE`。high-water 会跨 owner gap 保留；相同位置的值按 canonical JSON 比较，不受 object key 顺序影响，冲突值返回 `BLUE_STALE`。同一 epoch/sequence 位置最多保留 256 个 key fingerprint 和 4,194,304 UTF-8 bytes；位置前进时清空这组有界记录。请求 key 数在遍历前受 exact grant 上界约束。`subscribe(keys, listener)` 在注册后 replay 一次一致 cut，只在指定 key 变化时读取新 cut；完全重复、过期、非法或迟到的 owner 通知不会进入 listener。当前 session 变为 `null` 时，已有 projection subscription 会立即 replay `null`，后续 projection read 也直接返回 `null` 而不查询 backing source，因此不会保留旧 session 值。
 
 ```ts
-const projections = opened.value.projections
+const projections = opened.value.api.projections
 if (projections !== undefined) {
   const cut = projections.currentMany(['costUsage', 'contextTimeline'])
   if (cut.ok && cut.value !== null) {

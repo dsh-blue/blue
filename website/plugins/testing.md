@@ -2,6 +2,10 @@
 
 本篇覆盖插件的本地迭代回路和发布前的两道机械验证：静态边界检查（validate）与打包安装 fixture。
 
+::: warning `0.1.1-rc.2` 的工具边界
+下面两条命令已能验证 workspace 外部的插件目录，但运行器仍位于 Blue 仓库中，因此需要克隆/checkout Blue。P5 才会交付发布后可直接安装的免克隆 author command；本页不把当前脚本写成已发布 CLI。
+:::
+
 ## 迭代回路
 
 ```text
@@ -41,13 +45,9 @@ node script/blue-plugin-validate.mjs /path/to/my-plugin
 
 | 组 | 检查内容 |
 | --- | --- |
-| `package` | package.json 存在、`exports` 映射完整、`files` 白名单覆盖所有导出目标、入口导出字面量 `name` 与 `apply`、`inject` 是稳定数组 |
+| `package` | canonical manifest schema/语义、`id === package.json.name`、公开 entry export、`files` 与真实 `npm pack` 文件闭包、入口导出字面量 `name` 与可调用 `apply`、直接 peer/dependency 闭包 |
 | `architecture` | 渲染器/raw-terminal 依赖不得出现在 core 之外、renderer-neutral 包不得依赖 renderer 特定 API、不跨界 import Agent/Session 包、frontend 不折叠 Harness session 事件 |
 | `lifecycle` | 插件入口有可观察的 Fiber 生命周期或注册所有权标记（`ctx.effect` / `.dispose` / `.register` / `.subscribe`） |
-
-::: tip 包名要求
-validate 会检查包名能否识别为 Blue 前端包或 adapter——名字里需含 `blue`、`frontend` 或 `adapter` 之一（如 `my-scope/blue-clock`、`my-scope/feature-blue`），否则报 `PACKAGE_NAME_INVALID`。
-:::
 
 ## fixture：打包安装契约
 
@@ -61,6 +61,7 @@ node script/blue-plugin-fixture.mjs /path/to/my-plugin --install --harness-line 
 
 - `--install` 是独立场景的开关——没有它 fixture 只做浅检查；
 - `--harness-line` 的版本覆盖只作用于一次性项目，不污染你的 checkout；报告的 `harnessPackages` 字段会列出每个 Harness 包的实际解析版本，应全部等于你指定的线。
+- 通过报告必须满足 `declared` 与 `executed` 完全相等，`skipped`/`failures` 为空，且临时项目已清理。
 
 fixture 发现的问题几乎都是"在 monorepo 里好好的、独立安装就坏"：漏声明的 peer、没进 `files` 的产物、依赖了 workspace 协议的版本。
 

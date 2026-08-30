@@ -2,35 +2,43 @@
 
 A Blue plugin is an ordinary Cordis plugin: it declares a manifest, requests capabilities from `bluePluginHost`, then registers renderer-neutral contributions (views, commands, notifications). All rendering is done by Blue's TUI kernel — your code never touches pi-tui, ANSI escapes, or terminal width.
 
-A minimal plugin looks like this:
+A minimal new plugin starts with a canonical `blue.plugin.json`:
 
-```ts
-import type { Context } from '@deepseek-ai/cordis'
-// 空类型导入：拉入 Context.bluePluginHost 的声明合并
-import type {} from '@dsh-blue/blue-api'
-
-export const name = 'my-plugin.clock'
-export const inject = ['bluePluginHost']
-
-export function apply(ctx: Context): void {
-  const opened = ctx.bluePluginHost.open(ctx, {
-    id: 'my-plugin.clock',
-    api: '^1.0.0-beta.1',
-    capabilities: ['status'],
-  })
-  if (!opened.ok) return // 结构性失败：放弃挂载，不向宿主抛异常
-  opened.value.status?.register({
-    id: 'clock.status',
-    render: () => ({ kind: 'text', content: new Date().toLocaleTimeString(), tone: 'muted' }),
-  })
+```json
+{
+  "$schema": "https://dsh-blue.dev/schema/blue.plugin.v1.schema.json",
+  "schemaVersion": 1,
+  "id": "my-plugin-clock",
+  "entry": ".",
+  "api": "^1.0.0-beta.1",
+  "compatibility": {
+    "blue": ">=0.1.1-rc.2 <0.1.2",
+    "harness": ">=0.1.1-rc.1 <0.1.2",
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "capabilities": {
+    "required": [{ "name": "status", "version": "^1.0.0" }],
+    "optional": []
+  }
 }
 ```
 
-Insert it into the profile's `cordis.patch.yml` and the status bar gains a clock entry. To run this plugin end to end from scratch, see the [quickstart](/en/plugins/quickstart).
+The entry passes this validated manifest to `open()`, then registers through the granted `status` facade. To run a complete package end to end from scratch, see the [quickstart](/en/plugins/quickstart).
 
 ::: warning Preview-stage caveat
-The executable protocol is `1.0.0-beta.1`, not Stable v1. This section is a Beta reference; the formal v1 manual, schema/catalog, and per-capability Stable promotions are later roadmap deliveries.
+The executable protocol is `1.0.0-beta.1`, not Stable v1. `0.1.1-rc.2` delivers the P1–P4 machine contract, catalog/Host negotiation, five UI capabilities, and two read-only session capabilities. P5's no-clone author commands, skill, and tutorial fixture remain later roadmap work.
 :::
+
+## The `0.1.1-rc.2` Public Beta boundary
+
+| Phase | Delivered |
+| --- | --- |
+| P1 | Draft 2020-12 manifest schema, generated TypeScript, shared positive/negative corpus, product/protocol mapping, and packed validator |
+| P2 | atomic required/optional admission, exact resource grants, structured denials, protected owner generations, and owner-gap restore |
+| P3 | quotas, refresh, unload/reload, and stale-result fences for `commands`, `status`, `panes`, `overlays`, and `notifications.publish` |
+| P4 | exact-field `session.read` and exact-key `session.projections.read` with epoch/revision/seq, consistent cuts, JSON/size bounds, and late-result rejection |
+
+These capabilities are ready for plugin adaptation but remain Public Beta until ecosystem consumers, author tooling, and the P7 evidence gates close. The machine entry points are `@dsh-blue/blue-api/protocol/v1` and the public [schema](/schema/blue.plugin.v1.schema.json). New plugins use canonical `blue.plugin.json`; do not start from the flat transition manifest.
 
 ## The integration model at a glance
 

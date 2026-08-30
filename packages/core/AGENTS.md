@@ -54,6 +54,10 @@ Render exceptions inspect only an own data `message` property behind a guarded
 descriptor lookup; revoked proxies and accessor-backed thrown values retain the
 fixed bounded fallback instead of escaping the error boundary.
 
+P3's packed fixture, generation-fence suite, and real-profile acceptance are
+complete. These public UI capabilities remain Public Beta until ecosystem
+consumer evidence and the later P7 promotion gate close.
+
 The API host Fiber owns the durable panes/overlays readiness and buffering
 lease, so host-only external rows may register regardless of core import order,
 while theme/components are pending, or during a nested bridge reload gap. The

@@ -34,17 +34,15 @@ A running agent's status is **not** in the footer — that's the activity pane's
 
 ## Contributing
 
-A third-party plugin opens the status capability, then registers a `BlueStatusEntryContribution`:
+A third-party plugin opens `status` with a validated canonical `manifest` whose
+required requests include `{ "name": "status", "version": "^1.0.0" }`, then
+registers a `BlueStatusEntryContribution`:
 
 ```ts
-const opened = ctx.bluePluginHost.open(ctx, {
-  id: 'my-plugin.build',
-  api: '^1.0.0-beta.1',
-  capabilities: ['status'],
-})
+const opened = ctx.bluePluginHost.open(ctx, manifest)
 if (!opened.ok) throw new Error(opened.message)
 
-const registered = opened.value.status!.register({
+const registered = opened.value.api.status!.register({
   id: 'build.status',
   priority: 15,
   render: () => ({ kind: 'text', content: myLine, tone: 'muted' }),

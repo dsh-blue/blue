@@ -7,7 +7,7 @@ const base = process.env.DOCS_BASE ?? '/'
  * 站点版本（ADR D32）：当前预览线，与十一包发布线一致。
  * 升级时只改这一处（首页 hero 文案与 footer 同步引用语义，见各 index.md）。
  */
-const SITE_VERSION = '0.1.1-rc.1'
+const SITE_VERSION = '0.1.1-rc.2'
 
 /**
  * 站点正式域名（dsh-blue.dev，经 Cloudflare DNS 指向 GitHub Pages）。
@@ -79,13 +79,13 @@ const sharedTheme = {
 const navZh = [
   { text: '用户手册', link: '/guide/', activeMatch: '/(guide|dsh|features|reference)' },
   { text: '开发手册', link: '/plugins/', activeMatch: '^/plugins' },
-  { text: '插件市场', link: '/marketplace/', activeMatch: '^/marketplace' },
+  { text: '插件市场（迁移中）', link: '/marketplace/', activeMatch: '^/marketplace' },
 ]
 
 const navEn = [
   { text: 'User manual', link: '/en/guide/', activeMatch: '/en/(guide|dsh|features|reference)' },
   { text: 'Developer manual', link: '/en/plugins/', activeMatch: '^/en/plugins' },
-  { text: 'Plugin marketplace', link: '/en/marketplace/', activeMatch: '^/en/marketplace' },
+  { text: 'Marketplace (migrating)', link: '/en/marketplace/', activeMatch: '^/en/marketplace' },
 ]
 
 // ── 侧边栏：按路径分册 ─────────────────────────────────────────────────────
@@ -153,11 +153,16 @@ const sidebarZh = {
       items: [
         { text: '命令', link: '/plugins/commands' },
         { text: '状态栏', link: '/plugins/status' },
-        { text: '编辑器扩展', link: '/plugins/editor-extensions' },
-        { text: '编辑器 Provider', link: '/plugins/editor-providers' },
         { text: 'Pane 与 Overlay', link: '/plugins/dock' },
         { text: '通知', link: '/plugins/notifications' },
-        { text: '会话读取与动作', link: '/plugins/session' },
+        { text: '会话只读数据', link: '/plugins/session' },
+      ],
+    },
+    {
+      text: 'Experimental / reference',
+      items: [
+        { text: '编辑器扩展', link: '/plugins/editor-extensions' },
+        { text: '编辑器 Provider', link: '/plugins/editor-providers' },
       ],
     },
     {
@@ -183,8 +188,8 @@ const sidebarZh = {
     {
       text: '市场',
       items: [
-        { text: '插件列表', link: '/marketplace/' },
-        { text: '收录指南', link: '/marketplace/submit' },
+        { text: '迁移状态', link: '/marketplace/' },
+        { text: '收录门禁', link: '/marketplace/submit' },
       ],
     },
   ],
@@ -251,11 +256,16 @@ const sidebarEn = {
       items: [
         { text: 'Commands', link: '/en/plugins/commands' },
         { text: 'Status bar', link: '/en/plugins/status' },
-        { text: 'Editor extensions', link: '/en/plugins/editor-extensions' },
-        { text: 'Editor providers', link: '/en/plugins/editor-providers' },
         { text: 'Panes and overlays', link: '/en/plugins/dock' },
         { text: 'Notifications', link: '/en/plugins/notifications' },
-        { text: 'Session reads and actions', link: '/en/plugins/session' },
+        { text: 'Read-only session data', link: '/en/plugins/session' },
+      ],
+    },
+    {
+      text: 'Experimental / reference',
+      items: [
+        { text: 'Editor extensions', link: '/en/plugins/editor-extensions' },
+        { text: 'Editor providers', link: '/en/plugins/editor-providers' },
       ],
     },
     {
@@ -281,8 +291,8 @@ const sidebarEn = {
     {
       text: 'Marketplace',
       items: [
-        { text: 'All plugins', link: '/en/marketplace/' },
-        { text: 'Submission guide', link: '/en/marketplace/submit' },
+        { text: 'Migration status', link: '/en/marketplace/' },
+        { text: 'Submission gate', link: '/en/marketplace/submit' },
       ],
     },
   ],

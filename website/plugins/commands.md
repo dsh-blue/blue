@@ -25,18 +25,29 @@ api.commands?.register(contribution: BlueCommandContribution): BlueResult<BlueRe
 
 ## 完整示例
 
-一个把文本追加到文件、可中止的命令：
+一个把文本追加到文件、可中止的命令。下面的 `manifest` 是已经通过
+`validateBluePluginManifestV1()` 的 canonical `blue.plugin.json`；它的 capability
+请求至少包含：
+
+```json
+{
+  "capabilities": {
+    "required": [
+      { "name": "commands", "version": "^1.0.0", "resources": { "names": ["clip"] } }
+    ],
+    "optional": [
+      { "name": "notifications.publish", "version": "^1.0.0" }
+    ]
+  }
+}
+```
 
 ```ts
-const opened = ctx.bluePluginHost.open(ctx, {
-  id: 'my-plugin.clipboard',
-  api: '^1.0.0-beta.1',
-  capabilities: ['commands', 'notifications.publish'],
-})
+const opened = ctx.bluePluginHost.open(ctx, manifest)
 if (!opened.ok) return
-const api = opened.value
+const api = opened.value.api
 
-api.commands?.register({
+const registered = api.commands?.register({
   id: 'clip',
   label: 'Append text to ~/clip.log',
   execute: async (args, { signal } = {}) => {
@@ -47,22 +58,26 @@ api.commands?.register({
       return { ok: false, code: 'BLUE_ABORTED', message: 'aborted' }
     }
     await appendFile(`${homedir()}/clip.log`, `${args.join(' ')}\n`)
-    api.notifications?.publish({
+    const published = api.notifications?.publish({
       id: 'clip.saved',
       view: { kind: 'text', content: `saved ${args.length} word(s)` },
       tone: 'success',
     })
+    if (published !== undefined && !published.ok) return published
     return { ok: true, value: undefined }
   },
 })
+if (registered !== undefined && !registered.ok) ctx.logger.warn(registered.message)
 ```
 
 ## 行为细节
 
+- **名字是 exact resource**：canonical manifest 必须声明 1–64 个 command name；注册未获准 name 返回 `BLUE_RESOURCE_DENIED`，同一 consumer 最多保留 64 个 command contribution；
 - **重复 id 被拒**：`register()` 返回 `BLUE_DUPLICATE_ID`。与内置命令或其他插件的命令撞名同样在注册时失败——`register` 的返回值要检查，失败时按降级处理；
 - **返回值即用户反馈**：`{ ok: false, code, message }` 的 `message` 会作为错误文本显示在编辑器通知条；`execute` 抛出的异常会被桥接层兜底为 `plugin command failed: ...` 显示——兜底不是契约，主动返回结构化错误；
 - **成功是静默的**：`{ ok: true }` 不产生任何输出。要给用户反馈就申请 [`notifications.publish`](/plugins/notifications) 发一条；
 - **卸载即消失**：注册绑定调用方 Fiber，插件卸载后命令从注册表移除，补全和 `/help` 同步消失。
+- **旧回调不能提交**：owner replacement、consumer unload 或 signal abort 会拒绝旧 command generation 的迟到结果；Host 不在 owner gap 中重放 command action。
 
 ## 常见错误
 

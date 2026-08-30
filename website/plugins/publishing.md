@@ -11,23 +11,25 @@ Blue 插件是带 `blue.plugin.json` 的普通 npm 包。Blue 官方包由 CI �
 发布前确认：
 
 - `exports` 指向构建产物，`files` 白名单覆盖所有导出目标（validate 脚本的 `package` 组会查）；
-- `@dsh-blue/blue-api` 在 `dependencies`，`@deepseek-ai/cordis` 在 `peerDependencies`——后者由宿主 dsh 安装提供，打进 `dependencies` 会出现第二份服务实例；
-- manifest 的 `api` 范围对准当前可执行的 Beta 契约（`^1.0.0-beta.1`）。这是预览兼容声明，不是对未来 Stable `1.x` 的承诺；每次宿主/API 变化都要用 packed fixture 重新验证，`open()` 对不兼容范围返回 `BLUE_API_INCOMPATIBLE`。
+- `@dsh-blue/blue-api@0.1.1-rc.2`（用到 builder 时再加 `@dsh-blue/blue-ui@0.1.1-rc.2`）在 `dependencies`，`@deepseek-ai/cordis` 在 `peerDependencies`——后者由宿主 dsh 提供，打进 `dependencies` 会出现第二份服务实例；
+- canonical manifest 的 `api` 对准 `^1.0.0-beta.1`，`compatibility.blue` / `harness` 对准已用 packed fixture 证明的产品线。这是预览兼容声明，不是对未来 Stable `1.x` 的承诺。
 
 ## 用户安装路径
 
 ```sh
-blue plugin install my-scope/blue-clock
+blue plugin add @my-scope/blue-clock@0.1.0
 ```
 
-然后在 profile 的 `cordis.patch.yml` 加上插件行：
+包含 `package.json.dsh.bundle.patch` 的包会由 dsh 装配自带的 patch。如果包没有 bundle 声明，它只会作为普通依赖安装，此时才需要手工向 profile patch 加行：
 
 ```yaml
 - id: my-plugin-clock
   name: 'my-scope/blue-clock'
 ```
 
-没有 `dsh.bundle` 声明的包只会作为普通依赖安装——patch 行是插件真正被装载的开关。README 里记得把这两步都写给用户。
+运行中的 Blue 保留 `/plugin install` 命令，但 rc.2 市场迁移期间不要从旧 registry
+安装条目。对已经证明 rc.2 兼容的明确 package spec 使用上面的
+`blue plugin add`；安装后重启 Blue 才会激活新行。
 
 ## 版本策略建议
 
@@ -37,10 +39,7 @@ blue plugin install my-scope/blue-clock
 
 ## 插件市场
 
-[插件市场](/marketplace/)已上线：发布后往 [dsh-blue/marketplace](https://github.com/dsh-blue/marketplace) 提交收录，用户即可在市场一行安装（GitHub 可安装的插件就能收录，npm 不是门槛）。收录流程与字段说明见[收录指南](/marketplace/submit)。分发机制依旧是 npm/GitHub 源 + patch 行——保持包的独立可安装性（fixture 验证的意义就在这里），收录不需要对包做任何改造。
-## Plugin protocol and marketplace
-
-Published plugins must include `blue.plugin.json` and pass the static validator
-and packed fixture before marketplace submission. Use `blue plugin install` or
-`/plugin install`; GitHub sources must be pinned to a commit. See the [plugin
-package specification](/plugins/manifest) and the marketplace submission guide.
+市场 registry 和现有 verified 条目仍使用 rc.2 之前的 legacy `dock`/`notifications`
+metadata，尚未完成 canonical P1–P4 迁移。因此 Website 构建会清理市场数据与详情
+路由，并暂停收录；旧 `verified` 不是 rc.2 兼容性或 conformance 证据。待 registry
+validator 和至少一个插件完成迁移后再恢复卡片、提交与一行安装承诺。

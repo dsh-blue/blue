@@ -21,11 +21,12 @@ api.notifications?.publish(notification: BlueNotification): BlueResult
 命令执行成功后发一条通知（配合 [commands](/plugins/commands) 能力）：
 
 ```ts
-api.notifications?.publish({
+const published = api.notifications?.publish({
   id: 'clip.saved',
   view: { kind: 'text', content: `saved ${args.length} word(s)` },
   tone: 'success',
 })
+if (published !== undefined && !published.ok) return published
 ```
 
 ## 行为细节

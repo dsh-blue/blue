@@ -29,9 +29,12 @@ export interface ChangelogEntry {
 export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
     version: '0.1.1-rc.2',
-    summary: 'Blue\'s renderer-neutral plugin runtime now ships as a hardened 1.0.0-beta.1 foundation with live Chinese/English switching.',
+    summary: 'Blue\'s renderer-neutral plugin runtime now ships the accepted P1–P4 1.0.0-beta.1 Public Beta foundation with live Chinese/English switching.',
     highlights: [
-      'Beta renderer-neutral UI runtime — API/host 1.0.0-beta.1 exposes canonical commands, status, panes, overlays, publish-only notifications and readonly session snapshots without exposing pi-tui or terminal objects.',
+      'P1 machine-readable plugin contract — Draft 2020-12 schema, generated readonly TypeScript, shared positive/negative corpus, product/protocol mapping, repository validator and packed fixture agree on canonical package identity, public entry exports, compatibility and capability requests.',
+      'P2 exact Host admission — required requests admit atomically, optional requests return structured denials, and every immutable grant records its concrete version, exact resources, limits, quotas, availability and protected owner generation.',
+      'P3 bounded renderer-neutral UI capabilities — commands, status, panes, overlays and publish-only notifications enforce resource and rate limits, owner-gap restore, unload/reload cleanup, refresh isolation and stale action or event fencing without exposing pi-tui or terminal objects.',
+      'P4 field- and key-scoped session reads — session.read and session.projections.read expose deeply frozen epoch/revision/sequence data, consistent projection cuts, JSON/size bounds, owner-gap restore and stale/late-result rejection without exposing Agent or Session objects.',
       'Hardened public authority boundary — generic session.act, global notification observation and callable owner helpers are removed; ordinary plugins receive only manifest-scoped facades.',
       'Private composition control plane — owner authority and raw app session/projection/action services live in an isolated bundle realm, while hostile sibling plugins retain access only to bluePluginHost.',
       'Experimental provider/editor runtime retained — status/editor providers and editor extensions keep their state-preserving swap, fallback, unload and late-result evidence without being advertised as Stable v1 capabilities.',
@@ -42,6 +45,7 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
     ],
     knownIssues: [
       'Localization remains intentionally incremental — feature-owned command result bodies such as /context and /effort, plus changelog release-note content, remain English until their owning packages gain bilingual sources.',
+      'The plugin marketplace is migrating — its registry validator and first example plugin still use the pre-P1 transition contract, so the Website hides install cards and pauses submissions until canonical rc.2 conformance is proven. P5\'s no-clone author tooling is not part of this RC.',
     ],
   },
   {

@@ -20,15 +20,17 @@ api.panes?.register(contribution: BluePaneContribution): BlueResult<BluePaneRegi
 | `render` | synchronously returns `BlueUiNode \| null`; keep it pure and cheap |
 | `onEvent` | optional structured event handler, with no raw keys or renderer objects |
 
-```ts
-const opened = ctx.bluePluginHost.open(ctx, {
-  id: 'acme.inspector',
-  api: '^1.0.0-beta.1',
-  capabilities: ['panes'],
-})
-if (!opened.ok) return
+Here `manifest` is a validated canonical manifest. It grants the `right`
+placement to `panes` and requests `commands` plus `overlays` for the later
+example. See the [quickstart](/en/plugins/quickstart) for the complete top-level
+shape.
 
-opened.value.panes?.register({
+```ts
+const opened = ctx.bluePluginHost.open(ctx, manifest)
+if (!opened.ok) return
+const api = opened.value.api
+
+const registered = api.panes?.register({
   id: 'acme.inspector.context',
   title: 'Context',
   placement: 'right',
@@ -39,12 +41,16 @@ opened.value.panes?.register({
     { label: 'Tokens', value: [{ text: '12k / 28k', tone: 'muted' }] },
   ]),
 })
+if (registered !== undefined && !registered.ok) ctx.logger.warn(registered.message)
 ```
 
 Blue creates lane tabs when multiple side panes compete. A plugin controls only
 the active pane's interior and cannot split the outer lane again. The returned
 handle supports `refresh()` and `setHidden()`; both the registration and handle
-are consumer-Fiber bound, so retained calls are rejected after unload.
+are consumer-Fiber bound, so retained calls are rejected after unload. The
+canonical grant permits only declared placements. One consumer may register up
+to eight panes, and each registration may successfully refresh at most 20 times
+in a rolling second.
 
 ## Overlay contract
 
@@ -59,7 +65,7 @@ A passive, non-capturing overlay can show transient details. A
 opened with the one-shot `userGesture` from the current Blue-owned dispatch:
 
 ```ts
-api.commands?.register({
+const command = api.commands?.register({
   id: 'show-details',
   label: 'Show details',
   execute: async (_args, options) => {
@@ -84,11 +90,16 @@ api.commands?.register({
     }
   },
 })
+if (command !== undefined && !command.ok) ctx.logger.warn(command.message)
 ```
 
 Gestures cannot be cached, transferred, or reused across asynchronous user
 operations. Close, failure, timeout, and plugin unload all remove the overlay;
-the host restores the previous focus.
+the host restores the previous focus. The global overlay stack holds at most
+four entries, one consumer may own at most one capturing overlay, and each
+handle may successfully refresh at most 20 times in a rolling second. An
+overlay is a transient action and is never buffered or replayed across an owner
+gap/reload.
 
 ## Responsive layout and width
 

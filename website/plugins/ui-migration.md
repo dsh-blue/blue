@@ -3,6 +3,12 @@
 新的公开边界是 canonical node + capability-scoped registry。迁移目标不是把旧
 renderer object 包一层，而是让 Blue 拥有 layout、focus、width 与生命周期。
 
+::: warning canonical 与 transition lane
+P1–P4 canonical schema 只接受七项 Public Beta capability。下表中的 pane、overlay
+与 additive status 是 canonical 迁移目标；provider/editor 行仍是 Experimental/reference
+transition lane，不能写进 canonical manifest。
+:::
+
 | 旧用法 | 新用法 | 迁移动作 |
 | --- | --- | --- |
 | `dock` / `BlueDockContribution` | `panes` / `BluePaneContribution` | 设 `placement: 'bottom'`，把 `view` 改为 `render`，用 `size` 表达预算 |
@@ -17,14 +23,11 @@ renderer object 包一层，而是让 Blue 拥有 layout、focus、width 与生�
 
 ```ts
 // 旧：capabilities: ['dock']; api.dock.register({ view, preferredRows })
-const opened = ctx.bluePluginHost.open(ctx, {
-  id: 'acme.activity',
-  api: '^1.0.0-beta.1',
-  capabilities: ['panes'],
-})
+// 新：manifest 是 required 中申请 panes/bottom 的 canonical manifest。
+const opened = ctx.bluePluginHost.open(ctx, manifest)
 if (!opened.ok) return
 
-opened.value.panes?.register({
+opened.value.api.panes?.register({
   id: 'acme.activity.log',
   title: 'Activity',
   placement: 'bottom',
@@ -49,13 +52,13 @@ opened.value.panes?.register({
   registration `refresh()` 请求重绘；
 - `onEvent` 使用 context 的 `signal` 与 `revision`，忽略 abort 后的迟到结果。
 
-## Provider 迁移
+## Experimental provider 迁移
 
 安装 provider 只增加候选，不得写 `blue.statusProvider` 或
 `blue.editorProvider`。选择、原子切换、失败回滚与 breaker 都归 owner。Editor
 provider 只能重排 shell metadata，并且每个候选必须恰好包含一个可见
 `editor-control`；draft、history、focus 与 IME engine 始终由 Blue 保留。
 
-迁移后运行静态 validator、独立 packed fixture、Fiber unload、late-result 与宽度
+Canonical 迁移后运行静态 validator、独立 packed fixture、Fiber unload、late-result 与宽度
 扫描。参考实现见[示例目录](/plugins/examples)，完整节点构造见
 [公共 UI Kit](/plugins/ui-kit)。

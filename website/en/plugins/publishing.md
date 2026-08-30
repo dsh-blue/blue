@@ -11,23 +11,26 @@ A Blue plugin is an ordinary npm package with `blue.plugin.json`. Official Blue 
 Confirm before publishing:
 
 - `exports` points at the build output, and the `files` whitelist covers every export target (the validate script's `package` group checks this);
-- `@dsh-blue/blue-api` is in `dependencies`, `@deepseek-ai/cordis` in `peerDependencies` — the latter is provided by the host dsh installation, and bundling it into `dependencies` produces a second service instance;
-- the manifest's `api` range targets the currently executable Beta contract (`^1.0.0-beta.1`). This is a preview compatibility declaration, not a promise about future Stable `1.x`; re-run packed fixtures for every host/API change, while `open()` returns `BLUE_API_INCOMPATIBLE` for an incompatible range.
+- `@dsh-blue/blue-api@0.1.1-rc.2` is in `dependencies` (add `@dsh-blue/blue-ui@0.1.1-rc.2` when using its builders), while `@deepseek-ai/cordis` is in `peerDependencies`. Cordis is host-provided; bundling it as a dependency produces a second service instance;
+- the canonical manifest targets `^1.0.0-beta.1` in `api`, while `compatibility.blue` and `compatibility.harness` cover only product lines proven by packed fixtures. This is a preview declaration, not a promise about future Stable `1.x`.
 
 ## User install path
 
 ```sh
-blue plugin install my-scope/blue-clock
+blue plugin add @my-scope/blue-clock@0.1.0
 ```
 
-Then add the plugin row to the profile's `cordis.patch.yml`:
+A package declaring `package.json.dsh.bundle.patch` is composed from its bundled patch by dsh. Only a package without that declaration installs as a plain dependency and needs a manually added profile row:
 
 ```yaml
 - id: my-plugin-clock
   name: 'my-scope/blue-clock'
 ```
 
-A package without a `dsh.bundle` declaration installs as a plain dependency only — the patch row is the switch that actually loads the plugin. Remember to spell out both steps for users in your README.
+The running TUI retains `/plugin install`, but do not install entries from the
+old registry while the rc.2 marketplace migration is in progress. Use
+`blue plugin add` above only with an explicitly rc.2-compatible package spec;
+restart Blue after installation to activate the new row.
 
 ## Versioning policy recommendations
 
@@ -37,10 +40,9 @@ A package without a `dsh.bundle` declaration installs as a plain dependency only
 
 ## Plugin marketplace
 
-The [plugin marketplace](/en/marketplace/) is live: after publishing, submit a listing to [dsh-blue/marketplace](https://github.com/dsh-blue/marketplace) and users can install your plugin from the marketplace in one line (any plugin installable from GitHub qualifies — npm is not a requirement). The listing process and field reference are in the [submission guide](/en/marketplace/submit). The distribution mechanism is still an npm/GitHub source plus a patch row — keep your package independently installable (this is what the fixture verifies), and listing requires no rework of the package.
-## Plugin protocol and marketplace
-
-Published plugins must include `blue.plugin.json` and pass the static validator
-and packed fixture before marketplace submission. Use `blue plugin install` or
-`/plugin install`; GitHub sources must be pinned to a commit. See the [plugin
-package specification](/en/plugins/manifest) and the marketplace submission guide.
+The marketplace registry and its existing verified entry still use pre-rc.2
+legacy `dock`/`notifications` metadata and have not completed the canonical
+P1–P4 migration. Website builds therefore remove fetched data and detail routes
+and pause submissions. The old `verified` flag is not rc.2 compatibility or
+conformance evidence. Cards, submissions, and one-line installation promises
+return only after the registry validator and at least one plugin migrate.

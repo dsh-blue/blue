@@ -7,10 +7,11 @@
 // 手写的 website/marketplace/index.md、submit.md 永不触碰；仅按 manifest
 // 清理上一轮生成的插件目录（防下架插件残留成死路由）。
 //
-// 用法：node script/marketplace-fetch.mjs [--ref <ref>] [--allow-missing] [--force]
+// 用法：node script/marketplace-fetch.mjs [--ref <ref>] [--allow-missing] [--force] [--paused]
 //   --ref           marketplace 仓库的分支/标签，默认 master
 //   --allow-missing 拿不到数据时不报错（本地 dev 降级用；CI 不带此参数）
 //   --force         忽略缓存重新 clone
+//   --paused        迁移期不取数，并清理上轮生成的数据与详情路由
 // 环境变量 MARKETPLACE_REPO 可覆盖源（默认 GitHub；本地联调指向本地路径）。
 import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -42,6 +43,20 @@ const fail = (msg) => { console.error(`✖ marketplace-fetch：${msg}`); process
 const git = (args_, opts = {}) => spawnSync('git', args_, { encoding: 'utf8', ...opts })
 // git 的 stderr 首行常是 "Cloning into '.'..." 之类的噪音，取最后一条实质信息
 const lastLine = (s) => (s || '').trim().split('\n').filter(Boolean).pop() ?? ''
+
+// P1-P4 migration gate: keep the hand-written status/submission pages while
+// removing every fetched plugin route and data file from Website builds.
+if (flag('--paused')) {
+  rmSync(DATA_DIR, { recursive: true, force: true })
+  for (const { base } of SIDES) {
+    if (!existsSync(base)) continue
+    for (const entry of readdirSync(base, { withFileTypes: true })) {
+      if (entry.isDirectory()) rmSync(join(base, entry.name), { recursive: true, force: true })
+    }
+  }
+  console.log('✓ marketplace-fetch：迁移暂停，已清理生成数据与详情路由')
+  process.exit(0)
+}
 
 // ── 1. 取数：clone / fetch，失败时降级用旧缓存 ──────────────────────────────
 if (flag('--force') && existsSync(CACHE)) rmSync(CACHE, { recursive: true, force: true })

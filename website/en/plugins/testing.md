@@ -2,6 +2,10 @@
 
 This page covers a plugin's local iteration loop and the two mechanical pre-publish verifications: the static boundary check (validate) and the packed-install fixture.
 
+::: warning Tooling boundary in `0.1.1-rc.2`
+Both commands below can validate a plugin directory outside the workspace, but the runners still live in the Blue repository, so they require a Blue clone/checkout. P5 will provide installable no-clone author commands. This page does not present the current scripts as a published CLI.
+:::
+
 ## Iteration loop
 
 ```text
@@ -41,13 +45,9 @@ It prints a JSON report in three groups:
 
 | Group | Checks |
 | --- | --- |
-| `package` | package.json exists, the `exports` map is complete, the `files` whitelist covers every export target, the entry exports a literal `name` and `apply`, and `inject` is a stable array |
+| `package` | canonical manifest schema/semantics, `id === package.json.name`, public entry export, the `files` plus real `npm pack` closure, a literal entry `name` and callable `apply`, and direct peer/dependency closure |
 | `architecture` | renderer/raw-terminal dependencies must not appear outside core; renderer-neutral packages must not depend on renderer-specific APIs; no cross-boundary imports of Agent/Session packages; the frontend does not fold Harness session events |
 | `lifecycle` | the plugin entry has observable Fiber-lifecycle or registration-ownership markers (`ctx.effect` / `.dispose` / `.register` / `.subscribe`) |
-
-::: tip Package-name requirement
-validate checks whether the package name is recognizable as a Blue frontend package or adapter — the name must contain one of `blue`, `frontend`, or `adapter` (e.g. `my-scope/blue-clock`, `my-scope/feature-blue`), otherwise it reports `PACKAGE_NAME_INVALID`.
-:::
 
 ## fixture: the packed-install contract
 
@@ -55,12 +55,13 @@ validate is static; the fixture actually packs and loads your plugin in a **thro
 
 ```sh
 node script/blue-plugin-fixture.mjs /path/to/my-plugin --install
-# 钉到上一条 Harness 线验证兼容性：
+# Pin the previous Harness line for compatibility evidence:
 node script/blue-plugin-fixture.mjs /path/to/my-plugin --install --harness-line 0.1.1-rc.1
 ```
 
 - `--install` is the switch for the independent scenario — without it the fixture only does shallow checks;
 - the `--harness-line` version override applies only inside the throwaway project and never pollutes your checkout; the report's `harnessPackages` field lists the actually resolved version of every Harness package, and all of them should equal the line you specified.
+- a passing report requires `declared` to equal `executed`, empty `skipped`/`failures`, and cleanup of the throwaway project.
 
 The problems the fixture finds are almost always of the kind "fine inside the monorepo, broken on an independent install": undeclared peers, build output missing from `files`, versions depending on the workspace protocol.
 

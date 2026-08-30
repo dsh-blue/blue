@@ -29,8 +29,8 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 ## 用法
 
 > [!NOTE]
-> 当前源码正在准备即将发布的 `0.1.1-rc.2` 候选版本。真人验收和合并完成前
-> 不会发布；npm 的 `rc` 与 `latest` 标签仍指向上一公开版本。
+> `0.1.1-rc.2` 是当前 Public Beta 发布线。下方命令使用 `rc` 通道；
+> 插件适配和可复现环境应锁定精确的 `0.1.1-rc.2` 版本。
 
 前置条件：Node `^22.19 || >=24` 与 pnpm 11。推荐的启动器已经内含经过测试的 dsh 运行时。
 
@@ -93,7 +93,7 @@ flowchart TB
 ```
 <!-- END diagram:blue-layers -->
 
-运行时流向为 `Harness domain -> projection/action 边界 -> renderer-neutral model -> TUI 功能插件 -> core`。事件表达已发生的事实，projection 表达当前状态，action 是带结构化结果的写请求；Blue 不维护第二套 Agent 真相，Agent/Session 对象也从不越界进入 renderer。bundle 的逐行组合（`dsh-base` 之上的 29 行 Blue 自有插件）见 [bundle 指南](https://dsh-blue.dev/plugins/builtins/)，功能巡览见[网站功能页](https://dsh-blue.dev/features/)。
+运行时流向为 `Harness domain -> projection/action 边界 -> renderer-neutral model -> TUI 功能插件 -> core`。事件表达已发生的事实，projection 表达当前状态，action 是带结构化结果的写请求；Blue 不维护第二套 Agent 真相，Agent/Session 对象也从不越界进入 renderer。bundle 的逐行组合（`dsh-base` 之上的 33 行 Blue 自有插件）见 [bundle 指南](https://dsh-blue.dev/plugins/builtins/)，功能巡览见[网站功能页](https://dsh-blue.dev/features/)。
 
 ## 文档
 
