@@ -93,17 +93,22 @@ R1 只冻结可观察权限结果，不强制特定 authority representation。h
 
 R2 按合并手册拆为 P1-P4，不得放进一个大 PR：P1 建机器真相，P2 建协商与权限，P3/P4 才把 UI 和 session capability 接到该契约。
 
-当前进度：P1-P3 已通过自动门禁与真人验收并合入主线，包含机器契约、共享 corpus、packed validator、双
+当前进度：P1-P4 已通过自动门禁与真人验收并合入主线，包含机器契约、共享 corpus、packed validator、双
 Harness line fixture，以及 canonical host admission、required/optional、精确
 resource grant、结构化 denial、受保护 owner generation 与 durable registration
 restore；五项 UI capability 已落实 resource/数量/刷新/notification 大小与速率限制、
 owner-gap restore、command/事件 stale fence、overlay 不重放与 status failure isolation。
-P4 候选 worktree 完成了 field-scoped
-`session.read` 与 exact-key `session.projections.read`：required epoch/revision、
-consistent cut、JSON/size bound、owner gap/reload、key unload 和 stale/late callback
-门禁均已有自动测试。其 P3 前基线曾通过完整仓库 gate、双 Harness packed fixture 与
-pseudo-TTY smoke；重放到最终 P3 主线后仍须重新执行全部门禁、重装独立 profile 并
-完成人工验收。P4 或三个生态插件在验收合并前都不能作为 capability Stable 证据。
+P4 以 feature head `18af62a48cd8d1eaa8b2165e8c3a96ea10dd498e`
+完成 field-scoped `session.read` 与 exact-key
+`session.projections.read`：required epoch/revision、consistent cut、JSON/size
+bound、owner gap/reload、key unload 和 stale/late callback 门禁均有自动测试。
+重放到最终 P3 主线后，完整仓库 gate、逐文件 100% coverage、双 Harness
+packed fixture、Website build 和 happy/PTY/mouse/output-recovery smoke 均通过；
+`blue-p4-session` 真实 profile 于 2026-08-30 获得用户验收。该 head 以
+`e97975e3566deceb9cd32c046f1ccb394c0b0495` 合入并推送 `master`，精确 SHA 的
+CI run `33303520631` 和 Website run `33303520599` 均为 success，验收 profile
+与 worktree 已清理。这些证据只关闭 P4 Public Beta 实施门；不使 capability
+自动成为 Stable，三个生态插件仍需各自的 packed、profile 和真人验收证据。
 
 ### Schema 与 package
 
@@ -125,7 +130,7 @@ pseudo-TTY smoke；重放到最终 P3 主线后仍须重新执行全部门禁、
 ### Capability Beta
 
 - `commands`、`status`、`panes`、`overlays`、`notifications.publish` 原则上逐项 PR 接入 grant、limits、fallback 和 owner lifecycle。
-- P4 候选已把 `session.read` 与 `session.projections.read` 分开收敛为 fields/key grant、session epoch、seq、一致 cut 和 size bound；在 profile 验收与合并前仍只按 Public Beta 候选记录。
+- P4 已把 `session.read` 与 `session.projections.read` 分开收敛为 fields/key grant、session epoch、seq、一致 cut 和 size bound，并完成 profile 验收与合并；在 R4 的真实消费者与发布门关闭前仍只是 Public Beta。
 - provider、editor、conversation、theme/settings 和 market operation 不因 PR #77 已有 runtime 自动进入 v1 root。
 
 ### 退出门
